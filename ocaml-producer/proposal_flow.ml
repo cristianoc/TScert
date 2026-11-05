@@ -52,6 +52,13 @@ type 'output callbacks = {
 
 let unsupported = Json.unsupported
 
+(* An environment no value meets: each slot at the empty type, which a join
+   drops and Lean checks by `vacuous-edge`. *)
+let unreachable env = List.map (fun (n,b) -> if is_field n then n,b else match b with
+  | Value _ -> n,Value (Atoms [])
+  | Local (contract,_) -> n,Local (contract,Atoms [])
+  | Storage _ -> n,b) env
+
 let statements callbacks flow_graph register_following owner_span env0 ss =
     let open Flow in
     let spans = List.map (fun (s:Source.stmt) -> s.span) ss in
@@ -172,12 +179,7 @@ let statements callbacks flow_graph register_following owner_span env0 ss =
             | Some plan -> callbacks.execute_bindings env plan
             | None -> callbacks.statement env s in
           (* A statement that cannot return normally leaves its successor an
-             environment no value meets: each slot at the empty type, which
-             a join drops and Lean checks by `vacuous-edge`. *)
-          let unreachable env = List.map (fun (n,b) -> if is_field n then n,b else match b with
-            | Value _ -> n,Value (Atoms [])
-            | Local (contract,_) -> n,Local (contract,Atoms [])
-            | Storage _ -> n,b) env in
+             environment no value meets (`unreachable`). *)
           (match s.statement with
            | Throw _ -> []
            | _ when callbacks.cannot_return_normally s -> [next id (unreachable after)]
@@ -188,6 +190,15 @@ let statements callbacks flow_graph register_following owner_span env0 ss =
             | _ -> Json.fail "a branch flow operation names another statement" in
           ignore (callbacks.expression env cond);
           let held,failed=callbacks.condition env cond in
+          (* A constant test takes one arm only: the other is left an
+             environment no value meets, as Lean finds the observation the
+             tested `true` or `false` rules out (`BranchRefinement.impossible`).
+             A `do` loop's and a `for (;;)` loop's head test `true`, so their
+             exits are only the `break`s and the test after the body. *)
+          let held,failed=match cond.node with
+            | Literal (LBool true) -> held,unreachable failed
+            | Literal (LBool false) -> unreachable held,failed
+            | _ -> held,failed in
           [next yes held;next no failed]
         | Flow.Return span ->
 
