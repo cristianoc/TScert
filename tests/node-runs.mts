@@ -3150,6 +3150,11 @@ for (const [file, call] of [
     /TypeError/, "a grapheme index inside the segment does not make its advances present");
   assert.equal(runEmitted(ofKind("literal-default-parameters", "positive"), "JSON.stringify([calls(), boxes(), written(), arrow(3), block(3)])"),
     '[22,"boxwide36",1,6,4]', "literal-default-parameters: the defaults run where the argument is undefined");
+  assert.equal(runExample(ofKind("do-while", "positive"),
+    "JSON.stringify([varint(String.fromCharCode(0x81, 0x01), 0), once(), tests([32, 9, 32, 7]), replaced(2), shadowed(3), lengthOf(5), lengthOf(\"abc\")])"),
+    '[129,1,3,2,"sss",1,12]', "do-while: the body before the test, a continue to the test, a finally replacing it");
+  assert.equal(runExample(negative("invalid-do-while-body-first"), "typeof last([])"), "undefined",
+    "invalid-do-while-body-first: the body reads past the end of an empty array before the test");
   assert.equal(runExample(negative("invalid-visitor-arity-bivariant"), thrown("digits([1, 2])")), "TypeError",
     "invalid-visitor-arity-bivariant: the walker passes undefined to the narrower closure");
 }

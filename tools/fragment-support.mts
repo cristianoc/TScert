@@ -324,10 +324,34 @@ export const iterationLabel = (node: ts.ForStatement, file: SourceFile): Within<
  * function. */
 export function jumpTarget(node: ts.BreakStatement | ts.ContinueStatement): Within<{ value: "any"; store: "grow" }, Node | undefined> {
   for (let parent: Node | undefined = node.parent; parent && !ts.isFunctionLikeDeclaration(parent); parent = parent.parent)
-    if (ts.isWhileStatement(parent) || ts.isForStatement(parent) || ts.isForOfStatement(parent) ||
-        ts.isForInStatement(parent) || (ts.isBreakStatement(node) && ts.isSwitchStatement(parent)))
+    if (isLoop(parent) || (ts.isBreakStatement(node) && ts.isSwitchStatement(parent)))
       return parent;
   return undefined;
+}
+
+/** A loop the lowering supports: `while`, `do...while`, `for`, `for...of`
+ * and `for...in`. */
+export type Loop = ts.WhileStatement | ts.DoStatement | ts.ForStatement | ts.ForOfStatement | ts.ForInStatement;
+export const isLoop = (node: Node): node is Loop =>
+  ts.isWhileStatement(node) || ts.isDoStatement(node) || ts.isForStatement(node) ||
+  ts.isForOfStatement(node) || ts.isForInStatement(node);
+
+/** The loop a `continue` repeats: the nearest. */
+export function continueTarget(node: ts.ContinueStatement): Within<{ value: "any"; store: "grow" }, Loop | undefined> {
+  const target = jumpTarget(node);
+  return target && isLoop(target) ? target : undefined;
+}
+
+/** The label of the block a loop runs its body in where a `continue` of
+ * the loop is a `break` of that block (`continueBlock`): a name no source
+ * can spell. */
+export const continueLabel = (node: Loop, file: SourceFile): Within<{ value: "any"; store: "grow" }, string> =>
+  `%continue@${node.getStart(file)}%`;
+
+/** Whether a loop runs its body in a block a `continue` of it leaves: a
+ * `do...while`, whose test follows its body. */
+export function continueBlock(loop: Loop): Within<{ value: "any"; store: "grow" }, boolean> {
+  return ts.isDoStatement(loop);
 }
 
 /** Whether a statement list's `break` leaves the loop whose body it is: an
