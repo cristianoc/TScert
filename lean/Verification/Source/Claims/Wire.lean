@@ -329,9 +329,9 @@ def decodeDocument (T : EquationStore.State) (claims : Json) : Except String (Do
   -- a document checked here has its modules' read apart.
   if !(← jArr claims "modules").isEmpty then throw "a document's module claims are read apart from it"
   let _ ← jArr claims "qualified"
-  let functions : List (Function Tree) ← decodeStrict (← jField claims "functions")
+  let functions : List (Function Tree) ← decodeStrict "claims.functions" (← jField claims "functions")
   let init : Option (InitClaims Tree) ← match claims.getObjVal? "init" with
-    | .ok j => some <$> decodeStrict j
+    | .ok j => some <$> decodeStrict "claims.init" j
     | .error _ => pure none
   let d : Document EquationStore.State Tree := ⟨← jStr (← jField claims "file"), ← jStr (← jField claims "sourceSha256"),
     T, functions, init⟩

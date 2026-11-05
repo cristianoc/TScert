@@ -556,7 +556,7 @@ claim `R` that is not proto-free, located at the write. -/
   let T ← table
   if reserved && !protoFreeTy (SourceTypes.graph T) R then
     throw (locatedRefusal T pos .expressionClaim
-      "a write at a key that may be `message` or `stack` onto an object that may hold a prototype: an instance of the `Error` family owns them as non-enumerable properties the model does not state, so the write is typed only on a receiver whose type excludes every object holding a prototype")
+      "a write at a key that may be `message`, `stack` or `cause` onto an object that may hold a prototype: an instance of the `Error` family owns them as non-enumerable properties the model does not state, so the write is typed only on a receiver whose type excludes every object holding a prototype")
 
 /-- Whether a key's claim is of keys known only at run time: every clause a
 string, a number or a symbol, singletons or families, and not one key the

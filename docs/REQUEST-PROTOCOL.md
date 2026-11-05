@@ -106,7 +106,9 @@ too (`0e0`, `-0`), never a fraction (`0.0`).
 Decoding is strict: it decodes, re-encodes and compares, so every field is
 required, an unknown field is refused, recursively, and a field whose absence
 is its one spelling of "none" (stated below where it applies) is refused when
-written empty. A document either has the current shape or is refused. The
+written empty. A document either has the current shape or is refused; the
+refusal names, by its path from the document, the first field where the
+document and its re-encoding differ. The
 JSON parser and codecs are part of the input-meaning boundary; round-trip
 tests are not a proof of fidelity to external source text.
 
