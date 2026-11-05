@@ -83,6 +83,11 @@ export type GlobalEntry = {
    * `%Freeze:K%({…})` (`freezeIntrinsic`), whose result holds the fields as
    * readonly views, and the member joins no value. */
   freezes?: true;
+  /** The global is a constant of the standard library, a non-writable,
+   * non-configurable data property of the global object, `Infinity`: its
+   * signature is the variable's declaration, and each reference reads it as
+   * a value of the stated result's type. */
+  constant?: true;
   /** For a global only constructed: a read of `href` written directly on
    * the `new` expression, `new X(…).href`, is a call of this intrinsic with
    * the construct's arguments. No other code reaches the object the
@@ -516,10 +521,30 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   { host: contract, global: "Number", member: "isInteger", signature: "isInteger(number: unknown): boolean;", effect: emptyEffect },
   { host: contract, global: "Number", member: "isSafeInteger", signature: "isSafeInteger(number: unknown): boolean;",
     effect: emptyEffect },
+  { host: contract, global: "Number", member: "isNaN", signature: "isNaN(number: unknown): boolean;", effect: emptyEffect },
+  // `Number.POSITIVE_INFINITY`, a non-writable, non-configurable data
+  // property of `Number` holding the number +∞: its read runs no code.
+  { host: contract, global: "Number", member: "POSITIVE_INFINITY", signature: "readonly POSITIVE_INFINITY: number;" },
+  // The global `Infinity`, a non-writable, non-configurable data property of
+  // the global object holding the number +∞: its read runs no code, and no
+  // code reassigns it. Read only as a value of its stated type.
+  { host: contract, global: "Infinity", signature: "Infinity: number", constant: true,
+    stated: { binders: [], params: [], result: atom("number") } },
   // SameValue of the two arguments: identity of objects, equality of
   // primitives, no conversion and no client code, and no write. `any` is
   // read as `unknown`.
   { host: contract, global: "Object", member: "is", signature: "is(value1: any, value2: any): boolean;", effect: emptyEffect },
+  // `Object.isFrozen(o)`: `true` of a primitive; of an object, its
+  // [[IsExtensible]] and, where it is not extensible, its [[OwnPropertyKeys]]
+  // and each key's [[GetOwnProperty]] (TestIntegrityLevel), which call no
+  // getter and run no code on an ordinary object or one of ECMAScript's
+  // exotic objects but a proxy (no object is one); a host object's may be
+  // the host's own code, so the parameter is stated at the non-host values.
+  // The result is a Boolean; no value of the object reaches the program,
+  // and nothing is written.
+  { host: obligated("the operand", "runs its [[IsExtensible]] and [[OwnPropertyKeys]], code of a host exotic object"),
+    global: "Object", member: "isFrozen", signature: "isFrozen(o: any): boolean;", effect: emptyEffect,
+    stated: { binders: [], params: [atom("nonHost")], result: atom("boolean") } },
   // `Object.freeze(o)` of an ordinary object makes every own property
   // non-writable and non-configurable and the object non-extensible, runs no
   // code (no object is a proxy) and returns `o`; a later write to it, or a
@@ -688,15 +713,23 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // owns `message` and inherits `name`, as `errorInstance` states; it
   // converts a string message with no code of the client's and writes
   // nothing it did not allocate: the empty footprint, on a throw too.
-  ...["new (message?: string): TypeError;", "new (message?: string, options?: ErrorOptions): TypeError;"].map(
-    (signature): GlobalEntry => ({ host: contract, global: "TypeError", signature, effect: footprintEffect(emptyFootprint, { onThrow: true }),
+  // `new RangeError(m)` likewise, with `RangeError.prototype`, whose `name`
+  // is `"RangeError"` and which inherits from `Error.prototype`.
+  ...(["TypeError", "RangeError"] as const).flatMap(global =>
+    [`new (message?: string): ${global};`, `new (message?: string, options?: ErrorOptions): ${global};`].map(
+    (signature): GlobalEntry => ({ host: contract, global, signature, effect: footprintEffect(emptyFootprint, { onThrow: true }),
       stated: { binders: [], params: signature.includes("options") ? [atom("string"), errorOptions(at)] : [atom("string")],
-        result: errorInstance(at) } })),
+        result: errorInstance(at) } }))),
   // `parseInt(s, radix)` converts `s` by ToString and `radix` by ToInt32,
   // which run no code on a string and a number, the calculus's primitive
   // types its declaration states: a number, `NaN` where `s` spells none.
   // It writes nothing: the empty footprint.
   { host: contract, global: "parseInt", signature: "declare function parseInt(string: string, radix?: number): number;",
+    effect: emptyEffect },
+  // `parseFloat(s)` converts `s` by ToString, which runs no code on a string,
+  // the primitive its declaration states: a number, `NaN` where no prefix of
+  // `s` spells one. It writes nothing: the empty footprint.
+  { host: contract, global: "parseFloat", signature: "declare function parseFloat(string: string): number;",
     effect: emptyEffect },
   // Node's global `clearTimeout(t)`, declared in `@types/node`: of a
   // number or a string, it cancels the timer of that id; of an object, it
@@ -736,10 +769,12 @@ export const globalsOverlay: readonly GlobalEntry[] = [
     (signature): GlobalEntry => ({ host: contract,
       origin: node, global: "structuredClone", signature,
       stated: { binders: [], params: [atom("unknown")], result: atom("unknown") } })),
-  // `Math.abs(x)` and `Math.ceil(x)` of a number, a primitive: no conversion
-  // code runs.
+  // `Math.abs(x)`, `Math.ceil(x)`, `Math.round(x)` and `Math.fround(x)` of a
+  // number, a primitive: no conversion code runs.
   { host: contract, global: "Math", member: "abs", signature: "abs(x: number): number;", effect: emptyEffect },
   { host: contract, global: "Math", member: "ceil", signature: "ceil(x: number): number;", effect: emptyEffect },
+  { host: contract, global: "Math", member: "round", signature: "round(x: number): number;", effect: emptyEffect },
+  { host: contract, global: "Math", member: "fround", signature: "fround(x: number): number;", effect: emptyEffect },
   // `Math.random()`: a number in [0, 1); it reads no argument and writes no
   // location a program can reach.
   { host: contract, global: "Math", member: "random", signature: "random(): number;", effect: emptyEffect },

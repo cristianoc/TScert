@@ -3365,6 +3365,11 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
           values.push({ binding, construct: true, ...selection.construct });
           continue;
         }
+        // A constant is a value of its stated type.
+        if (selection.constant !== undefined) {
+          values.push({ binding, construct: false, typeParams: [], ...selection.constant });
+          continue;
+        }
         const definition = selection.definition;
         selections.push(definition);
         values.push({ binding, declaration: definition.declaration, construct: false, typeParams: [],
@@ -4983,8 +4988,9 @@ function ownStringRead(checker: Checker, call: ts.CallExpression): ts.PropertyAc
 }
 
 function selectGlobal(checker: Checker, uses: readonly Identifier[], context: SelectionContext):
-    { definition: TypeDefinition; construct?: never } |
-    { construct: { declaration: DeclarationIdentity; typeParams: ValueRoot["typeParams"]; type: TypeTerm } } |
+    { definition: TypeDefinition; construct?: never; constant?: never } |
+    { construct: { declaration: DeclarationIdentity; typeParams: ValueRoot["typeParams"]; type: TypeTerm }; constant?: never } |
+    { constant: { declaration: DeclarationIdentity; type: TypeTerm }; definition?: never; construct?: never } |
     null {
   const [first] = uses;
   if (!first) throw Error("a global value without a reference");
@@ -5081,6 +5087,17 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
       span: [declaration.getStart(source), declaration.end] }, typeParams: [],
       type: { k: "constructor", effect: constructed.effect ?? ordinaryEffect, params: form.params, rest: null,
         result: form.result, span: [declaration.getStart(source), declaration.end] } } };
+  }
+  // A constant of the standard library (`GlobalEntry.constant`): its one
+  // declaration as reviewed, every reference a read of the value.
+  if (constructed?.constant) {
+    const written = typeof constructed.stated === "function" ? constructed.stated(context.library, context.view) : constructed.stated;
+    if (!written || written.binders.length || written.params.length || written.rest || constructed.forms)
+      throw Error(`the constant ${name} is reviewed with no one stated type`);
+    for (const use of uses) if (isWritten(use)) throw Error(`the global ${name} is written, which the module may not do`);
+    const source = declaration.getSourceFile();
+    return { constant: { declaration: { module: context.identityOf(source), name,
+      span: [declaration.getStart(source), declaration.end] }, type: written.result } };
   }
   // The interface the variable is annotated with, a plain or qualified name.
   const annotation = declaration.type;

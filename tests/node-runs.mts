@@ -941,6 +941,9 @@ assert.equal(runExample("invalid-named-implicit-index", 'typeof asDictionary({ a
     `return [e instanceof TypeError, made("n"), (() => { try { caused("c", 7); } catch (f) { return f.cause; } })()].join(); } })()`),
     "true,TypeError: n,7",
     "type-error-construct: a TypeError thrown, and its inherited name");
+  assert.equal(runExample("range-error-construct", `(() => { try { check(""); } catch (e) { ` +
+    `return [e instanceof RangeError, e instanceof Error, made("n")].join(); } })()`),
+    "true,true,RangeError: n", "range-error-construct: a RangeError thrown, and its inherited name");
   assert.equal(runExample("json-parse-own-proto", `value('{"__proto__": 1, "a": 2}', "a")`), 2,
     "json-parse-own-proto: the own __proto__ member set no prototype");
   assert.equal(runExample("invalid-field-equality-call", `(() => { const c = { kind: "a" }; return wrong(c, () => { c.kind = "b"; }); })()`), "b",

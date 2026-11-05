@@ -3,9 +3,8 @@
 // measurement.ts#getCharacterSpaceKerning, measurement.ts#getEmojiGlyphs,
 // measurement.ts#getFontKanaKerning, measurement.ts#measureKanaKerning,
 // measurement.ts#sameInk.
-// Refusal: gate: Math.round is not in the reviewed overlay of library
-// globals: round(x: number): number;.
-// `Math.round`, not in the reviewed overlay of library globals.
+// `Math.round` of a number runs no conversion code and writes nothing: the
+// nearest integer, a number.
 export function stop(advance: number): number {
   return Math.round(advance * 60);
 }
