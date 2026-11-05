@@ -277,6 +277,11 @@ export function expr(this: Gate, node: Expression): Within<{ value: "any"; store
     const byteLength = gate.byteReads.get(gate.span(node).join(":"));
     if (byteLength !== undefined)
       return gate.intrinsic(byteLength, gate.span(node), gate.span(node.name), [gate.expr(node.expression)]);
+    // `o.k` of a 2D context at a key its host getter reads is the getter's
+    // intrinsic `%CanvasGet:k%(o)` (`library-types.mts`).
+    const hostGet = gate.hostMembers.get(gate.span(node).join(":"));
+    if (hostGet !== undefined)
+      return gate.intrinsic(hostGet, gate.span(node), gate.span(node.name), [gate.expr(node.expression)]);
     // `o.k` of an object TypeScript types by `"k" in o` tests alone is
     // `%Read:k%(o)` (`intrinsics.mts`).
     const openRead = gate.openReads.get(gate.span(node).join(":"));
@@ -407,13 +412,18 @@ export function expr(this: Gate, node: Expression): Within<{ value: "any"; store
 
   // `typeof e` as a value: the string naming the operand's shape. A
   // comparison of it with a shape's literal is a test (`typeofTest`).
-  if (ts.isTypeOfExpression(node))
+  if (ts.isTypeOfExpression(node)) {
+    // `typeof X` of a DOM global some hosts do not define, a call of its
+    // intrinsic (`GlobalEntry.typeOf`).
+    const typeOf = gate.globalIntrinsics.get(gate.span(node).join(":"));
+    if (typeOf) return gate.intrinsic(typeOf, gate.span(node), gate.span(node.expression), []);
     return {
       k: "unary",
       op: "typeof",
       pos: gate.span(node),
       e: gate.expr(node.expression),
     };
+  }
 
   // A type assertion is the operand's value; the runtime never sees it.
   // What it asserts is an obligation on the operand, never a fact. `as
@@ -1914,6 +1924,13 @@ export function binary(this: Gate, node: BinaryExpression): Within<{ value: "any
     if (symbolKey !== undefined && ts.isElementAccessExpression(node.left) && !node.left.questionDotToken)
       return { k: "write", pos: gate.span(node), field: { symbol: symbolKey },
         receiver: gate.expr(node.left.expression), rhs: gate.expr(node.right) };
+    // `o.k = v` of a 2D context at a key its host setter writes is the
+    // setter's intrinsic `%CanvasSet:k%(o, v)` (`library-types.mts`).
+    const hostSet = ts.isPropertyAccessExpression(node.left)
+      ? gate.hostMembers.get(gate.span(node.left).join(":")) : undefined;
+    if (hostSet !== undefined && ts.isPropertyAccessExpression(node.left))
+      return gate.intrinsic(hostSet, gate.span(node), gate.span(node.left.name),
+        [gate.expr(node.left.expression), gate.expr(node.right)]);
     // `b[k] = v` of a view of bytes at a number is `%ByteSet%(b, k, v)`
     // (`library-types.mts`).
     const byteSet = ts.isElementAccessExpression(node.left)
@@ -1968,10 +1985,13 @@ export function binary(this: Gate, node: BinaryExpression): Within<{ value: "any
       right = unwrap(node.right);
     const shapeOf = (e: Expression): TypeofShape | undefined =>
       ts.isStringLiteral(e) ? TYPEOF_SHAPES.find((s) => s === e.text) : undefined;
+    // `typeof X` of a DOM global read by its intrinsic tests no operand.
+    const tested = (e: Expression): boolean =>
+      ts.isTypeOfExpression(e) && !gate.globalIntrinsics.has(gate.span(e).join(":"));
     const pair =
-      ts.isTypeOfExpression(left) && shapeOf(right)
+      ts.isTypeOfExpression(left) && tested(left) && shapeOf(right)
         ? { operand: left, shape: shapeOf(right) }
-        : ts.isTypeOfExpression(right) && shapeOf(left)
+        : ts.isTypeOfExpression(right) && tested(right) && shapeOf(left)
           ? { operand: right, shape: shapeOf(left) }
           : null;
     if (pair?.shape)

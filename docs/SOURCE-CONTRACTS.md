@@ -1717,6 +1717,12 @@ The entries:
   [Node's `URL`](#nodes-url) states it.
 - `Intl.Segmenter`, `Intl.Segments` and `Intl.SegmentData`, the standard
   library's interfaces, as [`Intl.Segmenter`](#intlsegmenter) states them.
+- The DOM's `CanvasRenderingContext2D` and
+  `OffscreenCanvasRenderingContext2D`, one type, `TextMetrics`,
+  `OffscreenCanvas` and `HTMLCanvasElement`, one type, and `Element` and
+  `HTMLElement`, one type, as
+  [the DOM's canvas, document and navigator](#the-doms-canvas-document-and-navigator)
+  states them.
 
 $`\mathsf{host}_m\,R`$ is the record $`R`$ with a host family's marker
 $`m`$ ([the family contract](HOST-FAMILIES.md#the-family-contract)): a
@@ -3836,6 +3842,148 @@ counterexamples and the fixtures `blocker-node-url-import`,
 `node-url-strings`, `node-url-fresh-href`, `invalid-node-url-write`, `invalid-node-url-spread`,
 `invalid-node-url-member`, `invalid-node-url-program-object` and
 `invalid-node-url-replaced`.
+
+#### The DOM's canvas, document and navigator
+
+**Audited against:** TypeScript 7.0.2's DOM library (`lib.dom.d.ts`); the
+[HTML](REFERENCES.md#html) standard's 2D context (`CanvasTextDrawingStyles`,
+`CanvasText`, `TextMetrics`), `OffscreenCanvas`, the canvas element,
+`Window`'s `document` and `navigator` and `NavigatorID`; the
+[DOM](REFERENCES.md#dom) standard's `createElement` and `Element`;
+[CSSOM](REFERENCES.md#cssom)'s `getComputedStyle`; [Web IDL](REFERENCES.md#web-idl)'s
+conversions and attributes. Node defines none of these objects, so no
+probe under Node runs them; the negative cases' Node runs use stand-ins
+(below).
+
+A text-measurement client makes a 2D context, sets its font and shaping,
+and measures text. These globals and types are stated at the members such
+a client uses ([modeling a library](#modeling-a-library)); any other
+member, read, written or called, is refused. Each type is a
+[stated library type](#stated-library-types) with a host marker, so no
+program object meets it and a spread of one is refused:
+
+```math
+\begin{aligned}
+\mathit{TextMetrics}&=\mathsf{host}_{t}\,\{\mathtt{width},\ \mathtt{actualBoundingBoxLeft},\ \mathtt{actualBoundingBoxRight}\colon\mathtt{number}\}\\
+\mathit{Context}&=\mathsf{host}_{c}\,\{\mathtt{measureText}\colon(\mathtt{string})\Rightarrow_\emptyset\mathit{TextMetrics}\}\\
+\mathit{Canvas}&=\mathsf{host}_{v}\,\{\mathtt{getContext}\colon(\texttt{"2d"})\Rightarrow_\emptyset\mathit{Context}\mid\mathtt{null}\}\\
+\mathit{Element}&=\mathsf{host}_{e}\,\{\mathtt{lang}\colon\mathtt{string}\mid\mathtt{undefined}\}\\
+\mathit{Style}&=\mathsf{host}_{s}\,\{\mathtt{width}\colon\mathtt{string}\}\\
+\mathit{Document}&=\mathsf{host}_{d}\,\{\mathtt{documentElement}\colon\mathit{Element}\mid\mathtt{null};\ \mathtt{createElement}\colon(\texttt{"canvas"})\Rightarrow_\emptyset\mathit{Canvas}\}\\
+\mathit{Navigator}&=\mathsf{host}_{n}\,\{\mathtt{userAgent},\ \mathtt{platform}\colon\mathtt{string}\}
+\end{aligned}
+```
+
+each field a readonly view. The names the overlay of library types maps
+to them: `CanvasRenderingContext2D` and `OffscreenCanvasRenderingContext2D`
+to $`\mathit{Context}`$, `OffscreenCanvas` and `HTMLCanvasElement` to
+$`\mathit{Canvas}`$, `Element` and `HTMLElement` to $`\mathit{Element}`$,
+and `TextMetrics`; their declarations are not read, so the DOM library's
+`HTMLCanvasElement`, which declares a field twice, is not either.
+
+- `measureText(text)` converts `text` by Web IDL's DOMString, which runs
+  no code on a string, shapes it under the context's state and returns a
+  fresh `TextMetrics`, whose attributes are getters answering the numbers
+  the call computed. `getContext("2d")` makes the canvas's context the
+  first time, returns it later, and returns `null` where the canvas has a
+  context of another kind. `createElement("canvas")` makes a fresh element;
+  `canvas` is no valid custom element name, so no constructor of the
+  program's runs. In a document that is not an HTML document the element
+  is in no namespace and has no `getContext`, whose call throws a
+  `TypeError`, an outcome. Each runs no code of the program's and writes
+  only host slots the model holds no location of.
+- An element's `lang` is `HTMLElement`'s reflecting getter, a string; a
+  root of another namespace (an SVG document's) has none on its chain and
+  reads `undefined`, and a document may have no root
+  (`invalid-dom-document-element-lang`, run under Node with a stand-in
+  root: `undefined`).
+- `getComputedStyle(element)`, of one argument, answers the element's
+  resolved style, whose `width` getter answers the property's resolved
+  value serialized, a string. It updates the document's style, which runs
+  no code of the program's: the empty footprint.
+- `navigator.userAgent` and `navigator.platform` are `NavigatorID`'s
+  getters, strings. Asserting `navigator` to a record whose `userAgent` is
+  writable is refused: the host gives a getter only
+  (`blocker-pretext-navigator`).
+
+The context's text drawing state is the host's: the model holds no
+location of it, as it holds no element of a view of bytes. A read `o.k`
+and a write `o.k = v`, with TypeScript typing `o` as 2D contexts only (each
+part a context or an intersection with one, as `"lang" in o` narrows it),
+at a key the context states a getter or a setter for, are calls of the
+intrinsics stating them:
+
+```math
+⟦o.k⟧=\%\mathrm{CanvasGet{:}k}\%(⟦o⟧)\qquad ⟦o.k=v⟧=\%\mathrm{CanvasSet{:}k}\%(⟦o⟧,⟦v⟧)\ \ \textsf{canvas-accessors}
+```
+
+```math
+\begin{aligned}
+\%\mathrm{CanvasGet{:}font}\%&\colon(\mathit{Context})\Rightarrow_\emptyset\mathtt{string}\qquad
+\%\mathrm{CanvasGet{:}letterSpacing}\%\colon(\mathit{Context})\Rightarrow_\emptyset\mathtt{string}\mid\mathtt{undefined}\\
+\%\mathrm{CanvasSet{:}k}\%&\colon(\mathit{Context},\ V_k)\Rightarrow_\emptyset V_k\qquad
+V_{\mathtt{font}}=V_{\mathtt{letterSpacing}}=V_{\mathtt{lang}}=\mathtt{string},\\
+V_{\mathtt{fontKerning}}&=\texttt{"auto"}\mid\texttt{"normal"}\mid\texttt{"none"},\quad
+V_{\mathtt{textRendering}}=\texttt{"auto"}\mid\texttt{"optimizeSpeed"}\mid\texttt{"optimizeLegibility"}\mid\texttt{"geometricPrecision"}
+\end{aligned}
+```
+
+A getter serializes the context's state: `font` its font, `letterSpacing`
+its letter spacing, `undefined` in a host that predates the attribute
+(Safari before 18), where no object of the context's chain holds the key.
+A setter converts the value by Web IDL's DOMString, which runs no code on a
+string, and parses it, setting the context's state or, for a value it does
+not parse or no enumeration value names, keeping it; in a host that
+predates the attribute the assignment creates an own data property of the
+context, which no stated member reads. Each runs no code of the program's
+and changes the context's state alone, which the model holds no location
+of: within the empty footprint. A read is a call, not a path, so no read of
+`font` is narrowed by an earlier one: the setter changes what the getter
+answers (`invalid-dom-canvas-font-after-set`). Any other write of a
+context is refused by the write rule, a host object holding no invariant
+field.
+
+The globals, each declared in the DOM library and read through
+[the overlay](#the-overlay) at its declaration's text: `OffscreenCanvas` is
+only constructed, at
+$`(\mathtt{number},\ \mathtt{number})\Rightarrow_\emptyset\mathit{Canvas}`$
+(Web IDL's `[EnforceRange] unsigned long long` runs no code on a number
+and throws a `TypeError` outside the range); `document` and `navigator`
+are constants of $`\mathit{Document}`$ and $`\mathit{Navigator}`$
+(`library-constant`): `Window`'s attributes, `document`
+`[LegacyUnforgeable]`, each answering the one object the global holds;
+`getComputedStyle` is called at $`(\mathit{Element})\Rightarrow_\emptyset\mathit{Style}`$.
+A worker defines no `document` and Node no `OffscreenCanvas`, so a client
+tests each with `typeof` first. `typeof X` of such a global, `X` with an
+entry naming a `typeOf` intrinsic, is a call of it, which answers the
+strings `typeof` answers of the value or of no binding:
+
+```math
+\frac{\omega\in\Omega\quad \omega=(x,\ \cdot,\ \mathsf{text}(d),\ \mathsf{typeOf}\ \tau)}
+     {⟦\mathtt{typeof}\ x⟧=\tau()}\ \textsf{library-typeof}
+\qquad
+\tau\colon()\Rightarrow_\emptyset\texttt{"undefined"}\mid\texttt{"object"}\ (\texttt{"function"}\ \text{for}\ \mathtt{OffscreenCanvas})
+```
+
+Its comparison with a literal is a comparison of strings, which narrows
+nothing, so both branches are checked (`invalid-dom-typeof-absent`, run
+under Node, which defines no `document`: the branch reads past an array's
+end). Every other reference reads the value the host defines, and throws a
+`ReferenceError`, an outcome, in a host that defines none.
+
+That each of these objects behaves as stated rests on a host assumption
+([trust surface](DESIGN.md#trust-surface)): the host implements these
+interfaces of the HTML, DOM and CSSOM standards, each value of a stated
+type is the host's platform object of that interface, and, under the
+approved policy that standard objects and prototypes are not tampered
+with, each stated member is the interface's own attribute or operation on
+its prototype, no object before it on the chain holding the key, and the
+globals hold the host's objects. A spread of a context is refused
+(`invalid-dom-canvas-spread`, run under Node with a stand-in whose class
+defines `font`: the copy's `font` is `undefined`). The cases are
+`dom-canvas-context`, `dom-canvas-create`,
+`blocker-pretext-canvas-context-type`, `blocker-pretext-document`,
+`blocker-pretext-offscreen-canvas` and `blocker-pretext-get-computed-style`.
 
 ### `JSON` and `Error`
 
