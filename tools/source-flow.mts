@@ -1,5 +1,5 @@
 /** Claim-independent execution graphs supplied by Lean to the producer. */
-import type { Json } from "./calculus.mts";
+import { hasExactly, nat, type Json } from "./calculus.mts";
 import type { Span } from "./span.mts";
 import { requireWellFormed } from "./wire-strings.mts";
 
@@ -260,23 +260,15 @@ const exact = (
   value: Record<string, unknown>,
   fields: readonly string[],
 ): void => {
-  if (
-    Object.keys(value).length !== fields.length ||
-    fields.some((field) => !Object.hasOwn(value, field))
-  )
-    invalid("unexpected or missing fields");
+  if (!hasExactly(value, fields)) invalid("unexpected or missing fields");
 };
 const array = (value: unknown): unknown[] =>
   Array.isArray(value) ? value : invalid("array required");
-const natural = (value: unknown): number =>
-  typeof value === "number" && Number.isSafeInteger(value) && value >= 0
-    ? value
-    : invalid("natural number required");
 const span = (value: unknown): Span => {
   const xs = array(value);
   if (xs.length !== 2) invalid("source span");
-  const end = natural(xs[1]);
-  const start = natural(xs[0]);
+  const end = nat(xs[1]);
+  const start = nat(xs[0]);
   if (end < start) invalid("source span");
   return [start, end];
 };
@@ -297,7 +289,7 @@ const scope = (value: unknown): FlowBinding[] => array(value).map(bindingOf);
 const saved = (value: unknown): SavedValue => {
   const b = object(value);
   exact(b, ["id", "name", "source", "role"]);
-  const id = natural(b.id);
+  const id = nat(b.id);
   const source = span(b.source);
   if (typeof b.name !== "string" || typeof b.role !== "string")
     invalid("saved value");
@@ -423,13 +415,13 @@ const operationOf = (value: unknown): ExecutionOperation => {
     case "positionRead": {
       exact(op, ["kind", "source", "array", "index"]);
       const array = saved(op.array);
-      const index = natural(op.index);
+      const index = nat(op.index);
       return { kind: op.kind, source, array, index };
     }
     case "arrayRest": {
       exact(op, ["kind", "source", "array", "start", "slice"]);
       const array = saved(op.array);
-      const start = natural(op.start);
+      const start = nat(op.start);
       if (typeof op.slice !== "boolean") invalid("array rest mode");
       return { kind: op.kind, source, array, start, slice: op.slice };
     }
@@ -446,7 +438,7 @@ const operationOf = (value: unknown): ExecutionOperation => {
       if (typeof op.key !== "string") {
         const symbolKey = object(op.key);
         exact(symbolKey, ["symbol"]);
-        key = { symbol: natural(symbolKey.symbol) };
+        key = { symbol: nat(symbolKey.symbol) };
       } else key = op.key;
       return { kind: op.kind, source, base, key, value, final: op.final };
     }
@@ -559,7 +551,7 @@ const bindingPlan = (value: unknown): BindingPlan => {
     case "input": {
       exact(b, ["kind", "name", "index", "value", "next"]);
       const name = text(b.name);
-      const index = natural(b.index);
+      const index = nat(b.index);
       const next = bindingPlan(b.next);
       return { kind: b.kind, name, index, value: decodedValue, next };
     }
@@ -582,7 +574,7 @@ const bindingPlan = (value: unknown): BindingPlan => {
       exact(b, ["kind", "source", "array", "index", "value", "next"]);
       const source = span(b.source);
       const array = saved(b.array);
-      const index = natural(b.index);
+      const index = nat(b.index);
       const next = bindingPlan(b.next);
       return { kind: b.kind, source, array, index, value: decodedValue, next };
     }
@@ -605,7 +597,7 @@ const bindingPlan = (value: unknown): BindingPlan => {
       exact(b, ["kind", "source", "array", "start", "slice", "value", "next"]);
       const source = span(b.source);
       const array = saved(b.array);
-      const start = natural(b.start);
+      const start = nat(b.start);
       if (typeof b.slice !== "boolean") invalid("binding array rest mode");
       const next = bindingPlan(b.next);
       return {
@@ -750,7 +742,7 @@ export function decodeFlowDocument(value: Json): FlowDocument {
     owners.add(owner);
     const nodes = array(graph.nodes);
     const edge = (target: unknown): number => {
-      const index = natural(target);
+      const index = nat(target);
       if (index >= nodes.length) invalid("edge names a missing node");
       return index;
     };
@@ -768,7 +760,7 @@ export function decodeFlowDocument(value: Json): FlowDocument {
         "bindingPlan",
       ]);
       const point = `${owner}:${id}`;
-      const nodeId = natural(node.id);
+      const nodeId = nat(node.id);
       if (nodeId !== id || node.point !== point) invalid("node identity");
       const source = span(node.source);
       const nodeScope = scope(node.scope);

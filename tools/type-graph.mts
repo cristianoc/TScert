@@ -5,7 +5,15 @@
  */
 import type { CallEffect, CallPromise, ClosedFootprint, ElementKind, ElementKinds, PropertyKey } from "./declaration-types.mts";
 import { requireWellFormed } from "./wire-strings.mts";
-import type { Json, JsonObject, JsonRead, JsonValue } from "./calculus.mts";
+import {
+  hasExactly,
+  isJsonList,
+  isJsonObject,
+  type Json,
+  type JsonObject,
+  type JsonRead,
+  type JsonValue,
+} from "./calculus.mts";
 export type { CallEffect, CallPromise, ClosedFootprint } from "./declaration-types.mts";
 /** Physical density and a safe in-bounds read are distinct guarantees. */
 export type ArrayPresence = "dense" | "readable" | "sparse";
@@ -97,12 +105,10 @@ function decodeKinds(v: JsonRead): Within<{ value: "any"; store: "grow" }, Eleme
   }
   return kinds;
 }
-const isObject = (v: JsonRead): v is JsonObject =>
-  typeof v === "object" && v !== null && !Array.isArray(v);
 /** The closed footprint a value states, as a fresh object of its fields, or
  * `undefined` where the value states none. */
 export function decodeClosedFootprint(v: JsonRead): Within<{ value: "any"; store: "grow" }, ClosedFootprint | undefined> {
-  if (!isObject(v) || Object.keys(v).length !== 2) return undefined;
+  if (!isJsonObject(v) || Object.keys(v).length !== 2) return undefined;
   const value = v.value;
   const store = v.store;
   if (!isFootprintValue(value) || !isFootprintStore(store)) return undefined;
@@ -117,7 +123,7 @@ function isFootprintStore(v: unknown): v is ClosedFootprint["store"] {
 /** The call effect a value states, as fresh objects of its fields, or
  * `undefined` where the value states none. */
 export function decodeCallEffect(v: JsonRead): Within<{ value: "any"; store: "grow" }, CallEffect | undefined> {
-  if (!isObject(v) || Object.keys(v).length !== 9) return undefined;
+  if (!isJsonObject(v) || Object.keys(v).length !== 9) return undefined;
   const requires = decodeKinds(v.requires);
   const elements = decodeKinds(v.elements);
   if (requires === undefined || elements === undefined) return undefined;
@@ -133,10 +139,10 @@ export function decodeCallEffect(v: JsonRead): Within<{ value: "any"; store: "gr
   const stated = v.promise;
   let promise: CallPromise | null = null;
   if (stated !== null) {
-    if (!isObject(stated) || Object.keys(stated).length !== 1) return undefined;
+    if (!isJsonObject(stated) || Object.keys(stated).length !== 1) return undefined;
     const guards = "guards" in stated;
     const about: JsonRead = guards ? stated.guards : "asserts" in stated ? stated.asserts : undefined;
-    if (!isObject(about) || Object.keys(about).length !== 1) return undefined;
+    if (!isJsonObject(about) || Object.keys(about).length !== 1) return undefined;
     const param = about.param;
     if (typeof param !== "number" || !Number.isInteger(param) || param < 0) return undefined;
     promise = guards ? { guards: { param } } : { asserts: { param } };
@@ -318,33 +324,20 @@ export const numberOfBits = (bits: string): Within<{ value: "keep"; store: "keep
 };
 
 
-const isRecord = (v: JsonRead): v is JsonObject =>
-  typeof v === "object" && v !== null && !Array.isArray(v);
 function obj(v: JsonRead, keys: string[]): JsonObject {
-  if (
-    !isRecord(v) ||
-    Object.keys(v).length !== keys.length ||
-    keys.some((k) => !(k in v))
-  )
-    throw Error("unexpected type graph fields");
-  return v;
+  return objOptional(v, keys, []);
 }
 function objOptional(
   v: JsonRead,
   keys: string[],
   optional: string[],
 ): JsonObject {
-  if (
-    !isRecord(v) ||
-    keys.some((k) => !(k in v)) ||
-    Object.keys(v).some((k) => !keys.includes(k) && !optional.includes(k))
-  )
+  if (!isJsonObject(v) || !hasExactly(v, keys, optional))
     throw Error("unexpected type graph fields");
   return v;
 }
-const isList = (v: JsonRead): v is readonly JsonValue[] => Array.isArray(v);
 function array(v: JsonRead): readonly JsonValue[] {
-  if (!isList(v)) throw Error("expected graph list");
+  if (!isJsonList(v)) throw Error("expected graph list");
   return v;
 }
 /** Each element of a list, decoded in order, as a fresh dense list. */
@@ -689,7 +682,7 @@ export function decodeGraph(value: Json | undefined): TypeGraph {
         result.push(kind);
         continue;
       }
-      if (!isRecord(c)) throw Error("unknown graph clause");
+      if (!isJsonObject(c)) throw Error("unknown graph clause");
       // The clause's one key and its body, read from its own entries.
       const entries = Object.entries(c);
       const entry = entries[0];
@@ -750,14 +743,14 @@ export function decodeGraph(value: Json | undefined): TypeGraph {
   };
   const graph: TypeGraph = [];
   rows.forEach((row, index) => {
-    if (isRecord(row) && "meet" in row) {
+    if (isJsonObject(row) && "meet" in row) {
       const r = objOptional(row, ["clauses", "meet"], ["also"]);
       const meet = label(r.meet);
       const also = "also" in r ? each(r.also, label) : undefined;
       graph.push({ meet, clauses: clauses(r.clauses), ...(also === undefined ? {} : { also }) });
       return;
     }
-    if (isRecord(row) && "param" in row) {
+    if (isJsonObject(row) && "param" in row) {
       const r = obj(row, ["kind", "name", "param"]);
       const kind = r.kind, name = r.name;
       if (!isParamKind(kind) || typeof name !== "string" ||
@@ -766,7 +759,7 @@ export function decodeGraph(value: Json | undefined): TypeGraph {
       graph.push({ kind, name, param: index });
       return;
     }
-    if (isRecord(row) && "scheme" in row) {
+    if (isJsonObject(row) && "scheme" in row) {
       graph.push(scheme(obj(row, ["scheme"]).scheme));
       return;
     }
