@@ -1,0 +1,215 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Commit Records</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Code+Pro:wght@400;600&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=STIX+Two+Text:ital,wght@0,400;0,600;1,400&display=swap">
+<style>
+:root { --bg:#fbfcfd; --surface:#ffffff; --ink:#0b1a2e; --muted:#56627a; --rule:#d5dce6; --accent:#8a6410; --code-bg:#eef2f7; --math-bg:#f2f4f8; --ok:#2f6b47; --ok-bg:#e2efe4; --principled:#a0521a; --principled-bg:#f7e6d6; --gap:#6b6f78; --gap-bg:#ecebe6; --neutral:#2c4f7c; --neutral-bg:#e6ebf2; --trust:#7c2f4a; --trust-bg:#f2e1e7; --neg:#9b3524; --neg-bg:#f5e1da; --run:#7a5414; --run-bg:#f3e7cc; --brand-ink:#0b1a2e; --brand-gold:#b8840f;
+  --display:"Bricolage Grotesque","Helvetica Neue",Arial,sans-serif; --body:"Inter","Helvetica Neue",Arial,sans-serif; --mono:"Source Code Pro",Menlo,Consolas,monospace; --math:"STIX Two Text","STIX Two Math","STIXGeneral","Cambria Math","Apple Symbols",Georgia,serif; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#0e1626; --surface:#16213a; --ink:#efe7d4; --muted:#9aa3b5; --rule:#2a3756; --accent:#e0ac4a; --code-bg:#131d33; --math-bg:#1a2540; --ok:#7fd0a2; --ok-bg:#17322a; --principled:#f0a868; --principled-bg:#3a2a1c; --gap:#9aa3b5; --gap-bg:#1c2639; --neutral:#8fb4e8; --neutral-bg:#1b2b49; --trust:#e79bb6; --trust-bg:#3a2131; --neg:#f0907d; --neg-bg:#3a1f22; --run:#e0ac4a; --run-bg:#2e2a24; --brand-ink:#efe7d4; --brand-gold:#e0ac4a; color-scheme:dark } }
+:root[data-theme="dark"] { --bg:#0e1626; --surface:#16213a; --ink:#efe7d4; --muted:#9aa3b5; --rule:#2a3756; --accent:#e0ac4a; --code-bg:#131d33; --math-bg:#1a2540; --ok:#7fd0a2; --ok-bg:#17322a; --principled:#f0a868; --principled-bg:#3a2a1c; --gap:#9aa3b5; --gap-bg:#1c2639; --neutral:#8fb4e8; --neutral-bg:#1b2b49; --trust:#e79bb6; --trust-bg:#3a2131; --neg:#f0907d; --neg-bg:#3a1f22; --run:#e0ac4a; --run-bg:#2e2a24; --brand-ink:#efe7d4; --brand-gold:#e0ac4a; color-scheme:dark }
+* { box-sizing:border-box } body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.6 var(--body) }
+main { max-width:900px; margin:0 auto; padding-inline:20px; padding-block:32px 64px; display:flex; flex-direction:column; gap:22px }
+h1 { font:600 32px/1.15 var(--display); margin:0 } h2 { font:600 22px/1.2 var(--display); margin:12px 0 8px; padding-top:12px; border-top:2px solid var(--ink) }
+h3 { font:600 19px/1.3 var(--display); margin:2px 0 0; text-wrap:balance }
+h4 { font:600 11px/1 var(--body); letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin:12px 0 4px }
+p { margin:2px 0; max-width:72ch } .lede { color:var(--muted) }
+code { font:13px/1.5 var(--mono); background:var(--code-bg); padding:1px 4px; border-radius:3px }
+pre { margin:4px 0; padding:12px 14px; border-radius:6px; overflow-x:auto }
+pre.code { font:13px/1.55 var(--mono); background:var(--code-bg) }
+.rules { display:flex; flex-direction:column; gap:14px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:14px 18px; overflow-x:auto; font:16px/1.6 var(--math) }
+.rules sub, .rules sup { font-size:.72em; line-height:0 }
+.formulas { display:flex; flex-direction:column; gap:4px }
+.formulas .row { display:flex; flex-wrap:wrap; gap:4px 28px } .formulas .row.cont { padding-left:2em }
+.infer { display:flex; align-items:center; gap:12px }
+.frac { display:inline-flex; flex-direction:column; align-items:center; min-width:0 }
+.premises { display:flex; flex-wrap:wrap; justify-content:center; gap:4px 26px; padding:0 6px 3px }
+.bar { align-self:stretch; border-top:1.5px solid var(--ink) }
+.conclusion { padding:3px 6px 0; text-align:center }
+.rule-name { font:15px/1 var(--math); font-variant:small-caps; letter-spacing:.02em; color:var(--accent); white-space:nowrap }
+.card { background:var(--surface); border:1px solid var(--rule); border-radius:8px; padding:20px 22px; display:flex; flex-direction:column; gap:6px; min-width:0 }
+.card > header { display:flex; justify-content:space-between; gap:12px; align-items:flex-start }
+.sha { font:12px/1.4 var(--mono); color:var(--muted) }
+.pill { font:600 11px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; padding:6px 9px; border-radius:99px; white-space:nowrap }
+.pill.ok { color:var(--ok); background:var(--ok-bg) } .pill.principled { color:var(--principled); background:var(--principled-bg) }
+.pill.gap { color:var(--gap); background:var(--gap-bg) } .pill.neutral { color:var(--neutral); background:var(--neutral-bg) }
+.units { display:flex; flex-wrap:wrap; gap:6px } .units span { font:12px/1 var(--mono); border:1px solid var(--rule); border-radius:4px; padding:5px 7px }
+dl.facts { display:grid; grid-template-columns:max-content minmax(0,1fr); gap:6px 16px; margin:12px 0 0; padding-top:12px; border-top:1px solid var(--rule); font-size:13.5px }
+dt { font:600 11px/1.9 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted) }
+dd { margin:0; min-width:0; display:flex; flex-wrap:wrap; gap:5px; align-items:baseline }
+.chip { font:500 12px/1 var(--body); border:1px solid var(--rule); border-radius:4px; padding:4px 7px } .chip.strong { color:var(--accent); border-color:var(--accent) }
+.trust { color:var(--trust); background:var(--trust-bg); padding:2px 6px; border-radius:4px } .none { color:var(--muted) }
+.test { font:12px/1 var(--mono); padding:4px 7px; border-radius:4px }
+.test.pos { color:var(--ok); background:var(--ok-bg) } .test.pos::before { content:"✓ " }
+.test.neg { color:var(--neg); background:var(--neg-bg) } .test.neg::before { content:"✗ " }
+.test.forged { color:var(--principled); background:var(--principled-bg) } .test.forged::before { content:"forged " }
+details { margin-top:8px; font-size:13px; color:var(--muted) } summary { cursor:pointer }
+.table-wrap { overflow-x:auto; border:1px solid var(--rule); border-radius:8px; background:var(--surface) }
+table { border-collapse:collapse; width:100%; font-size:13px } th, td { text-align:left; vertical-align:top; padding:8px 10px; border-bottom:1px solid var(--rule) }
+th { font:600 11px/1.2 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); white-space:nowrap } td.num { font-variant-numeric:tabular-nums }
+h4.change { display:flex; align-items:center; gap:8px; text-transform:none; letter-spacing:0; font:600 14px/1.3 var(--body); color:var(--ink); margin:16px 0 6px }
+h4.change .target { font-weight:400; color:var(--muted) }
+.act { font:600 10.5px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; padding:4px 7px; border-radius:4px }
+.act.added { color:var(--ok); background:var(--ok-bg) } .act.removed { color:var(--neg); background:var(--neg-bg) }
+.act.modified, .act.replaced { color:var(--principled); background:var(--principled-bg) }
+.versions { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:10px }
+.versions figure { margin:0; min-width:0 } .versions figcaption { font:600 11px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); margin:0 0 4px }
+.versions .rules { height:calc(100% - 18px); box-sizing:border-box }
+pre.code .ln { display:block; white-space:pre } pre.code .ln.add { background:var(--ok-bg) } pre.code .ln.del { background:var(--neg-bg) }
+.tk-k { color:#7a3b8c } .tk-s { color:#2f6b47 } .tk-n { color:#a35a12 } .tk-c { color:var(--muted); font-style:italic } .tk-t { color:#2c4f7c }
+.prose p { margin:4px 0 }
+ul.effect, ul.summary { margin:4px 0; padding-left:20px } ul.effect li, ul.summary li { margin:3px 0 } ul.summary ul { padding-left:18px; color:var(--muted) }
+ul.effect .arrow { color:var(--accent); font-weight:600 }
+ul.effect details { margin:0; color:inherit; font-size:inherit } ul.effect summary { list-style-position:outside }
+ul.effect .kind { font-size:11px; text-transform:uppercase; letter-spacing:.04em; padding:1px 6px; border-radius:4px; background:var(--chip, #eee) }
+ul.effect .kind.negative { color:#8a3b12 } ul.effect .kind.positive { color:#22663a } ul.effect .kind.gap { color:#7a5b00 }
+ul.effect .was.unsound { color:#b3261e; font-weight:600 } ul.effect .now { font-weight:500 } ul.effect .why { color:var(--muted) }
+ul.effect mark { background:#ffe08a; color:inherit; border-radius:2px }
+@media (max-width:720px) { .versions { grid-template-columns:minmax(0,1fr) } }
+.lowering { display:flex; flex-direction:column; gap:6px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:12px 16px; overflow-x:auto }
+.lowering .map, .lowering .cond, .lowering .result { display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 10px }
+.lowering .map:not(:has(.sem)) { flex-direction:column; align-items:stretch; gap:4px }
+.lowering .result { display:grid; grid-template-columns:auto minmax(0,1fr); align-items:baseline; gap:2px 10px; padding-left:1em } .lowering .result .note { grid-column:2 }
+.m-intr { font:14px/1.5 var(--mono); color:#2c4f7c } .m-lit { font:13px/1.5 var(--mono); color:#7a3b8c }
+.lowering code.src { font:13px/1.5 var(--mono); background:var(--surface); border:1px solid var(--rule); padding:2px 6px; border-radius:4px }
+.lowering .to { color:var(--accent); font-weight:600; font-size:17px }
+.lowering .tgt { font:16px/1.5 var(--math) } .rules .lowering { background:none; border:0; padding:0 } .lowering .sem code.src { margin:0 2px }
+var { font-style:italic } .m-op { color:#2c4f7c; font-style:normal } .m-con { color:#8f6416; font-style:normal; font-variant:small-caps }
+.m-kw { color:#7a3b8c; font-weight:600; font-style:normal } .m-bind { color:#7a3b8c } .m-rel { color:var(--accent); padding:0 .12em }
+.m-text { font:14px/1.5 var(--body); color:var(--muted) } code.m-code { font:13px/1.5 var(--mono); background:var(--surface); border:1px solid var(--rule); padding:1px 5px; border-radius:4px }
+.refused { color:var(--neg); font-weight:600 }
+.lowering .refused { color:var(--neg); font-weight:600 }
+.lowering .label { font:600 11px/1 var(--body); letter-spacing:.05em; text-transform:uppercase; color:var(--muted); min-width:7em }
+.lowering .cond { padding-left:1.5em } .lowering .note { color:var(--muted); font:italic 13px/1.4 var(--body) }
+a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outline-offset:2px }
+@media (max-width:520px) { dl.facts { grid-template-columns:minmax(0,1fr) } .card > header { flex-direction:column } }</style></head><body><main><header><h1>Commit Records</h1><p class="lede">6 commits, rendered from their records.</p></header>
+<section><h2>Branches</h2><ul class="summary"><li><a href="#g-pr-81"><code>50be2ce88b9c4091f3498642d955144e433bda1d..pr-81</code></a><ul><li>6 commits</li><li>parts: <span class="chip">docs</span> <span class="chip">tests</span></li></ul></li></ul></section>
+<h2 id="g-pr-81"><code>50be2ce88b9c4091f3498642d955144e433bda1d..pr-81</code></h2><article class="card" id="c-3a6405c83"><header><div><div class="sha">3a6405c83 · Cristiano Calcagno · Nov 05, 03:15</div><h3>State the restrictions the documents claimed and the code does not make</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>Issue #43: five document sentences state refusals no code makes, and a positive case shows each admitted. <code>Number</code> both called and read through <code>Number.isFinite</code> verifies (<code>number-call-and-members</code>); <code>unknown</code> is <code>readonly unknown[]</code> after <code>Array.isArray</code> (<code>isarray-unknown</code>); an imported interface declared twice is read as one (<code>interface-merge-value-import</code>); <code>||=</code> lowers on a number cell (<code>invalid-logical-assign-value</code> is refused by the value it keeps, not by its target); an async function settles to a fresh object literal (<code>async-object-result</code>). In each pair the code is right: each admitted form is sound by the rule the owning section states (a callable object holding its members; the array invariant of <code>unknown</code>; TypeScript's interface merge; the truthiness test; a stable non-thenable result), so the documents change.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">SOURCE-CONTRACTS.md, imported values</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>A global both called and read through a method, or both constructed and read through members, has no clause and is refused, unless the overlay reads those members as intrinsics.</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>A global both called and read through members is a callable object holding those members. A global both constructed and read through members or called is refused, unless the overlay reads its construction or those members as intrinsics (<code>new Promise</code>, <code>Promise.resolve</code>). An interface declared more than once, in the checked file or a module it imports, is one declaration.</p></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">SOURCE-FRAGMENT.md, model limits</span></h4><div class="prose"><p>the rows for <code>unknown</code> as an array after <code>Array.isArray</code> and for an imported interface declared more than once are removed; the library-global row names constructed globals alone</p></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">PROGRAM-TYPING.md, logical-assignments.ts header</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p><code>||=</code> and <code>&amp;&amp;=</code> are lowered on a Boolean target only</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>the test of <code>||=</code> and <code>&amp;&amp;=</code> is the value's truthiness, as an <code>if</code>'s; the kept value is its truthy part for <code>||=</code>, its falsy part for <code>&amp;&amp;=</code></p></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">SOURCE-MODEL.md, calls</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>An async function's promise settles only to a primitive</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>it settles to a value of a stable non-thenable type, one owning and inheriting no <code>then</code></p></div></figure></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">docs</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd></dl>
+<details><summary>5 files changed, 19 insertions(+), 14 deletions(-)</summary><pre class="code"> docs/PROGRAM-TYPING.md                                   |  5 +++--
+ docs/SOURCE-CONTRACTS.md                                 | 14 +++++++++-----
+ docs/SOURCE-FRAGMENT.md                                  |  5 ++---
+ docs/SOURCE-MODEL.md                                     |  7 ++++---
+ pipeline/examples/stateful-source/logical-assignments.ts |  2 +-</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-139b442a9"><header><div><div class="sha">139b442a9 · Cristiano Calcagno · Nov 05, 03:16</div><h3>Describe four refusals as the code makes them, and pin the generic rest one</h3></div><span class="pill gap">gap</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>Issue #44: four document sentences describe a refusal otherwise than the code makes it. PROGRAM-TYPING.md lets a rest's contract be readonly, while the verifier refuses a generic module function's readonly or tuple rest (&quot;a generic module function's rest parameter needs a mutable array contract&quot;), which no SOURCE-FRAGMENT.md row stated and no case reached. The refused <code>in</code> keys omitted the regular expression's; the array own-key exclusion omitted <code>then</code> and <code>toJSON</code>; DESIGN.md counted <code>name</code> among the keys whose write Lean refuses, which are <code>message</code>, <code>stack</code> and <code>cause</code>. Each refusal in the code is the sound side (a refusal is never unsound), so the documents change and the unstated refusal gets its row and a case.</p></div>
+<h4 class="change"><span class="act added">added</span>Refusal <span class="target">SOURCE-FRAGMENT.md, model limits</span></h4><div class="prose"><p>a generic module function's rest typed by a readonly array, a tuple or an alias, other than its own type parameter: the function's scheme states its rest as a mutable array's element</p></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">PROGRAM-TYPING.md, rest parameters</span></h4><div class="prose"><p>a generic module function's rest is a mutable array or the function's own type parameter</p></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">SOURCE-ELABORATION.md, the <code>in</code> test</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>the refused keys: Object.prototype's and Array.prototype's own string keys, array indices, and the reserved keys</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>Object.prototype's, Array.prototype's and RegExp.prototype's own string keys, a regular expression's own <code>lastIndex</code>, array indices, and the reserved keys</p></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">POSITIVE-TYPES.md, key bounds</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>N is ArrayProto's keys plus <code>constructor</code></p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>N is ArrayProto's keys plus <code>constructor</code>, <code>then</code> and <code>toJSON</code></p></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">DESIGN.md, trust surface, the Error row</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>Lean refuses a write that may set any of these keys (<code>message</code>, <code>stack</code>, <code>cause</code>, <code>name</code>)</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>Lean refuses a write that may set <code>message</code>, <code>stack</code> or <code>cause</code></p></div></figure></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>generic-readonly-rest-refused</code> <span class="kind gap">gap</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">gap</span> <span class="why">a generic module function's readonly rest</span></summary><pre class="code"><span class="tk-c">// A generic module function's rest typed by a readonly array: the array a</span>
+<span class="tk-c">// call collects is fresh, so the readonly view gives up only writes, but the</span>
+<span class="tk-c">// scheme of a generic module function states its rest as a mutable array's</span>
+<span class="tk-c">// element, and the readonly contract is refused at the function.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> firstOr&lt;<span class="tk-t">T</span>&gt;(fallback: <span class="tk-t">T</span>, ...xs: <span class="tk-k">readonly</span> <span class="tk-t">T</span>[]): <span class="tk-t">T</span> {
+  <span class="tk-k">const</span> [x] = xs;
+  <span class="tk-k">return</span> x === <span class="tk-k">undefined</span> ? fallback : x;
+}
+<span class="tk-k">export</span> <span class="tk-k">function</span> use(): number {
+  <span class="tk-k">return</span> firstOr(<span class="tk-n">0</span>, <span class="tk-n">1</span>, <span class="tk-n">2</span>);
+}</pre></details></li></ul>
+<h4 class="change">Gap</h4><div class="prose"><p>a generic module function's readonly or tuple rest needs its scheme to state the rest's contract rather than its element</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">docs</span> <span class="chip">tests</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd><span class="test pos">generic-readonly-rest-refused</span></dd></dl>
+<details><summary>7 files changed, 25 insertions(+), 5 deletions(-)</summary><pre class="code"> docs/DESIGN.md                                     |  2 +-
+ docs/POSITIVE-TYPES.md                             |  2 +-
+ docs/PROGRAM-TYPING.md                             |  5 +++++
+ docs/SOURCE-ELABORATION.md                         |  7 ++++---
+ docs/SOURCE-FRAGMENT.md                            |  1 +
+ pipeline/cases.mts                                 |  2 ++
+ pipeline/examples/generic-readonly-rest-refused.ts | 11 +++++++++++</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-44eb42e51"><header><div><div class="sha">44eb42e51 · Cristiano Calcagno · Nov 05, 03:16</div><h3>Index the compiler API's restrictions and four existing cases in SOURCE-FRAGMENT.md</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>Issue #45: SOURCE-FRAGMENT.md is the index of the pipeline's refusals, but COMPILER-API.md's restrictions R1–R7 and limits L1, L3–L6 had no row, and four existing cases were missing from the rows they exercise (<code>array-length-refused</code>, <code>index-write-dynamic-refused</code>, <code>invalid-optional-write-alias</code>, <code>open-array-generic-call-refused</code>). Its opening also read as if every row named a case, while many name none.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">SOURCE-FRAGMENT.md, fragment boundary</span></h4><div class="prose"><p>a row on principle for R1–R7 and a model-limit row for L1, L4–L6, each linking COMPILER-API.md's restrictions and naming the cases that reach them; the namespace-import row names L3; the key-adding write, <code>new Array(x)</code> and open-array generic call rows name their cases; the opening says a row names its cases where one exists</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">docs</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd></dl>
+<details><summary>1 file changed, 7 insertions(+), 5 deletions(-)</summary><pre class="code"> docs/SOURCE-FRAGMENT.md | 12 +++++++-----</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-e59080973"><header><div><div class="sha">e59080973 · Cristiano Calcagno · Nov 05, 03:18</div><h3>Cite for each boundary a case that reaches it</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>Issue #46: documents cite cases for boundaries the cases do not reach. <code>invalid-node-dirent-test-replaced</code>, cited for refusing <code>Reflect</code>'s other functions, is refused where <code>Dirent</code> is imported. The two <code>invalid-merged-*-callback</code> cases, cited for the contextual-parameter route, are refused at a written annotation, the unit's first array: the gate meets a literal or written array before a callback's contextual one (a variant with no written array was refused at its literal), so no case isolates that route. <code>invalid-stated-effect-stringify</code>, cited for the record route, is refused by its replacer function whatever its argument. The sentence that every <code>invalid-error-subclass-*</code> case holds a row of the error exclusion list overstated it: rows such as <code>D.captureStackTrace</code> and a library base have no case.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">SOURCE-CONTRACTS.md, Reflect and merged arrays</span></h4><div class="prose"><p><code>Reflect</code>'s other functions cite <code>invalid-reflect-unreviewed</code> and <code>invalid-reflect-method-replaced</code>; a merge into <code>Array</code> or <code>ReadonlyArray</code> refuses a unit at the first array type the reader meets, which in the callback cases is a written annotation</p></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">SOURCE-REWRITES.md, promise texts</span></h4><div class="prose"><p><code>JSON.stringify</code> of a promise type is refused as of any record (<code>invalid-json-stringify-record</code>)</p></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">SOURCE-ELABORATION.md, a class extending Error</span></h4><div class="prose"><p>each row of the exclusion list is held by the cases it names</p></div>
+<h4 class="change"><span class="act modified">modified</span>Tests <span class="target">cases.mts, invalid-merged-readonly-array-callback</span></h4><div class="prose"><p>its description names the written parameter it is refused at</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">docs</span> <span class="chip">tests</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd></dl>
+<details><summary>4 files changed, 11 insertions(+), 10 deletions(-)</summary><pre class="code"> docs/SOURCE-CONTRACTS.md   | 13 +++++++------
+ docs/SOURCE-ELABORATION.md |  2 +-
+ docs/SOURCE-REWRITES.md    |  4 ++--
+ pipeline/cases.mts         |  2 +-</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-522c1c5f4"><header><div><div class="sha">522c1c5f4 · Cristiano Calcagno · Nov 05, 03:21</div><h3>Name the declarations and files the documents and comments cite as they are</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>Issue #47: documents, comments and example headers cite names that resolve to no declaration. <code>SourceRequests.lean</code> declares the namespace <code>SourceExtraction</code>, so <code>SourceRequests.Bundle</code> and four <code>SourceRequests.…</code> theorems name nothing; <code>inheritRows</code>, <code>LoweringControl.implicationForm</code> and <code>TypingBasics.conflicting_empty</code> name no declaration; the constructor <code>HasTyUsing.ifBoolVar</code> was called a proof; SEMANTICS.md placed <code>heap_values</code> and <code>read_sound</code> in Worlds.lean and Heaps.lean. Census headers name functions renamed or deleted since (<code>isCallEffect</code>, <code>isResult</code>, <code>sameData</code>, <code>declarationAnswer</code>, <code>compiler-channel.mts#query</code>); <code>deferredIn</code>, <code>serializingRequests</code> and <code>module.findPackageJSON</code> are gone; <code>capturedAt</code> was placed in the computed-alias evaluation; COMPILER-API.md placed &quot;the refused guards&quot; in <code>tools/compiler-api.mts</code> and omitted the guard table and its closure. The <code>Label.ofTree</code> docstring is already fixed at main (#67).</p></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">FOOTPRINTS, REQUEST-PROTOCOL, SOURCE-ELABORATION, SOURCE-CONTRACTS, PROGRAM-TYPING, SEMANTICS</span></h4><div class="prose"><p>Lean names by their namespace: <code>SourceExtraction.Bundle</code>, <code>SourceExtraction.checkRequests_async</code>, <code>…effectResult_stated</code>, <code>…checkRequests_stated_at</code>, <code>…checkRequests_footprint_at</code>, <code>ProgramTyping.conflicting_empty</code>; an interface's heritage meet is <code>declarationRow</code>; the <code>ifBoolVar</code> case of <code>HasTyUsing.sound</code> proves the tested-variable rule; <code>heap_values</code> and <code>read_sound</code> are in HeapExpressionRules.lean; <code>capturedAt</code> is in <code>tools/declaration-graph.mts</code></p></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">COMPILER-API.md, HOST-FAMILIES.md, drafts</span></h4><div class="prose"><p>the guard table (<code>tools/compiler-api-guards.mts</code>) and its closure (<code>tools/guard-closure.mts</code>) have their own entry under &quot;Where it lives&quot;; an installation is found by <code>findPackage</code> (<code>tools/files.mts</code>); the drafts name <code>sameTerm</code> and the <code>hostViews</code> entries without a <code>request</code> mark</p></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">comments and example headers</span></h4><div class="prose"><p><code>refinement.ml</code>, <code>type_queries.ml</code>, <code>type-term.mts</code>, <code>test.mts</code> and seven <code>blocker-*</code> headers name the current declarations; a census function deleted since is dropped from its header</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">docs</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd></dl>
+<details><summary>22 files changed, 33 insertions(+), 31 deletions(-)</summary><pre class="code"> docs/COMPILER-API.md                                   | 6 +++++-
+ docs/FOOTPRINTS.md                                     | 2 +-
+ docs/HOST-FAMILIES.md                                  | 4 ++--
+ docs/PROGRAM-TYPING.md                                 | 4 ++--
+ docs/REQUEST-PROTOCOL.md                               | 2 +-
+ docs/SEMANTICS.md                                      | 4 ++--
+ docs/SOURCE-CONTRACTS.md                               | 4 ++--
+ docs/SOURCE-ELABORATION.md                             | 6 +++---
+ docs/drafts/canonicity.md                              | 3 +--
+ docs/drafts/method-effects.md                          | 4 ++--
+ ocaml-producer/refinement.ml                           | 2 +-
+ ocaml-producer/type_queries.ml                         | 2 +-
+ pipeline/cases.mts                                     | 2 +-
+ pipeline/examples/blocker-contextual-any.ts            | 2 +-
+ pipeline/examples/blocker-guard-readonly-storage.ts    | 2 +-
+ pipeline/examples/blocker-node-hash-contract.ts        | 2 +-
+ pipeline/examples/blocker-node-url-import.ts           | 2 +-
+ pipeline/examples/blocker-prep-reflect-apply.ts        | 1 -
+ pipeline/examples/blocker-round-generic-rest-answer.ts | 4 ++--
+ pipeline/examples/blocker-weakmap.ts                   | 2 +-
+ pipeline/test.mts                                      | 2 +-
+ tools/type-term.mts                                    | 2 +-</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-21a73d3de"><header><div><div class="sha">21a73d3de · Cristiano Calcagno · Nov 05, 04:32</div><h3>Point each cross-reference at the document and section that holds what it cites</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>Issue #48: references resolve to a document or section other than the one holding what they cite. Comments of the front end cite SOURCE-CONTRACTS.md or SOURCE-MODEL.md for sections of SOURCE-ELABORATION.md, SOURCE-FRAGMENT.md for a section of SOURCE-CONTRACTS.md, <code>../OBLIGATION-DIAGNOSTICS.md</code> for a document under <code>docs/</code>, and AGENTS.md and a pull request description for the fragment; the stage-store files cite DESIGN.md &quot;The stage store&quot; for what STAGE-STORE.md owns; a refusal message cites a bullet of DESIGN.md as a section. Lean comments and an example cite RECURSIVE-EQUATIONS.md sections it does not have (§3.3, §6, §7, §7.1, §7.3, §7.5, §9.2). Four document links land on the wrong section, and PROGRAM-TYPING.md says &quot;the next section&quot; supplies a certificate producer it does not.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">comments of tools/, pipeline/, dev/ and tests/</span></h4><div class="prose"><p>each cites the owning section: SOURCE-ELABORATION.md's user-defined guards, calls through a location, loops, patterns and statement forms; SOURCE-CONTRACTS.md's types stated by annotations; STAGE-STORE.md's keys, timing, entries, controls and census records; SOURCE-MODEL.md's method members; <code>tests/compiler-api-guards.mts</code> for the stand-in's guard table; fragment-parse.mts lists fragment-guards.mts among the gate's modules and points to SOURCE-FRAGMENT.md and FRAGMENT-FORMAT.md</p></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">RECURSIVE-EQUATIONS citations in Lean and an example</span></h4><div class="prose"><p>a meet's meaning is §2.2, the canonical meet and the tree spelling §8, family entries and their hypotheses §4.2, quantified-α §4.1, <code>Var</code> §4.3</p></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">SOURCE-ELABORATION, SOURCE-CLAIMS, PROGRAM-TYPING links</span></h4><div class="prose"><p>function declarations link <code>#function-declarations</code>, handler facts <code>#handler-facts</code>; the async <code>Within</code> refusal names <code>statedResult</code> in <code>tools/type-term.mts</code>; clause fields link REQUEST-PROTOCOL.md's <code>#clauses</code>; the certificate producer is named by its Lean file</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">docs</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd></dl>
+<details><summary>28 files changed, 61 insertions(+), 59 deletions(-)</summary><pre class="code"> dev/census.mts                                        |  2 +-
+ docs/PROGRAM-TYPING.md                                |  3 ++-
+ docs/RECURSIVE-EQUATIONS.md                           |  2 +-
+ docs/SOURCE-CLAIMS.md                                 |  2 +-
+ docs/SOURCE-ELABORATION.md                            |  8 ++++----
+ lean/Verification/Types/EquationFamilies.lean         |  2 +-
+ lean/Verification/Types/EquationGraphs.lean           |  8 ++++----
+ lean/Verification/Types/EquationJson.lean             |  2 +-
+ lean/Verification/Types/EquationMeets.lean            |  2 +-
+ lean/Verification/Types/PairFamilies.lean             | 10 +++++-----
+ lean/Verification/Types/PositiveGraphs.lean           |  2 +-
+ lean/Verification/Types/PositiveRules.lean            |  8 ++++----
+ pipeline/examples/generic-growing-application-push.ts |  2 +-
+ pipeline/in-process-execution.mts                     |  8 ++++----
+ pipeline/runner/stage-runner.c                        |  2 +-
+ pipeline/stage-execution.mts                          | 12 ++++++------
+ pipeline/stage-store.mts                              | 10 +++++-----
+ pipeline/stages.mts                                   |  6 +++---
+ pipeline/string-family.mts                            |  2 +-
+ pipeline/test.mts                                     |  2 +-
+ tests/stage-store.mts                                 |  2 +-
+ tools/diagnostic-view.mts                             |  2 +-
+ tools/fragment-expressions.mts                        |  2 +-
+ tools/fragment-guards.mts                             |  2 +-
+ tools/fragment-parse.mts                              |  9 +++++----
+ tools/fragment-statements.mts                         |  2 +-
+ tools/intrinsics.mts                                  |  4 ++--
+ tools/written-applications.mts                        |  2 +-</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+</main></body></html>
