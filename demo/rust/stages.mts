@@ -1,14 +1,14 @@
 // A Rust crate through the demo's front end (`parse.mts`, then `lower.mts`),
 // then through TScert's own stages: the verifier's control-flow lowering,
 // the OCaml producer's claims, the verifier's evidence search and its check.
-// It calls the stages directly, without the stage store.
+// The backend stages use the shared stage store.
 
-import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { producerBuild, verifierBuild } from "../../pipeline/stage-execution.mts";
+import { producerBuild, verifierBuild, producerCall, verifierCall } from "../../pipeline/stage-execution.mts";
+import { tested } from "../../pipeline/stages.mts";
 import { readDiagnostic } from "../../tools/diagnostic.mts";
 import { presentObligation } from "../../tools/diagnostic-view.mts";
 import type { Ast } from "../../tools/fragment.mts";
@@ -16,12 +16,6 @@ import { Lowering } from "./lower.mts";
 import { lineOf, Parser, Unsupported, type RCrate } from "./parse.mts";
 
 type Run = { status: number | null; stdout: string; stderr: string };
-function run(executable: string, args: string[]): Run {
-  const ran = spawnSync(executable, args, { encoding: "utf8", maxBuffer: 1 << 30 });
-  if (ran.error) throw ran.error;
-  return { status: ran.status, stdout: ran.stdout, stderr: ran.stderr };
-}
-
 /** A unit's refusal as a reader of the source wants it: the verifier's
  * first line, the obligation it names in source terms, and the source line at
  * its span. The verifier's full diagnostic stays in `search.log`. */
@@ -72,22 +66,23 @@ export function front(file: string): { source: string; crate: RCrate; lowering: 
 /** A lowered crate through the four stages. */
 export function check(file: string, source: string, fragment: Ast): Report {
   const artifacts = mkdtempSync(join(tmpdir(), "tscert-rust-"));
+  writeFileSync(join(artifacts, "source.rs"), source);
   const ast = join(artifacts, "fragment.json");
   writeFileSync(ast, JSON.stringify(fragment));
 
-  const lowered = run(verifierBuild, ["--lower-control-flow", ast]);
+  const lowered = tested(verifierCall(verifierBuild, ["--lower-control-flow", ast]), 60_000);
   if (lowered.status !== 0) return { status: "unsupported", artifacts, detail: refusal(lowered, "reject: ") };
   const flow = join(artifacts, "flow.json");
   writeFileSync(flow, lowered.stdout);
 
-  const proposed = run(producerBuild, [ast, flow]);
+  const proposed = tested(producerCall(producerBuild, [ast, flow]), 60_000);
   if (proposed.status !== 0) return { status: "unsupported", artifacts, detail: refusal(proposed, "unsupported: ") };
   const claims = join(artifacts, "claims.json");
   writeFileSync(claims, proposed.stdout);
 
   // The file key names the source; the verifier reads the fragment, not the file.
   const evidence = join(artifacts, "evidence.json");
-  const searched = run(verifierBuild, ["--produce-units", ast, claims, resolve(file), evidence, "12"]);
+  const searched = tested(verifierCall(verifierBuild, ["--produce-units", ast, claims, resolve(file), evidence, "12"]), 60_000);
   writeFileSync(join(artifacts, "search.log"), searched.stdout + searched.stderr);
   if (!searched.stdout.includes("checked source evidence written: "))
     return { status: "unverified", artifacts, detail: refusal(searched, "reject: ") };
@@ -99,7 +94,7 @@ export function check(file: string, source: string, fragment: Ast): Report {
       searchRefusals.set(value.unit, value.refusal);
   }
 
-  const checked = run(verifierBuild, ["--check-units", ast, claims, resolve(file), evidence]);
+  const checked = tested(verifierCall(verifierBuild, ["--check-units", ast, claims, resolve(file), evidence]), 60_000);
   writeFileSync(join(artifacts, "check.log"), checked.stdout + checked.stderr);
   const units = checked.stdout.split("\n").filter((l) => l.startsWith("{")).map((line) => {
     const value: unknown = JSON.parse(line);
@@ -109,7 +104,8 @@ export function check(file: string, source: string, fragment: Ast): Report {
     const own = "refusal" in value && typeof value.refusal === "string" ? value.refusal : "";
     return { unit: value.unit, status: "unverified", detail: readable(`reject: ${searchRefusals.get(value.unit) ?? own}`, source) };
   });
-  if (units.length === 0) return { status: "error", artifacts, detail: refusal(checked, "reject: ") };
+  if (units.length !== fragment.functions.length || new Set(units.map((u) => u.unit)).size !== units.length ||
+      (units.every((u) => u.status === "verified") && checked.status !== 0)) return { status: "error", artifacts, detail: refusal(checked, "reject: ") };
   return { status: units.every((u) => u.status === "verified") ? "verified" : "unverified", artifacts, units };
 }
 

@@ -15,3 +15,8 @@ pub fn scale(x: i64, k: i64) -> i64 {
 pub fn greet(name: &str) -> String {
     "hello, ".to_string() + name
 }
+
+#[wasm_bindgen]
+pub fn next_id() -> i64 {
+    42
+}

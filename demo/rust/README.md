@@ -1,18 +1,99 @@
-# A Rust front end and a `wasm-bindgen` boundary for TScert (demo)
+# Rust/Wasm declaration agreement and a Rust front end (demo)
 
-A minimal front end that reads a small subset of Rust and hands it to
-TScert's own back end, and a check of one boundary `wasm-bindgen` creates:
-a TypeScript caller, the `.d.ts` it imports, and the Rust crate behind it.
-The OCaml producer and the Lean verifier run unchanged; the front end
-writes the Fragment document (`tools/fragment.mts`) that the TypeScript
-front end writes, as the Python demo (PR #107, `demo/python/`) does.
+The boundary demo catches a stale TypeScript declaration for valid Rust:
+the caller promises `number`, while the compiled Rust/Wasm export returns
+`bigint`. It includes an optional build and execution of the actual crossing,
+with generated glue and both stages of the repair.
 
-It is a demonstration of the wire, not a verifier for Rust: TScert's
-calculus models JavaScript, and the demo gives each Rust form the meaning of
-the JavaScript form it is mapped to. [Whose semantics](#whose-semantics-a-verdict-covers)
-states where the two differ.
+The Rust front end also hands a small subset of Rust to TScert's existing
+producer and independent proof checker, through the same
+[Fragment](../../tools/fragment.mts) the TypeScript front end writes. Its
+verdict concerns that program in the JavaScript model;
+[whose semantics](#whose-semantics-a-verdict-covers) states its Rust scope.
 
-## Run it
+## A stale return declaration
+
+Rust's export in [`boundary-return-mismatch/lib.rs`](examples/boundary-return-mismatch/lib.rs):
+
+```rust
+#[wasm_bindgen]
+pub fn next_id() -> i64 {
+    42
+}
+```
+
+The stale declaration says `export function next_id(): number`. Its
+[TypeScript caller](examples/boundary-return-mismatch/caller.ts) is:
+
+```ts
+import { next_id } from "./lib.js";
+
+export function jobId(): number {
+  return next_id();
+}
+```
+
+TypeScript accepts this caller, and TScert verifies it assuming its import
+meets the declaration. With the actual generated module, `jobId()` returns
+`42n`, a `bigint`, on normal return. The declaration agreement check refuses:
+
+```text
+disagreed: lib.d.ts against lib.rs
+  next_id (lib.d.ts: next_id): result: lib.d.ts states number; Rust i64 requires bigint in JavaScript
+```
+
+Updating the declaration to `bigint` exposes the caller's wrong `number`
+result to TypeScript and TScert. Updating the caller to `jobId(): bigint`
+makes the model/declaration checks pass and execution returns `42n` at the
+promised type. This is [`boundary-return/`](examples/boundary-return).
+
+The [parameter-mismatch example](examples/boundary-mismatch/caller.ts) is
+also retained: its stale declaration lets `doubled(21)` pass `number`s to
+Rust `i64` parameters. The real crossing throws
+`TypeError: Cannot convert 21 to a BigInt`. The repaired bigint call returns
+`42n`.
+
+## Build and execute the real crossing
+
+This optional command needs `make build`, Rust/Cargo, the
+`wasm32-unknown-unknown` target and wasm-bindgen-cli **0.2.130**. The
+[official tool and mapping](../../docs/REFERENCES.md#wasm-bindgen) define the
+crate/CLI pair. Setup with `rustup target add wasm32-unknown-unknown` and
+install that CLI release, for example
+`cargo install wasm-bindgen-cli --version 0.2.130 --locked`. Set
+`WASM_BINDGEN=/path/to/wasm-bindgen` if it is outside `PATH`.
+
+```sh
+node demo/rust/run-boundary.mts
+```
+
+It copies the Rust source into a temporary Cargo crate, compiles it in
+release mode with `panic = "abort"`, generates `--target web` glue and real
+`.d.ts` output, and loads the resulting Wasm in Node. Each consumer's
+`lib.js` re-exports that same generated module. Node executes the actual
+TypeScript caller with type annotations stripped.
+
+| Pairing | TypeScript | Model/declaration checks | Actual execution |
+| --- | --- | --- | --- |
+| Stale result declaration | accepts | agreement refuses `number` vs `bigint` | returns bigint `42n` under `number` |
+| Fresh result declaration, old caller | rejects | caller refused; agreement passes | returns bigint `42n` |
+| Fresh result declaration, repaired caller | accepts | pass | returns bigint `42n` under `bigint` |
+| Stale parameter declaration | accepts | agreement refuses `number` vs `bigint` | argument-conversion `TypeError` |
+| Fresh parameter declaration, old caller | rejects | caller refused; agreement passes | argument-conversion `TypeError` |
+| Fresh parameter declaration, repaired caller | accepts | pass | returns bigint `42n` |
+
+The script asserts all six outcomes. Measured on 2026-11-05 with rustc
+1.91.1, wasm-bindgen 0.2.130 and the repository's pinned Node, they have
+these results. The printed temporary directory retains `commands.json`,
+`report.json`, `Cargo.lock`, source snapshots, generated glue/declarations
+and Wasm, and the consumers. The report records versions, complete output,
+and hashes of the source, manifest, lockfile, generated artifacts and
+consumer files. These records describe this run's artifacts; they are not a
+proof of artifact provenance in another build or deployment.
+
+This command and all demo checks are manual. They add no CI job or dependency.
+
+## Check the source examples
 
 From the repository root, after `make build`:
 
@@ -22,13 +103,15 @@ node demo/rust/verify.mts demo/rust/examples/refused.rs
 node demo/rust/verify-boundary.mts demo/rust/examples/boundary
 node demo/rust/verify-boundary.mts demo/rust/examples/boundary-refused
 node demo/rust/verify-boundary.mts demo/rust/examples/boundary-mismatch
+node demo/rust/verify-boundary.mts demo/rust/examples/boundary-return-mismatch
+node demo/rust/verify-boundary.mts demo/rust/examples/boundary-return
 ```
 
 - `hello.rs` is verified, each of its eight functions a unit of its own.
 - `refused.rs` is refused: `fn widen(x: i32) -> i64 { x + 1 }` computes a
   `number` in the model, and its result is a `bigint`. `rustc` rejects it
   too.
-- `boundary/` is verified: the crate's three exports, the caller's three
+- `boundary/` passes: the crate's four exports, the caller's three
   functions, and the agreement of `lib.d.ts` with `lib.rs`.
 - `boundary-refused/` is refused: its caller passes a `number` to `scale`,
   whose `i64` parameter is a `bigint` in `lib.d.ts`; the verifier refuses the
@@ -38,7 +121,10 @@ node demo/rust/verify-boundary.mts demo/rust/examples/boundary-mismatch
   `tsc` and TScert both accept the caller against that declaration; the
   agreement check refuses it, since `lib.rs` takes `i64`s.
 
-Each command exits 0 when everything is verified and prints the directory
+The model/declaration command refuses a caller that imports no Rust export
+through `./lib.d.ts`. Its final `passed` label means the Rust model units,
+caller units and declaration agreement all pass. Each command exits 0 when
+its checks pass and prints the directory
 holding what each run wrote (`fragment.json`, `flow.json`, `claims.json`,
 `evidence.json` and the verifier's logs).
 
@@ -53,8 +139,8 @@ holding what each run wrote (`fragment.json`, `flow.json`, `claims.json`,
    `tools/fragment.mts`, and refuses any other construct with its line.
 3. `stages.mts` runs the stages `pipeline/verify-source.mts` runs after its
    parse: `verifier --lower-control-flow`, the producer, `verifier
-   --produce-units` and `verifier --check-units`, directly, without the
-   stage store.
+   --produce-units` and `verifier --check-units`, through the shared stage
+   store, with 60-second process limits and a retained source snapshot.
 4. `verify-boundary.mts` adds the caller's check through
    `pipeline/verify-source.mts` and the agreement of the two signatures
    ([the boundary](#the-boundary)).
@@ -89,9 +175,10 @@ Precedence is Rust's for these forms: postfix (calls, fields,
 comparisons, which do not chain, then `&&`, then `||`, each binary level
 associating left.
 
-**Types the front end computes.** The input is assumed to be a program
-`rustc` accepts; the front end runs no `rustc` and checks no Rust typing
-rule. It computes each expression's Rust type for two lowerings: an
+**Types the front end computes.** The source-only check assumes a program
+`rustc` accepts; its parser and lowering check no Rust typing rule. The
+optional real-crossing command compiles its Rust snapshot with Cargo.
+The front end computes each expression's Rust type for two lowerings: an
 unsuffixed integer literal takes the type its context fixes (the other
 operand, a `let`'s annotation, a parameter at a call, the result at a
 `return` or tail, a struct field, through unary, binary and conditional
@@ -167,29 +254,29 @@ takes `./lib.js` to `./lib.d.ts`). `wasm-bindgen`'s mapping, by position:
 
 It establishes three results, each by its owner:
 
-- (a) **The Rust functions in the model**: each unit is safe at its
+- **The Rust functions in the model**: each unit is safe at its
   signature (TScert's theorem).
-- (b) **The caller**: each unit is safe assuming each import meets the
+- **The caller**: each unit is safe assuming each import meets the
   declaration TypeScript resolves it to in `lib.d.ts` (the same theorem,
   the import an input at its declared type).
-- (c) **Agreement**: each such declaration equals, in every field
+- **Agreement**: each such declaration equals, in every field
   (parameters, result, effect, receiver, rest; spans aside), the signature
   the table gives the Rust export of its name; a generic, overloaded or
   construct declaration, a missing export, or any difference is refused.
   This is node-side code without a proof.
 
-**What the caller's safety rests on.** (b) assumes the boundary contract:
-a call of the export with arguments of the declared types, on normal
+**What the caller's safety rests on.** The caller's verdict assumes the
+boundary contract: a call of the export with arguments of the declared types, on normal
 return, gives a value of the declared result type, and may instead throw
 (a panic among the ways) or diverge. That contract rests on `rustc`'s
-acceptance of `lib.rs`, on (c), and on the glue below; not on (a), which
-is an independent check of the Rust bodies in the model. That the caller is
-then safe is this argument, not a Lean theorem: TScert composes no units
-across modules in Lean, even within TypeScript ([module
+acceptance of `lib.rs`, declaration agreement and the glue below. The Rust
+model verdict independently checks the Rust bodies in the model. The
+cross-language composition is an argument rather than a Lean theorem:
+TScert composes no units across modules in Lean, even within TypeScript ([module
 composition](../../WORK.md#module-composition)).
 
 **The glue, assumed.** The module is built for `wasm32-unknown-unknown`
-with `panic = "abort"` by `wasm-bindgen` with its default options, its
+with `panic = "abort"` by `wasm-bindgen` with `--target web`, its
 JavaScript unmodified, `TextEncoder`, `TextDecoder`, `WebAssembly` and
 `BigInt` untampered, and no custom panic hook. The glue then converts a
 `number` to `i32`/`u32` modulo 2³² (`NaN` and infinities to 0, fractions
@@ -207,9 +294,10 @@ caller's: `1.5`, `2**32` and `NaN` reach an `i32` parameter as `1`, `0` and
 allows. After a trap the instance's state, its allocator's among it, is
 unspecified: the argument covers calls before any trap.
 
-**The build.** That `lib.d.ts` and the loaded module are the output of
-building `lib.rs` is the project's build's. The demo compares the `.d.ts`
-with the Rust source and runs neither `rustc` nor `wasm-bindgen`; the
-`lib.d.ts` files of the examples are written as `wasm-bindgen` writes them.
+**The build.** The project's build is responsible for shipping the declaration
+and loaded module for its Rust source. The source-only command compares
+the `.d.ts` with the Rust source; its fixture declarations are hand-written. The optional real-crossing command
+builds its snapshot and executes the generated module, retaining its actual
+fresh declarations beside deliberately stale consumer declarations.
 The declaration's effect is the ordinary one (a call may change anything),
 which over-approximates a function of primitives.

@@ -13,9 +13,10 @@
 // Usage: node demo/rust/verify-boundary.mts <dir>
 
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import type { TypeTerm } from "../../tools/declaration-types.mts";
+import type { TypeTerm, ValueRoot } from "../../tools/declaration-types.mts";
+import { readFragmentFile } from "../../pipeline/verify-source.mts";
 import { ordinaryEffect } from "../../tools/type-graph.mts";
 import type { RFn, RType } from "./parse.mts";
 import { check, front, print, readable, type Report } from "./stages.mts";
@@ -60,15 +61,18 @@ const field = (value: unknown, name: string): unknown =>
   typeof value === "object" && value !== null && name in value ? Reflect.get(value, name) : undefined;
 
 /** The caller through `pipeline/verify-source.mts`: its report and its Fragment's imported values. */
-function checkCaller(dir: string): { report: Report; values: unknown[] } {
+function checkCaller(dir: string): { report: Report; values: ValueRoot[] } {
   const source = readFileSync(join(dir, "caller.ts"), "utf8");
   const ran = spawnSync("node", [join(here, "../../pipeline/verify-source.mts"), join(dir, "caller.ts"), "--project", dir],
-    { encoding: "utf8", maxBuffer: 1 << 30 });
+    { encoding: "utf8", maxBuffer: 1 << 26, timeout: 240_000 });
+  if (ran.error) throw ran.error;
   const out: unknown = JSON.parse(ran.stdout);
   const status = field(out, "status"), artifacts = field(out, "artifacts");
   if (typeof artifacts !== "string" ||
       (status !== "verified" && status !== "unsupported" && status !== "unverified" && status !== "error"))
     throw Error(`verify-source printed no outcome: ${ran.stderr}`);
+  if (status === "verified" && ran.status !== 0)
+    throw Error(`verify-source reported verified but exited ${ran.status}: ${ran.stderr}`);
   const unitsOut = field(out, "units");
   const units = (Array.isArray(unitsOut) ? unitsOut : []).map((u: unknown) => {
     const unit = field(u, "unit"), s = field(u, "status"), detail = field(u, "detail");
@@ -77,38 +81,48 @@ function checkCaller(dir: string): { report: Report; values: unknown[] } {
   const detail = field(out, "detail");
   const report: Report = { status, artifacts, units };
   if (units.length === 0 && typeof detail === "string") report.detail = detail.split("\n")[0] ?? "";
-  let values: unknown[] = [];
-  try {
-    const fragment: unknown = JSON.parse(readFileSync(join(artifacts, "fragment.json"), "utf8"));
-    const listed = field(field(fragment, "declarations"), "values");
-    values = Array.isArray(listed) ? listed : [];
-  } catch {
-    // No Fragment: the caller's report states why.
-  }
+  const fragment = join(artifacts, "fragment.json");
+  const values = existsSync(fragment) ? readFragmentFile(fragment).declarations.values : [];
   return { report, values };
 }
 
 /** (c): each value the caller imports from `lib.d.ts` against the crate's export of its name. */
-function agreement(values: unknown[], exports: Map<string, RFn>): string[] {
+function agreement(values: ValueRoot[], exports: Map<string, RFn>): string[] {
   const refusals: string[] = [];
-  for (const v of values) {
-    const declaration = field(v, "declaration");
-    if (field(declaration, "module") !== "./lib.d.ts") continue;
-    const name = field(declaration, "name");
-    const label = `${String(field(field(v, "binding"), "local"))} (lib.d.ts: ${String(name)})`;
-    const f = typeof name === "string" ? exports.get(name) : undefined;
+  const imports = values.filter((v) => v.declaration.module === "./lib.d.ts");
+  if (imports.length === 0) refusals.push("the caller imports no Rust export through ./lib.d.ts");
+  for (const v of imports) {
+    const name = v.declaration.name;
+    const label = `${v.binding.local} (lib.d.ts: ${name})`;
+    const f = exports.get(name);
     if (f === undefined) { refusals.push(`${label}: lib.rs exports no #[wasm_bindgen] function of that name`); continue; }
-    const typeParams = field(v, "typeParams");
-    if (field(v, "construct") !== false || !Array.isArray(typeParams) || typeParams.length > 0) {
+    if (v.construct || v.typeParams.length > 0) {
       refusals.push(`${label}: a construct signature or a generic declaration`);
       continue;
     }
-    const declared = field(v, "type");
-    if (field(declared, "k") !== "function") { refusals.push(`${label}: not one function signature (overloads?)`); continue; }
+    const declared = v.type;
+    if (declared.k !== "function") { refusals.push(`${label}: not one function signature (overloads?)`); continue; }
     const signature = rustSignature(f);
-    if (typeof signature === "string") continue; // listed with the exports wasm-bindgen cannot map
+    if (typeof signature === "string") continue;
     const d = difference(declared, signature, "signature");
-    if (d !== null) refusals.push(`${label}: lib.d.ts disagrees with lib.rs at ${d} (lib.d.ts against lib.rs)`);
+    if (d === null) continue;
+    let explanation = d;
+    let parameterMismatch = false;
+    if (signature.k === "function") {
+      for (const [index, expected] of signature.params.entries()) {
+        const actual = declared.params[index];
+        const parameter = f.params[index];
+        if (actual?.k === "atom" && expected.k === "atom" && actual.name !== expected.name && parameter?.type.k === "prim") {
+          explanation = `parameter ${parameter.name}: lib.d.ts states ${actual.name}; Rust ${parameter.type.name} requires ${expected.name} in JavaScript`;
+          parameterMismatch = true;
+          break;
+        }
+      }
+    }
+    if (!parameterMismatch && signature.k === "function" && declared.result.k === "atom" && signature.result.k === "atom" &&
+        declared.result.name !== signature.result.name && f.ret?.k === "prim")
+      explanation = `result: lib.d.ts states ${declared.result.name}; Rust ${f.ret.name} requires ${signature.result.name} in JavaScript`;
+    refusals.push(`${label}: ${explanation}`);
   }
   return refusals;
 }
@@ -131,13 +145,13 @@ const mapping = [...exports.values()].flatMap((f) => {
 });
 
 const rust = check(rs, lowered.source, lowered.fragment);
-print(`${rs} (a: the Rust functions in the model)`, rust);
+print(`${rs} (Rust functions in the model)`, rust);
 const caller = checkCaller(dir);
-print(`${join(dir, "caller.ts")} (b: the caller, imports at lib.d.ts)`, caller.report);
+print(`${join(dir, "caller.ts")} (caller, imports at lib.d.ts)`, caller.report);
 const refusals = [...mapping, ...agreement(caller.values, exports)];
-process.stdout.write(`${refusals.length === 0 ? "agreed" : "disagreed"}: lib.d.ts against lib.rs (c)\n`);
+process.stdout.write(`${refusals.length === 0 ? "agreed" : "disagreed"}: lib.d.ts against lib.rs\n`);
 for (const r of refusals) process.stdout.write(`  ${r}\n`);
 
 const ok = rust.status === "verified" && caller.report.status === "verified" && refusals.length === 0;
-process.stdout.write(`${ok ? "verified" : "refused"}: the boundary of ${dir}\n`);
+process.stdout.write(`${ok ? "passed" : "refused"}: Rust model, caller and declaration checks for ${dir}\n`);
 process.exit(ok ? 0 : 1);
