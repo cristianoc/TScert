@@ -2412,6 +2412,9 @@ assert.equal(runExample("invalid-named-implicit-index", 'typeof asDictionary({ a
   // and no `groups` where no group is named; one shrinking the array `map`
   // steps leaves a hole.
   assert.equal(runExample("invalid-regexp-replace-capture", `last("b")`), undefined);
+  assert.throws(() => runExample("invalid-pretext-replace-capture-types", `canvasFont('"Foo", serif', ["Times"])`),
+    /TypeError/, "a quoted family hands the callback undefined for the separator it types as a string");
+  assert.equal(runExample("invalid-pretext-replace-capture-types", `canvasFont("serif, monospace", ["Times"])`), "Times, monospace");
   assert.equal(runExample("invalid-regexp-replace-groups", `groups("a")`), undefined);
   assert.equal(runExample("invalid-regexp-replace-callback-effect", `1 in wrong(["a", "a"])`), false);
   // A regex shared before the call: a `lastIndex` whose `valueOf` compiles
