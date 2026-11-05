@@ -205,8 +205,9 @@ let infer (expr:Analysis_state.expression_infer) execute_bindings (infer_body:An
          signature taking at least its parameters has that signature's result
          as its contextual return type, as in TypeScript. *)
       (* A context that is one callable type, or one beside `undefined` or
-         `null` (an optional callback's parameter), states the signature a
-         closure literal is expected at: the absent arms take no closure. *)
+         `null` (an optional callback's parameter), states the signatures a
+         closure literal is offered (`from_context`): the absent arms take no
+         closure. Its contextual result is read from one callable type alone. *)
       let head t = try declared_head declarations [] t with Json.Error _ -> t in
       let context_head t =
         match head t with
@@ -220,7 +221,7 @@ let infer (expr:Analysis_state.expression_infer) execute_bindings (infer_body:An
         | t -> t in
       let contextual = match written,expected with
         | None,Some t when quantified = [] ->
-          (match context_head t with
+          (match head t with
            | Atoms [Shape {calls=[s];fields=[];indexes=[];elements=None}]
              when s.quantified=[] && s.rest_pack=None && s.variadic=None
                   && List.length s.params >= List.length ps -> Some s.result
