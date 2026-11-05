@@ -561,7 +561,9 @@ as not excluding, so a recursive bound is decided in one pass,
 conservatively. A type reference is decided by its definition, a reference
 met again on the same path counting as not excluding. `unknown`, `object`,
 a readonly array or tuple, and a record of readonly or optional fields
-alone exclude nothing, and nor does a union with such an arm.
+alone exclude nothing, and nor does a union with such an arm
+(`invalid-spread-empty-record`, `invalid-reflect-own-keys-object`,
+`invalid-spread-readonly-array`, `spread-readonly-record-refused`).
 
 Records are open: a record type constrains the fields it names, and a value
 of it may own others. So no operation traversing every own key is admitted,
