@@ -937,7 +937,7 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // and writes nothing: it reads own data properties and allocates the
   // string, also before it throws on a cycle, so the empty footprint holds
   // on a throw too.
-  { host: transparent("the parameter is JsonValue, whose string-key traversal reaches no host object"), global: "JSON", member: "stringify",
+  { host: transparent("the parameter is JsonValue, whose serialization enumerates the keys of no host object (HOST-FAMILIES.md, Excluding host values)"), global: "JSON", member: "stringify",
     signature: "stringify(value: any, replacer?: (this: any, key: string, value: any) => any, space?: string | number): string;",
     stated: { binders: [], params: [jsonValue, optional(atom("null")),
       optional({ k: "union", parts: [atom("number"), atom("string")], span: at })], result: atom("string") },
@@ -946,7 +946,7 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // The overload whose replacer is a list of keys, which `JSON.stringify`
   // reads by its length and indices, primitive numbers and strings whose
   // conversion runs no code; or `null` or absent, as the other.
-  { host: transparent("the parameter is JsonValue, whose string-key traversal reaches no host object"), global: "JSON", member: "stringify",
+  { host: transparent("the parameter is JsonValue, whose serialization enumerates the keys of no host object (HOST-FAMILIES.md, Excluding host values)"), global: "JSON", member: "stringify",
     signature: "stringify(value: any, replacer?: (number | string)[] | null, space?: string | number): string;",
     stated: { binders: [], params: [jsonValue, optional({ k: "union", span: at, parts: [atom("null"),
       readonlyArray({ k: "union", parts: [atom("number"), atom("string")], span: at })] }),

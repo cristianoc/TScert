@@ -4,11 +4,15 @@ import Verification.Programs.ObjectMerge
 # The string-key traversal of a JSON value reaches no host object
 
 `JSON.stringify` takes `JsonValue` (`library-globals.mts`), whose arms are
-primitives and one dictionary indexed by every string key at `JsonValue`
-itself. Serialization reads an object's own string keys and descends into
-the values found there. A host object's own keys are the package's internal
-fields (HOST-FAMILIES.md, "Excluding host values"), so the contract is sound
-for host values only if no object the traversal meets is one.
+primitives, one dictionary indexed by every string key at `JsonValue`
+itself, and one readonly array of `JsonValue | undefined`. Serialization
+reads a non-array object's own string keys and descends into the values
+found there. A host object's own keys are the package's internal fields
+(HOST-FAMILIES.md, "Excluding host values"), so the contract is sound for
+host values only if no object whose keys the traversal enumerates is one.
+This module proves it for the primitive and dictionary arms; the array arm,
+which serialization reads by its indices only, is argued in
+HOST-FAMILIES.md and not stated here.
 
 `reach_noHost`: in a world the heap satisfies, every value the traversal
 reaches from a member of a JSON-shaped family within the step index is no
