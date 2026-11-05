@@ -261,7 +261,7 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
           (match param, (try Some (declared_head declarations [] (resolve env n)) with Json.Error _ -> None) with
            | Atoms [Shape {calls=[o];_}], Some (Atoms [Shape {calls=[own];fields=[];indexes=[];elements=None}])
                when List.length o.params > List.length own.params || (o.variadic <> None && own.variadic = None) ->
-             Option.iter (S.explain arg.pos) (Module_contract.longer_refusal
+             Option.iter (S.explain arg.pos) (Module_contract.longer_refusal own
                (if List.mem_assoc n env then None else module_arity n))
            | _ -> ());
           None
@@ -272,7 +272,7 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
            | Atoms [Shape {calls=[o];_}], Some (Atoms [Shape {calls=[own];fields=[];indexes=[];elements=None}])
                when own.variadic = None
                  && (List.length o.params > List.length own.params || o.variadic <> None) ->
-             Option.iter (S.explain arg.pos) (Module_contract.longer_refusal None)
+             Option.iter (S.explain arg.pos) (Module_contract.longer_refusal own None)
            | _ -> ());
           None
         | _ -> None in

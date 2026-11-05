@@ -41,11 +41,14 @@ type arity = Discards | Collects | Instances
 let arity (g:Source.fn) =
   if g.quantified <> [] then Instances else if g.rest then Collects else Discards
 
-(* Why a function is refused where a signature binding more parameters is
-   expected: a module function of the given arity, or a value known only by
-   its type (`None`). *)
-let longer_refusal = function
+(* Why a function whose own signature is `own` is refused where a signature
+   binding more parameters is expected: a module function of the given arity,
+   or a value known only by its type (`None`). A value whose type states a
+   rest reads the further actuals at its element, which the expected
+   signature's parameters meet or not as any other parameter. *)
+let longer_refusal (own:Semantic.signature) = function
   | Some Discards -> None
+  | None when own.variadic <> None -> None
   | Some Collects -> Some ("a function with a rest parameter where a signature binding more parameters is \
       expected: " ^ Proposal_diagnostics.rest_arity_reason)
   | Some Instances -> Some ("a generic module function where a signature binding more parameters is \
