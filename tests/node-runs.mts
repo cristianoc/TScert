@@ -3099,4 +3099,22 @@ for (const [file, call] of [
     "the later default reads the earlier binding before the body assigns it");
   assert.equal(runExample(negative("invalid-logical-assign-value"), "(() => { set(2); return pick(); })()"), 2,
     "||= keeps the truthy target 2, beyond the result 1");
+  // `new Array<T>(n).fill(v)`: the length is checked before `v` is
+  // evaluated, and the result is dense; a hole read before a fill, or left
+  // by a partial fill, is `undefined`.
+  assert.equal(runExample(ofKind("array-fill", "positive"), `(() => {
+    const seen = [];
+    try { counted(-1); } catch (e) { seen.push(e.name); }
+    try { counted(1.5); } catch (e) { seen.push(e.name); }
+    const table = [null];
+    return JSON.stringify([seen, counted(2), counted(0), record(null, 2, [7]), record(table, 3, [8]) === table, table,
+      record(null, 2, []), shared(2), total(3), 1 in counted(2)]);
+  })()`), '[["RangeError","RangeError"],[1,1],[],[null,null,[7]],true,[null,[8]],[],[{"count":2},{"count":2}],3,true]',
+    "array-fill: an invalid length throws before the value is computed, the value is computed once, every index holds it");
+  assert.throws(() => runExample(negative("invalid-array-fill-read-before"), "firstFixed(2)"), /TypeError/,
+    "the hole read before the fill is undefined");
+  assert.throws(() => runExample(negative("invalid-array-fill-partial"), "digits(2)"), /TypeError/,
+    "fill from index 1 leaves index 0 a hole, read as undefined");
+  assert.throws(() => runExample(negative("invalid-array-fill-range"), "digits(2)"), /TypeError/,
+    "fill below index 1 leaves index 1 a hole, read as undefined");
 }
