@@ -120,7 +120,7 @@ tests are not a proof of fidelity to external source text.
 | `result`  | The required result type of the graph.                                                                                                                                                                                                                                       |
 | `start`   | The designated control-flow entry label.                                                                                                                                                                                                                                     |
 | `inputs`  | External argument types in slot order. The designated entry context must equal this contract; `[]` for closed invocation. The input contract is a premise of the safety theorem, never inferred from point claims.                                                        |
-| `codes`   | The graph code the program creates ([code requests](#code-requests)); left out when there is none.                                                                                                                                                                           |
+| `codes`   | The graph code the program creates ([code requests](#code-requests)); `[]` when there is none.                                                                                                                                                                               |
 | `promise` | `null`, or a guard's promise `[asserts, [slot, T]]`: the returns establish a type guard's `true` or `false` (`asserts` false) or an assertion function's `undefined` (true), each `true` or `undefined` with the input in entry slot `slot` a value of `T`; `result` is then the plain result. |
 
 A type is a list of type labels, interpreted as their union; the empty list
@@ -174,11 +174,15 @@ G.\mathit{meets}(i)=(p;\vec c)\land G.\mathit{meetParams}(i)=\vec q\iff T[i]=\ma
 
 with the meaning given in
 [Parameter and scheme rows](POSITIVE-TYPES.md#parameter-and-scheme-rows).
-Validation (`StoreView.wellFormed`, which `RequestJson.validRequest` calls) requires every label a row names to index `types`,
-a parameter row to name its own label and state its kind, a scheme's binders
-to be parameter rows, and a meet row's parameters to be value parameter rows.
-A parameter row is therefore never the same row as another, so two distinct
-binders are never identified by content. A subtype instantiation choice names
+`RequestJson.validRequest` requires every type the request states to name
+labels the store holds (`StoreView.valid`) and the store to be well formed
+(`StoreView.wellFormed`). A checked request's store
+(`EquationStore.Checked`) holds equations the
+[equation validator](RECURSIVE-EQUATIONS.md) accepted, every template
+scoped and constructor-headed and every parameter of a declared kind, and its
+labels are labels of their signature, so both checks hold of it by
+construction; a store that still grows is well formed when every head it
+holds has a body. A subtype instantiation choice names
 a scheme row and its image types. A table with no scheme rows has no
 quantified signature to instantiate.
 
@@ -211,7 +215,7 @@ recursion.
 | Plain object: a record's contracts and readonly index views `[class, operand]`, class `"strings"` (every string key), `"numeric"` (the canonical numeric keys) or `"symbols"` (every symbol key), each constraining every present own field under a key of its class                                                                                                                    | `{"dict":{"first":[],"rest":[],"views":[],"indexes":[["strings",[1,3]],["numeric",[1]]]}}`    |
 | A plain object's writable index contracts, a mutable index signature's: every present own field under a key of the class holds exactly the operand; each is also listed in `indexes`                                                                                                                                                                                                    | `"cells":[["strings",[1,3]]]`                                                                 |
 | Intersection of callable contracts, fixed and variadic                                                                                                                                                                                                                                                                                                                                   | `{"arrs":{"arrows":[contract, …]}}`                                                           |
-| Callable object: invariant bag contracts `first` and `rest`, and fixed and variadic signatures                                                                                                                                                                                                                                                                                            | `{"callable":{"first":[["value",[1]]],"rest":[],"arrows":[contract, …]}}`                     |
+| Callable object: invariant bag contracts `first` and `rest`, fixed and variadic signatures, and methods as a record's                                                                                                                                                                                                                                                                     | `{"callable":{"first":[["value",[1]]],"rest":[],"arrows":[contract, …]}}`                     |
 | Class value: construct signatures, receiver `{}`, which `new` meets and no call does; variadic ones; its static fields as invariant `first` and `rest` and readonly `views`                                                                                                                                                                                                              | `{"ctors":{"signatures":[contract, …]}}`                                                      |
 | Array store: simultaneous tuple contracts, each with required, optional and rest positions; readonly contracts give element read capabilities                                                                                                                                                                                                                                            | `{"list":{"first":{"required":[[4]],"optional":[],"rest":[4],"readonly":false,"presence":"readable"},"rest":[]}}` |
 | Argument list: simultaneous tuple contracts on the actuals a rest parameter receives, positions compared covariantly                                                                                                                                                                                                                                                                    | `{"pack":{"first":{"required":[[4]],"optional":[],"rest":[0],"readonly":false,"presence":"dense"},"rest":[]}}` |
@@ -219,7 +223,7 @@ recursion.
 The rows marked as a record's fields are fields of `refs` and of `dict`. A
 field left out when empty: `optional`, `methods`, `bounds` and `stable` of
 `refs` and `dict`, `cells` of `dict`, `variadic` of `arrs`, `callable` and
-`ctors`, and `first`, `rest` and `views` of `ctors`. A variadic signature
+`ctors`, `methods` of `callable`, and `first`, `rest` and `views` of `ctors`. A variadic signature
 (`"variadic": [contract, …]`) has `arguments` `[params, rest]` and takes the
 actuals past `params` according to the argument-list contract `rest`.
 
@@ -374,12 +378,13 @@ environment alone. Every closure a source program creates is graph code.
 ### Code requests
 
 A request's `codes` lists the graph code its program creates, one
-`{"entry": {"arity","exprs","conts","start","captures","row","store"}, "claims": [...]}`
+`{"entry": {"arity","exprs","conts","start","captures","row","store"}, "claims": [...], "async": b}`
 per code and signature, nested code before the code creating it: `captures`
 the captured values' types, `row` the signature as a contract record,
 `store`, for code with a rest, the rest-store type its frame starts with
-(`null` otherwise), and `claims` one point claim per node of the code's
-graph, as `claims` is for the program.
+(`null` otherwise), `claims` one point claim per node of the code's
+graph, as `claims` is for the program, and `async` whether the source
+declares the function `async`.
 
 ## Evidence
 
@@ -603,8 +608,8 @@ accepted certificate shape.
 
 ## Heap facts
 
-`knowledge` and `output` each contain `cells`, `values`, `links` and
-`separation`
+`knowledge` and `output` each contain `cells`, `values`, `links`,
+`separation` and `elems`
 ([checked expression postconditions](PROGRAM-TYPING.md#checked-expression-postconditions)).
 
 - `cells` and `values` are lists of `{slot, contents, field}` facts: for a
@@ -631,6 +636,12 @@ accepted certificate shape.
   timeless fact established by allocation and the reason a write to one
   cell keeps facts about another. A separation stating no fact is
   `{"depth": 0, "facts": []}`.
+- `elems` is a list of `{slot, pred, cond, negated}`
+  [elements facts](FOOTPRINTS.md#the-elements-fact): every present element
+  of the array in slot `slot` is a value of a kind `pred` admits, `pred`
+  being one Boolean per kind, `{nul, undef, bool, num, str, big, sym, obj}`.
+  `cond` is `null`, or a slot: then the fact is stated where that slot holds
+  a truthy value, or a falsy one where `negated` is true.
 
 These are finite state assertions, not extra type labels. Current-content
 predicates are checked on every incoming edge; a predicate the rules do not
@@ -803,7 +814,8 @@ name their entries by position
 ```json
 { "types": [T, …], "contexts": [[t, …], …], "terms": [M, …], "links": [link, …], "separations": [fact, …],
   "valueSets": [V, …],
-  "knowledge": [{"cells": [F, …], "values": [F, …], "links": [l, …], "depth": d, "separation": [s, …]}, …],
+  "knowledge": [{"cells": [F, …], "values": [F, …], "links": [l, …], "depth": d, "separation": [s, …],
+                  "elems": [E, …]}, …],
   "proofs": [{"claim": {"context": c, "term": m, "type": t}, "rule": r, "premises": [p, …]}, …],
   "functions": [response, …], "obligations": [[p, …], …] }
 ```
@@ -812,7 +824,8 @@ name their entries by position
 a [separation fact](#heap-facts), `V` a value set (a fact's
 [contents](#heap-facts)) and `r` a [rule](#rules); a fact reference `F` is
 `{"slot": i, "contents": v, "field": f}`, the heap fact on slot `i` and field
-`f` whose contents are `valueSets[v]`; `t`, `c`, `m`, `l`, `s` and `p` are
+`f` whose contents are `valueSets[v]`; `E` is an
+[elements fact](#heap-facts), written in full; `t`, `c`, `m`, `l`, `s` and `p` are
 positions in `types`, `contexts`, `terms`, `links`, `separations` and `proofs`. A response is as in [evidence](#evidence),
 its nodes written with references: `ordinary` is `{"proof": {"tree": p}}`,
 `"effect"` or `null`; `sequent` is `{"context": c, "term": m, "type": t}` or
@@ -832,8 +845,8 @@ derivation's premises earlier entries of `proofs`:
 \mathit{context}(c) = [\,\mathit{type}(t) \mid t \in D.\mathit{contexts}[c]\,] \\
 \mathit{fact}(\langle i, v, f\rangle) &= \langle i, D.\mathit{valueSets}[v], f\rangle \\
 \mathit{knowledge}(k) &= \langle [\,\mathit{fact}(F) \mid F \in \vec f\,], [\,\mathit{fact}(F) \mid F \in \vec g\,], [\,D.\mathit{links}[l] \mid l \in \vec l\,],
-  \langle d, [\,D.\mathit{separations}[s] \mid s \in \vec s\,]\rangle\rangle
-  \quad\text{where } D.\mathit{knowledge}[k] = \langle \vec f, \vec g, \vec l, d, \vec s\rangle \\
+  \langle d, [\,D.\mathit{separations}[s] \mid s \in \vec s\,]\rangle, \vec e\rangle
+  \quad\text{where } D.\mathit{knowledge}[k] = \langle \vec f, \vec g, \vec l, d, \vec s, \vec e\rangle \\
 \mathit{proof}(k) &= \mathsf{node}(\langle \mathit{context}(c), D.\mathit{terms}[m], \mathit{type}(t)\rangle, r,
   [\,\mathit{proof}(p) \mid p \in \vec p\,])
   \quad\text{where } D.\mathit{proofs}[k] = \langle \langle c, m, t\rangle, r, \vec p\rangle
