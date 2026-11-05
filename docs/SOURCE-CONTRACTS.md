@@ -3812,6 +3812,14 @@ the client's and writes no location it did not allocate. A view as the
 argument (`new Uint8Array(v)`) is refused, an argument no form states
 (`typed-array-views`, the `blocker-pretext-*-construct` cases).
 
+#### Formatter locale
+
+The library overlay states `new Intl.DateTimeFormat()` at zero arguments and
+`resolvedOptions()` at a result with readonly `locale: string`. The host assumption
+is [ECMA-402](REFERENCES.md#ecma-402)'s construction and resolved-options behavior
+under the stable-standard-objects policy. Both calls have unrestricted effects.
+Other construction arguments have no contract in this entry.
+
 #### `Intl.Segmenter`
 
 **Audited against:** TypeScript 7.0.2's standard library
@@ -3984,10 +3992,11 @@ conversions and attributes. Node defines none of these objects, so no
 probe under Node runs them; the negative cases' Node runs use stand-ins
 (below).
 
-A text-measurement client makes a 2D context, sets its font and shaping,
+A text-measurement client makes a 2D context or span, sets its font and shaping,
 and measures text. These globals and types are stated at the members such
 a client uses ([modeling a library](#modeling-a-library)); any other
-member, read, written or called, is refused. Each type is a
+member, read, written or called, is refused. The following display gives the canvas-facing members; the span members
+are stated below. Each type is a
 [stated library type](#stated-library-types) with a host marker, so no
 program object meets it and a spread of one is refused:
 
@@ -4006,7 +4015,8 @@ program object meets it and a spread of one is refused:
 each field a readonly view. The names the overlay of library types maps
 to them: `CanvasRenderingContext2D` and `OffscreenCanvasRenderingContext2D`
 to $`\mathit{Context}`$, `OffscreenCanvas` and `HTMLCanvasElement` to
-$`\mathit{Canvas}`$, `Element` and `HTMLElement` to $`\mathit{Element}`$,
+$`\mathit{Canvas}`$, `Element` to $`\mathit{Element}`$, and `HTMLElement`
+to that element view intersected with readonly inline `style`,
 and `TextMetrics`; their declarations are not read, so the DOM library's
 `HTMLCanvasElement`, which declares a field twice, is not either.
 
@@ -4034,6 +4044,33 @@ and `TextMetrics`; their declarations are not read, so the DOM library's
   getters, strings. Asserting `navigator` to a record whose `userAgent` is
   writable is refused: the host gives a getter only
   (`blocker-pretext-navigator`).
+
+The browser overlay states nullable `document.body` and `document.head`, and
+`createElement("span")` at an element with a readonly `style` view that may be
+undefined outside HTML documents. A present style has a distinct
+inline-style host marker and `setProperty(string, string, string | undefined)`.
+Assignment to `cssText` takes a string; assignment to an element's `textContent`
+takes a string or null. Each assignment lowers to a host call returning its
+assigned value, with unrestricted effects on normal and exceptional exits.
+Computed style retains its readonly width view and cannot satisfy the inline-style
+setter's marker.
+
+An element's `appendChild` and `removeChild` take and return an element. The host
+returns the supplied child on normal completion; the contract promises its element
+type. `getBoundingClientRect()` returns a host rectangle with readonly numeric
+`width`. These calls, inline `setProperty`, and span creation have unrestricted
+effects. Tree operations and text replacement can run custom-element reactions;
+style mutation can trigger attribute reactions. No heap-preservation guarantee
+passes across these operations, including a caught exception.
+
+The assumptions concern browser implementations of [DOM](REFERENCES.md#dom),
+[HTML](REFERENCES.md#html), [CSSOM](REFERENCES.md#cssom), and
+[Web IDL](REFERENCES.md#web-idl), with their stated members retaining host behavior.
+`navigator.userAgent` and `navigator.platform` are readonly browser strings.
+The source checks the nullable root before using it as a parent and checks
+span style before writing it. A non-HTML document may return an element
+without style. Browser execution evidence is required separately from
+structural stand-ins and the calculus proof.
 
 The context's text drawing state is the host's: the model holds no
 location of it, as it holds no element of a view of bytes. A read `o.k`

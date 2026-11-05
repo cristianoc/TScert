@@ -96,7 +96,7 @@ import { join } from "node:path";
 import type { SourceTypeParameter, TypeDefinition, TypeTerm } from "./declaration-types.mts";
 import { resolutionSlots, resolvableSlots } from "./type-term.mts";
 import { emptyFootprint, emptyEffect, footprintEffect, ordinaryEffect } from "./type-graph.mts";
-import { bytes, canvasContext, canvasGetters, canvasSetters, segmentData, segmenter, segments } from "./library-types.mts";
+import { bytes, canvasContext, canvasGetters, canvasSetters, domSetters, dateTimeFormat, segmentData, segmenter, segments } from "./library-types.mts";
 import { moduleLocation } from "./files.mts";
 
 export const intrinsicModule = "tscert/intrinsics";
@@ -133,6 +133,7 @@ export const typeOfOffscreenCanvasName = "%TypeOf:OffscreenCanvas%";
 export const promiseAllName = "%PromiseAll%";
 export const promiseRejectName = "%PromiseReject%";
 export const newPromiseName = "%NewPromise%";
+export const newDateTimeFormatName = "%NewDateTimeFormat%";
 export const newSegmenterName = "%NewSegmenter%";
 export const symbolForName = "%SymbolFor%";
 export const symbolKeyForName = "%SymbolKeyFor%";
@@ -566,6 +567,7 @@ export function intrinsics(promise: (argument: TypeTerm) => TypeTerm, needed: Re
     // `RangeError` on a value outside the option's list. NewTarget is the
     // constructor itself, whose `prototype` is a non-writable data property.
     // It runs no code and allocates the segmenter alone.
+    [newDateTimeFormatName]: () => ({ typeParams: [], type: fn([], dateTimeFormat) }),
     [newSegmenterName]: () => {
       const literals = (...texts: string[]): TypeTerm =>
         either(...texts.map((text): TypeTerm => ({ k: "literal", name: "string", text, span })), atom("undefined"));
@@ -685,6 +687,8 @@ export function intrinsics(promise: (argument: TypeTerm) => TypeTerm, needed: Re
     // a string, to a DOMString, which runs no code, and the setter changes
     // the context's state alone, which the model holds no location of. It
     // answers the value, the value the assignment is.
+    ...Object.fromEntries(domSetters.map(s => [s.intrinsic, () => ({ typeParams: [],
+      type: fn([s.receiver, s.value], s.value) })])),
     ...Object.fromEntries(canvasSetters.map(s => [s.intrinsic, () => ({ typeParams: [],
       type: { ...fn([canvasContext, s.value], s.value), effect: emptyEffect } })])),
     [elementAtName]: () => ({ typeParams: [{ name: "T", bound: null, resolution: null }],

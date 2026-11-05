@@ -30,7 +30,7 @@ import { type BrandPredicate, compilerApiFamily, statedGuards, brandedTypes, hos
 import { activeFamilies, familyOfFile, familyOfGuard, guardOfExport, importedExport, installationPath, isHostFile, selectionGuard, tagEnumMatches, hostEnumObject } from "./family-activation.mts";
 import { errorInstance, reviewedErrorMembers, globalEntry, globalOrigins, globalsOverlay, importMetaName, type GlobalEntry, type Stated } from "./library-globals.mts";
 import { moduleEntries, moduleObjectDefault, reviewedText, reviewedTexts, type ModuleEntry } from "./library-modules.mts";
-import { canvasGetters, canvasSetters, definitions as typeDefinitions, namedDefinitions, typeEntry, type TypeEntry } from "./library-types.mts";
+import { canvasGetters, canvasSetters, domSetters, definitions as typeDefinitions, namedDefinitions, typeEntry, type TypeEntry } from "./library-types.mts";
 import { literalParts, regexpShape } from "./regexp-shape.mts";
 import { dispatchIntrinsic, dispatchName, isDispatchMethod, libraryRegExpNames, libraryRegExpTerm, marks, nativeIterator, nativeIteratorDefinition,
   nativeRegExp, regexpIntrinsicName, reviewedRegExpMembers,
@@ -3136,16 +3136,16 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
     // gets: each part of the object's type a name the overlay of library
     // types states as a 2D context, or an intersection with one, as
     // `"lang" in o` narrows it.
-    const contextOnly = (access: ts.PropertyAccessExpression): boolean => {
+    const contextOnly = (access: ts.PropertyAccessExpression, definitions: TypeDefinition[] = [typeDefinitions.canvasContext]): boolean => {
       const object = checker.getTypeAtLocation(access.expression);
       const parts = object && isUnionType(object) ? object.getTypes() : object ? [object] : [];
       const context = (t: Type): boolean =>
-        statedType((t.getSymbol()?.declarations ?? []).map(d => d.resolve()))?.definition === typeDefinitions.canvasContext;
+        definitions.some(d => statedType((t.getSymbol()?.declarations ?? []).map(d => d.resolve()))?.definition === d);
       return parts.length > 0 && parts.every(t => context(t) || (isIntersectionType(t) && t.getTypes().some(context)));
     };
-    const hostMember = (span: Span, intrinsic: string): void => {
+    const hostMember = (span: Span, intrinsic: string, definition: TypeDefinition = typeDefinitions.canvasContext): void => {
       listIntrinsics(span, [intrinsic]);
-      defineOverlay(typeDefinitions.canvasContext);
+      defineOverlay(definition);
       operationAnswers.hostMember?.(span, intrinsic);
     };
     for (const span of operationsRequested.memberWrites ?? []) {
@@ -3153,6 +3153,10 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
       if (!write || !ts.isPropertyAccessExpression(write)) throw declarationError(span, "TypeScript member write missing");
       const setter = canvasSetters.find(s => s.member === write.name.text);
       if (setter && contextOnly(write)) hostMember(span, setter.intrinsic);
+      const dom = domSetters.find(s => s.member === write.name.text);
+      const receivers = dom?.member === "cssText" ? [typeDefinitions.computedStyle] : [typeDefinitions.element, typeDefinitions.htmlElement];
+      if (dom && contextOnly(write, receivers))
+        hostMember(span, dom.intrinsic, dom.member === "cssText" ? typeDefinitions.inlineStyle : typeDefinitions.element);
     }
     for (const span of operationsRequested.memberReads ?? []) {
       const read = expressionAt(client, span);
@@ -4895,8 +4899,10 @@ function globalNamespace(checker: Checker, name: string, uses: readonly Identifi
       const literal = resolved && ts.isConstructSignatureDeclaration(resolved) ? resolved.parent : undefined;
       const variable = literal && ts.isTypeLiteralNode(literal) ? literal.parent : undefined;
       const statement = variable && ts.isVariableDeclaration(variable) ? variable.parent?.parent : undefined;
-      const declared = statement && ts.isVariableStatement(statement) &&
-        namespaces.some(n => n.body && ts.isModuleBlock(n.body) && n.body.statements.includes(statement));
+      const declared = (statement && ts.isVariableStatement(statement) &&
+        namespaces.some(n => n.body && ts.isModuleBlock(n.body) && n.body.statements.includes(statement))) ||
+        (literal && ts.isInterfaceDeclaration(literal) && namespaces.some(n =>
+          n.body && ts.isModuleBlock(n.body) && n.body.statements.includes(literal)));
       if (!resolved || !declared)
         throw declarationError(spanOf(call), `TypeScript resolves ${what} to no construct signature of a constant ${name} declares`);
       const text = resolved.getText(resolved.getSourceFile()).trim();

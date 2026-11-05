@@ -27,7 +27,7 @@ import { obligated, transparent, type HostClass } from "./host-operations.mts";
 import type { DeclarationIdentity, TypeDefinition, TypeTerm } from "./declaration-types.mts";
 import type { Span } from "./span.mts";
 import { asyncCompleteName, instanceOfErrorName, instanceOfMapName, instanceOfSetName, ownKeysName, promiseResolveName, prototypeIsObjectName, ownStringName, newPromiseName, promiseAllName, promiseRejectName, symbolForName,
-  symbolKeyForName, typeOfDocumentName, typeOfNavigatorName, typeOfOffscreenCanvasName, urlHrefName, newSegmenterName, arrayLengthName, arrayFilledName } from "./intrinsics.mts";
+  symbolKeyForName, typeOfDocumentName, typeOfNavigatorName, typeOfOffscreenCanvasName, urlHrefName, newSegmenterName, newDateTimeFormatName, arrayLengthName, arrayFilledName } from "./intrinsics.mts";
 import { footprintEffect, emptyFootprint, emptyEffect, ordinaryEffect } from "./type-graph.mts";
 import type { CallEffect } from "./type-graph.mts";
 import { buffer, bytes, canvas, computedStyle, definitions as stated, documentType, element, navigatorType, textDecoder, url } from "./library-types.mts";
@@ -407,6 +407,10 @@ const typedArrayEntries: GlobalEntry[] = ["Uint8Array", "Uint16Array", "Int32Arr
  * that is `undefined` or a string and options that are `undefined` or a
  * record of the two options it reads. */
 const intlEntries: GlobalEntry[] = [
+  ...["new (locales?: string | string[], options?: DateTimeFormatOptions): DateTimeFormat;",
+    "new (locales?: LocalesArgument, options?: DateTimeFormatOptions): DateTimeFormat;"].map((signature): GlobalEntry => ({
+      host: contract, global: "Intl", member: "DateTimeFormat", signature,
+      intrinsic: newDateTimeFormatName, definitions: [stated.dateTimeFormat] })),
   { host: transparent("a locale and a record of string options, which no node list is"), global: "Intl",
     member: "Segmenter", signature: "new (locales?: LocalesArgument, options?: SegmenterOptions): Segmenter;",
     intrinsic: newSegmenterName, definitions: [stated.segmenter] },
