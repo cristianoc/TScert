@@ -7,8 +7,8 @@
 // field at another type: under Node, `layout({ widths: [1, 2], items: 5 })`
 // returns undefined where a number is due, and no claim meets the parameter.
 // Pretext's handle comes only from prepare(), which builds it without
-// `items` (src/line-break.ts:64), so its functions are safe under that
-// invariant; the type PreparedLineBreakData does not state it.
+// `items`; pretext states it in the handle's type (`items?: never`) and
+// the walkers' (`readonly items?`), a rewrite of TScert issue #94.
 type Data = { widths: number[] };
 type LineData = Data & { items?: { count: number } };
 
