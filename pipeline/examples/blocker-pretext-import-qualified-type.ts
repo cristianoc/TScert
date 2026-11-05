@@ -25,10 +25,10 @@
 // line-breaks.ts#unpackClasses, line-breaks.ts#unpackStateRows,
 // line-breaks.ts#unpackTable, line-breaks.ts#unpackTableRows,
 // line-breaks.ts#unpackVarints.
-// Refusal: gate: a qualified type reference in getWordSegmenter.
-// An imported function whose result is `Intl.Segmenter`, a qualified type
-// reference, read at its declared signature. Pretext's `getWordSegmenter`
-// meets it in its own module and in each module importing it.
+// An imported function whose result is `Intl.Segmenter`, read at its
+// declared signature through the overlay of library types, and a loop over
+// its `segment(text)`. Pretext's `getWordSegmenter` meets it in its own
+// module and in each module importing it.
 import { getWordSegmenter } from "../pretext-project/line-breaks.ts";
 
 export function wordStarts(text: string): number[] {

@@ -151,6 +151,14 @@ function release(thrown: { error: unknown } | null): void {
 // Numeric literals in the fragment are plain decimals; every other spelling
 // (hex, binary, octal, separators, bigint) is outside it.
 
+/** A type name's spelling: an identifier's text, or, for the right of a
+ * qualified name `N.T`, `N.T`. */
+function qualifiedSpelling(name: Identifier): string {
+  const parent = name.parent;
+  return parent && ts.isQualifiedName(parent) && parent.right === name && ts.isIdentifier(parent.left)
+    ? `${parent.left.text}.${name.text}` : name.text;
+}
+
 export class Gate {
   // Written out rather than a parameter property: node strips types, it does
   // not compile them, so the syntax has to be erasable.
@@ -780,6 +788,13 @@ export class Gate {
         return this.settled(result.value, node);
       },
       named: (node, span, read) => {
+        // `Intl.T` of a type the overlay of library types states.
+        const qualified = ts.isQualifiedName(node.typeName) && this.namespaceMember(node.typeName) === undefined
+          ? this.libraryTypes.get(qualifiedSpelling(node.typeName.right)) : undefined;
+        if (qualified !== undefined)
+          return libraryTerm(qualified, libraryArguments(qualified, node.typeArguments ?? [], read,
+            part => this.keyType(part)), span,
+            message => this.fail(node, message), this.termScope().record, this.termScope().alias);
         const name = ts.isIdentifier(node.typeName) ? node.typeName.text
           : this.namespaceMember(node.typeName) ?? this.fail(node, "type reference outside the fragment");
         const answered = this.blockTypeAt(node);
@@ -1680,8 +1695,13 @@ function lowerFile(file: string, carriesContext: boolean,
   const findGlobals = (node: Node): void => {
     const typeName = ts.isTypeReferenceNode(node) ? node.typeName : null;
     if (typeName && ts.isIdentifier(typeName) && !rooted.has(typeName.text) &&
-        (blockNames.has(typeName.text) || !globalNodes.some(g => g.text === typeName.text)))
+        (blockNames.has(typeName.text) || !globalNodes.some(g => qualifiedSpelling(g) === typeName.text)))
       globalNodes.push(typeName);
+    // `Intl.T`: the member of the standard library's namespace `Intl`, by its
+    // name's own identifier, which the overlay of library types may state.
+    if (typeName && ts.isQualifiedName(typeName) && ts.isIdentifier(typeName.left) && typeName.left.text === "Intl" &&
+        !rooted.has("Intl") && !globalNodes.some(g => qualifiedSpelling(g) === qualifiedSpelling(typeName.right)))
+      globalNodes.push(typeName.right);
     node.forEachChild(findGlobals);
   };
   if (!carriesContext) scan(findGlobals);
@@ -2289,7 +2309,7 @@ function lowerFile(file: string, carriesContext: boolean,
         constEnumRead: ([start, end], value) => gate.constEnumReads.set(`${start}:${end}`, value),
         library: ([start, end], library, local) => {
           const node = globalNodes.find(n => n.getStart(source) === start && n.end === end);
-          if (node) gate.libraryTypes.set(node.text, library);
+          if (node) gate.libraryTypes.set(qualifiedSpelling(node), library);
           // An imported type the overlay of library types states.
           else if (library.k === "stated" && importNodes.some(n => n.getStart(source) === start && n.end === end))
             gate.libraryTypes.set(local, library);

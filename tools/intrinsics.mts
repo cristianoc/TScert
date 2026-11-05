@@ -92,7 +92,7 @@ import { join } from "node:path";
 import type { SourceTypeParameter, TypeDefinition, TypeTerm } from "./declaration-types.mts";
 import { resolutionSlots, resolvableSlots } from "./type-term.mts";
 import { emptyFootprint, emptyEffect, footprintEffect, ordinaryEffect } from "./type-graph.mts";
-import { bytes } from "./library-types.mts";
+import { bytes, segmentData, segmenter, segments } from "./library-types.mts";
 import { moduleLocation } from "./files.mts";
 
 export const intrinsicModule = "tscert/intrinsics";
@@ -115,6 +115,7 @@ export const iterateSetName = "%Iterate:Set%";
 export const iterateMapName = "%Iterate:Map%";
 export const iterateIteratorName = "%Iterate:Iterator%";
 export const iterateRegExpStringName = "%Iterate:RegExpString%";
+export const iterateSegmentsName = "%Iterate:Segments%";
 export const forInName = "%ForIn%";
 export const iterateForInName = "%Iterate:ForIn%";
 export const hasPropertyName = "%HasProperty%";
@@ -125,6 +126,7 @@ export const byteSetName = "%ByteSet%";
 export const promiseAllName = "%PromiseAll%";
 export const promiseRejectName = "%PromiseReject%";
 export const newPromiseName = "%NewPromise%";
+export const newSegmenterName = "%NewSegmenter%";
 export const symbolForName = "%SymbolFor%";
 export const symbolKeyForName = "%SymbolKeyFor%";
 /** `e instanceof C` of a class `C` a block declares: whether the prototype
@@ -246,6 +248,13 @@ const step: Signature = stepOf(binder);
  *   (`regexp.mts`): it steps a private clone of the regex with the standard
  *   `exec`, yielding each match. A structural iterator meets no marked type,
  *   so it is never stepped as this one.
+ * - An `Intl.Segments`' iterator (`%Iterate:Segments%`), which its
+ *   `[Symbol.iterator]`, `%IntlSegmentsPrototype%`'s, returns (ECMA-402,
+ *   CreateSegmentIterator): it finds each next boundary of the string the
+ *   `Segments` holds under the segmenter's granularity and yields a fresh
+ *   `SegmentData` (`library-types.mts`); `%IntlSegmentIteratorPrototype%`
+ *   and `%IteratorPrototype%` hold no `return`. The `Segments` type is a
+ *   host object's, so no program object is stepped as one.
  *
  * A spread form, `%Spread:K%` for `%Iterate:K%` (`spreadName`), takes the
  * same parameter and gives the fresh array of what the step yields.
@@ -278,6 +287,7 @@ export function iterationIntrinsic(name: string, view: (kind: "Set" | "Map", arg
         { k: "tuple", presence: "dense", readonly: false, required: [key, value], optional: [], rest: null, span }]
       : kind === iterateIteratorName ? [[tq], nativeCollection(t), t]
       : kind === iterateRegExpStringName ? [[tq], nativeMatches(t), t]
+      : kind === iterateSegmentsName ? [[], segments, segmentData]
       : (() => { throw Error(`no iteration intrinsic ${name}`); })();
   };
   // A union's iteration (`unionIterationName`) takes any of its kinds'
@@ -315,7 +325,8 @@ export function unionIterationKinds(name: string): string[] | undefined {
 /** The kinds a union's iteration may join: those whose intrinsic steps a
  * value of its parameter without client code. */
 export const unionIterationParts: readonly string[] =
-  [iterateName, iterateStringName, iterateSetName, iterateMapName, iterateIteratorName, iterateRegExpStringName];
+  [iterateName, iterateStringName, iterateSetName, iterateMapName, iterateIteratorName, iterateRegExpStringName,
+    iterateSegmentsName];
 
 /** The spread form of an iteration intrinsic: `...x` in an argument list, over
  * a value the step intrinsic `step` iterates, is `...%Spread:K%(x)`, a fresh
@@ -529,6 +540,26 @@ export function intrinsics(promise: (argument: TypeTerm) => TypeTerm, needed: Re
     // that settle the promise to their argument, or reject it; a throw out
     // of the executor rejects it. This constructor contract admits primitive
     // payloads; resolving with a thenable would adopt it instead.
+    // `new Intl.Segmenter(locales, options)` (ECMA-402, "The Intl.Segmenter
+    // Constructor"): CanonicalizeLocaleList of `undefined` or a string, its
+    // own value, which validates the tag and throws a `RangeError` on an
+    // ill-formed one; GetOptionsObject of `undefined` or an object; and
+    // GetOption of `localeMatcher` and `granularity`, each a [[Get]] of a
+    // field the stated record holds as a data property or not at all, where
+    // `Object.prototype` holds neither, and ToString of a string, throwing a
+    // `RangeError` on a value outside the option's list. NewTarget is the
+    // constructor itself, whose `prototype` is a non-writable data property.
+    // It runs no code and allocates the segmenter alone.
+    [newSegmenterName]: () => {
+      const literals = (...texts: string[]): TypeTerm =>
+        either(...texts.map((text): TypeTerm => ({ k: "literal", name: "string", text, span })), atom("undefined"));
+      const option = (name: string, type: TypeTerm) => ({ name, optional: true, readonly: true, type, span });
+      const options: TypeTerm = { k: "object", stringIndex: null, calls: [], span, fields: [
+        option("localeMatcher", literals("best fit", "lookup")),
+        option("granularity", literals("grapheme", "word", "sentence"))] };
+      return { typeParams: [], type: { ...fn([either(atom("undefined"), atom("string")), either(options, atom("undefined"))],
+        segmenter), effect: emptyEffect } };
+    },
     [newPromiseName]: () => ({ typeParams: [{ name: "T", bound: primitive, resolution: null }],
       type: fn([fn([fn([binder], atom("void")), fn([atom("unknown")], atom("void"))], atom("void"))],
         promise(binder)) }),

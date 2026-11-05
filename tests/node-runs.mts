@@ -2950,6 +2950,22 @@ for (const [file, call] of [
     "a write past the end of a view writes no element, and the read after it is undefined");
   assert.equal(runExample(negative("invalid-typed-array-subclass"), "typeof trimmed(reset())"), "number",
     "subarray constructs its result with the subclass, whose code replaces the narrowed string");
+  assert.equal(runExample(negative("invalid-typed-array-float64-subclass"), "typeof trimmed(reset())"), "number",
+    "subarray constructs its result with the Float64Array subclass, whose code replaces the narrowed string");
+  assert.equal(runExample(ofKind("typed-array-float64", "positive"),
+    "JSON.stringify((() => { const m = { kanaKerning: undefined, size: 1 }; const t = getKerning(m, 2); return [t.length, Number.isNaN(t[3]), kerningAt(t, 3, 0.5), kerningAt(t, 3, 2), Number.isNaN(t[0]), Number.isNaN(total(t))]; })())"),
+    "[4,true,0.5,0.5,true,true]", "typed-array-float64: a fresh table's elements are NaN, a written one a double");
+  assert.equal(runExample(negative("invalid-intl-segmenter-options-getter"), "typeof segmented()"), "number",
+    "new Intl.Segmenter runs a getter of its options' granularity, which replaces the narrowed string");
+  assert.equal(runExample(negative("invalid-intl-segmenter-subclass"), "typeof count(make(), \"a b\")"), "number",
+    "a subclass's segment runs where a segmenter's segment is called, replacing the narrowed string");
+  assert.equal(runExample(negative("invalid-intl-segmenter-structural"), "typeof count(fake(), \"a b\")"), "number",
+    "a program's object typed Intl.Segmenter runs its own segment, replacing the narrowed string");
+  assert.equal(runExample(negative("invalid-intl-segments-structural"), "typeof count(fake())"), "number",
+    "a program's object typed Intl.Segments runs its own iterator, replacing the narrowed string");
+  assert.equal(runExample(ofKind("intl-segmenter-words", "positive"),
+    "JSON.stringify([wordStarts(\"hello big world\", 10), firstWord(\" hi there\"), graphemes(\"abc\")])"),
+    "[[15,16,19,20],\"hi\",3]", "intl-segmenter-words: word starts after the first, the first word-like segment, three graphemes");
   assert.equal(runExample(ofKind("typed-array-views", "positive"),
     "JSON.stringify([first(unpack(1)), [...unpack(1).values.subarray(0, 9)], [...mark(3, 1)], mark(3, 5)])"),
     "[1,[1,1,1,1,1,1,1,1,1],[0,1,0],null]", "typed-array-views: the elements are numbers");

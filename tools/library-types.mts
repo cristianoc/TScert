@@ -58,9 +58,10 @@ const definitionOf = (id: DeclarationIdentity, expression: TypeTerm): TypeDefini
  * type. */
 export const bytesMarker = "node:bytes";
 
-/** A view of bytes: a `Uint8Array`, a `Uint16Array`, an `Int32Array`, or a
- * `Buffer`, a host object read at what the host gives it (ECMA-262,
- * "TypedArray Objects"), each a typed array whose elements are numbers,
+/** A view of bytes: a `Uint8Array`, a `Uint16Array`, an `Int32Array`, a
+ * `Float64Array`, or a `Buffer`, a host object read at what the host gives
+ * it (ECMA-262, "TypedArray Objects"), each a typed array whose elements
+ * are numbers (a `Float64Array`'s any double, `NaN` included),
  *
  *     type Uint8Array = host "node:bytes" {
  *       fill(value: number, start?: number, end?: number): Uint8Array;
@@ -68,7 +69,7 @@ export const bytesMarker = "node:bytes";
  *       set(source: Uint8Array, offset?: number): undefined;
  *       subarray(begin: number, end?: number): Uint8Array };
  *
- * The three standard names denote this one type: every member it states
+ * The four standard names denote this one type: every member it states
  * holds of each of them alike. Its elements and its `length` are read
  * through `%ByteAt%` and `%ByteLength%`, and an element written through
  * `%ByteSet%` (`intrinsics.mts`), which the parser writes for an element
@@ -195,15 +196,69 @@ const urlDefinition: TypeDefinition = definitionOf(urlIdentity,
   { k: "object", stringIndex: null, calls: [], host: urlMarker, span: at,
     fields: [] });
 
+/** A segment `Intl.Segments`' iterator yields (ECMA-402,
+ * CreateSegmentDataObject): a fresh ordinary object, `Object.prototype` its
+ * prototype, owning `segment`, `index` and `input` as data properties, and
+ * `isWordLike` where the segmenter's granularity is `"word"`,
+ *
+ *     type SegmentData = { segment: string; index: number; input: string; isWordLike?: boolean };
+ */
+const segmentDataIdentity = identity("SegmentData");
+export const segmentData: TypeTerm = named(segmentDataIdentity);
+const segmentDataDefinition = definitionOf(segmentDataIdentity, { k: "object", stringIndex: null, calls: [], span: at,
+  fields: [field("segment", atom("string"), false), field("index", atom("number"), false), field("input", atom("string"), false),
+    { name: "isWordLike", optional: true, readonly: false, type: atom("boolean"), span: at }] });
+
+/** The marker of an `Intl.Segments`: a host object (HOST-FAMILIES.md, "Host
+ * objects"), as a view of bytes is. */
+export const segmentsMarker = "intl:segments";
+
+/** What `Intl.Segmenter.prototype.segment` returns (ECMA-402,
+ * CreateSegmentsObject): a fresh object of `%IntlSegmentsPrototype%`
+ * holding the segmenter and the string in internal slots,
+ *
+ *     type Segments = host "intl:segments" {};
+ *
+ * A `for...of` over one steps `%Iterate:Segments%` (`intrinsics.mts`),
+ * yielding `SegmentData`. It states no member: `containing` is not read. */
+const segmentsIdentity = identity("Segments");
+export const segments: TypeTerm = named(segmentsIdentity);
+export const segmentsDefinition: TypeDefinition = definitionOf(segmentsIdentity,
+  { k: "object", stringIndex: null, calls: [], host: segmentsMarker, span: at, fields: [] });
+
+/** The marker of an `Intl.Segmenter`: a host object (HOST-FAMILIES.md,
+ * "Host objects"), as a view of bytes is. */
+export const segmenterMarker = "intl:segmenter";
+
+/** What `new Intl.Segmenter(locales, options)` constructs (ECMA-402,
+ * "Segmenter Objects"),
+ *
+ *     type Segmenter = host "intl:segmenter" { segment(input: string): Segments };
+ *
+ * `segment` is `%IntlSegmenterPrototype%`'s method: it checks the
+ * receiver's `[[SegmenterLocale]]` slot, throwing a `TypeError` where it
+ * has none, converts a string by ToString, its own value, and allocates a
+ * `Segments` over the segmenter and the string, running no code and writing
+ * no location it did not allocate. `resolvedOptions` is not stated. */
+const segmenterIdentity = identity("Segmenter");
+export const segmenter: TypeTerm = named(segmenterIdentity);
+export const segmenterDefinition: TypeDefinition = definitionOf(segmenterIdentity,
+  { k: "object", stringIndex: null, calls: [], host: segmenterMarker, span: at,
+    fields: [field("segment", method([atom("string")], segments, emptyEffect))] });
+
 export const definitions: { bytes: TypeDefinition; buffer: TypeDefinition; bigIntStats: TypeDefinition;
-  dirent: TypeDefinition; textDecoder: TypeDefinition; url: TypeDefinition } = { bytes: bytesDefinition,
-  buffer: bufferDefinition, bigIntStats: bigIntStatsDefinition, dirent: direntDefinition,
-  textDecoder: textDecoderDefinition, url: urlDefinition };
+  dirent: TypeDefinition; textDecoder: TypeDefinition; url: TypeDefinition; segmenter: TypeDefinition;
+  segments: TypeDefinition } = { bytes: bytesDefinition, buffer: bufferDefinition, bigIntStats: bigIntStatsDefinition,
+  dirent: direntDefinition, textDecoder: textDecoderDefinition, url: urlDefinition, segmenter: segmenterDefinition,
+  segments: segmentsDefinition };
 
 /** The overlay's definitions a definition names, which join the document
- * with it: a `Buffer`'s `set` takes any view. */
+ * with it: a `Buffer`'s `set` takes any view, a segmenter's `segment`
+ * returns a `Segments`, whose iteration yields `SegmentData`. */
 export function namedDefinitions(definition: TypeDefinition): TypeDefinition[] {
-  return definition === bufferDefinition ? [bytesDefinition] : [];
+  return definition === bufferDefinition ? [bytesDefinition]
+    : definition === segmenterDefinition ? [segmentsDefinition]
+    : definition === segmentsDefinition ? [segmentDataDefinition] : [];
 }
 
 const node = "@types/node";
@@ -215,9 +270,10 @@ export const typesOverlay: readonly TypeEntry[] = [
     { origin: library, heading: "interface Uint8Array<TArrayBuffer extends ArrayBufferLike = ArrayBufferLike> {" },
     { origin: library, heading: "interface Uint8Array<TArrayBuffer extends ArrayBufferLike> {" },
     { origin: node, heading: "interface Uint8Array extends RelativeIndexable<number> {" }] },
-  // The standard library's `Uint16Array` and `Int32Array`, as it declares
-  // them in parts: views of bytes, at the type a `Uint8Array` is.
-  ...["Uint16Array", "Int32Array"].map((name): TypeEntry => ({ name, definition: bytesDefinition, view: "bytes", parts: [
+  // The standard library's `Uint16Array`, `Int32Array` and `Float64Array`,
+  // as it declares them in parts: views of bytes, at the type a
+  // `Uint8Array` is.
+  ...["Uint16Array", "Int32Array", "Float64Array"].map((name): TypeEntry => ({ name, definition: bytesDefinition, view: "bytes", parts: [
     { origin: library, heading: `interface ${name}<TArrayBuffer extends ArrayBufferLike = ArrayBufferLike> {` },
     { origin: library, heading: `interface ${name}<TArrayBuffer extends ArrayBufferLike> {` }] })),
   { name: "Buffer", definition: bufferDefinition, view: "bytes", parts: [
@@ -231,6 +287,12 @@ export const typesOverlay: readonly TypeEntry[] = [
   // Node's global `URL`, an interface extending the module's class, as both
   // pinned installations declare it.
   { name: "URL", definition: urlDefinition, parts: [{ origin: node, heading: "interface URL extends _URL {" }] },
+  // The standard library's `Intl.Segmenter`, `Intl.Segments` and
+  // `Intl.SegmentData`, each one interface of the namespace `Intl`, read by
+  // their qualified names.
+  { name: "Segmenter", definition: segmenterDefinition, parts: [{ origin: library, heading: "interface Segmenter {" }] },
+  { name: "Segments", definition: segmentsDefinition, parts: [{ origin: library, heading: "interface Segments {" }] },
+  { name: "SegmentData", definition: segmentDataDefinition, parts: [{ origin: library, heading: "interface SegmentData {" }] },
 ];
 
 /** The entry stating `name`, where every part TypeScript binds it to as a

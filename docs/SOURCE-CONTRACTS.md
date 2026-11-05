@@ -1618,10 +1618,10 @@ so no case reaches this refusal.
 **Audited against:** TypeScript 7.0.2's standard library and `@types/node`
 22.20.2 and 22.10.7 (`tools/package.json`,
 `pipeline/library-project/package.json`); host behaviour from ECMA-262's
-TypedArray objects, Node 25.2.1's `lib/buffer.js`, `lib/internal/buffer.js`
-and `lib/internal/fs/utils.js`, and probes run under Node 25.2.1
-(2026-10-27) and Node 26.13.0 (2026-11-05, the typed arrays' constructors
-and methods).
+TypedArray objects, ECMA-402's Segmenter objects, Node 25.2.1's
+`lib/buffer.js`, `lib/internal/buffer.js` and `lib/internal/fs/utils.js`,
+and probes run under Node 25.2.1 (2026-10-27) and Node 26.13.0 (2026-11-05,
+the typed arrays' constructors and methods, `Intl.Segmenter`).
 
 A type name some host values have, whose declarations the reader does not
 read as those values are (`Buffer` names the conditional type
@@ -1642,6 +1642,10 @@ $`\Theta`$ the overlay:
       \forall p\in P_N.\ (\mathsf{origin}(p),\ \mathsf{heading}(p))\in\theta.\mathit{parts}}
      {⟦N⟧=D_\theta}\ \textsf{library-type}
 ```
+
+A member of the standard library's namespace `Intl` written qualified,
+`Intl.N`, is read by the same rule, $`P_N`$ the declarations TypeScript
+binds the qualified name to; a qualified name no entry states is refused.
 
 The declarations are not read, and neither are the types they name. A name
 with a part the entry reviews beside one whose origin or heading it does
@@ -1673,8 +1677,8 @@ V_S=\mathsf{host}_b\,\{\mathtt{fill}\colon(\mathtt{number},\ n^?,\ n^?)\Rightarr
 The entries:
 
 - `Uint8Array`, the standard library's parts and Node's part adding `at`,
-  and `Uint16Array` and `Int32Array`, the standard library's parts: one
-  type, the view of bytes $`V_\mathit{Uint8Array}`$, its members each a
+  and `Uint16Array`, `Int32Array` and `Float64Array`, the standard
+  library's parts: one type, the view of bytes $`V_\mathit{Uint8Array}`$, its members each a
   method of `%TypedArray%.prototype`, called at numbers and views
   alone: ToNumber and ToIntegerOrInfinity of a number run no code, `set`
   of a view copies by SetTypedArrayFromTypedArray, which runs none, and
@@ -1684,7 +1688,7 @@ The entries:
   the same memory. `fill` and `copyWithin` return the receiver. Each
   writes the view's elements alone, which the model holds no location of,
   and throws a `RangeError` at an index out of range: within the empty
-  footprint. Every member holds of each of the three alike; the members
+  footprint. Every member holds of each of the four alike; the members
   calling a callback or a species constructor's code (`map`, `filter`,
   `slice`, `every` with a `thisArg`, …) are not stated, so a read of one
   finds no member.
@@ -1711,6 +1715,8 @@ The entries:
 - `URL`, Node's global interface extending the class of `node:url`:
   $`\mathsf{host}_u\,\{\}`$, with $`u`$ the marker `"node:url"`, as
   [Node's `URL`](#nodes-url) states it.
+- `Intl.Segmenter`, `Intl.Segments` and `Intl.SegmentData`, the standard
+  library's interfaces, as [`Intl.Segmenter`](#intlsegmenter) states them.
 
 $`\mathsf{host}_m\,R`$ is the record $`R`$ with a host family's marker
 $`m`$ ([the family contract](HOST-FAMILIES.md#the-family-contract)): a
@@ -1724,7 +1730,8 @@ view's element keys, which the model does not hold: strings and Booleans,
 at no type that tells them. A view of bytes
 is an integer-indexed exotic object (ECMA-262, "TypedArray Objects"): its
 [[Get]] at a canonical numeric key is the element at a valid index, a
-number from 0 to 255, and `undefined` at any other, never reading the
+number of the view's element type (an integer in its range, or for a
+`Float64Array` any double, `NaN` included), and `undefined` at any other, never reading the
 prototype chain, and its `length` is `%TypedArray%.prototype`'s getter.
 The model holds neither: an element read at a number and a read of
 `length` of a value TypeScript types as views of bytes only are calls of
@@ -1782,13 +1789,15 @@ getter in a method's place runs where the member is read
 (`invalid-node-bytes-method-getter`, run under Node: it pops the array). A
 program reaches none of them: `Buffer.prototype`, `Object.defineProperty`
 and `Object.getPrototypeOf` but its comparison with `Object.prototype`
-are refused. A class extending `Uint8Array`, `Uint16Array` or `Int32Array`
-is refused: `subarray` would construct its result with the subclass and
-run its code (`invalid-typed-array-subclass`, run under Node: the
-subclass's constructor replaces a string the caller narrowed).
+are refused. A class extending `Uint8Array`, `Uint16Array`, `Int32Array`
+or `Float64Array` is refused: `subarray` would construct its result with
+the subclass and run its code (`invalid-typed-array-subclass`,
+`invalid-typed-array-float64-subclass`, run under Node: the subclass's
+constructor replaces a string the caller narrowed).
 
-The cases are `typed-array-views`, `blocker-pretext-uint16array-type`,
-`blocker-pretext-int32array-type`, `node-bytes-write`, `node-bytes-buffer`,
+The cases are `typed-array-views`, `typed-array-float64`,
+`blocker-pretext-uint16array-type`, `blocker-pretext-int32array-type`,
+`blocker-pretext-float64array-type`, `node-bytes-write`, `node-bytes-buffer`,
 `node-bytes-text-decoder`, `node-fs-stat-bigint`, `node-readdir-dirents`,
 `blocker-node-buffer-contract`, `blocker-node-hash-contract` and
 `invalid-node-stat-bigint` (run under Node: a `BigIntStats`'s `size` is a
@@ -3231,6 +3240,8 @@ keeps from running.
   reassigns it. Its entry marks it a constant (`constant`): its
   declaration, `Infinity: number`, is read as a value of the stated type,
   every reference a read, and a write is refused (`library-infinity`).
+  The global `NaN`, a non-writable, non-configurable data property of the
+  global object holding NaN, is read the same way (`typed-array-float64`).
 
 ```math
 \frac{\mathit{lib}(x)\quad \omega\in\Omega\quad \omega=(x,\ \cdot,\ \mathsf{text}(d),\ \mathsf{constant},\ \mathsf{stated}\ T)\quad x\ \text{never written}}
@@ -3644,8 +3655,8 @@ does not review.
 from ECMA-262's TypedArray constructors and probes run under Node 26.13.0
 (2026-11-05).
 
-The globals `Uint8Array`, `Uint16Array` and `Int32Array` are read only as
-constructors through `library-global-constructs`, at one form, their
+The globals `Uint8Array`, `Uint16Array`, `Int32Array` and `Float64Array`
+are read only as constructors through `library-global-constructs`, at one form, their
 result the [stated library type](#stated-library-types)
 $`V_\mathit{Uint8Array}`$,
 
@@ -3665,6 +3676,100 @@ the untampered constructor's `prototype` and allocates: it runs no code of
 the client's and writes no location it did not allocate. A view as the
 argument (`new Uint8Array(v)`) is refused, an argument no form states
 (`typed-array-views`, the `blocker-pretext-*-construct` cases).
+
+#### `Intl.Segmenter`
+
+**Audited against:** TypeScript 7.0.2's standard library
+(`lib.es2022.intl.d.ts`); host behaviour from ECMA-402's Segmenter objects
+and probes run under Node 26.13.0 (2026-11-05).
+
+The [overlay of library types](#stated-library-types) states the three
+interfaces of the namespace `Intl` a segmentation reads, each by its one
+heading, with $`g`$ and $`s`$ the markers `"intl:segmenter"` and
+`"intl:segments"`:
+
+```math
+\begin{aligned}
+\mathit{Segmenter}&=\mathsf{host}_g\,\{\mathtt{segment}\colon(\mathtt{string})\Rightarrow_\emptyset\mathit{Segments}\}\\
+\mathit{Segments}&=\mathsf{host}_s\,\{\}\\
+\mathit{SegmentData}&=\{\mathtt{segment}\colon\mathtt{string};\ \mathtt{index}\colon\mathtt{number};\ \mathtt{input}\colon\mathtt{string};\ \mathtt{isWordLike}^?\colon\mathtt{boolean}\}
+\end{aligned}
+```
+
+`segment` is `%IntlSegmenterPrototype%`'s method: it checks the receiver's
+`[[SegmenterLocale]]` slot, throwing a `TypeError` where it has none,
+converts a string by ToString, its own value, and allocates a `Segments`
+holding the segmenter and the string (CreateSegmentsObject): it runs no
+code and writes no location it did not allocate. `resolvedOptions` and a
+`Segments`' `containing` are not stated, so a read of either finds no
+member. A `SegmentData` is a fresh ordinary object
+(CreateSegmentDataObject), `Object.prototype` its prototype, owning
+`segment`, `index` and `input` as writable data properties, and
+`isWordLike` where the granularity is `"word"`.
+
+The namespace `Intl` is read through
+[the overlay of library globals](#the-overlay) only by calling its
+functions or by `new Intl.Segmenter(…)`, whose one construct signature the
+entry reviews by its text, `new (locales?: LocalesArgument, options?:
+SegmenterOptions): Segmenter;`, as a call of the intrinsic stating the
+constructor's steps:
+
+```math
+⟦\mathtt{new}\ \mathtt{Intl.Segmenter}(\vec a)⟧=\%\mathrm{NewSegmenter}\%(⟦\vec a⟧)\ \ \textsf{intl-segmenter-new}
+```
+
+```math
+\%\mathrm{NewSegmenter}\%\colon(\mathtt{undefined}\mid\mathtt{string},\ O\mid\mathtt{undefined})\Rightarrow_\emptyset\mathit{Segmenter}
+\qquad
+O=\{\mathtt{readonly}\ \mathtt{localeMatcher}^?\colon\texttt{"best fit"}\mid\texttt{"lookup"}\mid\mathtt{undefined};\ \mathtt{readonly}\ \mathtt{granularity}^?\colon\texttt{"grapheme"}\mid\texttt{"word"}\mid\texttt{"sentence"}\mid\mathtt{undefined}\}
+```
+
+CanonicalizeLocaleList of `undefined` is empty, and of a string, its own
+value, validates the tag, throwing a `RangeError` on an ill-formed one;
+GetOptionsObject takes `undefined` or the object; GetOption reads
+`localeMatcher` and `granularity` by [[Get]], each a field $`O`$ states, so
+a value meeting it holds the field as a data property or not at all, and
+`Object.prototype` holds neither; ToString of a string runs no code, and a
+value outside the option's list throws a `RangeError`. The constructor's
+`prototype`, which OrdinaryCreateFromConstructor reads of NewTarget, the
+constructor itself, is a non-writable data property. So the construction
+runs no code and allocates the segmenter alone (`intl-segmenter-words`,
+`blocker-pretext-intl-segmenter-construct`). A getter among the options
+runs at its [[Get]]; an object literal's accessor is refused
+(`invalid-intl-segmenter-options-getter`, run under Node: the getter
+replaces a string the caller narrowed).
+
+A `for...of` over a value TypeScript types `Intl.Segments` steps the
+iteration intrinsic of its kind,
+$`\%\mathrm{Iterate{:}Segments}\%\colon(\mathit{Segments})\Rightarrow\mathit{Step}(\mathit{SegmentData})`$
+([loops over host iterables](SOURCE-ELABORATION.md#loops-and-spreads-over-iterables)).
+GetIterator reads `Symbol.iterator`, which a `Segments` owns none of, from
+`%IntlSegmentsPrototype%`, which returns a fresh segment iterator
+(CreateSegmentIterator); IteratorStep calls
+`%IntlSegmentIteratorPrototype%.next`, which finds the next boundary of the
+string under the segmenter's granularity and answers a fresh
+`SegmentData`, or `done`; neither runs code. Leaving the loop early reads
+the iterator's `return`, which neither `%IntlSegmentIteratorPrototype%`
+nor `%IteratorPrototype%` holds, so the close calls nothing. The step
+writes the iterator's position, which the model holds no location of, and
+allocates what it yields; it states the effect every host iteration step
+states, `{value: any, store: keep}`.
+
+That `segment`, `Symbol.iterator` and `next` are these, and that a
+lookup of them runs no other code, rest on a host assumption
+([trust surface](DESIGN.md#trust-surface)): every `Intl.Segmenter` and
+`Intl.Segments`, the program's or external code's, is created by the host,
+no subclass's instance, keeps its standard prototype and owns no property,
+and the prototypes' members are the host's own, under the approved policy
+that standard objects are not tampered with. A class extending
+`Intl.Segmenter`, which could replace `segment`, is refused
+(`invalid-intl-segmenter-subclass`, run under Node: the subclass's
+`segment` replaces a string the caller narrowed), and no program object
+meets $`\mathit{Segmenter}`$ or $`\mathit{Segments}`$, host types
+(`invalid-intl-segmenter-structural`, `invalid-intl-segments-structural`,
+run under Node: the object's own `segment` and iterator run). The cases are
+`intl-segmenter-words`, `blocker-pretext-import-qualified-type` and
+`blocker-pretext-intl-segmenter-construct`.
 
 #### Node's `URL`
 
