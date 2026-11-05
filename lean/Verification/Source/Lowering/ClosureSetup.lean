@@ -339,7 +339,8 @@ by subtyping; or a scheme row's variadic signatures. -/
     | none => throw "internal closure slot mismatch"
   -- A captured receiver keeps its type here: no statement claim names `this`.
   let captures : List (ScopeBinding Tree) := (caps.zip Cs).map fun ((b, _), C) =>
-    if b.source.name == "this" then { b with fixed := some C, captured := true } else { b with captured := true }
+    if b.source.name == "this" then { b with fixed := some C, captured := true, moduleCell := none }
+    else { b with captured := true, moduleCell := none }
   -- The rest is bound after every fixed parameter: a default reading it reads
   -- a binding JavaScript has not yet initialized, and throws.
   if let some (restName, _) := restParam then

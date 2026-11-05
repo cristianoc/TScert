@@ -3615,9 +3615,12 @@ declared `T | null` holding no `null` for a later read, until a call or another
 write (`field-write-refinement`, `invalid-field-write-call`). A `let` cell
 the unit declares is allocated apart from every older location
 (`fresh-separation`); any other cell, a module's say, is separated by no
-fact, so the producer proposes its write as a step that may write cells:
-every other cell and field is known by its contract alone, and a member path
-through stable members keeps its entry (`module-cells-written-in-turn`).
+fact but from another module cell (`module-cells-apart`,
+[module cells](SOURCE-ELABORATION.md#module-cells)), so the producer proposes
+its write as a step that may write every location but another module cell:
+every other cell and field is known by its contract alone, another module
+cell keeps its contents, and a member path through stable members keeps its
+entry (`module-cells-written-in-turn`).
 Where $`y`$ has
 no predicate, the write establishes no new contents and keeps the separated
 atoms all the same:
@@ -3828,7 +3831,14 @@ level $`y`$, $`(y,G)\in O`$ (`HeapSeparation.Holds`):
   \rho(d-1-y).g\mapsto l'\Rightarrow l\neq l'
 ```
 
-It names no heap, so every heap change keeps it. A fact without partners says
+It names no heap, so every heap change keeps it. A request may assume a
+separation of its inputs beside their types, its entry separation $`S_0`$
+(`Request.entrySeparation`): a unit's module cells, two apart
+([`module-cells-apart`](SOURCE-ELABORATION.md#module-cells)). Its safety
+theorem holds for every environment meeting the inputs and $`S_0`$, and its
+entry node's knowledge is empty or follows from $`S_0`$ by `knowledge-edge`
+(`ControlFlow.entryKnows`, `entryKnows_sound`); a code request's is empty. A
+fact without partners says
 nothing and is dropped, and a separation without facts is $`(0,[\,])`$, so
 knowledge stating none has one spelling (`HeapSeparation.norm`). The rules,
 each proved to preserve the meaning for the environment it produces:

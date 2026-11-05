@@ -409,16 +409,21 @@ theorem checkBodyGraph_reassign (body : BodySubtyping G)
     checkGraphUsing G images Rty P C codes (Checker.withSubtyping G images body ord) sums := by
   simp only [checkGraphUsing_eq, checkBodyNode_reassign G η images body body' same ord ord']
 
+theorem entryKnows_reassign (inputs : List (List ι)) (S : HeapSeparation.Separation) (k : HeapKnowledge.Knowledge) :
+    ControlFlow.entryKnows (reassign G η) inputs S k = ControlFlow.entryKnows G inputs S k := rfl
+
 theorem checkBodyEntry_reassign (body : BodySubtyping G)
     (body' : BodySubtyping (reassign G η)) (same : body'.check = body.check)
     (ord : ∀ {A B p}, checkUsing G images A B p = true → body.check A B p = true)
     (ord' : ∀ {A B p}, checkUsing (reassign G η) (images.reassign η) A B p = true → body'.check A B p = true)
     (Rty : ControlFlow.Goal ι) (P : Program) (C : ControlFlow.Certificate ι) (start : Nat)
-    (inputs : List (List ι)) (codes : CodeEntry ι → Bool) (sums : List (ReadSummary ι)) :
+    (inputs : List (List ι)) (codes : CodeEntry ι → Bool) (sums : List (ReadSummary ι))
+    (entrySeparation : HeapSeparation.Separation := {}) :
     checkEntryUsing (reassign G η) (images.reassign η) Rty P C start inputs codes
-      (Checker.withSubtyping (reassign G η) (images.reassign η) body' ord') sums =
-    checkEntryUsing G images Rty P C start inputs codes (Checker.withSubtyping G images body ord) sums := by
-  simp only [checkEntryUsing_eq, checkBodyGraph_reassign G η images body body' same ord ord']
+      (Checker.withSubtyping (reassign G η) (images.reassign η) body' ord') sums entrySeparation =
+    checkEntryUsing G images Rty P C start inputs codes (Checker.withSubtyping G images body ord) sums
+      entrySeparation := by
+  simp only [checkEntryUsing_eq, checkBodyGraph_reassign G η images body body' same ord ord', entryKnows_reassign]
 
 theorem keepsCall_reassign (j : Sequent ι) (e : StepEvidence ι) (codes : CodeEntry ι → Bool) (sums : List (ReadSummary ι)) :
     PromiseCalls.keepsCall (reassign G η) (images.reassign η) j e codes sums =
@@ -570,34 +575,37 @@ theorem checkGraph_reassign (Rty : ControlFlow.Goal ι) (P : Program) (C : Contr
   simp only [checkGraphUsing_eq, checkNode_reassign]
 
 theorem checkEntry_reassign (Rty : ControlFlow.Goal ι) (P : Program) (C : ControlFlow.Certificate ι) (start : Nat)
-    (inputs : List (List ι)) (codes : CodeEntry ι → Bool := fun _ => false) (sums : List (ReadSummary ι) := []) :
-    checkEntryUsing (sums := sums) (reassign G η) (images.reassign η) Rty P C start inputs codes =
-      checkEntryUsing (sums := sums) G images Rty P C start inputs codes := by
-  simp only [checkEntryUsing_eq, checkGraph_reassign]
+    (inputs : List (List ι)) (codes : CodeEntry ι → Bool := fun _ => false) (sums : List (ReadSummary ι) := [])
+    (entrySeparation : HeapSeparation.Separation := {}) :
+    checkEntryUsing (sums := sums) (entrySeparation := entrySeparation) (reassign G η) (images.reassign η) Rty P C start inputs codes =
+      checkEntryUsing (sums := sums) (entrySeparation := entrySeparation) G images Rty P C start inputs codes := by
+  simp only [checkEntryUsing_eq, checkGraph_reassign, entryKnows_reassign]
 
 /-- **Acceptance reads no assignment.** A graph's evidence is accepted exactly
 when it is accepted for every reassignment of the graph's parameter rows, by
 the same image checker. -/
 theorem accept_reassign (R : ControlFlow.Goal ι) (P : Program) (claims : List (CertificateProducer.PointClaim ι))
     (C : ControlFlow.Certificate ι) (start : Nat) (inputs : List (List ι))
-    (codes : CodeEntry ι → Bool := fun _ => false) (sums : List (ReadSummary ι) := []) :
-    CertificateProducer.acceptUsing (sums := sums) (reassign G η) (images.reassign η) R P claims C start inputs codes =
-      CertificateProducer.acceptUsing (sums := sums) G images R P claims C start inputs codes := by
+    (codes : CodeEntry ι → Bool := fun _ => false) (sums : List (ReadSummary ι) := [])
+    (entrySeparation : HeapSeparation.Separation := {}) :
+    CertificateProducer.acceptUsing (sums := sums) (entrySeparation := entrySeparation) (reassign G η) (images.reassign η) R P claims C start inputs codes =
+      CertificateProducer.acceptUsing (sums := sums) (entrySeparation := entrySeparation) G images R P claims C start inputs codes := by
   simp only [CertificateProducer.acceptUsing_eq, checkEntry_reassign]
 
 /-- **Parametricity.** Accepted evidence is safe at every assignment of the
 graph's parameter rows: every input environment meeting the inputs read at
 `η` runs safely to a result of the result type read at `η`. -/
 theorem accepted_at {G : NormalGraph ι} {images : InstanceImageCheck G} {R : ControlFlow.Goal ι} {P claims C start inputs}
-    {codes : CodeEntry ι → Bool} {sums : List (ReadSummary ι)}
-    (hc : CertificateProducer.acceptUsing (sums := sums) G images R P claims C start inputs codes = true)
+    {codes : CodeEntry ι → Bool} {sums : List (ReadSummary ι)} {entrySeparation : HeapSeparation.Separation}
+    (hc : CertificateProducer.acceptUsing (sums := sums) (entrySeparation := entrySeparation) G images R P claims C start inputs codes = true)
     (η : MixedAssignment ι) (n W h ρ)
     (he : EnvOk (reassign G η) inputs ρ n W) (hw : WorldAdm W) (hh : HeapOk n W h)
     (hcodes : CodesSound (reassign G η) codes := by exact Verification.ProgramCertificates.codesSound_none _)
-    (hsums : SummariesSound G images sums := by exact Verification.ProgramCertificates.summariesSound_none _ _) :
+    (hsums : SummariesSound G images sums := by exact Verification.ProgramCertificates.summariesSound_none _ _)
+    (hsep : HeapSeparation.Holds entrySeparation ρ := by exact HeapSeparation.empty_holds _) :
     SafeGraph (excOf (reassign G η)) P (ControlFlow.GoalHolds (reassign G η) R (R.argument ρ)) n W h (.at start ρ) := by
-  have hc' := (accept_reassign G η images R P claims C start inputs codes sums).trans hc
+  have hc' := (accept_reassign G η images R P claims C start inputs codes sums entrySeparation).trans hc
   simp only [CertificateProducer.acceptUsing_eq, Bool.and_eq_true] at hc'
-  exact ControlFlow.accepted_inputs_safe hc'.2 n W h ρ he hw hh hcodes (summariesSound_reassign G η images hsums)
+  exact ControlFlow.accepted_inputs_safe hc'.2 n W h ρ he hw hh hcodes (summariesSound_reassign G η images hsums) hsep
 
 end Verification.Parametricity

@@ -1,6 +1,6 @@
-// Two module cells written in turn, then a call run with them set aside: a
-// write of one cell may, as far as the function can tell, write the other,
-// so after the second write only the second's contents are known.
+// Two module cells written in turn, then a call run with them set aside:
+// two module cells are two locations, so after the second write both
+// cells' contents are known.
 // Census functions: declaration-session.mts#asideForTests.
 type Session = { readonly name: string; readonly uses: Map<string, number> };
 

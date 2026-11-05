@@ -3096,9 +3096,28 @@ $`\mathsf{cell}(C_x\cup U)`$, its contents any value there at the unit's
 entry and after each call; the facts a unit establishes of the contents
 follow the [current-content rules](PROGRAM-TYPING.md#current-content-rules-semantic-layer):
 a write or a call ends them, a join keeps only what every edge proves, and
-a closure captures the cell's identity, never its contents. Composing the
+a closure captures the cell's identity, never its contents. Two module cells
+are two locations: the initialization unit allocates each fresh at its
+entry, and every unit of the module assumes the separation of the cells it
+mentions, each cell's `value` apart from every other's, beside their types:
+
+```math
+\frac{x\neq y\ \text{module cells}\qquad \Gamma_f(x)=\mathsf{cell}(C_x\cup U)\qquad \Gamma_f(y)=\mathsf{cell}(C_y\cup U)}
+     {\mathrm{apart}(x.\mathsf{value},\,y.\mathsf{value})\ \text{at the entry of}\ f}\ \textsf{module-cells-apart}
+```
+
+A unit's request states it (`entrySeparation`), its safety theorem assumes
+it of the environment beside the inputs' types (`RequestsSafe`), its entry
+knows it (`ControlFlow.entryKnows`) and every statement entry restates it
+([separation facts](PROGRAM-TYPING.md#separation-facts)). So a write of one
+cell keeps what is known of another's contents (`module-cells-written-in-turn`,
+`blocker-pretext-module-cells-apart`); a call at a footprint letting a value
+change, which may write either cell, ends both
+(`invalid-module-cells-apart-call`, run under Node). A closure's capture of a
+module cell states no such fact. Composing the
 units' theorems for a module execution, with the cell's contract as a
-shared invariant of the heap every write preserves, is
+shared invariant of the heap every write preserves and the cells'
+separation as the initialization's allocation gives it, is
 [module composition](../WORK.md#module-composition). A `var`, whose binding
 exists from the module's entry at `undefined` and may be redeclared, and an
 exported `let`, a live binding importers read, are outside the fragment. A

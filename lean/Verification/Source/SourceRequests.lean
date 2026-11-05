@@ -328,7 +328,7 @@ theorem checkRequests_safe_at {rs : List (SourceRequest σ ι)} {b : (Bundle ι)
     (h : checkRequests rs b = true) {r c} (hm : (r,c) ∈ rs.zip b.functions)
     (η : PositiveGraphs.MixedAssignment ι) (admitted : r.Admits η) (n W heap ρ)
     (he : EnvOk (reassign (RequestJson.graph r.toRequest) η) r.inputs ρ n W) (hw : WorldAdm W)
-    (hh : HeapOk n W heap) :
+    (hh : HeapOk n W heap) (hsep : HeapSeparation.Holds r.entrySeparation ρ) :
     SafeGraph (excOf (reassign (RequestJson.graph r.toRequest) η)) r.program
       (ControlFlow.GoalHolds (reassign (RequestJson.graph r.toRequest) η) r.goal (r.goal.argument ρ)) n W heap
       (.at r.start ρ) := by
@@ -337,13 +337,13 @@ theorem checkRequests_safe_at {rs : List (SourceRequest σ ι)} {b : (Bundle ι)
   cases hq : r.qualification with
   | none =>
     simp only [SourceRequest.checker, hq] at checked
-    exact verify_safe_at checked η n W heap ρ he hw hh
+    exact verify_safe_at checked η n W heap ρ he hw hh hsep
   | some q =>
     simp only [SourceRequest.checker, hq, QualifiedBody.checker] at checked
     simp only [SourceRequest.Admits, hq, QualifiedBody.Admits] at admitted
     obtain ⟨θ, As, length, allowed, bounded, rfl⟩ := admitted
     exact verify_qualified_safe_at q.source q.domain q.body q.aliases q.aliases_sound q.check_eq checked
-      θ As length allowed bounded n W heap ρ he hw hh
+      θ As length allowed bounded n W heap ρ he hw hh hsep
 
 /-- A graph is the code its node lists describe. -/
 theorem program_nodes (P : Program) :
@@ -366,7 +366,8 @@ theorem checkRequests_footprint_at {rs : List (SourceRequest σ ι)} {b : Bundle
     (heffect : r.footprint ≠ .top ∨ r.onThrow = true)
     (η : PositiveGraphs.MixedAssignment ι) (n W heap) (L : List Tm) (d : Tm)
     (he : EnvOk (reassign (RequestJson.graph r.toRequest) η) r.inputs (envOf L d) n W) (hw : WorldAdm W)
-    (hh : HeapOk n W heap) (hvalues : ∀ v ∈ L, isVal v = true) (hd : isVal d = true) :
+    (hh : HeapOk n W heap) (hvalues : ∀ v ∈ L, isVal v = true) (hd : isVal d = true)
+    (hsep : HeapSeparation.Holds r.entrySeparation (envOf L d)) :
     HeapObservations.SafePostExc (excOf (reassign (RequestJson.graph r.toRequest) η))
       (ControlFlow.GoalHolds (reassign (RequestJson.graph r.toRequest) η) r.goal (r.goal.argument (envOf L d)))
       (fun h' _ => r.footprint.Holds heap h') (fun h' => r.onThrow = true → r.footprint.Holds heap h') n W heap
@@ -387,12 +388,12 @@ theorem checkRequests_footprint_at {rs : List (SourceRequest σ ι)} {b : Bundle
       fun e he η' => codeTable_sound ht e he η'
     have hsums := Parametricity.summariesSound_reassign G η images (codeTable_summaries ht)
     have hacc := (Parametricity.accept_reassign G η images r.goal r.program r.claims c.certificate
-      r.start r.inputs (GraphCode.admits table) c.readSummaries).trans hx
+      r.start r.inputs (GraphCode.admits table) c.readSummaries r.entrySeparation).trans hx
     simp only [CertificateProducer.acceptUsing_eq, Bool.and_eq_true] at hacc
     have hP := program_nodes r.program
     have hc := hacc.2
     rw [← hP] at hc
-    have hs := GraphCode.goto_safe hc hcodes hsums n W heap L d he hw hh
+    have hs := GraphCode.goto_safe hc hcodes hsums n W heap L d he hw hh hsep
     rcases hp with hp | hp
     · -- A pure graph keeps the heap a prefix at every step, a raise included.
       have hp : ∀ e ∈ r.program.map (·.expression), Purity.pureTerm e = true := by
@@ -413,7 +414,7 @@ theorem checkRequests_footprint_at {rs : List (SourceRequest σ ι)} {b : Bundle
         simp only [checkEntryUsing_eq, Bool.and_eq_true] at hchecked
         exact hchecked.1
       have hb := GraphCode.goto_bounded hc hcodes hsums (GraphCode.nodes_of_checked hgraph hcodes hsums hp.2) hp.1
-        n W heap L d he hw hh
+        n W heap L d he hw hh hsep
       exact HeapObservations.SafePostExc.weaken (fun _ _ hq => hq.1) (fun _ hq => hq) hb
   · contradiction
 
@@ -427,7 +428,8 @@ theorem checkRequests_stated_at {rs : List (SourceRequest σ ι)} {b : Bundle ι
     {s : CallEffects.Effect} (hs : r.stated = some s)
     (η : PositiveGraphs.MixedAssignment ι) (n W heap) (L : List Tm) (d : Tm)
     (he : EnvOk (reassign (RequestJson.graph r.toRequest) η) r.inputs (envOf L d) n W) (hw : WorldAdm W)
-    (hh : HeapOk n W heap) (hvalues : ∀ v ∈ L, isVal v = true) (hd : isVal d = true) :
+    (hh : HeapOk n W heap) (hvalues : ∀ v ∈ L, isVal v = true) (hd : isVal d = true)
+    (hsep : HeapSeparation.Holds r.entrySeparation (envOf L d)) :
     HeapObservations.SafePostExc (excOf (reassign (RequestJson.graph r.toRequest) η))
       (ControlFlow.GoalHolds (reassign (RequestJson.graph r.toRequest) η) r.goal (r.goal.argument (envOf L d)))
       (fun h' _ => s.footprint.Holds heap h') (fun h' => s.onThrow = true → s.footprint.Holds heap h') n W heap
@@ -446,7 +448,7 @@ theorem checkRequests_stated_at {rs : List (SourceRequest σ ι)} {b : Bundle ι
   exact HeapObservations.SafePostExc.weaken
     (fun h' _ hq => Footprints.Closed.Holds.mono hle hq)
     (fun h' hq ho => Footprints.Closed.Holds.mono hle (hq (hthrow ho)))
-    (checkRequests_footprint_at h hm heffect η n W heap L d he hw hh hvalues hd)
+    (checkRequests_footprint_at h hm heffect η n W heap L d he hw hh hvalues hd hsep)
 
 /-- The source region represented by a graph, for checks on synthetic nodes. -/
 def sourceMapRegion (sourceMap : SourceMap) : Option SourceMapEntry :=
@@ -539,7 +541,7 @@ def SourceRequest.over (F : Frozen) (r : SourceRequest EquationStore.State Tree)
   let nodePlans ← r.nodePlans.mapM fun p => relabel p
   let request : RequestJson.Request (Checked F.equations F.primitive) (CheckedLabel F.equations F.primitive) :=
     { types := F.store, program := r.program, claims := claims, result := result, start := r.start,
-      inputs := inputs, codes := codes, promise := promise }
+      inputs := inputs, codes := codes, promise := promise, entrySeparation := r.entrySeparation }
   let qualification ← sourceScheme.mapM fun s => do
     let some context := F.store.resolution
       | throw "qualified source signature requires the native descriptor domain"

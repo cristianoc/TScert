@@ -105,13 +105,14 @@ theorem safe_of_sim {E K T} : ∀ (n : Nat) (W : WorldT n) (h : Heap) {ts s},
 
 /-- A graph run started at an entry the checker accepted is safe. -/
 theorem goto_safe {G : NormalGraph ι} [DecidableEq ι] {images : InstanceImageCheck G} {sums : List (ProgramCertificates.ReadSummary ι)} {Rty : Goal ι}
-    {E K C start inputs} {codes : CodeEntry ι → Bool}
-    (hc : checkEntryUsing (sums := sums) G images Rty (program E K) C start inputs codes = true)
+    {E K C start inputs} {codes : CodeEntry ι → Bool} {entrySeparation : HeapSeparation.Separation}
+    (hc : checkEntryUsing (sums := sums) (entrySeparation := entrySeparation) G images Rty (program E K) C start inputs codes = true)
     (hcodes : ProgramCertificates.CodesSound G codes) (hsums : ProgramCertificates.SummariesSound G images sums)
     (n W h L d) (he : EnvOk G inputs (envOf L d) n W) (hw : WorldAdm W)
-    (hh : HeapOk n W h) :
+    (hh : HeapOk n W h)
+    (hsep : HeapSeparation.Holds entrySeparation (envOf L d) := by exact HeapSeparation.empty_holds _) :
     Safe (excOf G) (GoalHolds G Rty (Rty.argument (envOf L d))) n W h (.goto E K start L d) :=
-  safe_of_sim n W h .goto (accepted_inputs_safe hc n W h (envOf L d) he hw hh hcodes hsums)
+  safe_of_sim n W h .goto (accepted_inputs_safe hc n W h (envOf L d) he hw hh hcodes hsums hsep)
 
 /-- A normal-return postcondition up to the current budget, independent of the
 world chosen by a parallel safety derivation. Throws impose no postcondition. -/
@@ -534,13 +535,14 @@ theorem bounded_safe_of_sim [DecidableEq ι] {G : NormalGraph ι} {images : Inst
 
 theorem goto_bounded [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G} {sums : List (ProgramCertificates.ReadSummary ι)} {Φ : Footprints.Closed} {Rty : Goal ι} {E : List Tm} {K : List (Continuation × Option Target)}
     {C : Certificate ι} {start inputs} {facts : List (List Nat)} {dead : List Bool} {ret exc : Bool}
-    {codes : CodeEntry ι → Bool}
-    (hc : checkEntryUsing (sums := sums) G images Rty (program E K) C start inputs codes = true)
+    {codes : CodeEntry ι → Bool} {entrySeparation : HeapSeparation.Separation}
+    (hc : checkEntryUsing (sums := sums) (entrySeparation := entrySeparation) G images Rty (program E K) C start inputs codes = true)
     (hcodes : ProgramCertificates.CodesSound G codes) (hsums : ProgramCertificates.SummariesSound G images sums)
     (hnodes : NodesWithin G Φ (program E K) C facts dead ret exc)
     (hstart : factsAt facts start = [])
     (n W h L d) (he : EnvOk G inputs (envOf L d) n W) (hw : WorldAdm W)
-    (hh : HeapOk n W h) :
+    (hh : HeapOk n W h)
+    (hsep : HeapSeparation.Holds entrySeparation (envOf L d) := by exact HeapSeparation.empty_holds _) :
     HeapObservations.SafePostExc (excOf G) (GoalHolds G Rty (Rty.argument (envOf L d)))
       (fun h' v => Φ.Holds h h' ∧ (ret = true → FreshAt h.length v))
       (fun h' => exc = true → Φ.Holds h h') n W h (.goto E K start L d) := by
@@ -549,7 +551,7 @@ theorem goto_bounded [DecidableEq ι] {G : NormalGraph ι} {images : InstanceIma
   split at hx
   · rename_i c hstart'
     simp only [Bool.and_eq_true, decide_eq_true_eq] at hx
-    obtain ⟨⟨hin, hk, himp, harg⟩, hslot⟩ := hx
+    obtain ⟨⟨⟨hin, himp, harg⟩, hk⟩, hslot⟩ := hx
     -- The promised argument, where the goal states one, is an input's value.
     have hv0 : isVal (Rty.argument (envOf L d)) = true := by
       unfold Goal.argument
@@ -572,7 +574,7 @@ theorem goto_bounded [DecidableEq ι] {G : NormalGraph ι} {images : InstanceIma
           rw [hs] at hp
           cases List.mem_singleton.mp hp
           rfl
-      · rw [hk]; exact HeapKnowledge.empty _ h
+      · exact entryKnows_sound hk (by simpa only [hin] using he) hsep
     · apply Or.inr
       refine ⟨Footprints.Closed.Holds.refl Φ h, ?_⟩
       rw [hstart]; intro i hi; cases hi
