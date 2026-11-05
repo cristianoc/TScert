@@ -1,5 +1,7 @@
 // Pretext (github.com/chenglou/pretext at 0d102a5c, src/, census by unit,
-// with the rewrites of issue #94): measurement.ts#clearMeasurementCaches.
+// with the rewrites of issue #94): measurement.ts#clearMeasurementCaches,
+// line-breaks.ts#unpackClasses (two cells filled by `??=` with calls
+// between, then read).
 // Refusal: reject: source expression obligation: no derivation of its
 // node-typing claim, a write at a module cell's contract.
 // A module cell tested against `null`, then a method of a `Map` it holds
