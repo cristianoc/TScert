@@ -2,8 +2,8 @@
 // and anchor resolves, that a link naming a section number names the section
 // its anchor points at, that math renders with KaTeX and avoids the forms
 // GitHub cannot render, that cited authors are named only inside links to
-// REFERENCES.md, and that a code comment's `(<document>.md, "Section")`
-// citation names a section the document holds.
+// REFERENCES.md, and that a code comment's `(<document>.md, "Section")` or
+// `<DOCUMENT> §n` citation names a section the document holds.
 //   node tests/docs.mts
 import { readdirSync, readFileSync, realpathSync } from "node:fs";
 import { present } from "../tools/files.mts";
@@ -201,11 +201,16 @@ for (const file of files) {
         fail(file, `names ${author} outside a link to REFERENCES.md`);
 }
 
-// Citations in code: a comment citing a section as `(<document>.md, "Title")`
-// names a document of docs/ or of the root and a section it holds, a heading
-// or a paragraph opening with a bold label, compared without case, backticks,
-// a section number or a closing period. A citation may wrap across comment
-// lines.
+// Citations in code: a comment or string citing sections as
+// `(<document>.md, "Title", "Title"…)` names a document of docs/ or of the
+// root and sections it holds, each a heading or a paragraph opening with a
+// bold label, compared without case, backticks, a section number or a closing
+// period; a citation `<DOCUMENT>[.md] §n, §m…` of such a document names
+// numbered headings it holds, both ends of a range `§n–m` included. A
+// citation may wrap across comment lines. A title cited without quotes, a
+// bare `§n` naming no document, whether an existing anchor or section is the
+// one a citation means, and the Lean and code names a document's code spans
+// hold are not checked here.
 const codeRoots = ["tools", "pipeline", "dev", "tests", "lean/Verification", "ocaml-producer"];
 const codeFile = /\.(mts|ts|lean|ml|mli|sh|c)$/;
 function codeFiles(dir: string): string[] {
@@ -220,25 +225,44 @@ function codeFiles(dir: string): string[] {
 }
 const sectionKey = (title: string): string =>
   title.replace(/[`*]/g, "").replace(/^§?[0-9]+(?:\.[0-9]+)*\.?\s+/, "").replace(/\.$/, "").replace(/\s+/g, " ").trim().toLowerCase();
-const sections = new Map<string, Set<string> | undefined>();
-function sectionsOf(document: string): Set<string> | undefined {
+/** A document of docs/ or of the root: its section keys and its headings' numbers. */
+interface Sections { keys: Set<string>; numbers: Set<string> }
+const sections = new Map<string, Sections | undefined>();
+function sectionsOf(document: string): Sections | undefined {
   if (sections.has(document)) return sections.get(document);
   const path = [join(root, "docs", document), join(root, document)].find((p) => present(p));
-  const found = path === undefined ? undefined : new Set(
-    [...withoutCode(readFileSync(path, "utf8")).matchAll(/^(?:#{1,6}\s+(.*)|\*\*(.+?)\*\*)/gm)]
-      .map((m) => sectionKey(m[1] ?? m[2] ?? "")));
+  const text = path === undefined ? undefined : withoutCode(readFileSync(path, "utf8"));
+  const found = text === undefined ? undefined : {
+    keys: new Set([...text.matchAll(/^(?:#{1,6}\s+(.*)|\*\*(.+?)\*\*)/gm)].map((m) => sectionKey(m[1] ?? m[2] ?? ""))),
+    numbers: new Set([...text.matchAll(/^#{1,6}\s+([0-9]+(?:\.[0-9]+)*)\.?\s/gm)].map((m) => m[1] ?? "")),
+  };
   sections.set(document, found);
   return found;
 }
+const quoted = /\\?"((?:[^"\\]|\\[^"])+)\\?"/;
 let codeCitations: number = 0;
 for (const file of codeRoots.flatMap((dir) => codeFiles(join(root, dir)))) {
   const text = readFileSync(file, "utf8").replace(/\n\s*(?:--|\/\/|\/-|\*|#)?\s*/g, " ");
-  for (const m of text.matchAll(/\b([A-Z][A-Z-]*\.md),?\s+"([^"]+)"/g)) {
-    const [, document = "", title = ""] = m;
-    codeCitations++;
+  const titles = new RegExp(`\\b([A-Z][A-Z-]*\\.md),?\\s+(${quoted.source}(?:\\s*(?:,|;|and|or)\\s*${quoted.source})*)`, "g");
+  for (const m of text.matchAll(titles)) {
+    const [, document = "", list = ""] = m;
     const known = sectionsOf(document);
-    if (known === undefined) fail(file, `cites missing document ${document}`);
-    else if (!known.has(sectionKey(title))) fail(file, `cites ${document}, "${title}", which it does not hold`);
+    if (known === undefined) { codeCitations++; fail(file, `cites missing document ${document}`); continue; }
+    for (const t of list.matchAll(new RegExp(quoted.source, "g"))) {
+      const title = t[1] ?? "";
+      codeCitations++;
+      if (!known.keys.has(sectionKey(title))) fail(file, `cites ${document}, "${title}", which it does not hold`);
+    }
+  }
+  const numbered = /\b([A-Z][A-Z]+(?:-[A-Z]+)*)(?:\.md)?,?\s*((?:§\s*[0-9]+(?:\.[0-9]+)*(?:\s*[–-]\s*[0-9]+(?:\.[0-9]+)*)?(?:\s*(?:,|;|and|or)\s*(?=§))?)+)/g;
+  for (const m of text.matchAll(numbered)) {
+    const [, name = "", list = ""] = m;
+    const known = sectionsOf(`${name}.md`);
+    if (known === undefined) continue;
+    for (const n of list.matchAll(/(?:§|[–-])\s*([0-9]+(?:\.[0-9]+)*)/g)) {
+      codeCitations++;
+      if (!known.numbers.has(n[1] ?? "")) fail(file, `cites ${name} §${n[1]}, which it does not number`);
+    }
   }
 }
 

@@ -6,7 +6,8 @@ import Verification.Types.EquationDomains
 -- ../Types/NativePromiseSeparation.lean proves from the source graph that no native Promise type lies within the stable bound; without it native lifting cannot meet stable exactness.
 import Verification.Types.NativePromiseSeparation
 
-/-! The label store over recursive equations (RECURSIVE-EQUATIONS §8, §9.2).
+/-! The label store over recursive equations (RECURSIVE-EQUATIONS §8;
+REQUEST-PROTOCOL.md, "Equations and tree labels").
 Extraction grows the lowering's heads (`EquationLowering.State`), its labels
 closed trees (`Tree`): a union of clauses, a scheme over fresh binders and a
 bounded binder's meet become heads with lifted templates, and a binder the
@@ -273,7 +274,8 @@ instance : ToJson State where
       | some b => toJson b
       | none => .null)]))
 
-/-- The equations' own spelling (§9.2): each head's name, parameters, binders
+/-- The equations' own spelling (REQUEST-PROTOCOL.md, "Equations and tree
+labels"): each head's name, parameters, binders
 and template. The built-ins is what the templates state: the prototype an
 array's clause views, and the keys that prototype's row provides. -/
 instance : FromJson State where

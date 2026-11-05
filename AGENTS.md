@@ -510,8 +510,9 @@ increasing trust silently.
   producer claims against both evidence production and consumption; calculus
   safety alone does not prove correspondence with JavaScript execution.
 - Docs: `node tests/docs.mts` checks every link and anchor, section
-  numbers in link texts, KaTeX rendering, and the math forms GitHub cannot
-  render. A doc-only change runs that check and no suite. Cite papers,
+  numbers in link texts, KaTeX rendering, the math forms GitHub cannot
+  render, and the sections code comments cite by quoted title or by `§n`
+  ([its header](tests/docs.mts) states what it leaves unchecked). A doc-only change runs that check and no suite. Cite papers,
   specifications and issues by a link to an entry of
   [REFERENCES.md](docs/REFERENCES.md), adding the entry there.
 - Commits: every commit carries a commit
