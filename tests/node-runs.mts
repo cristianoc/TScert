@@ -3132,6 +3132,15 @@ for (const [file, call] of [
     "an object substitution's toString writes the narrowed let, returned as a number");
   assert.equal(runExample(ofKind("blocker-pretext-string-raw", "positive"), "source()"), "[ぁ-ヿ]",
     "blocker-pretext-string-raw: the raw string");
+  // Pretext's line walkers: an element read past its own array's end, where
+  // the index is bounded by another array's length or another argument.
+  assert.equal(runExample(negative("blocker-pretext-parallel-element-assertion"),
+    "typeof lastFlag({ widths: [1, 2], flags: new Uint8Array(1) })"), "undefined",
+    "the flag read inside the widths' length but past the flags' end is undefined, returned as a number");
+  assert.throws(() => runExample(negative("blocker-pretext-parallel-element-cast"), "advanceCount([1], [])"), /TypeError/,
+    "the advances read past their end are undefined, pass the test against null and throw at length");
+  assert.throws(() => runExample(negative("blocker-pretext-argument-implied-assertion"), "firstAdvanceCount([null], 0, 1)"),
+    /TypeError/, "a grapheme index inside the segment does not make its advances present");
   assert.equal(runEmitted(ofKind("literal-default-parameters", "positive"), "JSON.stringify([calls(), boxes(), written(), arrow(3), block(3)])"),
     '[22,"boxwide36",1,6,4]', "literal-default-parameters: the defaults run where the argument is undefined");
 }
