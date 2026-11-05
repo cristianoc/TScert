@@ -4,7 +4,7 @@
  * which lets a call that never returns (`gate.fail`) narrow what follows. A
  * function that reads nothing of the gate is a module function, called by
  * its binding: a call through a field reads the field's annotation, which
- * states no effect (SOURCE-MODEL.md, calls through a location). */
+ * states no effect (SOURCE-ELABORATION.md, calls through a location). */
 import * as ts from "typescript/unstable/ast";
 import type { Expression, FunctionDeclaration, Node, Statement } from "typescript/unstable/ast";
 import type { BindingAst, Expr, FunctionAst, FunctionParamAst, Guard, PatternAst, PatternElemAst, PatternPropAst, Stmt } from "./fragment.mts";

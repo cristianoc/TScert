@@ -1,7 +1,7 @@
 /** `async`, `await`, `for...of`, argument spreads, array pattern slices and
  * `for...in` as trusted steps (SOURCE-CONTRACTS.md, "Async functions and
- * await", "Loops and spreads over iterables", "Patterns" and "Statement
- * forms"). Each is a
+ * await"; SOURCE-ELABORATION.md, "Loops and spreads over iterables",
+ * "Patterns" and "Statement forms"). Each is a
  * call of an intrinsic, a value no source name can denote: the parser writes
  * the async ones, and Lean compiles a `for...of` to its calls. The declaration
  * reader lists the intrinsics among the client's values at these signatures,

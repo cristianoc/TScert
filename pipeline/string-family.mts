@@ -3,7 +3,7 @@
 // `pipeline/string-family-fixture/`, its installation the package Node finds
 // from `pipeline/string-family-fixture-project/` (pipeline/fixture-links.mts).
 // Its guard table is the generator's output (`dev/guard-table.mts`), which
-// `tests/host-families.mts` compares with it. Test data: no entry point of
+// `tests/compiler-api-guards.mts` compares with it. Test data: no entry point of
 // the pipeline activates it.
 import type { FamilyDescription } from "../tools/host-families.mts";
 

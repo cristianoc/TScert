@@ -45,10 +45,10 @@ inductive Tree where
   | argument (slot : Nat)
   | local (slot : Nat)
   /-- A family variable: a parameter owned by a family entry, not by an
-  application, so no scheme binds it (RECURSIVE-EQUATIONS §7.1). It carries
+  application, so no scheme binds it (RECURSIVE-EQUATIONS §4.2). It carries
   its kind. Templates cannot contain one. -/
   | var (owner : Nat) (slot : Nat) (kind : ParameterKind)
-  /-- An intersection (RECURSIVE-EQUATIONS §3.3): it means exactly the
+  /-- An intersection (RECURSIVE-EQUATIONS §2.2): it means exactly the
   intersection of its parts' values. No part is itself a meet. -/
   | meet (parts : Types)
   deriving Repr, DecidableEq, Hashable
@@ -327,7 +327,7 @@ theorem Types.scoped_append (xs ys : Types)
     obtain ⟨h1, h2⟩ := Bool.and_eq_true_iff.mp hx
     exact Bool.and_eq_true_iff.mpr ⟨h1, scoped_append xs ys h2 hy⟩
 
-/-- The canonical meet of trees (RECURSIVE-EQUATIONS §3.3): a part that is
+/-- The canonical meet of trees (RECURSIVE-EQUATIONS §8): a part that is
 itself a meet is flattened, and the parts are sorted and deduplicated.
 The meet wrapper remains even for one part: `meet(L)` contains only values,
 whereas `L` may also admit argument lists. -/
@@ -751,7 +751,7 @@ theorem meet_partition (parts : List (ι × GraphRow ι)) (P : ι → Prop)
     cases r <;> simp only [meetRigid, meetClauseLists, partCase, List.forall_mem_cons, and_assoc,
       and_left_comm]
 
-/-- A meet label's row from its parts' rows (RECURSIVE-EQUATIONS §3.3): the
+/-- A meet label's row from its parts' rows (RECURSIVE-EQUATIONS §2.2): the
 normalized conjunction of its clause parts' clauses, within its parameter and
 scheme parts when it has any. A meet means values only: without such parts,
 argument-list clauses are left out. -/

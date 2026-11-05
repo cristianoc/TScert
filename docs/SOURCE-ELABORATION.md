@@ -2972,7 +2972,7 @@ annotation completes, beside the signatures it is offered, with the
 footprint it proposes for the closure:
 every such closure is assumed to change nothing, and rounds of inference
 raise the assumption to what the closure's claim then shows, as for
-[function declarations](SOURCE-ELABORATION.md#inferred-call-effects-elaboration-and-certification);
+[function declarations](#function-declarations);
 the checker derives each from the claimed type. A `find` callback calling
 a recursive constant whose body changes nothing is therefore within the
 empty footprint, its element `T` (`find-recursive-constant`); one whose
@@ -3596,7 +3596,7 @@ A call consumes the contract established for
 the callee value; a stronger effect needs a certificate, and storage keeps
 its checked lifetime contract. A module function declaration no code
 reassigns is read at the signature certified from its body
-([function declarations](SOURCE-ELABORATION.md#inferred-call-effects-elaboration-and-certification)),
+([function declarations](#function-declarations)),
 as a certified import is. A field or element read, `e.f(…)` or `e[k](…)`,
 gives the value the location holds when the call runs: one written after
 any initialiser, through any reference, or held by a record built
@@ -3895,7 +3895,7 @@ anywhere else, a reference the declaration reader resolves to `Within` or
 other than in place; the footprint letting everything change, with or
 without `onThrow`, which states nothing; a statement on an async
 definition, whose call returns where its body throws
-([async](#definition-and-application-rules)); on a constructor or a
+(`statedResult`, `tools/type-term.mts`); on a constructor or a
 construct signature; on any signature of an overloaded declaration, whose
 unit is certified at one; on a declaration with a resolution-qualified
 type parameter, whose unit claims no footprint; on a generic closure or
@@ -4024,7 +4024,7 @@ exceptional edge. A handler binds the thrown value at the graph's exception
 family, `unknown`, and the thrown slot is never fresh; the slots the node
 already held keep their freshness (`handlerFresh`; the candidate facts
 `inferFresh` proposes flow along handler edges the same way). The handler
-receives no current-content fact ([handler facts](#exceptional-footprints)).
+receives no current-content fact ([handler facts](#handler-facts)).
 
 #### Composition through a body
 

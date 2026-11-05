@@ -2586,7 +2586,8 @@ This is a safety and partial-correctness theorem, not a termination guarantee.
 The graph layer does not change the type-family or expression semantics. A
 closure body is a graph as a function body is, run by its own steps
 ([graph code](SEMANTICS.md#graph-code)) and typed by `funGraph`. Boolean result refinement is proved as described below. A primitive fragment with parameters
-is connected; broader source extraction remains integration work. The next section supplies
+is connected; broader source extraction remains integration work.
+[CertificateProducer.lean](../lean/Verification/Programs/CertificateProducer.lean) supplies
 an in-memory certificate producer; [REQUEST-PROTOCOL.md](REQUEST-PROTOCOL.md)
 describes its serialized consumer boundary. No completeness theorem is
 claimed for graph, program or edge evidence.

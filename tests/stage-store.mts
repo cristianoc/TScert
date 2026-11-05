@@ -1,4 +1,4 @@
-// The stage store's tests (DESIGN.md, "The stage store"): streams larger
+// The stage store's tests (STAGE-STORE.md): streams larger
 // than a pipe's buffer executed and replayed, dependency invalidation, concurrent publication by two processes, an interrupted
 // writer, a timeout/success race, writable artifact isolation, a longer
 // limit executing past a recorded timeout and a retry of timeouts executing

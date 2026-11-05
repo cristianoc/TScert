@@ -3,7 +3,7 @@ import Verification.Types.SchemeInstances
 /-! ## Families of pairs
 
 A family entry
-(RECURSIVE-EQUATIONS §7) holds its pairs where its hypotheses hold: its
+(RECURSIVE-EQUATIONS §4.2) holds its pairs where its hypotheses hold: its
 variables are parameter rows, and one entry stands for every pair that is
 an instance of it. One level induction justifies both (`pairs_sound`),
 parameterized by the relation premises are read through: an ordinary table
@@ -49,7 +49,7 @@ theorem HypsHold.values {G : NormalGraph ι} {η : MixedAssignment ι} {hyps : L
     {n : Nat} (h : HypsHold G η hyps n) : HypsHoldValues G η hyps n :=
   ⟨fun p hp j hj => h p hp j (Nat.le_of_lt hj), fun p hp => (h p hp n (Nat.le_refl n)).values⟩
 
-/-- **Quantified-α** (RECURSIVE-EQUATIONS §6). A scheme row's quantified
+/-- **Quantified-α** (RECURSIVE-EQUATIONS §4.1). A scheme row's quantified
 signatures cover another's up to renaming the target's binders to the
 source's: as many binders, distinct on each side, of pairwise equal kinds;
 each source bound on a binder matched by the target's bound on the renamed
@@ -80,8 +80,8 @@ renaming is the general case. -/
     (arrows : Ops ι → List (RestArrow (List ι)) → Ops ι → Prop) (i j : ι) : Prop :=
   SchemeCoversWith G R known arrows i j ∨ SchemeRenames G sub R known arrows i j
 
-/-- A meet part of a family pair below another (RECURSIVE-EQUATIONS §3.3,
-§7.3): a scheme whose signatures cover the other's up to renaming, or a
+/-- A meet part of a family pair below another (RECURSIVE-EQUATIONS §2.2,
+§4.2): a scheme whose signatures cover the other's up to renaming, or a
 variable below the other by a hypothesis. Without hypotheses it is
 quantified coverage alone. -/
 @[nospecialize] def PartCovers [DecidableEq ι] (G : NormalGraph ι) (sub : Option (Renaming G))
@@ -139,7 +139,7 @@ theorem OpaqueFamily.mono [DecidableEq ι] {G : NormalGraph ι} {sub : Option (R
   · exact .inr (.inr (.inr (.inr (.inr ⟨j, hj, SchemeCoversAlpha.mono ha hc⟩))))
 
 /-- The three core conditions for one pair (POSITIVE-TYPES "Core tables",
-RECURSIVE-EQUATIONS §7.3), premises read through `R`. -/
+RECURSIVE-EQUATIONS §4.2), premises read through `R`. -/
 @[nospecialize] def PairOk [DecidableEq ι] (G : NormalGraph ι) (sub : Option (Renaming G)) (known : Known ι)
     (R : List ι → List ι → Prop) (hyps : List (ι × ι)) (A B : List ι) : Prop :=
   SameKind G A B = true ∧

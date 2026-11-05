@@ -136,7 +136,7 @@ export function writtenApplications(context: SweepContext, roots: readonly Node[
     }
   };
   // The written annotations that determine an entity's exposed type
-  // (SOURCE-FRAGMENT.md, types stated by annotations): the union over its
+  // (SOURCE-CONTRACTS.md, types stated by annotations): the union over its
   // declarations, each by its kind, with an overload set's and an accessor
   // pair's declarations taken together, and the members its type exposes;
   // the declaration whose type is inferred where there are none.

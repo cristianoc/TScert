@@ -3,7 +3,7 @@
  * A record describes an unsuccessful verification attempt: the assumptions that
  * were available and the conclusion that had to follow. It is explanatory
  * metadata, never proof evidence and never a judgement that a claim is false.
- * See ../OBLIGATION-DIAGNOSTICS.md.
+ * See docs/OBLIGATION-DIAGNOSTICS.md.
  */
 
 import type { CallCode, JsonRead, JsonValue, Term } from "./calculus.mts";

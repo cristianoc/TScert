@@ -2,7 +2,7 @@
 // mutations of the verifier, injected tool failures and host-family
 // overrides, each control run by a pool of control processes (`make test`).
 // Every operation a control runs replays from the stage store like any stage
-// (DESIGN.md, "The stage store"). The pipeline cases are run-cases.mts's.
+// (STAGE-STORE.md, "Controls"). The pipeline cases are run-cases.mts's.
 import assert from "node:assert/strict";
 import { chmodSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { present } from "../tools/files.mts";

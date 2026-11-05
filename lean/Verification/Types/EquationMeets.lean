@@ -2,7 +2,7 @@ import Verification.Types.EquationGraphs
 import Verification.Types.PairFamilies
 
 /-! Meet labels mean exactly the intersection of their parts' values
-(RECURSIVE-EQUATIONS §3.3). A meet's row is computed from its parts' rows;
+(RECURSIVE-EQUATIONS §2.2). A meet's row is computed from its parts' rows;
 its meaning reads its parameter and scheme parts at its own level and its
 clause parts through the normalized conjunction (`meetLists_row`). A meet
 admits no argument list. Distribution over unions follows. -/

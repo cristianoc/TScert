@@ -13,7 +13,7 @@ open PositiveGraphs PositiveRules PositiveCertificates PositiveNormalization Cal
 
 /-! ## The renaming of equation graphs -/
 
-/- Whether a tree occurs anywhere in another: the claim discipline of §7.1. -/
+/- Whether a tree occurs anywhere in another: the claim discipline of RECURSIVE-EQUATIONS §4.2. -/
 mutual
 def Tree.subtrees : Tree → List Tree
   | .app h args => .app h args :: args.subtrees

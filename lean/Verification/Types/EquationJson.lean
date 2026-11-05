@@ -1,7 +1,7 @@
 import Lean.Data.Json
 import Verification.Types.EquationGraphs
 
-/-! The tree spelling of RECURSIVE-EQUATIONS §9.2: a nullary application is
+/-! The tree spelling of RECURSIVE-EQUATIONS §8: a nullary application is
 its head's number; every other tree is an object with exactly its own fields,
 one spelling each. Decoding refuses an unknown field, a missing one, and a
 second spelling of the same tree (`{"app": h, "args": []}` for `h`, an owned

@@ -1,7 +1,7 @@
-// The execution adapter of in-process stages (DESIGN.md, "The stage store",
-// keys). It describes an invocation (the stage, the node side's keyed code,
-// the runtime, its inputs' digests and, for an observed stage, its compiler
-// and the system's build), runs it, under observation for an observed stage,
+// The execution adapter of in-process stages (STAGE-STORE.md, "Keys"). It
+// describes an invocation (the stage, the node side's keyed code, the
+// runtime, its inputs' digests and, for an observed stage, its compiler and
+// the system's build), runs it, under observation for an observed stage,
 // completes an observed stage's key with its observations, and stores and
 // reads its value as text. The replay policy (`stages.mts`) chooses between
 // running an invocation here and returning an entry whose stored description

@@ -1123,7 +1123,7 @@ noncomputable def schemeSemWithArgs (I : ParameterInterpretation ι k) (Ξ : Fam
     (s : SchemeRow ι) : Fam :=
   boundedSem (fun θ S => I.bound θ (D θ) S) η s (fun As => instanceTWithArgs Ξ D η s As I.arguments) I.domain
 
-/-- A meet row's part, read at the meet's own level (RECURSIVE-EQUATIONS §3.3):
+/-- A meet row's part, read at the meet's own level (RECURSIVE-EQUATIONS §2.2):
 a parameter's family, a scheme row's instances, or a clause row's clauses. It
 is the step's reading of a row that is not a meet row, so a meet reads its
 parts by one unfolding: a part is never itself a meet row. -/
