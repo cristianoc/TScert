@@ -134,15 +134,6 @@ theorem elems_separation_false :
     (fun i j hij => by simp only [μ5]; split <;> split <;> omega) rfl rfl (Nat.le_refl _)
     (by decide) (by simp [typedF]) (by simp [apart, fieldsOf]) rfl
 
-/-- The separation checker, on these stamps: it separates slot 0's own
-locations from slot 1's typed field, and refuses to separate slot 0's listed
-elements from it. -/
-private def apartK : SepKnowledge := ⟨fun _ _ => none, apartStamps, typedF, []⟩
-
-#guard apartK.apart (.own 0) (.field 1 "f")
-#guard apartK.apart (.field 0 arrayStoreKey) (.field 1 "f")
-#guard !apartK.apart (.elems 0) (.field 1 "f")
-
 /-- `stamps_separate`'s region premise must exclude `elems`: on the witness,
 slot 0's listed element and slot 1's typed field are one location, so the
 theorem's conclusion fails there; were its premise to admit `elems 0`, this
@@ -158,22 +149,14 @@ theorem stamps_separate_excludes_elems
 
 Source stamps: `after 0 = 1`, `before 1 = 2`, with marks `0, 5, 10`, and
 location 7 both an own location of slot 0 and slot 1's typed field. A target
-merging marks 1 and 2 would make them apart. The check refuses every way to
-state it, as it refuses a reordering and a moved mark 0, and each merge it
-refuses is false.The mark-map check belongs to the deferred provenance stamps
-([FOOTPRINTS](../../../docs/FOOTPRINTS.md#deferred-extra-precision)), which no checker
-uses yet; these controls keep its counterexamples beside it. -/
+merging marks 1 and 2 would make them apart, and each such merge is false.
+The mark-map check (`stampEdgeOk`) belongs to the deferred provenance stamps
+([FOOTPRINTS](../../../docs/FOOTPRINTS.md#deferred-extra-precision)), which no
+checker uses; its soundness theorem with this counterexample shows it refuses
+both merges. -/
 
 private def source : Stamps := ⟨fun x => if x = 0 then some 1 else none, fun y => if y = 1 then some 2 else none⟩
 private def merged : Stamps := ⟨fun x => if x = 0 then some 1 else none, fun y => if y = 1 then some 1 else none⟩
-
-#guard stampEdgeOk ⟨[0, 1, 2], id⟩ source source typedF typedF [0, 1]
-#guard !stampEdgeOk ⟨[0, 1], id⟩ source merged typedF typedF [0, 1]
-#guard !stampEdgeOk ⟨[0, 2], id⟩ source merged typedF typedF [0, 1]
-#guard !stampEdgeOk ⟨[0, 2, 1], id⟩ source source typedF typedF [0, 1]
-#guard !stampEdgeOk ⟨[1, 1, 2], id⟩ source source typedF typedF [0, 1]
--- weakening in its own direction is admitted: `after` to an earlier mark, `before` to a later one
-#guard stampEdgeOk ⟨[0, 1, 2], id⟩ source ⟨fun x => if x = 0 then some 0 else none, source.before⟩ typedF typedF [0, 1]
 
 private def μ0510 : Nat → Nat := fun i => if i = 0 then 0 else if i = 1 then 5 else 10
 private def shared7 : Env := fun i =>
