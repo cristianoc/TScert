@@ -1,8 +1,9 @@
 // Pretext (github.com/chenglou/pretext at 0d102a5c, src/, census by unit):
 // line-break.ts#breaksAfterKind, line-break.ts#consumesAtLineStart,
 // line-break.ts#countPreparedLines, line-break.ts#countSteppedLines,
-// line-break.ts#getItemTabAdvance, line-break.ts#getTerminalLetterSpacing,
-// line-break.ts#isDiscretionaryLineEnd,
+// line-break.ts#getItemTabAdvance, line-break.ts#getTabAdvance,
+// line-break.ts#getTerminalLetterSpacing,
+// line-break.ts#isDiscretionaryLineEnd, line-break.ts#normalizeMaxWidth,
 // line-break.ts#normalizePreparedLineStart,
 // line-break.ts#returnsFromUnfitHyphen, line-break.ts#staysAfterObject,
 // line-break.ts#stepPreparedLineGeometryFromStart,
