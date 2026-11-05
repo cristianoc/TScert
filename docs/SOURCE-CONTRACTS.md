@@ -298,9 +298,12 @@ its claim names, at any signature of it whose parameters admit its actuals
 [library modules](#library-modules) reads the overloads its calls select
 the same way, their binders its type parameters. Two generic overloads
 binding the same name are refused. A
-global both called and read through a method, or both constructed and read
-through members, has no clause and is refused, unless the overlay reads those
-members as intrinsics. A global both read as a value and constructed is
+global both called and read through members is a callable object holding
+those members, its call signatures and each member's contract
+(`number-call-and-members`). A global both constructed and read through
+members or called has no clause and is refused, unless the overlay reads its
+construction or those members as intrinsics (`new Promise`,
+`Promise.resolve`). A global both read as a value and constructed is
 refused too. A global declared as a function, its overloads without
 bodies (`declare function parseInt(…)`), is only called, at the overloads
 TypeScript resolves its calls to:
@@ -640,8 +643,9 @@ heads, and there is no budget, colour or depth: an alias reached again before
 a constructor is refused as unguarded, and everything else terminates
 because heads are keyed by source occurrence.
 
-An interface the checked file declares more than once, as TypeScript merges
-it, is one declaration: its body holds every declaration's members, each at
+An interface declared more than once, in the checked file or in a module it
+imports (`interface-merge-value-import`), as TypeScript merges it, is one
+declaration: its body holds every declaration's members, each at
 its own type. Its type parameters are positional: each declaration binds a
 prefix of the longest list under the same names (TypeScript requires the
 others to have defaults), and its members are read with the parameters it

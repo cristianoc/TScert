@@ -592,8 +592,9 @@ declarations, with IteratorClose a closing region around the loop's body
 ([loops](SOURCE-ELABORATION.md#loops-and-spreads-over-iterables),
 [the iterator protocol](SOURCE-ELABORATION.md#the-iterator-protocol)). No
 calculus rule changes: a call's callee is an assumption at its declared
-type, or code the unit checks. An async function's promise settles only to
-a primitive, the values that are never thenables
-([nested promises](TRUST-REDUCTION.md#illustration-nested-promises)). The
+type, or code the unit checks. An async function's promise settles to a
+value of a stable non-thenable type, one owning and inheriting no `then`
+([async functions](SOURCE-CONTRACTS.md#async-functions-and-await),
+[nested promises](TRUST-REDUCTION.md#illustration-nested-promises)). The
 model runs a body to its end; every point where other code can intervene is
 an `await` or a call, across which only contracts survive.
