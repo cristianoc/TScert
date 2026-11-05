@@ -16,7 +16,7 @@ import { fieldOf, messageOf, passToolFailure } from "../tools/thrown.mts";
 import { keepRunDirectories, ownedRun, requireDiskSpace, runDirectory, runRoot, withinRunDirectory } from "./run-directory.mts";
 import type { Json as ParsedJson } from "../tools/calculus.mts";
 import type { Ast } from "../tools/fragment.mts";
-import type { SourceClaims } from "../tools/source-claims.mts";
+import { decodeSourceClaims, type SourceClaims } from "../tools/source-claims.mts";
 // ../tools/source-flow.mts checks the shared execution graph wire before proposal.
 import { decodeFlowDocument } from "../tools/source-flow.mts";
 import { initOmission } from "../tools/fragment-parse.mts";
@@ -48,15 +48,11 @@ export function sourceKey(artifacts: string): string {
   return readFragmentFile(join(artifacts, "fragment.json")).file;
 }
 
-/** A claims document this pipeline's producer wrote, read back by a test that
- * forges it. The tests (83 reads) edit fields deep in the document through
- * its type, and no TypeScript decoder of the claims exists; the assertion
- * stands for the producer's output, unchecked before the test reads it. */
+/** A claims document this pipeline's producer wrote, decoded against its
+ * TypeScript description; read back by a test that forges it. */
 export function readClaimsFile(file: string): SourceClaims {
   const parsed: ParsedJson = JSON.parse(wireText(readFileSync(file), file));
-  requireWellFormed(parsed, file);
-  const claims: unknown = parsed;
-  return claims as SourceClaims; // asserted: the producer wrote the file against SourceClaims; a check of every field the tests read would cost more than it guards a test's forgery
+  return decodeSourceClaims(parsed);
 }
 
 const here = import.meta.dirname;
@@ -715,6 +711,10 @@ function checkUnowned(artifacts: string, source: string, tsconfigPath?: string, 
       // The importer's claims, its `modules` the claims `used`.
       const assembled = invokeInProcess(assemblyCall(proposed.out, used), { force: false, recorder }).value;
       writeFileSync(claims, assembled);
+      // The document has the shape its TypeScript description states, its
+      // modules' included; a field the producer writes otherwise fails the run.
+      const document: ParsedJson = JSON.parse(assembled);
+      decodeSourceClaims(document);
       phase = "search";
       const round = unitRound(recorder, artifacts, ast, claims, snapshot, budget, units.select);
       if ("withdraw" in round) {

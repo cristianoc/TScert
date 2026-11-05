@@ -280,7 +280,7 @@ export type Row<L = number> = Clause<L>[];
  * meet, a value parameter within clauses (`V & DepSafe`)
  * (`POSITIVE-TYPES.md`, "Parameter and scheme rows"). */
 type ParamRow = { kind: "value" | "arguments"; name: string; param: number };
-type SchemeRow<L = number> = { scheme: { binders: L[]; signatures: Arrow<L>[];
+export type SchemeRow<L = number> = { scheme: { binders: L[]; signatures: Arrow<L>[];
   bounds?: [binder: L, bound: Labels<L>][]; variadic?: RestArrow<L>[];
   resolution?: { input: number; observation: number; result: number | null }[];
   /** A construct scheme: its signatures are construct signatures. */
@@ -370,15 +370,16 @@ function isParamKind(v: unknown): v is ParamRow["kind"] {
 /** A key as TypeScript writes it: a string plainly, a symbol by its index. */
 const keyText = (name: PropertyKey): string =>
   typeof name === "string" ? name : `[symbol ${name.symbol}]`;
-/** The type graph a parsed document states, as fresh rows of the clauses it
- * checked. */
-export function decodeGraph(value: Json | undefined): TypeGraph {
-  requireWellFormed(value, "type graph");
-  const rows = array(value);
-  const label = (v: JsonRead): number => labelAt(v, rows.length);
-  const labels = (v: JsonRead): Labels => decodeLabels(v, rows.length);
-  const labelLists = (v: JsonRead): Labels[] => each(v, labels);
-  const indexEntry = (v: JsonRead): IndexEntry => {
+/** The decoders of a row, and of its clauses, whose labels `label` and
+ * `labels` read: the graph's row references, or the claims document's
+ * labels. */
+type ClauseDecoders<L> = {
+  clauses: (row: JsonRead) => Row<L>;
+  row: (row: JsonRead) => Row<L> | SchemeRow<L>;
+};
+function clauseDecoders<L>(label: (v: JsonRead) => L, labels: (v: JsonRead) => Labels<L>): ClauseDecoders<L> {
+  const labelLists = (v: JsonRead): Labels<L>[] => each(v, labels);
+  const indexEntry = (v: JsonRead): IndexEntry<L> => {
     const pair = array(v);
     const keyClass = pair[0];
     if (pair.length !== 2 || !isIndexClass(keyClass))
@@ -392,48 +393,48 @@ export function decodeGraph(value: Json | undefined): TypeGraph {
     if (decoded === undefined) throw Error("invalid callable effect");
     return decoded;
   };
-  const restArguments = (v: JsonRead): [Labels[], Labels] => {
+  const restArguments = (v: JsonRead): [Labels<L>[], Labels<L>] => {
     const args = array(v);
     if (args.length !== 2) throw Error("expected fixed arguments and a rest contract");
     const fixed = labelLists(args[0]);
     return [fixed, labels(args[1])];
   };
-  const arrow = (v: JsonRead): Arrow => {
+  const arrow = (v: JsonRead): Arrow<L> => {
     const sig = signature(v);
     const receiver = labels(sig.receiver);
     const e = effect(sig);
     const result = labels(sig.result);
     return { receiver, arguments: labelLists(sig.arguments), result, effect: e };
   };
-  const restArrow = (v: JsonRead): RestArrow => {
+  const restArrow = (v: JsonRead): RestArrow<L> => {
     const sig = signature(v);
     const receiver = labels(sig.receiver);
     const e = effect(sig);
     const result = labels(sig.result);
     return { receiver, arguments: restArguments(sig.arguments), result, effect: e };
   };
-  const methodArrow = (v: JsonRead): MethodArrow => {
+  const methodArrow = (v: JsonRead): MethodArrow<L> => {
     const sig = signature(v);
     obj(sig.receiver, []);
     const e = effect(sig);
     const result = labels(sig.result);
     return { receiver: {}, arguments: labelLists(sig.arguments), result, effect: e };
   };
-  const methodRestArrow = (v: JsonRead): MethodRestArrow => {
+  const methodRestArrow = (v: JsonRead): MethodRestArrow<L> => {
     const sig = signature(v);
     obj(sig.receiver, []);
     const e = effect(sig);
     const result = labels(sig.result);
     return { receiver: {}, arguments: restArguments(sig.arguments), result, effect: e };
   };
-  const arrows = (v: JsonRead): Arrow[] => each(v, arrow);
+  const arrows = (v: JsonRead): Arrow<L>[] => each(v, arrow);
   // Left out when empty: an explicit empty list is not the canonical form.
-  const variadic = (v: JsonRead): RestArrow[] => {
+  const variadic = (v: JsonRead): RestArrow<L>[] => {
     const sigs = array(v);
     if (!sigs.length) throw Error("an empty variadic list is written by omitting it");
     return each(sigs, restArrow);
   };
-  const methodVariadic = (v: JsonRead): MethodRestArrow[] => {
+  const methodVariadic = (v: JsonRead): MethodRestArrow<L>[] => {
     const sigs = array(v);
     if (!sigs.length) throw Error("an empty variadic list is written by omitting it");
     return each(sigs, methodRestArrow);
@@ -447,9 +448,9 @@ export function decodeGraph(value: Json | undefined): TypeGraph {
       throw Error(`expected ${what}`);
     return { symbol: r.symbol };
   };
-  const fields = (v: JsonRead, repeated = false): Fields => {
+  const fields = (v: JsonRead, repeated = false): Fields<L> => {
     const names = new Set<string>();
-    const result: Fields = [];
+    const result: Fields<L> = [];
     for (const f of array(v)) {
       const pair = array(f);
       if (pair.length !== 2)
@@ -459,14 +460,15 @@ export function decodeGraph(value: Json | undefined): TypeGraph {
       if (!repeated && names.has(name))
         throw Error("duplicate field in an object contract");
       names.add(name);
-      result.push([k, labels(pair[1])]);
+      const field: [PropertyKey, Labels<L>] = [k, labels(pair[1])];
+      result.push(field);
     }
     return result;
   };
-  const fieldLists = (v: JsonRead): Fields[] => each(v, (f) => fields(f));
-  const optionalFields = (v: JsonRead): OptionalField[] => {
+  const fieldLists = (v: JsonRead): Fields<L>[] => each(v, (f) => fields(f));
+  const optionalFields = (v: JsonRead): OptionalField<L>[] => {
     const names = new Set<string>();
-    const result: OptionalField[] = [];
+    const result: OptionalField<L>[] = [];
     for (const f of array(v)) {
       const r = obj(f, ["key", "readonly", "type"]);
       const k = key(r.key, "an optional field's key");
@@ -479,7 +481,7 @@ export function decodeGraph(value: Json | undefined): TypeGraph {
     }
     return result;
   };
-  const methods = (v: JsonRead): MethodSig[] =>
+  const methods = (v: JsonRead): MethodSig<L>[] =>
     each(v, (m) => {
       const r = obj(m, ["key", "calls", "rests", "schemes", "receivers"]);
       const k = key(r.key, "a method key");
@@ -503,7 +505,7 @@ export function decodeGraph(value: Json | undefined): TypeGraph {
     if (!ks.length) throw Error("an empty stable-key list is written by omitting it");
     return each(ks, (k) => key(k, "a stable key"));
   };
-  const tuple = (v: JsonRead): Tuple => {
+  const tuple = (v: JsonRead): Tuple<L> => {
     const t = obj(v, ["required", "optional", "rest", "readonly", "presence"]);
     const presence = t.presence;
     if (!isArrayPresence(presence)) throw Error("invalid tuple density flag");
@@ -515,7 +517,7 @@ export function decodeGraph(value: Json | undefined): TypeGraph {
     const rest = t.rest === null ? null : labels(t.rest);
     return { required, optional, rest, readonly, presence };
   };
-  const tuples = (v: JsonRead): { first: Tuple; rest: Tuple[] } => {
+  const tuples = (v: JsonRead): { first: Tuple<L>; rest: Tuple<L>[] } => {
     const r = obj(v, ["first", "rest"]);
     const first = tuple(r.first);
     return { first, rest: each(r.rest, tuple) };
@@ -526,7 +528,7 @@ export function decodeGraph(value: Json | undefined): TypeGraph {
   // a type error; read only at the key of `CLAUSE_KEYS` equal to the
   // document's, so a clause this does not know, `toString` among them, is a
   // refusal rather than a silent pass.
-  const decode: Record<ClauseKey, (body: JsonRead) => Clause> = {
+  const decode: Record<ClauseKey, (body: JsonRead) => Clause<L>> = {
     boolLit: (b) => {
       const value = obj(b, ["value"]).value;
       if (typeof value !== "boolean")
@@ -673,8 +675,8 @@ export function decodeGraph(value: Json | undefined): TypeGraph {
     },
   };
 
-  const clauses = (row: JsonRead): Row => {
-    const result: Row = [];
+  const clauses = (row: JsonRead): Row<L> => {
+    const result: Row<L> = [];
     for (const c of array(row)) {
       if (typeof c === "string") {
         const kind = STRING_CLAUSE_KEYS.find((k) => k === c);
@@ -694,14 +696,17 @@ export function decodeGraph(value: Json | undefined): TypeGraph {
     }
     return result;
   };
-  const scheme = (v: JsonRead): SchemeRow => {
+  // A row: a scheme, or a union of clauses.
+  const row = (v: JsonRead): Row<L> | SchemeRow<L> =>
+    isJsonObject(v) && "scheme" in v ? scheme(obj(v, ["scheme"]).scheme) : clauses(v);
+  const scheme = (v: JsonRead): SchemeRow<L> => {
     const r = objOptional(v, ["binders", "signatures"],
       ["bounds", "variadic", "resolution", "construct"]);
     if ("construct" in r && r.construct !== true) throw Error("a scheme's construct field, when present, is true");
-    const binders = array(r.binders).map(label);
+    const binders = each(r.binders, label);
     const signatures = arrows(r.signatures);
     const binderBounds = "bounds" in r
-      ? each(r.bounds, (b): [number, Labels] => {
+      ? each(r.bounds, (b): [L, Labels<L>] => {
           const pair = array(b);
           if (pair.length !== 2) throw Error("expected a binder and its bound");
           const binder = label(pair[0]);
@@ -741,6 +746,21 @@ export function decodeGraph(value: Json | undefined): TypeGraph {
       },
     };
   };
+  return { clauses, row };
+}
+/** The rows of a claims document's table, each a scheme or a union of
+ * clauses whose labels `label` reads, as fresh rows. */
+export function decodeRows<L>(v: JsonRead, label: (v: JsonRead) => L): (Row<L> | SchemeRow<L>)[] {
+  return each(v, clauseDecoders(label, (x) => each(x, label)).row);
+}
+/** The type graph a parsed document states, as fresh rows of the clauses it
+ * checked. */
+export function decodeGraph(value: Json | undefined): TypeGraph {
+  requireWellFormed(value, "type graph");
+  const rows = array(value);
+  const label = (v: JsonRead): number => labelAt(v, rows.length);
+  const labels = (v: JsonRead): Labels => decodeLabels(v, rows.length);
+  const { clauses, row: schemeOrClauses } = clauseDecoders(label, labels);
   const graph: TypeGraph = [];
   rows.forEach((row, index) => {
     if (isJsonObject(row) && "meet" in row) {
@@ -759,11 +779,7 @@ export function decodeGraph(value: Json | undefined): TypeGraph {
       graph.push({ kind, name, param: index });
       return;
     }
-    if (isJsonObject(row) && "scheme" in row) {
-      graph.push(scheme(obj(row, ["scheme"]).scheme));
-      return;
-    }
-    graph.push(clauses(row));
+    graph.push(schemeOrClauses(row));
   });
   return graph;
 }

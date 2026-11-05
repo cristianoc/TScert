@@ -87,14 +87,14 @@ control(async (): Promise<void> => {
     assert.ok(Array.isArray(member.type));
     const label = member.type[0];
     assert.ok(typeof label === "number");
-    const arrow = must(must(claims.types[label], "the member's row").flatMap(clause =>
+    const arrow = must(clauseRow(claims, label, "the member's row").flatMap(clause =>
       typeof clause === "object" && "arrs" in clause ? clause.arrs.variadic ?? [] : [])[0],
       "the variadic splice signature");
     assert.equal(arrow.arguments[0].length, 2, "the fixed start and deletion count");
     if (variant === "rest") {
       const packLabel = arrow.arguments[1][0];
       assert.ok(typeof packLabel === "number");
-      const pack = must(must(claims.types[packLabel], "the rest's row").flatMap(clause =>
+      const pack = must(clauseRow(claims, packLabel, "the rest's row").flatMap(clause =>
         typeof clause === "object" && "pack" in clause ? [clause.pack] : [])[0], "the argument pack");
       must(pack.first.rest, "the inserted element contract").push(rowOf(claims, "str"));
     } else {
@@ -122,7 +122,7 @@ control(async (): Promise<void> => {
   const read = must(fn.expressions.find(e => e.pos[0] === at && e.pos[1] === at + 4), "the arm's callable read");
   assert.ok(Array.isArray(read.type));
   const label = must(read.type.find(t => typeof t === "number"), "the callable label");
-  const row = must(claims.types[label], "the callable row");
+  const row = clauseRow(claims, label, "the callable row");
   const callable = must(row.find(c => typeof c === "object" && "arrs" in c), "the callable clause");
   assert.ok(typeof callable === "object" && "arrs" in callable);
   const own = must(callable.arrs.arrows[0], "the fixed numeric signature");
@@ -559,10 +559,28 @@ const refusedAt = (artifacts: string, claims: string, name: string, at: string):
   assert.equal(searched.status, 1, detail);
   assert.ok(detail.includes(at), detail);
 };
+/** A claims row that is a union of clauses, as the controls read and forge
+ * them; a scheme row is none. */
+type ClaimRow = Extract<SourceClaims["types"][number], readonly unknown[]>;
+const isClauseRow = (row: SourceClaims["types"][number]): row is ClaimRow => Array.isArray(row);
+/** The clause row at `label`, or undefined where the document has no row
+ * there or a scheme row. */
+const clauseRowAt = (claims: SourceClaims, label: number): ClaimRow | undefined => {
+  const row = claims.types[label];
+  return row !== undefined && isClauseRow(row) ? row : undefined;
+};
+/** The clause row at `label`. */
+const clauseRow = (claims: SourceClaims, label: number, what: string): ClaimRow => {
+  const row = must(claims.types[label], what);
+  if (!isClauseRow(row)) throw Error(`${what}: a scheme row`);
+  return row;
+};
+/** The document's clause rows, its scheme rows left out. */
+const clauseRows = (claims: SourceClaims): ClaimRow[] => claims.types.filter(isClauseRow);
 /** The label of the one-clause row `clause`, added to the claims' rows when
  * they lack it. */
 const rowOf = (claims: SourceClaims, clause: Row[number]): number => {
-  const i = claims.types.findIndex((row) => row.length === 1 && JSON.stringify(row[0]) === JSON.stringify(clause));
+  const i = claims.types.findIndex((row) => Array.isArray(row) && row.length === 1 && JSON.stringify(row[0]) === JSON.stringify(clause));
   return i >= 0 ? i : claims.types.push([clause]) - 1;
 };
 /** The closed footprints other than the one letting everything change. */
@@ -1229,7 +1247,7 @@ control(async (): Promise<void> => {
   const artifacts = run("then-member-resolution");
   for (const functionName of ["awaited", "returned", "resolved", "made"]) {
     const claims = readClaims(artifacts);
-    const thenable = claims.types.findIndex(row => JSON.stringify(row).startsWith('[{"refs":{"first":[["then",'));
+    const thenable = claims.types.findIndex((row) => Array.isArray(row) && JSON.stringify(row).startsWith('[{"refs":{"first":[["then",'));
     assert.ok(thenable >= 0, "the thenable's row");
     const fn = must(claims.functions.find(f => f.name === functionName), `${functionName}'s claims`);
     const site = must(fn.expressions.find(e => e.instantiate?.length), "the resolving operation's instance");
@@ -1752,7 +1770,7 @@ control(async (): Promise<void> => {
     const entry = must(fn.entries.find(e => e.start === start), `${name}'s entry where the test passed`);
     const bound = must(entry.bindings.find(b => b.name === binding), `${name}'s ${binding}`);
     // The arm declaring the key, the only row naming it.
-    const arms = claims.types.flatMap((row, label) => JSON.stringify(row).includes(`"${kept}"`) ? [label] : []);
+    const arms = clauseRows(claims).flatMap((row, label) => JSON.stringify(row).includes(`"${kept}"`) ? [label] : []);
     assert.equal(arms.length, 1, `${name}'s arm naming ${kept}`);
     assert.notDeepEqual(bound.type, arms, `${name}'s honest claim`);
     bound.type = arms;
@@ -2035,7 +2053,7 @@ control(async (): Promise<void> => {
       ["function-early-receiver-contract", (fn: SourceClaims["functions"][number], claims: SourceClaims) => {
         const c = must(fn.contracts.find(x => x.name === "isOdd"), "isOdd's contract");
         const only = Array.isArray(c.type) && c.type.length === 1 ? c.type[0] : undefined;
-        const clause = typeof only === "number" ? claims.types[only]?.[0] : undefined;
+        const clause = typeof only === "number" ? clauseRowAt(claims, only)?.[0] : undefined;
         if (clause === undefined || typeof clause !== "object" || !("arrs" in clause)) throw new Error("isOdd's contract is no callable");
         const forged = structuredClone(clause);
         for (const arrow of forged.arrs.arrows) arrow.receiver = [rowOf(claims, "str")];
@@ -2269,7 +2287,7 @@ control(async (): Promise<void> => {
     const fn = must(claims.functions.find(f => f.name === sample.function), "spread function");
     const start = source.indexOf(sample.text) + sample.offset;
     const operand = must(fn.expressions.find(e => e.pos[0] === start && e.pos[1] === start + sample.length), "spread operand claim");
-    const number = claims.types.findIndex(r => Array.isArray(r) && r.length === 1 && r[0] === "num");
+    const number = claims.types.findIndex((r) => Array.isArray(r) && Array.isArray(r) && r.length === 1 && r[0] === "num");
     assert(number >= 0);
     operand.type = [number];
     const forged = writeClaims(good, "spread-number", claims);
@@ -2334,7 +2352,7 @@ control(async (): Promise<void> => {
   assert.deepEqual(events.map(o => o.kind === "snapshotSpread" ? "snapshot" : source.slice(...o.source)),
     ["(choose(xs))", "snapshot", "replace(xs)", "new (choose(xs))(...xs, replace(xs))"]);
   const snapshot = must(ops.find(o => o.kind === "snapshotSpread"), "spread snapshot");
-  const number = claims.types.findIndex(r => Array.isArray(r) && r.length === 1 && r[0] === "num");
+  const number = claims.types.findIndex((r) => Array.isArray(r) && Array.isArray(r) && r.length === 1 && r[0] === "num");
   assert(number >= 0);
   const read = must(fn.expressions.find(e => JSON.stringify(e.pos) === JSON.stringify(snapshot.source)), "spread operand claim");
   read.type = [number];
@@ -2359,7 +2377,7 @@ control(async (): Promise<void> => {
     const claims = readClaims(good);
     const fn = must(claims.functions.find((f) => f.name === "typedIdentity"), "consumer");
     const read = must(fn.expressions.find((e) => e.pos[0] === pos[0] && e.pos[1] === pos[1]), "prototype read");
-    const number = claims.types.findIndex((r) => Array.isArray(r) && r.length === 1 && r[0] === "num");
+    const number = claims.types.findIndex((r) => Array.isArray(r) && Array.isArray(r) && r.length === 1 && r[0] === "num");
     assert(number >= 0);
     read.type = variant === "number" ? [number] : [{ binder: "UnboundPrototypeParameter" }];
     const forged = writeClaims(good, `prototype-${variant}`, claims);
@@ -2391,7 +2409,7 @@ control(async (): Promise<void> => {
     const num = rowOf(claims, "num");
     call.type = [num];
     if (variant === "signature")
-      for (const row of claims.types) for (const clause of row)
+      for (const row of clauseRows(claims)) for (const clause of row)
         if (typeof clause === "object" && "arrs" in clause) for (const arrow of clause.arrs.arrows) arrow.result = [num];
     const name = `forged-function-to-string-${variant}`;
     const forged = writeClaims(artifacts, name, claims);
@@ -2512,7 +2530,7 @@ control(async (): Promise<void> => {
   // index-only replacement must not certify a function annotated with both.
   const indexed = run("index-signature-uninherited-key");
   const claims = readClaims(indexed);
-  const mixed = must(claims.types.find((row) =>
+  const mixed = must(clauseRows(claims).find((row) =>
     row.length === 1 && typeof row[0] === "object" && "dict" in row[0] &&
     row[0].dict.views.some(([name]) => name === "ready")), "the mixed dictionary row");
   const clause = mixed[0];
@@ -2531,7 +2549,7 @@ control(async (): Promise<void> => {
   ];
   for (const [name, clause] of forgeries) {
     const claims = readClaims(keyed);
-    const rows = claims.types.filter((row) => row.length === 1 && typeof row[0] === "object" && "symbolLit" in row[0]);
+    const rows = clauseRows(claims).filter((row) => row.length === 1 && typeof row[0] === "object" && "symbolLit" in row[0]);
     assert.ok(rows.length > 0, "the claims name a unique symbol");
     for (const row of rows) {
       const [only] = row;
@@ -2551,7 +2569,7 @@ control(async (): Promise<void> => {
   ] as const) {
     const claims = readClaims(artifacts);
     // mapEntry's arrow, or AddIndex's construct signature: its last parameter.
-    const domains = claims.types.flatMap((row) => row.flatMap((clause) =>
+    const domains = clauseRows(claims).flatMap((row) => row.flatMap((clause) =>
       typeof clause !== "object" ? [] :
       "arrs" in clause ? clause.arrs.arrows.map((s) => s.arguments) :
       "ctors" in clause ? clause.ctors.signatures.map((s) => s.arguments) : []));
@@ -2567,7 +2585,7 @@ control(async (): Promise<void> => {
   // created, not taken from the producer on trust.
   const variadicOffer = run("variadic-offer-sync");
   const claims = readClaims(variadicOffer);
-  const offered = must(claims.types.flatMap((row) => row.flatMap((clause) =>
+  const offered = must(clauseRows(claims).flatMap((row) => row.flatMap((clause) =>
     typeof clause === "object" && "arrs" in clause && clause.arrs.arrows.length > 0
       ? clause.arrs.variadic ?? [] : []))
     .find((s) => s.arguments[0].length === 1), "the variadic signature `named` is offered");
@@ -2589,7 +2607,7 @@ control(async (): Promise<void> => {
   assert.ok(typeof label === "number");
   const originalType = structuredClone(closure.type);
   // The closure value uses a private row; reduce retains its declared instance.
-  const row = structuredClone(must(claims.types[label], "the closure's type row"));
+  const row = structuredClone(clauseRow(claims, label, "the closure's type row"));
   const own = must(row.flatMap((clause) =>
     typeof clause === "object" && "arrs" in clause ? clause.arrs.arrows : [])
     .find((s) => s.arguments.length === 2), "the closure's own arrow");
@@ -2622,7 +2640,7 @@ control(async (): Promise<void> => {
   assert.ok(Array.isArray(closure.type));
   const label = closure.type[0];
   assert.ok(typeof label === "number");
-  const row = must(claims.types[label], "the rest closure's row");
+  const row = clauseRow(claims, label, "the rest closure's row");
   const signature = must(row.flatMap((clause) =>
     typeof clause === "object" && "arrs" in clause ? clause.arrs.variadic ?? [] : [])[0],
     "the rest closure's variadic signature");
@@ -2681,7 +2699,7 @@ control(async (): Promise<void> => {
   const claims = readClaims(artifacts);
   const reverse = must(claims.functions.find((f) => f.name === "reverse"), "reverse");
   const contract = must(reverse.contracts.find((c) => c.name === "result"), "result's storage contract");
-  const nul = claims.types.findIndex((t) => JSON.stringify(t) === JSON.stringify(["nul"]));
+  const nul = claims.types.findIndex((t) => Array.isArray(t) && JSON.stringify(t) === JSON.stringify(["nul"]));
   assert.ok(nul >= 0, "a null type label");
   contract.type = [nul];
   const forged = writeClaims(artifacts, "forged-use-contract", claims);
@@ -2758,13 +2776,13 @@ control(async (): Promise<void> => {
 /** Forge the effects of the signatures a call site's callee read is claimed
  * at, `forge` choosing and changing them; the claims keep every other row. */
 const forgeCallee = (claims: SourceClaims, fn: string, start: number, name: string,
-    forge: (arrows: Extract<SourceClaims["types"][number][number], { arrs: unknown }>["arrs"]["arrows"]) => void): void => {
+    forge: (arrows: Extract<ClaimRow[number], { arrs: unknown }>["arrs"]["arrows"]) => void): void => {
   const unit = must(claims.functions.find(f => f.name === fn), fn);
   const callee = must(unit.expressions.find(e => e.pos[0] === start && e.pos[1] === start + name.length), `the read of ${name}`);
   assert.ok(Array.isArray(callee.type) && callee.type.length === 1);
   const label = callee.type[0];
   assert.ok(typeof label === "number");
-  const row = structuredClone(must(claims.types[label], `${name}'s row`));
+  const row = structuredClone(clauseRow(claims, label, `${name}'s row`));
   forge(row.flatMap(clause => typeof clause === "object" && "arrs" in clause ? clause.arrs.arrows : []));
   callee.type = [claims.types.push(row) - 1];
 };
@@ -2885,7 +2903,7 @@ const refusedWithWritingReset = (negative: string, positive: string, write: stri
       if (source.slice(e.pos[0], e.pos[1]) === "reset" && Array.isArray(e.type))
         e.type = e.type.map((l) => {
           if (typeof l !== "number") return l;
-          const row = structuredClone(must(claims.types[l], "the callee's row"));
+          const row = structuredClone(clauseRow(claims, l, "the callee's row"));
           for (const clause of row)
             if (typeof clause === "object" && "arrs" in clause)
               for (const arrow of clause.arrs.arrows) arrow.effect = { ...arrow.effect, footprint: changes, onThrow: false };
@@ -3162,7 +3180,7 @@ for (const [file, name] of [["for-of-iterable-parameter", "first"], ["bind-union
   assert.ok(Array.isArray(bound.type) && bound.type.length === 1);
   const label = bound.type[0];
   assert.ok(typeof label === "number");
-  const row = structuredClone(must(claims.types[label], "the bound function's row"));
+  const row = structuredClone(clauseRow(claims, label, "the bound function's row"));
   const arrows = row.flatMap(clause => typeof clause === "object" && "arrs" in clause ? clause.arrs.arrows : []);
   assert.equal(arrows.length, 1);
   const arrow = must(arrows[0], "the bound signature");
@@ -3223,7 +3241,7 @@ for (const name of ["countdown", "total"]) control(async (): Promise<void> => {
   assert.ok(Array.isArray(bound.type) && bound.type.length === 1);
   const label = bound.type[0];
   assert.ok(typeof label === "number");
-  const row = structuredClone(must(claims.types[label], "the bound function's row"));
+  const row = structuredClone(clauseRow(claims, label, "the bound function's row"));
   const arrows = row.flatMap(clause => typeof clause === "object" && "arrs" in clause ? clause.arrs.arrows : []);
   assert.equal(arrows.length, 1);
   const arrow = must(arrows[0], "the bound signature");
@@ -3235,7 +3253,7 @@ for (const name of ["countdown", "total"]) control(async (): Promise<void> => {
   assert.ok(Array.isArray(member.type));
   for (const label of member.type) {
     assert.ok(typeof label === "number");
-    for (const clause of must(claims.types[label], "the member callable's row")) {
+    for (const clause of clauseRow(claims, label, "the member callable's row")) {
       if (typeof clause === "object" && "arrs" in clause)
         for (const arrow of clause.arrs.arrows) arrow.effect = ordinaryEffect;
     }
@@ -3408,7 +3426,7 @@ control(async (): Promise<void> => {
   assert.ok(Array.isArray(read.claim.type));
   const [label] = read.claim.type;
   assert.ok(typeof label === "number");
-  const row = structuredClone(must(member.types[label], "the member's row"));
+  const row = structuredClone(clauseRow(member, label, "the member's row"));
   for (const clause of row)
     if (typeof clause === "object" && "arrs" in clause)
       for (const arrow of clause.arrs.arrows) arrow.result = [rowOf(member, { boolLit: { value: true } })];
@@ -3429,7 +3447,7 @@ control(async (): Promise<void> => {
   // at the bound member.
   const collections = run("collections-collections");
   const claims = readClaims(collections);
-  const rest = must(claims.types.flatMap((row) => row.flatMap((clause) =>
+  const rest = must(clauseRows(claims).flatMap((row) => row.flatMap((clause) =>
     typeof clause === "object" && "pack" in clause ? [clause.pack.first] : []))
     .find((t) => t.rest !== null), "merge's claimed rest").rest;
   must(rest, "the rest's labels").unshift(4);
@@ -3488,7 +3506,7 @@ control(async (): Promise<void> => {
     const artifacts = run(file);
     const source = readFileSync(sourceKey(artifacts), "utf8");
     const claims = readClaims(artifacts);
-    const str = claims.types.findIndex((row) => row.length === 1 && row[0] === "str");
+    const str = claims.types.findIndex((row) => Array.isArray(row) && row.length === 1 && row[0] === "str");
     assert.ok(str >= 0, "the string row");
     const label = claims.types.push([clause(str)]) - 1;
     const fn = must(claims.functions[0], "the function's claims");
@@ -3850,7 +3868,7 @@ control(async (): Promise<void> => {
     const literal = must(fn.expressions.find(e => e.pos[0] === start), "the recursive literal");
     assert.ok(Array.isArray(literal.type));
     literal.type = literal.type.map(l => {
-      const row = must(typeof l === "number" ? claims.types[l] : undefined, "the closure row");
+      const row = must(typeof l === "number" ? clauseRowAt(claims, l) : undefined, "the closure row");
       return claims.types.push(row.map(clause => {
         if (typeof clause !== "object" || !("arrs" in clause)) return clause;
         assert.equal(clause.arrs.arrows.length, 2);
@@ -4192,14 +4210,14 @@ control(async (): Promise<void> => {
     const method = must(fn.expressions.find(e => e.pos[0] === at && e.pos[1] === at + "p.finally".length),
       "finally's read claim").type;
     assert.ok(Array.isArray(method) && method.length === 1 && typeof method[0] === "number");
-    const row = must(claims.types[method[0]], "finally's callable row");
+    const row = clauseRow(claims, method[0], "finally's callable row");
     const arrow = must(row.flatMap(c => typeof c === "object" && "arrs" in c ? c.arrs.arrows : [])
       .find(a => a.arguments.length === 1), "finally's method signature");
     const top = [rowOf(claims, "top")];
     if (part === "receiver") arrow.receiver = top;
     else {
       const callback = must(arrow.arguments[0].flatMap(label => typeof label === "number" ?
-        must(claims.types[label], "the cleanup row").flatMap(c =>
+        clauseRow(claims, label, "the cleanup row").flatMap(c =>
           typeof c === "object" && "arrs" in c ? c.arrs.arrows : []) : [])
         .find(a => a.arguments.length === 0), "the cleanup signature");
       callback.result = top;
@@ -4317,7 +4335,7 @@ control(async (): Promise<void> => {
     assert.ok(Array.isArray(closure.type) && closure.type.length === 1);
     const label = closure.type[0];
     assert.ok(typeof label === "number");
-    const row = must(claims.types[label], "the callback's type row");
+    const row = clauseRow(claims, label, "the callback's type row");
     const arrow = must(row.flatMap(clause =>
       typeof clause === "object" && "arrs" in clause ? clause.arrs.arrows : [])
       .find(s => s.arguments.length === arity), "the callback contract");
@@ -4374,7 +4392,7 @@ control(async (): Promise<void> => {
     assert.ok(typeof array === "object" && "array" in array);
     const label = array.array[0];
     assert.ok(typeof label === "number");
-    const row = structuredClone(must(claims.types[label], "the receiver's store row"));
+    const row = structuredClone(clauseRow(claims, label, "the receiver's store row"));
     const list = must(row.find(clause => typeof clause === "object" && "list" in clause),
       "the receiver's list contract");
     assert.ok(typeof list === "object" && "list" in list);
@@ -4402,7 +4420,7 @@ control(async (): Promise<void> => {
   const at = source.indexOf('"\\n"');
   const separator = must(claims.functions.flatMap(f => f.expressions).find(e => e.pos[0] === at),
     "the separator's claim");
-  const str = claims.types.findIndex(row => JSON.stringify(row) === JSON.stringify(["str"]));
+  const str = claims.types.findIndex((row) => Array.isArray(row) && JSON.stringify(row) === JSON.stringify(["str"]));
   assert.ok(str >= 0 && Array.isArray(separator.type) && !separator.type.includes(str));
   separator.type = [str];
   const input = writeClaims(artifacts, "forged-split-separator", claims);
@@ -4427,7 +4445,7 @@ control(async (): Promise<void> => {
     const at = source.indexOf(call, source.indexOf(`function ${name}(`));
     const claim = must(claims.functions.flatMap(f => f.expressions).find(e => e.pos[0] === at && e.pos[1] === at + call.length),
       `${name}'s split claim`);
-    const str = claims.types.findIndex(row => JSON.stringify(row) === JSON.stringify(["str"]));
+    const str = claims.types.findIndex((row) => Array.isArray(row) && JSON.stringify(row) === JSON.stringify(["str"]));
     assert.ok(str >= 0);
     claims.types.push([{ list: { first: { required: [[str]], optional: [], rest: [str], readonly: false, presence: "dense" }, rest: [] } }]);
     claim.type = [{ array: [claims.types.length - 1], readonly: false }];
@@ -4452,7 +4470,7 @@ control(async (): Promise<void> => {
   const at = source.indexOf("b.n;", source.indexOf("function size("));
   const receiver = must(claims.functions.flatMap(f => f.expressions).find(e => e.pos[0] === at && e.pos[1] === at + 1),
     "the receiver's claim");
-  const undef = claims.types.findIndex(row => JSON.stringify(row) === JSON.stringify(["undef"]));
+  const undef = claims.types.findIndex((row) => Array.isArray(row) && JSON.stringify(row) === JSON.stringify(["undef"]));
   assert.ok(Array.isArray(receiver.type) && receiver.type.includes(undef), "the honest receiver admits undefined");
   receiver.type = receiver.type.filter(label => label !== undef);
   const input = writeClaims(artifacts, "forged-nullish-receiver", claims);
@@ -4478,7 +4496,7 @@ control(async (): Promise<void> => {
   assert.ok(Array.isArray(closure.type) && closure.type.length === 1);
   const label = closure.type[0];
   assert.ok(typeof label === "number");
-  const arrows = must(claims.types[label], "the closure's type row").flatMap(clause =>
+  const arrows = clauseRow(claims, label, "the closure's type row").flatMap(clause =>
     typeof clause === "object" && "arrs" in clause ? clause.arrs.arrows : []);
   assert.ok(arrows.length > 0 && arrows.every(a => !a.effect.fresh), "the honest claim states no fresh result");
   for (const arrow of arrows) arrow.effect = { ...arrow.effect, fresh: true };
@@ -4502,7 +4520,7 @@ control(async (): Promise<void> => {
   const source = readFileSync(sourceKey(artifacts), "utf8");
   const classes: [number, number] = [source.indexOf("class Counted"), source.indexOf("class Plain")];
   const within = (at: [number, number]) => classes[0] <= at[0] && at[1] <= classes[1];
-  const signatures = claims.types.flatMap(row => row.flatMap(clause =>
+  const signatures = clauseRows(claims).flatMap(row => row.flatMap(clause =>
     typeof clause === "object" && "ctors" in clause ? clause.ctors.signatures : []));
   assert.ok(signatures.length > 0, "the classes' construct signatures");
   for (const signature of signatures) signature.effect = footprintEffect(keepAll);
@@ -4617,10 +4635,10 @@ control(async (): Promise<void> => {
     "the constant's arrow claim");
   const label = Array.isArray(closure.type) ? closure.type[0] : undefined;
   assert.ok(typeof label === "number");
-  const row = must(claims.types[label], "the arrow's type row");
+  const row = clauseRow(claims, label, "the arrow's type row");
   const extended = must(row.flatMap(clause => typeof clause === "object" && "arrs" in clause ? clause.arrs.variadic ?? [] : [])[0],
     "the extended signature");
-  const unknown = claims.types.findIndex(r => JSON.stringify(r) === JSON.stringify(["source"]));
+  const unknown = claims.types.findIndex((r) => Array.isArray(r) && JSON.stringify(r) === JSON.stringify(["source"]));
   assert.ok(unknown >= 0, "a row of unknown");
   extended.arguments = [[[unknown]], must(extended.arguments[1], "the extended signature's rest")];
   const input = writeClaims(artifacts, "forged-constant-extension", claims);
@@ -4653,7 +4671,7 @@ control(async (): Promise<void> => {
       `the claim at ${start}`);
     const label = Array.isArray(claim.type) ? claim.type[0] : undefined;
     assert.ok(typeof label === "number");
-    const row = must(claims.types[label], `the type row at ${start}`);
+    const row = clauseRow(claims, label, `the type row at ${start}`);
     return must(row.flatMap(clause => typeof clause === "object" && "arrs" in clause ? clause.arrs.arrows : [])
       .find(s => s.arguments.length === arity), `the contract at ${start}`);
   };
@@ -4687,7 +4705,7 @@ control(async (): Promise<void> => {
       .find(e => e.pos[0] === start && Array.isArray(e.type) && e.type.length === 1), `the claim at ${start}`);
     const label = Array.isArray(claim.type) ? claim.type[0] : undefined;
     assert.ok(typeof label === "number");
-    const row = must(claims.types[label], `the type row at ${start}`);
+    const row = clauseRow(claims, label, `the type row at ${start}`);
     return must(row.flatMap(clause => typeof clause === "object" && "arrs" in clause ? clause.arrs.arrows : [])
       .find(s => s.arguments.length === arity), `the contract at ${start}`);
   };
@@ -4806,7 +4824,7 @@ control(async (): Promise<void> => {
   must(expressions.find(e => e.pos[0] === at && e.pos[1] === at + "stop(xs)".length), "the call's claim").type = [];
   const closure = must(expressions.find(e => e.pos[0] === source.indexOf("(x) => {")), "the callback's claim");
   assert.ok(Array.isArray(closure.type) && closure.type.length === 1 && typeof closure.type[0] === "number");
-  const arrow = must(must(claims.types[closure.type[0]], "the callback's type row").flatMap(clause =>
+  const arrow = must(clauseRow(claims, closure.type[0], "the callback's type row").flatMap(clause =>
     typeof clause === "object" && "arrs" in clause ? clause.arrs.arrows : []).find(s => s.arguments.length === 3),
     "the callback contract");
   arrow.effect = footprintEffect(keepAll);
@@ -4866,7 +4884,7 @@ mutationControl(async (): Promise<void> => {
         "the async arrow's claim");
       assert.ok(Array.isArray(closure.type) && closure.type.length === 1 && typeof closure.type[0] === "number");
       // A row of its own: the function's result claim shares the honest one.
-      const row = structuredClone(must(c.types[closure.type[0]], "the arrow's type row"));
+      const row = structuredClone(clauseRow(c, closure.type[0], "the arrow's type row"));
       must(row.flatMap(clause => typeof clause === "object" && "arrs" in clause ? clause.arrs.arrows : [])
         .find(s => s.arguments.length === 2), "the arrow's contract").effect = footprintEffect(keepAll);
       closure.type = [c.types.push(row) - 1];
@@ -4879,7 +4897,7 @@ mutationControl(async (): Promise<void> => {
       assert.ok(Array.isArray(closure.type) && closure.type.length === 1 && typeof closure.type[0] === "number");
       // Its row in place: the binding, the self entry and the recursive
       // call read the same row, which no annotation fixes.
-      for (const s of must(c.types[closure.type[0]], "countdown's type row").flatMap(clause =>
+      for (const s of clauseRow(c, closure.type[0], "countdown's type row").flatMap(clause =>
         typeof clause === "object" && "arrs" in clause ? clause.arrs.arrows : [])) s.effect = footprintEffect(keepAll);
     }],
   ];
@@ -4952,7 +4970,7 @@ mutationControl(async (): Promise<void> => {
   // search certifies it. `flagged`, popping where its flag is `true`,
   // claimed at a flag of `false` alone and the empty footprint, which its
   // code meets there: refused for offering no row over the whole domain.
-  type ClaimArrow = Extract<SourceClaims["types"][number][number], { arrs: unknown }>["arrs"]["arrows"][number];
+  type ClaimArrow = Extract<ClaimRow[number], { arrs: unknown }>["arrs"]["arrows"][number];
   const forge = (file: string, at: RegExp, name: string, change: (s: ClaimArrow) => void): {
     artifacts: string; input: string } => {
     const artifacts = run(file);
@@ -4960,7 +4978,7 @@ mutationControl(async (): Promise<void> => {
     const source = readFileSync(sourceKey(artifacts), "utf8");
     const closure = must((claims.init?.expressions ?? []).find(e => e.pos[0] === source.search(at)), `${file}'s closure claim`);
     assert.ok(Array.isArray(closure.type) && closure.type.length === 1 && typeof closure.type[0] === "number");
-    const row = structuredClone(must(claims.types[closure.type[0]], `${file}'s type row`));
+    const row = structuredClone(clauseRow(claims, closure.type[0], `${file}'s type row`));
     for (const s of row.flatMap(clause => typeof clause === "object" && "arrs" in clause ? clause.arrs.arrows : [])) change(s);
     closure.type = [claims.types.push(row) - 1];
     return { artifacts, input: writeClaims(artifacts, name, claims) };
@@ -5024,7 +5042,7 @@ control(async (): Promise<void> => {
   assert.ok(Array.isArray(closure.type) && closure.type.length === 1 && typeof closure.type[0] === "number");
   // Its row in place: the method's binding and the prototype's field read
   // the same row, which no annotation fixes.
-  for (const s of must(claims.types[closure.type[0]], "bump's type row").flatMap(clause =>
+  for (const s of clauseRow(claims, closure.type[0], "bump's type row").flatMap(clause =>
     typeof clause === "object" && "arrs" in clause ? clause.arrs.arrows : [])) s.effect = ordinaryEffect;
   const name = "forged-unstated-method";
   const input = writeClaims(artifacts, name, claims);
@@ -5515,7 +5533,7 @@ control(async (): Promise<void> => {
   const closure = must(fn.expressions.find(e => e.pos[0] === at), "the closure's claim");
   const label = Array.isArray(closure.type) ? closure.type[0] : undefined;
   assert.ok(typeof label === "number", "the closure's claim is a row");
-  const row = must(claims.types[label], "the closure's row");
+  const row = clauseRow(claims, label, "the closure's row");
   const clause = row[0];
   assert.ok(clause !== undefined && typeof clause === "object" && "arrs" in clause, "an arrow clause");
   const arrows = clause.arrs.arrows;
@@ -5533,7 +5551,7 @@ control(async (): Promise<void> => {
   // the body does not return, and the rows of interior claims one short of
   // the signatures: each refused where evidence is produced and where the
   // honest evidence is checked.
-  type ClosureArrows = Extract<SourceClaims["types"][number][number], { arrs: unknown }>["arrs"]["arrows"];
+  type ClosureArrows = Extract<ClaimRow[number], { arrs: unknown }>["arrs"]["arrows"];
   type ClosureRows = NonNullable<SourceClaims["functions"][number]["arrows"]>[number]["rows"];
   const forgeLonger = (name: string, edit: (forgedArrows: ClosureArrows, forgedRows: ClosureRows) => void): string => {
     const forged = readClaims(artifacts);
@@ -5541,7 +5559,7 @@ control(async (): Promise<void> => {
     const forgedClosure = must(forgedFn.expressions.find(e => e.pos[0] === at), "the closure's claim");
     const forgedLabel = Array.isArray(forgedClosure.type) ? forgedClosure.type[0] : undefined;
     assert.ok(typeof forgedLabel === "number", "the closure's claim is a row");
-    const forgedClause = must(forged.types[forgedLabel], "the closure's row")[0];
+    const forgedClause = clauseRow(forged, forgedLabel, "the closure's row")[0];
     assert.ok(forgedClause !== undefined && typeof forgedClause === "object" && "arrs" in forgedClause, "an arrow clause");
     edit(forgedClause.arrs.arrows, must((forgedFn.arrows ?? []).find(a => a.pos[0] === at), "the closure's rows").rows);
     return writeClaims(artifacts, name, forged);
@@ -5578,7 +5596,7 @@ control(async (): Promise<void> => {
     declarations: "(d): d is Declaration => d.kind === \"declaration\")",
     overwriting: "(x): x is string => {\n    xs[0] = 0;",
   } as const;
-  type ClosureArrow = Extract<SourceClaims["types"][number][number], { arrs: unknown }>["arrs"]["arrows"][number];
+  type ClosureArrow = Extract<ClaimRow[number], { arrs: unknown }>["arrs"]["arrows"][number];
   const forgeLonger = (name: string, edit: (longer: ClosureArrow, claims: SourceClaims) => void,
     of: keyof typeof closures = "declarations"): string => {
     const at = source.indexOf(closures[of]);
@@ -5588,7 +5606,7 @@ control(async (): Promise<void> => {
     const closure = must(fn.expressions.find(e => e.pos[0] === at), "the closure's claim");
     const label = Array.isArray(closure.type) ? closure.type[0] : undefined;
     assert.ok(typeof label === "number", "the closure's claim is a row");
-    const clause = must(forged.types[label], "the closure's row")[0];
+    const clause = clauseRow(forged, label, "the closure's row")[0];
     assert.ok(clause !== undefined && typeof clause === "object" && "arrs" in clause, "an arrow clause");
     const longer = must(clause.arrs.arrows.find(a => a.arguments.length > 1 && a.effect.promise !== null),
       "the longer promise signature");
@@ -5623,7 +5641,7 @@ control(async (): Promise<void> => {
   // promise, or at a promised type the guard does not state; and a function
   // stating no promise forged at a promise signature: each refused where
   // evidence is produced and where the honest evidence is checked.
-  type Arrow = Extract<SourceClaims["types"][number][number], { arrs: unknown }>["arrs"]["arrows"][number];
+  type Arrow = Extract<ClaimRow[number], { arrs: unknown }>["arrs"]["arrows"][number];
   const forgeArgument = (artifacts: string, fnName: string, text: string, name: string,
       edit: (arrow: Arrow, claims: SourceClaims) => void): string => {
     const source = readFileSync(sourceKey(artifacts), "utf8");
@@ -5635,7 +5653,7 @@ control(async (): Promise<void> => {
       `the claim of ${text}`);
     const label = Array.isArray(argument.type) ? argument.type[0] : undefined;
     assert.ok(typeof label === "number", "the argument's claim is a row");
-    const clause = must(forged.types[label], "the argument's row")[0];
+    const clause = clauseRow(forged, label, "the argument's row")[0];
     assert.ok(clause !== undefined && typeof clause === "object" && "arrs" in clause, "an arrow clause");
     const [arrow] = clause.arrs.arrows;
     assert.ok(arrow !== undefined && clause.arrs.arrows.length === 1, "one signature");
@@ -5692,14 +5710,14 @@ control(async (): Promise<void> => {
   const source = readFileSync(sourceKey(artifacts), "utf8");
   const at = source.indexOf("(st): st is ts.ClassDeclaration =>");
   assert.ok(at >= 0, "the guard closure passed to `find`");
-  type ClosureArrow = Extract<SourceClaims["types"][number][number], { arrs: unknown }>["arrs"]["arrows"][number];
+  type ClosureArrow = Extract<ClaimRow[number], { arrs: unknown }>["arrs"]["arrows"][number];
   const forgeLonger = (name: string, edit: (longer: ClosureArrow, claims: SourceClaims) => void): string => {
     const forged = readClaims(artifacts);
     const fn = must(forged.functions.find(f => f.name === "use"), "use's claims");
     const closure = must(fn.expressions.find(e => e.pos[0] === at), "the closure's claim");
     const label = Array.isArray(closure.type) ? closure.type[0] : undefined;
     assert.ok(typeof label === "number", "the closure's claim is a row");
-    const clause = must(forged.types[label], "the closure's row")[0];
+    const clause = clauseRow(forged, label, "the closure's row")[0];
     assert.ok(clause !== undefined && typeof clause === "object" && "arrs" in clause, "an arrow clause");
     const longer = must(clause.arrs.arrows.find(a => a.arguments.length > 1 && a.effect.promise !== null),
       "the longer promise signature");
@@ -5789,7 +5807,7 @@ control(async (): Promise<void> => {
   writeFileSync(grown, must(JSON.stringify(claims, (key, value: unknown) =>
     key === "footprint" && value === collect.footprint ? { value: "grow", store: "keep" } : value), "the forged claims' text"));
   invoke(grown, evidence, artifacts, /invalid footprint change 'grow'/);
-  const arrow = must(claims.types.flatMap(row => row.flatMap(clause =>
+  const arrow = must(clauseRows(claims).flatMap(row => row.flatMap(clause =>
     typeof clause === "object" && "arrs" in clause ? clause.arrs.arrows : []))[0], "a claimed arrow");
   const unpromised = join(artifacts, "forged-effect-without-promise.json");
   writeFileSync(unpromised, must(JSON.stringify(claims, (key, value: unknown) =>
@@ -5813,7 +5831,7 @@ control(async (): Promise<void> => {
         `the claim at ${start}`);
       const label = Array.isArray(claim.type) ? claim.type[0] : undefined;
       assert.ok(typeof label === "number");
-      const row = must(claims.types[label], `the type row at ${start}`);
+      const row = clauseRow(claims, label, `the type row at ${start}`);
       return row.flatMap(clause => typeof clause === "object" && "arrs" in clause ? clause.arrs.arrows : []);
     };
     const forged = [...arrowsAt(source.indexOf("double(x)")), ...arrowsAt(source.indexOf("(x) =>"))];
@@ -5960,7 +5978,7 @@ control(async (): Promise<void> => {
     const claim = must(claims.functions.flatMap(f => f.expressions).filter(e => e.pos[0] === start)
       .sort((a, b) => b.pos[1] - a.pos[1])[0], `${name}: the literal's claim`);
     assert.ok(Array.isArray(claim.type));
-    const rows = claim.type.map(l => must(typeof l === "number" ? claims.types[l] : undefined, "a row"));
+    const rows = claim.type.map(l => must(typeof l === "number" ? clauseRowAt(claims, l) : undefined, "a row"));
     claim.type = rows.map(row => claims.types.push(row.map(clause => {
       if (typeof clause !== "object" || !("arrs" in clause)) return clause;
       const arrows = clause.arrs.arrows.map(a => {
@@ -6152,7 +6170,7 @@ control(async (): Promise<void> => {
   const claim = must(init.expressions.find((e) => e.pos[0] === at && e.pos[1] === arrow.pos[1]), "isNumber's claim");
   const label = Array.isArray(claim.type) && claim.type.length === 1 ? claim.type[0] : undefined;
   assert.ok(typeof label === "number", "isNumber is claimed at one row");
-  const clause = must(claims.types[label]?.[0], "isNumber's row");
+  const clause = must(clauseRowAt(claims, label)?.[0], "isNumber's row");
   assert.ok(typeof clause === "object" && "arrs" in clause, "isNumber is claimed at arrows");
   const kept = clause.arrs.arrows.map((a) => a.effect.promise === null);
   assert.ok(kept.includes(false), "isNumber's claim offers its promise");
@@ -6176,7 +6194,7 @@ control(async (): Promise<void> => {
   const claim = must(init.expressions.find((e) => e.pos[0] === at && e.pos[1] === arrow.pos[1]), "isNumber's claim");
   const label = Array.isArray(claim.type) && claim.type.length === 1 ? claim.type[0] : undefined;
   assert.ok(typeof label === "number", "isNumber is claimed at one row");
-  const clause = must(claims.types[label]?.[0], "isNumber's row");
+  const clause = must(clauseRowAt(claims, label)?.[0], "isNumber's row");
   assert.ok(typeof clause === "object" && "arrs" in clause, "isNumber is claimed at arrows");
   const promise = must(clause.arrs.arrows.find((a) => a.effect.promise !== null), "isNumber's promise signature");
   promise.arguments = [promise.result];
@@ -6208,8 +6226,8 @@ control(async (): Promise<void> => {
   // refused by the decoder.
   const artifacts = run("tag-sets");
   const original = readClaims(artifacts);
-  const numbers = original.types.findIndex((row) => row.length === 1 && typeof row[0] === "object" && "numIn" in row[0]);
-  const strings = original.types.findIndex((row) => row.length === 1 && typeof row[0] === "object" && "strIn" in row[0]);
+  const numbers = original.types.findIndex((row) => Array.isArray(row) && row.length === 1 && typeof row[0] === "object" && "numIn" in row[0]);
+  const strings = original.types.findIndex((row) => Array.isArray(row) && row.length === 1 && typeof row[0] === "object" && "strIn" in row[0]);
   assert.ok(numbers >= 0 && strings >= 0, "the claims state a number set and a string set");
   const forgeries: [string, number, (bits: string[]) => string[], RegExp][] = [
     ["unsorted-number-set", numbers, (xs) => [...xs].reverse(), /a number set lists two or more bit patterns, sorted and distinct/],
@@ -6220,7 +6238,7 @@ control(async (): Promise<void> => {
   ];
   for (const [name, row, forge, refusal] of forgeries) {
     const claims = readClaims(artifacts);
-    const clause = claims.types[row]?.[0];
+    const clause = clauseRowAt(claims, row)?.[0];
     if (typeof clause === "object" && "numIn" in clause) clause.numIn.bits = forge(clause.numIn.bits);
     else if (typeof clause === "object" && "strIn" in clause) clause.strIn.values = forge(clause.strIn.values);
     else assert.fail("the forged row is a tag set");
@@ -7117,9 +7135,9 @@ control(async (): Promise<void> => {
   // reverse is refused by both.
   const artifacts = run("tag-set-code-points");
   const original = readClaims(artifacts);
-  const row = original.types.findIndex((r) => r.length === 1 && typeof r[0] === "object" && "strIn" in r[0] &&
+  const row = original.types.findIndex((r) => Array.isArray(r) && r.length === 1 && typeof r[0] === "object" && "strIn" in r[0] &&
     r[0].strIn.values.includes("\uE000") && r[0].strIn.values.includes("\u{10000}"));
-  const clause = original.types[row]?.[0];
+  const clause = clauseRowAt(original, row)?.[0];
   assert.ok(typeof clause === "object" && "strIn" in clause, "the claims state the set of U+E000 and U+10000");
   const values = clause.strIn.values;
   assert.ok(values.indexOf("\uE000") < values.indexOf("\u{10000}"), "the producer orders by code point");
@@ -7142,7 +7160,7 @@ control(async (): Promise<void> => {
   // Lean).
   const artifacts = run("tag-set-code-points");
   const original = readClaims(artifacts);
-  const row = original.types.findIndex((r) => r.length === 1 && typeof r[0] === "object" && "strIn" in r[0]);
+  const row = original.types.findIndex((r) => Array.isArray(r) && r.length === 1 && typeof r[0] === "object" && "strIn" in r[0]);
   const lone = { strIn: { values: ["\ud800", ""] } };
   assert.throws(() => decodeGraph([[lone]]), /not well-formed Unicode/);
   const claims = readClaims(artifacts);
@@ -7678,7 +7696,7 @@ control(async (): Promise<void> => {
     const fn = must(claims.functions.find(f => f.name === "wrong"), `${file}: wrong`);
     const entry = must(fn.entries.find(e => source.startsWith("return d;", e.start)), `${file}: return d;`);
     const d = must(entry.bindings.find(b => b.name === "d"), `${file}: d`);
-    const undefinedRow = claims.types.findIndex(row => JSON.stringify(row) === JSON.stringify(["undef"]));
+    const undefinedRow = claims.types.findIndex((row) => Array.isArray(row) && JSON.stringify(row) === JSON.stringify(["undef"]));
     const labels = d.type;
     assert.ok(Array.isArray(labels), `${file}: d's claim is a union of labels`);
     const narrowed = labels.filter(label => label !== undefinedRow);
