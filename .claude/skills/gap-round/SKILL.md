@@ -120,7 +120,7 @@ reaches the owner
 ## The report
 
 Lead with the number: verified functions before → after (total, and of
-the original 499), with the functions lost and gained. Then one line per
+the 499 functions the census of 83cdb42 checked), with the functions lost and gained. Then one line per
 case: verified, answered by a route (which one), or open with what it
 needs. Then any model of external code the owner reviews before the push,
 and the state of the push.

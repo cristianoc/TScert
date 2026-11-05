@@ -280,7 +280,9 @@ const codeBlock = (lines: string[], mark: "add" | "del" | "" = "", other: string
 
 /** A change to a named object: `<Kind> <action> (<target>)`, the kind deciding
  * how its content is drawn (mathematics or code), Before/After shown side by side. */
-const MATH_KINDS: ReadonlySet<string> = new Set(["Rule", "Rules", "Semantics", "Definition", "Definitions", "Type", "Typing", "Theorem", "Notation"]);
+const MATH_KINDS: ReadonlySet<string> = new Set(["Rule", "Semantics", "Definition", "Typing", "Theorem"]);
+/** `Code` is no kind of the review skill; a record of the history uses it,
+ * drawn as an `Example`'s code. */
 const CODE_KINDS: ReadonlySet<string> = new Set(["Example", "Counterexample", "Code"]);
 /** Kinds whose lines are drawn as written: commands, layouts, aligned columns. */
 const PLAIN_KINDS: ReadonlySet<string> = new Set(["Tooling"]);
@@ -323,6 +325,7 @@ function program(e: Example): string {
  * apart; ⚠ after the old outcome marks it unsound. A line naming a pipeline
  * case expands to the case's program at the commit. */
 function effects(lines: string[], examples: Map<string, Example>): string {
+  // `control` is no kind of the review skill; records of the history use it.
   const KINDS = new Set(["positive", "negative", "gap", "control"]);
   return `<ul class="effect">${lines.filter(l => l.trim()).map(l => {
     // A line holds a word, so `parts` gives at least one.

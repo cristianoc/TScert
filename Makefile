@@ -70,8 +70,12 @@ fmt: ## format with Prettier
 check-fmt: ## check formatting with Prettier
 	npx prettier --check .
 
-# the commit-record check on every commit
-.git/hooks/commit-msg: bin/git_hooks/commit_record.sh
-	ln -s $(PWD)/bin/git_hooks/commit_record.sh .git/hooks/commit-msg
+# the commit-record check on every commit, of the main checkout and of every
+# worktree: they share the repository's hooks directory, whose hook is the main
+# checkout's script
+HOOKS_DIR = $(shell git rev-parse --path-format=absolute --git-path hooks)
+MAIN_CHECKOUT = $(patsubst %/,%,$(dir $(shell git rev-parse --path-format=absolute --git-common-dir)))
 
-setup-git-hooks: .git/hooks/commit-msg ## install the commit-record check
+setup-git-hooks: ## install the commit-record check
+	mkdir -p $(HOOKS_DIR)
+	ln -sfn $(MAIN_CHECKOUT)/bin/git_hooks/commit_record.sh $(HOOKS_DIR)/commit-msg
