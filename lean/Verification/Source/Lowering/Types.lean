@@ -312,7 +312,7 @@ numeric family of its operands. -/
   let G := SourceTypes.graph (← table)
   let strings := fun (T : Ty Tree) =>
     let cs := PositiveRules.expand G T
-    !cs.isEmpty && cs.all ProgramTyping.stringClause
+    !cs.isEmpty && cs.all ObjectMerge.stringClause
   if op == .add && (strings A || strings B) then return [← lower (SourceTypes.use .str)]
   let cs := PositiveRules.expand G A
   if !cs.isEmpty && cs.all ProgramTyping.bigintClause then return [← lower (SourceTypes.use .bigint)]
@@ -543,9 +543,7 @@ none of them. -/
   G.plainTy S && (PositiveNormalization.splitSets (PositiveRules.expand G S)).all fun c =>
     let bounded := fun (ks : List KeyBound) =>
       ks.any fun b => reservedKeys.all fun k => !b.admits (.str k)
-    match c with
-    | .nul | .undef | .bool | .boolLit _ | .num | .numLit _ | .numIn _ | .str | .strLit _ | .strIn _
-    | .bigint | .bigintLit _ | .symbol | .symbolLit _ => true
+    ProtoFree.primitive c || match c with
     | .refs _ _ _ _ _ ks _ => bounded ks
     | .dict _ _ _ [] _ _ ks [] _ => bounded ks
     | _ => false

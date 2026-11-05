@@ -608,7 +608,7 @@ inductive Src (ι : Type) where
   | obj (o : Obj ι)
 
 /-- A clause of strings. -/
-@[nospecialize] def stringClause : Clause (List ι) → Bool
+@[nospecialize] def stringClause {α : Type} : Clause α → Bool
   | .str | .strLit _ | .strIn _ => true
   | _ => false
 

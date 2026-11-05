@@ -14,6 +14,7 @@ namespace Verification.ProgramTyping
 open PositiveNormalization PositiveGraphs PositiveRules Tower
 open CallEffects (Arrow RestArrow MethodArrow MethodRestArrow Contract Effect PromiseWith)
 open HeapObservations (SafePost)
+open ObjectMerge (stringClause)
 
 variable {ι : Type}
 
@@ -28,10 +29,6 @@ def numberClause : Clause α → Bool
 
 def bigintClause : Clause α → Bool
   | .bigint | .bigintLit _ => true
-  | _ => false
-
-def stringClause : Clause α → Bool
-  | .str | .strLit _ | .strIn _ => true
   | _ => false
 
 /-- Primitives `ToNumeric` converts to a number or a bigint without running

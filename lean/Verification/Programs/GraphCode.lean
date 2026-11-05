@@ -13,6 +13,7 @@ is safety of the term that runs the code. -/
 namespace Verification.GraphCode
 open ControlFlow PointClaims ProgramTyping PositiveGraphs PositiveRules
 open PositiveCertificates (InstanceImageCheck finiteInstanceImages)
+open CertificateProducer (successors)
 
 /-- The graph a code's node lists describe. -/
 def program (E : List Tm) (K : List (Continuation × Option Target)) : Program :=
@@ -195,18 +196,12 @@ def FreshOk (F : List Nat) (b : Nat) (ρ : Env) : Prop := ∀ i ∈ F, FreshAt b
 /-- A label's facts: none past the list. -/
 def factsAt (facts : List (List Nat)) (l : Nat) : List Nat := facts.getD l []
 
-/-- A continuation's destinations. -/
-def destinations : Continuation → List Target
-  | .ret => []
-  | .bind t | .effect t => [t]
-  | .branch y n | .branchBind y n | .tagBind _ y n => [y, n]
-
 /-- Labels in a region from which no normal return is possible. Missing
 labels are outside the region. Membership is checked at every node. -/
 def deadAt (dead : List Bool) (l : Nat) : Bool := dead.getD l false
 
 def deadContinuation (dead : List Bool) (k : Continuation) : Bool :=
-  k != .ret && (destinations k).all fun t => deadAt dead t.label
+  k != .ret && (successors k).all fun t => deadAt dead t.label
 
 def deadHandler (dead : List Bool) (x : Option Target) : Bool :=
   match x with
@@ -225,7 +220,7 @@ def deadIterate (nodes : Array (Node × Bool)) : Nat → Array Bool → Array Bo
   | fuel + 1, dead =>
     let at_ := fun (l : Nat) => dead.getD l false
     let next := nodes.map fun (node, empty) =>
-      (empty || (node.continuation != .ret && (destinations node.continuation).all fun t => at_ t.label)) &&
+      (empty || (node.continuation != .ret && (successors node.continuation).all fun t => at_ t.label)) &&
         (match node.handler with | none => true | some t => at_ t.label)
     if next = dead then dead else deadIterate nodes fuel next
 
@@ -253,13 +248,13 @@ def freshSlot (F : List Nat) (pushed out : Bool) : Nat → Bool
 value, fresh where `out`; and a return under a fresh-result goal returns a
 fresh value. -/
 def edgesFresh (facts : List (List Nat)) (F : List Nat) (out ret : Bool) (k : Continuation) : Bool :=
-  (destinations k).all (fun t => (factsAt facts t.label).all fun i =>
+  (successors k).all (fun t => (factsAt facts t.label).all fun i =>
     freshSlot F (pushes k) out (slot t.mapping i)) &&
     (k != .ret || !ret || out)
 
 /-- What an edge check establishes of the value a node returns. -/
 def TargetsFresh (facts : List (List Nat)) (b : Nat) (ret : Bool) (ρ : Env) (v : Tm) (k : Continuation) : Prop :=
-  (∀ t ∈ destinations k, FreshOk (factsAt facts t.label) b
+  (∀ t ∈ successors k, FreshOk (factsAt facts t.label) b
     (mapEnv t.mapping (if pushes k then push v ρ else ρ))) ∧
     (k = .ret → ret = true → FreshAt b v)
 
@@ -469,35 +464,35 @@ theorem bounded_step [DecidableEq ι] {G : NormalGraph ι} {images : InstanceIma
     · exact ⟨hb, ht.2 rfl⟩
   | bind hv =>
     rcases hp.1.value hv with hd | ⟨hb, ht⟩
-    · exact .inl (by simpa [deadContinuation, destinations] using hd)
-    · exact .inr ⟨hb, by simpa [pushes] using ht.1 _ (by simp [destinations])⟩
+    · exact .inl (by simpa [deadContinuation, successors] using hd)
+    · exact .inr ⟨hb, by simpa [pushes] using ht.1 _ (by simp [successors])⟩
   | effect hv =>
     rcases hp.1.value hv with hd | ⟨hb, ht⟩
-    · exact .inl (by simpa [deadContinuation, destinations] using hd)
-    · exact .inr ⟨hb, by simpa [pushes] using ht.1 _ (by simp [destinations])⟩
+    · exact .inl (by simpa [deadContinuation, successors] using hd)
+    · exact .inr ⟨hb, by simpa [pushes] using ht.1 _ (by simp [successors])⟩
   | yes =>
     rcases hp.1.value rfl with hd | ⟨hb, ht⟩
-    · simp only [deadContinuation, destinations, List.all_cons, List.all_nil, Bool.and_true, Bool.and_eq_true] at hd
+    · simp only [deadContinuation, successors, List.all_cons, List.all_nil, Bool.and_true, Bool.and_eq_true] at hd
       exact .inl hd.2.1
-    · exact .inr ⟨hb, by simpa [pushes] using ht.1 _ (by simp [destinations])⟩
+    · exact .inr ⟨hb, by simpa [pushes] using ht.1 _ (by simp [successors])⟩
   | no =>
     rcases hp.1.value rfl with hd | ⟨hb, ht⟩
-    · simp only [deadContinuation, destinations, List.all_cons, List.all_nil, Bool.and_true, Bool.and_eq_true] at hd
+    · simp only [deadContinuation, successors, List.all_cons, List.all_nil, Bool.and_true, Bool.and_eq_true] at hd
       exact .inl hd.2.2
-    · exact .inr ⟨hb, by simpa [pushes] using ht.1 _ (by simp [destinations])⟩
+    · exact .inr ⟨hb, by simpa [pushes] using ht.1 _ (by simp [successors])⟩
   | yesBind =>
     rcases hp.1.value rfl with hd | ⟨hb, ht⟩
-    · simp only [deadContinuation, destinations, List.all_cons, List.all_nil, Bool.and_true, Bool.and_eq_true] at hd
+    · simp only [deadContinuation, successors, List.all_cons, List.all_nil, Bool.and_true, Bool.and_eq_true] at hd
       exact .inl hd.2.1
-    · exact .inr ⟨hb, by simpa [pushes] using ht.1 _ (by simp [destinations])⟩
+    · exact .inr ⟨hb, by simpa [pushes] using ht.1 _ (by simp [successors])⟩
   | noBind =>
     rcases hp.1.value rfl with hd | ⟨hb, ht⟩
-    · simp only [deadContinuation, destinations, List.all_cons, List.all_nil, Bool.and_true, Bool.and_eq_true] at hd
+    · simp only [deadContinuation, successors, List.all_cons, List.all_nil, Bool.and_true, Bool.and_eq_true] at hd
       exact .inl hd.2.2
-    · exact .inr ⟨hb, by simpa [pushes] using ht.1 _ (by simp [destinations])⟩
+    · exact .inr ⟨hb, by simpa [pushes] using ht.1 _ (by simp [successors])⟩
   | tagBind hv =>
     rcases hp.1.value hv with hd | ⟨hb, ht⟩
-    · simp only [deadContinuation, destinations, List.all_cons, List.all_nil, Bool.and_true,
+    · simp only [deadContinuation, successors, List.all_cons, List.all_nil, Bool.and_true,
         Bool.and_eq_true] at hd
       split
       · exact .inl hd.2.1
@@ -505,8 +500,8 @@ theorem bounded_step [DecidableEq ι] {G : NormalGraph ι} {images : InstanceIma
     · apply Or.inr
       refine ⟨hb, ?_⟩
       split
-      · exact by simpa [pushes] using ht.1 _ (by simp [destinations])
-      · exact by simpa [pushes] using ht.1 _ (by simp [destinations])
+      · exact by simpa [pushes] using ht.1 _ (by simp [successors])
+      · exact by simpa [pushes] using ht.1 _ (by simp [successors])
   | handle hr => exact Or.imp id (fun h => ⟨h.1.raised hr, h.2 _⟩) hp.2
   | raise hr => exact fun he => (hp.2 he).raised hr
 
@@ -798,7 +793,7 @@ below decides whether the result holds on every edge. -/
   nodes.foldr (fun ((node, _), l) facts =>
     let F := facts.getD l []
     let out := varFresh F node.expression || calls.getD l false
-    let facts := (destinations node.continuation).foldl (fun facts t =>
+    let facts := (successors node.continuation).foldl (fun facts t =>
       facts.modify t.label fun D => D.filter fun i =>
         freshSlot F (pushes node.continuation) out (slot t.mapping i)) facts
     -- A handler binds the thrown value, never fresh, before the node's slots.
