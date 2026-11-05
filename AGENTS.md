@@ -393,9 +393,11 @@ substitution, overload and certificate path for the effect field; exhaustive
 constructor matching does not detect a discarded field. Qualified claims need
 located failures and forged-evidence controls, and imported effects require an
 explicit checked contract or documented external assumption.
-The current effect guarantees preservation only on normal return. Do not carry
-it onto a call's exceptional edge or infer preservation for a caller that catches
-the exception without checking its handler against the changed heap.
+An effect without `onThrow` guarantees preservation only on normal return. Do
+not carry it onto a call's exceptional edge or infer preservation for a caller
+that catches the exception without checking its handler against the changed
+heap; an effect with `onThrow` also bounds the heap a throw leaves
+([exceptional footprints](docs/SOURCE-ELABORATION.md#exceptional-footprints)).
 
 Agreement between the OCaml producer and the Lean checker does not catch a
 specification mistake they share, such as reading an unsupported generic method
