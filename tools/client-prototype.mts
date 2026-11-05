@@ -39,7 +39,7 @@ const isProcedure = (f: unknown): f is () => unknown => typeof f === "function";
 export function checkedPrivateClient(api: API): PrivateClient {
   const client = fieldOf(api, "client");
   const missing = (member: string): Error =>
-    Error(`the compiler package's private shape changed: API.client${member} is missing (compiler-channel.mts)`);
+    Error(`the compiler package's private shape changed: API.client${member} is missing (client-prototype.mts)`);
   if (!client || typeof client !== "object") throw missing("");
   if (!("close" in client) || !isProcedure(client.close)) throw missing(".close");
   for (const member of requestMembers)

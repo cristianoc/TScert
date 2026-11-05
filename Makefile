@@ -20,7 +20,7 @@ build: build-lean build-producer build-runner ## build the Lean verifier, the OC
 
 RUNNER := pipeline/runner/_build/stage-runner
 
-build-runner: $(RUNNER) ## build the stage runner, which reports the CPU time of process stages
+build-runner: $(RUNNER) ## build the stage runner, which reports the CPU time and peak memory of process stages
 
 $(RUNNER): pipeline/runner/stage-runner.c
 	mkdir -p $(dir $@)

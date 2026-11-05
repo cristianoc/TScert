@@ -4,7 +4,8 @@ import Verification.Source.Lowering.Observations
 import Verification.Source.Lowering.Plans
 import Verification.Source.FragmentTypes
 
-/-! Prepares closure signatures, parameters and captures. -/
+/-! Prepares closure signatures, parameters and captures, and recognizes a
+guarded return of a tested read (`guardedReturn`). -/
 namespace Verification.SourceExtraction
 open CallEffects (Arrow RestArrow Contract Effect)
 open Lean ProgramTyping PositiveRules ControlFlow CertificateProducer RequestJson

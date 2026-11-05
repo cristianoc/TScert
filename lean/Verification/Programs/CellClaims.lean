@@ -1,8 +1,10 @@
 import Verification.Source.SourceTypes
 
 /-! Single-field record claims at the invariant-cell boundary. This module does
-not lower TypeScript objects. It validates a bounded export and refuses to pick
-one side when a claim's read and write types differ. The plain-cell interpretation
+not lower TypeScript objects. It decodes a bounded export's record atoms and
+conjunctions, each field with its read and write types; the refusal of a cell
+whose read and write types differ is `cellConjunction`'s, in `FragmentTypes`.
+The plain-cell interpretation
 excludes arrays, callable objects, accessors and hidden object behavior. -/
 namespace Verification.CellClaims
 open Lean ProgramTyping PositiveRules SourceTypes LabelStore

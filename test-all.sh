@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# The checks of `make test`, after its build: front-end types, JSON field
-# names, assertions, documents, the rule inventory, and the controls no
-# pipeline case can make (pipeline/test.mts). The pipeline cases are
-# pipeline/run-cases.mts (`make suite`).
+# The checks of `make test`, after its build: the suites below, each a
+# `run_test` line with a comment naming what it checks, running no stage, and
+# the controls no pipeline case can make (pipeline/test.mts). The pipeline
+# cases are pipeline/run-cases.mts (`make suite`).
 # Usage: test-all.sh
 set -uo pipefail
 
@@ -113,8 +113,9 @@ refuses_broken_external() {
 run_test "unchecked.mts refuses a broken external declaration" refuses_broken_external
 # tests/docs.mts checks every document's links, anchors and math.
 run_test "Documents: links, math" node tests/docs.mts
-# tests/node-runs.mts runs examples and native-contract counterexamples under Node.
+# tests/caught-errors.mts checks the makers and handlers of caught errors on real failures.
 run_test "Caught error helpers" node tests/caught-errors.mts
+# tests/node-runs.mts runs examples and native-contract counterexamples under Node.
 run_test "Examples run under Node" node tests/node-runs.mts
 # tests/trusted-inputs.mts checks the front end's trusted inputs: pinned declarations, resolved files, imports, the array overlay.
 run_test "Trusted inputs" node tests/trusted-inputs.mts
@@ -134,9 +135,9 @@ run_test "Family guard tables" node tests/compiler-api-guards.mts
 run_test "Host family interpreter" node tests/host-families.mts
 # tests/regexp-shapes.mts checks the capture-shape reading of regex literals against the host.
 run_test "RegExp shapes" node tests/regexp-shapes.mts
-# tests/claim-text.mts checks the claim printer on malformed producer output.
+# tests/diagnostic.mts checks the decoder of diagnostic records, apart from proof acceptance.
 run_test "Diagnostic decoder" node tests/diagnostic.mts
-
+# tests/claim-text.mts checks the claim printer on malformed producer output.
 run_test "Claim text of malformed input" node tests/claim-text.mts
 # tests/rule-inventory.mts checks that the rules REQUEST-PROTOCOL documents are the rules Lean declares.
 run_test "Rule inventory" node tests/rule-inventory.mts

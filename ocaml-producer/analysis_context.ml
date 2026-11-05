@@ -1,4 +1,3 @@
-(* refinement.ml supplies branch refinement through the execution interpreter's input interface. *)
 (* execution_analysis.ml interprets expression schedules to provide effect states and operand-entry environments. *)
 (* closure_offers.ml tracks named closures and class constructors and records signatures offered by their uses. *)
 (* claim_collection.ml collects entry claims and instances through point-specific publication operations. *)

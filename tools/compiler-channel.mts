@@ -1,10 +1,11 @@
 /* Part of the trusted front end: the compiler's synchronous API, opened and
- * released in one place, and the one place that reads the pinned package's
- * private shape (typescript 7.0.2, `dist/api/sync/client.js`): an `API`'s
- * `client`, whose members `requestMembers` lists carry every request to the
- * compiler process, whose `close` ends that process without a request,
- * and whose `channel.child` is the process. A package that renames one of
- * them fails here, by name (`tests/tool-failures.mts` opens one).
+ * released in one place. It reaches the pinned package's private shape
+ * (typescript 7.0.2, `dist/api/sync/client.js`) only through
+ * `client-prototype.mts`, which reads an `API`'s `client`, whose members
+ * `requestMembers` lists carry every request to the compiler process, whose
+ * `close` ends that process without a request, and whose `channel.child` is
+ * the process. A package that renames one of them fails when the channel
+ * opens, by name (`tests/tool-failures.mts` opens one).
  *
  * Every request's failure, whatever it raised (a reply the compiler sent as
  * an error, a panic, a transport or native I/O failure, a stack exhaustion

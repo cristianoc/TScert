@@ -3,9 +3,11 @@ import Verification.Semantics.CallEffects
 
 /-! The one JSON form of a call signature's effect, read and written by the
 Fragment's declaration document, the claims document and the evidence: a
-closed footprint, `{"value", "store"}`, a promise, `null` or
-`{"guards": {"param": p}}` or `{"asserts": {"param": p}}`, and the Booleans
-`fresh` and `receiverStore`. Each decoder
+closed `footprint`, `{"value", "store"}`; a `promise`, `null` or
+`{"guards": {"param": p}}` or `{"asserts": {"param": p}}`; the Booleans
+`fresh`, `receiverStore`, `onThrow`, `receiverOwn` and `freshObject`; and the
+element predicates `requires` and `elements`, each `null` or its kinds in
+order. Each decoder
 re-encodes what it read and refuses a document that differs, so a field
 outside these, or a `grow` on `value`, is refused. -/
 namespace Verification.EffectJson
