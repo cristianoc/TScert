@@ -1,15 +1,15 @@
-<section id="multiply" style="background:#f6f7f5;color:#1d2422;font-family:'IBM Plex Sans','Helvetica Neue',Arial,sans-serif;padding:120px 128px;display:flex;flex-direction:column;gap:22px">
-<div style="display:flex;gap:24px;align-items:baseline;flex-wrap:wrap"><p style="font-size:24px;color:#5b6662;font-weight:600;letter-spacing:2px;text-transform:uppercase">How it multiplies</p><p style="font-size:24px;color:#5b6662">the function of the previous slide with n tests: without the rule (<span style="color:#2b5b9c">gap-in-unknown</span>) → on main (<span style="color:#2b5b9c">d578dd8</span>) · <span style="color:#2b5b9c">measured</span></p></div>
-<h2 style="font-family:'IBM Plex Serif',Georgia,serif;font-size:56px;font-weight:500;line-height:1.15">Doubling the tests multiplies the stored values by about 8</h2>
-<table style="font-size:24px;color:#1d2422">
+<section id="multiply" style="background:#fbfcfd;color:#0b1a2e;font-family:'Inter','Helvetica Neue',Arial,sans-serif;padding:120px 128px;display:flex;flex-direction:column;gap:22px">
+<div style="display:flex;gap:24px;align-items:baseline;flex-wrap:wrap"><p style="font-size:24px;color:#56627a;font-weight:600;letter-spacing:2px;text-transform:uppercase">How it multiplies</p><p style="font-size:24px;color:#56627a">the function of the previous slide with n tests: without the rule (<span style="color:#2c4f7c">gap-in-unknown</span>) → on main (<span style="color:#2c4f7c">d578dd8</span>) · <span style="color:#2c4f7c">measured</span></p></div>
+<h2 style="font-family:'Bricolage Grotesque','Helvetica Neue',Arial,sans-serif;font-size:56px;font-weight:500;line-height:1.15">Doubling the tests multiplies the stored values by about 8</h2>
+<table style="font-size:24px;color:#0b1a2e">
 <tr><th style="width:22%;text-align:left;font-weight:600">tests in the condition</th><th style="width:26%;text-align:left;font-weight:600">heap facts at the busiest point</th><th style="width:30%;text-align:left;font-weight:600">values stored in all heap facts</th><th style="width:22%;text-align:left;font-weight:600">evidence written</th></tr>
 <tr><td>4</td><td>18 → 24</td><td>95,646 → 144,328</td><td>7.3 MB → 9.3 MB</td></tr>
 <tr><td>8</td><td>70 → 80</td><td>762,992 → 945,398</td><td>42.4 MB → 50.1 MB</td></tr>
 <tr><td>16</td><td>270 → 288</td><td>6,219,164 → 6,953,434</td><td>300.0 MB → 331.0 MB</td></tr>
-</table><p style="font-size:26px;color:#1d2422;line-height:1.4">Four factors multiply; the first three grow with the number of tests n:</p><ul style="font-size:25px;color:#1d2422;line-height:1.36">
+</table><p style="font-size:26px;color:#0b1a2e;line-height:1.4">Four factors multiply; the first three grow with the number of tests n:</p><ul style="font-size:25px;color:#0b1a2e;line-height:1.36">
 <li><b style="font-weight:600">Facts per slot:</b> one per failed test, about n.</li>
 <li><b style="font-weight:600">Slots holding the object:</b> they grow with the tests: 6, 10 and 18 at 4, 8 and 16 tests (n + 2).</li>
 <li><b style="font-weight:600">Distinct points:</b> each test’s edges carry their own knowledge, about n.</li>
-<li><b style="font-weight:600">Values per fact:</b> the size of the field’s type: 100 for <span style="color:#2b5b9c">Kind</span>, about 300 for <span style="color:#2b5b9c">SyntaxKind</span>.</li>
-</ul><p style="font-size:26px;color:#1d2422;line-height:1.4">So the stored values grow as about n³ times the type’s size, and the evidence 5 to 7 times per doubling. The growth is there without the rule.</p>
+<li><b style="font-weight:600">Values per fact:</b> the size of the field’s type: 100 for <span style="color:#2c4f7c">Kind</span>, about 300 for <span style="color:#2c4f7c">SyntaxKind</span>.</li>
+</ul><p style="font-size:26px;color:#0b1a2e;line-height:1.4">So the stored values grow as about n³ times the type’s size, and the evidence 5 to 7 times per doubling. The growth is there without the rule.</p>
 </section>
