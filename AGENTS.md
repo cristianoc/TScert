@@ -94,7 +94,9 @@ checked whole, unit by unit, over one front per file; a function is
 shallow verified when its own unit is accepted) runs once on main, after a
 merge, and its movement is recorded then: the
 [Census workflow](.github/workflows/census.yml) runs it on each push to
-main, comments the movement on the pushed commit's pull request, publishes
+main, comments the movement on the pushed commit's pull request (as the
+machine user `tscert-bot`, mentioning the owner when a function is lost or
+statement coverage falls), publishes
 the report under `census/` on the repository's GitHub Pages and keeps the
 record as the run's artifact. A branch runs no census, over
 `tools/` or over a file. To show a change does what it is for, it runs the
