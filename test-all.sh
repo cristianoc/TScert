@@ -117,7 +117,7 @@ run_test "Documents: links, math" node tests/docs.mts
 run_test "Caught error helpers" node tests/caught-errors.mts
 # tests/node-runs.mts runs examples and native-contract counterexamples under Node.
 run_test "Examples run under Node" node tests/node-runs.mts
-# tests/trusted-inputs.mts checks the front end's trusted inputs: pinned declarations, resolved files, imports, the array overlay.
+# tests/trusted-inputs.mts checks the front end's trusted inputs: the Node version, pinned declarations, resolved files, imports, the array overlay.
 run_test "Trusted inputs" node tests/trusted-inputs.mts
 # tests/tool-failures.mts forces a failure of the compiler's API at each kind of catching site: each is reported as a tool failure.
 run_test "Tool failures stay tool failures" node tests/tool-failures.mts

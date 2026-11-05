@@ -4,7 +4,7 @@
  * give it or its search parameters an own member that a later read of its
  * `href` runs (SOURCE-CONTRACTS.md, "Node's `URL`"), so the program holds
  * none: this module is a host boundary, whose callers rely on its signatures
- * and the contract below, audited against Node 25.2.1's
+ * and the contract below, audited against Node 26.13.0's
  * `lib/internal/url.js` (SOURCE-REWRITES.md, "URLs as strings").
  *
  * Each function constructs a URL no other code can reach, reads its `href`

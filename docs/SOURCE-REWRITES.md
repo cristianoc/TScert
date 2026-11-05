@@ -2027,7 +2027,7 @@ a later read of a member or a conversion runs, so no member is read.
   and fragments, with and without `--preserve-symlinks`, on other
   serialized URLs (other schemes, encoded `?`, `#` and space, a fragment
   holding `?`), and on specifiers with encodings, queries, fragments and an
-  invalid URL (Node 25.2.1, 2026-10-29).
+  invalid URL (Node 25.2.1, 2026-10-29; Node 26.13.0, 2026-11-05).
 - **Functions:** `files.mts#resolveObserved`, `files.mts#observeResolution`
   and the two reads of `family-activation.mts`; `blocker-node-url-import`
   shows the rewritten form.
@@ -4652,7 +4652,7 @@ each URL it makes inside one function.
   Callers are verified against `(string) => string` and
   `(string, string) => string`, which state no effect
   (`blocker-node-url-import`).
-- **Contract, audited against Node 25.2.1's `lib/internal/url.js`:** each
+- **Contract, audited against Node 26.13.0's `lib/internal/url.js`:** each
   function constructs a URL, reads its `href` once and returns it; the URL
   reaches no other code, since Node's URL construction publishes nothing
   (no diagnostics channel) and the function passes it nowhere. The `href`
@@ -4662,7 +4662,7 @@ each URL it makes inside one function.
   runs no other code. `pathToFileHref` resolves a relative path against
   `process.cwd()`, so its result depends on the working directory, and
   for a relative path throws what `process.cwd()` throws (the working
-  directory removed: ENOENT, run under Node 25.2.1); a NUL character is
+  directory removed: ENOENT, run under Node 25.2.1 and Node 26.13.0); a NUL character is
   encoded as `%00`;
   `resolveHref` throws a `TypeError` where its input is no URL relative to
   the base, or the base is no URL.
@@ -4717,8 +4717,11 @@ program holds none.
   removed the boundary's `error` listener ends the process. The child is
   not killed on a rejection: its `pid` is a property other code may have
   replaced.
-- **Audited against Node 25.2.1's `lib/child_process.js` and
-  `lib/internal/child_process.js`:** where no other code holds the child,
+- **Audited against Node 26.13.0's `lib/child_process.js` and
+  `lib/internal/child_process.js`:** Node also publishes the spawn options
+  on the `child_process.spawn` tracing channel before it spawns, so other
+  code may change the command, its arguments and its streams; where no
+  other code holds the child or its options,
   it resolves once the child closes, with the exit code and the signal Node
   passes to `close` and the output decoded as UTF-8, a character split
   across chunks kept whole, and rejects where the child cannot start (a
@@ -4726,7 +4729,7 @@ program holds none.
   is absent). `tests/node-runs.mts` runs each case above under Node, each
   in a process of its own whose diagnostics-channel subscriber does what
   other code may, and reports a promise still pending after three seconds
-  (2026-10-29).
+  (Node 25.2.1, 2026-10-29; Node 26.13.0, 2026-11-05).
 - **What depends on it:** the worker loop of `unchecked.mts`.
 - **Commit:** the introducing commit, `node:url and URL overlay contracts; host boundaries for URL strings and a child's output`.
 
@@ -4783,7 +4786,7 @@ at states all of that, so the program holds none.
   are recorded as they come. Loading runs the module's code and every
   hook other code registered, and those may register hooks that outlive
   the call.
-- **Audited against Node 25.2.1's
+- **Audited against Node 26.13.0's
   `lib/internal/modules/customization_hooks.js`:** `registerHooks` pushes
   a frozen `ModuleHooks` onto the process's lists, and `deregister` splices
   it out by its own symbol, both through primordials; the most recently
@@ -4796,7 +4799,8 @@ at states all of that, so the program holds none.
   `42`, which an earlier hook answers, a resolution an earlier hook
   forges or throws from, and a load whose module registers a hook that
   keeps its continuation and throws, the continuation called after
-  `loadObserved` returned (2026-10-29).
+  `loadObserved` returned (Node 25.2.1, 2026-10-29; Node 26.13.0,
+  2026-11-05).
 - **What depends on it:** `files.mts#resolveObserved` (through
   `nodeResolve`), `files.mts#runtimeConditions` and
   `files.mts#loadModule`, which family activation uses.

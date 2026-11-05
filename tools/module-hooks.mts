@@ -12,7 +12,7 @@
  * host boundary that holds the hooks, checks every value they collect, and
  * hands its caller plain values only (SOURCE-REWRITES.md, "Module
  * customization hooks"). What it promises is their types, not their
- * provenance. Audited against Node 25.2.1's
+ * provenance. Audited against Node 26.13.0's
  * `lib/internal/modules/customization_hooks.js`. */
 import { createHash } from "node:crypto";
 import { createRequire, registerHooks } from "node:module";

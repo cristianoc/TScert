@@ -1,6 +1,7 @@
-// The trusted inputs of the front end, checked without a build: the pinned Node
-// declarations, the file TypeScript resolves, imports as TypeScript binds them,
-// and the array prototype overlay read from TypeScript's declarations.
+// The trusted inputs of the front end, checked without a build: the Node the
+// host contracts are audited against, the pinned Node declarations, the file
+// TypeScript resolves, imports as TypeScript binds them, and the array
+// prototype overlay read from TypeScript's declarations.
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
@@ -41,6 +42,14 @@ function fixtureProject(files: Record<string, string>, lib?: string[]): { graphO
     graphOf: (text: string) => collectDeclarations(client(text), { tsconfigPath: config }),
     parse: (text: string) => parseFile(client(text), false, config),
   };
+}
+
+{
+  // The host the library contracts are audited against (docs/SOURCE-CONTRACTS.md,
+  // "Library modules"): the Node version .nvmrc names runs the suites.
+  const pinned = readFileSync(resolve(import.meta.dirname, "../.nvmrc"), "utf8").trim();
+  assert.equal(process.version, `v${pinned}`, `run Node ${pinned}, the version .nvmrc names`);
+  process.stdout.write(`Node ${pinned}: the version the host contracts are audited against\n`);
 }
 
 {

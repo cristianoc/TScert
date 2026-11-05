@@ -347,14 +347,13 @@ const processEntries: GlobalEntry[] = [
  * declaration in `@types/node`; the two texts of a member are the two pinned
  * installations' (the tools' and `library-project`'s). */
 const bytesEntries: GlobalEntry[] = [
-  // `Buffer.from(s)` with a string returns a fresh `Buffer` (Node 25.2.1's
+  // `Buffer.from(s)` with a string returns a fresh `Buffer` (Node 26.13.0's
   // `lib/buffer.js`, `fromString`), its own memory or a view into the
-  // module's pool. It writes the string's UTF-8 bytes through `utf8Write`, a
-  // writable property of `Buffer.prototype` other code may replace, whose
-  // answer also sets the view's length and the pool's next offset: the
-  // contents, and the memory's disjointness from the pool's other views,
-  // hold only where that is Node's own. The stated type depends on neither. It reads `Buffer.poolSize`, a writable property of `Buffer`
-  // other code may make a getter, to choose: no effect is stated.
+  // module's pool. It writes the string's UTF-8 bytes through the binding's
+  // `utf8Write`, captured when the module loads, whose answer also sets the
+  // view's length and the pool's next offset. It reads `Buffer.poolSize`, a
+  // writable property of `Buffer` other code may make a getter, to choose:
+  // no effect is stated.
   ...["from(string: WithImplicitCoercion<string>, encoding?: BufferEncoding): Buffer<ArrayBuffer>;",
     "from(data: WithImplicitCoercion<Uint8Array | readonly number[] | string>): Buffer<ArrayBuffer>;"].map(
     (signature): GlobalEntry => ({ host: contract, origin: node, global: "Buffer", member: "from", signature,
@@ -367,7 +366,7 @@ const bytesEntries: GlobalEntry[] = [
     signature: "compare(buf1: Uint8Array, buf2: Uint8Array): -1 | 0 | 1;", effect: emptyEffect,
     stated: { binders: [], params: [bytes, bytes], result: { k: "union", span: at, parts: ["-1", "0", "1"].map(
       (n): TypeTerm => ({ k: "literal", name: "number", text: n, span: at })) } }, definitions: [stated.bytes] },
-  // `new TextDecoder(label, options)` (Node 25.2.1's
+  // `new TextDecoder(label, options)` (Node 26.13.0's
   // `lib/internal/encoding.js`, the ICU build) converts the label by a
   // template, a string's own value, and throws where it names no supported
   // encoding; of the options it reads `fatal` and `ignoreBOM`, both stated,
@@ -467,7 +466,7 @@ export const importMetaName = "import.meta";
  * members the repository's code reads, each pinned to its declaration in
  * `@types/node` (the tools' text, then `library-project`'s where it
  * differs) and read as a call of an intrinsic at `unknown` stating no
- * effect (`intrinsics.mts`). Node 25.2.1's
+ * effect (`intrinsics.mts`). Node 26.13.0's
  * `DefaultImportMetaObjectInitializer` (`src/module_wrap.cc`) fills the
  * object at the module's first evaluation of `import.meta`, from the
  * module's wrapper, which other code reaches through `require.cache`: it
@@ -880,8 +879,8 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // fresh copy of data properties, its prototypes `Object.prototype`, its
   // symbol keys dropped; a function throws a `DataCloneError`. A getter may
   // change what the traversal reads later, so the copy of a `JsonValue` may
-  // be none (Node 25.2.1: a getter beside an array's elements popping an
-  // enclosing array leaves a hole in its copy). Stated at any value, the
+  // be none (Node 25.2.1, and Node 26.13.0 on 2026-11-05: a getter beside an
+  // array's elements popping an enclosing array leaves a hole in its copy). Stated at any value, the
   // result `unknown`, no effect stated; a transfer list is not admitted.
   ...["function structuredClone<T>(\n            value: T,\n            options?: { transfer?: Transferable[] },\n        ): T;",
     "function structuredClone<T>(\n        value: T,\n        transfer?: { transfer: ReadonlyArray<import(\"worker_threads\").TransferListItem> },\n    ): T;"].map(

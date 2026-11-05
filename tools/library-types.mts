@@ -108,7 +108,7 @@ const bytesDefinition = definitionOf(bytesIdentity,
   { k: "object", fields: viewMethods(bytes), stringIndex: null, calls: [], host: bytesMarker, span: at });
 
 /** A `Buffer`, a view of bytes with the methods of `Buffer.prototype` the
- * overlay states (Node 25.2.1's `lib/buffer.js`),
+ * overlay states (Node 26.13.0's `lib/buffer.js`),
  *
  *     type Buffer = host "node:bytes" { toString(encoding: "utf8"): string;
  *       fill(value: number, offset?: number, end?: number): Buffer;
@@ -116,9 +116,9 @@ const bytesDefinition = definitionOf(bytesIdentity,
  *       set(source: Uint8Array, offset?: number): undefined;
  *       subarray(start: number, end?: number): Buffer };
  *
- * `toString("utf8")` reads `this.length` and calls `this.utf8Slice`, and
- * `subarray(start, end)` reads `this.length`, `this.buffer` and
- * `this.byteOffset`, clamps its integers and constructs a `FastBuffer` over
+ * `toString("utf8")` reads the view's length from its internal slot and
+ * decodes through the binding's `utf8Slice`, and `subarray(start, end)`
+ * reads the length from the slot, `this.buffer` and `this.byteOffset`, clamps its integers and constructs a `FastBuffer` over
  * the same memory: a fresh `Buffer`. `fill` of a number validates its
  * offsets as integers within the view, throwing otherwise, reads
  * `this.length` and the byte length, and calls the realm's
@@ -140,7 +140,7 @@ export const bufferDefinition: TypeDefinition = definitionOf(bufferIdentity,
 const tests: Field[] = ["isFile", "isDirectory", "isBlockDevice", "isCharacterDevice", "isSymbolicLink", "isFIFO",
   "isSocket"].map(name => field(name, method([], atom("unknown"))));
 
-/** What `statSync(path, { bigint: true })` returns (Node 25.2.1's
+/** What `statSync(path, { bigint: true })` returns (Node 26.13.0's
  * `lib/internal/fs/utils.js`): `StatsBase` and `BigIntStats` assign the
  * eighteen bigints, which become own writable data properties under the
  * host assumption that a `BigIntStats` keeps its audited prototype chain, as
@@ -166,7 +166,7 @@ export const dirent: TypeTerm = named(direntIdentity);
 const direntDefinition = definitionOf(direntIdentity, { k: "object", stringIndex: null, calls: [], span: at,
   fields: [field("name", atom("string"), false), field("parentPath", atom("string"), false), ...tests] });
 
-/** What `new TextDecoder(label, options)` constructs (Node 25.2.1's
+/** What `new TextDecoder(label, options)` constructs (Node 26.13.0's
  * `lib/internal/encoding.js`),
  *
  *     type TextDecoder = { decode(input: Uint8Array): string };
@@ -175,9 +175,8 @@ const direntDefinition = definitionOf(direntIdentity, { k: "object", stringIndex
  * that it is Node's own data property throughout execution and that no
  * decoder owns a `decode` (SOURCE-CONTRACTS.md, "Node's `Buffer` and
  * `TextDecoder`"). It reads the decoder's state
- * through symbol-keyed properties, on which other code may install a getter,
- * and, outside UTF-8 and windows-1252, the decoder's `encoding` getter,
- * which other code may replace: it states no effect. A view of bytes it
+ * through symbol-keyed properties, on which other code may install a getter:
+ * it states no effect. A view of bytes it
  * decodes to a string; a malformed one, at `fatal: true`, throws. */
 const textDecoderIdentity = identity("TextDecoder");
 export const textDecoder: TypeTerm = named(textDecoderIdentity);

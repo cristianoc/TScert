@@ -475,7 +475,8 @@ of `x < lo` and `x > hi` give $`lo\le x\le hi`$, no operand being NaN.
 $`K_q=\{lo\le r,\ r\le hi\}`$ types both comparisons of `ensures` at
 `true`. The route is automatic, infinities included. Without `x === x` the
 contract is false: `clamp(NaN, 0, 1)` returns `NaN`, for which `ensures` is
-`false` (observed under Node 25.2.1, 2026-10-28); no order atom holds of
+`false` (observed under Node 25.2.1, 2026-10-28, and Node 26.13.0,
+2026-11-05); no order atom holds of
 $`x`$ at the third return. A positive and a negative case show both.
 
 ### Loop: binary search
@@ -585,7 +586,7 @@ non-array objects with one set of own string keys and values pairwise
    the key sets do, and `-0` and `0` give the same answers.
 
 Two weaker statements are false (observed under Node 25.2.1,
-2026-10-28): equality by `Object.is` fails at `param: -0`, which comes
+2026-10-28, and Node 26.13.0, 2026-11-05): equality by `Object.is` fails at `param: -0`, which comes
 back `0`; and without the precondition, a `CallEffect` holding an own
 `asserts: undefined`, which its type admits, comes back without the key.
 

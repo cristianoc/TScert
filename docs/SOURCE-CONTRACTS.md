@@ -1651,10 +1651,11 @@ so no case reaches this refusal.
 **Audited against:** TypeScript 7.0.2's standard library and `@types/node`
 22.20.2 and 22.10.7 (`tools/package.json`,
 `pipeline/library-project/package.json`); host behaviour from ECMA-262's
-TypedArray objects, ECMA-402's Segmenter objects, Node 25.2.1's
+TypedArray objects, ECMA-402's Segmenter objects, Node 26.13.0's
 `lib/buffer.js`, `lib/internal/buffer.js` and `lib/internal/fs/utils.js`,
 and probes run under Node 25.2.1 (2026-10-27) and Node 26.13.0 (2026-11-05,
-the typed arrays' constructors and methods, `Intl.Segmenter`).
+the typed arrays' constructors and methods, `Intl.Segmenter`, and the Node
+runs of `tests/node-runs.mts`).
 
 A type name some host values have, whose declarations the reader does not
 read as those values are (`Buffer` names the conditional type
@@ -1728,8 +1729,9 @@ The entries:
 - `Buffer`: $`V_\mathit{Buffer}`$ with
   $`\mathtt{toString}\colon(\texttt{"utf8"})\Rightarrow_\emptyset\mathtt{string}`$
   besides, each a method, within the empty footprint. `toString("utf8")`
-  reads `this.length` and calls `this.utf8Slice`; `subarray` reads
-  `this.length`, `this.buffer` and `this.byteOffset`, clamps its integers
+  reads the view's length from its internal slot and decodes through the
+  binding's `utf8Slice`; `subarray` reads the length from the slot,
+  `this.buffer` and `this.byteOffset`, clamps its integers
   and constructs a `FastBuffer` over the same memory; `fill` of a number
   validates its offsets as integers within the view, throwing otherwise,
   and calls the realm's `%TypedArray%.prototype.fill` captured at startup,
@@ -3076,7 +3078,7 @@ What is proved and what is audited:
 **Audited against:** TypeScript 7.0.2's standard library and `@types/node`
 22.20.2 and 22.10.7 (`tools/package.json`,
 `pipeline/library-project/package.json`); host behaviour observed under Node 25.2.1
-(2026-10-19).
+(2026-10-19) and Node 26.13.0 (2026-11-05).
 
 The overlay files (`library-globals.mts` here, `library-modules.mts` for
 [library modules](#library-modules), `array-prototype.mts` for
@@ -3735,12 +3737,10 @@ where the two differ; the types are the
 
 - `Buffer.from(s)` of a string returns a fresh `Buffer` (Node's
   `lib/buffer.js`, `fromString`), its own memory or a view into the
-  module's pool, into which it writes the string's UTF-8 bytes through
-  `utf8Write`, a writable property of `Buffer.prototype` other code may
-  replace, whose answer also sets the view's length and the pool's next
-  offset; so its contents, and its memory's disjointness from the pool's
-  other views, hold only where that method is Node's own. The stated type
-  depends on neither: $`(\mathtt{string})\Rightarrow\mathit{Buffer}`$.
+  module's pool, into which it writes the string's UTF-8 bytes through the
+  binding's `utf8Write`, captured when the module loads, whose answer also
+  sets the view's length and the pool's next offset (Node 26.13.0):
+  $`(\mathtt{string})\Rightarrow\mathit{Buffer}`$.
   It reads `Buffer.poolSize`, a writable property other code may make a
   getter, to choose, so it states no effect.
 - `Buffer.compare(a, b)` checks that each is a `Uint8Array` by its internal
@@ -3770,8 +3770,7 @@ with $`\mathit{TextDecoder}=\{\mathtt{decode}\colon(\mathit{Uint8Array})\Rightar
 `decode` a method of `TextDecoder.prototype`. The construction writes the
 decoder's state to symbol-keyed properties of the fresh decoder, which a
 setter other code defines on `TextDecoder.prototype` would intercept, and
-`decode` reads them and, outside UTF-8 and windows-1252, the `encoding`
-getter other code may replace: neither states an effect. `decode` of a
+`decode` reads them (Node 26.13.0): neither states an effect. `decode` of a
 view gives its text; a malformed byte at `fatal: true`, and a value of the
 view's type that is no view, throw (`node-bytes-text-decoder`, run under
 Node). That `decode` finds Node's method and that reading it runs no code
@@ -3910,8 +3909,8 @@ run under Node: the object's own `segment` and iterator run). The cases are
 #### Node's `URL`
 
 **Audited against:** `@types/node` 22.20.2 and 22.10.7; host behaviour
-from Node 25.2.1's `lib/internal/url.js` and probes run under Node 25.2.1
-(2026-10-29).
+from Node 26.13.0's `lib/internal/url.js` and probes run under Node 25.2.1
+(2026-10-29) and Node 26.13.0 (2026-11-05).
 
 `URL` is read only as a constructor through `library-global-constructs`.
 Its contract admits string inputs and an optional string base:
@@ -4521,7 +4520,7 @@ the calculus does not prove Node's scheduler.
 
 ### Module metadata
 
-**Audited against:** Node 25.2.1, `src/module_wrap.cc`
+**Audited against:** Node 26.13.0, `src/module_wrap.cc`
 (`DefaultImportMetaObjectInitializer`) and
 `lib/internal/modules/esm/loader.js` (`createImportMetaResolve`,
 `resolveSync`); `@types/node` 22.20.2 and 22.10.7.
@@ -4572,8 +4571,10 @@ anything there, which the `unknown` values and the absent effect cover.
 
 **Audited against:** `@types/node` 22.20.2 and 22.10.7 (`tools/package.json`,
 `pipeline/library-project/package.json`); host
-behaviour from Node 25.2.1's `lib/` sources and probes run under Node 25.2.1
-(2026-10-19).
+behaviour from Node 26.13.0's `lib/` sources, Node run without
+`--experimental-vfs` (under it, a mounted virtual file system's provider
+answers the `fs` functions), and probes run under Node 25.2.1 (2026-10-19)
+and Node 26.13.0 (2026-11-05).
 
 A value a client imports from one of Node's built-in modules (`node:fs`, or
 `fs`; a specifier Node's `isBuiltin` answers true of) is read through the
@@ -4735,8 +4736,9 @@ type names does, and a definition's methods name it as their receiver
   ([trust surface](DESIGN.md#trust-surface)): a `Stats` keeps its audited
   prototype chain, `Stats.prototype` → `StatsBase.prototype` →
   `Object.prototype`, whose two Node prototypes hold the seven tests,
-  `_checkModeProperty` and the date getters `atime`, `mtime`, `ctime` and
-  `birthtime`, none named by $`S`$'s numbers, the seven tests data
+  `_checkModeProperty`, the date getters `atime`, `mtime`, `ctime` and
+  `birthtime` and the instant getters `atimeInstant`, `mtimeInstant`,
+  `ctimeInstant` and `birthtimeInstant`, none named by $`S`$'s numbers, the seven tests data
   properties holding callable values throughout execution, also in external
   code. A getter in a test's place runs where the member is read, a read no
   call's effect covers (`invalid-node-stat-method-getter`, run under Node: a
@@ -4986,9 +4988,9 @@ type names does, and a definition's methods name it as their receiver
 
 Node's default export of a built-in module is the module's object,
 `module.exports`, and its named exports are bound from that object's own
-properties when Node loads the module (Node 25.2.1,
+properties when Node loads the module (Node 26.13.0,
 `lib/internal/bootstrap/realm.js`, `BuiltinModule.prototype.syncExports`;
-probed under Node 25.2.1: `(await import("node:fs")).default` is
+probed under Node 25.2.1 and Node 26.13.0 (2026-11-05): `(await import("node:fs")).default` is
 `require("node:fs")`, and its `existsSync` is the named export). A default
 import of a module $`\mu`$ the overlay lists whose `default` it reviews no
 entry of (`import fs from "node:fs"`, `import path from "node:path"`;
@@ -5014,7 +5016,7 @@ refused where they are written (`invalid-node-default-import-write`,
 `invalid-node-default-import-value`, run under Node: a replaced `dirname`
 shrinks the array `map` visits). A member call passes the module's object
 as the receiver, which none of the listed functions reads (their sources
-under Node 25.2.1 mention no `this`); a callee whose declaration states a
+under Node 26.13.0 mention no `this`); a callee whose declaration states a
 `this` parameter is refused, as a namespace member's is.
 
 TypeScript declares `node:path`'s `path` twice, `namespace path`, which
