@@ -1055,6 +1055,16 @@ as regression evidence.
   For every exported function of the package, its own keys and their
   descriptors are those T4 states, and `typeof` of every host object and
   node list met is `"object"`.
+- **C5, open reads.** At each key the front end reads a compiler-provided
+  object at through an open read, the lookup along the object's chain finds
+  a data property or the audited getter
+  [open reads](SOURCE-CONTRACTS.md#open-reads) names: the API's private
+  client at `close`, its process at `kill`, `once`, `exitCode` and
+  `signalCode`, a node at `kind` (the getter of `RemoteNodeBase.prototype`)
+  and `getStart`, and, on nodes of three kinds, `RemoteNode.prototype`'s
+  `body` and `type` getters, which read the kind's named child or
+  `undefined`, while the client and its process have neither key
+  (regression evidence for that audit).
 - **C6, stated guards.** Each [stated guard](#stated-type-guards) is
   declared as its entry states, and the function Node loads for it, and
   for `isTypeReference`'s helper `isObjectType`, is the entry's reviewed
@@ -1275,6 +1285,6 @@ digest, the string-tagged stand-in) are in
   `dev/guard-table.mts` and reviewed; a guard it does not list is refused at
   its use (L1). `tools/guard-closure.mts`: the executable module closure of
   the table's entry point, whose digests bind the reviewed sources.
-- `tests/compiler-api.mts`: C0, C1, C4, C6 and C7 (the symbol tables and
+- `tests/compiler-api.mts`: C0, C1, C4, C5, C6 and C7 (the symbol tables and
   type predicates against `auditedSyncMethods`); `tests/compiler-api-guards.mts`:
   C2; `tests/compiler-api-shapes.mts`: C3.

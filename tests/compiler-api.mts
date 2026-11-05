@@ -13,18 +13,22 @@
 // reverse key holding the name of a member with its value, and the entry points that
 // export the enum export that object.
 //
-// C4, node lists: every transparent row of a node list answers as a dense
-// readonly array's, through throwing and re-entrant callbacks and iterators
-// left early or interleaved.
+// C4, members, lists and operations: every transparent row of a node list
+// answers as a dense readonly array's, through throwing and re-entrant
+// callbacks and iterators left early or interleaved; each member the
+// contract refuses as allocating is declared as reviewed, and under Node two
+// reads of it give different values where a stable member gives one.
 //
 // C5, open reads: at each key the front end reads a compiler-provided object
 // at through an open read (`%Read:k%`), the lookup along the object's chain
-// finds a data property, or the audited `kind` getter of a node's base
-// prototype (SOURCE-CONTRACTS.md, "Open reads").
+// finds a data property, or an audited getter of a node's prototypes
+// (SOURCE-CONTRACTS.md, "Open reads").
 //
-// C4, allocating members: each member the contract refuses as allocating is
-// declared as reviewed, and under Node two reads of it give different values
-// where a stable member gives one.
+// C6, stated guards: each stated guard is declared and loaded as reviewed,
+// and leaves the members its promise covers at their declared types.
+//
+// C7, symbol tables and type predicates: the audited sync methods are loaded
+// as reviewed, and their tables and predicates are as audited.
 import assert from "node:assert/strict";
 import { copyFileSync, cpSync, mkdirSync, readdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";

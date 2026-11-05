@@ -30,6 +30,9 @@ A case naming a project reads its imports and declarations from it:
 | `pipeline/augmented-project/` | an augmentation of `ObjectConstructor` from a module of its own, for the `*augmented*` cases |
 | `pipeline/host-augmented-project/` | an augmentation merging members into the compiler API's host types, for the `invalid-host-augmentation-*` cases |
 | `pipeline/fake-lib-project/` | `pipeline/fake-lib/`, a file named like a standard library file, for the `*fake-lib*` cases |
+| `pipeline/exact-optional-project/` | `exactOptionalPropertyTypes`, under which `-?` keeps an optional field's type, for the `*exact-optional*` cases |
+| `pipeline/node-types-heritage-project/` | Node's `statSync` declared through a `StatSyncFn` with a base other than `Function`, for `invalid-node-types-heritage-stat` |
+| `pipeline/node-types-let-project/` | Node's `statSync` declared by `let`, for `invalid-node-types-let-stat` |
 | `pipeline/lib-collision-project/` | a file at `typescript/lib/lib.augment.d.ts`, the path a standard library identity is printed with, for the `*lib-collision*` case |
 | `pipeline/merged-*-project/` | one member merged into one standard library interface each (`Array`, `ReadonlyArray`, `Object`, `Function`, `Iterator`, `ArrayIterator`, `String`, `Iterable`, and `ReadonlyArray`'s `at` restated, renamed, narrowed and reached along two bases), for the cases whose file names contain the directory's `merged-*` part |
 | `pipeline/parse-int-overload-project/` | an overload added to the standard library's `parseInt`, for the `*parse-int-overload*` case |
@@ -43,8 +46,11 @@ The fixture projects' `node_modules` are links `pipeline/fixture-links.mts`
 creates.
 
 This directory holds the suites that check the repository around the
-pipeline; `test-all.sh` runs each but `compiler-api-shapes.mts`, which
-`make compiler-api-shapes` runs:
+pipeline. `test-all.sh` runs each but `compiler-api-shapes.mts`, which
+`make compiler-api-shapes` runs, and `session-reuse.mts`, which
+`pipeline/test.mts` runs beside its controls, as it runs the full
+`observed-stages.mts` (`test-all.sh` runs it with `--reads`);
+`force-tool-failure.mts` is the forced failure `tool-failures.mts` imports:
 
 | Tests | Coverage |
 | --- | --- |
@@ -52,14 +58,18 @@ pipeline; `test-all.sh` runs each but `compiler-api-shapes.mts`, which
 | [`json-field-names.mts`](json-field-names.mts) | TypeScript, Lean and OCaml use the same JSON field names. |
 | [`node-runs.mts`](node-runs.mts) | The examples and native-contract counterexamples run under Node with the outcomes the cases state. |
 | [`trusted-inputs.mts`](trusted-inputs.mts) | The front end's trusted inputs: pinned declarations, resolved files, imports, the array overlay. |
-| [`tool-failures.mts`](tool-failures.mts) / [`force-tool-failure.mts`](force-tool-failure.mts) | A failure of the compiler's API forced at each kind of site that catches what a query throws (a read refused into a value or a located error, a lookup made an absence, a computed type refused when generic, an imported module left out, `unchecked.mts`'s uninspected nodes) is reported as a tool failure, also when it strikes after a request was sent, a native read failure included; no request follows on a damaged channel, and the next parse opens a fresh compiler; a failure releasing the compiler is a tool failure naming the refusal in flight; an abandoned compiler's process ends; `unchecked.mts` reports every panic, retried or not; a step killed by a signal is a tool failure. |
+| [`tool-failures.mts`](tool-failures.mts), with [`force-tool-failure.mts`](force-tool-failure.mts) | A failure of the compiler's API forced at each kind of site that catches what a query throws (a read refused into a value or a located error, a lookup made an absence, a computed type refused when generic, an imported module left out, `unchecked.mts`'s uninspected nodes) is reported as a tool failure, also when it strikes after a request was sent, a native read failure included; no request follows on a damaged channel, and the next parse opens a fresh compiler; a failure releasing the compiler is a tool failure naming the refusal in flight; an abandoned compiler's process ends; `unchecked.mts` reports every panic, retried or not; a step killed by a signal is a tool failure. |
 | [`stage-store.mts`](stage-store.mts) | The [stage store](../docs/STAGE-STORE.md) with stand-in stages: dependency invalidation, concurrent publication, an interrupted writer, a timeout/success race, writable artifact isolation, timeouts at a longer limit and retried, and an edit of the replay policy replaying its entries. |
+| [`shared-work.mts`](shared-work.mts) | The work shared within a process: an attempt's answers, a snapshot's query answers and every compiler's ledger. |
+| [`session-reuse.mts`](session-reuse.mts) | Retained declaration sessions: a parse in a reused session is byte for byte the parse in fresh compilers, in forward, reverse and A–B–A orders, and the replacements, invalidations and failed restorations [retained declaration sessions](../docs/STAGE-STORE.md#retained-declaration-sessions) lists. |
 | [`observed-stages.mts`](observed-stages.mts) | With `--reads` (a fast check), that the stages' code reads the file system only through `tools/files.mts`; in full, run by `pipeline/test.mts`, that a parse replays after an unchanged run and executes after each change that alters what it read, that forged entries are refused, and that the confined compiler is killed on a read the API's queries do not serve. |
-| [`compiler-api.mts`](compiler-api.mts) | The compiler-API contract against the installed package: the host package is the audited installation with the reviewed declarations (C0); the host enums' declared values are their runtime values (C1); `jsDoc` allocates on each read, a stable member does not (C4). |
+| [`compiler-api.mts`](compiler-api.mts) | The compiler-API contract against the installed package: the host package is the audited installation with the reviewed declarations (C0); the host enums' declared values are their runtime values (C1); node lists answer as dense readonly arrays, `jsDoc` allocates on each read, a stable member does not (C4); open reads find data properties or audited getters (C5); the stated guards (C6); the symbol tables and type predicates (C7). |
 | [`compiler-api-guards.mts`](compiler-api-guards.mts) | Each family's guard table, the compiler API's and the string-tagged stand-in's, equals its generator's output, and every entry run under Node answers exactly its tag set (C2). |
 | [`compiler-api-shapes.mts`](compiler-api-shapes.mts) | Every node of a corpus holds the properties its shape states required, or a correction covers them (C3), and its members read one value throughout (C4). |
 | [`host-families.mts`](host-families.mts) | The family interpreter on declarations no audited package has: generic arms, residual members, refinements, and tampered tag enum objects. |
 | [`regexp-shapes.mts`](regexp-shapes.mts) | The capture-shape reading of regex literals against the host: known shapes, counterexamples and a seeded fuzz. |
+| [`caught-errors.mts`](caught-errors.mts) | The makers and handlers of caught errors on real failures: I/O failures, tool failures and absences. |
+| [`diagnostic.mts`](diagnostic.mts) | The decoder of diagnostic records, a wire apart from proof acceptance. |
 | [`claim-text.mts`](claim-text.mts) | The claim printer on malformed producer output, which no source can make. |
 | [`rule-inventory.mts`](rule-inventory.mts) / `rule-inventory.snap` | The rules REQUEST-PROTOCOL documents are the rules Lean declares. |
 | [`unchecked-project/`](unchecked-project/) | The counterexamples [`tools/unchecked.mts`](../tools/unchecked.mts) must report, each line marked `// expected: KIND`: flows of an external `any` (`library/` declares them) through results, properties read and written, index signatures, aliases, generic arguments, heritage, defaults beside constraints, conditional types, callback and rest parameters and an unreviewed input; the compiler's brands; `JSON.stringify(undefined)`; suppression directives, a syntax error; values still typed `any`; functions at a unit's boundary; and, unmarked, the `Object.assign` mutations outside the check. |

@@ -127,7 +127,7 @@ run_test "Stage store" node tests/stage-store.mts
 run_test "Keyed closures; observed stages read through files.mts" node tests/observed-stages.mts --reads
 # tests/shared-work.mts checks the work shared within a process: an attempt's answers, query answers and every compiler's ledger.
 run_test "Shared work" node tests/shared-work.mts
-# tests/compiler-api.mts binds the compiler-API contract to the installed package: C1, its enums.
+# tests/compiler-api.mts binds the compiler-API contract to the installed package: C0, C1, C4, C5, C6 and C7.
 run_test "Compiler-API contract" node tests/compiler-api.mts
 # tests/compiler-api-guards.mts compares each family's guard table, the compiler API's and the stand-in's, with its generator and runs every entry under Node (C2).
 run_test "Family guard tables" node tests/compiler-api-guards.mts
