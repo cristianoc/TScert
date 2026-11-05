@@ -1,5 +1,6 @@
 // Pretext (github.com/chenglou/pretext at 0d102a5c, src/, census by unit):
-// measurement.ts#buildEngineProfile.
+// measurement.ts#buildEngineProfile, which with the rewrites of TScert
+// issue #94 reads it through `{ readonly userAgent?: string }` and verifies.
 // Refusal: search: closure expression claim: the available claim for
 // navigator is the host's Navigator, and the assertion requires a record
 // whose `userAgent` is writable.

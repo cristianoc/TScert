@@ -1,9 +1,7 @@
-// Pretext (github.com/chenglou/pretext at 0d102a5c, src/, census by unit):
-// layout.ts#createLayoutLine, layout.ts#getInternalPrepared,
-// layout.ts#layoutNextLine, layout.ts#prepareWithSegments,
-// rich-inline.ts#getInternalPreparedRichInline; and, introducing the brand
-// with `as` on an object literal, prepare.ts#measureAnalysis and
-// rich-inline.ts#prepareRichInline.
+// Pretext (github.com/chenglou/pretext at 0d102a5c, src/, census by unit,
+// with the rewrites of TScert issue #94):
+// rich-inline.ts#getInternalPreparedRichInline. layout.ts states its
+// handle's type as the record preparation builds, and asserts none.
 // Refusal: reject: closure expression claim.
 // A branded opaque handle asserted with `as` to its internal record: no
 // claim of the handle meets the internal type's fields.
