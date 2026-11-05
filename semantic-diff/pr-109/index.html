@@ -1,0 +1,337 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Commit Records</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Code+Pro:wght@400;600&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=STIX+Two+Text:ital,wght@0,400;0,600;1,400&display=swap">
+<style>
+:root { --bg:#fbfcfd; --surface:#ffffff; --ink:#0b1a2e; --muted:#56627a; --rule:#d5dce6; --accent:#8a6410; --code-bg:#eef2f7; --math-bg:#f2f4f8; --ok:#2f6b47; --ok-bg:#e2efe4; --principled:#a0521a; --principled-bg:#f7e6d6; --gap:#6b6f78; --gap-bg:#ecebe6; --neutral:#2c4f7c; --neutral-bg:#e6ebf2; --trust:#7c2f4a; --trust-bg:#f2e1e7; --neg:#9b3524; --neg-bg:#f5e1da; --run:#7a5414; --run-bg:#f3e7cc; --brand-ink:#0b1a2e; --brand-gold:#b8840f;
+  --display:"Bricolage Grotesque","Helvetica Neue",Arial,sans-serif; --body:"Inter","Helvetica Neue",Arial,sans-serif; --mono:"Source Code Pro",Menlo,Consolas,monospace; --math:"STIX Two Text","STIX Two Math","STIXGeneral","Cambria Math","Apple Symbols",Georgia,serif; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#0e1626; --surface:#16213a; --ink:#efe7d4; --muted:#9aa3b5; --rule:#2a3756; --accent:#e0ac4a; --code-bg:#131d33; --math-bg:#1a2540; --ok:#7fd0a2; --ok-bg:#17322a; --principled:#f0a868; --principled-bg:#3a2a1c; --gap:#9aa3b5; --gap-bg:#1c2639; --neutral:#8fb4e8; --neutral-bg:#1b2b49; --trust:#e79bb6; --trust-bg:#3a2131; --neg:#f0907d; --neg-bg:#3a1f22; --run:#e0ac4a; --run-bg:#2e2a24; --brand-ink:#efe7d4; --brand-gold:#e0ac4a; color-scheme:dark } }
+:root[data-theme="dark"] { --bg:#0e1626; --surface:#16213a; --ink:#efe7d4; --muted:#9aa3b5; --rule:#2a3756; --accent:#e0ac4a; --code-bg:#131d33; --math-bg:#1a2540; --ok:#7fd0a2; --ok-bg:#17322a; --principled:#f0a868; --principled-bg:#3a2a1c; --gap:#9aa3b5; --gap-bg:#1c2639; --neutral:#8fb4e8; --neutral-bg:#1b2b49; --trust:#e79bb6; --trust-bg:#3a2131; --neg:#f0907d; --neg-bg:#3a1f22; --run:#e0ac4a; --run-bg:#2e2a24; --brand-ink:#efe7d4; --brand-gold:#e0ac4a; color-scheme:dark }
+* { box-sizing:border-box } body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.6 var(--body) }
+main { max-width:900px; margin:0 auto; padding-inline:20px; padding-block:32px 64px; display:flex; flex-direction:column; gap:22px }
+h1 { font:600 32px/1.15 var(--display); margin:0 } h2 { font:600 22px/1.2 var(--display); margin:12px 0 8px; padding-top:12px; border-top:2px solid var(--ink) }
+h3 { font:600 19px/1.3 var(--display); margin:2px 0 0; text-wrap:balance }
+h4 { font:600 11px/1 var(--body); letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin:12px 0 4px }
+p { margin:2px 0; max-width:72ch } .lede { color:var(--muted) }
+code { font:13px/1.5 var(--mono); background:var(--code-bg); padding:1px 4px; border-radius:3px }
+pre { margin:4px 0; padding:12px 14px; border-radius:6px; overflow-x:auto }
+pre.code { font:13px/1.55 var(--mono); background:var(--code-bg) }
+.rules { display:flex; flex-direction:column; gap:14px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:14px 18px; overflow-x:auto; font:16px/1.6 var(--math) }
+.rules sub, .rules sup { font-size:.72em; line-height:0 }
+.formulas { display:flex; flex-direction:column; gap:4px }
+.formulas .row { display:flex; flex-wrap:wrap; gap:4px 28px } .formulas .row.cont { padding-left:2em }
+.infer { display:flex; align-items:center; gap:12px }
+.frac { display:inline-flex; flex-direction:column; align-items:center; min-width:0 }
+.premises { display:flex; flex-wrap:wrap; justify-content:center; gap:4px 26px; padding:0 6px 3px }
+.bar { align-self:stretch; border-top:1.5px solid var(--ink) }
+.conclusion { padding:3px 6px 0; text-align:center }
+.rule-name { font:15px/1 var(--math); font-variant:small-caps; letter-spacing:.02em; color:var(--accent); white-space:nowrap }
+.card { background:var(--surface); border:1px solid var(--rule); border-radius:8px; padding:20px 22px; display:flex; flex-direction:column; gap:6px; min-width:0 }
+.card > header { display:flex; justify-content:space-between; gap:12px; align-items:flex-start }
+.sha { font:12px/1.4 var(--mono); color:var(--muted) }
+.pill { font:600 11px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; padding:6px 9px; border-radius:99px; white-space:nowrap }
+.pill.ok { color:var(--ok); background:var(--ok-bg) } .pill.principled { color:var(--principled); background:var(--principled-bg) }
+.pill.gap { color:var(--gap); background:var(--gap-bg) } .pill.neutral { color:var(--neutral); background:var(--neutral-bg) }
+.units { display:flex; flex-wrap:wrap; gap:6px } .units span { font:12px/1 var(--mono); border:1px solid var(--rule); border-radius:4px; padding:5px 7px }
+dl.facts { display:grid; grid-template-columns:max-content minmax(0,1fr); gap:6px 16px; margin:12px 0 0; padding-top:12px; border-top:1px solid var(--rule); font-size:13.5px }
+dt { font:600 11px/1.9 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted) }
+dd { margin:0; min-width:0; display:flex; flex-wrap:wrap; gap:5px; align-items:baseline }
+.chip { font:500 12px/1 var(--body); border:1px solid var(--rule); border-radius:4px; padding:4px 7px } .chip.strong { color:var(--accent); border-color:var(--accent) }
+.trust { color:var(--trust); background:var(--trust-bg); padding:2px 6px; border-radius:4px } .none { color:var(--muted) }
+.test { font:12px/1 var(--mono); padding:4px 7px; border-radius:4px }
+.test.pos { color:var(--ok); background:var(--ok-bg) } .test.pos::before { content:"✓ " }
+.test.neg { color:var(--neg); background:var(--neg-bg) } .test.neg::before { content:"✗ " }
+.test.forged { color:var(--principled); background:var(--principled-bg) } .test.forged::before { content:"forged " }
+details { margin-top:8px; font-size:13px; color:var(--muted) } summary { cursor:pointer }
+.table-wrap { overflow-x:auto; border:1px solid var(--rule); border-radius:8px; background:var(--surface) }
+table { border-collapse:collapse; width:100%; font-size:13px } th, td { text-align:left; vertical-align:top; padding:8px 10px; border-bottom:1px solid var(--rule) }
+th { font:600 11px/1.2 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); white-space:nowrap } td.num { font-variant-numeric:tabular-nums }
+h4.change { display:flex; align-items:center; gap:8px; text-transform:none; letter-spacing:0; font:600 14px/1.3 var(--body); color:var(--ink); margin:16px 0 6px }
+h4.change .target { font-weight:400; color:var(--muted) }
+.act { font:600 10.5px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; padding:4px 7px; border-radius:4px }
+.act.added { color:var(--ok); background:var(--ok-bg) } .act.removed { color:var(--neg); background:var(--neg-bg) }
+.act.modified, .act.replaced { color:var(--principled); background:var(--principled-bg) }
+.versions { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:10px }
+.versions figure { margin:0; min-width:0 } .versions figcaption { font:600 11px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); margin:0 0 4px }
+.versions .rules { height:calc(100% - 18px); box-sizing:border-box }
+pre.code .ln { display:block; white-space:pre } pre.code .ln.add { background:var(--ok-bg) } pre.code .ln.del { background:var(--neg-bg) }
+.tk-k { color:#7a3b8c } .tk-s { color:#2f6b47 } .tk-n { color:#a35a12 } .tk-c { color:var(--muted); font-style:italic } .tk-t { color:#2c4f7c }
+.prose p { margin:4px 0 }
+ul.effect, ul.summary { margin:4px 0; padding-left:20px } ul.effect li, ul.summary li { margin:3px 0 } ul.summary ul { padding-left:18px; color:var(--muted) }
+ul.effect .arrow { color:var(--accent); font-weight:600 }
+ul.effect details { margin:0; color:inherit; font-size:inherit } ul.effect summary { list-style-position:outside }
+ul.effect .kind { font-size:11px; text-transform:uppercase; letter-spacing:.04em; padding:1px 6px; border-radius:4px; background:var(--chip, #eee) }
+ul.effect .kind.negative { color:#8a3b12 } ul.effect .kind.positive { color:#22663a } ul.effect .kind.gap { color:#7a5b00 }
+ul.effect .was.unsound { color:#b3261e; font-weight:600 } ul.effect .now { font-weight:500 } ul.effect .why { color:var(--muted) }
+ul.effect mark { background:#ffe08a; color:inherit; border-radius:2px }
+@media (max-width:720px) { .versions { grid-template-columns:minmax(0,1fr) } }
+.lowering { display:flex; flex-direction:column; gap:6px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:12px 16px; overflow-x:auto }
+.lowering .map, .lowering .cond, .lowering .result { display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 10px }
+.lowering .map:not(:has(.sem)) { flex-direction:column; align-items:stretch; gap:4px }
+.lowering .result { display:grid; grid-template-columns:auto minmax(0,1fr); align-items:baseline; gap:2px 10px; padding-left:1em } .lowering .result .note { grid-column:2 }
+.m-intr { font:14px/1.5 var(--mono); color:#2c4f7c } .m-lit { font:13px/1.5 var(--mono); color:#7a3b8c }
+.lowering code.src { font:13px/1.5 var(--mono); background:var(--surface); border:1px solid var(--rule); padding:2px 6px; border-radius:4px }
+.lowering .to { color:var(--accent); font-weight:600; font-size:17px }
+.lowering .tgt { font:16px/1.5 var(--math) } .rules .lowering { background:none; border:0; padding:0 } .lowering .sem code.src { margin:0 2px }
+var { font-style:italic } .m-op { color:#2c4f7c; font-style:normal } .m-con { color:#8f6416; font-style:normal; font-variant:small-caps }
+.m-kw { color:#7a3b8c; font-weight:600; font-style:normal } .m-bind { color:#7a3b8c } .m-rel { color:var(--accent); padding:0 .12em }
+.m-text { font:14px/1.5 var(--body); color:var(--muted) } code.m-code { font:13px/1.5 var(--mono); background:var(--surface); border:1px solid var(--rule); padding:1px 5px; border-radius:4px }
+.refused { color:var(--neg); font-weight:600 }
+.lowering .refused { color:var(--neg); font-weight:600 }
+.lowering .label { font:600 11px/1 var(--body); letter-spacing:.05em; text-transform:uppercase; color:var(--muted); min-width:7em }
+.lowering .cond { padding-left:1.5em } .lowering .note { color:var(--muted); font:italic 13px/1.4 var(--body) }
+a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outline-offset:2px }
+@media (max-width:520px) { dl.facts { grid-template-columns:minmax(0,1fr) } .card > header { flex-direction:column } }</style></head><body><main><header><h1>Commit Records</h1><p class="lede">3 commits, rendered from their records.</p></header>
+<section><h2>Branches</h2><ul class="summary"><li><a href="#g-pr-109"><code>4ffa514efc06d6904fec1be8085a0504f4c0a1ad..pr-109</code></a><ul><li>3 commits, units 2 verified, 1 refused</li><li>parts: <span class="chip">producer</span> <span class="chip">tests</span> <span class="chip">lean-lowering</span> <span class="chip">docs</span></li></ul></li></ul></section>
+<h2 id="g-pr-109"><code>4ffa514efc06d6904fec1be8085a0504f4c0a1ad..pr-109</code></h2><article class="card" id="c-ff87deb6a"><header><div><div class="sha">ff87deb6a · Cristiano Calcagno · Nov 05, 20:57</div><h3>Leave a constant test's untaken arm unreachable in the producer's flow states</h3></div><span class="pill ok">verified</span></header>
+<div class="units"><span>line-break.ts#walkPreparedComplexLines</span><span>gecko-line-breaks.ts#isEastAsianSegmentBreak</span></div>
+<h4 class="change">Why</h4><div class="prose"><p>Pretext's <code>walkPreparedComplexLines</code> declares <code>let consumedEndSegmentIndex: number</code>, assigns it before each <code>break</code> of <code>for (let i = …; ; i++)</code>, and stores it after the loop: refused, &quot;no derivation of its storage-contract claim&quot;, the read typed <code>undefined | number</code>. <code>isEastAsianSegmentBreak</code> does the same with <code>let before: number</code> and a <code>do … while</code> loop. Both loops lower to a head testing the constant <code>true</code>. The producer propagated the entry state, where the binding is still <code>undefined</code>, along that test's <code>false</code> edge to the code after the loop, so it proposed <code>undefined | number</code> there; Lean already takes no run along that edge (the tested <code>true</code> rules the observation out).</p></div>
+<h4 class="change"><span class="act modified">modified</span>Definition <span class="target">producer: the flow states of a branch on a constant</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">both arms carry what the condition leaves, whatever the test</span></span></div></div></div></figure><figure><figcaption>After</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">a test of <code class="m-code"><span class="tk-k">true</span></code> (<code class="m-code"><span class="tk-k">false</span></code>) gives its <code class="m-code"><span class="tk-k">false</span></code> (<code class="m-code"><span class="tk-k">true</span></code>) arm an</span></span></div><div class="row"><span><span class="m-text">environment no value meets, which a join drops</span></span></div></div></div></figure></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>blocker-pretext-loop-exit-assigned</code> <span class="kind positive">positive</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">a <code>let</code> assigned before each exit of <code>for (;;)</code> and <code>do</code></span></summary><pre class="code"><span class="tk-c">// Pretext (github.com/chenglou/pretext at 0d102a5c, src/, census by unit,</span>
+<span class="tk-c">// with the rewrites of issue #94): gecko-line-breaks.ts#isEastAsianSegmentBreak,</span>
+<span class="tk-c">// line-break.ts#walkPreparedComplexLines.</span>
+<span class="tk-c">// A `let` declared without an initializer, assigned before every exit of a</span>
+<span class="tk-c">// loop whose head tests nothing (`for (;;)`) or of a `do` loop, and read</span>
+<span class="tk-c">// after the loop: the head's test is the constant `true`, whose `false`</span>
+<span class="tk-c">// edge no run takes, so the loop is left only by a `break` or by the test</span>
+<span class="tk-c">// after the body, each where the binding holds a number.</span>
+<span class="tk-k">function</span> scaled(n: number): number {
+  <span class="tk-k">return</span> n * <span class="tk-n">2</span>;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> firstAbove(xs: number[], limit: number): number {
+  <span class="tk-k">let</span> found: number;
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; ; i++) {
+    <span class="tk-k">if</span> (i &gt;= xs.length) {
+      found = -<span class="tk-n">1</span>;
+      <span class="tk-k">break</span>;
+    }
+    <span class="tk-k">const</span> x = xs[i];
+    <span class="tk-k">if</span> (x !== <span class="tk-k">undefined</span> &amp;&amp; x &gt; limit) {
+      found = i;
+      <span class="tk-k">break</span>;
+    }
+  }
+  <span class="tk-k">return</span> scaled(found);
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> lastBelow(text: string, end: number): number {
+  <span class="tk-k">let</span> code: number;
+  <span class="tk-k">let</span> at = end;
+  <span class="tk-k">do</span> {
+    code = text.charCodeAt(at - <span class="tk-n">1</span>);
+    at--;
+  } <span class="tk-k">while</span> (code === 0x20 &amp;&amp; at &gt; <span class="tk-n">0</span>);
+  <span class="tk-k">return</span> scaled(code);
+}</pre></details></li></ul>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">producer</span> <span class="chip">tests</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Measured</dt><dd>pretext census (TSCERT_STEP_LIMIT=300, with the #94 rewrites), shallow 169 -&gt; 170 of 212 functions, statements 1768 -&gt; 2088 of 3439 · isEastAsianSegmentBreak moves to its next refusal, <code>codePointAt(pos)!</code></dd><dt>Tests</dt><dd><span class="test pos">blocker-pretext-loop-exit-assigned</span></dd></dl>
+<details><summary>3 files changed, 55 insertions(+), 6 deletions(-)</summary><pre class="code"> ocaml-producer/proposal_flow.ml                    | 23 ++++++++++----
+ pipeline/cases.mts                                 |  1 +
+ .../examples/blocker-pretext-loop-exit-assigned.ts | 37 ++++++++++++++++++++++</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-452daaab2"><header><div><div class="sha">452daaab2 · Cristiano Calcagno · Nov 05, 20:58</div><h3>Read a key of some string or string literals as any string, refused at its inherited members</h3></div><span class="pill principled">refused</span></header>
+<div class="units"><span>line-breaks.ts#getWebKitLineRules</span></div>
+<h4 class="change">Why</h4><div class="prose"><p>Pretext's <code>getWebKitLineRules</code> reads <code>appleQuoteRemaps[name]</code>, a <code>Record&lt;string, readonly number[]&gt;</code>, with <code>name</code> a <code>let</code> the loop writes <code>cut &lt; 0 ? '' : name.slice(0, cut)</code>, typed <code>string | &quot;&quot;</code>. The read was refused with &quot;a numeric array key needs a proved array-index singleton&quot;, which names no cause the read has: the key reader classified a key of several clauses that are not all number literals as an array index. The read is unsafe for another reason, the one a <code>string</code> key gets: at the locale &quot;constructor&quot; it finds <code>Object.prototype.constructor</code>, a function, where the type says an array or <code>undefined</code>.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Definition <span class="target">lowering: the kind of a computed key</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">a key of one string literal names a field; <code class="m-code">string</code> is dynamic; any</span></span></div><div class="row"><span><span class="m-text">other union is an array index</span></span></div></div></div></figure><figure><figcaption>After</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">a union of <code class="m-code">string</code> and string literals is dynamic too, as <code class="m-code">string</code> is</span>,</span></div><div class="row"><span><span class="m-text">and is </span><span class="refused">refused</span><span class="m-text"> where the read may find a member of</span> <code class="m-code"><span class="tk-t">Object</span>.prototype</code></span></div></div></div></figure></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>invalid-dictionary-literal-union-key</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">a member of Object.prototype at a <code>string | &quot;&quot;</code> key</span></summary><pre class="code"><span class="tk-c">// A dictionary read at a key that may be any string or one literal,</span>
+<span class="tk-c">// `string | &quot;&quot;` as a `let` holds it after a write of `&quot;&quot;`: the key is any</span>
+<span class="tk-c">// string, so the read may find a member every object inherits from</span>
+<span class="tk-c">// `Object.prototype` (`constructor` at the key &quot;constructor&quot;), a function</span>
+<span class="tk-c">// where the dictionary's type says an array or nothing. Pretext's</span>
+<span class="tk-c">// line-breaks.ts#getWebKitLineRules reads its quote remaps so</span>
+<span class="tk-c">// (blocker-pretext-widened-key-read).</span>
+<span class="tk-k">const</span> remaps: <span class="tk-t">Record</span>&lt;string, <span class="tk-k">readonly</span> number[]&gt; = { <span class="tk-s">&quot;&quot;</span>: [<span class="tk-n">0</span>], ab: [<span class="tk-n">1</span>] };
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> remapOf(locale: string): <span class="tk-k">readonly</span> number[] {
+  <span class="tk-k">let</span> name = locale;
+  <span class="tk-k">let</span> remap = remaps[name];
+  <span class="tk-k">while</span> (remap === <span class="tk-k">undefined</span>) {
+    <span class="tk-k">const</span> cut = name.lastIndexOf(<span class="tk-s">&quot;_&quot;</span>);
+    name = cut &lt; <span class="tk-n">0</span> ? <span class="tk-s">&quot;&quot;</span> : name.slice(<span class="tk-n">0</span>, cut);
+    remap = remaps[name];
+  }
+  <span class="tk-k">return</span> remap;
+}</pre></details></li><li><details><summary><code>blocker-pretext-widened-key-read</code> <span class="kind gap">gap</span> <span class="was">refused</span> <span class="arrow">→</span> <span class="now">refused  names getWebKitLineRules too</span></summary><pre class="code"><span class="tk-c">// Pretext (github.com/chenglou/pretext at 0d102a5c, src/, census by unit):</span>
+<span class="tk-c">// measurement.ts#getWebKitGenericFamilies, line-breaks.ts#getWebKitLineRules.</span>
+<span class="tk-c">// Refusal: search: a read at a key that may name a member every object</span>
+<span class="tk-c">// inherits from `Object.prototype`.</span>
+<span class="tk-c">// A dictionary read at a `let` key a literal write widened, `string |</span>
+<span class="tk-c">// &quot;zh-hans&quot;` as TypeScript's flow types it, then shortened in a loop until</span>
+<span class="tk-c">// the dictionary holds it: the key is any string, so `families[tag]` may</span>
+<span class="tk-c">// find a member of `Object.prototype` (`toString` at the key &quot;toString&quot;).</span>
+<span class="tk-k">export</span> <span class="tk-k">const</span> families: <span class="tk-t">Readonly</span>&lt;<span class="tk-t">Record</span>&lt;string, <span class="tk-k">readonly</span> number[]&gt;&gt; = {
+  <span class="tk-s">&quot;&quot;</span>: [<span class="tk-n">0</span>, <span class="tk-n">1</span>],
+};
+<span class="tk-k">export</span> <span class="tk-k">function</span> row(language: string, han: boolean): <span class="tk-k">readonly</span> number[] {
+  <span class="tk-k">let</span> tag = language.toLowerCase();
+  <span class="tk-k">if</span> (han) tag = <span class="tk-s">&quot;zh-hans&quot;</span>;
+  <span class="tk-k">let</span> found = families[tag];
+  <span class="tk-k">while</span> (found === <span class="tk-k">undefined</span>) {
+    tag = tag.slice(<span class="tk-n">0</span>, <span class="tk-t">Math</span>.max(<span class="tk-n">0</span>, tag.lastIndexOf(<span class="tk-s">&quot;-&quot;</span>)));
+    found = families[tag];
+  }
+  <span class="tk-k">return</span> found;
+}</pre></details></li></ul>
+<h4 class="change">Counterexample</h4><pre class="code"><span class="ln"><span class="tk-s">`remapOf(&quot;constructor&quot;)`</span> <span class="tk-k">in</span> invalid-dictionary-literal-union-key returns</span><span class="ln">a <span class="tk-k">function</span> under <span class="tk-t">Node</span> (<span class="tk-s">`typeof`</span> gives <span class="tk-s">&quot;function&quot;</span>)</span></pre>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">lean-lowering</span> <span class="chip">tests</span></dd><dt>Lean</dt><dd>SourceExtraction.keyField</dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd><span class="test pos">invalid-dictionary-literal-union-key</span></dd></dl>
+<details><summary>5 files changed, 29 insertions(+), 3 deletions(-)</summary><pre class="code"> lean/Verification/Source/Lowering/Types.lean          |  5 ++++-
+ pipeline/cases.mts                                    |  4 +++-
+ pipeline/examples/blocker-pretext-widened-key-read.ts |  2 +-
+ .../examples/invalid-dictionary-literal-union-key.ts  | 19 +++++++++++++++++++
+ tests/node-runs.mts                                   |  2 ++</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-9d98cf7ba"><header><div><div class="sha">9d98cf7ba · Cristiano Calcagno · Nov 05, 21:01</div><h3>Give a case to each reason still blocking pretext's functions after the issue #94 rewrites</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<div class="units"><span>analysis.ts#analyzeText</span><span>analysis.ts#removeSkippableSegmentBreaks</span><span>analysis.ts#segmentAtLineBreaks</span><span>measurement.ts#readEmojiWidth</span><span>measurement.ts#readWidthIn</span><span>line-breaks.ts#getBlinkDefaultLocale</span><span>han-kerning.ts#getStaticCharType</span><span>prepare.ts#measureAnalysis</span><span>rich-inline.ts#materializeRichInlineLineRange</span></div>
+<h4 class="change">Why</h4><div class="prose"><p>The census of pretext's <code>src/</code> with the rewrites of issue #94 applied refuses 32 functions in analysis.ts, gecko-line-breaks.ts, han-kerning.ts, line-break.ts, line-breaks.ts, measurement.ts, prepare.ts and rich-inline.ts. Seven of their reasons had no case: each is reduced here to the smallest source with the same refusal, its header naming the census functions it stands for. Four existing cases stand for more functions than their headers named.</p></div>
+<h4 class="change"><span class="act added">added</span>Example</h4><pre class="code"><span class="ln">blocker-pretext-<span class="tk-k">import</span>-arrow-result (an imported arrow with no result</span><span class="ln">annotation, with its fixture module pretext-project/gecko-line-breaks.ts),</span><span class="ln">blocker-pretext-dom-measurement, blocker-pretext-intl-date-time-format,</span><span class="ln">blocker-pretext-regexp-last-index, blocker-pretext-equality-conjunction,</span><span class="ln">blocker-pretext-masked-kind-cast, blocker-pretext-fresh-array-wider</span></pre>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">case headers, WORK.md row of the pretext census</span></h4><div class="prose"><p>blocker-pretext-loop-cell-call-result names markWordBreaks, blocker-pretext-module-cell-after-call names unpackClasses, blocker-pretext-opaque-handle-cast names measureAnalysis and prepareRichInline, which introduce the brand; the row states the census with the rewrites and its largest reasons</p></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>blocker-pretext-import-arrow-result</code> <span class="kind gap">gap</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">no result type on an imported arrow (TS9007)</span></summary><pre class="code"><span class="tk-c">// Pretext (github.com/chenglou/pretext at 0d102a5c, src/, census by unit,</span>
+<span class="tk-c">// with the rewrites of issue #94): analysis.ts#analyzeText,</span>
+<span class="tk-c">// analysis.ts#removeSkippableSegmentBreaks,</span>
+<span class="tk-c">// analysis.ts#segmentAtLineBreaks.</span>
+<span class="tk-c">// Refusal: gate: a declared value must be an annotated constant, function</span>
+<span class="tk-c">// or class: isSpaceOrTabOrSegmentBreak.</span>
+<span class="tk-c">// An imported constant holding an arrow whose parameters are annotated and</span>
+<span class="tk-c">// whose result is not: the declaration states no result type, so its use is</span>
+<span class="tk-c">// refused. TypeScript's `isolatedDeclarations` refuses the declaration too</span>
+<span class="tk-c">// (TS9007): a function's result needs an annotation there. The source</span>
+<span class="tk-c">// states `: boolean`.</span>
+<span class="tk-k">import</span> { isSpaceOrTabOrSegmentBreak } <span class="tk-k">from</span> <span class="tk-s">&quot;../pretext-project/gecko-line-breaks.ts&quot;</span>;
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> countSpaces(text: string): number {
+  <span class="tk-k">let</span> count = <span class="tk-n">0</span>;
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; text.length; i++)
+    <span class="tk-k">if</span> (isSpaceOrTabOrSegmentBreak(text.charCodeAt(i))) count++;
+  <span class="tk-k">return</span> count;
+}</pre></details></li><li><details><summary><code>blocker-pretext-dom-measurement</code> <span class="kind gap">gap</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">document.body and element members unstated</span></summary><pre class="code"><span class="tk-c">// Pretext (github.com/chenglou/pretext at 0d102a5c, src/, census by unit,</span>
+<span class="tk-c">// with the rewrites of issue #94): measurement.ts#readEmojiWidth,</span>
+<span class="tk-c">// measurement.ts#readWidthIn.</span>
+<span class="tk-c">// Refusal: unsupported: missing field body (`readWidthIn`: missing field</span>
+<span class="tk-c">// appendChild).</span>
+<span class="tk-c">// A span measured in the page: `document.body`, `document.createElement`,</span>
+<span class="tk-c">// the element's `style` and `textContent` written, `appendChild` and</span>
+<span class="tk-c">// `removeChild` on a parent, `getBoundingClientRect()`. The reviewed entry</span>
+<span class="tk-c">// for `document` states its root's `lang` alone, and no entry states an</span>
+<span class="tk-c">// element's tree or layout members.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> readWidth(font: string): number {
+  <span class="tk-k">const</span> body = document.body <span class="tk-k">as</span> <span class="tk-t">HTMLElement</span> | <span class="tk-k">null</span>;
+  <span class="tk-k">if</span> (body === <span class="tk-k">null</span>) <span class="tk-k">return</span> <span class="tk-t">NaN</span>;
+  <span class="tk-k">const</span> span = document.createElement(<span class="tk-s">&quot;span&quot;</span>);
+  span.style.setProperty(<span class="tk-s">&quot;font&quot;</span>, font, <span class="tk-s">&quot;important&quot;</span>);
+  span.textContent = <span class="tk-s">&quot;\u{1F600}&quot;</span>;
+  body.appendChild(span);
+  <span class="tk-k">const</span> width = span.getBoundingClientRect().width;
+  body.removeChild(span);
+  <span class="tk-k">return</span> width;
+}</pre></details></li><li><details><summary><code>blocker-pretext-intl-date-time-format</code> <span class="kind gap">gap</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">no reviewed construct entry</span></summary><pre class="code"><span class="tk-c">// Pretext (github.com/chenglou/pretext at 0d102a5c, src/, census by unit,</span>
+<span class="tk-c">// with the rewrites of issue #94): line-breaks.ts#getBlinkDefaultLocale.</span>
+<span class="tk-c">// Refusal: gate: TypeScript resolves new Intl.DateTimeFormat(…) to no</span>
+<span class="tk-c">// construct signature of a constant Intl declares.</span>
+<span class="tk-c">// The default locale read as `new Intl.DateTimeFormat().resolvedOptions()</span>
+<span class="tk-c">// .locale`: the namespace's reviewed entries state `Intl.Segmenter`'s</span>
+<span class="tk-c">// construction alone.</span>
+<span class="tk-k">let</span> defaultLocale: string | <span class="tk-k">null</span> = <span class="tk-k">null</span>;
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> getDefaultLocale(): string {
+  <span class="tk-k">return</span> (defaultLocale ??= <span class="tk-k">new</span> <span class="tk-t">Intl</span>.<span class="tk-t">DateTimeFormat</span>().resolvedOptions().locale);
+}</pre></details></li><li><details><summary><code>blocker-pretext-regexp-last-index</code> <span class="kind gap">gap</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">a regex's <code>lastIndex</code> is outside the fragment</span></summary><pre class="code"><span class="tk-c">// Pretext (github.com/chenglou/pretext at 0d102a5c, src/, census by unit,</span>
+<span class="tk-c">// with the rewrites of issue #94): han-kerning.ts#getStaticCharType.</span>
+<span class="tk-c">// Refusal: reject: source refusal: a write of 'lastIndex', a key the</span>
+<span class="tk-c">// object's type does not state.</span>
+<span class="tk-c">// A sticky regular expression positioned by a write of its `lastIndex`,</span>
+<span class="tk-c">// then tested: the model's regular expressions state their methods alone</span>
+<span class="tk-c">// (SOURCE-FRAGMENT.md, a regex's property), so the write is refused. The</span>
+<span class="tk-c">// test of the one code point at the index needs no position:</span>
+<span class="tk-c">// `/^\p{Ps}$/u.test(String.fromCodePoint(cp))`.</span>
+<span class="tk-k">const</span> openPunctuationRe = /\p{<span class="tk-t">Ps</span>}/uy;
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> opensAt(text: string, index: number): boolean {
+  openPunctuationRe.lastIndex = index;
+  <span class="tk-k">return</span> openPunctuationRe.test(text);
+}</pre></details></li><li><details><summary><code>blocker-pretext-equality-conjunction</code> <span class="kind gap">gap</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why"><code>a === b &amp;&amp; f()</code> keeps <code>b</code> unnarrowed for <code>f()</code></span></summary><pre class="code"><span class="tk-c">// Pretext (github.com/chenglou/pretext at 0d102a5c, src/, census by unit,</span>
+<span class="tk-c">// with the rewrites of issue #94): analysis.ts#segmentAtLineBreaks.</span>
+<span class="tk-c">// Refusal: reject: source incoming edge obligation: the edge does not</span>
+<span class="tk-c">// establish the claims at this point (`last` at `-1 | 0 | 1 | 2`, `0 | 1 |</span>
+<span class="tk-c">// 2` required).</span>
+<span class="tk-c">// An equality of two names, `kind === last`, as the left operand of `&amp;&amp;`</span>
+<span class="tk-c">// before a call: where both held, `last` equals `kind`, so it is one of</span>
+<span class="tk-c">// `kind`'s values, as TypeScript narrows it. The right operand runs in a</span>
+<span class="tk-c">// context that keeps `last` at its own type: the narrowing by the equality</span>
+<span class="tk-c">// is not carried to it. With the call first, `gathers(kind) &amp;&amp; kind ===</span>
+<span class="tk-c">// last`, the equality is the last test and its dispatch narrows `last`.</span>
+<span class="tk-k">type</span> <span class="tk-t">Kind</span> = <span class="tk-n">0</span> | <span class="tk-n">1</span> | <span class="tk-n">2</span>;
+
+<span class="tk-k">function</span> kindOf(n: number): <span class="tk-t">Kind</span> {
+  <span class="tk-k">return</span> n &gt; <span class="tk-n">2</span> ? <span class="tk-n">2</span> : n &gt; <span class="tk-n">1</span> ? <span class="tk-n">1</span> : <span class="tk-n">0</span>;
+}
+
+<span class="tk-k">function</span> gathers(k: <span class="tk-t">Kind</span>): boolean {
+  <span class="tk-k">return</span> k !== <span class="tk-n">0</span>;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> runs(n: number): number {
+  <span class="tk-k">let</span> last = -<span class="tk-n">1</span>;
+  <span class="tk-k">let</span> count = <span class="tk-n">0</span>;
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; n; i++) {
+    <span class="tk-k">const</span> kind = kindOf(i);
+    <span class="tk-k">if</span> (kind === last &amp;&amp; gathers(kind)) <span class="tk-k">continue</span>;
+    last = kind;
+    count++;
+  }
+  <span class="tk-k">return</span> count;
+}</pre></details></li><li><details><summary><code>blocker-pretext-masked-kind-cast</code> <span class="kind gap">gap</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">a masked number asserted to a literal union</span></summary><pre class="code"><span class="tk-c">// Pretext (github.com/chenglou/pretext at 0d102a5c, src/, census by unit,</span>
+<span class="tk-c">// with the rewrites of issue #94): prepare.ts#measureAnalysis.</span>
+<span class="tk-c">// Refusal: reject: closure expression claim: evidence search failed.</span>
+<span class="tk-c">// A flags byte masked to its kind bits and asserted to the union of the</span>
+<span class="tk-c">// kind codes, `(flags &amp; 0x0f) as Kind`: the mask leaves 0 to 15, and that</span>
+<span class="tk-c">// every stored byte's low bits hold a kind is an invariant of the array's</span>
+<span class="tk-c">// writers, which no type states. The code reads the masked number as it</span>
+<span class="tk-c">// is; only `=== ZERO_WIDTH_BREAK` reads it further.</span>
+<span class="tk-k">type</span> <span class="tk-t">Kind</span> = <span class="tk-n">0</span> | <span class="tk-n">1</span> | <span class="tk-n">2</span>;
+
+<span class="tk-k">function</span> spaced(kind: <span class="tk-t">Kind</span>): number {
+  <span class="tk-k">return</span> kind === <span class="tk-n">2</span> ? <span class="tk-n">0</span> : <span class="tk-n">1</span>;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> count(flags: <span class="tk-t">Uint8Array</span>, i: number): number {
+  <span class="tk-k">const</span> kind = ((flags[i] ?? <span class="tk-n">0</span>) &amp; 0x0f) <span class="tk-k">as</span> <span class="tk-t">Kind</span>;
+  <span class="tk-k">return</span> spaced(kind);
+}</pre></details></li><li><details><summary><code>blocker-pretext-fresh-array-wider</code> <span class="kind gap">gap</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">a fresh array returned at a wider element</span></summary><pre class="code"><span class="tk-c">// Pretext (github.com/chenglou/pretext at 0d102a5c, src/, census by unit,</span>
+<span class="tk-c">// with the rewrites of issue #94): rich-inline.ts#materializeRichInlineLineRange.</span>
+<span class="tk-c">// Refusal: reject: source expression obligation: no derivation of its</span>
+<span class="tk-c">// node-typing claim, the returned record's `fragments`.</span>
+<span class="tk-c">// A local array of records with more fields, returned in a record whose</span>
+<span class="tk-c">// field is an array of records with fewer: a mutable array is invariant in</span>
+<span class="tk-c">// its element (a write through the wider view would break the narrower),</span>
+<span class="tk-c">// and the model states no ownership by which a fresh array no other</span>
+<span class="tk-c">// reference holds could be viewed at its wider element once returned.</span>
+<span class="tk-k">type</span> <span class="tk-t">Fragment</span> = { text: string };
+<span class="tk-k">type</span> <span class="tk-t">InternalFragment</span> = <span class="tk-t">Fragment</span> &amp; { start: number };
+<span class="tk-k">type</span> <span class="tk-t">Line</span> = { fragments: <span class="tk-t">Fragment</span>[] };
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> materialize(texts: string[]): <span class="tk-t">Line</span> {
+  <span class="tk-k">const</span> fragments: <span class="tk-t">InternalFragment</span>[] = [];
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; texts.length; i++)
+    fragments.push({ text: texts[i] ?? <span class="tk-s">&quot;&quot;</span>, start: i });
+  <span class="tk-k">return</span> { fragments };
+}</pre></details></li></ul>
+<h4 class="change">Gap</h4><div class="prose"><p>measureAnalysis also refuses a constant's implication, <code>measuredWithSpace = followingSpaceTail === ''</code> tested at <code>measuredWithSpace ? … : …</code>, which a ten-line reduction verifies; its cause is not established.</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">tests</span> <span class="chip">docs</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Measured</dt><dd>pretext census with the #94 rewrites (TSCERT_STEP_LIMIT=300), 170 of 212 functions shallow, 2088 of 3439 statements</dd><dt>Tests</dt><dd><span class="test pos">blocker-pretext-import-arrow-result</span> <span class="test pos">blocker-pretext-dom-measurement</span> <span class="test pos">blocker-pretext-intl-date-time-format</span> <span class="test pos">blocker-pretext-regexp-last-index</span> <span class="test pos">blocker-pretext-equality-conjunction</span> <span class="test pos">blocker-pretext-masked-kind-cast</span> <span class="test pos">blocker-pretext-fresh-array-wider</span></dd></dl>
+<details><summary>13 files changed, 160 insertions(+), 7 deletions(-)</summary><pre class="code"> WORK.md                                            |  2 +-
+ pipeline/cases.mts                                 | 13 +++++++--
+ .../examples/blocker-pretext-dom-measurement.ts    | 21 ++++++++++++++
+ .../blocker-pretext-equality-conjunction.ts        | 32 ++++++++++++++++++++++
+ .../examples/blocker-pretext-fresh-array-wider.ts  | 19 +++++++++++++
+ .../blocker-pretext-import-arrow-result.ts         | 19 +++++++++++++
+ .../blocker-pretext-intl-date-time-format.ts       | 12 ++++++++
+ .../blocker-pretext-loop-cell-call-result.ts       |  4 ++-
+ .../examples/blocker-pretext-masked-kind-cast.ts   | 18 ++++++++++++
+ .../blocker-pretext-module-cell-after-call.ts      |  4 ++-
+ .../examples/blocker-pretext-opaque-handle-cast.ts |  4 ++-
+ .../examples/blocker-pretext-regexp-last-index.ts  | 15 ++++++++++
+ pipeline/pretext-project/gecko-line-breaks.ts      |  4 +++</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+</main></body></html>
