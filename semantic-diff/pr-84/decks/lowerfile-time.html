@@ -1,0 +1,147 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Where lowerFile's time goes</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Code+Pro:wght@400;600&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=STIX+Two+Text:ital,wght@0,400;0,600;1,400&display=swap">
+<style>
+*{margin:0;box-sizing:border-box}html,body{height:100%;background:#2a2f2d}
+#stage{position:fixed;inset:0;display:flex;align-items:center;justify-content:center}
+section{width:1920px;height:1080px;flex:none;position:relative;transform-origin:center;overflow:hidden}
+section:not(.on){display:none !important}ul,ol{padding-left:1.2em}li{margin:4px 0}td,th{padding:.35em .6em;border:1px solid #d5dce6;vertical-align:top}
+table{border-collapse:collapse}#count{position:fixed;right:16px;bottom:12px;color:#cfd6d3;font:14px "Inter","Helvetica Neue",Arial,sans-serif}
+</style></head><body><div id="stage">
+<section id="cover" style="background:#fbfcfd;color:#0b1a2e;font-family:'Inter','Helvetica Neue',Arial,sans-serif;padding:128px;display:flex;flex-direction:column;gap:40px">
+<p style="font-size:24px;color:#56627a;font-weight:600;letter-spacing:2px;text-transform:uppercase">TScert · run time of one census slice</p>
+<h1 style="font-family:'Bricolage Grotesque','Helvetica Neue',Arial,sans-serif;font-size:88px;font-weight:500;line-height:1.1">Where lowerFile's 239 seconds go</h1>
+<p style="font-size:28px;color:#0b1a2e;line-height:1.4;width:1500px">TScert checks type claims about TypeScript programs and is run on its own front end, one function at a time. Checking the function lowerFile of tools/fragment-parse.mts took 239 s, with no earlier result to reuse. This deck attributes that time to the steps of the check and, inside the slowest one, to what it repeats. Two repairs of data structures, which change no output, bring the check to 108 s. Of those, about 30 s follow the size of the program; of the producer's remaining 64 s, 30 s are measured repetition, and three designs are proposed for it. The next slide explains the words.</p>
+</section>
+
+<section id="terms" style="background:#fbfcfd;color:#0b1a2e;font-family:'Inter','Helvetica Neue',Arial,sans-serif;padding:120px 128px;display:flex;flex-direction:column;gap:22px">
+<p style="font-size:24px;color:#56627a;font-weight:600;letter-spacing:2px;text-transform:uppercase">Words used in this deck</p>
+<h2 style="font-family:'Bricolage Grotesque','Helvetica Neue',Arial,sans-serif;font-size:56px;font-weight:500;line-height:1.15">A slice, its stages, and its outcome</h2>
+<div style="display:grid;grid-template-columns:repeat(3, 1fr);gap:20px"><div style="background:#ffffff;border:1px solid #d5dce6;border-radius:16px;padding:24px;display:flex;flex-direction:column;gap:6px"><h3 style="font-size:28px;font-weight:600">Slice, census, refusal</h3><p style="font-size:24px;color:#0b1a2e;line-height:1.36">A slice is one top-level function of TScert's front end (the folder tools/), copied into a file of its own with the definitions of its file it uses, and checked alone. The census checks every slice and records each one's outcome and the time of every step. A check ends verified, or in a refusal: the place where no proof of the proposed types was found, and why.</p></div><div style="background:#ffffff;border:1px solid #d5dce6;border-radius:16px;padding:24px;display:flex;flex-direction:column;gap:6px"><h3 style="font-size:28px;font-weight:600">Stages</h3><p style="font-size:24px;color:#0b1a2e;line-height:1.36">A check runs separate programs, one after another. <b>parse</b>: TypeScript's compiler reads the slice and each module it imports into syntax documents. <b>lower</b>: Lean, a proof assistant, derives each function's control-flow graph. <b>propose</b>: an OCaml program, the producer, proposes a type, a claim, for every expression. <b>plan</b>: Lean decides which certified imports (slide “Import rounds”) the slice may use. <b>search</b>: Lean looks for a proof of the claims.</p></div><div style="background:#ffffff;border:1px solid #d5dce6;border-radius:16px;padding:24px;display:flex;flex-direction:column;gap:6px"><h3 style="font-size:28px;font-weight:600">Empty store</h3><p style="font-size:24px;color:#0b1a2e;line-height:1.36">A cache keyed by a stage's exact inputs replays a stage it already holds. Every measurement here starts with it empty, so every stage runs. Times are of one check on a 12-core laptop, at commit ee0ed0e5 of the repository unless a slide says otherwise.</p></div></div>
+</section>
+
+<section id="stages" style="background:#fbfcfd;color:#0b1a2e;font-family:'Inter','Helvetica Neue',Arial,sans-serif;padding:120px 128px;display:flex;flex-direction:column;gap:20px">
+<p style="font-size:24px;color:#56627a;font-weight:600;letter-spacing:2px;text-transform:uppercase">Measured: census of ee0ed0e5, empty store, 2026-10-30</p>
+<h2 style="font-family:'Bricolage Grotesque','Helvetica Neue',Arial,sans-serif;font-size:56px;font-weight:500;line-height:1.15">One stage, propose, takes 190 of the 239 s</h2>
+<table style="font-size:24px;color:#0b1a2e">
+<tr><th style="width:27%;text-align:left;font-weight:600">Stage</th><th style="width:8%;text-align:left;font-weight:600">Runs</th><th style="width:12%;text-align:left;font-weight:600">Elapsed</th><th style="width:53%;text-align:left;font-weight:600">What a run reads</th></tr>
+<tr><td>propose: the slice</td><td>1</td><td>133.3 s</td><td>the slice: 5 functions, 30 MB of syntax with its 21 imported modules</td></tr>
+<tr><td>propose: imported modules</td><td>27</td><td>56.5 s</td><td>one imported module, so that the slice may rely on what TScert proves of it</td></tr>
+<tr><td>parse, the 21 modules included</td><td>1 + 29</td><td>24.3 s</td><td>the slice through TypeScript's compiler; 20.3 s of it reading the modules</td></tr>
+<tr><td>plan</td><td>16</td><td>11.0 s</td><td>the slice's syntax and its list of certified imports</td></tr>
+<tr><td>search</td><td>1</td><td>7.5 s</td><td>the proof search, which ends in the refusal</td></tr>
+<tr><td>lower</td><td>22</td><td>3.0 s</td><td>the control-flow graphs of the slice and the modules</td></tr>
+</table><ul style="font-size:24px;color:#0b1a2e;line-height:1.36">
+<li>The 6 extra module proposals and 14 of the 16 plans come from import rounds (slide “Import rounds”). Outcome, unchanged by everything in this deck: refused, “closure signature claim is outside the source annotation”, at one closure of lowerFile.</li>
+<li>In the census of the earlier commit 5dd180f, lowerFile and six functions calling it did not finish within the census's 1200 s limit for one check; at ee0ed0e5 lowerFile finishes in 239 s.</li>
+</ul>
+</section>
+
+<section id="size" style="background:#fbfcfd;color:#0b1a2e;font-family:'Inter','Helvetica Neue',Arial,sans-serif;padding:120px 128px;display:flex;flex-direction:column;gap:22px">
+<p style="font-size:24px;color:#56627a;font-weight:600;letter-spacing:2px;text-transform:uppercase">Measured: the slice's proposal</p>
+<h2 style="font-family:'Bricolage Grotesque','Helvetica Neue',Arial,sans-serif;font-size:56px;font-weight:500;line-height:1.15">What the 133 s proposal processes</h2>
+<div style="display:grid;grid-template-columns:repeat(3, 1fr);gap:20px"><div style="background:#ffffff;border:1px solid #d5dce6;border-radius:16px;padding:24px;display:flex;flex-direction:column;gap:6px"><p style="font-family:'Bricolage Grotesque','Helvetica Neue',Arial,sans-serif;font-size:56px;font-weight:500;color:#8a6410">735</p><p style="font-size:24px;color:#0b1a2e;line-height:1.34">statements in <span style="color:#2c4f7c">lowerFile</span>, one function of the slice's 5; its control-flow graph has 325 nodes</p></div><div style="background:#ffffff;border:1px solid #d5dce6;border-radius:16px;padding:24px;display:flex;flex-direction:column;gap:6px"><p style="font-family:'Bricolage Grotesque','Helvetica Neue',Arial,sans-serif;font-size:56px;font-weight:500;color:#8a6410">52,660</p><p style="font-size:24px;color:#0b1a2e;line-height:1.34">expression typings in the run, over the passes of slide “What the remaining 29 s repeat”</p></div><div style="background:#ffffff;border:1px solid #d5dce6;border-radius:16px;padding:24px;display:flex;flex-direction:column;gap:6px"><p style="font-family:'Bricolage Grotesque','Helvetica Neue',Arial,sans-serif;font-size:56px;font-weight:500;color:#8a6410">≈100</p><p style="font-size:24px;color:#0b1a2e;line-height:1.34">bindings in an environment, the list of the names in scope with their types: locals, parameters and imported names (34.2 million bindings over 338,542 joins)</p></div></div><ul style="font-size:24px;color:#0b1a2e;line-height:1.36">
+<li><b style="font-weight:600">How the producer types a function:</b> in one pass it walks the function's control-flow graph, carrying an environment from node to node. Where two paths meet, such as the two arms of a conditional expression <span style="color:#2c4f7c">c ? a : b</span>, it joins their environments: each binding of one path's environment is looked up by name in the other's, and the two types are united.</li>
+<li><b style="font-weight:600">Its inputs:</b> 29.8 MB of syntax (28.9 MB of it the imported modules' declarations), 10.8 MB of control-flow graphs (4.7 MB of them <span style="color:#2c4f7c">lowerFile</span>'s); it writes 9.8 MB of claims.</li>
+</ul>
+</section>
+
+<section id="profile" style="background:#fbfcfd;color:#0b1a2e;font-family:'Inter','Helvetica Neue',Arial,sans-serif;padding:120px 128px;display:flex;flex-direction:column;gap:20px">
+<p style="font-size:24px;color:#56627a;font-weight:600;letter-spacing:2px;text-transform:uppercase">Measured: sampling profiler, and a build counting each lookup</p>
+<h2 style="font-family:'Bricolage Grotesque','Helvetica Neue',Arial,sans-serif;font-size:56px;font-weight:500;line-height:1.15">93% of the slice's proposal is looking up names in lists</h2>
+<div style="display:grid;grid-template-columns:minmax(0, 58fr) minmax(0, 42fr);gap:36px;align-items:start"><div style="display:flex;flex-direction:column;gap:14px"><ul style="font-size:24px;color:#0b1a2e;line-height:1.36">
+<li><b style="font-weight:600">Sampled:</b> 1 ms samples of the running proposal: 93% inside OCaml's <span style="color:#2c4f7c">List.assoc_opt</span>, the standard lookup in a list of pairs, almost all of it comparing names.</li>
+<li><b style="font-weight:600">Counted:</b> the join's lookups (the two shown, and two more in the join and the function calling it) ran 34.2 million times each and visited 3.7 to 3.8 billion list cells each: about 110 cells per lookup.</li>
+<li><b style="font-weight:600">Why:</b> an environment is a list, so a lookup walks it, and a join makes ≈100 such walks where a table answers each lookup directly.</li>
+</ul></div><div style="display:flex;flex-direction:column;gap:14px"><div style="background:#ffffff;border:1px solid #d5dce6;border-radius:16px;padding:16px 22px;display:flex;flex-direction:column;gap:6px"><h3 style="font-size:28px;font-weight:600">The join, before, abridged (ocaml-producer/execution_analysis.ml)</h3><div style="background:#eef2f7;padding:16px 22px;border-radius:12px;display:flex;flex-direction:column"><p style="font-family:'Source Code Pro',Menlo,Consolas,monospace;font-size:24px;line-height:1.45;white-space:nowrap">(*&#160;<span style="color:#7a3b8c">for</span>&#160;each&#160;binding&#160;<span style="color:#7a3b8c">of</span>&#160;before&#160;*)</p><p style="font-family:'Source Code Pro',Menlo,Consolas,monospace;font-size:24px;line-height:1.45;white-space:nowrap"><span style="color:#2c4f7c">List</span>.filter_map&#160;(fun&#160;(n,b)&#160;-&gt;</p><p style="font-family:'Source Code Pro',Menlo,Consolas,monospace;font-size:24px;line-height:1.45;white-space:nowrap">&#160;&#160;match&#160;b,&#160;<span style="color:#2c4f7c">List</span>.assoc_opt&#160;n&#160;left,</p><p style="font-family:'Source Code Pro',Menlo,Consolas,monospace;font-size:24px;line-height:1.45;white-space:nowrap">&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;<span style="color:#2c4f7c">List</span>.assoc_opt&#160;n&#160;right&#160;with</p><p style="font-family:'Source Code Pro',Menlo,Consolas,monospace;font-size:24px;line-height:1.45;white-space:nowrap">&#160;&#160;|&#160;...&#160;-&gt;&#160;<span style="color:#2c4f7c">Some</span>&#160;(n,&#160;union&#160;l&#160;r))&#160;before</p></div></div></div></div>
+</section>
+
+<section id="repairs" style="background:#fbfcfd;color:#0b1a2e;font-family:'Inter','Helvetica Neue',Arial,sans-serif;padding:120px 128px;display:flex;flex-direction:column;gap:18px">
+<p style="font-size:24px;color:#56627a;font-weight:600;letter-spacing:2px;text-transform:uppercase">Two repairs, changing no output</p>
+<h2 style="font-family:'Bricolage Grotesque','Helvetica Neue',Arial,sans-serif;font-size:56px;font-weight:500;line-height:1.15">The same claims; the slice's proposal in a quarter of the time</h2>
+<div style="display:grid;grid-template-columns:repeat(2, 1fr);gap:20px"><div style="background:#ffffff;border:1px solid #d5dce6;border-radius:16px;padding:24px;display:flex;flex-direction:column;gap:6px"><h3 style="font-size:28px;font-weight:600">1 · A table for the join</h3><p style="font-size:24px;color:#0b1a2e;line-height:1.36">Each environment of a join is indexed once by name (a hash table keeping the first binding of each name, which is what the list lookup finds), and every binding is looked up there. The joined environment is the same list, in the same order.</p></div><div style="background:#ffffff;border:1px solid #d5dce6;border-radius:16px;padding:24px;display:flex;flex-direction:column;gap:6px"><h3 style="font-size:28px;font-weight:600">2 · Uniting sorted lists by merging</h3><p style="font-size:24px;color:#0b1a2e;line-height:1.36">A type is often a list of alternatives kept sorted without repeats. Uniting two such lists sorted their concatenation again; it now merges them in one pass when both are sorted, and sorts otherwise. The result is the same list.</p></div></div><table style="font-size:24px;color:#0b1a2e">
+<tr><th style="width:46%;text-align:left;font-weight:600">Producer CPU, user time, on saved inputs</th><th style="width:18%;text-align:left;font-weight:600">ee0ed0e5</th><th style="width:18%;text-align:left;font-weight:600">repair 1</th><th style="width:18%;text-align:left;font-weight:600">repairs 1 and 2</th></tr>
+<tr><td>the slice</td><td>121.5 s</td><td>33.8 s</td><td>28.8 s</td></tr>
+<tr><td>module tools/type-probe.mts</td><td>15.6 s</td><td>14.6 s</td><td>6.8 s</td></tr>
+<tr><td>module tools/type-term.mts</td><td>9.7 s</td><td>9.3 s</td><td>7.2 s</td></tr>
+<tr><td>module tools/fragment-support.mts</td><td>7.3 s</td><td>7.4 s</td><td>5.2 s</td></tr>
+<tr><td>module tools/library-modules.mts</td><td>5.6 s</td><td>5.8 s</td><td>5.7 s</td></tr>
+</table><ul style="font-size:24px;color:#0b1a2e;line-height:1.36">
+<li>Measured one after another, 2026-10-30; each output identical byte for byte to ee0ed0e5's. The whole check, empty store: 239 s → 108 s, propose 184.9 → 64.1 s of CPU, the same refusal. Library-modules spends its time elsewhere (next slide).</li>
+</ul>
+</section>
+
+<section id="repeated" style="background:#fbfcfd;color:#0b1a2e;font-family:'Inter','Helvetica Neue',Arial,sans-serif;padding:120px 128px;display:flex;flex-direction:column;gap:16px">
+<div style="display:flex;gap:24px;align-items:baseline;flex-wrap:wrap"><p style="font-size:24px;color:#56627a;font-weight:600;letter-spacing:2px;text-transform:uppercase">Measured: a timing build on the slice</p><p style="font-size:24px;color:#56627a">the producer with counters and timers added; the same claims</p></div>
+<h2 style="font-family:'Bricolage Grotesque','Helvetica Neue',Arial,sans-serif;font-size:56px;font-weight:500;line-height:1.15">What the remaining 29 s repeat</h2>
+<table style="font-size:24px;color:#0b1a2e">
+<tr><th style="width:52%;text-align:left;font-weight:600">Repetition</th><th style="width:26%;text-align:left;font-weight:600">Count</th><th style="width:22%;text-align:left;font-weight:600">Time</th></tr>
+<tr><td><b>Entry environments recomputed.</b> To type a sub-expression, the producer reruns the evaluation of its whole statement from the start, to find the environment where that sub-expression begins.</td><td>50,972 reruns over 1,879 statements (a statement at one graph node), 27 each</td><td>19.1 of 29.4 s, 65%</td></tr>
+<tr><td><b>Passes over <span style="color:#2c4f7c">lowerFile</span>.</b> The producer assumes what each function's calls may change (its effect), types every function, and repeats until no assumption grows: 2 effect rounds. In each, <span style="color:#2c4f7c">lowerFile</span> is typed twice, the second time because the first found calls passing one of its closures more arguments than it declares, which the closure's type must then state.</td><td>4 passes of <span style="color:#2c4f7c">lowerFile</span></td><td>6.6 s outside the reruns, over the 4</td></tr>
+<tr><td><b>Types compared in full.</b> Two equal types built separately are compared part by part; the types here are unions of hundreds of TypeScript syntax-node types.</td><td>12.2 million unions of two types</td><td>not timed apart</td></tr>
+</table><ul style="font-size:24px;color:#0b1a2e;line-height:1.36">
+<li>In the modules the reruns take 0.8 of 6.6 s (type-probe), 2.6 of 7.0 s (type-term), 2.0 of 5.5 s (fragment-support) and 5.7 of 5.9 s (library-modules: 3,300 reruns over 61 statements, 2.44 million evaluation steps).</li>
+</ul>
+</section>
+
+<section id="rounds" style="background:#fbfcfd;color:#0b1a2e;font-family:'Inter','Helvetica Neue',Arial,sans-serif;padding:120px 128px;display:flex;flex-direction:column;gap:20px">
+<p style="font-size:24px;color:#56627a;font-weight:600;letter-spacing:2px;text-transform:uppercase">Measured: census of ee0ed0e5, empty store</p>
+<h2 style="font-family:'Bricolage Grotesque','Helvetica Neue',Arial,sans-serif;font-size:56px;font-weight:500;line-height:1.15">Import rounds: one import dropped per round</h2>
+<ul style="font-size:24px;color:#0b1a2e;line-height:1.36">
+<li><b style="font-weight:600">Certified imports:</b> the slice may type a call of an imported function by what TScert proves of that function in its own module, instead of by its declared type alone. It may do so only where the slice and the module give the function the same signature. Before proposing the slice, the plan checks each such import; where it refuses one, the import is dropped, and the round starts again.</li>
+<li><b style="font-weight:600">This slice:</b> 14 rounds each drop one import; the 15th plan passes, the slice is proposed, and the search stage runs the plan once more to divide its work: 16 plans of 0.6–0.9 s, 11.0 s. Each plan reads the whole 30 MB syntax document.</li>
+<li><b style="font-weight:600">Modules proposed again:</b> a module's proposal depends on which of its own calls of other modules are still typed by certified imports, so a dropped import can change it; each round proposes again each module so changed: 27 proposals of 21 modules, tools/declaration-graph.mts five times at 1.8 s.</li>
+<li><b style="font-weight:600">Avoidable:</b> a plan that reports every import it refuses lets one round drop them all: an estimated 16 → 3 plans (−9 s), and about −5.5 s of the 8.8 s of repeated module proposals, since each changed module is still proposed once more. The outcome stays the same only if no refusal depends on another import being dropped, which the change would have to show.</li>
+</ul>
+</section>
+
+<section id="verdict" style="background:#fbfcfd;color:#0b1a2e;font-family:'Inter','Helvetica Neue',Arial,sans-serif;padding:120px 128px;display:flex;flex-direction:column;gap:16px">
+<div style="display:flex;gap:24px;align-items:baseline;flex-wrap:wrap"><p style="font-size:24px;color:#56627a;font-weight:600;letter-spacing:2px;text-transform:uppercase">Intrinsic or avoidable</p><p style="font-size:24px;color:#56627a">census after the repairs, 2026-10-30; shares from the timing build</p></div>
+<h2 style="font-family:'Bricolage Grotesque','Helvetica Neue',Arial,sans-serif;font-size:56px;font-weight:500;line-height:1.15">30 of the remaining 108 s follow the program; about half the producer's 64 s is repetition</h2>
+<table style="font-size:24px;color:#0b1a2e">
+<tr><th style="width:36%;text-align:left;font-weight:600;padding:4px 12px">Part</th><th style="width:24%;text-align:left;font-weight:600;padding:4px 12px">Time after the repairs</th><th style="width:40%;text-align:left;font-weight:600;padding:4px 12px">Verdict</th></tr>
+<tr><td style="padding:4px 12px">the compiler reads the slice and 21 modules</td><td style="padding:4px 12px">20.2 s; 24.3 and 24.0 s in two earlier censuses, run-to-run variation on a shared machine</td><td style="padding:4px 12px"><span style="color:#2c4f7c">proportional</span>: TypeScript's reading of the source and its imports</td></tr>
+<tr><td style="padding:4px 12px">one search, the lowering</td><td style="padding:4px 12px">9.4 s</td><td style="padding:4px 12px"><span style="color:#2c4f7c">proportional</span>: one proof attempt over the slice's graphs</td></tr>
+<tr><td style="padding:4px 12px">the quadratic join and the re-sorting</td><td style="padding:4px 12px">propose CPU 184.9 → 64.1 s</td><td style="padding:4px 12px"><span style="color:#2f6b47">repaired</span> (slide “Two repairs”)</td></tr>
+<tr><td style="padding:4px 12px">entry environments recomputed</td><td style="padding:4px 12px">30.2 s in the slice and 4 modules</td><td style="padding:4px 12px"><span style="color:#a0521a">avoidable</span>: one evaluation per statement</td></tr>
+<tr><td style="padding:4px 12px">the second effect round over <span style="color:#2c4f7c">lowerFile</span></td><td style="padding:4px 12px">2 of its 4 passes</td><td style="padding:4px 12px"><span style="color:#a0521a">avoidable</span>: typed after its callees, one round suffices</td></tr>
+<tr><td style="padding:4px 12px">16 plans, modules proposed again</td><td style="padding:4px 12px">≈15 s saved (estimated)</td><td style="padding:4px 12px"><span style="color:#a0521a">avoidable</span> if refusals are independent</td></tr>
+<tr><td style="padding:4px 12px">types compared part by part</td><td style="padding:4px 12px">not timed apart</td><td style="padding:4px 12px"><span style="color:#a0521a">avoidable</span>: shared, numbered types</td></tr>
+</table><ul style="font-size:24px;color:#0b1a2e;line-height:1.36">
+<li>“Proportional”: the cost follows the size of the program and what it imports, as one producer pass per function does; the measured reruns are 30.2 of the producer's 64.1 s, 47%, plus the repeated proposals.</li>
+</ul>
+</section>
+
+<section id="designs" style="background:#fbfcfd;color:#0b1a2e;font-family:'Inter','Helvetica Neue',Arial,sans-serif;padding:120px 128px;display:flex;flex-direction:column;gap:18px">
+<p style="font-size:24px;color:#56627a;font-weight:600;letter-spacing:2px;text-transform:uppercase">Proposed, not built</p>
+<h2 style="font-family:'Bricolage Grotesque','Helvetica Neue',Arial,sans-serif;font-size:56px;font-weight:500;line-height:1.15">Three designs for the producer, by expected gain</h2>
+<ul style="font-size:24px;color:#0b1a2e;line-height:1.36">
+<li><b style="font-weight:600">Entry environments in one evaluation:</b> evaluate a statement once while typing it, in evaluation order, handing each sub-expression the environment the evaluation has reached. A rerun sees the claims typed so far, so the design must show it gives the environments the reruns give, or record the claims each step reads and rerun only when one changed. Expected: one evaluation per statement instead of 27 in the slice; estimated −18 s in the slice and −11 s in the four modules measured.</li>
+<li><b style="font-weight:600">Passes only where an assumption changed:</b> type the functions callee before caller, in the order of the call graph, so a function is typed once its callees' effects are final; a recursive group is iterated alone. Expected: <span style="color:#2c4f7c">lowerFile</span> typed in one effect round, 4 → 2 passes, an estimated −3.5 s once the first design lands; the closure pass stays.</li>
+<li><b style="font-weight:600">Shared, numbered types:</b> build each distinct type once and give it a number, so two types are equal exactly when their numbers are; union, join and lookup then compare numbers. Expected gain not measured; the largest change of the three, touching every module of the producer.</li>
+<li>With the first two and one import round, the producer's 64 s of CPU in this check would fall to an estimated 25 s, before the third; with the plans saved too, the check would take about 60 s, the compiler's 20 s and the search among them.</li>
+</ul>
+</section>
+
+<section id="goal" style="background:#fbfcfd;color:#0b1a2e;font-family:'Inter','Helvetica Neue',Arial,sans-serif;padding:120px 128px;display:flex;flex-direction:column;gap:22px">
+<p style="font-size:24px;color:#56627a;font-weight:600;letter-spacing:2px;text-transform:uppercase">Against the goal of one second per function</p>
+<h2 style="font-family:'Bricolage Grotesque','Helvetica Neue',Arial,sans-serif;font-size:56px;font-weight:500;line-height:1.15">What one second would take</h2>
+<div style="display:grid;grid-template-columns:repeat(3, 1fr);gap:20px"><div style="background:#ffffff;border:1px solid #d5dce6;border-radius:16px;padding:24px;display:flex;flex-direction:column;gap:6px"><p style="font-family:'Bricolage Grotesque','Helvetica Neue',Arial,sans-serif;font-size:56px;font-weight:500;color:#2f6b47">239 → 108 s</p><p style="font-size:24px;color:#0b1a2e;line-height:1.34">the check on an empty store, the same refusal (<span style="color:#2f6b47">measured</span>)</p></div><div style="background:#ffffff;border:1px solid #d5dce6;border-radius:16px;padding:24px;display:flex;flex-direction:column;gap:6px"><p style="font-family:'Bricolage Grotesque','Helvetica Neue',Arial,sans-serif;font-size:56px;font-weight:500;color:#8a6410">20.2 s</p><p style="font-size:24px;color:#0b1a2e;line-height:1.34">of the 108 are the compiler reading the slice and its 21 modules: every slice importing them pays it again on an empty store</p></div><div style="background:#ffffff;border:1px solid #d5dce6;border-radius:16px;padding:24px;display:flex;flex-direction:column;gap:6px"><p style="font-family:'Bricolage Grotesque','Helvetica Neue',Arial,sans-serif;font-size:56px;font-weight:500;color:#8a6410">≈25 s</p><p style="font-size:24px;color:#0b1a2e;line-height:1.34">producer CPU once two designs and one import round land (<span style="color:#6b6f78">estimated</span>)</p></div></div><ul style="font-size:24px;color:#0b1a2e;line-height:1.36">
+<li>A census replays a module's reading, lowering and proposal from the store when another slice already ran them with the same inputs, so in a census a slice's own cost is close to its own stages.</li>
+<li>No step of this check is unexplained: each slide above attributes its time, and the 1200 s limit of the census of 5dd180f (slide “Stages”) is far away.</li>
+<li>One second for a 735-statement function needs the producer typing each expression once (the designs above) and a search proportional to the function: a target, not an estimate.</li>
+</ul>
+</section>
+
+</div><div id="count"></div>
+<script>
+const slides=[...document.querySelectorAll("section")];let i=Math.max(0,slides.findIndex(s=>"#"+s.id===location.hash));
+function show(){slides.forEach((s,k)=>s.classList.toggle("on",k===i));const z=Math.min(innerWidth/1920,innerHeight/1080);
+slides[i].style.transform="scale("+z+")";document.getElementById("count").textContent=(i+1)+" / "+slides.length;history.replaceState(null,"","#"+slides[i].id)}
+addEventListener("keydown",e=>{if(["ArrowRight","PageDown"," "].includes(e.key))i=Math.min(slides.length-1,i+1);
+else if(["ArrowLeft","PageUp"].includes(e.key))i=Math.max(0,i-1);else if(e.key==="Home")i=0;else if(e.key==="End")i=slides.length-1;else return;e.preventDefault();show()});
+addEventListener("resize",show);show();
+</script></body></html>
