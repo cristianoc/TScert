@@ -1,0 +1,289 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Commit Records</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Code+Pro:wght@400;600&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=STIX+Two+Text:ital,wght@0,400;0,600;1,400&display=swap">
+<style>
+:root { --bg:#fbfcfd; --surface:#ffffff; --ink:#0b1a2e; --muted:#56627a; --rule:#d5dce6; --accent:#8a6410; --code-bg:#eef2f7; --math-bg:#f2f4f8; --ok:#2f6b47; --ok-bg:#e2efe4; --principled:#a0521a; --principled-bg:#f7e6d6; --gap:#6b6f78; --gap-bg:#ecebe6; --neutral:#2c4f7c; --neutral-bg:#e6ebf2; --trust:#7c2f4a; --trust-bg:#f2e1e7; --neg:#9b3524; --neg-bg:#f5e1da; --run:#7a5414; --run-bg:#f3e7cc; --brand-ink:#0b1a2e; --brand-gold:#b8840f;
+  --display:"Bricolage Grotesque","Helvetica Neue",Arial,sans-serif; --body:"Inter","Helvetica Neue",Arial,sans-serif; --mono:"Source Code Pro",Menlo,Consolas,monospace; --math:"STIX Two Text","STIX Two Math","STIXGeneral","Cambria Math","Apple Symbols",Georgia,serif; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#0e1626; --surface:#16213a; --ink:#efe7d4; --muted:#9aa3b5; --rule:#2a3756; --accent:#e0ac4a; --code-bg:#131d33; --math-bg:#1a2540; --ok:#7fd0a2; --ok-bg:#17322a; --principled:#f0a868; --principled-bg:#3a2a1c; --gap:#9aa3b5; --gap-bg:#1c2639; --neutral:#8fb4e8; --neutral-bg:#1b2b49; --trust:#e79bb6; --trust-bg:#3a2131; --neg:#f0907d; --neg-bg:#3a1f22; --run:#e0ac4a; --run-bg:#2e2a24; --brand-ink:#efe7d4; --brand-gold:#e0ac4a; color-scheme:dark } }
+:root[data-theme="dark"] { --bg:#0e1626; --surface:#16213a; --ink:#efe7d4; --muted:#9aa3b5; --rule:#2a3756; --accent:#e0ac4a; --code-bg:#131d33; --math-bg:#1a2540; --ok:#7fd0a2; --ok-bg:#17322a; --principled:#f0a868; --principled-bg:#3a2a1c; --gap:#9aa3b5; --gap-bg:#1c2639; --neutral:#8fb4e8; --neutral-bg:#1b2b49; --trust:#e79bb6; --trust-bg:#3a2131; --neg:#f0907d; --neg-bg:#3a1f22; --run:#e0ac4a; --run-bg:#2e2a24; --brand-ink:#efe7d4; --brand-gold:#e0ac4a; color-scheme:dark }
+* { box-sizing:border-box } body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.6 var(--body) }
+main { max-width:900px; margin:0 auto; padding-inline:20px; padding-block:32px 64px; display:flex; flex-direction:column; gap:22px }
+h1 { font:600 32px/1.15 var(--display); margin:0 } h2 { font:600 22px/1.2 var(--display); margin:12px 0 8px; padding-top:12px; border-top:2px solid var(--ink) }
+h3 { font:600 19px/1.3 var(--display); margin:2px 0 0; text-wrap:balance }
+h4 { font:600 11px/1 var(--body); letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin:12px 0 4px }
+p { margin:2px 0; max-width:72ch } .lede { color:var(--muted) }
+code { font:13px/1.5 var(--mono); background:var(--code-bg); padding:1px 4px; border-radius:3px }
+pre { margin:4px 0; padding:12px 14px; border-radius:6px; overflow-x:auto }
+pre.code { font:13px/1.55 var(--mono); background:var(--code-bg) }
+.rules { display:flex; flex-direction:column; gap:14px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:14px 18px; overflow-x:auto; font:16px/1.6 var(--math) }
+.rules sub, .rules sup { font-size:.72em; line-height:0 }
+.formulas { display:flex; flex-direction:column; gap:4px }
+.formulas .row { display:flex; flex-wrap:wrap; gap:4px 28px } .formulas .row.cont { padding-left:2em }
+.infer { display:flex; align-items:center; gap:12px }
+.frac { display:inline-flex; flex-direction:column; align-items:center; min-width:0 }
+.premises { display:flex; flex-wrap:wrap; justify-content:center; gap:4px 26px; padding:0 6px 3px }
+.bar { align-self:stretch; border-top:1.5px solid var(--ink) }
+.conclusion { padding:3px 6px 0; text-align:center }
+.rule-name { font:15px/1 var(--math); font-variant:small-caps; letter-spacing:.02em; color:var(--accent); white-space:nowrap }
+.card { background:var(--surface); border:1px solid var(--rule); border-radius:8px; padding:20px 22px; display:flex; flex-direction:column; gap:6px; min-width:0 }
+.card > header { display:flex; justify-content:space-between; gap:12px; align-items:flex-start }
+.sha { font:12px/1.4 var(--mono); color:var(--muted) }
+.pill { font:600 11px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; padding:6px 9px; border-radius:99px; white-space:nowrap }
+.pill.ok { color:var(--ok); background:var(--ok-bg) } .pill.principled { color:var(--principled); background:var(--principled-bg) }
+.pill.gap { color:var(--gap); background:var(--gap-bg) } .pill.neutral { color:var(--neutral); background:var(--neutral-bg) }
+.units { display:flex; flex-wrap:wrap; gap:6px } .units span { font:12px/1 var(--mono); border:1px solid var(--rule); border-radius:4px; padding:5px 7px }
+dl.facts { display:grid; grid-template-columns:max-content minmax(0,1fr); gap:6px 16px; margin:12px 0 0; padding-top:12px; border-top:1px solid var(--rule); font-size:13.5px }
+dt { font:600 11px/1.9 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted) }
+dd { margin:0; min-width:0; display:flex; flex-wrap:wrap; gap:5px; align-items:baseline }
+.chip { font:500 12px/1 var(--body); border:1px solid var(--rule); border-radius:4px; padding:4px 7px } .chip.strong { color:var(--accent); border-color:var(--accent) }
+.trust { color:var(--trust); background:var(--trust-bg); padding:2px 6px; border-radius:4px } .none { color:var(--muted) }
+.test { font:12px/1 var(--mono); padding:4px 7px; border-radius:4px }
+.test.pos { color:var(--ok); background:var(--ok-bg) } .test.pos::before { content:"✓ " }
+.test.neg { color:var(--neg); background:var(--neg-bg) } .test.neg::before { content:"✗ " }
+.test.forged { color:var(--principled); background:var(--principled-bg) } .test.forged::before { content:"forged " }
+details { margin-top:8px; font-size:13px; color:var(--muted) } summary { cursor:pointer }
+.table-wrap { overflow-x:auto; border:1px solid var(--rule); border-radius:8px; background:var(--surface) }
+table { border-collapse:collapse; width:100%; font-size:13px } th, td { text-align:left; vertical-align:top; padding:8px 10px; border-bottom:1px solid var(--rule) }
+th { font:600 11px/1.2 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); white-space:nowrap } td.num { font-variant-numeric:tabular-nums }
+h4.change { display:flex; align-items:center; gap:8px; text-transform:none; letter-spacing:0; font:600 14px/1.3 var(--body); color:var(--ink); margin:16px 0 6px }
+h4.change .target { font-weight:400; color:var(--muted) }
+.act { font:600 10.5px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; padding:4px 7px; border-radius:4px }
+.act.added { color:var(--ok); background:var(--ok-bg) } .act.removed { color:var(--neg); background:var(--neg-bg) }
+.act.modified, .act.replaced { color:var(--principled); background:var(--principled-bg) }
+.versions { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:10px }
+.versions figure { margin:0; min-width:0 } .versions figcaption { font:600 11px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); margin:0 0 4px }
+.versions .rules { height:calc(100% - 18px); box-sizing:border-box }
+pre.code .ln { display:block; white-space:pre } pre.code .ln.add { background:var(--ok-bg) } pre.code .ln.del { background:var(--neg-bg) }
+.tk-k { color:#7a3b8c } .tk-s { color:#2f6b47 } .tk-n { color:#a35a12 } .tk-c { color:var(--muted); font-style:italic } .tk-t { color:#2c4f7c }
+.prose p { margin:4px 0 }
+ul.effect, ul.summary { margin:4px 0; padding-left:20px } ul.effect li, ul.summary li { margin:3px 0 } ul.summary ul { padding-left:18px; color:var(--muted) }
+ul.effect .arrow { color:var(--accent); font-weight:600 }
+ul.effect details { margin:0; color:inherit; font-size:inherit } ul.effect summary { list-style-position:outside }
+ul.effect .kind { font-size:11px; text-transform:uppercase; letter-spacing:.04em; padding:1px 6px; border-radius:4px; background:var(--chip, #eee) }
+ul.effect .kind.negative { color:#8a3b12 } ul.effect .kind.positive { color:#22663a } ul.effect .kind.gap { color:#7a5b00 }
+ul.effect .was.unsound { color:#b3261e; font-weight:600 } ul.effect .now { font-weight:500 } ul.effect .why { color:var(--muted) }
+ul.effect mark { background:#ffe08a; color:inherit; border-radius:2px }
+@media (max-width:720px) { .versions { grid-template-columns:minmax(0,1fr) } }
+.lowering { display:flex; flex-direction:column; gap:6px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:12px 16px; overflow-x:auto }
+.lowering .map, .lowering .cond, .lowering .result { display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 10px }
+.lowering .map:not(:has(.sem)) { flex-direction:column; align-items:stretch; gap:4px }
+.lowering .result { display:grid; grid-template-columns:auto minmax(0,1fr); align-items:baseline; gap:2px 10px; padding-left:1em } .lowering .result .note { grid-column:2 }
+.m-intr { font:14px/1.5 var(--mono); color:#2c4f7c } .m-lit { font:13px/1.5 var(--mono); color:#7a3b8c }
+.lowering code.src { font:13px/1.5 var(--mono); background:var(--surface); border:1px solid var(--rule); padding:2px 6px; border-radius:4px }
+.lowering .to { color:var(--accent); font-weight:600; font-size:17px }
+.lowering .tgt { font:16px/1.5 var(--math) } .rules .lowering { background:none; border:0; padding:0 } .lowering .sem code.src { margin:0 2px }
+var { font-style:italic } .m-op { color:#2c4f7c; font-style:normal } .m-con { color:#8f6416; font-style:normal; font-variant:small-caps }
+.m-kw { color:#7a3b8c; font-weight:600; font-style:normal } .m-bind { color:#7a3b8c } .m-rel { color:var(--accent); padding:0 .12em }
+.m-text { font:14px/1.5 var(--body); color:var(--muted) } code.m-code { font:13px/1.5 var(--mono); background:var(--surface); border:1px solid var(--rule); padding:1px 5px; border-radius:4px }
+.refused { color:var(--neg); font-weight:600 }
+.lowering .refused { color:var(--neg); font-weight:600 }
+.lowering .label { font:600 11px/1 var(--body); letter-spacing:.05em; text-transform:uppercase; color:var(--muted); min-width:7em }
+.lowering .cond { padding-left:1.5em } .lowering .note { color:var(--muted); font:italic 13px/1.4 var(--body) }
+a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outline-offset:2px }
+@media (max-width:520px) { dl.facts { grid-template-columns:minmax(0,1fr) } .card > header { flex-direction:column } }</style></head><body><main><header><h1>Commit Records</h1><p class="lede">3 commits, rendered from their records.</p></header>
+<section><h2>Branches</h2><ul class="summary"><li><a href="#g-pr-88"><code>5b2a6983ffd4577bfd1b5d7748359a9ab08f1cc6..pr-88</code></a><ul><li>3 commits</li><li>parts: <span class="chip">parser</span> <span class="chip strong">trust</span> <span class="chip">docs</span> <span class="chip">tests</span></li><li>new trust: <span class="trust">Math.round, Math.fround, parseFloat, Number.isNaN, Number.POSITIVE_INFINITY, Object.isFrozen, Infinity and RangeError are the standard ones, untampered (pre-approved policy); Object.isFrozen runs no code on a non-host value (no proxies, as Reflect.ownKeys)</span></li><li>new trust: <span class="trust">the host's atob follows the HTML standard's forgiving-base64 decode and writes nothing (a host contract beyond ECMAScript: for owner review)</span></li><li>new trust: <span class="trust">Math.floor and Math.sign are the standard functions, untampered (pre-approved policy)</span></li></ul></li></ul></section>
+<h2 id="g-pr-88"><code>5b2a6983ffd4577bfd1b5d7748359a9ab08f1cc6..pr-88</code></h2><article class="card" id="c-32ea03e1e"><header><div><div class="sha">32ea03e1e · Cristiano Calcagno · Nov 05, 08:11</div><h3>Admit six number and Object members, the global Infinity and new RangeError</h3></div><span class="pill ok">verified</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>The census of pretext's src/ (chenglou/pretext at 0d102a5c) refuses 17 of its functions at the source gate on standard-library members and globals no reviewed entry admits: &quot;Math.round is not in the reviewed overlay of library globals&quot; (7 functions), Math.fround, Number.isNaN, Number.POSITIVE_INFINITY, parseFloat, Object.isFrozen, and &quot;the global Infinity (RangeError) is declared in typescript/lib/lib.es5.d.ts (library), an origin no reviewed entry admits&quot;. <code>Infinity</code> is declared <code>declare var Infinity: number</code>, a variable whose type is no interface, which the global reader had no reading of.</p></div>
+<h4 class="change"><span class="act added">added</span>Trust <span class="target">library-globals overlay: Math.round, Math.fround, parseFloat</span></h4><div class="prose"><p><code>round(x: number): number</code>, <code>fround(x: number): number</code> and <code>parseFloat(string: string): number</code>, as declared, within the empty footprint. A number and a string are primitives, so ToNumber and ToString run no code, and none of them writes.</p></div>
+<h4 class="change"><span class="act added">added</span>Trust <span class="target">library-globals overlay: Number.isNaN, Number.POSITIVE_INFINITY</span></h4><div class="prose"><p><code>isNaN(number: unknown): boolean</code> within the empty footprint, as <code>Number.isFinite</code>: it converts nothing, <code>false</code> of every non-number. <code>readonly POSITIVE_INFINITY: number</code>: a non-writable, non-configurable data property of <code>Number</code>, read as declared.</p></div>
+<h4 class="change"><span class="act added">added</span>Trust <span class="target">library-globals overlay: Object.isFrozen</span></h4><div class="prose"><p><code>isFrozen(o: any): boolean</code> stated at the non-host values:</p><p>(NonHost) ⇒ boolean within the empty footprint</p><p><code>true</code> of a primitive; of an object, TestIntegrityLevel: [[IsExtensible]], then [[OwnPropertyKeys]] and [[GetOwnProperty]] of each key, which call no getter and run no code on an ordinary or ECMAScript exotic object (no object is a proxy). A host exotic object's internal methods are the host's code, so an <code>object</code> is refused at the argument, as for <code>Reflect.ownKeys</code>.</p></div>
+<h4 class="change"><span class="act added">added</span>Trust <span class="target">library-globals overlay: new RangeError(m)</span></h4><div class="prose"><p>ECMA-262's NativeError constructor for <code>RangeError</code>, read as <code>new TypeError(m)</code> is: Error's steps, with <code>RangeError.prototype</code>, whose <code>name</code> is &quot;RangeError&quot; and which inherits from <code>Error.prototype</code>.</p><p>s : string o : ErrorOptions ───────────────────────────────────────── (library-range-error) new RangeError(s, o) : Err within the empty footprint, on a throw too</p></div>
+<h4 class="change"><span class="act added">added</span>Rule <span class="target">the global reader: a constant of the standard library</span></h4><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">An entry marked <code class="m-code">constant</code> states a global variable's declaration</span>,</span></div><div class="row"><span><code class="m-code"><span class="tk-t">Infinity</span>: number</code>, <span class="m-text">and a type</span> <var>T</var>; <span class="m-text">every reference reads the value, and a</span></span></div><div class="row"><span><span class="m-text">write is </span><span class="refused">refused</span>.</span></div></div><div class="infer"><div class="frac"><div class="premises"><span><span class="m-op">lib</span>(<var>x</var>)</span><span><var>ω</var> <span class="m-rel">∈</span> <var>Ω</var></span><span><var>ω</var> <span class="m-rel">=</span> (<var>x</var>, <span class="m-op">text</span>(<var>d</var>), <span class="m-text">constant, stated</span> <var>T</var>)</span><span><var>x</var> <span class="m-text">never written</span></span></div><div class="bar"></div><div class="conclusion"><div><var>Γ</var>(<var>x</var>) <span class="m-rel">=</span> <var>T</var></div></div></div><span class="rule-name">(library-constant)</span></div><div class="formulas"><div class="row"><span><code class="m-code"><span class="tk-t">Infinity</span></code> <span class="m-text">is a non-writable, non-configurable data property of the</span></span></div><div class="row"><span><span class="m-text">global object holding</span> +∞<span class="m-rel">:</span> <span class="m-text">its read runs no code and no code reassigns</span></span></div><div class="row"><span><span class="m-op">it</span>.</span></div></div></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">SOURCE-CONTRACTS.md library globals and Error, DESIGN.md trust table</span></h4><div class="prose"><p>each entry beside its neighbours; the library-constant rule</p></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>library-math-round</code> <span class="kind positive">positive</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">Math.round of a number</span></summary><pre class="code"><span class="tk-c">// Pretext (github.com/chenglou/pretext at 0d102a5c, src/, census by unit):</span>
+<span class="tk-c">// line-break.ts#getTabAdvance, measurement.ts#countLigaturesOnFirstLetter,</span>
+<span class="tk-c">// measurement.ts#getCharacterSpaceKerning, measurement.ts#getEmojiGlyphs,</span>
+<span class="tk-c">// measurement.ts#getFontKanaKerning, measurement.ts#measureKanaKerning,</span>
+<span class="tk-c">// measurement.ts#sameInk.</span>
+<span class="tk-c">// `Math.round` of a number runs no conversion code and writes nothing: the</span>
+<span class="tk-c">// nearest integer, a number.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> stop(advance: number): number {
+  <span class="tk-k">return</span> <span class="tk-t">Math</span>.round(advance * <span class="tk-n">60</span>);
+}</pre></details></li><li><details><summary><code>library-math-fround</code> <span class="kind positive">positive</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">Math.fround of a number</span></summary><pre class="code"><span class="tk-c">// Pretext (github.com/chenglou/pretext at 0d102a5c, src/, census by unit):</span>
+<span class="tk-c">// measurement.ts#getWebKitGenericFamilies.</span>
+<span class="tk-c">// `Math.fround` of a number runs no conversion code and writes nothing: the</span>
+<span class="tk-c">// nearest single-precision value, a number.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> single(x: number): number {
+  <span class="tk-k">return</span> <span class="tk-t">Math</span>.fround(x);
+}</pre></details></li><li><details><summary><code>library-number-isnan</code> <span class="kind positive">positive</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">Number.isNaN of a number</span></summary><pre class="code"><span class="tk-c">// Pretext (github.com/chenglou/pretext at 0d102a5c, src/, census by unit):</span>
+<span class="tk-c">// measurement.ts#getKanaKerning, measurement.ts#readLetterSpacing.</span>
+<span class="tk-c">// `Number.isNaN` tests a value without converting it and writes nothing: a</span>
+<span class="tk-c">// Boolean.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> spacing(x: number): number {
+  <span class="tk-k">return</span> <span class="tk-t">Number</span>.isNaN(x) ? <span class="tk-n">0</span> : x;
+}</pre></details></li><li><details><summary><code>library-number-positive-infinity</code> <span class="kind positive">positive</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">Number.POSITIVE_INFINITY read</span></summary><pre class="code"><span class="tk-c">// Pretext (github.com/chenglou/pretext at 0d102a5c, src/, census by unit):</span>
+<span class="tk-c">// layout.ts#measureNaturalWidth, rich-inline.ts#findWholeLine,</span>
+<span class="tk-c">// rich-inline.ts#prepareRichInline.</span>
+<span class="tk-c">// `Number.POSITIVE_INFINITY`, a non-writable data property of `Number`: its</span>
+<span class="tk-c">// read runs no code and is a number.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> widest(): number {
+  <span class="tk-k">return</span> <span class="tk-t">Number</span>.<span class="tk-t">POSITIVE_INFINITY</span>;
+}</pre></details></li><li><details><summary><code>library-parse-float</code> <span class="kind positive">positive</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">parseFloat of a string</span></summary><pre class="code"><span class="tk-c">// Pretext (github.com/chenglou/pretext at 0d102a5c, src/, census by unit):</span>
+<span class="tk-c">// measurement.ts#parseFontSize, measurement.ts#readWidthIn.</span>
+<span class="tk-c">// `parseFloat` of a string, a primitive no conversion code runs on, writes</span>
+<span class="tk-c">// nothing: a number, `NaN` where no prefix of the string spells one.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> size(text: string): number {
+  <span class="tk-k">return</span> parseFloat(text);
+}</pre></details></li><li><details><summary><code>library-object-isfrozen</code> <span class="kind positive">positive</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">Object.isFrozen of a record naming an invariant field</span></summary><pre class="code"><span class="tk-c">// Pretext (github.com/chenglou/pretext at 0d102a5c, src/, census by unit):</span>
+<span class="tk-c">// rich-inline.ts#findSegmentSources.</span>
+<span class="tk-c">// `Object.isFrozen` of a value that is no host object, here a record naming</span>
+<span class="tk-c">// an invariant field: its integrity test runs no code and writes nothing, a</span>
+<span class="tk-c">// Boolean.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> frozen(o: { items: string[] }): boolean {
+  <span class="tk-k">return</span> <span class="tk-t">Object</span>.isFrozen(o);
+}</pre></details></li><li><details><summary><code>invalid-object-isfrozen-object</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">an object, possibly a host object, at the non-host parameter</span></summary><pre class="code"><span class="tk-c">// `Object.isFrozen` of a value typed `object`, which may be a host object: a</span>
+<span class="tk-c">// host exotic object's [[IsExtensible]] and [[OwnPropertyKeys]] may be the</span>
+<span class="tk-c">// host's own code. Refused at the argument.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> frozen(o: object): boolean {
+  <span class="tk-k">return</span> <span class="tk-t">Object</span>.isFrozen(o);
+}</pre></details></li><li><details><summary><code>library-infinity</code> <span class="kind positive">positive</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">Infinity read as a number</span></summary><pre class="code"><span class="tk-c">// Pretext (github.com/chenglou/pretext at 0d102a5c, src/, census by unit):</span>
+<span class="tk-c">// line-break.ts#normalizeMaxWidth.</span>
+<span class="tk-c">// The global `Infinity`, a non-writable, non-configurable data property of</span>
+<span class="tk-c">// the global object: read as a value, a number.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> normalize(maxWidth: number): number {
+  <span class="tk-k">return</span> maxWidth &lt;= <span class="tk-t">Infinity</span> ? maxWidth : <span class="tk-t">Infinity</span>;
+}</pre></details></li><li><details><summary><code>range-error-construct</code> <span class="kind positive">positive</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">a RangeError constructed, thrown, its inherited name read</span></summary><pre class="code"><span class="tk-c">// Pretext (github.com/chenglou/pretext at 0d102a5c, src/, census by unit):</span>
+<span class="tk-c">// measurement.ts#getFontMeasurement.</span>
+<span class="tk-c">// `new RangeError(m)` at a string message constructs an error whose message</span>
+<span class="tk-c">// is that string and whose name, inherited from `RangeError.prototype`, is</span>
+<span class="tk-c">// `&quot;RangeError&quot;`. A throw of it is an outcome.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> check(font: string): string {
+  <span class="tk-k">if</span> (font === <span class="tk-s">&quot;&quot;</span>) <span class="tk-k">throw</span> <span class="tk-k">new</span> <span class="tk-t">RangeError</span>(<span class="tk-s">&quot;font must be a font string&quot;</span>);
+  <span class="tk-k">return</span> font;
+}
+<span class="tk-k">export</span> <span class="tk-k">function</span> made(message: string): string {
+  <span class="tk-k">const</span> error = <span class="tk-k">new</span> <span class="tk-t">RangeError</span>(message);
+  <span class="tk-k">return</span> <span class="tk-s">`${error.name}: ${error.message}`</span>;
+}</pre></details></li><li><details><summary><code>blocker-pretext-math-round</code> <span class="kind gap">gap</span> <span class="was">gap</span> <span class="arrow">→</span> <span class="now">removed</span> <span class="why">replaced by library-math-round</span></summary><pre class="code"><span class="tk-c">// Pretext (github.com/chenglou/pretext at 0d102a5c, src/, census by unit):</span>
+<span class="tk-c">// line-break.ts#getTabAdvance, measurement.ts#countLigaturesOnFirstLetter,</span>
+<span class="tk-c">// measurement.ts#getCharacterSpaceKerning, measurement.ts#getEmojiGlyphs,</span>
+<span class="tk-c">// measurement.ts#getFontKanaKerning, measurement.ts#measureKanaKerning,</span>
+<span class="tk-c">// measurement.ts#sameInk.</span>
+<span class="tk-c">// Refusal: gate: Math.round is not in the reviewed overlay of library</span>
+<span class="tk-c">// globals: round(x: number): number;.</span>
+<span class="tk-c">// `Math.round`, not in the reviewed overlay of library globals.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> stop(advance: number): number {
+  <span class="tk-k">return</span> <span class="tk-t">Math</span>.round(advance * <span class="tk-n">60</span>);
+}</pre></details></li><li><details><summary><code>blocker-pretext-math-fround</code> <span class="kind gap">gap</span> <span class="was">gap</span> <span class="arrow">→</span> <span class="now">removed</span> <span class="why">replaced by library-math-fround</span></summary><pre class="code"><span class="tk-c">// Pretext (github.com/chenglou/pretext at 0d102a5c, src/, census by unit):</span>
+<span class="tk-c">// measurement.ts#getWebKitGenericFamilies.</span>
+<span class="tk-c">// Refusal: gate: Math.fround is not in the reviewed overlay of library</span>
+<span class="tk-c">// globals: fround(x: number): number;.</span>
+<span class="tk-c">// `Math.fround`, not in the reviewed overlay of library globals.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> single(x: number): number {
+  <span class="tk-k">return</span> <span class="tk-t">Math</span>.fround(x);
+}</pre></details></li><li><details><summary><code>blocker-pretext-number-isnan</code> <span class="kind gap">gap</span> <span class="was">gap</span> <span class="arrow">→</span> <span class="now">removed</span> <span class="why">replaced by library-number-isnan</span></summary><pre class="code"><span class="tk-c">// Pretext (github.com/chenglou/pretext at 0d102a5c, src/, census by unit):</span>
+<span class="tk-c">// measurement.ts#getKanaKerning, measurement.ts#readLetterSpacing.</span>
+<span class="tk-c">// Refusal: gate: Number.isNaN is not in the reviewed overlay of library</span>
+<span class="tk-c">// globals: isNaN(number: unknown): boolean;.</span>
+<span class="tk-c">// `Number.isNaN`, not in the reviewed overlay of library globals.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> spacing(x: number): number {
+  <span class="tk-k">return</span> <span class="tk-t">Number</span>.isNaN(x) ? <span class="tk-n">0</span> : x;
+}</pre></details></li><li><details><summary><code>blocker-pretext-number-positive-infinity</code> <span class="kind gap">gap</span> <span class="was">gap</span> <span class="arrow">→</span> <span class="now">removed</span> <span class="why">replaced by library-number-positive-infinity</span></summary><pre class="code"><span class="tk-c">// Pretext (github.com/chenglou/pretext at 0d102a5c, src/, census by unit):</span>
+<span class="tk-c">// layout.ts#measureNaturalWidth, rich-inline.ts#findWholeLine,</span>
+<span class="tk-c">// rich-inline.ts#prepareRichInline.</span>
+<span class="tk-c">// Refusal: gate: Number.POSITIVE_INFINITY is not in the reviewed overlay of</span>
+<span class="tk-c">// library globals: readonly POSITIVE_INFINITY: number;.</span>
+<span class="tk-c">// `Number.POSITIVE_INFINITY`, not in the reviewed overlay of library</span>
+<span class="tk-c">// globals.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> widest(): number {
+  <span class="tk-k">return</span> <span class="tk-t">Number</span>.<span class="tk-t">POSITIVE_INFINITY</span>;
+}</pre></details></li><li><details><summary><code>blocker-pretext-parse-float</code> <span class="kind gap">gap</span> <span class="was">gap</span> <span class="arrow">→</span> <span class="now">removed</span> <span class="why">replaced by library-parse-float</span></summary><pre class="code"><span class="tk-c">// Pretext (github.com/chenglou/pretext at 0d102a5c, src/, census by unit):</span>
+<span class="tk-c">// measurement.ts#parseFontSize, measurement.ts#readWidthIn.</span>
+<span class="tk-c">// Refusal: gate: parseFloat(…) is not in the reviewed overlay of library</span>
+<span class="tk-c">// globals: declare function parseFloat(string: string): number;.</span>
+<span class="tk-c">// `parseFloat`, not in the reviewed overlay of library globals.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> size(text: string): number {
+  <span class="tk-k">return</span> parseFloat(text);
+}</pre></details></li><li><details><summary><code>blocker-pretext-object-isfrozen</code> <span class="kind gap">gap</span> <span class="was">gap</span> <span class="arrow">→</span> <span class="now">removed</span> <span class="why">replaced by library-object-isfrozen</span></summary><pre class="code"><span class="tk-c">// Pretext (github.com/chenglou/pretext at 0d102a5c, src/, census by unit):</span>
+<span class="tk-c">// rich-inline.ts#findSegmentSources.</span>
+<span class="tk-c">// Refusal: gate: Object.isFrozen is not in the reviewed overlay of library</span>
+<span class="tk-c">// globals: isFrozen(o: any): boolean;.</span>
+<span class="tk-c">// `Object.isFrozen`, not in the reviewed overlay of library globals.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> frozen(o: { items: string[] }): boolean {
+  <span class="tk-k">return</span> <span class="tk-t">Object</span>.isFrozen(o);
+}</pre></details></li><li><details><summary><code>blocker-pretext-infinity</code> <span class="kind gap">gap</span> <span class="was">gap</span> <span class="arrow">→</span> <span class="now">removed</span> <span class="why">replaced by library-infinity</span></summary><pre class="code"><span class="tk-c">// Pretext (github.com/chenglou/pretext at 0d102a5c, src/, census by unit):</span>
+<span class="tk-c">// line-break.ts#normalizeMaxWidth.</span>
+<span class="tk-c">// Refusal: gate: the global Infinity is declared in</span>
+<span class="tk-c">// typescript/lib/lib.es5.d.ts (library), an origin no reviewed entry</span>
+<span class="tk-c">// admits.</span>
+<span class="tk-c">// The global `Infinity`, which has no reviewed entry.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> normalize(maxWidth: number): number {
+  <span class="tk-k">return</span> maxWidth &lt;= <span class="tk-t">Infinity</span> ? maxWidth : <span class="tk-t">Infinity</span>;
+}</pre></details></li><li><details><summary><code>blocker-pretext-range-error</code> <span class="kind gap">gap</span> <span class="was">gap</span> <span class="arrow">→</span> <span class="now">removed</span> <span class="why">replaced by range-error-construct</span></summary><pre class="code"><span class="tk-c">// Pretext (github.com/chenglou/pretext at 0d102a5c, src/, census by unit):</span>
+<span class="tk-c">// measurement.ts#getFontMeasurement.</span>
+<span class="tk-c">// Refusal: gate: the global RangeError is declared in</span>
+<span class="tk-c">// typescript/lib/lib.es5.d.ts (library), an origin no reviewed entry</span>
+<span class="tk-c">// admits.</span>
+<span class="tk-c">// `new RangeError(…)`: the global `RangeError` has no reviewed entry.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> check(font: string): string {
+  <span class="tk-k">if</span> (font === <span class="tk-s">&quot;&quot;</span>) <span class="tk-k">throw</span> <span class="tk-k">new</span> <span class="tk-t">RangeError</span>(<span class="tk-s">&quot;font must be a font string&quot;</span>);
+  <span class="tk-k">return</span> font;
+}</pre></details></li></ul>
+<h4 class="change">Soundness</h4><div class="prose"><p>Under Node, range-error-construct's <code>check(&quot;&quot;)</code> throws an error that is an instance of RangeError and of Error, and <code>made(&quot;n&quot;)</code> is &quot;RangeError: n&quot; (tests/node-runs.mts).</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">parser</span> <span class="chip strong">trust</span> <span class="chip">docs</span> <span class="chip">tests</span></dd><dt>Trust</dt><dd><span class="trust">Math.round, Math.fround, parseFloat, Number.isNaN, Number.POSITIVE_INFINITY, Object.isFrozen, Infinity and RangeError are the standard ones, untampered (pre-approved policy); Object.isFrozen runs no code on a non-host value (no proxies, as Reflect.ownKeys)</span></dd><dt>Tests</dt><dd><span class="test pos">library-math-round</span> <span class="test pos">library-math-fround</span> <span class="test pos">library-number-isnan</span> <span class="test pos">library-number-positive-infinity</span> <span class="test pos">library-parse-float</span> <span class="test pos">library-object-isfrozen</span> <span class="test neg">invalid-object-isfrozen-object</span> <span class="test pos">library-infinity</span> <span class="test pos">range-error-construct</span></dd></dl>
+<details><summary>16 files changed, 143 insertions(+), 58 deletions(-)</summary><pre class="code"> docs/DESIGN.md                                     |  2 +-
+ docs/SOURCE-CONTRACTS.md                           | 43 +++++++++++++++++----
+ pipeline/cases.mts                                 | 20 +++++-----
+ pipeline/examples/blocker-pretext-range-error.ts   | 10 -----
+ .../examples/invalid-object-isfrozen-object.ts     |  6 +++
+ ...ker-pretext-infinity.ts =&gt; library-infinity.ts} |  6 +--
+ ...etext-math-fround.ts =&gt; library-math-fround.ts} |  5 +--
+ ...pretext-math-round.ts =&gt; library-math-round.ts} |  5 +--
+ ...ext-number-isnan.ts =&gt; library-number-isnan.ts} |  5 +--
+ ...nity.ts =&gt; library-number-positive-infinity.ts} |  6 +--
+ ...ject-isfrozen.ts =&gt; library-object-isfrozen.ts} |  6 +--
+ ...etext-parse-float.ts =&gt; library-parse-float.ts} |  5 +--
+ pipeline/examples/range-error-construct.ts         | 13 +++++++
+ tests/node-runs.mts                                |  3 ++
+ tools/declaration-graph.mts                        | 21 +++++++++-
+ tools/library-globals.mts                          | 45 +++++++++++++++++++---</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-c8801da3a"><header><div><div class="sha">c8801da3a · Cristiano Calcagno · Nov 05, 08:11</div><h3>Admit the DOM's atob of a string, the forgiving-base64 decode, writing nothing</h3></div><span class="pill ok">verified</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>Pretext's line-breaks.ts#unpackTable and #unpackVarints decode their packed tables with <code>atob</code>, refused at the source gate: &quot;atob(…) is not in the reviewed overlay of library globals&quot;. <code>atob</code> is a host function of the HTML standard (WindowOrWorkerGlobalScope), declared in the DOM's library; Node's global <code>atob</code> follows the same algorithm. It enters through the reviewed overlay of library globals, as the DOM's <code>console.error</code> and Node's <code>structuredClone</code> do.</p></div>
+<h4 class="change"><span class="act added">added</span>Trust <span class="target">library-globals overlay: atob, the DOM's library</span></h4><div class="prose"><p><code>declare function atob(data: string): string</code>, as declared, within the empty footprint, on a throw too. Web IDL converts <code>data</code> to a DOMString, which runs no code on a string; the forgiving-base64 decode returns a fresh string of the decoded bytes, one code unit each, or throws an <code>InvalidCharacterError</code> DOMException, an outcome.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">SOURCE-CONTRACTS.md library globals, DESIGN.md trust table</span></h4><div class="prose"><p>the <code>atob</code> entry</p></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>library-atob</code> <span class="kind positive">positive</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">atob of a string, its length</span></summary><pre class="code"><span class="tk-c">// Pretext (github.com/chenglou/pretext at 0d102a5c, src/, census by unit):</span>
+<span class="tk-c">// line-breaks.ts#unpackTable, line-breaks.ts#unpackVarints.</span>
+<span class="tk-c">// The DOM's `atob` of a string, which no conversion code runs on: a fresh</span>
+<span class="tk-c">// string of the decoded bytes, or a thrown DOMException, an outcome; it</span>
+<span class="tk-c">// writes nothing.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> bytes(data: string): number {
+  <span class="tk-k">return</span> atob(data).length;
+}</pre></details></li><li><code>blocker-pretext-atob  gap</code> <span class="was">gap</span> <span class="arrow">→</span> <span class="now">removed</span> <span class="why">replaced by library-atob</span></li></ul>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip strong">trust</span> <span class="chip">docs</span> <span class="chip">tests</span></dd><dt>Trust</dt><dd><span class="trust">the host's atob follows the HTML standard's forgiving-base64 decode and writes nothing (a host contract beyond ECMAScript: for owner review)</span></dd><dt>Tests</dt><dd><span class="test pos">library-atob</span></dd></dl>
+<details><summary>5 files changed, 21 insertions(+), 5 deletions(-)</summary><pre class="code"> docs/DESIGN.md                                                 | 2 +-
+ docs/SOURCE-CONTRACTS.md                                       | 7 +++++++
+ pipeline/cases.mts                                             | 2 +-
+ pipeline/examples/{blocker-pretext-atob.ts =&gt; library-atob.ts} | 6 +++---
+ tools/library-globals.mts                                      | 9 +++++++++</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-45ed4766c"><header><div><div class="sha">45ed4766c · Cristiano Calcagno · Nov 05, 08:18</div><h3>Admit Math.floor and Math.sign of a number, and record pretext's census at 7 of 209</h3></div><span class="pill ok">verified</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>With the earlier entries of this branch, the census of pretext's src/ reaches two further members of <code>Math</code> the reviewed overlay does not admit: &quot;Math.floor is not in the reviewed overlay of library globals&quot; (line-break.ts#getTabAdvance) and &quot;Math.sign …&quot; (measurement.ts#readLetterSpacing, #getWebKitGenericFamilies).</p></div>
+<h4 class="change"><span class="act added">added</span>Trust <span class="target">library-globals overlay: Math.floor, Math.sign</span></h4><div class="prose"><p><code>floor(x: number): number</code> and <code>sign(x: number): number</code>, as declared, within the empty footprint. A number is a primitive, so no conversion code runs, and neither writes.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">SOURCE-CONTRACTS.md library globals, DESIGN.md trust table, WORK.md pretext row</span></h4><div class="prose"><p>the two members beside <code>Math.ceil</code>; the row's census and the cases standing for the modeled reasons</p></div>
+<h4 class="change"><span class="act modified">modified</span>Tooling <span class="target">tests/tool-failures.mts: the refused source of a release failure</span></h4><div class="versions"><figure><figcaption>Before</figcaption><pre class="code"><span class="ln">return Math.floor(1.5);</span></pre></figure><figure><figcaption>After</figcaption><pre class="code"><span class="ln">return Math.cbrt(8);</span><span class="ln">(a member the overlay still refuses, so the release failure keeps a refusal in flight)</span></pre></figure></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>library-math-floor-sign</code> <span class="kind positive">positive</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">Math.floor and Math.sign of a number</span></summary><pre class="code"><span class="tk-c">// Pretext (github.com/chenglou/pretext at 0d102a5c, src/, census by unit):</span>
+<span class="tk-c">// line-break.ts#getTabAdvance (Math.floor), measurement.ts#readLetterSpacing</span>
+<span class="tk-c">// and measurement.ts#getWebKitGenericFamilies (Math.sign).</span>
+<span class="tk-c">// `Math.floor` and `Math.sign` of a number run no conversion code and write</span>
+<span class="tk-c">// nothing: each a number.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> tabStop(advance: number, width: number): number {
+  <span class="tk-k">return</span> (<span class="tk-t">Math</span>.floor(advance / width) + <span class="tk-n">1</span>) * width;
+}
+<span class="tk-k">export</span> <span class="tk-k">function</span> direction(x: number): number {
+  <span class="tk-k">return</span> <span class="tk-t">Math</span>.sign(x);
+}</pre></details></li></ul>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip strong">trust</span> <span class="chip">docs</span> <span class="chip">tests</span></dd><dt>Trust</dt><dd><span class="trust">Math.floor and Math.sign are the standard functions, untampered (pre-approved policy)</span></dd><dt>Measured</dt><dd>pretext 0d102a5c src/, shallow per unit: 6 of 209 -&gt; 7 of 209 functions, 12 -&gt; 13 of 3424 statements (dev census driver for pretext, TSCERT_STEP_LIMIT=300, this branch) · gained layout.ts#measureNaturalWidth</dd><dt>Tests</dt><dd><span class="test pos">library-math-floor-sign</span></dd></dl>
+<details><summary>7 files changed, 25 insertions(+), 9 deletions(-)</summary><pre class="code"> WORK.md                                      |  2 +-
+ docs/DESIGN.md                               |  2 +-
+ docs/SOURCE-CONTRACTS.md                     |  9 +++++----
+ pipeline/cases.mts                           |  1 +
+ pipeline/examples/library-math-floor-sign.ts | 11 +++++++++++
+ tests/tool-failures.mts                      |  2 +-
+ tools/library-globals.mts                    |  7 +++++--</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+</main></body></html>
