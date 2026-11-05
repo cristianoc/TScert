@@ -11,7 +11,8 @@ import { createHash } from "node:crypto";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { producerBuild, verifierBuild } from "../../pipeline/stage-execution.mts";
+import { producerBuild, verifierBuild, producerCall, verifierCall } from "../../pipeline/stage-execution.mts";
+import { tested } from "../../pipeline/stages.mts";
 import { readDiagnostic } from "../../tools/diagnostic.mts";
 import { presentObligation } from "../../tools/diagnostic-view.mts";
 import type { Ast } from "../../tools/fragment.mts";
@@ -21,7 +22,7 @@ const here = import.meta.dirname;
 
 type Run = { status: number | null; stdout: string; stderr: string };
 function run(executable: string, args: string[]): Run {
-  const ran = spawnSync(executable, args, { encoding: "utf8", maxBuffer: 1 << 30 });
+  const ran = spawnSync(executable, args, { encoding: "utf8", maxBuffer: 1 << 26, timeout: 60_000 });
   if (ran.error) throw ran.error;
   return { status: ran.status, stdout: ran.stdout, stderr: ran.stderr };
 }
@@ -62,7 +63,9 @@ type Report = {
 function verify(file: string): Report {
   const artifacts = mkdtempSync(join(tmpdir(), "tscert-python-"));
   const bytes = readFileSync(file);
-  const parsed = run("python3", ["-I", join(here, "py_ast.py"), file]);
+  const snapshot = join(artifacts, "source.py");
+  writeFileSync(snapshot, bytes);
+  const parsed = run("python3", ["-I", join(here, "py_ast.py"), snapshot]);
   if (parsed.status !== 0) return { status: "unsupported", artifacts, detail: parsed.stderr.trim() };
   writeFileSync(join(artifacts, "python-ast.json"), parsed.stdout);
   const tree = readNode(JSON.parse(parsed.stdout));
@@ -77,19 +80,19 @@ function verify(file: string): Report {
   const ast = join(artifacts, "fragment.json");
   writeFileSync(ast, JSON.stringify(fragment));
 
-  const lowered = run(verifierBuild, ["--lower-control-flow", ast]);
+  const lowered = tested(verifierCall(verifierBuild, ["--lower-control-flow", ast]), 60_000);
   if (lowered.status !== 0) return { status: "unsupported", artifacts, detail: refusal(lowered, "reject: ") };
   const flow = join(artifacts, "flow.json");
   writeFileSync(flow, lowered.stdout);
 
-  const proposed = run(producerBuild, [ast, flow]);
+  const proposed = tested(producerCall(producerBuild, [ast, flow]), 60_000);
   if (proposed.status !== 0) return { status: "unsupported", artifacts, detail: refusal(proposed, "unsupported: ") };
   const claims = join(artifacts, "claims.json");
   writeFileSync(claims, proposed.stdout);
 
   // The file key names the source; the verifier reads the fragment, not the file.
   const evidence = join(artifacts, "evidence.json");
-  const searched = run(verifierBuild, ["--produce-units", ast, claims, resolve(file), evidence, "12"]);
+  const searched = tested(verifierCall(verifierBuild, ["--produce-units", ast, claims, resolve(file), evidence, "12"]), 60_000);
   writeFileSync(join(artifacts, "search.log"), searched.stdout + searched.stderr);
   if (!searched.stdout.includes("checked source evidence written: "))
     return { status: "unverified", artifacts, detail: refusal(searched, "reject: ") };
@@ -101,7 +104,7 @@ function verify(file: string): Report {
       searchRefusals.set(value.unit, value.refusal);
   }
 
-  const checked = run(verifierBuild, ["--check-units", ast, claims, resolve(file), evidence]);
+  const checked = tested(verifierCall(verifierBuild, ["--check-units", ast, claims, resolve(file), evidence]), 60_000);
   writeFileSync(join(artifacts, "check.log"), checked.stdout + checked.stderr);
   const units = checked.stdout.split("\n").filter((l) => l.startsWith("{")).map((line) => {
     const value: unknown = JSON.parse(line);
@@ -112,7 +115,8 @@ function verify(file: string): Report {
     return { unit: value.unit, status: "unverified", 
       detail: readable(`reject: ${searchRefusals.get(value.unit) ?? own}`, bytes.toString("utf8")) };
   });
-  if (units.length === 0) return { status: "error", artifacts, detail: refusal(checked, "reject: ") };
+  if (units.length !== fragment.functions.length || new Set(units.map((u) => u.unit)).size !== units.length ||
+      (units.every((u) => u.status === "verified") && checked.status !== 0)) return { status: "error", artifacts, detail: refusal(checked, "reject: ") };
   return { status: units.every((u) => u.status === "verified") ? "verified" : "unverified", artifacts, units };
 }
 

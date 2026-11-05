@@ -1,40 +1,114 @@
-# A Python front end for TScert (demo)
+# Python aliasing demo
 
-A minimal front end that reads a small subset of Python and hands it to
-TScert's own back end: the Lean verifier's control-flow lowering, the OCaml
-producer's claims, the Lean evidence search and the Lean check. The producer
-and the verifier run unchanged; the front end writes the same Fragment
-document (`tools/fragment.mts`) that the TypeScript front end writes.
+The same proof checker can expose a Python bug accepted by five Python type
+checkers: a dictionary write through an alias invalidates an earlier type
+check. The demo translates a restricted Python subset into TScert's
+[Fragment](../../tools/fragment.mts). Its OCaml producer and Lean verifier
+check that program unchanged.
 
-It is a demonstration of the wire, not a verifier for Python: TScert's
-calculus models JavaScript, and the demo gives each Python form the meaning of
-the JavaScript form it is mapped to. [Limits](#limits) states where the two
-differ.
+## The example
+
+[`stale_title.py`](examples/stale_title.py):
+
+```python
+from typing import TypedDict
+
+class Payload(TypedDict):
+    title: str | int
+
+def display_title(payload: Payload) -> str:
+    alias = payload
+    if isinstance(payload["title"], str):
+        alias["title"] = 0
+        return payload["title"]
+    return "untitled"
+```
+
+With `{"title": "Quarterly report"}`, the function returns the integer `0`.
+A caller using the promised string's `.upper()` raises `AttributeError`.
+Every argument and write meets the stated `TypedDict` contract. The earlier
+`isinstance` test describes the field before its mutation.
+
+TScert refuses the final read: its available claim is `string | bigint`,
+while the result requires `string`. The checker accepts the
+[snapshot repair](examples/snapshot_title.py): save `title = payload["title"]`,
+test `isinstance(title, str)` and return `title` across the write. The saved
+string survives the dictionary's mutation.
+
+[`aliased_arguments.py`](examples/aliased_arguments.py) exercises a second
+form: two parameters may receive the same dictionary. Writing one can
+invalidate a narrowing of the other. Its counterexample passes the same
+object for both arguments; distinct objects produce the promised string.
 
 ## Run it
 
-From the repository root, after `make build`:
+From the repository root, with Python 3.10+ and after `make build`:
 
 ```sh
-node demo/python/verify.mts demo/python/examples/hello.py
-node demo/python/verify.mts demo/python/examples/refused.py
+python3 -I -B demo/python/runtime.py
+node demo/python/verify.mts demo/python/examples/stale_title.py
+node demo/python/verify.mts demo/python/examples/aliased_arguments.py
+node demo/python/verify.mts demo/python/examples/snapshot_title.py
+node demo/python/test.mts
 ```
 
-`hello.py` is verified, each of its five functions a unit of its own.
-`refused.py` is refused: under the JavaScript model, `x + "a"` with `x` an
-`int` is a string, and the function's result annotation is `int`:
+The first two verdicts are `unverified` (exit 1); the snapshot is `verified`
+(exit 0). `runtime.py` executes both counterexamples and checks the repair
+on six inputs, including an empty string, astral Unicode and a large integer.
+`test.mts` checks these verdicts, the original primitive examples, source
+restrictions and diagnostic locations across Unicode and CRLF. CI runs it.
 
-```text
-unverified: demo/python/examples/refused.py
-  unverified inc@4
-    reject: source expression obligation at [35,42): evidence search failed: no derivation of its return-contract claim
-    obligation: The available claim for x + "a" is string. This return requires bigint.
-    line 2: return x + "a"
+The verifier command retains a source snapshot, Python syntax tree,
+`fragment.json`, `flow.json`, `claims.json`, `evidence.json` and the search
+and checking logs in the printed temporary directory. Only complete,
+independently checked unit verdicts produce `verified`. The backend stages
+use the repository's stage store and 60-second limits.
+
+## Python type checker comparison
+
+Measured on 2026-11-05, all five releases below accept both aliasing
+counterexamples and the snapshot repair with zero reported errors. Each
+also rejects the control `def ordinary_error() -> str: return 0`.
+
+| Checker | Release | Configuration |
+| --- | --- | --- |
+| mypy | 2.4.1 | `--strict` |
+| Pyright | 1.1.414 | `typeCheckingMode: strict` |
+| basedpyright | 1.40.2 | `typeCheckingMode: strict` |
+| ty | 0.0.98 | `check` defaults |
+| Pyrefly | 1.4.1 | `--preset strict` |
+
+Reproduce the comparison with `uv` installed (downloads the pinned releases):
+
+```sh
+node demo/python/compare.mts
 ```
 
-The command exits 0 when every unit is verified, and prints the directory
-holding what the run wrote: the Python syntax tree, `fragment.json`,
-`flow.json`, `claims.json`, `evidence.json` and the verifier's logs.
+The printed temporary directory holds `report.json`: exact commands,
+versions, source hashes, exit statuses and full output, including the
+ordinary-error controls. These are results for those releases and settings;
+other checkers and future releases require their own measurements.
+
+## What this demonstrates
+
+The interesting obligation is the relation between a heap read, an aliasing
+write and a later read. TScert's existing record contracts and heap rules
+handle it for a Python-origin Fragment, including possible aliasing between
+parameters. The snapshot succeeds through those same stages. The front end
+recognizes Python syntax and supplies contracts; it contains no rule that
+recognizes or rejects this example's mutation pattern.
+
+The theorem proves safety of the translated calculus program. A theorem
+relating Python execution to that program is a separate obligation. For
+these aliasing examples, the correspondence assumes exact built-in
+`dict`, `str` and `int` values satisfying all required fields; built-in
+`isinstance` and `str`; and sequential execution without concurrent mutation.
+Dictionary reads and writes denote the same required string-keyed locations,
+local bindings preserve aliases, `isinstance(value, str)` tests the string
+arm, and a saved string value survives a dictionary write. Subclasses with
+custom behavior are outside this correspondence. These assumptions are
+review obligations for the Python demo; TypeScript's trust surface is
+unchanged. The broader demo's differences are stated in [Limits](#limits).
 
 ## How it works
 
@@ -46,7 +120,7 @@ holding what the run wrote: the Python syntax tree, `fragment.json`,
 3. `verify.mts` writes `fragment.json` and runs the stages
    `pipeline/verify-source.mts` runs after its parse: `verifier
    --lower-control-flow`, the producer, `verifier --produce-units` and
-   `verifier --check-units`. It calls them directly, without the stage store.
+   `verifier --check-units`.
 
 ## The subset and its mapping
 
@@ -56,6 +130,11 @@ holding what the run wrote: the Python syntax tree, `fragment.json`,
 | annotation `int` | `bigint` |
 | annotation `str` | `string` |
 | annotation `bool` | `boolean` |
+| union annotation | the union of both contracts |
+| total `TypedDict` with required annotated fields | a mutable record contract, every field retained |
+| `value["key"]`, `value["key"] = e` | record field read and write |
+| outer-block `name = e`, once per name | immutable local binding, preserving object identity |
+| `isinstance(e, str)` | a string-shape test |
 | `return e` | `return e` |
 | `if c: … elif …: … else: …` | `if (c) {…} else {…}`, an `elif` a nested `if` |
 | `a if c else b` | `c ? a : b` |
@@ -65,11 +144,17 @@ holding what the run wrote: the Python syntax tree, `fragment.json`,
 | `==`, `!=` | `===`, `!==` |
 | `and`, `or`, `not` | `&&`, `\|\|`, `!` |
 
-Each parameter and the result must be annotated with `int`, `str` or `bool`.
-Anything else is refused by the front end: other statements (assignment,
-loops, calls, `pass`), other operators (`*`, `/`, `//`, `%`, `**`), chained
-comparisons, other annotations, defaults, `*args`, decorators, `async def`,
-and module-level code other than `def`.
+Each parameter and result has a supported annotation. The only import is
+an initial `from typing import TypedDict`; a record annotation refers to a
+preceding declaration. Locals bind once in a function's outer block;
+parameters and locals cannot shadow the built-ins used by the translation.
+
+Other forms are refused with a source line: optional or readonly fields,
+unsupported field annotations, dictionary construction, computed keys,
+rebound locals, branch-local bindings, loops, general calls, defaults,
+`*args`, decorators, `async def`, generic declarations and other module code.
+The primitive examples are [`hello.py`](examples/hello.py) and
+[`refused.py`](examples/refused.py).
 
 ## Limits
 
@@ -98,6 +183,9 @@ is the demo's mapping, trusted, reviewed only against the points below.
   string one of UTF-16 code units. `+` agrees; `<` orders two strings
   differently where they hold characters outside the Basic Multilingual
   Plane. Values differ there, types do not.
+- **Dictionary equality.** Python compares dictionaries by their contents;
+  the model compares object identity. The aliasing examples use string-shape
+  tests and perform no dictionary equality comparison.
 - **Truthiness.** `if`, `and`, `or`, `not` and the conditional expression
   test truthiness, which agrees on these three types: `0`, `""` and `False`
   are falsy in Python, as `0n`, `""` and `false` are in JavaScript; `and` and

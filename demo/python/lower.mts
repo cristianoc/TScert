@@ -58,6 +58,16 @@ const annotations: ReadonlyMap<string, "bigint" | "string" | "boolean"> = new Ma
 /** Lowers one Python module; `source` is its text, whose UTF-16 offsets the spans count. */
 export class Lowering {
   readonly source: string;
+  readonly records: Map<string, TypeTerm> = new Map();
+  readonly bindings: Set<string> = new Set();
+  depth: number = 0;
+
+  bind(n: PyNode, name: string): void {
+    if (["int", "str", "bool", "isinstance", "TypedDict"].includes(name))
+      this.refuse(n, `rebinding the built-in ${name}`);
+    if (this.bindings.has(name)) this.refuse(n, `rebinding ${name}`);
+    this.bindings.add(name);
+  }
   constructor(source: string) {
     this.source = source;
   }
@@ -70,15 +80,67 @@ export class Lowering {
 
   annotation(n: PyNode | null, owner: PyNode, role: string): TypeTerm {
     if (n === null) return this.refuse(owner, `an unannotated ${role}`);
+    if (n._type === "BinOp" && nodeField(n, "op")._type === "BitOr")
+      return { k: "union", span: spanOf(n), parts: [
+        this.annotation(nodeField(n, "left"), n, role),
+        this.annotation(nodeField(n, "right"), n, role),
+      ] };
+    if (n._type === "Name") {
+      const record = this.records.get(stringField(n, "id"));
+      if (record) return record;
+    }
     const name = n._type === "Name" ? annotations.get(stringField(n, "id")) : undefined;
-    if (name === undefined) return this.refuse(n, `the annotation of a ${role} other than int, str or bool`);
+    if (name === undefined) return this.refuse(n, `the annotation of a ${role} other than int, str, bool, their unions or a preceding TypedDict`);
     return { k: "atom", name, span: spanOf(n) };
   }
 
   /** The module's functions, in source order. */
   module(tree: PyNode, file: string, sourceSha256: string): Ast {
-    const functions = nodeList(tree, "body").map((s) =>
-      s._type === "FunctionDef" ? this.function(s) : this.refuse(s, `the module statement ${s._type}`));
+    const functions: FunctionAst[] = [];
+    const names = new Set<string>();
+    let imported = false;
+    for (const s of nodeList(tree, "body")) {
+      if (s._type === "ImportFrom") {
+        const imports = nodeList(s, "names");
+        const [only] = imports;
+        if (imported || functions.length || this.records.size ||
+            s.fields.get("module") !== "typing" || s.fields.get("level") !== 0 ||
+            imports.length !== 1 || !only || stringField(only, "name") !== "TypedDict" ||
+            only.fields.get("asname") !== null)
+          this.refuse(s, "an import other than an initial from typing import TypedDict");
+        imported = true;
+        continue;
+      }
+      if (s._type !== "FunctionDef" && s._type !== "ClassDef")
+        this.refuse(s, `the module statement ${s._type}`);
+      const name = stringField(s, "name");
+      if (names.has(name) || ["int", "str", "bool", "isinstance", "TypedDict"].includes(name))
+        this.refuse(s, `a duplicate or reserved module name ${name}`);
+      names.add(name);
+      if (s._type === "FunctionDef") functions.push(this.function(s));
+      else {
+        const bases = nodeList(s, "bases");
+        const [base] = bases;
+        const parameters = s.fields.get("type_params");
+        if (!imported || bases.length !== 1 || !base || base._type !== "Name" ||
+            stringField(base, "id") !== "TypedDict" || nodeList(s, "keywords").length ||
+            nodeList(s, "decorator_list").length || (Array.isArray(parameters) && parameters.length))
+          this.refuse(s, "a class other than a total, non-generic TypedDict");
+        const fields: { name: string; optional: boolean; readonly: boolean; type: TypeTerm; span: Span }[] = [];
+        for (const field of nodeList(s, "body")) {
+          if (field._type !== "AnnAssign" || optionalNode(field, "value") !== null)
+            this.refuse(field, "a TypedDict member other than an annotation");
+          const target = nodeField(field, "target");
+          if (target._type !== "Name") this.refuse(target, "a non-name TypedDict field");
+          const key = stringField(target, "id");
+          if (fields.some((f) => f.name === key)) this.refuse(target, "a duplicate TypedDict field");
+          fields.push({ name: key, optional: false, readonly: false,
+            type: this.annotation(nodeField(field, "annotation"), field, "field"), span: spanOf(field) });
+        }
+        this.records.set(name, { k: "object", fields, stringIndex: null, calls: [], span: spanOf(s) });
+      }
+    }
+    if (!functions.length) this.refuse(tree, "a module without functions");
     const declarations = { roots: [], definitions: [], values: [], symbols: [], applications: [] };
     return { file, sourceSha256, declarations, init: [], functions, modules: [] };
   }
@@ -93,11 +155,14 @@ export class Lowering {
     if (optionalNode(args, "vararg") !== null || optionalNode(args, "kwarg") !== null)
       this.refuse(def, "a parameter list with *args or **kwargs");
     const name = stringField(def, "name");
+    this.bindings.clear();
+    this.depth = 0;
     // The name follows `def` and its whitespace.
     const [start] = spanOf(def);
     const at = this.source.indexOf(name, start + "def".length);
     const params = nodeList(args, "args").map((a): FunctionParamAst => {
       const param = stringField(a, "arg");
+      this.bind(a, param);
       const [from] = spanOf(a);
       return { name: param, pos: [from, from + param.length], type: this.annotation(optionalNode(a, "annotation"), a, "parameter") };
     });
@@ -126,14 +191,34 @@ export class Lowering {
         if (value === null) return this.refuse(s, "a return without a value");
         return { k: "return", pos: spanOf(s), e: this.expression(value) };
       }
+      case "Assign": {
+        const targets = nodeList(s, "targets");
+        const [target] = targets;
+        if (targets.length !== 1 || !target) return this.refuse(s, "a chained assignment");
+        const rhs = this.expression(nodeField(s, "value"));
+        if (target._type === "Subscript") {
+          const { receiver, field } = this.item(target);
+          return { k: "effect", pos: spanOf(s), e: { k: "write", pos: spanOf(s), receiver, field, rhs } };
+        }
+        if (target._type !== "Name" || this.depth !== 0)
+          return this.refuse(target, "a local binding outside the function's outer block");
+        const name = stringField(target, "id");
+        this.bind(target, name);
+        return { k: "const", pos: spanOf(s), bindings: [{ name, namePos: spanOf(target),
+          annot: null, init: rhs, early: false }] };
+      }
       case "If": {
         const orelse = nodeList(s, "orelse");
+        this.depth++;
+        const then = this.block(nodeList(s, "body"));
+        const else_ = orelse.length === 0 ? null : this.block(orelse);
+        this.depth--;
         return {
           k: "if",
           pos: spanOf(s),
           cond: this.expression(nodeField(s, "test")),
-          then: this.block(nodeList(s, "body")),
-          else_: orelse.length === 0 ? null : this.block(orelse),
+          then,
+          else_,
         };
       }
       default:
@@ -141,11 +226,37 @@ export class Lowering {
     }
   }
 
+  /** Literal string keys denote required record fields, read and written once. */
+  item(e: PyNode): { receiver: Expr; field: string } {
+    const key = nodeField(e, "slice");
+    const field = key.fields.get("value");
+    if (key._type !== "Constant" || typeof field !== "string")
+      return this.refuse(key, "a subscript other than a literal string key");
+    return { receiver: this.expression(nodeField(e, "value")), field };
+  }
+
   expression(e: PyNode): Expr {
     const pos = spanOf(e);
     switch (e._type) {
-      case "Name":
-        return { k: "id", pos, name: stringField(e, "id") };
+      case "Name": {
+        const name = stringField(e, "id");
+        if (!this.bindings.has(name)) return this.refuse(e, `an unbound name ${name}`);
+        return { k: "id", pos, name };
+      }
+      case "Subscript": {
+        const { receiver, field } = this.item(e);
+        return { k: "read", pos, field, e: receiver };
+      }
+      case "Call": {
+        const fn = nodeField(e, "func");
+        const args = nodeList(e, "args");
+        const [value, kind] = args;
+        if (fn._type !== "Name" || stringField(fn, "id") !== "isinstance" ||
+            args.length !== 2 || !value || !kind || kind._type !== "Name" ||
+            stringField(kind, "id") !== "str" || nodeList(e, "keywords").length)
+          return this.refuse(e, "a call other than isinstance(value, str)");
+        return { k: "typeofTest", pos, shape: "string", equal: true, e: this.expression(value) };
+      }
       case "Constant": {
         const value = e.fields.get("value");
         if (typeof value === "boolean") return { k: "lit", pos, lit: { a: "booleanlit", v: String(value) } };

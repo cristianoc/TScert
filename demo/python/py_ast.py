@@ -63,7 +63,7 @@ def main(path):
             return node(value)
         if isinstance(value, list):
             return [convert(v) for v in value]
-        return constant(value)
+        return value
 
     out = node(tree)
     out["source"] = source

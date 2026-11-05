@@ -171,6 +171,7 @@ make help     # every target
 - [WORK](WORK.md): open work and its status.
 - [Pipeline cases](tests/README.md): worked examples of every supported
   construct, positive and negative.
+- [Python aliasing demo](demo/python/README.md): a second-language experiment using the same checker.
 - [REFERENCES](docs/REFERENCES.md): the work TScert draws on.
 
 ## License

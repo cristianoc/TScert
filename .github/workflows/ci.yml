@@ -71,6 +71,9 @@ jobs:
       - name: Fast checks and controls
         run: opam exec -- make test
 
+      - name: Python aliasing demo
+        run: node demo/python/test.mts
+
       # C3 and C4 over the corpus (tests/compiler-api-shapes.mts): about a
       # minute, outside the fast checks.
       - name: Compiler-API shapes
