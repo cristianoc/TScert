@@ -1,0 +1,230 @@
+<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width">
+<title>Census 9b297febe</title>
+<style>body{font:14px/1.45 system-ui,sans-serif;margin:24px auto;max-width:1100px;padding:0 16px}pre{overflow-x:auto;background:#f6f8fa;padding:12px}</style>
+<h1>Census of tools/ at <a href="https://github.com/cristianoc/TScert/commit/9b297febee58332df2e25cddf5e592f7021c7211">9b297febe</a></h1>
+<p><a href="../history.tsv">every census</a> · <a href="https://github.com/cristianoc/TScert/actions/runs/41971403083">the run</a>, with the record and the refusals ranked as artifacts</p>
+<h2>Movement</h2><pre>
+no earlier census to compare with
+</pre>
+<h2>Report</h2><pre>
+functions: 683; shallow verified 640; own results {"unsupported/proposal":1,"verified/check":640,"unverified/search":32,"unsupported/source":10}
+deep status (computed, not a headline figure): 37 deep verified
+   3 gate: createRequire of node:module is a value no entry of the overlay of library modules reviews 
+   2 gate: .call requires a known local function, an explicit receiver and ordinary arguments 
+   2 gate: TypeScript types this unannotated closure parameter from its context as `any`, which states no contract 
+   2 reject: source effect refusal
+   1 unsupported: missing field fields
+   1 reject: source expression obligation
+obligation-diagnostic: {"fuel":12,"id":"node:4","kind":"node-typing","names":[[6,"ReadonlyArray&lt;literal
+   1 reject: source expression obligation
+obligation-diagnostic: {"fuel":12,"id":"node:26","kind":"node-typing","names":[[31,"Array&lt;literal tuple
+   1 reject: source expression obligation
+obligation-diagnostic: {"fuel":12,"id":"node:23","kind":"node-typing","names":[[2,"ReadonlyArray&lt;row 20
+   1 reject: source incoming edge obligation
+obligation-diagnostic: {"destination":{"claim":{"context":[[70],[70],[70],[70],[70],[70],[70],[70],[
+   1 gate: spawn of node:child_process is a value no entry of the overlay of library modules reviews 
+   1 reject: closure expression claim
+obligation-diagnostic: {"fuel":12,"id":"expression:4","kind":"expression-claim","names":[[6,"literal functi
+   1 reject: source expression obligation
+obligation-diagnostic: {"fuel":12,"id":"node:115","kind":"node-typing","names":[[6,"Map&lt;string, string&gt;
+   1 gate: the constructor of API is outside the named view API of the compiler-API contract (compiler-api.mts, reading rule 4) 
+   1 reject: source expression obligation
+obligation-diagnostic: {"fuel":12,"id":"node:76","kind":"node-typing","names":[[14,"Map&lt;string, string&gt;
+   1 reject: source expression obligation
+obligation-diagnostic: {"fuel":12,"id":"node:3","kind":"node-typing","names":[[1,"Array&lt;literal tuple a
+   1 reject: source expression obligation
+obligation-diagnostic: {"fuel":12,"id":"node:64","kind":"node-typing","names":[[1,"Array&lt;row 813&gt;"],[2,
+   1 reject: source expression obligation
+obligation-diagnostic: {"fuel":12,"id":"node:15","kind":"node-typing","names":[[0,"source &amp; T"],[1,"typ
+   1 reject: source incoming edge obligation
+obligation-diagnostic: {"destination":{"claim":{"context":[[18],[18],[18],[18],[18],[0],[18],[18],[1
+   1 reject: source expression obligation
+obligation-diagnostic: {"fuel":12,"id":"node:731","kind":"node-typing","names":[[0,"ReadonlyArray&lt;row 1
+   1 reject: source expression obligation
+obligation-diagnostic: {"fuel":12,"id":"node:326","kind":"node-typing","names":[[0,"unknown &amp; T"],[2,"R
+   1 reject: source expression obligation
+obligation-diagnostic: {"fuel":12,"id":"node:144","kind":"node-typing","names":[[9,"Map&lt;string, string 
+   1 reject: source expression obligation
+obligation-diagnostic: {"fuel":12,"id":"node:610","kind":"node-typing","names":[[36,"Token&lt;number set&gt; 
+   1 reject: source expression obligation
+obligation-diagnostic: {"fuel":12,"id":"node:47","kind":"node-typing","names":[[0,"literal object at [6
+   1 reject: source expression obligation
+obligation-diagnostic: {"fuel":12,"id":"node:19","kind":"node-typing","names":[[5,"Array&lt;literal array 
+   1 reject: source expression obligation
+obligation-diagnostic: {"fuel":12,"id":"node:174","kind":"node-typing","names":[[4,"Array&lt;row 57&gt;"],[6,
+   1 reject: source expression obligation
+obligation-diagnostic: {"fuel":12,"id":"node:55","kind":"node-typing","names":[[22,"Array&lt;literal array
+   1 reject: source expression obligation
+obligation-diagnostic: {"fuel":12,"id":"node:256","kind":"node-typing","names":[[1,"Array&lt;row 1154&gt;"],[
+   1 reject: source expression obligation
+obligation-diagnostic: {"fuel":12,"id":"node:154","kind":"node-typing","names":[[0,"Array&lt;literal array
+   1 gate: types of node:util is a value no entry of the overlay of library modules reviews 
+   1 reject: source expression obligation
+obligation-diagnostic: {"fuel":12,"id":"node:32","kind":"node-typing","names":[[1,"ReadonlyMap&lt;string, 
+   1 reject: source expression obligation
+obligation-diagnostic: {"fuel":12,"id":"node:0","kind":"node-typing","names":[[0,"Array&lt;literal array a
+   1 reject: source expression obligation
+obligation-diagnostic: {"fuel":12,"id":"node:143","kind":"node-typing","names":[[33,"Array&lt;literal tupl
+   1 reject: source expression obligation
+obligation-diagnostic: {"fuel":12,"id":"node:493","kind":"node-typing","names":[[23,"Token&lt;132&gt; &amp; Keywo
+   1 reject: source expression obligation
+obligation-diagnostic: {"fuel":12,"id":"node:23","kind":"node-typing","names":[[12,"Array&lt;row 47&gt;"],[27
+   1 reject: source expression obligation
+obligation-diagnostic: {"fuel":12,"id":"node:162","kind":"node-typing","names":[[16,"Array&lt;literal tupl
+   1 reject: source direct obligation
+obligation-diagnostic: {"fuel":0,"id":"subtype:77178:binding-annotation","judgment":{"actual":[0,1],"expect
+   1 reject: closure expression claim
+obligation-diagnostic: {"fuel":12,"id":"expression:11","kind":"expression-claim","names":[[0,"ReadonlyArray
+   1 reject: source direct obligation
+obligation-diagnostic: {"fuel":0,"id":"subtype:16618:binding-annotation","judgment":{"actual":[0,1,2,3,4,5,
+initializations blocking deep status (functions blocked first by each):
+   140  type-graph.mts#:init  unsupported/source: gate: the global DataView is declared in typescript/lib/lib.es5.d.ts (library), an origin no reviewed entry admits 
+    89  compiler-api.mts#:init  unsupported/source: gate: the namespace import ts is used only through member reads and qualified type names 
+    89  fragment-parse.mts#:init  unsupported/source: gate: top-level statement outside the fragment (IfStatement) 
+    74  files.mts#:init  unverified/search: reject: source expression obligation
+    61  library-globals.mts#:init  unverified/search: reject: source expression obligation
+obligation-diagnostic: {"fuel":12,"id":"node:3","kind":"node-typing","names":[[10,"Array&lt;literal tuple 
+    52  thrown.mts#:init  unsupported/source: gate: the global RangeError is declared in typescript/lib/lib.es5.d.ts (library), an origin no reviewed entry admits 
+    20  claim-text.mts#:init  unsupported/source: gate: top-level statement outside the fragment (ExportAssignment) 
+    15  unchecked.mts#:init  unsupported/source: gate: top-level statement outside the fragment (IfStatement) 
+    14  compiler-channel.mts#:init  unverified/search: reject: source refusal
+    12  regexp.mts#:init  unverified/search: reject: source expression obligation
+    10  array-prototype.mts#:init  unverified/search: reject: source expression obligation
+obligation-diagnostic: {"fuel":12,"id":"node:0","kind":"node-typing","names":[[8,"Array&lt;literal array a
+     8  library-modules.mts#:init  unverified/search: reject: source expression obligation
+obligation-diagnostic: {"fuel":12,"id":"node:5747","kind":"node-typing","names":[[9,"Array&lt;literal tupl
+     2  client-prototype.mts#:init  unsupported/source: gate: Object.getPrototypeOf is read only compared with Object.prototype 
+stage cost (each result's producing execution, each result once; seconds, peak MB):
+  stage          ran replay │        CPU    med    p90     max │    elapsed    med    p90     max │ peak med   p90   max
+  search          74      6 │     3871.6   7.06 167.59  357.80 │     3916.6   7.13 167.93  360.92 │      137  2127  6146
+  check           59      6 │     1447.7   2.17  69.95  208.92 │     1464.4   2.26  70.15  212.51 │      141   765  2647
+  propose        179     25 │      439.4   0.41   6.07   38.45 │      451.2   0.44   6.17   38.77 │       50   141   615
+  module          72      7 │      111.3   1.18   2.36   13.41 │      107.4   1.12   2.27   13.01 │      301   334   334
+  explain         32      0 │      109.3   0.14   7.13   66.30 │      110.6   0.16   7.49   66.37 │       22   142   535
+  parse           90      0 │      102.4   0.65   2.02   14.32 │      222.4   0.79   6.52   35.82 │      243   326   334
+  plan            69      6 │       24.6   0.22   0.68    2.48 │       28.9   0.27   0.72    2.81 │      101   223   589
+  lower          121     22 │       19.5   0.07   0.30    1.39 │       25.0   0.11   0.35    1.51 │       37    86   389
+  assemble        80      0 │        1.6   0.01   0.03    0.19 │        2.9   0.03   0.05    0.14 │      302   326   334
+files by CPU (top 10; seconds, peak MB):
+       862.4 CPU    879.2 elapsed  2647 MB  fragment-expressions.mts: 35 of 35 units accepted
+       834.1 CPU    855.1 elapsed  1759 MB  declaration-graph.mts: 86 of 91 units accepted
+       780.9 CPU    796.3 elapsed  2445 MB  fragment-statements.mts: 55 of 56 units accepted
+       765.9 CPU    801.7 elapsed  2766 MB  fragment-parse.mts: 18 of 24 units accepted
+       565.1 CPU    572.2 elapsed   225 MB  files.mts: 47 of 47 units accepted
+       467.9 CPU    473.4 elapsed  1424 MB  type-term.mts: 43 of 44 units accepted
+       373.0 CPU    384.6 elapsed  2137 MB  fragment-classes.mts: 22 of 23 units accepted
+       267.4 CPU    273.2 elapsed   765 MB  fragment-support.mts: 38 of 38 units accepted
+       147.3 CPU    151.7 elapsed   385 MB  written-applications.mts: 20 of 21 units accepted
+       108.8 CPU    120.3 elapsed   506 MB  unchecked.mts: 20 of 21 units accepted
+shallow:
+statement coverage of tools/ (verified statements of every unit):
+   56.7%  10092 of 17787 statements · functions 640 of 683 verified
+  not verified, by the owning unit's outcome: unverified/search 4064, unsupported/source 3617, unsupported/proposal 13, error/search 1
+per file:
+  array-prototype.mts        6.6%     23 of 346   statements · functions 5 of 10 verified
+  calculus.mts             100.0%    273 of 273   statements · functions 17 of 17 verified
+  child-output.mts           0.0%      0 of 38    statements · functions 0 of 1 verified
+  claim-text.mts            86.9%    325 of 374   statements · functions 14 of 14 verified
+  claim.mts                100.0%    145 of 145   statements · functions 14 of 14 verified
+  client-prototype.mts       4.6%      4 of 87    statements · functions 2 of 5 verified
+  compiler-api-guards.mts    0.0%      0 of 1     statements · functions 0 of 0 verified
+  compiler-api.mts          82.1%     55 of 67    statements · functions 7 of 7 verified
+  compiler-channel.mts      47.2%     67 of 142   statements · functions 11 of 14 verified
+  compiler-processes.mts   100.0%     18 of 18    statements · functions 3 of 3 verified
+  computed-types.mts       100.0%    478 of 478   statements · functions 22 of 22 verified
+  control-flow.mts         100.0%     27 of 27    statements · functions 3 of 3 verified
+  declaration-graph.mts     21.6%    967 of 4478  statements · functions 78 of 84 verified
+  declaration-session.mts   86.8%    164 of 189   statements · functions 14 of 15 verified
+  diagnostic-view.mts      100.0%    109 of 109   statements · functions 6 of 6 verified
+  diagnostic.mts           100.0%    300 of 300   statements · functions 11 of 11 verified
+  family-activation.mts     95.5%    338 of 354   statements · functions 26 of 27 verified
+  files.mts                 89.1%    460 of 516   statements · functions 57 of 57 verified
+  fragment-classes.mts      39.9%    236 of 591   statements · functions 18 of 19 verified
+  fragment-expressions.mts 100.0%   1217 of 1217  statements · functions 30 of 30 verified
+  fragment-guards.mts      100.0%     12 of 12    statements · functions 2 of 2 verified
+  fragment-parse.mts        10.3%    154 of 1488  statements · functions 10 of 15 verified
+  fragment-parts.mts       100.0%    140 of 140   statements · functions 15 of 15 verified
+  fragment-statements.mts   98.1%   1128 of 1150  statements · functions 49 of 50 verified
+  fragment-support.mts     100.0%    420 of 420   statements · functions 34 of 34 verified
+  fragment.mts             100.0%      2 of 2     statements · functions 0 of 0 verified
+  guard-closure.mts        100.0%     77 of 77    statements · functions 1 of 1 verified
+  host-families.mts          6.5%     21 of 325   statements · functions 1 of 2 verified
+  host-operations.mts      100.0%     16 of 16    statements · functions 0 of 0 verified
+  intrinsics.mts            94.2%    178 of 189   statements · functions 10 of 11 verified
+  library-globals.mts       11.0%      9 of 82    statements · functions 4 of 4 verified
+  library-modules.mts       18.0%      9 of 50    statements · functions 4 of 4 verified
+  library-types.mts        100.0%     56 of 56    statements · functions 1 of 1 verified
+  module-hooks.mts           0.0%      0 of 67    statements · functions 0 of 5 verified
+  named-record.mts          33.8%     53 of 157   statements · functions 16 of 19 verified
+  namespace-members.mts    100.0%    119 of 119   statements · functions 4 of 4 verified
+  regexp-shape.mts         100.0%    176 of 176   statements · functions 5 of 5 verified
+  regexp.mts                61.2%     41 of 67    statements · functions 12 of 12 verified
+  shadow-contracts.mts      60.1%    122 of 203   statements · functions 7 of 8 verified
+  source-flow.mts            0.0%      0 of 349   statements · functions 0 of 1 verified
+  strip-types.mts          100.0%      8 of 8     statements · functions 1 of 1 verified
+  syntax.mts               100.0%    403 of 403   statements · functions 5 of 5 verified
+  thrown.mts                 5.0%      3 of 60    statements · functions 1 of 1 verified
+  type-graph.mts            91.5%    378 of 413   statements · functions 17 of 17 verified
+  type-probe.mts            12.0%     27 of 225   statements · functions 3 of 4 verified
+  type-term.mts             98.4%    983 of 999   statements · functions 57 of 58 verified
+  unchecked.mts             64.5%    218 of 338   statements · functions 15 of 16 verified
+  url-strings.mts          100.0%      2 of 2     statements · functions 2 of 2 verified
+  wire-strings.mts         100.0%     49 of 49    statements · functions 8 of 8 verified
+  written-applications.mts  20.8%     82 of 395   statements · functions 18 of 19 verified
+deep:
+statement coverage of tools/ (verified statements of every unit):
+    5.5%    984 of 17787 statements · functions 37 of 683 verified
+  not verified, by the owning unit's outcome: blocked/deep 9108, unverified/search 4064, unsupported/source 3617, unsupported/proposal 13, error/search 1
+per file:
+  array-prototype.mts        0.0%      0 of 346   statements · functions 0 of 10 verified
+  calculus.mts             100.0%    273 of 273   statements · functions 17 of 17 verified
+  child-output.mts           0.0%      0 of 38    statements · functions 0 of 1 verified
+  claim-text.mts             0.0%      0 of 374   statements · functions 0 of 14 verified
+  claim.mts                  0.0%      0 of 145   statements · functions 0 of 14 verified
+  client-prototype.mts       0.0%      0 of 87    statements · functions 0 of 5 verified
+  compiler-api-guards.mts    0.0%      0 of 1     statements · functions 0 of 0 verified
+  compiler-api.mts           0.0%      0 of 67    statements · functions 0 of 7 verified
+  compiler-channel.mts       0.0%      0 of 142   statements · functions 0 of 14 verified
+  compiler-processes.mts   100.0%     18 of 18    statements · functions 3 of 3 verified
+  computed-types.mts         0.0%      0 of 478   statements · functions 0 of 22 verified
+  control-flow.mts         100.0%     27 of 27    statements · functions 3 of 3 verified
+  declaration-graph.mts      0.0%      0 of 4478  statements · functions 0 of 84 verified
+  declaration-session.mts    0.0%      0 of 189   statements · functions 0 of 15 verified
+  diagnostic-view.mts        0.0%      0 of 109   statements · functions 0 of 6 verified
+  diagnostic.mts             0.0%      0 of 300   statements · functions 0 of 11 verified
+  family-activation.mts      0.0%      0 of 354   statements · functions 0 of 27 verified
+  files.mts                  0.0%      0 of 516   statements · functions 0 of 57 verified
+  fragment-classes.mts       0.0%      0 of 591   statements · functions 0 of 19 verified
+  fragment-expressions.mts   0.0%      0 of 1217  statements · functions 0 of 30 verified
+  fragment-guards.mts        0.0%      0 of 12    statements · functions 0 of 2 verified
+  fragment-parse.mts         0.0%      0 of 1488  statements · functions 0 of 15 verified
+  fragment-parts.mts         0.0%      0 of 140   statements · functions 0 of 15 verified
+  fragment-statements.mts    0.0%      0 of 1150  statements · functions 0 of 50 verified
+  fragment-support.mts       0.0%      0 of 420   statements · functions 0 of 34 verified
+  fragment.mts               0.0%      0 of 2     statements · functions 0 of 0 verified
+  guard-closure.mts        100.0%     77 of 77    statements · functions 1 of 1 verified
+  host-families.mts          0.0%      0 of 325   statements · functions 0 of 2 verified
+  host-operations.mts        0.0%      0 of 16    statements · functions 0 of 0 verified
+  intrinsics.mts             0.0%      0 of 189   statements · functions 0 of 11 verified
+  library-globals.mts        0.0%      0 of 82    statements · functions 0 of 4 verified
+  library-modules.mts        0.0%      0 of 50    statements · functions 0 of 4 verified
+  library-types.mts          0.0%      0 of 56    statements · functions 0 of 1 verified
+  module-hooks.mts           0.0%      0 of 67    statements · functions 0 of 5 verified
+  named-record.mts           0.0%      0 of 157   statements · functions 0 of 19 verified
+  namespace-members.mts      0.0%      0 of 119   statements · functions 0 of 4 verified
+  regexp-shape.mts         100.0%    176 of 176   statements · functions 5 of 5 verified
+  regexp.mts                 0.0%      0 of 67    statements · functions 0 of 12 verified
+  shadow-contracts.mts       0.0%      0 of 203   statements · functions 0 of 8 verified
+  source-flow.mts            0.0%      0 of 349   statements · functions 0 of 1 verified
+  strip-types.mts          100.0%      8 of 8     statements · functions 1 of 1 verified
+  syntax.mts               100.0%    403 of 403   statements · functions 5 of 5 verified
+  thrown.mts                 0.0%      0 of 60    statements · functions 0 of 1 verified
+  type-graph.mts             0.0%      0 of 413   statements · functions 0 of 17 verified
+  type-probe.mts             0.0%      0 of 225   statements · functions 0 of 4 verified
+  type-term.mts              0.0%      0 of 999   statements · functions 0 of 58 verified
+  unchecked.mts              0.0%      0 of 338   statements · functions 0 of 16 verified
+  url-strings.mts          100.0%      2 of 2     statements · functions 2 of 2 verified
+  wire-strings.mts           0.0%      0 of 49    statements · functions 0 of 8 verified
+  written-applications.mts   0.0%      0 of 395   statements · functions 0 of 19 verified
+elapsed: 1776 s
+</pre>
