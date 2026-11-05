@@ -488,7 +488,7 @@ theorem objFacts_of_sem {G : NormalGraph ι} {c : Clause (List ι)} {o : Obj ι}
     · obtain ⟨fs', l, c, oid', he, hl, hc, hag⟩ := fields_at (η := G.env) hr hw p hp
       cases he
       exact ⟨l, c, hl, hc, hag⟩
-    · obtain ⟨fs', oid', he, -, hall⟩ := hopt
+    · obtain ⟨fs', oid', he, -, -, hall⟩ := hopt
       cases he
       obtain ⟨c, hc, hag⟩ := hall _ (List.mem_map_of_mem hq) l hl
       exact ⟨c, hc, fun j hj U u hu => (hag j hj U u).1 hu⟩
@@ -509,7 +509,7 @@ theorem objFacts_of_sem {G : NormalGraph ι} {c : Clause (List ι)} {o : Obj ι}
     · obtain ⟨fs', l, c, oid', he, hl, hc, hag⟩ := fields_at (η := G.env) hr hw p hp
       cases he
       exact ⟨l, c, hl, hc, hag⟩
-    · obtain ⟨fs', oid', he, -, hall⟩ := hopt
+    · obtain ⟨fs', oid', he, -, -, hall⟩ := hopt
       cases he
       obtain ⟨c, hc, hag⟩ := hall _ (List.mem_map_of_mem hq) l hl
       exact ⟨c, hc, fun j hj U u hu => (hag j hj U u).1 hu⟩
@@ -1709,7 +1709,7 @@ theorem merge_finish {G : NormalGraph ι} {d : List PropKey} {oa : Obj ι} {sb :
       exact ⟨v, c, hv, hU, hag⟩
     have hrefs : ReferenceConjunctions.refsT (ReferenceConjunctions.famsOf (meaning G) fs) [] j U
         (.objAt (slots h.length (ps.map Prod.fst)) .absent (h.length + (ps.map Prod.snd).length)) := by
-      refine ⟨⟨_, _, rfl, ?_⟩, by simp, fun _ _ _ he => by cases he; exact hnohost⟩
+      refine ⟨⟨_, _, rfl, fun _ _ _ _ hl => owned_of_nodup (slots_nodup _ _) hl, ?_⟩, by simp, fun _ _ _ he => by cases he; exact hnohost⟩
       intro f F hm
       obtain ⟨T, hT, rfl⟩ := ReferenceConjunctions.mem_famsOf.mp hm
       obtain ⟨v, hv, -⟩ := hF (f, T) hT
@@ -1724,7 +1724,7 @@ theorem merge_finish {G : NormalGraph ι} {d : List PropKey} {oa : Obj ι} {sb :
       intro f F hm; simp [ReferenceConjunctions.famsOf] at hm
     have hopt : optT (os.map (·.map (meaning G))) j U
         (.objAt (slots h.length (ps.map Prod.fst)) .absent (h.length + (ps.map Prod.snd).length)) := by
-      refine ⟨_, _, rfl, ?_, ?_⟩
+      refine ⟨_, _, rfl, fun _ _ _ _ hl => owned_of_nodup (slots_nodup _ _) hl, ?_, ?_⟩
       · intro o ho _
         have hne : os ≠ [] := by
           intro he; subst he; simp at ho

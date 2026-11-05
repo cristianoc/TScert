@@ -30,7 +30,11 @@ under a field is interpreted rather than ignored.
 
 Fields the type does not name are unconstrained, so a record type is open, as
 TypeScript's structural types are; every field it does name keeps its exact
-contract, which is what makes that openness sound and each field invariant. -/
+contract, which is what makes that openness sound and each field invariant.
+The location a named field finds belongs to that key alone (`Owned`), as each
+own data property of a JavaScript object is its own storage: so a write of a
+named field leaves every other key of the object unchanged
+(PROGRAM-TYPING.md, "Separation facts"). -/
 abbrev Fields := List (PropKey × Fam)
 
 /-- **Not a host object** (`hostKey`): a primitive, a callable, or an
@@ -40,6 +44,7 @@ def NoHost (v : Val) : Prop := ∀ flds oid, v = .objAt flds .absent oid → fld
 
 def recT (fs : Fields) : Fam := fun k W v =>
   ∃ (flds : List (PropKey × Nat)) (oid : Nat), v = .objAt flds .absent oid ∧
+    (∀ (f : PropKey) (T : Fam), (f, T) ∈ fs → ∀ l, flds.lookup f = some l → Owned flds f l) ∧
     ∀ (f : PropKey) (T : Fam), (f, T) ∈ fs →
       ∃ (l : Nat) (c : Ctr k), flds.lookup f = some l ∧ lookup W l = some c ∧
         ∀ (j : Nat) (hj : j < k) (W' : WorldT j) (u : Val), c j hj W' u ↔ T j W' u
@@ -69,6 +74,7 @@ theorem recT_alloc {n : Nat} {W : WorldT n} {ns : List PropKey} {As : List Fam} 
       lookup W (base + i) = some (res (As[i]'(hlen ▸ hi)))) :
     recT (ns.zip As) n W (.objAt (slots base ns) .absent oid) := by
   refine ⟨slots base ns, oid, rfl, ?_⟩
+  refine ⟨fun _ _ _ _ hl => owned_of_nodup (slots_nodup base ns) hl, ?_⟩
   intro f T hm
   obtain ⟨i, hi, hj, rfl, rfl⟩ := mem_zip_index hm
   exact ⟨base + i, res (As[i]'hj), lookup_slots hnd hi, hl i hi, fun _ _ _ _ => Iff.rfl⟩
@@ -79,9 +85,17 @@ theorem recT_at {fs : List (PropKey × Fam)} {f : PropKey} {A : Fam} (hm : (f, A
     ∃ (flds : List (PropKey × Nat)) (l : Nat) (c : Ctr k) (oid : Nat),
       v = .objAt flds .absent oid ∧ flds.lookup f = some l ∧ lookup W l = some c ∧
       ∀ (j : Nat) (hj : j < k) (W' : WorldT j) (u : Val), c j hj W' u ↔ A j W' u := by
-  obtain ⟨flds, oid, rfl, hfs⟩ := h
+  obtain ⟨flds, oid, rfl, -, hfs⟩ := h
   obtain ⟨l, c, hl, hw, hag⟩ := hfs f A hm
   exact ⟨flds, l, c, oid, rfl, hl, hw, hag⟩
+
+/-- The location a record's named field finds belongs to that key alone. -/
+theorem recT_owned {fs : Fields} {k : Nat} {W : WorldT k} {flds : List (PropKey × Nat)} {c : CallCode} {oid : Nat}
+    (h : recT fs k W (.objAt flds c oid)) {f : PropKey} {T : Fam} (hm : (f, T) ∈ fs) {l : Nat}
+    (hl : flds.lookup f = some l) : Owned flds f l := by
+  obtain ⟨flds', oid', he, hown, -⟩ := h
+  cases he
+  exact hown f T hm l hl
 
 def nulT : Fam := fun _ _ v => v = .nul
 
@@ -117,8 +131,8 @@ def Agree {α : Type} (T U : WorldFamily α) (n : Nat) : Prop := ∀ m, m < n �
 contract it already had. -/
 theorem recT_mono (fs : List (PropKey × Fam)) (k : Nat) (W W' : WorldT k) (h : WExt W W')
     (v : Val) (hv : recT fs k W v) : recT fs k W' v := by
-  obtain ⟨flds, oid, rfl, hfs⟩ := hv
-  refine ⟨flds, oid, rfl, ?_⟩
+  obtain ⟨flds, oid, rfl, hnd, hfs⟩ := hv
+  refine ⟨flds, oid, rfl, hnd, ?_⟩
   intro f T hm
   obtain ⟨l, c, hf, hl, hag⟩ := hfs f T hm
   exact ⟨l, c, hf, WExt_lookup h hl, hag⟩
@@ -146,8 +160,8 @@ theorem topF_adm : Adm topF := ⟨fun _ _ _ _ => trivial, fun _ _ _ _ _ _ => tri
 absorbed by restricting the stored contract, and allocation only appends. -/
 theorem recT_adm (fs : List (PropKey × Fam)) : Adm (recT fs) := by
   refine ⟨?_, fun n W W' hx v hv => recT_mono fs n W W' hx v hv⟩
-  rintro n W v ⟨flds, oid, rfl, hfs⟩
-  refine ⟨flds, oid, rfl, ?_⟩
+  rintro n W v ⟨flds, oid, rfl, hnd, hfs⟩
+  refine ⟨flds, oid, rfl, hnd, ?_⟩
   intro f T hm
   obtain ⟨l, c, hf, hl, hag⟩ := hfs f T hm
   refine ⟨l, _, hf, lookup_trunc (Nat.le_succ n) W l c hl, ?_⟩
@@ -488,6 +502,7 @@ so whether a key is present never changes. The plain-object restriction is the
 one `recT` uses. -/
 def optT (fs : List (OptionalField Fam)) : Fam := fun k W v =>
   ∃ (flds : List (PropKey × Nat)) (oid : Nat), v = .objAt flds .absent oid ∧
+    (∀ o ∈ fs, o.readonly = false → ∀ l, flds.lookup o.key = some l → Owned flds o.key l) ∧
     (∀ o ∈ fs, flds.lookup o.key = none → flds.lookup CallArguments.protoField = none) ∧
     ∀ o ∈ fs, ∀ l, flds.lookup o.key = some l →
       ∃ c : Ctr k, lookup W l = some c ∧
@@ -571,7 +586,7 @@ def KeyBound.keeps (K : KeyBound) (C : IndexKeys) : Bool :=
 /-- No optional field constrains a plain object. -/
 theorem optT_nil {k} {W : WorldT k} {flds : List (PropKey × Nat)} :
     optT [] k W (.objAt flds .absent oid) :=
-  ⟨flds, oid, rfl, fun _ hm => by simp at hm, fun _ hm => by simp at hm⟩
+  ⟨flds, oid, rfl, fun _ hm => by simp at hm, fun _ hm => by simp at hm, fun _ hm => by simp at hm⟩
 
 /-- What optional fields say of one present key: its location's contract is
 the field's type, or implies it for a readonly field. -/
@@ -581,9 +596,18 @@ theorem optT_present {fs : List (OptionalField Fam)} {o : OptionalField Fam} (hm
     ∃ c : Ctr k, lookup W l = some c ∧
       ∀ (j : Nat) (hj : j < k) (W' : WorldT j) (u : Val),
         SlotContract o.readonly (c j hj W' u) (o.type j W' u) := by
-  obtain ⟨flds', oid, heq, -, hf⟩ := h
+  obtain ⟨flds', oid, heq, -, -, hf⟩ := h
   cases heq
   exact hf o hm l hl
+
+/-- The location a writable optional key finds belongs to that key alone. -/
+theorem optT_owned {fs : List (OptionalField Fam)} {o : OptionalField Fam} (hm : o ∈ fs)
+    (hro : o.readonly = false)
+    {k} {W : WorldT k} {flds : List (PropKey × Nat)} (h : optT fs k W (.objAt flds .absent oid))
+    {l : Nat} (hl : flds.lookup o.key = some l) : Owned flds o.key l := by
+  obtain ⟨flds', oid, heq, hown, -⟩ := h
+  cases heq
+  exact hown o hm hro l hl
 
 /-- An object lacking one of its optional keys has no prototype, so the
 key reads `undefined`. -/
@@ -592,21 +616,26 @@ theorem optT_no_proto {fs : List (OptionalField Fam)} {o : OptionalField Fam} (h
     {flds : List (PropKey × Nat)} (h : optT fs k W (.objAt flds .absent oid))
     (hl : flds.lookup o.key = none) :
     flds.lookup CallArguments.protoField = none := by
-  obtain ⟨flds', oid, heq, hp, -⟩ := h
+  obtain ⟨flds', oid, heq, -, hp, -⟩ := h
   cases heq
   exact hp o hm hl
 
 theorem optT_append (A B : List (OptionalField Fam)) (k : Nat) (W : WorldT k) (v : Val) :
     optT (A ++ B) k W v ↔ optT A k W v ∧ optT B k W v := by
   constructor
-  · rintro ⟨flds, oid, rfl, hp, h⟩
-    exact ⟨⟨flds, oid, rfl, fun o hm => hp o (List.mem_append_left _ hm),
+  · rintro ⟨flds, oid, rfl, hw, hp, h⟩
+    exact ⟨⟨flds, oid, rfl, fun o hm => hw o (List.mem_append_left _ hm),
+        fun o hm => hp o (List.mem_append_left _ hm),
         fun o hm => h o (List.mem_append_left _ hm)⟩,
-      ⟨flds, oid, rfl, fun o hm => hp o (List.mem_append_right _ hm),
+      ⟨flds, oid, rfl, fun o hm => hw o (List.mem_append_right _ hm),
+        fun o hm => hp o (List.mem_append_right _ hm),
         fun o hm => h o (List.mem_append_right _ hm)⟩⟩
-  · rintro ⟨⟨flds, oid, rfl, hpa, ha⟩, ⟨flds', oid, he, hpb, hb⟩⟩
+  · rintro ⟨⟨flds, oid, rfl, hwa, hpa, ha⟩, ⟨flds', oid, he, hwb, hpb, hb⟩⟩
     cases he
-    refine ⟨flds, oid, rfl, fun o hm => ?_, fun o hm => ?_⟩
+    refine ⟨flds, oid, rfl, fun o hm => ?_, fun o hm => ?_, fun o hm => ?_⟩
+    · rcases List.mem_append.mp hm with hm | hm
+      · exact hwa o hm
+      · exact hwb o hm
     · rcases List.mem_append.mp hm with hm | hm
       · exact hpa o hm
       · exact hpb o hm
@@ -699,7 +728,7 @@ theorem dictCellT_of_recT {fs : Fields} {flds : List (PropKey × Nat)} {K : Inde
     dictCellT K A k W (.objAt flds .absent oid) := by
   refine ⟨flds, oid, rfl, ⟨hproto, hhost⟩, fun f l hl hk => ?_⟩
   obtain ⟨T, hT⟩ := hown f l hl
-  obtain ⟨flds', oid, he, hfs⟩ := hrec
+  obtain ⟨flds', oid, he, -, hfs⟩ := hrec
   cases he
   obtain ⟨l', c, hl', hc, hag⟩ := hfs f T hT
   rw [hl] at hl'
@@ -1070,15 +1099,15 @@ theorem viewsT_adm (fs : Fields) : Adm (viewsT fs) := by
 theorem optT_adm (fs : List (OptionalField Fam)) : Adm (optT fs) := by
   refine ⟨?_, ?_⟩
   · intro n W v h
-    obtain ⟨flds, oid, rfl, hp, hf⟩ := h
-    refine ⟨flds, oid, rfl, hp, ?_⟩
+    obtain ⟨flds, oid, rfl, hw, hp, hf⟩ := h
+    refine ⟨flds, oid, rfl, hw, hp, ?_⟩
     intro o hm l hl
     obtain ⟨c, hc, hag⟩ := hf o hm l hl
     exact ⟨_, lookup_trunc (Nat.le_succ n) W l c hc,
       fun j hj W' u => hag j (by omega) W' u⟩
   · intro n W W' hx v h
-    obtain ⟨flds, oid, rfl, hp, hf⟩ := h
-    refine ⟨flds, oid, rfl, hp, ?_⟩
+    obtain ⟨flds, oid, rfl, hw, hp, hf⟩ := h
+    refine ⟨flds, oid, rfl, hw, hp, ?_⟩
     intro o hm l hl
     obtain ⟨c, hc, hag⟩ := hf o hm l hl
     exact ⟨c, WExt_lookup hx hc, hag⟩

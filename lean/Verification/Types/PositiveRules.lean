@@ -1417,7 +1417,13 @@ theorem covers_recs {G : NormalGraph ι} {η : MixedAssignment ι} {R : List ι 
     (hsrc : ∀ x ∈ a :: bs, recT (famsOf (mixedValues G η) x) n W (.objAt flds .absent oid)) :
     ∀ b ∈ c :: ds, recT (famsOf (mixedValues G η) b) n W (.objAt flds .absent oid) := by
   intro b hb
-  refine ⟨flds, oid, rfl, ?_⟩
+  refine ⟨flds, oid, rfl, fun f T hm => ?_, ?_⟩
+  · obtain ⟨y, hy, rfl⟩ := mem_famsOf.mp hm
+    obtain ⟨⟨pf, pl⟩, hp, hpf, -⟩ := hc b hb (f, y) hy
+    simp only at hpf
+    subst hpf
+    obtain ⟨L, hL, hpL⟩ := List.mem_flatten.mp hp
+    exact fun l hl => recT_owned (hsrc L hL) (mem_famsOf.mpr ⟨pl, hpL, rfl⟩) hl
   intro f T hm
   obtain ⟨y, hy, rfl⟩ := mem_famsOf.mp hm
   obtain ⟨⟨pf, pl⟩, hp, hpf, hpy, hyp⟩ := hc b hb (f, y) hy
@@ -1546,6 +1552,7 @@ theorem covers_optional_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R 
   -- type (equivalent when writable), or, for an optional slot, possibly absent
   -- with no prototype.
   have slot : ∀ p ∈ optionalSources (a :: bs) vs os,
+      (p.readonly = false → ∀ l, flds.lookup p.key = some l → Owned flds p.key l) ∧
       (flds.lookup p.key = none → flds.lookup CallArguments.protoField = none) ∧
       ∀ l, flds.lookup p.key = some l → ∃ c : Ctr n, lookup W l = some c ∧
         ∀ (j : Nat) (hj : j < n) (W' : WorldT j) (u : Val),
@@ -1557,7 +1564,8 @@ theorem covers_optional_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R 
     · obtain ⟨L, hL, hqL⟩ := List.mem_flatten.mp hq
       obtain ⟨flds', l, c, oid'', he', hf, hw, hag⟩ := recT_at (mem_famsOf.mpr ⟨q.2, hqL, rfl⟩) (hsrc L hL)
       cases he'
-      refine ⟨(fun hl => by simp [hl] at hf), fun l' hl' => ?_⟩
+      refine ⟨fun _ l' hl' => recT_owned (hsrc L hL) (mem_famsOf.mpr ⟨q.2, hqL, rfl⟩) hl',
+        (fun hl => by simp [hl] at hf), fun l' hl' => ?_⟩
       rw [hl'] at hf
       cases hf
       exact ⟨c, hw, fun j hj W' u => ⟨(hag j hj W' u).mp, fun _ => (hag j hj W' u).mpr⟩⟩
@@ -1565,20 +1573,29 @@ theorem covers_optional_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R 
       obtain ⟨flds', l, c, oid'', he', hf, hw, hag⟩ :=
         viewsT_at (mem_famsOf.mpr ⟨q.2, hq, rfl⟩) (by simpa using hql) hv.2.1
       cases he'
-      refine ⟨(fun hl => by simp [hl] at hf), fun l' hl' => ?_⟩
+      refine ⟨fun h => Bool.noConfusion h, (fun hl => by simp [hl] at hf), fun l' hl' => ?_⟩
       rw [hl'] at hf
       cases hf
       exact ⟨c, hw, fun j hj W' u => ⟨hag j hj W' u, fun h => nomatch h⟩⟩
     · have hm : p.map (mixedValues G η) ∈ os.map (·.map (mixedValues G η)) := List.mem_map_of_mem hp
-      exact ⟨fun hl => optT_no_proto hm hv.2.2 hl, fun l hl => optT_present hm hv.2.2 hl⟩
-  refine ⟨flds, oid, rfl, fun o hm hl => ?_, fun o hm l hl => ?_⟩
+      exact ⟨fun hro l hl => optT_owned hm hro hv.2.2 hl,
+        fun hl => optT_no_proto hm hv.2.2 hl, fun l hl => optT_present hm hv.2.2 hl⟩
+  refine ⟨flds, oid, rfl, fun o hm hro l hl => ?_, fun o hm hl => ?_, fun o hm l hl => ?_⟩
+  · obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hm
+    rcases hc q hq with ⟨p, hp, hk, hmode, -, -⟩ | ⟨⟨K, hK, hqK⟩, -⟩
+    · have := (slot p hp).1 (hmode hro) l (by rw [hk]; exact hl)
+      simpa [OptionalField.map, hk] using this
+    · have hnone := ownKeysT_lookup (hks K hK) hqK
+      simp only [OptionalField.map] at hl
+      rw [hnone] at hl
+      cases hl
   · obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hm
     rcases hc q hq with ⟨p, hp, hk, -, -, -⟩ | ⟨-, K, hK, hpK⟩
-    · exact (slot p hp).1 (by rw [hk]; exact hl)
+    · exact (slot p hp).2.1 (by rw [hk]; exact hl)
     · exact ownKeysT_lookup (hks K hK) hpK
   · obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hm
     rcases hc q hq with ⟨p, hp, hk, hmode, hpq, hqp⟩ | ⟨⟨K, hK, hqK⟩, -⟩
-    · obtain ⟨c, hw, hag⟩ := (slot p hp).2 l (by rw [hk]; exact hl)
+    · obtain ⟨c, hw, hag⟩ := (slot p hp).2.2 l (by rw [hk]; exact hl)
       exact ⟨c, hw, fun j hj W' u => (hag j hj W' u).weaken hmode (hr j hj _ _ hpq W' u)
         (fun hq' => hr j hj _ _ (hqp hq') W' u)⟩
     · have := ownKeysT_lookup (hks K hK) hqK

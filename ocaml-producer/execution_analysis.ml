@@ -205,6 +205,25 @@ open S
   and cell_written env name =
     if List.mem name !unit_cells then env
     else forget ~keep:(Refinement.stable_path declarations env) env
+  (* A write of field [f] of an immutable binding's object keeps what is
+     known of the object's other fields where every arm states [f] an
+     invariant field (Lean's `write-sibling`); any other write may write any
+     location. *)
+  and field_written env written =
+    let stable = Refinement.stable_path declarations env in
+    match written with
+    | Some (n,f) ->
+      (match List.assoc_opt n env with
+       | Some (Value t) when Refinement.owned_field declarations t f ->
+         forget ~keep:(fun k -> stable k ||
+           (is_field k && not (is_path k) && owner k = n && field_of k <> f)) env
+       | _ -> forget ~keep:stable env)
+    | None -> forget ~keep:stable env
+  (* The binding and field a write expression, or a written reference, names. *)
+  and written_field ~target source = match expression_hint source with
+    | Some {node=Write ({node=Id n;_},Name f,_);_} when not target -> Some (n,f)
+    | Some {node=Read ({node=Id n;_},Name f);_} when target -> Some (n,f)
+    | _ -> None
   and step env operation = match operation.Execution.impact with
       (* A completed member read narrows its receiver: reading a member of
          `null` or `undefined` throws, so past it the constant or owned local
@@ -218,7 +237,8 @@ open S
       (* A step that may write cells keeps the path entries through stable
          members, as Lean keeps their read links. *)
       | Execution.Havoc when keeps_heap operation.Execution.source -> env
-      | Execution.Havoc -> forget ~keep:(Refinement.stable_path declarations env) env
+      | Execution.Havoc -> field_written env (written_field ~target:false operation.Execution.source)
+      | Execution.FieldWrite target -> field_written env (written_field ~target:true target)
       | Execution.CellWrite (name,value) ->
         (match List.assoc_opt name env,claimed_type value with
          | Some (Storage _),Some t -> assign (cell_written env name) name t

@@ -157,7 +157,7 @@ theorem field_value {G : NormalGraph ι} {c : Clause (Ty ι)} {f : PropKey} {K :
       cases hu'
       exact himp _ _ (hall n (Nat.lt_succ_self n))
     rcases List.mem_append.mp hK with hK | hK
-    · obtain ⟨flds', oid', hv', hall⟩ := hv.1.1
+    · obtain ⟨flds', oid', hv', -, hall⟩ := hv.1.1
       rw [hl] at hv'
       cases hv'
       obtain ⟨l', c', hl', hc', hag⟩ := hall f (meaning G K) (ReferenceConjunctions.mem_famsOf.mpr ⟨K, hK, rfl⟩)
@@ -223,7 +223,7 @@ theorem fieldSlice_absent {G : NormalGraph ι} {A : Ty ι} {f tag q n W v flds c
       simp only [fieldAnswers, List.any_eq_true, Bool.and_eq_true, decide_eq_true_eq] at hans
       obtain ⟨⟨g, K⟩, hp, ⟨rfl, _⟩, _⟩ := hans
       rcases List.mem_append.mp hp with hK | hK
-      · obtain ⟨flds', oid', hv', hall⟩ := hcv.1.1
+      · obtain ⟨flds', oid', hv', -, hall⟩ := hcv.1.1
         rw [hl] at hv'
         cases hv'
         obtain ⟨l', _, hl', _⟩ := hall g (meaning G K) (ReferenceConjunctions.mem_famsOf.mpr ⟨K, hK, rfl⟩)
@@ -317,7 +317,7 @@ theorem field_located {G : NormalGraph ι} {c : Clause (Ty ι)} {f : PropKey} {K
   | refs a bs vs os ms ks =>
     simp only [fixedFields] at hK
     rcases List.mem_append.mp hK with hK | hK
-    · obtain ⟨flds', oid', hv', hall⟩ := hv.1.1
+    · obtain ⟨flds', oid', hv', -, hall⟩ := hv.1.1
       obtain ⟨l', c', hl', hc', -⟩ := hall f (meaning G K) (ReferenceConjunctions.mem_famsOf.mpr ⟨K, hK, rfl⟩)
       obtain ⟨u, hu, -⟩ := hh.2 l' c' hc'
       exact ⟨flds', _, oid', l', u, hv', hl', hu⟩
@@ -933,7 +933,7 @@ theorem promote_sound {X : α → Fam} {P : α → ArgFam} {k : PropKey} {c : Cl
     · rename_i o ho
       have hmem := List.mem_of_find?_eq_some ho
       have hkey : o.key = k := by simpa using List.find?_some ho
-      obtain ⟨⟨⟨flds, oid, hv, hrec⟩, hbs⟩, hview, hopt, hmeth, hkeys, hst⟩ := hc
+      obtain ⟨⟨⟨flds, oid, hv, hown, hrec⟩, hbs⟩, hview, hopt, hmeth, hkeys, hst⟩ := hc
       subst hv
       have hmem' : o.map X ∈ os.map (·.map X) := List.mem_map.mpr ⟨o, hmem, rfl⟩
       obtain ⟨l, hl⟩ : ∃ l, flds.lookup k = some l := by
@@ -950,7 +950,17 @@ theorem promote_sound {X : α → Fam} {P : α → ArgFam} {k : PropKey} {c : Cl
       · rw [if_neg (by rw [hcond]; exact Bool.false_ne_true)]
         simp only [Bool.or_eq_false_iff, Bool.and_eq_false_iff, Bool.not_eq_false'] at hcond
         have hro : o.readonly = false := hcond.1
-        refine ⟨⟨⟨flds, oid, rfl, ?_⟩, hbs.1, fun _ => ?_⟩, hview, hopt, hmeth, hkeys, hst⟩
+        refine ⟨⟨⟨flds, oid, rfl, ?_, ?_⟩, hbs.1, fun _ => ?_⟩, hview, hopt, hmeth, hkeys, hst⟩
+        · intro f T hm
+          simp only [ReferenceConjunctions.famsOf, List.map_append, List.mem_append,
+            List.map_cons, List.map_nil, List.mem_singleton] at hm
+          rcases hm with hm | hm
+          · exact hown f T hm
+          · cases hm
+            intro l' hl''
+            have := optT_owned hmem' (by simpa [OptionalField.map] using hro) hopt
+              (by simpa [OptionalField.map, hkey] using hl'')
+            simpa [OptionalField.map, hkey] using this
         · intro f T hm
           simp only [ReferenceConjunctions.famsOf, List.map_append, List.mem_append,
             List.map_cons, List.map_nil, List.mem_singleton] at hm
@@ -973,7 +983,7 @@ theorem promote_sound {X : α → Fam} {P : α → ArgFam} {k : PropKey} {c : Cl
           revert hcond
           cases (o.readonly || ((a :: bs).flatten.isEmpty && !ks.any KeyBound.closed)) <;> simp
         rw [if_pos hc']
-        refine ⟨⟨⟨flds, oid, rfl, hrec⟩, hbs⟩, ?_, hopt, hmeth, hkeys, hst⟩
+        refine ⟨⟨⟨flds, oid, rfl, hown, hrec⟩, hbs⟩, ?_, hopt, hmeth, hkeys, hst⟩
         intro f T hm
         simp only [ReferenceConjunctions.famsOf, List.map_append, List.mem_append,
           List.map_cons, List.map_nil, List.mem_singleton] at hm
@@ -1051,19 +1061,23 @@ theorem weaker_sound [DecidableEq α] {X : α → Fam} {P : α → ArgFam} {d c 
     | refs a' bs' vs' os' ms' ks' =>
       simp only [weaker, Bool.and_eq_true] at hw
       obtain ⟨⟨⟨⟨⟨⟨ha, hb⟩, hv⟩, ho⟩, hm⟩, hk⟩, hs⟩ := hw
-      obtain ⟨⟨⟨flds, oid, hvf, hrec⟩, hbs⟩, hview, hopt, hmeth, hkeys, hst⟩ := hc
-      refine ⟨⟨⟨flds, oid, hvf, fun f T hmem => ?_⟩, fun B hB => ?_,
+      obtain ⟨⟨⟨flds, oid, hvf, hown, hrec⟩, hbs⟩, hview, hopt, hmeth, hkeys, hst⟩ := hc
+      refine ⟨⟨⟨flds, oid, hvf, fun f T hmem => ?_, fun f T hmem => ?_⟩, fun B hB => ?_,
         fun hne => hbs.2 (fewer_named ha hb hne)⟩, fun f T hmem => ?_, ?_,
         fun m hm' => ?_, fun K hK => hkeys K (within_mem hk hK),
         stableKeysT_weaken (fun x hx => within_mem hs hx) n W v hst⟩
+      · obtain ⟨i, hi, rfl⟩ := ReferenceConjunctions.mem_famsOf.mp hmem
+        exact hown f _ (ReferenceConjunctions.mem_famsOf.mpr ⟨i, within_mem ha hi, rfl⟩)
       · obtain ⟨i, hi, rfl⟩ := ReferenceConjunctions.mem_famsOf.mp hmem
         exact hrec f _ (ReferenceConjunctions.mem_famsOf.mpr ⟨i, within_mem ha hi, rfl⟩)
       · obtain ⟨B', hB', rfl⟩ := List.mem_map.mp hB
         exact hbs.1 _ (List.mem_map.mpr ⟨B', within_mem hb hB', rfl⟩)
       · obtain ⟨i, hi, rfl⟩ := ReferenceConjunctions.mem_famsOf.mp hmem
         exact hview f _ (ReferenceConjunctions.mem_famsOf.mpr ⟨i, within_mem hv hi, rfl⟩)
-      · obtain ⟨flds', oid', hv', hp, hf⟩ := hopt
-        refine ⟨flds', oid', hv', fun o hmo => ?_, fun o hmo => ?_⟩
+      · obtain ⟨flds', oid', hv', hw, hp, hf⟩ := hopt
+        refine ⟨flds', oid', hv', fun o hmo => ?_, fun o hmo => ?_, fun o hmo => ?_⟩
+        · obtain ⟨o', ho', rfl⟩ := List.mem_map.mp hmo
+          exact hw _ (List.mem_map.mpr ⟨o', within_mem ho ho', rfl⟩)
         · obtain ⟨o', ho', rfl⟩ := List.mem_map.mp hmo
           exact hp _ (List.mem_map.mpr ⟨o', within_mem ho ho', rfl⟩)
         · obtain ⟨o', ho', rfl⟩ := List.mem_map.mp hmo
@@ -1076,20 +1090,24 @@ theorem weaker_sound [DecidableEq α] {X : α → Fam} {P : α → ArgFam} {d c 
     | dict a' bs' vs' ds' os' ms' ks' cs' =>
       simp only [weaker, Bool.and_eq_true] at hw
       obtain ⟨⟨⟨⟨⟨⟨⟨⟨ha, hb⟩, hv⟩, hds⟩, ho⟩, hm⟩, hk⟩, hcs⟩, hs⟩ := hw
-      obtain ⟨⟨⟨flds, oid, hvf, hrec⟩, hbs⟩, hview, ⟨hd, hc⟩, hopt, hmeth, hkeys, hst⟩ := hc
-      refine ⟨⟨⟨flds, oid, hvf, fun f T hmem => ?_⟩, fun B hB => ?_,
+      obtain ⟨⟨⟨flds, oid, hvf, hown, hrec⟩, hbs⟩, hview, ⟨hd, hc⟩, hopt, hmeth, hkeys, hst⟩ := hc
+      refine ⟨⟨⟨flds, oid, hvf, fun f T hmem => ?_, fun f T hmem => ?_⟩, fun B hB => ?_,
         fun hne => hbs.2 (fewer_named ha hb hne)⟩, fun f T hmem => ?_,
         ⟨fun x hx => hd x (within_mem hds hx), fun x hx => hc x (within_mem hcs hx)⟩, ?_,
         fun m hm' => ?_, fun K hK => hkeys K (within_mem hk hK),
         stableKeysT_weaken (fun x hx => within_mem hs hx) n W v hst⟩
+      · obtain ⟨i, hi, rfl⟩ := ReferenceConjunctions.mem_famsOf.mp hmem
+        exact hown f _ (ReferenceConjunctions.mem_famsOf.mpr ⟨i, within_mem ha hi, rfl⟩)
       · obtain ⟨i, hi, rfl⟩ := ReferenceConjunctions.mem_famsOf.mp hmem
         exact hrec f _ (ReferenceConjunctions.mem_famsOf.mpr ⟨i, within_mem ha hi, rfl⟩)
       · obtain ⟨B', hB', rfl⟩ := List.mem_map.mp hB
         exact hbs.1 _ (List.mem_map.mpr ⟨B', within_mem hb hB', rfl⟩)
       · obtain ⟨i, hi, rfl⟩ := ReferenceConjunctions.mem_famsOf.mp hmem
         exact hview f _ (ReferenceConjunctions.mem_famsOf.mpr ⟨i, within_mem hv hi, rfl⟩)
-      · obtain ⟨flds', oid', hv', hp, hf⟩ := hopt
-        refine ⟨flds', oid', hv', fun o hmo => ?_, fun o hmo => ?_⟩
+      · obtain ⟨flds', oid', hv', hw, hp, hf⟩ := hopt
+        refine ⟨flds', oid', hv', fun o hmo => ?_, fun o hmo => ?_, fun o hmo => ?_⟩
+        · obtain ⟨o', ho', rfl⟩ := List.mem_map.mp hmo
+          exact hw _ (List.mem_map.mpr ⟨o', within_mem ho ho', rfl⟩)
         · obtain ⟨o', ho', rfl⟩ := List.mem_map.mp hmo
           exact hp _ (List.mem_map.mpr ⟨o', within_mem ho ho', rfl⟩)
         · obtain ⟨o', ho', rfl⟩ := List.mem_map.mp hmo
@@ -1452,7 +1470,7 @@ theorem builtinArray_of_record [DecidableEq ι] {G : NormalGraph ι} {L : ι}
       refine ⟨L, List.mem_singleton_self L, (unfold_plain hplain n W _).mpr
         ⟨.refs [] [] [(CallArguments.arrayStoreField, S), (CallArguments.protoField, r.proto)] [] []
           [⟨false, r.keys⟩], by rw [hGL]; simp, ?_, ?_⟩⟩
-      · refine ⟨⟨⟨flds, oid, rfl, fun f T hm => by simp [ReferenceConjunctions.famsOf] at hm⟩, by simp,
+      · refine ⟨⟨⟨flds, oid, rfl, fun f T hm => by simp [ReferenceConjunctions.famsOf] at hm, fun f T hm => by simp [ReferenceConjunctions.famsOf] at hm⟩, by simp,
           by simp [ReferenceConjunctions.famsOf]⟩,
           fun f T hm => ?_, by simpa [OptionalField.map] using optT_nil,
           MethodMembers.methodT_nil _ _ _, fun K hK => ?_, stableKeysT_nil _ _ _⟩
@@ -1653,7 +1671,7 @@ theorem sourceKinds_cover {G : NormalGraph ι} {n W v} (hv : clauseSem G .source
   | objAt fs code oid =>
     cases code with
     | absent =>
-      refine ⟨.refs [] [] [], by simp [sourceKinds], ⟨⟨⟨⟨fs, oid, rfl, fun f T hm => by
+      refine ⟨.refs [] [] [], by simp [sourceKinds], ⟨⟨⟨⟨fs, oid, rfl, fun f T hm => by simp [ReferenceConjunctions.famsOf] at hm, fun f T hm => by
           simp [ReferenceConjunctions.famsOf] at hm⟩, by simp, by simp [ReferenceConjunctions.famsOf]⟩,
         fun f T hm => by simp [ReferenceConjunctions.famsOf] at hm, optT_nil,
         MethodMembers.methodT_nil _ _ _, fun K hK => by simp at hK, stableKeysT_nil _ _ _⟩, ?_⟩⟩

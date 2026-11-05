@@ -92,7 +92,7 @@ theorem adm (A : Fields) (Bs : List Fields) (L : List (Arrow Fam)) : Adm (object
 /-- A bag stating no field holds of every object value. -/
 theorem props_nil {fs : List (PropKey × Nat)} {code : CallCode} {oid n W} :
     propsT [] [] n W (.objAt fs code oid) :=
-  ⟨⟨fs, code, oid, rfl, rfl, fs, oid, rfl, fun _ _ h => by simp at h⟩, fun _ h => by simp at h⟩
+  ⟨⟨fs, code, oid, rfl, rfl, fs, oid, rfl, fun _ _ h => by simp at h, fun _ _ h => by simp at h⟩, fun _ h => by simp at h⟩
 
 theorem props_congr_below {α : Type} (X Y : α → Fam) (a : List (PropKey × α))
     (bs : List (List (PropKey × α))) (n : Nat) (h : ∀ a, Agree (X a) (Y a) n) (W : WorldT n)

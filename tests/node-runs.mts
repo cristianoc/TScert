@@ -991,6 +991,11 @@ assert.equal(runExample("invalid-named-implicit-index", 'typeof asDictionary({ a
     "invalid-field-alias-binder: the parameter is number, and the object has no n");
   assert.equal(runExample("field-tag-read", `[size({ mapping: [1, 2] }), size({ mapping: "abc" }), count({ mapping: [7] })].join()`),
     "2,3,1", "field-tag-read: each mapping's size");
+  assert.equal(runExample("invalid-sibling-field-alias",
+    `(() => { const s = { context: null, font: "" }; return aliased(s, s); })()`), null,
+    "invalid-sibling-field-alias: the write through the second parameter is a write of the narrowed field");
+  assert.equal(runExample("invalid-sibling-field-accessor", "run()"), null,
+    "invalid-sibling-field-accessor: the accessor answers from the field the write changed");
   assert.equal(runExample("invalid-field-tag-alias", `(() => { const o = { mapping: [1] }; return wrong(o, o); })()`), 5,
     "invalid-field-tag-alias: the write through the alias leaves a number where an array is promised");
   assert.equal(runExample("invalid-field-tag-call", `(() => { const o = { mapping: [1] }; return wrong(o, () => { o.mapping = 5; }); })()`), 5,

@@ -360,6 +360,47 @@ theorem fieldOperand_typed [DecidableEq ι] {G : NormalGraph ι} {Ref fld n W v}
     exact ofBag hmem (inBag (by simpa [clauseBagOperand] using hmem)) hc.1.1.1.1
   | _ => simp [clauseField, clauseBagOperand] at hb
 
+/-- Whether every alternative of `Ref` states `fld` in its first invariant
+operand: the location the field finds then belongs to that key alone
+(`recT`), so a write of it changes no other key of the object
+(`write-sibling`, PROGRAM-TYPING.md, "Writing"). -/
+def ownedField (cs : List (PositiveNormalization.Clause α)) (fld : PropKey) : Bool :=
+  !cs.isEmpty && cs.all fun c => match clauseBagOperand c with
+    | some B => B.any fun p => decide (p.1 = fld)
+    | none => false
+
+/-- An object of such a type has the field, at a location no other key of it
+finds. -/
+theorem ownedField_sound [DecidableEq ι] {G : NormalGraph ι} {Ref fld n W v}
+    (hr : ownedField (expand G Ref) fld = true) (hv : meaning G Ref n W v) :
+    ∃ (flds : List (PropKey × Nat)) (code : CallCode) (oid l : Nat), v = .objAt flds code oid ∧
+      flds.lookup fld = some l ∧ Owned flds fld l := by
+  simp only [ownedField, Bool.and_eq_true, Bool.not_eq_true', List.isEmpty_eq_false_iff,
+    List.all_eq_true] at hr
+  have hp : G.plainTy Ref = true := by
+    obtain ⟨c, hc⟩ := List.exists_mem_of_ne_nil _ hr.1
+    exact plain_of_mem_expand (c := c) hc
+  obtain ⟨c,hm,hc,-⟩ := (expand_sem G Ref hp n W v).mp hv
+  have hb := hr.2 c hm
+  have ofBag : ∀ {B : List (PropKey × Ty ι)}, B.any (fun p => decide (p.1 = fld)) = true →
+      bagT (ReferenceConjunctions.famsOf (meaning G) B) n W v →
+      ∃ (flds : List (PropKey × Nat)) (code : CallCode) (oid l : Nat), v = .objAt flds code oid ∧
+        flds.lookup fld = some l ∧ Owned flds fld l := by
+    intro B hB hbag
+    obtain ⟨⟨g, El⟩, hmem, hg⟩ := List.any_eq_true.mp hB
+    simp only [decide_eq_true_eq] at hg
+    subst hg
+    obtain ⟨flds,code,oid,hl,_,hrec⟩ := hbag
+    have hmf : (g, meaning G El) ∈ ReferenceConjunctions.famsOf (meaning G) B :=
+      ReferenceConjunctions.mem_famsOf.mpr ⟨El, hmem, rfl⟩
+    obtain ⟨flds',l,c',oid',hproj,hfd,-⟩ := recT_at hmf hrec
+    cases hproj
+    exact ⟨flds, code, oid, l, hl, hfd, recT_owned hrec hmf hfd⟩
+  cases c with
+  | refs a bs vs os ms ks => exact ofBag (by simpa [clauseBagOperand] using hb) (recT_bag hc.1.1)
+  | callable a bs L S ms => exact ofBag (by simpa [clauseBagOperand] using hb) hc.1.1.1.1
+  | _ => simp [clauseBagOperand] at hb
+
 theorem fieldOperand_sound [DecidableEq ι] {G : NormalGraph ι} {Ref fld n W v}
     (hr : fieldOperand (expand G Ref) fld = true) (hv : meaning G Ref n W v) :
     ∃ (El : Ty ι) (flds : List (PropKey × Nat)) (code : CallCode) (oid l : Nat) (c : Ctr n), v = .objAt flds code oid ∧ flds.lookup fld = some l ∧
@@ -553,7 +594,7 @@ theorem optionalOperand_sound [DecidableEq ι] {G : NormalGraph ι} {Ref fld n W
   cases c with
   | refs a bs vs os ms ks =>
     simp only [Bool.or_eq_true, List.any_eq_true, decide_eq_true_eq, Bool.and_eq_true, bne_iff_ne] at hb
-    obtain ⟨⟨flds, oid, hvf, hrec⟩, _⟩ := hc.1
+    obtain ⟨⟨flds, oid, hvf, -, hrec⟩, _⟩ := hc.1
     subst hvf
     refine ⟨flds, oid, rfl, ?_, ?_⟩
     · intro l hl
@@ -946,13 +987,22 @@ theorem makeKey_alloc_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k A ρ n W
         exact one_step rfl rfl (.makeFields (by simpa using hvb) (by simp))
           (fresh_holds he hk hh _ _ _) hs1
 
+/-- Whether a write of field `fld` of slot `i` keeps a cell fact about
+field `g` of slot `s`: a separation fact states the two apart, or, where the
+written field's location belongs to its key alone (`owned`), `s` holds the
+same object as `i` and `g` is another key (`write-sibling`). -/
+def writeKeeps (k : Knowledge) (i : Nat) (fld : PropKey) (owned : Bool) (s : Nat) (g : PropKey) : Bool :=
+  let M := Partitions.cls (LinkClasses.closure k.links)
+  HeapSeparation.apartBy M k.separation i fld s g ||
+    (owned && g != fld && (s == i || (M i).contains s))
+
 /-- A write forgets old cell observations, except those about locations known
 to be distinct from the written one, establishes its new contents where the
 written value is a known primitive (`R`), and retains immutable values
 already read into slots. -/
-def writeOutput (k : Knowledge) (i : Nat) (fld : PropKey) (R : Option ValueSets.ValueSet) : Knowledge :=
+def writeOutput (k : Knowledge) (i : Nat) (fld : PropKey) (R : Option ValueSets.ValueSet) (owned : Bool) : Knowledge :=
   ⟨(R.map fun R => (HeapLinks.aliases k.links i).map (fun j => (⟨j+1,R,fld⟩ : Fact))).getD [] ++
-      (k.cells.filter fun f => HeapSeparation.apartBy (Partitions.cls (LinkClasses.closure k.links)) k.separation i fld f.slot f.field).map
+      (k.cells.filter fun f => writeKeeps k i fld owned f.slot f.field).map
         (fun f => {f with slot := f.slot + 1}),
     ⟨0,{ nul := true },valueField⟩ :: HeapFacts.shift k.values,
     HeapLinks.stable (HeapKnowledge.shift k).links, HeapSeparation.shift k.separation, []⟩
@@ -974,7 +1024,7 @@ theorem write_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImag
     (he : EnvOk G Γ ρ n W) (hk : HeapKnowledge.Holds k ρ h)
     (hw : WorldAdm W) (hh : HeapOk n W h) :
     SafePost (excOf G) (meaning G A)
-      (fun h' v => HeapKnowledge.Holds (writeOutput k i fld R) (push v ρ) h')
+      (fun h' v => HeapKnowledge.Holds (writeOutput k i fld R (ownedField (expand G (Γ.getD i [])) fld)) (push v ρ) h')
       n W h (.writeAt fld (ρ i) (ρ j)) := by
   have hvv : isVal (ρ j) = true :=
     (meaning_value (he.2 j Γ[j] (List.getElem?_eq_some_iff.mpr ⟨hj,rfl⟩))).1
@@ -1015,7 +1065,31 @@ theorem write_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImag
             | none => rw [hfd0] at hrd; exact hrd
             | some l0 =>
               rw [hfd0] at hrd
-              have hne : l ≠ l0 := HeapSeparation.apartBy_sound (fun _ _ hy => (LinkClasses.gen_sound hk.2.2.1 (LinkClasses.mem_cls_closure.mp hy)).symm) hg.2 hk.2.2.2.1 hl hfd hs0 hfd0
+              have hM : ∀ x, ∀ y ∈ Partitions.cls (LinkClasses.closure k.links) x, ρ y = ρ x :=
+                fun _ _ hy => (LinkClasses.gen_sound hk.2.2.1 (LinkClasses.mem_cls_closure.mp hy)).symm
+              have hne : l ≠ l0 := by
+                unfold writeKeeps at hg
+                rcases Bool.or_eq_true_iff.mp hg.2 with ha | hsib
+                · exact HeapSeparation.apartBy_sound hM ha hk.2.2.2.1 hl hfd hs0 hfd0
+                · simp only [Bool.and_eq_true, bne_iff_ne, ne_eq, Bool.or_eq_true, beq_iff_eq,
+                    List.contains_iff_mem] at hsib
+                  obtain ⟨⟨hown, hgf⟩, hsame⟩ := hsib
+                  have hsi : ρ g.slot = ρ i := by
+                    rcases hsame with rfl | hm
+                    · rfl
+                    · exact hM i g.slot hm
+                  obtain ⟨flds1, code1, oid1, l1, hv1, hfd1, howned⟩ :=
+                    ownedField_sound hown (he.2 i (Γ.getD i [])
+                      (by simp [List.getD_eq_getElem?_getD, List.getElem?_eq_getElem hi]))
+                  rw [hl] at hv1
+                  cases hv1
+                  rw [hsi, hl] at hs0
+                  cases hs0
+                  rw [hfd] at hfd1
+                  cases hfd1
+                  intro heq
+                  subst heq
+                  exact hgf (howned g.field hfd0)
               simpa only [List.getElem?_set_ne hne] using hrd
       · intro f hf
         rcases List.mem_cons.mp hf with rfl | hf
@@ -1393,7 +1467,8 @@ frame. Subtype comparisons retain unfinished work through the step validation. -
     match writeSlots j.term with
     | some (fld, i', v') =>
       checkedOutput G images e (decide (claim e = j ∧ i' = i ∧ v' = v ∧ i < j.context.length ∧
-        v < j.context.length ∧ valuesAt G j.context k v = R)) (writeOutput k i fld R) codes sums tree
+        v < j.context.length ∧ valuesAt G j.context k v = R))
+        (writeOutput k i fld R (ownedField (expand G (j.context.getD i [])) fld)) codes sums tree
     | none => failure
 
 @[nospecialize] def checkStepUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (j : Sequent ι)
@@ -1491,7 +1566,7 @@ theorem checkStepUsing_eq [DecidableEq ι] (G : NormalGraph ι) (images : Instan
       if claim e = j ∧ checkTreeUsing G images e codes sums = true ∧ i' = i ∧ v' = v ∧
           i < j.context.length ∧ v < j.context.length ∧
           valuesAt G j.context k v = R
-      then some (writeOutput k i fld R) else none
+      then some (writeOutput k i fld R (ownedField (expand G (j.context.getD i [])) fld)) else none
     | none => none := by
   cases step <;> simp only [checkStepUsing, checkStepResult, checkedOutput_value,
     CheckResult.value_bind_const,

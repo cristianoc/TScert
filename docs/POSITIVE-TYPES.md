@@ -130,7 +130,8 @@ $`c_j\equiv T_j`$ when $`r=\mathsf{w}`$ and $`c_j\subseteq T_j`$ when $`r=\maths
 \mathsf{own}(b)_n(W,v)&\iff v=\ell\land\forall\kappa\in\mathrm{dom}(\mathit{flds}).\;b\vDash\kappa,\\
 \mathsf{rec}(\overline{\kappa{:}T})_n(W,v)
 &\iff v=\ell\land\forall(\kappa{:}T).\;\exists l,c.\;
-      \mathit{flds}(\kappa)=l\land W(l)=c\land c_j\equiv T_j,\\
+      \mathit{flds}(\kappa)=l\land W(l)=c\land c_j\equiv T_j\land\mathsf{owned}(\mathit{flds},\kappa,l),\\
+\mathsf{owned}(\mathit{flds},\kappa,l)&\iff\forall\kappa'.\;\mathit{flds}(\kappa')=l\Rightarrow\kappa'=\kappa,\\
 \mathsf{view}(\overline{\kappa{:}T})_n(W,v)
 &\iff\forall(\kappa{:}T).\;\mathsf{view}_1(\kappa{:}T)_n(W,v)\lor
       \kappa=\mathtt{length}\land\mathsf{len}(T)_n(W,v),\\
@@ -142,7 +143,8 @@ $`c_j\equiv T_j`$ when $`r=\mathsf{w}`$ and $`c_j\subseteq T_j`$ when $`r=\maths
 \mathsf{opt}(\overline{\kappa{:}^{r}T})_n(W,v)
 &\iff v=\ell\land\forall(\kappa{:}^{r}T).\;
       (\mathit{flds}(\kappa)=\varnothing\Rightarrow\mathit{flds}(\mathsf{proto})=\varnothing)\\
-&\qquad\land\forall l.\;\mathit{flds}(\kappa)=l\Rightarrow\exists c.\;W(l)=c\land c_j\sqsubseteq^{r}T_j.
+&\qquad\land\forall l.\;\mathit{flds}(\kappa)=l\Rightarrow\exists c.\;W(l)=c\land c_j\sqsubseteq^{r}T_j
+      \land(r=\mathsf{w}\Rightarrow\mathsf{owned}(\mathit{flds},\kappa,l)).
 \end{aligned}
 ```
 
@@ -151,6 +153,15 @@ $`c_j\equiv T_j`$ when $`r=\mathsf{w}`$ and $`c_j\subseteq T_j`$ when $`r=\maths
   with each of them. They are not several cells, and they are not replaced by
   one contract at the intersection of their types. A plain reference cell is
   $`\mathsf{Ref}\,\{\mathsf{value}{:}A\}`$.
+- **Owned locations.** The location an invariant field, or a writable
+  optional field present, finds belongs to its key alone
+  ($`\mathsf{owned}`$, `Owned`, in `recT` and `optT`): each own data
+  property of a JavaScript object is its own storage, which every
+  allocation's fresh positions give (`slots_nodup`), and the caller contract
+  states every field of a value at a structural type an own data property
+  ([trust surface](DESIGN.md#trust-surface)). So a write of such a field
+  changes no other key of its object
+  ([`write-sibling`](PROGRAM-TYPING.md#writing)).
 - **Views** only read: the location's contract implies the view's type, so a
   view grants no write.
 - **Stable keys** are owned at locations whose contracts admit one value,

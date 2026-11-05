@@ -137,7 +137,7 @@ theorem reject_clause (G : NormalGraph ι) (η : MixedAssignment ι)
       cases he
       rw [fields_absent keys _ hn] at hl
       cases hl
-    · obtain ⟨fs, oid, he, absent, _⟩ := hv.2.2.1
+    · obtain ⟨fs, oid, he, -, absent, _⟩ := hv.2.2.1
       cases he
       have hp := absent (o.map (mixedValues G η)) (List.mem_map.mpr ⟨o, ho, rfl⟩)
         (fields_absent keys _ hn)
