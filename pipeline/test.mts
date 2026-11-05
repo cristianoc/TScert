@@ -8,7 +8,7 @@ import { chmodSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, sy
 import { present } from "../tools/files.mts";
 import { join, resolve } from "node:path";
 import type { Ast, Expr } from "../tools/fragment.mts";
-import type { TypeDefinition, TypeTerm } from "../tools/declaration-types.mts";
+import type { PropertyKey, TypeDefinition, TypeTerm } from "../tools/declaration-types.mts";
 import type { Span } from "../tools/span.mts";
 import { createHash } from "node:crypto";
 import { availableParallelism } from "node:os";
@@ -7813,7 +7813,7 @@ mutationControl(async (): Promise<void> => {
   const accepted = tested(verifierCall(verifier, ["--check-units", join(artifacts, "fragment.json"), join(artifacts, "claims.json"),
     sourceKey(artifacts), join(artifacts, "evidence.json")]));
   assert.equal(accepted.status, 0, accepted.stdout + accepted.stderr);
-  const chain = (path: readonly string[]): boolean => path.length === 2 && path[0] === "mid" && path[1] === "leaf";
+  const chain = (path: readonly PropertyKey[]): boolean => path.length === 2 && path[0] === "mid" && path[1] === "leaf";
   const before = must(honest.functions.find(f => f.name === "before"), "chain before");
   const refined = must(before.entries.find(e => source.startsWith("return 1;", e.start)), "chain refined entry");
   const current = must(must(refined.bindings.find(b => b.name === "holder"), "holder").current, "chain witness type");
