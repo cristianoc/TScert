@@ -74,6 +74,7 @@ export const cases: Case[] = [
   negative("invalid-footprint-factory-provider", "A shrinking provider cannot meet the private factory's preserving contract (run under Node)",
     /source expression obligation.*no derivation of its node-typing claim/s),
   positive("blocker-next-splice-insert-spread", "Replacing an array through splice with inserted spread values"),
+  positive("set-first-position", "the first of a list of positions where every one equals it, the equivalent form of an array pattern over a `Set`"),
   positive("array-splice-insert", "Splice insertion retains argument order, element contracts and fresh removed storage"),
   negative("invalid-splice-insert-map-density", "Splice insertion can shrink the mapped receiver and leave a result hole (run under Node)",
     /source expression obligation.*no derivation of its return-contract claim/s),
