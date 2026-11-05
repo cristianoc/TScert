@@ -3128,6 +3128,7 @@ export const cases: Case[] = [
     kind: "negative", status: "unsupported", phase: "source",
     diagnostic: /parseInt\(…\) is not in the reviewed overlay of library globals: function parseInt\(value: boolean\).*\(line 5, col 10\)/,
     project: "pipeline/parse-int-overload-project" },
+  positive("library-math-floor-sign", "`Math.floor` and `Math.sign` of a number within the empty footprint: each a number"),
   positive("library-math-round", "`Math.round` of a number within the empty footprint: a number"),
   positive("library-math-fround", "`Math.fround` of a number within the empty footprint: a number"),
   positive("library-number-isnan", "`Number.isNaN` of a number within the empty footprint: a Boolean"),
