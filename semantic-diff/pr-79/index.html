@@ -1,0 +1,782 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Commit Records</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Code+Pro:wght@400;600&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=STIX+Two+Text:ital,wght@0,400;0,600;1,400&display=swap">
+<style>
+:root { --bg:#fbfcfd; --surface:#ffffff; --ink:#0b1a2e; --muted:#56627a; --rule:#d5dce6; --accent:#8a6410; --code-bg:#eef2f7; --math-bg:#f2f4f8; --ok:#2f6b47; --ok-bg:#e2efe4; --principled:#a0521a; --principled-bg:#f7e6d6; --gap:#6b6f78; --gap-bg:#ecebe6; --neutral:#2c4f7c; --neutral-bg:#e6ebf2; --trust:#7c2f4a; --trust-bg:#f2e1e7; --neg:#9b3524; --neg-bg:#f5e1da; --run:#7a5414; --run-bg:#f3e7cc; --brand-ink:#0b1a2e; --brand-gold:#b8840f;
+  --display:"Bricolage Grotesque","Helvetica Neue",Arial,sans-serif; --body:"Inter","Helvetica Neue",Arial,sans-serif; --mono:"Source Code Pro",Menlo,Consolas,monospace; --math:"STIX Two Text","STIX Two Math","STIXGeneral","Cambria Math","Apple Symbols",Georgia,serif; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#0e1626; --surface:#16213a; --ink:#efe7d4; --muted:#9aa3b5; --rule:#2a3756; --accent:#e0ac4a; --code-bg:#131d33; --math-bg:#1a2540; --ok:#7fd0a2; --ok-bg:#17322a; --principled:#f0a868; --principled-bg:#3a2a1c; --gap:#9aa3b5; --gap-bg:#1c2639; --neutral:#8fb4e8; --neutral-bg:#1b2b49; --trust:#e79bb6; --trust-bg:#3a2131; --neg:#f0907d; --neg-bg:#3a1f22; --run:#e0ac4a; --run-bg:#2e2a24; --brand-ink:#efe7d4; --brand-gold:#e0ac4a; color-scheme:dark } }
+:root[data-theme="dark"] { --bg:#0e1626; --surface:#16213a; --ink:#efe7d4; --muted:#9aa3b5; --rule:#2a3756; --accent:#e0ac4a; --code-bg:#131d33; --math-bg:#1a2540; --ok:#7fd0a2; --ok-bg:#17322a; --principled:#f0a868; --principled-bg:#3a2a1c; --gap:#9aa3b5; --gap-bg:#1c2639; --neutral:#8fb4e8; --neutral-bg:#1b2b49; --trust:#e79bb6; --trust-bg:#3a2131; --neg:#f0907d; --neg-bg:#3a1f22; --run:#e0ac4a; --run-bg:#2e2a24; --brand-ink:#efe7d4; --brand-gold:#e0ac4a; color-scheme:dark }
+* { box-sizing:border-box } body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.6 var(--body) }
+main { max-width:900px; margin:0 auto; padding-inline:20px; padding-block:32px 64px; display:flex; flex-direction:column; gap:22px }
+h1 { font:600 32px/1.15 var(--display); margin:0 } h2 { font:600 22px/1.2 var(--display); margin:12px 0 8px; padding-top:12px; border-top:2px solid var(--ink) }
+h3 { font:600 19px/1.3 var(--display); margin:2px 0 0; text-wrap:balance }
+h4 { font:600 11px/1 var(--body); letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin:12px 0 4px }
+p { margin:2px 0; max-width:72ch } .lede { color:var(--muted) }
+code { font:13px/1.5 var(--mono); background:var(--code-bg); padding:1px 4px; border-radius:3px }
+pre { margin:4px 0; padding:12px 14px; border-radius:6px; overflow-x:auto }
+pre.code { font:13px/1.55 var(--mono); background:var(--code-bg) }
+.rules { display:flex; flex-direction:column; gap:14px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:14px 18px; overflow-x:auto; font:16px/1.6 var(--math) }
+.rules sub, .rules sup { font-size:.72em; line-height:0 }
+.formulas { display:flex; flex-direction:column; gap:4px }
+.formulas .row { display:flex; flex-wrap:wrap; gap:4px 28px } .formulas .row.cont { padding-left:2em }
+.infer { display:flex; align-items:center; gap:12px }
+.frac { display:inline-flex; flex-direction:column; align-items:center; min-width:0 }
+.premises { display:flex; flex-wrap:wrap; justify-content:center; gap:4px 26px; padding:0 6px 3px }
+.bar { align-self:stretch; border-top:1.5px solid var(--ink) }
+.conclusion { padding:3px 6px 0; text-align:center }
+.rule-name { font:15px/1 var(--math); font-variant:small-caps; letter-spacing:.02em; color:var(--accent); white-space:nowrap }
+.card { background:var(--surface); border:1px solid var(--rule); border-radius:8px; padding:20px 22px; display:flex; flex-direction:column; gap:6px; min-width:0 }
+.card > header { display:flex; justify-content:space-between; gap:12px; align-items:flex-start }
+.sha { font:12px/1.4 var(--mono); color:var(--muted) }
+.pill { font:600 11px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; padding:6px 9px; border-radius:99px; white-space:nowrap }
+.pill.ok { color:var(--ok); background:var(--ok-bg) } .pill.principled { color:var(--principled); background:var(--principled-bg) }
+.pill.gap { color:var(--gap); background:var(--gap-bg) } .pill.neutral { color:var(--neutral); background:var(--neutral-bg) }
+.units { display:flex; flex-wrap:wrap; gap:6px } .units span { font:12px/1 var(--mono); border:1px solid var(--rule); border-radius:4px; padding:5px 7px }
+dl.facts { display:grid; grid-template-columns:max-content minmax(0,1fr); gap:6px 16px; margin:12px 0 0; padding-top:12px; border-top:1px solid var(--rule); font-size:13.5px }
+dt { font:600 11px/1.9 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted) }
+dd { margin:0; min-width:0; display:flex; flex-wrap:wrap; gap:5px; align-items:baseline }
+.chip { font:500 12px/1 var(--body); border:1px solid var(--rule); border-radius:4px; padding:4px 7px } .chip.strong { color:var(--accent); border-color:var(--accent) }
+.trust { color:var(--trust); background:var(--trust-bg); padding:2px 6px; border-radius:4px } .none { color:var(--muted) }
+.test { font:12px/1 var(--mono); padding:4px 7px; border-radius:4px }
+.test.pos { color:var(--ok); background:var(--ok-bg) } .test.pos::before { content:"✓ " }
+.test.neg { color:var(--neg); background:var(--neg-bg) } .test.neg::before { content:"✗ " }
+.test.forged { color:var(--principled); background:var(--principled-bg) } .test.forged::before { content:"forged " }
+details { margin-top:8px; font-size:13px; color:var(--muted) } summary { cursor:pointer }
+.table-wrap { overflow-x:auto; border:1px solid var(--rule); border-radius:8px; background:var(--surface) }
+table { border-collapse:collapse; width:100%; font-size:13px } th, td { text-align:left; vertical-align:top; padding:8px 10px; border-bottom:1px solid var(--rule) }
+th { font:600 11px/1.2 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); white-space:nowrap } td.num { font-variant-numeric:tabular-nums }
+h4.change { display:flex; align-items:center; gap:8px; text-transform:none; letter-spacing:0; font:600 14px/1.3 var(--body); color:var(--ink); margin:16px 0 6px }
+h4.change .target { font-weight:400; color:var(--muted) }
+.act { font:600 10.5px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; padding:4px 7px; border-radius:4px }
+.act.added { color:var(--ok); background:var(--ok-bg) } .act.removed { color:var(--neg); background:var(--neg-bg) }
+.act.modified, .act.replaced { color:var(--principled); background:var(--principled-bg) }
+.versions { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:10px }
+.versions figure { margin:0; min-width:0 } .versions figcaption { font:600 11px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); margin:0 0 4px }
+.versions .rules { height:calc(100% - 18px); box-sizing:border-box }
+pre.code .ln { display:block; white-space:pre } pre.code .ln.add { background:var(--ok-bg) } pre.code .ln.del { background:var(--neg-bg) }
+.tk-k { color:#7a3b8c } .tk-s { color:#2f6b47 } .tk-n { color:#a35a12 } .tk-c { color:var(--muted); font-style:italic } .tk-t { color:#2c4f7c }
+.prose p { margin:4px 0 }
+ul.effect, ul.summary { margin:4px 0; padding-left:20px } ul.effect li, ul.summary li { margin:3px 0 } ul.summary ul { padding-left:18px; color:var(--muted) }
+ul.effect .arrow { color:var(--accent); font-weight:600 }
+ul.effect details { margin:0; color:inherit; font-size:inherit } ul.effect summary { list-style-position:outside }
+ul.effect .kind { font-size:11px; text-transform:uppercase; letter-spacing:.04em; padding:1px 6px; border-radius:4px; background:var(--chip, #eee) }
+ul.effect .kind.negative { color:#8a3b12 } ul.effect .kind.positive { color:#22663a } ul.effect .kind.gap { color:#7a5b00 }
+ul.effect .was.unsound { color:#b3261e; font-weight:600 } ul.effect .now { font-weight:500 } ul.effect .why { color:var(--muted) }
+ul.effect mark { background:#ffe08a; color:inherit; border-radius:2px }
+@media (max-width:720px) { .versions { grid-template-columns:minmax(0,1fr) } }
+.lowering { display:flex; flex-direction:column; gap:6px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:12px 16px; overflow-x:auto }
+.lowering .map, .lowering .cond, .lowering .result { display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 10px }
+.lowering .map:not(:has(.sem)) { flex-direction:column; align-items:stretch; gap:4px }
+.lowering .result { display:grid; grid-template-columns:auto minmax(0,1fr); align-items:baseline; gap:2px 10px; padding-left:1em } .lowering .result .note { grid-column:2 }
+.m-intr { font:14px/1.5 var(--mono); color:#2c4f7c } .m-lit { font:13px/1.5 var(--mono); color:#7a3b8c }
+.lowering code.src { font:13px/1.5 var(--mono); background:var(--surface); border:1px solid var(--rule); padding:2px 6px; border-radius:4px }
+.lowering .to { color:var(--accent); font-weight:600; font-size:17px }
+.lowering .tgt { font:16px/1.5 var(--math) } .rules .lowering { background:none; border:0; padding:0 } .lowering .sem code.src { margin:0 2px }
+var { font-style:italic } .m-op { color:#2c4f7c; font-style:normal } .m-con { color:#8f6416; font-style:normal; font-variant:small-caps }
+.m-kw { color:#7a3b8c; font-weight:600; font-style:normal } .m-bind { color:#7a3b8c } .m-rel { color:var(--accent); padding:0 .12em }
+.m-text { font:14px/1.5 var(--body); color:var(--muted) } code.m-code { font:13px/1.5 var(--mono); background:var(--surface); border:1px solid var(--rule); padding:1px 5px; border-radius:4px }
+.refused { color:var(--neg); font-weight:600 }
+.lowering .refused { color:var(--neg); font-weight:600 }
+.lowering .label { font:600 11px/1 var(--body); letter-spacing:.05em; text-transform:uppercase; color:var(--muted); min-width:7em }
+.lowering .cond { padding-left:1.5em } .lowering .note { color:var(--muted); font:italic 13px/1.4 var(--body) }
+a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outline-offset:2px }
+@media (max-width:520px) { dl.facts { grid-template-columns:minmax(0,1fr) } .card > header { flex-direction:column } }</style></head><body><main><header><h1>Commit Records</h1><p class="lede">4 commits, rendered from their records.</p></header>
+<section><h2>Branches</h2><ul class="summary"><li><a href="#g-pr-79"><code>50be2ce88b9c4091f3498642d955144e433bda1d..pr-79</code></a><ul><li>4 commits</li><li>parts: <span class="chip">tests</span> <span class="chip">docs</span></li></ul></li></ul></section>
+<h2 id="g-pr-79"><code>50be2ce88b9c4091f3498642d955144e433bda1d..pr-79</code></h2><article class="card" id="c-b2104023f"><header><div><div class="sha">b2104023f · Cristiano Calcagno · Nov 05, 03:12</div><h3>Name the refusal each negative case reaches, and drop cases repeating another's</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>Several negative cases named an obligation that their sources never reach: an earlier refusal stops them first, so removing the named cause leaves the same refusal (issues #31 and #65). A case blocked before its obligation is a gap for that obligation; a negative names the refusal it reaches and the hazard that refusal excludes. Three cases added no signal: a safe program, or the same input shape as another case through the same refusal.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">WORK.md, generic methods left</span></h4><div class="prose"><p>invalid-tag-inherited-declaration stops at the covering rule for members binding different numbers of binders, before its tag obligation</p></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>invalid-stated-effect-stringify</code> <span class="kind negative">negative</span> <span class="was">refused</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">a record is no JSON value: refused at the argument, before the statement</span></summary><pre class="code"><span class="tk-c">// A function stating {value: any, store: grow} that serializes a record</span>
+<span class="tk-c">// with `JSON.stringify` and a replacer: a value of the record's type may</span>
+<span class="tk-c">// hold a `toJSON`, which serializing calls and which may remove an element</span>
+<span class="tk-c">// of an array. A record is no JSON value, so the call is refused at its</span>
+<span class="tk-c">// argument, before the function's statement is checked.</span>
+<span class="tk-k">type</span> <span class="tk-t">Term</span> = { k: string; span: number };
+
+<span class="tk-k">function</span> sameTerm(
+  a: <span class="tk-t">Term</span>,
+  b: <span class="tk-t">Term</span>,
+): <span class="tk-t">Within</span>&lt;{ value: <span class="tk-s">&quot;any&quot;</span>; store: <span class="tk-s">&quot;grow&quot;</span> }, boolean&gt; {
+  <span class="tk-k">const</span> text = (t: <span class="tk-t">Term</span>): string =&gt;
+    <span class="tk-t">JSON</span>.stringify(t, (key, value: unknown) =&gt;
+      key === <span class="tk-s">&quot;span&quot;</span> ? <span class="tk-k">undefined</span> : value,
+    ) ?? <span class="tk-s">&quot;&quot;</span>;
+  <span class="tk-k">return</span> text(a) === text(b);
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> wrong(xs: number[], t: <span class="tk-t">Term</span>): number[] {
+  <span class="tk-k">return</span> xs.map((x) =&gt; (sameTerm(t, t) ? x : <span class="tk-n">0</span>));
+}</pre></details></li><li><details><summary><code>invalid-tag-ambient-base</code> <span class="kind negative">negative</span> <span class="was">refused</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">the subclassing boundary the tag exclusion rests on</span></summary><pre class="code"><span class="tk-c">// A class extending a declared class that states `Symbol.toStringTag`</span>
+<span class="tk-c">// beside `then`, `catch` and `finally`, its instance asserted to be a</span>
+<span class="tk-c">// `Promise&lt;number&gt;`: refused at the base, since a class extends only a class</span>
+<span class="tk-c">// of its file, which keeps every prototype of an object the program makes</span>
+<span class="tk-c">// free of the tag.</span>
+<span class="tk-k">declare</span> <span class="tk-k">class</span> <span class="tk-t">Base</span> {
+  <span class="tk-k">readonly</span> [<span class="tk-t">Symbol</span>.toStringTag]: string;
+  then(onfulfilled?: (value: number) =&gt; unknown): <span class="tk-t">Promise</span>&lt;unknown&gt;;
+  <span class="tk-k">catch</span>(onrejected?: (reason: unknown) =&gt; unknown): <span class="tk-t">Promise</span>&lt;unknown&gt;;
+  <span class="tk-k">finally</span>(onfinally?: () =&gt; <span class="tk-k">void</span>): <span class="tk-t">Promise</span>&lt;number&gt;;
+}
+<span class="tk-k">class</span> <span class="tk-t">Derived</span> <span class="tk-k">extends</span> <span class="tk-t">Base</span> {}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> forged(d: <span class="tk-t">Derived</span>): <span class="tk-t">Promise</span>&lt;number&gt; {
+  <span class="tk-k">return</span> d <span class="tk-k">as</span> unknown <span class="tk-k">as</span> <span class="tk-t">Promise</span>&lt;number&gt;;
+}</pre></details></li><li><details><summary><code>invalid-tag-inherited-declaration</code> <span class="kind gap">gap</span> <span class="was">refused</span> <span class="arrow">→</span> <span class="now">gap</span> <span class="why">stops at the covering rule for quantified signatures</span></summary><pre class="code"><span class="tk-c">// An interface inheriting `Symbol.toStringTag` from `Map` and stating the</span>
+<span class="tk-c">// native `then`, `catch` and `finally`: a tag a declaration inherits is a</span>
+<span class="tk-c">// field of the instance, not of the prototype the native `Promise` contract</span>
+<span class="tk-c">// requires, so a value of it returned as a `Promise&lt;number&gt;` is refused.</span>
+<span class="tk-k">interface</span> <span class="tk-t">Fake</span> <span class="tk-k">extends</span> <span class="tk-t">Map</span>&lt;string, number&gt; {
+  then&lt;<span class="tk-t">A</span> = number, <span class="tk-t">B</span> = never&gt;(
+    onfulfilled?: ((value: number) =&gt; <span class="tk-t">A</span> | <span class="tk-t">PromiseLike</span>&lt;<span class="tk-t">A</span>&gt;) | <span class="tk-k">null</span>,
+    onrejected?: ((reason: unknown) =&gt; <span class="tk-t">B</span> | <span class="tk-t">PromiseLike</span>&lt;<span class="tk-t">B</span>&gt;) | <span class="tk-k">null</span>,
+  ): <span class="tk-t">Promise</span>&lt;<span class="tk-t">A</span> | <span class="tk-t">B</span>&gt;;
+  <span class="tk-k">catch</span>&lt;<span class="tk-t">B</span> = never&gt;(
+    onrejected?: ((reason: unknown) =&gt; <span class="tk-t">B</span> | <span class="tk-t">PromiseLike</span>&lt;<span class="tk-t">B</span>&gt;) | <span class="tk-k">null</span>,
+  ): <span class="tk-t">Promise</span>&lt;number | <span class="tk-t">B</span>&gt;;
+  <span class="tk-k">finally</span>(onfinally?: (() =&gt; <span class="tk-k">void</span>) | <span class="tk-k">null</span>): <span class="tk-t">Promise</span>&lt;number&gt;;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> forged(f: <span class="tk-t">Fake</span>): <span class="tk-t">Promise</span>&lt;number&gt; {
+  <span class="tk-k">return</span> f;
+}</pre></details></li><li><details><summary><code>forged-promise-refused</code> <span class="kind negative">negative</span> <span class="was">refused</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">an assertion through unknown establishes no Promise&lt;number&gt;</span></summary><pre class="code"><span class="tk-c">// An object literal with a `then` method asserted through `unknown` to be a</span>
+<span class="tk-c">// `Promise&lt;number&gt;`: the operand is claimed at `unknown`, which establishes</span>
+<span class="tk-c">// no `Promise&lt;number&gt;`, so the assertion is refused.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> forged(inner: <span class="tk-t">Promise</span>&lt;number&gt;): <span class="tk-t">Promise</span>&lt;number&gt; {
+  <span class="tk-k">const</span> p: <span class="tk-t">Promise</span>&lt;number&gt; = {
+    then(onfulfilled?: (value: number) =&gt; unknown) {
+      <span class="tk-k">return</span> inner.then(onfulfilled);
+    },
+  } <span class="tk-k">as</span> unknown <span class="tk-k">as</span> <span class="tk-t">Promise</span>&lt;number&gt;;
+  <span class="tk-k">return</span> p;
+}</pre></details></li><li><code>invalid-optional-chain-discriminant-write negative</code> <span class="was">refused</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">no narrowing of a closure-assigned let holding objects</span></li><li><details><summary><code>invalid-in-test-closure-alias</code> <span class="kind negative">negative</span> <span class="was">refused</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">an optional key's write is a key-adding write</span></summary><pre class="code"><span class="tk-c">// A write through an alias between the test and the read: `a` may be `p`'s</span>
+<span class="tk-c">// object, typed with `name` optional, and write `undefined` there. Under Node,</span>
+<span class="tk-c">// `name([o], [o])` with `o = { name: &quot;x&quot; }` returns `[undefined]`.</span>
+<span class="tk-k">type</span> <span class="tk-t">Part</span> = { name: string } | { spread: number };
+<span class="tk-k">export</span> <span class="tk-k">function</span> name(parts: <span class="tk-t">Part</span>[], aliases: { name?: string }[]): string[] {
+  <span class="tk-k">return</span> parts.map((p) =&gt; {
+    <span class="tk-k">if</span> (<span class="tk-s">&quot;spread&quot;</span> <span class="tk-k">in</span> p) <span class="tk-k">return</span> <span class="tk-s">&quot;s&quot;</span>;
+    <span class="tk-k">for</span> (<span class="tk-k">const</span> a <span class="tk-k">of</span> aliases) <mark>a.name = <span class="tk-k">undefined</span></mark>;
+    <span class="tk-k">return</span> p.name;
+  });
+}</pre></details></li><li><details><summary><code>invalid-union-method-borrowed</code> <span class="kind negative">negative</span> <span class="was">refused</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">.call's callee is a known local function only</span></summary><pre class="code"><span class="tk-c">// A member of a union of hosts called on another receiver: the member's</span>
+<span class="tk-c">// contract holds of its own host only, so `o.k.call(p)` promises nothing.</span>
+<span class="tk-c">// Under Node, `borrowed({ tag: &quot;a&quot;, n: 1, k() { return this.n; } },</span>
+<span class="tk-c">// { tag: &quot;b&quot;, k() { return 0; } })` returns `undefined`.</span>
+<span class="tk-k">interface</span> <span class="tk-t">A</span> {
+  tag: <span class="tk-s">&quot;a&quot;</span>;
+  k(): number;
+}
+<span class="tk-k">interface</span> <span class="tk-t">B</span> {
+  tag: <span class="tk-s">&quot;b&quot;</span>;
+  k(): number;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> borrowed(o: <span class="tk-t">A</span> | <span class="tk-t">B</span>, p: <span class="tk-t">A</span> | <span class="tk-t">B</span>): number {
+  <span class="tk-k">return</span> o.k.call(p);
+}</pre></details></li><li><details><summary><code>invalid-node-bytes-length-shadowed</code> <span class="kind negative">negative</span> <span class="was">refused</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">refused at Object.defineProperty</span></summary><pre class="code"><span class="tk-c">// A `length` on `Uint8Array.prototype` shadows `%TypedArray%.prototype`'s</span>
+<span class="tk-c">// getter for every view (run under Node: a view's `length` is a string):</span>
+<span class="tk-c">// `Uint8Array` is outside the reviewed globals, refused.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> shadow(value: string): <span class="tk-k">void</span> {
+  <span class="tk-t">Object</span>.defineProperty(<span class="tk-t">Uint8Array</span>.prototype, <span class="tk-s">&quot;length&quot;</span>, {
+    configurable: <span class="tk-k">true</span>,
+    value,
+  });
+}</pre></details></li><li><details><summary><code>invalid-node-bytes-method-getter</code> <span class="kind negative">negative</span> <span class="was">refused</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">refused at Object.defineProperty</span></summary><pre class="code"><span class="tk-c">// A getter for `subarray` on `Buffer.prototype` runs at the method's lookup,</span>
+<span class="tk-c">// before the call (run under Node: it pops the array): refused.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> hook(xs: number[]): <span class="tk-k">void</span> {
+  <span class="tk-t">Object</span>.defineProperty(<span class="tk-t">Buffer</span>.prototype, <span class="tk-s">&quot;subarray&quot;</span>, {
+    <span class="tk-k">get</span>() {
+      xs.pop();
+      <span class="tk-k">return</span> () =&gt; <span class="tk-t">Buffer</span>.<span class="tk-k">from</span>(<span class="tk-s">&quot;&quot;</span>);
+    },
+  });
+}</pre></details></li><li><details><summary><code>contextual-constructor-assign-parameter</code> <span class="kind negative">negative</span> <span class="was">refused</span> <span class="arrow">→</span> <span class="now">removed</span> <span class="why">a safe program, the gate of -result and -static</span></summary><pre class="code"><span class="tk-k">class</span> <span class="tk-t">Box</span> {
+  value: number = <span class="tk-n">1</span>;
+}
+<span class="tk-k">export</span> <span class="tk-k">function</span> use(): number {
+  <span class="tk-k">const</span> callable = <span class="tk-t">Object</span>.assign((ctor: <span class="tk-k">typeof</span> <span class="tk-t">Box</span>): number =&gt; <span class="tk-n">1</span>, { tag: <span class="tk-n">1</span> });
+  <span class="tk-k">return</span> callable(<span class="tk-t">Box</span>);
+}</pre></details></li><li><details><summary><code>named-for-in-key</code> <span class="kind negative">negative</span> <span class="was">refused</span> <span class="arrow">→</span> <span class="now">removed</span> <span class="why">invalid-for-in-entry-call's input through the same refusal</span></summary><pre class="code"><span class="tk-c">// A key a `for...in` loop yields is read after a call, which may have removed</span>
+<span class="tk-c">// it: the read may miss, and the refusal names why.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> sum(v: { [k: string]: number }, log: () =&gt; <span class="tk-k">void</span>): number {
+  <span class="tk-k">let</span> total = <span class="tk-n">0</span>;
+  <span class="tk-k">for</span> (<span class="tk-k">const</span> k <span class="tk-k">in</span> v) {
+    log();
+    total = total + v[k]!;
+  }
+  <span class="tk-k">return</span> total;
+}</pre></details></li><li><details><summary><code>invalid-const-literal-optional-views</code> <span class="kind negative">negative</span> <span class="was">refused</span> <span class="arrow">→</span> <span class="now">removed</span> <span class="why">a safe program refused at the implicit index, before its obligation</span></summary><pre class="code"><span class="tk-c">// A constant's literal also held as a writable dictionary, whose holder may</span>
+<span class="tk-c">// add keys, is not claimed with its exact keys (nor would they meet the</span>
+<span class="tk-c">// dictionary): a view saying `a` is absent is not derived.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> views(): <span class="tk-k">void</span> {
+  <span class="tk-k">const</span> t = {};
+  <span class="tk-k">const</span> f: { a?: number } = t;
+  <span class="tk-k">const</span> g: { [k: string]: boolean } = t;
+}</pre></details></li></ul>
+<h4 class="change">Gap</h4><div class="prose"><p>The obligations these sources were written for and do not reach have no case: a stated effect broken by a serialized toJSON, a forged promise's missing tag, an alias write between a test and its read, a borrowed union member's receiver, a literal's exact keys beside a dictionary view.</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">tests</span> <span class="chip">docs</span></dd><dt>Tests</dt><dd><span class="test neg">contextual-constructor-assign-parameter</span> <span class="test neg">named-for-in-key</span> <span class="test neg">invalid-const-literal-optional-views</span></dd></dl>
+<details><summary>8 files changed, 24 insertions(+), 52 deletions(-)</summary><pre class="code"> WORK.md                                            |  3 ++-
+ pipeline/cases.mts                                 | 31 +++++++++-------------
+ .../contextual-constructor-assign-parameter.ts     |  7 -----
+ pipeline/examples/forged-promise-refused.ts        |  6 ++---
+ .../invalid-const-literal-optional-views.ts        |  8 ------
+ .../examples/invalid-stated-effect-stringify.ts    |  4 +--
+ pipeline/examples/invalid-tag-ambient-base.ts      |  7 ++---
+ pipeline/examples/named-for-in-key.ts              | 10 -------</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-0cf39748e"><header><div><div class="sha">0cf39748e · Cristiano Calcagno · Nov 05, 03:13</div><h3>Remove a positive repeating closure-array-length; state what blocker-entries-mixed-overloads tests</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>closure-rest-pack-refused, named for a refusal, had become a positive of an ordinary number[] closure rest, the program closure-array-length already verifies; the refusal it was written for, a closure rest typed by its own type parameter, is a model limit of SOURCE-FRAGMENT.md with no census function behind it (issue #33). blocker-entries-mixed-overloads named census functions of array-prototype.mts, which no longer use Object.entries.</p></div>
+<h4 class="change"><span class="act removed">removed</span>Docs <span class="target">SOURCE-REWRITES.md, generic rest forwarding</span></h4><div class="prose"><p>the paragraph on closure-rest-pack-refused's rewrite</p></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>closure-rest-pack-refused</code> <span class="kind positive">positive</span> <span class="was">verified</span> <span class="arrow">→</span> <span class="now">removed</span> <span class="why">an ordinary closure rest, as closure-array-length</span></summary><pre class="code"><span class="tk-c">// The local closure collects number elements; its public count operation</span>
+<span class="tk-c">// needs the number of the two arguments it supplies.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> count(): number {
+  <span class="tk-k">const</span> bare = (...args: number[]): number =&gt; args.length;
+  <span class="tk-k">return</span> bare(<span class="tk-n">1</span>, <span class="tk-n">2</span>);
+}</pre></details></li><li><details><summary><code>blocker-entries-mixed-overloads</code> <span class="kind positive">positive</span> <span class="was">verified</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">Object.entries of a recursive data union's dictionary arm</span></summary><pre class="code"><span class="tk-c">// `Object.entries` of a recursive data union's dictionary arm, its entries</span>
+<span class="tk-c">// filtered and mapped through written tuple patterns: each entry keeps the</span>
+<span class="tk-c">// union's contract, so the printer recurses on it.</span>
+<span class="tk-k">type</span> <span class="tk-t">ContractData</span> =
+  | <span class="tk-k">null</span>
+  | <span class="tk-k">undefined</span>
+  | boolean
+  | number
+  | string
+  | <span class="tk-k">readonly</span> <span class="tk-t">ContractData</span>[]
+  | { <span class="tk-k">readonly</span> [key: string]: <span class="tk-t">ContractData</span> };
+<span class="tk-k">const</span> isArrayData = (value: <span class="tk-t">ContractData</span>): value is <span class="tk-k">readonly</span> <span class="tk-t">ContractData</span>[] =&gt;
+  <span class="tk-t">Array</span>.isArray(value);
+<span class="tk-k">export</span> <span class="tk-k">function</span> canonical(value: <span class="tk-t">ContractData</span>): string {
+  <span class="tk-k">if</span> (<span class="tk-t">Array</span>.isArray(value)) {
+    <span class="tk-c">// Both tests are the same pure native operation.</span>
+    <span class="tk-k">if</span> (!isArrayData(value)) <span class="tk-k">throw</span> <span class="tk-t">Error</span>(<span class="tk-s">&quot;array data tests disagree&quot;</span>);
+    <span class="tk-k">const</span> items: <span class="tk-k">readonly</span> <span class="tk-t">ContractData</span>[] = value;
+    <span class="tk-k">return</span> <span class="tk-s">`[${items.map(canonical).join(&quot;,&quot;)}]`</span>;
+  }
+  <span class="tk-k">if</span> (value !== <span class="tk-k">null</span> &amp;&amp; <span class="tk-k">typeof</span> value === <span class="tk-s">&quot;object&quot;</span>)
+    <span class="tk-k">return</span> <span class="tk-s">`{${Object.entries(value)
+      .filter(([key]: [string, ContractData]) =&gt; key !== &quot;span&quot;)
+      .map(
+        ([key, field]: [string, ContractData]) =&gt; `</span>${key}:${canonical(field)}<span class="tk-s">`,
+      )
+      .join(&quot;,&quot;)}}`</span>;
+  <span class="tk-k">return</span> <span class="tk-k">typeof</span> value === <span class="tk-s">&quot;string&quot;</span> ? <span class="tk-t">JSON</span>.stringify(value) : <span class="tk-t">String</span>(value);
+}</pre></details></li></ul>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">tests</span> <span class="chip">docs</span></dd><dt>Tests</dt><dd><span class="test neg">closure-rest-pack-refused</span></dd></dl>
+<details><summary>5 files changed, 3 insertions(+), 18 deletions(-)</summary><pre class="code"> docs/SOURCE-REWRITES.md                              | 7 -------
+ pipeline/cases.mts                                   | 1 -
+ pipeline/examples/blocker-entries-mixed-overloads.ts | 5 +++--
+ pipeline/examples/closure-rest-pack-refused.ts       | 6 ------
+ tests/node-runs.mts                                  | 2 --</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-9ffdb510a"><header><div><div class="sha">9ffdb510a · Cristiano Calcagno · Nov 05, 03:17</div><h3>Name each case by its kind: invalid- for a negative, no invalid- or -refused for a positive</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>Case names had come to contradict their kinds (issue #34): positives named invalid- or -refused, negatives named like positives or with the gaps' -refused suffix, and three names describing a construct their sources do not contain. The convention lived in no document.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">pipeline/cases.mts, header</span></h4><div class="prose"><p>a negative case's name starts with invalid-, as does a gap's that is a control stopped before its obligation; another gap's ends with -refused; a positive's has neither</p></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">WORK.md, SOURCE-CONTRACTS.md, SOURCE-ELABORATION.md, SOURCE-FRAGMENT.md, SOURCE-REWRITES.md</span></h4><div class="prose"><p>the renamed cases cited by their new names</p></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>string-object</code> <span class="kind positive">positive</span> <span class="was">verified</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">renamed from invalid-string-object</span></summary><pre class="code"><span class="tk-c">// Census: tools/claim-text.mts#bareAtomText and #atomText, through typeText,</span>
+<span class="tk-c">// printType, liftClause, liftSignatures, liftType, liftLabels, treeAtom and lift.</span>
+<span class="tk-c">// Finite conversion alone does not establish that the JSON field is text.</span>
+<span class="tk-k">type</span> <span class="tk-t">JsonValue</span> =
+  | <span class="tk-k">null</span>
+  | boolean
+  | number
+  | string
+  | <span class="tk-k">readonly</span> <span class="tk-t">JsonValue</span>[]
+  | { <span class="tk-k">readonly</span> [key: string]: <span class="tk-t">JsonValue</span> };
+<span class="tk-k">function</span> describe(atom: {
+  <span class="tk-k">readonly</span> a: <span class="tk-t">JsonValue</span>;
+  <span class="tk-k">readonly</span> v: <span class="tk-t">JsonValue</span>;
+}): string {
+  <span class="tk-k">if</span> (
+    (atom.a === <span class="tk-s">&quot;numberlit&quot;</span> || atom.a === <span class="tk-s">&quot;numlit&quot;</span>) &amp;&amp;
+    <span class="tk-k">typeof</span> atom.v === <span class="tk-s">&quot;string&quot;</span> &amp;&amp;
+    <span class="tk-t">Number</span>.isFinite(<span class="tk-t">Number</span>(atom.v))
+  )
+    <span class="tk-k">return</span> atom.v;
+  <span class="tk-k">return</span> <span class="tk-s">&quot;«type»&quot;</span>;
+}</pre></details></li><li><details><summary><code>async-object</code> <span class="kind positive">positive</span> <span class="was">verified</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">renamed from invalid-async-object</span></summary><pre class="code"><span class="tk-c">// unchecked.mts#findIn, #check and #decodeResult include runPart, which</span>
+<span class="tk-c">// returns a freshly decoded record through its declared result type.</span>
+<span class="tk-c">// The lifetime then contract retains what the fresh allocation establishes.</span>
+<span class="tk-k">type</span> <span class="tk-t">Result</span> = { a: number; <span class="tk-k">readonly</span> then?: <span class="tk-k">undefined</span> };
+
+<span class="tk-k">function</span> decode(a: number): <span class="tk-t">Result</span> {
+  <span class="tk-k">return</span> { a };
+}
+
+<span class="tk-k">export</span> <span class="tk-k">async</span> <span class="tk-k">function</span> wrap(a: number): <span class="tk-t">Promise</span>&lt;<span class="tk-t">Result</span>&gt; {
+  <span class="tk-k">const</span> result = decode(a);
+  <span class="tk-k">return</span> result;
+}</pre></details></li><li><details><summary><code>reflect-get-getter</code> <span class="kind positive">positive</span> <span class="was">verified</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">renamed from invalid-reflect-get-getter</span></summary><pre class="code"><span class="tk-c">/// &lt;reference path=&quot;../../tools/resolvable.d.ts&quot; /&gt;</span>
+<span class="tk-c">// Census: syntax.mts#childOf and #childrenOf.</span>
+<span class="tk-c">// Representative single-child and child-list reads through declared kinds.</span>
+<span class="tk-k">import</span> * <span class="tk-k">as</span> ts <span class="tk-k">from</span> <span class="tk-s">&quot;typescript/unstable/ast&quot;</span>;
+<span class="tk-k">import</span> <span class="tk-k">type</span> { <span class="tk-t">Node</span> } <span class="tk-k">from</span> <span class="tk-s">&quot;typescript/unstable/ast&quot;</span>;
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> childOf(
+  node: <span class="tk-t">Node</span>,
+): <span class="tk-t">Within</span>&lt;{ value: <span class="tk-s">&quot;any&quot;</span>; store: <span class="tk-s">&quot;grow&quot;</span> }, <span class="tk-t">Node</span> | <span class="tk-k">undefined</span>&gt; {
+  <span class="tk-k">if</span> (ts.isBreakStatement(node)) <span class="tk-k">return</span> node.label;
+  <span class="tk-k">if</span> (ts.isContinueStatement(node)) <span class="tk-k">return</span> node.label;
+  <span class="tk-k">if</span> (ts.isLabeledStatement(node)) <span class="tk-k">return</span> node.label;
+  <span class="tk-k">return</span> <span class="tk-k">undefined</span>;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> childrenOf(
+  node: <span class="tk-t">Node</span>,
+): <span class="tk-t">Within</span>&lt;{ value: <span class="tk-s">&quot;any&quot;</span>; store: <span class="tk-s">&quot;grow&quot;</span> }, <span class="tk-k">readonly</span> <span class="tk-t">Node</span>[]&gt; {
+  <span class="tk-k">if</span> (ts.isFunctionDeclaration(node)) <span class="tk-k">return</span> node.parameters.filter(() =&gt; <span class="tk-k">true</span>);
+  <span class="tk-k">return</span> [];
+}</pre></details></li><li><details><summary><code>error-subclass-prototype</code> <span class="kind positive">positive</span> <span class="was">verified</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">renamed from invalid-error-subclass-prototype</span></summary><pre class="code"><span class="tk-c">// Census functions: client-prototype.mts#clientHasMethod, #guardClientRequests.</span>
+<span class="tk-c">// The compiler client's prototype is inspected through its audited boundary.</span>
+<span class="tk-c">// The safe, unsupported Error-prototype form is in SOURCE-REWRITES.md,</span>
+<span class="tk-c">// &quot;The compiler client's prototype&quot;.</span>
+<span class="tk-k">import</span> <span class="tk-k">type</span> { <span class="tk-t">API</span> } <span class="tk-k">from</span> <span class="tk-s">&quot;typescript/unstable/sync&quot;</span>;
+<span class="tk-k">import</span> { clientHasMethod } <span class="tk-k">from</span> <span class="tk-s">&quot;../../tools/client-prototype.mts&quot;</span>;
+<span class="tk-k">export</span> <span class="tk-k">function</span> hasRequest(api: <span class="tk-t">API</span>): boolean {
+  <span class="tk-k">return</span> clientHasMethod(api, <span class="tk-s">&quot;apiRequest&quot;</span>);
+}</pre></details></li><li><details><summary><code>nullish-field-undefined</code> <span class="kind positive">positive</span> <span class="was">verified</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">renamed from nullish-field-undefined-refused</span></summary><pre class="code"><span class="tk-k">export</span> <span class="tk-k">function</span> invalid(x: { child?: { b: number } | <span class="tk-k">null</span> }): number {
+  <span class="tk-k">if</span> (x.child !== <span class="tk-k">null</span>) {
+    <span class="tk-c">// @ts-expect-error The null check permits an absent child.</span>
+    <span class="tk-k">return</span> x.child.b;
+  }
+  <span class="tk-k">return</span> <span class="tk-n">0</span>;
+}</pre></details></li><li><details><summary><code>optional-write</code> <span class="kind positive">positive</span> <span class="was">verified</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">renamed from optional-write-refused</span></summary><pre class="code"><span class="tk-c">// Census sites: files.mts#inputRead and files.mts#noteInput.</span>
+<span class="tk-c">// A shared recording owns its flag from construction; marking an input</span>
+<span class="tk-c">// replaces the flag while every reference keeps the same object.</span>
+<span class="tk-k">type</span> <span class="tk-t">Recording</span> = { readsInput: boolean };
+<span class="tk-k">export</span> <span class="tk-k">function</span> mark(recording: <span class="tk-t">Recording</span>): <span class="tk-k">void</span> {
+  recording.readsInput = <span class="tk-k">true</span>;
+}
+<span class="tk-k">export</span> <span class="tk-k">function</span> shared(): boolean {
+  <span class="tk-k">const</span> recording: <span class="tk-t">Recording</span> = { readsInput: <span class="tk-k">false</span> };
+  <span class="tk-k">const</span> alias = recording;
+  mark(recording);
+  <span class="tk-k">return</span> alias.readsInput;
+}</pre></details></li><li><details><summary><code>optional-field-truthiness-union</code> <span class="kind positive">positive</span> <span class="was">verified</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">renamed from optional-field-truthiness-union-refused</span></summary><pre class="code"><span class="tk-c">// A truthy read of a field one arm of a union leaves optional and another</span>
+<span class="tk-c">// requires: the witness in the branch holds the field's non-undefined value.</span>
+<span class="tk-k">type</span> <span class="tk-t">Required</span> = { <span class="tk-k">readonly</span> kind: <span class="tk-n">1</span>; <span class="tk-k">readonly</span> m: { x: number } };
+<span class="tk-k">type</span> <span class="tk-t">Optional</span> = { <span class="tk-k">readonly</span> kind: <span class="tk-n">2</span>; <span class="tk-k">readonly</span> m?: { x: number } };
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> inner(
+  found: <span class="tk-t">Required</span> | <span class="tk-t">Optional</span>,
+  f: (n: { x: number }) =&gt; number,
+): number {
+  <span class="tk-k">if</span> (found.m) <span class="tk-k">return</span> f(found.m);
+  <span class="tk-k">return</span> <span class="tk-n">0</span>;
+}</pre></details></li><li><details><summary><code>invalid-spread-holes</code> <span class="kind negative">negative</span> <span class="was">refused</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">renamed from spread-holes</span></summary><pre class="code"><span class="tk-c">// TypeScript accepts this, but the write leaves a hole at index 1, and</span>
+<span class="tk-c">// spreading would pass it as undefined, violating boolean[]. This element contract forbids holes:</span>
+<span class="tk-c">// the write is refused, so no spread ever meets a hole.</span>
+<span class="tk-k">function</span> spreadsArray(seed: boolean): boolean[] {
+  <span class="tk-k">const</span> values: boolean[] = [seed];
+  values[<span class="tk-n">2</span>] = seed;
+  <span class="tk-k">const</span> collect = (...rest: boolean[]): boolean[] =&gt; rest;
+  <span class="tk-k">return</span> collect(...values);
+}</pre></details></li><li><details><summary><code>invalid-class-constructor-offer</code> <span class="kind negative">negative</span> <span class="was">refused</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">renamed from class-constructor-offer</span></summary><pre class="code"><span class="tk-c">// A class whose constructor takes fewer parameters than the construct</span>
+<span class="tk-c">// signature it meets: `new` discards the extra actuals, so the class value is</span>
+<span class="tk-c">// claimed at that signature beside its own, and its constructor's body is</span>
+<span class="tk-c">// checked there, at the parameters it binds.</span>
+<span class="tk-k">interface</span> <span class="tk-t">Shape</span> {
+  area(): number;
+}
+
+<span class="tk-k">class</span> <span class="tk-t">Unit</span> {
+  area(): number {
+    <span class="tk-k">return</span> <span class="tk-n">1</span>;
+  }
+}
+
+<span class="tk-k">const</span> makers: { <span class="tk-k">readonly</span> [name: string]: <span class="tk-k">new</span> (seed: number) =&gt; <span class="tk-t">Shape</span> } = {
+  unit: <span class="tk-t">Unit</span>,
+};
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> build(name: string): number {
+  <span class="tk-k">const</span> make = makers[name];
+  <span class="tk-k">return</span> make === <span class="tk-k">undefined</span> ? <span class="tk-n">0</span> : <span class="tk-k">new</span> make(<span class="tk-n">3</span>).area();
+}</pre></details></li><li><details><summary><code>invalid-generic-default-write</code> <span class="kind negative">negative</span> <span class="was">refused</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">renamed from generic-default</span></summary><pre class="code"><span class="tk-c">// The scheme checker must not discard this default and certify only the body.</span>
+<span class="tk-c">// Its write breaks the fixed boolean contract and returns null at run time.</span>
+<span class="tk-c">// Field writes in a rigid body remain outside its certificate language.</span>
+<span class="tk-k">function</span> genericDefault(seed: boolean): boolean {
+  <span class="tk-k">const</span> cell: { value: boolean } = { value: seed };
+  <span class="tk-k">const</span> pick = &lt;<span class="tk-t">T</span>&gt;(
+    value: <span class="tk-t">T</span>,
+    ignored: boolean | <span class="tk-k">undefined</span> = (cell.value = <span class="tk-k">null</span>),
+  ): <span class="tk-t">T</span> =&gt; value;
+  <span class="tk-k">const</span> result: boolean = pick(seed, <span class="tk-k">undefined</span>);
+  <span class="tk-k">return</span> cell.value;
+}</pre></details></li><li><details><summary><code>invalid-index-signature</code> <span class="kind negative">negative</span> <span class="was">refused</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">renamed from index-signature</span></summary><pre class="code"><span class="tk-c">// A readonly index view promises values only for keys that are present.</span>
+<span class="tk-k">function</span> retainDictionary(x: { <span class="tk-k">readonly</span> [key: string]: boolean }): {
+  <span class="tk-k">readonly</span> [key: string]: boolean;
+} {
+  <span class="tk-k">return</span> x;
+}
+
+<span class="tk-k">function</span> readPossiblyAbsent(x: {
+  <span class="tk-k">readonly</span> [key: string]: boolean;
+}): boolean | <span class="tk-k">undefined</span> {
+  <span class="tk-k">return</span> x[<span class="tk-s">&quot;missing&quot;</span>];
+}
+
+<span class="tk-c">// All locations are allocated here, so every present value can be checked.</span>
+<span class="tk-k">function</span> makeDictionary(): { <span class="tk-k">readonly</span> [key: string]: boolean } {
+  <span class="tk-k">return</span> { ready: <span class="tk-k">true</span>, done: <span class="tk-k">false</span> };
+}
+
+<span class="tk-c">// The key is evaluated at runtime; its value is not a known string singleton.</span>
+<span class="tk-k">function</span> readDynamic(
+  x: { <span class="tk-k">readonly</span> [key: string]: boolean },
+  key: string,
+): boolean | <span class="tk-k">undefined</span> {
+  <span class="tk-k">return</span> x[key];
+}
+
+<span class="tk-c">// A required named view and a string index constrain the same object.</span>
+<span class="tk-k">function</span> preserveMixed(x: {
+  <span class="tk-k">readonly</span> ready: boolean;
+  <span class="tk-k">readonly</span> [key: string]: boolean;
+}): {
+  <span class="tk-k">readonly</span> ready: boolean;
+  <span class="tk-k">readonly</span> [key: string]: boolean;
+} {
+  <span class="tk-k">return</span> x;
+}
+
+<span class="tk-c">// The computed key can still miss, despite the required named field.</span>
+<span class="tk-k">function</span> readMixed(
+  x: { <span class="tk-k">readonly</span> ready: boolean; <span class="tk-k">readonly</span> [key: string]: boolean },
+  key: string,
+): boolean | <span class="tk-k">undefined</span> {
+  <span class="tk-k">return</span> x[key];
+}</pre></details></li><li><details><summary><code>invalid-mutable-index-signature</code> <span class="kind negative">negative</span> <span class="was">refused</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">renamed from mutable-index-signature</span></summary><pre class="code"><span class="tk-c">// A mutable index signature is a writable index: every present value's</span>
+<span class="tk-c">// location holds exactly its contract. It reads as a readonly one does, and</span>
+<span class="tk-c">// it is a readonly one.</span>
+<span class="tk-k">function</span> makeEmpty(): { [key: string]: boolean } {
+  <span class="tk-k">return</span> {};
+}
+
+<span class="tk-k">function</span> makeDictionary(): { [key: string]: boolean } {
+  <span class="tk-k">return</span> { ready: <span class="tk-k">true</span>, done: <span class="tk-k">false</span> };
+}
+
+<span class="tk-k">function</span> retain(x: { [key: string]: boolean }): { [key: string]: boolean } {
+  <span class="tk-k">return</span> x;
+}
+
+<span class="tk-k">function</span> asView(x: { [key: string]: boolean }): {
+  <span class="tk-k">readonly</span> [key: string]: boolean;
+} {
+  <span class="tk-k">return</span> x;
+}
+
+<span class="tk-k">function</span> read(x: { [key: string]: boolean }, key: string): boolean | <span class="tk-k">undefined</span> {
+  <span class="tk-k">return</span> x[key];
+}</pre></details></li><li><details><summary><code>invalid-number-index</code> <span class="kind negative">negative</span> <span class="was">refused</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">renamed from number-index</span></summary><pre class="code"><span class="tk-c">// A number index signature constrains the canonical numeric keys (&quot;0&quot;,</span>
+<span class="tk-c">// &quot;1.5&quot;, &quot;-1&quot;, &quot;NaN&quot;), the keys `o[n]` reaches for a number `n`, apart from</span>
+<span class="tk-c">// the other string keys; a string index beside it constrains every string key.</span>
+<span class="tk-k">interface</span> <span class="tk-t">Dual</span> {
+  <span class="tk-k">readonly</span> [k: string]: number | string;
+  <span class="tk-k">readonly</span> [k: number]: number;
+}
+<span class="tk-k">type</span> <span class="tk-t">Numbers</span> = { <span class="tk-k">readonly</span> [k: number]: string };
+<span class="tk-k">type</span> <span class="tk-t">Named</span> = { <span class="tk-k">readonly</span> name: string; <span class="tk-k">readonly</span> [k: number]: boolean };
+<span class="tk-k">interface</span> <span class="tk-t">Strings</span> {
+  [k: string]: number;
+}
+<span class="tk-k">interface</span> <span class="tk-t">Counts</span> {
+  [k: number]: number;
+}
+
+<span class="tk-c">// A numeric key, by a number or its spelling, reads through the number index.</span>
+<span class="tk-k">function</span> first(x: <span class="tk-t">Numbers</span>): string | <span class="tk-k">undefined</span> {
+  <span class="tk-k">return</span> x[<span class="tk-n">0</span>];
+}
+<span class="tk-k">function</span> spelled(x: <span class="tk-t">Numbers</span>): string | <span class="tk-k">undefined</span> {
+  <span class="tk-k">const</span> a = x[<span class="tk-s">&quot;1.5&quot;</span>];
+  <span class="tk-k">const</span> b = x[<span class="tk-s">&quot;-1&quot;</span>];
+  <span class="tk-k">return</span> x[<span class="tk-s">&quot;NaN&quot;</span>] ?? a ?? b;
+}
+<span class="tk-k">function</span> dynamic(x: <span class="tk-t">Numbers</span>, n: number): string | <span class="tk-k">undefined</span> {
+  <span class="tk-k">return</span> x[n];
+}
+<span class="tk-c">// Every other string key reads through the string index.</span>
+<span class="tk-k">function</span> dualString(x: <span class="tk-t">Dual</span>, k: string): number | string | <span class="tk-k">undefined</span> {
+  <span class="tk-k">return</span> x[<span class="tk-s">&quot;key&quot;</span>] ?? x[k];
+}
+<span class="tk-k">function</span> dualNumber(x: <span class="tk-t">Dual</span>, n: number): number | <span class="tk-k">undefined</span> {
+  <span class="tk-k">return</span> x[<span class="tk-n">0</span>] ?? x[n];
+}
+<span class="tk-c">// A named member beside a number index reads at its own contract.</span>
+<span class="tk-k">function</span> named(x: <span class="tk-t">Named</span>): string {
+  <span class="tk-k">return</span> x.name;
+}
+<span class="tk-c">// A number reads a string index too: its key is a string.</span>
+<span class="tk-k">function</span> throughStrings(x: <span class="tk-t">Strings</span>, n: number): number | <span class="tk-k">undefined</span> {
+  <span class="tk-k">return</span> x[n];
+}
+<span class="tk-c">// A string index constrains the numeric keys too, so it is a number index at</span>
+<span class="tk-c">// its contract, writable as it is.</span>
+<span class="tk-k">function</span> narrow(x: <span class="tk-t">Strings</span>): <span class="tk-t">Counts</span> {
+  <span class="tk-k">return</span> x;
+}
+<span class="tk-k">function</span> forget(x: <span class="tk-t">Dual</span>): <span class="tk-t">Numbers</span> | { <span class="tk-k">readonly</span> [k: number]: number } {
+  <span class="tk-k">return</span> x;
+}
+<span class="tk-c">// A fresh literal meets a number index through its own keys: `name` is no</span>
+<span class="tk-c">// number's spelling, so only `0` and `1` are held to it.</span>
+<span class="tk-k">function</span> make(): <span class="tk-t">Named</span> {
+  <span class="tk-k">return</span> { name: <span class="tk-s">&quot;n&quot;</span>, <span class="tk-n">0</span>: <span class="tk-k">true</span>, <span class="tk-n">1</span>: <span class="tk-k">false</span> };
+}
+<span class="tk-k">export</span> <span class="tk-k">function</span> use(n: number): number {
+  <span class="tk-k">const</span> x: <span class="tk-t">Numbers</span> = { <span class="tk-n">0</span>: <span class="tk-s">&quot;a&quot;</span>, <span class="tk-n">1.5</span>: <span class="tk-s">&quot;b&quot;</span> };
+  <span class="tk-k">const</span> d: <span class="tk-t">Dual</span> = { <span class="tk-n">0</span>: <span class="tk-n">1</span>, a: <span class="tk-s">&quot;a&quot;</span> };
+  <span class="tk-k">const</span> s: <span class="tk-t">Strings</span> = { a: <span class="tk-n">1</span> };
+  <span class="tk-k">const</span> counts: <span class="tk-t">Counts</span> = narrow(s);
+  <span class="tk-k">return</span> (
+    (first(x) ?? <span class="tk-s">&quot;&quot;</span>).length +
+    (spelled(x) ?? <span class="tk-s">&quot;&quot;</span>).length +
+    (dynamic(x, n) ?? <span class="tk-s">&quot;&quot;</span>).length +
+    (dualString(d, <span class="tk-s">&quot;a&quot;</span>) === <span class="tk-n">1</span> ? <span class="tk-n">1</span> : <span class="tk-n">0</span>) +
+    (dualNumber(d, n) ?? <span class="tk-n">0</span>) +
+    named(make()).length +
+    (throughStrings(s, n) ?? <span class="tk-n">0</span>) +
+    (counts[<span class="tk-n">0</span>] ?? <span class="tk-n">0</span>) +
+    (forget(d)[<span class="tk-n">0</span>] === <span class="tk-n">1</span> ? <span class="tk-n">1</span> : <span class="tk-n">0</span>)
+  );
+}</pre></details></li><li><details><summary><code>invalid-symbol-index</code> <span class="kind negative">negative</span> <span class="was">refused</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">renamed from symbol-index</span></summary><pre class="code"><span class="tk-c">// A symbol index signature constrains every symbol key, and no string key:</span>
+<span class="tk-c">// the two key spaces are disjoint.</span>
+<span class="tk-k">const</span> tag: <span class="tk-k">unique</span> symbol = <span class="tk-t">Symbol</span>(<span class="tk-s">&quot;tag&quot;</span>);
+<span class="tk-k">type</span> <span class="tk-t">Tags</span> = { <span class="tk-k">readonly</span> [k: symbol]: boolean };
+<span class="tk-k">type</span> <span class="tk-t">Both</span> = { <span class="tk-k">readonly</span> [k: string]: number; <span class="tk-k">readonly</span> [k: symbol]: boolean };
+
+<span class="tk-k">function</span> dynamic(t: <span class="tk-t">Tags</span>, s: symbol): boolean | <span class="tk-k">undefined</span> {
+  <span class="tk-k">return</span> t[s];
+}
+<span class="tk-c">// A `unique symbol` key is one symbol key.</span>
+<span class="tk-k">function</span> tagged(t: <span class="tk-t">Tags</span>): boolean | <span class="tk-k">undefined</span> {
+  <span class="tk-k">return</span> t[tag];
+}
+<span class="tk-k">function</span> both(b: <span class="tk-t">Both</span>, s: symbol, k: string): boolean | number | <span class="tk-k">undefined</span> {
+  <span class="tk-k">return</span> b[s] ?? b[k];
+}
+<span class="tk-c">// A named symbol-keyed member reads at its own contract.</span>
+<span class="tk-k">function</span> marked(t: {
+  <span class="tk-k">readonly</span> [tag]: number;
+  <span class="tk-k">readonly</span> [k: symbol]: boolean;
+}): number {
+  <span class="tk-k">return</span> t[tag];
+}
+<span class="tk-k">function</span> forget(b: <span class="tk-t">Both</span>): <span class="tk-t">Tags</span> {
+  <span class="tk-k">return</span> b;
+}
+<span class="tk-k">export</span> <span class="tk-k">function</span> use(
+  s: symbol,
+  m: { <span class="tk-k">readonly</span> [tag]: number; <span class="tk-k">readonly</span> [k: symbol]: boolean },
+): number {
+  <span class="tk-k">const</span> t: <span class="tk-t">Tags</span> = {};
+  <span class="tk-k">const</span> b: <span class="tk-t">Both</span> = { a: <span class="tk-n">1</span> };
+  <span class="tk-k">const</span> seen = dynamic(t, s) ?? tagged(t) ?? forget(b)[s] ?? <span class="tk-k">false</span>;
+  <span class="tk-k">const</span> read = both(b, s, <span class="tk-s">&quot;a&quot;</span>) ?? <span class="tk-n">0</span>;
+  <span class="tk-k">return</span> (seen ? <span class="tk-n">1</span> : <span class="tk-n">0</span>) + (read === <span class="tk-k">true</span> ? <span class="tk-n">1</span> : <span class="tk-n">0</span>) + marked(m);
+}</pre></details></li><li><details><summary><code>invalid-collections-json</code> <span class="kind negative">negative</span> <span class="was">refused</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">renamed from collections-json</span></summary><pre class="code"><span class="tk-k">import</span> <span class="tk-k">type</span> { <span class="tk-t">Json</span>, <span class="tk-t">JsonObject</span> } <span class="tk-k">from</span> <span class="tk-s">&quot;@fixture/collections&quot;</span>;
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> nest(value: <span class="tk-t">Json</span>): <span class="tk-t">Json</span> {
+  <span class="tk-k">return</span> { child: [value, <span class="tk-k">null</span>] };
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> lookup(
+  object: <span class="tk-t">JsonObject</span>,
+  key: string,
+): <span class="tk-t">Json</span> | <span class="tk-k">null</span> | <span class="tk-k">undefined</span> {
+  <span class="tk-k">return</span> object[key];
+}</pre></details></li><li><details><summary><code>invalid-array-shadow</code> <span class="kind negative">negative</span> <span class="was">refused</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">renamed from array-shadow-refused</span></summary><pre class="code"><span class="tk-c">// An array owns no key its prototype provides, so `xs.map` is always</span>
+<span class="tk-c">// `Array.prototype.map`: an array with an own `map` field is no array type,</span>
+<span class="tk-c">// and its intersection is refused rather than verified vacuously.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> shadow(xs: number[] &amp; { map: number }): number {
+  <span class="tk-k">return</span> xs.length;
+}</pre></details></li><li><details><summary><code>invalid-array-length</code> <span class="kind negative">negative</span> <span class="was">refused</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">renamed from array-length-refused</span></summary><pre class="code"><span class="tk-c">// `new Array(n)` makes an array of length `n` with no elements: holes,</span>
+<span class="tk-c">// which number[] forbids. A length constructor with a hole-admitting element</span>
+<span class="tk-c">// type is not implemented; the overlay reads `new Array` with no argument only.</span>
+<span class="tk-k">function</span> holes(n: number): number[] {
+  <span class="tk-k">return</span> <span class="tk-k">new</span> <span class="tk-t">Array</span>(n);
+}</pre></details></li><li><details><summary><code>invalid-json-parse-reviver</code> <span class="kind negative">negative</span> <span class="was">refused</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">renamed from json-parse-reviver-refused</span></summary><pre class="code"><span class="tk-c">// A reviver is client code the host calls on every member, whose results</span>
+<span class="tk-c">// replace them: `JSON.parse` is read with the text only.</span>
+<span class="tk-k">function</span> decode(text: string): unknown {
+  <span class="tk-k">return</span> <span class="tk-t">JSON</span>.parse(text, (key: string, value: unknown) =&gt; value);
+}</pre></details></li><li><details><summary><code>invalid-generic-call-signature</code> <span class="kind negative">negative</span> <span class="was">refused</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">renamed from generic-call-signature-refused</span></summary><pre class="code"><span class="tk-c">// An interface whose call signature is generic: the declaration reader lowers</span>
+<span class="tk-c">// a call signature's parameters and result, and refuses one that binds its own</span>
+<span class="tk-c">// type parameters.</span>
+<span class="tk-k">interface</span> <span class="tk-t">GenericCall</span> {
+  &lt;<span class="tk-t">T</span>&gt;(value: <span class="tk-t">T</span>): <span class="tk-t">T</span>;
+}
+<span class="tk-k">export</span> <span class="tk-k">function</span> apply(f: <span class="tk-t">GenericCall</span>): number {
+  <span class="tk-k">return</span> f(<span class="tk-n">1</span>);
+}</pre></details></li><li><details><summary><code>invalid-wrapped-member-call</code> <span class="kind negative">negative</span> <span class="was">refused</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">renamed from wrapped-member-call-refused</span></summary><pre class="code"><span class="tk-c">// A call of an element read through `!`, with the array as its receiver:</span>
+<span class="tk-c">// the read is the element's type or `undefined` (an index past the end),</span>
+<span class="tk-c">// and `!` does not rule `undefined` out, so the callee's cast is unmet.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> wrapped(fs: <span class="tk-k">readonly</span> (() =&gt; number)[], i: number): number {
+  <span class="tk-k">return</span> fs[i]!();
+}</pre></details></li><li><details><summary><code>invalid-wrapped-member-chain-call</code> <span class="kind negative">negative</span> <span class="was">refused</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">renamed from wrapped-member-chain-call-refused</span></summary><pre class="code"><span class="tk-c">// A call of an element read in an optional chain through `!`: on the</span>
+<span class="tk-c">// chain's present value the read is the element's type or `undefined`,</span>
+<span class="tk-c">// which `!` does not rule out, as outside a chain.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> wrapped(
+  fs: <span class="tk-k">readonly</span> (() =&gt; number)[] | <span class="tk-k">undefined</span>,
+  i: number,
+): number | <span class="tk-k">undefined</span> {
+  <span class="tk-k">return</span> fs?.[i]!();
+}</pre></details></li><li><details><summary><code>invalid-loose-equality-conversion</code> <span class="kind negative">negative</span> <span class="was">refused</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">renamed from loose-equality-conversion-refused</span></summary><pre class="code"><span class="tk-c">// An open record may convert through a user-defined hook with effects.</span>
+<span class="tk-k">function</span> objectConversion(
+  value: { tag: number } | number,
+  other: number,
+): boolean {
+  <span class="tk-k">return</span> value == other;
+}</pre></details></li><li><details><summary><code>invalid-loose-equality-array-conversion</code> <span class="kind negative">negative</span> <span class="was">refused</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">renamed from loose-equality-array-conversion-refused</span></summary><pre class="code"><span class="tk-c">// Array-to-primitive conversion can call an own valueOf method.</span>
+<span class="tk-k">function</span> arrayConversion(value: number[] | number, other: number): boolean {
+  <span class="tk-k">return</span> value == other;
+}</pre></details></li><li><details><summary><code>invalid-sloppy-this-primitive</code> <span class="kind negative">negative</span> <span class="was">refused</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">renamed from sloppy-this-primitive-refused</span></summary><pre class="code"><span class="tk-c">// A script without a &quot;use strict&quot; directive is sloppy code. Its call wraps a</span>
+<span class="tk-c">// primitive receiver in an object, so `this` is no string: TypeScript types</span>
+<span class="tk-c">// `this` at `string`, and `sloppySelf.call(&quot;a&quot;)` returns a `String` object.</span>
+<span class="tk-k">function</span> sloppySelf(<span class="tk-k">this</span>: string): string {
+  <span class="tk-k">return</span> <span class="tk-k">this</span>;
+}
+
+<span class="tk-k">function</span> caller(): string {
+  <span class="tk-k">return</span> sloppySelf.call(<span class="tk-s">&quot;a&quot;</span>);
+}</pre></details></li><li><details><summary><code>invalid-let-object-narrowing</code> <span class="kind negative">negative</span> <span class="was">refused</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">renamed from let-object-narrowing-refused</span></summary><pre class="code"><span class="tk-c">// A `let` a closure assigns stays a cell: a test of the object it holds does</span>
+<span class="tk-c">// not narrow it, since the call in between may replace it.</span>
+<span class="tk-k">type</span> <span class="tk-t">U</span> = { kind: <span class="tk-s">&quot;a&quot;</span>; name: string } | { kind: <span class="tk-s">&quot;b&quot;</span>; n: number };
+<span class="tk-k">export</span> <span class="tk-k">function</span> reassigned(p: <span class="tk-t">U</span>, q: <span class="tk-t">U</span>): string {
+  <span class="tk-k">let</span> u = p;
+  <span class="tk-k">const</span> reset = (): <span class="tk-k">void</span> =&gt; {
+    u = q;
+  };
+  <span class="tk-k">if</span> (u.kind === <span class="tk-s">&quot;a&quot;</span>) {
+    reset();
+    <span class="tk-k">return</span> u.name;
+  }
+  <span class="tk-k">return</span> <span class="tk-s">&quot;&quot;</span>;
+}</pre></details></li><li><details><summary><code>invalid-computed-key-proto</code> <span class="kind negative">negative</span> <span class="was">refused</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">renamed from computed-key-proto-refused</span></summary><pre class="code"><span class="tk-c">// A string key may be `__proto__`, whose setter makes an object value the</span>
+<span class="tk-c">// prototype rather than a property: `setProto(&quot;__proto__&quot;).a` is `&quot;x&quot;`, a</span>
+<span class="tk-c">// string where the dictionary promises objects. The copy that adds a key adds</span>
+<span class="tk-c">// no prototype. Refused.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> setProto(key: string): { [k: string]: object } {
+  <span class="tk-k">const</span> obj: { [k: string]: object } = {};
+  obj[key] = { a: <span class="tk-s">&quot;x&quot;</span> };
+  <span class="tk-k">return</span> obj;
+}</pre></details></li><li><details><summary><code>invalid-reserved-key</code> <span class="kind negative">negative</span> <span class="was">refused</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">renamed from reserved-key-refused</span></summary><pre class="code"><span class="tk-c">// A literal owning the key the model keeps an array's store under would be</span>
+<span class="tk-c">// an array to the model's `Array.isArray` (and `in`), though JavaScript's</span>
+<span class="tk-c">// says no: with a claim dropping that arm on the failed test, `h` would</span>
+<span class="tk-c">// return the object as a number. The key is refused wherever a source</span>
+<span class="tk-c">// spells it.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> h(flag: boolean): number {
+  <span class="tk-k">const</span> x = flag ? { <span class="tk-s">&quot;[]&quot;</span>: <span class="tk-s">&quot;s&quot;</span> } : <span class="tk-n">0</span>;
+  <span class="tk-k">if</span> (<span class="tk-t">Array</span>.isArray(x)) {
+    <span class="tk-k">return</span> <span class="tk-n">1</span>;
+  }
+  <span class="tk-k">return</span> x;
+}</pre></details></li><li><details><summary><code>invalid-spread-symbol-key</code> <span class="kind negative">negative</span> <span class="was">refused</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">renamed from spread-symbol-key-refused</span></summary><pre class="code"><span class="tk-c">// A spread copies an own enumerable symbol-keyed property too, which the</span>
+<span class="tk-c">// copy the model states, at string keys only, does not say.</span>
+<span class="tk-k">declare</span> <span class="tk-k">const</span> tag: <span class="tk-k">unique</span> symbol;
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> copy(x: { [tag]: number }): { [tag]: number } {
+  <span class="tk-k">return</span> { ...x };
+}</pre></details></li><li><details><summary><code>invalid-promise-like</code> <span class="kind negative">negative</span> <span class="was">refused</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">renamed from promise-like</span></summary><pre class="code"><span class="tk-c">// `Promise&lt;number&gt;` at `PromiseLike&lt;number&gt;`: the native `then` resolves</span>
+<span class="tk-c">// only a native promise or a stable value its callbacks return, where</span>
+<span class="tk-c">// `PromiseLike`'s takes a callback returning any thenable, so the native</span>
+<span class="tk-c">// contract is no `PromiseLike`.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> like(p: <span class="tk-t">Promise</span>&lt;number&gt;): <span class="tk-t">PromiseLike</span>&lt;number&gt; {
+  <span class="tk-k">return</span> p;
+}</pre></details></li><li><details><summary><code>invalid-readonly-callback-argument</code> <span class="kind negative">negative</span> <span class="was">refused</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">renamed from invalid-object-callable-operands</span></summary><pre class="code"><span class="tk-c">// A readonly view cannot supply the write capability required by a callback.</span>
+<span class="tk-k">function</span> readonlyArgument(
+  write: (target: { value: number }) =&gt; number,
+  input: { <span class="tk-k">readonly</span> value: number },
+): number {
+  <span class="tk-k">return</span> write(input);
+}</pre></details></li><li><details><summary><code>callback-record-operands</code> <span class="kind positive">positive</span> <span class="was">verified</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">renamed from object-callable-operands</span></summary><pre class="code"><span class="tk-s">&quot;use strict&quot;</span>;
+
+<span class="tk-c">// Callback inputs and outputs may contain nested readonly object contracts.</span>
+<span class="tk-k">function</span> nestedCallback(
+  consume: (input: { <span class="tk-k">readonly</span> payload: { <span class="tk-k">readonly</span> value: number } }) =&gt; {
+    <span class="tk-k">readonly</span> value: number;
+  },
+  input: { <span class="tk-k">readonly</span> payload: { <span class="tk-k">readonly</span> value: number } },
+): number {
+  <span class="tk-k">return</span> consume(input).value;
+}
+
+<span class="tk-c">// A callback that writes requires the same fixed contract as its argument.</span>
+<span class="tk-k">function</span> mutableCallback(input: { value: number }): number {
+  <span class="tk-k">const</span> replace = (target: { value: number }): number =&gt; {
+    target.value = <span class="tk-n">2</span>;
+    <span class="tk-k">return</span> target.value;
+  };
+  <span class="tk-k">return</span> replace(input);
+}
+
+<span class="tk-c">// Optional fields can be stated in a receiver contract as in an ordinary input.</span>
+<span class="tk-k">function</span> optionalReceiver(input: { value?: number }): number {
+  <span class="tk-k">const</span> read = <span class="tk-k">function</span> (<span class="tk-k">this</span>: { value?: number }): number {
+    <span class="tk-k">return</span> <span class="tk-n">1</span>;
+  };
+  <span class="tk-k">return</span> read.call(input);
+}</pre></details></li><li><details><summary><code>invalid-asserted-literal-arm</code> <span class="kind negative">negative</span> <span class="was">refused</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">renamed from invalid-method-receiver-literal</span></summary><pre class="code"><span class="tk-c">// A literal whose discriminant names an arm its other fields do not meet is</span>
+<span class="tk-c">// no element of the array.</span>
+<span class="tk-k">type</span> <span class="tk-t">D</span> = { kind: <span class="tk-s">&quot;a&quot;</span>; v: number } | { kind: <span class="tk-s">&quot;b&quot;</span>; w: string };
+<span class="tk-k">export</span> <span class="tk-k">function</span> add(items: <span class="tk-t">D</span>[]): number {
+  <span class="tk-k">return</span> items.push({ kind: <span class="tk-s">&quot;a&quot;</span>, w: <span class="tk-s">&quot;x&quot;</span> } <span class="tk-k">as</span> unknown <span class="tk-k">as</span> <span class="tk-t">D</span>);
+}</pre></details></li></ul>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">tests</span> <span class="chip">docs</span></dd></dl>
+<details><summary>45 files changed, 66 insertions(+), 63 deletions(-)</summary><pre class="code"> WORK.md                                            |  2 +-
+ docs/SOURCE-CONTRACTS.md                           |  4 +-
+ docs/SOURCE-ELABORATION.md                         |  4 +-
+ docs/SOURCE-FRAGMENT.md                            |  2 +-
+ docs/SOURCE-REWRITES.md                            | 10 ++--
+ pipeline/blocker-project/tsconfig.json             |  2 +-
+ pipeline/cases.mts                                 | 67 +++++++++++-----------
+ pipeline/compiler-api-project/tsconfig.json        |  2 +-
+ pipeline/default-parameters.mts                    |  2 +-
+ .../{invalid-async-object.ts =&gt; async-object.ts}   |  0
+ pipeline/examples/callables/README.md              |  2 +-
+ ...ble-operands.ts =&gt; callback-record-operands.ts} |  0
+ ...ss-prototype.ts =&gt; error-subclass-prototype.ts} |  0
+ ...y-length-refused.ts =&gt; invalid-array-length.ts} |  0
+ ...y-shadow-refused.ts =&gt; invalid-array-shadow.ts} |  0
+ ...-literal.ts =&gt; invalid-asserted-literal-arm.ts} |  0
+ ...offer.ts =&gt; invalid-class-constructor-offer.ts} |  0
+ ...ections-json.ts =&gt; invalid-collections-json.ts} |  0
+ ...to-refused.ts =&gt; invalid-computed-key-proto.ts} |  0
+ ...efused.ts =&gt; invalid-generic-call-signature.ts} |  0
+ ...default.ts =&gt; invalid-generic-default-write.ts} |  0
+ ...dex-signature.ts =&gt; invalid-index-signature.ts} |  0
+ ...er-refused.ts =&gt; invalid-json-parse-reviver.ts} |  0
+ ...-refused.ts =&gt; invalid-let-object-narrowing.ts} |  0
+ ... =&gt; invalid-loose-equality-array-conversion.ts} |  0
+ ...sed.ts =&gt; invalid-loose-equality-conversion.ts} |  0
+ ...ature.ts =&gt; invalid-mutable-index-signature.ts} |  0
+ .../{number-index.ts =&gt; invalid-number-index.ts}   |  0
+ .../{promise-like.ts =&gt; invalid-promise-like.ts}   |  0
+ ...ds.ts =&gt; invalid-readonly-callback-argument.ts} |  0
+ ...rved-key-refused.ts =&gt; invalid-reserved-key.ts} |  0
+ ...refused.ts =&gt; invalid-sloppy-this-primitive.ts} |  0
+ .../{spread-holes.ts =&gt; invalid-spread-holes.ts}   |  0
+ ...key-refused.ts =&gt; invalid-spread-symbol-key.ts} |  0
+ .../{symbol-index.ts =&gt; invalid-symbol-index.ts}   |  0
+ ...l-refused.ts =&gt; invalid-wrapped-member-call.ts} |  0
+ ...sed.ts =&gt; invalid-wrapped-member-chain-call.ts} |  0
+ ...fined-refused.ts =&gt; nullish-field-undefined.ts} |  0
+ ...fused.ts =&gt; optional-field-truthiness-union.ts} |  0
+ ...optional-write-refused.ts =&gt; optional-write.ts} |  0
+ ...reflect-get-getter.ts =&gt; reflect-get-getter.ts} |  0
+ .../{invalid-string-object.ts =&gt; string-object.ts} |  0
+ pipeline/test.mts                                  |  4 +-
+ tests/node-runs.mts                                | 26 ++++-----
+ tests/trusted-inputs.mts                           |  2 +-</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-6f72f6100"><header><div><div class="sha">6f72f6100 · Cristiano Calcagno · Nov 05, 03:19</div><h3>Name in WORK.md the gap cases whose work an open item owns</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>A blocked ordinary program is open work in WORK.md, and 33 gap cases had no item naming them (issue #32). Each whose missing support an open item already describes is now named in that item's prose: the census refusal examples under the front end's coverage, and the others under remaining source forms, model limits, keys known only at run time, iteration, exceptional footprints and async code.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">WORK.md, open work</span></h4><div class="prose"><p>blocker-prep-api-constructor, blocker-node-create-require, blocker-contextual-default-argument, blocker-compiler-api-generic-meet-field, blocker-compiler-api-contextual-host-shape, blocker-in-unknown-walk, nullish-member-write-refused, closure-contextual-method-refused, computed-index-inherited-method-refused, literal-const-array-constant-value-import, error-subclass-json-replacer, type-guard-object-refused, intersection-callable-readonly-refused, invalid-object-growth-passed, growth-optional-accumulator-refused, pattern-program-iterable-default-refused, spread-readonly-map-values-refused, map-fresh-handler-refused and four promise controls, each beside the support it needs</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">docs</span></dd></dl>
+<details><summary>1 file changed, 42 insertions(+), 6 deletions(-)</summary><pre class="code"> WORK.md | 48 ++++++++++++++++++++++++++++++++++++++++++------</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+</main></body></html>
