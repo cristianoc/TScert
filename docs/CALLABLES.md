@@ -176,30 +176,12 @@ binders are parameter rows $`\vec p`$: rows the graph's assignment interprets,
 which no rule reads (a type holding one has no expansion). Acceptance does not
 read the assignment (`accept_reassign` in
 [Parametricity.lean](../lean/Verification/Programs/Parametricity.lean)), so the
-rule **Generic-Body** is the ordinary safety theorem at every reassignment:
-
-```math
-\frac{
-\mathsf{accept}(G,R,P,\mathit{claims},C,s,\vec I)=\mathsf{true}
-\qquad
-\mathsf{EnvOk}_{G[\mathit{env}:=\eta]}(\vec I,\rho,n,W)
-\qquad \mathsf{WorldAdm}(W)\qquad \mathsf{HeapOk}(n,W,h)
-}{
-\mathsf{SafeGraph}\bigl(P,⟦R⟧^{\eta},n,W,h,\mathsf{at}(s,\rho)\bigr)
-}
-\quad\text{for every }\eta .
-```
-
-One derivation, checked once, covers every instantiation of the binders: the
-inputs and the result are read at the same $`\eta`$. A bounded binder is read as
-the meet of its row and its bound, and one bounded by another binder as the
-meet of the two ([binders met](SOURCE-CONTRACTS.md#binders-met-with-ground-types));
-at every instantiation within the bounds the meets are the binders, and the
-body is certified at the others too. Every generic unit takes this one path.
-The binders of a generic class are those of the unit that declares it, the
-module's initialization unit, so its constructor and methods are certified at
-every instantiation the same way. Proved: `Parametricity.accepted_at`,
-`RequestJson.verify_safe_at`, `SourceExtraction.checkRequests_safe_at`.
+body is certified at every assignment of its binders it admits, the inputs and
+the result read at the same assignment: the rule **Generic-Body**, with its
+premises and proofs, is stated in [call schemes](PROGRAM-TYPING.md#call-schemes).
+One derivation, checked once, covers every admitted instantiation, and
+every generic unit takes this one path; bounded binders and the binders of a
+generic class are read as that section states.
 
 **Binding.** `f.call`, `f.apply` and `f.bind` are property reads followed by
 calls; the parser identifies the standard intrinsic by its declaration
