@@ -591,7 +591,12 @@ if (eligible) sections.push((async (): Promise<void> => {
   assert.equal(readdirSync(join(store.root, "entries", "lower")).length, 1);
   use(store);
   assert.equal(invoke(lower(steady, input)).record.execution, "replayed");
-  const varying = script("varying.sh", `/bin/sleep 1; echo $$`, ["/bin/sleep"]);
+  // Each run marks that it has started and waits for the other's mark, so
+  // both execute before either publishes, however late load starts one.
+  const varying = script("varying.sh",
+    `: > "${dir}/varying-started.$$"\n` +
+    `while set -- "${dir}"/varying-started.*; [ $# -lt 2 ]; do /bin/sleep 0.05; done\n` +
+    `echo $$`, ["/bin/sleep"]);
   const outcomes = (await Promise.all([child(varying, input), child(varying, input)])).map(parsed);
   assert.equal(outcomes.filter((o) => typeof o === "object" && o !== null && "error" in o && o.error === "store").length, 1, JSON.stringify(outcomes));
   process.stdout.write("concurrent publication: one entry for two writers; two results for one key a store error\n");
