@@ -14,7 +14,11 @@ mechanism has four parts:
 
 Each claim is labelled **proved** (with its Lean name), **audited** (with
 its row in [native footprints](SOURCE-CONTRACTS.md#native-footprints)) or
-**conjectured**. The lemmas are in `lean/Verification/Semantics/`
+**conjectured**. The lemmas of `FootprintNatives.lean` (`Arr.push_grow`,
+`Arr.unshift_grow`, `Arr.setLength_grow`, `sort_grow`, `array_native_post`,
+`map_rely`, `denseCheck_stable`, `elems_rely`) are proved in a model of the
+natives' specification steps and read by no acceptance theorem; the native
+footprints they argue for are trusted input. The lemmas are in `lean/Verification/Semantics/`
 (`Footprints.lean`, `ClosedFootprints.lean`, `FootprintProvenance.lean`,
 `FootprintStability.lean`, `FootprintNatives.lean`) and
 `lean/Verification/Programs/` (`ExpressionEffects.lean`, `GraphCode.lean`);

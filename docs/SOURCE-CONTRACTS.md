@@ -2876,8 +2876,9 @@ union with a string.
 A native's **footprint** is the closed footprint its signatures state
 ([FOOTPRINTS](FOOTPRINTS.md#changes-and-footprints)): for the locations that
 existed before a call, the change the call may make to those holding a value
-and to those holding an array store. Each row states its argument, proved
-where the native is modelled and audited otherwise:
+and to those holding an array store. Each row's footprint is trusted input
+of acceptance; its argument is proved of a model of the specification steps
+where the native is modelled, and audited otherwise:
 
 | Native | Footprint | Argument |
 | --- | --- | --- |
@@ -2950,9 +2951,13 @@ checking (`pipeline/test.mts`).
 
 What is proved and what is audited:
 
-- **Proved** of the array mutators' specification steps (`Set` of an index,
-  `Delete`, a length change, in the order ECMA-262 gives them;
-  `lean/Verification/Semantics/FootprintNatives.lean`): `push`, `unshift`, a
+- **Proved** in the model, of the array mutators' specification steps
+  (`Set` of an index, `Delete`, a length change, in the order ECMA-262 gives
+  them; `lean/Verification/Semantics/FootprintNatives.lean`), and read by no
+  acceptance theorem: a native signature's footprint enters acceptance as
+  stated, and these lemmas are the argument for stating it
+  ([native footprints from their steps](drafts/native-footprints-from-steps.md)
+  makes them part of acceptance): `push`, `unshift`, a
   longer length and `sort` over the whole call change the store by `grow`
   (`Arr.push_grow`, `Arr.unshift_grow`, `Arr.setLength_grow`, `sort_grow`);
   `pop`, `shift`, `reverse` of a store with a hole and a shorter length do

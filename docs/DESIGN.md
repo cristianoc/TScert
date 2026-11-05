@@ -764,7 +764,7 @@ owner; other documents link to them and give only the context their readers need
 | [SOURCE-ELABORATION](SOURCE-ELABORATION.md) | The lowering of every source form (statements, guards, iteration, mutable bindings, closures, inferred effects) and the checklist for adding one. |
 | [SOURCE-CONTRACTS](SOURCE-CONTRACTS.md) | Reading types, declarations and annotations; library contracts and their audits; certified imports. |
 | [CALLABLES](CALLABLES.md) | What a function is in the calculus: callable values, their call and code rules and their proof scope. |
-| [FOOTPRINTS](FOOTPRINTS.md) | Footprints: one framing mechanism that keeps heap-dependent facts across writes, calls and callbacks, its proved lemmas and natives as its instances. |
+| [FOOTPRINTS](FOOTPRINTS.md) | Footprints: one framing mechanism that keeps heap-dependent facts across writes, calls and callbacks, its proved lemmas, and natives as its instances, whose footprints are trusted and argued in a model of their specification steps. |
 | [HOST-FAMILIES](HOST-FAMILIES.md) | The mechanism for families of library objects tagged by one field: tag sets, the family contract, guards read as tag tests, stable members, and each family's description and trust. |
 | [COMPILER-API](COMPILER-API.md) | The contract for verifying code that uses TypeScript's compiler API: host declarations, the node invariant, guards as kind tests, node lists as foreign arrays, its trust and restrictions. |
 | [REQUEST-PROTOCOL](REQUEST-PROTOCOL.md) | Request/evidence JSON and the verifier CLI. |
