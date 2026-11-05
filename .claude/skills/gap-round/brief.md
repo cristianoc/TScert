@@ -79,8 +79,9 @@ avoidance or a host boundary in SOURCE-REWRITES.md in the same commit.
   Release the lock on failure too.
 - **Measuring:** take the function the case blocks most and one that
   depends on it, before and after, under the lock. Run
-  `make census FILES=f.mts FUNCTIONS=fn,other SHALLOW=1`, with `TSCERT_STAGE_STORE`
-  naming a fresh directory in your scratch. Run no full census.
+  `make census FILES=f.mts FUNCTIONS=fn,other SHALLOW=1`, with the default
+  stage store ([the stage store](../../../AGENTS.md#the-stage-store)). Run
+  no full census.
 - **Committing:**
   - `make suite` and `make test` pass before each commit.
   - Each commit carries a record in the format of

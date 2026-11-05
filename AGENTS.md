@@ -414,7 +414,8 @@ increasing trust silently.
 
 ## Conventions
 
-- Formatting: everything is prettier-formatted (`make fmt` at the root).
+- Formatting: `make fmt` at the root formats with Prettier the `.json` and
+  `.ts` files `.prettierignore` admits; `make check-fmt` checks them.
 - Every module the node side runs is `.mts`, and `tools/tsconfig.json` covers
   all of them — the trusted front end, the pipeline driver and the suites — under
   one fully strict configuration, `noImplicitAny` and `strictNullChecks`
