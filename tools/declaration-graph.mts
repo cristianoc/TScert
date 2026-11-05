@@ -22,7 +22,7 @@ import { wildcardReadings, classInstance, computedAlias, computedForm, expandMap
   type AliasHook, type ModifiersHook, type RecordHook, type TermScope } from "./type-term.mts";
 import { arrayPrototype, functionPrototype, functionPrototypeName, interfaceOverlay, mergeMessage, mergeRefusal, overlay, primitiveKinds, primitivePrototype,
   primitivePrototypeName, collectionIteratorMark, nativeCollectionIterator, nativeCollectionIteratorDefinition, nativeCollectionView, nativeCollectionViewDefinition, type CollectionKind, type OverlayEntry, splitSeparators, type OverlayLibrary, type PrimitiveKind } from "./array-prototype.mts";
-import { intrinsics, intrinsicModule, resolutionIntrinsics, resolvableDeclaration, stableDefinition, iterateIteratorName, iterateName, unionIterationName, unionIterationParts, iterateRegExpStringName, iterateMapName, iterateSetName, iterateStringName,
+import { intrinsics, intrinsicModule, resolutionIntrinsics, resolvableDeclaration, stableDefinition, iterateIteratorName, iterateName, unionIterationName, unionIterationParts, iterateRegExpStringName, iterateSegmentsName, iterateMapName, iterateSetName, iterateStringName,
   iterationIntrinsic, hasPropertyName, openReadIntrinsic, elementAtName, freezeName, byteAtName, byteLengthName, byteSetName, nonThenable, restFromIntrinsic, spreadName, enumIntrinsic, enumMembersTerm,
   literalTerm, assertionFailureName, type EnumMemberValue, type EnumReverse } from "./intrinsics.mts";
 import { compareTags, familyTable, footprintReading, type FamilyArm, type FamilyDescription, type FamilyGraph, type FamilyTable, type FlatMember, type GuardEntry, type TagValue } from "./host-families.mts";
@@ -1069,15 +1069,21 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
       hostTypes.set(node, result);
       return result;
     };
-    // The name a type reference reads: an identifier, or the member of a
+    // The name a type reference reads: an identifier, the member of a
     // namespace import a qualified name `ns.T` reads, which TypeScript binds
-    // to the export it names (`namespace-members.mts`); null for any other
-    // qualified name.
+    // to the export it names (`namespace-members.mts`), or an interface of
+    // the standard library's namespace `Intl` the overlay of library types
+    // states (`Intl.Segmenter`); null for any other qualified name.
     const memberName = (name: ts.EntityName): Identifier | null => {
       if (ts.isIdentifier(name)) return name;
       if (!ts.isIdentifier(name.left)) return null;
-      const declaration = checker.getSymbolAtLocation(name.left)?.declarations[0]?.resolve();
-      return declaration && ts.isNamespaceImport(declaration) ? name.right : null;
+      const declarations = (checker.getSymbolAtLocation(name.left)?.declarations ?? []).map(d => d.resolve());
+      const [declaration] = declarations;
+      if (declaration && ts.isNamespaceImport(declaration)) return name.right;
+      const intl = name.left.text === "Intl" && declarations.length > 0 && declarations.every(d =>
+        !!d && ts.isModuleDeclaration(d) && libraryFile(d.getSourceFile()));
+      const stated = intl && statedType((targetOf(checker, name.right)?.declarations ?? []).map(d => d.resolve()));
+      return stated ? name.right : null;
     };
     // The enum a name denotes, every declaration TypeScript binds it to an
     // enum's (merged enums are one), or null.
@@ -2618,6 +2624,19 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
     for (const span of rootsRequested.globals ?? []) {
       const identifier = identifierAt(client, span);
       if (!identifier) throw declarationError(span, "TypeScript global reference missing");
+      // `Intl.T`'s name: a type the overlay of library types states, or
+      // refused.
+      const qualified = identifier.parent && ts.isQualifiedName(identifier.parent) ? identifier.parent : null;
+      if (qualified) {
+        try {
+          const known = memberName(qualified) ? library(identifier, `Intl.${identifier.text}`) : null;
+          if (!known) throw Error(`a qualified type reference in ${idOf(client)}`);
+          typeAnswers.library?.(span, known, identifier.text);
+        } catch (error) {
+          refuseAt(span, error);
+        }
+        continue;
+      }
       if (roots.some(r => r.root.binding.local === identifier.text)) continue;
       const declaration = targetOf(checker, identifier)?.declarations[0]?.resolve();
       if (!declaration || ts.isTypeParameterDeclaration(declaration) ||
@@ -2821,7 +2840,7 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
     // which runs the iterator protocol (`protocolForOf` in the parser).
     const collections: Record<string, string> = { Set: iterateSetName, Map: iterateMapName,
       SetIterator: iterateIteratorName, MapIterator: iterateIteratorName,
-      RegExpStringIterator: iterateRegExpStringName };
+      RegExpStringIterator: iterateRegExpStringName, Segments: iterateSegmentsName };
     const iterationKind = (part: Type): string => {
       if (checker.isArrayType(part) || checker.isTupleType(part)) return "array";
       if (part.flags & TypeFlags.StringLike) return iterateStringName;
@@ -2947,6 +2966,10 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
       if (!program && !listedIterations.has(listed)) {
         listedIterations.add(listed);
         try {
+          // An `Intl.Segments`' iteration names the overlay's `Segments`
+          // and the `SegmentData` it yields.
+          if (listed.split("|").some(k => k === iterateSegmentsName || k === spreadName(iterateSegmentsName)))
+            defineOverlay(typeDefinitions.segments);
           const intrinsic = iterationIntrinsic(listed, (kind, args) => collectionView(emptyDeclarationReading, kind, args),
             element => { nativeMatches(); return nativeIterator(element); }, element => collectionIterator(emptyDeclarationReading, element));
           values.push({ binding: { local: intrinsic.name, imported: intrinsic.name,
@@ -4815,6 +4838,30 @@ function globalNamespace(checker: Checker, name: string, uses: readonly Identifi
   for (const use of uses) {
     const access = use.parent;
     const call = access.parent;
+    // `new N.C(…)` of a constant of the namespace whose type's construct
+    // signature an entry lists by its exact text (`new Intl.Segmenter(…)`):
+    // a call of the intrinsic the entry names, which states the same steps.
+    if (ts.isPropertyAccessExpression(access) && access.expression === use && !access.questionDotToken &&
+        ts.isIdentifier(access.name) && call && ts.isNewExpression(call) && call.expression === access &&
+        !(call.arguments ?? []).some(ts.isSpreadElement)) {
+      const what = `new ${name}.${access.name.text}(…)`;
+      const resolved = checker.getResolvedSignature(call)?.declaration?.resolve();
+      const literal = resolved && ts.isConstructSignatureDeclaration(resolved) ? resolved.parent : undefined;
+      const variable = literal && ts.isTypeLiteralNode(literal) ? literal.parent : undefined;
+      const statement = variable && ts.isVariableDeclaration(variable) ? variable.parent?.parent : undefined;
+      const declared = statement && ts.isVariableStatement(statement) &&
+        namespaces.some(n => n.body && ts.isModuleBlock(n.body) && n.body.statements.includes(statement));
+      if (!resolved || !declared)
+        throw declarationError(spanOf(call), `TypeScript resolves ${what} to no construct signature of a constant ${name} declares`);
+      const text = resolved.getText(resolved.getSourceFile()).trim();
+      const entry = globalEntry(context.overlay, name, access.name.text, signature => signature === text,
+        declarationOrigin(resolved.getSourceFile(), context.libraryFile));
+      if (!entry?.intrinsic)
+        throw declarationError(spanOf(call), `${what} is not in the reviewed overlay of library globals: ${reviewedText(text)}`);
+      for (const definition of entry.definitions ?? []) context.define(definition);
+      context.intrinsic(spanOf(call), entry.intrinsic);
+      continue;
+    }
     if (!ts.isPropertyAccessExpression(access) || access.expression !== use || access.questionDotToken ||
         !ts.isIdentifier(access.name) || !call || !ts.isCallExpression(call) || call.expression !== access ||
         call.questionDotToken || call.arguments.some(ts.isSpreadElement))

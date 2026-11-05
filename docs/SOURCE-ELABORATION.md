@@ -2015,9 +2015,14 @@ With $`\mathit{Step}(E)=()\Rightarrow\{\mathsf{readonly}\ \mathit{value}:E\}\mid
 \mathtt{\%Iterate{:}string\%}:(\mathsf{string})\Rightarrow\mathit{Step}(\mathsf{string}) & \text{a string, by code point}\\
 \mathtt{\%Iterate{:}Set\%}:\forall T.\ (\mathsf{NativeSetView}\langle T\rangle)\Rightarrow\mathit{Step}(T) & \\
 \mathtt{\%Iterate{:}Map\%}:\forall K\,V.\ (\mathsf{NativeMapView}\langle K,V\rangle)\Rightarrow\mathit{Step}([K,V]) & \text{a fresh entry per step}\\
-\mathtt{\%Iterate{:}Iterator\%}:\forall T.\ (\mathsf{NativeCollectionIterator}\langle T\rangle)\Rightarrow\mathit{Step}(T) & \text{a SetIterator or MapIterator}
+\mathtt{\%Iterate{:}Iterator\%}:\forall T.\ (\mathsf{NativeCollectionIterator}\langle T\rangle)\Rightarrow\mathit{Step}(T) & \text{a SetIterator or MapIterator}\\
+\mathtt{\%Iterate{:}Segments\%}:(\mathit{Segments})\Rightarrow\mathit{Step}(\mathit{SegmentData}) & \text{an \texttt{Intl.Segments}, a fresh segment per step}
 \end{array}
 ```
+
+$`\mathit{Segments}`$ and $`\mathit{SegmentData}`$ are the overlay's
+([`Intl.Segmenter`](SOURCE-CONTRACTS.md#intlsegmenter)); a
+`Segments`' iterator is the host's segment iterator, which has no `return`.
 
 The iterable kinds of a conditional are the kinds of both arms. The kinds
 of `a ?? b` are those of `a` excluding `null` and `undefined`, together with
