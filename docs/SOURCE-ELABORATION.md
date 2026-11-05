@@ -2742,8 +2742,10 @@ the module's functions at
 the initialization unit's claim for its initializer. That unit checks
 $`\Gamma\vdash e_c:Q_{\mathit{init}}(e_c)`$ where it binds $`c`$, exactly as it
 checks an annotation, and a constant never changes, so the functions'
-assumption is what the unit establishes (the composition argument is
-[DESIGN.md](DESIGN.md#modules-and-code-units)'s, unchanged).
+assumption is what the unit establishes. Each unit's theorem gives safety
+under `EnvOk` of its inputs, $`c`$ among them at that type; a theorem
+composing the units is [module composition](../WORK.md#module-composition)
+([modules and code units](DESIGN.md#modules-and-code-units)).
 
 A non-generic class $`C`$ bound by the initialization unit at its type
 $`K_C`$ is read by its own methods, static ones included, and constructor, closures
@@ -3834,9 +3836,10 @@ footprint relates to its entry heap, and a value meeting its goal
 (`SourceExtraction.checkRequests_footprint_at`).
 Every other unit reads the declaration at its annotation's signature stating
 that effect, its variadic extension included (`moduleArrow`), as it reads the
-declaration's ordinary signature: that each declaration meets the signature
-the others read it at is the [module composition](../WORK.md#module-composition)
-argument. A parameter default executes in the declaration's graph, so the
+declaration's ordinary signature: each unit's theorem holds under `EnvOk` of
+its inputs, the declarations at those signatures among them, and a theorem
+that each declaration meets the signature the others read it at is
+[module composition](../WORK.md#module-composition). A parameter default executes in the declaration's graph, so the
 check covers it. An imported function is read at its declaration's type,
 which states the effect its [statement](#stated-effects) states and none
 without one (`invalid-preserving-callback-value-import`). OCaml

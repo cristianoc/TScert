@@ -611,12 +611,12 @@ contracts in the current heap and world, and the module's initialisation and
 all execution after it preserve that. The eligibility rule makes the first
 half a property of the parser's resolution and of the host's module loader
 (an exported declaration never reassigned holds its closure once its module
-is evaluated); the second is the [module composition](../WORK.md#module-composition)
-argument for units certified against each other's signatures, on which the
-units of one module already rely. A dependency whose initialisation throws
-stops the importer's evaluation: certifying a body proves no initialisation
-succeeds. Until module composition is proved, the invariant is a review
-obligation, listed with the import assumption and in the
+is evaluated); the second is the obligation of
+[module composition](../WORK.md#module-composition) for units certified
+against each other's signatures, on which the units of one module rely too.
+A dependency whose initialisation throws stops the importer's evaluation:
+certifying a body proves no initialisation succeeds. The invariant is a
+review obligation, listed with the import assumption and in the
 [parser, extraction, declared-types and host bridges](TRUST-REDUCTION.md#the-bridges).
 
 **A catch.** A certified import's footprint holds on normal return, and on
