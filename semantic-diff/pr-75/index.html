@@ -81,8 +81,8 @@ var { font-style:italic } .m-op { color:#2c4f7c; font-style:normal } .m-con { co
 .lowering .label { font:600 11px/1 var(--body); letter-spacing:.05em; text-transform:uppercase; color:var(--muted); min-width:7em }
 .lowering .cond { padding-left:1.5em } .lowering .note { color:var(--muted); font:italic 13px/1.4 var(--body) }
 a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outline-offset:2px }
-@media (max-width:520px) { dl.facts { grid-template-columns:minmax(0,1fr) } .card > header { flex-direction:column } }</style></head><body><main><header><h1>Commit Records</h1><p class="lede">2 commits, rendered from their records.</p></header>
-<section><h2>Branches</h2><ul class="summary"><li><a href="#g-pr-75"><code>50be2ce88b9c4091f3498642d955144e433bda1d..pr-75</code></a><ul><li>2 commits</li><li>parts: <span class="chip">tools</span> <span class="chip">docs</span></li></ul></li></ul></section>
+@media (max-width:520px) { dl.facts { grid-template-columns:minmax(0,1fr) } .card > header { flex-direction:column } }</style></head><body><main><header><h1>Commit Records</h1><p class="lede">3 commits, rendered from their records.</p></header>
+<section><h2>Branches</h2><ul class="summary"><li><a href="#g-pr-75"><code>50be2ce88b9c4091f3498642d955144e433bda1d..pr-75</code></a><ul><li>3 commits</li><li>parts: <span class="chip">tools</span> <span class="chip">docs</span> <span class="chip">tests</span></li></ul></li></ul></section>
 <h2 id="g-pr-75"><code>50be2ce88b9c4091f3498642d955144e433bda1d..pr-75</code></h2><article class="card" id="c-e60441993"><header><div><div class="sha">e60441993 · Cristiano Calcagno · Nov 05, 02:49</div><h3>Run the census on each push to main and report its movement on the pull request</h3></div><span class="pill neutral">no-behaviour-change</span></header>
 <h4 class="change">Why</h4><div class="prose"><p>The census of main was run by hand after a merge, on the owner's machine, so its movement reached no one reading the pull request that caused it, and a lost function was found only at the next census.</p></div>
 <h4 class="change"><span class="act added">added</span>Tooling <span class="target">.github/workflows/census.yml</span></h4><pre class="code"><span class="ln">on each push to main: the census of tools/, compared with the record of</span><span class="ln">the last push whose census completed; the movement (counts before and</span><span class="ln">after, functions gained and lost, statement coverage) commented on the</span><span class="ln">pushed commit's pull request; a page per census at census/&lt;commit&gt;/ on</span><span class="ln">the gh-pages branch with the movement and the full report, census/ the</span><span class="ln">latest and census/history.tsv a line per census; the record and the</span><span class="ln">refusals ranking kept as the run's artifacts; the stage store cached</span><span class="ln">between censuses, so unchanged stages replay. A pull request changing</span><span class="ln">the workflow runs the census and publishes nothing.</span></pre>
@@ -97,6 +97,13 @@ a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outl
 <h4 class="change"><span class="act modified">modified</span>Tooling <span class="target">.github/workflows/census.yml, the census step</span></h4><pre class="code"><span class="ln">the census's output goes to the step's log as it is written, and to</span><span class="ln">the run's log file</span></pre>
 <dl class="facts"><dt>Parts</dt><dd><span class="chip">tools</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd></dl>
 <details><summary>1 file changed, 4 insertions(+), 3 deletions(-)</summary><pre class="code"> .github/workflows/census.yml | 7 ++++---</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-40b7441e4"><header><div><div class="sha">40b7441e4 · Cristiano Calcagno · Nov 05, 04:32</div><h3>Give the killed-runner control 30 s for its program to start</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>The control that kills a runner and checks its watchdog ends the stage's program waited 2 s for the program to write its pid; on a loaded CI runner the program had not started by then, and the control failed reading a pid file that did not exist yet.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Tests <span class="target">tests/stage-store.mts, the killed runner's watchdog</span></h4><div class="prose"><p>the wait for the program's pid file is up to 30 s</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">tests</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd></dl>
+<details><summary>1 file changed, 2 insertions(+), 1 deletion(-)</summary><pre class="code"> tests/stage-store.mts | 3 ++-</pre></details>
 <div class="sha">with Claude Opus 5.5</div>
 </article>
 </main></body></html>
