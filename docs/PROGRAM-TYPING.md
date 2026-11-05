@@ -2000,10 +2000,13 @@ the safety of its term. Checker recursion follows the finite evidence tree;
 there is no user-supplied fuel and no semantic level in the evidence. The
 image checker is chosen by Lean code; evidence cannot name one.
 
-Evidence trees are in-memory values, never serialized; each node repeats its
-explicit sequent, terms and contexts included. The
+In memory each node of an evidence tree repeats its explicit sequent,
+terms and contexts included. The
 [in-memory producer](SOURCE-ELABORATION.md#producing-evidence-from-supplied-claims)
-builds them.
+builds them. The evidence document writes the derivation nodes as one of
+its tables, each node naming its premises among the nodes before it, and
+its types and contexts as other tables, each entry once
+([evidence document](REQUEST-PROTOCOL.md#evidence-document)).
 
 ### Lean files and adding a rule
 

@@ -1166,6 +1166,16 @@ The modules of `lean/Verification/Semantics/` not introduced above:
 - `Footprints.lean`, `ClosedFootprints.lean`, `FootprintProvenance.lean`,
   `FootprintStability.lean` and `FootprintNatives.lean` are specified in
   [FOOTPRINTS](FOOTPRINTS.md).
+- The representation of heap knowledge, specified in
+  [program typing](PROGRAM-TYPING.md#stored-knowledge-and-how-it-is-read):
+  [ValueSets.lean](../lean/Verification/Semantics/ValueSets.lean), what a heap fact states of a value, one component per
+  kind of value, into which [HeapAtoms.lean](../lean/Verification/Semantics/HeapAtoms.lean) translates the finite atoms of
+  heap facts; [Partitions.lean](../lean/Verification/Semantics/Partitions.lean) and [LinkClasses.lean](../lean/Verification/Semantics/LinkClasses.lean), the alias classes
+  of links; [KnowledgeNormal.lean](../lean/Verification/Semantics/KnowledgeNormal.lean), the normal form of heap facts, and
+  [KnowledgeExpand.lean](../lean/Verification/Semantics/KnowledgeExpand.lean), its expansion for readers looking a fact up by its
+  slot; [HeapSeparation.lean](../lean/Verification/Semantics/HeapSeparation.lean), separation facts addressed by level, and
+  [SeparationNormal.lean](../lean/Verification/Semantics/SeparationNormal.lean), their stored form; and [CanonicalLists.lean](../lean/Verification/Semantics/CanonicalLists.lean),
+  the one representation of a set as a strictly increasing list.
 
 The program layer (syntactic typing, certificates, control-flow graphs) is
 specified with its Lean files in [Program typing](PROGRAM-TYPING.md#lean-files-and-adding-a-rule),
