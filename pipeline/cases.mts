@@ -1223,6 +1223,8 @@ export const cases: Case[] = [
     kind: "negative", status: "unsupported", phase: "proposal", diagnostic: /a type parameter typing a value and a rest's argument list, is no array or tuple type/ },
   { file: "invalid-rest-pack-value", area: "a type parameter typing a rest and a value is refused on principle: the collected array is fresh, without the instance's other members (a tagged instance's tag)",
     kind: "negative", status: "unsupported", phase: "source", diagnostic: /a type parameter typing a rest parameter and anything else/ },
+  gap("generic-readonly-rest-refused", "a generic module function's rest typed by a readonly array: its scheme states the rest as a mutable array's element, so the readonly contract is refused", "unverified", "search",
+    /a generic module function's rest parameter needs a mutable array contract/),
   { file: "invalid-rest-intersection", area: "a rest typed by an intersection is refused on principle: its contract can be empty at an instance TypeScript admits, and the source's call then returns a number as a boolean",
     kind: "negative", status: "unsupported", phase: "source", diagnostic: /a rest parameter needs a tuple of required positions or an array: one typed by an intersection/ },
   { ...gap("await-thenable-refused", "row await of a non-promise object: a `PromiseLike` parameter awaited, whose `then` JavaScript calls",
