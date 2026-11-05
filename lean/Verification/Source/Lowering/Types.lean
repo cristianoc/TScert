@@ -510,11 +510,11 @@ its construction's options held one); every such instance owns the prototype
 key in the model. -/
 
 /-- The keys a write may reach only on a proto-free receiver. -/
-def reservedKeys : List String := ["message", "stack", "cause"]
+def errorOwnedKeys : List String := ["message", "stack", "cause"]
 
-/-- A key a write names. -/
-def reservedKey : PropKey → Bool
-  | .str s => reservedKeys.contains s
+/-- A key an instance of the `Error` family may own, among `errorOwnedKeys`. -/
+def errorOwnedKey : PropKey → Bool
+  | .str s => errorOwnedKeys.contains s
   | .sym _ => false
 
 /-- A key whose claim is `K` may be reserved: unless `K` is of clause rows,
@@ -522,10 +522,10 @@ each a number, bigint, symbol, Boolean, `null`, `undefined` (whose
 conversions to a key are none of the reserved strings) or a string literal
 other than them. Any other clause, an object's included (whose conversion to
 a key runs code), may be. -/
-@[nospecialize] def reservedKeyClaim (G : PositiveGraphs.NormalGraph ι) (K : Ty ι) : Bool :=
+@[nospecialize] def errorOwnedKeyClaim (G : PositiveGraphs.NormalGraph ι) (K : Ty ι) : Bool :=
   !G.plainTy K || (PositiveNormalization.splitSets (PositiveRules.expand G K)).any fun c => match c with
-    | .strLit s => reservedKeys.contains s
-    | .strIn ss => ss.any reservedKeys.contains
+    | .strLit s => errorOwnedKeys.contains s
+    | .strIn ss => ss.any errorOwnedKeys.contains
     | .num | .numLit _ | .numIn _ | .bigint | .bigintLit _ | .symbol | .symbolLit _
     | .bool | .boolLit _ | .nul | .undef => false
     | _ => true
@@ -539,10 +539,10 @@ clauses to read and is not proto-free. -/
 /-- An `Object.assign` source owns no reserved key: of clause rows, each a
 primitive, or a record or dictionary with no index and a key bound admitting
 none of them. -/
-@[nospecialize] def excludesReservedKeys (G : PositiveGraphs.NormalGraph ι) (S : Ty ι) : Bool :=
+@[nospecialize] def excludesErrorOwnedKeys (G : PositiveGraphs.NormalGraph ι) (S : Ty ι) : Bool :=
   G.plainTy S && (PositiveNormalization.splitSets (PositiveRules.expand G S)).all fun c =>
     let bounded := fun (ks : List KeyBound) =>
-      ks.any fun b => reservedKeys.all fun k => !b.admits (.str k)
+      ks.any fun b => errorOwnedKeys.all fun k => !b.admits (.str k)
     ProtoFree.primitive c || match c with
     | .refs _ _ _ _ _ ks _ => bounded ks
     | .dict _ _ _ [] _ _ ks [] _ => bounded ks
@@ -637,7 +637,7 @@ negation. -/
   | .write p f l r =>
     -- Checked here, before any lowering of the write, and again where the
     -- write is emitted (`reservedWriteCheck`).
-    reservedWriteCheck p (← exprType fc l) (reservedKey f)
+    reservedWriteCheck p (← exprType fc l) (errorOwnedKey f)
     return .write p f (← comparisonsExpr fc l) (← comparisonsExpr fc r)
   | .index p _ e key =>
     let key ← comparisonsExpr fc key
@@ -677,7 +677,7 @@ negation. -/
     return .update p op (← comparisonsExpr fc target) (← rhs.mapM (comparisonsExpr fc)) post
   | .indexWrite p _ r key rhs =>
     reservedWriteCheck p (← exprType fc r)
-      (reservedKeyClaim (SourceTypes.graph (← table)) (← exprType fc (← comparisonsExpr fc key)))
+      (errorOwnedKeyClaim (SourceTypes.graph (← table)) (← exprType fc (← comparisonsExpr fc key)))
     let key ← comparisonsExpr fc key
     let r ← comparisonsExpr fc r
     let rhs ← comparisonsExpr fc rhs

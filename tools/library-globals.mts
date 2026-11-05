@@ -800,7 +800,7 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // non-enumerable data property `cause`. The options are stated at
   // `errorOptions`, at which neither step runs code. The error's own
   // `cause`, like `stack`, is not stated: a read of it is refused, and a
-  // write of it is reserved (`reservedKeys` in Lean's lowering).
+  // write of it is reserved (`errorOwnedKeys` in Lean's lowering).
   //
   // `Error(m)` called runs the same steps: with no new target, the error
   // constructor takes itself as the target (ECMA-262, "Error ( message [ ,

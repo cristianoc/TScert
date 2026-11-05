@@ -46,7 +46,7 @@ so it fails here rather than reaching a message. -/
   -- Every write the lowering emits is a node's term: one at a reserved key
   -- needs a proto-free receiver (`reservedWriteCheck`).
   if let .writeAt fld (.var i) _ := t then
-    reservedWriteCheck pos (Γ[i]?.getD []) (reservedKey fld)
+    reservedWriteCheck pos (Γ[i]?.getD []) (errorOwnedKey fld)
   let target ← emit t k Γ A
   if scope.length != Γ.length then
     throw s!"internal extraction error: source map covers {scope.length} of {Γ.length} bindings at {pos.1}"
