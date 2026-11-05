@@ -1,0 +1,207 @@
+# The census of tools/ (docs/DESIGN.md, "Function coverage and release
+# thresholds") on each push to main, compared with the census of the last
+# push that completed one. Its results:
+# - a page per census on the gh-pages branch, census/<commit>/, holding the
+#   movement and the full report, census/ showing the latest, and
+#   census/history.tsv a line per census;
+# - a comment on the pull request the pushed commit belongs to, with the
+#   movement: the counts before and after, the functions gained and lost;
+# - the census record, the next census's baseline, and the refusals ranking
+#   (census.mts refusals), artifacts of the run.
+# A pull request changing this workflow runs the census and writes its
+# report to the run's summary, publishing nothing.
+
+name: Census
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths: [.github/workflows/census.yml]
+  workflow_dispatch:
+
+concurrency:
+  group: census-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  census:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: read
+    env:
+      # A runner has 4 CPUs: a stage's limit three times the census's 300 s,
+      # so a slow search reports the outcome it reaches.
+      TSCERT_STEP_LIMIT: "900"
+      TSCERT_STAGE_MEMORY: "6"
+      TSCERT_STORE_BUDGET: "3G"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install bubblewrap
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bubblewrap
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "26"
+
+      - name: Install elan
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh \
+            | sh -s -- -y --default-toolchain none
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+
+      - uses: ocaml/setup-ocaml@v3
+        with:
+          ocaml-compiler: "5.3"
+
+      - name: Install Dune
+        run: opam install -y dune
+
+      # CI's workflow saves the Lean build; the census only reads it.
+      - name: Restore the Lean build
+        uses: actions/cache/restore@v4
+        with:
+          path: lean/.lake
+          key: lake-${{ runner.os }}-${{ hashFiles('lean/lean-toolchain') }}-${{ hashFiles('lean/**/*.lean', 'lean/c/**', 'lean/lakefile.toml') }}
+          restore-keys: |
+            lake-${{ runner.os }}-${{ hashFiles('lean/lean-toolchain') }}-
+
+      - name: Install the node dependencies
+        run: make setup
+
+      - name: Build
+        run: opam exec -- make build
+
+      # The stage store of the last census: its unchanged stages replay.
+      - name: Restore the stage store
+        id: store
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.cache/tscert/stages
+          key: census-store-${{ github.sha }}
+          restore-keys: census-store-
+
+      - name: Census
+        run: |
+          CENSUS="$RUNNER_TEMP/census"
+          echo "CENSUS=$CENSUS" >> "$GITHUB_ENV"
+          mkdir -p "$CENSUS"
+          opam exec -- node dev/census.mts --dir tools --out "$CENSUS/tools" --record "$CENSUS/record.json" \
+            > "$CENSUS/run.log" 2>&1 || { tail -50 "$CENSUS/run.log"; exit 1; }
+          tail -5 "$CENSUS/run.log"
+
+      - name: Save the stage store
+        if: always() && steps.store.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.cache/tscert/stages
+          key: census-store-${{ github.sha }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: census-record
+          path: ${{ runner.temp }}/census/record.json
+          retention-days: 90
+
+      # The baseline: the record of the last push to main whose census completed.
+      - name: Compare with the last census
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          node dev/census.mts report "$CENSUS/record.json" > "$CENSUS/report.txt"
+          node dev/census.mts refusals "$CENSUS/record.json" > "$CENSUS/refusals.json"
+          previous=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow census.yml --branch main --event push \
+            --status success --limit 1 --json databaseId -q '.[0].databaseId // empty')
+          if [ -n "$previous" ] && gh run download "$previous" --repo "$GITHUB_REPOSITORY" -n census-record -D "$CENSUS/base"; then
+            base=$(node -p 'JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).source.commit' "$CENSUS/base/record.json")
+            echo "BASE=${base:0:9}" >> "$GITHUB_ENV"
+            node dev/census.mts report "$CENSUS/base/record.json" "$CENSUS/record.json" > "$CENSUS/movement.txt"
+          else
+            echo "no earlier census to compare with" > "$CENSUS/movement.txt"
+          fi
+          # The headline: the counts, their movement and the functions gained and lost.
+          {
+            grep -m1 '^functions:' "$CENSUS/report.txt"
+            grep -m1 -E '^ +[0-9.]+% +[0-9]+ of [0-9]+ statements' "$CENSUS/report.txt" | sed 's/^ *//'
+            grep -E '^(shallow verified|deep verified|  gained|  lost|own results changed|shallow: verified statement coverage)' \
+              "$CENSUS/movement.txt" || true
+          } > "$CENSUS/headline.txt"
+          {
+            echo "### Census of \`${GITHUB_SHA:0:9}\`${BASE:+ since \`$BASE\`}"
+            echo '```'
+            cat "$CENSUS/headline.txt"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: census-refusals
+          path: ${{ runner.temp }}/census/refusals.json
+          retention-days: 90
+
+      - name: Publish the pages
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          short=${GITHUB_SHA:0:9}
+          remote="https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git clone --quiet --depth 1 --branch gh-pages "$remote" pages
+          page="pages/census/$short"
+          mkdir -p "$page"
+          escape() { sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g' "$1"; }
+          {
+            echo '<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width">'
+            echo "<title>Census $short</title>"
+            echo '<style>body{font:14px/1.45 system-ui,sans-serif;margin:24px auto;max-width:1100px;padding:0 16px}pre{overflow-x:auto;background:#f6f8fa;padding:12px}</style>'
+            echo "<h1>Census of tools/ at <a href=\"https://github.com/${GITHUB_REPOSITORY}/commit/${GITHUB_SHA}\">$short</a></h1>"
+            echo "<p><a href=\"../history.tsv\">every census</a> · <a href=\"https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}\">the run</a>, with the record and the refusals ranked as artifacts</p>"
+            echo "<h2>Movement${BASE:+ since $BASE}</h2><pre>"; escape "$CENSUS/movement.txt"; echo '</pre>'
+            echo '<h2>Report</h2><pre>'; escape "$CENSUS/report.txt"; echo '</pre>'
+          } > "$page/index.html"
+          cp "$page/index.html" pages/census/index.html
+          sed -i 's#href="\.\./history.tsv"#href="history.tsv"#' pages/census/index.html
+          [ -f pages/census/history.tsv ] || printf 'date\tcommit\tshallow\tdeep\tstatements\n' > pages/census/history.tsv
+          shallow=$(grep -m1 -oE 'shallow verified [0-9]+' "$CENSUS/report.txt" | grep -oE '[0-9]+$')
+          total=$(grep -m1 -oE '^functions: [0-9]+' "$CENSUS/report.txt" | grep -oE '[0-9]+$')
+          deep=$(grep -m1 -oE '[0-9]+ deep verified' "$CENSUS/report.txt" | grep -oE '^[0-9]+')
+          statements=$(grep -m1 -oE '^ +[0-9.]+%' "$CENSUS/report.txt" | tr -d ' ')
+          printf '%s\t%s\t%s of %s\t%s\t%s\n' "$(date -u +%F)" "$short" "$shallow" "$total" "$deep" "$statements" \
+            >> pages/census/history.tsv
+          touch pages/.nojekyll
+          cd pages
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit --quiet -m "Census of ${short}"
+          # Pull requests publish semantic diffs concurrently: rebase and retry.
+          for attempt in 1 2 3 4 5; do
+            if git push --quiet origin gh-pages; then exit 0; fi
+            git pull --quiet --rebase origin gh-pages
+          done
+          exit 1
+
+      - name: Comment on the pull request
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          number=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/pulls" -q '.[0].number // empty')
+          if [ -z "$number" ]; then echo "no pull request holds ${GITHUB_SHA}"; exit 0; fi
+          owner=${GITHUB_REPOSITORY%%/*}
+          repo=${GITHUB_REPOSITORY#*/}
+          {
+            echo "**Census** of \`main\` at \`${GITHUB_SHA:0:9}\`${BASE:+, since \`$BASE\`}: [the report](https://${owner}.github.io/${repo}/census/${GITHUB_SHA:0:9}/)"
+            echo
+            echo '```'
+            cat "$CENSUS/headline.txt"
+            echo '```'
+          } > "$CENSUS/comment.md"
+          gh pr comment "$number" --repo "$GITHUB_REPOSITORY" --body-file "$CENSUS/comment.md"
