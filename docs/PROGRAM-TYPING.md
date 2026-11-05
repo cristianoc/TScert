@@ -2531,11 +2531,14 @@ supplied input context $`\Gamma_0`$, with an empty input fact context.
 
 ```math
 \begin{gathered}
-\mathrm{checkEntryUsing}(G,\mathit{images},R,P,C,p,\Gamma_0)=\mathsf{true}
+\mathrm{checkEntryUsing}(G,\mathit{images},R,P,C,p,\Gamma_0,\mathit{codes},\mathit{sums})=\mathsf{true}
 \\
 \land\;\mathrm{EnvOk}_G(\Gamma_0,\rho,n,W)
 \land\;\mathrm{WorldAdm}(W)
 \land\;\mathrm{HeapOk}(n,W,h)
+\\
+\land\;\mathrm{CodesSound}_G(\mathit{codes})
+\land\;\mathrm{SummariesSound}_G(\mathit{images},\mathit{sums})
 \\
 \Longrightarrow\quad
 \mathrm{SafeGraph}_P(⟦R⟧_G^{\rho},n,W,h,\mathrm{at}(p,\rho)).
@@ -2556,8 +2559,17 @@ Boolean slot carries, are node evidence the edges transfer.
 are the graph-level analogues of `Safe`: the run starts at the entry label with
 the input environment, and stays safe through every transition.
 The arguments, world, heap and budget are arbitrary subject to these premises.
-`accepted_entry_safe` is the underlying theorem for a checked point and its
-claimed environment and heap facts, both of which its caller must establish.
+The code table and the read summaries the check reads are sound
+(`CodesSound`, `SummariesSound`); their default arguments discharge only the
+empty tables, and a request's checked tables discharge them
+(`RequestJson.verify_safe_at`). `accepted_entry_safe` is the underlying
+theorem for a checked point $`c`$ of a graph checked by `checkGraphUsing`, from
+a value $`v_0`$: its premises are the soundness of the code table and the
+summaries, $`\mathrm{EnvOk}`$ of the point's environment,
+its implications (`ImpliesOk`), its argument slots holding $`v_0`$
+(`ArgumentsOk`), its heap knowledge (`HeapKnowledge.Holds`),
+$`\mathrm{WorldAdm}(W)`$ and $`\mathrm{HeapOk}(n,W,h)`$, all of which its
+caller establishes.
 The proof inducts on execution budget, so it covers cycles without unrolling
 the graph or computing invariants. Expressions use the existing small-step
 relation, with `SafePost` carrying checked output facts to the continuation.

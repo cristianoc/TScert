@@ -857,9 +857,11 @@ choice.
 
 ## Proved boundary and validation
 
-`checkUnitJson_safe` proves that acceptance yields the decoded bundle
-and a successful `checkRequests` over the requests reconstructed from the
-source and claims. Each request's check is `verify`, which binds the
+`checkUnitJson_safe` proves that a unit's acceptance yields, for a unit of
+functions, the bundle decoded from its group's evidence and a successful
+`checkRequests` over the group's requests reconstructed from the source and
+claims, and for a module unit its document's check
+([its statement](SOURCE-ELABORATION.md#exceptional-footprints)). Each request's check is `verify`, which binds the
 certificate to the requested point annotations (`verify_eq`, through
 `acceptUsing_eq`). It establishes global modeled safety at every observation
 budget and every admitted assignment of the parameter rows
