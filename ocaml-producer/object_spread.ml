@@ -38,8 +38,8 @@ let meet_refused s = unsupported ("a spread of an intersection " ^ s)
    at this boundary; all spread refusals then share structured control flow. *)
 let spread_definition declarations id args =
   try definition declarations id args with
-  | Json.Error (Json.Message message) when String.starts_with ~prefix:"unsupported: " message ->
-    unsupported (String.sub message 13 (String.length message - 13))
+  | Json.Error (Json.Message message) as error ->
+    (match Json.refusal_reason message with Some reason -> unsupported reason | None -> raise error)
   | Json.Error (Json.Unbound { name; at }) -> unsupported (Json.unbound_text name at)
 let primitive_atom = function
   | Nul | Undef | True | False | Num | Str | NumLit _ | StrLit _ | Bigint | BigintLit _

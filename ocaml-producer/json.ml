@@ -6,6 +6,16 @@ type t = Null | Bool of bool | Number of string | String of string
 type failure = Message of string | Unbound of { name : string; at : t option }
 exception Error of failure
 let fail s = raise (Error (Message s))
+(* A refusal's message begins with this prefix; the producer exits with
+   status 2 on one, and the pipeline reads it by the producer's protocol
+   (`producerProtocol` in pipeline/stage-execution.mts), so every case the
+   producer refuses checks that the two agree. *)
+let refusal_prefix = "unsupported: "
+let unsupported reason = fail (refusal_prefix ^ reason)
+(* A message's reason where it is a refusal. *)
+let refusal_reason m =
+  let n = String.length refusal_prefix in
+  if String.starts_with ~prefix:refusal_prefix m then Some (String.sub m n (String.length m - n)) else None
 (* A source span as diagnostics write it, `[start,end)`. *)
 let span_text = function
   | Array [Number a; Number b] -> "[" ^ a ^ "," ^ b ^ ")"
@@ -16,7 +26,7 @@ let unbound_text name at =
 (* A failure's text: an unbound name's is a refusal's. *)
 let message = function
   | Message s -> s
-  | Unbound { name; at } -> "unsupported: " ^ unbound_text name at
+  | Unbound { name; at } -> refusal_prefix ^ unbound_text name at
 let obj = function Object xs -> xs | _ -> fail "expected object"
 let field k j = match List.assoc_opt k (obj j) with
   | Some x -> x | None -> fail ("missing field: " ^ k)

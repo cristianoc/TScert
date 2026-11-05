@@ -50,7 +50,7 @@ type 'output callbacks = {
   widen_slot: ty -> ty;
 }
 
-let unsupported s = Json.fail ("unsupported: " ^ s)
+let unsupported = Json.unsupported
 
 let statements callbacks flow_graph register_following owner_span env0 ss =
     let open Flow in

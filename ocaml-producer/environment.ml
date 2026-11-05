@@ -27,7 +27,7 @@ let lookup ?at env name = match List.assoc_opt name env with
 let is_field n = String.contains n '\000'
 let owner n = String.sub n 0 (String.index n '\000')
 let extend env name binding =
-  if List.mem_assoc name env then Json.fail ("unsupported: shadowing " ^ name);
+  if List.mem_assoc name env then Json.unsupported ("shadowing " ^ name);
   env @ [name,binding]
 
 (* Primitive observations have a type independent of the storage contract. *)

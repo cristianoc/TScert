@@ -59,7 +59,7 @@ let qualify_substitution ~native ~expand ~owned ~observed quantified solution =
         Option.map (fun r -> r,Option.value result ~default:(Atoms [])) r,certificate)
     | _,_ -> identity,argument) solution
 
-let unsupported s = Json.fail ("unsupported: " ^ s)
+let unsupported = Json.unsupported
 
 (* [meet] rebuilds an intersection of a declaration's equation (`Meet`) once
    its operands are substituted: by default it stays one, for the

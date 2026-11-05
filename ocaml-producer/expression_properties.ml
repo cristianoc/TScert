@@ -3,6 +3,9 @@ open Environment
 open Source
 open Type_queries
 open Proposal_diagnostics
+(* A refusal of a read of a field a type lacks (`Type_queries`). *)
+let missing_field m =
+  match Json.refusal_reason m with Some r -> String.starts_with ~prefix:"missing field " r | None -> false
 module type Inputs = sig
   include Expression_support.Inputs
   include Analysis_capabilities.Path_queries
@@ -47,10 +50,10 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
       when (match List.assoc_opt name env with Some (Storage _) -> true | _ -> false) ->
       let t = present (expr env e) in
       (try S.field_type declarations [] t n with Json.Error (Json.Message m)
-        when String.length m >= 27 && String.sub m 0 27 = "unsupported: missing field " ->
+        when missing_field m ->
         Proposal_diagnostics.unsupported ("a read of " ^ key_text n ^ " on a `let` holding a union of objects, some without it: \
           a test does not narrow a cell holding an object, whose known contents are primitive values")
-        | Json.Error (Json.Message m) when m = "unsupported: field read on non-object" ->
+        | Json.Error (Json.Message m) when Json.refusal_reason m = Some "field read on non-object" ->
           Proposal_diagnostics.unsupported ("a cell read at its contract: a read of " ^ key_text n ^ " on a `let` or an assigned \
             parameter holding a primitive beside an object, which a test does not narrow: what a cell is known \
             to hold is primitive values or merely no `undefined`"))
@@ -84,7 +87,7 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
        | _ -> ());
       (
          (try S.field_type declarations [] receiver n with Json.Error (Json.Message m)
-           when String.length m >= 27 && String.sub m 0 27 = "unsupported: missing field "
+           when missing_field m
                 && (match receiver with
                     | Atoms atoms -> List.exists (function Shape {elements=Some _;_} -> true | _ -> false) atoms
                                      && List.exists (function Shape {elements=None;_} -> true | _ -> false) atoms
@@ -96,7 +99,7 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
            (* A member of an array the prototype's reviewed contract does not
               list: an array's type is its elements and that contract. *)
            | Json.Error (Json.Message m)
-               when String.length m >= 27 && String.sub m 0 27 = "unsupported: missing field "
+               when missing_field m
                     && (match receiver with
                         | Atoms atoms -> List.for_all (function Shape {elements=Some _;_} -> true | _ -> false) atoms
                         | _ -> false) ->
@@ -106,13 +109,13 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
               guard found an object: what a field is known to hold is a union
               of primitives, and an object's contents may change through an
               alias, so the guard leaves it at its type. *)
-           | Json.Error (Json.Message m) when m = "unsupported: field read on non-object"
+           | Json.Error (Json.Message m) when Json.refusal_reason m = Some "field read on non-object"
                && (match e.node with Read ({node=Id _;_},_) -> true | _ -> false) ->
              Proposal_diagnostics.unsupported ("a field read at its contract: a read of " ^ key_text n ^ " through a field holding \
                an object beside null or undefined, which a test does not narrow: what a field is known to hold \
                is a union of primitive values (DESIGN.md, \"Current-content assertions\")")
            (* A member some arm of the receiver lacks: refused at the read. *)
-           | Json.Error (Json.Message m) when String.length m >= 27 && String.sub m 0 27 = "unsupported: missing field " ->
+           | Json.Error (Json.Message m) when missing_field m ->
              Json.fail (m ^ " at " ^ Json.span_text site)))
     | Index (e,key) -> let receiver=present (expr env e) in let key=expr env key in
       S.index_type declarations [] receiver key

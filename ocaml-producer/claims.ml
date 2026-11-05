@@ -34,7 +34,7 @@ let key_json = function
   | Name name -> String name
   | Key i -> Object ["symbol",int i]
 
-let unsupported s = fail ("unsupported: " ^ s)
+let unsupported = Json.unsupported
 (* The graph's sole callable contract shape. Effects become definition
    obligations when a qualified signature is proposed. *)
 let change_json = function Keep -> String "keep" | Grow -> String "grow" | Any -> String "any"

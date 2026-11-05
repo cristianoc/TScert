@@ -24,7 +24,7 @@ import { requireWellFormed, wireText } from "../tools/wire-strings.mts";
 import { resolvableDeclaration } from "../tools/intrinsics.mts";
 import { assemblyCall } from "./claims-assembly.mts";
 import { currentStore, invokeInProcess, invokeProcess, Recorder, readInvocationLog, type AttemptRecord } from "./stages.mts";
-import { producerBuild, producerCall, refusalEnd, verifierBuild, verifierCall, type ProcessCall } from "./stage-execution.mts";
+import { producerBuild, producerCall, producerProtocol, refusalEnd, verifierBuild, verifierCall, verifierProtocol, type ProcessCall, type Protocol } from "./stage-execution.mts";
 
 /** The file of a run's directory holding its stage invocations' attempts. */
 export const invocationLog = "invocations.jsonl";
@@ -132,10 +132,10 @@ function stepLimit(): number {
   return milliseconds;
 }
 /** A step run: its exit code, its output, and what it reports on failure. */
-export type Ran = { code: number; out: string; detail: string };
+export type StepRun = { code: number; out: string; detail: string };
 /** A process stage run through the common invocation mechanism, its attempt
  * recorded by `recorder`. */
-export function runStep(call: ProcessCall, recorder: Recorder | null = null, limitMs: number = stepTimeoutMs): Ran {
+export function runStep(call: ProcessCall, recorder: Recorder | null = null, limitMs: number = stepTimeoutMs): StepRun {
   const p = invokeProcess(call, { limitMs, force: false, recorder });
   const step = [
     basename(call.program),
@@ -169,22 +169,23 @@ export function runStep(call: ProcessCall, recorder: Recorder | null = null, lim
 }
 export { refusalEnd };
 /** A step's refusal record, without its end line, or null where the step
- * succeeded. A refusal is its exit status (the verifier's 1, the producer's
- * 2), a first line naming it (`reject: …`, `unsupported: …`) and a last line
+ * succeeded. A refusal is the exit status and the first line's prefix its
+ * tool's protocol states (`stage-execution.mts`), and a last line
  * `end of refusal`, so a record cut short is none. Any other exit but 0 (no
  * output, an exception, a usage error, a file it could not read or write,
  * the verifier's 3 and the producer's 3) is a failure of the tool, no
  * verdict. */
-function refusalOf(ran: Ran, step: string, status: number, prefix: string): string | null {
+function refusalOf(ran: StepRun, step: string, protocol: Protocol): string | null {
   if (ran.code === 0) return null;
   const lines = ran.detail.split("\n");
-  if (ran.code === status && ran.detail.startsWith(prefix) && lines.at(-1) === refusalEnd)
+  const refusal = protocol.refusal;
+  if (refusal !== null && ran.code === refusal.status && ran.detail.startsWith(refusal.prefix) && lines.at(-1) === refusalEnd)
     return lines.slice(0, -1).join("\n").trim();
   throw Error(`tool failure: ${step} exited with status ${ran.code} without a complete refusal: ` +
     `${lines[0] || "no output"}`);
 }
-const verifierRefusal = (ran: Ran, step: string): string | null => refusalOf(ran, `verifier ${step}`, 1, "reject: ");
-const producerRefusal = (ran: Ran): string | null => refusalOf(ran, "the producer", 2, "unsupported: ");
+const verifierRefusal = (ran: StepRun, step: string): string | null => refusalOf(ran, `verifier ${step}`, verifierProtocol);
+const producerRefusal = (ran: StepRun): string | null => refusalOf(ran, "the producer", producerProtocol);
 /** A failed search names the obligation it could not establish and why, in
  * source terms: the presentation's summary (`diagnostic-view.mts`) of the verifier's structured record, as
  * the line `obligation: …` after the verifier's own first line. Display only;
@@ -215,7 +216,7 @@ function isJsonRecord(value: Json): value is JsonRecord {
 /** The producer's explanations (`producer --explain`), read field by field:
  * a run that exits otherwise than 0, or prints anything but an array of
  * `{pos, reason}` records, is a tool failure, never "no explanation". */
-function readExplanations(ran: Ran): Explanation[] {
+function readExplanations(ran: StepRun): Explanation[] {
   const malformed = (what: string): Error =>
     Error(`tool failure: the producer's --explain ${what}: ${ran.detail.split("\n")[0] || "no output"}`);
   if (ran.code !== 0) throw malformed(`exited with status ${ran.code}`);
@@ -333,7 +334,7 @@ function eligibleReads(declarations: unknown, units: Map<string, unknown[]>, cla
   });
 }
 /** Propose a document's claims, its eligible reads qualified. */
-function propose(recorder: Recorder, ast: string, flow: string, reads: QualifiedRead[], qualifiedPath: string): Ran {
+function propose(recorder: Recorder, ast: string, flow: string, reads: QualifiedRead[], qualifiedPath: string): StepRun {
   writeFileSync(qualifiedPath, JSON.stringify(reads.map(({ local, declaration, footprint, onThrow }) =>
     ({ local, declaration, footprint, onThrow }))));
   return runStep(producerCall(producerExecutable, reads.length ? [ast, flow, qualifiedPath] : [ast, flow]), recorder);
