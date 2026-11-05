@@ -1002,7 +1002,7 @@ as regression evidence.
   node guard, whose behaviour on `undefined` the description admits, throws
   a `TypeError` there.
 - **C3, shapes (regression evidence).** `make compiler-api-shapes`
-  (`tests/compiler-api-shapes.mts`, about 20 s) reads the family table over
+  (`tests/compiler-api-shapes.mts`, about a minute, also run by CI) reads the family table over
   the installed declarations and walks every node of `tools/*.mts`,
   `pipeline/*.mts`, `tests/*.mts`, `dev/*.mts`, `pipeline/examples/*.ts` and
   `tests/node-shapes-corpus/` (TypeScript, JSX and JavaScript with JSDoc),

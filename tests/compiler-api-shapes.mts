@@ -17,8 +17,8 @@
 // declarations, resolved by name; the corpus is the repository's own sources
 // and fixtures and `tests/node-shapes-corpus/`. What the corpus never reaches
 // is reported: the kinds no node has, and the members of reached kinds no
-// node holds, the brands declared `any` aside. About 20 s: `make
-// compiler-api-shapes`, outside the fast checks.
+// node holds, the brands declared `any` aside. About a minute: `make
+// compiler-api-shapes` and CI run it, outside the fast checks.
 //   node tests/compiler-api-shapes.mts
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync, writeFileSync } from "node:fs";

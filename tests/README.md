@@ -47,7 +47,7 @@ creates.
 
 This directory holds the suites that check the repository around the
 pipeline. `test-all.sh` runs each but `compiler-api-shapes.mts`, which
-`make compiler-api-shapes` runs, and `session-reuse.mts`, which
+`make compiler-api-shapes` and CI run, and `session-reuse.mts`, which
 `pipeline/test.mts` runs beside its controls, as it runs the full
 `observed-stages.mts` (`test-all.sh` runs it with `--reads`);
 `force-tool-failure.mts` is the forced failure `tool-failures.mts` imports:

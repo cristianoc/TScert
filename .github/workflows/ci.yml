@@ -71,6 +71,11 @@ jobs:
       - name: Fast checks and controls
         run: opam exec -- make test
 
+      # C3 and C4 over the corpus (tests/compiler-api-shapes.mts): about a
+      # minute, outside the fast checks.
+      - name: Compiler-API shapes
+        run: make compiler-api-shapes
+
       # A runner has 4 CPUs: a stage's limit three times the 60 s a
       # 12-core machine's cases are calibrated to.
       - name: Pipeline cases

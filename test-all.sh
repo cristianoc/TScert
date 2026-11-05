@@ -111,6 +111,56 @@ refuses_broken_external() {
   echo "an external declaration that does not check: refused"
 }
 run_test "unchecked.mts refuses a broken external declaration" refuses_broken_external
+# unchecked.mts --list prints every site of the counterexamples, and --contracts the external `any` inputs read at a contract.
+unchecked_reports() {
+  local list sites total contracts
+  list="$(node tools/unchecked.mts --project tests/unchecked-project --list 2>&1)" && { echo "--list passed a project with errors"; return 1; }
+  sites=$(grep -c '^tests/unchecked-project/.*  \[' <<<"$list")
+  total=$(tail -n 1 <<<"$list" | grep -oE '^[0-9]+ `[^`]*`(, [0-9]+ `[^`]*`)*' | grep -oE '[0-9]+ `' | tr -d ' `' | paste -sd+ - | bc)
+  [ "$sites" -gt 0 ] && [ "$sites" -eq "$total" ] || { echo "$list"; echo "--list printed $sites sites; its summary counts ${total:-none}"; return 1; }
+  contracts="$(node tools/unchecked.mts --project tests/unchecked-project --contracts 2>&1)" || { echo "$contracts"; return 1; }
+  grep -q 'TScertParsedJson: parse(text: string' <<<"$contracts" || { echo "$contracts"; echo "--contracts omits JSON.parse's overlay entry"; return 1; }
+  if grep -v '  ([^()]*\.d\.ts)$' <<<"$contracts"; then echo "--contracts printed a line naming no declaration file"; return 1; fi
+  echo "--list: $sites sites, as its summary counts; --contracts: $(wc -l <<<"$contracts" | tr -d ' ') contract inputs"
+}
+run_test "unchecked.mts lists sites and contract inputs" unchecked_reports
+# The commit-msg hook (bin/git_hooks/commit_record.sh) accepts a commit record and refuses each kind of malformed one.
+commit_records() {
+  local dir="$WORK/commit-records" out
+  mkdir -p "$dir"
+  record() { printf '%s\n\nWhy:\n    a reason\n\n%s\n\n%s\n' "$1" "$2" "$3"; }
+  record "Subject" "Docs modified (a document):" $'Outcome: no-behaviour-change\nParts: docs' > "$dir/valid"
+  record "Subject" "Rule added (a rule):" $'Outcome: verified\nParts: lean-rules\nTrust: none' > "$dir/valid-behaviour"
+  bin/git_hooks/commit_record.sh "$dir/valid" --check || return 1
+  bin/git_hooks/commit_record.sh "$dir/valid-behaviour" --check || return 1
+  refused() {
+    local name="$1" expected="$2"
+    if out="$(bin/git_hooks/commit_record.sh "$dir/$name" --check 2>&1)"; then echo "accepted: $name"; return 1; fi
+    grep -qF -- "$expected" <<<"$out" || { echo "$name: $out"; return 1; }
+  }
+  printf 'Subject\n\nOutcome: no-behaviour-change\nParts: docs\n' > "$dir/no-why"
+  refused no-why "no 'Why:' section" || return 1
+  record "Subject" "Docs modified (a document):" 'Parts: docs' > "$dir/no-outcome"
+  refused no-outcome "no 'Outcome:' trailer" || return 1
+  record "Subject" "Docs modified (a document):" $'Outcome: maybe\nParts: docs' > "$dir/bad-outcome"
+  refused bad-outcome "Outcome 'maybe' is not one of" || return 1
+  record "Subject" "Docs modified (a document):" 'Outcome: no-behaviour-change' > "$dir/no-parts"
+  refused no-parts "no 'Parts:' trailer" || return 1
+  record "Subject" "Rule added (a rule):" $'Outcome: verified\nParts: lean-rules' > "$dir/no-trust"
+  refused no-trust "no 'Trust:' trailer" || return 1
+  record "Subject" "Docs modified (a document):" $'Outcome: verified\nParts: docs\nTrust: none' > "$dir/no-change"
+  refused no-change "no change block" || return 1
+  record "$(printf 'x%.0s' {1..101})" "Docs modified (a document):" $'Outcome: no-behaviour-change\nParts: docs' > "$dir/long-subject"
+  refused long-subject "the subject line has 101 characters" || return 1
+  record "Subject" $'Docs modified (a document,\n  another):' $'Outcome: no-behaviour-change\nParts: docs' > "$dir/wrapped-heading"
+  refused wrapped-heading "a change heading must close on its own line" || return 1
+  record "Subject" "Docs modified (a document):" $'Outcome: no-behaviour-change\nParts: docs\nReviewed: yes' > "$dir/unknown-trailer"
+  refused unknown-trailer "unknown trailer 'Reviewed:'" || return 1
+  record "Subject" "Docs modified (a document):" $'Outcome: no-behaviour-change\nParts: docs\nUnits: none' > "$dir/units-none"
+  refused units-none "'Units: none'" || return 1
+  echo "two records accepted, ten malformed messages refused"
+}
+run_test "Commit records: the commit-msg hook" commit_records
 # tests/docs.mts checks every document's links, anchors and math.
 run_test "Documents: links, math" node tests/docs.mts
 # tests/caught-errors.mts checks the makers and handlers of caught errors on real failures.
