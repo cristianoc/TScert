@@ -4234,6 +4234,35 @@ record from the loop's iterator, which the entry edge does not state
   per step agree on a list that does not change.
 - **Scope:** `blocker-compiler-api-template-reduce`.
 
+### A dictionary completed by writes in branches before its return
+
+`identify` in `tools/compiler-channel.mts` built its identity as a local
+`{ [field: string]: string | boolean }` from a literal of five fields, wrote
+`profile` on macOS, or `confinement` and `bubblewrap` on Linux, in the two
+arms of an `if`, and returned `{ identity }`. The search found no evidence
+at the return ("the edge from node 98 does not establish the claims at
+this point"); which rule fails there is not established
+([investigation](../WORK.md#status)). The function shares one unit with
+`profile`, `current`, `launcher` and the module's initialization, so the
+refusal lost all four functions and the initialization.
+
+- **Avoided form and cost:** each arm returns one literal holding every
+  field of its platform. The written form is the only one of its kind in
+  `tools/`; supporting it needs its failing rule found first.
+- **Equivalence:** both forms evaluate `installed(swapCase(…))`, then
+  `profile`, or `confinement` and `treeDigest`, in the same order, reading
+  `at`'s fields, which run no code. Each returns a fresh `identity` record
+  whose own data properties are `executable`, `packagePath`, `package`,
+  `executablePackage`, `caseSensitive` and the platform's fields, in that
+  order, writable, enumerable and configurable; under the
+  untampered-standard-objects assumption `Object.prototype` supplies no
+  setter for those keys, so the writes define the same properties as the
+  literal. Returns, exceptions and effects agree on both platforms.
+- **Scope:** the census of `compiler-channel.mts` (`make census
+  FILES=compiler-channel.mts FUNCTIONS=identify,compilerLedger SHALLOW=1`):
+  1 of 7 functions verified before, 5 of 7 after, the initialization
+  accepted. No host contract or external assumption is added.
+
 ## Host boundaries
 
 Operations of TScert's code on an external service that no rule models,
