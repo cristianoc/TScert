@@ -1,0 +1,156 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Commit Records</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Code+Pro:wght@400;600&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=STIX+Two+Text:ital,wght@0,400;0,600;1,400&display=swap">
+<style>
+:root { --bg:#fbfcfd; --surface:#ffffff; --ink:#0b1a2e; --muted:#56627a; --rule:#d5dce6; --accent:#8a6410; --code-bg:#eef2f7; --math-bg:#f2f4f8; --ok:#2f6b47; --ok-bg:#e2efe4; --principled:#a0521a; --principled-bg:#f7e6d6; --gap:#6b6f78; --gap-bg:#ecebe6; --neutral:#2c4f7c; --neutral-bg:#e6ebf2; --trust:#7c2f4a; --trust-bg:#f2e1e7; --neg:#9b3524; --neg-bg:#f5e1da; --run:#7a5414; --run-bg:#f3e7cc; --brand-ink:#0b1a2e; --brand-gold:#b8840f;
+  --display:"Bricolage Grotesque","Helvetica Neue",Arial,sans-serif; --body:"Inter","Helvetica Neue",Arial,sans-serif; --mono:"Source Code Pro",Menlo,Consolas,monospace; --math:"STIX Two Text","STIX Two Math","STIXGeneral","Cambria Math","Apple Symbols",Georgia,serif; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#0e1626; --surface:#16213a; --ink:#efe7d4; --muted:#9aa3b5; --rule:#2a3756; --accent:#e0ac4a; --code-bg:#131d33; --math-bg:#1a2540; --ok:#7fd0a2; --ok-bg:#17322a; --principled:#f0a868; --principled-bg:#3a2a1c; --gap:#9aa3b5; --gap-bg:#1c2639; --neutral:#8fb4e8; --neutral-bg:#1b2b49; --trust:#e79bb6; --trust-bg:#3a2131; --neg:#f0907d; --neg-bg:#3a1f22; --run:#e0ac4a; --run-bg:#2e2a24; --brand-ink:#efe7d4; --brand-gold:#e0ac4a; color-scheme:dark } }
+:root[data-theme="dark"] { --bg:#0e1626; --surface:#16213a; --ink:#efe7d4; --muted:#9aa3b5; --rule:#2a3756; --accent:#e0ac4a; --code-bg:#131d33; --math-bg:#1a2540; --ok:#7fd0a2; --ok-bg:#17322a; --principled:#f0a868; --principled-bg:#3a2a1c; --gap:#9aa3b5; --gap-bg:#1c2639; --neutral:#8fb4e8; --neutral-bg:#1b2b49; --trust:#e79bb6; --trust-bg:#3a2131; --neg:#f0907d; --neg-bg:#3a1f22; --run:#e0ac4a; --run-bg:#2e2a24; --brand-ink:#efe7d4; --brand-gold:#e0ac4a; color-scheme:dark }
+* { box-sizing:border-box } body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.6 var(--body) }
+main { max-width:900px; margin:0 auto; padding-inline:20px; padding-block:32px 64px; display:flex; flex-direction:column; gap:22px }
+h1 { font:600 32px/1.15 var(--display); margin:0 } h2 { font:600 22px/1.2 var(--display); margin:12px 0 8px; padding-top:12px; border-top:2px solid var(--ink) }
+h3 { font:600 19px/1.3 var(--display); margin:2px 0 0; text-wrap:balance }
+h4 { font:600 11px/1 var(--body); letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin:12px 0 4px }
+p { margin:2px 0; max-width:72ch } .lede { color:var(--muted) }
+code { font:13px/1.5 var(--mono); background:var(--code-bg); padding:1px 4px; border-radius:3px }
+pre { margin:4px 0; padding:12px 14px; border-radius:6px; overflow-x:auto }
+pre.code { font:13px/1.55 var(--mono); background:var(--code-bg) }
+.rules { display:flex; flex-direction:column; gap:14px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:14px 18px; overflow-x:auto; font:16px/1.6 var(--math) }
+.rules sub, .rules sup { font-size:.72em; line-height:0 }
+.formulas { display:flex; flex-direction:column; gap:4px }
+.formulas .row { display:flex; flex-wrap:wrap; gap:4px 28px } .formulas .row.cont { padding-left:2em }
+.infer { display:flex; align-items:center; gap:12px }
+.frac { display:inline-flex; flex-direction:column; align-items:center; min-width:0 }
+.premises { display:flex; flex-wrap:wrap; justify-content:center; gap:4px 26px; padding:0 6px 3px }
+.bar { align-self:stretch; border-top:1.5px solid var(--ink) }
+.conclusion { padding:3px 6px 0; text-align:center }
+.rule-name { font:15px/1 var(--math); font-variant:small-caps; letter-spacing:.02em; color:var(--accent); white-space:nowrap }
+.card { background:var(--surface); border:1px solid var(--rule); border-radius:8px; padding:20px 22px; display:flex; flex-direction:column; gap:6px; min-width:0 }
+.card > header { display:flex; justify-content:space-between; gap:12px; align-items:flex-start }
+.sha { font:12px/1.4 var(--mono); color:var(--muted) }
+.pill { font:600 11px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; padding:6px 9px; border-radius:99px; white-space:nowrap }
+.pill.ok { color:var(--ok); background:var(--ok-bg) } .pill.principled { color:var(--principled); background:var(--principled-bg) }
+.pill.gap { color:var(--gap); background:var(--gap-bg) } .pill.neutral { color:var(--neutral); background:var(--neutral-bg) }
+.units { display:flex; flex-wrap:wrap; gap:6px } .units span { font:12px/1 var(--mono); border:1px solid var(--rule); border-radius:4px; padding:5px 7px }
+dl.facts { display:grid; grid-template-columns:max-content minmax(0,1fr); gap:6px 16px; margin:12px 0 0; padding-top:12px; border-top:1px solid var(--rule); font-size:13.5px }
+dt { font:600 11px/1.9 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted) }
+dd { margin:0; min-width:0; display:flex; flex-wrap:wrap; gap:5px; align-items:baseline }
+.chip { font:500 12px/1 var(--body); border:1px solid var(--rule); border-radius:4px; padding:4px 7px } .chip.strong { color:var(--accent); border-color:var(--accent) }
+.trust { color:var(--trust); background:var(--trust-bg); padding:2px 6px; border-radius:4px } .none { color:var(--muted) }
+.test { font:12px/1 var(--mono); padding:4px 7px; border-radius:4px }
+.test.pos { color:var(--ok); background:var(--ok-bg) } .test.pos::before { content:"✓ " }
+.test.neg { color:var(--neg); background:var(--neg-bg) } .test.neg::before { content:"✗ " }
+.test.forged { color:var(--principled); background:var(--principled-bg) } .test.forged::before { content:"forged " }
+details { margin-top:8px; font-size:13px; color:var(--muted) } summary { cursor:pointer }
+.table-wrap { overflow-x:auto; border:1px solid var(--rule); border-radius:8px; background:var(--surface) }
+table { border-collapse:collapse; width:100%; font-size:13px } th, td { text-align:left; vertical-align:top; padding:8px 10px; border-bottom:1px solid var(--rule) }
+th { font:600 11px/1.2 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); white-space:nowrap } td.num { font-variant-numeric:tabular-nums }
+h4.change { display:flex; align-items:center; gap:8px; text-transform:none; letter-spacing:0; font:600 14px/1.3 var(--body); color:var(--ink); margin:16px 0 6px }
+h4.change .target { font-weight:400; color:var(--muted) }
+.act { font:600 10.5px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; padding:4px 7px; border-radius:4px }
+.act.added { color:var(--ok); background:var(--ok-bg) } .act.removed { color:var(--neg); background:var(--neg-bg) }
+.act.modified, .act.replaced { color:var(--principled); background:var(--principled-bg) }
+.versions { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:10px }
+.versions figure { margin:0; min-width:0 } .versions figcaption { font:600 11px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); margin:0 0 4px }
+.versions .rules { height:calc(100% - 18px); box-sizing:border-box }
+pre.code .ln { display:block; white-space:pre } pre.code .ln.add { background:var(--ok-bg) } pre.code .ln.del { background:var(--neg-bg) }
+.tk-k { color:#7a3b8c } .tk-s { color:#2f6b47 } .tk-n { color:#a35a12 } .tk-c { color:var(--muted); font-style:italic } .tk-t { color:#2c4f7c }
+.prose p { margin:4px 0 }
+ul.effect, ul.summary { margin:4px 0; padding-left:20px } ul.effect li, ul.summary li { margin:3px 0 } ul.summary ul { padding-left:18px; color:var(--muted) }
+ul.effect .arrow { color:var(--accent); font-weight:600 }
+ul.effect details { margin:0; color:inherit; font-size:inherit } ul.effect summary { list-style-position:outside }
+ul.effect .kind { font-size:11px; text-transform:uppercase; letter-spacing:.04em; padding:1px 6px; border-radius:4px; background:var(--chip, #eee) }
+ul.effect .kind.negative { color:#8a3b12 } ul.effect .kind.positive { color:#22663a } ul.effect .kind.gap { color:#7a5b00 }
+ul.effect .was.unsound { color:#b3261e; font-weight:600 } ul.effect .now { font-weight:500 } ul.effect .why { color:var(--muted) }
+ul.effect mark { background:#ffe08a; color:inherit; border-radius:2px }
+@media (max-width:720px) { .versions { grid-template-columns:minmax(0,1fr) } }
+.lowering { display:flex; flex-direction:column; gap:6px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:12px 16px; overflow-x:auto }
+.lowering .map, .lowering .cond, .lowering .result { display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 10px }
+.lowering .map:not(:has(.sem)) { flex-direction:column; align-items:stretch; gap:4px }
+.lowering .result { display:grid; grid-template-columns:auto minmax(0,1fr); align-items:baseline; gap:2px 10px; padding-left:1em } .lowering .result .note { grid-column:2 }
+.m-intr { font:14px/1.5 var(--mono); color:#2c4f7c } .m-lit { font:13px/1.5 var(--mono); color:#7a3b8c }
+.lowering code.src { font:13px/1.5 var(--mono); background:var(--surface); border:1px solid var(--rule); padding:2px 6px; border-radius:4px }
+.lowering .to { color:var(--accent); font-weight:600; font-size:17px }
+.lowering .tgt { font:16px/1.5 var(--math) } .rules .lowering { background:none; border:0; padding:0 } .lowering .sem code.src { margin:0 2px }
+var { font-style:italic } .m-op { color:#2c4f7c; font-style:normal } .m-con { color:#8f6416; font-style:normal; font-variant:small-caps }
+.m-kw { color:#7a3b8c; font-weight:600; font-style:normal } .m-bind { color:#7a3b8c } .m-rel { color:var(--accent); padding:0 .12em }
+.m-text { font:14px/1.5 var(--body); color:var(--muted) } code.m-code { font:13px/1.5 var(--mono); background:var(--surface); border:1px solid var(--rule); padding:1px 5px; border-radius:4px }
+.refused { color:var(--neg); font-weight:600 }
+.lowering .refused { color:var(--neg); font-weight:600 }
+.lowering .label { font:600 11px/1 var(--body); letter-spacing:.05em; text-transform:uppercase; color:var(--muted); min-width:7em }
+.lowering .cond { padding-left:1.5em } .lowering .note { color:var(--muted); font:italic 13px/1.4 var(--body) }
+a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outline-offset:2px }
+@media (max-width:520px) { dl.facts { grid-template-columns:minmax(0,1fr) } .card > header { flex-direction:column } }</style></head><body><main><header><h1>Commit Records</h1><p class="lede">1 commit, rendered from their records.</p></header>
+<section><h2>Branches</h2><ul class="summary"><li><a href="#g-pr-110"><code>4ffa514efc06d6904fec1be8085a0504f4c0a1ad..pr-110</code></a><ul><li>1 commit</li><li>parts: <span class="chip">producer</span> <span class="chip">docs</span> <span class="chip">tests</span></li></ul></li></ul></section>
+<h2 id="g-pr-110"><code>4ffa514efc06d6904fec1be8085a0504f4c0a1ad..pr-110</code></h2><article class="card" id="c-9227dfd2b"><header><div><div class="sha">9227dfd2b · Cristiano Calcagno · Nov 05, 21:50</div><h3>Schedule a search's node productions by label tables, and reuse a round's equal production</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>Since pretext's <code>walkPreparedComplexLines</code> (<code>line-break.ts</code>, 9,917 program nodes, 325 loop heads) reaches proof search, its search takes 152 s CPU, and each file importing it searches it again as a module run: the first searches of <code>line-break.ts</code>, <code>layout.ts</code> and <code>rich-inline.ts</code> take 153 s, 173 s and 182 s CPU, past the 60 s stage limit. The search fails, so it runs all six of its rounds over every node. Profiling (macOS <code>sample</code>) put 74% of the time in list membership tests: each pass over the nodes, at each node still waiting for a predecessor, tested the 325-element cut list and the handler-target list and looked the node up in the requirement and seed lists, and a waiting round makes 4,781 passes. The rest went largely to reading a point's claim, and an edge's source slot, by position in a list.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Definition <span class="target">search: the order of node productions in a round</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">each pass visits every node in label order; at a node not yet</span></span></div><div class="row"><span><span class="m-text">produced it reads its requirement and seeds, then tests the cut and</span></span></div><div class="row"><span><span class="m-text">handler lists, then waits if a predecessor is missing</span></span></div></div></div></figure><figure><figcaption>After</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">each pass visits every node in label order; a node waits while its</span></span></div><div class="row"><span><span class="m-text">count of entering edges from unproduced nodes is nonzero, read before</span></span></div><div class="row"><span><span class="m-text">anything else; cut, handler, requirement and seed are read from</span></span></div><div class="row"><span><span class="m-text">tables by label</span></span></div><div class="row"><span><span class="m-text">(the same nodes are produced from the same inputs in the same order)</span></span></div></div></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Definition <span class="target">search: a node production in a later round</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">every round produces each node again</span></span></div></div></div></figure><figure><figcaption>After</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">a round producing a node from the same knowledge, implications and</span></span></div><div class="row"><span><span class="m-text">argument slots as the node's latest production takes that result</span>;</span></div><div class="row"><span><span class="m-text">the other inputs are the same in every round, and the answers the</span></span></div><div class="row"><span><span class="m-text">search threads only grow</span></span></div></div></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Definition <span class="target">search: reading claims and edge slots</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">a point's claim read by its position in the claim list; an edge's</span></span></div><div class="row"><span><span class="m-text">source slot by position in the mapping, for each target slot</span></span></div></div></div></figure><figure><figcaption>After</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">claims read from an array; an edge's mapping read alongside the target</span></span></div><div class="row"><span><span class="m-text">context; an implication's target slots read only for a tested slot</span></span></div><div class="row"><span><span class="m-text">some implication tests</span></span></div></div></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Tooling <span class="target">evidence-mutations.mts, the coverage mutation</span></h4><pre class="code"><span class="ln">The injected edge search reads the target's claim from the claims</span><span class="ln">array by index.</span></pre>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">WORK.md row</span></h4><div class="prose"><p>A status row for what stays: the walker's search takes 22 s CPU over six failing rounds, and each importer searches it again as a module run, so <code>rich-inline.ts</code>'s first search takes 53 s of the 60 s limit.</p></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>invalid-guard-constant-across-loops</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">unsafe element read; search 7.4 s → 1.6 s CPU</span></summary><pre class="code"><span class="tk-c">// A guard's answer held in a constant across forty loops, each loop head a</span>
+<span class="tk-c">// cut, then an element read typed `number` that an empty array leaves</span>
+<span class="tk-c">// `undefined`: `walk([], undefined)` returns `undefined` under Node. The</span>
+<span class="tk-c">// guarded add needs the implication the loop heads carry, which the search's</span>
+<span class="tk-c">// later rounds seed; every round fails at the read, and the first round's</span>
+<span class="tk-c">// failure, at the add's edge, is the one reported. The function lowers to</span>
+<span class="tk-c">// about 1,800 nodes, and each failing round searches all of them.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> walk(xs: <span class="tk-k">readonly</span> number[], v: number | <span class="tk-k">undefined</span>): number {
+  <span class="tk-k">const</span> has = v !== <span class="tk-k">undefined</span>;
+  <span class="tk-k">let</span> total = <span class="tk-n">0</span>;
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i0 = <span class="tk-n">0</span>; i0 &lt; xs.length; i0++) total += xs[i0] ?? <span class="tk-n">0</span>;
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i1 = <span class="tk-n">0</span>; i1 &lt; xs.length; i1++) total += xs[i1] ?? <span class="tk-n">1</span>;
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i2 = <span class="tk-n">0</span>; i2 &lt; xs.length; i2++) total += xs[i2] ?? <span class="tk-n">2</span>;
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i3 = <span class="tk-n">0</span>; i3 &lt; xs.length; i3++) total += xs[i3] ?? <span class="tk-n">3</span>;
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i4 = <span class="tk-n">0</span>; i4 &lt; xs.length; i4++) total += xs[i4] ?? <span class="tk-n">4</span>;
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i5 = <span class="tk-n">0</span>; i5 &lt; xs.length; i5++) total += xs[i5] ?? <span class="tk-n">5</span>;
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i6 = <span class="tk-n">0</span>; i6 &lt; xs.length; i6++) total += xs[i6] ?? <span class="tk-n">6</span>;
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i7 = <span class="tk-n">0</span>; i7 &lt; xs.length; i7++) total += xs[i7] ?? <span class="tk-n">7</span>;
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i8 = <span class="tk-n">0</span>; i8 &lt; xs.length; i8++) total += xs[i8] ?? <span class="tk-n">8</span>;
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i9 = <span class="tk-n">0</span>; i9 &lt; xs.length; i9++) total += xs[i9] ?? <span class="tk-n">9</span>;
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i10 = <span class="tk-n">0</span>; i10 &lt; xs.length; i10++) total += xs[i10] ?? <span class="tk-n">10</span>;
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i11 = <span class="tk-n">0</span>; i11 &lt; xs.length; i11++) total += xs[i11] ?? <span class="tk-n">11</span>;
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i12 = <span class="tk-n">0</span>; i12 &lt; xs.length; i12++) total += xs[i12] ?? <span class="tk-n">12</span>;
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i13 = <span class="tk-n">0</span>; i13 &lt; xs.length; i13++) total += xs[i13] ?? <span class="tk-n">13</span>;
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i14 = <span class="tk-n">0</span>; i14 &lt; xs.length; i14++) total += xs[i14] ?? <span class="tk-n">14</span>;
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i15 = <span class="tk-n">0</span>; i15 &lt; xs.length; i15++) total += xs[i15] ?? <span class="tk-n">15</span>;
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i16 = <span class="tk-n">0</span>; i16 &lt; xs.length; i16++) total += xs[i16] ?? <span class="tk-n">16</span>;
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i17 = <span class="tk-n">0</span>; i17 &lt; xs.length; i17++) total += xs[i17] ?? <span class="tk-n">17</span>;
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i18 = <span class="tk-n">0</span>; i18 &lt; xs.length; i18++) total += xs[i18] ?? <span class="tk-n">18</span>;
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i19 = <span class="tk-n">0</span>; i19 &lt; xs.length; i19++) total += xs[i19] ?? <span class="tk-n">19</span>;
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i20 = <span class="tk-n">0</span>; i20 &lt; xs.length; i20++) total += xs[i20] ?? <span class="tk-n">20</span>;
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i21 = <span class="tk-n">0</span>; i21 &lt; xs.length; i21++) total += xs[i21] ?? <span class="tk-n">21</span>;
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i22 = <span class="tk-n">0</span>; i22 &lt; xs.length; i22++) total += xs[i22] ?? <span class="tk-n">22</span>;
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i23 = <span class="tk-n">0</span>; i23 &lt; xs.length; i23++) total += xs[i23] ?? <span class="tk-n">23</span>;
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i24 = <span class="tk-n">0</span>; i24 &lt; xs.length; i24++) total += xs[i24] ?? <span class="tk-n">24</span>;
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i25 = <span class="tk-n">0</span>; i25 &lt; xs.length; i25++) total += xs[i25] ?? <span class="tk-n">25</span>;
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i26 = <span class="tk-n">0</span>; i26 &lt; xs.length; i26++) total += xs[i26] ?? <span class="tk-n">26</span>;
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i27 = <span class="tk-n">0</span>; i27 &lt; xs.length; i27++) total += xs[i27] ?? <span class="tk-n">27</span>;
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i28 = <span class="tk-n">0</span>; i28 &lt; xs.length; i28++) total += xs[i28] ?? <span class="tk-n">28</span>;
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i29 = <span class="tk-n">0</span>; i29 &lt; xs.length; i29++) total += xs[i29] ?? <span class="tk-n">29</span>;
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i30 = <span class="tk-n">0</span>; i30 &lt; xs.length; i30++) total += xs[i30] ?? <span class="tk-n">30</span>;
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i31 = <span class="tk-n">0</span>; i31 &lt; xs.length; i31++) total += xs[i31] ?? <span class="tk-n">31</span>;
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i32 = <span class="tk-n">0</span>; i32 &lt; xs.length; i32++) total += xs[i32] ?? <span class="tk-n">32</span>;
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i33 = <span class="tk-n">0</span>; i33 &lt; xs.length; i33++) total += xs[i33] ?? <span class="tk-n">33</span>;
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i34 = <span class="tk-n">0</span>; i34 &lt; xs.length; i34++) total += xs[i34] ?? <span class="tk-n">34</span>;
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i35 = <span class="tk-n">0</span>; i35 &lt; xs.length; i35++) total += xs[i35] ?? <span class="tk-n">35</span>;
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i36 = <span class="tk-n">0</span>; i36 &lt; xs.length; i36++) total += xs[i36] ?? <span class="tk-n">36</span>;
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i37 = <span class="tk-n">0</span>; i37 &lt; xs.length; i37++) total += xs[i37] ?? <span class="tk-n">37</span>;
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i38 = <span class="tk-n">0</span>; i38 &lt; xs.length; i38++) total += xs[i38] ?? <span class="tk-n">38</span>;
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i39 = <span class="tk-n">0</span>; i39 &lt; xs.length; i39++) total += xs[i39] ?? <span class="tk-n">39</span>;
+  <span class="tk-k">if</span> (has) total += v;
+  <span class="tk-k">const</span> first: number = xs[<span class="tk-n">0</span>];
+  <span class="tk-k">return</span> total &gt; <span class="tk-n">0</span> ? total : first;
+}</pre></details></li></ul>
+<h4 class="change">Soundness</h4><div class="prose"><p>Search only: the checker, the lowering and the acceptance path are unchanged, and the checker checks whatever evidence the search proposes. The evidence is byte-identical before and after for the searches of <code>line-break.ts</code> and <code>layout.ts</code> and for the new case at 20, 40 and 80 loops.</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">producer</span> <span class="chip">docs</span> <span class="chip">tests</span></dd><dt>Lean</dt><dd>CertificateProducer.produceRawUsing · CertificateProducer.byLabel · CertificateProducer.edgeUsing · CertificateProducer.projectImplications · CertificateProducer.produceNode</dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Measured</dt><dd>walkPreparedComplexLines search 152 s -&gt; 22 s CPU · first search of line-break.ts 153 -&gt; 27 s, layout.ts 173 -&gt; 44 s, rich-inline.ts 182 -&gt; 53 s CPU (pretext census at 0d102a5c, 300 s limit, 2026-11-05) · per file CPU line-break.ts 166 -&gt; 38 s, layout.ts 210 -&gt; 77 s, rich-inline.ts 234 -&gt; 102 s</dd><dt>Tests</dt><dd><span class="test pos">invalid-guard-constant-across-loops</span></dd></dl>
+<details><summary>5 files changed, 133 insertions(+), 26 deletions(-)</summary><pre class="code"> WORK.md                                            |  1 +
+ .../Verification/Programs/CertificateProducer.lean | 98 +++++++++++++++++-----
+ pipeline/cases.mts                                 |  1 +
+ pipeline/evidence-mutations.mts                    |  5 +-
+ .../invalid-guard-constant-across-loops.ts         | 54 ++++++++++++</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+</main></body></html>
