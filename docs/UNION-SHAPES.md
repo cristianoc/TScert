@@ -213,10 +213,7 @@ Each entry states its eligibility, its exclusion and its selection lemma.
   in $`\psi'`$ with $`f\ne\mathtt{length}`$); if some $`n,W,v`$ has
   $`v\in⟦A⟧_n(W)`$ for every source entry $`(f{:}A)\in\Phi\,\psi`$ and
   $`v\notin⟦B⟧_n(W)`$, then
-
-  ```math
-  \Delta;S\nvdash\mathsf{Ref}(\Phi;\psi;\ldots)\sqsubseteq\mathsf{Ref}(\varphi';\psi';\ldots).
-  ```
+  $`\Delta;S\nvdash\mathsf{Ref}(\Phi;\psi;\ldots)\sqsubseteq\mathsf{Ref}(\varphi';\psi';\ldots)`$.
 
   The literal form the exclusion uses is proved (`ClauseSelection.covers_litExcl`,
   for record and dictionary clauses on both sides and every
