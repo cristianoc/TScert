@@ -58,45 +58,80 @@ const definitionOf = (id: DeclarationIdentity, expression: TypeTerm): TypeDefini
  * type. */
 export const bytesMarker = "node:bytes";
 
-/** A view of bytes: a `Uint8Array`, or a `Buffer`, a host object read at
- * what the host gives it (ECMA-262, "TypedArray Objects"),
+/** A view of bytes: a `Uint8Array`, a `Uint16Array`, an `Int32Array`, or a
+ * `Buffer`, a host object read at what the host gives it (ECMA-262,
+ * "TypedArray Objects"), each a typed array whose elements are numbers,
  *
- *     type Uint8Array = host "node:bytes" {};
+ *     type Uint8Array = host "node:bytes" {
+ *       fill(value: number, start?: number, end?: number): Uint8Array;
+ *       copyWithin(target: number, start: number, end?: number): Uint8Array;
+ *       set(source: Uint8Array, offset?: number): undefined;
+ *       subarray(begin: number, end?: number): Uint8Array };
  *
- * Its bytes and its `length` are read through `%ByteAt%` and `%ByteLength%`
- * (`intrinsics.mts`), which the parser writes for an element read at a
- * number and a read of `length` of a value TypeScript types as a view: the
- * host's [[Get]] of an integer-indexed exotic object at a canonical numeric
- * key, which never reads the prototype chain, and `%TypedArray%.prototype`'s
- * `length` getter. The model holds no element and no `length` of it: a
- * host object refuses the operations copying its own properties or
- * exposing their values, `Object.keys` and `Object.hasOwn` answer strings
- * and Booleans no type tells, and no record type naming `length` admits a
- * view. A write is not stated. */
+ * The three standard names denote this one type: every member it states
+ * holds of each of them alike. Its elements and its `length` are read
+ * through `%ByteAt%` and `%ByteLength%`, and an element written through
+ * `%ByteSet%` (`intrinsics.mts`), which the parser writes for an element
+ * read or write at a number and a read of `length` of a value TypeScript
+ * types as a view: the host's [[Get]] and [[Set]] of an integer-indexed
+ * exotic object at a canonical numeric key, which never read the prototype
+ * chain, and `%TypedArray%.prototype`'s `length` getter. The model holds no
+ * element and no `length` of it: a host object refuses the operations
+ * copying its own properties or exposing their values, `Object.keys` and
+ * `Object.hasOwn` answer strings and Booleans no type tells, and no record
+ * type naming `length` admits a view.
+ *
+ * The methods are `%TypedArray%.prototype`'s (ECMA-262, "Properties of the
+ * %TypedArray% Prototype Object"), each called at numbers and views alone:
+ * ToNumber and ToIntegerOrInfinity of a number run no code, `set` of a view
+ * copies by SetTypedArrayFromTypedArray, which runs none, and `subarray`'s
+ * TypedArraySpeciesCreate reads the view's `constructor` and its
+ * `Symbol.species`, the standard constructor and `%TypedArray%`'s getter
+ * under the host assumption below, and constructs a fresh view over the
+ * same memory. `fill` and `copyWithin` return the receiver. Each writes the
+ * view's elements alone, which the model holds no location of, and throws
+ * a `RangeError` where an index is out of range: within the empty
+ * footprint. `map`, `filter`, `slice` and the other members, a species
+ * constructor's or a callback's, are not stated. */
 const bytesIdentity = identity("Uint8Array");
 export const bytes: TypeTerm = named(bytesIdentity);
+const optionalNumber = union(atom("number"), atom("undefined"));
+/** The members of `%TypedArray%.prototype` a view states, each returning
+ * `self` where it returns the receiver or a view of its kind. */
+const viewMethods = (self: TypeTerm): Field[] => [
+  field("fill", method([atom("number"), optionalNumber, optionalNumber], self, emptyEffect)),
+  field("copyWithin", method([atom("number"), atom("number"), optionalNumber], self, emptyEffect)),
+  field("set", method([bytes, optionalNumber], atom("undefined"), emptyEffect)),
+  field("subarray", method([atom("number"), optionalNumber], self, emptyEffect))];
 const bytesDefinition = definitionOf(bytesIdentity,
-  { k: "object", fields: [], stringIndex: null, calls: [], host: bytesMarker, span: at });
+  { k: "object", fields: viewMethods(bytes), stringIndex: null, calls: [], host: bytesMarker, span: at });
 
 /** A `Buffer`, a view of bytes with the methods of `Buffer.prototype` the
  * overlay states (Node 25.2.1's `lib/buffer.js`),
  *
  *     type Buffer = host "node:bytes" { toString(encoding: "utf8"): string;
+ *       fill(value: number, offset?: number, end?: number): Buffer;
+ *       copyWithin(target: number, start: number, end?: number): Buffer;
+ *       set(source: Uint8Array, offset?: number): undefined;
  *       subarray(start: number, end?: number): Buffer };
  *
  * `toString("utf8")` reads `this.length` and calls `this.utf8Slice`, and
  * `subarray(start, end)` reads `this.length`, `this.buffer` and
  * `this.byteOffset`, clamps its integers and constructs a `FastBuffer` over
- * the same memory: a fresh `Buffer`. Under the host assumption that these
- * members are the host's own (SOURCE-CONTRACTS.md, "Stated library types"),
- * neither runs code of the client's nor writes a location it did not
- * allocate. A `Buffer` is a `Uint8Array`: it has the marker and more. */
+ * the same memory: a fresh `Buffer`. `fill` of a number validates its
+ * offsets as integers within the view, throwing otherwise, reads
+ * `this.length` and the byte length, and calls the realm's
+ * `%TypedArray%.prototype.fill` captured at startup; it returns the
+ * receiver. `copyWithin` and `set` are `%TypedArray%.prototype`'s, as for
+ * any view. Under the host assumption that these members are the host's
+ * own (SOURCE-CONTRACTS.md, "Stated library types"), none runs code of the
+ * client's nor writes a location the model holds. A `Buffer` is a
+ * `Uint8Array`: it has the marker and more. */
 const bufferIdentity = identity("Buffer");
 export const buffer: TypeTerm = named(bufferIdentity);
 export const bufferDefinition: TypeDefinition = definitionOf(bufferIdentity,
   { k: "object", stringIndex: null, calls: [], host: bytesMarker, span: at, fields: [
-    field("toString", method([text("utf8")], atom("string"), emptyEffect)),
-    field("subarray", method([atom("number"), union(atom("number"), atom("undefined"))], buffer, emptyEffect))] });
+    field("toString", method([text("utf8")], atom("string"), emptyEffect)), ...viewMethods(buffer)] });
 
 /** The tests a `Stats`, a `BigIntStats` and a `Dirent` dispatch through a
  * prototype other code may change: each `() => unknown`, its effect
@@ -165,6 +200,12 @@ export const definitions: { bytes: TypeDefinition; buffer: TypeDefinition; bigIn
   buffer: bufferDefinition, bigIntStats: bigIntStatsDefinition, dirent: direntDefinition,
   textDecoder: textDecoderDefinition, url: urlDefinition };
 
+/** The overlay's definitions a definition names, which join the document
+ * with it: a `Buffer`'s `set` takes any view. */
+export function namedDefinitions(definition: TypeDefinition): TypeDefinition[] {
+  return definition === bufferDefinition ? [bytesDefinition] : [];
+}
+
 const node = "@types/node";
 const library = "library";
 export const typesOverlay: readonly TypeEntry[] = [
@@ -174,6 +215,11 @@ export const typesOverlay: readonly TypeEntry[] = [
     { origin: library, heading: "interface Uint8Array<TArrayBuffer extends ArrayBufferLike = ArrayBufferLike> {" },
     { origin: library, heading: "interface Uint8Array<TArrayBuffer extends ArrayBufferLike> {" },
     { origin: node, heading: "interface Uint8Array extends RelativeIndexable<number> {" }] },
+  // The standard library's `Uint16Array` and `Int32Array`, as it declares
+  // them in parts: views of bytes, at the type a `Uint8Array` is.
+  ...["Uint16Array", "Int32Array"].map((name): TypeEntry => ({ name, definition: bytesDefinition, view: "bytes", parts: [
+    { origin: library, heading: `interface ${name}<TArrayBuffer extends ArrayBufferLike = ArrayBufferLike> {` },
+    { origin: library, heading: `interface ${name}<TArrayBuffer extends ArrayBufferLike> {` }] })),
   { name: "Buffer", definition: bufferDefinition, view: "bytes", parts: [
     { origin: node, heading: "interface Buffer<TArrayBuffer extends ArrayBufferLike = ArrayBufferLike> extends Uint8Array<TArrayBuffer> {" },
     { origin: node, heading: "interface Buffer {" }] },

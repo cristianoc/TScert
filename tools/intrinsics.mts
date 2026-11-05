@@ -50,8 +50,9 @@
  *   does the lookup on the objects a program holds (no proxy, DESIGN.md
  *   "Trust surface"); the answer is a Boolean, which narrows nothing.
  * - `b[k]` of a view of bytes at a key TypeScript types as `number` is
- *   `%ByteAt%(b, k)`, and `b.length` is `%ByteLength%(b)`
- *   (`library-types.mts`): the host's element read and `length` getter.
+ *   `%ByteAt%(b, k)`, `b[k] = v` is `%ByteSet%(b, k, v)`, and `b.length` is
+ *   `%ByteLength%(b)` (`library-types.mts`): the host's element read,
+ *   element write and `length` getter.
  * - `xs[k]` of an array or a tuple at a key TypeScript types as `number` (no
  *   literal) is `%ElementAt%(xs, k)`: the property the number names, an
  *   element where it is an index below the length, an own property of
@@ -120,6 +121,7 @@ export const hasPropertyName = "%HasProperty%";
 export const elementAtName = "%ElementAt%";
 export const byteAtName = "%ByteAt%";
 export const byteLengthName = "%ByteLength%";
+export const byteSetName = "%ByteSet%";
 export const promiseAllName = "%PromiseAll%";
 export const promiseRejectName = "%PromiseReject%";
 export const newPromiseName = "%NewPromise%";
@@ -599,6 +601,15 @@ export function intrinsics(promise: (argument: TypeTerm) => TypeTerm, needed: Re
     // its buffer is detached: it reads the view's slots, runs no code and
     // writes nothing.
     [byteLengthName]: () => ({ typeParams: [], type: { ...fn([bytes], atom("number")), effect: emptyEffect } }),
+    // A view of bytes's [[Set]] at a number, ToPropertyKey's canonical
+    // numeric string, of a number (ECMA-262, "TypedArray Objects",
+    // TypedArraySetElement): ToNumber of the number, which runs no code, and
+    // the element at a valid index set to it converted to the view's element
+    // type, no element at any other key, the prototype chain never read. It
+    // writes the view's element alone, which the model holds no location of,
+    // and answers a number, the value the assignment is.
+    [byteSetName]: () => ({ typeParams: [],
+      type: { ...fn([bytes, atom("number"), atom("number")], atom("number")), effect: emptyEffect } }),
     [elementAtName]: () => ({ typeParams: [{ name: "T", bound: null, resolution: null }],
       type: { ...fn([{ k: "array", presence: "readable", readonly: true, element: binder, span }, atom("number")],
         either(binder, atom("undefined"))), effect: emptyEffect } }),

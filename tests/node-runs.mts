@@ -1208,8 +1208,8 @@ assert.equal(runExample("invalid-named-implicit-index", 'typeof asDictionary({ a
   // malformed byte throws at `fatal`.
   assert.equal(runImporting("invalid-node-bytes-past-end", "last(Buffer.from(\"ab\")) === undefined"), true,
     "invalid-node-bytes-past-end: a byte past the end is undefined");
-  assert.equal(runImporting("invalid-node-bytes-write", "write(Buffer.from(\"a\"), 300)"), 44,
-    "invalid-node-bytes-write: 300 reads back as 44");
+  assert.equal(runImporting("node-bytes-write", "write(Buffer.from(\"a\"), 300)"), 44,
+    "node-bytes-write: 300 reads back as 44");
   assert.equal(runImporting("invalid-node-bytes-spread", "copied(Buffer.from(\"ab\")) === undefined"), true,
     "invalid-node-bytes-spread: the copy has no length");
   assert.equal(runImporting("invalid-node-bytes-json", "JSON.parse(serialized(Buffer.from(\"a\"))).type"), "Buffer",
@@ -2946,6 +2946,13 @@ for (const [file, call] of [
   const hole = (call: string): string => `(() => { const r = ${call}; return [r.length, 1 in r]; })()`;
 
   // Construction and data contracts.
+  assert.equal(runExample(negative("invalid-typed-array-write-past-end"), "written()"), undefined,
+    "a write past the end of a view writes no element, and the read after it is undefined");
+  assert.equal(runExample(negative("invalid-typed-array-subclass"), "typeof trimmed(reset())"), "number",
+    "subarray constructs its result with the subclass, whose code replaces the narrowed string");
+  assert.equal(runExample(ofKind("typed-array-views", "positive"),
+    "JSON.stringify([first(unpack(1)), [...unpack(1).values.subarray(0, 9)], [...mark(3, 1)], mark(3, 5)])"),
+    "[1,[1,1,1,1,1,1,1,1,1],[0,1,0],null]", "typed-array-views: the elements are numbers");
   assert.equal(runExample(negative("invalid-round-compiler-identity-overlap"), "typeof wrong().unobserved"), "string",
     "the overlapping field holds a string where the intersection also requires a Boolean");
   assert.equal(runExample(negative("invalid-round-compiler-identity-indexes"), "typeof wrong().unobserved"), "string",
