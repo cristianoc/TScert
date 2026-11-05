@@ -1,6 +1,7 @@
 // The parser, the OCaml producer and the Lean verifier exchange JSON documents:
 // the Fragment tree with its declaration document, SourceClaims, the source
-// flow, and the producer's qualified reads and explanations. Each
+// flow, and the producer's qualified reads and explanations; Lean's equation
+// trees are compared with their spelling in REQUEST-PROTOCOL.md. Each
 // document's fields are written three times: as TypeScript types, as Lean
 // decoders, and as the OCaml producer's reads and writes. Nothing compiles one against another, so
 // this compares, by text, the field names each one uses, and fails when a
@@ -137,6 +138,22 @@ const equationReaders = [
   const explained = ocamlWrites("ocaml-producer/producer.ml");
   expectSubset("OCaml writes of explanations", explained, explanation, {});
   expectSubset("Explanation fields OCaml omits", explanation, explained, {});
+}
+
+// The equation tree's spelling: Lean alone writes and reads it (the evidence
+// bundle's labels), and REQUEST-PROTOCOL.md states it for every other reader.
+{
+  const protocol = read("docs/REQUEST-PROTOCOL.md");
+  const table = protocol.slice(protocol.indexOf("**Tree spelling.**"), protocol.indexOf("Decoding refuses an unknown"));
+  const documented = new Set([...table.matchAll(/"(\w+)":/g)].flatMap(captured));
+  assert.ok(documented.size > 0, "the protocol's tree spelling table is found");
+  const codec = "lean/Verification/Types/EquationJson.lean";
+  const writes = new Set([...read(codec).matchAll(/\("(\w+)",/g)].flatMap(captured));
+  const reads = lean([codec]);
+  expectSubset("Lean writes of equation trees", writes, documented, {});
+  expectSubset("Lean reads of equation trees", reads, documented, {});
+  expectSubset("Tree fields Lean does not write", documented, writes, {});
+  expectSubset("Tree fields Lean does not read", documented, reads, {});
 }
 
 process.stdout.write(`JSON field names: ${checked} comparisons agree across TypeScript, Lean and OCaml\n`);
