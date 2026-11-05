@@ -333,9 +333,9 @@ one an entry lists with its exact text, an augmentation's included, or the
 call is refused (`node-clear-timeout`; `invalid-parse-int-overload`, run
 under Node; `invalid-node-global-unreviewed`, `invalid-host-global-unreviewed`,
 `invalid-host-global-changed`). The checked file's own ambient declarations
-are the [ambient assumption](DESIGN.md#trust-surface). A
-a function of Node's modules an overlay entry lists, through the overlay of
-library modules ([Library modules](#library-modules)).
+are the [ambient assumption](DESIGN.md#trust-surface). A function of
+Node's modules is read through the overlay of library modules, at the entry
+that lists it, or it is refused ([Library modules](#library-modules)).
 
 ### Imported classes and `instanceof`
 

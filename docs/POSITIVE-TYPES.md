@@ -1628,6 +1628,13 @@ Lean: `Types/PositiveGraphs.lean` (`schemeSemWithArgs`).
 - [Types/PositiveCertificates.lean](../lean/Verification/Types/PositiveCertificates.lean): the certificate checker and its soundness
 - [Types/GraphRows.lean](../lean/Verification/Types/GraphRows.lean): the label-independent row representation
 - `Types/EquationGraphs.lean`, `Types/EquationSupport.lean`, `Types/EquationCongruence.lean`
+- [Types/ResolutionDescriptors.lean](../lean/Verification/Types/ResolutionDescriptors.lean): qualified generic parameters' input and observation families and their stable associated-result family
+- [Types/QualifiedGraphs.lean](../lean/Verification/Types/QualifiedGraphs.lean): lexical instances of schemes whose binders carry resolution descriptors
+- [Types/QualifiedTemplateEmbedding.lean](../lean/Verification/Types/QualifiedTemplateEmbedding.lean): a graph with qualified rows keeps an ordinary template's meaning ([recursive equations](RECURSIVE-EQUATIONS.md))
+- [Types/CellUnion.lean](../lean/Verification/Types/CellUnion.lean): exact absorption of redundant read/write record alternatives at the claim boundary
+- [Types/ProtoFree.lean](../lean/Verification/Types/ProtoFree.lean): clauses whose members own no prototype, for a write of a key the model reserves
+- [Types/NativePromiseSeparation.lean](../lean/Verification/Types/NativePromiseSeparation.lean): a native Promise application separated from the stable bound by one world and value
+- [Types/SelectionPreservation.lean](../lean/Verification/Types/SelectionPreservation.lean): selection preserves a completed certificate ([union shapes](UNION-SHAPES.md))
 
 All under `lean/Verification/`. `cd lean && lake build` checks the whole
 library; it contains no `sorry` or custom axioms. Semantic
