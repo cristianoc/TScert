@@ -11,7 +11,7 @@
 
 import type { Span } from "./span.mts";
 import type { CallEffect, ClosedFootprint, Labels, Row } from "./type-graph.mts";
-import type { DeclarationIdentity, SourceTypeParameter } from "./declaration-types.mts";
+import type { DeclarationIdentity, PropertyKey, SourceTypeParameter } from "./declaration-types.mts";
 export type { Row } from "./type-graph.mts";
 
 /** A label: a row of the document's own `types`, or a tree naming a row
@@ -65,7 +65,7 @@ type ClaimType<L = Label> =
  * (HOST-FAMILIES.md, "Entries"). `current` is required and explicitly `null`
  * where no such assertion is made, so silence is stated rather than inferred.
  */
-type CurrentFields<L = Label> = [fields: [string, ...string[]], labels: Labels<L>][];
+type CurrentFields<L = Label> = [fields: [PropertyKey, ...PropertyKey[]], labels: Labels<L>][];
 
 interface Point<L = Label> {
   type: ClaimType<L>;

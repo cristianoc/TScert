@@ -489,7 +489,8 @@ A location has a fixed write contract and contents that can vary within it.
 `current` proposes property-read result facts at one execution point, with
 the meaning in [Semantics](SEMANTICS.md#what-is-asserted-and-what-a-heap-change-can-touch).
 It is `null`, or a nonempty list of distinct `[path,labels]` pairs, a path
-a nonempty list of field names. Each path's first field must be named,
+a nonempty list of property keys, each a string or a symbol key
+`{"symbol": id}`. Each path's first field must be named,
 required or optional, by every record alternative, and its labels name a
 valid type in the table. An empty inner label list denotes impossibility;
 it does not mean that the assertion is absent. A path of two fields or more
