@@ -81,8 +81,8 @@ var { font-style:italic } .m-op { color:#2c4f7c; font-style:normal } .m-con { co
 .lowering .label { font:600 11px/1 var(--body); letter-spacing:.05em; text-transform:uppercase; color:var(--muted); min-width:7em }
 .lowering .cond { padding-left:1.5em } .lowering .note { color:var(--muted); font:italic 13px/1.4 var(--body) }
 a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outline-offset:2px }
-@media (max-width:520px) { dl.facts { grid-template-columns:minmax(0,1fr) } .card > header { flex-direction:column } }</style></head><body><main><header><h1>Commit Records</h1><p class="lede">3 commits, rendered from their records.</p></header>
-<section><h2>Branches</h2><ul class="summary"><li><a href="#g-pr-88"><code>a54fff4ca3ce3afcf5a2ba27dd157686c0276c5b..pr-88</code></a><ul><li>3 commits</li><li>parts: <span class="chip">parser</span> <span class="chip strong">trust</span> <span class="chip">docs</span> <span class="chip">tests</span></li><li>new trust: <span class="trust">Math.round, Math.fround, parseFloat, Number.isNaN, Number.POSITIVE_INFINITY, Object.isFrozen, Infinity and RangeError are the standard ones, untampered (pre-approved policy); Object.isFrozen runs no code on a non-host value (no proxies, as Reflect.ownKeys)</span></li><li>new trust: <span class="trust">the host's atob follows the HTML standard's forgiving-base64 decode and writes nothing (a host contract beyond ECMAScript: for owner review)</span></li><li>new trust: <span class="trust">Math.floor and Math.sign are the standard functions, untampered (pre-approved policy)</span></li></ul></li></ul></section>
+@media (max-width:520px) { dl.facts { grid-template-columns:minmax(0,1fr) } .card > header { flex-direction:column } }</style></head><body><main><header><h1>Commit Records</h1><p class="lede">4 commits, rendered from their records.</p></header>
+<section><h2>Branches</h2><ul class="summary"><li><a href="#g-pr-88"><code>a54fff4ca3ce3afcf5a2ba27dd157686c0276c5b..pr-88</code></a><ul><li>4 commits</li><li>parts: <span class="chip">parser</span> <span class="chip strong">trust</span> <span class="chip">docs</span> <span class="chip">tests</span></li><li>new trust: <span class="trust">Math.round, Math.fround, parseFloat, Number.isNaN, Number.POSITIVE_INFINITY, Object.isFrozen, Infinity and RangeError are the standard ones, untampered (pre-approved policy); Object.isFrozen runs no code on a non-host value (no proxies, as Reflect.ownKeys)</span></li><li>new trust: <span class="trust">the host's atob follows the HTML standard's forgiving-base64 decode and writes nothing (a host contract beyond ECMAScript: for owner review)</span></li><li>new trust: <span class="trust">Math.floor and Math.sign are the standard functions, untampered (pre-approved policy)</span></li><li>new trust: <span class="trust">Uint8Array, Uint16Array and Int32Array values are host-created views, no subclass's instances, with the standard prototype chain, constructor and Symbol.species; %TypedArray%.prototype's fill, copyWithin, set and subarray, and Buffer.prototype's fill, are the host's own; their element writes change no location the model holds</span></li></ul></li></ul></section>
 <h2 id="g-pr-88"><code>a54fff4ca3ce3afcf5a2ba27dd157686c0276c5b..pr-88</code></h2><article class="card" id="c-267b3e8fc"><header><div><div class="sha">267b3e8fc · Cristiano Calcagno · Nov 05, 08:11</div><h3>Admit six number and Object members, the global Infinity and new RangeError</h3></div><span class="pill ok">verified</span></header>
 <h4 class="change">Why</h4><div class="prose"><p>The census of pretext's src/ (chenglou/pretext at 0d102a5c) refuses 17 of its functions at the source gate on standard-library members and globals no reviewed entry admits: &quot;Math.round is not in the reviewed overlay of library globals&quot; (7 functions), Math.fround, Number.isNaN, Number.POSITIVE_INFINITY, parseFloat, Object.isFrozen, and &quot;the global Infinity (RangeError) is declared in typescript/lib/lib.es5.d.ts (library), an origin no reviewed entry admits&quot;. <code>Infinity</code> is declared <code>declare var Infinity: number</code>, a variable whose type is no interface, which the global reader had no reading of.</p></div>
 <h4 class="change"><span class="act added">added</span>Trust <span class="target">library-globals overlay: Math.round, Math.fround, parseFloat</span></h4><div class="prose"><p><code>round(x: number): number</code>, <code>fround(x: number): number</code> and <code>parseFloat(string: string): number</code>, as declared, within the empty footprint. A number and a string are primitives, so ToNumber and ToString run no code, and none of them writes.</p></div>
@@ -284,6 +284,188 @@ a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outl
  pipeline/examples/library-math-floor-sign.ts | 11 +++++++++++
  tests/tool-failures.mts                      |  2 +-
  tools/library-globals.mts                    |  7 +++++--</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-a687d36f6"><header><div><div class="sha">a687d36f6 · Cristiano Calcagno · Nov 05, 08:22</div><h3>Admit Uint8Array, Uint16Array and Int32Array as views of bytes, with writes</h3></div><span class="pill ok">verified</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>Pretext (chenglou/pretext at 0d102a5c) keeps its tables and flags in typed arrays. A file naming <code>Uint16Array</code> or <code>Int32Array</code> was refused with &quot;type outside the fragment (ThisType) in lib.es5.d.ts#Uint16Array&quot;: the standard library declares their methods with the polymorphic <code>this</code> type, which TScert's types do not have. <code>new Uint8Array(n)</code> and the other two constructors were refused as globals no reviewed entry admits, and a write <code>flags[i] = 1</code> was refused as a key the view's type does not state. <code>Uint8Array</code> as a type was admitted already, through the overlay of library types: a host object whose elements and <code>length</code> are read through <code>%ByteAt%</code> and <code>%ByteLength%</code>. The census of pretext's src/ names these refusals for 82 of its 209 functions.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Trust <span class="target">overlay of library types: views of bytes</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p><code>Uint8Array</code> and <code>Buffer</code> are views of bytes, host objects the host created with their standard prototype chain; a <code>Uint8Array</code> states no member; a write is not stated</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p><code>Uint8Array</code>, <code>Uint16Array</code> and <code>Int32Array</code> are one type, a view of bytes: host &quot;node:bytes&quot; { fill(value: number, start?: number, end?: number): Uint8Array copyWithin(target: number, start: number, end?: number): Uint8Array set(source: Uint8Array, offset?: number): undefined subarray(begin: number, end?: number): Uint8Array } each <code>%TypedArray%.prototype</code>'s method, called at numbers and views alone, so it runs no code of the program's; each writes the view's elements alone, which the model holds no location of. A <code>Buffer</code> has the same members, <code>fill</code> and <code>subarray</code> its own prototype's, and <code>toString(&quot;utf8&quot;)</code>. Every such value, the program's or external code's, is no subclass's instance, and a lookup of <code>constructor</code> finds the standard constructor, whose <code>Symbol.species</code> is <code>%TypedArray%</code>'s getter</p></div></figure></div>
+<h4 class="change"><span class="act added">added</span>Lowering <span class="target">parser: an element write of a view of bytes</span></h4><div class="lowering"><div class="map"><code class="src">b[k] = v</code><div class="result"><span class="to">⇝</span><span class="tgt"><span class="m-intr">%ByteSet%</span>(<var>b</var>, <var>k</var>, <var>v</var>)</span></div></div><div class="cond"><span class="tgt"><span class="m-text">(TypeScript types <code class="m-code">b</code> as views of bytes only and <code class="m-code">k</code> as a number)</span></span></div><div class="cond"><span class="tgt"><span class="m-intr">%ByteSet%</span> <span class="m-rel">:</span> (<span class="m-con">Uint8Array</span>, <span class="m-text">number, number</span>) ⇒∅ <span class="m-text">number</span></span></div></div>
+<h4 class="change"><span class="act added">added</span>Trust <span class="target">library globals: typed array constructors</span></h4><div class="prose"><p>new Uint8Array / new Uint16Array / new Int32Array : (number | readonly number[]) ⇒∅ Uint8Array a length converted by ToIndex, or an array stepped by the untampered array iterator and each element converted by ToNumber: no code runs, and only the fresh view is written. The globals are only constructed</p></div>
+<h4 class="change"><span class="act added">added</span>Refusal <span class="target">unstated members of a view</span></h4><div class="prose"><p><code>map</code>, <code>filter</code>, <code>slice</code>, <code>every</code> and the other members that call a callback or a species constructor find no member; <code>new Uint8Array(v)</code> of a view, <code>b[k] += v</code> and <code>b[k]++</code> are refused</p></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>typed-array-views</code> <span class="kind positive">positive</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">record fields, constructors, element reads and writes, fill, copyWithin, set, subarray</span></summary><pre class="code"><span class="tk-c">// The standard library's `Uint8Array`, `Uint16Array` and `Int32Array`, as</span>
+<span class="tk-c">// pretext uses them (chenglou/pretext at 0d102a5c, src/): record fields and</span>
+<span class="tk-c">// parameters, construction at a length and from an array of numbers,</span>
+<span class="tk-c">// element reads and writes at a number, `length`, and the methods `fill`,</span>
+<span class="tk-c">// `copyWithin`, `set` and `subarray`.</span>
+<span class="tk-k">export</span> <span class="tk-k">type</span> <span class="tk-t">Runs</span> = {
+  index: <span class="tk-t">Uint16Array</span>;
+  values: <span class="tk-t">Uint8Array</span>;
+  ends: <span class="tk-t">Int32Array</span> | <span class="tk-k">null</span>;
+};
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> unpack(blocks: number): <span class="tk-t">Runs</span> {
+  <span class="tk-k">const</span> index = <span class="tk-k">new</span> <span class="tk-t">Uint16Array</span>(0x100);
+  <span class="tk-k">const</span> values = <span class="tk-k">new</span> <span class="tk-t">Uint8Array</span>(blocks &lt;&lt; <span class="tk-n">8</span>);
+  <span class="tk-k">const</span> whole = <span class="tk-k">new</span> <span class="tk-t">Int32Array</span>(0x100).fill(-<span class="tk-n">1</span>);
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; index.length; i++) index[i] = i;
+  values.fill(<span class="tk-n">1</span>, <span class="tk-n">0</span>, <span class="tk-n">8</span>);
+  values.copyWithin(<span class="tk-n">8</span>, <span class="tk-n">0</span>, <span class="tk-n">8</span>);
+  index.<span class="tk-k">set</span>(<span class="tk-k">new</span> <span class="tk-t">Uint16Array</span>([<span class="tk-n">1</span>, <span class="tk-n">2</span>, <span class="tk-n">3</span>]), <span class="tk-n">1</span>);
+  <span class="tk-k">return</span> { index, values, ends: whole.subarray(<span class="tk-n">0</span>, <span class="tk-n">4</span>) };
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> mark(len: number, at: number): <span class="tk-t">Uint8Array</span> | <span class="tk-k">null</span> {
+  <span class="tk-k">let</span> leftOut: <span class="tk-t">Uint8Array</span> | <span class="tk-k">null</span> = <span class="tk-k">null</span>;
+  <span class="tk-k">if</span> (at &lt; len) (leftOut ??= <span class="tk-k">new</span> <span class="tk-t">Uint8Array</span>(len))[at] = <span class="tk-n">1</span>;
+  <span class="tk-k">return</span> leftOut;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> first(runs: <span class="tk-t">Runs</span>): number {
+  <span class="tk-k">const</span> ends = runs.ends;
+  <span class="tk-k">const</span> end = ends === <span class="tk-k">null</span> ? <span class="tk-k">undefined</span> : ends[<span class="tk-n">0</span>];
+  <span class="tk-k">return</span> (runs.values[<span class="tk-n">0</span>] ?? <span class="tk-n">0</span>) + (runs.index[<span class="tk-n">1</span>] ?? <span class="tk-n">0</span>) + (end ?? <span class="tk-n">0</span>);
+}</pre></details></li><li><details><summary><code>invalid-typed-array-write-past-end</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">the read after a write past the end is undefined | number</span></summary><pre class="code"><span class="tk-c">// A write past the end of a view writes no element, and the read after it</span>
+<span class="tk-c">// is `undefined` (run under Node), which TypeScript, narrowing the element</span>
+<span class="tk-c">// by the write, types as a number: refused as a number.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> written(): number {
+  <span class="tk-k">const</span> ends = <span class="tk-k">new</span> <span class="tk-t">Int32Array</span>(<span class="tk-n">0</span>);
+  ends[<span class="tk-n">0</span>] = <span class="tk-n">1</span>;
+  <span class="tk-k">return</span> ends[<span class="tk-n">0</span>];
+}</pre></details></li><li><details><summary><code>invalid-typed-array-subclass</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">extending Uint8Array, whose subarray runs the subclass</span></summary><pre class="code"><span class="tk-c">// A subclass of `Uint8Array` is the constructor `subarray` constructs its</span>
+<span class="tk-c">// result with (TypedArraySpeciesCreate), running the subclass's code, which</span>
+<span class="tk-c">// replaces a string the caller narrowed (run under Node: a number): the</span>
+<span class="tk-c">// global `Uint8Array` is only constructed, refused.</span>
+<span class="tk-k">let</span> label: string | number = <span class="tk-s">&quot;text&quot;</span>;
+<span class="tk-k">class</span> <span class="tk-t">Counting</span> <span class="tk-k">extends</span> <span class="tk-t">Uint8Array</span> {
+  <span class="tk-k">constructor</span>(length: number) {
+    <span class="tk-k">super</span>(length);
+    label = <span class="tk-n">1</span>;
+  }
+}
+<span class="tk-k">export</span> <span class="tk-k">function</span> reset(): <span class="tk-t">Uint8Array</span> {
+  <span class="tk-k">const</span> view = <span class="tk-k">new</span> <span class="tk-t">Counting</span>(<span class="tk-n">4</span>);
+  label = <span class="tk-s">&quot;text&quot;</span>;
+  <span class="tk-k">return</span> view;
+}
+<span class="tk-k">export</span> <span class="tk-k">function</span> trimmed(view: <span class="tk-t">Uint8Array</span>): string {
+  <span class="tk-k">if</span> (<span class="tk-k">typeof</span> label !== <span class="tk-s">&quot;string&quot;</span>) <span class="tk-k">return</span> <span class="tk-s">&quot;&quot;</span>;
+  view.subarray(<span class="tk-n">0</span>, <span class="tk-n">1</span>);
+  <span class="tk-k">return</span> label;
+}</pre></details></li><li><details><summary><code>blocker-pretext-uint16array-type</code> <span class="kind positive">positive</span> <span class="was">gap</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">a Uint16Array record field</span></summary><pre class="code"><span class="tk-c">// Pretext (github.com/chenglou/pretext at 0d102a5c, src/, census by unit):</span>
+<span class="tk-c">// analysis.ts#classifySegmentBreakCode, analysis.ts#classifySegmentUnit,</span>
+<span class="tk-c">// analysis.ts#collapseWhitespaceNormal, analysis.ts#followsChunkContent,</span>
+<span class="tk-c">// analysis.ts#gathersKind, analysis.ts#getTrailingCollapsibleStart,</span>
+<span class="tk-c">// analysis.ts#isCollapsibleSpaceCode, analysis.ts#isControlSegmentCode,</span>
+<span class="tk-c">// analysis.ts#isSegmentBreakRunSpace, analysis.ts#markItemStarts,</span>
+<span class="tk-c">// analysis.ts#normalizeWhitespacePreWrap,</span>
+<span class="tk-c">// analysis.ts#removeItemsSkippableSegmentBreaks,</span>
+<span class="tk-c">// gecko-line-breaks.ts#extendCluster,</span>
+<span class="tk-c">// gecko-line-breaks.ts#getComplexLanguage,</span>
+<span class="tk-c">// gecko-line-breaks.ts#hasCompressedLeadingWhitespace,</span>
+<span class="tk-c">// gecko-line-breaks.ts#isDiscardable, gecko-line-breaks.ts#isInvalidChar,</span>
+<span class="tk-c">// gecko-line-breaks.ts#isKeepAllLetter,</span>
+<span class="tk-c">// gecko-line-breaks.ts#isSpaceCombiningSequenceTail,</span>
+<span class="tk-c">// gecko-line-breaks.ts#isTrimmableSpace,</span>
+<span class="tk-c">// gecko-line-breaks.ts#markWordBreaks, gecko-line-breaks.ts#readCodePoint,</span>
+<span class="tk-c">// gecko-line-breaks.ts#setupClusterBoundaries,</span>
+<span class="tk-c">// gecko-line-breaks.ts#splitAndInitTextRun, graphemes.ts#findGraphemeEnds,</span>
+<span class="tk-c">// graphemes.ts#isBidiControl, han-kerning.ts#getCharType,</span>
+<span class="tk-c">// han-kerning.ts#getFontData, han-kerning.ts#getHanKerningTrims,</span>
+<span class="tk-c">// han-kerning.ts#getStaticCharType, han-kerning.ts#getTrim,</span>
+<span class="tk-c">// han-kerning.ts#getTypeFromBounds, han-kerning.ts#haltedSide,</span>
+<span class="tk-c">// han-kerning.ts#isCanvasCjkSymbol, han-kerning.ts#maybeHanKerns,</span>
+<span class="tk-c">// han-kerning.ts#textMayHanKern, prepare.ts#addInternalLetterSpacing,</span>
+<span class="tk-c">// prepare.ts#countRenderedSpacingGraphemes,</span>
+<span class="tk-c">// prepare.ts#getFollowingSpaceTail, prepare.ts#getScriptFacts,</span>
+<span class="tk-c">// prepare.ts#getScriptFactsAt, prepare.ts#isSpaceKind,</span>
+<span class="tk-c">// prepare.ts#mayHoldCursive, prepare.ts#needsComplexTextPath,</span>
+<span class="tk-c">// prepare.ts#readScriptRuns, prepare.ts#spaceSharesScriptRun.</span>
+<span class="tk-c">// A record type with a `Uint16Array` field, read through the overlay of</span>
+<span class="tk-c">// library types: a view of bytes, whose declarations are not read. Pretext</span>
+<span class="tk-c">// meets it in its own type `TextAnalysis` and in the modules importing it.</span>
+<span class="tk-k">export</span> <span class="tk-k">type</span> <span class="tk-t">Analysis</span> = { sources: <span class="tk-t">Uint16Array</span> | <span class="tk-k">null</span>; texts: string[] };
+<span class="tk-k">export</span> <span class="tk-k">function</span> count(a: <span class="tk-t">Analysis</span>): number {
+  <span class="tk-k">return</span> a.texts.length;
+}</pre></details></li><li><details><summary><code>blocker-pretext-int32array-type</code> <span class="kind positive">positive</span> <span class="was">gap</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">an Int32Array parameter and its length</span></summary><pre class="code"><span class="tk-c">// Pretext (github.com/chenglou/pretext at 0d102a5c, src/, census by unit):</span>
+<span class="tk-c">// layout.ts#prepareInternal, layout.ts#prepareWithSegments,</span>
+<span class="tk-c">// line-text.ts#buildLineTextFromRange, line-text.ts#buildRangeText,</span>
+<span class="tk-c">// line-text.ts#getGraphemeStart, rich-inline.ts#createLine,</span>
+<span class="tk-c">// rich-inline.ts#createOnlyItemLine, rich-inline.ts#fitsWhole,</span>
+<span class="tk-c">// rich-inline.ts#getHyphenRooms,</span>
+<span class="tk-c">// rich-inline.ts#getInternalPreparedRichInline,</span>
+<span class="tk-c">// rich-inline.ts#getOpeningFit, rich-inline.ts#getPartWidth,</span>
+<span class="tk-c">// rich-inline.ts#getSegmentIndex, rich-inline.ts#getSourceOffset,</span>
+<span class="tk-c">// rich-inline.ts#getSourceUnits, rich-inline.ts#isSoftHyphenSegment,</span>
+<span class="tk-c">// rich-inline.ts#layoutNextRichInlineLineRange,</span>
+<span class="tk-c">// rich-inline.ts#materializeRichInlineLineRange,</span>
+<span class="tk-c">// rich-inline.ts#measureRichInlineStats, rich-inline.ts#narrowsLine,</span>
+<span class="tk-c">// rich-inline.ts#walkRichInlineLineRanges, rich-inline.ts#zeroList.</span>
+<span class="tk-c">// An `Int32Array` in a signature, read through the overlay of library types:</span>
+<span class="tk-c">// a view of bytes, its `length` `%ByteLength%`'s. Pretext meets it in</span>
+<span class="tk-c">// signatures and record types holding grapheme ends.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> first(ends: <span class="tk-t">Int32Array</span>): number {
+  <span class="tk-k">return</span> ends.length;
+}</pre></details></li><li><details><summary><code>blocker-pretext-uint8array-construct</code> <span class="kind positive">positive</span> <span class="was">gap</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">new Uint8Array(n)</span></summary><pre class="code"><span class="tk-c">// Pretext (github.com/chenglou/pretext at 0d102a5c, src/, census by unit):</span>
+<span class="tk-c">// analysis.ts#getWebKitParagraphBreaks, analysis.ts#mapSourceLineBreaks,</span>
+<span class="tk-c">// gecko-line-breaks.ts#getBreakStates, graphemes.ts#parseGraphemeRules,</span>
+<span class="tk-c">// rich-inline.ts#setEmptyObjectFacts.</span>
+<span class="tk-c">// `new Uint8Array(n)`, through the global's reviewed entry: only</span>
+<span class="tk-c">// constructed, at a length or an array of numbers.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> flags(n: number): number {
+  <span class="tk-k">const</span> out = <span class="tk-k">new</span> <span class="tk-t">Uint8Array</span>(n);
+  <span class="tk-k">return</span> out.length;
+}</pre></details></li><li><details><summary><code>blocker-pretext-int32array-construct</code> <span class="kind positive">positive</span> <span class="was">gap</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">new Int32Array(n)</span></summary><pre class="code"><span class="tk-c">// Pretext (github.com/chenglou/pretext at 0d102a5c, src/, census by unit):</span>
+<span class="tk-c">// analysis.ts#alignToSource, gecko-line-breaks.ts#transformText,</span>
+<span class="tk-c">// line-text.ts#getGraphemeEnds, measurement.ts#countEmojiGlyphs,</span>
+<span class="tk-c">// measurement.ts#getExtraSpacings, measurement.ts#getSegmentFit,</span>
+<span class="tk-c">// prepare.ts#getUnspacedGraphemes.</span>
+<span class="tk-c">// `new Int32Array(n)`, through the global's reviewed entry: only</span>
+<span class="tk-c">// constructed, at a length or an array of numbers.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> ends(n: number): number {
+  <span class="tk-k">const</span> out = <span class="tk-k">new</span> <span class="tk-t">Int32Array</span>(n);
+  <span class="tk-k">return</span> out.length;
+}</pre></details></li><li><details><summary><code>blocker-pretext-uint16array-construct</code> <span class="kind positive">positive</span> <span class="was">gap</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">new Uint16Array(n)</span></summary><pre class="code"><span class="tk-c">// Pretext (github.com/chenglou/pretext at 0d102a5c, src/, census by unit):</span>
+<span class="tk-c">// line-breaks.ts#hasProperty, line-breaks.ts#unpackClassRuns.</span>
+<span class="tk-c">// `new Uint16Array(n)`, through the global's reviewed entry: only</span>
+<span class="tk-c">// constructed, at a length or an array of numbers.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> runs(n: number): number {
+  <span class="tk-k">const</span> out = <span class="tk-k">new</span> <span class="tk-t">Uint16Array</span>(n);
+  <span class="tk-k">return</span> out.length;
+}</pre></details></li><li><details><summary><code>node-bytes-write</code> <span class="kind positive">positive</span> <span class="was">refused</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">a write of 300 reads back 44, a number</span></summary><pre class="code"><span class="tk-c">// A write through a view of bytes at a number is `%ByteSet%`'s: it converts</span>
+<span class="tk-c">// its value by ToNumber, which runs no code on a number, and keeps it modulo</span>
+<span class="tk-c">// 256 (run under Node: 300 reads back as 44). The element read back is a</span>
+<span class="tk-c">// number, or `undefined` past the end.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> write(bytes: <span class="tk-t">Buffer</span>, value: number): number {
+  bytes[<span class="tk-n">0</span>] = value;
+  <span class="tk-k">return</span> bytes[<span class="tk-n">0</span>] ?? -<span class="tk-n">1</span>;
+}</pre></details></li></ul>
+<h4 class="change">Counterexample</h4><pre class="code"><span class="ln"><span class="tk-k">let</span> label: string | number = <span class="tk-s">&quot;text&quot;</span>;</span><span class="ln"><span class="tk-k">class</span> <span class="tk-t">Counting</span> <span class="tk-k">extends</span> <span class="tk-t">Uint8Array</span> {</span><span class="ln">  <span class="tk-k">constructor</span>(length: number) { <span class="tk-k">super</span>(length); label = <span class="tk-n">1</span>; }</span><span class="ln">}</span><span class="ln"><span class="tk-c">// trimmed(view) narrows label to string, calls view.subarray(0, 1),</span></span><span class="ln"><span class="tk-c">// and returns label</span></span><span class="ln"><span class="tk-k">typeof</span> trimmed(reset())   <span class="tk-c">// Node: &quot;number&quot;</span></span></pre>
+<h4 class="change">Soundness</h4><div class="prose"><p>The model holds no element of a view, so <code>%ByteSet%</code> and the methods change no location the model holds; <code>%ByteAt%</code> still answers a number or <code>undefined</code> after any write. Each stated member was audited against ECMA-262 and Node's <code>Buffer.prototype</code>, and run under Node 26.13.0.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">SOURCE-CONTRACTS.md, DESIGN.md, WORK.md</span></h4><div class="prose"><p>the stated view of bytes and its members, %ByteSet%, the typed array constructors under library globals, the trust row, and the pretext row</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">parser</span> <span class="chip strong">trust</span> <span class="chip">docs</span> <span class="chip">tests</span></dd><dt>Trust</dt><dd><span class="trust">Uint8Array, Uint16Array and Int32Array values are host-created views, no subclass's instances, with the standard prototype chain, constructor and Symbol.species; %TypedArray%.prototype's fill, copyWithin, set and subarray, and Buffer.prototype's fill, are the host's own; their element writes change no location the model holds</span></dd><dt>Measured</dt><dd>pretext src/ census (0d102a5c), shallow verified functions 6 -&gt; 33 of 209, statements 12 -&gt; 205 of 3424</dd><dt>Tests</dt><dd><span class="test pos">typed-array-views</span> <span class="test pos">invalid-typed-array-write-past-end</span> <span class="test pos">invalid-typed-array-subclass</span> <span class="test pos">node-bytes-write</span> <span class="test neg">invalid-node-bytes-write</span></dd></dl>
+<details><summary>23 files changed, 346 insertions(+), 92 deletions(-)</summary><pre class="code"> WORK.md                                            |   2 +-
+ docs/DESIGN.md                                     |   6 +-
+ docs/SOURCE-CONTRACTS.md                           | 104 +++++++++++++++++----
+ pipeline/cases.mts                                 |  21 +++--
+ .../blocker-pretext-int32array-construct.ts        |   6 +-
+ .../examples/blocker-pretext-int32array-type.ts    |   6 +-
+ .../blocker-pretext-uint16array-construct.ts       |   6 +-
+ .../examples/blocker-pretext-uint16array-type.ts   |   8 +-
+ .../blocker-pretext-uint8array-construct.ts        |   6 +-
+ pipeline/examples/invalid-node-bytes-write.ts      |   7 --
+ pipeline/examples/invalid-typed-array-subclass.ts  |  21 +++++
+ .../examples/invalid-typed-array-write-past-end.ts |   8 ++
+ pipeline/examples/node-bytes-write.ts              |   8 ++
+ pipeline/examples/typed-array-views.ts             |  33 +++++++
+ pipeline/pretext-project/tsconfig.json             |   2 +-
+ tests/node-runs.mts                                |  11 ++-
+ tools/declaration-graph.mts                        |  26 +++++-
+ tools/fragment-expressions.mts                     |   7 ++
+ tools/fragment-parse.mts                           |  21 ++++-
+ tools/host-operations.mts                          |   7 +-
+ tools/intrinsics.mts                               |  15 ++-
+ tools/library-globals.mts                          |  21 +++++
+ tools/library-types.mts                            |  86 +++++++++++++----</pre></details>
 <div class="sha">with Claude Opus 5.5</div>
 </article>
 </main></body></html>
