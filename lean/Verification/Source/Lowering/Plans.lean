@@ -155,6 +155,13 @@ witness, where the scope holds one, holds the value it reads
   let (root, fields) ← b.witness
   scope.findIdx? (·.witness == some (root, fields ++ [f]))
 
+/-- The saved read of a source path denotes its witness; a field read of
+its prefix's witness denotes that same longer path. -/
+@[nospecialize] def readPathWitness (scope : List (ScopeBinding ι)) (read : Fragment.Expr) : Option Nat :=
+  (pathWitness scope read).orElse fun _ => match read with
+    | .read _ f (.var _ w) => (valueSlot scope w).bind (longerWitness scope · f)
+    | _ => none
+
 /-- The tag a condition tests on an immutable variable: its own shape or
 singleton test, or, for a variable that is not a Boolean, its truthiness
 (`ToBoolean`), which is how JavaScript reads any other value as a condition. -/

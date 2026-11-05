@@ -23,7 +23,8 @@ function verify(file: string, status: "verified" | "unverified" | "unsupported",
 }
 for (const name of ["stale_title", "aliased_arguments"])
   verify(join(here, "examples", `${name}.py`), "unverified", /This return requires string/);
-verify(join(here, "examples", "snapshot_title.py"), "verified");
+for (const name of ["snapshot_title", "rechecked_title", "rechecked_arguments"])
+  verify(join(here, "examples", `${name}.py`), "verified");
 verify(join(here, "examples", "hello.py"), "verified");
 verify(join(here, "examples", "refused.py"), "unverified", /This return requires bigint/);
 const runtime = command("python3", ["-I", "-B", join(here, "runtime.py")]);
@@ -62,4 +63,4 @@ const out = verify(file, "unverified", /line 13: return payload\["title"\]/);
 const span = /obligation at \[(\d+),(\d+)\)/.exec(out);
 assert.ok(span, out);
 assert.equal(unicode.slice(Number(span[1]), Number(span[2])), 'payload["title"]');
-process.stdout.write(`Python demo: 5 verdicts, CPython witnesses, ${boundaries.length} source boundaries, Unicode/CRLF locations\n`);
+process.stdout.write(`Python demo: 7 source verdicts, CPython witnesses, ${boundaries.length} source boundaries, Unicode/CRLF locations\n`);

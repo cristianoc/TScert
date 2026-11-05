@@ -4,11 +4,11 @@ The same proof checker can expose a Python bug accepted by five Python type
 checkers: a dictionary write through an alias invalidates an earlier type
 check. The demo translates a restricted Python subset into TScert's
 [Fragment](../../tools/fragment.mts). Its OCaml producer and Lean verifier
-check that program unchanged.
+check that program using the existing typing rules.
 
 ## The example
 
-[`stale_title.py`](examples/stale_title.py):
+[`aliased_arguments.py`](examples/aliased_arguments.py):
 
 ```python
 from typing import TypedDict
@@ -16,29 +16,38 @@ from typing import TypedDict
 class Payload(TypedDict):
     title: str | int
 
-def display_title(payload: Payload) -> str:
-    alias = payload
+def display_title(payload: Payload, pending: Payload) -> str:
     if isinstance(payload["title"], str):
-        alias["title"] = 0
+        pending["title"] = 0
         return payload["title"]
     return "untitled"
 ```
 
-With `{"title": "Quarterly report"}`, the function returns the integer `0`.
+The caller may pass the same dictionary twice. With `payload = {"title":
+"Quarterly report"}`, `display_title(payload, payload)` returns integer `0`.
 A caller using the promised string's `.upper()` raises `AttributeError`.
-Every argument and write meets the stated `TypedDict` contract. The earlier
-`isinstance` test describes the field before its mutation.
+Every argument and write meets the stated contract; writing `pending` can
+invalidate a narrowing of `payload`. Distinct objects produce the promised
+string. [`stale_title.py`](examples/stale_title.py) makes the alias explicit
+with `alias = payload` inside the function.
 
-TScert refuses the final read: its available claim is `string | bigint`,
-while the result requires `string`. The checker accepts the
-[snapshot repair](examples/snapshot_title.py): save `title = payload["title"]`,
-test `isinstance(title, str)` and return `title` across the write. The saved
-string survives the dictionary's mutation.
+The comparison includes both preserving a saved value and establishing a
+fresh fact after mutation:
 
-[`aliased_arguments.py`](examples/aliased_arguments.py) exercises a second
-form: two parameters may receive the same dictionary. Writing one can
-invalidate a narrowing of the other. Its counterexample passes the same
-object for both arguments; distinct objects produce the promised string.
+| Program | Value returned | TScert |
+| --- | --- | --- |
+| [Aliased parameters](examples/aliased_arguments.py) | integer `0` for the same-object call | `unverified` at the return |
+| [Local alias](examples/stale_title.py) | integer `0` after the aliased write | `unverified` at the return |
+| [Snapshot](examples/snapshot_title.py) | saved string across mutation | `verified` |
+| [Fresh check](examples/rechecked_title.py) | string replacement or fallback after testing the current field | `verified` |
+| [Fresh check of aliased parameters](examples/rechecked_arguments.py) | current string or fallback, for same or distinct objects | `verified` |
+
+The stale read's diagnostic states `string | bigint` where the return
+requires `string`; `bigint` represents Python's `int`. The snapshot repair
+saves `title = payload["title"]`, tests `isinstance(title, str)` and returns
+`title`. The fresh-check repair tests the dictionary field after its write.
+Its tests cover string and integer replacements and a return expression
+using the freshly checked field.
 
 ## Run it
 
@@ -49,12 +58,15 @@ python3 -I -B demo/python/runtime.py
 node demo/python/verify.mts demo/python/examples/stale_title.py
 node demo/python/verify.mts demo/python/examples/aliased_arguments.py
 node demo/python/verify.mts demo/python/examples/snapshot_title.py
+node demo/python/verify.mts demo/python/examples/rechecked_title.py
+node demo/python/verify.mts demo/python/examples/rechecked_arguments.py
 node demo/python/test.mts
 ```
 
-The first two verdicts are `unverified` (exit 1); the snapshot is `verified`
-(exit 0). `runtime.py` executes both counterexamples and checks the repair
-on six inputs, including an empty string, astral Unicode and a large integer.
+The first two verdicts are `unverified` (exit 1); all three repair files are
+`verified` (exit 0). `runtime.py` executes both counterexamples and checks the repair
+with empty strings, astral Unicode and large integers, string and integer
+replacements, and same and distinct parameter objects.
 `test.mts` checks these verdicts, the original primitive examples, source
 restrictions and diagnostic locations across Unicode and CRLF. CI runs it.
 
@@ -67,7 +79,8 @@ use the repository's stage store and 60-second limits.
 ## Python type checker comparison
 
 Measured on 2026-11-05, all five releases below accept both aliasing
-counterexamples and the snapshot repair with zero reported errors. Each
+counterexamples, the snapshot repair and the fresh-check repair with zero
+reported errors. Each
 also rejects the control `def ordinary_error() -> str: return 0`.
 
 | Checker | Release | Configuration |
@@ -94,7 +107,7 @@ other checkers and future releases require their own measurements.
 The interesting obligation is the relation between a heap read, an aliasing
 write and a later read. TScert's existing record contracts and heap rules
 handle it for a Python-origin Fragment, including possible aliasing between
-parameters. The snapshot succeeds through those same stages. The front end
+parameters. The snapshot and fresh checks succeed through those same stages. The front end
 recognizes Python syntax and supplies contracts; it contains no rule that
 recognizes or rejects this example's mutation pattern.
 

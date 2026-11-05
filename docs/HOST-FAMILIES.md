@@ -1232,11 +1232,14 @@ cannot receive a witness link from the throwing computation. In a
 condition, a path's read whose receiver was read just before, into its
 prefix's witness as well, reads its field from that witness, which holds the
 same value, so the link it records is the one the entry states. A strict
-test of a path of two members or more against `null` or `undefined` re-reads
-the path's last member into a saved slot and dispatches on it; that slot is
-the path's witness on both edges, so the test's slice of it is the witness's
-type (`field-write-refinement`; `invalid-path-null-test-alias`, a write through
-an alias between the test and the read, run under Node). Controls:
+singleton or shape test of a path re-reads its last member into a saved slot
+and dispatches on it; that slot is the path's witness on both edges, so the
+test's slice of it is the witness's type. A guarded return uses the saved
+read as its result and passes that same read to the following entry on the
+failed-test edge (`path-witness-controls`, a fresh string test after an
+aliased write with a bigint outcome; `field-write-refinement`;
+`invalid-path-null-test-alias`, a write through an alias between the test and
+the read, run under Node). Controls:
 `compiler-api-entry-path` (two and three members, a loop's backedge, past a
 call), `invalid-compiler-api-entry-path-record` (a middle member a call
 replaces, run under Node), and in `pipeline/test.mts` forged chains of

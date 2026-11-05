@@ -9,7 +9,7 @@ import { join } from "node:path";
 
 const here = import.meta.dirname;
 const artifacts = mkdtempSync(join(tmpdir(), "tscert-python-comparison-"));
-const names = ["stale_title", "aliased_arguments", "snapshot_title"];
+const names = ["stale_title", "aliased_arguments", "snapshot_title", "rechecked_title"];
 const files = names.map((name) => join(here, "examples", `${name}.py`));
 const config = join(artifacts, "pyrightconfig.json");
 writeFileSync(config, JSON.stringify({ typeCheckingMode: "strict", pythonVersion: "3.13" }));
@@ -45,5 +45,5 @@ for (const tool of tools) {
   assert.equal(bad.status, 1, `${tool.name}: expected an ordinary type-error exit`);
   assert.match(bad.stdout + bad.stderr, /ordinary_error\.py/);
   assert.match(bad.stdout + bad.stderr, /return|Return|incompatible|assignable/i);
-  process.stdout.write(`${version.stdout.trim()}: accepts both aliasing bugs and the snapshot; rejects ordinary return error\n`);
+  process.stdout.write(`${version.stdout.trim()}: accepts both aliasing bugs and both repairs; rejects ordinary return error\n`);
 }
