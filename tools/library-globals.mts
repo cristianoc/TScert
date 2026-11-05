@@ -120,7 +120,8 @@ export type GlobalEntry = {
    * did not allocate as it was. Absent, the signature states none. */
   effect?: CallEffect;
   /** The entry's classification against restricted values
-   * (`host-operations.mts`). */
+   * (`host-operations.mts`): required, so every entry states one; a
+   * reviewed record that no check reads. */
   host: HostClass;
   /** Where the reviewed declaration comes from: the standard library
    * (`library`, the default) or the installed package of that name

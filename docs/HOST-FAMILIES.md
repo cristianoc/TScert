@@ -623,7 +623,16 @@ fields to the program: those fields hold the package's mutable internal
 heap (a list's `_cursorIndex`, which an indexed read changes; its
 `sourceFile`, whose `nodes` cache grows as nodes materialise), which the
 model does not describe, and an `unknown` result does not stop its later
-refinement and reflection. An unclassified form or entry is refused.
+refinement and reflection.
+
+The classifications are recorded in `host-operations.mts` and in each
+overlay entry's required `host` field (`library-globals.mts`). The tables
+of source forms are keyed by the parser's unions of expression, statement
+and pattern kinds, so a form added to the fragment is a type error there
+until it is classified; the table of intrinsics is keyed by name, and its
+completeness against `intrinsics.mts` is reviewed, not checked. No check
+reads the classifications: they are the reviewed record, and Lean enforces
+each obligated step by its own rule.
 
 | Operation                                                                                                                      | Model                                                                                  | Classification                                                                  |
 | ------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
@@ -645,9 +654,13 @@ refinement and reflection. An unclassified form or entry is refused.
 | an object spread, an object pattern's rest                                                                                     | a fresh record of the operand's members                                                | obligated: $`\mathrm{excludesHost}`$ of the operand                             |
 | `Object.assign(t, s…)`                                                                                                         | `t` with each `s`'s members                                                            | obligated: $`\mathrm{excludesHost}`$ of `t` and of each `s`                     |
 | a member write                                                                                                                 | the receiver's invariant field written                                                 | the write rule's invariant field, which excludes host values (R1)               |
-| `structuredClone`, `Array.from`, `concat`, `Object.hasOwn`, `hasOwnProperty`, `delete`, freezing, prototype reflection | —                                                                                      | refused: not in the fragment                                                    |
+| `Object.hasOwn(o, k)`                                                                                                           | a Boolean                                                                              | transparent: [[GetOwnProperty]] runs no code, and no value of `o` reaches the program |
+| `Object.freeze` of an object literal written as its argument (`%Freeze:K%`)                                                   | the fresh object, its fields readonly views                                            | transparent: a fresh object, no host value                                      |
+| `Array.from` of an array or of a length record; `structuredClone(x)`                                                                               | the store's elements; a value at `unknown`                                             | transparent                                                                     |
+| `Object.getPrototypeOf(o)` compared with `Object.prototype` (`%PrototypeIs:Object%`), `Reflect.ownKeys(o)` (`%OwnKeys%`)        | `o`'s [[GetPrototypeOf]]; its [[OwnPropertyKeys]]                                     | obligated: $`\mathrm{excludesHost}`$ of `o`, whose internal methods may be the host's code |
+| `concat` of arrays, `hasOwnProperty`, `delete`, `Object.freeze` of any other operand, other prototype reflection                | —                                                                                      | refused: not in the fragment                                                    |
 | `sort`, `reverse`, `push`, `pop`, `shift`, `unshift`, `splice`                                                                 | the receiver's store written                                                           | a writable receiver, which excludes host values                                 |
-| an `Array.prototype` member called with another receiver (`Array.prototype.sort.call(l)`)                                      | —                                                                                      | refused: no library value but `Boolean` is admitted as a value                  |
+| an `Array.prototype` member called with another receiver (`Array.prototype.sort.call(l)`)                                      | —                                                                                      | refused: no library value but `Boolean`, `String` and `Number` is admitted as a value                  |
 
 **First-class library values.** The obligated library calls are members of
 `Object`: `Object.assign`, a call form of the parser recognized by its
