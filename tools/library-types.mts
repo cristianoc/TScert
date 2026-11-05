@@ -486,7 +486,9 @@ const node = "@types/node";
 const library = "library";
 export const typesOverlay: readonly TypeEntry[] = [
   { name: "HTMLSpanElement", definition: htmlElementDefinition, parts: [{ origin: library, heading: "interface HTMLSpanElement extends HTMLElement {" }] },
-  { name: "CSSStyleDeclaration", definition: computedStyleDefinition, parts: [{ origin: library, heading: "interface CSSStyleDeclaration extends CSSStyleProperties {" }] },
+  { name: "CSSStyleDeclaration", definition: computedStyleDefinition, parts: [
+    { origin: library, heading: "interface CSSStyleDeclaration extends CSSStyleProperties {" },
+    { origin: library, heading: "interface CSSStyleDeclaration {" }] },
   { name: "DateTimeFormat", definition: dateTimeFormatDefinition, parts: [{ origin: library, heading: "interface DateTimeFormat {" }] },
   // The standard library's `Uint8Array`, as the configured standard library
   // declares it in parts, and Node's part adding `at`.
