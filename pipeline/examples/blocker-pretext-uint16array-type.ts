@@ -27,11 +27,9 @@
 // prepare.ts#getScriptFactsAt, prepare.ts#isSpaceKind,
 // prepare.ts#mayHoldCursive, prepare.ts#needsComplexTextPath,
 // prepare.ts#readScriptRuns, prepare.ts#spaceSharesScriptRun.
-// Refusal: gate: type outside the fragment (ThisType) in
-// typescript/lib/lib.es5.d.ts#Uint16Array.
-// A record type with a `Uint16Array` field: the library's declaration of
-// `Uint16Array` uses `ThisType`, a type outside the fragment. Pretext meets
-// it in its own type `TextAnalysis` and in the modules importing it.
+// A record type with a `Uint16Array` field, read through the overlay of
+// library types: a view of bytes, whose declarations are not read. Pretext
+// meets it in its own type `TextAnalysis` and in the modules importing it.
 export type Analysis = { sources: Uint16Array | null; texts: string[] };
 export function count(a: Analysis): number {
   return a.texts.length;

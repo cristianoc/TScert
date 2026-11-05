@@ -26,7 +26,7 @@ import {
   newPromiseName, promiseAllName, promiseRejectName, promiseResolveName, symbolForName, symbolKeyForName,
   instanceOfErrorName, instanceOfMapName, instanceOfSetName, assertionFailureName, ownKeysName, prototypeIsObjectName, ownStringName,
   ordinaryHasInstanceName, importMetaDirnameName, importMetaFilenameName, importMetaResolveName, importMetaUrlName,
-  urlHrefName, pathToFileHrefName, throwUninitializedName, byteAtName, byteLengthName,
+  urlHrefName, pathToFileHrefName, throwUninitializedName, byteAtName, byteLengthName, byteSetName,
 } from "./intrinsics.mts";
 
 /** The key capability for an open read, independent of the receiver's
@@ -161,8 +161,9 @@ export const intrinsicForms: Readonly<Record<string, HostClass>> = {
   [iterateForInName]: transparent("over a dictionary, whose family admits no host object"),
   [hasPropertyName]: transparent("HasProperty over own fields and the prototype chain, as at run time (T4)"),
   [elementAtName]: store,
-  [byteAtName]: transparent("a byte of a `Uint8Array` or `Buffer`, a number, as its stated library type gives it; a node is no byte view"),
-  [byteLengthName]: transparent("the length of a `Uint8Array` or `Buffer`, a number, as its stated library type gives it"),
+  [byteAtName]: transparent("an element of a view of bytes, a number, as its stated library type gives it; a node is no byte view"),
+  [byteLengthName]: transparent("the length of a view of bytes, a number, as its stated library type gives it"),
+  [byteSetName]: transparent("an element of a view of bytes written with a number, as its stated library type gives it; a node is no byte view"),
   [throwUninitializedName]: transparent("throws a `ReferenceError`; observes no value"),
   "%Spread:": transparent("a string, Set, Map or iterator: no host value"),
   "%RestFrom:": store,

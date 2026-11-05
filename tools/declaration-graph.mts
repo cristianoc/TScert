@@ -23,14 +23,14 @@ import { wildcardReadings, classInstance, computedAlias, computedForm, expandMap
 import { arrayPrototype, functionPrototype, functionPrototypeName, interfaceOverlay, mergeMessage, mergeRefusal, overlay, primitiveKinds, primitivePrototype,
   primitivePrototypeName, collectionIteratorMark, nativeCollectionIterator, nativeCollectionIteratorDefinition, nativeCollectionView, nativeCollectionViewDefinition, type CollectionKind, type OverlayEntry, splitSeparators, type OverlayLibrary, type PrimitiveKind } from "./array-prototype.mts";
 import { intrinsics, intrinsicModule, resolutionIntrinsics, resolvableDeclaration, stableDefinition, iterateIteratorName, iterateName, unionIterationName, unionIterationParts, iterateRegExpStringName, iterateMapName, iterateSetName, iterateStringName,
-  iterationIntrinsic, hasPropertyName, openReadIntrinsic, elementAtName, freezeName, byteAtName, byteLengthName, nonThenable, restFromIntrinsic, spreadName, enumIntrinsic, enumMembersTerm,
+  iterationIntrinsic, hasPropertyName, openReadIntrinsic, elementAtName, freezeName, byteAtName, byteLengthName, byteSetName, nonThenable, restFromIntrinsic, spreadName, enumIntrinsic, enumMembersTerm,
   literalTerm, assertionFailureName, type EnumMemberValue, type EnumReverse } from "./intrinsics.mts";
 import { compareTags, familyTable, footprintReading, type FamilyArm, type FamilyDescription, type FamilyGraph, type FamilyTable, type FlatMember, type GuardEntry, type TagValue } from "./host-families.mts";
 import { type BrandPredicate, compilerApiFamily, statedGuards, brandedTypes, hostBrands, hostEnums, hostNodeBuilders, hostNodeList, hostTypeRoots, nodeListMembers, hostViews, readsAsOptionalUnknown, requestReading, tableReading } from "./compiler-api.mts";
 import { activeFamilies, familyOfFile, familyOfGuard, guardOfExport, importedExport, installationPath, isHostFile, selectionGuard, tagEnumMatches, hostEnumObject } from "./family-activation.mts";
 import { errorInstance, reviewedErrorMembers, globalEntry, globalOrigins, globalsOverlay, importMetaName, type GlobalEntry, type Stated } from "./library-globals.mts";
 import { moduleEntries, moduleObjectDefault, reviewedText, reviewedTexts, type ModuleEntry } from "./library-modules.mts";
-import { definitions as typeDefinitions, typeEntry, type TypeEntry } from "./library-types.mts";
+import { definitions as typeDefinitions, namedDefinitions, typeEntry, type TypeEntry } from "./library-types.mts";
 import { literalParts, regexpShape } from "./regexp-shape.mts";
 import { dispatchIntrinsic, dispatchName, isDispatchMethod, libraryRegExpNames, libraryRegExpTerm, marks, nativeIterator, nativeIteratorDefinition,
   nativeRegExp, regexpIntrinsicName, reviewedRegExpMembers,
@@ -683,6 +683,11 @@ export interface OperationRequests {
    * `byteRead` with the intrinsic reading it, `%ByteAt%` or `%ByteLength%`,
    * which joins the values. */
   lengthReads?: readonly Span[];
+  /** The client's element writes `e[k] = v`, by their targets: each whose
+   * object TypeScript types as views of bytes only and whose key as a number
+   * is reported to `byteRead` with `%ByteSet%`, which writes it and joins
+   * the values. */
+  elementWrites?: readonly Span[];
   /** The client's reads `e.k` at a key some `"k" in o` test writes: each
    * whose object TypeScript types as `object` narrowed by such tests alone
    * (every part of an intersection `object` or the standard library's
@@ -1569,8 +1574,10 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
     // each joining the document once, wherever it is named.
     const overlayDefinitions: TypeDefinition[] = [];
     const defineOverlay = (definition: TypeDefinition): void => {
-      if (!overlayDefinitions.some(d => d.declaration.module === definition.declaration.module &&
-          d.declaration.name === definition.declaration.name)) overlayDefinitions.push(definition);
+      if (overlayDefinitions.some(d => d.declaration.module === definition.declaration.module &&
+          d.declaration.name === definition.declaration.name)) return;
+      overlayDefinitions.push(definition);
+      for (const named of namedDefinitions(definition)) defineOverlay(named);
     };
     // A type the overlay of library types states (`library-types.mts`): every
     // part TypeScript binds the name to as a type is one its entry reviews,
@@ -3076,6 +3083,17 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
         listIntrinsics(span, [elementAtName]);
         operationAnswers.hostElement?.(span);
       }
+    }
+    // `b[k] = v` of a view of bytes at a number, a literal one included.
+    for (const span of operationsRequested.elementWrites ?? []) {
+      const write = expressionAt(client, span);
+      if (!write || !ts.isElementAccessExpression(write)) throw declarationError(span, "TypeScript element write missing");
+      const object = checker.getTypeAtLocation(write.expression);
+      const key = checker.getTypeAtLocation(write.argumentExpression);
+      const keys = key && isUnionType(key) ? key.getTypes() : key ? [key] : [];
+      if (bytesOnly(object && isUnionType(object) ? object.getTypes() : object ? [object] : []) && keys.length &&
+          keys.every(t => !!(t.flags & (TypeFlags.Number | TypeFlags.NumberLiteral))))
+        viewRead(span, byteSetName);
     }
     // `b.length` of a view of bytes.
     for (const span of operationsRequested.lengthReads ?? []) {

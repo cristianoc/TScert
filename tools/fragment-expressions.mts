@@ -1914,6 +1914,13 @@ export function binary(this: Gate, node: BinaryExpression): Within<{ value: "any
     if (symbolKey !== undefined && ts.isElementAccessExpression(node.left) && !node.left.questionDotToken)
       return { k: "write", pos: gate.span(node), field: { symbol: symbolKey },
         receiver: gate.expr(node.left.expression), rhs: gate.expr(node.right) };
+    // `b[k] = v` of a view of bytes at a number is `%ByteSet%(b, k, v)`
+    // (`library-types.mts`).
+    const byteSet = ts.isElementAccessExpression(node.left)
+      ? gate.byteReads.get(gate.span(node.left).join(":")) : undefined;
+    if (byteSet !== undefined && ts.isElementAccessExpression(node.left))
+      return gate.intrinsic(byteSet, gate.span(node), elementBracket(node.left),
+        [gate.expr(node.left.expression), gate.expr(node.left.argumentExpression), gate.expr(node.right)]);
     if (
       ts.isElementAccessExpression(node.left) &&
       !node.left.questionDotToken
