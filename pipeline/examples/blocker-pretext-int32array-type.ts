@@ -12,10 +12,8 @@
 // rich-inline.ts#materializeRichInlineLineRange,
 // rich-inline.ts#measureRichInlineStats, rich-inline.ts#narrowsLine,
 // rich-inline.ts#walkRichInlineLineRanges, rich-inline.ts#zeroList.
-// Refusal: gate: type outside the fragment (ThisType) in
-// typescript/lib/lib.es5.d.ts#Int32Array.
-// An `Int32Array` in a signature: the library's declaration of `Int32Array`
-// uses `ThisType`, a type outside the fragment. Pretext meets it in
+// An `Int32Array` in a signature, read through the overlay of library types:
+// a view of bytes, its `length` `%ByteLength%`'s. Pretext meets it in
 // signatures and record types holding grapheme ends.
 export function first(ends: Int32Array): number {
   return ends.length;

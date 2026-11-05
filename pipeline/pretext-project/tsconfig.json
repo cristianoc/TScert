@@ -16,5 +16,5 @@
     "noUncheckedIndexedAccess": true,
     "exactOptionalPropertyTypes": true
   },
-  "include": ["./*.ts", "../examples/blocker-pretext-import-*.ts"]
+  "include": ["./*.ts", "../examples/blocker-pretext-import-*.ts", "../examples/typed-array-*.ts", "../examples/invalid-typed-array-*.ts"]
 }

@@ -362,6 +362,26 @@ const bytesEntries: GlobalEntry[] = [
         result: textDecoder }, definitions: [stated.textDecoder, stated.bytes] })),
 ];
 
+/** The standard library's `Uint8Array`, `Uint16Array` and `Int32Array`
+ * (SOURCE-CONTRACTS.md, "The standard library's typed arrays"), only
+ * constructed, at a
+ * length or an array of numbers: `new Uint8Array(n)` converts `n` by
+ * ToIndex, a number's own value, throwing a `RangeError` where it is
+ * negative or too large, and allocates a view of that many zeros; `new
+ * Uint8Array(xs)` of an array gets the array's `Symbol.iterator`, which an
+ * array owns none of, from the untampered `Array.prototype`, steps the
+ * standard array iterator, which reads `length` and each element, own data
+ * properties or holes that no prototype holds, and converts each element,
+ * a number or a hole's `undefined`, by ToNumber, which runs no code. Each
+ * reads its prototype from the untampered constructor's `prototype` and
+ * allocates: it runs no code of the client's and writes no location it did
+ * not allocate. */
+const typedArrayEntries: GlobalEntry[] = ["Uint8Array", "Uint16Array", "Int32Array"].map((name): GlobalEntry => (
+  { host: transparent("a length or an array of numbers, which no node list is"), global: name,
+    signature: `${name}: ${name}Constructor`, constructs: true, effect: emptyEffect,
+    stated: { binders: [], params: [{ k: "union", span: at, parts: [atom("number"), readonlyArray(atom("number"))] }],
+      result: bytes }, definitions: [stated.bytes] }));
+
 /** Node's global `URL` (SOURCE-CONTRACTS.md, "Node's `URL`"), at the
  * declaration both pinned installations give it. */
 const urlEntries: GlobalEntry[] = [
@@ -420,6 +440,7 @@ const importMetaEntries: GlobalEntry[] = [
 export const globalsOverlay: readonly GlobalEntry[] = [
   ...processEntries,
   ...bytesEntries,
+  ...typedArrayEntries,
   ...urlEntries,
   ...importMetaEntries,
   // Node's `console.log` and `console.error`, and the DOM's `console.error`,

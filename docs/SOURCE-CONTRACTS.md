@@ -1620,7 +1620,8 @@ so no case reaches this refusal.
 `pipeline/library-project/package.json`); host behaviour from ECMA-262's
 TypedArray objects, Node 25.2.1's `lib/buffer.js`, `lib/internal/buffer.js`
 and `lib/internal/fs/utils.js`, and probes run under Node 25.2.1
-(2026-10-27).
+(2026-10-27) and Node 26.13.0 (2026-11-05, the typed arrays' constructors
+and methods).
 
 A type name some host values have, whose declarations the reader does not
 read as those values are (`Buffer` names the conditional type
@@ -1660,16 +1661,43 @@ at the arguments the entry states, or at any where it states none:
 The entries of [library modules](#library-modules) and
 [library globals](#nodes-buffer-and-textdecoder) returning or taking such
 values name $`D_\theta`$ too. Each $`D_\theta`$ joins the document once,
-where a statement or a name reads it. The entries:
+where a statement or a name reads it.
 
-- `Uint8Array`, the standard library's parts and Node's part adding `at`, a
-  host object of no stated member, $`\mathsf{host}_b\,\{\}`$, with $`b`$
-  the marker `"node:bytes"`.
-- `Buffer`: $`\mathsf{host}_b\,\{\mathtt{toString}\colon(\texttt{"utf8"})\Rightarrow_\emptyset\mathtt{string};\ \mathtt{subarray}\colon(\mathtt{number},\ \mathtt{number}\mid\mathtt{undefined})\Rightarrow_\emptyset\mathit{Buffer}\}`$,
-  each a method, within the empty footprint. `toString("utf8")` reads
-  `this.length` and calls `this.utf8Slice`; `subarray` reads `this.length`,
-  `this.buffer` and `this.byteOffset`, clamps its integers and constructs a
-  `FastBuffer` over the same memory. A `Buffer` is a `Uint8Array`.
+A view of bytes $`V_S`$, with $`b`$ the marker `"node:bytes"` and $`n^?`$
+for $`\mathtt{number}\mid\mathtt{undefined}`$, is
+
+```math
+V_S=\mathsf{host}_b\,\{\mathtt{fill}\colon(\mathtt{number},\ n^?,\ n^?)\Rightarrow_\emptyset S;\ \mathtt{copyWithin}\colon(\mathtt{number},\ \mathtt{number},\ n^?)\Rightarrow_\emptyset S;\ \mathtt{set}\colon(\mathit{Uint8Array},\ n^?)\Rightarrow_\emptyset\mathtt{undefined};\ \mathtt{subarray}\colon(\mathtt{number},\ n^?)\Rightarrow_\emptyset S\}
+```
+
+The entries:
+
+- `Uint8Array`, the standard library's parts and Node's part adding `at`,
+  and `Uint16Array` and `Int32Array`, the standard library's parts: one
+  type, the view of bytes $`V_\mathit{Uint8Array}`$, its members each a
+  method of `%TypedArray%.prototype`, called at numbers and views
+  alone: ToNumber and ToIntegerOrInfinity of a number run no code, `set`
+  of a view copies by SetTypedArrayFromTypedArray, which runs none, and
+  `subarray`'s TypedArraySpeciesCreate reads the view's `constructor` and
+  its `Symbol.species`, which the host assumption below makes the standard
+  constructor and `%TypedArray%`'s getter, and constructs a fresh view over
+  the same memory. `fill` and `copyWithin` return the receiver. Each
+  writes the view's elements alone, which the model holds no location of,
+  and throws a `RangeError` at an index out of range: within the empty
+  footprint. Every member holds of each of the three alike; the members
+  calling a callback or a species constructor's code (`map`, `filter`,
+  `slice`, `every` with a `thisArg`, …) are not stated, so a read of one
+  finds no member.
+- `Buffer`: $`V_\mathit{Buffer}`$ with
+  $`\mathtt{toString}\colon(\texttt{"utf8"})\Rightarrow_\emptyset\mathtt{string}`$
+  besides, each a method, within the empty footprint. `toString("utf8")`
+  reads `this.length` and calls `this.utf8Slice`; `subarray` reads
+  `this.length`, `this.buffer` and `this.byteOffset`, clamps its integers
+  and constructs a `FastBuffer` over the same memory; `fill` of a number
+  validates its offsets as integers within the view, throwing otherwise,
+  and calls the realm's `%TypedArray%.prototype.fill` captured at startup,
+  returning the receiver; `copyWithin` and `set` are
+  `%TypedArray%.prototype`'s. A `Buffer` is a `Uint8Array`.
 - `BigIntStats`: `{ dev, mode, nlink, uid, gid, rdev, blksize, ino, size,
   blocks, atimeMs, mtimeMs, ctimeMs, birthtimeMs, atimeNs, mtimeNs, ctimeNs,
   birthtimeNs: bigint; isFile, isDirectory, isBlockDevice,
@@ -1700,24 +1728,32 @@ number from 0 to 255, and `undefined` at any other, never reading the
 prototype chain, and its `length` is `%TypedArray%.prototype`'s getter.
 The model holds neither: an element read at a number and a read of
 `length` of a value TypeScript types as views of bytes only are calls of
-the intrinsics stating them,
+the intrinsics stating them, and so is an element write at a number,
 
 ```math
-⟦b[k]⟧=\%\mathrm{ByteAt}\%(⟦b⟧,⟦k⟧)\qquad ⟦b.\mathtt{length}⟧=\%\mathrm{ByteLength}\%(⟦b⟧)\ \ \textsf{byte-reads}
+⟦b[k]⟧=\%\mathrm{ByteAt}\%(⟦b⟧,⟦k⟧)\qquad ⟦b.\mathtt{length}⟧=\%\mathrm{ByteLength}\%(⟦b⟧)\qquad ⟦b[k]=v⟧=\%\mathrm{ByteSet}\%(⟦b⟧,⟦k⟧,⟦v⟧)\ \ \textsf{byte-reads}
 ```
 
 ```math
 \%\mathrm{ByteAt}\%\colon(\mathit{Uint8Array},\ \mathtt{number})\Rightarrow_\emptyset\mathtt{number}\mid\mathtt{undefined}
 \qquad
 \%\mathrm{ByteLength}\%\colon(\mathit{Uint8Array})\Rightarrow_\emptyset\mathtt{number}
+\qquad
+\%\mathrm{ByteSet}\%\colon(\mathit{Uint8Array},\ \mathtt{number},\ \mathtt{number})\Rightarrow_\emptyset\mathtt{number}
 ```
 
 each checked at its argument as any call is, so a read the parser writes
 of another value is refused, and one it leaves a member read finds no
 member (`invalid-node-bytes-past-end`, run under Node: `undefined` past the
-end). A write converts its value by ToNumber, which runs an object's
-`valueOf`, and keeps it modulo 256: it is not stated
-(`invalid-node-bytes-write`, run under Node: 300 reads back as 44). A
+end). A write converts its value by ToNumber, which runs no code on a
+number, the only value `%ByteSet%` takes, and sets the element at a valid
+index to it converted to the view's element type, modulo 256 for a
+`Uint8Array` (`node-bytes-write`, run under Node: 300 reads back as 44),
+setting none at any other key; it answers the number, the value the
+assignment is. A read after a write is still `%ByteAt%`'s, a number or
+`undefined`, where TypeScript narrows the element by the write
+(`invalid-typed-array-write-past-end`, run under Node: `undefined` past the
+end). A compound assignment or an update of an element is refused. A
 spread copies a view's elements and not `length`, so its copy states no
 member (`invalid-node-bytes-spread`), and a view meets no record naming
 `length`, whose spread would copy it (`invalid-node-bytes-length-record`,
@@ -1746,7 +1782,13 @@ getter in a method's place runs where the member is read
 (`invalid-node-bytes-method-getter`, run under Node: it pops the array). A
 program reaches none of them: `Buffer.prototype`, `Object.defineProperty`
 and `Object.getPrototypeOf` but its comparison with `Object.prototype`
-are refused. The cases are `node-bytes-buffer`,
+are refused. A class extending `Uint8Array`, `Uint16Array` or `Int32Array`
+is refused: `subarray` would construct its result with the subclass and
+run its code (`invalid-typed-array-subclass`, run under Node: the
+subclass's constructor replaces a string the caller narrowed).
+
+The cases are `typed-array-views`, `blocker-pretext-uint16array-type`,
+`blocker-pretext-int32array-type`, `node-bytes-write`, `node-bytes-buffer`,
 `node-bytes-text-decoder`, `node-fs-stat-bigint`, `node-readdir-dirents`,
 `blocker-node-buffer-contract`, `blocker-node-hash-contract` and
 `invalid-node-stat-bigint` (run under Node: a `BigIntStats`'s `size` is a
@@ -3595,6 +3637,34 @@ Node: a number); the program reads the global only to construct it, so it
 reaches no prototype. The standard library's DOM, which declares
 `TextDecoder` too, gives the global a second declaration, which the entry
 does not review.
+
+#### The standard library's typed arrays
+
+**Audited against:** TypeScript 7.0.2's standard library; host behaviour
+from ECMA-262's TypedArray constructors and probes run under Node 26.13.0
+(2026-11-05).
+
+The globals `Uint8Array`, `Uint16Array` and `Int32Array` are read only as
+constructors through `library-global-constructs`, at one form, their
+result the [stated library type](#stated-library-types)
+$`V_\mathit{Uint8Array}`$,
+
+```math
+\mathtt{new}\ C\colon(\mathtt{number}\mid\mathtt{readonly}\ \mathtt{number}[\,])\Rightarrow_\emptyset\mathit{Uint8Array}
+```
+
+`new C(n)` converts `n` by ToIndex, a number's own value, throwing a
+`RangeError` where it is negative or too large, and allocates a view of
+that many zeros; `new C(xs)` of an array gets `Symbol.iterator`, which an
+array owns none of ([array contracts](#prototype-contracts)), from the
+untampered `Array.prototype`, steps the standard array iterator, which
+reads `length` and each element, own data properties or holes no
+prototype holds, and converts each element, a number or a hole's
+`undefined`, by ToNumber, which runs no code. Each reads its prototype from
+the untampered constructor's `prototype` and allocates: it runs no code of
+the client's and writes no location it did not allocate. A view as the
+argument (`new Uint8Array(v)`) is refused, an argument no form states
+(`typed-array-views`, the `blocker-pretext-*-construct` cases).
 
 #### Node's `URL`
 
