@@ -4051,8 +4051,9 @@ predicates without treating an effectful operand as pure. A negated graph guard
 checks its full expression claim separately and swaps the operand's successors;
 it does not invent an equality between a Boolean and its negation.
 
-Result predicates follow the [assertion grammar](POSITIVE-TYPES.md#state-assertion-grammar). `HeapKnowledge.check_sound`
-justifies transfer along executable slot maps.
+Result predicates follow the [assertion grammar](POSITIVE-TYPES.md#state-assertion-grammar). The
+transfer along an edge's slot map is checked by `KnowledgeExpand.checkIn`,
+which `KnowledgeExpand.checkIn_sound` proves sound.
 
 The maintained graph checker carries the same postconditions in its state
 invariant and checks every incoming edge, including back edges. External entry
