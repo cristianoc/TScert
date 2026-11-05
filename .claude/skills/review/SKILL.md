@@ -188,8 +188,10 @@ by the owner.
 
 ## When to produce a review
 
-- After a batch of agent work, before any merge: render each range and give
-  the user the pages. The user chooses what to merge from them.
+- After a batch of agent work, before any merge: render each range. Who
+  merges, and when a review is asked for, is
+  [AGENTS.md's](../../../AGENTS.md#measuring-coverage-once-on-main); a
+  review asked for is given as these pages.
 - When an agent finishes: its report lists the commits; their records are the
   description of the work.
 - Agent briefs require records in this format (paste the principles and the
