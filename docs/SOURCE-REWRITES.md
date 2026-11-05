@@ -126,6 +126,50 @@ written result contract is unsafe. The separate
 [overlay field repair](#overlay-fields-consumed-by-the-signature-helper)
 establishes the helper argument contract in `selectGlobal`.
 
+## Support
+
+The records of a refusal of TScert's code answered by support: an
+existing rule or contract admits the construct, and the source keeps its
+form.
+
+### Captured mapped arrays passed to flatMap
+
+`liftLabels` in `tools/claim-text.mts` builds an array of functions and
+passes it to `flatMap`. A map callback with arbitrary effects gives a
+potentially sparse result. The [prototype contract](SOURCE-CONTRACTS.md#prototype-contracts)
+accepts that receiver and gives the callback a sparse third argument.
+
+- **Support:** the existing native contract and array-presence checks
+  establish the call. The source retains its operations and annotations.
+- **Scope:** `blocker-gap-round-captured-arms` isolates this call;
+  `blocker-gap-round-captured-arms-reduction` contains the full reduction
+  and iteration example. `invalid-flat-map-sparse-callback` checks that a
+  visited entry gives no presence guarantee for other indices. The native
+  contract states the existing standard-object assumption.
+- **Commit:** the introducing commit.
+
+### Conditional mapped arrays passed to filter
+
+`lowerFile` in `tools/fragment-parse.mts` holds either a `map` result or a
+`flatMap` result in `lowered`, then repeatedly filters it. The unrestricted
+map callback permits holes in its result. The existing
+[filter contract](SOURCE-CONTRACTS.md#prototype-contracts) admits the sparse
+receiver and states the same presence mode for the callback's array
+argument, using the existing array-presence checks.
+
+- **Support:** the source retains its conditional, mutable binding and
+  callbacks. No information is discarded at these sites.
+- **Scope:** `blocker-round-conditional-map-cell` exercises the conditional
+  receiver; `native-filter-sparse` covers ordinary and guard callbacks;
+  `invalid-filter-sparse-callback` checks the callback's third argument.
+  The contract uses the existing standard-object assumption.
+- **Case shape:** both initializer arms allocate `{ source, item }`
+  entries, corresponding to the production `{ s, fn }` entries. The filter
+  reads `item.value`; the final projection reads `item` from the saved
+  `kept` result inside the loop. This exercises the allocation-shaped
+  element union and states the final projection's receiver directly.
+- **Commit:** the introducing commit.
+
 ## Rewrites
 
 ### Installation records built by a singleton flatMap
@@ -691,44 +735,6 @@ these values.
   external assumption.
 - **Commit:** the introducing commit.
 
-### Captured mapped arrays passed to flatMap
-
-`liftLabels` in `tools/claim-text.mts` builds an array of functions and
-passes it to `flatMap`. A map callback with arbitrary effects gives a
-potentially sparse result. The [prototype contract](SOURCE-CONTRACTS.md#prototype-contracts)
-accepts that receiver and gives the callback a sparse third argument.
-
-- **Support:** the existing native contract and array-presence checks
-  establish the call. The source retains its operations and annotations.
-- **Scope:** `blocker-gap-round-captured-arms` isolates this call;
-  `blocker-gap-round-captured-arms-reduction` contains the full reduction
-  and iteration example. `invalid-flat-map-sparse-callback` checks that a
-  visited entry gives no presence guarantee for other indices. The native
-  contract states the existing standard-object assumption.
-- **Commit:** the introducing commit.
-
-### Conditional mapped arrays passed to filter
-
-`lowerFile` in `tools/fragment-parse.mts` holds either a `map` result or a
-`flatMap` result in `lowered`, then repeatedly filters it. The unrestricted
-map callback permits holes in its result. The existing
-[filter contract](SOURCE-CONTRACTS.md#prototype-contracts) admits the sparse
-receiver and states the same presence mode for the callback's array
-argument, using the existing array-presence checks.
-
-- **Support:** the source retains its conditional, mutable binding and
-  callbacks. No information is discarded at these sites.
-- **Scope:** `blocker-round-conditional-map-cell` exercises the conditional
-  receiver; `native-filter-sparse` covers ordinary and guard callbacks;
-  `invalid-filter-sparse-callback` checks the callback's third argument.
-  The contract uses the existing standard-object assumption.
-- **Case shape:** both initializer arms allocate `{ source, item }`
-  entries, corresponding to the production `{ s, fn }` entries. The filter
-  reads `item.value`; the final projection reads `item` from the saved
-  `kept` result inside the loop. This exercises the allocation-shaped
-  element union and states the final projection's receiver directly.
-- **Commit:** the introducing commit.
-
 ### Decoded records returned by async workers
 
 `tools/unchecked.mts` gives its worker result the type `Result`, whose
@@ -770,11 +776,6 @@ fields twice: it amends callable contracts, then gives prototype slots an
   [equivalent explicit form](#inferred-writable-fields-in-native-method-maps).
   The repair adds no external assumption.
 - **Commit:** the introducing commit.
-
-### A compiler node's initializer read through its parent
-
-The compiler-kind rewrite is described under
-[constructs avoided](#an-initializer-read-after-an-in-test-on-an-open-compiler-node).
 
 ### A graph field holding a lookup function
 
@@ -1148,7 +1149,7 @@ returning `undefined` from a function annotated to return `number`.
   Their contracts are `CallPromise`, `Installation`,
   `CompilerImplementation`, `LoweredModule`, `Determined`, `ObjectPart`,
   and the results of `identify`, `importedExport`, and `selectGlobal`.
-- **Commit:** the introducing commit, `State the contracts used by the front end's negative patterns`.
+- **Commit:** the introducing commit, `The front end states the contracts its tests establish`.
 
 ### A decoder's result asserted over parsed storage
 
@@ -1190,9 +1191,8 @@ bound the values written there later.
   `recordAtom`, `functionAtom` (`tools/claim.mts`); `isOrdinary`
   (`tools/claim-text.mts`); the two effect edits in the filter-guard
   forged-evidence control; `decoder-fresh-result` is the pattern as a case.
-- **Commits:** `State the contracts used by the front end's negative
-  patterns`, which made the effect types readonly, and the introducing
-  commit.
+- **Commits:** `The front end states the contracts its tests establish`,
+  which made the effect types readonly, and the introducing commit.
 
 ### Type terms compared through their semantic fields
 
@@ -1269,7 +1269,7 @@ of b81675f) are refused with the reason `blocker-contextual-any` shows.
   weakest contract its body uses.
 - **Functions:** the module's top level, read by `check`, `findIn` and
   `decodeResult`.
-- **Commit:** the introducing commit, `A promise executor of unchecked.mts states its resolving functions`.
+- **Commit:** the introducing commit, `A promise executor of unchecked.mts states the types of its resolving functions`.
 
 ### An import phase read through an undeclared host field
 
@@ -1285,7 +1285,7 @@ For the supported ordinary and type imports, the two tests agree.
   represents. A shared runtime getter does not extend a host view's contract.
 - **Functions:** `importedModules`, `namespaceMembers`, `importBindings`,
   and the declaration graph's local `closure` in `collectDeclarations`.
-- **Commit:** the introducing commit, `State the contracts used by the front end's negative patterns`.
+- **Commit:** the introducing commit, `The front end states the contracts its tests establish`.
 
 ### A node's child read through `Reflect.get`
 
@@ -1313,7 +1313,7 @@ whose list has no `typeArguments`. The nine kinds whose list has it
 - **Functions:** `argumentsOf`, which `typeArgumentsOf` replaces, and
   `makeProbe`, which calls it.
   The other child fields use [their declared kinds](#compiler-children-read-at-their-declared-kinds).
-- **Commit:** the introducing commit, `Reflect.ownKeys and a prototype compared with Object.prototype are read; a node's type arguments by their declared member`.
+- **Commit:** the introducing commit, `Reflect.ownKeys and a prototype compared with Object.prototype are read; type arguments by member`.
 
 ### A host test whose result its contract leaves unknown
 
@@ -2832,6 +2832,226 @@ claims there ("the edge … does not establish the claims at this point").
   `collectFrom`.
 - **Commit:** the introducing commit.
 
+### A recursive declaration visitor's store contract
+
+The `reads` visitor in `tools/fragment-statements.mts#declarationsOf`
+checks an initializer for a reference to the declaration being bound.
+Its result states a normal-return `Within` footprint allowing array growth
+and preserving existing array positions. The recursive self call and the
+compiler API's `forEachChild` use that signature; the existing closure and
+call checks establish its body and each call against the footprint.
+The surrounding `map` can therefore produce dense `BindingAst[]` storage.
+
+This uses the existing [inferred call effects](SOURCE-ELABORATION.md#inferred-call-effects-elaboration-and-certification)
+mechanism with a written recursive signature.
+`blocker-compiler-api-declaration-bindings-map` exercises a recursive visitor
+that calls a captured preserving callback while mapping compiler nodes to
+numbers. `invalid-compiler-api-declaration-bindings-map` gives the recursive
+visitor the same annotation while popping the mapped array: two identifiers
+produce a result with a hole under Node. The closure body must establish the
+written footprint. The annotation changes no runtime return, exception or
+effect and adds no external assumption.
+
+### Native probe files at their callback boundary
+
+`tools/type-probe.mts#ProbeProgram` receives `Map<string, string>` from
+`makeProbe` and `tools/declaration-graph.mts#compatibilityReviewed`, each
+constructed with `new Map`. Its implementations in `withOwnProject` and
+`tools/declaration-session.mts#collect` retain that native contract when
+iterating the replacements and spreading their keys.
+
+- **Repair:** the parameter retains the native map its callers supply. The
+  [native collection contract](SOURCE-CONTRACTS.md#library-globals) gives
+  `keys()` its native iterator, checked by array spread.
+- **Behaviour:** the annotation is erased. Map identities, lookups,
+  iteration order, callbacks, writes, returns and exceptions agree.
+- **Avoided form and cost:** a structural `ReadonlyMap` admits arbitrary
+  user-written iterators. Checking their protocol effects is unnecessary
+  for these constructed maps.
+- **Scope:** `blocker-round-probe-file-keys` retains this map boundary.
+  This repair adds no rule or external assumption.
+- **Commit:** the introducing commit.
+
+### Compiler identity as JSON data
+
+`tools/compiler-channel.mts#identify` constructs a plain compiler identity
+record or an explanation string under `unobserved`. Its result combines
+that field union with `JsonObject`, retaining the bound on every own string
+key that [JSON serialization](SOURCE-CONTRACTS.md#json-and-error) requires.
+The constructor uses the existing
+[contextual object hints](SOURCE-ELABORATION.md#producing-evidence-from-supplied-claims),
+which retain each field and index contract through the intersection.
+
+`current` keeps that full result as `data` for serialization and reads its
+fields through an `Identification` view. Both bindings hold the same object;
+`identify` executes once, and the serializer receives that original object.
+The additional local binding changes no return, exception or heap effect.
+This is a repair of an internal data boundary and an explicit record view
+for optional-field reads; it adds no external assumption.
+
+`blocker-round-compiler-identity-json` exercises the data boundary through
+a generic field union. The overlapping-field, multiple-index and extra-hook
+negative cases require all construction constraints. Under Node their
+values violate the promised Boolean field or index, or a `toJSON` hook
+returns `undefined` where serialization promises a string.
+
+### The brand predicate's normal-return footprint
+
+`tools/compiler-api.mts#hostBrands` and its function and constructor helpers
+use `BrandPredicate`: a Boolean callback within
+`{ value: "any", store: "grow" }` on normal return. The recursive results
+and local `go` closures state the same footprint. The existing
+[effect certification](SOURCE-ELABORATION.md#inferred-call-effects-elaboration-and-certification)
+checks their bodies before calls consume that guarantee; the native map
+contract preserves the readable argument arrays.
+
+The declaration reader's `brandKey` formats string fields and a numeric
+span with `join`, and `isBrand` uses the native `Set.has` contract.
+Their written footprints and `DeclarationElaborationContext.isBrand` retain
+this guarantee at each call to the traversal. The predicate type has one
+owner in `compiler-api.mts`. These annotations add no runtime operation,
+return, exception or heap effect and take no external assumption.
+
+The failure callback returns `never` and carries its ordinary contract.
+It has no normal exit. The traversal's footprint states no guarantee for
+an exceptional exit, including one on which that callback mutates a heap
+before throwing. Brand directions follow the compiler API's
+[declaration reading rules](COMPILER-API.md#reading-rules).
+
+`blocker-round-host-brand-footprint` exercises a known predicate retained
+through the shared type and a context. `invalid-round-host-brand-footprint`
+shows that storing an unrestricted callback at that type remains an
+obligation: a callback popping the outer arguments during recursion leaves
+a result hole and causes `TypeError` under Node.
+
+### A record classifier's checked preservation contract
+
+`tools/named-record.mts#NamedRecords` gives classification a normal-return
+preservation [footprint](FOOTPRINTS.md). Its definition lookup has a
+separate growth footprint, allowing definitions to be settled and cached.
+`aliasMeaning` retains its tested expression across classification under
+that checked contract.
+
+- **Repair:** `definitionKey` states its checked preservation footprint.
+  `Gate.namedRecords` supplies native set membership with that key, and
+  `settleDeclarations` retains the native `Set` constructed by its caller.
+  The callback passed through `settleDocument` keeps the same preservation
+  contract. Each source body has the ordinary qualification check.
+- **Behaviour:** these annotations are erased. The classifiers perform the
+  same key construction and set lookup; identities, iteration, callbacks,
+  returns, exceptions and mutations agree for their native-set callers.
+  Preservation applies on normal return.
+- **Scope:** a callback with a growth footprint can replace a definition's
+  nullable expression. `blocker-prep-alias-expression-after-call` throws a
+  `TypeError` under Node for such a callback. The preserving example and the
+  false-preservation negative exercise the narrower classification contract.
+  Definition lookup retains its growth guarantee.
+- **Commit:** the introducing commit.
+
+### A global declaration matcher's array-store footprint
+
+`tools/library-globals.mts#globalEntry` searches the reviewed overlay with
+`find`. Its `GlobalSignatureMatcher` takes a signature string and returns a
+Boolean within `{ value: "any"; store: "keep" }` on normal return. The lookup
+retains the same normal-return footprint. The five providers in
+`tools/declaration-graph.mts` compare the argument to a captured declaration
+string with strict equality; their bodies establish the matcher contract.
+
+- **Repair:** the matcher contract retains the array-store guarantee of the
+  supplied primitive comparisons at the helper's parameter and an owned
+  lookup context. The existing callback definition checks certify each
+  supplied function before its effect is consumed
+  ([certification](SOURCE-ELABORATION.md#inferred-call-effects-elaboration-and-certification)).
+- **Find:** the [prototype contract](SOURCE-CONTRACTS.md#prototype-contracts)
+  requires `store: "keep"` to pass an element without adding `undefined`.
+  The matcher leaves value changes unrestricted.
+- **Exceptions:** the guarantee concerns normal return. A throwing matcher
+  may change the heap before it throws; the lookup propagates that exception.
+- **Behaviour:** the annotations are erased. The same array, field reads,
+  strict comparisons, callback arguments, short-circuit order and origin
+  default select the same first entry or `undefined`. The callback precondition
+  is checked at the source's supplied definitions.
+- **Scope:** `blocker-round-global-signature-matcher` checks a known matcher
+  retained through an owned context. `invalid-round-global-signature-matcher`
+  writes a false preservation promise whose body pops that context's searched
+  array; Node throws `TypeError` at the next visit's `global` read. The generic
+  find mutation and ordinary-field-effect cases retain their own refusals.
+
+### A mapped identity's null-free array observation
+
+`tools/type-term.mts#expandIdentity` tests whether all mapped field types
+are non-null. Its local `settled` function returns a Boolean. Both callers
+retain each indexed fallback, `values[i] ?? f.type`, when constructing the
+field type. The test observes current contents while
+the array keeps its nullable element storage contract.
+
+- **Repair:** the result annotation states the Boolean observation the
+  callers consume. A type predicate promising `TypeTerm[]` would require a
+  narrower invariant array storage contract; testing present elements does
+  not establish that contract
+  ([storage contracts](FOOTPRINTS.md#the-fact)).
+- **Behaviour:** the annotation is erased. The same `every` calls, null
+  comparisons, short-circuit decisions, indexed fallbacks and returned
+  records execute in the same order.
+- **Scope:** `blocker-next-array-store-promise` exercises the Boolean
+  observation. `invalid-next-array-store-promise` retains the unsafe
+  mutable-array promise: a nullable alias appends `null` after the test,
+  and the narrowed alias calls `toUpperCase` on it. Node throws `TypeError`.
+  The [elements fact](FOOTPRINTS.md#the-elements-fact) describes heap
+  knowledge subject to preservation; it does not replace a location's
+  invariant storage contract.
+
+### The compiler identification failure's absent identity
+
+`tools/compiler-channel.mts#identify` returns a fresh failure object
+containing only `unobserved` when the installation is missing, confinement
+is unavailable, or an installation digest is missing. Its private
+`Identification` failure alternative states `identity?: never`. The
+success alternative carries the identity record.
+
+- **Repair:** the result annotation retains the absent identity established
+  by all three failure constructors. `current` keeps that fact when it
+  builds the failure alternative of `CompilerImplementation`; the existing
+  [object-allocation checks](PROGRAM-TYPING.md#objects-and-records) check
+  each producer and the returned `Current` record.
+- **Scope:** `Identification` is private to the module. Its values come
+  from `identify`, called by `current` for its captured identity and again
+  by the `changed` callback. The annotation describes these constructors.
+  `CompilerImplementation` retains its complete existing contract.
+- **Behaviour:** the annotation is erased. The same installation checks,
+  digest reads, sandbox profile, failure strings, identities and comparison
+  callbacks execute; object keys and serialized JSON agree.
+- **Example:** `blocker-next-current-identification` carries the absent key
+  through the conditional implementation record.
+
+### Module constants read at their annotations beside an omitted step
+
+`tools/fragment-parse.mts` keeps the compiler's overlay texts and open files
+in `contents` and `opened`, `tools/unchecked.mts` its comment patterns in
+`SUPPRESSION` and `REASON`, and `tools/client-prototype.mts` the answers it
+records in `answers`. Each file holds a top-level statement a census omits
+as a step of unknown effect: a command's main block (`if` at the top level,
+outside the fragment) in the first two, a `WeakSet` no reviewed entry
+admits in the third. After it, a module constant that is neither a
+function nor a primitive literal is read at its annotation, and without one
+is no value ([units](DESIGN.md#function-coverage-and-release-thresholds)).
+The five had none ("unbound name contents", `opened`, `SUPPRESSION`,
+`REASON`, `answers`).
+
+- **Repair:** `contents: Map<string, string>`, `opened: Set<string>`,
+  `SUPPRESSION: RegExp`, `REASON: RegExp` and
+  `answers: WeakMap<object, Map<unknown, Map<string, string>>>`, the types of
+  the values their initializers build. Read at `RegExp`, a match's group is
+  `string | undefined` at each read, so `reasonAt` keeps the group it tests
+  (`REASON.exec(…)?.[1]`) and returns that value rather than reading the
+  match again.
+- **Behaviour:** the annotations are erased; the same maps, sets and
+  patterns are built and read. `reasonAt` returns the same group of the
+  same match.
+- **Scope:** `projectFor`, `openText`, `openFile` and `release` of
+  `fragment-parse.mts`; `reasonAt` and `findIn` of `unchecked.mts`;
+  `heldSnapshots` and `query` of `client-prototype.mts`.
+
 ## Constructs avoided
 
 Constructs TScert's code once used, refused because sound support is not
@@ -3879,6 +4099,7 @@ pattern's lowering, for this one site of the census of b81675f.
   is not negative, as the `Set` of one element did. The loop runs the same
   calls in the same order; positions are integers, which `Set` compares as
   `!==` does.
+- **Scope:** `set-first-position` verifies in this form.
 - **Commit:** 467af18b.
 
 ### A method call on the instance under construction
@@ -4255,6 +4476,25 @@ refusal lost all four functions and the initialization.
   1 of 7 functions verified before, 5 of 7 after, the initialization
   accepted. No host contract or external assumption is added.
 
+### A readonly compiler-node list view for accessor filtering
+
+`tools/written-applications.mts#pairOf` reads an object literal's properties
+through a `readonly Node[]` local before filtering for matching accessors.
+The [compiler node-list contract](COMPILER-API.md#node-lists) supplies the
+readonly element view; the existing accessor guards refine each callback
+argument before its accessor-specific members are read.
+
+- **Avoidance:** the local annotation gives the callback the general node
+  domain admitted by the compiler model. The more specific contextual
+  object-element domain requires a callable relation the model does not
+  establish for that invocation. Readonly covariance supports the local
+  view without changing the element contract of writable storage.
+- **Behaviour:** the local holds the same list read at the same point.
+  The same filter method, receiver, callback, guards and property reads
+  execute in the same order. The binding allocates no array.
+- **Example:** `blocker-next-compiler-api-callback-view` exercises the
+  readonly view and the accessor-name comparison.
+
 ## Host boundaries
 
 Operations of TScert's code on an external service that no rule models,
@@ -4560,7 +4800,7 @@ at states all of that, so the program holds none.
 - **What depends on it:** `files.mts#resolveObserved` (through
   `nodeResolve`), `files.mts#runtimeConditions` and
   `files.mts#loadModule`, which family activation uses.
-- **Commit:** the introducing commit, `Module customization hooks behind a host boundary; node:os and isBuiltin entries`.
+- **Commit:** the introducing commit, `Module customization hooks behind a host boundary; node:os and isBuiltin overlay entries`.
 
 ### A loaded module's own exports
 
@@ -4604,6 +4844,10 @@ may include accessors or a Proxy.
 - **Commit:** the introducing commit.
 
 ## Changes for a tool's defect
+
+The records of a refusal of TScert's code answered by a change of the
+producer or the lowering, the source unchanged, and of a source change
+around a defect of the compiler's API.
 
 ### A primitive member read's saved witness
 
@@ -4743,242 +4987,3 @@ check including it ended in that tool failure.
 
 - **Change:** read the first declaration by index, forming no empty tuple.
 - **Commit:** f704fdb (`tools/fragment-support.mts`).
-
-### A recursive declaration visitor's store contract
-
-The `reads` visitor in `tools/fragment-statements.mts#declarationsOf`
-checks an initializer for a reference to the declaration being bound.
-Its result states a normal-return `Within` footprint allowing array growth
-and preserving existing array positions. The recursive self call and the
-compiler API's `forEachChild` use that signature; the existing closure and
-call checks establish its body and each call against the footprint.
-The surrounding `map` can therefore produce dense `BindingAst[]` storage.
-
-This uses the existing [inferred call effects](SOURCE-ELABORATION.md#inferred-call-effects-elaboration-and-certification)
-mechanism with a written recursive signature.
-`blocker-compiler-api-declaration-bindings-map` exercises a recursive visitor
-that calls a captured preserving callback while mapping compiler nodes to
-numbers. `invalid-compiler-api-declaration-bindings-map` gives the recursive
-visitor the same annotation while popping the mapped array: two identifiers
-produce a result with a hole under Node. The closure body must establish the
-written footprint. The annotation changes no runtime return, exception or
-effect and adds no external assumption.
-
-### Native probe files at their callback boundary
-
-`tools/type-probe.mts#ProbeProgram` receives `Map<string, string>` from
-`makeProbe` and `tools/declaration-graph.mts#compatibilityReviewed`, each
-constructed with `new Map`. Its implementations in `withOwnProject` and
-`tools/declaration-session.mts#collect` retain that native contract when
-iterating the replacements and spreading their keys.
-
-- **Repair:** the parameter retains the native map its callers supply. The
-  [native collection contract](SOURCE-CONTRACTS.md#library-globals) gives
-  `keys()` its native iterator, checked by array spread.
-- **Behaviour:** the annotation is erased. Map identities, lookups,
-  iteration order, callbacks, writes, returns and exceptions agree.
-- **Avoided form and cost:** a structural `ReadonlyMap` admits arbitrary
-  user-written iterators. Checking their protocol effects is unnecessary
-  for these constructed maps.
-- **Scope:** `blocker-round-probe-file-keys` retains this map boundary.
-  This repair adds no rule or external assumption.
-- **Commit:** the introducing commit.
-
-### Compiler identity as JSON data
-
-`tools/compiler-channel.mts#identify` constructs a plain compiler identity
-record or an explanation string under `unobserved`. Its result combines
-that field union with `JsonObject`, retaining the bound on every own string
-key that [JSON serialization](SOURCE-CONTRACTS.md#json-and-error) requires.
-The constructor uses the existing
-[contextual object hints](SOURCE-ELABORATION.md#producing-evidence-from-supplied-claims),
-which retain each field and index contract through the intersection.
-
-`current` keeps that full result as `data` for serialization and reads its
-fields through an `Identification` view. Both bindings hold the same object;
-`identify` executes once, and the serializer receives that original object.
-The additional local binding changes no return, exception or heap effect.
-This is a repair of an internal data boundary and an explicit record view
-for optional-field reads; it adds no external assumption.
-
-`blocker-round-compiler-identity-json` exercises the data boundary through
-a generic field union. The overlapping-field, multiple-index and extra-hook
-negative cases require all construction constraints. Under Node their
-values violate the promised Boolean field or index, or a `toJSON` hook
-returns `undefined` where serialization promises a string.
-
-### The brand predicate's normal-return footprint
-
-`tools/compiler-api.mts#hostBrands` and its function and constructor helpers
-use `BrandPredicate`: a Boolean callback within
-`{ value: "any", store: "grow" }` on normal return. The recursive results
-and local `go` closures state the same footprint. The existing
-[effect certification](SOURCE-ELABORATION.md#inferred-call-effects-elaboration-and-certification)
-checks their bodies before calls consume that guarantee; the native map
-contract preserves the readable argument arrays.
-
-The declaration reader's `brandKey` formats string fields and a numeric
-span with `join`, and `isBrand` uses the native `Set.has` contract.
-Their written footprints and `DeclarationElaborationContext.isBrand` retain
-this guarantee at each call to the traversal. The predicate type has one
-owner in `compiler-api.mts`. These annotations add no runtime operation,
-return, exception or heap effect and take no external assumption.
-
-The failure callback returns `never` and carries its ordinary contract.
-It has no normal exit. The traversal's footprint states no guarantee for
-an exceptional exit, including one on which that callback mutates a heap
-before throwing. Brand directions follow the compiler API's
-[declaration reading rules](COMPILER-API.md#reading-rules).
-
-`blocker-round-host-brand-footprint` exercises a known predicate retained
-through the shared type and a context. `invalid-round-host-brand-footprint`
-shows that storing an unrestricted callback at that type remains an
-obligation: a callback popping the outer arguments during recursion leaves
-a result hole and causes `TypeError` under Node.
-
-### A record classifier's checked preservation contract
-
-`tools/named-record.mts#NamedRecords` gives classification a normal-return
-preservation [footprint](FOOTPRINTS.md). Its definition lookup has a
-separate growth footprint, allowing definitions to be settled and cached.
-`aliasMeaning` retains its tested expression across classification under
-that checked contract.
-
-- **Repair:** `definitionKey` states its checked preservation footprint.
-  `Gate.namedRecords` supplies native set membership with that key, and
-  `settleDeclarations` retains the native `Set` constructed by its caller.
-  The callback passed through `settleDocument` keeps the same preservation
-  contract. Each source body has the ordinary qualification check.
-- **Behaviour:** these annotations are erased. The classifiers perform the
-  same key construction and set lookup; identities, iteration, callbacks,
-  returns, exceptions and mutations agree for their native-set callers.
-  Preservation applies on normal return.
-- **Scope:** a callback with a growth footprint can replace a definition's
-  nullable expression. `blocker-prep-alias-expression-after-call` throws a
-  `TypeError` under Node for such a callback. The preserving example and the
-  false-preservation negative exercise the narrower classification contract.
-  Definition lookup retains its growth guarantee.
-- **Commit:** the introducing commit.
-
-### A global declaration matcher's array-store footprint
-
-`tools/library-globals.mts#globalEntry` searches the reviewed overlay with
-`find`. Its `GlobalSignatureMatcher` takes a signature string and returns a
-Boolean within `{ value: "any"; store: "keep" }` on normal return. The lookup
-retains the same normal-return footprint. The five providers in
-`tools/declaration-graph.mts` compare the argument to a captured declaration
-string with strict equality; their bodies establish the matcher contract.
-
-- **Repair:** the matcher contract retains the array-store guarantee of the
-  supplied primitive comparisons at the helper's parameter and an owned
-  lookup context. The existing callback definition checks certify each
-  supplied function before its effect is consumed
-  ([certification](SOURCE-ELABORATION.md#inferred-call-effects-elaboration-and-certification)).
-- **Find:** the [prototype contract](SOURCE-CONTRACTS.md#prototype-contracts)
-  requires `store: "keep"` to pass an element without adding `undefined`.
-  The matcher leaves value changes unrestricted.
-- **Exceptions:** the guarantee concerns normal return. A throwing matcher
-  may change the heap before it throws; the lookup propagates that exception.
-- **Behaviour:** the annotations are erased. The same array, field reads,
-  strict comparisons, callback arguments, short-circuit order and origin
-  default select the same first entry or `undefined`. The callback precondition
-  is checked at the source's supplied definitions.
-- **Scope:** `blocker-round-global-signature-matcher` checks a known matcher
-  retained through an owned context. `invalid-round-global-signature-matcher`
-  writes a false preservation promise whose body pops that context's searched
-  array; Node throws `TypeError` at the next visit's `global` read. The generic
-  find mutation and ordinary-field-effect cases retain their own refusals.
-
-### A mapped identity's null-free array observation
-
-`tools/type-term.mts#expandIdentity` tests whether all mapped field types
-are non-null. Its local `settled` function returns a Boolean. Both callers
-retain each indexed fallback, `values[i] ?? f.type`, when constructing the
-field type. The test observes current contents while
-the array keeps its nullable element storage contract.
-
-- **Repair:** the result annotation states the Boolean observation the
-  callers consume. A type predicate promising `TypeTerm[]` would require a
-  narrower invariant array storage contract; testing present elements does
-  not establish that contract
-  ([storage contracts](FOOTPRINTS.md#the-fact)).
-- **Behaviour:** the annotation is erased. The same `every` calls, null
-  comparisons, short-circuit decisions, indexed fallbacks and returned
-  records execute in the same order.
-- **Scope:** `blocker-next-array-store-promise` exercises the Boolean
-  observation. `invalid-next-array-store-promise` retains the unsafe
-  mutable-array promise: a nullable alias appends `null` after the test,
-  and the narrowed alias calls `toUpperCase` on it. Node throws `TypeError`.
-  The [elements fact](FOOTPRINTS.md#the-elements-fact) describes heap
-  knowledge subject to preservation; it does not replace a location's
-  invariant storage contract.
-
-### The compiler identification failure's absent identity
-
-`tools/compiler-channel.mts#identify` returns a fresh failure object
-containing only `unobserved` when the installation is missing, confinement
-is unavailable, or an installation digest is missing. Its private
-`Identification` failure alternative states `identity?: never`. The
-success alternative carries the identity record.
-
-- **Repair:** the result annotation retains the absent identity established
-  by all three failure constructors. `current` keeps that fact when it
-  builds the failure alternative of `CompilerImplementation`; the existing
-  [object-allocation checks](PROGRAM-TYPING.md#objects-and-records) check
-  each producer and the returned `Current` record.
-- **Scope:** `Identification` is private to the module. Its values come
-  from `identify`, called by `current` for its captured identity and again
-  by the `changed` callback. The annotation describes these constructors.
-  `CompilerImplementation` retains its complete existing contract.
-- **Behaviour:** the annotation is erased. The same installation checks,
-  digest reads, sandbox profile, failure strings, identities and comparison
-  callbacks execute; object keys and serialized JSON agree.
-- **Example:** `blocker-next-current-identification` carries the absent key
-  through the conditional implementation record.
-
-### A readonly compiler-node list view for accessor filtering
-
-`tools/written-applications.mts#pairOf` reads an object literal's properties
-through a `readonly Node[]` local before filtering for matching accessors.
-The [compiler node-list contract](COMPILER-API.md#node-lists) supplies the
-readonly element view; the existing accessor guards refine each callback
-argument before its accessor-specific members are read.
-
-- **Avoidance:** the local annotation gives the callback the general node
-  domain admitted by the compiler model. The more specific contextual
-  object-element domain requires a callable relation the model does not
-  establish for that invocation. Readonly covariance supports the local
-  view without changing the element contract of writable storage.
-- **Behaviour:** the local holds the same list read at the same point.
-  The same filter method, receiver, callback, guards and property reads
-  execute in the same order. The binding allocates no array.
-- **Example:** `blocker-next-compiler-api-callback-view` exercises the
-  readonly view and the accessor-name comparison.
-
-### Module constants read at their annotations beside an omitted step
-
-`tools/fragment-parse.mts` keeps the compiler's overlay texts and open files
-in `contents` and `opened`, `tools/unchecked.mts` its comment patterns in
-`SUPPRESSION` and `REASON`, and `tools/client-prototype.mts` the answers it
-records in `answers`. Each file holds a top-level statement a census omits
-as a step of unknown effect: a command's main block (`if` at the top level,
-outside the fragment) in the first two, a `WeakSet` no reviewed entry
-admits in the third. After it, a module constant that is neither a
-function nor a primitive literal is read at its annotation, and without one
-is no value ([units](DESIGN.md#function-coverage-and-release-thresholds)).
-The five had none ("unbound name contents", `opened`, `SUPPRESSION`,
-`REASON`, `answers`).
-
-- **Repair:** `contents: Map<string, string>`, `opened: Set<string>`,
-  `SUPPRESSION: RegExp`, `REASON: RegExp` and
-  `answers: WeakMap<object, Map<unknown, Map<string, string>>>`, the types of
-  the values their initializers build. Read at `RegExp`, a match's group is
-  `string | undefined` at each read, so `reasonAt` keeps the group it tests
-  (`REASON.exec(…)?.[1]`) and returns that value rather than reading the
-  match again.
-- **Behaviour:** the annotations are erased; the same maps, sets and
-  patterns are built and read. `reasonAt` returns the same group of the
-  same match.
-- **Scope:** `projectFor`, `openText`, `openFile` and `release` of
-  `fragment-parse.mts`; `reasonAt` and `findIn` of `unchecked.mts`;
-  `heldSnapshots` and `query` of `client-prototype.mts`.
