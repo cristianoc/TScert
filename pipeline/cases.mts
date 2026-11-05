@@ -2606,7 +2606,6 @@ export const cases: Case[] = [
     "unverified", "search", /source refusal at \[\d+,\d+\): sloppy code that reads `this` needs a receiver type of objects only/), kind: "negative" },
   { ...gap("let-object-narrowing-refused", "row a test of a written `let` holding a union of objects: a closure assigns it, so a test of its object does not narrow it",
     "unsupported", "proposal", /a read of name on a `let` holding a union of objects, some without it/), kind: "negative" },
-  positive("closure-rest-pack-refused", "The local count closure collects numeric elements at an ordinary array rest."),
   gap("object-host-symbol-refused", "a well-known symbol key other than `Symbol.iterator`: the host treats the object otherwise, and a tag would let it pass for a host collection",
     "unsupported", "source", /a well-known symbol key other than `Symbol.iterator` and `Symbol.hasInstance` is outside the fragment/),
   negative("invalid-object-growth-early-alias", "an earlier closure retains an alias initialized later: growth through another view is refused (run under Node)",
