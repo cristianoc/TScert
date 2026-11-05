@@ -1,0 +1,199 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Commit Records</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Code+Pro:wght@400;600&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=STIX+Two+Text:ital,wght@0,400;0,600;1,400&display=swap">
+<style>
+:root { --bg:#fbfcfd; --surface:#ffffff; --ink:#0b1a2e; --muted:#56627a; --rule:#d5dce6; --accent:#8a6410; --code-bg:#eef2f7; --math-bg:#f2f4f8; --ok:#2f6b47; --ok-bg:#e2efe4; --principled:#a0521a; --principled-bg:#f7e6d6; --gap:#6b6f78; --gap-bg:#ecebe6; --neutral:#2c4f7c; --neutral-bg:#e6ebf2; --trust:#7c2f4a; --trust-bg:#f2e1e7; --neg:#9b3524; --neg-bg:#f5e1da; --run:#7a5414; --run-bg:#f3e7cc; --brand-ink:#0b1a2e; --brand-gold:#b8840f;
+  --display:"Bricolage Grotesque","Helvetica Neue",Arial,sans-serif; --body:"Inter","Helvetica Neue",Arial,sans-serif; --mono:"Source Code Pro",Menlo,Consolas,monospace; --math:"STIX Two Text","STIX Two Math","STIXGeneral","Cambria Math","Apple Symbols",Georgia,serif; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#0e1626; --surface:#16213a; --ink:#efe7d4; --muted:#9aa3b5; --rule:#2a3756; --accent:#e0ac4a; --code-bg:#131d33; --math-bg:#1a2540; --ok:#7fd0a2; --ok-bg:#17322a; --principled:#f0a868; --principled-bg:#3a2a1c; --gap:#9aa3b5; --gap-bg:#1c2639; --neutral:#8fb4e8; --neutral-bg:#1b2b49; --trust:#e79bb6; --trust-bg:#3a2131; --neg:#f0907d; --neg-bg:#3a1f22; --run:#e0ac4a; --run-bg:#2e2a24; --brand-ink:#efe7d4; --brand-gold:#e0ac4a; color-scheme:dark } }
+:root[data-theme="dark"] { --bg:#0e1626; --surface:#16213a; --ink:#efe7d4; --muted:#9aa3b5; --rule:#2a3756; --accent:#e0ac4a; --code-bg:#131d33; --math-bg:#1a2540; --ok:#7fd0a2; --ok-bg:#17322a; --principled:#f0a868; --principled-bg:#3a2a1c; --gap:#9aa3b5; --gap-bg:#1c2639; --neutral:#8fb4e8; --neutral-bg:#1b2b49; --trust:#e79bb6; --trust-bg:#3a2131; --neg:#f0907d; --neg-bg:#3a1f22; --run:#e0ac4a; --run-bg:#2e2a24; --brand-ink:#efe7d4; --brand-gold:#e0ac4a; color-scheme:dark }
+* { box-sizing:border-box } body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.6 var(--body) }
+main { max-width:900px; margin:0 auto; padding-inline:20px; padding-block:32px 64px; display:flex; flex-direction:column; gap:22px }
+h1 { font:600 32px/1.15 var(--display); margin:0 } h2 { font:600 22px/1.2 var(--display); margin:12px 0 8px; padding-top:12px; border-top:2px solid var(--ink) }
+h3 { font:600 19px/1.3 var(--display); margin:2px 0 0; text-wrap:balance }
+h4 { font:600 11px/1 var(--body); letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin:12px 0 4px }
+p { margin:2px 0; max-width:72ch } .lede { color:var(--muted) }
+code { font:13px/1.5 var(--mono); background:var(--code-bg); padding:1px 4px; border-radius:3px }
+pre { margin:4px 0; padding:12px 14px; border-radius:6px; overflow-x:auto }
+pre.code { font:13px/1.55 var(--mono); background:var(--code-bg) }
+.rules { display:flex; flex-direction:column; gap:14px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:14px 18px; overflow-x:auto; font:16px/1.6 var(--math) }
+.rules sub, .rules sup { font-size:.72em; line-height:0 }
+.formulas { display:flex; flex-direction:column; gap:4px }
+.formulas .row { display:flex; flex-wrap:wrap; gap:4px 28px } .formulas .row.cont { padding-left:2em }
+.infer { display:flex; align-items:center; gap:12px }
+.frac { display:inline-flex; flex-direction:column; align-items:center; min-width:0 }
+.premises { display:flex; flex-wrap:wrap; justify-content:center; gap:4px 26px; padding:0 6px 3px }
+.bar { align-self:stretch; border-top:1.5px solid var(--ink) }
+.conclusion { padding:3px 6px 0; text-align:center }
+.rule-name { font:15px/1 var(--math); font-variant:small-caps; letter-spacing:.02em; color:var(--accent); white-space:nowrap }
+.card { background:var(--surface); border:1px solid var(--rule); border-radius:8px; padding:20px 22px; display:flex; flex-direction:column; gap:6px; min-width:0 }
+.card > header { display:flex; justify-content:space-between; gap:12px; align-items:flex-start }
+.sha { font:12px/1.4 var(--mono); color:var(--muted) }
+.pill { font:600 11px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; padding:6px 9px; border-radius:99px; white-space:nowrap }
+.pill.ok { color:var(--ok); background:var(--ok-bg) } .pill.principled { color:var(--principled); background:var(--principled-bg) }
+.pill.gap { color:var(--gap); background:var(--gap-bg) } .pill.neutral { color:var(--neutral); background:var(--neutral-bg) }
+.units { display:flex; flex-wrap:wrap; gap:6px } .units span { font:12px/1 var(--mono); border:1px solid var(--rule); border-radius:4px; padding:5px 7px }
+dl.facts { display:grid; grid-template-columns:max-content minmax(0,1fr); gap:6px 16px; margin:12px 0 0; padding-top:12px; border-top:1px solid var(--rule); font-size:13.5px }
+dt { font:600 11px/1.9 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted) }
+dd { margin:0; min-width:0; display:flex; flex-wrap:wrap; gap:5px; align-items:baseline }
+.chip { font:500 12px/1 var(--body); border:1px solid var(--rule); border-radius:4px; padding:4px 7px } .chip.strong { color:var(--accent); border-color:var(--accent) }
+.trust { color:var(--trust); background:var(--trust-bg); padding:2px 6px; border-radius:4px } .none { color:var(--muted) }
+.test { font:12px/1 var(--mono); padding:4px 7px; border-radius:4px }
+.test.pos { color:var(--ok); background:var(--ok-bg) } .test.pos::before { content:"✓ " }
+.test.neg { color:var(--neg); background:var(--neg-bg) } .test.neg::before { content:"✗ " }
+.test.forged { color:var(--principled); background:var(--principled-bg) } .test.forged::before { content:"forged " }
+details { margin-top:8px; font-size:13px; color:var(--muted) } summary { cursor:pointer }
+.table-wrap { overflow-x:auto; border:1px solid var(--rule); border-radius:8px; background:var(--surface) }
+table { border-collapse:collapse; width:100%; font-size:13px } th, td { text-align:left; vertical-align:top; padding:8px 10px; border-bottom:1px solid var(--rule) }
+th { font:600 11px/1.2 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); white-space:nowrap } td.num { font-variant-numeric:tabular-nums }
+h4.change { display:flex; align-items:center; gap:8px; text-transform:none; letter-spacing:0; font:600 14px/1.3 var(--body); color:var(--ink); margin:16px 0 6px }
+h4.change .target { font-weight:400; color:var(--muted) }
+.act { font:600 10.5px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; padding:4px 7px; border-radius:4px }
+.act.added { color:var(--ok); background:var(--ok-bg) } .act.removed { color:var(--neg); background:var(--neg-bg) }
+.act.modified, .act.replaced { color:var(--principled); background:var(--principled-bg) }
+.versions { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:10px }
+.versions figure { margin:0; min-width:0 } .versions figcaption { font:600 11px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); margin:0 0 4px }
+.versions .rules { height:calc(100% - 18px); box-sizing:border-box }
+pre.code .ln { display:block; white-space:pre } pre.code .ln.add { background:var(--ok-bg) } pre.code .ln.del { background:var(--neg-bg) }
+.tk-k { color:#7a3b8c } .tk-s { color:#2f6b47 } .tk-n { color:#a35a12 } .tk-c { color:var(--muted); font-style:italic } .tk-t { color:#2c4f7c }
+.prose p { margin:4px 0 }
+ul.effect, ul.summary { margin:4px 0; padding-left:20px } ul.effect li, ul.summary li { margin:3px 0 } ul.summary ul { padding-left:18px; color:var(--muted) }
+ul.effect .arrow { color:var(--accent); font-weight:600 }
+ul.effect details { margin:0; color:inherit; font-size:inherit } ul.effect summary { list-style-position:outside }
+ul.effect .kind { font-size:11px; text-transform:uppercase; letter-spacing:.04em; padding:1px 6px; border-radius:4px; background:var(--chip, #eee) }
+ul.effect .kind.negative { color:#8a3b12 } ul.effect .kind.positive { color:#22663a } ul.effect .kind.gap { color:#7a5b00 }
+ul.effect .was.unsound { color:#b3261e; font-weight:600 } ul.effect .now { font-weight:500 } ul.effect .why { color:var(--muted) }
+ul.effect mark { background:#ffe08a; color:inherit; border-radius:2px }
+@media (max-width:720px) { .versions { grid-template-columns:minmax(0,1fr) } }
+.lowering { display:flex; flex-direction:column; gap:6px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:12px 16px; overflow-x:auto }
+.lowering .map, .lowering .cond, .lowering .result { display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 10px }
+.lowering .map:not(:has(.sem)) { flex-direction:column; align-items:stretch; gap:4px }
+.lowering .result { display:grid; grid-template-columns:auto minmax(0,1fr); align-items:baseline; gap:2px 10px; padding-left:1em } .lowering .result .note { grid-column:2 }
+.m-intr { font:14px/1.5 var(--mono); color:#2c4f7c } .m-lit { font:13px/1.5 var(--mono); color:#7a3b8c }
+.lowering code.src { font:13px/1.5 var(--mono); background:var(--surface); border:1px solid var(--rule); padding:2px 6px; border-radius:4px }
+.lowering .to { color:var(--accent); font-weight:600; font-size:17px }
+.lowering .tgt { font:16px/1.5 var(--math) } .rules .lowering { background:none; border:0; padding:0 } .lowering .sem code.src { margin:0 2px }
+var { font-style:italic } .m-op { color:#2c4f7c; font-style:normal } .m-con { color:#8f6416; font-style:normal; font-variant:small-caps }
+.m-kw { color:#7a3b8c; font-weight:600; font-style:normal } .m-bind { color:#7a3b8c } .m-rel { color:var(--accent); padding:0 .12em }
+.m-text { font:14px/1.5 var(--body); color:var(--muted) } code.m-code { font:13px/1.5 var(--mono); background:var(--surface); border:1px solid var(--rule); padding:1px 5px; border-radius:4px }
+.refused { color:var(--neg); font-weight:600 }
+.lowering .refused { color:var(--neg); font-weight:600 }
+.lowering .label { font:600 11px/1 var(--body); letter-spacing:.05em; text-transform:uppercase; color:var(--muted); min-width:7em }
+.lowering .cond { padding-left:1.5em } .lowering .note { color:var(--muted); font:italic 13px/1.4 var(--body) }
+a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outline-offset:2px }
+@media (max-width:520px) { dl.facts { grid-template-columns:minmax(0,1fr) } .card > header { flex-direction:column } }</style></head><body><main><header><h1>Commit Records</h1><p class="lede">1 commit, rendered from their records.</p></header>
+<section><h2>Branches</h2><ul class="summary"><li><a href="#g-pr-96"><code>f4678f5a6235834814815116d18843c05dd49597..pr-96</code></a><ul><li>1 commit, units 1 verified</li><li>parts: <span class="chip">parser</span> <span class="chip strong">trust</span> <span class="chip">docs</span> <span class="chip">tests</span></li><li>new trust: <span class="trust">Array.prototype.fill and ArrayCreate are the standard ones, untampered (pre-approved policy); Array.prototype and Object.prototype own no numeric key, as %ElementAt% assumes</span></li></ul></li></ul></section>
+<h2 id="g-pr-96"><code>f4678f5a6235834814815116d18843c05dd49597..pr-96</code></h2><article class="card" id="c-970e22c59"><header><div><div class="sha">970e22c59 · Cristiano Calcagno · Nov 05, 10:35</div><h3>Admit new Array&lt;T&gt;(n).fill(v) as one fresh dense array, its length checked before v</h3></div><span class="pill ok">verified</span></header>
+<div class="units"><span>rich-inline.ts#prepareRichInline</span></div>
+<h4 class="change">Why</h4><div class="prose"><p>pretext's prepareRichInline (rich-inline.ts, chenglou/pretext at 0d102a5c) makes a table on first need with <code>xs ??= new Array&lt;number[] | null&gt;(n).fill(null)</code>. The source gate refused it: &quot;new Array(…) is not in the reviewed overlay of library globals: new &lt;T&gt;(arrayLength: number): T[];&quot;. <code>new Array(n)</code> alone makes n holes, which a readable <code>T[]</code> admits only where <code>undefined</code> meets T, so the length constructor stayed outside the overlay. Filled at once by a <code>fill</code> of one argument, before any other code holds the array, the result has no hole.</p></div>
+<h4 class="change"><span class="act added">added</span>Lowering <span class="target">the parser: a length construct filled at once</span></h4><div class="lowering"><div class="map"><code class="src"><span class="tk-k">new</span> <span class="tk-t">Array</span>&lt;<span class="tk-t">T</span>&gt;(e₁).fill(e₂)</code><div class="result"><span class="to">⇝</span><span class="tgt"><span class="m-intr">%ArrayFilled%</span>(<span class="m-intr">%ArrayLength%</span>(<var>e</var>₁), <var>e</var>₂)</span></div></div><div class="cond"><span class="label">side condition</span><span class="tgt"><span class="m-text">the construct is written directly as</span> <code class="m-code">fill</code>'<var>s</var> <span class="m-text">receiver</span></span><span class="note">(no parentheses, no optional chain at the read or the call)</span></div><div class="cond"><span class="label">side condition</span><span class="tgt"><span class="m-text">one argument, no spread, no type argument; TypeScript resolves <code class="m-code">fill</code> to the standard library's</span> <span class="m-op">fill</span><span class="m-text">(value</span><span class="m-rel">:</span> <var>T</var>, <span class="m-text">start</span>?<span class="m-rel">:</span> <span class="m-text">number, end</span>?<span class="m-rel">:</span> <span class="m-con">number</span>)<span class="m-rel">:</span> <span class="m-text">this of Array</span>&lt;<var>T</var>&gt;</span></div><div class="cond"><span class="tgt"><span class="m-text">(any other use of the length constructor is </span><span class="refused">refused</span><span class="m-text">, as before)</span></span></div></div>
+<h4 class="change"><span class="act added">added</span>Trust <span class="target">intrinsics: %ArrayLength%, %ArrayFilled%</span></h4><div class="prose"><p>%ArrayLength% : (number) ⇒ number within the empty footprint %ArrayFilled% : ∀T. (number, T) ⇒ dense T[] within the empty footprint, its store fresh</p><p>%ArrayLength% is ArrayCreate's check: a RangeError where ToUint32(n) ≠ n, otherwise n. %ArrayFilled% makes an array of that length whose every index holds the value itself (an object value is one object all indices share). JavaScript evaluates e₁, checks the length, finds Array.prototype.fill, evaluates e₂, then fill reads the array's own length, takes 0 and the length for the omitted bounds without converting anything, and defines each index (neither Array.prototype nor Object.prototype owns a numeric key). The lowering keeps e₁, the check and e₂ in that order and allocates after e₂, which no code observes: nothing holds the array before fill returns it. Neither states its footprint on a throw.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">SOURCE-CONTRACTS.md, SOURCE-FRAGMENT.md, DESIGN.md, WORK.md</span></h4><div class="prose"><p>&quot;new Array filled at once&quot; states the form, both intrinsics and the host's steps; the fragment row for <code>new Array(x)</code> excepts the filled form and lists its controls; the overlay list; pretext's census row</p></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>blocker-pretext-new-array-fill</code> <span class="kind positive">positive</span> <span class="was">gap</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">the pretext form</span></summary><pre class="code"><span class="tk-c">// Pretext (github.com/chenglou/pretext at 0d102a5c, src/, census by unit):</span>
+<span class="tk-c">// rich-inline.ts#prepareRichInline.</span>
+<span class="tk-c">// `new Array&lt;T&gt;(n).fill(v)`: the construct written directly as the receiver</span>
+<span class="tk-c">// of `fill` of one argument is a fresh dense `T[]` of the filled value</span>
+<span class="tk-c">// (SOURCE-CONTRACTS.md, &quot;`new Array` filled at once&quot;).</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> slots(n: number): (number[] | <span class="tk-k">null</span>)[] {
+  <span class="tk-k">return</span> <span class="tk-k">new</span> <span class="tk-t">Array</span>&lt;number[] | <span class="tk-k">null</span>&gt;(n).fill(<span class="tk-k">null</span>);
+}</pre></details></li><li><details><summary><code>array-fill</code> <span class="kind positive">positive</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">null fill then a number[] pushed; a call's value; one shared object; a dense loop</span></summary><pre class="code"><span class="tk-c">// `new Array&lt;T&gt;(n).fill(v)`: the construct written directly as the receiver</span>
+<span class="tk-c">// of `fill` of one argument is a fresh dense `T[]`, every index holding `v`</span>
+<span class="tk-c">// (SOURCE-CONTRACTS.md, &quot;`new Array` filled at once&quot;). `n` is evaluated, then</span>
+<span class="tk-c">// the length is checked (a RangeError where `n` is no array length), then</span>
+<span class="tk-c">// `v`, and the array no code reached before is returned.</span>
+
+<span class="tk-c">// Pretext's shape: a table made on first need, filled with `null`, then</span>
+<span class="tk-c">// given an element of the wider type. An existing table skips the</span>
+<span class="tk-c">// construct and its value.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> record(
+  table: (number[] | <span class="tk-k">null</span>)[] | <span class="tk-k">null</span>,
+  size: number,
+  units: number[],
+): (number[] | <span class="tk-k">null</span>)[] {
+  <span class="tk-k">let</span> slots = table;
+  <span class="tk-k">if</span> (units.length &gt; <span class="tk-n">0</span>)
+    (slots ??= <span class="tk-k">new</span> <span class="tk-t">Array</span>&lt;number[] | <span class="tk-k">null</span>&gt;(size).fill(<span class="tk-k">null</span>)).push(units);
+  <span class="tk-k">return</span> slots ?? [];
+}
+
+<span class="tk-c">// A value computed by a call, evaluated after the length's check.</span>
+<span class="tk-k">let</span> calls: number = <span class="tk-n">0</span>;
+<span class="tk-k">function</span> next(): number {
+  calls += <span class="tk-n">1</span>;
+  <span class="tk-k">return</span> calls;
+}
+<span class="tk-k">export</span> <span class="tk-k">function</span> counted(n: number): number[] {
+  <span class="tk-k">return</span> <span class="tk-k">new</span> <span class="tk-t">Array</span>&lt;number&gt;(n).fill(next());
+}
+
+<span class="tk-c">// An object fill: every index holds the same object, which a write through</span>
+<span class="tk-c">// one element changes for all.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> shared(n: number): { count: number }[] {
+  <span class="tk-k">const</span> cell = { count: <span class="tk-n">0</span> };
+  <span class="tk-k">const</span> cells = <span class="tk-k">new</span> <span class="tk-t">Array</span>&lt;{ count: number }&gt;(n).fill(cell);
+  <span class="tk-k">for</span> (<span class="tk-k">const</span> c <span class="tk-k">of</span> cells) c.count += <span class="tk-n">1</span>;
+  <span class="tk-k">return</span> cells;
+}
+
+<span class="tk-c">// A dense result: iteration reads every element as a number.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> total(n: number): number {
+  <span class="tk-k">let</span> sum = <span class="tk-n">0</span>;
+  <span class="tk-k">for</span> (<span class="tk-k">const</span> x <span class="tk-k">of</span> <span class="tk-k">new</span> <span class="tk-t">Array</span>&lt;number&gt;(n).fill(<span class="tk-n">2</span>)) sum += x.toFixed(<span class="tk-n">0</span>).length;
+  <span class="tk-k">return</span> sum;
+}</pre></details></li><li><details><summary><code>invalid-array-fill-read-before</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">a hole read before the fill (Node: TypeError)</span></summary><pre class="code"><span class="tk-c">// `new Array&lt;T&gt;(n)` bound to a name before its `fill`: the holes are read</span>
+<span class="tk-c">// first. TypeScript types `xs[0]` as `number`; under Node `first` is</span>
+<span class="tk-c">// `undefined` and `toFixed` throws a TypeError. Only the construct written</span>
+<span class="tk-c">// directly as the receiver of `fill(v)` is admitted.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> firstFixed(n: number): string {
+  <span class="tk-k">const</span> xs = <span class="tk-k">new</span> <span class="tk-t">Array</span>&lt;number&gt;(n);
+  <span class="tk-k">const</span> first = xs[<span class="tk-n">0</span>];
+  xs.fill(<span class="tk-n">0</span>);
+  <span class="tk-k">return</span> first.toFixed(<span class="tk-n">1</span>);
+}</pre></details></li><li><details><summary><code>invalid-array-fill-partial</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">fill(v, start) leaves holes (Node: TypeError)</span></summary><pre class="code"><span class="tk-c">// `fill(v, start)` fills from `start` only: index 0 stays a hole, which the</span>
+<span class="tk-c">// loop reads as `undefined`, and `toFixed` throws a TypeError under Node.</span>
+<span class="tk-c">// TypeScript types the result as `number[]`. Only `fill` of one argument is</span>
+<span class="tk-c">// admitted.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> digits(n: number): string {
+  <span class="tk-k">let</span> text = <span class="tk-s">&quot;&quot;</span>;
+  <span class="tk-k">for</span> (<span class="tk-k">const</span> x <span class="tk-k">of</span> <span class="tk-k">new</span> <span class="tk-t">Array</span>&lt;number&gt;(n).fill(<span class="tk-n">0</span>, <span class="tk-n">1</span>)) text += x.toFixed(<span class="tk-n">0</span>);
+  <span class="tk-k">return</span> text;
+}</pre></details></li><li><details><summary><code>invalid-array-fill-range</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">fill(v, start, end) leaves holes (Node: TypeError)</span></summary><pre class="code"><span class="tk-c">// `fill(v, start, end)` fills below `end` only: index 1 of a longer array</span>
+<span class="tk-c">// stays a hole, which the loop reads as `undefined`, and `toFixed` throws a</span>
+<span class="tk-c">// TypeError under Node. TypeScript types the result as `number[]`. Only</span>
+<span class="tk-c">// `fill` of one argument is admitted.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> digits(n: number): string {
+  <span class="tk-k">let</span> text = <span class="tk-s">&quot;&quot;</span>;
+  <span class="tk-k">for</span> (<span class="tk-k">const</span> x <span class="tk-k">of</span> <span class="tk-k">new</span> <span class="tk-t">Array</span>&lt;number&gt;(n).fill(<span class="tk-n">0</span>, <span class="tk-n">0</span>, <span class="tk-n">1</span>)) text += x.toFixed(<span class="tk-n">0</span>);
+  <span class="tk-k">return</span> text;
+}</pre></details></li><li><details><summary><code>array-fill-parenthesized</code> <span class="kind gap">gap</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">gap</span> <span class="why">the form's restriction: a parenthesized construct</span></summary><pre class="code"><span class="tk-c">// The restriction of `new Array&lt;T&gt;(n).fill(v)` to its written form: the</span>
+<span class="tk-c">// construct parenthesized before its `fill` is safe, but is read as the</span>
+<span class="tk-c">// construct alone, which makes holes, and refused</span>
+<span class="tk-c">// (SOURCE-CONTRACTS.md, &quot;`new Array` filled at once&quot;).</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> zeros(n: number): number[] {
+  <span class="tk-c">// prettier-ignore</span>
+  <span class="tk-k">return</span> (<span class="tk-k">new</span> <span class="tk-t">Array</span>&lt;number&gt;(n)).fill(<span class="tk-n">0</span>);
+}</pre></details></li></ul>
+<h4 class="change">Gap</h4><div class="prose"><p><code>new Array(n).fill(v)</code> without a type argument is TypeScript's <code>any[]</code> construct and stays refused (invalid-array-length); the element type is written.</p></div>
+<h4 class="change">Soundness</h4><div class="prose"><p>Under Node, array-fill's <code>counted(-1)</code> and <code>counted(1.5)</code> throw a RangeError without calling the value's function, and <code>counted(2)</code> then gives [1,1]; each negative throws a TypeError (tests/node-runs.mts). A control forges the claimed instance of %ArrayFilled% at number where the value is null: search refuses at the call, checking at <code>fill</code>; the same control checks the lowered term holds the length check once, as the first argument.</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">parser</span> <span class="chip strong">trust</span> <span class="chip">docs</span> <span class="chip">tests</span></dd><dt>Trust</dt><dd><span class="trust">Array.prototype.fill and ArrayCreate are the standard ones, untampered (pre-approved policy); Array.prototype and Object.prototype own no numeric key, as %ElementAt% assumes</span></dd><dt>Measured</dt><dd>pretext census (0d102a5c) shallow 34 -&gt; 34 of 209, deep 25 -&gt; 22, statements 206 -&gt; 202 of 3424 (driver census-pretext.mts): prepareRichInline passes the gate and reaches Float64Array's ThisType, which the census places at rich-inline.ts's initialization</dd><dt>Tests</dt><dd><span class="test pos">array-fill</span> <span class="test pos">blocker-pretext-new-array-fill</span> <span class="test neg">invalid-array-fill-read-before</span> <span class="test neg">invalid-array-fill-partial</span> <span class="test neg">invalid-array-fill-range</span> <span class="test forged">%ArrayFilled% instance at number</span></dd></dl>
+<details><summary>18 files changed, 294 insertions(+), 10 deletions(-)</summary><pre class="code"> WORK.md                                            |  2 +-
+ docs/DESIGN.md                                     |  2 +-
+ docs/SOURCE-CONTRACTS.md                           | 55 ++++++++++++++++++++++
+ docs/SOURCE-FRAGMENT.md                            |  2 +-
+ pipeline/cases.mts                                 | 11 ++++-
+ pipeline/examples/array-fill-parenthesized.ts      |  8 ++++
+ pipeline/examples/array-fill.ts                    | 45 ++++++++++++++++++
+ .../examples/blocker-pretext-new-array-fill.ts     |  7 ++-
+ pipeline/examples/invalid-array-fill-partial.ts    |  9 ++++
+ pipeline/examples/invalid-array-fill-range.ts      |  9 ++++
+ .../examples/invalid-array-fill-read-before.ts     | 10 ++++
+ pipeline/test.mts                                  | 30 ++++++++++++
+ tests/node-runs.mts                                | 18 +++++++
+ tools/declaration-graph.mts                        | 45 ++++++++++++++++++
+ tools/fragment-expressions.mts                     |  9 ++++
+ tools/host-operations.mts                          |  4 +-
+ tools/intrinsics.mts                               | 17 +++++++
+ tools/library-globals.mts                          | 21 ++++++++-</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+</main></body></html>
