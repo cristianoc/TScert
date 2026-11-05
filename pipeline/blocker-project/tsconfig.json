@@ -37,5 +37,6 @@
     "../examples/compiler-overlay-*.ts",
     "../examples/invalid-compiler-overlay-*.ts"
   ],
+  "exclude": ["../examples/blocker-pretext-*.ts"],
   "files": ["../../tools/resolvable.d.ts"]
 }
