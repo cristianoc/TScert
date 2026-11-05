@@ -1,8 +1,8 @@
-// The stage store's entries (DESIGN.md, "The stage store"): finished results
-// and timeout observations of replay-eligible stage invocations, each an
-// immutable directory published by atomic rename, and the stable locations
-// of source snapshots. The invocation mechanism (`stages.mts`) is the only
-// user.
+// The stage store's entries (STAGE-STORE.md, "Entries and timeouts"):
+// finished results and timeout observations of replay-eligible stage
+// invocations, each an immutable directory published by atomic rename, and
+// the stable locations of source snapshots. The invocation mechanism
+// (`stages.mts`) is the only user.
 //
 //   <root>/entries/<stage>/<key>/              a finished result
 //       manifest.json   key, stage, input manifest, exit status, digests of

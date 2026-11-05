@@ -242,9 +242,9 @@ export const ran = (record: AttemptRecord): boolean =>
 export const controlOperations: { executed: number; replayed: number; elapsedMs: number } =
   { executed: 0, replayed: 0, elapsedMs: 0 };
 
-/** A control's run of the operation it tests (DESIGN.md, "The stage store",
- * controls): an invocation like any other, replayed where the store holds a
- * finished result for its key, and required to have run or to have replayed
+/** A control's run of the operation it tests (STAGE-STORE.md, "Controls"):
+ * an invocation like any other, replayed where the store holds a finished
+ * result for its key, and required to have run or to have replayed
  * that result; a replayed timeout is no run. */
 export function tested(call: ProcessCall, limitMs: number = 30_000): Invoked {
   const invoked = invokeProcess(call, { limitMs, force: false, recorder: null });

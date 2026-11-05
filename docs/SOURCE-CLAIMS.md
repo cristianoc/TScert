@@ -207,7 +207,7 @@ ordered list of label unions. A zero-argument signature uses `[]`; a signature
 with one `undefined` parameter uses `[[3]]` in the illustrative table above.
 Optional row fields describe variadic signatures, optional fields, host-relative
 methods, and own-key bounds. The full native clause field definitions are in
-[Request fields](REQUEST-PROTOCOL.md#request-fields), shared by graph requests
+[the request protocol's clauses](REQUEST-PROTOCOL.md#clauses), shared by graph requests
 and this document; [type-graph.mts](../tools/type-graph.mts) declares their wire types.
 The reader validates label references even in unused candidates. A label is a
 name, not a guarantee that the value at a source site has that type.

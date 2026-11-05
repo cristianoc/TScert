@@ -1,5 +1,5 @@
 // The execution adapter of process stages and the node side's code identity
-// (DESIGN.md, "The stage store", keys). It describes an invocation
+// (STAGE-STORE.md, "Keys"). It describes an invocation
 // (the stage, its argument vector, environment, exit protocol, input digests
 // and output roles, with the identities of its executable and of the Node
 // runtime), runs it in a fresh directory holding its inputs under their role
@@ -20,7 +20,7 @@ import type { Cpu } from "./stage-store.mts";
 
 const here = import.meta.dirname;
 
-/** The stages of the pipeline's entry point (DESIGN.md, "The stage store"). */
+/** The stages of the pipeline's entry point (STAGE-STORE.md). */
 export type StageName = "parse" | "module" | "lower" | "propose" | "assemble" | "plan" | "search" | "check" | "explain" |
   "diagnostics";
 export const stageNames: readonly StageName[] = ["parse", "module", "lower", "propose", "assemble", "plan", "search", "check",
@@ -68,10 +68,10 @@ const fileDigest = (path: string): string => known(path).digest;
 
 const repository = resolve(here, "..");
 
-/** The files of the node side no key covers (DESIGN.md, "The stage store",
- * keys): each chooses among entries whose stored manifest is the
- * invocation's own, publishes or records attempts, orchestrates stages over
- * inputs their manifests bind, or presents outcomes. */
+/** The files of the node side no key covers (STAGE-STORE.md, "Keys"): each
+ * chooses among entries whose stored manifest is the invocation's own,
+ * publishes or records attempts, orchestrates stages over inputs their
+ * manifests bind, or presents outcomes. */
 export const unkeyed: readonly string[] = [
   "pipeline/stages.mts", "pipeline/stage-store.mts", "pipeline/verify-source.mts", "pipeline/run-cases.mts",
   "pipeline/cases.mts", "pipeline/test.mts", "pipeline/default-parameters.mts", "pipeline/evidence-mutations.mts",

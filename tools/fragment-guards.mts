@@ -5,7 +5,7 @@
  * TypeScript does not check. The function is read at its plain result,
  * `boolean` (`void`), with the promise beside it (`Guard`): its type carries
  * a promise signature, which the verifier proves at the body and a call
- * consumes (SOURCE-CONTRACTS.md, user-defined guards). The predicate is read
+ * consumes (SOURCE-ELABORATION.md, user-defined guards). The predicate is read
  * as the type reader reads one in any signature (`promiseOf`). */
 import * as ts from "typescript/unstable/ast";
 import type { ArrowFunction, FunctionDeclaration, FunctionExpression, MethodDeclaration } from "typescript/unstable/ast";

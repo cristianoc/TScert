@@ -10,10 +10,11 @@
  *
  * This program is TRUSTED. It defines what the source text means; the verifier
  * never sees the producer's own parse. The gate's methods for enums and classes,
- * expressions, and patterns and statements are in fragment-classes.mts,
- * fragment-expressions.mts and fragment-statements.mts; the helpers they share
- * are in fragment-support.mts. All five are this one trusted program. The fragment it accepts is stated in
- * ../AGENTS.md and, as a grammar, in the pull request description.
+ * expressions, user-defined guards, and patterns and statements are in
+ * fragment-classes.mts, fragment-expressions.mts, fragment-guards.mts and
+ * fragment-statements.mts; the helpers they share are in fragment-support.mts.
+ * All six are this one trusted program. Its refusals are indexed in
+ * docs/SOURCE-FRAGMENT.md, and the tree it writes is docs/FRAGMENT-FORMAT.md's.
  */
 import { type API, SymbolFlags, type Checker, type Project } from "typescript/unstable/sync";
 import * as ts from "typescript/unstable/ast";

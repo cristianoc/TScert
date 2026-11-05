@@ -1083,7 +1083,7 @@ export function refuseReceiverForm(this: Gate, node: ts.CallExpression, refusal:
   if (ts.isPropertyAccessExpression(target) && gate.methodTargets.has(gate.span(target.name).join(":")))
     gate.fail(node, `a method read off its object is not a function value: \`.${form}\` passes it a receiver ` +
       "other than the object it is read from, and a method's contract is relative to that object " +
-      "(DESIGN.md, \"Method members are host-relative\")");
+      "(SOURCE-MODEL.md, \"Method members are host-relative\")");
   gate.fail(node, refusal);
 }
 

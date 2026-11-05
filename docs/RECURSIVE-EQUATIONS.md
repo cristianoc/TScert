@@ -618,7 +618,7 @@ to parameters and quantified variables by position.
 | Concept | Lean |
 | --- | --- |
 | Definitions, types and unfolding (2) | [Types/EquationGraphs.lean](../lean/Verification/Types/EquationGraphs.lean) |
-| A meet label means the intersection of its parts (2, 3.3) | [Types/EquationMeets.lean](../lean/Verification/Types/EquationMeets.lean) |
+| A meet label means the intersection of its parts (2.2, 8) | [Types/EquationMeets.lean](../lean/Verification/Types/EquationMeets.lean) |
 | Lemma 1, support | [Types/EquationSupport.lean](../lean/Verification/Types/EquationSupport.lean) |
 | Lemma 2, congruence of applications | [Types/EquationCongruence.lean](../lean/Verification/Types/EquationCongruence.lean) |
 | Lemma 3, substitution | [Types/EquationSubstitution.lean](../lean/Verification/Types/EquationSubstitution.lean) |

@@ -7,7 +7,7 @@
 // are omitted and the file checked again (`omitted`). A function is shallow
 // verified when its unit is accepted, and deep verified when every unit of
 // its dependency closure is, computed from the record alone. Each run writes
-// a census record (DESIGN.md, "The stage store"): per file its rounds, its
+// a census record (STAGE-STORE.md, "Census records"): per file its rounds, its
 // units' results, its omitted units and the ordered references to its stage
 // invocations, the edges the census adds to the units' own dependencies, and
 // the directory's statement inventory. A selection of files or functions

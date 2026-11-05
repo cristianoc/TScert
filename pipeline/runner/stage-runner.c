@@ -1,4 +1,4 @@
-/* The runner of process stages (DESIGN.md, "The stage store", measurement):
+/* The runner of process stages (STAGE-STORE.md, "Timing"):
  * it runs a stage's program and reports the CPU time of the processes the
  * stage ran and their peak memory, which Node's spawnSync does not report.
  *

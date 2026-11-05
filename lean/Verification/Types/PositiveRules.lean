@@ -707,7 +707,7 @@ abbrev CoversOptional (R : List ι → List ι → Prop)
   ((G.meets i).map (·.2)).getD []
 
 /-- A meet row's parts other than its clauses: its parameters and, in an
-equation graph, its scheme parts (RECURSIVE-EQUATIONS §3.3). -/
+equation graph, its scheme parts (RECURSIVE-EQUATIONS §2.2). -/
 @[nospecialize] def meetParts (G : NormalGraph ι) (i : ι) : List ι :=
   match G.meets i with
   | some (p, _) => p :: G.meetParams i
@@ -3364,7 +3364,7 @@ meet's. `U ⊓ T` is below `T`, `U ⊓ T ⊓ B` below `T ⊓ B`, and `T ⊓ numb
 below `T ⊓ (number | null)`: a value of the meet is what the assignment gives
 each of its parameters, within its clauses. In a
 family pair a target parameter may instead be above one of the meet's
-parameters by a hypothesis (RECURSIVE-EQUATIONS §3.3, §7.3): `x ⊓ B` is below
+parameters by a hypothesis (RECURSIVE-EQUATIONS §2.2, §4.2): `x ⊓ B` is below
 `y ⊓ B`, and below `y`, when `x ≤ y`. -/
 @[nospecialize] def meetBelow [DecidableEq ι] (G : NormalGraph ι) (i j : ι) (hyps : List (ι × ι) := []) : Bool :=
   match G.meets i with
@@ -3399,7 +3399,7 @@ induction over every assignment supplies (`family_sound`). -/
       CoversWith G none R known arrows [] s.body s'.body
   | _, _ => False
 
-/-- A row read as a meet part: not a meet row (RECURSIVE-EQUATIONS §3.3). -/
+/-- A row read as a meet part: not a meet row (RECURSIVE-EQUATIONS §2.2). -/
 @[nospecialize] def _root_.Verification.PositiveGraphs.NormalGraph.partRow (G : NormalGraph ι) (q : ι) : Bool :=
   G.params q || (G.schemes q).isSome || (G.meets q).isNone
 
@@ -3407,7 +3407,7 @@ induction over every assignment supplies (`family_sound`). -/
 @[nospecialize] def schemeMeet (G : NormalGraph ι) (i : ι) : Bool :=
   (meetParts G i).any fun q => (G.schemes q).isSome
 
-/-- **A meet source, read through one part** (RECURSIVE-EQUATIONS §3.3): a
+/-- **A meet source, read through one part** (RECURSIVE-EQUATIONS §2.2): a
 parameter part below a target row (`meetBelow`), a scheme part covered by a
 target scheme (`sc`), or its clauses each covered (`cover`). -/
 @[nospecialize] def MeetSource [DecidableEq ι] (G : NormalGraph ι) (sc : ι → ι → Prop)
