@@ -83,9 +83,9 @@ var { font-style:italic } .m-op { color:#2c4f7c; font-style:normal } .m-con { co
 a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outline-offset:2px }
 @media (max-width:520px) { dl.facts { grid-template-columns:minmax(0,1fr) } .card > header { flex-direction:column } }</style></head><body><main><header><h1>Commit Records</h1><p class="lede">1 commit, rendered from their records.</p></header>
 <section><h2>Branches</h2><ul class="summary"><li><a href="#g-pr-91"><code>b197ddd5aa461d6a1addeacd0e5959d84034ee68..pr-91</code></a><ul><li>1 commit</li><li>parts: <span class="chip">tests</span> <span class="chip">docs</span></li></ul></li></ul></section>
-<h2 id="g-pr-91"><code>b197ddd5aa461d6a1addeacd0e5959d84034ee68..pr-91</code></h2><article class="card" id="c-f88f6ec18"><header><div><div class="sha">f88f6ec18 · Cristiano Calcagno · Nov 05, 09:24</div><h3>Add cases for the reasons TScert still refuses in pretext's library</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h2 id="g-pr-91"><code>b197ddd5aa461d6a1addeacd0e5959d84034ee68..pr-91</code></h2><article class="card" id="c-94e72b2f8"><header><div><div class="sha">94e72b2f8 · Cristiano Calcagno · Nov 05, 09:24</div><h3>Add cases for the reasons TScert still refuses in pretext's library</h3></div><span class="pill neutral">no-behaviour-change</span></header>
 <h4 class="change">Why</h4><div class="prose"><p>On main b197ddd5, with the reviewed library members and the typed-array views, the census of pretext's src/ (chenglou/pretext at 0d102a5c, its 11 modules but the tests, its tsconfig.json with <code>types: []</code>) verifies 34 of 209 functions shallow, 206 of 3424 statements, and 25 functions deep. Twelve of the reasons blocking the other 175 had no case: the gap process could not rank or work them.</p></div>
-<h4 class="change"><span class="act added">added</span>Example</h4><pre class="code"><span class="ln">one self-contained source per reason, the smallest the pipeline</span><span class="ln">refuses with the census's refusal, its header naming the pretext</span><span class="ln">functions (file#<span class="tk-k">function</span>) it stands <span class="tk-k">for</span>. <span class="tk-t">The</span> non-<span class="tk-k">null</span> assertions are</span><span class="ln">split by what is asserted: a typed array's element read inside its</span><span class="ln">length (safe, a gap), an array's (a hole reads <span class="tk-k">undefined</span>, a negative</span><span class="ln"><span class="tk-k">case</span>), a nullable field after a call that tested it, and a local made</span><span class="ln">non-<span class="tk-k">null</span> by another local's value. <span class="tk-t">The</span> visitor <span class="tk-k">case</span> reads</span><span class="ln">pipeline/pretext-project/line-data.ts.</span></pre>
+<h4 class="change"><span class="act added">added</span>Example</h4><pre class="code"><span class="ln">one self-contained source per reason, the smallest the pipeline</span><span class="ln">refuses with the census's refusal, its header naming the pretext</span><span class="ln">functions (file#<span class="tk-k">function</span>) it stands <span class="tk-k">for</span>. <span class="tk-t">The</span> non-<span class="tk-k">null</span> assertions are</span><span class="ln">split by what is asserted: a typed array's element read inside its</span><span class="ln">length and an array's (both safe, gaps: <span class="tk-s">`number[]`</span> is readable, so it</span><span class="ln">holds no hole), a nullable field after a call that tested it, and a local made</span><span class="ln">non-<span class="tk-k">null</span> by another local's value. <span class="tk-t">The</span> visitor <span class="tk-k">case</span> reads</span><span class="ln">pipeline/pretext-project/line-data.ts.</span></pre>
 <h4 class="change"><span class="act modified">modified</span>Example</h4><pre class="code"><span class="ln">each names the functions <span class="tk-k">this</span> census blocks by its reason, and its</span><span class="ln">area the count: the qualified <span class="tk-k">type</span> <span class="tk-n">37</span> → <span class="tk-n">41</span>, <span class="tk-t">HTMLCanvasElement</span></span><span class="ln"><span class="tk-n">27</span> → <span class="tk-n">40</span>, the defaulted parameter <span class="tk-n">14</span> → <span class="tk-n">16</span>, the opaque handle cast</span><span class="ln"><span class="tk-n">3</span> → <span class="tk-n">5</span>. <span class="tk-t">No</span> <span class="tk-k">case</span>'s refusal moved.</span></pre>
 <h4 class="change"><span class="act modified">modified</span>Tooling <span class="target">tests/node-runs.mts</span></h4><pre class="code"><span class="ln">the array assertion's program runs: `last(new Array(2))` is undefined</span></pre>
 <h4 class="change"><span class="act modified">modified</span>Docs <span class="target">WORK.md, the pretext census row</span></h4><div class="prose"><p>the new measurement, the cases by kind and the largest reasons</p></div>
@@ -128,7 +128,7 @@ a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outl
   <span class="tk-k">let</span> sum = <span class="tk-n">0</span>;
   <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; flags.length; i++) sum += flags[i]!;
   <span class="tk-k">return</span> sum;
-}</pre></details></li><li><details><summary><code>invalid-pretext-array-element-assertion</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">widths[i]! may read a hole (9 functions)</span></summary><pre class="code"><span class="tk-c">// Pretext (github.com/chenglou/pretext at 0d102a5c, src/, census by unit):</span>
+}</pre></details></li><li><details><summary><code>blocker-pretext-array-element-assertion</code> <span class="kind gap">gap</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">gap</span> <span class="why">widths[i]! cast claim, index bound unused (9 functions)</span></summary><pre class="code"><span class="tk-c">// Pretext (github.com/chenglou/pretext at 0d102a5c, src/, census by unit):</span>
 <span class="tk-c">// analysis.ts#getWebKitParagraphBreaks,</span>
 <span class="tk-c">// analysis.ts#removeItemsSkippableSegmentBreaks,</span>
 <span class="tk-c">// line-text.ts#getGraphemeEnds, rich-inline.ts#findSegmentSources,</span>
@@ -138,9 +138,9 @@ a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outl
 <span class="tk-c">// Refusal: reject: source expression obligation: no derivation of its cast</span>
 <span class="tk-c">// claim.</span>
 <span class="tk-c">// A non-null assertion of an array's element read inside its length,</span>
-<span class="tk-c">// `widths[i]!` with `i &lt; widths.length`: an array may have holes, which</span>
-<span class="tk-c">// read as `undefined`: under Node, `last(new Array(2))` returns `undefined`</span>
-<span class="tk-c">// where a number is due.</span>
+<span class="tk-c">// `widths[i]!` with `i &lt; widths.length`: `number[]` is readable (every</span>
+<span class="tk-c">// in-bounds read meets `number`, so it holds no hole), so the read is a</span>
+<span class="tk-c">// number; the loop's bound is not used to rule out a read past the end.</span>
 <span class="tk-k">export</span> <span class="tk-k">function</span> last(widths: number[]): number {
   <span class="tk-k">let</span> width = <span class="tk-n">0</span>;
   <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; widths.length; i++) width = widths[i]!;
@@ -262,10 +262,10 @@ a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outl
   }
   <span class="tk-k">return</span> frame;
 }</pre></details></li></ul>
-<h4 class="change">Counterexample</h4><pre class="code"><span class="ln">invalid-pretext-array-element-assertion: <span class="tk-s">`typeof last(new Array(2))`</span></span><span class="ln">prints <span class="tk-k">undefined</span> under <span class="tk-t">Node</span>.</span></pre>
-<dl class="facts"><dt>Parts</dt><dd><span class="chip">tests</span> <span class="chip">docs</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Measured</dt><dd>pretext src/ census 6 of 209 -&gt; 34 of 209 functions shallow, 12 -&gt; 206 of 3424 statements (TScert 50be2ce8 -&gt; b197ddd5, 2026-11-05)</dd><dt>Tests</dt><dd><span class="test pos">blocker-pretext-* (11 gaps)</span> <span class="test pos">invalid-pretext-array-element-assertion</span></dd></dl>
-<details><summary>20 files changed, 258 insertions(+), 26 deletions(-)</summary><pre class="code"> WORK.md                                            |  2 +-
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">tests</span> <span class="chip">docs</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Measured</dt><dd>pretext src/ census 6 of 209 -&gt; 34 of 209 functions shallow, 12 -&gt; 206 of 3424 statements (TScert 50be2ce8 -&gt; b197ddd5, 2026-11-05)</dd><dt>Tests</dt><dd><span class="test pos">blocker-pretext-* (12 gaps)</span></dd></dl>
+<details><summary>19 files changed, 256 insertions(+), 26 deletions(-)</summary><pre class="code"> WORK.md                                            |  2 +-
  pipeline/cases.mts                                 | 20 ++++++++++++---
+ .../blocker-pretext-array-element-assertion.ts     | 18 +++++++++++++
  .../blocker-pretext-canvas-context-type.ts         | 30 ++++++++++++++--------
  .../blocker-pretext-defaulted-parameter.ts         |  5 ++--
  .../blocker-pretext-destructuring-assignment.ts    | 12 +++++++++
@@ -281,9 +281,7 @@ a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outl
  .../examples/blocker-pretext-new-array-fill.ts     |  9 +++++++
  .../examples/blocker-pretext-opaque-handle-cast.ts |  3 ++-
  ...locker-pretext-typed-array-element-assertion.ts | 17 ++++++++++++
- .../invalid-pretext-array-element-assertion.ts     | 18 +++++++++++++
- pipeline/pretext-project/line-data.ts              | 22 ++++++++++++++++
- tests/node-runs.mts                                |  2 ++</pre></details>
+ pipeline/pretext-project/line-data.ts              | 22 ++++++++++++++++</pre></details>
 <div class="sha">with Claude Opus 5.5</div>
 </article>
 </main></body></html>
