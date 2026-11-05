@@ -78,7 +78,7 @@ each item's design and evidence, not its progress.
 | [Async and generator code](#async-and-generator-code) | open | an async function's entry and resumption are checked by an asynchronous entry judgment, and `%Await%`, `%AsyncReturn%` and `%AsyncComplete%` leave the trust surface |
 | [Iteration left open](#iteration-left-open) | open: `blocker-round-map-keys-spread` verifies with the [native placement Map contract retained](docs/SOURCE-REWRITES.md#a-native-placement-map-widened-to-readonlymap); targeted slices `fragment-statements.mts#markEarly,#hoisting` pass the spread claim and reach the later node-typing claim at `[48517,48535)`, with 0 of 2 functions and 0 of 91 statements verified before and after, and no timeouts (2026-10-31); `blocker-round-map-entries-spread` verifies with the [native merge binder contract retained](docs/SOURCE-REWRITES.md#native-merge-binders-widened-to-readonlymap); targeted slices `array-prototype.mts#mergeRefusal,#prototype` retain 0 of 2 functions and 0 of 215 statements verified, with no timeouts: `mergeRefusal`’s first refusal moves from the entry spread to `Object.entries(value)`, while `prototype` retains its optional dictionary key-read refusal (2026-11-01) | the iteration forms listed there are lowered; both map-iterator spreads have checked result contracts or documented source rewrites |
 | [Keys known only at run time](#keys-known-only-at-run-time) | open | the writes listed there are typed |
-| Regression coverage for refusal-index rows | open: 44 rows of [the refusal index](docs/SOURCE-FRAGMENT.md#fragment-boundary) name no case (2026-11-05), three of them constructs TypeScript rejects (a rest typed by a non-array, `"use strict"` beside non-simple parameters, `this` before `super(...)`) | each distinct enforced boundary of the index has a case reaching its refusal, an existing case named where it reaches one |
+| Regression coverage for refusal-index rows | open: 42 rows of [the refusal index](docs/SOURCE-FRAGMENT.md#fragment-boundary) name no case (2026-11-05), three of them constructs TypeScript rejects (a rest typed by a non-array, `"use strict"` beside non-simple parameters, `this` before `super(...)`) | each distinct enforced boundary of the index has a case reaching its refusal, an existing case named where it reaches one |
 | [Remaining source forms](#remaining-source-forms) | open | the forms listed there are admitted |
 | [Model limits of one form each](#model-limits-of-one-form-each) | open | each limit listed there has its model support |
 | [Regular expressions left](#regular-expressions-left) | open | replacement callbacks of a regex of the conservative shape, a native regex from `new RegExp`, a regex's properties and structural match iterators are admitted, and `SetIterator` and `MapIterator` loops require the native mark |
@@ -139,7 +139,9 @@ Gap cases standing for census refusals, each header naming its census
 functions, are worked in the gap round's order: `blocker-prep-api-constructor`,
 `blocker-node-create-require`, `blocker-contextual-default-argument`,
 `blocker-compiler-api-generic-meet-field`,
-`blocker-compiler-api-contextual-host-shape` and `blocker-in-unknown-walk`.
+`blocker-compiler-api-contextual-host-shape`, `blocker-in-unknown-walk`,
+`blocker-next-compiler-api-ancestor-cell`, `blocker-last-guard-param-inferred`,
+`blocker-api-indexed-method` and `blocker-optional-method-bind`.
 
 <a id="decoders-dictionary-reads"></a>
 **Decoders' dictionary reads.** The decoders of `calculus.mts`,
