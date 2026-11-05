@@ -895,6 +895,9 @@ let rec footprint_expr ?(fresh=[]) ?(dispatched=fun _ _ -> false) ?(field_write=
   | Id name -> if List.mem name readable then Some empty_footprint else None
   | Literal _ -> Some empty_footprint
   | Not a | TypeofTest (_,_,a) | TagMember (_,_,_,a) | Cast (_,_,a) -> go a
+  (* A unary operator lowers to its operand's arithmetic (`-x` as `-1 * x`)
+     or its `typeof` test, which change no location. *)
+  | Unary (_,a) -> go a
   | Arith (_,a,b) | Comma (a,b) -> all [a;b]
   | Logical (_,a,b) | Coalesce (a,b) -> all [a;b]
   | Conditional (c,a,b) -> all [c;a;b]
@@ -951,7 +954,7 @@ let rec footprint_expr ?(fresh=[]) ?(dispatched=fun _ _ -> false) ?(field_write=
   (* `x.f ??= v`, `||=` and `&&=` read the field, then may write it. *)
   | LogicalAssign (_,{node=Read (o,k);_},v) when field_write o k -> join_bound cell_write (all [o;v])
   | BlockBody body -> footprint_stmts ~fresh ~dispatched ~field_write ~dead_throw ~callable ~no_return ~iteration ~readable body
-  | Unary _ | InstanceTest _
+  | InstanceTest _
   | Write _ | Update _ | LogicalAssign _
   | ArrayAssign _ | Invoke _ | Apply _ | Ctor _
   | IndexWrite _ | Bind _ | ObjectAssign _
@@ -1022,7 +1025,7 @@ and throws_expr ~callable (e:expr) : bool =
     | _ -> false in
   match e.node with
   | Id _ | Literal _ | Lambda _ -> true
-  | Not a | TypeofTest (_,_,a) | TagMember (_,_,_,a) | Cast (_,_,a) | Read (a,_) -> go a
+  | Not a | TypeofTest (_,_,a) | TagMember (_,_,_,a) | Cast (_,_,a) | Read (a,_) | Unary (_,a) -> go a
   | Arith (_,a,b) | Comma (a,b) | Logical (_,a,b) | Coalesce (a,b) | Index (a,b) | Equality (_,a,b)
   | HasKey (a,b) ->
     go a && go b
@@ -1038,7 +1041,7 @@ and throws_expr ~callable (e:expr) : bool =
   | New (callee,_,args,spreads) -> spreads = [] && List.for_all go (callee :: args) && calls callee
   | Optional (r,b) | WithObject (r,b) -> go r && go b
   | BlockBody body -> throws_stmts ~callable body
-  | Unary _ | InstanceTest _
+  | InstanceTest _
   | Write _ | Update _ | LogicalAssign _ | NullishAssign _
   | ArrayAssign _ | Invoke _ | Apply _ | Ctor _
   | IndexWrite _ | Bind _ | ObjectAssign _

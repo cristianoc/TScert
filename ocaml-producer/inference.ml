@@ -231,6 +231,16 @@ let infer ?receiver ?expected ?(expand = fun _ -> None) ?(native = fun _ -> fals
      widened where its body returns a fresh literal, and a declared one keeps
      its literals, as TypeScript widens only a fresh literal candidate. *)
   let returned_lowers = ref [] in
+  let same_head_arm a right =
+    let arms = match right with
+      | Atoms atoms when List.length atoms > 1 -> List.map (fun x -> Atoms [x]) atoms
+      | Union arms -> List.concat_map (function
+          | Atoms atoms -> List.map (fun x -> Atoms [x]) atoms
+          | t -> [t]) arms
+      | _ -> [] in
+    match List.filter (function Atoms [Named (b,_)] -> a = b | _ -> false) arms with
+    | [arm] -> Some arm
+    | _ -> None in
   let rec constrain ?(depth=0) ?(output=false) ?(contextual=false) ?(returned=false) left right =
     let contextual_reverse = constrain ~depth:(depth+1) ~output ~contextual:output in
     let constrain_result = constrain ~depth:(depth+1) ~output ~contextual ~returned:true in
@@ -258,6 +268,12 @@ let infer ?receiver ?expected ?(expand = fun _ -> None) ?(native = fun _ -> fals
            obligation; this assumes no variance. Input comparisons constrain
            the arguments both ways. *)
         contextual_reverse y x) xs ys
+      (* A result expected at a union naming one application of the same
+         declaration, among other arms (`Map<K, V> | null` expected of a
+         `new Map()`): that arm, as TypeScript infers to the union member of
+         the same reference. *)
+      | Atoms [Named (a,_)],_ when output && (match same_head_arm a right with Some _ -> true | None -> false) ->
+      Option.iter (fun arm -> constrain left arm) (same_head_arm a right)
       | Atoms [Named _],_ | _,Atoms [Named _]
         when not (match right with
           | Union arms -> List.length (List.filter (fun a -> local a <> None) arms) = 1

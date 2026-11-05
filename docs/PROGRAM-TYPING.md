@@ -3023,10 +3023,17 @@ proposes, at a merge or a cut every edge of which it has produced, the
 implications the edges establish, those on a slot the target claims at both
 Booleans included, where one edge's slot never holds `true` and the union of
 the others' types of the target slot is narrower than the target's claim
-(`meetImplications`). A cut's implications come from a further round of the
-search, run where a round fails at some node and the cuts it produced meet
-new implications; a round succeeding keeps its evidence
-(`guard-answer-constant`, `blocker-aliased-guard`). A `let` holding the
+(`meetImplications`). A cut's implications come from further rounds of the
+search, run where the first fails at some node: each seeds a cut with what
+its entering edges met in the round before, at most four rounds. Where these
+fail and some node carried an implication, at most two waiting rounds
+follow, in which a cut also waits for its entering edges and takes what they
+meet in the round itself. A loop's head, entered by a back edge it precedes,
+goes ahead first and takes, in the first waiting round, what the edges
+produced establish, a guess the back edge confirms or refutes; the second
+runs without the guess. A round succeeding keeps its evidence; where none
+does, the refusal is the first round's (`guard-answer-constant`,
+`blocker-aliased-guard`, `blocker-pretext-constant-implication-statements`). A `let` holding the
 answer, or a guarded `let` reassigned between the test and the use, carries
 no implication: the edge's mapping binds the new value to the slot
 (`invalid-guard-answer-let-prettier-ignore`,

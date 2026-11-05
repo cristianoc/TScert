@@ -169,23 +169,31 @@ open S
       let restore = Option.map (fun env -> if optional then restore_optional original env else env) in
       restore (either ~refine base yt nt),restore (either ~refine base yf nf),
       restore (either ~refine:false base yall nall)
-  (* A call whose callee's every signature keeps the heap (its footprint
-     within the empty one, its receiver's store included): Lean's
-     `call-keep` keeps every heap fact across it, so the step keeps the
-     fields and paths a test found. The signatures are those the call's
-     instance projects from its callee's overloads, as a closure's footprint
-     reads them, else all of the callee's type's. *)
-  and keeps_heap source = match expression_hint source with
+  (* A call or a construction whose callee's every signature keeps the
+     heap (its footprint within the empty one, its receiver's store
+     included): Lean's `call-keep` keeps every heap fact across it, so the
+     step keeps the cells, fields and paths a test found. The signatures are
+     those the call's instance projects from its callee's overloads, as a
+     closure's footprint reads them, else all of the callee's type's: its
+     call signatures for a call, its construct signatures for a
+     construction. *)
+  and keeps_heap source =
+    let keeps calls = List.for_all (fun (s:Semantic.signature) ->
+      footprint_le s.call_effect.footprint empty_footprint && not s.call_effect.receiver_store &&
+      not s.call_effect.receiver_own) calls in
+    let callee_head (callee:expr) =
+      match (match latest_instance callee.pos with Some t -> Some t | None -> claimed_type callee.pos) with
+      | Some t -> (try Some (declared_head declarations [] t) with Json.Error _ -> None)
+      | None -> None in
+    match expression_hint source with
     | Some {node=(Call (callee,_,_,_,_) | Invoke (callee,_,_,_));_} ->
-      (match (match latest_instance callee.pos with Some t -> Some t | None -> claimed_type callee.pos) with
-       | Some t ->
-         (match (try Some (declared_head declarations [] t) with Json.Error _ -> None) with
-          | Some (Atoms [Shape {calls=(_ :: _ as calls);_}]) ->
-            List.for_all (fun (s:Semantic.signature) ->
-              footprint_le s.call_effect.footprint empty_footprint && not s.call_effect.receiver_store &&
-              not s.call_effect.receiver_own) calls
-          | _ -> false)
-       | None -> false)
+      (match callee_head callee with
+       | Some (Atoms [Shape {calls=(_ :: _ as calls);_}]) -> keeps calls
+       | _ -> false)
+    | Some {node=New (callee,_,_,_);_} ->
+      (match callee_head callee with
+       | Some (Atoms [Ctors ((_ :: _ as constructs),_)]) -> keeps constructs
+       | _ -> false)
     | _ -> false
   (* A write of a cell's contents may be a write of any location the unit
      does not know apart from it, another cell's or a field's: Lean's
