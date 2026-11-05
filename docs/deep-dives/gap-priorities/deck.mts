@@ -1,6 +1,6 @@
 /* Measured tools census 9bf8c463b7c9, 2026-11-02, 300-second stages.
  * Build: make deck NAME=gap-priorities SINCE=f893d8b4.
- * Site audit: session scratch deck-final/ranking.md and site-contexts.md. */
+ * Site audit: `node dev/census.mts refusals <record>` on that census's record. */
 import { bullets, card, cards, cover, point, slide, stat, table, type Deck, type Slide } from "../../../dev/deck.mts";
 
 const measured = "Measured 2026-11-02 · complete tools census of 9bf8c463b7c9";
@@ -197,7 +197,7 @@ const slides: Slide[] = [
     ]),
   }),
   slide("leading-sites", {
-    label: "Inspected source sites · full paths and spans in the session ranking", title: "The leading sites expose further obligations", gap: 20,
+    label: "Inspected source sites · full paths and spans in census.mts refusals of that census", title: "The leading sites expose further obligations", gap: 20,
     body: table(["Source under tools/", "Observed first refusal", "Scope of the evidence"], [
       ["1. type-term · expandIdentity", "An every test is offered as a predicate excluding null array elements", "The promised narrowing is not established at this return"],
       ["2. fragment-statements · hoistTarget", "Destructuring declares the first item and a rest array", "The function’s stated preservation effect is not established"],
