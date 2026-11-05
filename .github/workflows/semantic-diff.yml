@@ -4,6 +4,12 @@ name: Semantic Diff
 # a review page, published on the gh-pages branch at
 # semantic-diff/pr-<number>/, and keeps one comment on the pull request that
 # links it and lists its commits; each push updates the page and the comment.
+# A deep-dive deck the pull request changes (docs/deep-dives/<name>/) is
+# built too (dev/deck-cli.mts), its page marking in yellow what changed
+# since the deck's approved version (the `SINCE=` of its header) or, for a
+# deck with none, since the base; the page is published beside the records,
+# at semantic-diff/pr-<number>/decks/<name>.html, and linked from a comment
+# of its own that mentions the repository's owner, whose approval it waits for.
 # Then each commit's message is checked as a commit record
 # (bin/git_hooks/commit_record.sh --check), last, so the page and the comment
 # appear either way.
@@ -59,8 +65,38 @@ jobs:
           head=$(git rev-parse --short=9 "pr-${PR_NUMBER}")
           echo "RANGE=${base}..pr-${PR_NUMBER}" >> "$GITHUB_ENV"
           echo "HEAD_SHORT=${head}" >> "$GITHUB_ENV"
+          echo "BASE=${base}" >> "$GITHUB_ENV"
           mkdir -p semantic-diff
           node dev/commit-records.mts --out semantic-diff/index.html "${base}..pr-${PR_NUMBER}"
+
+      # A deck's source is code: it runs only for a branch of this
+      # repository, never for a fork's pull request.
+      - name: Build the changed decks
+        if: github.event_name == 'pull_request'
+        env:
+          CHROME: /usr/bin/google-chrome
+        run: |
+          mkdir -p semantic-diff/decks
+          : > semantic-diff/decks.md
+          : > semantic-diff/deck-failures.txt
+          for deck in $(git diff --name-only "$RANGE" -- docs/deep-dives | cut -d/ -f3 | sort -u); do
+            [ -f "docs/deep-dives/$deck/deck.mts" ] || continue
+            approved=$(grep -m1 -oE 'SINCE=[0-9a-f]+' "docs/deep-dives/$deck/deck.mts" | cut -d= -f2 || true)
+            since=$BASE
+            if [ -n "$approved" ] && git cat-file -e "${approved}^{commit}" 2>/dev/null; then since=$approved; fi
+            if ! node dev/deck-cli.mts "$deck" --since "$since" > "semantic-diff/deck-$deck.log" 2>&1; then
+              echo "$deck: $(grep -v '^page:' "semantic-diff/deck-$deck.log" | tail -3 | tr '\n' ' ')" >> semantic-diff/deck-failures.txt
+            fi
+            cat "semantic-diff/deck-$deck.log"
+            if [ -n "$(git status --porcelain -- "docs/deep-dives/$deck/project")" ]; then
+              echo "$deck: project/ differs from what deck.mts builds" >> semantic-diff/deck-failures.txt
+            fi
+            page=$(sed -n 's/^page: //p' "semantic-diff/deck-$deck.log")
+            [ -n "$page" ] && cp "$page" "semantic-diff/decks/$deck.html"
+            marked=$(sed -n 's/^marked since [^:]*: \([^;]*\);.*/\1/p' "semantic-diff/deck-$deck.log")
+            if [ "$since" = "$approved" ]; then from="its approved version \`${since:0:9}\`"; else from="the base \`${since:0:9}\`"; fi
+            echo "- [${deck}](decks/${deck}.html?v=${HEAD_SHORT}): marked since ${from}; slides changed: ${marked:-none}" >> semantic-diff/decks.md
+          done
 
       - name: Publish the page
         env:
@@ -75,6 +111,10 @@ jobs:
           fi
           mkdir -p "pages/semantic-diff/pr-${PR_NUMBER}"
           cp semantic-diff/index.html "pages/semantic-diff/pr-${PR_NUMBER}/index.html"
+          if [ -d semantic-diff/decks ] && [ -n "$(ls semantic-diff/decks)" ]; then
+            mkdir -p "pages/semantic-diff/pr-${PR_NUMBER}/decks"
+            cp semantic-diff/decks/*.html "pages/semantic-diff/pr-${PR_NUMBER}/decks/"
+          fi
           touch pages/.nojekyll
           cd pages
           # The identity of the commit and of its rebase onto another page.
@@ -100,6 +140,15 @@ jobs:
             echo
             git log --reverse --no-merges --format='- `%h` %s' "$RANGE"
           } > semantic-diff/comment.md
+          # A changed deck waits for the owner's approval: its own comment
+          # mentions the owner, which notifies them when it is first made.
+          if [ -s semantic-diff/decks.md ]; then
+            {
+              echo "@${GITHUB_REPOSITORY_OWNER} **Decks changed** in this pull request, built with the changes marked, for your approval:"
+              echo
+              sed "s#](decks/#](https://${owner}.github.io/${repo}/semantic-diff/pr-${PR_NUMBER}/decks/#" semantic-diff/decks.md
+            } > semantic-diff/decks-comment.md
+          fi
 
       - name: Comment the semantic diff
         uses: thollander/actions-comment-pull-request@v3
@@ -109,6 +158,15 @@ jobs:
           comment-tag: semantic-diff
           mode: upsert
           file-path: semantic-diff/comment.md
+
+      - name: Comment the changed decks
+        if: hashFiles('semantic-diff/decks-comment.md') != ''
+        uses: thollander/actions-comment-pull-request@v3
+        with:
+          pr-number: ${{ github.event.pull_request.number }}
+          comment-tag: deck-changes
+          mode: upsert
+          file-path: semantic-diff/decks-comment.md
 
       # Last, so that the page and the comment show the records either way.
       - name: Check the commit records
@@ -121,4 +179,8 @@ jobs:
               failed=1
             fi
           done
+          if [ -s semantic-diff/deck-failures.txt ]; then
+            echo "decks:"; cat semantic-diff/deck-failures.txt
+            failed=1
+          fi
           exit $failed

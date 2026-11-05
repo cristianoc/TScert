@@ -1,13 +1,13 @@
-<section id="performance" style="background:#f6f7f5;color:#1d2422;font-family:'IBM Plex Sans','Helvetica Neue',Arial,sans-serif;padding:120px 128px;display:flex;flex-direction:column;gap:24px">
-<p style="font-size:24px;color:#5b6662;font-weight:600;letter-spacing:2px;text-transform:uppercase">Measured producing-execution costs · ca4e3c8a → 9bf8c463b7c9</p>
-<h2 style="font-family:'IBM Plex Serif',Georgia,serif;font-size:56px;font-weight:500;line-height:1.15">Search cost rises in refused type-term slices</h2>
-<table style="font-size:24px;color:#1d2422">
+<section id="performance" style="background:#fbfcfd;color:#0b1a2e;font-family:'Inter','Helvetica Neue',Arial,sans-serif;padding:120px 128px;display:flex;flex-direction:column;gap:24px">
+<p style="font-size:24px;color:#56627a;font-weight:600;letter-spacing:2px;text-transform:uppercase">Measured producing-execution costs · ca4e3c8a → 9bf8c463b7c9</p>
+<h2 style="font-family:'Bricolage Grotesque','Helvetica Neue',Arial,sans-serif;font-size:56px;font-weight:500;line-height:1.15">Search cost rises in refused type-term slices</h2>
+<table style="font-size:24px;color:#0b1a2e">
 <tr><th style="width:58%;text-align:left;font-weight:600">Search measure and scope</th><th style="width:21%;text-align:left;font-weight:600">Before</th><th style="width:21%;text-align:left;font-weight:600">After</th></tr>
 <tr><td>CPU seconds · all unique producing executions</td><td>2,909.2</td><td>6,088.0</td></tr>
 <tr><td>CPU seconds · 460 functions verified in both records</td><td>1,446.5</td><td>1,345.7</td></tr>
 <tr><td>CPU seconds · 20 distinct refused type-term slices, 29 functions</td><td>50.9</td><td>3,354.7</td></tr>
 <tr><td>Maximum recorded search peak · all functions</td><td>2,508 MiB</td><td>2,140 MiB</td></tr>
-</table><ul style="font-size:24px;color:#1d2422;line-height:1.36">
+</table><ul style="font-size:24px;color:#0b1a2e;line-height:1.36">
 <li><b style="font-weight:600">How costs count:</b> CPU is user plus system time. Each scope counts a producing execution once, even when many functions refer to it. Replays retain historical producing costs; these are not CPU consumed by replay lookups. Maximum memory is one recorded process peak.</li>
 <li><b style="font-weight:600">Rows are not additive:</b> the global row includes the subsets. Function cohorts can share executions: five final executions overlap cohorts, totaling 10.669515 seconds. The global total removes that overlap; each cohort deduplicates within its own scope.</li>
 <li><b style="font-weight:600">What the comparison establishes:</b> the retained verified cohort costs less; the refused type-term slices cost more and report a later first refusal. Inputs, contracts and verifier implementations differ. These observations establish neither a same-work project speed ratio nor the cause of the new classStmt timeout.</li>

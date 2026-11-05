@@ -1,7 +1,7 @@
-<section id="stages" style="background:#f6f7f5;color:#1d2422;font-family:'IBM Plex Sans','Helvetica Neue',Arial,sans-serif;padding:120px 128px;display:flex;flex-direction:column;gap:20px">
-<p style="font-size:24px;color:#5b6662;font-weight:600;letter-spacing:2px;text-transform:uppercase">Measured: census of ee0ed0e5, empty store, 2026-10-30</p>
-<h2 style="font-family:'IBM Plex Serif',Georgia,serif;font-size:56px;font-weight:500;line-height:1.15">One stage, propose, takes 190 of the 239 s</h2>
-<table style="font-size:24px;color:#1d2422">
+<section id="stages" style="background:#fbfcfd;color:#0b1a2e;font-family:'Inter','Helvetica Neue',Arial,sans-serif;padding:120px 128px;display:flex;flex-direction:column;gap:20px">
+<p style="font-size:24px;color:#56627a;font-weight:600;letter-spacing:2px;text-transform:uppercase">Measured: census of ee0ed0e5, empty store, 2026-10-30</p>
+<h2 style="font-family:'Bricolage Grotesque','Helvetica Neue',Arial,sans-serif;font-size:56px;font-weight:500;line-height:1.15">One stage, propose, takes 190 of the 239 s</h2>
+<table style="font-size:24px;color:#0b1a2e">
 <tr><th style="width:27%;text-align:left;font-weight:600">Stage</th><th style="width:8%;text-align:left;font-weight:600">Runs</th><th style="width:12%;text-align:left;font-weight:600">Elapsed</th><th style="width:53%;text-align:left;font-weight:600">What a run reads</th></tr>
 <tr><td>propose: the slice</td><td>1</td><td>133.3 s</td><td>the slice: 5 functions, 30 MB of syntax with its 21 imported modules</td></tr>
 <tr><td>propose: imported modules</td><td>27</td><td>56.5 s</td><td>one imported module, so that the slice may rely on what TScert proves of it</td></tr>
@@ -9,7 +9,7 @@
 <tr><td>plan</td><td>16</td><td>11.0 s</td><td>the slice's syntax and its list of certified imports</td></tr>
 <tr><td>search</td><td>1</td><td>7.5 s</td><td>the proof search, which ends in the refusal</td></tr>
 <tr><td>lower</td><td>22</td><td>3.0 s</td><td>the control-flow graphs of the slice and the modules</td></tr>
-</table><ul style="font-size:24px;color:#1d2422;line-height:1.36">
+</table><ul style="font-size:24px;color:#0b1a2e;line-height:1.36">
 <li>The 6 extra module proposals and 14 of the 16 plans come from import rounds (slide “Import rounds”). Outcome, unchanged by everything in this deck: refused, “closure signature claim is outside the source annotation”, at one closure of lowerFile.</li>
 <li>In the census of the earlier commit 5dd180f, lowerFile and six functions calling it did not finish within the census's 1200 s limit for one check; at ee0ed0e5 lowerFile finishes in 239 s.</li>
 </ul>

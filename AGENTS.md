@@ -514,7 +514,13 @@ increasing trust silently.
   ([semantic-diff.yml](.github/workflows/semantic-diff.yml)).
 - Presentations: record pages and deep-dive decks share one style, and a
   deck is written for a reader with zero context and reaches the owner only
-  after a review against the sources ([STYLE.md](docs/STYLE.md)).
+  after a review against the sources ([STYLE.md](docs/STYLE.md)). On a pull
+  request that changes a deck, CI builds it, fails when its `project/`
+  differs from what `deck.mts` builds or a slide passes its margins, and
+  publishes its page with what changed since its approved version (its
+  header's `SINCE=`) marked, in a comment that mentions the owner; the
+  owner's approval moves `SINCE=` to the approved commit
+  ([semantic-diff.yml](.github/workflows/semantic-diff.yml)).
 - A record uses only the [glossary](docs/GLOSSARY.md)'s terms, plain words
   and the terms of TypeScript and the code, explaining any other term where
   it first appears; before a push, any deep dive the range calls for is
