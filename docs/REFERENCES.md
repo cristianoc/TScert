@@ -719,3 +719,17 @@ programming language.* CADE-28, LNCS 12699, pp. 625–635, Springer, 2021.
 **Used as** the authority: the model, the rules, their soundness proofs and
 the checker that consumes producer evidence.
 **Discussed in** [DESIGN: what "verified" means](DESIGN.md#what-verified-means).
+
+### PyTorch tensor operations
+
+PyTorch contributors. *PyTorch 2.15 documentation*: [broadcasting](https://docs.pytorch.org/docs/2.15/notes/broadcasting.html),
+[squeeze](https://docs.pytorch.org/docs/2.15/generated/torch.squeeze.html),
+[square](https://docs.pytorch.org/docs/2.15/generated/torch.square.html), and
+[mean](https://docs.pytorch.org/docs/2.15/generated/torch.mean.html).
+
+**Used for** the Python demo's assumed native rank contracts: broadcasting
+rank, removal of singleton dimensions, rank-preserving elementwise square,
+scalar reduction and metadata preservation of the out-of-place calls.
+These contracts are reviewed assumptions, with concrete regression evidence;
+they are not theorems about PyTorch's implementation.
+**Discussed in** [the Python demo: tensor rank contracts](../demo/python/README.md#tensor-rank-contracts).

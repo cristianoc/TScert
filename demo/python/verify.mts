@@ -17,6 +17,7 @@ import { readDiagnostic } from "../../tools/diagnostic.mts";
 import { presentObligation } from "../../tools/diagnostic-view.mts";
 import type { Ast } from "../../tools/fragment.mts";
 import { Lowering, readNode, Unsupported } from "./lower.mts";
+import { TensorLowering, tensorObligation } from "./tensors.mts";
 
 const here = import.meta.dirname;
 
@@ -30,11 +31,11 @@ function run(executable: string, args: string[]): Run {
 /** A unit's refusal as a reader of the Python file wants it: the verifier's
  * first line, the obligation it names in source terms, and the Python line
  * at its span. The verifier's full diagnostic stays in `search.log`. */
-function readable(detail: string, source: string): string {
+function readable(detail: string, source: string, tensors: boolean): string {
   const [first = ""] = detail.split("\n");
   const out = [first];
   const record = readDiagnostic(detail);
-  const summary = record && presentObligation(record, source).summary;
+  const summary = record && ((tensors ? tensorObligation(record, source) : null) ?? presentObligation(record, source).summary);
   if (summary) out.push(`obligation: ${summary}`);
   const at = /at \[(\d+),(\d+)\)/.exec(first);
   if (at) {
@@ -60,7 +61,7 @@ type Report = {
   units?: { unit: string; status: string; detail: string }[];
 };
 
-function verify(file: string): Report {
+function verify(file: string, tensors: boolean): Report {
   const artifacts = mkdtempSync(join(tmpdir(), "tscert-python-"));
   const bytes = readFileSync(file);
   const snapshot = join(artifacts, "source.py");
@@ -72,7 +73,8 @@ function verify(file: string): Report {
   let fragment: Ast;
   try {
     const sha = createHash("sha256").update(bytes).digest("hex");
-    fragment = new Lowering(bytes.toString("utf8")).module(tree, resolve(file), sha);
+    const front = tensors ? new TensorLowering(bytes.toString("utf8")) : new Lowering(bytes.toString("utf8"));
+    fragment = front.module(tree, resolve(file), sha);
   } catch (error) {
     if (error instanceof Unsupported) return { status: "unsupported", artifacts, detail: error.message };
     throw error;
@@ -113,19 +115,21 @@ function verify(file: string): Report {
     if ("accepted" in value && value.accepted === true) return { unit: value.unit, status: "verified", detail: "" };
     const own = "refusal" in value && typeof value.refusal === "string" ? value.refusal : "";
     return { unit: value.unit, status: "unverified", 
-      detail: readable(`reject: ${searchRefusals.get(value.unit) ?? own}`, bytes.toString("utf8")) };
+      detail: readable(`reject: ${searchRefusals.get(value.unit) ?? own}`, bytes.toString("utf8"), tensors) };
   });
   if (units.length !== fragment.functions.length || new Set(units.map((u) => u.unit)).size !== units.length ||
       (units.every((u) => u.status === "verified") && checked.status !== 0)) return { status: "error", artifacts, detail: refusal(checked, "reject: ") };
   return { status: units.every((u) => u.status === "verified") ? "verified" : "unverified", artifacts, units };
 }
 
-const [file] = process.argv.slice(2);
-if (file === undefined) {
-  process.stderr.write("usage: node demo/python/verify.mts <file.py>\n");
+const args = process.argv.slice(2);
+const tensors = args[0] === "--tensors";
+const [file, ...extra] = tensors ? args.slice(1) : args;
+if (file === undefined || extra.length > 0) {
+  process.stderr.write("usage: node demo/python/verify.mts [--tensors] <file.py>\n");
   process.exit(2);
 }
-const report = verify(file);
+const report = verify(file, tensors);
 process.stdout.write(`${report.status}: ${file}\n`);
 for (const u of report.units ?? []) {
   process.stdout.write(`  ${u.status} ${u.unit}\n`);

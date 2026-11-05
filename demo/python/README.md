@@ -1,4 +1,4 @@
-# Python aliasing demo
+# Python proof-checking demo
 
 The same proof checker can expose a Python bug accepted by five Python type
 checkers: a dictionary write through an alias invalidates an earlier type
@@ -6,7 +6,121 @@ check. The demo translates a restricted Python subset into TScert's
 [Fragment](../../tools/fragment.mts). Its OCaml producer and Lean verifier
 check that program using the existing typing rules.
 
-## The example
+## Tensor rank contracts
+
+The tensor mode extends the existing [external-value contracts](../../docs/SOURCE-CONTRACTS.md#modeling-a-library)
+and readonly record types. Native operators are imported callable contracts;
+the OCaml producer selects their overloads and Lean checks each application
+and the function's result. The proof checker has no tensor-specific rule.
+
+A common batch-size-one failure is [`batch_squeeze.py`](examples/tensors/batch_squeeze.py):
+
+```python
+from rank_contracts import Column, Vector
+
+def predict_vector(predictions: Column) -> Vector:
+    return predictions.squeeze()
+```
+
+`Column` states rank 2 with last dimension 1; `Vector` states rank 1.
+With input shape `[1, 1]`, `squeeze()` removes both singleton axes and
+returns a scalar. [`fixed_squeeze.py`](examples/tensors/fixed_squeeze.py)
+uses `squeeze(-1)`, which removes the last axis and preserves the batch axis.
+The contracts follow [PyTorch's documented operations](../../docs/REFERENCES.md#pytorch-tensor-operations).
+
+After `make build`, these commands need Python's parser but no PyTorch installation:
+
+```sh
+node demo/python/verify.mts --tensors demo/python/examples/tensors/batch_squeeze.py
+node demo/python/verify.mts --tensors demo/python/examples/tensors/fixed_squeeze.py
+node demo/python/test-tensors.mts
+```
+
+The first command exits 1 with the actual return obligation:
+
+```text
+unverified predict_vector@48
+  obligation: predictions.squeeze() may return rank 0 (scalar) or rank 1 (vector). This return requires rank 1 (vector).
+  line 5: return predictions.squeeze()
+```
+
+The repair exits 0 and reports `verified`. The rank explanation is read from
+the checker's diagnostic table; it does not decide the verdict.
+
+| Source | Contract and result | TScert |
+| --- | --- | --- |
+| `batch_squeeze.py` | `Column` → `Vector`; `squeeze()` may return a scalar | `unverified` |
+| `fixed_squeeze.py` | `Column` → `Vector`; `squeeze(-1)` preserves the batch axis | `verified` |
+| `unchecked_squeeze.py` | `Matrix` → `Vector`; its last dimension need not be 1 | `unverified` |
+| `bad_errors.py` | `Column - Vector` has rank 2; a per-example `Vector` is required | `unverified` |
+| `fixed_errors.py` | squeeze the column's last axis before subtracting | `verified` |
+| `scalar_loss.py`, `fixed_loss.py` | both expressions return `Scalar` | both `verified` |
+
+The broadcasting counterexample uses predictions `[[1.0], [2.0]]` and
+targets `[1.0, 2.0]`. The predictions match the targets, but the broadcast
+subtraction yields a `[2, 2]` error matrix and loss `0.5`; the repaired loss
+is `0.0`. A scalar return contract alone permits both results. The
+per-example result contract exposes the wrong rank before reduction.
+
+### Native contract and proof scope
+
+[`rank_contracts.py`](examples/tensors/rank_contracts.py) gives Python callers
+`Annotated[Tensor, …]` aliases: `Scalar` (rank 0), `Vector` (rank 1), `Matrix`
+(rank 2), and `Column` (rank 2, last dimension 1). These are rank contracts;
+they state no equality between different tensors' batch lengths. Other tensor
+annotations, general imports, in-place operations, output parameters and
+other methods are refused. Function bodies contain return statements only;
+tensor truthiness and control flow are outside this subset. The imported contract names cannot be rebound.
+
+The model projects tensor metadata onto readonly fields. `ndim` is the
+rank; the internal `%lastDimension%` field is the last extent. The external
+operator contracts in `tensors.mts` state, on normal return:
+
+- column-minus-vector returns a matrix; vector-minus-vector returns a vector;
+- `square()` preserves rank 1 or 2;
+- column `squeeze()` returns a scalar or vector; column `squeeze(-1)` returns a vector;
+- whole-tensor `mean()` returns a scalar;
+- these out-of-place calls preserve the inputs' represented metadata.
+
+These contracts assume exact ordinary CPU strided PyTorch tensors, standard
+operators, sequential execution and no custom dispatch or hooks. The runtime
+controls exercise float32 tensors without autograd. Squeezed tensors share
+numerical storage; the model describes metadata, and the source subset
+admits no tensor data mutation. The contracts and Python projection are
+reviewed assumptions. Lean proves the translated program safe relative to
+them. Tensor dimensions, dtype, device compatibility, numerical values,
+gradients, exception freedom and correctness of the learning objective have
+no proved contract in this demo.
+
+### Tensor validation and comparison
+
+With PyTorch 2.15.0 installed:
+
+```sh
+python -B demo/python/tensor_runtime.py
+```
+
+The runtime executes the source fixtures and checks four batch sizes
+(including 0 and 1) and sixteen pairs of tensor lengths against the assumed
+operator rank contracts. It checks input values and metadata remain unchanged.
+The optional model tests also forge a producer claim that `squeeze()` returns `Vector`: evidence
+search and final checking refuse it.
+
+Measured on 2026-11-05, the same five pinned Python checker releases listed
+below accept all six tensor comparison fixtures, including the three rank
+bugs; each rejects an ordinary non-Tensor return. They interpret the
+`Annotated` aliases as `Tensor` and do not enforce this rank metadata.
+Reproduce with `uv` and real PyTorch declarations available to every checker:
+
+```sh
+uv run --no-project --python 3.13 --with torch==2.15.0 --with mypy==2.4.1 --with pyright==1.1.414 --with basedpyright==1.40.2 --with ty==0.0.98 --with pyrefly==1.4.1 python demo/python/compare-tensors.py
+```
+
+The printed temporary directory retains commands, versions, source hashes
+and complete outputs. This comparison concerns the listed releases and the
+rank contract; it is no claim about shape-aware runtime checkers.
+
+## Mutable aliasing
 
 [`aliased_arguments.py`](examples/aliased_arguments.py):
 
@@ -68,7 +182,7 @@ The first two verdicts are `unverified` (exit 1); all three repair files are
 with empty strings, astral Unicode and large integers, string and integer
 replacements, and same and distinct parameter objects.
 `test.mts` checks these verdicts, the original primitive examples, source
-restrictions and diagnostic locations across Unicode and CRLF. CI runs it.
+restrictions and diagnostic locations across Unicode and CRLF.
 
 The verifier command retains a source snapshot, Python syntax tree,
 `fragment.json`, `flow.json`, `claims.json`, `evidence.json` and the search
