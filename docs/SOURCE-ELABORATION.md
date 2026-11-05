@@ -3117,7 +3117,7 @@ A module-level `let x` that the module does not export,
 in no form (no `export let`, no `export { x }` or alias of it), is an
 [early binding](#lexical-bindings-before-initialization) of the module's
 scope, whatever its mentions: a **module cell**. So is a module `const x: C`
-of one name, annotated, initialized by an object literal and not exported,
+of one name, annotated, initialized by `{}` and not exported,
 that a write `x[k] = e` at a key no literal spells may add a key to
 (`keyAddedConstant`): a `const` differs from a `let` only in assignment,
 which TypeScript refuses for it, and both have the same dead zone. Where the

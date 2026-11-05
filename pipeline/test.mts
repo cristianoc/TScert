@@ -248,6 +248,20 @@ control(async (): Promise<void> => {
 });
 
 control(async (): Promise<void> => {
+  // A module's own object is decided over every mention of it: a function a
+  // census omits, read at its signature, still lets the cache escape, by a
+  // parameter default or by its body, and the cache's write is refused with
+  // the function omitted as without.
+  for (const file of ["invalid-module-cache-omitted-default", "invalid-module-cache-omitted-let"]) {
+    using outcome = checkSource(join(here, "examples", `${file}.ts`), undefined, false, undefined, true,
+      { omitted: ["leak"], select: null });
+    assert.ok(outcome.status === "unverified", `${file}: ${outcome.status}`);
+    assert.match(outcome.detail, /source refusal at \[\d+,\d+\): a write at a key known only at run time may add the key to an object another reference holds/);
+  }
+  process.stdout.write("module cache: escapes in omitted code keep the cache's write refused\n");
+});
+
+control(async (): Promise<void> => {
   // A `continue outer` from an inner loop skips the rest of the outer body,
   // the assignment of a number to `kind` after the inner loop: a claim that
   // `kind` is a number at the return, which holds only if the `continue`

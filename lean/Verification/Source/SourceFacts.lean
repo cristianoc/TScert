@@ -460,10 +460,10 @@ def growSites (classes : List String) (ss : List Fragment.Stmt) (module : Bool :
 
 /-! ### Module-owned objects
 
-A module cell whose fresh object no reference but the cell reaches: every
-mention of it, in the module's initialization, in every module function and in
-every closure, is the receiver of a member read, an index read, a write or a
-key test, at a key that runs no code. A closure holds the cell, never the
+A module cell whose object, created empty, no reference but the cell
+reaches: every mention of it, in the module's initialization, in every module
+function and in every closure, is the receiver of a member read, an index read
+or a write, at a key that runs no code. A closure holds the cell, never the
 object, so its mentions are traversed like the others. A key-adding write on
 such a cell is the copy of its object written to the cell, the cell read again
 after the write's operands (PROGRAM-TYPING.md, "Key-adding writes"). -/
@@ -484,17 +484,15 @@ partial def moduleEscapes (n : String) : Fragment.Expr → Bool
   | .write _ _ (.var ..) rhs => moduleEscapes n rhs
   | .indexWrite _ _ (.var _ m) key rhs =>
     (m == n && !quietKey key) || moduleEscapes n key || moduleEscapes n rhs
-  | .inKeys _ key (.var ..) => moduleEscapes n key
-  | .shapeTest _ (.hasKey _) _ (.var ..) => false
-  | .tagMember _ _ _ _ _ (.var ..) => false
   | .lambda _ _ _ _ ds _ _ _ _ _ b => ds.any (fun d => moduleEscapes n d.2) || moduleEscapes n b
   | .ctor _ lam statics => moduleEscapes n lam || statics.any (fun s => moduleEscapes n s.2)
   | .block _ ss => ss.any (moduleStmtEscapes n)
   -- An update, a logical assignment or a destructuring of a member, and the
   -- forms holding a value for a later part, count wherever they mention it.
   | e@(.optional ..) | e@(.withObject ..) | e@(.withValue ..) | e@(.arrayAssign ..)
-  | e@(.assign ..) | e@(.nullishAssign ..) | e@(.update ..) | e@(.logicalAssign ..)
-  | e@(.objectAssign ..) => e.freeNames.contains n
+  | e@(.update ..) | e@(.logicalAssign ..) | e@(.objectAssign ..) => e.freeNames.contains n
+  -- An assignment of another binding holds the right side's value.
+  | .assign _ m _ rhs | .nullishAssign _ m _ rhs => m == n || moduleEscapes n rhs
   | .not _ e | .unary _ _ e | .cast _ _ e | .read _ _ e | .shapeTest _ _ _ e | .tagMember _ _ _ _ _ e =>
     moduleEscapes n e
   | .equality _ _ a b | .logical _ _ a b | .coalesce _ a b | .singletonTest _ _ _ _ a b
@@ -524,20 +522,21 @@ partial def moduleStmtEscapes (n : String) : Fragment.Stmt → Bool
   | .brk .. | .cont .. => false
 end
 
-/-- An object literal of data properties at string keys, none `__proto__`
-and no spread: an ordinary object whose own properties a copy at string keys
-holds all of. -/
-def stringKeyedLiteral : Fragment.Expr → Bool
-  | .alloc _ names _ => names.all fun | .str k => k != "__proto__" | .sym _ => false
+/-- The empty object literal: an ordinary object of the default prototype,
+owning no key. -/
+def emptyLiteral : Fragment.Expr → Bool
+  | .alloc _ [] [] => true
   | _ => false
 
 /-- The module cells whose objects the module owns: each a module cell of the
-initialization `init` holding a literal of string-keyed data properties
-(`stringKeyedLiteral`), no mention of which, in `init` or a module function's
-body (`bodies`), lets it escape (`moduleEscapes`). -/
-def ownedModuleCells (init : List Fragment.Stmt) (bodies : List (List Fragment.Stmt)) : List String :=
+initialization `init` holding the empty literal (`emptyLiteral`), that no code
+the lowering leaves out mentions (`omitted`), and no mention of which, in
+`init` or a module function's body (`bodies`), lets it escape
+(`moduleEscapes`). -/
+def ownedModuleCells (init : List Fragment.Stmt) (bodies : List (List Fragment.Stmt))
+    (omitted : List String) : List String :=
   let cells := init.flatMap fun
-    | .mutables _ bs => (bs.filter fun b => b.early && stringKeyedLiteral b.init).map (·.name)
+    | .mutables _ bs => (bs.filter fun b => b.early && emptyLiteral b.init && !omitted.contains b.name).map (·.name)
     | _ => []
   cells.filter fun n => !(init ++ bodies.flatten).any (moduleStmtEscapes n)
 

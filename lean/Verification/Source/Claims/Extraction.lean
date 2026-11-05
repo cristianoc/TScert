@@ -209,7 +209,7 @@ def fileFront (ast claims : Json) (fileKey : String)
     initUnit.map (fun (f, tps, c) => (f, tps, some c))
   return ⟨ast, d, functionJsons, init, generics, unitBinders, initBinders, classNames, freshConstructors,
     moduleFunctions, moduleConstants, classSelves, units, qualified.map (·.1), initOrder,
-    SourceExtraction.ownedModuleCells init (all.map (·.1.body))⟩
+    SourceExtraction.ownedModuleCells init (all.map (·.1.body)) (← Fragment.decodeOmittedMentions ast)⟩
 
 /-- One unit's plan, extracted from the front over the store `T`. -/
 def extractMember (fr : Front) (T : EquationStore.State)

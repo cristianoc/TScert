@@ -1,6 +1,5 @@
-// A module's own dictionary written at a `string` key: the key may be
-// `__proto__`, whose setter the copy at string keys does not run, so the
-// write is refused.
+// A module's own dictionary written at a `string` key: its type states no
+// finite key set, so its key-adding write is refused.
 const cache: Record<string, number[]> = {};
 
 export function rules(name: string): number[] {

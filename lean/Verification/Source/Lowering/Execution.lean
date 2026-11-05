@@ -339,6 +339,10 @@ copy takes: the copy of such an object holds all of it. -/
   -- symbol key and no `__proto__` is ever written: the copy then holds all
   -- of it.
   if module.isSome then
+    -- The object's type states its finite key set: object clauses stating
+    -- fields, no index.
+    if !(PositiveRules.expand G X).all (fun c => match c with | .refs .. => true | _ => false) then
+      refuse "a key-adding write on a module's own object whose type states no finite key set: the module's own objects are records of named keys"
     let symbolKey := match static, key with
       | some (.sym _), _ => true
       | none, some (.var _ keyName) => (valueSlot scope keyName).any fun k =>
@@ -539,14 +543,6 @@ written to the cell at its contract, and the right side's value. -/
     return ← emitAt original.span (.var k)
       (.tagBind (.strEq "__proto__") (branchMapping width none owns) (branchMapping width none copied))
       Γ (Γ[k]?.getD []) "tag-dispatch" (scope := scope)
-  -- A write in place on a module cell's own object writes the object its
-  -- receiver read, which a right side running code may have replaced.
-  match original with
-  | .write _ _ (.var _ n) rhs | .indexWrite _ _ (.var _ n) _ rhs =>
-    if (← moduleOwnedCell scope n).isSome && !quietKey rhs then
-      throw (locatedRefusal (← table) original.span .expressionClaim
-        "a write of a key a module's own object states, whose right side may run code: the code may replace the object the receiver read")
-  | _ => pure ()
   if let .objectAssign _ target _ := original then
     match target with
     | .alloc .. | .build .. => pure ()
