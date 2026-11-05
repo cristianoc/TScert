@@ -23,7 +23,10 @@ set_option maxHeartbeats 1000000
   let B ← match b.annot with | none => pure A | some ty => lower (Fragment.translate ty)
   let fresh := match b.init with | .alloc .. | .arrayLit .. => true | _ => false
   let bound : ScopeBinding Tree := { source := ⟨b.name,some pos⟩, fresh := fresh }
-  recordConditionConstant b.name b.init
+  -- The condition as its tests run it: an equality with a claimed singleton
+  -- is that singleton's tag test (`comparisonsExpr`), which
+  -- `constantImplications` narrows by as the test's own edge does.
+  recordConditionConstant b.name (← try comparisonsExpr fc b.init catch _ => pure b.init)
   let next ← after (bound::scope)
   -- A function literal reading the constant: its self entry
   -- (SOURCE-ELABORATION.md, "Recursive constants").

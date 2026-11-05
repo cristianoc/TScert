@@ -1,11 +1,10 @@
 // Pretext (github.com/chenglou/pretext at 0d102a5c, src/, census by unit,
 // with the rewrites of issue #94): measurement.ts#getSegmentFit.
-// Refusal: reject: source incoming edge obligation: the edge does not
-// establish the claims at this point (`from` is "a" | "b", "a" required).
 // A constant holding a comparison, tested as the left operand of `&&`: the
-// branch on the constant narrows `from` on its edge, but the nodes of the
-// right operand are claimed at the statement's entry, where `from` is
-// "a" | "b". The constant alone, or as the right operand, narrows.
+// branch on the constant narrows `from` where it is `true`, and the right
+// operand's nodes run in that narrowing, so the call in the arm reads `from`
+// at "a". The constant's condition is read as its tests run it, the
+// equality with the literal a tag test of `from`.
 function onlyA(from: "a"): number {
   return from.length;
 }
