@@ -3,7 +3,7 @@
  * line per node: its label, its term, and where control goes next. A record's
  * author starts from this output when writing a `Lowering` block.
  *
- *   node tools/lowering-dump.mts <file.ts> [function]
+ *   node dev/lowering-dump.mts <file.ts> [function]
  *
  * A function the pipeline refuses before the producer's claims exist has no
  * graph; the command then prints the refusal. */

@@ -514,7 +514,7 @@ function objectMember(value: Json | undefined, key: "files" | "found" | "file" |
 
 /** The argument a flag names, or the usage error where it names none. */
 function present(argument: string | undefined): string {
-  if (argument === undefined) throw new Error("usage: unchecked.mts [--list] [--project DIR --expect]");
+  if (argument === undefined) throw new Error("usage: unchecked.mts [--list] [--project DIR --expect] [--contracts]");
   return argument;
 }
 

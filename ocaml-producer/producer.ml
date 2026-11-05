@@ -5,7 +5,12 @@ let main () =
   match Array.to_list Sys.argv with
   | [_;"--explain";file;flow_file] ->
     let state = Proposal_diagnostics.create ~explaining:true () in
-    (try ignore (file |> Json.read |> Source.decode |> Proposal.infer ~state (List.map Flow.decode (Json.list (Json.read flow_file)))) with Json.Error _ -> ());
+    (* The documents are read and decoded first: one it cannot read refuses
+       the run. A refusal of the inference ends it, the explanations met
+       before it printed. *)
+    let program = file |> Json.read |> Source.decode in
+    let flows = List.map Flow.decode (Json.list (Json.read flow_file)) in
+    (try ignore (Proposal.infer ~state flows program) with Json.Error _ -> ());
     print_endline (Json.encode (Json.Array (List.rev_map (fun (pos,reason) ->
       Json.Object ["pos",pos;"reason",Json.String reason]) !(state.Proposal_diagnostics.explanations))))
   | _ ->
