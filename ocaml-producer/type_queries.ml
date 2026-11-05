@@ -669,8 +669,15 @@ let key_singletons = function
       | NumLit bits -> not (Float.is_nan (Int64.float_of_bits bits)) && number_key bits <> None
       | _ -> false) ks -> Some ks
   | _ -> None
+(* A key's singletons beside their primitive (`string | "zh-hans"`, a
+   `let` TypeScript widens after a literal write) are that primitive's. *)
+let absorbed_key = function
+  | Atoms (_::_::_ as ks) when List.mem Str ks || List.mem Num ks ->
+    Atoms (List.filter (function StrLit _ -> not (List.mem Str ks) | NumLit _ -> not (List.mem Num ks)
+      | _ -> true) ks)
+  | key -> key
 let rec index_type bounds declarations seen receiver key =
-  let key = literal_key declarations key in
+  let key = absorbed_key (literal_key declarations key) in
   match key_singletons key with
   | Some ks -> unions (List.map (fun k -> index_type bounds declarations seen receiver (Atoms [k])) ks)
   | None -> match receiver with
