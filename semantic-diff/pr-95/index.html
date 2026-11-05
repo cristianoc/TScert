@@ -1,0 +1,360 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Commit Records</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Code+Pro:wght@400;600&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=STIX+Two+Text:ital,wght@0,400;0,600;1,400&display=swap">
+<style>
+:root { --bg:#fbfcfd; --surface:#ffffff; --ink:#0b1a2e; --muted:#56627a; --rule:#d5dce6; --accent:#8a6410; --code-bg:#eef2f7; --math-bg:#f2f4f8; --ok:#2f6b47; --ok-bg:#e2efe4; --principled:#a0521a; --principled-bg:#f7e6d6; --gap:#6b6f78; --gap-bg:#ecebe6; --neutral:#2c4f7c; --neutral-bg:#e6ebf2; --trust:#7c2f4a; --trust-bg:#f2e1e7; --neg:#9b3524; --neg-bg:#f5e1da; --run:#7a5414; --run-bg:#f3e7cc; --brand-ink:#0b1a2e; --brand-gold:#b8840f;
+  --display:"Bricolage Grotesque","Helvetica Neue",Arial,sans-serif; --body:"Inter","Helvetica Neue",Arial,sans-serif; --mono:"Source Code Pro",Menlo,Consolas,monospace; --math:"STIX Two Text","STIX Two Math","STIXGeneral","Cambria Math","Apple Symbols",Georgia,serif; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#0e1626; --surface:#16213a; --ink:#efe7d4; --muted:#9aa3b5; --rule:#2a3756; --accent:#e0ac4a; --code-bg:#131d33; --math-bg:#1a2540; --ok:#7fd0a2; --ok-bg:#17322a; --principled:#f0a868; --principled-bg:#3a2a1c; --gap:#9aa3b5; --gap-bg:#1c2639; --neutral:#8fb4e8; --neutral-bg:#1b2b49; --trust:#e79bb6; --trust-bg:#3a2131; --neg:#f0907d; --neg-bg:#3a1f22; --run:#e0ac4a; --run-bg:#2e2a24; --brand-ink:#efe7d4; --brand-gold:#e0ac4a; color-scheme:dark } }
+:root[data-theme="dark"] { --bg:#0e1626; --surface:#16213a; --ink:#efe7d4; --muted:#9aa3b5; --rule:#2a3756; --accent:#e0ac4a; --code-bg:#131d33; --math-bg:#1a2540; --ok:#7fd0a2; --ok-bg:#17322a; --principled:#f0a868; --principled-bg:#3a2a1c; --gap:#9aa3b5; --gap-bg:#1c2639; --neutral:#8fb4e8; --neutral-bg:#1b2b49; --trust:#e79bb6; --trust-bg:#3a2131; --neg:#f0907d; --neg-bg:#3a1f22; --run:#e0ac4a; --run-bg:#2e2a24; --brand-ink:#efe7d4; --brand-gold:#e0ac4a; color-scheme:dark }
+* { box-sizing:border-box } body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.6 var(--body) }
+main { max-width:900px; margin:0 auto; padding-inline:20px; padding-block:32px 64px; display:flex; flex-direction:column; gap:22px }
+h1 { font:600 32px/1.15 var(--display); margin:0 } h2 { font:600 22px/1.2 var(--display); margin:12px 0 8px; padding-top:12px; border-top:2px solid var(--ink) }
+h3 { font:600 19px/1.3 var(--display); margin:2px 0 0; text-wrap:balance }
+h4 { font:600 11px/1 var(--body); letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin:12px 0 4px }
+p { margin:2px 0; max-width:72ch } .lede { color:var(--muted) }
+code { font:13px/1.5 var(--mono); background:var(--code-bg); padding:1px 4px; border-radius:3px }
+pre { margin:4px 0; padding:12px 14px; border-radius:6px; overflow-x:auto }
+pre.code { font:13px/1.55 var(--mono); background:var(--code-bg) }
+.rules { display:flex; flex-direction:column; gap:14px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:14px 18px; overflow-x:auto; font:16px/1.6 var(--math) }
+.rules sub, .rules sup { font-size:.72em; line-height:0 }
+.formulas { display:flex; flex-direction:column; gap:4px }
+.formulas .row { display:flex; flex-wrap:wrap; gap:4px 28px } .formulas .row.cont { padding-left:2em }
+.infer { display:flex; align-items:center; gap:12px }
+.frac { display:inline-flex; flex-direction:column; align-items:center; min-width:0 }
+.premises { display:flex; flex-wrap:wrap; justify-content:center; gap:4px 26px; padding:0 6px 3px }
+.bar { align-self:stretch; border-top:1.5px solid var(--ink) }
+.conclusion { padding:3px 6px 0; text-align:center }
+.rule-name { font:15px/1 var(--math); font-variant:small-caps; letter-spacing:.02em; color:var(--accent); white-space:nowrap }
+.card { background:var(--surface); border:1px solid var(--rule); border-radius:8px; padding:20px 22px; display:flex; flex-direction:column; gap:6px; min-width:0 }
+.card > header { display:flex; justify-content:space-between; gap:12px; align-items:flex-start }
+.sha { font:12px/1.4 var(--mono); color:var(--muted) }
+.pill { font:600 11px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; padding:6px 9px; border-radius:99px; white-space:nowrap }
+.pill.ok { color:var(--ok); background:var(--ok-bg) } .pill.principled { color:var(--principled); background:var(--principled-bg) }
+.pill.gap { color:var(--gap); background:var(--gap-bg) } .pill.neutral { color:var(--neutral); background:var(--neutral-bg) }
+.units { display:flex; flex-wrap:wrap; gap:6px } .units span { font:12px/1 var(--mono); border:1px solid var(--rule); border-radius:4px; padding:5px 7px }
+dl.facts { display:grid; grid-template-columns:max-content minmax(0,1fr); gap:6px 16px; margin:12px 0 0; padding-top:12px; border-top:1px solid var(--rule); font-size:13.5px }
+dt { font:600 11px/1.9 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted) }
+dd { margin:0; min-width:0; display:flex; flex-wrap:wrap; gap:5px; align-items:baseline }
+.chip { font:500 12px/1 var(--body); border:1px solid var(--rule); border-radius:4px; padding:4px 7px } .chip.strong { color:var(--accent); border-color:var(--accent) }
+.trust { color:var(--trust); background:var(--trust-bg); padding:2px 6px; border-radius:4px } .none { color:var(--muted) }
+.test { font:12px/1 var(--mono); padding:4px 7px; border-radius:4px }
+.test.pos { color:var(--ok); background:var(--ok-bg) } .test.pos::before { content:"✓ " }
+.test.neg { color:var(--neg); background:var(--neg-bg) } .test.neg::before { content:"✗ " }
+.test.forged { color:var(--principled); background:var(--principled-bg) } .test.forged::before { content:"forged " }
+details { margin-top:8px; font-size:13px; color:var(--muted) } summary { cursor:pointer }
+.table-wrap { overflow-x:auto; border:1px solid var(--rule); border-radius:8px; background:var(--surface) }
+table { border-collapse:collapse; width:100%; font-size:13px } th, td { text-align:left; vertical-align:top; padding:8px 10px; border-bottom:1px solid var(--rule) }
+th { font:600 11px/1.2 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); white-space:nowrap } td.num { font-variant-numeric:tabular-nums }
+h4.change { display:flex; align-items:center; gap:8px; text-transform:none; letter-spacing:0; font:600 14px/1.3 var(--body); color:var(--ink); margin:16px 0 6px }
+h4.change .target { font-weight:400; color:var(--muted) }
+.act { font:600 10.5px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; padding:4px 7px; border-radius:4px }
+.act.added { color:var(--ok); background:var(--ok-bg) } .act.removed { color:var(--neg); background:var(--neg-bg) }
+.act.modified, .act.replaced { color:var(--principled); background:var(--principled-bg) }
+.versions { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:10px }
+.versions figure { margin:0; min-width:0 } .versions figcaption { font:600 11px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); margin:0 0 4px }
+.versions .rules { height:calc(100% - 18px); box-sizing:border-box }
+pre.code .ln { display:block; white-space:pre } pre.code .ln.add { background:var(--ok-bg) } pre.code .ln.del { background:var(--neg-bg) }
+.tk-k { color:#7a3b8c } .tk-s { color:#2f6b47 } .tk-n { color:#a35a12 } .tk-c { color:var(--muted); font-style:italic } .tk-t { color:#2c4f7c }
+.prose p { margin:4px 0 }
+ul.effect, ul.summary { margin:4px 0; padding-left:20px } ul.effect li, ul.summary li { margin:3px 0 } ul.summary ul { padding-left:18px; color:var(--muted) }
+ul.effect .arrow { color:var(--accent); font-weight:600 }
+ul.effect details { margin:0; color:inherit; font-size:inherit } ul.effect summary { list-style-position:outside }
+ul.effect .kind { font-size:11px; text-transform:uppercase; letter-spacing:.04em; padding:1px 6px; border-radius:4px; background:var(--chip, #eee) }
+ul.effect .kind.negative { color:#8a3b12 } ul.effect .kind.positive { color:#22663a } ul.effect .kind.gap { color:#7a5b00 }
+ul.effect .was.unsound { color:#b3261e; font-weight:600 } ul.effect .now { font-weight:500 } ul.effect .why { color:var(--muted) }
+ul.effect mark { background:#ffe08a; color:inherit; border-radius:2px }
+@media (max-width:720px) { .versions { grid-template-columns:minmax(0,1fr) } }
+.lowering { display:flex; flex-direction:column; gap:6px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:12px 16px; overflow-x:auto }
+.lowering .map, .lowering .cond, .lowering .result { display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 10px }
+.lowering .map:not(:has(.sem)) { flex-direction:column; align-items:stretch; gap:4px }
+.lowering .result { display:grid; grid-template-columns:auto minmax(0,1fr); align-items:baseline; gap:2px 10px; padding-left:1em } .lowering .result .note { grid-column:2 }
+.m-intr { font:14px/1.5 var(--mono); color:#2c4f7c } .m-lit { font:13px/1.5 var(--mono); color:#7a3b8c }
+.lowering code.src { font:13px/1.5 var(--mono); background:var(--surface); border:1px solid var(--rule); padding:2px 6px; border-radius:4px }
+.lowering .to { color:var(--accent); font-weight:600; font-size:17px }
+.lowering .tgt { font:16px/1.5 var(--math) } .rules .lowering { background:none; border:0; padding:0 } .lowering .sem code.src { margin:0 2px }
+var { font-style:italic } .m-op { color:#2c4f7c; font-style:normal } .m-con { color:#8f6416; font-style:normal; font-variant:small-caps }
+.m-kw { color:#7a3b8c; font-weight:600; font-style:normal } .m-bind { color:#7a3b8c } .m-rel { color:var(--accent); padding:0 .12em }
+.m-text { font:14px/1.5 var(--body); color:var(--muted) } code.m-code { font:13px/1.5 var(--mono); background:var(--surface); border:1px solid var(--rule); padding:1px 5px; border-radius:4px }
+.refused { color:var(--neg); font-weight:600 }
+.lowering .refused { color:var(--neg); font-weight:600 }
+.lowering .label { font:600 11px/1 var(--body); letter-spacing:.05em; text-transform:uppercase; color:var(--muted); min-width:7em }
+.lowering .cond { padding-left:1.5em } .lowering .note { color:var(--muted); font:italic 13px/1.4 var(--body) }
+a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outline-offset:2px }
+@media (max-width:520px) { dl.facts { grid-template-columns:minmax(0,1fr) } .card > header { flex-direction:column } }</style></head><body><main><header><h1>Commit Records</h1><p class="lede">2 commits, rendered from their records.</p></header>
+<section><h2>Branches</h2><ul class="summary"><li><a href="#g-pr-95"><code>6e24bf79b6dd6dcf66a31b47f290c63084cb16ea..pr-95</code></a><ul><li>2 commits, units 1 gap</li><li>parts: <span class="chip">producer</span> <span class="chip">tests</span> <span class="chip">parser</span> <span class="chip strong">trust</span> <span class="chip">docs</span></li><li>new trust: <span class="trust">the host implements the HTML, DOM and CSSOM interfaces stated for the 2D context, TextMetrics, OffscreenCanvas, the canvas element, Element, document, navigator and getComputedStyle; their values are the host's platform objects, each stated member its interface's own attribute or operation; a context's getters and setters of a string run no code of the program's and change its drawing state alone; typeof of document, navigator and OffscreenCanvas answers &quot;undefined&quot; where the host defines none (a host contract beyond ECMAScript: for owner review)</span></li></ul></li></ul></section>
+<h2 id="g-pr-95"><code>6e24bf79b6dd6dcf66a31b47f290c63084cb16ea..pr-95</code></h2><article class="card" id="c-3b22a3ed6"><header><div><div class="sha">3b22a3ed6 · Cristiano Calcagno · Nov 05, 10:23</div><h3>Read a key of a string and its literals as a string in the producer's index types</h3></div><span class="pill gap">gap</span></header>
+<div class="units"><span>measurement.ts#getWebKitGenericFamilies</span></div>
+<h4 class="change">Why</h4><div class="prose"><p>Pretext's <code>getWebKitGenericFamilies</code> reads a dictionary at a <code>let</code> key that a literal write widened: <code>if (han) tag = 'zh-hans'</code> gives <code>webkitGenericFamilies[tag]</code> a key TypeScript's flow types as <code>string | &quot;zh-hans&quot;</code>. The producer's index type took no key mixing a primitive with its literals and refused the whole module with &quot;unsupported: record index requires a string key&quot;, so no unit of pretext's measurement.ts was checked.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Definition <span class="target">producer: the key of an element read</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-op">key</span>(<var>K</var>) <span class="m-rel">=</span> <var>K</var></span></div></div></div></figure><figure><figcaption>After</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-op">key</span><span class="m-text">(string</span> | <var>s</var>₁ | … | <var>s</var>ₙ) <span class="m-rel">=</span> <span class="m-text">string, each</span> <var>s</var>ᵢ <span class="m-text">a string literal</span></span></div><div class="row"><span><span class="m-op">key</span><span class="m-text">(number</span> | <var>n</var>₁ | … | <var>n</var>ₙ) <span class="m-rel">=</span> <span class="m-text">number, each</span> <var>n</var>ᵢ <span class="m-text">a number literal</span></span></div><div class="row"><span><span class="m-text">(a literal beside its primitive denotes no value the primitive does not)</span></span></div></div></div></figure></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>blocker-pretext-widened-key-read</code> <span class="kind gap">gap</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">gap</span> <span class="why">the read may find a member of Object.prototype</span></summary><pre class="code"><span class="tk-c">// Pretext (github.com/chenglou/pretext at 0d102a5c, src/, census by unit):</span>
+<span class="tk-c">// measurement.ts#getWebKitGenericFamilies.</span>
+<span class="tk-c">// Refusal: search: a read at a key that may name a member every object</span>
+<span class="tk-c">// inherits from `Object.prototype`.</span>
+<span class="tk-c">// A dictionary read at a `let` key a literal write widened, `string |</span>
+<span class="tk-c">// &quot;zh-hans&quot;` as TypeScript's flow types it, then shortened in a loop until</span>
+<span class="tk-c">// the dictionary holds it: the key is any string, so `families[tag]` may</span>
+<span class="tk-c">// find a member of `Object.prototype` (`toString` at the key &quot;toString&quot;).</span>
+<span class="tk-k">export</span> <span class="tk-k">const</span> families: <span class="tk-t">Readonly</span>&lt;<span class="tk-t">Record</span>&lt;string, <span class="tk-k">readonly</span> number[]&gt;&gt; = {
+  <span class="tk-s">&quot;&quot;</span>: [<span class="tk-n">0</span>, <span class="tk-n">1</span>],
+};
+<span class="tk-k">export</span> <span class="tk-k">function</span> row(language: string, han: boolean): <span class="tk-k">readonly</span> number[] {
+  <span class="tk-k">let</span> tag = language.toLowerCase();
+  <span class="tk-k">if</span> (han) tag = <span class="tk-s">&quot;zh-hans&quot;</span>;
+  <span class="tk-k">let</span> found = families[tag];
+  <span class="tk-k">while</span> (found === <span class="tk-k">undefined</span>) {
+    tag = tag.slice(<span class="tk-n">0</span>, <span class="tk-t">Math</span>.max(<span class="tk-n">0</span>, tag.lastIndexOf(<span class="tk-s">&quot;-&quot;</span>)));
+    found = families[tag];
+  }
+  <span class="tk-k">return</span> found;
+}</pre></details></li></ul>
+<h4 class="change">Gap</h4><div class="prose"><p>the read itself is refused, its key any string, which may name a member of <code>Object.prototype</code></p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">producer</span> <span class="chip">tests</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd><span class="test pos">blocker-pretext-widened-key-read</span></dd></dl>
+<details><summary>3 files changed, 30 insertions(+), 1 deletion(-)</summary><pre class="code"> ocaml-producer/type_queries.ml                      |  9 ++++++++-
+ pipeline/cases.mts                                  |  1 +
+ .../examples/blocker-pretext-widened-key-read.ts    | 21 +++++++++++++++++++++</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-f4678f5a6"><header><div><div class="sha">f4678f5a6 · Cristiano Calcagno · Nov 05, 10:27</div><h3>Admit the DOM's 2D context, canvases, document and navigator as pretext measures text</h3></div><span class="pill ok">verified</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>Pretext (chenglou/pretext at 0d102a5c) measures text through a canvas 2D context. Its record type <code>MeasureState</code> holds a <code>CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D</code>, and reading that type reached the DOM library's <code>HTMLCanvasElement</code>, refused with &quot;duplicate field name in a record in lib.dom.d.ts#HTMLCanvasElement&quot;. The globals <code>document</code>, <code>navigator</code> and <code>OffscreenCanvas</code> were refused as &quot;declared in lib.dom.d.ts (library), an origin no reviewed entry admits&quot;, and <code>getComputedStyle</code> as &quot;not in the reviewed overlay of library globals&quot;. The census of pretext's src/ names these refusals for 46 of its 209 functions. Pretext writes the context's <code>font</code>, <code>letterSpacing</code>, <code>lang</code>, <code>fontKerning</code> and <code>textRendering</code>, setters whose effect the model had no way to state: a host object holds no writable field.</p></div>
+<h4 class="change"><span class="act added">added</span>Trust <span class="target">overlay of library types: the DOM's host objects</span></h4><div class="prose"><p>TextMetrics = host &quot;dom:text-metrics&quot; { width, actualBoundingBoxLeft, actualBoundingBoxRight: number } Context = host &quot;dom:canvas-2d&quot; { measureText(text: string) ⇒∅ TextMetrics } Canvas = host &quot;dom:canvas&quot; { getContext(id: &quot;2d&quot;) ⇒∅ Context | null } Element = host &quot;dom:element&quot; { lang: string | undefined } Style = host &quot;dom:computed-style&quot; { width: string } Document = host &quot;dom:document&quot; { documentElement: Element | null; createElement(name: &quot;canvas&quot;) ⇒∅ Canvas } Navigator = host &quot;dom:navigator&quot; { userAgent: string; platform: string } (CanvasRenderingContext2D and OffscreenCanvasRenderingContext2D name Context, OffscreenCanvas and HTMLCanvasElement name Canvas, Element and HTMLElement name Element; their declarations are not read.) Each is the host's platform object of its interface, its members the interface's own attributes and operations, by the HTML, DOM and CSSOM standards. <code>lang</code> is undefined on a root of another namespace, an SVG document's.</p></div>
+<h4 class="change"><span class="act added">added</span>Lowering <span class="target">parser: a 2D context's accessors</span></h4><div class="lowering"><div class="map"><code class="src">o.k</code><div class="result"><span class="to">⇝</span><span class="tgt"><span class="m-intr">%CanvasGet:k%</span>(<var>o</var>)         <var>k</var> <span class="m-rel">∈</span> {<span class="m-text">font, letterSpacing</span>}</span></div></div><div class="map"><code class="src">o.k = v</code><div class="result"><span class="to">⇝</span><span class="tgt"><span class="m-intr">%CanvasSet:k%</span>(<var>o</var>, <var>v</var>)   <var>k</var> <span class="m-rel">∈</span> {<span class="m-text">font, letterSpacing, lang, fontKerning, textRendering</span>}</span></div></div><div class="cond"><span class="tgt"><span class="m-text">(TypeScript types <code class="m-code">o</code> as</span> 2<var>D</var> <span class="m-text">contexts only, each part a context or an</span></span></div><div class="cond"><span class="tgt"><span class="m-text">intersection with one, as <code class="m-code"><span class="tk-s">&quot;lang&quot;</span> <span class="tk-k">in</span> o</code> narrows it</span>)</span></div><div class="cond"><span class="tgt"><span class="m-intr">%CanvasGet:font%</span> <span class="m-rel">:</span> (<span class="m-con">Context</span>) ⇒∅ <span class="m-text">string</span></span></div><div class="cond"><span class="tgt"><span class="m-intr">%CanvasGet:letterSpacing%</span> <span class="m-rel">:</span> (<span class="m-con">Context</span>) ⇒∅ <span class="m-text">string</span> | <span class="m-lit">undefined</span></span></div><div class="cond"><span class="tgt"><span class="m-intr">%CanvasSet:k%</span> <span class="m-rel">:</span> (<span class="m-con">Context</span>, <var>V</var><sub><var>k</var></sub>) ⇒∅ <var>V</var><sub><var>k</var></sub>, <var>V</var><sub><var>k</var></sub> <span class="m-text">a string, or the enumeration's</span></span></div><div class="cond"><span class="tgt"><span class="m-text">literals for fontKerning and textRendering</span></span></div><div class="cond"><span class="tgt"><span class="m-text">The context's text drawing state is the host's, which the model holds no</span></span></div><div class="cond"><span class="tgt"><span class="m-text">location of, as it holds no element of a view of bytes</span><span class="m-rel">:</span> <span class="m-text">a setter writes</span></span></div><div class="cond"><span class="tgt"><span class="m-text">nothing the model holds, and each read is a call, which no earlier read</span></span></div><div class="cond"><span class="tgt"><span class="m-text">narrows</span>.</span></div></div>
+<h4 class="change"><span class="act added">added</span>Lowering <span class="target">parser: typeof of a DOM global some hosts do not define</span></h4><div class="lowering"><div class="map"><code class="src"><span class="tk-k">typeof</span> <span class="tk-t">X</span></code><div class="result"><span class="to">⇝</span><span class="tgt"><span class="m-intr">%TypeOf:X%</span>()   <var>X</var> <span class="m-rel">∈</span> {<span class="m-text">document, navigator, OffscreenCanvas</span>}</span></div></div><div class="cond"><span class="tgt"><span class="m-intr">%TypeOf:X%</span> <span class="m-rel">:</span> () ⇒∅ <code class="m-code"><span class="tk-s">&quot;undefined&quot;</span></code> | <code class="m-code"><span class="tk-s">&quot;object&quot;</span></code></span><span class="note">(&quot;function&quot; for OffscreenCanvas)</span></div><div class="cond"><span class="tgt"><span class="m-text">(a comparison of it with a literal narrows nothing, so both branches</span></span></div><div class="cond"><span class="tgt"><span class="m-text">are checked; any other reference throws a ReferenceError where the host</span></span></div><div class="cond"><span class="tgt"><span class="m-text">defines no binding</span>)</span></div></div>
+<h4 class="change"><span class="act added">added</span>Trust <span class="target">library globals: the DOM's globals</span></h4><div class="prose"><p>new OffscreenCanvas : (number, number) ⇒∅ Canvas document : Document, navigator : Navigator (constants) getComputedStyle : (Element) ⇒∅ Style</p></div>
+<h4 class="change"><span class="act added">added</span>Refusal <span class="target">unstated DOM members</span></h4><div class="prose"><p>any other member of these types, read, written or called, and a spread of one; an assertion of <code>navigator</code> to a record whose <code>userAgent</code> is writable</p></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>dom-canvas-context</code> <span class="kind positive">positive</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">a record field of either context, accessors, measureText's metrics</span></summary><pre class="code"><span class="tk-c">// A 2D context as pretext's measurement.ts uses one, read through the</span>
+<span class="tk-c">// overlay of library types: a record field holding either context, its</span>
+<span class="tk-c">// `font` written and read back, `letterSpacing` tested and written,</span>
+<span class="tk-c">// `fontKerning` and `textRendering` written, a record field narrowed</span>
+<span class="tk-c">// across the setters, which write no location the model holds, and</span>
+<span class="tk-c">// `measureText`'s `TextMetrics` read at `width` and its ink edges.</span>
+<span class="tk-k">type</span> <span class="tk-t">Context</span> = <span class="tk-t">CanvasRenderingContext2D</span> | <span class="tk-t">OffscreenCanvasRenderingContext2D</span>;
+<span class="tk-k">export</span> <span class="tk-k">type</span> <span class="tk-t">State</span> = { context: <span class="tk-t">Context</span>; font: string; letterSpacing: string };
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> measureIn(
+  context: <span class="tk-t">Context</span>,
+  font: string,
+  text: string,
+): number {
+  context.font = font;
+  <span class="tk-k">return</span> context.measureText(text).width;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> takesFont(context: <span class="tk-t">Context</span>, font: string): boolean {
+  context.font = <span class="tk-s">&quot;1px serif&quot;</span>;
+  context.font = font;
+  <span class="tk-k">if</span> (context.font !== <span class="tk-s">&quot;1px serif&quot;</span>) <span class="tk-k">return</span> <span class="tk-k">true</span>;
+  context.font = <span class="tk-s">&quot;2px serif&quot;</span>;
+  context.font = font;
+  <span class="tk-k">return</span> context.font !== <span class="tk-s">&quot;2px serif&quot;</span>;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> shaped(
+  state: <span class="tk-t">State</span>,
+  font: string,
+  letterSpacing: string,
+): <span class="tk-t">Context</span> {
+  <span class="tk-k">if</span> (state.font !== font) state.context.font = state.font = font;
+  <span class="tk-k">if</span> (state.letterSpacing !== letterSpacing)
+    state.context.letterSpacing = state.letterSpacing = letterSpacing;
+  <span class="tk-k">return</span> state.context;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> takesLetterSpacing(context: <span class="tk-t">Context</span>): boolean {
+  <span class="tk-k">return</span> <span class="tk-k">typeof</span> context.letterSpacing === <span class="tk-s">&quot;string&quot;</span>;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> sameInk(a: <span class="tk-t">TextMetrics</span>, b: <span class="tk-t">TextMetrics</span>): boolean {
+  <span class="tk-k">const</span> bound = a.width / 0x400000;
+  <span class="tk-k">return</span> (
+    <span class="tk-t">Math</span>.abs(a.width - b.width) &lt;= bound &amp;&amp;
+    <span class="tk-t">Math</span>.abs(a.actualBoundingBoxLeft - b.actualBoundingBoxLeft) &lt;= bound &amp;&amp;
+    <span class="tk-t">Math</span>.abs(a.actualBoundingBoxRight - b.actualBoundingBoxRight) &lt;= bound
+  );
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> kerning(context: <span class="tk-t">Context</span>, probe: string): number {
+  context.textRendering = <span class="tk-s">&quot;optimizeLegibility&quot;</span>;
+  <span class="tk-k">const</span> kerned = context.measureText(probe).width;
+  context.fontKerning = <span class="tk-s">&quot;none&quot;</span>;
+  <span class="tk-k">const</span> unkerned: <span class="tk-t">TextMetrics</span> = context.measureText(probe);
+  context.fontKerning = <span class="tk-s">&quot;auto&quot;</span>;
+  <span class="tk-k">return</span> kerned - unkerned.width;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">type</span> <span class="tk-t">Runs</span> = { whole: <span class="tk-t">Context</span> | <span class="tk-k">null</span> };
+<span class="tk-k">export</span> <span class="tk-k">function</span> wholeRun(
+  runs: <span class="tk-t">Runs</span>,
+  make: () =&gt; <span class="tk-t">Context</span>,
+  font: string,
+): <span class="tk-t">Context</span> {
+  <span class="tk-k">if</span> (runs.whole === <span class="tk-k">null</span>) {
+    runs.whole = make();
+    runs.whole.textRendering = <span class="tk-s">&quot;optimizeLegibility&quot;</span>;
+  }
+  runs.whole.font = font;
+  <span class="tk-k">return</span> runs.whole;
+}</pre></details></li><li><details><summary><code>dom-canvas-create</code> <span class="kind positive">positive</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">OffscreenCanvas or a canvas element, typeof tests, lang, navigator</span></summary><pre class="code"><span class="tk-c">// A 2D context made as pretext's measurement.ts makes one: from an</span>
+<span class="tk-c">// `OffscreenCanvas` where the host defines one, else from a canvas element</span>
+<span class="tk-c">// of the document, its `lang` set where it has the attribute; and the</span>
+<span class="tk-c">// engine read from `navigator.userAgent` where the host defines one, and its</span>
+<span class="tk-c">// platform from `navigator.platform`.</span>
+<span class="tk-k">type</span> <span class="tk-t">Context</span> = <span class="tk-t">CanvasRenderingContext2D</span> | <span class="tk-t">OffscreenCanvasRenderingContext2D</span>;
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> createContext(language: string | <span class="tk-k">null</span>): <span class="tk-t">Context</span> {
+  <span class="tk-k">let</span> context: <span class="tk-t">Context</span> | <span class="tk-k">null</span> = <span class="tk-k">null</span>;
+  <span class="tk-k">if</span> (<span class="tk-k">typeof</span> <span class="tk-t">OffscreenCanvas</span> !== <span class="tk-s">&quot;undefined&quot;</span>)
+    context = <span class="tk-k">new</span> <span class="tk-t">OffscreenCanvas</span>(<span class="tk-n">1</span>, <span class="tk-n">1</span>).getContext(<span class="tk-s">&quot;2d&quot;</span>);
+  <span class="tk-k">else</span> <span class="tk-k">if</span> (<span class="tk-k">typeof</span> document !== <span class="tk-s">&quot;undefined&quot;</span>)
+    context = document.createElement(<span class="tk-s">&quot;canvas&quot;</span>).getContext(<span class="tk-s">&quot;2d&quot;</span>);
+  <span class="tk-k">if</span> (context === <span class="tk-k">null</span>)
+    <span class="tk-k">throw</span> <span class="tk-k">new</span> <span class="tk-t">Error</span>(
+      <span class="tk-s">&quot;Text measurement requires OffscreenCanvas or a DOM canvas context.&quot;</span>,
+    );
+  <span class="tk-k">if</span> (language !== <span class="tk-k">null</span> &amp;&amp; <span class="tk-s">&quot;lang&quot;</span> <span class="tk-k">in</span> context) context.lang = language;
+  <span class="tk-k">return</span> context;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> userAgent(): string {
+  <span class="tk-k">return</span> <span class="tk-k">typeof</span> navigator === <span class="tk-s">&quot;undefined&quot;</span> ? <span class="tk-s">&quot;&quot;</span> : navigator.userAgent;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> namesFamilies(engine: string): boolean {
+  <span class="tk-k">return</span> (
+    engine === <span class="tk-s">&quot;webkit&quot;</span> &amp;&amp; !/^(?:<span class="tk-t">Linux</span>|<span class="tk-t">Win32</span>|<span class="tk-t">Haiku</span>|$)/.test(navigator.platform)
+  );
+}</pre></details></li><li><details><summary><code>invalid-dom-canvas-font-after-set</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">a font read is no path a write keeps narrowed</span></summary><pre class="code"><span class="tk-c">// The font a context held, narrowed before a write of `font`, asserted after</span>
+<span class="tk-c">// it: the setter changes the font the getter answers, so the narrowing does</span>
+<span class="tk-c">// not survive the write.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> stale(
+  context: <span class="tk-t">CanvasRenderingContext2D</span>,
+  font: string,
+): <span class="tk-s">&quot;10px serif&quot;</span> | <span class="tk-k">undefined</span> {
+  <span class="tk-k">if</span> (context.font !== <span class="tk-s">&quot;10px serif&quot;</span>) <span class="tk-k">return</span> <span class="tk-k">undefined</span>;
+  context.font = font;
+  <span class="tk-k">return</span> context.font <span class="tk-k">as</span> <span class="tk-s">&quot;10px serif&quot;</span>;
+}</pre></details></li><li><details><summary><code>invalid-dom-canvas-spread</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">a spread copies no attribute of a platform object</span></summary><pre class="code"><span class="tk-c">// A spread of a 2D context: its attributes are accessors on its interface's</span>
+<span class="tk-c">// prototype, which a spread does not copy, so the copy has no `font`</span>
+<span class="tk-c">// (run under Node with a stand-in whose class defines the accessor).</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> copied(context: <span class="tk-t">CanvasRenderingContext2D</span>): { font: string } {
+  <span class="tk-k">return</span> { ...context };
+}</pre></details></li><li><details><summary><code>invalid-dom-typeof-absent</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">the branch without document reads past the end</span></summary><pre class="code"><span class="tk-c">// The branch where the host defines no `document`, as Node and a worker</span>
+<span class="tk-c">// define none: `typeof document` answers &quot;undefined&quot; there, so the branch</span>
+<span class="tk-c">// runs, and its read past the array's end answers `undefined`.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> absent(names: string[]): string {
+  <span class="tk-k">if</span> (<span class="tk-k">typeof</span> document === <span class="tk-s">&quot;undefined&quot;</span>) <span class="tk-k">return</span> names[<span class="tk-n">0</span>];
+  <span class="tk-k">return</span> <span class="tk-s">&quot;&quot;</span>;
+}</pre></details></li><li><details><summary><code>invalid-dom-document-element-lang</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">a root's lang is string | undefined</span></summary><pre class="code"><span class="tk-c">// The document's root element read at `lang` as a string: an SVG document's</span>
+<span class="tk-c">// root is no HTML element and has no `lang`, which reads `undefined`, and a</span>
+<span class="tk-c">// document with no root answers `null` (run under Node with a stand-in</span>
+<span class="tk-c">// document whose root has no `lang`).</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> language(): string {
+  <span class="tk-k">return</span> document.documentElement.lang;
+}</pre></details></li><li><details><summary><code>blocker-pretext-canvas-context-type</code> <span class="kind positive">positive</span> <span class="was">gap</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">a record field of either 2D context</span></summary><pre class="code"><span class="tk-c">// Pretext (github.com/chenglou/pretext at 0d102a5c, src/, census by unit):</span>
+<span class="tk-c">// measurement.ts#addMetrics, measurement.ts#addUpTo,</span>
+<span class="tk-c">// measurement.ts#clearMeasurementCaches, measurement.ts#contextTakesFont,</span>
+<span class="tk-c">// measurement.ts#countEmojiGlyphs,</span>
+<span class="tk-c">// measurement.ts#countLigaturesOnFirstLetter,</span>
+<span class="tk-c">// measurement.ts#createMeasureState, measurement.ts#getCanvasFont,</span>
+<span class="tk-c">// measurement.ts#getCharacterSpaceKerning, measurement.ts#getContext,</span>
+<span class="tk-c">// measurement.ts#getCorrectedSegmentWidth, measurement.ts#getEmojiGlyphs,</span>
+<span class="tk-c">// measurement.ts#getEngineProfile, measurement.ts#getExtraSpacings,</span>
+<span class="tk-c">// measurement.ts#getFollowingSpaceMetrics,</span>
+<span class="tk-c">// measurement.ts#getFontMeasurement, measurement.ts#getFontSpaceKerning,</span>
+<span class="tk-c">// measurement.ts#getHyphenText, measurement.ts#getKanaKerning,</span>
+<span class="tk-c">// measurement.ts#getLayoutEngine, measurement.ts#getSegmentFit,</span>
+<span class="tk-c">// measurement.ts#getSegmentMetrics, measurement.ts#getSpaceKerning,</span>
+<span class="tk-c">// measurement.ts#getSpaceWidth, measurement.ts#getTextWidth,</span>
+<span class="tk-c">// measurement.ts#getWebKitGenericFamilies,</span>
+<span class="tk-c">// measurement.ts#getWholeRunContext, measurement.ts#hasFamily,</span>
+<span class="tk-c">// measurement.ts#isCanvasWordLetter, measurement.ts#isLigature,</span>
+<span class="tk-c">// measurement.ts#measureFitAdvances, measurement.ts#measureIn,</span>
+<span class="tk-c">// measurement.ts#measureKanaKerning, measurement.ts#parseFontSize,</span>
+<span class="tk-c">// measurement.ts#readLetterSpacing, measurement.ts#sameInk,</span>
+<span class="tk-c">// measurement.ts#setLocaleLanguage, measurement.ts#takesNoSpaceKerning,</span>
+<span class="tk-c">// measurement.ts#textMayContainEmoji, measurement.ts#zeros.</span>
+<span class="tk-c">// Refusal: gate: duplicate field name in a record in</span>
+<span class="tk-c">// typescript/lib/lib.dom.d.ts#HTMLCanvasElement.</span>
+<span class="tk-c">// A record type with a `CanvasRenderingContext2D |</span>
+<span class="tk-c">// OffscreenCanvasRenderingContext2D` field: the DOM library's</span>
+<span class="tk-c">// `HTMLCanvasElement`, reached from it, declares a field twice. Pretext</span>
+<span class="tk-c">// meets it in its own type `MeasureState`.</span>
+<span class="tk-k">export</span> <span class="tk-k">type</span> <span class="tk-t">State</span> = {
+  context: <span class="tk-t">CanvasRenderingContext2D</span> | <span class="tk-t">OffscreenCanvasRenderingContext2D</span>;
+  font: string;
+};
+<span class="tk-k">export</span> <span class="tk-k">function</span> font(s: <span class="tk-t">State</span>): string {
+  <span class="tk-k">return</span> s.font;
+}</pre></details></li><li><details><summary><code>blocker-pretext-document</code> <span class="kind positive">positive</span> <span class="was">gap</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">typeof document and the root's lang, as pretext reads it</span></summary><pre class="code"><span class="tk-c">// Pretext (github.com/chenglou/pretext at 0d102a5c, src/, census by unit):</span>
+<span class="tk-c">// measurement.ts#getEmojiCorrection, measurement.ts#getPreparationLanguage,</span>
+<span class="tk-c">// measurement.ts#readEmojiWidth.</span>
+<span class="tk-c">// The DOM global `document`, tested by `typeof` and read at its root's</span>
+<span class="tk-c">// `lang`, which the root has only where it is an HTML element.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> language(): string | <span class="tk-k">null</span> {
+  <span class="tk-k">let</span> language: string | <span class="tk-k">null</span> = <span class="tk-k">null</span>;
+  <span class="tk-k">if</span> (<span class="tk-k">typeof</span> document !== <span class="tk-s">&quot;undefined&quot;</span>) {
+    <span class="tk-k">const</span> lang = (document.documentElement <span class="tk-k">as</span> <span class="tk-t">HTMLElement</span> | <span class="tk-k">null</span> | <span class="tk-k">undefined</span>)
+      ?.lang;
+    <span class="tk-k">if</span> (<span class="tk-k">typeof</span> lang === <span class="tk-s">&quot;string&quot;</span>) language = lang;
+  }
+  <span class="tk-k">return</span> language;
+}</pre></details></li><li><details><summary><code>blocker-pretext-offscreen-canvas</code> <span class="kind positive">positive</span> <span class="was">gap</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">typeof OffscreenCanvas, new, getContext(&quot;2d&quot;)</span></summary><pre class="code"><span class="tk-c">// Pretext (github.com/chenglou/pretext at 0d102a5c, src/, census by unit):</span>
+<span class="tk-c">// measurement.ts#createContext.</span>
+<span class="tk-c">// Refusal: gate: the global OffscreenCanvas is declared in</span>
+<span class="tk-c">// typescript/lib/lib.dom.d.ts (library), an origin no reviewed entry</span>
+<span class="tk-c">// admits.</span>
+<span class="tk-c">// The DOM global `OffscreenCanvas`, which has no reviewed entry.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> hasCanvas(): boolean {
+  <span class="tk-k">if</span> (<span class="tk-k">typeof</span> <span class="tk-t">OffscreenCanvas</span> !== <span class="tk-s">&quot;undefined&quot;</span>)
+    <span class="tk-k">return</span> <span class="tk-k">new</span> <span class="tk-t">OffscreenCanvas</span>(<span class="tk-n">1</span>, <span class="tk-n">1</span>).getContext(<span class="tk-s">&quot;2d&quot;</span>) !== <span class="tk-k">null</span>;
+  <span class="tk-k">return</span> <span class="tk-k">false</span>;
+}</pre></details></li><li><details><summary><code>blocker-pretext-get-computed-style</code> <span class="kind positive">positive</span> <span class="was">gap</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">getComputedStyle(element).width</span></summary><pre class="code"><span class="tk-c">// Pretext (github.com/chenglou/pretext at 0d102a5c, src/, census by unit):</span>
+<span class="tk-c">// measurement.ts#readWidthIn.</span>
+<span class="tk-c">// Refusal: gate: getComputedStyle(…) is not in the reviewed overlay of</span>
+<span class="tk-c">// library globals.</span>
+<span class="tk-c">// The DOM's `getComputedStyle`, not in the reviewed overlay of library</span>
+<span class="tk-c">// globals.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> width(element: <span class="tk-t">Element</span>): string {
+  <span class="tk-k">return</span> getComputedStyle(element).width;
+}</pre></details></li><li><details><summary><code>blocker-pretext-navigator</code> <span class="kind gap">gap</span> <span class="was">gap</span> <span class="arrow">→</span> <span class="now">gap</span> <span class="why">navigator asserted to a record of a writable userAgent</span></summary><pre class="code"><span class="tk-c">// Pretext (github.com/chenglou/pretext at 0d102a5c, src/, census by unit):</span>
+<span class="tk-c">// measurement.ts#buildEngineProfile.</span>
+<span class="tk-c">// Refusal: search: closure expression claim: the available claim for</span>
+<span class="tk-c">// navigator is the host's Navigator, and the assertion requires a record</span>
+<span class="tk-c">// whose `userAgent` is writable.</span>
+<span class="tk-c">// The DOM global `navigator`, asserted to a record of an optional writable</span>
+<span class="tk-c">// `userAgent` before the read: the assertion would grant a write of a</span>
+<span class="tk-c">// member the host defines only a getter for.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> agent(): string {
+  <span class="tk-k">return</span> <span class="tk-k">typeof</span> navigator === <span class="tk-s">&quot;undefined&quot;</span>
+    ? <span class="tk-s">&quot;&quot;</span>
+    : ((navigator <span class="tk-k">as</span> { userAgent?: string }).userAgent ?? <span class="tk-s">&quot;&quot;</span>);
+}</pre></details></li></ul>
+<h4 class="change">Counterexample</h4><pre class="code"><span class="ln"><span class="tk-c">// invalid-dom-typeof-absent: with typeof document a test of the</span></span><span class="ln"><span class="tk-c">// Document value, the branch where it is &quot;undefined&quot; is dead and</span></span><span class="ln"><span class="tk-c">// names[0] is accepted at string</span></span><span class="ln"><span class="tk-k">typeof</span> absent([])   <span class="tk-c">// Node, which defines no document: &quot;undefined&quot;</span></span><span class="ln"><span class="tk-c">// invalid-dom-canvas-spread, with a stand-in platform object</span></span><span class="ln"><span class="tk-k">typeof</span> copied(<span class="tk-k">new</span> (<span class="tk-k">class</span> { <span class="tk-k">get</span> font() { <span class="tk-k">return</span> <span class="tk-s">&quot;10px serif&quot;</span>; } })()).font</span><span class="ln"><span class="tk-c">// Node: &quot;undefined&quot;</span></span></pre>
+<h4 class="change">Soundness</h4><div class="prose"><p>The model holds no location of a context's drawing state, so the accessors' intrinsics are within the empty footprint and no read of <code>font</code> is narrowed across a write. A reference to a DOM global where the host defines none throws a ReferenceError, an outcome; <code>typeof</code> of one is a call answering either tag, so the branch for each is checked. Every member stated was audited against the standards and TypeScript 7.0.2's lib.dom.d.ts; Node has no DOM, so the negative cases run under Node with stand-ins.</p></div>
+<h4 class="change">Gap</h4><div class="prose"><p>pretext's <code>buildEngineProfile</code> asserts <code>navigator</code> to <code>{ userAgent?: string }</code>, whose field is writable; <code>readEmojiWidth</code> and <code>readWidthIn</code> read <code>document.body</code>, <code>document.head</code>, <code>createElement(&quot;span&quot;)</code>, an element's <code>style</code>, <code>textContent</code>, <code>appendChild</code>, <code>removeChild</code> and <code>getBoundingClientRect</code>, which are not stated.</p></div>
+<h4 class="change"><span class="act added">added</span>Docs <span class="target">SOURCE-CONTRACTS.md, DESIGN.md, REFERENCES.md, WORK.md</span></h4><div class="prose"><p>the DOM's canvas, document and navigator; the trust row; the HTML, DOM, CSSOM and Web IDL standards; the pretext row</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">parser</span> <span class="chip strong">trust</span> <span class="chip">docs</span> <span class="chip">tests</span></dd><dt>Trust</dt><dd><span class="trust">the host implements the HTML, DOM and CSSOM interfaces stated for the 2D context, TextMetrics, OffscreenCanvas, the canvas element, Element, document, navigator and getComputedStyle; their values are the host's platform objects, each stated member its interface's own attribute or operation; a context's getters and setters of a string run no code of the program's and change its drawing state alone; typeof of document, navigator and OffscreenCanvas answers &quot;undefined&quot; where the host defines none (a host contract beyond ECMAScript: for owner review)</span></dd><dt>Measured</dt><dd>pretext src/ census (0d102a5c), shallow verified functions 58 -&gt; 97 of 209, deep 34 -&gt; 62, statements 395 -&gt; 625 of 3424 (on pretext-float64-intl 0acb97f0, merged)</dd><dt>Tests</dt><dd><span class="test pos">dom-canvas-context</span> <span class="test pos">dom-canvas-create</span> <span class="test pos">invalid-dom-canvas-font-after-set</span> <span class="test pos">invalid-dom-canvas-spread</span> <span class="test pos">invalid-dom-typeof-absent</span> <span class="test pos">invalid-dom-document-element-lang</span></dd></dl>
+<details><summary>21 files changed, 746 insertions(+), 32 deletions(-)</summary><pre class="code"> WORK.md                                            |   2 +-
+ docs/DESIGN.md                                     |   1 +
+ docs/REFERENCES.md                                 |  42 +++++
+ docs/SOURCE-CONTRACTS.md                           | 148 +++++++++++++++
+ pipeline/cases.mts                                 |  20 +-
+ pipeline/examples/blocker-pretext-document.ts      |  16 +-
+ pipeline/examples/blocker-pretext-navigator.ts     |  14 +-
+ pipeline/examples/dom-canvas-context.ts            |  73 ++++++++
+ pipeline/examples/dom-canvas-create.ts             |  30 +++
+ .../examples/invalid-dom-canvas-font-after-set.ts  |  11 ++
+ pipeline/examples/invalid-dom-canvas-spread.ts     |   6 +
+ .../examples/invalid-dom-document-element-lang.ts  |   7 +
+ pipeline/examples/invalid-dom-typeof-absent.ts     |   7 +
+ tests/node-runs.mts                                |  12 ++
+ tools/declaration-graph.mts                        |  52 +++++-
+ tools/fragment-expressions.mts                     |  26 ++-
+ tools/fragment-parse.mts                           |  32 +++-
+ tools/host-operations.mts                          |   3 +
+ tools/intrinsics.mts                               |  31 +++-
+ tools/library-globals.mts                          |  42 ++++-
+ tools/library-types.mts                            | 203 ++++++++++++++++++++-</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+</main></body></html>
