@@ -4150,13 +4150,6 @@ The rewrite removes forwarding allocations and adds no runtime check or
 external assumption. Existing record views and optional method calls check
 `blocker-round-generic-rest-answer`.
 
-`closure-rest-pack-refused` uses an ordinary `number[]` rest in its local
-counting closure. Its exported `count(): number` supplies exactly `1, 2`
-and observes the collected length; the generic tuple parameter contributes
-no further observation. The equivalent function returns `2`. This case
-exercises the ordinary rest-array check; generic argument-pack rest closures
-retain the [model limit](SOURCE-FRAGMENT.md#model-limits).
-
 ### A map over a literal holding a possibly absent first element
 
 `liftClause` in `tools/claim-text.mts` lifted a reference clause's cells as

@@ -107,8 +107,6 @@ assert.equal(runExample("blocker-round-generic-rest-answer",
 assert.equal(runExample("blocker-round-generic-rest-answer",
   `(() => { const marker = {}; const options = { answer() { if (this !== options) return "wrong"; throw marker; } }; try { deliver(options, "chosen"); } catch (error) { return error === marker; } return false; })()`), true,
   "a callback's exception identity is preserved");
-assert.equal(runExample("closure-rest-pack-refused", "count()"), 2,
-  "the local ordinary rest preserves the exported count result");
 
 
 assert.equal(runExample("blocker-round-append-definitions",

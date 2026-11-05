@@ -1,5 +1,6 @@
-// Census functions: array-prototype.mts#mergeRefusal,#prototype,#functionPrototype.
-// Contract syntax retains its recursive data contract during printing.
+// `Object.entries` of a recursive data union's dictionary arm, its entries
+// filtered and mapped through written tuple patterns: each entry keeps the
+// union's contract, so the printer recurses on it.
 type ContractData =
   | null
   | undefined
