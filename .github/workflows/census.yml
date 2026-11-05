@@ -93,9 +93,10 @@ jobs:
           CENSUS="$RUNNER_TEMP/census"
           echo "CENSUS=$CENSUS" >> "$GITHUB_ENV"
           mkdir -p "$CENSUS"
-          opam exec -- node dev/census.mts --dir tools --out "$CENSUS/tools" --record "$CENSUS/record.json" \
-            > "$CENSUS/run.log" 2>&1 || { tail -50 "$CENSUS/run.log"; exit 1; }
-          tail -5 "$CENSUS/run.log"
+          # Progress shows in the step's log as the census runs.
+          set -o pipefail
+          opam exec -- node dev/census.mts --dir tools --out "$CENSUS/tools" --record "$CENSUS/record.json" 2>&1 \
+            | tee "$CENSUS/run.log"
 
       - name: Save the stage store
         if: always() && steps.store.outputs.cache-hit != 'true'
