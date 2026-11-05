@@ -402,16 +402,35 @@ mapped to the meet of its parameters' type arguments with its clauses
 
 A generic unit's body is checked once, with its binders as parameter rows,
 which no rule reads. Acceptance does not read the assignment
-(`Parametricity.accept_reassign`), so the ordinary safety theorem holds at every
-reassignment $`\eta`$, the inputs and the result read at the same $`\eta`$
-(**Generic-Body**, proved: `Parametricity.accepted_at`,
-`RequestJson.verify_safe_at`, `SourceExtraction.checkRequests_safe_at`):
+(`Parametricity.accept_reassign`), so the ordinary safety theorem holds at
+every reassignment $`\eta`$ the request admits, the inputs and the result read
+at the same $`\eta`$ (**Generic-Body**). An ordinary body admits every
+$`\eta`$; a qualified body admits the instances of its retained source
+signature that meet its descriptor constraints and its declared bounds
+(`QualifiedBody.Admits`):
 
 ```math
 \frac{\mathsf{accept}(G,R,P,\mathit{claims},C,s,\vec I)=\mathsf{true}
+      \quad\mathrm{Admits}(\eta)
       \quad\mathrm{EnvOk}_{G[\eta]}(\vec I,\rho,n,W)\quad\mathrm{WorldAdm}(W)\quad\mathrm{HeapOk}(n,W,h)}
-     {\mathrm{SafeGraph}(P,⟦R⟧^{\eta},n,W,h,\mathsf{at}(s,\rho))}\quad\text{for every }\eta
+     {\mathrm{SafeGraph}(P,⟦R⟧^{\eta},n,W,h,\mathsf{at}(s,\rho))}
 ```
+
+Proved:
+
+- `Parametricity.accepted_at`: from `acceptUsing` and `EnvOk`, `WorldAdm`
+  and `HeapOk` at $`G[\eta]`$, for every $`\eta`$, given that the code table
+  is sound at $`G[\eta]`$ (`CodesSound`) and the read summaries at $`G`$
+  (`SummariesSound`); their defaults discharge only the empty tables;
+- `RequestJson.verify_safe_at`: from `verify` of an ordinary request, for
+  every $`\eta`$, its code table and summaries discharged from the request's
+  checked table;
+- `RequestJson.verify_qualified_safe_at`: from `verify` of a qualified body,
+  at the assignment $`\eta`$ extended with families $`\vec A`$ for the source
+  signature's binders that the graph's domain allows and that meet the
+  binders' bounds;
+- `SourceExtraction.checkRequests_safe_at`: from `checkRequests` of a bundle,
+  for each of its requests at every $`\eta`$ with `r.Admits η`.
 
 A bounded binder is read as the meet of its row and its bound, and one bounded
 by another binder as the meet of the two
