@@ -92,7 +92,11 @@ Coverage reports follow [function coverage and release thresholds](docs/DESIGN.m
 The census of the front end's own functions (each module of `tools/`
 checked whole, unit by unit, over one front per file; a function is
 shallow verified when its own unit is accepted) runs once on main, after a
-merge, and its movement is recorded then. A branch runs no census, over
+merge, and its movement is recorded then: the
+[Census workflow](.github/workflows/census.yml) runs it on each push to
+main, comments the movement on the pushed commit's pull request, publishes
+the report under `census/` on the repository's GitHub Pages and keeps the
+record as the run's artifact. A branch runs no census, over
 `tools/` or over a file. To show a change does what it is for, it runs the
 function the change targets and one function depending on it, before and
 after (`make census FILES=f.mts FUNCTIONS=fn,other SHALLOW=1`).
