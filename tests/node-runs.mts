@@ -3164,6 +3164,11 @@ for (const [file, call] of [
   assert.equal(runExample(negative("invalid-labeled-break-stale-narrowing"),
     '(() => { const box = { v: "a" }; return typeof stale(box, () => { box.v = 1; }); })()'), "number",
     "invalid-labeled-break-stale-narrowing: the call after the test writes a number");
+  assert.equal(runExample(ofKind("destructuring-assignment", "positive"),
+    '(() => { let calls = 0; return JSON.stringify([once(() => { calls++; return { a: 3 }; }), calls, nullKept({ v: null }), nullKept({}), nested({ p: { x: 1, y: 2 }, q: "z" }), captured({ n: 7 }), shadowed({ s: "x" })]); })()'),
+    '[33,1,"null","default","z3",7,"outer"]', "destructuring-assignment: the right side once, each property read, defaulted and written in turn");
+  assert.equal(runExample(negative("invalid-destructuring-assignment-dictionary"), "typeof total({})"), "undefined",
+    "invalid-destructuring-assignment-dictionary: the pattern reads a key the dictionary lacks");
   assert.equal(runExample(negative("invalid-visitor-arity-bivariant"), thrown("digits([1, 2])")), "TypeError",
     "invalid-visitor-arity-bivariant: the walker passes undefined to the narrower closure");
 }

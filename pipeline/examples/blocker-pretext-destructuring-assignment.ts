@@ -1,8 +1,8 @@
 // Pretext (github.com/chenglou/pretext at 0d102a5c, src/, census by unit):
 // rich-inline.ts#materializeRichInlineLineRange.
-// Refusal: gate: only field and local assignments are supported.
 // A destructuring assignment to existing `let` bindings, `({ starts, ends }
-// = found)`: only field and local assignments are supported.
+// = found)`: the right side once, then each property read and written to
+// its target in turn.
 type Sources = { starts: number[] | null; ends: number[] | null };
 
 export function sources(flow: Sources, found: Sources): number {

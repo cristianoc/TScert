@@ -179,6 +179,29 @@ control(async (): Promise<void> => {
       /^reject: source evidence does not justify the extracted program and exact claims/m);
   }
   process.stdout.write("module cells apart: a cell read past a writing call claimed at its old contents, and an entry knowing more than the cells' separation, refused\n");
+  // An object destructuring assignment reads each property and writes its
+  // target: a property read claimed at a type the target's storage does
+  // not take, and a later read of the target claimed at its narrowing
+  // before the assignment (`null`), are each refused in search and checking.
+  const artifacts = run("blocker-pretext-destructuring-assignment");
+  const source = readFileSync(sourceKey(artifacts), "utf8");
+  const pattern = source.indexOf("({ starts, ends } = found)") + "({ ".length;
+  const after = source.indexOf("(starts?.length") + 1;
+  for (const [variant, at, row] of [["storage", pattern, "num"], ["narrowing", after, "nul"]] as const) {
+    const claims = readClaims(artifacts);
+    const fn = must(claims.functions.find(f => f.name === "sources"), "sources's claims");
+    const claim = must(fn.expressions.find(e => e.pos[0] === at && e.pos[1] === at + "starts".length),
+      `the claim of starts at ${at}`);
+    claim.type = [rowOf(claims, row)];
+    const forged = writeClaims(artifacts, `forged-object-assignment-${variant}`, claims);
+    const searched = produceWith(artifacts, forged, `forged-object-assignment-${variant}`);
+    assert.equal(searched.status, 1, searched.stdout + searched.stderr);
+    invoke(forged, join(artifacts, "evidence.json"), artifacts, /^reject: source evidence refusal/m);
+  }
+  process.stdout.write("object destructuring assignment: a target's read at another storage, and a stale narrowing after it, refused\n");
+});
+
+control(async (): Promise<void> => {
   // A `continue outer` from an inner loop skips the rest of the outer body,
   // the assignment of a number to `kind` after the inner loop: a claim that
   // `kind` is a number at the return, which holds only if the `continue`
