@@ -133,7 +133,7 @@ every work, with what TScert takes from it and where.
 
 ## Try it
 
-Prerequisites: Node, the pinned [Lean toolchain](lean/lean-toolchain), OCaml
+Prerequisites: Node at the version [`.nvmrc`](.nvmrc) pins, the pinned [Lean toolchain](lean/lean-toolchain), OCaml
 and Dune ([the producer guide](ocaml-producer/README.md#try-it)). Then:
 
 ```sh

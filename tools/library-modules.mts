@@ -113,7 +113,7 @@ const block: TypeTerm = { k: "function", effect: ordinaryEffect, receiver: null,
  * `Object.is`, a comparison with `null` and `undefined`): their footprint is
  * empty on normal return. A failure builds an `AssertionError`, which reads
  * the compared values' accessors, runs a program's `Error.prepareStackTrace`
- * and sets and restores `Error.stackTraceLimit` (Node 25.2.1): no entry
+ * and sets and restores `Error.stackTraceLimit` (Node 26.13.0): no entry
  * preserves anything across the throw (`onThrow` false). A deep comparison
  * traverses enumerable own string and symbol properties, an array's extra
  * ones included, accessors among them; `match` runs the regex's `exec`,
@@ -191,7 +191,7 @@ export const modulesOverlay: readonly ModuleEntry[] = [
   // `env` it is given and convert its values; `shell` is absent or `false`,
   // as a shell with arguments runs `process.emitWarning`'s listeners; `stdio`
   // is given, three streams long, so the host pads no array and writes no
-  // standard error of its own. Under Node 25.2.1 the host writes nothing it
+  // standard error of its own. Under Node 26.13.0 the host writes nothing it
   // did not allocate before it returns or throws: the empty footprint, on a
   // throw too.
   { module: "child_process", name: "execFileSync",
@@ -231,8 +231,9 @@ export const modulesOverlay: readonly ModuleEntry[] = [
   // validates without converting, throwing on a type it does not accept: an
   // object at each key it reads, the declared options and `argv0`,
   // `detached` and `windowsVerbatimArguments`, ran no code of the client's
-  // under Node 25.2.1, and `env` alone did. A record type states nothing of
-  // the keys it does not name, so `env` is stated.
+  // under Node 25.2.1 and Node 26.13.0 (2026-11-05), and `env` alone did. A
+  // record type states nothing of the keys it does not name, so `env` is
+  // stated.
   { module: "child_process", name: "execFileSync",
     signature: "function execFileSync(\n        file: string,\n        args: readonly string[],\n        options: ExecFileSyncOptionsWithStringEncoding,\n    ): string;",
     stated: { binders: [], params: [atom("string"),
@@ -245,7 +246,7 @@ export const modulesOverlay: readonly ModuleEntry[] = [
       result: atom("string") } },
   // `spawnSync(command, args, options)` runs the command and waits for it.
   // Stated at options naming `encoding: "utf8"` and `stdio` and `env` absent
-  // (Node 25.2.1): both streams are piped, so `stdout` and `stderr` are its
+  // (Node 26.13.0): both streams are piped, so `stdout` and `stderr` are its
   // decoded output, a string, where the child ran, and absent where it could
   // not be spawned (`error` then set, `status` null); a timeout kills it
   // (`signal` set, `status` null). The host reads the options' other
@@ -272,15 +273,14 @@ export const modulesOverlay: readonly ModuleEntry[] = [
         field("error", atom("unknown"), true)] } } },
   // `readdirSync(path, options)` with a string path reads, of the options,
   // `encoding` and `signal` (`getOptions`), then `recursive`, `encoding` and
-  // `withFileTypes` again (Node 25.2.1's `lib/fs.js`). The four are stated:
+  // `withFileTypes` again (Node 26.13.0's `lib/fs.js`). The four are stated:
   // `withFileTypes: true`, `encoding` "utf8" or absent (`"buffer"` names the
   // entries by Buffers), `recursive` false or absent and `signal` absent, so
   // under the caller contract each is a data property every read of which
-  // agrees. `recursive: true` walks the subdirectories (`readdirSyncRecursive`,
-  // `handleDirents`): it calls each entry's `isDirectory` through its
-  // prototype and `path.join`, both other code may replace, and the
-  // `internalModuleStat` of the joined path to choose what to read next,
-  // and collects entries of every depth; that walk is not audited. The
+  // agrees. `recursive: true` walks the subdirectories, in native code
+  // (`readdirRecursive`) or, under the permission model, through
+  // `collectRecursiveReaddirResult`, and collects entries of every depth;
+  // that walk is not audited. The
   // result is a fresh array of entries: a `Dirent`, or, where the directory
   // reports an unknown type, a `DirentFromStats` built from `fs.lstatSync`
   // of the joined path, both writable properties other code may replace.
@@ -308,7 +308,7 @@ export const modulesOverlay: readonly ModuleEntry[] = [
     definitions: [stated.dirent] },
   // `readdirSync(path)` with a string path and no options reads the
   // default options' `recursive`, `encoding` and `withFileTypes`, a frozen
-  // object of no property (Node 25.2.1's `lib/fs.js`), and returns a fresh
+  // object of no property (Node 26.13.0's `lib/fs.js`), and returns a fresh
   // array of the entries' names, strings decoded as UTF-8; a path it cannot
   // read throws. It runs no code of the client's on a string path. The call
   // states no effect.
@@ -320,20 +320,21 @@ export const modulesOverlay: readonly ModuleEntry[] = [
   // names, its symbolic links followed, and returns a fresh `Stats`; a path
   // that names nothing, or one it cannot stat, throws (`throwIfNoEntry`
   // defaults to true). It validates the string and runs no code of the
-  // client's (Node 25.2.1's `lib/fs.js`). The declaration is a constant of
+  // client's (Node 26.13.0's `lib/fs.js`). The declaration is a constant of
   // the interface `StatSyncFn`, whose first call signature the entry names.
   // `StatsBase` and `Stats` assign the fourteen numbers, which become own
-  // writable data properties under the host assumption that a `Stats`
-  // keeps its audited prototype chain, `Stats.prototype` →
-  // `StatsBase.prototype` → `Object.prototype`, whose two Node prototypes
-  // hold the seven `is…` tests, `_checkModeProperty` and the date getters
-  // (`atime`, `mtime`, `ctime`, `birthtime`), none named by the stated
+  // writable data properties, and four symbol-keyed numbers, under the host
+  // assumption that a `Stats` keeps its audited prototype chain,
+  // `Stats.prototype` → `StatsBase.prototype` → `Object.prototype`, whose
+  // two Node prototypes hold the seven `is…` tests, `_checkModeProperty`,
+  // the date getters (`atime`, `mtime`, `ctime`, `birthtime`) and the
+  // instant getters (`atimeInstant`, …), none named by the stated
   // fields, the tests data properties holding callable values throughout
   // execution, also in external code
   // (SOURCE-CONTRACTS.md, "Library modules"). A test calls
   // `this._checkModeProperty`, a writable property of `Stats.prototype`
   // other code may replace: each is stated at `() => unknown`, its effect
-  // unrestricted, as a `Dirent`'s. The date getters are not stated. The
+  // unrestricted, as a `Dirent`'s. The date and instant getters are not stated. The
   // call states no effect.
   { module: "fs", name: "statSync", signature: "(path: PathLike, options?: undefined): Stats;",
     stated: { binders: [], params: [atom("string")], result: { k: "object", stringIndex: null, calls: [], span: at,
@@ -344,7 +345,7 @@ export const modulesOverlay: readonly ModuleEntry[] = [
           params: [], rest: null, result: atom("unknown"), span: at }, false))] } } },
   // `statSync(path, options)` with a string path and options naming
   // `bigint: true` reads, of the options, `bigint` and `throwIfNoEntry`
-  // (Node 25.2.1's `lib/fs.js`), both stated: at `throwIfNoEntry` absent,
+  // (Node 26.13.0's `lib/fs.js`), both stated: at `throwIfNoEntry` absent,
   // `undefined` or `true` a path that names nothing throws, as without
   // options. It returns a fresh `BigIntStats` (`library-types.mts`), whose
   // numbers are bigints. It runs no code of the client's at the stated
@@ -380,7 +381,7 @@ export const modulesOverlay: readonly ModuleEntry[] = [
         field("signal", atom("undefined"), true), field("flush", union(atom("boolean"), atom("undefined")), true),
         field("flag", union(text("w"), atom("undefined")), true)] }], result: atom("undefined") } },
   // `mkdirSync(path, options)` with a string path and options naming
-  // `recursive: true` reads `recursive` and `mode` (Node 25.2.1's
+  // `recursive: true` reads `recursive` and `mode` (Node 26.13.0's
   // `lib/fs.js`), both stated: it creates the directory and those above it
   // that are missing, and returns the first it created, a string, or
   // `undefined` where the directory exists; a mode that is no 32-bit
@@ -394,7 +395,7 @@ export const modulesOverlay: readonly ModuleEntry[] = [
   // `chmodSync(path, mode)` with a string path and a number sets the mode
   // of what the path names, its symbolic links followed, and returns
   // `undefined`; a mode that is no 32-bit unsigned integer, or a path it
-  // cannot change, throws. It runs no code of the client's (Node 25.2.1's
+  // cannot change, throws. It runs no code of the client's (Node 26.13.0's
   // `lib/fs.js`). The call states no effect.
   { module: "fs", name: "chmodSync", signature: "export function chmodSync(path: PathLike, mode: Mode): void;",
     stated: { binders: [], params: [atom("string"), atom("number")], result: atom("undefined") } },
@@ -412,7 +413,7 @@ export const modulesOverlay: readonly ModuleEntry[] = [
   // through `fs.openSync`, `fs.readSync` and `fs.closeSync`, writable
   // properties of the module's object other code may replace, and allocates
   // through `Buffer.allocUnsafe`, `Buffer.concat` and `Buffer.prototype.slice`
-  // (Node 25.2.1's `lib/fs.js`): the call states no effect, and its result
+  // (Node 26.13.0's `lib/fs.js`): the call states no effect, and its result
   // is a `Buffer` under the host assumption that `Buffer`'s and
   // `Buffer.prototype`'s functions are Node's own (SOURCE-CONTRACTS.md,
   // "Stated library types"). The two texts are the two pinned `@types/node`
@@ -447,7 +448,7 @@ export const modulesOverlay: readonly ModuleEntry[] = [
   { module: "fs", name: "realpathSync",
     signature: "export function realpathSync(path: PathLike, options?: EncodingOption): string;",
     stated: { binders: [], params: [atom("string")], result: atom("string") } },
-  // `createHash("sha256")` constructs a `Hash` (Node 25.2.1's
+  // `createHash("sha256")` constructs a `Hash` (Node 26.13.0's
   // lib/internal/crypto/hash.js): it validates the algorithm, a string,
   // builds the native handle and the state record, both fresh, and, at a
   // SHAKE algorithm without an output length alone, emits a deprecation
@@ -488,7 +489,7 @@ export const modulesOverlay: readonly ModuleEntry[] = [
   // POSIX the native `getTempDir`, the first of `TMPDIR`, `TMP` and `TEMP`
   // set, stripped of a trailing separator, or `"/tmp"`; on Windows
   // `process.env`'s `TEMP` or `TMP`, or `SystemRoot` or `windir` joined to
-  // `\temp` (Node 25.2.1's lib/os.js). The result is a string under the
+  // `\temp` (Node 26.13.0's lib/os.js). The result is a string under the
   // approved assumption that standard objects are not tampered with:
   // `process.env` is Node's, whose values are strings; a replaced
   // `process.env` holding `TEMP: 7` makes Windows return 7. It states no
@@ -496,13 +497,13 @@ export const modulesOverlay: readonly ModuleEntry[] = [
   { module: "os", name: "tmpdir", signature: "function tmpdir(): string;",
     stated: { binders: [], params: [], result: atom("string") } },
   // `availableParallelism()` is the native `getAvailableParallelism`
-  // (Node 25.2.1's lib/os.js and src/node_os.cc): libuv's
+  // (Node 26.13.0's lib/os.js and src/node_os.cc): libuv's
   // `uv_available_parallelism`, an unsigned integer, returned as a number.
   // It reads no property, runs no code of the client's, allocates nothing
   // and does not throw: the empty footprint.
   { module: "os", name: "availableParallelism", signature: "function availableParallelism(): number;",
     stated: { binders: [], params: [], result: atom("number") }, effect: emptyEffect },
-  // `userInfo()` with no options (Node 25.2.1's lib/os.js and
+  // `userInfo()` with no options (Node 26.13.0's lib/os.js and
   // src/node_os.cc) calls the native `getUserInfo` with `null` options, so
   // no property is read, and encodes libuv's password entry as UTF-8: a
   // fresh object of null prototype whose own data properties, writable, are
@@ -520,7 +521,7 @@ export const modulesOverlay: readonly ModuleEntry[] = [
       { ...field("gid", atom("number"), false), readonly: false },
       { ...field("shell", union(atom("string"), atom("null")), false), readonly: false },
       { ...field("homedir", atom("string"), false), readonly: false }] } } },
-  // `isBuiltin(id)` with a string (Node 25.2.1's lib/internal/bootstrap/realm.js)
+  // `isBuiltin(id)` with a string (Node 26.13.0's lib/internal/bootstrap/realm.js)
   // tests the id in the set of built-ins requirable without a scheme, and,
   // for an id starting `node:`, the rest in the set of those requirable by
   // users: `SafeSet`s and primordial string functions, which run no code of
@@ -536,7 +537,7 @@ export const modulesOverlay: readonly ModuleEntry[] = [
   { module: "url", name: "fileURLToPath",
     signature: "function fileURLToPath(url: string | URL, options?: FileUrlToPathOptions): string;",
     stated: { binders: [], params: [atom("string")], result: atom("string") }, effect: emptyEffect },
-  // `pathToFileURL(path)` (Node 25.2.1's `lib/internal/url.js`) validates
+  // `pathToFileURL(path)` (Node 26.13.0's `lib/internal/url.js`) validates
   // the string, resolves it by platform-specific posix/win32.resolve, which reads
   // `process.cwd()` for a relative path, a writable property other code may
   // replace, keeps a trailing `/`, and returns a fresh URL of the `file:`
@@ -550,7 +551,7 @@ export const modulesOverlay: readonly ModuleEntry[] = [
     stated: { binders: [], params: [atom("string")], result: url }, definitions: [stated.url] },
   // `node:path`'s `sep`, the separator of the platform's paths: a data
   // property of the object the module exports, set when Node loads it (`"/"`
-  // on POSIX, `"\\"` on Windows; Node 25.2.1's lib/path.js). It is writable:
+  // on POSIX, `"\\"` on Windows; Node 26.13.0's lib/path.js). It is writable:
   // no code writes it, an assumption, as of `process.argv`.
   { module: "path", name: "sep", signature: 'readonly sep: "\\\\" | "/";', constant: true,
     stated: { binders: [], params: [], result: union(text("\\"), text("/")) } },
@@ -582,7 +583,7 @@ export function moduleEntries(specifier: string, name: string): readonly ModuleE
  * a Node module the overlay lists, whose `default` it reviews no entry of.
  * Node's default export of a built-in module is its `module.exports`, the
  * object whose own properties the named exports are bound from when Node
- * loads the module (Node 25.2.1, `lib/internal/bootstrap/realm.js`,
+ * loads the module (Node 26.13.0, `lib/internal/bootstrap/realm.js`,
  * `BuiltinModule.prototype.syncExports`); with that object's members not
  * replaced (the approved assumption that standard objects are not tampered
  * with), its member `x` holds the named export `x`. */
