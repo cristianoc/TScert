@@ -24,14 +24,21 @@
  *   `unknown` at a positive position, `never` at a parameter of it; and
  *   `keyof any` is `string | number | symbol`. These constrain types; no
  *   value has them.
- * - A member the reviewed overlay of library globals states
- *   (library-globals.mts), of a standard library file, is read at the
- *   overlay's own contract: its `stated` signature where it has one, and
+ * - A member of a standard library file that no review below states and
+ *   the reviewed overlay of library globals states (library-globals.mts) is
+ *   read at the overlay's own contract: its `stated` signature where it has one, and
  *   otherwise its declaration with `any` read as `unknown`, as the front end
  *   reads a declaration's `any` (type-term.mts). The overlays of array and
  *   interface members state no `any` but a dropped `thisArg`, which stays
  *   `TScertAny`: calls omit it.
- * - A member a review below states is read at that contract.
+ * - A member a review below states is read at that contract, whether or not
+ *   the overlay states it. A review states what the host does at every value
+ *   of the member's parameters (`String` of any value is a string), which is
+ *   what this check asks of an `any`; the overlay states the narrower
+ *   contract TScert checks a call against (`String` at the primitives, whose
+ *   conversion runs no code of the program's), and TScert refuses a call
+ *   outside it. So `JSON.stringify`, `String`, `Number` and `console.log`
+ *   are read here at their reviews.
  * - A property of the compiler API's declarations declared `any` reads as
  *   an optional `unknown` (reading rule 2 of COMPILER-API.md), as the front
  *   end reads it.
@@ -97,8 +104,6 @@ export const reviewed: readonly Reviewed[] = [
   { file: "lib.es5.d.ts", text: "(value?: any): number;", why: `Number(v) ${coercion}` },
   { file: "lib.es2015.symbol.wellknown.d.ts", text: "[Symbol.hasInstance](value: any): boolean;",
     why: "`instanceof` takes any left operand: OrdinaryHasInstance returns false for a non-object" },
-  { file: "lib.es5.d.ts", text: "getPrototypeOf(o: any): any;",
-    why: "Object.getPrototypeOf takes any value: ToObject throws on null and undefined, a primitive's wrapper otherwise" },
   { file: "lib.es2015.reflect.d.ts", text: "function set(target: object, propertyKey: PropertyKey, value: any, receiver?: any): boolean;",
     why: "Reflect.set stores any value (what it then breaks is a mutation, not an any)" },
   { file: "console.d.ts", text: "log(message?: any, ...optionalParams: any[]): void;",
