@@ -113,7 +113,7 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
                && (match e.node with Read ({node=Id _;_},_) -> true | _ -> false) ->
              Proposal_diagnostics.unsupported ("a field read at its contract: a read of " ^ key_text n ^ " through a field holding \
                an object beside null or undefined, which a test does not narrow: what a field is known to hold \
-               is a union of primitive values (DESIGN.md, \"Current-content assertions\")")
+               is a union of primitive values (SOURCE-MODEL.md, \"Current-content assertions\")")
            (* A member some arm of the receiver lacks: refused at the read. *)
            | Json.Error (Json.Message m) when missing_field m ->
              Json.fail (m ^ " at " ^ Json.span_text site)))
