@@ -1,7 +1,8 @@
 // A class extending a declared class that states `Symbol.toStringTag`
-// beside `then`, `catch` and `finally`: its instance's prototype is the
-// class's own, which holds no tag, and a declared class's tag is an own
-// field, so the instance asserted to be a `Promise<number>` is refused.
+// beside `then`, `catch` and `finally`, its instance asserted to be a
+// `Promise<number>`: refused at the base, since a class extends only a class
+// of its file, which keeps every prototype of an object the program makes
+// free of the tag.
 declare class Base {
   readonly [Symbol.toStringTag]: string;
   then(onfulfilled?: (value: number) => unknown): Promise<unknown>;

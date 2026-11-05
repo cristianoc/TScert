@@ -1,8 +1,8 @@
 // A function stating {value: any, store: grow} that serializes a record
 // with `JSON.stringify` and a replacer: a value of the record's type may
 // hold a `toJSON`, which serializing calls and which may remove an element
-// of an array. A record is no JSON value, so the call is refused at the
-// stated parameter, and the statement is not established.
+// of an array. A record is no JSON value, so the call is refused at its
+// argument, before the function's statement is checked.
 type Term = { k: string; span: number };
 
 function sameTerm(

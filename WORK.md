@@ -308,7 +308,8 @@ up to renaming ([generic methods](docs/SOURCE-CONTRACTS.md#generic-methods)); tw
 binding different numbers of binders (`m<U, V>` at `m<W>`), which TypeScript
 relates by instantiating the source at the target's binders, need an instance
 table naming each source signature's image at the target's binders, inside
-the family entry's table. A binder a member's result accumulates
+the family entry's table; `invalid-tag-inherited-declaration`, a control of the
+native promise's tag, stops at that relation before its obligation. A binder a member's result accumulates
 (`catch`'s `Promise<T | TResult>`) grows its family by one binder per call:
 each is an application of the one equation, unfolded only when read
 ([RECURSIVE-EQUATIONS](docs/RECURSIVE-EQUATIONS.md)), never truncated.
