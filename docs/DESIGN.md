@@ -737,7 +737,7 @@ or design extends the mechanism of its concern
 | External code's behaviour (natives, library globals, prototypes) | Contracts audited against the implementation, with the trust each states | [Prototype contracts](SOURCE-CONTRACTS.md#prototype-contracts), [library types](SOURCE-CONTRACTS.md#library-types) |
 | Code of another module the program imports | Certified imports: the module's own claims checked, its effects read at the import | [Certified imports](SOURCE-CONTRACTS.md#certified-imports) |
 | A construct outside the fragment | An explicit, enforced restriction with its reason and its control | [The refusal index](SOURCE-FRAGMENT.md) |
-| TScert's own code that does not verify | The routes: support, runtime check, repair, avoidance, host boundary, trusted unit, proof, refusal | [Source rewrites](SOURCE-REWRITES.md#deciding-what-a-refusal-of-tscerts-code-calls-for) |
+| TScert's own code that does not verify | The seven routes, from support to a proof; a refusal only of a program shown unsafe under Node | [Source rewrites](SOURCE-REWRITES.md#deciding-what-a-refusal-of-tscerts-code-calls-for) |
 | Repeated work of the pipeline | Stage results keyed by content and replayed | [Stage store](STAGE-STORE.md) |
 
 ## Documentation map

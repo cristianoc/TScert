@@ -21,24 +21,11 @@ The protocol has three documents:
 - The source-claims document proposes entry environments, expression results,
   and fixed storage contracts. Any producer can write it.
 
-```sh
-lean/.lake/build/bin/verifier --lower-control-flow ast.json
-lean/.lake/build/bin/verifier --lower-program ast.json source-claims.json file-key
-lean/.lake/build/bin/verifier --produce-units \
-  ast.json source-claims.json file-key evidence.json 10
-lean/.lake/build/bin/verifier --check-units \
-  ast.json source-claims.json file-key evidence.json
-```
-
-`file-key` is the Fragment's `file` field, the checked file's identity
-(`sourceKey` in `verify-source.mts`). `--lower-control-flow` prints the
-execution document; `--lower-program` prints the program graph each unit
-lowers to under the claims (`make lowering`).
-`--produce-units` searches for evidence of the reconstructed obligations, unit
-by unit. `--check-units` checks supplied evidence against those obligations,
-a verdict per unit
-([the modes](REQUEST-PROTOCOL.md#run-the-verifier)).
-Any mode may be preceded by `--subtype-rounds n`.
+The verifier reads the three documents in [its modes](REQUEST-PROTOCOL.md#run-the-verifier):
+`--lower-control-flow` prints the execution document, `--lower-program` the
+program graph each unit lowers to under the claims (`make lowering`), and
+`--produce-units` and `--check-units` search for and check the evidence of
+the obligations the claims reconstruct, a verdict per unit.
 `SourceClaimJson.checkUnitJson_safe` proves calculus safety for every function
 of an accepted unit, at every permitted interpretation of its type
 parameters. The

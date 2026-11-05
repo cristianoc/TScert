@@ -99,7 +99,7 @@ function options(args: string[]): Options {
   const parsed: Options = {
     driver: model(option(args, "--driver") ?? "sol"), agents: (option(args, "--agent") ?? "sol").split(",").map(model),
     reviewer: model(option(args, "--reviewer") ?? "astra"), parallel: number("--parallel", 5),
-    codexStop: number("--codex-stop", 95), cases: number("--cases", 5), census: option(args, "--census"),
+    codexStop: number("--codex-stop", 95), cases: number("--cases", 10), census: option(args, "--census"),
     previous: option(args, "--previous"), causes: option(args, "--causes"), run: option(args, "--run"),
   };
   if (parsed.parallel > 5) throw Error("--parallel is at most 5");
