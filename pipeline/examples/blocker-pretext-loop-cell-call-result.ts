@@ -1,5 +1,7 @@
 // Pretext (github.com/chenglou/pretext at 0d102a5c, src/, census by unit,
-// with the rewrites of issue #94): measurement.ts#getExtraSpacings.
+// with the rewrites of issue #94): measurement.ts#getExtraSpacings,
+// gecko-line-breaks.ts#markWordBreaks (`cache[cacheAt++]` in a loop's body,
+// then `cache = segmentComplex(units)`).
 // Refusal: reject: source incoming edge obligation: the edge does not
 // establish the claims at this point.
 // A `for` loop whose update writes its bindings inside an expression
