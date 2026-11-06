@@ -1,0 +1,264 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Commit Records</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Code+Pro:wght@400;600&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=STIX+Two+Text:ital,wght@0,400;0,600;1,400&display=swap">
+<style>
+:root { --bg:#fbfcfd; --surface:#ffffff; --ink:#0b1a2e; --muted:#56627a; --rule:#d5dce6; --accent:#8a6410; --code-bg:#eef2f7; --math-bg:#f2f4f8; --ok:#2f6b47; --ok-bg:#e2efe4; --principled:#a0521a; --principled-bg:#f7e6d6; --gap:#6b6f78; --gap-bg:#ecebe6; --neutral:#2c4f7c; --neutral-bg:#e6ebf2; --trust:#7c2f4a; --trust-bg:#f2e1e7; --neg:#9b3524; --neg-bg:#f5e1da; --run:#7a5414; --run-bg:#f3e7cc; --brand-ink:#0b1a2e; --brand-gold:#b8840f;
+  --display:"Bricolage Grotesque","Helvetica Neue",Arial,sans-serif; --body:"Inter","Helvetica Neue",Arial,sans-serif; --mono:"Source Code Pro",Menlo,Consolas,monospace; --math:"STIX Two Text","STIX Two Math","STIXGeneral","Cambria Math","Apple Symbols",Georgia,serif; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#0e1626; --surface:#16213a; --ink:#efe7d4; --muted:#9aa3b5; --rule:#2a3756; --accent:#e0ac4a; --code-bg:#131d33; --math-bg:#1a2540; --ok:#7fd0a2; --ok-bg:#17322a; --principled:#f0a868; --principled-bg:#3a2a1c; --gap:#9aa3b5; --gap-bg:#1c2639; --neutral:#8fb4e8; --neutral-bg:#1b2b49; --trust:#e79bb6; --trust-bg:#3a2131; --neg:#f0907d; --neg-bg:#3a1f22; --run:#e0ac4a; --run-bg:#2e2a24; --brand-ink:#efe7d4; --brand-gold:#e0ac4a; color-scheme:dark } }
+:root[data-theme="dark"] { --bg:#0e1626; --surface:#16213a; --ink:#efe7d4; --muted:#9aa3b5; --rule:#2a3756; --accent:#e0ac4a; --code-bg:#131d33; --math-bg:#1a2540; --ok:#7fd0a2; --ok-bg:#17322a; --principled:#f0a868; --principled-bg:#3a2a1c; --gap:#9aa3b5; --gap-bg:#1c2639; --neutral:#8fb4e8; --neutral-bg:#1b2b49; --trust:#e79bb6; --trust-bg:#3a2131; --neg:#f0907d; --neg-bg:#3a1f22; --run:#e0ac4a; --run-bg:#2e2a24; --brand-ink:#efe7d4; --brand-gold:#e0ac4a; color-scheme:dark }
+* { box-sizing:border-box } body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.6 var(--body) }
+main { max-width:900px; margin:0 auto; padding-inline:20px; padding-block:32px 64px; display:flex; flex-direction:column; gap:22px }
+h1 { font:600 32px/1.15 var(--display); margin:0 } h2 { font:600 22px/1.2 var(--display); margin:12px 0 8px; padding-top:12px; border-top:2px solid var(--ink) }
+h3 { font:600 19px/1.3 var(--display); margin:2px 0 0; text-wrap:balance }
+h4 { font:600 11px/1 var(--body); letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin:12px 0 4px }
+p { margin:2px 0; max-width:72ch } .lede { color:var(--muted) }
+code { font:13px/1.5 var(--mono); background:var(--code-bg); padding:1px 4px; border-radius:3px }
+pre { margin:4px 0; padding:12px 14px; border-radius:6px; overflow-x:auto }
+pre.code { font:13px/1.55 var(--mono); background:var(--code-bg) }
+.rules { display:flex; flex-direction:column; gap:14px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:14px 18px; overflow-x:auto; font:16px/1.6 var(--math) }
+.rules sub, .rules sup { font-size:.72em; line-height:0 }
+.formulas { display:flex; flex-direction:column; gap:4px }
+.formulas .row { display:flex; flex-wrap:wrap; gap:4px 28px } .formulas .row.cont { padding-left:2em }
+.infer { display:flex; align-items:center; gap:12px }
+.frac { display:inline-flex; flex-direction:column; align-items:center; min-width:0 }
+.premises { display:flex; flex-wrap:wrap; justify-content:center; gap:4px 26px; padding:0 6px 3px }
+.bar { align-self:stretch; border-top:1.5px solid var(--ink) }
+.conclusion { padding:3px 6px 0; text-align:center }
+.rule-name { font:15px/1 var(--math); font-variant:small-caps; letter-spacing:.02em; color:var(--accent); white-space:nowrap }
+.card { background:var(--surface); border:1px solid var(--rule); border-radius:8px; padding:20px 22px; display:flex; flex-direction:column; gap:6px; min-width:0 }
+.card > header { display:flex; justify-content:space-between; gap:12px; align-items:flex-start }
+.sha { font:12px/1.4 var(--mono); color:var(--muted) }
+.pill { font:600 11px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; padding:6px 9px; border-radius:99px; white-space:nowrap }
+.pill.ok { color:var(--ok); background:var(--ok-bg) } .pill.principled { color:var(--principled); background:var(--principled-bg) }
+.pill.gap { color:var(--gap); background:var(--gap-bg) } .pill.neutral { color:var(--neutral); background:var(--neutral-bg) }
+.units { display:flex; flex-wrap:wrap; gap:6px } .units span { font:12px/1 var(--mono); border:1px solid var(--rule); border-radius:4px; padding:5px 7px }
+dl.facts { display:grid; grid-template-columns:max-content minmax(0,1fr); gap:6px 16px; margin:12px 0 0; padding-top:12px; border-top:1px solid var(--rule); font-size:13.5px }
+dt { font:600 11px/1.9 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted) }
+dd { margin:0; min-width:0; display:flex; flex-wrap:wrap; gap:5px; align-items:baseline }
+.chip { font:500 12px/1 var(--body); border:1px solid var(--rule); border-radius:4px; padding:4px 7px } .chip.strong { color:var(--accent); border-color:var(--accent) }
+.trust { color:var(--trust); background:var(--trust-bg); padding:2px 6px; border-radius:4px } .none { color:var(--muted) }
+.test { font:12px/1 var(--mono); padding:4px 7px; border-radius:4px }
+.test.pos { color:var(--ok); background:var(--ok-bg) } .test.pos::before { content:"✓ " }
+.test.neg { color:var(--neg); background:var(--neg-bg) } .test.neg::before { content:"✗ " }
+.test.forged { color:var(--principled); background:var(--principled-bg) } .test.forged::before { content:"forged " }
+details { margin-top:8px; font-size:13px; color:var(--muted) } summary { cursor:pointer }
+.table-wrap { overflow-x:auto; border:1px solid var(--rule); border-radius:8px; background:var(--surface) }
+table { border-collapse:collapse; width:100%; font-size:13px } th, td { text-align:left; vertical-align:top; padding:8px 10px; border-bottom:1px solid var(--rule) }
+th { font:600 11px/1.2 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); white-space:nowrap } td.num { font-variant-numeric:tabular-nums }
+h4.change { display:flex; align-items:center; gap:8px; text-transform:none; letter-spacing:0; font:600 14px/1.3 var(--body); color:var(--ink); margin:16px 0 6px }
+h4.change .target { font-weight:400; color:var(--muted) }
+.act { font:600 10.5px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; padding:4px 7px; border-radius:4px }
+.act.added { color:var(--ok); background:var(--ok-bg) } .act.removed { color:var(--neg); background:var(--neg-bg) }
+.act.modified, .act.replaced { color:var(--principled); background:var(--principled-bg) }
+.versions { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:10px }
+.versions figure { margin:0; min-width:0 } .versions figcaption { font:600 11px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); margin:0 0 4px }
+.versions .rules { height:calc(100% - 18px); box-sizing:border-box }
+pre.code .ln { display:block; white-space:pre } pre.code .ln.add { background:var(--ok-bg) } pre.code .ln.del { background:var(--neg-bg) }
+.tk-k { color:#7a3b8c } .tk-s { color:#2f6b47 } .tk-n { color:#a35a12 } .tk-c { color:var(--muted); font-style:italic } .tk-t { color:#2c4f7c }
+.prose p { margin:4px 0 }
+ul.effect, ul.summary { margin:4px 0; padding-left:20px } ul.effect li, ul.summary li { margin:3px 0 } ul.summary ul { padding-left:18px; color:var(--muted) }
+ul.effect .arrow { color:var(--accent); font-weight:600 }
+ul.effect details { margin:0; color:inherit; font-size:inherit } ul.effect summary { list-style-position:outside }
+ul.effect .kind { font-size:11px; text-transform:uppercase; letter-spacing:.04em; padding:1px 6px; border-radius:4px; background:var(--chip, #eee) }
+ul.effect .kind.negative { color:#8a3b12 } ul.effect .kind.positive { color:#22663a } ul.effect .kind.gap { color:#7a5b00 }
+ul.effect .was.unsound { color:#b3261e; font-weight:600 } ul.effect .now { font-weight:500 } ul.effect .why { color:var(--muted) }
+ul.effect mark { background:#ffe08a; color:inherit; border-radius:2px }
+@media (max-width:720px) { .versions { grid-template-columns:minmax(0,1fr) } }
+.lowering { display:flex; flex-direction:column; gap:6px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:12px 16px; overflow-x:auto }
+.lowering .map, .lowering .cond, .lowering .result { display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 10px }
+.lowering .map:not(:has(.sem)) { flex-direction:column; align-items:stretch; gap:4px }
+.lowering .result { display:grid; grid-template-columns:auto minmax(0,1fr); align-items:baseline; gap:2px 10px; padding-left:1em } .lowering .result .note { grid-column:2 }
+.m-intr { font:14px/1.5 var(--mono); color:#2c4f7c } .m-lit { font:13px/1.5 var(--mono); color:#7a3b8c }
+.lowering code.src { font:13px/1.5 var(--mono); background:var(--surface); border:1px solid var(--rule); padding:2px 6px; border-radius:4px }
+.lowering .to { color:var(--accent); font-weight:600; font-size:17px }
+.lowering .tgt { font:16px/1.5 var(--math) } .rules .lowering { background:none; border:0; padding:0 } .lowering .sem code.src { margin:0 2px }
+var { font-style:italic } .m-op { color:#2c4f7c; font-style:normal } .m-con { color:#8f6416; font-style:normal; font-variant:small-caps }
+.m-kw { color:#7a3b8c; font-weight:600; font-style:normal } .m-bind { color:#7a3b8c } .m-rel { color:var(--accent); padding:0 .12em }
+.m-text { font:14px/1.5 var(--body); color:var(--muted) } code.m-code { font:13px/1.5 var(--mono); background:var(--surface); border:1px solid var(--rule); padding:1px 5px; border-radius:4px }
+.refused { color:var(--neg); font-weight:600 }
+.lowering .refused { color:var(--neg); font-weight:600 }
+.lowering .label { font:600 11px/1 var(--body); letter-spacing:.05em; text-transform:uppercase; color:var(--muted); min-width:7em }
+.lowering .cond { padding-left:1.5em } .lowering .note { color:var(--muted); font:italic 13px/1.4 var(--body) }
+a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outline-offset:2px }
+@media (max-width:520px) { dl.facts { grid-template-columns:minmax(0,1fr) } .card > header { flex-direction:column } }</style></head><body><main><header><h1>Commit Records</h1><p class="lede">2 commits, rendered from their records.</p></header>
+<section><h2>Branches</h2><ul class="summary"><li><a href="#g-pr-123"><code>aa6ba108d5dc497f886d80c7cdaee908e2b95d81..pr-123</code></a><ul><li>2 commits</li><li>parts: <span class="chip">producer</span> <span class="chip">tests</span> <span class="chip">docs</span></li></ul></li></ul></section>
+<h2 id="g-pr-123"><code>aa6ba108d5dc497f886d80c7cdaee908e2b95d81..pr-123</code></h2><article class="card" id="c-467334ce0"><header><div><div class="sha">467334ce0 · Cristiano Calcagno · Nov 06, 16:18</div><h3>Give a condition's answer its execution plan excludes the unreachable state in the producer</h3></div><span class="pill ok">verified</span></header>
+<h4 class="change">Why</h4><div class="prose"><p><code>if (true || flag) { picked = seed; }</code> followed by <code>scaled(picked)</code>, with <code>let picked: number</code>, was refused: &quot;No rule derives this invoke at number from picked: undefined | number&quot;. The producer's <code>condition</code> computes, along the condition's evaluation plan, the state where it holds and where it fails, <code>None</code> for an answer no path reaches. For such an answer it fell back to the syntactic refinement of the whole condition, a state some values meet, so the join after the <code>if</code> took in the entry state where <code>picked</code> is still <code>undefined</code>. The statement flow worked around this for one form only, a branch whose test is the literal <code>true</code> or <code>false</code> (the head of <code>do</code> and <code>for (;;)</code>), and kept its own copy of the unreachable state.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Definition <span class="target">producer: a condition's two answers</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">held</span> <span class="m-rel">=</span> <span class="m-text">the plan's truthy state, else the syntactic refinement at</span> <span class="m-lit">true</span></span></div><div class="row"><span><span class="m-text">failed</span> <span class="m-rel">=</span> <span class="m-text">the plan's falsy state, else the syntactic refinement at</span> <span class="m-lit">false</span></span></div><div class="row"><span><span class="m-text">(and, in the statement flow only, a literal</span> <code class="m-code"><span class="tk-k">true</span></code>/<code class="m-code"><span class="tk-k">false</span></code> <span class="m-text">test's other</span></span></div><div class="row"><span><span class="m-text">arm unreachable</span>)</span></div></div></div></figure><figure><figcaption>After</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">held</span> <span class="m-rel">=</span> <span class="m-text">the plan's truthy state</span>, <span class="m-kw">else</span> <span class="m-op">unreachable</span><span class="m-text">(state after the condition)</span></span></div><div class="row"><span><span class="m-text">failed</span> <span class="m-rel">=</span> <span class="m-text">the plan's falsy state</span>, <span class="m-kw">else</span> <span class="m-op">unreachable</span><span class="m-text">(state after the condition)</span></span></div></div></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Definition <span class="target">producer: the state of a point no run reaches</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-op">unreachable</span><span class="m-text">(env)</span><span class="m-rel">:</span> <span class="m-text">each value and slot at the empty type, a cell's</span></span></div><div class="row"><span><span class="m-text">contents unchanged, field entries kept</span></span></div></div></div></figure><figure><figcaption>After</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-op">unreachable</span><span class="m-text">(env)</span><span class="m-rel">:</span> <span class="m-text">each value and slot at the empty type, a cell's</span></span></div><div class="row"><span><span class="m-text">contents at the empty type too, field entries kept; one definition, used</span></span></div><div class="row"><span><span class="m-text">after a statement that cannot return normally and for an answer no path</span></span></div><div class="row"><span><span class="m-text">reaches</span></span></div></div></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">PROGRAM-TYPING.md, vacuous edges</span></h4><div class="prose"><p>a condition whose execution plan excludes an answer (its tested Boolean a constant on every path) leaves that answer's target the state no value meets</p></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>decided-logical-condition</code> <span class="kind positive">positive</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why"><code>true || flag</code>, <code>false &amp;&amp; flag</code> in an <code>if</code> and a <code>while</code> head</span></summary><pre class="code"><span class="tk-c">// Conditions decided by a constant operand of `||` and `&amp;&amp;`: `true || flag`</span>
+<span class="tk-c">// always holds and `false &amp;&amp; flag` always fails, so the arm each rules out</span>
+<span class="tk-c">// is one no run takes, and a `let` assigned in the arm taken holds a number</span>
+<span class="tk-c">// after the statement, as it does after the `while (true || flag)` loop</span>
+<span class="tk-c">// left only by its `break`.</span>
+<span class="tk-k">function</span> scaled(n: number): number {
+  <span class="tk-k">return</span> n * <span class="tk-n">2</span>;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> eitherHolds(flag: boolean, seed: number): number {
+  <span class="tk-k">let</span> picked: number;
+  <span class="tk-k">if</span> (<span class="tk-k">true</span> || flag) {
+    picked = seed;
+  }
+  <span class="tk-k">return</span> scaled(picked);
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> bothFail(flag: boolean, seed: number): number {
+  <span class="tk-k">let</span> picked: number;
+  <span class="tk-k">if</span> (<span class="tk-k">false</span> &amp;&amp; flag) {
+    scaled(seed);
+  } <span class="tk-k">else</span> {
+    picked = seed;
+  }
+  <span class="tk-k">return</span> scaled(picked);
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> loopUntilBreak(flag: boolean, seed: number): number {
+  <span class="tk-k">let</span> picked: number;
+  <span class="tk-k">while</span> (<span class="tk-k">true</span> || flag) {
+    picked = seed;
+    <span class="tk-k">break</span>;
+  }
+  <span class="tk-k">return</span> scaled(picked);
+}</pre></details></li><li><details><summary><code>decided-if-true-arm</code> <span class="kind positive">positive</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">a <code>let</code> assigned only in the arm <code>if (true)</code> takes</span></summary><pre class="code"><span class="tk-c">// A `let` assigned only in the arm `if (true)` takes, read after the</span>
+<span class="tk-c">// statement: the other arm's edge is one no run takes, so after the `if` the</span>
+<span class="tk-c">// binding holds a number.</span>
+<span class="tk-k">function</span> scaled(n: number): number {
+  <span class="tk-k">return</span> n * <span class="tk-n">2</span>;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> chosen(seed: number): number {
+  <span class="tk-k">let</span> picked: number;
+  <span class="tk-k">if</span> (<span class="tk-k">true</span>) {
+    picked = seed + <span class="tk-n">1</span>;
+  } <span class="tk-k">else</span> {
+    scaled(seed);
+  }
+  <span class="tk-k">return</span> scaled(picked);
+}</pre></details></li><li><details><summary><code>decided-while-true-breaks</code> <span class="kind positive">positive</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">a <code>let</code> assigned before each <code>break</code> of <code>while (true)</code></span></summary><pre class="code"><span class="tk-c">// A `let` with no initializer, assigned before each `break` of a</span>
+<span class="tk-c">// `while (true)` loop, read after the loop: the head's `false` edge is one no</span>
+<span class="tk-c">// run takes, so the loop is left only by a `break`, each where the binding</span>
+<span class="tk-c">// holds a number.</span>
+<span class="tk-k">function</span> scaled(n: number): number {
+  <span class="tk-k">return</span> n * <span class="tk-n">2</span>;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> firstZero(xs: number[]): number {
+  <span class="tk-k">let</span> at: number;
+  <span class="tk-k">let</span> i = <span class="tk-n">0</span>;
+  <span class="tk-k">while</span> (<span class="tk-k">true</span>) {
+    <span class="tk-k">if</span> (i &gt;= xs.length) {
+      at = -<span class="tk-n">1</span>;
+      <span class="tk-k">break</span>;
+    }
+    <span class="tk-k">if</span> (xs[i] === <span class="tk-n">0</span>) {
+      at = i;
+      <span class="tk-k">break</span>;
+    }
+    i++;
+  }
+  <span class="tk-k">return</span> scaled(at);
+}</pre></details></li><li><details><summary><code>decided-for-continue</code> <span class="kind positive">positive</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why"><code>for (;;)</code> with a <code>continue</code> and one assigning <code>break</code></span></summary><pre class="code"><span class="tk-c">// A `let` with no initializer, assigned before the one `break` of a</span>
+<span class="tk-c">// `for (;;)` loop whose body also `continue`s, read after the loop: the</span>
+<span class="tk-c">// `continue` returns to the head, whose `false` edge no run takes.</span>
+<span class="tk-k">function</span> scaled(n: number): number {
+  <span class="tk-k">return</span> n * <span class="tk-n">2</span>;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> firstPositive(xs: number[]): number {
+  <span class="tk-k">let</span> found: number;
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; ; i++) {
+    <span class="tk-k">const</span> x = xs[i];
+    <span class="tk-k">if</span> (x === <span class="tk-k">undefined</span>) {
+      found = <span class="tk-n">0</span>;
+      <span class="tk-k">break</span>;
+    }
+    <span class="tk-k">if</span> (x &lt;= <span class="tk-n">0</span>) {
+      <span class="tk-k">continue</span>;
+    }
+    found = x;
+    <span class="tk-k">break</span>;
+  }
+  <span class="tk-k">return</span> scaled(found);
+}</pre></details></li><li><details><summary><code>invalid-loop-exit-unassigned</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">one <code>break</code> leaves the <code>let</code> unassigned: <code>undefined</code> returned at <code>number</code></span></summary><pre class="code"><span class="tk-c">// The counterpart of blocker-pretext-loop-exit-assigned: a `let` with no</span>
+<span class="tk-c">// initializer, one exit of whose `for (;;)` loop does not assign it, read</span>
+<span class="tk-c">// after the loop. On an array with no element above the limit the first</span>
+<span class="tk-c">// `break` runs before any assignment, and the function returns `undefined`</span>
+<span class="tk-c">// where its result is a number (run under Node).</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> firstAbove(xs: number[], limit: number): number {
+  <span class="tk-k">let</span> found: number;
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; ; i++) {
+    <span class="tk-k">if</span> (i &gt;= xs.length) {
+      <span class="tk-k">break</span>;
+    }
+    <span class="tk-k">const</span> x = xs[i];
+    <span class="tk-k">if</span> (x !== <span class="tk-k">undefined</span> &amp;&amp; x &gt; limit) {
+      found = i;
+      <span class="tk-k">break</span>;
+    }
+  }
+  <span class="tk-k">return</span> found;
+}</pre></details></li><li><details><summary><code>blocker-pretext-loop-exit-assigned</code> <span class="kind positive">positive</span> <span class="was">verified</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">the <code>for (;;)</code> and <code>do</code> heads, through the general point</span></summary><pre class="code"><span class="tk-c">// Pretext (github.com/chenglou/pretext at 0d102a5c, src/, census by unit,</span>
+<span class="tk-c">// with the rewrites of issue #94): gecko-line-breaks.ts#isEastAsianSegmentBreak,</span>
+<span class="tk-c">// line-break.ts#walkPreparedComplexLines.</span>
+<span class="tk-c">// A `let` declared without an initializer, assigned before every exit of a</span>
+<span class="tk-c">// loop whose head tests nothing (`for (;;)`) or of a `do` loop, and read</span>
+<span class="tk-c">// after the loop: the head's test is the constant `true`, whose `false`</span>
+<span class="tk-c">// edge no run takes, so the loop is left only by a `break` or by the test</span>
+<span class="tk-c">// after the body, each where the binding holds a number.</span>
+<span class="tk-k">function</span> scaled(n: number): number {
+  <span class="tk-k">return</span> n * <span class="tk-n">2</span>;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> firstAbove(xs: number[], limit: number): number {
+  <span class="tk-k">let</span> found: number;
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; ; i++) {
+    <span class="tk-k">if</span> (i &gt;= xs.length) {
+      found = -<span class="tk-n">1</span>;
+      <span class="tk-k">break</span>;
+    }
+    <span class="tk-k">const</span> x = xs[i];
+    <span class="tk-k">if</span> (x !== <span class="tk-k">undefined</span> &amp;&amp; x &gt; limit) {
+      found = i;
+      <span class="tk-k">break</span>;
+    }
+  }
+  <span class="tk-k">return</span> scaled(found);
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> lastBelow(text: string, end: number): number {
+  <span class="tk-k">let</span> code: number;
+  <span class="tk-k">let</span> at = end;
+  <span class="tk-k">do</span> {
+    code = text.charCodeAt(at - <span class="tk-n">1</span>);
+    at--;
+  } <span class="tk-k">while</span> (code === 0x20 &amp;&amp; at &gt; <span class="tk-n">0</span>);
+  <span class="tk-k">return</span> scaled(code);
+}</pre></details></li></ul>
+<h4 class="change">Counterexample</h4><pre class="code"><span class="ln">invalid-loop-exit-unassigned.ts under <span class="tk-t">Node</span>: <span class="tk-s">`firstAbove([], 0)`</span> prints</span><span class="ln"><span class="tk-s">`undefined undefined`</span> (the value and its <span class="tk-s">`typeof`</span>) where the result is</span><span class="ln">declared <span class="tk-s">`number`</span>. <span class="tk-t">The</span> pipeline refuses the <span class="tk-k">return</span>: &quot;<span class="tk-t">The</span> available claim</span><span class="ln"><span class="tk-k">for</span> found is <span class="tk-k">undefined</span> | number | <span class="tk-n">0</span>. <span class="tk-t">This</span> <span class="tk-k">return</span> requires number.&quot;</span></pre>
+<h4 class="change">Gap</h4><div class="prose"><p>a condition whose answer is decided only by its value, not by its plan, keeps both answers: <code>if (true === true)</code> (an equality's result is not a constant of the plan) is refused as the <code>true || flag</code> form was, and a conditional expression's value (<code>true ? seed : undefined</code>) is typed as the union of both arms</p></div>
+<h4 class="change">Soundness</h4><div class="prose"><p>the producer's states only propose claims. An edge no run takes is accepted by <code>vacuous-edge</code>, whose premise is the edge source's context in Lean (the tested value refined by the answer it rules out, a call's result at the empty type), whatever the target's claims state; every other edge into a join still establishes the join's claims. A cell's contents are emptied as well because the producer's join recognises an unreachable state by a binding at the empty type, which for a cell is its contents: a state of cells alone, contents kept, would join the cells' entry contents into what follows (observed with a module <code>let</code> holding <code>number | undefined</code>, read after a <code>while (true)</code> loop: the read was proposed at <code>undefined | number | 1</code>). No Lean rule or check changes.</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">producer</span> <span class="chip">tests</span> <span class="chip">docs</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd><span class="test pos">decided-logical-condition</span> <span class="test pos">decided-if-true-arm</span> <span class="test pos">decided-while-true-breaks</span> <span class="test pos">decided-for-continue</span> <span class="test neg">invalid-loop-exit-unassigned</span></dd></dl>
+<details><summary>10 files changed, 143 insertions(+), 21 deletions(-)</summary><pre class="code"> docs/PROGRAM-TYPING.md                            |  8 +++++-
+ ocaml-producer/environment.ml                     | 11 +++++++
+ ocaml-producer/execution_analysis.ml              |  7 ++---
+ ocaml-producer/proposal_flow.ml                   | 16 -----------
+ pipeline/cases.mts                                |  5 ++++
+ pipeline/examples/decided-for-continue.ts         | 23 +++++++++++++++
+ pipeline/examples/decided-if-true-arm.ts          | 16 +++++++++++
+ pipeline/examples/decided-logical-condition.ts    | 35 +++++++++++++++++++++++
+ pipeline/examples/decided-while-true-breaks.ts    | 24 ++++++++++++++++
+ pipeline/examples/invalid-loop-exit-unassigned.ts | 19 ++++++++++++</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-9d4f41c7a"><header><div><div class="sha">9d4f41c7a · Cristiano Calcagno · Nov 06, 16:19</div><h3>End the session-reuse test's held worker once its parent is gone</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p><code>tests/session-reuse.mts</code> starts itself with <code>--hold</code>: the worker opens a session, prints its compilers' pids and computes in <code>for (;;);</code> until the parent kills it. Where the parent died first, the worker was left orphaned and computed forever (one ran 23 hours at 100% CPU). Orphaned by hand, the old worker kept running with parent pid 1.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Tooling <span class="target">tests/session-reuse.mts, the held worker</span></h4><div class="versions"><figure><figcaption>Before</figcaption><pre class="code"><span class="ln">spawn: node session-reuse.mts --hold</span><span class="ln">worker: for (;;);</span></pre></figure><figure><figcaption>After</figcaption><pre class="code"><span class="ln">spawn: node session-reuse.mts --hold &lt;parent pid&gt;</span><span class="ln">worker: while (process.ppid === parent); process.exit(1);</span></pre></figure></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><code>the test checks the same thing, compilers ending with a worker killed</code></li><li><code>while it computes; a worker whose parent is gone exits (orphaned by</code></li><li><code>hand, it was gone within 2 s)</code></li></ul>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">tests</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd></dl>
+<details><summary>1 file changed, 6 insertions(+), 3 deletions(-)</summary><pre class="code"> tests/session-reuse.mts | 9 ++++++---</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+</main></body></html>
