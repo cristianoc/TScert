@@ -1551,7 +1551,10 @@ An optional chain keeps its own test, `x?.[key()]` skipping the key where
 `x` is nullish, and a member of its result, `(x?.a).b`, is an ordinary
 access. A primitive other than `null` and `undefined` keeps its wrapper and
 prototype arms. A plain write to a member of a nullish operand is refused
-(`nullish-member-write-refused`). The producer reads a member at the
+(`nullish-member-write-refused`). A member reference whose receiver's type
+holds no value, `missing()`'s result on the path where `x` is nullish in
+`(x ?? missing()).f -= d` with `missing(): never`, names a location holding
+no value; no run reaches it (`coalesce-missing-compound-member`). The producer reads a member at the
 operand's other values (`nullish-member-reads`, `nullish-member-order`,
 `invalid-nullish-member-reads`; a receiver forged without `undefined` is
 refused in `pipeline/test.mts`).
