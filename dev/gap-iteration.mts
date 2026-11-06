@@ -28,7 +28,7 @@
  *
  * Every change is a task: an author's run in its own worktree, on branch
  * `gap/<task>` from main, then, by the script: main integrated by rebase,
- * the task's gates (`make build`, `make suite`, `make test`, or the docs
+ * the task's gates (`make build`, `make test`, or the docs
  * checks), the reviewer's review of `git diff main...` until it has no
  * blocking finding (the reviewer implementing them, two rounds at most),
  * and a fast-forward merge into main, one at a time. A gate or review left
@@ -344,7 +344,7 @@ const runNote = (r: Run, m: Model): string => `
 
 ${m.tool === "codex" ? `- You run under codex: your commands run in a sandbox without network. A
   command that opens the TypeScript compiler (\`run-cases.mts\`,
-  \`verify-source.mts\`, \`make suite\`, \`make test\`, \`make census\`) and
+  \`verify-source.mts\`, \`make test\`, \`make census\`) and
   every git commit need escalated permissions: request them.` : `- You run under agy, every tool allowed. Produce no review pages and open
   no browser.`} Never push or
   fetch, and write nothing outside your worktree, \`${work(r)}\` and the
@@ -356,7 +356,7 @@ ${m.tool === "codex" ? `- You run under codex: your commands run in a sandbox wi
   any other term where it first appears, and use no words of process or
   status ("now", "approved", "reviewed"). Skip the brief's glossary check
   by a fresh agent.
-- After you finish, the orchestrator runs \`make suite\` and \`make test\`,
+- After you finish, the orchestrator runs \`make test\`,
   has the branch reviewed and merges it.
 - Leave the worktree clean: everything committed. Your final message is
   your report.`;
@@ -456,7 +456,7 @@ async function gate(r: Run, t: Task): Promise<{ passed: boolean; failure: string
   if (t.gated === key) return { passed: true, failure: "" };
   const steps: [string, string[]][] = t.kind === "row" ? [["node", ["tests/docs.mts"]]]
     : t.kind === "deck" ? [["node", ["tests/docs.mts"]], ["node", ["dev/deck-cli.mts", "gap-priorities"]]]
-    : [["make", ["build"]], ["make", ["suite"]], ["make", ["test"]]];
+    : [["make", ["build"]], ["make", ["test"]]];
   return locked(heavy(r), async () => {
     for (const [command, args] of steps) {
       const ran = await exec(command, args, { cwd: tree, log });
@@ -665,7 +665,7 @@ async function finish(r: Run): Promise<void> {
   if (!r.state.previous) throw Error("no previous census: pass --previous <record>");
   mainReady();
   if (!r.state.verified) {
-    for (const target of ["suite", "test"]) {
+    for (const target of ["test"]) {
       const ran = await locked(heavy(r), () => exec("make", [target], { cwd: repository, log: join(r.run, "main.log") }));
       if (ran.status !== 0) throw Error(`make ${target} fails on main (${join(r.run, "main.log")})`);
     }

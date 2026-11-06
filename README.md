@@ -148,8 +148,9 @@ the source, the parser's output, the producer's claims and the certificate.
 ## Develop
 
 ```sh
-make test     # fast checks and the controls (forged documents and claims)
-make suite    # every pipeline case: source files with their expected outcome
+make test        # both below
+make test-checks # fast checks and the controls (forged documents and claims)
+make test-cases  # every pipeline case: source files with their expected outcome
 make help     # every target
 ```
 

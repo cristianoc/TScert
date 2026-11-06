@@ -1,5 +1,6 @@
-# Build, then the fast checks and controls (`make test`) and the pipeline
-# cases (`make suite`), on every pull request and every push to main, on Linux.
+# Build, then the fast checks and controls (`make test-checks`) and the
+# pipeline cases (`make test-cases`), together `make test`, on every pull
+# request and every push to main, on Linux.
 name: CI
 
 on:
@@ -69,7 +70,7 @@ jobs:
           key: ${{ steps.lake.outputs.cache-primary-key }}
 
       - name: Fast checks and controls
-        run: opam exec -- make test
+        run: opam exec -- make test-checks
 
       # C3 and C4 over the corpus (tests/compiler-api-shapes.mts): about a
       # minute, outside the fast checks.
@@ -81,4 +82,4 @@ jobs:
       - name: Pipeline cases
         env:
           TSCERT_STEP_LIMIT: "180"
-        run: opam exec -- make suite
+        run: opam exec -- make test-cases

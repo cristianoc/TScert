@@ -517,7 +517,7 @@ point, evidence bytes, and search and check CPU. Done when, between 16 and 32 re
 elements grow with an exponent of at most 2 and the evidence bytes with an
 exponent of at most 2.3,
 `moduleFunction` writes no more than the 4.9 MB of evidence it wrote before
-`call-keep` (**measured**, deck), and `make suite` and `make test` pass with
+`call-keep` (**measured**, deck), and `make test` passes with
 every case at its expected outcome.
 
 ## 10. Order of work

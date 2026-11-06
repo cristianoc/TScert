@@ -83,7 +83,7 @@ it. Areas follow the pipeline's order; terms are alphabetical within each.
 - **negative case**: a case expected to be refused ([the record](../.claude/skills/review/SKILL.md#the-record)).
 - **Node counterexample**: a negative case run under Node to show the behaviour its refusal excludes (`tests/node-runs.mts`) ([adding a source form](SOURCE-ELABORATION.md#adding-a-source-form)).
 - **positive case**: a case expected to verify ([the record](../.claude/skills/review/SKILL.md#the-record)).
-- **suite** (`make test`, `make suite`): the fast checks and controls, and the pipeline cases ([the suite's shape](../AGENTS.md#the-suites-shape-and-the-rules-that-keep-it)).
+- **suite** (`make test-checks`, `make test-cases`; `make test` runs both): the fast checks and controls, and the pipeline cases ([the suite's shape](../AGENTS.md#the-suites-shape-and-the-rules-that-keep-it)).
 
 ## Stage store, census and measurement
 

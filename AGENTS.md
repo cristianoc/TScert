@@ -12,8 +12,9 @@ without breaking the suite's shape.
 
 ```sh
 make help        # every target
-make test        # build, then the fast checks and the controls, replayed from the store
-make suite       # build, then the pipeline cases
+make test        # make test-checks, then make test-cases: every test
+make test-checks # build, then the fast checks and the controls, replayed from the store
+make test-cases  # build, then the pipeline cases
 make cases P=x   # the pipeline cases whose file names contain x
 make check FILE=f.ts [PROJECT=dir]  # one source file through the pipeline
 make lowering FILE=f.ts [FN=name]   # the program graph a source lowers to
@@ -69,13 +70,13 @@ that covers what changed, and the wider tier once before committing:
 
 | Changed | While iterating | Before committing |
 | --- | --- | --- |
-| OCaml producer (`ocaml-producer/*.ml`) | `dune build --root ocaml-producer`, then `node pipeline/run-cases.mts <pattern>` (cases whose file names contain the pattern; about a second for a handful) | `make suite`, then `make test` (the controls: forged documents and claims no case can make) |
+| OCaml producer (`ocaml-producer/*.ml`) | `dune build --root ocaml-producer`, then `node pipeline/run-cases.mts <pattern>` (cases whose file names contain the pattern; about a second for a handful) | `make test` (the pipeline cases, and the controls: forged documents and claims no case can make) |
 | One source file | `node pipeline/verify-source.mts <file.ts> [--project dir]` | — |
-| Lean | `(cd lean && lake build)`, then `run-cases.mts` for the affected cases | `make suite`, then `make test` |
-| Parser, Fragment or SourceClaims wire, shared tools | `(cd tools && npx tsc -p tsconfig.json)`, `node tests/json-field-names.mts` (instant: TypeScript, Lean and OCaml use the same JSON field names), then `run-cases.mts` | `make suite`, then `make test` |
+| Lean | `(cd lean && lake build)`, then `run-cases.mts` for the affected cases | `make test` |
+| Parser, Fragment or SourceClaims wire, shared tools | `(cd tools && npx tsc -p tsconfig.json)`, `node tests/json-field-names.mts` (instant: TypeScript, Lean and OCaml use the same JSON field names), then `run-cases.mts` | `make test` |
 
 `run-cases.mts` with no pattern runs every case (26 s on 12 cores, measured
-2026-10-16) and is `make suite` after its build. Cases run in one worker
+2026-10-16) and is `make test-cases` after its build. Cases run in one worker
 process per core, each keeping its TypeScript compiler between cases;
 progress goes to standard error.
 
@@ -163,7 +164,7 @@ status, and statement coverage per directory and file under both
 the record's commit or of the checkout, running no stage. A census rerun with a longer `TSCERT_STEP_LIMIT`
 executes the stages that timed out again and replays the finished ones.
 
-A branch is ready to merge when `make test` and `make suite` pass; it
+A branch is ready to merge when `make test` passes; it
 reports as soon as its suites pass. The trusted model (Claude Opus 5.5 or
 Astra) that authors the change, or merges it when its author is another
 model, merges it when confident the change is correct and sound, a new
@@ -202,7 +203,7 @@ symbolic link resolves type declarations from the main checkout's path, and
 the cases reading `@types/node` then fail.
 
 
-`make suite` includes the pipeline cases, including those importing from
+`make test-cases` includes the pipeline cases, including those importing from
 `pipeline/imports-project/` and `pipeline/library-project/`. Install OCaml and
 Dune as described in [the producer guide](ocaml-producer/README.md#try-it)
 before running it.
@@ -258,8 +259,8 @@ extraction, producer, wire), and what Lean proves needs no test.
 
 ## The suite's shape, and the rules that keep it
 
-`make test` builds (a no-op when nothing changed), then runs `test-all.sh`:
-the fast checks and the controls (`pipeline/test.mts`). `make suite` builds,
+`make test-checks` builds (a no-op when nothing changed), then runs `test-all.sh`:
+the fast checks and the controls (`pipeline/test.mts`). `make test-cases` builds,
 then runs the pipeline cases (`pipeline/run-cases.mts`). Three rules decide
 where a check goes.
 

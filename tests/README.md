@@ -1,13 +1,13 @@
 # Verification regressions
 
-`make test` builds, then runs the fast checks and the controls
+`make test-checks` builds, then runs the fast checks and the controls
 ([`test-all.sh`](../test-all.sh), [`pipeline/test.mts`](../pipeline/test.mts));
-`make suite` builds, then runs the pipeline cases
+`make test-cases` builds, then runs the pipeline cases
 ([`pipeline/run-cases.mts`](../pipeline/run-cases.mts)).
 
 The pipeline cases are listed in [`pipeline/cases.mts`](../pipeline/cases.mts),
 each a source file under [`pipeline/examples/`](../pipeline/examples/) with its
-expected outcome, run by `pipeline/run-cases.mts` (`make suite`, and
+expected outcome, run by `pipeline/run-cases.mts` (`make test-cases`, and
 `make cases P=…` for those whose names contain `P`); the controls no case can
 make are `pipeline/test.mts`'s. Two families in
 `pipeline/examples/` hold one source per feature, every function checked:

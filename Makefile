@@ -4,7 +4,7 @@
 OUT ?= $(or $(TMPDIR),/tmp)/semantic-diff.html
 REV ?= HEAD
 
-.PHONY: help setup build build-lean build-producer test suite cases check lowering compiler-api-shapes semantic-diff deck fmt \
+.PHONY: help setup build build-lean build-producer test test-checks test-cases cases check lowering compiler-api-shapes semantic-diff deck fmt \
   check-fmt setup-git-hooks clean-store census build-runner
 
 help: ## list the targets
@@ -32,10 +32,12 @@ build-lean: ## build the Lean verifier
 build-producer: ## build the OCaml producer
 	dune build --root ocaml-producer
 
-test: build ## build, then the fast checks and the controls no case can make (replayed from the stage store)
+test: test-checks test-cases ## build, then the fast checks and the controls, then the pipeline cases
+
+test-checks: build ## build, then the fast checks and the controls no case can make (replayed from the stage store)
 	@./test-all.sh
 
-suite: build ## build, then the pipeline cases
+test-cases: build ## build, then the pipeline cases
 	node pipeline/run-cases.mts
 
 cases: ## the pipeline cases whose file names contain P (all of them when P is empty)

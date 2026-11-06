@@ -338,7 +338,7 @@ For every numbered step, record three numbers beside the commit record:
 1. **V:** verified statements in `declaration-graph.mts`, from
    `make census FILES=declaration-graph.mts`, with verified/countable totals.
 2. **U:** pipeline cases whose actual outcomes and expected refusal reasons
-   agree with the previous step, from `make suite`, as `U/total`; retain the
+   agree with the previous step, from `make test-cases`, as `U/total`; retain the
    full case results to identify a changed case. The requirement is every
    case unchanged, including gaps and refusals.
 3. **P:** parse CPU seconds summed over the census slice invocations, from
@@ -440,7 +440,7 @@ step limit.
 | Measure | Baseline |
 | --- | --- |
 | V: verified statements | **410 / 4,247 (9.7%)**, 31 / 45 functions verified |
-| U: pipeline case baseline | **2,752 / 2,752** cases as expected (`make suite`, same sources); comparison starts from these outcomes |
+| U: pipeline case baseline | **2,752 / 2,752** cases as expected (`make test-cases`, same sources); comparison starts from these outcomes |
 | P: parse CPU | **74.847290 s**, 45 executed parses, 0 replayed, 0 unavailable CPU readings |
 | Common collector slice's parse CPU | **13.365444 s** |
 | Collector's statements | **0 / 2,941** verified |
@@ -459,7 +459,7 @@ policy; it predicts neither additional refusals behind the first one nor a
 speedup from extraction.
 
 The suite baseline is also measured on 2026-11-01 under the same lock, by
-`make suite` at the same commit. The suite reports 3,455 functions verified, 1,458 negative
+`make test-cases` at the same commit. The suite reports 3,455 functions verified, 1,458 negative
 controls and 210 named gaps. Its case outcomes include those gaps; the
 2,752 figure counts agreement with expectations, rather than acceptance of
 every source.
