@@ -37,6 +37,12 @@ inductive StepEvidence (ι : Type) where
   state, so this carries only the ordinary derivation it stands beside. -/
   | allocated (proof : ProgramCertificates.Evidence ι)
   | written (receiver value : Nat) (contents : Option ValueSets.ValueSet) (proof : ProgramCertificates.Evidence ι)
+  /-- A write `x.[] := x.[]⟦k ↦ v⟧` of the value in `value` into the store of
+  the array in `receiver` at the index in `index`, where the knowledge bounds
+  that index by the store's length (`IndexWrites`, `setElem-bounded`); `sub`
+  takes the value's type to the store's element type. The base checker
+  accepts none: a layer of `Checker.ordinary` checks it. -/
+  | boundedWrite (receiver index value : Nat) (sub : PositiveCertificates.SubtypeChoices ι)
 
 /-- An expression-step checker carries the safety theorem required by graph
 composition, including its output heap knowledge. -/
@@ -65,12 +71,12 @@ def copySlots (i j : Nat) : List Nat := if j = i then [0,j+1] else [j+1]
 def copy (k : Knowledge) (i : Nat) : Knowledge :=
   ⟨copyFacts k.cells i,copyFacts k.values i,
     ⟨0,i+1,true,valueField,false⟩ :: HeapLinks.pull k.links (copySlots i),
-    HeapSeparation.copy k.separation i, HeapKnowledge.shiftElems k.elems⟩
+    HeapSeparation.copy k.separation i, HeapKnowledge.shiftElems k.elems, HeapKnowledge.shiftIndices k.indices⟩
 
 theorem copy_holds {k i ρ h} (hk : HeapKnowledge.Holds k ρ h) :
     HeapKnowledge.Holds (copy k i) (push (ρ i) ρ) h := by
   have shifted := HeapKnowledge.shift_holds (v := ρ i) hk
-  refine ⟨?_,?_,?_,HeapSeparation.copy_holds hk.2.2.2.1,shifted.2.2.2.2⟩
+  refine ⟨?_,?_,?_,HeapSeparation.copy_holds hk.2.2.2.1,shifted.2.2.2.2.1,shifted.2.2.2.2.2⟩
   · intro f hf
     rcases List.mem_append.mp hf with hf | hf
     · obtain ⟨g,hg,rfl⟩ := List.mem_map.mp hf
@@ -216,7 +222,7 @@ theorem includes_sound {G : NormalGraph ι} {A R v} (hc : includes G A R = true)
   · contradiction
 
 def withResult (k : Knowledge) (R : ValueSets.ValueSet) : Knowledge :=
-  ⟨k.cells,⟨0,R,valueField⟩::k.values,k.links,k.separation,k.elems⟩
+  ⟨k.cells,⟨0,R,valueField⟩::k.values,k.links,k.separation,k.elems,k.indices⟩
 
 theorem result_holds {k R ρ h v} (hk : HeapKnowledge.Holds k (push v ρ) h)
     (hr : R.mem v = true) : HeapKnowledge.Holds (withResult k R) (push v ρ) h := by
@@ -735,7 +741,7 @@ theorem linkedRead_sound {G : NormalGraph ι} {Γ k i y fld B A ρ n W h}
 /-- Ordinary calls and arbitrary expressions retain immutable snapshots, but no
 heap observation without a specific proved effect rule. -/
 def ordinaryOutput (k : Knowledge) : Knowledge :=
-  ⟨[],HeapFacts.shift k.values,HeapLinks.stable (HeapKnowledge.shift k).links,HeapSeparation.shift k.separation,[]⟩
+  ⟨[],HeapFacts.shift k.values,HeapLinks.stable (HeapKnowledge.shift k).links,HeapSeparation.shift k.separation,[],[]⟩
 
 theorem ordinary_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G} {subtyping : BodySubtyping G} {Γ k t A ρ n W h}
     (ht : HasTyUsing G images (subtyping := subtyping) Γ t A) (he : EnvOk G Γ ρ n W) (hk : HeapKnowledge.Holds k ρ h)
@@ -746,7 +752,8 @@ theorem ordinary_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceI
   intro _ _ heap v _
   exact ⟨holds_nil _ _,(HeapKnowledge.shift_holds (v := v) hk).2.1,
     HeapLinks.stable_holds (HeapKnowledge.shift_holds (v := v) hk).2.2.1,
-    (HeapKnowledge.shift_holds (v := v) hk).2.2.2.1, HeapKnowledge.elemsHolds_nil _ _⟩
+    (HeapKnowledge.shift_holds (v := v) hk).2.2.2.1, HeapKnowledge.elemsHolds_nil _ _,
+    HeapKnowledge.indexHolds_nil _ _⟩
 
 /-- The named fields, invariant fields and readonly views, of every
 record-typed slot: the locations a fresh allocation is known to differ from,
@@ -780,7 +787,8 @@ whatever it holds: one separation fact (`HeapSeparation.allocate`). -/
 def allocOutput (k : Knowledge) (Rs : List (PropKey × ValueSets.ValueSet)) (n : Nat)
     (others : List (Nat × PropKey)) : Knowledge :=
   ⟨(Rs.map fun p => (⟨0,p.2,p.1⟩ : Fact)) ++ HeapFacts.shift k.cells, HeapFacts.shift k.values,
-    (HeapKnowledge.shift k).links, HeapSeparation.allocate k.separation n others, HeapKnowledge.shiftElems k.elems⟩
+    (HeapKnowledge.shift k).links, HeapSeparation.allocate k.separation n others, HeapKnowledge.shiftElems k.elems,
+    HeapKnowledge.shiftIndices k.indices⟩
 
 theorem slots_snd_ge : ∀ {base : Nat} {ns : List PropKey} {l : Nat},
     l ∈ (slots base ns).map Prod.snd → base ≤ l
@@ -905,7 +913,8 @@ theorem alloc_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k A ρ n W h} {cod
   · simp only [allocOutput]
     exact ⟨HeapLinks.alloc_frames [.nul] (HeapLinks.alloc_frames (parts.map fun p => ρ p.2) hshift.2.2.1),
       HeapSeparation.allocate_holds hk.2.2.2.1 (fresh_apart he hh),
-      HeapKnowledge.elemsHolds_extend _ (HeapKnowledge.elemsHolds_extend _ hshift.2.2.2.2)⟩
+      HeapKnowledge.elemsHolds_extend _ (HeapKnowledge.elemsHolds_extend _ hshift.2.2.2.2.1),
+      HeapKnowledge.indexHolds_extend _ (HeapKnowledge.indexHolds_extend _ hshift.2.2.2.2.2)⟩
 
 /-- An object allocated past the heap's end keeps what was known of the old
 heap, and its own locations are separated from every contract field of the
@@ -918,7 +927,8 @@ theorem fresh_holds [DecidableEq ι] {G : NormalGraph ι} {Γ k ρ n W h}
   have hshift := HeapKnowledge.shift_holds (v := Tm.objAt (slots h.length ns) code oid) hk
   refine ⟨?_, hshift.2.1, HeapLinks.alloc_frames [.nul] (HeapLinks.alloc_frames vs hshift.2.2.1),
     HeapSeparation.allocate_holds hk.2.2.2.1 (fresh_apart he hh),
-    HeapKnowledge.elemsHolds_extend _ (HeapKnowledge.elemsHolds_extend _ hshift.2.2.2.2)⟩
+    HeapKnowledge.elemsHolds_extend _ (HeapKnowledge.elemsHolds_extend _ hshift.2.2.2.2.1),
+    HeapKnowledge.indexHolds_extend _ (HeapKnowledge.indexHolds_extend _ hshift.2.2.2.2.2)⟩
   intro f hf
   simp only [allocOutput, List.map_nil, List.nil_append] at hf
   obtain ⟨g,hg,rfl⟩ := List.mem_map.mp hf
@@ -1005,7 +1015,7 @@ def writeOutput (k : Knowledge) (i : Nat) (fld : PropKey) (R : Option ValueSets.
       (k.cells.filter fun f => writeKeeps k i fld owned f.slot f.field).map
         (fun f => {f with slot := f.slot + 1}),
     ⟨0,{ nul := true },valueField⟩ :: HeapFacts.shift k.values,
-    HeapLinks.stable (HeapKnowledge.shift k).links, HeapSeparation.shift k.separation, []⟩
+    HeapLinks.stable (HeapKnowledge.shift k).links, HeapSeparation.shift k.separation, [], []⟩
 
 theorem write_inv {f h a b h' t} (ha : isVal a = true) (hb : isVal b = true)
     (hs : Step h (.writeAt f a b) h' t) :
@@ -1044,7 +1054,8 @@ theorem write_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImag
       rw [hl] at hs ⊢
       apply one_step rfl rfl (.writeField hvv hfd hlt) _ hs
       refine ⟨?_,?_,HeapLinks.stable_holds (HeapKnowledge.shift_holds (v := .nul) hk).2.2.1,
-        (HeapKnowledge.shift_holds (v := .nul) hk).2.2.2.1, HeapKnowledge.elemsHolds_nil _ _⟩
+        (HeapKnowledge.shift_holds (v := .nul) hk).2.2.2.1, HeapKnowledge.elemsHolds_nil _ _,
+        HeapKnowledge.indexHolds_nil _ _⟩
       · intro f hf
         rcases List.mem_append.mp hf with hf | hf
         · cases hR : R with
@@ -1470,6 +1481,7 @@ frame. Subtype comparisons retain unfinished work through the step validation. -
         v < j.context.length ∧ valuesAt G j.context k v = R))
         (writeOutput k i fld R (ownedField (expand G (j.context.getD i [])) fld)) codes sums tree
     | none => failure
+  | .boundedWrite .. => failure
 
 @[nospecialize] def checkStepUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (j : Sequent ι)
     (k : Knowledge) (step : StepEvidence ι) (codes : CodeEntry ι → Bool := fun _ => false)
@@ -1567,7 +1579,8 @@ theorem checkStepUsing_eq [DecidableEq ι] (G : NormalGraph ι) (images : Instan
           i < j.context.length ∧ v < j.context.length ∧
           valuesAt G j.context k v = R
       then some (writeOutput k i fld R (ownedField (expand G (j.context.getD i [])) fld)) else none
-    | none => none := by
+    | none => none
+  | .boundedWrite .. => none := by
   cases step <;> simp only [checkStepUsing, checkStepResult, checkedOutput_value,
     CheckResult.value_bind_const,
     CheckResult.accepted_ofBool,
@@ -1815,6 +1828,9 @@ theorem checkStep_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instance
         simpa [instantiate] using write_sound typed hi hv hr he hk hw hh
       · contradiction
     · contradiction
+  | boundedWrite =>
+    simp only [checkStepUsing_eq] at hc
+    cases hc
 
 /-! ### Stable links (HOST-FAMILIES.md, "Stable links")
 

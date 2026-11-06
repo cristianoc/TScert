@@ -282,7 +282,7 @@ did not mention grow it, and the request carries the result. -/
       (siblingScope.zipIdx.filterMap fun (b, j) => b.moduleCell.map (base + j, ·))
     let entry ← emit .nul (.effect first) inputs [Labels.nul]
     if !entrySeparation.facts.isEmpty then
-      recordAssertion entry ⟨[], [], [], entrySeparation, []⟩
+      recordAssertion entry ⟨[], [], [], entrySeparation, [], []⟩
     return (inputs, R, entry, promise, entrySeparation)
   return {
     toRequest := ⟨built.types, built.program, built.claims, R, entry.label, inputs, built.codes, promise,

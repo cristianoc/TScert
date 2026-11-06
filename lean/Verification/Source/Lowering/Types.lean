@@ -460,8 +460,21 @@ singleton; NaN, which no equality test finds, is not one. -/
     | .numLit b => if numberEqual b b then some (.numEq b, .str (numberToString b)) else none
     | _ => none
 
+/-- Whether a key's claim is numbers, `number` among them: a key the program
+computes, whose write into a homogeneous writable array is certified where
+the knowledge bounds it (PROGRAM-TYPING.md, "Writes at a checked index"). -/
+def runtimeNumberKey (G : PositiveGraphs.NormalGraph ι) (K : Ty ι) : Bool :=
+  let cs := PositiveNormalization.splitSets (PositiveRules.expand G K)
+  cs.contains .num && cs.all fun c => match c with | .num | .numLit _ => true | _ => false
+
+/-- Whether an expression is claimed at a homogeneous writable array, whose
+store a write at a `number` key may write (`IndexWrites.writableElement`). -/
+@[nospecialize] def writableReceiver (fc : SourceClaims.Function Tree) (e : Fragment.Expr) : Compiler Bool := do
+  return (IndexWrites.writableElement (SourceTypes.graph (← table)) (← exprType fc e)).isSome
+
 @[nospecialize] def keyField (fc : SourceClaims.Function Tree) (key : Fragment.Expr)
-    (string : Bool := false) (record : Bool := false) (dict : Bool := false) : Compiler KeyKind := do
+    (string : Bool := false) (record : Bool := false) (dict : Bool := false)
+    (writable : Bool := false) : Compiler KeyKind := do
   let K ← exprType fc key
   let G := SourceTypes.graph (← table)
   let spelled := fun (s : String) =>
@@ -480,7 +493,11 @@ singleton; NaN, which no equality test finds, is not one. -/
   | [.strLit s] => spelled s
   | [.str] => pure .dynamic
   | [.num] | [.symbol] => if dict then pure .dynamic else
-    if string && decide (Answers G K .isNum true) then return .element else do
+    if string && decide (Answers G K .isNum true) then return .element else
+    -- A write at a `number` key into a homogeneous writable array: the write
+    -- is certified where the knowledge bounds the key
+    -- (PROGRAM-TYPING.md, "Writes at a checked index").
+    if writable && runtimeNumberKey G K then return .element else do
       let _ ← locatedIndex key.span K
       pure .element
   | .numLit b :: cs =>
@@ -489,6 +506,7 @@ singleton; NaN, which no equality test finds, is not one. -/
       spelled (numberToString b)
     else
       if string && decide (Answers G K .isNum true) then return .element
+      if writable && runtimeNumberKey G K then return .element
       let _ ← locatedIndex key.span K
       pure .element
   -- Some string with string singletons is any string, read as `[.str]` is.
@@ -496,8 +514,10 @@ singleton; NaN, which no equality test finds, is not one. -/
     if cs.any (fun c => match c with | .str => true | _ => false) &&
         cs.all (fun c => match c with | .str | .strLit _ => true | _ => false) then pure .dynamic else
     -- A string's index properties are its code units: any number names one
-    -- or none (`elemStr`); an array's needs one proved index.
+    -- or none (`elemStr`); an array's needs one proved index, or a checked
+    -- bound where it is written.
     if string && decide (Answers G K .isNum true) then return .element
+    if writable && runtimeNumberKey G K then return .element
     let _ ← locatedIndex key.span K
     pure .element
 
@@ -697,7 +717,8 @@ negation. -/
     if moduleOwned || (← ownedWrite) == some p then
       if computedKeyClaim (SourceTypes.graph (← table)) (← exprType fc key) then
         return .indexWrite p none r key rhs
-    match ← keyField fc key (record := ← recordReceiver fc r) (dict := ← dictReceiver fc r) with
+    match ← keyField fc key (record := ← recordReceiver fc r) (dict := ← dictReceiver fc r)
+        (writable := ← writableReceiver fc r) with
     | .field s => return .indexWrite p (some s) r key rhs
     | .dynamic =>
       -- A write at a key known only at run time may add the key: on an

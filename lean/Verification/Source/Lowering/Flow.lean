@@ -292,8 +292,19 @@ private def reachablePoints (graph : SourceFlow.Graph) (id : Nat) : List String 
   let facts ← entryFacts fc node.source.1 scope
   let separation := separationFacts (SourceTypes.graph (← table)) scope Γ
   let links ← witnessLinks fc node.source.1 scope
-  if !facts.isEmpty || !links.isEmpty || !separation.facts.isEmpty then
-    recordAssertion reserved ⟨facts, [], links, separation, []⟩
+  -- A bound a guard states: the index binding's value is an array index at
+  -- most the length of the array binding's store (PROGRAM-TYPING.md, "Writes
+  -- at a checked index"). Both name value bindings; a claim naming any other
+  -- is refused rather than dropped.
+  let bounds ← ((fc.entryBounds.lookup node.source.1).getD []).mapM fun (array, index) =>
+    match valueSlot scope array, valueSlot scope index with
+    | some x, some k => pure ({ fact := .bound x k } : HeapKnowledge.IndexAtom)
+    | none, _ => do throw (locatedRefusal (← table) node.source .entryClaim
+        s!"a bound names '{array}' as its array, which is no value binding")
+    | _, none => do throw (locatedRefusal (← table) node.source .entryClaim
+        s!"a bound names '{index}' as its index, which is no value binding")
+  if !facts.isEmpty || !links.isEmpty || !separation.facts.isEmpty || !bounds.isEmpty then
+    recordAssertion reserved ⟨facts, [], links, separation, [], bounds⟩
   recordCut reserved
   return ← jumpTo incoming reserved scope
 

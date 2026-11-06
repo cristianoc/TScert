@@ -317,14 +317,19 @@ let infer (expr:Analysis_state.expression_infer) execute_bindings (infer_body:An
       let field_write (o:expr) k = match latest_claim o.pos with
         | Some t -> source_field_write declarations t k
         | None -> false in
+      (* An element write: the claim types the object as a writable array
+         and the key as a number. *)
+      let element_key (o:expr) (k:expr) = match latest_claim o.pos, latest_claim k.pos with
+        | Some a, Some n -> writable_array declarations a && number_like declarations n
+        | _ -> false in
       (* Where every node of the body and its defaults bounds its throw, the
          footprint is proposed on a throw too; otherwise a `throw` is outside
          what it bounds. *)
       let on_throw = List.for_all (fun (_,d) -> throws_expr ~callable d) defaults && throws_expr ~callable body in
       let dead_throw = not on_throw in
       let bound = if rest || Hashtbl.mem Source.async_closures e.pos then None else
-        List.fold_left (fun acc (_,d) -> join_bound acc (footprint_expr ~field_write ~dead_throw ~callable ~no_return ~iteration ~readable d))
-          (footprint_expr ~dispatched ~field_write ~dead_throw ~callable ~no_return ~iteration ~readable body) defaults in
+        List.fold_left (fun acc (_,d) -> join_bound acc (footprint_expr ~field_write ~element_key ~dead_throw ~callable ~no_return ~iteration ~readable d))
+          (footprint_expr ~dispatched ~field_write ~element_key ~dead_throw ~callable ~no_return ~iteration ~readable body) defaults in
       let call_effect = match bound with
         | Some footprint -> {Semantic.ordinary_effect with footprint; fresh=fresh_result ~callable body; on_throw}
         | None -> Semantic.ordinary_effect in

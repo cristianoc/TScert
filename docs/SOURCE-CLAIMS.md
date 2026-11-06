@@ -74,13 +74,17 @@ Each function object has these fields:
 | `contracts` | Mutable declaration contracts: `{pos,name,type}` |
 | `footprint` | The [closed footprint](FOOTPRINTS.md#changes-and-footprints) proposed for the declaration's signature: `{"value":v,"store":s}` |
 | `onThrow` | Whether the footprint is proposed on a throw too, which the unit's graph must then establish as well: `true` or `false` |
-| `entries` | Entry claims: `{point,start,bindings}` |
+| `entries` | Entry claims: `{point,start,bindings,bounds}` |
 | `expressions` | Expression claims: `{point,pos,type,current}` |
 | `arrows` | Optional per-signature interior claims, described below |
 
 A parameter point and an entry binding both carry `name`, `type` and
-`current`. Entry `bindings` is a list of those named points. `start` is the
-source offset associated with the graph node. Expression `pos` is a span.
+`current`. Entry `bindings` is a list of those named points. Entry `bounds`
+is a list, possibly empty, of `{array,index}`, each naming two value bindings
+of the entry: the index binding's value is an array index at most the length
+of the array binding's store, which the entry's knowledge states and every
+edge into it checks ([writes at a checked index](PROGRAM-TYPING.md#writes-at-a-checked-index)).
+`start` is the source offset associated with the graph node. Expression `pos` is a span.
 Every point has an explicit `current`: `null` states that no additional
 contents assertion is supplied. Expressions may also have `instantiate`,
 absent or `null` except at proposed quantified-call eliminations.
@@ -132,7 +136,7 @@ executable input; its identity and point associations must match a Fragment:
     "params": [{"name":"flag","type":[1,2],"current":null}],
     "result": [1,2], "contracts": [], "footprint": {"value":"keep","store":"keep"},
     "entries": [{"point":"9:17:1","start":43,
-      "bindings":[{"name":"flag","type":[1,2],"current":null}]}],
+      "bindings":[{"name":"flag","type":[1,2],"current":null}], "bounds":[]}],
     "expressions": [{"point":"9:17:1","pos":[50,54],
       "type":[1,2],"current":null}]
   }]

@@ -802,7 +802,7 @@ its keys change. -/
     | .indexWrite _ none receiver key rhs => do
       let resolved ← comparisonsExpr fc key
       match ← keyField fc resolved (record := ← recordReceiver fc receiver)
-          (dict := ← dictReceiver fc receiver) with
+          (dict := ← dictReceiver fc receiver) (writable := ← writableReceiver fc receiver) with
       | .field s => pure (receiver, PropKey.str s, some key, rhs)
       | _ => return none
     | _ => return none

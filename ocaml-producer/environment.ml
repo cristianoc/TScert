@@ -26,6 +26,16 @@ let lookup ?at env name = match List.assoc_opt name env with
   | Some b -> b | None -> unbound ?at name
 let is_field n = String.contains n '\000'
 let owner n = String.sub n 0 (String.index n '\000')
+(* A bound a guard states for the statement after it (PROGRAM-TYPING.md,
+   "Writes at a checked index"): the value of `index` is an array index at
+   most the length of the array `array` holds. It is held from the guard's
+   failing edge to the next statement's entry, which claims it, and no
+   further. *)
+let bound_key array index = "\002" ^ array ^ "\002" ^ index
+let is_bound n = String.length n > 0 && n.[0] = '\002'
+let bound_parts n = match String.split_on_char '\002' n with
+  | [""; array; index] -> Some (array, index)
+  | _ -> None
 let extend env name binding =
   if List.mem_assoc name env then Json.unsupported ("shadowing " ^ name);
   env @ [name,binding]

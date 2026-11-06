@@ -63,7 +63,7 @@ def links : HeapLinks.Links :=
 of `ls` the value facts `vs` of its value. -/
 def cells (vs : Facts) (ls : HeapLinks.Links) : Facts :=
   (k.cells.flatMap fun f => (members cs f.slot).map fun y => { f with slot := y }) ++
-  vs.flatMap fun F => linkFacts ⟨[], [], ls, {}, []⟩ F.slot F.contents
+  vs.flatMap fun F => linkFacts ⟨[], [], ls, {}, [], []⟩ F.slot F.contents
 
 /-- An atomic pair between every two slots of its classes. -/
 def spread : SepAtom → List SepAtom
@@ -87,7 +87,7 @@ def expand : Knowledge :=
   let cs := LinkClasses.closure k.links
   let vs := values ctx k cs
   let ls := links k cs
-  ⟨cells k cs vs ls, vs, ls, separation k cs, k.elems⟩
+  ⟨cells k cs vs ls, vs, ls, separation k cs, k.elems, k.indices⟩
 
 end
 
@@ -177,8 +177,9 @@ theorem cells_holds (hk : HeapKnowledge.Holds k ρ h) {vs : Facts} {ls : HeapLin
     obtain ⟨flds, c, oid, u, he, hr, hm⟩ := hk.1 f hf
     exact ⟨flds, c, oid, u, by rw [members_eq hk.2.2.1 hy]; exact he, hr, hm⟩
   · obtain ⟨V, hV, hF⟩ := List.mem_flatMap.mp hF
-    have hk' : HeapKnowledge.Holds ⟨[], [], ls, {}, []⟩ ρ h :=
-      ⟨holds_nil ρ h, by simp [ValueHolds], hl, HeapSeparation.empty_holds ρ, elemsHolds_nil ρ h⟩
+    have hk' : HeapKnowledge.Holds ⟨[], [], ls, {}, [], []⟩ ρ h :=
+      ⟨holds_nil ρ h, by simp [ValueHolds], hl, HeapSeparation.empty_holds ρ, elemsHolds_nil ρ h,
+        indexHolds_nil ρ h⟩
     exact linkFacts_holds hk' (hv V hV) F hF
 
 theorem atoms_of_holds {S : HeapSeparation.Separation} (hS : HeapSeparation.Holds S ρ) :
@@ -238,7 +239,8 @@ def expandLinks (ctx : Ctx) (k : Knowledge) : Knowledge :=
   let vs := (k.values.map fun F => { F with contents := restrict (classCtxIn ctx cs F.slot) F.contents }) ++
     (k.links.filter fun g => !g.alias).filterMap fun g =>
       (classCtxIn ctx cs g.value).map fun C => ⟨g.value, C, valueField⟩
-  ⟨k.cells ++ vs.flatMap (fun F => linkFacts ⟨[], [], k.links, {}, []⟩ F.slot F.contents), vs, ls, k.separation, k.elems⟩
+  ⟨k.cells ++ vs.flatMap (fun F => linkFacts ⟨[], [], k.links, {}, [], []⟩ F.slot F.contents), vs, ls, k.separation, k.elems,
+    k.indices⟩
 
 theorem expandLinks_holds {ctx : Ctx} {k : Knowledge} {ρ : Env} {h : Heap} (hc : CtxOk ctx ρ)
     (hk : HeapKnowledge.Holds k ρ h) : HeapKnowledge.Holds (expandLinks ctx k) ρ h := by
@@ -260,8 +262,9 @@ theorem expandLinks_holds {ctx : Ctx} {k : Knowledge} {ρ : Env} {h : Heap} (hc 
   rcases List.mem_append.mp hF with hF | hF
   · exact hk.1 F hF
   · obtain ⟨V, hV, hF⟩ := List.mem_flatMap.mp hF
-    have hk' : HeapKnowledge.Holds ⟨[], [], k.links, {}, []⟩ ρ h :=
-      ⟨holds_nil ρ h, by simp [ValueHolds], hk.2.2.1, HeapSeparation.empty_holds ρ, elemsHolds_nil ρ h⟩
+    have hk' : HeapKnowledge.Holds ⟨[], [], k.links, {}, [], []⟩ ρ h :=
+      ⟨holds_nil ρ h, by simp [ValueHolds], hk.2.2.1, HeapSeparation.empty_holds ρ, elemsHolds_nil ρ h,
+        indexHolds_nil ρ h⟩
     exact linkFacts_holds hk' (hv V hV) F hF
 
 /-- The expansion holds wherever the knowledge does, at environments meeting
@@ -296,7 +299,8 @@ def checkIn (ctx : Ctx) (a b : Knowledge) (m : PointClaims.Mapping) : Bool :=
   cellsCheck a cs b.cells m && (valuesCheck ctx a cs b m &&
   (HeapLinks.checkWith (LinkClasses.repIn cs) a.links b.links m &&
     (HeapSeparation.checkWithTable (SeparationNormal.levelTable (LinkClasses.repIn cs) a.separation.depth)
-      a.separation b.separation m && HeapKnowledge.elemsCheckBy (Partitions.cls cs) a.elems b.elems m)))
+      a.separation b.separation m && (HeapKnowledge.elemsCheckBy (Partitions.cls cs) a.elems b.elems m &&
+        HeapKnowledge.indicesCheckBy (Partitions.cls cs) a.indices b.indices m))))
 
 theorem checkIn_sound {ctx a b m ρ h} (hc : checkIn ctx a b m = true)
     (hctx : CtxOk ctx (PointClaims.mapEnv m ρ)) (ha : HeapKnowledge.Holds a ρ h) :
@@ -331,7 +335,8 @@ theorem checkIn_sound {ctx a b m ρ h} (hc : checkIn ctx a b m = true)
         ρ (a.separation.depth - 1 - ℓ) := fun ℓ hℓ => by
     rw [SeparationNormal.levelTable_eq]; exact hrn ℓ hℓ
   refine ⟨?_, ?_, hl, HeapSeparation.checkBy_sound hrn' hc.2.2.2.1 ha.2.2.2.1,
-    HeapKnowledge.elemsCheckBy_sound hs hc.2.2.2.2 ha.2.2.2.2⟩
+    HeapKnowledge.elemsCheckBy_sound hs hc.2.2.2.2.1 ha.2.2.2.2.1,
+    HeapKnowledge.indicesCheckBy_sound hs hc.2.2.2.2.2 ha.2.2.2.2.2⟩
   · intro f hf
     have hf := List.all_eq_true.mp hc.1 f hf
     split at hf

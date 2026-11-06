@@ -549,7 +549,7 @@ let encode (proposal : Proposal_types.t) =
   (* A statement entry's bindings; a field's known contents are its object's
      `current` assertion, one `[path, type]` pair per field or member path. *)
   let bindings bs = Array (List.filter_map (fun (n,b) ->
-    if Environment.is_field n then None else
+    if Environment.is_field n || Environment.is_bound n then None else
     let fields = List.filter_map (fun (m,f) ->
       if Environment.is_field m && Environment.owner m = n &&
          (Environment.is_path m || not (List.mem_assoc (Environment.path_key n [Environment.field_of m]) bs)) then
@@ -561,6 +561,11 @@ let encode (proposal : Proposal_types.t) =
                   "current",(if fields = [] then Null else Array fields)])) bs)
 
   in
+  (* A statement entry's bounds (`Environment.bound_key`), each an array and
+     an index named by a binding of the entry. *)
+  let bounds bs = Array (List.filter_map (fun (n,_) -> match Environment.bound_parts n with
+    | Some (array,index) -> Some (Object ["array",String array;"index",String index])
+    | None -> None) bs) in
   let contracts row = Array (List.map (fun (c : Proposal_types.contract) ->
     Object ["pos",c.pos;"name",String c.name;"type",claim_type c.type_]) row) in
   let interior (f : Proposal_types.function_claim) =
@@ -568,7 +573,8 @@ let encode (proposal : Proposal_types.t) =
       Object (["point",String e.point; "pos",e.pos; "type",claim_type e.type_; "current",Null]
         @ instantiate e.instantiation)) row) in
     let entries es = Array (List.map (fun (e : Proposal_types.entry) ->
-      Object ["point",String e.point; "start",e.start;"bindings",bindings e.bindings]) es) in
+      Object ["point",String e.point; "start",e.start;"bindings",bindings e.bindings;
+              "bounds",bounds e.bindings]) es) in
     let arrows = if f.arrows = [] then [] else
       ["arrows",Array (List.map (fun (pos,rows) ->
         Object ["pos",pos;"rows",Array (List.map (fun (o : Proposal_types.overlay) ->
@@ -583,7 +589,8 @@ let encode (proposal : Proposal_types.t) =
     (* One set of interior claims per advertised signature, in signature order,
        stated only by a closure that advertises more than one. *)
     let entries es = Array (List.map (fun (e : Proposal_types.entry) ->
-      Object ["point",String e.point; "start",e.start;"bindings",bindings e.bindings]) es) in
+      Object ["point",String e.point; "start",e.start;"bindings",bindings e.bindings;
+              "bounds",bounds e.bindings]) es) in
     let arrows = if f.arrows = [] then [] else
       ["arrows",Array (List.map (fun (pos,rows) ->
         Object ["pos",pos;"rows",Array (List.map (fun (o : Proposal_types.overlay) ->

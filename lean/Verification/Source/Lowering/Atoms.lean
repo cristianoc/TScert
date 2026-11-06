@@ -1010,7 +1010,13 @@ Mappings discard only the temporaries introduced by this expression. -/
     -- write, so every alias sees the contract kept.
     let B ← exprType fc receiver
     let K ← exprType fc key
-    let index ← arrayKeyTerm key.span K
+    -- A key of type `number` into a homogeneous writable array is the key's
+    -- slot: the write is certified where the knowledge bounds it
+    -- (`IndexWrites.boundedWriteCheck`, PROGRAM-TYPING.md, "Writes at a
+    -- checked index"). Any other key names one index or is refused.
+    let G := SourceTypes.graph (← table)
+    let index ← if runtimeNumberKey G K && (IndexWrites.writableElement G B).isSome then pure (Tm.var 1)
+      else arrayKeyTerm key.span K
     let C ← exprType fc rhs
     let drop := ⟨next.label, some ((next.mapping.getD (List.range (Γ.length+1))).map
       (fun i => if i == 0 then 0 else i+3))⟩

@@ -108,10 +108,17 @@ structure Binding (ι : Type) where
   type : ClaimType ι
   current : Option (CurrentFields ι) := none
   deriving ToJson, FromJson
+/-- A bound a guard states at a statement entry: the binding `index` holds an
+array index at most the length of the array the binding `array` holds. -/
+structure Bound where
+  array : String
+  index : String
+  deriving ToJson, FromJson
 structure Entry (ι : Type) where
   point : String
   start : Nat
   bindings : List (Binding ι)
+  bounds : List Bound
   deriving ToJson, FromJson
 /-- The type arguments one call supplies for a scheme's binders. It is the
 producer's proposed elimination, re-checked here; it is never itself evidence. -/
@@ -230,6 +237,7 @@ private def pointData (entries : List (Entry ι)) (expressions : List (Expressio
   { envs := entries.map (fun e => (e.start,e.bindings.map (fun b => (b.name,b.type.ground))))
     exprs := expressions.map (fun e => (e.pos,e.type.ground))
     entryCurrent := entries.map (fun e => (e.start,e.bindings.filterMap fun b => b.current.map (b.name,·)))
+    entryBounds := entries.map (fun e => (e.start,e.bounds.map fun b => (b.array, b.index)))
     -- An expression's assertion is of one field each (`validCurrent`).
     exprCurrent := expressions.filterMap (fun e => e.current.map fun fs =>
       (e.pos, fs.filterMap fun (p, A) => match p with | [k] => some (k, A) | _ => none)) }
@@ -246,7 +254,7 @@ def Function.normalized (f : Function ι) : SourceClaims.Function ι :=
   let sites := pointData f.entries f.expressions
   { name := f.name, namePos := f.namePos, params := f.params.map (fun b => (b.name,b.type.ground))
     ret := f.result.ground, envs := sites.envs, exprs := sites.exprs
-    entryCurrent := sites.entryCurrent, exprCurrent := sites.exprCurrent
+    entryCurrent := sites.entryCurrent, exprCurrent := sites.exprCurrent, entryBounds := sites.entryBounds
     points := pointTable f.entries f.expressions, contracts := storageContracts f.contracts
     footprint := f.footprint
     onThrow := f.onThrow

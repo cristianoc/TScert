@@ -111,6 +111,52 @@ control(async (): Promise<void> => {
 });
 
 control(async (): Promise<void> => {
+  // A write at a checked index (PROGRAM-TYPING.md, "Writes at a checked
+  // index"). A bound claimed at the write's entry where the guard tests the
+  // mask alone is refused where evidence is searched; and in the evidence of
+  // a guarded write, a write naming another index slot, a bound whose
+  // condition's answer is flipped and a conditional bound made unconditional
+  // are each refused where it is checked.
+  {
+    const artifacts = run("invalid-index-write-no-compare");
+    const source = readFileSync(sourceKey(artifacts), "utf8");
+    const write = source.indexOf("xs[k] = v");
+    const claims = readClaims(artifacts);
+    const fn = must(claims.functions.find(f => f.name === "wrong"), "wrong's claims");
+    const entry = must(fn.entries.find(e => e.start === write), "the write's entry");
+    entry.bounds.push({ array: "xs", index: "k" });
+    const forged = writeClaims(artifacts, "index-write-forged-bound", claims);
+    const searched = produceWith(artifacts, forged, "index-write-forged-bound");
+    assert.equal(searched.status, 1, searched.stdout + searched.stderr);
+  }
+  const artifacts = run("index-write-guard");
+  const claims = readClaims(artifacts);
+  const at = claims.functions.findIndex(f => f.name === "set");
+  type Atom = { fact: { [kind: string]: { [slot: string]: number } }; cond: number | null; negated: boolean };
+  type Node = WireNode & { output: { indices: Atom[] } };
+  for (const variant of ["index", "polarity", "unconditional"] as const) {
+    const evidence: unknown = unfoldedEvidence(join(artifacts, "evidence.json"));
+    assert.ok(isObject(evidence) && isObject(evidence.main) && Array.isArray(evidence.main.functions));
+    const unit: unknown = evidence.main.functions[at];
+    assert.ok(isObject(unit) && Array.isArray(unit.certificate));
+    const nodes = unit.certificate as Node[]; // asserted: honest verifier-produced evidence; Lean independently decodes the complete forged document
+    if (variant === "index") {
+      const step = must(nodes.map(n => n.effect?.boundedWrite).find(e => e !== undefined), "the bounded write");
+      step.index = step.value;
+    } else {
+      const atom = must(nodes.flatMap(n => n.output.indices).find(a => "bound" in a.fact && a.cond !== null),
+        "a conditional bound");
+      if (variant === "polarity") atom.negated = !atom.negated;
+      else atom.cond = null;
+    }
+    const path = join(artifacts, `index-write-forged-${variant}.json`);
+    writeFileSync(path, tabledEvidence(evidence));
+    invoke(join(artifacts, "claims.json"), path, artifacts, /^reject: source evidence /m);
+  }
+  process.stdout.write("checked index writes: a bound claimed past the mask alone, and a write at another slot, a flipped or dropped bound condition in evidence, refused\n");
+});
+
+control(async (): Promise<void> => {
   // A write keeps what is known of the other keys of its own object alone
   // (`write-sibling`): past a write of the same key through a parameter that
   // may hold the same object, the narrowed field's read claimed at the
@@ -627,7 +673,7 @@ function unfoldBundle(b: JsonObject): void {
       const e = jsonObject(k);
       return { cells: facts(e.cells), values: facts(e.values), links: jsonArray(e.links).map((l) => at(links, l)),
         separation: { depth: e.depth ?? null, facts: jsonArray(e.separation).map((a) => at(separations, a)) },
-        elems: e.elems ?? [] };
+        elems: e.elems ?? [], indices: e.indices ?? [] };
     });
     const sequent = (s: JsonValue): JsonValue => {
       const e = jsonObject(s);
@@ -729,7 +775,8 @@ function tableBundle(b: JsonObject): void {
       const separation = jsonObject(e.separation);
       return add("knowledge", { cells: facts(e.cells), values: facts(e.values),
         links: jsonArray(e.links).map((l) => add("links", l)), depth: separation.depth ?? null,
-        separation: jsonArray(separation.facts).map((a) => add("separations", a)), elems: e.elems ?? [] });
+        separation: jsonArray(separation.facts).map((a) => add("separations", a)), elems: e.elems ?? [],
+        indices: e.indices ?? [] });
     };
     const node = (n: JsonValue): JsonValue => {
       const e = jsonObject(n);
@@ -7614,7 +7661,7 @@ control(async (): Promise<void> => {
       jsonArray(b.proofs).push(must(proofs(b)[k], "its derivation"));
       jsonObject(jsonObject(n.ordinary).proof).tree = jsonArray(b.proofs).length - 1;
     }],
-    ["unused", (b) => { jsonArray(b.knowledge).push({ cells: [], values: [], links: [], depth: 0, separation: [], elems: [] }); }],
+    ["unused", (b) => { jsonArray(b.knowledge).push({ cells: [], values: [], links: [], depth: 0, separation: [], elems: [], indices: [] }); }],
   ];
   for (const [name, change] of accepted) {
     const checked = check(name, change);

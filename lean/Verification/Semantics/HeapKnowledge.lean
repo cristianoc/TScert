@@ -16,6 +16,91 @@ structure ElemAtom where
   negated : Bool := false
   deriving DecidableEq, Repr, Hashable
 
+/-- An index fact (DESIGN of the guarded write, PROGRAM-TYPING.md, "Writes at
+a checked index"): the slot `k` holds a number that is an array index
+(`index`); the slot `n` holds the length of the store the array in slot `x`
+holds (`length`); the slot `k` holds an array index at most that length
+(`bound`). The first reads no heap; the others read the location of the
+array's store field. -/
+inductive IndexFact where
+  | index (k : Nat)
+  | length (x n : Nat)
+  | bound (x k : Nat)
+  deriving DecidableEq, Repr, Hashable
+
+namespace IndexFact
+
+/-- The slots a fact names. -/
+def slots : IndexFact → List Nat
+  | .index k => [k]
+  | .length x n => [x, n]
+  | .bound x k => [x, k]
+
+/-- The fact with each slot renamed. -/
+def map (f : Nat → Nat) : IndexFact → IndexFact
+  | .index k => .index (f k)
+  | .length x n => .length (f x) (f n)
+  | .bound x k => .bound (f x) (f k)
+
+/-- The fact with each slot renamed by a partial map, where it maps every slot. -/
+def mapM (f : Nat → Option Nat) : IndexFact → Option IndexFact
+  | .index k => (f k).map .index
+  | .length x n => do pure (.length (← f x) (← f n))
+  | .bound x k => do pure (.bound (← f x) (← f k))
+
+def HoldsAt : IndexFact → Env → Heap → Prop
+  | .index k, ρ, _ => ∃ b i, ρ k = .num b ∧ indexOfBits b = some i
+  | .length x n, ρ, h => ∃ s ls, Footprints.storeOf (ρ x) = some s ∧ h[s]? = some (.arr ls) ∧
+      ρ n = .num (bitsOfNat ls.length)
+  | .bound x k, ρ, h => ∃ s ls b i, Footprints.storeOf (ρ x) = some s ∧ h[s]? = some (.arr ls) ∧
+      ρ k = .num b ∧ indexOfBits b = some i ∧ i ≤ ls.length
+
+/-- A fact reads its slots' values alone. -/
+theorem holdsAt_map {F : IndexFact} {f : Nat → Nat} {ρ ρ' : Env} {h : Heap}
+    (hf : ∀ s ∈ F.slots, ρ' (f s) = ρ s) : (F.map f).HoldsAt ρ' h ↔ F.HoldsAt ρ h := by
+  cases F <;> simp only [slots, List.mem_cons, List.not_mem_nil, or_false, forall_eq_or_imp, forall_eq] at hf <;>
+    simp only [map, HoldsAt, hf]
+
+theorem holdsAt_mapM {F F' : IndexFact} {f : Nat → Option Nat} {ρ ρ' : Env} {h : Heap}
+    (hm : F.mapM f = some F') (hf : ∀ s ∈ F.slots, ∀ t, f s = some t → ρ' t = ρ s) :
+    F'.HoldsAt ρ' h ↔ F.HoldsAt ρ h := by
+  cases F with
+  | index k =>
+    simp only [mapM, Option.map_eq_some_iff] at hm
+    obtain ⟨t, ht, rfl⟩ := hm
+    simp only [HoldsAt, hf k (by simp [slots]) t ht]
+  | length x n =>
+    simp only [mapM, Option.bind_eq_bind, Option.bind_eq_some_iff, Option.pure_def, Option.some.injEq] at hm
+    obtain ⟨x', hx, n', hn, rfl⟩ := hm
+    simp only [HoldsAt, hf x (by simp [slots]) x' hx, hf n (by simp [slots]) n' hn]
+  | bound x k =>
+    simp only [mapM, Option.bind_eq_bind, Option.bind_eq_some_iff, Option.pure_def, Option.some.injEq] at hm
+    obtain ⟨x', hx, k', hk, rfl⟩ := hm
+    simp only [HoldsAt, hf x (by simp [slots]) x' hx, hf k (by simp [slots]) k' hk]
+
+/-- A heap extension keeps a fact: the store lies in the old heap. -/
+theorem holdsAt_extend {F : IndexFact} {ρ : Env} {h : Heap} (vs : List Val) (hF : F.HoldsAt ρ h) :
+    F.HoldsAt ρ (h ++ vs) := by
+  cases F with
+  | index k => exact hF
+  | length x n =>
+    obtain ⟨s, ls, hs, hl, hn⟩ := hF
+    exact ⟨s, ls, hs, by rw [List.getElem?_append_left (List.getElem?_eq_some_iff.mp hl).1]; exact hl, hn⟩
+  | bound x k =>
+    obtain ⟨s, ls, b, i, hs, hl, hk, hi, hle⟩ := hF
+    exact ⟨s, ls, b, i, hs, by rw [List.getElem?_append_left (List.getElem?_eq_some_iff.mp hl).1]; exact hl,
+      hk, hi, hle⟩
+
+end IndexFact
+
+/-- An index atom: its fact, where the slot `cond`, if stated, holds a truthy
+value, or a falsy one where `negated`, as an elements atom's condition. -/
+structure IndexAtom where
+  fact : IndexFact
+  cond : Option Nat := none
+  negated : Bool := false
+  deriving DecidableEq, Repr, Hashable
+
 structure Knowledge where
   cells : Facts := []
   values : Facts := []
@@ -24,6 +109,8 @@ structure Knowledge where
   separation : HeapSeparation.Separation := {}
   /-- The elements facts (`ElemAtom`). -/
   elems : List ElemAtom := []
+  /-- The index facts (`IndexAtom`). -/
+  indices : List IndexAtom := []
   deriving DecidableEq, Repr
 
 def ValueHolds (facts : Facts) (ρ : Env) : Prop :=
@@ -32,14 +119,56 @@ def ValueHolds (facts : Facts) (ρ : Env) : Prop :=
 def ElemsHolds (as : List ElemAtom) (ρ : Env) (h : Heap) : Prop :=
   ∀ a ∈ as, (∀ b, a.cond = some b → tagHolds .truthy (ρ b) = !a.negated) → CallEffects.ElemsAt a.pred (ρ a.slot) h
 
+def IndexHolds (as : List IndexAtom) (ρ : Env) (h : Heap) : Prop :=
+  ∀ a ∈ as, (∀ b, a.cond = some b → tagHolds .truthy (ρ b) = !a.negated) → a.fact.HoldsAt ρ h
+
 def Holds (k : Knowledge) (ρ : Env) (h : Heap) : Prop :=
   HeapFacts.Holds k.cells ρ h ∧ ValueHolds k.values ρ ∧ HeapLinks.Holds k.links ρ h ∧
-    HeapSeparation.Holds k.separation ρ ∧ ElemsHolds k.elems ρ h
+    HeapSeparation.Holds k.separation ρ ∧ ElemsHolds k.elems ρ h ∧ IndexHolds k.indices ρ h
 
 theorem elemsHolds_nil (ρ h) : ElemsHolds [] ρ h := by simp [ElemsHolds]
 
+theorem indexHolds_nil (ρ h) : IndexHolds [] ρ h := by simp [IndexHolds]
+
+theorem indexHolds_extend {as : List IndexAtom} {ρ h} (vs : List Val) (he : IndexHolds as ρ h) :
+    IndexHolds as ρ (h ++ vs) := fun a ha hc => IndexFact.holdsAt_extend vs (he a ha hc)
+
+/-- An atom renamed by a partial map, where it maps every slot the atom names. -/
+def mapIndex (f : Nat → Option Nat) (a : IndexAtom) : Option IndexAtom :=
+  match a.fact.mapM f, a.cond with
+  | some F, none => some { a with fact := F }
+  | some F, some c => (f c).map fun c' => { a with fact := F, cond := some c' }
+  | none, _ => none
+
+/-- Atoms renamed by a partial map, kept where every slot maps. -/
+def mapIndices (f : Nat → Option Nat) (as : List IndexAtom) : List IndexAtom :=
+  as.filterMap (mapIndex f)
+
+/-- Renaming keeps the atoms where each renamed slot holds its source slot's value. -/
+theorem mapIndices_holds {as : List IndexAtom} {f : Nat → Option Nat} {ρ ρ' : Env} {h : Heap}
+    (hf : ∀ s t, f s = some t → ρ' t = ρ s) (he : IndexHolds as ρ h) :
+    IndexHolds (mapIndices f as) ρ' h := by
+  intro a ha hc
+  obtain ⟨b, hb, hab⟩ := List.mem_filterMap.mp ha
+  unfold mapIndex at hab
+  split at hab
+  · rename_i F hF hcb
+    cases hab
+    exact (IndexFact.holdsAt_mapM hF (fun s _ t ht => hf s t ht)).mpr (he b hb (by simp [hcb]))
+  · rename_i F c hF hcb
+    simp only [Option.map_eq_some_iff] at hab
+    obtain ⟨t, ht, rfl⟩ := hab
+    refine (IndexFact.holdsAt_mapM hF (fun s _ t ht => hf s t ht)).mpr (he b hb ?_)
+    intro d hd
+    rw [hcb] at hd
+    cases hd
+    rw [← hf c t ht]
+    exact hc t rfl
+  · cases hab
+
 theorem empty (ρ h) : Holds {} ρ h :=
-  ⟨holds_nil ρ h,by simp [ValueHolds],by simp [HeapLinks.Holds],HeapSeparation.empty_holds ρ,elemsHolds_nil ρ h⟩
+  ⟨holds_nil ρ h,by simp [ValueHolds],by simp [HeapLinks.Holds],HeapSeparation.empty_holds ρ,elemsHolds_nil ρ h,
+    indexHolds_nil ρ h⟩
 
 /-- A heap extension keeps an elements fact: the store and every element
 location lie in the old heap. -/
@@ -86,14 +215,16 @@ theorem dropElems_holds {as : List ElemAtom} {ρ h v} (he : ElemsHolds as (push 
 
 /-- A fresh allocation preserves every assertion about existing cells and aliases. -/
 theorem alloc_frame {k ρ h v} (hk : Holds k ρ h) : Holds k ρ (h ++ [v]) := by
-  refine ⟨?_, hk.2.1, HeapLinks.alloc_frame hk.2.2.1, hk.2.2.2.1, elemsHolds_extend [v] hk.2.2.2.2⟩
+  refine ⟨?_, hk.2.1, HeapLinks.alloc_frame hk.2.2.1, hk.2.2.2.1, elemsHolds_extend [v] hk.2.2.2.2.1,
+    indexHolds_extend [v] hk.2.2.2.2.2⟩
   intro f hf
   obtain ⟨flds,c,oid,u,he,hr,hm⟩ := hk.1 f hf
   exact ⟨flds,c,oid,u,he,hr.alloc_frames [v],hm⟩
 
 /-- The same across a whole object's worth of fresh locations. -/
 theorem alloc_frames {k ρ h} (vs : List Val) (hk : Holds k ρ h) : Holds k ρ (h ++ vs) := by
-  refine ⟨?_, hk.2.1, HeapLinks.alloc_frames vs hk.2.2.1, hk.2.2.2.1, elemsHolds_extend vs hk.2.2.2.2⟩
+  refine ⟨?_, hk.2.1, HeapLinks.alloc_frames vs hk.2.2.1, hk.2.2.2.1, elemsHolds_extend vs hk.2.2.2.2.1,
+    indexHolds_extend vs hk.2.2.2.2.2⟩
   intro f hf
   obtain ⟨flds,c,oid,u,he,hr,hm⟩ := hk.1 f hf
   exact ⟨flds,c,oid,u,he,hr.alloc_frames vs,hm⟩
@@ -118,7 +249,8 @@ def meet : List Knowledge → Knowledge
      let others := ks.map fun o => (Std.HashSet.ofList o.links : Std.HashSet HeapLinks.Link)
      k.links.filter (fun g => others.all (·.contains g)),
      HeapSeparation.meet (k.separation :: ks.map (·.separation)),
-     k.elems.filter fun a => ks.all (·.elems.contains a)⟩
+     k.elems.filter fun a => ks.all (·.elems.contains a),
+     k.indices.filter fun a => ks.all (·.indices.contains a)⟩
 
 /-- Whether a target atom follows from a source atom on an edge mapping `m`:
 the source's slot holds the mapped target slot's value (`M`), its predicate
@@ -155,17 +287,129 @@ theorem elemsCheckBy_sound {M : Nat → List Nat} {a b : List ElemAtom} {m ρ h}
   rw [hsv] at this
   exact this.mono hle
 
+/-- Whether a target fact follows from a source fact on an edge mapping `m`:
+each slot of the source's holds the value of the mapped target slot (`M`). -/
+def factFollows (M : Nat → List Nat) (m : PointClaims.Mapping) : IndexFact → IndexFact → Bool
+  | .index k, .index k' => (M (PointClaims.slot m k')).contains k
+  | .length x n, .length x' n' =>
+    (M (PointClaims.slot m x')).contains x && (M (PointClaims.slot m n')).contains n
+  | .bound x k, .bound x' k' =>
+    (M (PointClaims.slot m x')).contains x && (M (PointClaims.slot m k')).contains k
+  | _, _ => false
+
+theorem factFollows_sound {M : Nat → List Nat} {m : PointClaims.Mapping} {s t : IndexFact} {ρ h}
+    (hM : ∀ x, ∀ y ∈ M x, ρ y = ρ x) (hf : factFollows M m s t = true) (hs : s.HoldsAt ρ h) :
+    t.HoldsAt (PointClaims.mapEnv m ρ) h := by
+  cases s <;> cases t <;> simp only [factFollows, Bool.and_eq_true, List.contains_iff_mem, reduceCtorEq] at hf
+  · rename_i k k'
+    simpa only [IndexFact.HoldsAt, PointClaims.mapEnv, hM _ _ hf] using hs
+  · rename_i x n x' n'
+    simpa only [IndexFact.HoldsAt, PointClaims.mapEnv, hM _ _ hf.1, hM _ _ hf.2] using hs
+  · rename_i x k x' k'
+    simpa only [IndexFact.HoldsAt, PointClaims.mapEnv, hM _ _ hf.1, hM _ _ hf.2] using hs
+
+/-- Whether a target atom follows from a source atom: its fact follows, and its
+condition is none or the mapped one's, at the same answer. -/
+def indexFollows (M : Nat → List Nat) (m : PointClaims.Mapping) (s t : IndexAtom) : Bool :=
+  factFollows M m s.fact t.fact &&
+    match s.cond, t.cond with
+    | none, _ => true
+    | some c, some c' => (M (PointClaims.slot m c')).contains c && s.negated == t.negated
+    | some _, none => false
+
+def indicesCheckBy (M : Nat → List Nat) (a b : List IndexAtom) (m : PointClaims.Mapping) : Bool :=
+  b.all fun t => a.any fun s => indexFollows M m s t
+
+theorem indicesCheckBy_sound {M : Nat → List Nat} {a b : List IndexAtom} {m ρ h}
+    (hM : ∀ x, ∀ y ∈ M x, ρ y = ρ x) (hc : indicesCheckBy M a b m = true) (ha : IndexHolds a ρ h) :
+    IndexHolds b (PointClaims.mapEnv m ρ) h := by
+  intro t ht hcond
+  obtain ⟨s, hs, hf⟩ := List.any_eq_true.mp (List.all_eq_true.mp hc t ht)
+  simp only [indexFollows, Bool.and_eq_true] at hf
+  obtain ⟨hfact, hcd⟩ := hf
+  have hsc : ∀ c, s.cond = some c → tagHolds .truthy (ρ c) = !s.negated := by
+    intro c hc
+    rw [hc] at hcd
+    cases htc : t.cond with
+    | none => rw [htc] at hcd; cases hcd
+    | some c' =>
+      rw [htc] at hcd
+      simp only [Bool.and_eq_true, List.contains_iff_mem, beq_iff_eq] at hcd
+      rw [hM _ _ hcd.1, hcd.2]
+      exact hcond c' htc
+  exact factFollows_sound hM hfact (ha s hs hsc)
+
+/-- Atoms about slots past the pushed one. -/
+def shiftIndices (as : List IndexAtom) : List IndexAtom := mapIndices (fun i => some (i + 1)) as
+
+theorem shiftIndices_holds {as : List IndexAtom} {ρ h v} (he : IndexHolds as ρ h) :
+    IndexHolds (shiftIndices as) (push v ρ) h :=
+  mapIndices_holds (fun s t hst => by cases hst; rfl) he
+
+/-- Atoms about slots below the dropped slot 0, restated one lower; an atom
+naming slot 0 is first restated on a slot the links relate to it. -/
+def dropIndices (ls : HeapLinks.Links) (as : List IndexAtom) : List IndexAtom :=
+  let restated := match HeapLinks.neighbors ls 0 with
+    | y :: _ => as ++ mapIndices (fun i => some (if i = 0 then y else i)) as
+    | [] => as
+  mapIndices (fun i => if i = 0 then none else some (i - 1)) restated
+
+theorem dropIndices_holds {ls : HeapLinks.Links} {as : List IndexAtom} {ρ h v}
+    (hl : HeapLinks.Holds ls (push v ρ) h) (he : IndexHolds as (push v ρ) h) :
+    IndexHolds (dropIndices ls as) ρ h := by
+  have hr : IndexHolds (match HeapLinks.neighbors ls 0 with
+      | y :: _ => as ++ mapIndices (fun i => some (if i = 0 then y else i)) as
+      | [] => as) (push v ρ) h := by
+    split
+    · rename_i y _ hn
+      have hy : push v ρ y = push v ρ 0 := HeapLinks.neighbors_eq hl (by rw [hn]; simp)
+      intro a ha
+      rcases List.mem_append.mp ha with ha | ha
+      · exact he a ha
+      · exact mapIndices_holds (fun s t hst => by
+          cases hst; split
+          · rename_i hs; rw [hs]; exact hy
+          · rfl) he a ha
+    · exact he
+  refine mapIndices_holds (fun s t hst => ?_) hr
+  split at hst
+  · cases hst
+  · cases hst
+    obtain ⟨i, rfl⟩ : ∃ i, s = i + 1 := ⟨s - 1, by omega⟩
+    rfl
+
+/-- The atoms conditional on the observed slot's class, at the observed answer,
+made unconditional. -/
+def promoteIndices (ls : HeapLinks.Links) (as : List IndexAtom) (slot : Nat) (q : Bool) : List IndexAtom :=
+  as ++ (as.filter fun a => a.negated == !q &&
+    a.cond.any fun c => (HeapLinks.aliases ls slot).contains c).map ({ · with cond := none })
+
+theorem promoteIndices_holds {ls : HeapLinks.Links} {as : List IndexAtom} {slot : Nat} {q : Bool} {ρ h}
+    (hl : HeapLinks.Holds ls ρ h) (he : IndexHolds as ρ h) (ht : tagHolds .truthy (ρ slot) = q) :
+    IndexHolds (promoteIndices ls as slot q) ρ h := by
+  intro a ha hc
+  rcases List.mem_append.mp ha with ha | ha
+  · exact he a ha hc
+  · simp only [List.mem_map, List.mem_filter, Bool.and_eq_true, beq_iff_eq] at ha
+    obtain ⟨b, ⟨hb, hneg, hcb⟩, rfl⟩ := ha
+    refine he b hb fun c hc' => ?_
+    rw [hc'] at hcb
+    simp only [Option.any_some, List.contains_iff_mem] at hcb
+    rw [HeapLinks.aliases_eq hl hcb, ht, hneg]
+    cases q <;> rfl
+
 def check (a b : Knowledge) (m : PointClaims.Mapping) : Bool :=
   HeapFacts.check a.cells b.cells m && (HeapFacts.check a.values b.values m &&
     (HeapLinks.check a.links b.links m && (HeapSeparation.check a.separation b.separation m &&
-      elemsCheckBy (fun x => [x]) a.elems b.elems m)))
+      (elemsCheckBy (fun x => [x]) a.elems b.elems m && indicesCheckBy (fun x => [x]) a.indices b.indices m))))
 
 theorem check_sound {a b m ρ h} (hc : check a b m = true) (ha : Holds a ρ h) :
     Holds b (PointClaims.mapEnv m ρ) h := by
   simp only [check,Bool.and_eq_true] at hc
   refine ⟨HeapFacts.check_sound hc.1 ha.1,?_,HeapLinks.check_sound hc.2.2.1 ha.2.2.1,
     HeapSeparation.check_sound hc.2.2.2.1 ha.2.2.2.1,
-    elemsCheckBy_sound (fun x y hy => by rw [List.mem_singleton.mp hy]) hc.2.2.2.2 ha.2.2.2.2⟩
+    elemsCheckBy_sound (fun x y hy => by rw [List.mem_singleton.mp hy]) hc.2.2.2.2.1 ha.2.2.2.2.1,
+    indicesCheckBy_sound (fun x y hy => by rw [List.mem_singleton.mp hy]) hc.2.2.2.2.2 ha.2.2.2.2.2⟩
   intro f hf
   obtain ⟨g,hg,hc⟩ := List.any_eq_true.mp (List.all_eq_true.mp hc.2.1 f hf)
   simp only [Bool.and_eq_true,beq_iff_eq] at hc
@@ -173,10 +417,11 @@ theorem check_sound {a b m ρ h} (hc : check a b m = true) (ha : Holds a ρ h) :
 
 def shift (k : Knowledge) : Knowledge :=
   ⟨HeapFacts.shift k.cells,HeapFacts.shift k.values,HeapLinks.pull k.links (fun i => [i+1]),
-    HeapSeparation.shift k.separation, shiftElems k.elems⟩
+    HeapSeparation.shift k.separation, shiftElems k.elems, shiftIndices k.indices⟩
 
 theorem shift_holds {k ρ h v} (hk : Holds k ρ h) : Holds (shift k) (push v ρ) h := by
-  refine ⟨HeapFacts.shift_holds hk.1,?_,?_,HeapSeparation.shift_holds hk.2.2.2.1,shiftElems_holds hk.2.2.2.2⟩
+  refine ⟨HeapFacts.shift_holds hk.1,?_,?_,HeapSeparation.shift_holds hk.2.2.2.1,shiftElems_holds hk.2.2.2.2.1,
+    shiftIndices_holds hk.2.2.2.2.2⟩
   · intro f hf
     obtain ⟨g,hg,rfl⟩ := List.mem_map.mp hf
     exact hk.2.1 g hg
@@ -200,7 +445,7 @@ def dropResult (k : Knowledge) : Knowledge :=
     HeapLinks.pull (HeapLinks.bridge k.links (· == 0)) (fun i => if i = 0 then [] else [i-1]),
     HeapSeparation.drop (match HeapLinks.neighbors k.links 0 with
       | y :: _ => HeapSeparation.restate k.separation 0 y
-      | [] => k.separation), dropElems k.elems⟩
+      | [] => k.separation), dropElems k.elems, dropIndices k.links k.indices⟩
 
 theorem aliasZero_mem {ls : HeapLinks.Links} {fs : Facts} {ρ : Env} {h : Heap} (hl : HeapLinks.Holds ls ρ h)
     {g : Fact} (hg : g ∈ aliasZero ls fs) : ∃ f ∈ fs, ρ g.slot = ρ f.slot ∧ g.contents = f.contents ∧ g.field = f.field := by
@@ -245,7 +490,8 @@ theorem dropResult_holds {k ρ h v} (hk : Holds k (push v ρ) h) :
       · rename_i y _ hn
         exact HeapSeparation.restate_holds (HeapLinks.neighbors_eq hk.2.2.1 (by rw [hn]; simp)) hk.2.2.2.1
       · exact hk.2.2.2.1
-    refine ⟨?_, HeapSeparation.drop_holds hs, dropElems_holds hk.2.2.2.2⟩
+    refine ⟨?_, HeapSeparation.drop_holds hs, dropElems_holds hk.2.2.2.2.1,
+      dropIndices_holds hk.2.2.1 hk.2.2.2.2.2⟩
     · apply HeapLinks.pull_holds (pre := fun i => if i = 0 then [] else [i-1]) (HeapLinks.bridge_holds hk.2.2.1)
       intro i j hj
       split at hj
@@ -288,7 +534,11 @@ def project (k : Knowledge) (m : PointClaims.Mapping) (count : Nat) : Knowledge 
         | none => some { a with slot := i }
         | some c => ((List.range count).find? fun j =>
             (HeapLinks.aliases k.links (PointClaims.slot m j)).contains c).map fun j =>
-              { a with slot := i, cond := some j }⟩
+              { a with slot := i, cond := some j },
+    -- Each slot an index atom names, its condition's included, restated at the
+    -- first target slot holding its value.
+    mapIndices (fun s => (List.range count).find? fun j =>
+      (HeapLinks.aliases k.links (PointClaims.slot m j)).contains s) k.indices⟩
 
 /-! ## Queries by class
 
@@ -504,20 +754,22 @@ def observeBoolean (k : Knowledge) (slot : Nat) (q : Bool) : Knowledge :=
   let R : ValueSets.ValueSet := if q then { tru := true } else { fls := true }
   ⟨linkFacts k slot R ++ k.cells,⟨slot,R,valueField⟩ :: k.values,k.links,k.separation,
     k.elems ++ (k.elems.filter fun a => a.negated == !q &&
-      a.cond.any fun c => (HeapLinks.aliases k.links slot).contains c).map ({ · with cond := none })⟩
+      a.cond.any fun c => (HeapLinks.aliases k.links slot).contains c).map ({ · with cond := none }),
+    promoteIndices k.links k.indices slot q⟩
 
 theorem observeBoolean_holds {k slot q ρ h} (hk : Holds k ρ h)
     (hq : ρ slot = if q then .tru else .fls) : Holds (observeBoolean k slot q) ρ h := by
   have hv : (if q then ({ tru := true } : ValueSets.ValueSet) else { fls := true }).mem (ρ slot) = true := by
     cases q <;> simp only [Bool.false_eq_true, ite_false, ite_true] at hq ⊢ <;> rw [hq] <;> rfl
-  refine ⟨?_,?_,hk.2.2.1,hk.2.2.2.1,?_⟩
+  have ht : tagHolds .truthy (ρ slot) = q := by cases q <;> simp only [Bool.false_eq_true, ite_false, ite_true] at hq <;> rw [hq] <;> rfl
+  refine ⟨?_,?_,hk.2.2.1,hk.2.2.2.1,?_,promoteIndices_holds hk.2.2.1 hk.2.2.2.2.2 ht⟩
   rotate_left 2
   · intro a ha hc
     rcases List.mem_append.mp ha with ha | ha
-    · exact hk.2.2.2.2 a ha hc
+    · exact hk.2.2.2.2.1 a ha hc
     · simp only [List.mem_map, List.mem_filter, Bool.and_eq_true, beq_iff_eq] at ha
       obtain ⟨b, ⟨hb, hneg, hcb⟩, rfl⟩ := ha
-      refine hk.2.2.2.2 b hb fun c hc' => ?_
+      refine hk.2.2.2.2.1 b hb fun c hc' => ?_
       rw [hc'] at hcb
       simp only [Option.any_some, List.contains_iff_mem] at hcb
       rw [HeapLinks.aliases_eq hk.2.2.1 hcb, hneg, hq]
@@ -538,7 +790,7 @@ def observeTag (k : Knowledge) (slot : Nat) (tag : Tag) (q : Bool) : Knowledge :
   | none => k
   | some V =>
     let R := V.meet (ValueSets.ofTag tag q)
-    ⟨linkFacts k slot R ++ k.cells,⟨slot,R,valueField⟩ :: k.values,k.links,k.separation,k.elems⟩
+    ⟨linkFacts k slot R ++ k.cells,⟨slot,R,valueField⟩ :: k.values,k.links,k.separation,k.elems,k.indices⟩
 
 theorem observeTag_holds {k slot tag q ρ h} (hk : Holds k ρ h)
     (hq' : tagHolds tag (ρ slot) = q ∨ protoFree tag (ρ slot) = false) :
@@ -563,18 +815,20 @@ theorem observeTag_holds {k slot tag q ρ h} (hk : Holds k ρ h)
 /-- A truthy answer of the slot `slot` makes the atoms conditional on it
 unconditional. -/
 def promoteTruthy (k : Knowledge) (slot : Nat) (q : Bool) : Knowledge :=
-  { k with elems := k.elems ++ (k.elems.filter fun a => a.negated == !q &&
-      a.cond.any fun c => (HeapLinks.aliases k.links slot).contains c).map ({ · with cond := none }) }
+  { k with
+    elems := (k.elems ++ (k.elems.filter fun a => a.negated == !q &&
+      a.cond.any fun c => (HeapLinks.aliases k.links slot).contains c).map ({ · with cond := none }))
+    indices := promoteIndices k.links k.indices slot q }
 
 theorem promoteTruthy_holds {k slot q ρ h} (hk : Holds k ρ h) (ht : tagHolds .truthy (ρ slot) = q) :
     Holds (promoteTruthy k slot q) ρ h := by
-  refine ⟨hk.1, hk.2.1, hk.2.2.1, hk.2.2.2.1, ?_⟩
+  refine ⟨hk.1, hk.2.1, hk.2.2.1, hk.2.2.2.1, ?_, promoteIndices_holds hk.2.2.1 hk.2.2.2.2.2 ht⟩
   intro a ha hc
   rcases List.mem_append.mp ha with ha | ha
-  · exact hk.2.2.2.2 a ha hc
+  · exact hk.2.2.2.2.1 a ha hc
   · simp only [List.mem_map, List.mem_filter, Bool.and_eq_true, beq_iff_eq] at ha
     obtain ⟨b, ⟨hb, hneg, hcb⟩, rfl⟩ := ha
-    refine hk.2.2.2.2 b hb fun c hc' => ?_
+    refine hk.2.2.2.2.1 b hb fun c hc' => ?_
     rw [hc'] at hcb
     simp only [Option.any_some, List.contains_iff_mem] at hcb
     rw [HeapLinks.aliases_eq hk.2.2.1 hcb, ht, hneg]
@@ -771,18 +1025,18 @@ undefined, whose broad saved nullish predicate alone is insufficient. -/
   | .tag tag q, some A =>
     match observedAtoms G A tag q with
     | some R => ⟨linkFacts k slot (ValueSets.ofAtoms R) ++ out.cells, ⟨slot,ValueSets.ofAtoms R,valueField⟩ :: out.values,
-        out.links, out.separation, out.elems⟩
+        out.links, out.separation, out.elems, out.indices⟩
     -- Otherwise the answer itself is a fact of every cell the value was
     -- read from (a separate fact: all of a cell's facts hold). A slice of
     -- objects a test leaves, `x` truthy where `x` is an object or undefined,
     -- also has values neither null nor undefined.
     | none =>
       let out : Knowledge := ⟨linkFacts k slot (ValueSets.ofTag tag q) ++ out.cells, out.values, out.links,
-        out.separation, out.elems⟩
+        out.separation, out.elems, out.indices⟩
       if G.plainTy (BranchRefinement.tagSlice G A tag q) && (expand G (BranchRefinement.tagSlice G A tag q)).all
           (fun c => tagClause .isNullish c == some false) then
         ⟨linkFacts k slot (ValueSets.ofAtom .nonNullish) ++ out.cells,
-          ⟨slot,ValueSets.ofAtom .nonNullish,valueField⟩ :: out.values, out.links, out.separation, out.elems⟩
+          ⟨slot,ValueSets.ofAtom .nonNullish,valueField⟩ :: out.values, out.links, out.separation, out.elems, out.indices⟩
       else out
   | _, _ => out
 
@@ -810,7 +1064,8 @@ theorem observeTyped_holds {G : NormalGraph ι} {Γ k slot o ρ n W h}
       have hout : Holds ⟨linkFacts k slot (ValueSets.ofTag tag q) ++ (observe (withTypedLinks G Γ k) slot (.tag tag q)).cells,
           (observe (withTypedLinks G Γ k) slot (.tag tag q)).values, (observe (withTypedLinks G Γ k) slot (.tag tag q)).links,
           (observe (withTypedLinks G Γ k) slot (.tag tag q)).separation,
-          (observe (withTypedLinks G Γ k) slot (.tag tag q)).elems⟩ ρ h := by
+          (observe (withTypedLinks G Γ k) slot (.tag tag q)).elems,
+          (observe (withTypedLinks G Γ k) slot (.tag tag q)).indices⟩ ρ h := by
         refine ⟨?_, hout.2.1, hout.2.2⟩
         intro f hf
         rcases List.mem_append.mp hf with hf | hf
