@@ -869,8 +869,9 @@ answers it does (`knownAnswer`). The context type is established by every
 incoming edge. In `(c && d) || !c`, where `c && d` failed with `c` true, the
 leaf `c` of `!c` holds `[true]`, so only the arm where `!c` is false is
 built, and no edge carries `c` true where `!c` held (`condition-short-circuit`'s
-`retested`; `invalid-condition-known`). The arm holds the tested value from
-the binding's slot, at the slot's type: where the left operand of `&&` found
+`retested`; `invalid-condition-known`). An arm that carries the tested
+value, neither a tested Boolean's rebound outcome nor an outcome going to
+its destination, holds it from the binding's slot, at the slot's type: where the left operand of `&&` found
 `xs` present in `xs ?? missing()`, with `missing(): never`, the right
 operand's `xs ?? missing()` takes the arm where `xs` is present and is read
 at `xs`'s array type (`coalesce-missing-and-arm`).

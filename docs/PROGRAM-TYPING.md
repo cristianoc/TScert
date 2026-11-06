@@ -1552,7 +1552,7 @@ An optional chain keeps its own test, `x?.[key()]` skipping the key where
 access. A primitive other than `null` and `undefined` keeps its wrapper and
 prototype arms. A plain write to a member of a nullish operand is refused
 (`nullish-member-write-refused`). A member reference whose receiver's type
-holds no value, `missing()`'s result on the path where `x` is nullish in
+holds no value (plain rows naming no clause), `missing()`'s result on the path where `x` is nullish in
 `(x ?? missing()).f -= d` with `missing(): never`, names a location holding
 no value; no run reaches it (`coalesce-missing-compound-member`). The producer reads a member at the
 operand's other values (`nullish-member-reads`, `nullish-member-order`,

@@ -20,3 +20,15 @@ export function frameAt(frameStarts: number[] | null, i: number): number {
 export function longer(xs: number[] | null): boolean {
   return (xs ?? missing()).length > 0 && (xs ?? missing()).length > 1;
 }
+
+// The tested binding read through an alias, and a member path's witness.
+export function aliased(xs: number[] | null): boolean {
+  const ys = xs;
+  return (xs ?? missing()).length > 0 && (ys ?? missing()).length > 1;
+}
+
+type Frames = { readonly starts: number[] | null };
+
+export function member(frames: Frames): boolean {
+  return (frames.starts ?? missing()).length > 0 && (frames.starts ?? missing()).length > 1;
+}
