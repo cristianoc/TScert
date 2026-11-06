@@ -469,8 +469,8 @@ theorem listT_builtinStore {U : Fam} {T : TupleF}
     (hT : ∀ A, (A ∈ T.required ∨ A ∈ T.optional ∨ T.rest = some A) →
       ∀ j (W : WorldT j) u, A j W u → U j W u)
     {k : Nat} {W : WorldT k} {v : Val} (h : listT T k W v) : builtinStoreT U k W v := by
-  obtain ⟨ls, rfl, hd, hlen, hbound, hreq, hopt, hrest⟩ := h
-  refine ⟨ls, rfl, (by simp [StorePresence]), by simp, by simp, by simp, by simp, ?_⟩
+  obtain ⟨ls, rfl, hd, hlen, hmax, hbound, hreq, hopt, hrest⟩ := h
+  refine ⟨ls, rfl, (by simp [StorePresence]), by simp, hmax, by simp, by simp, by simp, ?_⟩
   intro i l _ hl
   refine ⟨U, ?_⟩
   simp only [true_and]
@@ -495,8 +495,8 @@ theorem listT_builtinStore {U : Fam} {T : TupleF}
 /-- A store of the built-ins reads its element type below the level. -/
 theorem builtinStoreT_congr {U U' : Fam} {n : Nat} (h : Agree U U' n) (W : WorldT n) (v : Val) :
     builtinStoreT U n W v → builtinStoreT U' n W v := by
-  rintro ⟨ls, rfl, hd, hlen, hbound, hreq, hopt, hrest⟩
-  refine ⟨ls, rfl, (by simp [StorePresence]), by simp, by simp, by simp, by simp, ?_⟩
+  rintro ⟨ls, rfl, hd, hlen, hmax, hbound, hreq, hopt, hrest⟩
+  refine ⟨ls, rfl, (by simp [StorePresence]), by simp, hmax, by simp, by simp, by simp, ?_⟩
   intro i l hi hl
   obtain ⟨E, c, hE, hw, hag⟩ := hrest i l hi hl
   cases hE

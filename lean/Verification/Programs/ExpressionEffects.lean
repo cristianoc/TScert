@@ -1113,7 +1113,7 @@ theorem listT_slot {T : TupleF} {k : Nat} {W : WorldT k} {ls : List (Option Nat)
     (h : listT T k W (.arr ls)) (hl : ls[i]? = some (some l)) (hA : positionFam T i = some A) :
     ∃ c : Ctr k, lookup W l = some c ∧ ∀ (j : Nat) (hj : j < k) (W' : WorldT j) (u : Val),
       c j hj W' u → A j W' u := by
-  obtain ⟨ls', heq, -, -, -, hreq, hopt, hrest⟩ := h
+  obtain ⟨ls', heq, -, -, -, -, hreq, hopt, hrest⟩ := h
   cases heq
   unfold positionFam at hA
   split at hA
@@ -1350,7 +1350,7 @@ theorem elem_write_core [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)
     cases present with
     | true =>
       have hp : idx < Tup.required.length := by simpa using hpresent
-      obtain ⟨ls', heq, -, -, -, hreq, -, -⟩ := hlist
+      obtain ⟨ls', heq, -, -, -, -, hreq, -, -⟩ := hlist
       cases heq
       obtain ⟨l, -, hl, -, -⟩ := hreq idx _ (by
         simp only [PositiveNormalization.tupleFams, List.getElem?_map]

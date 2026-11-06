@@ -344,7 +344,7 @@ theorem restStore_safe {G : NormalGraph ι} {S P : Ty ι} (hS : RestStore G S P)
       exact meaning_valOnly G b
     have hfit : ArgumentContracts.Fits (tupleFams (meaning G) T') n W extra := by
       exact (mixed_pack_args hP).mp he
-    have := RestCalls.argument_alloc_safe (Ξ := excOf G) hpos hposv hw hh hfit hvals
+    have := RestCalls.argument_alloc_safe (Ξ := excOf G) hpos hposv hw hh (builtinExc_errors G _) hfit hvals
     apply Safe_mono n _ W h _ this
     intro k _ V v hv
     apply (represents_back hR k V v)
@@ -355,6 +355,26 @@ theorem restStore_safe {G : NormalGraph ι} {S P : Ty ι} (hS : RestStore G S P)
     exact hv
   · exact hS.elim
 
+
+/-- A literal of more values than a store holds throws its fresh
+`RangeError` in one step, a throw meeting `R` where `R` holds of the heap with
+the error object allocated. -/
+theorem alloc_throw_exc {Ξ T : Fam} {Q : HeapObservations.Post} {R : Heap → Prop} {n : Nat} {W : WorldT n}
+    {h : Heap} {vs : List Tm} (hvals : ∀ v ∈ vs, isVal v = true) (hlen : maxArrayLength < vs.length)
+    (hw : WorldAdm W) (hh : HeapOk n W h) (hΞ : ErrorsIn Ξ) (hR : R (h ++ [.nul])) :
+    HeapObservations.SafePostExc Ξ T Q R n W h (.arrLit vs) := by
+  cases n with
+  | zero => trivial
+  | succ p =>
+    have hcadm : CtrAdm (res nulT : Ctr p) :=
+      ⟨fun _ _ _ _ _ _ h => h, fun _ _ _ _ h => by rw [show _ = Tm.nul from h]; rfl⟩
+    refine .inr ⟨appendW (trunc p (Nat.le_succ p) W) (res nulT), h ++ [.nul], _,
+      WExt_appendW _ _, WorldAdm_append (WorldAdm_trunc _ hw) hcadm, .arrAllocThrow hvals hlen,
+      heap_alloc p _ h (res nulT) .nul (HeapOk_trunc p W h hh) (WorldAdm_trunc _ hw)
+        (fun _ _ => rfl), ?_⟩
+    cases p with
+    | zero => trivial
+    | succ q => exact .inl (.inr ⟨⟨thrownError h.length, .throwV rfl rfl, by simp [thrownError, Scoped], hΞ _ _ _⟩, hR⟩)
 
 /-- **Invoking graph code with a rest.** A call at a variadic signature
 whose fixed parameters are the code's first collects the actuals past them
@@ -388,8 +408,13 @@ theorem graphRest_invoke {G : NormalGraph ι} {arity E K start Cs A vs n W}
     exact this
   have hstore : HeapObservations.SafePostExc (excOf G) (meaning G A) (fun heap' _ => heap.IsPrefix heap')
       (s.effect.excPost r heap) j U heap (.arrLit (args.drop arity)) := by
-    apply HeapObservations.SafePostExc.one_step rfl rfl (.arrAlloc (fun a hm => hvals a (List.mem_of_mem_drop hm)))
-      ⟨args.drop arity, rfl⟩ (restStore_safe harr hu hh hpack (fun a hm => hvals a (List.mem_of_mem_drop hm)))
+    by_cases hmax : (args.drop arity).length ≤ maxArrayLength
+    · apply HeapObservations.SafePostExc.one_step rfl rfl
+        (.arrAlloc (fun a hm => hvals a (List.mem_of_mem_drop hm)) hmax)
+        ⟨args.drop arity, rfl⟩ (restStore_safe harr hu hh hpack (fun a hm => hvals a (List.mem_of_mem_drop hm)))
+    · exact alloc_throw_exc (fun a hm => hvals a (List.mem_of_mem_drop hm)) (by omega) hu hh
+        (builtinExc_errors G _) (fun _ => Effect.within_of_holds
+          (Footprints.Closed.Holds.mono (Footprints.Closed.empty_le _) (Footprints.Closed.holds_empty.mpr ⟨[.nul], rfl⟩)))
   apply HeapObservations.SafePostExc.bind (.letE · _) .letC .letC j U heap _ hu hh hstore
   intro i hi V hy hv heap' a hh' hval harr' hprefix
   cases i with
@@ -1071,21 +1096,21 @@ theorem construct_pack_safe {Ps Qs : List Fam} {R : Fam} {P : ArgFam} {e : Effec
 contract `E` at every position, under any readonly flag and presence mode:
 every position holds a location of its own. -/
 theorem fresh_store_safe {E : Fam} (ro : Bool) (presence : ArrayPresence) (hE : Adm E) (hEv : ValOnly E)
-    {n : Nat} {W : WorldT n} {h : Heap} {vs : List Tm} (hw : WorldAdm W) (hh : HeapOk n W h)
+    {n : Nat} {W : WorldT n} {h : Heap} {vs : List Tm} (hw : WorldAdm W) (hh : HeapOk n W h) (hΞ : ErrorsIn Ξ)
     (hvs : ∀ e ∈ vs, E n W e) :
     Safe Ξ (listT ⟨[], [], some E, ro, presence⟩) n W h (.arrLit vs) := by
   apply arr_alloc_rule (As := List.replicate vs.length E)
     (by intro A hA; rw [List.eq_of_mem_replicate hA]; exact hE)
     (by intro A hA; rw [List.eq_of_mem_replicate hA]; exact hEv)
-    n W h vs (by simp) (fun v hm => hEv n W v (hvs v hm)) hw hh
+    n W h vs (by simp) (fun v hm => hEv n W v (hvs v hm)) hw hh hΞ
     (by
       intro q hq
       rw [List.eq_of_mem_replicate (List.of_mem_zip hq).1]
       exact hvs q.2 (List.of_mem_zip hq).2)
-  intro k hk X hy hl
+  intro k hk X hy hl hmax
   have := listT_alloc (n := k) (W := X) (T := ⟨[], [], some E, ro, presence⟩)
     (As := List.replicate vs.length E) (base := h.length)
-    (by simp) (by simp)
+    (by simp) (by simpa using hmax) (by simp)
     (by
       intro i A hA
       have := (List.getElem?_eq_some_iff.mp hA)

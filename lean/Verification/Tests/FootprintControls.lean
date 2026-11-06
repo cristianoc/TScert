@@ -241,7 +241,7 @@ theorem elems_class_needs_two_levels :
     refine ⟨_, rfl, fun j hj => ?_⟩
     have hj0 : j = 0 := by omega
     subst hj0
-    refine ⟨[some 1], rfl, fun j hj => absurd hj (Nat.not_lt_zero _), by simp [numbers],
+    refine ⟨[some 1], rfl, fun j hj => absurd hj (Nat.not_lt_zero _), by simp [numbers], by decide,
       fun h => by simp [numbers] at h, fun i A hA => by simp [numbers] at hA,
       fun i A l hA => by simp [numbers] at hA, fun i l _ hl => ?_⟩
     have hi : i = 0 := by

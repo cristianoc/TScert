@@ -372,6 +372,18 @@ Thus the complete store interpretation at observation depth $`k`$ is
 \forall j<k.\;\mathsf{Presence}_{\tau.\mathsf{presence}}(\tau,\vec\ell,j).
 ```
 
+$`\mathsf{Bounds}_\tau(\vec\ell)`$ states the lengths: at least the required
+positions, at most the required and optional ones without a rest, and at most
+$`2^{32}-1`$, the largest length ECMA-262 admits for an array (cited:
+[ECMA-262](REFERENCES.md#ecma-262), ArrayCreate and ArraySetLength). Every view
+of one store is a conjunction of such contracts, so every view carries the same
+bound, and a heap meeting its contracts (`HeapOk`) holds no longer built-in
+store. The calculus keeps it: a literal of more values throws a `RangeError`
+([a literal with spreads](PROGRAM-TYPING.md#a-literal-with-spreads)), and a write grows a
+store at an index, below $`2^{32}-1`$ (`listT_alloc`, `listT_grow`). A native
+returning or growing a built-in store is trusted to keep it, as it is trusted
+to keep `HeapOk`.
+
 Presence is guarded at the same depth as element contracts, preserving the
 contractiveness of recursive types. At depth zero there is no element observation;
 physical density follows at every positive depth for a dense contract.

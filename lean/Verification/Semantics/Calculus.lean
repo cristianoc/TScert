@@ -973,6 +973,23 @@ def readElems (h : List Tm) : List (Option Nat) → Option (List Tm)
   | none :: ls => (readElems h ls).map (.undef :: ·)
   | some l :: ls => h[l]?.bind fun v => (readElems h ls).map (v :: ·)
 
+/-- The most elements a built-in array store holds: `2^32 - 1`, the largest
+array length ECMA-262 admits (ArrayCreate, ArraySetLength). -/
+def maxArrayLength : Nat := 2 ^ 32 - 1
+
+/-- An index is below the most elements a store holds. -/
+theorem indexOfBits_lt {b : UInt64} {k : Nat} (h : indexOfBits b = some k) : k < maxArrayLength := by
+  simp only [indexOfBits] at h
+  split at h
+  · cases h; decide
+  · split at h
+    · cases h
+    · split at h
+      · rename_i hc; cases h
+        simp only [Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq] at hc
+        exact hc.2
+      · cases h
+
 /-- One fresh location per element, in order, as a literal allocates them. -/
 def elemSlots (base n : Nat) : List (Option Nat) := (List.range n).map fun i => some (base + i)
 
@@ -1988,9 +2005,14 @@ inductive Step : Heap → Tm → Heap → Tm → Prop where
   | arrSpread {inits pre post : List Tm} {ls : List (Option Nat)} {vs : List Tm} {h : Heap} :
       inits = pre ++ .spread (.arr ls) :: post → (∀ v ∈ pre, isVal v = true) →
       readElems h ls = some vs → Step h (.arrLit inits) h (.arrLit (pre ++ vs ++ post))
-  /-- A store takes one fresh location per element, in order. -/
-  | arrAlloc {vs : List Tm} {h : Heap} : (∀ v ∈ vs, isVal v = true) →
+  /-- A store takes one fresh location per element, in order, where it has
+  at most `maxArrayLength` elements. -/
+  | arrAlloc {vs : List Tm} {h : Heap} : (∀ v ∈ vs, isVal v = true) → vs.length ≤ maxArrayLength →
       Step h (.arrLit vs) (h ++ vs) (.arr (elemSlots h.length vs.length))
+  /-- A store of more elements throws a fresh error object, a `RangeError`, as
+  engines do (ECMA-262, ArrayCreate). -/
+  | arrAllocThrow {vs : List Tm} {h : Heap} : (∀ v ∈ vs, isVal v = true) → maxArrayLength < vs.length →
+      Step h (.arrLit vs) (h ++ [.nul]) (.throw (thrownError h.length))
   | elemC1 : Step h a h' a' → Step h (.elemAt a i) h' (.elemAt a' i)
   | elemC2 : isVal a = true → Step h i h' i' → Step h (.elemAt a i) h' (.elemAt a i')
   /-- An index naming a location reads it; any other reads `undefined`. -/
@@ -2402,7 +2424,8 @@ theorem raises_no_step {t v : Tm} (hr : Raises t v) : ∀ {h h' t'}, ¬ Step h t
       obtain ⟨rfl, rfl⟩ := first_nonval_unique hg hg' hb hb' (raises_not_val hr) (not_val_of_step s)
       exact ih s
     | arrSpread he hpre _ => exact spread_blocks_raise he hpre hg hb hr
-    | arrAlloc hvs => have := hvs _ (List.mem_of_getElem? hg); rw [raises_not_val hr] at this; contradiction
+    | arrAlloc hvs _ => have := hvs _ (List.mem_of_getElem? hg); rw [raises_not_val hr] at this; contradiction
+    | arrAllocThrow hvs _ => have := hvs _ (List.mem_of_getElem? hg); rw [raises_not_val hr] at this; contradiction
   | elemC1 hr ih =>
     intro _ _ _ s
     cases s with
@@ -2981,21 +3004,30 @@ theorem Step_det {h t h1 t1 h2 t2} (s1 : Step h t h1 t1) (s2 : Step h t h2 t2) :
       subst b
       obtain ⟨rfl, rfl⟩ := ih s'
       exact ⟨rfl, rfl⟩
-    | arrAlloc hvs => exact False.elim (value_no_step (hvs _ (List.mem_of_getElem? hg)) s)
+    | arrAlloc hvs _ => exact False.elim (value_no_step (hvs _ (List.mem_of_getElem? hg)) s)
+    | arrAllocThrow hvs _ => exact False.elim (value_no_step (hvs _ (List.mem_of_getElem? hg)) s)
     | arrSpread he hpre _ => exact False.elim (spread_blocks_arg he hpre hg hb s)
   | arrSpread he hpre hr =>
     cases s2 with
     | arrArg hg hb s' => exact False.elim (spread_blocks_arg he hpre hg hb s')
-    | arrAlloc hvs => exact False.elim (spread_not_values he hvs)
+    | arrAlloc hvs _ => exact False.elim (spread_not_values he hvs)
+    | arrAllocThrow hvs _ => exact False.elim (spread_not_values he hvs)
     | arrSpread he' hpre' hr' =>
       obtain ⟨rfl, hx, rfl⟩ := split_unique (he.symm.trans he') hpre hpre' rfl rfl
       cases hx
       cases Option.some.inj (hr.symm.trans hr')
       exact ⟨rfl, rfl⟩
-  | arrAlloc hv =>
+  | arrAlloc hv hl =>
     cases s2 with
     | arrArg hg _ s' => exact False.elim (value_no_step (hv _ (List.mem_of_getElem? hg)) s')
-    | arrAlloc _ => exact ⟨rfl, rfl⟩
+    | arrAlloc _ _ => exact ⟨rfl, rfl⟩
+    | arrAllocThrow _ hl' => exact absurd hl (by omega)
+    | arrSpread he _ _ => exact False.elim (spread_not_values he hv)
+  | arrAllocThrow hv hl =>
+    cases s2 with
+    | arrArg hg _ s' => exact False.elim (value_no_step (hv _ (List.mem_of_getElem? hg)) s')
+    | arrAlloc _ hl' => exact absurd hl (by omega)
+    | arrAllocThrow _ _ => exact ⟨rfl, rfl⟩
     | arrSpread he _ _ => exact False.elim (spread_not_values he hv)
   | elemC1 s ih =>
     cases s2 with

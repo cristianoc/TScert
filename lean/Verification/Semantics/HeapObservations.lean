@@ -168,6 +168,28 @@ theorem one_step {T Q n W h t h' v} (ht : isVal t = false) (hv : isVal v = true)
     · obtain ⟨rfl,rfl⟩ := Step_det step step'
       exact Or.inr ⟨U,h',v,hx,hu,step',hh,refine_value hv hq hs'⟩
 
+/-- A term stepping to a throw of a value reaches no value: any postcondition
+holds of its run. -/
+theorem one_step_throw {T Q n W h t h' v} (ht : isVal t = false) (hv : isVal v = true)
+    (step : Step h t h' (.throw v)) (hs : Safe Ξ T n W h t) :
+    SafePost Ξ T Q n W h t := by
+  cases n with
+  | zero => trivial
+  | succ n =>
+    rcases hs with (⟨hval,_⟩ | hr) | ⟨U,h'',t'',hx,hu,step',hh,hs'⟩
+    · simp [ht] at hval
+    · exact absurd step hr.no_step
+    · obtain ⟨rfl,rfl⟩ := Step_det step step'
+      refine Or.inr ⟨U,h',_,hx,hu,step',hh,?_⟩
+      cases n with
+      | zero => trivial
+      | succ m =>
+        rcases hs' with (⟨hval', _⟩ | hr') | ⟨_, _, _, _, _, step'', _, _⟩
+        · simp [isVal] at hval'
+        · exact .inl (.inr hr')
+        · cases step'' with
+          | throwC s => exact absurd s (value_no_step hv)
+
 theorem write_new {h : Heap} {l v} (hlt : l < h.length) : Observes (h.set l v) l v := by
   simp [Observes,hlt]
 

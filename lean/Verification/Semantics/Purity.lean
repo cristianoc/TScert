@@ -147,6 +147,8 @@ inductive CollectingRun : Tm → Prop where
   | collected : (∀ e ∈ E, pureTerm e = true) →
       (∀ v ∈ L, isVal v = true) → (∀ v ∈ L, Scoped 0 v) →
       CollectingRun (.letE (.arr ls) (.goto E K start (.var 0 :: L) .nul))
+  /-- A pack of more elements than a store holds throws its `RangeError`. -/
+  | refused : CollectingRun (.letE (.throw (thrownError l)) b)
 
 theorem CollectingRun.step {h t h' t'} (hp : CollectingRun t) (hs : Step h t h' t') :
     h.IsPrefix h' ∧ CollectingRun t' := by
@@ -154,9 +156,18 @@ theorem CollectingRun.step {h t h' t'} (hp : CollectingRun t) (hs : Step h t h' 
   | pure hp =>
     obtain ⟨hpre, hp'⟩ := hp.step hs
     exact ⟨hpre, .pure hp'⟩
-  | collect hE hL hsc hvs =>
-    obtain ⟨rfl, rfl⟩ := Step_det hs (.letC (.arrAlloc hvs))
-    exact ⟨⟨_, rfl⟩, .collected hE hL hsc⟩
+  | @collect E L vs K start hE hL hsc hvs =>
+    by_cases hl : vs.length ≤ maxArrayLength
+    · obtain ⟨rfl, rfl⟩ := Step_det hs (.letC (.arrAlloc hvs hl))
+      exact ⟨⟨_, rfl⟩, .collected hE hL hsc⟩
+    · obtain ⟨rfl, rfl⟩ := Step_det hs (.letC (.arrAllocThrow hvs (by omega)))
+      exact ⟨⟨_, rfl⟩, .refused⟩
+  | refused =>
+    cases hs with
+    | letC s =>
+      cases s with
+      | throwC s' => exact absurd s' (value_no_step rfl)
+    | letV hv => simp [isVal] at hv
   | @collected E L ls K start hE hL hsc =>
     obtain ⟨rfl, rfl⟩ := Step_det hs (.letV (by rfl))
     have hm : L.map (subst 0 (.arr ls)) = L := by
@@ -350,6 +361,7 @@ theorem inspect_step {h t h' t'} (hs : Step h t h' t') (hp : inspectTerm t = tru
   case arithThrow => exact ⟨⟨[.nul], rfl⟩, rfl⟩
   case makeFields => exact ⟨⟨_, (List.append_assoc _ _ _).symm⟩, rfl⟩
   case arrAlloc => exact ⟨⟨_, rfl⟩, rfl⟩
+  case arrAllocThrow => exact ⟨⟨[.nul], rfl⟩, rfl⟩
   case mergeV _ _ hparts =>
     refine ⟨List.prefix_refl _, ?_⟩
     simp only [inspectTerm, List.all_eq_true, List.mem_map]

@@ -36,7 +36,7 @@ step, rather than tuple membership, consumes an approximation level. -/
 theorem argument_alloc_safe {T : TupleF} (hT : ∀ i A, positionFam T i = some A → Adm A)
     (hTv : ∀ i A, positionFam T i = some A → ValOnly A)
     {n : Nat} {W : WorldT n} {h : Heap} {vs : List Tm}
-    (hw : WorldAdm W) (hh : HeapOk n W h) (hp : ArgumentContracts.Fits T n W vs)
+    (hw : WorldAdm W) (hh : HeapOk n W h) (hΞ : ErrorsIn Ξ) (hp : ArgumentContracts.Fits T n W vs)
     (hvals : CallArguments.Values vs) :
     Safe Ξ (listT { T with readonly := false }) n W h (.arrLit vs) := by
   obtain ⟨hreq, hbound, hel⟩ := hp
@@ -62,7 +62,7 @@ theorem argument_alloc_safe {T : TupleF} (hT : ∀ i A, positionFam T i = some A
       intro A hA
       obtain ⟨i, hi, rfl⟩ := List.getElem_of_mem hA
       exact hTv i _ (hAi i hi))
-    n W h vs hlen hvals hw hh
+    n W h vs hlen hvals hw hh hΞ
     (by
       intro p hp j hj
       obtain ⟨i, hi, hpi⟩ := List.getElem_of_mem hp
@@ -72,9 +72,9 @@ theorem argument_alloc_safe {T : TupleF} (hT : ∀ i A, positionFam T i = some A
       exact (hT i _ (hAi i _)).down_le n j (Nat.le_of_lt hj) W _
         (hel i _ _ (List.getElem?_eq_getElem hiv) (hAi i _)))
     (by
-      intro j hj U hx hl
+      intro j hj U hx hl hmax
       have := listT_alloc (T := { T with readonly := false }) (As := As) (base := h.length)
-        (by simp only [hlen]; exact hreq) (by simp only [hlen]; exact hbound)
+        (by simp only [hlen]; exact hreq) (by simp only [hlen]; exact hmax) (by simp only [hlen]; exact hbound)
         (fun i A hA => by
           obtain ⟨hi, rfl⟩ := List.getElem?_eq_some_iff.mp hA
           exact hAi i hi)
@@ -132,7 +132,7 @@ theorem listT_spreads {T : TupleF} {E : Fam}
     (hpos : ∀ i A, positionFam T i = some A → FamLe A E)
     (hhole : T.presence = .sparse → ∀ j (U : WorldT j), E j U .undef) :
     Spreads (listT T) E := by
-  rintro n W h v hh ⟨ls, rfl, hd, hlen, hbound, hreq, hopt, hrest⟩
+  rintro n W h v hh ⟨ls, rfl, hd, hlen, -, hbound, hreq, hopt, hrest⟩
   have hsome : ∀ l, some l ∈ ls → ∃ c : Ctr n, lookup W l = some c ∧
       ∀ (j : Nat) (hj : j < n) (U : WorldT j) (u : Val), c j hj U u → E j U u := by
     intro l hm
