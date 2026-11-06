@@ -114,14 +114,17 @@ retainDeclarationSessions(true);
 const base = fixture("base");
 
 // A worker holding a session, killed while it computes: its compilers end
-// with it.
+// with it. The worker computes until its parent kills it, and exits once the
+// parent that started it, whose pid it is given, is no longer its parent.
 if (process.argv[2] === "--hold") {
   parse({ name: "certified-value-import", directory: "hold", config: base.config, examples: base.examples });
   process.stdout.write(JSON.stringify(liveCompilers().map((c) => c.pid)) + "\n");
-  for (;;);
+  const parent = Number(process.argv[3]);
+  while (process.ppid === parent);
+  process.exit(1);
 }
 {
-  const held = spawn(process.execPath, [import.meta.filename, "--hold"], { stdio: ["ignore", "pipe", "inherit"] });
+  const held = spawn(process.execPath, [import.meta.filename, "--hold", String(process.pid)], { stdio: ["ignore", "pipe", "inherit"] });
   const pids = await new Promise<number[]>((done, fail) => {
     let out = "";
     held.stdout.setEncoding("utf8");
