@@ -1162,10 +1162,10 @@ meanings only below the budget, as a record's does. -/
 theorem list_congr_below (X Y : α → Fam) (t : Tuple α) (n : Nat)
     (h : ∀ i, Agree (X i) (Y i) n) (W : WorldT n) (v : Val) :
     listT (tupleFams X t) n W v ↔ listT (tupleFams Y t) n W v := by
-  constructor <;> rintro ⟨ls, rfl, hd, hlen, hbound, hreq, hopt, hrest⟩ <;>
+  constructor <;> rintro ⟨ls, rfl, hd, hlen, hmax, hbound, hreq, hopt, hrest⟩ <;>
     simp only [listT, tupleFams, List.length_map, List.getElem?_map, Option.map_eq_none_iff,
       Option.map_eq_some_iff] at hlen hbound hreq hopt hrest ⊢ <;>
-    refine ⟨ls, rfl, ?_, hlen, hbound, ?_, ?_, ?_⟩
+    refine ⟨ls, rfl, ?_, hlen, hmax, hbound, ?_, ?_, ?_⟩
   · intro j hj
     exact (storePresence_congr X Y t j (fun a U => h a j hj U .undef) ls).mp (hd j hj)
   · rintro i A ⟨a, ha, rfl⟩

@@ -1363,9 +1363,11 @@ theorem store_alloc_sound [DecidableEq ι] {G : NormalGraph ι} {k A ρ n W h}
     (hs : Safe (excOf G) (meaning G A) n W h (.arrLit vs)) :
     SafePost (excOf G) (meaning G A)
       (fun h' v => HeapKnowledge.Holds (HeapKnowledge.shift k) (push v ρ) h')
-      n W h (.arrLit vs) :=
-  one_step rfl rfl (.arrAlloc hvals)
-    (HeapKnowledge.shift_holds (HeapKnowledge.alloc_frames vs hk)) hs
+      n W h (.arrLit vs) := by
+  by_cases hmax : vs.length ≤ maxArrayLength
+  · exact one_step rfl rfl (.arrAlloc hvals hmax)
+      (HeapKnowledge.shift_holds (HeapKnowledge.alloc_frames vs hk)) hs
+  · exact one_step_throw rfl rfl (.arrAllocThrow hvals (by omega)) hs
 
 theorem writeSlots_eq {t f i v} (h : writeSlots t = some (f, i, v)) :
     t = .writeAt f (.var i) (.var v) := by

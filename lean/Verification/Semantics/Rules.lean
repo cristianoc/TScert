@@ -293,16 +293,26 @@ is a step, so the elements need their families below the budget only. -/
 theorem arr_alloc_rule_below {Q : Fam} {As : List Fam} (hA : ∀ A ∈ As, Adm A) (hV : ∀ A ∈ As, ValOnly A)
     (n : Nat) (W : WorldT n) (h : Heap) (vs : List Val)
     (hAs : As.length = vs.length) (hvals : ∀ v ∈ vs, isVal v = true)
-    (hadm : WorldAdm W) (hok : HeapOk n W h)
+    (hadm : WorldAdm W) (hok : HeapOk n W h) (hΞ : ErrorsIn Ξ)
     (hv : ∀ p ∈ As.zip vs, ∀ (j : Nat) (hj : j < n), p.1 j (trunc j (Nat.le_of_lt hj) W) p.2)
     (result : ∀ j (hj : j < n) (U : WorldT j),
       WExt (trunc j (Nat.le_of_lt hj) W) U →
       (∀ (i : Nat) (hi : i < As.length), lookup U (h.length + i) = some (res (As[i]'hi))) →
+      vs.length ≤ maxArrayLength →
       Q j U (.arr (elemSlots h.length vs.length))) :
     Safe Ξ Q n W h (.arrLit vs) := by
   cases n with
   | zero => trivial
   | succ p =>
+    by_cases hmax : vs.length ≤ maxArrayLength
+    case neg =>
+      have hcadm : CtrAdm (res nulT : Ctr p) :=
+        ⟨fun _ _ _ _ _ _ h => h, fun _ _ _ _ h => by rw [show _ = Tm.nul from h]; rfl⟩
+      refine Or.inr ⟨appendW (trunc p (Nat.le_succ p) W) (res nulT), h ++ [.nul], _,
+        WExt_appendW _ _, WorldAdm_append (WorldAdm_trunc _ hadm) hcadm, .arrAllocThrow hvals (by omega),
+        heap_alloc p _ h (res nulT) .nul (HeapOk_trunc p W h hok) (WorldAdm_trunc _ hadm)
+          (fun _ _ => rfl), ?_⟩
+      exact thrown_safe _ _ _ _ ⟨thrownError h.length, .throwV rfl rfl, by simp [thrownError, Scoped], hΞ _ _ _⟩
     have hcadm : ∀ c ∈ As.map (fun A => (res A : Ctr p)), CtrAdm c := by
       intro c hc
       obtain ⟨A, hA', rfl⟩ := List.mem_map.mp hc
@@ -320,13 +330,13 @@ theorem arr_alloc_rule_below {Q : Fam} {As : List Fam} (hA : ∀ A ∈ As, Adm A
     refine Or.inr ⟨appendWs (trunc p (Nat.le_succ p) W) (As.map (fun A => (res A : Ctr p))),
       h ++ vs, .arr (elemSlots h.length vs.length),
       WExt_appendWs _ _, WorldAdm_appendWs (WorldAdm_trunc _ hadm) hcadm,
-      .arrAlloc hvals,
+      .arrAlloc hvals hmax,
       heap_allocs p _ (trunc p (Nat.le_succ p) W) h vs (HeapOk_trunc p W h hok)
         (WorldAdm_trunc _ hadm) hcadm (by simp [hAs]) hcont, ?_⟩
     cases p with
     | zero => trivial
     | succ q =>
-      refine Or.inl (Or.inl ⟨rfl, result (q + 1) (by omega) _ (WExt_appendWs _ _) ?_⟩)
+      refine Or.inl (Or.inl ⟨rfl, result (q + 1) (by omega) _ (WExt_appendWs _ _) ?_ hmax⟩)
       intro i hi
       have hib : i < (As.map (fun A => (res A : Ctr (q + 1)))).length := by
         simp; omega
@@ -339,14 +349,15 @@ theorem arr_alloc_rule_below {Q : Fam} {As : List Fam} (hA : ∀ A ∈ As, Adm A
 theorem arr_alloc_rule {Q : Fam} {As : List Fam} (hA : ∀ A ∈ As, Adm A) (hV : ∀ A ∈ As, ValOnly A)
     (n : Nat) (W : WorldT n) (h : Heap) (vs : List Val)
     (hAs : As.length = vs.length) (hvals : ∀ v ∈ vs, isVal v = true)
-    (hadm : WorldAdm W) (hok : HeapOk n W h)
+    (hadm : WorldAdm W) (hok : HeapOk n W h) (hΞ : ErrorsIn Ξ)
     (hv : ∀ p ∈ As.zip vs, p.1 n W p.2)
     (result : ∀ j (hj : j < n) (U : WorldT j),
       WExt (trunc j (Nat.le_of_lt hj) W) U →
       (∀ (i : Nat) (hi : i < As.length), lookup U (h.length + i) = some (res (As[i]'hi))) →
+      vs.length ≤ maxArrayLength →
       Q j U (.arr (elemSlots h.length vs.length))) :
     Safe Ξ Q n W h (.arrLit vs) :=
-  arr_alloc_rule_below hA hV n W h vs hAs hvals hadm hok
+  arr_alloc_rule_below hA hV n W h vs hAs hvals hadm hok hΞ
     (fun p hp j hj => (hA p.1 (List.of_mem_zip hp).1).down_le n j (Nat.le_of_lt hj) W p.2 (hv p hp))
     result
 

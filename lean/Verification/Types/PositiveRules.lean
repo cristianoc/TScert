@@ -2866,10 +2866,10 @@ theorem covers_shape_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R : L
     (W : WorldT n) (v : Val) (hv : listT (tupleFams (mixedValues G η) p) n W v) :
     listT (tupleFams (mixedValues G η) q) n W v := by
   obtain ⟨hreqLen, hoptLen, hreqR, hoptR, hrestR, hmode⟩ := hc
-  obtain ⟨ls, rfl, hd, hlen, hbound, hreq, hopt, hrest⟩ := hv
+  obtain ⟨ls, rfl, hd, hlen, hmax, hbound, hreq, hopt, hrest⟩ := hv
   simp only [listT, tupleFams, List.length_map, List.getElem?_map, Option.map_eq_none_iff,
     Option.map_eq_some_iff] at hlen hbound hreq hopt hrest ⊢
-  refine ⟨ls, rfl, (covers_presence_sound hpresence n hr ls hbound hd), hreqLen ▸ hlen, ?_, ?_, ?_, ?_⟩
+  refine ⟨ls, rfl, (covers_presence_sound hpresence n hr ls hbound hd), hreqLen ▸ hlen, hmax, ?_, ?_, ?_, ?_⟩
   · intro hn
     have hpn : p.rest = none := by
       cases hp : p.rest <;> cases hq : q.rest <;> simp_all [CoversRest]
@@ -2909,7 +2909,7 @@ theorem covers_readonly_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R 
     (W : WorldT n) (v : Val) (hv : listT (tupleFams (mixedValues G η) p) n W v) :
     listT (tupleFams (mixedValues G η) q) n W v := by
   obtain ⟨hreqLen, hrestB, hpos⟩ := hc
-  obtain ⟨ls, rfl, hd, hlen, hbound, hreq, hopt, hrest⟩ := hv
+  obtain ⟨ls, rfl, hd, hlen, hmax, hbound, hreq, hopt, hrest⟩ := hv
   simp only [listT, tupleFams, List.length_map, List.getElem?_map, Option.map_eq_none_iff,
     Option.map_eq_some_iff] at hlen hbound hreq hopt hrest ⊢
   -- Each element present has a location whose contract its source position
@@ -2943,7 +2943,7 @@ theorem covers_readonly_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R 
     intro c a b hab hag j hj W' u
     exact (hag j hj W' u).weaken (fun h => by simp [hro] at h) (hr j hj _ _ hab W' u)
       (fun h => by simp [hro] at h)
-  refine ⟨ls, rfl, (covers_presence_sound hpresence n hr ls hbound hd), by omega, ?_, ?_, ?_, ?_⟩
+  refine ⟨ls, rfl, (covers_presence_sound hpresence n hr ls hbound hd), by omega, hmax, ?_, ?_, ?_, ?_⟩
   · intro hn
     obtain ⟨hp, hle⟩ := hrestB hn
     have := hbound hp

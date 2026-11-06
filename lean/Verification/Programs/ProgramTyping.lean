@@ -526,7 +526,7 @@ theorem setElem_store_safe {Ξ : Fam} {G : NormalGraph ι} {L A : Ty ι} {T : Tu
     (hvval : isVal vv = true) (hv' : meaning G A p X vv) :
     Safe Ξ (meaning G L) p X heap'' (.setElem (.arr ls) (.num b) vv) := by
   have hlist := ((represents_raw hr p X (.arr ls)) hav').1
-  obtain ⟨ls', hls, -, -, -, hreq, hopt, hrest⟩ := hlist
+  obtain ⟨ls', hls, -, -, -, -, hreq, hopt, hrest⟩ := hlist
   cases hls
   simp only [tupleFams, List.length_map, List.getElem?_map] at hreq hopt hrest
   have rwContract : ∀ P Q : Prop, SlotContract T.readonly P Q ↔ (P ↔ Q) := by
@@ -582,6 +582,7 @@ theorem setElem_store_safe {Ξ : Fam} {G : NormalGraph ι} {L A : Ty ι} {T : Tu
     · rw [positionFam_tupleFams, hA]; rfl
     · simp only [elemLoc, hk, Option.bind_some] at hloc; exact hloc
     · exact hkls
+    · exact indexOfBits_lt hk
     · exact hm'
 
 /-- Every derivation is safe in every admissible world and satisfying heap. -/
@@ -1318,12 +1319,13 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
       (ArgsT_values
         (by intro A hA'; obtain ⟨r, hr', rfl⟩ := List.mem_map.mp hA'; exact meaning_valOnly G r.1)
         hargs)
-      hu hok (ArgsT_zip hargs)
-    intro k hk V hy hl
+      hu hok (builtinExc_errors G _) (ArgsT_zip hargs)
+    intro k hk V hy hl hmax
     refine (represents_back hr k V _) ⟨?_, by simp⟩
     rw [hlen]
     apply listT_alloc
     · simpa [tupleFams] using hreq
+    · simpa [hlen] using hmax
     · intro hn
       simp only [tupleFams, List.length_map, Option.map_eq_none_iff] at hn ⊢
       exact hbound hn
@@ -1342,7 +1344,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
       (ihi j U heap ρ (he.transfer j hj U hx) hu hok)
     intro m hm V hy hv heap' iv hok' hival hi'
     have ha'' := (meaning_adm G L).mono m _ V hy av ((meaning_adm G L).down_le j m hm U av ha')
-    obtain ⟨ls, rfl, -, -, -, hreq, -, -⟩ := ((represents_raw hr m V av) ha'').1
+    obtain ⟨ls, rfl, -, -, -, -, hreq, -, -⟩ := ((represents_raw hr m V av) ha'').1
     simp only [tupleFams, List.getElem?_map] at hreq
     have hb : iv = .num b := (represents_raw hI m V iv) hi'
     subst hb
@@ -1357,7 +1359,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
       (ihi j U' heap ρ (he.transfer j hj U' hx) hu hok)
     intro m hm V hy hv heap' iv hok' hival hi'
     have ha'' := (meaning_adm G L).mono m _ V hy av ((meaning_adm G L).down_le j m hm U' av ha')
-    obtain ⟨ls, rfl, -, -, -, -, hopt, hrest⟩ := ((represents_raw hr m V av) ha'').1
+    obtain ⟨ls, rfl, -, -, -, -, -, hopt, hrest⟩ := ((represents_raw hr m V av) ha'').1
     simp only [tupleFams, List.length_map, List.getElem?_map] at hopt hrest
     have hb : iv = .num b := (represents_raw hI m V iv) hi'
     subst hb
@@ -1404,7 +1406,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
       (ihi j U' heap ρ (he.transfer j hj U' hx) hu hok)
     intro m hm V hy hv heap' iv hok' hival hi'
     have ha'' := (meaning_adm G L).mono m _ V hy av ((meaning_adm G L).down_le j m hm U' av ha')
-    obtain ⟨ls, rfl, -, -, -, -, -, hrest⟩ := ((represents_raw hr m V av) ha'').1
+    obtain ⟨ls, rfl, -, -, -, -, -, -, hrest⟩ := ((represents_raw hr m V av) ha'').1
     have hnum := answers_sound hq hi'
     obtain ⟨b, rfl⟩ : ∃ b, iv = .num b := by
       cases iv <;> simp [tagHolds] at hnum; exact ⟨_, rfl⟩
@@ -1692,7 +1694,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
         · exact ih _ hp' j U heap ρ (he.transfer j hj U hxU) hu hok)
     intro j _ U _ hu heap extra hok hex
     apply Safe_mono j _ U heap _
-      (fresh_store_safe ro presence (meaning_adm G E) (meaning_valOnly G E) hu hok hex)
+      (fresh_store_safe ro presence (meaning_adm G E) (meaning_valOnly G E) hu hok (builtinExc_errors G _) hex)
     intro k _ V v hv
     exact (represents_back hr k V v) ⟨by simpa [tupleFams] using hv, by simp⟩
   | @callPacked effect Γ f r a F Rt A B P xs t hf hmem htP hrt hx ha hpk hplain ihf ihrt ihx iha =>

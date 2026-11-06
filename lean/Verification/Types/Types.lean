@@ -862,9 +862,11 @@ distinguishes physical density, safe hole reads, and unconstrained holes.
 At depth zero no element can be observed; presence is guarded at the same
 depth as the element families.
 Required positions always exist. Lengths follow: at least the required
-positions, and no more than the optional ones without a rest. -/
+positions, at most `maxArrayLength`, and no more than the optional ones
+without a rest. -/
 def listT (T : TupleF) : Fam := fun k W v =>
   ∃ ls : List (Option Nat), v = .arr ls ∧ (∀ j, j < k → StorePresence T ls j) ∧ T.required.length ≤ ls.length ∧
+    ls.length ≤ maxArrayLength ∧
     (T.rest = none → ls.length ≤ T.required.length + T.optional.length) ∧
     (∀ (i : Nat) (A : Fam), T.required[i]? = some A → ∃ (l : Nat) (c : Ctr k),
       ls[i]? = some (some l) ∧ lookup W l = some c ∧
@@ -878,8 +880,8 @@ def listT (T : TupleF) : Fam := fun k W v =>
 
 theorem listT_adm (T : TupleF) : Adm (listT T) := by
   refine ⟨?_, ?_⟩
-  · rintro n W v ⟨ls, rfl, hd, hlen, hbound, hreq, hopt, hrest⟩
-    refine ⟨ls, rfl, (fun j hj => hd j (by omega)), hlen, hbound, ?_, ?_, ?_⟩
+  · rintro n W v ⟨ls, rfl, hd, hlen, hmax, hbound, hreq, hopt, hrest⟩
+    refine ⟨ls, rfl, (fun j hj => hd j (by omega)), hlen, hmax, hbound, ?_, ?_, ?_⟩
     · intro i A hA
       obtain ⟨l, c, hl, hw, hag⟩ := hreq i A hA
       exact ⟨l, _, hl, lookup_trunc (Nat.le_succ n) W l c hw, fun j hj W' u => hag j (by omega) W' u⟩
@@ -889,8 +891,8 @@ theorem listT_adm (T : TupleF) : Adm (listT T) := by
     · intro i l hi hl
       obtain ⟨E, c, hE, hw, hag⟩ := hrest i l hi hl
       exact ⟨E, _, hE, lookup_trunc (Nat.le_succ n) W l c hw, fun j hj W' u => hag j (by omega) W' u⟩
-  · rintro n W W' hx v ⟨ls, rfl, hd, hlen, hbound, hreq, hopt, hrest⟩
-    refine ⟨ls, rfl, hd, hlen, hbound, ?_, ?_, ?_⟩
+  · rintro n W W' hx v ⟨ls, rfl, hd, hlen, hmax, hbound, hreq, hopt, hrest⟩
+    refine ⟨ls, rfl, hd, hlen, hmax, hbound, ?_, ?_, ?_⟩
     · intro i A hA
       obtain ⟨l, c, hl, hw, hag⟩ := hreq i A hA
       exact ⟨l, c, hl, WExt_lookup hx hw, hag⟩
@@ -975,7 +977,7 @@ theorem placeAt_length (ls : List (Option Nat)) (k m : Nat) :
 contract of its family, in order, so the store meets any tuple contract whose
 positions those families are, and whose bounds the count respects. -/
 theorem listT_alloc {n : Nat} {W : WorldT n} {T : TupleF} {As : List Fam} {base : Nat}
-    (hreq : T.required.length ≤ As.length)
+    (hreq : T.required.length ≤ As.length) (hmax : As.length ≤ maxArrayLength)
     (hbound : T.rest = none → As.length ≤ T.required.length + T.optional.length)
     (hpos : ∀ i A, As[i]? = some A → positionFam T i = some A)
     (hl : ∀ (i : Nat) (hi : i < As.length), lookup W (base + i) = some (res (As[i]'hi))) :
@@ -983,7 +985,7 @@ theorem listT_alloc {n : Nat} {W : WorldT n} {T : TupleF} {As : List Fam} {base 
   have hpos' : ∀ (i : Nat) (hi : i < As.length), positionFam T i = some (As[i]'hi) :=
     fun i hi => hpos i _ (List.getElem?_eq_some_iff.mpr ⟨hi, rfl⟩)
   refine ⟨_, rfl, (fun j _ => StorePresence.of_dense (elemSlots_dense _ _) j), by simp [elemSlots, hreq],
-    fun hn => by simpa [elemSlots] using hbound hn, ?_, ?_, ?_⟩
+    by simp [elemSlots, hmax], fun hn => by simpa [elemSlots] using hbound hn, ?_, ?_, ?_⟩
   · intro i A hA
     have hi : i < As.length := by
       have := (List.getElem?_eq_some_iff.mp hA).1; omega
@@ -1022,9 +1024,10 @@ bounds still hold because the position is one the contract names, and the
 store stays dense because nothing is skipped. -/
 theorem listT_grow {n : Nat} {W : WorldT n} {T : TupleF} {ls : List (Option Nat)} {k m : Nat} {A : Fam}
     (h : listT T n W (.arr ls)) (hpos : positionFam T k = some A)
-    (hhole : (ls[k]?).bind id = none) (hk : k ≤ ls.length) (hm : lookup W m = some (res A)) :
+    (hhole : (ls[k]?).bind id = none) (hk : k ≤ ls.length) (hkmax : k < maxArrayLength)
+    (hm : lookup W m = some (res A)) :
     listT T n W (.arr (placeAt ls k m)) := by
-  obtain ⟨ls', he, hd, hlen, hbound, hreq, hopt, hrest⟩ := h
+  obtain ⟨ls', he, hd, hlen, hmax, hbound, hreq, hopt, hrest⟩ := h
   cases he
   have hnamed : T.rest = none → k < T.required.length + T.optional.length := by
     intro hn
@@ -1037,7 +1040,7 @@ theorem listT_grow {n : Nat} {W : WorldT n} {T : TupleF} {ls : List (Option Nat)
         · rw [hn] at hpos; cases hpos
         · cases hpos
   refine ⟨_, rfl, (fun j hj => StorePresence.grow (hd j hj) hk), by rw [placeAt_length]; omega,
-    fun hn => by rw [placeAt_length]; have := hbound hn; have := hnamed hn; omega, ?_, ?_, ?_⟩
+    by rw [placeAt_length]; omega, fun hn => by rw [placeAt_length]; have := hbound hn; have := hnamed hn; omega, ?_, ?_, ?_⟩
   · intro i A' hA
     obtain ⟨l, c, hl, hw, hag⟩ := hreq i A' hA
     have hik : i ≠ k := by

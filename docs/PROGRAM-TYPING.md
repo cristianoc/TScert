@@ -1470,7 +1470,12 @@ is refused. Each variable is a slot holding a safe integer
 A store literal evaluates its parts left to right, and a spread of a ready
 store is replaced by the store's elements once every earlier part is a value,
 `undefined` at a hole (`Step.arrSpread`); the store then takes one fresh
-location per value (`Step.arrAlloc`). Its length is known only at run time,
+location per value (`Step.arrAlloc`), where there are at most $`2^{32}-1`$
+values, and otherwise throws a fresh error object, as engines throw a
+`RangeError` (`Step.arrAllocThrow`; `[...a, ...a]` with $`|a|>2^{31}`$), so
+a store's length is within [its contract's bound](POSITIVE-TYPES.md#arrays).
+A literal is typed in a family whose exceptions hold every thrown error
+object (`ErrorsIn`), as an operator that throws is. Its length is known only at run time,
 so its contract is one element type $`E`$ at every position: each plain part
 is in $`E`$, each spread a store whose elements are:
 
