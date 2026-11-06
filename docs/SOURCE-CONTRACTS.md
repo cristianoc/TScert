@@ -657,6 +657,138 @@ certifying a body proves no initialisation succeeds. The invariant is a
 review obligation, listed with the import assumption and in the
 [parser, extraction, declared-types and host bridges](TRUST-REDUCTION.md#the-bridges).
 
+**Concrete closure captures.** A graph closure stores a finite list of term
+values. Every explicit capture is strictly smaller than its enclosing
+closure; every nonempty path through such captures strictly decreases size.
+`LinkingCaptures.no_capture_cycle` proves that this graph is acyclic, and
+`LinkingCaptures.no_two_way_links` proves that a table of direct captures
+cannot realize mutual links
+([Lean](../lean/Verification/Programs/LinkingCaptures.lean)). The implicit
+self slot supplied at invocation is separate from explicit captures;
+`ProgramTyping.offers_self` proves the existing self-recursive closure rule.
+A mutually recursive group requires an encoding through self or heap
+locations and a proof connecting invocation of that encoding to the
+certified requests. Circular equations between term-valued captures do not
+construct such a group.
+
+**Acyclic stable linking.** `Linking.WellLinked` records a finite family of
+initialized exports, their concrete code and capture layouts, certified
+invocation specifications, external capture contracts, and semantic transport
+between the two readings of each linked signature. An external slot must
+hold a value distinct from every export in the family. Every slot holding a
+family export therefore uses the linked branch; capture links strictly
+decrease the dependency rank. The same exclusion applies to entry slots.
+These are semantic premises checked by Lean when a `WellLinked` witness is
+constructed. The general theorem assumes external contracts at every world.
+[`Linking.exports_safe`](../lean/Verification/Programs/Linking.lean) proves
+that membership, including the callable effects, by dependency-order
+induction. Self-recursion uses `ProgramTyping.offers_self` and its
+step-index induction. `Linking.entry_env` assembles each entry's `EnvOk`;
+[`Linking.entries_safe`](../lean/Verification/Source/Claims/Linking.lean)
+applies the `RequestsSafe` component of `checkUnitJson_safe` to give
+`SafeGraph`. Admitted parameters, entry separation, `WorldAdm` and `HeapOk`
+remain premises. Certified invocation specifications are explicit premises;
+`code_of_accepted_request` obtains that specification from an accepted
+request's checked code table when `offersChecked` matches the exact code,
+capture types and offered rows. Its proof uses `codeTable_sound`, whose
+code checks use `GraphCode.codeChecked_sound`. [`code_of_adapted_request`](../lean/Verification/Source/Claims/Invocation.lean)
+derives an ordinary fixed-signature invocation specification directly from
+top-level acceptance. Its invocation code embeds the exact accepted graph and
+projects the invocation frame into the request inputs. A request starts with
+parameters and module bindings; invocation starts with the receiver and ends
+with captures and self. `code_of_capture_free_request` supplies that projection
+for a capture-free function by dropping the receiver and ignoring self. Typed
+module-slot projection and entry separation are explicit premises for captures.
+`code_of_effectful_adapted_request` preserves a request's checked closed
+footprint and its on-throw bound through the same adapter. Promises, result
+freshness and receiver-relative effects require their corresponding proof.
+These results prove adapter code safety; source-to-adapter correspondence
+belongs to the lowering simulation.
+
+[`Assembly.check_sound`](../lean/Verification/Programs/LinkAssembly.lean)
+constructs a `WellLinked` witness from a successful structural check and the
+body checker's soundness. The data supplies ranks and capture targets; the
+checker compares concrete capture values and signature labels in one graph.
+Its closed-family fragment requires every capture to name a family export;
+external captures are refused. The checker receives its concrete export family
+and body-certification function. The standalone forged-data controls cover a
+wrong target, a nondecreasing rank, an internal capture marked external and an
+attachment to the wrong row.
+
+**Source-bound demo assembly.**
+[`linkingFilePlans`](../lean/Verification/Source/Claims/Json.lean) retains named
+module signatures in the same frozen store as its requests. Ordinary unit
+acceptance uses `filePlans`, which freezes the store from unit extraction and
+returns an empty signature table. The complete signature
+includes its overloads, effects and variadic extensions. Its fixed ordinary
+call view has a separate retained label and a separate body check. A signature
+whose lowering fails retains its refusal.
+[`Demo.assemble`](../lean/Verification/Source/Demo.lean) consumes the retained
+plans through the exhaustive certification boundary and checks their evidence.
+It constructs full and fixed-view closures in dependency order. Each closure
+embeds the exact accepted graph with its checked invocation-frame projection.
+The module-binding selection supplies the ordered capture names; the assembly
+checker compares the resulting values, types, layouts and decreasing ranks.
+`Demo.rowCheck_sound` derives every offered fixed row and variadic extension's
+body specification from request acceptance, preserving its checked effects.
+`Demo.assemblyCheck_sound` constructs the concrete `WellLinked` family.
+
+The demo admits fixed synchronous functions with callable module captures,
+singleton function units and acyclic dependencies. Its entries have primitive
+parameters and imported callables from `./lib.d.ts`; their ordered input types
+must equal the parameter types followed by the resolved import signatures.
+Module initialization code, external captures, generic bodies and array
+built-ins are refused by this checker. The standalone source-bound controls
+cover matching imports with same-module captures and arithmetic helpers, an
+independently accepted stale declaration, a forged export signature, a forged
+capture association and absent export evidence.
+
+The scope is completed initialization, stable exports, and acyclic imports,
+with no cyclic initialization, live-binding writes, or re-exports.
+Mutual recursion across units requires a recursive-group encoding and its
+invocation correspondence proof ([WORK](../WORK.md#module-composition)).
+
+**Closed primitive comparison.**
+[`PrimitiveBoundary.compare_sound`](../lean/Verification/Source/PrimitiveBoundary.lean)
+proves that equality checked on fixed primitive signatures gives equality of
+interpreted callable contracts, including effects. `check_sound` connects this
+result to the decoder's executable decision. `Attachment` records each
+signature's represented callable row and its primitive interpretation in a
+frozen graph; its receiver is the graph's `source` interpretation, `excOf G`.
+`transport` moves export membership to the importer under those attachments
+and a shared exception interpretation.
+[`attachmentCheck_sound`](../lean/Verification/Source/PrimitiveAttachment.lean)
+proves an attachment from the actual graph's expanded callable row, primitive
+operand rows and effect. `exceptions_eq_of_no_builtins` proves shared exception
+interpretation for graphs with no array built-ins. An attachment requires a
+callable row: `no_attachment_without_arrow_rows` states its absence precisely.
+The demo's `boundary-check` command reads the exact Fragment, claims and
+evidence artifacts of both files. `Demo.link` resolves the import's local name
+and declaration identity to its constructed export. It runs both attachment
+checks at the retained labels and compares the decoded signatures. The
+absence of array built-ins establishes equality of exception interpretations.
+`Demo.Link.transport` supplies semantic transport, and `Demo.Entry.slots`
+connects it to the caller request's exact input slots.
+
+**Conditional runtime composition.**
+[`LinkedRuntime.end_to_end`](../lean/Verification/Source/LinkedRuntime.lean)
+combines the linked entry theorem with simulations for source translation,
+compilation, adapters and engine execution. Every target observation machine
+is deterministic and its terminal states have no outgoing transitions.
+`Machine.Safe` requires progress at nonterminal states and safety of every
+successor, recursively through the observation bound. The conclusion therefore
+covers every observation prefix. The existential helper `Machine.CanRun`
+records one safe path; determinism and terminal stopping turn it into
+`Machine.Safe`. The theorem assumes explicit runtime simulations
+and their initial-state relations. `Demo.linked_safe` instantiates it from
+exactly the Boolean success condition of `boundary-check`, for each computed
+entry and every written primitive argument, starting with an empty world and
+heap after initialization. The assembly, accepted caller, attachments, input
+slots, separation and admissibility are consequences of the executable
+checks. The five started runtime simulations supply implementation
+correspondence and their related initial states; the implementation trust and
+demo scope are owned by [the Rust demo](../demo/rust/README.md#conditional-linked-safety-and-trust).
+
 **A catch.** A certified import's footprint holds on normal return, and on
 a throw where its effect states `onThrow`
 ([exceptional footprints](SOURCE-ELABORATION.md#exceptional-footprints)).

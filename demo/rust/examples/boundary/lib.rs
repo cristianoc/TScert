@@ -20,3 +20,15 @@ pub fn greet(name: &str) -> String {
 pub fn next_id() -> i64 {
     42
 }
+
+#[wasm_bindgen]
+pub fn identity(x: i64) -> i64 { x }
+
+#[wasm_bindgen]
+pub fn quotient(x: i64, y: i64) -> i64 { x / y }
+
+#[wasm_bindgen]
+pub fn remainder(x: i64, y: i64) -> i64 { x % y }
+
+#[wasm_bindgen]
+pub fn negate(x: i64) -> i64 { -x }

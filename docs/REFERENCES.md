@@ -728,6 +728,19 @@ The wasm-bindgen contributors. *The wasm-bindgen Guide*: [numeric types](https:/
 
 **Used for** the Rust demo's numeric ABI mapping and its optional
 real build: matching crate/CLI versions, generated JavaScript, declarations
-and Wasm. The signature agreement check is unproved; the concrete run is
-regression evidence, and no cross-language composition theorem is claimed.
+and Wasm. The Lean comparison of primitive signatures is proved
+(`PrimitiveBoundary.check_sound`), and `Demo.linked_safe` composes the two
+sides conditional on the runtime simulations that wasm-bindgen's conversions
+are part of; the Node comparison is a diagnostic, and the concrete run is
+evidence for those simulations.
 **Discussed in** [the Rust demo](../demo/rust/README.md#build-and-execute-the-real-crossing).
+
+### Rust integer overflow
+
+The Rust project. [Integer operator overflow](https://doc.rust-lang.org/reference/expressions/operator-expr.html#overflow)
+and [Cargo profiles](https://doc.rust-lang.org/cargo/reference/profiles.html).
+Release disables overflow checks by default; division and remainder retain
+the signed MIN/-1 overflow check. These describe the compiler profile;
+correspondence with a deployed artifact is a runtime premise.
+
+**Discussed in** [the Rust demo](../demo/rust/README.md#whose-semantics-a-verdict-covers).

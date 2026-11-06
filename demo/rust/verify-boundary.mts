@@ -5,8 +5,9 @@
 //   (a) the crate's functions in the model, each export at its signature;
 //   (b) the caller through TScert's TypeScript pipeline, each import assumed
 //       at the declaration TypeScript resolves it to;
-//   (c) that each such declaration is, field by field, the signature
-//       `wasm-bindgen`'s mapping gives the Rust function.
+//   (c) source-bound Lean assembly: retained signatures, accepted invocation
+//       bodies, concrete captures and entry slots, and both graph attachments.
+// Node also compares wasm-bindgen signatures for mismatch diagnostics.
 // What these establish together, and what they assume, is stated in this
 // directory's README.
 //
@@ -127,6 +128,17 @@ function agreement(values: ValueRoot[], exports: Map<string, RFn>): string[] {
   return refusals;
 }
 
+/** Lean rechecks the exact Fragment, claims and evidence artifacts and
+ * constructs the linked model consumed by Demo.linked_safe. */
+function leanAgreement(rust: Report, caller: Report): string[] {
+  const binary = join(here, "../../lean/.lake/build/bin/boundary-check");
+  const checked = spawnSync(binary, [rust.artifacts, caller.artifacts],
+    { encoding: "utf8", timeout: 60_000, maxBuffer: 1 << 20 });
+  return checked.error || checked.status !== 0 || checked.stdout.trim() !== "linked"
+    ? [`Lean linked assembly refused: ${checked.error?.message ?? checked.stderr.trim()}`]
+    : [];
+}
+
 const [dir] = process.argv.slice(2);
 if (dir === undefined) {
   process.stderr.write("usage: node demo/rust/verify-boundary.mts <dir>\n");
@@ -148,10 +160,14 @@ const rust = check(rs, lowered.source, lowered.fragment);
 print(`${rs} (Rust functions in the model)`, rust);
 const caller = checkCaller(dir);
 print(`${join(dir, "caller.ts")} (caller, imports at lib.d.ts)`, caller.report);
-const refusals = [...mapping, ...agreement(caller.values, exports)];
-process.stdout.write(`${refusals.length === 0 ? "agreed" : "disagreed"}: lib.d.ts against lib.rs\n`);
-for (const r of refusals) process.stdout.write(`  ${r}\n`);
+const signatureRefusals = [...mapping, ...agreement(caller.values, exports)];
+process.stdout.write(`${signatureRefusals.length === 0 ? "agreed" : "disagreed"}: lib.d.ts against lib.rs\n`);
+for (const r of signatureRefusals) process.stdout.write(`  ${r}\n`);
+const assemblyRefusals = leanAgreement(rust, caller.report);
+process.stdout.write(`${assemblyRefusals.length === 0 ? "linked" : "refused"}: Lean source-bound assembly\n`);
+for (const r of assemblyRefusals) process.stdout.write(`  ${r}\n`);
 
-const ok = rust.status === "verified" && caller.report.status === "verified" && refusals.length === 0;
+const ok = rust.status === "verified" && caller.report.status === "verified" &&
+  signatureRefusals.length === 0 && assemblyRefusals.length === 0;
 process.stdout.write(`${ok ? "passed" : "refused"}: Rust model, caller and declaration checks for ${dir}\n`);
 process.exit(ok ? 0 : 1);
