@@ -1,5 +1,5 @@
 name = "verification"
-defaultTargets = ["verifier", "Verification"]
+defaultTargets = ["verifier", "boundary-check", "Verification"]
 
 [[lean_lib]]
 name = "Verification"
@@ -22,3 +22,8 @@ leanOptions = { warningAsError = true }
 # directory, where Lake runs. Lake traces the arguments, not the file: after
 # editing the C file, remove .lake/build/bin/verifier to relink.
 moreLinkArgs = ["c/runtime_init.c"]
+
+[[lean_exe]]
+name = "boundary-check"
+root = "BoundaryMain"
+leanOptions = { warningAsError = true }

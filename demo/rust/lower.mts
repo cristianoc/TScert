@@ -21,9 +21,36 @@ export class Lowering {
   /** The names in scope in the function being lowered, and their Rust types. */
   private env = new Map<string, RType>();
   private ret: RType | null = null;
+  private divisions = new Map<"div" | "rem", Span>();
+  private locations = new Set<string>();
+
+  /** Reserve source locations before allocating generated nodes. A generated
+   * interval contains the first Rust character responsible for that node.
+   * Shortest available intervals keep diagnostics close to that character. */
+  private reserve(value: unknown): void {
+    if (Array.isArray(value)) { for (const item of value) this.reserve(item); return; }
+    if (typeof value !== "object" || value === null) return;
+    for (const [key, item] of Object.entries(value)) {
+      if ((key === "span" || key.endsWith("Span")) && Array.isArray(item))
+        this.locations.add(`${item[0]}:${item[1]}`);
+      else this.reserve(item);
+    }
+  }
+
+  private generated(origin: Span): Span {
+    const anchor = Math.min(origin[0], this.source.length - 1);
+    for (let width = 1; width <= this.source.length; width++) {
+      for (let start = Math.max(0, anchor - width + 1); start <= anchor && start + width <= this.source.length; start++) {
+        const end = start + width, key = `${start}:${end}`;
+        if (!this.locations.has(key)) { this.locations.add(key); return [start, end]; }
+      }
+    }
+    return this.refuse(origin, "insufficient distinct source locations for generated arithmetic");
+  }
 
   constructor(source: string, crate: RCrate) {
     this.source = source;
+    this.reserve(crate);
     this.structs = new Map(crate.structs.map((s) => [s.name, s]));
     this.fns = new Map(crate.fns.map((f) => [f.name, f]));
   }
@@ -52,6 +79,7 @@ export class Lowering {
     for (const s of crate.structs)
       for (const f of s.fields) this.term(f.type);
     const functions = crate.fns.map((f) => this.function(f));
+    for (const [op, origin] of this.divisions) functions.push(this.divisionHelper(op, origin));
     const declarations = { roots: [], definitions: [], values: [], symbols: [], applications: [] };
     return { file, sourceSha256, declarations, init: [], functions, modules: [] };
   }
@@ -60,14 +88,53 @@ export class Lowering {
     if (f.ret === null) this.refuse(f.span, "a function returning ()");
     this.ret = f.ret;
     this.env = new Map();
-    const params = f.params.map((p) => {
+    const conversions: Stmt[] = [];
+    const params = f.params.map((p, index) => {
       this.bind(p.name, p.span, p.type);
+      if (isPrim(p.type, ["i64"])) {
+        const name = `$tscert_i64_${index}`;
+        conversions.push({ k: "const", pos: this.generated(p.span), bindings: [{ name: p.name, namePos: this.generated(p.span),
+          annot: this.term(p.type), init: this.wrap({ k: "id", pos: this.generated(p.span), name }, p.span), early: false }] });
+        return { name, pos: p.span, type: this.term(p.type) };
+      }
       return { name: p.name, pos: p.span, type: this.term(p.type) };
     });
     return {
       name: f.name, namePos: f.nameSpan, typeParams: [], params, retType: this.term(f.ret),
-      guard: null, stated: null, completion: "sync", body: this.block(f.body, true), strict: true,
+      guard: null, stated: null, completion: "sync", body: [...conversions, ...this.block(f.body, true)], strict: true,
     };
+  }
+
+  /** Signed wrapping using JavaScript's truncating bigint remainder. The
+   * source expression occurs once, so calls retain their evaluation order. */
+  private wrap(e: Expr, origin: Span = e.pos): Expr {
+    const at = (): Span => this.generated(origin);
+    const literal = (v: string): Expr => ({ k: "lit", pos: at(), lit: { a: "bigintlit", v } });
+    const half = (): Expr => literal("9223372036854775808");
+    const modulus = (): Expr => literal("18446744073709551616");
+    const shifted: Expr = { k: "arith", pos: at(), op: "add", l: e, r: half() };
+    const residue: Expr = { k: "arith", pos: at(), op: "rem", l: shifted, r: modulus() };
+    const positive: Expr = { k: "arith", pos: at(), op: "add", l: residue, r: modulus() };
+    return { k: "arith", pos: at(), op: "sub",
+      l: { k: "arith", pos: at(), op: "rem", l: positive, r: modulus() }, r: half() };
+  }
+
+  /** Operands are evaluated once; generated nodes map to the first operator
+   * use in Rust. Both division overflow and remainder overflow panic. */
+  private divisionHelper(op: "div" | "rem", origin: Span): FunctionAst {
+    const at = (): Span => this.generated(origin);
+    const id = (name: string): Expr => ({ k: "id", pos: at(), name });
+    const literal = (v: string): Expr => ({ k: "lit", pos: at(), lit: { a: "bigintlit", v } });
+    const type = (): TypeTerm => ({ k: "atom", name: "bigint", span: at() });
+    return { name: `$tscert_i64_${op}`, namePos: at(), typeParams: [],
+      params: [{ name: "a", pos: at(), type: type() }, { name: "b", pos: at(), type: type() }], retType: type(),
+      guard: null, stated: null, completion: "sync", strict: true, body: [
+        { k: "if", pos: at(), cond: { k: "bin", pos: at(), op: "&&",
+          l: { k: "bin", pos: at(), op: "===", l: id("a"), r: literal("-9223372036854775808") },
+          r: { k: "bin", pos: at(), op: "===", l: id("b"), r: literal("-1") } },
+          then: [{ k: "throw", pos: at(), e: { k: "lit", pos: at(), lit: { a: "stringlit", v: "i64 division overflow" } } }], else_: null },
+        { k: "return", pos: at(), e: { k: "arith", pos: at(), op, l: id("a"), r: id("b") } },
+      ] };
   }
 
   private bind(name: string, at: Span, type: RType): void {
@@ -175,7 +242,8 @@ export class Lowering {
         const type = this.natural(e.e) ?? want;
         if (type === null) return this.refuse(pos, "an integer literal whose type no context fixes");
         if (!isPrim(type, ["i32", "u32", "i64", "f64"])) return this.refuse(pos, `unary - on ${show(type)}`);
-        return { e: { k: "unary", pos, op: "neg", e: this.expr(e.e, type).e }, type };
+        const result: Expr = { k: "unary", pos, op: "neg", e: this.expr(e.e, type).e };
+        return { e: isPrim(type, ["i64"]) ? this.wrap(result) : result, type };
       }
       case "binary": {
         if (e.op === "&&" || e.op === "||") {
@@ -204,9 +272,17 @@ export class Lowering {
           // falls through
           case "-": case "*":
             if (!isPrim(operand, ["i32", "u32", "i64", "f64"])) return this.refuse(pos, `${e.op} on ${show(operand)}`);
-            return { e: { k: "arith", pos, op: e.op === "+" ? "add" : e.op === "-" ? "sub" : "mul", l, r }, type: operand };
+            {
+              const result: Expr = { k: "arith", pos, op: e.op === "+" ? "add" : e.op === "-" ? "sub" : "mul", l, r };
+              return { e: isPrim(operand, ["i64"]) ? this.wrap(result) : result, type: operand };
+            }
           case "/": case "%":
             if (!isPrim(operand, ["i64", "f64"])) return this.refuse(pos, `${e.op} on ${show(operand)} (admitted on i64 and f64)`);
+            if (isPrim(operand, ["i64"])) {
+              const op = e.op === "/" ? "div" : "rem";
+              if (!this.divisions.has(op)) this.divisions.set(op, pos);
+              return { e: { k: "apply", pos, callee: { k: "id", pos: this.generated(pos), name: `$tscert_i64_${op}` }, args: [l, r] }, type: operand };
+            }
             return { e: { k: "arith", pos, op: e.op === "/" ? "div" : "rem", l, r }, type: operand };
         }
         return this.refuse(pos, `the operator ${e.op}`);

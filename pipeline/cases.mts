@@ -18,6 +18,8 @@ export interface Case {
   status: Outcome["status"];
   phase: Phase;
   diagnostic?: RegExp;
+  /** A Rust source in demo/rust/examples, through the demo lowering. */
+  rust?: boolean;
   /** Source tree supplying named imports. */
   project?: string;
   /** Whether a failed search is named by TypeScript's errors
@@ -3028,6 +3030,10 @@ export const cases: Case[] = [
   positive("else-if", "`else if` and unbraced arms in functions, closures and a constructor's last `if`"),
   negative("invalid-else-if", "the last arm of an `else if` chain is reached only where every test failed"),
   positive("numeric-operators", "relational comparisons of numbers and of strings, `**`, `%` and `%=`, unary -, + and ~ on numbers, and an array's length compared and computed with; `===` of numbers as an operand of `&&`"),
+  { ...positive("rust-i64-identity", "Rust i64 identity through Rust-to-Fragment lowering and checked evidence."), rust: true },
+  { ...positive("rust-i64-overflow", "Rust release product and negation through generated wrapping nodes."), rust: true },
+  { ...positive("rust-i64-division", "Rust division and remainder through generated overflow guards and same-module helper captures."), rust: true },
+  { ...positive("rust-i64-calls", "Rust same-module calls, including an i64 callee and a string callee."), rust: true },
   positive("bigint-operators", "bigint literals in every spelling and literal types, arithmetic within the family, a literal divisor of `/` and `%` and a non-negative literal exponent, comparisons across number and bigint, and typeof as a tag"),
   positive("bitwise-operators", "`&`, `|`, `^`, `<<`, `>>` and `>>>` on numbers and their compound assignments, a number each, running no code; a flag test; `^` of two bigints"),
   negative("invalid-bitwise-bigint", "`&` of two bigints: the model states `&`, `|`, `<<`, `>>` and `>>>` on numbers alone",

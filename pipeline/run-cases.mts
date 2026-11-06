@@ -4,9 +4,10 @@
 //   node pipeline/run-cases.mts module- generic-rest
 // The controls no case can make are `test.mts`'s (`make test`).
 import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
 import { availableParallelism } from "node:os";
 import { join, resolve } from "node:path";
-import { checkApart, type Outcome } from "./verify-source.mts";
+import { checkApart, readOutcome, type Outcome } from "./verify-source.mts";
 import { linkFixtures } from "./fixture-links.mts";
 import { startEviction } from "./stages.mts";
 import { readDiagnostic } from "../tools/diagnostic.mts";
@@ -18,6 +19,13 @@ const here = import.meta.dirname;
 /** Run one case's pipeline in its own process, as `verify-source.mts` does from the
  * command line, so that several cases run at once. */
 export function runCase(test: Case): Promise<Outcome> {
+  if (test.rust) return new Promise((done, fail) => {
+    execFile(process.execPath, [join(here, "../demo/rust/run-case.mts"), test.file],
+      { encoding: "utf8", maxBuffer: 1 << 26, timeout: 300_000 }, (error, stdout, stderr) => {
+        if (error) { fail(new Error(`${test.file}: ${stderr || error.message}`)); return; }
+        try { done(readOutcome(JSON.parse(stdout))); } catch (error) { fail(error); }
+      });
+  });
   return checkApart(join(here, "examples", `${test.file}.ts`),
     test.project ? resolve(here, "..", test.project) : undefined, test.typescriptErrors)
     .then((result) => {

@@ -423,12 +423,40 @@ def Front.extractAll (fr : Front) :
     | .ok (next, plan) => (next, plans ++ [.ok plan])
     | .error reason => (T, plans ++ [.error reason])
 
-/-- A file's plans over one frozen store: the import plan, the front, the
-frozen store, and each unit's plan or refusal, in the front's order. -/
+/-- A named module callable, retained in the same store as the accepted
+requests. A refused signature remains a located refusal in this table. -/
+structure RetainedSignature (ι : Type) where
+  name : String
+  pos : Span
+  type : Except String (Ty ι)
+  /-- The fixed ordinary call view, certified separately by the linker. -/
+  fixed : Except String (Ty ι)
+
+/-- Intern the complete callable contracts, including overloads, effects and
+variadic extensions, even when no body reads the binding. Each failed reading
+keeps its refusal and leaves the store unchanged. -/
+def Front.retainSignatures (fr : Front) (T : EquationStore.State) :
+    EquationStore.State × List (RetainedSignature Tree) :=
+  fr.moduleFunctions.foldl (init := (T, [])) fun (T, retained) (name, pos, ty) =>
+    let lowered := do
+      let .written j ← ty | throw "module callable has no written signature"
+      (Fragment.translate j).run T
+    match lowered with
+    | .ok (A, next) =>
+      match PositiveRules.expand (SourceTypes.graph next) A with
+      | [.arrs [p] _] =>
+        let (next, l) := EquationStore.intern next [.arrs [{ p with effect := .ordinary }] []]
+        (next, retained ++ [⟨name, pos, .ok A, .ok [l]⟩])
+      | _ => (next, retained ++ [⟨name, pos, .ok A, .error "no single fixed call view"⟩])
+    | .error reason => (T, retained ++ [⟨name, pos, .error reason, .error reason⟩])
+
+/-- A file's retained results over one frozen store: the import plan, front,
+named callable signatures, and each unit's plan or refusal in front order. -/
 structure FilePlans where
   p : ImportPlan
   fr : Front
   F : EquationStore.Frozen
+  signatures : List (RetainedSignature (EquationStore.CheckedLabel F.equations F.primitive))
   plans : List (Except String (FunctionPlan (EquationStore.Checked F.equations F.primitive)
     (EquationStore.CheckedLabel F.equations F.primitive)))
 
@@ -438,7 +466,22 @@ def filePlans (ast claims : Json) (fileKey : String) (budget : PositiveCertifica
   let fr ← fileFront p.ast p.claims fileKey budget p.qualified
   let (T, plans) := fr.extractAll
   let F ← EquationStore.freeze T
-  return ⟨p, fr, F, plans.map fun e => e.bind (FunctionPlan.over F)⟩
+  return ⟨p, fr, F, [], plans.map fun e => e.bind (FunctionPlan.over F)⟩
+
+/-- Retain complete module signatures for linking over the linking check's
+frozen store. Ordinary unit acceptance uses `filePlans`. -/
+def linkingFilePlans (ast claims : Json) (fileKey : String)
+    (budget : PositiveCertificates.SearchBudget) : Except String FilePlans := do
+  let p ← planImports ast claims
+  let fr ← fileFront p.ast p.claims fileKey budget p.qualified
+  let (T, plans) := fr.extractAll
+  let (T, signatures) := fr.retainSignatures T
+  let F ← EquationStore.freeze T
+  let signatures := signatures.map fun s =>
+    { s with
+      type := s.type.bind fun A => decodeStrict "retained signature" (toJson A)
+      fixed := s.fixed.bind fun A => decodeStrict "retained fixed signature" (toJson A) }
+  return ⟨p, fr, F, signatures, plans.map fun e => e.bind (FunctionPlan.over F)⟩
 
 /-- The plans of a group, by its members' indices, crossing the exhaustive
 certification boundary. -/

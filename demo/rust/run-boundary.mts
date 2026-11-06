@@ -1,7 +1,8 @@
 // Optional real Rust -> wasm-bindgen -> TypeScript demonstration. All build
 // output, generated declarations, snapshots, hashes and logs stay in tmpdir.
 // Requires rustc/cargo, the wasm32 target and wasm-bindgen-cli 0.2.130.
-// Usage: WASM_BINDGEN=/path/to/wasm-bindgen node demo/rust/run-boundary.mts
+// Usage: WASM_BINDGEN=/path/to/wasm-bindgen node demo/rust/run-boundary.mts [--i64-only]
+// --i64-only runs the real Wasm integer observations without the TS compiler.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -37,7 +38,7 @@ assert.equal(cli.stdout.trim(), `wasm-bindgen ${version}`, "CLI and crate must u
 mkdirSync(join(root, "src"));
 writeFileSync(join(root, "src/lib.rs"), rustSource);
 writeFileSync(join(root, "package.json"), JSON.stringify({ type: "module" }));
-writeFileSync(join(root, "Cargo.toml"), `[package]\nname = "tscert_boundary_demo"\nversion = "0.1.0"\nedition = "2021"\n\n[lib]\ncrate-type = ["cdylib"]\n\n[dependencies]\nwasm-bindgen = "=${version}"\n\n[profile.release]\npanic = "abort"\n`);
+writeFileSync(join(root, "Cargo.toml"), `[package]\nname = "tscert_boundary_demo"\nversion = "0.1.0"\nedition = "2021"\n\n[lib]\ncrate-type = ["cdylib"]\n\n[dependencies]\nwasm-bindgen = "=${version}"\n\n[profile.release]\npanic = "abort"\noverflow-checks = false\n`);
 success("cargo", ["build", "--manifest-path", join(root, "Cargo.toml"), "--target", "wasm32-unknown-unknown", "--release"]);
 const generated = join(root, "generated");
 success(bindgen, ["--target", "web", "--out-name", "lib", "--out-dir", generated,
@@ -60,7 +61,7 @@ const states = [
   { name: "stale", declaration: stale, caller: oldCaller, tsc: 0, boundary: 1, argument: "number" },
   { name: "declaration-repaired", declaration: fresh, caller: oldCaller, tsc: 1, boundary: 1, argument: "number" },
   { name: "repaired", declaration: fresh, caller: fixedCaller, tsc: 0, boundary: 0, argument: "bigint" },
-];
+].filter(() => !process.argv.includes("--i64-only"));
 for (const state of states) {
   const dir = join(root, state.name);
   mkdirSync(dir);
@@ -97,6 +98,34 @@ for (const state of states) {
     assert.ok("value" in result && result.value === "42");
   }
   process.stdout.write(`${state.name}: tsc ${typed.status === 0 ? "accepts" : "rejects"}; boundary ${boundary.status === 0 ? "passes" : "refuses"}; runtime ${runtime.stdout.trim()}\n`);
+}
+// Actual wasm-bindgen bigint conversions: inputs exceed i64 before the glue
+// converts them. Every process initializes a fresh instance, including panics.
+const observations: readonly (readonly [string, string[], string | null])[] = [
+  ["identity", ["18446744073709551637"], "21"],
+  ["identity", ["9223372036854775808"], "-9223372036854775808"],
+  ["identity", ["-9223372036854775809"], "9223372036854775807"],
+  ["scale", ["9223372036854775807", "2"], "-2"],
+  ["negate", ["-9223372036854775808"], "-9223372036854775808"],
+  ["quotient", ["-7", "3"], "-2"], ["remainder", ["-7", "3"], "-1"],
+  ["quotient", ["1", "0"], null], ["remainder", ["1", "0"], null],
+  ["quotient", ["-9223372036854775808", "-1"], null],
+  ["remainder", ["-9223372036854775808", "-1"], null],
+  ["quotient", ["1", "18446744073709551616"], null],
+];
+for (const [name, args, expected] of observations) {
+  const observed = success(process.execPath, [join(here, "execute-i64.mts"), generated, name, ...args]);
+  const value: unknown = JSON.parse(observed.stdout);
+  assert.ok(typeof value === "object" && value !== null && "status" in value);
+  if (expected === null) {
+    assert.equal(value.status, "threw");
+    assert.ok("name" in value && value.name === "RuntimeError", observed.stdout);
+  } else {
+    assert.equal(value.status, "returned");
+    assert.ok("type" in value && value.type === "bigint");
+    assert.ok("value" in value && value.value === expected, observed.stdout);
+  }
+  process.stdout.write(`Wasm ${name}(${args.join(", ")}): ${observed.stdout.trim()}\n`);
 }
 const files = ["src/lib.rs", "Cargo.toml", "Cargo.lock", "generated/lib.js", "generated/lib.d.ts", "generated/lib_bg.wasm",
   ...states.flatMap((s) => [`${s.name}/lib.rs`, `${s.name}/lib.d.ts`, `${s.name}/lib.js`, `${s.name}/caller.ts`])];

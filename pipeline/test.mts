@@ -42,6 +42,7 @@ import { decodeGraph, emptyEffect, emptyFootprint, footprintEffect, ordinaryEffe
 import { checkGenericRest } from "./generic-rest.mts";
 import { checkRestPackInstance } from "./rest-pack-instance.mts";
 import { checkOverloads } from "./overload-claims.mts";
+import { checkRustForgeries } from "../demo/rust/controls.mts";
 import { checkDefaults, checkSchemeDefaults, checkEarlyDefault, checkPatternDefaults } from "./default-parameters.mts";
 import { decodeFlowDocument, type ExecutionPlan, type ExecutionOperation } from "../tools/source-flow.mts";
 import { runExample } from "./run-example.mts";
@@ -2977,6 +2978,11 @@ for (const signature of ["plain", "promise"] as const) control(async (): Promise
   invoke(forged, join(artifacts, "evidence.json"), artifacts,
       /^reject: (?:source effect refusal at \[\d+,\d+\): the footprint claimed for 'size' is not established by its body|source evidence refusal at \[\d+,\d+\): the evidence does not establish this node's typing)/m);
   process.stdout.write(`a guard whose ${signature} signature may change its receiver's store: the field reread refused in search and in checking\n`);
+});
+
+control(async (): Promise<void> => {
+  checkRustForgeries();
+  process.stdout.write("Rust evidence: forged signatures, bodies, capture associations and call targets refused\n");
 });
 
 control(async (): Promise<void> => {

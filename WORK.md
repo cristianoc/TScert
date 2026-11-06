@@ -85,7 +85,7 @@ each item's design and evidence, not its progress.
 | [JSON records by their fields](#json-records-by-their-fields) | open | a record bounded on all its own string keys meets `JsonValue`, built or validated and kept through mutation and external calls |
 | [Node's process](#nodes-process) | open: the environment write a located gap; events known only as strings refused | a write of `process.env` through a receiver-bound host setter over shared state preserving every alias's view; signals reached through iteration proven admitted |
 | [Precision](#precision) | open | the facts listed there are derivable |
-| [Module composition](#module-composition) | open: certified imports checked, their units' composition reviewed (2026-10-18) | a Lean theorem composes units certified against each other's signatures |
+| [Module composition](#module-composition) | partial: source-bound acyclic demo assembly and CLI-to-runtime theorem proved; mutual recursion across units open | a Lean theorem composes units certified against each other's signatures |
 | [A semantics of the Fragment](#a-semantics-of-the-fragment) | open | extraction is proved a simulation of a Lean interpreter of the Fragment |
 | [A connection to ECMA-262](#a-connection-to-ecma-262) | open | the host's stated types are lemmas of a mechanized specification |
 | [Computed types evaluated through helper declarations](#computed-types-evaluated-through-helper-declarations) | open: a stopgap | the helper declarations are replaced by a checker endpoint (relaxed), or TypeScript's computation is checked by a source-type elaborator in Lean (checked) |
@@ -682,6 +682,22 @@ signature. `checkUnitJson_safe` keeps its statement.
 Combining a certified import's conclusion with the importer's is left to
 this theorem, plus the review obligation that the import binds the certified
 unit's closure ([the linking obligation](docs/SOURCE-CONTRACTS.md#certified-imports)).
+`Linking.exports_safe` proves stable export membership for acyclic imports,
+and `Linking.entries_safe` proves entry safety under the assembled
+environment. Their certified-code, signature-transport and external-contract
+premises are stated in [certified imports](docs/SOURCE-CONTRACTS.md#certified-imports).
+`LinkedRuntime.end_to_end` transfers the linked entry's safety through
+explicit runtime simulations with deterministic targets and terminal stopping.
+[`Demo.linked_safe`](lean/Verification/Source/Demo.lean) connects the Rust
+demo's exact CLI success condition to linked runtime safety for primitive
+entries after initialization, with the five named runtime simulations and
+their related initial states as implementation premises. The source-bound
+closure construction, retained signatures, body and attachment checks, and
+entry slot assembly are described in
+[certified imports](docs/SOURCE-CONTRACTS.md#certified-imports).
+Mutual recursion across units requires a concrete recursive-group encoding
+and an invocation unfolding lemma. Live-binding writes, cyclic initialization,
+and re-exports require module-state semantics.
 It also discharges each unit's entry separation, its module cells two apart
 ([module cells](docs/SOURCE-ELABORATION.md#module-cells)), from the
 initialization's allocation of each cell.

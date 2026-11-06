@@ -68,7 +68,7 @@ node demo/rust/run-boundary.mts
 ```
 
 It copies the Rust source into a temporary Cargo crate, compiles it in
-release mode with `panic = "abort"`, generates `--target web` glue and real
+release mode with `panic = "abort"` and `overflow-checks = false`, generates `--target web` glue and real
 `.d.ts` output, and loads the resulting Wasm in Node. Each consumer's
 `lib.js` re-exports that same generated module. Node executes the actual
 TypeScript caller with type annotations stripped.
@@ -161,8 +161,10 @@ holding what each run wrote (`fragment.json`, `flow.json`, `claims.json`,
 | `if c { a } else { b }`, arms only expressions, as a value | `c ? a : b` |
 | integer literal | a `number` literal at `i32`/`u32`, a `bigint` literal at `i64` |
 | float literal, string literal (`\n \t \\ \" \'`), `true`, `false` | the same literal |
-| `a + b`, `a - b`, `a * b`, `-a` on `i32`, `u32`, `i64`, `f64` | the same arithmetic |
-| `a / b`, `a % b` on `i64` or `f64` | `a / b`, `a % b` |
+| `a + b`, `a - b`, `a * b`, `-a` on `i64` | signed wrapping after the arithmetic |
+| the same operations on `i32`, `u32`, `f64` | model-number arithmetic |
+| `a / b`, `a % b` on `i64` | truncating arithmetic, with zero and MIN/-1 throws |
+| `a / b`, `a % b` on `f64` | `a / b`, `a % b` |
 | `a + b` on strings (`String + &str`) | `a + b` |
 | `<`, `<=`, `>`, `>=`; `==`, `!=` | the same comparisons; `===`, `!==` |
 | `&&`, `\|\|`, `!` on `bool` | `&&`, `\|\|`, `!` |
@@ -208,20 +210,27 @@ functions it calls at their claimed signatures among them). The mapping is
 trusted; the agreements and differences below delimit its correspondence
 with Rust. No whole-program simulation is claimed.
 
-- **Integer overflow.** With overflow checks on (`rustc`'s default in debug
-  builds, `-C overflow-checks`), `+ - *` and unary `-` panic on overflow;
-  with them off (the release default) they wrap. `i64::MIN / -1` and
-  `i64::MIN % -1` panic either way. The model computes the mathematical
-  value: exactly for a `bigint`, and for a `number` exactly within ±2⁵³,
-  rounded beyond. Where no operation overflows, each admitted integer
-  operation's model value is Rust's as an integer (the model's `-0` equals
-  `0` under every admitted operation). After an overflow the two runs
-  diverge, values, branches and outcomes alike; the verdict says nothing
-  about Rust's run after one.
-- **Division** (`i64`): both truncate toward zero and give `%` the
-  dividend's sign; a zero divisor panics in Rust and throws a `RangeError`
-  in JavaScript. **`f64`**: `+ - * / %` and the comparisons are IEEE 754
-  binary64 operations in both, as the subset can observe them.
+- **`i64`.** The release profile has overflow checks disabled
+  ([Rust's operator and profile specifications](../../docs/REFERENCES.md#rust-integer-overflow)).
+  Parameters wrap to signed 64-bit integers, as the bigint adapter does.
+  Addition, subtraction, multiplication and negation wrap after each operation.
+  Division and remainder truncate toward zero; a zero divisor and `MIN / -1`
+  (also `MIN % -1`) take an exceptional transition. Operands are evaluated
+  once, in source order. The model represents a panic as a throw; exception
+  identity and messages are outside the safety claim.
+  [`I64.lean`](../../lean/Verification/Semantics/I64.lean) defines the bounded
+  integers and proves wrapping range, identity, modular congruence, round
+  trips, and equality of the emitted truncating-remainder formula with
+  signed wrapping. `tdiv_range`, `tmod_range` and `divRem_exact` establish
+  the exact normal arithmetic results. `adapter_result`, `adapter_effect`
+  and `adapter_error` prove the pure adapter's result bound and preservation
+  of normal and exceptional body effects. This adapter theorem concerns an
+  integer/heap function; correspondence with core evaluation of the generated
+  Fragment remains a Rust-translation premise.
+- **`i32` and `u32`.** Arithmetic uses model numbers. Overflow can change
+  values and branches relative to Rust; a Rust correspondence premise for
+  these types requires a separate bounded translation.
+- **`f64`.** Arithmetic and comparisons use the model's binary64 operations.
 - **Strings.** Rust's are UTF-8, JavaScript's UTF-16. `+` and `==` agree;
   `<` orders by bytes in Rust and by code units in JavaScript, which differ
   for a character at or above U+10000 against one in U+E000–U+FFFF. `String`
@@ -263,17 +272,21 @@ It establishes three results, each by its owner:
   (parameters, result, effect, receiver, rest; spans aside), the signature
   the table gives the Rust export of its name; a generic, overloaded or
   construct declaration, a missing export, or any difference is refused.
-  This is node-side code without a proof.
+  The success decision runs `boundary-check`, which rechecks both files' evidence,
+  constructs their source-bound assembly and checks primitive graph attachments.
+  The Node comparison supplies mismatch diagnostics.
 
-**What the caller's safety rests on.** The caller's verdict assumes the
-boundary contract: a call of the export with arguments of the declared types, on normal
-return, gives a value of the declared result type, and may instead throw
-(a panic among the ways) or diverge. That contract rests on `rustc`'s
-acceptance of `lib.rs`, declaration agreement and the glue below. The Rust
-model verdict independently checks the Rust bodies in the model. The
-cross-language composition is an argument rather than a Lean theorem:
-TScert composes no units across modules in Lean, even within TypeScript ([module
-composition](../../WORK.md#module-composition)).
+**What the caller's safety rests on.** Both model checks and Lean's linked
+assembly decision must pass. `boundary-check <rust-artifacts> <caller-artifacts>`
+reads each directory's `fragment.json`, `claims.json` and `evidence.json`.
+[`Demo.linked_safe`](../../lean/Verification/Source/Demo.lean) takes exactly
+its Boolean success condition and the five runtime simulations described
+below. The executable construction and proofs are owned by
+[certified imports](../../docs/SOURCE-CONTRACTS.md#certified-imports).
+
+Build the executable with `cd lean && lake build boundary-check`.
+`node demo/rust/check-primitives.mts` runs standalone source-bound matching
+and forged-input controls without opening the TypeScript compiler channel.
 
 **The glue, assumed.** The module is built for `wasm32-unknown-unknown`
 with `panic = "abort"` by `wasm-bindgen` with `--target web`, its
@@ -301,3 +314,75 @@ builds its snapshot and executes the generated module, retaining its actual
 fresh declarations beside deliberately stale consumer declarations.
 The declaration's effect is the ordinary one (a call may change anything),
 which over-approximates a function of primitives.
+
+## Conditional linked safety and trust
+
+[`Demo.linked_safe`](../../lean/Verification/Source/Demo.lean) proves
+finite-observation safety for every computed caller entry and every value of
+its written primitive parameter types. Its premise `input.accepted = true`
+is exactly the success condition selecting exit zero in `boundary-check`.
+The result of that check supplies the accepted caller, concrete closures,
+capture ranks and slots, `WellLinked`, both primitive graph attachments,
+signature transport, entry separation and admitted assignment. Execution
+starts after initialization in the empty world and heap. The proof applies
+[`LinkedRuntime.end_to_end`](../../lean/Verification/Source/LinkedRuntime.lean).
+The source-bound construction and checker proofs are owned by
+[certified imports](../../docs/SOURCE-CONTRACTS.md#certified-imports).
+
+The runtime premises are simulations with progress, preservation of terminal
+contracts, and deterministic target observation machines whose terminal
+states have no outgoing steps. `Machine.Safe` requires every successor to
+be safe through the observation bound. Each machine describes the whole
+linked execution; an
+observation step may group implementation steps. Their named trust is:
+
+- `typescriptLowering`: the caller's lowering and extraction faithfully
+  describe its execution, types and effects.
+- `rustTranslation`: the Rust Fragment faithfully describes the admitted
+  source, including wrapping bigint conversion, each bounded operation,
+  evaluation order and panic behavior.
+- `rustc`: the selected compiler and Wasm backend preserve that behavior
+  under the recorded release profile. The `i64` examples use wrapping
+  arithmetic; the broader demo's other integer types require their own
+  correspondence argument.
+- `wasmBindgen`: the unmodified glue preserves primitive conversion and
+  result contracts, allocation and panic/trap behavior. Its state invariant
+  must hold on throws, or the protocol must prevent reuse after a trap.
+- `engine`: Node/JavaScript and Wasm execute according to those machines;
+  module loading and artifact provenance connect the retained source,
+  declarations, glue, Wasm and entry to the actual deployment.
+
+Each named premise is a `Demo.Started` simulation with its related initial
+state. Runtime machines and these witnesses are implementation premises.
+Initialization is complete, exports remain fixed, and callable dependencies
+are acyclic. The checker admits fixed synchronous functions, singleton units,
+primitive entry parameters and imports through `./lib.d.ts`. Module
+initialization code, external captures, generic bodies and array built-ins
+are refused. Mutual recursion across units, live-binding writes, re-exports
+and cyclic initialization are outside this scope.
+
+`node demo/rust/check-i64.mts` compiles the primitive examples with explicit
+release arithmetic flags and checks an overflowing product, MIN negation,
+signed division/remainder, and all four panic cases. These are observations
+of the installed native rustc, rather than a proof about its Wasm backend.
+The pipeline's `rust-i64-identity`, `rust-i64-overflow`, `rust-i64-division`
+and `rust-i64-calls` cases run Rust source through Fragment lowering,
+production and Lean acceptance. The source/evidence controls in
+`demo/rust/controls.mts` bypass Node comparison and forge signatures, bodies,
+captured function associations and call targets. They check existing
+source/evidence consistency. Standalone serialized-assembly controls exercise wrong targets, ranks,
+external classification and attachment rows against the structural checkers.
+`check-primitives.mts` exercises the source-bound CLI with same-module captures
+and the boundary's arithmetic helpers, an independently accepted stale return
+declaration, forged export signatures and capture associations, and missing
+export evidence.
+
+`node demo/rust/run-boundary.mts --i64-only` builds the real Wasm module and
+observes out-of-range bigint conversions, overflowing products, signed
+negation, division and remainder, and panic cases. Each observation loads a
+fresh instance. The default command also checks the declaration/caller
+scenarios. Node signature diagnostics are reported alongside acceptance;
+`passed` requires both acceptance checks and Lean's source-bound assembly.
+Generated arithmetic nodes have distinct, nonempty intervals within the Rust
+source, each containing the source character that prompted its generation.
+The producer's and verifier's identity and span checks apply to them.
