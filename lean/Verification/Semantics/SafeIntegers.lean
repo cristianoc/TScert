@@ -438,6 +438,49 @@ theorem safeIntOfBits_sound {x : UInt64} {i : Int} (h : safeIntOfBits x = some i
       refine ⟨by simpa using hc.1, .inl ⟨by omega, by simpa using hc.2⟩⟩
   · rw [if_neg hc] at h; cases h
 
+theorem magnitudeOfBits_safe {x : UInt64} {i : Int} (hx : SafeInt x i) : magnitudeOfBits x = i.natAbs := by
+  simp only [magnitudeOfBits]
+  have hb := bitsOfNat_lt hx.1
+  rcases Nat.eq_zero_or_pos i.natAbs with h0 | h0
+  · have hz : (bitsOfNat i.natAbs).toNat = 0 := by rw [h0]; exact bitsOfNat_zero
+    have : x.toNat % 2 ^ 63 = 0 := by rcases hx.2 with ⟨-, he⟩ | ⟨-, he⟩ <;> omega
+    rw [if_pos this, h0]
+  · have hq : ∃ q : Bool, x.toNat = (bitsOfNat i.natAbs).toNat + (if q then 2 ^ 63 else 0) := by
+      rcases hx.2 with ⟨-, he⟩ | ⟨-, he⟩
+      · exact ⟨false, by simpa using he⟩
+      · exact ⟨true, by simpa using he⟩
+    obtain ⟨q, hxq⟩ := hq
+    obtain ⟨hE, hM, -, -⟩ := bitsOfNat_fields h0 hx.1 q
+    rw [← hxq] at hE hM
+    have hl := log2_lt53 h0 hx.1
+    have hmag : x.toNat % 2 ^ 63 = (bitsOfNat i.natAbs).toNat := by cases q <;> simp at hxq <;> omega
+    have hne : x.toNat % 2 ^ 63 ≠ 0 := by
+      rw [hmag]; obtain ⟨ht, -, -, -⟩ := bitsOfNat_toNat h0 hx.1; omega
+    rw [if_neg hne]
+    have h1 : x.toNat % 2 ^ 63 / 2 ^ 52 = 1023 + i.natAbs.log2 := by omega
+    have h2 : x.toNat % 2 ^ 63 % 2 ^ 52 + 2 ^ 52 = i.natAbs * 2 ^ (52 - i.natAbs.log2) := by omega
+    rw [h1, h2, show 1075 - (1023 + i.natAbs.log2) = 52 - i.natAbs.log2 by omega]
+    exact Nat.mul_div_cancel _ (Nat.two_pow_pos _)
+
+/-- **Decoding is complete.** The double of a safe integer decodes to it. -/
+theorem safeIntOfBits_complete {x : UInt64} {i : Int} (hx : SafeInt x i) : safeIntOfBits x = some i := by
+  simp only [safeIntOfBits, magnitudeOfBits_safe hx]
+  have hb := bitsOfNat_lt hx.1
+  rcases hx.2 with ⟨hi, he⟩ | ⟨hi, he⟩
+  · by_cases hz : i = 0
+    · subst hz
+      have h0 : x.toNat = 0 := by simpa [bitsOfNat_zero] using he
+      rw [if_pos ⟨by decide, by simp [h0, bitsOfNat_zero]⟩]; simp [h0]
+    · have hn : ¬ 2 ^ 63 ≤ x.toNat := by omega
+      rw [if_pos ⟨hx.1, by simp [he]; omega⟩]
+      simp [hn]; omega
+  · have hn : 2 ^ 63 ≤ x.toNat := by omega
+    rw [if_pos ⟨hx.1, by simp [he]⟩]
+    simp [hn]; omega
+
+theorem safeInt_unique {x : UInt64} {i j : Int} (hi : SafeInt x i) (hj : SafeInt x j) : i = j :=
+  Option.some.inj ((safeIntOfBits_complete hi).symm.trans (safeIntOfBits_complete hj))
+
 /-! ## Order and equality -/
 
 /-- The canonical forms of two positive safe integers compare as they do. -/

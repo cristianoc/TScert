@@ -1461,8 +1461,27 @@ comparison of integers is $`x-y\le -1`$, an equality two facts. Proved:
 `Linear.check_sound`, every fact an accepted certificate concludes holds of
 every integer valuation meeting the facts it starts from. The steps are
 incomplete for the integers: an implication that no chain of them derives
-is refused. Each variable is a slot holding a safe integer
-([safe integers](SEMANTICS.md#operational-language)).
+is refused (proved: `Linear.entails_sound`; `Linear.entails` searches by
+tightening, strict steps and the elimination of variables, and `check` decides
+what it finds).
+
+**In heap knowledge.** Two more index facts (`IndexFact.int`,
+`IndexFact.linear`) read only the environment:
+
+```math
+\begin{aligned}
+\mathrm{int}(k)(\rho,h) &\iff \exists b\,i.\ \rho(k)=\mathsf{num}\,b\land\mathrm{SafeInt}(b,i)\\
+\mathrm{linear}(F)(\rho,h) &\iff (\forall x\in\mathrm{vars}(F).\ \mathrm{int}(x)(\rho,h))\land F\ \text{holds at}\ x\mapsto i_x
+\end{aligned}
+```
+
+with $`i_x`$ the safe integer slot $`x`$ holds
+([safe integers](SEMANTICS.md#operational-language)). They are renamed with
+their slots and carried as the other index facts are. On an edge, a target
+atom holds where a source atom gives it, or, unconditional, where the source's
+unconditional linear facts entail it, each target slot renamed to the source
+slot the edge maps it to and each of its slots stated a safe integer by the
+source (`linearFollows`, proved: `linearFollows_sound`).
 
 ### A literal with spreads
 
