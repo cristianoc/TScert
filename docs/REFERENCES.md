@@ -677,3 +677,27 @@ programming language.* CADE-28, LNCS 12699, pp. 625–635, Springer, 2021.
 **Used as** the authority: the model, the rules, their soundness proofs and
 the checker that consumes producer evidence.
 **Discussed in** [DESIGN: what "verified" means](DESIGN.md#what-verified-means).
+
+## TScert issues
+
+### TScert 94
+
+*Rewrites of pretext.* cristianoc/TScert issue #94: the smallest set of
+source rewrites under which pretext (chenglou/pretext at `0d102a5c`)
+verifies, with its census and benchmark measurements.
+[github.com/cristianoc/TScert/issues/94](https://github.com/cristianoc/TScert/issues/94).
+
+**Used as** the measured motivation for written bound contracts.
+**Discussed in** [checked bound annotations](drafts/checked-bound-annotations.md#8-motivation-and-estimates).
+
+### TScert 104
+
+*Index bounds.* cristianoc/TScert issue #104, with a design comment
+against `4ffa514e` (2026-11-05): integer, length, extent, density and
+presence facts proved inside a unit, and the owner decisions N (the
+arithmetic foundation) and P (interprocedural preconditions).
+[github.com/cristianoc/TScert/issues/104](https://github.com/cristianoc/TScert/issues/104).
+
+**Used as** the design written bound contracts extend: its decision P's
+second route, its decision N's lemmas.
+**Discussed in** [checked bound annotations](drafts/checked-bound-annotations.md#the-existing-mechanism-this-extends).
