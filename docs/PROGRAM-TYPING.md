@@ -1422,8 +1422,12 @@ statement as a claim of its entry, `EntryClaim.bounds`
 ([source claims](SOURCE-CLAIMS.md)), an array binding's name and an index
 binding's, which the lowering states as $`\mathrm{bound}(x,k)`$ of their
 slots and every edge into the entry checks. The producer claims it at the
-statement following `if ((k & m) !== k || k > xs.length) throw …`, `k` and
-`xs` names (`guard_bound`). The facts are about values: a variable a closure
+statement following an `if (c) throw …` whose test's false answer states both
+facts of names `k` and `xs` (`false_facts`, `guard_bounds`): `a || b` false
+states what each operand's does; `(k & m) !== k`, with the literal `m` and
+`k` on either side, states that `k` is an index; `k > xs.length`,
+`k >= xs.length`, `xs.length < k` and `xs.length <= k`, evaluated after the
+test making `k` an index, that `k` is at most the length. The facts are about values: a variable a closure
 reassigns is a cell, whose every read is a new slot no fact names.
 
 The cases `index-write-guard` and `index-write-guard-loop` verify;

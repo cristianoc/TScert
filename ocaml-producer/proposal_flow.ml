@@ -54,14 +54,34 @@ let unsupported = Json.unsupported
 
 (* An environment no value meets: each slot at the empty type, which a join
    drops and Lean checks by `vacuous-edge`. *)
-(* The array and index a write guard bounds: `(k & m) !== k || k > xs.length`,
-   `m` a number literal, `k` and `xs` names. *)
-let guard_bound (cond:Source.expr) = match cond.node with
-  | Logical (false,
-      {node=Equality (StrictUnequal,{node=Arith (BitAnd,{node=Id k;_},{node=Literal (LNumber _);_});_},{node=Id k';_});_},
-      {node=Arith (Gt,{node=Id k'';_},{node=Read ({node=Id xs;_},Name "length");_});_})
-    when k = k' && k = k'' -> Some (xs,k)
-  | _ -> None
+(* What a condition's false answer states of names (PROGRAM-TYPING.md,
+   "Writes at a checked index"): `a || b` false, both false; `(k & m) !== k`
+   false, with `m` a number literal on either side of `&` and either operand
+   of `!==` the other, `k` an index; `k > xs.length` or `k >= xs.length`
+   false, or `xs.length < k` or `xs.length <= k`, `k` at most the length. *)
+type false_fact = IsIndex of string | AtMost of string * string
+let rec false_facts (cond:Source.expr) = match cond.node with
+  | Logical (false,a,b) -> false_facts a @ false_facts b
+  | Equality (StrictUnequal,a,b) ->
+    let masked (m:Source.expr) (k:Source.expr) = match m.node,k.node with
+      | Arith (BitAnd,{node=Id k';_},{node=Literal (LNumber _);_}),Id k
+      | Arith (BitAnd,{node=Literal (LNumber _);_},{node=Id k';_}),Id k when k = k' -> [IsIndex k]
+      | _ -> [] in
+    masked a b @ masked b a
+  | Arith ((Gt | Ge),{node=Id k;_},{node=Read ({node=Id xs;_},Name "length");_})
+  | Arith ((Lt | Le),{node=Read ({node=Id xs;_},Name "length");_},{node=Id k;_}) -> [AtMost (xs,k)]
+  | _ -> []
+(* The array and index pairs a guard's false answer bounds: `k` an index at
+   most `xs.length`, its comparison evaluated after the test making `k` an
+   index, as Lean's `bound-compare` reads the index fact the comparison's
+   operand already has. *)
+let guard_bounds (cond:Source.expr) =
+  let rec scan seen = function
+    | [] -> []
+    | IsIndex k :: rest -> scan (k :: seen) rest
+    | AtMost (xs,k) :: rest when List.mem k seen -> (xs,k) :: scan seen rest
+    | AtMost _ :: rest -> scan seen rest in
+  scan [] (false_facts cond)
 let unreachable env = List.map (fun (n,b) -> if is_field n then n,b else match b with
   | Value _ -> n,Value (Atoms [])
   | Local (contract,_) -> n,Local (contract,Atoms [])
@@ -213,10 +233,10 @@ let statements callbacks flow_graph register_following owner_span env0 ss =
           (* `(k & m) !== k || k > xs.length` fails only where `k` is an
              index at most `xs.length`: the statement after it is claimed
              with that bound, which Lean checks on every edge into it. *)
-          let failed=match guard_bound cond with
-            | Some (array,index) when List.mem_assoc array failed && List.mem_assoc index failed ->
-              failed @ [bound_key array index,Value top]
-            | _ -> failed in
+          let failed=List.fold_left (fun failed (array,index) ->
+            if List.mem_assoc array failed && List.mem_assoc index failed
+               && not (List.mem_assoc (bound_key array index) failed)
+            then failed @ [bound_key array index,Value top] else failed) failed (guard_bounds cond) in
           [next yes held;next no failed]
         | Flow.Return span ->
 

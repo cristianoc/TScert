@@ -117,17 +117,41 @@ control(async (): Promise<void> => {
   // a guarded write, a write naming another index slot, a bound whose
   // condition's answer is flipped and a conditional bound made unconditional
   // are each refused where it is checked.
+  // A bound claimed at an entry no incoming edge establishes it at: past the
+  // mask alone, past another array's comparison, with no guard, and at the
+  // guard's entry in a loop, reached from the loop's test.
+  for (const [name, fnName, at, array, index] of [
+    ["invalid-index-write-no-compare", "wrong", "xs[k] = v", "xs", "k"],
+    ["invalid-index-write-other-array", "wrong", "xs[k] = v", "xs", "k"],
+    ["invalid-index-write-unguarded", "wrong", "xs[k] = v", "xs", "k"],
+    ["index-write-guard-loop", "clear", "if ((j & 0x7fffffff)", "xs", "j"],
+  ] as const) {
+    const artifacts = run(name);
+    const source = readFileSync(sourceKey(artifacts), "utf8");
+    const start = source.indexOf(at);
+    const claims = readClaims(artifacts);
+    const fn = must(claims.functions.find(f => f.name === fnName), `${fnName}'s claims`);
+    must(fn.entries.find(e => e.start === start), "the forged entry").bounds.push({ array, index });
+    const forged = writeClaims(artifacts, `index-write-forged-bound-${name}`, claims);
+    const searched = produceWith(artifacts, forged, `index-write-forged-bound-${name}`);
+    assert.equal(searched.status, 1, `${name}: ${searched.stdout}${searched.stderr}`);
+  }
+  // The honest evidence of a guarded write, checked against claims whose
+  // write entry drops the bound or names another index: the entry's
+  // knowledge is exact, and each is refused where it is checked.
   {
-    const artifacts = run("invalid-index-write-no-compare");
+    const artifacts = run("index-write-guard");
     const source = readFileSync(sourceKey(artifacts), "utf8");
     const write = source.indexOf("xs[k] = v");
-    const claims = readClaims(artifacts);
-    const fn = must(claims.functions.find(f => f.name === "wrong"), "wrong's claims");
-    const entry = must(fn.entries.find(e => e.start === write), "the write's entry");
-    entry.bounds.push({ array: "xs", index: "k" });
-    const forged = writeClaims(artifacts, "index-write-forged-bound", claims);
-    const searched = produceWith(artifacts, forged, "index-write-forged-bound");
-    assert.equal(searched.status, 1, searched.stdout + searched.stderr);
+    for (const variant of ["dropped", "other-index"] as const) {
+      const claims = readClaims(artifacts);
+      const fn = must(claims.functions.find(f => f.name === "set"), "set's claims");
+      const entry = must(fn.entries.find(e => e.start === write), "the write's entry");
+      assert.deepEqual(entry.bounds, [{ array: "xs", index: "k" }]);
+      entry.bounds = variant === "dropped" ? [] : [{ array: "xs", index: "v" }];
+      const forged = writeClaims(artifacts, `index-write-claims-${variant}`, claims);
+      invoke(forged, join(artifacts, "evidence.json"), artifacts, /^reject: source evidence /m);
+    }
   }
   const artifacts = run("index-write-guard");
   const claims = readClaims(artifacts);
@@ -153,7 +177,7 @@ control(async (): Promise<void> => {
     writeFileSync(path, tabledEvidence(evidence));
     invoke(join(artifacts, "claims.json"), path, artifacts, /^reject: source evidence /m);
   }
-  process.stdout.write("checked index writes: a bound claimed past the mask alone, and a write at another slot, a flipped or dropped bound condition in evidence, refused\n");
+  process.stdout.write("checked index writes: a bound claimed past the mask alone, another array's comparison, no guard or at a loop's guard; claims dropping the bound or naming another index against honest evidence; a write at another slot, a flipped or dropped bound condition in evidence; each refused\n");
 });
 
 control(async (): Promise<void> => {
