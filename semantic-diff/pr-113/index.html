@@ -1,0 +1,159 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Commit Records</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Code+Pro:wght@400;600&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=STIX+Two+Text:ital,wght@0,400;0,600;1,400&display=swap">
+<style>
+:root { --bg:#fbfcfd; --surface:#ffffff; --ink:#0b1a2e; --muted:#56627a; --rule:#d5dce6; --accent:#8a6410; --code-bg:#eef2f7; --math-bg:#f2f4f8; --ok:#2f6b47; --ok-bg:#e2efe4; --principled:#a0521a; --principled-bg:#f7e6d6; --gap:#6b6f78; --gap-bg:#ecebe6; --neutral:#2c4f7c; --neutral-bg:#e6ebf2; --trust:#7c2f4a; --trust-bg:#f2e1e7; --neg:#9b3524; --neg-bg:#f5e1da; --run:#7a5414; --run-bg:#f3e7cc; --brand-ink:#0b1a2e; --brand-gold:#b8840f;
+  --display:"Bricolage Grotesque","Helvetica Neue",Arial,sans-serif; --body:"Inter","Helvetica Neue",Arial,sans-serif; --mono:"Source Code Pro",Menlo,Consolas,monospace; --math:"STIX Two Text","STIX Two Math","STIXGeneral","Cambria Math","Apple Symbols",Georgia,serif; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#0e1626; --surface:#16213a; --ink:#efe7d4; --muted:#9aa3b5; --rule:#2a3756; --accent:#e0ac4a; --code-bg:#131d33; --math-bg:#1a2540; --ok:#7fd0a2; --ok-bg:#17322a; --principled:#f0a868; --principled-bg:#3a2a1c; --gap:#9aa3b5; --gap-bg:#1c2639; --neutral:#8fb4e8; --neutral-bg:#1b2b49; --trust:#e79bb6; --trust-bg:#3a2131; --neg:#f0907d; --neg-bg:#3a1f22; --run:#e0ac4a; --run-bg:#2e2a24; --brand-ink:#efe7d4; --brand-gold:#e0ac4a; color-scheme:dark } }
+:root[data-theme="dark"] { --bg:#0e1626; --surface:#16213a; --ink:#efe7d4; --muted:#9aa3b5; --rule:#2a3756; --accent:#e0ac4a; --code-bg:#131d33; --math-bg:#1a2540; --ok:#7fd0a2; --ok-bg:#17322a; --principled:#f0a868; --principled-bg:#3a2a1c; --gap:#9aa3b5; --gap-bg:#1c2639; --neutral:#8fb4e8; --neutral-bg:#1b2b49; --trust:#e79bb6; --trust-bg:#3a2131; --neg:#f0907d; --neg-bg:#3a1f22; --run:#e0ac4a; --run-bg:#2e2a24; --brand-ink:#efe7d4; --brand-gold:#e0ac4a; color-scheme:dark }
+* { box-sizing:border-box } body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.6 var(--body) }
+main { max-width:900px; margin:0 auto; padding-inline:20px; padding-block:32px 64px; display:flex; flex-direction:column; gap:22px }
+h1 { font:600 32px/1.15 var(--display); margin:0 } h2 { font:600 22px/1.2 var(--display); margin:12px 0 8px; padding-top:12px; border-top:2px solid var(--ink) }
+h3 { font:600 19px/1.3 var(--display); margin:2px 0 0; text-wrap:balance }
+h4 { font:600 11px/1 var(--body); letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin:12px 0 4px }
+p { margin:2px 0; max-width:72ch } .lede { color:var(--muted) }
+code { font:13px/1.5 var(--mono); background:var(--code-bg); padding:1px 4px; border-radius:3px }
+pre { margin:4px 0; padding:12px 14px; border-radius:6px; overflow-x:auto }
+pre.code { font:13px/1.55 var(--mono); background:var(--code-bg) }
+.rules { display:flex; flex-direction:column; gap:14px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:14px 18px; overflow-x:auto; font:16px/1.6 var(--math) }
+.rules sub, .rules sup { font-size:.72em; line-height:0 }
+.formulas { display:flex; flex-direction:column; gap:4px }
+.formulas .row { display:flex; flex-wrap:wrap; gap:4px 28px } .formulas .row.cont { padding-left:2em }
+.infer { display:flex; align-items:center; gap:12px }
+.frac { display:inline-flex; flex-direction:column; align-items:center; min-width:0 }
+.premises { display:flex; flex-wrap:wrap; justify-content:center; gap:4px 26px; padding:0 6px 3px }
+.bar { align-self:stretch; border-top:1.5px solid var(--ink) }
+.conclusion { padding:3px 6px 0; text-align:center }
+.rule-name { font:15px/1 var(--math); font-variant:small-caps; letter-spacing:.02em; color:var(--accent); white-space:nowrap }
+.card { background:var(--surface); border:1px solid var(--rule); border-radius:8px; padding:20px 22px; display:flex; flex-direction:column; gap:6px; min-width:0 }
+.card > header { display:flex; justify-content:space-between; gap:12px; align-items:flex-start }
+.sha { font:12px/1.4 var(--mono); color:var(--muted) }
+.pill { font:600 11px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; padding:6px 9px; border-radius:99px; white-space:nowrap }
+.pill.ok { color:var(--ok); background:var(--ok-bg) } .pill.principled { color:var(--principled); background:var(--principled-bg) }
+.pill.gap { color:var(--gap); background:var(--gap-bg) } .pill.neutral { color:var(--neutral); background:var(--neutral-bg) }
+.units { display:flex; flex-wrap:wrap; gap:6px } .units span { font:12px/1 var(--mono); border:1px solid var(--rule); border-radius:4px; padding:5px 7px }
+dl.facts { display:grid; grid-template-columns:max-content minmax(0,1fr); gap:6px 16px; margin:12px 0 0; padding-top:12px; border-top:1px solid var(--rule); font-size:13.5px }
+dt { font:600 11px/1.9 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted) }
+dd { margin:0; min-width:0; display:flex; flex-wrap:wrap; gap:5px; align-items:baseline }
+.chip { font:500 12px/1 var(--body); border:1px solid var(--rule); border-radius:4px; padding:4px 7px } .chip.strong { color:var(--accent); border-color:var(--accent) }
+.trust { color:var(--trust); background:var(--trust-bg); padding:2px 6px; border-radius:4px } .none { color:var(--muted) }
+.test { font:12px/1 var(--mono); padding:4px 7px; border-radius:4px }
+.test.pos { color:var(--ok); background:var(--ok-bg) } .test.pos::before { content:"✓ " }
+.test.neg { color:var(--neg); background:var(--neg-bg) } .test.neg::before { content:"✗ " }
+.test.forged { color:var(--principled); background:var(--principled-bg) } .test.forged::before { content:"forged " }
+details { margin-top:8px; font-size:13px; color:var(--muted) } summary { cursor:pointer }
+.table-wrap { overflow-x:auto; border:1px solid var(--rule); border-radius:8px; background:var(--surface) }
+table { border-collapse:collapse; width:100%; font-size:13px } th, td { text-align:left; vertical-align:top; padding:8px 10px; border-bottom:1px solid var(--rule) }
+th { font:600 11px/1.2 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); white-space:nowrap } td.num { font-variant-numeric:tabular-nums }
+h4.change { display:flex; align-items:center; gap:8px; text-transform:none; letter-spacing:0; font:600 14px/1.3 var(--body); color:var(--ink); margin:16px 0 6px }
+h4.change .target { font-weight:400; color:var(--muted) }
+.act { font:600 10.5px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; padding:4px 7px; border-radius:4px }
+.act.added { color:var(--ok); background:var(--ok-bg) } .act.removed { color:var(--neg); background:var(--neg-bg) }
+.act.modified, .act.replaced { color:var(--principled); background:var(--principled-bg) }
+.versions { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:10px }
+.versions figure { margin:0; min-width:0 } .versions figcaption { font:600 11px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); margin:0 0 4px }
+.versions .rules { height:calc(100% - 18px); box-sizing:border-box }
+pre.code .ln { display:block; white-space:pre } pre.code .ln.add { background:var(--ok-bg) } pre.code .ln.del { background:var(--neg-bg) }
+.tk-k { color:#7a3b8c } .tk-s { color:#2f6b47 } .tk-n { color:#a35a12 } .tk-c { color:var(--muted); font-style:italic } .tk-t { color:#2c4f7c }
+.prose p { margin:4px 0 }
+ul.effect, ul.summary { margin:4px 0; padding-left:20px } ul.effect li, ul.summary li { margin:3px 0 } ul.summary ul { padding-left:18px; color:var(--muted) }
+ul.effect .arrow { color:var(--accent); font-weight:600 }
+ul.effect details { margin:0; color:inherit; font-size:inherit } ul.effect summary { list-style-position:outside }
+ul.effect .kind { font-size:11px; text-transform:uppercase; letter-spacing:.04em; padding:1px 6px; border-radius:4px; background:var(--chip, #eee) }
+ul.effect .kind.negative { color:#8a3b12 } ul.effect .kind.positive { color:#22663a } ul.effect .kind.gap { color:#7a5b00 }
+ul.effect .was.unsound { color:#b3261e; font-weight:600 } ul.effect .now { font-weight:500 } ul.effect .why { color:var(--muted) }
+ul.effect mark { background:#ffe08a; color:inherit; border-radius:2px }
+@media (max-width:720px) { .versions { grid-template-columns:minmax(0,1fr) } }
+.lowering { display:flex; flex-direction:column; gap:6px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:12px 16px; overflow-x:auto }
+.lowering .map, .lowering .cond, .lowering .result { display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 10px }
+.lowering .map:not(:has(.sem)) { flex-direction:column; align-items:stretch; gap:4px }
+.lowering .result { display:grid; grid-template-columns:auto minmax(0,1fr); align-items:baseline; gap:2px 10px; padding-left:1em } .lowering .result .note { grid-column:2 }
+.m-intr { font:14px/1.5 var(--mono); color:#2c4f7c } .m-lit { font:13px/1.5 var(--mono); color:#7a3b8c }
+.lowering code.src { font:13px/1.5 var(--mono); background:var(--surface); border:1px solid var(--rule); padding:2px 6px; border-radius:4px }
+.lowering .to { color:var(--accent); font-weight:600; font-size:17px }
+.lowering .tgt { font:16px/1.5 var(--math) } .rules .lowering { background:none; border:0; padding:0 } .lowering .sem code.src { margin:0 2px }
+var { font-style:italic } .m-op { color:#2c4f7c; font-style:normal } .m-con { color:#8f6416; font-style:normal; font-variant:small-caps }
+.m-kw { color:#7a3b8c; font-weight:600; font-style:normal } .m-bind { color:#7a3b8c } .m-rel { color:var(--accent); padding:0 .12em }
+.m-text { font:14px/1.5 var(--body); color:var(--muted) } code.m-code { font:13px/1.5 var(--mono); background:var(--surface); border:1px solid var(--rule); padding:1px 5px; border-radius:4px }
+.refused { color:var(--neg); font-weight:600 }
+.lowering .refused { color:var(--neg); font-weight:600 }
+.lowering .label { font:600 11px/1 var(--body); letter-spacing:.05em; text-transform:uppercase; color:var(--muted); min-width:7em }
+.lowering .cond { padding-left:1.5em } .lowering .note { color:var(--muted); font:italic 13px/1.4 var(--body) }
+a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outline-offset:2px }
+@media (max-width:520px) { dl.facts { grid-template-columns:minmax(0,1fr) } .card > header { flex-direction:column } }</style></head><body><main><header><h1>Commit Records</h1><p class="lede">4 commits, rendered from their records.</p></header>
+<section><h2>Branches</h2><ul class="summary"><li><a href="#g-pr-113"><code>65b03f7d6b2d12f95731d8315e9334b96a66d8f6..pr-113</code></a><ul><li>4 commits, units 1 verified</li><li>parts: <span class="chip">parser</span> <span class="chip">tools</span> <span class="chip strong">trust</span> <span class="chip">docs</span> <span class="chip">tests</span> <span class="chip">producer</span></li><li>new trust: <span class="trust">Standard formatter construction and resolved locale; browser body/head, span creation, inline style setters, element text/tree mutation and rectangle width, with unrestricted effects and stable host members.</span></li></ul></li></ul></section>
+<h2 id="g-pr-113"><code>65b03f7d6b2d12f95731d8315e9334b96a66d8f6..pr-113</code></h2><article class="card" id="c-9253f6cd9"><header><div><div class="sha">9253f6cd9 · Cristiano Calcagno · Nov 05, 21:12</div><h3>State formatter locale and conservative browser span contracts</h3></div><span class="pill gap">gap</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>Pretext reads the default formatter locale and measures a span. The overlay has no contracts for these operations and their host setters.</p></div>
+<h4 class="change"><span class="act added">added</span>Trust <span class="target">library overlay: formatter and browser elements</span></h4><div class="prose"><p>No-argument DateTimeFormat construction returns a host formatter whose resolvedOptions result has a readonly string locale. Document body and head are nullable HTML elements. Span creation returns an element whose inline style may be absent outside HTML. Element tree methods and rectangle width, inline setProperty, cssText assignment and textContent assignment follow their standard host behavior with unrestricted effects.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Lowering <span class="target">parser: host accessor assignment</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="lowering"><div class="cond"><span class="tgt"><span class="m-text">The host accessor table covers canvas state</span>.</span></div></div></figure><figure><figcaption>After</figcaption><div class="lowering"><div class="cond"><span class="tgt"><span class="m-con">DOM</span> <span class="m-text">setters also require their receiver's checked host contract and return</span></span></div><div class="cond"><span class="tgt"><span class="m-text">the assigned value</span>. <span class="m-text">Computed style cannot meet the inline-style marker</span>.</span></div><div class="cond"><span class="tgt"><span class="m-text">Namespace construction accepts a pinned interface construct signature</span>.</span></div></div></figure></div>
+<h4 class="change"><span class="act added">added</span>Example</h4><pre class="code"><span class="ln"><span class="tk-t">Formatter</span>, span measurement, cold locale <span class="tk-t">Map</span> lookup and separate loop updates</span><span class="ln">have dedicated sources. <span class="tk-t">Computed</span>-style writes and unsupported creation names</span><span class="ln">have refusal fixtures.</span></pre>
+<h4 class="change">Gap</h4><div class="prose"><p>Standalone runs fail before parsing because sandbox-exec cannot apply its sandbox in this session. Case expectations, forged-input controls, browser execution and full suites require validation. TypeScript projects type-check.</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">parser</span> <span class="chip">tools</span> <span class="chip strong">trust</span> <span class="chip">docs</span> <span class="chip">tests</span></dd><dt>Trust</dt><dd><span class="trust">Standard formatter construction and resolved locale; browser body/head, span creation, inline style setters, element text/tree mutation and rectangle width, with unrestricted effects and stable host members.</span></dd></dl>
+<details><summary>15 files changed, 201 insertions(+), 25 deletions(-)</summary><pre class="code"> docs/REFERENCES.md                                 |  6 ++
+ docs/SOURCE-CONTRACTS.md                           | 43 ++++++++++++-
+ pipeline/cases.mts                                 |  6 ++
+ .../invalid-pretext-computed-style-write.ts        |  4 ++
+ pipeline/examples/invalid-pretext-span-name.ts     |  4 ++
+ pipeline/examples/pretext-checked-schedules.ts     | 19 ++++++
+ pipeline/examples/pretext-host-locale.ts           |  4 ++
+ pipeline/examples/pretext-host-span.ts             | 15 +++++
+ pipeline/examples/pretext-locale-map.ts            | 14 +++++
+ tools/declaration-graph.mts                        | 20 +++---
+ tools/fragment-parse.mts                           |  4 +-
+ tools/host-operations.mts                          |  4 +-
+ tools/intrinsics.mts                               |  6 +-
+ tools/library-globals.mts                          |  6 +-
+ tools/library-types.mts                            | 71 +++++++++++++++++++---</pre></details>
+</article>
+<article class="card" id="c-67e76daee"><header><div><div class="sha">67e76daee · Cristiano Calcagno · Nov 05, 21:28</div><h3>Astra round 2: CSSStyleDeclaration overlay entry, span cases, checked-schedules case</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>Round 2 of the pretext gap work: the host-span cases needed a reviewed CSSStyleDeclaration entry, and the checked-schedules case follows the new pretext base.</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">tools</span> <span class="chip">tests</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd></dl>
+<details><summary>3 files changed, 25 insertions(+), 3 deletions(-)</summary><pre class="code"> pipeline/cases.mts                             |  2 +-
+ pipeline/examples/pretext-checked-schedules.ts | 22 +++++++++++++++++++++-
+ tools/library-types.mts                        |  4 +++-</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-2678b1a33"><header><div><div class="sha">2678b1a33 · Cristiano Calcagno · Nov 06, 02:17</div><h3>Claim a literal at a union with exact keys where an arm states an optional field it omits</h3></div><span class="pill ok">verified</span></header>
+<div class="units"><span>prepare.ts#measureAnalysis</span></div>
+<h4 class="change">Why</h4><div class="prose"><p>Pretext's prepare.ts#measureAnalysis returns <code>{ widths, ..., segments }</code> at <code>(PreparedLineBreakData &amp; { segments: string[] }) | (PreparedLineBreakData &amp; { segments?: never })</code>, whose arms state an optional <code>items?: never</code>. The producer claimed the literal as an open record, which cannot meet an arm stating a key it may own, so search found no derivation of the return-contract claim. A fresh literal owns exactly its written keys; the producer already claims that bound where a single contract states an optional field, and not where the expected type is a union no written field selects one arm of.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Lowering <span class="target">producer: a record literal's claim</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="lowering"><div class="map"><code class="src">{ f₁: e₁, …, fₙ: eₙ } at a contract with an optional field</code><div class="result"><span class="to">⇝</span><span class="tgt"><span class="m-con">Exact</span>{<var>f</var>₁…<var>f</var>ₙ}</span></div></div><div class="map"><code class="src">{ f₁: e₁, …, fₙ: eₙ } at a union <span class="tk-k">of</span> records</code><div class="result"><span class="to">⇝</span><span class="tgt"><span class="m-con">Record</span>{<var>f</var>₁…<var>f</var>ₙ}, <span class="m-text">open</span></span></div></div></div></figure><figure><figcaption>After</figcaption><div class="lowering"><div class="map"><code class="src">{ f₁: e₁, …, fₙ: eₙ } at a contract with an optional field</code><div class="result"><span class="to">⇝</span><span class="tgt"><span class="m-con">Exact</span>{<var>f</var>₁…<var>f</var>ₙ}</span></div></div><div class="cond"><span class="tgt">{ <var>f</var>₁<span class="m-rel">:</span> <var>e</var>₁, …, <var>f</var>ₙ<span class="m-rel">:</span> <var>e</var>ₙ } <span class="m-text">at a union of records, an arm stating an optional</span></span></div><div class="map"><code class="src">field outside f₁…fₙ</code><div class="result"><span class="to">⇝</span><span class="tgt"><span class="m-con">Exact</span>{<var>f</var>₁…<var>f</var>ₙ}</span></div></div><div class="cond"><span class="tgt"><span class="m-text">(Lean checks the allocation's claim; only allocation establishes absence)</span></span></div></div></figure></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>blocker-pretext-union-arm-optional-literal</code> <span class="kind positive">positive</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">literal meets the arm through its exact keys</span></summary><pre class="code"><span class="tk-c">// Pretext (github.com/chenglou/pretext at 0d102a5c, src/, census by unit,</span>
+<span class="tk-c">// with the rewrites of issue #94): prepare.ts#measureAnalysis.</span>
+<span class="tk-c">// Refusal: reject: source expression obligation: no derivation of its</span>
+<span class="tk-c">// return-contract claim, a record literal `{ widths, segments }` returned at</span>
+<span class="tk-c">// a union of two records whose arms state an optional `items` it leaves out.</span>
+<span class="tk-c">// A record literal expected at a union of records, no written field of which</span>
+<span class="tk-c">// selects one arm, is claimed with its exact keys when an arm states an</span>
+<span class="tk-c">// optional field it leaves out: the literal is fresh, so it owns no other</span>
+<span class="tk-c">// key, and that bound is what lets it meet the arm.</span>
+<span class="tk-k">type</span> <span class="tk-t">Data</span> = { widths: number[]; items?: never }
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> measure(keep: boolean): (<span class="tk-t">Data</span> &amp; { segments: string[] }) | (<span class="tk-t">Data</span> &amp; { segments?: never }) {
+  <span class="tk-k">const</span> widths: number[] = [<span class="tk-n">1</span>, <span class="tk-n">2</span>]
+  <span class="tk-k">const</span> segments = keep ? [<span class="tk-s">&quot;a&quot;</span>, <span class="tk-s">&quot;b&quot;</span>] : <span class="tk-k">null</span>
+  <span class="tk-k">if</span> (segments !== <span class="tk-k">null</span>) <span class="tk-k">return</span> { widths, segments }
+  <span class="tk-k">return</span> { widths }
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> total(keep: boolean): number {
+  <span class="tk-k">const</span> data = measure(keep)
+  <span class="tk-k">return</span> data.segments === <span class="tk-k">undefined</span> ? data.widths.length : data.widths.length + data.segments.length
+}</pre></details></li></ul>
+<h4 class="change">Soundness</h4><div class="prose"><p>The producer proposes; the claim's own-key bound is checked against the allocation in Lean, which establishes it for a fresh literal alone.</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">producer</span> <span class="chip">tests</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd><span class="test pos">blocker-pretext-union-arm-optional-literal</span></dd></dl>
+<details><summary>3 files changed, 32 insertions(+)</summary><pre class="code"> ocaml-producer/expression_objects.ml               |  9 +++++++++
+ pipeline/cases.mts                                 |  1 +
+ .../blocker-pretext-union-arm-optional-literal.ts  | 22 ++++++++++++++++++++++</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-04f15a6fa"><header><div><div class="sha">04f15a6fa · Cristiano Calcagno · Nov 06, 04:04</div><h3>Update three pretext cases to the host contracts: Intl verifies, the root and span read as rewritten</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>With the reviewed Intl.DateTimeFormat construction and the DOM span and style contracts on this branch, three census cases changed: the formatter case now verifies; the document case's cast to HTMLElement claims an inline style an SVG root lacks, where pretext's rewritten source reads the root's lang with no cast; and the measurement case writes a span's style unchecked, which a non-HTML document's span lacks.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Cases</h4><div class="prose"><p>blocker-pretext-intl-date-time-format gap → positive blocker-pretext-document source follows the rewritten read (no cast); positive blocker-pretext-dom-measurement gap, its refusal now the unchecked style read</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">tests</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd></dl>
+<details><summary>3 files changed, 10 insertions(+), 12 deletions(-)</summary><pre class="code"> pipeline/cases.mts                                   |  4 ++--
+ pipeline/examples/blocker-pretext-document.ts        |  6 +++---
+ pipeline/examples/blocker-pretext-dom-measurement.ts | 12 +++++-------</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+</main></body></html>
