@@ -119,11 +119,13 @@ before the member is read. -/
         | throw (locatedRefusal (← table) original.span .storageWrite
           s!"update of a field '{fld}' the contract does not name as a writable location")
       pure (.field (.var i) fld T)
-    -- A receiver of no value, as the result of a call that returns none on
-    -- a path through `x ?? missing()`: no execution reaches the reference,
-    -- and its location holds no value.
-    | [] => pure (.field (.var i) fld [])
-    | _ => throw (locatedRefusal (← table) original.span .storageWrite
+    -- A receiver of no value (plain rows naming no clause), as the result
+    -- of a call that returns none on a path through `x ?? missing()`: no
+    -- execution reaches the reference, and its location holds no value.
+    | _ =>
+      if decide (PositiveRules.Uninhabited (SourceTypes.graph (← table)) B) then
+        return .field (.var i) fld []
+      throw (locatedRefusal (← table) original.span .storageWrite
         "an assignment needs one cell contract")
 
 /-- The slot a local reference names, with its contract, when the local is
