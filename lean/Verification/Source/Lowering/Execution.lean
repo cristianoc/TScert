@@ -119,6 +119,10 @@ before the member is read. -/
         | throw (locatedRefusal (← table) original.span .storageWrite
           s!"update of a field '{fld}' the contract does not name as a writable location")
       pure (.field (.var i) fld T)
+    -- A receiver of no value, as the result of a call that returns none on
+    -- a path through `x ?? missing()`: no execution reaches the reference,
+    -- and its location holds no value.
+    | [] => pure (.field (.var i) fld [])
     | _ => throw (locatedRefusal (← table) original.span .storageWrite
         "an assignment needs one cell contract")
 
