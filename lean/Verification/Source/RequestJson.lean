@@ -239,6 +239,8 @@ deriving instance ToJson, FromJson for HeapSeparation.Fact
 deriving instance ToJson, FromJson for HeapSeparation.Separation
 deriving instance ToJson, FromJson for CallEffects.ElemPred
 deriving instance ToJson, FromJson for HeapKnowledge.ElemAtom
+deriving instance ToJson, FromJson for HeapKnowledge.IndexFact
+deriving instance ToJson, FromJson for HeapKnowledge.IndexAtom
 deriving instance ToJson, FromJson for HeapKnowledge.Knowledge
 deriving instance ToJson, FromJson for PromiseCalls.Implication
 deriving instance ToJson, FromJson for PromiseCalls.Yield
@@ -373,7 +375,7 @@ decreasing_by
     validEvidence ok e
   | .slicedRead _ _ _ e p => validEvidence ok e && (subtypeChoiceTypes p).all (validTy ok)
   | .observedRead _ _ | .knownValue _ _ => true
-  | .linkedRead _ _ p => (subtypeChoiceTypes p).all (validTy ok)
+  | .linkedRead _ _ p | .boundedWrite _ _ _ p => (subtypeChoiceTypes p).all (validTy ok)
 
 @[nospecialize] def validCertificate (ok : ι → Bool) (C : ControlFlow.Certificate ι) : Bool :=
   C.all (fun n =>

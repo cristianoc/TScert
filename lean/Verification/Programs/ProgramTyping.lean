@@ -512,6 +512,78 @@ theorem captures_sem {G : NormalGraph ι} {Γ : List (Ty ι)} {ρ : Env} {n : Na
   cases hc.symm.trans hc'
   exact hcapv c (List.mem_of_getElem? hc)
 
+omit [DecidableEq ι] in
+/-- **A write into a store at an index no greater than its length.** The
+store `ls` meets the list contract `L`; the write lands on a present element's
+location or a fresh one the new store records, holes filling no gap, so the
+store it yields meets `L` again. The literal-index rule `setElem` and the
+bounded write of heap knowledge both reach the store this way. -/
+theorem setElem_store_safe {Ξ : Fam} {G : NormalGraph ι} {L A : Ty ι} {T : Tuple (Ty ι)} {ls : List (Option Nat)}
+    {b : UInt64} {k p : Nat} {X : WorldT p} {heap'' : Heap} {vv : Tm}
+    (hr : Represents G L (.list T [])) (hro : T.readonly = false) (hA : positionTy T k = some A)
+    (hk : indexOfBits b = some k) (hkls : k ≤ ls.length)
+    (hav' : meaning G L p X (.arr ls)) (hxw : WorldAdm X) (hok'' : HeapOk p X heap'')
+    (hvval : isVal vv = true) (hv' : meaning G A p X vv) :
+    Safe Ξ (meaning G L) p X heap'' (.setElem (.arr ls) (.num b) vv) := by
+  have hlist := ((represents_raw hr p X (.arr ls)) hav').1
+  obtain ⟨ls', hls, -, -, -, hreq, hopt, hrest⟩ := hlist
+  cases hls
+  simp only [tupleFams, List.length_map, List.getElem?_map] at hreq hopt hrest
+  have rwContract : ∀ P Q : Prop, SlotContract T.readonly P Q ↔ (P ↔ Q) := by
+    intro P Q; simp [SlotContract, hro, iff_def]
+  simp only [rwContract] at hreq hopt hrest
+  have hkeep : ∀ j' (hj' : j' < p) (U' : WorldT j'), WExt (trunc j' (Nat.le_of_lt hj') X) U' →
+      meaning G L j' U' (.arr ls) := fun j' hj' U' hx' =>
+    (meaning_adm G L).mono j' _ U' hx' _ ((meaning_adm G L).down_le p j' (by omega) X _ hav')
+  cases hloc : elemLoc ls b with
+  | some l =>
+    have hl : ls[k]? = some (some l) := by
+      simp only [elemLoc, hk, Option.bind_some] at hloc
+      cases hls : ls[k]? with
+      | none => simp [hls] at hloc
+      | some o => cases o with
+        | none => simp [hls] at hloc
+        | some l' => simp [hls] at hloc; subst hloc; rfl
+    have key : ∃ c : Ctr p, lookup X l = some c ∧
+        ∀ (j : Nat) (hj : j < p) (W' : WorldT j) (u : Val), c j hj W' u ↔ meaning G A j W' u := by
+      have hpos := hA
+      simp only [positionTy] at hpos
+      split at hpos
+      · rename_i hreq'
+        cases hpos
+        obtain ⟨l', c, hl', hw', hag⟩ := hreq k (meaning G A) (by simp [hreq'])
+        cases Option.some.inj (Option.some.inj (hl.symm.trans hl'))
+        exact ⟨c, hw', hag⟩
+      · rename_i hnone
+        split at hpos
+        · rename_i hopt'
+          cases hpos
+          have hk' : T.required.length + (k - T.required.length) = k := by
+            have := (List.getElem?_eq_none_iff.mp hnone); omega
+          exact hopt (k - T.required.length) (meaning G A) l
+            (by simp [hopt']) (by rw [hk']; exact hl)
+        · split at hpos
+          · rename_i hge
+            obtain ⟨E, c, hE, hw', hag⟩ := hrest k l hge hl
+            simp only [Option.map_eq_some_iff] at hE
+            obtain ⟨e, he, rfl⟩ := hE
+            rw [he] at hpos
+            cases hpos
+            exact ⟨c, hw', hag⟩
+          · cases hpos
+    obtain ⟨c, hw', hag⟩ := key
+    exact set_present_rule (meaning_adm G A) p X heap'' l vv hvval hxw hok'' hloc hw' hag hv' hkeep
+  | none =>
+    apply set_grow_rule (meaning_adm G A) (meaning_valOnly G A) p X heap'' vv hvval hxw hok'' hk hloc hv'
+    intro j' hj' U' hx' hm'
+    refine (represents_back hr j' U' _) ⟨?_, by simp⟩
+    have hold := ((represents_raw hr j' U' _) (hkeep j' hj' U' hx')).1
+    apply listT_grow hold
+    · rw [positionFam_tupleFams, hA]; rfl
+    · simp only [elemLoc, hk, Option.bind_some] at hloc; exact hloc
+    · exact hkls
+    · exact hm'
+
 /-- Every derivation is safe in every admissible world and satisfying heap. -/
 theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.InstanceImageCheck G}
     {subtyping : BodySubtyping G} {Γ t A}
@@ -1371,65 +1443,12 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
     have hav' := (meaning_adm G L).mono p _ X hz av ((meaning_adm G L).down_le m p hp V av
       ((meaning_adm G L).mono m _ V hy av ((meaning_adm G L).down_le j m hm U av ha')))
     have hlist := ((represents_raw hr p X av) hav').1
-    obtain ⟨ls, rfl, -, hlen, -, hreq, hopt, hrest⟩ := hlist
-    simp only [tupleFams, List.length_map, List.getElem?_map] at hreq hopt hrest hlen
-    have rwContract : ∀ P Q : Prop, SlotContract T.readonly P Q ↔ (P ↔ Q) := by
-      intro P Q; simp [SlotContract, hro, iff_def]
-    simp only [rwContract] at hreq hopt hrest
+    obtain ⟨ls, rfl, -, hlen, -, -, -, -⟩ := hlist
+    simp only [tupleFams, List.length_map] at hlen
     have hb : iv = .num b := (meaning_adm G I).mono p _ X hz iv ((meaning_adm G I).down_le m p hp V iv hi')
       |> (represents_raw hI p X iv)
     subst hb
-    have hkeep : ∀ j' (hj' : j' < p) (U' : WorldT j'), WExt (trunc j' (Nat.le_of_lt hj') X) U' →
-        meaning G L j' U' (.arr ls) := fun j' hj' U' hx' =>
-      (meaning_adm G L).mono j' _ U' hx' _ ((meaning_adm G L).down_le p j' (by omega) X _ hav')
-    cases hloc : elemLoc ls b with
-    | some l =>
-      have hl : ls[k]? = some (some l) := by
-        simp only [elemLoc, hk, Option.bind_some] at hloc
-        cases hls : ls[k]? with
-        | none => simp [hls] at hloc
-        | some o => cases o with
-          | none => simp [hls] at hloc
-          | some l' => simp [hls] at hloc; subst hloc; rfl
-      have key : ∃ c : Ctr p, lookup X l = some c ∧
-          ∀ (j : Nat) (hj : j < p) (W' : WorldT j) (u : Val), c j hj W' u ↔ meaning G A j W' u := by
-        have hpos := hA
-        simp only [positionTy] at hpos
-        split at hpos
-        · rename_i hreq'
-          cases hpos
-          obtain ⟨l', c, hl', hw', hag⟩ := hreq k (meaning G A) (by simp [hreq'])
-          cases Option.some.inj (Option.some.inj (hl.symm.trans hl'))
-          exact ⟨c, hw', hag⟩
-        · rename_i hnone
-          split at hpos
-          · rename_i hopt'
-            cases hpos
-            have hk' : T.required.length + (k - T.required.length) = k := by
-              have := (List.getElem?_eq_none_iff.mp hnone); omega
-            exact hopt (k - T.required.length) (meaning G A) l
-              (by simp [hopt']) (by rw [hk']; exact hl)
-          · split at hpos
-            · rename_i hge
-              obtain ⟨E, c, hE, hw', hag⟩ := hrest k l hge hl
-              simp only [Option.map_eq_some_iff] at hE
-              obtain ⟨e, he, rfl⟩ := hE
-              rw [he] at hpos
-              cases hpos
-              exact ⟨c, hw', hag⟩
-            · cases hpos
-      obtain ⟨c, hw', hag⟩ := key
-      exact set_present_rule (meaning_adm G A) p X heap'' l vv hvval hxw hok'' hloc hw' hag hv' hkeep
-    | none =>
-      apply set_grow_rule (meaning_adm G A) (meaning_valOnly G A) p X heap'' vv hvval hxw hok'' hk hloc hv'
-      intro j' hj' U' hx' hm'
-      refine (represents_back hr j' U' _) ⟨?_, by simp⟩
-      have hold := ((represents_raw hr j' U' _) (hkeep j' hj' U' hx')).1
-      apply listT_grow hold
-      · rw [positionFam_tupleFams, hA]; rfl
-      · simp only [elemLoc, hk, Option.bind_some] at hloc; exact hloc
-      · omega
-      · exact hm'
+    exact setElem_store_safe hr hro hA hk (by omega) hav' hxw hok'' hvval hv'
   | @len Γ a L N T ha hr hn ih =>
     intro n W h ρ he hw hh
     apply Safe_bind Tm.lenOf Step.lenC Raises.lenC n W h _ hw hh (ih n W h ρ he hw hh)

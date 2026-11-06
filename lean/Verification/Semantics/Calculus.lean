@@ -424,10 +424,6 @@ def wrapInt32 (i : Int) : Int :=
   let u := i % 2 ^ 32
   if 2 ^ 31 ≤ u then u - 2 ^ 32 else u
 
-/-- The double an integer in the 32-bit range denotes, exactly. -/
-def int32Bits (i : Int) : UInt64 :=
-  (if i < 0 then -((-i).toNat.toFloat) else i.toNat.toFloat).toBits
-
 /-- The bits of the double `mant * 2^(b - 1075)`, positive, where the value is
 a double: normalized to 53 significant bits, or subnormal when its exponent
 is below the least normal one. -/
@@ -442,6 +438,18 @@ def encodeBits (mant b : Nat) : UInt64 :=
   else
     let down := len - 53
     UInt64.ofNat (((b + down) <<< 52) ||| (mant >>> down - 2 ^ 52))
+
+/-- The double a natural denotes: below `2^53`, where every natural is a
+double, its bits exactly (`encodeBits` at the exponent of the units);
+above, the nearest double, as `Nat.toFloat` rounds. -/
+def bitsOfNat (n : Nat) : UInt64 :=
+  if n < 2 ^ 53 then encodeBits n 1075 else n.toFloat.toBits
+
+/-- The double an integer of a 32-bit result denotes, exactly: a signed
+`ToInt32` result, or an unsigned `ToUint32` one below `2^32`. A negative
+integer is its magnitude's bits with the sign bit set. -/
+def int32Bits (i : Int) : UInt64 :=
+  if i < 0 then bitsOfNat (-i).toNat ||| 0x8000000000000000 else bitsOfNat i.toNat
 
 /-- JavaScript's `Number::remainder`, exactly (the result is always a double,
 so no rounding occurs): NaN when the dividend is NaN or infinite or the
@@ -924,13 +932,20 @@ def thrownError (oid : Nat) : Tm := .objAt [] .absent oid
 
 /-- The array index a number denotes, when it is one: a finite integer in the
 index range, the property name it would spell. Any other number names an
-ordinary property this fragment does not model. -/
+ordinary property this fragment does not model. Decoded from the bits: both
+zeros are `0`; any other double with its sign clear, a biased exponent `e`
+neither `0` nor all ones and a fraction `m` is `(m + 2^52) * 2^(e - 1075)`,
+which is `(m + 2^52) * 2^(e - 1) / 2^1074`, an index where that division is
+exact and its quotient below `2^32 - 1`. A negative, subnormal, infinite or
+NaN double denotes none. -/
 def indexOfBits (b : UInt64) : Option Nat :=
-  let f := Float.ofBits b
-  if f.isFinite && decide (0.0 ≤ f) && f == f.floor && decide (f < 4294967295.0)
-  then some f.toUInt64.toNat else none
-
-def bitsOfNat (n : Nat) : UInt64 := n.toFloat.toBits
+  let e := ((b >>> 52) &&& 0x7ff).toNat
+  let m := (b &&& 0xfffffffffffff).toNat
+  if m == 0 && e == 0 then some 0
+  else if b >>> 63 == 1 || e == 0 || e == 0x7ff then none
+  else
+    let s := (m + 2 ^ 52) * 2 ^ (e - 1)
+    if s % 2 ^ 1074 == 0 && s / 2 ^ 1074 < 4294967295 then some (s / 2 ^ 1074) else none
 
 /-- A one-code-unit string. A model string is a sequence of Unicode scalar
 values, so half of a surrogate pair has no string of its own: it reads as

@@ -105,7 +105,13 @@ export interface HeapKnowledge {
    * of a kind `pred` lists, where the slot `cond`, if stated, holds a truthy
    * value, or a falsy one where `negated`. */
   elems: {slot: number; pred: ElemKind[]; cond?: number; negated: boolean}[];
+  /** Index facts: the slot `k` holds an array index (`index`), the slot `n`
+   * the length of the array slot `x`'s store (`length`), or `k` an index at
+   * most that length (`bound`), where the slot `cond`, if stated, holds a
+   * truthy value, or a falsy one where `negated`. */
+  indices: {fact: IndexFact; cond?: number; negated: boolean}[];
 }
+type IndexFact = { index: { k: number } } | { length: { x: number; n: number } } | { bound: { x: number; k: number } };
 type SeparationKey = string | { symbol: number };
 /** The value kinds an elements fact's predicate names. */
 const ELEM_KINDS = ["nul", "undef", "bool", "num", "str", "big", "sym", "obj"] as const;
@@ -319,7 +325,7 @@ function directJudgment(v: Json | undefined, size: number): DirectJudgment {
 }
 function knowledge(v: Json | undefined): HeapKnowledge | null {
   if (v === null) return null;
-  const k = record(v,["cells","values","links","separation","elems"]);
+  const k = record(v,["cells","values","links","separation","elems","indices"]);
   const factsOf = (facts: Json | undefined): HeapFact[] => {
     if (!Array.isArray(facts)) throw Error("invalid heap facts");
     const result: HeapFact[] = [];
@@ -379,7 +385,25 @@ function knowledge(v: Json | undefined): HeapKnowledge | null {
     }
     elems.push({ slot: nat(a.slot), pred, negated: a.negated, ...(a.cond === undefined ? {} : { cond: nat(a.cond) }) });
   }
-  return { cells, values, links, separation: { depth, facts }, elems };
+  if (!Array.isArray(k.indices)) throw Error("invalid index facts");
+  const indices: HeapKnowledge["indices"] = [];
+  for (const atom of k.indices) {
+    const a = record(atom,["fact","cond","negated"]);
+    if (typeof a.negated !== "boolean") throw Error("invalid index fact");
+    const f = a.fact;
+    if (f === null || typeof f !== "object" || Array.isArray(f)) throw Error("invalid index fact");
+    let fact: IndexFact;
+    if ("index" in f) fact = { index: { k: nat(record(record(f,["index"]).index,["k"]).k) } };
+    else if ("length" in f) {
+      const l = record(record(f,["length"]).length,["x","n"]);
+      fact = { length: { x: nat(l.x), n: nat(l.n) } };
+    } else {
+      const b = record(record(f,["bound"]).bound,["x","k"]);
+      fact = { bound: { x: nat(b.x), k: nat(b.k) } };
+    }
+    indices.push({ fact, negated: a.negated, ...(a.cond === null ? {} : { cond: nat(a.cond) }) });
+  }
+  return { cells, values, links, separation: { depth, facts }, elems, indices };
 }
 
 /** A node record with its node decoded in place of its wire form, as the

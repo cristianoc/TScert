@@ -834,6 +834,19 @@ let numeric_family declarations t =
     Atoms [Bigint]
   | _ -> Atoms [Num]
 
+(* Whether every value of a type is a number. *)
+let number_like declarations t =
+  match declared_head declarations [] t with
+  | Atoms (_::_ as atoms) -> List.for_all (function Num | NumLit _ -> true | _ -> false) atoms
+  | _ -> false
+
+(* Whether every value of a type is an array whose elements are writable. *)
+let writable_array declarations t =
+  match declared_head declarations [] t with
+  | Atoms (_::_ as atoms) ->
+    List.for_all (function Shape {elements=Some s;_} -> not s.readonly | _ -> false) atoms
+  | _ -> false
+
 (* Whether every value of a type is a string. *)
 let string_like declarations t =
   match declared_head declarations [] t with

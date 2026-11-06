@@ -33,7 +33,7 @@ A sliced read's proof is at the location's contract, another sequent. -/
 @[nospecialize] def _root_.Verification.HeapExpressionRules.StepEvidence.proof? :
     HeapExpressionRules.StepEvidence ι → Option (Evidence ι)
   | .ordinary e | .pure e | .reading e | .created e | .typedRead _ e | .allocated e | .written _ _ _ e => some e
-  | .observedRead .. | .slicedRead .. | .knownValue .. | .linkedRead .. => none
+  | .observedRead .. | .slicedRead .. | .knownValue .. | .linkedRead .. | .boundedWrite .. => none
 
 /-- A node's ordinary typing derivation: its step's proof, or a separate tree. -/
 inductive OrdinaryEvidence (ι : Type) where
@@ -560,7 +560,8 @@ theorem handlerFacts_holds {k ρ h} (hk : HeapKnowledge.Holds k ρ h) (v : Tm) (
     HeapKnowledge.Holds (handlerFacts k) (push v ρ) h' :=
   ⟨HeapFacts.holds_nil _ _,(HeapKnowledge.shift_holds (v := v) hk).2.1,
     HeapLinks.stable_holds (HeapKnowledge.shift_holds (v := v) hk).2.2.1,
-    (HeapKnowledge.shift_holds (v := v) hk).2.2.2.1, HeapKnowledge.elemsHolds_nil _ _⟩
+    (HeapKnowledge.shift_holds (v := v) hk).2.2.2.1, HeapKnowledge.elemsHolds_nil _ _,
+    HeapKnowledge.indexHolds_nil _ _⟩
 
 /-- A node's handler, when it has one, is a checked target for the thrown
 value at a type admitting every value, under the facts that survive a throw. -/
@@ -1318,7 +1319,7 @@ theorem entryKnows_sound [DecidableEq ι] {G : NormalGraph ι} {inputs : List (T
       rw [hid]; exact KnowledgeExpand.ctxOf_ok he
     have hsrc : HeapKnowledge.Holds { separation := S } ρ h :=
       ⟨HeapFacts.holds_nil ρ h, by simp [HeapKnowledge.ValueHolds], by simp [HeapLinks.Holds], hs,
-        HeapKnowledge.elemsHolds_nil ρ h⟩
+        HeapKnowledge.elemsHolds_nil ρ h, HeapKnowledge.indexHolds_nil ρ h⟩
     have := KnowledgeExpand.checkIn_sound hk hctx hsrc
     rwa [hid] at this
 

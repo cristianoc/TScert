@@ -367,9 +367,23 @@ array throws in strict code: the rule rests on the host assumption that
 every array the program writes is writable and extensible
 ([ordinary array construction](SOURCE-MODEL.md#exact-contracts-and-native-effects)).
 
+A write at a key the program computes, its index a slot
+([writes at a checked index](PROGRAM-TYPING.md#writes-at-a-checked-index)),
+is within the same `grow` footprint where every position of the store's
+contract holds source values, a tuple of no required or optional position
+whose rest does (`elemVarWriteWithin`, proved: `elem_var_write_core`): where
+the write steps, its index decodes to some position, and the rest's contract
+gives that position's.
+
+```math
+\frac{\Gamma(o).\mathtt{[]} = \mathsf{list}(\langle[\,],[\,],E\rangle)\qquad E\ \text{source-valued}}
+     {o[k] = v\ \text{within}\ \{\mathsf{value}{:}\,\mathsf{any},\ \mathsf{store}{:}\,\mathsf{grow}\}}\ \textsf{elem-write-slot}
+```
+
 The producer proposes `{value: any, store: grow}` for an element write at a
-literal index and for a compound or logical assignment of a variable
-`{value: any, store: keep}` (`footprint_expr`). `map-stable-element-write`
+literal index or at a computed key every claim types as a number
+(`element_key`), and for a compound or logical assignment
+of a variable `{value: any, store: keep}` (`footprint_expr`). `map-stable-element-write`
 is the case; controls in `pipeline/test.mts` certify `keep` claimed at a
 required position, through search and checking, and refuse it at an
 optional one.

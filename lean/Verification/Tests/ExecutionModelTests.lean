@@ -337,3 +337,49 @@ theorem returns_expected (callable fresh : Bool) :
 end Reentry
 
 end Verification.ExecutionModelTests
+
+/-! ## Numbers the semantics decodes and encodes from their bits
+
+`indexOfBits`, `bitsOfNat` and `int32Bits` read and write a double's fields
+directly. Each is compared here with the compiled double operations it
+stands for: `bitsOfNat` with `Nat.toFloat`; `int32Bits` with the negation of
+a natural's double; `indexOfBits` with the test JavaScript's array index is,
+a finite double at least zero, equal to its floor and below `2^32 - 1`. -/
+
+namespace Verification.ExecutionModelTests
+
+private def floatIndex (b : UInt64) : Option Nat :=
+  let f := Float.ofBits b
+  if f.isFinite && decide (0.0 ≤ f) && f == f.floor && decide (f < 4294967295.0)
+  then some f.toUInt64.toNat else none
+
+/-- Naturals around each power of two to `2^54`, and every natural below `2^16`. -/
+private def naturals : List Nat :=
+  List.range 65536 ++ (List.range 55).flatMap fun p => [2 ^ p - 2, 2 ^ p - 1, 2 ^ p, 2 ^ p + 1, 2 ^ p + 2]
+
+#guard naturals.all fun n => bitsOfNat n == n.toFloat.toBits
+#guard [4294967294, 4294967295, 4294967296, 9007199254740991, 9007199254740992, 9007199254740993,
+  18014398509481985].all fun n => bitsOfNat n == n.toFloat.toBits
+
+#guard naturals.all fun n => n ≥ 2 ^ 32 || int32Bits (n : Int) == n.toFloat.toBits
+#guard (naturals.filter (fun n => 0 < n && n ≤ 2 ^ 31)).all fun n =>
+  int32Bits (-(n : Int)) == (-(n.toFloat)).toBits
+
+/-- Bit patterns: each natural's double, its negation, its half, and the
+special values: both zeros, the infinities, NaN encodings, subnormals, the
+largest double, `2^32 - 2`, `2^32 - 1`, `2^32`, and a spread of patterns. -/
+private def patterns : List UInt64 :=
+  naturals.flatMap (fun n => [bitsOfNat n, bitsOfNat n ||| 0x8000000000000000,
+    (n.toFloat / 2.0).toBits, (n.toFloat + 0.5).toBits]) ++
+  [0, 0x8000000000000000, 0x7ff0000000000000, 0xfff0000000000000, 0x7ff8000000000000,
+   0x7ff0000000000001, 0xfff8000000000001, 1, 0x000fffffffffffff, 0x8000000000000001,
+   0x7fefffffffffffff, (4294967294.0 : Float).toBits, (4294967295.0 : Float).toBits,
+   (4294967296.0 : Float).toBits, (4294967294.5 : Float).toBits] ++
+  (List.range 4096).map fun i => UInt64.ofNat (i * 0x9E3779B97F4A7C15)
+
+#guard patterns.all fun b => indexOfBits b == floatIndex b
+#guard indexOfBits 0x8000000000000000 == some 0
+#guard indexOfBits (4294967294.0 : Float).toBits == some 4294967294
+#guard indexOfBits (4294967295.0 : Float).toBits == none
+
+end Verification.ExecutionModelTests

@@ -98,9 +98,10 @@ export function mutationVerifier(): string {
     }
     if (module === "Programs/ControlFlow")
       text = inject(text, "ControlFlow_handlerFacts", a => `if (mutation("handler")) {
-        lean_object *k = lean_alloc_ctor(0, 5, 0);
+        lean_object *k = lean_alloc_ctor(0, 6, 0);
         lean_ctor_set(k, 0, lean_box(0));
         lean_ctor_set(k, 4, lean_box(0));
+        lean_ctor_set(k, 5, lean_box(0));
         lean_object *values = lean_ctor_get(${a[0]}, 1), *links = lean_ctor_get(${a[0]}, 2);
         lean_object *separation = lean_ctor_get(${a[0]}, 3);
         lean_inc(values); lean_inc(links); lean_inc(separation);

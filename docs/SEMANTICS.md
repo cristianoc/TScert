@@ -262,6 +262,22 @@ and $`\sim x=x\mathbin{\hat{}}(-1)`$, exact on doubles (a sign flip, the identit
 (`Semantics/Calculus.lean`); their agreement with node's values rests on
 review.
 
+**Indices and lengths from the bits.** The array index a number denotes,
+`indexOfBits`, is decoded from its double's fields: both zeros are index 0;
+any other double with its sign clear, a biased exponent $`e`$ neither 0 nor
+all ones and a fraction $`m`$ has the value $`(m+2^{52})\cdot 2^{e-1075}`$, an
+index where that value is an integer below $`2^{32}-1`$; a negative,
+subnormal, infinite or NaN double is none. A store's length is the double
+`bitsOfNat` encodes: below $`2^{53}`$, where every natural is a double, its
+exact bits (`encodeBits`), above, the nearest double. A 32-bit operator's
+result is `int32Bits` of its integer, `bitsOfNat` of its magnitude with the
+sign bit for a negative one. These read and write the bits directly; their
+agreement with the compiled double operations is checked on every natural
+below $`2^{16}`$, around each power of two to $`2^{54}`$ and on the boundary
+values (`Tests/ExecutionModelTests.lean`), and the order of two doubles that
+denote naturals is proved against Lean's float model
+(`IndexNumbers.doubleOrder_denotes`).
+
 **Strings.** A string owns its `length` and its index properties, and
 `lenOf` and `elemAt` read them as they read a store's:
 

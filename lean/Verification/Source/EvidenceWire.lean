@@ -54,6 +54,7 @@ structure KnowledgeEntry where
   depth : Nat
   separation : List Nat
   elems : List HeapKnowledge.ElemAtom
+  indices : List HeapKnowledge.IndexAtom
   deriving ToJson, FromJson
 
 /-- `OrdinaryEvidence`, its derivation an entry of `proofs`. -/
@@ -76,6 +77,7 @@ inductive StepRef (ι : Type) where
   | linkedRead (slot value : Nat) (sub : PositiveCertificates.SubtypeChoices ι)
   | allocated (proof : Nat)
   | written (receiver value : Nat) (contents : Option Nat) (proof : Nat)
+  | boundedWrite (receiver index value : Nat) (sub : PositiveCertificates.SubtypeChoices ι)
   deriving ToJson, FromJson
 
 /-- `NodeEvidence`, its sequent, derivations and knowledge named by
@@ -190,7 +192,7 @@ structure Tables (ι : Type) where
 @[nospecialize] def knowledge (links : Array HeapLinks.Link) (separations : Array HeapSeparation.Fact)
     (valueSets : Array ValueSets.ValueSet) (e : KnowledgeEntry) : Except String HeapKnowledge.Knowledge := do
   return ⟨← facts valueSets e.cells, ← facts valueSets e.values, ← entries "link" links e.links,
-    ⟨e.depth, ← entries "separation fact" separations e.separation⟩, e.elems⟩
+    ⟨e.depth, ← entries "separation fact" separations e.separation⟩, e.elems, e.indices⟩
 
 @[nospecialize] def tables (d : Document ι) : Except String (Tables ι) := do
   let types := d.types.toArray
@@ -216,6 +218,7 @@ structure Tables (ι : Type) where
   | .allocated p => return .allocated (← entry "proof" t.proofs p)
   | .written receiver value contents p =>
     return .written receiver value (← contents.mapM (entry "value set" t.valueSets)) (← entry "proof" t.proofs p)
+  | .boundedWrite receiver index value sub => return .boundedWrite receiver index value sub
 
 @[nospecialize] def ordinary (t : Tables ι) : OrdinaryRef → Except String (OrdinaryEvidence ι)
   | .effect => return .effect
@@ -401,7 +404,7 @@ structure Interner (ι : Type) [BEq ι] [Hashable ι] where
   /-- Knowledge by its facts, link positions, depth and separation facts'
   positions. -/
   knowledge : Interned (List (Nat × Nat × PropKey) × List (Nat × Nat × PropKey) × List Nat × Nat × List Nat ×
-    List HeapKnowledge.ElemAtom) KnowledgeEntry := {}
+    List HeapKnowledge.ElemAtom × List HeapKnowledge.IndexAtom) KnowledgeEntry := {}
   /-- Derivation nodes by their JSON text, whose premises are positions. -/
   proofs : Interned String (ProofEntry ι) := {}
 
@@ -442,9 +445,9 @@ abbrev InternM (ι : Type) [BEq ι] [Hashable ι] := StateM (Interner ι)
   let cs ← k.cells.mapM internFact
   let vs ← k.values.mapM internFact
   let flat := fun (fs : List FactRef) => fs.map fun f => (f.slot, f.contents, f.field)
-  let key := (flat cs, flat vs, ls, k.separation.depth, ss, k.elems)
+  let key := (flat cs, flat vs, ls, k.separation.depth, ss, k.elems, k.indices)
   modifyGet fun s =>
-    let (i, t) := s.knowledge.add key ⟨cs, vs, ls, k.separation.depth, ss, k.elems⟩
+    let (i, t) := s.knowledge.add key ⟨cs, vs, ls, k.separation.depth, ss, k.elems, k.indices⟩
     (i, { s with knowledge := t })
 
 @[nospecialize] def internSequent (j : Sequent ι) : InternM ι SequentRef := do
@@ -470,6 +473,7 @@ abbrev InternM (ι : Type) [BEq ι] [Hashable ι] := StateM (Interner ι)
   | .allocated p => return .allocated (← internProof p)
   | .written receiver value contents p =>
     return .written receiver value (← contents.mapM internValueSet) (← internProof p)
+  | .boundedWrite receiver index value sub => return .boundedWrite receiver index value sub
 
 @[nospecialize] def internOrdinary : OrdinaryEvidence ι → InternM ι OrdinaryRef
   | .effect => return .effect

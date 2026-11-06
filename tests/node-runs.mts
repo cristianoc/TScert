@@ -554,6 +554,15 @@ assert.equal(runExample("invalid-named-implicit-index", 'typeof asDictionary({ a
     ["invalid-optional-chain-dynamic-index", `at(["a"], 1)`],
     ["invalid-optional-chain-dynamic-index", `argAt({ args: ["a"] }, 1)`],
     ["invalid-array-before-last", `beforeLast(["a"])`],
+    // A write past the length leaves a hole, read as `undefined`; one at a
+    // fraction adds a key no array owns.
+    ["invalid-index-write-unguarded", "wrong([1], 3, 2)[1]"],
+    ["invalid-index-write-no-mask", `(() => { const xs = [1]; wrong(xs, 0.5, 2); return Object.keys(xs).includes("0.5") ? undefined : 0; })()`],
+    ["invalid-index-write-no-compare", "wrong([1], 3, 2)[1]"],
+    ["invalid-index-write-other-array", "wrong([1], [1, 2, 3, 4], 3, 2)[1]"],
+    ["invalid-index-write-call-shrinks", "wrong([1, 2], (xs) => { xs.pop(); return 9; })[1]"],
+    ["invalid-index-write-pop", "wrong([1, 2], 9)[1]"],
+    ["invalid-index-write-captured", "wrong([1], 9)[1]"],
     // `map`'s result holds a hole where its callback shrank the array; a
     // spread passes it to `push` as `undefined`.
     ["invalid-push-spread-sparse", "wrong([1, 2])"],

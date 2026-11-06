@@ -1,4 +1,5 @@
 import Verification.Programs.ExpressionEffects
+import Verification.Programs.IndexWrites
 
 /-! # Promises between slots
 
@@ -813,7 +814,8 @@ theorem ordinaryOutput_holds {k : HeapKnowledge.Knowledge} {ρ h} (hk : HeapKnow
     (v : Tm) (h' : Heap) : HeapKnowledge.Holds (HeapExpressionRules.ordinaryOutput k) (push v ρ) h' :=
   ⟨HeapFacts.holds_nil _ _,(HeapKnowledge.shift_holds (v := v) hk).2.1,
     HeapLinks.stable_holds (HeapKnowledge.shift_holds (v := v) hk).2.2.1,
-    (HeapKnowledge.shift_holds (v := v) hk).2.2.2.1, HeapKnowledge.elemsHolds_nil _ _⟩
+    (HeapKnowledge.shift_holds (v := v) hk).2.2.2.1, HeapKnowledge.elemsHolds_nil _ _,
+    HeapKnowledge.indexHolds_nil _ _⟩
 
 /-- Whether a signature's effect keeps the contents of every location a
 call starts with on a normal return: the empty footprint, on the receiver's
@@ -852,7 +854,7 @@ theorem promiseOutput_ordinary {effect : Effect} {k : HeapKnowledge.Knowledge} {
   unfold promiseOutput at hk
   split at hk
   · exact ⟨HeapFacts.holds_nil _ _, hk.2.1, HeapLinks.stable_holds hk.2.2.1, hk.2.2.2.1,
-      HeapKnowledge.elemsHolds_nil _ _⟩
+      HeapKnowledge.elemsHolds_nil _ _, HeapKnowledge.indexHolds_nil _ _⟩
   · exact hk
 
 /-- **A call at a promise signature** returns where the promise holds: its
@@ -1168,7 +1170,7 @@ each cell fact and read link about a field separated from every own location
 of `i`, every alias link, every value fact and the separation. -/
 def ownKept (k : HeapKnowledge.Knowledge) (i : Nat) : HeapKnowledge.Knowledge :=
   ⟨k.cells.filter (fun f => HeapSeparation.apartAll k.separation i f.slot f.field), k.values,
-    k.links.filter (fun g => g.alias || HeapSeparation.apartAll k.separation i g.cell g.field), k.separation, []⟩
+    k.links.filter (fun g => g.alias || HeapSeparation.apartAll k.separation i g.cell g.field), k.separation, [], []⟩
 
 def ownOutput (k : HeapKnowledge.Knowledge) (i : Nat) : HeapKnowledge.Knowledge :=
   HeapKnowledge.shift (ownKept k i)
@@ -1195,7 +1197,7 @@ theorem ownKept_holds {k : HeapKnowledge.Knowledge} {i : Nat} {ρ : Env} {h h' :
       unfold HeapSeparation.At
       split at hm <;> simp_all
     exact HeapSeparation.apartAll_sound ha hk.2.2.2.1 hat hs hl rfl
-  refine ⟨?_, hk.2.1, ?_, hk.2.2.2.1, HeapKnowledge.elemsHolds_nil _ _⟩
+  refine ⟨?_, hk.2.1, ?_, hk.2.2.2.1, HeapKnowledge.elemsHolds_nil _ _, HeapKnowledge.indexHolds_nil _ _⟩
   · intro f hf
     obtain ⟨hf, ha⟩ := List.mem_filter.mp hf
     obtain ⟨flds,c,oid,u,hs,hr,hm⟩ := hk.1 f hf
@@ -1364,7 +1366,7 @@ theorem elementsCall_sound {G : NormalGraph ι} {images : InstanceImageCheck G} 
             have hb := onlyBool_sound hbool hT
             obtain ⟨vs, rfl⟩ := keepsHeap_prefix hkeep hq
             have hs := HeapKnowledge.shift_holds (v := v) (HeapKnowledge.alloc_frames vs hk)
-            refine ⟨hs.1, hs.2.1, hs.2.2.1, hs.2.2.2.1, ?_⟩
+            refine ⟨hs.1, hs.2.1, hs.2.2.1, hs.2.2.2.1, ?_, hs.2.2.2.2.2⟩
             intro a ha hcond
             rcases List.mem_cons.mp ha with rfl | ha
             · have hv : v = .tru := by
@@ -1376,7 +1378,7 @@ theorem elementsCall_sound {G : NormalGraph ι} {images : InstanceImageCheck G} 
               have hel := hq.2.2.2 _ hR' hv
               rw [hterm] at hel
               simpa [ExpressionEffects.receiverOf, instantiate, push] using hel
-            · exact hs.2.2.2.2 a ha hcond
+            · exact hs.2.2.2.2.1 a ha hcond
           · rw [if_neg hkeep] at hc; cases hc
     · rw [if_neg hcond] at hc; cases hc
   · cases hc
@@ -1397,7 +1399,7 @@ theorem atomFor_sound {k : HeapKnowledge.Knowledge} {x R ρ h} (hc : atomFor k x
   obtain ⟨a, ha, hm⟩ := List.any_eq_true.mp hc
   simp only [Bool.and_eq_true, Option.isNone_iff_eq_none, List.contains_iff_mem] at hm
   obtain ⟨⟨hnone, hal⟩, hle⟩ := hm
-  have hat := hk.2.2.2.2 a ha fun b hb => by rw [hnone] at hb; cases hb
+  have hat := hk.2.2.2.2.1 a ha fun b hb => by rw [hnone] at hb; cases hb
   rw [HeapLinks.aliases_eq hk.2.2.1 hal] at hat
   exact hat.mono hle
 
@@ -1648,13 +1650,42 @@ theorem negatedAtoms_holds {k : HeapKnowledge.Knowledge} {x : Nat} {ρ h u}
     rw [hcb] at hbc
     simp only [Option.any_some, List.contains_iff_mem] at hbc
     have hrc : ρ c = ρ x := HeapLinks.aliases_eq hk.2.2.1 hbc
-    have := hk.2.2.2.2 b hbm fun c' hc' => by
+    have := hk.2.2.2.2.1 b hbm fun c' hc' => by
       rw [hcb] at hc'; cases hc'
       rw [hrc]
       rcases hu with ⟨hx, hu⟩ | ⟨hx, hu⟩
       · rw [hu] at hcu; rw [hx]; cases hn : b.negated <;> simp_all [tagHolds]
       · rw [hu] at hcu; rw [hx]; cases hn : b.negated <;> simp_all [tagHolds]
     simpa [push] using this
+
+/-- The index atoms on the negated slot's class, restated on the result with
+the opposite condition: the polarity of the condition flips, the fact stays. -/
+def negatedIndices (k : HeapKnowledge.Knowledge) (x : Nat) : List HeapKnowledge.IndexAtom :=
+  (k.indices.filter fun a => a.cond.any fun c => (HeapLinks.aliases k.links x).contains c).map fun a =>
+    { a with fact := a.fact.map (· + 1), cond := some 0, negated := !a.negated }
+
+theorem negatedIndices_holds {k : HeapKnowledge.Knowledge} {x : Nat} {ρ h u}
+    (hk : HeapKnowledge.Holds k ρ h)
+    (hu : (tagHolds .truthy (ρ x) = true ∧ u = .fls) ∨ (tagHolds .truthy (ρ x) = false ∧ u = .tru)) :
+    HeapKnowledge.IndexHolds (negatedIndices k x) (push u ρ) h := by
+  intro a ha hc
+  obtain ⟨b, hb', rfl⟩ := List.mem_map.mp ha
+  obtain ⟨hbm, hbc⟩ := List.mem_filter.mp hb'
+  have hcu := hc 0 rfl
+  simp only [push] at hcu
+  cases hcb : b.cond with
+  | none => rw [hcb] at hbc; simp at hbc
+  | some c =>
+    rw [hcb] at hbc
+    simp only [Option.any_some, List.contains_iff_mem] at hbc
+    have hrc : ρ c = ρ x := HeapLinks.aliases_eq hk.2.2.1 hbc
+    have := hk.2.2.2.2.2 b hbm fun c' hc' => by
+      rw [hcb] at hc'; cases hc'
+      rw [hrc]
+      rcases hu with ⟨hx, hu⟩ | ⟨hx, hu⟩
+      · rw [hu] at hcu; rw [hx]; cases hn : b.negated <;> simp_all [tagHolds]
+      · rw [hu] at hcu; rw [hx]; cases hn : b.negated <;> simp_all [tagHolds]
+    exact (HeapKnowledge.IndexFact.holdsAt_map (fun s _ => rfl)).mpr this
 
 theorem negation_bool {u v : Tm} (h : (v = .tru ∧ u = .fls) ∨ (v = .fls ∧ u = .tru)) :
     (tagHolds .truthy v = true ∧ u = .fls) ∨ (tagHolds .truthy v = false ∧ u = .tru) := by
@@ -1677,12 +1708,16 @@ every step is otherwise `base`'s. -/
   run := fun j k e codes sums =>
     match PromiseCalls.negationOf j with
     | some x => (base.run j k e codes sums).map fun out =>
-        { out with elems := out.elems ++ PromiseCalls.negatedAtoms k x }
+        { out with
+            elems := out.elems ++ PromiseCalls.negatedAtoms k x
+            indices := out.indices ++ PromiseCalls.negatedIndices k x }
     | none => base.run j k e codes sums
   select := fun j k e codes sums =>
     match PromiseCalls.negationOf j with
     | some x => (base.select j k e codes sums).map fun out =>
-        { out with elems := out.elems ++ PromiseCalls.negatedAtoms k x }
+        { out with
+            elems := out.elems ++ PromiseCalls.negatedAtoms k x
+            indices := out.indices ++ PromiseCalls.negatedIndices k x }
     | none => base.select j k e codes sums
   sound := by
     intro j k e out codes sums hc hcodes hsums ρ n W h he hk hw hh
@@ -1708,13 +1743,18 @@ every step is otherwise `base`'s. -/
         (ProgramTyping.meaning_value (he.2 x _ (List.getElem?_eq_getElem hterm.2))).1
       have finish : ∀ h' u, HeapKnowledge.Holds out0 (push u ρ) h' ∧ h' = h ∧
           ((tagHolds .truthy (ρ x) = true ∧ u = .fls) ∨ (tagHolds .truthy (ρ x) = false ∧ u = .tru)) →
-          HeapKnowledge.Holds { out0 with elems := out0.elems ++ PromiseCalls.negatedAtoms k x } (push u ρ) h' := by
+          HeapKnowledge.Holds { out0 with
+            elems := out0.elems ++ PromiseCalls.negatedAtoms k x
+            indices := out0.indices ++ PromiseCalls.negatedIndices k x } (push u ρ) h' := by
         intro h' u hq
         obtain ⟨hq, rfl, hu⟩ := hq
         exact ⟨hq.1, hq.2.1, hq.2.2.1, hq.2.2.2.1, fun a ha hc => by
           rcases List.mem_append.mp ha with ha | ha
-          · exact hq.2.2.2.2 a ha hc
-          · exact PromiseCalls.negatedAtoms_holds hk hu a ha hc⟩
+          · exact hq.2.2.2.2.1 a ha hc
+          · exact PromiseCalls.negatedAtoms_holds hk hu a ha hc, fun a ha hc => by
+          rcases List.mem_append.mp ha with ha | ha
+          · exact hq.2.2.2.2.2 a ha hc
+          · exact PromiseCalls.negatedIndices_holds hk hu a ha hc⟩
       rcases hterm.1 with ht | ht
       · have hinst : instantiate 0 ρ j.term = .ite (ρ x) .fls .tru := by
           rw [ht]; simp [instantiate]
@@ -1828,10 +1868,12 @@ receiver's elements are checked against the entry's atoms
 
 /-- The steps' rules, a call keeping the heap keeping every heap fact, a call
 allocating its result separating it, a call changing only its receiver's own
-locations keeping the facts separated from them, each keeping its input's
-stable links. -/
+locations keeping the facts separated from them, the index atoms a step
+states and the write at a checked index (`IndexWrites`), each keeping its
+input's stable links. -/
 @[nospecialize] def Checker.ordinary [DecidableEq ι] (G : NormalGraph ι)
     (images : InstanceImageCheck G) : Checker G images :=
-  (Checker.steps G images).keepingCalls.keepingOwnCalls.allocatingCalls.requiringCalls.elementCalls.negatingSlots.keepingStable
+  (Checker.steps G images).keepingCalls.keepingOwnCalls.allocatingCalls.requiringCalls.elementCalls.negatingSlots
+    |>.indexing.boundedWrites.keepingStable
 
 end Verification.HeapExpressionRules

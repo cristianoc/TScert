@@ -559,12 +559,41 @@ theorem negatingSlots_value_reassign (j : Sequent ι) (k : HeapKnowledge.Knowled
     rw [elementCalls_value_reassign]
   · exact elementCalls_value_reassign G η images j k e codes sums
 
+theorem indexing_value_reassign (j : Sequent ι) (k : HeapKnowledge.Knowledge)
+    (e : StepEvidence ι) (codes : CodeEntry ι → Bool) (sums : List (ReadSummary ι)) :
+    ((Checker.steps (reassign G η) (images.reassign η)).keepingCalls.keepingOwnCalls.allocatingCalls.requiringCalls.elementCalls.negatingSlots.indexing.run
+        j k e codes sums).value =
+      ((Checker.steps G images).keepingCalls.keepingOwnCalls.allocatingCalls.requiringCalls.elementCalls.negatingSlots.indexing.run
+        j k e codes sums).value := by
+  simp only [Checker.indexing, CheckResult.map]
+  rw [negatingSlots_value_reassign]
+  rfl
+
+theorem boundedWriteCheck_reassign (j : Sequent ι) (k : HeapKnowledge.Knowledge) (a i v : Nat)
+    (p : SubtypeChoices ι) :
+    IndexWrites.boundedWriteCheck (reassign G η) (images.reassign η) j k a i v p =
+      IndexWrites.boundedWriteCheck G images j k a i v p := by
+  unfold IndexWrites.boundedWriteCheck
+  simp only [check_reassign]
+  rfl
+
+theorem boundedWrites_value_reassign (j : Sequent ι) (k : HeapKnowledge.Knowledge)
+    (e : StepEvidence ι) (codes : CodeEntry ι → Bool) (sums : List (ReadSummary ι)) :
+    ((Checker.steps (reassign G η) (images.reassign η)).keepingCalls.keepingOwnCalls.allocatingCalls.requiringCalls.elementCalls.negatingSlots.indexing.boundedWrites.run
+        j k e codes sums).value =
+      ((Checker.steps G images).keepingCalls.keepingOwnCalls.allocatingCalls.requiringCalls.elementCalls.negatingSlots.indexing.boundedWrites.run
+        j k e codes sums).value := by
+  simp only [Checker.boundedWrites]
+  split
+  · rw [boundedWriteCheck_reassign]
+  · exact indexing_value_reassign G η images j k e codes sums
+
 theorem checkNode_reassign (Rty : ControlFlow.Goal ι) (P : Program) (C : ControlFlow.Certificate ι) (node : Node)
     (c : NodeEvidence ι) (codes : CodeEntry ι → Bool := fun _ => false) (sums : List (ReadSummary ι) := []) :
     checkNodeUsing (sums := sums) (reassign G η) (images.reassign η) Rty P C node c codes =
       checkNodeUsing (sums := sums) G images Rty P C node c codes := by
   simp only [checkNodeUsing_eq, Checker.ordinary, Checker.keepingStable, CheckResult.map,
-    withStable_reassign, checkHandler_reassign, negatingSlots_value_reassign, checkTarget_reassign,
+    withStable_reassign, checkHandler_reassign, boundedWrites_value_reassign, checkTarget_reassign,
     checkBranchTarget_reassign, checkYields_reassign, checkReturn_reassign]
   rfl
 

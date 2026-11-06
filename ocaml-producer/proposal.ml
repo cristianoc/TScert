@@ -104,7 +104,14 @@ let declaration_footprint declarations values names (claim:function_claim) =
   let field_write (o:expr) k = match claims_at o.pos with
     | [] -> false
     | ts -> List.for_all (fun t -> Type_queries.source_field_write declarations t k) ts in
-  Option.value (footprint_stmts ~dispatched ~field_write ~callable ~no_return ~iteration ~readable g.body) ~default:top_footprint,
+  (* An element write: every claim types the object as a writable array and
+     the key as a number. *)
+  let element_key (o:expr) (k:expr) =
+    let all query (e:expr) = match claims_at e.pos with
+      | [] -> false
+      | ts -> List.for_all (query declarations) ts in
+    all Type_queries.writable_array o && all Type_queries.number_like k in
+  Option.value (footprint_stmts ~dispatched ~field_write ~element_key ~callable ~no_return ~iteration ~readable g.body) ~default:top_footprint,
   throws_stmts ~callable g.body
 
 let rec infer ?(state = Proposal_diagnostics.create ()) flows program =

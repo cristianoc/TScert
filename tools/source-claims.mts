@@ -84,11 +84,20 @@ interface NamedPoint<L = Label> extends Point<L> {
   name: string;
 }
 
+/** A bound a guard states at a statement entry: the value `index` names is an
+ * array index at most the length of the array `array` names (PROGRAM-TYPING.md,
+ * "Writes at a checked index"). */
+interface BoundClaim {
+  array: string;
+  index: string;
+}
+
 /** The environment at one shared control-flow point, with source provenance. */
 interface EntryClaim<L = Label> {
   point: string;
   start: number;
   bindings: NamedPoint<L>[];
+  bounds: BoundClaim[];
 }
 
 /** The type arguments one call supplies for a scheme's binders. It records the
@@ -293,9 +302,13 @@ function claimsDocument(v: JsonRead): SourceClaims {
     return { name: name(r.name, "a point's name"), type: claimType(r.type), current: current(r.current) };
   };
   const entry = (x: JsonRead): EntryClaim => {
-    const r = record(x, "an entry", ["point", "start", "bindings"]);
+    const r = record(x, "an entry", ["point", "start", "bindings", "bounds"]);
     return { point: text(r.point, "an entry's point"), start: index(r.start, "an entry's start"),
-      bindings: each(r.bindings, "an entry's bindings", namedPoint) };
+      bindings: each(r.bindings, "an entry's bindings", namedPoint),
+      bounds: each(r.bounds, "an entry's bounds", (b) => {
+        const q = record(b, "a bound", ["array", "index"]);
+        return { array: name(q.array, "a bound's array"), index: name(q.index, "a bound's index") };
+      }) };
   };
   const certificate = (x: JsonRead): ResolutionCertificate => {
     const k = isJsonObject(x) ? x.k : undefined;

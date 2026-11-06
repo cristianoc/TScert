@@ -1281,8 +1281,11 @@ leaves a hole:
      {\Gamma\vdash_G a[i]=v:L}\ \textsf{setElem}
 ```
 
-Writes at a greater index, or at one no contract names, and reads by a
-non-literal index into a tuple, have no rule; a program appends with `push`.
+A write at a key typed `number` into a homogeneous writable array has the
+rule of [writes at a checked index](#writes-at-a-checked-index), which reads
+its bound off the heap knowledge. Writes at a greater literal index, or at one
+no contract names, and reads by a non-literal index into a tuple, have no
+rule; a program appends with `push`.
 A read `xs[k]` of an array, a tuple or a compiler-API node list
 ([node lists](COMPILER-API.md#node-lists-in-the-model)) at a key TypeScript
 types as `number`, no literal, is the host's read of the property the number
@@ -1329,6 +1332,105 @@ empty array), `invalid-array-last-sparse`, `invalid-array-last-after-pop`,
 `invalid-program-node-array-last`, `invalid-array-past-end` (`length`),
 `invalid-array-before-last` (`length - 2`) and
 `invalid-compiler-api-node-list-last` are refused, each run under Node.
+
+### Writes at a checked index
+
+A write `xs[k] = v` at a key TypeScript types as `number`, into an array whose
+store contract is homogeneous and writable, $`\mathsf{list}(\langle[\,],[\,],E,\mathrm{writable}\rangle)`$,
+lowers to the slots of the receiver, the key and the value, as a literal
+index's write does, and is admitted where the heap knowledge bounds the key by
+the receiver's store. A program states the bound with a guard before the
+write, its own statement:
+
+```ts
+if ((k & 0x7fffffff) !== k || k > xs.length) throw new RangeError('index')
+xs[k] = v
+```
+
+**The facts.** Three atoms of heap knowledge (`HeapKnowledge.IndexAtom`),
+each, as an [elements atom](FOOTPRINTS.md#the-elements-fact), optionally
+conditional on a Boolean slot:
+
+```math
+\begin{aligned}
+\mathrm{index}(k)(\rho,h) &\iff \rho(k)=\mathsf{num}\,b\land \mathrm{indexOfBits}(b)=\mathsf{some}\,i\\
+\mathrm{length}(x,n)(\rho,h) &\iff \mathrm{store}(\rho(x))=\ell\land h[\ell]=\mathsf{arr}\,ls\land \rho(n)=\mathsf{num}(\mathrm{bitsOfNat}\,|ls|)\\
+\mathrm{bound}(x,k)(\rho,h) &\iff \mathrm{store}(\rho(x))=\ell\land h[\ell]=\mathsf{arr}\,ls\land \rho(k)=\mathsf{num}\,b\land \mathrm{indexOfBits}(b)=\mathsf{some}\,i\land i\le|ls|
+\end{aligned}
+```
+
+(`IndexFact.HoldsAt`). They are carried as elements atoms are: renamed with
+their slots, a condition's included (`mapIndices`), met at merges, compared on
+edges by alias class (`indicesCheckBy`, proved: `indicesCheckBy_sound`),
+promoted on the branch edge observing their condition (`promoteIndices`),
+restated by a negation with the opposite condition (`negatedIndices`), kept
+by a heap extension and a call keeping the heap, and dropped by every step
+that may write.
+
+**The steps stating them** are a layer of `Checker.ordinary`
+(`Checker.indexing`, `IndexWrites.stepAtoms`), adding atoms to what the step's
+own rule gives:
+
+```math
+\frac{x.\mathtt{[]}\mapsto s'\in\Sigma\quad s'\in[s]\quad \Gamma(s)\equiv_G\mathsf{list}(\tau)}
+     {\Gamma;\Pi;\Sigma\vdash_G n\leftarrow\mathsf{lenOf}(s)\dashv\ldots,\ \mathrm{length}(x,n)}\ \textsf{length-observed}
+\qquad
+\frac{(\Gamma;\Pi)(m)\subseteq\{\mathsf{num}\,b\mid 0\le\mathrm{ToInt32}(b)<2^{31}\}}
+     {\Gamma;\Pi;\Sigma\vdash_G r\leftarrow a\,\&\,m\dashv\ldots,\ \mathrm{index}(r)}\ \textsf{index-mask}
+```
+
+```math
+\frac{\mathrm{index}(a')\in\Sigma\quad a'\in[a]}
+     {\Gamma;\Pi;\Sigma\vdash_G c\leftarrow a\equiv b\dashv\ldots,\ \mathrm{index}(b)\ \text{if}\ c}\ \textsf{index-equal}
+\qquad
+\frac{\mathrm{index}(k')\in\Sigma\quad \mathrm{length}(x,n')\in\Sigma\quad k'\in[k],\ n'\in[n]}
+     {\Gamma;\Pi;\Sigma\vdash_G c\leftarrow k\ \mathit{op}\ n\dashv\ldots,\ \mathrm{bound}(x,k)\ \text{if}\ c=q_{\mathit{op}}}\ \textsf{bound-compare}
+```
+
+with each premise atom unconditional, $`\equiv`$ strict equality (either
+operand the index), and $`q_{\mathit{op}}`$ the answer giving $`k\le n`$:
+false for `>` and `>=`, true for `<` and `<=`, and the mirrored answers with
+the length on the left (`IndexNumbers.boundAnswer`). Proved:
+`IndexWrites.stepAtoms_holds`, from `IndexNumbers.bitAnd_index`,
+`strictEquals_index` and `le_of_relation`, which rest on the order of two
+doubles that denote naturals (`doubleOrder_denotes`, against `Float.Model`).
+`(k & m) === k` with `m` a non-negative 32-bit integer holds only where `k`
+is an integer from 0 to $`2^{31}-1`$, or `-0`: `NaN`, fractions, negatives,
+$`2^{31}`$ and above fail it.
+
+**The write.** A step whose evidence is `boundedWrite` (`Checker.boundedWrites`,
+`IndexWrites.boundedWriteCheck`):
+
+```math
+\frac{\Gamma(x)\ \text{a record whose invariant}\ \mathtt{[]}\ \text{holds}\ \mathsf{list}(\langle[\,],[\,],E,\mathrm{writable}\rangle)\quad
+      \mathrm{bound}(x',k')\in\Sigma\quad x'\in[x],\ k'\in[k]\quad \Gamma(v)\le E}
+     {\Gamma;\Pi;\Sigma\vdash_G r\leftarrow x.\mathtt{[]}:=x.\mathtt{[]}⟦k\mapsto v⟧:\mathsf{Null}\dashv\Pi;\ \emptyset}\ \textsf{setElem-bounded}
+```
+
+The write reads the store, lands on a present element's location or, at a
+hole below the length or at the length, on a fresh location the new store
+records, leaving no hole, and writes the store back
+(proved: `IndexWrites.boundedWrite_safe`, through `setElem_store_safe`, which
+the literal rule `setElem` shares). An element location is written before the
+store field is, so the step keeps no observation of the heap
+(`ordinaryOutput`). It is within the footprint `{value: any, store: grow}`
+([element writes](FOOTPRINTS.md#element-writes), `elemVarWriteWithin`).
+
+**Across the guard's statement.** A statement entry is an exact interface
+([decisions](DESIGN.md#lasting-decisions)): the bound reaches the write's
+statement as a claim of its entry, `EntryClaim.bounds`
+([source claims](SOURCE-CLAIMS.md)), an array binding's name and an index
+binding's, which the lowering states as $`\mathrm{bound}(x,k)`$ of their
+slots and every edge into the entry checks. The producer claims it at the
+statement following `if ((k & m) !== k || k > xs.length) throw …`, `k` and
+`xs` names (`guard_bound`). The facts are about values: a variable a closure
+reassigns is a cell, whose every read is a new slot no fact names.
+
+The cases `index-write-guard` and `index-write-guard-loop` verify;
+`invalid-index-write-unguarded`, `invalid-index-write-no-mask`,
+`invalid-index-write-no-compare`, `invalid-index-write-other-array`,
+`invalid-index-write-call-shrinks`, `invalid-index-write-pop` and
+`invalid-index-write-captured` are refused, each run under Node.
 
 ### A literal with spreads
 

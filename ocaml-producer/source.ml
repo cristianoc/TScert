@@ -880,8 +880,8 @@ let rec leaves_stmts ss = List.exists (fun s -> match s.statement with
   | Closing (c,b) -> leaves_stmts (b @ c)
   | Declare _ | Destructure _ | Effect _ | Throw _ -> false) ss
 
-let rec footprint_expr ?(fresh=[]) ?(dispatched=fun _ _ -> false) ?(field_write=fun _ _ -> false) ?(dead_throw=false) ~callable ~no_return ~iteration ~readable (e:expr) : footprint option =
-  let go = footprint_expr ~fresh ~dispatched ~field_write ~dead_throw ~callable ~no_return ~iteration ~readable in
+let rec footprint_expr ?(fresh=[]) ?(dispatched=fun _ _ -> false) ?(field_write=fun _ _ -> false) ?(element_key=fun _ _ -> false) ?(dead_throw=false) ~callable ~no_return ~iteration ~readable (e:expr) : footprint option =
+  let go = footprint_expr ~fresh ~dispatched ~field_write ~element_key ~dead_throw ~callable ~no_return ~iteration ~readable in
   let calls ?(receiver_fresh=false) callee =
     Option.map (effects_footprint ~receiver_fresh) (callable callee) in
   let all es = List.fold_left (fun acc e -> join_bound acc (go e)) (Some empty_footprint) es in
@@ -924,7 +924,12 @@ let rec footprint_expr ?(fresh=[]) ?(dispatched=fun _ _ -> false) ?(field_write=
   | Update (_,{node=Id _;_},r,_) -> join_bound cell_write (all (Option.to_list r))
   | NullishAssign (_,_,v) -> join_bound cell_write (go v)
   | LogicalAssign (_,({node=Id _;_} as t),v) -> join_bound cell_write (all [t;v])
+  (* An element write at a literal index, or at a key every claim types as
+     a number into an array every claim types as writable, which Lean admits
+     at a checked index into a store of source values
+     (`elemVarWriteWithin`). *)
   | IndexWrite (o,({node=Literal (LNumber _);_} as k),v) -> join_bound element_write (all [o;k;v])
+  | IndexWrite (o,k,v) when element_key o k -> join_bound element_write (all [o;k;v])
   | Update (_,{node=Index (o,({node=Literal (LNumber _);_} as k));_},r,_) ->
     join_bound element_write (all (o :: k :: Option.to_list r))
   (* A spread argument reads its operand's store, as an array literal's
@@ -945,26 +950,26 @@ let rec footprint_expr ?(fresh=[]) ?(dispatched=fun _ _ -> false) ?(field_write=
     if spreads<>[] then None else join_bound (all (callee :: args)) (calls callee)
   (* An optional chain runs its receiver once, then its body, which reads
      the receiver as `?.`, where the receiver is present. *)
-  | Optional (r,b) -> join_bound (go r) (footprint_expr ~fresh ~dispatched ~field_write ~dead_throw ~callable ~no_return ~iteration ~readable:("?." :: readable) b)
-  | WithObject (o,b) -> join_bound (go o) (footprint_expr ~fresh ~dispatched ~field_write ~dead_throw ~callable ~no_return ~iteration ~readable:("?.object" :: readable) b)
+  | Optional (r,b) -> join_bound (go r) (footprint_expr ~fresh ~dispatched ~field_write ~element_key ~dead_throw ~callable ~no_return ~iteration ~readable:("?." :: readable) b)
+  | WithObject (o,b) -> join_bound (go o) (footprint_expr ~fresh ~dispatched ~field_write ~element_key ~dead_throw ~callable ~no_return ~iteration ~readable:("?.object" :: readable) b)
   (* A write of a field whose contract, at every alternative of its
      object's claim, is a writable field holding source values changes one
      location, which holds a value (Lean's typed field write). *)
   | Write (o,k,v) when field_write o k -> join_bound cell_write (all [o;v])
   (* `x.f ??= v`, `||=` and `&&=` read the field, then may write it. *)
   | LogicalAssign (_,{node=Read (o,k);_},v) when field_write o k -> join_bound cell_write (all [o;v])
-  | BlockBody body -> footprint_stmts ~fresh ~dispatched ~field_write ~dead_throw ~callable ~no_return ~iteration ~readable body
+  | BlockBody body -> footprint_stmts ~fresh ~dispatched ~field_write ~element_key ~dead_throw ~callable ~no_return ~iteration ~readable body
   | InstanceTest _
   | Write _ | Update _ | LogicalAssign _
   | ArrayAssign _ | Invoke _ | Apply _ | Ctor _
   | IndexWrite _ | Bind _ | ObjectAssign _
   | WithFields _ -> None
-and footprint_stmts ?(fresh=[]) ?(dispatched=fun _ _ -> false) ?(field_write=fun _ _ -> false) ?(dead_throw=false) ~callable ~no_return ~iteration ~readable = function
+and footprint_stmts ?(fresh=[]) ?(dispatched=fun _ _ -> false) ?(field_write=fun _ _ -> false) ?(element_key=fun _ _ -> false) ?(dead_throw=false) ~callable ~no_return ~iteration ~readable = function
   | [] -> Some empty_footprint
   | s::rest ->
-    let go = footprint_expr ~fresh ~dispatched ~field_write ~dead_throw ~callable ~no_return ~iteration ~readable in
+    let go = footprint_expr ~fresh ~dispatched ~field_write ~element_key ~dead_throw ~callable ~no_return ~iteration ~readable in
     let block ?(fresh=fresh) ?(dead_throw=dead_throw) readable body =
-      footprint_stmts ~fresh ~dispatched ~field_write ~dead_throw ~callable ~no_return ~iteration ~readable body in
+      footprint_stmts ~fresh ~dispatched ~field_write ~element_key ~dead_throw ~callable ~no_return ~iteration ~readable body in
     let tail () = block readable rest in
     match s.statement with
     | Declare (mutable_,bindings) ->
@@ -975,7 +980,7 @@ and footprint_stmts ?(fresh=[]) ?(dispatched=fun _ _ -> false) ?(field_write=fun
             else List.filter ((<>) name) fresh in
           let written = if Hashtbl.mem early_bindings (name,init.pos) then cell_write else Some empty_footprint in
           add fresh (name::readable) (join_bound written
-            (join_bound acc (footprint_expr ~fresh ~dispatched ~field_write ~dead_throw ~callable ~no_return ~iteration ~readable init))) more in
+            (join_bound acc (footprint_expr ~fresh ~dispatched ~field_write ~element_key ~dead_throw ~callable ~no_return ~iteration ~readable init))) more in
       add fresh readable (Some empty_footprint) bindings
     (* Where no handler of the body returns normally, a `throw` and the
        evaluation of its operand lie in Lean's checked region with no normal
@@ -994,7 +999,7 @@ and footprint_stmts ?(fresh=[]) ?(dispatched=fun _ _ -> false) ?(field_write=fun
       List.fold_left join_bound (go init)
         (Option.to_list (Option.map go d) @ List.map go (pattern_defaults target) @
          [footprint_stmts ~fresh:(List.filter (fun n -> not (List.mem n (pattern_names target))) fresh)
-            ~dispatched ~field_write ~dead_throw ~callable ~no_return ~iteration ~readable:(pattern_names target @ readable) rest])
+            ~dispatched ~field_write ~element_key ~dead_throw ~callable ~no_return ~iteration ~readable:(pattern_names target @ readable) rest])
     | ForOf (name,_,iterate,iterable,body) ->
       join_bound (go iterable) (join_bound (iteration iterate)
         (join_bound (block ~fresh:(List.filter ((<>) name) fresh) (name::readable) body) (tail ())))

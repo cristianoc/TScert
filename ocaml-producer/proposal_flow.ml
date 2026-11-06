@@ -54,6 +54,14 @@ let unsupported = Json.unsupported
 
 (* An environment no value meets: each slot at the empty type, which a join
    drops and Lean checks by `vacuous-edge`. *)
+(* The array and index a write guard bounds: `(k & m) !== k || k > xs.length`,
+   `m` a number literal, `k` and `xs` names. *)
+let guard_bound (cond:Source.expr) = match cond.node with
+  | Logical (false,
+      {node=Equality (StrictUnequal,{node=Arith (BitAnd,{node=Id k;_},{node=Literal (LNumber _);_});_},{node=Id k';_});_},
+      {node=Arith (Gt,{node=Id k'';_},{node=Read ({node=Id xs;_},Name "length");_});_})
+    when k = k' && k = k'' -> Some (xs,k)
+  | _ -> None
 let unreachable env = List.map (fun (n,b) -> if is_field n then n,b else match b with
   | Value _ -> n,Value (Atoms [])
   | Local (contract,_) -> n,Local (contract,Atoms [])
@@ -87,7 +95,8 @@ let statements callbacks flow_graph register_following owner_span env0 ss =
       | Some s -> s | None -> Json.fail "flow operation names missing source syntax" in
     let scope bindings env =
       let live n = List.mem_assoc n env0 || List.exists (fun (b:Flow.binding) -> b.name=n) bindings in
-      List.filter (fun (n,_) -> live n || (is_field n && live (owner n))) env in
+      List.filter (fun (n,_) -> live n || (is_field n && live (owner n)) ||
+        (match bound_parts n with Some (a,i) -> live a && live i | None -> false)) env in
     let capture env =
       let bound n = List.mem_assoc n env in
       let m = callbacks.snapshot_metadata () in
@@ -143,6 +152,8 @@ let statements callbacks flow_graph register_following owner_span env0 ss =
         match graph.Flow.prologue with None -> env | Some plan -> callbacks.execute_bindings env plan
         else env in
       callbacks.entry env node.source;
+      (* A guard's bound is claimed at this entry alone. *)
+      let env = List.filter (fun (n,_) -> not (is_bound n)) env in
       let next id env = id,capture (scope graph.nodes.(id).scope env) in
       let infer_return span = match (source span).statement with
         | Return e -> callbacks.return_expression env e
@@ -199,6 +210,13 @@ let statements callbacks flow_graph register_following owner_span env0 ss =
             | Literal (LBool true) -> held,unreachable failed
             | Literal (LBool false) -> unreachable held,failed
             | _ -> held,failed in
+          (* `(k & m) !== k || k > xs.length` fails only where `k` is an
+             index at most `xs.length`: the statement after it is claimed
+             with that bound, which Lean checks on every edge into it. *)
+          let failed=match guard_bound cond with
+            | Some (array,index) when List.mem_assoc array failed && List.mem_assoc index failed ->
+              failed @ [bound_key array index,Value top]
+            | _ -> failed in
           [next yes held;next no failed]
         | Flow.Return span ->
 

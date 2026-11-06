@@ -1444,6 +1444,15 @@ read/value rule may succeed when ordinary derivation search cannot. -/
                   if (tag == .isArray && q && BranchRefinement.arraySlice G C j.type) ||
                       BranchRefinement.sourceSlice G C j.type tag q then
                     choices := choices ++ [.slicedRead tag q i e {}]
+  | .writeAt _ (.var a) (.setElem (.readAt _ (.var _)) (.var i) (.var v)) =>
+    -- A write at a run-time index: the value's type below the array's
+    -- element type (`IndexWrites.boundedWriteCheck`).
+    if let (some R, some V) := (j.context[a]?, j.context[v]?) then
+      if let some E := IndexWrites.writableElement G R then
+        let compared ← (subtypeUsing G images V E).result
+        incomplete := incomplete <|> compared.exhaustion
+        if let some p := compared.value then
+          choices := choices ++ [.boundedWrite a i v p]
   | _ => pure ()
   if let some e := ordinary.value then
     match j.term with
@@ -2087,7 +2096,8 @@ Every edge is still checked by the independent consumer. -/
           | none => pure ()
         k := ⟨(k.cells ++ required.cells).eraseDups,(k.values ++ required.values).eraseDups,
           HeapLinks.dedup (k.links ++ required.links),
-          HeapSeparation.union k.separation required.separation, (k.elems ++ required.elems).eraseDups⟩
+          HeapSeparation.union k.separation required.separation, (k.elems ++ required.elems).eraseDups,
+          (k.indices ++ required.indices).eraseDups⟩
         -- A handler target is entered by throws too, which carry no
         -- implication, and the argument slots the throwing nodes carry.
         if handled then
