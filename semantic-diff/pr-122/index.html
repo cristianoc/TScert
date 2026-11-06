@@ -1,0 +1,216 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Commit Records</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Code+Pro:wght@400;600&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=STIX+Two+Text:ital,wght@0,400;0,600;1,400&display=swap">
+<style>
+:root { --bg:#fbfcfd; --surface:#ffffff; --ink:#0b1a2e; --muted:#56627a; --rule:#d5dce6; --accent:#8a6410; --code-bg:#eef2f7; --math-bg:#f2f4f8; --ok:#2f6b47; --ok-bg:#e2efe4; --principled:#a0521a; --principled-bg:#f7e6d6; --gap:#6b6f78; --gap-bg:#ecebe6; --neutral:#2c4f7c; --neutral-bg:#e6ebf2; --trust:#7c2f4a; --trust-bg:#f2e1e7; --neg:#9b3524; --neg-bg:#f5e1da; --run:#7a5414; --run-bg:#f3e7cc; --brand-ink:#0b1a2e; --brand-gold:#b8840f;
+  --display:"Bricolage Grotesque","Helvetica Neue",Arial,sans-serif; --body:"Inter","Helvetica Neue",Arial,sans-serif; --mono:"Source Code Pro",Menlo,Consolas,monospace; --math:"STIX Two Text","STIX Two Math","STIXGeneral","Cambria Math","Apple Symbols",Georgia,serif; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#0e1626; --surface:#16213a; --ink:#efe7d4; --muted:#9aa3b5; --rule:#2a3756; --accent:#e0ac4a; --code-bg:#131d33; --math-bg:#1a2540; --ok:#7fd0a2; --ok-bg:#17322a; --principled:#f0a868; --principled-bg:#3a2a1c; --gap:#9aa3b5; --gap-bg:#1c2639; --neutral:#8fb4e8; --neutral-bg:#1b2b49; --trust:#e79bb6; --trust-bg:#3a2131; --neg:#f0907d; --neg-bg:#3a1f22; --run:#e0ac4a; --run-bg:#2e2a24; --brand-ink:#efe7d4; --brand-gold:#e0ac4a; color-scheme:dark } }
+:root[data-theme="dark"] { --bg:#0e1626; --surface:#16213a; --ink:#efe7d4; --muted:#9aa3b5; --rule:#2a3756; --accent:#e0ac4a; --code-bg:#131d33; --math-bg:#1a2540; --ok:#7fd0a2; --ok-bg:#17322a; --principled:#f0a868; --principled-bg:#3a2a1c; --gap:#9aa3b5; --gap-bg:#1c2639; --neutral:#8fb4e8; --neutral-bg:#1b2b49; --trust:#e79bb6; --trust-bg:#3a2131; --neg:#f0907d; --neg-bg:#3a1f22; --run:#e0ac4a; --run-bg:#2e2a24; --brand-ink:#efe7d4; --brand-gold:#e0ac4a; color-scheme:dark }
+* { box-sizing:border-box } body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.6 var(--body) }
+main { max-width:900px; margin:0 auto; padding-inline:20px; padding-block:32px 64px; display:flex; flex-direction:column; gap:22px }
+h1 { font:600 32px/1.15 var(--display); margin:0 } h2 { font:600 22px/1.2 var(--display); margin:12px 0 8px; padding-top:12px; border-top:2px solid var(--ink) }
+h3 { font:600 19px/1.3 var(--display); margin:2px 0 0; text-wrap:balance }
+h4 { font:600 11px/1 var(--body); letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin:12px 0 4px }
+p { margin:2px 0; max-width:72ch } .lede { color:var(--muted) }
+code { font:13px/1.5 var(--mono); background:var(--code-bg); padding:1px 4px; border-radius:3px }
+pre { margin:4px 0; padding:12px 14px; border-radius:6px; overflow-x:auto }
+pre.code { font:13px/1.55 var(--mono); background:var(--code-bg) }
+.rules { display:flex; flex-direction:column; gap:14px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:14px 18px; overflow-x:auto; font:16px/1.6 var(--math) }
+.rules sub, .rules sup { font-size:.72em; line-height:0 }
+.formulas { display:flex; flex-direction:column; gap:4px }
+.formulas .row { display:flex; flex-wrap:wrap; gap:4px 28px } .formulas .row.cont { padding-left:2em }
+.infer { display:flex; align-items:center; gap:12px }
+.frac { display:inline-flex; flex-direction:column; align-items:center; min-width:0 }
+.premises { display:flex; flex-wrap:wrap; justify-content:center; gap:4px 26px; padding:0 6px 3px }
+.bar { align-self:stretch; border-top:1.5px solid var(--ink) }
+.conclusion { padding:3px 6px 0; text-align:center }
+.rule-name { font:15px/1 var(--math); font-variant:small-caps; letter-spacing:.02em; color:var(--accent); white-space:nowrap }
+.card { background:var(--surface); border:1px solid var(--rule); border-radius:8px; padding:20px 22px; display:flex; flex-direction:column; gap:6px; min-width:0 }
+.card > header { display:flex; justify-content:space-between; gap:12px; align-items:flex-start }
+.sha { font:12px/1.4 var(--mono); color:var(--muted) }
+.pill { font:600 11px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; padding:6px 9px; border-radius:99px; white-space:nowrap }
+.pill.ok { color:var(--ok); background:var(--ok-bg) } .pill.principled { color:var(--principled); background:var(--principled-bg) }
+.pill.gap { color:var(--gap); background:var(--gap-bg) } .pill.neutral { color:var(--neutral); background:var(--neutral-bg) }
+.units { display:flex; flex-wrap:wrap; gap:6px } .units span { font:12px/1 var(--mono); border:1px solid var(--rule); border-radius:4px; padding:5px 7px }
+dl.facts { display:grid; grid-template-columns:max-content minmax(0,1fr); gap:6px 16px; margin:12px 0 0; padding-top:12px; border-top:1px solid var(--rule); font-size:13.5px }
+dt { font:600 11px/1.9 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted) }
+dd { margin:0; min-width:0; display:flex; flex-wrap:wrap; gap:5px; align-items:baseline }
+.chip { font:500 12px/1 var(--body); border:1px solid var(--rule); border-radius:4px; padding:4px 7px } .chip.strong { color:var(--accent); border-color:var(--accent) }
+.trust { color:var(--trust); background:var(--trust-bg); padding:2px 6px; border-radius:4px } .none { color:var(--muted) }
+.test { font:12px/1 var(--mono); padding:4px 7px; border-radius:4px }
+.test.pos { color:var(--ok); background:var(--ok-bg) } .test.pos::before { content:"✓ " }
+.test.neg { color:var(--neg); background:var(--neg-bg) } .test.neg::before { content:"✗ " }
+.test.forged { color:var(--principled); background:var(--principled-bg) } .test.forged::before { content:"forged " }
+details { margin-top:8px; font-size:13px; color:var(--muted) } summary { cursor:pointer }
+.table-wrap { overflow-x:auto; border:1px solid var(--rule); border-radius:8px; background:var(--surface) }
+table { border-collapse:collapse; width:100%; font-size:13px } th, td { text-align:left; vertical-align:top; padding:8px 10px; border-bottom:1px solid var(--rule) }
+th { font:600 11px/1.2 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); white-space:nowrap } td.num { font-variant-numeric:tabular-nums }
+h4.change { display:flex; align-items:center; gap:8px; text-transform:none; letter-spacing:0; font:600 14px/1.3 var(--body); color:var(--ink); margin:16px 0 6px }
+h4.change .target { font-weight:400; color:var(--muted) }
+.act { font:600 10.5px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; padding:4px 7px; border-radius:4px }
+.act.added { color:var(--ok); background:var(--ok-bg) } .act.removed { color:var(--neg); background:var(--neg-bg) }
+.act.modified, .act.replaced { color:var(--principled); background:var(--principled-bg) }
+.versions { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:10px }
+.versions figure { margin:0; min-width:0 } .versions figcaption { font:600 11px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); margin:0 0 4px }
+.versions .rules { height:calc(100% - 18px); box-sizing:border-box }
+pre.code .ln { display:block; white-space:pre } pre.code .ln.add { background:var(--ok-bg) } pre.code .ln.del { background:var(--neg-bg) }
+.tk-k { color:#7a3b8c } .tk-s { color:#2f6b47 } .tk-n { color:#a35a12 } .tk-c { color:var(--muted); font-style:italic } .tk-t { color:#2c4f7c }
+.prose p { margin:4px 0 }
+ul.effect, ul.summary { margin:4px 0; padding-left:20px } ul.effect li, ul.summary li { margin:3px 0 } ul.summary ul { padding-left:18px; color:var(--muted) }
+ul.effect .arrow { color:var(--accent); font-weight:600 }
+ul.effect details { margin:0; color:inherit; font-size:inherit } ul.effect summary { list-style-position:outside }
+ul.effect .kind { font-size:11px; text-transform:uppercase; letter-spacing:.04em; padding:1px 6px; border-radius:4px; background:var(--chip, #eee) }
+ul.effect .kind.negative { color:#8a3b12 } ul.effect .kind.positive { color:#22663a } ul.effect .kind.gap { color:#7a5b00 }
+ul.effect .was.unsound { color:#b3261e; font-weight:600 } ul.effect .now { font-weight:500 } ul.effect .why { color:var(--muted) }
+ul.effect mark { background:#ffe08a; color:inherit; border-radius:2px }
+@media (max-width:720px) { .versions { grid-template-columns:minmax(0,1fr) } }
+.lowering { display:flex; flex-direction:column; gap:6px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:12px 16px; overflow-x:auto }
+.lowering .map, .lowering .cond, .lowering .result { display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 10px }
+.lowering .map:not(:has(.sem)) { flex-direction:column; align-items:stretch; gap:4px }
+.lowering .result { display:grid; grid-template-columns:auto minmax(0,1fr); align-items:baseline; gap:2px 10px; padding-left:1em } .lowering .result .note { grid-column:2 }
+.m-intr { font:14px/1.5 var(--mono); color:#2c4f7c } .m-lit { font:13px/1.5 var(--mono); color:#7a3b8c }
+.lowering code.src { font:13px/1.5 var(--mono); background:var(--surface); border:1px solid var(--rule); padding:2px 6px; border-radius:4px }
+.lowering .to { color:var(--accent); font-weight:600; font-size:17px }
+.lowering .tgt { font:16px/1.5 var(--math) } .rules .lowering { background:none; border:0; padding:0 } .lowering .sem code.src { margin:0 2px }
+var { font-style:italic } .m-op { color:#2c4f7c; font-style:normal } .m-con { color:#8f6416; font-style:normal; font-variant:small-caps }
+.m-kw { color:#7a3b8c; font-weight:600; font-style:normal } .m-bind { color:#7a3b8c } .m-rel { color:var(--accent); padding:0 .12em }
+.m-text { font:14px/1.5 var(--body); color:var(--muted) } code.m-code { font:13px/1.5 var(--mono); background:var(--surface); border:1px solid var(--rule); padding:1px 5px; border-radius:4px }
+.refused { color:var(--neg); font-weight:600 }
+.lowering .refused { color:var(--neg); font-weight:600 }
+.lowering .label { font:600 11px/1 var(--body); letter-spacing:.05em; text-transform:uppercase; color:var(--muted); min-width:7em }
+.lowering .cond { padding-left:1.5em } .lowering .note { color:var(--muted); font:italic 13px/1.4 var(--body) }
+a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outline-offset:2px }
+@media (max-width:520px) { dl.facts { grid-template-columns:minmax(0,1fr) } .card > header { flex-direction:column } }</style></head><body><main><header><h1>Commit Records</h1><p class="lede">3 commits, rendered from their records.</p></header>
+<section><h2>Branches</h2><ul class="summary"><li><a href="#g-pr-122"><code>aa6ba108d5dc497f886d80c7cdaee908e2b95d81..pr-122</code></a><ul><li>3 commits</li><li>parts: <span class="chip">lean-lowering</span> <span class="chip">docs</span> <span class="chip">tests</span></li></ul></li></ul></section>
+<h2 id="g-pr-122"><code>aa6ba108d5dc497f886d80c7cdaee908e2b95d81..pr-122</code></h2><article class="card" id="c-021be3a8a"><header><div><div class="sha">021be3a8a · Cristiano Calcagno · Nov 06, 15:44</div><h3>Read a test's known answer at the tested binding's own type in the selected arm</h3></div><span class="pill ok">verified</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>Pretext's checked reads written inline, <code>e ?? missing()</code> with <code>missing(): never</code>, are refused in <code>transformText</code> (gecko-line-breaks.ts) at the second <code>frameStarts ?? missing()</code> of <code>frame &lt; (frameStarts ?? missing()).length &amp;&amp; ((frameStarts ?? missing())[frame] ?? missing()) &lt;= i</code>: &quot;evidence search failed: no derivation of its expression-claim claim&quot;, the claim <code>number[]</code> against the derived <code>number[] | null</code>. The lowering continues each arm of the first <code>??</code> separately, so in the right operand of <code>&amp;&amp;</code>, on the path where the first test found <code>frameStarts</code> present, its slot holds <code>number[]</code> and the second test's answer is known: only the present arm is built. That arm held the tested value at the type of the read <code>frameStarts</code>, which TypeScript types <code>number[] | null</code>, so the <code>??</code>'s result was read with <code>null</code> in it.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Lowering <span class="target">a value test whose answer the tested binding's slot gives</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="lowering"><div class="cond"><span class="tgt"><span class="m-kw">let</span> <var>v</var> <span class="m-rel">=</span> <var>x</var> <span class="m-kw">in</span> (<var>v</var> <span class="m-rel">=</span><span class="m-rel">=</span> <span class="m-lit">null</span> ? <var>f</var>() <span class="m-rel">:</span> <var>v</var>)   <span class="m-text">where x's slot type answers</span> <code class="m-code"><span class="tk-s">&quot;not nullish&quot;</span></code></span></div><div class="map"><code class="src"></code><div class="result"><span class="to">⇝</span><span class="tgt"><span class="m-text">the arm <code class="m-code">v</code>, with</span> <var>v</var> <span class="m-rel">:</span> <span class="m-text">the type of the read of</span> <var>x</var></span></div></div></div></figure><figure><figcaption>After</figcaption><div class="lowering"><div class="cond"><span class="tgt"><span class="m-kw">let</span> <var>v</var> <span class="m-rel">=</span> <var>x</var> <span class="m-kw">in</span> (<var>v</var> <span class="m-rel">=</span><span class="m-rel">=</span> <span class="m-lit">null</span> ? <var>f</var>() <span class="m-rel">:</span> <var>v</var>)   <span class="m-text">where x's slot type answers</span> <code class="m-code"><span class="tk-s">&quot;not nullish&quot;</span></code></span></div><div class="map"><code class="src"></code><div class="result"><span class="to">⇝</span><span class="tgt"><span class="m-text">the arm <code class="m-code">v</code>, with</span> <var>v</var> <span class="m-text">taken from x's slot</span>, <var>v</var> <span class="m-rel">:</span> <span class="m-text">x's slot type</span></span></div></div><div class="cond"><span class="tgt">(<var>x</var> <span class="m-text">is an immutable binding, a const or a parameter never written; the</span></span></div><div class="cond"><span class="tgt"><span class="m-text">tested value is x's value, the fact the existing selection of one arm</span></span></div><div class="cond"><span class="tgt"><span class="m-text">already rests on</span>)</span></div></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">SOURCE-ELABORATION.md, DESIGN.md</span></h4><div class="prose"><p>The known answer's paragraph states that the arm holds the tested value from the binding's slot, at the slot's type; the extraction trust row names it with the arm selection it already lists.</p></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>coalesce-missing-and-arm</code> <span class="kind positive">positive</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why"><code>xs ?? missing()</code> again in <code>&amp;&amp;</code>'s right operand</span></summary><pre class="code"><span class="tk-c">// A checked read written inline, `xs ?? missing()` with `missing(): never`,</span>
+<span class="tk-c">// read again in the right operand of `&amp;&amp;` after the left operand read it so</span>
+<span class="tk-c">// (pretext's `transformText`, gecko-line-breaks.ts): on the path where the</span>
+<span class="tk-c">// first test found `xs` present, the second test's answer is known from</span>
+<span class="tk-c">// `xs`'s slot, and its result is read at that slot's array type.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> missing(): never {
+  <span class="tk-k">throw</span> <span class="tk-k">new</span> <span class="tk-t">RangeError</span>(<span class="tk-s">&quot;missing value&quot;</span>);
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> frameAt(frameStarts: number[] | <span class="tk-k">null</span>, i: number): number {
+  <span class="tk-k">let</span> frame = <span class="tk-n">0</span>;
+  <span class="tk-k">while</span> (
+    frame &lt; (frameStarts ?? missing()).length &amp;&amp;
+    ((frameStarts ?? missing())[frame] ?? missing()) &lt;= i
+  )
+    frame++;
+  <span class="tk-k">return</span> frame;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> longer(xs: number[] | <span class="tk-k">null</span>): boolean {
+  <span class="tk-k">return</span> (xs ?? missing()).length &gt; <span class="tk-n">0</span> &amp;&amp; (xs ?? missing()).length &gt; <span class="tk-n">1</span>;
+}</pre></details></li></ul>
+<h4 class="change">Soundness</h4><div class="prose"><p>The graph edge into the selected arm takes position 0 from the tested binding's slot; the checker checks that edge against the slot's type, as every other edge. That the arm's value is the tested value is the same correspondence the selection of a single arm relies on.</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">lean-lowering</span> <span class="chip">docs</span> <span class="chip">tests</span></dd><dt>Lean</dt><dd>LoweringExecution.knownAnswer · LoweringExecution.executePlanTail</dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd><span class="test pos">coalesce-missing-and-arm</span></dd></dl>
+<details><summary>5 files changed, 48 insertions(+), 11 deletions(-)</summary><pre class="code"> docs/DESIGN.md                                   |  2 +-
+ docs/SOURCE-ELABORATION.md                       |  6 ++++-
+ lean/Verification/Source/Lowering/Execution.lean | 28 ++++++++++++++++--------
+ pipeline/cases.mts                               |  1 +
+ pipeline/examples/coalesce-missing-and-arm.ts    | 22 +++++++++++++++++++</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-82c2e4be4"><header><div><div class="sha">82c2e4be4 · Cristiano Calcagno · Nov 06, 15:44</div><h3>Give a member reference on a receiver that holds no value an empty location</h3></div><span class="pill ok">verified</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>Pretext's <code>createLine</code> (rich-inline.ts), with its checked reads written inline, is refused at <code>(fragments[fragments.length - 1] ?? missing()).occupiedWidth -= rest</code>: &quot;an assignment needs one cell contract&quot;. The lowering continues each arm of the <code>??</code> separately; on the arm where the element is <code>undefined</code> the receiver is the result of <code>missing(): never</code>, of the type holding no value, and the compound assignment's location was looked up as a field of one record type, which that type is not.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Lowering <span class="target">the location of a member reference</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="lowering"><div class="map"><code class="src">(r).f op= v   where r : never</code><div class="result"><span class="to">⇝</span><span class="tgt"><span class="refused">refused</span><span class="m-rel">:</span> <code class="m-code"><span class="tk-s">&quot;an assignment needs one cell contract&quot;</span></code></span></div></div></div></figure><figure><figcaption>After</figcaption><div class="lowering"><div class="map"><code class="src">(r).f op= v   where r : never</code><div class="result"><span class="to">⇝</span><span class="tgt"><span class="m-text">the field</span> <var>f</var> <span class="m-op">of</span> <var>r</var>, <span class="m-text">holding no value</span></span></div></div><div class="cond"><span class="tgt"><span class="m-text">(the read, the operation and the write are built as on any receiver</span>;</span></div><div class="cond"><span class="tgt"><span class="m-text">the checker accepts them where</span> <var>r</var> <span class="m-text">has no value, and no run reaches them</span>)</span></div></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">PROGRAM-TYPING.md, WORK.md</span></h4><div class="prose"><p>The section on members of <code>null</code> and <code>undefined</code> states the location a reference names on a receiver holding no value. A WORK.md row records the inline checked reads: pretext with the guarded writes and every checked read inline verifies all its functions.</p></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>coalesce-missing-compound-member</code> <span class="kind positive">positive</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">compound assignment through <code>x ?? missing()</code></span></summary><pre class="code"><span class="tk-c">// A compound assignment to a member of a checked read written inline,</span>
+<span class="tk-c">// `(x ?? missing()).f -= d` with `missing(): never` (pretext's `createLine`,</span>
+<span class="tk-c">// rich-inline.ts): on the path where `x` is nullish the receiver is the</span>
+<span class="tk-c">// result of `missing()`, which holds no value, so no write is reached there;</span>
+<span class="tk-c">// on the other the member is read and written at the record's field.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> missing(): never {
+  <span class="tk-k">throw</span> <span class="tk-k">new</span> <span class="tk-t">RangeError</span>(<span class="tk-s">&quot;missing value&quot;</span>);
+}
+
+<span class="tk-k">type</span> <span class="tk-t">Fragment</span> = { occupiedWidth: number };
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> trimLast(fragments: (<span class="tk-t">Fragment</span> | <span class="tk-k">undefined</span>)[], rest: number): <span class="tk-k">void</span> {
+  <span class="tk-k">if</span> (rest &lt; <span class="tk-n">0</span> &amp;&amp; fragments.length &gt; <span class="tk-n">0</span>)
+    (fragments[fragments.length - <span class="tk-n">1</span>] ?? missing()).occupiedWidth -= rest;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> widen(fragment: <span class="tk-t">Fragment</span> | <span class="tk-k">undefined</span>, by: number): number {
+  <span class="tk-k">return</span> ((fragment ?? missing()).occupiedWidth += by);
+}</pre></details></li></ul>
+<h4 class="change">Soundness</h4><div class="prose"><p>The location only names a field; the graph checker types the read and the write at the receiver's slot type, as on every receiver. A slot of the type holding no value is on no run's path.</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">lean-lowering</span> <span class="chip">docs</span> <span class="chip">tests</span></dd><dt>Lean</dt><dd>LoweringExecution.executionReference</dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Measured</dt><dd>pretext 8605a4d9 (guarded writes, checked reads inline), census of src/ at a 300 s stage limit: 208 -&gt; 210 of 210 functions shallow verified</dd><dt>Tests</dt><dd><span class="test pos">coalesce-missing-compound-member</span></dd></dl>
+<details><summary>5 files changed, 29 insertions(+), 1 deletion(-)</summary><pre class="code"> WORK.md                                               |  1 +
+ docs/PROGRAM-TYPING.md                                |  5 ++++-
+ lean/Verification/Source/Lowering/Execution.lean      |  4 ++++
+ pipeline/cases.mts                                    |  1 +
+ pipeline/examples/coalesce-missing-compound-member.ts | 19 +++++++++++++++++++</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-77fc58a43"><header><div><div class="sha">77fc58a43 · Cristiano Calcagno · Nov 06, 15:51</div><h3>Name an empty location only on a receiver type that holds no value</h3></div><span class="pill ok">verified</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>The location for a member reference on a receiver holding no value was taken wherever the receiver's type expanded to no clause, which also holds for a type with a parameter or scheme row; those may hold values. The reference's arm reaching such a type is not the unreachable path the rule is for.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Lowering <span class="target">the location of a member reference</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="lowering"><div class="map"><code class="src">(r).f op= v   where r's <span class="tk-k">type</span> expands to no clause</code><div class="result"><span class="to">⇝</span><span class="tgt"><span class="m-text">the field</span> <var>f</var> <span class="m-op">of</span> <var>r</var>, <span class="m-text">holding no value</span></span></div></div></div></figure><figure><figcaption>After</figcaption><div class="lowering"><div class="map"><code class="src">(r).f op= v   where r's <span class="tk-k">type</span> is plain rows naming no clause</code><div class="result"><span class="to">⇝</span><span class="tgt"><span class="m-text">the field</span> <var>f</var> <span class="m-op">of</span> <var>r</var>, <span class="m-text">holding no value</span></span></div></div><div class="cond"><span class="tgt"><span class="m-text">(any other receiver type that is not one record keeps the refusal</span></span></div><div class="cond"><span class="tgt"><code class="m-code"><span class="tk-s">&quot;an assignment needs one cell contract&quot;</span></code>)</span></div></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">PROGRAM-TYPING.md, SOURCE-ELABORATION.md</span></h4><div class="prose"><p>The receiver holding no value is stated as plain rows naming no clause; the known answer's arm holding the tested value from the slot is stated for the arms that carry it, apart from a tested Boolean's rebound outcome and an outcome going to its destination.</p></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>coalesce-missing-and-arm</code> <span class="kind positive">positive</span> <span class="was">verified</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">its alias and member-path variants verify with or without the known-answer fix, so they do not test it</span></summary><pre class="code"><span class="tk-c">// A checked read written inline, `xs ?? missing()` with `missing(): never`,</span>
+<span class="tk-c">// read again in the right operand of `&amp;&amp;` after the left operand read it so</span>
+<span class="tk-c">// (pretext's `transformText`, gecko-line-breaks.ts): on the path where the</span>
+<span class="tk-c">// first test found `xs` present, the second test's answer is known from</span>
+<span class="tk-c">// `xs`'s slot, and its result is read at that slot's array type.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> missing(): never {
+  <span class="tk-k">throw</span> <span class="tk-k">new</span> <span class="tk-t">RangeError</span>(<span class="tk-s">&quot;missing value&quot;</span>);
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> frameAt(frameStarts: number[] | <span class="tk-k">null</span>, i: number): number {
+  <span class="tk-k">let</span> frame = <span class="tk-n">0</span>;
+  <span class="tk-k">while</span> (
+    frame &lt; (frameStarts ?? missing()).length &amp;&amp;
+    ((frameStarts ?? missing())[frame] ?? missing()) &lt;= i
+  )
+    frame++;
+  <span class="tk-k">return</span> frame;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> longer(xs: number[] | <span class="tk-k">null</span>): boolean {
+  <span class="tk-k">return</span> (xs ?? missing()).length &gt; <span class="tk-n">0</span> &amp;&amp; (xs ?? missing()).length &gt; <span class="tk-n">1</span>;
+}
+
+<span class="tk-c">// The tested binding read through an alias, and a member path's witness.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> aliased(xs: number[] | <span class="tk-k">null</span>): boolean {
+  <span class="tk-k">const</span> ys = xs;
+  <span class="tk-k">return</span> (xs ?? missing()).length &gt; <span class="tk-n">0</span> &amp;&amp; (ys ?? missing()).length &gt; <span class="tk-n">1</span>;
+}
+
+<span class="tk-k">type</span> <span class="tk-t">Frames</span> = { <span class="tk-k">readonly</span> starts: number[] | <span class="tk-k">null</span> };
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> member(frames: <span class="tk-t">Frames</span>): boolean {
+  <span class="tk-k">return</span> (frames.starts ?? missing()).length &gt; <span class="tk-n">0</span> &amp;&amp; (frames.starts ?? missing()).length &gt; <span class="tk-n">1</span>;
+}</pre></details></li><li><details><summary><code>coalesce-missing-compound-member</code> <span class="kind positive">positive</span> <span class="was">verified</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">the receiver of <code>missing()</code> is plain and empty</span></summary><pre class="code"><span class="tk-c">// A compound assignment to a member of a checked read written inline,</span>
+<span class="tk-c">// `(x ?? missing()).f -= d` with `missing(): never` (pretext's `createLine`,</span>
+<span class="tk-c">// rich-inline.ts): on the path where `x` is nullish the receiver is the</span>
+<span class="tk-c">// result of `missing()`, which holds no value, so no write is reached there;</span>
+<span class="tk-c">// on the other the member is read and written at the record's field.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> missing(): never {
+  <span class="tk-k">throw</span> <span class="tk-k">new</span> <span class="tk-t">RangeError</span>(<span class="tk-s">&quot;missing value&quot;</span>);
+}
+
+<span class="tk-k">type</span> <span class="tk-t">Fragment</span> = { occupiedWidth: number };
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> trimLast(fragments: (<span class="tk-t">Fragment</span> | <span class="tk-k">undefined</span>)[], rest: number): <span class="tk-k">void</span> {
+  <span class="tk-k">if</span> (rest &lt; <span class="tk-n">0</span> &amp;&amp; fragments.length &gt; <span class="tk-n">0</span>)
+    (fragments[fragments.length - <span class="tk-n">1</span>] ?? missing()).occupiedWidth -= rest;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> widen(fragment: <span class="tk-t">Fragment</span> | <span class="tk-k">undefined</span>, by: number): number {
+  <span class="tk-k">return</span> ((fragment ?? missing()).occupiedWidth += by);
+}</pre></details></li></ul>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">lean-lowering</span> <span class="chip">docs</span> <span class="chip">tests</span></dd><dt>Lean</dt><dd>LoweringExecution.executionReference · PositiveRules.Uninhabited</dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Measured</dt><dd>pretext 8605a4d9, census of rich-inline.ts and gecko-line-breaks.ts with their dependencies at a 300 s stage limit: 45 of 45 functions shallow and deep verified</dd><dt>Tests</dt><dd><span class="test pos">coalesce-missing-and-arm</span></dd></dl>
+<details><summary>4 files changed, 23 insertions(+), 8 deletions(-)</summary><pre class="code"> docs/PROGRAM-TYPING.md                           |  2 +-
+ docs/SOURCE-ELABORATION.md                       |  5 +++--
+ lean/Verification/Source/Lowering/Execution.lean | 12 +++++++-----
+ pipeline/examples/coalesce-missing-and-arm.ts    | 12 ++++++++++++</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+</main></body></html>
