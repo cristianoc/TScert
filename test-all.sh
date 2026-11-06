@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# The checks of `make test`, after its build: the suites below, each a
+# The checks of `make test-checks`, after its build: the suites below, each a
 # `run_test` line with a comment naming what it checks, running no stage, and
 # the controls no pipeline case can make (pipeline/test.mts). The pipeline
-# cases are pipeline/run-cases.mts (`make suite`).
+# cases are pipeline/run-cases.mts (`make test-cases`).
 # Usage: test-all.sh
 set -uo pipefail
 

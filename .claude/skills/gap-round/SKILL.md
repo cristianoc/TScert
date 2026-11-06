@@ -23,7 +23,7 @@ starts the round, and the round runs to the end without asking.
   equivalent form TScert's code takes, with the avoided form recorded. A
   case is a negative case only where its program is unsafe, shown under
   Node.
-- Heavy runs (`make suite`, `make test`, `make census`, `run-cases.mts`
+- Heavy runs (`make test`, `make census`, `run-cases.mts`
   with no pattern) take the lock `<scratch>/heavy.lock`, where `<scratch>`
   is the session's scratchpad. One census runs at a time.
 
@@ -93,7 +93,7 @@ When an agent reports:
 
 After the last merge, run under the lock:
 
-- `make suite` and `make test` on main. Each must pass.
+- `make test` on main. It must pass.
 - `make census`, the verified census.
 
 Compare with the previous census on main:

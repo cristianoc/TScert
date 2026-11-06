@@ -1,6 +1,6 @@
 // The pipeline's controls: the forged documents and claims no case can make,
 // mutations of the verifier, injected tool failures and host-family
-// overrides, each control run by a pool of control processes (`make test`).
+// overrides, each control run by a pool of control processes (`make test-checks`).
 // Every operation a control runs replays from the stage store like any stage
 // (STAGE-STORE.md, "Controls"). The pipeline cases are run-cases.mts's.
 import assert from "node:assert/strict";

@@ -213,7 +213,7 @@ theorem, the reruns and `InstanceImageCheck.general`; with `discovery_complete`,
 
 ## 5. Remaining steps
 
-Each step is a green round (`make test`, `make suite`), measured on the
+Each step is a green round (`make test`), measured on the
 census slices and the width series, with its commit record, and moves the
 owning documents in the same commit. No step changes a wire shape; every
 change of evidence size is reported.

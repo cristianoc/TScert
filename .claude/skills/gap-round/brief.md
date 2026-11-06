@@ -68,9 +68,9 @@ avoidance or a host boundary in SOURCE-REWRITES.md in the same commit.
   `lean/.lake`. Copy the `node_modules` directories from the main checkout
   with `cp -c -R`: `tools/`, the root's, and each `pipeline/*/` one. Then
   run `make build-runner`. Never commit these.
-- **Heavy runs** are serialized across agents. Wrap every `make suite`,
-  every `make test`, every `make census …` and every `run-cases.mts` with
-  no pattern:
+- **Heavy runs** are serialized across agents. Wrap every `make test`,
+  `make test-checks` and `make test-cases`, every `make census …` and every
+  `run-cases.mts` with no pattern:
 
   ```sh
   until mkdir <scratch>/heavy.lock 2>/dev/null; do sleep 20; done; <command>; rmdir <scratch>/heavy.lock
@@ -83,7 +83,7 @@ avoidance or a host boundary in SOURCE-REWRITES.md in the same commit.
   stage store ([the stage store](../../../AGENTS.md#the-stage-store)). Run
   no full census.
 - **Committing:**
-  - `make suite` and `make test` pass before each commit.
+  - `make test` passes before each commit.
   - Each commit carries a record in the format of
     `.claude/skills/review/SKILL.md`, in the words its section "The words
     of a record" states.

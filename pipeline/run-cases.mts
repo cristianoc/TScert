@@ -1,8 +1,8 @@
-// The pipeline cases (`make suite`): each case of the inventory whose file
+// The pipeline cases (`make test-cases`): each case of the inventory whose file
 // name contains a pattern, every case with none, several at once, each
 // against its expected outcome, phase and diagnostic.
 //   node pipeline/run-cases.mts module- generic-rest
-// The controls no case can make are `test.mts`'s (`make test`).
+// The controls no case can make are `test.mts`'s (`make test-checks`).
 import assert from "node:assert/strict";
 import { availableParallelism } from "node:os";
 import { join, resolve } from "node:path";

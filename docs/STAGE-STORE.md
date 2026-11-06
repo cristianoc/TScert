@@ -415,7 +415,7 @@ ordered diagnostics byte for byte. It rests on the compiler's caches being
 correct across snapshots whose answers hold, on query omission and on the
 exact restoration of the base state, a trusted obligation of the front end
 ([trust surface](DESIGN.md#trust-surface)) and no Lean result. The controls
-of `tests/session-reuse.mts`, run by `make test` through the production
+of `tests/session-reuse.mts`, run by `make test-checks` through the production
 adapters with replay disabled, compare each reused parse with the fresh one
 at the same paths:
 
@@ -692,7 +692,7 @@ observations rather than deterministic judgments.
 A control tests the verifier, the producer or the pipeline on
 an input no case makes: a forged or tampered document, a mutation of the
 verifier, an injected tool failure, a host-family override. The controls of
-`pipeline/test.mts` run in `make test`, in a pool of processes. Every
+`pipeline/test.mts` run in `make test-checks`, in a pool of processes. Every
 operation a control runs is a stage invocation of the common mechanism and
 replays from the store like any other: its key binds the executable by
 content, its argument vector, its environment and the bytes of every input
@@ -905,7 +905,7 @@ store exceeds its budget by at most what is published meanwhile. On a store
 of 30,112 items taking 1.8 GB (the suite run from two checkouts), a pass
 removing nothing took 0.3 to 0.5 s, one measuring every item 3.8 s, and one
 removing 19,581 entries, 2,431 snapshots and 4,392 references down to
-0.4 GB took 23 s, most of it the system deleting files; a warm `make suite`
+0.4 GB took 23 s, most of it the system deleting files; a warm `make test-cases`
 took 18 s with the use logs and 18 to 20 s without them. On a copy of the
 shared store (392,759 items, 14.9 GB: 241,707 snapshots, 151,052 entries
 and timeout observations), the first pass, measuring every item, took 392 s; the
