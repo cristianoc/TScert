@@ -82,8 +82,8 @@ var { font-style:italic } .m-op { color:#2c4f7c; font-style:normal } .m-con { co
 .lowering .cond { padding-left:1.5em } .lowering .note { color:var(--muted); font:italic 13px/1.4 var(--body) }
 a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outline-offset:2px }
 @media (max-width:520px) { dl.facts { grid-template-columns:minmax(0,1fr) } .card > header { flex-direction:column } }</style></head><body><main><header><h1>Commit Records</h1><p class="lede">1 commit, rendered from their records.</p></header>
-<section><h2>Branches</h2><ul class="summary"><li><a href="#g-pr-111"><code>4ffa514efc06d6904fec1be8085a0504f4c0a1ad..pr-111</code></a><ul><li>1 commit</li><li>parts: <span class="chip">tests</span></li></ul></li></ul></section>
-<h2 id="g-pr-111"><code>4ffa514efc06d6904fec1be8085a0504f4c0a1ad..pr-111</code></h2><article class="card" id="c-5195f378f"><header><div><div class="sha">5195f378f · Cristiano Calcagno · Nov 05, 21:27</div><h3>Name pretext's rewrites in the headers of the handle, optional-field and navigator cases</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<section><h2>Branches</h2><ul class="summary"><li><a href="#g-pr-111"><code>653854465ba8bcd03e3b7c994886c0477ec28ae0..pr-111</code></a><ul><li>1 commit</li><li>parts: <span class="chip">tests</span></li></ul></li></ul></section>
+<h2 id="g-pr-111"><code>653854465ba8bcd03e3b7c994886c0477ec28ae0..pr-111</code></h2><article class="card" id="c-55c100f86"><header><div><div class="sha">55c100f86 · Cristiano Calcagno · Nov 05, 21:27</div><h3>Name pretext's rewrites in the headers of the handle, optional-field and navigator cases</h3></div><span class="pill neutral">no-behaviour-change</span></header>
 <div class="units"><span>pretext</span><span>src/layout.ts,</span><span>src/measurement.ts#buildEngineProfile</span></div>
 <h4 class="change">Why</h4><div class="prose"><p>Pretext's layout.ts (chenglou/pretext at 0d102a5c, with the rewrites of issue #94) verifies 8 of its 17 functions: five pass a text's handle where the walkers' type adds an optional <code>items</code>, unsafe for an open record (<code>invalid-optional-field-widening</code>), and five assert the branded opaque handle to its record (<code>blocker-pretext-opaque-handle-cast</code>). The owner chose an honest structural handle: pretext's handle type is the record preparation builds, documented as internal, the brand dropped; the text handle states <code>items?: never</code> and the walkers read <code>readonly items?</code>; and measurement.ts reads <code>navigator</code> through <code>{ readonly userAgent?: string }</code> (browsers only). With these rewrites (a patch to pretext, not in this repository) the census verifies all 16 functions of layout.ts and buildEngineProfile. The cases these functions stood for keep their roles, and their headers name the functions they still stand for.</p></div>
 <h4 class="change"><span class="act modified">modified</span>Example</h4><div class="versions"><figure><figcaption>Before</figcaption><pre class="code"><span class="ln del">stands <span class="tk-k">for</span> createLayoutLine, getInternalPrepared, layoutNextLine,</span><span class="ln del">prepareWithSegments and getInternalPreparedRichInline; blocks <span class="tk-n">5</span></span></pre></figure><figure><figcaption>After</figcaption><pre class="code"><span class="ln add">stands <span class="tk-k">for</span> getInternalPreparedRichInline; layout.ts's handle <span class="tk-k">type</span> is its</span><span class="ln add">record and asserts none; blocks <span class="tk-n">1</span></span></pre></figure></div>
@@ -143,10 +143,10 @@ a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outl
     : ((navigator <span class="tk-k">as</span> { userAgent?: string }).userAgent ?? <span class="tk-s">&quot;&quot;</span>);
 }</pre></details></li></ul>
 <dl class="facts"><dt>Parts</dt><dd><span class="chip">tests</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Measured</dt><dd>pretext census by unit, TSCERT_STEP_LIMIT=300, shallow, with the issue #94 rewrites and the layout patch: layout.ts 8 of 17 -&gt; 16 of 16 functions · measurement.ts 40 of 47 -&gt; 41 of 47 (buildEngineProfile)</dd></dl>
-<details><summary>4 files changed, 10 insertions(+), 9 deletions(-)</summary><pre class="code"> pipeline/cases.mts                                      | 4 ++--
- pipeline/examples/blocker-pretext-navigator.ts          | 3 ++-
- pipeline/examples/blocker-pretext-opaque-handle-cast.ts | 8 ++++----
- pipeline/examples/invalid-optional-field-widening.ts    | 4 ++--</pre></details>
+<details><summary>4 files changed, 10 insertions(+), 11 deletions(-)</summary><pre class="code"> pipeline/cases.mts                                      |  4 ++--
+ pipeline/examples/blocker-pretext-navigator.ts          |  3 ++-
+ pipeline/examples/blocker-pretext-opaque-handle-cast.ts | 10 ++++------
+ pipeline/examples/invalid-optional-field-widening.ts    |  4 ++--</pre></details>
 <div class="sha">with Claude Opus 5.5</div>
 </article>
 </main></body></html>
