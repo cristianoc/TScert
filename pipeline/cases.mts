@@ -148,6 +148,7 @@ export const cases: Case[] = [
   positive("blocker-pretext-unary-footprint", "A function building its result with a unary minus, mapped over an array and read in a closure: a unary operator changes no location, so the function's footprint is empty and the mapped array dense."),
   positive("blocker-pretext-construct-union-context", "`new Map()` with no type arguments where `Map<number, number> | null | undefined` is expected: its type arguments are inferred from the arm of the expected union naming the same declaration."),
   positive("blocker-pretext-constant-implication-statements", "A constant holding a comparison of a literal union, tested statements later and inside a loop: its implication reaches each statement's entry and the loop's head."),
+  positive("blocker-pretext-union-arm-optional-literal", "A record literal expected at a union of records, none of whose written fields selects one arm, leaving out an optional field an arm states: it is claimed with its exact keys, which lets it meet that arm."),
   positive("construction-keeps-cells", "A module cell's narrowing kept across a construction at a signature keeping the heap, `new Uint8Array(n)`, as across such a call (`call-keep`)."),
   // Supplied census first refusals; source headers name the functions each case represents.
   { ...positive("blocker-compiler-api-declaration-bindings-map", "a recursive compiler-node visitor calling a captured preserving callback states its normal-return growth footprint, so its surrounding map produces dense number storage"),

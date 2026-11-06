@@ -74,6 +74,15 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
        | Some {indexes=_::_;_} -> Atoms [Exact fields]
        | Some {fields=contract_fields;_}
          when List.exists (fun (f:Semantic.field) -> f.optional) contract_fields -> Atoms [Exact fields]
+       (* Expected at a union of records no field selects one arm of, the
+          literal leaving out an optional field of an arm is claimed with its
+          exact keys too: that bound is what lets it meet that arm. *)
+       | None when (match expected with
+           | Some t ->
+             List.exists (fun (s:shape) -> List.exists (fun (f:Semantic.field) ->
+                 f.optional && not f.host && not (List.mem_assoc f.name fs)) s.fields)
+               (try record_arms declarations [] t with Json.Error _ -> [])
+           | None -> false) -> Atoms [Exact fields]
        | _ -> record fields)
     | Build parts ->
       List.iter (fun (name,(e:expr)) -> if name = None then
