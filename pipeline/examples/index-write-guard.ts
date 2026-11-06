@@ -21,3 +21,10 @@ export function bump(counts: number[], i: number, from: number): void {
     throw new RangeError("index");
   counts[at] = (counts[at] ?? 0) + 1;
 }
+
+// The same facts, each comparison's operands swapped: the mask's test
+// before the length's, which reads the index it states.
+export function setSwapped(xs: number[], k: number, v: number): void {
+  if (k !== (0x7fffffff & k) || xs.length < k) throw new RangeError("index");
+  xs[k] = v;
+}
