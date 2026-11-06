@@ -1,13 +1,11 @@
 // Pretext (github.com/chenglou/pretext at 0d102a5c, src/, census by unit,
 // with the rewrites of issue #94): measurement.ts#readEmojiWidth,
 // measurement.ts#readWidthIn.
-// Refusal: unsupported: missing field body (`readWidthIn`: missing field
-// appendChild).
-// A span measured in the page: `document.body`, `document.createElement`,
-// the element's `style` and `textContent` written, `appendChild` and
-// `removeChild` on a parent, `getBoundingClientRect()`. The reviewed entry
-// for `document` states its root's `lang` alone, and no entry states an
-// element's tree or layout members.
+// Refusal: reject: source expression obligation (the read of `span.style`,
+// which is `undefined` for a span of a non-HTML document).
+// A span measured in the page, in pretext's original form: the element's
+// `style` written with no check. The form the rewrites of issue #94 use
+// checks `style` first and verifies: see `pretext-host-span`.
 export function readWidth(font: string): number {
   const body = document.body as HTMLElement | null;
   if (body === null) return NaN;
