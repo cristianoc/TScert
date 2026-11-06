@@ -795,15 +795,15 @@ it recorded for an inner chain does not denote an outer chain's binding. -/
 
 /-- The answer a test of `origin` has where `origin` reads an immutable
 binding whose slot type in `Δ` answers it one way: `true` where every label
-of it answers `answer`, `false` where none does. The slot type is the
-context the graph checker establishes on every incoming edge. -/
+of it answers `answer`, `false` where none does, with that slot. The slot
+type is the context the graph checker establishes on every incoming edge. -/
 private def knownAnswer (G : PositiveGraphs.NormalGraph Tree) (scope : List (ScopeBinding Tree))
-    (Δ : List (Ty Tree)) (origin : Fragment.Expr) (tag : Tag) (answer : Bool) : Option Bool := do
+    (Δ : List (Ty Tree)) (origin : Fragment.Expr) (tag : Tag) (answer : Bool) : Option (Nat × Bool) := do
   let .var _ name := origin | none
   let (i, .value) ← resolve scope name | none
   let T ← Δ[i]?
-  if decide (Answers G T tag answer) then some true
-  else if decide (Answers G T tag (!answer)) then some false
+  if decide (Answers G T tag answer) then some (i, true)
+  else if decide (Answers G T tag (!answer)) then some (i, false)
   else none
 
 private partial def executionBranches : SourceExecution.Plan → Bool
@@ -1099,10 +1099,20 @@ the one the graph checker computes for the dispatch. -/
         let selected ← arm false A no
         return ← emitAt source (.var 0) (.effect selected) Δ A "expression-dispatch" (scope := scope')
       -- So does a read of an immutable binding whose slot type, the
-      -- context every incoming edge establishes, answers the test.
-      if let some truth := knownAnswer G scope' Δ origin tag answer then
-        let selected ← arm truth A (if truth then yes else no)
-        return ← emitAt source (.var 0) (.effect selected) Δ A "expression-dispatch" (scope := scope')
+      -- context every incoming edge establishes, answers the test. The
+      -- tested value is that binding's: the selected arm holds it from the
+      -- slot, at the slot's type, so it reads it as narrowly as the slot
+      -- states, as `xs ?? f()` does where an earlier `xs ?? f()` on the same
+      -- path narrowed `xs`.
+      if let some (i, truth) := knownAnswer G scope' Δ origin tag answer then
+        let body := if truth then yes else no
+        if let (some destination, .atom _ (.outcome _ outcome)) := (exit, body) then
+          let selected ← destination scope' Δ outcome
+          return ← emitAt source (.var 0) (.effect selected) Δ A "expression-dispatch" (scope := scope')
+        let some S := Δ[i]? | throw "internal execution plan: missing tested slot"
+        let selected ← arm truth S body
+        let fromSlot := (selected.mapping.getD (List.range Δ.length)).map fun j => if j == 0 then i else j
+        return ← emitAt source (.var 0) (.effect ⟨selected.label,some fromSlot⟩) Δ A "expression-dispatch" (scope := scope')
       let yes ← arm true Y yes
       let no ← arm false N no
       if correlated then
