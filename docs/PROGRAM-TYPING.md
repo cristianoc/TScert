@@ -1437,6 +1437,34 @@ The cases `index-write-guard` and `index-write-guard-loop` verify;
 `invalid-index-write-call-shrinks`, `invalid-index-write-pop` and
 `invalid-index-write-captured` are refused, each run under Node.
 
+### Linear facts
+
+A **linear fact** over integer variables is $`c\cdot x\le d`$ or
+$`c\cdot x\ne d`$, with $`c\cdot x=\sum_i c_i x_i`$, integer coefficients
+$`c_i`$ and an integer bound $`d`$ (`Linear.Fact`). A **linear certificate**
+is a list of steps, each concluding one fact from the facts held before it,
+its conclusion held by the later steps:
+
+```math
+\frac{a_j\cdot x\le b_j\ \ (j\in J)\qquad \lambda_j\in\mathbb{N}\qquad g\ge 1\qquad
+      \sum_j\lambda_j a_j=g\,c\qquad \Bigl\lfloor\frac{\sum_j\lambda_j b_j}{g}\Bigr\rfloor\le d}
+     {c\cdot x\le d}\ \textsf{combine}
+\qquad
+\frac{c\cdot x\le d\qquad c\cdot x\ne d}
+     {c\cdot x\le d-1}\ \textsf{strict}
+```
+
+The equality of linear forms is decided on their normal forms, sorted by
+variable with one nonzero coefficient each (`Linear.normalize`). With
+$`g=1`$, `combine` is a nonnegative combination; with $`g>1`$ it rounds once,
+valid because $`c\cdot x`$ is an integer at an integer valuation. A strict
+comparison of integers is $`x-y\le -1`$, an equality two facts. Proved:
+`Linear.check_sound`, every fact an accepted certificate concludes holds of
+every integer valuation meeting the facts it starts from. The steps are
+incomplete for the integers: an implication that no chain of them derives
+is refused. Each variable is a slot holding a safe integer
+([safe integers](SEMANTICS.md#operational-language)).
+
 ### A literal with spreads
 
 A store literal evaluates its parts left to right, and a spread of a ready
