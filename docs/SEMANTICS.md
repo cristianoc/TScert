@@ -278,6 +278,34 @@ values (`Tests/ExecutionModelTests.lean`), and the order of two doubles that
 denote naturals is proved against Lean's float model
 (`IndexNumbers.doubleOrder_denotes`).
 
+**Safe integers.** A double denotes the **safe integer** $`i`$,
+$`|i|\le 2^{53}-1`$, JavaScript's `Number.isSafeInteger`, where its bits are
+`bitsOfNat` of $`|i|`$, the sign bit set for a negative $`i`$; both zeros
+denote $`0`$:
+
+```math
+\mathrm{SafeInt}(b,i)\iff |i|<2^{53}\ \land\ \bigl((i\ge 0\land b=\mathrm{bitsOfNat}\,|i|)\lor(i\le 0\land b=\mathrm{bitsOfNat}\,|i|+2^{63})\bigr)
+```
+
+`safeIntOfBits` decides it from the bits: the candidate magnitude its fields
+give, kept where encoding it again gives the bits (proved:
+`SafeIntegers.safeIntOfBits_sound`). Against Lean's float model, sums,
+differences and comparisons of safe integers are exact where the
+mathematical result is a safe integer:
+
+```math
+\frac{\mathrm{SafeInt}(x,i)\qquad\mathrm{SafeInt}(y,j)\qquad |i\pm j|<2^{53}}
+     {\mathrm{SafeInt}(\mathrm{arithBits}_{\pm}(x,y),\ i\pm j)}
+\qquad
+\frac{\mathrm{SafeInt}(x,i)\qquad\mathrm{SafeInt}(y,j)}
+     {\mathrm{doubleOrder}(x,y)=\mathrm{compare}(i,j)}
+```
+
+(proved: `SafeIntegers.add_safe`, `sub_safe`, `doubleOrder_safe`). The
+premise on the result is needed: `(2 ** 53 - 1) + 2` is `2 ** 53`, which is
+no safe integer, so no sum fact states it (a witness of
+`SafeIntegers.lean`, as Node computes it).
+
 **Strings.** A string owns its `length` and its index properties, and
 `lenOf` and `elemAt` read them as they read a store's:
 
