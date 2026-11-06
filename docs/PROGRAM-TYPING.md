@@ -3020,7 +3020,13 @@ reached by the condition's `false` edge alone and sees its refinement
 (`never-call-narrowing`, `compiler-api-never-guard`). The claim is the
 call's, checked at the callee's signature: a call of a function returning a
 value, claimed at the empty type, is refused (the forged `never-call` claims
-of `pipeline/test.mts`).
+of `pipeline/test.mts`). A condition whose
+execution plan excludes an answer, its tested Boolean a constant on every path
+(`if (true)`, `while (true)`, the head of `for (;;)` and of `do`,
+`true || x`), leaves that answer's edge with the tested value at the empty
+type, and the producer proposes that edge's target the same state no value
+meets, slots and cell contents at the empty type (`decided-logical-condition`,
+`invalid-loop-exit-unassigned`).
 
 The `branchBind` dispatch uses this common checker and environment
 theorem with a Boolean observation of the actual pushed value. Its all-budget

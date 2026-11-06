@@ -52,8 +52,6 @@ type 'output callbacks = {
 
 let unsupported = Json.unsupported
 
-(* An environment no value meets: each slot at the empty type, which a join
-   drops and Lean checks by `vacuous-edge`. *)
 (* What a condition's false answer states of names (PROGRAM-TYPING.md,
    "Writes at a checked index"): `a || b` false, both false; `(k & m) !== k`
    false, with `m` a number literal on either side of `&` and either operand
@@ -82,11 +80,6 @@ let guard_bounds (cond:Source.expr) =
     | AtMost (xs,k) :: rest when List.mem k seen -> (xs,k) :: scan seen rest
     | AtMost _ :: rest -> scan seen rest in
   scan [] (false_facts cond)
-let unreachable env = List.map (fun (n,b) -> if is_field n then n,b else match b with
-  | Value _ -> n,Value (Atoms [])
-  | Local (contract,_) -> n,Local (contract,Atoms [])
-  | Storage _ -> n,b) env
-
 let statements callbacks flow_graph register_following owner_span env0 ss =
     let open Flow in
     let spans = List.map (fun (s:Source.stmt) -> s.span) ss in
@@ -221,15 +214,6 @@ let statements callbacks flow_graph register_following owner_span env0 ss =
             | _ -> Json.fail "a branch flow operation names another statement" in
           ignore (callbacks.expression env cond);
           let held,failed=callbacks.condition env cond in
-          (* A constant test takes one arm only: the other is left an
-             environment no value meets, as Lean finds the observation the
-             tested `true` or `false` rules out (`BranchRefinement.impossible`).
-             A `do` loop's and a `for (;;)` loop's head test `true`, so their
-             exits are only the `break`s and the test after the body. *)
-          let held,failed=match cond.node with
-            | Literal (LBool true) -> held,unreachable failed
-            | Literal (LBool false) -> unreachable held,failed
-            | _ -> held,failed in
           (* `(k & m) !== k || k > xs.length` fails only where `k` is an
              index at most `xs.length`: the statement after it is claimed
              with that bound, which Lean checks on every edge into it. *)
