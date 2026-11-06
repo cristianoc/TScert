@@ -112,6 +112,8 @@ theorem indexed_sound {k : Knowledge} {a : Nat} {ρ h} (hc : indexed k a = true)
     exact hat
   | length _ _ => rw [hfact] at hf; cases hf
   | bound _ _ => rw [hfact] at hf; cases hf
+  | int _ => rw [hfact] at hf; cases hf
+  | linear _ => rw [hfact] at hf; cases hf
 
 /-- The arrays whose store's length a slot of `n`'s class holds, by unconditional ats. -/
 def lengthsOf (k : Knowledge) (n : Nat) : List Nat :=
@@ -141,6 +143,8 @@ theorem lengthsOf_sound {k : Knowledge} {n x : Nat} {ρ h} (hx : x ∈ lengthsOf
       · cases hm
     | index _ => rw [hfact] at hm; cases hm
     | bound _ _ => rw [hfact] at hm; cases hm
+    | int _ => rw [hfact] at hm; cases hm
+    | linear _ => rw [hfact] at hm; cases hm
   · cases hm
 
 /-- The arrays a slot of `s`'s class was read from as their store: read links
@@ -490,6 +494,8 @@ theorem bounded_sound {k : Knowledge} {a i : Nat} {ρ h} (hc : bounded k a i = t
     exact hat
   | index _ => rw [hfact] at hf; cases hf
   | length _ _ => rw [hfact] at hf; cases hf
+  | int _ => rw [hfact] at hf; cases hf
+  | linear _ => rw [hfact] at hf; cases hf
 
 /-- The slots of a write at a run-time index: `x.[] := x.[]⟦k ↦ v⟧`. -/
 def boundedSlots : Tm → Option (Nat × Nat × Nat)

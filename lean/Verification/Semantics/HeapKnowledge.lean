@@ -1,4 +1,6 @@
 import Verification.Semantics.HeapSeparation
+import Verification.Semantics.SafeIntegers
+import Verification.Semantics.Linear
 import Verification.Programs.BranchRefinement
 
 /-! Primitive heap and immutable-value facts for expression postconditions. Facts
@@ -16,16 +18,36 @@ structure ElemAtom where
   negated : Bool := false
   deriving DecidableEq, Repr, Hashable
 
+/-- The safe integer a value is, where it is one (`SafeIntegers.safeIntOfBits`). -/
+def intValue : Val → Option Int
+  | .num b => SafeIntegers.safeIntOfBits b
+  | _ => none
+
+/-- The integers an environment's slots hold, `0` where a slot holds no safe
+integer: the valuation the linear facts are read at. -/
+def valuation (ρ : Env) (s : Nat) : Int := (intValue (ρ s)).getD 0
+
+theorem intValue_safe {v : Val} {i : Int} (h : intValue v = some i) : ∃ b, v = .num b ∧ SafeIntegers.SafeInt b i := by
+  cases v <;> simp only [intValue, reduceCtorEq] at h
+  exact ⟨_, rfl, SafeIntegers.safeIntOfBits_sound h⟩
+
+theorem intValue_num {b : UInt64} {i : Int} (h : SafeIntegers.SafeInt b i) : intValue (.num b) = some i :=
+  SafeIntegers.safeIntOfBits_complete h
+
 /-- An index fact (DESIGN of the guarded write, PROGRAM-TYPING.md, "Writes at
 a checked index"): the slot `k` holds a number that is an array index
 (`index`); the slot `n` holds the length of the store the array in slot `x`
 holds (`length`); the slot `k` holds an array index at most that length
-(`bound`). The first reads no heap; the others read the location of the
-array's store field. -/
+(`bound`); the slot `k` holds a safe integer (`int`); the slots of a linear
+fact hold safe integers meeting it (`linear`, PROGRAM-TYPING.md, "Linear
+facts"). `index`, `int` and `linear` read no heap; the others read the
+location of the array's store field. -/
 inductive IndexFact where
   | index (k : Nat)
   | length (x n : Nat)
   | bound (x k : Nat)
+  | int (k : Nat)
+  | linear (F : Linear.Fact)
   deriving DecidableEq, Repr, Hashable
 
 namespace IndexFact
@@ -35,18 +57,19 @@ def slots : IndexFact → List Nat
   | .index k => [k]
   | .length x n => [x, n]
   | .bound x k => [x, k]
-
-/-- The fact with each slot renamed. -/
-def map (f : Nat → Nat) : IndexFact → IndexFact
-  | .index k => .index (f k)
-  | .length x n => .length (f x) (f n)
-  | .bound x k => .bound (f x) (f k)
+  | .int k => [k]
+  | .linear F => F.vars
 
 /-- The fact with each slot renamed by a partial map, where it maps every slot. -/
 def mapM (f : Nat → Option Nat) : IndexFact → Option IndexFact
   | .index k => (f k).map .index
   | .length x n => do pure (.length (← f x) (← f n))
   | .bound x k => do pure (.bound (← f x) (← f k))
+  | .int k => (f k).map .int
+  | .linear F => (F.mapVars f).map .linear
+
+/-- The fact with each slot renamed. -/
+def map (f : Nat → Nat) (F : IndexFact) : IndexFact := (F.mapM (some ∘ f)).getD F
 
 def HoldsAt : IndexFact → Env → Heap → Prop
   | .index k, ρ, _ => ∃ b i, ρ k = .num b ∧ indexOfBits b = some i
@@ -54,12 +77,8 @@ def HoldsAt : IndexFact → Env → Heap → Prop
       ρ n = .num (bitsOfNat ls.length)
   | .bound x k, ρ, h => ∃ s ls b i, Footprints.storeOf (ρ x) = some s ∧ h[s]? = some (.arr ls) ∧
       ρ k = .num b ∧ indexOfBits b = some i ∧ i ≤ ls.length
-
-/-- A fact reads its slots' values alone. -/
-theorem holdsAt_map {F : IndexFact} {f : Nat → Nat} {ρ ρ' : Env} {h : Heap}
-    (hf : ∀ s ∈ F.slots, ρ' (f s) = ρ s) : (F.map f).HoldsAt ρ' h ↔ F.HoldsAt ρ h := by
-  cases F <;> simp only [slots, List.mem_cons, List.not_mem_nil, or_false, forall_eq_or_imp, forall_eq] at hf <;>
-    simp only [map, HoldsAt, hf]
+  | .int k, ρ, _ => (intValue (ρ k)).isSome
+  | .linear F, ρ, _ => (∀ s ∈ F.vars, (intValue (ρ s)).isSome) ∧ F.Holds (valuation ρ)
 
 theorem holdsAt_mapM {F F' : IndexFact} {f : Nat → Option Nat} {ρ ρ' : Env} {h : Heap}
     (hm : F.mapM f = some F') (hf : ∀ s ∈ F.slots, ∀ t, f s = some t → ρ' t = ρ s) :
@@ -77,6 +96,39 @@ theorem holdsAt_mapM {F F' : IndexFact} {f : Nat → Option Nat} {ρ ρ' : Env} 
     simp only [mapM, Option.bind_eq_bind, Option.bind_eq_some_iff, Option.pure_def, Option.some.injEq] at hm
     obtain ⟨x', hx, k', hk, rfl⟩ := hm
     simp only [HoldsAt, hf x (by simp [slots]) x' hx, hf k (by simp [slots]) k' hk]
+  | int k =>
+    simp only [mapM, Option.map_eq_some_iff] at hm
+    obtain ⟨t, ht, rfl⟩ := hm
+    simp only [HoldsAt, hf k (by simp [slots]) t ht]
+  | linear G =>
+    simp only [mapM, Option.map_eq_some_iff] at hm
+    obtain ⟨G', hG, rfl⟩ := hm
+    simp only [HoldsAt]
+    have hv : ∀ x ∈ G.vars, ∀ y, f x = some y → valuation ρ' y = valuation ρ x := by
+      intro x hx y hy; simp only [valuation, hf x hx y hy]
+    rw [Linear.Fact.holds_mapVars hG hv]
+    constructor
+    · rintro ⟨hi, hh⟩
+      refine ⟨fun x hx => ?_, hh⟩
+      obtain ⟨y, hy, hfy⟩ := Linear.Fact.mapVars_vars_fwd hG x hx
+      rw [← hf x hx y hfy]; exact hi y hy
+    · rintro ⟨hi, hh⟩
+      refine ⟨fun y hy => ?_, hh⟩
+      obtain ⟨x, hx, hfx⟩ := Linear.Fact.mapVars_vars hG y hy
+      rw [hf x hx y hfx]; exact hi x hx
+
+/-- A fact reads its slots' values alone. -/
+theorem holdsAt_map {F : IndexFact} {f : Nat → Nat} {ρ ρ' : Env} {h : Heap}
+    (hf : ∀ s ∈ F.slots, ρ' (f s) = ρ s) : (F.map f).HoldsAt ρ' h ↔ F.HoldsAt ρ h := by
+  obtain ⟨G, hG⟩ : ∃ G, F.mapM (some ∘ f) = some G := by
+    cases F with
+    | index k => exact ⟨_, rfl⟩
+    | length x n => exact ⟨_, rfl⟩
+    | bound x k => exact ⟨_, rfl⟩
+    | int k => exact ⟨_, rfl⟩
+    | linear G => obtain ⟨G', h⟩ := Linear.Fact.mapVars_some f G; exact ⟨.linear G', by simp [mapM, h]⟩
+  simp only [map, hG, Option.getD_some]
+  exact holdsAt_mapM hG (fun s hs t ht => by cases ht; exact hf s hs)
 
 /-- A heap extension keeps a fact: the store lies in the old heap. -/
 theorem holdsAt_extend {F : IndexFact} {ρ : Env} {h : Heap} (vs : List Val) (hF : F.HoldsAt ρ h) :
@@ -90,6 +142,8 @@ theorem holdsAt_extend {F : IndexFact} {ρ : Env} {h : Heap} (vs : List Val) (hF
     obtain ⟨s, ls, b, i, hs, hl, hk, hi, hle⟩ := hF
     exact ⟨s, ls, b, i, hs, by rw [List.getElem?_append_left (List.getElem?_eq_some_iff.mp hl).1]; exact hl,
       hk, hi, hle⟩
+  | int k => exact hF
+  | linear G => exact hF
 
 end IndexFact
 
@@ -317,14 +371,93 @@ def indexFollows (M : Nat → List Nat) (m : PointClaims.Mapping) (s t : IndexAt
     | some c, some c' => (M (PointClaims.slot m c')).contains c && s.negated == t.negated
     | some _, none => false
 
+/-- The linear facts the unconditional atoms state. -/
+def linearFacts (as : List IndexAtom) : List Linear.Fact :=
+  as.filterMap fun a => if a.cond.isNone then match a.fact with
+    | .linear F => some F
+    | _ => none else none
+
+/-- Whether an unconditional atom states that the slot `s` holds a safe integer. -/
+def intSlot (as : List IndexAtom) (s : Nat) : Bool :=
+  as.any fun a => a.cond.isNone && match a.fact with
+    | .int k => k == s
+    | .linear F => F.vars.contains s
+    | _ => false
+
+theorem linearFacts_holds {as : List IndexAtom} {ρ h} (he : IndexHolds as ρ h) :
+    ∀ F ∈ linearFacts as, F.Holds (valuation ρ) := by
+  intro F hF
+  obtain ⟨a, ha, hm⟩ := List.mem_filterMap.mp hF
+  split at hm
+  · rename_i hn
+    have hat := he a ha fun b hb => by rw [Option.isNone_iff_eq_none.mp hn] at hb; cases hb
+    cases hf : a.fact with
+    | linear G => rw [hf] at hm hat; cases hm; exact hat.2
+    | index _ | length _ _ | bound _ _ | int _ => rw [hf] at hm; cases hm
+  · cases hm
+
+theorem intSlot_sound {as : List IndexAtom} {ρ h s} (he : IndexHolds as ρ h) (hs : intSlot as s = true) :
+    (intValue (ρ s)).isSome := by
+  obtain ⟨a, ha, hm⟩ := List.any_eq_true.mp hs
+  simp only [Bool.and_eq_true, Option.isNone_iff_eq_none] at hm
+  obtain ⟨hn, hf⟩ := hm
+  have hat := he a ha fun b hb => by rw [hn] at hb; cases hb
+  cases hfa : a.fact with
+  | int k => rw [hfa] at hf hat; simp only [beq_iff_eq] at hf; subst hf; exact hat
+  | linear G => rw [hfa] at hf hat; exact hat.1 s (List.contains_iff_mem.mp hf)
+  | index _ | length _ _ | bound _ _ => rw [hfa] at hf; cases hf
+
+/-- Whether a target atom follows from the source's linear facts: an
+unconditional `int` atom of a slot the source states holds a safe integer, or
+an unconditional linear atom the source's linear facts entail
+(`Linear.entails`), each target slot renamed to the source slot the edge maps
+it to. -/
+def linearFollows (m : PointClaims.Mapping) (a : List IndexAtom) (t : IndexAtom) : Bool :=
+  t.cond.isNone && match t.fact with
+  | .int k => intSlot a (PointClaims.slot m k)
+  | .linear F => match F.mapVars (fun y => some (PointClaims.slot m y)) with
+    | some F' => F'.vars.all (intSlot a) && Linear.entails (linearFacts a) F'
+    | none => false
+  | _ => false
+
+theorem linearFollows_sound {m : PointClaims.Mapping} {a : List IndexAtom} {t : IndexAtom} {ρ h}
+    (hf : linearFollows m a t = true) (ha : IndexHolds a ρ h) :
+    t.fact.HoldsAt (PointClaims.mapEnv m ρ) h := by
+  simp only [linearFollows, Bool.and_eq_true] at hf
+  obtain ⟨-, hf⟩ := hf
+  cases ht : t.fact with
+  | int k =>
+    rw [ht] at hf
+    simp only at hf
+    exact (intSlot_sound ha hf : (intValue (ρ (PointClaims.slot m k))).isSome)
+  | linear F =>
+    rw [ht] at hf
+    simp only at hf
+    split at hf
+    · rename_i F' hF'
+      simp only [Bool.and_eq_true, List.all_eq_true] at hf
+      obtain ⟨hv, he⟩ := hf
+      have hv' : ∀ x ∈ F.vars, ∀ y, (fun y => some (PointClaims.slot m y)) x = some y →
+          valuation ρ y = valuation (PointClaims.mapEnv m ρ) x := by
+        intro x _ y hy; cases hy; rfl
+      refine ⟨fun x hx => ?_, (Linear.Fact.holds_mapVars hF' hv').mp
+        (Linear.entails_sound he (linearFacts_holds ha))⟩
+      obtain ⟨y, hy, hxy⟩ := Linear.Fact.mapVars_vars_fwd hF' x hx
+      cases hxy
+      exact (intSlot_sound ha (hv _ hy) : (intValue (ρ (PointClaims.slot m x))).isSome)
+    · cases hf
+  | index _ | length _ _ | bound _ _ => rw [ht] at hf; cases hf
+
 def indicesCheckBy (M : Nat → List Nat) (a b : List IndexAtom) (m : PointClaims.Mapping) : Bool :=
-  b.all fun t => a.any fun s => indexFollows M m s t
+  b.all fun t => a.any (fun s => indexFollows M m s t) || linearFollows m a t
 
 theorem indicesCheckBy_sound {M : Nat → List Nat} {a b : List IndexAtom} {m ρ h}
     (hM : ∀ x, ∀ y ∈ M x, ρ y = ρ x) (hc : indicesCheckBy M a b m = true) (ha : IndexHolds a ρ h) :
     IndexHolds b (PointClaims.mapEnv m ρ) h := by
   intro t ht hcond
-  obtain ⟨s, hs, hf⟩ := List.any_eq_true.mp (List.all_eq_true.mp hc t ht)
+  rcases Bool.or_eq_true_iff.mp (List.all_eq_true.mp hc t ht) with hc' | hlin
+  case inr => exact linearFollows_sound hlin ha
+  obtain ⟨s, hs, hf⟩ := List.any_eq_true.mp hc'
   simp only [indexFollows, Bool.and_eq_true] at hf
   obtain ⟨hfact, hcd⟩ := hf
   have hsc : ∀ c, s.cond = some c → tagHolds .truthy (ρ c) = !s.negated := by

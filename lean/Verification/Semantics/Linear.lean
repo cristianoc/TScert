@@ -233,6 +233,234 @@ theorem check_sound {v : Nat → Int} :
       · exact hk G hG
       · simp only [List.mem_singleton] at hG; subst hG; exact Step.conclude_sound hk hc
 
+/-! ## Renaming -/
+
+/-- A form with each variable renamed by a partial map, where it maps every one. -/
+def Form.mapVars (f : Nat → Option Nat) : Form → Option Form
+  | [] => some []
+  | (x, c) :: t => do
+    let y ← f x
+    let t' ← Form.mapVars f t
+    pure ((y, c) :: t')
+
+theorem Form.eval_mapVars {f : Nat → Option Nat} {v v' : Nat → Int} :
+    ∀ {F F' : Form}, Form.mapVars f F = some F' → (∀ x ∈ F.map (·.1), ∀ y, f x = some y → v' y = v x) →
+      Form.eval v' F' = Form.eval v F := by
+  intro F
+  induction F with
+  | nil => intro F' h _; simp only [Form.mapVars, Option.some.injEq] at h; subst h; rfl
+  | cons p t ih =>
+    intro F' h hv
+    obtain ⟨x, c⟩ := p
+    simp only [Form.mapVars, Option.bind_eq_bind, Option.bind_eq_some_iff, Option.pure_def,
+      Option.some.injEq] at h
+    obtain ⟨y, hy, t', ht, rfl⟩ := h
+    simp only [Form.eval]
+    rw [ih ht (fun x hx y hy => hv x (by simp [hx]) y hy), hv x (by simp) y hy]
+
+theorem Form.mapVars_vars {f : Nat → Option Nat} :
+    ∀ {F F' : Form}, Form.mapVars f F = some F' → ∀ y ∈ F'.map (·.1), ∃ x ∈ F.map (·.1), f x = some y := by
+  intro F
+  induction F with
+  | nil => intro F' h; simp only [Form.mapVars, Option.some.injEq] at h; subst h; simp
+  | cons p t ih =>
+    intro F' h y hy
+    obtain ⟨x, c⟩ := p
+    simp only [Form.mapVars, Option.bind_eq_bind, Option.bind_eq_some_iff, Option.pure_def,
+      Option.some.injEq] at h
+    obtain ⟨y', hy', t', ht, rfl⟩ := h
+    simp only [List.map_cons, List.mem_cons] at hy
+    rcases hy with rfl | hy
+    · exact ⟨x, by simp, hy'⟩
+    · obtain ⟨x', hx', hf⟩ := ih ht y hy
+      exact ⟨x', by simp [hx'], hf⟩
+
+theorem Form.mapVars_vars_fwd {f : Nat → Option Nat} :
+    ∀ {F F' : Form}, Form.mapVars f F = some F' → ∀ x ∈ F.map (·.1), ∃ y ∈ F'.map (·.1), f x = some y := by
+  intro F
+  induction F with
+  | nil => intro F' _ x hx; simp at hx
+  | cons p t ih =>
+    intro F' h x hx
+    obtain ⟨x0, c⟩ := p
+    simp only [Form.mapVars, Option.bind_eq_bind, Option.bind_eq_some_iff, Option.pure_def,
+      Option.some.injEq] at h
+    obtain ⟨y', hy', t', ht, rfl⟩ := h
+    simp only [List.map_cons, List.mem_cons] at hx
+    rcases hx with rfl | hx
+    · exact ⟨y', by simp, hy'⟩
+    · obtain ⟨y, hy, hf⟩ := ih ht x hx
+      exact ⟨y, by simp [hy], hf⟩
+
+theorem Form.mapVars_some (f : Nat → Nat) : ∀ F : Form, ∃ F', Form.mapVars (some ∘ f) F = some F'
+  | [] => ⟨[], rfl⟩
+  | (x, c) :: t => by
+    obtain ⟨t', ht⟩ := Form.mapVars_some f t
+    exact ⟨(f x, c) :: t', by simp [Form.mapVars, ht]⟩
+
+def Fact.mapVars (f : Nat → Option Nat) : Fact → Option Fact
+  | .le F d => (Form.mapVars f F).map (.le · d)
+  | .ne F d => (Form.mapVars f F).map (.ne · d)
+
+theorem Fact.holds_mapVars {f : Nat → Option Nat} {v v' : Nat → Int} {F F' : Fact}
+    (h : F.mapVars f = some F') (hv : ∀ x ∈ F.vars, ∀ y, f x = some y → v' y = v x) :
+    F'.Holds v' ↔ F.Holds v := by
+  cases F with
+  | le G d =>
+    simp only [Fact.mapVars, Option.map_eq_some_iff] at h
+    obtain ⟨G', hG, rfl⟩ := h
+    simp only [Fact.Holds, Form.eval_mapVars hG hv]
+  | ne G d =>
+    simp only [Fact.mapVars, Option.map_eq_some_iff] at h
+    obtain ⟨G', hG, rfl⟩ := h
+    simp only [Fact.Holds, Form.eval_mapVars hG hv]
+
+theorem Fact.mapVars_vars_fwd {f : Nat → Option Nat} {F F' : Fact} (h : F.mapVars f = some F') :
+    ∀ x ∈ F.vars, ∃ y ∈ F'.vars, f x = some y := by
+  cases F with
+  | le G d =>
+    simp only [Fact.mapVars, Option.map_eq_some_iff] at h
+    obtain ⟨G', hG, rfl⟩ := h
+    exact Form.mapVars_vars_fwd hG
+  | ne G d =>
+    simp only [Fact.mapVars, Option.map_eq_some_iff] at h
+    obtain ⟨G', hG, rfl⟩ := h
+    exact Form.mapVars_vars_fwd hG
+
+theorem Fact.mapVars_some (f : Nat → Nat) (F : Fact) : ∃ F', F.mapVars (some ∘ f) = some F' := by
+  cases F with
+  | le G d => obtain ⟨G', h⟩ := Form.mapVars_some f G; exact ⟨.le G' d, by simp [Fact.mapVars, h]⟩
+  | ne G d => obtain ⟨G', h⟩ := Form.mapVars_some f G; exact ⟨.ne G' d, by simp [Fact.mapVars, h]⟩
+
+theorem Fact.mapVars_vars {f : Nat → Option Nat} {F F' : Fact} (h : F.mapVars f = some F') :
+    ∀ y ∈ F'.vars, ∃ x ∈ F.vars, f x = some y := by
+  cases F with
+  | le G d =>
+    simp only [Fact.mapVars, Option.map_eq_some_iff] at h
+    obtain ⟨G', hG, rfl⟩ := h
+    exact Form.mapVars_vars hG
+  | ne G d =>
+    simp only [Fact.mapVars, Option.map_eq_some_iff] at h
+    obtain ⟨G', hG, rfl⟩ := h
+    exact Form.mapVars_vars hG
+
+/-! ## Finding a certificate
+
+A search proposes the steps; `check` decides them, so the search needs no
+proof. It tightens each held `≤` fact whose coefficients share a divisor `g`
+(a rounding step), turns a `≤` fact strict where a `≠` fact of the same form
+and bound is held, then eliminates variables from the held `≤` facts and the
+goal's negation (Fourier–Motzkin), tracking the multipliers of each row, until
+a row with no variable and a negative bound is found. Its multipliers are the
+goal's combination step, with the negation's multiplier as the divisor. -/
+
+/-- A row of the elimination: `form ≤ bound`, as `Σⱼ λⱼ·(fact j) + μ·(¬goal)`. -/
+structure Row where
+  form : Form
+  bound : Int
+  mult : List (Nat × Nat)
+  goal : Nat
+  deriving Inhabited
+
+def Form.coeff (F : Form) (x : Nat) : Int := ((F.find? (·.1 == x)).map (·.2)).getD 0
+
+def addMult : List (Nat × Nat) → List (Nat × Nat) → List (Nat × Nat)
+  | [], m => m
+  | (j, l) :: rest, m =>
+    match m.find? (·.1 == j) with
+    | some (_, l') => addMult rest ((j, l + l') :: m.filter (·.1 != j))
+    | none => addMult rest ((j, l) :: m)
+
+def Row.scale (k : Nat) (r : Row) : Row :=
+  { form := r.form.scale k, bound := k * r.bound, mult := r.mult.map fun (j, l) => (j, k * l), goal := k * r.goal }
+
+def Row.add (r s : Row) : Row :=
+  { form := normalize (r.form ++ s.form), bound := r.bound + s.bound, mult := addMult r.mult s.mult,
+    goal := r.goal + s.goal }
+
+/-- Eliminates `x` from the rows: those without it, and each pair of opposite
+signs combined to cancel it. -/
+def eliminate (x : Nat) (rows : List Row) : List Row :=
+  let pos := rows.filter fun r => 0 < r.form.coeff x
+  let neg := rows.filter fun r => r.form.coeff x < 0
+  let zero := rows.filter fun r => r.form.coeff x = 0
+  zero ++ pos.flatMap fun p => neg.map fun n =>
+    (p.scale (n.form.coeff x).natAbs).add (n.scale (p.form.coeff x).natAbs)
+
+def gcdForm (F : Form) : Nat := F.foldl (fun g (_, c) => Nat.gcd g c.natAbs) 0
+
+/-- The tightening and strict steps of the held facts, each concluding a fact
+appended after them. -/
+def preSteps (known : List Fact) : List Step × List Fact := Id.run do
+  let mut steps : List Step := []
+  let mut facts := known
+  for j in List.range known.length do
+    match known[j]? with
+    | some (.le F d) =>
+      let g := gcdForm (normalize F)
+      if g > 1 then
+        let c := (normalize F).map fun (x, a) => (x, a / (g : Int))
+        steps := steps ++ [.combine [(j, 1)] g c (d / (g : Int))]
+        facts := facts ++ [.le c (d / (g : Int))]
+      for i in List.range known.length do
+        match known[i]? with
+        | some (.ne F' d') =>
+          if F = F' ∧ d = d' then
+            steps := steps ++ [.strict j i]
+            facts := facts ++ [.le F (d - 1)]
+        | _ => pure ()
+    | _ => pure ()
+  return (steps, facts)
+
+/-- The variables of the rows, each once. -/
+def rowVars (rows : List Row) : List Nat :=
+  (rows.flatMap fun r => r.form.map (·.1)).eraseDups
+
+/-- The steps establishing `c·x ≤ d` from the held facts, where the search
+finds them, within `limit` rows at every stage. -/
+def prove (known : List Fact) (c : Form) (d : Int) (limit : Nat := 400) : Option (List Step) := Id.run do
+  let (pre, facts) := preSteps known
+  let rows0 : List Row := (List.range facts.length).filterMap fun j =>
+    match (facts[j]? : Option Fact) with
+    | some (.le F b) => some { form := normalize F, bound := b, mult := [(j, 1)], goal := 0 }
+    | _ => none
+  let negGoal : Row := { form := normalize (c.scale (-1)), bound := -d - 1, mult := [], goal := 1 }
+  let mut rows := negGoal :: rows0
+  for x in rowVars rows do
+    rows := eliminate x rows
+    if rows.length > limit then return none
+  match rows.find? fun r => r.form.isEmpty && r.bound < 0 && 0 < r.goal with
+  | some r => return some (pre ++ [.combine r.mult r.goal c d])
+  | none => return none
+
+/-- Whether the held facts entail `goal`, by a certificate `check` accepts. -/
+def entails (known : List Fact) (goal : Fact) : Bool :=
+  known.contains goal ||
+  match goal with
+  | .le c d => match prove known c d with
+    | some steps => match check known steps with
+      | some out => out.contains goal
+      | none => false
+    | none => false
+  | .ne _ _ => false
+
+/-- **Entailment is sound.** -/
+theorem entails_sound {v : Nat → Int} {known : List Fact} {goal : Fact} (h : entails known goal = true)
+    (hk : ∀ F ∈ known, F.Holds v) : goal.Holds v := by
+  unfold entails at h
+  rcases Bool.or_eq_true_iff.mp h with h | h
+  · exact hk goal (List.contains_iff_mem.mp h)
+  · cases goal with
+    | ne _ _ => cases h
+    | le c d =>
+      simp only at h
+      split at h
+      · split at h
+        · rename_i out hc
+          exact check_sound hk hc _ (List.contains_iff_mem.mp h)
+        · cases h
+      · cases h
+
 /-! ## Witnesses
 
 `sumPairs` of decision 6: from `2j - 2n ≤ -1` (the loop's `2 * j < pairs.length`
@@ -248,5 +476,14 @@ a rounding that would need a divisor the premise's form is not a multiple of. -/
 -- `atEnd`: from `i + 1 - count ≤ 0` and `i + 1 ≠ count` (as `i - count ≠ -1`), `i + 1 - count ≤ -1`.
 #guard (check [.le [(0, 1), (1, -1)] (-1), .ne [(0, 1), (1, -1)] (-1)] [.strict 0 1]) =
   some [.le [(0, 1), (1, -1)] (-1), .ne [(0, 1), (1, -1)] (-1), .le [(0, 1), (1, -1)] (-2)]
+
+-- `entails` finds the same chain: `2j - 2n ≤ -1` gives `2j + 1 - 2n ≤ -1`, and
+-- `i + 1 - count ≤ 0` with `i + 1 ≠ count` gives `i + 2 - count ≤ 0`; `j ≤ n` gives
+-- no `j ≤ n - 1`.
+#guard entails [.le [(0, 2), (1, -2)] (-1)] (.le [(0, 2), (1, -2)] (-2))
+#guard entails [.le [(0, 1), (1, -1)] (-1), .ne [(0, 1), (1, -1)] (-1)] (.le [(0, 1), (1, -1)] (-2))
+#guard !entails [.le [(0, 1), (1, -1)] 0] (.le [(0, 1), (1, -1)] (-1))
+-- `0 ≤ i`, `i < n`, `n ≤ 2^32 - 1` give `i ≤ 2^32 - 2`.
+#guard entails [.le [(0, -1)] 0, .le [(0, 1), (1, -1)] (-1), .le [(1, 1)] 4294967295] (.le [(0, 1)] 4294967294)
 
 end Verification.Linear
