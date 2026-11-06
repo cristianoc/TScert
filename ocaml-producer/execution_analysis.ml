@@ -272,13 +272,12 @@ open S
 
   let effects env (e:expr) = run_execution env (execution e)
   (* What a condition leaves where it holds and where it fails, each path
-     refined in evaluation order; where no path reaches an answer, its
-     syntactic refinement. *)
+     refined in evaluation order; an answer no path reaches is `unreachable`. *)
   let condition env (e:expr) =
     let t,f,all=outcomes ~refine:true env (execution e) in
     let after=Option.value all ~default:env in
-    (match t with Some t -> t | None -> branch after e true),
-    (match f with Some f -> f | None -> branch after e false)
+    (match t with Some t -> t | None -> unreachable after),
+    (match f with Some f -> f | None -> unreachable after)
 
   module Roots = Hashtbl.Make(struct
     type t = Analysis_capabilities.root

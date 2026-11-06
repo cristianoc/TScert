@@ -59,6 +59,17 @@ let observed_contents contract t =
         | _ -> true) xs)
     | _ -> contract
 let holding contract t = Storage (contract,observed_contents contract t)
+(* The state of a point no run reaches: each binding at the empty type, a
+   cell's contents included, and each field entry kept. A join drops a state
+   with a binding at the empty type, so a cell's contents on such a path stay
+   out of what follows; Lean checks the edge by `vacuous-edge`, which reads
+   the unsatisfiable context of the edge's source (a tested Boolean refined
+   to the answer it rules out, a call's result at the empty type), whatever
+   the target's claims state. *)
+let unreachable env = List.map (fun (n,b) -> if is_field n then n,b else match b with
+  | Value _ -> n,Value (Atoms [])
+  | Local (contract,_) -> n,Local (contract,Atoms [])
+  | Storage (contract,_) -> n,Storage (contract,Atoms [])) env
 
 (* A branch refines an immutable value, and a cell's known contents where
    the refinement is a supported current-content predicate. *)
