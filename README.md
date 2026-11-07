@@ -47,9 +47,37 @@ obligation: The available claim for xs[n - 1] is undefined | string. This return
 ```
 
 With the result type stated honestly, `string | undefined`, TScert accepts it.
-Both versions are pipeline cases:
-[`invalid-array-last-after-pop.ts`](pipeline/examples/invalid-array-last-after-pop.ts)
-and `afterPop` in [`array-last-element.ts`](pipeline/examples/array-last-element.ts).
+
+TypeScript's `noUncheckedIndexedAccess` refuses `stale` too, by typing every
+index read `string | undefined`. It then refuses this loop as well, whose read
+the condition `i < xs.length` keeps in bounds; TScert verifies it:
+
+```ts
+export function total(xs: string[]): number {
+  let n = 0;
+  for (let i = 0; i < xs.length; i++) n += xs[i].length; // flag: possibly 'undefined'
+  return n;
+}
+```
+
+TypeScript accepts the next function under every flag, since it relates arrays
+covariantly. The `push` puts a number in `xs`, and under Node `toUpperCase`
+throws a `TypeError`. TScert refuses the assignment, as a writable array is
+invariant in its element type:
+
+```ts
+export function shout(xs: string[]): string[] {
+  const ys: (string | number)[] = xs;
+  ys.push(1);
+  return xs.map((x) => x.toUpperCase());
+}
+```
+
+Each is a pipeline case:
+[`invalid-array-last-after-pop.ts`](pipeline/examples/invalid-array-last-after-pop.ts),
+`afterPop` in [`array-last-element.ts`](pipeline/examples/array-last-element.ts),
+[`array-index-loop.ts`](pipeline/examples/array-index-loop.ts) and
+[`invalid-array-covariance.ts`](pipeline/examples/invalid-array-covariance.ts).
 
 ## How it works
 
@@ -87,9 +115,53 @@ The [trust surface](docs/DESIGN.md#trust-surface) lists every assumption, and
 [what "verified" means](docs/DESIGN.md#what-verified-means) states the guarantee
 exactly.
 
+## Questions
+
+**TypeScript is unsound. How can a checker of it be sound?** TScert has its own
+semantics of the code: a calculus with a semantic model, in which each operation
+has its JavaScript meaning. A function TypeScript accepts only by an unsound
+rule, such as covariant arrays, has no proof there, and TScert refuses it. The
+open question is how much ordinary code it accepts.
+
+**Does a stricter `tsconfig` give the same guarantee?** No configuration is
+sound. [An example](#an-example) shows a flag that refuses a safe loop along
+with the unsafe read, and a function that every flag accepts and that throws
+under Node. Bivariant method parameters are another unsound rule no flag closes
+([`invalid-set-covariant.ts`](pipeline/examples/invalid-set-covariant.ts)).
+
+**What does a proof look like?** A certificate, checked by a program proved
+sound once. The front end lowers each function to a program graph, a producer
+proposes a type for each program point, a search derives those claims from the
+calculus's typing rules, and the checker validates the derivation
+([How it works](#how-it-works)). Nobody writes a proof by hand: a person or an
+agent runs TScert as they run `tsc`.
+
+**What does the proof assume about JavaScript?** No object is a proxy, standard
+built-in prototypes keep their standard methods, values at a declared type are
+plain data objects whose fields are data properties, and library and host
+functions meet their reviewed contracts. The
+[trust surface](docs/DESIGN.md#trust-surface) states each assumption and what
+relies on it.
+
+**What blocks the remaining functions, and is any of it out of reach in
+principle?** Nothing found so far is out of reach. Each refusal is a
+pattern the calculus has no rule for yet, a library function with no reviewed
+model, or code whose invariant is left implicit. The first is closed by a rule
+with its soundness proof, the second by a model audited against the real
+implementation, the third by rewriting the code to state the invariant. What
+remains open is cost: a rule's complexity weighed against how much code uses the
+pattern, and some patterns are better rewritten than supported. The
+[gap priorities](docs/deep-dives/gap-priorities) rank the refusals of TScert's
+own front end by the code they hold back.
+
+**Is it a replacement for TypeScript?** It checks ordinary TypeScript source,
+read through the TypeScript compiler's own API, and the code it accepts compiles
+and runs as before.
+
 ## Status
 
-TScert is a research project, unfinished by design. Its benchmark is its own
+TScert is a research prototype, built to illustrate ideas and unfinished by
+design. Its benchmark is its own
 front end: at [v0.94](https://github.com/cristianoc/TScert/releases/tag/v0.94),
 643 of the 686 functions of `tools/` verify, each checked in its own unit
 with what it calls read at its stated signature (census of `ae20a6c6`,
