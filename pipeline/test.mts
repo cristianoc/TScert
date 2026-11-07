@@ -269,13 +269,14 @@ control(async (): Promise<void> => {
   // statement, is refused at that entry where evidence is searched: a write
   // of the array field a path length names, a write through a parameter
   // that may hold the object a path value names, a `pop` of a parameter that
-  // may be the counted array.
+  // may be the counted array, and a `pop` in a `for...of` body.
   const value = (name: string, path: string[] = []) => ({ name, path, term: "value" as const });
   const length = (name: string, path: string[] = []) => ({ name, path, term: "length" as const });
   for (const [name, fnName, read, statement, index, array] of [
     ["invalid-facts-across-field-write-replaced", "counted", "o.data[i]", "return o.data[i]!", value("i"), length("o", ["data"])],
     ["invalid-facts-across-field-write-alias", "aliased", "xs[b.i]", "return xs[b.i]!", value("b", ["i"]), length("xs")],
     ["invalid-facts-across-alias-pop", "drained", "xs[i]", "s = s + xs[i]!", value("i"), length("xs")],
+    ["invalid-facts-across-for-of-pop", "nestedPop", "units[i]", "s = s + units[i]!", value("i"), length("units")],
   ] as const) {
     const artifacts = run(name);
     const source = readFileSync(sourceKey(artifacts), "utf8");
@@ -292,7 +293,7 @@ control(async (): Promise<void> => {
     assert.equal(searched.status, 1, `${tag}: ${searched.stdout}${searched.stderr}`);
     assert.match(searched.stdout + searched.stderr, /does not establish the claims/);
   }
-  process.stdout.write("facts across writes: a bound a field write, an aliased write or a pop takes away, forged at the read's entry, each refused\n");
+  process.stdout.write("facts across writes: a bound a field write, an aliased write, a pop or a for...of body's pop takes away, forged at the read's entry, each refused\n");
 });
 
 control(async (): Promise<void> => {

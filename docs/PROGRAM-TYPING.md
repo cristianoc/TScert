@@ -1656,7 +1656,7 @@ proved: `holdsAt_kept`):
      {F\ \text{holds in}\ h'}\ \textsf{fact-kept}
 ```
 
-Three steps state their change:
+Four steps state their change:
 
 - **A field write** $`x.f=y`$: its location held a member of a type the
   receiver's type states for $`f`$ (`fieldOperand_typed`), so $`\chi`$ is
@@ -1679,6 +1679,12 @@ Three steps state their change:
   (`Changes.ofClosed`, proved: `ofClosed_holds`; `PromiseCalls.effectKept`,
   added by `Checker.ensuringCalls`). `{value: any, store: keep}`, a `Map`'s
   `set`, keeps every length.
+- **A call changing only its receiver's own locations** (`call-own`):
+  $`\chi`$ alters everything, and $`\mathrm{first}(z,g)`$ is
+  $`\mathrm{apart}(x.\star,z.g)`$ (`PromiseCalls.ownKept`). So an array
+  iterator's step keeps the length of each array its allocation was
+  separated from.
+
 **A comparison with a length.** A strict comparison of a safe integer $`k`$
 with a slot $`n`$ a length atom names states, on the answer giving $`k<n`$,
 the facts of $`k`$ alone, which survive dropping $`n`$ (`IndexWrites.lengthAtoms`,
@@ -1781,7 +1787,9 @@ writing none, is a field's, an element's below the length of an array of
 primitives or a call's at signatures excepting no receiver location keeps
 those [fact-kept](#linear-facts) keeps, the field's classes read
 off the receiver's record type, its first location never assumed
-(`Linear_facts.write_changes`); every other statement forgets them; a merge
+(`Linear_facts.write_changes`); an array iterator's start keeps every fact,
+and its step those naming only values and the lengths of the arrays in scope
+where it started; every other statement forgets them; a merge
 keeps those both paths hold, and the other path's state where one path is
 one no value reaches, the earlier state's where neither is. A linear fact's binding that an assignment
 rebinds or that leaves scope is eliminated as Lean eliminates a dropped
@@ -1865,7 +1873,8 @@ and a loop to `e !== n`), `derived-index-loop` (an index reassigned from one
 derived from it), `call-keeps-heap-loop` (a typed array's bound across a
 call of a function whose loop writes only its locals), `facts-across-writes`
 (bounds across field writes and an element write), `method-calls-keep-facts`
-(a `WeakMap`'s `get`, a `Map`'s construction and `set`), and
+(a `WeakMap`'s `get`, a `Map`'s construction and `set`),
+`for-of-keeps-counter-facts` (an array iterator's step) and
 `typed-array-reads-below-length` (a
 `Uint8Array`, a `Float64Array`, an `Int32Array` written and read back, and a
 `@requires` over a view's length). Negative, each run under Node:
@@ -1881,7 +1890,8 @@ array), `invalid-facts-across-field-write-replaced` (a write of the array
 field a path's length names), `invalid-facts-across-field-write-alias` (a
 write through a parameter that may be the object a path names),
 `invalid-facts-across-alias-pop` (a `pop` of a parameter that may be the
-counted array), `invalid-typed-array-read-at-length` (a loop to `i <= b.length`) and
+counted array), `invalid-facts-across-for-of-pop` (a `pop` in a `for...of`
+body), `invalid-typed-array-read-at-length` (a loop to `i <= b.length`) and
 `invalid-typed-array-read-other-length` (a read of `b` below another view's
 length). Forged controls in `pipeline/test.mts`: each array negative's read
 claimed at the element type, with and without a strict bound claimed at its

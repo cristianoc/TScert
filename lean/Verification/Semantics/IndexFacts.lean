@@ -557,6 +557,9 @@ theorem join_alters_left {a b : Changes} {v : Val} (h : a.alters v = true) : (a.
 theorem join_alters_right {a b : Changes} {v : Val} (h : b.alters v = true) : (a.join b).alters v = true := by
   cases v <;> simp_all [Changes.join, Changes.alters]
 
+theorem top_holds (h h' : Heap) : top.Holds h h' :=
+  ⟨fun _ v _ ha => (by rw [top_alters] at ha; cases ha), fun hs => (by simp [top] at hs)⟩
+
 /-- The change a closed footprint allows: `grow` on a value is `keep`. -/
 def ofClosed (Φ : Footprints.Closed) : Changes :=
   ⟨Φ.value == .any, Φ.value == .any, if Φ.store == .keep then .keep else .any⟩

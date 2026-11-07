@@ -491,8 +491,8 @@ value) reads the locations its terms read, each holding an object, a store
 or a number. A closed footprint keeps the locations of the classes it keeps,
 `grow` on a value being `keep` (`HeapKnowledge.Changes.ofClosed`, proved:
 `ofClosed_holds`), so a call at a signature within `{value: any, store: keep}`
-keeps every length; a field write and an element write below the length state
-their own change. The
+keeps every length; a field write, an element write below the length and a
+call changing only its receiver's own locations state their own change. The
 rule and its proofs are [facts across a heap change](PROGRAM-TYPING.md#linear-facts).
 
 ## The rule users see

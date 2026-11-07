@@ -175,6 +175,11 @@ let statements callbacks flow_graph register_following owner_span env0 ss =
     let early_bindings=Array.fold_left (fun acc (node:Flow.node) -> match node.action with
       | Flow.Early (bs,_) -> List.map (fun (span,name,_,_) -> span,name) bs @ acc
       | _ -> acc) [] graph.nodes in
+    (* The array bindings in scope where each iterator starts, by the
+       iterator's binding: Lean's array iterator is allocated apart from
+       their stores, and its step changes only its own locations
+       (`call-own`), so their lengths' facts survive the step. *)
+    let iterator_arrays : (string, string list) Hashtbl.t = Hashtbl.create 4 in
     let transfer (node:Flow.node) state =
       let saved_metadata=capture env0 in
       let edges,output=callbacks.with_path_metadata saved_metadata.metadata state.metadata (fun () ->
@@ -315,6 +320,30 @@ let statements callbacks flow_graph register_following owner_span env0 ss =
           let s = source span in
           [with_facts e (Linear_facts.statement ~array:(callbacks.array_binding env) ~bounds:bounds0 env facts0 s)
             (Linear_facts.statement_bounds ~facts:facts0 env bounds0 s)]
+        | Flow.IteratorStart (span,b,_), [e] ->
+          (* `%Iterate%` of an array binding allocates its iterator and keeps
+             the heap (`call-fresh`); any other iterable keeps the facts
+             reading no heap. *)
+          let array_iterable = match (source span).statement with
+            | ForOf (_,_,_,{node=Id x;_},_) -> Linear_facts.value_binding env x && callbacks.array_binding env x []
+            | _ -> false in
+          let arrays = List.filter_map (fun (n,b) -> match b with
+            | Value _ | Local _ when not (is_fact n) && not (is_bound n) && callbacks.array_binding env n [] -> Some n
+            | _ -> None) env in
+          if array_iterable then Hashtbl.replace iterator_arrays b.name arrays else Hashtbl.remove iterator_arrays b.name;
+          let fs = if array_iterable then facts0 else List.filter (fun f -> not (Linear_facts.has_heap_term f)) facts0 in
+          [with_facts e (Linear_facts.forget b.name fs) (if array_iterable then bounds0 else [])]
+        | Flow.IteratorStep (_,b,element,_,_), [y;n] ->
+          (* The step of an array's iterator changes only the iterator's own
+             locations: the lengths of the arrays older than it are kept,
+             every other heap-reading fact is not. *)
+          let arrays = Option.value ~default:[] (Hashtbl.find_opt iterator_arrays b.name) in
+          let kept_term t = let r,path,kind = Linear_facts.term_parts t in
+            not (Linear_facts.reads_heap t) || (kind = Linear_facts.Length_term && path = [] && List.mem r arrays) in
+          let fs = List.filter (fun ((t,_) : Linear_facts.fact) -> List.for_all (fun (n,_) -> kept_term n) t) facts0 in
+          let fs = Linear_facts.forget element.name fs in
+          let bs = List.filter (fun (a,i,_) -> List.mem a arrays && i <> element.name) bounds0 in
+          [with_facts y fs bs; with_facts n fs bs]
         | Flow.Branch (span,_,_), [y;n] ->
           let s = source span in
           (match s.statement with
