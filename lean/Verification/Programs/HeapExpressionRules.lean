@@ -712,6 +712,12 @@ def linksField (k : Knowledge) (i y : Nat) (fld : PropKey) : Bool :=
   k.links.any fun g => (HeapLinks.aliases k.links i).contains g.cell && g.value == y &&
     !g.alias && g.field == fld
 
+/-- A linked read's output: a copy of the linked value, whose links the copy
+restates of the result, with what the knowledge states of paths through the
+read field restated of the result (`HeapKnowledge.readAtoms`, the read
+bridge), as a read the link does not give states. -/
+def linkedOutput (k : Knowledge) (y : Nat) : Knowledge := HeapKnowledge.withReadAtoms (copy k y)
+
 /-- **A linked read.** Where a read link says the object in `i` holds the
 value of `y` at its field, the read gives that value, which has `y`'s type. -/
 theorem linkedRead_sound {G : NormalGraph ι} {Γ k i y fld B A ρ n W h}
@@ -719,7 +725,7 @@ theorem linkedRead_sound {G : NormalGraph ι} {Γ k i y fld B A ρ n W h}
     (hsub : FamLe (meaning G B) (meaning G A))
     (he : EnvOk G Γ ρ n W) (hk : HeapKnowledge.Holds k ρ h) (hw : WorldAdm W) (hh : HeapOk n W h) :
     SafePost (excOf G) (meaning G A)
-      (fun h' v => HeapKnowledge.Holds (copy k y) (push v ρ) h') n W h (.readAt fld (ρ i)) := by
+      (fun h' v => HeapKnowledge.Holds (linkedOutput k y) (push v ρ) h') n W h (.readAt fld (ρ i)) := by
   obtain ⟨g,hg,hm⟩ := List.any_eq_true.mp hl
   simp only [Bool.and_eq_true, beq_iff_eq, Bool.not_eq_true', List.contains_iff_mem] at hm
   obtain ⟨⟨⟨hal,hv⟩,ha⟩,hf⟩ := hm
@@ -741,7 +747,8 @@ theorem linkedRead_sound {G : NormalGraph ι} {Γ k i y fld B A ρ n W h}
     rw [ho]
     exact .inr ⟨trunc n (Nat.le_succ n) W, h, ρ y, WExt_refl _, WorldAdm_trunc _ hw, hr.step,
       HeapOk_trunc n W h hh,
-      HeapObservations.value hval (hsub _ _ _ ((meaning_adm G B).down n W _ hty)) (copy_holds hk)⟩
+      HeapObservations.value hval (hsub _ _ _ ((meaning_adm G B).down n W _ hty))
+        (HeapKnowledge.withReadAtoms_holds (copy_holds hk))⟩
 
 /-- Ordinary calls and arbitrary expressions retain immutable snapshots, but no
 heap observation without a specific proved effect rule. -/
@@ -1697,7 +1704,7 @@ frame. Subtype comparisons retain unfinished work through the step validation. -
     match readSlot j.term, j.context[y]? with
     | some (fld, i'), some B =>
       (CheckResult.ofBool (decide (i' = i ∧ linksField k i y fld = true))).bind fun _ =>
-        (ProgramCertificates.checkSubtypeUsing G images B j.type p).map fun _ => copy k y
+        (ProgramCertificates.checkSubtypeUsing G images B j.type p).map fun _ => linkedOutput k y
     | _, _ => failure
   | .allocated e =>
     match allocationSlots j.term with
@@ -1796,7 +1803,7 @@ theorem checkStepUsing_eq [DecidableEq ι] (G : NormalGraph ι) (images : Instan
     match readSlot j.term, j.context[y]? with
     | some (fld, i'), some B =>
       if i' = i ∧ linksField k i y fld = true ∧ PositiveCertificates.checkUsing G images B j.type p = true
-      then some (copy k y) else none
+      then some (linkedOutput k y) else none
     | _, _ => none
   | .allocated e =>
     match allocationSlots j.term with

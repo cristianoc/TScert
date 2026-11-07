@@ -207,6 +207,7 @@ let statements callbacks flow_graph register_following owner_span env0 ss =
         | _ -> false in
       Linear_facts.current_bounds := (if typed_with_bounds then bounds0 else []);
       Linear_facts.current_facts := (if typed_with_bounds then facts0 else []);
+      Linear_facts.current_gfacts := (if typed_with_bounds then guarded0 else []);
       let next id env = id,capture (scope graph.nodes.(id).scope env) in
       let infer_return span = match (source span).statement with
         | Return e -> callbacks.return_expression env e
@@ -263,6 +264,7 @@ let statements callbacks flow_graph register_following owner_span env0 ss =
             then failed @ [bound_key array index,Value top] else failed) failed (guard_bounds cond) in
           Linear_facts.current_bounds := [];
           Linear_facts.current_facts := [];
+          Linear_facts.current_gfacts := [];
           [next yes held;next no failed]
         | Flow.Return span ->
 
@@ -301,6 +303,7 @@ let statements callbacks flow_graph register_following owner_span env0 ss =
         | _ -> false in
       Linear_facts.current_bounds := [];
       Linear_facts.current_facts := [];
+      Linear_facts.current_gfacts := [];
       (* Each normal edge's linear facts and bounds, by the node's action. *)
       let edges =
         (* A cell (a binding a closure assigns, or an early one) holds no

@@ -364,6 +364,8 @@ let statement_heap_free env (s : stmt) = match s.statement with
 let current_bounds : (string * string * bool) list ref = ref []
 (* The linear facts holding there, alike. *)
 let current_facts : fact list ref = ref []
+(* The guarded facts holding there, alike. *)
+let current_gfacts : gfact list ref = ref []
 
 (* What a statement's one heap write may change, by what a location held
    before it (Lean's `HeapKnowledge.Changes`): an object, a number, an array
@@ -801,19 +803,6 @@ let widen (previous : fact list) (current : fact list) =
     | Some d' -> d <= d'
     | None -> false) (tighten current)
 
-(* `f ()` with the facts of a call stating a precondition (`current_facts`)
-   extended by what the answer `yes` of the test `c` states: an arm of
-   `c ? a : b`. A proposal: Lean promotes the test's facts where it observes
-   its answer. *)
-let with_test env (c : expr) yes f =
-  let saved = !current_facts in
-  if saved = [] then f () else begin
-    let array = !array_path env in
-    let t,fl = comparison ~array env saved c in
-    current_facts := saved @ (if yes then t else fl);
-    Fun.protect ~finally:(fun () -> current_facts := saved) f
-  end
-
 (* Guarded facts across a step (PROGRAM-TYPING.md, "Guarded clauses"), as
    Lean keeps them: a step writing no heap keeps each; one writing it keeps
    those whose guards read slots alone and whose fact the step keeps
@@ -873,6 +862,23 @@ let geliminate exclusions (gs : gfact list) : fact list * gfact list =
     | _ -> None) gs) gs exclusions in
   List.filter_map (fun ((guards,f) : gfact) -> if guards = [] then Some f else None) gs,
   List.sort_uniq compare (List.filter (fun ((guards,_) : gfact) -> guards <> []) gs)
+
+(* `f ()` with the facts of a call stating a precondition (`current_facts`)
+   extended by what the answer `yes` of the test `c` states, and by the
+   bodies of the guarded facts (`current_gfacts`) whose guards that answer
+   excludes (`geliminate`): an arm of `c ? a : b`. A proposal: Lean
+   promotes the test's facts, and frees the guards (`unguardIndices`),
+   where it observes its answer. *)
+let with_test env (c : expr) yes f =
+  let saved = !current_facts and gsaved = !current_gfacts in
+  if saved = [] && gsaved = [] then f () else begin
+    let array = !array_path env in
+    let t,fl = comparison ~array env saved c in
+    let freed,gs = geliminate (excluded env c yes) gsaved in
+    current_facts := saved @ (if yes then t else fl) @ freed;
+    current_gfacts := gs;
+    Fun.protect ~finally:(fun () -> current_facts := saved; current_gfacts := gsaved) f
+  end
 
 (* What an answer of `a && b` (`a || b`) that `a` alone may give states,
    where `a`'s other answer excludes one tag of a path (`x !== null`): on

@@ -1564,7 +1564,9 @@ it defined (`bridgedDefined`), and a bound or safe-integer target atom is read
 alike (`lengthBoundVia`). *The read*: a field read restates each linear atom
 naming a term rooted at the receiver's class, its path starting with the read
 field, of the read's slot (`readAtoms`, proved: `readAtoms_holds`), so the
-read value of `cursor.itemIndex` is a safe integer an operand may be. *A
+read value of `cursor.itemIndex` is a safe integer an operand may be; a read a
+current read link answers, the linked slot's value copied, restates them alike
+(`HeapExpressionRules.linkedOutput`, proved in `linkedRead_sound`). *A
 dropped slot*: before a slot is eliminated, at a step's output or an edge's
 projection, each linear fact or length atom naming a term rooted at it is
 restated rooted at a kept slot the reads reach (`restateReads`, proved:
@@ -2356,7 +2358,10 @@ read link, optional or not, gives as one (`readsClass`, proved:
 So `const { contexts } = prepared; if (contexts !== null) … contexts[i]!`
 reads below the length the invariant states: the destructuring's read link
 restates the guard of `prepared.contexts` as one of `contexts`, and the
-dispatch's failed `null` test frees the body.
+dispatch's failed `null` test frees the body. A conditional's arm reads it
+alike: in `items.f === null ? 0 : items.f[i]!` the test's read link answers
+the arm's read of `items.f`, which restates the freed fact of the read's
+value ([the read bridge](#linear-facts)).
 
 **Introduction.** A guarded target atom, unconditional, on an edge, at a
 call's precondition or at a return, is renamed into the source's slots and
@@ -2417,7 +2422,8 @@ through the absent key (`readBridge`, proved).
 linear facts, each a pseudo-binding (`gfact_key`): from a precondition and a
 call's result facts; restated at a path's read and a destructuring; kept by a
 heap change where its guards read slots alone and the change keeps its fact;
-a test's answer excluding a guard's tag adds its body (`geliminate`); `a &&
+a test's answer excluding a guard's tag adds its body (`geliminate`), at a
+statement's edges and in a conditional's arm (`with_test`); `a &&
 b`'s `false` answer, where `a` tests a path against one tag, states `b`'s
 answer guarded by that tag (`gtest`); a conditional with a `null` or
 `undefined` arm states the other arm's restated guarded facts. Entry claims
@@ -2435,10 +2441,12 @@ and is kept by no heap change.
 `discretionaryHyphenContexts`: two builders, a destructured walker,
 `returnsFromUnfitHyphen`'s shape, a walker testing the path, two callers) and
 `guarded-invariant-optional` (pretext's `items?.hyphenWidths` in
-`walkPreparedComplexLines`); negative, each run under Node,
-`invalid-guarded-invariant-short` (a builder returning untested contexts,
-refused at its return) and `invalid-guarded-invariant-other-field` (the
-null test of another field, refused at the read); forged controls: the guard
+`walkPreparedComplexLines`) and `guarded-conditional-arm` (pretext's
+`getItemTabAdvance`, each read in a conditional's arm); negative, each run
+under Node, `invalid-guarded-invariant-short` (a builder returning untested
+contexts, refused at its return), `invalid-guarded-invariant-other-field`
+(the null test of another field, refused at the read) and
+`invalid-guarded-conditional-other-field` (alike, in a conditional); forged controls: the guard
 removed from a claimed fact, and a guard naming another field, each refused
 at its entry.
 
@@ -5122,7 +5130,7 @@ It computes a guaranteed output, not an assumed postcondition:
 | Ordinary typed read                  | Preserve facts and record read links to the receiver and witnessed aliases, retaining its plain or callable descriptor; through a key a record may lack, optional links. No prior current-content fact is needed. Its result has the supplied type. |
 | Observed read                        | Preserve facts and links; record the result's primitive predicate and its current read relationship. That set must fit the requested ordinary result type.                                                                               |
 | Sliced read (`slicedRead`)           | A read of a location one of whose facts answers a tag $`\tau`$ with $`q`$ (a nullish exclusion answers its test `false`, a tag atom is its answer): ordinary read evidence at the location's contract $`C`$, whose refinement by that answer is within the requested type (`ObservedSub`, as a branch edge checks a refinement). As an ordinary typed read otherwise. |
-| Linked read (`linkedRead`)           | The rule [read-linked](HOST-FAMILIES.md#linked-reads): a read of a field one of whose read links, from the receiver's slot or a slot an alias link equates with it, names the slot holding what the field holds: the read gives that slot's value, at its type below the claim (`checkUsing`); the output is that slot's copy. [Witness edges](#witness-edges) check both the slot's type and its receiver-and-field link when carrying it into a target. |
+| Linked read (`linkedRead`)           | The rule [read-linked](HOST-FAMILIES.md#linked-reads): a read of a field one of whose read links, from the receiver's slot or a slot an alias link equates with it, names the slot holding what the field holds: the read gives that slot's value, at its type below the claim (`checkUsing`); the output is that slot's copy, with what the knowledge states of paths through the field restated of it, as a typed read's (`linkedOutput`). [Witness edges](#witness-edges) check both the slot's type and its receiver-and-field link when carrying it into a target. |
 | Known immutable value                | Check the requested primitive type against a proved slot fact or the slot's ordinary primitive type.                                                                                                                                     |
 | Allocation                           | Check ordinary creation evidence and scope for either descriptor, preserve old facts, add the fresh bag's initial contents where a checked value slot's are known, and one separation fact: its locations apart from every record slot's contract fields. Closure code is not executed. A merge of two slots is an allocation too: old facts preserved, its locations separated likewise. So is an array literal's store of value slots, whose element locations lie past the heap's end: old facts preserved (`store_alloc_sound`). |
 | Write                                | Check ordinary write evidence (no old-content premise), discard old cell facts but those a separation fact separates from the written location, record new contents for the receiver and its witnessed aliases where the value is a known primitive, or its supported nullish exclusion, and preserve immutable facts and slot equalities. Read links are discarded. |
