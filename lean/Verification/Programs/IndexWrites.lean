@@ -805,6 +805,150 @@ theorem linearAtoms_holds [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty �
     · exact none_case
   | _ => simp only [linearAtoms]; exact none_case
 
+/-! ## A comparison with a length
+
+A strict comparison of a safe integer `k` with a slot `n` holding the length of
+an array `x`'s store states, on the answer giving `k < n`, the facts of `k`
+alone that survive the length slot: `k ≤ 2^32 - 2`, and, where the knowledge
+entails `0 ≤ k`, `bound(x, k)`. -/
+
+/-- For a strict relational operator, whether the index is the left operand
+and the answer on which it is below the other. -/
+def strictAnswer : Arith → Option (Bool × Bool)
+  | .lt => some (true, true)
+  | .ge => some (true, false)
+  | .gt => some (false, true)
+  | .le => some (false, false)
+  | _ => none
+
+theorem strictAnswer_sound {op : Arith} {left q : Bool} (h : strictAnswer op = some (left, q)) (i L : Int) :
+    relationHolds op (some (if left then compare i L else compare L i)) = q → i - L ≤ -1 := by
+  intro hr
+  have ha := answer_sound op (if left then i else L) (if left then L else i)
+  cases op <;> simp only [strictAnswer, Option.some.injEq, Prod.mk.injEq, reduceCtorEq] at h <;>
+    obtain ⟨rfl, rfl⟩ := h <;> simp only [if_true, Bool.false_eq_true, if_false] at hr ha <;>
+    rw [hr] at ha <;> simp only [answerHolds] at ha <;> omega
+
+/-- The atoms of `i < n` with `n` a length, conditional on the answer `q` of
+the result slot 0. -/
+def lengthPair (k : Knowledge) (i n : Nat) (q : Bool) : List IndexAtom :=
+  match lengthsOf k n with
+  | [] => []
+  | xs => ⟨.linear (.le [(i + 1, 1)] (maxArrayLength - 1)), some 0, !q⟩ ::
+      (if Linear.entails (linearFacts k.indices) (.le [(i, -1)] 0) then
+        xs.map fun x => ⟨.bound (x + 1) (i + 1), some 0, !q⟩ else [])
+
+def lengthAtoms (k : Knowledge) (Γ : List (Ty ι)) : Tm → List IndexAtom
+  | .arith op (.var a) (.var b) =>
+    if a < Γ.length ∧ b < Γ.length then
+      match strictAnswer op with
+      | some (true, q) => if intSlot k.indices a then lengthPair k a b q else []
+      | some (false, q) => if intSlot k.indices b then lengthPair k b a q else []
+      | none => []
+    else []
+  | _ => []
+
+theorem lengthPair_holds {k : Knowledge} {i n : Nat} {q : Bool} {ρ h} {u : Val} {j : Int}
+    (hk : Holds k ρ h) (hj : valuation ρ i = j)
+    (below : ∀ (ls : List (Option Nat)), ρ n = .num (bitsOfNat ls.length) →
+      ls.length ≤ maxArrayLength → tagHolds .truthy u = q → j - ls.length ≤ -1)
+    (hb : ∃ bj, ρ i = .num bj ∧ SafeIntegers.SafeInt bj j) :
+    IndexHolds (lengthPair k i n q) (push u ρ) h := by
+  unfold lengthPair
+  split
+  · exact indexHolds_nil _ _
+  · rename_i xs hxs
+    obtain ⟨bj, hbj, hsafe⟩ := hb
+    have hlin := linearFacts_holds hk.2.2.2.2.2
+    have hm : ((maxArrayLength : Nat) : Int) = 4294967295 := rfl
+    intro atom hat hc
+    have hq' : atom.cond = some 0 → (atom.negated = !q) → tagHolds .truthy u = q := by
+      intro h0 hneg
+      have := hc 0 h0; simp only [push, hneg] at this; cases q <;> simpa using this
+    rcases List.mem_cons.mp hat with rfl | hat
+    · have hq := hq' rfl rfl
+      -- `i ≤ 2^32 - 2`, from any length the other operand holds
+      obtain ⟨x, hx⟩ : ∃ x, x ∈ lengthsOf k n := by
+        cases hl : lengthsOf k n with
+        | nil => exact absurd hl hxs
+        | cons x _ => exact ⟨x, by simp⟩
+      obtain ⟨_, ls, -, -, hn, hmax⟩ := lengthsOf_sound hx hk
+      have hlt := below ls hn hmax hq
+      have hi : intValue (push u ρ (i + 1)) = some j := by simp [push, hbj, intValue_num hsafe]
+      refine ⟨by simp [Linear.Fact.vars, hi], ?_⟩
+      show Linear.Form.eval _ _ ≤ _
+      simp only [Linear.Form.eval, valuation, hi, Option.getD_some]
+      simp [maxArrayLength] at hmax; omega
+    · split at hat
+      · rename_i h0
+        obtain ⟨x, hx, rfl⟩ := List.mem_map.mp hat
+        have hq := hq' rfl rfl
+        obtain ⟨s, ls, hs, hl, hn, hmax⟩ := lengthsOf_sound hx hk
+        have hlt := below ls hn hmax hq
+        have f0 : -j ≤ 0 := by
+          have := Linear.entails_sound h0 hlin
+          simp only [Linear.Fact.Holds, Linear.Form.eval, hj] at this; omega
+        exact ⟨s, ls, bj, j.toNat, by simpa [push] using hs, hl, by simpa [push] using hbj,
+          HeapKnowledge.indexOfBits_safe hsafe (by omega) (by simp [maxArrayLength] at hmax; omega), by omega⟩
+      · cases hat
+
+theorem lengthAtoms_shape {k : Knowledge} {Γ : List (Ty ι)} {t : Tm} (h : lengthAtoms k Γ t ≠ []) :
+    ∃ op a b, t = .arith op (.var a) (.var b) := by
+  unfold lengthAtoms at h
+  split at h
+  · exact ⟨_, _, _, rfl⟩
+  · exact absurd rfl h
+
+theorem lengthAtoms_holds {k : Knowledge} {Γ : List (Ty ι)} {G : NormalGraph ι} {t : Tm}
+    {Ξ T : Fam} {Q : Post} {ρ n W h}
+    (he : EnvOk G Γ ρ n W) (hk : Holds k ρ h) (hs : SafePost Ξ T Q n W h (instantiate 0 ρ t)) :
+    SafePost Ξ T (fun h' u => Q h' u ∧ IndexHolds (lengthAtoms k Γ t) (push u ρ) h') n W h
+      (instantiate 0 ρ t) := by
+  have hval : ∀ i, i < Γ.length → isVal (ρ i) = true := fun i hi =>
+    (meaning_value (he.2 i _ (List.getElem?_eq_getElem hi))).1
+  by_cases hnil : lengthAtoms k Γ t = []
+  · rw [hnil]; exact weaken (fun _ _ hq => ⟨hq, indexHolds_nil _ _⟩) hs
+  obtain ⟨op, a, b, rfl⟩ := lengthAtoms_shape hnil
+  simp only [lengthAtoms] at hnil ⊢
+  split
+  · rename_i hab
+    simp only [instantiate, Nat.not_lt_zero, if_false, Nat.sub_zero] at hs ⊢
+    refine weaken (fun h' u hq => ⟨hq.1, ?_⟩) (arith_run (hval a hab.1) (hval b hab.2) hs)
+    obtain ⟨-, rfl, hu⟩ := hq
+    have pick : ∀ i, intSlot k.indices i = true →
+        ∃ j, valuation ρ i = j ∧ ∃ bj, ρ i = .num bj ∧ SafeIntegers.SafeInt bj j := by
+      intro i hi
+      obtain ⟨j, hj⟩ := Option.isSome_iff_exists.mp (intSlot_sound hk.2.2.2.2.2 hi)
+      obtain ⟨bj, hbj, hsafe⟩ := intValue_safe hj
+      exact ⟨j, by simp [valuation, hj], bj, hbj, hsafe⟩
+    have hrel : ∀ {l q'}, strictAnswer op = some (l, q') → op.relational = true := by
+      intro l q' h; cases op <;> simp_all [strictAnswer, Arith.relational]
+    split
+    · rename_i q hsa
+      split
+      · rename_i hint
+        obtain ⟨j, hj, bj, hbj, hsafe⟩ := pick a hint
+        refine lengthPair_holds hk hj (fun ls hn hmax hq' => ?_) ⟨bj, hbj, hsafe⟩
+        have hL : SafeIntegers.SafeInt (bitsOfNat ls.length) (ls.length : Int) :=
+          ⟨by simp [maxArrayLength] at hmax ⊢; omega, .inl ⟨by omega, by simp⟩⟩
+        rw [hbj, hn] at hu
+        rw [binop_relational (hrel hsa) hu, SafeIntegers.doubleOrder_safe hsafe hL] at hq'
+        exact strictAnswer_sound hsa j ls.length (by simpa using truthy_boolVal hq')
+      · exact indexHolds_nil _ _
+    · rename_i q hsa
+      split
+      · rename_i hint
+        obtain ⟨j, hj, bj, hbj, hsafe⟩ := pick b hint
+        refine lengthPair_holds hk hj (fun ls hn hmax hq' => ?_) ⟨bj, hbj, hsafe⟩
+        have hL : SafeIntegers.SafeInt (bitsOfNat ls.length) (ls.length : Int) :=
+          ⟨by simp [maxArrayLength] at hmax ⊢; omega, .inl ⟨by omega, by simp⟩⟩
+        rw [hbj, hn] at hu
+        rw [binop_relational (hrel hsa) hu, SafeIntegers.doubleOrder_safe hL hsafe] at hq'
+        exact strictAnswer_sound hsa j ls.length (by simpa using truthy_boolVal hq')
+      · exact indexHolds_nil _ _
+    · exact indexHolds_nil _ _
+  · exact weaken (fun _ _ hq => ⟨hq, indexHolds_nil _ _⟩) hs
+
 /-! ## The write at a checked index -/
 
 /-- **A write at an index at most the store's length** (`setElem-bounded`).
@@ -1002,18 +1146,18 @@ theorem indexHolds_append {as bs : List HeapKnowledge.IndexAtom} {ρ h}
     (base : Checker G images) : Checker G images where
   run := fun j k e codes sums => (base.run j k e codes sums).map fun out =>
     { out with indices := out.indices ++ (IndexWrites.stepAtoms G j.context k j.term ++
-        IndexWrites.linearAtoms G j.context k j.term) }
+        IndexWrites.linearAtoms G j.context k j.term ++ IndexWrites.lengthAtoms k j.context j.term) }
   select := fun j k e codes sums => (base.select j k e codes sums).map fun out =>
     { out with indices := out.indices ++ (IndexWrites.stepAtoms G j.context k j.term ++
-        IndexWrites.linearAtoms G j.context k j.term) }
+        IndexWrites.linearAtoms G j.context k j.term ++ IndexWrites.lengthAtoms k j.context j.term) }
   sound := by
     intro j k e out codes sums hc hcodes hsums ρ n W h he hk hw hh
     simp only [CheckResult.map, Option.map_eq_some_iff] at hc
     obtain ⟨out0, hrun, rfl⟩ := hc
     have hs := base.sound hrun hcodes hsums he hk hw hh
-    exact weaken (fun h' u hq => ⟨hq.1.1.1, hq.1.1.2.1, hq.1.1.2.2.1, hq.1.1.2.2.2.1, hq.1.1.2.2.2.2.1,
-      indexHolds_append hq.1.1.2.2.2.2.2 (indexHolds_append hq.1.2 hq.2)⟩)
-      (IndexWrites.linearAtoms_holds he hk (IndexWrites.stepAtoms_holds he hk hs))
+    exact weaken (fun h' u hq => ⟨hq.1.1.1.1, hq.1.1.1.2.1, hq.1.1.1.2.2.1, hq.1.1.1.2.2.2.1, hq.1.1.1.2.2.2.2.1,
+      indexHolds_append hq.1.1.1.2.2.2.2.2 (indexHolds_append (indexHolds_append hq.1.1.2 hq.1.2) hq.2)⟩)
+      (IndexWrites.lengthAtoms_holds he hk (IndexWrites.linearAtoms_holds he hk (IndexWrites.stepAtoms_holds he hk hs)))
 
 /-- A checker whose `boundedWrite` steps are writes at a checked index
 (`IndexWrites.boundedWriteCheck`, `setElem-bounded`), keeping no observation

@@ -1514,6 +1514,36 @@ from `SafeIntegers.add_safe`, `sub_safe` and `doubleOrder_safe`. A length atom
 $`\mathrm{length}(x,n)`$ also states the store's length at most $`2^{32}-1`$,
 which `length-observed` reads from the store contract.
 
+**Dropping a slot.** Where a step's output drops a slot, or an edge's mapping
+keeps no slot of a fact's class, the slot is first eliminated from the
+unconditional linear facts: each pair of facts of opposite signs on it is
+combined to cancel it (Fourier–Motzkin, `Linear.eliminateAll`, each
+combination a `combine` step `check` decides), and the derived facts naming no
+dropped slot are kept (`HeapKnowledge.eliminateIndices`, proved:
+`eliminateIndices_holds`). So `const answer = base + 2`, computed from copies
+of `base` and of the literal, keeps `answer = base + 2` once the copies are
+dropped. A step that writes a field, or keeps only its receiver's own
+locations, keeps the index facts reading no heap, as the ordinary output does.
+
+**A comparison with a length.** A strict comparison of a safe integer $`k`$
+with a slot $`n`$ a length atom names states, on the answer giving $`k<n`$,
+the facts of $`k`$ alone, which survive dropping $`n`$ (`IndexWrites.lengthAtoms`,
+proved: `lengthAtoms_holds`):
+
+```math
+\frac{\mathrm{int}(k)\quad \mathrm{length}(x,n)\in\Sigma\quad K\vdash 0\le k}
+     {c\leftarrow k<n\dashv (k\le 2^{32}-2\ \text{if}\ c),\ (\mathrm{bound}(x,k)\ \text{if}\ c)}\ \textsf{length-compare}
+```
+
+with the mirrored forms `n > k`, and `k >= n`, `n <= k` on the answer `false`;
+without $`K\vdash 0\le k`$ only the first fact. A loop's test is evaluated
+twice, its value and then, as a tested Boolean, again from its saved operands
+for the dispatch's refinement (`compileConditionAtom`); the edge into the
+dispatch keeps the test's result and drops the operands' re-read slots, so a
+fact of the comparison over them reaches the branch only through slots it
+keeps. A copy of a slot restates the atoms conditional on it as conditional on
+the copy (`IndexWrites.copiedAtoms`).
+
 **A write bounded by linear facts.** `setElem-bounded` reads
 $`\mathrm{bound}(x,k)`$, stated by a bound atom or by the linear facts
 (`IndexWrites.linearBound`, proved: `linearBound_sound`):

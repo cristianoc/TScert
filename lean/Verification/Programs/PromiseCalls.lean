@@ -1170,7 +1170,8 @@ each cell fact and read link about a field separated from every own location
 of `i`, every alias link, every value fact and the separation. -/
 def ownKept (k : HeapKnowledge.Knowledge) (i : Nat) : HeapKnowledge.Knowledge :=
   ⟨k.cells.filter (fun f => HeapSeparation.apartAll k.separation i f.slot f.field), k.values,
-    k.links.filter (fun g => g.alias || HeapSeparation.apartAll k.separation i g.cell g.field), k.separation, [], []⟩
+    k.links.filter (fun g => g.alias || HeapSeparation.apartAll k.separation i g.cell g.field), k.separation, [],
+    HeapKnowledge.envIndices k.indices⟩
 
 def ownOutput (k : HeapKnowledge.Knowledge) (i : Nat) : HeapKnowledge.Knowledge :=
   HeapKnowledge.shift (ownKept k i)
@@ -1197,7 +1198,8 @@ theorem ownKept_holds {k : HeapKnowledge.Knowledge} {i : Nat} {ρ : Env} {h h' :
       unfold HeapSeparation.At
       split at hm <;> simp_all
     exact HeapSeparation.apartAll_sound ha hk.2.2.2.1 hat hs hl rfl
-  refine ⟨?_, hk.2.1, ?_, hk.2.2.2.1, HeapKnowledge.elemsHolds_nil _ _, HeapKnowledge.indexHolds_nil _ _⟩
+  refine ⟨?_, hk.2.1, ?_, hk.2.2.2.1, HeapKnowledge.elemsHolds_nil _ _,
+    HeapKnowledge.envIndices_holds hk.2.2.2.2.2 _⟩
   · intro f hf
     obtain ⟨hf, ha⟩ := List.mem_filter.mp hf
     obtain ⟨flds,c,oid,u,hs,hr,hm⟩ := hk.1 f hf

@@ -90,7 +90,14 @@ coefficients and `bound` a safe integer: every named binding holds a safe
 integer and the sum of the terms is at most the bound, which the entry's
 knowledge states and every edge into it checks; a fact whose coefficients are
 all zero states only that its bindings hold safe integers
-([linear facts](PROGRAM-TYPING.md#linear-facts)).
+([linear facts](PROGRAM-TYPING.md#linear-facts)). The producer proposes them
+by a must-analysis of the statement graph: an integer literal or a sum
+of known ranges assigned states an equality, an increment restates the facts
+of the old value, a comparison states each answer's fact on its branch, and
+`j < xs.length` before a body writing `xs[j]`, with `0 ≤ j` known, the bound
+of `xs` and `j` at the body's entry; a merge keeps the larger bound of each
+form, a bound that grows at a merge is raised to `2^32 - 1` where it is at
+most that and forgotten otherwise, and a fact naming a cell is not proposed.
 `start` is the source offset associated with the graph node. Expression `pos` is a span.
 Every point has an explicit `current`: `null` states that no additional
 contents assertion is supplied. Expressions may also have `instantiate`,

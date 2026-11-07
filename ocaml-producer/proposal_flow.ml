@@ -109,7 +109,8 @@ let statements callbacks flow_graph register_following owner_span env0 ss =
     let scope bindings env =
       let live n = List.mem_assoc n env0 || List.exists (fun (b:Flow.binding) -> b.name=n) bindings in
       List.filter (fun (n,_) -> live n || (is_field n && live (owner n)) ||
-        (match bound_parts n with Some (a,i) -> live a && live i | None -> false)) env in
+        (match bound_parts n with Some (a,i) -> live a && live i | None -> false) ||
+        (match fact_parts n with Some (t,_) -> List.for_all (fun (x,_) -> live x) t | None -> false)) env in
     let capture env =
       let bound n = List.mem_assoc n env in
       let m = callbacks.snapshot_metadata () in
@@ -126,6 +127,9 @@ let statements callbacks flow_graph register_following owner_span env0 ss =
       let left=scope node.scope left and right=scope node.scope right in
       let impossible env=List.exists (fun (n,b) -> not (is_field n) && binding_type b=Atoms []) env in
       if impossible left then right else if impossible right then left else
+      let joined_facts=Linear_facts.join (Linear_facts.facts left) (Linear_facts.facts right) in
+      let left=Linear_facts.strip left and right=Linear_facts.strip right in
+      Fun.flip Linear_facts.add joined_facts @@
       List.filter_map (fun (n,b) -> match List.assoc_opt n right with
         | None -> None
         | Some c -> (match b,c with
@@ -167,6 +171,10 @@ let statements callbacks flow_graph register_following owner_span env0 ss =
       callbacks.entry env node.source;
       (* A guard's bound is claimed at this entry alone. *)
       let env = List.filter (fun (n,_) -> not (is_bound n)) env in
+      (* The linear facts flow beside the environment (`Linear_facts`); the
+         statement callbacks see none. *)
+      let facts0 = Linear_facts.facts env in
+      let env = Linear_facts.strip env in
       let next id env = id,capture (scope graph.nodes.(id).scope env) in
       let infer_return span = match (source span).statement with
         | Return e -> callbacks.return_expression env e
@@ -257,6 +265,40 @@ let statements callbacks flow_graph register_following owner_span env0 ss =
               | Declare (_,bindings) -> List.for_all (fun (b,_,init) -> b <> name || quiet init) bindings
               | _ -> false)
         | _ -> false in
+      (* Each normal edge's linear facts, by the node's action. *)
+      let edges =
+        (* A cell (a binding a closure assigns, or an early one) holds no
+           value slot a fact could name. *)
+        let cell n = List.exists (fun (b:Flow.binding) -> b.name=n) graph.cells in
+        let with_facts (id,state) fs extra =
+          let fs = List.filter (fun ((t,_) : Linear_facts.fact) -> not (List.exists (fun (n,_) -> cell n) t)) fs in
+          id,{state with env=scope graph.nodes.(id).scope (Linear_facts.add state.env fs @ extra)} in
+        match node.action, edges with
+        | Flow.Jump _, [e] -> [with_facts e facts0 []]
+        | Flow.Declaration (span,name,initial_source,_,_), [e] when not (List.mem (span,name) early_bindings) ->
+          let fs = match (source span).statement with
+            | Declare (_,bindings) ->
+              (match List.find_opt (fun (b,_,(init:Source.expr)) -> b=name && init.pos=initial_source) bindings with
+               | Some (_,_,init) -> Linear_facts.declaration env facts0 name init
+               | None -> [])
+            | _ -> [] in
+          [with_facts e fs []]
+        | Flow.Statement (span,_), [e] -> [with_facts e (Linear_facts.statement env facts0 (source span)) []]
+        | Flow.Branch (span,_,_), [y;n] ->
+          let s = source span in
+          (match s.statement with
+           | If (c,_,_) ->
+             let t,f = Linear_facts.comparison env facts0 c in
+             [with_facts y (facts0 @ t) []; with_facts n (facts0 @ f) []]
+           | While (c,body,_) ->
+             let t,f = Linear_facts.comparison env facts0 c in
+             let bound,lt = Linear_facts.length_test env facts0 c body in
+             let extra = match bound with
+               | Some (xs,j) -> [bound_key xs j,Value top]
+               | None -> [] in
+             [with_facts y (facts0 @ t @ lt) extra; with_facts n (facts0 @ f) []]
+           | _ -> edges)
+        | _ -> edges in
       let edges=match node.handler with
         | None -> edges
         | Some h ->
@@ -277,9 +319,10 @@ let statements callbacks flow_graph register_following owner_span env0 ss =
         (* A slot still changing here is widened to its contract; one that
            settled keeps what it holds, a branch's narrowing included. *)
         let settled n b = List.assoc_opt n previous.env = Some b in
-        {state with env=List.map (fun (n,b) -> match b with
+        let kept=Linear_facts.widen (Linear_facts.facts previous.env) (Linear_facts.facts state.env) in
+        {state with env=Linear_facts.add (List.map (fun (n,b) -> match b with
           | Local (contract,_) when not (settled n b) -> n,Local (contract,callbacks.widen_slot contract)
-          | _ -> n,b) (forget state.env)}) graph (capture env0) in
+          | _ -> n,b) (forget (Linear_facts.strip state.env))) kept}) graph (capture env0) in
     Array.iter callbacks.publish_output publications;
     let completed=Array.to_list (Array.mapi (fun id state -> match graph.nodes.(id).action,state with
       | Flow.End,Some state -> Some (scope [] state.env) | _ -> None) states) |> List.filter_map Fun.id in

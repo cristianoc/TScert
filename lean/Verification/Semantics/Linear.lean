@@ -433,12 +433,28 @@ def prove (known : List Fact) (c : Form) (d : Int) (limit : Nat := 400) : Option
   | some r => return some (pre ++ [.combine r.mult r.goal c d])
   | none => return none
 
-/-- Whether the held facts entail `goal`, by a certificate `check` accepts. -/
+/-- The held facts connected to the goal's variables: those sharing a
+variable with the goal or with a fact already selected, so the elimination
+works over the facts that can matter. -/
+def relevant (known : List Fact) (goal : Fact) : List Fact := Id.run do
+  let mut vars := goal.vars
+  let mut chosen : List Fact := []
+  for _ in List.range (known.length + 1) do
+    let more := known.filter fun F => !chosen.contains F && F.vars.any vars.contains
+    if more.isEmpty then break
+    chosen := chosen ++ more
+    vars := vars ++ more.flatMap (·.vars)
+  return known.filter chosen.contains
+
+/-- Whether the held facts entail `goal`, by a certificate `check` accepts,
+searched over the facts connected to the goal. -/
 def entails (known : List Fact) (goal : Fact) : Bool :=
   known.contains goal ||
   match goal with
-  | .le c d => match prove known c d with
-    | some steps => match check known steps with
+  | .le c d =>
+    let near := relevant known goal
+    match prove near c d with
+    | some steps => match check near steps with
       | some out => out.contains goal
       | none => false
     | none => false
@@ -454,12 +470,54 @@ theorem entails_sound {v : Nat → Int} {known : List Fact} {goal : Fact} (h : e
     | ne _ _ => cases h
     | le c d =>
       simp only at h
+      have hn : ∀ F ∈ relevant known (.le c d), F.Holds v := by
+        intro F hF
+        unfold relevant at hF
+        exact hk F (List.mem_filter.mp hF).1
       split at h
       · split at h
         · rename_i out hc
-          exact check_sound hk hc _ (List.contains_iff_mem.mp h)
+          exact check_sound hn hc _ (List.contains_iff_mem.mp h)
         · cases h
       · cases h
+
+/-! ## Eliminating a variable
+
+The facts implied by held `≤` facts that do not name a variable `x`: each
+pair of opposite signs on `x` combined to cancel it (Fourier–Motzkin), each
+combination a `combine` step `check` decides. -/
+
+/-- The steps combining each pair of held facts of opposite signs on `x`. -/
+def elimSteps (known : List Fact) (x : Nat) (limit : Nat := 64) : List Step :=
+  let les := (List.range known.length).filterMap fun j => match (known[j]? : Option Fact) with
+    | some (.le F b) => some (j, normalize F, b)
+    | _ => none
+  let pos := les.filter fun (_, F, _) => 0 < F.coeff x
+  let neg := les.filter fun (_, F, _) => F.coeff x < 0
+  ((pos.flatMap fun (i, F, b) => neg.map fun (j, F', b') =>
+    let p := (F'.coeff x).natAbs
+    let q := (F.coeff x).natAbs
+    Step.combine [(i, p), (j, q)] 1 (normalize (F.scale p ++ F'.scale q)) (p * b + q * b'))).take limit
+
+/-- The held facts with each variable of `xs` eliminated in turn, the derived
+facts appended; `known` itself where a step is refused. -/
+def eliminateAll (known : List Fact) : List Nat → List Fact
+  | [] => known
+  | x :: xs => match check known (elimSteps known x) with
+    | some out => eliminateAll out xs
+    | none => eliminateAll known xs
+
+theorem eliminateAll_sound {v : Nat → Int} :
+    ∀ {xs : List Nat} {known : List Fact}, (∀ F ∈ known, F.Holds v) → ∀ F ∈ eliminateAll known xs, F.Holds v := by
+  intro xs
+  induction xs with
+  | nil => intro known hk; exact hk
+  | cons x xs ih =>
+    intro known hk
+    simp only [eliminateAll]
+    split
+    · rename_i out hc; exact ih (check_sound hk hc)
+    · exact ih hk
 
 /-! ## Witnesses
 
@@ -485,5 +543,8 @@ a rounding that would need a divisor the premise's form is not a multiple of. -/
 #guard !entails [.le [(0, 1), (1, -1)] 0] (.le [(0, 1), (1, -1)] (-1))
 -- `0 ≤ i`, `i < n`, `n ≤ 2^32 - 1` give `i ≤ 2^32 - 2`.
 #guard entails [.le [(0, -1)] 0, .le [(0, 1), (1, -1)] (-1), .le [(1, 1)] 4294967295] (.le [(0, 1)] 4294967294)
+
+-- Eliminating `j` (variable 0) from `j - n ≤ -1` and `-j ≤ 0` gives `-n ≤ -1`.
+#guard (eliminateAll [.le [(0, 1), (1, -1)] (-1), .le [(0, -1)] 0] [0]).contains (.le [(1, -1)] (-1))
 
 end Verification.Linear

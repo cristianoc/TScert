@@ -1016,7 +1016,8 @@ def writeOutput (k : Knowledge) (i : Nat) (fld : PropKey) (R : Option ValueSets.
       (k.cells.filter fun f => writeKeeps k i fld owned f.slot f.field).map
         (fun f => {f with slot := f.slot + 1}),
     ⟨0,{ nul := true },valueField⟩ :: HeapFacts.shift k.values,
-    HeapLinks.stable (HeapKnowledge.shift k).links, HeapSeparation.shift k.separation, [], []⟩
+    HeapLinks.stable (HeapKnowledge.shift k).links, HeapSeparation.shift k.separation, [],
+    HeapKnowledge.envIndices (HeapKnowledge.shiftIndices k.indices)⟩
 
 theorem write_inv {f h a b h' t} (ha : isVal a = true) (hb : isVal b = true)
     (hs : Step h (.writeAt f a b) h' t) :
@@ -1056,7 +1057,7 @@ theorem write_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImag
       apply one_step rfl rfl (.writeField hvv hfd hlt) _ hs
       refine ⟨?_,?_,HeapLinks.stable_holds (HeapKnowledge.shift_holds (v := .nul) hk).2.2.1,
         (HeapKnowledge.shift_holds (v := .nul) hk).2.2.2.1, HeapKnowledge.elemsHolds_nil _ _,
-        HeapKnowledge.indexHolds_nil _ _⟩
+        HeapKnowledge.envIndices_holds (HeapKnowledge.shift_holds (v := .nul) hk).2.2.2.2.2 _⟩
       · intro f hf
         rcases List.mem_append.mp hf with hf | hf
         · cases hR : R with

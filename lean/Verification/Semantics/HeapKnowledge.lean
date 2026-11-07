@@ -638,9 +638,34 @@ theorem envIndices_holds {as : List IndexAtom} {ρ h} (he : IndexHolds as ρ h) 
   have := he a ha hc
   cases hf : a.fact <;> rw [hf] at this henv <;> simp [IndexFact.envOnly] at henv <;> exact this
 
+/-- The atoms with the slots of `drop` eliminated from the unconditional
+linear facts (`Linear.eliminateAll`): the derived facts naming none of them,
+each of whose slots an atom states a safe integer, appended. -/
+def eliminateIndices (drop : List Nat) (as : List IndexAtom) : List IndexAtom :=
+  let used := drop.filter fun x => (linearFacts as).any fun F => F.vars.contains x
+  if used.isEmpty then as else
+  as ++ ((Linear.eliminateAll (linearFacts as) used).filter fun F =>
+      !(linearFacts as).contains F && F.vars.all (fun x => !drop.contains x && intSlot as x)).map
+    fun F => ⟨.linear F, none, false⟩
+
+theorem eliminateIndices_holds {drop : List Nat} {as : List IndexAtom} {ρ h} (he : IndexHolds as ρ h) :
+    IndexHolds (eliminateIndices drop as) ρ h := by
+  simp only [eliminateIndices]
+  split
+  · exact he
+  · intro a ha hc
+    rcases List.mem_append.mp ha with ha | ha
+    · exact he a ha hc
+    · obtain ⟨F, hF, rfl⟩ := List.mem_map.mp ha
+      obtain ⟨hF, hk⟩ := List.mem_filter.mp hF
+      simp only [Bool.and_eq_true, Bool.not_eq_true', List.all_eq_true] at hk
+      refine ⟨fun x hx => intSlot_sound he (hk.2 x hx).2, ?_⟩
+      exact Linear.eliminateAll_sound (linearFacts_holds he) F hF
+
 /-- Atoms about slots below the dropped slot 0, restated one lower; an atom
 naming slot 0 is first restated on a slot the links relate to it. -/
 def dropIndices (ls : HeapLinks.Links) (as : List IndexAtom) : List IndexAtom :=
+  let as := eliminateIndices [0] as
   let restated := match HeapLinks.neighbors ls 0 with
     | y :: _ => as ++ mapIndices (fun i => some (if i = 0 then y else i)) as
     | [] => as
@@ -649,6 +674,9 @@ def dropIndices (ls : HeapLinks.Links) (as : List IndexAtom) : List IndexAtom :=
 theorem dropIndices_holds {ls : HeapLinks.Links} {as : List IndexAtom} {ρ h v}
     (hl : HeapLinks.Holds ls (push v ρ) h) (he : IndexHolds as (push v ρ) h) :
     IndexHolds (dropIndices ls as) ρ h := by
+  have he := eliminateIndices_holds (drop := [0]) he
+  unfold dropIndices
+  generalize eliminateIndices [0] as = as at he ⊢
   have hr : IndexHolds (match HeapLinks.neighbors ls 0 with
       | y :: _ => as ++ mapIndices (fun i => some (if i = 0 then y else i)) as
       | [] => as) (push v ρ) h := by
@@ -829,8 +857,11 @@ def project (k : Knowledge) (m : PointClaims.Mapping) (count : Nat) : Knowledge 
               { a with slot := i, cond := some j },
     -- Each slot an index atom names, its condition's included, restated at the
     -- first target slot holding its value.
-    mapIndices (fun s => (List.range count).find? fun j =>
-      (HeapLinks.aliases k.links (PointClaims.slot m j)).contains s) k.indices⟩
+    -- A slot no target slot holds is first eliminated from the linear facts.
+    let target := fun s => (List.range count).find? fun j =>
+      (HeapLinks.aliases k.links (PointClaims.slot m j)).contains s
+    let dropped := ((linearFacts k.indices).flatMap (·.vars)).eraseDups.filter fun s => (target s).isNone
+    mapIndices target (eliminateIndices dropped k.indices)⟩
 
 /-! ## Queries by class
 

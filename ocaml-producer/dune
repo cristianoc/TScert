@@ -11,7 +11,7 @@
   refinement object_spread module_contract analysis_capabilities analysis_state closure_offers
   execution_analysis claim_collection analysis_context expression_support expression_values
   expression_objects expression_properties expression_closures expression_calls expression_typing
-  binding_analysis proposal_flow statement_analysis analysis_pass proposal
+  binding_analysis linear_facts proposal_flow statement_analysis analysis_pass proposal
   claims))
 
 (executable
