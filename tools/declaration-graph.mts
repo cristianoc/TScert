@@ -44,6 +44,7 @@ import { messageOf, passToolFailure, toolFailureOf } from "./thrown.mts";
 // named-record.mts reads a named type's record shape, at which a mapped type read before its definition is expanded.
 import { definitionKey, deferredInDocument, identityText, settleDocument, termsText, termText } from "./named-record.mts";
 import { documentHolds } from "./fragment-parts.mts";
+import { requiresTags } from "./bound-annotations.mts";
 // files.mts makes every file-system failure a tool failure.
 import { builtinModule, manifestMember, orAbsent, readText, realPath, remembered, type Remembered } from "./files.mts";
 import type { Json } from "./calculus.mts";
@@ -895,6 +896,13 @@ export interface DeclarationObservations {
    * a type alias read as its declared body, outside a class and a host
    * type (`NamedRecords`, named-record.mts). */
   record?: (declaration: DeclarationIdentity) => void;
+  /** Told each value that is a function declaration of the program's
+   * sources stating a written precondition (`@requires`): its identity, its
+   * clauses, and its parameters' names in order, `this` included, where its
+   * declaration admits one (synchronous, every parameter a plain required
+   * name), else null. The client elaborates the clauses over the value's
+   * signature, as the declaration's own module does. */
+  requires?: (declaration: DeclarationIdentity, clauses: readonly string[], parameters: readonly string[] | null) => void;
   /** Told each import binding of a listed guard of the compiler API's family
    * (HOST-FAMILIES.md, "Calls"): its local name, its entry, the domain its
    * declared parameter states, the field a node guard tests (the family's
@@ -969,6 +977,12 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
     const { idOf, libraryFile } = moduleIds(clientFile, root, program);
     // A module of the program: a source file outside the standard library,
     // the host packages and any installed package.
+    // A function declaration's written precondition, of the program's
+    // sources alone: its `@requires` clauses (`requiresTags`).
+    const writtenClauses = (node: ts.FunctionDeclaration): string[] => {
+      const file = node.getSourceFile();
+      return programFile(file) && !ambient(node) && node.body ? requiresTags(file.text.slice(node.pos, node.getStart(file))) : [];
+    };
     const programFile = (file: SourceFile): boolean => !file.isDeclarationFile && !libraryFile(file) &&
       !isHostFile(file.fileName) && !file.fileName.split(sep).includes("node_modules");
     // The verifier's declaration file (`resolvable.d.ts`): the repository's,
@@ -1899,6 +1913,8 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
         // beside its implementation included.
         if (nodes.some(n => ts.isFunctionDeclaration(n) && statedResult(valueScope(reading, n, what), n.type, n).stated))
           throw Error(`a statement (\`Within\`) on an overloaded declaration is outside the fragment: ${what}`);
+        if (nodes.some(n => ts.isFunctionDeclaration(n) && writtenClauses(n).length > 0))
+          throw Error(`a written precondition (\`@requires\`) on an overloaded declaration is outside the fragment: ${what}`);
         if (overloads.length > 1) {
           // Generic overloads are read as one generic declaration when every
           // overload states the same type parameters, each with the same
@@ -1932,7 +1948,14 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
         for (const part of [...(node.typeParameters ?? []), ...node.parameters, ...(node.type ? [node.type] : [])])
           clean(part, `${idOf(source)}#${node.name.text}`);
         const { names, typeParams } = bindersOf(reading, node.typeParameters, node, what);
-        return { declaration: { module: idOf(source), name: node.name.text, span }, construct: false, typeParams,
+        const declaration = { module: idOf(source), name: node.name.text, span };
+        const clauses = writtenClauses(node);
+        if (clauses.length > 0)
+          observations.requires?.(declaration, clauses,
+            !node.modifiers?.some(m => m.kind === ts.SyntaxKind.AsyncKeyword) &&
+            node.parameters.every(p => !p.dotDotDotToken && !p.initializer && !p.questionToken && ts.isIdentifier(p.name))
+              ? node.parameters.map(p => ts.isIdentifier(p.name) ? p.name.text : "") : null);
+        return { declaration, construct: false, typeParams,
           type: oneTerm(signature(valueScope(reading, node, what, names), node.parameters, node.type, node, span, true), span) };
       }
       if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name)) {

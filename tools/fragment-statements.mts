@@ -2152,33 +2152,20 @@ export function functionDecl(this: Gate, node: FunctionDeclaration, signature: F
       bound.get(p.name) ?? [{ k: "name", name: p.name, pos: p.pos }, null]));
     // The written precondition (`@requires`), at the call's positions: the
     // receiver at 0 where a `this` parameter names it, each other parameter
-    // at its place after it. A declaration a caller outside its module may
-    // call, an async one, and one whose parameters are not plain names
-    // state none: their callers establish nothing it could assume.
+    // at its place after it. An async declaration and one whose parameters
+    // are not plain names state none: their callers establish nothing it
+    // could assume. An exported one's callers outside the analyzed sources
+    // are trusted to meet it (DESIGN.md, trust surface).
     const clauses = requiresTags(gate.file.text.slice(node.pos, node.getStart(gate.file)));
     let requires: IndexFact[] = [];
     if (clauses.length > 0) {
-      if (node.modifiers?.some(m => m.kind === ts.SyntaxKind.ExportKeyword))
-        gate.fail(node, "a precondition (`@requires`) on an exported function: a caller outside its module establishes nothing");
       if (isAsync) gate.fail(node, "a precondition (`@requires`) on an async function");
       if (node.parameters.some(p => p.dotDotDotToken || p.initializer || p.questionToken || !ts.isIdentifier(p.name)))
         gate.fail(node, "a precondition (`@requires`) on a function whose parameters are not plain required names");
-      const named = node.parameters.map((p, i): ClauseParameter => {
-        const type = parameterTypes[i];
-        return {
-          name: ts.isIdentifier(p.name) ? p.name.text : "",
-          position: receiverParam ? i : i + 1,
-          at: (path) => {
-            const t = type === undefined ? null : path.reduce<TypeTerm | null>((t, f) => t && fieldType(gate, t, f), type);
-            return t === null ? null : t.k === "array" ? "array" : namesView(t) ? "view" : "other";
-          },
-        };
-      });
-      const elaborated = elaborateRequires(clauses, named);
-      if ("refused" in elaborated) gate.fail(node, `a precondition (\`@requires\`): ${elaborated.refused}`);
-      requires = elaborated.facts;
-      if (!receiverParam && requires.some(f => indexFactPositions(f).includes(0)))
-        gate.fail(node, "a precondition (`@requires`) names the receiver, which the function does not declare");
+      const elaborated = writtenPrecondition(gate, clauses, node.parameters.map((p, i) => ({
+        name: ts.isIdentifier(p.name) ? p.name.text : "", type: parameterTypes[i] })), !!receiverParam);
+      if (typeof elaborated === "string") gate.fail(node, elaborated);
+      else requires = elaborated;
     }
     const body = [...bindings,
       ...this.statements(node.body.statements.filter((s) => !prologue.skip.has(s)))];
@@ -2202,6 +2189,30 @@ export function functionDecl(this: Gate, node: FunctionDeclaration, signature: F
     gate.asyncBody = outerAsync;
     gate.guardBody = outerGuard;
   }
+}
+
+/** A written precondition's clauses elaborated to index facts at the call's
+ * positions (`elaborateRequires`), over parameters named in order, a leading
+ * `this` the receiver at 0 where `receiver` holds and each other parameter at
+ * its place after it; each path's kind read through its declared type
+ * (`fieldType`). A function's own module and a module importing it read its
+ * clause through this one elaboration. The refusal's message where it is
+ * refused. */
+export function writtenPrecondition(gate: Gate, clauses: readonly string[],
+    parameters: readonly { name: string; type: TypeTerm | undefined }[], receiver: boolean): Within<{ value: "any"; store: "grow" }, IndexFact[] | string> {
+  const named = parameters.map(({ name, type }, i): ClauseParameter => ({
+    name,
+    position: receiver ? i : i + 1,
+    at: (path) => {
+      const t = type === undefined ? null : path.reduce<TypeTerm | null>((t, f) => t && fieldType(gate, t, f), type);
+      return t === null ? null : t.k === "array" ? "array" : namesView(t) ? "view" : "other";
+    },
+  }));
+  const elaborated = elaborateRequires(clauses, named);
+  if ("refused" in elaborated) return `a precondition (\`@requires\`): ${elaborated.refused}`;
+  if (!receiver && elaborated.facts.some(f => indexFactPositions(f).includes(0)))
+    return "a precondition (`@requires`) names the receiver, which the function does not declare";
+  return elaborated.facts;
 }
 
 /** The type of the required data field `f` of a value of type `t`, where a

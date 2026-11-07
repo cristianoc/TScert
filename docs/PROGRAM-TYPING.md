@@ -1848,9 +1848,20 @@ each side exactly, so the comparison of the two safe integers answers as the
 fact states: the facts imply the clause's value under the
 [operational semantics](SEMANTICS.md#operational-language). A clause whose
 constants leave the safe integers is refused. A precondition
-is refused on an exported function, whose callers outside the module
-establish nothing; on an async function; on one whose parameters are not
-plain required names; and on one naming the receiver without declaring it.
+is refused on an async function; on one whose parameters are not plain
+required names; and on one naming the receiver without declaring it.
+
+**Exported functions.** An exported function's precondition is its
+signature's in every module that imports it: the front end elaborates the
+clause from the declaration TypeScript resolves the import to, over the
+declaration's parameter types, by the elaboration of its own module
+(`writtenPrecondition`), and states it on every form of the imported
+signature (`writtenImport`). Where the import is certified, Lean reads the
+signature at its unit's footprint (`importedArrow`) only where its
+precondition is the one the unit is checked assuming (`qualifiedRead`), so
+`call-requires` checks every call of the analyzed sources, an importer's
+included. A caller outside the analyzed sources is trusted to establish it
+([trust surface](DESIGN.md#trust-surface)).
 Every other form of the draft's grammar ([checked bound
 annotations](drafts/checked-bound-annotations.md): guards, `old`, `result`,
 computed keys, `||`, `!`) is refused with the declaration's location.
@@ -1872,8 +1883,11 @@ Negative, each run under Node: `invalid-written-precondition-call` (a call at
 `xs.length`), `invalid-written-precondition-body` (a body reading past what its
 clause bounds) `invalid-written-precondition-lengths` (a call with no length equality) and
 `invalid-written-precondition-lengths-shrunk` (an equality a `pop` changed) and
-`invalid-written-precondition-literal-index` (a literal index past the clause's bound). Refused forms: `written-precondition-exported-refused`,
-`written-precondition-disjunction-refused`. Over paths: positive
+`invalid-written-precondition-literal-index` (a literal index past the clause's bound). Exported: positive
+`written-precondition-exported` and `written-precondition-value-import` (an
+importer's calls of `imports-project/bounded.ts`'s functions); negative, run
+under Node, `invalid-written-precondition-value-import` (an importer's call
+at the length). Refused form: `written-precondition-disjunction-refused`. Over paths: positive
 `field-path-reads`; negative, each run under Node,
 `invalid-field-path-read-at-length` (a call at the flags' element count),
 `invalid-field-path-read-other-record` (a read bounded by another record's

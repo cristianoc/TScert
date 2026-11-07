@@ -23,7 +23,7 @@ import { createHash } from "node:crypto";
 // files.mts makes every file-system failure a tool failure.
 import { noteInput, readText, writeText } from "./files.mts";
 import { dirname, resolve } from "node:path";
-import type { DeclarationIdentity, ResolutionSlots, StatedEffect, TypeDefinition, TypeTerm } from "./declaration-types.mts";
+import type { DeclarationIdentity, ResolutionSlots, StatedEffect, TypeDefinition, TypeTerm, ValueRoot } from "./declaration-types.mts";
 import { deepPartMap, mapDocument, mapFunctionParts } from "./fragment-parts.mts";
 import { computedAlias, computedForm, optionalTerm, resolutionSlots, restPositions, restRefusal, restTerm, REST_PACK_BOUND, REST_PACK_VALUE, statedResult, substitute, typeTerm, visitType, mapTypeParts, type MappedMember, type TermScope } from "./type-term.mts";
 import type { Ast, Expr, FunctionAst, ModuleAst, Stmt, TypeParamAst } from "./fragment.mts";
@@ -2258,6 +2258,7 @@ function lowerFile(file: string, carriesContext: boolean,
     }
     // TypeScript resolves every name, in the project that owns the file or the
     // one named explicitly: the declaration graph is the compiler's.
+    const written: { declaration: DeclarationIdentity; clauses: readonly string[]; parameters: readonly string[] | null }[] = [];
     try {
       declarations = collectDeclarations(resolutionFile, { tsconfigPath, client: source,
         ...(family.given ? { familySelection: family.given } : {}),
@@ -2406,6 +2407,7 @@ function lowerFile(file: string, carriesContext: boolean,
             gate.libraryTypes.set(local, library);
         },
         record: identity => gate.recordKeys.add(definitionKey(identity)),
+        requires: (declaration, clauses, parameters) => written.push({ declaration, clauses, parameters }),
         awaited: () => { gate.standardAwaited = true; },
         resolvable: () => { gate.standardResolvable = true; },
         awaitable: () => { gate.standardAwaitable = true; },
@@ -2445,6 +2447,15 @@ function lowerFile(file: string, carriesContext: boolean,
     for (const { declaration } of declarations.definitions)
       gate.typeIdentities.add(JSON.stringify([declaration.module, declaration.span, declaration.name]));
     gate.recordDefinitions = new Map(declarations.definitions.map(d => [definitionKey(d.declaration), d]));
+    // An imported function's written precondition is its signature's, every
+    // form's, as its own module reads it (`moduleArrow`): the importer's
+    // calls establish it (PROGRAM-TYPING.md, "Written preconditions").
+    if (written.length > 0)
+      declarations = { ...declarations, values: declarations.values.map(v => {
+        const w = written.find(w => definitionKey(w.declaration) === definitionKey(v.declaration));
+        const at = importNodes.find(n => n.getStart(source) === v.binding.span[0]) ?? first;
+        return w === undefined ? v : { ...v, type: writtenImport(gate, v, w.clauses, w.parameters, at) };
+      }) };
     for (const root of declarations.roots) {
       const identity = root.declaration;
       const definition = declarations.definitions.find(d =>
@@ -2651,4 +2662,29 @@ if (process.argv[1] && import.meta.filename === resolve(process.argv[1])) {
     const out = options.get("--typescript-diagnostics");
     if (out) writeText(out, JSON.stringify(seen, null, 1) + "\n");
   }
+}
+
+/** An imported function's signature with its written precondition
+ * (`writtenPrecondition`) stated by every form, its parameters' types read
+ * from its plain form; refused at `at` where its declaration admits none or
+ * its signature is not one function's. */
+function writtenImport(gate: Gate, value: ValueRoot, clauses: readonly string[],
+    parameters: readonly string[] | null, at: Node | undefined): Within<{ value: "any"; store: "grow" }, TypeTerm> {
+  const what = `${value.declaration.module}#${value.declaration.name}`;
+  if (parameters === null)
+    return gate.fail(at ?? null, `an imported precondition (\`@requires\`) on an async function or one whose parameters are not plain required names: ${what}`);
+  const forms = value.type.k === "function" ? [value.type]
+    : value.type.k === "intersection" ? value.type.parts.flatMap(p => p.k === "function" ? [p] : []) : [];
+  const plain = forms.find(f => f.effect.promise === null);
+  if (plain === undefined || value.type.k === "intersection" && forms.length !== value.type.parts.length)
+    return gate.fail(at ?? null, `an imported precondition (\`@requires\`) on a function whose signature is not one function's: ${what}`);
+  const receiver = parameters[0] === "this";
+  const types = receiver ? [plain.receiver ?? undefined, ...plain.params] : plain.params;
+  if (types.length !== parameters.length)
+    return gate.fail(at ?? null, `an imported precondition (\`@requires\`) whose signature's parameters are not its declaration's: ${what}`);
+  const pre = statements.writtenPrecondition(gate, clauses, parameters.map((name, i) => ({ name, type: types[i] })), receiver);
+  if (typeof pre === "string") return gate.fail(at ?? null, `${pre}: ${what}`);
+  const stated = (f: Extract<TypeTerm, { k: "function" }>): Extract<TypeTerm, { k: "function" }> => ({ ...f, effect: { ...f.effect, pre } });
+  if (value.type.k === "function") return stated(value.type);
+  return { k: "intersection", parts: forms.map(stated), span: value.type.span };
 }
