@@ -1481,7 +1481,35 @@ their slots and carried as the other index facts are. On an edge, a target
 atom holds where a source atom gives it, or, unconditional, where the source's
 unconditional linear facts entail it, each target slot renamed to the source
 slot the edge maps it to and each of its slots stated a safe integer by the
-source (`linearFollows`, proved: `linearFollows_sound`).
+source (`linearFollows`, proved: `linearFollows_sound`); a target slot may read
+a source slot of its value's class (`M`), as the other index facts do.
+
+**The steps stating them** are a layer of `Checker.indexing`
+(`IndexWrites.linearAtoms`). An operand is a slot $`x`$ with
+$`\mathrm{int}(x)`$, of value $`x`$, or a literal that is a safe integer $`i`$, of
+value $`i`$; $`r`$ is the result:
+
+```math
+\frac{\mathrm{SafeInt}(b,i)}{r\leftarrow\mathsf{num}\,b\dashv\mathrm{int}(r),\ r=i}\ \textsf{int-literal}
+\qquad
+\frac{\mathrm{int}(x)}{r\leftarrow x\dashv\mathrm{int}(r),\ r=x}\ \textsf{int-copy}
+\qquad
+\frac{\Gamma(s)\equiv_G\mathsf{list}(\tau)}{r\leftarrow\mathsf{lenOf}(s)\dashv\mathrm{int}(r),\ 0\le r\le 2^{32}-1}\ \textsf{length-range}
+```
+
+```math
+\frac{K\vdash -(2^{53}-1)\le a\pm b\le 2^{53}-1}
+     {K\vdash r\leftarrow a\pm b\dashv\mathrm{int}(r),\ r=a\pm b}\ \textsf{int-exact}
+\qquad
+\frac{}{K\vdash c\leftarrow a\lhd b\dashv (a\lhd b\ \text{if}\ c),\ (\neg(a\lhd b)\ \text{if}\ \neg c)}\ \textsf{int-compare}
+```
+
+with $`K\vdash`$ the entailment of `Linear.entails` from the step's unconditional
+linear facts, $`\lhd`$ one of `<`, `<=`, `>`, `>=`, and each answer's fact over
+the integers ($`\neg(a<b)`$ is $`b\le a`$: two safe integers are never NaN).
+`length-range` reads the store contract's bound
+([arrays](POSITIVE-TYPES.md#arrays)). Proved: `IndexWrites.linearAtoms_holds`,
+from `SafeIntegers.add_safe`, `sub_safe` and `doubleOrder_safe`.
 
 ### A literal with spreads
 
