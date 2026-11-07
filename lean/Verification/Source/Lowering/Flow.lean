@@ -237,7 +237,11 @@ private def reachablePoints (graph : SourceFlow.Graph) (id : Nat) : List String 
         let p ← LoweringExpression.closureExpr recursive yesClaims ds Γy e
         let yes ← emitPlanned e.span p .ret Γy R "return-contract" (scope := ds)
         let no ← successor noId scope
-        let no : Target := ⟨no.label, some ((no.mapping.getD (List.range scope.length)).map (·+1))⟩
+        -- The failed test leaves the saved read at its negative slice too.
+        -- Any path witness the following entry requires holds that value.
+        let witness := readPathWitness scope read
+        let no : Target := ⟨no.label, some ((no.mapping.getD (List.range scope.length)).map
+          fun i => if witness == some i then 0 else i+1)⟩
         let A ← exprType fc cond
         let branch ← emitBranch ds K tested A yes no
         let predicate ← LoweringExecution.compileExpr recursive fc ds K tested branch

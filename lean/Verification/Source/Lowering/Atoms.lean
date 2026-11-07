@@ -1200,13 +1200,11 @@ with the knowledge their edges carry, such as the field a failed test left
       let B ← exprType fc read
       let ds := held ⟨snapshot,some read.span⟩ :: scope
       let K := B :: Γ
-      -- A read of a field of a path's witness is a read of the longer path:
-      -- its witness, where the scope holds one, is the saved read on both
-      -- edges, which holds the value the path's link states and the test's
-      -- refinement of it (HOST-FAMILIES.md, "Entries").
-      let longer : Option Nat := match read with
-        | .read _ f (.var _ w) => (valueSlot scope w).bind (longerWitness scope · f)
-        | _ => none
+      -- The tested path's witness is the saved read on both edges, holding
+      -- the value the path's link states and the test's refinement of it.
+      -- A field of a prefix's witness denotes the longer path too
+      -- (HOST-FAMILIES.md, "Entries").
+      let longer := readPathWitness scope read
       let lift := fun (t : Target) =>
         ⟨t.label, some ((t.mapping.getD (List.range scope.length)).map
           fun i => if longer == some i then 0 else i+1)⟩

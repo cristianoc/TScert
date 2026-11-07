@@ -98,3 +98,15 @@ export function numericChain(holder: {
   if (holder.value.size && holder.value.flag && holder.value.flag) return 1;
   return 0;
 }
+
+// The Python demo's fresh field test uses this same source lowering. Both
+// outcomes carry the value the test reads, including the bigint outcome.
+export function recheckedPrimitive(
+  holder: { value: string | bigint },
+  replacement: string | bigint,
+): string {
+  const alias = holder;
+  alias.value = replacement;
+  if (typeof holder.value === "string") return holder.value;
+  return "";
+}
