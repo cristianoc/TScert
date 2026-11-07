@@ -40,14 +40,16 @@ let unsupported = Json.unsupported
 let change_json = function Keep -> String "keep" | Grow -> String "grow" | Any -> String "any"
 let footprint_json f = Object ["value",change_json f.on_value;"store",change_json f.on_store]
 let kinds_json = function None -> Null | Some ks -> Array (List.map (fun k -> String k) ks)
-let index_fact_json =
+let rec index_fact_json fact =
   let term t =
     let x,path = match t with Value_at (x,p) | Length_at (x,p) | View_at (x,p) -> x,p in
     let kind = match t with Value_at _ -> "value" | Length_at _ -> "length" | View_at _ -> "view" in
     Object ["kind",String kind;"slot",int x;"path",Array (List.map (fun f -> String f) path)] in
   let linear k form d = Object ["linear",Object ["fact",Object [k,Object [
     "form",Array (List.map (fun (t,c) -> Array [term t;int c]) form);"bound",int d]]]] in
-  function
+  match fact with
+  | Guarded (x,path,tag,body) -> Object ["guarded",Object ["slot",int x;"path",Array (List.map (fun f -> String f) path);
+      "tag",String tag;"body",index_fact_json body]]
   | Index_at k -> Object ["index",Object ["slot",int k]]
   | Length_of (x,n) -> Object ["length",Object ["array",int x;"length",int n]]
   | Bound_by (x,k,strict) -> Object ["bound",Object ["array",int x;"index",int k;"strict",Bool strict]]
@@ -585,8 +587,17 @@ let encode (proposal : Proposal_types.t) =
      coefficients and a bound the wire states, safe integers; a fact
      derived past them is left out, a weaker claim. *)
   let safe k = abs k <= 9007199254740991 in
-  let facts bs = Array (List.filter_map (fun (n,_) -> match Environment.fact_parts n with
-    | Some (terms,bound) when safe bound && List.for_all (fun (_,c) -> safe c) terms -> Some (Object ["terms",Array (List.map (fun (t,c) ->
+  (* A guarded fact (`Linear_facts.gfact_key`) is its fact with its guards
+     (PROGRAM-TYPING.md, "Guarded clauses"). *)
+  let facts bs = Array (List.filter_map (fun (n,_) ->
+    let fact = match Environment.fact_parts n with
+      | Some f -> Some ([],f)
+      | None -> Linear_facts.gfact_parts n in
+    match fact with
+    | Some (guards,(terms,bound)) when safe bound && List.for_all (fun (_,c) -> safe c) terms -> Some (Object [
+      "guards",Array (List.map (fun (x,path,tag) ->
+        Object ["name",String x;"path",Array (List.map (fun f -> String f) path);"tag",String tag]) guards);
+      "terms",Array (List.map (fun (t,c) ->
         let name,path,kind = Linear_facts.term_parts t in
         let kind = match kind with Linear_facts.Value_term -> "value" | Linear_facts.Length_term -> "length" | Linear_facts.View_term -> "view" in
         Object ["name",String name;"path",Array (List.map (fun f -> String f) path);"term",String kind;

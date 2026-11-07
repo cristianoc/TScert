@@ -758,7 +758,7 @@ def EnsuresAt (ens : List HeapKnowledge.IndexFact) (h : Heap) (ρ : Env) : Prop 
 /-- Whether a knowledge, its result at slot `0`, entails the facts, each
 input's position read at the slot after the result its pair names. -/
 def returnEntails (k : HeapKnowledge.Knowledge) (t : Tracked) (ens : List HeapKnowledge.IndexFact) : Bool :=
-  namesTracked t ens && HeapKnowledge.indicesCheckBy (HeapLinks.aliases k.links) k.links k.indices
+  namesTracked t ens && HeapKnowledge.indicesCheckWith (HeapKnowledge.guardTags k) (HeapLinks.aliases k.links) k.links k.indices
     (ens.map fun F => ⟨F, none, false⟩) (returnMapping t ens)
 
 theorem returnEntails_sound {k : HeapKnowledge.Knowledge} {t : Tracked} {ens : List HeapKnowledge.IndexFact}
@@ -767,7 +767,8 @@ theorem returnEntails_sound {k : HeapKnowledge.Knowledge} {t : Tracked} {ens : L
     EnsuresAt ens h (push v ρ0) := by
   simp only [returnEntails, Bool.and_eq_true] at hc
   intro F hF
-  have hheld := HeapKnowledge.indicesCheckBy_sound (fun x y hy => HeapLinks.aliases_eq hk.2.2.1 hy) hk.2.2.1
+  have hheld := HeapKnowledge.indicesCheckWith_sound (HeapKnowledge.guardTags_sound hk)
+    (fun x y hy => HeapLinks.aliases_eq hk.2.2.1 hy) hk.2.2.1
     hc.2 hk.2.2.2.2.2 ⟨F, none, false⟩ (List.mem_map_of_mem hF) (fun b hb => by cases hb)
   exact (HeapKnowledge.IndexFact.holdsAt_congr (returnMapping_eq hF hc.1 ht)).mp hheld
 

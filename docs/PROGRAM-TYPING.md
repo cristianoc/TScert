@@ -1541,7 +1541,8 @@ length atom or a linear fact naming it, an element count or a path by a linear
 fact naming it (`linearFollows`, proved: `linearFollows_sound`).
 
 **The read bridge.** A current read link $`x.f\mapsto v`$ (`HeapLinks.Holds`,
-neither an alias nor optional, $`f`$ a string key) states that $`v`$ holds
+not an alias, $`f`$ a string key; through an optional key as
+[guarded clauses](#guarded-clauses) state) states that $`v`$ holds
 what reading $`f`$ from $`x`$'s object gives, so for every kind and path
 $`p`$ the term rooted at $`v`$ with $`p`$ denotes what the term rooted at
 $`x`$ with $`f.p`$ denotes, or neither denotes an integer
@@ -2085,9 +2086,11 @@ precondition is the one the unit is checked assuming (`qualifiedRead`), so
 `call-requires` checks every call of the analyzed sources, an importer's
 included. A caller outside the analyzed sources is trusted to establish it
 ([trust surface](DESIGN.md#trust-surface)).
+A clause may start with guards ([guarded clauses](#guarded-clauses)).
 Every other form of the draft's grammar ([checked bound
-annotations](drafts/checked-bound-annotations.md): guards, `old`, `result`,
-computed keys, `||`, `!`) is refused with the declaration's location.
+annotations](drafts/checked-bound-annotations.md): `old`, `result`,
+computed keys, a `||` after an atom, `!`) is refused with the declaration's
+location.
 
 A call selects a signature stating a precondition where the producer's own
 facts at the call's statement establish it: the bounds and linear facts of
@@ -2255,7 +2258,8 @@ over `widths` and `segmentFlags`. A failing return is refused at its
 statement (`ensuresRefusal`).
 
 **The excluded forms**, refused with the clause's location: a clause outside
-the language (a guard, `||`, `!`), as a written clause's. Closures, methods,
+the language (a `||` after an atom, `!`), as a written clause's; guards are
+[guarded clauses](#guarded-clauses). Closures, methods,
 overloaded and nested declarations state no invariant facts.
 
 **Cases.** Positive: `record-invariant-walker` (pretext's `line-break.ts`
@@ -2295,6 +2299,148 @@ invariant claimed at the walker's entry after the resize, refused there. A
 cast into or out of a handle is itself an obligation of the operand at the
 handle's or the record's type, which these casts do not meet
 (`blocker-pretext-opaque-handle-cast`).
+
+### Guarded clauses
+
+A [written clause](#written-preconditions) or a
+[record invariant](#record-invariants) may start with **guards**, each a
+test that its path reads `null` or `undefined`:
+
+```math
+K ::= p\ \texttt{===}\ \mathtt{null}\ \texttt{||}\ K \;\mid\; p\ \texttt{===}\ \mathtt{undefined}\ \texttt{||}\ K \;\mid\; C
+```
+
+with $`C`$ a conjunction of atoms; `undefined` names the primitive value, and
+a parameter named `undefined` refuses the clause. Each path after a guard is
+resolved where the guards before it fail: the type at a guarded prefix is its
+type without the tag's arm, and an optional field is read where `undefined`
+is excluded of it, or, at a guard's own path, where the guard tests
+`undefined`. So `this.items === undefined || this.items.hyphenWidths === null
+|| this.items.hyphenWidths.length === this.widths.length` reads `items` past
+the first guard and `hyphenWidths`'s length past the second
+(`clauseParameter`, `withoutTags`, `fragment-statements.mts`). Each fact the
+conjunction elaborates to, with every safe-integer obligation of its
+arithmetic, is wrapped in a **guarded fact** of each guard, the first
+outermost (`IndexFact.guarded`).
+
+**Meaning.** A guard's path reads a value with each field the object's read
+of a string key (`HeapFacts.ReadGave`): the location's value where the object
+owns the key, `undefined` where it owns neither the key nor a prototype; a
+missing intermediate object reads nothing (`readGuard`). With $`g`$ the
+guard's tag, `null` or `undefined`, and $`\overline g`$ its value:
+
+```math
+\mathrm{guarded}(x.p,g,B)(\rho,h) \iff \exists v.\ \mathrm{readGuard}(h,\rho(x),p)=v\land\bigl(v=\overline g\lor B(\rho,h)\bigr)
+```
+
+A matching guard requires nothing of the body's terms; a failed read
+establishes no disjunction. A numeric term reads an absent field as nothing
+(`readPath`), so a guard admits an absent `items` without reading its length
+as `0`. Renaming, heap extension and slot congruence carry a guarded fact as
+they carry its body (proved: `IndexFact.holdsAt_mapM`, `holdsAt_extend`,
+`holdsAt_congr`).
+
+**Elimination.** An observation excluding the tag of a guard whose path reads
+the observed value removes the guard (`HeapKnowledge.unguardIndices`, applied
+by `observe`; proved: `unguardIndices_holds`): a failed `null`, `undefined`
+or nullish test, or a truthy answer (`excludesTag`, proved: `excludesTag_ne`);
+the path is a slot of the observed slot's alias class, or one field a current
+read link, optional or not, gives as one (`readsClass`, proved:
+`readsClass_eq`):
+
+```math
+\frac{\mathrm{guarded}(x.p,g,B)\in\Sigma\qquad \mathrm{reads}_\Sigma(x.p)=y\qquad o\ \text{excludes}\ \overline g\ \text{of}\ y}
+     {\Sigma\vdash y\ \text{observed}\ o\dashv\Sigma,\ B}\ \textsf{guard-eliminate}
+```
+
+So `const { contexts } = prepared; if (contexts !== null) … contexts[i]!`
+reads below the length the invariant states: the destructuring's read link
+restates the guard of `prepared.contexts` as one of `contexts`, and the
+dispatch's failed `null` test frees the body.
+
+**Introduction.** A guarded target atom, unconditional, on an edge, at a
+call's precondition or at a return, is renamed into the source's slots and
+entailed (`guardFollows`, `guardEntails`; proved: `guardEntails_sound`,
+`guardFollows_sound`, within `indicesCheckWith_sound`): its path is
+restated toward its root by read links (`liftGuard`, proved: `liftGuard_eq`)
+and toward its end (`lowerGuard`, proved: `lowerGuard_eq`), its body's terms
+by the read bridge, and it holds where
+
+```math
+\frac{\mathrm{tag}_\Sigma(x.p)=\overline g}{\Sigma\vdash\mathrm{guarded}(x.p,g,B)}\ \textsf{guard-tag}
+\qquad
+\frac{\mathrm{guarded}(x'.p',g,B')\in\Sigma\qquad \mathrm{lift}(x'.p')=\mathrm{lift}(x.p)\qquad \Sigma,B'\vdash B}
+     {\Sigma\vdash\mathrm{guarded}(x.p,g,B)}\ \textsf{guard-match}
+\qquad
+\frac{\mathrm{lower}(x.p)=y\qquad \Sigma\vdash B}{\Sigma\vdash\mathrm{guarded}(x.p,g,B)}\ \textsf{guard-body}
+```
+
+with $`\mathrm{tag}_\Sigma`$ a value fact of the path's slot, or a cell fact
+of its one field, holding the tag's value alone (`guardTags`, proved:
+`guardTags_sound`), and $`\mathrm{lower}(x.p)=y`$ the path restated to a slot
+alone, whose read is defined. An edge reads the value a slot's type states
+of each slot its target's guarded atoms test alone (`typeValues`,
+`ControlFlow.withTypedCells`). So a builder's `return { widths, contexts:
+null }` proves the invariant by its field's value and `return { widths,
+contexts }` after `if (contexts !== null && contexts.length !==
+widths.length) throw …` by its two edges, one entering where `contexts` is
+`null`, the other where the lengths are equal.
+
+**Joins.** A merge of the search keeps a guarded candidate, each
+predecessor's guarded atom also restated through its read links, where every
+predecessor's knowledge entails it (`CertificateProducer`, untrusted; each
+edge is checked). The search keeps the value a slot's type states where it
+admits `null` alone or `undefined` alone, which an edge widening the slot's
+type would otherwise lose (`withTagValues`). So `const hyphenWidths = items
+=== undefined ? null : items.hyphenWidths` states `hyphenWidths === null ||
+hyphenWidths.length === widths.length` on each arm.
+
+**Across a heap change.** A change keeps a guarded fact where it keeps its
+guard's read, a slot alone or one field whose location it keeps
+($`\mathrm{first}(x,f)`$), and its body (`guardKept`, `IndexFact.keptBy`;
+proved: `readGuard_kept`, `holdsAt_kept`):
+
+```math
+\mathrm{kept}_\chi(\mathrm{guarded}(x.p,g,B)) \iff (p=[\,]\lor(p=[f]\land\mathrm{first}(x,f)))\land\mathrm{kept}_\chi(B)
+```
+
+A guard read through a longer path, whose locations may hold any value, is
+kept by no change. A guarded fact over a slot alone reads the environment
+where its body does (`IndexFact.envOnly`, proved: `holdsAt_envOnly`).
+
+**The read bridge through an optional key.** A read link through a key the
+object may lack bridges terms too: where the key is absent, the read gave
+`undefined`, of which no term denotes an integer, as none does of the path
+through the absent key (`readBridge`, proved).
+
+**The producer** (`linear_facts.ml`) carries guarded facts as it carries
+linear facts, each a pseudo-binding (`gfact_key`): from a precondition and a
+call's result facts; restated at a path's read and a destructuring; kept by a
+heap change where its guards read slots alone and the change keeps its fact;
+a test's answer excluding a guard's tag adds its body (`geliminate`); `a &&
+b`'s `false` answer, where `a` tests a path against one tag, states `b`'s
+answer guarded by that tag (`gtest`); a conditional with a `null` or
+`undefined` arm states the other arm's restated guarded facts. Entry claims
+carry each fact's ordered `guards` (`LinearClaim.guards`), each a binding's
+name, a path and a tag; the lowering wraps the fact in them
+(`Lowering/Flow.lean`).
+
+**Limits.** An object literal with no field `items` has a prototype, so its
+read of `items` is the prototype's, which no rule reads: a builder returning
+`{ widths }` does not establish `this.items === undefined`. A guard of two
+fields or more is introduced by a matching guard or its value's cell facts,
+and is kept by no heap change.
+
+**Cases.** Positive `guarded-invariant-nullable` (pretext's
+`discretionaryHyphenContexts`: two builders, a destructured walker,
+`returnsFromUnfitHyphen`'s shape, a walker testing the path, two callers) and
+`guarded-invariant-optional` (pretext's `items?.hyphenWidths` in
+`walkPreparedComplexLines`); negative, each run under Node,
+`invalid-guarded-invariant-short` (a builder returning untested contexts,
+refused at its return) and `invalid-guarded-invariant-other-field` (the
+null test of another field, refused at the read); forged controls: the guard
+removed from a claimed fact, and a guard naming another field, each refused
+at its entry.
 
 ### A literal with spreads
 

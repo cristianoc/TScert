@@ -115,6 +115,7 @@ theorem indexed_sound {k : Knowledge} {a : Nat} {ρ h} (hc : indexed k a = true)
   | bound _ _ _ => rw [hfact] at hf; cases hf
   | int _ => rw [hfact] at hf; cases hf
   | linear _ => rw [hfact] at hf; cases hf
+  | guarded _ _ _ _ => rw [hfact] at hf; cases hf
 
 /-- The arrays whose store's length a slot of `n`'s class holds, by unconditional ats. -/
 def lengthsOf (k : Knowledge) (n : Nat) : List Nat :=
@@ -147,6 +148,7 @@ theorem lengthsOf_sound {k : Knowledge} {n x : Nat} {ρ h} (hx : x ∈ lengthsOf
     | bound _ _ _ => rw [hfact] at hm; cases hm
     | int _ => rw [hfact] at hm; cases hm
     | linear _ => rw [hfact] at hm; cases hm
+    | guarded _ _ _ _ => rw [hfact] at hm; cases hm
   · cases hm
 
 /-- The arrays a slot of `s`'s class was read from as their store: read links
@@ -1087,6 +1089,7 @@ theorem boundAtom_sound {k : Knowledge} {a i : Nat} {strict : Bool} {ρ h} (hc :
   | length _ _ => rw [hfact] at hf; cases hf
   | int _ => rw [hfact] at hf; cases hf
   | linear _ => rw [hfact] at hf; cases hf
+  | guarded _ _ _ _ => rw [hfact] at hf; cases hf
 
 /-- Whether the linear facts bound a slot `i` by the length of the store of an
 array of `a`'s class (`HeapKnowledge.lengthBound`). -/

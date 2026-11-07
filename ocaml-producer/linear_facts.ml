@@ -106,9 +106,42 @@ let tighten (fs : fact list) : fact list =
   let forms = List.sort_uniq compare (List.map fst fs) in
   List.map (fun t -> t, List.fold_left (fun acc (t',d) -> if t' = t then min acc d else acc) max_int fs) forms
 
+(* A guarded fact (PROGRAM-TYPING.md, "Guarded clauses"; Lean's
+   `IndexFact.guarded`): where none of its guards, in order, reads its tag's
+   value, its fact holds; a guard a value binding's name, the named data
+   fields read from it in turn, and `null` or `undefined`. Held as a fact's
+   pseudo-binding whose name, after `\003G`, encodes it; `fact_parts` reads
+   none of these. *)
+type guard = string * string list * string
+type gfact = guard list * fact
+let gfact_key ((gs,(t,b)) : gfact) =
+  "\003G" ^ String.concat "\008" (List.map (fun (x,p,tag) -> x ^ "\007" ^ String.concat "." p ^ "\007" ^ tag) gs)
+  ^ "\006" ^ fact_key (norm t) b
+let gfact_parts n : gfact option =
+  if String.length n < 2 || String.sub n 0 2 <> "\003G" then None else
+  match String.index_opt n '\006' with
+  | None -> None
+  | Some i ->
+    let gs = String.sub n 2 (i - 2) and f = String.sub n (i + 1) (String.length n - i - 1) in
+    let guard g = match String.split_on_char '\007' g with
+      | [x; p; tag] -> Some (x, (if p = "" then [] else String.split_on_char '.' p), tag)
+      | _ -> None in
+    let guards = List.map guard (String.split_on_char '\008' gs) in
+    if gs = "" || List.exists Option.is_none guards then None else
+    Option.map (fun fact -> List.filter_map Fun.id guards, fact) (fact_parts f)
+let is_gfact n = gfact_parts n <> None
+let gfacts env : gfact list = List.filter_map (fun (n,_) -> gfact_parts n) env
+
 let add env (fs : fact list) =
   let fs = tighten fs in
-  strip env @ List.map (fun (t,b) -> fact_key t b, Value Semantic.top) fs
+  List.filter (fun (n,_) -> not (is_fact n) || is_gfact n) env @ List.map (fun (t,b) -> fact_key t b, Value Semantic.top) fs
+let gadd env (gs : gfact list) =
+  List.filter (fun (n,_) -> not (is_gfact n)) env @
+    List.map (fun g -> gfact_key g, Value Semantic.top) (List.sort_uniq compare gs)
+(* The bindings a guarded fact names, its guards' and its fact's. *)
+let gbindings ((gs,(t,_)) : gfact) = List.map (fun (x,_,_) -> x) gs @ List.map (fun (n,_) -> term_binding n) t
+let gmentions x g = List.mem x (gbindings g)
+let gforget x (gs : gfact list) = List.filter (fun g -> not (gmentions x g)) gs
 
 (* A binding a fact may name: a value or a slot local, never a cell. *)
 let value_binding env x = match List.assoc_opt x env with
@@ -645,6 +678,11 @@ let atom_length_test ~array env fs (cond : expr) =
   | [_,j,_],_ -> [[j,1],max_index]
   | _ -> []
 
+(* Whether the binding's path holds an array where it is not `null` or
+   `undefined`, set by the statement analysis, which reads the type. *)
+let array_unless_nullish : ((string * Environment.binding) list -> string -> string list -> bool) ref =
+  ref (fun _ _ _ -> false)
+
 (* What each answer of a test states, its facts and its bounds. A
    comparison's as above; `a && b` answers `true` where both do, `b`
    evaluated with what `a`'s `true` states, and `a || b` answers `false`
@@ -775,3 +813,167 @@ let with_test env (c : expr) yes f =
     current_facts := saved @ (if yes then t else fl);
     Fun.protect ~finally:(fun () -> current_facts := saved) f
   end
+
+(* Guarded facts across a step (PROGRAM-TYPING.md, "Guarded clauses"), as
+   Lean keeps them: a step writing no heap keeps each; one writing it keeps
+   those whose guards read slots alone and whose fact the step keeps
+   (`IndexFact.keptBy`), here the stable ones or those `ch` keeps. *)
+let gkept ?ch env (gs : gfact list) =
+  List.filter (fun ((guards,f) : gfact) -> List.for_all (fun (_,p,_) -> p = []) guards &&
+    (stable_fact env f || match ch with Some ch -> fact_kept ch f | None -> false)) gs
+
+(* The guarded facts restated where a binding is declared at a path's read
+   (`const b = p.f`), as `restate_read` restates facts: each guard's path and
+   each term extending the read path restated of the binding, as Lean's
+   read link restates a guard's path (`liftGuard`) and a term. *)
+let grestate_read name (root,path) (gs : gfact list) : gfact list =
+  let rec prefix p q = match p,q with
+    | [],rest -> Some rest
+    | f :: p,g :: q when f = g -> prefix p q
+    | _ -> None in
+  let rename t = let b,p,kind = term_parts t in
+    if b <> root then None else Option.map (fun rest -> make_term ~path:rest kind name) (prefix path p) in
+  let guard (x,p,tag) = if x <> root then None else Option.map (fun rest -> name,rest,tag) (prefix path p) in
+  List.filter_map (fun ((guards,(t,d)) : gfact) ->
+    if List.exists (fun g -> guard g <> None) guards || List.exists (fun (n,_) -> rename n <> None) t then
+      Some (List.map (fun g -> Option.value ~default:g (guard g)) guards,
+        (norm (List.map (fun (n,c) -> (match rename n with Some m -> m | None -> n),c) t),d))
+    else None) gs
+
+(* What a test's answer excludes of a path: `p === null` answering `false`
+   (`!==` answering `true`) excludes `null` of `p`, `undefined` alike, `==`
+   both; a truthy answer excludes both; `a && b` answering `true` and `a ||
+   b` answering `false` what both operands' answers exclude, in order. *)
+let rec excluded env (c : expr) (answer : bool) : (string * string list * string list) list =
+  let nullish (e : expr) = match e.node with
+    | Literal LNull -> Some ["null"]
+    | Literal LUndefined | Id "undefined" -> Some ["undefined"]
+    | _ -> None in
+  match c.node with
+  | Equality (op,a,b) ->
+    let operand,tags = match nullish b, nullish a with
+      | Some t,_ -> a,t | None,Some t -> b,t | None,None -> a,[] in
+    let tags = match op with LooseEqual | LooseUnequal when tags <> [] -> ["null"; "undefined"] | _ -> tags in
+    let unequal = match op with StrictUnequal | LooseUnequal -> true | _ -> false in
+    (match path_of env operand with
+     | Some (x,p) when tags <> [] && unequal = answer -> [x,p,tags]
+     | _ -> [])
+  | Logical (conjunction,a,b) when conjunction = answer -> excluded env a answer @ excluded env b answer
+  | Not a -> excluded env a (not answer)
+  | Id _ | Read _ when answer -> (match path_of env c with Some (x,p) -> [x,p,["null"; "undefined"]] | None -> [])
+  | _ -> []
+
+(* Guard elimination (Lean's `unguardIndices`, which keeps the atoms it
+   reads): each exclusion in turn adds, of a guarded fact whose first guard
+   reads the excluded path with an excluded tag, the fact past that guard; a
+   fact left with no guard is a fact. *)
+let geliminate exclusions (gs : gfact list) : fact list * gfact list =
+  let gs = List.fold_left (fun gs (x,p,tags) -> gs @ List.filter_map (fun ((guards,f) : gfact) -> match guards with
+    | (y,q,tag) :: rest when y = x && q = p && List.mem tag tags -> Some (rest,f)
+    | _ -> None) gs) gs exclusions in
+  List.filter_map (fun ((guards,f) : gfact) -> if guards = [] then Some f else None) gs,
+  List.sort_uniq compare (List.filter (fun ((guards,_) : gfact) -> guards <> []) gs)
+
+(* What an answer of `a && b` (`a || b`) that `a` alone may give states,
+   where `a`'s other answer excludes one tag of a path (`x !== null`): on
+   that answer either the path reads the tag's value, or `b` gave it, so
+   each fact `b`'s answer states holds guarded by the path's test
+   (`guard-introduce`). *)
+let gtest ~array env fs (c : expr) answer : gfact list =
+  match c.node with
+  | Logical (conjunction,a,b) when conjunction <> answer ->
+    (match excluded env a conjunction with
+     | [(x,p,[tag])] ->
+       let (ta,_),(fa,_) = test ~array env fs a in
+       (* `b` runs where `a` excludes the tag: an array path's type there
+          is its type without `null` or `undefined`. *)
+       let array y q = array y q || (y = x && q = p && !array_unless_nullish env x p) in
+       let (tb,_),(fb,_) = test ~array env (fs @ (if conjunction then ta else fa)) b in
+       List.map (fun f -> [x,p,tag],f) (if conjunction then fb else tb)
+     | _ -> [])
+  | _ -> []
+
+(* The guarded facts a precondition's index facts state, at a call's
+   positions restated over bindings (`of_index_facts`). *)
+let rec of_guarded_fact (name : int -> string option) (fact : Semantic.index_fact) : gfact option =
+  match fact with
+  | Semantic.Guarded (x,path,tag,body) ->
+    (match name x with
+     | None -> None
+     | Some n ->
+       let guard = n,path,tag in
+       (match body with
+        | Semantic.Guarded _ -> Option.map (fun (gs,f) -> guard :: gs,f) (of_guarded_fact name body)
+        | _ -> (match of_index_facts name [body] with [f] -> Some ([guard],f) | _ -> None)))
+  | _ -> None
+
+(* The guarded facts the signatures of the binding `f` state at a call's
+   normal return, as `call_facts` states its facts. *)
+let call_gfacts ?name env f (args : expr list) : gfact list =
+  List.filter_map (fun fact -> of_guarded_fact (fun p ->
+    if p = 0 then name
+    else if p >= 2 then (match List.nth_opt args (p - 2) with
+      | Some {node=Id a;_} when value_binding env a -> Some a
+      | _ -> None)
+    else None) fact) (!call_ensures env f)
+
+(* A declaration's guarded facts: as a statement's, then restated at a
+   path's read; `const x = c ? null : p.f` (or with the arms swapped, or
+   `undefined`) states of `x` what the read's arm states, under the guard
+   `x === null`: on the literal's arm the guard reads its tag's value. *)
+let gdeclaration env (gs : gfact list) (fs : fact list) name (init : expr) : gfact list =
+  let gs = if heap_free env init then gs else gkept env gs in
+  let gs = gforget name gs in
+  (* `const x = f(…)` of a function stating guarded facts of its result. *)
+  let gs = match init.node with
+    | Call ({node=Id f;_},None,args,[],_) -> gs @ call_gfacts ~name env f args
+    | _ -> gs in
+  let rec uncast (e : expr) = match e.node with
+    | Cast (("as" | "satisfies" | "nonNull"),_,a) -> uncast a
+    | _ -> e in
+  let read = match path_of env (uncast init) with
+    | Some (root,(_ :: _ as path)) when root <> name && heap_free env init -> grestate_read name (root,path) gs
+    | _ -> [] in
+  let literal (e : expr) = match e.node with
+    | Literal LNull -> Some "null"
+    | Literal LUndefined | Id "undefined" -> Some "undefined"
+    | _ -> None in
+  let conditional = match init.node with
+    | Conditional (c,a,b) when heap_free env init ->
+      let arm = match literal a, literal b with
+        | Some tag,None -> Some (tag,b,false)
+        | None,Some tag -> Some (tag,a,true)
+        | _ -> None in
+      (match arm with
+       | Some (tag,e,answer) ->
+         (match path_of env e with
+          | Some (root,(_ :: _ as path)) when root <> name ->
+            let facts,guarded = geliminate (excluded env c answer) gs in
+            let under ((guards,_) : gfact) = match guards with
+              | (x,[],t) :: _ -> x = name && t = tag
+              | _ -> false in
+            List.filter under (grestate_read name (root,path) guarded) @
+            List.map (fun f -> [name,[],tag],f) (List.filter (mentions name) (restate_read name (root,path) (fs @ facts)))
+          | _ -> [])
+       | None -> [])
+    | _ -> [] in
+  gs @ read @ conditional
+
+(* A statement's guarded facts: those naming a binding it assigns
+   forgotten, those a heap write keeps (`gkept`), and a destructuring's
+   field reads restated of the names they are bound to. *)
+let gstatement ?(bounds=[]) env (fs : fact list) (gs : gfact list) (s : stmt) : gfact list =
+  let gs = if statement_heap_free env s then gs else gkept ?ch:(statement_changes ~facts:fs ~bounds env s) env gs in
+  let gs = List.fold_left (fun gs x -> gforget x gs) gs (names_assigned s env) in
+  let gs = match s.statement with
+    | Effect {node=Call ({node=Id f;_},None,args,[],_);_} -> gs @ call_gfacts env f args
+    | _ -> gs in
+  match s.statement with
+  | Destructure _ ->
+    (match destructure_reads env s with
+     | Some ((root,path),fields) ->
+       let gs = List.fold_left (fun gs (_,n) -> gforget n gs) gs fields in
+       gs @ List.concat_map (fun (f,n) -> grestate_read n (root,path @ [f]) gs) fields
+     | None -> gs)
+  | _ -> gs
+

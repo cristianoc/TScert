@@ -268,11 +268,15 @@ theorem fieldSets_reassign : ∀ (Els : List (List ι)),
     simp only [HeapExpressionRules.fieldSets, fieldSets_reassign rest]
     rfl
 
+omit [DecidableEq ι] in
+theorem typeValues_reassign (Γ : List (List ι)) (i : Nat) :
+    HeapExpressionRules.typeValues (reassign G η) Γ i = HeapExpressionRules.typeValues G Γ i := rfl
+
 theorem withTypedCells_reassign (Γ : List (List ι)) (k : HeapKnowledge.Knowledge) (m : Mapping)
     (facts : HeapKnowledge.Knowledge) :
     withTypedCells (reassign G η) Γ k m facts = withTypedCells G Γ k m facts := by
   simp only [withTypedCells, HeapExpressionRules.typedCells, HeapExpressionRules.typedFieldSet, expand_reassign,
-    fieldSets_reassign]
+    fieldSets_reassign, typeValues_reassign]
 
 theorem checkTarget_reassign (P : Program) (C : ControlFlow.Certificate ι) (Γ : List (List ι)) (t : Target)
     (p : EdgeEvidence ι) (facts : HeapKnowledge.Knowledge) (xs : List (PromiseCalls.Implication ι))

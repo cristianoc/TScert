@@ -48,13 +48,20 @@ export type CallEffect = {
 /** An index fact at numbered positions (`HeapKnowledge.IndexFact`, its
  * constructor's name holding its fields): an array index; the length of an
  * array's store; an index at most that length, below it where `strict`; a
- * safe integer; a linear fact `Σ c·t ≤ d` or `≠ d`. */
+ * safe integer; a linear fact `Σ c·t ≤ d` or `≠ d`; a guarded fact, which
+ * holds where the named data fields `path` read from the position `slot`
+ * give the value `tag` names, or where its body holds (PROGRAM-TYPING.md,
+ * "Guarded clauses"). */
 export type IndexFact =
   | { readonly index: { readonly slot: number } }
   | { readonly length: { readonly array: number; readonly length: number } }
   | { readonly bound: { readonly array: number; readonly index: number; readonly strict: boolean } }
   | { readonly int: { readonly slot: number } }
-  | { readonly linear: { readonly fact: LinearFact } };
+  | { readonly linear: { readonly fact: LinearFact } }
+  | { readonly guarded: { readonly slot: number; readonly path: readonly string[]; readonly tag: GuardTag;
+      readonly body: IndexFact } };
+/** The value a guard compares a path's read with (`HeapKnowledge.GuardTag`). */
+export type GuardTag = "null" | "undefined";
 /** A linear fact (`Linear.Fact`): `Σ c·t ≤ bound` or `≠ bound`, each term a
  * linear term and its coefficient. */
 export type LinearFact =

@@ -113,7 +113,8 @@ export interface HeapKnowledge {
 }
 type IndexFact = { index: { slot: number } } | { length: { array: number; length: number } } |
   { bound: { array: number; index: number; strict: boolean } } | { int: { slot: number } } |
-  { linear: { fact: { le: { form: [LinearTerm, number][]; bound: number } } | { ne: { form: [LinearTerm, number][]; bound: number } } } };
+  { linear: { fact: { le: { form: [LinearTerm, number][]; bound: number } } | { ne: { form: [LinearTerm, number][]; bound: number } } } } |
+  { guarded: { slot: number; path: string[]; tag: "null" | "undefined"; body: IndexFact } };
 /** A linear fact's term: a root slot, the named data fields read from it
  * (`path`), and what it reads of the value they end at: the value, the length
  * of its array store, or the element count of its typed array. */
@@ -396,39 +397,53 @@ function knowledge(v: Json | undefined): HeapKnowledge | null {
   for (const atom of k.indices) {
     const a = record(atom,["fact","cond","negated"]);
     if (typeof a.negated !== "boolean") throw Error("invalid index fact");
-    const f = a.fact;
-    if (f === null || typeof f !== "object" || Array.isArray(f)) throw Error("invalid index fact");
-    let fact: IndexFact;
-    if ("index" in f) fact = { index: { slot: nat(record(record(f,["index"]).index,["slot"]).slot) } };
-    else if ("length" in f) {
-      const l = record(record(f,["length"]).length,["array","length"]);
-      fact = { length: { array: nat(l.array), length: nat(l.length) } };
-    } else if ("bound" in f) {
-      const b = record(record(f,["bound"]).bound,["array","index","strict"]);
-      if (typeof b.strict !== "boolean") throw Error("a bound's strict is a Boolean");
-      fact = { bound: { array: nat(b.array), index: nat(b.index), strict: b.strict } };
-    } else if ("int" in f) {
-      fact = { int: { slot: nat(record(record(f,["int"]).int,["slot"]).slot) } };
-    } else {
-      const stated = record(record(f,["linear"]).linear,["fact"]).fact;
-      const le = isParsedObject(stated) && "le" in stated;
-      const F = record(stated, le ? ["le"] : ["ne"]);
-      const body = record(le ? F.le : F.ne, ["form","bound"]);
-      if (!Array.isArray(body.form) || typeof body.bound !== "number") throw Error("a linear fact's form and bound");
-      const form: [LinearTerm, number][] = body.form.map((t: Json): [LinearTerm, number] => {
-        if (!Array.isArray(t) || t.length !== 2 || typeof t[1] !== "number") throw Error("a linear fact's term");
-        const term = record(t[0], ["kind", "slot", "path"]);
-        const kind = term.kind;
-        if (kind !== "value" && kind !== "length" && kind !== "view") throw Error("a linear term's kind");
-        const path = term.path;
-        if (!Array.isArray(path) || !path.every((f: Json) => typeof f === "string")) throw Error("a linear term's path");
-        return [{ kind, slot: nat(term.slot), path: path.filter((f: Json): f is string => typeof f === "string") }, t[1]];
-      });
-      fact = { linear: { fact: le ? { le: { form, bound: body.bound } } : { ne: { form, bound: body.bound } } } };
-    }
+    const fact = indexFact(a.fact);
     indices.push({ fact, negated: a.negated, ...(a.cond === null ? {} : { cond: nat(a.cond) }) });
   }
   return { cells, values, links, separation: { depth, facts }, elems, indices };
+}
+
+/** An index fact of a knowledge (`HeapKnowledge.IndexFact`), decoded field
+ * by field; a guarded fact's body in turn. */
+function indexFact(f: Json | undefined): IndexFact {
+  if (f === null || typeof f !== "object" || Array.isArray(f)) throw Error("invalid index fact");
+  let fact: IndexFact;
+  if ("guarded" in f) {
+    const g = record(record(f,["guarded"]).guarded,["slot","path","tag","body"]);
+    const path = g.path;
+    if (!Array.isArray(path) || !path.every((x: Json) => typeof x === "string")) throw Error("a guard's path");
+    if (g.tag !== "null" && g.tag !== "undefined") throw Error("a guard's tag");
+    return { guarded: { slot: nat(g.slot), path: path.filter((x: Json): x is string => typeof x === "string"), tag: g.tag,
+      body: indexFact(g.body) } };
+  }
+  if ("index" in f) fact = { index: { slot: nat(record(record(f,["index"]).index,["slot"]).slot) } };
+  else if ("length" in f) {
+    const l = record(record(f,["length"]).length,["array","length"]);
+    fact = { length: { array: nat(l.array), length: nat(l.length) } };
+  } else if ("bound" in f) {
+    const b = record(record(f,["bound"]).bound,["array","index","strict"]);
+    if (typeof b.strict !== "boolean") throw Error("a bound's strict is a Boolean");
+    fact = { bound: { array: nat(b.array), index: nat(b.index), strict: b.strict } };
+  } else if ("int" in f) {
+    fact = { int: { slot: nat(record(record(f,["int"]).int,["slot"]).slot) } };
+  } else {
+    const stated = record(record(f,["linear"]).linear,["fact"]).fact;
+    const le = isParsedObject(stated) && "le" in stated;
+    const F = record(stated, le ? ["le"] : ["ne"]);
+    const body = record(le ? F.le : F.ne, ["form","bound"]);
+    if (!Array.isArray(body.form) || typeof body.bound !== "number") throw Error("a linear fact's form and bound");
+    const form: [LinearTerm, number][] = body.form.map((t: Json): [LinearTerm, number] => {
+      if (!Array.isArray(t) || t.length !== 2 || typeof t[1] !== "number") throw Error("a linear fact's term");
+      const term = record(t[0], ["kind", "slot", "path"]);
+      const kind = term.kind;
+      if (kind !== "value" && kind !== "length" && kind !== "view") throw Error("a linear term's kind");
+      const path = term.path;
+      if (!Array.isArray(path) || !path.every((f: Json) => typeof f === "string")) throw Error("a linear term's path");
+      return [{ kind, slot: nat(term.slot), path: path.filter((f: Json): f is string => typeof f === "string") }, t[1]];
+    });
+    fact = { linear: { fact: le ? { le: { form, bound: body.bound } } : { ne: { form, bound: body.bound } } } };
+  }
+  return fact;
 }
 
 /** A node record with its node decoded in place of its wire form, as the

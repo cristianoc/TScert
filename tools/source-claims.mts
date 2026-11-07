@@ -106,9 +106,20 @@ interface LinearTermClaim {
   coefficient: number;
 }
 
-/** A linear fact proposed at a statement entry: the sum of the terms is at
- * most `bound` (PROGRAM-TYPING.md, "Linear facts"). */
+/** A guard of a proposed fact (PROGRAM-TYPING.md, "Guarded clauses"): the
+ * named data fields `path` read from what the binding `name` holds give the
+ * value `tag` names, or the fact holds. */
+interface GuardClaim {
+  name: string;
+  path: string[];
+  tag: "null" | "undefined";
+}
+
+/** A linear fact proposed at a statement entry: where none of its guards,
+ * in order, reads its tag's value, the sum of the terms is at most `bound`
+ * (PROGRAM-TYPING.md, "Linear facts"). */
 interface LinearClaim {
+  guards: GuardClaim[];
   terms: LinearTermClaim[];
   bound: number;
 }
@@ -334,12 +345,19 @@ function claimsDocument(v: JsonRead): SourceClaims {
           strict: q.strict };
       }),
       facts: each(r.facts, "an entry's facts", (f) => {
-        const q = record(f, "a linear fact", ["terms", "bound"]);
+        const q = record(f, "a linear fact", ["guards", "terms", "bound"]);
         const integer = (v: JsonRead, what: string): number => {
           if (typeof v !== "number" || !Number.isSafeInteger(v)) fail(`${what} is a safe integer`);
           return v;
         };
         return {
+          guards: each(q.guards, "a fact's guards", (g) => {
+            const r = record(g, "a fact's guard", ["name", "path", "tag"]);
+            if (r.tag !== "null" && r.tag !== "undefined") fail("a guard's tag is null or undefined");
+            const guard: GuardClaim = { name: name(r.name, "a guard's name"),
+              path: each(r.path, "a guard's path", (f) => name(f, "a path's field")), tag: r.tag };
+            return guard;
+          }),
           terms: each(q.terms, "a fact's terms", (t) => {
             const r = record(t, "a fact's term", ["name", "path", "term", "coefficient"]);
             const kind = r.term;

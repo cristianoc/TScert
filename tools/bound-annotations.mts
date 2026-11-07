@@ -6,8 +6,9 @@
 // receiver, i + 1 the i-th actual).
 //
 // The clause language read here is a conjunction of atoms over the
-// declaration's parameters:
+// declaration's parameters, after guards:
 //
+//   K ::= G || K | C        G ::= p === null | p === undefined
 //   C ::= A && C | A
 //   A ::= safeInteger(p) | E rel E      rel ∈ { <, <=, >, >=, === }
 //   E ::= n | p | p.length | n * p | n * p.length | E + E | E - E | -E | (E)
@@ -25,9 +26,14 @@
 // a path and a kind), with every sum, difference and product it computes
 // stated a safe integer. Where those facts hold, each side of the comparison
 // evaluates under JavaScript's arithmetic to that safe integer exactly, so the
-// comparison's answer is the fact's. A clause executes no property read: it
-// states what the reads denote in the heap a call starts in. Every other form
-// of the draft's grammar (guards, `old`, `result`, computed keys, `||`, `!`)
+// comparison's answer is the fact's. A guarded clause `G || K`
+// (PROGRAM-TYPING.md, "Guarded clauses") wraps each fact `K` elaborates to in
+// a guarded fact: it holds where `G`'s path reads the tag's value, or the
+// fact holds; each path after a guard is resolved where the guard's test
+// fails, its type without the tag (an optional field read as present where
+// it is not `undefined`). A clause executes no property read: it states what
+// the reads denote in the heap a call starts in. Every other form of the
+// draft's grammar (`old`, `result`, computed keys, a `||` after an atom, `!`)
 // is refused with the clause's location, as is a path whose field no type
 // resolves.
 //
@@ -42,15 +48,22 @@
 // conjunct of the precondition, or at the result's position `0`, a fact of
 // its result (`recordInvariants`, fragment-statements.mts).
 import * as ts from "typescript/unstable/ast";
-import type { IndexFact, LinearFact, LinearTerm } from "./declaration-types.mts";
+import type { GuardTag, IndexFact, LinearFact, LinearTerm } from "./declaration-types.mts";
 
 /** What a path's type names: an array, whose `length` is its store's length;
  * a typed array, whose `length` is its element count (`view`); a record or any
  * other value (`other`); or no type a field resolves (`null`). */
 export type PathType = "array" | "view" | "other" | null;
+/** The tags a clause's guards exclude of a path's prefix of `depth` fields,
+ * where the clause holds past them. */
+export type Excluded = (depth: number) => readonly GuardTag[];
 /** A parameter a clause may name: its name, its call position, and the type
- * a path of fields read from it has (`at`, the parameter's own at `[]`). */
-export type ClauseParameter = { name: string; position: number; at: (path: readonly string[]) => PathType };
+ * a path of fields read from it has (`at`, the parameter's own at `[]`), each
+ * prefix's type without the tags `excluded` names, an optional field read
+ * where `undefined` is excluded of it, or, at the path's end, where
+ * `optionalLast`. */
+export type ClauseParameter = { name: string; position: number;
+  at: (path: readonly string[], excluded?: Excluded, optionalLast?: boolean) => PathType };
 
 /** The text of each `@requires` tag of the last JSDoc comment (`/** … *\/`)
  * in a declaration's leading trivia, with each line's leading `*` removed. */
@@ -166,6 +179,10 @@ function tokens(text: string): Token[] | string {
  * on the way (`steps`), each a sum, difference or product. */
 type Linear = { terms: Map<string, number>; constant: number; steps: Linear[] };
 type Atom = { k: "safeInteger"; of: string } | { k: "compare"; op: string; left: Linear; right: Linear };
+/** A guard `p === tag ||`, and a clause: its guards in order, then its
+ * conjunction. */
+type Guard = { path: string; tag: GuardTag };
+type Clause = { guards: Guard[]; atoms: Atom[] };
 
 class Parser {
   private at = 0;
@@ -179,10 +196,34 @@ class Parser {
     this.at++;
   }
   done(): boolean { return this.at === this.ts.length; }
+  /** A clause: its guards `p === null ||`, `p === undefined ||`, then a
+   * conjunction. */
+  clause(): Clause {
+    const guards: Guard[] = [];
+    for (;;) {
+      const saved = this.at;
+      const g = this.guard();
+      if (g === null) { this.at = saved; break; }
+      guards.push(g);
+    }
+    return { guards, atoms: this.conjunction() };
+  }
+  private guard(): Guard | null {
+    const x = this.peek();
+    if (!x || x.k !== "name" || x.v === "safeInteger") return null;
+    const path = this.variable();
+    if (!this.isOp("===")) return null;
+    this.at++;
+    const v = this.take();
+    if (!v || v.k !== "name" || (v.v !== "null" && v.v !== "undefined")) return null;
+    if (!this.isOp("||")) return null;
+    this.at++;
+    return { path, tag: v.v };
+  }
   conjunction(): Atom[] {
     const atoms = [this.atom()];
     while (this.isOp("&&")) { this.at++; atoms.push(this.atom()); }
-    if (!this.done()) throw new ClauseError("the clause is a conjunction of atoms (`&&`), no other connective");
+    if (!this.done()) throw new ClauseError("the clause is a conjunction of atoms (`&&`) after its guards (`p === null ||`, `p === undefined ||`), no other connective");
     return atoms;
   }
   private atom(): Atom {
@@ -262,6 +303,7 @@ function computed(e: Linear): Linear {
 
 /** The positions an index fact names. */
 export function indexFactPositions(f: IndexFact): number[] {
+  if ("guarded" in f) return [f.guarded.slot, ...indexFactPositions(f.guarded.body)];
   if ("index" in f) return [f.index.slot];
   if ("int" in f) return [f.int.slot];
   if ("length" in f) return [f.length.array, f.length.length];
@@ -275,60 +317,108 @@ export function indexFactPositions(f: IndexFact): number[] {
 export function elaborateRequires(clauses: readonly string[], params: readonly ClauseParameter[]):
     { facts: IndexFact[] } | { refused: string } {
   try {
-    const atoms = clauses.flatMap(text => {
+    const parsed = clauses.map(text => {
       const ts = tokens(text);
       if (typeof ts === "string") throw new ClauseError(ts);
-      return new Parser(ts).conjunction();
+      return new Parser(ts).clause();
     });
+    if (parsed.some(c => c.guards.some(g => g.tag === "undefined")) && params.some(q => q.name === "undefined"))
+      throw new ClauseError("the clause's `undefined` is shadowed by a parameter");
     const param = (name: string): ClauseParameter => {
       const p = params.find(q => q.name === name);
       if (!p) throw new ClauseError(`the clause names ${name}, which is no parameter of the declaration`);
       return p;
     };
-    /** The parameter and fields a path names, each field resolved. */
-    const path = (key: string): { p: ClauseParameter; path: string[] } => {
-      const [x = "", ...fields] = key.split(".");
-      const p = param(x);
-      if (fields.length > 0 && p.at(fields) === null)
-        throw new ClauseError(`the path ${key} reads a field no record type of ${x} declares as a required data field`);
-      return { p, path: fields };
-    };
-    const value = (key: string): LinearTerm => {
-      const { p, path: fields } = path(key);
-      return { kind: "value", slot: p.position, path: fields };
-    };
-    const ints = new Set(atoms.flatMap(a => a.k === "safeInteger" ? [JSON.stringify(value(a.of))] : []));
-    const term = (key: string): LinearTerm => {
-      const names = key.split(".");
-      // `p.length` of an array or a typed array path is its length; of any
-      // other, the field `length` read from it.
-      if (names.length > 1 && names[names.length - 1] === "length") {
-        const { p, path: fields } = path(names.slice(0, -1).join("."));
-        const at = p.at(fields);
-        if (at === "array") return { kind: "length", slot: p.position, path: fields };
-        if (at === "view") return { kind: "view", slot: p.position, path: fields };
+    // The safe integers every clause states, then its comparisons' facts.
+    const intFacts: IndexFact[] = [];
+    const compared: IndexFact[] = [];
+    /** The facts each atom of a clause states, each in turn in a guarded
+     * fact of each of the clause's guards, the first outermost. */
+    const elaborate = (clause: Clause, unguarded: ReadonlySet<string>): void => {
+      const { guards, atoms } = clause;
+      /** The tags the guards before the `i`-th exclude of the prefix of
+       * `depth` fields of the parameter `x`'s path. */
+      const excludedBy = (i: number, x: string): Excluded => (depth) =>
+        guards.slice(0, i).flatMap(g => {
+          const [y = "", ...fields] = g.path.split(".");
+          return y === x && fields.length === depth ? [g.tag] : [];
+        });
+      /** The parameter and fields a path names, each field resolved past
+       * the guards before the `i`-th. */
+      const pathAt = (i: number, key: string, optionalLast = false): { p: ClauseParameter; path: string[] } => {
+        const [x = "", ...fields] = key.split(".");
+        const p = param(x);
+        if (fields.length > 0 && p.at(fields, excludedBy(i, x), optionalLast) === null)
+          throw new ClauseError(`the path ${key} reads a field no record type of ${x} declares as a required data field`);
+        return { p, path: fields };
+      };
+      const resolved = guards.map((g, i) => {
+        const { p, path: fields } = pathAt(i, g.path, g.tag === "undefined");
+        return { slot: p.position, path: fields, tag: g.tag };
+      });
+      const wrap = (f: IndexFact): IndexFact =>
+        resolved.reduceRight<IndexFact>((body, g) => ({ guarded: { ...g, body } }), f);
+      const path = (key: string): { p: ClauseParameter; path: string[] } => pathAt(guards.length, key);
+      const value = (key: string): LinearTerm => {
+        const { p, path: fields } = path(key);
+        return { kind: "value", slot: p.position, path: fields };
+      };
+      const ints = new Set([...unguarded,
+        ...atoms.flatMap(a => a.k === "safeInteger" ? [JSON.stringify(value(a.of))] : [])]);
+      const term = (key: string): LinearTerm => {
+        const names = key.split(".");
+        // `p.length` of an array or a typed array path is its length; of any
+        // other, the field `length` read from it.
+        if (names.length > 1 && names[names.length - 1] === "length") {
+          const prefix = names.slice(0, -1).join(".");
+          const { p, path: fields } = path(prefix);
+          const at = p.at(fields, excludedBy(guards.length, names[0] ?? ""));
+          if (at === "array") return { kind: "length", slot: p.position, path: fields };
+          if (at === "view") return { kind: "view", slot: p.position, path: fields };
+        }
+        const t = value(key);
+        if (!ints.has(JSON.stringify(t))) throw new ClauseError(`the comparison names ${key}, which the clause does not state a safe integer`);
+        return t;
+      };
+      for (const a of atoms) {
+        if (a.k !== "safeInteger") continue;
+        const t = value(a.of);
+        intFacts.push(wrap(t.path.length === 0 ? { int: { slot: t.slot } }
+          : { linear: { fact: { le: { form: [[t, 1]], bound: MAX_SAFE } } } }));
       }
-      const t = value(key);
-      if (!ints.has(JSON.stringify(t))) throw new ClauseError(`the comparison names ${key}, which the clause does not state a safe integer`);
-      return t;
+      /** The fact `Σ c·t ≤ bound`, each term once, sorted by position and kind. */
+      const lessEq = (terms: Map<string, number>, bound: number): void => {
+        if (!Number.isSafeInteger(bound)) throw new ClauseError("the clause's constants lie outside the safe integers");
+        const form: [LinearTerm, number][] = [...terms].filter(([, c]) => c !== 0)
+          .map(([x, c]): [LinearTerm, number] => [term(x), c])
+          .sort((a, b) => order(a[0], b[0]));
+        const fact: LinearFact = { le: { form, bound } };
+        compared.push(wrap({ linear: { fact } }));
+      };
+      compareAtoms(atoms, lessEq);
     };
-    const facts: IndexFact[] = atoms.flatMap((a): IndexFact[] => {
+    /** The values the unguarded clauses state safe integers. */
+    const unguarded = new Set(parsed.filter(c => c.guards.length === 0).flatMap(c => c.atoms.flatMap(a => {
       if (a.k !== "safeInteger") return [];
-      const t = value(a.of);
-      return t.path.length === 0 ? [{ int: { slot: t.slot } }]
-        : [{ linear: { fact: { le: { form: [[t, 1]], bound: MAX_SAFE } } } }];
-    });
+      const [x = "", ...fields] = a.of.split(".");
+      return [JSON.stringify({ kind: "value", slot: param(x).position, path: fields })];
+    })));
+    for (const c of parsed) elaborate(c, unguarded);
     const seen = new Set<string>();
-    /** The fact `Σ c·t ≤ bound`, each term once, sorted by position and kind. */
-    const lessEq = (terms: Map<string, number>, bound: number): void => {
-      if (!Number.isSafeInteger(bound)) throw new ClauseError("the clause's constants lie outside the safe integers");
-      const form: [LinearTerm, number][] = [...terms].filter(([, c]) => c !== 0)
-        .map(([x, c]): [LinearTerm, number] => [term(x), c])
-        .sort((a, b) => order(a[0], b[0]));
-      const fact: LinearFact = { le: { form, bound } };
-      const key = JSON.stringify(fact);
-      if (!seen.has(key)) { seen.add(key); facts.push({ linear: { fact } }); }
-    };
+    const facts = [...intFacts, ...compared].filter(f => {
+      const key = JSON.stringify(f);
+      return seen.has(key) ? false : (seen.add(key), true);
+    });
+    return { facts };
+  } catch (e) {
+    if (e instanceof ClauseError) return { refused: e.message };
+    throw e;
+  }
+}
+
+/** The facts the comparison atoms state (`lessEq`): each computed
+ * subexpression a safe integer, then the comparison over the integers. */
+function compareAtoms(atoms: readonly Atom[], lessEq: (terms: Map<string, number>, bound: number) => void): void {
     const compare = (l: Linear, r: Linear, strict: boolean): void => {
       const d = add(l, r, -1);
       lessEq(d.terms, -d.constant - (strict ? 1 : 0));
@@ -356,11 +446,6 @@ export function elaborateRequires(clauses: readonly string[], params: readonly C
       else if (op === ">=") compare(right, left, false);
       else { compare(left, right, false); compare(right, left, false); }
     }
-    return { facts };
-  } catch (e) {
-    if (e instanceof ClauseError) return { refused: e.message };
-    throw e;
-  }
 }
 
 const MAX_SAFE = Number.MAX_SAFE_INTEGER;

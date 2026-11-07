@@ -9,7 +9,7 @@ import * as ts from "typescript/unstable/ast";
 import type { Expression, FunctionDeclaration, Node, Statement } from "typescript/unstable/ast";
 import type { BindingAst, Expr, FunctionAst, FunctionParamAst, Guard, PatternAst, PatternElemAst, PatternPropAst, Stmt } from "./fragment.mts";
 import type { Span } from "./span.mts";
-import type { DeclarationIdentity, IndexFact, StatedEffect, TypeTerm } from "./declaration-types.mts";
+import type { DeclarationIdentity, GuardTag, IndexFact, StatedEffect, TypeTerm } from "./declaration-types.mts";
 import { assertionFailureName, asyncCompleteName, asyncReturnName, forInName, iterateForInName, iterateName } from "./intrinsics.mts";
 import { GENERATOR, UNCLOSABLE, booleanForm, booleanReturn, bindingScope, firstOptional, capturesLoopLet, continueBlock, continueLabel, continueTarget, type Loop, forInEntryReads, labeledTarget, statementLabel, freeOffsets, iterationLabel, jumpTarget, nameSlot, namesRead, parameterName, patternNames, skipParentheses, switchLabel, TYPEOF_SHAPES } from "./fragment-support.mts";
 import type { Gate } from "./fragment-parse.mts";
@@ -2234,16 +2234,34 @@ export function writtenPrecondition(gate: Gate, clauses: readonly string[],
 }
 
 /** A name a clause may use for a call position, each path's kind read
- * through the declared type (`fieldType`). */
+ * through the declared type (`fieldType`), each prefix's type without the
+ * tags a guard excludes of it (`withoutTags`), an optional field read where
+ * `undefined` is excluded of it or, at the path's end, where `optionalLast`
+ * (PROGRAM-TYPING.md, "Guarded clauses"). */
 function clauseParameter(gate: Gate, name: string, position: number, type: TypeTerm | undefined): ClauseParameter {
   return {
     name,
     position,
-    at: (path) => {
-      const t = type === undefined ? null : path.reduce<TypeTerm | null>((t, f) => t && fieldType(gate, t, f), type);
+    at: (path, excluded = () => [], optionalLast = false) => {
+      let t: TypeTerm | null = type === undefined ? null : withoutTags(type, excluded(0));
+      for (const [i, f] of path.entries()) {
+        if (t === null) break;
+        const out = excluded(i + 1);
+        const field = fieldType(gate, t, f, 0, out.includes("undefined") || (optionalLast && i === path.length - 1));
+        t = field === null ? null : withoutTags(field, out);
+      }
       return t === null ? null : t.k === "array" ? "array" : namesView(t) ? "view" : "other";
     },
   };
+}
+
+/** A type without the parts a guard's failed test excludes: the arms of a
+ * union naming `null` or `undefined`, as the tags list. */
+function withoutTags(t: TypeTerm, tags: readonly GuardTag[]): TypeTerm {
+  if (tags.length === 0 || t.k !== "union") return t;
+  const parts = t.parts.filter(p => !(p.k === "atom" && (p.name === "null" || p.name === "undefined") &&
+    tags.includes(p.name)));
+  return parts.length === 1 ? parts[0] ?? t : { ...t, parts };
 }
 
 /** A function declaration's record invariants (`@invariant`;
@@ -2368,23 +2386,23 @@ function representable(gate: Gate, id: DeclarationIdentity, depth: number = 0): 
  * record shape states one (`recordShape`): of a record type, an alias
  * followed to its equation, or the one part of an intersection that states
  * it; null where none does. A clause's path reads such fields alone. */
-function fieldType(gate: Gate, t: TypeTerm, f: string, depth: number = 0): TypeTerm | null {
+function fieldType(gate: Gate, t: TypeTerm, f: string, depth: number = 0, optional: boolean = false): TypeTerm | null {
   const records = gate.namedRecords();
   if (records === null || depth > 16) return null;
   const refused = (): never => { throw new UnresolvedField(); };
   try {
     if (t.k === "object") {
       const field = t.fields.find(x => x.name === f);
-      return field !== undefined && !field.optional ? field.type : null;
+      return field !== undefined && (optional || !field.optional) ? field.type : null;
     }
     if (t.k === "intersection") {
-      const found = t.parts.flatMap(p => { const r = fieldType(gate, p, f, depth + 1); return r === null ? [] : [r]; });
+      const found = t.parts.flatMap(p => { const r = fieldType(gate, p, f, depth + 1, optional); return r === null ? [] : [r]; });
       return found.length === 1 ? found[0] ?? null : null;
     }
     if (t.k === "reference") {
-      if (records.record(t.reference.target)) return fieldType(gate, recordShape(t, records, refused), f, depth + 1);
+      if (records.record(t.reference.target)) return fieldType(gate, recordShape(t, records, refused), f, depth + 1, optional);
       const meaning = aliasMeaning(t, records, refused);
-      return meaning === "record" ? null : fieldType(gate, meaning, f, depth + 1);
+      return meaning === "record" ? null : fieldType(gate, meaning, f, depth + 1, optional);
     }
   } catch (e) {
     if (e instanceof UnresolvedField) return null;

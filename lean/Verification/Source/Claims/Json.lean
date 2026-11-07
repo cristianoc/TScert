@@ -192,9 +192,11 @@ Claim agreement is checked before this diagnostic is selected. -/
         | none => PointClaims.checkMappedUsing G images Γ (entry destination) target.mapping proof
         | some o => BranchRefinement.checkObservedUsing G images Γ (entry destination) 0 o target.mapping proof
             (readFields facts 0) (optionalFields facts 0) (HeapKnowledge.aliasCells (HeapKnowledge.observeTyped G Γ facts 0 o))
+      -- The source knowledge the checker reads (`ControlFlow.withTypedCells`).
+      let typedFacts := ControlFlow.withTypedCells G Γ destination.knowledge target.mapping facts
       let knowledge := match observed with
-        | none => HeapKnowledge.withTypedLinks G Γ facts
-        | some o => HeapKnowledge.observeTyped G Γ facts 0 o
+        | none => HeapKnowledge.withTypedLinks G Γ typedFacts
+        | some o => HeapKnowledge.observeTyped G Γ typedFacts 0 o
       let linked := KnowledgeExpand.checkIn (KnowledgeExpand.ctxOf G (entry destination)) knowledge destination.knowledge target.mapping
       if !typed || !linked then
         if let some m := (r.sourceMap[target.label]?).bind id then

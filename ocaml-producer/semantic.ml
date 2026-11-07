@@ -34,6 +34,10 @@ type promise = Guards of int | Asserts of int
 type term = Value_at of int * string list | Length_at of int * string list | View_at of int * string list
 type index_fact = Index_at of int | Length_of of int * int | Bound_by of int * int * bool | Int_at of int
   | Linear_le of (term * int) list * int | Linear_ne of (term * int) list * int
+  (* Where the named data fields read from the position do not give the
+     value the tag names, `null` or `undefined`, the body holds
+     (PROGRAM-TYPING.md, "Guarded clauses"). *)
+  | Guarded of int * string list * string * index_fact
 type call_effect = { footprint: footprint; promise: promise option; fresh: bool; receiver_store: bool; on_throw: bool;
   receiver_own: bool; fresh_object: bool;
   (* The kinds the receiver's present elements have where the call starts,

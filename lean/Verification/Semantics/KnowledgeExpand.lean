@@ -300,7 +300,7 @@ def checkIn (ctx : Ctx) (a b : Knowledge) (m : PointClaims.Mapping) : Bool :=
   (HeapLinks.checkWith (LinkClasses.repIn cs) a.links b.links m &&
     (HeapSeparation.checkWithTable (SeparationNormal.levelTable (LinkClasses.repIn cs) a.separation.depth)
       a.separation b.separation m && (HeapKnowledge.elemsCheckBy (Partitions.cls cs) a.elems b.elems m &&
-        HeapKnowledge.indicesCheckBy (Partitions.cls cs) a.links a.indices b.indices m))))
+        HeapKnowledge.indicesCheckWith (HeapKnowledge.guardTags a) (Partitions.cls cs) a.links a.indices b.indices m))))
 
 theorem checkIn_sound {ctx a b m ρ h} (hc : checkIn ctx a b m = true)
     (hctx : CtxOk ctx (PointClaims.mapEnv m ρ)) (ha : HeapKnowledge.Holds a ρ h) :
@@ -336,7 +336,7 @@ theorem checkIn_sound {ctx a b m ρ h} (hc : checkIn ctx a b m = true)
     rw [SeparationNormal.levelTable_eq]; exact hrn ℓ hℓ
   refine ⟨?_, ?_, hl, HeapSeparation.checkBy_sound hrn' hc.2.2.2.1 ha.2.2.2.1,
     HeapKnowledge.elemsCheckBy_sound hs hc.2.2.2.2.1 ha.2.2.2.2.1,
-    HeapKnowledge.indicesCheckBy_sound hs ha.2.2.1 hc.2.2.2.2.2 ha.2.2.2.2.2⟩
+    HeapKnowledge.indicesCheckWith_sound (HeapKnowledge.guardTags_sound ha) hs ha.2.2.1 hc.2.2.2.2.2 ha.2.2.2.2.2⟩
   · intro f hf
     have hf := List.all_eq_true.mp hc.1 f hf
     split at hf

@@ -1497,8 +1497,27 @@ def successors : Continuation → List Target
   | .bind t | .effect t => [t]
   | .branch y n | .branchBind y n | .tagBind _ y n => [y,n]
 
-@[nospecialize] def edgeKnowledge (G : NormalGraph ι) (Γ : List (Ty ι)) (k : HeapKnowledge.Knowledge) (cont : Continuation) (index : Nat) :
+/-- The value of each slot whose type admits `null` alone or `undefined`
+alone, a fact the slot's type states (`typeValues`), kept where an edge
+widens the slot's type: a guard's tag reads it (PROGRAM-TYPING.md, "Guarded
+clauses"). Untrusted: each edge is checked. -/
+@[nospecialize] def withTagValues (G : NormalGraph ι) (Γ : List (Ty ι)) (k : HeapKnowledge.Knowledge) :
     HeapKnowledge.Knowledge :=
+  -- Only a slot of one label of one clause, `null` or `undefined`, is read.
+  let candidate := fun (i : Nat) => match Γ[i]? with
+    | some [l] => match G l with
+      | [.nul] | [.undef] => true
+      | _ => false
+    | _ => false
+  let tagged := (List.range Γ.length).filterMap fun i => if !candidate i then none else
+    (HeapExpressionRules.typeValues G Γ i).bind fun V =>
+      if HeapKnowledge.onlyTag V .null || HeapKnowledge.onlyTag V .undef then some (⟨i, V, valueField⟩ : HeapFacts.Fact)
+      else none
+  if tagged.isEmpty then k else { k with values := tagged ++ k.values }
+
+@[nospecialize] def edgeKnowledge (G : NormalGraph ι) (Γ : List (Ty ι)) (k0 : HeapKnowledge.Knowledge) (cont : Continuation) (index : Nat) :
+    HeapKnowledge.Knowledge :=
+  let k := withTagValues G Γ k0
   match cont with
   | .effect _ => HeapKnowledge.dropResult k
   | .branch _ _ => HeapKnowledge.dropResult (HeapKnowledge.promoteTruthy k 0 (index == 0))
@@ -2102,6 +2121,15 @@ Every edge is still checked by the independent consumer. -/
                     c.context.length]
                 | _, _ => pure ()
               k := HeapKnowledge.meet projections
+              -- A guarded candidate each predecessor entails (PROGRAM-TYPING.md,
+              -- "Guarded clauses", the join): each one's guarded atoms, also
+              -- restated through its read links, kept where every edge's
+              -- knowledge entails it; each edge is checked again.
+              let candidates := (projections.flatMap fun p => HeapKnowledge.lowerGuards p.links p.indices).eraseDups
+              let guarded := candidates.filter fun a => !k.indices.contains a && projections.all fun p =>
+                HeapKnowledge.indicesCheckWith (HeapKnowledge.guardTags p) (HeapLinks.aliases p.links) p.links
+                  p.indices [a] none
+              k := { k with indices := k.indices ++ guarded }
               implies := meetImplications G carried c.context.length c.context
               held := match holding with
                 | first :: rest => first.filter fun p => rest.all (·.contains p)
@@ -2119,7 +2147,7 @@ Every edge is still checked by the independent consumer. -/
         -- A point other than a cut stores its knowledge's normal form at the
         -- point's contexts; a cut stores exactly its requirement.
         if l != start && !cut then
-          k := KnowledgeNormal.normFast (KnowledgeExpand.ctxOf G c.context) k
+          k := withTagValues G c.context (KnowledgeNormal.normFast (KnowledgeExpand.ctxOf G c.context) k)
         let fresh := fun (_ : Unit) => tryCatch (Except.ok <$> produceNode G images pool fuel l node claimed k
           suggestions index codes aliases checker implies held goal) (fun e => pure (Except.error e))
         let produced ← match latest.getD l none with

@@ -72,6 +72,15 @@ private def predOf : Json → Except String (Option ElemPred)
 deriving instance ToJson, FromJson for HeapKnowledge.Term.Kind
 deriving instance ToJson, FromJson for HeapKnowledge.Term
 deriving instance ToJson, FromJson for Linear.Fact
+-- A guard's tag is `"null"` or `"undefined"`; a guarded fact is
+-- `{"guarded": {"slot", "path", "tag", "body"}}`.
+instance : ToJson HeapKnowledge.GuardTag := ⟨fun
+  | .null => "null"
+  | .undef => "undefined"⟩
+instance : FromJson HeapKnowledge.GuardTag := ⟨fun
+  | .str "null" => pure .null
+  | .str "undefined" => pure .undef
+  | _ => throw "a guard's tag is \"null\" or \"undefined\""⟩
 deriving instance ToJson, FromJson for HeapKnowledge.IndexFact
 
 /-- An effect is its footprint, its promise, `null` when there is none,

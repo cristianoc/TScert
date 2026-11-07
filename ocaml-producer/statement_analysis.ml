@@ -508,6 +508,19 @@ let statements (expr:Analysis_state.expression_infer) execute_bindings owner_spa
        | None -> false)
     | None -> false in
   Linear_facts.array_path := array_binding;
+  (* Whether the path holds an array where it is not `null` or `undefined`:
+     its type's arms but those an array's (PROGRAM-TYPING.md, "Guarded
+     clauses"). *)
+  Linear_facts.array_unless_nullish := (fun env x path -> match List.assoc_opt x env with
+    | Some b when path = [] ->
+      let head t = try declared_head declarations [] t with Json.Error _ -> Atoms [] in
+      (match head (binding_type b) with
+       | Atoms atoms ->
+         let arrays = List.filter (function Shape {elements=Some _;indexes=[];calls=[];_} -> true | _ -> false) atoms in
+         List.length arrays = 1 && List.for_all (function
+           | Shape {elements=Some _;indexes=[];calls=[];_} | Nul | Undef -> true | _ -> false) atoms
+       | _ -> false)
+    | _ -> false);
   (* The type a path from a binding reads: each field a required one of the
      record type before it. *)
   let head t = try declared_head declarations [] t with Json.Error _ -> Atoms [Top] in

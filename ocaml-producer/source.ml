@@ -27,7 +27,7 @@ let keys j = match j with
   | _ -> []
 (* An index fact, its constructor's name holding its fields (Lean's derived
    `IndexFact` encoding). *)
-let index_fact_of j =
+let rec index_fact_of j =
   let only k = match keys j with [k'] when k' = k -> true | _ -> false in
   let body k ks = let b = field k j in if keys b = List.sort String.compare ks then b else unsupported "invalid index fact" in
   if only "index" then Index_at (natural (field "slot" (body "index" ["slot"])))
@@ -37,6 +37,11 @@ let index_fact_of j =
   else if only "bound" then
     let b = body "bound" ["array";"index";"strict"] in
     Bound_by (natural (field "array" b), natural (field "index" b), boolean (field "strict" b))
+  else if only "guarded" then
+    let b = body "guarded" ["body";"path";"slot";"tag"] in
+    let tag = str (field "tag" b) in
+    if tag <> "null" && tag <> "undefined" then unsupported "invalid guard tag";
+    Guarded (natural (field "slot" b), List.map str (list (field "path" b)), tag, index_fact_of (field "body" b))
   else if only "linear" then
     let f = field "fact" (body "linear" ["fact"]) in
     let parts k = let b = field k f in

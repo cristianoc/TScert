@@ -148,6 +148,86 @@ theorem readPath_extend {h : Heap} (vs : List Val) :
       · cases hw
     | _ => simp [readPath] at hw
 
+/-- What a guard compares the value a path reads with (PROGRAM-TYPING.md,
+"Guarded clauses"): `null` or `undefined`. -/
+inductive GuardTag where
+  | null
+  | undef
+  deriving DecidableEq, Repr, Hashable
+
+/-- The value a guard tag names. -/
+def GuardTag.val : GuardTag → Val
+  | .null => .nul
+  | .undef => .undef
+
+/-- The value a guard's path reads from a value: each step the read of a
+string key, the location's value where the object owns the key, `undefined`
+where it owns neither the key nor a prototype (`HeapFacts.ReadGave`). A
+missing intermediate object reads nothing. -/
+def readGuard (h : Heap) : Val → List String → Option Val
+  | v, [] => some v
+  | .objAt fs _ _, f :: p => match fs.lookup (.str f) with
+    | some l => match h[l]? with
+      | some v => readGuard h v p
+      | none => none
+    | none => if fs.lookup CallArguments.protoField = none then readGuard h .undef p else none
+  | _, _ :: _ => none
+
+/-- A heap extension keeps what a guard's path reads. -/
+theorem readGuard_extend {h : Heap} (vs : List Val) :
+    ∀ {v : Val} {p : List String} {w : Val}, readGuard h v p = some w → readGuard (h ++ vs) v p = some w := by
+  intro v p
+  induction p generalizing v with
+  | nil => intro w hw; exact hw
+  | cons f p ih =>
+    intro w hw
+    cases v with
+    | objAt fs c oid =>
+      simp only [readGuard] at hw ⊢
+      split at hw
+      · rename_i l hl
+        split at hw
+        · rename_i u hu
+          simp only [List.getElem?_append_left (List.getElem?_eq_some_iff.mp hu).1, hu]
+          exact ih hw
+        · cases hw
+      · split at hw
+        · rename_i hp
+          simp only [hp, ite_true]
+          exact ih hw
+        · cases hw
+    | _ => simp [readGuard] at hw
+
+/-- Whether a change keeps what a guard's path reads: the empty path reads
+the slot alone; one field, its location where `first` keeps it, or an
+absent key. -/
+def guardKept (first : Nat → String → Bool) (s : Nat) : List String → Bool
+  | [] => true
+  | [g] => first s g
+  | _ => false
+
+theorem readGuard_kept {first : Nat → String → Bool} {ρ : Env} {h h' : Heap} {s : Nat} {p : List String} {v : Val}
+    (hf : ∀ s g fs cd o l v, first s g = true → ρ s = .objAt fs cd o → fs.lookup (.str g) = some l →
+      h[l]? = some v → h'[l]? = some v)
+    (hk : guardKept first s p = true) (hv : readGuard h (ρ s) p = some v) : readGuard h' (ρ s) p = some v := by
+  match p, hk with
+  | [], _ => exact hv
+  | [g], hk =>
+    simp only [guardKept] at hk
+    cases hs : ρ s with
+    | objAt fs cd o =>
+      rw [hs] at hv
+      simp only [readGuard] at hv ⊢
+      split at hv
+      · rename_i l hl
+        split at hv
+        · rename_i u hu
+          simp only [hf s g fs cd o l u hk hs hl hu]
+          exact hv
+        · cases hv
+      · exact hv
+    | _ => rw [hs] at hv; simp [readGuard] at hv
+
 /-- The length of the array store a value holds, read in the heap, where it
 is at most `maxArrayLength`. -/
 def lengthOf (h : Heap) (v : Val) : Option Int :=
@@ -322,13 +402,16 @@ holds (`length`); the slot `k` holds an array index at most that length
 fact denote integers meeting it (`linear`, PROGRAM-TYPING.md, "Linear
 facts"), its terms (`Term`) rooted at slots. `index`, `int` and a linear fact
 of slots' values read no heap; the others read the locations their terms or
-the array's store field read. -/
+the array's store field read. A guarded fact (`guarded`, PROGRAM-TYPING.md,
+"Guarded clauses") holds where the path `path` from the slot `slot` reads a
+value (`readGuard`) that is the tag's, or its body holds. -/
 inductive IndexFact where
   | index (slot : Nat)
   | length (array length : Nat)
   | bound (array index : Nat) (strict : Bool)
   | int (slot : Nat)
   | linear (fact : Linear.Fact Term)
+  | guarded (slot : Nat) (path : List String) (tag : GuardTag) (body : IndexFact)
   deriving DecidableEq, Repr, Hashable
 
 namespace IndexFact
@@ -340,6 +423,7 @@ def slots : IndexFact → List Nat
   | .bound x k _ => [x, k]
   | .int k => [k]
   | .linear F => F.vars.map Term.slot
+  | .guarded s _ _ B => s :: B.slots
 
 /-- The fact with each slot renamed by a partial map, where it maps every slot. -/
 def mapM (f : Nat → Option Nat) : IndexFact → Option IndexFact
@@ -348,6 +432,7 @@ def mapM (f : Nat → Option Nat) : IndexFact → Option IndexFact
   | .bound x k st => do pure (.bound (← f x) (← f k) st)
   | .int k => (f k).map .int
   | .linear F => (F.mapVars (Term.mapM f)).map .linear
+  | .guarded s p t B => do pure (.guarded (← f s) p t (← B.mapM f))
 
 /-- The fact with each slot renamed. -/
 def map (f : Nat → Nat) (F : IndexFact) : IndexFact := (F.mapM (some ∘ f)).getD F
@@ -360,11 +445,17 @@ def HoldsAt : IndexFact → Env → Heap → Prop
       ρ k = .num b ∧ indexOfBits b = some i ∧ i + (if st then 1 else 0) ≤ ls.length
   | .int k, ρ, _ => (intValue (ρ k)).isSome
   | .linear F, ρ, h => (∀ t ∈ F.vars, (termValue ρ h t).isSome) ∧ F.Holds (termValuation ρ h)
+  | .guarded s p t B, ρ, h => ∃ v, readGuard h (ρ s) p = some v ∧ (v = t.val ∨ B.HoldsAt ρ h)
 
 theorem holdsAt_mapM {F F' : IndexFact} {f : Nat → Option Nat} {ρ ρ' : Env} {h : Heap}
     (hm : F.mapM f = some F') (hf : ∀ s ∈ F.slots, ∀ t, f s = some t → ρ' t = ρ s) :
     F'.HoldsAt ρ' h ↔ F.HoldsAt ρ h := by
-  cases F with
+  induction F generalizing F' with
+  | guarded s p t B ih =>
+    simp only [mapM, Option.bind_eq_bind, Option.bind_eq_some_iff, Option.pure_def, Option.some.injEq] at hm
+    obtain ⟨s', hs, B', hB, rfl⟩ := hm
+    have hB' := ih hB (fun x hx y hy => hf x (by simp [slots, hx]) y hy)
+    simp only [HoldsAt, hf s (by simp [slots]) s' hs, hB']
   | index k =>
     simp only [mapM, Option.map_eq_some_iff] at hm
     obtain ⟨t, ht, rfl⟩ := hm
@@ -423,25 +514,33 @@ theorem holdsAt_linear_mapVars {F F' : Linear.Fact Term} {f : Term → Option Te
     obtain ⟨x, hx, hfx⟩ := Linear.Fact.mapVars_vars hm y hy
     rw [hf x hx y hfx]; exact hi x hx
 
+/-- A total renaming renames every fact. -/
+theorem mapM_total (f : Nat → Nat) : ∀ F : IndexFact, ∃ G, F.mapM (some ∘ f) = some G
+  | .index k => ⟨_, rfl⟩
+  | .length x n => ⟨_, rfl⟩
+  | .bound x k st => ⟨_, rfl⟩
+  | .int k => ⟨_, rfl⟩
+  | .linear G => by
+    obtain ⟨G', h⟩ := Linear.Fact.mapVars_some (Term.mapM' f) G
+    exact ⟨.linear G', by simp only [mapM, Term.mapM_eq, h, Option.map_some]⟩
+  | .guarded s p t B => by
+    obtain ⟨B', hB⟩ := mapM_total f B
+    exact ⟨.guarded (f s) p t B', by simp [mapM, hB]⟩
+
 /-- A fact reads its slots' values alone. -/
 theorem holdsAt_map {F : IndexFact} {f : Nat → Nat} {ρ ρ' : Env} {h : Heap}
     (hf : ∀ s ∈ F.slots, ρ' (f s) = ρ s) : (F.map f).HoldsAt ρ' h ↔ F.HoldsAt ρ h := by
-  obtain ⟨G, hG⟩ : ∃ G, F.mapM (some ∘ f) = some G := by
-    cases F with
-    | index k => exact ⟨_, rfl⟩
-    | length x n => exact ⟨_, rfl⟩
-    | bound x k st => exact ⟨_, rfl⟩
-    | int k => exact ⟨_, rfl⟩
-    | linear G =>
-      obtain ⟨G', h⟩ := Linear.Fact.mapVars_some (Term.mapM' f) G
-      exact ⟨.linear G', by simp only [mapM, Term.mapM_eq, h, Option.map_some]⟩
+  obtain ⟨G, hG⟩ := mapM_total f F
   simp only [map, hG, Option.getD_some]
   exact holdsAt_mapM hG (fun s hs t ht => by cases ht; exact hf s hs)
 
 /-- A heap extension keeps a fact: the store lies in the old heap. -/
 theorem holdsAt_extend {F : IndexFact} {ρ : Env} {h : Heap} (vs : List Val) (hF : F.HoldsAt ρ h) :
     F.HoldsAt ρ (h ++ vs) := by
-  cases F with
+  induction F with
+  | guarded s p t B ih =>
+    obtain ⟨v, hv, hor⟩ := hF
+    exact ⟨v, readGuard_extend vs hv, hor.imp id ih⟩
   | index k => exact hF
   | length x n =>
     obtain ⟨s, ls, hs, hl, hn⟩ := hF
@@ -464,7 +563,10 @@ theorem holdsAt_extend {F : IndexFact} {ρ : Env} {h : Heap} (vs : List Val) (hF
 /-- A fact reads the values of the slots it names alone. -/
 theorem holdsAt_congr {F : IndexFact} {ρ ρ' : Env} {h : Heap} (hs : ∀ s ∈ F.slots, ρ s = ρ' s) :
     F.HoldsAt ρ h ↔ F.HoldsAt ρ' h := by
-  cases F with
+  induction F with
+  | guarded s p t B ih =>
+    simp only [slots, List.mem_cons, forall_eq_or_imp] at hs
+    simp only [HoldsAt, hs.1, ih hs.2]
   | index k => simp only [slots, List.mem_singleton, forall_eq] at hs; simp only [HoldsAt, hs]
   | length x n =>
     simp only [slots, List.mem_cons, List.not_mem_nil, or_false, forall_eq_or_imp, forall_eq] at hs
@@ -791,6 +893,7 @@ def keptBy (c : Changes) (first : Nat → String → Bool) : IndexFact → Bool
   | .index _ | .int _ => true
   | .length x _ | .bound x _ _ => c.store != .any || first x "[]"
   | .linear F => F.vars.all (Term.keptBy c first)
+  | .guarded s p _ B => guardKept first s p && B.keptBy c first
 
 theorem holdsAt_kept {c : Changes} {first : Nat → String → Bool} {F : IndexFact} {ρ : Env} {h h' : Heap}
     (hc : c.Holds h h') (hf : FirstKept first ρ h h') (hk : F.keptBy c first = true) (hF : F.HoldsAt ρ h) :
@@ -811,7 +914,11 @@ theorem holdsAt_kept {c : Changes} {first : Nat → String → Bool} {F : IndexF
           simpa [Footprints.storeOf, Footprints.fieldsOf, arrayStoreKey] using hs
         exact ⟨ls, hf x "[]" fs cd o s _ hfs hv hl hls, rfl⟩
       all_goals rw [hv] at hs; simp [Footprints.storeOf, Footprints.fieldsOf] at hs
-  cases F with
+  induction F with
+  | guarded s p t B ih =>
+    simp only [keptBy, Bool.and_eq_true] at hk
+    obtain ⟨v, hv, hor⟩ := hF
+    exact ⟨v, readGuard_kept hf hk.1 hv, hor.imp id (ih hk.2)⟩
   | index k => exact hF
   | int k => exact hF
   | length x m =>
@@ -910,6 +1017,7 @@ theorem holdsAt_keptWith {c : Changes} {first views : Nat → String → Bool} {
   | int _ => exact holdsAt_kept hc hf (by simp [keptWith] at hk ⊢; exact hk) hF
   | length _ _ => exact holdsAt_kept hc hf (by simpa [keptWith] using hk) hF
   | bound _ _ _ => exact holdsAt_kept hc hf (by simpa [keptWith] using hk) hF
+  | guarded _ _ _ _ => exact holdsAt_kept hc hf (by simpa [keptWith] using hk) hF
 
 end IndexFact
 

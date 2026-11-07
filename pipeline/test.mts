@@ -224,8 +224,8 @@ control(async (): Promise<void> => {
   const fn = must(claims.functions.find(f => f.name === "second"), "second's claims");
   const entry = must(fn.entries.find(e => e.start === source.indexOf("return at(")), "the call's entry");
   const length = (name: string, coefficient: number) => ({ name, path: [], term: "length" as const, coefficient });
-  entry.facts.push({ terms: [length("xs", 1), length("ys", -1)], bound: 0 },
-    { terms: [length("xs", -1), length("ys", 1)], bound: 0 });
+  entry.facts.push({ guards: [], terms: [length("xs", 1), length("ys", -1)], bound: 0 },
+    { guards: [], terms: [length("xs", -1), length("ys", 1)], bound: 0 });
   const forged = writeClaims(artifacts, "length-equality-forged", claims);
   const searched = produceWith(artifacts, forged, "length-equality-forged");
   assert.equal(searched.status, 1, `${searched.stdout}${searched.stderr}`);
@@ -254,7 +254,7 @@ control(async (): Promise<void> => {
     const claim = must(fn.expressions.find(e => e.pos[0] === at && e.pos[1] === at + read.length), "the read");
     claim.type = [rowOf(claims, "num")];
     must(fn.entries.find(e => e.start === source.indexOf(statement)), "the read's entry").facts.push(
-      { terms: [{ name: "i", path: [], term: "value", coefficient: 1 }, { name: "b", path: [], term: "view", coefficient: -1 }],
+      { guards: [], terms: [{ name: "i", path: [], term: "value", coefficient: 1 }, { name: "b", path: [], term: "view", coefficient: -1 }],
         bound: -1 });
     const forged = writeClaims(artifacts, `view-length-forged-${name}`, claims);
     const searched = produceWith(artifacts, forged, `view-length-forged-${name}`);
@@ -276,13 +276,53 @@ control(async (): Promise<void> => {
   const term = (path: string[], kind: "length" | "view", coefficient: number) =>
     ({ name: "prepared", path, term: kind, coefficient });
   must(fn.entries.find(e => e.start === source.indexOf("return lastFlag(prepared)")), "the call's entry").facts.push(
-    { terms: [term(["segmentFlags"], "view", 1), term(["widths"], "length", -1)], bound: 0 },
-    { terms: [term(["segmentFlags"], "view", -1), term(["widths"], "length", 1)], bound: 0 });
+    { guards: [], terms: [term(["segmentFlags"], "view", 1), term(["widths"], "length", -1)], bound: 0 },
+    { guards: [], terms: [term(["segmentFlags"], "view", -1), term(["widths"], "length", 1)], bound: 0 });
   const forged = writeClaims(artifacts, "record-invariant-forged", claims);
   const searched = produceWith(artifacts, forged, "record-invariant-forged");
   assert.equal(searched.status, 1, `${searched.stdout}${searched.stderr}`);
   assert.match(searched.stdout + searched.stderr, /does not establish the claims/);
   process.stdout.write("record invariants: an invariant claimed of a cast record at a call's entry, refused there\n");
+});
+
+control(async (): Promise<void> => {
+  // Guarded facts claimed where no guard is eliminated (PROGRAM-TYPING.md,
+  // "Guarded clauses"): in the walker testing another field, its read
+  // claimed at `number`, the invariant's body forged at the read's entry
+  // with its guard removed, and forged guarded by the tested field instead,
+  // at the test's entry, are each refused at that entry where evidence is
+  // searched.
+  const artifacts = run("invalid-guarded-invariant-other-field");
+  const source = readFileSync(sourceKey(artifacts), "utf8");
+  const fnStart = source.indexOf("export function lastHyphen");
+  const read = "prepared.hyphens[i]";
+  const at = source.indexOf(read, fnStart);
+  type Fact = SourceClaims["functions"][number]["entries"][number]["facts"][number];
+  type LinearTermClaim = Fact["terms"][number];
+  type GuardClaim = Fact["guards"][number];
+  type LinearClaim = Fact;
+  const term = (path: string[], coefficient: number): LinearTermClaim =>
+    ({ name: "prepared", path, term: "length", coefficient });
+  const extra: GuardClaim[] = [{ name: "prepared", path: ["extra"], tag: "null" }];
+  const variants: [string, string, GuardClaim[]][] = [
+    ["unguarded", "return prepared.hyphens[i]!", []],
+    ["other-guard", "if (prepared.extra !== null)", extra],
+  ];
+  for (const [variant, statement, guards] of variants) {
+    const claims = readClaims(artifacts);
+    const fn = must(claims.functions.find(f => f.name === "lastHyphen"), "lastHyphen's claims");
+    const claim = must(fn.expressions.find(e => e.pos[0] === at && e.pos[1] === at + read.length), "the read");
+    claim.type = [rowOf(claims, "num")];
+    const facts: LinearClaim[] = [
+      { guards, terms: [term(["hyphens"], 1), term(["widths"], -1)], bound: 0 },
+      { guards, terms: [term(["hyphens"], -1), term(["widths"], 1)], bound: 0 }];
+    must(fn.entries.find(e => e.start === source.indexOf(statement, fnStart)), `the entry of ${statement}`).facts.push(...facts);
+    const forged = writeClaims(artifacts, `guarded-forged-${variant}`, claims);
+    const searched = produceWith(artifacts, forged, `guarded-forged-${variant}`);
+    assert.equal(searched.status, 1, `${variant}: ${searched.stdout}${searched.stderr}`);
+    assert.match(searched.stdout + searched.stderr, /does not establish the claims/, variant);
+  }
+  process.stdout.write("guarded facts: an invariant's body claimed with its guard removed, and guarded by another field's test, each refused at its entry\n");
 });
 
 control(async (): Promise<void> => {
@@ -298,8 +338,8 @@ control(async (): Promise<void> => {
   const term = (path: string[], kind: "length" | "view", coefficient: number) =>
     ({ name: "prepared", path, term: kind, coefficient });
   must(fn.entries.find(e => e.start === source.indexOf("return lastFlag(prepared)")), "the call's entry").facts.push(
-    { terms: [term(["segmentFlags"], "view", 1), term(["widths"], "length", -1)], bound: 0 },
-    { terms: [term(["segmentFlags"], "view", -1), term(["widths"], "length", 1)], bound: 0 });
+    { guards: [], terms: [term(["segmentFlags"], "view", 1), term(["widths"], "length", -1)], bound: 0 },
+    { guards: [], terms: [term(["segmentFlags"], "view", -1), term(["widths"], "length", 1)], bound: 0 });
   const forged = writeClaims(artifacts, "sealed-handle-forged", claims);
   const searched = produceWith(artifacts, forged, "sealed-handle-forged");
   assert.equal(searched.status, 1, `${searched.stdout}${searched.stderr}`);
@@ -318,7 +358,7 @@ control(async (): Promise<void> => {
   const fn = must(claims.functions.find(f => f.name === "prepare"), "prepare's claims");
   must(fn.entries.find(e => e.start === source.indexOf("const segmentFlags = new Uint8Array(half)")),
     "the construction's entry").facts.push(
-    { terms: [{ name: "half", path: [], term: "value", coefficient: -1 }], bound: 0 });
+    { guards: [], terms: [{ name: "half", path: [], term: "value", coefficient: -1 }], bound: 0 });
   const forged = writeClaims(artifacts, "typed-array-length-forged", claims);
   const searched = produceWith(artifacts, forged, "typed-array-length-forged");
   assert.equal(searched.status, 1, `${searched.stdout}${searched.stderr}`);
@@ -390,8 +430,8 @@ control(async (): Promise<void> => {
     const claim = must(fn.expressions.find(e => e.pos[0] === at && e.pos[1] === at + read.length), "the read");
     claim.type = [rowOf(claims, "num")];
     must(fn.entries.find(e => e.start === source.indexOf(statement)), "the read's entry").facts.push(
-      { terms: [{ ...index, coefficient: -1 }], bound: 0 },
-      { terms: [{ ...index, coefficient: 1 }, { ...array, coefficient: -1 }], bound: -1 });
+      { guards: [], terms: [{ ...index, coefficient: -1 }], bound: 0 },
+      { guards: [], terms: [{ ...index, coefficient: 1 }, { ...array, coefficient: -1 }], bound: -1 });
     const tag = `facts-across-writes-forged-${name}`;
     const searched = produceWith(artifacts, writeClaims(artifacts, tag, claims), tag);
     assert.equal(searched.status, 1, `${tag}: ${searched.stdout}${searched.stderr}`);
@@ -422,7 +462,7 @@ control(async (): Promise<void> => {
       claim.type = [rowOf(claims, "num")];
       if (forgeFact)
         must(fn.entries.find(e => e.start === source.indexOf(statement)), "the read's entry").facts.push(
-          { terms: [{ name: "i", path: [], term: "value", coefficient: 1 },
+          { guards: [], terms: [{ name: "i", path: [], term: "value", coefficient: 1 },
             { name: root, path: [field], term: "length", coefficient: -1 }], bound: -1 });
       const tag = `field-path-forged-${name}-${forgeFact ? "fact" : "read"}`;
       const searched = produceWith(artifacts, writeClaims(artifacts, tag, claims), tag);

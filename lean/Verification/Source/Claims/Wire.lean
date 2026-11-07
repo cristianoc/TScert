@@ -127,9 +127,19 @@ structure FactTerm where
   term : HeapKnowledge.Term.Kind
   coefficient : Int
   deriving ToJson, FromJson
-/-- A linear fact the producer proposes at a statement entry: the sum of the
-terms is at most `bound`; every term denotes an integer. -/
+/-- A guard of a fact the producer proposes (PROGRAM-TYPING.md, "Guarded
+clauses"): the named data fields `path` read from what the binding `name`
+holds give the value `tag` names, or the guarded fact holds. -/
+structure FactGuard where
+  name : String
+  path : List String
+  tag : HeapKnowledge.GuardTag
+  deriving ToJson, FromJson
+/-- A linear fact the producer proposes at a statement entry: where none of
+its guards, in order, reads its tag's value, the sum of the terms is at most
+`bound`; every term denotes an integer. -/
 structure Fact where
+  guards : List FactGuard
   terms : List FactTerm
   bound : Int
   deriving ToJson, FromJson
@@ -259,7 +269,8 @@ private def pointData (entries : List (Entry ι)) (expressions : List (Expressio
     entryCurrent := entries.map (fun e => (e.start,e.bindings.filterMap fun b => b.current.map (b.name,·)))
     entryBounds := entries.map (fun e => (e.start,e.bounds.map fun b => (b.array, b.index, b.strict)))
     entryFacts := entries.map (fun e => (e.start,e.facts.map fun f =>
-      (f.terms.map fun t => (t.name, t.path, t.term, t.coefficient), f.bound)))
+      (f.guards.map fun g => (g.name, g.path, g.tag),
+        f.terms.map fun t => (t.name, t.path, t.term, t.coefficient), f.bound)))
     -- An expression's assertion is of one field each (`validCurrent`).
     exprCurrent := expressions.filterMap (fun e => e.current.map fun fs =>
       (e.pos, fs.filterMap fun (p, A) => match p with | [k] => some (k, A) | _ => none)) }

@@ -240,20 +240,37 @@ implications and argument slots must follow from them. -/
   impliesCheck G Γ (PromiseCalls.aliasImplications facts.links xs) target.mapping c.implies &&
     argFollows (PromiseCalls.aliasSources facts.links sources) target.mapping c.arguments
 
+/-- The slots the target's guarded atoms test alone (`guarded s [] …`). -/
+def guardedSlots (k : HeapKnowledge.Knowledge) : List Nat :=
+  k.indices.filterMap fun a => match a.fact with
+    | .guarded s [] _ _ => some s
+    | _ => none
+
 /-- An edge's facts with what the types of its context `Γ` state of the
 cells the target's knowledge `k` requires, at the slots the target's mapping
-`m` takes them from (`typed-cell`, PROGRAM-TYPING.md, "Facts a type states"). -/
+`m` takes them from (`typed-cell`, PROGRAM-TYPING.md, "Facts a type states"),
+and of the values of the slots its value facts and its guarded atoms test
+alone (`typeValues`), which a guard's tag reads (`guardTags`). -/
 @[nospecialize] def withTypedCells [DecidableEq ι] (G : NormalGraph ι) (Γ : List (Ty ι)) (k : HeapKnowledge.Knowledge)
     (m : Mapping) (facts : HeapKnowledge.Knowledge) : HeapKnowledge.Knowledge :=
-  { facts with cells := HeapExpressionRules.typedCells G Γ (k.cells.map fun f => (slot m f.slot, f.field)) ++ facts.cells }
+  { facts with cells := HeapExpressionRules.typedCells G Γ (k.cells.map fun f => (slot m f.slot, f.field)) ++ facts.cells
+               values := (guardedSlots k ++ k.values.map (·.slot)).eraseDups.filterMap (fun y =>
+                 (HeapExpressionRules.typeValues G Γ (slot m y)).map
+                 fun V => (⟨slot m y, V, valueField⟩ : HeapFacts.Fact)) ++ facts.values }
 
 theorem withTypedCells_holds [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)} {k m facts ρ h}
     (hc : ∀ wanted, HeapFacts.Holds (HeapExpressionRules.typedCells G Γ wanted) ρ h)
+    (hv : ∀ i R, HeapExpressionRules.typeValues G Γ i = some R → R.mem (ρ i) = true)
     (hf : HeapKnowledge.Holds facts ρ h) : HeapKnowledge.Holds (withTypedCells G Γ k m facts) ρ h := by
-  refine ⟨fun f hm => ?_, hf.2.1, hf.2.2.1, hf.2.2.2⟩
-  rcases List.mem_append.mp hm with hm | hm
-  · exact hc _ f hm
-  · exact hf.1 f hm
+  refine ⟨fun f hm => ?_, fun f hm => ?_, hf.2.2.1, hf.2.2.2⟩
+  · rcases List.mem_append.mp hm with hm | hm
+    · exact hc _ f hm
+    · exact hf.1 f hm
+  · rcases List.mem_append.mp hm with hm | hm
+    · obtain ⟨y, -, hy⟩ := List.mem_filterMap.mp hm
+      obtain ⟨V, hV, rfl⟩ := Option.map_eq_some_iff.mp hy
+      exact hv _ _ hV
+    · exact hf.2.1 f hm
 
 /-- A context no environment meets: one of its slots has a type of clause
 rows none of which holds a clause, which no value meets. Each slot's labels
@@ -887,7 +904,7 @@ theorem witness_edge_sound [DecidableEq ι] {G : NormalGraph ι} {images : Insta
   constructor
   · exact (covers.env he).2 witness A typed
   · have link := (KnowledgeExpand.checkIn_sound knowledge (KnowledgeExpand.ctxOf_ok (covers.env he))
-      (HeapKnowledge.withTypedLinks_holds he (withTypedCells_holds hcells hk))).2.2.1 _ linked
+      (HeapKnowledge.withTypedLinks_holds he (withTypedCells_holds hcells (fun _ _ hr => HeapExpressionRules.typeValues_sound hr he) hk))).2.2.1 _ linked
     cases optional <;> simp only [Bool.false_eq_true, ite_false, ite_true] at link
     · obtain ⟨flds, cls, oid, loc, obj, key, value⟩ := link
       exact ⟨flds, cls, oid, obj, HeapFacts.ReadGave.present key value⟩
@@ -1060,7 +1077,7 @@ theorem target_state [DecidableEq ι] {G : NormalGraph ι} {Rty C Γ l ρ n W h 
     PromiseCalls.impliesCheck_sound hcar.1 he (PromiseCalls.aliasImplications_holds hf.2.2.1 hi),
     PromiseCalls.argFollows_sound hcar.2 (PromiseCalls.aliasSources_holds hf.2.2.1 ha),
     KnowledgeExpand.checkIn_sound hfact (KnowledgeExpand.ctxOf_ok (hcov.env he))
-      (HeapKnowledge.withTypedLinks_holds he (withTypedCells_holds hcells hf))⟩
+      (HeapKnowledge.withTypedLinks_holds he (withTypedCells_holds hcells (fun _ _ hr => HeapExpressionRules.typeValues_sound hr he) hf))⟩
 
 theorem branch_target_state [DecidableEq ι] {G : NormalGraph ι} {Rty C Γ q l ρ n W h facts xs sources v0}
     (ht : BranchTargetOk G C Γ q l facts xs sources) (he : EnvOk G Γ ρ (n+1) W) (hh : HeapOk (n+1) W h)
@@ -1079,7 +1096,7 @@ theorem branch_target_state [DecidableEq ι] {G : NormalGraph ι} {Rty C Γ q l 
     PromiseCalls.argFollows_sound hcar.2 (PromiseCalls.aliasSources_holds hf.2.2.1 ha),
     KnowledgeExpand.checkIn_sound hfact (KnowledgeExpand.ctxOf_ok (hcov.env he hq hh (readFields_holds hf) (optionalFields_holds hf)
       (HeapKnowledge.aliasCells_holds (HeapKnowledge.observeTyped_holds he hf hq))))
-      (HeapKnowledge.observeTyped_holds he (withTypedCells_holds (fun _ => HeapExpressionRules.typedCells_holds he hh) hf) hq)⟩
+      (HeapKnowledge.observeTyped_holds he (withTypedCells_holds (fun _ => HeapExpressionRules.typedCells_holds he hh) (fun _ _ hr => HeapExpressionRules.typeValues_sound hr he) hf) hq)⟩
 
 /-- A context refined by facts its values meet, with a heap meeting the
 world (`PromiseCalls.envOk_refineBy`). -/

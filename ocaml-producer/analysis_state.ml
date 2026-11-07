@@ -106,7 +106,10 @@ let create diagnostics flows offered declarations module_functions arities bound
     let bounds = List.filter_map (fun (fact : Semantic.index_fact) -> match fact with
       | Bound_by (x,k,strict) -> (match name x, name k with Some a, Some i -> Some (a,i,strict) | _ -> None)
       | _ -> None) f.requires in
-    if facts = [] && bounds = [] then env0 else Linear_facts.add_bounds (Linear_facts.add env0 facts) bounds in
+    let env0 = if facts = [] && bounds = [] then env0 else Linear_facts.add_bounds (Linear_facts.add env0 facts) bounds in
+    (* Its guarded facts (PROGRAM-TYPING.md, "Guarded clauses"), alike. *)
+    let guarded = List.filter_map (Linear_facts.of_guarded_fact name) f.requires in
+    if guarded = [] then env0 else Linear_facts.gadd env0 guarded in
   (* A module function holds each module cell its body mentions. *)
   let rec mentions n (e:Source.expr) = (match e.node with
     | Id m | Assign (m,_,_) | NullishAssign (m,_,_) -> m = n

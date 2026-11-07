@@ -134,6 +134,17 @@ function fieldsOf(v: JsonRead, names: readonly string[]): JsonObject | undefined
 }
 function decodeIndexFact(v: JsonRead): IndexFact | undefined {
   if (!isJsonObject(v) || Object.keys(v).length !== 1) return undefined;
+  const guarded = fieldsOf(v.guarded, ["slot", "path", "tag", "body"]);
+  if (guarded) {
+    const slot = decodeNat(guarded.slot);
+    const path = guarded.path;
+    const tag = guarded.tag;
+    const body = decodeIndexFact(guarded.body);
+    if (slot === undefined || body === undefined || (tag !== "null" && tag !== "undefined") || !isJsonList(path)) return undefined;
+    const fields: string[] = [];
+    for (const f of path) { if (typeof f !== "string") return undefined; fields.push(f); }
+    return { guarded: { slot, path: fields, tag, body } };
+  }
   const index = fieldsOf(v.index, ["slot"]);
   if (index) { const slot = decodeNat(index.slot); return slot === undefined ? undefined : { index: { slot } }; }
   const int = fieldsOf(v.int, ["slot"]);

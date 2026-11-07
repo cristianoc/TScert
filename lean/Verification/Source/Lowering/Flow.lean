@@ -308,17 +308,26 @@ private def reachablePoints (graph : SourceFlow.Graph) (id : Nat) : List String 
   -- from it; a fact whose coefficients are all zero states only that its
   -- terms denote integers: a binding's value a safe integer, a path's value
   -- one at most `2^53 - 1`, a length or element count one at least `0`.
-  let linear ← ((fc.entryFacts.lookup node.source.1).getD []).flatMapM fun (terms, bound) => do
+  -- A guarded fact (PROGRAM-TYPING.md, "Guarded clauses") is each such fact
+  -- in a guarded fact of each guard, the first outermost, its path read
+  -- from a value binding.
+  let linear ← ((fc.entryFacts.lookup node.source.1).getD []).flatMapM fun (guards, terms, bound) => do
     let form ← terms.mapM fun (name, path, kind, c) => match valueSlot scope name with
       | some x => pure ((⟨kind, x, path⟩ : HeapKnowledge.Term), c)
       | none => do throw (locatedRefusal (← table) node.source .entryClaim
           s!"a linear fact names '{name}', which is no value binding")
+    let guards ← guards.mapM fun (name, path, tag) => match valueSlot scope name with
+      | some x => pure (x, path, tag)
+      | none => do throw (locatedRefusal (← table) node.source .entryClaim
+          s!"a linear fact's guard names '{name}', which is no value binding")
+    let wrap := fun (F : HeapKnowledge.IndexFact) =>
+      guards.foldr (fun (x, path, tag) B => HeapKnowledge.IndexFact.guarded x path tag B) F
     if form.all (·.2 == 0) && 0 ≤ bound then
-      pure (form.map fun (t, _) => ({ fact := match t.kind, t.path with
+      pure (form.map fun (t, _) => ({ fact := wrap (match t.kind, t.path with
         | .value, [] => .int t.slot
         | .value, _ :: _ => .linear (.le [(t, 1)] (2 ^ 53 - 1))
-        | _, _ => .linear (.le [(t, -1)] 0) } : HeapKnowledge.IndexAtom))
-    else pure [({ fact := .linear (.le form bound) } : HeapKnowledge.IndexAtom)]
+        | _, _ => .linear (.le [(t, -1)] 0)) } : HeapKnowledge.IndexAtom))
+    else pure [({ fact := wrap (.linear (.le form bound)) } : HeapKnowledge.IndexAtom)]
   let bounds := bounds ++ linear
   if !facts.isEmpty || !links.isEmpty || !separation.facts.isEmpty || !bounds.isEmpty then
     recordAssertion reserved ⟨facts, [], links, separation, [], bounds⟩
