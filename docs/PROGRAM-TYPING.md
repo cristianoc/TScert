@@ -2084,7 +2084,32 @@ pretext's branded `PreparedText`, through the record type a
 resolves where `R` is declared. A path reads the value's fields in the heap,
 whatever its static type, so $`I_R`$ is a predicate of the handle's object
 either way. A path no field resolves, and a representation that is no record
-type, are refused where an annotation names `R`. An annotation **names** `R`
+type, are refused where an annotation names `R`.
+
+**A handle means its representation.** A type alias or an interface `H`
+stating `@representation T` means `T`: its equation is the reference to `T`
+(`elaborateDeclaration` in `tools/declaration-graph.mts`), and the members
+`H` declares, a brand no value holds, are no requirement. A value of `H`, and
+of `H & S`, is then a value of `T`, and of `T & S`:
+
+```math
+\frac{H\ \text{states}\ \mathtt{@representation}\ T}
+     {⟦H⟧ = ⟦T⟧}\ \textsf{handle-meaning}
+```
+
+so a cast into the handle (`e as unknown as H`, `e as H & S`) is the
+obligation that `e` is a `T` (and an `S`), as every
+[type assertion](DESIGN.md#lasting-decisions) is, and a cast out
+(`h as H & T`, `h as T`) holds of every value of `H`. The invariant `C` of `H`
+is the boundary contract below: a cast states no fact, so a value cast into
+`H` meets `C` where a boundary requiring it, a call or a return, proves it. A
+cast to `unknown` is claimed at its operand's type, which meets `unknown`, so
+`e as unknown as H` is the obligation of `e`. A binding declared at a cast of
+a binding (`const internal = prepared as InternalPreparedText`) holds the
+same value: the producer restates the operand's facts of the binding it
+declares, which Lean's alias link relates.
+
+An annotation **names** `R`
 where it is a reference to `R` without type arguments, a reference to an
 alias whose equation names it, an intersection with a part naming it, or a
 union each of whose arms names it; an optional type, a union with an arm
@@ -2115,7 +2140,7 @@ facts are kept by the steps whose footprints keep what they read
 ([facts across a heap change](#linear-facts)): a `push` to one array of a
 received record changes a length, and the next call requiring the invariant
 is refused, while an object literal's allocation and a parameter's default
-change no old location and keep them (`HeapExpressionRules.allocOutput`). A value given type `R` otherwise, by a cast, a spread, a native or
+change no old location and keep them (`HeapExpressionRules.allocOutput`). A value given type `R` otherwise, by a cast into it, a spread, a native or
 a read of another structure's field, carries no fact, and a call requiring
 the invariant of it is refused. An importer reads an imported declaration's
 invariants as its own module does (`writtenImport`, over the imported signature's types; the certified

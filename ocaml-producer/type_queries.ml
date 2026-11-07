@@ -183,10 +183,13 @@ let definition_of declarations id args =
        principal operand would lose receiver restrictions when the equation
        is later instantiated. Lean fills the claim's meet row independently. *)
     let meet t ts =
-      let expand t = match t with
-        | Atoms [Named (named,named_args)] when not (List.mem named (id::seen)) ->
-          (try instantiate (id::seen) named named_args with Json.Error _ -> t)
+      (* A declared operand read through its equation, and an equation that
+         is itself a reference (a handle's representation) through its own. *)
+      let rec expand_in seen t = match t with
+        | Atoms [Named (named,named_args)] when not (List.mem named seen) ->
+          (try expand_in (named::seen) (instantiate seen named named_args) with Json.Error _ -> t)
         | t -> t in
+      let expand = expand_in (id::seen) in
       (* `{}` is every value but `null` and `undefined`: a ground union met
          with it (`NonNullable<T>`, `T & {}`) is that union without them. *)
       let non_nullish = ground [True;False;Num;Str;Bigint;Symbol;
@@ -195,7 +198,8 @@ let definition_of declarations id args =
       | _::_,[Atoms atoms] when not (List.mem Top atoms) ->
         Atoms (List.filter (fun a -> a <> Nul && a <> Undef) atoms)
       | _ ->
-      match List.fold_left (fun acc part -> Option.bind acc (fun a -> meet_objects a (expand part)))
+      match List.fold_left (fun acc part -> Option.bind acc (fun a ->
+                let p = expand part in if p = a then Some a else meet_objects a p))
               (Some (expand t)) ts with
       | Some merged -> merged
       | None -> Meet (t,ts) in
@@ -243,6 +247,15 @@ let rec declared_head declarations seen = function
   | Atoms [Named (id,args)] ->
     if List.mem id seen then unsupported "unguarded callable alias cycle";
     declared_head declarations (id::seen) (definition declarations id args)
+  (* An intersection written in place (`h as H & R`): the one object its
+     operands' heads describe, where they are records, as an alias's
+     equation is read (`definition_of`). *)
+  | Meet (t,ts) as meet ->
+    let head = declared_head declarations seen in
+    (match List.fold_left (fun acc part -> Option.bind acc (fun a ->
+        let p = head part in if p = a then Some a else meet_objects a p)) (Some (head t)) ts with
+     | Some merged -> merged
+     | None -> meet)
   | t -> t
 (* Whether a type excludes `undefined`, each declared atom unfolded to what
    it names, through unions (a host family's declaration read as the union

@@ -291,7 +291,7 @@ control(async (): Promise<void> => {
   // representation's fields, forged at the entry of the walker's call after
   // the `push`, which requires it, is refused at that entry where evidence is
   // searched.
-  const artifacts = run("invalid-sealed-handle-resize-value-import");
+  const artifacts = run("invalid-sealed-handle-resize");
   const source = readFileSync(sourceKey(artifacts), "utf8");
   const claims = readClaims(artifacts);
   const fn = must(claims.functions.find(f => f.name === "grown"), "grown's claims");

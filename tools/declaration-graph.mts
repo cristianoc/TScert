@@ -4545,11 +4545,10 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
             node.typeParameters?.length || (partners.get(node)?.length ?? 1) !== 1) return null;
         const trivia = file.text.slice(node.pos, node.getStart(file));
         const clauses = invariantTags(trivia);
-        if (clauses.length === 0) return null;
         const named = representationTags(trivia).map(t => t.trim());
         const [name] = named;
         if (name === undefined) {
-          observations.invariant?.(identity, clauses, null);
+          if (clauses.length > 0) observations.invariant?.(identity, clauses, null);
           return null;
         }
         const what = `the representation of ${identity.module}#${identity.name}`;
@@ -6064,9 +6063,21 @@ function elaborateDeclaration(node: TypeDeclaration, identity: DeclarationIdenti
     applied: DeclarationInstance | undefined, seen: Set<string>, output: ElaboratedDeclaration,
     context: DeclarationElaborationContext): void {
   const { lookup, identityOf, symbol, partners, library, equation } = context;
+  // A handle stating `@representation R` means its representation: its
+  // equation is a reference to `R`, so a value of it is a value of `R`, a
+  // cast into it the obligation that the operand is one, and its own
+  // members (a brand) are no requirement (PROGRAM-TYPING.md, "Record
+  // invariants").
   if (!applied) {
     const represented = context.invariant(node, identity);
-    if (represented) output.dependencies.push(represented);
+    if (represented) {
+      output.dependencies.push(represented);
+      const target = identityOf(represented);
+      const span: Span = identity.span;
+      output.definitions.push({ declaration: identity, parameters: [], bases: [], expression:
+        { k: "reference", reference: { name: target.name, span, arguments: [], target }, args: [], span } });
+      return;
+    }
   }
   const stated = equation(key, node);
   if (stated) {

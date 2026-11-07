@@ -2,10 +2,9 @@
 // pretext's `layout.ts`: the public `PreparedText` is a branded type with no
 // field of its own, its representation `PreparedLineBreakData`, the arrays
 // the walkers read. Its invariant is stated over the representation's fields
-// (`@representation`). `seal` and `open` are pretext's casts in and out of
-// the handle, refused at their casts (`blocker-pretext-opaque-handle-cast`);
-// their importers read them at their declared signatures with the
-// invariant's facts.
+// (`@representation`), which the handle means. `seal` and `open` are
+// pretext's casts in and out of the handle; their importers read them at
+// their signatures with the invariant's facts.
 
 declare const preparedTextBrand: unique symbol;
 

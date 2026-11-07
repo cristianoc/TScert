@@ -1,8 +1,8 @@
 // A sealed handle's invariant (PROGRAM-TYPING.md, "Record invariants"),
-// pretext's `PreparedText`: `@fixture/handle` declares the branded handle,
-// its representation `PreparedLineBreakData` and its invariant over the
-// representation's fields (`@representation`), and `seal` and `open`, its
-// casts in and out. Each function taking the handle assumes
+// pretext's `PreparedText`, across an import: `@fixture/handle` declares the
+// branded handle, its representation `PreparedLineBreakData` and its
+// invariant over the representation's fields (`@representation`), and `seal`
+// and `open`, its casts in and out. Each function taking the handle assumes
 // `segmentFlags.length === widths.length` of it; `open` states it of the
 // record it returns, so `countBreaks` reads `segmentFlags[i]!` below
 // `widths.length`. The builder establishes the representation's invariant at

@@ -480,6 +480,10 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (body:Analysi
       (match kind,annot with
         | "nonNull",None -> without_nullish actual
         | "satisfies",Some _ -> actual
+        (* `e as unknown` is `e`'s value at `e`'s claim, which meets
+           `unknown`: an outer cast (`e as unknown as H`) is then the
+           obligation that `e` meets its target. *)
+        | "as",Some (Atoms [Top]) -> actual
         | "as",Some target -> target
         | _ -> Proposal_diagnostics.unsupported "cast form")
     (* A closure's statements: the union of what its `return`s give, each

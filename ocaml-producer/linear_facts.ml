@@ -487,8 +487,15 @@ let declaration ~(array : string -> string list -> bool) env fs name (init : exp
        result: each of them, of `x`, over the actuals. *)
     | New ({node=Id c;_},_,args,[]) -> fs @ construct_ensures ~array env fs name c args
     | _ -> fs in
-  let fs = match path_of env init with
+  (* A type assertion's value is its operand's (`const internal = prepared
+     as Internal`): the binding aliases the operand, as Lean's cast node
+     transfers the slot. *)
+  let rec uncast (e : expr) = match e.node with
+    | Cast (("as" | "satisfies" | "nonNull"),_,a) -> uncast a
+    | _ -> e in
+  let fs = match path_of env (uncast init) with
     | Some (root,(_ :: _ as path)) when root <> name && heap_free env init -> fs @ restate_read name (root,path) fs
+    | Some (root,[]) when root <> name && init != uncast init -> fs @ restate_read name (root,[]) fs
     | _ -> fs in
   match linear ~array env fs init with
   | Some (t,c) when not (List.mem_assoc name t) -> fs @ equal name (t,c)
