@@ -2334,8 +2334,8 @@ function invariantsNamed(gate: Gate, t: TypeTerm, depth: number = 0): NamedInvar
   if (stated !== undefined) {
     const representation = stated.representation;
     if (representation !== null && "refused" in representation) return representation.refused;
-    if (representation !== null && !records.record(representation))
-      return `the representation ${representation.name} of ${target.name} (\`@representation\`) is not a record type`;
+    if (representation !== null && !representable(gate, representation))
+      return `the representation ${representation.name} of ${target.name} (\`@representation\`) is not a record type or an intersection of record types`;
     own.push({ declaration: stated.declaration, clauses: stated.clauses,
       through: reference(representation ?? stated.declaration) });
   }
@@ -2346,6 +2346,22 @@ function invariantsNamed(gate: Gate, t: TypeTerm, depth: number = 0): NamedInvar
     return own;
   const named = invariantsNamed(gate, equation, depth + 1);
   return typeof named === "string" ? named : distinct([...own, ...named]);
+}
+
+/** Whether a declaration is a representation a record invariant's paths read
+ * fields of: a record type, or an alias without parameters of an intersection
+ * each of whose parts is a record type literal or a reference without
+ * arguments to such a declaration; a value of the intersection has the fields
+ * of every part, a path reading a field one part states (`fieldType`). */
+function representable(gate: Gate, id: DeclarationIdentity, depth: number = 0): boolean {
+  const records = gate.namedRecords();
+  if (records === null || depth > 16) return false;
+  if (records.record(id)) return true;
+  const definition = records.definition(id, (message: string): never => gate.fail(null, message));
+  if (definition === undefined || definition.parameters.length > 0) return false;
+  const e = definition.expression;
+  return e !== null && e.k === "intersection" && e.parts.every(p => p.k === "object" ||
+    (p.k === "reference" && p.args.length === 0 && representable(gate, p.reference.target, depth + 1)));
 }
 
 /** The type of the required data field `f` of a value of type `t`, where a

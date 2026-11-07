@@ -2128,12 +2128,18 @@ of a value $`o`$ in a heap, $`I_R(o,h)`$, the clause with `this` read as
 $`o`. Each path is resolved, for its kind (a value, an array's length, a
 view's element count), through the fields `R` declares, or, where `R` is a
 **sealed handle**, a type declaring no field the clause reads, such as
-pretext's branded `PreparedText`, through the record type a
-`@representation T` tag beside the invariant names, which TypeScript
-resolves where `R` is declared. A path reads the value's fields in the heap,
-whatever its static type, so $`I_R`$ is a predicate of the handle's object
-either way. A path no field resolves, and a representation that is no record
-type, are refused where an annotation names `R`.
+pretext's branded `PreparedText`, through the type a `@representation T`
+tag beside the invariant names, which TypeScript resolves where `R` is
+declared: a record type, or an alias of an intersection of record types
+$`T=T_1\mathbin{\&}\cdots\mathbin{\&}T_m`$, each part a record type or such
+an alias, pretext's `PreparedLineData = PreparedLineBreakData & { items?:
+ParagraphSegmentData }`. A value of the intersection is a value of every
+part, so a path's field resolves through the one part declaring it. A path
+reads the value's fields in the heap, whatever its static type, so $`I_R`$ is
+a predicate of the handle's object either way. A path no field resolves, a
+field several parts of an intersection declare, and a representation of
+another type, a union among them, are refused where an annotation names
+`R`.
 
 **A handle means its representation.** A type alias or an interface `H`
 stating `@representation T` means `T`: its equation is the reference to `T`
@@ -2278,7 +2284,10 @@ not read, a union result); negative, each run under Node,
 refused at `seal`), `invalid-sealed-handle-resize-value-import` (a `push`
 after opening, refused at the next walker's call) and
 `invalid-sealed-handle-forged-value-import` (a handle cast from an
-unrelated object, refused at the cast); refused gaps
+unrelated object, refused at the cast); a representation by intersection,
+positive `sealed-handle-intersection-representation` and negative, run under
+Node, `invalid-sealed-handle-intersection-builder` (a view one element short,
+refused at the builder's return); refused gaps
 `sealed-handle-no-representation-refused` and
 `sealed-handle-union-representation-refused`; a forged control: the handle's
 invariant claimed at the walker's entry after the resize, refused there. A
