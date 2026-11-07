@@ -245,3 +245,10 @@ export function isImport(node: Node): node is Within<{ value: "keep"; store: "ke
 /** Whether a member is written `static`. */
 export const isStatic = (node: Node): Within<{ value: "any"; store: "grow" }, boolean> =>
   childrenOf(node, "modifiers").some((m) => m.kind === ts.SyntaxKind.StaticKeyword);
+
+/** The node with every parenthesized wrapper stripped: TypeScript gives a
+ * wrapped and an unwritten expression one meaning, so a decision that reads
+ * the normalized form treats the spellings alike (#119). */
+export function unparenthesized(node: Node): Node {
+  return ts.isParenthesizedExpression(node) ? unparenthesized(node.expression) : node;
+}

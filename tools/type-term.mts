@@ -5,7 +5,7 @@
 import * as ts from "typescript/unstable/ast";
 import type { Identifier, Node, SourceFile, TypeAliasDeclaration, TypeElement, TypeNode, TypeReferenceNode } from "typescript/unstable/ast";
 import type { Span } from "./span.mts";
-import { childrenOf, isTypeAlias } from "./syntax.mts";
+import { childrenOf, isTypeAlias, unparenthesized } from "./syntax.mts";
 import type { ClosedFootprint, PropertyKey, ResolutionSlots, StatedEffect, TypeTerm } from "./declaration-types.mts";
 import { withPromise, footprintEffect, ordinaryEffect, promiseEffect } from "./type-graph.mts";
 import type { CallEffect, CallPromise } from "./type-graph.mts";
@@ -421,11 +421,14 @@ export function typeTerm(scope: TermScope, node: TypeNode | undefined, at: Node 
  * `boolean`, a numeric literal a `number` and a bigint literal a `bigint`,
  * each also under one `-`, a string literal or a template without
  * substitutions a `string`: the literal's type widened, so a caller may pass
- * any value of its kind. `null` for any other node. */
+ * any value of its kind; parentheses around the default or its operand are
+ * transparent, as TypeScript gives them one meaning. `null` for any other
+ * node. */
 export function literalDefaultName(p: Node): Within<{ value: "any"; store: "grow" }, "boolean" | "number" | "bigint" | "string" | null> {
   if (!ts.isParameterDeclaration(p) || p.type || !p.initializer) return null;
-  const written = p.initializer;
-  const value = ts.isPrefixUnaryExpression(written) && written.operator === ts.SyntaxKind.MinusToken ? written.operand : written;
+  const written = unparenthesized(p.initializer);
+  const value = ts.isPrefixUnaryExpression(written) && written.operator === ts.SyntaxKind.MinusToken ?
+    unparenthesized(written.operand) : written;
   if (ts.isNumericLiteral(value)) return "number";
   if (ts.isBigIntLiteral(value)) return "bigint";
   if (value !== written) return null;

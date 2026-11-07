@@ -5052,18 +5052,22 @@ function hrefRead(made: Node): ts.PropertyAccessExpression | null {
 }
 
 /** The call of `fill` written directly on `made`, `new Array<T>(n).fill(v)`:
- * a plain read of `fill` on the construct itself (no parentheses, no
- * optional chain at the read or the call), called with one argument, no
- * spread and no type argument, which TypeScript resolves to the standard
+ * a plain read of `fill` on the construct itself, through any parentheses
+ * (no optional chain at the read or the call), called with one argument,
+ * no spread and no type argument, which TypeScript resolves to the standard
  * library's `fill` of `Array<T>`, exactly as reviewed. Null otherwise. */
 function fillCall(checker: Checker, made: ts.NewExpression, libraryFile: (file: SourceFile) => boolean):
     ts.CallExpression | null {
-  const access = made.parent;
-  if (!access || !ts.isPropertyAccessExpression(access) || access.expression !== made || access.questionDotToken ||
+  let read: Node = made;
+  while (read.parent && ts.isParenthesizedExpression(read.parent)) read = read.parent;
+  const access = read.parent;
+  if (!access || !ts.isPropertyAccessExpression(access) || access.expression !== read || access.questionDotToken ||
       !ts.isIdentifier(access.name) || access.name.text !== "fill")
     return null;
-  const call = access.parent;
-  if (!call || !ts.isCallExpression(call) || call.expression !== access || call.questionDotToken ||
+  let called: Node = access;
+  while (called.parent && ts.isParenthesizedExpression(called.parent)) called = called.parent;
+  const call = called.parent;
+  if (!call || !ts.isCallExpression(call) || call.expression !== called || call.questionDotToken ||
       call.typeArguments?.length || call.arguments.length !== 1 || call.arguments.some(ts.isSpreadElement))
     return null;
   const resolved = checker.getResolvedSignature(call)?.declaration?.resolve();

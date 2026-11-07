@@ -473,7 +473,7 @@ where $`\mathrm{widen}`$ is defined on these literals alone: `true` and
 `number`; a bigint literal, or one under a single `-`, gives `bigint`; a
 string literal or a template without substitutions gives `string`. Any other
 unannotated parameter states no type and is refused ("missing type
-annotation"), although TypeScript also reads `+1`, parentheses, `as const`,
+annotation"), although TypeScript also reads `+1`, `as const`,
 templates with substitutions, `null`, `undefined` and object literals
 (TypeScript 5.9, 6.0 and 7.0, measured 2026-11-05). The type is the widened
 one, so a caller may pass any value of the kind and the body may write any
@@ -3551,8 +3551,10 @@ signature `new <T>(arrayLength: number): T[]` is read only in one form: the
 construct written directly as the receiver of a call of `fill` of one
 argument, which TypeScript resolves to the standard library's
 `fill(value: T, start?: number, end?: number): this` of `Array<T>`. There is
-no parenthesis around the construct, no optional chain at the read or the
-call, no spread and no type argument of the call (the entry's `filled`,
+no optional chain at the read or the
+call, no spread and no type argument of the call; parentheses around the
+construct or around the read are transparent, as TypeScript gives the
+wrapped and the unwritten form one meaning (the entry's `filled`,
 `fillCall` in `declaration-graph.mts`). The two calls are the two intrinsics:
 
 ```math
@@ -3591,8 +3593,10 @@ construct bound before its `fill` has holes another statement can read
 (`invalid-array-fill-read-before`), and `fill(v, start)` or
 `fill(v, start, end)` leaves holes outside the range
 (`invalid-array-fill-partial`, `invalid-array-fill-range`), each run under
-Node; a parenthesized construct is refused too
-(`array-fill-parenthesized`), and `new Array(n)` without a type argument is
+Node; a parenthesized construct is read the same as a directly written one
+(`array-fill-parenthesized`), an optional chain at the parenthesized read is
+refused (`invalid-array-fill-paren-optional`), and `new Array(n)` without a
+type argument is
 TypeScript's `any[]` construct, refused as before (`invalid-array-length`).
 The cases are `array-fill` and `blocker-pretext-new-array-fill`; a control
 forges the instance of `%ArrayFilled%` at a type the value does not meet and
