@@ -725,3 +725,15 @@ programming language.* CADE-28, LNCS 12699, pp. 625–635, Springer, 2021.
 **Used as** the authority: the model, the rules, their soundness proofs and
 the checker that consumes producer evidence.
 **Discussed in** [DESIGN: what "verified" means](DESIGN.md#what-verified-means).
+
+### wasm-bindgen
+
+The wasm-bindgen contributors. *The wasm-bindgen Guide*: [numeric types](https://wasm-bindgen.github.io/wasm-bindgen/reference/types/numbers.html),
+[deployment targets](https://wasm-bindgen.github.io/wasm-bindgen/reference/deployment.html), and
+[release 0.2.130](https://github.com/wasm-bindgen/wasm-bindgen/releases/tag/0.2.130).
+
+**Used for** the Rust demo's numeric ABI mapping and its optional
+real build: matching crate/CLI versions, generated JavaScript, declarations
+and Wasm. The signature agreement check is unproved; the concrete run is
+regression evidence, and no cross-language composition theorem is claimed.
+**Discussed in** [the Rust demo](../demo/rust/README.md#build-and-execute-the-real-crossing).
