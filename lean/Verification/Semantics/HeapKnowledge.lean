@@ -341,6 +341,58 @@ theorem elemsCheckBy_sound {M : Nat → List Nat} {a b : List ElemAtom} {m ρ h}
   rw [hsv] at this
   exact this.mono hle
 
+/-- Whether a target linear form is a source one, term by term, each target
+slot mapped to a slot whose value the source slot holds (`M`). -/
+def termsFollow (M : Nat → List Nat) (m : PointClaims.Mapping) : Linear.Form → Linear.Form → Bool
+  | [], [] => true
+  | (x, c) :: t, (y, c') :: t' => c == c' && (M (PointClaims.slot m y)).contains x && termsFollow M m t t'
+  | _, _ => false
+
+def formFollows (M : Nat → List Nat) (m : PointClaims.Mapping) : Linear.Fact → Linear.Fact → Bool
+  | .le F d, .le F' d' => d == d' && termsFollow M m F F'
+  | .ne F d, .ne F' d' => d == d' && termsFollow M m F F'
+  | _, _ => false
+
+theorem termsFollow_sound {M : Nat → List Nat} {m : PointClaims.Mapping} {ρ : Env}
+    (hM : ∀ x, ∀ y ∈ M x, ρ y = ρ x) :
+    ∀ {F F' : Linear.Form}, termsFollow M m F F' = true →
+      Linear.Form.eval (valuation (PointClaims.mapEnv m ρ)) F' = Linear.Form.eval (valuation ρ) F ∧
+      ∀ y ∈ F'.map (·.1), ∃ x ∈ F.map (·.1), ρ x = PointClaims.mapEnv m ρ y := by
+  intro F
+  induction F with
+  | nil => intro F' h; cases F' with
+    | nil => exact ⟨rfl, by simp⟩
+    | cons _ _ => simp [termsFollow] at h
+  | cons p t ih =>
+    intro F' h
+    obtain ⟨x, c⟩ := p
+    cases F' with
+    | nil => simp [termsFollow] at h
+    | cons q t' =>
+      obtain ⟨y, c'⟩ := q
+      simp only [termsFollow, Bool.and_eq_true, beq_iff_eq, List.contains_iff_mem] at h
+      obtain ⟨⟨rfl, hx⟩, ht⟩ := h
+      obtain ⟨he, hv⟩ := ih ht
+      have hxy : ρ x = PointClaims.mapEnv m ρ y := hM _ _ hx
+      refine ⟨?_, ?_⟩
+      · simp only [Linear.Form.eval, he, valuation, ← hxy]
+      · intro z hz
+        simp only [List.map_cons, List.mem_cons] at hz
+        rcases hz with rfl | hz
+        · exact ⟨x, by simp, hxy⟩
+        · obtain ⟨w, hw, hwz⟩ := hv z hz
+          exact ⟨w, by simp [hw], hwz⟩
+
+theorem formFollows_sound {M : Nat → List Nat} {m : PointClaims.Mapping} {ρ : Env} {F F' : Linear.Fact}
+    (hM : ∀ x, ∀ y ∈ M x, ρ y = ρ x) (hf : formFollows M m F F' = true) :
+    (F'.Holds (valuation (PointClaims.mapEnv m ρ)) ↔ F.Holds (valuation ρ)) ∧
+      ∀ y ∈ F'.vars, ∃ x ∈ F.vars, ρ x = PointClaims.mapEnv m ρ y := by
+  cases F <;> cases F' <;> simp only [formFollows, Bool.and_eq_true, beq_iff_eq, Bool.false_eq_true] at hf
+  all_goals
+    obtain ⟨rfl, ht⟩ := hf
+    obtain ⟨he, hv⟩ := termsFollow_sound hM ht
+    exact ⟨by simp only [Linear.Fact.Holds, he], hv⟩
+
 /-- Whether a target fact follows from a source fact on an edge mapping `m`:
 each slot of the source's holds the value of the mapped target slot (`M`). -/
 def factFollows (M : Nat → List Nat) (m : PointClaims.Mapping) : IndexFact → IndexFact → Bool
@@ -349,6 +401,8 @@ def factFollows (M : Nat → List Nat) (m : PointClaims.Mapping) : IndexFact →
     (M (PointClaims.slot m x')).contains x && (M (PointClaims.slot m n')).contains n
   | .bound x k, .bound x' k' =>
     (M (PointClaims.slot m x')).contains x && (M (PointClaims.slot m k')).contains k
+  | .int k, .int k' => (M (PointClaims.slot m k')).contains k
+  | .linear F, .linear F' => formFollows M m F F'
   | _, _ => false
 
 theorem factFollows_sound {M : Nat → List Nat} {m : PointClaims.Mapping} {s t : IndexFact} {ρ h}
@@ -361,6 +415,15 @@ theorem factFollows_sound {M : Nat → List Nat} {m : PointClaims.Mapping} {s t 
     simpa only [IndexFact.HoldsAt, PointClaims.mapEnv, hM _ _ hf.1, hM _ _ hf.2] using hs
   · rename_i x k x' k'
     simpa only [IndexFact.HoldsAt, PointClaims.mapEnv, hM _ _ hf.1, hM _ _ hf.2] using hs
+  · rename_i k k'
+    simpa only [IndexFact.HoldsAt, PointClaims.mapEnv, hM _ _ hf] using hs
+  · rename_i F F'
+    obtain ⟨hh, hv⟩ := formFollows_sound hM hf
+    refine ⟨fun y hy => ?_, hh.mpr hs.2⟩
+    obtain ⟨x, hx, hxy⟩ := hv y hy
+    have := hs.1 x hx
+    rw [hxy] at this
+    exact this
 
 /-- Whether a target atom follows from a source atom: its fact follows, and its
 condition is none or the mapped one's, at the same answer. -/
@@ -412,16 +475,26 @@ unconditional `int` atom of a slot the source states holds a safe integer, or
 an unconditional linear atom the source's linear facts entail
 (`Linear.entails`), each target slot renamed to the source slot the edge maps
 it to. -/
-def linearFollows (m : PointClaims.Mapping) (a : List IndexAtom) (t : IndexAtom) : Bool :=
+def pickSlot (M : Nat → List Nat) (m : PointClaims.Mapping) (a : List IndexAtom) (y : Nat) : Nat :=
+  ((M (PointClaims.slot m y)).find? (intSlot a)).getD (PointClaims.slot m y)
+
+theorem pickSlot_eq {M : Nat → List Nat} {m : PointClaims.Mapping} {a : List IndexAtom} {ρ : Env}
+    (hM : ∀ x, ∀ y ∈ M x, ρ y = ρ x) (y : Nat) : ρ (pickSlot M m a y) = PointClaims.mapEnv m ρ y := by
+  unfold pickSlot
+  cases hf : (M (PointClaims.slot m y)).find? (intSlot a) with
+  | none => rfl
+  | some x => exact hM _ _ (List.mem_of_find?_eq_some hf)
+
+def linearFollows (M : Nat → List Nat) (m : PointClaims.Mapping) (a : List IndexAtom) (t : IndexAtom) : Bool :=
   t.cond.isNone && match t.fact with
-  | .int k => intSlot a (PointClaims.slot m k)
-  | .linear F => match F.mapVars (fun y => some (PointClaims.slot m y)) with
+  | .int k => intSlot a (pickSlot M m a k)
+  | .linear F => match F.mapVars (fun y => some (pickSlot M m a y)) with
     | some F' => F'.vars.all (intSlot a) && Linear.entails (linearFacts a) F'
     | none => false
   | _ => false
 
-theorem linearFollows_sound {m : PointClaims.Mapping} {a : List IndexAtom} {t : IndexAtom} {ρ h}
-    (hf : linearFollows m a t = true) (ha : IndexHolds a ρ h) :
+theorem linearFollows_sound {M : Nat → List Nat} {m : PointClaims.Mapping} {a : List IndexAtom} {t : IndexAtom} {ρ h}
+    (hM : ∀ x, ∀ y ∈ M x, ρ y = ρ x) (hf : linearFollows M m a t = true) (ha : IndexHolds a ρ h) :
     t.fact.HoldsAt (PointClaims.mapEnv m ρ) h := by
   simp only [linearFollows, Bool.and_eq_true] at hf
   obtain ⟨-, hf⟩ := hf
@@ -429,7 +502,9 @@ theorem linearFollows_sound {m : PointClaims.Mapping} {a : List IndexAtom} {t : 
   | int k =>
     rw [ht] at hf
     simp only at hf
-    exact (intSlot_sound ha hf : (intValue (ρ (PointClaims.slot m k))).isSome)
+    have := intSlot_sound ha hf
+    rw [pickSlot_eq hM] at this
+    exact this
   | linear F =>
     rw [ht] at hf
     simp only at hf
@@ -437,26 +512,28 @@ theorem linearFollows_sound {m : PointClaims.Mapping} {a : List IndexAtom} {t : 
     · rename_i F' hF'
       simp only [Bool.and_eq_true, List.all_eq_true] at hf
       obtain ⟨hv, he⟩ := hf
-      have hv' : ∀ x ∈ F.vars, ∀ y, (fun y => some (PointClaims.slot m y)) x = some y →
+      have hv' : ∀ x ∈ F.vars, ∀ y, (fun y => some (pickSlot M m a y)) x = some y →
           valuation ρ y = valuation (PointClaims.mapEnv m ρ) x := by
-        intro x _ y hy; cases hy; rfl
+        intro x _ y hy; cases hy; simp only [valuation, pickSlot_eq hM]
       refine ⟨fun x hx => ?_, (Linear.Fact.holds_mapVars hF' hv').mp
         (Linear.entails_sound he (linearFacts_holds ha))⟩
       obtain ⟨y, hy, hxy⟩ := Linear.Fact.mapVars_vars_fwd hF' x hx
       cases hxy
-      exact (intSlot_sound ha (hv _ hy) : (intValue (ρ (PointClaims.slot m x))).isSome)
+      have := intSlot_sound ha (hv _ hy)
+      rw [pickSlot_eq hM] at this
+      exact this
     · cases hf
   | index _ | length _ _ | bound _ _ => rw [ht] at hf; cases hf
 
 def indicesCheckBy (M : Nat → List Nat) (a b : List IndexAtom) (m : PointClaims.Mapping) : Bool :=
-  b.all fun t => a.any (fun s => indexFollows M m s t) || linearFollows m a t
+  b.all fun t => a.any (fun s => indexFollows M m s t) || linearFollows M m a t
 
 theorem indicesCheckBy_sound {M : Nat → List Nat} {a b : List IndexAtom} {m ρ h}
     (hM : ∀ x, ∀ y ∈ M x, ρ y = ρ x) (hc : indicesCheckBy M a b m = true) (ha : IndexHolds a ρ h) :
     IndexHolds b (PointClaims.mapEnv m ρ) h := by
   intro t ht hcond
   rcases Bool.or_eq_true_iff.mp (List.all_eq_true.mp hc t ht) with hc' | hlin
-  case inr => exact linearFollows_sound hlin ha
+  case inr => exact linearFollows_sound hM hlin ha
   obtain ⟨s, hs, hf⟩ := List.any_eq_true.mp hc'
   simp only [indexFollows, Bool.and_eq_true] at hf
   obtain ⟨hfact, hcd⟩ := hf
