@@ -1028,7 +1028,8 @@ def linearTerms (as : List IndexAtom) : List Term :=
     | _ => []).eraseDups
 
 /-- The atoms with the terms of the slots of `drop` eliminated from the
-linear facts (`Linear.eliminateAll`): from the unconditional ones, and from
+linear facts with the strict bounds their inequalities give
+(`Linear.strengthen`, `Linear.eliminateAll`): from the unconditional ones, and from
 those with each condition's atoms, the derived facts naming none of them,
 each of whose terms an atom states defined, appended under the condition
 they were derived under. -/
@@ -1040,11 +1041,11 @@ def eliminateIndices (drop : List Nat) (as : List IndexAtom) : List IndexAtom :=
   let groups := (as.filterMap fun a => match a.cond, a.fact with
     | some c, .linear _ => if drop.contains c then none else some (c, a.negated)
     | _, _ => none).eraseDups
-  as ++ ((Linear.eliminateAll (linearFacts as) used).filter (keep (linearFacts as))).map
+  as ++ ((Linear.eliminateAll (Linear.strengthen (linearFacts as)) used).filter (keep (linearFacts as))).map
     (fun F => ⟨.linear F, none, false⟩) ++
     groups.flatMap fun (c, neg) =>
       let known := linearFacts as ++ condFacts as c neg
-      ((Linear.eliminateAll known used).filter (keep known)).map fun F => ⟨.linear F, some c, neg⟩
+      ((Linear.eliminateAll (Linear.strengthen known) used).filter (keep known)).map fun F => ⟨.linear F, some c, neg⟩
 
 theorem eliminateIndices_holds {drop : List Nat} {as : List IndexAtom} {ρ h} (he : IndexHolds as ρ h) :
     IndexHolds (eliminateIndices drop as) ρ h := by
@@ -1059,14 +1060,14 @@ theorem eliminateIndices_holds {drop : List Nat} {as : List IndexAtom} {ρ h} (h
         obtain ⟨hF, hk⟩ := List.mem_filter.mp hF
         simp only [Bool.and_eq_true, Bool.not_eq_true', List.all_eq_true] at hk
         exact ⟨fun x hx => termDefined_sound he (hk.2 x hx).2,
-          Linear.eliminateAll_sound (linearFacts_holds he) F hF⟩
+          Linear.eliminateAll_sound (Linear.strengthen_holds (linearFacts_holds he)) F hF⟩
     · obtain ⟨⟨c, neg⟩, -, ha⟩ := List.mem_flatMap.mp ha
       obtain ⟨F, hF, rfl⟩ := List.mem_map.mp ha
       obtain ⟨hF, hk⟩ := List.mem_filter.mp hF
       simp only [Bool.and_eq_true, Bool.not_eq_true', List.all_eq_true] at hk
       have hcv := hc c rfl
       refine ⟨fun x hx => termDefined_sound he (hk.2 x hx).2, ?_⟩
-      refine Linear.eliminateAll_sound (fun G hG => ?_) F hF
+      refine Linear.eliminateAll_sound (Linear.strengthen_holds (fun G hG => ?_)) F hF
       rcases List.mem_append.mp hG with hG | hG
       · exact linearFacts_holds he G hG
       · exact condFacts_holds he hcv G hG

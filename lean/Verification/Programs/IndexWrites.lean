@@ -473,11 +473,13 @@ def compareAtoms (op : Arith) (D : Linear.Form Nat) (c : Int) : List IndexAtom :
   | some (t, f) => [⟨.linear (valueFact t), some 0, false⟩, ⟨.linear (valueFact f), some 0, true⟩]
   | none => []
 
-/-- The atoms of a strict equality's `true` answer, on the result slot 0, of
-operands whose difference is `D + c`: `D + c = 0`, as two facts. -/
+/-- The atoms of a strict equality's answers, on the result slot 0, of
+operands whose difference is `D + c`: `D + c = 0`, as two facts, on `true`,
+and `D + c ≠ 0` on `false`. -/
 def equalAtoms (D : Linear.Form Nat) (c : Int) : List IndexAtom :=
   [⟨.linear (valueFact (.le (shiftForm D) (-c))), some 0, false⟩,
-    ⟨.linear (valueFact (.le (shiftForm (D.scale (-1))) c)), some 0, false⟩]
+    ⟨.linear (valueFact (.le (shiftForm (D.scale (-1))) c)), some 0, false⟩,
+    ⟨.linear (valueFact (.ne (shiftForm D) (-c))), some 0, true⟩]
 
 /-- A copy of slot `a` restates the atoms conditional on `a` as conditional on
 the copy, the result slot 0: the copy holds the same value. -/
@@ -681,8 +683,8 @@ theorem compareAtoms_holds {op : Arith} {D : Linear.Form Nat} {c : Int} {ρ h} {
            show _ ≤ _; first | (rw [ep]; simp only [answerHolds] at hans; omega) | (rw [en]; simp only [answerHolds] at hans; omega)⟩)
     | exact absurd ha (by simp)
 
-/-- A strict equality's `true` answer of two safe integers gives their
-difference zero. -/
+/-- A strict equality's answers of two safe integers give their difference
+zero on `true` and nonzero on `false`. -/
 theorem equalAtoms_holds {D : Linear.Form Nat} {c : Int} {ρ h} {x y : UInt64} {i j : Int}
     (hD : ∀ z ∈ D.map (·.1), (intValue (ρ z)).isSome)
     (hdiff : Linear.Form.eval (valuation ρ) D + c = i - j)
@@ -697,18 +699,31 @@ theorem equalAtoms_holds {D : Linear.Form Nat} {c : Int} {ρ h} {x y : UInt64} {
   intro a ha hc
   have hq := hc 0
   simp only [equalAtoms, List.mem_cons, List.not_mem_nil, or_false] at ha
-  have htrue : numberEqual x y = true := by
-    rcases ha with rfl | rfl <;>
-    · have := hq rfl
+  rcases ha with rfl | rfl | rfl
+  · have htrue : numberEqual x y = true := by
+      have := hq rfl
       cases hn : numberEqual x y <;> simp_all [push, boolVal, tagHolds]
-  have hij := SafeIntegers.numberEqual_safe hx hy htrue
-  rcases ha with rfl | rfl
-  · refine IndexFact.holdsAt_valueFact.mpr ⟨hvars D rfl, ?_⟩
+    have hij := SafeIntegers.numberEqual_safe hx hy htrue
+    refine IndexFact.holdsAt_valueFact.mpr ⟨hvars D rfl, ?_⟩
     show Linear.Form.eval _ _ ≤ _
     rw [eval_shiftForm]; omega
-  · refine IndexFact.holdsAt_valueFact.mpr ⟨hvars (D.scale (-1)) (scale_vars _ _), ?_⟩
+  · have htrue : numberEqual x y = true := by
+      have := hq rfl
+      cases hn : numberEqual x y <;> simp_all [push, boolVal, tagHolds]
+    have hij := SafeIntegers.numberEqual_safe hx hy htrue
+    refine IndexFact.holdsAt_valueFact.mpr ⟨hvars (D.scale (-1)) (scale_vars _ _), ?_⟩
     show Linear.Form.eval _ _ ≤ _
     rw [eval_shiftForm, Linear.Form.eval_scale]; omega
+  · have hfalse : numberEqual x y = false := by
+      have := hq rfl
+      cases hn : numberEqual x y <;> simp_all [push, boolVal, tagHolds]
+    have hij : i ≠ j := fun he => by
+      subst he
+      rw [SafeIntegers.numberEqual_of_safe hx hy] at hfalse
+      cases hfalse
+    refine IndexFact.holdsAt_valueFact.mpr ⟨hvars D rfl, ?_⟩
+    show Linear.Form.eval _ _ ≠ _
+    rw [eval_shiftForm]; omega
 
 theorem binop_num_eq {x y : UInt64} {u : Tm} (h : binop .eq (.num x) (.num y) = some u) :
     u = boolVal (numberEqual x y) := by

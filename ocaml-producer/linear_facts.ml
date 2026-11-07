@@ -296,7 +296,7 @@ let declaration ~(array : string -> string list -> bool) env fs name (init : exp
   | _ -> fs
 
 (* What each answer of a comparison of two operands states. *)
-let comparison ~array env fs (cond : expr) : fact list * fact list =
+let atom_comparison ~array env fs (cond : expr) : fact list * fact list =
   match cond.node with
   | Arith ((Lt | Le | Gt | Ge) as op,a,b) ->
     (match linear ~array env fs a, linear ~array env fs b with
@@ -309,17 +309,21 @@ let comparison ~array env fs (cond : expr) : fact list * fact list =
         | Gt -> [neg,c-1],[d,-c]
         | _ -> [neg,c],[d,-1-c])
      | _ -> [],[])
-  (* A strict equality of two operands states `a = b` on its `true` answer,
-     a strict inequality on its `false` one (Lean's `IndexWrites.equalAtoms`).
-     A comparison with a number literal is a tag test in Lean's lowering
-     (`numEq`), which states no linear fact. *)
+  (* A strict equality of two operands states `a = b` on its `true` answer
+     and `a ≠ b` on its `false` one, a strict inequality the reverse (Lean's
+     `IndexWrites.equalAtoms`). The facts here are inequalities: `a ≠ b`
+     with `a ≤ b` held is `a ≤ b - 1`, as Lean's strict step derives it, and
+     with `b ≤ a` held `b ≤ a - 1`. A comparison with a number literal is a
+     tag test in Lean's lowering (`numEq`), which states no linear fact. *)
   | Equality ((StrictEqual | StrictUnequal) as op,a,b)
     when (match a.node, b.node with Literal (LNumber _),_ | _,Literal (LNumber _) -> false | _ -> true) ->
     (match linear ~array env fs a, linear ~array env fs b with
      | Some (ta,ca),Some (tb,cb) ->
        let d = norm (ta @ scale (-1) tb) and c = ca - cb in
        let equal = [d,-c; scale (-1) d,c] in
-       if op = StrictEqual then equal,[] else [],equal
+       let unequal = (if entails fs (d,-c) then [d,-c-1] else []) @
+         (if entails fs (scale (-1) d,c) then [scale (-1) d,c-1] else []) in
+       if op = StrictEqual then equal,unequal else unequal,equal
      | _ -> [],[])
   | _ -> [],[]
 
@@ -360,7 +364,7 @@ let statement_bounds env (bs : bound list) (s : stmt) =
 (* What each answer of a comparison of an index with an array's length states:
    on the answer giving `j < xs.length`, with `0 ≤ j` known, `j` an index
    below the length (`IndexWrites.lengthPair`). *)
-let comparison_bounds ~array env fs (cond : expr) : bound list * bound list =
+let atom_bounds ~array env fs (cond : expr) : bound list * bound list =
   let index j = value_binding env j && is_int fs j && (match range fs j with Some l,_ -> l >= 0 | _ -> false) in
   let length (e : expr) = match e.node with
     | Read ({node=Id xs;_},Semantic.Name "length") when value_binding env xs && array xs [] -> Some xs
@@ -378,10 +382,31 @@ let array_path : ((string * Environment.binding) list -> string -> string list -
 
 (* The true answer of `j < xs.length`, with `0 ≤ j` known: `j` is at most
    `2^32 - 2`, which Lean derives from the length's range. *)
-let length_test ~array env fs (cond : expr) =
-  match comparison_bounds ~array env fs cond with
+let atom_length_test ~array env fs (cond : expr) =
+  match atom_bounds ~array env fs cond with
   | [_,j,_],_ -> [[j,1],max_index]
   | _ -> []
+
+(* What each answer of a test states, its facts and its bounds. A
+   comparison's as above; `a && b` answers `true` where both do, `b`
+   evaluated with what `a`'s `true` states, and `a || b` answers `false`
+   where both do, `b` evaluated with what `a`'s `false` states; the other
+   answer states nothing. Lean evaluates `b` only on that answer of `a`
+   (`choose`), so both answers' facts hold where the test answers so. *)
+let rec test ~array env fs (cond : expr) : (fact list * bound list) * (fact list * bound list) =
+  match cond.node with
+  | Logical (conjunction,a,b) ->
+    let (ta,bta),(fa,bfa) = test ~array env fs a in
+    let left,left_bounds = if conjunction then ta,bta else fa,bfa in
+    let (tb,btb),(fb,bfb) = test ~array env (fs @ left) b in
+    if conjunction then (left @ tb, left_bounds @ btb),([],[])
+    else ([],[]),(left @ fb, left_bounds @ bfb)
+  | _ ->
+    let t,f = atom_comparison ~array env fs cond and bt,bf = atom_bounds ~array env fs cond in
+    (t @ atom_length_test ~array env fs cond, bt),(f,bf)
+
+let comparison ~array env fs cond = let (t,_),(f,_) = test ~array env fs cond in t,f
+let comparison_bounds ~array env fs cond = let (_,t),(_,f) = test ~array env fs cond in t,f
 
 (* The bounds holding where the statement being typed starts, for a call
    whose signature states a precondition (`Expression_calls`): set by the
@@ -421,6 +446,6 @@ let with_test env (c : expr) yes f =
   if saved = [] then f () else begin
     let array = !array_path env in
     let t,fl = comparison ~array env saved c in
-    current_facts := saved @ (if yes then t @ length_test ~array env saved c else fl);
+    current_facts := saved @ (if yes then t else fl);
     Fun.protect ~finally:(fun () -> current_facts := saved) f
   end

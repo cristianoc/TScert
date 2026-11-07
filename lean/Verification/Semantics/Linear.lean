@@ -479,7 +479,7 @@ def relevant [DecidableEq V] (known : List (Fact V)) (goal : Fact V) : List (Fac
 
 /-- Whether the held facts entail `goal`, by a certificate `check` accepts,
 searched over the facts connected to the goal. -/
-def entails [DecidableEq V] [LT V] [DecidableRel (α := V) (· < ·)] (known : List (Fact V)) (goal : Fact V) : Bool :=
+def entailsDirect [DecidableEq V] [LT V] [DecidableRel (α := V) (· < ·)] (known : List (Fact V)) (goal : Fact V) : Bool :=
   known.contains goal ||
   match goal with
   | .le c d =>
@@ -491,10 +491,9 @@ def entails [DecidableEq V] [LT V] [DecidableRel (α := V) (· < ·)] (known : L
     | none => false
   | .ne _ _ => false
 
-/-- **Entailment is sound.** -/
-theorem entails_sound [DecidableEq V] [LT V] [DecidableRel (α := V) (· < ·)] {v : V → Int} {known : List (Fact V)} {goal : Fact V} (h : entails known goal = true)
+theorem entailsDirect_sound [DecidableEq V] [LT V] [DecidableRel (α := V) (· < ·)] {v : V → Int} {known : List (Fact V)} {goal : Fact V} (h : entailsDirect known goal = true)
     (hk : ∀ F ∈ known, F.Holds v) : goal.Holds v := by
-  unfold entails at h
+  unfold entailsDirect at h
   rcases Bool.or_eq_true_iff.mp h with h | h
   · exact hk goal (List.contains_iff_mem.mp h)
   · cases goal with
@@ -511,6 +510,56 @@ theorem entails_sound [DecidableEq V] [LT V] [DecidableRel (α := V) (· < ·)] 
           exact check_sound hn hc _ (List.contains_iff_mem.mp h)
         · cases h
       · cases h
+
+/-- The held facts with the strict bounds their inequalities give: for each
+`c·x ≠ d`, the bound `c·x ≤ d - 1` where the facts entail `c·x ≤ d`, and
+`-c·x ≤ -d - 1` where they entail `-c·x ≤ -d` (`entailsDirect`). -/
+def strengthen [DecidableEq V] [LT V] [DecidableRel (α := V) (· < ·)] (known : List (Fact V)) : List (Fact V) :=
+  known ++ known.flatMap fun
+    | .ne F d =>
+      (if entailsDirect known (.le F d) then [.le F (d - 1)] else []) ++
+      (if entailsDirect known (.le (F.scale (-1)) (-d)) then [.le (F.scale (-1)) (-d - 1)] else [])
+    | .le _ _ => []
+
+theorem strengthen_holds [DecidableEq V] [LT V] [DecidableRel (α := V) (· < ·)] {v : V → Int} {known : List (Fact V)}
+    (hk : ∀ F ∈ known, F.Holds v) : ∀ F ∈ strengthen known, F.Holds v := by
+  intro G hG
+  rcases List.mem_append.mp hG with hG | hG
+  · exact hk G hG
+  · obtain ⟨H, hH, hG⟩ := List.mem_flatMap.mp hG
+    cases H with
+    | le _ _ => cases hG
+    | ne F d =>
+      have hne : Form.eval v F ≠ d := hk _ hH
+      rcases List.mem_append.mp hG with hG | hG
+      · split at hG
+        · rename_i he
+          simp only [List.mem_singleton] at hG; subst hG
+          have := entailsDirect_sound he hk
+          show Form.eval v F ≤ d - 1
+          simp only [Fact.Holds] at this; omega
+        · cases hG
+      · split at hG
+        · rename_i he
+          simp only [List.mem_singleton] at hG; subst hG
+          have := entailsDirect_sound he hk
+          show Form.eval v (F.scale (-1)) ≤ -d - 1
+          simp only [Fact.Holds, Form.eval_scale] at this ⊢; omega
+        · cases hG
+
+/-- Whether the held facts entail `goal`: directly (`entailsDirect`), or
+with the strict bounds their inequalities give (`strengthen`). -/
+def entails [DecidableEq V] [LT V] [DecidableRel (α := V) (· < ·)] (known : List (Fact V)) (goal : Fact V) : Bool :=
+  entailsDirect known goal ||
+    (known.any (fun | .ne _ _ => true | .le _ _ => false) && entailsDirect (strengthen known) goal)
+
+/-- **Entailment is sound.** -/
+theorem entails_sound [DecidableEq V] [LT V] [DecidableRel (α := V) (· < ·)] {v : V → Int} {known : List (Fact V)} {goal : Fact V} (h : entails known goal = true)
+    (hk : ∀ F ∈ known, F.Holds v) : goal.Holds v := by
+  unfold entails at h
+  rcases Bool.or_eq_true_iff.mp h with h | h
+  · exact entailsDirect_sound h hk
+  · exact entailsDirect_sound (Bool.and_eq_true_iff.mp h).2 (strengthen_holds hk)
 
 /-! ## Eliminating a variable
 

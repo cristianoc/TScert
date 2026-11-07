@@ -1468,7 +1468,18 @@ every integer valuation meeting the facts it starts from. The steps are
 incomplete for the integers: an implication that no chain of them derives
 is refused (proved: `Linear.entails_sound`; `Linear.entails` searches by
 tightening, strict steps and the elimination of variables, and `check` decides
-what it finds).
+what it finds). An inequality gives the strict bound on the side the facts
+bound it, before a search and before an elimination (`Linear.strengthen`,
+proved: `strengthen_holds`):
+
+```math
+\frac{c\cdot x\ne d\qquad K\vdash c\cdot x\le d}{c\cdot x\le d-1}
+\qquad
+\frac{c\cdot x\ne d\qquad K\vdash -c\cdot x\le -d}{-c\cdot x\le -d-1}\ \textsf{strengthen}
+```
+
+so `e === xs.length` answering `false` with $`e\le|\mathit{xs}|`$ known
+bounds a read at $`e`$.
 
 **In heap knowledge.** Two more index facts (`IndexFact.int`,
 `IndexFact.linear`) state integers. The variables of a linear fact are
@@ -1578,14 +1589,15 @@ value $`i`$; $`r`$ is the result:
 \qquad
 \frac{}{K\vdash c\leftarrow a\lhd b\dashv (a\lhd b\ \text{if}\ c),\ (\neg(a\lhd b)\ \text{if}\ \neg c)}\ \textsf{int-compare}
 \qquad
-\frac{}{K\vdash c\leftarrow a\ \texttt{===}\ b\dashv (a=b\ \text{if}\ c)}\ \textsf{int-equal}
+\frac{}{K\vdash c\leftarrow a\ \texttt{===}\ b\dashv (a=b\ \text{if}\ c),\ (a\ne b\ \text{if}\ \neg c)}\ \textsf{int-equal}
 ```
 
 with $`K\vdash`$ the entailment of `Linear.entails` from the step's unconditional
 linear facts, $`\lhd`$ one of `<`, `<=`, `>`, `>=`, and each answer's fact over
 the integers ($`\neg(a<b)`$ is $`b\le a`$: two safe integers are never NaN).
 `int-equal` reads `Number::equal`, which on two safe integers is their
-equality, the zeros included (proved: `SafeIntegers.numberEqual_safe`); a
+equality, the zeros included (proved: `SafeIntegers.numberEqual_safe`, and
+its converse `numberEqual_of_safe`: no safe integer's bits are a NaN's); a
 comparison with a number literal lowers to a tag test and states none.
 `length-range` reads the store contract's bound
 ([arrays](POSITIVE-TYPES.md#arrays)). Proved: `IndexWrites.linearAtoms_holds`,
@@ -1698,7 +1710,13 @@ test, the body's entry claims it, and the read selects the second signature,
 so `xs[j]!` is a `number` with no check. The producer proposes the bounds a
 must-analysis holds (`Linear_facts.bounds`): a comparison of an index $`j`$
 known $`0\le j`$ with an array binding's `length` states one on the answer
-giving $`j<\mathit{length}`$; a statement writing no heap (slots, constants,
+giving $`j<\mathit{length}`$; a test `a && b` states on `true` what `a`'s
+`true` answer states and what `b`'s does with it, `a || b` on `false` alike
+with `false`, and neither states anything on its other answer
+(`Linear_facts.test`); the right operand is typed with what that answer of
+the left states. Lean evaluates the right operand only on that answer, a
+branch on the left's value (`choose`), whose edge promotes the facts
+conditional on it; a statement writing no heap (slots, constants,
 operators, reads, element reads, assignments of value bindings) keeps those
 whose bindings it does not assign; every other statement forgets them; a merge
 keeps those both paths hold. A call stating `pre` is typed at that signature
@@ -1758,12 +1776,16 @@ does a length's, and decides a sum safe as Lean does, by the facts with the
 ranges of the lengths and element counts they name entailing its bounds.
 
 **Cases.** Positive: `bounded-element-read` (a `for` and a `while` loop),
-`pretext-array-element-read` and `typed-array-reads-below-length` (a
+`pretext-array-element-read`, `logical-guard-reads` (reads in the right
+operand of `&&` and `||`, a strict equality's `false` answer among them) and
+`typed-array-reads-below-length` (a
 `Uint8Array`, a `Float64Array`, an `Int32Array` written and read back, and a
 `@requires` over a view's length). Negative, each run under Node:
 `invalid-bounded-element-read-inclusive` (a loop to `j <= xs.length`) and
 `invalid-bounded-element-read-shrunk` (a `pop` between the test and the
-read), `invalid-typed-array-read-at-length` (a loop to `i <= b.length`) and
+read), `invalid-logical-guard-read-inclusive` (`e <= xs.length && xs[e]!`),
+`invalid-logical-guard-read-wrong-answer` (`e < xs.length || xs[e]!`),
+`invalid-logical-guard-read-equal` (`e !== xs.length || xs[e]!`), `invalid-typed-array-read-at-length` (a loop to `i <= b.length`) and
 `invalid-typed-array-read-other-length` (a read of `b` below another view's
 length). Forged controls in `pipeline/test.mts`: each array negative's read
 claimed at the element type, with and without a strict bound claimed at its

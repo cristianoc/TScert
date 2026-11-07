@@ -461,7 +461,10 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (body:Analysi
     (* The left operand's value where it decides, the right's elsewhere; the
        right operand runs where the left answered the other way. *)
     | Logical (conjunction,a,b) -> let left=expr env a in
-      let right=expr ?expected env b in
+      (* The right operand is typed with what the left's answer running it
+         states, `true` of `a && b` and `false` of `a || b`, for a call
+         stating a precondition (`Linear_facts.with_test`). *)
+      let right=Linear_facts.with_test env a conjunction (fun () -> expr ?expected env b) in
       union (truthy_refine declarations (not conjunction) left) right
     (* The operand is built at its const type, which is the cast's. *)
     | Cast ("const",None,e) ->

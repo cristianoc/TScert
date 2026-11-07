@@ -309,11 +309,9 @@ let statements callbacks flow_graph register_following owner_span env0 ss =
           let s = source span in
           (match s.statement with
            | If (c,_,_) | While (c,_,_) ->
-             let t,f = Linear_facts.comparison ~array:(callbacks.array_binding env) env facts0 c in
-             let lt = Linear_facts.length_test ~array:(callbacks.array_binding env) env facts0 c in
+             let (t,bt),(f,bf) = Linear_facts.test ~array:(callbacks.array_binding env) env facts0 c in
              let kept = Linear_facts.statement_bounds env bounds0 s in
-             let bt,bf = Linear_facts.comparison_bounds ~array:(callbacks.array_binding env) env facts0 c in
-             [with_facts y (facts0 @ t @ lt) (kept @ bt); with_facts n (facts0 @ f) (kept @ bf)]
+             [with_facts y (facts0 @ t) (kept @ bt); with_facts n (facts0 @ f) (kept @ bf)]
            | _ -> edges)
         | _ -> edges in
       let edges=match node.handler with

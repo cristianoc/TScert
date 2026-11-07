@@ -596,6 +596,60 @@ theorem numberEqual_safe {x y : UInt64} {i j : Int} (hx : SafeInt x i) (hy : Saf
       omega
     rw [zero hx hx0, zero hy hy0]
 
+/-- A safe integer's bits lie below exponent field `1076`. -/
+theorem bitsOfNat_finite {L : Nat} (hL : L < 2 ^ 53) : (bitsOfNat L).toNat < 1076 * 2 ^ 52 := by
+  rcases Nat.eq_zero_or_pos L with rfl | h0
+  · rw [bitsOfNat_zero]; omega
+  · obtain ⟨ht, -, hhi, hlen⟩ := IndexNumbers.bitsOfNat_toNat h0 hL
+    rw [ht]
+    have : (1022 + (L.log2 + 1)) * 2 ^ 52 ≤ 1075 * 2 ^ 52 := Nat.mul_le_mul_right _ (by omega)
+    omega
+
+/-- The bits of a safe integer have an exponent field other than `0x7ff`,
+which every NaN and infinity has. -/
+theorem exponent_safe {x : UInt64} {i : Int} (hx : SafeInt x i) :
+    (x &&& 0x7ff0000000000000) ≠ 0x7ff0000000000000 := by
+  intro h
+  have hb := bitsOfNat_finite hx.1
+  have hm := congrArg UInt64.toNat h
+  rw [UInt64.toNat_and] at hm
+  have hmod : (x.toNat &&& (0x7ff0000000000000 : UInt64).toNat) % 2 ^ 63 =
+      x.toNat % 2 ^ 63 &&& (0x7ff0000000000000 : UInt64).toNat % 2 ^ 63 := Nat.and_mod_two_pow
+  rw [hm] at hmod
+  have hle : x.toNat % 2 ^ 63 &&& (0x7ff0000000000000 : UInt64).toNat % 2 ^ 63 ≤ x.toNat % 2 ^ 63 :=
+    Nat.and_le_left
+  rw [← hmod] at hle
+  have hc : (0x7ff0000000000000 : UInt64).toNat = 2047 * 2 ^ 52 := by decide
+  rw [hc] at hle
+  rcases hx.2 with ⟨_, he⟩ | ⟨_, he⟩ <;> omega
+
+/-- Two doubles denoting the same safe integer are equal by `Number::equal`:
+neither is NaN, and they are the same bits or two zeros. -/
+theorem numberEqual_of_safe {x y : UInt64} {i : Int} (hx : SafeInt x i) (hy : SafeInt y i) :
+    numberEqual x y = true := by
+  have nx := exponent_safe hx
+  have hxy : x = y ∨ (x.toNat = 0 ∨ x.toNat = 2 ^ 63) ∧ (y.toNat = 0 ∨ y.toNat = 2 ^ 63) := by
+    have h0 := bitsOfNat_zero
+    rcases hx.2 with ⟨hi, he⟩ | ⟨hi, he⟩ <;> rcases hy.2 with ⟨hi', he'⟩ | ⟨hi', he'⟩
+    · exact .inl (UInt64.toNat_inj.mp (by omega))
+    · by_cases hz : i = 0
+      · subst hz; simp only [Int.natAbs_zero, h0] at he he'; exact .inr ⟨by omega, by omega⟩
+      · omega
+    · by_cases hz : i = 0
+      · subst hz; simp only [Int.natAbs_zero, h0] at he he'; exact .inr ⟨by omega, by omega⟩
+      · omega
+    · exact .inl (UInt64.toNat_inj.mp (by omega))
+  have bx : ((x &&& 0x7ff0000000000000) == 0x7ff0000000000000) = false := by simpa using nx
+  have zero : ∀ z : UInt64, (z.toNat = 0 ∨ z.toNat = 2 ^ 63) → z = 0 ∨ z = 0x8000000000000000 := by
+    intro z hz
+    rcases hz with hz | hz
+    · exact .inl (UInt64.toNat_inj.mp (by simp [hz]))
+    · exact .inr (UInt64.toNat_inj.mp (by rw [hz]; decide))
+  unfold numberEqual
+  rcases hxy with rfl | ⟨hx0, hy0⟩
+  · simp [bx]
+  · rcases zero x hx0 with rfl | rfl <;> rcases zero y hy0 with rfl | rfl <;> decide
+
 #guard safeIntOfBits ((1.0 / 0.0 : Float).toBits) = none
 #guard safeIntOfBits (arithBits .add (bitsOfNat (2 ^ 53 - 1)) (bitsOfNat 2)) = none
 #guard safeIntOfBits (arithBits .sub (bitsOfNat 3) (bitsOfNat 10)) = some (-7)
