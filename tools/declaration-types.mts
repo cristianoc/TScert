@@ -60,13 +60,16 @@ export type IndexFact =
 export type LinearFact =
   | { readonly le: { readonly form: readonly (readonly [LinearTerm, number])[]; readonly bound: number } }
   | { readonly ne: { readonly form: readonly (readonly [LinearTerm, number])[]; readonly bound: number } };
-/** A term of a linear fact (`HeapKnowledge.Term`): the safe integer a
- * position holds, the length of the array store it holds, or the element
- * count of the typed array it holds. */
-export type LinearTerm =
-  | { readonly value: { readonly slot: number } }
-  | { readonly length: { readonly slot: number } }
-  | { readonly view: { readonly slot: number } };
+/** A term of a linear fact (`HeapKnowledge.Term`): a root position, the
+ * named data fields read from what it holds in turn (`path`, empty for the
+ * position's own value), and what the term reads of the value the path ends
+ * at (`kind`): the safe integer it is, the length of its array store, or the
+ * element count of the typed array it is. */
+export type LinearTerm = {
+  readonly kind: "value" | "length" | "view";
+  readonly slot: number;
+  readonly path: readonly string[];
+};
 /** The kinds of value an elements predicate admits (`CallEffects.ElemPred`),
  * each at most once, in this order. */
 export type ElementKind = "null" | "undefined" | "boolean" | "number" | "string" | "bigint" | "symbol" | "object";

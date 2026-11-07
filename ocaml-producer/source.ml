@@ -41,10 +41,13 @@ let index_fact_of j =
     let f = field "fact" (body "linear" ["fact"]) in
     let parts k = let b = field k f in
       if keys b <> ["bound";"form"] then unsupported "invalid linear fact";
-      let term t = match keys t with
-        | ["value"] when keys (field "value" t) = ["slot"] -> Value_at (natural (field "slot" (field "value" t)))
-        | ["length"] when keys (field "length" t) = ["slot"] -> Length_at (natural (field "slot" (field "length" t)))
-        | ["view"] when keys (field "view" t) = ["slot"] -> View_at (natural (field "slot" (field "view" t)))
+      let term t =
+        if keys t <> ["kind";"path";"slot"] then unsupported "invalid linear term";
+        let slot = natural (field "slot" t) and path = List.map str (list (field "path" t)) in
+        match text "kind" t with
+        | "value" -> Value_at (slot,path)
+        | "length" -> Length_at (slot,path)
+        | "view" -> View_at (slot,path)
         | _ -> unsupported "invalid linear term" in
       List.map (function Array [x;c] -> (term x, integer c) | _ -> fail "invalid linear term") (list (field "form" b)),
       integer (field "bound" b) in

@@ -234,10 +234,15 @@ theorem result_holds {k R ρ h v} (hk : HeapKnowledge.Holds k (push v ρ) h)
 
 /-- An ordinary typed read preserves the heap and records which cell its result
 came from. This does not claim the cell had any particular contents beforehand. -/
-def readFrame (k : Knowledge) (i : Nat) (fld : PropKey) (optional : Bool := false) : Knowledge :=
+def readLinks (k : Knowledge) (i : Nat) (fld : PropKey) (optional : Bool := false) : Knowledge :=
   let out := HeapKnowledge.shift k
   let fresh := (HeapLinks.aliases k.links i).map fun j => (⟨j+1,0,false,fld,optional⟩ : HeapLinks.Link)
   {out with links := fresh ++ out.links}
+
+/-- The read's frame, with what the knowledge states of paths through the
+field restated of the result (`HeapKnowledge.readAtoms`, the read bridge). -/
+def readFrame (k : Knowledge) (i : Nat) (fld : PropKey) (optional : Bool := false) : Knowledge :=
+  HeapKnowledge.withReadAtoms (readLinks k i fld optional)
 
 /-- Reading uses a current-cell fact; its result is also an immutable value fact.
 This latter fact is what permits a subsequent result-contract check to retain
@@ -245,7 +250,7 @@ precision even when the producer supplied a wider expression type. The read
 link is optional, a read of the field or the `undefined` of an absent one,
 unless the receiver's type states the field (`presentRead_sound`). -/
 def readOutput (k : Knowledge) (i : Nat) (fld : PropKey) (R : ValueSets.ValueSet) (optional : Bool := true) : Knowledge :=
-  withResult (readFrame k i fld optional) R
+  HeapKnowledge.withReadAtoms (withResult (readLinks k i fld optional) R)
 
 /-- A cell the knowledge states of a slot and field, gathered over its
 aliases, at least as narrow as `R`: the read gives a value in `R`. -/
@@ -271,7 +276,7 @@ theorem read_sound {G : NormalGraph ι} {Γ k i fld R A ρ n W h}
   · intro h' u hp
     rw [hp.1]
     have hout := result_holds (HeapKnowledge.shift_holds (v := u) hk) (by simpa [hp.2] using hav)
-    refine ⟨hout.1,hout.2.1,?_,hout.2.2.2⟩
+    refine HeapKnowledge.withReadAtoms_holds ⟨hout.1,hout.2.1,?_,hout.2.2.2⟩
     intro link hm
     rcases List.mem_append.mp hm with hm | hm
     · obtain ⟨j,hj,rfl⟩ := List.mem_map.mp hm
@@ -496,7 +501,7 @@ theorem presentRead_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k i fld R Re
     · intro h' u hp
       rw [hp.1]
       have hout := result_holds (HeapKnowledge.shift_holds (v := u) hk) (by simpa [hp.2] using hav)
-      refine ⟨hout.1,hout.2.1,?_,hout.2.2.2⟩
+      refine HeapKnowledge.withReadAtoms_holds ⟨hout.1,hout.2.1,?_,hout.2.2.2⟩
       intro link hm
       rcases List.mem_append.mp hm with hm | hm
       · obtain ⟨j,hj,rfl⟩ := List.mem_map.mp hm
@@ -523,7 +528,7 @@ theorem typedRead_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instance
     rw [hl] at hs ⊢
     apply one_step rfl hval (.readField hfd hv) _ hs
     have hout := HeapKnowledge.shift_holds (v := v) hk
-    refine ⟨hout.1,hout.2.1,?_,hout.2.2.2⟩
+    refine HeapKnowledge.withReadAtoms_holds ⟨hout.1,hout.2.1,?_,hout.2.2.2⟩
     intro link hm
     rcases List.mem_append.mp hm with hm | hm
     · obtain ⟨j,hj,rfl⟩ := List.mem_map.mp hm
@@ -673,7 +678,7 @@ theorem optionalRead_sound [DecidableEq ι] {G : NormalGraph ι} {images : Insta
         HeapKnowledge.Holds (readFrame k i fld true) (push u ρ) h := by
       intro u hu
       have hout := HeapKnowledge.shift_holds (v := u) hk
-      refine ⟨hout.1,hout.2.1,?_,hout.2.2.2⟩
+      refine HeapKnowledge.withReadAtoms_holds ⟨hout.1,hout.2.1,?_,hout.2.2.2⟩
       intro link hm
       rcases List.mem_append.mp hm with hm | hm
       · obtain ⟨j,hj,rfl⟩ := List.mem_map.mp hm

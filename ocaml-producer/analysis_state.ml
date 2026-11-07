@@ -98,9 +98,9 @@ let create diagnostics flows offered declarations module_functions arities bound
       | Int_at k -> Option.map Linear_facts.int_fact (name k)
       | Linear_le (form,d) ->
         let terms = List.map (fun (t,c) -> match (t : Semantic.term) with
-          | Value_at x -> Option.map (fun n -> n,c) (name x)
-          | Length_at x -> Option.map (fun n -> Linear_facts.length_term n,c) (name x)
-          | View_at x -> Option.map (fun n -> Linear_facts.view_term n,c) (name x)) form in
+          | Value_at (x,path) -> Option.map (fun n -> Linear_facts.path_term n path,c) (name x)
+          | Length_at (x,path) -> Option.map (fun n -> Linear_facts.length_term ~path n,c) (name x)
+          | View_at (x,path) -> Option.map (fun n -> Linear_facts.view_term ~path n,c) (name x)) form in
         if List.for_all Option.is_some terms then Some (Linear_facts.norm (List.filter_map Fun.id terms),d) else None
       | _ -> None) f.requires in
     let bounds = List.filter_map (fun (fact : Semantic.index_fact) -> match fact with

@@ -489,6 +489,25 @@ let statements (expr:Analysis_state.expression_infer) execute_bindings owner_spa
     match Option.map (fun t -> try declared_head declarations [] t with Json.Error _ -> Atoms []) declared with
     | Some (Atoms [Shape {calls;_}]) -> Linear_facts.signatures_keep calls
     | _ -> false);
+  (* Whether the path from a binding holds an array: each field a required
+     one of the record type before it, the last an array's. *)
+  let array_binding env x path = match List.assoc_opt x env with
+    | Some b ->
+      let head t = try declared_head declarations [] t with Json.Error _ -> Atoms [] in
+      let step t f = match t with
+        | Some t -> (match head t with
+          | Atoms [Shape {fields;_}] -> (match List.find_opt (fun (g:Semantic.field) -> g.name = Semantic.Name f) fields with
+            | Some g when not g.optional -> Some g.read
+            | _ -> None)
+          | _ -> None)
+        | None -> None in
+      (match List.fold_left step (Some (binding_type b)) path with
+       | Some t -> (match head t with
+         | Atoms [Shape {elements=Some _;indexes=[];calls=[];_}] -> true
+         | _ -> false)
+       | None -> false)
+    | None -> false in
+  Linear_facts.array_path := array_binding;
   let flow_callbacks = {
     early;
     widen_slot=arms declarations;
@@ -498,11 +517,7 @@ let statements (expr:Analysis_state.expression_infer) execute_bindings owner_spa
     with_output;
     publish_output;
     statement=transfer_statement;
-    array_binding=(fun env x -> match List.assoc_opt x env with
-      | Some b -> (match (try declared_head declarations [] (binding_type b) with Json.Error _ -> Atoms []) with
-        | Atoms [Shape {elements=Some _;indexes=[];calls=[];_}] -> true
-        | _ -> false)
-      | None -> false);
+    array_binding;
     cannot_return_normally=(fun (s:Source.stmt) -> match s.statement with
       | Effect e -> claimed_type e.pos = Some (Atoms [])
       | _ -> false);

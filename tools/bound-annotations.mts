@@ -9,27 +9,36 @@
 // declaration's parameters:
 //
 //   C ::= A && C | A
-//   A ::= safeInteger(x) | E rel E      rel ∈ { <, <=, >, >=, === }
-//   E ::= n | x | xs.length | n * x | n * xs.length | E + E | E - E | -E | (E)
+//   A ::= safeInteger(p) | E rel E      rel ∈ { <, <=, >, >=, === }
+//   E ::= n | p | p.length | n * p | n * p.length | E + E | E - E | -E | (E)
+//   p ::= x | p.f
 //
-// with n an integer literal, x a parameter the clause states a safe integer
-// and xs an array or typed array parameter. Each atom's meaning is the index
-// facts it elaborates to: `safeInteger(x)` is `int(x)`; a comparison is the
-// linear fact over the integers its terms denote, a parameter's value, its
-// array's length or its typed array's element count (`HeapKnowledge.Term`),
-// with every sum, difference and
-// product it computes stated a safe integer. Where those facts hold, each
-// side of the comparison evaluates under JavaScript's arithmetic to that
-// safe integer exactly, so the comparison's answer is the fact's. Every other
-// form of the draft's grammar (guards, `old`, `result`, paths other than an
-// array or typed array parameter's length, `||`, `!`) is refused with the
-// clause's location.
+// with n an integer literal, x a parameter and f a field name: a path `p`
+// reads the named data fields from the parameter in turn, each a required
+// field of the record type the path before it has. A value term `p` is a
+// path the clause states a safe integer; `p.length` is the length of an
+// array or the element count of a typed array the path's type names. Each
+// atom's meaning is the index facts it elaborates to: `safeInteger(x)` is
+// `int(x)`, `safeInteger(p.f)` the fact `p.f ≤ 2^53 - 1`, which holds of a
+// path exactly where it reads a safe integer; a comparison is the linear fact
+// over the integers its terms denote (`HeapKnowledge.Term`, a root position,
+// a path and a kind), with every sum, difference and product it computes
+// stated a safe integer. Where those facts hold, each side of the comparison
+// evaluates under JavaScript's arithmetic to that safe integer exactly, so the
+// comparison's answer is the fact's. A clause executes no property read: it
+// states what the reads denote in the heap a call starts in. Every other form
+// of the draft's grammar (guards, `old`, `result`, computed keys, `||`, `!`)
+// is refused with the clause's location, as is a path whose field no type
+// resolves.
 import type { IndexFact, LinearFact, LinearTerm } from "./declaration-types.mts";
 
-/** A parameter a clause may name: its name, its call position, and what its
- * `length` is: an array's, its store's length (`length`); a typed array's,
- * its element count (`view`); or none a clause names (`null`). */
-export type ClauseParameter = { name: string; position: number; length: "length" | "view" | null };
+/** What a path's type names: an array, whose `length` is its store's length;
+ * a typed array, whose `length` is its element count (`view`); a record or any
+ * other value (`other`); or no type a field resolves (`null`). */
+export type PathType = "array" | "view" | "other" | null;
+/** A parameter a clause may name: its name, its call position, and the type
+ * a path of fields read from it has (`at`, the parameter's own at `[]`). */
+export type ClauseParameter = { name: string; position: number; at: (path: readonly string[]) => PathType };
 
 /** The text of each `@requires` tag of the last JSDoc comment (`/** … *\/`)
  * in a declaration's leading trivia, with each line's leading `*` removed. */
@@ -104,10 +113,11 @@ class Parser {
     if (t && t.k === "name" && t.v === "safeInteger") {
       this.at++;
       this.expect("(");
-      const x = this.take();
-      if (!x || x.k !== "name") throw new ClauseError("`safeInteger` takes a parameter");
+      const x = this.peek();
+      if (!x || x.k !== "name") throw new ClauseError("`safeInteger` takes a parameter's path");
+      const of = this.variable();
       this.expect(")");
-      return { k: "safeInteger", of: x.v };
+      return { k: "safeInteger", of };
     }
     const left = this.sum();
     const op = this.take();
@@ -125,17 +135,18 @@ class Parser {
     }
     return e;
   }
-  /** A parameter or its array's `length`. */
+  /** A path: a parameter and the field names read from it, `.`-separated. */
   private variable(): string {
     const x = this.take();
-    if (!x || x.k !== "name") throw new ClauseError("a product is an integer literal times a parameter or a length");
-    if (this.isOp(".")) {
+    if (!x || x.k !== "name") throw new ClauseError("a product is an integer literal times a parameter's path");
+    const names = [x.v];
+    while (this.isOp(".")) {
       this.at++;
       const f = this.take();
-      if (!f || f.k !== "name" || f.v !== "length") throw new ClauseError("a path is a parameter's `length`, no other");
-      return `${x.v}.length`;
+      if (!f || f.k !== "name") throw new ClauseError("a path reads named fields");
+      names.push(f.v);
     }
-    return x.v;
+    return names.join(".");
   }
   private product(): Linear {
     if (this.isOp("-")) { this.at++; return scale(this.product(), -1); }
@@ -172,11 +183,6 @@ function computed(e: Linear): Linear {
   return { ...e, steps: [...e.steps, { terms: e.terms, constant: e.constant, steps: [] }] };
 }
 
-/** The position a linear term reads. */
-export function termSlot(t: LinearTerm): number {
-  return "value" in t ? t.value.slot : "length" in t ? t.length.slot : t.view.slot;
-}
-
 /** The positions an index fact names. */
 export function indexFactPositions(f: IndexFact): number[] {
   if ("index" in f) return [f.index.slot];
@@ -184,7 +190,7 @@ export function indexFactPositions(f: IndexFact): number[] {
   if ("length" in f) return [f.length.array, f.length.length];
   if ("bound" in f) return [f.bound.array, f.bound.index];
   const F = f.linear.fact;
-  return ("le" in F ? F.le.form : F.ne.form).map(([t]) => termSlot(t));
+  return ("le" in F ? F.le.form : F.ne.form).map(([t]) => t.slot);
 }
 
 /** The index facts a declaration's `@requires` clauses elaborate to, or the
@@ -202,26 +208,46 @@ export function elaborateRequires(clauses: readonly string[], params: readonly C
       if (!p) throw new ClauseError(`the clause names ${name}, which is no parameter of the declaration`);
       return p;
     };
-    const ints = new Set(atoms.flatMap(a => a.k === "safeInteger" ? [param(a.of).name] : []));
-    const term = (key: string): LinearTerm => {
-      if (key.endsWith(".length")) {
-        const p = param(key.slice(0, -".length".length));
-        if (p.length === null)
-          throw new ClauseError(`${p.name} is no array or typed array parameter, whose length a clause names`);
-        return p.length === "length" ? { length: { slot: p.position } } : { view: { slot: p.position } };
-      }
-      const p = param(key);
-      if (!ints.has(p.name)) throw new ClauseError(`the comparison names ${key}, which the clause does not state a safe integer`);
-      return { value: { slot: p.position } };
+    /** The parameter and fields a path names, each field resolved. */
+    const path = (key: string): { p: ClauseParameter; path: string[] } => {
+      const [x = "", ...fields] = key.split(".");
+      const p = param(x);
+      if (fields.length > 0 && p.at(fields) === null)
+        throw new ClauseError(`the path ${key} reads a field no record type of ${x} declares as a required data field`);
+      return { p, path: fields };
     };
-    const facts: IndexFact[] = atoms.flatMap(a => a.k === "safeInteger" ? [{ int: { slot: param(a.of).position } }] : []);
+    const value = (key: string): LinearTerm => {
+      const { p, path: fields } = path(key);
+      return { kind: "value", slot: p.position, path: fields };
+    };
+    const ints = new Set(atoms.flatMap(a => a.k === "safeInteger" ? [JSON.stringify(value(a.of))] : []));
+    const term = (key: string): LinearTerm => {
+      const names = key.split(".");
+      // `p.length` of an array or a typed array path is its length; of any
+      // other, the field `length` read from it.
+      if (names.length > 1 && names[names.length - 1] === "length") {
+        const { p, path: fields } = path(names.slice(0, -1).join("."));
+        const at = p.at(fields);
+        if (at === "array") return { kind: "length", slot: p.position, path: fields };
+        if (at === "view") return { kind: "view", slot: p.position, path: fields };
+      }
+      const t = value(key);
+      if (!ints.has(JSON.stringify(t))) throw new ClauseError(`the comparison names ${key}, which the clause does not state a safe integer`);
+      return t;
+    };
+    const facts: IndexFact[] = atoms.flatMap((a): IndexFact[] => {
+      if (a.k !== "safeInteger") return [];
+      const t = value(a.of);
+      return t.path.length === 0 ? [{ int: { slot: t.slot } }]
+        : [{ linear: { fact: { le: { form: [[t, 1]], bound: MAX_SAFE } } } }];
+    });
     const seen = new Set<string>();
     /** The fact `Σ c·t ≤ bound`, each term once, sorted by position and kind. */
     const lessEq = (terms: Map<string, number>, bound: number): void => {
       if (!Number.isSafeInteger(bound)) throw new ClauseError("the clause's constants lie outside the safe integers");
       const form: [LinearTerm, number][] = [...terms].filter(([, c]) => c !== 0)
         .map(([x, c]): [LinearTerm, number] => [term(x), c])
-        .sort((a, b) => code(a[0]) - code(b[0]));
+        .sort((a, b) => order(a[0], b[0]));
       const fact: LinearFact = { le: { form, bound } };
       const key = JSON.stringify(fact);
       if (!seen.has(key)) { seen.add(key); facts.push({ linear: { fact } }); }
@@ -262,8 +288,15 @@ export function elaborateRequires(clauses: readonly string[], params: readonly C
 
 const MAX_SAFE = Number.MAX_SAFE_INTEGER;
 
-/** A term's place in a normal form (`HeapKnowledge.Term.code`): a position's
- * value, then its length, then its element count. */
-function code(t: LinearTerm): number {
-  return "value" in t ? 3 * t.value.slot : "length" in t ? 3 * t.length.slot + 1 : 3 * t.view.slot + 2;
+/** Terms in the order of a normal form (`HeapKnowledge.Term.before`): by
+ * position and kind, a position's value, then its length, then its element
+ * count; then by path, lexicographically, the empty path first. */
+function order(a: LinearTerm, b: LinearTerm): number {
+  const code = (t: LinearTerm): number => 3 * t.slot + (t.kind === "value" ? 0 : t.kind === "length" ? 1 : 2);
+  if (code(a) !== code(b)) return code(a) - code(b);
+  for (let i = 0; i < Math.min(a.path.length, b.path.length); i++) {
+    const x = a.path[i] ?? "", y = b.path[i] ?? "";
+    if (x !== y) return x < y ? -1 : 1;
+  }
+  return a.path.length - b.path.length;
 }

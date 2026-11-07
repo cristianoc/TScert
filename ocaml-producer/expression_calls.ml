@@ -109,6 +109,9 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
           let name p = match (if p = 0 then receiver else List.nth_opt args (p - 1)) with
             | Some {node=Id x;_} -> Some x
             | _ -> None in
+          (* Each position's actual as a path: a binding and the fields read
+             from it, as Lean's read links relate a read's slot to it. *)
+          let path p = Option.bind (if p = 0 then receiver else List.nth_opt args (p - 1)) (Linear_facts.path_of env) in
           (* Each position's actual as a linear expression over safe-integer
              bindings, as Lean reads an operand (`Linear_facts.linear`). *)
           let form p = Option.bind (if p = 0 then receiver else List.nth_opt args (p - 1))
@@ -117,23 +120,23 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
             | Semantic.Bound_by (x,k,strict) -> (match name x, name k with
               | Some a, Some i when List.exists (fun (a',i',s) -> a' = a && i' = i && (s || not strict))
                   !Linear_facts.current_bounds -> true
-              | Some a, _ ->
+              | _ ->
                 (* The index's value `t + c` within `0 ≤ t + c ≤ a.length`
                    (below it where strict), as Lean's `lengthBound` reads it
-                   of the index's slot. *)
-                (match form k with
-                 | Some (t,c) -> let fs = !Linear_facts.current_facts in
+                   of the index's slot, the array a binding or a path. *)
+                (match path x, form k with
+                 | Some (a,p), Some (t,c) -> let fs = !Linear_facts.current_facts in
                    Linear_facts.entails fs (Linear_facts.scale (-1) t, c) &&
-                   Linear_facts.entails fs (Linear_facts.norm (t @ [Linear_facts.length_term a,-1]),
+                   Linear_facts.entails fs (Linear_facts.norm (t @ [Linear_facts.length_term ~path:p a,-1]),
                      (if strict then -1 else 0) - c)
-                 | None -> false)
-              | _ -> false)
+                 | _ -> false))
             | Semantic.Int_at k -> Option.is_some (form k)
             | Semantic.Linear_le (fact,d) ->
               let parts = List.map (fun (t,c) -> match (t : Semantic.term) with
-                | Value_at x -> Option.map (fun (t,k) -> Linear_facts.scale c t, c * k) (form x)
-                | Length_at x -> Option.map (fun xs -> [Linear_facts.length_term xs,c],0) (name x)
-                | View_at x -> Option.map (fun b -> [Linear_facts.view_term b,c],0) (name x)) fact in
+                | Value_at (x,[]) -> Option.map (fun (t,k) -> Linear_facts.scale c t, c * k) (form x)
+                | Value_at (x,q) -> Option.map (fun (b,p) -> [Linear_facts.path_term b (p @ q),c],0) (path x)
+                | Length_at (x,q) -> Option.map (fun (b,p) -> [Linear_facts.length_term ~path:(p @ q) b,c],0) (path x)
+                | View_at (x,q) -> Option.map (fun (b,p) -> [Linear_facts.view_term ~path:(p @ q) b,c],0) (path x)) fact in
               List.for_all Option.is_some parts &&
               (let parts = List.filter_map Fun.id parts in
                let terms = Linear_facts.norm (List.concat_map fst parts) in

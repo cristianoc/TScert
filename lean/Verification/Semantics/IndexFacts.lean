@@ -25,71 +25,128 @@ theorem intValue_safe {v : Val} {i : Int} (h : intValue v = some i) : ∃ b, v =
 theorem intValue_num {b : UInt64} {i : Int} (h : SafeIntegers.SafeInt b i) : intValue (.num b) = some i :=
   SafeIntegers.safeIntOfBits_complete h
 
-/-- A term of a linear fact: the safe integer a slot holds (`value`); the
-length of the array store a slot holds (`length`), as the calculus's `lenOf`
-gives it (`Step.lenV`), at most `maxArrayLength`; or the element count of
-the typed array a slot holds (`view`), the safe integer at least `0` the
-location of its `viewLengthKey` holds (`viewLengthOf`). -/
-inductive Term where
-  | value (slot : Nat)
-  | length (slot : Nat)
-  | view (slot : Nat)
+/-- What a term reads of the value its path ends at: the safe integer it is
+(`value`), the length of its array store (`length`), or the element count of
+the typed array it is (`view`). -/
+inductive Term.Kind where
+  | value
+  | length
+  | view
+  deriving DecidableEq, Repr, Hashable
+
+/-- A term of a linear fact (PROGRAM-TYPING.md, "Linear facts"): a root slot,
+a path of named data fields read in turn from the value it holds, and what
+the term reads of the value the path ends at (`Term.Kind`): the safe integer
+it is; the length of its array store, as the calculus's `lenOf` gives it
+(`Step.lenV`), at most `maxArrayLength`; or the element count of the typed
+array it is, the safe integer at least `0` the location of its
+`viewLengthKey` holds (`viewLengthOf`). The empty path reads the slot's
+value itself. -/
+structure Term where
+  kind : Term.Kind
+  slot : Nat
+  path : List String
   deriving DecidableEq, Repr, Hashable
 
 namespace Term
 
-/-- The slot a term reads. -/
-def slot : Term → Nat
-  | .value s | .length s | .view s => s
+/-- The safe integer a slot holds. -/
+def value (s : Nat) : Term := ⟨.value, s, []⟩
+/-- The length of the array store a slot holds. -/
+def length (s : Nat) : Term := ⟨.length, s, []⟩
+/-- The element count of the typed array a slot holds. -/
+def view (s : Nat) : Term := ⟨.view, s, []⟩
 
-/-- Whether a term reads the environment alone. -/
-def envOnly : Term → Bool
-  | .value _ => true
-  | .length _ | .view _ => false
+/-- The term of a kind at a slot, its path empty. -/
+def ofKind (k : Kind) (s : Nat) : Term := ⟨k, s, []⟩
 
-/-- An order on terms, by slot and kind, which normal forms sort by. -/
-def code : Term → Nat
-  | .value s => 3 * s
-  | .length s => 3 * s + 1
-  | .view s => 3 * s + 2
+/-- Whether a term reads the environment alone: a slot's own value. -/
+def envOnly (t : Term) : Bool := t.kind == .value && t.path.isEmpty
 
-instance : LT Term := ⟨fun a b => a.code < b.code⟩
+def Kind.code : Kind → Nat
+  | .value => 0
+  | .length => 1
+  | .view => 2
 
-instance : DecidableRel (α := Term) (· < ·) := fun a b => inferInstanceAs (Decidable (a.code < b.code))
+/-- A term's place by slot and kind, which normal forms sort by. -/
+def code (t : Term) : Nat := 3 * t.slot + t.kind.code
+
+/-- Paths in lexicographic order, the empty path first. -/
+def pathBefore : List String → List String → Bool
+  | [], [] => false
+  | [], _ :: _ => true
+  | _ :: _, [] => false
+  | a :: p, b :: q => decide (a < b) || (a == b && pathBefore p q)
+
+/-- An order on terms: by slot and kind, then by path. -/
+def before (a b : Term) : Bool := a.code < b.code || (a.code == b.code && pathBefore a.path b.path)
+
+instance : LT Term := ⟨fun a b => a.before b = true⟩
+
+instance : DecidableRel (α := Term) (· < ·) := fun a b => inferInstanceAs (Decidable (a.before b = true))
 
 /-- The term with its slot renamed, where the map names one. -/
-def mapM (f : Nat → Option Nat) : Term → Option Term
-  | .value s => (f s).map .value
-  | .length s => (f s).map .length
-  | .view s => (f s).map .view
+def mapM (f : Nat → Option Nat) (t : Term) : Option Term := (f t.slot).map fun s => { t with slot := s }
 
 theorem mapM_slot {f : Nat → Option Nat} {t t' : Term} (h : t.mapM f = some t') : f t.slot = some t'.slot := by
-  cases t <;> simp only [mapM, Option.map_eq_some_iff] at h <;> obtain ⟨s, hs, rfl⟩ := h <;> exact hs
+  simp only [mapM, Option.map_eq_some_iff] at h
+  obtain ⟨s, hs, rfl⟩ := h
+  exact hs
+
+theorem mapM_eq_some {f : Nat → Option Nat} {t t' : Term} (h : t.mapM f = some t') :
+    t' = { t with slot := t'.slot } := by
+  simp only [mapM, Option.map_eq_some_iff] at h
+  obtain ⟨s, -, rfl⟩ := h
+  rfl
 
 /-- The term with its slot renamed by a total map. -/
-def mapM' (f : Nat → Nat) : Term → Term
-  | .value s => .value (f s)
-  | .length s => .length (f s)
-  | .view s => .view (f s)
+def mapM' (f : Nat → Nat) (t : Term) : Term := { t with slot := f t.slot }
 
 theorem mapM_eq (f : Nat → Nat) : Term.mapM (some ∘ f) = some ∘ mapM' f := by
-  funext t; cases t <;> rfl
-
-/-- What a term reads of its slot: the value, the array store's length, or
-the typed array's element count. -/
-inductive Kind where
-  | value
-  | length
-  | view
-  deriving DecidableEq, Repr
-
-/-- The term of a kind at a slot. -/
-def ofKind : Kind → Nat → Term
-  | .value => .value
-  | .length => .length
-  | .view => .view
+  funext t; rfl
 
 end Term
+
+/-- The value a path of named data fields reads from a value: each step an
+object owning the field as a string key, whose location the heap
+allocates. -/
+def readPath (h : Heap) : Val → List String → Option Val
+  | v, [] => some v
+  | .objAt fs _ _, f :: p => match fs.lookup (.str f) with
+    | some l => match h[l]? with
+      | some v => readPath h v p
+      | none => none
+    | none => none
+  | _, _ :: _ => none
+
+/-- **The read bridge, one field.** Where the object `o` owns `f` at a location
+holding `v`, the path `f :: p` read from `o` reads what `p` reads from `v`. -/
+theorem readPath_cons {h : Heap} {fs : List (PropKey × Nat)} {c : CallCode} {oid l : Nat} {v : Val} {f : String}
+    {p : List String} (hl : fs.lookup (.str f) = some l) (hv : h[l]? = some v) :
+    readPath h (.objAt fs c oid) (f :: p) = readPath h v p := by
+  simp only [readPath, hl, hv]
+
+/-- A heap extension keeps what a path reads: each location it reads lies in
+the old heap. -/
+theorem readPath_extend {h : Heap} (vs : List Val) :
+    ∀ {v : Val} {p : List String} {w : Val}, readPath h v p = some w → readPath (h ++ vs) v p = some w := by
+  intro v p
+  induction p generalizing v with
+  | nil => intro w hw; exact hw
+  | cons f p ih =>
+    intro w hw
+    cases v with
+    | objAt fs c oid =>
+      simp only [readPath] at hw ⊢
+      split at hw
+      · rename_i l hl
+        split at hw
+        · rename_i u hu
+          simp only [List.getElem?_append_left (List.getElem?_eq_some_iff.mp hu).1, hu]
+          exact ih hw
+        · cases hw
+      · cases hw
+    | _ => simp [readPath] at hw
 
 /-- The length of the array store a value holds, read in the heap, where it
 is at most `maxArrayLength`. -/
@@ -175,11 +232,34 @@ theorem viewLengthOf_extend {h : Heap} (vs : List Val) {v : Val} {n : Int} (hl :
     · cases hl
   · cases hl
 
-/-- The integer a term denotes, where it denotes one. -/
-def termValue (ρ : Env) (h : Heap) : Term → Option Int
-  | .value s => intValue (ρ s)
-  | .length s => lengthOf h (ρ s)
-  | .view s => viewLengthOf h (ρ s)
+/-- What a kind of term reads of a value. -/
+def kindValue (h : Heap) : Term.Kind → Val → Option Int
+  | .value, v => intValue v
+  | .length, v => lengthOf h v
+  | .view, v => viewLengthOf h v
+
+/-- The integer a term denotes, where it denotes one: what its kind reads of
+the value its path reads from its slot's value. -/
+def termValue (ρ : Env) (h : Heap) (t : Term) : Option Int :=
+  (readPath h (ρ t.slot) t.path).bind (kindValue h t.kind)
+
+theorem termValue_nil {ρ : Env} {h : Heap} {k : Term.Kind} {s : Nat} :
+    termValue ρ h ⟨k, s, []⟩ = kindValue h k (ρ s) := rfl
+
+@[simp] theorem termValue_value {ρ : Env} {h : Heap} {s : Nat} : termValue ρ h (.value s) = intValue (ρ s) := rfl
+@[simp] theorem termValue_length {ρ : Env} {h : Heap} {s : Nat} : termValue ρ h (.length s) = lengthOf h (ρ s) := rfl
+@[simp] theorem termValue_view {ρ : Env} {h : Heap} {s : Nat} : termValue ρ h (.view s) = viewLengthOf h (ρ s) := rfl
+
+theorem termValue_slot {ρ ρ' : Env} {h : Heap} {t : Term} {s : Nat} (hs : ρ' s = ρ t.slot) :
+    termValue ρ' h { t with slot := s } = termValue ρ h t := by
+  simp only [termValue, hs]
+
+theorem termValue_isSome {ρ : Env} {h : Heap} {t : Term} (ht : (termValue ρ h t).isSome) :
+    ∃ v n, readPath h (ρ t.slot) t.path = some v ∧ kindValue h t.kind v = some n ∧ termValue ρ h t = some n := by
+  obtain ⟨n, hn⟩ := Option.isSome_iff_exists.mp ht
+  simp only [termValue, Option.bind_eq_some_iff] at hn
+  obtain ⟨v, hv, hk⟩ := hn
+  exact ⟨v, n, hv, hk, by simp [termValue, hv, hk]⟩
 
 /-- The integers terms denote, `0` where one denotes none: the valuation the
 linear facts are read at. -/
@@ -216,24 +296,33 @@ theorem lengthOf_extend {h : Heap} (vs : List Val) {v : Val} {n : Int} (hl : len
 /-- A term reading the environment alone denotes the same in every heap. -/
 theorem termValue_envOnly {ρ : Env} {h h' : Heap} {t : Term} (ht : t.envOnly = true) :
     termValue ρ h t = termValue ρ h' t := by
-  cases t <;> simp_all [Term.envOnly, termValue]
+  obtain ⟨k, s, p⟩ := t
+  simp only [Term.envOnly, Bool.and_eq_true, beq_iff_eq, List.isEmpty_iff] at ht
+  obtain ⟨rfl, rfl⟩ := ht
+  rfl
+
+theorem kindValue_extend {h : Heap} (vs : List Val) {k : Term.Kind} {v : Val} {n : Int} (hk : kindValue h k v = some n) :
+    kindValue (h ++ vs) k v = some n := by
+  cases k with
+  | value => exact hk
+  | length => exact lengthOf_extend vs hk
+  | view => exact viewLengthOf_extend vs hk
 
 theorem termValue_extend {ρ : Env} {h : Heap} (vs : List Val) {t : Term} {n : Int} (ht : termValue ρ h t = some n) :
     termValue ρ (h ++ vs) t = some n := by
-  cases t with
-  | value s => exact ht
-  | length s => exact lengthOf_extend vs ht
-  | view s => exact viewLengthOf_extend vs ht
+  simp only [termValue, Option.bind_eq_some_iff] at ht ⊢
+  obtain ⟨v, hv, hk⟩ := ht
+  exact ⟨v, readPath_extend vs hv, kindValue_extend vs hk⟩
 
 /-- An index fact (DESIGN of the guarded write, PROGRAM-TYPING.md, "Writes at
 a checked index"): the slot `k` holds a number that is an array index
 (`index`); the slot `n` holds the length of the store the array in slot `x`
 holds (`length`); the slot `k` holds an array index at most that length
 (`bound`), below it where `strict`; the slot `k` holds a safe integer (`int`); the slots of a linear
-fact denote safe integers meeting it (`linear`, PROGRAM-TYPING.md, "Linear
-facts"), its terms a slot's value or the length of what a slot holds.
-`index`, `int` and a linear fact of values read no heap; the others read
-the location of the array's store field. -/
+fact denote integers meeting it (`linear`, PROGRAM-TYPING.md, "Linear
+facts"), its terms (`Term`) rooted at slots. `index`, `int` and a linear fact
+of slots' values read no heap; the others read the locations their terms or
+the array's store field read. -/
 inductive IndexFact where
   | index (slot : Nat)
   | length (array length : Nat)
@@ -300,8 +389,8 @@ theorem holdsAt_mapM {F F' : IndexFact} {f : Nat → Option Nat} {ρ ρ' : Env} 
     have hterm : ∀ x ∈ G.vars, ∀ y, x.mapM f = some y → termValue ρ' h y = termValue ρ h x := by
       intro x hx y hy
       have hs := hf x.slot (List.mem_map_of_mem hx) y.slot (Term.mapM_slot hy)
-      cases x <;> simp only [Term.mapM, Option.map_eq_some_iff] at hy <;> obtain ⟨s, _, rfl⟩ := hy <;>
-        simp only [termValue, Term.slot] at hs ⊢ <;> rw [hs]
+      rw [Term.mapM_eq_some hy]
+      exact termValue_slot hs
     have hv : ∀ x ∈ G.vars, ∀ y, x.mapM f = some y → termValuation ρ' h y = termValuation ρ h x := by
       intro x hx y hy; simp only [termValuation, hterm x hx y hy]
     rw [Linear.Fact.holds_mapVars hG hv]
@@ -314,6 +403,25 @@ theorem holdsAt_mapM {F F' : IndexFact} {f : Nat → Option Nat} {ρ ρ' : Env} 
       refine ⟨fun y hy => ?_, hh⟩
       obtain ⟨x, hx, hfx⟩ := Linear.Fact.mapVars_vars hG y hy
       rw [hterm x hx y hfx]; exact hi x hx
+
+/-- A linear fact with its terms restated, each by a term denoting the same,
+holds where the fact does. -/
+theorem holdsAt_linear_mapVars {F F' : Linear.Fact Term} {f : Term → Option Term} {ρ : Env} {h : Heap}
+    (hm : F.mapVars f = some F') (hf : ∀ x ∈ F.vars, ∀ y, f x = some y → termValue ρ h y = termValue ρ h x) :
+    (linear F').HoldsAt ρ h ↔ (linear F).HoldsAt ρ h := by
+  have hv : ∀ x ∈ F.vars, ∀ y, f x = some y → termValuation ρ h y = termValuation ρ h x := by
+    intro x hx y hy; simp only [termValuation, hf x hx y hy]
+  simp only [HoldsAt]
+  rw [Linear.Fact.holds_mapVars hm hv]
+  constructor
+  · rintro ⟨hi, hh⟩
+    refine ⟨fun x hx => ?_, hh⟩
+    obtain ⟨y, hy, hfy⟩ := Linear.Fact.mapVars_vars_fwd hm x hx
+    rw [← hf x hx y hfy]; exact hi y hy
+  · rintro ⟨hi, hh⟩
+    refine ⟨fun y hy => ?_, hh⟩
+    obtain ⟨x, hx, hfx⟩ := Linear.Fact.mapVars_vars hm y hy
+    rw [hf x hx y hfx]; exact hi x hx
 
 /-- A fact reads its slots' values alone. -/
 theorem holdsAt_map {F : IndexFact} {f : Nat → Nat} {ρ ρ' : Env} {h : Heap}
@@ -371,7 +479,7 @@ theorem holdsAt_congr {F : IndexFact} {ρ ρ' : Env} {h : Heap} (hs : ∀ s ∈ 
     have heq : ∀ t ∈ G.vars, termValue ρ h t = termValue ρ' h t := by
       intro t ht
       have := hs t.slot (List.mem_map_of_mem ht)
-      cases t <;> simp only [termValue, Term.slot] at this ⊢ <;> rw [this]
+      simp only [termValue, this]
     rw [Linear.Fact.holds_congr (v' := termValuation ρ' h) (fun t ht => by simp only [termValuation, heq t ht])]
     exact ⟨fun ⟨a, b⟩ => ⟨fun t hm => heq t hm ▸ a t hm, b⟩, fun ⟨a, b⟩ => ⟨fun t hm => (heq t hm).symm ▸ a t hm, b⟩⟩
 
@@ -380,7 +488,7 @@ meeting it. -/
 theorem holdsAt_valueFact {F : Linear.Fact Nat} {ρ : Env} {h : Heap} :
     (IndexFact.linear (valueFact F)).HoldsAt ρ h ↔ (∀ x ∈ F.vars, (intValue (ρ x)).isSome) ∧ F.Holds (valuation ρ) := by
   simp only [HoldsAt, vars_valueFact, List.mem_map, forall_exists_index, and_imp, forall_apply_eq_imp_iff₂,
-    termValue, holds_valueFact]
+    termValue_value, holds_valueFact]
 
 /-- A linear fact whose terms read the environment alone holds in every heap. -/
 theorem holdsAt_linear_heap {F : Linear.Fact Term} {ρ : Env} {h h' : Heap} (hv : F.vars.all Term.envOnly = true)

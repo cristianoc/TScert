@@ -67,7 +67,9 @@ private def predOf : Json → Except String (Option ElemPred)
 -- receiver, `i + 1` the `i`-th actual), in result facts at the return's
 -- positions (`0` the result, `i + 1` the call's position `i`) and in
 -- diagnostics' knowledge: its
--- constructor's name holding its fields.
+-- constructor's name holding its fields; a linear term is `{"kind", "slot",
+-- "path"}`, its kind's name, its root and its fields.
+deriving instance ToJson, FromJson for HeapKnowledge.Term.Kind
 deriving instance ToJson, FromJson for HeapKnowledge.Term
 deriving instance ToJson, FromJson for Linear.Fact
 deriving instance ToJson, FromJson for HeapKnowledge.IndexFact

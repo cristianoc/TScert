@@ -1472,22 +1472,35 @@ what it finds).
 
 **In heap knowledge.** Two more index facts (`IndexFact.int`,
 `IndexFact.linear`) state integers. The variables of a linear fact are
-**terms** (`HeapKnowledge.Term`): $`x`$, the safe integer slot $`x`$ holds;
-$`|x|`$, the length of the array store slot $`x`$ holds, where that is at
-most $`2^{32}-1`$ (`lengthOf`, the length `Step.lenV` gives); and
-$`\mathrm{view}(x)`$, the element count of the typed array slot $`x`$ holds,
-the safe integer at least $`0`$ the location of its model key
-$`[[\mathrm{viewLength}]]`$ holds (`viewLengthOf`, `Calculus.viewLengthKey`):
+**terms** (`HeapKnowledge.Term`): a root slot $`x`$, a **path** $`p`$ of
+named data fields read from its value in turn, and what the term reads of the
+value $`v`$ the path ends at: $`x.p`$, the safe integer $`v`$ is;
+$`|x.p|`$, the length of $`v`$'s array store, where that is at most
+$`2^{32}-1`$ (`lengthOf`, the length `Step.lenV` gives); and
+$`\mathrm{view}(x.p)`$, the element count of the typed array $`v`$ is, the
+safe integer at least $`0`$ the location of its model key
+$`[[\mathrm{viewLength}]]`$ holds (`viewLengthOf`, `Calculus.viewLengthKey`).
+The empty path reads the slot's value itself, $`x`$, $`|x|`$ and
+$`\mathrm{view}(x)`$:
 
 ```math
 \begin{aligned}
+\mathrm{read}(\rho,h,x) &= \rho(x)\\
+\mathrm{read}(\rho,h,x.p.f) &= v \iff \mathrm{read}(\rho,h,x.p)=\mathsf{objAt}\,fs\,c\,i\land fs(f)=\ell\land h(\ell)=v\\
 \mathrm{int}(k)(\rho,h) &\iff \exists b\,i.\ \rho(k)=\mathsf{num}\,b\land\mathrm{SafeInt}(b,i)\\
-⟦x⟧_{\rho,h} &= i \iff \exists b.\ \rho(x)=\mathsf{num}\,b\land\mathrm{SafeInt}(b,i)\\
-⟦|x|⟧_{\rho,h} &= n \iff \mathrm{store}(\rho(x))=s\land h(s)=\mathsf{arr}\,\ell\land n=|\ell|\le 2^{32}-1\\
-⟦\mathrm{view}(x)⟧_{\rho,h} &= n \iff \rho(x)=\mathsf{objAt}\,fs\,c\,i\land fs([[\mathrm{host}]])\ \text{defined}\land fs([[\mathrm{viewLength}]])=\ell\land h(\ell)=\mathsf{num}\,b\land\mathrm{SafeInt}(b,n)\land 0\le n\\
+⟦x.p⟧_{\rho,h} &= i \iff \exists b.\ \mathrm{read}(\rho,h,x.p)=\mathsf{num}\,b\land\mathrm{SafeInt}(b,i)\\
+⟦|x.p|⟧_{\rho,h} &= n \iff \mathrm{store}(\mathrm{read}(\rho,h,x.p))=s\land h(s)=\mathsf{arr}\,\ell\land n=|\ell|\le 2^{32}-1\\
+⟦\mathrm{view}(x.p)⟧_{\rho,h} &= n \iff \mathrm{read}(\rho,h,x.p)=\mathsf{objAt}\,fs\,c\,i\land fs([[\mathrm{host}]])\ \text{defined}\land fs([[\mathrm{viewLength}]])=\ell\land h(\ell)=\mathsf{num}\,b\land\mathrm{SafeInt}(b,n)\land 0\le n\\
 \mathrm{linear}(F)(\rho,h) &\iff (\forall t\in\mathrm{vars}(F).\ ⟦t⟧_{\rho,h}\ \text{is defined})\land F\ \text{holds at}\ t\mapsto⟦t⟧_{\rho,h}
 \end{aligned}
 ```
+
+with $`fs(f)`$ the location of the string key $`f`$ the object owns
+(`IndexFacts.readPath`): `read` is partial, defined where every object on the
+path owns its next field at an allocated location, and a term is defined
+where its read is and the read value meets its kind. A fact over a path
+states no own key: where a field is absent or the value is no object, the
+term denotes nothing, and no fact naming it holds.
 
 with the safe integers of [the operational language](SEMANTICS.md#operational-language).
 An element count is defined only of a host object (one owning
@@ -1495,10 +1508,11 @@ $`[[\mathrm{host}]]`$), which no allocation of the program makes, and no step
 copies the key (`copiedKey`); that its location holds the view's element
 count is the host's trust ([typed arrays](SOURCE-CONTRACTS.md#stated-library-types)).
 A linear fact naming a length reads the location of that store's elements,
-one naming an element count the location of the view's count; each is kept
-by a heap change only where the other heap-reading index facts are (a heap
-extension, a call keeping the heap); a fact of values alone reads only the
-environment (`IndexFact.envOnly`). The linear facts a knowledge states
+one naming an element count the location of the view's count, one naming a
+path the location of each field the path reads; each is kept by a heap change
+only where the other heap-reading index facts are (a heap extension, which
+keeps every read, `readPath_extend`, and a call keeping the heap); a fact of
+slots' values alone reads only the environment (`IndexFact.envOnly`). The linear facts a knowledge states
 (`HeapKnowledge.linearFacts`) are its unconditional linear atoms, each with
 the range $`0\le|x|\le 2^{32}-1`$ of every length and the range
 $`0\le\mathrm{view}(x)\le 2^{53}-1`$ of every element count it names
@@ -1509,125 +1523,41 @@ source atom gives it, term by term of the same kind, or, unconditional, where
 the source's linear facts entail it, each target term renamed to a source
 term of the same kind at a slot of the class of the slot the edge maps it to,
 which the source states defined: a value by $`\mathrm{int}`$, a length by a
-length atom or a linear fact naming it, an element count by a linear fact
-naming it (`linearFollows`, proved: `linearFollows_sound`).
+length atom or a linear fact naming it, an element count or a path by a linear
+fact naming it (`linearFollows`, proved: `linearFollows_sound`).
 
-**The steps stating them** are a layer of `Checker.ordinary`
-(`Checker.indexing`, `IndexWrites.stepAtoms`), adding atoms to what the step's
-own rule gives:
-
-```math
-\frac{x.\mathtt{[]}\mapsto s'\in\Sigma\quad s'\in[s]\quad \Gamma(s)\equiv_G\mathsf{list}(\tau)}
-     {\Gamma;\Pi;\Sigma\vdash_G n\leftarrow\mathsf{lenOf}(s)\dashv\ldots,\ \mathrm{length}(x,n)}\ \textsf{length-observed}
-\qquad
-\frac{(\Gamma;\Pi)(m)\subseteq\{\mathsf{num}\,b\mid 0\le\mathrm{ToInt32}(b)<2^{31}\}}
-     {\Gamma;\Pi;\Sigma\vdash_G r\leftarrow a\,\&\,m\dashv\ldots,\ \mathrm{index}(r)}\ \textsf{index-mask}
-```
+**The read bridge.** A current read link $`x.f\mapsto v`$ (`HeapLinks.Holds`,
+neither an alias nor optional, $`f`$ a string key) states that $`v`$ holds
+what reading $`f`$ from $`x`$'s object gives, so for every kind and path
+$`p`$ the term rooted at $`v`$ with $`p`$ denotes what the term rooted at
+$`x`$ with $`f.p`$ denotes, or neither denotes an integer
+(`HeapKnowledge.readBridge`, proved):
 
 ```math
-\frac{\mathrm{index}(a')\in\Sigma\quad a'\in[a]}
-     {\Gamma;\Pi;\Sigma\vdash_G c\leftarrow a\equiv b\dashv\ldots,\ \mathrm{index}(b)\ \text{if}\ c}\ \textsf{index-equal}
-\qquad
-\frac{\mathrm{index}(k')\in\Sigma\quad \mathrm{length}(x,n')\in\Sigma\quad k'\in[k],\ n'\in[n]}
-     {\Gamma;\Pi;\Sigma\vdash_G c\leftarrow k\ \mathit{op}\ n\dashv\ldots,\ \mathrm{bound}(x,k)\ \text{if}\ c=q_{\mathit{op}}}\ \textsf{bound-compare}
+\frac{x.f\mapsto v\in\Sigma}{⟦v.p⟧_{\rho,h}=⟦x.f.p⟧_{\rho,h},\quad ⟦|v.p|⟧_{\rho,h}=⟦|x.f.p|⟧_{\rho,h},\quad ⟦\mathrm{view}(v.p)⟧_{\rho,h}=⟦\mathrm{view}(x.f.p)⟧_{\rho,h}}\ \textsf{read-bridge}
 ```
 
-with each premise atom unconditional, $`\equiv`$ strict equality (either
-operand the index), and $`q_{\mathit{op}}`$ the answer giving $`k\le n`$:
-false for `>` and `>=`, true for `<` and `<=`, and the mirrored answers with
-the length on the left (`IndexNumbers.boundAnswer`). Proved:
-`IndexWrites.stepAtoms_holds`, from `IndexNumbers.bitAnd_index`,
-`strictEquals_index` and `le_of_relation`, which rest on the order of two
-doubles that denote naturals (`doubleOrder_denotes`, against `Float.Model`).
-`(k & m) === k` with `m` a non-negative 32-bit integer holds only where `k`
-is an integer from 0 to $`2^{31}-1`$, or `-0`: `NaN`, fractions, negatives,
-$`2^{31}`$ and above fail it.
-
-**The write.** A step whose evidence is `boundedWrite` (`Checker.boundedWrites`,
-`IndexWrites.boundedWriteCheck`):
-
-```math
-\frac{\Gamma(x)\ \text{a record whose invariant}\ \mathtt{[]}\ \text{holds}\ \mathsf{list}(\langle[\,],[\,],E,\mathrm{writable}\rangle)\quad
-      \mathrm{bound}(x',k')\in\Sigma\quad x'\in[x],\ k'\in[k]\quad \Gamma(v)\le E}
-     {\Gamma;\Pi;\Sigma\vdash_G r\leftarrow x.\mathtt{[]}:=x.\mathtt{[]}⟦k\mapsto v⟧:\mathsf{Null}\dashv\Pi;\ \emptyset}\ \textsf{setElem-bounded}
-```
-
-The write reads the store, lands on a present element's location or, at a
-hole below the length or at the length, on a fresh location the new store
-records, leaving no hole, and writes the store back
-(proved: `IndexWrites.boundedWrite_safe`, through `setElem_store_safe`, which
-the literal rule `setElem` shares). An element location is written before the
-store field is, so the step keeps no observation of the heap
-(`ordinaryOutput`). It is within the footprint `{value: any, store: grow}`
-([element writes](FOOTPRINTS.md#element-writes), `elemVarWriteWithin`).
-
-**Across the guard's statement.** A statement entry is an exact interface
-([decisions](DESIGN.md#lasting-decisions)): the bound reaches the write's
-statement as a claim of its entry, `EntryClaim.bounds`
-([source claims](SOURCE-CLAIMS.md)), an array binding's name and an index
-binding's, which the lowering states as $`\mathrm{bound}(x,k)`$ of their
-slots and every edge into the entry checks. The producer claims it at the
-statement following an `if (c) throw …` whose test's false answer states both
-facts of names `k` and `xs` (`false_facts`, `guard_bounds`): `a || b` false
-states what each operand's does; `(k & m) !== k`, with the literal `m` and
-`k` on either side, states that `k` is an index; `k > xs.length`,
-`k >= xs.length`, `xs.length < k` and `xs.length <= k`, evaluated after the
-test making `k` an index, that `k` is at most the length. The facts are about values: a variable a closure
-reassigns is a cell, whose every read is a new slot no fact names.
-
-The cases `index-write-guard` and `index-write-guard-loop` verify;
-`invalid-index-write-unguarded`, `invalid-index-write-no-mask`,
-`invalid-index-write-no-compare`, `invalid-index-write-other-array`,
-`invalid-index-write-call-shrinks`, `invalid-index-write-pop` and
-`invalid-index-write-captured` are refused, each run under Node.
-
-### Linear facts
-
-A **linear fact** over integer variables is $`c\cdot x\le d`$ or
-$`c\cdot x\ne d`$, with $`c\cdot x=\sum_i c_i x_i`$, integer coefficients
-$`c_i`$ and an integer bound $`d`$ (`Linear.Fact`). A **linear certificate**
-is a list of steps, each concluding one fact from the facts held before it,
-its conclusion held by the later steps:
-
-```math
-\frac{a_j\cdot x\le b_j\ \ (j\in J)\qquad \lambda_j\in\mathbb{N}\qquad g\ge 1\qquad
-      \sum_j\lambda_j a_j=g\,c\qquad \Bigl\lfloor\frac{\sum_j\lambda_j b_j}{g}\Bigr\rfloor\le d}
-     {c\cdot x\le d}\ \textsf{combine}
-\qquad
-\frac{c\cdot x\le d\qquad c\cdot x\ne d}
-     {c\cdot x\le d-1}\ \textsf{strict}
-```
-
-The equality of linear forms is decided on their normal forms, sorted by
-variable with one nonzero coefficient each (`Linear.normalize`). With
-$`g=1`$, `combine` is a nonnegative combination; with $`g>1`$ it rounds once,
-valid because $`c\cdot x`$ is an integer at an integer valuation. A strict
-comparison of integers is $`x-y\le -1`$, an equality two facts. Proved:
-`Linear.check_sound`, every fact an accepted certificate concludes holds of
-every integer valuation meeting the facts it starts from. The steps are
-incomplete for the integers: an implication that no chain of them derives
-is refused (proved: `Linear.entails_sound`; `Linear.entails` searches by
-tightening, strict steps and the elimination of variables, and `check` decides
-what it finds).
-
-**In heap knowledge.** Two more index facts (`IndexFact.int`,
-`IndexFact.linear`) read only the environment:
-
-```math
-\begin{aligned}
-\mathrm{int}(k)(\rho,h) &\iff \exists b\,i.\ \rho(k)=\mathsf{num}\,b\land\mathrm{SafeInt}(b,i)\\
-\mathrm{linear}(F)(\rho,h) &\iff (\forall x\in\mathrm{vars}(F).\ \mathrm{int}(x)(\rho,h))\land F\ \text{holds at}\ x\mapsto i_x
-\end{aligned}
-```
-
-with $`i_x`$ the safe integer slot $`x`$ holds
-([safe integers](SEMANTICS.md#operational-language)). They are renamed with
-their slots and carried as the other index facts are. On an edge, a target
-atom holds where a source atom gives it, or, unconditional, where the source's
-unconditional linear facts entail it, each target slot renamed to the source
-slot the edge maps it to and each of its slots stated a safe integer by the
-source (`linearFollows`, proved: `linearFollows_sound`); a target slot may read
-a source slot of its value's class (`M`), as the other index facts do.
+Three places use it. *Entailment*: where an atom of the source or the target
+names a path, the check of index atoms (`indicesCheckBy`, on edges and at a
+call's precondition) restates every term by the source's links toward its
+root: its slot taken to its alias class's representative, then, while a read
+link gives the root's value as field $`f`$ read from slot $`c`$, the term
+rooted at $`c`$ with $`f`$ before its path (`liftTerm`, proved:
+`liftTerm_eq`); the source's linear facts and the target's are compared
+restated, a restated term defined where the source states a term restated to
+it defined (`bridgedDefined`), and a bound or safe-integer target atom is read
+alike (`lengthBoundVia`). *The read*: a field read restates each linear atom
+naming a term rooted at the receiver's class, its path starting with the read
+field, of the read's slot (`readAtoms`, proved: `readAtoms_holds`), so the
+read value of `cursor.itemIndex` is a safe integer an operand may be. *A
+dropped slot*: before a slot is eliminated, at a step's output or an edge's
+projection, each linear fact or length atom naming a term rooted at it is
+restated rooted at a kept slot the reads reach (`restateReads`, proved:
+`restateReads_holds`), so `const n = flow.data.widths.length` keeps
+$`n=|\mathit{flow}.\mathit{data}.\mathit{widths}|`$. A read link is a
+current-heap fact, discarded by a write or a call that changes the heap: a
+slot holding an earlier read is a snapshot, and its link to the path expires.
+Dropping a root slot eliminates every term rooted at it.
 
 **The steps stating them** are a layer of `Checker.indexing`
 (`IndexWrites.linearAtoms`). An operand is a slot $`x`$ with
@@ -1888,17 +1818,27 @@ parameters:
 ```math
 \begin{aligned}
 C &::= A \mid A\ \texttt{\&\&}\ C\\
-A &::= \mathtt{safeInteger}(x) \mid E\ \mathit{rel}\ E\\
-E &::= n \mid x \mid x.\mathtt{length} \mid n\cdot x \mid n\cdot x.\mathtt{length} \mid E + E \mid E - E \mid -E \mid (E)
+A &::= \mathtt{safeInteger}(P) \mid E\ \mathit{rel}\ E\\
+E &::= n \mid P \mid P.\mathtt{length} \mid n\cdot P \mid n\cdot P.\mathtt{length} \mid E + E \mid E - E \mid -E \mid (E)\\
+P &::= x \mid P.f
 \end{aligned}
 ```
 
 with $`\mathit{rel}`$ one of `<`, `<=`, `>`, `>=`, `===`, $`n`$ an integer
-literal, $`x`$ a parameter the clause states $`\mathrm{int}(x)`$, and
-`x.length` the length $`|x|`$ of an array parameter's store or the element
-count $`\mathrm{view}(x)`$ of a typed array parameter, one whose type is a
-view of bytes the overlay of library types states (`namesView`). Each atom
-elaborates to index facts: `safeInteger(x)` to $`\mathrm{int}(x)`$; a
+literal, $`x`$ a parameter and $`f`$ a field name. A path $`P = x.f_1\ldots
+f_k`$ reads the fields from the parameter in turn, each a required field of
+the record type the path before it has, an alias followed to its equation
+and an intersection to the one part stating the field (`fieldType`,
+`recordShape`); a path whose field no type resolves is refused. A path $`P`$
+as a term is its value, which the clause states $`\mathrm{int}`$;
+`P.length` is the length $`|P|`$ where $`P`$'s type is an array, the element
+count $`\mathrm{view}(P)`$ where it is a view of bytes the overlay of library
+types states (`namesView`), and the field `length` read from $`P`$ otherwise.
+The type decides only which term a clause names: callers prove the fact as
+stated, so a term misread would be unprovable, never assumed. A clause
+executes no property read. Each atom elaborates to index facts:
+`safeInteger(x)` to $`\mathrm{int}(x)`$, `safeInteger(P)` of a nonempty path to
+$`P\le 2^{53}-1`$, which holds exactly where $`P`$ reads a safe integer; a
 comparison $`E_1\ \mathit{rel}\ E_2`$ to the linear fact over the integers its
 terms denote ([linear facts](#linear-facts)), with, for every sum,
 difference and product $`e`$ it computes, the range
@@ -1913,14 +1853,18 @@ establish nothing; on an async function; on one whose parameters are not
 plain required names; and on one naming the receiver without declaring it.
 Every other form of the draft's grammar ([checked bound
 annotations](drafts/checked-bound-annotations.md): guards, `old`, `result`,
-other paths, `||`, `!`) is refused with the declaration's location.
+computed keys, `||`, `!`) is refused with the declaration's location.
 
 A call selects a signature stating a precondition where the producer's own
 facts at the call's statement establish it: the bounds and linear facts of
-its analysis, each actual read as a linear expression. Its facts naming a
-length are kept by a statement writing no heap, a call keeping the heap
-([`call-keep`](#a-call-that-keeps-the-heap)) included, as Lean keeps them.
-Lean decides at the call (`call-requires`).
+its analysis, each actual read as a linear expression or as a path, a
+binding and the fields read from it; in an arm of `c ? a : b`, with what the
+arm's answer of `c` states. Its facts naming a length, an element count or a
+path are kept by a statement writing no heap, a call keeping the heap
+([`call-keep`](#a-call-that-keeps-the-heap)) included, as Lean keeps them, and
+forgotten by every other; a binding declared at a path's read
+(`const b = p.f`, `const { f: b } = p`) restates each fact over a path through
+it of the binding. Lean decides at the call (`call-requires`).
 
 **Cases.** Positive: `written-precondition`, `written-precondition-lengths`
 (`i + 1 < xs.length`, and `xs.length === ys.length` established by a test).
@@ -1929,7 +1873,13 @@ Negative, each run under Node: `invalid-written-precondition-call` (a call at
 clause bounds) `invalid-written-precondition-lengths` (a call with no length equality) and
 `invalid-written-precondition-lengths-shrunk` (an equality a `pop` changed) and
 `invalid-written-precondition-literal-index` (a literal index past the clause's bound). Refused forms: `written-precondition-exported-refused`,
-`written-precondition-disjunction-refused`.
+`written-precondition-disjunction-refused`. Over paths: positive
+`field-path-reads`; negative, each run under Node,
+`invalid-field-path-read-at-length` (a call at the flags' element count),
+`invalid-field-path-read-other-record` (a read bounded by another record's
+field) and `invalid-field-path-read-replaced` (a field replaced after its
+test); a gap, `field-path-precondition-unestablished` (an exported
+parameter's cursor, of whose index nothing states a safe integer).
 
 ### A literal with spreads
 

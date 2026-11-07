@@ -390,6 +390,12 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (body:Analysi
        the other arm's type, as TypeScript types `c ? xs : []`: a fresh
        array may take any element contract. *)
     | Conditional (c,a,b) -> ignore (expr env c);
+      (* Each arm is typed with what its answer of the test states, for a
+         call stating a precondition (`Linear_facts.with_test`). *)
+      let expr ?expected env (e:expr) =
+        if e == a then Linear_facts.with_test env c true (fun () -> expr ?expected env e)
+        else if e == b then Linear_facts.with_test env c false (fun () -> expr ?expected env e)
+        else expr ?expected env e in
       let empty (e:expr) = match e.node with ArrayLiteral ([],_) -> true | _ -> false in
       let array = function Atoms [Shape {elements=Some _;fields=[];calls=[];indexes=[]}] -> true | _ -> false in
       (* An arm with required positions, a non-empty `split`'s, beside the

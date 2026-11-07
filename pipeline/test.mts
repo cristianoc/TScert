@@ -223,7 +223,7 @@ control(async (): Promise<void> => {
   const claims = readClaims(artifacts);
   const fn = must(claims.functions.find(f => f.name === "second"), "second's claims");
   const entry = must(fn.entries.find(e => e.start === source.indexOf("return at(")), "the call's entry");
-  const length = (name: string, coefficient: number) => ({ name, term: "length" as const, coefficient });
+  const length = (name: string, coefficient: number) => ({ name, path: [], term: "length" as const, coefficient });
   entry.facts.push({ terms: [length("xs", 1), length("ys", -1)], bound: 0 },
     { terms: [length("xs", -1), length("ys", 1)], bound: 0 });
   const forged = writeClaims(artifacts, "length-equality-forged", claims);
@@ -252,13 +252,47 @@ control(async (): Promise<void> => {
     const claim = must(fn.expressions.find(e => e.pos[0] === at && e.pos[1] === at + read.length), "the read");
     claim.type = [rowOf(claims, "num")];
     must(fn.entries.find(e => e.start === source.indexOf(statement)), "the read's entry").facts.push(
-      { terms: [{ name: "i", term: "value", coefficient: 1 }, { name: "b", term: "view", coefficient: -1 }], bound: -1 });
+      { terms: [{ name: "i", path: [], term: "value", coefficient: 1 }, { name: "b", path: [], term: "view", coefficient: -1 }],
+        bound: -1 });
     const forged = writeClaims(artifacts, `view-length-forged-${name}`, claims);
     const searched = produceWith(artifacts, forged, `view-length-forged-${name}`);
     assert.equal(searched.status, 1, `${name}: ${searched.stdout}${searched.stderr}`);
     assert.match(searched.stdout + searched.stderr, /does not establish the claims/);
   }
   process.stdout.write("view lengths: a read below a typed array's element count claimed where no test stated it, at the length and below another view's, refused at its entry\n");
+});
+
+control(async (): Promise<void> => {
+  // A path's facts are about its root and its fields: the read of each
+  // unsafe program claimed at `number`, the precondition's of
+  // `%ElementAt%`'s bounded signature, with no fact added, is refused where
+  // evidence is searched (a bound over another root, `a.widths`, or another
+  // field, `row.widths`, bounds no read of `b.widths` or `row.heights`); and
+  // with `i < b.widths.length` or `i < row.heights.length` forged at the
+  // read's statement entry, refused at that entry.
+  for (const [name, fnName, read, statement, root, field] of [
+    ["invalid-field-path-read-other-record", "other", "b.widths[i]", "return b.widths[i]!", "b", "widths"],
+    ["invalid-field-path-read-other-field", "heightAt", "row.heights[i]", "return row.heights[i]!", "row", "heights"],
+  ] as const) {
+    const artifacts = run(name);
+    const source = readFileSync(sourceKey(artifacts), "utf8");
+    const at = source.indexOf(read, source.indexOf(statement));
+    for (const forgeFact of [false, true]) {
+      const claims = readClaims(artifacts);
+      const fn = must(claims.functions.find(f => f.name === fnName), `${fnName}'s claims`);
+      const claim = must(fn.expressions.find(e => e.pos[0] === at && e.pos[1] === at + read.length), "the read");
+      claim.type = [rowOf(claims, "num")];
+      if (forgeFact)
+        must(fn.entries.find(e => e.start === source.indexOf(statement)), "the read's entry").facts.push(
+          { terms: [{ name: "i", path: [], term: "value", coefficient: 1 },
+            { name: root, path: [field], term: "length", coefficient: -1 }], bound: -1 });
+      const tag = `field-path-forged-${name}-${forgeFact ? "fact" : "read"}`;
+      const searched = produceWith(artifacts, writeClaims(artifacts, tag, claims), tag);
+      assert.equal(searched.status, 1, `${tag}: ${searched.stdout}${searched.stderr}`);
+      if (forgeFact) assert.match(searched.stdout + searched.stderr, /does not establish the claims/);
+    }
+  }
+  process.stdout.write("field paths: a read claimed below another root's or another field's length, and a path fact forged at its entry, each refused\n");
 });
 
 control(async (): Promise<void> => {

@@ -304,18 +304,20 @@ private def reachablePoints (graph : SourceFlow.Graph) (id : Nat) : List String 
     | _, none => do throw (locatedRefusal (← table) node.source .entryClaim
         s!"a bound names '{index}' as its index, which is no value binding")
   -- The linear facts the producer proposes (PROGRAM-TYPING.md, "Linear
-  -- facts"): each term a value binding; a fact whose coefficients are all
-  -- zero states only that its bindings hold safe integers.
+  -- facts"): each term rooted at a value binding, its path the fields read
+  -- from it; a fact whose coefficients are all zero states only that its
+  -- terms denote integers: a binding's value a safe integer, a path's value
+  -- one at most `2^53 - 1`, a length or element count one at least `0`.
   let linear ← ((fc.entryFacts.lookup node.source.1).getD []).flatMapM fun (terms, bound) => do
-    let form ← terms.mapM fun (name, kind, c) => match valueSlot scope name with
-      | some x => pure ((HeapKnowledge.Term.ofKind kind x, c) : HeapKnowledge.Term × Int)
+    let form ← terms.mapM fun (name, path, kind, c) => match valueSlot scope name with
+      | some x => pure ((⟨kind, x, path⟩ : HeapKnowledge.Term), c)
       | none => do throw (locatedRefusal (← table) node.source .entryClaim
           s!"a linear fact names '{name}', which is no value binding")
     if form.all (·.2 == 0) && 0 ≤ bound then
-      pure (form.map fun (t, _) => ({ fact := match t with
-        | .value x => .int x
-        | .length x => .linear (.le [(.length x, -1)] 0)
-        | .view x => .linear (.le [(.view x, -1)] 0) } : HeapKnowledge.IndexAtom))
+      pure (form.map fun (t, _) => ({ fact := match t.kind, t.path with
+        | .value, [] => .int t.slot
+        | .value, _ :: _ => .linear (.le [(t, 1)] (2 ^ 53 - 1))
+        | _, _ => .linear (.le [(t, -1)] 0) } : HeapKnowledge.IndexAtom))
     else pure [({ fact := .linear (.le form bound) } : HeapKnowledge.IndexAtom)]
   let bounds := bounds ++ linear
   if !facts.isEmpty || !links.isEmpty || !separation.facts.isEmpty || !bounds.isEmpty then

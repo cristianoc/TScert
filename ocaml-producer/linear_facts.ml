@@ -11,19 +11,29 @@ open Source
 
 type fact = (string * int) list * int
 
-(* A term of a fact (Lean's `HeapKnowledge.Term`): a value binding's name;
-   `xs.length`, the length of the array store the binding `xs` holds; or
-   `b.view`, the element count of the typed array the binding `b` holds. A
-   binding's name has no `.`, so the three never meet. *)
+(* A term of a fact (Lean's `HeapKnowledge.Term`): a value binding's name,
+   then the named data fields read from what it holds in turn, each after a
+   `.` (its path), then what the term reads of the value the path ends at:
+   nothing for the value itself, `:length` for the length of its array store,
+   `:view` for the element count of the typed array it is. A binding's name
+   and a field name have no `.` or `:`, so the parts never meet. *)
 type kind = Value_term | Length_term | View_term
-let length_term xs = xs ^ ".length"
-let view_term b = b ^ ".view"
-let term_parts t = match String.index_opt t '.' with
-  | Some i -> String.sub t 0 i, (if String.sub t (i + 1) (String.length t - i - 1) = "view" then View_term else Length_term)
-  | None -> t, Value_term
-let term_binding t = fst (term_parts t)
-(* A length or an element count reads the heap (Lean's `Term.envOnly`). *)
-let reads_heap t = snd (term_parts t) <> Value_term
+let make_term ?(path=[]) kind b =
+  String.concat "." (b :: path) ^ (match kind with Value_term -> "" | Length_term -> ":length" | View_term -> ":view")
+let length_term ?path xs = make_term ?path Length_term xs
+let view_term ?path b = make_term ?path View_term b
+let path_term b path = make_term ~path Value_term b
+let term_parts t : string * string list * kind =
+  let base,kind = match String.index_opt t ':' with
+    | Some i -> String.sub t 0 i, (if String.sub t (i + 1) (String.length t - i - 1) = "view" then View_term else Length_term)
+    | None -> t, Value_term in
+  match String.split_on_char '.' base with
+  | root :: path -> root,path,kind
+  | [] -> base,[],kind
+let term_binding t = let b,_,_ = term_parts t in b
+(* A path, a length or an element count reads the heap (Lean's
+   `Term.envOnly`). *)
+let reads_heap t = let _,path,kind = term_parts t in kind <> Value_term || path <> []
 let has_heap_term ((t,_) : fact) = List.exists (fun (n,_) -> reads_heap n) t
 
 let max_safe = 9007199254740991
@@ -123,7 +133,7 @@ let entails fs ((terms,d) : fact) =
 (* The ranges Lean's knowledge states of each length and element count the
    facts name (`HeapKnowledge.lengthRange`, `viewRange`). *)
 let term_ranges (fs : fact list) : fact list =
-  List.concat_map (fun ((t,_) : fact) -> List.concat_map (fun (n,_) -> match snd (term_parts n) with
+  List.concat_map (fun ((t,_) : fact) -> List.concat_map (fun (n,_) -> match (let _,_,k = term_parts n in k) with
     | Length_term -> [[n,-1],0; [n,1],max_index + 1]
     | View_term -> [[n,-1],0; [n,1],max_safe]
     | Value_term -> []) t) fs |> List.sort_uniq compare
@@ -140,15 +150,29 @@ let literal_int s =
   | Some f when Float.is_integer f && Float.abs f <= 9007199254740991. -> Some (int_of_float f)
   | _ -> None
 
-(* An operand Lean reads as a safe integer: a literal, or a binding a fact
-   states one; a sum or a difference of such, each step's result in range. *)
-let rec linear ?(array = fun _ -> false) env fs (e : expr) : ((string * int) list * int) option = match e.node with
+(* The path an expression reads: a value binding and the named fields read
+   from it in turn. *)
+let rec path_of env (e : expr) = match e.node with
+  | Id x when value_binding env x -> Some (x,[])
+  | Read (o,Semantic.Name f) when not (String.contains f '.') && not (String.contains f ':') ->
+    Option.map (fun (b,p) -> b,p @ [f]) (path_of env o)
+  | _ -> None
+
+(* An operand Lean reads as a safe integer: a literal, or a binding or a
+   path a fact states one; a sum or a difference of such, each step's result
+   in range. `array b path` tells whether the path from `b` holds an array,
+   whose `length` is its store's. *)
+let rec linear ?(array = fun _ _ -> false) env fs (e : expr) : ((string * int) list * int) option = match e.node with
   | Literal (LNumber s) -> Option.map (fun i -> [],i) (literal_int s)
   | Id x when value_binding env x && is_int fs x -> Some ([x,1],0)
-  | Read ({node=Id xs;_},Semantic.Name "length") when value_binding env xs && array xs -> Some ([length_term xs,1],0)
+  | Read (o,Semantic.Name "length") when (match path_of env o with Some (b,p) -> array b p | None -> false) ->
+    (match path_of env o with Some (b,path) -> Some ([length_term ~path b,1],0) | None -> None)
+  | Read (_,Semantic.Name _) when (match path_of env e with Some (b,p) -> p <> [] && is_int fs (path_term b p) | None -> false) ->
+    (match path_of env e with Some (b,p) -> Some ([path_term b p,1],0) | None -> None)
   (* `b.length` of a typed array, `%ByteLength%(b)`, whose result facts
      state it the view's element count. *)
-  | Call ({node=Id "%ByteLength%";_},None,[{node=Id b;_}],[],_) when value_binding env b -> Some ([view_term b,1],0)
+  | Call ({node=Id "%ByteLength%";_},None,[o],[],_) when path_of env o <> None ->
+    (match path_of env o with Some (b,path) -> Some ([view_term ~path b,1],0) | None -> None)
   | Arith ((Add | Sub) as op,a,b) ->
     (match linear ~array env fs a, linear ~array env fs b with
      | Some (ta,ca),Some (tb,cb) ->
@@ -200,16 +224,48 @@ let rec heap_free env (e : expr) = match e.node with
   | Update (_,{node=Id x;_},rhs,_) -> value_binding env x && Option.fold ~none:true ~some:(heap_free env) rhs
   | _ -> false
 
+(* A destructuring that reads fields of a path alone, `const { f, g: h } = p`:
+   each field bound to a name, no default and no rest; its path and the
+   fields with the names they are bound to. *)
+let destructure_reads env (s : stmt) = match s.statement with
+  | Destructure (PObject (props,None),None,init) when heap_free env init ->
+    (match path_of env init with
+     | Some (root,path) ->
+       let fields = List.filter_map (fun (f,t,d) -> match t,d with
+         | PName (n,_),None when not (String.contains f '.') && not (String.contains f ':') -> Some (f,n)
+         | _ -> None) props in
+       if List.length fields = List.length props && not (List.mem_assoc root (List.map (fun (f,n) -> n,f) fields))
+       then Some ((root,path),fields) else None
+     | None -> None)
+  | _ -> None
+
 let statement_heap_free env (s : stmt) = match s.statement with
   | Effect e | Return e -> heap_free env e
   | Declare (_,bs) -> List.for_all (fun (_,_,e) -> heap_free env e) bs
   | If (c,_,_) | While (c,_,_) -> heap_free env c
+  | Destructure _ -> destructure_reads env s <> None
   | _ -> false
+
+(* The facts restated where a binding is declared at a path's read
+   (`const b = p.f`): each fact naming a term of a path extending it restated
+   of the binding, the path's prefix replaced by the binding's name, as Lean's
+   read link and its bridge relate them. *)
+let restate_read name (root,path) (fs : fact list) : fact list =
+  let rec prefix p q = match p,q with
+    | [],rest -> Some rest
+    | f :: p,g :: q when f = g -> prefix p q
+    | _ -> None in
+  let rename t = let b,p,kind = term_parts t in
+    if b <> root then None else Option.map (fun rest -> make_term ~path:rest kind name) (prefix path p) in
+  List.filter_map (fun ((t,d) : fact) ->
+    if List.exists (fun (n,_) -> rename n <> None) t then
+      Some (norm (List.map (fun (n,c) -> (match rename n with Some m -> m | None -> n),c) t),d)
+    else None) fs
 
 (* A statement's effect on the facts: an assignment or update of a slot
    binding by a linear expression, and every other assigned binding
    forgotten. *)
-let statement ~(array : string -> bool) env fs (s : stmt) : fact list =
+let statement ~(array : string -> string list -> bool) env fs (s : stmt) : fact list =
   (* A fact naming a length or an element count reads the heap: kept where
      the statement writes none, as Lean keeps it (`IndexFact.envOnly`). *)
   let fs = if statement_heap_free env s then fs else List.filter (fun f -> not (has_heap_term f)) fs in
@@ -219,11 +275,22 @@ let statement ~(array : string -> bool) env fs (s : stmt) : fact list =
     let one = {node=Literal (LNumber "1"); pos} in
     let r = match rhs with Some r -> r | None -> one in
     assign ~array env fs x {node=Arith (op,target,r); pos}
+  | Destructure _ ->
+    let fs = List.fold_left (fun fs x -> forget x fs) fs (names_assigned s env) in
+    (* Each field's read restated of the name it is bound to. *)
+    (match destructure_reads env s with
+     | Some ((root,path),fields) ->
+       let fs = List.fold_left (fun fs (_,n) -> forget n fs) fs fields in
+       fs @ List.concat_map (fun (f,n) -> restate_read n (root,path @ [f]) fs) fields
+     | None -> fs)
   | _ -> List.fold_left (fun fs x -> forget x fs) fs (names_assigned s env)
 
-let declaration ~(array : string -> bool) env fs name (init : expr) : fact list =
+let declaration ~(array : string -> string list -> bool) env fs name (init : expr) : fact list =
   let fs = if heap_free env init then fs else List.filter (fun f -> not (has_heap_term f)) fs in
   let fs = forget name fs in
+  let fs = match path_of env init with
+    | Some (root,(_ :: _ as path)) when root <> name && heap_free env init -> fs @ restate_read name (root,path) fs
+    | _ -> fs in
   match linear ~array env fs init with
   | Some (t,c) when not (List.mem_assoc name t) -> fs @ equal name (t,c)
   | _ -> fs
@@ -296,7 +363,7 @@ let statement_bounds env (bs : bound list) (s : stmt) =
 let comparison_bounds ~array env fs (cond : expr) : bound list * bound list =
   let index j = value_binding env j && is_int fs j && (match range fs j with Some l,_ -> l >= 0 | _ -> false) in
   let length (e : expr) = match e.node with
-    | Read ({node=Id xs;_},Semantic.Name "length") when value_binding env xs && array xs -> Some xs
+    | Read ({node=Id xs;_},Semantic.Name "length") when value_binding env xs && array xs [] -> Some xs
     | _ -> None in
   match cond.node with
   | Arith (Lt,{node=Id j;_},l) when index j -> (match length l with Some xs -> [xs,j,true],[] | None -> [],[])
@@ -304,6 +371,10 @@ let comparison_bounds ~array env fs (cond : expr) : bound list * bound list =
   | Arith (Gt,l,{node=Id j;_}) when index j -> (match length l with Some xs -> [xs,j,true],[] | None -> [],[])
   | Arith (Le,l,{node=Id j;_}) when index j -> (match length l with Some xs -> [],[xs,j,true] | None -> [],[])
   | _ -> [],[]
+
+(* Whether the path from a binding holds an array, by its declared type: set
+   by the statement analysis. *)
+let array_path : ((string * Environment.binding) list -> string -> string list -> bool) ref = ref (fun _ _ _ -> false)
 
 (* The true answer of `j < xs.length`, with `0 ≤ j` known: `j` is at most
    `2^32 - 2`, which Lean derives from the length's range. *)
@@ -340,3 +411,16 @@ let widen (previous : fact list) (current : fact list) =
   List.filter (fun (t,d) -> match List.assoc_opt t previous with
     | Some d' -> d <= d'
     | None -> false) (tighten current)
+
+(* `f ()` with the facts of a call stating a precondition (`current_facts`)
+   extended by what the answer `yes` of the test `c` states: an arm of
+   `c ? a : b`. A proposal: Lean promotes the test's facts where it observes
+   its answer. *)
+let with_test env (c : expr) yes f =
+  let saved = !current_facts in
+  if saved = [] then f () else begin
+    let array = !array_path env in
+    let t,fl = comparison ~array env saved c in
+    current_facts := saved @ (if yes then t @ length_test ~array env saved c else fl);
+    Fun.protect ~finally:(fun () -> current_facts := saved) f
+  end

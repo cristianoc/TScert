@@ -35,7 +35,7 @@ type 'output callbacks = {
   cannot_return_normally: Source.stmt -> bool;
   (* Whether a binding's declared type is an array, whose length Lean reads
      from its store (`Linear_facts.comparison_bounds`). *)
-  array_binding: environment -> string -> bool;
+  array_binding: environment -> string -> string list -> bool;
   execute_bindings: environment -> Execution.binding_plan -> environment;
   expression: environment -> Source.expr -> ty;
   expression_effects: Source.expr -> environment -> environment;

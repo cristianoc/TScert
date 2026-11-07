@@ -664,8 +664,9 @@ export function intrinsics(promise: (argument: TypeTerm) => TypeTerm, needed: Re
         { ...fn(params, either(atom("number"), atom("undefined"))), effect: emptyEffect },
         { ...fn(params, atom("number")), effect: footprintEffect(emptyFootprint, { pre: [
           { int: { slot: 2 } },
-          { linear: { fact: { le: { form: [[{ value: { slot: 2 } }, -1]], bound: 0 } } } },
-          { linear: { fact: { le: { form: [[{ value: { slot: 2 } }, 1], [{ view: { slot: 1 } }, -1]], bound: -1 } } } },
+          { linear: { fact: { le: { form: [[{ kind: "value", slot: 2, path: [] }, -1]], bound: 0 } } } },
+          { linear: { fact: { le: { form: [[{ kind: "value", slot: 2, path: [] }, 1],
+            [{ kind: "view", slot: 1, path: [] }, -1]], bound: -1 } } } },
         ] }) },
       ] } };
     },
@@ -679,8 +680,10 @@ export function intrinsics(promise: (argument: TypeTerm) => TypeTerm, needed: Re
     [byteLengthName]: () => ({ typeParams: [], type: { ...fn([bytes], atom("number")),
       effect: footprintEffect(emptyFootprint, { ensures: [
         { int: { slot: 0 } },
-        { linear: { fact: { le: { form: [[{ value: { slot: 0 } }, 1], [{ view: { slot: 2 } }, -1]], bound: 0 } } } },
-        { linear: { fact: { le: { form: [[{ value: { slot: 0 } }, -1], [{ view: { slot: 2 } }, 1]], bound: 0 } } } },
+        { linear: { fact: { le: { form: [[{ kind: "value", slot: 0, path: [] }, 1],
+          [{ kind: "view", slot: 2, path: [] }, -1]], bound: 0 } } } },
+        { linear: { fact: { le: { form: [[{ kind: "value", slot: 0, path: [] }, -1],
+          [{ kind: "view", slot: 2, path: [] }, 1]], bound: 0 } } } },
       ] }) } }),
     // A view of bytes's [[Set]] at a number, ToPropertyKey's canonical
     // numeric string, of a number (ECMA-262, "TypedArray Objects",

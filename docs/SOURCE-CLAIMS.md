@@ -85,11 +85,13 @@ of the entry: the index binding's value is an array index at most the length
 of the array binding's store, which the entry's knowledge states and every
 edge into it checks ([writes at a checked index](PROGRAM-TYPING.md#writes-at-a-checked-index)).
 Entry `facts` is a list, possibly empty, of `{terms,bound}`, `terms` a list of
-`[name, coefficient]` pairs naming value bindings of the entry with safe-integer
-coefficients and `bound` a safe integer: every named binding holds a safe
-integer and the sum of the terms is at most the bound, which the entry's
-knowledge states and every edge into it checks; a fact whose coefficients are
-all zero states only that its bindings hold safe integers
+`{name, path, term, coefficient}`, each naming a value binding of the entry,
+the named data fields `path` read from it in turn (empty for the binding's
+own value), what `term` reads of the value they end at (`value`, `length` or
+`view`) and a safe-integer coefficient, and `bound` a safe integer: every
+term denotes an integer and the sum of the terms is at most the bound, which
+the entry's knowledge states and every edge into it checks; a fact whose
+coefficients are all zero states only that its terms denote integers
 ([linear facts](PROGRAM-TYPING.md#linear-facts)). The producer proposes them
 by a must-analysis of the statement graph: an integer literal or a sum
 of known ranges assigned states an equality, an increment restates the facts

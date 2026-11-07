@@ -17,6 +17,7 @@ import { guardResult } from "./fragment-guards.mts";
 import { literalDefaultName } from "./type-term.mts";
 import { elaborateRequires, indexFactPositions, requiresTags, type ClauseParameter } from "./bound-annotations.mts";
 import { namesView } from "./library-types.mts";
+import { aliasMeaning, recordShape } from "./named-record.mts";
 import { isImport, isTypeAlias } from "./syntax.mts";
 
 /** The declarator `d` of a pattern, the statement `node` holds it, lowered
@@ -2167,7 +2168,10 @@ export function functionDecl(this: Gate, node: FunctionDeclaration, signature: F
         return {
           name: ts.isIdentifier(p.name) ? p.name.text : "",
           position: receiverParam ? i : i + 1,
-          length: type?.k === "array" ? "length" : type !== undefined && namesView(type) ? "view" : null,
+          at: (path) => {
+            const t = type === undefined ? null : path.reduce<TypeTerm | null>((t, f) => t && fieldType(gate, t, f), type);
+            return t === null ? null : t.k === "array" ? "array" : namesView(t) ? "view" : "other";
+          },
         };
       });
       const elaborated = elaborateRequires(clauses, named);
@@ -2199,3 +2203,34 @@ export function functionDecl(this: Gate, node: FunctionDeclaration, signature: F
     gate.guardBody = outerGuard;
   }
 }
+
+/** The type of the required data field `f` of a value of type `t`, where a
+ * record shape states one (`recordShape`): of a record type, an alias
+ * followed to its equation, or the one part of an intersection that states
+ * it; null where none does. A clause's path reads such fields alone. */
+function fieldType(gate: Gate, t: TypeTerm, f: string, depth: number = 0): TypeTerm | null {
+  const records = gate.namedRecords();
+  if (records === null || depth > 16) return null;
+  const refused = (): never => { throw new UnresolvedField(); };
+  try {
+    if (t.k === "object") {
+      const field = t.fields.find(x => x.name === f);
+      return field !== undefined && !field.optional ? field.type : null;
+    }
+    if (t.k === "intersection") {
+      const found = t.parts.flatMap(p => { const r = fieldType(gate, p, f, depth + 1); return r === null ? [] : [r]; });
+      return found.length === 1 ? found[0] ?? null : null;
+    }
+    if (t.k === "reference") {
+      if (records.record(t.reference.target)) return fieldType(gate, recordShape(t, records, refused), f, depth + 1);
+      const meaning = aliasMeaning(t, records, refused);
+      return meaning === "record" ? null : fieldType(gate, meaning, f, depth + 1);
+    }
+  } catch (e) {
+    if (e instanceof UnresolvedField) return null;
+    throw e;
+  }
+  return null;
+}
+
+class UnresolvedField extends Error {}

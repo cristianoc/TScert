@@ -172,17 +172,21 @@ function decodeIndexFact(v: JsonRead): IndexFact | undefined {
   if (d === undefined) return undefined;
   return { linear: { fact: le ? { le: { form, bound: d } } : { ne: { form, bound: d } } } };
 }
-/** A linear term (`HeapKnowledge.Term`): a position's value, its store's
- * length or its typed array's element count, its constructor's name holding
- * its slot. */
+/** A linear term (`HeapKnowledge.Term`): its kind, its root position and
+ * the named data fields read from it. */
 function decodeLinearTerm(v: JsonRead): LinearTerm | undefined {
-  if (!isJsonObject(v) || Object.keys(v).length !== 1) return undefined;
-  const value = fieldsOf(v.value, ["slot"]);
-  const length = fieldsOf(v.length, ["slot"]);
-  const view = fieldsOf(v.view, ["slot"]);
-  const slot = decodeNat((value ?? length ?? view)?.slot);
-  if (slot === undefined) return undefined;
-  return value ? { value: { slot } } : length ? { length: { slot } } : { view: { slot } };
+  const t = fieldsOf(v, ["kind", "slot", "path"]);
+  if (t === undefined) return undefined;
+  const kind = t.kind;
+  if (kind !== "value" && kind !== "length" && kind !== "view") return undefined;
+  const slot = decodeNat(t.slot);
+  if (slot === undefined || !isJsonList(t.path)) return undefined;
+  const path: string[] = [];
+  for (const f of t.path) {
+    if (typeof f !== "string") return undefined;
+    path.push(f);
+  }
+  return { kind, slot, path };
 }
 /** The closed footprint a value states, as a fresh object of its fields, or
  * `undefined` where the value states none. */

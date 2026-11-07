@@ -94,12 +94,14 @@ interface BoundClaim {
   strict: boolean;
 }
 
-/** A term of a proposed linear fact: what the binding `name` holds, read as
- * `term` says (`HeapKnowledge.Term.Kind`): the safe integer it holds
- * (`value`), the length of its array store (`length`), or the element count
- * of its typed array (`view`); with an integer coefficient. */
+/** A term of a proposed linear fact: what the binding `name` holds, the named
+ * data fields `path` read from it in turn, read as `term` says
+ * (`HeapKnowledge.Term.Kind`): the safe integer it is (`value`), the length of
+ * its array store (`length`), or the element count of its typed array
+ * (`view`); with an integer coefficient. */
 interface LinearTermClaim {
   name: string;
+  path: string[];
   term: "value" | "length" | "view";
   coefficient: number;
 }
@@ -339,10 +341,11 @@ function claimsDocument(v: JsonRead): SourceClaims {
         };
         return {
           terms: each(q.terms, "a fact's terms", (t) => {
-            const r = record(t, "a fact's term", ["name", "term", "coefficient"]);
+            const r = record(t, "a fact's term", ["name", "path", "term", "coefficient"]);
             const kind = r.term;
             if (kind !== "value" && kind !== "length" && kind !== "view") fail("a term's kind is value, length or view");
-            const term: LinearTermClaim = { name: name(r.name, "a term's name"), term: kind,
+            const term: LinearTermClaim = { name: name(r.name, "a term's name"),
+              path: each(r.path, "a term's path", (f) => name(f, "a path's field")), term: kind,
               coefficient: integer(r.coefficient, "a term's coefficient") };
             return term;
           }),

@@ -28,9 +28,10 @@ type promise = Guards of int | Asserts of int
    the receiver, i + 1 the i-th actual): an array index; the length of an
    array's store; an index at most that length, below it where strict; a safe
    integer; a linear fact `Σ c·t ≤ d` or `≠ d`, each term the value at a
-   position, the length of the array store there, or the element count of
-   the typed array there (Lean's `HeapKnowledge.Term`). *)
-type term = Value_at of int | Length_at of int | View_at of int
+   position or at the named data fields read from it in turn (its path), the
+   length of the array store there, or the element count of the typed array
+   there (Lean's `HeapKnowledge.Term`). *)
+type term = Value_at of int * string list | Length_at of int * string list | View_at of int * string list
 type index_fact = Index_at of int | Length_of of int * int | Bound_by of int * int * bool | Int_at of int
   | Linear_le of (term * int) list * int | Linear_ne of (term * int) list * int
 type call_effect = { footprint: footprint; promise: promise option; fresh: bool; receiver_store: bool; on_throw: bool;
