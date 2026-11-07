@@ -318,7 +318,13 @@ let statements callbacks flow_graph register_following owner_span env0 ss =
            | If (c,_,_) | While (c,_,_) ->
              let (t,bt),(f,bf) = Linear_facts.test ~array:(callbacks.array_binding env) env facts0 c in
              let kept = Linear_facts.statement_bounds env bounds0 s in
-             [with_facts y (facts0 @ t) (kept @ bt); with_facts n (facts0 @ f) (kept @ bf)]
+             (* A test that may write the heap, a call of a function changing
+                it, keeps no fact reading the heap, as Lean keeps none past
+                the call: its own answers' included, and no bound. *)
+             let heap_free = Linear_facts.statement_heap_free env s in
+             let reading fs = if heap_free then fs else List.filter (fun f -> not (Linear_facts.has_heap_term f)) fs in
+             let bounds bs = if heap_free then bs else [] in
+             [with_facts y (reading (facts0 @ t)) (kept @ bounds bt); with_facts n (reading (facts0 @ f)) (kept @ bounds bf)]
            | _ -> edges)
         | _ -> edges in
       let edges=match node.handler with

@@ -796,7 +796,8 @@ let rec assigns name s = match s.statement with
    footprint a body's runs stay within, or [None] where the analysis cannot
    bound them. Reads, tests, arithmetic and fresh allocations change nothing;
    an assignment to a variable changes at most a cell holding a value, which
-   [cell_write] bounds; a call or a construction changes at most what every
+   [cell_write] bounds, and nothing where it is a local held in a slot
+   ([slot_local]); a call or a construction changes at most what every
    signature its callee may take states ([callable]: call signatures, or
    construct signatures). Creation does not execute a closure's code. Lean
    checks every node of the body against the proposed footprint, and each
@@ -847,6 +848,13 @@ let join_footprint a b =
   {on_value=join_change a.on_value b.on_value;on_store=join_change a.on_store b.on_store}
 let join_bound a b = match a,b with Some a,Some b -> Some (join_footprint a b) | _ -> None
 let cell_write = Some {on_value=Any;on_store=Keep}
+(* Whether a name an assignment writes is a local of the body being bounded
+   held in a slot of its activation, which no location holds: its write
+   changes no location (Lean's slot write). Set around a declaration's
+   footprint proposal (`Proposal.declaration_footprint`); elsewhere every
+   variable's write is a cell's. *)
+let slot_local : (string -> bool) ref = ref (fun _ -> false)
+let variable_write name = if !slot_local name then Some empty_footprint else cell_write
 (* An element write at a literal index writes the element's location or
    lists a fresh one, keeping every dense prefix (Lean's element write rule,
    FOOTPRINTS.md "Element writes"). *)
@@ -963,10 +971,10 @@ let rec footprint_expr ?(fresh=[]) ?(dispatched=fun _ _ -> false) ?(field_write=
   | Lambda _ -> Some empty_footprint
   (* A variable's new value goes to its slot, or to its cell, a location
      holding a value (Lean's typed write rule). *)
-  | Assign (_,_,v) -> join_bound cell_write (go v)
-  | Update (_,{node=Id _;_},r,_) -> join_bound cell_write (all (Option.to_list r))
-  | NullishAssign (_,_,v) -> join_bound cell_write (go v)
-  | LogicalAssign (_,({node=Id _;_} as t),v) -> join_bound cell_write (all [t;v])
+  | Assign (n,_,v) -> join_bound (variable_write n) (go v)
+  | Update (_,{node=Id n;_},r,_) -> join_bound (variable_write n) (all (Option.to_list r))
+  | NullishAssign (n,_,v) -> join_bound (variable_write n) (go v)
+  | LogicalAssign (_,({node=Id n;_} as t),v) -> join_bound (variable_write n) (all [t;v])
   (* An element write at a literal index, or at a key every claim types as
      a number into an array every claim types as writable, which Lean admits
      at a checked index into a store of source values

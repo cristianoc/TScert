@@ -66,9 +66,22 @@ let effect_candidate (g:Source.fn) = not g.rest && g.quantified = [] && not g.as
    claims as a closure's is (`Expression_closures`), else the one letting
    everything change. A proposal: Lean's check of the unit's graph
    establishes it. *)
-let declaration_footprint declarations values names (claim:function_claim) =
+let declaration_footprint ?(flows=[]) ?(module_names=[]) declarations values names (claim:function_claim) =
   let g = claim.source in
   if not (effect_candidate g) then top_footprint,false else
+  (* A local of the body held in a slot: a parameter or a binding its flow
+     graph scopes, no cell of it (Lean's `cellLocals`), and no name the
+     module declares, which a write could also mean. *)
+  let slot = match List.find_opt (fun (f:Flow.graph) -> f.Flow.owner = g.name_pos) flows with
+    | Some graph ->
+      let locals = List.map fst g.params @ List.concat_map (fun (node:Flow.node) ->
+        List.map (fun (b:Flow.binding) -> b.Flow.name) node.Flow.scope) (Array.to_list graph.Flow.nodes) in
+      fun n -> List.mem n locals && not (List.mem n module_names) &&
+        not (List.exists (fun (b:Flow.binding) -> b.Flow.name = n) graph.Flow.cells)
+    | None -> fun _ -> false in
+  let saved = !Source.slot_local in
+  Source.slot_local := slot;
+  Fun.protect ~finally:(fun () -> Source.slot_local := saved) @@ fun () ->
   let callable (callee:expr) =
     match List.filter_map (fun (x:expression) -> if x.pos = callee.pos then Some x.type_ else None)
             claim.expressions with
@@ -127,6 +140,10 @@ let rec infer ?(state = Proposal_diagnostics.create ()) flows program =
     | _ -> []) program.Source.init in
   let names = List.map (fun (g:Source.fn) -> g.name) program.Source.functions @ List.map fst program.Source.values
     @ constants in
+  (* Every name the module's top-level code declares. *)
+  let module_names = names @ List.concat_map (fun (s:Source.stmt) -> match s.statement with
+    | Declare (true,bindings) -> List.map (fun (n,_,_) -> n) bindings
+    | _ -> []) program.Source.init in
   let start = List.filter_map (fun (g:Source.fn) ->
     if effect_candidate g then Some (g.name,empty_footprint) else None) program.Source.functions in
   (* A footprint on a throw is proposed at the greatest fixpoint: every
@@ -162,7 +179,7 @@ let rec infer ?(state = Proposal_diagnostics.create ()) flows program =
   let rec rounds assumed thrown =
     let proposal : Proposal_types.t = infer_assuming ~thrown ~state flows program assumed in
     let selves_raised = raise_selves proposal in
-    let footprints = List.map (fun c -> c,declaration_footprint program.Source.declarations program.Source.values names c) proposal.functions in
+    let footprints = List.map (fun c -> c,declaration_footprint ~flows ~module_names program.Source.declarations program.Source.values names c) proposal.functions in
     (* A stated declaration is assumed at most at its statement. *)
     let raised = List.filter_map (fun ((c:function_claim),(f,_)) ->
       match List.assoc_opt c.source.name assumed with

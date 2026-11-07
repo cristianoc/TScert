@@ -233,7 +233,11 @@ proved: `SourceExtraction.checkRequests_async`):
 
 The producer proposes each footprint, untrusted: a body's is the join of its
 nodes' (`footprint_expr`, `footprint_stmts` in `ocaml-producer/source.ml`),
-a variable write `{value: any, store: keep}`, as is a field write whose
+a variable write `{value: any, store: keep}`, the empty footprint in a
+declaration's body where the variable is a local its activation holds in a
+slot, which no location holds (a parameter or a binding of the body, no cell
+of it, `cellLocals`, and no name the module declares; `Source.slot_local`),
+and a field write `{value: any, store: keep}` where its
 object's claim gives every alternative the field as a required writable one
 holding source values (`Type_queries.source_field_write`, as Lean's typed
 write reads it), a call or construction the join

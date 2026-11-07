@@ -1796,7 +1796,8 @@ ranges of the lengths and element counts they name entailing its bounds.
 operand of `&&` and `||`, a strict equality's `false` answer among them),
 `adjacent-pair-reads` (reads at `i` and `i + 1` under `i + 1 < xs.length`,
 and a loop to `e !== n`), `derived-index-loop` (an index reassigned from one
-derived from it) and
+derived from it), `call-keeps-heap-loop` (a typed array's bound across a
+call of a function whose loop writes only its locals) and
 `typed-array-reads-below-length` (a
 `Uint8Array`, a `Float64Array`, an `Int32Array` written and read back, and a
 `@requires` over a view's length). Negative, each run under Node:
@@ -1806,7 +1807,9 @@ read), `invalid-logical-guard-read-inclusive` (`e <= xs.length && xs[e]!`),
 `invalid-logical-guard-read-wrong-answer` (`e < xs.length || xs[e]!`),
 `invalid-logical-guard-read-equal` (`e !== xs.length || xs[e]!`),
 `invalid-adjacent-pair-read-past` (a read at `i + 1` under `i < xs.length`),
-`invalid-derived-index-loop-negative` (an index reassigned to `j - 2`), `invalid-typed-array-read-at-length` (a loop to `i <= b.length`) and
+`invalid-derived-index-loop-negative` (an index reassigned to `j - 2`),
+`invalid-call-in-test-shrinks` (a test calling a function that pops the
+array), `invalid-typed-array-read-at-length` (a loop to `i <= b.length`) and
 `invalid-typed-array-read-other-length` (a read of `b` below another view's
 length). Forged controls in `pipeline/test.mts`: each array negative's read
 claimed at the element type, with and without a strict bound claimed at its
@@ -1916,7 +1919,8 @@ binding and the fields read from it; in an arm of `c ? a : b`, with what the
 arm's answer of `c` states. Its facts naming a length, an element count or a
 path are kept by a statement writing no heap, a call keeping the heap
 ([`call-keep`](#a-call-that-keeps-the-heap)) included, as Lean keeps them, and
-forgotten by every other; a binding declared at a path's read
+forgotten by every other, a test's evaluation, its answers' facts included,
+alike; a binding declared at a path's read
 (`const b = p.f`, `const { f: b } = p`) restates each fact over a path through
 it of the binding. Lean decides at the call (`call-requires`).
 
