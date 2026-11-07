@@ -1471,6 +1471,135 @@ tightening, strict steps and the elimination of variables, and `check` decides
 what it finds).
 
 **In heap knowledge.** Two more index facts (`IndexFact.int`,
+`IndexFact.linear`) state integers. The variables of a linear fact are
+**terms** (`HeapKnowledge.Term`): $`x`$, the safe integer slot $`x`$ holds,
+and $`|x|`$, the length of the array store slot $`x`$ holds, where that is at
+most $`2^{32}-1`$ (`lengthOf`, the length `Step.lenV` gives):
+
+```math
+\begin{aligned}
+\mathrm{int}(k)(\rho,h) &\iff \exists b\,i.\ \rho(k)=\mathsf{num}\,b\land\mathrm{SafeInt}(b,i)\\
+⟦x⟧_{\rho,h} &= i \iff \exists b.\ \rho(x)=\mathsf{num}\,b\land\mathrm{SafeInt}(b,i)\\
+⟦|x|⟧_{\rho,h} &= n \iff \mathrm{store}(\rho(x))=s\land h(s)=\mathsf{arr}\,\ell\land n=|\ell|\le 2^{32}-1\\
+\mathrm{linear}(F)(\rho,h) &\iff (\forall t\in\mathrm{vars}(F).\ ⟦t⟧_{\rho,h}\ \text{is defined})\land F\ \text{holds at}\ t\mapsto⟦t⟧_{\rho,h}
+\end{aligned}
+```
+
+with the safe integers of [the operational language](SEMANTICS.md#operational-language).
+A linear fact naming a length reads the location of that store's elements and
+is kept by a heap change only where the other heap-reading index facts are; a
+fact of values alone reads only the environment (`IndexFact.envOnly`). The
+linear facts a knowledge states (`HeapKnowledge.linearFacts`) are its
+unconditional linear atoms, each with the range $`0\le|x|\le 2^{32}-1`$ of
+every length it names, and, for each length atom $`\mathrm{length}(x,n)`$, the
+equality $`n=|x|`$ with that range. Facts are renamed with their slots and
+carried as the other index facts are. On an edge, a target atom holds where a
+source atom gives it, term by term of the same kind, or, unconditional, where
+the source's linear facts entail it, each target term renamed to a source
+term of the same kind at a slot of the class of the slot the edge maps it to,
+which the source states defined: a value by $`\mathrm{int}`$, a length by a
+length atom or a linear fact naming it (`linearFollows`, proved:
+`linearFollows_sound`).
+
+**The steps stating them** are a layer of `Checker.ordinary`
+(`Checker.indexing`, `IndexWrites.stepAtoms`), adding atoms to what the step's
+own rule gives:
+
+```math
+\frac{x.\mathtt{[]}\mapsto s'\in\Sigma\quad s'\in[s]\quad \Gamma(s)\equiv_G\mathsf{list}(\tau)}
+     {\Gamma;\Pi;\Sigma\vdash_G n\leftarrow\mathsf{lenOf}(s)\dashv\ldots,\ \mathrm{length}(x,n)}\ \textsf{length-observed}
+\qquad
+\frac{(\Gamma;\Pi)(m)\subseteq\{\mathsf{num}\,b\mid 0\le\mathrm{ToInt32}(b)<2^{31}\}}
+     {\Gamma;\Pi;\Sigma\vdash_G r\leftarrow a\,\&\,m\dashv\ldots,\ \mathrm{index}(r)}\ \textsf{index-mask}
+```
+
+```math
+\frac{\mathrm{index}(a')\in\Sigma\quad a'\in[a]}
+     {\Gamma;\Pi;\Sigma\vdash_G c\leftarrow a\equiv b\dashv\ldots,\ \mathrm{index}(b)\ \text{if}\ c}\ \textsf{index-equal}
+\qquad
+\frac{\mathrm{index}(k')\in\Sigma\quad \mathrm{length}(x,n')\in\Sigma\quad k'\in[k],\ n'\in[n]}
+     {\Gamma;\Pi;\Sigma\vdash_G c\leftarrow k\ \mathit{op}\ n\dashv\ldots,\ \mathrm{bound}(x,k)\ \text{if}\ c=q_{\mathit{op}}}\ \textsf{bound-compare}
+```
+
+with each premise atom unconditional, $`\equiv`$ strict equality (either
+operand the index), and $`q_{\mathit{op}}`$ the answer giving $`k\le n`$:
+false for `>` and `>=`, true for `<` and `<=`, and the mirrored answers with
+the length on the left (`IndexNumbers.boundAnswer`). Proved:
+`IndexWrites.stepAtoms_holds`, from `IndexNumbers.bitAnd_index`,
+`strictEquals_index` and `le_of_relation`, which rest on the order of two
+doubles that denote naturals (`doubleOrder_denotes`, against `Float.Model`).
+`(k & m) === k` with `m` a non-negative 32-bit integer holds only where `k`
+is an integer from 0 to $`2^{31}-1`$, or `-0`: `NaN`, fractions, negatives,
+$`2^{31}`$ and above fail it.
+
+**The write.** A step whose evidence is `boundedWrite` (`Checker.boundedWrites`,
+`IndexWrites.boundedWriteCheck`):
+
+```math
+\frac{\Gamma(x)\ \text{a record whose invariant}\ \mathtt{[]}\ \text{holds}\ \mathsf{list}(\langle[\,],[\,],E,\mathrm{writable}\rangle)\quad
+      \mathrm{bound}(x',k')\in\Sigma\quad x'\in[x],\ k'\in[k]\quad \Gamma(v)\le E}
+     {\Gamma;\Pi;\Sigma\vdash_G r\leftarrow x.\mathtt{[]}:=x.\mathtt{[]}⟦k\mapsto v⟧:\mathsf{Null}\dashv\Pi;\ \emptyset}\ \textsf{setElem-bounded}
+```
+
+The write reads the store, lands on a present element's location or, at a
+hole below the length or at the length, on a fresh location the new store
+records, leaving no hole, and writes the store back
+(proved: `IndexWrites.boundedWrite_safe`, through `setElem_store_safe`, which
+the literal rule `setElem` shares). An element location is written before the
+store field is, so the step keeps no observation of the heap
+(`ordinaryOutput`). It is within the footprint `{value: any, store: grow}`
+([element writes](FOOTPRINTS.md#element-writes), `elemVarWriteWithin`).
+
+**Across the guard's statement.** A statement entry is an exact interface
+([decisions](DESIGN.md#lasting-decisions)): the bound reaches the write's
+statement as a claim of its entry, `EntryClaim.bounds`
+([source claims](SOURCE-CLAIMS.md)), an array binding's name and an index
+binding's, which the lowering states as $`\mathrm{bound}(x,k)`$ of their
+slots and every edge into the entry checks. The producer claims it at the
+statement following an `if (c) throw …` whose test's false answer states both
+facts of names `k` and `xs` (`false_facts`, `guard_bounds`): `a || b` false
+states what each operand's does; `(k & m) !== k`, with the literal `m` and
+`k` on either side, states that `k` is an index; `k > xs.length`,
+`k >= xs.length`, `xs.length < k` and `xs.length <= k`, evaluated after the
+test making `k` an index, that `k` is at most the length. The facts are about values: a variable a closure
+reassigns is a cell, whose every read is a new slot no fact names.
+
+The cases `index-write-guard` and `index-write-guard-loop` verify;
+`invalid-index-write-unguarded`, `invalid-index-write-no-mask`,
+`invalid-index-write-no-compare`, `invalid-index-write-other-array`,
+`invalid-index-write-call-shrinks`, `invalid-index-write-pop` and
+`invalid-index-write-captured` are refused, each run under Node.
+
+### Linear facts
+
+A **linear fact** over integer variables is $`c\cdot x\le d`$ or
+$`c\cdot x\ne d`$, with $`c\cdot x=\sum_i c_i x_i`$, integer coefficients
+$`c_i`$ and an integer bound $`d`$ (`Linear.Fact`). A **linear certificate**
+is a list of steps, each concluding one fact from the facts held before it,
+its conclusion held by the later steps:
+
+```math
+\frac{a_j\cdot x\le b_j\ \ (j\in J)\qquad \lambda_j\in\mathbb{N}\qquad g\ge 1\qquad
+      \sum_j\lambda_j a_j=g\,c\qquad \Bigl\lfloor\frac{\sum_j\lambda_j b_j}{g}\Bigr\rfloor\le d}
+     {c\cdot x\le d}\ \textsf{combine}
+\qquad
+\frac{c\cdot x\le d\qquad c\cdot x\ne d}
+     {c\cdot x\le d-1}\ \textsf{strict}
+```
+
+The equality of linear forms is decided on their normal forms, sorted by
+variable with one nonzero coefficient each (`Linear.normalize`). With
+$`g=1`$, `combine` is a nonnegative combination; with $`g>1`$ it rounds once,
+valid because $`c\cdot x`$ is an integer at an integer valuation. A strict
+comparison of integers is $`x-y\le -1`$, an equality two facts. Proved:
+`Linear.check_sound`, every fact an accepted certificate concludes holds of
+every integer valuation meeting the facts it starts from. The steps are
+incomplete for the integers: an implication that no chain of them derives
+is refused (proved: `Linear.entails_sound`; `Linear.entails` searches by
+tightening, strict steps and the elimination of variables, and `check` decides
+what it finds).
+
+**In heap knowledge.** Two more index facts (`IndexFact.int`,
 `IndexFact.linear`) read only the environment:
 
 ```math
@@ -1550,16 +1679,17 @@ the copy (`IndexWrites.copiedAtoms`).
 
 **A write bounded by linear facts.** `setElem-bounded` reads
 $`\mathrm{bound}(x,k)`$, stated by a bound atom or by the linear facts
-(`IndexWrites.linearBound`, proved: `linearBound_sound`), and a read below the
-length reads $`\mathrm{bound}_<(x,k)`$ alike:
+(`HeapKnowledge.lengthBound`, proved: `lengthBound_sound`), and a read below the
+length reads $`\mathrm{bound}_<(x,k)`$ alike; a length atom
+$`\mathrm{length}(x',n)`$ states $`|x'|`$ defined and equal to $`n`$:
 
 ```math
-\frac{\mathrm{length}(x',n)\in\Sigma\quad x'\in[x]\quad \mathrm{int}(k)\quad\mathrm{int}(n)\quad
-      K\vdash 0\le k\le n\quad K\vdash k\le 2^{32}-2}
+\frac{x'\in[x]\quad |x'|\ \text{defined}\quad \mathrm{int}(k)\quad
+      K\vdash 0\le k\le |x'|\quad K\vdash k\le 2^{32}-2}
      {\mathrm{bound}(x,k)}\ \textsf{bound-linear}
 \qquad
-\frac{\mathrm{length}(x',n)\in\Sigma\quad x'\in[x]\quad \mathrm{int}(k)\quad\mathrm{int}(n)\quad
-      K\vdash 0\le k\le n-1\quad K\vdash k\le 2^{32}-2}
+\frac{x'\in[x]\quad |x'|\ \text{defined}\quad \mathrm{int}(k)\quad
+      K\vdash 0\le k\le |x'|-1}
      {\mathrm{bound}_<(x,k)}\ \textsf{bound-linear-strict}
 ```
 

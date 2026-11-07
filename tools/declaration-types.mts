@@ -44,18 +44,21 @@ export type CallEffect = {
 /** An index fact at numbered positions (`HeapKnowledge.IndexFact`, its
  * constructor's name holding its fields): an array index; the length of an
  * array's store; an index at most that length, below it where `strict`; a
- * safe integer; a linear fact `Σ c·x ≤ d` or `≠ d`. */
+ * safe integer; a linear fact `Σ c·t ≤ d` or `≠ d`. */
 export type IndexFact =
   | { readonly index: { readonly slot: number } }
   | { readonly length: { readonly array: number; readonly length: number } }
   | { readonly bound: { readonly array: number; readonly index: number; readonly strict: boolean } }
   | { readonly int: { readonly slot: number } }
   | { readonly linear: { readonly fact: LinearFact } };
-/** A linear fact (`Linear.Fact`): `Σ c·x ≤ bound` or `≠ bound`, each term a
- * position and its coefficient. */
+/** A linear fact (`Linear.Fact`): `Σ c·t ≤ bound` or `≠ bound`, each term a
+ * linear term and its coefficient. */
 export type LinearFact =
-  | { readonly le: { readonly form: readonly (readonly [number, number])[]; readonly bound: number } }
-  | { readonly ne: { readonly form: readonly (readonly [number, number])[]; readonly bound: number } };
+  | { readonly le: { readonly form: readonly (readonly [LinearTerm, number])[]; readonly bound: number } }
+  | { readonly ne: { readonly form: readonly (readonly [LinearTerm, number])[]; readonly bound: number } };
+/** A term of a linear fact (`HeapKnowledge.Term`): the safe integer a
+ * position holds, or the length of the array store it holds. */
+export type LinearTerm = { readonly value: { readonly slot: number } } | { readonly length: { readonly slot: number } };
 /** The kinds of value an elements predicate admits (`CallEffects.ElemPred`),
  * each at most once, in this order. */
 export type ElementKind = "null" | "undefined" | "boolean" | "number" | "string" | "bigint" | "symbol" | "object";

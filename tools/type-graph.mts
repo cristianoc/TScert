@@ -3,7 +3,7 @@
  * A row and a label list both denote unions. Contracts within one clause are
  * simultaneous requirements (including all arrows of an overload).
  */
-import type { CallEffect, CallPromise, ClosedFootprint, ElementKind, ElementKinds, IndexFact, PropertyKey } from "./declaration-types.mts";
+import type { CallEffect, CallPromise, ClosedFootprint, ElementKind, ElementKinds, IndexFact, LinearTerm, PropertyKey } from "./declaration-types.mts";
 import { requireWellFormed } from "./wire-strings.mts";
 import {
   hasExactly,
@@ -157,10 +157,10 @@ function decodeIndexFact(v: JsonRead): IndexFact | undefined {
   const ne = fieldsOf(fact.ne, ["form", "bound"]);
   const body = le ?? ne;
   if (body === undefined || !isJsonList(body.form)) return undefined;
-  const form: (readonly [number, number])[] = [];
+  const form: (readonly [LinearTerm, number])[] = [];
   for (const t of body.form) {
     if (!isJsonList(t) || t.length !== 2) return undefined;
-    const x = decodeNat(t[0]);
+    const x = decodeLinearTerm(t[0]);
     const c = decodeInt(t[1]);
     if (x === undefined || c === undefined) return undefined;
     form.push([x, c]);
@@ -168,6 +168,16 @@ function decodeIndexFact(v: JsonRead): IndexFact | undefined {
   const d = decodeInt(body.bound);
   if (d === undefined) return undefined;
   return { linear: { fact: le ? { le: { form, bound: d } } : { ne: { form, bound: d } } } };
+}
+/** A linear term (`HeapKnowledge.Term`): a position's value or its store's
+ * length, its constructor's name holding its slot. */
+function decodeLinearTerm(v: JsonRead): LinearTerm | undefined {
+  if (!isJsonObject(v) || Object.keys(v).length !== 1) return undefined;
+  const value = fieldsOf(v.value, ["slot"]);
+  const length = fieldsOf(v.length, ["slot"]);
+  const slot = decodeNat((value ?? length)?.slot);
+  if (slot === undefined) return undefined;
+  return value ? { value: { slot } } : { length: { slot } };
 }
 /** The closed footprint a value states, as a fresh object of its fields, or
  * `undefined` where the value states none. */

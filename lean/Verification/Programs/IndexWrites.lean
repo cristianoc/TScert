@@ -437,7 +437,7 @@ integer, or a literal that is one; its value is a linear form plus a constant. -
 def maxSafe : Int := 2 ^ 53 - 1
 
 /-- An operand's value as a linear form over the input slots plus a constant. -/
-def operandForm (k : Knowledge) : Tm → Option (Linear.Form × Int)
+def operandForm (k : Knowledge) : Tm → Option (Linear.Form Nat × Int)
   | .var a => if intSlot k.indices a then some ([(a, 1)], 0) else none
   | .num b => (SafeIntegers.safeIntOfBits b).map fun i => ([], i)
   | _ => none
@@ -449,28 +449,28 @@ def operandIn (Γ : List (Ty ι)) : Tm → Bool
   | _ => false
 
 /-- A form over the input slots, read over the output slots, one higher. -/
-def shiftForm (F : Linear.Form) : Linear.Form := F.map fun (x, c) => (x + 1, c)
+def shiftForm (F : Linear.Form Nat) : Linear.Form Nat := F.map fun (x, c) => (x + 1, c)
 
 /-- The atoms stating that the result, slot 0, is the value of `F + c` over the
 input slots, a safe integer. -/
-def valueAtoms (F : Linear.Form) (c : Int) : List IndexAtom :=
-  [⟨.int 0, none, false⟩, ⟨.linear (.le ((0, 1) :: shiftForm (F.scale (-1))) c), none, false⟩,
-    ⟨.linear (.le ((0, -1) :: shiftForm F) (-c)), none, false⟩]
+def valueAtoms (F : Linear.Form Nat) (c : Int) : List IndexAtom :=
+  [⟨.int 0, none, false⟩, ⟨.linear (valueFact (.le ((0, 1) :: shiftForm (F.scale (-1))) c)), none, false⟩,
+    ⟨.linear (valueFact (.le ((0, -1) :: shiftForm F) (-c))), none, false⟩]
 
 /-- The atoms of a comparison's two answers, on the result slot 0, of operands
 whose difference is `D + c`: the fact each answer gives, conditional on it. -/
-def compareAtoms (op : Arith) (D : Linear.Form) (c : Int) : List IndexAtom :=
+def compareAtoms (op : Arith) (D : Linear.Form Nat) (c : Int) : List IndexAtom :=
   let pos := shiftForm D
   let neg := shiftForm (D.scale (-1))
   -- (fact on `true`, fact on `false`)
-  let facts : Option (Linear.Fact × Linear.Fact) := match op with
+  let facts : Option (Linear.Fact Nat × Linear.Fact Nat) := match op with
     | .lt => some (.le pos (-1 - c), .le neg c)
     | .le => some (.le pos (-c), .le neg (c - 1))
     | .gt => some (.le neg (c - 1), .le pos (-c))
     | .ge => some (.le neg c, .le pos (-1 - c))
     | _ => none
   match facts with
-  | some (t, f) => [⟨.linear t, some 0, false⟩, ⟨.linear f, some 0, true⟩]
+  | some (t, f) => [⟨.linear (valueFact t), some 0, false⟩, ⟨.linear (valueFact f), some 0, true⟩]
   | none => []
 
 /-- A copy of slot `a` restates the atoms conditional on `a` as conditional on
@@ -505,16 +505,16 @@ def linearAtoms (G : NormalGraph ι) (Γ : List (Ty ι)) (k : Knowledge) : Tm �
       (if a < Γ.length then copiedAtoms k a else [])
   | .lenOf (.var s) =>
     if storeSlot G Γ s then
-      [⟨.int 0, none, false⟩, ⟨.linear (.le [(0, -1)] 0), none, false⟩,
-        ⟨.linear (.le [(0, 1)] maxArrayLength), none, false⟩]
+      [⟨.int 0, none, false⟩, ⟨.linear (valueFact (.le [(0, -1)] 0)), none, false⟩,
+        ⟨.linear (valueFact (.le [(0, 1)] maxArrayLength)), none, false⟩]
     else []
   | .arith op a b =>
     if operandIn Γ a && operandIn Γ b then
       match operandForm k a, operandForm k b with
       | some (fa, ca), some (fb, cb) =>
-        let sum := fun (F : Linear.Form) (c : Int) =>
-          if Linear.entails (linearFacts k.indices) (.le F (maxSafe - c)) &&
-              Linear.entails (linearFacts k.indices) (.le (F.scale (-1)) (maxSafe + c)) then valueAtoms F c else []
+        let sum := fun (F : Linear.Form Nat) (c : Int) =>
+          if Linear.entails (linearFacts k.indices) (valueFact (.le F (maxSafe - c))) &&
+              Linear.entails (linearFacts k.indices) (valueFact (.le (F.scale (-1)) (maxSafe + c))) then valueAtoms F c else []
         match op with
         | .add => sum (fa ++ fb) (ca + cb)
         | .sub => sum (fa ++ fb.scale (-1)) (ca - cb)
@@ -524,20 +524,20 @@ def linearAtoms (G : NormalGraph ι) (Γ : List (Ty ι)) (k : Knowledge) : Tm �
     else []
   | _ => []
 
-theorem eval_shiftForm (F : Linear.Form) (u : Val) (ρ : Env) :
+theorem eval_shiftForm (F : Linear.Form Nat) (u : Val) (ρ : Env) :
     Linear.Form.eval (valuation (push u ρ)) (shiftForm F) = Linear.Form.eval (valuation ρ) F := by
   induction F with
   | nil => rfl
   | cons p t ih => obtain ⟨x, c⟩ := p; simp only [shiftForm, List.map_cons, Linear.Form.eval] at ih ⊢; rw [ih]; rfl
 
-theorem shiftForm_vars (F : Linear.Form) : (shiftForm F).map (·.1) = (F.map (·.1)).map (· + 1) := by
+theorem shiftForm_vars (F : Linear.Form Nat) : (shiftForm F).map (·.1) = (F.map (·.1)).map (· + 1) := by
   simp [shiftForm, Function.comp_def]
 
-theorem scale_vars (k : Int) (F : Linear.Form) : (F.scale k).map (·.1) = F.map (·.1) := by
+theorem scale_vars (k : Int) (F : Linear.Form Nat) : (F.scale k).map (·.1) = F.map (·.1) := by
   simp [Linear.Form.scale, Function.comp_def]
 
 /-- What an operand denotes: a value whose safe integer is `F + c` at the input slots. -/
-theorem operandForm_sound {k : Knowledge} {t : Tm} {F : Linear.Form} {c : Int} {ρ h}
+theorem operandForm_sound {k : Knowledge} {t : Tm} {F : Linear.Form Nat} {c : Int} {ρ h}
     (ho : operandForm k t = some (F, c)) (hk : Holds k ρ h) :
     (∀ x ∈ F.map (·.1), (intValue (ρ x)).isSome) ∧
       ∃ b, instantiate 0 ρ t = .num b ∧ SafeIntegers.SafeInt b (Linear.Form.eval (valuation ρ) F + c) := by
@@ -560,7 +560,7 @@ theorem operandForm_sound {k : Knowledge} {t : Tm} {F : Linear.Form} {c : Int} {
     exact ⟨by simp, b, rfl, by simpa [Linear.Form.eval] using SafeIntegers.safeIntOfBits_sound hi⟩
   | _ => simp [operandForm] at ho
 
-theorem valueAtoms_holds {F : Linear.Form} {c : Int} {ρ h} {b : UInt64}
+theorem valueAtoms_holds {F : Linear.Form Nat} {c : Int} {ρ h} {b : UInt64}
     (hF : ∀ x ∈ F.map (·.1), (intValue (ρ x)).isSome)
     (hb : SafeIntegers.SafeInt b (Linear.Form.eval (valuation ρ) F + c)) :
     IndexHolds (valueAtoms F c) (push (.num b) ρ) h := by
@@ -576,7 +576,7 @@ theorem valueAtoms_holds {F : Linear.Form} {c : Int} {ρ h} {b : UInt64}
   simp only [valueAtoms, List.mem_cons, List.not_mem_nil, or_false] at ha
   rcases ha with rfl | rfl | rfl
   · exact hi0
-  · refine ⟨?_, ?_⟩
+  · refine IndexFact.holdsAt_valueFact.mpr ⟨?_, ?_⟩
     · intro x hx
       simp only [Linear.Fact.vars, List.map_cons, List.mem_cons] at hx
       rcases hx with rfl | hx
@@ -585,7 +585,7 @@ theorem valueAtoms_holds {F : Linear.Form} {c : Int} {ρ h} {b : UInt64}
     · show Linear.Form.eval _ _ ≤ c
       simp only [Linear.Form.eval, eval_shiftForm, Linear.Form.eval_scale, h0]
       omega
-  · refine ⟨?_, ?_⟩
+  · refine IndexFact.holdsAt_valueFact.mpr ⟨?_, ?_⟩
     · intro x hx
       simp only [Linear.Fact.vars, List.map_cons, List.mem_cons] at hx
       rcases hx with rfl | hx
@@ -639,7 +639,7 @@ theorem answer_sound (op : Arith) (i j : Int) :
   · rw [Int.compare_eq_gt.mpr hl]; cases op <;> simp [answerHolds, relationHolds] <;> omega
 
 /-- The facts a comparison's answer gives, conditional on the answer. -/
-theorem compareAtoms_holds {op : Arith} {D : Linear.Form} {c : Int} {ρ h} {x y : UInt64} {i j : Int}
+theorem compareAtoms_holds {op : Arith} {D : Linear.Form Nat} {c : Int} {ρ h} {x y : UInt64} {i j : Int}
     (hD : ∀ z ∈ D.map (·.1), (intValue (ρ z)).isSome)
     (hdiff : Linear.Form.eval (valuation ρ) D + c = i - j)
     (hx : SafeIntegers.SafeInt x i) (hy : SafeIntegers.SafeInt y j) :
@@ -647,7 +647,7 @@ theorem compareAtoms_holds {op : Arith} {D : Linear.Form} {c : Int} {ρ h} {x y 
   rw [SafeIntegers.doubleOrder_safe hx hy]
   generalize hr : relationHolds op (some (compare i j)) = r
   have hans : answerHolds op r (i - j) := hr ▸ answer_sound op i j
-  have hvars : ∀ (F : Linear.Form), F.map (·.1) = D.map (·.1) →
+  have hvars : ∀ (F : Linear.Form Nat), F.map (·.1) = D.map (·.1) →
       ∀ z ∈ (shiftForm F).map (·.1), (intValue (push (boolVal r) ρ z)).isSome := by
     intro F hF z hz
     rw [shiftForm_vars, hF] at hz
@@ -667,10 +667,10 @@ theorem compareAtoms_holds {op : Arith} {D : Linear.Form} {c : Int} {ρ h} {x y 
     first
     | (rcases ha with rfl | rfl
        · have := hb true (hq rfl); subst this
-         exact ⟨fun z hz => by first | exact hpos z hz | exact hneg z hz, by
+         exact IndexFact.holdsAt_valueFact.mpr ⟨fun z hz => by first | exact hpos z hz | exact hneg z hz, by
            show _ ≤ _; first | (rw [ep]; simp only [answerHolds] at hans; omega) | (rw [en]; simp only [answerHolds] at hans; omega)⟩
        · have := hb false (hq rfl); subst this
-         exact ⟨fun z hz => by first | exact hpos z hz | exact hneg z hz, by
+         exact IndexFact.holdsAt_valueFact.mpr ⟨fun z hz => by first | exact hpos z hz | exact hneg z hz, by
            show _ ≤ _; first | (rw [ep]; simp only [answerHolds] at hans; omega) | (rw [en]; simp only [answerHolds] at hans; omega)⟩)
     | exact absurd ha (by simp)
 
@@ -733,9 +733,9 @@ theorem linearAtoms_holds [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty �
         simp only [List.mem_cons, List.not_mem_nil, or_false] at hat
         rcases hat with rfl | rfl | rfl
         · show (intValue _).isSome; rw [h0]; rfl
-        · refine ⟨by simp [Linear.Fact.vars, h0], ?_⟩
+        · refine IndexFact.holdsAt_valueFact.mpr ⟨by simp [Linear.Fact.vars, h0], ?_⟩
           show Linear.Form.eval _ _ ≤ _; simp [Linear.Form.eval, hv0]
-        · refine ⟨by simp [Linear.Fact.vars, h0], ?_⟩
+        · refine IndexFact.holdsAt_valueFact.mpr ⟨by simp [Linear.Fact.vars, h0], ?_⟩
           show Linear.Form.eval _ _ ≤ _; simp [Linear.Form.eval, hv0]; simpa [maxArrayLength] using hmax
       · exact none_case
     | _ => simp only [linearAtoms]; exact none_case
@@ -755,24 +755,24 @@ theorem linearAtoms_holds [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty �
         obtain ⟨-, -, hu⟩ := hq
         rw [hxa, hxb] at hu
         have hlin := linearFacts_holds hk.2.2.2.2.2
-        have hsum : ∀ (F : Linear.Form) (c : Int) (v : Int) (bits : UInt64) {h'' : Heap},
+        have hsum : ∀ (F : Linear.Form Nat) (c : Int) (v : Int) (bits : UInt64) {h'' : Heap},
             (∀ x ∈ F.map (·.1), (intValue (ρ x)).isSome) →
             Linear.Form.eval (valuation ρ) F + c = v →
             ((v.natAbs < 2 ^ 53) → SafeIntegers.SafeInt bits v) →
-            IndexHolds ((if Linear.entails (linearFacts k.indices) (.le F (maxSafe - c)) &&
-              Linear.entails (linearFacts k.indices) (.le (F.scale (-1)) (maxSafe + c)) then valueAtoms F c else []))
+            IndexHolds ((if Linear.entails (linearFacts k.indices) (valueFact (.le F (maxSafe - c))) &&
+              Linear.entails (linearFacts k.indices) (valueFact (.le (F.scale (-1)) (maxSafe + c))) then valueAtoms F c else []))
               (push (.num bits) ρ) h'' := by
           intro F c v bits h'' hF hv hsafe
           split
           · rename_i hc
             simp only [Bool.and_eq_true] at hc
-            have h1 : Linear.Form.eval (valuation ρ) F ≤ maxSafe - c := Linear.entails_sound hc.1 hlin
-            have h2 : Linear.Form.eval (valuation ρ) (F.scale (-1)) ≤ maxSafe + c := Linear.entails_sound hc.2 hlin
+            have h1 : Linear.Form.eval (valuation ρ) F ≤ maxSafe - c := holds_valueFact.mp (Linear.entails_sound hc.1 hlin)
+            have h2 : Linear.Form.eval (valuation ρ) (F.scale (-1)) ≤ maxSafe + c := holds_valueFact.mp (Linear.entails_sound hc.2 hlin)
             rw [Linear.Form.eval_scale] at h2
             refine valueAtoms_holds hF ?_
             rw [hv]; apply hsafe; simp only [maxSafe] at h1 h2; omega
           · exact indexHolds_nil _ _
-        have hvars : ∀ (G' : Linear.Form), G'.map (·.1) = (fa ++ fb).map (·.1) →
+        have hvars : ∀ (G' : Linear.Form Nat), G'.map (·.1) = (fa ++ fb).map (·.1) →
             ∀ x ∈ G'.map (·.1), (intValue (ρ x)).isSome := by
           intro G' hG x hx
           rw [hG, List.map_append] at hx
@@ -834,8 +834,8 @@ the result slot 0. -/
 def lengthPair (k : Knowledge) (i n : Nat) (q : Bool) : List IndexAtom :=
   match lengthsOf k n with
   | [] => []
-  | xs => ⟨.linear (.le [(i + 1, 1)] (maxArrayLength - 1)), some 0, !q⟩ ::
-      (if Linear.entails (linearFacts k.indices) (.le [(i, -1)] 0) then
+  | xs => ⟨.linear (valueFact (.le [(i + 1, 1)] (maxArrayLength - 1))), some 0, !q⟩ ::
+      (if Linear.entails (linearFacts k.indices) (valueFact (.le [(i, -1)] 0)) then
         xs.map fun x => ⟨.bound (x + 1) (i + 1) true, some 0, !q⟩ else [])
 
 def lengthAtoms (k : Knowledge) (Γ : List (Ty ι)) : Tm → List IndexAtom
@@ -875,7 +875,7 @@ theorem lengthPair_holds {k : Knowledge} {i n : Nat} {q : Bool} {ρ h} {u : Val}
       obtain ⟨_, ls, -, -, hn, hmax⟩ := lengthsOf_sound hx hk
       have hlt := below ls hn hmax hq
       have hi : intValue (push u ρ (i + 1)) = some j := by simp [push, hbj, intValue_num hsafe]
-      refine ⟨by simp [Linear.Fact.vars, hi], ?_⟩
+      refine IndexFact.holdsAt_valueFact.mpr ⟨by simp [Linear.Fact.vars, hi], ?_⟩
       show Linear.Form.eval _ _ ≤ _
       simp only [Linear.Form.eval, valuation, hi, Option.getD_some]
       simp [maxArrayLength] at hmax; omega
@@ -886,7 +886,7 @@ theorem lengthPair_holds {k : Knowledge} {i n : Nat} {q : Bool} {ρ h} {u : Val}
         obtain ⟨s, ls, hs, hl, hn, hmax⟩ := lengthsOf_sound hx hk
         have hlt := below ls hn hmax hq
         have f0 : -j ≤ 0 := by
-          have := Linear.entails_sound h0 hlin
+          have := holds_valueFact.mp (Linear.entails_sound h0 hlin)
           simp only [Linear.Fact.Holds, Linear.Form.eval, hj] at this; omega
         exact ⟨s, ls, bj, j.toNat, by simpa [push] using hs, hl, by simpa [push] using hbj,
           HeapKnowledge.indexOfBits_safe hsafe (by omega) (by simp [maxArrayLength] at hmax; omega), by simp; omega⟩

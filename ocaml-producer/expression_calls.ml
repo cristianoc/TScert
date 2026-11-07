@@ -120,7 +120,9 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
               | _ -> false)
             | Semantic.Int_at k -> Option.is_some (form k)
             | Semantic.Linear_le (fact,d) ->
-              let parts = List.map (fun (x,c) -> Option.map (fun (t,k) -> Linear_facts.scale c t, c * k) (form x)) fact in
+              let parts = List.map (fun (t,c) -> match (t : Semantic.term) with
+                | Value_at x -> Option.map (fun (t,k) -> Linear_facts.scale c t, c * k) (form x)
+                | Length_at _ -> None) fact in
               List.for_all Option.is_some parts &&
               (let parts = List.filter_map Fun.id parts in
                let terms = Linear_facts.norm (List.concat_map fst parts) in

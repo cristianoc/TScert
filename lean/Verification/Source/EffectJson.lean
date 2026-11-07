@@ -66,6 +66,7 @@ private def predOf : Json → Except String (Option ElemPred)
 -- An index fact, in a precondition at the call's positions (`0` the
 -- receiver, `i + 1` the `i`-th actual) and in diagnostics' knowledge: its
 -- constructor's name holding its fields.
+deriving instance ToJson, FromJson for HeapKnowledge.Term
 deriving instance ToJson, FromJson for Linear.Fact
 deriving instance ToJson, FromJson for HeapKnowledge.IndexFact
 

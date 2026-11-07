@@ -27,9 +27,12 @@ type promise = Guards of int | Asserts of int
 (* An index fact at a call's positions (Lean's `HeapKnowledge.IndexFact`, 0
    the receiver, i + 1 the i-th actual): an array index; the length of an
    array's store; an index at most that length, below it where strict; a safe
-   integer; a linear fact `Σ c·x ≤ d` or `≠ d`. *)
+   integer; a linear fact `Σ c·t ≤ d` or `≠ d`, each term the value at a
+   position or the length of the array store there (Lean's
+   `HeapKnowledge.Term`). *)
+type term = Value_at of int | Length_at of int
 type index_fact = Index_at of int | Length_of of int * int | Bound_by of int * int * bool | Int_at of int
-  | Linear_le of (int * int) list * int | Linear_ne of (int * int) list * int
+  | Linear_le of (term * int) list * int | Linear_ne of (term * int) list * int
 type call_effect = { footprint: footprint; promise: promise option; fresh: bool; receiver_store: bool; on_throw: bool;
   receiver_own: bool; fresh_object: bool;
   (* The kinds the receiver's present elements have where the call starts,

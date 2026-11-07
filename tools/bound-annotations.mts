@@ -25,7 +25,7 @@
 // store `xs` holds, which is the array's `length`. Every other form of the
 // draft's grammar (guards, `old`, `result`, paths other than an array
 // parameter's length, `||`, `!`) is refused with the clause's location.
-import type { IndexFact, LinearFact } from "./declaration-types.mts";
+import type { IndexFact, LinearFact, LinearTerm } from "./declaration-types.mts";
 
 /** A parameter a clause may name: its name, its call position, whether its
  * type is an array, whose length is its store's. */
@@ -167,6 +167,11 @@ function scale(a: Linear, k: number): Linear {
   return { terms: new Map([...a.terms].map(([x, c]): [string, number] => [x, k * c])), constant: k * a.constant };
 }
 
+/** The position a linear term reads. */
+export function termSlot(t: LinearTerm): number {
+  return "value" in t ? t.value.slot : t.length.slot;
+}
+
 /** The positions an index fact names. */
 export function indexFactPositions(f: IndexFact): number[] {
   if ("index" in f) return [f.index.slot];
@@ -174,7 +179,7 @@ export function indexFactPositions(f: IndexFact): number[] {
   if ("length" in f) return [f.length.array, f.length.length];
   if ("bound" in f) return [f.bound.array, f.bound.index];
   const F = f.linear.fact;
-  return ("le" in F ? F.le.form : F.ne.form).map(([x]) => x);
+  return ("le" in F ? F.le.form : F.ne.form).map(([t]) => termSlot(t));
 }
 
 /** The index facts a declaration's `@requires` clauses elaborate to, or the
@@ -234,8 +239,8 @@ export function elaborateRequires(clauses: readonly string[], params: readonly C
       facts.push({ bound: { array: param(l.array).position, index: param(l.index).position, strict: l.strict } });
     }
     for (const f of linearFacts) {
-      const form: [number, number][] = [...f.form].map(([x, c]): [number, number] => [param(x).position, c])
-        .sort((a, b) => a[0] - b[0]);
+      const form: [LinearTerm, number][] = [...f.form].map(([x, c]): [number, number] => [param(x).position, c])
+        .sort((a, b) => a[0] - b[0]).map(([x, c]): [LinearTerm, number] => [{ value: { slot: x } }, c]);
       const fact: LinearFact = { le: { form, bound: f.bound } };
       facts.push({ linear: { fact } });
     }

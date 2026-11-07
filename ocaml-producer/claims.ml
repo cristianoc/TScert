@@ -41,8 +41,11 @@ let change_json = function Keep -> String "keep" | Grow -> String "grow" | Any -
 let footprint_json f = Object ["value",change_json f.on_value;"store",change_json f.on_store]
 let kinds_json = function None -> Null | Some ks -> Array (List.map (fun k -> String k) ks)
 let index_fact_json =
+  let term = function
+    | Value_at x -> Object ["value",Object ["slot",int x]]
+    | Length_at x -> Object ["length",Object ["slot",int x]] in
   let linear k form d = Object ["linear",Object ["fact",Object [k,Object [
-    "form",Array (List.map (fun (x,c) -> Array [int x;int c]) form);"bound",int d]]]] in
+    "form",Array (List.map (fun (t,c) -> Array [term t;int c]) form);"bound",int d]]]] in
   function
   | Index_at k -> Object ["index",Object ["slot",int k]]
   | Length_of (x,n) -> Object ["length",Object ["array",int x;"length",int n]]

@@ -113,7 +113,9 @@ export interface HeapKnowledge {
 }
 type IndexFact = { index: { slot: number } } | { length: { array: number; length: number } } |
   { bound: { array: number; index: number; strict: boolean } } | { int: { slot: number } } |
-  { linear: { fact: { le: { form: [number, number][]; bound: number } } | { ne: { form: [number, number][]; bound: number } } } };
+  { linear: { fact: { le: { form: [LinearTerm, number][]; bound: number } } | { ne: { form: [LinearTerm, number][]; bound: number } } } };
+/** A linear fact's term: a slot's value, or the length of its array store. */
+type LinearTerm = { value: { slot: number } } | { length: { slot: number } };
 type SeparationKey = string | { symbol: number };
 /** The value kinds an elements fact's predicate names. */
 const ELEM_KINDS = ["nul", "undef", "bool", "num", "str", "big", "sym", "obj"] as const;
@@ -411,9 +413,12 @@ function knowledge(v: Json | undefined): HeapKnowledge | null {
       const F = record(stated, le ? ["le"] : ["ne"]);
       const body = record(le ? F.le : F.ne, ["form","bound"]);
       if (!Array.isArray(body.form) || typeof body.bound !== "number") throw Error("a linear fact's form and bound");
-      const form: [number, number][] = body.form.map((t: unknown): [number, number] => {
+      const form: [LinearTerm, number][] = body.form.map((t: Json): [LinearTerm, number] => {
         if (!Array.isArray(t) || t.length !== 2 || typeof t[1] !== "number") throw Error("a linear fact's term");
-        return [nat(t[0]), t[1]];
+        const term = t[0];
+        const value = isParsedObject(term) && "value" in term;
+        const slot = nat(record(record(term, [value ? "value" : "length"])[value ? "value" : "length"], ["slot"]).slot);
+        return [value ? { value: { slot } } : { length: { slot } }, t[1]];
       });
       fact = { linear: { fact: le ? { le: { form, bound: body.bound } } : { ne: { form, bound: body.bound } } } };
     }

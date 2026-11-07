@@ -16,25 +16,29 @@ integer valuation meeting the facts it starts from. The steps are
 incomplete for integer arithmetic: an implication no chain derives is
 refused. -/
 namespace Verification.Linear
+/-! The variables of a fact are of any type `V` with a decidable equality and
+a decidable order, which `normalize` sorts by. -/
+variable {V W : Type}
+
 
 /-- A linear form: coefficients by variable. Two forms with the same value at
 every valuation may differ as lists; `normalize` gives one representative. -/
-abbrev Form := List (Nat × Int)
+abbrev Form (V : Type) := List (V × Int)
 
 /-- A form's value at an integer valuation. -/
-def Form.eval (v : Nat → Int) : Form → Int
+def Form.eval (v : V → Int) : Form V → Int
   | [] => 0
   | (x, c) :: t => c * v x + Form.eval v t
 
-theorem Form.eval_append (v : Nat → Int) (s t : Form) : Form.eval v (s ++ t) = Form.eval v s + Form.eval v t := by
+theorem Form.eval_append (v : V → Int) (s t : Form V) : Form.eval v (s ++ t) = Form.eval v s + Form.eval v t := by
   induction s with
   | nil => simp [Form.eval]
   | cons p s ih => obtain ⟨x, c⟩ := p; simp only [List.cons_append, Form.eval, ih]; omega
 
 /-- A form scaled by an integer. -/
-def Form.scale (k : Int) (f : Form) : Form := f.map fun (x, c) => (x, k * c)
+def Form.scale (k : Int) (f : Form V) : Form V := f.map fun (x, c) => (x, k * c)
 
-theorem Form.eval_scale (v : Nat → Int) (k : Int) (f : Form) : Form.eval v (f.scale k) = k * Form.eval v f := by
+theorem Form.eval_scale (v : V → Int) (k : Int) (f : Form V) : Form.eval v (f.scale k) = k * Form.eval v f := by
   induction f with
   | nil => simp [Form.scale, Form.eval]
   | cons p f ih =>
@@ -44,14 +48,14 @@ theorem Form.eval_scale (v : Nat → Int) (k : Int) (f : Form) : Form.eval v (f.
 
 /-- Adds `c` to the coefficient of `x` in a form sorted by variable, keeping
 it sorted and free of zero coefficients. -/
-def insertTerm (x : Nat) (c : Int) : Form → Form
+def insertTerm [DecidableEq V] [LT V] [DecidableRel (α := V) (· < ·)] (x : V) (c : Int) : Form V → Form V
   | [] => if c = 0 then [] else [(x, c)]
   | (y, d) :: t =>
     if x < y then (if c = 0 then (y, d) :: t else (x, c) :: (y, d) :: t)
     else if x = y then (if c + d = 0 then t else (y, c + d) :: t)
     else (y, d) :: insertTerm x c t
 
-theorem eval_insertTerm (v : Nat → Int) (x : Nat) (c : Int) (f : Form) :
+theorem eval_insertTerm [DecidableEq V] [LT V] [DecidableRel (α := V) (· < ·)] (v : V → Int) (x : V) (c : Int) (f : Form V) :
     Form.eval v (insertTerm x c f) = c * v x + Form.eval v f := by
   induction f with
   | nil => simp only [insertTerm]; split <;> simp_all [Form.eval]
@@ -70,9 +74,9 @@ theorem eval_insertTerm (v : Nat → Int) (x : Nat) (c : Int) (f : Form) :
       · simp only [Form.eval, ih]; omega
 
 /-- The normal form: sorted by variable, one coefficient each, none zero. -/
-def normalize (f : Form) : Form := f.foldr (fun (x, c) acc => insertTerm x c acc) []
+def normalize [DecidableEq V] [LT V] [DecidableRel (α := V) (· < ·)] (f : Form V) : Form V := f.foldr (fun (x, c) acc => insertTerm x c acc) []
 
-theorem eval_normalize (v : Nat → Int) (f : Form) : Form.eval v (normalize f) = Form.eval v f := by
+theorem eval_normalize [DecidableEq V] [LT V] [DecidableRel (α := V) (· < ·)] (v : V → Int) (f : Form V) : Form.eval v (normalize f) = Form.eval v f := by
   induction f with
   | nil => rfl
   | cons p f ih =>
@@ -83,20 +87,20 @@ theorem eval_normalize (v : Nat → Int) (f : Form) : Form.eval v (normalize f) 
 /-! ## Facts -/
 
 /-- A linear fact over integer variables: `form ≤ bound`, or `form ≠ bound`. -/
-inductive Fact where
-  | le (form : Form) (bound : Int)
-  | ne (form : Form) (bound : Int)
+inductive Fact (V : Type) where
+  | le (form : Form V) (bound : Int)
+  | ne (form : Form V) (bound : Int)
   deriving DecidableEq, Repr, Hashable
 
-def Fact.Holds (v : Nat → Int) : Fact → Prop
+def Fact.Holds (v : V → Int) : Fact V → Prop
   | .le f d => Form.eval v f ≤ d
   | .ne f d => Form.eval v f ≠ d
 
 /-- The variables a fact names. -/
-def Fact.vars : Fact → List Nat
+def Fact.vars : Fact V → List V
   | .le f _ | .ne f _ => f.map (·.1)
 
-theorem Form.eval_congr {v v' : Nat → Int} {f : Form} (h : ∀ x ∈ f.map (·.1), v x = v' x) :
+theorem Form.eval_congr {v v' : V → Int} {f : Form V} (h : ∀ x ∈ f.map (·.1), v x = v' x) :
     Form.eval v f = Form.eval v' f := by
   induction f with
   | nil => rfl
@@ -106,7 +110,7 @@ theorem Form.eval_congr {v v' : Nat → Int} {f : Form} (h : ∀ x ∈ f.map (·
     simp only [Form.eval, h x (.inl rfl), ih (fun y hy => h y (.inr hy))]
 
 /-- A fact reads its variables alone. -/
-theorem Fact.holds_congr {v v' : Nat → Int} {F : Fact} (h : ∀ x ∈ F.vars, v x = v' x) :
+theorem Fact.holds_congr {v v' : V → Int} {F : Fact V} (h : ∀ x ∈ F.vars, v x = v' x) :
     F.Holds v ↔ F.Holds v' := by
   cases F <;> simp only [Fact.Holds, Fact.vars] at h ⊢ <;> rw [Form.eval_congr h]
 
@@ -116,21 +120,21 @@ theorem Fact.holds_congr {v v' : Nat → Int} {F : Fact} (h : ∀ x ∈ F.vars, 
 natural multipliers, with a divisor; or a disequality step from a held `le`
 fact and a held `ne` fact with the same form and bound. Each names the fact
 it concludes. -/
-inductive Step where
-  | combine (premises : List (Nat × Nat)) (divisor : Nat) (form : Form) (bound : Int)
+inductive Step (V : Type) where
+  | combine (premises : List (Nat × Nat)) (divisor : Nat) (form : Form V) (bound : Int)
   | strict (le : Nat) (ne : Nat)
   deriving DecidableEq, Repr, Hashable
 
 /-- The sum `Σ λⱼ·aⱼ ≤ Σ λⱼ·bⱼ` of the premises a combination names. -/
-def combineSum (known : List Fact) : List (Nat × Nat) → Option (Form × Int)
+def combineSum (known : List (Fact V)) : List (Nat × Nat) → Option (Form V × Int)
   | [] => some ([], 0)
   | (j, l) :: rest => do
     let .le f b ← known[j]? | none
     let (s, t) ← combineSum known rest
     some (f.scale l ++ s, l * b + t)
 
-theorem combineSum_holds {v : Nat → Int} {known : List Fact} (hk : ∀ F ∈ known, F.Holds v) :
-    ∀ {ps : List (Nat × Nat)} {s : Form} {t : Int}, combineSum known ps = some (s, t) → Form.eval v s ≤ t := by
+theorem combineSum_holds {v : V → Int} {known : List (Fact V)} (hk : ∀ F ∈ known, F.Holds v) :
+    ∀ {ps : List (Nat × Nat)} {s : Form V} {t : Int}, combineSum known ps = some (s, t) → Form.eval v s ≤ t := by
   intro ps
   induction ps with
   | nil => intro s t h; simp only [combineSum, Option.some.injEq, Prod.mk.injEq] at h; obtain ⟨rfl, rfl⟩ := h; simp [Form.eval]
@@ -157,7 +161,7 @@ theorem combineSum_holds {v : Nat → Int} {known : List Fact} (hk : ∀ F ∈ k
           omega
 
 /-- The fact a step concludes from the facts held, where it is accepted. -/
-def Step.conclude (known : List Fact) : Step → Option Fact
+def Step.conclude [DecidableEq V] [LT V] [DecidableRel (α := V) (· < ·)] (known : List (Fact V)) : Step V → Option (Fact V)
   | .combine ps g c d => do
     if g = 0 then none
     let (s, t) ← combineSum known ps
@@ -167,8 +171,8 @@ def Step.conclude (known : List Fact) : Step → Option Fact
     let .ne f' d' ← known[j]? | none
     if f = f' ∧ d = d' then some (.le f (d - 1)) else none
 
-theorem Step.conclude_sound {v : Nat → Int} {known : List Fact} (hk : ∀ F ∈ known, F.Holds v) :
-    ∀ {s : Step} {F : Fact}, s.conclude known = some F → F.Holds v := by
+theorem Step.conclude_sound [DecidableEq V] [LT V] [DecidableRel (α := V) (· < ·)] {v : V → Int} {known : List (Fact V)} (hk : ∀ F ∈ known, F.Holds v) :
+    ∀ {s : Step V} {F : Fact V}, s.conclude known = some F → F.Holds v := by
   intro s F h
   cases s with
   | combine ps g c d =>
@@ -220,7 +224,7 @@ theorem Step.conclude_sound {v : Nat → Int} {known : List Fact} (hk : ∀ F �
 
 /-- A certificate's steps run in order, each conclusion appended to the facts
 held; the facts at the end, or none where a step is refused. -/
-def check (known : List Fact) : List Step → Option (List Fact)
+def check [DecidableEq V] [LT V] [DecidableRel (α := V) (· < ·)] (known : List (Fact V)) : List (Step V) → Option (List (Fact V))
   | [] => some known
   | s :: rest => do
     let F ← s.conclude known
@@ -228,8 +232,8 @@ def check (known : List Fact) : List Step → Option (List Fact)
 
 /-- **Linear certificates are sound.** Every fact an accepted certificate
 concludes holds of every integer valuation meeting the facts it starts from. -/
-theorem check_sound {v : Nat → Int} :
-    ∀ {steps : List Step} {known out : List Fact}, (∀ F ∈ known, F.Holds v) → check known steps = some out →
+theorem check_sound [DecidableEq V] [LT V] [DecidableRel (α := V) (· < ·)] {v : V → Int} :
+    ∀ {steps : List (Step V)} {known out : List (Fact V)}, (∀ F ∈ known, F.Holds v) → check known steps = some out →
       ∀ F ∈ out, F.Holds v := by
   intro steps
   induction steps with
@@ -250,15 +254,15 @@ theorem check_sound {v : Nat → Int} :
 /-! ## Renaming -/
 
 /-- A form with each variable renamed by a partial map, where it maps every one. -/
-def Form.mapVars (f : Nat → Option Nat) : Form → Option Form
+def Form.mapVars (f : V → Option W) : Form V → Option (Form W)
   | [] => some []
   | (x, c) :: t => do
     let y ← f x
     let t' ← Form.mapVars f t
     pure ((y, c) :: t')
 
-theorem Form.eval_mapVars {f : Nat → Option Nat} {v v' : Nat → Int} :
-    ∀ {F F' : Form}, Form.mapVars f F = some F' → (∀ x ∈ F.map (·.1), ∀ y, f x = some y → v' y = v x) →
+theorem Form.eval_mapVars {f : V → Option W} {v : V → Int} {v' : W → Int} :
+    ∀ {F : Form V} {F' : Form W}, Form.mapVars f F = some F' → (∀ x ∈ F.map (·.1), ∀ y, f x = some y → v' y = v x) →
       Form.eval v' F' = Form.eval v F := by
   intro F
   induction F with
@@ -272,8 +276,8 @@ theorem Form.eval_mapVars {f : Nat → Option Nat} {v v' : Nat → Int} :
     simp only [Form.eval]
     rw [ih ht (fun x hx y hy => hv x (by simp [hx]) y hy), hv x (by simp) y hy]
 
-theorem Form.mapVars_vars {f : Nat → Option Nat} :
-    ∀ {F F' : Form}, Form.mapVars f F = some F' → ∀ y ∈ F'.map (·.1), ∃ x ∈ F.map (·.1), f x = some y := by
+theorem Form.mapVars_vars {f : V → Option W} :
+    ∀ {F : Form V} {F' : Form W}, Form.mapVars f F = some F' → ∀ y ∈ F'.map (·.1), ∃ x ∈ F.map (·.1), f x = some y := by
   intro F
   induction F with
   | nil => intro F' h; simp only [Form.mapVars, Option.some.injEq] at h; subst h; simp
@@ -289,8 +293,8 @@ theorem Form.mapVars_vars {f : Nat → Option Nat} :
     · obtain ⟨x', hx', hf⟩ := ih ht y hy
       exact ⟨x', by simp [hx'], hf⟩
 
-theorem Form.mapVars_vars_fwd {f : Nat → Option Nat} :
-    ∀ {F F' : Form}, Form.mapVars f F = some F' → ∀ x ∈ F.map (·.1), ∃ y ∈ F'.map (·.1), f x = some y := by
+theorem Form.mapVars_vars_fwd {f : V → Option W} :
+    ∀ {F : Form V} {F' : Form W}, Form.mapVars f F = some F' → ∀ x ∈ F.map (·.1), ∃ y ∈ F'.map (·.1), f x = some y := by
   intro F
   induction F with
   | nil => intro F' _ x hx; simp at hx
@@ -306,17 +310,17 @@ theorem Form.mapVars_vars_fwd {f : Nat → Option Nat} :
     · obtain ⟨y, hy, hf⟩ := ih ht x hx
       exact ⟨y, by simp [hy], hf⟩
 
-theorem Form.mapVars_some (f : Nat → Nat) : ∀ F : Form, ∃ F', Form.mapVars (some ∘ f) F = some F'
+theorem Form.mapVars_some (f : V → W) : ∀ F : Form V, ∃ F', Form.mapVars (some ∘ f) F = some F'
   | [] => ⟨[], rfl⟩
   | (x, c) :: t => by
     obtain ⟨t', ht⟩ := Form.mapVars_some f t
     exact ⟨(f x, c) :: t', by simp [Form.mapVars, ht]⟩
 
-def Fact.mapVars (f : Nat → Option Nat) : Fact → Option Fact
+def Fact.mapVars (f : V → Option W) : Fact V → Option (Fact W)
   | .le F d => (Form.mapVars f F).map (.le · d)
   | .ne F d => (Form.mapVars f F).map (.ne · d)
 
-theorem Fact.holds_mapVars {f : Nat → Option Nat} {v v' : Nat → Int} {F F' : Fact}
+theorem Fact.holds_mapVars {f : V → Option W} {v : V → Int} {v' : W → Int} {F : Fact V} {F' : Fact W}
     (h : F.mapVars f = some F') (hv : ∀ x ∈ F.vars, ∀ y, f x = some y → v' y = v x) :
     F'.Holds v' ↔ F.Holds v := by
   cases F with
@@ -329,7 +333,7 @@ theorem Fact.holds_mapVars {f : Nat → Option Nat} {v v' : Nat → Int} {F F' :
     obtain ⟨G', hG, rfl⟩ := h
     simp only [Fact.Holds, Form.eval_mapVars hG hv]
 
-theorem Fact.mapVars_vars_fwd {f : Nat → Option Nat} {F F' : Fact} (h : F.mapVars f = some F') :
+theorem Fact.mapVars_vars_fwd {f : V → Option W} {F : Fact V} {F' : Fact W} (h : F.mapVars f = some F') :
     ∀ x ∈ F.vars, ∃ y ∈ F'.vars, f x = some y := by
   cases F with
   | le G d =>
@@ -341,12 +345,12 @@ theorem Fact.mapVars_vars_fwd {f : Nat → Option Nat} {F F' : Fact} (h : F.mapV
     obtain ⟨G', hG, rfl⟩ := h
     exact Form.mapVars_vars_fwd hG
 
-theorem Fact.mapVars_some (f : Nat → Nat) (F : Fact) : ∃ F', F.mapVars (some ∘ f) = some F' := by
+theorem Fact.mapVars_some (f : V → W) (F : Fact V) : ∃ F', F.mapVars (some ∘ f) = some F' := by
   cases F with
   | le G d => obtain ⟨G', h⟩ := Form.mapVars_some f G; exact ⟨.le G' d, by simp [Fact.mapVars, h]⟩
   | ne G d => obtain ⟨G', h⟩ := Form.mapVars_some f G; exact ⟨.ne G' d, by simp [Fact.mapVars, h]⟩
 
-theorem Fact.mapVars_vars {f : Nat → Option Nat} {F F' : Fact} (h : F.mapVars f = some F') :
+theorem Fact.mapVars_vars {f : V → Option W} {F : Fact V} {F' : Fact W} (h : F.mapVars f = some F') :
     ∀ y ∈ F'.vars, ∃ x ∈ F.vars, f x = some y := by
   cases F with
   | le G d =>
@@ -369,14 +373,14 @@ a row with no variable and a negative bound is found. Its multipliers are the
 goal's combination step, with the negation's multiplier as the divisor. -/
 
 /-- A row of the elimination: `form ≤ bound`, as `Σⱼ λⱼ·(fact j) + μ·(¬goal)`. -/
-structure Row where
-  form : Form
+structure Row (V : Type) where
+  form : Form V
   bound : Int
   mult : List (Nat × Nat)
   goal : Nat
   deriving Inhabited
 
-def Form.coeff (F : Form) (x : Nat) : Int := ((F.find? (·.1 == x)).map (·.2)).getD 0
+def Form.coeff [DecidableEq V] (F : Form V) (x : V) : Int := ((F.find? (·.1 == x)).map (·.2)).getD 0
 
 def addMult : List (Nat × Nat) → List (Nat × Nat) → List (Nat × Nat)
   | [], m => m
@@ -385,28 +389,28 @@ def addMult : List (Nat × Nat) → List (Nat × Nat) → List (Nat × Nat)
     | some (_, l') => addMult rest ((j, l + l') :: m.filter (·.1 != j))
     | none => addMult rest ((j, l) :: m)
 
-def Row.scale (k : Nat) (r : Row) : Row :=
+def Row.scale (k : Nat) (r : Row V) : Row V :=
   { form := r.form.scale k, bound := k * r.bound, mult := r.mult.map fun (j, l) => (j, k * l), goal := k * r.goal }
 
-def Row.add (r s : Row) : Row :=
+def Row.add [DecidableEq V] [LT V] [DecidableRel (α := V) (· < ·)] (r s : Row V) : Row V :=
   { form := normalize (r.form ++ s.form), bound := r.bound + s.bound, mult := addMult r.mult s.mult,
     goal := r.goal + s.goal }
 
 /-- Eliminates `x` from the rows: those without it, and each pair of opposite
 signs combined to cancel it. -/
-def eliminate (x : Nat) (rows : List Row) : List Row :=
+def eliminate [DecidableEq V] [LT V] [DecidableRel (α := V) (· < ·)] (x : V) (rows : List (Row V)) : List (Row V) :=
   let pos := rows.filter fun r => 0 < r.form.coeff x
   let neg := rows.filter fun r => r.form.coeff x < 0
   let zero := rows.filter fun r => r.form.coeff x = 0
   zero ++ pos.flatMap fun p => neg.map fun n =>
     (p.scale (n.form.coeff x).natAbs).add (n.scale (p.form.coeff x).natAbs)
 
-def gcdForm (F : Form) : Nat := F.foldl (fun g (_, c) => Nat.gcd g c.natAbs) 0
+def gcdForm (F : Form V) : Nat := F.foldl (fun g (_, c) => Nat.gcd g c.natAbs) 0
 
 /-- The tightening and strict steps of the held facts, each concluding a fact
 appended after them. -/
-def preSteps (known : List Fact) : List Step × List Fact := Id.run do
-  let mut steps : List Step := []
+def preSteps [DecidableEq V] [LT V] [DecidableRel (α := V) (· < ·)] (known : List (Fact V)) : List (Step V) × List (Fact V) := Id.run do
+  let mut steps : List (Step V) := []
   let mut facts := known
   for j in List.range known.length do
     match known[j]? with
@@ -427,22 +431,35 @@ def preSteps (known : List Fact) : List Step × List Fact := Id.run do
   return (steps, facts)
 
 /-- The variables of the rows, each once. -/
-def rowVars (rows : List Row) : List Nat :=
+def rowVars [DecidableEq V] (rows : List (Row V)) : List V :=
   (rows.flatMap fun r => r.form.map (·.1)).eraseDups
+
+/-- The variable of the rows whose elimination combines the fewest pairs,
+the first such: Fourier–Motzkin's usual order, keeping the rows few. -/
+def cheapestVar [DecidableEq V] (rows : List (Row V)) : Option V :=
+  let cost := fun x =>
+    (rows.filter fun r => 0 < r.form.coeff x).length * (rows.filter fun r => r.form.coeff x < 0).length
+  ((rowVars rows).foldl (fun best x => match best with
+    | some (y, c) => if cost x < c then some (x, cost x) else some (y, c)
+    | none => some (x, cost x)) none).map (·.1)
 
 /-- The steps establishing `c·x ≤ d` from the held facts, where the search
 finds them, within `limit` rows at every stage. -/
-def prove (known : List Fact) (c : Form) (d : Int) (limit : Nat := 400) : Option (List Step) := Id.run do
+def prove [DecidableEq V] [LT V] [DecidableRel (α := V) (· < ·)] (known : List (Fact V)) (c : Form V) (d : Int) (limit : Nat := 400) : Option (List (Step V)) := Id.run do
   let (pre, facts) := preSteps known
-  let rows0 : List Row := (List.range facts.length).filterMap fun j =>
-    match (facts[j]? : Option Fact) with
+  let rows0 : List (Row V) := (List.range facts.length).filterMap fun j =>
+    match (facts[j]? : Option (Fact V)) with
     | some (.le F b) => some { form := normalize F, bound := b, mult := [(j, 1)], goal := 0 }
     | _ => none
-  let negGoal : Row := { form := normalize (c.scale (-1)), bound := -d - 1, mult := [], goal := 1 }
+  let negGoal : Row V := { form := normalize (c.scale (-1)), bound := -d - 1, mult := [], goal := 1 }
   let mut rows := negGoal :: rows0
-  for x in rowVars rows do
-    rows := eliminate x rows
-    if rows.length > limit then return none
+  for _ in List.range (rowVars rows).length do
+    if rows.any fun r => r.form.isEmpty && r.bound < 0 && 0 < r.goal then break
+    match cheapestVar rows with
+    | some x =>
+      rows := eliminate x rows
+      if rows.length > limit then return none
+    | none => break
   match rows.find? fun r => r.form.isEmpty && r.bound < 0 && 0 < r.goal with
   | some r => return some (pre ++ [.combine r.mult r.goal c d])
   | none => return none
@@ -450,9 +467,9 @@ def prove (known : List Fact) (c : Form) (d : Int) (limit : Nat := 400) : Option
 /-- The held facts connected to the goal's variables: those sharing a
 variable with the goal or with a fact already selected, so the elimination
 works over the facts that can matter. -/
-def relevant (known : List Fact) (goal : Fact) : List Fact := Id.run do
+def relevant [DecidableEq V] (known : List (Fact V)) (goal : Fact V) : List (Fact V) := Id.run do
   let mut vars := goal.vars
-  let mut chosen : List Fact := []
+  let mut chosen : List (Fact V) := []
   for _ in List.range (known.length + 1) do
     let more := known.filter fun F => !chosen.contains F && F.vars.any vars.contains
     if more.isEmpty then break
@@ -462,7 +479,7 @@ def relevant (known : List Fact) (goal : Fact) : List Fact := Id.run do
 
 /-- Whether the held facts entail `goal`, by a certificate `check` accepts,
 searched over the facts connected to the goal. -/
-def entails (known : List Fact) (goal : Fact) : Bool :=
+def entails [DecidableEq V] [LT V] [DecidableRel (α := V) (· < ·)] (known : List (Fact V)) (goal : Fact V) : Bool :=
   known.contains goal ||
   match goal with
   | .le c d =>
@@ -475,7 +492,7 @@ def entails (known : List Fact) (goal : Fact) : Bool :=
   | .ne _ _ => false
 
 /-- **Entailment is sound.** -/
-theorem entails_sound {v : Nat → Int} {known : List Fact} {goal : Fact} (h : entails known goal = true)
+theorem entails_sound [DecidableEq V] [LT V] [DecidableRel (α := V) (· < ·)] {v : V → Int} {known : List (Fact V)} {goal : Fact V} (h : entails known goal = true)
     (hk : ∀ F ∈ known, F.Holds v) : goal.Holds v := by
   unfold entails at h
   rcases Bool.or_eq_true_iff.mp h with h | h
@@ -502,8 +519,8 @@ pair of opposite signs on `x` combined to cancel it (Fourier–Motzkin), each
 combination a `combine` step `check` decides. -/
 
 /-- The steps combining each pair of held facts of opposite signs on `x`. -/
-def elimSteps (known : List Fact) (x : Nat) (limit : Nat := 64) : List Step :=
-  let les := (List.range known.length).filterMap fun j => match (known[j]? : Option Fact) with
+def elimSteps [DecidableEq V] [LT V] [DecidableRel (α := V) (· < ·)] (known : List (Fact V)) (x : V) (limit : Nat := 64) : List (Step V) :=
+  let les := (List.range known.length).filterMap fun j => match (known[j]? : Option (Fact V)) with
     | some (.le F b) => some (j, normalize F, b)
     | _ => none
   let pos := les.filter fun (_, F, _) => 0 < F.coeff x
@@ -515,14 +532,14 @@ def elimSteps (known : List Fact) (x : Nat) (limit : Nat := 64) : List Step :=
 
 /-- The held facts with each variable of `xs` eliminated in turn, the derived
 facts appended; `known` itself where a step is refused. -/
-def eliminateAll (known : List Fact) : List Nat → List Fact
+def eliminateAll [DecidableEq V] [LT V] [DecidableRel (α := V) (· < ·)] (known : List (Fact V)) : List V → List (Fact V)
   | [] => known
   | x :: xs => match check known (elimSteps known x) with
     | some out => eliminateAll out xs
     | none => eliminateAll known xs
 
-theorem eliminateAll_sound {v : Nat → Int} :
-    ∀ {xs : List Nat} {known : List Fact}, (∀ F ∈ known, F.Holds v) → ∀ F ∈ eliminateAll known xs, F.Holds v := by
+theorem eliminateAll_sound [DecidableEq V] [LT V] [DecidableRel (α := V) (· < ·)] {v : V → Int} :
+    ∀ {xs : List V} {known : List (Fact V)}, (∀ F ∈ known, F.Holds v) → ∀ F ∈ eliminateAll known xs, F.Holds v := by
   intro xs
   induction xs with
   | nil => intro known hk; exact hk

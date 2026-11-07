@@ -308,12 +308,12 @@ private def reachablePoints (graph : SourceFlow.Graph) (id : Nat) : List String 
   -- zero states only that its bindings hold safe integers.
   let linear ← ((fc.entryFacts.lookup node.source.1).getD []).flatMapM fun (terms, bound) => do
     let form ← terms.mapM fun (name, c) => match valueSlot scope name with
-      | some x => pure (x, c)
+      | some x => pure ((x, c) : Nat × Int)
       | none => do throw (locatedRefusal (← table) node.source .entryClaim
           s!"a linear fact names '{name}', which is no value binding")
     if form.all (·.2 == 0) && 0 ≤ bound then
       pure (form.map fun (x, _) => ({ fact := .int x } : HeapKnowledge.IndexAtom))
-    else pure [({ fact := .linear (.le form bound) } : HeapKnowledge.IndexAtom)]
+    else pure [({ fact := .linear (HeapKnowledge.valueFact (.le form bound)) } : HeapKnowledge.IndexAtom)]
   let bounds := bounds ++ linear
   if !facts.isEmpty || !links.isEmpty || !separation.facts.isEmpty || !bounds.isEmpty then
     recordAssertion reserved ⟨facts, [], links, separation, [], bounds⟩
