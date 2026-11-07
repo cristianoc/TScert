@@ -455,7 +455,14 @@ let join (l : fact list) (r : fact list) : fact list =
   let defines side ((t,_) : fact) = List.for_all (fun (n,_) ->
     if reads_heap n then List.exists (fun ((t',_) : fact) -> List.mem_assoc n t') side
     else List.mem ([n,0],0) side) t in
-  let bound side candidates ((t,_) as f : fact) =
+  (* The earlier state (`l`) keeps a bound it states, so the join is never
+     stronger than it and a loop settles; the later state, and an earlier one
+     not stating the form, are read at the least candidate their facts
+     entail. *)
+  let bound ?(keep = false) side candidates ((t,_) as f : fact) =
+    match List.assoc_opt t side with
+    | Some d when keep -> Some d
+    | _ ->
     if not (defines side f) then None else
     let side' = side @ term_ranges side in
     List.find_opt (fun b -> List.mem (t,b) side || entails side' (t,b)) candidates in
@@ -464,7 +471,7 @@ let join (l : fact list) (r : fact list) : fact list =
     let dl = List.assoc_opt t l and dr = List.assoc_opt t r in
     if is_int_fact (t,0) then (match dl,dr with Some d,Some _ -> Some (t,d) | _ -> None) else
     let candidates = List.sort_uniq compare (List.filter_map Fun.id [dl; dr] @ [0; max_index + 1]) in
-    match bound l candidates (t,0), bound r candidates (t,0) with
+    match bound ~keep:true l candidates (t,0), bound r candidates (t,0) with
     | Some d, Some d' when d' <= d -> Some (t,d)
     | Some d, Some d' when d' <= max_index + 1 && d < max_index + 1 -> Some (t, max_index + 1)
     | _ -> None) forms

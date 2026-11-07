@@ -1456,6 +1456,9 @@ its conclusion held by the later steps:
 \qquad
 \frac{c\cdot x\le d\qquad c\cdot x\ne d}
      {c\cdot x\le d-1}\ \textsf{strict}
+\qquad
+\frac{0\le b\qquad b<0}
+     {F}\ \textsf{absurd}
 ```
 
 The equality of linear forms is decided on their normal forms, sorted by
@@ -1725,8 +1728,10 @@ slot: each pair of facts of opposite signs on one of its terms combined to
 cancel it, the derived facts naming it no more kept (`Linear_facts.forget`),
 so `let j = i + 1; … i = j` keeps $`1\le j`$, then $`0\le i`$, from
 $`0\le i`$. Of the linear facts, a merge keeps a form
-$`c\cdot x`$ at the bound $`\max(d_1,d_2)`$, $`d_i`$ the least of the bounds
-either path states, $`0`$ and $`2^{32}-1`$ that path $`i`$'s facts, with the
+$`c\cdot x`$ at the bound $`\max(d_1,d_2)`$, $`d_1`$ the bound the earlier
+state states where it states one (so the merge is never stronger than it),
+and otherwise, as $`d_2`$, the least of the bounds either path states,
+$`0`$ and $`2^{32}-1`$ that path's facts, with the
 ranges of the lengths and element counts they name, entail, where each path
 names every length, element count and path of the form and states each
 binding it names a safe integer, as an edge's source must

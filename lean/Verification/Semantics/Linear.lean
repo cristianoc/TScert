@@ -123,6 +123,8 @@ it concludes. -/
 inductive Step (V : Type) where
   | combine (premises : List (Nat × Nat)) (divisor : Nat) (form : Form V) (bound : Int)
   | strict (le : Nat) (ne : Nat)
+  /-- Any fact, from a held `0 ≤ b` with `b < 0`: facts no valuation meets. -/
+  | absurd (premise : Nat) (goal : Fact V)
   deriving DecidableEq, Repr, Hashable
 
 /-- The sum `Σ λⱼ·aⱼ ≤ Σ λⱼ·bⱼ` of the premises a combination names. -/
@@ -170,6 +172,9 @@ def Step.conclude [DecidableEq V] [LT V] [DecidableRel (α := V) (· < ·)] (kno
     let .le f d ← known[i]? | none
     let .ne f' d' ← known[j]? | none
     if f = f' ∧ d = d' then some (.le f (d - 1)) else none
+  | .absurd i goal => do
+    let .le f b ← known[i]? | none
+    if normalize f = [] ∧ b < 0 then some goal else none
 
 theorem Step.conclude_sound [DecidableEq V] [LT V] [DecidableRel (α := V) (· < ·)] {v : V → Int} {known : List (Fact V)} (hk : ∀ F ∈ known, F.Holds v) :
     ∀ {s : Step V} {F : Fact V}, s.conclude known = some F → F.Holds v := by
@@ -221,6 +226,21 @@ theorem Step.conclude_sound [DecidableEq V] [LT V] [DecidableRel (α := V) (· <
               show Form.eval v f ≤ d - 1
               omega
             · cases h
+  | absurd i goal =>
+    simp only [Step.conclude] at h
+    cases hi : known[i]? with
+    | none => simp [hi] at h
+    | some Fi =>
+      cases Fi with
+      | ne _ _ => simp [hi] at h
+      | le f b =>
+        simp only [hi, Option.bind_eq_bind, Option.bind_some] at h
+        split at h
+        · rename_i hc
+          have h1 : Form.eval v f ≤ b := hk _ (List.mem_of_getElem? hi)
+          have h0 : Form.eval v f = 0 := by rw [← eval_normalize v f, hc.1]; rfl
+          omega
+        · cases h
 
 /-- A certificate's steps run in order, each conclusion appended to the facts
 held; the facts at the end, or none where a step is refused. -/
@@ -454,7 +474,7 @@ def prove [DecidableEq V] [LT V] [DecidableRel (α := V) (· < ·)] (known : Lis
   let negGoal : Row V := { form := normalize (c.scale (-1)), bound := -d - 1, mult := [], goal := 1 }
   let mut rows := negGoal :: rows0
   for _ in List.range (rowVars rows).length do
-    if rows.any fun r => r.form.isEmpty && r.bound < 0 && 0 < r.goal then break
+    if rows.any fun r => r.form.isEmpty && r.bound < 0 then break
     match cheapestVar rows with
     | some x =>
       rows := eliminate x rows
@@ -462,7 +482,12 @@ def prove [DecidableEq V] [LT V] [DecidableRel (α := V) (· < ·)] (known : Lis
     | none => break
   match rows.find? fun r => r.form.isEmpty && r.bound < 0 && 0 < r.goal with
   | some r => return some (pre ++ [.combine r.mult r.goal c d])
-  | none => return none
+  | none =>
+    -- The held facts alone meet no valuation: their sum `0 ≤ b`, `b < 0`,
+    -- concludes the goal (`absurd`).
+    match rows.find? fun r => r.form.isEmpty && r.bound < 0 && r.goal = 0 with
+    | some r => return some (pre ++ [.combine r.mult 1 [] r.bound, .absurd facts.length (.le c d)])
+    | none => return none
 
 /-- The held facts connected to the goal's variables: those sharing a
 variable with the goal or with a fact already selected, so the elimination
