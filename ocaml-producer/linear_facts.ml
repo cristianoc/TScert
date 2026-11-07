@@ -431,6 +431,50 @@ let of_index_facts (name : int -> string option) (fs : Semantic.index_fact list)
 let call_ensures : ((string * Environment.binding) list -> string -> Semantic.index_fact list) ref =
   ref (fun _ _ -> [])
 
+(* The construct signatures of the binding `c`, in order, set by the
+   statement analysis. *)
+let ctor_signatures : ((string * Environment.binding) list -> string -> Semantic.signature list) ref =
+  ref (fun _ _ -> [])
+
+(* The result facts of `new c(args)` bound to `name`: those of the first
+   construct signature, in order, that states no precondition or one the
+   facts establish of the actuals (as Lean's search admits it, `call-requires`),
+   its positions 0 the result and `i + 2` the `i`-th actual, each actual a
+   linear expression. A fact naming another position is left out. *)
+let construct_ensures ~array env fs name c (args : expr list) : fact list =
+  let form p = if p >= 1 then Option.bind (List.nth_opt args (p - 1)) (linear ~array env fs) else None in
+  let holds = function
+    | Semantic.Int_at k -> Option.is_some (form k)
+    | Semantic.Linear_le (f,d) ->
+      let parts = List.map (fun (t,c) -> match (t : Semantic.term) with
+        | Semantic.Value_at (x,[]) -> Option.map (fun (t,k) -> scale c t, c * k) (form x)
+        | _ -> None) f in
+      List.for_all Option.is_some parts &&
+      (let parts = List.filter_map Fun.id parts in
+       let terms = norm (List.concat_map fst parts) in
+       let constant = List.fold_left (fun acc (_,k) -> acc + k) 0 parts in
+       terms = [] && constant <= d || entails (fs @ term_ranges ((terms,0) :: fs)) (terms, d - constant))
+    | _ -> false in
+  let plain (s : Semantic.signature) = s.Semantic.call_effect.Semantic.promise = None && s.Semantic.call_effect.Semantic.requires = None &&
+    s.Semantic.call_effect.Semantic.pre = [] in
+  match List.find_opt (fun (s : Semantic.signature) -> List.length args <= List.length s.Semantic.params &&
+      (plain s || s.Semantic.call_effect.Semantic.promise = None && s.Semantic.call_effect.Semantic.requires = None && List.for_all holds s.Semantic.call_effect.Semantic.pre))
+      (!ctor_signatures env c) with
+  | None -> []
+  | Some s -> List.filter_map (fun (fact : Semantic.index_fact) -> match fact with
+    | Semantic.Linear_le (f,d) ->
+      let parts = List.map (fun (t,k) -> match (t : Semantic.term) with
+        | Semantic.Value_at (0,path) -> Some ([path_term name path,k],0)
+        | Semantic.Length_at (0,path) -> Some ([length_term ~path name,k],0)
+        | Semantic.View_at (0,path) -> Some ([view_term ~path name,k],0)
+        | Semantic.Value_at (p,[]) when p >= 2 -> Option.map (fun (t,c) -> scale k t, k * c) (form (p - 1))
+        | _ -> None) f in
+      if List.for_all Option.is_some parts then
+        let parts = List.filter_map Fun.id parts in
+        Some (norm (List.concat_map fst parts), d - List.fold_left (fun acc (_,c) -> acc + c) 0 parts)
+      else None
+    | _ -> None) s.Semantic.call_effect.Semantic.ensures
+
 let declaration ~(array : string -> string list -> bool) env fs name (init : expr) : fact list =
   let fs = if heap_free env init then fs else keep_stable env fs in
   let fs = forget name fs in
@@ -439,6 +483,9 @@ let declaration ~(array : string -> string list -> bool) env fs name (init : exp
   let fs = match init.node with
     | Call ({node=Id f;_},None,_,[],_) ->
       fs @ of_index_facts (fun p -> if p = 0 then Some name else None) (!call_ensures env f)
+    (* `const x = new c(…)` at a construct signature stating facts of its
+       result: each of them, of `x`, over the actuals. *)
+    | New ({node=Id c;_},_,args,[]) -> fs @ construct_ensures ~array env fs name c args
     | _ -> fs in
   let fs = match path_of env init with
     | Some (root,(_ :: _ as path)) when root <> name && heap_free env init -> fs @ restate_read name (root,path) fs

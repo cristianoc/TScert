@@ -308,6 +308,25 @@ control(async (): Promise<void> => {
 });
 
 control(async (): Promise<void> => {
+  // The precondition of the construct signature stating a typed array's
+  // element count, `n` a safe integer at least 0, claimed of a fraction at
+  // the construction's entry: refused there, so the construction is typed at
+  // the signature stating no result fact.
+  const artifacts = run("invalid-typed-array-length-fraction");
+  const source = readFileSync(sourceKey(artifacts), "utf8");
+  const claims = readClaims(artifacts);
+  const fn = must(claims.functions.find(f => f.name === "prepare"), "prepare's claims");
+  must(fn.entries.find(e => e.start === source.indexOf("const segmentFlags = new Uint8Array(half)")),
+    "the construction's entry").facts.push(
+    { terms: [{ name: "half", path: [], term: "value", coefficient: -1 }], bound: 0 });
+  const forged = writeClaims(artifacts, "typed-array-length-forged", claims);
+  const searched = produceWith(artifacts, forged, "typed-array-length-forged");
+  assert.equal(searched.status, 1, `${searched.stdout}${searched.stderr}`);
+  assert.match(searched.stdout + searched.stderr, /does not establish the claims/);
+  process.stdout.write("typed arrays: a construction's precondition claimed of a fraction at its entry, refused there\n");
+});
+
+control(async (): Promise<void> => {
   // Result facts the front end does not state, forged into the parser's
   // document: `countBreaks`, returning a count of at least 0, stated to
   // return one below 0, is refused at its return, the checker reading the

@@ -1295,7 +1295,8 @@ declared bounds. -/
       (∀ ja ∈ jas.drop args.length, ja.term = .undef) ∧
       (∀ ja ∈ jas, ja.context = j.context) ∧
       match expand G jf.type with
-      | [.ctors L _ _ _ _] => ⟨(), jas.map Sequent.type, j.type, e⟩ ∈ L ∧ e.plain = true
+      | [.ctors L _ _ _ _] => ⟨(), jas.map Sequent.type, j.type, e⟩ ∈ L ∧
+          (e.plain = true ∨ (allowRequires = true ∧ e.promise = none))
       | _ => False
     | _, _ => False
   -- The constructor, the fixed actuals, then one premise per further part:
@@ -2415,6 +2416,7 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι}
         simp only [List.map_map, Function.comp_def]
         rw [← List.map_append, List.take_append_drop]
       obtain ⟨hpm, hpl⟩ := hL
+      have hpl := hpl.resolve_right (by simp)
       have hc := HasTyUsing.construct (xs := (jas.take args.length).map fun ja => (ja.type, ja.term))
         (Us := (jas.drop args.length).map Sequent.type) hf he
         (by rw [hsplit]; exact hpm) hpl hxs hu

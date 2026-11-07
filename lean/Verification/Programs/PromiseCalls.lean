@@ -1437,6 +1437,8 @@ may not name. -/
 def callSlots : Tm → Option (Bool × List Nat)
   | .invoke _ (.var r) args => (varSlots args).map fun as => (true, r :: as)
   | .invoke _ _ args => (varSlots args).map fun as => (false, 0 :: as)
+  -- A construction's receiver is `undefined` (`ExpressionEffects.receiverOf`).
+  | .construct _ args => (varSlots args).map fun as => (false, 0 :: as)
   | _ => none
 
 theorem callSlots_env {t : Tm} {recv : Bool} {slots : List Nat} (hs : callSlots t = some (recv, slots)) (ρ : Env) :
@@ -1445,6 +1447,19 @@ theorem callSlots_env {t : Tm} {recv : Bool} {slots : List Nat} (hs : callSlots 
         (ExpressionEffects.actualsOf (instantiate 0 ρ t)) p := by
   intro p hp hrecv
   cases t <;> simp only [callSlots, reduceCtorEq] at hs
+  case construct f args =>
+    simp only [Option.map_eq_some_iff, Prod.mk.injEq] at hs
+    obtain ⟨as, has, rfl, rfl⟩ := hs
+    cases p with
+    | zero => simp at hrecv
+    | succ q =>
+      obtain ⟨hl, hg⟩ := varSlots_get has ρ
+      simp only [List.length_cons] at hp
+      simp only [PointClaims.mapEnv, PointClaims.slot, ExpressionEffects.actualsOf, instantiate,
+        instantiateArgs_eq_map, CallEffects.callEnv, Nat.add_one_ne_zero, if_false, Nat.add_sub_cancel,
+        List.getElem?_cons_succ]
+      rw [hg q (by omega)]
+      simp [List.getD_eq_getElem?_getD]
   rename_i f r args
   have core : ∀ (as : List Nat), varSlots args = some as → ∀ (y : Nat) (q : Nat), q + 1 < (y :: as).length →
       PointClaims.mapEnv (some (y :: as)) ρ (q + 1) =
@@ -1525,6 +1540,12 @@ theorem preconditionHolds_sound {k : HeapKnowledge.Knowledge} {eff : Effect} {t 
     decide (LocalUsing G images j (.app eff) (ps.map claim) codes (sums := sums) (allowRequires := true)) &&
     ps.attach.all (fun p => checkTreeUsing G images p.val codes sums) &&
     preconditionHolds k eff j.term
+  -- A construction at a construct signature stating a precondition, alike.
+  | .node j (.construct eff) ps =>
+    (ps.all fun p => ExpressionEffects.valueTerm (claim p).term && checkScope (claim p).context.length (claim p).term) &&
+    decide (LocalUsing G images j (.construct eff) (ps.map claim) codes (sums := sums) (allowRequires := true)) &&
+    ps.attach.all (fun p => checkTreeUsing G images p.val codes sums) &&
+    preconditionHolds k eff j.term
   | _ => false
 
 /-- Such a call, or its subsumption. -/
@@ -1564,6 +1585,23 @@ theorem requiresApp_sound {G : NormalGraph ι} {images : InstanceImageCheck G}
         obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hm
         simpa only [Bool.and_eq_true] using List.all_eq_true.mp hvals q hq
       exact (ExpressionEffects.call_local_sound hl typed values he hw hh hq).post
+  | construct eff' =>
+      simp only [ExpressionEffects.selectedEffect, Option.some.injEq] at hsel
+      subst hsel
+      simp only [requiresApp, Bool.and_eq_true, decide_eq_true_eq] at hc
+      obtain ⟨⟨⟨hvals, hl⟩, ht⟩, hreq⟩ := hc
+      simp only [claim] at he ⊢
+      have hq := preconditionHolds_sound hreq hk (ρ := ρ)
+      have typed : ∀ p ∈ ps.map claim, HasTyUsing G images p.context p.term p.type := by
+        intro p hm
+        obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hm
+        exact checkTreeUsing_sound q (List.all_eq_true.mp ht ⟨q, hq⟩ (List.mem_attach _ _)) hcodes hsums
+      have values : ∀ p ∈ ps.map claim, ExpressionEffects.valueTerm p.term = true ∧
+          checkScope p.context.length p.term = true := by
+        intro p hm
+        obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hm
+        simpa only [Bool.and_eq_true] using List.all_eq_true.mp hvals q hq
+      exact (ExpressionEffects.construct_local_requires_sound hl typed values he hw hh hq).post
   | _ => simp [requiresApp] at hc
 
 /-- `call-requires` also bounds the heap a throw leaves, where its signature
@@ -1598,6 +1636,23 @@ theorem requiresApp_sound_exc {G : NormalGraph ι} {images : InstanceImageCheck 
         obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hm
         simpa only [Bool.and_eq_true] using List.all_eq_true.mp hvals q hq
       exact ExpressionEffects.call_local_sound hl typed values he hw hh hq
+  | construct eff' =>
+      simp only [ExpressionEffects.selectedEffect, Option.some.injEq] at hsel
+      subst hsel
+      simp only [requiresApp, Bool.and_eq_true, decide_eq_true_eq] at hc
+      obtain ⟨⟨⟨hvals, hl⟩, ht⟩, hreq⟩ := hc
+      simp only [claim] at he ⊢
+      have hq := preconditionHolds_sound hreq hk (ρ := ρ)
+      have typed : ∀ p ∈ ps.map claim, HasTyUsing G images p.context p.term p.type := by
+        intro p hm
+        obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hm
+        exact checkTreeUsing_sound q (List.all_eq_true.mp ht ⟨q, hq⟩ (List.mem_attach _ _)) hcodes hsums
+      have values : ∀ p ∈ ps.map claim, ExpressionEffects.valueTerm p.term = true ∧
+          checkScope p.context.length p.term = true := by
+        intro p hm
+        obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hm
+        simpa only [Bool.and_eq_true] using List.all_eq_true.mp hvals q hq
+      exact ExpressionEffects.construct_local_requires_sound hl typed values he hw hh hq
   | _ => simp [requiresApp] at hc
 
 theorem requiresApp_selected {G : NormalGraph ι} {images : InstanceImageCheck G}
@@ -1607,6 +1662,7 @@ theorem requiresApp_selected {G : NormalGraph ι} {images : InstanceImageCheck G
   obtain ⟨j, r, ps⟩ := p
   cases r with
   | app eff' => exact ⟨_, rfl⟩
+  | construct eff' => exact ⟨_, rfl⟩
   | _ => simp [requiresApp] at hc
 
 theorem requiresTree_sound {G : NormalGraph ι} {images : InstanceImageCheck G}

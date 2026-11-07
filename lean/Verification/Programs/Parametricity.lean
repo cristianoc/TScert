@@ -506,6 +506,7 @@ theorem requiresApp_reassign (k : HeapKnowledge.Knowledge) (codes : CodeEntry ι
   unfold PromiseCalls.requiresApp
   split
   · simp only [LocalRequires_reassign, checkTree_reassign]
+  · simp only [LocalRequires_reassign, checkTree_reassign]
   · rfl
 
 theorem requiresTree_reassign (k : HeapKnowledge.Knowledge) (codes : CodeEntry ι → Bool)

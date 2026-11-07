@@ -1140,16 +1140,25 @@ theorem call_safe {effect : Effect} {P : ArgFam} {Rc R : Fam}
     SafePost Ξ (effect.result R (effect.promised vs)) (effect.post r vs heap) n W heap (.invoke f r vs) :=
   (call_safe_exc hP hRc hf hr hrv hv ha hw hh hq).post
 
+/-- Trailing `undefined` actuals change no precondition: a construction's
+positions past its actuals hold `undefined` either way (`callEnv_pad`). -/
+theorem Effect.requires_pad {e : Effect} {r : Tm} {args pad : List Tm} {h : Heap}
+    (hpad : ∀ a ∈ pad, a = .undef) (hq : e.Requires r args h) : e.Requires r (args ++ pad) h := by
+  refine ⟨hq.1, fun F hF => ?_⟩
+  rw [callEnv_pad r args hpad]
+  exact hq.2 F hF
+
 /-- A construction of a class value with value actuals takes one step to the
 body its signature makes safe, meeting the signature's effect from the heap
-it starts in. The signature may declare trailing positions the construction
-omits: each admits `undefined`, which the step binds there. The signature's
-effect is plain, so its result operand is the result's type. -/
-theorem construct_safe_exc {effect : Effect} (hpl : effect.plain = true) {P : ArgFam} {R : Fam}
+it starts in, where the signature's precondition holds of the construction's
+actuals (`call-requires`) and it states no promise, so its result operand is
+the result's type. The signature may declare trailing positions the
+construction omits: each admits `undefined`, which the step binds there. -/
+theorem construct_safe_exc_requires {effect : Effect} (hpr : effect.promise = none) {P : ArgFam} {R : Fam}
     (hP : Adm P) {n W heap v vs pad}
     (hf : ConstructPromise Ξ effect P R n W v) (hv : CallArguments.Values vs)
     (hpad : ∀ a ∈ pad, a = .undef) (ha : P n W (vs ++ pad))
-    (hw : WorldAdm W) (hh : HeapOk n W heap) :
+    (hw : WorldAdm W) (hh : HeapOk n W heap) (hq : effect.Requires .undef vs heap) :
     SafePostExc Ξ R (effect.post .undef vs heap) (effect.excPost .undef heap) n W heap (.construct v vs) := by
   cases n with
   | zero => trivial
@@ -1163,11 +1172,22 @@ theorem construct_safe_exc {effect : Effect} (hpl : effect.plain = true) {P : Ar
     obtain ⟨result, ⟨fs, c, enter, oid, rfl, hc, rfl⟩, hs⟩ := hf n (Nat.lt_succ_self n) U (WExt_refl _)
       (WorldAdm_trunc _ hw) heap (HeapOk_trunc n W heap hh) _ hvp
       (hP.transfer ha n (Nat.le_succ n) U (WExt_refl _))
-      (Effect.requires_none (Effect.plain_requires hpl) (Effect.plain_pre hpl) .undef _ heap)
-    rw [CallArguments.construction_pad hc _ _ hpad, Effect.result_plain hpl] at hs
+      (Effect.requires_pad hpad hq)
+    rw [CallArguments.construction_pad hc _ _ hpad, Effect.result_none hpr] at hs
     exact .inr ⟨U, heap, _, WExt_refl _, WorldAdm_trunc _ hw,
       CallArguments.construction_step hc hv heap, HeapOk_trunc n W heap hh,
       SafePostExc.weaken (fun _ _ h => Effect.post_pad hpad h) (fun _ h => h) hs⟩
+
+/-- A construction at a plain signature, whose precondition is empty. -/
+theorem construct_safe_exc {effect : Effect} (hpl : effect.plain = true) {P : ArgFam} {R : Fam}
+    (hP : Adm P) {n W heap v vs pad}
+    (hf : ConstructPromise Ξ effect P R n W v) (hv : CallArguments.Values vs)
+    (hpad : ∀ a ∈ pad, a = .undef) (ha : P n W (vs ++ pad))
+    (hw : WorldAdm W) (hh : HeapOk n W heap) :
+    SafePostExc Ξ R (effect.post .undef vs heap) (effect.excPost .undef heap) n W heap (.construct v vs) :=
+  construct_safe_exc_requires
+    (by simp only [Effect.plain, Bool.and_eq_true, Option.isNone_iff_eq_none] at hpl; exact hpl.1.1)
+    hP hf hv hpad ha hw hh (Effect.requires_none (Effect.plain_requires hpl) (Effect.plain_pre hpl) .undef vs heap)
 
 /-- An operational invariant that only appends fresh locations supplies
 the normal-return preservation postcondition, supplementing ordinary safety.

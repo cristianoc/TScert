@@ -7,7 +7,7 @@
 // `segmentFlags.length === widths.length` is each walker's precondition, its
 // body assumes it and each call establishes it, and a fact of the result of
 // `prepare`, which its return establishes from the arrays it builds, a view
-// of `widths.length` elements checked at its allocation.
+// allocated at `widths.length`, whose construction states that element count.
 
 /** @invariant this.segmentFlags.length === this.widths.length */
 export type PreparedLineBreakData = {
@@ -19,8 +19,6 @@ export function prepare(texts: string[]): PreparedLineBreakData {
   const widths: number[] = [];
   for (const t of texts) widths.push(t.length);
   const segmentFlags = new Uint8Array(widths.length);
-  if (segmentFlags.length !== widths.length)
-    throw new RangeError("a view of another length");
   for (let i = 0; i < widths.length; i++)
     segmentFlags[i] = widths[i]! === 0 ? 1 : 0;
   return { widths, segmentFlags };

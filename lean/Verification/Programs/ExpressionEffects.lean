@@ -326,14 +326,17 @@ theorem call_local_sound [DecidableEq ι] {G : NormalGraph ι}
 
 /-- Construction consumes the selected construct signature's effect, as
 invocation does: the constructor and the actuals are values, each omitted
-position an explicit `undefined` premise. -/
-private theorem construct_local_sound [DecidableEq ι] {G : NormalGraph ι}
+position an explicit `undefined` premise; a signature stating a precondition
+(`allowRequires`) where it holds of the construction's actuals. -/
+theorem construct_local_requires_sound [DecidableEq ι] {G : NormalGraph ι}
     {images : PositiveCertificates.InstanceImageCheck G}
     {j : Sequent ι} {ps : List (Sequent ι)} {codes : CodeEntry ι → Bool} {sums : List (ReadSummary ι)}
-    {e : CallEffects.Effect} (hl : LocalUsing G images j (.construct e) ps codes (sums := sums))
+    {allow : Bool}
+    {e : CallEffects.Effect} (hl : LocalUsing G images j (.construct e) ps codes (sums := sums) (allowRequires := allow))
     (ht : ∀ p ∈ ps, HasTyUsing G images p.context p.term p.type)
     (hv : ∀ p ∈ ps, valueTerm p.term = true ∧ checkScope p.context.length p.term = true)
-    {ρ n W h} (he : EnvOk G j.context ρ n W) (hw : WorldAdm W) (hh : HeapOk n W h) :
+    {ρ n W h} (he : EnvOk G j.context ρ n W) (hw : WorldAdm W) (hh : HeapOk n W h)
+    (hq : e.Requires (receiverOf (instantiate 0 ρ j.term)) (actualsOf (instantiate 0 ρ j.term)) h) :
     SafePostExc (excOf G) (meaning G j.type) (e.post (receiverOf (instantiate 0 ρ j.term)) (actualsOf (instantiate 0 ρ j.term)) h)
       (e.excPost (receiverOf (instantiate 0 ρ j.term)) h) n W h (instantiate 0 ρ j.term) := by
   rcases j with ⟨Γ,t,A⟩
@@ -382,7 +385,14 @@ private theorem construct_local_sound [DecidableEq ι] {G : NormalGraph ι}
         intro v hv'
         obtain ⟨p,hp,rfl⟩ := List.mem_map.mp hv'
         exact values p (by simp [List.mem_of_mem_take hp])
-      have hs := CallEffects.construct_safe_exc hpl
+      have hpr : e.promise = none := by
+        rcases hpl with hpl | ⟨-, hpr⟩
+        · simp only [CallEffects.Effect.plain, Bool.and_eq_true, Option.isNone_iff_eq_none] at hpl
+          exact hpl.1.1
+        · exact hpr
+      have hq' : e.Requires .undef (args.map (instantiate 0 ρ)) h := by
+        simpa [receiverOf, actualsOf, instantiate, instantiateArgs_eq_map] using hq
+      have hs := CallEffects.construct_safe_exc_requires hpr
         (P := ArgsT (jas.map (fun p => meaning G p.type)))
         (Adm.of_transfer (fun ha j hj U hx => ArgsT_transfer (fun T hm => by
           obtain ⟨p,hp,rfl⟩ := List.mem_map.mp hm; exact meaning_adm G p.type) ha j hj U hx))
@@ -391,9 +401,31 @@ private theorem construct_local_sound [DecidableEq ι] {G : NormalGraph ι}
           intro v hv'
           obtain ⟨p,hp,rfl⟩ := List.mem_map.mp hv'
           simp [hundef p hp, instantiate])
-        (by rw [← hsplit]; exact hArgs) hw hh
+        (by rw [← hsplit]; exact hArgs) hw hh hq'
       simpa [htf, receiverOf, actualsOf, instantiate, instantiateArgs_eq_map] using hs
     · contradiction
+
+/-- A construction at a plain signature, whose precondition is empty. -/
+private theorem construct_local_sound [DecidableEq ι] {G : NormalGraph ι}
+    {images : PositiveCertificates.InstanceImageCheck G}
+    {j : Sequent ι} {ps : List (Sequent ι)} {codes : CodeEntry ι → Bool} {sums : List (ReadSummary ι)}
+    {e : CallEffects.Effect} (hl : LocalUsing G images j (.construct e) ps codes (sums := sums))
+    (ht : ∀ p ∈ ps, HasTyUsing G images p.context p.term p.type)
+    (hv : ∀ p ∈ ps, valueTerm p.term = true ∧ checkScope p.context.length p.term = true)
+    {ρ n W h} (he : EnvOk G j.context ρ n W) (hw : WorldAdm W) (hh : HeapOk n W h) :
+    SafePostExc (excOf G) (meaning G j.type) (e.post (receiverOf (instantiate 0 ρ j.term)) (actualsOf (instantiate 0 ρ j.term)) h)
+      (e.excPost (receiverOf (instantiate 0 ρ j.term)) h) n W h (instantiate 0 ρ j.term) := by
+  have hpl : e.plain = true := by
+    rcases j with ⟨Γ,t,A⟩
+    cases t <;> try exact (hl : False).elim
+    rcases ps with _ | ⟨jf, jas⟩
+    · exact (hl : False).elim
+    obtain ⟨-, -, -, -, -, hL⟩ := hl
+    split at hL
+    · exact hL.2.resolve_right (by simp)
+    · exact hL.elim
+  exact construct_local_requires_sound hl ht hv he hw hh
+    (CallEffects.Effect.requires_none (CallEffects.Effect.plain_requires hpl) (CallEffects.Effect.plain_pre hpl) _ _ h)
 
 theorem map_spread_false : ∀ (flags : List Bool) (qs : List (Sequent ι)), (∀ b ∈ flags, b = false) →
     flags.length = qs.length →

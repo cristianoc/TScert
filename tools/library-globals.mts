@@ -24,7 +24,7 @@
  * A global declared outside the standard library, such as Node's `process`,
  * is read as its declaration states, member by member (`selectGlobal`). */
 import { obligated, transparent, type HostClass } from "./host-operations.mts";
-import type { DeclarationIdentity, TypeDefinition, TypeTerm } from "./declaration-types.mts";
+import type { DeclarationIdentity, LinearTerm, TypeDefinition, TypeTerm } from "./declaration-types.mts";
 import type { Span } from "./span.mts";
 import { asyncCompleteName, instanceOfErrorName, instanceOfMapName, instanceOfSetName, ownKeysName, promiseResolveName, prototypeIsObjectName, ownStringName, newPromiseName, promiseAllName, promiseRejectName, symbolForName,
   symbolKeyForName, typeOfDocumentName, typeOfNavigatorName, typeOfOffscreenCanvasName, urlHrefName, newSegmenterName, newDateTimeFormatName, arrayLengthName, arrayFilledName } from "./intrinsics.mts";
@@ -36,7 +36,10 @@ type AtomName = Extract<TypeTerm, { k: "atom" }>["name"];
 
 /** A signature the overlay states: its binders, its parameters, the element
  * type of its rest parameter where it has one, its result. */
-export type Stated = { binders: string[]; params: TypeTerm[]; rest?: TypeTerm; result: TypeTerm };
+export type Stated = { binders: string[]; params: TypeTerm[]; rest?: TypeTerm; result: TypeTerm;
+  /** The effect of this form alone, where the forms of an entry only
+   * constructed state different ones (`GlobalEntry.constructs`). */
+  effect?: CallEffect };
 /** A standard library interface applied to arguments, such as `Set<T>`. */
 type LibraryReference = (name: string, args: TypeTerm[]) => TypeTerm;
 /** A host collection's reading view applied to arguments, `NativeSetView<T>`
@@ -386,7 +389,9 @@ const bytesEntries: GlobalEntry[] = [
  * constructed, at a
  * length or an array of numbers: `new Uint8Array(n)` converts `n` by
  * ToIndex, a number's own value, throwing a `RangeError` where it is
- * negative or too large, and allocates a view of that many zeros; `new
+ * negative or too large, and allocates a view of that many zeros, so at a
+ * safe integer `n ≥ 0` a normal return's view has exactly `n` elements (the
+ * first form's precondition and result facts); `new
  * Uint8Array(xs)` of an array gets the array's `Symbol.iterator`, which an
  * array owns none of, from the untampered `Array.prototype`, steps the
  * standard array iterator, which reads `length` and each element, own data
@@ -395,11 +400,20 @@ const bytesEntries: GlobalEntry[] = [
  * reads its prototype from the untampered constructor's `prototype` and
  * allocates: it runs no code of the client's and writes no location it did
  * not allocate. */
+const lengthTerm = (kind: "value" | "view", slot: number): LinearTerm => ({ kind, slot, path: [] });
+const viewOfLength: CallEffect = { ...emptyEffect,
+  // At a call's positions: 1 the length, `int(1) ∧ 0 ≤ 1`.
+  pre: [{ int: { slot: 1 } }, { linear: { fact: { le: { form: [[lengthTerm("value", 1), -1]], bound: 0 } } } }],
+  // At a return's positions: 0 the view, 2 the length, `view(0) = 2`.
+  ensures: [
+    { linear: { fact: { le: { form: [[lengthTerm("view", 0), 1], [lengthTerm("value", 2), -1]], bound: 0 } } } },
+    { linear: { fact: { le: { form: [[lengthTerm("view", 0), -1], [lengthTerm("value", 2), 1]], bound: 0 } } } }] };
 const typedArrayEntries: GlobalEntry[] = ["Uint8Array", "Uint16Array", "Int32Array", "Float64Array"].map((name): GlobalEntry => (
   { host: transparent("a length or an array of numbers, which no node list is"), global: name,
     signature: `${name}: ${name}Constructor`, constructs: true, effect: emptyEffect,
-    stated: { binders: [], params: [{ k: "union", span: at, parts: [atom("number"), readonlyArray(atom("number"))] }],
-      result: bytes }, definitions: [stated.bytes] }));
+    forms: [{ binders: [], params: [atom("number")], result: bytes, effect: viewOfLength },
+      { binders: [], params: [{ k: "union", span: at, parts: [atom("number"), readonlyArray(atom("number"))] }],
+        result: bytes }], definitions: [stated.bytes] }));
 
 /** The standard library's `Intl.Segmenter` (SOURCE-CONTRACTS.md,
  * "`Intl.Segmenter`"), only constructed, at its one construct signature: a

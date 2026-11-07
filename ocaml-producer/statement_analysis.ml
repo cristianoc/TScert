@@ -569,6 +569,10 @@ let statements (expr:Analysis_state.expression_infer) execute_bindings owner_spa
     match Option.bind (receiver_type env {Source.node = Id b; pos = Json.Null}) (fun t -> field_of t (Name "[[viewLength]]")) with
     | Some g -> g.stable
     | None -> false);
+  Linear_facts.ctor_signatures := (fun env c ->
+    match Option.map head (receiver_type env {Source.node = Id c; pos = Json.Null}) with
+    | Some (Atoms [Ctors (sigs,_)]) -> sigs
+    | _ -> []);
   Linear_facts.ctor_keeps_heap := (fun env c ->
     match Option.map head (receiver_type env {Source.node = Id c; pos = Json.Null}) with
     | Some (Atoms [Ctors (sigs,_)]) -> Linear_facts.signatures_keep sigs

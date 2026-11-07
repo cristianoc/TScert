@@ -73,7 +73,7 @@ diagnostic mentioning some of them shows of it (`StoreView.project`). -/
         pure e
       | none => do
         let (e, answers) := CertificateProducer.expressionWithUsing G images pool (rs.map Required.sequent) []
-          fuel j.context j.term j.type cache.answers
+          (fun _ _ => false) fuel j.context j.term j.type cache.answers
         cache := { cache with answers }
         pure e
     -- Attribute an invalid suggested proof to its own obligation, rather than

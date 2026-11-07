@@ -3856,13 +3856,30 @@ from ECMA-262's TypedArray constructors and probes run under Node 26.13.0
 (2026-11-05).
 
 The globals `Uint8Array`, `Uint16Array`, `Int32Array` and `Float64Array`
-are read only as constructors through `library-global-constructs`, at one form, their
-result the [stated library type](#stated-library-types)
-$`V_\mathit{Uint8Array}`$,
+are read only as constructors through `library-global-constructs`, at two
+forms, in this order, their result the
+[stated library type](#stated-library-types) $`V_\mathit{Uint8Array}`$:
 
 ```math
-\mathtt{new}\ C\colon(\mathtt{number}\mid\mathtt{readonly}\ \mathtt{number}[\,])\Rightarrow_\emptyset\mathit{Uint8Array}
+\mathtt{new}\ C\colon(\mathtt{number})\Rightarrow_\emptyset^{\mathrm{int}(1),\ 0\le 1;\ \mathsf{ensures}\ \mathrm{view}(0)=2}\mathit{Uint8Array}
+\ \land\
+(\mathtt{number}\mid\mathtt{readonly}\ \mathtt{number}[\,])\Rightarrow_\emptyset\mathit{Uint8Array}
 ```
+
+The first form's precondition is at a construction's positions (1 the
+length) and its result fact at a return's (0 the view, 2 the length;
+[result facts](PROGRAM-TYPING.md#reads-below-the-length)): at a safe integer
+$`n\ge 0`$, ToIndex returns $`n`$ itself (ToIntegerOrInfinity of an integer
+is the integer, and $`n\le 2^{53}-1`$ is its own ToLength), and
+AllocateTypedArray with that length makes a fresh fixed-length buffer of
+$`n`$ elements, so a normal return's view has element count $`n`$; a
+length the buffer cannot hold throws a `RangeError`, no normal return. At a
+fraction ToIndex truncates (`new Uint8Array(1.5)` has one element under
+Node), which the precondition excludes. The fact lies within the
+owner-approved typed-array trust (the view's element count is the stable
+`[[viewLength]]` the stated type reads). Audited against ECMA-262's
+TypedArray constructor with a number argument (ToIndex, AllocateTypedArray)
+and a probe under Node 26.13.0 (2026-11-07).
 
 `new C(n)` converts `n` by ToIndex, a number's own value, throwing a
 `RangeError` where it is negative or too large, and allocates a view of

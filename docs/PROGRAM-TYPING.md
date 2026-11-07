@@ -1781,7 +1781,14 @@ slot:
 ```
 
 (`PromiseCalls.preconditionHolds`, proved: `preconditionHolds_sound`, through
-`call_local_sound` with the precondition). For a read in a loop,
+`call_local_sound` with the precondition). A construction is accepted alike
+at a construct signature stating a precondition, its positions those of a
+call whose receiver is `undefined`, which no fact may name
+(`PromiseCalls.requiresApp`, proved through `construct_local_requires_sound`
+and `CallEffects.construct_safe_exc_requires`); the search takes such a
+signature, in its order, where the knowledge at the step establishes it
+(`expressionEffectUsing`), and the producer proposes the result facts of the
+signature it would take (`Linear_facts.construct_ensures`). For a read in a loop,
 
 ```ts
 for (let j = 0; j < xs.length; j++) s = s + xs[j]!
@@ -1875,6 +1882,18 @@ the element count: `%ByteLength%`'s result facts state it, and
 \%\mathsf{ByteAt}\%:(\mathit{View},\ \mathtt{number})\Rightarrow_{\emptyset}\mathtt{number}\mid\mathtt{undefined}
 \ \land\ (\mathit{View},\ \mathtt{number})\Rightarrow_{\emptyset}^{\mathrm{int}(2),\ 0\le 2,\ 2\le\mathrm{view}(1)-1}\mathtt{number}
 ```
+
+A typed array's construction at a safe integer $`n\ge 0`$ states its element
+count, `new Uint8Array(n)` at $`\mathrm{view}(r)=n`$
+([typed arrays](SOURCE-CONTRACTS.md#the-standard-librarys-typed-arrays)), so
+a view allocated at `widths.length` has `widths.length` elements, as a
+record invariant equating them requires (`typed-array-length-builder`;
+negative `invalid-typed-array-length-short` and, a fraction,
+`invalid-typed-array-length-fraction`, each run under Node; a forged control,
+the precondition claimed of the fraction at the construction's entry,
+refused there). A test of two counts the facts already state equal, such as
+`segmentFlags.length !== widths.length` after that allocation, is refused at
+the edge from its second evaluation (`known-equal-length-test-refused`).
 
 So in `for (let i = 0; i < b.length; i++) s = s + b[i]!`, `call-ensures`
 states the test's operand equal to $`\mathrm{view}(b)`$, `int-compare` states
@@ -2133,7 +2152,7 @@ the language (a guard, `||`, `!`), as a written clause's. Closures, methods,
 overloaded and nested declarations state no invariant facts.
 
 **Cases.** Positive: `record-invariant-walker` (pretext's `line-break.ts`
-shape: a constructor building `widths` and a view checked at its allocation,
+shape: a constructor building `widths` and a view allocated at its length,
 walkers reading `prepared.segmentFlags[i]!` below `prepared.widths.length`).
 Negative, each run under Node: `invalid-record-invariant-constructor` (a
 return of a view one element short), `invalid-record-invariant-push` (a

@@ -17,8 +17,6 @@ export function prepare(texts: string[]): PreparedText {
   const widths: number[] = [];
   for (const t of texts) widths.push(t.length);
   const segmentFlags = new Uint8Array(widths.length);
-  if (segmentFlags.length !== widths.length)
-    throw new RangeError("a view of another length");
   for (let i = 0; i < widths.length; i++)
     segmentFlags[i] = widths[i]! === 0 ? 1 : 0;
   return seal({ widths, segmentFlags, label: "" });

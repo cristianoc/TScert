@@ -727,7 +727,8 @@ search fuel, including implicit let typing. Suggestions only prioritize candidat
 types; every premise is proved in the actual context, even when the suggestion
 came from a different context. No execution budget is inspected. -/
 @[nospecialize] def expressionWithUsing [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι))
-    (suggestions : List (Sequent ι)) (aliases : List (ι × ι)) :
+    (suggestions : List (Sequent ι)) (aliases : List (ι × ι))
+    (admits : CallEffects.Effect → Tm → Bool) :
     Nat → List (Ty ι) → Tm → Ty ι → SearchM G (ProgramCertificates.Evidence ι)
   | 0, _, _, _ => failure
   | fuel+1, Γ, t, A => Id.run do
@@ -738,7 +739,7 @@ came from a different context. No execution budget is inspected. -/
       return some (ProgramCertificates.Evidence.node ⟨Γ,t,A⟩ (.unionVar i) [])
     let leaf := fun B r => ProgramCertificates.Evidence.node ⟨Γ,t,B⟩ r []
     let leaf' := fun (i : Nat) (C : Ty ι) => ProgramCertificates.Evidence.node ⟨Γ,.var i,C⟩ .var []
-    let recur := expressionWithUsing G images pool suggestions aliases fuel
+    let recur := expressionWithUsing G images pool suggestions aliases admits fuel
     -- A slot of the empty type holds no value: the point is unreachable, and
     -- eliminating that union leaves no premise.
     if let some i := Γ.findIdx? (·.isEmpty) then
@@ -818,7 +819,9 @@ came from a different context. No execution budget is inspected. -/
         | _, _ => none
     -- `new f(args)`: a construct signature of the constructor's type taking at
     -- least as many parameters as there are actuals; each omitted position
-    -- proves `undefined`, as a call's does.
+    -- proves `undefined`, as a call's does. A signature stating a
+    -- precondition is taken where `admits` holds of it at the term, the
+    -- knowledge at the step establishing it (`call-requires`), in its order.
     | .construct f args =>
       let own := match f with | .var i => (Γ[i]?).toList | _ => []
       return (keepFirst {} (own ++ pool)).2.toList.findSearch? fun F => do
@@ -828,7 +831,8 @@ came from a different context. No execution budget is inspected. -/
           (if flags.any id then [] else L.map .inl) ++ S.map .inr
         candidates.findSearch? fun c => match c with
         | .inl p => do
-          if args.length > p.arguments.length || !p.effect.plain then none else do
+          if args.length > p.arguments.length ||
+            !(p.effect.plain || p.effect.promise.isNone && admits p.effect t) then none else do
           let ef ← recur Γ f F
           let eas ← (args.zip p.arguments).mapM fun (a,D) => recur Γ a D
           let eus ← (p.arguments.drop args.length).mapM fun D => recur Γ .undef D
@@ -1381,11 +1385,13 @@ read/value rule may succeed when ordinary derivation search cannot. -/
     SearchM G (Option (Evidence ι) × HeapExpressionRules.StepEvidence ι × HeapKnowledge.Knowledge) := do
   -- A node's derivation is first sought among its own types: its claim and
   -- its context's, which are its operands' claims. The pool is consulted
-  -- only where those leave a choice open.
+  -- only where those leave a choice open. A construct signature stating a
+  -- precondition is admitted where the step's knowledge establishes it.
+  let admits := fun (eff : CallEffects.Effect) (t : Tm) => PromiseCalls.preconditionHolds k eff t
   let own := (j.type :: j.context).eraseDups
   let ordinary ← (SearchM.orElse (SearchM.lift (CheckResult.fromOption (known.find? j))) fun _ =>
-    (expressionWithUsing G images own suggestions aliases fuel j.context j.term j.type).orElse fun _ =>
-      expressionWithUsing G images pool suggestions aliases fuel j.context j.term j.type).result
+    (expressionWithUsing G images own suggestions aliases admits fuel j.context j.term j.type).orElse fun _ =>
+      expressionWithUsing G images pool suggestions aliases admits fuel j.context j.term j.type).result
   let mut incomplete := ordinary.exhaustion
   let mut choices : List (HeapExpressionRules.StepEvidence ι) := []
   match j.term with
@@ -1439,7 +1445,7 @@ read/value rule may succeed when ordinary derivation search cannot. -/
             -- A dictionary's read finds `undefined` where the key is absent:
             -- its row is searched beside the contract.
             let undefs := C.filterMap fun l => match G l with | [.undef] => some [l] | _ => none
-            let searched ← (expressionWithUsing G images (C :: undefs ++ own) suggestions aliases fuel j.context j.term C).result
+            let searched ← (expressionWithUsing G images (C :: undefs ++ own) suggestions aliases admits fuel j.context j.term C).result
             incomplete := incomplete <|> searched.exhaustion
             if let some e := searched.value then
               for (tag, q) in answers do

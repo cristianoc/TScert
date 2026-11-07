@@ -5319,9 +5319,9 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
     const listed = typeof constructed.forms === "function" ? constructed.forms(context.library, context.view) : constructed.forms;
     if (written !== undefined && listed !== undefined) throw Error(`new ${name}(…) states a signature beside its forms`);
     const forms = listed ?? (written === undefined ? [] : [written]);
-    const [form] = forms;
-    if (!form || forms.length !== 1 || form.binders.length || form.rest)
-      throw Error(`new ${name}(…) is reviewed with no one construct form`);
+    if (!forms.length || forms.some(f => f.binders.length || f.rest))
+      throw Error(`new ${name}(…) is reviewed with no construct form`);
+    const most = Math.max(...forms.map(f => f.params.length));
     for (const definition of constructed.definitions ?? []) context.define(definition);
     for (const use of uses) {
       const parent = use.parent;
@@ -5331,16 +5331,20 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
       }
       if (!ts.isNewExpression(parent) || parent.expression !== use)
         throw Error(`the global ${name} is only constructed`);
-      if ((parent.arguments?.length ?? 0) > form.params.length || parent.arguments?.some(ts.isSpreadElement))
-        throw Error(`new ${name}(…) is read with at most ${form.params.length} argument(s)`);
+      if ((parent.arguments?.length ?? 0) > most || parent.arguments?.some(ts.isSpreadElement))
+        throw Error(`new ${name}(…) is read with at most ${most} argument(s)`);
       const read = constructed.serialized === undefined ? null : hrefRead(parent);
       if (read && constructed.serialized !== undefined) context.intrinsic(spanOf(read), constructed.serialized);
     }
     const source = declaration.getSourceFile();
-    return { construct: { declaration: { module: context.identityOf(source), name,
-      span: [declaration.getStart(source), declaration.end] }, typeParams: [],
-      type: { k: "constructor", effect: constructed.effect ?? ordinaryEffect, params: form.params, rest: null,
-        result: form.result, span: [declaration.getStart(source), declaration.end] } } };
+    const span: Span = [declaration.getStart(source), declaration.end];
+    // Each form a construct signature, at its own effect where it states one;
+    // several are the meet of their signatures, a construction selecting one.
+    const types = forms.map((f): TypeTerm => ({ k: "constructor", effect: f.effect ?? constructed.effect ?? ordinaryEffect,
+      params: f.params, rest: null, result: f.result, span }));
+    const [one] = types;
+    return { construct: { declaration: { module: context.identityOf(source), name, span }, typeParams: [],
+      type: one !== undefined && types.length === 1 ? one : { k: "intersection", parts: types, span } } };
   }
   // A constant of the standard library (`GlobalEntry.constant`): its one
   // declaration as reviewed, every reference a read of the value.
