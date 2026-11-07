@@ -114,12 +114,24 @@ let names_assigned (s : stmt) env =
 (* Whether evaluating an expression writes no heap location: slots and
    constants, operators on them, reads, element reads (`%ElementAt%`, which
    writes nothing) and assignments of value bindings. *)
+(* Whether every signature the binding `f` holds keeps the heap: its
+   footprint keeps every location's value and store, and it changes neither
+   its receiver's store nor its own locations, so Lean keeps every fact
+   across a normal return (`call-keep`, `PromiseCalls.keepsHeap`). Set by the
+   statement analysis, which reads the binding's declared type. *)
+let keeps_heap : ((string * Environment.binding) list -> string -> bool) ref = ref (fun _ _ -> false)
+let signatures_keep (calls : Semantic.signature list) =
+  calls <> [] && List.for_all (fun (s : Semantic.signature) -> let e = s.Semantic.call_effect in
+    e.Semantic.footprint.Semantic.on_value = Semantic.Keep && e.Semantic.footprint.Semantic.on_store = Semantic.Keep &&
+    not e.Semantic.receiver_store && not e.Semantic.receiver_own) calls
+
 let rec heap_free env (e : expr) = match e.node with
   | Id _ | Literal _ -> true
   | Not a | Unary (_,a) | Cast (_,_,a) | Read (a,_) -> heap_free env a
   | Arith (_,a,b) | Equality (_,a,b) | Logical (_,a,b) | Coalesce (a,b) -> heap_free env a && heap_free env b
   | Conditional (c,a,b) -> heap_free env c && heap_free env a && heap_free env b
   | Call ({node=Id "%ElementAt%";_},None,args,[],_) -> List.for_all (heap_free env) args
+  | Call ({node=Id f;_},None,args,_,_) when !keeps_heap env f -> List.for_all (heap_free env) args
   | Assign (x,_,rhs) -> value_binding env x && heap_free env rhs
   | Update (_,{node=Id x;_},rhs,_) -> value_binding env x && Option.fold ~none:true ~some:(heap_free env) rhs
   | _ -> false

@@ -24,3 +24,12 @@ export function firstProduct(xs: number[], ys: number[]): number {
   }
   return 0;
 }
+
+// In a loop: the test's equality is kept by each call of `both`, whose
+// footprint keeps the heap, so every iteration's call establishes it.
+export function dot(xs: number[], ys: number[]): number {
+  if (xs.length !== ys.length) throw new Error("lengths differ");
+  let s = 0;
+  for (let j = 0; j < xs.length; j++) s = s + both(xs, ys, j);
+  return s;
+}

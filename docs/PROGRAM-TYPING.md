@@ -1842,15 +1842,17 @@ other paths, `||`, `!`) is refused with the declaration's location.
 
 A call selects a signature stating a precondition where the producer's own
 facts at the call's statement establish it: the bounds and linear facts of
-its analysis, each actual read as a linear expression. Lean decides at the
-call (`call-requires`).
+its analysis, each actual read as a linear expression. Its facts naming a
+length are kept by a statement writing no heap, a call keeping the heap
+([`call-keep`](#a-call-that-keeps-the-heap)) included, as Lean keeps them.
+Lean decides at the call (`call-requires`).
 
 **Cases.** Positive: `written-precondition`, `written-precondition-lengths`
 (`i + 1 < xs.length`, and `xs.length === ys.length` established by a test).
 Negative, each run under Node: `invalid-written-precondition-call` (a call at
 `xs.length`), `invalid-written-precondition-body` (a body reading past what its
-clause bounds) and `invalid-written-precondition-lengths` (a call with no
-length equality). Refused forms: `written-precondition-exported-refused`,
+clause bounds) `invalid-written-precondition-lengths` (a call with no length equality) and
+`invalid-written-precondition-lengths-shrunk` (an equality a `pop` changed). Refused forms: `written-precondition-exported-refused`,
 `written-precondition-disjunction-refused`.
 
 ### A literal with spreads

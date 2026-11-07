@@ -482,6 +482,13 @@ let statements (expr:Analysis_state.expression_infer) execute_bindings owner_spa
   (* What the producer knew at each loop's iterator start, after its
      iterable's evaluation, by the loop statement's span. *)
   let at_start = Hashtbl.create 4 in
+  Linear_facts.keeps_heap := (fun env x ->
+    let declared = match List.assoc_opt x env with
+      | Some b -> Some (binding_type b)
+      | None -> (try module_type x with Json.Error _ -> None) in
+    match Option.map (fun t -> try declared_head declarations [] t with Json.Error _ -> Atoms []) declared with
+    | Some (Atoms [Shape {calls;_}]) -> Linear_facts.signatures_keep calls
+    | _ -> false);
   let flow_callbacks = {
     early;
     widen_slot=arms declarations;
