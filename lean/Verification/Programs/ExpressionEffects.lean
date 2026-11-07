@@ -1570,6 +1570,108 @@ theorem elem_var_write_core [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty
   · refine .inr ⟨U2, _, _, hx2, hu2, step2, hh2, write_back_post hfd ?_ hs2⟩
     exact elem_grow_holds hfu
 
+theorem Changes.length_refl (h : Heap) : (⟨true, true, .length⟩ : HeapKnowledge.Changes).Holds h h :=
+  ⟨fun _ _ hv _ => hv, fun _ _ ls hls => ⟨ls, hls, rfl⟩⟩
+
+/-- **An element write below its store's length keeps every store's
+length** (PROGRAM-TYPING.md, "Linear facts"): it writes a listed element's
+location, which held a source value and no store, and the store back
+unchanged, or, at a hole, a store of the same length (`placeAt_length`). -/
+theorem elem_var_write_length [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)} {f : PropKey} {i j k : Nat}
+    {Ref : Ty ι} {T : Fam} {ρ n W h} {flds : List (PropKey × Nat)} {cd : CallCode} {oid fl : Nat}
+    {ls0 : List (Option Nat)} {b0 : UInt64} {idx : Nat}
+    (hk : k < Γ.length) (hj : j < Γ.length) (hi : Γ[i]? = some Ref)
+    (hst : storeFieldEvery G (expand G Ref) f = true)
+    (hoi : ρ i = .objAt flds cd oid) (hfl : flds.lookup f = some fl) (hls0 : h[fl]? = some (.arr ls0))
+    (hb0 : ρ j = .num b0) (hidx : indexOfBits b0 = some idx) (hlt : idx < ls0.length)
+    (he : EnvOk G Γ ρ n W) (hh : HeapOk n W h)
+    (hs : Safe Ξ T n W h (instantiate 0 ρ (.writeAt f (.var i) (.setElem (.readAt f (.var i)) (.var j) (.var k))))) :
+    SafePostExc Ξ T (fun h' _ => (⟨true, true, .length⟩ : HeapKnowledge.Changes).Holds h h')
+      (fun h' => (⟨true, true, .length⟩ : HeapKnowledge.Changes).Holds h h') n W h
+      (instantiate 0 ρ (.writeAt f (.var i) (.setElem (.readAt f (.var i)) (.var j) (.var k)))) := by
+  have hvv := (meaning_value (he.2 k Γ[k] (List.getElem?_eq_getElem hk))).1
+  have hjv := (meaning_value (he.2 j Γ[j] (List.getElem?_eq_getElem hj))).1
+  obtain ⟨B, L, hmem, hevery, hbag⟩ := storeFieldEvery_sound hst (he.2 i Ref hi)
+  obtain ⟨flds0, code, oid0, hl0, _, hrec⟩ := hbag
+  obtain ⟨flds1, fl1, cfl, oid', hproj, hfd, hlookup, hagree⟩ :=
+    recT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨L, hmem, rfl⟩) hrec
+  cases hproj
+  rw [hoi] at hl0; cases hl0
+  rw [hfl] at hfd; cases hfd
+  simp only [instantiate, Nat.not_lt_zero, ite_false, Nat.sub_zero] at hs ⊢
+  rw [hoi] at hs ⊢
+  rw [hb0] at hs ⊢ hjv
+  generalize hvk : ρ k = v at hs hvv ⊢
+  cases n with
+  | zero => trivial
+  | succ n1 =>
+  rcases hs with (⟨hbad, _⟩ | hr) | ⟨U1, h1, t1, hx1, hu1, step1, hh1, hs1⟩
+  · simp [isVal] at hbad
+  · exact .inl (.inr ⟨hr, Changes.length_refl _⟩)
+  obtain ⟨u, hfu, rfl, rfl⟩ := elem_read_inv hfl step1
+  rw [hls0] at hfu; cases hfu
+  refine .inr ⟨U1, h, _, hx1, hu1, step1, hh1, ?_⟩
+  cases n1 with
+  | zero => trivial
+  | succ n2 =>
+  obtain ⟨u0, hu0, hcu⟩ := hh.2 fl cfl hlookup
+  rw [hls0] at hu0; cases hu0
+  have hmL : meaning G L 1 (trunc 1 (by omega) W) (.arr ls0) := (hagree 1 (by omega) _ _).mp (hcu 1 (by omega))
+  rcases hs1 with (⟨hbad, _⟩ | hr) | ⟨U2, h2, t2, hx2, hu2, step2, hh2, hs2⟩
+  · simp [isVal] at hbad
+  · exact .inl (.inr ⟨hr, Changes.length_refl _⟩)
+  obtain ⟨b, ls, hbb, hls, hcase⟩ := elem_set_inv rfl rfl hjv hvv step2
+  cases hbb; cases hls
+  have hflt := (List.getElem?_eq_some_iff.mp hls0).1
+  rcases hcase with ⟨l, hl, rfl, rfl⟩ | ⟨k', hk', hn, rfl, rfl⟩
+  · -- A listed position: its location held a source value, which is no store.
+    have hstore := storeTyEvery_at hevery idx
+    unfold storeTy at hstore
+    split at hstore
+    case h_2 => contradiction
+    rename_i Tup hexp
+    have hlist := (represents_raw (show Represents G L (.list Tup []) from hexp) 1 _ _ hmL).1
+    simp only [Bool.and_eq_true, Bool.or_eq_true, Bool.not_eq_true', decide_eq_true_eq] at hstore
+    obtain ⟨hpos, -⟩ := hstore
+    have hlk : ls0[idx]? = some (some l) := by
+      simp only [elemLoc, hidx, Option.bind_some] at hl
+      cases hls : ls0[idx]? with
+      | none => simp [hls] at hl
+      | some o => cases o with
+        | none => simp [hls] at hl
+        | some l' => simp [hls] at hl; subst hl; rfl
+    split at hpos
+    case h_2 => contradiction
+    rename_i A hA
+    obtain ⟨c', hc', himp⟩ := listT_slot hlist hlk
+      (by rw [ProgramTyping.positionFam_tupleFams, hA]; rfl)
+    obtain ⟨c, hc, rfl⟩ := lookup_trunc_inv _ W l c' hc'
+    obtain ⟨w, hw, hcw⟩ := hh.2 l c hc
+    have hmA : meaning G A 0 (trunc 0 (by omega) W) w := himp 0 (by omega) _ w (hcw 0 (by omega))
+    have hnarr : Footprints.isArr w = false := by
+      have := sourceTy_sound hpos hmA
+      cases w <;> simp_all [isSourceVal, Footprints.isArr]
+    refine .inr ⟨U2, _, _, hx2, hu2, step2, hh2, write_back_post hfl ?_ hs2⟩
+    refine ⟨fun _ _ _ ha => by cases ‹Val› <;> simp_all [HeapKnowledge.Changes.alters], fun _ l' ls' hls' => ?_⟩
+    by_cases hf : l' = fl
+    · subst hf; rw [hls0] at hls'; cases hls'
+      exact ⟨ls0, by rw [List.getElem?_set_self (by simpa using hflt)], rfl⟩
+    · refine ⟨ls', ?_, rfl⟩
+      rw [List.getElem?_set_ne (Ne.symm hf)]
+      by_cases hll : l' = l
+      · subst hll; rw [hw] at hls'; cases hls'; simp [Footprints.isArr] at hnarr
+      · rw [List.getElem?_set_ne (Ne.symm hll)]; exact hls'
+  · refine .inr ⟨U2, _, _, hx2, hu2, step2, hh2, write_back_post hfl ?_ hs2⟩
+    rw [hidx] at hk'; cases hk'
+    refine ⟨fun _ _ _ ha => by cases ‹Val› <;> simp_all [HeapKnowledge.Changes.alters], fun _ l' ls' hls' => ?_⟩
+    by_cases hf : l' = fl
+    · subst hf; rw [hls0] at hls'; cases hls'
+      refine ⟨placeAt ls0 idx h.length, by rw [List.getElem?_set_self (by simp; omega)], ?_⟩
+      rw [placeAt_length]; omega
+    · refine ⟨ls', ?_, rfl⟩
+      rw [List.getElem?_set_ne (Ne.symm hf), List.getElem?_append_left (List.getElem?_eq_some_iff.mp hls').1]
+      exact hls'
+
 /-- An element write at a run-time index within `Φ`: at a store type every
 position of which holds source values, `{value: any, store: grow}`. -/
 def elemVarWriteWithin (G : NormalGraph ι) (Γ : List (Ty ι)) (Φ : Footprints.Closed) (t : Tm) : Bool :=

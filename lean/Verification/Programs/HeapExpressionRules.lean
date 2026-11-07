@@ -1003,6 +1003,124 @@ theorem makeKey_alloc_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k A ρ n W
         exact one_step rfl rfl (.makeFields (by simpa using hvb) (by simp))
           (fresh_holds he hk hh _ _ _) hs1
 
+/-! ### What a write may change (PROGRAM-TYPING.md, "Linear facts")
+
+A write's location held, before it, a member of the field's type, so it
+holds no value of a class the type excludes: a location holding such a value
+is another location, and keeps its contents (`Changes`). -/
+
+/-- Whether a clause admits an object, a number, an array store, by its
+members' shape (`semWithArgs_shape`); `top` admits each, `source` each but a
+store. -/
+def clauseObj (c : PositiveNormalization.Clause α) : Bool := ![0, 1, 4, 5, 6, 8, 9, 10, 12].contains (shape c)
+def clauseNum (c : PositiveNormalization.Clause α) : Bool := [5, 7].contains (shape c)
+def clauseArr : PositiveNormalization.Clause α → Bool
+  | .top => true
+  | c => shape c == 8
+
+/-- The change a write of a member of a clause may make, by what the
+location held. -/
+def clauseChanges (c : PositiveNormalization.Clause α) : Changes :=
+  ⟨clauseObj c, clauseNum c, if clauseArr c then .any else .keep⟩
+
+theorem valueShape_objAt (fs : List (PropKey × Nat)) (cd : CallCode) (o : Nat) :
+    valueShape (.objAt fs cd o) ∈ [2, 3, 7, 11] := by
+  simp only [valueShape]
+  split <;> simp_all
+
+/-- A member of a clause is altered by the clause's change. -/
+theorem clauseChanges_alters {Ξ : Fam} {X : α → Fam} {P : α → ArgFam} {c : PositiveNormalization.Clause α} {n W v}
+    (h : semWithArgs Ξ X P c n W v) : (clauseChanges c).alters v = true := by
+  by_cases ht : c = .top
+  · subst ht; cases v <;> simp [clauseChanges, clauseObj, clauseNum, clauseArr, shape, Changes.alters]
+  by_cases hs : c = .source
+  · subst hs
+    have hsv : isSourceVal v = true := h.1
+    cases v <;> simp_all [clauseChanges, clauseObj, clauseNum, clauseArr, shape, Changes.alters, isSourceVal]
+  have hsh := semWithArgs_shape ht hs h
+  cases v
+  case objAt fs cd o =>
+    have hm := valueShape_objAt fs cd o
+    rw [hsh] at hm
+    simp only [List.mem_cons, List.not_mem_nil, or_false] at hm
+    simp only [clauseChanges, Changes.alters, clauseObj]
+    rcases hm with hm | hm | hm | hm <;> simp [hm]
+  case num b =>
+    simp only [valueShape] at hsh
+    simp [clauseChanges, Changes.alters, clauseNum, ← hsh]
+  case arr ls =>
+    simp only [valueShape] at hsh
+    cases c <;> simp_all [clauseChanges, Changes.alters, clauseArr, shape]
+  all_goals simp [Changes.alters]
+
+/-- The change a write of a member of a type may make. -/
+def typeChanges [DecidableEq ι] (G : NormalGraph ι) (A : Ty ι) : Changes :=
+  if G.plainTy A then ((expand G A).map clauseChanges).foldr Changes.join ⟨false, false, .keep⟩ else Changes.top
+
+theorem foldr_join_alters {cs : List Changes} {c : Changes} {v : Val} (hc : c ∈ cs) (h : c.alters v = true) :
+    (cs.foldr Changes.join ⟨false, false, .keep⟩).alters v = true := by
+  induction cs with
+  | nil => cases hc
+  | cons d ds ih =>
+    rcases List.mem_cons.mp hc with rfl | hm
+    · exact Changes.join_alters_left h
+    · exact Changes.join_alters_right (ih hm)
+
+theorem typeChanges_alters [DecidableEq ι] {G : NormalGraph ι} {A : Ty ι} {n W v} (hv : meaning G A n W v) :
+    (typeChanges G A).alters v = true := by
+  unfold typeChanges
+  split
+  · rename_i hp
+    obtain ⟨c, hc, hcv⟩ := (expand_sem G A hp n W v).mp hv
+    exact foldr_join_alters (List.mem_map_of_mem hc) (clauseChanges_alters hcv.1)
+  · exact Changes.top_alters v
+
+/-- The change a write of the field `fld` of an object of a type with the
+clauses `cs` may make: what each type they state for it may (`fieldTys`). -/
+def fieldChanges [DecidableEq ι] (G : NormalGraph ι) (cs : List (PositiveNormalization.Clause (Ty ι))) (fld : PropKey) : Changes :=
+  if fieldOperand cs fld then ((fieldTys cs fld).map (typeChanges G)).foldr Changes.join ⟨false, false, .keep⟩
+  else Changes.top
+
+/-- **A written field's location held a value the write's change alters**:
+where its object meets `Ref`, its location's contract is a field type's. -/
+theorem fieldChanges_alters [DecidableEq ι] {G : NormalGraph ι} {Ref : Ty ι} {fld : PropKey} {n W h v}
+    {flds : List (PropKey × Nat)} {cd : CallCode} {o l : Nat} {u : Val}
+    (hv : meaning G Ref (n + 1) W v) (hh : HeapOk (n + 1) W h) (ho : v = .objAt flds cd o)
+    (hl : flds.lookup fld = some l) (hu : h[l]? = some u) :
+    (fieldChanges G (expand G Ref) fld).alters u = true := by
+  unfold fieldChanges
+  split
+  · rename_i hr
+    obtain ⟨El, flds', cd', o', l', c, hv', hl', hW, himp, hEl⟩ := fieldOperand_typed hr hv
+    rw [ho] at hv'; cases hv'
+    rw [hl] at hl'; cases hl'
+    obtain ⟨u', hu', hm⟩ := hh.2 l c hW
+    rw [hu] at hu'; cases hu'
+    exact foldr_join_alters (List.mem_map_of_mem hEl) (typeChanges_alters (himp 0 (by omega) _ u (hm 0 (by omega))))
+  · exact Changes.top_alters u
+
+/-- A write of one location meets a change altering what it held, where the
+change keeps no store's length alone. -/
+theorem set_changes {c : Changes} {h : Heap} {l : Nat} {u b : Val} (hu : h[l]? = some u) (ha : c.alters u = true)
+    (hs : c.store ≠ .length) : c.Holds h (h.set l b) := by
+  refine ⟨fun l' v hv hna => ?_, fun hl => absurd hl hs⟩
+  have hne : l ≠ l' := by
+    rintro rfl; rw [hu] at hv; cases hv; rw [ha] at hna; cases hna
+  rw [List.getElem?_set_ne hne]; exact hv
+
+theorem foldr_join_store (cs : List Changes) :
+    (cs.foldr Changes.join ⟨false, false, .keep⟩).store ≠ .length := by
+  cases cs with
+  | nil => simp
+  | cons d ds => simp only [List.foldr_cons, Changes.join]; split <;> simp
+
+theorem fieldChanges_store [DecidableEq ι] (G : NormalGraph ι) (cs : List (PositiveNormalization.Clause (Ty ι)))
+    (fld : PropKey) : (fieldChanges G cs fld).store ≠ .length := by
+  unfold fieldChanges
+  split
+  · exact foldr_join_store _
+  · simp [Changes.top]
+
 /-- Whether a write of field `fld` of slot `i` keeps a cell fact about
 field `g` of slot `s`: a separation fact states the two apart, or, where the
 written field's location belongs to its key alone (`owned`), `s` holds the
@@ -1016,13 +1134,47 @@ def writeKeeps (k : Knowledge) (i : Nat) (fld : PropKey) (owned : Bool) (s : Nat
 to be distinct from the written one, establishes its new contents where the
 written value is a known primitive (`R`), and retains immutable values
 already read into slots. -/
-def writeOutput (k : Knowledge) (i : Nat) (fld : PropKey) (R : Option ValueSets.ValueSet) (owned : Bool) : Knowledge :=
+def writeOutput (k : Knowledge) (i : Nat) (fld : PropKey) (R : Option ValueSets.ValueSet) (owned : Bool)
+    (chg : Changes) : Knowledge :=
   ⟨(R.map fun R => (HeapLinks.aliases k.links i).map (fun j => (⟨j+1,R,fld⟩ : Fact))).getD [] ++
       (k.cells.filter fun f => writeKeeps k i fld owned f.slot f.field).map
         (fun f => {f with slot := f.slot + 1}),
     ⟨0,{ nul := true },valueField⟩ :: HeapFacts.shift k.values,
     HeapLinks.stable (HeapKnowledge.shift k).links, HeapSeparation.shift k.separation, [],
-    HeapKnowledge.envIndices (HeapKnowledge.shiftIndices k.indices)⟩
+    HeapKnowledge.shiftIndices (HeapKnowledge.keptIndices chg (fun s g => writeKeeps k i fld owned s (.str g)) k.indices)⟩
+
+/-- **A kept location differs from the written one**: a separation fact
+states it, or `write-sibling` (`ownedField_sound`). -/
+theorem writeKeeps_ne [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)} {k : Knowledge} {i : Nat} {fld g : PropKey}
+    {s : Nat} {ρ n W h} {flds flds0 : List (PropKey × Nat)} {c c0 : CallCode} {oid oid0 l l0 : Nat}
+    (he : EnvOk G Γ ρ n W) (hk : HeapKnowledge.Holds k ρ h) (hi : i < Γ.length)
+    (hw : writeKeeps k i fld (ownedField (expand G (Γ.getD i [])) fld) s g = true)
+    (hl : ρ i = .objAt flds c oid) (hfd : flds.lookup fld = some l)
+    (hs0 : ρ s = .objAt flds0 c0 oid0) (hfd0 : flds0.lookup g = some l0) : l ≠ l0 := by
+  have hM : ∀ x, ∀ y ∈ Partitions.cls (LinkClasses.closure k.links) x, ρ y = ρ x :=
+    fun _ _ hy => (LinkClasses.gen_sound hk.2.2.1 (LinkClasses.mem_cls_closure.mp hy)).symm
+  unfold writeKeeps at hw
+  rcases Bool.or_eq_true_iff.mp hw with ha | hsib
+  · exact HeapSeparation.apartBy_sound hM ha hk.2.2.2.1 hl hfd hs0 hfd0
+  · simp only [Bool.and_eq_true, bne_iff_ne, ne_eq, Bool.or_eq_true, beq_iff_eq,
+      List.contains_iff_mem] at hsib
+    obtain ⟨⟨hown, hgf⟩, hsame⟩ := hsib
+    have hsi : ρ s = ρ i := by
+      rcases hsame with rfl | hm
+      · rfl
+      · exact hM i s hm
+    obtain ⟨flds1, code1, oid1, l1, hv1, hfd1, howned⟩ :=
+      ownedField_sound hown (he.2 i (Γ.getD i [])
+        (by simp [List.getD_eq_getElem?_getD, List.getElem?_eq_getElem hi]))
+    rw [hl] at hv1
+    cases hv1
+    rw [hsi, hl] at hs0
+    cases hs0
+    rw [hfd] at hfd1
+    cases hfd1
+    intro heq
+    subst heq
+    exact hgf (howned g hfd0)
 
 theorem write_inv {f h a b h' t} (ha : isVal a = true) (hb : isVal b = true)
     (hs : Step h (.writeAt f a b) h' t) :
@@ -1041,7 +1193,8 @@ theorem write_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImag
     (he : EnvOk G Γ ρ n W) (hk : HeapKnowledge.Holds k ρ h)
     (hw : WorldAdm W) (hh : HeapOk n W h) :
     SafePost (excOf G) (meaning G A)
-      (fun h' v => HeapKnowledge.Holds (writeOutput k i fld R (ownedField (expand G (Γ.getD i [])) fld)) (push v ρ) h')
+      (fun h' v => HeapKnowledge.Holds (writeOutput k i fld R (ownedField (expand G (Γ.getD i [])) fld)
+        (fieldChanges G (expand G (Γ.getD i [])) fld)) (push v ρ) h')
       n W h (.writeAt fld (ρ i) (ρ j)) := by
   have hvv : isVal (ρ j) = true :=
     (meaning_value (he.2 j Γ[j] (List.getElem?_eq_some_iff.mpr ⟨hj,rfl⟩))).1
@@ -1060,9 +1213,20 @@ theorem write_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImag
     · obtain ⟨flds,c,oid,l,hl,hfd,hlt,_,_⟩ := write_inv hiv hvv step
       rw [hl] at hs ⊢
       apply one_step rfl rfl (.writeField hvv hfd hlt) _ hs
+      have hindex : HeapKnowledge.IndexHolds (HeapKnowledge.shiftIndices (HeapKnowledge.keptIndices
+          (fieldChanges G (expand G (Γ.getD i [])) fld)
+          (fun s g => writeKeeps k i fld (ownedField (expand G (Γ.getD i [])) fld) s (.str g)) k.indices))
+          (push .nul ρ) (h.set l (ρ j)) := by
+        obtain ⟨u, hu⟩ : ∃ u, h[l]? = some u := ⟨h[l], List.getElem?_eq_getElem hlt⟩
+        have hRef : meaning G (Γ.getD i []) (n + 1) W (ρ i) :=
+          he.2 i (Γ.getD i []) (by simp [List.getD_eq_getElem?_getD, List.getElem?_eq_getElem hi])
+        refine HeapKnowledge.shiftIndices_holds (HeapKnowledge.keptIndices_holds hk.2.2.2.2.2
+          (set_changes hu (fieldChanges_alters hRef hh hl hfd hu) (fieldChanges_store _ _ _)) ?_)
+        intro s g fs cd o l0 v hfirst hs0 hl0 hv
+        rw [List.getElem?_set_ne (writeKeeps_ne he hk hi hfirst hl hfd hs0 hl0)]
+        exact hv
       refine ⟨?_,?_,HeapLinks.stable_holds (HeapKnowledge.shift_holds (v := .nul) hk).2.2.1,
-        (HeapKnowledge.shift_holds (v := .nul) hk).2.2.2.1, HeapKnowledge.elemsHolds_nil _ _,
-        HeapKnowledge.envIndices_holds (HeapKnowledge.shift_holds (v := .nul) hk).2.2.2.2.2 _⟩
+        (HeapKnowledge.shift_holds (v := .nul) hk).2.2.2.1, HeapKnowledge.elemsHolds_nil _ _, hindex⟩
       · intro f hf
         rcases List.mem_append.mp hf with hf | hf
         · cases hR : R with
@@ -1083,31 +1247,7 @@ theorem write_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImag
             | none => rw [hfd0] at hrd; exact hrd
             | some l0 =>
               rw [hfd0] at hrd
-              have hM : ∀ x, ∀ y ∈ Partitions.cls (LinkClasses.closure k.links) x, ρ y = ρ x :=
-                fun _ _ hy => (LinkClasses.gen_sound hk.2.2.1 (LinkClasses.mem_cls_closure.mp hy)).symm
-              have hne : l ≠ l0 := by
-                unfold writeKeeps at hg
-                rcases Bool.or_eq_true_iff.mp hg.2 with ha | hsib
-                · exact HeapSeparation.apartBy_sound hM ha hk.2.2.2.1 hl hfd hs0 hfd0
-                · simp only [Bool.and_eq_true, bne_iff_ne, ne_eq, Bool.or_eq_true, beq_iff_eq,
-                    List.contains_iff_mem] at hsib
-                  obtain ⟨⟨hown, hgf⟩, hsame⟩ := hsib
-                  have hsi : ρ g.slot = ρ i := by
-                    rcases hsame with rfl | hm
-                    · rfl
-                    · exact hM i g.slot hm
-                  obtain ⟨flds1, code1, oid1, l1, hv1, hfd1, howned⟩ :=
-                    ownedField_sound hown (he.2 i (Γ.getD i [])
-                      (by simp [List.getD_eq_getElem?_getD, List.getElem?_eq_getElem hi]))
-                  rw [hl] at hv1
-                  cases hv1
-                  rw [hsi, hl] at hs0
-                  cases hs0
-                  rw [hfd] at hfd1
-                  cases hfd1
-                  intro heq
-                  subst heq
-                  exact hgf (howned g.field hfd0)
+              have hne : l ≠ l0 := writeKeeps_ne he hk hi hg.2 hl hfd hs0 hfd0
               simpa only [List.getElem?_set_ne hne] using hrd
       · intro f hf
         rcases List.mem_cons.mp hf with rfl | hf
@@ -1488,7 +1628,8 @@ frame. Subtype comparisons retain unfinished work through the step validation. -
     | some (fld, i', v') =>
       checkedOutput G images e (decide (claim e = j ∧ i' = i ∧ v' = v ∧ i < j.context.length ∧
         v < j.context.length ∧ valuesAt G j.context k v = R))
-        (writeOutput k i fld R (ownedField (expand G (j.context.getD i [])) fld)) codes sums tree
+        (writeOutput k i fld R (ownedField (expand G (j.context.getD i [])) fld)
+          (fieldChanges G (expand G (j.context.getD i [])) fld)) codes sums tree
     | none => failure
   | .boundedWrite .. => failure
 
@@ -1587,7 +1728,8 @@ theorem checkStepUsing_eq [DecidableEq ι] (G : NormalGraph ι) (images : Instan
       if claim e = j ∧ checkTreeUsing G images e codes sums = true ∧ i' = i ∧ v' = v ∧
           i < j.context.length ∧ v < j.context.length ∧
           valuesAt G j.context k v = R
-      then some (writeOutput k i fld R (ownedField (expand G (j.context.getD i [])) fld)) else none
+      then some (writeOutput k i fld R (ownedField (expand G (j.context.getD i [])) fld)
+          (fieldChanges G (expand G (j.context.getD i [])) fld)) else none
     | none => none
   | .boundedWrite .. => none := by
   cases step <;> simp only [checkStepUsing, checkStepResult, checkedOutput_value,

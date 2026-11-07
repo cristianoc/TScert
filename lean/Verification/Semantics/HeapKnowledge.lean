@@ -1021,6 +1021,22 @@ theorem envIndices_holds {as : List IndexAtom} {ρ h} (he : IndexHolds as ρ h) 
   | index _ | int _ => rw [hf] at this; exact this
   | length _ _ | bound _ _ _ => rw [hf] at henv; simp [IndexFact.envOnly] at henv
 
+/-- The atoms a change keeps (`IndexFact.keptBy`), the facts reading no heap
+among them. -/
+def keptIndices (c : Changes) (first : Nat → String → Bool) (as : List IndexAtom) : List IndexAtom :=
+  as.filter (·.fact.keptBy c first)
+
+theorem keptIndices_holds {c : Changes} {first : Nat → String → Bool} {as : List IndexAtom} {ρ h h'}
+    (he : IndexHolds as ρ h) (hc : c.Holds h h') (hf : FirstKept first ρ h h') :
+    IndexHolds (keptIndices c first as) ρ h' := by
+  intro a ha hcd
+  obtain ⟨ha, hk⟩ := List.mem_filter.mp ha
+  exact IndexFact.holdsAt_kept hc hf hk (he a ha hcd)
+
+/-- Nothing is kept by `first` where it names no location. -/
+theorem firstKept_none {ρ : Env} {h h' : Heap} : FirstKept (fun _ _ => false) ρ h h' := by
+  intro _ _ _ _ _ _ _ hf; cases hf
+
 /-- The terms the linear facts of the atoms name, conditional ones included. -/
 def linearTerms (as : List IndexAtom) : List Term :=
   ((linearFacts as).flatMap (·.vars) ++ as.flatMap fun a => match a.fact with

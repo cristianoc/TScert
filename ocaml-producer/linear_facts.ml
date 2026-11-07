@@ -229,6 +229,8 @@ let names_assigned (s : stmt) env =
    across a normal return (`call-keep`, `PromiseCalls.keepsHeap`). Set by the
    statement analysis, which reads the binding's declared type. *)
 let keeps_heap : ((string * Environment.binding) list -> string -> bool) ref = ref (fun _ _ -> false)
+(* Whether every signature of the method `key` of the receiver's type keeps
+   the heap, alike (`call-keep` at a method call). *)
 let signatures_keep (calls : Semantic.signature list) =
   calls <> [] && List.for_all (fun (s : Semantic.signature) -> let e = s.Semantic.call_effect in
     e.Semantic.footprint.Semantic.on_value = Semantic.Keep && e.Semantic.footprint.Semantic.on_store = Semantic.Keep &&
@@ -267,6 +269,74 @@ let statement_heap_free env (s : stmt) = match s.statement with
   | Destructure _ -> destructure_reads env s <> None
   | _ -> false
 
+(* The bounds holding where the statement being typed starts, for a call
+   whose signature states a precondition (`Expression_calls`): set by the
+   flow around each statement it types, empty elsewhere. *)
+let current_bounds : (string * string * bool) list ref = ref []
+(* The linear facts holding there, alike. *)
+let current_facts : fact list ref = ref []
+
+(* What a statement's one heap write may change, by what a location held
+   before it (Lean's `HeapKnowledge.Changes`): an object, a number, an array
+   store (its contents kept, its length kept, or neither). A fact is kept
+   where no location its terms read holds what the write may change
+   (`Term.keptBy`): a path's locations hold objects, its last a number for a
+   value term; a length reads a store, an element count a number. *)
+type changes = { obj : bool; num : bool; store : [`Keep | `Length | `Any] }
+
+(* The classes a field's type admits, `(object, number, store)`, where the
+   receiver's type states the field (Lean's `fieldChanges`); set by the
+   statement analysis, which reads the receiver's type. *)
+let field_classes : ((string * Environment.binding) list -> expr -> Semantic.key -> (bool * bool * bool) option) ref =
+  ref (fun _ _ _ -> None)
+(* The footprint every signature of the binding `f` states, where none
+   excepts its receiver's store or own locations (Lean's `effectKept`). *)
+let call_footprint : ((string * Environment.binding) list -> string -> Semantic.footprint option) ref =
+  ref (fun _ _ -> None)
+(* Whether the array binding's store holds source values at every position,
+   one writable homogeneous contract (Lean's `keepsLengths`). *)
+let source_elements : ((string * Environment.binding) list -> string -> bool) ref = ref (fun _ _ -> false)
+
+let of_classes (o,n,a) = { obj = o; num = n; store = (if a then `Any else `Keep) }
+let of_footprint (fp : Semantic.footprint) =
+  { obj = fp.Semantic.on_value = Semantic.Any; num = fp.Semantic.on_value = Semantic.Any;
+    store = (if fp.Semantic.on_store = Semantic.Keep then `Keep else `Any) }
+
+let term_kept ch t =
+  let _,path,kind = term_parts t in
+  let last = if kind = Value_term then ch.num else ch.obj in
+  (match path with
+   | [] -> true
+   | _ :: q -> not (if q = [] then last else ch.obj) && (q = [] || (not last && (List.length q = 1 || not ch.obj)))) &&
+  (match kind with Value_term -> true | Length_term -> ch.store <> `Any | View_term -> not ch.num)
+let fact_kept ch ((t,_) : fact) = List.for_all (fun (n,_) -> term_kept ch n) t
+
+(* An index below an array's length: a strict bound, or `0 ≤ k` and
+   `k ≤ |xs| - 1` from the facts (Lean's `bounded`, strict). *)
+let strictly_bounded ~facts ~bounds xs k =
+  List.mem (xs,k,true) bounds ||
+  (let fs = facts @ term_ranges facts in
+   entails fs ([k,-1],0) && entails fs (norm [k,1; length_term xs,-1],-1))
+
+(* The change of an expression whose one heap write is a field's, a checked
+   element's or a call's, its operands writing none. *)
+let write_changes ~facts ~bounds env (e : expr) : changes option =
+  match e.node with
+  | Write (recv,key,rhs) when heap_free env recv && heap_free env rhs ->
+    Option.map of_classes (!field_classes env recv key)
+  | Update (_,{node=Read (recv,key);_},rhs,_) when heap_free env recv && Option.fold ~none:true ~some:(heap_free env) rhs ->
+    Option.map of_classes (!field_classes env recv key)
+  | IndexWrite ({node=Id xs;_},{node=Id k;_},rhs)
+    when heap_free env rhs && value_binding env xs && value_binding env k && !source_elements env xs && strictly_bounded ~facts ~bounds xs k ->
+    Some { obj = true; num = true; store = `Length }
+  | Call ({node=Id f;_},None,args,[],_) when List.for_all (heap_free env) args ->
+    Option.map of_footprint (!call_footprint env f)
+  | _ -> None
+
+let statement_changes ~facts ~bounds env (s : stmt) = match s.statement with
+  | Effect e -> write_changes ~facts ~bounds env e
+  | _ -> None
+
 (* The facts restated where a binding is declared at a path's read
    (`const b = p.f`): each fact naming a term of a path extending it restated
    of the binding, the path's prefix replaced by the binding's name, as Lean's
@@ -286,10 +356,12 @@ let restate_read name (root,path) (fs : fact list) : fact list =
 (* A statement's effect on the facts: an assignment or update of a slot
    binding by a linear expression, and every other assigned binding
    forgotten. *)
-let statement ~(array : string -> string list -> bool) env fs (s : stmt) : fact list =
+let statement ~(array : string -> string list -> bool) ?(bounds=[]) env fs (s : stmt) : fact list =
   (* A fact naming a length or an element count reads the heap: kept where
      the statement writes none, as Lean keeps it (`IndexFact.envOnly`). *)
-  let fs = if statement_heap_free env s then fs else List.filter (fun f -> not (has_heap_term f)) fs in
+  let fs = if statement_heap_free env s then fs else match statement_changes ~facts:fs ~bounds env s with
+    | Some ch -> List.filter (fact_kept ch) fs
+    | None -> List.filter (fun f -> not (has_heap_term f)) fs in
   match s.statement with
   | Effect {node=Assign (x,_,e);_} -> assign ~array env fs x e
   | Effect {node=Update ((Add | Sub) as op,({node=Id x;_} as target),rhs,_);pos} ->
@@ -378,8 +450,10 @@ let join_bounds (l : bound list) (r : bound list) : bound list =
 
 (* The bounds a statement keeps: those whose bindings it does not assign, where
    it writes no heap. *)
-let statement_bounds env (bs : bound list) (s : stmt) =
-  if not (statement_heap_free env s) then [] else
+let statement_bounds ?(facts=[]) env (bs : bound list) (s : stmt) =
+  let kept = statement_heap_free env s ||
+    (match statement_changes ~facts ~bounds:bs env s with Some ch -> ch.store <> `Any | None -> false) in
+  if not kept then [] else
   let assigned = names_assigned s env in
   List.filter (fun (a,i,_) -> not (List.mem a assigned) && not (List.mem i assigned)) bs
 
@@ -429,13 +503,6 @@ let rec test ~array env fs (cond : expr) : (fact list * bound list) * (fact list
 
 let comparison ~array env fs cond = let (t,_),(f,_) = test ~array env fs cond in t,f
 let comparison_bounds ~array env fs cond = let (_,t),(_,f) = test ~array env fs cond in t,f
-
-(* The bounds holding where the statement being typed starts, for a call
-   whose signature states a precondition (`Expression_calls`): set by the
-   flow around each statement it types, empty elsewhere. *)
-let current_bounds : bound list ref = ref []
-(* The linear facts holding there, alike. *)
-let current_facts : fact list ref = ref []
 
 (* At a merge, a fact of one form holds at the larger bound where both
    paths bound it. A bound larger than the one the earlier state (`l`, the

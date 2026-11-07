@@ -311,7 +311,8 @@ let statements callbacks flow_graph register_following owner_span env0 ss =
           [with_facts e fs (Linear_facts.statement_bounds env bounds0 (source span))]
         | Flow.Statement (span,_), [e] ->
           let s = source span in
-          [with_facts e (Linear_facts.statement ~array:(callbacks.array_binding env) env facts0 s) (Linear_facts.statement_bounds env bounds0 s)]
+          [with_facts e (Linear_facts.statement ~array:(callbacks.array_binding env) ~bounds:bounds0 env facts0 s)
+            (Linear_facts.statement_bounds ~facts:facts0 env bounds0 s)]
         | Flow.Branch (span,_,_), [y;n] ->
           let s = source span in
           (match s.statement with

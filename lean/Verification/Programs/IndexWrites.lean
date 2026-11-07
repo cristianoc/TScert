@@ -1,4 +1,5 @@
 import Verification.Programs.HeapExpressionRules
+import Verification.Programs.ExpressionEffects
 import Verification.Semantics.IndexNumbers
 
 /-! # Writes at a checked index
@@ -1195,6 +1196,57 @@ theorem boundedWrite_sound [DecidableEq ι] {G : NormalGraph ι} {images : Insta
     · cases htypes
   · cases htypes
 
+/-- The knowledge after a write below its store's length: what the ordinary
+output keeps, and every atom reading stores' lengths alone
+(`ExpressionEffects.elem_var_write_length`). -/
+def lengthOutput (k : Knowledge) : Knowledge :=
+  { HeapExpressionRules.ordinaryOutput k with
+    indices := shiftIndices (keptIndices ⟨true, true, .length⟩ (fun _ _ => false) k.indices) }
+
+/-- Whether a checked write keeps every store's length: its index below the
+store's length, at a store type every position of which holds source
+values. -/
+def keepsLengths [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι) (k : Knowledge) (a i : Nat) : Bool :=
+  bounded k a i true && match j.context[a]? with
+    | some R => ExpressionEffects.storeFieldEvery G (expand G R) arrayStoreKey
+    | none => false
+
+theorem boundedLength_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
+    {j : Sequent ι} {k : Knowledge} {a i v : Nat} {sub : PositiveCertificates.SubtypeChoices ι}
+    (hc : boundedWriteCheck G images j k a i v sub = true) (hkeep : keepsLengths G j k a i = true) {ρ n W h}
+    (he : EnvOk G j.context ρ n W) (hk : Holds k ρ h) (hw : WorldAdm W) (hh : HeapOk n W h) :
+    SafePost (excOf G) (meaning G j.type)
+      (fun h' u => Holds (lengthOutput k) (push u ρ) h') n W h (instantiate 0 ρ j.term) := by
+  have hs := boundedWrite_sound hc he hk hw hh
+  simp only [boundedWriteCheck, Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq] at hc
+  obtain ⟨⟨⟨⟨hslots, hil⟩, htypes⟩, -⟩, -⟩ := hc
+  simp only [keepsLengths, Bool.and_eq_true] at hkeep
+  obtain ⟨hbd, hst⟩ := hkeep
+  split at hst
+  case h_2 => cases hst
+  rename_i R hR
+  have hvl : v < j.context.length := by
+    split at htypes
+    · rename_i R' V hR' hV; exact (List.getElem?_eq_some_iff.mp hV).1
+    · cases htypes
+  obtain ⟨s, ls, b, idx, hs0, hl, hb, hidx, hle⟩ := bounded_sound hbd hk
+  obtain ⟨flds, cd, oid, hoi⟩ : ∃ flds cd oid, ρ a = .objAt flds cd oid := by
+    cases hra : ρ a
+    case objAt => exact ⟨_, _, _, rfl⟩
+    all_goals rw [hra] at hs0; simp [Footprints.storeOf, Footprints.fieldsOf] at hs0
+  have hfl : flds.lookup arrayStoreKey = some s := by
+    simpa [Footprints.storeOf, Footprints.fieldsOf, hoi] using hs0
+  rw [boundedSlots_eq hslots] at hs ⊢
+  have hsafe : Safe (excOf G) (meaning G j.type) n W h
+      (instantiate 0 ρ (.writeAt arrayStoreKey (.var a) (.setElem (.readAt arrayStoreKey (.var a)) (.var i) (.var v)))) :=
+    HeapObservations.erase hs
+  have hp := (ExpressionEffects.elem_var_write_length hvl hil hR hst hoi hfl hl hb hidx (by simp at hle; omega)
+    he hh hsafe).post
+  refine weaken (fun h' u hq => ?_) hp
+  exact ⟨HeapFacts.holds_nil _ _, (shift_holds (v := u) hk).2.1,
+    HeapLinks.stable_holds (shift_holds (v := u) hk).2.2.1, (shift_holds (v := u) hk).2.2.2.1,
+    elemsHolds_nil _ _, shiftIndices_holds (keptIndices_holds hk.2.2.2.2.2 hq firstKept_none)⟩
+
 end Verification.IndexWrites
 
 namespace Verification.HeapExpressionRules
@@ -1233,11 +1285,15 @@ of the heap; every other step is `base`'s. -/
     (base : Checker G images) : Checker G images where
   run := fun j k e codes sums => match e with
     | .boundedWrite a i v p =>
-      if IndexWrites.boundedWriteCheck G images j k a i v p then pure (ordinaryOutput k) else failure
+      if IndexWrites.boundedWriteCheck G images j k a i v p then
+        pure (if IndexWrites.keepsLengths G j k a i then IndexWrites.lengthOutput k else ordinaryOutput k)
+      else failure
     | _ => base.run j k e codes sums
   select := fun j k e codes sums => match e with
     | .boundedWrite a i v p =>
-      if IndexWrites.boundedWriteCheck G images j k a i v p then pure (ordinaryOutput k) else failure
+      if IndexWrites.boundedWriteCheck G images j k a i v p then
+        pure (if IndexWrites.keepsLengths G j k a i then IndexWrites.lengthOutput k else ordinaryOutput k)
+      else failure
     | _ => base.select j k e codes sums
   sound := by
     intro j k e out codes sums hc hcodes hsums ρ n W h he hk hw hh
@@ -1245,7 +1301,10 @@ of the heap; every other step is `base`'s. -/
     · split at hc
       · rename_i hck
         cases hc
-        exact IndexWrites.boundedWrite_sound hck he hk hw hh
+        split
+        · rename_i hkeep
+          exact IndexWrites.boundedLength_sound hck hkeep he hk hw hh
+        · exact IndexWrites.boundedWrite_sound hck he hk hw hh
       · cases hc
     · exact base.sound hc hcodes hsums he hk hw hh
 

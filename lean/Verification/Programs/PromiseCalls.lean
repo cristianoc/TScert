@@ -1762,19 +1762,45 @@ theorem ensuresAtoms_holds {eff : Effect} {t : Tm} {ρ : Env} {h' : Heap} {v : T
       exact hp F hF
   · exact HeapKnowledge.indexHolds_nil _ _
 
-/-- Knowledge with a call's result-fact atoms added. -/
-def withEnsures (eff : Effect) (t : Tm) (k : HeapKnowledge.Knowledge) : HeapKnowledge.Knowledge :=
-  { k with indices := k.indices ++ ensuresAtoms eff t }
+/-- The heap-reading atoms of a call's entry its footprint keeps, renamed past
+the result (`Changes.ofClosed`, PROGRAM-TYPING.md, "Linear facts"): none
+where its signature keeps the heap, whose output keeps every atom
+(`call-keep`), or excepts its receiver's store or own locations. -/
+def effectKept (eff : Effect) (k : HeapKnowledge.Knowledge) : List HeapKnowledge.IndexAtom :=
+  if keepsHeap eff || eff.receiverStore || eff.receiverOwn then [] else
+    HeapKnowledge.shiftIndices (HeapKnowledge.keptIndices (HeapKnowledge.Changes.ofClosed eff.footprint)
+      (fun _ _ => false) (k.indices.filter fun a => !a.fact.envOnly))
 
-theorem withEnsures_holds {eff : Effect} {t : Tm} {k : HeapKnowledge.Knowledge} {ρ : Env} {h' : Heap} {v : Tm}
-    (hk : HeapKnowledge.Holds k (push v ρ) h')
+theorem effectKept_holds {eff : Effect} {k : HeapKnowledge.Knowledge} {ρ : Env} {h h' : Heap} {r : Tm} {v : Tm}
+    (hk : HeapKnowledge.Holds k ρ h) (hw : eff.within r h h') :
+    HeapKnowledge.IndexHolds (effectKept eff k) (push v ρ) h' := by
+  unfold effectKept
+  split
+  · exact HeapKnowledge.indexHolds_nil _ _
+  · rename_i hc
+    simp only [Bool.or_eq_true, not_or, Bool.not_eq_true] at hc
+    obtain ⟨⟨-, hs⟩, ho⟩ := hc
+    exact HeapKnowledge.shiftIndices_holds (HeapKnowledge.keptIndices_holds
+      (fun a ha hcd => hk.2.2.2.2.2 a (List.mem_filter.mp ha).1 hcd)
+      (HeapKnowledge.Changes.ofClosed_holds (CallEffects.Effect.within_holds hw hs ho)) HeapKnowledge.firstKept_none)
+
+/-- Knowledge with a call's result-fact atoms added, and the atoms of its
+entry `k0` its footprint keeps (`effectKept`). -/
+def withEnsures (eff : Effect) (t : Tm) (k0 k : HeapKnowledge.Knowledge) : HeapKnowledge.Knowledge :=
+  { k with indices := k.indices ++ ensuresAtoms eff t ++ effectKept eff k0 }
+
+theorem withEnsures_holds {eff : Effect} {t : Tm} {k0 k : HeapKnowledge.Knowledge} {ρ : Env} {h h' : Heap} {v : Tm}
+    (hk : HeapKnowledge.Holds k (push v ρ) h') (hk0 : HeapKnowledge.Holds k0 ρ h)
+    (hw : eff.within (ExpressionEffects.receiverOf (instantiate 0 ρ t)) h h')
     (hp : ∀ F ∈ eff.ensures, F.HoldsAt (CallEffects.ensuresEnv v (ExpressionEffects.receiverOf (instantiate 0 ρ t))
       (ExpressionEffects.actualsOf (instantiate 0 ρ t))) h') :
-    HeapKnowledge.Holds (withEnsures eff t k) (push v ρ) h' :=
+    HeapKnowledge.Holds (withEnsures eff t k0 k) (push v ρ) h' :=
   ⟨hk.1, hk.2.1, hk.2.2.1, hk.2.2.2.1, hk.2.2.2.2.1, fun a ha hc => by
     rcases List.mem_append.mp ha with ha | ha
-    · exact hk.2.2.2.2.2 a ha hc
-    · exact ensuresAtoms_holds hp a ha hc⟩
+    · rcases List.mem_append.mp ha with ha | ha
+      · exact hk.2.2.2.2.2 a ha hc
+      · exact ensuresAtoms_holds hp a ha hc
+    · exact effectKept_holds hk0 hw a ha hc⟩
 
 /-- The selected signature of an ordinary step's evidence that `call-ensures`
 applies to: at the sequent `j`, a call checked as `selected_sound` or as
@@ -1787,7 +1813,7 @@ applies to: at the sequent `j`, a call checked as `selected_sound` or as
     if decide (claim p = j) && (ExpressionEffects.selectedOperands p && checkTreeUsing G images p codes sums ||
         requiresTree G images k codes sums p) then
       match ExpressionEffects.selectedEffect p with
-      | some eff => if eff.ensures.isEmpty then none else some eff
+      | some eff => if eff.ensures.isEmpty && (effectKept eff k).isEmpty then none else some eff
       | none => none
     else none
   | _ => none
@@ -2153,11 +2179,11 @@ other step is `base`'s. -/
     (base : Checker G images) : Checker G images where
   run := fun j k e codes sums =>
     match PromiseCalls.ensuresCall G images j k e codes sums with
-    | some eff => (base.run j k e codes sums).map (PromiseCalls.withEnsures eff j.term)
+    | some eff => (base.run j k e codes sums).map (PromiseCalls.withEnsures eff j.term k)
     | none => base.run j k e codes sums
   select := fun j k e codes sums =>
     match PromiseCalls.ensuresCall G images j k e codes sums with
-    | some eff => (base.select j k e codes sums).map (PromiseCalls.withEnsures eff j.term)
+    | some eff => (base.select j k e codes sums).map (PromiseCalls.withEnsures eff j.term k)
     | none => base.select j k e codes sums
   sound := by
     intro j k e out codes sums hc hcodes hsums ρ n W h he hk hw hh
@@ -2167,7 +2193,7 @@ other step is `base`'s. -/
       obtain ⟨out0, hrun, rfl⟩ := hc
       have hs := base.sound hrun hcodes hsums he hk hw hh
       have hp := PromiseCalls.ensuresCall_sound hens hcodes hsums he hk hw hh
-      exact HeapObservations.weaken (fun h' v hq => PromiseCalls.withEnsures_holds hq.1 hq.2.2.2.2.2)
+      exact HeapObservations.weaken (fun h' v hq => PromiseCalls.withEnsures_holds hq.1 hk hq.2.1 hq.2.2.2.2.2)
         (HeapObservations.cross_upto n (fun _ _ _ _ _ _ _ _ hb _ => hb) W W h _ hh hh hs hp)
     · exact base.sound hc hcodes hsums he hk hw hh
 

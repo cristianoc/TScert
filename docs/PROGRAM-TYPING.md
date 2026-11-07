@@ -1523,10 +1523,10 @@ copies the key (`copiedKey`); that its location holds the view's element
 count is the host's trust ([typed arrays](SOURCE-CONTRACTS.md#stated-library-types)).
 A linear fact naming a length reads the location of that store's elements,
 one naming an element count the location of the view's count, one naming a
-path the location of each field the path reads; each is kept by a heap change
-only where the other heap-reading index facts are (a heap extension, which
-keeps every read, `readPath_extend`, and a call keeping the heap); a fact of
-slots' values alone reads only the environment (`IndexFact.envOnly`). The linear facts a knowledge states
+path the location of each field the path reads; a fact of slots' values alone
+reads only the environment (`IndexFact.envOnly`), and a heap extension keeps
+every read (`readPath_extend`). Which other heap changes keep a fact is
+stated by [facts across a heap change](#linear-facts). The linear facts a knowledge states
 (`HeapKnowledge.linearFacts`) are its unconditional linear atoms, each with
 the range $`0\le|x|\le 2^{32}-1`$ of every length and the range
 $`0\le\mathrm{view}(x)\le 2^{53}-1`$ of every element count it names
@@ -1622,9 +1622,63 @@ condition's class, at the same answer, entail it (`linearFollows`). So a test
 evaluated again from saved operands keeps, on each answer, what it states of
 the slots that remain. So `const answer = base + 2`, computed from copies
 of `base` and of the literal, keeps `answer = base + 2` once the copies are
-dropped. A step that writes a field, or keeps only its receiver's own
-locations, keeps the index facts reading no heap, as the ordinary output does.
+dropped.
 
+**Facts across a heap change.** A change is described by what a location it
+may alter held before it: $`\chi=(o,n,s)`$ states whether it may alter a
+location holding an object ($`o`$) or a number ($`n`$), and what it does to
+one holding a store ($`s`$: keeps its contents, keeps its length, or
+neither); a location holding any other value may change
+(`HeapKnowledge.Changes`, its meaning `Changes.Holds`). The locations a term
+reads hold, in turn, an object for each field of its path but the last, the
+last a number for a value term and an object otherwise, then, for a length
+term, a store, and for an element count, a number. A term is kept by
+$`\chi`$ where none of them holds what $`\chi`$ may alter, the first
+location, field $`g`$ of the root's object, also where it is known to be
+none the step writes ($`\mathrm{first}(x,g)`$), and a store also where it is
+the root's own `[]` field and $`\mathrm{first}(x,[\,])`$ holds
+(`Term.keptBy`, proved: `termValue_kept`):
+
+```math
+\mathrm{kept}_\chi(x.g_1\ldots g_m) \iff
+  (m=0)\lor\bigl((\mathrm{first}(x,g_1)\lor\neg\chi(c_1))\land\forall i\in 2..m.\ \neg\chi(c_i)\bigr),
+\qquad c_i=\begin{cases}\mathsf{num}&i=m,\ \text{a value term}\\\mathsf{obj}&\text{otherwise}\end{cases}
+```
+
+and a length term needs besides $`s\ne\mathsf{any}`$ or, of an empty path,
+$`\mathrm{first}(x,[\,])`$, an element count $`\neg n`$. A fact is kept where
+each of its terms is; `length` and `bound` read a store, kept where
+$`s\ne\mathsf{any}`$ or $`\mathrm{first}(x,[\,])`$ (`IndexFact.keptBy`,
+proved: `holdsAt_kept`):
+
+```math
+\frac{F\in\Sigma\qquad \forall t\in\mathrm{vars}(F).\ \mathrm{kept}_\chi(t)\qquad h\to h'\ \text{within}\ \chi}
+     {F\ \text{holds in}\ h'}\ \textsf{fact-kept}
+```
+
+Three steps state their change:
+
+- **A field write** $`x.f=y`$: its location held a member of a type the
+  receiver's type states for $`f`$ (`fieldOperand_typed`), so $`\chi`$ is
+  the classes those types admit, by their clauses' shapes (`fieldChanges`,
+  `typeChanges`; `top` admits each, `source` each but a store), and
+  $`\mathrm{first}(z,g)`$ is $`\mathrm{apart}(x.f,z.g)\lor\mathrm{sibling}(x.f,z.g)`$,
+  the condition that keeps a cell fact (`writeKeeps`, `writeKeeps_ne`;
+  `writeOutput`, `write_sound`). A field of type `number` keeps every
+  length and every path's objects; a field of type `string` keeps the
+  numbers too.
+- **An element write below the length**, `setElem-bounded` at a strict
+  bound on a store every position of which holds source values:
+  $`\chi=(\top,\top,\text{length})`$ (`IndexWrites.keepsLengths`,
+  `lengthOutput`; proved: `ExpressionEffects.elem_var_write_length`, the
+  present element's location held no store, and a hole's write gives a
+  store of the same length, `placeAt_length`).
+- **A call** at a selected signature $`\mathcal F_\epsilon`$ stating neither
+  `receiverStore` nor `receiverOwn` and not keeping the heap:
+  $`\chi`$ is its footprint's, `grow` on a value being `keep`
+  (`Changes.ofClosed`, proved: `ofClosed_holds`; `PromiseCalls.effectKept`,
+  added by `Checker.ensuringCalls`). `{value: any, store: keep}` keeps every
+  length.
 **A comparison with a length.** A strict comparison of a safe integer $`k`$
 with a slot $`n`$ a length atom names states, on the answer giving $`k<n`$,
 the facts of $`k`$ alone, which survive dropping $`n`$ (`IndexWrites.lengthAtoms`,
@@ -1720,8 +1774,14 @@ with `false`, and neither states anything on its other answer
 the left states. Lean evaluates the right operand only on that answer, a
 branch on the left's value (`choose`), whose edge promotes the facts
 conditional on it; a statement writing no heap (slots, constants,
-operators, reads, element reads, assignments of value bindings) keeps those
-whose bindings it does not assign; every other statement forgets them; a merge
+operators, reads, element reads, assignments of value bindings, calls at
+signatures keeping the heap) keeps those
+whose bindings it does not assign; a statement whose one write, its operands
+writing none, is a field's, an element's below the length of an array of
+primitives or a call's at signatures excepting no receiver location keeps
+those [fact-kept](#linear-facts) keeps, the field's classes read
+off the receiver's record type, its first location never assumed
+(`Linear_facts.write_changes`); every other statement forgets them; a merge
 keeps those both paths hold. A linear fact's binding that an assignment
 rebinds or that leaves scope is eliminated as Lean eliminates a dropped
 slot: each pair of facts of opposite signs on one of its terms combined to
@@ -1802,7 +1862,8 @@ operand of `&&` and `||`, a strict equality's `false` answer among them),
 `adjacent-pair-reads` (reads at `i` and `i + 1` under `i + 1 < xs.length`,
 and a loop to `e !== n`), `derived-index-loop` (an index reassigned from one
 derived from it), `call-keeps-heap-loop` (a typed array's bound across a
-call of a function whose loop writes only its locals) and
+call of a function whose loop writes only its locals), `facts-across-writes`
+(bounds across field writes and an element write), and
 `typed-array-reads-below-length` (a
 `Uint8Array`, a `Float64Array`, an `Int32Array` written and read back, and a
 `@requires` over a view's length). Negative, each run under Node:
@@ -1814,12 +1875,20 @@ read), `invalid-logical-guard-read-inclusive` (`e <= xs.length && xs[e]!`),
 `invalid-adjacent-pair-read-past` (a read at `i + 1` under `i < xs.length`),
 `invalid-derived-index-loop-negative` (an index reassigned to `j - 2`),
 `invalid-call-in-test-shrinks` (a test calling a function that pops the
-array), `invalid-typed-array-read-at-length` (a loop to `i <= b.length`) and
+array), `invalid-facts-across-field-write-replaced` (a write of the array
+field a path's length names), `invalid-facts-across-field-write-alias` (a
+write through a parameter that may be the object a path names),
+`invalid-facts-across-alias-pop` (a `pop` of a parameter that may be the
+counted array), `invalid-typed-array-read-at-length` (a loop to `i <= b.length`) and
 `invalid-typed-array-read-other-length` (a read of `b` below another view's
 length). Forged controls in `pipeline/test.mts`: each array negative's read
 claimed at the element type, with and without a strict bound claimed at its
 statement; each typed array negative's read claimed at `number` with
-`i < b.length` claimed at its statement.
+`i < b.length` claimed at its statement; each facts-across negative's read
+claimed at `number` with the bound its write or call takes away claimed at
+its statement. Gap: `view-count-across-field-write`, a typed array's element
+count across a write of a number field, which no heap invariant sets apart
+from the view's `[[viewLength]]` location.
 
 
 ### Written preconditions

@@ -500,4 +500,329 @@ theorem holdsAt_linear_heap {F : Linear.Fact Term} {ρ : Env} {h h' : Heap} (hv 
 
 end IndexFact
 
+/-! ## Facts a heap change keeps (PROGRAM-TYPING.md, "Linear facts")
+
+A change is described by what a location held before it: an object, a
+number, an array store. A term reads locations of known contents, its path's
+objects, then a store or a number; it denotes the same after a change that
+alters no location holding what it reads. -/
+
+/-- What a heap change does to a location holding an array store: keeps its
+contents, keeps its length, or neither. -/
+inductive StoreChange where
+  | keep
+  | length
+  | any
+  deriving DecidableEq, Repr
+
+/-- Which locations a heap change may alter, by what they held before it: an
+object (`obj`), a number (`num`), an array store (`store`). A location
+holding any other value may change. -/
+structure Changes where
+  obj : Bool
+  num : Bool
+  store : StoreChange
+  deriving DecidableEq, Repr
+
+namespace Changes
+
+/-- Whether the change may alter a location holding `v`. -/
+def alters (c : Changes) : Val → Bool
+  | .objAt .. => c.obj
+  | .num _ => c.num
+  | .arr _ => c.store != .keep
+  | _ => true
+
+/-- `h'` meets the change from `h`: every location of `h` holding a value it
+does not alter holds it in `h'`, and where it keeps stores' lengths every
+store of `h` is a store of that length in `h'`. -/
+def Holds (c : Changes) (h h' : Heap) : Prop :=
+  (∀ (l : Nat) (v : Val), h[l]? = some v → c.alters v = false → h'[l]? = some v) ∧
+  (c.store = .length → ∀ (l : Nat) (ls : List (Option Nat)), h[l]? = some (.arr ls) →
+    ∃ ls' : List (Option Nat), h'[l]? = some (.arr ls') ∧ ls'.length = ls.length)
+
+/-- Every change: where nothing is known of a location's contents. -/
+def top : Changes := ⟨true, true, .any⟩
+
+theorem top_alters (v : Val) : Changes.top.alters v = true := by
+  cases v <;> simp [Changes.top, Changes.alters]
+
+/-- Two changes' union. -/
+def join (a b : Changes) : Changes :=
+  ⟨a.obj || b.obj, a.num || b.num, if a.store == .keep && b.store == .keep then .keep else .any⟩
+
+theorem join_alters_left {a b : Changes} {v : Val} (h : a.alters v = true) : (a.join b).alters v = true := by
+  cases v <;> simp_all [Changes.join, Changes.alters]
+
+theorem join_alters_right {a b : Changes} {v : Val} (h : b.alters v = true) : (a.join b).alters v = true := by
+  cases v <;> simp_all [Changes.join, Changes.alters]
+
+/-- The change a closed footprint allows: `grow` on a value is `keep`. -/
+def ofClosed (Φ : Footprints.Closed) : Changes :=
+  ⟨Φ.value == .any, Φ.value == .any, if Φ.store == .keep then .keep else .any⟩
+
+theorem ofClosed_holds {Φ : Footprints.Closed} {h h' : Heap} (hp : Φ.Holds h h') : (ofClosed Φ).Holds h h' := by
+  rw [Footprints.Closed.holds_iff] at hp
+  refine ⟨fun l v hv ha => ?_, fun hs => ?_⟩
+  · obtain ⟨v', hv', hc⟩ := hp.2 l v hv
+    have hkeep : v' = v := by
+      cases v
+      case arr ls =>
+        simp only [alters, ofClosed] at ha
+        have hst : Φ.store = .keep := by
+          cases hΦ : Φ.store <;> simp_all
+        simp only [Footprints.Closed.at, Footprints.isArr, hst, ite_true] at hc
+        exact hc
+      all_goals
+        have hva : Φ.value ≠ .any := by
+          intro he; simp [alters, ofClosed, he] at ha
+        simp only [Footprints.Closed.at, Footprints.isArr] at hc
+        cases hΦ : Φ.value
+        · rw [hΦ] at hc; exact hc
+        · rw [hΦ] at hc; exact hc.grow_value rfl
+        · exact absurd hΦ hva
+    exact hkeep ▸ hv'
+  · revert hs; simp only [ofClosed]; split <;> simp
+
+end Changes
+
+/-- The location of field `g` of slot `s`'s object keeps its contents from
+`h` to `h'` wherever `first s g` says so. -/
+def FirstKept (first : Nat → String → Bool) (ρ : Env) (h h' : Heap) : Prop :=
+  ∀ s g fs cd o l v, first s g = true → ρ s = .objAt fs cd o → fs.lookup (.str g) = some l →
+    h[l]? = some v → h'[l]? = some v
+
+/-- Whether a term denotes the same after a change `c`: each location its
+path reads holds an object, but the last, which holds a number for a value
+term; a length term then reads a store, a view term a number. The first
+location, field `g` of the root's object, may instead be one `first` keeps. -/
+def Term.keptBy (c : Changes) (first : Nat → String → Bool) (t : Term) : Bool :=
+  let last := if t.kind == .value then c.num else c.obj
+  (match t.path with
+    | [] => true
+    | g :: q => (first t.slot g || !(if q.isEmpty then last else c.obj)) &&
+        (q.isEmpty || (!last && (q.length == 1 || !c.obj)))) &&
+  (match t.kind with
+    | .value => true
+    | .length => c.store != .any || (t.path.isEmpty && first t.slot "[]")
+    | .view => !c.num)
+
+/-- A change keeps what a path reads: each location it reads holds an object
+the change keeps, but the last, which holds the value read. -/
+theorem readPath_kept {c : Changes} {h h' : Heap} (hc : c.Holds h h') :
+    ∀ (p : List String) (v w : Val), readPath h v p = some w → (p = [] ∨ c.alters w = false) →
+      (2 ≤ p.length → c.obj = false) → readPath h' v p = some w := by
+  intro p
+  induction p with
+  | nil => intro v w hw _ _; exact hw
+  | cons f q ih =>
+    intro v w hw hlast hobj
+    have hw' : c.alters w = false := hlast.resolve_left (by simp)
+    cases v
+    case objAt fs cd o =>
+      simp only [readPath] at hw ⊢
+      split at hw
+      · rename_i l hl
+        split at hw
+        · rename_i u hu
+          have hkeep : h'[l]? = some u := by
+            apply hc.1 l u hu
+            cases q with
+            | nil => simp only [readPath, Option.some.injEq] at hw; subst hw; exact hw'
+            | cons g q' =>
+              cases u
+              case objAt => exact hobj (by simp)
+              all_goals simp [readPath] at hw
+          simp only [hkeep]
+          exact ih u w hw (Or.inr hw') (fun h2 => hobj (by simp; omega))
+        · cases hw
+      · cases hw
+    all_goals simp [readPath] at hw
+
+theorem viewLengthOf_inv {h : Heap} {v : Val} {n : Int} (hv : viewLengthOf h v = some n) :
+    ∃ fs cd o l b, v = .objAt fs cd o ∧ (fs.lookup hostKey).isSome ∧ fs.lookup viewLengthKey = some l ∧
+      h[l]? = some (.num b) ∧ SafeIntegers.safeIntOfBits b = some n ∧ 0 ≤ n := by
+  unfold viewLengthOf at hv
+  split at hv
+  · rename_i fs cd o
+    split at hv
+    · rename_i hhost
+      split at hv
+      · rename_i l hl
+        split at hv
+        · rename_i b hb
+          split at hv
+          · rename_i m hm
+            split at hv
+            · cases hv; exact ⟨fs, cd, o, l, b, rfl, hhost, hl, hb, hm, by assumption⟩
+            · cases hv
+          · cases hv
+        · cases hv
+      · cases hv
+    · cases hv
+  · cases hv
+
+/-- A change keeps what a kind of term reads of a value: a store it keeps or
+keeps the length of, a number it keeps. -/
+theorem kindValue_kept {c : Changes} {h h' : Heap} (hc : c.Holds h h') {k : Term.Kind} {w : Val} {n : Int}
+    (hk : kindValue h k w = some n) (hlen : k = .length → c.store ≠ .any) (hview : k = .view → c.num = false) :
+    kindValue h' k w = some n := by
+  cases k with
+  | value => exact hk
+  | length =>
+    obtain ⟨s, ls, hs, hls, rfl, hm⟩ := lengthOf_store hk
+    have hst := hlen rfl
+    cases hcs : c.store with
+    | keep => exact lengthOf_of_store hs (hc.1 s _ hls (by simp [Changes.alters, hcs])) hm
+    | length =>
+      obtain ⟨ls', hls', heq⟩ := hc.2 hcs s ls hls
+      have := lengthOf_of_store hs hls' (by omega)
+      simp only [kindValue, this, heq]
+    | any => exact absurd hcs hst
+  | view =>
+    obtain ⟨fs, cd, o, l, b, rfl, hhost, hl, hb, hm, h0⟩ := viewLengthOf_inv hk
+    have hb' := hc.1 l _ hb (by simp [Changes.alters, hview rfl])
+    simp only [kindValue, viewLengthOf, hhost, ite_true, hl, hb', hm, h0]
+
+/-- **A change keeps a term it keeps** (`Term.keptBy`). -/
+theorem termValue_kept {c : Changes} {first : Nat → String → Bool} {ρ : Env} {h h' : Heap} {t : Term} {n : Int}
+    (hc : c.Holds h h') (hf : FirstKept first ρ h h') (hk : t.keptBy c first = true)
+    (ht : termValue ρ h t = some n) : termValue ρ h' t = some n := by
+  obtain ⟨kind, s, p⟩ := t
+  simp only [termValue, Option.bind_eq_some_iff] at ht ⊢
+  obtain ⟨w, hw, hkw⟩ := ht
+  simp only [Term.keptBy, Bool.and_eq_true] at hk
+  obtain ⟨hpath, hkind⟩ := hk
+  have hlast : c.alters w = (if kind == .value then c.num else c.obj) := by
+    cases kind with
+    | value =>
+      simp only [kindValue] at hkw
+      obtain ⟨b, rfl, -⟩ := intValue_safe hkw
+      rfl
+    | length =>
+      obtain ⟨st, ls, hs, -⟩ := lengthOf_store hkw
+      cases w
+      case objAt => rfl
+      all_goals simp [Footprints.storeOf, Footprints.fieldsOf] at hs
+    | view =>
+      obtain ⟨fs, cd, o, l, b, rfl, -⟩ := viewLengthOf_inv hkw
+      rfl
+  by_cases hfs : kind = .length ∧ p = [] ∧ first s "[]" = true
+  · -- The store at field `[]` of the root's object, kept by `first`.
+    obtain ⟨rfl, rfl, hfs⟩ := hfs
+    refine ⟨w, hw, ?_⟩
+    simp only [readPath, Option.some.injEq] at hw
+    subst hw
+    simp only [kindValue] at hkw ⊢
+    obtain ⟨st, ls, hst, hls, rfl, hm⟩ := lengthOf_store hkw
+    cases hv : ρ s
+    case objAt fs cd o =>
+      rw [hv] at hst
+      have hl : fs.lookup (.str "[]") = some st := by
+        simpa [Footprints.storeOf, Footprints.fieldsOf, arrayStoreKey] using hst
+      exact lengthOf_of_store hst (hf s "[]" fs cd o st _ hfs hv hl hls) hm
+    all_goals rw [hv] at hst; simp [Footprints.storeOf, Footprints.fieldsOf] at hst
+  have hkind' : (match kind with
+      | .value => true
+      | .length => c.store != .any
+      | .view => !c.num) = true := by
+    cases kind with
+    | value => rfl
+    | view => simpa using hkind
+    | length =>
+      simp only [Bool.or_eq_true, Bool.and_eq_true, List.isEmpty_iff] at hkind
+      rcases hkind with h1 | ⟨h2, h3⟩
+      · simpa using h1
+      · exact absurd ⟨rfl, h2, h3⟩ hfs
+  refine ⟨w, ?_, kindValue_kept hc hkw (fun he => by subst he; simpa using hkind')
+    (fun he => by subst he; simpa using hkind')⟩
+  cases p with
+  | nil => exact hw
+  | cons g q =>
+    simp only [Bool.and_eq_true, Bool.or_eq_true, Bool.not_eq_true'] at hpath
+    obtain ⟨hfirst, htail⟩ := hpath
+    have hq : q ≠ [] → c.alters w = false ∧ (2 ≤ q.length → c.obj = false) := by
+      intro hq
+      have hne : q.isEmpty = false := by simpa using hq
+      simp only [hne, Bool.false_eq_true, false_or, beq_iff_eq] at htail
+      refine ⟨by rw [hlast]; simpa using htail.1, fun h2 => htail.2.resolve_left (by omega)⟩
+    rcases hfirst with hfirst | hnot
+    · -- The first location kept by `first`; the rest by the change.
+      cases hv : ρ s
+      case objAt fs cd o =>
+        rw [hv] at hw
+        simp only [readPath] at hw ⊢
+        split at hw
+        · rename_i l hl
+          split at hw
+          · rename_i u hu
+            simp only [hf s g fs cd o l u hfirst hv hl hu]
+            by_cases hqe : q = []
+            · subst hqe; exact hw
+            · exact readPath_kept hc q u w hw (Or.inr (hq hqe).1) (hq hqe).2
+          · cases hw
+        · cases hw
+      all_goals rw [hv] at hw; simp [readPath] at hw
+    · refine readPath_kept hc (g :: q) (ρ s) w hw (Or.inr ?_) (fun h2 => ?_)
+      · by_cases hqe : q = []
+        · subst hqe; simpa [hlast] using hnot
+        · exact (hq hqe).1
+      · have hqe : q ≠ [] := by intro he; subst he; simp at h2
+        have hne : q.isEmpty = false := by simpa using hqe
+        simpa [hne] using hnot
+
+namespace IndexFact
+
+/-- Whether a change keeps a fact (`Term.keptBy`): `index` and `int` read
+no heap, `length` and `bound` a store's length. -/
+def keptBy (c : Changes) (first : Nat → String → Bool) : IndexFact → Bool
+  | .index _ | .int _ => true
+  | .length x _ | .bound x _ _ => c.store != .any || first x "[]"
+  | .linear F => F.vars.all (Term.keptBy c first)
+
+theorem holdsAt_kept {c : Changes} {first : Nat → String → Bool} {F : IndexFact} {ρ : Env} {h h' : Heap}
+    (hc : c.Holds h h') (hf : FirstKept first ρ h h') (hk : F.keptBy c first = true) (hF : F.HoldsAt ρ h) :
+    F.HoldsAt ρ h' := by
+  have store : ∀ {x s : Nat} {ls : List (Option Nat)}, (c.store != .any || first x "[]") = true →
+      Footprints.storeOf (ρ x) = some s → h[s]? = some (.arr ls) →
+      ∃ ls' : List (Option Nat), h'[s]? = some (.arr ls') ∧ ls'.length = ls.length := by
+    intro x s ls hk hs hls
+    rcases Bool.or_eq_true_iff.mp hk with hst | hfs
+    · cases hcs : c.store with
+      | keep => exact ⟨ls, hc.1 s _ hls (by simp [Changes.alters, hcs]), rfl⟩
+      | length => exact hc.2 hcs s ls hls
+      | any => simp [hcs] at hst
+    · cases hv : ρ x
+      case objAt fs cd o =>
+        rw [hv] at hs
+        have hl : fs.lookup (.str "[]") = some s := by
+          simpa [Footprints.storeOf, Footprints.fieldsOf, arrayStoreKey] using hs
+        exact ⟨ls, hf x "[]" fs cd o s _ hfs hv hl hls, rfl⟩
+      all_goals rw [hv] at hs; simp [Footprints.storeOf, Footprints.fieldsOf] at hs
+  cases F with
+  | index k => exact hF
+  | int k => exact hF
+  | length x m =>
+    simp only [keptBy] at hk
+    obtain ⟨s, ls, hs, hls, hm, hmax⟩ := hF
+    obtain ⟨ls', hls', heq⟩ := store hk hs hls
+    exact ⟨s, ls', hs, hls', heq ▸ hm, heq ▸ hmax⟩
+  | bound x k st =>
+    simp only [keptBy] at hk
+    obtain ⟨s, ls, b, i, hs, hls, hb, hi, hle⟩ := hF
+    obtain ⟨ls', hls', heq⟩ := store hk hs hls
+    exact ⟨s, ls', b, i, hs, hls', hb, hi, heq ▸ hle⟩
+  | linear G =>
+    simp only [keptBy, List.all_eq_true] at hk
+    obtain ⟨hi, hh⟩ := hF
+    have heq : ∀ t ∈ G.vars, termValue ρ h' t = termValue ρ h t := by
+      intro t ht
+      obtain ⟨n, hn⟩ := Option.isSome_iff_exists.mp (hi t ht)
+      rw [hn, termValue_kept hc hf (hk t ht) hn]
+    refine ⟨fun t ht => by rw [heq t ht]; exact hi t ht, ?_⟩
+    rw [Linear.Fact.holds_congr (v' := termValuation ρ h) (fun t ht => by simp only [termValuation, heq t ht])]
+    exact hh
+
+end IndexFact
+
 end Verification.HeapKnowledge

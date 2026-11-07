@@ -484,6 +484,17 @@ type). Forged controls in `pipeline/test.mts`: the declarations without the
 elements promise or at another predicate, a guard closure's claim stating
 either part, and the atom forged unconditional in the evidence.
 
+## Index facts
+
+A third instance: an index fact (a length, an element count, a field path's
+value) reads the locations its terms read, each holding an object, a store
+or a number. A closed footprint keeps the locations of the classes it keeps,
+`grow` on a value being `keep` (`HeapKnowledge.Changes.ofClosed`, proved:
+`ofClosed_holds`), so a call at a signature within `{value: any, store: keep}`
+keeps every length; a field write and an element write below the length state
+their own change. The
+rule and its proofs are [facts across a heap change](PROGRAM-TYPING.md#linear-facts).
+
 ## The rule users see
 
 > `xs.map(f)` has type `U[]` with no holes when `xs` has none and `f`, with

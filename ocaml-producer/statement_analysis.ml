@@ -508,6 +508,58 @@ let statements (expr:Analysis_state.expression_infer) execute_bindings owner_spa
        | None -> false)
     | None -> false in
   Linear_facts.array_path := array_binding;
+  (* The type a path from a binding reads: each field a required one of the
+     record type before it. *)
+  let head t = try declared_head declarations [] t with Json.Error _ -> Atoms [Top] in
+  let field_of t (f : Semantic.key) = match head t with
+    | Atoms [Shape {fields;_}] -> List.find_opt (fun (g:Semantic.field) -> g.name = f) fields
+    | _ -> None in
+  let rec receiver_type env (e : Source.expr) = match e.node with
+    | Id x -> (match List.assoc_opt x env with
+      | Some (Value _ as b) | Some (Local _ as b) -> Some (binding_type b)
+      | Some _ -> None
+      | None -> (try module_type x with Json.Error _ -> None))
+    | Read (r,f) -> (match Option.bind (receiver_type env r) (fun t -> field_of t f) with
+      | Some g when not g.optional && not g.host -> Some g.read
+      | _ -> None)
+    | _ -> None in
+  (* The classes a type admits: an object, a number, a store (`unknown`). *)
+  let classes t = match head t with
+    | Atoms atoms -> List.fold_left (fun (o,n,a) (at : Semantic.atom) -> match at with
+      | Num | NumLit _ -> (o,true,a)
+      | Nul | Undef | True | False | Str | StrLit _ | Bigint | BigintLit _ | Symbol | SymbolLit _ -> (o,n,a)
+      | Top -> (true,true,true)
+      | _ -> (true,n,a)) (false,false,false) atoms
+    | _ -> (true,true,true) in
+  Linear_facts.field_classes := (fun env recv f ->
+    match Option.bind (receiver_type env recv) (fun t -> field_of t f) with
+    | Some g when not g.optional && not g.host && g.write <> None -> Some (classes g.read)
+    | _ -> None);
+  (* The footprint every signature of a callable type states, where none
+     excepts its receiver's store or own locations. *)
+  let footprint_of t = match head t with
+    | Atoms [Shape {calls;_}] when calls <> [] && List.for_all (fun (s : Semantic.signature) ->
+        let e = s.Semantic.call_effect in not e.Semantic.receiver_store && not e.Semantic.receiver_own) calls ->
+      let join a b = match a,b with Semantic.Any,_ | _,Semantic.Any -> Semantic.Any | Semantic.Grow,_ | _,Semantic.Grow -> Semantic.Grow | _ -> Semantic.Keep in
+      Some (List.fold_left (fun (fp : Semantic.footprint) (s : Semantic.signature) ->
+        let f = s.Semantic.call_effect.Semantic.footprint in
+        { Semantic.on_value = join fp.Semantic.on_value f.Semantic.on_value; on_store = join fp.Semantic.on_store f.Semantic.on_store })
+        { Semantic.on_value = Semantic.Keep; on_store = Semantic.Keep } calls)
+    | _ -> None in
+  Linear_facts.call_footprint := (fun env x ->
+    let declared = match List.assoc_opt x env with
+      | Some b -> Some (binding_type b)
+      | None -> (try module_type x with Json.Error _ -> None) in
+    Option.bind declared footprint_of);
+  Linear_facts.source_elements := (fun env xs ->
+    match Option.map head (receiver_type env {Source.node = Id xs; pos = Json.Null}) with
+    | Some (Atoms [Shape {elements=Some {required=[];optional_elements=[];rest=Some t;readonly=false;_};indexes=[];calls=[];_}]) ->
+      (match head t with
+       | Atoms atoms -> atoms <> [] && List.for_all (fun (at : Semantic.atom) -> match at with
+         | Num | NumLit _ | Nul | Undef | True | False | Str | StrLit _ | Bigint | BigintLit _ -> true
+         | _ -> false) atoms
+       | _ -> false)
+    | _ -> false);
   let flow_callbacks = {
     early;
     widen_slot=arms declarations;

@@ -263,6 +263,39 @@ control(async (): Promise<void> => {
 });
 
 control(async (): Promise<void> => {
+  // A heap-reading fact a step's write may change, forged at the entry of
+  // the read after it: the read of each unsafe program claimed at `number`,
+  // with the bound the write or call takes away claimed at the read's
+  // statement, is refused at that entry where evidence is searched: a write
+  // of the array field a path length names, a write through a parameter
+  // that may hold the object a path value names, a `pop` of a parameter that
+  // may be the counted array.
+  const value = (name: string, path: string[] = []) => ({ name, path, term: "value" as const });
+  const length = (name: string, path: string[] = []) => ({ name, path, term: "length" as const });
+  for (const [name, fnName, read, statement, index, array] of [
+    ["invalid-facts-across-field-write-replaced", "counted", "o.data[i]", "return o.data[i]!", value("i"), length("o", ["data"])],
+    ["invalid-facts-across-field-write-alias", "aliased", "xs[b.i]", "return xs[b.i]!", value("b", ["i"]), length("xs")],
+    ["invalid-facts-across-alias-pop", "drained", "xs[i]", "s = s + xs[i]!", value("i"), length("xs")],
+  ] as const) {
+    const artifacts = run(name);
+    const source = readFileSync(sourceKey(artifacts), "utf8");
+    const at = source.indexOf(read, source.indexOf(statement));
+    const claims = readClaims(artifacts);
+    const fn = must(claims.functions.find(f => f.name === fnName), `${fnName}'s claims`);
+    const claim = must(fn.expressions.find(e => e.pos[0] === at && e.pos[1] === at + read.length), "the read");
+    claim.type = [rowOf(claims, "num")];
+    must(fn.entries.find(e => e.start === source.indexOf(statement)), "the read's entry").facts.push(
+      { terms: [{ ...index, coefficient: -1 }], bound: 0 },
+      { terms: [{ ...index, coefficient: 1 }, { ...array, coefficient: -1 }], bound: -1 });
+    const tag = `facts-across-writes-forged-${name}`;
+    const searched = produceWith(artifacts, writeClaims(artifacts, tag, claims), tag);
+    assert.equal(searched.status, 1, `${tag}: ${searched.stdout}${searched.stderr}`);
+    assert.match(searched.stdout + searched.stderr, /does not establish the claims/);
+  }
+  process.stdout.write("facts across writes: a bound a field write, an aliased write or a pop takes away, forged at the read's entry, each refused\n");
+});
+
+control(async (): Promise<void> => {
   // A path's facts are about its root and its fields: the read of each
   // unsafe program claimed at `number`, the precondition's of
   // `%ElementAt%`'s bounded signature, with no fact added, is refused where
