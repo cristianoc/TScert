@@ -815,7 +815,7 @@ theorem ordinaryOutput_holds {k : HeapKnowledge.Knowledge} {ρ h} (hk : HeapKnow
   ⟨HeapFacts.holds_nil _ _,(HeapKnowledge.shift_holds (v := v) hk).2.1,
     HeapLinks.stable_holds (HeapKnowledge.shift_holds (v := v) hk).2.2.1,
     (HeapKnowledge.shift_holds (v := v) hk).2.2.2.1, HeapKnowledge.elemsHolds_nil _ _,
-    HeapKnowledge.indexHolds_nil _ _⟩
+    HeapKnowledge.envIndices_holds (HeapKnowledge.shift_holds (v := v) hk).2.2.2.2.2 _⟩
 
 /-- Whether a signature's effect keeps the contents of every location a
 call starts with on a normal return: the empty footprint, on the receiver's
@@ -854,7 +854,7 @@ theorem promiseOutput_ordinary {effect : Effect} {k : HeapKnowledge.Knowledge} {
   unfold promiseOutput at hk
   split at hk
   · exact ⟨HeapFacts.holds_nil _ _, hk.2.1, HeapLinks.stable_holds hk.2.2.1, hk.2.2.2.1,
-      HeapKnowledge.elemsHolds_nil _ _, HeapKnowledge.indexHolds_nil _ _⟩
+      HeapKnowledge.elemsHolds_nil _ _, HeapKnowledge.envIndices_holds hk.2.2.2.2.2 _⟩
   · exact hk
 
 /-- **A call at a promise signature** returns where the promise holds: its

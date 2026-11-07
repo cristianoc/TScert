@@ -551,7 +551,8 @@ theorem admitsAll_sound {G : NormalGraph ι} {T : Ty ι} (h : admitsAll G T = tr
 
 /-- The facts that hold wherever a node's expression throws: only what its
 entry knowledge says without the heap (immutable values, alias links and
-separation), since the expression may have run any effect before throwing. The
+separation, and the index facts reading no heap), since the expression may have
+run any effect before throwing. The
 thrown value takes the fresh slot, as a call's result does. -/
 def handlerFacts (k : HeapKnowledge.Knowledge) : HeapKnowledge.Knowledge :=
   HeapExpressionRules.ordinaryOutput k
@@ -561,7 +562,7 @@ theorem handlerFacts_holds {k ρ h} (hk : HeapKnowledge.Holds k ρ h) (v : Tm) (
   ⟨HeapFacts.holds_nil _ _,(HeapKnowledge.shift_holds (v := v) hk).2.1,
     HeapLinks.stable_holds (HeapKnowledge.shift_holds (v := v) hk).2.2.1,
     (HeapKnowledge.shift_holds (v := v) hk).2.2.2.1, HeapKnowledge.elemsHolds_nil _ _,
-    HeapKnowledge.indexHolds_nil _ _⟩
+    HeapKnowledge.envIndices_holds (HeapKnowledge.shift_holds (v := v) hk).2.2.2.2.2 _⟩
 
 /-- A node's handler, when it has one, is a checked target for the thrown
 value at a type admitting every value, under the facts that survive a throw. -/

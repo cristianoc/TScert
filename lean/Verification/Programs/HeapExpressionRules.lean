@@ -741,7 +741,8 @@ theorem linkedRead_sound {G : NormalGraph ι} {Γ k i y fld B A ρ n W h}
 /-- Ordinary calls and arbitrary expressions retain immutable snapshots, but no
 heap observation without a specific proved effect rule. -/
 def ordinaryOutput (k : Knowledge) : Knowledge :=
-  ⟨[],HeapFacts.shift k.values,HeapLinks.stable (HeapKnowledge.shift k).links,HeapSeparation.shift k.separation,[],[]⟩
+  ⟨[],HeapFacts.shift k.values,HeapLinks.stable (HeapKnowledge.shift k).links,HeapSeparation.shift k.separation,[],
+    HeapKnowledge.envIndices (HeapKnowledge.shiftIndices k.indices)⟩
 
 theorem ordinary_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G} {subtyping : BodySubtyping G} {Γ k t A ρ n W h}
     (ht : HasTyUsing G images (subtyping := subtyping) Γ t A) (he : EnvOk G Γ ρ n W) (hk : HeapKnowledge.Holds k ρ h)
@@ -753,7 +754,7 @@ theorem ordinary_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceI
   exact ⟨holds_nil _ _,(HeapKnowledge.shift_holds (v := v) hk).2.1,
     HeapLinks.stable_holds (HeapKnowledge.shift_holds (v := v) hk).2.2.1,
     (HeapKnowledge.shift_holds (v := v) hk).2.2.2.1, HeapKnowledge.elemsHolds_nil _ _,
-    HeapKnowledge.indexHolds_nil _ _⟩
+    HeapKnowledge.envIndices_holds (HeapKnowledge.shift_holds (v := v) hk).2.2.2.2.2 _⟩
 
 /-- The named fields, invariant fields and readonly views, of every
 record-typed slot: the locations a fresh allocation is known to differ from,

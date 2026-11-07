@@ -92,12 +92,21 @@ interface BoundClaim {
   index: string;
 }
 
+/** A linear fact proposed at a statement entry: the sum of the terms, each a
+ * value binding's name and an integer coefficient, is at most `bound`
+ * (PROGRAM-TYPING.md, "Linear facts"). */
+interface LinearClaim {
+  terms: [string, number][];
+  bound: number;
+}
+
 /** The environment at one shared control-flow point, with source provenance. */
 interface EntryClaim<L = Label> {
   point: string;
   start: number;
   bindings: NamedPoint<L>[];
   bounds: BoundClaim[];
+  facts: LinearClaim[];
 }
 
 /** The type arguments one call supplies for a scheme's binders. It records the
@@ -302,12 +311,27 @@ function claimsDocument(v: JsonRead): SourceClaims {
     return { name: name(r.name, "a point's name"), type: claimType(r.type), current: current(r.current) };
   };
   const entry = (x: JsonRead): EntryClaim => {
-    const r = record(x, "an entry", ["point", "start", "bindings", "bounds"]);
+    const r = record(x, "an entry", ["point", "start", "bindings", "bounds", "facts"]);
     return { point: text(r.point, "an entry's point"), start: index(r.start, "an entry's start"),
       bindings: each(r.bindings, "an entry's bindings", namedPoint),
       bounds: each(r.bounds, "an entry's bounds", (b) => {
         const q = record(b, "a bound", ["array", "index"]);
         return { array: name(q.array, "a bound's array"), index: name(q.index, "a bound's index") };
+      }),
+      facts: each(r.facts, "an entry's facts", (f) => {
+        const q = record(f, "a linear fact", ["terms", "bound"]);
+        const integer = (v: JsonRead, what: string): number => {
+          if (typeof v !== "number" || !Number.isSafeInteger(v)) fail(`${what} is a safe integer`);
+          return v;
+        };
+        return {
+          terms: each(q.terms, "a fact's terms", (t) => {
+            if (!Array.isArray(t) || t.length !== 2) fail("a fact's term is a name and a coefficient");
+            const term: [string, number] = [name(t[0], "a term's name"), integer(t[1], "a term's coefficient")];
+            return term;
+          }),
+          bound: integer(q.bound, "a fact's bound"),
+        };
       }) };
   };
   const certificate = (x: JsonRead): ResolutionCertificate => {
