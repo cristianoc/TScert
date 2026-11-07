@@ -91,6 +91,15 @@ const equationReaders = [
     arguments: "a reference's argument spans are provenance",
     kind: "a root binding's kind is provenance",
     v: "a literal atom's value is read by the claim decoder",
+    F: "an index fact's field, read by the instance EffectJson.lean derives for HeapKnowledge.IndexFact and Linear.Fact",
+    form: "an index fact's field, read by the instance EffectJson.lean derives for HeapKnowledge.IndexFact and Linear.Fact",
+    int: "an index fact's field, read by the instance EffectJson.lean derives for HeapKnowledge.IndexFact and Linear.Fact",
+    le: "an index fact's field, read by the instance EffectJson.lean derives for HeapKnowledge.IndexFact and Linear.Fact",
+    length: "an index fact's field, read by the instance EffectJson.lean derives for HeapKnowledge.IndexFact and Linear.Fact",
+    linear: "an index fact's field, read by the instance EffectJson.lean derives for HeapKnowledge.IndexFact and Linear.Fact",
+    n: "an index fact's field, read by the instance EffectJson.lean derives for HeapKnowledge.IndexFact and Linear.Fact",
+    ne: "an index fact's field, read by the instance EffectJson.lean derives for HeapKnowledge.IndexFact and Linear.Fact",
+    x: "an index fact's field, read by the instance EffectJson.lean derives for HeapKnowledge.IndexFact and Linear.Fact",
   });
 }
 

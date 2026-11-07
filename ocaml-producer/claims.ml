@@ -40,6 +40,16 @@ let unsupported = Json.unsupported
 let change_json = function Keep -> String "keep" | Grow -> String "grow" | Any -> String "any"
 let footprint_json f = Object ["value",change_json f.on_value;"store",change_json f.on_store]
 let kinds_json = function None -> Null | Some ks -> Array (List.map (fun k -> String k) ks)
+let index_fact_json =
+  let linear k form d = Object ["linear",Object ["F",Object [k,Object [
+    "form",Array (List.map (fun (x,c) -> Array [int x;int c]) form);"bound",int d]]]] in
+  function
+  | Index_at k -> Object ["index",Object ["k",int k]]
+  | Length_of (x,n) -> Object ["length",Object ["x",int x;"n",int n]]
+  | Bound_by (x,k,strict) -> Object ["bound",Object ["x",int x;"k",int k;"strict",Bool strict]]
+  | Int_at k -> Object ["int",Object ["k",int k]]
+  | Linear_le (form,d) -> linear "le" form d
+  | Linear_ne (form,d) -> linear "ne" form d
 let effect_json e = Object ["footprint",footprint_json e.footprint;
   "promise",(match e.promise with
     | None -> Null
@@ -47,7 +57,8 @@ let effect_json e = Object ["footprint",footprint_json e.footprint;
     | Some (Asserts param) -> Object ["asserts",Object ["param",int param]]);
   "fresh",Bool e.fresh;"receiverStore",Bool e.receiver_store;"onThrow",Bool e.on_throw;
   "receiverOwn",Bool e.receiver_own;"freshObject",Bool e.fresh_object;
-  "requires",kinds_json e.requires;"elements",kinds_json e.elements]
+  "requires",kinds_json e.requires;"elements",kinds_json e.elements;
+  "pre",Array (List.map index_fact_json e.pre)]
 let rec resolution_json = function
   | StableResolution -> Object ["k",String "stable"]
   | NativeResolution child -> Object ["k",String "native";"child",resolution_json child]
@@ -564,7 +575,7 @@ let encode (proposal : Proposal_types.t) =
   (* A statement entry's bounds (`Environment.bound_key`), each an array and
      an index named by a binding of the entry. *)
   let bounds bs = Array (List.filter_map (fun (n,_) -> match Environment.bound_parts n with
-    | Some (array,index) -> Some (Object ["array",String array;"index",String index])
+    | Some (array,index,strict) -> Some (Object ["array",String array;"index",String index;"strict",Bool strict])
     | None -> None) bs) in
   (* A statement entry's linear facts (`Environment.fact_key`). *)
   let facts bs = Array (List.filter_map (fun (n,_) -> match Environment.fact_parts n with

@@ -96,6 +96,20 @@ def Fact.Holds (v : Nat → Int) : Fact → Prop
 def Fact.vars : Fact → List Nat
   | .le f _ | .ne f _ => f.map (·.1)
 
+theorem Form.eval_congr {v v' : Nat → Int} {f : Form} (h : ∀ x ∈ f.map (·.1), v x = v' x) :
+    Form.eval v f = Form.eval v' f := by
+  induction f with
+  | nil => rfl
+  | cons p t ih =>
+    obtain ⟨x, c⟩ := p
+    simp only [List.map_cons, List.mem_cons] at h
+    simp only [Form.eval, h x (.inl rfl), ih (fun y hy => h y (.inr hy))]
+
+/-- A fact reads its variables alone. -/
+theorem Fact.holds_congr {v v' : Nat → Int} {F : Fact} (h : ∀ x ∈ F.vars, v x = v' x) :
+    F.Holds v ↔ F.Holds v' := by
+  cases F <;> simp only [Fact.Holds, Fact.vars] at h ⊢ <;> rw [Form.eval_congr h]
+
 /-! ## Steps -/
 
 /-- One step: a combination of held `le` facts, by their positions and

@@ -947,7 +947,7 @@ declared bounds. -/
       (∀ ja ∈ jas, ja.context = j.context) ∧
       match expand G jf.type with
       | [.arrs L _] => ⟨jr.type, jas.map Sequent.type, j.type, effect⟩ ∈ L ∧
-          effect.promise = none ∧ (allowRequires = true ∨ effect.requires = none)
+          effect.promise = none ∧ (allowRequires = true ∨ (effect.requires = none ∧ effect.pre = []))
       | _ => False
     | _, _ => False
   | .letE =>
@@ -1900,7 +1900,7 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι}
         rw [← List.map_append, List.take_append_drop]
       have h := HasTyUsing.app hf he (xs := (jas.take args.length).map (fun ja => (ja.type,ja.term)))
         (Us := (jas.drop args.length).map Sequent.type)
-        (by rw [hsplit]; exact hL.1) hrt ha hu (CallEffects.Effect.plain_of hL.2.1 (hL.2.2.resolve_left (by simp)))
+        (by rw [hsplit]; exact hL.1) hrt ha hu (CallEffects.Effect.plain_of hL.2.1 (hL.2.2.resolve_left (by simp)).1 (hL.2.2.resolve_left (by simp)).2)
       simpa only [List.map_map,Function.comp_def,hargs] using h
     · contradiction
   · rename_i a b ja jb

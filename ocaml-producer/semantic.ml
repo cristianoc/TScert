@@ -24,15 +24,23 @@ type promise = Guards of int | Asserts of int
    normal return's value has an array store the call allocated, and whether
    the footprint excepts the receiver's array store, which the call may
    change arbitrarily. *)
+(* An index fact at a call's positions (Lean's `HeapKnowledge.IndexFact`, 0
+   the receiver, i + 1 the i-th actual): an array index; the length of an
+   array's store; an index at most that length, below it where strict; a safe
+   integer; a linear fact `Σ c·x ≤ d` or `≠ d`. *)
+type index_fact = Index_at of int | Length_of of int * int | Bound_by of int * int * bool | Int_at of int
+  | Linear_le of (int * int) list * int | Linear_ne of (int * int) list * int
 type call_effect = { footprint: footprint; promise: promise option; fresh: bool; receiver_store: bool; on_throw: bool;
   receiver_own: bool; fresh_object: bool;
   (* The kinds the receiver's present elements have where the call starts,
      and those a normal return of `true` leaves them with (Lean's
      `Effect.requires` and `Effect.elements`), in the wire's order. *)
-  requires: string list option; elements: string list option }
+  requires: string list option; elements: string list option;
+  (* A precondition on the call's values (Lean's `Effect.pre`). *)
+  pre: index_fact list }
 let footprint_effect footprint =
   {footprint;promise=None;fresh=false;receiver_store=false;on_throw=false;receiver_own=false;fresh_object=false;
-   requires=None;elements=None}
+   requires=None;elements=None;pre=[]}
 (* An ordinary arrow's: every location may change. *)
 let ordinary_effect = footprint_effect top_footprint
 (* Heap preservation: no location may change. *)
@@ -58,6 +66,7 @@ let effect_covers a b = footprint_le a.footprint b.footprint && a.promise = b.pr
   (not a.receiver_own || b.receiver_own || b.footprint = top_footprint) && (not b.fresh_object || a.fresh_object) &&
   (match a.requires, b.requires with
    | None, _ -> true | Some ka, Some kb -> List.for_all (fun k -> List.mem k ka) kb | Some _, None -> false) &&
+  List.for_all (fun f -> List.mem f b.pre) a.pre &&
   (match a.elements, b.elements with
    | _, None -> true | Some ka, Some kb -> List.for_all (fun k -> List.mem k kb) ka | None, Some _ -> false)
 

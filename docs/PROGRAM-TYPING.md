@@ -1356,9 +1356,13 @@ conditional on a Boolean slot:
 \begin{aligned}
 \mathrm{index}(k)(\rho,h) &\iff \rho(k)=\mathsf{num}\,b\land \mathrm{indexOfBits}(b)=\mathsf{some}\,i\\
 \mathrm{length}(x,n)(\rho,h) &\iff \mathrm{store}(\rho(x))=\ell\land h[\ell]=\mathsf{arr}\,ls\land \rho(n)=\mathsf{num}(\mathrm{bitsOfNat}\,|ls|)\\
-\mathrm{bound}(x,k)(\rho,h) &\iff \mathrm{store}(\rho(x))=\ell\land h[\ell]=\mathsf{arr}\,ls\land \rho(k)=\mathsf{num}\,b\land \mathrm{indexOfBits}(b)=\mathsf{some}\,i\land i\le|ls|
+\mathrm{bound}(x,k)(\rho,h) &\iff \mathrm{store}(\rho(x))=\ell\land h[\ell]=\mathsf{arr}\,ls\land \rho(k)=\mathsf{num}\,b\land \mathrm{indexOfBits}(b)=\mathsf{some}\,i\land i\le|ls|\\
+\mathrm{bound}_<(x,k)(\rho,h) &\iff \mathrm{store}(\rho(x))=\ell\land h[\ell]=\mathsf{arr}\,ls\land \rho(k)=\mathsf{num}\,b\land \mathrm{indexOfBits}(b)=\mathsf{some}\,i\land i<|ls|
 \end{aligned}
 ```
+
+The strict bound $`\mathrm{bound}_<`$ is `IndexFact.bound x k true`; it gives
+$`\mathrm{bound}`$ wherever that is needed, on an edge as in a premise.
 
 (`IndexFact.HoldsAt`). They are carried as elements atoms are: renamed with
 their slots, a condition's included (`mapIndices`), met at merges, compared on
@@ -1532,7 +1536,7 @@ proved: `lengthAtoms_holds`):
 
 ```math
 \frac{\mathrm{int}(k)\quad \mathrm{length}(x,n)\in\Sigma\quad K\vdash 0\le k}
-     {c\leftarrow k<n\dashv (k\le 2^{32}-2\ \text{if}\ c),\ (\mathrm{bound}(x,k)\ \text{if}\ c)}\ \textsf{length-compare}
+     {c\leftarrow k<n\dashv (k\le 2^{32}-2\ \text{if}\ c),\ (\mathrm{bound}_<(x,k)\ \text{if}\ c)}\ \textsf{length-compare}
 ```
 
 with the mirrored forms `n > k`, and `k >= n`, `n <= k` on the answer `false`;
@@ -1546,13 +1550,81 @@ the copy (`IndexWrites.copiedAtoms`).
 
 **A write bounded by linear facts.** `setElem-bounded` reads
 $`\mathrm{bound}(x,k)`$, stated by a bound atom or by the linear facts
-(`IndexWrites.linearBound`, proved: `linearBound_sound`):
+(`IndexWrites.linearBound`, proved: `linearBound_sound`), and a read below the
+length reads $`\mathrm{bound}_<(x,k)`$ alike:
 
 ```math
 \frac{\mathrm{length}(x',n)\in\Sigma\quad x'\in[x]\quad \mathrm{int}(k)\quad\mathrm{int}(n)\quad
       K\vdash 0\le k\le n\quad K\vdash k\le 2^{32}-2}
      {\mathrm{bound}(x,k)}\ \textsf{bound-linear}
+\qquad
+\frac{\mathrm{length}(x',n)\in\Sigma\quad x'\in[x]\quad \mathrm{int}(k)\quad\mathrm{int}(n)\quad
+      K\vdash 0\le k\le n-1\quad K\vdash k\le 2^{32}-2}
+     {\mathrm{bound}_<(x,k)}\ \textsf{bound-linear-strict}
 ```
+
+### Reads below the length
+
+A read `xs[k]` is $`\%\mathsf{ElementAt}\%(\mathit{xs},k)`$
+([arrays](#arrays)), which has two signatures: any read, an element or
+`undefined`, and a read at an index below the length of the store, the
+element itself:
+
+```math
+\%\mathsf{ElementAt}\%:\forall T.\ (\mathtt{readonly}\ T[\,],\ \mathtt{number})\Rightarrow_{\emptyset} T\mid\mathtt{undefined}
+\ \ \land\ \
+(\mathtt{readonly}\ T[\,],\ \mathtt{number})\Rightarrow_{\emptyset}^{\mathrm{bound}_<(1,2)} T
+```
+
+A readable store holds a hole only where reading `undefined` meets its
+element contract (`Types.StorePresence`), so the element at an index below the
+length meets $`T`$ whether it is present or a hole.
+
+**A precondition on the call's values.** A signature's effect states `pre`, a
+list of index facts at the call's positions: `0` the receiver, $`i+1`$ the
+$`i`$-th actual (`CallEffects.callEnv`). The arrow's meaning assumes them, with
+the elements precondition, in the heap the call starts in
+(`CallEffects.Effect.Requires`), so an ordinary call never selects such a
+signature (`Effect.plain`), a binding keeps none (`Effect.keeps`), and a
+signature covers another only where each of its facts is one of the other's
+(`preCovers`). A call at such a signature is accepted where each fact,
+renamed from positions to the slots the call's receiver and actuals hold,
+follows from the knowledge at the call as an edge's target fact follows
+(`indicesCheckBy`), a fact naming the receiver only where the receiver is a
+slot:
+
+```math
+\frac{f:\ (\vec A)\Rightarrow_{\phi}^{P} R\quad
+      \Gamma\vdash r,\vec a:\vec A\quad
+      \Sigma\vdash P[0\mapsto r,\ i+1\mapsto a_i]}
+     {\Gamma;\Sigma\vdash f.\mathsf{call}(r,\vec a):R\;!\;\phi}\ \textsf{call-requires}
+```
+
+(`PromiseCalls.preconditionHolds`, proved: `preconditionHolds_sound`, through
+`call_local_sound` with the precondition). For a read in a loop,
+
+```ts
+for (let j = 0; j < xs.length; j++) s = s + xs[j]!
+```
+
+`length-compare` states $`\mathrm{bound}_<(\mathit{xs},j)`$ on the loop's
+test, the body's entry claims it, and the read selects the second signature,
+so `xs[j]!` is a `number` with no check. The producer proposes the bounds a
+must-analysis holds (`Linear_facts.bounds`): a comparison of an index $`j`$
+known $`0\le j`$ with an array binding's `length` states one on the answer
+giving $`j<\mathit{length}`$; a statement writing no heap (slots, constants,
+operators, reads, element reads, assignments of value bindings) keeps those
+whose bindings it does not assign; every other statement forgets them; a merge
+keeps those both paths hold. A call stating `pre` is typed at that signature
+where the bounds holding at its statement's start establish it. Each is a
+claim Lean checks on every edge into the entry claiming it.
+
+**Cases.** Positive: `bounded-element-read` (a `for` and a `while` loop) and
+`pretext-array-element-read`. Negative, each run under Node:
+`invalid-bounded-element-read-inclusive` (a loop to `j <= xs.length`) and
+`invalid-bounded-element-read-shrunk` (a `pop` between the test and the
+read). Forged controls in `pipeline/test.mts`: each negative's read claimed at
+the element type, with and without a strict bound claimed at its statement.
 
 ### A literal with spreads
 

@@ -81,7 +81,7 @@ const heap = readDiagnostic(`obligation-diagnostic: ${JSON.stringify({ ...common
       values: [], links: [{ cell: 0, value: 1, alias: false, field: "id", optional: false }],
       separation: { depth: 2, facts: [{ slot: 0, fields: ["id"], partners: [[1, ["id", { symbol: 0 }]]] }] },
       elems: [{ slot: 1, pred, negated: false }, { slot: 1, pred, cond: 0, negated: true }],
-      indices: [{ fact: { bound: { x: 1, k: 2 } }, cond: null, negated: false },
+      indices: [{ fact: { bound: { x: 1, k: 2, strict: false } }, cond: null, negated: false },
         { fact: { index: { k: 2 } }, cond: 0, negated: true }],
     } },
 })}`);
@@ -92,7 +92,7 @@ assert.deepEqual(knowledge?.cells[0].contents, { ...contents, num: { allBut: ["0
 assert.deepEqual(knowledge?.separation.facts[0].partners, [[1, ["id", { symbol: 0 }]]]);
 assert.deepEqual(knowledge?.elems, [{ slot: 1, pred: ["num", "str"], negated: false },
   { slot: 1, pred: ["num", "str"], cond: 0, negated: true }]);
-assert.deepEqual(knowledge?.indices, [{ fact: { bound: { x: 1, k: 2 } }, negated: false },
+assert.deepEqual(knowledge?.indices, [{ fact: { bound: { x: 1, k: 2, strict: false } }, negated: false },
   { fact: { index: { k: 2 } }, cond: 0, negated: true }]);
 
 console.log("Diagnostic decoder: all variants, heap data and malformed required fields");

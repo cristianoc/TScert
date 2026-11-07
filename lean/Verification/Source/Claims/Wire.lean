@@ -108,11 +108,13 @@ structure Binding (ι : Type) where
   type : ClaimType ι
   current : Option (CurrentFields ι) := none
   deriving ToJson, FromJson
-/-- A bound a guard states at a statement entry: the binding `index` holds an
-array index at most the length of the array the binding `array` holds. -/
+/-- A bound at a statement entry: the binding `index` holds an array index at
+most the length of the array the binding `array` holds, below it where
+`strict`. -/
 structure Bound where
   array : String
   index : String
+  strict : Bool
   deriving ToJson, FromJson
 /-- A linear fact the producer proposes at a statement entry: the sum of the
 terms, each a value binding's name and an integer coefficient, is at most
@@ -245,7 +247,7 @@ private def pointData (entries : List (Entry ι)) (expressions : List (Expressio
   { envs := entries.map (fun e => (e.start,e.bindings.map (fun b => (b.name,b.type.ground))))
     exprs := expressions.map (fun e => (e.pos,e.type.ground))
     entryCurrent := entries.map (fun e => (e.start,e.bindings.filterMap fun b => b.current.map (b.name,·)))
-    entryBounds := entries.map (fun e => (e.start,e.bounds.map fun b => (b.array, b.index)))
+    entryBounds := entries.map (fun e => (e.start,e.bounds.map fun b => (b.array, b.index, b.strict)))
     entryFacts := entries.map (fun e => (e.start,e.facts.map fun f => (f.terms, f.bound)))
     -- An expression's assertion is of one field each (`validCurrent`).
     exprCurrent := expressions.filterMap (fun e => e.current.map fun fs =>

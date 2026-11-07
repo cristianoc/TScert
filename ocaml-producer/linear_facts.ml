@@ -133,28 +133,85 @@ let comparison env fs (cond : expr) : fact list * fact list =
      | _ -> [],[])
   | _ -> [],[]
 
-let rec writes_index xs j (s : stmt) =
-  let rec in_expr (e : expr) = match e.node with
-    | IndexWrite ({node=Id a;_},{node=Id k;_},_) when a = xs && k = j -> true
-    | _ -> List.exists in_expr (Source.children e) in
-  match s.statement with
-  | Effect e | Return e | Throw e -> in_expr e
-  | Declare (_,bs) -> List.exists (fun (_,_,e) -> in_expr e) bs
-  | If (c,a,b) -> in_expr c || List.exists (writes_index xs j) (a @ b)
-  | Block (_,b) -> List.exists (writes_index xs j) b
+(* The bounds (`Environment.bound_key`): an array binding, an index binding
+   and whether the index is below the length (`strict`) or at most it. They
+   flow beside the linear facts and mirror what Lean's steps keep: a
+   comparison with an array's length states one on the answer giving
+   `j < length` (`IndexWrites.lengthAtoms`); a statement that writes no heap
+   keeps those whose bindings it does not assign; every other statement
+   forgets them. *)
+type bound = string * string * bool
+
+let bounds env : bound list = List.filter_map (fun (n,_) -> bound_parts n) env
+let strip_bounds env = List.filter (fun (n,_) -> not (is_bound n)) env
+
+(* One bound per array and index, strict where any is. *)
+let tighten_bounds (bs : bound list) : bound list =
+  let pairs = List.sort_uniq compare (List.map (fun (a,i,_) -> a,i) bs) in
+  List.map (fun (a,i) -> a,i,List.exists (fun (a',i',s) -> a'=a && i'=i && s) bs) pairs
+
+let add_bounds env (bs : bound list) =
+  strip_bounds env @ List.map (fun (a,i,s) -> bound_key ~strict:s a i, Value Semantic.top) (tighten_bounds bs)
+
+(* At a merge, a bound both paths hold, strict where both are. *)
+let join_bounds (l : bound list) (r : bound list) : bound list =
+  let r = tighten_bounds r in
+  List.filter_map (fun (a,i,s) -> match List.find_opt (fun (a',i',_) -> a'=a && i'=i) r with
+    | Some (_,_,s') -> Some (a,i,s && s')
+    | None -> None) (tighten_bounds l)
+
+(* Whether evaluating an expression writes no heap location: slots and
+   constants, operators on them, reads, element reads (`%ElementAt%`, which
+   writes nothing) and assignments of value bindings. *)
+let rec heap_free env (e : expr) = match e.node with
+  | Id _ | Literal _ -> true
+  | Not a | Unary (_,a) | Cast (_,_,a) | Read (a,_) -> heap_free env a
+  | Arith (_,a,b) | Equality (_,a,b) | Logical (_,a,b) | Coalesce (a,b) -> heap_free env a && heap_free env b
+  | Conditional (c,a,b) -> heap_free env c && heap_free env a && heap_free env b
+  | Call ({node=Id "%ElementAt%";_},None,args,[],_) -> List.for_all (heap_free env) args
+  | Assign (x,_,rhs) -> value_binding env x && heap_free env rhs
+  | Update (_,{node=Id x;_},rhs,_) -> value_binding env x && Option.fold ~none:true ~some:(heap_free env) rhs
   | _ -> false
 
-(* The true answer of `j < xs.length`, with `0 ≤ j` known, before a body
-   writing `xs[j]`: `j` is an index at most the length (the bound atom) and at
-   most `2^32 - 2`, which Lean derives from the length's range. *)
-let length_test env fs (cond : expr) body =
+let statement_heap_free env (s : stmt) = match s.statement with
+  | Effect e | Return e -> heap_free env e
+  | Declare (_,bs) -> List.for_all (fun (_,_,e) -> heap_free env e) bs
+  | If (c,_,_) | While (c,_,_) -> heap_free env c
+  | _ -> false
+
+(* The bounds a statement keeps: those whose bindings it does not assign, where
+   it writes no heap. *)
+let statement_bounds env (bs : bound list) (s : stmt) =
+  if not (statement_heap_free env s) then [] else
+  let assigned = names_assigned s env in
+  List.filter (fun (a,i,_) -> not (List.mem a assigned) && not (List.mem i assigned)) bs
+
+(* What each answer of a comparison of an index with an array's length states:
+   on the answer giving `j < xs.length`, with `0 ≤ j` known, `j` an index
+   below the length (`IndexWrites.lengthPair`). *)
+let comparison_bounds ~array env fs (cond : expr) : bound list * bound list =
+  let index j = value_binding env j && is_int fs j && (match range fs j with Some l,_ -> l >= 0 | _ -> false) in
+  let length (e : expr) = match e.node with
+    | Read ({node=Id xs;_},Semantic.Name "length") when value_binding env xs && array xs -> Some xs
+    | _ -> None in
   match cond.node with
-  | Arith (Lt,{node=Id j;_},{node=Read ({node=Id xs;_},Semantic.Name "length");_})
-    when value_binding env j && value_binding env xs && is_int fs j
-         && (match range fs j with Some l,_ -> l >= 0 | _ -> false)
-         && List.exists (writes_index xs j) body ->
-    Some (xs,j), [[j,1],max_index]
-  | _ -> None,[]
+  | Arith (Lt,{node=Id j;_},l) when index j -> (match length l with Some xs -> [xs,j,true],[] | None -> [],[])
+  | Arith (Ge,{node=Id j;_},l) when index j -> (match length l with Some xs -> [],[xs,j,true] | None -> [],[])
+  | Arith (Gt,l,{node=Id j;_}) when index j -> (match length l with Some xs -> [xs,j,true],[] | None -> [],[])
+  | Arith (Le,l,{node=Id j;_}) when index j -> (match length l with Some xs -> [],[xs,j,true] | None -> [],[])
+  | _ -> [],[]
+
+(* The true answer of `j < xs.length`, with `0 ≤ j` known: `j` is at most
+   `2^32 - 2`, which Lean derives from the length's range. *)
+let length_test ~array env fs (cond : expr) =
+  match comparison_bounds ~array env fs cond with
+  | [_,j,_],_ -> [[j,1],max_index]
+  | _ -> []
+
+(* The bounds holding where the statement being typed starts, for a call
+   whose signature states a precondition (`Expression_calls`): set by the
+   flow around each statement it types, empty elsewhere. *)
+let current_bounds : bound list ref = ref []
 
 (* At a merge, a fact of one form holds at the larger bound where both
    paths state one. A bound larger than the one the earlier state (`l`, the

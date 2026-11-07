@@ -691,9 +691,18 @@ export function intrinsics(promise: (argument: TypeTerm) => TypeTerm, needed: Re
       type: fn([s.receiver, s.value], s.value) })])),
     ...Object.fromEntries(canvasSetters.map(s => [s.intrinsic, () => ({ typeParams: [],
       type: { ...fn([canvasContext, s.value], s.value), effect: emptyEffect } })])),
-    [elementAtName]: () => ({ typeParams: [{ name: "T", bound: null, resolution: null }],
-      type: { ...fn([{ k: "array", presence: "readable", readonly: true, element: binder, span }, atom("number")],
-        either(binder, atom("undefined"))), effect: emptyEffect } }),
+    // Two signatures: any read, an element or `undefined`; and a read at an
+    // index below the length of the array's store, the element at that
+    // index, which a readable store holds at its element type, a hole only
+    // where the element type admits `undefined` (`Types.StorePresence`).
+    [elementAtName]: () => {
+      const params = [{ k: "array", presence: "readable", readonly: true, element: binder, span } as const, atom("number")];
+      return { typeParams: [{ name: "T", bound: null, resolution: null }],
+        type: { k: "intersection", span, parts: [
+          { ...fn(params, either(binder, atom("undefined"))), effect: emptyEffect },
+          { ...fn(params, binder), effect: footprintEffect(emptyFootprint, { pre: [{ bound: { x: 1, k: 2, strict: true } }] }) },
+        ] } };
+    },
   };
   // Each needed name is looked up in a Map, which holds no inherited member.
   const byName = new Map(Object.entries(definitions));

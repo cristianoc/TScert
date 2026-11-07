@@ -19,9 +19,37 @@ let promise_of = function
   | Object [("guards",Object [("param",p)])] -> Guards (natural p)
   | Object [("asserts",Object [("param",p)])] -> Asserts (natural p)
   | _ -> unsupported "unknown callable promise"
+let integer j = match j with
+  | Number n -> (match int_of_string_opt n with Some i -> i | None -> fail "expected an integer")
+  | _ -> fail "expected an integer"
+let keys j = match j with
+  | Object fields -> List.sort String.compare (List.map fst fields)
+  | _ -> []
+(* An index fact, its constructor's name holding its fields (Lean's derived
+   `IndexFact` encoding). *)
+let index_fact_of j =
+  let only k = match keys j with [k'] when k' = k -> true | _ -> false in
+  let body k ks = let b = field k j in if keys b = List.sort String.compare ks then b else unsupported "invalid index fact" in
+  if only "index" then Index_at (natural (field "k" (body "index" ["k"])))
+  else if only "int" then Int_at (natural (field "k" (body "int" ["k"])))
+  else if only "length" then let b = body "length" ["x";"n"] in Length_of (natural (field "x" b), natural (field "n" b))
+  else if only "bound" then
+    let b = body "bound" ["x";"k";"strict"] in Bound_by (natural (field "x" b), natural (field "k" b), boolean (field "strict" b))
+  else if only "linear" then
+    let f = field "F" (body "linear" ["F"]) in
+    let parts k = let b = field k f in
+      if keys b <> ["bound";"form"] then unsupported "invalid linear fact";
+      List.map (function Array [x;c] -> (natural x, integer c) | _ -> fail "invalid linear term") (list (field "form" b)),
+      integer (field "bound" b) in
+    (match keys f with
+     | ["le"] -> let form,d = parts "le" in Linear_le (form,d)
+     | ["ne"] -> let form,d = parts "ne" in Linear_ne (form,d)
+     | _ -> unsupported "invalid linear fact")
+  else unsupported "unknown index fact"
 let effect_of j = match j with
   | Object fields when List.sort String.compare (List.map fst fields) =
-      ["elements";"footprint";"fresh";"freshObject";"onThrow";"promise";"receiverOwn";"receiverStore";"requires"] ->
+      ["elements";"footprint";"fresh";"freshObject";"onThrow";"pre";"promise";"receiverOwn";"receiverStore";
+       "requires"] ->
     let kinds k = match field k j with
       | Null -> None
       | Array ks -> Some (List.map str ks)
@@ -30,7 +58,8 @@ let effect_of j = match j with
      promise=(match field "promise" j with Null -> None | p -> Some (promise_of p));
      fresh=boolean (field "fresh" j); receiver_store=boolean (field "receiverStore" j);
      on_throw=boolean (field "onThrow" j); receiver_own=boolean (field "receiverOwn" j);
-     fresh_object=boolean (field "freshObject" j); requires=kinds "requires"; elements=kinds "elements"}
+     fresh_object=boolean (field "freshObject" j); requires=kinds "requires"; elements=kinds "elements";
+     pre=List.map index_fact_of (list (field "pre" j))}
   | _ -> unsupported "unknown callable effect"
 let resolution_slots scope index j = match field "resolution" j with
   | Null -> None

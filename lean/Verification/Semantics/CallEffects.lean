@@ -1,6 +1,7 @@
 import Verification.Semantics.ExceptionalPosts
 import Verification.Semantics.Purity
 import Verification.Semantics.ClosedFootprints
+import Verification.Semantics.IndexFacts
 
 /-! Call postconditions qualify the same receiver/arguments/result contract
 as ordinary arrows. They concern calls admitted by that contract, not every
@@ -86,8 +87,12 @@ location but the receiver's own ones, its store's among them, which the call
 may change arbitrarily; `freshObject` that a normal return's value is an
 object every own location of which the call allocated. `requires` states a
 precondition: the receiver's elements meet the predicate in the heap the call
-starts in (`ElemsAt`); `elements` a promise: a normal return of `true` leaves
-the receiver's elements meeting it. -/
+starts in (`ElemsAt`); `pre` a precondition on the call's values: each index
+fact holds of them in the heap the call starts in, read at the call's
+positions (`callEnv`: 0 the receiver, `i + 1` the `i`-th actual), such as
+`bound(1, 2, true)`, the second actual an index below the length of the first
+actual's store; `elements` a promise: a normal return of `true` leaves the
+receiver's elements meeting it. -/
 structure Effect where
   footprint : Footprints.Closed
   promise : Option TypePromise
@@ -98,16 +103,24 @@ structure Effect where
   freshObject : Bool
   requires : Option ElemPred := none
   elements : Option ElemPred := none
+  pre : List HeapKnowledge.IndexFact := []
   deriving Repr, DecidableEq
 
 /-- A signature with a footprint and no promise. -/
-def Effect.ofFootprint (c : Footprints.Closed) : Effect := ⟨c, none, false, false, false, false, false, none, none⟩
+def Effect.ofFootprint (c : Footprints.Closed) : Effect := ⟨c, none, false, false, false, false, false, none, none, []⟩
 
-/-- A signature's precondition on the heap a call with receiver `r` starts in. -/
-def Effect.Requires (e : Effect) (r : Tm) (h : Heap) : Prop := ∀ R, e.requires = some R → ElemsAt R r h
+/-- A call's values by position: `0` the receiver, `i + 1` the `i`-th actual,
+`undefined` past the last. -/
+def callEnv (r : Tm) (args : List Tm) : Env := fun i => if i = 0 then r else args.getD (i - 1) .undef
 
-theorem Effect.requires_none {e : Effect} (h : e.requires = none) (r : Tm) (heap : Heap) : e.Requires r heap := by
-  intro R hR; rw [h] at hR; cases hR
+/-- A signature's precondition on a call with receiver `r` and actuals `args`
+and the heap it starts in. -/
+def Effect.Requires (e : Effect) (r : Tm) (args : List Tm) (h : Heap) : Prop :=
+  (∀ R, e.requires = some R → ElemsAt R r h) ∧ ∀ F ∈ e.pre, F.HoldsAt (callEnv r args) h
+
+theorem Effect.requires_none {e : Effect} (h : e.requires = none) (hp : e.pre = []) (r : Tm) (args : List Tm)
+    (heap : Heap) : e.Requires r args heap :=
+  ⟨fun R hR => (by rw [h] at hR; cases hR), fun F hF => (by rw [hp] at hF; cases hF)⟩
 
 /-- An ordinary arrow's guarantee: none beyond its contract. -/
 def Effect.ordinary : Effect := .ofFootprint .top
@@ -295,11 +308,11 @@ theorem Effect.within_top {e : Effect} {r : Tm} {before after : Heap}
 /-- Whether the signature's result operand is the result's type and it
 states no precondition: a signature an ordinary arrow can stand for once its
 postcondition, an elements promise included, is forgotten. -/
-def Effect.plain (e : Effect) : Bool := e.promise.isNone && e.requires.isNone
+def Effect.plain (e : Effect) : Bool := e.promise.isNone && e.requires.isNone && e.pre.isEmpty
 
 /-- Whether a signature states no precondition and no elements promise, the
 two parts of a guarantee about its receiver's elements. -/
-def Effect.elementFree (e : Effect) : Bool := e.requires.isNone && e.elements.isNone
+def Effect.elementFree (e : Effect) : Bool := e.requires.isNone && e.elements.isNone && e.pre.isEmpty
 
 /-- The actual a promise is about: the one at its parameter, `undefined` where
 the call passes none. A signature without a promise is about none. -/
@@ -325,13 +338,17 @@ theorem Effect.result_none {e : Effect} (h : e.promise = none) (R : Fam) (a : Tm
   simp [Effect.result, h]
 
 theorem Effect.result_plain {e : Effect} (h : e.plain = true) (R : Fam) (a : Tm) : e.result R a = R :=
-  Effect.result_none (by simp only [Effect.plain, Bool.and_eq_true, Option.isNone_iff_eq_none] at h; exact h.1) R a
+  Effect.result_none (by simp only [Effect.plain, Bool.and_eq_true, Option.isNone_iff_eq_none] at h; exact h.1.1) R a
 
-theorem Effect.plain_of {e : Effect} (hp : e.promise = none) (hr : e.requires = none) : e.plain = true := by
-  simp [Effect.plain, hp, hr]
+theorem Effect.plain_of {e : Effect} (hp : e.promise = none) (hr : e.requires = none) (hpre : e.pre = []) :
+    e.plain = true := by
+  simp [Effect.plain, hp, hr, hpre]
 
 theorem Effect.plain_requires {e : Effect} (h : e.plain = true) : e.requires = none := by
-  simp only [Effect.plain, Bool.and_eq_true, Option.isNone_iff_eq_none] at h; exact h.2
+  simp only [Effect.plain, Bool.and_eq_true, Option.isNone_iff_eq_none] at h; exact h.1.2
+
+theorem Effect.plain_pre {e : Effect} (h : e.plain = true) : e.pre = [] := by
+  simp only [Effect.plain, Bool.and_eq_true, List.isEmpty_iff] at h; exact h.2
 
 theorem Effect.result_mono (e : Effect) {R T : Fam} {a : Tm} {k W u}
     (h : ∀ u, R k W u → T k W u) (hr : ∀ a', R k W a' → T k W a') :
@@ -351,7 +368,7 @@ def TypePromise.drop (n : Nat) : TypePromise → TypePromise
 
 def Effect.drop (n : Nat) (e : Effect) : Effect :=
   ⟨if e.receiverStore || e.receiverOwn then .top else e.footprint, e.promise.map (TypePromise.drop n), e.fresh, false,
-    e.onThrow, false, e.freshObject, e.requires, none⟩
+    e.onThrow, false, e.freshObject, e.requires, none, e.pre⟩
 
 /-- Whether binding `n` actuals keeps the promise about an actual of the
 bound call. A precondition or an elements promise is about the receiver the
@@ -366,7 +383,11 @@ theorem Effect.keeps_elementFree {e : Effect} {n : Nat} (h : e.keeps n = true) :
 
 theorem Effect.keeps_requires {e : Effect} {n : Nat} (h : e.keeps n = true) : e.requires = none := by
   have := Effect.keeps_elementFree h
-  simp only [Effect.elementFree, Bool.and_eq_true, Option.isNone_iff_eq_none] at this; exact this.1
+  simp only [Effect.elementFree, Bool.and_eq_true, Option.isNone_iff_eq_none] at this; exact this.1.1
+
+theorem Effect.keeps_pre {e : Effect} {n : Nat} (h : e.keeps n = true) : e.pre = [] := by
+  have := Effect.keeps_elementFree h
+  simp only [Effect.elementFree, Bool.and_eq_true, List.isEmpty_iff] at this; exact this.2
 
 theorem Effect.promised_drop {e : Effect} {pre args : List Tm} (h : e.keeps pre.length = true) :
     (e.drop pre.length).promised args = e.promised (pre ++ args) := by
@@ -480,24 +501,24 @@ their footprints, with the promise they share, a fresh result where either
 states one. -/
 def Effect.meet (a b : Effect) : Effect :=
   ⟨a.footprint.meet b.footprint, a.promise, a.fresh || b.fresh, a.receiverStore, a.onThrow && b.onThrow,
-    a.receiverOwn, a.freshObject || b.freshObject, a.requires, a.elements⟩
+    a.receiverOwn, a.freshObject || b.freshObject, a.requires, a.elements, a.pre⟩
 
 /-- Two guarantees whose results mean the same: the same promise, or none,
 the same precondition and elements promise, and footprints over the same
 locations. Only these combine. -/
 def Effect.sameResult (a b : Effect) : Bool :=
   a.promise == b.promise && a.receiverStore == b.receiverStore && a.receiverOwn == b.receiverOwn &&
-    a.requires == b.requires && a.elements == b.elements
+    a.requires == b.requires && a.elements == b.elements && a.pre == b.pre
 
 theorem Effect.within_meet {a b : Effect} (hs : a.sameResult b = true) {r : Tm} {before after : Heap} :
     (a.meet b).within r before after ↔ a.within r before after ∧ b.within r before after := by
   simp only [Effect.sameResult, Bool.and_eq_true, beq_iff_eq] at hs
   unfold Effect.within Effect.meet
   simp only
-  rw [← hs.1.1.1.2, ← hs.1.1.2]
+  rw [← hs.1.1.1.1.2, ← hs.1.1.1.2]
   split
   · have hc : Effect.ownChange ⟨a.footprint.meet b.footprint, a.promise, a.fresh || b.fresh, a.receiverStore,
-        a.onThrow && b.onThrow, a.receiverOwn, a.freshObject || b.freshObject, a.requires, a.elements⟩ =
+        a.onThrow && b.onThrow, a.receiverOwn, a.freshObject || b.freshObject, a.requires, a.elements, a.pre⟩ =
         a.ownChange.meet b.ownChange := by
       rfl
     rw [hc, Footprints.Closed.holdsOn_meet, Footprints.Closed.holdsOn_meet]
@@ -513,7 +534,7 @@ theorem Effect.post_meet {a b : Effect} (hs : a.sameResult b = true) (r : Tm) (b
   have ho : (a.meet b).freshObject = (a.freshObject || b.freshObject) := rfl
   have he : (a.meet b).elements = a.elements := rfl
   have hbe : b.elements = a.elements := by
-    simp only [Effect.sameResult, Bool.and_eq_true, beq_iff_eq] at hs; exact hs.2.symm
+    simp only [Effect.sameResult, Bool.and_eq_true, beq_iff_eq] at hs; exact hs.1.2.symm
   unfold Effect.post
   rw [hw, hf, ho, he, hbe, Bool.or_eq_true, Bool.or_eq_true]
   constructor
@@ -549,7 +570,7 @@ def PromiseWith (Ξ : Fam) (effect : Effect)
     (k : Nat) (W : WorldT k) (v : Val) : Prop :=
   ∀ (j : Nat) (hj : j < k) (U : WorldT j), WExt (trunc j (Nat.le_of_lt hj) W) U →
     WorldAdm U → ∀ (heap : Heap), HeapOk j U heap → ∀ r, isVal r = true → Rc j U r →
-      ∀ args, CallArguments.Values args → Acc j U args → effect.Requires r heap →
+      ∀ args, CallArguments.Values args → Acc j U args → effect.Requires r args heap →
         ∃ result, CallArguments.Invoke ⟨v, r, args⟩ result ∧
           SafePostExc Ξ (effect.result R (effect.promised args)) (effect.post r heap)
             (effect.excPost r heap) j U heap result
@@ -561,7 +582,7 @@ theorem PromiseWith.erase {effect Acc Rc R k W v} (hp : effect.plain = true)
     (h : PromiseWith Ξ effect Acc Rc R k W v) : Promise Ξ Acc Rc R k W v := by
   intro j hj U hx hu heap hh r hrv hr args hv ha
   obtain ⟨result, hi, hs⟩ := h j hj U hx hu heap hh r hrv hr args hv ha
-    (Effect.requires_none (Effect.plain_requires hp) r heap)
+    (Effect.requires_none (Effect.plain_requires hp) (Effect.plain_pre hp) r args heap)
   rw [Effect.result_plain hp] at hs
   exact ⟨result, hi, HeapObservations.erase hs.post⟩
 
@@ -584,7 +605,7 @@ def Effect.Covers (source target : Effect) : Prop :=
   (∀ r before after value, source.post r before after value → target.post r before after value) ∧
   (∀ R args k W u, source.result R (source.promised args) k W u → target.result R (target.promised args) k W u) ∧
   (∀ r before after, source.excPost r before after → target.excPost r before after) ∧
-  ∀ r heap, target.Requires r heap → source.Requires r heap
+  ∀ r args heap, target.Requires r args heap → source.Requires r args heap
 
 /-- A precondition implying another's: none, or a predicate at most the
 other's. -/
@@ -600,13 +621,18 @@ def elementsCovers : Option ElemPred → Option ElemPred → Bool
   | some a, some b => a.le b
   | none, some _ => false
 
-theorem requiresCovers_sound {a b : Effect} (h : requiresCovers a.requires b.requires = true) {r heap}
-    (hb : b.Requires r heap) : a.Requires r heap := by
-  intro R hR
+/-- A precondition on the call's values implying another's: each fact of the
+other's is one of this one's. -/
+def preCovers (a b : List HeapKnowledge.IndexFact) : Bool := a.all b.contains
+
+theorem requiresCovers_sound {a b : Effect} (h : requiresCovers a.requires b.requires = true)
+    (hp : preCovers a.pre b.pre = true) {r args heap}
+    (hb : b.Requires r args heap) : a.Requires r args heap := by
+  refine ⟨fun R hR => ?_, fun F hF => hb.2 F (List.contains_iff_mem.mp (List.all_eq_true.mp hp F hF))⟩
   rw [hR] at h
   cases hq : b.requires with
   | none => rw [hq] at h; cases h
-  | some R' => rw [hq] at h; exact (hb R' hq).mono h
+  | some R' => rw [hq] at h; exact (hb.1 R' hq).mono h
 
 theorem elementsCovers_sound {a b : Effect} (h : elementsCovers a.elements b.elements = true) {r after} {v : Tm}
     (ha : ∀ R, a.elements = some R → v = .tru → ElemsAt R r after) :
@@ -626,7 +652,7 @@ def Effect.covers (a b : Effect) : Bool :=
   a.footprint.le b.footprint && a.promise == b.promise && (!b.fresh || a.fresh) &&
     (!a.receiverStore || (b.receiverStore && !b.receiverOwn) || b.footprint == .top) && (!b.onThrow || a.onThrow) &&
     (!a.receiverOwn || b.receiverOwn || b.footprint == .top) && (!b.freshObject || a.freshObject) &&
-    requiresCovers a.requires b.requires && elementsCovers a.elements b.elements
+    requiresCovers a.requires b.requires && elementsCovers a.elements b.elements && preCovers a.pre b.pre
 
 private theorem Effect.within_top_of {e : Effect} {r : Tm} {before after : Heap}
     (ht : e.footprint = .top) (h : Footprints.Closed.top.Holds before after) : e.within r before after := by
@@ -635,7 +661,7 @@ private theorem Effect.within_top_of {e : Effect} {r : Tm} {before after : Heap}
 
 theorem Effect.covers_sound {a b : Effect} (h : a.covers b = true) : a.Covers b := by
   simp only [Effect.covers, Bool.and_eq_true] at h
-  obtain ⟨⟨⟨⟨⟨⟨⟨⟨hle, hp⟩, hf⟩, hs⟩, ho⟩, hw⟩, hfo⟩, hrq⟩, hel⟩ := h
+  obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨hle, hp⟩, hf⟩, hs⟩, ho⟩, hw⟩, hfo⟩, hrq⟩, hel⟩, hpre⟩ := h
   simp only [beq_iff_eq] at hp
   have hown : a.ownChange.le b.ownChange = true := by
     simp only [Footprints.Closed.le, Bool.and_eq_true] at hle
@@ -666,7 +692,7 @@ theorem Effect.covers_sound {a b : Effect} (h : a.covers b = true) : a.Covers b 
   refine ⟨fun r before after v ⟨hw, hfr, hfro, hels⟩ => ⟨within r before after hw, fun hb => hfr ?_,
       fun hb => hfro ?_, elementsCovers_sound hel hels⟩,
     fun R args k W u hu => ?_, fun r before after he hb => within r before after (he ?_),
-    fun r heap hq => requiresCovers_sound hrq hq⟩
+    fun r args heap hq => requiresCovers_sound hrq hpre hq⟩
   · rw [hb] at hf; simpa using hf
   · rw [hb] at hfo; simpa using hfo
   · simpa [Effect.result, Effect.promised, hp] using hu
@@ -684,7 +710,7 @@ theorem Effect.bindCovers_covers {n : Nat} {a b : Effect} (h : a.bindCovers n b 
   simp only [Effect.bindCovers, Bool.and_eq_true] at h; exact h.2
 
 theorem Effect.Covers.refl (e : Effect) : e.Covers e :=
-  ⟨fun _ _ _ _ h => h, fun _ _ _ _ _ h => h, fun _ _ _ h => h, fun _ _ h => h⟩
+  ⟨fun _ _ _ _ h => h, fun _ _ _ _ _ h => h, fun _ _ _ h => h, fun _ _ _ h => h⟩
 
 /-- Two executions' results combine as the results of their operands do. -/
 theorem Effect.cross_result (e : Effect) {B C D : Fam} {a : Tm} {n}
@@ -713,7 +739,7 @@ theorem PromiseWith.weaken' {Ξ Ξ' : Fam} {effect effect' Acc Acc' Rc Rc' R T k
     (h : PromiseWith Ξ effect Acc Rc R k W v) : PromiseWith Ξ' effect' Acc' Rc' T k W v := by
   intro j hj U hx hu heap hh r hrv hr args hv ha hq
   obtain ⟨result, hi, hs⟩ :=
-    h j hj U hx hu heap hh r hrv (hrecv j hj U r hr) args hv (hacc j hj U args ha) (he.2.2.2 r heap hq)
+    h j hj U hx hu heap hh r hrv (hrecv j hj U r hr) args hv (hacc j hj U args ha) (he.2.2.2 r args heap hq)
   exact ⟨result, hi, SafePostExc.consequence_below' (fun m hm => hexc m (by omega))
     (fun m hm U' u hu => he.2.1 T args m U' u
       (Effect.result_mono effect (hres m (by omega) U') (hres m (by omega) U') hu)) (he.1 r heap)
@@ -916,10 +942,11 @@ theorem PromiseWith.combine {effect other Acc Rc B C D k W v}
     (hcross : ∀ n, n < k → CrossCompatUpTo n B C D) :
     PromiseWith Ξ (effect.meet other) Acc Rc D k W v := by
   intro j hj U hx hu heap hh r hrv hr args hv ha hq
-  have hq' : other.Requires r heap := by
+  have hq' : other.Requires r args heap := by
     simp only [Effect.sameResult, Bool.and_eq_true, beq_iff_eq] at hs
-    intro R hR; exact hq R (by simp only [Effect.meet]; rw [hs.1.2]; exact hR)
-  obtain ⟨b, hib, hsb⟩ := hb j hj U hx hu heap hh r hrv hr args hv ha (fun R hR => hq R hR)
+    exact ⟨fun R hR => hq.1 R (by simp only [Effect.meet]; rw [hs.1.1.2]; exact hR),
+      fun F hF => hq.2 F (by simp only [Effect.meet]; rw [hs.2]; exact hF)⟩
+  obtain ⟨b, hib, hsb⟩ := hb j hj U hx hu heap hh r hrv hr args hv ha ⟨hq.1, hq.2⟩
   obtain ⟨c, hic, hsc⟩ := hc j hj U hx hu heap hh r hrv hr args hv ha hq'
   cases CallArguments.invoke_deterministic hib hic
   obtain ⟨hr1, hp1, hr2, hp2⟩ := Effect.meet_same hs
@@ -964,7 +991,7 @@ theorem PromiseWith.bound {effect : Effect} {Acc Rest : ArgFam} {Rt R Rc : Fam}
       · exact hargs a hm
     obtain ⟨res, hinv, hsafe⟩ := ht i hi _ hxU hu' heap hh' rv hrv hr'
       (pre ++ args) hall (hprefix i hi _ hxU args ha')
-      (Effect.requires_none (Effect.keeps_requires hkeeps) rv heap)
+      (Effect.requires_none (Effect.keeps_requires hkeeps) (Effect.keeps_pre hkeeps) rv (pre ++ args) heap)
     rw [Effect.result_drop, Effect.promised_drop hkeeps]
     exact .inr ⟨_, heap, res, WExt_refl _, hu', hinv.step heap, hh',
       SafePostExc.weaken (fun _ _ h => Effect.post_drop pre.length h)
@@ -976,7 +1003,7 @@ theorem call_safe_exc {effect : Effect} {P : ArgFam} {Rc R : Fam}
     (hP : Adm P) (hRc : Adm Rc) {n W heap f r vs}
     (hf : PromiseWith Ξ effect P Rc R n W f) (hr : Rc n W r)
     (hrv : isVal r = true) (hv : CallArguments.Values vs) (ha : P n W vs)
-    (hw : WorldAdm W) (hh : HeapOk n W heap) (hq : effect.Requires r heap) :
+    (hw : WorldAdm W) (hh : HeapOk n W heap) (hq : effect.Requires r vs heap) :
     SafePostExc Ξ (effect.result R (effect.promised vs)) (effect.post r heap) (effect.excPost r heap)
       n W heap (.invoke f r vs) := by
   cases n with
@@ -993,7 +1020,7 @@ theorem call_safe {effect : Effect} {P : ArgFam} {Rc R : Fam}
     (hP : Adm P) (hRc : Adm Rc) {n W heap f r vs}
     (hf : PromiseWith Ξ effect P Rc R n W f) (hr : Rc n W r)
     (hrv : isVal r = true) (hv : CallArguments.Values vs) (ha : P n W vs)
-    (hw : WorldAdm W) (hh : HeapOk n W heap) (hq : effect.Requires r heap) :
+    (hw : WorldAdm W) (hh : HeapOk n W heap) (hq : effect.Requires r vs heap) :
     SafePost Ξ (effect.result R (effect.promised vs)) (effect.post r heap) n W heap (.invoke f r vs) :=
   (call_safe_exc hP hRc hf hr hrv hv ha hw hh hq).post
 

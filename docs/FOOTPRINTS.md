@@ -464,7 +464,9 @@ result with the opposite answer (`not-elements`, proved:
 `negation_test_run`). A call at a signature stating `requires R` is accepted
 where its receiver slot's class has an unconditional atom with a predicate
 within $`R`$ (`call-requires`, proved: `requiresTree_sound`, through
-`call_local_sound` with the precondition); a write, a call beyond the empty
+`call_local_sound` with the precondition), and each fact of a precondition on
+the call's values its signature states follows from the knowledge at the call
+([reads below the length](PROGRAM-TYPING.md#reads-below-the-length)); a write, a call beyond the empty
 footprint and a throw drop every atom, as they drop every heap fact. The
 search carries the atoms along edges, meets them at merges and seeds a cut
 with the atoms every entering edge carries; Lean checks every edge.

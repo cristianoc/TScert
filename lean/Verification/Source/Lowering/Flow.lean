@@ -292,13 +292,13 @@ private def reachablePoints (graph : SourceFlow.Graph) (id : Nat) : List String 
   let facts ← entryFacts fc node.source.1 scope
   let separation := separationFacts (SourceTypes.graph (← table)) scope Γ
   let links ← witnessLinks fc node.source.1 scope
-  -- A bound a guard states: the index binding's value is an array index at
-  -- most the length of the array binding's store (PROGRAM-TYPING.md, "Writes
-  -- at a checked index"). Both name value bindings; a claim naming any other
-  -- is refused rather than dropped.
-  let bounds ← ((fc.entryBounds.lookup node.source.1).getD []).mapM fun (array, index) =>
+  -- A bound: the index binding's value is an array index at most the length
+  -- of the array binding's store, below it where strict (PROGRAM-TYPING.md,
+  -- "Writes at a checked index"). Both name value bindings; a claim naming
+  -- any other is refused rather than dropped.
+  let bounds ← ((fc.entryBounds.lookup node.source.1).getD []).mapM fun (array, index, strict) =>
     match valueSlot scope array, valueSlot scope index with
-    | some x, some k => pure ({ fact := .bound x k } : HeapKnowledge.IndexAtom)
+    | some x, some k => pure ({ fact := .bound x k strict } : HeapKnowledge.IndexAtom)
     | none, _ => do throw (locatedRefusal (← table) node.source .entryClaim
         s!"a bound names '{array}' as its array, which is no value binding")
     | _, none => do throw (locatedRefusal (← table) node.source .entryClaim

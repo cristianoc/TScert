@@ -5,12 +5,12 @@
 // rich-inline.ts#getOpeningFit, rich-inline.ts#getPartWidth,
 // rich-inline.ts#getSegmentIndex, rich-inline.ts#getSourceOffset,
 // rich-inline.ts#narrowsLine.
-// Refusal: reject: source expression obligation: no derivation of its cast
-// claim.
 // A non-null assertion of an array's element read inside its length,
-// `widths[i]!` with `i < widths.length`: `number[]` is readable (every
-// in-bounds read meets `number`, so it holds no hole), so the read is a
-// number; the loop's bound is not used to rule out a read past the end.
+// `widths[i]!` with `i < widths.length`: the test states that `i` is an index
+// below the length of `widths`' store, which reaches the read; there
+// `%ElementAt%`'s signature at an index below the length gives the element,
+// and `number[]` is readable (a hole only where the element admits
+// `undefined`), so the read is a number.
 export function last(widths: number[]): number {
   let width = 0;
   for (let i = 0; i < widths.length; i++) width = widths[i]!;

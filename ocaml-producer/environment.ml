@@ -26,15 +26,15 @@ let lookup ?at env name = match List.assoc_opt name env with
   | Some b -> b | None -> unbound ?at name
 let is_field n = String.contains n '\000'
 let owner n = String.sub n 0 (String.index n '\000')
-(* A bound a guard states for the statement after it (PROGRAM-TYPING.md,
-   "Writes at a checked index"): the value of `index` is an array index at
-   most the length of the array `array` holds. It is held from the guard's
-   failing edge to the next statement's entry, which claims it, and no
-   further. *)
-let bound_key array index = "\002" ^ array ^ "\002" ^ index
+(* A bound (PROGRAM-TYPING.md, "Writes at a checked index"): the value of
+   `index` is an array index at most the length of the array `array` holds,
+   below it where `strict`. Held as a pseudo-binding whose name encodes it, so
+   it flows and joins with the environment (`Linear_facts.bounds`). *)
+let bound_key ?(strict=false) array index =
+  "\002" ^ array ^ "\002" ^ index ^ "\002" ^ (if strict then "<" else "=")
 let is_bound n = String.length n > 0 && n.[0] = '\002'
 let bound_parts n = match String.split_on_char '\002' n with
-  | [""; array; index] -> Some (array, index)
+  | [""; array; index; s] -> Some (array, index, s = "<")
   | _ -> None
 (* A linear fact the producer proposes at statement entries (PROGRAM-TYPING.md,
    "Linear facts"): the sum of [terms], each a value binding's name and an

@@ -785,7 +785,8 @@ effect, the slot and the promise's type. -/
       | .invoke _ _ args, jf :: jr :: jas =>
         match expand G jf.type with
         | [.arrs L _] => L.findSome? fun s =>
-          if s.receiver = jr.type ∧ s.arguments = jas.map Sequent.type ∧ s.effect.requires = none then
+          if s.receiver = jr.type ∧ s.arguments = jas.map Sequent.type ∧ s.effect.requires = none ∧
+              s.effect.pre = [] then
             match s.effect.promise with
             | some (.guards p) | some (.asserts p) => match args[p]? with
               | some (.var a) => some (s.effect, a, s.result)
@@ -905,7 +906,7 @@ theorem promiseCall_sound {G : NormalGraph ι} {images : InstanceImageCheck G} {
   split at hsome
   case isFalse => contradiction
   rename_i hsig
-  obtain ⟨hrecv, hargsig, hreq⟩ := hsig
+  obtain ⟨hrecv, hargsig, hreq, hpre⟩ := hsig
   have context : ∀ p ∈ jf::jr::jas, p.context = Γ := by
     intro p hp
     simp only [List.mem_cons] at hp
@@ -956,7 +957,7 @@ theorem promiseCall_sound {G : NormalGraph ι} {images : InstanceImageCheck G} {
       (Adm.of_transfer (fun ha j hj U hx => ArgsShort_transfer (fun T hm => by
         obtain ⟨p,hp,rfl⟩ := List.mem_map.mp hm; exact meaning_adm G p.type) ha j hj U hx))
       (meaning_adm G jr.type) (by simpa [List.map_map, Function.comp_def] using hpw) hr hrval hvs ha hw hh
-      (CallEffects.Effect.requires_none hreq _ _)
+      (CallEffects.Effect.requires_none hreq hpre _ _ _)
     have hterm : instantiate 0 ρ (.invoke f rv args) = .invoke (instantiate 0 ρ jf.term)
         (instantiate 0 ρ jr.term) (args.map (instantiate 0 ρ)) := by
       simp [instantiate, instantiateArgs_eq_map, htf, htr]
@@ -1405,10 +1406,114 @@ theorem atomFor_sound {k : HeapKnowledge.Knowledge} {x R ρ h} (hc : atomFor k x
   rw [HeapLinks.aliases_eq hk.2.2.1 hal] at hat
   exact hat.mono hle
 
+/-- The slots a list of terms names, where each is a slot. -/
+def varSlots : List Tm → Option (List Nat)
+  | [] => some []
+  | .var a :: t => (varSlots t).map (a :: ·)
+  | _ :: _ => none
+
+theorem varSlots_get {args : List Tm} {as : List Nat} (h : varSlots args = some as) (ρ : Env) :
+    as.length = args.length ∧ ∀ q < as.length, (args.map (instantiate 0 ρ)).getD q .undef = ρ (as.getD q 0) := by
+  induction args generalizing as with
+  | nil => simp only [varSlots, Option.some.injEq] at h; subst h; simp
+  | cons t rest ih =>
+    cases t <;> simp only [varSlots, Option.map_eq_some_iff, reduceCtorEq] at h
+    rename_i a
+    obtain ⟨bs, hbs, rfl⟩ := h
+    obtain ⟨hl, hg⟩ := ih hbs
+    refine ⟨by simp [hl], fun q hq => ?_⟩
+    cases q with
+    | zero => simp [instantiate]
+    | succ q => simpa using hg q (by simpa using hq)
+
+/-- The slots a call's positions hold: its receiver's, then its actuals', each
+a slot (`CallEffects.callEnv`'s positions); and whether the receiver is a
+slot. A receiver that is no slot, such as the `undefined` of a plain
+function's call, holds position `0` at slot `0`, which a precondition then
+may not name. -/
+def callSlots : Tm → Option (Bool × List Nat)
+  | .invoke _ (.var r) args => (varSlots args).map fun as => (true, r :: as)
+  | .invoke _ _ args => (varSlots args).map fun as => (false, 0 :: as)
+  | _ => none
+
+theorem callSlots_env {t : Tm} {recv : Bool} {slots : List Nat} (hs : callSlots t = some (recv, slots)) (ρ : Env) :
+    ∀ p < slots.length, (p ≠ 0 ∨ recv = true) → PointClaims.mapEnv (some slots) ρ p =
+      CallEffects.callEnv (ExpressionEffects.receiverOf (instantiate 0 ρ t))
+        (ExpressionEffects.actualsOf (instantiate 0 ρ t)) p := by
+  intro p hp hrecv
+  cases t <;> simp only [callSlots, reduceCtorEq] at hs
+  rename_i f r args
+  have core : ∀ (as : List Nat), varSlots args = some as → ∀ (y : Nat) (q : Nat), q + 1 < (y :: as).length →
+      PointClaims.mapEnv (some (y :: as)) ρ (q + 1) =
+        CallEffects.callEnv (ExpressionEffects.receiverOf (instantiate 0 ρ (.invoke f r args)))
+          (ExpressionEffects.actualsOf (instantiate 0 ρ (.invoke f r args))) (q + 1) := by
+    intro as has y q hq
+    obtain ⟨hl, hg⟩ := varSlots_get has ρ
+    simp only [List.length_cons] at hq
+    simp only [PointClaims.mapEnv, PointClaims.slot, ExpressionEffects.actualsOf, instantiate,
+      instantiateArgs_eq_map, CallEffects.callEnv, Nat.add_one_ne_zero, if_false, Nat.add_sub_cancel,
+      List.getElem?_cons_succ]
+    rw [hg q (by omega)]
+    simp [List.getD_eq_getElem?_getD]
+  cases r <;> simp only [Option.map_eq_some_iff, Prod.mk.injEq] at hs
+  case var x =>
+    obtain ⟨as, has, -, rfl⟩ := hs
+    cases p with
+    | zero => simp [PointClaims.mapEnv, PointClaims.slot, ExpressionEffects.receiverOf, instantiate,
+        CallEffects.callEnv]
+    | succ q => exact core as has x q hp
+  all_goals
+    obtain ⟨as, has, rfl, rfl⟩ := hs
+    cases p with
+    | zero => simp at hrecv
+    | succ q => exact core as has 0 q hp
+
 /-- Whether a derivation is a call `call-requires` applies to: the local call
 rule at a selected signature stating a precondition, its operands values, its
-premises' derivations checked, and the precondition's atom on its receiver
-slot. -/
+premises' derivations checked; the elements precondition's atom on its
+receiver slot, and each fact of the precondition on the call's values
+following from the knowledge at the slots its positions hold. -/
+def preconditionHolds (k : HeapKnowledge.Knowledge) (eff : Effect) (t : Tm) : Bool :=
+  (eff.requires.isSome || !eff.pre.isEmpty) &&
+  (match eff.requires with
+    | none => true
+    | some R => match receiverSlot t with
+      | some x => atomFor k x R
+      | none => false) &&
+  (eff.pre.isEmpty || match callSlots t with
+    | some (recv, slots) => eff.pre.all (fun F => F.slots.all fun p => p < slots.length && (p != 0 || recv)) &&
+        HeapKnowledge.indicesCheckBy (HeapLinks.aliases k.links) k.indices
+          (eff.pre.map fun F => ⟨F, none, false⟩) (some slots)
+    | none => false)
+
+theorem preconditionHolds_sound {k : HeapKnowledge.Knowledge} {eff : Effect} {t : Tm} {ρ h}
+    (hc : preconditionHolds k eff t = true) (hk : HeapKnowledge.Holds k ρ h) :
+    eff.Requires (ExpressionEffects.receiverOf (instantiate 0 ρ t)) (ExpressionEffects.actualsOf (instantiate 0 ρ t)) h := by
+  simp only [preconditionHolds, Bool.and_eq_true, Bool.or_eq_true] at hc
+  obtain ⟨⟨-, hreq⟩, hpre⟩ := hc
+  refine ⟨fun R hR => ?_, fun F hF => ?_⟩
+  · rw [hR] at hreq
+    simp only at hreq
+    split at hreq
+    · rename_i x hx
+      obtain ⟨f, args, hterm⟩ := receiverSlot_term hx
+      rw [hterm]
+      simpa [ExpressionEffects.receiverOf, instantiate] using atomFor_sound hreq hk
+    · cases hreq
+  · rcases hpre with hnil | hpre
+    · simp only [List.isEmpty_iff] at hnil; rw [hnil] at hF; cases hF
+    · split at hpre
+      · rename_i recv slots hs
+        simp only [Bool.and_eq_true, List.all_eq_true] at hpre
+        obtain ⟨hin, hchk⟩ := hpre
+        have hheld := HeapKnowledge.indicesCheckBy_sound (fun x y hy => HeapLinks.aliases_eq hk.2.2.1 hy) hchk
+          hk.2.2.2.2.2 ⟨F, none, false⟩ (List.mem_map_of_mem hF) (fun b hb => by cases hb)
+        refine (HeapKnowledge.IndexFact.holdsAt_congr fun s hs' => ?_).mp hheld
+        have hp := hin F hF s hs'
+        simp only [decide_eq_true_eq, Bool.or_eq_true, bne_iff_ne, ne_eq] at hp
+        exact callSlots_env hs ρ s hp.1 hp.2
+      · simp at hpre
+
 @[nospecialize] def requiresApp (G : NormalGraph ι) (images : InstanceImageCheck G)
     (k : HeapKnowledge.Knowledge) (codes : CodeEntry ι → Bool) (sums : List (ReadSummary ι)) :
     Evidence ι → Bool
@@ -1416,9 +1521,7 @@ slot. -/
     (ps.all fun p => ExpressionEffects.valueTerm (claim p).term && checkScope (claim p).context.length (claim p).term) &&
     decide (LocalUsing G images j (.app eff) (ps.map claim) codes (sums := sums) (allowRequires := true)) &&
     ps.attach.all (fun p => checkTreeUsing G images p.val codes sums) &&
-    match eff.requires, receiverSlot j.term with
-    | some R, some x => atomFor k x R
-    | _, _ => false
+    preconditionHolds k eff j.term
   | _ => false
 
 /-- Such a call, or its subsumption. -/
@@ -1446,30 +1549,17 @@ theorem requiresApp_sound {G : NormalGraph ι} {images : InstanceImageCheck G}
       simp only [requiresApp, Bool.and_eq_true, decide_eq_true_eq] at hc
       obtain ⟨⟨⟨hvals, hl⟩, ht⟩, hreq⟩ := hc
       simp only [claim] at he ⊢
-      cases hR : eff'.requires with
-      | none => simp [hR] at hreq
-      | some R =>
-        cases hx : receiverSlot j.term with
-        | none => simp [hR, hx] at hreq
-        | some x =>
-          simp only [hR, hx] at hreq
-          obtain ⟨f, args, hterm⟩ := receiverSlot_term hx
-          have hq : eff'.Requires (ExpressionEffects.receiverOf (instantiate 0 ρ j.term)) h := by
-            intro R' hR'
-            rw [hR] at hR'
-            cases hR'
-            rw [hterm]
-            simpa [ExpressionEffects.receiverOf, instantiate] using atomFor_sound hreq hk
-          have typed : ∀ p ∈ ps.map claim, HasTyUsing G images p.context p.term p.type := by
-            intro p hm
-            obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hm
-            exact checkTreeUsing_sound q (List.all_eq_true.mp ht ⟨q, hq⟩ (List.mem_attach _ _)) hcodes hsums
-          have values : ∀ p ∈ ps.map claim, ExpressionEffects.valueTerm p.term = true ∧
-              checkScope p.context.length p.term = true := by
-            intro p hm
-            obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hm
-            simpa only [Bool.and_eq_true] using List.all_eq_true.mp hvals q hq
-          exact (ExpressionEffects.call_local_sound hl typed values he hw hh hq).post
+      have hq := preconditionHolds_sound hreq hk (ρ := ρ)
+      have typed : ∀ p ∈ ps.map claim, HasTyUsing G images p.context p.term p.type := by
+        intro p hm
+        obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hm
+        exact checkTreeUsing_sound q (List.all_eq_true.mp ht ⟨q, hq⟩ (List.mem_attach _ _)) hcodes hsums
+      have values : ∀ p ∈ ps.map claim, ExpressionEffects.valueTerm p.term = true ∧
+          checkScope p.context.length p.term = true := by
+        intro p hm
+        obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hm
+        simpa only [Bool.and_eq_true] using List.all_eq_true.mp hvals q hq
+      exact (ExpressionEffects.call_local_sound hl typed values he hw hh hq).post
   | _ => simp [requiresApp] at hc
 
 theorem requiresApp_selected {G : NormalGraph ι} {images : InstanceImageCheck G}

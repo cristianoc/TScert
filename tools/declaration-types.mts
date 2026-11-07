@@ -36,7 +36,26 @@ export type CallEffect = {
   /** A promise: a normal return of `true` leaves every present element of
    * the receiver's array of one of these kinds. */
   readonly elements: ElementKinds | null;
+  /** A precondition on the call's values: each index fact holds of them in
+   * the heap the call starts in, read at the call's positions (0 the
+   * receiver, i + 1 the i-th actual) (`CallEffects.Effect.pre`). */
+  readonly pre: readonly IndexFact[];
 };
+/** An index fact at numbered positions (`HeapKnowledge.IndexFact`, its
+ * constructor's name holding its fields): an array index; the length of an
+ * array's store; an index at most that length, below it where `strict`; a
+ * safe integer; a linear fact `Σ c·x ≤ d` or `≠ d`. */
+export type IndexFact =
+  | { readonly index: { readonly k: number } }
+  | { readonly length: { readonly x: number; readonly n: number } }
+  | { readonly bound: { readonly x: number; readonly k: number; readonly strict: boolean } }
+  | { readonly int: { readonly k: number } }
+  | { readonly linear: { readonly F: LinearFact } };
+/** A linear fact (`Linear.Fact`): `Σ c·x ≤ bound` or `≠ bound`, each term a
+ * position and its coefficient. */
+export type LinearFact =
+  | { readonly le: { readonly form: readonly (readonly [number, number])[]; readonly bound: number } }
+  | { readonly ne: { readonly form: readonly (readonly [number, number])[]; readonly bound: number } };
 /** The kinds of value an elements predicate admits (`CallEffects.ElemPred`),
  * each at most once, in this order. */
 export type ElementKind = "null" | "undefined" | "boolean" | "number" | "string" | "bigint" | "symbol" | "object";

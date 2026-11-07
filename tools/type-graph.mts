@@ -3,7 +3,7 @@
  * A row and a label list both denote unions. Contracts within one clause are
  * simultaneous requirements (including all arrows of an overload).
  */
-import type { CallEffect, CallPromise, ClosedFootprint, ElementKind, ElementKinds, PropertyKey } from "./declaration-types.mts";
+import type { CallEffect, CallPromise, ClosedFootprint, ElementKind, ElementKinds, IndexFact, PropertyKey } from "./declaration-types.mts";
 import { requireWellFormed } from "./wire-strings.mts";
 import {
   hasExactly,
@@ -59,12 +59,12 @@ export const footprintEffect = (footprint: ClosedFootprint, options?: EffectOpti
   ({ footprint, promise: options?.promise ?? null, fresh: options?.fresh ?? false,
     receiverStore: options?.receiverStore ?? false, onThrow: options?.onThrow ?? false,
     receiverOwn: options?.receiverOwn ?? false, freshObject: options?.freshObject ?? false,
-    requires: options?.requires ?? null, elements: options?.elements ?? null });
+    requires: options?.requires ?? null, elements: options?.elements ?? null, pre: options?.pre ?? [] });
 /** A fresh effect with a replacement promise and every other guarantee retained. */
 export const withPromise = (effect: CallEffect, promise: CallPromise | null): Within<{ value: "keep"; store: "keep" }, CallEffect> =>
   ({ footprint: effect.footprint, promise, fresh: effect.fresh, receiverStore: effect.receiverStore,
     onThrow: effect.onThrow, receiverOwn: effect.receiverOwn, freshObject: effect.freshObject,
-    requires: effect.requires, elements: effect.elements });
+    requires: effect.requires, elements: effect.elements, pre: effect.pre });
 /** Heap preservation: no location may change, no promise. */
 export const emptyEffect: CallEffect = footprintEffect(emptyFootprint);
 /** An ordinary arrow's effect: every location may change, no promise. */
@@ -105,6 +105,68 @@ function decodeKinds(v: JsonRead): Within<{ value: "any"; store: "grow" }, Eleme
   }
   return kinds;
 }
+/** A natural number a value states, or `undefined`. */
+function decodeNat(v: JsonRead): number | undefined {
+  return typeof v === "number" && Number.isSafeInteger(v) && v >= 0 ? v : undefined;
+}
+/** A safe integer a value states, or `undefined`. */
+function decodeInt(v: JsonRead): number | undefined {
+  return typeof v === "number" && Number.isSafeInteger(v) ? v : undefined;
+}
+/** The index facts a precondition states (`CallEffect.pre`), as fresh
+ * objects, or `undefined` where the value is no list of them. */
+export function decodeIndexFacts(v: JsonRead): Within<{ value: "any"; store: "grow" }, IndexFact[] | undefined> {
+  if (!isJsonList(v)) return undefined;
+  const facts: IndexFact[] = [];
+  for (const f of v) {
+    const fact = decodeIndexFact(f);
+    if (fact === undefined) return undefined;
+    facts.push(fact);
+  }
+  return facts;
+}
+/** A record's fields, where the value is a record of exactly these. */
+function fieldsOf(v: JsonRead, names: readonly string[]): JsonObject | undefined {
+  return isJsonObject(v) && Object.keys(v).sort().join(",") === [...names].sort().join(",") ? v : undefined;
+}
+function decodeIndexFact(v: JsonRead): IndexFact | undefined {
+  if (!isJsonObject(v) || Object.keys(v).length !== 1) return undefined;
+  const index = fieldsOf(v.index, ["k"]);
+  if (index) { const k = decodeNat(index.k); return k === undefined ? undefined : { index: { k } }; }
+  const int = fieldsOf(v.int, ["k"]);
+  if (int) { const k = decodeNat(int.k); return k === undefined ? undefined : { int: { k } }; }
+  const length = fieldsOf(v.length, ["x", "n"]);
+  if (length) {
+    const x = decodeNat(length.x);
+    const n = decodeNat(length.n);
+    return x === undefined || n === undefined ? undefined : { length: { x, n } };
+  }
+  const bound = fieldsOf(v.bound, ["x", "k", "strict"]);
+  if (bound) {
+    const x = decodeNat(bound.x);
+    const k = decodeNat(bound.k);
+    const strict = bound.strict;
+    return x === undefined || k === undefined || typeof strict !== "boolean" ? undefined : { bound: { x, k, strict } };
+  }
+  const linear = fieldsOf(v.linear, ["F"]);
+  const fact = linear === undefined || !isJsonObject(linear.F) || Object.keys(linear.F).length !== 1 ? undefined : linear.F;
+  if (fact === undefined) return undefined;
+  const le = fieldsOf(fact.le, ["form", "bound"]);
+  const ne = fieldsOf(fact.ne, ["form", "bound"]);
+  const body = le ?? ne;
+  if (body === undefined || !isJsonList(body.form)) return undefined;
+  const form: (readonly [number, number])[] = [];
+  for (const t of body.form) {
+    if (!isJsonList(t) || t.length !== 2) return undefined;
+    const x = decodeNat(t[0]);
+    const c = decodeInt(t[1]);
+    if (x === undefined || c === undefined) return undefined;
+    form.push([x, c]);
+  }
+  const d = decodeInt(body.bound);
+  if (d === undefined) return undefined;
+  return { linear: { F: le ? { le: { form, bound: d } } : { ne: { form, bound: d } } } };
+}
 /** The closed footprint a value states, as a fresh object of its fields, or
  * `undefined` where the value states none. */
 export function decodeClosedFootprint(v: JsonRead): Within<{ value: "any"; store: "grow" }, ClosedFootprint | undefined> {
@@ -123,10 +185,11 @@ function isFootprintStore(v: unknown): v is ClosedFootprint["store"] {
 /** The call effect a value states, as fresh objects of its fields, or
  * `undefined` where the value states none. */
 export function decodeCallEffect(v: JsonRead): Within<{ value: "any"; store: "grow" }, CallEffect | undefined> {
-  if (!isJsonObject(v) || Object.keys(v).length !== 9) return undefined;
+  if (!isJsonObject(v) || Object.keys(v).length !== 10) return undefined;
   const requires = decodeKinds(v.requires);
   const elements = decodeKinds(v.elements);
-  if (requires === undefined || elements === undefined) return undefined;
+  const pre = decodeIndexFacts(v.pre);
+  if (requires === undefined || elements === undefined || pre === undefined) return undefined;
   const footprint = decodeClosedFootprint(v.footprint);
   const fresh = v.fresh;
   const receiverStore = v.receiverStore;
@@ -147,7 +210,7 @@ export function decodeCallEffect(v: JsonRead): Within<{ value: "any"; store: "gr
     if (typeof param !== "number" || !Number.isInteger(param) || param < 0) return undefined;
     promise = guards ? { guards: { param } } : { asserts: { param } };
   }
-  return { footprint, promise, fresh, receiverStore, onThrow, receiverOwn, freshObject, requires, elements };
+  return { footprint, promise, fresh, receiverStore, onThrow, receiverOwn, freshObject, requires, elements, pre };
 }
 /** One contract representation; every operand mapping must retain its effect. */
 type CallContract<Receiver, Arguments, L = number> = {

@@ -491,6 +491,11 @@ let statements (expr:Analysis_state.expression_infer) execute_bindings owner_spa
     with_output;
     publish_output;
     statement=transfer_statement;
+    array_binding=(fun env x -> match List.assoc_opt x env with
+      | Some b -> (match (try declared_head declarations [] (binding_type b) with Json.Error _ -> Atoms []) with
+        | Atoms [Shape {elements=Some _;indexes=[];calls=[];_}] -> true
+        | _ -> false)
+      | None -> false);
     cannot_return_normally=(fun (s:Source.stmt) -> match s.statement with
       | Effect e -> claimed_type e.pos = Some (Atoms [])
       | _ -> false);

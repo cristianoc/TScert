@@ -18,7 +18,7 @@ structure PointData (ι : Type) where
   exprCurrent : List (Span × List (PropKey × Ty ι)) := []
   /-- At a statement entry, the bounds a guard states: an array binding's name
   and an index binding's. -/
-  entryBounds : List (Nat × List (String × String)) := []
+  entryBounds : List (Nat × List (String × String × Bool)) := []
   /-- At a statement entry, the linear facts the producer proposes: terms of
   value bindings' names with integer coefficients, and a bound. -/
   entryFacts : List (Nat × List (List (String × Int) × Int)) := []
@@ -55,7 +55,7 @@ structure Function (ι : Type) where
   exprs : List (Span × Candidate ι)
   entryCurrent : List (Nat × List (String × List (List PropKey × Ty ι))) := []
   exprCurrent : List (Span × List (PropKey × Ty ι)) := []
-  entryBounds : List (Nat × List (String × String)) := []
+  entryBounds : List (Nat × List (String × String × Bool)) := []
   entryFacts : List (Nat × List (List (String × Int) × Int)) := []
   /-- The source closure's interior obligations, one per claimed signature. -/
   arrowClaims : List (Span × List (Overlay ι)) := []

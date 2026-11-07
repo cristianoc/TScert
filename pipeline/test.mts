@@ -119,19 +119,20 @@ control(async (): Promise<void> => {
   // are each refused where it is checked.
   // A bound claimed at an entry no incoming edge establishes it at: past the
   // mask alone, past another array's comparison, with no guard, and at the
-  // guard's entry in a loop, reached from the loop's test.
+  // guard's entry in a loop counting down from the length, reached from a
+  // test of the index against 0 alone.
   for (const [name, fnName, at, array, index] of [
     ["invalid-index-write-no-compare", "wrong", "xs[k] = v", "xs", "k"],
     ["invalid-index-write-other-array", "wrong", "xs[k] = v", "xs", "k"],
     ["invalid-index-write-unguarded", "wrong", "xs[k] = v", "xs", "k"],
-    ["index-write-guard-loop", "clear", "if ((j & 0x7fffffff)", "xs", "j"],
+    ["index-write-guard-loop", "fillBack", "if ((k & 0x7fffffff)", "xs", "k"],
   ] as const) {
     const artifacts = run(name);
     const source = readFileSync(sourceKey(artifacts), "utf8");
     const start = source.indexOf(at);
     const claims = readClaims(artifacts);
     const fn = must(claims.functions.find(f => f.name === fnName), `${fnName}'s claims`);
-    must(fn.entries.find(e => e.start === start), "the forged entry").bounds.push({ array, index });
+    must(fn.entries.find(e => e.start === start), "the forged entry").bounds.push({ array, index, strict: false });
     const forged = writeClaims(artifacts, `index-write-forged-bound-${name}`, claims);
     const searched = produceWith(artifacts, forged, `index-write-forged-bound-${name}`);
     assert.equal(searched.status, 1, `${name}: ${searched.stdout}${searched.stderr}`);
@@ -147,8 +148,8 @@ control(async (): Promise<void> => {
       const claims = readClaims(artifacts);
       const fn = must(claims.functions.find(f => f.name === "set"), "set's claims");
       const entry = must(fn.entries.find(e => e.start === write), "the write's entry");
-      assert.deepEqual(entry.bounds, [{ array: "xs", index: "k" }]);
-      entry.bounds = variant === "dropped" ? [] : [{ array: "xs", index: "v" }];
+      assert.deepEqual(entry.bounds, [{ array: "xs", index: "k", strict: false }]);
+      entry.bounds = variant === "dropped" ? [] : [{ array: "xs", index: "v", strict: false }];
       const forged = writeClaims(artifacts, `index-write-claims-${variant}`, claims);
       invoke(forged, join(artifacts, "evidence.json"), artifacts, /^reject: source evidence /m);
     }
@@ -178,6 +179,37 @@ control(async (): Promise<void> => {
     invoke(join(artifacts, "claims.json"), path, artifacts, /^reject: source evidence /m);
   }
   process.stdout.write("checked index writes: a bound claimed past the mask alone, another array's comparison, no guard or at a loop's guard; claims dropping the bound or naming another index against honest evidence; a write at another slot, a flipped or dropped bound condition in evidence; each refused\n");
+});
+
+control(async (): Promise<void> => {
+  // An element read at an index below the length (`%ElementAt%`'s signature
+  // stating `pre`, checked by `call-requires`). The read of each unsafe
+  // program claimed at the element type alone, and also with a strict bound
+  // claimed at its statement's entry, is refused where evidence is searched:
+  // the read past the end of a loop running to `j <= xs.length`, and the read
+  // after a `pop` between the test and the read.
+  for (const [name, fnName, read, statement, array, index] of [
+    ["invalid-bounded-element-read-inclusive", "sum", "xs[j]", "s = s + xs[j]!", "xs", "j"],
+    ["invalid-bounded-element-read-shrunk", "last", "xs[i]", "return xs[i]!", "xs", "i"],
+  ] as const) {
+    for (const variant of ["claim", "bound"] as const) {
+      const artifacts = run(name);
+      const source = readFileSync(sourceKey(artifacts), "utf8");
+      const at = source.indexOf(read);
+      const claims = readClaims(artifacts);
+      const fn = must(claims.functions.find(f => f.name === fnName), `${fnName}'s claims`);
+      const claim = must(fn.expressions.find(e => e.pos[0] === at && e.pos[1] === at + read.length), "the read");
+      claim.type = [rowOf(claims, "num")];
+      if (variant === "bound") {
+        must(fn.entries.find(e => e.start === source.indexOf(statement)), "the read's entry")
+          .bounds.push({ array, index, strict: true });
+      }
+      const forged = writeClaims(artifacts, `bounded-read-forged-${name}-${variant}`, claims);
+      const searched = produceWith(artifacts, forged, `bounded-read-forged-${name}-${variant}`);
+      assert.equal(searched.status, 1, `${name} ${variant}: ${searched.stdout}${searched.stderr}`);
+    }
+  }
+  process.stdout.write("bounded element reads: the read past the end and the read after a pop, claimed at the element type with and without a strict bound, each refused\n");
 });
 
 control(async (): Promise<void> => {
@@ -1493,7 +1525,8 @@ control(async (): Promise<void> => {
     const fields: unknown[] = prototype.fields;
     for (const field of fields) if (field && typeof field === "object" && "readonly" in field) field.readonly = false;
     prototype.calls = [{ k: "function", effect: { footprint: { value: "any", store: "any" }, promise: null, fresh: false,
-      receiverStore: false, onThrow: false, receiverOwn: false, freshObject: false, requires: null, elements: null },
+      receiverStore: false, onThrow: false, receiverOwn: false, freshObject: false, requires: null, elements: null,
+      pre: [] },
       receiver: null, params: [], rest: null,
       result: { k: "atom", name: "unknown", span: [0, 0] }, span: [0, 0] }];
     return must(JSON.stringify(contract), "the callable contract's text");

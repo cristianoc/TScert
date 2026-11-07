@@ -111,7 +111,9 @@ export interface HeapKnowledge {
    * truthy value, or a falsy one where `negated`. */
   indices: {fact: IndexFact; cond?: number; negated: boolean}[];
 }
-type IndexFact = { index: { k: number } } | { length: { x: number; n: number } } | { bound: { x: number; k: number } };
+type IndexFact = { index: { k: number } } | { length: { x: number; n: number } } |
+  { bound: { x: number; k: number; strict: boolean } } | { int: { k: number } } |
+  { linear: { F: { le: { form: [number, number][]; bound: number } } | { ne: { form: [number, number][]; bound: number } } } };
 type SeparationKey = string | { symbol: number };
 /** The value kinds an elements fact's predicate names. */
 const ELEM_KINDS = ["nul", "undef", "bool", "num", "str", "big", "sym", "obj"] as const;
@@ -397,9 +399,23 @@ function knowledge(v: Json | undefined): HeapKnowledge | null {
     else if ("length" in f) {
       const l = record(record(f,["length"]).length,["x","n"]);
       fact = { length: { x: nat(l.x), n: nat(l.n) } };
+    } else if ("bound" in f) {
+      const b = record(record(f,["bound"]).bound,["x","k","strict"]);
+      if (typeof b.strict !== "boolean") throw Error("a bound's strict is a Boolean");
+      fact = { bound: { x: nat(b.x), k: nat(b.k), strict: b.strict } };
+    } else if ("int" in f) {
+      fact = { int: { k: nat(record(record(f,["int"]).int,["k"]).k) } };
     } else {
-      const b = record(record(f,["bound"]).bound,["x","k"]);
-      fact = { bound: { x: nat(b.x), k: nat(b.k) } };
+      const stated = record(record(f,["linear"]).linear,["F"]).F;
+      const le = isParsedObject(stated) && "le" in stated;
+      const F = record(stated, le ? ["le"] : ["ne"]);
+      const body = record(le ? F.le : F.ne, ["form","bound"]);
+      if (!Array.isArray(body.form) || typeof body.bound !== "number") throw Error("a linear fact's form and bound");
+      const form: [number, number][] = body.form.map((t: unknown): [number, number] => {
+        if (!Array.isArray(t) || t.length !== 2 || typeof t[1] !== "number") throw Error("a linear fact's term");
+        return [nat(t[0]), t[1]];
+      });
+      fact = { linear: { F: le ? { le: { form, bound: body.bound } } : { ne: { form, bound: body.bound } } } };
     }
     indices.push({ fact, negated: a.negated, ...(a.cond === null ? {} : { cond: nat(a.cond) }) });
   }

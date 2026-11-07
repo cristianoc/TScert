@@ -90,6 +90,8 @@ interface NamedPoint<L = Label> extends Point<L> {
 interface BoundClaim {
   array: string;
   index: string;
+  /** The index is below the length, not only at most it. */
+  strict: boolean;
 }
 
 /** A linear fact proposed at a statement entry: the sum of the terms, each a
@@ -315,8 +317,10 @@ function claimsDocument(v: JsonRead): SourceClaims {
     return { point: text(r.point, "an entry's point"), start: index(r.start, "an entry's start"),
       bindings: each(r.bindings, "an entry's bindings", namedPoint),
       bounds: each(r.bounds, "an entry's bounds", (b) => {
-        const q = record(b, "a bound", ["array", "index"]);
-        return { array: name(q.array, "a bound's array"), index: name(q.index, "a bound's index") };
+        const q = record(b, "a bound", ["array", "index", "strict"]);
+        if (typeof q.strict !== "boolean") fail("a bound's strict is a Boolean");
+        return { array: name(q.array, "a bound's array"), index: name(q.index, "a bound's index"),
+          strict: q.strict };
       }),
       facts: each(r.facts, "an entry's facts", (f) => {
         const q = record(f, "a linear fact", ["terms", "bound"]);
@@ -326,7 +330,7 @@ function claimsDocument(v: JsonRead): SourceClaims {
         };
         return {
           terms: each(q.terms, "a fact's terms", (t) => {
-            if (!Array.isArray(t) || t.length !== 2) fail("a fact's term is a name and a coefficient");
+            if (!isJsonList(t) || t.length !== 2) fail("a fact's term is a name and a coefficient");
             const term: [string, number] = [name(t[0], "a term's name"), integer(t[1], "a term's coefficient")];
             return term;
           }),

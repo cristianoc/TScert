@@ -1206,7 +1206,7 @@ theorem fixed_calls_pack_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R
         exact ArgsShort_of_exact this
     obtain ⟨result, hi, hsafe⟩ := hv j hj U hx hu heap hh r hrv
       (hr j hj _ _ hrecv U r hrm) args hvals (Domains.short (hr j hj) hd hall)
-      ((Effect.covers_sound heff).2.2.2 r heap hq)
+      ((Effect.covers_sound heff).2.2.2 r args heap hq)
     exact ⟨result, hi, HeapObservations.SafePostExc.consequence_below' (fun _ _ _ _ h => h) (fun m hm V u hu =>
         (Effect.covers_sound heff).2.1 _ args m V u (Effect.result_mono p.effect
           (fun u hu => hr m (by omega) _ _ hres V u hu) (fun u hu => hr m (by omega) _ _ hres V u hu) hu))

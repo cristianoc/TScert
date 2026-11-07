@@ -1076,7 +1076,7 @@ theorem codeChecked_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instan
   have hnel : ∀ R, c.row.effect.elements = some R → False := by
     intro R hR
     simp only [CallEffects.Effect.elementFree, Bool.and_eq_true, Option.isNone_iff_eq_none] at hel
-    rw [hel.2] at hR; cases hR
+    rw [hel.1.2] at hR; cases hR
   by_cases htop : c.row.effect.footprint = .top ∧ c.row.effect.fresh = false ∧ c.row.effect.onThrow = false
   · -- No footprint on a throw: the throw's postcondition is vacuous.
     apply HeapObservations.SafePostExc.of_post (fun _ r h => absurd h (by simp [htop.2.2]))

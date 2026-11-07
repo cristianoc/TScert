@@ -111,7 +111,7 @@ theorem indexed_sound {k : Knowledge} {a : Nat} {ρ h} (hc : indexed k a = true)
     rw [← HeapLinks.aliases_eq hk.2.2.1 hf]
     exact hat
   | length _ _ => rw [hfact] at hf; cases hf
-  | bound _ _ => rw [hfact] at hf; cases hf
+  | bound _ _ _ => rw [hfact] at hf; cases hf
   | int _ => rw [hfact] at hf; cases hf
   | linear _ => rw [hfact] at hf; cases hf
 
@@ -143,7 +143,7 @@ theorem lengthsOf_sound {k : Knowledge} {n x : Nat} {ρ h} (hx : x ∈ lengthsOf
         exact hat
       · cases hm
     | index _ => rw [hfact] at hm; cases hm
-    | bound _ _ => rw [hfact] at hm; cases hm
+    | bound _ _ _ => rw [hfact] at hm; cases hm
     | int _ => rw [hfact] at hm; cases hm
     | linear _ => rw [hfact] at hm; cases hm
   · cases hm
@@ -270,10 +270,10 @@ def stepAtoms [DecidableEq ι] (G : NormalGraph ι) (Γ : List (Ty ι)) (k : Kno
         (if indexed k b then [⟨.index (a + 1), some 0, false⟩] else [])
       | op =>
         (match boundAnswerOf op true with
-         | some q => if indexed k a then (lengthsOf k b).map fun x => ⟨.bound (x + 1) (a + 1), some 0, !q⟩ else []
+         | some q => if indexed k a then (lengthsOf k b).map fun x => ⟨.bound (x + 1) (a + 1) false, some 0, !q⟩ else []
          | none => []) ++
         (match boundAnswerOf op false with
-         | some q => if indexed k b then (lengthsOf k a).map fun x => ⟨.bound (x + 1) (b + 1), some 0, !q⟩ else []
+         | some q => if indexed k b then (lengthsOf k a).map fun x => ⟨.bound (x + 1) (b + 1) false, some 0, !q⟩ else []
          | none => [])
     else []
   | _ => []
@@ -401,7 +401,7 @@ theorem stepAtoms_holds [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)
               have hcq := hc rfl
               simp only [push, hu', Bool.not_not] at hcq
               have hle := IndexNumbers.le_of_relation hix (boundAnswerOf_sound hq) (truthy_boolVal hcq)
-              exact ⟨s, ls, x, i, by simpa [push] using hs', hls, by simpa [push] using hx, hix, hle⟩
+              exact ⟨s, ls, x, i, by simpa [push] using hs', hls, by simpa [push] using hx, hix, by simpa using hle⟩
             · cases hat
           · cases hat
         · split at hat
@@ -419,7 +419,7 @@ theorem stepAtoms_holds [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)
               have hcq := hc rfl
               simp only [push, hu', Bool.not_not] at hcq
               have hle := IndexNumbers.le_of_relation_swap hix (boundAnswerOf_sound hq) (truthy_boolVal hcq)
-              exact ⟨s, ls, x, i, by simpa [push] using hs', hls, by simpa [push] using hx, hix, hle⟩
+              exact ⟨s, ls, x, i, by simpa [push] using hs', hls, by simpa [push] using hx, hix, by simpa using hle⟩
             · cases hat
           · cases hat
     · exact weaken (fun _ _ hq => ⟨hq, indexHolds_nil _ _⟩) hs
@@ -810,7 +810,7 @@ theorem linearAtoms_holds [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty �
 A strict comparison of a safe integer `k` with a slot `n` holding the length of
 an array `x`'s store states, on the answer giving `k < n`, the facts of `k`
 alone that survive the length slot: `k ≤ 2^32 - 2`, and, where the knowledge
-entails `0 ≤ k`, `bound(x, k)`. -/
+entails `0 ≤ k`, the strict `bound(x, k)`: `k` an index below the length. -/
 
 /-- For a strict relational operator, whether the index is the left operand
 and the answer on which it is below the other. -/
@@ -836,7 +836,7 @@ def lengthPair (k : Knowledge) (i n : Nat) (q : Bool) : List IndexAtom :=
   | [] => []
   | xs => ⟨.linear (.le [(i + 1, 1)] (maxArrayLength - 1)), some 0, !q⟩ ::
       (if Linear.entails (linearFacts k.indices) (.le [(i, -1)] 0) then
-        xs.map fun x => ⟨.bound (x + 1) (i + 1), some 0, !q⟩ else [])
+        xs.map fun x => ⟨.bound (x + 1) (i + 1) true, some 0, !q⟩ else [])
 
 def lengthAtoms (k : Knowledge) (Γ : List (Ty ι)) : Tm → List IndexAtom
   | .arith op (.var a) (.var b) =>
@@ -889,7 +889,7 @@ theorem lengthPair_holds {k : Knowledge} {i n : Nat} {q : Bool} {ρ h} {u : Val}
           have := Linear.entails_sound h0 hlin
           simp only [Linear.Fact.Holds, Linear.Form.eval, hj] at this; omega
         exact ⟨s, ls, bj, j.toNat, by simpa [push] using hs, hl, by simpa [push] using hbj,
-          HeapKnowledge.indexOfBits_safe hsafe (by omega) (by simp [maxArrayLength] at hmax; omega), by omega⟩
+          HeapKnowledge.indexOfBits_safe hsafe (by omega) (by simp [maxArrayLength] at hmax; omega), by simp; omega⟩
       · cases hat
 
 theorem lengthAtoms_shape {k : Knowledge} {Γ : List (Ty ι)} {t : Tm} (h : lengthAtoms k Γ t ≠ []) :
@@ -999,25 +999,29 @@ theorem boundedWrite_safe [DecidableEq ι] {Ξ : Fam} {G : NormalGraph ι} {R S 
     exact write_rule (meaning_adm G S) j U heap l' av hav hu hok hf' hl' hag' ha'
 
 /-- Whether an unconditional atom bounds a slot of `i`'s class by the store of
-an array of `a`'s class. -/
-def boundAtom (k : Knowledge) (a i : Nat) : Bool :=
+an array of `a`'s class, strictly where `strict`. -/
+def boundAtom (k : Knowledge) (a i : Nat) (strict : Bool) : Bool :=
   k.indices.any fun atom => atom.cond.isNone && match atom.fact with
-    | .bound x i' => (HeapLinks.aliases k.links a).contains x && (HeapLinks.aliases k.links i).contains i'
+    | .bound x i' st => (HeapLinks.aliases k.links a).contains x && (HeapLinks.aliases k.links i).contains i' &&
+        (st || !strict)
     | _ => false
 
-theorem boundAtom_sound {k : Knowledge} {a i : Nat} {ρ h} (hc : boundAtom k a i = true) (hk : Holds k ρ h) :
+theorem boundAtom_sound {k : Knowledge} {a i : Nat} {strict : Bool} {ρ h} (hc : boundAtom k a i strict = true)
+    (hk : Holds k ρ h) :
     ∃ s ls b idx, Footprints.storeOf (ρ a) = some s ∧ h[s]? = some (.arr ls) ∧ ρ i = .num b ∧
-      indexOfBits b = some idx ∧ idx ≤ ls.length := by
+      indexOfBits b = some idx ∧ idx + (if strict then 1 else 0) ≤ ls.length := by
   obtain ⟨atom, ha, hm⟩ := List.any_eq_true.mp hc
   simp only [Bool.and_eq_true, Option.isNone_iff_eq_none] at hm
   obtain ⟨hnone, hf⟩ := hm
   have hat := hk.2.2.2.2.2 atom ha fun b hb => by rw [hnone] at hb; cases hb
   cases hfact : atom.fact with
-  | bound x i' =>
+  | bound x i' st =>
     rw [hfact] at hf hat
     simp only [Bool.and_eq_true, List.contains_iff_mem] at hf
-    rw [← HeapLinks.aliases_eq hk.2.2.1 hf.1, ← HeapLinks.aliases_eq hk.2.2.1 hf.2]
-    exact hat
+    obtain ⟨⟨hx, hi⟩, hst⟩ := hf
+    rw [← HeapLinks.aliases_eq hk.2.2.1 hx, ← HeapLinks.aliases_eq hk.2.2.1 hi]
+    obtain ⟨s, ls, b, idx, hs, hl, hb, hidx, hle⟩ := hat
+    exact ⟨s, ls, b, idx, hs, hl, hb, hidx, by cases st <;> cases strict <;> simp_all <;> omega⟩
   | index _ => rw [hfact] at hf; cases hf
   | length _ _ => rw [hfact] at hf; cases hf
   | int _ => rw [hfact] at hf; cases hf
@@ -1025,20 +1029,23 @@ theorem boundAtom_sound {k : Knowledge} {a i : Nat} {ρ h} (hc : boundAtom k a i
 
 /-- Whether the linear facts bound a slot `i` by the length of the store of an
 array of `a`'s class (`HeapKnowledge.lengthBound`). -/
-def linearBound (k : Knowledge) (a i : Nat) : Bool := lengthBound (HeapLinks.aliases k.links a) k.indices i
+def linearBound (k : Knowledge) (a i : Nat) (strict : Bool) : Bool :=
+  lengthBound (HeapLinks.aliases k.links a) k.indices i strict
 
-theorem linearBound_sound {k : Knowledge} {a i : Nat} {ρ h} (hc : linearBound k a i = true) (hk : Holds k ρ h) :
+theorem linearBound_sound {k : Knowledge} {a i : Nat} {strict : Bool} {ρ h} (hc : linearBound k a i strict = true)
+    (hk : Holds k ρ h) :
     ∃ s ls b idx, Footprints.storeOf (ρ a) = some s ∧ h[s]? = some (.arr ls) ∧ ρ i = .num b ∧
-      indexOfBits b = some idx ∧ idx ≤ ls.length :=
+      indexOfBits b = some idx ∧ idx + (if strict then 1 else 0) ≤ ls.length :=
   lengthBound_sound (fun _ hy => HeapLinks.aliases_eq hk.2.2.1 hy) hc hk.2.2.2.2.2
 
 /-- Whether a slot of `i`'s class holds an index at most the length of the
 store of an array of `a`'s class: a bound atom states it, or the linear facts do. -/
-def bounded (k : Knowledge) (a i : Nat) : Bool := boundAtom k a i || linearBound k a i
+def bounded (k : Knowledge) (a i : Nat) (strict : Bool) : Bool := boundAtom k a i strict || linearBound k a i strict
 
-theorem bounded_sound {k : Knowledge} {a i : Nat} {ρ h} (hc : bounded k a i = true) (hk : Holds k ρ h) :
+theorem bounded_sound {k : Knowledge} {a i : Nat} {strict : Bool} {ρ h} (hc : bounded k a i strict = true)
+    (hk : Holds k ρ h) :
     ∃ s ls b idx, Footprints.storeOf (ρ a) = some s ∧ h[s]? = some (.arr ls) ∧ ρ i = .num b ∧
-      indexOfBits b = some idx ∧ idx ≤ ls.length := by
+      indexOfBits b = some idx ∧ idx + (if strict then 1 else 0) ≤ ls.length := by
   rcases Bool.or_eq_true_iff.mp hc with hc | hc
   · exact boundAtom_sound hc hk
   · exact linearBound_sound hc hk
@@ -1100,7 +1107,7 @@ knowledge bounding `k` by `x`'s store, and its type `null`. -/
        | some E => PositiveCertificates.checkUsing G images V E sub
        | none => false
      | _, _ => false) &&
-    bounded k a i && (expand G j.type == [.nul])
+    bounded k a i false && (expand G j.type == [.nul])
 
 theorem boundedWrite_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
     {j : Sequent ι} {k : Knowledge} {a i v : Nat} {sub : PositiveCertificates.SubtypeChoices ι}
@@ -1118,7 +1125,7 @@ theorem boundedWrite_sound [DecidableEq ι] {G : NormalGraph ι} {images : Insta
       obtain ⟨fs, vs, os, ms, ks, st, S, pr, hrep, hm, hS⟩ := writableElement_sound hE
       obtain ⟨s, ls, b, idx, hs, hl, hb, hidx, hle⟩ := bounded_sound hbd hk
       have hv : meaning G E n W (ρ v) := PositiveCertificates.acceptedUsing htypes n W _ (he.2 v V hV)
-      have hsafe := boundedWrite_safe (Ξ := excOf G) hrep hm hS (he.2 a R hR) hs hl hidx hle hv hw hh
+      have hsafe := boundedWrite_safe (Ξ := excOf G) hrep hm hS (he.2 a R hR) hs hl hidx (by simpa using hle) hv hw hh
       simp only [instantiate, Nat.not_lt_zero, if_false, Nat.sub_zero, hb]
       apply HeapObservations.of_value_property (fun _ _ _ u _ => ?_)
       · exact Safe_mono n (fun m _ X u hu => (represents_back (c := .nul) hnul m X u) hu) W h _ hsafe
