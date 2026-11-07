@@ -729,6 +729,19 @@ let declaration ~(array : string -> string list -> bool) env fs name (init : exp
     | Some (root,(_ :: _ as path)) when root <> name && heap_free env init -> fs @ restate_read name (root,path) fs
     | Some (root,[]) when root <> name && init != uncast init -> fs @ restate_read name (root,[]) fs
     | _ -> fs in
+  match init.node with
+  (* `const x = c ? a : b`: on each arm, what the arm's answer of `c` states
+     and `x` the arm's value, the two joined (Lean's branch on `c`, each arm
+     binding its value, merged at the declaration's end). *)
+  | Conditional (c,a,b) ->
+    let t,f = comparison ~array env fs c in
+    let arm answer (e : expr) = match linear ~array env (fs @ answer) e with
+      | Some (te,ce) when not (List.mem_assoc name te) -> Some (fs @ answer @ equal name (te,ce))
+      | _ -> None in
+    (match arm t a, arm f b with
+     | Some l, Some r -> List.filter (fun f -> mentions name f) (join l r) @ fs
+     | _ -> fs)
+  | _ ->
   match linear ~array env fs init with
   | Some (t,c) when not (List.mem_assoc name t) -> fs @ equal name (t,c)
   | _ -> fs

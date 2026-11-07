@@ -1852,7 +1852,11 @@ claim Lean checks on every edge into the entry claiming it. The producer also st
 new value at a write of a field the receiver's type states by a linear
 expression, the old value renamed apart and eliminated (`Linear_facts.statement`),
 an object literal's named fields at its declaration (`const c = { i: 0 }`
-states $`c.i=0`$), and, after each statement, the facts derived by
+states $`c.i=0`$), a conditional's at its declaration, each arm's answer of
+the test with the binding equal to the arm's value, the two joined (`const e
+= k < n ? k : n` states $`e\le n`$ and $`e\le k`$, which Lean checks at the
+declaration's end, where the arms meet; positive `conditional-bound`,
+negative, run under Node, `invalid-conditional-bound-past`), and, after each statement, the facts derived by
 eliminating each path's term that name no path, at most 16
 (`Linear_facts.close`), so $`n=|p.\mathit{widths}|`$ and
 $`|b|=|p.\mathit{widths}|`$ give $`n=|b|`$, which a call writing `p`'s fields
