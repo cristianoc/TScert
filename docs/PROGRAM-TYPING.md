@@ -1677,8 +1677,8 @@ Three steps state their change:
   `receiverStore` nor `receiverOwn` and not keeping the heap:
   $`\chi`$ is its footprint's, `grow` on a value being `keep`
   (`Changes.ofClosed`, proved: `ofClosed_holds`; `PromiseCalls.effectKept`,
-  added by `Checker.ensuringCalls`). `{value: any, store: keep}` keeps every
-  length.
+  added by `Checker.ensuringCalls`). `{value: any, store: keep}`, a `Map`'s
+  `set`, keeps every length.
 **A comparison with a length.** A strict comparison of a safe integer $`k`$
 with a slot $`n`$ a length atom names states, on the answer giving $`k<n`$,
 the facts of $`k`$ alone, which survive dropping $`n`$ (`IndexWrites.lengthAtoms`,
@@ -1774,15 +1774,16 @@ with `false`, and neither states anything on its other answer
 the left states. Lean evaluates the right operand only on that answer, a
 branch on the left's value (`choose`), whose edge promotes the facts
 conditional on it; a statement writing no heap (slots, constants,
-operators, reads, element reads, assignments of value bindings, calls at
-signatures keeping the heap) keeps those
+operators, reads, element reads, assignments of value bindings, calls,
+method calls and constructions at signatures keeping the heap) keeps those
 whose bindings it does not assign; a statement whose one write, its operands
 writing none, is a field's, an element's below the length of an array of
 primitives or a call's at signatures excepting no receiver location keeps
 those [fact-kept](#linear-facts) keeps, the field's classes read
 off the receiver's record type, its first location never assumed
 (`Linear_facts.write_changes`); every other statement forgets them; a merge
-keeps those both paths hold. A linear fact's binding that an assignment
+keeps those both paths hold, and the other path's state where one path is
+one no value reaches, the earlier state's where neither is. A linear fact's binding that an assignment
 rebinds or that leaves scope is eliminated as Lean eliminates a dropped
 slot: each pair of facts of opposite signs on one of its terms combined to
 cancel it, the derived facts naming it no more kept (`Linear_facts.forget`),
@@ -1863,7 +1864,8 @@ operand of `&&` and `||`, a strict equality's `false` answer among them),
 and a loop to `e !== n`), `derived-index-loop` (an index reassigned from one
 derived from it), `call-keeps-heap-loop` (a typed array's bound across a
 call of a function whose loop writes only its locals), `facts-across-writes`
-(bounds across field writes and an element write), and
+(bounds across field writes and an element write), `method-calls-keep-facts`
+(a `WeakMap`'s `get`, a `Map`'s construction and `set`), and
 `typed-array-reads-below-length` (a
 `Uint8Array`, a `Float64Array`, an `Int32Array` written and read back, and a
 `@requires` over a view's length). Negative, each run under Node:

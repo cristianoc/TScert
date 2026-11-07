@@ -157,7 +157,9 @@ let statements callbacks flow_graph register_following owner_span env0 ss =
     let join node left_state right_state =
       let left=left_state.env and right=right_state.env in
       let impossible env=List.exists (fun (n,b) -> not (is_field n) && binding_type b=Atoms []) env in
-      if impossible left then right_state else if impossible right then left_state else
+      (* Where both are, the earlier state stays, so a loop no path reaches
+         settles. *)
+      if impossible right then left_state else if impossible left then right_state else
       let l=left_state.metadata and r=right_state.metadata in
       {env=join_env node left right; metadata={
         evolving=common l.evolving r.evolving;

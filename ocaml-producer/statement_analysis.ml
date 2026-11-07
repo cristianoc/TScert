@@ -551,6 +551,19 @@ let statements (expr:Analysis_state.expression_infer) execute_bindings owner_spa
       | Some b -> Some (binding_type b)
       | None -> (try module_type x with Json.Error _ -> None) in
     Option.bind declared footprint_of);
+  (* A method of the receiver's type: a host-relative member. *)
+  let method_type env r key = match Option.bind (receiver_type env r) (fun t -> field_of t key) with
+    | Some g when g.host && not g.optional -> Some g.read
+    | _ -> None in
+  Linear_facts.method_footprint := (fun env r key -> Option.bind (method_type env r key) footprint_of);
+  Linear_facts.ctor_keeps_heap := (fun env c ->
+    match Option.map head (receiver_type env {Source.node = Id c; pos = Json.Null}) with
+    | Some (Atoms [Ctors (sigs,_)]) -> Linear_facts.signatures_keep sigs
+    | _ -> false);
+  Linear_facts.method_keeps_heap := (fun env r key ->
+    match Option.map head (method_type env r key) with
+    | Some (Atoms [Shape {calls;_}]) -> Linear_facts.signatures_keep calls
+    | _ -> false);
   Linear_facts.source_elements := (fun env xs ->
     match Option.map head (receiver_type env {Source.node = Id xs; pos = Json.Null}) with
     | Some (Atoms [Shape {elements=Some {required=[];optional_elements=[];rest=Some t;readonly=false;_};indexes=[];calls=[];_}]) ->

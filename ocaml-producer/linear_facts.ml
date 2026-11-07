@@ -231,6 +231,11 @@ let names_assigned (s : stmt) env =
 let keeps_heap : ((string * Environment.binding) list -> string -> bool) ref = ref (fun _ _ -> false)
 (* Whether every signature of the method `key` of the receiver's type keeps
    the heap, alike (`call-keep` at a method call). *)
+(* Whether every construct signature of the class value `c` holds keeps the
+   heap, alike (`call-keep` at a construction). *)
+let ctor_keeps_heap : ((string * Environment.binding) list -> string -> bool) ref = ref (fun _ _ -> false)
+let method_keeps_heap : ((string * Environment.binding) list -> expr -> Semantic.key -> bool) ref =
+  ref (fun _ _ _ -> false)
 let signatures_keep (calls : Semantic.signature list) =
   calls <> [] && List.for_all (fun (s : Semantic.signature) -> let e = s.Semantic.call_effect in
     e.Semantic.footprint.Semantic.on_value = Semantic.Keep && e.Semantic.footprint.Semantic.on_store = Semantic.Keep &&
@@ -243,6 +248,9 @@ let rec heap_free env (e : expr) = match e.node with
   | Conditional (c,a,b) -> heap_free env c && heap_free env a && heap_free env b
   | Call ({node=Id "%ElementAt%";_},None,args,[],_) -> List.for_all (heap_free env) args
   | Call ({node=Id f;_},None,args,_,_) when !keeps_heap env f -> List.for_all (heap_free env) args
+  | Invoke ({node=Read (r,key);_},args,[],_) when heap_free env r && !method_keeps_heap env r key ->
+    List.for_all (heap_free env) args
+  | New ({node=Id c;_},_,args,[]) when !ctor_keeps_heap env c -> List.for_all (heap_free env) args
   | Assign (x,_,rhs) -> value_binding env x && heap_free env rhs
   | Update (_,{node=Id x;_},rhs,_) -> value_binding env x && Option.fold ~none:true ~some:(heap_free env) rhs
   | _ -> false
@@ -293,6 +301,9 @@ let field_classes : ((string * Environment.binding) list -> expr -> Semantic.key
    excepts its receiver's store or own locations (Lean's `effectKept`). *)
 let call_footprint : ((string * Environment.binding) list -> string -> Semantic.footprint option) ref =
   ref (fun _ _ -> None)
+(* The footprint every signature of a receiver's method states, alike. *)
+let method_footprint : ((string * Environment.binding) list -> expr -> Semantic.key -> Semantic.footprint option) ref =
+  ref (fun _ _ _ -> None)
 (* Whether the array binding's store holds source values at every position,
    one writable homogeneous contract (Lean's `keepsLengths`). *)
 let source_elements : ((string * Environment.binding) list -> string -> bool) ref = ref (fun _ _ -> false)
@@ -331,6 +342,8 @@ let write_changes ~facts ~bounds env (e : expr) : changes option =
     Some { obj = true; num = true; store = `Length }
   | Call ({node=Id f;_},None,args,[],_) when List.for_all (heap_free env) args ->
     Option.map of_footprint (!call_footprint env f)
+  | Invoke ({node=Read (r,key);_},args,[],_) when heap_free env r && List.for_all (heap_free env) args ->
+    Option.map of_footprint (!method_footprint env r key)
   | _ -> None
 
 let statement_changes ~facts ~bounds env (s : stmt) = match s.statement with

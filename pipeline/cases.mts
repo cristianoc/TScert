@@ -2810,6 +2810,7 @@ export const cases: Case[] = [
     /no derivation of its cast claim/),
   negative("invalid-facts-across-alias-pop", "a `pop` of a parameter that may be the counted array: the length bound does not survive the call, and the read is `undefined` at `number` (run under Node)",
     /no derivation of its cast claim/),
+  positive("method-calls-keep-facts", "method calls keep the facts their footprints keep: a `WeakMap`'s `get` and a `Map`'s construction keep a path's length bound, a `Map`'s `set` a length bound (SOURCE-CONTRACTS.md, \"Weak tables\")"),
   gap("view-count-across-field-write", "a typed array's element count across a write of a number field: no heap invariant sets the `[[viewLength]]` location apart from a number field's, so the bound does not survive the write", "unverified", "search",
     /no derivation of its cast claim/),
   negative("invalid-logical-guard-read-inclusive", "a loop test `e <= xs.length && xs[e]! !== 0` reads at the length: `undefined` at `number` (run under Node)",
