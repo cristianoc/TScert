@@ -670,8 +670,9 @@ export interface OperationRequests {
    * and cannot throw, is reported to `libraryValue`. */
   libraryValues?: readonly Span[];
   /** The client's element reads `e[k]`: each whose object TypeScript types
-   * as arrays, tuples and node lists only and whose key as `number`, no literal, is
-   * reported to `hostElement`, and the intrinsics, among them
+   * as arrays, tuples and node lists only and whose key as `number`, or as
+   * arrays only and whose key as a number literal under a non-null assertion,
+   * is reported to `hostElement`, and the intrinsics, among them
    * `%ElementAt%`, which reads it, join the values. Each whose key is
    * `n.toString()`, of no argument, TypeScript typing `n` as `number` and
    * resolving the call to `Number.prototype.toString`, is reported to
@@ -3115,8 +3116,19 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
         viewRead(span, byteAtName);
         continue;
       }
-      if (objects.length && objects.every(t => checker.isArrayType(t) || checker.isTupleType(t) || nodeListType(t)) &&
-          keys.length && keys.every(t => !!(t.flags & TypeFlags.Number))) {
+      // A literal key of an array read the program asserts present (`xs[0]!`)
+      // alike: `%ElementAt%`'s bounded signature proves the presence where
+      // the length bounds the key. An unasserted literal read stays the
+      // direct read, which reads the required positions TScert's own list
+      // types state (a `split`'s first element); a tuple's position keeps the
+      // type it states.
+      let parent: Node = read.parent;
+      while (ts.isParenthesizedExpression(parent)) parent = parent.parent;
+      const computed = keys.length && keys.every(t => !!(t.flags & TypeFlags.Number)) &&
+        objects.every(t => checker.isArrayType(t) || checker.isTupleType(t) || nodeListType(t));
+      const literal = keys.length && keys.every(t => !!(t.flags & TypeFlags.NumberLiteral)) &&
+        objects.every(t => checker.isArrayType(t)) && ts.isNonNullExpression(parent);
+      if (objects.length && (computed || literal)) {
         listIntrinsics(span, [elementAtName]);
         operationAnswers.hostElement?.(span);
       }

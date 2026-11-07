@@ -1719,7 +1719,11 @@ element itself:
 
 A readable store holds a hole only where reading `undefined` meets its
 element contract (`Types.StorePresence`), so the element at an index below the
-length meets $`T`$ whether it is present or a hole.
+length meets $`T`$ whether it is present or a hole. The read is
+$`\%\mathsf{ElementAt}\%`$'s at a key TypeScript types `number` of arrays,
+tuples and node lists, and at a number literal of arrays where the program
+asserts the element present (`xs[0]!`); an unasserted literal read is the
+store's own read, which reads the required positions a list type states.
 
 **A precondition on the call's values.** A signature's effect states `pre`, a
 list of index facts at the call's positions: `0` the receiver, $`i+1`$ the
@@ -1852,7 +1856,8 @@ Lean decides at the call (`call-requires`).
 Negative, each run under Node: `invalid-written-precondition-call` (a call at
 `xs.length`), `invalid-written-precondition-body` (a body reading past what its
 clause bounds) `invalid-written-precondition-lengths` (a call with no length equality) and
-`invalid-written-precondition-lengths-shrunk` (an equality a `pop` changed). Refused forms: `written-precondition-exported-refused`,
+`invalid-written-precondition-lengths-shrunk` (an equality a `pop` changed) and
+`invalid-written-precondition-literal-index` (a literal index past the clause's bound). Refused forms: `written-precondition-exported-refused`,
 `written-precondition-disjunction-refused`.
 
 ### A literal with spreads

@@ -33,3 +33,14 @@ export function dot(xs: number[], ys: number[]): number {
   for (let j = 0; j < xs.length; j++) s = s + both(xs, ys, j);
   return s;
 }
+
+// A literal index asserted present, read below the length its clause states.
+/** @requires 2 <= xs.length */
+function second(xs: number[]): number {
+  return xs[1]!;
+}
+
+export function secondOf(xs: number[]): number {
+  if (xs.length >= 2) return second(xs);
+  return 0;
+}
