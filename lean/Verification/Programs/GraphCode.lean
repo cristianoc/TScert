@@ -644,7 +644,8 @@ theorem nodePost_of_checked [DecidableEq ι] {G : NormalGraph ι} {images : Inst
         simp only [Bool.and_eq_true] at hsel
         obtain ⟨hle, hr⟩ := hsel
         have hs : HeapObservations.SafePost (excOf G) (meaning G (ProgramCertificates.claim c.expression).type)
-            (eff.post (ExpressionEffects.receiverOf (instantiate 0 ρ (ProgramCertificates.claim c.expression).term)) h')
+            (eff.post (ExpressionEffects.receiverOf (instantiate 0 ρ (ProgramCertificates.claim c.expression).term))
+            (ExpressionEffects.actualsOf (instantiate 0 ρ (ProgramCertificates.claim c.expression).term)) h')
             j V h' (instantiate 0 ρ (ProgramCertificates.claim c.expression).term) := by
           simp only [Bool.or_eq_true] at htree
           rcases htree with htree | htree
@@ -738,7 +739,8 @@ theorem throwsWithin_sound [DecidableEq ι] {G : NormalGraph ι} {images : Insta
       simp only [Bool.and_eq_true] at hsel
       obtain ⟨hle, hr⟩ := hsel
       have hs : HeapObservations.SafePostExc (excOf G) (meaning G (ProgramCertificates.claim c.expression).type)
-          (eff.post (ExpressionEffects.receiverOf (instantiate 0 ρ (ProgramCertificates.claim c.expression).term)) h')
+          (eff.post (ExpressionEffects.receiverOf (instantiate 0 ρ (ProgramCertificates.claim c.expression).term))
+            (ExpressionEffects.actualsOf (instantiate 0 ρ (ProgramCertificates.claim c.expression).term)) h')
           (eff.excPost (ExpressionEffects.receiverOf (instantiate 0 ρ (ProgramCertificates.claim c.expression).term)) h')
           j V h' (instantiate 0 ρ (ProgramCertificates.claim c.expression).term) := by
         rcases Bool.or_eq_true_iff.mp htree with htree | hreq
@@ -1108,6 +1110,8 @@ theorem codeChecked_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instan
   rw [effectChecked_eq] at heff
   simp only [Bool.and_eq_true, Bool.not_eq_true'] at heff
   obtain ⟨⟨hfo, hel⟩, heff⟩ := heff
+  have hens := CallEffects.Effect.below_ensures hbelow
+  have hnen : ∀ F, F ∈ c.row.effect.ensures → False := fun F hF => by rw [hens] at hF; cases hF
   have hnel : ∀ R, c.row.effect.elements = some R → False := by
     intro R hR
     simp only [Option.isNone_iff_eq_none] at hel
@@ -1115,9 +1119,9 @@ theorem codeChecked_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instan
   by_cases htop : c.row.effect.footprint = .top ∧ c.row.effect.fresh = false ∧ c.row.effect.onThrow = false
   · -- No footprint on a throw: the throw's postcondition is vacuous.
     apply HeapObservations.SafePostExc.of_post (fun _ r h => absurd h (by simp [htop.2.2]))
-    refine HeapObservations.weaken (fun h' v hp r => ?_) (Footprints.Closed.top_safe hsafe)
+    refine HeapObservations.weaken (fun h' v hp r args => ?_) (Footprints.Closed.top_safe hsafe)
     refine ⟨CallEffects.Effect.within_of_holds ?_, fun hf => (by rw [htop.2.1] at hf; cases hf),
-      fun hf => (by rw [hfo] at hf; cases hf), fun R hR => (hnel R hR).elim⟩
+      fun hf => (by rw [hfo] at hf; cases hf), fun R hR => (hnel R hR).elim, fun F hF => (hnen F hF).elim⟩
     rw [htop.1]
     exact hp
   · simp only [htop, decide_false, Bool.false_or, Bool.and_eq_true, Bool.or_eq_true] at heff
@@ -1126,13 +1130,13 @@ theorem codeChecked_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instan
       have hfresh := hp.1
       have hp : ∀ e ∈ c.exprs, Purity.pureTerm e = true := List.all_eq_true.mp hp.2
       exact HeapObservations.SafePostExc.weaken
-        (fun h' v hq r => ⟨CallEffects.Effect.within_of_holds
+        (fun h' v hq r _ => ⟨CallEffects.Effect.within_of_holds
           (Footprints.Closed.Holds.mono (Footprints.Closed.empty_le _)
-            ((CallEffects.Effect.post_ofFootprint _ .undef _ _ _).mp hq)), fun hf => (by rw [hfresh] at hf; cases hf),
-          fun hf => (by rw [hfo] at hf; cases hf), fun R hR => (hnel R hR).elim⟩)
+            ((CallEffects.Effect.post_ofFootprint _ .undef [] _ _ _).mp hq)), fun hf => (by rw [hfresh] at hf; cases hf),
+          fun hf => (by rw [hfo] at hf; cases hf), fun R hR => (hnel R hR).elim, fun F hF => (hnen F hF).elim⟩)
         (fun h' hq r _ => CallEffects.Effect.within_of_holds
           (Footprints.Closed.Holds.mono (Footprints.Closed.empty_le _) hq))
-        (CallEffects.pure_safe_exc (r := .undef) (.goto hp hvalues rfl) hsafe)
+        (CallEffects.pure_safe_exc (r := .undef) (args := []) (.goto hp hvalues rfl) hsafe)
     · rw [← compositionalChecked_reassign G images sums η, compositionalChecked_eq] at hp
       simp only [Bool.and_eq_true, List.isEmpty_iff] at hp
       have hgraph : checkGraphUsing (sums := sums) (reassign G η) (images.reassign η) c.goal
@@ -1144,8 +1148,8 @@ theorem codeChecked_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instan
         (hidx := hidx)
       rw [hres] at hb
       exact HeapObservations.SafePostExc.weaken
-        (fun h' v hq r => ⟨CallEffects.Effect.within_of_holds hq.1, hq.2, fun hf => (by rw [hfo] at hf; cases hf),
-          fun R hR => (hnel R hR).elim⟩)
+        (fun h' v hq r _ => ⟨CallEffects.Effect.within_of_holds hq.1, hq.2, fun hf => (by rw [hfo] at hf; cases hf),
+          fun R hR => (hnel R hR).elim, fun F hF => (hnen F hF).elim⟩)
         (fun h' hq r ho => CallEffects.Effect.within_of_holds (hq ho)) hb
 
 /-- Check codes in order, each against the table of those before it. -/

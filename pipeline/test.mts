@@ -1547,7 +1547,7 @@ control(async (): Promise<void> => {
     for (const field of fields) if (field && typeof field === "object" && "readonly" in field) field.readonly = false;
     prototype.calls = [{ k: "function", effect: { footprint: { value: "any", store: "any" }, promise: null, fresh: false,
       receiverStore: false, onThrow: false, receiverOwn: false, freshObject: false, requires: null, elements: null,
-      pre: [] },
+      pre: [], ensures: [] },
       receiver: null, params: [], rest: null,
       result: { k: "atom", name: "unknown", span: [0, 0] }, span: [0, 0] }];
     return must(JSON.stringify(contract), "the callable contract's text");

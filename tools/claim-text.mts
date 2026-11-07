@@ -39,7 +39,8 @@ const members = (v: JsonValue): readonly JsonValue[] =>
         : [];
 /** An ordinary arrow's effect, the one a structural function atom states. */
 /** Each field is compared with `ordinaryEffect`'s, whose promise and kind
- * lists are `null`, so `===` is `sameEffect`'s comparison of them. */
+ * lists are `null`, so `===` is `sameEffect`'s comparison of them, and whose
+ * index-fact lists are empty. */
 const isOrdinary = (effect: JsonRead): boolean => {
   const d = decodeCallEffect(effect);
   const o = ordinaryEffect;
@@ -54,7 +55,9 @@ const isOrdinary = (effect: JsonRead): boolean => {
     d.receiverOwn === o.receiverOwn &&
     d.freshObject === o.freshObject &&
     d.requires === o.requires &&
-    d.elements === o.elements
+    d.elements === o.elements &&
+    d.pre.length === 0 &&
+    d.ensures.length === 0
   );
 };
 /** The atoms whose kind is all there is to them, read off `Atom` rather than

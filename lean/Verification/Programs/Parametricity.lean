@@ -548,23 +548,45 @@ theorem elementCalls_value_reassign (j : Sequent ι) (k : HeapKnowledge.Knowledg
   · rfl
   · exact requiringCalls_value_reassign G η images j k e codes sums
 
-theorem negatingSlots_value_reassign (j : Sequent ι) (k : HeapKnowledge.Knowledge)
+theorem ensuresCall_reassign (j : Sequent ι) (k : HeapKnowledge.Knowledge) (e : StepEvidence ι)
+    (codes : CodeEntry ι → Bool) (sums : List (ReadSummary ι)) :
+    PromiseCalls.ensuresCall (reassign G η) (images.reassign η) j k e codes sums =
+      PromiseCalls.ensuresCall G images j k e codes sums := by
+  unfold PromiseCalls.ensuresCall
+  split
+  · rename_i p
+    rw [checkTree_reassign G η images p codes sums, requiresTree_reassign]
+  · rfl
+
+theorem ensuringCalls_value_reassign (j : Sequent ι) (k : HeapKnowledge.Knowledge)
     (e : StepEvidence ι) (codes : CodeEntry ι → Bool) (sums : List (ReadSummary ι)) :
-    ((Checker.steps (reassign G η) (images.reassign η)).keepingCalls.keepingOwnCalls.allocatingCalls.requiringCalls.elementCalls.negatingSlots.run
+    ((Checker.steps (reassign G η) (images.reassign η)).keepingCalls.keepingOwnCalls.allocatingCalls.requiringCalls.elementCalls.ensuringCalls.run
         j k e codes sums).value =
-      ((Checker.steps G images).keepingCalls.keepingOwnCalls.allocatingCalls.requiringCalls.elementCalls.negatingSlots.run
+      ((Checker.steps G images).keepingCalls.keepingOwnCalls.allocatingCalls.requiringCalls.elementCalls.ensuringCalls.run
         j k e codes sums).value := by
-  simp only [Checker.negatingSlots]
+  simp only [Checker.ensuringCalls, ensuresCall_reassign]
   split
   · simp only [CheckResult.map]
     rw [elementCalls_value_reassign]
   · exact elementCalls_value_reassign G η images j k e codes sums
 
+theorem negatingSlots_value_reassign (j : Sequent ι) (k : HeapKnowledge.Knowledge)
+    (e : StepEvidence ι) (codes : CodeEntry ι → Bool) (sums : List (ReadSummary ι)) :
+    ((Checker.steps (reassign G η) (images.reassign η)).keepingCalls.keepingOwnCalls.allocatingCalls.requiringCalls.elementCalls.ensuringCalls.negatingSlots.run
+        j k e codes sums).value =
+      ((Checker.steps G images).keepingCalls.keepingOwnCalls.allocatingCalls.requiringCalls.elementCalls.ensuringCalls.negatingSlots.run
+        j k e codes sums).value := by
+  simp only [Checker.negatingSlots]
+  split
+  · simp only [CheckResult.map]
+    rw [ensuringCalls_value_reassign]
+  · exact ensuringCalls_value_reassign G η images j k e codes sums
+
 theorem indexing_value_reassign (j : Sequent ι) (k : HeapKnowledge.Knowledge)
     (e : StepEvidence ι) (codes : CodeEntry ι → Bool) (sums : List (ReadSummary ι)) :
-    ((Checker.steps (reassign G η) (images.reassign η)).keepingCalls.keepingOwnCalls.allocatingCalls.requiringCalls.elementCalls.negatingSlots.indexing.run
+    ((Checker.steps (reassign G η) (images.reassign η)).keepingCalls.keepingOwnCalls.allocatingCalls.requiringCalls.elementCalls.ensuringCalls.negatingSlots.indexing.run
         j k e codes sums).value =
-      ((Checker.steps G images).keepingCalls.keepingOwnCalls.allocatingCalls.requiringCalls.elementCalls.negatingSlots.indexing.run
+      ((Checker.steps G images).keepingCalls.keepingOwnCalls.allocatingCalls.requiringCalls.elementCalls.ensuringCalls.negatingSlots.indexing.run
         j k e codes sums).value := by
   simp only [Checker.indexing, CheckResult.map]
   rw [negatingSlots_value_reassign]
@@ -580,9 +602,9 @@ theorem boundedWriteCheck_reassign (j : Sequent ι) (k : HeapKnowledge.Knowledge
 
 theorem boundedWrites_value_reassign (j : Sequent ι) (k : HeapKnowledge.Knowledge)
     (e : StepEvidence ι) (codes : CodeEntry ι → Bool) (sums : List (ReadSummary ι)) :
-    ((Checker.steps (reassign G η) (images.reassign η)).keepingCalls.keepingOwnCalls.allocatingCalls.requiringCalls.elementCalls.negatingSlots.indexing.boundedWrites.run
+    ((Checker.steps (reassign G η) (images.reassign η)).keepingCalls.keepingOwnCalls.allocatingCalls.requiringCalls.elementCalls.ensuringCalls.negatingSlots.indexing.boundedWrites.run
         j k e codes sums).value =
-      ((Checker.steps G images).keepingCalls.keepingOwnCalls.allocatingCalls.requiringCalls.elementCalls.negatingSlots.indexing.boundedWrites.run
+      ((Checker.steps G images).keepingCalls.keepingOwnCalls.allocatingCalls.requiringCalls.elementCalls.ensuringCalls.negatingSlots.indexing.boundedWrites.run
         j k e codes sums).value := by
   simp only [Checker.boundedWrites]
   split

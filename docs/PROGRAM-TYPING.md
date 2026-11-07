@@ -1764,6 +1764,34 @@ keeps those both paths hold. A call stating `pre` is typed at that signature
 where the bounds holding at its statement's start establish it. Each is a
 claim Lean checks on every edge into the entry claiming it.
 
+**Result facts.** A signature's effect also states `ensures`, a list of index
+facts at the return's positions: `0` the result, $`i+1`$ the call's position
+$`i`$ (`CallEffects.ensuresEnv`). A normal return leaves a heap where each
+holds (the last conjunct of `CallEffects.Effect.post`, which takes the call's
+actuals). Only a trusted signature, an intrinsic's or a declaration's, states
+them; code and written signatures state none (`Effect.below`, `moduleArrow`,
+and a certified import's signature, `importedArrow`), since a fact over a
+parameter needs its entry value, which a reassigned parameter no longer holds.
+A binding keeps none (`Effect.keeps`), a signature covers another only where
+its facts include each of the other's (`ensuresCovers`), the meet of two
+signatures states both lists (`Effect.meet`), and a variadic call's selected
+signature states none (`Effect.forgetEnsures`), its actuals not being its
+positions' values. At a call whose selected signature $`\mathcal F_\epsilon`$
+states them, the knowledge after a normal return gains each fact renamed from
+positions to slots, the result to $`r`$, the receiver to $`x`$ and the
+$`i`$-th actual to $`y_i`$, where each position the fact names is a slot:
+
+```math
+\frac{\Gamma;\Pi;\Sigma\vdash_G r\leftarrow \mathrm{invoke}(f,x,\vec y):A\dashv \Pi\;;\;\Sigma'\qquad
+      \text{at a signature}\ \mathcal F_\epsilon}
+{\Gamma;\Pi;\Sigma\vdash_G r\leftarrow \mathrm{invoke}(f,x,\vec y):A\dashv \Pi\;;\;\Sigma',\ \epsilon.\mathsf{ensures}[0\mapsto r,\ 1\mapsto x,\ i+2\mapsto y_i]}\ \textsf{call-ensures}
+```
+
+Its premise is the step any other rule checks, `call-requires` included; the
+renamed facts hold on its normal return (`PromiseCalls.ensuresCall_sound`,
+`ensuresAtoms_holds`, proved; the step checker `Checker.ensuringCalls` joins
+the two postconditions of the one run, `HeapObservations.cross_upto`).
+
 **Cases.** Positive: `bounded-element-read` (a `for` and a `while` loop) and
 `pretext-array-element-read`. Negative, each run under Node:
 `invalid-bounded-element-read-inclusive` (a loop to `j <= xs.length`) and

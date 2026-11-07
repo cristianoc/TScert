@@ -40,10 +40,14 @@ type call_effect = { footprint: footprint; promise: promise option; fresh: bool;
      `Effect.requires` and `Effect.elements`), in the wire's order. *)
   requires: string list option; elements: string list option;
   (* A precondition on the call's values (Lean's `Effect.pre`). *)
-  pre: index_fact list }
+  pre: index_fact list;
+  (* Facts a normal return states, at the return's positions: 0 the result,
+     i + 1 the call's position i (Lean's `Effect.ensures`). Only a trusted
+     signature states them. *)
+  ensures: index_fact list }
 let footprint_effect footprint =
   {footprint;promise=None;fresh=false;receiver_store=false;on_throw=false;receiver_own=false;fresh_object=false;
-   requires=None;elements=None;pre=[]}
+   requires=None;elements=None;pre=[];ensures=[]}
 (* An ordinary arrow's: every location may change. *)
 let ordinary_effect = footprint_effect top_footprint
 (* Heap preservation: no location may change. *)
@@ -52,10 +56,11 @@ let promise_effect promise = {(footprint_effect top_footprint) with promise=Some
 
 (* A bound function's effect (Lean's `Effect.drop`): the receiver it saved is
    not the receiver of a call of it, so an exception of the receiver's store
-   is an exception of every location. *)
+   is an exception of every location; its positions are not the target's, so
+   it states no result facts. *)
 let bound_effect e = if e.receiver_store || e.receiver_own then
-    {e with footprint=top_footprint; receiver_store=false; receiver_own=false; elements=None}
-  else {e with elements=None}
+    {e with footprint=top_footprint; receiver_store=false; receiver_own=false; elements=None; ensures=[]}
+  else {e with elements=None; ensures=[]}
 (* Whether a signature's result is the call's: one without a promise. *)
 let plain_effect e = e.promise = None
 (* A smaller footprint and the same promise, a fresh result where the other
@@ -70,6 +75,7 @@ let effect_covers a b = footprint_le a.footprint b.footprint && a.promise = b.pr
   (match a.requires, b.requires with
    | None, _ -> true | Some ka, Some kb -> List.for_all (fun k -> List.mem k ka) kb | Some _, None -> false) &&
   List.for_all (fun f -> List.mem f b.pre) a.pre &&
+  List.for_all (fun f -> List.mem f a.ensures) b.ensures &&
   (match a.elements, b.elements with
    | _, None -> true | Some ka, Some kb -> List.for_all (fun k -> List.mem k kb) ka | None, Some _ -> false)
 

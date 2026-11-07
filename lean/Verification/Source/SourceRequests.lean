@@ -404,9 +404,9 @@ theorem checkRequests_footprint_at {rs : List (SourceRequest σ ι)} {b : Bundle
         exact List.all_eq_true.mp hp node hn
       exact HeapObservations.SafePostExc.weaken
         (fun _ _ h => Footprints.Closed.Holds.mono (Footprints.Closed.empty_le _)
-          ((CallEffects.Effect.post_ofFootprint _ .undef _ _ _).mp h))
+          ((CallEffects.Effect.post_ofFootprint _ .undef [] _ _ _).mp h))
         (fun _ h _ => Footprints.Closed.Holds.mono (Footprints.Closed.empty_le _) h)
-        (CallEffects.pure_safe_exc (r := .undef) (.goto hp hvalues hd) hs)
+        (CallEffects.pure_safe_exc (r := .undef) (args := []) (.goto hp hvalues hd) hs)
     · rw [← hP] at hp
       erw [← GraphCode.compositionalChecked_reassign G images c.readSummaries η, GraphCode.compositionalChecked_eq] at hp
       simp only [Bool.and_eq_true, List.isEmpty_iff] at hp

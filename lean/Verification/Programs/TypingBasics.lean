@@ -409,7 +409,7 @@ def GraphCodeSpec (G : NormalGraph ι) (arity : Nat) (E : List Tm)
     HeapOk n W h → CallArguments.Values L → PreAt row.effect store L h →
       HeapObservations.SafePostExc (excOf G)
         (row.effect.result (meaning G row.result) (framePromised row.effect (frameOffset store) L))
-        (fun after v => ∀ r, row.effect.post r h after v) (fun after => ∀ r, row.effect.excPost r h after)
+        (fun after v => ∀ r args, row.effect.post r args h after v) (fun after => ∀ r, row.effect.excPost r h after)
         n W h (.goto E K start L .nul)
 
 /-- A graph code the certificate of a unit has checked at one signature: the
@@ -557,7 +557,7 @@ theorem graph_invoke {G : NormalGraph ι} {arity E K start Cs row vs n W}
     {args : List Tm} (ha : ArgsShort (row.arguments.map (meaning G)) j U args)
     (hq : ∀ F ∈ row.effect.pre, F.HoldsAt (CallEffects.callEnv r args) heap) :
     HeapObservations.SafePostExc (excOf G) (row.effect.result (meaning G row.result) (row.effect.promised args))
-      (row.effect.post r heap) (row.effect.excPost r heap) j U heap
+      (row.effect.post r args heap) (row.effect.excPost r heap) j U heap
       (.goto E K start (r :: CallArguments.parameters arity args ++ vs) .nul) := by
   have hsafe := hs.2.2 j U heap _ (frame_envOk hs.1 hvs (Nat.le_of_lt hj) hx hr ha) hu hh (by
     intro v hv
@@ -571,7 +571,7 @@ theorem graph_invoke {G : NormalGraph ι} {arity E K start Cs row vs n W}
   have hp := framePromised_params hs.2.1 [r] args vs
   simp only [List.length_singleton, List.singleton_append] at hp
   rw [show frameOffset (none : Option (Ty ι)) = 1 from rfl, hp] at hsafe
-  exact HeapObservations.SafePostExc.weaken (fun _ _ h => h r) (fun _ h => h r) hsafe
+  exact HeapObservations.SafePostExc.weaken (fun _ _ h => h r args) (fun _ h => h r) hsafe
 
 /-- **Invoking graph code from a frame at the call's own level.** As
 `graph_invoke`, with the captures' frame met where the call runs: what a
@@ -584,7 +584,7 @@ theorem graph_invoke_at {G : NormalGraph ι} {arity E K start Cs row vs}
     {args : List Tm} (ha : ArgsShort (row.arguments.map (meaning G)) j U args)
     (hq : ∀ F ∈ row.effect.pre, F.HoldsAt (CallEffects.callEnv r args) heap) :
     HeapObservations.SafePostExc (excOf G) (row.effect.result (meaning G row.result) (row.effect.promised args))
-      (row.effect.post r heap) (row.effect.excPost r heap) j U heap
+      (row.effect.post r args heap) (row.effect.excPost r heap) j U heap
       (.goto E K start (r :: CallArguments.parameters arity args ++ vs) .nul) := by
   have hx : WExt (trunc j (Nat.le_refl j) U) U := by rw [trunc_id]; exact WExt_refl U
   have hsafe := hs.2.2 j U heap _ (frame_envOk hs.1 hvs (Nat.le_refl j) hx hr ha) hu hh (by
@@ -599,7 +599,7 @@ theorem graph_invoke_at {G : NormalGraph ι} {arity E K start Cs row vs}
   have hp := framePromised_params hs.2.1 [r] args vs
   simp only [List.length_singleton, List.singleton_append] at hp
   rw [show frameOffset (none : Option (Ty ι)) = 1 from rfl, hp] at hsafe
-  exact HeapObservations.SafePostExc.weaken (fun _ _ h => h r) (fun _ h => h r) hsafe
+  exact HeapObservations.SafePostExc.weaken (fun _ _ h => h r args) (fun _ h => h r) hsafe
 
 /-- Graph code with captured values meets its fixed signatures, where its
 kind binds each signature's receivers. -/
@@ -645,7 +645,8 @@ theorem restsT_of_graph {G : NormalGraph ι} {arity E K start Cs vs n W} {kind :
     rw [← CallArguments.parameters_take arity (args.take _), List.take_take,
       Nat.min_eq_left hle, CallArguments.parameters_take]
   rw [hp, CallEffects.Effect.promised_take (e := s.fixed.effect) hbelow hle] at hsafe
-  exact ⟨_, .graph hrv hvals (hb s hsm j U r hr), hsafe⟩
+  exact ⟨_, .graph hrv hvals (hb s hsm j U r hr), HeapObservations.SafePostExc.weaken
+    (fun _ _ h => CallEffects.Effect.post_args (CallEffects.Effect.below_ensures hbelow) h) (fun _ h => h) hsafe⟩
 
 /-- An equality established by a branch can refine one immutable slot. -/
 theorem EnvOk.refine {G : NormalGraph ι} {Γ ρ n W i A B}

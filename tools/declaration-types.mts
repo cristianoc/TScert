@@ -40,6 +40,10 @@ export type CallEffect = {
    * the heap the call starts in, read at the call's positions (0 the
    * receiver, i + 1 the i-th actual) (`CallEffects.Effect.pre`). */
   readonly pre: readonly IndexFact[];
+  /** Result facts: each index fact holds in the heap a normal return leaves,
+   * read at the return's positions (0 the result, i + 1 the call's position
+   * i) (`CallEffects.Effect.ensures`). Only a trusted signature states one. */
+  readonly ensures: readonly IndexFact[];
 };
 /** An index fact at numbered positions (`HeapKnowledge.IndexFact`, its
  * constructor's name holding its fields): an array index; the length of an

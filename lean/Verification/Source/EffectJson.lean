@@ -7,7 +7,7 @@ closed `footprint`, `{"value", "store"}`; a `promise`, `null` or
 `{"guards": {"param": p}}` or `{"asserts": {"param": p}}`; the Booleans
 `fresh`, `receiverStore`, `onThrow`, `receiverOwn` and `freshObject`; and the
 element predicates `requires` and `elements`, each `null` or its kinds in
-order. Each decoder
+order; and the index-fact lists `pre` and `ensures`. Each decoder
 re-encodes what it read and refuses a document that differs, so a field
 outside these, or a `grow` on `value`, is refused. -/
 namespace Verification.EffectJson
@@ -64,7 +64,9 @@ private def predOf : Json → Except String (Option ElemPred)
   | j => do pure (some (predOfKinds (← fromJson? j)))
 
 -- An index fact, in a precondition at the call's positions (`0` the
--- receiver, `i + 1` the `i`-th actual) and in diagnostics' knowledge: its
+-- receiver, `i + 1` the `i`-th actual), in result facts at the return's
+-- positions (`0` the result, `i + 1` the call's position `i`) and in
+-- diagnostics' knowledge: its
 -- constructor's name holding its fields.
 deriving instance ToJson, FromJson for HeapKnowledge.Term
 deriving instance ToJson, FromJson for Linear.Fact
@@ -75,13 +77,14 @@ whether its result's array store is fresh, whether its footprint excepts its
 receiver's store, whether the footprint also holds on a throw, whether it
 excepts its receiver's own locations, and whether its result is an object
 every own location of which is fresh, its precondition on the receiver's
-elements and its elements promise, and its precondition on the call's values
-(`pre`). -/
+elements and its elements promise, its precondition on the call's values
+(`pre`) and the facts a normal return states (`ensures`). -/
 instance : ToJson Effect := ⟨fun e => Json.mkObj [("footprint", toJson e.footprint),
   ("promise", match e.promise with | some p => toJson p | none => Json.null),
   ("fresh", toJson e.fresh), ("receiverStore", toJson e.receiverStore), ("onThrow", toJson e.onThrow),
   ("receiverOwn", toJson e.receiverOwn), ("freshObject", toJson e.freshObject),
-  ("requires", predJson e.requires), ("elements", predJson e.elements), ("pre", toJson e.pre)]⟩
+  ("requires", predJson e.requires), ("elements", predJson e.elements), ("pre", toJson e.pre),
+  ("ensures", toJson e.ensures)]⟩
 
 instance : FromJson Effect := ⟨fun j => do
   let footprint ← j.getObjValAs? Footprints.Closed "footprint"
@@ -91,10 +94,10 @@ instance : FromJson Effect := ⟨fun j => do
   let e : Effect := ⟨footprint, promise, ← j.getObjValAs? Bool "fresh", ← j.getObjValAs? Bool "receiverStore",
     ← j.getObjValAs? Bool "onThrow", ← j.getObjValAs? Bool "receiverOwn", ← j.getObjValAs? Bool "freshObject",
     ← predOf (← j.getObjVal? "requires"), ← predOf (← j.getObjVal? "elements"),
-    ← fromJson? (← j.getObjVal? "pre")⟩
+    ← fromJson? (← j.getObjVal? "pre"), ← fromJson? (← j.getObjVal? "ensures")⟩
   if toJson e != j then
     throw ("an effect has exactly the fields footprint, promise, fresh, receiverStore, onThrow, receiverOwn, " ++
-      "freshObject, requires, elements, a predicate its kinds in order, and pre")
+      "freshObject, requires, elements, a predicate its kinds in order, pre and ensures")
   pure e⟩
 
 end Verification.EffectJson
