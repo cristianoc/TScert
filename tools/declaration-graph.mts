@@ -44,7 +44,7 @@ import { messageOf, passToolFailure, toolFailureOf } from "./thrown.mts";
 // named-record.mts reads a named type's record shape, at which a mapped type read before its definition is expanded.
 import { definitionKey, deferredInDocument, identityText, settleDocument, termsText, termText } from "./named-record.mts";
 import { documentHolds } from "./fragment-parts.mts";
-import { invariantsNamed, requiresTags, type ImportedInvariants } from "./bound-annotations.mts";
+import { invariantTags, plainParameter, representationTags, requiresTags, type ImportedInvariants } from "./bound-annotations.mts";
 // files.mts makes every file-system failure a tool failure.
 import { builtinModule, manifestMember, orAbsent, readText, realPath, remembered, type Remembered } from "./files.mts";
 import type { Json } from "./calculus.mts";
@@ -901,11 +901,21 @@ export interface DeclarationObservations {
    * clauses, and its parameters' names in order, `this` included, where its
    * declaration admits one (synchronous, every parameter a plain required
    * name), else null. The client elaborates the clauses over the value's
-   * signature, as the declaration's own module does; with the record
-   * invariants its parameters' and result's types name (`ImportedInvariants`),
-   * told also of a declaration stating no clause but naming one. */
+   * signature, as the declaration's own module does; with which record
+   * invariants of its parameters' and result's types the client reads
+   * (`ImportedInvariants`), told also of a declaration of the program's
+   * sources stating no clause. */
   requires?: (declaration: DeclarationIdentity, clauses: readonly string[], parameters: readonly string[] | null,
     invariants: ImportedInvariants) => void;
+  /** Told each definition the graph reads that states a record invariant
+   * (`@invariant`; PROGRAM-TYPING.md, "Record invariants"): a type alias or
+   * an interface of the program's sources, without type parameters or merged
+   * declarations, its clauses, and the declaration its `@representation`
+   * tag names, collected as a dependency, where it states one (null where it
+   * states none; the refusal's message where its tags name no one
+   * declaration). */
+  invariant?: (declaration: DeclarationIdentity, clauses: readonly string[],
+    representation: DeclarationIdentity | null | { refused: string }) => void;
   /** Told each import binding of a listed guard of the compiler API's family
    * (HOST-FAMILIES.md, "Calls"): its local name, its entry, the domain its
    * declared parameter states, the field a node guard tests (the family's
@@ -1957,12 +1967,14 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
         const plainNames = synchronous &&
           node.parameters.every(p => !p.dotDotDotToken && !p.initializer && !p.questionToken && ts.isIdentifier(p.name));
         // The record invariants its types name, of the program's sources
-        // alone, read as its own module reads them (`recordInvariants`).
+        // alone, which the client reads off its signature as its own module
+        // reads them (`recordInvariants`).
         const own = programFile(node.getSourceFile()) && !ambient(node) && !!node.body;
         const invariants: ImportedInvariants = {
-          params: own && plainNames ? node.parameters.map(p => invariantsNamed(p.type, checker)) : [],
-          result: own && synchronous ? invariantsNamed(node.type, checker) : [] };
-        if (clauses.length > 0 || invariants.params.some(c => c.length > 0) || invariants.result.length > 0)
+          receiver: node.parameters[0] !== undefined && ts.isIdentifier(node.parameters[0].name) &&
+            node.parameters[0].name.text === "this",
+          params: node.parameters.map(p => own && synchronous && plainParameter(p)), result: own && synchronous };
+        if (clauses.length > 0 || own)
           observations.requires?.(declaration, clauses,
             plainNames ? node.parameters.map(p => ts.isIdentifier(p.name) ? p.name.text : "") : null, invariants);
         return { declaration, construct: false, typeParams,
@@ -4527,6 +4539,47 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
         records.add(definitionKey(identity));
         observations.record?.(identity);
       },
+      invariant: (node, identity) => {
+        const file = node.getSourceFile();
+        if (!programFile(file) || !(isTypeAlias(node) || ts.isInterfaceDeclaration(node)) ||
+            node.typeParameters?.length || (partners.get(node)?.length ?? 1) !== 1) return null;
+        const trivia = file.text.slice(node.pos, node.getStart(file));
+        const clauses = invariantTags(trivia);
+        if (clauses.length === 0) return null;
+        const named = representationTags(trivia).map(t => t.trim());
+        const [name] = named;
+        if (name === undefined) {
+          observations.invariant?.(identity, clauses, null);
+          return null;
+        }
+        const what = `the representation of ${identity.module}#${identity.name}`;
+        if (named.length !== 1 || !/^[A-Za-z_$][\w$]*$/.test(name)) {
+          observations.invariant?.(identity, clauses, { refused: `${what} is not one type name: ${named.join(", ")}` });
+          return null;
+        }
+        // The name as TypeScript resolves it where the declaration is
+        // written, its import followed.
+        const symbol = checker.resolveName(name, SymbolFlags.Type, node, false);
+        const target = symbol && symbol.flags & SymbolFlags.Alias ? checker.getAliasedSymbol(symbol) : symbol;
+        if (!target || checker.isUnknownSymbol(target) || target.declarations.length === 0) {
+          observations.invariant?.(identity, clauses, { refused: `${what}, ${name}, names no type` });
+          return null;
+        }
+        try {
+          const nodes = target.declarations.map((d): Node => {
+            const resolved = d.resolve();
+            if (!resolved) throw Error(`${what}, ${name}, names no type`);
+            return resolved;
+          });
+          const represented = declarationOf(nodes, `${what}, ${name}`);
+          observations.invariant?.(identity, clauses, identityOf(represented));
+          return represented;
+        } catch (error) {
+          passToolFailure(error);
+          observations.invariant?.(identity, clauses, { refused: messageOf(error) });
+          return null;
+        }
+      },
       collecting: (node, key) => {
         if (node && key !== null && ts.isClassDeclaration(node) && programFile(node.getSourceFile()) && !ambient(node))
           programClasses.add(key);
@@ -5945,6 +5998,10 @@ interface DeclarationElaborationContext {
   keys: KeysHook;
   /** Told each definition that is a record written as one (`NamedRecords`). */
   record: (identity: DeclarationIdentity) => void;
+  /** Told each declaration read, under its identity: the declaration a
+   * record invariant's `@representation` names, a dependency to collect,
+   * where it states one (`DeclarationObservations.invariant`). */
+  invariant: (node: TypeDeclaration, identity: DeclarationIdentity) => TypeDeclaration | null;
   /** A mapped type over `keyof` as TypeScript resolves it. */
   modifiers: ModifiersHook;
   /** A declaration's type parameters, its merged declarations together. */
@@ -6003,6 +6060,10 @@ function elaborateDeclaration(node: TypeDeclaration, identity: DeclarationIdenti
     applied: DeclarationInstance | undefined, seen: Set<string>, output: ElaboratedDeclaration,
     context: DeclarationElaborationContext): void {
   const { lookup, identityOf, symbol, partners, library, equation } = context;
+  if (!applied) {
+    const represented = context.invariant(node, identity);
+    if (represented) output.dependencies.push(represented);
+  }
   const stated = equation(key, node);
   if (stated) {
     output.definitions.push({ declaration: identity, parameters: [], bases: [], expression: stated });

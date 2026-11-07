@@ -265,6 +265,9 @@ let rec heap_free env (e : expr) = match e.node with
   | Invoke ({node=Read (r,key);_},args,[],_) when heap_free env r && !method_keeps_heap env r key ->
     List.for_all (heap_free env) args
   | New ({node=Id c;_},_,args,[]) when !ctor_keeps_heap env c -> List.for_all (heap_free env) args
+  (* An object literal of named fields allocates and writes only its own
+     fresh locations (Lean's `allocOutput` keeps every index atom). *)
+  | Alloc fields -> List.for_all (fun (_,v) -> heap_free env v) fields
   | Assign (x,_,rhs) -> value_binding env x && heap_free env rhs
   | Update (_,{node=Id x;_},rhs,_) -> value_binding env x && Option.fold ~none:true ~some:(heap_free env) rhs
   | _ -> false
@@ -288,6 +291,10 @@ let statement_heap_free env (s : stmt) = match s.statement with
   | Effect e | Return e -> heap_free env e
   | Declare (_,bs) -> List.for_all (fun (_,_,e) -> heap_free env e) bs
   | If (c,_,_) | While (c,_,_) -> heap_free env c
+  (* A parameter's default, `const x = p === undefined ? d : p`, binds a
+     name alone. *)
+  | Destructure (PName _,default,init) ->
+    heap_free env init && Option.fold ~none:true ~some:(heap_free env) default
   | Destructure _ -> destructure_reads env s <> None
   | _ -> false
 

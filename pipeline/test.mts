@@ -286,6 +286,28 @@ control(async (): Promise<void> => {
 });
 
 control(async (): Promise<void> => {
+  // A sealed handle's invariant claimed where a resize broke it: the
+  // handle's `segmentFlags.length === widths.length`, over its
+  // representation's fields, forged at the entry of the walker's call after
+  // the `push`, which requires it, is refused at that entry where evidence is
+  // searched.
+  const artifacts = run("invalid-sealed-handle-resize-value-import");
+  const source = readFileSync(sourceKey(artifacts), "utf8");
+  const claims = readClaims(artifacts);
+  const fn = must(claims.functions.find(f => f.name === "grown"), "grown's claims");
+  const term = (path: string[], kind: "length" | "view", coefficient: number) =>
+    ({ name: "prepared", path, term: kind, coefficient });
+  must(fn.entries.find(e => e.start === source.indexOf("return lastFlag(prepared)")), "the call's entry").facts.push(
+    { terms: [term(["segmentFlags"], "view", 1), term(["widths"], "length", -1)], bound: 0 },
+    { terms: [term(["segmentFlags"], "view", -1), term(["widths"], "length", 1)], bound: 0 });
+  const forged = writeClaims(artifacts, "sealed-handle-forged", claims);
+  const searched = produceWith(artifacts, forged, "sealed-handle-forged");
+  assert.equal(searched.status, 1, `${searched.stdout}${searched.stderr}`);
+  assert.match(searched.stdout + searched.stderr, /does not establish the claims/);
+  process.stdout.write("sealed handles: a handle's invariant claimed at a call's entry after a resize, refused there\n");
+});
+
+control(async (): Promise<void> => {
   // Result facts the front end does not state, forged into the parser's
   // document: `countBreaks`, returning a count of at least 0, stated to
   // return one below 0, is refused at its return, the checker reading the

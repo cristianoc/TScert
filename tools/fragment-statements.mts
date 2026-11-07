@@ -9,15 +9,15 @@ import * as ts from "typescript/unstable/ast";
 import type { Expression, FunctionDeclaration, Node, Statement } from "typescript/unstable/ast";
 import type { BindingAst, Expr, FunctionAst, FunctionParamAst, Guard, PatternAst, PatternElemAst, PatternPropAst, Stmt } from "./fragment.mts";
 import type { Span } from "./span.mts";
-import type { IndexFact, StatedEffect, TypeTerm } from "./declaration-types.mts";
+import type { DeclarationIdentity, IndexFact, StatedEffect, TypeTerm } from "./declaration-types.mts";
 import { assertionFailureName, asyncCompleteName, asyncReturnName, forInName, iterateForInName, iterateName } from "./intrinsics.mts";
 import { GENERATOR, UNCLOSABLE, booleanForm, booleanReturn, bindingScope, firstOptional, capturesLoopLet, continueBlock, continueLabel, continueTarget, type Loop, forInEntryReads, labeledTarget, statementLabel, freeOffsets, iterationLabel, jumpTarget, nameSlot, namesRead, parameterName, patternNames, skipParentheses, switchLabel, TYPEOF_SHAPES } from "./fragment-support.mts";
 import type { Gate } from "./fragment-parse.mts";
 import { guardResult } from "./fragment-guards.mts";
 import { literalDefaultName } from "./type-term.mts";
-import { elaborateRequires, indexFactPositions, requiresTags, type ClauseParameter } from "./bound-annotations.mts";
+import { elaborateRequires, indexFactPositions, plainParameter, requiresTags, type ClauseParameter } from "./bound-annotations.mts";
 import { namesView } from "./library-types.mts";
-import { aliasMeaning, recordShape } from "./named-record.mts";
+import { aliasMeaning, definitionKey, recordShape } from "./named-record.mts";
 import { isImport, isTypeAlias } from "./syntax.mts";
 
 /** The declarator `d` of a pattern, the statement `node` holds it, lowered
@@ -2170,17 +2170,16 @@ export function functionDecl(this: Gate, node: FunctionDeclaration, signature: F
     // The record invariants its parameters' and result's types name
     // (`@invariant`; PROGRAM-TYPING.md, "Record invariants"), of a function
     // declaration of the module read at its own signature: each parameter's,
-    // `this` at its call position, a conjunct of the precondition, where the
-    // parameters are plain required names and it is not async; its
-    // result's, `this` the result at position 0, facts each return
-    // establishes, where it is not async. An importing module reads them
-    // alike (`writtenImport`).
+    // `this` at its call position, a conjunct of the precondition, of each
+    // parameter that is a plain required name, where it is not async: its
+    // input slot holds the actual at that position; its result's, `this` the
+    // result at position 0, facts each return establishes, where it is not
+    // async. An importing module reads them alike (`writtenImport`).
     let ensures: IndexFact[] = [];
     if (signature === node && ts.isSourceFile(node.parent)) {
-      const plainNames = !isAsync &&
-        node.parameters.every(p => !p.dotDotDotToken && !p.initializer && !p.questionToken && ts.isIdentifier(p.name));
-      const contract = recordInvariants(gate, plainNames ? node.parameters.map(p => gate.invariantsOf(p.type)) : [],
-        parameterTypes, !!receiverParam, isAsync ? [] : gate.invariantsOf(node.type), retType);
+      const contract = recordInvariants(gate,
+        isAsync ? [] : node.parameters.map((p, i) => plainParameter(p) ? parameterTypes[i] : undefined),
+        !!receiverParam, isAsync ? undefined : retType);
       if (typeof contract === "string") gate.fail(node, contract);
       else {
         requires = [...requires, ...contract.pre];
@@ -2245,27 +2244,95 @@ function clauseParameter(gate: Gate, name: string, position: number, type: TypeT
 
 /** A function declaration's record invariants (`@invariant`;
  * PROGRAM-TYPING.md, "Record invariants") elaborated to index facts: those
- * the type of its parameter `i` names (`params[i]`), `this` that parameter's
- * call position, conjuncts of its precondition; those its result's type
- * names, `this` the result's position `0`, facts of its result. The
- * refusal's message where a clause is refused. */
-export function recordInvariants(gate: Gate, params: readonly (readonly string[])[],
-    types: readonly (TypeTerm | undefined)[], receiver: boolean, result: readonly string[],
-    resultType: TypeTerm | undefined): { pre: IndexFact[]; ensures: IndexFact[] } | string {
-  const facts = (clauses: readonly string[], position: number, type: TypeTerm | undefined): IndexFact[] | string => {
-    if (clauses.length === 0) return [];
-    const elaborated = elaborateRequires(clauses, [clauseParameter(gate, "this", position, type)]);
-    return "refused" in elaborated ? `a record invariant (\`@invariant\`): ${elaborated.refused}` : elaborated.facts;
+ * the type of its parameter `i` names (`invariantsNamed`), `this` that
+ * parameter's call position, conjuncts of its precondition; those its
+ * result's type names, `this` the result's position `0`, facts of its
+ * result; none of a type `undefined` stands for. The refusal's message where
+ * a clause is refused. */
+export function recordInvariants(gate: Gate, params: readonly (TypeTerm | undefined)[], receiver: boolean,
+    result: TypeTerm | undefined): { pre: IndexFact[]; ensures: IndexFact[] } | string {
+  const facts = (type: TypeTerm | undefined, position: number): IndexFact[] | string => {
+    const named = type === undefined ? [] : invariantsNamed(gate, type);
+    if (typeof named === "string") return named;
+    const out: IndexFact[] = [];
+    for (const { declaration, clauses, through } of named) {
+      const elaborated = elaborateRequires(clauses, [clauseParameter(gate, "this", position, through)]);
+      if ("refused" in elaborated)
+        return `a record invariant (\`@invariant\`) of ${declaration.name}: ${elaborated.refused}`;
+      // A fact two named invariants state alike is stated once.
+      for (const f of elaborated.facts)
+        if (!out.some(g => JSON.stringify(g) === JSON.stringify(f))) out.push(f);
+    }
+    return out;
   };
   const pre: IndexFact[] = [];
-  for (const [i, clauses] of params.entries()) {
-    const stated = facts(clauses, receiver ? i : i + 1, types[i]);
+  for (const [i, type] of params.entries()) {
+    const stated = facts(type, receiver ? i : i + 1);
     if (typeof stated === "string") return stated;
     pre.push(...stated);
   }
-  const ensures = facts(result, 0, resultType);
+  const ensures = facts(result, 0);
   if (typeof ensures === "string") return ensures;
   return { pre, ensures };
+}
+
+/** A record invariant a type names: the declaration stating it, its clauses,
+ * and the type its paths are read through, the declaration's own or the
+ * representation its `@representation` names. */
+type NamedInvariant = { declaration: DeclarationIdentity; clauses: readonly string[]; through: TypeTerm };
+
+/** The record invariants a type names (PROGRAM-TYPING.md, "Record
+ * invariants"): a reference without type arguments to a declaration stating
+ * one (`Gate.invariants`), with those its definition's equation names in
+ * turn; every part's of an intersection; those every arm of a union names.
+ * A generic reference and every other type name none. The refusal's message
+ * where a named declaration's representation is no record type. */
+function invariantsNamed(gate: Gate, t: TypeTerm, depth: number = 0): NamedInvariant[] | string {
+  const records = gate.namedRecords();
+  if (records === null || depth > 16) return [];
+  const all = (parts: readonly TypeTerm[]): NamedInvariant[][] | string => {
+    const out: NamedInvariant[][] = [];
+    for (const p of parts) {
+      const named = invariantsNamed(gate, p, depth + 1);
+      if (typeof named === "string") return named;
+      out.push(named);
+    }
+    return out;
+  };
+  const key = (n: NamedInvariant): string => definitionKey(n.declaration);
+  const distinct = (named: readonly NamedInvariant[]): NamedInvariant[] =>
+    named.filter((n, i) => named.findIndex(m => key(m) === key(n)) === i);
+  if (t.k === "intersection") {
+    const parts = all(t.parts);
+    return typeof parts === "string" ? parts : distinct(parts.flat());
+  }
+  if (t.k === "union") {
+    const arms = all(t.parts);
+    if (typeof arms === "string") return arms;
+    const [first, ...rest] = arms;
+    return (first ?? []).filter(n => rest.every(arm => arm.some(m => key(m) === key(n))));
+  }
+  if (t.k !== "reference" || t.args.length > 0) return [];
+  const target = t.reference.target;
+  const reference = (id: DeclarationIdentity): TypeTerm =>
+    ({ k: "reference", reference: { name: id.name, span: t.span, arguments: [], target: id }, args: [], span: t.span });
+  const own: NamedInvariant[] = [];
+  const stated = gate.invariants.get(definitionKey(target));
+  if (stated !== undefined) {
+    const representation = stated.representation;
+    if (representation !== null && "refused" in representation) return representation.refused;
+    if (representation !== null && !records.record(representation))
+      return `the representation ${representation.name} of ${target.name} (\`@representation\`) is not a record type`;
+    own.push({ declaration: stated.declaration, clauses: stated.clauses,
+      through: reference(representation ?? stated.declaration) });
+  }
+  // An alias's equation, read where it names further declarations.
+  const definition = records.definition(target, (message: string): never => gate.fail(null, message));
+  const equation = definition !== undefined && definition.parameters.length === 0 ? definition.expression : null;
+  if (equation === null || !(equation.k === "reference" || equation.k === "intersection" || equation.k === "union"))
+    return own;
+  const named = invariantsNamed(gate, equation, depth + 1);
+  return typeof named === "string" ? named : distinct([...own, ...named]);
 }
 
 /** The type of the required data field `f` of a value of type `t`, where a

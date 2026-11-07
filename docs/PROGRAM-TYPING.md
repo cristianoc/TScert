@@ -2057,12 +2057,23 @@ comment, `/** @invariant C */`, the [written clause](#written-preconditions)'s
 language over the paths of `this`: values, array lengths and element counts,
 `safeInteger(this.f)`, conjunctions of comparisons. Its meaning is a predicate
 of a value $`o`$ in a heap, $`I_R(o,h)`$, the clause with `this` read as
-$`o`. An annotation **names** `R` where it is a reference to `R` without type
-arguments, a reference to an alias whose equation names it, or an
-intersection with a part naming it; a union, an optional type or a generic
-reference names none. The invariant is a contract of the boundaries of
-function declarations of the module, elaborated by the front end
-(`tools/bound-annotations.mts`, `recordInvariants`) to the facts the
+$`o`. Each path is resolved, for its kind (a value, an array's length, a
+view's element count), through the fields `R` declares, or, where `R` is a
+**sealed handle**, a type declaring no field the clause reads, such as
+pretext's branded `PreparedText`, through the record type a
+`@representation T` tag beside the invariant names, which TypeScript
+resolves where `R` is declared. A path reads the value's fields in the heap,
+whatever its static type, so $`I_R`$ is a predicate of the handle's object
+either way. A path no field resolves, and a representation that is no record
+type, are refused where an annotation names `R`. An annotation **names** `R`
+where it is a reference to `R` without type arguments, a reference to an
+alias whose equation names it, an intersection with a part naming it, or a
+union each of whose arms names it; an optional type, a union with an arm
+naming none, and a generic reference name none. The invariant is a contract
+of the boundaries of function declarations of the module, elaborated by the
+front end (the declaration graph reads the tags of each declaration it
+collects; `recordInvariants` in `tools/fragment-statements.mts`) to the
+facts the
 [written preconditions](#written-preconditions) and the
 [result facts](#reads-below-the-length) are:
 
@@ -2074,20 +2085,24 @@ function declarations of the module, elaborated by the front end
      {\mathsf{ensures}_f\ \ni\ I_R[\mathtt{this}\mapsto 0]}\ \textsf{invariant-ensures}
 ```
 
-for a declaration of the module that is not async, the first where every
-parameter is a plain required name, at the call positions a `this` parameter
-shifts as a written clause's. So a body assumes the invariant of each record
+for a declaration of the module that is not async, the first for each
+parameter $`p_i`$ that is a plain required name (no rest, default, `?` or
+pattern: its input slot holds the actual at its position, whatever the other
+parameters are), at the call positions a `this` parameter shifts as a written
+clause's. So a body assumes the invariant of each record
 it receives, and each call establishes it (`call-requires`); a caller gains it
 of each record a call returns (`call-ensures`). Between two boundaries the
 facts are kept by the steps whose footprints keep what they read
 ([facts across a heap change](#linear-facts)): a `push` to one array of a
 received record changes a length, and the next call requiring the invariant
-is refused. A value given type `R` otherwise, by a cast, a spread, a native or
+is refused, while an object literal's allocation and a parameter's default
+change no old location and keep them (`HeapExpressionRules.allocOutput`). A value given type `R` otherwise, by a cast, a spread, a native or
 a read of another structure's field, carries no fact, and a call requiring
 the invariant of it is refused. An importer reads an imported declaration's
-invariants as its own module does (`writtenImport`, from the declaration
-graph's report; the certified import's signature and its unit state the
-same facts, `Claims.Imports`).
+invariants as its own module does (`writtenImport`, over the imported signature's types; the certified
+import's signature and its unit state the same facts, `Claims.Imports`). A
+union result's fact is one every arm's type states, so a return of any arm
+proves it.
 
 **Proving result facts.** A unit's request states its declaration's result
 facts (`SourceRequest.ensures`), each naming position `0` alone. Each return
@@ -2126,6 +2141,22 @@ return of a view one element short), `invalid-record-invariant-push` (a
 record typed by a cast). Forged controls in `pipeline/test.mts`: the
 invariant claimed of the cast record at the call's entry, refused there, and
 result facts forged into the parser's document, refused at the return.
+Sealed handles: `sealed-handle-value-import` (the handle and its casts in
+and out, `seal` and `open`, in `imports-project/handle.ts`; a builder
+establishing the representation's invariant at `seal`, walkers opening the
+handle and reading below `widths.length`, a write of a field the clause does
+not read, a union result); negative, each run under Node,
+`invalid-sealed-handle-builder-value-import` (a view one element short,
+refused at `seal`), `invalid-sealed-handle-resize-value-import` (a `push`
+after opening, refused at the next walker's call) and
+`invalid-sealed-handle-forged-value-import` (a handle cast from an
+unrelated object, refused at the cast); refused gaps
+`sealed-handle-no-representation-refused` and
+`sealed-handle-union-representation-refused`; a forged control: the handle's
+invariant claimed at the walker's entry after the resize, refused there. A
+cast into or out of a handle is itself an obligation of the operand at the
+handle's or the record's type, which these casts do not meet
+(`blocker-pretext-opaque-handle-cast`).
 
 ### A literal with spreads
 

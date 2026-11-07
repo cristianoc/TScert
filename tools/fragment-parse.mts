@@ -29,7 +29,7 @@ import { computedAlias, computedForm, optionalTerm, resolutionSlots, restPositio
 import type { Ast, Expr, FunctionAst, ModuleAst, Stmt, TypeParamAst } from "./fragment.mts";
 import type { Span } from "./span.mts";
 import { requireWellFormedText, wellFormedTextRefusal } from "./wire-strings.mts";
-import { invariantsNamed, type ImportedInvariants } from "./bound-annotations.mts";
+import type { ImportedInvariants } from "./bound-annotations.mts";
 // thrown.mts reads what the TypeScript API throws into the message the gate reports, without asserting its type.
 import { messageOf, passToolFailure, toolFailureOf, toolFailureText, type ToolFailure } from "./thrown.mts";
 // syntax.mts reads the name, modifiers and other children a member or declaration of unasked kind carries, checking each is a node.
@@ -406,9 +406,11 @@ export class Gate {
   /** The identifiers spelled `undefined` that TypeScript binds to the global
    * `undefined`, by span: those alone read the value `undefined`. */
   readonly globalUndefined: Set<string> = new Set();
-  /** The `@invariant` clauses of the record types an annotation names
-   * (`invariantsNamed`), read through the file's checker. */
-  invariantsOf: (type: TypeNode | undefined) => string[] = () => [];
+  /** The record invariants (`@invariant`) of the definitions the
+   * declaration graph read, by `definitionKey`: each one's clauses and the
+   * declaration its `@representation` names (`DeclarationObservations.invariant`). */
+  readonly invariants: Map<string, { declaration: DeclarationIdentity; clauses: readonly string[];
+    representation: DeclarationIdentity | null | { refused: string } }> = new Map();
   /** The global `Object`s of `Object.assign` calls, which no global value
    * stands for: each is the intrinsic or refused, by span. */
   readonly assignObjects: Set<string> = new Set();
@@ -1425,7 +1427,6 @@ function lowerFile(file: string, carriesContext: boolean,
   const text = readText(absolute);
   const { file: source, checker } = openFile(absolute, text);
   const gate = new Gate(source);
-  gate.invariantsOf = (type) => invariantsNamed(type, checker);
   // An omitted function, one a census refused in an earlier round, is read
   // as an ambient declaration is, at its declared signature: its body is
   // neither lowered nor read by the scans that collect what the lowering
@@ -2415,6 +2416,8 @@ function lowerFile(file: string, carriesContext: boolean,
         record: identity => gate.recordKeys.add(definitionKey(identity)),
         requires: (declaration, clauses, parameters, invariants) =>
           written.push({ declaration, clauses, parameters, invariants }),
+        invariant: (declaration, clauses, representation) =>
+          gate.invariants.set(definitionKey(declaration), { declaration, clauses, representation }),
         awaited: () => { gate.standardAwaited = true; },
         resolvable: () => { gate.standardResolvable = true; },
         awaitable: () => { gate.standardAwaitable = true; },
@@ -2672,9 +2675,11 @@ if (process.argv[1] && import.meta.filename === resolve(process.argv[1])) {
 }
 
 /** An imported function's signature with its written precondition
- * (`writtenPrecondition`) stated by every form, its parameters' types read
- * from its plain form; refused at `at` where its declaration admits none or
- * its signature is not one function's. */
+ * (`writtenPrecondition`) and the record invariants of its parameters' and
+ * result's types (`recordInvariants`) stated by every form, its parameters'
+ * types read from its plain form; refused at `at` where its declaration
+ * admits no precondition or its signature is not one function's; the
+ * signature as read where it states neither. */
 function writtenImport(gate: Gate, value: ValueRoot, clauses: readonly string[],
     parameters: readonly string[] | null, invariants: ImportedInvariants,
     at: Node | undefined): Within<{ value: "any"; store: "grow" }, TypeTerm> {
@@ -2684,19 +2689,23 @@ function writtenImport(gate: Gate, value: ValueRoot, clauses: readonly string[],
   const forms = value.type.k === "function" ? [value.type]
     : value.type.k === "intersection" ? value.type.parts.flatMap(p => p.k === "function" ? [p] : []) : [];
   const plain = forms.find(f => f.effect.promise === null);
-  if (plain === undefined || value.type.k === "intersection" && forms.length !== value.type.parts.length)
+  const one = plain !== undefined && !(value.type.k === "intersection" && forms.length !== value.type.parts.length);
+  const receiver = invariants.receiver;
+  const types = plain === undefined ? [] : receiver ? [plain.receiver ?? undefined, ...plain.params] : plain.params;
+  // The invariants of the record types its parameters and result name, read
+  // as its own module's unit reads them (`recordInvariants`).
+  const contract = !one || plain === undefined ? { pre: [], ensures: [] } :
+    statements.recordInvariants(gate, invariants.params.map((read, i) => read ? types[i] : undefined), receiver,
+      invariants.result ? plain.result : undefined);
+  if (typeof contract === "string") return gate.fail(at ?? null, `${contract}: ${what}`);
+  if (clauses.length === 0 && contract.pre.length === 0 && contract.ensures.length === 0) return value.type;
+  if (!one || plain === undefined)
     return gate.fail(at ?? null, `an imported precondition (\`@requires\`) on a function whose signature is not one function's: ${what}`);
-  const receiver = parameters?.[0] === "this";
-  const types = receiver ? [plain.receiver ?? undefined, ...plain.params] : plain.params;
   if (parameters !== null && types.length !== parameters.length)
     return gate.fail(at ?? null, `an imported precondition (\`@requires\`) whose signature's parameters are not its declaration's: ${what}`);
   const written = parameters === null ? [] :
     statements.writtenPrecondition(gate, clauses, parameters.map((name, i) => ({ name, type: types[i] })), receiver);
   if (typeof written === "string") return gate.fail(at ?? null, `${written}: ${what}`);
-  // The invariants of the record types its parameters and result name, read
-  // as its own module's unit reads them (`recordInvariants`).
-  const contract = statements.recordInvariants(gate, invariants.params, types, receiver, invariants.result, plain.result);
-  if (typeof contract === "string") return gate.fail(at ?? null, `${contract}: ${what}`);
   const pre = [...written, ...contract.pre];
   const ensures = contract.ensures;
   const stated = (f: Extract<TypeTerm, { k: "function" }>): Extract<TypeTerm, { k: "function" }> =>
