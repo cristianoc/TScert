@@ -473,12 +473,36 @@ def compareAtoms (op : Arith) (D : Linear.Form) (c : Int) : List IndexAtom :=
   | some (t, f) => [⟨.linear t, some 0, false⟩, ⟨.linear f, some 0, true⟩]
   | none => []
 
+/-- A copy of slot `a` restates the atoms conditional on `a` as conditional on
+the copy, the result slot 0: the copy holds the same value. -/
+def copiedAtoms (k : Knowledge) (a : Nat) : List IndexAtom :=
+  (k.indices.filter (·.cond == some a)).filterMap fun atom =>
+    (atom.fact.mapM (fun i => some (i + 1))).map fun F => { atom with fact := F, cond := some 0 }
+
+theorem copiedAtoms_holds {k : Knowledge} {a : Nat} {ρ h} (hk : Holds k ρ h) :
+    IndexHolds (copiedAtoms k a) (push (ρ a) ρ) h := by
+  intro atom' hat hc
+  obtain ⟨atom, hat0, hm⟩ := List.mem_filterMap.mp hat
+  obtain ⟨hat0, hcond⟩ := List.mem_filter.mp hat0
+  simp only [beq_iff_eq] at hcond
+  obtain ⟨F, hF, rfl⟩ := Option.map_eq_some_iff.mp hm
+  have hsrc := hk.2.2.2.2.2 atom hat0 (fun b hb => by
+    rw [hcond] at hb; cases hb
+    simpa [push] using hc 0 rfl)
+  exact (IndexFact.holdsAt_mapM hF (fun s _ t ht => by cases ht; rfl)).mpr hsrc
+
+theorem indexHolds_cat {as bs : List IndexAtom} {ρ h}
+    (ha : IndexHolds as ρ h) (hb : IndexHolds bs ρ h) : IndexHolds (as ++ bs) ρ h := fun a hm hc =>
+  (List.mem_append.mp hm).elim (fun hm => ha a hm hc) (fun hm => hb a hm hc)
+
 /-- The linear atoms a step on slots states of its result. -/
 def linearAtoms (G : NormalGraph ι) (Γ : List (Ty ι)) (k : Knowledge) : Tm → List IndexAtom
   | .num b => match SafeIntegers.safeIntOfBits b with
     | some i => valueAtoms [] i
     | none => []
-  | .var a => if a < Γ.length ∧ intSlot k.indices a = true then valueAtoms [(a, 1)] 0 else []
+  | .var a =>
+    (if a < Γ.length ∧ intSlot k.indices a = true then valueAtoms [(a, 1)] 0 else []) ++
+      (if a < Γ.length then copiedAtoms k a else [])
   | .lenOf (.var s) =>
     if storeSlot G Γ s then
       [⟨.int 0, none, false⟩, ⟨.linear (.le [(0, -1)] 0), none, false⟩,
@@ -676,19 +700,21 @@ theorem linearAtoms_holds [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty �
     · exact none_case
   | var a =>
     simp only [linearAtoms]
-    split
-    · rename_i hc
-      obtain ⟨ha, hi⟩ := hc
-      simp only [instantiate, Nat.not_lt_zero, if_false, Nat.sub_zero] at hs ⊢
+    by_cases ha : a < Γ.length
+    · simp only [instantiate, Nat.not_lt_zero, if_false, Nat.sub_zero, ha, true_and, if_true] at hs ⊢
       refine weaken (fun h' u hq => ⟨hq.1, ?_⟩) (value_run (hval a ha) hs)
-      obtain ⟨-, -, rfl⟩ := hq
-      have hs' := intSlot_sound hk.2.2.2.2.2 hi
-      obtain ⟨i, hi'⟩ := Option.isSome_iff_exists.mp hs'
-      obtain ⟨b, hb, hsafe⟩ := intValue_safe hi'
-      rw [hb]
-      refine valueAtoms_holds (by simp [hs']) ?_
-      simpa [Linear.Form.eval, valuation, hi'] using hsafe
-    · exact none_case
+      obtain ⟨-, rfl, rfl⟩ := hq
+      refine indexHolds_cat ?_ (copiedAtoms_holds hk)
+      split
+      · rename_i hi
+        have hs' := intSlot_sound hk.2.2.2.2.2 hi
+        obtain ⟨i, hi'⟩ := Option.isSome_iff_exists.mp hs'
+        obtain ⟨b, hb, hsafe⟩ := intValue_safe hi'
+        rw [hb]
+        refine valueAtoms_holds (by simp [hs']) ?_
+        simpa [Linear.Form.eval, valuation, hi'] using hsafe
+      · exact indexHolds_nil _ _
+    · simp only [ha, false_and, if_false, List.append_nil]; exact none_case
   | lenOf a =>
     cases a with
     | var s =>
@@ -853,62 +879,14 @@ theorem boundAtom_sound {k : Knowledge} {a i : Nat} {ρ h} (hc : boundAtom k a i
   | int _ => rw [hfact] at hf; cases hf
   | linear _ => rw [hfact] at hf; cases hf
 
-/-- Whether the linear facts bound a slot of `i`'s class by the length of the
-store of an array of `a`'s class: an unconditional length atom `length(x, n)`,
-`int(i)` and `int(n)`, and the facts entail `0 ≤ i ≤ n` and `i ≤ 2^32 - 2`. -/
-def linearBound (k : Knowledge) (a i : Nat) : Bool :=
-  intSlot k.indices i && k.indices.any fun atom => atom.cond.isNone && match atom.fact with
-    | .length x n => (HeapLinks.aliases k.links a).contains x && intSlot k.indices n &&
-        Linear.entails (linearFacts k.indices) (.le [(i, -1)] 0) &&
-        Linear.entails (linearFacts k.indices) (.le [(i, 1), (n, -1)] 0) &&
-        Linear.entails (linearFacts k.indices) (.le [(i, 1)] (maxArrayLength - 1))
-    | _ => false
-
-theorem indexOfBits_safe {b : UInt64} {j : Int} (hb : SafeIntegers.SafeInt b j) (h0 : 0 ≤ j)
-    (h1 : j < maxArrayLength) : indexOfBits b = some j.toNat := by
-  rcases hb.2 with ⟨-, he⟩ | ⟨hle, he⟩
-  · have : b = bitsOfNat j.natAbs := UInt64.toNat_inj.mp he
-    have hm : ((maxArrayLength : Nat) : Int) = 4294967295 := rfl
-    have h1' : j < 4294967295 := by omega
-    rw [this, IndexNumbers.indexOfBits_bitsOfNat (by omega)]
-    congr 1; omega
-  · have hj : j = 0 := by omega
-    subst hj
-    have : b = 0x8000000000000000 := UInt64.toNat_inj.mp (by rw [he]; simp [SafeIntegers.bitsOfNat_zero])
-    subst this; rfl
+/-- Whether the linear facts bound a slot `i` by the length of the store of an
+array of `a`'s class (`HeapKnowledge.lengthBound`). -/
+def linearBound (k : Knowledge) (a i : Nat) : Bool := lengthBound (HeapLinks.aliases k.links a) k.indices i
 
 theorem linearBound_sound {k : Knowledge} {a i : Nat} {ρ h} (hc : linearBound k a i = true) (hk : Holds k ρ h) :
     ∃ s ls b idx, Footprints.storeOf (ρ a) = some s ∧ h[s]? = some (.arr ls) ∧ ρ i = .num b ∧
-      indexOfBits b = some idx ∧ idx ≤ ls.length := by
-  simp only [linearBound, Bool.and_eq_true] at hc
-  obtain ⟨hi, hany⟩ := hc
-  obtain ⟨atom, ha, hm⟩ := List.any_eq_true.mp hany
-  simp only [Bool.and_eq_true, Option.isNone_iff_eq_none] at hm
-  obtain ⟨hnone, hf⟩ := hm
-  have hat := hk.2.2.2.2.2 atom ha fun b hb => by rw [hnone] at hb; cases hb
-  have hlin := linearFacts_holds hk.2.2.2.2.2
-  cases hfact : atom.fact with
-  | length x n =>
-    rw [hfact] at hf hat
-    simp only [Bool.and_eq_true, List.contains_iff_mem] at hf
-    obtain ⟨⟨⟨⟨hx, hn⟩, e1⟩, e2⟩, e3⟩ := hf
-    obtain ⟨s, ls, hs, hl, hnv, hmax⟩ := hat
-    have f1 := Linear.entails_sound e1 hlin
-    have f2 := Linear.entails_sound e2 hlin
-    have f3 := Linear.entails_sound e3 hlin
-    simp only [Linear.Fact.Holds, Linear.Form.eval] at f1 f2 f3
-    -- the length slot's integer is the store's length
-    have hL : SafeIntegers.SafeInt (bitsOfNat ls.length) (ls.length : Int) :=
-      ⟨by simp [maxArrayLength] at hmax ⊢; omega, .inl ⟨by omega, by simp⟩⟩
-    have hvn : valuation ρ n = ls.length := by simp [valuation, hnv, intValue, SafeIntegers.safeIntOfBits_complete hL]
-    obtain ⟨j, hj⟩ := Option.isSome_iff_exists.mp (intSlot_sound hk.2.2.2.2.2 hi)
-    obtain ⟨b, hb, hsafe⟩ := intValue_safe hj
-    have hvi : valuation ρ i = j := by simp [valuation, hj]
-    rw [hvi, hvn] at f2; rw [hvi] at f1 f3
-    refine ⟨s, ls, b, j.toNat, by rw [← HeapLinks.aliases_eq hk.2.2.1 hx]; exact hs, hl, hb,
-      indexOfBits_safe hsafe (by omega) (by have hm : ((maxArrayLength : Nat) : Int) = 4294967295 := rfl; omega),
-      by omega⟩
-  | index _ | bound _ _ | int _ | linear _ => rw [hfact] at hf; simp at hf
+      indexOfBits b = some idx ∧ idx ≤ ls.length :=
+  lengthBound_sound (fun _ hy => HeapLinks.aliases_eq hk.2.2.1 hy) hc hk.2.2.2.2.2
 
 /-- Whether a slot of `i`'s class holds an index at most the length of the
 store of an array of `a`'s class: a bound atom states it, or the linear facts do. -/
@@ -1002,7 +980,7 @@ theorem boundedWrite_sound [DecidableEq ι] {G : NormalGraph ι} {images : Insta
       · exact Safe_mono n (fun m _ X u hu => (represents_back (c := .nul) hnul m X u) hu) W h _ hsafe
       · exact ⟨HeapFacts.holds_nil _ _, (shift_holds (v := u) hk).2.1,
           HeapLinks.stable_holds (shift_holds (v := u) hk).2.2.1, (shift_holds (v := u) hk).2.2.2.1,
-          elemsHolds_nil _ _, indexHolds_nil _ _⟩
+          elemsHolds_nil _ _, envIndices_holds (shift_holds (v := u) hk).2.2.2.2.2 _⟩
     · cases htypes
   · cases htypes
 

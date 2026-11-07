@@ -36,6 +36,24 @@ let is_bound n = String.length n > 0 && n.[0] = '\002'
 let bound_parts n = match String.split_on_char '\002' n with
   | [""; array; index] -> Some (array, index)
   | _ -> None
+(* A linear fact the producer proposes at statement entries (PROGRAM-TYPING.md,
+   "Linear facts"): the sum of [terms], each a value binding's name and an
+   integer coefficient, is at most [bound]. Held as a pseudo-binding whose
+   name encodes it, so it flows and joins with the environment. The terms are
+   sorted by name with nonzero coefficients; a fact with one zero term states
+   only that its binding holds a safe integer. *)
+let fact_key (terms : (string * int) list) (bound : int) =
+  "\003" ^ string_of_int bound ^ String.concat "" (List.map (fun (n,c) -> "\004" ^ n ^ "\005" ^ string_of_int c) terms)
+let is_fact n = String.length n > 0 && n.[0] = '\003'
+let fact_parts n =
+  if not (is_fact n) then None else
+  match String.split_on_char '\004' (String.sub n 1 (String.length n - 1)) with
+  | bound :: terms ->
+    (try Some (List.map (fun t -> match String.split_on_char '\005' t with
+        | [name; c] -> name, int_of_string c
+        | _ -> raise Exit) terms, int_of_string bound)
+     with _ -> None)
+  | [] -> None
 let extend env name binding =
   if List.mem_assoc name env then Json.unsupported ("shadowing " ^ name);
   env @ [name,binding]

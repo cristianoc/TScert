@@ -19,6 +19,9 @@ structure PointData (ι : Type) where
   /-- At a statement entry, the bounds a guard states: an array binding's name
   and an index binding's. -/
   entryBounds : List (Nat × List (String × String)) := []
+  /-- At a statement entry, the linear facts the producer proposes: terms of
+  value bindings' names with integer coefficients, and a bound. -/
+  entryFacts : List (Nat × List (List (String × Int) × Int)) := []
 
 /-- Replacement claims for the sites a closure signature owns. Absence of a
 current-content assertion replaces that assertion too. -/
@@ -30,6 +33,8 @@ def PointData.overlay (base row : PointData ι) : PointData ι :=
     exprCurrent := row.exprCurrent ++ base.exprCurrent.filter (fun p =>
       !(row.exprs.map Prod.fst).contains p.1)
     entryBounds := row.entryBounds ++ base.entryBounds.filter (fun p =>
+      !(row.envs.map Prod.fst).contains p.1)
+    entryFacts := row.entryFacts ++ base.entryFacts.filter (fun p =>
       !(row.envs.map Prod.fst).contains p.1) }
 
 /-- A lifetime storage contract is keyed by its initializer and binding name.
@@ -51,6 +56,7 @@ structure Function (ι : Type) where
   entryCurrent : List (Nat × List (String × List (List PropKey × Ty ι))) := []
   exprCurrent : List (Span × List (PropKey × Ty ι)) := []
   entryBounds : List (Nat × List (String × String)) := []
+  entryFacts : List (Nat × List (List (String × Int) × Int)) := []
   /-- The source closure's interior obligations, one per claimed signature. -/
   arrowClaims : List (Span × List (Overlay ι)) := []
   /-- The complete point table survives selection and nested closure checking. -/
@@ -74,20 +80,23 @@ def Function.atPoint (f : Function ι) (point : String) : Function ι :=
     exprs := row.exprs
     entryCurrent := row.entryCurrent
     exprCurrent := row.exprCurrent
-    entryBounds := row.entryBounds }
+    entryBounds := row.entryBounds
+    entryFacts := row.entryFacts }
 
 /-- A signature overlay retains other bodies' claims, while replacing its own
 sites in every execution point. -/
 def Function.withOverlay (f : Function ι) (row : Overlay ι) : Function ι :=
   let points := (f.points.map Prod.fst ++ row.points.map Prod.fst).eraseDups.map fun id =>
     (id, ((f.points.lookup id).getD {}).overlay ((row.points.lookup id).getD {}))
-  let active := (PointData.mk f.exprs f.envs f.entryCurrent f.exprCurrent f.entryBounds).overlay row.toPointData
+  let active := (PointData.mk f.exprs f.envs f.entryCurrent f.exprCurrent f.entryBounds f.entryFacts).overlay
+    row.toPointData
   { f with
     exprs := active.exprs
     envs := active.envs
     entryCurrent := active.entryCurrent
     exprCurrent := active.exprCurrent
     entryBounds := active.entryBounds
+    entryFacts := active.entryFacts
     points := points
     contracts := row.contracts ++ f.contracts.filter (fun p => !(row.contracts.map Prod.fst).contains p.1) }
 

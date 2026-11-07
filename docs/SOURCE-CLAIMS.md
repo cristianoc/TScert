@@ -74,7 +74,7 @@ Each function object has these fields:
 | `contracts` | Mutable declaration contracts: `{pos,name,type}` |
 | `footprint` | The [closed footprint](FOOTPRINTS.md#changes-and-footprints) proposed for the declaration's signature: `{"value":v,"store":s}` |
 | `onThrow` | Whether the footprint is proposed on a throw too, which the unit's graph must then establish as well: `true` or `false` |
-| `entries` | Entry claims: `{point,start,bindings,bounds}` |
+| `entries` | Entry claims: `{point,start,bindings,bounds,facts}` |
 | `expressions` | Expression claims: `{point,pos,type,current}` |
 | `arrows` | Optional per-signature interior claims, described below |
 
@@ -84,6 +84,13 @@ is a list, possibly empty, of `{array,index}`, each naming two value bindings
 of the entry: the index binding's value is an array index at most the length
 of the array binding's store, which the entry's knowledge states and every
 edge into it checks ([writes at a checked index](PROGRAM-TYPING.md#writes-at-a-checked-index)).
+Entry `facts` is a list, possibly empty, of `{terms,bound}`, `terms` a list of
+`[name, coefficient]` pairs naming value bindings of the entry with safe-integer
+coefficients and `bound` a safe integer: every named binding holds a safe
+integer and the sum of the terms is at most the bound, which the entry's
+knowledge states and every edge into it checks; a fact whose coefficients are
+all zero states only that its bindings hold safe integers
+([linear facts](PROGRAM-TYPING.md#linear-facts)).
 `start` is the source offset associated with the graph node. Expression `pos` is a span.
 Every point has an explicit `current`: `null` states that no additional
 contents assertion is supplied. Expressions may also have `instantiate`,
@@ -136,7 +143,7 @@ executable input; its identity and point associations must match a Fragment:
     "params": [{"name":"flag","type":[1,2],"current":null}],
     "result": [1,2], "contracts": [], "footprint": {"value":"keep","store":"keep"},
     "entries": [{"point":"9:17:1","start":43,
-      "bindings":[{"name":"flag","type":[1,2],"current":null}], "bounds":[]}],
+      "bindings":[{"name":"flag","type":[1,2],"current":null}], "bounds":[], "facts":[]}],
     "expressions": [{"point":"9:17:1","pos":[50,54],
       "type":[1,2],"current":null}]
   }]

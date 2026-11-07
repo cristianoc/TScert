@@ -114,11 +114,19 @@ structure Bound where
   array : String
   index : String
   deriving ToJson, FromJson
+/-- A linear fact the producer proposes at a statement entry: the sum of the
+terms, each a value binding's name and an integer coefficient, is at most
+`bound`; every term's binding holds a safe integer. -/
+structure Fact where
+  terms : List (String × Int)
+  bound : Int
+  deriving ToJson, FromJson
 structure Entry (ι : Type) where
   point : String
   start : Nat
   bindings : List (Binding ι)
   bounds : List Bound
+  facts : List Fact
   deriving ToJson, FromJson
 /-- The type arguments one call supplies for a scheme's binders. It is the
 producer's proposed elimination, re-checked here; it is never itself evidence. -/
@@ -238,6 +246,7 @@ private def pointData (entries : List (Entry ι)) (expressions : List (Expressio
     exprs := expressions.map (fun e => (e.pos,e.type.ground))
     entryCurrent := entries.map (fun e => (e.start,e.bindings.filterMap fun b => b.current.map (b.name,·)))
     entryBounds := entries.map (fun e => (e.start,e.bounds.map fun b => (b.array, b.index)))
+    entryFacts := entries.map (fun e => (e.start,e.facts.map fun f => (f.terms, f.bound)))
     -- An expression's assertion is of one field each (`validCurrent`).
     exprCurrent := expressions.filterMap (fun e => e.current.map fun fs =>
       (e.pos, fs.filterMap fun (p, A) => match p with | [k] => some (k, A) | _ => none)) }
@@ -255,6 +264,7 @@ def Function.normalized (f : Function ι) : SourceClaims.Function ι :=
   { name := f.name, namePos := f.namePos, params := f.params.map (fun b => (b.name,b.type.ground))
     ret := f.result.ground, envs := sites.envs, exprs := sites.exprs
     entryCurrent := sites.entryCurrent, exprCurrent := sites.exprCurrent, entryBounds := sites.entryBounds
+    entryFacts := sites.entryFacts
     points := pointTable f.entries f.expressions, contracts := storageContracts f.contracts
     footprint := f.footprint
     onThrow := f.onThrow
