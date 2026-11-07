@@ -29,6 +29,7 @@ import { computedAlias, computedForm, optionalTerm, resolutionSlots, restPositio
 import type { Ast, Expr, FunctionAst, ModuleAst, Stmt, TypeParamAst } from "./fragment.mts";
 import type { Span } from "./span.mts";
 import { requireWellFormedText, wellFormedTextRefusal } from "./wire-strings.mts";
+import { invariantsNamed, type ImportedInvariants } from "./bound-annotations.mts";
 // thrown.mts reads what the TypeScript API throws into the message the gate reports, without asserting its type.
 import { messageOf, passToolFailure, toolFailureOf, toolFailureText, type ToolFailure } from "./thrown.mts";
 // syntax.mts reads the name, modifiers and other children a member or declaration of unasked kind carries, checking each is a node.
@@ -405,6 +406,9 @@ export class Gate {
   /** The identifiers spelled `undefined` that TypeScript binds to the global
    * `undefined`, by span: those alone read the value `undefined`. */
   readonly globalUndefined: Set<string> = new Set();
+  /** The `@invariant` clauses of the record types an annotation names
+   * (`invariantsNamed`), read through the file's checker. */
+  invariantsOf: (type: TypeNode | undefined) => string[] = () => [];
   /** The global `Object`s of `Object.assign` calls, which no global value
    * stands for: each is the intrinsic or refused, by span. */
   readonly assignObjects: Set<string> = new Set();
@@ -1421,6 +1425,7 @@ function lowerFile(file: string, carriesContext: boolean,
   const text = readText(absolute);
   const { file: source, checker } = openFile(absolute, text);
   const gate = new Gate(source);
+  gate.invariantsOf = (type) => invariantsNamed(type, checker);
   // An omitted function, one a census refused in an earlier round, is read
   // as an ambient declaration is, at its declared signature: its body is
   // neither lowered nor read by the scans that collect what the lowering
@@ -2258,7 +2263,8 @@ function lowerFile(file: string, carriesContext: boolean,
     }
     // TypeScript resolves every name, in the project that owns the file or the
     // one named explicitly: the declaration graph is the compiler's.
-    const written: { declaration: DeclarationIdentity; clauses: readonly string[]; parameters: readonly string[] | null }[] = [];
+    const written: { declaration: DeclarationIdentity; clauses: readonly string[]; parameters: readonly string[] | null;
+      invariants: ImportedInvariants }[] = [];
     try {
       declarations = collectDeclarations(resolutionFile, { tsconfigPath, client: source,
         ...(family.given ? { familySelection: family.given } : {}),
@@ -2407,7 +2413,8 @@ function lowerFile(file: string, carriesContext: boolean,
             gate.libraryTypes.set(local, library);
         },
         record: identity => gate.recordKeys.add(definitionKey(identity)),
-        requires: (declaration, clauses, parameters) => written.push({ declaration, clauses, parameters }),
+        requires: (declaration, clauses, parameters, invariants) =>
+          written.push({ declaration, clauses, parameters, invariants }),
         awaited: () => { gate.standardAwaited = true; },
         resolvable: () => { gate.standardResolvable = true; },
         awaitable: () => { gate.standardAwaitable = true; },
@@ -2454,7 +2461,7 @@ function lowerFile(file: string, carriesContext: boolean,
       declarations = { ...declarations, values: declarations.values.map(v => {
         const w = written.find(w => definitionKey(w.declaration) === definitionKey(v.declaration));
         const at = importNodes.find(n => n.getStart(source) === v.binding.span[0]) ?? first;
-        return w === undefined ? v : { ...v, type: writtenImport(gate, v, w.clauses, w.parameters, at) };
+        return w === undefined ? v : { ...v, type: writtenImport(gate, v, w.clauses, w.parameters, w.invariants, at) };
       }) };
     for (const root of declarations.roots) {
       const identity = root.declaration;
@@ -2669,22 +2676,31 @@ if (process.argv[1] && import.meta.filename === resolve(process.argv[1])) {
  * from its plain form; refused at `at` where its declaration admits none or
  * its signature is not one function's. */
 function writtenImport(gate: Gate, value: ValueRoot, clauses: readonly string[],
-    parameters: readonly string[] | null, at: Node | undefined): Within<{ value: "any"; store: "grow" }, TypeTerm> {
+    parameters: readonly string[] | null, invariants: ImportedInvariants,
+    at: Node | undefined): Within<{ value: "any"; store: "grow" }, TypeTerm> {
   const what = `${value.declaration.module}#${value.declaration.name}`;
-  if (parameters === null)
+  if (parameters === null && clauses.length > 0)
     return gate.fail(at ?? null, `an imported precondition (\`@requires\`) on an async function or one whose parameters are not plain required names: ${what}`);
   const forms = value.type.k === "function" ? [value.type]
     : value.type.k === "intersection" ? value.type.parts.flatMap(p => p.k === "function" ? [p] : []) : [];
   const plain = forms.find(f => f.effect.promise === null);
   if (plain === undefined || value.type.k === "intersection" && forms.length !== value.type.parts.length)
     return gate.fail(at ?? null, `an imported precondition (\`@requires\`) on a function whose signature is not one function's: ${what}`);
-  const receiver = parameters[0] === "this";
+  const receiver = parameters?.[0] === "this";
   const types = receiver ? [plain.receiver ?? undefined, ...plain.params] : plain.params;
-  if (types.length !== parameters.length)
+  if (parameters !== null && types.length !== parameters.length)
     return gate.fail(at ?? null, `an imported precondition (\`@requires\`) whose signature's parameters are not its declaration's: ${what}`);
-  const pre = statements.writtenPrecondition(gate, clauses, parameters.map((name, i) => ({ name, type: types[i] })), receiver);
-  if (typeof pre === "string") return gate.fail(at ?? null, `${pre}: ${what}`);
-  const stated = (f: Extract<TypeTerm, { k: "function" }>): Extract<TypeTerm, { k: "function" }> => ({ ...f, effect: { ...f.effect, pre } });
+  const written = parameters === null ? [] :
+    statements.writtenPrecondition(gate, clauses, parameters.map((name, i) => ({ name, type: types[i] })), receiver);
+  if (typeof written === "string") return gate.fail(at ?? null, `${written}: ${what}`);
+  // The invariants of the record types its parameters and result name, read
+  // as its own module's unit reads them (`recordInvariants`).
+  const contract = statements.recordInvariants(gate, invariants.params, types, receiver, invariants.result, plain.result);
+  if (typeof contract === "string") return gate.fail(at ?? null, `${contract}: ${what}`);
+  const pre = [...written, ...contract.pre];
+  const ensures = contract.ensures;
+  const stated = (f: Extract<TypeTerm, { k: "function" }>): Extract<TypeTerm, { k: "function" }> =>
+    ({ ...f, effect: { ...f.effect, pre, ensures } });
   if (value.type.k === "function") return stated(value.type);
   return { k: "intersection", parts: forms.map(stated), span: value.type.span };
 }

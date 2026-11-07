@@ -23,6 +23,23 @@ namespace Verification.SourceClaimJson
 open Lean ProgramTyping RequestJson SourceExtraction ControlFlow PositiveGraphs PositiveRules LabelStore
 open EquationGraphs (Tree)
 
+/-- A unit stating facts of its result whose return does not establish them:
+refused at that return, or at the definition where the facts name other
+positions or the unit is qualified. -/
+def ensuresRefusal {σ ι : Type} [Labels ι] [StoreView σ ι] (name : String) (namePos : Span)
+    (r : SourceRequest σ ι) (c : Response ι) : Option String :=
+  if r.ensures.isEmpty || (ensuresResult r c).accepted then none else
+  let G := RequestJson.graph r.toRequest
+  let bad := (List.range r.program.length).find? fun l =>
+    match r.program[l]?, c.certificate[l]? with
+    | some node, some n => match node.continuation with
+      | .ret => !(GraphCode.unreachableEntry G n || ExpressionEffects.emptyType G (ControlFlow.result n) ||
+          GraphCode.returnEntails (ControlFlow.outFacts G n) r.ensures)
+      | _ => false
+    | _, _ => false
+  let pos := ((bad.bind fun l => (r.sourceMap[l]?).bind id).map (·.pos)).getD namePos
+  some s!"source ensures refusal at [{pos.1},{pos.2}): a return of '{name}' does not establish the facts its result's record invariant states"
+
 /-- The located refusal of a footprint a unit claims for its declaration, or
 for a closure of its code, that its graph and certificate do not establish:
 at the first node the node-by-node bound check refuses, else at the
@@ -187,7 +204,7 @@ def requestsRefusal {σ ι : Type} [Labels ι] [StoreView σ ι] (certified : Li
   let fallback := validationFailure rs checked "source evidence does not justify the extracted program and exact claims"
   if checked.exhaustion.isSome then fallback else
     (((certified.zip b.functions).findSome? fun (plan, c) => match plan with
-      | .graph name namePos r => footprintRefusal name namePos r c) <|>
+      | .graph name namePos r => footprintRefusal name namePos r c <|> ensuresRefusal name namePos r c) <|>
      (((certified.zip b.functions).zip b.obligations).findSome? fun ((plan, c), es) => match plan with
       | .graph _ _ r => obligationRefusal r c es <|> claimRefusal r c <|> edgeRefusal r c <|> nodeRefusal r c <|>
           typingRefusal r c)).getD fallback
@@ -296,9 +313,10 @@ def lowerJson (ast claims : Json) (fileKey : String) : Except String Json := do
         ("codes", toJson (r.toRequest.codes.map fun (c : CodeRequest _) => codeJson c.entry))])
 
 /-- What requests a bundle justifies give: the check accepts them, each is
-safe, within its footprint where it claims one, and its stated assertions are
-entailed by its certificate, as `checkRequests_safe_at`,
-`checkRequests_footprint_at` and `checkRequests_assertions_at` state; each for
+safe, within its footprint where it claims one, returning values meeting its
+result facts where it states some, and its stated assertions are entailed by
+its certificate, as `checkRequests_safe_at`, `checkRequests_footprint_at`,
+`checkRequests_ensures_at` and `checkRequests_assertions_at` state; each for
 an environment meeting what the request assumes of its inputs, their types,
 their separation and the index facts of its written precondition
 (`entryIndices`). -/
@@ -327,6 +345,17 @@ def RequestsSafe (F : EquationStore.Frozen)
             n W heap
             (.goto (r.program.map (·.expression)) (r.program.map fun n => (n.continuation, n.handler))
               r.start L d)) ∧
+      (∀ r c, (r,c) ∈ rs.zip b.functions → r.ensures ≠ [] →
+        ∀ η n W heap (L : List Tm) (d : Tm),
+          EnvOk (reassign F.equations.graph η) r.inputs (envOf L d) n W →
+          HeapSeparation.Holds r.entrySeparation (envOf L d) →
+          HeapKnowledge.IndexHolds r.entryIndices (envOf L d) heap →
+          WorldAdm W → HeapOk n W heap →
+          HeapObservations.SafePost (excOf (reassign F.equations.graph η))
+            (ControlFlow.GoalHolds (reassign F.equations.graph η) r.goal (r.goal.argument (envOf L d)))
+            (fun h' v => GraphCode.EnsuresAt r.ensures h' v) n W heap
+            (.goto (r.program.map (·.expression)) (r.program.map fun n => (n.continuation, n.handler))
+              r.start L d)) ∧
       (∀ r c, (r,c) ∈ rs.zip b.functions → RequestAssertionsEntailed r c)
 
 theorem requestsSafe_of_check {F : EquationStore.Frozen}
@@ -335,11 +364,13 @@ theorem requestsSafe_of_check {F : EquationStore.Frozen}
     {b : Bundle (EquationStore.CheckedLabel F.equations F.primitive)}
     (hx : (checkRequestsResult rs b).accepted = true) : RequestsSafe F rs b := by
   have hc : checkRequests rs b = true := hx
-  refine ⟨hc, ?_, ?_, fun r c hm => checkRequests_assertions_at hc hm⟩
+  refine ⟨hc, ?_, ?_, ?_, fun r c hm => checkRequests_assertions_at hc hm⟩
   · intro r c hm η admitted n W heap ρ he hsep hidx hw hh
     exact checkRequests_safe_at hc hm η admitted n W heap ρ he hw hh hsep hidx
   · intro r c hm heffect η n W heap L d he hsep hidx hw hh hvalues hd
     exact checkRequests_footprint_at hc hm heffect η n W heap L d he hw hh hvalues hd hsep hidx
+  · intro r c hm hens η n W heap L d he hsep hidx hw hh
+    exact checkRequests_ensures_at hc hm hens η n W heap L d he hw hh hsep hidx
 
 /-- What a successful check of extracted plans gives: they cross the
 exhaustive certification boundary, and their requests are safe at the

@@ -217,9 +217,10 @@ partial def walk (path : String) (scope : List (String × Binding)) (bounds : Li
         let .arr values := value | throw s!"{here}: type arguments are a list"
         for (v, i) in values.toList.zipIdx do
           out := out ++ [(s!"{here}/{i}", ← lowerType { ctx with site := s!"{here}/{i}" } v)]
-      -- A resolution and a written precondition (`requires`, index facts)
-      -- hold no type annotation.
-      else if name != "resolution" && name != "requires" then out := out ++ (← walk here scope bounds value)
+      -- A resolution, a written precondition (`requires`) and a function's
+      -- result facts (`ensures`), index facts, hold no type annotation.
+      else if name != "resolution" && name != "requires" && name != "ensures" then
+        out := out ++ (← walk here scope bounds value)
     return out
   | _ => return []
 

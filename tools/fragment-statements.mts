@@ -2167,6 +2167,26 @@ export function functionDecl(this: Gate, node: FunctionDeclaration, signature: F
       if (typeof elaborated === "string") gate.fail(node, elaborated);
       else requires = elaborated;
     }
+    // The record invariants its parameters' and result's types name
+    // (`@invariant`; PROGRAM-TYPING.md, "Record invariants"), of a function
+    // declaration of the module read at its own signature: each parameter's,
+    // `this` at its call position, a conjunct of the precondition, where the
+    // parameters are plain required names and it is not async; its
+    // result's, `this` the result at position 0, facts each return
+    // establishes, where it is not async. An importing module reads them
+    // alike (`writtenImport`).
+    let ensures: IndexFact[] = [];
+    if (signature === node && ts.isSourceFile(node.parent)) {
+      const plainNames = !isAsync &&
+        node.parameters.every(p => !p.dotDotDotToken && !p.initializer && !p.questionToken && ts.isIdentifier(p.name));
+      const contract = recordInvariants(gate, plainNames ? node.parameters.map(p => gate.invariantsOf(p.type)) : [],
+        parameterTypes, !!receiverParam, isAsync ? [] : gate.invariantsOf(node.type), retType);
+      if (typeof contract === "string") gate.fail(node, contract);
+      else {
+        requires = [...requires, ...contract.pre];
+        ensures = contract.ensures;
+      }
+    }
     const body = [...bindings,
       ...this.statements(node.body.statements.filter((s) => !prologue.skip.has(s)))];
     return {
@@ -2178,6 +2198,7 @@ export function functionDecl(this: Gate, node: FunctionDeclaration, signature: F
       guard,
       stated,
       requires,
+      ensures,
       completion: isAsync ? "async" : "sync",
       body: isAsync ? gate.asyncCompletion(node.body, body) : body,
       strict: gate.strict,
@@ -2200,19 +2221,51 @@ export function functionDecl(this: Gate, node: FunctionDeclaration, signature: F
  * refused. */
 export function writtenPrecondition(gate: Gate, clauses: readonly string[],
     parameters: readonly { name: string; type: TypeTerm | undefined }[], receiver: boolean): Within<{ value: "any"; store: "grow" }, IndexFact[] | string> {
-  const named = parameters.map(({ name, type }, i): ClauseParameter => ({
-    name,
-    position: receiver ? i : i + 1,
-    at: (path) => {
-      const t = type === undefined ? null : path.reduce<TypeTerm | null>((t, f) => t && fieldType(gate, t, f), type);
-      return t === null ? null : t.k === "array" ? "array" : namesView(t) ? "view" : "other";
-    },
-  }));
+  const named = parameters.map(({ name, type }, i): ClauseParameter =>
+    clauseParameter(gate, name, receiver ? i : i + 1, type));
   const elaborated = elaborateRequires(clauses, named);
   if ("refused" in elaborated) return `a precondition (\`@requires\`): ${elaborated.refused}`;
   if (!receiver && elaborated.facts.some(f => indexFactPositions(f).includes(0)))
     return "a precondition (`@requires`) names the receiver, which the function does not declare";
   return elaborated.facts;
+}
+
+/** A name a clause may use for a call position, each path's kind read
+ * through the declared type (`fieldType`). */
+function clauseParameter(gate: Gate, name: string, position: number, type: TypeTerm | undefined): ClauseParameter {
+  return {
+    name,
+    position,
+    at: (path) => {
+      const t = type === undefined ? null : path.reduce<TypeTerm | null>((t, f) => t && fieldType(gate, t, f), type);
+      return t === null ? null : t.k === "array" ? "array" : namesView(t) ? "view" : "other";
+    },
+  };
+}
+
+/** A function declaration's record invariants (`@invariant`;
+ * PROGRAM-TYPING.md, "Record invariants") elaborated to index facts: those
+ * the type of its parameter `i` names (`params[i]`), `this` that parameter's
+ * call position, conjuncts of its precondition; those its result's type
+ * names, `this` the result's position `0`, facts of its result. The
+ * refusal's message where a clause is refused. */
+export function recordInvariants(gate: Gate, params: readonly (readonly string[])[],
+    types: readonly (TypeTerm | undefined)[], receiver: boolean, result: readonly string[],
+    resultType: TypeTerm | undefined): { pre: IndexFact[]; ensures: IndexFact[] } | string {
+  const facts = (clauses: readonly string[], position: number, type: TypeTerm | undefined): IndexFact[] | string => {
+    if (clauses.length === 0) return [];
+    const elaborated = elaborateRequires(clauses, [clauseParameter(gate, "this", position, type)]);
+    return "refused" in elaborated ? `a record invariant (\`@invariant\`): ${elaborated.refused}` : elaborated.facts;
+  };
+  const pre: IndexFact[] = [];
+  for (const [i, clauses] of params.entries()) {
+    const stated = facts(clauses, receiver ? i : i + 1, types[i]);
+    if (typeof stated === "string") return stated;
+    pre.push(...stated);
+  }
+  const ensures = facts(result, 0, resultType);
+  if (typeof ensures === "string") return ensures;
+  return { pre, ensures };
 }
 
 /** The type of the required data field `f` of a value of type `t`, where a

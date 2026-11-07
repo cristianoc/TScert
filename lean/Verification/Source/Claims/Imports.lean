@@ -241,6 +241,11 @@ private def qualifiedRead (importer : Reading) (values : List Json) (fragmentMod
   let requires : List HeapKnowledge.IndexFact ← fromJson? (← jField unit "requires")
   if pre != requires then
     throw s!"the importer's signature and the module's unit state different preconditions: {location}#{name}"
+  -- Its result facts too, which the unit certifies at each return.
+  let ensures : List HeapKnowledge.IndexFact ← fromJson? (← jField effect "ensures")
+  let stated : List HeapKnowledge.IndexFact ← fromJson? (← jField unit "ensures")
+  if ensures != stated then
+    throw s!"the importer's signature and the module's unit state different result facts: {location}#{name}"
   let ps ← jArr type "params"
   if ps.length != params.length then
     throw s!"the importer's and the module's readings of an imported signature differ: {location}#{name}"

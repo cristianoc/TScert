@@ -586,6 +586,227 @@ theorem goto_bounded [DecidableEq ι] {G : NormalGraph ι} {images : InstanceIma
       rw [hstart]; intro i hi; cases hi
   · contradiction
 
+/-! ## Result facts a graph's returns establish
+
+A unit stating facts of its result (`Effect.ensures` at the result's
+position `0` alone) is checked at each return: the knowledge after the
+returned expression, its result at slot `0`, entails each fact there. The
+facts then hold of every value a normal run returns, in the heap it returns
+in. -/
+
+/-- Facts stating their result alone: each names position `0` only. -/
+def resultOnly (ens : List HeapKnowledge.IndexFact) : Bool :=
+  ens.all fun F => F.slots.all (· == 0)
+
+/-- What a return of `v` meets in the heap `h` it returns in: each fact, its
+position `0` the result. -/
+def EnsuresAt (ens : List HeapKnowledge.IndexFact) (h : Heap) (v : Tm) : Prop :=
+  ∀ F ∈ ens, F.HoldsAt (fun _ => v) h
+
+/-- Whether a knowledge, its result at slot `0`, entails the facts there. -/
+def returnEntails (k : HeapKnowledge.Knowledge) (ens : List HeapKnowledge.IndexFact) : Bool :=
+  HeapKnowledge.indicesCheckBy (HeapLinks.aliases k.links) k.links k.indices
+    (ens.map fun F => ⟨F, none, false⟩) (some [0])
+
+theorem returnEntails_sound {k : HeapKnowledge.Knowledge} {ens : List HeapKnowledge.IndexFact} {ρ h}
+    (hr : resultOnly ens = true) (hc : returnEntails k ens = true) (hk : HeapKnowledge.Holds k ρ h) :
+    EnsuresAt ens h (ρ 0) := by
+  intro F hF
+  have hheld := HeapKnowledge.indicesCheckBy_sound (fun x y hy => HeapLinks.aliases_eq hk.2.2.1 hy) hk.2.2.1 hc
+    hk.2.2.2.2.2 ⟨F, none, false⟩ (List.mem_map_of_mem hF) (fun b hb => by cases hb)
+  refine (HeapKnowledge.IndexFact.holdsAt_congr fun s hs => ?_).mp hheld
+  have h0 : s = 0 := by
+    have := List.all_eq_true.mp (List.all_eq_true.mp hr F hF) s hs
+    simpa using this
+  subst h0
+  rfl
+
+/-- Every return of a graph a run may reach entails the facts: its node's
+entry admits no value, its result type none (a throw), or its output
+entails them. -/
+def returnsEnsure (G : NormalGraph ι) (P : Program) (C : Certificate ι)
+    (ens : List HeapKnowledge.IndexFact) : Bool :=
+  resultOnly ens && (List.range P.length).all fun l =>
+    match P[l]?, C[l]? with
+    | some node, some c => match node.continuation with
+      | .ret => unreachableEntry G c || ExpressionEffects.emptyType G (result c) ||
+          returnEntails (outFacts G c) ens
+      | _ => true
+    | _, _ => true
+
+/-- The same check, each return's failure located at its node. -/
+def returnsEnsureResult (G : NormalGraph ι) (P : Program) (C : Certificate ι)
+    (ens : List HeapKnowledge.IndexFact) : ProgramCertificates.CheckResult ι Unit :=
+  (ProgramCertificates.CheckResult.ofBool (resultOnly ens)).bind fun _ =>
+  ProgramCertificates.CheckResult.all (List.range P.length) fun l =>
+    (ProgramCertificates.CheckResult.ofBool (match P[l]?, C[l]? with
+      | some node, some c => match node.continuation with
+        | .ret => unreachableEntry G c || ExpressionEffects.emptyType G (result c) ||
+            returnEntails (outFacts G c) ens
+        | _ => true
+      | _, _ => true)).at (.node l)
+
+theorem returnsEnsureResult_accepted (G : NormalGraph ι) (P : Program) (C : Certificate ι)
+    (ens : List HeapKnowledge.IndexFact) :
+    (returnsEnsureResult G P C ens).accepted = returnsEnsure G P C ens := by
+  simp only [returnsEnsureResult, returnsEnsure, ProgramCertificates.CheckResult.accepted_bind,
+    ProgramCertificates.CheckResult.accepted_ofBool, ProgramCertificates.CheckResult.accepted_all,
+    ProgramCertificates.CheckResult.accepted_at]
+
+/-- A run whose values meet no type returns none: any postcondition holds of
+its normal returns. -/
+theorem SafePost_empty {Ξ T : Fam} {Q Q' : HeapObservations.Post} (hT : ∀ k U u, T k U u → False) :
+    ∀ {n W h t}, HeapObservations.SafePost Ξ T Q n W h t → HeapObservations.SafePost Ξ T Q' n W h t := by
+  intro n
+  induction n with
+  | zero => intros; trivial
+  | succ n ih =>
+    intro W h t hs
+    rcases hs with (⟨_, ht, _⟩ | hr) | ⟨U, h', t', hx, hu, st, hh, hs⟩
+    · exact (hT _ _ _ ht).elim
+    · exact .inl (.inr hr)
+    · exact .inr ⟨U, h', t', hx, hu, st, hh, ih hs⟩
+
+theorem returnsEnsure_reassign (G : NormalGraph ι) (η : MixedAssignment ι) (P : Program) (C : Certificate ι)
+    (ens : List HeapKnowledge.IndexFact) :
+    returnsEnsure (reassign G η) P C ens = returnsEnsure G P C ens := by
+  simp only [returnsEnsure, unreachableEntry, ExpressionEffects.emptyType]
+  rfl
+
+theorem returnsEnsure_at {G : NormalGraph ι} {P : Program} {C : Certificate ι}
+    {ens : List HeapKnowledge.IndexFact} (h : returnsEnsure G P C ens = true) {l : Nat} {node : Node}
+    {c : NodeEvidence ι} (hn : P[l]? = some node) (hc : C[l]? = some c) (hk : node.continuation = Continuation.ret) :
+    unreachableEntry G c = true ∨ ExpressionEffects.emptyType G (result c) = true ∨
+      returnEntails (outFacts G c) ens = true := by
+  simp only [returnsEnsure, Bool.and_eq_true, List.all_eq_true] at h
+  have hl : l ∈ List.range P.length := List.mem_range.mpr (List.getElem?_eq_some_iff.mp hn).1
+  have := h.2 l hl
+  rw [hn, hc] at this
+  simp only [hk, Bool.or_eq_true] at this
+  exact or_assoc.mp this
+
+/-- What the run reads of a state for the result facts: a return's
+expression returns values meeting them, and a finished run's value meets
+them in its heap. -/
+def EnsState (ens : List HeapKnowledge.IndexFact) (n : Nat) (h : Heap) : State → Prop
+  | .eval t _ k _ => k = Continuation.ret → ReturnsPost (fun h' v => EnsuresAt ens h' v) n h t
+  | .done v => EnsuresAt ens h v
+  | _ => True
+
+theorem ensures_step [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
+    {sums : List (ProgramCertificates.ReadSummary ι)} {Rty : Goal ι} {v0 : Tm} {P : Program}
+    {C : Certificate ι} {ens : List HeapKnowledge.IndexFact} {codes}
+    (hg : checkGraphUsing (sums := sums) G images Rty P C codes = true)
+    (hcodes : ProgramCertificates.CodesSound G codes) (hsums : ProgramCertificates.SummariesSound G images sums)
+    (hens : returnsEnsure G P C ens = true)
+    {n W h s h' s'} (hw : WorldAdm W) (hh : HeapOk (n+1) W h)
+    (hs : StateOk G Rty C v0 (n+1) W h s) (hp : EnsState ens (n+1) h s)
+    (st : Transition P h s h' s') : EnsState ens n h' s' := by
+  cases st with
+  | @enter l node _ ρ hn =>
+    obtain ⟨c, hc, he, hi, -, hf⟩ := hs
+    intro hk
+    obtain ⟨actual, hactual, hterm, -⟩ := graph_node hg hcodes hsums hc
+    cases hn.symm.trans hactual
+    have hrun := hterm n _ h ρ (he.transfer n (Nat.le_succ n) _ (WExt_refl _))
+      (hi.transfer n (Nat.le_succ n) _ (WExt_refl _)) (entryFacts_holds he hf)
+      (WorldAdm_trunc _ hw) (HeapOk_trunc n W h hh)
+    rcases returnsEnsure_at hens hn hc hk with hu | hempty | hr
+    · exact (unreachableEntry_sound hu he).elim
+    · exact returnsPost_of_safePost (SafePost_empty
+        (fun _ _ _ hu => ExpressionEffects.emptyType_sound hempty hu.1) hrun)
+    have hres : resultOnly ens = true := by
+      simp only [returnsEnsure, Bool.and_eq_true] at hens; exact hens.1
+    exact returnsPost_of_safePost (HeapObservations.weaken
+      (fun h'' v hq => returnEntails_sound hres hr hq) hrun)
+  | @expr _ t _ t' ρ k handler st =>
+    intro hk
+    exact (hp hk).step st
+  | ret hv => exact (hp rfl).value hv
+  | bind hv => trivial
+  | effect hv => trivial
+  | yes => trivial
+  | no => trivial
+  | yesBind => trivial
+  | noBind => trivial
+  | tagBind hv => trivial
+  | handle hr => trivial
+  | raise hr => trivial
+
+/-- **A graph's returns meet its result facts**: run from a state the safety
+proof and the result facts' reading admit, it is safe, and every value it
+returns meets the facts in the heap it returns in. -/
+theorem ensures_safe_of_sim [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
+    {sums : List (ProgramCertificates.ReadSummary ι)} {Rty : Goal ι} {v0 : Tm} {E : List Tm}
+    {K : List (Continuation × Option Target)} {C : Certificate ι} {ens : List HeapKnowledge.IndexFact}
+    {codes : CodeEntry ι → Bool} (hg : checkGraphUsing (sums := sums) G images Rty (program E K) C codes = true)
+    (hcodes : ProgramCertificates.CodesSound G codes) (hsums : ProgramCertificates.SummariesSound G images sums)
+    (hens : returnsEnsure G (program E K) C ens = true) (hv0 : isVal v0 = true) :
+    ∀ n W h ts s, Sim E K ts s → WorldAdm W → HeapOk n W h →
+      StateOk G Rty C v0 n W h s → EnsState ens n h s →
+      HeapObservations.SafePost (excOf G) (GoalHolds G Rty v0) (fun h' v => EnsuresAt ens h' v) n W h ts := by
+  intro n
+  induction n with
+  | zero => intros; trivial
+  | succ n ih =>
+    intro W h ts s sim hw hh hs hp
+    rcases state_progress hg hcodes hsums hv0 hw hh hs with
+      (⟨v, rfl, hv, ht⟩ | ⟨v, rfl, hsc⟩) | ⟨U, h', s', hx, hu, st, hok, hs'⟩
+    · cases sim; exact .inl (.inl ⟨hv, ht, hp⟩)
+    · cases sim with
+      | raised hv hj => exact .inl (.inr ⟨v, .throwV hv hj, hsc⟩)
+    · obtain ⟨ts', step, sim'⟩ := sim_step sim st
+      exact .inr ⟨U, h', ts', hx, hu, step, hok,
+        ih U h' ts' s' sim' hu hok hs' (ensures_step hg hcodes hsums hens hw hh hs hp st)⟩
+
+/-- A graph run started at an entry the checker accepted, whose returns
+entail the result facts, is safe, and every value it returns meets them. -/
+theorem goto_ensures [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
+    {sums : List (ProgramCertificates.ReadSummary ι)} {Rty : Goal ι} {E : List Tm}
+    {K : List (Continuation × Option Target)} {C : Certificate ι} {start inputs}
+    {ens : List HeapKnowledge.IndexFact} {codes : CodeEntry ι → Bool}
+    {entrySeparation : HeapSeparation.Separation} {entryIndices : List HeapKnowledge.IndexAtom}
+    (hc : checkEntryUsing (sums := sums) (entrySeparation := entrySeparation) (entryIndices := entryIndices)
+      G images Rty (program E K) C start inputs codes = true)
+    (hcodes : ProgramCertificates.CodesSound G codes) (hsums : ProgramCertificates.SummariesSound G images sums)
+    (hens : returnsEnsure G (program E K) C ens = true)
+    (n W h L d) (he : EnvOk G inputs (envOf L d) n W) (hw : WorldAdm W)
+    (hh : HeapOk n W h)
+    (hsep : HeapSeparation.Holds entrySeparation (envOf L d) := by exact HeapSeparation.empty_holds _)
+    (hidx : HeapKnowledge.IndexHolds entryIndices (envOf L d) h := by exact HeapKnowledge.indexHolds_nil _ _) :
+    HeapObservations.SafePost (excOf G) (GoalHolds G Rty (Rty.argument (envOf L d)))
+      (fun h' v => EnsuresAt ens h' v) n W h (.goto E K start L d) := by
+  simp only [checkEntryUsing_eq, Bool.and_eq_true] at hc
+  have hx := hc.2
+  split at hx
+  · rename_i c hstart'
+    simp only [Bool.and_eq_true, decide_eq_true_eq] at hx
+    obtain ⟨⟨⟨hin, himp, harg⟩, hk⟩, hslot⟩ := hx
+    have hv0 : isVal (Rty.argument (envOf L d)) = true := by
+      unfold Goal.argument
+      cases hs : Rty.slot with
+      | none => rfl
+      | some s =>
+        rw [hs] at hslot
+        have hlt : s < inputs.length := by simpa using hslot
+        exact (meaning_value (he.2 s inputs[s] (List.getElem?_eq_getElem hlt))).1
+    apply ensures_safe_of_sim hc.1 hcodes hsums hens hv0 n W h _ _ .goto hw hh
+    · refine ⟨c, hstart', ?_, ?_, ?_, ?_⟩
+      · simpa only [hin] using he
+      · rw [himp]; exact PromiseCalls.ImpliesOk.nil G _ n W
+      · intro p hp
+        rw [harg] at hp
+        unfold Goal.argument
+        cases hs : Rty.slot with
+        | none => rw [hs] at hp; cases hp
+        | some s =>
+          rw [hs] at hp
+          cases List.mem_singleton.mp hp
+          rfl
+      · exact entryKnows_sound hk (by simpa only [hin] using he) hsep hidx
+    · trivial
+  · contradiction
+
 /-- **A node the bound check accepts is within the bound** on the locations
 below where the invocation started: an inspection, which preserves the heap,
 a typed write of a field holding a value, or a call at a selected signature

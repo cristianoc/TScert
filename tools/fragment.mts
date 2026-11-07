@@ -400,6 +400,10 @@ export interface FunctionAst {
    * facts at the call's positions: 0 the receiver, i + 1 the i-th actual
    * (`bound-annotations.mts`; PROGRAM-TYPING.md, "Written preconditions"). */
   requires: IndexFact[];
+  /** The facts it states of its result, index facts at position 0: the
+   * invariants of the record types its result's type names
+   * (`bound-annotations.mts`; PROGRAM-TYPING.md, "Record invariants"). */
+  ensures: IndexFact[];
   completion: Completion;
   body: Stmt[];
   /** Whether the function's code is strict: a sloppy call converts a

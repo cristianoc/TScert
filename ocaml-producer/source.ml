@@ -691,7 +691,7 @@ and fn = { quantified: quantifier list; name: string; name_pos: Json.t; params: 
            stated: (footprint * bool) option;
            (* Its written precondition, index facts at the call's positions
               (Lean's `Fn.requires`: 0 the receiver, i + 1 the i-th actual). *)
-           requires: index_fact list; body: stmt list }
+           requires: index_fact list; ensures: index_fact list; body: stmt list }
 type declaration = { id: string; native_promise: bool; parameters: rigid list;
   bases: ty list; expression: ty option }
 (* `init` is the module's top-level code, run once after its function
@@ -1533,4 +1533,5 @@ and decode_program ast =
       result=source_type binders (field "retType" f);guard=guard_of binders (field "guard" f);
       async=async_completion f;stated=stated_of f;
       requires=List.map index_fact_of (items "requires" f);
+      ensures=List.map index_fact_of (items "ensures" f);
       body=List.map (stmt binders) (items "body" f)}) (items "functions" ast) }

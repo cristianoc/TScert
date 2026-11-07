@@ -1836,9 +1836,11 @@ claim Lean checks on every edge into the entry claiming it.
 facts at the return's positions: `0` the result, $`i+1`$ the call's position
 $`i`$ (`CallEffects.ensuresEnv`). A normal return leaves a heap where each
 holds (the last conjunct of `CallEffects.Effect.post`, which takes the call's
-actuals). Only a trusted signature, an intrinsic's or a declaration's, states
-them; code and written signatures state none (`Effect.below`, `moduleArrow`,
-and a certified import's signature, `importedArrow`), since a fact over a
+actuals). A trusted signature, an intrinsic's or a declaration's, states
+them, and so does a module function's signature where its result's type names
+a record invariant ([record invariants](#record-invariants)), facts of its
+result alone, which its unit proves at each return (`moduleArrow`,
+`importedArrow`); code states none (`Effect.below`), since a fact over a
 parameter needs its entry value, which a reassigned parameter no longer holds.
 A binding keeps none (`Effect.keeps`), a signature covers another only where
 its facts include each of the other's (`ensuresCovers`), the meet of two
@@ -2047,6 +2049,83 @@ at the length). Refused form: `written-precondition-disjunction-refused`. Over p
 field) and `invalid-field-path-read-replaced` (a field replaced after its
 test); a gap, `field-path-precondition-unestablished` (an exported
 parameter's cursor, of whose index nothing states a safe integer).
+
+### Record invariants
+
+A type alias or an interface `R` states an invariant in its leading JSDoc
+comment, `/** @invariant C */`, the [written clause](#written-preconditions)'s
+language over the paths of `this`: values, array lengths and element counts,
+`safeInteger(this.f)`, conjunctions of comparisons. Its meaning is a predicate
+of a value $`o`$ in a heap, $`I_R(o,h)`$, the clause with `this` read as
+$`o`. An annotation **names** `R` where it is a reference to `R` without type
+arguments, a reference to an alias whose equation names it, or an
+intersection with a part naming it; a union, an optional type or a generic
+reference names none. The invariant is a contract of the boundaries of
+function declarations of the module, elaborated by the front end
+(`tools/bound-annotations.mts`, `recordInvariants`) to the facts the
+[written preconditions](#written-preconditions) and the
+[result facts](#reads-below-the-length) are:
+
+```math
+\frac{f(\ldots,p_i:T_i,\ldots):T\qquad T_i\ \text{names}\ R}
+     {\mathsf{pre}_f\ \ni\ I_R[\mathtt{this}\mapsto i+1]}\ \textsf{invariant-requires}
+\qquad
+\frac{f(\ldots):T\qquad T\ \text{names}\ R}
+     {\mathsf{ensures}_f\ \ni\ I_R[\mathtt{this}\mapsto 0]}\ \textsf{invariant-ensures}
+```
+
+for a declaration of the module that is not async, the first where every
+parameter is a plain required name, at the call positions a `this` parameter
+shifts as a written clause's. So a body assumes the invariant of each record
+it receives, and each call establishes it (`call-requires`); a caller gains it
+of each record a call returns (`call-ensures`). Between two boundaries the
+facts are kept by the steps whose footprints keep what they read
+([facts across a heap change](#linear-facts)): a `push` to one array of a
+received record changes a length, and the next call requiring the invariant
+is refused. A value given type `R` otherwise, by a cast, a spread, a native or
+a read of another structure's field, carries no fact, and a call requiring
+the invariant of it is refused. An importer reads an imported declaration's
+invariants as its own module does (`writtenImport`, from the declaration
+graph's report; the certified import's signature and its unit state the
+same facts, `Claims.Imports`).
+
+**Proving result facts.** A unit's request states its declaration's result
+facts (`SourceRequest.ensures`), each naming position `0` alone. Each return
+node of its graph a run may reach is checked: its entry admits no value, its
+result type none (a throw), or its output knowledge, the result at slot `0`,
+entails each fact there (`GraphCode.returnsEnsure`, by `indicesCheckBy`, the
+read bridge included):
+
+```math
+\frac{\forall\,\ell\mapsto(e,\mathsf{ret})\in P.\ \ \Gamma_\ell\ \text{empty}\ \lor\ A_\ell=\emptyset\ \lor\ \Sigma^{\mathit{out}}_\ell\vdash F[0\mapsto 0]\ \ (F\in\mathsf{ensures})}
+     {P\ \text{returns}\ \mathsf{ensures}}\ \textsf{return-ensures}
+```
+
+Every value a normal run returns then meets the facts in the heap it returns
+in (`GraphCode.goto_ensures`, by an invariant of the run's states beside the
+safety proof's, `EnsState`; for units, `SourceRequests.checkRequests_ensures_at`,
+a conjunct of `RequestsSafe`, the conclusion of `checkUnitJson_safe`). A
+literal's allocation states the read links of its fields
+(`HeapExpressionRules.freshLinks`, proved in `alloc_sound`), so the bridge
+restates a fact over an initializer's slot as one over the result's path: a
+return of `{ widths, segmentFlags }` establishes
+$`\mathrm{view}(0.\mathit{segmentFlags})=|0.\mathit{widths}|`$ from the facts
+over `widths` and `segmentFlags`. A failing return is refused at its
+statement (`ensuresRefusal`).
+
+**The excluded forms**, refused with the clause's location: a clause outside
+the language (a guard, `||`, `!`), as a written clause's. Closures, methods,
+overloaded and nested declarations state no invariant facts.
+
+**Cases.** Positive: `record-invariant-walker` (pretext's `line-break.ts`
+shape: a constructor building `widths` and a view checked at its allocation,
+walkers reading `prepared.segmentFlags[i]!` below `prepared.widths.length`).
+Negative, each run under Node: `invalid-record-invariant-constructor` (a
+return of a view one element short), `invalid-record-invariant-push` (a
+`push` before passing the record on) and `invalid-record-invariant-cast` (a
+record typed by a cast). Forged controls in `pipeline/test.mts`: the
+invariant claimed of the cast record at the call's entry, refused there, and
+result facts forged into the parser's document, refused at the return.
 
 ### A literal with spreads
 

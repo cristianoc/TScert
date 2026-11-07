@@ -405,9 +405,34 @@ let statement ~(array : string -> string list -> bool) ?(bounds=[]) env fs (s : 
      | None -> fs)
   | _ -> List.fold_left (fun fs x -> forget x fs) fs (names_assigned s env)
 
+(* Index facts at a call's positions restated over bindings, `name p` the
+   binding the position `p` holds; a fact naming a position no binding holds
+   is left out. *)
+let of_index_facts (name : int -> string option) (fs : Semantic.index_fact list) : fact list =
+  List.filter_map (fun (fact : Semantic.index_fact) -> match fact with
+    | Semantic.Int_at k -> Option.map int_fact (name k)
+    | Semantic.Linear_le (form,d) ->
+      let terms = List.map (fun (t,c) -> match (t : Semantic.term) with
+        | Semantic.Value_at (x,path) -> Option.map (fun n -> path_term n path,c) (name x)
+        | Semantic.Length_at (x,path) -> Option.map (fun n -> length_term ~path n,c) (name x)
+        | Semantic.View_at (x,path) -> Option.map (fun n -> view_term ~path n,c) (name x)) form in
+      if List.for_all Option.is_some terms then Some (norm (List.filter_map Fun.id terms),d) else None
+    | _ -> None) fs
+
+(* The facts every signature of the binding `f` states of its result, at
+   position 0 alone (Lean's `call-ensures`), set by the statement analysis. *)
+let call_ensures : ((string * Environment.binding) list -> string -> Semantic.index_fact list) ref =
+  ref (fun _ _ -> [])
+
 let declaration ~(array : string -> string list -> bool) env fs name (init : expr) : fact list =
   let fs = if heap_free env init then fs else keep_stable env fs in
   let fs = forget name fs in
+  (* `const x = f(…)` of a function stating facts of its result: each of
+     them, of `x`. *)
+  let fs = match init.node with
+    | Call ({node=Id f;_},None,_,[],_) ->
+      fs @ of_index_facts (fun p -> if p = 0 then Some name else None) (!call_ensures env f)
+    | _ -> fs in
   let fs = match path_of env init with
     | Some (root,(_ :: _ as path)) when root <> name && heap_free env init -> fs @ restate_read name (root,path) fs
     | _ -> fs in

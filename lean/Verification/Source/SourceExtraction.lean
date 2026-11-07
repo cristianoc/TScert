@@ -306,6 +306,7 @@ did not mention grow it, and the request carries the result. -/
     nodePlans := built.nodePlans
     footprint := fc.footprint
     onThrow := fc.onThrow
+    ensures := f.ensures
     async := f.async
     stated := f.stated }
 

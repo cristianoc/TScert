@@ -42,6 +42,10 @@ structure SourceRequest (σ ι : Type) [Labels ι] [StoreView σ ι] extends Req
   /-- Whether the declaration claims its footprint on a throw too, which its
   graph must establish as well. -/
   onThrow : Bool := false
+  /-- The facts the declaration states of its result (`Fragment.Fn.ensures`),
+  at position `0` alone, which each return of its graph must establish
+  (`ensuresResult`). -/
+  ensures : List HeapKnowledge.IndexFact := []
   /-- Whether the declaration is async, as the source states (`Fragment.Fn`):
   its footprint is then `top` (`RequestJson.asyncEffects`). -/
   async : Bool
@@ -230,12 +234,31 @@ theorem effectResult_stated {r : SourceRequest σ ι} {c : Response ι}
   · rw [hso] at ho; cases ho
   · exact ho
 
+/-- A unit's result facts, established by its own graph: none, or facts of
+its result alone, which each return its graph may reach entails
+(`GraphCode.returnsEnsure`), for a unit checked by the ordinary checker. -/
+@[nospecialize] def ensuresResult (r : SourceRequest σ ι) (c : Response ι) : ProgramCertificates.CheckResult ι Unit :=
+  if r.ensures.isEmpty then pure () else
+    (ProgramCertificates.CheckResult.ofBool r.qualification.isNone).bind fun _ =>
+      GraphCode.returnsEnsureResult (RequestJson.graph r.toRequest) r.program c.certificate r.ensures
+
+theorem ensuresResult_checked {r : SourceRequest σ ι} {c : Response ι}
+    (h : (ensuresResult r c).accepted = true) (he : r.ensures ≠ []) :
+    r.qualification = none ∧
+      GraphCode.returnsEnsure (RequestJson.graph r.toRequest) r.program c.certificate r.ensures = true := by
+  have hn : r.ensures.isEmpty = false := by simpa using he
+  simp only [ensuresResult, hn, Bool.false_eq_true, if_false, ProgramCertificates.CheckResult.accepted_bind,
+    ProgramCertificates.CheckResult.accepted_ofBool, GraphCode.returnsEnsureResult_accepted, Bool.and_eq_true,
+    Option.isNone_iff_eq_none] at h
+  exact h
+
 /-- Validate one unit, sharing its checked code table with supplemental obligations. -/
 @[nospecialize] def checkRequestResult (r : SourceRequest σ ι) (c : Response ι)
     (es : List (ProgramCertificates.Evidence ι)) : ProgramCertificates.CheckResult ι Unit :=
   (verifyResult r.toRequest c r.checker).bind fun table =>
     (ProgramCertificates.CheckResult.ofBool (checkAssertions r c)).bind fun _ =>
     (effectResult r c).bind fun _ =>
+    (ensuresResult r c).bind fun _ =>
     ExpressionClaims.checkAllResult (RequestJson.graph r.toRequest) (StoreView.images r.types)
       (StoreView.valid r.types) r.obligations es (GraphCode.admits table) c.readSummaries
 
@@ -243,7 +266,7 @@ theorem checkRequestResult_accepted_iff (r : SourceRequest σ ι) (c : Response 
     (es : List (ProgramCertificates.Evidence ι)) :
     (checkRequestResult r c es).accepted = true ↔
       verify r.toRequest c r.checker = true ∧ checkAssertions r c = true ∧
-      (effectResult r c).accepted = true ∧
+      (effectResult r c).accepted = true ∧ (ensuresResult r c).accepted = true ∧
       ∃ table, codeTable r.toRequest c = some table ∧
         ExpressionClaims.checkAllUsing (RequestJson.graph r.toRequest) (StoreView.images r.types)
           (StoreView.valid r.types) r.obligations es (GraphCode.admits table) c.readSummaries = true := by
@@ -254,12 +277,12 @@ theorem checkRequestResult_accepted_iff (r : SourceRequest σ ι) (c : Response 
     obtain ⟨hv, htable⟩ := (verifyResult_hasTable _ _ _ r.checker).mp ht
     simp only [ProgramCertificates.CheckResult.accepted_bind,
       ProgramCertificates.CheckResult.accepted_ofBool, Bool.and_eq_true] at hc
-    exact ⟨hv, hc.1, hc.2.1, table, htable, hc.2.2⟩
-  · rintro ⟨hv, ha, hf, table, ht, ho⟩
+    exact ⟨hv, hc.1, hc.2.1, hc.2.2.1, table, htable, hc.2.2.2⟩
+  · rintro ⟨hv, ha, hf, hens, table, ht, ho⟩
     refine ⟨table, (verifyResult_hasTable _ _ _ r.checker).mpr ⟨hv, ht⟩, ?_⟩
     simp only [ProgramCertificates.CheckResult.accepted_bind,
       ProgramCertificates.CheckResult.accepted_ofBool, Bool.and_eq_true]
-    exact ⟨ha, hf, ho⟩
+    exact ⟨ha, hf, hens, ho⟩
 
 @[nospecialize] def checkRequestsResult (rs : List (SourceRequest σ ι)) (b : Bundle ι) :
     ProgramCertificates.CheckResult ι Unit :=
@@ -313,7 +336,7 @@ theorem checkRequests_async {rs : List (SourceRequest σ ι)} {b : Bundle ι}
     (r.async = true → r.footprint = .top) ∧
       ∀ q ∈ r.codes, q.async = true → q.entry.row.effect.footprint = .top := by
   obtain ⟨es, _, hunit⟩ := checkRequests_pair h hm
-  obtain ⟨-, -, heff, table, ht, -⟩ := (checkRequestResult_accepted_iff _ _ _).mp hunit
+  obtain ⟨-, -, heff, -, table, ht, -⟩ := (checkRequestResult_accepted_iff _ _ _).mp hunit
   exact ⟨effectResult_async heff, fun q hq ha => RequestJson.codeTable_async ht hq ha⟩
 
 /-- An accepted unit's stated assertions are entailed by its certificate. -/
@@ -418,6 +441,49 @@ theorem checkRequests_footprint_at {rs : List (SourceRequest σ ι)} {b : Bundle
       have hb := GraphCode.goto_bounded hc hcodes hsums (GraphCode.nodes_of_checked hgraph hcodes hsums hp.2) hp.1
         n W heap L d he hw hh hsep hidx
       exact HeapObservations.SafePostExc.weaken (fun _ _ hq => hq.1) (fun _ hq => hq) hb
+  · contradiction
+
+/-- **A unit stating result facts meets them.** A unit whose declaration
+states facts of its result (`ensures`), run as the code its graph describes
+from any environment of values its inputs admit, is safe, and every value it
+returns meets the facts in the heap it returns in. -/
+theorem checkRequests_ensures_at {rs : List (SourceRequest σ ι)} {b : Bundle ι}
+    (h : checkRequests rs b = true) {r c} (hm : (r,c) ∈ rs.zip b.functions) (hens : r.ensures ≠ [])
+    (η : PositiveGraphs.MixedAssignment ι) (n W heap) (L : List Tm) (d : Tm)
+    (he : EnvOk (reassign (RequestJson.graph r.toRequest) η) r.inputs (envOf L d) n W) (hw : WorldAdm W)
+    (hh : HeapOk n W heap)
+    (hsep : HeapSeparation.Holds r.entrySeparation (envOf L d))
+    (hidx : HeapKnowledge.IndexHolds r.entryIndices (envOf L d) heap) :
+    HeapObservations.SafePost (excOf (reassign (RequestJson.graph r.toRequest) η))
+      (ControlFlow.GoalHolds (reassign (RequestJson.graph r.toRequest) η) r.goal (r.goal.argument (envOf L d)))
+      (fun h' v => GraphCode.EnsuresAt r.ensures h' v) n W heap
+      (.goto (r.program.map (·.expression)) (r.program.map fun n => (n.continuation, n.handler))
+        r.start L d) := by
+  obtain ⟨es, _, hunit⟩ := checkRequests_pair h hm
+  obtain ⟨checked, -, -, hres, -⟩ := (checkRequestResult_accepted_iff _ _ _).mp hunit
+  obtain ⟨hq, hret⟩ := ensuresResult_checked hres hens
+  simp only [SourceRequest.checker, hq] at checked
+  rw [verify_eq] at checked
+  simp only [Bool.and_eq_true] at checked
+  have hx := checked.2
+  split at hx
+  · rename_i table ht
+    let G := RequestJson.graph r.toRequest
+    let images := StoreView.images r.types
+    have hcodes : ProgramCertificates.CodesSound (reassign G η) (GraphCode.admits table) :=
+      fun e he η' => codeTable_sound ht e he η'
+    have hsums := Parametricity.summariesSound_reassign G η images (codeTable_summaries ht)
+    have hacc := (Parametricity.accept_reassign G η images r.goal r.program r.claims c.certificate
+      r.start r.inputs (GraphCode.admits table) c.readSummaries r.entrySeparation r.entryIndices).trans hx
+    simp only [CertificateProducer.acceptUsing_eq, Bool.and_eq_true] at hacc
+    have hP := program_nodes r.program
+    have hc := hacc.2
+    rw [← hP] at hc
+    have hret' : GraphCode.returnsEnsure (reassign G η)
+        (GraphCode.program (r.program.map (·.expression)) (r.program.map fun n => (n.continuation, n.handler)))
+        c.certificate r.ensures = true := by
+      rw [GraphCode.returnsEnsure_reassign, hP]; exact hret
+    exact GraphCode.goto_ensures hc hcodes hsums hret' n W heap L d he hw hh hsep hidx
   · contradiction
 
 /-- **A unit stating an effect meets it** (`Within<F, T>`; SOURCE-ELABORATION.md,
@@ -554,8 +620,8 @@ def SourceRequest.over (F : Frozen) (r : SourceRequest EquationStore.State Tree)
     return body
   return { toRequest := request, sourceScheme, qualification, obligations := obligations, sourceMap := r.sourceMap,
            assertions := r.assertions, cuts := r.cuts, hints := hints, codeSources := r.codeSources,
-           nodePlans := nodePlans, footprint := r.footprint, onThrow := r.onThrow, async := r.async,
-           stated := r.stated }
+           nodePlans := nodePlans, footprint := r.footprint, onThrow := r.onThrow, ensures := r.ensures,
+           async := r.async, stated := r.stated }
 
 end
 

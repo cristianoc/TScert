@@ -796,6 +796,16 @@ def allocOutput (k : Knowledge) (Rs : List (PropKey × ValueSets.ValueSet)) (n :
     (HeapKnowledge.shift k).links, HeapSeparation.allocate k.separation n others, HeapKnowledge.shiftElems k.elems,
     HeapKnowledge.shiftIndices k.indices⟩
 
+/-- The read links a literal's allocation gives: its field `f`, initialized
+by slot `i`, holds what that slot held, one slot further. -/
+def freshLinks (parts : List (PropKey × Nat)) : HeapLinks.Links :=
+  parts.map fun p => ⟨0, p.2 + 1, false, p.1, false⟩
+
+/-- A literal's allocation output, with the read links of its fields. -/
+def allocLinked (k : Knowledge) (Rs : List (PropKey × ValueSets.ValueSet)) (n : Nat)
+    (others : List (Nat × PropKey)) (parts : List (PropKey × Nat)) : Knowledge :=
+  { allocOutput k Rs n others with links := (allocOutput k Rs n others).links ++ freshLinks parts }
+
 theorem slots_snd_ge : ∀ {base : Nat} {ns : List PropKey} {l : Nat},
     l ∈ (slots base ns).map Prod.snd → base ≤ l
   | _, [], _, h => by simp [slots] at h
@@ -882,7 +892,7 @@ theorem alloc_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k A ρ n W h} {cod
       (.makeAt code (parts.map Prod.fst) (parts.map fun p => ρ p.2))) :
     SafePost (excOf G) (meaning G A)
       (fun h' v => HeapKnowledge.Holds
-        (allocOutput k (allocationFacts G Γ k parts) Γ.length (contractFields G Γ))
+        (allocLinked k (allocationFacts G Γ k parts) Γ.length (contractFields G Γ) parts)
         (push v ρ) h')
       n W h (.makeAt code (parts.map Prod.fst) (parts.map fun p => ρ p.2)) := by
   have hval : ∀ p ∈ parts, isVal (ρ p.2) = true := fun p hp =>
@@ -895,9 +905,23 @@ theorem alloc_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k A ρ n W h} {cod
   have hshift := HeapKnowledge.shift_holds
     (v := Tm.objAt (slots h.length (parts.map Prod.fst)) code
       (h.length + (parts.map fun p => ρ p.2).length)) hk
+  -- Field `p.1` of the fresh object is at its `i`-th location, which holds
+  -- slot `p.2`'s value.
+  have hfield : ∀ i (hi : i < parts.length),
+      (slots h.length (parts.map Prod.fst)).lookup parts[i].1 = some (h.length + i) ∧
+      (h ++ (parts.map fun p => ρ p.2) ++ [.nul])[h.length + i]? = some (ρ parts[i].2) := by
+    intro i hi
+    constructor
+    · have hname : (parts.map Prod.fst)[i]'(by simpa using hi) = parts[i].1 := by simp
+      rw [← hname]
+      exact lookup_slots hnd (by simpa using hi)
+    · rw [List.getElem?_append_left (by simp; omega), List.getElem?_append_right (by omega)]
+      simp only [Nat.add_sub_cancel_left]
+      rw [List.getElem?_eq_getElem (by simpa using hi)]
+      simp
   refine ⟨?_, hshift.2.1, ?_⟩
   · intro f hf
-    simp only [allocOutput] at hf
+    simp only [allocLinked, allocOutput] at hf
     rcases List.mem_append.mp hf with hf | hf
     · obtain ⟨q,hq,rfl⟩ := List.mem_map.mp hf
       obtain ⟨p,hp,hpq⟩ := List.mem_filterMap.mp hq
@@ -916,11 +940,17 @@ theorem alloc_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k A ρ n W h} {cod
     · obtain ⟨g,hg,rfl⟩ := List.mem_map.mp hf
       obtain ⟨flds,c,oid,v,hl,hrd,hv'⟩ := hk.1 g hg
       exact ⟨flds,c,oid,v,hl,(hrd.alloc_frames _).alloc_frames _,hv'⟩
-  · simp only [allocOutput]
-    exact ⟨HeapLinks.alloc_frames [.nul] (HeapLinks.alloc_frames (parts.map fun p => ρ p.2) hshift.2.2.1),
-      HeapSeparation.allocate_holds hk.2.2.2.1 (fresh_apart he hh),
+  · simp only [allocLinked, allocOutput]
+    refine ⟨fun g hg => ?_, HeapSeparation.allocate_holds hk.2.2.2.1 (fresh_apart he hh),
       HeapKnowledge.elemsHolds_extend _ (HeapKnowledge.elemsHolds_extend _ hshift.2.2.2.2.1),
       HeapKnowledge.indexHolds_extend _ (HeapKnowledge.indexHolds_extend _ hshift.2.2.2.2.2)⟩
+    rcases List.mem_append.mp hg with hg | hg
+    · exact HeapLinks.alloc_frames [.nul] (HeapLinks.alloc_frames (parts.map fun p => ρ p.2) hshift.2.2.1) g hg
+    · obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hg
+      obtain ⟨i, hi, rfl⟩ := List.mem_iff_getElem.mp hp
+      obtain ⟨hl, hv⟩ := hfield i hi
+      simp only [Bool.false_eq_true, if_false]
+      exact ⟨_, _, _, h.length + i, rfl, hl, by simpa [push] using hv⟩
 
 /-- An object allocated past the heap's end keeps what was known of the old
 heap, and its own locations are separated from every contract field of the
@@ -1611,7 +1641,8 @@ frame. Subtype comparisons retain unfinished work through the step validation. -
     | some slots =>
       checkedOutput G images e (decide (claim e = j ∧ checkScope j.context.length j.term = true ∧
         (slots.map Prod.fst).Nodup ∧ ∀ p ∈ slots, p.2 < j.context.length))
-        (allocOutput k (allocationFacts G j.context k slots) j.context.length (contractFields G j.context)) codes sums tree
+        (allocLinked k (allocationFacts G j.context k slots) j.context.length (contractFields G j.context) slots)
+        codes sums tree
     | none =>
       match mergeSlots j.term with
       | some (_, a, b) =>
@@ -1709,8 +1740,8 @@ theorem checkStepUsing_eq [DecidableEq ι] (G : NormalGraph ι) (images : Instan
     | some slots =>
       if claim e = j ∧ checkScope j.context.length j.term = true ∧ checkTreeUsing G images e codes sums = true ∧
           (slots.map Prod.fst).Nodup ∧ ∀ p ∈ slots, p.2 < j.context.length
-      then some (allocOutput k (allocationFacts G j.context k slots) j.context.length
-        (contractFields G j.context)) else none
+      then some (allocLinked k (allocationFacts G j.context k slots) j.context.length
+        (contractFields G j.context) slots) else none
     | none =>
       match mergeSlots j.term with
       | some (_, a, b) =>

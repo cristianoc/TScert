@@ -30,6 +30,17 @@
 // of the draft's grammar (guards, `old`, `result`, computed keys, `||`, `!`)
 // is refused with the clause's location, as is a path whose field no type
 // resolves.
+//
+// A record invariant (PROGRAM-TYPING.md, "Record invariants") is an
+// `@invariant C` tag of a type alias's or an interface's leading JSDoc, its
+// clause in the same language over `this`'s field paths. Where a function
+// declaration's parameter or result is of a type naming the record, the
+// clause is elaborated with `this` at that parameter's call position, a
+// conjunct of the precondition, or at the result's position `0`, a fact of
+// its result (`invariantsNamed`).
+import { SymbolFlags, type Checker } from "typescript/unstable/sync";
+import * as ts from "typescript/unstable/ast";
+import type { TypeNode } from "typescript/unstable/ast";
 import type { IndexFact, LinearFact, LinearTerm } from "./declaration-types.mts";
 
 /** What a path's type names: an array, whose `length` is its store's length;
@@ -43,6 +54,50 @@ export type ClauseParameter = { name: string; position: number; at: (path: reado
 /** The text of each `@requires` tag of the last JSDoc comment (`/** … *\/`)
  * in a declaration's leading trivia, with each line's leading `*` removed. */
 export function requiresTags(trivia: string): string[] {
+  return tagsOf(trivia, "requires");
+}
+
+/** The text of each `@invariant` tag of the last JSDoc comment in a type
+ * declaration's leading trivia, alike. */
+export function invariantTags(trivia: string): string[] {
+  return tagsOf(trivia, "invariant");
+}
+
+/** The `@invariant` clauses of each record type an annotation names: a
+ * reference, without type arguments, to a type alias or an interface stating
+ * them, the alias's own equation followed for those it names in turn, and
+ * every part of an intersection, in parentheses or not. A union, an
+ * optional or a generic reference names none: a value of such a type need
+ * not be of the record's. */
+export function invariantsNamed(type: TypeNode | undefined, checker: Checker, depth: number = 0): string[] {
+  if (!type || depth > 16) return [];
+  if (ts.isParenthesizedTypeNode(type)) return invariantsNamed(type.type, checker, depth + 1);
+  if (ts.isIntersectionTypeNode(type)) return type.types.flatMap(t => invariantsNamed(t, checker, depth + 1));
+  if (!ts.isTypeReferenceNode(type) || (type.typeArguments?.length ?? 0) > 0) return [];
+  const [symbol] = checker.getSymbolAtLocation([type.typeName]);
+  if (!symbol) return [];
+  const target = symbol.flags & SymbolFlags.Alias ? checker.getAliasedSymbol(symbol) : symbol;
+  if (target.declarations.length !== 1) return [];
+  const declaration = target.declarations[0]?.resolve();
+  if (!declaration) return [];
+  const own = (d: ts.Node): string[] => {
+    const file = d.getSourceFile();
+    return file.isDeclarationFile ? [] : invariantTags(file.text.slice(d.pos, d.getStart(file)));
+  };
+  if (ts.isInterfaceDeclaration(declaration) && !declaration.typeParameters?.length) return own(declaration);
+  if (ts.isTypeAliasDeclaration(declaration) && !declaration.typeParameters?.length)
+    return [...own(declaration), ...invariantsNamed(declaration.type, checker, depth + 1)];
+  return [];
+}
+
+/** What the declaration graph reports of an imported function declaration's
+ * record invariants: the clauses its parameters' types name, each by its
+ * position in the declaration, where its parameters are plain required names
+ * and it is not async, else none; and those its result's type names, where
+ * it is not async. */
+export type ImportedInvariants = { params: readonly (readonly string[])[]; result: readonly string[] };
+
+function tagsOf(trivia: string, name: string): string[] {
   const open = trivia.lastIndexOf("/**");
   if (open < 0) return [];
   const close = trivia.indexOf("*/", open + 3);
@@ -54,7 +109,7 @@ export function requiresTags(trivia: string): string[] {
     const tag = /^@(\w+)\b(.*)$/.exec(line.trim());
     if (tag) {
       if (current) tags.push(current.join(" "));
-      current = tag[1] === "requires" ? [tag[2] ?? ""] : null;
+      current = tag[1] === name ? [tag[2] ?? ""] : null;
     } else if (current) current.push(line);
   }
   if (current) tags.push(current.join(" "));

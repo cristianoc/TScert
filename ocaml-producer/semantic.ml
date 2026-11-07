@@ -201,6 +201,14 @@ let with_pre pre t = match t with
       {s with call_effect={s.call_effect with pre}}) calls}]
   | _ -> t
 
+(* Every signature stating the facts of its result a declaration's record
+   invariants give (Lean's `moduleArrow`, `Fn.ensures`). *)
+let with_ensures ensures t = match t with
+  | Atoms [Shape ({calls;_} as shape)] when ensures <> [] ->
+    Atoms [Shape {shape with calls=List.map (fun (s:signature) ->
+      {s with call_effect={s.call_effect with ensures}}) calls}]
+  | _ -> t
+
 let record fields = Atoms [Shape {fields;indexes=[];calls=[];elements=None}]
 (* Whether a type mentions a type parameter. *)
 let rec mentions_rigid = function

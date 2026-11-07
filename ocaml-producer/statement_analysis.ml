@@ -556,6 +556,15 @@ let statements (expr:Analysis_state.expression_infer) execute_bindings owner_spa
     | Some g when g.host && not g.optional -> Some g.read
     | _ -> None in
   Linear_facts.method_footprint := (fun env r key -> Option.bind (method_type env r key) footprint_of);
+  Linear_facts.call_ensures := (fun env x ->
+    let declared = match List.assoc_opt x env with
+      | Some b -> Some (binding_type b)
+      | None -> (try module_type x with Json.Error _ -> None) in
+    match Option.map head declared with
+    | Some (Atoms [Shape {calls=(s :: rest);_}]) when List.for_all (fun (r : Semantic.signature) ->
+        r.Semantic.call_effect.Semantic.ensures = s.Semantic.call_effect.Semantic.ensures) rest ->
+      s.Semantic.call_effect.Semantic.ensures
+    | _ -> []);
   Linear_facts.stable_view := (fun env b ->
     match Option.bind (receiver_type env {Source.node = Id b; pos = Json.Null}) (fun t -> field_of t (Name "[[viewLength]]")) with
     | Some g -> g.stable

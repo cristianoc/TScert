@@ -796,9 +796,12 @@ def moduleArrow (g : Fragment.Fn) (footprint : Footprints.Closed := .top) (onThr
   -- discarding further actuals runs the same code, so it states the same.
   -- The written precondition is every signature's: the code is checked
   -- assuming it, so a call establishes it whichever signature it takes.
+  -- Its result facts too (`Fn.ensures`), which its unit certifies at each
+  -- return (`SourceRequests.ensuresResult`).
   let plain : List (String × Json) :=
-    if footprint = .top ∧ onThrow = false ∧ g.requires.isEmpty then [] else
-      [("effect", toJson ({ CallEffects.Effect.ofFootprint footprint with onThrow, pre := g.requires } : CallEffects.Effect))]
+    if footprint = .top ∧ onThrow = false ∧ g.requires.isEmpty ∧ g.ensures.isEmpty then [] else
+      [("effect", toJson ({ CallEffects.Effect.ofFootprint footprint with
+        onThrow := onThrow, pre := g.requires, ensures := g.ensures } : CallEffects.Effect))]
   let extra := promised.map (fun (result, effect) => Json.mkObj (signature rest result effect)) ++
     if params.any (·.rest) then []
     else ((g.ret, plain) :: promised).map fun (result, effect) => Json.mkObj (signature [("rest", top)] result effect)

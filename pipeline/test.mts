@@ -265,6 +265,47 @@ control(async (): Promise<void> => {
 });
 
 control(async (): Promise<void> => {
+  // A record invariant claimed of a value no boundary gives it: the cast
+  // record's `segmentFlags.length === widths.length` forged at the entry of
+  // the walker's call, which requires it, is refused at that entry where
+  // evidence is searched.
+  const artifacts = run("invalid-record-invariant-cast");
+  const source = readFileSync(sourceKey(artifacts), "utf8");
+  const claims = readClaims(artifacts);
+  const fn = must(claims.functions.find(f => f.name === "forged"), "forged's claims");
+  const term = (path: string[], kind: "length" | "view", coefficient: number) =>
+    ({ name: "prepared", path, term: kind, coefficient });
+  must(fn.entries.find(e => e.start === source.indexOf("return lastFlag(prepared)")), "the call's entry").facts.push(
+    { terms: [term(["segmentFlags"], "view", 1), term(["widths"], "length", -1)], bound: 0 },
+    { terms: [term(["segmentFlags"], "view", -1), term(["widths"], "length", 1)], bound: 0 });
+  const forged = writeClaims(artifacts, "record-invariant-forged", claims);
+  const searched = produceWith(artifacts, forged, "record-invariant-forged");
+  assert.equal(searched.status, 1, `${searched.stdout}${searched.stderr}`);
+  assert.match(searched.stdout + searched.stderr, /does not establish the claims/);
+  process.stdout.write("record invariants: an invariant claimed of a cast record at a call's entry, refused there\n");
+});
+
+control(async (): Promise<void> => {
+  // Result facts the front end does not state, forged into the parser's
+  // document: `countBreaks`, returning a count of at least 0, stated to
+  // return one below 0, is refused at its return, the checker reading the
+  // facts from the document whatever the claims say.
+  const artifacts = run("record-invariant-walker");
+  const ast: Ast = readFragmentFile(join(artifacts, "fragment.json"));
+  const fn = must(ast.functions.find(f => f.name === "countBreaks"), "countBreaks");
+  assert.deepEqual(fn.ensures, []);
+  fn.ensures = [{ int: { slot: 0 } },
+    { linear: { fact: { le: { form: [[{ kind: "value", slot: 0, path: [] }, 1]], bound: -1 } } } }];
+  const document = join(artifacts, "forged-ensures-fragment.json");
+  writeFileSync(document, JSON.stringify(ast));
+  const searched = produceWith(artifacts, join(artifacts, "claims.json"), "forged-ensures", document);
+  assert.equal(searched.status, 1, `${searched.stdout}${searched.stderr}`);
+  assert.match(searched.stdout + searched.stderr,
+    /source ensures refusal at \[\d+,\d+\): a return of 'countBreaks' does not establish/);
+  process.stdout.write("record invariants: result facts forged into the document, refused at the return\n");
+});
+
+control(async (): Promise<void> => {
   // A heap-reading fact a step's write may change, forged at the entry of
   // the read after it: the read of each unsafe program claimed at `number`,
   // with the bound the write or call takes away claimed at the read's

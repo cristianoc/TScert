@@ -44,7 +44,7 @@ import { messageOf, passToolFailure, toolFailureOf } from "./thrown.mts";
 // named-record.mts reads a named type's record shape, at which a mapped type read before its definition is expanded.
 import { definitionKey, deferredInDocument, identityText, settleDocument, termsText, termText } from "./named-record.mts";
 import { documentHolds } from "./fragment-parts.mts";
-import { requiresTags } from "./bound-annotations.mts";
+import { invariantsNamed, requiresTags, type ImportedInvariants } from "./bound-annotations.mts";
 // files.mts makes every file-system failure a tool failure.
 import { builtinModule, manifestMember, orAbsent, readText, realPath, remembered, type Remembered } from "./files.mts";
 import type { Json } from "./calculus.mts";
@@ -901,8 +901,11 @@ export interface DeclarationObservations {
    * clauses, and its parameters' names in order, `this` included, where its
    * declaration admits one (synchronous, every parameter a plain required
    * name), else null. The client elaborates the clauses over the value's
-   * signature, as the declaration's own module does. */
-  requires?: (declaration: DeclarationIdentity, clauses: readonly string[], parameters: readonly string[] | null) => void;
+   * signature, as the declaration's own module does; with the record
+   * invariants its parameters' and result's types name (`ImportedInvariants`),
+   * told also of a declaration stating no clause but naming one. */
+  requires?: (declaration: DeclarationIdentity, clauses: readonly string[], parameters: readonly string[] | null,
+    invariants: ImportedInvariants) => void;
   /** Told each import binding of a listed guard of the compiler API's family
    * (HOST-FAMILIES.md, "Calls"): its local name, its entry, the domain its
    * declared parameter states, the field a node guard tests (the family's
@@ -1950,11 +1953,18 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
         const { names, typeParams } = bindersOf(reading, node.typeParameters, node, what);
         const declaration = { module: idOf(source), name: node.name.text, span };
         const clauses = writtenClauses(node);
-        if (clauses.length > 0)
+        const synchronous = !node.modifiers?.some(m => m.kind === ts.SyntaxKind.AsyncKeyword);
+        const plainNames = synchronous &&
+          node.parameters.every(p => !p.dotDotDotToken && !p.initializer && !p.questionToken && ts.isIdentifier(p.name));
+        // The record invariants its types name, of the program's sources
+        // alone, read as its own module reads them (`recordInvariants`).
+        const own = programFile(node.getSourceFile()) && !ambient(node) && !!node.body;
+        const invariants: ImportedInvariants = {
+          params: own && plainNames ? node.parameters.map(p => invariantsNamed(p.type, checker)) : [],
+          result: own && synchronous ? invariantsNamed(node.type, checker) : [] };
+        if (clauses.length > 0 || invariants.params.some(c => c.length > 0) || invariants.result.length > 0)
           observations.requires?.(declaration, clauses,
-            !node.modifiers?.some(m => m.kind === ts.SyntaxKind.AsyncKeyword) &&
-            node.parameters.every(p => !p.dotDotDotToken && !p.initializer && !p.questionToken && ts.isIdentifier(p.name))
-              ? node.parameters.map(p => ts.isIdentifier(p.name) ? p.name.text : "") : null);
+            plainNames ? node.parameters.map(p => ts.isIdentifier(p.name) ? p.name.text : "") : null, invariants);
         return { declaration, construct: false, typeParams,
           type: oneTerm(signature(valueScope(reading, node, what, names), node.parameters, node.type, node, span, true), span) };
       }
