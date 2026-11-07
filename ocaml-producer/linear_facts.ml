@@ -321,8 +321,9 @@ let atom_comparison ~array env fs (cond : expr) : fact list * fact list =
      | Some (ta,ca),Some (tb,cb) ->
        let d = norm (ta @ scale (-1) tb) and c = ca - cb in
        let equal = [d,-c; scale (-1) d,c] in
-       let unequal = (if entails fs (d,-c) then [d,-c-1] else []) @
-         (if entails fs (scale (-1) d,c) then [scale (-1) d,c-1] else []) in
+       let ranged = fs @ term_ranges fs in
+       let unequal = (if entails ranged (d,-c) then [d,-c-1] else []) @
+         (if entails ranged (scale (-1) d,c) then [scale (-1) d,c-1] else []) in
        if op = StrictEqual then equal,unequal else unequal,equal
      | _ -> [],[])
   | _ -> [],[]
@@ -416,19 +417,36 @@ let current_bounds : bound list ref = ref []
 let current_facts : fact list ref = ref []
 
 (* At a merge, a fact of one form holds at the larger bound where both
-   paths state one. A bound larger than the one the earlier state (`l`, the
+   paths bound it. A bound larger than the one the earlier state (`l`, the
    state the flow solver joins into) held is raised at once to `2^32 - 1`, the
    largest length, where it is at most that, and forgotten otherwise, so each
    form changes at most twice and a loop settles as it would without facts. *)
 let join (l : fact list) (r : fact list) : fact list =
   let l = tighten l and r = tighten r in
-  List.filter_map (fun (t,d) ->
-    match List.assoc_opt t r with
-    | None -> None
-    | Some d' when d' <= d -> Some (t,d)
-    | Some d' when d' <= max_index + 1 && d < max_index + 1 -> Some (t, max_index + 1)
-    | Some _ -> None) l
-  |> List.sort_uniq compare
+  (* Each path's bound of a form: the least of the bounds either path
+     states, `0` and the largest length that its facts, with the ranges of
+     the lengths and element counts they name, entail, where its facts name
+     every length, element count and path the form does and state each
+     binding it names a safe integer, as Lean requires of an edge's source
+     (`linearFollows`). So a loop's entry, `i = 0`, and its iteration's
+     `i - xs.length ≤ -1` keep `i ≤ 2^32 - 1` where the iteration bounds
+     `i` by the length. *)
+  let defines side ((t,_) : fact) = List.for_all (fun (n,_) ->
+    if reads_heap n then List.exists (fun ((t',_) : fact) -> List.mem_assoc n t') side
+    else List.mem ([n,0],0) side) t in
+  let bound side candidates ((t,_) as f : fact) =
+    if not (defines side f) then None else
+    let side' = side @ term_ranges side in
+    List.find_opt (fun b -> List.mem (t,b) side || entails side' (t,b)) candidates in
+  let forms = List.sort_uniq compare (List.map fst l @ List.map fst r) in
+  List.filter_map (fun t ->
+    let dl = List.assoc_opt t l and dr = List.assoc_opt t r in
+    if is_int_fact (t,0) then (match dl,dr with Some d,Some _ -> Some (t,d) | _ -> None) else
+    let candidates = List.sort_uniq compare (List.filter_map Fun.id [dl; dr] @ [0; max_index + 1]) in
+    match bound l candidates (t,0), bound r candidates (t,0) with
+    | Some d, Some d' when d' <= d -> Some (t,d)
+    | Some d, Some d' when d' <= max_index + 1 && d < max_index + 1 -> Some (t, max_index + 1)
+    | _ -> None) forms
 
 (* Widening keeps the facts that did not change. *)
 let widen (previous : fact list) (current : fact list) =

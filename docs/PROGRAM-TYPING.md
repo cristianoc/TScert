@@ -1719,7 +1719,18 @@ branch on the left's value (`choose`), whose edge promotes the facts
 conditional on it; a statement writing no heap (slots, constants,
 operators, reads, element reads, assignments of value bindings) keeps those
 whose bindings it does not assign; every other statement forgets them; a merge
-keeps those both paths hold. A call stating `pre` is typed at that signature
+keeps those both paths hold. Of the linear facts, a merge keeps a form
+$`c\cdot x`$ at the bound $`\max(d_1,d_2)`$, $`d_i`$ the least of the bounds
+either path states, $`0`$ and $`2^{32}-1`$ that path $`i`$'s facts, with the
+ranges of the lengths and element counts they name, entail, where each path
+names every length, element count and path of the form and states each
+binding it names a safe integer, as an edge's source must
+(`Linear_facts.join`); a bound larger than the earlier state's is raised to
+$`2^{32}-1`$, so a loop settles. So a loop `for (let i = 0; i + 1 <
+xs.length; i++)` keeps $`i\le 2^{32}-1`$ at its head, its entry stating
+$`i=0`$ and its iteration $`i-|\mathit{xs}|\le -1`$, and the test's
+`i + 1` is a safe integer whose `true` answer bounds reads at `i` and
+`i + 1`. A call stating `pre` is typed at that signature
 where the bounds holding at its statement's start establish it. Each is a
 claim Lean checks on every edge into the entry claiming it.
 
@@ -1777,7 +1788,9 @@ ranges of the lengths and element counts they name entailing its bounds.
 
 **Cases.** Positive: `bounded-element-read` (a `for` and a `while` loop),
 `pretext-array-element-read`, `logical-guard-reads` (reads in the right
-operand of `&&` and `||`, a strict equality's `false` answer among them) and
+operand of `&&` and `||`, a strict equality's `false` answer among them),
+`adjacent-pair-reads` (reads at `i` and `i + 1` under `i + 1 < xs.length`,
+and a loop to `e !== n`) and
 `typed-array-reads-below-length` (a
 `Uint8Array`, a `Float64Array`, an `Int32Array` written and read back, and a
 `@requires` over a view's length). Negative, each run under Node:
@@ -1785,7 +1798,8 @@ operand of `&&` and `||`, a strict equality's `false` answer among them) and
 `invalid-bounded-element-read-shrunk` (a `pop` between the test and the
 read), `invalid-logical-guard-read-inclusive` (`e <= xs.length && xs[e]!`),
 `invalid-logical-guard-read-wrong-answer` (`e < xs.length || xs[e]!`),
-`invalid-logical-guard-read-equal` (`e !== xs.length || xs[e]!`), `invalid-typed-array-read-at-length` (a loop to `i <= b.length`) and
+`invalid-logical-guard-read-equal` (`e !== xs.length || xs[e]!`),
+`invalid-adjacent-pair-read-past` (a read at `i + 1` under `i < xs.length`), `invalid-typed-array-read-at-length` (a loop to `i <= b.length`) and
 `invalid-typed-array-read-other-length` (a read of `b` below another view's
 length). Forged controls in `pipeline/test.mts`: each array negative's read
 claimed at the element type, with and without a strict bound claimed at its
