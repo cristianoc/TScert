@@ -460,12 +460,13 @@ singleton; NaN, which no equality test finds, is not one. -/
     | .numLit b => if numberEqual b b then some (.numEq b, .str (numberToString b)) else none
     | _ => none
 
-/-- Whether a key's claim is numbers, `number` among them: a key the program
-computes, whose write into a homogeneous writable array is certified where
-the knowledge bounds it (PROGRAM-TYPING.md, "Writes at a checked index"). -/
+/-- Whether a key's claim is numbers alone: `number`, a numeric literal, or
+a union of them — a key whose every value is a number, however spelled —
+whose write into a homogeneous writable array is certified where the
+knowledge bounds it (PROGRAM-TYPING.md, "Writes at a checked index"). -/
 def runtimeNumberKey (G : PositiveGraphs.NormalGraph ι) (K : Ty ι) : Bool :=
   let cs := PositiveNormalization.splitSets (PositiveRules.expand G K)
-  cs.contains .num && cs.all fun c => match c with | .num | .numLit _ => true | _ => false
+  !cs.isEmpty && cs.all fun c => match c with | .num | .numLit _ => true | _ => false
 
 /-- Whether an expression is claimed at a homogeneous writable array, whose
 store a write at a `number` key may write (`IndexWrites.writableElement`). -/
@@ -489,6 +490,10 @@ store a write at a `number` key may write (`IndexWrites.writableElement`). -/
           if let .str s := k then
             if SourceTypes.reservedKey s then throw s!"'{s}' is internal to the model, not a source property"
         return .dynamic
+  -- A dictionary reads a numeric key at any entry, `number`, a numeric
+  -- literal or a union of them, the classification the writable array's
+  -- write shares (`runtimeNumberKey`): one meaning, one decision.
+  if dict && runtimeNumberKey G K then return .dynamic
   match PositiveNormalization.splitSets (PositiveRules.expand G K) with
   | [.strLit s] => spelled s
   | [.str] => pure .dynamic

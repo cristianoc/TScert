@@ -16,7 +16,7 @@ import type { ClassDeclaration, ExportDeclaration, FunctionDeclaration, Identifi
 // library-globals.mts is the reviewed overlay of the standard library's globals, the only global values this reader admits, at the signatures it states.
 import { auditedOpenReadKeys, receiverOpenReadKeys } from "./host-operations.mts";
 import type { Span } from "./span.mts";
-import { childrenOf, nameOf, isImport, isTypeAlias } from "./syntax.mts";
+import { childrenOf, nameOf, isImport, isTypeAlias, namedAccess } from "./syntax.mts";
 import { wildcardReadings, classInstance, computedAlias, literalDefaultName, computedForm, expandMapped, mapped, mapTypeParts, typeParts, members, numericKey, oneTerm, overloadTerm, optionalTerm, restPositions, restTerm, signature, signatures, statedResult, substitute,
   typeTerm, validateAnnotation, visitType, WITHIN_PLACE, type AwaitedHook, type ComputedHook, type EnumeratedHook, type KeysHook, type Mapped, type MappedMember,
   type AliasHook, type ModifiersHook, type RecordHook, type TermScope } from "./type-term.mts";
@@ -3136,7 +3136,7 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
     // gets: each part of the object's type a name the overlay of library
     // types states as a 2D context, or an intersection with one, as
     // `"lang" in o` narrows it.
-    const contextOnly = (access: ts.PropertyAccessExpression, definitions: TypeDefinition[] = [typeDefinitions.canvasContext]): boolean => {
+    const contextOnly = (access: ts.PropertyAccessExpression | ts.ElementAccessExpression, definitions: TypeDefinition[] = [typeDefinitions.canvasContext]): boolean => {
       const object = checker.getTypeAtLocation(access.expression);
       const parts = object && isUnionType(object) ? object.getTypes() : object ? [object] : [];
       const context = (t: Type): boolean =>
@@ -3150,18 +3150,24 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
     };
     for (const span of operationsRequested.memberWrites ?? []) {
       const write = expressionAt(client, span);
-      if (!write || !ts.isPropertyAccessExpression(write)) throw declarationError(span, "TypeScript member write missing");
-      const setter = canvasSetters.find(s => s.member === write.name.text);
+      const target = write ? namedAccess(write) : null;
+      if (!write || !target ||
+          !(ts.isPropertyAccessExpression(write) || ts.isElementAccessExpression(write)))
+        throw declarationError(span, "TypeScript member write missing");
+      const setter = canvasSetters.find(s => s.member === target.key);
       if (setter && contextOnly(write)) hostMember(span, setter.intrinsic);
-      const dom = domSetters.find(s => s.member === write.name.text);
+      const dom = domSetters.find(s => s.member === target.key);
       const receivers = dom?.member === "cssText" ? [typeDefinitions.computedStyle] : [typeDefinitions.element, typeDefinitions.htmlElement];
       if (dom && contextOnly(write, receivers))
         hostMember(span, dom.intrinsic, dom.member === "cssText" ? typeDefinitions.inlineStyle : typeDefinitions.element);
     }
     for (const span of operationsRequested.memberReads ?? []) {
       const read = expressionAt(client, span);
-      if (!read || !ts.isPropertyAccessExpression(read)) throw declarationError(span, "TypeScript member read missing");
-      const getter = canvasGetters.find(g => g.member === read.name.text);
+      const target = read ? namedAccess(read) : null;
+      if (!read || !target ||
+          !(ts.isPropertyAccessExpression(read) || ts.isElementAccessExpression(read)))
+        throw declarationError(span, "TypeScript member read missing");
+      const getter = canvasGetters.find(g => g.member === target.key);
       if (getter && contextOnly(read)) hostMember(span, getter.intrinsic);
     }
     // `b.length` of a view of bytes.

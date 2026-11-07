@@ -32,7 +32,7 @@ import { requireWellFormedText, wellFormedTextRefusal } from "./wire-strings.mts
 // thrown.mts reads what the TypeScript API throws into the message the gate reports, without asserting its type.
 import { messageOf, passToolFailure, toolFailureOf, toolFailureText, type ToolFailure } from "./thrown.mts";
 // syntax.mts reads the name, modifiers and other children a member or declaration of unasked kind carries, checking each is a node.
-import { childOf, isImport, isStatic, nameOf, isTypeAlias } from "./syntax.mts";
+import { childOf, isImport, isStatic, nameOf, isTypeAlias, namedAccess } from "./syntax.mts";
 import { enclosingBinders } from "./computed-types.mts";
 // named-record.mts reads a named type's record shape, which a mapped type over it maps.
 import { aliasMeaning, definitionKey, deferredInAst, deferredInModule, recordShape, settleTerm, type NamedRecords } from "./named-record.mts";
@@ -1968,7 +1968,8 @@ function lowerFile(file: string, carriesContext: boolean,
   };
   if (!carriesContext) scan(findElementWrites);
   // Member writes `e.k = v` and reads `e.k` at a key a 2D context sets or
-  // gets through its host accessor (`canvasSetters`, `canvasGetters`): a
+  // gets through its host accessor (`canvasSetters`, `canvasGetters`), in
+  // either spelling — `e["k"]` at a string key reads the same member — a
   // plain assignment's target, or a read other than a write's target and a
   // call's callee, outside an optional chain. TypeScript's type of the
   // object decides whether the accessor's intrinsic writes or reads it.
@@ -1977,12 +1978,14 @@ function lowerFile(file: string, carriesContext: boolean,
   const memberWriteNodes: Node[] = [];
   const memberReadNodes: Node[] = [];
   const findMemberAccesses = (node: Node): void => {
-    if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
-        ts.isPropertyAccessExpression(node.left) && !node.left.questionDotToken && ts.isIdentifier(node.left.name) &&
-        setterKeys.has(node.left.name.text))
-      memberWriteNodes.push(node.left);
-    if (ts.isPropertyAccessExpression(node) && !node.questionDotToken && ts.isIdentifier(node.name) &&
-        getterKeys.has(node.name.text) && !writtenElement(node) && !callTarget(node))
+    if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.EqualsToken) {
+      const target = namedAccess(node.left);
+      if (target && setterKeys.has(target.key)) memberWriteNodes.push(node.left);
+    }
+    const read = namedAccess(node);
+    if (read && getterKeys.has(read.key) &&
+        (ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node)) &&
+        !writtenElement(node) && !callTarget(node))
       memberReadNodes.push(node);
     node.forEachChild(findMemberAccesses);
   };

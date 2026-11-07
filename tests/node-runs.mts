@@ -560,6 +560,7 @@ assert.equal(runExample("invalid-named-implicit-index", 'typeof asDictionary({ a
     // A write past the length leaves a hole, read as `undefined`; one at a
     // fraction adds a key no array owns.
     ["invalid-index-write-unguarded", "wrong([1], 3, 2)[1]"],
+    ["invalid-index-write-unguarded-union", `(() => { const xs = []; set(xs, 1, 0); return xs[0]; })()`],
     ["invalid-index-write-no-mask", `(() => { const xs = [1]; wrong(xs, 0.5, 2); return Object.keys(xs).includes("0.5") ? undefined : 0; })()`],
     ["invalid-index-write-no-compare", "wrong([1], 3, 2)[1]"],
     ["invalid-index-write-other-array", "wrong([1], [1, 2, 3, 4], 3, 2)[1]"],

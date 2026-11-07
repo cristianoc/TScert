@@ -246,6 +246,19 @@ export function isImport(node: Node): node is Within<{ value: "keep"; store: "ke
 export const isStatic = (node: Node): Within<{ value: "any"; store: "grow" }, boolean> =>
   childrenOf(node, "modifiers").some((m) => m.kind === ts.SyntaxKind.StaticKeyword);
 
+/** A named property access in either spelling — `e.k`, or `e["k"]` at a
+ * string literal or a template without substitutions, no optional chain —
+ * as TypeScript gives the spellings one meaning (#119): the object, the
+ * key's text, and the key's own node. Null otherwise. */
+export function namedAccess(node: Node): { object: Node; key: string; keyNode: Node } | null {
+  if (ts.isPropertyAccessExpression(node) && !node.questionDotToken && ts.isIdentifier(node.name))
+    return { object: node.expression, key: node.name.text, keyNode: node.name };
+  if (ts.isElementAccessExpression(node) && !node.questionDotToken &&
+      (ts.isStringLiteral(node.argumentExpression) || ts.isNoSubstitutionTemplateLiteral(node.argumentExpression)))
+    return { object: node.expression, key: node.argumentExpression.text, keyNode: node.argumentExpression };
+  return null;
+}
+
 /** The node with every parenthesized wrapper stripped: TypeScript gives a
  * wrapped and an unwritten expression one meaning, so a decision that reads
  * the normalized form treats the spellings alike (#119). */
