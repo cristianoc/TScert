@@ -124,7 +124,8 @@ def lengthsOf (k : Knowledge) (n : Nat) : List Nat :=
   else none
 
 theorem lengthsOf_sound {k : Knowledge} {n x : Nat} {ρ h} (hx : x ∈ lengthsOf k n) (hk : Holds k ρ h) :
-    ∃ s ls, Footprints.storeOf (ρ x) = some s ∧ h[s]? = some (.arr ls) ∧ ρ n = .num (bitsOfNat ls.length) := by
+    ∃ s ls, Footprints.storeOf (ρ x) = some s ∧ h[s]? = some (.arr ls) ∧ ρ n = .num (bitsOfNat ls.length) ∧
+      ls.length ≤ maxArrayLength := by
   obtain ⟨atom, ha, hm⟩ := List.mem_filterMap.mp hx
   split at hm
   · rename_i hnone
@@ -224,14 +225,14 @@ def storeSlot (G : NormalGraph ι) (Γ : List (Ty ι)) (s : Nat) : Bool :=
   | none => false
 
 theorem storeSlot_sound {G : NormalGraph ι} {Γ : List (Ty ι)} {s : Nat} {ρ n W}
-    (hc : storeSlot G Γ s = true) (he : EnvOk G Γ ρ n W) : ∃ ls, ρ s = .arr ls := by
+    (hc : storeSlot G Γ s = true) (he : EnvOk G Γ ρ n W) : ∃ ls, ρ s = .arr ls ∧ ls.length ≤ maxArrayLength := by
   unfold storeSlot at hc
   split at hc
   · rename_i S hS
     split at hc
     · rename_i T hT
-      obtain ⟨ls, hls, -⟩ := ((represents_raw (c := .list T []) hT n W (ρ s)) (he.2 s S hS)).1
-      exact ⟨ls, hls⟩
+      obtain ⟨ls, hls, -, -, hmax, -⟩ := ((represents_raw (c := .list T []) hT n W (ρ s)) (he.2 s S hS)).1
+      exact ⟨ls, hls, hmax⟩
     · cases hc
   · cases hc
 
@@ -318,14 +319,14 @@ theorem stepAtoms_holds [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)
     simp only [stepAtoms]
     split
     · rename_i hst
-      obtain ⟨ls, hls⟩ := storeSlot_sound hst he
+      obtain ⟨ls, hls, hmax⟩ := storeSlot_sound hst he
       simp only [instantiate, Nat.not_lt_zero, if_false, Nat.sub_zero, hls] at hs ⊢
       refine weaken (fun h' u hq => ⟨hq.1, ?_⟩) (len_run hs)
       obtain ⟨-, rfl, rfl⟩ := hq
       intro atom ha _
       obtain ⟨x, hx, rfl⟩ := List.mem_map.mp ha
       obtain ⟨l, hl, hh⟩ := storeReaders_sound hx hk
-      exact ⟨l, ls, hl, by rw [hh, hls], rfl⟩
+      exact ⟨l, ls, hl, by rw [hh, hls], rfl, hmax⟩
     · exact weaken (fun _ _ hq => ⟨hq, indexHolds_nil _ _⟩) hs
   · simp only [stepAtoms]
     split
@@ -394,7 +395,7 @@ theorem stepAtoms_holds [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)
                 have := boundAnswerOf_sound hq
                 cases op <;> cases q <;> simp [IndexNumbers.boundAnswer, Arith.relational] at this ⊢
               obtain ⟨x, i, hx, hix⟩ := indexed_sound hi hk
-              obtain ⟨s, ls, hs', hls, hb'⟩ := lengthsOf_sound hx' hk
+              obtain ⟨s, ls, hs', hls, hb', -⟩ := lengthsOf_sound hx' hk
               rw [hx, hb'] at hu
               have hu' := binop_relational hrel hu
               have hcq := hc rfl
@@ -412,7 +413,7 @@ theorem stepAtoms_holds [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)
                 have := boundAnswerOf_sound hq
                 cases op <;> cases q <;> simp [IndexNumbers.boundAnswer, Arith.relational] at this ⊢
               obtain ⟨x, i, hx, hix⟩ := indexed_sound hi hk
-              obtain ⟨s, ls, hs', hls, hb'⟩ := lengthsOf_sound hx' hk
+              obtain ⟨s, ls, hs', hls, hb', -⟩ := lengthsOf_sound hx' hk
               rw [hx, hb'] at hu
               have hu' := binop_relational hrel hu
               have hcq := hc rfl
@@ -587,16 +588,8 @@ theorem binop_num_arith {op : Arith} {x y : UInt64} {u : Tm} (hop : op = .add �
   rcases hop with rfl | rfl <;> simp [binop, Arith.relational] at h <;> exact h.symm
 
 theorem storeSlot_bound {G : NormalGraph ι} {Γ : List (Ty ι)} {s : Nat} {ρ n W}
-    (hc : storeSlot G Γ s = true) (he : EnvOk G Γ ρ n W) : ∃ ls, ρ s = .arr ls ∧ ls.length ≤ maxArrayLength := by
-  unfold storeSlot at hc
-  split at hc
-  · rename_i S hS
-    split at hc
-    · rename_i T hT
-      obtain ⟨ls, hls, -, -, hmax, -⟩ := ((represents_raw (c := .list T []) hT n W (ρ s)) (he.2 s S hS)).1
-      exact ⟨ls, hls, hmax⟩
-    · cases hc
-  · cases hc
+    (hc : storeSlot G Γ s = true) (he : EnvOk G Γ ρ n W) : ∃ ls, ρ s = .arr ls ∧ ls.length ≤ maxArrayLength :=
+  storeSlot_sound hc he
 
 theorem operandIn_value {Γ : List (Ty ι)} {t : Tm} {ρ : Env} (hval : ∀ i, i < Γ.length → isVal (ρ i) = true)
     (h : operandIn Γ t = true) : isVal (instantiate 0 ρ t) = true := by
@@ -837,12 +830,12 @@ theorem boundedWrite_safe [DecidableEq ι] {Ξ : Fam} {G : NormalGraph ι} {R S 
 
 /-- Whether an unconditional atom bounds a slot of `i`'s class by the store of
 an array of `a`'s class. -/
-def bounded (k : Knowledge) (a i : Nat) : Bool :=
+def boundAtom (k : Knowledge) (a i : Nat) : Bool :=
   k.indices.any fun atom => atom.cond.isNone && match atom.fact with
     | .bound x i' => (HeapLinks.aliases k.links a).contains x && (HeapLinks.aliases k.links i).contains i'
     | _ => false
 
-theorem bounded_sound {k : Knowledge} {a i : Nat} {ρ h} (hc : bounded k a i = true) (hk : Holds k ρ h) :
+theorem boundAtom_sound {k : Knowledge} {a i : Nat} {ρ h} (hc : boundAtom k a i = true) (hk : Holds k ρ h) :
     ∃ s ls b idx, Footprints.storeOf (ρ a) = some s ∧ h[s]? = some (.arr ls) ∧ ρ i = .num b ∧
       indexOfBits b = some idx ∧ idx ≤ ls.length := by
   obtain ⟨atom, ha, hm⟩ := List.any_eq_true.mp hc
@@ -859,6 +852,74 @@ theorem bounded_sound {k : Knowledge} {a i : Nat} {ρ h} (hc : bounded k a i = t
   | length _ _ => rw [hfact] at hf; cases hf
   | int _ => rw [hfact] at hf; cases hf
   | linear _ => rw [hfact] at hf; cases hf
+
+/-- Whether the linear facts bound a slot of `i`'s class by the length of the
+store of an array of `a`'s class: an unconditional length atom `length(x, n)`,
+`int(i)` and `int(n)`, and the facts entail `0 ≤ i ≤ n` and `i ≤ 2^32 - 2`. -/
+def linearBound (k : Knowledge) (a i : Nat) : Bool :=
+  intSlot k.indices i && k.indices.any fun atom => atom.cond.isNone && match atom.fact with
+    | .length x n => (HeapLinks.aliases k.links a).contains x && intSlot k.indices n &&
+        Linear.entails (linearFacts k.indices) (.le [(i, -1)] 0) &&
+        Linear.entails (linearFacts k.indices) (.le [(i, 1), (n, -1)] 0) &&
+        Linear.entails (linearFacts k.indices) (.le [(i, 1)] (maxArrayLength - 1))
+    | _ => false
+
+theorem indexOfBits_safe {b : UInt64} {j : Int} (hb : SafeIntegers.SafeInt b j) (h0 : 0 ≤ j)
+    (h1 : j < maxArrayLength) : indexOfBits b = some j.toNat := by
+  rcases hb.2 with ⟨-, he⟩ | ⟨hle, he⟩
+  · have : b = bitsOfNat j.natAbs := UInt64.toNat_inj.mp he
+    have hm : ((maxArrayLength : Nat) : Int) = 4294967295 := rfl
+    have h1' : j < 4294967295 := by omega
+    rw [this, IndexNumbers.indexOfBits_bitsOfNat (by omega)]
+    congr 1; omega
+  · have hj : j = 0 := by omega
+    subst hj
+    have : b = 0x8000000000000000 := UInt64.toNat_inj.mp (by rw [he]; simp [SafeIntegers.bitsOfNat_zero])
+    subst this; rfl
+
+theorem linearBound_sound {k : Knowledge} {a i : Nat} {ρ h} (hc : linearBound k a i = true) (hk : Holds k ρ h) :
+    ∃ s ls b idx, Footprints.storeOf (ρ a) = some s ∧ h[s]? = some (.arr ls) ∧ ρ i = .num b ∧
+      indexOfBits b = some idx ∧ idx ≤ ls.length := by
+  simp only [linearBound, Bool.and_eq_true] at hc
+  obtain ⟨hi, hany⟩ := hc
+  obtain ⟨atom, ha, hm⟩ := List.any_eq_true.mp hany
+  simp only [Bool.and_eq_true, Option.isNone_iff_eq_none] at hm
+  obtain ⟨hnone, hf⟩ := hm
+  have hat := hk.2.2.2.2.2 atom ha fun b hb => by rw [hnone] at hb; cases hb
+  have hlin := linearFacts_holds hk.2.2.2.2.2
+  cases hfact : atom.fact with
+  | length x n =>
+    rw [hfact] at hf hat
+    simp only [Bool.and_eq_true, List.contains_iff_mem] at hf
+    obtain ⟨⟨⟨⟨hx, hn⟩, e1⟩, e2⟩, e3⟩ := hf
+    obtain ⟨s, ls, hs, hl, hnv, hmax⟩ := hat
+    have f1 := Linear.entails_sound e1 hlin
+    have f2 := Linear.entails_sound e2 hlin
+    have f3 := Linear.entails_sound e3 hlin
+    simp only [Linear.Fact.Holds, Linear.Form.eval] at f1 f2 f3
+    -- the length slot's integer is the store's length
+    have hL : SafeIntegers.SafeInt (bitsOfNat ls.length) (ls.length : Int) :=
+      ⟨by simp [maxArrayLength] at hmax ⊢; omega, .inl ⟨by omega, by simp⟩⟩
+    have hvn : valuation ρ n = ls.length := by simp [valuation, hnv, intValue, SafeIntegers.safeIntOfBits_complete hL]
+    obtain ⟨j, hj⟩ := Option.isSome_iff_exists.mp (intSlot_sound hk.2.2.2.2.2 hi)
+    obtain ⟨b, hb, hsafe⟩ := intValue_safe hj
+    have hvi : valuation ρ i = j := by simp [valuation, hj]
+    rw [hvi, hvn] at f2; rw [hvi] at f1 f3
+    refine ⟨s, ls, b, j.toNat, by rw [← HeapLinks.aliases_eq hk.2.2.1 hx]; exact hs, hl, hb,
+      indexOfBits_safe hsafe (by omega) (by have hm : ((maxArrayLength : Nat) : Int) = 4294967295 := rfl; omega),
+      by omega⟩
+  | index _ | bound _ _ | int _ | linear _ => rw [hfact] at hf; simp at hf
+
+/-- Whether a slot of `i`'s class holds an index at most the length of the
+store of an array of `a`'s class: a bound atom states it, or the linear facts do. -/
+def bounded (k : Knowledge) (a i : Nat) : Bool := boundAtom k a i || linearBound k a i
+
+theorem bounded_sound {k : Knowledge} {a i : Nat} {ρ h} (hc : bounded k a i = true) (hk : Holds k ρ h) :
+    ∃ s ls b idx, Footprints.storeOf (ρ a) = some s ∧ h[s]? = some (.arr ls) ∧ ρ i = .num b ∧
+      indexOfBits b = some idx ∧ idx ≤ ls.length := by
+  rcases Bool.or_eq_true_iff.mp hc with hc | hc
+  · exact boundAtom_sound hc hk
+  · exact linearBound_sound hc hk
 
 /-- The slots of a write at a run-time index: `x.[] := x.[]⟦k ↦ v⟧`. -/
 def boundedSlots : Tm → Option (Nat × Nat × Nat)
