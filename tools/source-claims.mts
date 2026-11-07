@@ -94,11 +94,19 @@ interface BoundClaim {
   strict: boolean;
 }
 
-/** A linear fact proposed at a statement entry: the sum of the terms, each a
- * value binding's name and an integer coefficient, is at most `bound`
- * (PROGRAM-TYPING.md, "Linear facts"). */
+/** A term of a proposed linear fact: the safe integer the binding `name`
+ * holds, or the length of its array store where `length`, with an integer
+ * coefficient. */
+interface LinearTermClaim {
+  name: string;
+  length: boolean;
+  coefficient: number;
+}
+
+/** A linear fact proposed at a statement entry: the sum of the terms is at
+ * most `bound` (PROGRAM-TYPING.md, "Linear facts"). */
 interface LinearClaim {
-  terms: [string, number][];
+  terms: LinearTermClaim[];
   bound: number;
 }
 
@@ -330,8 +338,10 @@ function claimsDocument(v: JsonRead): SourceClaims {
         };
         return {
           terms: each(q.terms, "a fact's terms", (t) => {
-            if (!isJsonList(t) || t.length !== 2) fail("a fact's term is a name and a coefficient");
-            const term: [string, number] = [name(t[0], "a term's name"), integer(t[1], "a term's coefficient")];
+            const r = record(t, "a fact's term", ["name", "length", "coefficient"]);
+            if (typeof r.length !== "boolean") fail("a term's length is a Boolean");
+            const term: LinearTermClaim = { name: name(r.name, "a term's name"), length: r.length,
+              coefficient: integer(r.coefficient, "a term's coefficient") };
             return term;
           }),
           bound: integer(q.bound, "a fact's bound"),

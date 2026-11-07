@@ -113,7 +113,7 @@ let statements callbacks flow_graph register_following owner_span env0 ss =
       let live n = List.mem_assoc n env0 || List.exists (fun (b:Flow.binding) -> b.name=n) bindings in
       List.filter (fun (n,_) -> live n || (is_field n && live (owner n)) ||
         (match bound_parts n with Some (a,i,_) -> live a && live i | None -> false) ||
-        (match fact_parts n with Some (t,_) -> List.for_all (fun (x,_) -> live x) t | None -> false)) env in
+        (match fact_parts n with Some (t,_) -> List.for_all (fun (x,_) -> live (Linear_facts.term_binding x)) t | None -> false)) env in
     let capture env =
       let bound n = List.mem_assoc n env in
       let m = callbacks.snapshot_metadata () in
@@ -289,7 +289,7 @@ let statements callbacks flow_graph register_following owner_span env0 ss =
            value slot a fact could name. *)
         let cell n = List.exists (fun (b:Flow.binding) -> b.name=n) graph.cells in
         let with_facts (id,state) fs bs =
-          let fs = List.filter (fun ((t,_) : Linear_facts.fact) -> not (List.exists (fun (n,_) -> cell n) t)) fs in
+          let fs = List.filter (fun ((t,_) : Linear_facts.fact) -> not (List.exists (fun (n,_) -> cell (Linear_facts.term_binding n)) t)) fs in
           let bs = List.filter (fun (a,i,_) -> not (cell a) && not (cell i)) (Linear_facts.bounds state.env @ bs) in
           id,{state with env=scope graph.nodes.(id).scope (Linear_facts.add_bounds (Linear_facts.add state.env fs) bs)} in
         match node.action, edges with
@@ -298,18 +298,18 @@ let statements callbacks flow_graph register_following owner_span env0 ss =
           let fs = match (source span).statement with
             | Declare (_,bindings) ->
               (match List.find_opt (fun (b,_,(init:Source.expr)) -> b=name && init.pos=initial_source) bindings with
-               | Some (_,_,init) -> Linear_facts.declaration env facts0 name init
+               | Some (_,_,init) -> Linear_facts.declaration ~array:(callbacks.array_binding env) env facts0 name init
                | None -> [])
             | _ -> [] in
           [with_facts e fs (Linear_facts.statement_bounds env bounds0 (source span))]
         | Flow.Statement (span,_), [e] ->
           let s = source span in
-          [with_facts e (Linear_facts.statement env facts0 s) (Linear_facts.statement_bounds env bounds0 s)]
+          [with_facts e (Linear_facts.statement ~array:(callbacks.array_binding env) env facts0 s) (Linear_facts.statement_bounds env bounds0 s)]
         | Flow.Branch (span,_,_), [y;n] ->
           let s = source span in
           (match s.statement with
            | If (c,_,_) | While (c,_,_) ->
-             let t,f = Linear_facts.comparison env facts0 c in
+             let t,f = Linear_facts.comparison ~array:(callbacks.array_binding env) env facts0 c in
              let lt = Linear_facts.length_test ~array:(callbacks.array_binding env) env facts0 c in
              let kept = Linear_facts.statement_bounds env bounds0 s in
              let bt,bf = Linear_facts.comparison_bounds ~array:(callbacks.array_binding env) env facts0 c in

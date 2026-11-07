@@ -115,14 +115,24 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
             (Linear_facts.linear env !Linear_facts.current_facts) in
           let holds = function
             | Semantic.Bound_by (x,k,strict) -> (match name x, name k with
-              | Some a, Some i -> List.exists (fun (a',i',s) -> a' = a && i' = i && (s || not strict))
-                  !Linear_facts.current_bounds
+              | Some a, Some i when List.exists (fun (a',i',s) -> a' = a && i' = i && (s || not strict))
+                  !Linear_facts.current_bounds -> true
+              | Some a, _ ->
+                (* The index's value `t + c` within `0 ≤ t + c ≤ a.length`
+                   (below it where strict), as Lean's `lengthBound` reads it
+                   of the index's slot. *)
+                (match form k with
+                 | Some (t,c) -> let fs = !Linear_facts.current_facts in
+                   Linear_facts.entails fs (Linear_facts.scale (-1) t, c) &&
+                   Linear_facts.entails fs (Linear_facts.norm (t @ [Linear_facts.length_term a,-1]),
+                     (if strict then -1 else 0) - c)
+                 | None -> false)
               | _ -> false)
             | Semantic.Int_at k -> Option.is_some (form k)
             | Semantic.Linear_le (fact,d) ->
               let parts = List.map (fun (t,c) -> match (t : Semantic.term) with
                 | Value_at x -> Option.map (fun (t,k) -> Linear_facts.scale c t, c * k) (form x)
-                | Length_at _ -> None) fact in
+                | Length_at x -> Option.map (fun xs -> [Linear_facts.length_term xs,c],0) (name x)) fact in
               List.for_all Option.is_some parts &&
               (let parts = List.filter_map Fun.id parts in
                let terms = Linear_facts.norm (List.concat_map fst parts) in

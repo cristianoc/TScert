@@ -582,8 +582,10 @@ let encode (proposal : Proposal_types.t) =
     | None -> None) bs) in
   (* A statement entry's linear facts (`Environment.fact_key`). *)
   let facts bs = Array (List.filter_map (fun (n,_) -> match Environment.fact_parts n with
-    | Some (terms,bound) -> Some (Object ["terms",Array (List.map (fun (name,c) ->
-        Array [String name; Number (string_of_int c)]) terms); "bound",Number (string_of_int bound)])
+    | Some (terms,bound) -> Some (Object ["terms",Array (List.map (fun (t,c) ->
+        let name,length = Linear_facts.term_parts t in
+        Object ["name",String name;"length",Bool length;"coefficient",Number (string_of_int c)]) terms);
+      "bound",Number (string_of_int bound)])
     | None -> None) bs) in
   let contracts row = Array (List.map (fun (c : Proposal_types.contract) ->
     Object ["pos",c.pos;"name",String c.name;"type",claim_type c.type_]) row) in

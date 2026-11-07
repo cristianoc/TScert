@@ -116,11 +116,18 @@ structure Bound where
   index : String
   strict : Bool
   deriving ToJson, FromJson
+/-- A term of a linear fact the producer proposes: the safe integer the
+binding `name` holds, or the length of its array store where `length`, with
+an integer coefficient. -/
+structure FactTerm where
+  name : String
+  length : Bool
+  coefficient : Int
+  deriving ToJson, FromJson
 /-- A linear fact the producer proposes at a statement entry: the sum of the
-terms, each a value binding's name and an integer coefficient, is at most
-`bound`; every term's binding holds a safe integer. -/
+terms is at most `bound`; every term denotes an integer. -/
 structure Fact where
-  terms : List (String × Int)
+  terms : List FactTerm
   bound : Int
   deriving ToJson, FromJson
 structure Entry (ι : Type) where
@@ -248,7 +255,8 @@ private def pointData (entries : List (Entry ι)) (expressions : List (Expressio
     exprs := expressions.map (fun e => (e.pos,e.type.ground))
     entryCurrent := entries.map (fun e => (e.start,e.bindings.filterMap fun b => b.current.map (b.name,·)))
     entryBounds := entries.map (fun e => (e.start,e.bounds.map fun b => (b.array, b.index, b.strict)))
-    entryFacts := entries.map (fun e => (e.start,e.facts.map fun f => (f.terms, f.bound)))
+    entryFacts := entries.map (fun e => (e.start,e.facts.map fun f =>
+      (f.terms.map fun t => (t.name, t.length, t.coefficient), f.bound)))
     -- An expression's assertion is of one field each (`validCurrent`).
     exprCurrent := expressions.filterMap (fun e => e.current.map fun fs =>
       (e.pos, fs.filterMap fun (p, A) => match p with | [k] => some (k, A) | _ => none)) }

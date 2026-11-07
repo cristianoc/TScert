@@ -213,6 +213,27 @@ control(async (): Promise<void> => {
 });
 
 control(async (): Promise<void> => {
+  // A length term claimed at an entry where no test stated it: the
+  // caller's facts forged to state `xs.length === ys.length` where only
+  // `xs.length > 0` was tested, the call then typed at the precondition's
+  // signature by the producer's own selection, is refused where evidence is
+  // searched, at the entry the forged facts are claimed.
+  const artifacts = run("invalid-written-precondition-lengths");
+  const source = readFileSync(sourceKey(artifacts), "utf8");
+  const claims = readClaims(artifacts);
+  const fn = must(claims.functions.find(f => f.name === "second"), "second's claims");
+  const entry = must(fn.entries.find(e => e.start === source.indexOf("return at(")), "the call's entry");
+  const length = (name: string, coefficient: number) => ({ name, length: true, coefficient });
+  entry.facts.push({ terms: [length("xs", 1), length("ys", -1)], bound: 0 },
+    { terms: [length("xs", -1), length("ys", 1)], bound: 0 });
+  const forged = writeClaims(artifacts, "length-equality-forged", claims);
+  const searched = produceWith(artifacts, forged, "length-equality-forged");
+  assert.equal(searched.status, 1, `${searched.stdout}${searched.stderr}`);
+  assert.match(searched.stdout + searched.stderr, /does not establish the claims/);
+  process.stdout.write("length terms: an equality of two lengths claimed where no test stated it, refused at its entry\n");
+});
+
+control(async (): Promise<void> => {
   // A write keeps what is known of the other keys of its own object alone
   // (`write-sibling`): past a write of the same key through a parameter that
   // may hold the same object, the narrowed field's read claimed at the

@@ -9,22 +9,19 @@
 // declaration's parameters:
 //
 //   C ::= A && C | A
-//   A ::= safeInteger(x)
-//       | E rel E           rel ∈ { <, <=, >, >=, === }, every parameter E
-//                           names stated a safe integer by the clause
-//       | k < xs.length | k <= xs.length | xs.length > k | xs.length >= k
-//                           k stated a safe integer and 0 <= k by the clause,
-//                           xs an array parameter
-//   E ::= n | x | n * x | E + E | E - E | -E
+//   A ::= safeInteger(x) | E rel E      rel ∈ { <, <=, >, >=, === }
+//   E ::= n | x | xs.length | n * x | n * xs.length | E + E | E - E | -E | (E)
 //
-// with n an integer literal and x a parameter. Each atom's meaning is the
-// index fact it elaborates to: `safeInteger(x)` is `int(x)`; a comparison of
-// linear expressions is a linear fact over the integers the parameters hold,
-// which for safe integers is the comparison's IEEE answer; `k < xs.length`
-// is `bound(xs, k, strict)`, k an index below (at most) the length of the
-// store `xs` holds, which is the array's `length`. Every other form of the
-// draft's grammar (guards, `old`, `result`, paths other than an array
-// parameter's length, `||`, `!`) is refused with the clause's location.
+// with n an integer literal, x a parameter the clause states a safe integer
+// and xs an array parameter. Each atom's meaning is the index facts it
+// elaborates to: `safeInteger(x)` is `int(x)`; a comparison is the linear
+// fact over the integers its terms denote, a parameter's value or its
+// array's length (`HeapKnowledge.Term`), with every sum, difference and
+// product it computes stated a safe integer. Where those facts hold, each
+// side of the comparison evaluates under JavaScript's arithmetic to that
+// safe integer exactly, so the comparison's answer is the fact's. Every other
+// form of the draft's grammar (guards, `old`, `result`, paths other than an
+// array parameter's length, `||`, `!`) is refused with the clause's location.
 import type { IndexFact, LinearFact, LinearTerm } from "./declaration-types.mts";
 
 /** A parameter a clause may name: its name, its call position, whether its
@@ -75,11 +72,11 @@ function tokens(text: string): Token[] | string {
   return out;
 }
 
-/** A linear expression: coefficients by parameter name and a constant. */
-type Linear = { terms: Map<string, number>; constant: number };
-/** A term of an atom: a linear expression, or the length of a parameter. */
-type Term = { k: "linear"; e: Linear } | { k: "length"; of: string };
-type Atom = { k: "safeInteger"; of: string } | { k: "compare"; op: string; left: Term; right: Term };
+/** A linear expression: coefficients by term and a constant, a term a
+ * parameter's name or `xs.length`, and the subexpressions JavaScript computes
+ * on the way (`steps`), each a sum, difference or product. */
+type Linear = { terms: Map<string, number>; constant: number; steps: Linear[] };
+type Atom = { k: "safeInteger"; of: string } | { k: "compare"; op: string; left: Linear; right: Linear };
 
 class Parser {
   private at = 0;
@@ -109,49 +106,48 @@ class Parser {
       this.expect(")");
       return { k: "safeInteger", of: x.v };
     }
-    const left = this.term();
+    const left = this.sum();
     const op = this.take();
     if (!op || op.k !== "op" || !["<", "<=", ">", ">=", "==="].includes(op.v))
       throw new ClauseError("an atom compares two terms with <, <=, >, >= or ===");
-    const right = this.term();
+    const right = this.sum();
     return { k: "compare", op: op.v, left, right };
-  }
-  private term(): Term {
-    const t = this.peek();
-    const next = this.ts[this.at + 1];
-    const after = this.ts[this.at + 2];
-    if (t && t.k === "name" && next && next.k === "op" && next.v === "." ) {
-      if (!after || after.k !== "name" || after.v !== "length")
-        throw new ClauseError("a path is a parameter's `length`, no other");
-      this.at += 3;
-      return { k: "length", of: t.v };
-    }
-    return { k: "linear", e: this.sum() };
   }
   private sum(): Linear {
     let e = this.product();
     while (this.isOp("+") || this.isOp("-")) {
       const sign = this.isOp("+") ? 1 : -1;
       this.at++;
-      e = add(e, this.product(), sign);
+      e = computed(add(e, this.product(), sign));
     }
     return e;
+  }
+  /** A parameter or its array's `length`. */
+  private variable(): string {
+    const x = this.take();
+    if (!x || x.k !== "name") throw new ClauseError("a product is an integer literal times a parameter or a length");
+    if (this.isOp(".")) {
+      this.at++;
+      const f = this.take();
+      if (!f || f.k !== "name" || f.v !== "length") throw new ClauseError("a path is a parameter's `length`, no other");
+      return `${x.v}.length`;
+    }
+    return x.v;
   }
   private product(): Linear {
     if (this.isOp("-")) { this.at++; return scale(this.product(), -1); }
     if (this.isOp("(")) { this.at++; const e = this.sum(); this.expect(")"); return e; }
-    const t = this.take();
+    const t = this.peek();
     if (!t) throw new ClauseError("the clause ends inside a term");
     if (t.k === "num") {
+      this.at++;
       if (this.isOp("*")) {
         this.at++;
-        const x = this.take();
-        if (!x || x.k !== "name") throw new ClauseError("a product is an integer literal times a parameter");
-        return { terms: new Map([[x.v, t.v]]), constant: 0 };
+        return computed({ terms: new Map([[this.variable(), t.v]]), constant: 0, steps: [] });
       }
-      return { terms: new Map(), constant: t.v };
+      return { terms: new Map(), constant: t.v, steps: [] };
     }
-    if (t.k === "name") return { terms: new Map([[t.v, 1]]), constant: 0 };
+    if (t.k === "name") return { terms: new Map([[this.variable(), 1]]), constant: 0, steps: [] };
     throw new ClauseError(`the clause has ${t.v} where a term is expected`);
   }
 }
@@ -161,10 +157,16 @@ class ClauseError extends Error {}
 function add(a: Linear, b: Linear, sign: number): Linear {
   const terms = new Map(a.terms);
   for (const [x, c] of b.terms) terms.set(x, (terms.get(x) ?? 0) + sign * c);
-  return { terms, constant: a.constant + sign * b.constant };
+  return { terms, constant: a.constant + sign * b.constant, steps: [...a.steps, ...b.steps] };
 }
+/** `-e`, which JavaScript computes exactly. */
 function scale(a: Linear, k: number): Linear {
-  return { terms: new Map([...a.terms].map(([x, c]): [string, number] => [x, k * c])), constant: k * a.constant };
+  return { terms: new Map([...a.terms].map(([x, c]): [string, number] => [x, k * c])), constant: k * a.constant,
+    steps: a.steps };
+}
+/** A subexpression JavaScript computes, recorded among its steps. */
+function computed(e: Linear): Linear {
+  return { ...e, steps: [...e.steps, { terms: e.terms, constant: e.constant, steps: [] }] };
 }
 
 /** The position a linear term reads. */
@@ -198,55 +200,66 @@ export function elaborateRequires(clauses: readonly string[], params: readonly C
       return p;
     };
     const ints = new Set(atoms.flatMap(a => a.k === "safeInteger" ? [param(a.of).name] : []));
-    const facts: IndexFact[] = [];
-    const linearFacts: { form: Map<string, number>; bound: number }[] = [];
-    const lessEq = (l: Linear, r: Linear, strict: boolean): void => {
-      const d = add(l, r, -1);
-      const form = new Map([...d.terms].filter(([, c]) => c !== 0));
-      for (const x of form.keys())
-        if (!ints.has(param(x).name)) throw new ClauseError(`the comparison names ${x}, which the clause does not state a safe integer`);
-      linearFacts.push({ form, bound: -d.constant - (strict ? 1 : 0) });
-    };
-    const lengths: { array: string; index: string; strict: boolean }[] = [];
-    for (const a of atoms) {
-      if (a.k === "safeInteger") { facts.push({ int: { slot: param(a.of).position } }); continue; }
-      const { op, left, right } = a;
-      if (left.k === "length" || right.k === "length") {
-        // `k < xs.length` and its mirrored and inclusive forms.
-        const [index, length, strict] =
-          left.k === "linear" && right.k === "length" && (op === "<" || op === "<=") ? [left.e, right.of, op === "<"]
-          : left.k === "length" && right.k === "linear" && (op === ">" || op === ">=") ? [right.e, left.of, op === ">"]
-          : (() => { throw new ClauseError("a length is compared as `k < xs.length` or `k <= xs.length`, no other way"); })();
-        const k = [...index.terms];
-        if (index.constant !== 0 || k.length !== 1 || k[0]?.[1] !== 1)
-          throw new ClauseError("a length bounds a parameter, no other term");
-        const name = k[0]?.[0] ?? "";
-        if (!param(length).array) throw new ClauseError(`${length} is no array parameter`);
-        if (!ints.has(param(name).name)) throw new ClauseError(`the index ${name} is not stated a safe integer`);
-        lengths.push({ array: length, index: name, strict });
-        continue;
+    const term = (key: string): LinearTerm => {
+      if (key.endsWith(".length")) {
+        const p = param(key.slice(0, -".length".length));
+        if (!p.array) throw new ClauseError(`${p.name} is no array parameter, whose length a clause names`);
+        return { length: { slot: p.position } };
       }
-      if (left.k !== "linear" || right.k !== "linear") throw new ClauseError("a comparison of linear terms");
-      if (op === "<") lessEq(left.e, right.e, true);
-      else if (op === "<=") lessEq(left.e, right.e, false);
-      else if (op === ">") lessEq(right.e, left.e, true);
-      else if (op === ">=") lessEq(right.e, left.e, false);
-      else { lessEq(left.e, right.e, false); lessEq(right.e, left.e, false); }
-    }
-    for (const l of lengths) {
-      const nonnegative = linearFacts.some(f => f.form.size === 1 && f.form.get(l.index) === -1 && f.bound <= 0);
-      if (!nonnegative) throw new ClauseError(`the index ${l.index} is bounded by a length but not stated 0 <= ${l.index}`);
-      facts.push({ bound: { array: param(l.array).position, index: param(l.index).position, strict: l.strict } });
-    }
-    for (const f of linearFacts) {
-      const form: [LinearTerm, number][] = [...f.form].map(([x, c]): [number, number] => [param(x).position, c])
-        .sort((a, b) => a[0] - b[0]).map(([x, c]): [LinearTerm, number] => [{ value: { slot: x } }, c]);
-      const fact: LinearFact = { le: { form, bound: f.bound } };
-      facts.push({ linear: { fact } });
+      const p = param(key);
+      if (!ints.has(p.name)) throw new ClauseError(`the comparison names ${key}, which the clause does not state a safe integer`);
+      return { value: { slot: p.position } };
+    };
+    const facts: IndexFact[] = atoms.flatMap(a => a.k === "safeInteger" ? [{ int: { slot: param(a.of).position } }] : []);
+    const seen = new Set<string>();
+    /** The fact `Σ c·t ≤ bound`, each term once, sorted by position and kind. */
+    const lessEq = (terms: Map<string, number>, bound: number): void => {
+      if (!Number.isSafeInteger(bound)) throw new ClauseError("the clause's constants lie outside the safe integers");
+      const form: [LinearTerm, number][] = [...terms].filter(([, c]) => c !== 0)
+        .map(([x, c]): [LinearTerm, number] => [term(x), c])
+        .sort((a, b) => code(a[0]) - code(b[0]));
+      const fact: LinearFact = { le: { form, bound } };
+      const key = JSON.stringify(fact);
+      if (!seen.has(key)) { seen.add(key); facts.push({ linear: { fact } }); }
+    };
+    const compare = (l: Linear, r: Linear, strict: boolean): void => {
+      const d = add(l, r, -1);
+      lessEq(d.terms, -d.constant - (strict ? 1 : 0));
+    };
+    for (const a of atoms) {
+      if (a.k === "safeInteger") continue;
+      const { op, left, right } = a;
+      // Each computed subexpression a safe integer, −(2^53 − 1) ≤ e ≤ 2^53 − 1,
+      // stated of its terms `t` as −(2^53 − 1) − c ≤ t ≤ 2^53 − 1 − c, each
+      // bound at most 2^53 − 1: stronger where c's sign would raise it. A
+      // range of one term with coefficient ±1 at 2^53 − 1 is what the term's
+      // own range states, and is left out.
+      for (const e of [...left.steps, ...right.steps]) {
+        const range = (terms: Map<string, number>, bound: number): void => {
+          const nonzero = [...terms].filter(([, c]) => c !== 0);
+          const own = nonzero.length === 1 && Math.abs(nonzero[0]?.[1] ?? 0) === 1 && bound >= MAX_SAFE;
+          if (!own) lessEq(terms, Math.min(bound, MAX_SAFE));
+        };
+        range(e.terms, MAX_SAFE - e.constant);
+        range(scale(e, -1).terms, MAX_SAFE + e.constant);
+      }
+      if (op === "<") compare(left, right, true);
+      else if (op === "<=") compare(left, right, false);
+      else if (op === ">") compare(right, left, true);
+      else if (op === ">=") compare(right, left, false);
+      else { compare(left, right, false); compare(right, left, false); }
     }
     return { facts };
   } catch (e) {
     if (e instanceof ClauseError) return { refused: e.message };
     throw e;
   }
+}
+
+const MAX_SAFE = Number.MAX_SAFE_INTEGER;
+
+/** A term's place in a normal form (`HeapKnowledge.Term.code`): a position's
+ * value before its length. */
+function code(t: LinearTerm): number {
+  return "value" in t ? 2 * t.value.slot : 2 * t.length.slot + 1;
 }

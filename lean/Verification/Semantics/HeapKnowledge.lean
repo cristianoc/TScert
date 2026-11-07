@@ -518,51 +518,99 @@ theorem lengthBound_sound {M : List Nat} {a : List IndexAtom} {k : Nat} {strict 
   refine ⟨s, ls, b, j.toNat, by rw [← hM y hy]; exact hs, hl, hb,
     indexOfBits_safe hsafe (by omega) (by omega), by cases strict <;> simp at f2 ⊢ <;> omega⟩
 
+/-- The linear facts of the atoms conditional on slot `c` at the answer `neg`. -/
+def condFacts (as : List IndexAtom) (c : Nat) (neg : Bool) : List (Linear.Fact Term) :=
+  as.filterMap fun a => if a.cond == some c && a.negated == neg then match a.fact with
+    | .linear F => some F
+    | _ => none else none
+
+theorem condFacts_holds {as : List IndexAtom} {c : Nat} {neg : Bool} {ρ h} (he : IndexHolds as ρ h)
+    (hc : tagHolds .truthy (ρ c) = !neg) : ∀ F ∈ condFacts as c neg, F.Holds (termValuation ρ h) := by
+  intro F hF
+  obtain ⟨a, ha, hm⟩ := List.mem_filterMap.mp hF
+  split at hm
+  · rename_i hk
+    simp only [Bool.and_eq_true, beq_iff_eq] at hk
+    have hat := he a ha fun c' hc' => by rw [hk.1] at hc'; cases hc'; rw [hk.2]; exact hc
+    cases hfa : a.fact with
+    | linear G => rw [hfa] at hm hat; cases hm; exact hat.2
+    | index _ | length _ _ | bound _ _ _ | int _ => rw [hfa] at hm; cases hm
+  · cases hm
+
+/-- Whether the facts `known` entail a target linear fact, each target term
+renamed to a source term the source states defined (`pickTerm`). -/
+def linearEntailed (M : Nat → List Nat) (m : PointClaims.Mapping) (a : List IndexAtom)
+    (known : List (Linear.Fact Term)) (F : Linear.Fact Term) : Bool :=
+  match F.mapVars (fun t => some (pickTerm M m a t)) with
+  | some F' => F'.vars.all (termDefined a) && Linear.entails known F'
+  | none => false
+
+/-- Whether a target atom follows from the source's linear facts: an
+unconditional `int` or `bound` atom they give; a linear atom they entail,
+unconditional from the unconditional facts, conditional on a slot from those
+with the facts conditional on a source slot of its class at the same answer. -/
 def linearFollows (M : Nat → List Nat) (m : PointClaims.Mapping) (a : List IndexAtom) (t : IndexAtom) : Bool :=
-  t.cond.isNone && match t.fact with
+  match t.fact with
+  | .linear F => match t.cond with
+    | none => linearEntailed M m a (linearFacts a) F
+    | some c' => (M (PointClaims.slot m c')).any fun c =>
+        linearEntailed M m a (linearFacts a ++ condFacts a c t.negated) F
   | .bound x k st =>
-      lengthBound (M (PointClaims.slot m x)) a (pickSlot M m a k) st
-  | .int k => intSlot a (pickSlot M m a k)
-  | .linear F => match F.mapVars (fun t => some (pickTerm M m a t)) with
-    | some F' => F'.vars.all (termDefined a) && Linear.entails (linearFacts a) F'
-    | none => false
+      t.cond.isNone && lengthBound (M (PointClaims.slot m x)) a (pickSlot M m a k) st
+  | .int k => t.cond.isNone && intSlot a (pickSlot M m a k)
   | _ => false
 
+theorem linearEntailed_sound {M : Nat → List Nat} {m : PointClaims.Mapping} {a : List IndexAtom}
+    {known : List (Linear.Fact Term)} {F : Linear.Fact Term} {ρ h}
+    (hM : ∀ x, ∀ y ∈ M x, ρ y = ρ x) (hf : linearEntailed M m a known F = true) (ha : IndexHolds a ρ h)
+    (hk : ∀ G ∈ known, G.Holds (termValuation ρ h)) :
+    (IndexFact.linear F).HoldsAt (PointClaims.mapEnv m ρ) h := by
+  unfold linearEntailed at hf
+  split at hf
+  · rename_i F' hF'
+    simp only [Bool.and_eq_true, List.all_eq_true] at hf
+    obtain ⟨hv, he⟩ := hf
+    have hv' : ∀ x ∈ F.vars, ∀ y, (fun t => some (pickTerm M m a t)) x = some y →
+        termValuation ρ h y = termValuation (PointClaims.mapEnv m ρ) h x := by
+      intro x _ y hy; cases hy; simp only [termValuation, pickTerm_eq hM]
+    refine ⟨fun x hx => ?_, (Linear.Fact.holds_mapVars hF' hv').mp (Linear.entails_sound he hk)⟩
+    obtain ⟨y, hy, hxy⟩ := Linear.Fact.mapVars_vars_fwd hF' x hx
+    cases hxy
+    have := termDefined_sound ha (hv _ hy)
+    rw [pickTerm_eq hM] at this
+    exact this
+  · cases hf
+
 theorem linearFollows_sound {M : Nat → List Nat} {m : PointClaims.Mapping} {a : List IndexAtom} {t : IndexAtom} {ρ h}
-    (hM : ∀ x, ∀ y ∈ M x, ρ y = ρ x) (hf : linearFollows M m a t = true) (ha : IndexHolds a ρ h) :
+    (hM : ∀ x, ∀ y ∈ M x, ρ y = ρ x) (hf : linearFollows M m a t = true) (ha : IndexHolds a ρ h)
+    (hcond : ∀ c, t.cond = some c → tagHolds .truthy (PointClaims.mapEnv m ρ c) = !t.negated) :
     t.fact.HoldsAt (PointClaims.mapEnv m ρ) h := by
-  simp only [linearFollows, Bool.and_eq_true] at hf
-  obtain ⟨-, hf⟩ := hf
+  unfold linearFollows at hf
   cases ht : t.fact with
   | int k =>
     rw [ht] at hf
-    simp only at hf
-    have := intSlot_sound ha hf
+    simp only [Bool.and_eq_true] at hf
+    have := intSlot_sound ha hf.2
     rw [pickSlot_eq hM] at this
     exact this
   | linear F =>
     rw [ht] at hf
     simp only at hf
     split at hf
-    · rename_i F' hF'
-      simp only [Bool.and_eq_true, List.all_eq_true] at hf
-      obtain ⟨hv, he⟩ := hf
-      have hv' : ∀ x ∈ F.vars, ∀ y, (fun t => some (pickTerm M m a t)) x = some y →
-          termValuation ρ h y = termValuation (PointClaims.mapEnv m ρ) h x := by
-        intro x _ y hy; cases hy; simp only [termValuation, pickTerm_eq hM]
-      refine ⟨fun x hx => ?_, (Linear.Fact.holds_mapVars hF' hv').mp
-        (Linear.entails_sound he (linearFacts_holds ha))⟩
-      obtain ⟨y, hy, hxy⟩ := Linear.Fact.mapVars_vars_fwd hF' x hx
-      cases hxy
-      have := termDefined_sound ha (hv _ hy)
-      rw [pickTerm_eq hM] at this
-      exact this
-    · cases hf
+    · exact linearEntailed_sound hM hf ha (linearFacts_holds ha)
+    · rename_i c' hc'
+      obtain ⟨c, hc, hf⟩ := List.any_eq_true.mp hf
+      have hcv : tagHolds .truthy (ρ c) = !t.negated := by
+        rw [hM _ _ hc]; exact hcond c' hc'
+      refine linearEntailed_sound hM hf ha fun G hG => ?_
+      rcases List.mem_append.mp hG with hG | hG
+      · exact linearFacts_holds ha G hG
+      · exact condFacts_holds ha hcv G hG
   | bound x k st =>
     rw [ht] at hf
-    simp only at hf
+    simp only [Bool.and_eq_true] at hf
     obtain ⟨s, ls, b, idx, hs, hl, hb, hidx, hle⟩ :=
-      lengthBound_sound (v := PointClaims.mapEnv m ρ x) (fun y hy => hM _ y hy) hf ha
+      lengthBound_sound (v := PointClaims.mapEnv m ρ x) (fun y hy => hM _ y hy) hf.2 ha
     rw [pickSlot_eq hM] at hb
     exact ⟨s, ls, b, idx, hs, hl, hb, hidx, hle⟩
   | index _ | length _ _ => rw [ht] at hf; cases hf
@@ -575,7 +623,7 @@ theorem indicesCheckBy_sound {M : Nat → List Nat} {a b : List IndexAtom} {m ρ
     IndexHolds b (PointClaims.mapEnv m ρ) h := by
   intro t ht hcond
   rcases Bool.or_eq_true_iff.mp (List.all_eq_true.mp hc t ht) with hc' | hlin
-  case inr => exact linearFollows_sound hM hlin ha
+  case inr => exact linearFollows_sound hM hlin ha hcond
   obtain ⟨s, hs, hf⟩ := List.any_eq_true.mp hc'
   simp only [indexFollows, Bool.and_eq_true] at hf
   obtain ⟨hfact, hcd⟩ := hf
@@ -618,15 +666,30 @@ theorem envIndices_holds {as : List IndexAtom} {ρ h} (he : IndexHolds as ρ h) 
   | index _ | int _ => rw [hf] at this; exact this
   | length _ _ | bound _ _ _ => rw [hf] at henv; simp [IndexFact.envOnly] at henv
 
+/-- The terms the linear facts of the atoms name, conditional ones included. -/
+def linearTerms (as : List IndexAtom) : List Term :=
+  ((linearFacts as).flatMap (·.vars) ++ as.flatMap fun a => match a.fact with
+    | .linear F => F.vars
+    | _ => []).eraseDups
+
 /-- The atoms with the terms of the slots of `drop` eliminated from the
-unconditional linear facts (`Linear.eliminateAll`): the derived facts naming
-none of them, each of whose terms an atom states defined, appended. -/
+linear facts (`Linear.eliminateAll`): from the unconditional ones, and from
+those with each condition's atoms, the derived facts naming none of them,
+each of whose terms an atom states defined, appended under the condition
+they were derived under. -/
 def eliminateIndices (drop : List Nat) (as : List IndexAtom) : List IndexAtom :=
-  let used := ((linearFacts as).flatMap (·.vars)).eraseDups.filter fun t => drop.contains t.slot
+  let used := (linearTerms as).filter fun t => drop.contains t.slot
   if used.isEmpty then as else
-  as ++ ((Linear.eliminateAll (linearFacts as) used).filter fun F =>
-      !(linearFacts as).contains F && F.vars.all (fun t => !drop.contains t.slot && termDefined as t)).map
-    fun F => ⟨.linear F, none, false⟩
+  let keep := fun (known : List (Linear.Fact Term)) (F : Linear.Fact Term) =>
+    !known.contains F && F.vars.all (fun t => !drop.contains t.slot && termDefined as t)
+  let groups := (as.filterMap fun a => match a.cond, a.fact with
+    | some c, .linear _ => if drop.contains c then none else some (c, a.negated)
+    | _, _ => none).eraseDups
+  as ++ ((Linear.eliminateAll (linearFacts as) used).filter (keep (linearFacts as))).map
+    (fun F => ⟨.linear F, none, false⟩) ++
+    groups.flatMap fun (c, neg) =>
+      let known := linearFacts as ++ condFacts as c neg
+      ((Linear.eliminateAll known used).filter (keep known)).map fun F => ⟨.linear F, some c, neg⟩
 
 theorem eliminateIndices_holds {drop : List Nat} {as : List IndexAtom} {ρ h} (he : IndexHolds as ρ h) :
     IndexHolds (eliminateIndices drop as) ρ h := by
@@ -635,12 +698,23 @@ theorem eliminateIndices_holds {drop : List Nat} {as : List IndexAtom} {ρ h} (h
   · exact he
   · intro a ha hc
     rcases List.mem_append.mp ha with ha | ha
-    · exact he a ha hc
-    · obtain ⟨F, hF, rfl⟩ := List.mem_map.mp ha
+    · rcases List.mem_append.mp ha with ha | ha
+      · exact he a ha hc
+      · obtain ⟨F, hF, rfl⟩ := List.mem_map.mp ha
+        obtain ⟨hF, hk⟩ := List.mem_filter.mp hF
+        simp only [Bool.and_eq_true, Bool.not_eq_true', List.all_eq_true] at hk
+        exact ⟨fun x hx => termDefined_sound he (hk.2 x hx).2,
+          Linear.eliminateAll_sound (linearFacts_holds he) F hF⟩
+    · obtain ⟨⟨c, neg⟩, -, ha⟩ := List.mem_flatMap.mp ha
+      obtain ⟨F, hF, rfl⟩ := List.mem_map.mp ha
       obtain ⟨hF, hk⟩ := List.mem_filter.mp hF
       simp only [Bool.and_eq_true, Bool.not_eq_true', List.all_eq_true] at hk
+      have hcv := hc c rfl
       refine ⟨fun x hx => termDefined_sound he (hk.2 x hx).2, ?_⟩
-      exact Linear.eliminateAll_sound (linearFacts_holds he) F hF
+      refine Linear.eliminateAll_sound (fun G hG => ?_) F hF
+      rcases List.mem_append.mp hG with hG | hG
+      · exact linearFacts_holds he G hG
+      · exact condFacts_holds he hcv G hG
 
 /-- Atoms about slots below the dropped slot 0, restated one lower; an atom
 naming slot 0 is first restated on a slot the links relate to it. -/
@@ -840,7 +914,7 @@ def project (k : Knowledge) (m : PointClaims.Mapping) (count : Nat) : Knowledge 
     -- A slot no target slot holds is first eliminated from the linear facts.
     let target := fun s => (List.range count).find? fun j =>
       (HeapLinks.aliases k.links (PointClaims.slot m j)).contains s
-    let dropped := ((linearFacts k.indices).flatMap (·.vars)).map Term.slot |>.eraseDups.filter fun s => (target s).isNone
+    let dropped := (linearTerms k.indices).map Term.slot |>.eraseDups.filter fun s => (target s).isNone
     mapIndices target (eliminateIndices dropped k.indices)⟩
 
 /-! ## Queries by class

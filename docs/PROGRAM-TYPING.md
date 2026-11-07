@@ -1636,11 +1636,16 @@ value $`i`$; $`r`$ is the result:
      {K\vdash r\leftarrow a\pm b\dashv\mathrm{int}(r),\ r=a\pm b}\ \textsf{int-exact}
 \qquad
 \frac{}{K\vdash c\leftarrow a\lhd b\dashv (a\lhd b\ \text{if}\ c),\ (\neg(a\lhd b)\ \text{if}\ \neg c)}\ \textsf{int-compare}
+\qquad
+\frac{}{K\vdash c\leftarrow a\ \texttt{===}\ b\dashv (a=b\ \text{if}\ c)}\ \textsf{int-equal}
 ```
 
 with $`K\vdash`$ the entailment of `Linear.entails` from the step's unconditional
 linear facts, $`\lhd`$ one of `<`, `<=`, `>`, `>=`, and each answer's fact over
 the integers ($`\neg(a<b)`$ is $`b\le a`$: two safe integers are never NaN).
+`int-equal` reads `Number::equal`, which on two safe integers is their
+equality, the zeros included (proved: `SafeIntegers.numberEqual_safe`); a
+comparison with a number literal lowers to a tag test and states none.
 `length-range` reads the store contract's bound
 ([arrays](POSITIVE-TYPES.md#arrays)). Proved: `IndexWrites.linearAtoms_holds`,
 from `SafeIntegers.add_safe`, `sub_safe` and `doubleOrder_safe`. A length atom
@@ -1653,7 +1658,13 @@ unconditional linear facts: each pair of facts of opposite signs on it is
 combined to cancel it (Fourier–Motzkin, `Linear.eliminateAll`, each
 combination a `combine` step `check` decides), and the derived facts naming no
 dropped slot are kept (`HeapKnowledge.eliminateIndices`, proved:
-`eliminateIndices_holds`). So `const answer = base + 2`, computed from copies
+`eliminateIndices_holds`). The facts conditional on a kept slot's answer are
+eliminated alike, together with the unconditional ones, and the derived facts
+kept under the same condition; an edge establishes such a target atom where
+the source's unconditional facts and those conditional on a slot of its
+condition's class, at the same answer, entail it (`linearFollows`). So a test
+evaluated again from saved operands keeps, on each answer, what it states of
+the slots that remain. So `const answer = base + 2`, computed from copies
 of `base` and of the literal, keeps `answer = base + 2` once the copies are
 dropped. A step that writes a field, or keeps only its receiver's own
 locations, keeps the index facts reading no heap, as the ordinary output does.
@@ -1804,19 +1815,24 @@ parameters:
 ```math
 \begin{aligned}
 C &::= A \mid A\ \texttt{\&\&}\ C\\
-A &::= \mathtt{safeInteger}(x) \mid E\ \mathit{rel}\ E \mid k < x.\mathtt{length} \mid k \le x.\mathtt{length}\\
-E &::= n \mid x \mid n\cdot x \mid E + E \mid E - E \mid -E
+A &::= \mathtt{safeInteger}(x) \mid E\ \mathit{rel}\ E\\
+E &::= n \mid x \mid x.\mathtt{length} \mid n\cdot x \mid n\cdot x.\mathtt{length} \mid E + E \mid E - E \mid -E \mid (E)
 \end{aligned}
 ```
 
-with $`\mathit{rel}`$ one of `<`, `<=`, `>`, `>=`, `===` and the mirrored
-`x.length > k`, `x.length >= k`. Each atom elaborates to the index fact it
-means: `safeInteger(x)` to $`\mathrm{int}(x)`$; a comparison of linear
-expressions, every parameter of which the clause states a safe integer, to
-the linear fact over the integers they hold, which on safe integers is the
-comparison's IEEE answer; `k < x.length` to $`\mathrm{bound}_<(x,k)`$ (`<=` to
-$`\mathrm{bound}(x,k)`$), with $`\mathrm{int}(k)`$ and `0 <= k` in the clause
-and $`x`$ an array parameter, whose `length` is its store's. A precondition
+with $`\mathit{rel}`$ one of `<`, `<=`, `>`, `>=`, `===`, $`n`$ an integer
+literal, $`x`$ a parameter the clause states $`\mathrm{int}(x)`$, and
+`x.length` the length $`|x|`$ of an array parameter's store. Each atom
+elaborates to index facts: `safeInteger(x)` to $`\mathrm{int}(x)`$; a
+comparison $`E_1\ \mathit{rel}\ E_2`$ to the linear fact over the integers its
+terms denote ([linear facts](#linear-facts)), with, for every sum,
+difference and product $`e`$ it computes, the range
+$`-(2^{53}-1)\le e\le 2^{53}-1`$, each bound of which is clamped at
+$`2^{53}-1`$ (a stronger fact). Where those facts hold, JavaScript computes
+each side exactly, so the comparison of the two safe integers answers as the
+fact states: the facts imply the clause's value under the
+[operational semantics](SEMANTICS.md#operational-language). A clause whose
+constants leave the safe integers is refused. A precondition
 is refused on an exported function, whose callers outside the module
 establish nothing; on an async function; on one whose parameters are not
 plain required names; and on one naming the receiver without declaring it.
@@ -1829,10 +1845,12 @@ facts at the call's statement establish it: the bounds and linear facts of
 its analysis, each actual read as a linear expression. Lean decides at the
 call (`call-requires`).
 
-**Cases.** Positive: `written-precondition`. Negative, each run under Node:
-`invalid-written-precondition-call` (a call at `xs.length`) and
-`invalid-written-precondition-body` (a body reading past what its clause
-bounds). Refused forms: `written-precondition-exported-refused`,
+**Cases.** Positive: `written-precondition`, `written-precondition-lengths`
+(`i + 1 < xs.length`, and `xs.length === ys.length` established by a test).
+Negative, each run under Node: `invalid-written-precondition-call` (a call at
+`xs.length`), `invalid-written-precondition-body` (a body reading past what its
+clause bounds) and `invalid-written-precondition-lengths` (a call with no
+length equality). Refused forms: `written-precondition-exported-refused`,
 `written-precondition-disjunction-refused`.
 
 ### A literal with spreads

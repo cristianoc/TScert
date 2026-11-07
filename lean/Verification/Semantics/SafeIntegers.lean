@@ -578,6 +578,24 @@ states that sum. -/
 #guard safeIntOfBits (bitsOfNat (2 ^ 53)) = none
 #guard safeIntOfBits (bitsOfNat (2 ^ 53 - 1)) = some (2 ^ 53 - 1)
 #guard safeIntOfBits ((0.0 / 0.0 : Float).toBits) = none
+/-- Two doubles denoting safe integers are equal by `Number::equal` only where
+the integers are: equal bits denote one integer, and two zeros denote `0`. -/
+theorem numberEqual_safe {x y : UInt64} {i j : Int} (hx : SafeInt x i) (hy : SafeInt y j)
+    (he : numberEqual x y = true) : i = j := by
+  simp only [numberEqual, Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq] at he
+  rcases he.2 with rfl | ⟨hx0, hy0⟩
+  · have := (safeIntOfBits_complete hx).symm.trans (safeIntOfBits_complete hy)
+    exact Option.some.inj this
+  · have zero : ∀ {z : UInt64} {k : Int}, SafeInt z k → z &&& 0x7fffffffffffffff = 0 → k = 0 := by
+      intro z k hz h0
+      have hm := magnitudeOfBits_safe hz
+      have h0' := congrArg UInt64.toNat h0
+      rw [IndexNumbers.magnitude_toNat] at h0'
+      simp only [magnitudeOfBits, UInt64.toNat_zero] at hm h0'
+      rw [if_pos h0'] at hm
+      omega
+    rw [zero hx hx0, zero hy hy0]
+
 #guard safeIntOfBits ((1.0 / 0.0 : Float).toBits) = none
 #guard safeIntOfBits (arithBits .add (bitsOfNat (2 ^ 53 - 1)) (bitsOfNat 2)) = none
 #guard safeIntOfBits (arithBits .sub (bitsOfNat 3) (bitsOfNat 10)) = some (-7)

@@ -473,6 +473,12 @@ def compareAtoms (op : Arith) (D : Linear.Form Nat) (c : Int) : List IndexAtom :
   | some (t, f) => [⟨.linear (valueFact t), some 0, false⟩, ⟨.linear (valueFact f), some 0, true⟩]
   | none => []
 
+/-- The atoms of a strict equality's `true` answer, on the result slot 0, of
+operands whose difference is `D + c`: `D + c = 0`, as two facts. -/
+def equalAtoms (D : Linear.Form Nat) (c : Int) : List IndexAtom :=
+  [⟨.linear (valueFact (.le (shiftForm D) (-c))), some 0, false⟩,
+    ⟨.linear (valueFact (.le (shiftForm (D.scale (-1))) c)), some 0, false⟩]
+
 /-- A copy of slot `a` restates the atoms conditional on `a` as conditional on
 the copy, the result slot 0: the copy holds the same value. -/
 def copiedAtoms (k : Knowledge) (a : Nat) : List IndexAtom :=
@@ -519,6 +525,7 @@ def linearAtoms (G : NormalGraph ι) (Γ : List (Ty ι)) (k : Knowledge) : Tm �
         | .add => sum (fa ++ fb) (ca + cb)
         | .sub => sum (fa ++ fb.scale (-1)) (ca - cb)
         | .lt | .le | .gt | .ge => compareAtoms op (fa ++ fb.scale (-1)) (ca - cb)
+        | .eq => equalAtoms (fa ++ fb.scale (-1)) (ca - cb)
         | _ => []
       | _, _ => []
     else []
@@ -674,6 +681,40 @@ theorem compareAtoms_holds {op : Arith} {D : Linear.Form Nat} {c : Int} {ρ h} {
            show _ ≤ _; first | (rw [ep]; simp only [answerHolds] at hans; omega) | (rw [en]; simp only [answerHolds] at hans; omega)⟩)
     | exact absurd ha (by simp)
 
+/-- A strict equality's `true` answer of two safe integers gives their
+difference zero. -/
+theorem equalAtoms_holds {D : Linear.Form Nat} {c : Int} {ρ h} {x y : UInt64} {i j : Int}
+    (hD : ∀ z ∈ D.map (·.1), (intValue (ρ z)).isSome)
+    (hdiff : Linear.Form.eval (valuation ρ) D + c = i - j)
+    (hx : SafeIntegers.SafeInt x i) (hy : SafeIntegers.SafeInt y j) :
+    IndexHolds (equalAtoms D c) (push (boolVal (numberEqual x y)) ρ) h := by
+  have hvars : ∀ (F : Linear.Form Nat), F.map (·.1) = D.map (·.1) →
+      ∀ z ∈ (shiftForm F).map (·.1), (intValue (push (boolVal (numberEqual x y)) ρ z)).isSome := by
+    intro F hF z hz
+    rw [shiftForm_vars, hF] at hz
+    obtain ⟨w, hw, rfl⟩ := List.mem_map.mp hz
+    simpa [push] using hD w hw
+  intro a ha hc
+  have hq := hc 0
+  simp only [equalAtoms, List.mem_cons, List.not_mem_nil, or_false] at ha
+  have htrue : numberEqual x y = true := by
+    rcases ha with rfl | rfl <;>
+    · have := hq rfl
+      cases hn : numberEqual x y <;> simp_all [push, boolVal, tagHolds]
+  have hij := SafeIntegers.numberEqual_safe hx hy htrue
+  rcases ha with rfl | rfl
+  · refine IndexFact.holdsAt_valueFact.mpr ⟨hvars D rfl, ?_⟩
+    show Linear.Form.eval _ _ ≤ _
+    rw [eval_shiftForm]; omega
+  · refine IndexFact.holdsAt_valueFact.mpr ⟨hvars (D.scale (-1)) (scale_vars _ _), ?_⟩
+    show Linear.Form.eval _ _ ≤ _
+    rw [eval_shiftForm, Linear.Form.eval_scale]; omega
+
+theorem binop_num_eq {x y : UInt64} {u : Tm} (h : binop .eq (.num x) (.num y) = some u) :
+    u = boolVal (numberEqual x y) := by
+  simp [binop, strictEquals, sameValue, isVal, isPrim] at h
+  exact h.symm
+
 theorem binop_num_relational {op : Arith} {x y : UInt64} {u : Tm} (hop : op.relational = true)
     (h : binop op (.num x) (.num y) = some u) : u = boolVal (relationHolds op (doubleOrder x y)) :=
   binop_relational hop h
@@ -795,6 +836,10 @@ theorem linearAtoms_holds [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty �
             (by rw [Linear.Form.eval_append, Linear.Form.eval_scale]; omega)
             (fun hr => SafeIntegers.sub_safe hsa hsb hr)
         all_goals first
+          | (rw [binop_num_eq hu]
+             exact equalAtoms_holds (hvars (fa ++ fb.scale (-1)) (by simp only [List.map_append, scale_vars]))
+               (i := Linear.Form.eval (valuation ρ) fa + ca) (j := Linear.Form.eval (valuation ρ) fb + cb)
+               (by rw [Linear.Form.eval_append, Linear.Form.eval_scale]; omega) hsa hsb)
           | (rename_i hop
              rw [binop_num_relational (by first | rfl) hu]
              exact compareAtoms_holds (hvars (fa ++ fb.scale (-1)) (by simp only [List.map_append, scale_vars]))

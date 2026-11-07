@@ -11,6 +11,17 @@ open Source
 
 type fact = (string * int) list * int
 
+(* A term of a fact: a value binding's name, or `xs.length`, the length of
+   the array store the binding `xs` holds (Lean's `HeapKnowledge.Term`). A
+   binding's name has no `.`, so the two never meet. *)
+let length_term xs = xs ^ ".length"
+let term_parts t = match String.index_opt t '.' with
+  | Some i -> String.sub t 0 i, true
+  | None -> t, false
+let term_binding t = fst (term_parts t)
+let is_length t = snd (term_parts t)
+let has_length ((t,_) : fact) = List.exists (fun (n,_) -> is_length n) t
+
 let max_safe = 9007199254740991
 let max_index = 4294967294
 
@@ -25,7 +36,7 @@ let norm (terms : (string * int) list) =
 
 let int_fact x : fact = [x,0], 0
 let is_int_fact ((t,_) : fact) = List.for_all (fun (_,c) -> c = 0) t
-let mentions x ((t,_) : fact) = List.mem_assoc x t
+let mentions x ((t,_) : fact) = List.exists (fun (n,_) -> term_binding n = x) t
 let forget x fs = List.filter (fun f -> not (mentions x f)) fs
 
 (* One fact per form, at its least bound. *)
@@ -42,7 +53,7 @@ let value_binding env x = match List.assoc_opt x env with
   | Some (Value _) | Some (Local _) -> true
   | _ -> false
 
-let is_int fs x = List.exists (fun f -> mentions x f) fs
+let is_int fs x = List.exists (fun ((t,_) : fact) -> List.mem_assoc x t) fs
 
 (* The range single-variable facts state of a binding. *)
 let range fs x =
@@ -70,11 +81,12 @@ let literal_int s =
 
 (* An operand Lean reads as a safe integer: a literal, or a binding a fact
    states one; a sum or a difference of such, each step's result in range. *)
-let rec linear env fs (e : expr) : ((string * int) list * int) option = match e.node with
+let rec linear ?(array = fun _ -> false) env fs (e : expr) : ((string * int) list * int) option = match e.node with
   | Literal (LNumber s) -> Option.map (fun i -> [],i) (literal_int s)
   | Id x when value_binding env x && is_int fs x -> Some ([x,1],0)
+  | Read ({node=Id xs;_},Semantic.Name "length") when value_binding env xs && array xs -> Some ([length_term xs,1],0)
   | Arith ((Add | Sub) as op,a,b) ->
-    (match linear env fs a, linear env fs b with
+    (match linear ~array env fs a, linear ~array env fs b with
      | Some (ta,ca),Some (tb,cb) ->
        let r = if op = Add then norm (ta @ tb),ca+cb else norm (ta @ scale (-1) tb),ca-cb in
        if in_safe (range_of fs r) then Some r else None
@@ -85,9 +97,9 @@ let rec linear env fs (e : expr) : ((string * int) list * int) option = match e.
 let equal x (t,c) : fact list =
   [int_fact x; norm ((x,1) :: scale (-1) t), c; norm ((x,-1) :: t), -c]
 
-let assign env fs x (e : expr) =
+let assign ~array env fs x (e : expr) =
   if not (value_binding env x) then forget x fs else
-  match linear env fs e with
+  match linear ~array env fs e with
   | Some ([y,1],c) when y = x ->
     (* `x = x + c`: each fact of the old value restated of the new one. *)
     List.map (fun ((t,d) as f) -> match List.assoc_opt x t with
@@ -99,29 +111,52 @@ let assign env fs x (e : expr) =
 let names_assigned (s : stmt) env =
   List.filter (fun (n,_) -> not (is_fact n) && Source.assigns n s) env |> List.map fst
 
+(* Whether evaluating an expression writes no heap location: slots and
+   constants, operators on them, reads, element reads (`%ElementAt%`, which
+   writes nothing) and assignments of value bindings. *)
+let rec heap_free env (e : expr) = match e.node with
+  | Id _ | Literal _ -> true
+  | Not a | Unary (_,a) | Cast (_,_,a) | Read (a,_) -> heap_free env a
+  | Arith (_,a,b) | Equality (_,a,b) | Logical (_,a,b) | Coalesce (a,b) -> heap_free env a && heap_free env b
+  | Conditional (c,a,b) -> heap_free env c && heap_free env a && heap_free env b
+  | Call ({node=Id "%ElementAt%";_},None,args,[],_) -> List.for_all (heap_free env) args
+  | Assign (x,_,rhs) -> value_binding env x && heap_free env rhs
+  | Update (_,{node=Id x;_},rhs,_) -> value_binding env x && Option.fold ~none:true ~some:(heap_free env) rhs
+  | _ -> false
+
+let statement_heap_free env (s : stmt) = match s.statement with
+  | Effect e | Return e -> heap_free env e
+  | Declare (_,bs) -> List.for_all (fun (_,_,e) -> heap_free env e) bs
+  | If (c,_,_) | While (c,_,_) -> heap_free env c
+  | _ -> false
+
 (* A statement's effect on the facts: an assignment or update of a slot
    binding by a linear expression, and every other assigned binding
    forgotten. *)
-let statement env fs (s : stmt) =
+let statement ~(array : string -> bool) env fs (s : stmt) : fact list =
+  (* A fact naming a length reads the heap: kept where the statement writes
+     none, as Lean keeps it (`IndexFact.envOnly`). *)
+  let fs = if statement_heap_free env s then fs else List.filter (fun f -> not (has_length f)) fs in
   match s.statement with
-  | Effect {node=Assign (x,_,e);_} -> assign env fs x e
+  | Effect {node=Assign (x,_,e);_} -> assign ~array env fs x e
   | Effect {node=Update ((Add | Sub) as op,({node=Id x;_} as target),rhs,_);pos} ->
     let one = {node=Literal (LNumber "1"); pos} in
     let r = match rhs with Some r -> r | None -> one in
-    assign env fs x {node=Arith (op,target,r); pos}
+    assign ~array env fs x {node=Arith (op,target,r); pos}
   | _ -> List.fold_left (fun fs x -> forget x fs) fs (names_assigned s env)
 
-let declaration env fs name (init : expr) =
+let declaration ~(array : string -> bool) env fs name (init : expr) : fact list =
+  let fs = if heap_free env init then fs else List.filter (fun f -> not (has_length f)) fs in
   let fs = forget name fs in
-  match linear env fs init with
+  match linear ~array env fs init with
   | Some (t,c) when not (List.mem_assoc name t) -> fs @ equal name (t,c)
   | _ -> fs
 
 (* What each answer of a comparison of two operands states. *)
-let comparison env fs (cond : expr) : fact list * fact list =
+let comparison ~array env fs (cond : expr) : fact list * fact list =
   match cond.node with
   | Arith ((Lt | Le | Gt | Ge) as op,a,b) ->
-    (match linear env fs a, linear env fs b with
+    (match linear ~array env fs a, linear ~array env fs b with
      | Some (ta,ca),Some (tb,cb) ->
        let d = norm (ta @ scale (-1) tb) and c = ca - cb in
        let neg = scale (-1) d in
@@ -130,6 +165,18 @@ let comparison env fs (cond : expr) : fact list * fact list =
         | Le -> [d,-c],[neg,c-1]
         | Gt -> [neg,c-1],[d,-c]
         | _ -> [neg,c],[d,-1-c])
+     | _ -> [],[])
+  (* A strict equality of two operands states `a = b` on its `true` answer,
+     a strict inequality on its `false` one (Lean's `IndexWrites.equalAtoms`).
+     A comparison with a number literal is a tag test in Lean's lowering
+     (`numEq`), which states no linear fact. *)
+  | Equality ((StrictEqual | StrictUnequal) as op,a,b)
+    when (match a.node, b.node with Literal (LNumber _),_ | _,Literal (LNumber _) -> false | _ -> true) ->
+    (match linear ~array env fs a, linear ~array env fs b with
+     | Some (ta,ca),Some (tb,cb) ->
+       let d = norm (ta @ scale (-1) tb) and c = ca - cb in
+       let equal = [d,-c; scale (-1) d,c] in
+       if op = StrictEqual then equal,[] else [],equal
      | _ -> [],[])
   | _ -> [],[]
 
@@ -159,25 +206,6 @@ let join_bounds (l : bound list) (r : bound list) : bound list =
   List.filter_map (fun (a,i,s) -> match List.find_opt (fun (a',i',_) -> a'=a && i'=i) r with
     | Some (_,_,s') -> Some (a,i,s && s')
     | None -> None) (tighten_bounds l)
-
-(* Whether evaluating an expression writes no heap location: slots and
-   constants, operators on them, reads, element reads (`%ElementAt%`, which
-   writes nothing) and assignments of value bindings. *)
-let rec heap_free env (e : expr) = match e.node with
-  | Id _ | Literal _ -> true
-  | Not a | Unary (_,a) | Cast (_,_,a) | Read (a,_) -> heap_free env a
-  | Arith (_,a,b) | Equality (_,a,b) | Logical (_,a,b) | Coalesce (a,b) -> heap_free env a && heap_free env b
-  | Conditional (c,a,b) -> heap_free env c && heap_free env a && heap_free env b
-  | Call ({node=Id "%ElementAt%";_},None,args,[],_) -> List.for_all (heap_free env) args
-  | Assign (x,_,rhs) -> value_binding env x && heap_free env rhs
-  | Update (_,{node=Id x;_},rhs,_) -> value_binding env x && Option.fold ~none:true ~some:(heap_free env) rhs
-  | _ -> false
-
-let statement_heap_free env (s : stmt) = match s.statement with
-  | Effect e | Return e -> heap_free env e
-  | Declare (_,bs) -> List.for_all (fun (_,_,e) -> heap_free env e) bs
-  | If (c,_,_) | While (c,_,_) -> heap_free env c
-  | _ -> false
 
 (* The bounds a statement keeps: those whose bindings it does not assign, where
    it writes no heap. *)
@@ -215,15 +243,47 @@ let current_bounds : bound list ref = ref []
 (* The linear facts holding there, alike. *)
 let current_facts : fact list ref = ref []
 
-(* Whether the facts state a linear fact `Σ c·x ≤ d` over bindings: a fact of
-   one binding by its range, any other by a held fact of the same form at a
-   bound at most `d`. Lean decides the same entailment by its own search. *)
+(* Whether the facts entail `Σ c·t ≤ d` by Fourier–Motzkin elimination: the
+   goal's negation, `-Σ c·t ≤ -d - 1`, beside the facts, each variable
+   eliminated by combining the rows of opposite signs on it, the variable
+   combining the fewest pairs first, until a row `0 ≤ b` with `b < 0`
+   appears. Lean searches the same way (`Linear.prove`) and checks what it
+   finds; a fact proposed here is a claim Lean checks. *)
+let fm_entails (fs : fact list) ((t,d) : fact) =
+  let limit = 400 and large = 1 lsl 58 in
+  let coeff x t = Option.value ~default:0 (List.assoc_opt x t) in
+  let rows = (norm (scale (-1) t), -d-1) :: List.map (fun (t,b) -> norm t, b) fs in
+  let rec go rows =
+    if List.exists (fun (t,b) -> t = [] && b < 0) rows then true else
+    match List.sort_uniq compare (List.concat_map (fun (t,_) -> List.map fst t) rows) with
+    | [] -> false
+    | vars ->
+      let sign x k = List.length (List.filter (fun (t,_) -> k * coeff x t > 0) rows) in
+      let cost x = sign x 1 * sign x (-1) in
+      let x = List.fold_left (fun y z -> if cost z < cost y then z else y) (List.hd vars) vars in
+      let pos = List.filter (fun (t,_) -> coeff x t > 0) rows
+      and neg = List.filter (fun (t,_) -> coeff x t < 0) rows
+      and zero = List.filter (fun (t,_) -> coeff x t = 0) rows in
+      let combined = List.concat_map (fun (tp,bp) -> List.filter_map (fun (tn,bn) ->
+        let a = coeff x tp and b = - (coeff x tn) in
+        let bound = b * bp + a * bn in
+        if abs bp > large / (b + 1) || abs bn > large / (a + 1) then None
+        else Some (norm (scale b tp @ scale a tn), bound)) neg) pos in
+      let rows = zero @ combined in
+      if List.length rows > limit then false else go rows in
+  go rows
+
+(* Whether the facts state a linear fact `Σ c·x ≤ d` over terms: a fact of
+   one term by its range, any other by a held fact of the same form at a
+   bound at most `d`, or by elimination (`fm_entails`). Lean decides the same
+   entailment by its own search. *)
 let entails fs ((terms,d) : fact) =
   let terms = norm terms in
-  match terms with
-  | [x,1] -> (match range fs x with _,Some h -> h <= d | _ -> false)
-  | [x,-1] -> (match range fs x with Some l,_ -> -l <= d | _ -> false)
-  | _ -> List.exists (fun ((t,b) : fact) -> norm t = terms && b <= d) fs
+  (match terms with
+   | [x,1] -> (match range fs x with _,Some h -> h <= d | _ -> false)
+   | [x,-1] -> (match range fs x with Some l,_ -> -l <= d | _ -> false)
+   | _ -> List.exists (fun ((t,b) : fact) -> norm t = terms && b <= d) fs)
+  || fm_entails fs (terms,d)
 
 (* At a merge, a fact of one form holds at the larger bound where both
    paths state one. A bound larger than the one the earlier state (`l`, the
