@@ -294,6 +294,15 @@ did not mention grow it, and the request carries the result. -/
     if !entrySeparation.facts.isEmpty || !entryIndices.isEmpty then
       recordAssertion entry ⟨[], [], [], entrySeparation, [], entryIndices⟩
     return (inputs, R, entry, promise, entrySeparation, entryIndices)
+  -- The result facts its unit proves at each return: position `0` the
+  -- result, each call position `p` (`i + 1` of the signature's `ensures`)
+  -- at `q + 1` for the input slot `q` that holds it on entry.
+  let receiverInput := (f.params.head?.map (·.name == "this")).getD false
+  let ensuresSlot : Nat → Option Nat := fun i =>
+    if i = 0 then some 0
+    else if receiverInput then some i else if i = 1 then none else some (i - 1)
+  let some ensures := f.ensures.mapM (·.mapM ensuresSlot)
+    | throw "a result fact names the receiver, which the function does not declare"
   return {
     toRequest := ⟨built.types, built.program, built.claims, R, entry.label, inputs, built.codes, promise,
       entrySeparation, entryIndices⟩
@@ -306,7 +315,7 @@ did not mention grow it, and the request carries the result. -/
     nodePlans := built.nodePlans
     footprint := fc.footprint
     onThrow := fc.onThrow
-    ensures := f.ensures
+    ensures := ensures
     async := f.async
     stated := f.stated }
 

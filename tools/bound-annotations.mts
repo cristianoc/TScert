@@ -76,12 +76,48 @@ export function plainParameter(p: ts.ParameterDeclaration): boolean {
   return !p.dotDotDotToken && !p.initializer && !p.questionToken && ts.isIdentifier(p.name);
 }
 
+/** Whether a function's body writes no binding of the parameter `p`'s
+ * name: no assignment, compound or logical assignment, update,
+ * destructuring assignment or `for` head anywhere in it targets that name,
+ * a same-named binding of a nested scope's included. The parameter's input
+ * slot then holds the call's actual at every return (PROGRAM-TYPING.md,
+ * "Record invariants"). */
+export function parameterKept(p: ts.ParameterDeclaration, body: ts.Node | undefined): boolean {
+  if (!ts.isIdentifier(p.name)) return false;
+  if (body === undefined) return true;
+  const name = p.name.text;
+  const targets = (e: ts.Node): boolean => {
+    while (ts.isParenthesizedExpression(e)) e = e.expression;
+    if (ts.isIdentifier(e)) return e.text === name;
+    if (ts.isArrayLiteralExpression(e)) return e.elements.some(targets);
+    if (ts.isObjectLiteralExpression(e)) return e.properties.some((q) =>
+      ts.isShorthandPropertyAssignment(q) ? ts.isIdentifier(q.name) && q.name.text === name
+        : ts.isPropertyAssignment(q) ? targets(q.initializer)
+        : ts.isSpreadAssignment(q) ? targets(q.expression) : false);
+    if (ts.isSpreadElement(e)) return targets(e.expression);
+    if (ts.isBinaryExpression(e) && e.operatorToken.kind === ts.SyntaxKind.EqualsToken) return targets(e.left);
+    return false;
+  };
+  const writes = (n: ts.Node): boolean => {
+    if (ts.isBinaryExpression(n) && n.operatorToken.kind >= ts.SyntaxKind.FirstAssignment &&
+        n.operatorToken.kind <= ts.SyntaxKind.LastAssignment && targets(n.left)) return true;
+    if ((ts.isPrefixUnaryExpression(n) || ts.isPostfixUnaryExpression(n)) &&
+        (n.operator === ts.SyntaxKind.PlusPlusToken || n.operator === ts.SyntaxKind.MinusMinusToken) &&
+        targets(n.operand)) return true;
+    if ((ts.isForOfStatement(n) || ts.isForInStatement(n)) && !ts.isVariableDeclarationList(n.initializer) &&
+        targets(n.initializer)) return true;
+    return !!n.forEachChild((c) => writes(c) || undefined);
+  };
+  return !writes(body);
+}
+
 /** Which record invariants an importer reads of an imported function
  * declaration of the program's sources (`writtenImport`): by its
  * declaration's parameters in order, `this` included (`receiver`), those of
- * each plain required name's type, where it is not async; and its result
- * type's, where it is not async. */
-export type ImportedInvariants = { receiver: boolean; params: readonly boolean[]; result: boolean };
+ * each plain required name's type, where it is not async, at its returns too
+ * where its body writes no binding of its name (`kept`, `parameterKept`);
+ * and its result type's, where it is not async. */
+export type ImportedInvariants = { receiver: boolean; params: readonly boolean[]; kept: readonly boolean[]; result: boolean };
 
 function tagsOf(trivia: string, name: string): string[] {
   const open = trivia.lastIndexOf("/**");

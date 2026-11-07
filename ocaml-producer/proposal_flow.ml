@@ -303,6 +303,7 @@ let statements callbacks flow_graph register_following owner_span env0 ss =
            value slot a fact could name. *)
         let cell n = List.exists (fun (b:Flow.binding) -> b.name=n) graph.cells in
         let with_facts (id,state) fs bs =
+          let fs = Linear_facts.close fs in
           let fs = List.filter (fun ((t,_) : Linear_facts.fact) -> not (List.exists (fun (n,_) -> cell (Linear_facts.term_binding n)) t)) fs in
           let bs = List.filter (fun (a,i,_) -> not (cell a) && not (cell i)) (Linear_facts.bounds state.env @ bs) in
           id,{state with env=scope graph.nodes.(id).scope (Linear_facts.add_bounds (Linear_facts.add state.env fs) bs)} in
@@ -351,10 +352,19 @@ let statements callbacks flow_graph register_following owner_span env0 ss =
              let (t,bt),(f,bf) = Linear_facts.test ~array:(callbacks.array_binding env) env facts0 c in
              let kept = Linear_facts.statement_bounds env bounds0 s in
              (* A test that may write the heap, a call of a function changing
-                it, keeps no fact reading the heap, as Lean keeps none past
-                the call: its own answers' included, and no bound. *)
+                it, keeps the facts its footprint keeps, as Lean keeps them
+                past the call, and every other test none reading the heap:
+                its own answers' included, and no bound. *)
              let heap_free = Linear_facts.statement_heap_free env s in
-             let reading fs = if heap_free then fs else Linear_facts.keep_stable env fs in
+             (* A test that calls a function stating facts at its returns
+                gains them, as Lean's `call-ensures` states them after the
+                call. *)
+             let reading fs = if heap_free then fs
+               else (match Linear_facts.write_changes ~facts:facts0 ~bounds:bounds0 env c with
+                 (* A test whose one write is a call's: the facts its
+                    footprint keeps (`fact-kept`), as at a statement. *)
+                 | Some ch -> List.filter (fun f -> Linear_facts.fact_kept ch f || Linear_facts.stable_fact env f) fs
+                 | None -> Linear_facts.keep_stable env fs) @ Linear_facts.test_call_facts env c in
              let bounds bs = if heap_free then bs else [] in
              [with_facts y (reading (facts0 @ t)) (kept @ bounds bt); with_facts n (reading (facts0 @ f)) (kept @ bounds bf)]
            | _ -> edges)

@@ -334,8 +334,8 @@ control(async (): Promise<void> => {
   const artifacts = run("record-invariant-walker");
   const ast: Ast = readFragmentFile(join(artifacts, "fragment.json"));
   const fn = must(ast.functions.find(f => f.name === "countBreaks"), "countBreaks");
-  assert.deepEqual(fn.ensures, []);
-  fn.ensures = [{ int: { slot: 0 } },
+  assert.ok(fn.ensures.every(f => !JSON.stringify(f).includes('"slot":0')), "countBreaks states no result fact");
+  fn.ensures = [...fn.ensures, { int: { slot: 0 } },
     { linear: { fact: { le: { form: [[{ kind: "value", slot: 0, path: [] }, 1]], bound: -1 } } } }];
   const document = join(artifacts, "forged-ensures-fragment.json");
   writeFileSync(document, JSON.stringify(ast));
@@ -344,6 +344,26 @@ control(async (): Promise<void> => {
   assert.match(searched.stdout + searched.stderr,
     /source ensures refusal at \[\d+,\d+\): a return of 'countBreaks' does not establish/);
   process.stdout.write("record invariants: result facts forged into the document, refused at the return\n");
+});
+
+control(async (): Promise<void> => {
+  // A parameter's fact at the returns the front end does not state, forged
+  // into the parser's document: `step`, whose returns keep the cursor's
+  // index at least 0, stated to return it below 0 at the cursor's position,
+  // is refused at a return, the checker reading the parameter's entry slot
+  // through every edge whatever the claims say.
+  const artifacts = run("cursor-invariant-after-writing-call");
+  const ast: Ast = readFragmentFile(join(artifacts, "fragment.json"));
+  const fn = must(ast.functions.find(f => f.name === "step"), "step");
+  fn.ensures = [...fn.ensures,
+    { linear: { fact: { le: { form: [[{ kind: "value", slot: 3, path: ["segmentIndex"] }, 1]], bound: -1 } } } }];
+  const document = join(artifacts, "forged-parameter-ensures-fragment.json");
+  writeFileSync(document, JSON.stringify(ast));
+  const searched = produceWith(artifacts, join(artifacts, "claims.json"), "forged-parameter-ensures", document);
+  assert.equal(searched.status, 1, `${searched.stdout}${searched.stderr}`);
+  assert.match(searched.stdout + searched.stderr,
+    /source ensures refusal at \[\d+,\d+\): a return of 'step' does not establish/);
+  process.stdout.write("record invariants: a parameter's fact at the returns forged into the document, refused at a return\n");
 });
 
 control(async (): Promise<void> => {

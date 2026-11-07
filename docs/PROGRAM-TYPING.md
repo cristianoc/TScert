@@ -1666,7 +1666,11 @@ Four steps state their change:
   the condition that keeps a cell fact (`writeKeeps`, `writeKeeps_ne`;
   `writeOutput`, `write_sound`). A field of type `number` keeps every
   length and every path's objects; a field of type `string` keeps the
-  numbers too.
+  numbers too. The write also states the read link from the field to the
+  written slot, whose value the field's location holds in the heap it
+  leaves (`write-link`, proved in `write_sound`), so the bridge restates the
+  written slot's facts of $`x.f`$: `cursor.segmentIndex = segmentIndex + 1`
+  states the field's new value.
 - **An element write below the length**, `setElem-bounded` at a strict
   bound on a store every position of which holds source values:
   $`\chi=(\top,\top,\text{length})`$ (`IndexWrites.keepsLengths`,
@@ -1684,6 +1688,13 @@ Four steps state their change:
   $`\mathrm{apart}(x.\star,z.g)`$ (`PromiseCalls.ownKept`). So an array
   iterator's step keeps the length of each array its allocation was
   separated from.
+
+A field write's read link, with $`\ell`$ the location of $`f`$ in $`x`$'s object:
+
+```math
+\frac{\Gamma;\Sigma\vdash x.f:=y\qquad h'=h[\ell\mapsto\rho(y)]}
+     {\Gamma;\Sigma\vdash x.f:=y\dashv\Sigma',\ x.f\mapsto y}\ \textsf{write-link}
+```
 
 **Through every step.** A typed array's element count is read from the
 location of its `[[viewLength]]`, which the view's type states a stable key
@@ -1837,18 +1848,27 @@ $`i=0`$ and its iteration $`i-|\mathit{xs}|\le -1`$, and the test's
 `i + 1` is a safe integer whose `true` answer bounds reads at `i` and
 `i + 1`. A call stating `pre` is typed at that signature
 where the bounds holding at its statement's start establish it. Each is a
-claim Lean checks on every edge into the entry claiming it.
+claim Lean checks on every edge into the entry claiming it. The producer also states a field's
+new value at a write of a field the receiver's type states by a linear
+expression, the old value renamed apart and eliminated (`Linear_facts.statement`),
+an object literal's named fields at its declaration (`const c = { i: 0 }`
+states $`c.i=0`$), and, after each statement, the facts derived by
+eliminating each path's term that name no path, at most 16
+(`Linear_facts.close`), so $`n=|p.\mathit{widths}|`$ and
+$`|b|=|p.\mathit{widths}|`$ give $`n=|b|`$, which a call writing `p`'s fields
+keeps; a test calling a function keeps the facts its footprint keeps, and
+gains its result facts at each actual that is a binding, as a statement
+calling it does.
 
 **Result facts.** A signature's effect also states `ensures`, a list of index
 facts at the return's positions: `0` the result, $`i+1`$ the call's position
 $`i`$ (`CallEffects.ensuresEnv`). A normal return leaves a heap where each
 holds (the last conjunct of `CallEffects.Effect.post`, which takes the call's
 actuals). A trusted signature, an intrinsic's or a declaration's, states
-them, and so does a module function's signature where its result's type names
-a record invariant ([record invariants](#record-invariants)), facts of its
-result alone, which its unit proves at each return (`moduleArrow`,
-`importedArrow`); code states none (`Effect.below`), since a fact over a
-parameter needs its entry value, which a reassigned parameter no longer holds.
+them, and so does a module function's signature where its result's type or a
+parameter's names a record invariant ([record invariants](#record-invariants)),
+which its unit proves at each return (`moduleArrow`, `importedArrow`);
+other code states none (`Effect.below`).
 A binding keeps none (`Effect.keeps`), a signature covers another only where
 its facts include each of the other's (`ensuresCovers`), the meet of two
 signatures states both lists (`Effect.meet`), and a variadic call's selected
@@ -2129,13 +2149,25 @@ facts the
      {\mathsf{ensures}_f\ \ni\ I_R[\mathtt{this}\mapsto 0]}\ \textsf{invariant-ensures}
 ```
 
+```math
+\frac{f(\ldots,p_i:T_i,\ldots):T\qquad T_i\ \text{names}\ R\qquad \text{the body of}\ f\ \text{writes no binding named}\ p_i}
+     {\mathsf{ensures}_f\ \ni\ I_R[\mathtt{this}\mapsto i+2]}\ \textsf{invariant-returns}
+```
+
 for a declaration of the module that is not async, the first for each
 parameter $`p_i`$ that is a plain required name (no rest, default, `?` or
 pattern: its input slot holds the actual at its position, whatever the other
 parameters are), at the call positions a `this` parameter shifts as a written
 clause's. So a body assumes the invariant of each record
 it receives, and each call establishes it (`call-requires`); a caller gains it
-of each record a call returns (`call-ensures`). Between two boundaries the
+of each record a call returns, and of each record it passes to a parameter
+the callee's body writes no binding of, at the actual's slot
+(`call-ensures`, position $`i+2`$ the $`i`$-th actual). Which bindings a body
+writes is read off its syntax (`parameterKept` in
+`tools/bound-annotations.mts`: an assignment, an update or a `for` head
+naming the parameter anywhere in the body, a nested scope's same-named
+binding included); Lean checks the facts at each return whatever the front
+end states. Between two boundaries the
 facts are kept by the steps whose footprints keep what they read
 ([facts across a heap change](#linear-facts)): a `push` to one array of a
 received record changes a length, and the next call requiring the invariant
@@ -2149,20 +2181,34 @@ union result's fact is one every arm's type states, so a return of any arm
 proves it.
 
 **Proving result facts.** A unit's request states its declaration's result
-facts (`SourceRequest.ensures`), each naming position `0` alone. Each return
-node of its graph a run may reach is checked: its entry admits no value, its
-result type none (a throw), or its output knowledge, the result at slot `0`,
-entails each fact there (`GraphCode.returnsEnsure`, by `indicesCheckBy`, the
-read bridge included):
+facts (`SourceRequest.ensures`), position `0` the result and $`q+1`$ the
+entry value of input slot $`q`$, renamed from the signature's call positions
+(`extractNormalizedFn`). Which slots hold an input's entry value is a table
+of pairs $`(s,q)`$ per node (`GraphCode.trackTable`, untrusted): the entry's
+pairs are $`(q,q)`$, and an edge carries a pair to each target slot its
+mapping reads from the pair's slot, a value it binds shifting the slots; a
+pair reaches a node where every edge into it carries it. The check reads the
+table, and three conditions decide it (`GraphCode.returnsEnsure`): the entry's
+pairs are $`(q,q)`$; every edge out of a node the table reaches carries its
+pairs, `trackFollows`, the target's each read through the mapping from one of
+the source's, so a reassigned parameter's slot, which no mapping reads from
+the input's, holds no pair after the assignment; and each return node the
+table reaches admits no value, has an empty result type, or its output
+knowledge entails each fact, an input's position read at the slot after the
+result its pair names (`returnEntails`, by `indicesCheckBy` through the
+mapping `returnMapping`, the read bridge included; a fact naming an input no
+pair holds is refused):
 
 ```math
-\frac{\forall\,\ell\mapsto(e,\mathsf{ret})\in P.\ \ \Gamma_\ell\ \text{empty}\ \lor\ A_\ell=\emptyset\ \lor\ \Sigma^{\mathit{out}}_\ell\vdash F[0\mapsto 0]\ \ (F\in\mathsf{ensures})}
+\frac{\forall\,\ell\mapsto(e,\mathsf{ret})\in P.\ \ \Gamma_\ell\ \text{empty}\ \lor\ A_\ell=\emptyset\ \lor\ \Sigma^{\mathit{out}}_\ell\vdash F[0\mapsto 0,\ q+1\mapsto s+1\ \text{for}\ (s,q)\in T_\ell]\ \ (F\in\mathsf{ensures})}
      {P\ \text{returns}\ \mathsf{ensures}}\ \textsf{return-ensures}
 ```
 
 Every value a normal run returns then meets the facts in the heap it returns
-in (`GraphCode.goto_ensures`, by an invariant of the run's states beside the
-safety proof's, `EnsState`; for units, `SourceRequests.checkRequests_ensures_at`,
+in, with the inputs' entry values (`GraphCode.goto_ensures`, by an invariant
+of the run's states beside the safety proof's, `EnsState`: at each node the
+table's pairs hold, `TracksAt`, and each edge's target's pairs hold after it,
+`NextTracks`, proved by `edgesTrack_sound`; for units, `SourceRequests.checkRequests_ensures_at`,
 a conjunct of `RequestsSafe`, the conclusion of `checkUnitJson_safe`). A
 literal's allocation states the read links of its fields
 (`HeapExpressionRules.freshLinks`, proved in `alloc_sound`), so the bridge
@@ -2185,6 +2231,14 @@ return of a view one element short), `invalid-record-invariant-push` (a
 record typed by a cast). Forged controls in `pipeline/test.mts`: the
 invariant claimed of the cast record at the call's entry, refused there, and
 result facts forged into the parser's document, refused at the return.
+A parameter's invariant at its returns: positive
+`cursor-invariant-after-writing-call` (pretext's `countSteppedLines` shape:
+a loop calling a cursor-writing helper, then reading at the cursor's index);
+negative, run under Node, `invalid-cursor-invariant-step-back` (a helper
+stepping the cursor below 0, refused at its return); a gap,
+`cursor-invariant-view-path-refused` (a view's element count read through a
+field, lost at a number field's write); a forged control, a parameter's fact
+the front end does not state forged into the document, refused at a return.
 Sealed handles: `sealed-handle-value-import` (the handle and its casts in
 and out, `seal` and `open`, in `imports-project/handle.ts`; a builder
 establishing the representation's invariant at `seal`, walkers opening the

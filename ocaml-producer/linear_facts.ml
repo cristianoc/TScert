@@ -74,6 +74,33 @@ let forget x fs =
     List.filter_map (fun (n,_) -> if term_binding n = x then Some n else None) t) fs) in
   if terms = [] then fs else List.filter (fun f -> not (mentions x f)) (eliminate fs terms)
 
+(* The facts derived by eliminating each term reading a path (Fourier–
+   Motzkin, as `forget` eliminates a binding's terms), those naming no path
+   added, at most 16: a fact over bindings, root lengths and root element
+   counts survives a heap change that a path does not, so `n = p.xs.length`
+   and `b.length = p.xs.length` keep `n = b.length` past a call writing `p`'s
+   fields. Lean checks each at the edge into the statement claiming it. *)
+let close (fs : fact list) : fact list =
+  let path_term n = let _,path,_ = term_parts n in path <> [] in
+  let terms = List.sort_uniq compare (List.concat_map (fun ((t,_) : fact) ->
+    List.filter_map (fun (n,_) -> if path_term n then Some n else None) t) fs) in
+  if terms = [] then fs else
+  let coeff n t = Option.value ~default:0 (List.assoc_opt n t) in
+  let rec eliminate (fs : fact list) = function
+    | [] -> fs
+    | n :: rest ->
+      let pos = List.filter (fun ((t,_) : fact) -> coeff n t > 0) fs
+      and neg = List.filter (fun ((t,_) : fact) -> coeff n t < 0) fs
+      and zero = List.filter (fun ((t,_) : fact) -> coeff n t = 0) fs in
+      let made = List.concat_map (fun (tp,bp) -> List.map (fun (tn,bn) ->
+        let a = coeff n tp and b = - (coeff n tn) in
+        norm (List.map (fun (m,c) -> m,b*c) tp @ List.map (fun (m,c) -> m,a*c) tn), b * bp + a * bn) neg) pos in
+      eliminate (zero @ List.filteri (fun i _ -> i < 64) (List.filter (fun ((t,_) : fact) -> t <> []) made)) rest in
+  let rooted ((t,_) : fact) = List.for_all (fun (n,_) -> not (path_term n)) t in
+  let derived = List.filter (fun ((t,_) as f) -> rooted f && List.exists (fun (n,_) -> reads_heap n) t &&
+    not (List.mem f fs)) (eliminate (List.filter (fun f -> not (is_int_fact f)) fs) terms) in
+  fs @ List.filteri (fun i _ -> i < 16) (List.sort_uniq compare derived)
+
 (* One fact per form, at its least bound. *)
 let tighten (fs : fact list) : fact list =
   let forms = List.sort_uniq compare (List.map fst fs) in
@@ -387,31 +414,6 @@ let restate_read name (root,path) (fs : fact list) : fact list =
       Some (norm (List.map (fun (n,c) -> (match rename n with Some m -> m | None -> n),c) t),d)
     else None) fs
 
-(* A statement's effect on the facts: an assignment or update of a slot
-   binding by a linear expression, and every other assigned binding
-   forgotten. *)
-let statement ~(array : string -> string list -> bool) ?(bounds=[]) env fs (s : stmt) : fact list =
-  (* A fact naming a length or an element count reads the heap: kept where
-     the statement writes none, as Lean keeps it (`IndexFact.envOnly`). *)
-  let fs = if statement_heap_free env s then fs else match statement_changes ~facts:fs ~bounds env s with
-    | Some ch -> List.filter (fun f -> fact_kept ch f || stable_fact env f) fs
-    | None -> keep_stable env fs in
-  match s.statement with
-  | Effect {node=Assign (x,_,e);_} -> assign ~array env fs x e
-  | Effect {node=Update ((Add | Sub) as op,({node=Id x;_} as target),rhs,_);pos} ->
-    let one = {node=Literal (LNumber "1"); pos} in
-    let r = match rhs with Some r -> r | None -> one in
-    assign ~array env fs x {node=Arith (op,target,r); pos}
-  | Destructure _ ->
-    let fs = List.fold_left (fun fs x -> forget x fs) fs (names_assigned s env) in
-    (* Each field's read restated of the name it is bound to. *)
-    (match destructure_reads env s with
-     | Some ((root,path),fields) ->
-       let fs = List.fold_left (fun fs (_,n) -> forget n fs) fs fields in
-       fs @ List.concat_map (fun (f,n) -> restate_read n (root,path @ [f]) fs) fields
-     | None -> fs)
-  | _ -> List.fold_left (fun fs x -> forget x fs) fs (names_assigned s env)
-
 (* Index facts at a call's positions restated over bindings, `name p` the
    binding the position `p` holds; a fact naming a position no binding holds
    is left out. *)
@@ -475,31 +477,68 @@ let construct_ensures ~array env fs name c (args : expr list) : fact list =
       else None
     | _ -> None) s.Semantic.call_effect.Semantic.ensures
 
-let declaration ~(array : string -> string list -> bool) env fs name (init : expr) : fact list =
-  let fs = if heap_free env init then fs else keep_stable env fs in
-  let fs = forget name fs in
-  (* `const x = f(…)` of a function stating facts of its result: each of
-     them, of `x`. *)
-  let fs = match init.node with
-    | Call ({node=Id f;_},None,_,[],_) ->
-      fs @ of_index_facts (fun p -> if p = 0 then Some name else None) (!call_ensures env f)
-    (* `const x = new c(…)` at a construct signature stating facts of its
-       result: each of them, of `x`, over the actuals. *)
-    | New ({node=Id c;_},_,args,[]) -> fs @ construct_ensures ~array env fs name c args
-    | _ -> fs in
-  (* A type assertion's value is its operand's (`const internal = prepared
-     as Internal`): the binding aliases the operand, as Lean's cast node
-     transfers the slot. *)
-  let rec uncast (e : expr) = match e.node with
-    | Cast (("as" | "satisfies" | "nonNull"),_,a) -> uncast a
-    | _ -> e in
-  let fs = match path_of env (uncast init) with
-    | Some (root,(_ :: _ as path)) when root <> name && heap_free env init -> fs @ restate_read name (root,path) fs
-    | Some (root,[]) when root <> name && init != uncast init -> fs @ restate_read name (root,[]) fs
-    | _ -> fs in
-  match linear ~array env fs init with
-  | Some (t,c) when not (List.mem_assoc name t) -> fs @ equal name (t,c)
-  | _ -> fs
+(* The facts the signatures of the binding `f` state at a call's normal
+   return (Lean's `call-ensures`), over bindings: position `0` the result
+   `name`, where one is bound, and `i + 2` the `i`-th actual, where it is a
+   value binding; a fact naming another position is left out. *)
+let call_facts ?name env f (args : expr list) : fact list =
+  of_index_facts (fun p ->
+    if p = 0 then name
+    else if p >= 2 then (match List.nth_opt args (p - 2) with
+      | Some {node=Id a;_} when value_binding env a -> Some a
+      | _ -> None)
+    else None) (!call_ensures env f)
+
+(* The facts a test's call states at its normal return, `f(…)` or `!f(…)`. *)
+let test_call_facts env (c : expr) : fact list = match c.node with
+  | Call ({node=Id f;_},None,args,[],_) | Not {node=Call ({node=Id f;_},None,args,[],_);_} -> call_facts env f args
+  | _ -> []
+
+(* A statement's effect on the facts: an assignment or update of a slot
+   binding by a linear expression, and every other assigned binding
+   forgotten. *)
+let statement ~(array : string -> string list -> bool) ?(bounds=[]) env fs (s : stmt) : fact list =
+  (* A write `x.f = e` of a field the receiver's type states, of a value
+     binding, by a linear expression: the field's new value is `e`'s, read through the old value where `e`
+     reads it (Lean's `write-link`, a read link from `x.f` to the written
+     slot). The old value is renamed apart before the write's change and
+     eliminated after. *)
+  let old = "%written" in
+  let written = match s.statement with
+    | Effect {node=Write (({node=Id x;_} as recv),(Semantic.Name f as key),rhs);_}
+      when value_binding env x && heap_free env rhs && !field_classes env recv key <> None ->
+      Option.map (fun form -> path_term x [f], form) (linear ~array env fs rhs)
+    | _ -> None in
+  let fs = match written with
+    | Some (p,_) -> List.map (fun ((t,d) : fact) -> List.map (fun (n,c) -> (if n = p then old else n),c) t, d) fs
+    | None -> fs in
+  (* A fact naming a length or an element count reads the heap: kept where
+     the statement writes none, as Lean keeps it (`IndexFact.envOnly`). *)
+  let fs = if statement_heap_free env s then fs else match statement_changes ~facts:fs ~bounds env s with
+    | Some ch -> List.filter (fun f -> fact_kept ch f || stable_fact env f) fs
+    | None -> keep_stable env fs in
+  let fs = match written with
+    | Some (p,(t,c)) ->
+      let t = List.map (fun (n,k) -> (if n = p then old else n),k) t in
+      forget old (fs @ [norm ((p,1) :: scale (-1) t), c; norm ((p,-1) :: t), -c])
+    | None -> fs in
+  match s.statement with
+  | Effect {node=Assign (x,_,e);_} -> assign ~array env fs x e
+  | Effect {node=Update ((Add | Sub) as op,({node=Id x;_} as target),rhs,_);pos} ->
+    let one = {node=Literal (LNumber "1"); pos} in
+    let r = match rhs with Some r -> r | None -> one in
+    assign ~array env fs x {node=Arith (op,target,r); pos}
+  | Effect {node=Call ({node=Id f;_},None,args,[],_);_} ->
+    List.fold_left (fun fs x -> forget x fs) fs (names_assigned s env) @ call_facts env f args
+  | Destructure _ ->
+    let fs = List.fold_left (fun fs x -> forget x fs) fs (names_assigned s env) in
+    (* Each field's read restated of the name it is bound to. *)
+    (match destructure_reads env s with
+     | Some ((root,path),fields) ->
+       let fs = List.fold_left (fun fs (_,n) -> forget n fs) fs fields in
+       fs @ List.concat_map (fun (f,n) -> restate_read n (root,path @ [f]) fs) fields
+     | None -> fs)
+  | _ -> List.fold_left (fun fs x -> forget x fs) fs (names_assigned s env)
 
 (* What each answer of a comparison of two operands states. *)
 let atom_comparison ~array env fs (cond : expr) : fact list * fact list =
@@ -619,9 +658,11 @@ let comparison_bounds ~array env fs cond = let (_,t),(_,f) = test ~array env fs 
 
 (* At a merge, a fact of one form holds at the larger bound where both
    paths bound it. A bound larger than the one the earlier state (`l`, the
-   state the flow solver joins into) held is raised at once to `2^32 - 1`, the
-   largest length, where it is at most that, and forgotten otherwise, so each
-   form changes at most twice and a loop settles as it would without facts. *)
+   state the flow solver joins into) held is raised at once to `0` where it
+   is at most that and the earlier one is negative, otherwise to `2^32 - 1`,
+   the largest length, or `2^53 - 1`, the largest safe integer, where it is
+   at most that, and forgotten otherwise, so each form changes at most four
+   times and a loop settles as it would without facts. *)
 let join (l : fact list) (r : fact list) : fact list =
   let l = tighten l and r = tighten r in
   (* Each path's bound of a form: the least of the bounds either path
@@ -650,11 +691,47 @@ let join (l : fact list) (r : fact list) : fact list =
   List.filter_map (fun t ->
     let dl = List.assoc_opt t l and dr = List.assoc_opt t r in
     if is_int_fact (t,0) then (match dl,dr with Some d,Some _ -> Some (t,d) | _ -> None) else
-    let candidates = List.sort_uniq compare (List.filter_map Fun.id [dl; dr] @ [0; max_index + 1]) in
+    let candidates = List.sort_uniq compare (List.filter_map Fun.id [dl; dr] @ [0; max_index + 1; max_safe]) in
     match bound ~keep:true l candidates (t,0), bound r candidates (t,0) with
     | Some d, Some d' when d' <= d -> Some (t,d)
+    | Some d, Some d' when d' <= 0 && d < 0 -> Some (t, 0)
     | Some d, Some d' when d' <= max_index + 1 && d < max_index + 1 -> Some (t, max_index + 1)
+    | Some d, Some d' when d' <= max_safe && d < max_safe -> Some (t, max_safe)
     | _ -> None) forms
+
+let declaration ~(array : string -> string list -> bool) env fs name (init : expr) : fact list =
+  let fs = if heap_free env init then fs else keep_stable env fs in
+  let fs = forget name fs in
+  (* `const x = f(…)` of a function stating facts of its result: each of
+     them, of `x`. *)
+  let fs = match init.node with
+    | Call ({node=Id f;_},None,args,[],_) -> fs @ call_facts ~name env f args
+    (* `const x = new c(…)` at a construct signature stating facts of its
+       result: each of them, of `x`, over the actuals. *)
+    | New ({node=Id c;_},_,args,[]) -> fs @ construct_ensures ~array env fs name c args
+    (* `const x = { f: e, … }`: each named field's value, a linear
+       expression, is the path's (Lean's `freshLinks`, a read link from each
+       field of the allocated object to its initializer's slot). *)
+    | Alloc fields ->
+      fs @ List.concat_map (fun (key,(e : expr)) -> match key with
+        | Semantic.Name f -> (match linear ~array env fs e with
+          | Some (t,c) -> let p = path_term name [f] in [norm ((p,1) :: scale (-1) t), c; norm ((p,-1) :: t), -c]
+          | None -> [])
+        | _ -> []) fields
+    | _ -> fs in
+  (* A type assertion's value is its operand's (`const internal = prepared
+     as Internal`): the binding aliases the operand, as Lean's cast node
+     transfers the slot. *)
+  let rec uncast (e : expr) = match e.node with
+    | Cast (("as" | "satisfies" | "nonNull"),_,a) -> uncast a
+    | _ -> e in
+  let fs = match path_of env (uncast init) with
+    | Some (root,(_ :: _ as path)) when root <> name && heap_free env init -> fs @ restate_read name (root,path) fs
+    | Some (root,[]) when root <> name && init != uncast init -> fs @ restate_read name (root,[]) fs
+    | _ -> fs in
+  match linear ~array env fs init with
+  | Some (t,c) when not (List.mem_assoc name t) -> fs @ equal name (t,c)
+  | _ -> fs
 
 (* Widening keeps the facts that did not change. *)
 let widen (previous : fact list) (current : fact list) =

@@ -23,22 +23,29 @@ namespace Verification.SourceClaimJson
 open Lean ProgramTyping RequestJson SourceExtraction ControlFlow PositiveGraphs PositiveRules LabelStore
 open EquationGraphs (Tree)
 
-/-- A unit stating facts of its result whose return does not establish them:
-refused at that return, or at the definition where the facts name other
-positions or the unit is qualified. -/
+/-- A unit stating result facts whose return does not establish them:
+refused at that return, at a node whose edge loses a slot holding an input
+the facts name, or at the definition where the unit is qualified. -/
 def ensuresRefusal {σ ι : Type} [Labels ι] [StoreView σ ι] (name : String) (namePos : Span)
     (r : SourceRequest σ ι) (c : Response ι) : Option String :=
   if r.ensures.isEmpty || (ensuresResult r c).accepted then none else
   let G := RequestJson.graph r.toRequest
+  let T := GraphCode.trackTable r.program c.certificate r.start (GraphCode.namedInputs r.ensures)
   let bad := (List.range r.program.length).find? fun l =>
     match r.program[l]?, c.certificate[l]? with
-    | some node, some n => match node.continuation with
-      | .ret => !(GraphCode.unreachableEntry G n || ExpressionEffects.emptyType G (ControlFlow.result n) ||
-          GraphCode.returnEntails (ControlFlow.outFacts G n) r.ensures)
-      | _ => false
+    | some node, some n => !(GraphCode.edgesTrack T l node &&
+        GraphCode.returnOk G n node.continuation (GraphCode.trackedAt T l) r.ensures)
     | _, _ => false
   let pos := ((bad.bind fun l => (r.sourceMap[l]?).bind id).map (·.pos)).getD namePos
-  some s!"source ensures refusal at [{pos.1},{pos.2}): a return of '{name}' does not establish the facts its result's record invariant states"
+  -- Whether the node at fault loses a slot holding an input the facts name
+  -- along an edge, or is a return not entailing them.
+  let losing := bad.any fun l => match r.program[l]? with
+    | some node => !GraphCode.edgesTrack T l node
+    | none => false
+  if losing then
+    some s!"source ensures refusal at [{pos.1},{pos.2}): an edge in '{name}' loses the slot holding a parameter whose record invariant its returns state"
+  else
+    some s!"source ensures refusal at [{pos.1},{pos.2}): a return of '{name}' does not establish the facts its result's and its parameters' record invariants state"
 
 /-- The located refusal of a footprint a unit claims for its declaration, or
 for a closure of its code, that its graph and certificate do not establish:
@@ -353,7 +360,7 @@ def RequestsSafe (F : EquationStore.Frozen)
           WorldAdm W → HeapOk n W heap →
           HeapObservations.SafePost (excOf (reassign F.equations.graph η))
             (ControlFlow.GoalHolds (reassign F.equations.graph η) r.goal (r.goal.argument (envOf L d)))
-            (fun h' v => GraphCode.EnsuresAt r.ensures h' v) n W heap
+            (fun h' v => GraphCode.EnsuresAt r.ensures h' (push v (envOf L d))) n W heap
             (.goto (r.program.map (·.expression)) (r.program.map fun n => (n.continuation, n.handler))
               r.start L d)) ∧
       (∀ r c, (r,c) ∈ rs.zip b.functions → RequestAssertionsEntailed r c)

@@ -1367,7 +1367,7 @@ def project (k : Knowledge) (m : PointClaims.Mapping) (count : Nat) : Knowledge 
     | first :: rest => rest.map fun r => { cell := first, value := r, alias := true }
     | [] => []
   ⟨projectFacts k.links k.cells m count,projectFacts k.links k.values m count,
-    HeapLinks.pull (HeapLinks.bridge k.links fun i => (preimages.getD i []).isEmpty)
+    HeapLinks.pull (HeapLinks.bridge (HeapLinks.aliasReads k.links) fun i => (preimages.getD i []).isEmpty)
       (fun i => preimages.getD i []) ++ shared ++ classLinks,
     HeapSeparation.project (HeapLinks.aliases k.links) k.separation m count,
     -- Each target slot takes the atoms of every alias of its source slot,

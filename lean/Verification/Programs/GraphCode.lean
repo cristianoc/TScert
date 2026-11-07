@@ -588,68 +588,239 @@ theorem goto_bounded [DecidableEq ι] {G : NormalGraph ι} {images : InstanceIma
 
 /-! ## Result facts a graph's returns establish
 
-A unit stating facts of its result (`Effect.ensures` at the result's
-position `0` alone) is checked at each return: the knowledge after the
-returned expression, its result at slot `0`, entails each fact there. The
-facts then hold of every value a normal run returns, in the heap it returns
-in. -/
+A unit stating facts of its result and of its inputs (`Effect.ensures`:
+position `0` the result, `q + 1` the entry value of input `q`) is checked at
+each return: the knowledge after the returned expression, its result at slot
+`0`, entails each fact, an input's position read at a slot holding that
+input's entry value there. Which slots hold an input's entry value is
+carried along every edge (`trackTable`, untrusted; `edgesTrack` checks each
+edge a run may take). The facts then hold of every value a normal run
+returns, with the inputs' entry values, in the heap it returns in. -/
 
-/-- Facts stating their result alone: each names position `0` only. -/
-def resultOnly (ens : List HeapKnowledge.IndexFact) : Bool :=
-  ens.all fun F => F.slots.all (· == 0)
+/-- Pairs of a slot and an input: the slot holds the input's entry value. -/
+abbrev Tracked := List (Nat × Nat)
 
-/-- What a return of `v` meets in the heap `h` it returns in: each fact, its
-position `0` the result. -/
-def EnsuresAt (ens : List HeapKnowledge.IndexFact) (h : Heap) (v : Tm) : Prop :=
-  ∀ F ∈ ens, F.HoldsAt (fun _ => v) h
+/-- Each pair's slot holds, in `ρ`, its input's value in `ρ0`. -/
+def TracksAt (t : Tracked) (ρ ρ0 : Env) : Prop := ∀ p ∈ t, ρ p.1 = ρ0 p.2
 
-/-- Whether a knowledge, its result at slot `0`, entails the facts there. -/
-def returnEntails (k : HeapKnowledge.Knowledge) (ens : List HeapKnowledge.IndexFact) : Bool :=
-  HeapKnowledge.indicesCheckBy (HeapLinks.aliases k.links) k.links k.indices
-    (ens.map fun F => ⟨F, none, false⟩) (some [0])
+/-- The pairs after a value is pushed. -/
+def shiftTracked (t : Tracked) : Tracked := t.map fun p => (p.1 + 1, p.2)
 
-theorem returnEntails_sound {k : HeapKnowledge.Knowledge} {ens : List HeapKnowledge.IndexFact} {ρ h}
-    (hr : resultOnly ens = true) (hc : returnEntails k ens = true) (hk : HeapKnowledge.Holds k ρ h) :
-    EnsuresAt ens h (ρ 0) := by
+theorem shiftTracked_holds {t : Tracked} {ρ ρ0 : Env} (v : Tm) (h : TracksAt t ρ ρ0) :
+    TracksAt (shiftTracked t) (push v ρ) ρ0 := by
+  intro p hp
+  obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hp
+  exact h q hq
+
+/-- Each target pair is read through the mapping from a source pair. -/
+def trackFollows (sources : Tracked) (m : Mapping) (targets : Tracked) : Bool :=
+  targets.all fun p => sources.contains (slot m p.1, p.2)
+
+theorem trackFollows_sound {sources targets : Tracked} {m : Mapping} {ρ ρ0 : Env}
+    (hc : trackFollows sources m targets = true) (hs : TracksAt sources ρ ρ0) :
+    TracksAt targets (mapEnv m ρ) ρ0 := by
+  intro p hp
+  exact hs _ (List.contains_iff_mem.mp (List.all_eq_true.mp hc p hp))
+
+/-- A node's edges, its handler's included, each with whether it pushes a
+value before its mapping. -/
+def edgesOf (k : Continuation) (x : Option Target) : List (Target × Bool) :=
+  (match k with
+    | .ret => []
+    | .bind t => [(t, true)]
+    | .effect t => [(t, false)]
+    | .branch y n => [(y, false), (n, false)]
+    | .branchBind y n => [(y, true), (n, true)]
+    | .tagBind _ y n => [(y, true), (n, true)]) ++ x.toList.map fun t => (t, true)
+
+/-- A node's pairs: none where the table reaches no run there. -/
+def trackedAt (T : List (Option Tracked)) (l : Nat) : Option Tracked := T[l]?.bind id
+
+/-- The pairs at each node: the seed at the entry, carried along every edge
+to each slot whose mapping reads a slot holding the input, those every
+predecessor carries. Untrusted: `edgesTrack` checks every edge. -/
+@[nospecialize] def trackTable (P : Program) (C : Certificate ι) (start : Nat) (seed : Tracked) :
+    List (Option Tracked) := Id.run do
+  let widths := (C.map fun c => (entry c).length).toArray
+  let mut table : Array (Option Tracked) := Array.replicate P.length none
+  table := table.set! start (some seed)
+  for _ in List.range (2 * P.length + 2) do
+    let mut changed := false
+    for (node, l) in P.zipIdx do
+      let some here := table.getD l none | continue
+      for e in edgesOf node.continuation node.handler do
+        let sources := if e.2 then shiftTracked here else here
+        let carried := (List.range (widths.getD e.1.label 0)).flatMap fun i =>
+          sources.filterMap fun p => if p.1 == slot e.1.mapping i then some (i, p.2) else none
+        let current := table.getD e.1.label none
+        let merged := match current with
+          | none => some carried
+          | some old => some (old.filter carried.contains)
+        if merged != current then
+          table := table.set! e.1.label merged
+          changed := true
+    if !changed then break
+  return table.toList
+
+/-- Every edge out of a node the table reaches carries its pairs: the table
+reaches the target, and the target's pairs follow. -/
+def edgesTrack (T : List (Option Tracked)) (l : Nat) (node : Node) : Bool :=
+  match trackedAt T l with
+  | none => true
+  | some here => (edgesOf node.continuation node.handler).all fun e =>
+      match trackedAt T e.1.label with
+      | none => false
+      | some there => trackFollows (if e.2 then shiftTracked here else here) e.1.mapping there
+
+/-- Each edge's target holds its pairs after the edge. -/
+def NextTracks (T : List (Option Tracked)) (k : Continuation) (x : Option Target) (ρ ρ0 : Env) : Prop :=
+  ∀ e ∈ edgesOf k x, ∀ v, ∃ t, trackedAt T e.1.label = some t ∧
+    TracksAt t (mapEnv e.1.mapping (if e.2 then push v ρ else ρ)) ρ0
+
+theorem edgesTrack_sound {T : List (Option Tracked)} {l : Nat} {node : Node} {here : Tracked} {ρ ρ0 : Env}
+    (hc : edgesTrack T l node = true) (hl : trackedAt T l = some here) (hs : TracksAt here ρ ρ0) :
+    NextTracks T node.continuation node.handler ρ ρ0 := by
+  intro e he v
+  simp only [edgesTrack, hl] at hc
+  have hx := List.all_eq_true.mp hc e he
+  split at hx
+  · cases hx
+  · rename_i there ht
+    refine ⟨there, ht, trackFollows_sound hx ?_⟩
+    rcases e with ⟨tgt, b⟩
+    cases b
+    · exact hs
+    · exact shiftTracked_holds v hs
+
+/-- The source slot of a fact's position at a return: `0` the result, `q + 1`
+the slot after the result holding input `q`'s entry value. -/
+def trackedSlot (t : Tracked) (j : Nat) : Nat :=
+  if j = 0 then 0 else match t.find? (fun p => p.2 == j - 1) with
+    | some p => p.1 + 1
+    | none => 0
+
+/-- One past the largest position a list of facts names. -/
+def slotBound (ens : List HeapKnowledge.IndexFact) : Nat :=
+  (ens.flatMap HeapKnowledge.IndexFact.slots).foldr max 0 + 1
+
+theorem le_foldr_max {l : List Nat} {s : Nat} (h : s ∈ l) : s ≤ l.foldr max 0 := by
+  induction l with
+  | nil => cases h
+  | cons a l ih =>
+    simp only [List.foldr_cons]
+    rcases List.mem_cons.mp h with rfl | h
+    · exact Nat.le_max_left _ _
+    · exact Nat.le_trans (ih h) (Nat.le_max_right _ _)
+
+/-- The mapping reading a return's facts from its output's slots. -/
+def returnMapping (t : Tracked) (ens : List HeapKnowledge.IndexFact) : Mapping :=
+  some ((List.range (slotBound ens)).map (trackedSlot t))
+
+/-- Each fact names the result or an input some pair holds. -/
+def namesTracked (t : Tracked) (ens : List HeapKnowledge.IndexFact) : Bool :=
+  ens.all fun F => F.slots.all fun j => j == 0 || t.any fun p => p.2 == j - 1
+
+theorem returnMapping_eq {t : Tracked} {ens : List HeapKnowledge.IndexFact} {F : HeapKnowledge.IndexFact}
+    (hF : F ∈ ens) (hn : namesTracked t ens = true) {ρ ρ0 : Env} {v : Tm} (ht : TracksAt t ρ ρ0) :
+    ∀ s ∈ F.slots, mapEnv (returnMapping t ens) (push v ρ) s = push v ρ0 s := by
+  intro s hs
+  have hlt : s < slotBound ens :=
+    Nat.lt_succ_of_le (le_foldr_max (List.mem_flatMap.mpr ⟨F, hF, hs⟩))
+  have hmap : slot (returnMapping t ens) s = trackedSlot t s := by
+    simp [returnMapping, slot, hlt]
+  simp only [mapEnv, hmap]
+  have hj := List.all_eq_true.mp (List.all_eq_true.mp hn F hF) s hs
+  unfold trackedSlot
+  cases s with
+  | zero => rfl
+  | succ q =>
+    simp only [Nat.add_one_ne_zero, ↓reduceIte, Nat.add_sub_cancel]
+    rw [Bool.or_eq_true] at hj
+    rcases hj with h0 | hj
+    · simp at h0
+    simp only [Nat.add_sub_cancel] at hj
+    cases hf : t.find? (fun p => p.2 == q) with
+    | none =>
+      obtain ⟨p, hp, hpq⟩ := List.any_eq_true.mp hj
+      exact absurd hpq (by simpa using List.find?_eq_none.mp hf p hp)
+    | some p =>
+      have hp := List.mem_of_find?_eq_some hf
+      have hpq : p.2 = q := by simpa using List.find?_some hf
+      show ρ p.1 = ρ0 q
+      rw [← hpq]
+      exact ht p hp
+
+/-- What a return meets in the heap `h` it returns in: each fact, at `ρ`, the
+result pushed onto the inputs' entry values. -/
+def EnsuresAt (ens : List HeapKnowledge.IndexFact) (h : Heap) (ρ : Env) : Prop :=
+  ∀ F ∈ ens, F.HoldsAt ρ h
+
+/-- Whether a knowledge, its result at slot `0`, entails the facts, each
+input's position read at the slot after the result its pair names. -/
+def returnEntails (k : HeapKnowledge.Knowledge) (t : Tracked) (ens : List HeapKnowledge.IndexFact) : Bool :=
+  namesTracked t ens && HeapKnowledge.indicesCheckBy (HeapLinks.aliases k.links) k.links k.indices
+    (ens.map fun F => ⟨F, none, false⟩) (returnMapping t ens)
+
+theorem returnEntails_sound {k : HeapKnowledge.Knowledge} {t : Tracked} {ens : List HeapKnowledge.IndexFact}
+    {ρ ρ0 : Env} {h : Heap} {v : Tm}
+    (hc : returnEntails k t ens = true) (hk : HeapKnowledge.Holds k (push v ρ) h) (ht : TracksAt t ρ ρ0) :
+    EnsuresAt ens h (push v ρ0) := by
+  simp only [returnEntails, Bool.and_eq_true] at hc
   intro F hF
-  have hheld := HeapKnowledge.indicesCheckBy_sound (fun x y hy => HeapLinks.aliases_eq hk.2.2.1 hy) hk.2.2.1 hc
-    hk.2.2.2.2.2 ⟨F, none, false⟩ (List.mem_map_of_mem hF) (fun b hb => by cases hb)
-  refine (HeapKnowledge.IndexFact.holdsAt_congr fun s hs => ?_).mp hheld
-  have h0 : s = 0 := by
-    have := List.all_eq_true.mp (List.all_eq_true.mp hr F hF) s hs
-    simpa using this
-  subst h0
-  rfl
+  have hheld := HeapKnowledge.indicesCheckBy_sound (fun x y hy => HeapLinks.aliases_eq hk.2.2.1 hy) hk.2.2.1
+    hc.2 hk.2.2.2.2.2 ⟨F, none, false⟩ (List.mem_map_of_mem hF) (fun b hb => by cases hb)
+  exact (HeapKnowledge.IndexFact.holdsAt_congr (returnMapping_eq hF hc.1 ht)).mp hheld
 
-/-- Every return of a graph a run may reach entails the facts: its node's
-entry admits no value, its result type none (a throw), or its output
-entails them. -/
-def returnsEnsure (G : NormalGraph ι) (P : Program) (C : Certificate ι)
+/-- The inputs a list of facts names, each held at its own slot on entry:
+position `q + 1` names input `q`. -/
+def namedInputs (ens : List HeapKnowledge.IndexFact) : Tracked :=
+  ((ens.flatMap HeapKnowledge.IndexFact.slots).filterMap fun j =>
+    if j = 0 then none else some (j - 1, j - 1)).eraseDups
+
+/-- The table reaches the entry with pairs each holding its input at its own slot. -/
+def startTracks (T : List (Option Tracked)) (start : Nat) : Bool :=
+  match trackedAt T start with
+  | some t => t.all fun p => p.1 == p.2
+  | none => false
+
+/-- A return the table reaches entails the facts: its node's entry admits no
+value, its result type none (a throw), or its output entails them. -/
+def returnOk (G : NormalGraph ι) (c : NodeEvidence ι) (k : Continuation) (here : Option Tracked)
     (ens : List HeapKnowledge.IndexFact) : Bool :=
-  resultOnly ens && (List.range P.length).all fun l =>
+  match k, here with
+  | .ret, some t => unreachableEntry G c || ExpressionEffects.emptyType G (result c) ||
+      returnEntails (outFacts G c) t ens
+  | _, _ => true
+
+/-- With the table `T`: it reaches the entry, every edge out of a node it
+reaches carries its pairs, and every return it reaches entails the facts. -/
+def returnsEnsureWith (G : NormalGraph ι) (P : Program) (C : Certificate ι)
+    (ens : List HeapKnowledge.IndexFact) (start : Nat) (T : List (Option Tracked)) : Bool :=
+  startTracks T start && (List.range P.length).all fun l =>
     match P[l]?, C[l]? with
-    | some node, some c => match node.continuation with
-      | .ret => unreachableEntry G c || ExpressionEffects.emptyType G (result c) ||
-          returnEntails (outFacts G c) ens
-      | _ => true
+    | some node, some c => edgesTrack T l node && returnOk G c node.continuation (trackedAt T l) ens
     | _, _ => true
 
-/-- The same check, each return's failure located at its node. -/
+/-- Every return of a graph a run may reach entails the facts, the inputs'
+slots carried by `trackTable`. -/
+def returnsEnsure (G : NormalGraph ι) (P : Program) (C : Certificate ι)
+    (ens : List HeapKnowledge.IndexFact) (start : Nat) : Bool :=
+  returnsEnsureWith G P C ens start (trackTable P C start (namedInputs ens))
+
+/-- The same check, each node's failure located at it. -/
 def returnsEnsureResult (G : NormalGraph ι) (P : Program) (C : Certificate ι)
-    (ens : List HeapKnowledge.IndexFact) : ProgramCertificates.CheckResult ι Unit :=
-  (ProgramCertificates.CheckResult.ofBool (resultOnly ens)).bind fun _ =>
+    (ens : List HeapKnowledge.IndexFact) (start : Nat) : ProgramCertificates.CheckResult ι Unit :=
+  let T := trackTable P C start (namedInputs ens)
+  (ProgramCertificates.CheckResult.ofBool (startTracks T start)).bind fun _ =>
   ProgramCertificates.CheckResult.all (List.range P.length) fun l =>
     (ProgramCertificates.CheckResult.ofBool (match P[l]?, C[l]? with
-      | some node, some c => match node.continuation with
-        | .ret => unreachableEntry G c || ExpressionEffects.emptyType G (result c) ||
-            returnEntails (outFacts G c) ens
-        | _ => true
+      | some node, some c => edgesTrack T l node && returnOk G c node.continuation (trackedAt T l) ens
       | _, _ => true)).at (.node l)
 
 theorem returnsEnsureResult_accepted (G : NormalGraph ι) (P : Program) (C : Certificate ι)
-    (ens : List HeapKnowledge.IndexFact) :
-    (returnsEnsureResult G P C ens).accepted = returnsEnsure G P C ens := by
-  simp only [returnsEnsureResult, returnsEnsure, ProgramCertificates.CheckResult.accepted_bind,
+    (ens : List HeapKnowledge.IndexFact) (start : Nat) :
+    (returnsEnsureResult G P C ens start).accepted = returnsEnsure G P C ens start := by
+  simp only [returnsEnsureResult, returnsEnsure, returnsEnsureWith, ProgramCertificates.CheckResult.accepted_bind,
     ProgramCertificates.CheckResult.accepted_ofBool, ProgramCertificates.CheckResult.accepted_all,
     ProgramCertificates.CheckResult.accepted_at]
 
@@ -668,83 +839,92 @@ theorem SafePost_empty {Ξ T : Fam} {Q Q' : HeapObservations.Post} (hT : ∀ k U
     · exact .inr ⟨U, h', t', hx, hu, st, hh, ih hs⟩
 
 theorem returnsEnsure_reassign (G : NormalGraph ι) (η : MixedAssignment ι) (P : Program) (C : Certificate ι)
-    (ens : List HeapKnowledge.IndexFact) :
-    returnsEnsure (reassign G η) P C ens = returnsEnsure G P C ens := by
-  simp only [returnsEnsure, unreachableEntry, ExpressionEffects.emptyType]
+    (ens : List HeapKnowledge.IndexFact) (start : Nat) :
+    returnsEnsure (reassign G η) P C ens start = returnsEnsure G P C ens start := by
+  simp only [returnsEnsure, returnsEnsureWith, returnOk, unreachableEntry, ExpressionEffects.emptyType]
   rfl
 
 theorem returnsEnsure_at {G : NormalGraph ι} {P : Program} {C : Certificate ι}
-    {ens : List HeapKnowledge.IndexFact} (h : returnsEnsure G P C ens = true) {l : Nat} {node : Node}
-    {c : NodeEvidence ι} (hn : P[l]? = some node) (hc : C[l]? = some c) (hk : node.continuation = Continuation.ret) :
-    unreachableEntry G c = true ∨ ExpressionEffects.emptyType G (result c) = true ∨
-      returnEntails (outFacts G c) ens = true := by
-  simp only [returnsEnsure, Bool.and_eq_true, List.all_eq_true] at h
+    {ens : List HeapKnowledge.IndexFact} {start : Nat} {T : List (Option Tracked)}
+    (h : returnsEnsureWith G P C ens start T = true) {l : Nat} {node : Node}
+    {c : NodeEvidence ι} (hn : P[l]? = some node) (hc : C[l]? = some c) :
+    edgesTrack T l node = true ∧ returnOk G c node.continuation (trackedAt T l) ens = true := by
+  simp only [returnsEnsureWith, Bool.and_eq_true, List.all_eq_true] at h
   have hl : l ∈ List.range P.length := List.mem_range.mpr (List.getElem?_eq_some_iff.mp hn).1
   have := h.2 l hl
   rw [hn, hc] at this
-  simp only [hk, Bool.or_eq_true] at this
-  exact or_assoc.mp this
+  simpa only [Bool.and_eq_true] using this
 
-/-- What the run reads of a state for the result facts: a return's
-expression returns values meeting them, and a finished run's value meets
-them in its heap. -/
-def EnsState (ens : List HeapKnowledge.IndexFact) (n : Nat) (h : Heap) : State → Prop
-  | .eval t _ k _ => k = Continuation.ret → ReturnsPost (fun h' v => EnsuresAt ens h' v) n h t
-  | .done v => EnsuresAt ens h v
+/-- What the run reads of a state for the result facts, `ρ0` the inputs'
+entry values: at a node, its pairs hold; a return's expression returns
+values meeting the facts, and each edge's target holds its pairs; a
+finished run's value meets them in its heap. -/
+def EnsState (T : List (Option Tracked)) (ens : List HeapKnowledge.IndexFact) (ρ0 : Env) (n : Nat) (h : Heap) :
+    State → Prop
+  | .at l ρ => ∃ t, trackedAt T l = some t ∧ TracksAt t ρ ρ0
+  | .eval t ρ k x => (k = Continuation.ret → ReturnsPost (fun h' v => EnsuresAt ens h' (push v ρ0)) n h t) ∧
+      NextTracks T k x ρ ρ0
+  | .done v => EnsuresAt ens h (push v ρ0)
   | _ => True
 
 theorem ensures_step [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
     {sums : List (ProgramCertificates.ReadSummary ι)} {Rty : Goal ι} {v0 : Tm} {P : Program}
-    {C : Certificate ι} {ens : List HeapKnowledge.IndexFact} {codes}
+    {C : Certificate ι} {ens : List HeapKnowledge.IndexFact} {codes} {start : Nat}
+    {T : List (Option Tracked)} {ρ0 : Env}
     (hg : checkGraphUsing (sums := sums) G images Rty P C codes = true)
     (hcodes : ProgramCertificates.CodesSound G codes) (hsums : ProgramCertificates.SummariesSound G images sums)
-    (hens : returnsEnsure G P C ens = true)
+    (hens : returnsEnsureWith G P C ens start T = true)
     {n W h s h' s'} (hw : WorldAdm W) (hh : HeapOk (n+1) W h)
-    (hs : StateOk G Rty C v0 (n+1) W h s) (hp : EnsState ens (n+1) h s)
-    (st : Transition P h s h' s') : EnsState ens n h' s' := by
+    (hs : StateOk G Rty C v0 (n+1) W h s) (hp : EnsState T ens ρ0 (n+1) h s)
+    (st : Transition P h s h' s') : EnsState T ens ρ0 n h' s' := by
   cases st with
   | @enter l node _ ρ hn =>
     obtain ⟨c, hc, he, hi, -, hf⟩ := hs
-    intro hk
+    obtain ⟨t, htl, htr⟩ := hp
+    obtain ⟨hedges, hret⟩ := returnsEnsure_at hens hn hc
+    refine ⟨fun hk => ?_, edgesTrack_sound hedges htl htr⟩
     obtain ⟨actual, hactual, hterm, -⟩ := graph_node hg hcodes hsums hc
     cases hn.symm.trans hactual
     have hrun := hterm n _ h ρ (he.transfer n (Nat.le_succ n) _ (WExt_refl _))
       (hi.transfer n (Nat.le_succ n) _ (WExt_refl _)) (entryFacts_holds he hf)
       (WorldAdm_trunc _ hw) (HeapOk_trunc n W h hh)
-    rcases returnsEnsure_at hens hn hc hk with hu | hempty | hr
+    simp only [returnOk, hk, htl, Bool.or_eq_true] at hret
+    rcases hret with (hu | hempty) | hr
     · exact (unreachableEntry_sound hu he).elim
     · exact returnsPost_of_safePost (SafePost_empty
         (fun _ _ _ hu => ExpressionEffects.emptyType_sound hempty hu.1) hrun)
-    have hres : resultOnly ens = true := by
-      simp only [returnsEnsure, Bool.and_eq_true] at hens; exact hens.1
     exact returnsPost_of_safePost (HeapObservations.weaken
-      (fun h'' v hq => returnEntails_sound hres hr hq) hrun)
-  | @expr _ t _ t' ρ k handler st =>
-    intro hk
-    exact (hp hk).step st
-  | ret hv => exact (hp rfl).value hv
-  | bind hv => trivial
-  | effect hv => trivial
-  | yes => trivial
-  | no => trivial
-  | yesBind => trivial
-  | noBind => trivial
-  | tagBind hv => trivial
-  | handle hr => trivial
+      (fun h'' v hq => returnEntails_sound hr hq htr) hrun)
+  | expr st => exact ⟨fun hk => (hp.1 hk).step st, hp.2⟩
+  | ret hv => exact (hp.1 rfl).value hv
+  | @bind v _ _ l _ hv => exact hp.2 (l, true) (List.mem_append_left _ (List.mem_singleton_self _)) v
+  | @effect v _ _ l _ hv => exact hp.2 (l, false) (List.mem_append_left _ (List.mem_singleton_self _)) v
+  | @yes _ _ y n _ => exact hp.2 (y, false) (List.mem_append_left _ (by simp)) .tru
+  | @no _ _ y n _ => exact hp.2 (n, false) (List.mem_append_left _ (by simp)) .fls
+  | @yesBind _ _ y n _ => exact hp.2 (y, true) (List.mem_append_left _ (by simp)) .tru
+  | @noBind _ _ y n _ => exact hp.2 (n, true) (List.mem_append_left _ (by simp)) .fls
+  | @tagBind v _ _ tag y n _ hv =>
+    split
+    · exact hp.2 (y, true) (List.mem_append_left _ (by simp)) v
+    · exact hp.2 (n, true) (List.mem_append_left _ (by simp)) v
+  | @handle _ v _ _ _ l hr => exact hp.2 (l, true) (List.mem_append_right _ (by simp)) v
   | raise hr => trivial
 
 /-- **A graph's returns meet its result facts**: run from a state the safety
 proof and the result facts' reading admit, it is safe, and every value it
-returns meets the facts in the heap it returns in. -/
+returns meets the facts, with the inputs' entry values `ρ0`, in the heap it
+returns in. -/
 theorem ensures_safe_of_sim [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
     {sums : List (ProgramCertificates.ReadSummary ι)} {Rty : Goal ι} {v0 : Tm} {E : List Tm}
     {K : List (Continuation × Option Target)} {C : Certificate ι} {ens : List HeapKnowledge.IndexFact}
-    {codes : CodeEntry ι → Bool} (hg : checkGraphUsing (sums := sums) G images Rty (program E K) C codes = true)
+    {codes : CodeEntry ι → Bool} {start : Nat} {T : List (Option Tracked)} {ρ0 : Env}
+    (hg : checkGraphUsing (sums := sums) G images Rty (program E K) C codes = true)
     (hcodes : ProgramCertificates.CodesSound G codes) (hsums : ProgramCertificates.SummariesSound G images sums)
-    (hens : returnsEnsure G (program E K) C ens = true) (hv0 : isVal v0 = true) :
+    (hens : returnsEnsureWith G (program E K) C ens start T = true) (hv0 : isVal v0 = true) :
     ∀ n W h ts s, Sim E K ts s → WorldAdm W → HeapOk n W h →
-      StateOk G Rty C v0 n W h s → EnsState ens n h s →
-      HeapObservations.SafePost (excOf G) (GoalHolds G Rty v0) (fun h' v => EnsuresAt ens h' v) n W h ts := by
+      StateOk G Rty C v0 n W h s → EnsState T ens ρ0 n h s →
+      HeapObservations.SafePost (excOf G) (GoalHolds G Rty v0) (fun h' v => EnsuresAt ens h' (push v ρ0))
+        n W h ts := by
   intro n
   induction n with
   | zero => intros; trivial
@@ -760,7 +940,8 @@ theorem ensures_safe_of_sim [DecidableEq ι] {G : NormalGraph ι} {images : Inst
         ih U h' ts' s' sim' hu hok hs' (ensures_step hg hcodes hsums hens hw hh hs hp st)⟩
 
 /-- A graph run started at an entry the checker accepted, whose returns
-entail the result facts, is safe, and every value it returns meets them. -/
+entail the result facts, is safe, and every value it returns meets them,
+with the inputs' values at the start. -/
 theorem goto_ensures [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
     {sums : List (ProgramCertificates.ReadSummary ι)} {Rty : Goal ι} {E : List Tm}
     {K : List (Continuation × Option Target)} {C : Certificate ι} {start inputs}
@@ -769,15 +950,17 @@ theorem goto_ensures [DecidableEq ι] {G : NormalGraph ι} {images : InstanceIma
     (hc : checkEntryUsing (sums := sums) (entrySeparation := entrySeparation) (entryIndices := entryIndices)
       G images Rty (program E K) C start inputs codes = true)
     (hcodes : ProgramCertificates.CodesSound G codes) (hsums : ProgramCertificates.SummariesSound G images sums)
-    (hens : returnsEnsure G (program E K) C ens = true)
+    (hens : returnsEnsure G (program E K) C ens start = true)
     (n W h L d) (he : EnvOk G inputs (envOf L d) n W) (hw : WorldAdm W)
     (hh : HeapOk n W h)
     (hsep : HeapSeparation.Holds entrySeparation (envOf L d) := by exact HeapSeparation.empty_holds _)
     (hidx : HeapKnowledge.IndexHolds entryIndices (envOf L d) h := by exact HeapKnowledge.indexHolds_nil _ _) :
     HeapObservations.SafePost (excOf G) (GoalHolds G Rty (Rty.argument (envOf L d)))
-      (fun h' v => EnsuresAt ens h' v) n W h (.goto E K start L d) := by
+      (fun h' v => EnsuresAt ens h' (push v (envOf L d))) n W h (.goto E K start L d) := by
   simp only [checkEntryUsing_eq, Bool.and_eq_true] at hc
   have hx := hc.2
+  have hstartT : startTracks (trackTable (program E K) C start (namedInputs ens)) start = true := by
+    simp only [returnsEnsure, returnsEnsureWith, Bool.and_eq_true] at hens; exact hens.1
   split at hx
   · rename_i c hstart'
     simp only [Bool.and_eq_true, decide_eq_true_eq] at hx
@@ -804,7 +987,13 @@ theorem goto_ensures [DecidableEq ι] {G : NormalGraph ι} {images : InstanceIma
           cases List.mem_singleton.mp hp
           rfl
       · exact entryKnows_sound hk (by simpa only [hin] using he) hsep hidx
-    · trivial
+    · simp only [startTracks] at hstartT
+      split at hstartT
+      · rename_i t ht
+        refine ⟨t, ht, fun p hp => ?_⟩
+        have := List.all_eq_true.mp hstartT p hp
+        rw [beq_iff_eq.mp this]
+      · cases hstartT
   · contradiction
 
 /-- **A node the bound check accepts is within the bound** on the locations

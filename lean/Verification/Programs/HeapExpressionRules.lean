@@ -1162,15 +1162,17 @@ def writeKeeps (k : Knowledge) (i : Nat) (fld : PropKey) (owned : Bool) (s : Nat
 
 /-- A write forgets old cell observations, except those about locations known
 to be distinct from the written one, establishes its new contents where the
-written value is a known primitive (`R`), and retains immutable values
-already read into slots. -/
-def writeOutput (k : Knowledge) (i : Nat) (fld : PropKey) (R : Option ValueSets.ValueSet) (owned : Bool)
+written value is a known primitive (`R`), states that reading the field from
+the receiver gives the written slot's value (a read link, `write-link`), and
+retains immutable values already read into slots. -/
+def writeOutput (k : Knowledge) (i v : Nat) (fld : PropKey) (R : Option ValueSets.ValueSet) (owned : Bool)
     (chg : Changes) : Knowledge :=
   ⟨(R.map fun R => (HeapLinks.aliases k.links i).map (fun j => (⟨j+1,R,fld⟩ : Fact))).getD [] ++
       (k.cells.filter fun f => writeKeeps k i fld owned f.slot f.field).map
         (fun f => {f with slot := f.slot + 1}),
     ⟨0,{ nul := true },valueField⟩ :: HeapFacts.shift k.values,
-    HeapLinks.stable (HeapKnowledge.shift k).links, HeapSeparation.shift k.separation, [],
+    ⟨i+1, v+1, false, fld, false⟩ :: HeapLinks.stable (HeapKnowledge.shift k).links,
+    HeapSeparation.shift k.separation, [],
     HeapKnowledge.shiftIndices (HeapKnowledge.keptIndices chg (fun s g => writeKeeps k i fld owned s (.str g)) k.indices)⟩
 
 /-- **A kept location differs from the written one**: a separation fact
@@ -1223,7 +1225,7 @@ theorem write_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImag
     (he : EnvOk G Γ ρ n W) (hk : HeapKnowledge.Holds k ρ h)
     (hw : WorldAdm W) (hh : HeapOk n W h) :
     SafePost (excOf G) (meaning G A)
-      (fun h' v => HeapKnowledge.Holds (writeOutput k i fld R (ownedField (expand G (Γ.getD i [])) fld)
+      (fun h' v => HeapKnowledge.Holds (writeOutput k i j fld R (ownedField (expand G (Γ.getD i [])) fld)
         (fieldChanges G (expand G (Γ.getD i [])) fld)) (push v ρ) h')
       n W h (.writeAt fld (ρ i) (ρ j)) := by
   have hvv : isVal (ρ j) = true :=
@@ -1255,7 +1257,13 @@ theorem write_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImag
         intro s g fs cd o l0 v hfirst hs0 hl0 hv
         rw [List.getElem?_set_ne (writeKeeps_ne he hk hi hfirst hl hfd hs0 hl0)]
         exact hv
-      refine ⟨?_,?_,HeapLinks.stable_holds (HeapKnowledge.shift_holds (v := .nul) hk).2.2.1,
+      have hlinks : HeapLinks.Holds (⟨i+1, j+1, false, fld, false⟩ ::
+          HeapLinks.stable (HeapKnowledge.shift k).links) (push .nul ρ) (h.set l (ρ j)) := by
+        intro g hg
+        rcases List.mem_cons.mp hg with rfl | hg
+        · exact ⟨flds, c, oid, l, by simpa [push] using hl, hfd, by simp [push, hlt]⟩
+        · exact HeapLinks.stable_holds (HeapKnowledge.shift_holds (v := .nul) hk).2.2.1 g hg
+      refine ⟨?_,?_,hlinks,
         (HeapKnowledge.shift_holds (v := .nul) hk).2.2.2.1, HeapKnowledge.elemsHolds_nil _ _, hindex⟩
       · intro f hf
         rcases List.mem_append.mp hf with hf | hf
@@ -1659,7 +1667,7 @@ frame. Subtype comparisons retain unfinished work through the step validation. -
     | some (fld, i', v') =>
       checkedOutput G images e (decide (claim e = j ∧ i' = i ∧ v' = v ∧ i < j.context.length ∧
         v < j.context.length ∧ valuesAt G j.context k v = R))
-        (writeOutput k i fld R (ownedField (expand G (j.context.getD i [])) fld)
+        (writeOutput k i v fld R (ownedField (expand G (j.context.getD i [])) fld)
           (fieldChanges G (expand G (j.context.getD i [])) fld)) codes sums tree
     | none => failure
   | .boundedWrite .. => failure
@@ -1759,7 +1767,7 @@ theorem checkStepUsing_eq [DecidableEq ι] (G : NormalGraph ι) (images : Instan
       if claim e = j ∧ checkTreeUsing G images e codes sums = true ∧ i' = i ∧ v' = v ∧
           i < j.context.length ∧ v < j.context.length ∧
           valuesAt G j.context k v = R
-      then some (writeOutput k i fld R (ownedField (expand G (j.context.getD i [])) fld)
+      then some (writeOutput k i v fld R (ownedField (expand G (j.context.getD i [])) fld)
           (fieldChanges G (expand G (j.context.getD i [])) fld)) else none
     | none => none
   | .boundedWrite .. => none := by

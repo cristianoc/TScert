@@ -42,9 +42,9 @@ structure SourceRequest (σ ι : Type) [Labels ι] [StoreView σ ι] extends Req
   /-- Whether the declaration claims its footprint on a throw too, which its
   graph must establish as well. -/
   onThrow : Bool := false
-  /-- The facts the declaration states of its result (`Fragment.Fn.ensures`),
-  at position `0` alone, which each return of its graph must establish
-  (`ensuresResult`). -/
+  /-- The facts the declaration states at its returns (`Fragment.Fn.ensures`),
+  position `0` the result and `q + 1` input slot `q`'s entry value, which
+  each return of its graph must establish (`ensuresResult`). -/
   ensures : List HeapKnowledge.IndexFact := []
   /-- Whether the declaration is async, as the source states (`Fragment.Fn`):
   its footprint is then `top` (`RequestJson.asyncEffects`). -/
@@ -235,17 +235,18 @@ theorem effectResult_stated {r : SourceRequest σ ι} {c : Response ι}
   · exact ho
 
 /-- A unit's result facts, established by its own graph: none, or facts of
-its result alone, which each return its graph may reach entails
-(`GraphCode.returnsEnsure`), for a unit checked by the ordinary checker. -/
+its result and of its inputs' entry values, which each return its graph may
+reach entails (`GraphCode.returnsEnsure`), for a unit checked by the ordinary
+checker. -/
 @[nospecialize] def ensuresResult (r : SourceRequest σ ι) (c : Response ι) : ProgramCertificates.CheckResult ι Unit :=
   if r.ensures.isEmpty then pure () else
     (ProgramCertificates.CheckResult.ofBool r.qualification.isNone).bind fun _ =>
-      GraphCode.returnsEnsureResult (RequestJson.graph r.toRequest) r.program c.certificate r.ensures
+      GraphCode.returnsEnsureResult (RequestJson.graph r.toRequest) r.program c.certificate r.ensures r.start
 
 theorem ensuresResult_checked {r : SourceRequest σ ι} {c : Response ι}
     (h : (ensuresResult r c).accepted = true) (he : r.ensures ≠ []) :
     r.qualification = none ∧
-      GraphCode.returnsEnsure (RequestJson.graph r.toRequest) r.program c.certificate r.ensures = true := by
+      GraphCode.returnsEnsure (RequestJson.graph r.toRequest) r.program c.certificate r.ensures r.start = true := by
   have hn : r.ensures.isEmpty = false := by simpa using he
   simp only [ensuresResult, hn, Bool.false_eq_true, if_false, ProgramCertificates.CheckResult.accepted_bind,
     ProgramCertificates.CheckResult.accepted_ofBool, GraphCode.returnsEnsureResult_accepted, Bool.and_eq_true,
@@ -444,9 +445,10 @@ theorem checkRequests_footprint_at {rs : List (SourceRequest σ ι)} {b : Bundle
   · contradiction
 
 /-- **A unit stating result facts meets them.** A unit whose declaration
-states facts of its result (`ensures`), run as the code its graph describes
-from any environment of values its inputs admit, is safe, and every value it
-returns meets the facts in the heap it returns in. -/
+states facts of its result and its inputs (`ensures`), run as the code its
+graph describes from any environment of values its inputs admit, is safe,
+and every value it returns meets the facts, with the inputs' entry values,
+in the heap it returns in. -/
 theorem checkRequests_ensures_at {rs : List (SourceRequest σ ι)} {b : Bundle ι}
     (h : checkRequests rs b = true) {r c} (hm : (r,c) ∈ rs.zip b.functions) (hens : r.ensures ≠ [])
     (η : PositiveGraphs.MixedAssignment ι) (n W heap) (L : List Tm) (d : Tm)
@@ -456,7 +458,7 @@ theorem checkRequests_ensures_at {rs : List (SourceRequest σ ι)} {b : Bundle �
     (hidx : HeapKnowledge.IndexHolds r.entryIndices (envOf L d) heap) :
     HeapObservations.SafePost (excOf (reassign (RequestJson.graph r.toRequest) η))
       (ControlFlow.GoalHolds (reassign (RequestJson.graph r.toRequest) η) r.goal (r.goal.argument (envOf L d)))
-      (fun h' v => GraphCode.EnsuresAt r.ensures h' v) n W heap
+      (fun h' v => GraphCode.EnsuresAt r.ensures h' (push v (envOf L d))) n W heap
       (.goto (r.program.map (·.expression)) (r.program.map fun n => (n.continuation, n.handler))
         r.start L d) := by
   obtain ⟨es, _, hunit⟩ := checkRequests_pair h hm
@@ -481,7 +483,7 @@ theorem checkRequests_ensures_at {rs : List (SourceRequest σ ι)} {b : Bundle �
     rw [← hP] at hc
     have hret' : GraphCode.returnsEnsure (reassign G η)
         (GraphCode.program (r.program.map (·.expression)) (r.program.map fun n => (n.continuation, n.handler)))
-        c.certificate r.ensures = true := by
+        c.certificate r.ensures r.start = true := by
       rw [GraphCode.returnsEnsure_reassign, hP]; exact hret
     exact GraphCode.goto_ensures hc hcodes hsums hret' n W heap L d he hw hh hsep hidx
   · contradiction

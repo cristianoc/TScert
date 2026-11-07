@@ -15,7 +15,7 @@ import { GENERATOR, UNCLOSABLE, booleanForm, booleanReturn, bindingScope, firstO
 import type { Gate } from "./fragment-parse.mts";
 import { guardResult } from "./fragment-guards.mts";
 import { literalDefaultName } from "./type-term.mts";
-import { elaborateRequires, indexFactPositions, plainParameter, requiresTags, type ClauseParameter } from "./bound-annotations.mts";
+import { elaborateRequires, indexFactPositions, parameterKept, plainParameter, requiresTags, type ClauseParameter } from "./bound-annotations.mts";
 import { namesView } from "./library-types.mts";
 import { aliasMeaning, definitionKey, recordShape } from "./named-record.mts";
 import { isImport, isTypeAlias } from "./syntax.mts";
@@ -2172,13 +2172,17 @@ export function functionDecl(this: Gate, node: FunctionDeclaration, signature: F
     // declaration of the module read at its own signature: each parameter's,
     // `this` at its call position, a conjunct of the precondition, of each
     // parameter that is a plain required name, where it is not async: its
-    // input slot holds the actual at that position; its result's, `this` the
-    // result at position 0, facts each return establishes, where it is not
-    // async. An importing module reads them alike (`writtenImport`).
+    // input slot holds the actual at that position; of each such parameter
+    // its body writes no binding of (`parameterKept`), `this` at the
+    // position after its call position, facts each return establishes; its
+    // result's, `this` the result at position 0, facts each return
+    // establishes, where it is not async. An importing module reads them
+    // alike (`writtenImport`).
     let ensures: IndexFact[] = [];
     if (signature === node && ts.isSourceFile(node.parent)) {
       const contract = recordInvariants(gate,
-        isAsync ? [] : node.parameters.map((p, i) => plainParameter(p) ? parameterTypes[i] : undefined),
+        isAsync ? [] : node.parameters.map((p, i) => plainParameter(p)
+          ? { type: parameterTypes[i], kept: parameterKept(p, node.body) } : { type: undefined, kept: false }),
         !!receiverParam, isAsync ? undefined : retType);
       if (typeof contract === "string") gate.fail(node, contract);
       else {
@@ -2245,12 +2249,14 @@ function clauseParameter(gate: Gate, name: string, position: number, type: TypeT
 /** A function declaration's record invariants (`@invariant`;
  * PROGRAM-TYPING.md, "Record invariants") elaborated to index facts: those
  * the type of its parameter `i` names (`invariantsNamed`), `this` that
- * parameter's call position, conjuncts of its precondition; those its
- * result's type names, `this` the result's position `0`, facts of its
+ * parameter's call position, conjuncts of its precondition, and, where the
+ * parameter is `kept`, `this` the position after it (`Effect.ensures`: `0`
+ * the result, `p + 1` the call's position `p`), facts at its returns; those
+ * its result's type names, `this` the result's position `0`, facts of its
  * result; none of a type `undefined` stands for. The refusal's message where
  * a clause is refused. */
-export function recordInvariants(gate: Gate, params: readonly (TypeTerm | undefined)[], receiver: boolean,
-    result: TypeTerm | undefined): { pre: IndexFact[]; ensures: IndexFact[] } | string {
+export function recordInvariants(gate: Gate, params: readonly { type: TypeTerm | undefined; kept: boolean }[],
+    receiver: boolean, result: TypeTerm | undefined): { pre: IndexFact[]; ensures: IndexFact[] } | string {
   const facts = (type: TypeTerm | undefined, position: number): IndexFact[] | string => {
     const named = type === undefined ? [] : invariantsNamed(gate, type);
     if (typeof named === "string") return named;
@@ -2266,14 +2272,21 @@ export function recordInvariants(gate: Gate, params: readonly (TypeTerm | undefi
     return out;
   };
   const pre: IndexFact[] = [];
-  for (const [i, type] of params.entries()) {
-    const stated = facts(type, receiver ? i : i + 1);
+  const kept: IndexFact[] = [];
+  for (const [i, { type, kept: returned }] of params.entries()) {
+    const position = receiver ? i : i + 1;
+    const stated = facts(type, position);
     if (typeof stated === "string") return stated;
     pre.push(...stated);
+    if (returned && stated.length > 0) {
+      const after = facts(type, position + 1);
+      if (typeof after === "string") return after;
+      kept.push(...after);
+    }
   }
   const ensures = facts(result, 0);
   if (typeof ensures === "string") return ensures;
-  return { pre, ensures };
+  return { pre, ensures: [...ensures, ...kept] };
 }
 
 /** A record invariant a type names: the declaration stating it, its clauses,

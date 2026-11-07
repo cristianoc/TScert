@@ -20,8 +20,6 @@ def importedArrow (T : EquationStore.State) (U : List Tree) (footprint : Footpri
   match PositiveRules.expand (SourceTypes.graph T) U with
   | [.arrs [a] []] =>
     if a.effect.promise.isSome then throw "a certified import's signature states no promise"
-    if !(a.effect.ensures.all fun F => F.slots.all (· == 0)) then
-      throw "a certified import's signature states result facts of its result alone"
     let params : List Fragment.Param := a.arguments.zipIdx.map fun (A, i) => ⟨s!"p{i}", graphClaim A, false⟩
     moduleArrow ⟨"", (0, 0), params, graphClaim a.result, [], false, none, false, none, a.effect.pre, a.effect.ensures⟩
       footprint onThrow

@@ -2695,7 +2695,8 @@ function writtenImport(gate: Gate, value: ValueRoot, clauses: readonly string[],
   // The invariants of the record types its parameters and result name, read
   // as its own module's unit reads them (`recordInvariants`).
   const contract = !one || plain === undefined ? { pre: [], ensures: [] } :
-    statements.recordInvariants(gate, invariants.params.map((read, i) => read ? types[i] : undefined), receiver,
+    statements.recordInvariants(gate, invariants.params.map((read, i) =>
+      ({ type: read ? types[i] : undefined, kept: read && (invariants.kept[i] ?? false) })), receiver,
       invariants.result ? plain.result : undefined);
   if (typeof contract === "string") return gate.fail(at ?? null, `${contract}: ${what}`);
   if (clauses.length === 0 && contract.pre.length === 0 && contract.ensures.length === 0) return value.type;
