@@ -12,6 +12,9 @@ import { cases } from "../pipeline/cases.mts";
 
 // These source counterexamples exercise refused operations within the caller
 // contract: ordinary records, stable standard prototypes and native promises.
+assert.equal(runExample("invalid-array-covariance",
+  '(() => { try { shout(["a"]); return "returned"; } catch (e) { return e.constructor.name; } })()'), "TypeError",
+  "a number pushed through the wider name reaches toUpperCase");
 assert.equal(runExample("invalid-optional-field-widening", "typeof layout({ widths: [1, 2], items: 5 })"), "undefined",
   "a record of the narrower type holds the optional field at another type");
 assert.equal(runExample("invalid-let-object-narrowing",
