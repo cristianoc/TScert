@@ -372,6 +372,20 @@ class ModuleRuns {
       this.units.set(location, list(field(m, "functions")));
     }
   }
+  /** The name of the function of `module` whose source holds the first span
+   * `detail` names (`at [a,b)`), from its name to its body's last statement;
+   * null where none does. */
+  functionAt(module: string, detail: string): string | null {
+    const at = /at \[(\d+),(\d+)\)/.exec(detail);
+    if (!at?.[1] || !at[2]) return null;
+    const start = Number(at[1]), end = Number(at[2]);
+    for (const f of this.units.get(module) ?? []) {
+      const name = field(f, "name"), from = spanOf(field(f, "namePos"));
+      const last = list(field(f, "body")).reduce((n: number, st) => Math.max(n, spanOf(field(st, "pos"))?.[1] ?? n), -1);
+      if (typeof name === "string" && from && from[0] <= start && end <= last) return name;
+    }
+    return null;
+  }
   /** Each module's claims, and the reads of each module's claims, at the
    * reads not withdrawn; then the importer's eligible reads. */
   claims(declarations: unknown, withdrawn: Set<string>): { claims: Map<string, ModuleClaims>;
@@ -501,7 +515,8 @@ unit's. A refusal naming a certified import asks for that import's
 withdrawal, every such import of the round at once, before the check; a
 refused front refuses every unit. */
 function unitRound(recorder: Recorder, artifacts: string, ast: string, claims: string, snapshot: string,
-    budget: string[], select: string[] | null): { withdraw: string[] } | { front: string } | { results: UnitResult[] } {
+    budget: string[], select: string[] | null, refusedRead: (module: string, detail: string) => string | null):
+    { withdraw: string[] } | { front: string } | { results: UnitResult[] } {
   const named = select === null ? [] : [select.join(",")];
   const search = (evidence: string, names: string[]): { refused: Map<string, string>; front: string | null } => {
     const produced = runStep(verifierCall(verifier, [...budget, "--produce-units", ast, claims, snapshot, evidence,
@@ -546,12 +561,13 @@ function unitRound(recorder: Recorder, artifacts: string, ast: string, claims: s
         detail, depends: [] };
     });
   };
-  // The certified imports refusals name, each once.
+  // The certified imports refusals name, each once: a module run's refusal
+  // within a function the round reads, that read alone (`refusedRead`).
   const withdrawal = (details: Iterable<string>): { withdraw: string[] } | null => {
     const keys = new Set<string>();
     for (const detail of details) {
       const failed = failedImport(detail);
-      if (failed) keys.add(`${failed.module}#${failed.name ?? "*"}`);
+      if (failed) keys.add(`${failed.module}#${failed.name ?? refusedRead(failed.module, detail) ?? "*"}`);
     }
     return keys.size ? { withdraw: [...keys] } : null;
   };
@@ -716,7 +732,15 @@ function checkUnowned(artifacts: string, source: string, tsconfigPath?: string, 
       const document: ParsedJson = JSON.parse(assembled);
       decodeSourceClaims(document);
       phase = "search";
-      const round = unitRound(recorder, artifacts, ast, claims, snapshot, budget, units.select);
+      // A module run's refusal at a span within a function of the module
+      // that a document of the round reads: that read, which the run's
+      // check reached; the module's other reads are kept.
+      const readNames = new Set([...reads, ...[...readsOf.values()].flat()].map((r) => `${r.module}#${r.name}`));
+      const refusedRead = (module: string, detail: string): string | null => {
+        const name = modules.functionAt(module, detail);
+        return name !== null && readNames.has(`${module}#${name}`) ? name : null;
+      };
+      const round = unitRound(recorder, artifacts, ast, claims, snapshot, budget, units.select, refusedRead);
       if ("withdraw" in round) {
         const again = round.withdraw.find((w) => withdrawn.has(w));
         if (again !== undefined) return { status: "error", artifacts, phase,

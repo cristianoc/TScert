@@ -581,15 +581,18 @@ let encode (proposal : Proposal_types.t) =
   let bounds bs = Array (List.filter_map (fun (n,_) -> match Environment.bound_parts n with
     | Some (array,index,strict) -> Some (Object ["array",String array;"index",String index;"strict",Bool strict])
     | None -> None) bs) in
-  (* A statement entry's linear facts (`Environment.fact_key`). *)
+  (* A statement entry's linear facts (`Environment.fact_key`), each with
+     coefficients and a bound the wire states, safe integers; a fact
+     derived past them is left out, a weaker claim. *)
+  let safe k = abs k <= 9007199254740991 in
   let facts bs = Array (List.filter_map (fun (n,_) -> match Environment.fact_parts n with
-    | Some (terms,bound) -> Some (Object ["terms",Array (List.map (fun (t,c) ->
+    | Some (terms,bound) when safe bound && List.for_all (fun (_,c) -> safe c) terms -> Some (Object ["terms",Array (List.map (fun (t,c) ->
         let name,path,kind = Linear_facts.term_parts t in
         let kind = match kind with Linear_facts.Value_term -> "value" | Linear_facts.Length_term -> "length" | Linear_facts.View_term -> "view" in
         Object ["name",String name;"path",Array (List.map (fun f -> String f) path);"term",String kind;
                 "coefficient",Number (string_of_int c)]) terms);
       "bound",Number (string_of_int bound)])
-    | None -> None) bs) in
+    | _ -> None) bs) in
   let contracts row = Array (List.map (fun (c : Proposal_types.contract) ->
     Object ["pos",c.pos;"name",String c.name;"type",claim_type c.type_]) row) in
   let interior (f : Proposal_types.function_claim) =
