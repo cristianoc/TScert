@@ -491,8 +491,11 @@ def prove [DecidableEq V] [LT V] [DecidableRel (α := V) (· < ·)] (known : Lis
 
 /-- The held facts connected to the goal's variables: those sharing a
 variable with the goal or with a fact already selected, so the elimination
-works over the facts that can matter. -/
+works over the facts that can matter. A goal naming no variable (a constant
+fact, which only facts no valuation meets entail besides a true one) is
+searched over every held fact. -/
 def relevant [DecidableEq V] (known : List (Fact V)) (goal : Fact V) : List (Fact V) := Id.run do
+  if goal.vars.isEmpty then return known
   let mut vars := goal.vars
   let mut chosen : List (Fact V) := []
   for _ in List.range (known.length + 1) do
@@ -501,6 +504,13 @@ def relevant [DecidableEq V] (known : List (Fact V)) (goal : Fact V) : List (Fac
     chosen := chosen ++ more
     vars := vars ++ more.flatMap (·.vars)
   return known.filter chosen.contains
+
+theorem relevant_mem [DecidableEq V] {known : List (Fact V)} {goal F : Fact V}
+    (h : F ∈ relevant known goal) : F ∈ known := by
+  unfold relevant at h
+  split at h
+  · exact h
+  · exact (List.mem_filter.mp h).1
 
 /-- Whether the held facts entail `goal`, by a certificate `check` accepts,
 searched over the facts connected to the goal. -/
@@ -527,8 +537,7 @@ theorem entailsDirect_sound [DecidableEq V] [LT V] [DecidableRel (α := V) (· <
       simp only at h
       have hn : ∀ F ∈ relevant known (.le c d), F.Holds v := by
         intro F hF
-        unfold relevant at hF
-        exact hk F (List.mem_filter.mp hF).1
+        exact hk F (relevant_mem hF)
       split at h
       · split at h
         · rename_i out hc

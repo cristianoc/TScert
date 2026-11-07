@@ -1941,8 +1941,9 @@ negative `invalid-typed-array-length-short` and, a fraction,
 `invalid-typed-array-length-fraction`, each run under Node; a forged control,
 the precondition claimed of the fraction at the construction's entry,
 refused there). A test of two counts the facts already state equal, such as
-`segmentFlags.length !== widths.length` after that allocation, is refused at
-the edge from its second evaluation (`known-equal-length-test-refused`).
+`segmentFlags.length !== widths.length` after that allocation, is decided by
+the contradiction its unreachable answer leaves, a fact naming no variable,
+which entailment searches over every held fact (`known-equal-length-test`).
 
 So in `for (let i = 0; i < b.length; i++) s = s + b[i]!`, `call-ensures`
 states the test's operand equal to $`\mathrm{view}(b)`$, `int-compare` states
