@@ -116,12 +116,14 @@ structure Bound where
   index : String
   strict : Bool
   deriving ToJson, FromJson
-/-- A term of a linear fact the producer proposes: the safe integer the
-binding `name` holds, or the length of its array store where `length`, with
-an integer coefficient. -/
+deriving instance ToJson, FromJson for HeapKnowledge.Term.Kind
+/-- A term of a linear fact the producer proposes: what the binding `name`
+holds, read as `term` says (`HeapKnowledge.Term.Kind`): the safe integer it
+holds, the length of its array store, or the element count of its typed
+array; with an integer coefficient. -/
 structure FactTerm where
   name : String
-  length : Bool
+  term : HeapKnowledge.Term.Kind
   coefficient : Int
   deriving ToJson, FromJson
 /-- A linear fact the producer proposes at a statement entry: the sum of the
@@ -256,7 +258,7 @@ private def pointData (entries : List (Entry ι)) (expressions : List (Expressio
     entryCurrent := entries.map (fun e => (e.start,e.bindings.filterMap fun b => b.current.map (b.name,·)))
     entryBounds := entries.map (fun e => (e.start,e.bounds.map fun b => (b.array, b.index, b.strict)))
     entryFacts := entries.map (fun e => (e.start,e.facts.map fun f =>
-      (f.terms.map fun t => (t.name, t.length, t.coefficient), f.bound)))
+      (f.terms.map fun t => (t.name, t.term, t.coefficient), f.bound)))
     -- An expression's assertion is of one field each (`validCurrent`).
     exprCurrent := expressions.filterMap (fun e => e.current.map fun fs =>
       (e.pos, fs.filterMap fun (p, A) => match p with | [k] => some (k, A) | _ => none)) }

@@ -1801,8 +1801,44 @@ setting none at any other key; it answers the number, the value the
 assignment is. A read after a write is still `%ByteAt%`'s, a number or
 `undefined`, where TypeScript narrows the element by the write
 (`invalid-typed-array-write-past-end`, run under Node: `undefined` past the
-end). A compound assignment or an update of an element is refused. A
-spread copies a view's elements and not `length`, so its copy states no
+end). A compound assignment or an update of an element is refused.
+
+**Reads below the element count.** Every view, the program's or external
+code's, views a fixed-size `ArrayBuffer` that is never detached (a host
+assumption, [trust surface](DESIGN.md#trust-surface)), so its element count
+never changes: the model's view owns the key $`[[\mathrm{viewLength}]]`$
+(`Calculus.viewLengthKey`), whose location, which no other object's field or
+store shares, holds that count, the linear term $`\mathrm{view}(b)`$
+([linear facts](PROGRAM-TYPING.md#linear-facts)). `%ByteLength%` states its
+result that count, and `%ByteAt%` has a second signature, a read at a safe
+integer below it, whose result is the element, a number:
+
+```math
+\%\mathrm{ByteLength}\%\colon(\mathit{Uint8Array})\Rightarrow_\emptyset^{\ \mathsf{ensures}\ \mathrm{int}(0),\ 0=\mathrm{view}(2)}\mathtt{number}
+\qquad
+\%\mathrm{ByteAt}\%\colon(\mathit{Uint8Array},\ \mathtt{number})\Rightarrow_\emptyset^{\ \mathrm{int}(2),\ 0\le 2,\ 2\le\mathrm{view}(1)-1}\mathtt{number}
+```
+
+at the positions of [result facts](PROGRAM-TYPING.md#reads-below-the-length)
+and of a precondition: the view is `%ByteLength%`'s first actual, position
+`2` of its return, and `%ByteAt%`'s position `1`. A safe integer $`k`$ with
+$`0\le k<\mathrm{view}(b)`$ is a valid integer index (IsValidIntegerIndex:
+integral, not `-0`, below the length; the key `-0` is `0` after
+ToPropertyKey's canonical numeric string), so the read is the element there,
+of the view's element type, a number (a `Float64Array`'s any double, `NaN`
+included). The getter reads the view's slots and the read runs no code;
+neither writes. The key is never copied (`copiedKey`) and no source property
+names it (`RequestJson.reservedKey`);
+the term is defined only of a host object, which no allocation of the
+program makes, so no program value states a view's count. A fact naming it
+reads the heap and is kept only across a heap extension and a call keeping
+the heap (`%ByteSet%`'s, `fill`'s and the other view methods' empty
+footprint). A read at the length is `undefined` (`invalid-typed-array-read-at-length`,
+run under Node), and so is a read of one view below another's length
+(`invalid-typed-array-read-other-length`, run under Node); both are refused.
+The case is `typed-array-reads-below-length`.
+
+A spread copies a view's elements and not `length`, so its copy states no
 member (`invalid-node-bytes-spread`), and a view meets no record naming
 `length`, whose spread would copy it (`invalid-node-bytes-length-record`,
 run under Node: the copy's `length` is `undefined`); `"length" in` a view

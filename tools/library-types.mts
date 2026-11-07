@@ -484,6 +484,16 @@ export function namedDefinitions(definition: TypeDefinition): TypeDefinition[] {
 
 const node = "@types/node";
 const library = "library";
+/** Whether a type term names a view of bytes: a reference to the
+ * declaration of a definition an entry of the overlay states as one
+ * (`TypeEntry.view`). */
+export function namesView(t: TypeTerm): boolean {
+  if (t.k !== "reference") return false;
+  const target = t.reference.target;
+  return typesOverlay.some(e => e.view === "bytes" &&
+    e.definition.declaration.module === target.module && e.definition.declaration.name === target.name);
+}
+
 export const typesOverlay: readonly TypeEntry[] = [
   { name: "HTMLSpanElement", definition: htmlElementDefinition, parts: [{ origin: library, heading: "interface HTMLSpanElement extends HTMLElement {" }] },
   { name: "CSSStyleDeclaration", definition: computedStyleDefinition, parts: [

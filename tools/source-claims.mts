@@ -94,12 +94,13 @@ interface BoundClaim {
   strict: boolean;
 }
 
-/** A term of a proposed linear fact: the safe integer the binding `name`
- * holds, or the length of its array store where `length`, with an integer
- * coefficient. */
+/** A term of a proposed linear fact: what the binding `name` holds, read as
+ * `term` says (`HeapKnowledge.Term.Kind`): the safe integer it holds
+ * (`value`), the length of its array store (`length`), or the element count
+ * of its typed array (`view`); with an integer coefficient. */
 interface LinearTermClaim {
   name: string;
-  length: boolean;
+  term: "value" | "length" | "view";
   coefficient: number;
 }
 
@@ -338,9 +339,10 @@ function claimsDocument(v: JsonRead): SourceClaims {
         };
         return {
           terms: each(q.terms, "a fact's terms", (t) => {
-            const r = record(t, "a fact's term", ["name", "length", "coefficient"]);
-            if (typeof r.length !== "boolean") fail("a term's length is a Boolean");
-            const term: LinearTermClaim = { name: name(r.name, "a term's name"), length: r.length,
+            const r = record(t, "a fact's term", ["name", "term", "coefficient"]);
+            const kind = r.term;
+            if (kind !== "value" && kind !== "length" && kind !== "view") fail("a term's kind is value, length or view");
+            const term: LinearTermClaim = { name: name(r.name, "a term's name"), term: kind,
               coefficient: integer(r.coefficient, "a term's coefficient") };
             return term;
           }),

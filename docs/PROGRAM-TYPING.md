@@ -1472,34 +1472,45 @@ what it finds).
 
 **In heap knowledge.** Two more index facts (`IndexFact.int`,
 `IndexFact.linear`) state integers. The variables of a linear fact are
-**terms** (`HeapKnowledge.Term`): $`x`$, the safe integer slot $`x`$ holds,
-and $`|x|`$, the length of the array store slot $`x`$ holds, where that is at
-most $`2^{32}-1`$ (`lengthOf`, the length `Step.lenV` gives):
+**terms** (`HeapKnowledge.Term`): $`x`$, the safe integer slot $`x`$ holds;
+$`|x|`$, the length of the array store slot $`x`$ holds, where that is at
+most $`2^{32}-1`$ (`lengthOf`, the length `Step.lenV` gives); and
+$`\mathrm{view}(x)`$, the element count of the typed array slot $`x`$ holds,
+the safe integer at least $`0`$ the location of its model key
+$`[[\mathrm{viewLength}]]`$ holds (`viewLengthOf`, `Calculus.viewLengthKey`):
 
 ```math
 \begin{aligned}
 \mathrm{int}(k)(\rho,h) &\iff \exists b\,i.\ \rho(k)=\mathsf{num}\,b\land\mathrm{SafeInt}(b,i)\\
 ⟦x⟧_{\rho,h} &= i \iff \exists b.\ \rho(x)=\mathsf{num}\,b\land\mathrm{SafeInt}(b,i)\\
 ⟦|x|⟧_{\rho,h} &= n \iff \mathrm{store}(\rho(x))=s\land h(s)=\mathsf{arr}\,\ell\land n=|\ell|\le 2^{32}-1\\
+⟦\mathrm{view}(x)⟧_{\rho,h} &= n \iff \rho(x)=\mathsf{objAt}\,fs\,c\,i\land fs([[\mathrm{host}]])\ \text{defined}\land fs([[\mathrm{viewLength}]])=\ell\land h(\ell)=\mathsf{num}\,b\land\mathrm{SafeInt}(b,n)\land 0\le n\\
 \mathrm{linear}(F)(\rho,h) &\iff (\forall t\in\mathrm{vars}(F).\ ⟦t⟧_{\rho,h}\ \text{is defined})\land F\ \text{holds at}\ t\mapsto⟦t⟧_{\rho,h}
 \end{aligned}
 ```
 
 with the safe integers of [the operational language](SEMANTICS.md#operational-language).
-A linear fact naming a length reads the location of that store's elements and
-is kept by a heap change only where the other heap-reading index facts are; a
-fact of values alone reads only the environment (`IndexFact.envOnly`). The
-linear facts a knowledge states (`HeapKnowledge.linearFacts`) are its
-unconditional linear atoms, each with the range $`0\le|x|\le 2^{32}-1`$ of
-every length it names, and, for each length atom $`\mathrm{length}(x,n)`$, the
-equality $`n=|x|`$ with that range. Facts are renamed with their slots and
+An element count is defined only of a host object (one owning
+$`[[\mathrm{host}]]`$), which no allocation of the program makes, and no step
+copies the key (`copiedKey`); that its location holds the view's element
+count is the host's trust ([typed arrays](SOURCE-CONTRACTS.md#stated-library-types)).
+A linear fact naming a length reads the location of that store's elements,
+one naming an element count the location of the view's count; each is kept
+by a heap change only where the other heap-reading index facts are (a heap
+extension, a call keeping the heap); a fact of values alone reads only the
+environment (`IndexFact.envOnly`). The linear facts a knowledge states
+(`HeapKnowledge.linearFacts`) are its unconditional linear atoms, each with
+the range $`0\le|x|\le 2^{32}-1`$ of every length and the range
+$`0\le\mathrm{view}(x)\le 2^{53}-1`$ of every element count it names
+(`lengthRange`, `viewRange`), and, for each length atom
+$`\mathrm{length}(x,n)`$, the equality $`n=|x|`$ with its range. Facts are renamed with their slots and
 carried as the other index facts are. On an edge, a target atom holds where a
 source atom gives it, term by term of the same kind, or, unconditional, where
 the source's linear facts entail it, each target term renamed to a source
 term of the same kind at a slot of the class of the slot the edge maps it to,
 which the source states defined: a value by $`\mathrm{int}`$, a length by a
-length atom or a linear fact naming it (`linearFollows`, proved:
-`linearFollows_sound`).
+length atom or a linear fact naming it, an element count by a linear fact
+naming it (`linearFollows`, proved: `linearFollows_sound`).
 
 **The steps stating them** are a layer of `Checker.ordinary`
 (`Checker.indexing`, `IndexWrites.stepAtoms`), adding atoms to what the step's
@@ -1792,12 +1803,42 @@ renamed facts hold on its normal return (`PromiseCalls.ensuresCall_sound`,
 `ensuresAtoms_holds`, proved; the step checker `Checker.ensuringCalls` joins
 the two postconditions of the one run, `HeapObservations.cross_upto`).
 
-**Cases.** Positive: `bounded-element-read` (a `for` and a `while` loop) and
-`pretext-array-element-read`. Negative, each run under Node:
+**Typed arrays.** A read `b[k]` of a typed array is
+$`\%\mathsf{ByteAt}\%(b,k)`$ and `b.length` is
+$`\%\mathsf{ByteLength}\%(b)`$
+([typed arrays](SOURCE-CONTRACTS.md#stated-library-types)), trusted signatures over
+the element count: `%ByteLength%`'s result facts state it, and
+`%ByteAt%`'s second signature reads the element at a safe integer below it:
+
+```math
+\%\mathsf{ByteLength}\%:(\mathit{View})\Rightarrow_{\emptyset}^{\mathsf{ensures}\ \mathrm{int}(0),\ 0=\mathrm{view}(2)}\mathtt{number}
+\qquad
+\%\mathsf{ByteAt}\%:(\mathit{View},\ \mathtt{number})\Rightarrow_{\emptyset}\mathtt{number}\mid\mathtt{undefined}
+\ \land\ (\mathit{View},\ \mathtt{number})\Rightarrow_{\emptyset}^{\mathrm{int}(2),\ 0\le 2,\ 2\le\mathrm{view}(1)-1}\mathtt{number}
+```
+
+So in `for (let i = 0; i < b.length; i++) s = s + b[i]!`, `call-ensures`
+states the test's operand equal to $`\mathrm{view}(b)`$, `int-compare` states
+$`i<\mathrm{view}(b)`$ on the answer entering the body, and the read selects
+the second signature. The bound on a typed array's index is
+$`k<\mathrm{view}(b)`$ alone: an element count is at most $`2^{53}-1`$, and
+no array index ceiling applies. The producer names the term `b.view` of a
+value binding `b` read through `%ByteLength%`, forgets a fact naming it as it
+does a length's, and decides a sum safe as Lean does, by the facts with the
+ranges of the lengths and element counts they name entailing its bounds.
+
+**Cases.** Positive: `bounded-element-read` (a `for` and a `while` loop),
+`pretext-array-element-read` and `typed-array-reads-below-length` (a
+`Uint8Array`, a `Float64Array`, an `Int32Array` written and read back, and a
+`@requires` over a view's length). Negative, each run under Node:
 `invalid-bounded-element-read-inclusive` (a loop to `j <= xs.length`) and
 `invalid-bounded-element-read-shrunk` (a `pop` between the test and the
-read). Forged controls in `pipeline/test.mts`: each negative's read claimed at
-the element type, with and without a strict bound claimed at its statement.
+read), `invalid-typed-array-read-at-length` (a loop to `i <= b.length`) and
+`invalid-typed-array-read-other-length` (a read of `b` below another view's
+length). Forged controls in `pipeline/test.mts`: each array negative's read
+claimed at the element type, with and without a strict bound claimed at its
+statement; each typed array negative's read claimed at `number` with
+`i < b.length` claimed at its statement.
 
 
 ### Written preconditions
@@ -1854,7 +1895,9 @@ E &::= n \mid x \mid x.\mathtt{length} \mid n\cdot x \mid n\cdot x.\mathtt{lengt
 
 with $`\mathit{rel}`$ one of `<`, `<=`, `>`, `>=`, `===`, $`n`$ an integer
 literal, $`x`$ a parameter the clause states $`\mathrm{int}(x)`$, and
-`x.length` the length $`|x|`$ of an array parameter's store. Each atom
+`x.length` the length $`|x|`$ of an array parameter's store or the element
+count $`\mathrm{view}(x)`$ of a typed array parameter, one whose type is a
+view of bytes the overlay of library types states (`namesView`). Each atom
 elaborates to index facts: `safeInteger(x)` to $`\mathrm{int}(x)`$; a
 comparison $`E_1\ \mathit{rel}\ E_2`$ to the linear fact over the integers its
 terms denote ([linear facts](#linear-facts)), with, for every sum,
@@ -2738,7 +2781,11 @@ alias link between them needs no source link:
 
 `HeapLinks.check` accepts it, and `HeapLinks.check_sound` proves it, since
 the target environment is $`\rho\circ m`$. The producer states it for every
-pair of a source slot's targets (`HeapKnowledge.project`). A nullish guard
+pair of a source slot's targets (`HeapKnowledge.project`), and links the
+targets of the slots of one source alias class, each to the first of them,
+which the check accepts by that class; so a class keeps its equalities where
+a chain of dropped slots joined them, as when one statement evaluates a
+binding twice (`index[i] = i`). A nullish guard
 of a completed read maps the receiver's slot and the slot the plan saved it
 in to the tested value (`nullishGuard`); the alias between them carries a
 read link made through either to the other, and so to a statement entry's

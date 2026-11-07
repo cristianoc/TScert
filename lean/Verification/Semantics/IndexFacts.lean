@@ -25,29 +25,33 @@ theorem intValue_safe {v : Val} {i : Int} (h : intValue v = some i) : ∃ b, v =
 theorem intValue_num {b : UInt64} {i : Int} (h : SafeIntegers.SafeInt b i) : intValue (.num b) = some i :=
   SafeIntegers.safeIntOfBits_complete h
 
-/-- A term of a linear fact: the safe integer a slot holds (`value`), or the
+/-- A term of a linear fact: the safe integer a slot holds (`value`); the
 length of the array store a slot holds (`length`), as the calculus's `lenOf`
-gives it (`Step.lenV`), at most `maxArrayLength`. -/
+gives it (`Step.lenV`), at most `maxArrayLength`; or the element count of
+the typed array a slot holds (`view`), the safe integer at least `0` the
+location of its `viewLengthKey` holds (`viewLengthOf`). -/
 inductive Term where
   | value (slot : Nat)
   | length (slot : Nat)
+  | view (slot : Nat)
   deriving DecidableEq, Repr, Hashable
 
 namespace Term
 
 /-- The slot a term reads. -/
 def slot : Term → Nat
-  | .value s | .length s => s
+  | .value s | .length s | .view s => s
 
 /-- Whether a term reads the environment alone. -/
 def envOnly : Term → Bool
   | .value _ => true
-  | .length _ => false
+  | .length _ | .view _ => false
 
 /-- An order on terms, by slot and kind, which normal forms sort by. -/
 def code : Term → Nat
-  | .value s => 2 * s
-  | .length s => 2 * s + 1
+  | .value s => 3 * s
+  | .length s => 3 * s + 1
+  | .view s => 3 * s + 2
 
 instance : LT Term := ⟨fun a b => a.code < b.code⟩
 
@@ -57,6 +61,7 @@ instance : DecidableRel (α := Term) (· < ·) := fun a b => inferInstanceAs (De
 def mapM (f : Nat → Option Nat) : Term → Option Term
   | .value s => (f s).map .value
   | .length s => (f s).map .length
+  | .view s => (f s).map .view
 
 theorem mapM_slot {f : Nat → Option Nat} {t t' : Term} (h : t.mapM f = some t') : f t.slot = some t'.slot := by
   cases t <;> simp only [mapM, Option.map_eq_some_iff] at h <;> obtain ⟨s, hs, rfl⟩ := h <;> exact hs
@@ -65,9 +70,24 @@ theorem mapM_slot {f : Nat → Option Nat} {t t' : Term} (h : t.mapM f = some t'
 def mapM' (f : Nat → Nat) : Term → Term
   | .value s => .value (f s)
   | .length s => .length (f s)
+  | .view s => .view (f s)
 
 theorem mapM_eq (f : Nat → Nat) : Term.mapM (some ∘ f) = some ∘ mapM' f := by
   funext t; cases t <;> rfl
+
+/-- What a term reads of its slot: the value, the array store's length, or
+the typed array's element count. -/
+inductive Kind where
+  | value
+  | length
+  | view
+  deriving DecidableEq, Repr
+
+/-- The term of a kind at a slot. -/
+def ofKind : Kind → Nat → Term
+  | .value => .value
+  | .length => .length
+  | .view => .view
 
 end Term
 
@@ -98,10 +118,68 @@ theorem lengthOf_of_store {h : Heap} {v : Val} {s : Nat} {ls : List (Option Nat)
     (hl : h[s]? = some (.arr ls)) (hm : ls.length ≤ maxArrayLength) : lengthOf h v = some (ls.length : Int) := by
   simp only [lengthOf, hs, hl, hm, ite_true]
 
+/-- The element count of the typed array a value is, read in the heap: the
+value is an object owning `hostKey`, a host object, whose field map gives
+`viewLengthKey` a location holding a safe integer at least `0`. -/
+def viewLengthOf (h : Heap) : Val → Option Int
+  | .objAt fs _ _ =>
+    if (fs.lookup hostKey).isSome then
+      match fs.lookup viewLengthKey with
+      | some l => match h[l]? with
+        | some (.num b) => match SafeIntegers.safeIntOfBits b with
+          | some n => if 0 ≤ n then some n else none
+          | none => none
+        | _ => none
+      | none => none
+    else none
+  | _ => none
+
+theorem viewLengthOf_range {h : Heap} {v : Val} {n : Int} (hv : viewLengthOf h v = some n) :
+    0 ≤ n ∧ n ≤ 2 ^ 53 - 1 := by
+  unfold viewLengthOf at hv
+  split at hv
+  · split at hv
+    · split at hv
+      · split at hv
+        · rename_i b _
+          split at hv
+          · rename_i m hm
+            split at hv
+            · cases hv
+              rename_i h0
+              have hb := (SafeIntegers.safeIntOfBits_sound hm).1
+              have : (n.natAbs : Int) = n := Int.natAbs_of_nonneg h0
+              exact ⟨h0, by omega⟩
+            · cases hv
+          · cases hv
+        · cases hv
+      · cases hv
+    · cases hv
+  · cases hv
+
+/-- A heap extension keeps the element count of what a value is: its
+location lies in the old heap. -/
+theorem viewLengthOf_extend {h : Heap} (vs : List Val) {v : Val} {n : Int} (hl : viewLengthOf h v = some n) :
+    viewLengthOf (h ++ vs) v = some n := by
+  unfold viewLengthOf at hl ⊢
+  split at hl
+  · split at hl
+    · split at hl
+      · rename_i l _
+        split at hl
+        · rename_i b hb
+          rw [List.getElem?_append_left (List.getElem?_eq_some_iff.mp hb).1, hb]
+          simp_all
+        · cases hl
+      · cases hl
+    · cases hl
+  · cases hl
+
 /-- The integer a term denotes, where it denotes one. -/
 def termValue (ρ : Env) (h : Heap) : Term → Option Int
   | .value s => intValue (ρ s)
   | .length s => lengthOf h (ρ s)
+  | .view s => viewLengthOf h (ρ s)
 
 /-- The integers terms denote, `0` where one denotes none: the valuation the
 linear facts are read at. -/
@@ -145,6 +223,7 @@ theorem termValue_extend {ρ : Env} {h : Heap} (vs : List Val) {t : Term} {n : I
   cases t with
   | value s => exact ht
   | length s => exact lengthOf_extend vs ht
+  | view s => exact viewLengthOf_extend vs ht
 
 /-- An index fact (DESIGN of the guarded write, PROGRAM-TYPING.md, "Writes at
 a checked index"): the slot `k` holds a number that is an array index

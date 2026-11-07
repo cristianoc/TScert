@@ -307,14 +307,15 @@ private def reachablePoints (graph : SourceFlow.Graph) (id : Nat) : List String 
   -- facts"): each term a value binding; a fact whose coefficients are all
   -- zero states only that its bindings hold safe integers.
   let linear ← ((fc.entryFacts.lookup node.source.1).getD []).flatMapM fun (terms, bound) => do
-    let form ← terms.mapM fun (name, length, c) => match valueSlot scope name with
-      | some x => pure (((if length then .length x else .value x), c) : HeapKnowledge.Term × Int)
+    let form ← terms.mapM fun (name, kind, c) => match valueSlot scope name with
+      | some x => pure ((HeapKnowledge.Term.ofKind kind x, c) : HeapKnowledge.Term × Int)
       | none => do throw (locatedRefusal (← table) node.source .entryClaim
           s!"a linear fact names '{name}', which is no value binding")
     if form.all (·.2 == 0) && 0 ≤ bound then
       pure (form.map fun (t, _) => ({ fact := match t with
         | .value x => .int x
-        | .length x => .linear (.le [(.length x, -1)] 0) } : HeapKnowledge.IndexAtom))
+        | .length x => .linear (.le [(.length x, -1)] 0)
+        | .view x => .linear (.le [(.view x, -1)] 0) } : HeapKnowledge.IndexAtom))
     else pure [({ fact := .linear (.le form bound) } : HeapKnowledge.IndexAtom)]
   let bounds := bounds ++ linear
   if !facts.isEmpty || !links.isEmpty || !separation.facts.isEmpty || !bounds.isEmpty then

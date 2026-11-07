@@ -15,7 +15,8 @@ import { GENERATOR, UNCLOSABLE, booleanForm, booleanReturn, bindingScope, firstO
 import type { Gate } from "./fragment-parse.mts";
 import { guardResult } from "./fragment-guards.mts";
 import { literalDefaultName } from "./type-term.mts";
-import { elaborateRequires, indexFactPositions, requiresTags } from "./bound-annotations.mts";
+import { elaborateRequires, indexFactPositions, requiresTags, type ClauseParameter } from "./bound-annotations.mts";
+import { namesView } from "./library-types.mts";
 import { isImport, isTypeAlias } from "./syntax.mts";
 
 /** The declarator `d` of a pattern, the statement `node` holds it, lowered
@@ -2161,11 +2162,14 @@ export function functionDecl(this: Gate, node: FunctionDeclaration, signature: F
       if (isAsync) gate.fail(node, "a precondition (`@requires`) on an async function");
       if (node.parameters.some(p => p.dotDotDotToken || p.initializer || p.questionToken || !ts.isIdentifier(p.name)))
         gate.fail(node, "a precondition (`@requires`) on a function whose parameters are not plain required names");
-      const named = node.parameters.map((p, i) => ({
-        name: ts.isIdentifier(p.name) ? p.name.text : "",
-        position: receiverParam ? i : i + 1,
-        array: (parameterTypes[i] ?? { k: "unknown" }).k === "array",
-      }));
+      const named = node.parameters.map((p, i): ClauseParameter => {
+        const type = parameterTypes[i];
+        return {
+          name: ts.isIdentifier(p.name) ? p.name.text : "",
+          position: receiverParam ? i : i + 1,
+          length: type?.k === "array" ? "length" : type !== undefined && namesView(type) ? "view" : null,
+        };
+      });
       const elaborated = elaborateRequires(clauses, named);
       if ("refused" in elaborated) gate.fail(node, `a precondition (\`@requires\`): ${elaborated.refused}`);
       requires = elaborated.facts;

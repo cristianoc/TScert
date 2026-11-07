@@ -43,7 +43,8 @@ let kinds_json = function None -> Null | Some ks -> Array (List.map (fun k -> St
 let index_fact_json =
   let term = function
     | Value_at x -> Object ["value",Object ["slot",int x]]
-    | Length_at x -> Object ["length",Object ["slot",int x]] in
+    | Length_at x -> Object ["length",Object ["slot",int x]]
+    | View_at x -> Object ["view",Object ["slot",int x]] in
   let linear k form d = Object ["linear",Object ["fact",Object [k,Object [
     "form",Array (List.map (fun (t,c) -> Array [term t;int c]) form);"bound",int d]]]] in
   function
@@ -583,8 +584,9 @@ let encode (proposal : Proposal_types.t) =
   (* A statement entry's linear facts (`Environment.fact_key`). *)
   let facts bs = Array (List.filter_map (fun (n,_) -> match Environment.fact_parts n with
     | Some (terms,bound) -> Some (Object ["terms",Array (List.map (fun (t,c) ->
-        let name,length = Linear_facts.term_parts t in
-        Object ["name",String name;"length",Bool length;"coefficient",Number (string_of_int c)]) terms);
+        let name,kind = Linear_facts.term_parts t in
+        let kind = match kind with Linear_facts.Value_term -> "value" | Linear_facts.Length_term -> "length" | Linear_facts.View_term -> "view" in
+        Object ["name",String name;"term",String kind;"coefficient",Number (string_of_int c)]) terms);
       "bound",Number (string_of_int bound)])
     | None -> None) bs) in
   let contracts row = Array (List.map (fun (c : Proposal_types.contract) ->

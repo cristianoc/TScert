@@ -132,7 +132,8 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
             | Semantic.Linear_le (fact,d) ->
               let parts = List.map (fun (t,c) -> match (t : Semantic.term) with
                 | Value_at x -> Option.map (fun (t,k) -> Linear_facts.scale c t, c * k) (form x)
-                | Length_at x -> Option.map (fun xs -> [Linear_facts.length_term xs,c],0) (name x)) fact in
+                | Length_at x -> Option.map (fun xs -> [Linear_facts.length_term xs,c],0) (name x)
+                | View_at x -> Option.map (fun b -> [Linear_facts.view_term b,c],0) (name x)) fact in
               List.for_all Option.is_some parts &&
               (let parts = List.filter_map Fun.id parts in
                let terms = Linear_facts.norm (List.concat_map fst parts) in

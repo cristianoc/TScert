@@ -13,20 +13,23 @@
 //   E ::= n | x | xs.length | n * x | n * xs.length | E + E | E - E | -E | (E)
 //
 // with n an integer literal, x a parameter the clause states a safe integer
-// and xs an array parameter. Each atom's meaning is the index facts it
-// elaborates to: `safeInteger(x)` is `int(x)`; a comparison is the linear
-// fact over the integers its terms denote, a parameter's value or its
-// array's length (`HeapKnowledge.Term`), with every sum, difference and
+// and xs an array or typed array parameter. Each atom's meaning is the index
+// facts it elaborates to: `safeInteger(x)` is `int(x)`; a comparison is the
+// linear fact over the integers its terms denote, a parameter's value, its
+// array's length or its typed array's element count (`HeapKnowledge.Term`),
+// with every sum, difference and
 // product it computes stated a safe integer. Where those facts hold, each
 // side of the comparison evaluates under JavaScript's arithmetic to that
 // safe integer exactly, so the comparison's answer is the fact's. Every other
 // form of the draft's grammar (guards, `old`, `result`, paths other than an
-// array parameter's length, `||`, `!`) is refused with the clause's location.
+// array or typed array parameter's length, `||`, `!`) is refused with the
+// clause's location.
 import type { IndexFact, LinearFact, LinearTerm } from "./declaration-types.mts";
 
-/** A parameter a clause may name: its name, its call position, whether its
- * type is an array, whose length is its store's. */
-export type ClauseParameter = { name: string; position: number; array: boolean };
+/** A parameter a clause may name: its name, its call position, and what its
+ * `length` is: an array's, its store's length (`length`); a typed array's,
+ * its element count (`view`); or none a clause names (`null`). */
+export type ClauseParameter = { name: string; position: number; length: "length" | "view" | null };
 
 /** The text of each `@requires` tag of the last JSDoc comment (`/** … *\/`)
  * in a declaration's leading trivia, with each line's leading `*` removed. */
@@ -171,7 +174,7 @@ function computed(e: Linear): Linear {
 
 /** The position a linear term reads. */
 export function termSlot(t: LinearTerm): number {
-  return "value" in t ? t.value.slot : t.length.slot;
+  return "value" in t ? t.value.slot : "length" in t ? t.length.slot : t.view.slot;
 }
 
 /** The positions an index fact names. */
@@ -203,8 +206,9 @@ export function elaborateRequires(clauses: readonly string[], params: readonly C
     const term = (key: string): LinearTerm => {
       if (key.endsWith(".length")) {
         const p = param(key.slice(0, -".length".length));
-        if (!p.array) throw new ClauseError(`${p.name} is no array parameter, whose length a clause names`);
-        return { length: { slot: p.position } };
+        if (p.length === null)
+          throw new ClauseError(`${p.name} is no array or typed array parameter, whose length a clause names`);
+        return p.length === "length" ? { length: { slot: p.position } } : { view: { slot: p.position } };
       }
       const p = param(key);
       if (!ints.has(p.name)) throw new ClauseError(`the comparison names ${key}, which the clause does not state a safe integer`);
@@ -259,7 +263,7 @@ export function elaborateRequires(clauses: readonly string[], params: readonly C
 const MAX_SAFE = Number.MAX_SAFE_INTEGER;
 
 /** A term's place in a normal form (`HeapKnowledge.Term.code`): a position's
- * value before its length. */
+ * value, then its length, then its element count. */
 function code(t: LinearTerm): number {
-  return "value" in t ? 2 * t.value.slot : 2 * t.length.slot + 1;
+  return "value" in t ? 3 * t.value.slot : "length" in t ? 3 * t.length.slot + 1 : 3 * t.view.slot + 2;
 }

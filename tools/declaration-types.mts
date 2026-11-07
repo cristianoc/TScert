@@ -61,8 +61,12 @@ export type LinearFact =
   | { readonly le: { readonly form: readonly (readonly [LinearTerm, number])[]; readonly bound: number } }
   | { readonly ne: { readonly form: readonly (readonly [LinearTerm, number])[]; readonly bound: number } };
 /** A term of a linear fact (`HeapKnowledge.Term`): the safe integer a
- * position holds, or the length of the array store it holds. */
-export type LinearTerm = { readonly value: { readonly slot: number } } | { readonly length: { readonly slot: number } };
+ * position holds, the length of the array store it holds, or the element
+ * count of the typed array it holds. */
+export type LinearTerm =
+  | { readonly value: { readonly slot: number } }
+  | { readonly length: { readonly slot: number } }
+  | { readonly view: { readonly slot: number } };
 /** The kinds of value an elements predicate admits (`CallEffects.ElemPred`),
  * each at most once, in this order. */
 export type ElementKind = "null" | "undefined" | "boolean" | "number" | "string" | "bigint" | "symbol" | "object";

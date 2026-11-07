@@ -21,7 +21,7 @@ structure PointData (ι : Type) where
   entryBounds : List (Nat × List (String × String × Bool)) := []
   /-- At a statement entry, the linear facts the producer proposes: terms of
   value bindings' names with integer coefficients, and a bound. -/
-  entryFacts : List (Nat × List (List (String × Bool × Int) × Int)) := []
+  entryFacts : List (Nat × List (List (String × HeapKnowledge.Term.Kind × Int) × Int)) := []
 
 /-- Replacement claims for the sites a closure signature owns. Absence of a
 current-content assertion replaces that assertion too. -/
@@ -56,7 +56,7 @@ structure Function (ι : Type) where
   entryCurrent : List (Nat × List (String × List (List PropKey × Ty ι))) := []
   exprCurrent : List (Span × List (PropKey × Ty ι)) := []
   entryBounds : List (Nat × List (String × String × Bool)) := []
-  entryFacts : List (Nat × List (List (String × Bool × Int) × Int)) := []
+  entryFacts : List (Nat × List (List (String × HeapKnowledge.Term.Kind × Int) × Int)) := []
   /-- The source closure's interior obligations, one per claimed signature. -/
   arrowClaims : List (Span × List (Overlay ι)) := []
   /-- The complete point table survives selection and nested closure checking. -/

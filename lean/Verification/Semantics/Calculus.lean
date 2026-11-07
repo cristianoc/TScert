@@ -73,6 +73,15 @@ one, and the field map is fixed at allocation: an object's classification
 never changes. The steps that copy an object's own keys are stuck on one. -/
 def hostKey : PropKey := "[[host]]"
 
+/-- The key a typed array, a host object, holds its element count under
+(SOURCE-CONTRACTS.md, "Stated library types"; `HeapKnowledge.Term.view`): its
+location holds the count, a safe integer, which no step of the program
+changes, every typed array viewing a fixed-size `ArrayBuffer` that is never
+detached (DESIGN.md, "Trust surface"). No source property names it
+(`RequestJson.reservedKey`) and no step copies it (`copiedKey`); it means a
+count only on an object owning `hostKey`. -/
+def viewLengthKey : PropKey := "[[viewLength]]"
+
 /-- The key an early binding's uninitialized marker owns (SOURCE-ELABORATION.md,
 "Lexical bindings before initialization"): a fresh object per entry of the
 binding's statement list, the cell's contents until the declaration writes
@@ -1603,12 +1612,14 @@ theorem tagHolds_of_heap {h : List Tm} {t : Tag} {v : Tm} {q : Bool} (hq : tagHo
 
 /-- A key a spread copies: a string key the model does not keep for itself
 (the prototype, the array store, a function object's code field, the host
-classification, an early binding's uninitialized marker). A
+classification, a typed array's element count, an early binding's
+uninitialized marker). A
 symbol-keyed field is never copied: the model's are the library's, whose
 enumerability it does not record, and
 no allocation of the fragment makes one. -/
 def copiedKey : PropKey → Bool
-  | .str s => s != "[[proto]]" && s != "[]" && s != "[[code]]" && s != "[[host]]" && s != "[[uninitialized]]"
+  | .str s => s != "[[proto]]" && s != "[]" && s != "[[code]]" && s != "[[host]]" && s != "[[viewLength]]" &&
+      s != "[[uninitialized]]"
   | .sym _ => false
 
 /-- The first entry of each key, which is the one `List.lookup` finds. -/

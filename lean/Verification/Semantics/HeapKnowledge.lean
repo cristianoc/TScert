@@ -325,12 +325,18 @@ def indexFollows (M : Nat → List Nat) (m : PointClaims.Mapping) (s t : IndexAt
 def lengthRange (x : Nat) : List (Linear.Fact Term) :=
   [.le [(.length x, -1)] 0, .le [(.length x, 1)] (maxArrayLength : Int)]
 
+/-- A typed array's element count lies between `0` and `2^53 - 1`, a safe
+integer. -/
+def viewRange (x : Nat) : List (Linear.Fact Term) :=
+  [.le [(.view x, -1)] 0, .le [(.view x, 1)] (2 ^ 53 - 1)]
+
 /-- The linear facts a fact states: a linear fact itself, with the range of
-each length it names; a length atom `length(x, n)` as the equality of `n`'s
-value with `x`'s length, with its range. -/
+each length and element count it names; a length atom `length(x, n)` as the
+equality of `n`'s value with `x`'s length, with its range. -/
 def factLinear : IndexFact → List (Linear.Fact Term)
   | .linear F => F :: F.vars.flatMap fun
       | .length x => lengthRange x
+      | .view x => viewRange x
       | .value _ => []
   | .length x n => .le [(.value n, 1), (.length x, -1)] 0 :: .le [(.value n, -1), (.length x, 1)] 0 :: lengthRange x
   | _ => []
@@ -348,13 +354,16 @@ def intSlot (as : List IndexAtom) (s : Nat) : Bool :=
     | _ => false
 
 /-- Whether an unconditional atom states that a term denotes an integer: a
-value's slot holds a safe integer (`intSlot`), or a length atom or linear
-fact names the length. -/
+value's slot holds a safe integer (`intSlot`), a length atom or linear
+fact names the length, or a linear fact names the element count. -/
 def termDefined (as : List IndexAtom) : Term → Bool
   | .value s => intSlot as s
   | .length x => as.any fun a => a.cond.isNone && match a.fact with
     | .length y _ => y == x
     | .linear F => F.vars.contains (.length x)
+    | _ => false
+  | .view x => as.any fun a => a.cond.isNone && match a.fact with
+    | .linear F => F.vars.contains (.view x)
     | _ => false
 
 theorem intValue_length {ls : List (Option Nat)} (hm : ls.length ≤ maxArrayLength) :
@@ -371,6 +380,15 @@ theorem lengthRange_holds {ρ h} {x : Nat} (hx : (termValue ρ h (.length x)).is
   simp only [lengthRange, List.mem_cons, List.not_mem_nil, or_false] at hF
   rcases hF with rfl | rfl <;> simp only [Linear.Fact.Holds, Linear.Form.eval, hv] <;> omega
 
+theorem viewRange_holds {ρ h} {x : Nat} (hx : (termValue ρ h (.view x)).isSome) :
+    ∀ F ∈ viewRange x, F.Holds (termValuation ρ h) := by
+  obtain ⟨n, hn⟩ := Option.isSome_iff_exists.mp hx
+  obtain ⟨h0, h1⟩ := viewLengthOf_range hn
+  have hv : termValuation ρ h (.view x) = n := by simp [termValuation, hn]
+  intro F hF
+  simp only [viewRange, List.mem_cons, List.not_mem_nil, or_false] at hF
+  rcases hF with rfl | rfl <;> simp only [Linear.Fact.Holds, Linear.Form.eval, hv] <;> omega
+
 theorem factLinear_holds {f : IndexFact} {ρ h} (hf : f.HoldsAt ρ h) :
     ∀ F ∈ factLinear f, F.Holds (termValuation ρ h) := by
   intro F hF
@@ -382,6 +400,7 @@ theorem factLinear_holds {f : IndexFact} {ρ h} (hf : f.HoldsAt ρ h) :
     · cases t with
       | value _ => cases hF
       | length x => exact lengthRange_holds (hf.1 _ ht) F hF
+      | view x => exact viewRange_holds (hf.1 _ ht) F hF
   | length x n =>
     obtain ⟨s, ls, hs, hl, hnv, hm⟩ := hf
     have hlen : termValue ρ h (.length x) = some (ls.length : Int) := lengthOf_of_store hs hl hm
@@ -436,6 +455,14 @@ theorem termDefined_sound {as : List IndexAtom} {ρ h} (he : IndexHolds as ρ h)
       simp only [termValue, lengthOf_of_store hs hl hm, Option.isSome_some]
     | linear G => rw [hfa] at hf hat; exact hat.1 (.length x) (List.contains_iff_mem.mp hf)
     | index _ | bound _ _ _ | int _ => rw [hfa] at hf; cases hf
+  | view x =>
+    obtain ⟨a, ha, hm⟩ := List.any_eq_true.mp ht
+    simp only [Bool.and_eq_true, Option.isNone_iff_eq_none] at hm
+    obtain ⟨hn, hf⟩ := hm
+    have hat := he a ha fun b hb => by rw [hn] at hb; cases hb
+    cases hfa : a.fact with
+    | linear G => rw [hfa] at hf hat; exact hat.1 (.view x) (List.contains_iff_mem.mp hf)
+    | index _ | length _ _ | bound _ _ _ | int _ => rw [hfa] at hf; cases hf
 
 /-- The first slot of `M z` meeting `p`, or `z`. -/
 def pick (M : Nat → List Nat) (p : Nat → Bool) (z : Nat) : Nat := ((M z).find? p).getD z
@@ -462,6 +489,7 @@ there is one. -/
 def pickTerm (M : Nat → List Nat) (m : PointClaims.Mapping) (a : List IndexAtom) : Term → Term
   | .value y => .value (pickSlot M m a y)
   | .length y => .length (pick M (fun x => termDefined a (.length x)) (PointClaims.slot m y))
+  | .view y => .view (pick M (fun x => termDefined a (.view x)) (PointClaims.slot m y))
 
 theorem pickTerm_eq {M : Nat → List Nat} {m : PointClaims.Mapping} {a : List IndexAtom} {ρ : Env} {h : Heap}
     (hM : ∀ x, ∀ y ∈ M x, ρ y = ρ x) (t : Term) :
@@ -469,6 +497,7 @@ theorem pickTerm_eq {M : Nat → List Nat} {m : PointClaims.Mapping} {a : List I
   cases t with
   | value y => simp only [pickTerm, termValue, pickSlot_eq hM]
   | length y => simp only [pickTerm, termValue, pick_eq hM, PointClaims.mapEnv]
+  | view y => simp only [pickTerm, termValue, pick_eq hM, PointClaims.mapEnv]
 
 /-- Whether the source's facts bound slot `k` by the length of the store of
 `x`'s class (`M`): `k` stated a safe integer, the length of a slot of the
@@ -896,9 +925,17 @@ def project (k : Knowledge) (m : PointClaims.Mapping) (count : Nat) : Knowledge 
   let shared : HeapLinks.Links := preimages.fold (fun acc _ js => match js with
     | _ :: _ :: _ => pairs js ++ acc
     | _ => acc) []
+  -- The target slots whose source slots lie in one alias class, each linked
+  -- to the first of them: the class keeps its equalities where a chain of
+  -- dropped slots joined them, which `bridge`, one dropped slot at a time,
+  -- does not span.
+  let classLinks : HeapLinks.Links := (HeapLinks.classes k.links).flatMap fun c =>
+    match (List.range count).filter fun j => c.contains (PointClaims.slot m j) with
+    | first :: rest => rest.map fun r => { cell := first, value := r, alias := true }
+    | [] => []
   ⟨projectFacts k.links k.cells m count,projectFacts k.links k.values m count,
     HeapLinks.pull (HeapLinks.bridge k.links fun i => (preimages.getD i []).isEmpty)
-      (fun i => preimages.getD i []) ++ shared,
+      (fun i => preimages.getD i []) ++ shared ++ classLinks,
     HeapSeparation.project (HeapLinks.aliases k.links) k.separation m count,
     -- Each target slot takes the atoms of every alias of its source slot,
     -- a condition restated at the first target slot holding it.

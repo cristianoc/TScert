@@ -223,7 +223,7 @@ control(async (): Promise<void> => {
   const claims = readClaims(artifacts);
   const fn = must(claims.functions.find(f => f.name === "second"), "second's claims");
   const entry = must(fn.entries.find(e => e.start === source.indexOf("return at(")), "the call's entry");
-  const length = (name: string, coefficient: number) => ({ name, length: true, coefficient });
+  const length = (name: string, coefficient: number) => ({ name, term: "length" as const, coefficient });
   entry.facts.push({ terms: [length("xs", 1), length("ys", -1)], bound: 0 },
     { terms: [length("xs", -1), length("ys", 1)], bound: 0 });
   const forged = writeClaims(artifacts, "length-equality-forged", claims);
@@ -231,6 +231,34 @@ control(async (): Promise<void> => {
   assert.equal(searched.status, 1, `${searched.stdout}${searched.stderr}`);
   assert.match(searched.stdout + searched.stderr, /does not establish the claims/);
   process.stdout.write("length terms: an equality of two lengths claimed where no test stated it, refused at its entry\n");
+});
+
+control(async (): Promise<void> => {
+  // A typed array's element count claimed at an entry where no test stated
+  // it: the read of each unsafe program claimed at `number`, the
+  // precondition's of `%ByteAt%`'s bounded signature, with `i < b.length`
+  // forged at the read's statement entry, is refused where evidence is
+  // searched: the read at the length of a loop running to `i <= b.length`,
+  // and the read of `b` below another view's length.
+  for (const [name, fnName, read, statement] of [
+    ["invalid-typed-array-read-at-length", "last", "b[i]", "x = b[i]!"],
+    ["invalid-typed-array-read-other-length", "across", "b[i]", "x = b[i]!"],
+  ] as const) {
+    const artifacts = run(name);
+    const source = readFileSync(sourceKey(artifacts), "utf8");
+    const at = source.indexOf(read, source.indexOf(statement));
+    const claims = readClaims(artifacts);
+    const fn = must(claims.functions.find(f => f.name === fnName), `${fnName}'s claims`);
+    const claim = must(fn.expressions.find(e => e.pos[0] === at && e.pos[1] === at + read.length), "the read");
+    claim.type = [rowOf(claims, "num")];
+    must(fn.entries.find(e => e.start === source.indexOf(statement)), "the read's entry").facts.push(
+      { terms: [{ name: "i", term: "value", coefficient: 1 }, { name: "b", term: "view", coefficient: -1 }], bound: -1 });
+    const forged = writeClaims(artifacts, `view-length-forged-${name}`, claims);
+    const searched = produceWith(artifacts, forged, `view-length-forged-${name}`);
+    assert.equal(searched.status, 1, `${name}: ${searched.stdout}${searched.stderr}`);
+    assert.match(searched.stdout + searched.stderr, /does not establish the claims/);
+  }
+  process.stdout.write("view lengths: a read below a typed array's element count claimed where no test stated it, at the length and below another view's, refused at its entry\n");
 });
 
 control(async (): Promise<void> => {

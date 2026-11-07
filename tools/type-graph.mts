@@ -172,15 +172,17 @@ function decodeIndexFact(v: JsonRead): IndexFact | undefined {
   if (d === undefined) return undefined;
   return { linear: { fact: le ? { le: { form, bound: d } } : { ne: { form, bound: d } } } };
 }
-/** A linear term (`HeapKnowledge.Term`): a position's value or its store's
- * length, its constructor's name holding its slot. */
+/** A linear term (`HeapKnowledge.Term`): a position's value, its store's
+ * length or its typed array's element count, its constructor's name holding
+ * its slot. */
 function decodeLinearTerm(v: JsonRead): LinearTerm | undefined {
   if (!isJsonObject(v) || Object.keys(v).length !== 1) return undefined;
   const value = fieldsOf(v.value, ["slot"]);
   const length = fieldsOf(v.length, ["slot"]);
-  const slot = decodeNat((value ?? length)?.slot);
+  const view = fieldsOf(v.view, ["slot"]);
+  const slot = decodeNat((value ?? length ?? view)?.slot);
   if (slot === undefined) return undefined;
-  return value ? { value: { slot } } : { length: { slot } };
+  return value ? { value: { slot } } : length ? { length: { slot } } : { view: { slot } };
 }
 /** The closed footprint a value states, as a fresh object of its fields, or
  * `undefined` where the value states none. */

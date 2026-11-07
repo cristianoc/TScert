@@ -652,13 +652,36 @@ export function intrinsics(promise: (argument: TypeTerm) => TypeTerm, needed: Re
     // numeric string: the element at a valid index, a number, and
     // `undefined` at any other key, the prototype chain never read
     // (ECMA-262, "TypedArray Objects", TypedArrayGetElement). It runs no code
-    // and writes nothing.
-    [byteAtName]: () => ({ typeParams: [],
-      type: { ...fn([bytes, atom("number")], either(atom("number"), atom("undefined"))), effect: emptyEffect } }),
+    // and writes nothing. Two signatures: any read, an element or
+    // `undefined`; and a read at a safe integer `k`, `0 ≤ k < view(b)`, the
+    // element there, a number (a `Float64Array`'s any double, `NaN`
+    // included): such a `k` is a valid integer index (IsValidIntegerIndex:
+    // integral, not `-0`, below the length, `-0` reading as `0` after
+    // ToPropertyKey's canonical numeric string).
+    [byteAtName]: () => {
+      const params = [bytes, atom("number")];
+      return { typeParams: [], type: { k: "intersection", span, parts: [
+        { ...fn(params, either(atom("number"), atom("undefined"))), effect: emptyEffect },
+        { ...fn(params, atom("number")), effect: footprintEffect(emptyFootprint, { pre: [
+          { int: { slot: 2 } },
+          { linear: { fact: { le: { form: [[{ value: { slot: 2 } }, -1]], bound: 0 } } } },
+          { linear: { fact: { le: { form: [[{ value: { slot: 2 } }, 1], [{ view: { slot: 1 } }, -1]], bound: -1 } } } },
+        ] }) },
+      ] } };
+    },
     // `%TypedArray%.prototype`'s `length` getter, the view's length, 0 where
     // its buffer is detached: it reads the view's slots, runs no code and
-    // writes nothing.
-    [byteLengthName]: () => ({ typeParams: [], type: { ...fn([bytes], atom("number")), effect: emptyEffect } }),
+    // writes nothing. Every view's buffer being of fixed size and never
+    // detached (DESIGN.md, "Trust surface"), the length is the view's
+    // element count, which it states of its result: a safe integer equal
+    // to `view(b)`, at the return's positions (0 the result, 2 the view, the
+    // call's first actual).
+    [byteLengthName]: () => ({ typeParams: [], type: { ...fn([bytes], atom("number")),
+      effect: footprintEffect(emptyFootprint, { ensures: [
+        { int: { slot: 0 } },
+        { linear: { fact: { le: { form: [[{ value: { slot: 0 } }, 1], [{ view: { slot: 2 } }, -1]], bound: 0 } } } },
+        { linear: { fact: { le: { form: [[{ value: { slot: 0 } }, -1], [{ view: { slot: 2 } }, 1]], bound: 0 } } } },
+      ] }) } }),
     // A view of bytes's [[Set]] at a number, ToPropertyKey's canonical
     // numeric string, of a number (ECMA-262, "TypedArray Objects",
     // TypedArraySetElement): ToNumber of the number, which runs no code, and

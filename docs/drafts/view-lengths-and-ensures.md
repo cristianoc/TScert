@@ -86,7 +86,7 @@ written signature (`@ensures`) is the clause language of `@requires` with
 ## 3. The typed-array signatures (trusted)
 
 ```math
-\%\mathrm{ByteLength}\%\colon(\mathit{View})\Rightarrow_\emptyset^{\ \mathsf{ensures}\ [\mathrm{int}(0),\ 0=\mathrm{view}(1)]}\mathtt{number}
+\%\mathrm{ByteLength}\%\colon(\mathit{View})\Rightarrow_\emptyset^{\ \mathsf{ensures}\ [\mathrm{int}(0),\ 0=\mathrm{view}(2)]}\mathtt{number}
 ```
 
 ```math

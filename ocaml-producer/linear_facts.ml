@@ -11,16 +11,20 @@ open Source
 
 type fact = (string * int) list * int
 
-(* A term of a fact: a value binding's name, or `xs.length`, the length of
-   the array store the binding `xs` holds (Lean's `HeapKnowledge.Term`). A
-   binding's name has no `.`, so the two never meet. *)
+(* A term of a fact (Lean's `HeapKnowledge.Term`): a value binding's name;
+   `xs.length`, the length of the array store the binding `xs` holds; or
+   `b.view`, the element count of the typed array the binding `b` holds. A
+   binding's name has no `.`, so the three never meet. *)
+type kind = Value_term | Length_term | View_term
 let length_term xs = xs ^ ".length"
+let view_term b = b ^ ".view"
 let term_parts t = match String.index_opt t '.' with
-  | Some i -> String.sub t 0 i, true
-  | None -> t, false
+  | Some i -> String.sub t 0 i, (if String.sub t (i + 1) (String.length t - i - 1) = "view" then View_term else Length_term)
+  | None -> t, Value_term
 let term_binding t = fst (term_parts t)
-let is_length t = snd (term_parts t)
-let has_length ((t,_) : fact) = List.exists (fun (n,_) -> is_length n) t
+(* A length or an element count reads the heap (Lean's `Term.envOnly`). *)
+let reads_heap t = snd (term_parts t) <> Value_term
+let has_heap_term ((t,_) : fact) = List.exists (fun (n,_) -> reads_heap n) t
 
 let max_safe = 9007199254740991
 let max_index = 4294967294
@@ -74,6 +78,63 @@ let range_of fs ((t,c) : (string * int) list * int) =
 
 let in_safe = function Some (lo,hi) -> -max_safe <= lo && hi <= max_safe | None -> false
 
+(* Whether the facts entail `Σ c·t ≤ d` by Fourier–Motzkin elimination: the
+   goal's negation, `-Σ c·t ≤ -d - 1`, beside the facts, each variable
+   eliminated by combining the rows of opposite signs on it, the variable
+   combining the fewest pairs first, until a row `0 ≤ b` with `b < 0`
+   appears. Lean searches the same way (`Linear.prove`) and checks what it
+   finds; a fact proposed here is a claim Lean checks. *)
+let fm_entails (fs : fact list) ((t,d) : fact) =
+  let limit = 400 and large = 1 lsl 58 in
+  let coeff x t = Option.value ~default:0 (List.assoc_opt x t) in
+  let rows = (norm (scale (-1) t), -d-1) :: List.map (fun (t,b) -> norm t, b) fs in
+  let rec go rows =
+    if List.exists (fun (t,b) -> t = [] && b < 0) rows then true else
+    match List.sort_uniq compare (List.concat_map (fun (t,_) -> List.map fst t) rows) with
+    | [] -> false
+    | vars ->
+      let sign x k = List.length (List.filter (fun (t,_) -> k * coeff x t > 0) rows) in
+      let cost x = sign x 1 * sign x (-1) in
+      let x = List.fold_left (fun y z -> if cost z < cost y then z else y) (List.hd vars) vars in
+      let pos = List.filter (fun (t,_) -> coeff x t > 0) rows
+      and neg = List.filter (fun (t,_) -> coeff x t < 0) rows
+      and zero = List.filter (fun (t,_) -> coeff x t = 0) rows in
+      let combined = List.concat_map (fun (tp,bp) -> List.filter_map (fun (tn,bn) ->
+        let a = coeff x tp and b = - (coeff x tn) in
+        let bound = b * bp + a * bn in
+        if abs bp > large / (b + 1) || abs bn > large / (a + 1) then None
+        else Some (norm (scale b tp @ scale a tn), bound)) neg) pos in
+      let rows = zero @ combined in
+      if List.length rows > limit then false else go rows in
+  go rows
+
+(* Whether the facts state a linear fact `Σ c·x ≤ d` over terms: a fact of
+   one term by its range, any other by a held fact of the same form at a
+   bound at most `d`, or by elimination (`fm_entails`). Lean decides the same
+   entailment by its own search. *)
+let entails fs ((terms,d) : fact) =
+  let terms = norm terms in
+  (match terms with
+   | [x,1] -> (match range fs x with _,Some h -> h <= d | _ -> false)
+   | [x,-1] -> (match range fs x with Some l,_ -> -l <= d | _ -> false)
+   | _ -> List.exists (fun ((t,b) : fact) -> norm t = terms && b <= d) fs)
+  || fm_entails fs (terms,d)
+
+(* The ranges Lean's knowledge states of each length and element count the
+   facts name (`HeapKnowledge.lengthRange`, `viewRange`). *)
+let term_ranges (fs : fact list) : fact list =
+  List.concat_map (fun ((t,_) : fact) -> List.concat_map (fun (n,_) -> match snd (term_parts n) with
+    | Length_term -> [[n,-1],0; [n,1],max_index + 1]
+    | View_term -> [[n,-1],0; [n,1],max_safe]
+    | Value_term -> []) t) fs |> List.sort_uniq compare
+
+(* Whether `t + c` is a safe integer: by the ranges of its terms, or as Lean
+   decides it, by the facts with those ranges entailing
+   `-(2^53 - 1) ≤ t + c ≤ 2^53 - 1` (`IndexWrites`, the sum's atoms). *)
+let safe fs ((t,c) : (string * int) list * int) =
+  in_safe (range_of fs (t,c)) ||
+  (let fs = fs @ term_ranges fs in entails fs (t, max_safe - c) && entails fs (scale (-1) t, max_safe + c))
+
 let literal_int s =
   match float_of_string_opt s with
   | Some f when Float.is_integer f && Float.abs f <= 9007199254740991. -> Some (int_of_float f)
@@ -85,11 +146,14 @@ let rec linear ?(array = fun _ -> false) env fs (e : expr) : ((string * int) lis
   | Literal (LNumber s) -> Option.map (fun i -> [],i) (literal_int s)
   | Id x when value_binding env x && is_int fs x -> Some ([x,1],0)
   | Read ({node=Id xs;_},Semantic.Name "length") when value_binding env xs && array xs -> Some ([length_term xs,1],0)
+  (* `b.length` of a typed array, `%ByteLength%(b)`, whose result facts
+     state it the view's element count. *)
+  | Call ({node=Id "%ByteLength%";_},None,[{node=Id b;_}],[],_) when value_binding env b -> Some ([view_term b,1],0)
   | Arith ((Add | Sub) as op,a,b) ->
     (match linear ~array env fs a, linear ~array env fs b with
      | Some (ta,ca),Some (tb,cb) ->
        let r = if op = Add then norm (ta @ tb),ca+cb else norm (ta @ scale (-1) tb),ca-cb in
-       if in_safe (range_of fs r) then Some r else None
+       if safe fs r then Some r else None
      | _ -> None)
   | _ -> None
 
@@ -146,9 +210,9 @@ let statement_heap_free env (s : stmt) = match s.statement with
    binding by a linear expression, and every other assigned binding
    forgotten. *)
 let statement ~(array : string -> bool) env fs (s : stmt) : fact list =
-  (* A fact naming a length reads the heap: kept where the statement writes
-     none, as Lean keeps it (`IndexFact.envOnly`). *)
-  let fs = if statement_heap_free env s then fs else List.filter (fun f -> not (has_length f)) fs in
+  (* A fact naming a length or an element count reads the heap: kept where
+     the statement writes none, as Lean keeps it (`IndexFact.envOnly`). *)
+  let fs = if statement_heap_free env s then fs else List.filter (fun f -> not (has_heap_term f)) fs in
   match s.statement with
   | Effect {node=Assign (x,_,e);_} -> assign ~array env fs x e
   | Effect {node=Update ((Add | Sub) as op,({node=Id x;_} as target),rhs,_);pos} ->
@@ -158,7 +222,7 @@ let statement ~(array : string -> bool) env fs (s : stmt) : fact list =
   | _ -> List.fold_left (fun fs x -> forget x fs) fs (names_assigned s env)
 
 let declaration ~(array : string -> bool) env fs name (init : expr) : fact list =
-  let fs = if heap_free env init then fs else List.filter (fun f -> not (has_length f)) fs in
+  let fs = if heap_free env init then fs else List.filter (fun f -> not (has_heap_term f)) fs in
   let fs = forget name fs in
   match linear ~array env fs init with
   | Some (t,c) when not (List.mem_assoc name t) -> fs @ equal name (t,c)
@@ -254,48 +318,6 @@ let length_test ~array env fs (cond : expr) =
 let current_bounds : bound list ref = ref []
 (* The linear facts holding there, alike. *)
 let current_facts : fact list ref = ref []
-
-(* Whether the facts entail `Σ c·t ≤ d` by Fourier–Motzkin elimination: the
-   goal's negation, `-Σ c·t ≤ -d - 1`, beside the facts, each variable
-   eliminated by combining the rows of opposite signs on it, the variable
-   combining the fewest pairs first, until a row `0 ≤ b` with `b < 0`
-   appears. Lean searches the same way (`Linear.prove`) and checks what it
-   finds; a fact proposed here is a claim Lean checks. *)
-let fm_entails (fs : fact list) ((t,d) : fact) =
-  let limit = 400 and large = 1 lsl 58 in
-  let coeff x t = Option.value ~default:0 (List.assoc_opt x t) in
-  let rows = (norm (scale (-1) t), -d-1) :: List.map (fun (t,b) -> norm t, b) fs in
-  let rec go rows =
-    if List.exists (fun (t,b) -> t = [] && b < 0) rows then true else
-    match List.sort_uniq compare (List.concat_map (fun (t,_) -> List.map fst t) rows) with
-    | [] -> false
-    | vars ->
-      let sign x k = List.length (List.filter (fun (t,_) -> k * coeff x t > 0) rows) in
-      let cost x = sign x 1 * sign x (-1) in
-      let x = List.fold_left (fun y z -> if cost z < cost y then z else y) (List.hd vars) vars in
-      let pos = List.filter (fun (t,_) -> coeff x t > 0) rows
-      and neg = List.filter (fun (t,_) -> coeff x t < 0) rows
-      and zero = List.filter (fun (t,_) -> coeff x t = 0) rows in
-      let combined = List.concat_map (fun (tp,bp) -> List.filter_map (fun (tn,bn) ->
-        let a = coeff x tp and b = - (coeff x tn) in
-        let bound = b * bp + a * bn in
-        if abs bp > large / (b + 1) || abs bn > large / (a + 1) then None
-        else Some (norm (scale b tp @ scale a tn), bound)) neg) pos in
-      let rows = zero @ combined in
-      if List.length rows > limit then false else go rows in
-  go rows
-
-(* Whether the facts state a linear fact `Σ c·x ≤ d` over terms: a fact of
-   one term by its range, any other by a held fact of the same form at a
-   bound at most `d`, or by elimination (`fm_entails`). Lean decides the same
-   entailment by its own search. *)
-let entails fs ((terms,d) : fact) =
-  let terms = norm terms in
-  (match terms with
-   | [x,1] -> (match range fs x with _,Some h -> h <= d | _ -> false)
-   | [x,-1] -> (match range fs x with Some l,_ -> -l <= d | _ -> false)
-   | _ -> List.exists (fun ((t,b) : fact) -> norm t = terms && b <= d) fs)
-  || fm_entails fs (terms,d)
 
 (* At a merge, a fact of one form holds at the larger bound where both
    paths state one. A bound larger than the one the earlier state (`l`, the
