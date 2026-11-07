@@ -379,7 +379,9 @@ description, `tools/declaration-graph.mts` writes the readings) the marker is
 the optional `host` field of an object type term, which only a family's
 reading writes and which Lean lowers to the required readonly view of
 `hostKey` at the marker's string (`objectClause`); a declared member's key is
-never a reserved key. A shape is a definition whose bases are one per
+never a reserved key but, of a marked shape, `[[viewLength]]`, which the
+overlay states of a typed array's view, readonly and stable, its element
+count ([reads below the element count](SOURCE-CONTRACTS.md#stated-library-types)). A shape is a definition whose bases are one per
 method it states required, a definition of that method alone, so that every
 shape stating a generic method shares its one method head whatever other
 methods it overrides; a member a reading states optional, by its
@@ -1335,6 +1337,9 @@ checks split by who can make them:
   optional, of the shape the description's table selects, not among the
   description's exclusions. The interpreter refuses a description whose
   stable-member rule names an excluded member or one the shape lacks.
+  The overlay of library types states one more, a typed array's
+  `[[viewLength]]`, by the host assumption on views
+  ([trust surface](DESIGN.md#trust-surface)).
 - **Lean** accepts stable keys only on an object term carrying a family's
   marker, and only each a readonly member of that term, a view or an
   optional readonly field; a stable key at a writable member or at a key

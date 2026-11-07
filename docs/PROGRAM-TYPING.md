@@ -1685,6 +1685,25 @@ Four steps state their change:
   iterator's step keeps the length of each array its allocation was
   separated from.
 
+**Through every step.** A typed array's element count is read from the
+location of its `[[viewLength]]`, which the view's type states a stable key
+([stable keys](HOST-FAMILIES.md#stable-keys)): a location whose contract
+admits one value, which every heap a normally returning execution reaches
+holds. So every step keeps a linear fact whose every term is a slot's value or
+the element count $`\mathrm{view}(x)`$ of a slot $`x`$ every clause of whose
+type states $`[[\mathrm{viewLength}]]`$ stable, beside the step's own output
+(`HeapExpressionRules.stableIndices`, added by `withStable`, applied by
+`Checker.keepingStable`; proved: `withStable_sound`, from
+`HeapObservations.stable_frame`):
+
+```math
+\frac{F\in\Sigma\qquad \forall t\in\mathrm{vars}(F).\ t=x\lor\bigl(t=\mathrm{view}(x)\land [[\mathrm{viewLength}]]\in\sigma(\Gamma(x))\bigr)}
+     {\Gamma;\Sigma\vdash r\leftarrow e\dashv\Sigma',\ F}\ \textsf{view-stable}
+```
+
+on the step's normal return. A write of a number field, a call and an
+element write keep `i < b.length` alike.
+
 **A comparison with a length.** A strict comparison of a safe integer $`k`$
 with a slot $`n`$ a length atom names states, on the answer giving $`k<n`$,
 the facts of $`k`$ alone, which survive dropping $`n`$ (`IndexWrites.lengthAtoms`,
@@ -1874,8 +1893,9 @@ derived from it), `call-keeps-heap-loop` (a typed array's bound across a
 call of a function whose loop writes only its locals), `facts-across-writes`
 (bounds across field writes and an element write), `method-calls-keep-facts`
 (a `WeakMap`'s `get`, a `Map`'s construction and `set`),
-`for-of-keeps-counter-facts` (an array iterator's step) and
-`typed-array-reads-below-length` (a
+`for-of-keeps-counter-facts` (an array iterator's step),
+`view-count-across-field-write` (a typed array's element count across a
+number field's write) and `typed-array-reads-below-length` (a
 `Uint8Array`, a `Float64Array`, an `Int32Array` written and read back, and a
 `@requires` over a view's length). Negative, each run under Node:
 `invalid-bounded-element-read-inclusive` (a loop to `j <= xs.length`) and
@@ -1891,16 +1911,15 @@ field a path's length names), `invalid-facts-across-field-write-alias` (a
 write through a parameter that may be the object a path names),
 `invalid-facts-across-alias-pop` (a `pop` of a parameter that may be the
 counted array), `invalid-facts-across-for-of-pop` (a `pop` in a `for...of`
-body), `invalid-typed-array-read-at-length` (a loop to `i <= b.length`) and
+body), `invalid-typed-array-read-at-length` (a loop to `i <= b.length`),
 `invalid-typed-array-read-other-length` (a read of `b` below another view's
-length). Forged controls in `pipeline/test.mts`: each array negative's read
+length) and `invalid-view-count-across-field-write-other` (alike, across a
+number field's write). Forged controls in `pipeline/test.mts`: each array negative's read
 claimed at the element type, with and without a strict bound claimed at its
 statement; each typed array negative's read claimed at `number` with
 `i < b.length` claimed at its statement; each facts-across negative's read
 claimed at `number` with the bound its write or call takes away claimed at
-its statement. Gap: `view-count-across-field-write`, a typed array's element
-count across a write of a number field, which no heap invariant sets apart
-from the view's `[[viewLength]]` location.
+its statement.
 
 
 ### Written preconditions

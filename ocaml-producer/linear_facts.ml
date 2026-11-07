@@ -88,6 +88,20 @@ let value_binding env x = match List.assoc_opt x env with
   | Some (Value _) | Some (Local _) -> true
   | _ -> false
 
+(* Whether a binding's type states a view's `[[viewLength]]` stable, set by
+   the statement analysis, which reads the type. *)
+let stable_view : ((string * Environment.binding) list -> string -> bool) ref = ref (fun _ _ -> false)
+
+(* A term every step keeps (Lean's `HeapExpressionRules.stableTerm`): a
+   binding's own value, or the element count of a typed array a value
+   binding holds whose type states `[[viewLength]]` stable, a location of
+   one value. *)
+let stable_term env t = not (reads_heap t) ||
+  (let b,path,kind = term_parts t in kind = View_term && path = [] && value_binding env b && !stable_view env b)
+let stable_fact env ((t,_) : fact) = List.for_all (fun (n,_) -> stable_term env n) t
+(* The facts a step writing the heap keeps whatever it writes. *)
+let keep_stable env fs = List.filter (stable_fact env) fs
+
 let is_int fs x = List.exists (fun ((t,_) : fact) -> List.mem_assoc x t) fs
 
 (* The range single-variable facts state of a binding. *)
@@ -373,8 +387,8 @@ let statement ~(array : string -> string list -> bool) ?(bounds=[]) env fs (s : 
   (* A fact naming a length or an element count reads the heap: kept where
      the statement writes none, as Lean keeps it (`IndexFact.envOnly`). *)
   let fs = if statement_heap_free env s then fs else match statement_changes ~facts:fs ~bounds env s with
-    | Some ch -> List.filter (fact_kept ch) fs
-    | None -> List.filter (fun f -> not (has_heap_term f)) fs in
+    | Some ch -> List.filter (fun f -> fact_kept ch f || stable_fact env f) fs
+    | None -> keep_stable env fs in
   match s.statement with
   | Effect {node=Assign (x,_,e);_} -> assign ~array env fs x e
   | Effect {node=Update ((Add | Sub) as op,({node=Id x;_} as target),rhs,_);pos} ->
@@ -392,7 +406,7 @@ let statement ~(array : string -> string list -> bool) ?(bounds=[]) env fs (s : 
   | _ -> List.fold_left (fun fs x -> forget x fs) fs (names_assigned s env)
 
 let declaration ~(array : string -> string list -> bool) env fs name (init : expr) : fact list =
-  let fs = if heap_free env init then fs else List.filter (fun f -> not (has_heap_term f)) fs in
+  let fs = if heap_free env init then fs else keep_stable env fs in
   let fs = forget name fs in
   let fs = match path_of env init with
     | Some (root,(_ :: _ as path)) when root <> name && heap_free env init -> fs @ restate_read name (root,path) fs

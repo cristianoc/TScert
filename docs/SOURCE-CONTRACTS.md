@@ -1830,10 +1830,13 @@ included). The getter reads the view's slots and the read runs no code;
 neither writes. The key is never copied (`copiedKey`) and no source property
 names it (`RequestJson.reservedKey`);
 the term is defined only of a host object, which no allocation of the
-program makes, so no program value states a view's count. A fact naming it
-reads the heap and is kept only across a heap extension and a call keeping
-the heap (`%ByteSet%`'s, `fill`'s and the other view methods' empty
-footprint). A read at the length is `undefined` (`invalid-typed-array-read-at-length`,
+program makes, so no program value states a view's count. The view's type
+states the key a readonly `number` member and a stable key
+([stable keys](HOST-FAMILIES.md#stable-keys)), the overlay's statement of
+the same host assumption: its location holds one value for the view's life.
+So a fact naming the count is kept through every step, a write of a number
+field among them ([through every step](PROGRAM-TYPING.md#linear-facts),
+`view-count-across-field-write`). A read at the length is `undefined` (`invalid-typed-array-read-at-length`,
 run under Node), and so is a read of one view below another's length
 (`invalid-typed-array-read-other-length`, run under Node); both are refused.
 The case is `typed-array-reads-below-length`.

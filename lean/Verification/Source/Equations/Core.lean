@@ -256,7 +256,10 @@ partial def objectClause (ctx : Ctx) (term : Json) : M (Clause (List Tree)) := d
   let mut all : Array (PropKey × List Tree × Bool × Bool) := #[]
   for f in ← arr term "fields" do
     let name ← PropKey.decode (← field f "name")
-    if RequestJson.reservedKey name then
+    -- A marked shape may state the model's `[[viewLength]]`, a typed
+    -- array's element count, which the host owns (DESIGN.md, "Trust
+    -- surface"); every other model key is the model's alone.
+    if RequestJson.reservedKey name && !(name == Verification.viewLengthKey && !marker.isEmpty) then
       throw s!"{ctx.site}: a declared member cannot use the model's internal key {repr name}"
     let ty ← field f "type"
     let optional ← bool f "optional"

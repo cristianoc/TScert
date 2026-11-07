@@ -331,7 +331,7 @@ let statements callbacks flow_graph register_following owner_span env0 ss =
             | Value _ | Local _ when not (is_fact n) && not (is_bound n) && callbacks.array_binding env n [] -> Some n
             | _ -> None) env in
           if array_iterable then Hashtbl.replace iterator_arrays b.name arrays else Hashtbl.remove iterator_arrays b.name;
-          let fs = if array_iterable then facts0 else List.filter (fun f -> not (Linear_facts.has_heap_term f)) facts0 in
+          let fs = if array_iterable then facts0 else Linear_facts.keep_stable env facts0 in
           [with_facts e (Linear_facts.forget b.name fs) (if array_iterable then bounds0 else [])]
         | Flow.IteratorStep (_,b,element,_,_), [y;n] ->
           (* The step of an array's iterator changes only the iterator's own
@@ -339,7 +339,7 @@ let statements callbacks flow_graph register_following owner_span env0 ss =
              every other heap-reading fact is not. *)
           let arrays = Option.value ~default:[] (Hashtbl.find_opt iterator_arrays b.name) in
           let kept_term t = let r,path,kind = Linear_facts.term_parts t in
-            not (Linear_facts.reads_heap t) || (kind = Linear_facts.Length_term && path = [] && List.mem r arrays) in
+            Linear_facts.stable_term env t || (kind = Linear_facts.Length_term && path = [] && List.mem r arrays) in
           let fs = List.filter (fun ((t,_) : Linear_facts.fact) -> List.for_all (fun (n,_) -> kept_term n) t) facts0 in
           let fs = Linear_facts.forget element.name fs in
           let bs = List.filter (fun (a,i,_) -> List.mem a arrays && i <> element.name) bounds0 in
@@ -354,7 +354,7 @@ let statements callbacks flow_graph register_following owner_span env0 ss =
                 it, keeps no fact reading the heap, as Lean keeps none past
                 the call: its own answers' included, and no bound. *)
              let heap_free = Linear_facts.statement_heap_free env s in
-             let reading fs = if heap_free then fs else List.filter (fun f -> not (Linear_facts.has_heap_term f)) fs in
+             let reading fs = if heap_free then fs else Linear_facts.keep_stable env fs in
              let bounds bs = if heap_free then bs else [] in
              [with_facts y (reading (facts0 @ t)) (kept @ bounds bt); with_facts n (reading (facts0 @ f)) (kept @ bounds bf)]
            | _ -> edges)

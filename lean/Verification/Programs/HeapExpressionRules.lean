@@ -2021,14 +2021,34 @@ def stableCells (G : NormalGraph ι) (Γ : List (Ty ι)) (k : Knowledge) : Facts
     | some A => stableField G A f.field
     | none => false
 
-/-- A step's output with the input's stable links and stable cell facts,
-past the result slot, each once. -/
+/-- A term a step keeps through its every effect: a slot's own value, or the
+element count of the typed array a slot holds, where every clause of the
+slot's type states `viewLengthKey` stable (PROGRAM-TYPING.md, "Linear
+facts"): the count is read from a location whose contract admits one
+value. -/
+def stableTerm (G : NormalGraph ι) (Γ : List (Ty ι)) (t : Term) : Bool :=
+  t.envOnly || (t.kind == .view && t.path.isEmpty &&
+    match Γ[t.slot]? with
+    | some A => stableField G A viewLengthKey
+    | none => false)
+
+/-- The index facts a step keeps through its every effect: the linear facts
+whose every term is stable. -/
+def stableIndices (G : NormalGraph ι) (Γ : List (Ty ι)) (k : Knowledge) : List IndexAtom :=
+  k.indices.filter fun a => match a.fact with
+    | .linear F => F.vars.all (stableTerm G Γ)
+    | _ => false
+
+/-- A step's output with the input's stable links, stable cell facts and
+stable index facts, past the result slot, each once. -/
 def withStable (G : NormalGraph ι) (Γ : List (Ty ι)) (k out : Knowledge) : Knowledge :=
   { out with
     cells := out.cells ++
       (HeapFacts.shift (stableCells G Γ k)).filter fun f => !out.cells.contains f
     links := out.links ++
-      (HeapLinks.pull (stableLinks G Γ k) (fun i => [i+1])).filter fun g => !out.links.contains g }
+      (HeapLinks.pull (stableLinks G Γ k) (fun i => [i+1])).filter fun g => !out.links.contains g
+    indices := out.indices ++
+      (mapIndices (fun i => some (i+1)) (stableIndices G Γ k)).filter fun a => !out.indices.contains a }
 
 /-- What a kept link says of a heap: a read link's meaning in `HeapLinks.Holds`. -/
 private def LinkAt (ρ : Env) (h : Heap) (g : HeapLinks.Link) : Prop :=
@@ -2133,16 +2153,84 @@ private theorem stable_cell_frames {G : NormalGraph ι} {Γ : List (Ty ι)} {k :
       · exact hall x hx
     · cases hty
 
+/-- The slots of a context whose type states `viewLengthKey` stable. -/
+private def viewSlots (G : NormalGraph ι) (Γ : List (Ty ι)) : List Nat :=
+  (List.range Γ.length).filter fun s => match Γ[s]? with
+    | some A => stableField G A viewLengthKey
+    | none => false
+
+/-- **A stable element count frames its read**: every heap a normally
+returning execution reaches gives each typed array at a slot of `S` the
+element count the heap it starts in gives it. -/
+private theorem view_frames {G : NormalGraph ι} {Γ : List (Ty ι)} {ρ n W h t}
+    {T : Fam} {Q : Post} (he : EnvOk G Γ ρ n W) (hh : HeapOk n W h) :
+    ∀ (S : List Nat), (∀ s ∈ S, s ∈ viewSlots G Γ) →
+      SafePost (excOf G) T Q n W h t →
+      SafePost (excOf G) T (fun h' v => Q h' v ∧ ∀ s ∈ S, viewLengthOf h' (ρ s) = viewLengthOf h (ρ s)) n W h t := by
+  intro S
+  induction S with
+  | nil =>
+    intro _ hs
+    exact consequence (fun _ _ _ h => h) (fun _ _ hq => ⟨hq, fun _ hs => by cases hs⟩) hs
+  | cons s S ih =>
+    intro hS hs
+    have rest := ih (fun x hx => hS x (List.mem_cons_of_mem _ hx)) hs
+    have hsv := hS s List.mem_cons_self
+    simp only [viewSlots, List.mem_filter] at hsv
+    obtain ⟨-, hty⟩ := hsv
+    split at hty
+    · rename_i A hA
+      obtain ⟨flds, oid, hcell, hst⟩ := stableField_at hty (he.2 s A hA)
+      cases n with
+      | zero => trivial
+      | succ m =>
+        cases hl : flds.lookup viewLengthKey with
+        | none =>
+          refine consequence (fun _ _ _ h => h) (fun h' _ hq => ⟨hq.1, fun x hx => ?_⟩) rest
+          rcases List.mem_cons.mp hx with rfl | hx
+          · simp only [hcell, viewLengthOf, hl]
+          · exact hq.2 x hx
+        | some l =>
+          obtain ⟨c, value, hw, hc⟩ := hst.present hl
+          have hval := hh.stable_value (Nat.zero_lt_succ m) hw hc
+          refine consequence (fun _ _ _ h => h) (fun h' _ hq => ⟨hq.1.1, fun x hx => ?_⟩)
+            (HeapObservations.stable_frame hw hc hh rest)
+          rcases List.mem_cons.mp hx with rfl | hx
+          · simp only [hcell, viewLengthOf, hl, hq.2, hval]
+          · exact hq.1.2 x hx
+    · cases hty
+
+/-- A stable term denotes, in every heap a normally returning execution
+reaches, what it denoted where the execution started. -/
+private theorem stableTerm_eq {G : NormalGraph ι} {Γ : List (Ty ι)} {ρ : Env} {h h' : Heap} {t : Term}
+    (ht : stableTerm G Γ t = true) (hviews : ∀ s ∈ viewSlots G Γ, viewLengthOf h' (ρ s) = viewLengthOf h (ρ s)) :
+    termValue ρ h' t = termValue ρ h t := by
+  simp only [stableTerm, Bool.or_eq_true, Bool.and_eq_true, beq_iff_eq, List.isEmpty_iff] at ht
+  rcases ht with ht | ⟨⟨hk, hp⟩, hty⟩
+  · exact termValue_envOnly ht
+  · obtain ⟨k, s, p⟩ := t
+    simp only at hk hp hty
+    subst hk; subst hp
+    have hs : s ∈ viewSlots G Γ := by
+      simp only [viewSlots, List.mem_filter, List.mem_range]
+      refine ⟨?_, hty⟩
+      split at hty
+      · rename_i A hA; exact (List.getElem?_eq_some_iff.mp hA).1
+      · cases hty
+    simp only [termValue_nil, kindValue, hviews s hs]
+
 /-- **Stable links survive every step.** Whatever a step's postcondition, its
-input's stable links and stable cell facts hold of every heap it returns in. -/
+input's stable links, stable cell facts and stable index facts hold of every
+heap it returns in. -/
 theorem withStable_sound {G : NormalGraph ι} {Γ : List (Ty ι)} {k out : Knowledge} {ρ n W h t} {T : Fam}
     (he : EnvOk G Γ ρ n W) (hk : HeapKnowledge.Holds k ρ h) (hh : HeapOk n W h)
     (hs : SafePost (excOf G) T (fun h' v => HeapKnowledge.Holds out (push v ρ) h') n W h t) :
     SafePost (excOf G) T (fun h' v => HeapKnowledge.Holds (withStable G Γ k out) (push v ρ) h') n W h t := by
   refine consequence (fun _ _ _ h => h) (fun h' v hq => ?_)
-    (stable_cell_frames he hk hh (stableCells G Γ k) (fun _ hf => hf)
-      (stable_frames he hk hh (stableLinks G Γ k) (fun _ hg => hg) hs))
-  obtain ⟨⟨hout, hall⟩, hcells⟩ := hq
+    (view_frames he hh (viewSlots G Γ) (fun _ hs => hs)
+      (stable_cell_frames he hk hh (stableCells G Γ k) (fun _ hf => hf)
+        (stable_frames he hk hh (stableLinks G Γ k) (fun _ hg => hg) hs)))
+  obtain ⟨⟨⟨hout, hall⟩, hcells⟩, hviews⟩ := hq
   have hS : HeapLinks.Holds (stableLinks G Γ k) ρ h' := by
     intro g hg
     have hg' := hg
@@ -2155,13 +2243,29 @@ theorem withStable_sound {G : NormalGraph ι} {Γ : List (Ty ι)} {k out : Knowl
   have hpull := HeapLinks.pull_holds (pre := fun i => [i+1]) (τ := push v ρ) hS
     (fun i j hj => by simp at hj; subst hj; rfl)
   have hshift := HeapFacts.shift_holds (v := v) hcells
-  refine ⟨fun f hf => ?_, hout.2.1, fun g hg => ?_, hout.2.2.2⟩
+  have hidx : IndexHolds (stableIndices G Γ k) ρ h' := by
+    intro a ha hc
+    simp only [stableIndices, List.mem_filter] at ha
+    obtain ⟨hmem, hall⟩ := ha
+    have hold := hk.2.2.2.2.2 a hmem hc
+    split at hall
+    · rename_i F hF
+      rw [hF] at hold ⊢
+      exact IndexFact.holdsAt_linear_terms
+        (fun t ht => stableTerm_eq (List.all_eq_true.mp hall t ht) hviews) hold
+    · cases hall
+  have hmap := mapIndices_holds (f := fun i => some (i+1)) (ρ' := push v ρ)
+    (fun s t hst => by simp only [Option.some.injEq] at hst; subst hst; rfl) hidx
+  refine ⟨fun f hf => ?_, hout.2.1, fun g hg => ?_, hout.2.2.2.1, hout.2.2.2.2.1, fun a ha => ?_⟩
   · rcases List.mem_append.mp hf with hf | hf
     · exact hout.1 f hf
     · exact hshift f (List.mem_filter.mp hf).1
-  rcases List.mem_append.mp hg with hg | hg
-  · exact hout.2.2.1 g hg
-  · exact hpull g (List.mem_filter.mp hg).1
+  · rcases List.mem_append.mp hg with hg | hg
+    · exact hout.2.2.1 g hg
+    · exact hpull g (List.mem_filter.mp hg).1
+  · rcases List.mem_append.mp ha with ha | ha
+    · exact hout.2.2.2.2.2 a ha
+    · exact hmap a (List.mem_filter.mp ha).1
 
 /-- A checker whose every step also keeps its input's stable links and
 stable cell facts. -/

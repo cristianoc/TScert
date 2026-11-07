@@ -64,6 +64,7 @@ export const bytesMarker = "node:bytes";
  * are numbers (a `Float64Array`'s any double, `NaN` included),
  *
  *     type Uint8Array = host "node:bytes" {
+ *       readonly [[viewLength]]: number;   // stable
  *       fill(value: number, start?: number, end?: number): Uint8Array;
  *       copyWithin(target: number, start: number, end?: number): Uint8Array;
  *       set(source: Uint8Array, offset?: number): undefined;
@@ -104,8 +105,15 @@ const viewMethods = (self: TypeTerm): Field[] => [
   field("copyWithin", method([atom("number"), atom("number"), optionalNumber], self, emptyEffect)),
   field("set", method([bytes, optionalNumber], atom("undefined"), emptyEffect)),
   field("subarray", method([atom("number"), optionalNumber], self, emptyEffect))];
+/** The element count a view's model key `[[viewLength]]` holds, a
+ * readonly `number` the host owns at a location no other object's field or
+ * store shares, one value for the view's life (DESIGN.md, "Trust surface"):
+ * a stable key (HOST-FAMILIES.md, "Stable keys"), so every step keeps a
+ * fact naming the count (PROGRAM-TYPING.md, "Linear facts"). */
+const viewLength: Field = field("[[viewLength]]", atom("number"));
 const bytesDefinition = definitionOf(bytesIdentity,
-  { k: "object", fields: viewMethods(bytes), stringIndex: null, calls: [], host: bytesMarker, span: at });
+  { k: "object", fields: [viewLength, ...viewMethods(bytes)], stringIndex: null, calls: [], host: bytesMarker,
+    stable: ["[[viewLength]]"], span: at });
 
 /** A `Buffer`, a view of bytes with the methods of `Buffer.prototype` the
  * overlay states (Node 26.13.0's `lib/buffer.js`),
@@ -131,8 +139,8 @@ const bytesDefinition = definitionOf(bytesIdentity,
 const bufferIdentity = identity("Buffer");
 export const buffer: TypeTerm = named(bufferIdentity);
 export const bufferDefinition: TypeDefinition = definitionOf(bufferIdentity,
-  { k: "object", stringIndex: null, calls: [], host: bytesMarker, span: at, fields: [
-    field("toString", method([text("utf8")], atom("string"), emptyEffect)), ...viewMethods(buffer)] });
+  { k: "object", stringIndex: null, calls: [], host: bytesMarker, stable: ["[[viewLength]]"], span: at, fields: [
+    viewLength, field("toString", method([text("utf8")], atom("string"), emptyEffect)), ...viewMethods(buffer)] });
 
 /** The tests a `Stats`, a `BigIntStats` and a `Dirent` dispatch through a
  * prototype other code may change: each `() => unknown`, its effect

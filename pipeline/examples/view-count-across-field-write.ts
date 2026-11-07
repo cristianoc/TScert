@@ -1,8 +1,8 @@
 // A typed array's element count across a write of a number field: the count
-// is the number the location of the view's `[[viewLength]]` holds, and no
-// heap invariant sets that location apart from a program object's number
-// field, so the write keeps no fact naming the count and the read after it
-// is refused. Safe under Node: the view's length never changes.
+// is the number the location of the view's `[[viewLength]]` holds, a stable
+// key of the view's type, a location of one value, so every step keeps a
+// fact naming the count, the write of `c.at` among them, and the read below
+// it after the write is accepted.
 
 type Cursor = { at: number };
 

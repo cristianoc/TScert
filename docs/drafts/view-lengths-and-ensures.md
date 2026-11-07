@@ -44,9 +44,9 @@ allocation of the program makes a host object, so no program value forges a
 view's length. An immutable field map does not make the location's
 contents immutable: a step given the location could write it
 (`Step.writeField`, `setPresent`). So a fact naming `view(x)` is a
-heap-reading fact (`IndexFact.envOnly` false), kept only where a proof shows
-the location unchanged: a heap extension, and a call keeping the heap
-(`call-keep`, `Closed.holds_empty`).
+heap-reading fact (`IndexFact.envOnly` false), kept where a proof shows the
+location unchanged: the view's type states `[[viewLength]]` a stable key, so
+every step keeps it ([through every step](../PROGRAM-TYPING.md#linear-facts)).
 
 Trust (owner-approved 2026-11-07): every typed array, the program's or
 external code's, views a fixed-size `ArrayBuffer` that is never detached;

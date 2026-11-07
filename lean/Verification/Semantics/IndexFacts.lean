@@ -498,6 +498,15 @@ theorem holdsAt_linear_heap {F : Linear.Fact Term} {ρ : Env} {h h' : Heap} (hv 
   refine ⟨fun t ht => heq t ht ▸ hF.1 t ht, ?_⟩
   exact (Linear.Fact.holds_congr (v' := termValuation ρ h') (fun t ht => by simp only [termValuation, heq t ht])).mp hF.2
 
+/-- A linear fact holds in a heap where each of its terms denotes what it
+denoted in the heap the fact held in. -/
+theorem holdsAt_linear_terms {F : Linear.Fact Term} {ρ : Env} {h h' : Heap}
+    (heq : ∀ t ∈ F.vars, termValue ρ h' t = termValue ρ h t)
+    (hF : (IndexFact.linear F).HoldsAt ρ h) : (IndexFact.linear F).HoldsAt ρ h' := by
+  refine ⟨fun t ht => by rw [heq t ht]; exact hF.1 t ht, ?_⟩
+  exact (Linear.Fact.holds_congr (v' := termValuation ρ h')
+    (fun t ht => by simp only [termValuation, heq t ht])).mp hF.2
+
 end IndexFact
 
 /-! ## Facts a heap change keeps (PROGRAM-TYPING.md, "Linear facts")

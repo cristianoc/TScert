@@ -239,10 +239,12 @@ control(async (): Promise<void> => {
   // precondition's of `%ByteAt%`'s bounded signature, with `i < b.length`
   // forged at the read's statement entry, is refused where evidence is
   // searched: the read at the length of a loop running to `i <= b.length`,
-  // and the read of `b` below another view's length.
+  // and the read of `b` below another view's length, with and without a
+  // number field's write before it.
   for (const [name, fnName, read, statement] of [
     ["invalid-typed-array-read-at-length", "last", "b[i]", "x = b[i]!"],
     ["invalid-typed-array-read-other-length", "across", "b[i]", "x = b[i]!"],
+    ["invalid-view-count-across-field-write-other", "other", "b[i]", "const f = b[i]!"],
   ] as const) {
     const artifacts = run(name);
     const source = readFileSync(sourceKey(artifacts), "utf8");
