@@ -268,3 +268,42 @@ through the contracts that exist instead of a global discipline:
 - **Excluded for now**: guarded clauses, temporary opening, conversions that
   give a value type `R` without a return of an analyzed function (casts,
   `satisfies` on a value not built there, natives, spreads): refused, located.
+
+## 5. Sealed handles (owner choice, 2026-11-07)
+
+**The existing mechanism this extends.** §4.1: an invariant is a
+precondition of the parameters of its type and a result fact of the
+functions returning it, preserved between boundaries through footprints.
+
+**The problem.** pretext's public handle `PreparedText` is
+`{ readonly [preparedTextBrand]: true }`, `preparedTextBrand` a non-exported
+`declare const … unique symbol` with no runtime value: no value of the type
+is built but by a cast, and pretext's casts in (`measureAnalysis`'s literal
+`satisfies PreparedLineBreakData as unknown as PreparedText & …`) and out
+(`getInternalPrepared`: `prepared as InternalPreparedText`) cross it. An
+invariant of the representation `R = PreparedLineBreakData` does not reach a
+value cast out of the handle.
+
+**Rule.** An `@invariant C` on the handle type `H` states `C` over the
+fields of a representation type named beside it (`@representation R`):
+field-path terms read the object's fields at run time whatever its static
+type, so `C` is a predicate on the handle's object. It is then a §4.1
+invariant of `H`: a parameter of type `H` has `I_H` in its precondition, a
+function returning `H` proves `I_H` of its result at each return, and the
+facts reach a cast out as any facts reach a later point.
+
+**Why no lifetime registry.** Astra's design (review of 2026-11-07) proposed
+a ghost registry of sealed objects preserved by every step, a whole-program
+heap invariant. The boundary form needs none: every analyzed call checks
+`I_H` of its handle argument and every analyzed return proves it, so a
+mutation breaking it fails at the next boundary that requires it. A handle
+the program stores in its own heap and reads back carries no fact until that
+structure states one (a nested invariant, later); a caller outside the
+analyzed sources is trusted at each call (the exported-precondition trust).
+
+**Pretext.** The standalone path proves `I_H` at `measureAnalysis`'s return
+from its local arrays; the later write `prepared.segments = …` names a field
+`C` does not read, kept through footprints. A rich-inline item's
+representation shares the paragraph's lists, which later iterations grow:
+its introduction is refused (located) until a predicate for shared data is
+stated.
