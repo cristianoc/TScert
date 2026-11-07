@@ -298,7 +298,10 @@ def lowerJson (ast claims : Json) (fileKey : String) : Except String Json := do
 /-- What requests a bundle justifies give: the check accepts them, each is
 safe, within its footprint where it claims one, and its stated assertions are
 entailed by its certificate, as `checkRequests_safe_at`,
-`checkRequests_footprint_at` and `checkRequests_assertions_at` state. -/
+`checkRequests_footprint_at` and `checkRequests_assertions_at` state; each for
+an environment meeting what the request assumes of its inputs, their types,
+their separation and the index facts of its written precondition
+(`entryIndices`). -/
 def RequestsSafe (F : EquationStore.Frozen)
     (rs : List (SourceRequest (EquationStore.Checked F.equations F.primitive)
       (EquationStore.CheckedLabel F.equations F.primitive)))
@@ -306,7 +309,8 @@ def RequestsSafe (F : EquationStore.Frozen)
       checkRequests rs b = true ∧
       (∀ r c, (r,c) ∈ rs.zip b.functions →
         ∀ η, r.Admits η → ∀ n W heap ρ, EnvOk (reassign F.equations.graph η) r.inputs ρ n W →
-          HeapSeparation.Holds r.entrySeparation ρ → WorldAdm W → HeapOk n W heap →
+          HeapSeparation.Holds r.entrySeparation ρ → HeapKnowledge.IndexHolds r.entryIndices ρ heap →
+          WorldAdm W → HeapOk n W heap →
           SafeGraph (excOf (reassign F.equations.graph η)) r.program
             (ControlFlow.GoalHolds (reassign F.equations.graph η) r.goal (r.goal.argument ρ))
             n W heap (.at r.start ρ)) ∧
@@ -315,6 +319,7 @@ def RequestsSafe (F : EquationStore.Frozen)
         ∀ η n W heap (L : List Tm) (d : Tm),
           EnvOk (reassign F.equations.graph η) r.inputs (envOf L d) n W →
           HeapSeparation.Holds r.entrySeparation (envOf L d) →
+          HeapKnowledge.IndexHolds r.entryIndices (envOf L d) heap →
           WorldAdm W → HeapOk n W heap → (∀ v ∈ L, isVal v = true) → isVal d = true →
           HeapObservations.SafePostExc (excOf (reassign F.equations.graph η))
             (ControlFlow.GoalHolds (reassign F.equations.graph η) r.goal (r.goal.argument (envOf L d)))
@@ -331,10 +336,10 @@ theorem requestsSafe_of_check {F : EquationStore.Frozen}
     (hx : (checkRequestsResult rs b).accepted = true) : RequestsSafe F rs b := by
   have hc : checkRequests rs b = true := hx
   refine ⟨hc, ?_, ?_, fun r c hm => checkRequests_assertions_at hc hm⟩
-  · intro r c hm η admitted n W heap ρ he hsep hw hh
-    exact checkRequests_safe_at hc hm η admitted n W heap ρ he hw hh hsep
-  · intro r c hm heffect η n W heap L d he hsep hw hh hvalues hd
-    exact checkRequests_footprint_at hc hm heffect η n W heap L d he hw hh hvalues hd hsep
+  · intro r c hm η admitted n W heap ρ he hsep hidx hw hh
+    exact checkRequests_safe_at hc hm η admitted n W heap ρ he hw hh hsep hidx
+  · intro r c hm heffect η n W heap L d he hsep hidx hw hh hvalues hd
+    exact checkRequests_footprint_at hc hm heffect η n W heap L d he hw hh hvalues hd hsep hidx
 
 /-- What a successful check of extracted plans gives: they cross the
 exhaustive certification boundary, and their requests are safe at the

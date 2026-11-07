@@ -1304,23 +1304,29 @@ theorem accepted_entry_safe [DecidableEq ι] {G : NormalGraph ι} {images : Inst
 
 /-- What the entry's knowledge may state: nothing, or what follows from the
 separation the request assumes of its inputs (`entrySeparation`): a unit's
-module cells, two cells apart (SOURCE-ELABORATION.md, "Module cells"). -/
+module cells, two cells apart (SOURCE-ELABORATION.md, "Module cells"); and
+from the index facts code assumes of its frame (`entryIndices`): its
+signature's precondition on the call's values (PROGRAM-TYPING.md, "Reads
+below the length"). -/
 @[nospecialize] def entryKnows [DecidableEq ι] (G : NormalGraph ι) (inputs : List (Ty ι))
-    (entrySeparation : HeapSeparation.Separation) (k : HeapKnowledge.Knowledge) : Bool :=
-  k == {} || KnowledgeExpand.checkIn (KnowledgeExpand.ctxOf G inputs) { separation := entrySeparation } k none
+    (entrySeparation : HeapSeparation.Separation) (entryIndices : List HeapKnowledge.IndexAtom)
+    (k : HeapKnowledge.Knowledge) : Bool :=
+  k == {} || KnowledgeExpand.checkIn (KnowledgeExpand.ctxOf G inputs)
+    { separation := entrySeparation, indices := entryIndices } k none
 
 theorem entryKnows_sound [DecidableEq ι] {G : NormalGraph ι} {inputs : List (Ty ι)}
-    {S : HeapSeparation.Separation} {k : HeapKnowledge.Knowledge} {ρ n W h}
-    (hk : entryKnows G inputs S k = true) (he : EnvOk G inputs ρ n W) (hs : HeapSeparation.Holds S ρ) :
+    {S : HeapSeparation.Separation} {I : List HeapKnowledge.IndexAtom} {k : HeapKnowledge.Knowledge} {ρ n W h}
+    (hk : entryKnows G inputs S I k = true) (he : EnvOk G inputs ρ n W) (hs : HeapSeparation.Holds S ρ)
+    (hi : HeapKnowledge.IndexHolds I ρ h) :
     HeapKnowledge.Holds k ρ h := by
   rcases Bool.or_eq_true_iff.mp hk with hk | hk
   · rw [eq_of_beq hk]; exact HeapKnowledge.empty ρ h
   · have hid : PointClaims.mapEnv none ρ = ρ := rfl
     have hctx : KnowledgeNormal.CtxOk (KnowledgeExpand.ctxOf G inputs) (PointClaims.mapEnv none ρ) := by
       rw [hid]; exact KnowledgeExpand.ctxOf_ok he
-    have hsrc : HeapKnowledge.Holds { separation := S } ρ h :=
+    have hsrc : HeapKnowledge.Holds { separation := S, indices := I } ρ h :=
       ⟨HeapFacts.holds_nil ρ h, by simp [HeapKnowledge.ValueHolds], by simp [HeapLinks.Holds], hs,
-        HeapKnowledge.elemsHolds_nil ρ h, HeapKnowledge.indexHolds_nil ρ h⟩
+        HeapKnowledge.elemsHolds_nil ρ h, hi⟩
     have := KnowledgeExpand.checkIn_sound hk hctx hsrc
     rwa [hid] at this
 
@@ -1332,11 +1338,12 @@ it is, a slot the inputs type. -/
     (P : Program) (C : Certificate ι) (start : Nat) (inputs : List (Ty ι))
     (codes : CodeEntry ι → Bool := fun _ => false)
     (checker : HeapExpressionRules.Checker G images := HeapExpressionRules.Checker.ordinary G images)
-    (sums : List (ReadSummary ι) := []) (entrySeparation : HeapSeparation.Separation := {}) : CheckResult ι Unit :=
+    (sums : List (ReadSummary ι) := []) (entrySeparation : HeapSeparation.Separation := {})
+    (entryIndices : List HeapKnowledge.IndexAtom := []) : CheckResult ι Unit :=
   (checkGraphResult (checker := checker) (sums := sums) G images Rty P C codes).bind fun _ =>
   match C[start]? with
   | some c => CheckResult.ofBool (decide (entry c = inputs ∧ c.implies = [] ∧
-      c.arguments = Rty.slot.toList) && entryKnows G inputs entrySeparation c.knowledge &&
+      c.arguments = Rty.slot.toList) && entryKnows G inputs entrySeparation entryIndices c.knowledge &&
       Rty.slot.all (· < inputs.length))
   | none => failure
 
@@ -1344,20 +1351,22 @@ it is, a slot the inputs type. -/
     (P : Program) (C : Certificate ι) (start : Nat) (inputs : List (Ty ι))
     (codes : CodeEntry ι → Bool := fun _ => false)
     (checker : HeapExpressionRules.Checker G images := HeapExpressionRules.Checker.ordinary G images)
-    (sums : List (ReadSummary ι) := []) (entrySeparation : HeapSeparation.Separation := {}) : Bool :=
+    (sums : List (ReadSummary ι) := []) (entrySeparation : HeapSeparation.Separation := {})
+    (entryIndices : List HeapKnowledge.IndexAtom := []) : Bool :=
   (checkEntryResult (checker := checker) (sums := sums) (entrySeparation := entrySeparation)
-    G images Rty P C start inputs codes).accepted
+    (entryIndices := entryIndices) G images Rty P C start inputs codes).accepted
 
 theorem checkEntryUsing_eq [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (Rty : Goal ι)
     (P : Program) (C : Certificate ι) (start : Nat) (inputs : List (Ty ι))
     (codes : CodeEntry ι → Bool)
     (checker : HeapExpressionRules.Checker G images := HeapExpressionRules.Checker.ordinary G images)
-    (sums : List (ReadSummary ι)) (entrySeparation : HeapSeparation.Separation := {}) :
+    (sums : List (ReadSummary ι)) (entrySeparation : HeapSeparation.Separation := {})
+    (entryIndices : List HeapKnowledge.IndexAtom := []) :
     checkEntryUsing (checker := checker) (sums := sums) (entrySeparation := entrySeparation)
-      G images Rty P C start inputs codes = (
+      (entryIndices := entryIndices) G images Rty P C start inputs codes = (
   checkGraphUsing (checker := checker) (sums := sums) G images Rty P C codes && match C[start]? with
     | some c => decide (entry c = inputs ∧ c.implies = [] ∧
-        c.arguments = Rty.slot.toList) && entryKnows G inputs entrySeparation c.knowledge &&
+        c.arguments = Rty.slot.toList) && entryKnows G inputs entrySeparation entryIndices c.knowledge &&
         Rty.slot.all (· < inputs.length)
     | none => false
   ) := by
@@ -1374,12 +1383,14 @@ def Goal.argument (goal : Goal ι) (ρ : Env) : Tm :=
 theorem accepted_inputs_safe [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
     {checker : HeapExpressionRules.Checker G images} {Rty P C start inputs}
     {codes : CodeEntry ι → Bool} {sums : List (ReadSummary ι)} {entrySeparation : HeapSeparation.Separation}
+    {entryIndices : List HeapKnowledge.IndexAtom}
     (hc : checkEntryUsing (checker := checker) (sums := sums) (entrySeparation := entrySeparation)
-      G images Rty P C start inputs codes = true) (n W h ρ)
+      (entryIndices := entryIndices) G images Rty P C start inputs codes = true) (n W h ρ)
     (he : EnvOk G inputs ρ n W) (hw : WorldAdm W) (hh : HeapOk n W h)
     (hcodes : CodesSound G codes := by exact Verification.ProgramCertificates.codesSound_none _)
     (hsums : SummariesSound G images sums := by exact Verification.ProgramCertificates.summariesSound_none _ _)
-    (hsep : HeapSeparation.Holds entrySeparation ρ := by exact HeapSeparation.empty_holds _) :
+    (hsep : HeapSeparation.Holds entrySeparation ρ := by exact HeapSeparation.empty_holds _)
+    (hidx : HeapKnowledge.IndexHolds entryIndices ρ h := by exact HeapKnowledge.indexHolds_nil _ _) :
     SafeGraph (excOf G) P (GoalHolds G Rty (Rty.argument ρ)) n W h (.at start ρ) := by
   simp only [checkEntryUsing_eq, Bool.and_eq_true] at hc
   have hg := hc.1
@@ -1408,7 +1419,7 @@ theorem accepted_inputs_safe [DecidableEq ι] {G : NormalGraph ι} {images : Ins
         rw [hs] at hp
         cases List.mem_singleton.mp hp
         rfl
-    · exact entryKnows_sound hk (by simpa only [hin] using he) hsep
+    · exact entryKnows_sound hk (by simpa only [hin] using he) hsep hidx
   · contradiction
 
 inductive Execution (P : Program) : Nat → Heap → State → Heap → State → Prop where

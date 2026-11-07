@@ -106,13 +106,16 @@ theorem safe_of_sim {E K T} : ∀ (n : Nat) (W : WorldT n) (h : Heap) {ts s},
 /-- A graph run started at an entry the checker accepted is safe. -/
 theorem goto_safe {G : NormalGraph ι} [DecidableEq ι] {images : InstanceImageCheck G} {sums : List (ProgramCertificates.ReadSummary ι)} {Rty : Goal ι}
     {E K C start inputs} {codes : CodeEntry ι → Bool} {entrySeparation : HeapSeparation.Separation}
-    (hc : checkEntryUsing (sums := sums) (entrySeparation := entrySeparation) G images Rty (program E K) C start inputs codes = true)
+    {entryIndices : List HeapKnowledge.IndexAtom}
+    (hc : checkEntryUsing (sums := sums) (entrySeparation := entrySeparation) (entryIndices := entryIndices)
+      G images Rty (program E K) C start inputs codes = true)
     (hcodes : ProgramCertificates.CodesSound G codes) (hsums : ProgramCertificates.SummariesSound G images sums)
     (n W h L d) (he : EnvOk G inputs (envOf L d) n W) (hw : WorldAdm W)
     (hh : HeapOk n W h)
-    (hsep : HeapSeparation.Holds entrySeparation (envOf L d) := by exact HeapSeparation.empty_holds _) :
+    (hsep : HeapSeparation.Holds entrySeparation (envOf L d) := by exact HeapSeparation.empty_holds _)
+    (hidx : HeapKnowledge.IndexHolds entryIndices (envOf L d) h := by exact HeapKnowledge.indexHolds_nil _ _) :
     Safe (excOf G) (GoalHolds G Rty (Rty.argument (envOf L d))) n W h (.goto E K start L d) :=
-  safe_of_sim n W h .goto (accepted_inputs_safe hc n W h (envOf L d) he hw hh hcodes hsums hsep)
+  safe_of_sim n W h .goto (accepted_inputs_safe hc n W h (envOf L d) he hw hh hcodes hsums hsep hidx)
 
 /-- A normal-return postcondition up to the current budget, independent of the
 world chosen by a parallel safety derivation. Throws impose no postcondition. -/
@@ -536,13 +539,16 @@ theorem bounded_safe_of_sim [DecidableEq ι] {G : NormalGraph ι} {images : Inst
 theorem goto_bounded [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G} {sums : List (ProgramCertificates.ReadSummary ι)} {Φ : Footprints.Closed} {Rty : Goal ι} {E : List Tm} {K : List (Continuation × Option Target)}
     {C : Certificate ι} {start inputs} {facts : List (List Nat)} {dead : List Bool} {ret exc : Bool}
     {codes : CodeEntry ι → Bool} {entrySeparation : HeapSeparation.Separation}
-    (hc : checkEntryUsing (sums := sums) (entrySeparation := entrySeparation) G images Rty (program E K) C start inputs codes = true)
+    {entryIndices : List HeapKnowledge.IndexAtom}
+    (hc : checkEntryUsing (sums := sums) (entrySeparation := entrySeparation) (entryIndices := entryIndices)
+      G images Rty (program E K) C start inputs codes = true)
     (hcodes : ProgramCertificates.CodesSound G codes) (hsums : ProgramCertificates.SummariesSound G images sums)
     (hnodes : NodesWithin G Φ (program E K) C facts dead ret exc)
     (hstart : factsAt facts start = [])
     (n W h L d) (he : EnvOk G inputs (envOf L d) n W) (hw : WorldAdm W)
     (hh : HeapOk n W h)
-    (hsep : HeapSeparation.Holds entrySeparation (envOf L d) := by exact HeapSeparation.empty_holds _) :
+    (hsep : HeapSeparation.Holds entrySeparation (envOf L d) := by exact HeapSeparation.empty_holds _)
+    (hidx : HeapKnowledge.IndexHolds entryIndices (envOf L d) h := by exact HeapKnowledge.indexHolds_nil _ _) :
     HeapObservations.SafePostExc (excOf G) (GoalHolds G Rty (Rty.argument (envOf L d)))
       (fun h' v => Φ.Holds h h' ∧ (ret = true → FreshAt h.length v))
       (fun h' => exc = true → Φ.Holds h h') n W h (.goto E K start L d) := by
@@ -574,7 +580,7 @@ theorem goto_bounded [DecidableEq ι] {G : NormalGraph ι} {images : InstanceIma
           rw [hs] at hp
           cases List.mem_singleton.mp hp
           rfl
-      · exact entryKnows_sound hk (by simpa only [hin] using he) hsep
+      · exact entryKnows_sound hk (by simpa only [hin] using he) hsep hidx
     · apply Or.inr
       refine ⟨Footprints.Closed.Holds.refl Φ h, ?_⟩
       rw [hstart]; intro i hi; cases hi
@@ -963,7 +969,8 @@ result is established node by node whatever the footprint. -/
 @[nospecialize] def effectCheckedResult [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
     (sums : List (ProgramCertificates.ReadSummary ι))
     (c : CodeEntry ι) (C : Certificate ι) : ProgramCertificates.CheckResult ι Unit :=
-  (ProgramCertificates.CheckResult.ofBool (!c.row.effect.freshObject && c.row.effect.elementFree)).bind fun _ =>
+  (ProgramCertificates.CheckResult.ofBool (!c.row.effect.freshObject &&
+    (c.row.effect.requires.isNone && c.row.effect.elements.isNone))).bind fun _ =>
   if c.row.effect.footprint = .top ∧ c.row.effect.fresh = false ∧ c.row.effect.onThrow = false then pure () else
     (ProgramCertificates.CheckResult.ofBool (!c.row.effect.fresh && c.exprs.all Purity.pureTerm)).orElse fun _ =>
     compositionalCheckedResult G images sums c.row.effect.footprint c.row.effect.fresh c.row.effect.onThrow c.start
@@ -977,13 +984,14 @@ result is established node by node whatever the footprint. -/
 theorem effectChecked_eq [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
     (sums : List (ProgramCertificates.ReadSummary ι))
     (c : CodeEntry ι) (C : Certificate ι) :
-    effectChecked G images sums c C = (!c.row.effect.freshObject && c.row.effect.elementFree && (
+    effectChecked G images sums c C = (!c.row.effect.freshObject &&
+      (c.row.effect.requires.isNone && c.row.effect.elements.isNone) && (
   decide (c.row.effect.footprint = .top ∧ c.row.effect.fresh = false ∧ c.row.effect.onThrow = false) ||
     ((!c.row.effect.fresh && c.exprs.all Purity.pureTerm) ||
       compositionalChecked G images sums c.row.effect.footprint c.row.effect.fresh c.row.effect.onThrow c.start
         (program c.exprs c.conts) C)
   )) := by
-  cases hfo : (!c.row.effect.freshObject && c.row.effect.elementFree)
+  cases hfo : (!c.row.effect.freshObject && (c.row.effect.requires.isNone && c.row.effect.elements.isNone))
   · simp only [effectChecked, effectCheckedResult, hfo, ProgramCertificates.CheckResult.accepted_ofBool,
       ProgramCertificates.CheckResult.accepted_bind, Bool.false_and]
   · by_cases h : c.row.effect.footprint = .top ∧ c.row.effect.fresh = false ∧ c.row.effect.onThrow = false <;>
@@ -1000,6 +1008,22 @@ def _root_.Verification.ProgramTyping.CodeEntry.goal (c : CodeEntry ι) : Goal �
   | some (.asserts p) => .asserts c.row.result (frameOffset c.store + p)
   | none => .plain c.row.result
 
+/-- What code assumes of its frame at entry: its signature's precondition on
+the call's values, at the frame's slots, which are the call's positions for
+code collecting no rest (`TypingBasics.PreAt`). -/
+def codeEntryIndices (c : CodeEntry ι) : List HeapKnowledge.IndexAtom :=
+  if c.store = none then c.row.effect.pre.map fun F => { fact := F } else []
+
+theorem codeEntryIndices_holds {c : CodeEntry ι} {L : List Tm} {h : Heap}
+    (hp : PreAt c.row.effect c.store L h) : HeapKnowledge.IndexHolds (codeEntryIndices c) (envOf L .nul) h := by
+  intro a ha _
+  unfold codeEntryIndices at ha
+  split at ha
+  · rename_i hs
+    obtain ⟨F, hF, rfl⟩ := List.mem_map.mp ha
+    exact hp hs F hF
+  · cases ha
+
 /-- One code entry, checked at its signature from the frame the signature
 describes, against an earlier table. -/
 @[nospecialize] def codeCheckedResult [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
@@ -1008,8 +1032,8 @@ describes, against an earlier table. -/
   (ProgramCertificates.CheckResult.ofBool (decide (c.arity ≤ c.row.arguments.length) &&
     c.row.effect.below c.arity)).bind fun _ =>
   (effectCheckedResult G images sums c C).bind fun _ =>
-  checkEntryResult (sums := sums) G images c.goal (program c.exprs c.conts) C c.start
-    (codeFrame c.arity c.row c.captures c.store) (admits table)
+  checkEntryResult (sums := sums) (entryIndices := codeEntryIndices c) G images c.goal (program c.exprs c.conts)
+    C c.start (codeFrame c.arity c.row c.captures c.store) (admits table)
 
 @[nospecialize] def codeCheckedUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
     (sums : List (ProgramCertificates.ReadSummary ι))
@@ -1021,8 +1045,8 @@ theorem codeCheckedUsing_eq [DecidableEq ι] (G : NormalGraph ι) (images : Inst
     (table : List (CodeEntry ι)) (c : CodeEntry ι) (C : ControlFlow.Certificate ι) :
     codeCheckedUsing G images sums table c C = (
   decide (c.arity ≤ c.row.arguments.length) && c.row.effect.below c.arity && effectChecked G images sums c C &&
-    checkEntryUsing (sums := sums) G images c.goal (program c.exprs c.conts) C c.start
-      (codeFrame c.arity c.row c.captures c.store) (admits table)
+    checkEntryUsing (sums := sums) (entryIndices := codeEntryIndices c) G images c.goal (program c.exprs c.conts)
+      C c.start (codeFrame c.arity c.row c.captures c.store) (admits table)
   ) := by
   simp only [codeCheckedUsing, codeCheckedResult, ProgramCertificates.CheckResult.accepted_bind,
     ProgramCertificates.CheckResult.accepted_ofBool, effectChecked, checkEntryUsing, Bool.and_assoc]
@@ -1036,16 +1060,17 @@ theorem codeChecked_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instan
   intro η
   simp only [codeCheckedUsing_eq, Bool.and_eq_true, decide_eq_true_eq] at h
   obtain ⟨⟨⟨harity, hbelow⟩, heff⟩, hentry⟩ := h
-  have hc : checkEntryUsing (sums := sums) (reassign G η) (images.reassign η) c.goal
-      (program c.exprs c.conts) C c.start
+  have hc : checkEntryUsing (sums := sums) (entryIndices := codeEntryIndices c) (reassign G η) (images.reassign η)
+      c.goal (program c.exprs c.conts) C c.start
       (codeFrame c.arity c.row c.captures c.store) (admits table) = true := by
-    exact (Parametricity.checkEntry_reassign G η images _ _ _ _ _ _ _).trans hentry
+    exact (Parametricity.checkEntry_reassign G η images _ _ _ _ _ _ _ _ _).trans hentry
   have hs' := Parametricity.summariesSound_reassign G η images hsums
   have ht : ProgramCertificates.CodesSound (reassign G η) (admits table) :=
     fun e he η' => htable e he η'
   refine ⟨harity, hbelow, ?_⟩
-  intro n W heap L he hw hh hvalues
-  have hs := goto_safe hc ht hs' n W heap L .nul he hw hh
+  intro n W heap L he hw hh hvalues hpre
+  have hidx := codeEntryIndices_holds hpre
+  have hs := goto_safe hc ht hs' n W heap L .nul he hw hh (hidx := hidx)
   -- The goal the graph is checked at is the signature's result, its
   -- promise included.
   have hres : GoalHolds (reassign G η) c.goal (c.goal.argument (envOf L .nul)) =
@@ -1075,8 +1100,8 @@ theorem codeChecked_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instan
   obtain ⟨⟨hfo, hel⟩, heff⟩ := heff
   have hnel : ∀ R, c.row.effect.elements = some R → False := by
     intro R hR
-    simp only [CallEffects.Effect.elementFree, Bool.and_eq_true, Option.isNone_iff_eq_none] at hel
-    rw [hel.1.2] at hR; cases hR
+    simp only [Option.isNone_iff_eq_none] at hel
+    rw [hel.2] at hR; cases hR
   by_cases htop : c.row.effect.footprint = .top ∧ c.row.effect.fresh = false ∧ c.row.effect.onThrow = false
   · -- No footprint on a throw: the throw's postcondition is vacuous.
     apply HeapObservations.SafePostExc.of_post (fun _ r h => absurd h (by simp [htop.2.2]))
@@ -1106,6 +1131,7 @@ theorem codeChecked_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instan
         simp only [checkEntryUsing_eq, Bool.and_eq_true] at hchecked
         exact hchecked.1
       have hb := goto_bounded hc ht hs' (nodes_of_checked hgraph ht hs' hp.2) hp.1 n W heap L .nul he hw hh
+        (hidx := hidx)
       rw [hres] at hb
       exact HeapObservations.SafePostExc.weaken
         (fun h' v hq r => ⟨CallEffects.Effect.within_of_holds hq.1, hq.2, fun hf => (by rw [hfo] at hf; cases hf),

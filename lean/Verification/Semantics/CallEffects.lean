@@ -400,10 +400,23 @@ theorem Effect.promised_drop {e : Effect} {pre args : List Tm} (h : e.keeps pre.
 
 /-- Whether a promise is about one of the first `n` parameters, the ones code
 of arity `n` binds. -/
-def Effect.below (n : Nat) (e : Effect) : Bool :=
+def Effect.promiseBelow (n : Nat) (e : Effect) : Bool :=
   match e.promise with
   | some p => p.param < n
   | none => true
+
+/-- Whether what a signature states of the call's values is about the
+receiver and the first `n` parameters, the ones code of arity `n` binds: its
+promise, and each position its precondition `pre` names. -/
+def Effect.below (n : Nat) (e : Effect) : Bool :=
+  e.promiseBelow n && e.pre.all fun F => F.slots.all (· ≤ n)
+
+theorem Effect.below_promise {e : Effect} {n : Nat} (h : e.below n = true) : e.promiseBelow n = true := by
+  simp only [Effect.below, Bool.and_eq_true] at h; exact h.1
+
+theorem Effect.below_pre {e : Effect} {n : Nat} (h : e.below n = true) :
+    ∀ F ∈ e.pre, ∀ s ∈ F.slots, s ≤ n := by
+  simp only [Effect.below, Bool.and_eq_true, List.all_eq_true, decide_eq_true_eq] at h; exact h.2
 
 private theorem parameters_getD : ∀ (n : Nat) (args : List Tm) (p : Nat), p < n →
     (CallArguments.parameters n args).getD p .undef = args.getD p .undef
@@ -424,7 +437,8 @@ theorem Effect.parameters_length : ∀ (n : Nat) (args : List Tm), (CallArgument
 theorem Effect.promised_frame {e : Effect} {n : Nat} (h : e.below n = true) (args vs : List Tm) :
     e.promised (CallArguments.parameters n args ++ vs) = e.promised args := by
   unfold Effect.promised
-  unfold Effect.below at h
+  have h := Effect.below_promise h
+  unfold Effect.promiseBelow at h
   split
   · rename_i p hp
     rw [hp] at h
@@ -437,7 +451,8 @@ theorem Effect.promised_frame {e : Effect} {n : Nat} (h : e.below n = true) (arg
 theorem Effect.promised_take {e : Effect} {n m : Nat} (h : e.below n = true) (hm : n ≤ m) (args : List Tm) :
     e.promised (args.take m) = e.promised args := by
   unfold Effect.promised
-  unfold Effect.below at h
+  have h := Effect.below_promise h
+  unfold Effect.promiseBelow at h
   split
   · rename_i p hp
     rw [hp] at h
@@ -445,6 +460,39 @@ theorem Effect.promised_take {e : Effect} {n m : Nat} (h : e.below n = true) (hm
     simp only [List.getD_eq_getElem?_getD, List.getElem?_take]
     rw [if_pos (by omega)]
   · rfl
+
+/-- Code binding `n` parameters reads the precondition's positions in its
+frame as the call passed them: the receiver, then each actual it binds. -/
+theorem Effect.pre_frame {e : Effect} {n : Nat} (h : e.below n = true) {F : HeapKnowledge.IndexFact}
+    (hF : F ∈ e.pre) (r : Tm) (args vs : List Tm) (d : Tm) (heap : Heap) :
+    F.HoldsAt (callEnv r args) heap ↔ F.HoldsAt (envOf (r :: CallArguments.parameters n args ++ vs) d) heap := by
+  refine HeapKnowledge.IndexFact.holdsAt_congr fun s hs => ?_
+  have hle := Effect.below_pre h F hF s hs
+  simp only [callEnv, envOf]
+  cases s with
+  | zero => simp
+  | succ i =>
+    have hp : (CallArguments.parameters n args).getD i .undef = args.getD i .undef :=
+      parameters_getD n args i (by omega)
+    have hlen : i < (CallArguments.parameters n args).length := by rw [Effect.parameters_length]; omega
+    obtain ⟨x, hx⟩ : ∃ x, (CallArguments.parameters n args)[i]? = some x :=
+      ⟨_, List.getElem?_eq_getElem hlen⟩
+    simp only [List.getD_eq_getElem?_getD, hx, Option.getD_some] at hp
+    simp only [Nat.add_one_ne_zero, if_false, Nat.add_sub_cancel, List.getD_eq_getElem?_getD,
+      List.cons_append, List.getElem?_cons_succ, List.getElem?_append_left hlen, hx, Option.getD_some, hp]
+
+/-- Actuals past those code binds do not change what its precondition reads. -/
+theorem Effect.pre_take {e : Effect} {n m : Nat} (h : e.below n = true) (hm : n ≤ m) {F : HeapKnowledge.IndexFact}
+    (hF : F ∈ e.pre) (r : Tm) (args : List Tm) (heap : Heap) :
+    F.HoldsAt (callEnv r (args.take m)) heap ↔ F.HoldsAt (callEnv r args) heap := by
+  refine HeapKnowledge.IndexFact.holdsAt_congr fun s hs => ?_
+  have hle := Effect.below_pre h F hF s hs
+  simp only [callEnv]
+  cases s with
+  | zero => simp
+  | succ i =>
+    simp only [Nat.add_one_ne_zero, if_false, Nat.add_sub_cancel, List.getD_eq_getElem?_getD, List.getElem?_take]
+    rw [if_pos (by omega)]
 
 theorem Effect.result_drop (e : Effect) (n : Nat) (R : Fam) (a : Tm) :
     (e.drop n).result R a = e.result R a := by
@@ -790,7 +838,7 @@ def ConstructPromise (Ξ : Fam) (effect : Effect) (P : ArgFam) (R : Fam) (k : Na
     (v : Val) : Prop :=
   ∀ (j : Nat) (hj : j < k) (U : WorldT j),
     WExt (trunc j (Nat.le_of_lt hj) W) U → WorldAdm U → ∀ (heap : Heap), HeapOk j U heap →
-      ∀ args, CallArguments.Values args → P j U args →
+      ∀ args, CallArguments.Values args → P j U args → effect.Requires .undef args heap →
         ∃ result, ConstructsTo v args result ∧
           SafePostExc Ξ (effect.result R (effect.promised args)) (effect.post .undef heap)
             (effect.excPost .undef heap) j U heap result
@@ -798,13 +846,13 @@ def ConstructPromise (Ξ : Fam) (effect : Effect) (P : ArgFam) (R : Fam) (k : Na
 theorem ConstructPromise.down {effect P R n W v}
     (h : ConstructPromise Ξ effect P R (n + 1) W v) :
     ConstructPromise Ξ effect P R n (trunc n (Nat.le_succ n) W) v := by
-  intro j hj U hx hu heap hh args hv ha
-  exact h j (by omega) U (by rwa [trunc_trunc] at hx) hu heap hh args hv ha
+  intro j hj U hx hu heap hh args hv ha hq
+  exact h j (by omega) U (by rwa [trunc_trunc] at hx) hu heap hh args hv ha hq
 
 theorem ConstructPromise.mono {effect P R n W W' v} (hx : WExt W W')
     (h : ConstructPromise Ξ effect P R n W v) : ConstructPromise Ξ effect P R n W' v := by
-  intro j hj U hy hu heap hh args hv ha
-  exact h j hj U (WExt_trans (WExt_trunc (Nat.le_of_lt hj) hx) hy) hu heap hh args hv ha
+  intro j hj U hy hu heap hh args hv ha hq
+  exact h j hj U (WExt_trans (WExt_trunc (Nat.le_of_lt hj) hx) hy) hu heap hh args hv ha hq
 
 theorem ConstructPromise.weaken' {Ξ Ξ' : Fam} {effect effect' P P' R T k W v}
     (he : effect.Covers effect')
@@ -812,8 +860,8 @@ theorem ConstructPromise.weaken' {Ξ Ξ' : Fam} {effect effect' P P' R T k W v}
     (hacc : ∀ j, j < k → ∀ U args, P' j U args → P j U args)
     (hres : ∀ j, j < k → ∀ U u, R j U u → T j U u)
     (h : ConstructPromise Ξ effect P R k W v) : ConstructPromise Ξ' effect' P' T k W v := by
-  intro j hj U hx hu heap hh args hv ha
-  obtain ⟨result, hc, hs⟩ := h j hj U hx hu heap hh args hv (hacc j hj U args ha)
+  intro j hj U hx hu heap hh args hv ha hq
+  obtain ⟨result, hc, hs⟩ := h j hj U hx hu heap hh args hv (hacc j hj U args ha) (he.2.2.2 .undef args heap hq)
   exact ⟨result, hc, SafePostExc.consequence_below' (fun m hm => hexc m (by omega))
     (fun m hm U' u hu => he.2.1 T args m U' u
       (Effect.result_mono effect (hres m (by omega) U') (hres m (by omega) U') hu)) (he.1 .undef heap)
@@ -844,6 +892,7 @@ theorem ConstructPromise.erase {effect P R k W v} (hp : effect.plain = true)
           ∃ result, ConstructsTo v args result ∧ Safe Ξ R j U heap result := by
   intro j hj U hx hu heap hh args hv ha
   obtain ⟨result, hc, hs⟩ := h j hj U hx hu heap hh args hv ha
+    (Effect.requires_none (Effect.plain_requires hp) (Effect.plain_pre hp) .undef args heap)
   rw [Effect.result_plain hp] at hs
   exact ⟨result, hc, HeapObservations.erase hs.post⟩
 
@@ -1047,6 +1096,7 @@ theorem construct_safe_exc {effect : Effect} (hpl : effect.plain = true) {P : Ar
     obtain ⟨result, ⟨fs, c, enter, oid, rfl, hc, rfl⟩, hs⟩ := hf n (Nat.lt_succ_self n) U (WExt_refl _)
       (WorldAdm_trunc _ hw) heap (HeapOk_trunc n W heap hh) _ hvp
       (hP.transfer ha n (Nat.le_succ n) U (WExt_refl _))
+      (Effect.requires_none (Effect.plain_requires hpl) (Effect.plain_pre hpl) .undef _ heap)
     rw [CallArguments.construction_pad hc _ _ hpad, Effect.result_plain hpl] at hs
     exact .inr ⟨U, heap, _, WExt_refl _, WorldAdm_trunc _ hw,
       CallArguments.construction_step hc hv heap, HeapOk_trunc n W heap hh, hs⟩

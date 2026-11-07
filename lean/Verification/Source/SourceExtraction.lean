@@ -286,7 +286,7 @@ did not mention grow it, and the request carries the result. -/
     return (inputs, R, entry, promise, entrySeparation)
   return {
     toRequest := ⟨built.types, built.program, built.claims, R, entry.label, inputs, built.codes, promise,
-      entrySeparation⟩
+      entrySeparation, []⟩
     obligations := built.obligations
     sourceMap := built.source.sourceMap
     assertions := built.source.assertions

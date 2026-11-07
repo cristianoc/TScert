@@ -458,6 +458,7 @@ theorem graphRest_invoke {G : NormalGraph ι} {arity E K start Cs A vs n W}
           · rcases List.mem_append.mp hm with hm | hm
             · exact CallArguments.parameters_property (P := fun v => isVal v = true) rfl hvals v hm
             · exact hvalues v hm)
+      (fun hn => by cases hn)
 
 /-- **Graph code with a rest meets its variadic signatures**: the actuals past
 its fixed parameters are collected, not discarded (`restsT_of_graph` is the
@@ -597,14 +598,14 @@ theorem offers_self {G : NormalGraph ι} {arity E K start Cs vs} {kind : Invoke}
   intro W hvs
   apply (represents_back hr n W _)
   refine ⟨⟨⟨fs, _, _, rfl, callable_of_kind hkind, hself⟩, ?_⟩, ⟨⟨fs, _, _, rfl, callable_of_kind hkind, hself⟩, ?_⟩⟩
-  · intro q hq j hj U hx hu heap hh r hrv hrr args hvals ha _
+  · intro q hq j hj U hx hu heap hh r hrv hrr args hvals ha hreq
     obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hq
     have henv := hvs.transfer j (Nat.le_of_lt hj) U hx
     have hF := ih j hj U henv
     exact ⟨_, .graph hrv hvals (hbL p hp j U r hrr),
       graph_invoke_at (ho p (List.mem_append_left _ hp)) (henv.withSelfAt hlen hself hF)
-        (Values.withSelf hvalues rfl) hu hh hrr ha⟩
-  · intro q hq j hj U hx hu heap hh r hrv hrr args hvals ha _
+        (Values.withSelf hvalues rfl) hu hh hrr ha (fun F hF => hreq.2 F hF)⟩
+  · intro q hq j hj U hx hu heap hh r hrv hrr args hvals ha hreq
     obtain ⟨s, hsm, rfl⟩ := List.mem_map.mp hq
     have hspec := ho _ (List.mem_append_right _ (List.mem_map.mpr ⟨s, hsm, rfl⟩))
     have hle : arity ≤ s.arguments.1.length := hspec.1
@@ -614,6 +615,8 @@ theorem offers_self {G : NormalGraph ι} {arity E K start Cs vs} {kind : Invoke}
     have hsafe := graph_invoke_at hspec (henv.withSelfAt hlen hself hF) (Values.withSelf hvalues rfl) hu hh
       (args := args.take s.arguments.1.length) hrr
       (by simpa [RestArrow.mapWith, Contract.map, RestArrow.fixed] using ha.1)
+      (fun F hF => (CallEffects.Effect.pre_take hbelow hle hF r args heap).mpr
+        (hreq.2 F (by simpa [RestArrow.mapWith, Contract.map, RestArrow.fixed] using hF)))
     have hp : CallArguments.parameters arity (args.take s.arguments.1.length) =
         CallArguments.parameters arity args := by
       rw [← CallArguments.parameters_take arity (args.take _), List.take_take,
@@ -634,12 +637,12 @@ theorem ctorsT_of_graph {G : NormalGraph ι} {arity E K start Cs vs n W} {U : Ty
       (.objAt fs (.graph arity E K start vs .construct) oid) := by
   have hself : Scoped 0 (.objAt fs (.graph arity E K start vs .construct) oid) := by simpa [Scoped] using hsc
   refine ⟨⟨fs, _, _, _, _, _, _, _, rfl, hself⟩, ?_⟩
-  intro q hq j hj V hx hv heap hh args _ ha
+  intro q hq j hj V hx hv heap hh args _ ha hreq
   obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hq
   refine ⟨_, ⟨fs, _, _, _, rfl, rfl, rfl⟩, ?_⟩
   exact graph_invoke (row := ⟨U, p.arguments, p.result, p.effect⟩) (hs p hp) (hvs.withSelf hcs hself)
     (Values.withSelf hvalues rfl) hj hx hv hh
-    ((represents_back hu j V _) rfl) (ArgsShort_of_exact ha)
+    ((represents_back hu j V _) rfl) (ArgsShort_of_exact ha) (fun F hF => hreq.2 F hF)
 
 /-- The row a class's graph code is checked at for a variadic construct
 signature with fixed parameters `Qs` and element rest `El`: the fixed
@@ -680,7 +683,7 @@ theorem ctorRestsT_of_graph {G : NormalGraph ι} {arity E K start Cs vs n W} {U 
       (.objAt fs (.graph arity E K start vs .construct) oid) := by
   have hself : Scoped 0 (.objAt fs (.graph arity E K start vs .construct) oid) := by simpa [Scoped] using hsc
   refine ⟨⟨fs, _, _, _, _, _, _, _, rfl, hself⟩, ?_⟩
-  intro q hq j hj V hx hv heap hh args _ ha
+  intro q hq j hj V hx hv heap hh args _ ha _
   obtain ⟨s, hsm, rfl⟩ := List.mem_map.mp hq
   obtain ⟨hplain, El, hel, hspec⟩ := hs s hsm
   obtain ⟨hlen, hfix, hext⟩ := ha
@@ -704,6 +707,7 @@ theorem ctorRestsT_of_graph {G : NormalGraph ι} {arity E K start Cs vs n W} {U 
     (hvs.withSelf hcs hself) (Values.withSelf hvalues rfl) hj hx hv hh ((represents_back hu j V _) rfl)
     (args := args.take (s.arguments.1.length + (arity - s.arguments.1.length)))
     (by simpa [ctorRestParams, List.map_append, List.map_replicate] using hshort)
+    (fun F hF => by rw [Effect.plain_pre hplain] at hF; cases hF)
   have hp : CallArguments.parameters arity (args.take (s.arguments.1.length + (arity - s.arguments.1.length))) =
       CallArguments.parameters arity args := by
     rw [← CallArguments.parameters_take arity (args.take _), List.take_take,

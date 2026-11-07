@@ -1626,6 +1626,43 @@ claim Lean checks on every edge into the entry claiming it.
 read). Forged controls in `pipeline/test.mts`: each negative's read claimed at
 the element type, with and without a strict bound claimed at its statement.
 
+
+### Written preconditions
+
+A function's signature may state a precondition on the call's values
+(`pre`, [reads below the length](#reads-below-the-length)); code is checked
+assuming it, and every call establishes it (`call-requires`). The arrow's
+meaning assumes it of each call (`PromiseWith`, `ConstructPromise`), so the
+safety it gives is conditional on it:
+
+```math
+f\in⟦(\vec A)\Rightarrow_{\phi}^{P}R⟧\iff\forall r\,\vec a\,h.\ \vec a\in⟦\vec A⟧\land P[0\mapsto r,\ i+1\mapsto a_i](h)\Rightarrow f(r,\vec a)\ \text{safe at}\ R\ \text{within}\ \phi
+```
+
+**Code.** Graph code of arity $`n`$ binds its receiver and its first $`n`$
+parameters at the call's positions (`codeFrame`), so a precondition naming
+positions up to $`n`$ (`Effect.below`) is read in the frame as the call
+passed it (`Effect.pre_frame`, proved). The code is checked from an entry
+whose knowledge may state the precondition's facts at those slots
+(`GraphCode.codeEntryIndices`, `ControlFlow.entryKnows`), and its
+specification assumes them (`TypingBasics.PreAt`, `GraphCodeSpec`); invoking
+it supplies them from the arrow's precondition (`graph_invoke`). Code
+collecting a rest assumes none.
+
+**Units.** A unit's request carries the index facts it assumes of its inputs
+(`Request.entryIndices`), as it carries their separation; its entry may know
+them, and its safety assumes them (`RequestsSafe`, in the conclusion of
+`checkUnitJson_safe`):
+
+```math
+\mathrm{EnvOk}(\Gamma_{\mathit{in}},\rho)\land\mathrm{Sep}(\rho)\land\mathrm{IndexHolds}(\mathit{entryIndices},\rho,h)\Rightarrow\text{the unit runs safely from }\rho,h
+```
+
+The facts a unit assumes are its function's written precondition; every call
+of the function at its declared signature establishes the same facts. That a
+declaration's signature and its unit's request state the same precondition is
+a property of the front end, which reads both from the one written clause.
+
 ### A literal with spreads
 
 A store literal evaluates its parts left to right, and a spread of a ready

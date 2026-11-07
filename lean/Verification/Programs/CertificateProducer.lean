@@ -57,24 +57,31 @@ structure PointClaim (ι : Type) where
     (claims : List (PointClaim ι)) (C : ControlFlow.Certificate ι) (start : Nat)
     (inputs : List (Ty ι) := []) (codes : CodeEntry ι → Bool := fun _ => false)
     (checker : HeapExpressionRules.Checker G images := HeapExpressionRules.Checker.ordinary G images)
-    (sums : List (ReadSummary ι) := []) (entrySeparation : HeapSeparation.Separation := {}) : CheckResult ι Unit :=
+    (sums : List (ReadSummary ι) := []) (entrySeparation : HeapSeparation.Separation := {})
+    (entryIndices : List HeapKnowledge.IndexAtom := []) : CheckResult ι Unit :=
   (CheckResult.ofBool (decide (C.map signature = claims))).bind fun _ =>
-  checkEntryResult (checker := checker) (sums := sums) (entrySeparation := entrySeparation) G images R P C start inputs codes
+  checkEntryResult (checker := checker) (sums := sums) (entrySeparation := entrySeparation)
+    (entryIndices := entryIndices) G images R P C start inputs codes
 
 @[nospecialize] def acceptUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (R : ControlFlow.Goal ι) (P : Program)
     (claims : List (PointClaim ι)) (C : ControlFlow.Certificate ι) (start : Nat)
     (inputs : List (Ty ι) := []) (codes : CodeEntry ι → Bool := fun _ => false)
     (checker : HeapExpressionRules.Checker G images := HeapExpressionRules.Checker.ordinary G images)
-    (sums : List (ReadSummary ι) := []) (entrySeparation : HeapSeparation.Separation := {}) : Bool :=
-  (acceptResult (checker := checker) (sums := sums) (entrySeparation := entrySeparation) G images R P claims C start inputs codes).accepted
+    (sums : List (ReadSummary ι) := []) (entrySeparation : HeapSeparation.Separation := {})
+    (entryIndices : List HeapKnowledge.IndexAtom := []) : Bool :=
+  (acceptResult (checker := checker) (sums := sums) (entrySeparation := entrySeparation)
+    (entryIndices := entryIndices) G images R P claims C start inputs codes).accepted
 
 theorem acceptUsing_eq [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (R : ControlFlow.Goal ι) (P : Program)
     (claims : List (PointClaim ι)) (C : ControlFlow.Certificate ι) (start : Nat)
     (inputs : List (Ty ι)) (codes : CodeEntry ι → Bool)
     (checker : HeapExpressionRules.Checker G images := HeapExpressionRules.Checker.ordinary G images)
-    (sums : List (ReadSummary ι)) (entrySeparation : HeapSeparation.Separation := {}) :
-    acceptUsing (checker := checker) (sums := sums) (entrySeparation := entrySeparation) G images R P claims C start inputs codes = (
-  decide (C.map signature = claims) && checkEntryUsing (checker := checker) (sums := sums) (entrySeparation := entrySeparation) G images R P C start inputs codes
+    (sums : List (ReadSummary ι)) (entrySeparation : HeapSeparation.Separation := {})
+    (entryIndices : List HeapKnowledge.IndexAtom := []) :
+    acceptUsing (checker := checker) (sums := sums) (entrySeparation := entrySeparation)
+      (entryIndices := entryIndices) G images R P claims C start inputs codes = (
+  decide (C.map signature = claims) && checkEntryUsing (checker := checker) (sums := sums)
+    (entrySeparation := entrySeparation) (entryIndices := entryIndices) G images R P C start inputs codes
   ) := by
   simp only [acceptUsing, acceptResult, CheckResult.accepted_bind,
     CheckResult.accepted_ofBool, checkEntryUsing]
@@ -2218,7 +2225,7 @@ heap entailment; it is not limited to ordinary subtype proof construction. -/
     (checker : HeapExpressionRules.Checker G images := HeapExpressionRules.Checker.ordinary G images)
     (aliases : List (ι × ι) := []) (answers : Answered G := {})
     (recheck : Option ((i : InstanceImageCheck G) → HeapExpressionRules.Checker G i) := none)
-    (entrySeparation : HeapSeparation.Separation := {}) :
+    (entrySeparation : HeapSeparation.Separation := {}) (entryIndices : List HeapKnowledge.IndexAtom := []) :
     Except (Failure ι) (ControlFlow.Certificate ι) × Answered G :=
   let promised := match R with
     | .guards T _ | .asserts T _ => [T]
@@ -2233,7 +2240,9 @@ heap entailment; it is not limited to ordinary subtype proof construction. -/
     let checked := match recheck with
       | some f => let images' := answers.images images
         acceptResult G images' R P claims C start inputs codes (f images') answers.summaries.toList entrySeparation
+          entryIndices
       | none => acceptResult G images R P claims C start inputs codes checker answers.summaries.toList entrySeparation
+          entryIndices
     if checked.accepted then .ok C
     else match checked.exhaustion with
       | some stop => .error (.exhaustedExpression (stop.nodeLabel.getD start) stop)

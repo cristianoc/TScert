@@ -275,6 +275,11 @@ structure Request (σ ι : Type) where
   unit's module cells (SOURCE-ELABORATION.md, "Module cells"). The entry may
   know it, and the safety theorems assume it of the environment. -/
   entrySeparation : HeapSeparation.Separation := {}
+  /-- The index facts the request assumes of its inputs: the written
+  precondition of the function it checks (PROGRAM-TYPING.md, "Written
+  preconditions"). The entry may know them, and the safety theorems assume
+  them of the environment. -/
+  entryIndices : List HeapKnowledge.IndexAtom := []
   deriving ToJson, FromJson
 
 /-- What a request's returns establish: its result, or its promise. -/
@@ -555,7 +560,8 @@ variable {σ ι : Type} [Labels ι] [StoreView σ ι]
   (codeTableResult r c).bind fun table =>
     (CertificateProducer.acceptResult (checker := checker) (sums := c.readSummaries) (graph r)
       (StoreView.images r.types) r.goal r.program
-      r.claims c.certificate r.start r.inputs (GraphCode.admits table) r.entrySeparation).map fun _ => table
+      r.claims c.certificate r.start r.inputs (GraphCode.admits table) r.entrySeparation r.entryIndices).map
+        fun _ => table
 
 /-- This check remains independent of the producer and its search settings. -/
 @[nospecialize] def verify (r : Request σ ι) (c : Response ι)
@@ -569,7 +575,7 @@ theorem verify_eq (r : Request σ ι) (c : Response ι)
     verify r c (checker := checker) = (validRequest r && validResponse r c &&
       match codeTable r c with
       | some table => CertificateProducer.acceptUsing (checker := checker) (sums := c.readSummaries)
-          (entrySeparation := r.entrySeparation) (graph r)
+          (entrySeparation := r.entrySeparation) (entryIndices := r.entryIndices) (graph r)
           (StoreView.images r.types) r.goal r.program
           r.claims c.certificate r.start r.inputs (GraphCode.admits table)
       | none => false) := by
@@ -587,7 +593,7 @@ theorem verifyResult_value_eq (r : Request σ ι) (c : Response ι)
       if validRequest r && validResponse r c then
         (codeTable r c).bind fun table =>
           if CertificateProducer.acceptUsing (checker := checker) (sums := c.readSummaries)
-              (entrySeparation := r.entrySeparation) (graph r)
+              (entrySeparation := r.entrySeparation) (entryIndices := r.entryIndices) (graph r)
               (StoreView.images r.types) r.goal r.program
               r.claims c.certificate r.start r.inputs (GraphCode.admits table) then some table else none
       else none := by
@@ -778,7 +784,7 @@ producer's caller for every search it makes (`produceResponseUsing`). -/
     Except String (ControlFlow.Certificate ι × CertificateProducer.Answered G) :=
   match CertificateProducer.produceUsing G I labels fuel (goal.getD r.goal)
       r.program r.claims r.start [] r.inputs suggestions known
-      requirements cuts (GraphCode.admits table) checker aliases answers recheck r.entrySeparation with
+      requirements cuts (GraphCode.admits table) checker aliases answers recheck r.entrySeparation r.entryIndices with
   | (.ok c, answers) => pure (c, answers)
   | (.error e, _) =>
     let location := match e with
@@ -894,7 +900,7 @@ every instantiation of them. -/
 theorem verify_safe_at {r : Request σ ι} {c : Response ι} (hc : verify r c = true)
     (η : MixedAssignment ι) (n W h ρ)
     (he : EnvOk (reassign (graph r) η) r.inputs ρ n W) (hw : WorldAdm W) (hh : HeapOk n W h)
-    (hsep : HeapSeparation.Holds r.entrySeparation ρ) :
+    (hsep : HeapSeparation.Holds r.entrySeparation ρ) (hidx : HeapKnowledge.IndexHolds r.entryIndices ρ h) :
     SafeGraph (excOf (reassign (graph r) η)) r.program (GoalHolds (reassign (graph r) η) r.goal (r.goal.argument ρ))
       n W h (.at r.start ρ) := by
   simp only [verify_eq, Bool.and_eq_true] at hc
@@ -903,7 +909,7 @@ theorem verify_safe_at {r : Request σ ι} {c : Response ι} (hc : verify r c = 
   · rename_i table ht
     have hsound : ProgramCertificates.CodesSound (reassign (graph r) η) (GraphCode.admits table) :=
       fun e he η' => codeTable_sound ht e he η'
-    exact Parametricity.accepted_at hx η n W h ρ he hw hh hsound (codeTable_summaries ht) hsep
+    exact Parametricity.accepted_at hx η n W h ρ he hw hh hsound (codeTable_summaries ht) hsep hidx
   · contradiction
 
 /-- A request checked using its enclosing scheme's descriptor evidence is
@@ -924,7 +930,8 @@ theorem verify_qualified_safe_at {r : Request σ ι} {c : Response ι}
     (bounded : ∀ m, Bounded (mixedMeaning (graph r)) η source As m)
     (n W h ρ)
     (he : EnvOk (reassign (graph r) (assign η source.binders As)) r.inputs ρ n W)
-    (hw : WorldAdm W) (hh : HeapOk n W h) (hsep : HeapSeparation.Holds r.entrySeparation ρ) :
+    (hw : WorldAdm W) (hh : HeapOk n W h) (hsep : HeapSeparation.Holds r.entrySeparation ρ)
+    (hidx : HeapKnowledge.IndexHolds r.entryIndices ρ h) :
     SafeGraph (excOf (reassign (graph r) (assign η source.binders As))) r.program
       (GoalHolds (reassign (graph r) (assign η source.binders As)) r.goal (r.goal.argument ρ))
       n W h (.at r.start ρ) := by
@@ -935,7 +942,7 @@ theorem verify_qualified_safe_at {r : Request σ ι} {c : Response ι}
     simp only [CertificateProducer.acceptUsing_eq (checker := HeapExpressionRules.Checker.withSubtyping
       (graph r) (StoreView.images r.types) body
       (fun h => by rw [bodyCheck]; exact ProgramCertificates.lexicalBodyCheck_ordinary h))
-      (entrySeparation := r.entrySeparation),
+      (entrySeparation := r.entrySeparation) (entryIndices := r.entryIndices),
       Bool.and_eq_true] at accepted
     let body' := ProgramCertificates.lexicalBodySubtyping (graph r)
       (StoreView.images r.types) source domain aliases aliasesSound η As length allowed bounded
@@ -949,10 +956,11 @@ theorem verify_qualified_safe_at {r : Request σ ι} {c : Response ι}
       rw [same]; exact ord ((Parametricity.check_reassign _ _ _ _ _ _).symm.trans h)
     have hc := (Parametricity.checkBodyEntry_reassign (graph r)
       (assign η source.binders As) (StoreView.images r.types) body body' same ord ord'
-      r.goal r.program c.certificate r.start r.inputs (GraphCode.admits table) c.readSummaries r.entrySeparation).trans accepted.2
+      r.goal r.program c.certificate r.start r.inputs (GraphCode.admits table) c.readSummaries r.entrySeparation
+      r.entryIndices).trans accepted.2
     exact ControlFlow.accepted_inputs_safe hc n W h ρ he hw hh
       (fun e he η' => codeTable_sound ht e he η')
-      (Parametricity.summariesSound_reassign _ _ _ (codeTable_summaries ht)) hsep
+      (Parametricity.summariesSound_reassign _ _ _ (codeTable_summaries ht)) hsep hidx
   · contradiction
 
 end
