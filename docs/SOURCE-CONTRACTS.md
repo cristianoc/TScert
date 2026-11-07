@@ -2346,7 +2346,9 @@ number`, or a number index at the string index's contract, is the string
 index alone. A named key reads through an index whose class surely admits it,
 at $`V\mid\mathtt{undefined}`$ (`readDict`); a computed `string`, `number` or
 `symbol` key through an index over a class containing its keys (`indexDict`),
-the narrower number index where both admit it. No write in place through an
+the narrower number index where both admit it. A key every value of
+which is a number — `number`, a numeric literal, or a union of them — is a
+computed `number` key (`index-read-dict-union`). No write in place through an
 index is typed: a write at a key known only at run time is a
 [key-adding write](PROGRAM-TYPING.md#key-adding-writes) on a local's own
 object, its copy with an allocation at the key over it. A numeric property name is the key its value's `ToString` spells
@@ -4077,7 +4079,10 @@ location of it, as it holds no element of a view of bytes. A read `o.k`
 and a write `o.k = v`, with TypeScript typing `o` as 2D contexts only (each
 part a context or an intersection with one, as `"lang" in o` narrows it),
 at a key the context states a getter or a setter for, are calls of the
-intrinsics stating them:
+intrinsics stating them. The named access is read in either spelling,
+`o.k` or `o["k"]` at a string literal key, which TypeScript gives one
+meaning; an optional chain at the read or the write is not the reviewed
+form (`invalid-canvas-bracket-optional`):
 
 ```math
 ⟦o.k⟧=\%\mathrm{CanvasGet{:}k}\%(⟦o⟧)\qquad ⟦o.k=v⟧=\%\mathrm{CanvasSet{:}k}\%(⟦o⟧,⟦v⟧)\ \ \textsf{canvas-accessors}

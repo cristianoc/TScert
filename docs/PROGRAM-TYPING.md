@@ -1335,7 +1335,8 @@ empty array), `invalid-array-last-sparse`, `invalid-array-last-after-pop`,
 
 ### Writes at a checked index
 
-A write `xs[k] = v` at a key TypeScript types as `number`, into an array whose
+A write `xs[k] = v` at a key every value of which is a number — `number`, a
+numeric literal, or a union of them — into an array whose
 store contract is homogeneous and writable, $`\mathsf{list}(\langle[\,],[\,],E,\mathrm{writable}\rangle)`$,
 lowers to the slots of the receiver, the key and the value, as a literal
 index's write does, and is admitted where the heap knowledge bounds the key by

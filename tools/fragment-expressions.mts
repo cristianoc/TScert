@@ -10,7 +10,7 @@ import { bigintText, CLASS_ACCESS, numericLexeme, GENERIC_METHOD_RECEIVER, numer
 import type { Expr, LambdaParamAst, PatternAst, Stmt, ArithOp, BinaryOp, UnaryOp, ArrayElemAst, TypeofShape } from "./fragment.mts";
 import { CHAIN, OBJECT } from "./fragment.mts";
 import type { Span } from "./span.mts";
-import { nameOf, isTypeAlias } from "./syntax.mts";
+import { nameOf, isTypeAlias, namedAccess } from "./syntax.mts";
 import { asyncReturnName, elementAtName, hasPropertyName, literalTerm, ordinaryHasInstanceName } from "./intrinsics.mts";
 import { guardResult } from "./fragment-guards.mts";
 import { FUNCTION_TO_STRING, GENERATOR, HAS_INSTANCE, booleanForm, booleanReturn, TAG_WRITE, INSTANCE_STATIC, type ObjectPart, SPREAD_POSITION, STATIC_INIT_CLASS, STATIC_INIT_CLOSURE, bindingScope, callableAssign, classKey, completes, firstOptional, inKey, literalExpr, parameterName, propertyKeyText, prototypeName, elementBracket, wrappedMemberCallee, WRAPPED_MEMBER_CALL, skipParentheses, staticFieldOf, staticMethodOf, staticName, fileClasses, TYPEOF_SHAPES } from "./fragment-support.mts";
@@ -378,6 +378,12 @@ export function expr(this: Gate, node: Expression): Within<{ value: "any"; store
     if (entry !== undefined)
       return { k: "index", pos: gate.span(node), e: { k: "id", pos: gate.span(node.expression), name: entry },
         key: { k: "lit", pos: gate.span(node.argumentExpression), lit: { a: "numberlit", v: "1" } } };
+    // `o["k"]` of a 2D context at a key its host getter reads is the getter's
+    // intrinsic `%CanvasGet:k%(o)`, as the dot spelling (`library-types.mts`).
+    const hostGet = gate.hostMembers.get(gate.span(node).join(":"));
+    if (hostGet !== undefined)
+      return gate.intrinsic(hostGet, gate.span(node), gate.span(node.argumentExpression),
+        [gate.expr(node.expression)]);
     // `b[k]` of a view of bytes is `%ByteAt%(b, k)` (`library-types.mts`).
     const byteAt = gate.byteReads.get(gate.span(node).join(":"));
     if (byteAt !== undefined)
@@ -1964,12 +1970,14 @@ export function binary(this: Gate, node: BinaryExpression): Within<{ value: "any
     if (symbolKey !== undefined && ts.isElementAccessExpression(node.left) && !node.left.questionDotToken)
       return { k: "write", pos: gate.span(node), field: { symbol: symbolKey },
         receiver: gate.expr(node.left.expression), rhs: gate.expr(node.right) };
-    // `o.k = v` of a 2D context at a key its host setter writes is the
-    // setter's intrinsic `%CanvasSet:k%(o, v)` (`library-types.mts`).
-    const hostSet = ts.isPropertyAccessExpression(node.left)
-      ? gate.hostMembers.get(gate.span(node.left).join(":")) : undefined;
-    if (hostSet !== undefined && ts.isPropertyAccessExpression(node.left))
-      return gate.intrinsic(hostSet, gate.span(node), gate.span(node.left.name),
+    // `o.k = v`, or `o["k"] = v`, of a 2D context at a key its host setter
+    // writes is the setter's intrinsic `%CanvasSet:k%(o, v)`
+    // (`library-types.mts`).
+    const hostTarget = namedAccess(node.left);
+    const hostSet = hostTarget ? gate.hostMembers.get(gate.span(node.left).join(":")) : undefined;
+    if (hostSet !== undefined && hostTarget &&
+        (ts.isPropertyAccessExpression(node.left) || ts.isElementAccessExpression(node.left)))
+      return gate.intrinsic(hostSet, gate.span(node), gate.span(hostTarget.keyNode),
         [gate.expr(node.left.expression), gate.expr(node.right)]);
     // `b[k] = v` of a view of bytes at a number is `%ByteSet%(b, k, v)`
     // (`library-types.mts`).
