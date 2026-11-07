@@ -1719,7 +1719,12 @@ branch on the left's value (`choose`), whose edge promotes the facts
 conditional on it; a statement writing no heap (slots, constants,
 operators, reads, element reads, assignments of value bindings) keeps those
 whose bindings it does not assign; every other statement forgets them; a merge
-keeps those both paths hold. Of the linear facts, a merge keeps a form
+keeps those both paths hold. A linear fact's binding that an assignment
+rebinds or that leaves scope is eliminated as Lean eliminates a dropped
+slot: each pair of facts of opposite signs on one of its terms combined to
+cancel it, the derived facts naming it no more kept (`Linear_facts.forget`),
+so `let j = i + 1; … i = j` keeps $`1\le j`$, then $`0\le i`$, from
+$`0\le i`$. Of the linear facts, a merge keeps a form
 $`c\cdot x`$ at the bound $`\max(d_1,d_2)`$, $`d_i`$ the least of the bounds
 either path states, $`0`$ and $`2^{32}-1`$ that path $`i`$'s facts, with the
 ranges of the lengths and element counts they name, entail, where each path
@@ -1790,7 +1795,8 @@ ranges of the lengths and element counts they name entailing its bounds.
 `pretext-array-element-read`, `logical-guard-reads` (reads in the right
 operand of `&&` and `||`, a strict equality's `false` answer among them),
 `adjacent-pair-reads` (reads at `i` and `i + 1` under `i + 1 < xs.length`,
-and a loop to `e !== n`) and
+and a loop to `e !== n`), `derived-index-loop` (an index reassigned from one
+derived from it) and
 `typed-array-reads-below-length` (a
 `Uint8Array`, a `Float64Array`, an `Int32Array` written and read back, and a
 `@requires` over a view's length). Negative, each run under Node:
@@ -1799,7 +1805,8 @@ and a loop to `e !== n`) and
 read), `invalid-logical-guard-read-inclusive` (`e <= xs.length && xs[e]!`),
 `invalid-logical-guard-read-wrong-answer` (`e < xs.length || xs[e]!`),
 `invalid-logical-guard-read-equal` (`e !== xs.length || xs[e]!`),
-`invalid-adjacent-pair-read-past` (a read at `i + 1` under `i < xs.length`), `invalid-typed-array-read-at-length` (a loop to `i <= b.length`) and
+`invalid-adjacent-pair-read-past` (a read at `i + 1` under `i < xs.length`),
+`invalid-derived-index-loop-negative` (an index reassigned to `j - 2`), `invalid-typed-array-read-at-length` (a loop to `i <= b.length`) and
 `invalid-typed-array-read-other-length` (a read of `b` below another view's
 length). Forged controls in `pipeline/test.mts`: each array negative's read
 claimed at the element type, with and without a strict bound claimed at its

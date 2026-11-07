@@ -111,6 +111,13 @@ let statements callbacks flow_graph register_following owner_span env0 ss =
       | Some s -> s | None -> Json.fail "flow operation names missing source syntax" in
     let scope bindings env =
       let live n = List.mem_assoc n env0 || List.exists (fun (b:Flow.binding) -> b.name=n) bindings in
+      (* A binding leaving scope is eliminated from the linear facts
+         (`Linear_facts.forget`), as Lean eliminates a dropped slot. *)
+      let dead = List.sort_uniq compare (List.concat_map (fun ((t,_) : Linear_facts.fact) ->
+        List.filter_map (fun (x,_) -> let b = Linear_facts.term_binding x in if live b then None else Some b) t)
+        (Linear_facts.facts env)) in
+      let env = if dead = [] then env
+        else Linear_facts.add env (List.fold_left (fun fs x -> Linear_facts.forget x fs) (Linear_facts.facts env) dead) in
       List.filter (fun (n,_) -> live n || (is_field n && live (owner n)) ||
         (match bound_parts n with Some (a,i,_) -> live a && live i | None -> false) ||
         (match fact_parts n with Some (t,_) -> List.for_all (fun (x,_) -> live (Linear_facts.term_binding x)) t | None -> false)) env in

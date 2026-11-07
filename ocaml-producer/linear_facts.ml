@@ -51,7 +51,28 @@ let norm (terms : (string * int) list) =
 let int_fact x : fact = [x,0], 0
 let is_int_fact ((t,_) : fact) = List.for_all (fun (_,c) -> c = 0) t
 let mentions x ((t,_) : fact) = List.exists (fun (n,_) -> term_binding n = x) t
-let forget x fs = List.filter (fun f -> not (mentions x f)) fs
+
+(* The facts with every term rooted at the binding `x` eliminated: those
+   naming none kept, and each pair of opposite signs on one such term
+   combined to cancel it (Fourier–Motzkin), at most 64 new facts per term,
+   as Lean eliminates a dropped slot (`HeapKnowledge.eliminateIndices`). So
+   `j = i + 1` with `0 ≤ i` keeps `1 ≤ j` where `i` is reassigned. *)
+let forget x fs =
+  let coeff n t = Option.value ~default:0 (List.assoc_opt n t) in
+  let rec eliminate (fs : fact list) = function
+    | [] -> fs
+    | n :: rest ->
+      let pos = List.filter (fun ((t,_) : fact) -> coeff n t > 0) fs
+      and neg = List.filter (fun ((t,_) : fact) -> coeff n t < 0) fs
+      and zero = List.filter (fun ((t,_) : fact) -> coeff n t = 0) fs in
+      let made = List.concat_map (fun (tp,bp) -> List.map (fun (tn,bn) ->
+        let a = coeff n tp and b = - (coeff n tn) in
+        norm (List.map (fun (m,c) -> m,b*c) tp @ List.map (fun (m,c) -> m,a*c) tn), b * bp + a * bn) neg) pos in
+      eliminate (zero @ List.filteri (fun i _ -> i < 64) (List.filter (fun ((t,_) : fact) -> t <> []) made)) rest in
+  let fs = List.filter (fun f -> not (is_int_fact f && mentions x f)) fs in
+  let terms = List.sort_uniq compare (List.concat_map (fun ((t,_) : fact) ->
+    List.filter_map (fun (n,_) -> if term_binding n = x then Some n else None) t) fs) in
+  if terms = [] then fs else List.filter (fun f -> not (mentions x f)) (eliminate fs terms)
 
 (* One fact per form, at its least bound. *)
 let tighten (fs : fact list) : fact list =
