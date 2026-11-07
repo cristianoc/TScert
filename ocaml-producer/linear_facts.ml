@@ -212,6 +212,18 @@ let length_test ~array env fs (cond : expr) =
    whose signature states a precondition (`Expression_calls`): set by the
    flow around each statement it types, empty elsewhere. *)
 let current_bounds : bound list ref = ref []
+(* The linear facts holding there, alike. *)
+let current_facts : fact list ref = ref []
+
+(* Whether the facts state a linear fact `Σ c·x ≤ d` over bindings: a fact of
+   one binding by its range, any other by a held fact of the same form at a
+   bound at most `d`. Lean decides the same entailment by its own search. *)
+let entails fs ((terms,d) : fact) =
+  let terms = norm terms in
+  match terms with
+  | [x,1] -> (match range fs x with _,Some h -> h <= d | _ -> false)
+  | [x,-1] -> (match range fs x with Some l,_ -> -l <= d | _ -> false)
+  | _ -> List.exists (fun ((t,b) : fact) -> norm t = terms && b <= d) fs
 
 (* At a merge, a fact of one form holds at the larger bound where both
    paths state one. A bound larger than the one the earlier state (`l`, the

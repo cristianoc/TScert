@@ -131,25 +131,27 @@ function fieldsOf(v: JsonRead, names: readonly string[]): JsonObject | undefined
 }
 function decodeIndexFact(v: JsonRead): IndexFact | undefined {
   if (!isJsonObject(v) || Object.keys(v).length !== 1) return undefined;
-  const index = fieldsOf(v.index, ["k"]);
-  if (index) { const k = decodeNat(index.k); return k === undefined ? undefined : { index: { k } }; }
-  const int = fieldsOf(v.int, ["k"]);
-  if (int) { const k = decodeNat(int.k); return k === undefined ? undefined : { int: { k } }; }
-  const length = fieldsOf(v.length, ["x", "n"]);
+  const index = fieldsOf(v.index, ["slot"]);
+  if (index) { const slot = decodeNat(index.slot); return slot === undefined ? undefined : { index: { slot } }; }
+  const int = fieldsOf(v.int, ["slot"]);
+  if (int) { const slot = decodeNat(int.slot); return slot === undefined ? undefined : { int: { slot } }; }
+  const length = fieldsOf(v.length, ["array", "length"]);
   if (length) {
-    const x = decodeNat(length.x);
-    const n = decodeNat(length.n);
-    return x === undefined || n === undefined ? undefined : { length: { x, n } };
+    const array = decodeNat(length.array);
+    const len = decodeNat(length.length);
+    return array === undefined || len === undefined ? undefined : { length: { array, length: len } };
   }
-  const bound = fieldsOf(v.bound, ["x", "k", "strict"]);
+  const bound = fieldsOf(v.bound, ["array", "index", "strict"]);
   if (bound) {
-    const x = decodeNat(bound.x);
-    const k = decodeNat(bound.k);
+    const array = decodeNat(bound.array);
+    const index = decodeNat(bound.index);
     const strict = bound.strict;
-    return x === undefined || k === undefined || typeof strict !== "boolean" ? undefined : { bound: { x, k, strict } };
+    return array === undefined || index === undefined || typeof strict !== "boolean" ? undefined
+      : { bound: { array, index, strict } };
   }
-  const linear = fieldsOf(v.linear, ["F"]);
-  const fact = linear === undefined || !isJsonObject(linear.F) || Object.keys(linear.F).length !== 1 ? undefined : linear.F;
+  const linear = fieldsOf(v.linear, ["fact"]);
+  const fact = linear === undefined || !isJsonObject(linear.fact) || Object.keys(linear.fact).length !== 1 ? undefined
+    : linear.fact;
   if (fact === undefined) return undefined;
   const le = fieldsOf(fact.le, ["form", "bound"]);
   const ne = fieldsOf(fact.ne, ["form", "bound"]);
@@ -165,7 +167,7 @@ function decodeIndexFact(v: JsonRead): IndexFact | undefined {
   }
   const d = decodeInt(body.bound);
   if (d === undefined) return undefined;
-  return { linear: { F: le ? { le: { form, bound: d } } : { ne: { form, bound: d } } } };
+  return { linear: { fact: le ? { le: { form, bound: d } } : { ne: { form, bound: d } } } };
 }
 /** The closed footprint a value states, as a fresh object of its fields, or
  * `undefined` where the value states none. */

@@ -87,6 +87,23 @@ let create diagnostics flows offered declarations module_functions arities bound
   let env0 = List.map (fun (n,t) ->
     n,if List.exists (assigns n) f.body then (if in_cell n then cell t else Local (t,arms declarations t))
       else Value (arms declarations t)) f.params in
+  (* The written precondition, assumed where the body starts: its bounds and
+     linear facts over the parameters the call's positions name. *)
+  let env0 =
+    let has_this = match f.params with (n,_) :: _ -> n = "this" | [] -> false in
+    let name p = if has_this then List.nth_opt f.params p
+      else if p = 0 then None else List.nth_opt f.params (p - 1) in
+    let name p = Option.map fst (name p) in
+    let facts = List.filter_map (fun (fact : Semantic.index_fact) -> match fact with
+      | Int_at k -> Option.map Linear_facts.int_fact (name k)
+      | Linear_le (form,d) ->
+        let terms = List.map (fun (x,c) -> Option.map (fun n -> n,c) (name x)) form in
+        if List.for_all Option.is_some terms then Some (Linear_facts.norm (List.filter_map Fun.id terms),d) else None
+      | _ -> None) f.requires in
+    let bounds = List.filter_map (fun (fact : Semantic.index_fact) -> match fact with
+      | Bound_by (x,k,strict) -> (match name x, name k with Some a, Some i -> Some (a,i,strict) | _ -> None)
+      | _ -> None) f.requires in
+    if facts = [] && bounds = [] then env0 else Linear_facts.add_bounds (Linear_facts.add env0 facts) bounds in
   (* A module function holds each module cell its body mentions. *)
   let rec mentions n (e:Source.expr) = (match e.node with
     | Id m | Assign (m,_,_) | NullishAssign (m,_,_) -> m = n

@@ -699,6 +699,10 @@ structure Fn where
   /-- The effect its result annotation states (`Within<F, T>`), which its
   unit's claim must lie within (`RequestJson.statedWithin`). -/
   stated : Option CallEffects.Effect
+  /-- Its written precondition, index facts at the call's positions: `0` the
+  receiver, `i + 1` the `i`-th actual (PROGRAM-TYPING.md, "Written
+  preconditions"). -/
+  requires : List HeapKnowledge.IndexFact := []
 
 private def decodeArith (j : Json) : Except String Arith := do
   match ← jStr j with
@@ -1313,7 +1317,8 @@ end
 
 
 def decodeFn (j : Json) : Except String (Fn × List TypeParam) := do
-  fieldsExactly j ["name", "namePos", "typeParams", "params", "retType", "guard", "stated", "completion", "body", "strict"]
+  fieldsExactly j ["name", "namePos", "typeParams", "params", "retType", "guard", "stated", "requires", "completion",
+    "body", "strict"]
   let typeParams ← decodeTypeParams (← jArr j "typeParams")
   let fn : Fn := ⟨← jStr (← jField j "name"), ← jSpan j "namePos",
     ← (← jArr j "params").mapM (fun p => do
@@ -1326,7 +1331,7 @@ def decodeFn (j : Json) : Except String (Fn × List TypeParam) := do
       return ⟨← jStr (← jField p "name"), ← jField p "type", rest⟩),
     ← jField j "retType", ← (← jArr j "body").mapM decodeStmt, !(← (← jField j "strict").getBool?),
     ← decodeGuard (← jField j "guard"), ← decodeCompletion (← jField j "completion"),
-    ← decodeStated (← jField j "stated")⟩
+    ← decodeStated (← jField j "stated"), ← fromJson? (← jField j "requires")⟩
   return (fn, typeParams)
 
 /-- A program module a certified import may read: its artifact, the

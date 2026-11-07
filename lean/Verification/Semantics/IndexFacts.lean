@@ -34,11 +34,11 @@ fact hold safe integers meeting it (`linear`, PROGRAM-TYPING.md, "Linear
 facts"). `index`, `int` and `linear` read no heap; the others read the
 location of the array's store field. -/
 inductive IndexFact where
-  | index (k : Nat)
-  | length (x n : Nat)
-  | bound (x k : Nat) (strict : Bool)
-  | int (k : Nat)
-  | linear (F : Linear.Fact)
+  | index (slot : Nat)
+  | length (array length : Nat)
+  | bound (array index : Nat) (strict : Bool)
+  | int (slot : Nat)
+  | linear (fact : Linear.Fact)
   deriving DecidableEq, Repr, Hashable
 
 namespace IndexFact

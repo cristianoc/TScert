@@ -100,24 +100,39 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
          Lean's `call-requires`) is the call's where the bounds holding at
          its statement's start establish each fact of it, its positions the
          receiver and the actuals; the others are then dropped. Elsewhere the
-         call is typed at the signatures stating none. A proposal: Lean
-         checks the precondition against its own knowledge at the call. *)
+         call is typed at the signatures stating none, or, where every
+         signature states one, at them all. A proposal: Lean checks the
+         precondition against its own knowledge at the call. *)
       let callee = match callee with
         | Atoms [Shape ({calls;_} as shape)]
           when List.exists (fun (s:Semantic.signature) -> s.call_effect.pre <> []) calls ->
           let name p = match (if p = 0 then receiver else List.nth_opt args (p - 1)) with
             | Some {node=Id x;_} -> Some x
             | _ -> None in
+          (* Each position's actual as a linear expression over safe-integer
+             bindings, as Lean reads an operand (`Linear_facts.linear`). *)
+          let form p = Option.bind (if p = 0 then receiver else List.nth_opt args (p - 1))
+            (Linear_facts.linear env !Linear_facts.current_facts) in
           let holds = function
             | Semantic.Bound_by (x,k,strict) -> (match name x, name k with
               | Some a, Some i -> List.exists (fun (a',i',s) -> a' = a && i' = i && (s || not strict))
                   !Linear_facts.current_bounds
               | _ -> false)
+            | Semantic.Int_at k -> Option.is_some (form k)
+            | Semantic.Linear_le (fact,d) ->
+              let parts = List.map (fun (x,c) -> Option.map (fun (t,k) -> Linear_facts.scale c t, c * k) (form x)) fact in
+              List.for_all Option.is_some parts &&
+              (let parts = List.filter_map Fun.id parts in
+               let terms = Linear_facts.norm (List.concat_map fst parts) in
+               let constant = List.fold_left (fun acc (_,k) -> acc + k) 0 parts in
+               terms = [] && constant <= d ||
+               Linear_facts.entails !Linear_facts.current_facts (terms, d - constant))
             | _ -> false in
           let established = List.filter (fun (s:Semantic.signature) ->
             s.call_effect.pre <> [] && List.for_all holds s.call_effect.pre) calls in
           let plain = List.filter (fun (s:Semantic.signature) -> s.call_effect.pre = []) calls in
-          Atoms [Shape {shape with calls=if established <> [] then established else plain}]
+          Atoms [Shape {shape with calls=if established <> [] then established else if plain <> [] then plain
+            else calls}]
         | t -> t in
       (* A statement's method call on a value the flow types at several
          declarations, whose signatures all state one declared receiver (a

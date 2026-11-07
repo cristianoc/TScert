@@ -694,7 +694,8 @@ def throwsWithin [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCh
     (Φ : Footprints.Closed) (F : List Nat) (c : NodeEvidence ι) (t : Tm) : Bool :=
   (ExpressionEffects.check G (entry c) t || ExpressionEffects.writeWithin G (entry c) Φ t) ||
     (decide ((ProgramCertificates.claim c.expression).term = t) &&
-      ProgramCertificates.checkTreeUsing G images c.expression (sums := sums) &&
+      (ProgramCertificates.checkTreeUsing G images c.expression (sums := sums) ||
+        PromiseCalls.requiresTree G images (entryFacts G c) (fun _ => false) sums c.expression) &&
       selectedWithinAt Φ F c.expression && ExpressionEffects.selectedThrows c.expression &&
       (match ExpressionEffects.selectedEffect c.expression with
       | some eff => eff.onThrow
@@ -736,8 +737,17 @@ theorem throwsWithin_sound [DecidableEq ι] {G : NormalGraph ι} {images : Insta
       simp only at hon
       simp only [Bool.and_eq_true] at hsel
       obtain ⟨hle, hr⟩ := hsel
-      have hs := ExpressionEffects.selected_sound_exc c.expression htree hops hthr heff
-        (ProgramCertificates.codesSound_none _) hsums (by simpa only [ControlFlow.entry] using henv) hworld hheap
+      have hs : HeapObservations.SafePostExc (excOf G) (meaning G (ProgramCertificates.claim c.expression).type)
+          (eff.post (ExpressionEffects.receiverOf (instantiate 0 ρ (ProgramCertificates.claim c.expression).term)) h')
+          (eff.excPost (ExpressionEffects.receiverOf (instantiate 0 ρ (ProgramCertificates.claim c.expression).term)) h')
+          j V h' (instantiate 0 ρ (ProgramCertificates.claim c.expression).term) := by
+        rcases Bool.or_eq_true_iff.mp htree with htree | hreq
+        · exact ExpressionEffects.selected_sound_exc c.expression htree hops hthr heff
+            (ProgramCertificates.codesSound_none _) hsums (by simpa only [ControlFlow.entry] using henv) hworld hheap
+        · obtain ⟨eff', heff', hs⟩ := PromiseCalls.requiresTree_sound_exc
+            (ProgramCertificates.codesSound_none _) hsums c.expression hreq
+          rw [heff] at heff'; cases heff'
+          exact hs (by simpa only [ControlFlow.entry] using henv) hknowledge hworld hheap
       rw [hterm'] at hs
       apply HeapObservations.SafePostExc.weaken (fun _ _ _ => trivial) (fun h'' hq => ?_) hs
       have hq := hq hon

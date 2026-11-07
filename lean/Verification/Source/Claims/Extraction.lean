@@ -21,7 +21,7 @@ def importedArrow (T : EquationStore.State) (U : List Tree) (footprint : Footpri
   | [.arrs [a] []] =>
     if a.effect.promise.isSome then throw "a certified import's signature states no promise"
     let params : List Fragment.Param := a.arguments.zipIdx.map fun (A, i) => ⟨s!"p{i}", graphClaim A, false⟩
-    moduleArrow ⟨"", (0, 0), params, graphClaim a.result, [], false, none, false, none⟩ footprint onThrow
+    moduleArrow ⟨"", (0, 0), params, graphClaim a.result, [], false, none, false, none, a.effect.pre⟩ footprint onThrow
   | _ => throw "a certified import needs one fixed call signature"
 
 /-- The units of one name are the overloads of one declaration: each runs the
@@ -198,7 +198,7 @@ def fileFront (ast claims : Json) (fileKey : String)
       if binders.map (·.name) != (initBinders.map (·.1)).filter (!·.endsWith "#pack") then
         throw "the module initialization's binders are not its generic classes'"
       -- Nothing calls the initialization unit with a receiver.
-      pure [(⟨"", span, [], undefinedType, init, false, none, false, none⟩, binders,
+      pure [(⟨"", span, [], undefinedType, init, false, none, false, none, []⟩, binders,
         ⟨"", span, [], .labels [Labels.undef], c.entries, c.expressions, c.contracts, .top, false, c.arrows⟩)]
   -- Initialization order is the initialization unit's own obligation.
   let initOrder := if initUnit.isEmpty then none else match checkInitializationOrder d.types all init with

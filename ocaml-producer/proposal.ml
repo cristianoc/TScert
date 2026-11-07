@@ -188,9 +188,9 @@ and infer_assuming ?(thrown=[]) ~state flows program assumed =
     program.Source.functions in
   let module_functions = List.map (fun name -> name,lazy (
       let units = List.filter (fun (g:Source.fn) -> g.name = name) program.Source.functions in
-      let typed = List.map (fun (g:Source.fn) -> with_footprint
+      let typed = List.map (fun (g:Source.fn) -> with_pre g.requires (with_footprint
         ~on_throw:(List.mem g.name thrown)
-        (Option.value (List.assoc_opt g.name assumed) ~default:top_footprint) (module_type g)) units in
+        (Option.value (List.assoc_opt g.name assumed) ~default:top_footprint) (module_type g))) units in
       match typed with
       | [t] -> t
       | _ -> Atoms [Shape {fields=[];indexes=[];elements=None;calls=List.concat_map (function
@@ -248,7 +248,7 @@ and infer_assuming ?(thrown=[]) ~state flows program assumed =
     | body -> Some (infer_function ~offers:discarding state flows program.Source.declarations arities
         (module_functions @ class_selves)
         {quantified=program.Source.init_quantified;name="";name_pos=Json.Null;params=[];rest=false;rest_pack=None;
-         result=Atoms [Undef];guard=None;async=false;stated=None;body}) in
+         result=Atoms [Undef];guard=None;async=false;stated=None;requires=[];body}) in
   (* The initialization unit checks both initializer and annotation. Use the
      annotation's offered signatures, retaining effects established by a matching
      initializer signature. Lean makes both checked contracts available. *)

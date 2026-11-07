@@ -111,9 +111,9 @@ export interface HeapKnowledge {
    * truthy value, or a falsy one where `negated`. */
   indices: {fact: IndexFact; cond?: number; negated: boolean}[];
 }
-type IndexFact = { index: { k: number } } | { length: { x: number; n: number } } |
-  { bound: { x: number; k: number; strict: boolean } } | { int: { k: number } } |
-  { linear: { F: { le: { form: [number, number][]; bound: number } } | { ne: { form: [number, number][]; bound: number } } } };
+type IndexFact = { index: { slot: number } } | { length: { array: number; length: number } } |
+  { bound: { array: number; index: number; strict: boolean } } | { int: { slot: number } } |
+  { linear: { fact: { le: { form: [number, number][]; bound: number } } | { ne: { form: [number, number][]; bound: number } } } };
 type SeparationKey = string | { symbol: number };
 /** The value kinds an elements fact's predicate names. */
 const ELEM_KINDS = ["nul", "undef", "bool", "num", "str", "big", "sym", "obj"] as const;
@@ -395,18 +395,18 @@ function knowledge(v: Json | undefined): HeapKnowledge | null {
     const f = a.fact;
     if (f === null || typeof f !== "object" || Array.isArray(f)) throw Error("invalid index fact");
     let fact: IndexFact;
-    if ("index" in f) fact = { index: { k: nat(record(record(f,["index"]).index,["k"]).k) } };
+    if ("index" in f) fact = { index: { slot: nat(record(record(f,["index"]).index,["slot"]).slot) } };
     else if ("length" in f) {
-      const l = record(record(f,["length"]).length,["x","n"]);
-      fact = { length: { x: nat(l.x), n: nat(l.n) } };
+      const l = record(record(f,["length"]).length,["array","length"]);
+      fact = { length: { array: nat(l.array), length: nat(l.length) } };
     } else if ("bound" in f) {
-      const b = record(record(f,["bound"]).bound,["x","k","strict"]);
+      const b = record(record(f,["bound"]).bound,["array","index","strict"]);
       if (typeof b.strict !== "boolean") throw Error("a bound's strict is a Boolean");
-      fact = { bound: { x: nat(b.x), k: nat(b.k), strict: b.strict } };
+      fact = { bound: { array: nat(b.array), index: nat(b.index), strict: b.strict } };
     } else if ("int" in f) {
-      fact = { int: { k: nat(record(record(f,["int"]).int,["k"]).k) } };
+      fact = { int: { slot: nat(record(record(f,["int"]).int,["slot"]).slot) } };
     } else {
-      const stated = record(record(f,["linear"]).linear,["F"]).F;
+      const stated = record(record(f,["linear"]).linear,["fact"]).fact;
       const le = isParsedObject(stated) && "le" in stated;
       const F = record(stated, le ? ["le"] : ["ne"]);
       const body = record(le ? F.le : F.ne, ["form","bound"]);
@@ -415,7 +415,7 @@ function knowledge(v: Json | undefined): HeapKnowledge | null {
         if (!Array.isArray(t) || t.length !== 2 || typeof t[1] !== "number") throw Error("a linear fact's term");
         return [nat(t[0]), t[1]];
       });
-      fact = { linear: { F: le ? { le: { form, bound: body.bound } } : { ne: { form, bound: body.bound } } } };
+      fact = { linear: { fact: le ? { le: { form, bound: body.bound } } : { ne: { form, bound: body.bound } } } };
     }
     indices.push({ fact, negated: a.negated, ...(a.cond === null ? {} : { cond: nat(a.cond) }) });
   }

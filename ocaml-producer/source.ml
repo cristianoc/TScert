@@ -30,13 +30,15 @@ let keys j = match j with
 let index_fact_of j =
   let only k = match keys j with [k'] when k' = k -> true | _ -> false in
   let body k ks = let b = field k j in if keys b = List.sort String.compare ks then b else unsupported "invalid index fact" in
-  if only "index" then Index_at (natural (field "k" (body "index" ["k"])))
-  else if only "int" then Int_at (natural (field "k" (body "int" ["k"])))
-  else if only "length" then let b = body "length" ["x";"n"] in Length_of (natural (field "x" b), natural (field "n" b))
+  if only "index" then Index_at (natural (field "slot" (body "index" ["slot"])))
+  else if only "int" then Int_at (natural (field "slot" (body "int" ["slot"])))
+  else if only "length" then
+    let b = body "length" ["array";"length"] in Length_of (natural (field "array" b), natural (field "length" b))
   else if only "bound" then
-    let b = body "bound" ["x";"k";"strict"] in Bound_by (natural (field "x" b), natural (field "k" b), boolean (field "strict" b))
+    let b = body "bound" ["array";"index";"strict"] in
+    Bound_by (natural (field "array" b), natural (field "index" b), boolean (field "strict" b))
   else if only "linear" then
-    let f = field "F" (body "linear" ["F"]) in
+    let f = field "fact" (body "linear" ["fact"]) in
     let parts k = let b = field k f in
       if keys b <> ["bound";"form"] then unsupported "invalid linear fact";
       List.map (function Array [x;c] -> (natural x, integer c) | _ -> fail "invalid linear term") (list (field "form" b)),
@@ -677,7 +679,10 @@ and fn = { quantified: quantifier list; name: string; name_pos: Json.t; params: 
            (* The effect its result annotation states (`Within<F, T>`): a
               footprint and whether it holds on a throw too. Its claim must
               lie within it. *)
-           stated: (footprint * bool) option; body: stmt list }
+           stated: (footprint * bool) option;
+           (* Its written precondition, index facts at the call's positions
+              (Lean's `Fn.requires`: 0 the receiver, i + 1 the i-th actual). *)
+           requires: index_fact list; body: stmt list }
 type declaration = { id: string; native_promise: bool; parameters: rigid list;
   bases: ty list; expression: ty option }
 (* `init` is the module's top-level code, run once after its function
@@ -1510,4 +1515,5 @@ and decode_program ast =
       rest_pack=Option.map fst pack_rest;
       result=source_type binders (field "retType" f);guard=guard_of binders (field "guard" f);
       async=async_completion f;stated=stated_of f;
+      requires=List.map index_fact_of (items "requires" f);
       body=List.map (stmt binders) (items "body" f)}) (items "functions" ast) }

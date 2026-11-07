@@ -41,13 +41,13 @@ let change_json = function Keep -> String "keep" | Grow -> String "grow" | Any -
 let footprint_json f = Object ["value",change_json f.on_value;"store",change_json f.on_store]
 let kinds_json = function None -> Null | Some ks -> Array (List.map (fun k -> String k) ks)
 let index_fact_json =
-  let linear k form d = Object ["linear",Object ["F",Object [k,Object [
+  let linear k form d = Object ["linear",Object ["fact",Object [k,Object [
     "form",Array (List.map (fun (x,c) -> Array [int x;int c]) form);"bound",int d]]]] in
   function
-  | Index_at k -> Object ["index",Object ["k",int k]]
-  | Length_of (x,n) -> Object ["length",Object ["x",int x;"n",int n]]
-  | Bound_by (x,k,strict) -> Object ["bound",Object ["x",int x;"k",int k;"strict",Bool strict]]
-  | Int_at k -> Object ["int",Object ["k",int k]]
+  | Index_at k -> Object ["index",Object ["slot",int k]]
+  | Length_of (x,n) -> Object ["length",Object ["array",int x;"length",int n]]
+  | Bound_by (x,k,strict) -> Object ["bound",Object ["array",int x;"index",int k;"strict",Bool strict]]
+  | Int_at k -> Object ["int",Object ["slot",int k]]
   | Linear_le (form,d) -> linear "le" form d
   | Linear_ne (form,d) -> linear "ne" form d
 let effect_json e = Object ["footprint",footprint_json e.footprint;

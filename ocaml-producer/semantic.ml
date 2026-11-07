@@ -183,6 +183,14 @@ let with_footprint ?(on_throw=false) footprint t = match t with
       {s with call_effect={s.call_effect with footprint;on_throw}}) calls}]
   | _ -> t
 
+(* A function's written precondition on every signature of its type: its code
+   is checked assuming it, so each call establishes it (Lean's `moduleArrow`). *)
+let with_pre pre t = match t with
+  | Atoms [Shape ({calls;_} as shape)] when pre <> [] ->
+    Atoms [Shape {shape with calls=List.map (fun (s:signature) ->
+      {s with call_effect={s.call_effect with pre}}) calls}]
+  | _ -> t
+
 let record fields = Atoms [Shape {fields;indexes=[];calls=[];elements=None}]
 (* Whether a type mentions a type parameter. *)
 let rec mentions_rigid = function

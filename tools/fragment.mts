@@ -5,7 +5,7 @@
  * Every annotation is a source type term, the language of declaration bodies.
  */
 import type { Atom } from "./claim.mts";
-import type { DeclarationDocument, PropertyKey, SourceTypeParameter, StatedEffect, TypeTerm } from "./declaration-types.mts";
+import type { DeclarationDocument, IndexFact, PropertyKey, SourceTypeParameter, StatedEffect, TypeTerm } from "./declaration-types.mts";
 // span.mts declares the source span every Fragment node carries, the one declaration the claims, the diagnostics and the reports share.
 import type { Span } from "./span.mts";
 import type { GuardUndefined } from "./host-families.mts";
@@ -396,6 +396,10 @@ export interface FunctionAst {
   /** The effect the result annotation states, `Within<F, T>`, of which
    * `retType` is `T`; null where it states none. */
   stated: StatedEffect | null;
+  /** The written precondition, its `@requires` clauses elaborated to index
+   * facts at the call's positions: 0 the receiver, i + 1 the i-th actual
+   * (`bound-annotations.mts`; PROGRAM-TYPING.md, "Written preconditions"). */
+  requires: IndexFact[];
   completion: Completion;
   body: Stmt[];
   /** Whether the function's code is strict: a sloppy call converts a

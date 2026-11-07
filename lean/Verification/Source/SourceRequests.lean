@@ -544,7 +544,8 @@ def SourceRequest.over (F : Frozen) (r : SourceRequest EquationStore.State Tree)
   let nodePlans ← r.nodePlans.mapM fun p => relabel p
   let request : RequestJson.Request (Checked F.equations F.primitive) (CheckedLabel F.equations F.primitive) :=
     { types := F.store, program := r.program, claims := claims, result := result, start := r.start,
-      inputs := inputs, codes := codes, promise := promise, entrySeparation := r.entrySeparation }
+      inputs := inputs, codes := codes, promise := promise, entrySeparation := r.entrySeparation,
+      entryIndices := r.entryIndices }
   let qualification ← sourceScheme.mapM fun s => do
     let some context := F.store.resolution
       | throw "qualified source signature requires the native descriptor domain"

@@ -1562,6 +1562,39 @@ theorem requiresApp_sound {G : NormalGraph ι} {images : InstanceImageCheck G}
       exact (ExpressionEffects.call_local_sound hl typed values he hw hh hq).post
   | _ => simp [requiresApp] at hc
 
+/-- `call-requires` also bounds the heap a throw leaves, where its signature
+states so (`excPost`). -/
+theorem requiresApp_sound_exc {G : NormalGraph ι} {images : InstanceImageCheck G}
+    {k : HeapKnowledge.Knowledge} {codes : CodeEntry ι → Bool} {sums : List (ReadSummary ι)}
+    (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums)
+    (p : Evidence ι) (hc : requiresApp G images k codes sums p = true) {eff : Effect}
+    (hsel : ExpressionEffects.selectedEffect p = some eff) {ρ n W h} (he : EnvOk G (claim p).context ρ n W)
+    (hk : HeapKnowledge.Holds k ρ h) (hw : WorldAdm W) (hh : HeapOk n W h) :
+    SafePostExc (excOf G) (meaning G (claim p).type)
+      (eff.post (ExpressionEffects.receiverOf (instantiate 0 ρ (claim p).term)) h)
+      (eff.excPost (ExpressionEffects.receiverOf (instantiate 0 ρ (claim p).term)) h) n W h
+      (instantiate 0 ρ (claim p).term) := by
+  obtain ⟨j, r, ps⟩ := p
+  cases r with
+  | app eff' =>
+      simp only [ExpressionEffects.selectedEffect, Option.some.injEq] at hsel
+      subst hsel
+      simp only [requiresApp, Bool.and_eq_true, decide_eq_true_eq] at hc
+      obtain ⟨⟨⟨hvals, hl⟩, ht⟩, hreq⟩ := hc
+      simp only [claim] at he ⊢
+      have hq := preconditionHolds_sound hreq hk (ρ := ρ)
+      have typed : ∀ p ∈ ps.map claim, HasTyUsing G images p.context p.term p.type := by
+        intro p hm
+        obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hm
+        exact checkTreeUsing_sound q (List.all_eq_true.mp ht ⟨q, hq⟩ (List.mem_attach _ _)) hcodes hsums
+      have values : ∀ p ∈ ps.map claim, ExpressionEffects.valueTerm p.term = true ∧
+          checkScope p.context.length p.term = true := by
+        intro p hm
+        obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hm
+        simpa only [Bool.and_eq_true] using List.all_eq_true.mp hvals q hq
+      exact ExpressionEffects.call_local_sound hl typed values he hw hh hq
+  | _ => simp [requiresApp] at hc
+
 theorem requiresApp_selected {G : NormalGraph ι} {images : InstanceImageCheck G}
     {k : HeapKnowledge.Knowledge} {codes : CodeEntry ι → Bool} {sums : List (ReadSummary ι)}
     (p : Evidence ι) (hc : requiresApp G images k codes sums p = true) :
@@ -1600,6 +1633,38 @@ theorem requiresTree_sound {G : NormalGraph ι} {images : InstanceImageCheck G}
       · simpa [requiresTree] using hc
     obtain ⟨eff, hsel⟩ := requiresApp_selected p happ
     exact ⟨eff, hsel, fun he hk hw hh => requiresApp_sound hcodes hsums p happ hsel he hk hw hh⟩
+
+theorem requiresTree_sound_exc {G : NormalGraph ι} {images : InstanceImageCheck G}
+    {k : HeapKnowledge.Knowledge} {codes : CodeEntry ι → Bool} {sums : List (ReadSummary ι)}
+    (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums)
+    (p : Evidence ι) (hc : requiresTree G images k codes sums p = true) :
+    ∃ eff, ExpressionEffects.selectedEffect p = some eff ∧ ∀ {ρ n W h}, EnvOk G (claim p).context ρ n W →
+    HeapKnowledge.Holds k ρ h → WorldAdm W → HeapOk n W h →
+    SafePostExc (excOf G) (meaning G (claim p).type)
+      (eff.post (ExpressionEffects.receiverOf (instantiate 0 ρ (claim p).term)) h)
+      (eff.excPost (ExpressionEffects.receiverOf (instantiate 0 ρ (claim p).term)) h) n W h
+      (instantiate 0 ρ (claim p).term) := by
+  by_cases hs : ∃ j c q, p = .node j (.sub c) [q]
+  · obtain ⟨j, c, q, rfl⟩ := hs
+    simp only [requiresTree, Bool.and_eq_true, decide_eq_true_eq] at hc
+    obtain ⟨hl, hc⟩ := hc
+    obtain ⟨eff, hsel⟩ := requiresApp_selected q hc
+    refine ⟨eff, by simpa [ExpressionEffects.selectedEffect] using hsel, fun {ρ n W h} he hk hw hh => ?_⟩
+    obtain ⟨hctx, hterm, hsub⟩ := hl
+    have ih := requiresApp_sound_exc hcodes hsums q hc hsel (ρ := ρ) (n := n) (W := W) (h := h)
+      (by rw [hctx]; exact he) hk hw hh
+    rw [hterm] at ih
+    exact SafePostExc.consequence_below' (fun _ _ _ _ hv => hv)
+      (fun j _ W v hv => PositiveCertificates.acceptedUsing hsub j W v hv) (fun _ _ hp => hp) (fun _ hp => hp) ih
+  · have happ : requiresApp G images k codes sums p = true := by
+      obtain ⟨j, r, ps⟩ := p
+      cases r <;> try (simpa [requiresTree] using hc)
+      rcases ps with _ | ⟨q, _ | ⟨q', qs⟩⟩
+      · simpa [requiresTree] using hc
+      · exact absurd ⟨j, _, q, rfl⟩ hs
+      · simpa [requiresTree] using hc
+    obtain ⟨eff, hsel⟩ := requiresApp_selected p happ
+    exact ⟨eff, hsel, fun he hk hw hh => requiresApp_sound_exc hcodes hsums p happ hsel he hk hw hh⟩
 
 /-- Whether an ordinary step's evidence is a call `call-requires` applies to. -/
 @[nospecialize] def requiresCall (G : NormalGraph ι) (images : InstanceImageCheck G) (j : Sequent ι)

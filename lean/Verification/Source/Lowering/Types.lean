@@ -788,14 +788,17 @@ def moduleArrow (g : Fragment.Fn) (footprint : Footprints.Closed := .top) (onThr
   -- result the promise's type.
   let promised : List (Json × List (String × Json)) := match g.guard with
     | some guard => [(guard.type, [("effect", toJson (CallEffects.Effect.mk footprint
-        (some (if guard.asserts then .asserts guard.param else .guards guard.param)) false false onThrow false false none none []))])]
+        (some (if guard.asserts then .asserts guard.param else .guards guard.param)) false false onThrow false false none none
+        g.requires))])]
     | none => []
   -- The plain signature states the footprint the declaration's claim
   -- proposes, which the declaration's own unit certifies; its extension
   -- discarding further actuals runs the same code, so it states the same.
+  -- The written precondition is every signature's: the code is checked
+  -- assuming it, so a call establishes it whichever signature it takes.
   let plain : List (String × Json) :=
-    if footprint = .top ∧ onThrow = false then [] else
-      [("effect", toJson ({ CallEffects.Effect.ofFootprint footprint with onThrow } : CallEffects.Effect))]
+    if footprint = .top ∧ onThrow = false ∧ g.requires.isEmpty then [] else
+      [("effect", toJson ({ CallEffects.Effect.ofFootprint footprint with onThrow, pre := g.requires } : CallEffects.Effect))]
   let extra := promised.map (fun (result, effect) => Json.mkObj (signature rest result effect)) ++
     if params.any (·.rest) then []
     else ((g.ret, plain) :: promised).map fun (result, effect) => Json.mkObj (signature [("rest", top)] result effect)

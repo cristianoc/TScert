@@ -46,11 +46,11 @@ export type CallEffect = {
  * array's store; an index at most that length, below it where `strict`; a
  * safe integer; a linear fact `Σ c·x ≤ d` or `≠ d`. */
 export type IndexFact =
-  | { readonly index: { readonly k: number } }
-  | { readonly length: { readonly x: number; readonly n: number } }
-  | { readonly bound: { readonly x: number; readonly k: number; readonly strict: boolean } }
-  | { readonly int: { readonly k: number } }
-  | { readonly linear: { readonly F: LinearFact } };
+  | { readonly index: { readonly slot: number } }
+  | { readonly length: { readonly array: number; readonly length: number } }
+  | { readonly bound: { readonly array: number; readonly index: number; readonly strict: boolean } }
+  | { readonly int: { readonly slot: number } }
+  | { readonly linear: { readonly fact: LinearFact } };
 /** A linear fact (`Linear.Fact`): `Σ c·x ≤ bound` or `≠ bound`, each term a
  * position and its coefficient. */
 export type LinearFact =

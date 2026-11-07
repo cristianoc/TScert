@@ -700,7 +700,7 @@ export function intrinsics(promise: (argument: TypeTerm) => TypeTerm, needed: Re
       return { typeParams: [{ name: "T", bound: null, resolution: null }],
         type: { k: "intersection", span, parts: [
           { ...fn(params, either(binder, atom("undefined"))), effect: emptyEffect },
-          { ...fn(params, binder), effect: footprintEffect(emptyFootprint, { pre: [{ bound: { x: 1, k: 2, strict: true } }] }) },
+          { ...fn(params, binder), effect: footprintEffect(emptyFootprint, { pre: [{ bound: { array: 1, index: 2, strict: true } }] }) },
         ] } };
     },
   };

@@ -9,12 +9,13 @@ import * as ts from "typescript/unstable/ast";
 import type { Expression, FunctionDeclaration, Node, Statement } from "typescript/unstable/ast";
 import type { BindingAst, Expr, FunctionAst, FunctionParamAst, Guard, PatternAst, PatternElemAst, PatternPropAst, Stmt } from "./fragment.mts";
 import type { Span } from "./span.mts";
-import type { StatedEffect, TypeTerm } from "./declaration-types.mts";
+import type { IndexFact, StatedEffect, TypeTerm } from "./declaration-types.mts";
 import { assertionFailureName, asyncCompleteName, asyncReturnName, forInName, iterateForInName, iterateName } from "./intrinsics.mts";
 import { GENERATOR, UNCLOSABLE, booleanForm, booleanReturn, bindingScope, firstOptional, capturesLoopLet, continueBlock, continueLabel, continueTarget, type Loop, forInEntryReads, labeledTarget, statementLabel, freeOffsets, iterationLabel, jumpTarget, nameSlot, namesRead, parameterName, patternNames, skipParentheses, switchLabel, TYPEOF_SHAPES } from "./fragment-support.mts";
 import type { Gate } from "./fragment-parse.mts";
 import { guardResult } from "./fragment-guards.mts";
 import { literalDefaultName } from "./type-term.mts";
+import { elaborateRequires, indexFactPositions, requiresTags } from "./bound-annotations.mts";
 import { isImport, isTypeAlias } from "./syntax.mts";
 
 /** The declarator `d` of a pattern, the statement `node` holds it, lowered
@@ -2147,6 +2148,30 @@ export function functionDecl(this: Gate, node: FunctionDeclaration, signature: F
     });
     gate.initializedBefore(node, params.map((p): [PatternAst, Expr | null] =>
       bound.get(p.name) ?? [{ k: "name", name: p.name, pos: p.pos }, null]));
+    // The written precondition (`@requires`), at the call's positions: the
+    // receiver at 0 where a `this` parameter names it, each other parameter
+    // at its place after it. A declaration a caller outside its module may
+    // call, an async one, and one whose parameters are not plain names
+    // state none: their callers establish nothing it could assume.
+    const clauses = requiresTags(gate.file.text.slice(node.pos, node.getStart(gate.file)));
+    let requires: IndexFact[] = [];
+    if (clauses.length > 0) {
+      if (node.modifiers?.some(m => m.kind === ts.SyntaxKind.ExportKeyword))
+        gate.fail(node, "a precondition (`@requires`) on an exported function: a caller outside its module establishes nothing");
+      if (isAsync) gate.fail(node, "a precondition (`@requires`) on an async function");
+      if (node.parameters.some(p => p.dotDotDotToken || p.initializer || p.questionToken || !ts.isIdentifier(p.name)))
+        gate.fail(node, "a precondition (`@requires`) on a function whose parameters are not plain required names");
+      const named = node.parameters.map((p, i) => ({
+        name: ts.isIdentifier(p.name) ? p.name.text : "",
+        position: receiverParam ? i : i + 1,
+        array: (parameterTypes[i] ?? { k: "unknown" }).k === "array",
+      }));
+      const elaborated = elaborateRequires(clauses, named);
+      if ("refused" in elaborated) gate.fail(node, `a precondition (\`@requires\`): ${elaborated.refused}`);
+      requires = elaborated.facts;
+      if (!receiverParam && requires.some(f => indexFactPositions(f).includes(0)))
+        gate.fail(node, "a precondition (`@requires`) names the receiver, which the function does not declare");
+    }
     const body = [...bindings,
       ...this.statements(node.body.statements.filter((s) => !prologue.skip.has(s)))];
     return {
@@ -2157,6 +2182,7 @@ export function functionDecl(this: Gate, node: FunctionDeclaration, signature: F
       retType,
       guard,
       stated,
+      requires,
       completion: isAsync ? "async" : "sync",
       body: isAsync ? gate.asyncCompletion(node.body, body) : body,
       strict: gate.strict,

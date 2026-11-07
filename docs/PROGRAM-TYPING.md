@@ -1663,6 +1663,48 @@ of the function at its declared signature establishes the same facts. That a
 declaration's signature and its unit's request state the same precondition is
 a property of the front end, which reads both from the one written clause.
 
+**The written clause.** A function declaration states its precondition in
+its leading JSDoc comment, `/** @requires C */`, read from the source text
+and elaborated by the front end (`tools/bound-annotations.mts`) to index
+facts at the call's positions; Lean reads them from the Fragment
+(`Fragment.Fn.requires`) into the unit's request and into the signature its
+callers see (`moduleArrow`). The clause is a conjunction of atoms over the
+parameters:
+
+```math
+\begin{aligned}
+C &::= A \mid A\ \texttt{\&\&}\ C\\
+A &::= \mathtt{safeInteger}(x) \mid E\ \mathit{rel}\ E \mid k < x.\mathtt{length} \mid k \le x.\mathtt{length}\\
+E &::= n \mid x \mid n\cdot x \mid E + E \mid E - E \mid -E
+\end{aligned}
+```
+
+with $`\mathit{rel}`$ one of `<`, `<=`, `>`, `>=`, `===` and the mirrored
+`x.length > k`, `x.length >= k`. Each atom elaborates to the index fact it
+means: `safeInteger(x)` to $`\mathrm{int}(x)`$; a comparison of linear
+expressions, every parameter of which the clause states a safe integer, to
+the linear fact over the integers they hold, which on safe integers is the
+comparison's IEEE answer; `k < x.length` to $`\mathrm{bound}_<(x,k)`$ (`<=` to
+$`\mathrm{bound}(x,k)`$), with $`\mathrm{int}(k)`$ and `0 <= k` in the clause
+and $`x`$ an array parameter, whose `length` is its store's. A precondition
+is refused on an exported function, whose callers outside the module
+establish nothing; on an async function; on one whose parameters are not
+plain required names; and on one naming the receiver without declaring it.
+Every other form of the draft's grammar ([checked bound
+annotations](drafts/checked-bound-annotations.md): guards, `old`, `result`,
+other paths, `||`, `!`) is refused with the declaration's location.
+
+A call selects a signature stating a precondition where the producer's own
+facts at the call's statement establish it: the bounds and linear facts of
+its analysis, each actual read as a linear expression. Lean decides at the
+call (`call-requires`).
+
+**Cases.** Positive: `written-precondition`. Negative, each run under Node:
+`invalid-written-precondition-call` (a call at `xs.length`) and
+`invalid-written-precondition-body` (a body reading past what its clause
+bounds). Refused forms: `written-precondition-exported-refused`,
+`written-precondition-disjunction-refused`.
+
 ### A literal with spreads
 
 A store literal evaluates its parts left to right, and a spread of a ready

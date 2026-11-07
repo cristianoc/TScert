@@ -123,7 +123,7 @@ did not mention grow it, and the request carries the result. -/
   if !distinct (fc.points.map Prod.fst) || fc.points.any (fun (_, row) =>
       !distinct (row.envs.map Prod.fst) || !distinct (row.exprs.map Prod.fst)) then
     throw "duplicate execution point, statement or expression claim"
-  let ((inputs, R, entry, promise, entrySeparation), built) ← runCompiler T (growSites classes f.body (module := f.name == "")) (freshConstructors := freshConstructors)
+  let ((inputs, R, entry, promise, entrySeparation, entryIndices), built) ← runCompiler T (growSites classes f.body (module := f.name == "")) (freshConstructors := freshConstructors)
       (moduleOwned := moduleOwned) do
     -- One binding per source parameter, and one request input per position a
     -- caller writes: a rest parameter is one binding, and its tuple's required
@@ -280,13 +280,23 @@ did not mention grow it, and the request carries the result. -/
     let base := inputs.length - siblingScope.length
     let entrySeparation := moduleCellSeparation inputs.length
       (siblingScope.zipIdx.filterMap fun (b, j) => b.moduleCell.map (base + j, ·))
+    -- The written precondition, which the unit assumes of its inputs: each
+    -- call position at the input slot that holds it, the receiver at slot 0
+    -- where a `this` parameter declares it, each parameter after it.
+    let receiverInput := (f.params.head?.map (·.name == "this")).getD false
+    let slotOf : Nat → Option Nat := fun p => if receiverInput then some p else if p = 0 then none else some (p - 1)
+    let T ← table
+    let entryIndices ← f.requires.mapM fun F => match F.mapM slotOf with
+      | some G => pure ({ fact := G } : HeapKnowledge.IndexAtom)
+      | none => throw (locatedRefusal T f.namePos .bindingAnnotation
+          "a precondition names the receiver, which the function does not declare")
     let entry ← emit .nul (.effect first) inputs [Labels.nul]
-    if !entrySeparation.facts.isEmpty then
-      recordAssertion entry ⟨[], [], [], entrySeparation, [], []⟩
-    return (inputs, R, entry, promise, entrySeparation)
+    if !entrySeparation.facts.isEmpty || !entryIndices.isEmpty then
+      recordAssertion entry ⟨[], [], [], entrySeparation, [], entryIndices⟩
+    return (inputs, R, entry, promise, entrySeparation, entryIndices)
   return {
     toRequest := ⟨built.types, built.program, built.claims, R, entry.label, inputs, built.codes, promise,
-      entrySeparation, []⟩
+      entrySeparation, entryIndices⟩
     obligations := built.obligations
     sourceMap := built.source.sourceMap
     assertions := built.source.assertions

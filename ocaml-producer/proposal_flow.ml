@@ -177,16 +177,18 @@ let statements callbacks flow_graph register_following owner_span env0 ss =
       callbacks.entry env node.source;
       (* The linear facts and the bounds flow beside the environment
          (`Linear_facts`); the statement callbacks see none, and a call
-         stating a precondition reads the bounds where its statement starts,
-         which hold through a statement writing no heap. *)
+         stating a precondition reads those where its statement starts. *)
       let facts0 = Linear_facts.facts env in
       let bounds0 = Linear_facts.bounds env in
       let env = Linear_facts.strip_bounds (Linear_facts.strip env) in
+      (* A call stating a precondition is offered the bounds and facts of its
+         statement's start: a proposal, which Lean refuses where an earlier
+         part of the statement changed what they read. *)
       let typed_with_bounds = match node.action with
-        | Flow.Statement (span,_) | Flow.Declaration (span,_,_,_,_) | Flow.Branch (span,_,_) ->
-          Linear_facts.statement_heap_free env (source span)
+        | Flow.Statement _ | Flow.Declaration _ | Flow.Branch _ | Flow.Return _ | Flow.ReturnSave _ -> true
         | _ -> false in
       Linear_facts.current_bounds := (if typed_with_bounds then bounds0 else []);
+      Linear_facts.current_facts := (if typed_with_bounds then facts0 else []);
       let next id env = id,capture (scope graph.nodes.(id).scope env) in
       let infer_return span = match (source span).statement with
         | Return e -> callbacks.return_expression env e
@@ -242,6 +244,7 @@ let statements callbacks flow_graph register_following owner_span env0 ss =
                && not (List.mem_assoc (bound_key array index) failed)
             then failed @ [bound_key array index,Value top] else failed) failed (guard_bounds cond) in
           Linear_facts.current_bounds := [];
+          Linear_facts.current_facts := [];
           [next yes held;next no failed]
         | Flow.Return span ->
 
@@ -279,6 +282,7 @@ let statements callbacks flow_graph register_following owner_span env0 ss =
               | _ -> false)
         | _ -> false in
       Linear_facts.current_bounds := [];
+      Linear_facts.current_facts := [];
       (* Each normal edge's linear facts and bounds, by the node's action. *)
       let edges =
         (* A cell (a binding a closure assigns, or an early one) holds no
