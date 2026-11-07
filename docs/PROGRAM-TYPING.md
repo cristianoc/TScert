@@ -1893,6 +1893,7 @@ derived from it), `call-keeps-heap-loop` (a typed array's bound across a
 call of a function whose loop writes only its locals), `facts-across-writes`
 (bounds across field writes and an element write), `method-calls-keep-facts`
 (a `WeakMap`'s `get`, a `Map`'s construction and `set`),
+`weak-map-set-keeps-facts` (a `WeakMap`'s `set` and `delete`),
 `for-of-keeps-counter-facts` (an array iterator's step),
 `view-count-across-field-write` (a typed array's element count across a
 number field's write) and `typed-array-reads-below-length` (a

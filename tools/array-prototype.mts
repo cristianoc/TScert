@@ -545,7 +545,9 @@ const primitiveOverlay: Readonly<Record<string, readonly OverlayEntry[]>> &
  * that change a collection or a date (`add`, `set`, `delete`, `clear`,
  * `setTime`) state `{value: any, store: keep}`: they compare keys by
  * SameValueZero or take a number, run no code, and write only the receiver's
- * internal slots, which hold values and no array store. `forEach`, which
+ * internal slots, which hold values and no array store; a `Set`'s and a
+ * `Map`'s `size`, a readonly view, changes with them. A `WeakMap`'s `set`
+ * and `delete` state the empty footprint: it has no `size`. `forEach`, which
  * calls its callback, states none (SOURCE-CONTRACTS.md, "Native
  * footprints"). */
 const changesValues = footprintEffect({ value: "any", store: "keep" });
@@ -576,12 +578,17 @@ export const interfaceOverlay: Map<string, readonly OverlayEntry[]> = new Map<st
   // Results describe normal returns. Native set throws TypeError for keys
   // other than objects and non-registered symbols; get/has/delete return
   // undefined/false for those keys. The declared K limits admitted calls.
+  // `set` and `delete` write only the table, the receiver's
+  // `[[WeakMapData]]`, which no location of the model holds: a weak map
+  // states no property but its tag, which neither changes. So both state
+  // the empty footprint, as `%ByteSet%` does (SOURCE-CONTRACTS.md, "Weak
+  // tables").
   ["WeakMap", [
     { name: "get", from: "WeakMap", signature: "get(key: K): V | undefined;", effect: emptyEffect },
     { name: "has", from: "WeakMap", signature: "has(key: K): boolean;", effect: emptyEffect },
     { name: "set", from: "WeakMap", signature: "set(key: K, value: V): this;", resultIsReceiver: true,
-      effect: changesValues },
-    { name: "delete", from: "WeakMap", signature: "delete(key: K): boolean;", effect: changesValues },
+      effect: emptyEffect },
+    { name: "delete", from: "WeakMap", signature: "delete(key: K): boolean;", effect: emptyEffect },
     { name: "[Symbol.toStringTag]", from: "WeakMap", signature: "readonly [Symbol.toStringTag]: string;" },
   ]],
   ["Map", [

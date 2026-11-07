@@ -2883,10 +2883,12 @@ are host assumptions about the built-in prototypes, not consequences of
 that structure. A member's signatures state the
 entry's effect: the empty footprint for the readers, `has`, `get`, `keys`,
 `values`, `entries`, `[Symbol.iterator]` and `Date`'s getters, `valueOf`,
-`toString` and `toISOString`; `{value: any, store: keep}` for the members
-that change the collection or the date, `add`, `set`, `delete`, `clear` and
+`toString` and `toISOString`, and for a `WeakMap`'s `set` and `delete`
+([weak tables](#weak-tables)); `{value: any, store: keep}` for the members
+that change a `Set`, a `Map` or a date, `add`, `set`, `delete`, `clear` and
 `setTime`, which compare by SameValueZero or take a number, run no code and
-write only the receiver's internal slots, which hold no array store; none for
+write only the receiver's internal slots, which hold no array store, and
+change a collection's `size`, a readonly view the model holds; none for
 `forEach`, which calls a callback. `new Set` and `new Map` of an array, of a
 host collection or of nothing state the empty footprint on their construct
 signatures: they read the array or the collection through the host's iterator
@@ -2903,9 +2905,8 @@ view. A string's own `length` and indices are the calculus's `lenStr` and
 
 `WeakMap<K, V>` uses the collection interface overlay, with `get(K): V |
 undefined`, `has(K): boolean`, `set(K, V): this`, `delete(K): boolean` and
-its readonly standard tag. The declared key bound is retained. `get` and
-`has` state the empty footprint; `set` and `delete` state
-`{value: any, store: keep}`. A lookup may be absent regardless of an earlier
+its readonly standard tag. The declared key bound is retained. All four
+state the empty footprint. A lookup may be absent regardless of an earlier
 `has`, particularly after alias mutation. `set` returns the receiver.
 Only zero-argument `new WeakMap<K, V>()` is admitted, with the empty
 footprint; an iterable argument is refused.
@@ -2916,7 +2917,26 @@ an adder. The four methods check the receiver's internal slots and compare
 keys by identity; they perform no key conversion, property read, iteration,
 callback, thenable assimilation, constructor lookup or species operation.
 Their only mutations affect the table's internal entries. Invalid receivers
-throw `TypeError`. A weak key is an object (including a function) or a
+throw `TypeError`.
+
+**The empty footprint of `set` and `delete`.** `WeakMap.prototype.set`
+([ECMA-262](REFERENCES.md#ecma-262), "WeakMap.prototype.set") requires the receiver's `[[WeakMapData]]`, tests the
+key by CanBeHeldWeakly (an object, or a symbol KeyForSymbol finds in no
+registry entry, which reads the registry and runs no code), throwing a
+`TypeError` otherwise, and replaces the value of the entry whose key is the
+same value or appends one; `delete` answers `false` for a key
+CanBeHeldWeakly refuses and empties the entry with the key. Neither runs code
+nor writes a property of any object. The table is host state: the model holds
+a weak map's members and its tag, the members found on its prototype and the
+tag a constant, and holds no location for `[[WeakMapData]]`, which no type
+states (a weak map has no `size`). So the calls change no location of the
+model: the empty footprint, as `%ByteSet%`'s writes of a view's elements. A
+lookup gives what its signature states, `V | undefined`, a value the table
+held, which met `V` when `set` stored it and meets it in every later world;
+no fact of the program relates a lookup to an earlier `set`, so a later `get`
+needs nothing the footprint drops. `Map`'s and `Set`'s changes are not alike:
+they change `size`, a readonly view the model holds, and keep
+`{value: any, store: keep}`. The case is `weak-map-set-keeps-facts`. A weak key is an object (including a function) or a
 non-registered symbol. `set` throws `TypeError` for every other key;
 `get` returns `undefined`, and `has` and `delete` return `false` for such
 keys. The overlay retains TypeScript's key parameter, so calls outside

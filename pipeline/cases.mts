@@ -2813,6 +2813,7 @@ export const cases: Case[] = [
   negative("invalid-facts-across-for-of-pop", "a `for...of` body popping the counter loop's array: the length bound does not survive the inner loop, and the read is `undefined` at `number` (run under Node)",
     /no derivation of its cast claim/),
   positive("method-calls-keep-facts", "method calls keep the facts their footprints keep: a `WeakMap`'s `get` and a `Map`'s construction keep a path's length bound, a `Map`'s `set` a length bound (SOURCE-CONTRACTS.md, \"Weak tables\")"),
+  positive("weak-map-set-keeps-facts", "a `WeakMap`'s `set` and `delete` state the empty footprint, writing only the table no location of the model holds, so a path's length bound survives a cache filled on a miss and a deletion (SOURCE-CONTRACTS.md, \"Weak tables\")"),
   positive("for-of-keeps-counter-facts", "a `for...of` loop over an array in a counter loop's body: the iterator's step changes only its own locations, so the counter's length bound survives it (PROGRAM-TYPING.md, \"Linear facts\")"),
   positive("view-count-across-field-write", "a typed array's element count across a write of a number field: `[[viewLength]]` is a stable key of the view's type, so every step keeps the count (PROGRAM-TYPING.md, \"Linear facts\")"),
   negative("invalid-view-count-across-field-write-other", "a read of `b` below another view's element count across a number field's write: `undefined` at `number` (run under Node)",
