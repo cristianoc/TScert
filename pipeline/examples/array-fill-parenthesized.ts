@@ -1,6 +1,7 @@
-// The restriction of `new Array<T>(n).fill(v)` to its written form: the
-// construct parenthesized before its `fill` is safe, but is read as the
-// construct alone, which makes holes, and refused
+// Parentheses around `new Array<T>(n)` before its `.fill(v)` are transparent:
+// TypeScript gives the wrapped and the direct form one meaning, so the
+// construct is read as `fill`'s receiver and the call as the filling
+// intrinsic, exactly as written directly
 // (SOURCE-CONTRACTS.md, "`new Array` filled at once").
 export function zeros(n: number): number[] {
   // prettier-ignore

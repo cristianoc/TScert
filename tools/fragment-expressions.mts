@@ -10,7 +10,7 @@ import { bigintText, CLASS_ACCESS, numericLexeme, GENERIC_METHOD_RECEIVER, numer
 import type { Expr, LambdaParamAst, PatternAst, Stmt, ArithOp, BinaryOp, UnaryOp, ArrayElemAst, TypeofShape } from "./fragment.mts";
 import { CHAIN, OBJECT } from "./fragment.mts";
 import type { Span } from "./span.mts";
-import { nameOf, isTypeAlias, namedAccess } from "./syntax.mts";
+import { nameOf, isTypeAlias, namedAccess, unparenthesized } from "./syntax.mts";
 import { asyncReturnName, elementAtName, hasPropertyName, literalTerm, ordinaryHasInstanceName } from "./intrinsics.mts";
 import { guardResult } from "./fragment-guards.mts";
 import { FUNCTION_TO_STRING, GENERATOR, HAS_INSTANCE, booleanForm, booleanReturn, TAG_WRITE, INSTANCE_STATIC, type ObjectPart, SPREAD_POSITION, STATIC_INIT_CLASS, STATIC_INIT_CLOSURE, bindingScope, callableAssign, classKey, completes, firstOptional, inKey, literalExpr, parameterName, propertyKeyText, prototypeName, elementBracket, wrappedMemberCallee, WRAPPED_MEMBER_CALL, skipParentheses, staticFieldOf, staticMethodOf, staticName, fileClasses, TYPEOF_SHAPES } from "./fragment-support.mts";
@@ -545,10 +545,12 @@ export function expr(this: Gate, node: Expression): Within<{ value: "any"; store
     // of the length check at `n`, and `v`: `n`, the check, `v`, in
     // JavaScript's order (SOURCE-CONTRACTS.md, "`new Array` filled at once").
     const filling = gate.globalIntrinsics.get(gate.span(node).join(":"));
-    if (filling && ts.isPropertyAccessExpression(node.expression) && ts.isNewExpression(node.expression.expression) &&
-        gate.globalIntrinsics.has(gate.span(node.expression.expression).join(":")))
-      return gate.intrinsic(filling, gate.span(node), gate.span(node.expression.name),
-        [gate.expr(node.expression.expression), ...node.arguments.map(a => gate.expr(a))]);
+    const filled = unparenthesized(node.expression);
+    const made = ts.isPropertyAccessExpression(filled) ? unparenthesized(filled.expression) : filled;
+    if (filling && ts.isPropertyAccessExpression(filled) && ts.isNewExpression(made) &&
+        gate.globalIntrinsics.has(gate.span(made).join(":")))
+      return gate.intrinsic(filling, gate.span(node), gate.span(filled.name),
+        [gate.expr(made), ...node.arguments.map(a => gate.expr(a))]);
     // `Promise.resolve(v)` and the like, which the overlay reads as a call
     // of the intrinsic stating the same step, read at the member's name.
     const intrinsic = gate.globalIntrinsics.get(gate.span(node).join(":"));

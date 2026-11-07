@@ -258,3 +258,10 @@ export function namedAccess(node: Node): { object: Node; key: string; keyNode: N
     return { object: node.expression, key: node.argumentExpression.text, keyNode: node.argumentExpression };
   return null;
 }
+
+/** The node with every parenthesized wrapper stripped: TypeScript gives a
+ * wrapped and an unwritten expression one meaning, so a decision that reads
+ * the normalized form treats the spellings alike (#119). */
+export function unparenthesized(node: Node): Node {
+  return ts.isParenthesizedExpression(node) ? unparenthesized(node.expression) : node;
+}
