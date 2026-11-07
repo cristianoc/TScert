@@ -1151,6 +1151,32 @@ theorem fieldChanges_store [DecidableEq ι] (G : NormalGraph ι) (cs : List (Pos
   · exact foldr_join_store _
   · simp [Changes.top]
 
+/-- Every clause of `A` states `fld` a stable key. -/
+def stableField (G : NormalGraph ι) (A : Ty ι) (fld : PropKey) : Bool :=
+  G.plainTy A && !(expand G A).isEmpty && (expand G A).all fun c => c.stableKeys.contains fld
+
+theorem stableField_at {G : NormalGraph ι} {A : Ty ι} {fld : PropKey} {n W v}
+    (hs : stableField G A fld = true) (hv : meaning G A n W v) :
+    ∃ (flds : List (PropKey × Nat)) (oid : Nat),
+      v = .objAt flds .absent oid ∧ StableAt W flds fld := by
+  simp only [stableField, Bool.and_eq_true, List.all_eq_true] at hs
+  obtain ⟨⟨hplain, -⟩, hall⟩ := hs
+  obtain ⟨c, hc, hsem, -⟩ := (expand_sem G A hplain n W v).mp hv
+  exact semWithArgs_stable hsem (List.contains_iff_mem.mp (hall c hc))
+
+/-- Whether every clause of `A` states `fld` a field whose every type states
+`viewLengthKey` stable: the view the field holds keeps its element count
+through every step (`view-path-stable`). -/
+def viewField (G : NormalGraph ι) (A : Ty ι) (fld : PropKey) : Bool :=
+  fieldOperand (expand G A) fld && (fieldTys (expand G A) fld).all fun B => stableField G B viewLengthKey
+
+/-- The slots and fields of a context whose view's element count a step
+keeps (`viewField`). -/
+def writeViews (G : NormalGraph ι) (Γ : List (Ty ι)) (s : Nat) (g : String) : Bool :=
+  match Γ[s]? with
+  | some A => viewField G A (.str g)
+  | none => false
+
 /-- Whether a write of field `fld` of slot `i` keeps a cell fact about
 field `g` of slot `s`: a separation fact states the two apart, or, where the
 written field's location belongs to its key alone (`owned`), `s` holds the
@@ -1166,14 +1192,15 @@ written value is a known primitive (`R`), states that reading the field from
 the receiver gives the written slot's value (a read link, `write-link`), and
 retains immutable values already read into slots. -/
 def writeOutput (k : Knowledge) (i v : Nat) (fld : PropKey) (R : Option ValueSets.ValueSet) (owned : Bool)
-    (chg : Changes) : Knowledge :=
+    (chg : Changes) (views : Nat → String → Bool) : Knowledge :=
   ⟨(R.map fun R => (HeapLinks.aliases k.links i).map (fun j => (⟨j+1,R,fld⟩ : Fact))).getD [] ++
       (k.cells.filter fun f => writeKeeps k i fld owned f.slot f.field).map
         (fun f => {f with slot := f.slot + 1}),
     ⟨0,{ nul := true },valueField⟩ :: HeapFacts.shift k.values,
     ⟨i+1, v+1, false, fld, false⟩ :: HeapLinks.stable (HeapKnowledge.shift k).links,
     HeapSeparation.shift k.separation, [],
-    HeapKnowledge.shiftIndices (HeapKnowledge.keptIndices chg (fun s g => writeKeeps k i fld owned s (.str g)) k.indices)⟩
+    HeapKnowledge.shiftIndices
+      (HeapKnowledge.keptIndicesWith chg (fun s g => writeKeeps k i fld owned s (.str g)) views k.indices)⟩
 
 /-- **A kept location differs from the written one**: a separation fact
 states it, or `write-sibling` (`ownedField_sound`). -/
@@ -1226,7 +1253,7 @@ theorem write_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImag
     (hw : WorldAdm W) (hh : HeapOk n W h) :
     SafePost (excOf G) (meaning G A)
       (fun h' v => HeapKnowledge.Holds (writeOutput k i j fld R (ownedField (expand G (Γ.getD i [])) fld)
-        (fieldChanges G (expand G (Γ.getD i [])) fld)) (push v ρ) h')
+        (fieldChanges G (expand G (Γ.getD i [])) fld) (writeViews G Γ)) (push v ρ) h')
       n W h (.writeAt fld (ρ i) (ρ j)) := by
   have hvv : isVal (ρ j) = true :=
     (meaning_value (he.2 j Γ[j] (List.getElem?_eq_some_iff.mpr ⟨hj,rfl⟩))).1
@@ -1237,23 +1264,51 @@ theorem write_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImag
   | zero => trivial
   | succ n =>
     have step := hs
-    rcases step with (⟨hbad,_⟩ | ⟨_,hr,_⟩) | ⟨U,h',t',_,_,step,_,_⟩
+    rcases step with (⟨hbad,_⟩ | ⟨_,hr,_⟩) | ⟨U,h',t',hx,hu,step,hh',hs'⟩
     · contradiction
     · cases hr with
       | writeC1 hr => rw [raises_not_val hr] at hiv; contradiction
       | writeC2 _ hr => rw [raises_not_val hr] at hvv; contradiction
-    · obtain ⟨flds,c,oid,l,hl,hfd,hlt,_,_⟩ := write_inv hiv hvv step
+    · obtain ⟨flds,c,oid,l,hl,hfd,hlt,rfl,rfl⟩ := write_inv hiv hvv step
+      -- At budget one the step ends the observed run: no heap is observed after it.
+      cases n with
+      | zero => exact .inr ⟨U, _, _, hx, hu, step, hh', trivial⟩
+      | succ m =>
       rw [hl] at hs ⊢
       apply one_step rfl rfl (.writeField hvv hfd hlt) _ hs
-      have hindex : HeapKnowledge.IndexHolds (HeapKnowledge.shiftIndices (HeapKnowledge.keptIndices
+      have hviews : HeapKnowledge.ViewsKept (writeViews G Γ) ρ h (h.set l (ρ j)) := by
+        intro s g fs cd o l0 w hvw hs0 hl0 hw
+        unfold writeViews at hvw
+        split at hvw
+        · rename_i A hA
+          simp only [viewField, Bool.and_eq_true, List.all_eq_true] at hvw
+          obtain ⟨El, flds0, code0, oid0, l1, c0, hv0, hl1, hW, himp, hEl⟩ := fieldOperand_typed hvw.1 (he.2 s A hA)
+          rw [hs0] at hv0; cases hv0
+          rw [hl0] at hl1; cases hl1
+          obtain ⟨u, hu0, hm⟩ := hh.2 l0 c0 hW
+          rw [hw] at hu0; cases hu0
+          have hEw := himp (m + 1) (by omega) _ w (hm (m + 1) (by omega))
+          obtain ⟨flds', oid', rfl, hst⟩ := stableField_at (hvw.2 El hEl) hEw
+          cases hlv : flds'.lookup viewLengthKey with
+          | none => simp only [viewLengthOf, hlv]
+          | some lv =>
+            obtain ⟨c', v0, hlk, hcs⟩ := hst.present hlv
+            have h0 : h[lv]? = some v0 :=
+              (HeapOk_trunc (m + 1) W h hh).stable_value (Nat.zero_lt_succ m) hlk hcs
+            have h1 : (h.set l (ρ j))[lv]? = some v0 :=
+              hh'.stable_value (Nat.zero_lt_succ m) (WExt_lookup hx hlk) hcs
+            simp only [viewLengthOf, hlv, h0, h1]
+        · cases hvw
+      have hindex : HeapKnowledge.IndexHolds (HeapKnowledge.shiftIndices (HeapKnowledge.keptIndicesWith
           (fieldChanges G (expand G (Γ.getD i [])) fld)
-          (fun s g => writeKeeps k i fld (ownedField (expand G (Γ.getD i [])) fld) s (.str g)) k.indices))
+          (fun s g => writeKeeps k i fld (ownedField (expand G (Γ.getD i [])) fld) s (.str g))
+          (writeViews G Γ) k.indices))
           (push .nul ρ) (h.set l (ρ j)) := by
         obtain ⟨u, hu⟩ : ∃ u, h[l]? = some u := ⟨h[l], List.getElem?_eq_getElem hlt⟩
-        have hRef : meaning G (Γ.getD i []) (n + 1) W (ρ i) :=
+        have hRef : meaning G (Γ.getD i []) (m + 1 + 1) W (ρ i) :=
           he.2 i (Γ.getD i []) (by simp [List.getD_eq_getElem?_getD, List.getElem?_eq_getElem hi])
-        refine HeapKnowledge.shiftIndices_holds (HeapKnowledge.keptIndices_holds hk.2.2.2.2.2
-          (set_changes hu (fieldChanges_alters hRef hh hl hfd hu) (fieldChanges_store _ _ _)) ?_)
+        refine HeapKnowledge.shiftIndices_holds (HeapKnowledge.keptIndicesWith_holds hk.2.2.2.2.2
+          (set_changes hu (fieldChanges_alters hRef hh hl hfd hu) (fieldChanges_store _ _ _)) ?_ hviews)
         intro s g fs cd o l0 v hfirst hs0 hl0 hv
         rw [List.getElem?_set_ne (writeKeeps_ne he hk hi hfirst hl hfd hs0 hl0)]
         exact hv
@@ -1668,7 +1723,7 @@ frame. Subtype comparisons retain unfinished work through the step validation. -
       checkedOutput G images e (decide (claim e = j ∧ i' = i ∧ v' = v ∧ i < j.context.length ∧
         v < j.context.length ∧ valuesAt G j.context k v = R))
         (writeOutput k i v fld R (ownedField (expand G (j.context.getD i [])) fld)
-          (fieldChanges G (expand G (j.context.getD i [])) fld)) codes sums tree
+          (fieldChanges G (expand G (j.context.getD i [])) fld) (writeViews G j.context)) codes sums tree
     | none => failure
   | .boundedWrite .. => failure
 
@@ -1768,7 +1823,7 @@ theorem checkStepUsing_eq [DecidableEq ι] (G : NormalGraph ι) (images : Instan
           i < j.context.length ∧ v < j.context.length ∧
           valuesAt G j.context k v = R
       then some (writeOutput k i v fld R (ownedField (expand G (j.context.getD i [])) fld)
-          (fieldChanges G (expand G (j.context.getD i [])) fld)) else none
+          (fieldChanges G (expand G (j.context.getD i [])) fld) (writeViews G j.context)) else none
     | none => none
   | .boundedWrite .. => none := by
   cases step <;> simp only [checkStepUsing, checkStepResult, checkedOutput_value,
@@ -2028,19 +2083,6 @@ A read link through a member every clause of its receiver's type states a
 stable key holds through every step: the key reads one way for the object's
 life, a location whose contract admits one value, which every heap a run
 reaches holds there, or an absent key of an object without a prototype. -/
-
-/-- Every clause of `A` states `fld` a stable key. -/
-def stableField (G : NormalGraph ι) (A : Ty ι) (fld : PropKey) : Bool :=
-  G.plainTy A && !(expand G A).isEmpty && (expand G A).all fun c => c.stableKeys.contains fld
-
-theorem stableField_at {G : NormalGraph ι} {A : Ty ι} {fld : PropKey} {n W v}
-    (hs : stableField G A fld = true) (hv : meaning G A n W v) :
-    ∃ (flds : List (PropKey × Nat)) (oid : Nat),
-      v = .objAt flds .absent oid ∧ StableAt W flds fld := by
-  simp only [stableField, Bool.and_eq_true, List.all_eq_true] at hs
-  obtain ⟨⟨hplain, -⟩, hall⟩ := hs
-  obtain ⟨c, hc, hsem, -⟩ := (expand_sem G A hplain n W v).mp hv
-  exact semWithArgs_stable hsem (List.contains_iff_mem.mp (hall c hc))
 
 /-- The read links a step keeps through its every effect: those through a
 member every clause of the receiver's type states stable, optional links

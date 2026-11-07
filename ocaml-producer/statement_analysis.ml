@@ -565,6 +565,11 @@ let statements (expr:Analysis_state.expression_infer) execute_bindings owner_spa
         r.Semantic.call_effect.Semantic.ensures = s.Semantic.call_effect.Semantic.ensures) rest ->
       s.Semantic.call_effect.Semantic.ensures
     | _ -> []);
+  Linear_facts.view_field := (fun env b g ->
+    match Option.bind (receiver_type env {Source.node = Id b; pos = Json.Null}) (fun t -> field_of t (Name g)) with
+    | Some fg when not fg.optional && not fg.host ->
+      (match field_of fg.read (Name "[[viewLength]]") with Some v -> v.stable | None -> false)
+    | _ -> false);
   Linear_facts.stable_view := (fun env b ->
     match Option.bind (receiver_type env {Source.node = Id b; pos = Json.Null}) (fun t -> field_of t (Name "[[viewLength]]")) with
     | Some g -> g.stable

@@ -837,4 +837,80 @@ theorem holdsAt_kept {c : Changes} {first : Nat → String → Bool} {F : IndexF
 
 end IndexFact
 
+
+/-- Where `views s g` holds, the view the field `g` of slot `s`'s object held
+keeps its element count from `h` to `h'`. -/
+def ViewsKept (views : Nat → String → Bool) (ρ : Env) (h h' : Heap) : Prop :=
+  ∀ s g fs cd o l w, views s g = true → ρ s = .objAt fs cd o → fs.lookup (.str g) = some l →
+    h[l]? = some w → viewLengthOf h' w = viewLengthOf h w
+
+/-- Whether a change keeps the element count of a view read through one
+field (`view-path-stable`): the field's location is one `first` keeps or holds
+an object the change keeps, and `views` frames the view's count. -/
+def Term.viewFramed (c : Changes) (first views : Nat → String → Bool) (t : Term) : Bool :=
+  t.kind == .view && match t.path with
+    | [g] => (first t.slot g || !c.obj) && views t.slot g
+    | _ => false
+
+theorem termValue_viewFramed {c : Changes} {first views : Nat → String → Bool} {ρ : Env} {h h' : Heap}
+    {t : Term} {n : Int} (hc : c.Holds h h') (hf : FirstKept first ρ h h') (hv : ViewsKept views ρ h h')
+    (hk : t.viewFramed c first views = true) (ht : termValue ρ h t = some n) : termValue ρ h' t = some n := by
+  obtain ⟨kind, s, p⟩ := t
+  simp only [Term.viewFramed, Bool.and_eq_true, beq_iff_eq] at hk
+  obtain ⟨rfl, hp⟩ := hk
+  match p, hp with
+  | [g], hp =>
+    simp only [Bool.and_eq_true, Bool.or_eq_true, Bool.not_eq_true'] at hp
+    obtain ⟨hfirst, hvs⟩ := hp
+    simp only [termValue, Option.bind_eq_some_iff] at ht ⊢
+    obtain ⟨w, hw, hkw⟩ := ht
+    cases hs : ρ s
+    case objAt fs0 cd0 o0 =>
+      rw [hs] at hw
+      simp only [readPath] at hw ⊢
+      split at hw
+      · rename_i l hl
+        split at hw
+        · rename_i u hu
+          simp only [Option.some.injEq] at hw
+          subst hw
+          have hu' : h'[l]? = some u := by
+            rcases hfirst with hfirst | hobj
+            · exact hf s g fs0 cd0 o0 l u hfirst hs hl hu
+            · obtain ⟨fs, cd, o, -, -, rfl, -⟩ := viewLengthOf_inv hkw
+              exact hc.1 l _ hu (by simp [Changes.alters, hobj])
+          refine ⟨u, by simp [hu'], ?_⟩
+          simp only [kindValue] at hkw ⊢
+          rw [hv s g fs0 cd0 o0 l u hvs hs hl hu]; exact hkw
+        · cases hw
+      · cases hw
+    all_goals rw [hs] at hw; simp [readPath] at hw
+
+namespace IndexFact
+
+/-- Whether a change keeps a fact, each of its terms kept by `Term.keptBy` or
+framed by `Term.viewFramed`. -/
+def keptWith (c : Changes) (first views : Nat → String → Bool) : IndexFact → Bool
+  | .linear F => F.vars.all fun t => t.keptBy c first || t.viewFramed c first views
+  | F => F.keptBy c first
+
+theorem holdsAt_keptWith {c : Changes} {first views : Nat → String → Bool} {F : IndexFact} {ρ : Env} {h h' : Heap}
+    (hc : c.Holds h h') (hf : FirstKept first ρ h h') (hv : ViewsKept views ρ h h')
+    (hk : F.keptWith c first views = true) (hF : F.HoldsAt ρ h) : F.HoldsAt ρ h' := by
+  cases F with
+  | linear G =>
+    simp only [keptWith, List.all_eq_true, Bool.or_eq_true] at hk
+    refine holdsAt_linear_terms (fun t ht => ?_) hF
+    obtain ⟨m, hm⟩ := Option.isSome_iff_exists.mp (hF.1 t ht)
+    rw [hm]
+    rcases hk t ht with hk | hk
+    · exact termValue_kept hc hf hk hm
+    · exact termValue_viewFramed hc hf hv hk hm
+  | index _ => exact holdsAt_kept hc hf (by simp [keptWith] at hk ⊢; exact hk) hF
+  | int _ => exact holdsAt_kept hc hf (by simp [keptWith] at hk ⊢; exact hk) hF
+  | length _ _ => exact holdsAt_kept hc hf (by simpa [keptWith] using hk) hF
+  | bound _ _ _ => exact holdsAt_kept hc hf (by simpa [keptWith] using hk) hF
+
+end IndexFact
+
 end Verification.HeapKnowledge

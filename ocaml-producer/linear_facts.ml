@@ -338,7 +338,8 @@ let current_facts : fact list ref = ref []
    where no location its terms read holds what the write may change
    (`Term.keptBy`): a path's locations hold objects, its last a number for a
    value term; a length reads a store, an element count a number. *)
-type changes = { obj : bool; num : bool; store : [`Keep | `Length | `Any] }
+type changes = { obj : bool; num : bool; store : [`Keep | `Length | `Any];
+                 framed : string -> string -> bool }
 
 (* The classes a field's type admits, `(object, number, store)`, where the
    receiver's type states the field (Lean's `fieldChanges`); set by the
@@ -355,19 +356,28 @@ let method_footprint : ((string * Environment.binding) list -> expr -> Semantic.
 (* Whether the array binding's store holds source values at every position,
    one writable homogeneous contract (Lean's `keepsLengths`). *)
 let source_elements : ((string * Environment.binding) list -> string -> bool) ref = ref (fun _ _ -> false)
+(* Whether every type the binding's type states for a field states
+   `[[viewLength]]` stable (Lean's `viewField`): a field write keeps the
+   element count of the view the field holds (`view-path-stable`). *)
+let view_field : ((string * Environment.binding) list -> string -> string -> bool) ref = ref (fun _ _ _ -> false)
 
-let of_classes (o,n,a) = { obj = o; num = n; store = (if a then `Any else `Keep) }
+let no_frame _ _ = false
+let of_classes env (o,n,a) = { obj = o; num = n; store = (if a then `Any else `Keep);
+  framed = (fun b g -> value_binding env b && !view_field env b g) }
 let of_footprint (fp : Semantic.footprint) =
   { obj = fp.Semantic.on_value = Semantic.Any; num = fp.Semantic.on_value = Semantic.Any;
-    store = (if fp.Semantic.on_store = Semantic.Keep then `Keep else `Any) }
+    store = (if fp.Semantic.on_store = Semantic.Keep then `Keep else `Any); framed = no_frame }
 
 let term_kept ch t =
-  let _,path,kind = term_parts t in
+  let b,path,kind = term_parts t in
   let last = if kind = Value_term then ch.num else ch.obj in
-  (match path with
+  ((match path with
    | [] -> true
    | _ :: q -> not (if q = [] then last else ch.obj) && (q = [] || (not last && (List.length q = 1 || not ch.obj)))) &&
-  (match kind with Value_term -> true | Length_term -> ch.store <> `Any | View_term -> not ch.num)
+  (match kind with Value_term -> true | Length_term -> ch.store <> `Any | View_term -> not ch.num)) ||
+  (* A view's count read through one field the write keeps, its type stating
+     the count stable (Lean's `Term.viewFramed`). *)
+  (match kind, path with View_term, [g] -> not ch.obj && ch.framed b g | _ -> false)
 let fact_kept ch ((t,_) : fact) = List.for_all (fun (n,_) -> term_kept ch n) t
 
 (* An index below an array's length: a strict bound, or `0 ≤ k` and
@@ -382,12 +392,12 @@ let strictly_bounded ~facts ~bounds xs k =
 let write_changes ~facts ~bounds env (e : expr) : changes option =
   match e.node with
   | Write (recv,key,rhs) when heap_free env recv && heap_free env rhs ->
-    Option.map of_classes (!field_classes env recv key)
+    Option.map (of_classes env) (!field_classes env recv key)
   | Update (_,{node=Read (recv,key);_},rhs,_) when heap_free env recv && Option.fold ~none:true ~some:(heap_free env) rhs ->
-    Option.map of_classes (!field_classes env recv key)
+    Option.map (of_classes env) (!field_classes env recv key)
   | IndexWrite ({node=Id xs;_},{node=Id k;_},rhs)
     when heap_free env rhs && value_binding env xs && value_binding env k && !source_elements env xs && strictly_bounded ~facts ~bounds xs k ->
-    Some { obj = true; num = true; store = `Length }
+    Some { obj = true; num = true; store = `Length; framed = no_frame }
   | Call ({node=Id f;_},None,args,[],_) when List.for_all (heap_free env) args ->
     Option.map of_footprint (!call_footprint env f)
   | Invoke ({node=Read (r,key);_},args,[],_) when heap_free env r && List.for_all (heap_free env) args ->

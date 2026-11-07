@@ -8,8 +8,8 @@
 // segmentFlags.length`, derived before the loop over the bindings alone. A
 // write of a field the receiver's type states gives the field's new value
 // (`write-link`), so `step`'s `return true` meets the cursor's invariant
-// from `segmentIndex + 1`. The flags are an array: an element count over a
-// path is a gap (`cursor-invariant-view-path-refused`).
+// from `segmentIndex + 1`. The flags are an array; `cursor-invariant-view-path`
+// is the same helper over a `Uint8Array`.
 
 /** @invariant safeInteger(this.segmentIndex) && 0 <= this.segmentIndex */
 export type Cursor = { segmentIndex: number };

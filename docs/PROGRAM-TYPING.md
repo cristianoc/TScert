@@ -1715,6 +1715,31 @@ type states $`[[\mathrm{viewLength}]]`$ stable, beside the step's own output
 on the step's normal return. A write of a number field, a call and an
 element write keep `i < b.length` alike.
 
+A field write also keeps the element count of a view read through one field
+$`g`$ of a slot $`z`$, where the write keeps the field's location (it alters no
+object, or $`\mathrm{first}(z,g)`$) and every clause of $`\Gamma(z)`$ states
+$`g`$ a field each of whose types $`B`$ states $`[[\mathrm{viewLength}]]`$
+stable in every clause (`HeapExpressionRules.viewField`, `writeViews`;
+`Term.viewFramed`, `IndexFact.keptWith`, `HeapKnowledge.keptIndicesWith`;
+proved in `write_sound`, from `fieldOperand_typed`, `stableField_at` and
+`HeapOk.stable_value` in the truncated world the field's contract types its
+value in, and `termValue_viewFramed`):
+
+```math
+\frac{F\in\Sigma\quad \mathrm{view}(z.g)\in\mathrm{vars}(F)\quad
+      \neg\chi(\mathsf{obj})\lor\mathrm{first}(z,g)\quad
+      \forall B\in\mathrm{fieldTys}(\Gamma(z),g).\ [[\mathrm{viewLength}]]\in\sigma(B)}
+     {\Gamma;\Sigma\vdash x.f:=y\dashv\Sigma',\ F}\ \textsf{view-path-stable}
+```
+
+with every other term of $`F`$ kept by $`\chi`$. So `cursor.segmentIndex = i + 1`
+keeps $`i<\mathrm{view}(\mathit{prepared}.\mathit{segmentFlags})`$, and a
+write of `prepared.segmentFlags` itself keeps no fact naming the count. The
+rule reads one field: a field's contract types its value at the levels below
+its record's, and a value read through two fields is typed only two levels
+below, where the stability of its count is not known at every level a run
+observes.
+
 **A comparison with a length.** A strict comparison of a safe integer $`k`$
 with a slot $`n`$ a length atom names states, on the answer giving $`k<n`$,
 the facts of $`k`$ alone, which survive dropping $`n`$ (`IndexWrites.lengthAtoms`,
@@ -2239,9 +2264,10 @@ A parameter's invariant at its returns: positive
 `cursor-invariant-after-writing-call` (pretext's `countSteppedLines` shape:
 a loop calling a cursor-writing helper, then reading at the cursor's index);
 negative, run under Node, `invalid-cursor-invariant-step-back` (a helper
-stepping the cursor below 0, refused at its return); a gap,
-`cursor-invariant-view-path-refused` (a view's element count read through a
-field, lost at a number field's write); a forged control, a parameter's fact
+stepping the cursor below 0, refused at its return); positive
+`cursor-invariant-view-path` (a view's element count read through a field,
+kept at a number field's write, `view-path-stable`) and negative, run under
+Node, `invalid-view-path-field-replaced` (the field itself replaced); a forged control, a parameter's fact
 the front end does not state forged into the document, refused at a return.
 Sealed handles: `sealed-handle-value-import` (the handle and its casts in
 and out, `seal` and `open`, in `imports-project/handle.ts`; a builder
