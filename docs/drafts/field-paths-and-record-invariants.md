@@ -195,3 +195,76 @@ any new certified constructor needs its checker and safety theorem.
 with precisely its declared entry assumptions. Require `make test`,
 the axiom check and documentation checks; report targeted before/after
 function outcomes without treating a later first refusal as verification.
+## 4. Record invariants as footprint facts (owner direction, 2026-11-07)
+
+**The existing mechanism this extends.** [Footprints](../FOOTPRINTS.md): a
+fact, the operations stable for it, the checked contract, the construct's
+rule. A record invariant is one more fact of that mechanism, not a separate
+discipline.
+
+**The fact.** `@invariant C` on a type alias or interface `R` names
+`I_R(o, h)`: the clause `C` (the `@requires` language over `this`'s field
+paths: values, array lengths, view counts) holds of `o` in `h`. Where the
+record's construction is in stages, the stage is one of the record's own
+fields and the clause is guarded by it, so `I_R` is still one predicate on
+record values.
+
+**Established** where a value is first given type `R` by the program: an
+object literal (or `satisfies R` / annotation) allocating it, from the facts
+known of its fields' values at that point (pretext's `measureAnalysis`
+builds the arrays as locals and allocates the record once).
+
+**Stable operations** (first subset): reads; element writes at a present
+index (they change no length); writes of fields `C` does not name; calls
+whose certified footprint touches no location `C` reads. Each stability is
+a lemma of the fact kind.
+
+**Excluded operations**, refused with a location, on a value that may be an
+`R` or an array a published `R` names: `push`, `pop`, `shift`, `unshift`,
+`splice`, `length =`, `fill`/`copyWithin` where they resize (none do), and
+replacing a field `C` names. A program needing one of them on a published
+record (appending to both parallel arrays) is outside this subset: opening
+and closing an invariant is later design.
+
+**Assumed** wherever a value of type `R` is read: `I_R` holds of it, a fact
+over its paths the linear facts use. Values reach type `R` only through
+establishment inside the analyzed sources, or across the boundary of an
+exported function, where a caller outside the analyzed sources is trusted
+(the trust row of exported preconditions; owner direction: the application
+is analyzed too, so the trust is a stand-in).
+
+**Aliasing.** The exclusion is by the excluded operation's receiver: any
+array that may be a field of a published `R` (by type: an array whose type
+is a field type of some invariant-bearing `R` reachable from it, or by the
+knowledge's links) is refused the resizing operations. That over-refuses
+arrays of the same type not stored in a record; the first version accepts
+that cost and measures it on pretext.
+
+### 4.1 Revision after review: invariants as boundary contracts
+
+Astra's review (2026-11-07) found the exclusion-by-receiver-type of §4
+neither a complete alias analysis nor a preservation theorem, and a read at
+type `R` unable to manufacture the fact. The revision states the invariant
+through the contracts that exist instead of a global discipline:
+
+- **Parameters.** Every analyzed function with a parameter `p : R` has `I_R(p)`
+  conjoined to its written precondition (`Effect.pre`): its body assumes it,
+  every call checks it (call-requires). A caller outside the analyzed sources
+  is trusted for it at each call (the exported-precondition trust row, extended
+  in words to invariants at the call; no lifetime preservation is assumed).
+- **Results.** Every analyzed function whose result type is `R` has `I_R(result)`
+  as a result fact (`Effect.ensures`), proved at each normal return. It names
+  only the result, so it needs no entry values of the parameters, the
+  obstacle to `ensures` on code in general.
+- **Preservation** is local: between two boundaries, the facts are kept only
+  by operations whose certified footprints preserve their support (the index
+  fact preservation through footprints). A mutation that breaks `I_R` fails
+  at the next boundary that requires it; no operation needs a global exclusion.
+- **Establishment** is the return's proof: an object literal built from
+  local arrays, its clause proved in the heap after every initializer ran.
+- **Values stored in the heap** (an `R` read from another record's field or a
+  `WeakMap`) carry no fact: a call needing `I_R` of such a value is refused
+  until the containing structure states it (a nested invariant, later).
+- **Excluded for now**: guarded clauses, temporary opening, conversions that
+  give a value type `R` without a return of an analyzed function (casts,
+  `satisfies` on a value not built there, natives, spreads): refused, located.
