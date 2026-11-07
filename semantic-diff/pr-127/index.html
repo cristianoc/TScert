@@ -1,0 +1,170 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Commit Records</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Code+Pro:wght@400;600&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=STIX+Two+Text:ital,wght@0,400;0,600;1,400&display=swap">
+<style>
+:root { --bg:#fbfcfd; --surface:#ffffff; --ink:#0b1a2e; --muted:#56627a; --rule:#d5dce6; --accent:#8a6410; --code-bg:#eef2f7; --math-bg:#f2f4f8; --ok:#2f6b47; --ok-bg:#e2efe4; --principled:#a0521a; --principled-bg:#f7e6d6; --gap:#6b6f78; --gap-bg:#ecebe6; --neutral:#2c4f7c; --neutral-bg:#e6ebf2; --trust:#7c2f4a; --trust-bg:#f2e1e7; --neg:#9b3524; --neg-bg:#f5e1da; --run:#7a5414; --run-bg:#f3e7cc; --brand-ink:#0b1a2e; --brand-gold:#b8840f;
+  --display:"Bricolage Grotesque","Helvetica Neue",Arial,sans-serif; --body:"Inter","Helvetica Neue",Arial,sans-serif; --mono:"Source Code Pro",Menlo,Consolas,monospace; --math:"STIX Two Text","STIX Two Math","STIXGeneral","Cambria Math","Apple Symbols",Georgia,serif; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#0e1626; --surface:#16213a; --ink:#efe7d4; --muted:#9aa3b5; --rule:#2a3756; --accent:#e0ac4a; --code-bg:#131d33; --math-bg:#1a2540; --ok:#7fd0a2; --ok-bg:#17322a; --principled:#f0a868; --principled-bg:#3a2a1c; --gap:#9aa3b5; --gap-bg:#1c2639; --neutral:#8fb4e8; --neutral-bg:#1b2b49; --trust:#e79bb6; --trust-bg:#3a2131; --neg:#f0907d; --neg-bg:#3a1f22; --run:#e0ac4a; --run-bg:#2e2a24; --brand-ink:#efe7d4; --brand-gold:#e0ac4a; color-scheme:dark } }
+:root[data-theme="dark"] { --bg:#0e1626; --surface:#16213a; --ink:#efe7d4; --muted:#9aa3b5; --rule:#2a3756; --accent:#e0ac4a; --code-bg:#131d33; --math-bg:#1a2540; --ok:#7fd0a2; --ok-bg:#17322a; --principled:#f0a868; --principled-bg:#3a2a1c; --gap:#9aa3b5; --gap-bg:#1c2639; --neutral:#8fb4e8; --neutral-bg:#1b2b49; --trust:#e79bb6; --trust-bg:#3a2131; --neg:#f0907d; --neg-bg:#3a1f22; --run:#e0ac4a; --run-bg:#2e2a24; --brand-ink:#efe7d4; --brand-gold:#e0ac4a; color-scheme:dark }
+* { box-sizing:border-box } body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.6 var(--body) }
+main { max-width:900px; margin:0 auto; padding-inline:20px; padding-block:32px 64px; display:flex; flex-direction:column; gap:22px }
+h1 { font:600 32px/1.15 var(--display); margin:0 } h2 { font:600 22px/1.2 var(--display); margin:12px 0 8px; padding-top:12px; border-top:2px solid var(--ink) }
+h3 { font:600 19px/1.3 var(--display); margin:2px 0 0; text-wrap:balance }
+h4 { font:600 11px/1 var(--body); letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin:12px 0 4px }
+p { margin:2px 0; max-width:72ch } .lede { color:var(--muted) }
+code { font:13px/1.5 var(--mono); background:var(--code-bg); padding:1px 4px; border-radius:3px }
+pre { margin:4px 0; padding:12px 14px; border-radius:6px; overflow-x:auto }
+pre.code { font:13px/1.55 var(--mono); background:var(--code-bg) }
+.rules { display:flex; flex-direction:column; gap:14px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:14px 18px; overflow-x:auto; font:16px/1.6 var(--math) }
+.rules sub, .rules sup { font-size:.72em; line-height:0 }
+.formulas { display:flex; flex-direction:column; gap:4px }
+.formulas .row { display:flex; flex-wrap:wrap; gap:4px 28px } .formulas .row.cont { padding-left:2em }
+.infer { display:flex; align-items:center; gap:12px }
+.frac { display:inline-flex; flex-direction:column; align-items:center; min-width:0 }
+.premises { display:flex; flex-wrap:wrap; justify-content:center; gap:4px 26px; padding:0 6px 3px }
+.bar { align-self:stretch; border-top:1.5px solid var(--ink) }
+.conclusion { padding:3px 6px 0; text-align:center }
+.rule-name { font:15px/1 var(--math); font-variant:small-caps; letter-spacing:.02em; color:var(--accent); white-space:nowrap }
+.card { background:var(--surface); border:1px solid var(--rule); border-radius:8px; padding:20px 22px; display:flex; flex-direction:column; gap:6px; min-width:0 }
+.card > header { display:flex; justify-content:space-between; gap:12px; align-items:flex-start }
+.sha { font:12px/1.4 var(--mono); color:var(--muted) }
+.pill { font:600 11px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; padding:6px 9px; border-radius:99px; white-space:nowrap }
+.pill.ok { color:var(--ok); background:var(--ok-bg) } .pill.principled { color:var(--principled); background:var(--principled-bg) }
+.pill.gap { color:var(--gap); background:var(--gap-bg) } .pill.neutral { color:var(--neutral); background:var(--neutral-bg) }
+.units { display:flex; flex-wrap:wrap; gap:6px } .units span { font:12px/1 var(--mono); border:1px solid var(--rule); border-radius:4px; padding:5px 7px }
+dl.facts { display:grid; grid-template-columns:max-content minmax(0,1fr); gap:6px 16px; margin:12px 0 0; padding-top:12px; border-top:1px solid var(--rule); font-size:13.5px }
+dt { font:600 11px/1.9 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted) }
+dd { margin:0; min-width:0; display:flex; flex-wrap:wrap; gap:5px; align-items:baseline }
+.chip { font:500 12px/1 var(--body); border:1px solid var(--rule); border-radius:4px; padding:4px 7px } .chip.strong { color:var(--accent); border-color:var(--accent) }
+.trust { color:var(--trust); background:var(--trust-bg); padding:2px 6px; border-radius:4px } .none { color:var(--muted) }
+.test { font:12px/1 var(--mono); padding:4px 7px; border-radius:4px }
+.test.pos { color:var(--ok); background:var(--ok-bg) } .test.pos::before { content:"✓ " }
+.test.neg { color:var(--neg); background:var(--neg-bg) } .test.neg::before { content:"✗ " }
+.test.forged { color:var(--principled); background:var(--principled-bg) } .test.forged::before { content:"forged " }
+details { margin-top:8px; font-size:13px; color:var(--muted) } summary { cursor:pointer }
+.table-wrap { overflow-x:auto; border:1px solid var(--rule); border-radius:8px; background:var(--surface) }
+table { border-collapse:collapse; width:100%; font-size:13px } th, td { text-align:left; vertical-align:top; padding:8px 10px; border-bottom:1px solid var(--rule) }
+th { font:600 11px/1.2 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); white-space:nowrap } td.num { font-variant-numeric:tabular-nums }
+h4.change { display:flex; align-items:center; gap:8px; text-transform:none; letter-spacing:0; font:600 14px/1.3 var(--body); color:var(--ink); margin:16px 0 6px }
+h4.change .target { font-weight:400; color:var(--muted) }
+.act { font:600 10.5px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; padding:4px 7px; border-radius:4px }
+.act.added { color:var(--ok); background:var(--ok-bg) } .act.removed { color:var(--neg); background:var(--neg-bg) }
+.act.modified, .act.replaced { color:var(--principled); background:var(--principled-bg) }
+.versions { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:10px }
+.versions figure { margin:0; min-width:0 } .versions figcaption { font:600 11px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); margin:0 0 4px }
+.versions .rules { height:calc(100% - 18px); box-sizing:border-box }
+pre.code .ln { display:block; white-space:pre } pre.code .ln.add { background:var(--ok-bg) } pre.code .ln.del { background:var(--neg-bg) }
+.tk-k { color:#7a3b8c } .tk-s { color:#2f6b47 } .tk-n { color:#a35a12 } .tk-c { color:var(--muted); font-style:italic } .tk-t { color:#2c4f7c }
+.prose p { margin:4px 0 }
+ul.effect, ul.summary { margin:4px 0; padding-left:20px } ul.effect li, ul.summary li { margin:3px 0 } ul.summary ul { padding-left:18px; color:var(--muted) }
+ul.effect .arrow { color:var(--accent); font-weight:600 }
+ul.effect details { margin:0; color:inherit; font-size:inherit } ul.effect summary { list-style-position:outside }
+ul.effect .kind { font-size:11px; text-transform:uppercase; letter-spacing:.04em; padding:1px 6px; border-radius:4px; background:var(--chip, #eee) }
+ul.effect .kind.negative { color:#8a3b12 } ul.effect .kind.positive { color:#22663a } ul.effect .kind.gap { color:#7a5b00 }
+ul.effect .was.unsound { color:#b3261e; font-weight:600 } ul.effect .now { font-weight:500 } ul.effect .why { color:var(--muted) }
+ul.effect mark { background:#ffe08a; color:inherit; border-radius:2px }
+@media (max-width:720px) { .versions { grid-template-columns:minmax(0,1fr) } }
+.lowering { display:flex; flex-direction:column; gap:6px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:12px 16px; overflow-x:auto }
+.lowering .map, .lowering .cond, .lowering .result { display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 10px }
+.lowering .map:not(:has(.sem)) { flex-direction:column; align-items:stretch; gap:4px }
+.lowering .result { display:grid; grid-template-columns:auto minmax(0,1fr); align-items:baseline; gap:2px 10px; padding-left:1em } .lowering .result .note { grid-column:2 }
+.m-intr { font:14px/1.5 var(--mono); color:#2c4f7c } .m-lit { font:13px/1.5 var(--mono); color:#7a3b8c }
+.lowering code.src { font:13px/1.5 var(--mono); background:var(--surface); border:1px solid var(--rule); padding:2px 6px; border-radius:4px }
+.lowering .to { color:var(--accent); font-weight:600; font-size:17px }
+.lowering .tgt { font:16px/1.5 var(--math) } .rules .lowering { background:none; border:0; padding:0 } .lowering .sem code.src { margin:0 2px }
+var { font-style:italic } .m-op { color:#2c4f7c; font-style:normal } .m-con { color:#8f6416; font-style:normal; font-variant:small-caps }
+.m-kw { color:#7a3b8c; font-weight:600; font-style:normal } .m-bind { color:#7a3b8c } .m-rel { color:var(--accent); padding:0 .12em }
+.m-text { font:14px/1.5 var(--body); color:var(--muted) } code.m-code { font:13px/1.5 var(--mono); background:var(--surface); border:1px solid var(--rule); padding:1px 5px; border-radius:4px }
+.refused { color:var(--neg); font-weight:600 }
+.lowering .refused { color:var(--neg); font-weight:600 }
+.lowering .label { font:600 11px/1 var(--body); letter-spacing:.05em; text-transform:uppercase; color:var(--muted); min-width:7em }
+.lowering .cond { padding-left:1.5em } .lowering .note { color:var(--muted); font:italic 13px/1.4 var(--body) }
+a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outline-offset:2px }
+@media (max-width:520px) { dl.facts { grid-template-columns:minmax(0,1fr) } .card > header { flex-direction:column } }</style></head><body><main><header><h1>Commit Records</h1><p class="lede">1 commit, rendered from their records.</p></header>
+<section><h2>Branches</h2><ul class="summary"><li><a href="#g-pr-127"><code>0b850de9168634ba6579d2089ec88e1e30f8e6a1..pr-127</code></a><ul><li>1 commit</li><li>parts: <span class="chip">lean</span> <span class="chip">tools</span> <span class="chip">tests</span> <span class="chip">docs</span></li></ul></li></ul></section>
+<h2 id="g-pr-127"><code>0b850de9168634ba6579d2089ec88e1e30f8e6a1..pr-127</code></h2><article class="card" id="c-0fd641bda"><header><div><div class="sha">0fd641bda · Vibe Nuage Agent · Nov 07, 10:53</div><h3>Classify a key and an access by their meaning, not their spelling</h3></div><span class="pill ok">verified</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>Issue #119's remaining findings are decisions made on how something is written instead of what it means. A key typed <code>0 | 1</code> is a number every value of it is a number, yet the guarded-write rule demanded <code>number</code> among the key's clauses and refused the union; a dictionary read at <code>number | 0</code> fell through a classification that knew the string union's absorption but not its numeric twin; and a host accessor was reached only through dot access, though <code>ctx[&quot;font&quot;]</code> and <code>ctx.font</code> are one member to TypeScript.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Rule <span class="target">the numeric key classification, <code>runtimeNumberKey</code></span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">a key qualified as a runtime number key only where <code class="m-code">number</code> was</span></span></div><div class="row"><span><span class="m-text">among its clauses, so a union of numeric literals fell to the</span></span></div><div class="row"><span><span class="m-text">single-index rule and a guarded write at it was </span><span class="refused">refused</span></span></div></div></div></figure><figure><figcaption>After</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">a key whose every value is a number qualifies</span> — <code class="m-code">number</code>, <span class="m-text">a numeric</span></span></div><div class="row"><span><span class="m-text">literal, or a union of them</span> — <span class="m-text">and the guarded write is certified</span></span></div><div class="row"><span><span class="m-text">where the knowledge bounds it, as a <code class="m-code">number</code> key's is</span></span></div></div></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Semantics <span class="target">a dictionary's read at a numeric union, <code>keyField</code></span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">a dictionary read a computed <code class="m-code">number</code> key at any entry, and a union</span></span></div><div class="row"><span><span class="m-text">of <code class="m-code">number</code> with a numeric literal fell to the single-index rule</span></span></div><div class="row"><span><span class="m-text">and was </span><span class="refused">refused</span></span></div></div></div></figure><figure><figcaption>After</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">the numeric-key classification is shared</span><span class="m-rel">:</span> <span class="m-text">a dictionary reads a key</span></span></div><div class="row"><span><span class="m-text">whose every value is a number at any entry, as it reads a</span> <code class="m-code">number</code></span></div><div class="row"><span><span class="m-text">key</span></span></div></div></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Lowering <span class="target">the named access, <code>namedAccess</code></span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="lowering"><div class="cond"><span class="tgt"><var>a</var> 2<var>D</var> <span class="m-text">context's host accessors were collected and lowered only from</span></span></div><div class="cond"><span class="tgt"><code class="m-code"><span class="tk-t">PropertyAccessExpression</span></code>, <span class="m-text">and <code class="m-code">ctx[<span class="tk-s">&quot;font&quot;</span>]</code> was </span><span class="refused">refused</span><span class="m-text"> as a</span></span></div><div class="cond"><span class="tgt"><span class="m-text">missing field</span></span></div></div></figure><figure><figcaption>After</figcaption><div class="lowering"><div class="cond"><span class="tgt"><span class="m-text">the named access is normalized once, <code class="m-code">e.k</code> or <code class="m-code">e[<span class="tk-s">&quot;k&quot;</span>]</code> at a string</span></span></div><div class="cond"><span class="tgt"><span class="m-text">key with no optional chain, and the collector, the declaration</span></span></div><div class="cond"><span class="tgt"><span class="m-text">dispatch and the intrinsic lowering read the normalized form; an</span></span></div><div class="cond"><span class="tgt"><span class="m-text">optional chain at the read or the write is still </span><span class="refused">refused</span></span></div></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">SOURCE-CONTRACTS, PROGRAM-TYPING</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>the checked-index write stated a key typed as <code>number</code>; the index signature stated a computed <code>string</code>, <code>number</code> or <code>symbol</code> key; the canvas accessors stated <code>o.k</code> and <code>o.k = v</code></p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>the write states a key every value of which is a number, the index signature states the same classification for its computed <code>number</code> key, and the canvas accessors state either spelling, with the optional chain named as the refused form</p></div></figure></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>index-write-guard-union</code> <span class="kind positive">positive</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">verified</span></summary><pre class="code"><span class="tk-c">// A guarded write at a key typed as a union of numeric literals, or of</span>
+<span class="tk-c">// `number` with one: every value the key holds is a number, so the guard's</span>
+<span class="tk-c">// mask and comparison bound it exactly as a `number` key's, and the write</span>
+<span class="tk-c">// lands on an element or appends (PROGRAM-TYPING.md, &quot;Writes at a checked</span>
+<span class="tk-c">// index&quot;). The union is the `number` key's meaning, not a different rule.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> <span class="tk-k">set</span>(xs: number[], k: <span class="tk-n">0</span> | <span class="tk-n">1</span>, v: number): <span class="tk-k">void</span> {
+  <span class="tk-k">if</span> ((k &amp; 0x7fffffff) !== k || k &gt; xs.length) <span class="tk-k">throw</span> <span class="tk-k">new</span> <span class="tk-t">RangeError</span>(<span class="tk-s">&quot;index&quot;</span>);
+  xs[k] = v;
+}
+
+<span class="tk-c">// A union of `number` with a literal: the same classification, the same</span>
+<span class="tk-c">// guard.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> setWide(xs: string[], k: number | <span class="tk-n">0</span>, v: string): <span class="tk-k">void</span> {
+  <span class="tk-k">if</span> ((k &amp; 0x7fffffff) !== k || k &gt; xs.length) <span class="tk-k">throw</span> <span class="tk-k">new</span> <span class="tk-t">RangeError</span>(<span class="tk-s">&quot;index&quot;</span>);
+  xs[k] = v;
+}</pre></details></li><li><details><summary><code>index-read-dict-union</code> <span class="kind positive">positive</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">verified</span></summary><pre class="code"><span class="tk-c">// A dictionary's read at a numeric key typed as a union of `number` with a</span>
+<span class="tk-c">// literal, or of literals alone: every value the key holds is a number,</span>
+<span class="tk-c">// which names an entry, exactly as a `number` key's read — one meaning, one</span>
+<span class="tk-c">// decision.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> lookup(
+  table: { [key: number]: string },
+  key: number | <span class="tk-n">0</span>,
+): string | <span class="tk-k">undefined</span> {
+  <span class="tk-k">return</span> table[key];
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> lookupLiteral(
+  table: { [key: number]: string },
+  key: <span class="tk-n">0</span> | <span class="tk-n">1</span>,
+): string | <span class="tk-k">undefined</span> {
+  <span class="tk-k">return</span> table[key];
+}</pre></details></li><li><details><summary><code>dom-canvas-context-bracket</code> <span class="kind positive">positive</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">verified</span></summary><pre class="code"><span class="tk-c">// A 2D context's host accessors read and written through bracket access at</span>
+<span class="tk-c">// a string key: TypeScript gives `context[&quot;font&quot;]` and `context.font` one</span>
+<span class="tk-c">// meaning, so each is the accessor's intrinsic, exactly as the dot spelling</span>
+<span class="tk-c">// (SOURCE-CONTRACTS.md, the overlay of library types).</span>
+<span class="tk-k">type</span> <span class="tk-t">Context</span> = <span class="tk-t">CanvasRenderingContext2D</span> | <span class="tk-t">OffscreenCanvasRenderingContext2D</span>;
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> measureIn(
+  context: <span class="tk-t">Context</span>,
+  font: string,
+  text: string,
+): number {
+  context[<span class="tk-s">&quot;font&quot;</span>] = font;
+  <span class="tk-k">return</span> context.measureText(text).width;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> readsFont(context: <span class="tk-t">Context</span>): string {
+  <span class="tk-k">return</span> context[<span class="tk-s">&quot;font&quot;</span>];
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> setsKerning(context: <span class="tk-t">Context</span>): <span class="tk-k">void</span> {
+  context[<span class="tk-s">&quot;fontKerning&quot;</span>] = <span class="tk-s">&quot;none&quot;</span>;
+}</pre></details></li><li><code>invalid-index-write-unguarded-union  negative</code> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span></li><li><details><summary><code>invalid-canvas-bracket-optional</code> <span class="kind gap">gap</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">unsupported</span></summary><pre class="code"><span class="tk-c">// An optional chain at a bracket read of a 2D context's accessor: the</span>
+<span class="tk-c">// construct is not the reviewed form (an optional chain reads through a</span>
+<span class="tk-c">// saved object), and is refused as a fragment restriction, though the</span>
+<span class="tk-c">// context is never nullish so the program is safe.</span>
+<span class="tk-k">type</span> <span class="tk-t">Context</span> = <span class="tk-t">CanvasRenderingContext2D</span> | <span class="tk-t">OffscreenCanvasRenderingContext2D</span>;
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> readsFont(context: <span class="tk-t">Context</span>): string {
+  <span class="tk-k">return</span> context?.[<span class="tk-s">&quot;font&quot;</span>];
+}</pre></details></li></ul>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">lean</span> <span class="chip">tools</span> <span class="chip">tests</span> <span class="chip">docs</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd><span class="test pos">index-write-guard-union</span> <span class="test pos">index-read-dict-union</span> <span class="test pos">dom-canvas-context-bracket</span> <span class="test pos">invalid-index-write-unguarded-union</span> <span class="test pos">invalid-canvas-bracket-optional</span></dd></dl>
+<details><summary>14 files changed, 148 insertions(+), 29 deletions(-)</summary><pre class="code"> docs/PROGRAM-TYPING.md                             |  3 ++-
+ docs/SOURCE-CONTRACTS.md                           |  9 +++++++--
+ lean/Verification/Source/Lowering/Types.lean       | 13 +++++++++----
+ pipeline/cases.mts                                 |  7 +++++++
+ pipeline/examples/dom-canvas-context-bracket.ts    | 22 ++++++++++++++++++++++
+ pipeline/examples/index-read-dict-union.ts         | 17 +++++++++++++++++
+ pipeline/examples/index-write-guard-union.ts       | 16 ++++++++++++++++
+ .../examples/invalid-canvas-bracket-optional.ts    |  9 +++++++++
+ .../invalid-index-write-unguarded-union.ts         |  6 ++++++
+ tests/node-runs.mts                                |  1 +
+ tools/declaration-graph.mts                        | 20 +++++++++++++-------
+ tools/fragment-expressions.mts                     | 22 +++++++++++++++-------
+ tools/fragment-parse.mts                           | 19 +++++++++++--------
+ tools/syntax.mts                                   | 13 +++++++++++++</pre></details>
+<div class="sha">with Mistral Vibe</div>
+</article>
+</main></body></html>
