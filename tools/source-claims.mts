@@ -326,7 +326,7 @@ function claimsDocument(v: JsonRead): SourceClaims {
         };
         return {
           terms: each(q.terms, "a fact's terms", (t) => {
-            if (!Array.isArray(t) || t.length !== 2) fail("a fact's term is a name and a coefficient");
+            if (!isJsonList(t) || t.length !== 2) fail("a fact's term is a name and a coefficient");
             const term: [string, number] = [name(t[0], "a term's name"), integer(t[1], "a term's coefficient")];
             return term;
           }),
