@@ -1510,7 +1510,19 @@ linear facts, $`\lhd`$ one of `<`, `<=`, `>`, `>=`, and each answer's fact over
 the integers ($`\neg(a<b)`$ is $`b\le a`$: two safe integers are never NaN).
 `length-range` reads the store contract's bound
 ([arrays](POSITIVE-TYPES.md#arrays)). Proved: `IndexWrites.linearAtoms_holds`,
-from `SafeIntegers.add_safe`, `sub_safe` and `doubleOrder_safe`.
+from `SafeIntegers.add_safe`, `sub_safe` and `doubleOrder_safe`. A length atom
+$`\mathrm{length}(x,n)`$ also states the store's length at most $`2^{32}-1`$,
+which `length-observed` reads from the store contract.
+
+**A write bounded by linear facts.** `setElem-bounded` reads
+$`\mathrm{bound}(x,k)`$, stated by a bound atom or by the linear facts
+(`IndexWrites.linearBound`, proved: `linearBound_sound`):
+
+```math
+\frac{\mathrm{length}(x',n)\in\Sigma\quad x'\in[x]\quad \mathrm{int}(k)\quad\mathrm{int}(n)\quad
+      K\vdash 0\le k\le n\quad K\vdash k\le 2^{32}-2}
+     {\mathrm{bound}(x,k)}\ \textsf{bound-linear}
+```
 
 ### A literal with spreads
 

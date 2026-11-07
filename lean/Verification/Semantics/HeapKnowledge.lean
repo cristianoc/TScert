@@ -74,7 +74,7 @@ def map (f : Nat → Nat) (F : IndexFact) : IndexFact := (F.mapM (some ∘ f)).g
 def HoldsAt : IndexFact → Env → Heap → Prop
   | .index k, ρ, _ => ∃ b i, ρ k = .num b ∧ indexOfBits b = some i
   | .length x n, ρ, h => ∃ s ls, Footprints.storeOf (ρ x) = some s ∧ h[s]? = some (.arr ls) ∧
-      ρ n = .num (bitsOfNat ls.length)
+      ρ n = .num (bitsOfNat ls.length) ∧ ls.length ≤ maxArrayLength
   | .bound x k, ρ, h => ∃ s ls b i, Footprints.storeOf (ρ x) = some s ∧ h[s]? = some (.arr ls) ∧
       ρ k = .num b ∧ indexOfBits b = some i ∧ i ≤ ls.length
   | .int k, ρ, _ => (intValue (ρ k)).isSome
