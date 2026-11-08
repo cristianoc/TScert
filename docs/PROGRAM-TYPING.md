@@ -2679,9 +2679,8 @@ states its value a safe integer between $`0`$ and $`|\mathit{data}.\mathit{width
 
 **Frame conditions.** A quantified fact and an element fact read the heap: a
 step leaving the heap unchanged preserves them, and a heap change other than
-a growth of a receiver's store preserves neither, a stated limit; an element
-write of a typed array among them, which may change the elements of every
-view over the written bytes. On an edge a target quantified fact follows from a
+a growth of a receiver's store or an exact element write of a typed array
+preserves neither, a stated limit. On an edge a target quantified fact follows from a
 source one whose root slot the edge maps it to, of the same path, whose bound
 and each body fact the target's follow term by term (proved), and a target
 element fact from the same one renamed. A read of field $`f`$ from slot
@@ -2717,6 +2716,32 @@ a value the body excludes, or into an array no separation keeps apart from
 the quantified one, keeps no fact over the whole quantified array. A push of
 several actuals extends none (`every-push` reads one).
 
+**Across a typed array's element write.** `b[k] = v` of a view at a safe
+integer $`0\le k<\mathrm{view}(b)`$ of a safe integer $`v`$ the view's
+element type holds unchanged (from $`0`$ to $`255`$ of a `Uint8Array`, to
+$`65535`$ of a `Uint16Array`, from $`-2^{31}`$ to $`2^{31}-1`$ of an
+`Int32Array`, any of a `Float64Array`) is `%ByteSet%`'s exact signature
+([typed arrays](SOURCE-CONTRACTS.md#stated-library-types)): the view's element
+store lists the same entries after it but at $`k`$, where it lists a location
+holding $`v`$, and every other location holding no store keeps its value,
+every store its length. So each index but $`k`$ keeps its element, and the
+element at $`k`$ is $`v`$ (proved):
+
+```math
+\frac{\mathrm{every}(x,t,\Phi)\in\Sigma\quad x\in[b]\quad \mathrm{int}(k)\quad
+      (K\vdash t\le k\ \lor\ \forall F\in\Phi.\ K\vdash F[\mathrm{index}\mapsto k,\ \mathrm{elem}\mapsto v])}
+     {\Sigma\vdash r\leftarrow \%\mathsf{ByteSet}\%(b,k,v)\dashv\Sigma',\ \mathrm{every}(x,t,\Phi)}\ \textsf{every-write}
+```
+
+with the terms of $`t`$ and $`\Phi`$ kept by the write
+($`\chi=(\bot,\bot,\mathsf{length})`$, which keeps every term). A quantified
+fact over any other array or view is dropped: views over one buffer share its
+bytes, and the model holds each view's elements as a store of its own, so a
+fact over a view does not transfer to a `subarray` of it either
+(`typed-array-subarray-facts-gap`, a stated limit). An array's length is at
+most $`2^{32}-1`$, so a value bounded by one alone is not known to fit an
+`Int32Array`: the clause states the bound (`v <= 2147483647`).
+
 **The producer** carries each precondition's quantified facts to the entries
 it claims (an entry's `quantified`, [SOURCE-CLAIMS](SOURCE-CLAIMS.md)),
 preserves them across a statement writing no heap and naming none of their
@@ -2743,14 +2768,15 @@ elements is `HeapKnowledge.elementsOf`. Preservation is
 `every-grow` and `every-push` are `PromiseCalls.everyGrown`, with
 `HeapKnowledge.bodyKeptBy` and `appendedBody`, added by `appendKept` in
 `withEnsures` (proved: `every_grown`, `every_appended`, from
-`boundValue_grown` and `factAt_monotone`; `appendKept_holds`). The producer's
+`boundValue_grown` and `factAt_monotone`; `appendKept_holds`). `every-write`
+is `PromiseCalls.everyWritten`, with `writtenBody`, added by `writeKept` in
+`withEnsures` (proved: `every_written`, `writeKept_holds`), from the exact
+write `CallEffects.ExactWrite`. The producer's
 facts are `Linear_facts.efact`, its element reads `Linear_facts.with_reads`
 and `element_facts`, its facts across a push `Linear_facts.egrown`.
 
 **Cases.** Positive: `quantified-element-reads` (a read at an element, a loop
-to an element, pretext's `narrowsLine` through a destructured path) and
-`typed-array-element-facts` (pretext's `getHyphenRooms`, a loop pushing an
-element-bounded read, and a typed array read through a destructured record). Negative,
+to an element, pretext's `narrowsLine` through a destructured path). Negative,
 each run under Node: `invalid-quantified-element-read-inclusive` (an element
 at most the length), `invalid-quantified-element-read-alias-write` (a write
 through an alias of the quantified array) and
@@ -2765,7 +2791,15 @@ of the bounding array). Over a typed array: positive `typed-array-element-facts`
 typed array read through a destructured record); negative, each run under
 Node, `invalid-typed-array-element-read-inclusive` (a typed array's element
 at most the length) and `invalid-typed-array-element-read-after-write` (a
-write through a `subarray` view of the quantified view's bytes). Forged
+write through a `subarray` view of the quantified view's bytes). Across an
+element write: positive `typed-array-element-writes` (a checked write, then
+reads at the written and another index; a loop clamping every element);
+negative, each run under Node, `invalid-typed-array-element-write-int32-wrap`
+(an `Int32Array` write of $`2^{31}`$), `invalid-typed-array-element-write-uint8-truncation`
+(a `Uint8Array` write of 260) and `invalid-typed-array-element-write-value`
+(a write of a value the body excludes), each refused where the fact the
+producer proposes after the write is checked; a gap,
+`typed-array-subarray-facts-gap`. Forged
 controls in `pipeline/test.mts`: the inclusive and alias-write negatives'
 reads claimed at `number` with the strict quantified fact claimed at the
 return's entry, refused there, and alike the two typed-array negatives'; and the

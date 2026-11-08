@@ -93,10 +93,10 @@
  * `undefined`: neither reads its receiver, and a string or a symbol argument
  * converts without running code. */
 import { join } from "node:path";
-import type { SourceTypeParameter, TypeDefinition, TypeTerm } from "./declaration-types.mts";
+import type { IndexFact, LinearTerm, SourceTypeParameter, TypeDefinition, TypeTerm } from "./declaration-types.mts";
 import { resolutionSlots, resolvableSlots } from "./type-term.mts";
 import { emptyFootprint, emptyEffect, footprintEffect, ordinaryEffect } from "./type-graph.mts";
-import { bytes, canvasContext, canvasGetters, canvasSetters, domSetters, dateTimeFormat, segmentData, segmenter, segments } from "./library-types.mts";
+import { viewKinds, views, canvasContext, canvasGetters, canvasSetters, domSetters, dateTimeFormat, segmentData, segmenter, segments } from "./library-types.mts";
 import { moduleLocation } from "./files.mts";
 
 export const intrinsicModule = "tscert/intrinsics";
@@ -664,7 +664,7 @@ export function intrinsics(promise: (argument: TypeTerm) => TypeTerm, needed: Re
     // `[[viewElements]]`, one location per element below the typed-array
     // length, each holding the element (DESIGN.md, "Trust surface").
     [byteAtName]: () => {
-      const params = [bytes, atom("number")];
+      const params = [views, atom("number")];
       return { typeParams: [], type: { k: "intersection", span, parts: [
         { ...fn(params, either(atom("number"), atom("undefined"))), effect: emptyEffect },
         { ...fn(params, atom("number")), effect: footprintEffect(emptyFootprint, { pre: [
@@ -682,7 +682,7 @@ export function intrinsics(promise: (argument: TypeTerm) => TypeTerm, needed: Re
     // typed-array length, which it states of its result: a safe integer equal
     // to `view(b)`, at the return's positions (0 the result, 2 the view, the
     // call's first actual).
-    [byteLengthName]: () => ({ typeParams: [], type: { ...fn([bytes], atom("number")),
+    [byteLengthName]: () => ({ typeParams: [], type: { ...fn([views], atom("number")),
       effect: footprintEffect(emptyFootprint, { ensures: [
         { int: { slot: 0 } },
         { linear: { fact: { le: { form: [[{ kind: "value", slot: 0, path: [] }, 1],
@@ -703,9 +703,27 @@ export function intrinsics(promise: (argument: TypeTerm) => TypeTerm, needed: Re
     // there, which changes stores alone, keeps their lengths and present
     // entries and lists no old location they did not list: the store-growth
     // footprint, values kept, every store's length kept (`elementWrite`).
-    [byteSetName]: () => ({ typeParams: [],
-      type: { ...fn([bytes, atom("number"), atom("number")], atom("number")),
-        effect: footprintEffect({ value: "keep", store: "grow" }, { elementWrite: "stores" }) } }),
+    // Then, for each element type, a write at a safe integer `k`,
+    // `0 ≤ k < view(b)`, a valid integer index, of a safe integer the
+    // element type holds unchanged (0 to 255 of a `Uint8Array`, 0 to 65535
+    // of a `Uint16Array`, −2^31 to 2^31 − 1 of an `Int32Array`, any of a
+    // `Float64Array`: the conversion is the identity there), which sets the
+    // view's element at `k` to the value and no other element of the view:
+    // each element is its own bytes of the buffer (`elementWrite` "exact",
+    // at the call's positions: 1 the view, 2 the index, 3 the value).
+    [byteSetName]: () => {
+      const value = (slot: number): LinearTerm => ({ kind: "value", slot, path: [] });
+      const le = (form: [LinearTerm, number][], bound: number): IndexFact => ({ linear: { fact: { le: { form, bound } } } });
+      const index: IndexFact[] = [{ int: { slot: 2 } }, le([[value(2), -1]], 0),
+        le([[value(2), 1], [{ kind: "view", slot: 1, path: [] }, -1]], -1), { int: { slot: 3 } }];
+      return { typeParams: [], type: { k: "intersection", span, parts: [
+        { ...fn([views, atom("number"), atom("number")], atom("number")),
+          effect: footprintEffect({ value: "keep", store: "grow" }, { elementWrite: "stores" }) },
+        ...viewKinds.map(({ type, range }): TypeTerm => ({ ...fn([type, atom("number"), atom("number")], atom("number")),
+          effect: footprintEffect({ value: "keep", store: "grow" }, { elementWrite: "exact", pre: [...index,
+            ...(range === null ? [] : [le([[value(3), -1]], -range[0]), le([[value(3), 1]], range[1])])] }) })),
+      ] } };
+    },
     // `typeof X` of a DOM global some hosts define (`GlobalEntry.typeOf`):
     // the lookup of the binding runs no code, no global being a getter of
     // the program's under the untampered-standard-objects policy, and

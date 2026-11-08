@@ -8,7 +8,7 @@ closed `footprint`, `{"value", "store"}`; a `promise`, `null` or
 `fresh`, `receiverStore`, `onThrow`, `receiverOwn` and `freshObject`; and the
 element predicates `requires` and `elements`, each `null` or its kinds in
 order; the index-fact lists `pre` and `ensures`; the Boolean
-`receiverGrows`; and `elementWrite`, `null` or `"stores"`. Each decoder
+`receiverGrows`; and `elementWrite`, `null`, `"stores"` or `"exact"`. Each decoder
 re-encodes what it read and refuses a document that differs, so a field
 outside these, or a `grow` on `value`, is refused. -/
 namespace Verification.EffectJson
@@ -17,9 +17,10 @@ open Lean CallEffects
 /-- An element write's wire name. -/
 def elementWriteName : ElementWrite → String
   | .stores => "stores"
+  | .exact => "exact"
 
 private def elementWriteOf (name : String) : Except String ElementWrite :=
-  match [ElementWrite.stores].find? (elementWriteName · == name) with
+  match [ElementWrite.stores, .exact].find? (elementWriteName · == name) with
   | some w => pure w
   | none => throw s!"invalid element write '{name}'"
 

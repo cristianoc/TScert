@@ -65,12 +65,13 @@ type call_effect = { footprint: footprint; promise: promise option; fresh: bool;
      it. *)
   receiver_grows: bool;
   (* A normal return changed the heap as a typed array's element write may:
-     no location holding no store, and no store's length (Lean's
+     no location holding no store, and no store's length; and, where
+     "exact", the view's element at the index alone, to the value (Lean's
      `Effect.elementWrite`). Only a trusted signature states it. *)
-  element_write: bool }
+  element_write: string option }
 let footprint_effect footprint =
   {footprint;promise=None;fresh=false;receiver_store=false;on_throw=false;receiver_own=false;fresh_object=false;
-   requires=None;elements=None;pre=[];ensures=[];receiver_grows=false;element_write=false}
+   requires=None;elements=None;pre=[];ensures=[];receiver_grows=false;element_write=None}
 (* An ordinary arrow's: every location may change. *)
 let ordinary_effect = footprint_effect top_footprint
 (* Heap preservation: no location may change. *)
@@ -100,7 +101,7 @@ let effect_covers a b = footprint_le a.footprint b.footprint && a.promise = b.pr
    | None, _ -> true | Some ka, Some kb -> List.for_all (fun k -> List.mem k ka) kb | Some _, None -> false) &&
   List.for_all (fun f -> List.mem f b.pre) a.pre &&
   List.for_all (fun f -> List.mem f a.ensures) b.ensures && (not b.receiver_grows || a.receiver_grows) &&
-  (not b.element_write || a.element_write) &&
+  (b.element_write = None || a.element_write = b.element_write) &&
   (match a.elements, b.elements with
    | _, None -> true | Some ka, Some kb -> List.for_all (fun k -> List.mem k kb) ka | None, Some _ -> false)
 

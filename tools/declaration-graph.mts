@@ -30,7 +30,7 @@ import { type BrandPredicate, compilerApiFamily, statedGuards, brandedTypes, hos
 import { activeFamilies, familyOfFile, familyOfGuard, guardOfExport, importedExport, installationPath, isHostFile, selectionGuard, tagEnumMatches, hostEnumObject } from "./family-activation.mts";
 import { errorInstance, reviewedErrorMembers, globalEntry, globalOrigins, globalsOverlay, importMetaName, type GlobalEntry, type Stated } from "./library-globals.mts";
 import { moduleEntries, moduleObjectDefault, reviewedText, reviewedTexts, type ModuleEntry } from "./library-modules.mts";
-import { canvasGetters, canvasSetters, domSetters, definitions as typeDefinitions, namedDefinitions, typeEntry, type TypeEntry } from "./library-types.mts";
+import { canvasGetters, canvasSetters, domSetters, definitions as typeDefinitions, namedDefinitions, typeEntry, viewDefinitions, type TypeEntry } from "./library-types.mts";
 import { literalParts, regexpShape } from "./regexp-shape.mts";
 import { dispatchIntrinsic, dispatchName, isDispatchMethod, libraryRegExpNames, libraryRegExpTerm, marks, nativeIterator, nativeIteratorDefinition,
   nativeRegExp, regexpIntrinsicName, reviewedRegExpMembers,
@@ -3125,7 +3125,7 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
       statedType((t.getSymbol()?.declarations ?? []).map(d => d.resolve()))?.view === "bytes");
     const viewRead = (span: Span, name: string): void => {
       listIntrinsics(span, [name]);
-      defineOverlay(typeDefinitions.bytes);
+      for (const d of viewDefinitions) defineOverlay(d);
       operationAnswers.byteRead?.(span, name);
     };
     for (const span of operationsRequested.elementReads ?? []) {

@@ -30,7 +30,7 @@ import { asyncCompleteName, instanceOfErrorName, instanceOfMapName, instanceOfSe
   symbolKeyForName, typeOfDocumentName, typeOfNavigatorName, typeOfOffscreenCanvasName, urlHrefName, newSegmenterName, newDateTimeFormatName, arrayLengthName, arrayFilledName } from "./intrinsics.mts";
 import { footprintEffect, emptyFootprint, emptyEffect, ordinaryEffect } from "./type-graph.mts";
 import type { CallEffect } from "./type-graph.mts";
-import { buffer, bytes, canvas, computedStyle, definitions as stated, documentType, element, navigatorType, textDecoder, url } from "./library-types.mts";
+import { buffer, bytes, canvas, computedStyle, definitions as stated, documentType, element, navigatorType, textDecoder, url, viewDefinitions, viewKinds } from "./library-types.mts";
 
 type AtomName = Extract<TypeTerm, { k: "atom" }>["name"];
 
@@ -408,12 +408,12 @@ const viewOfLength: CallEffect = { ...emptyEffect,
   ensures: [
     { linear: { fact: { le: { form: [[lengthTerm("view", 0), 1], [lengthTerm("value", 2), -1]], bound: 0 } } } },
     { linear: { fact: { le: { form: [[lengthTerm("view", 0), -1], [lengthTerm("value", 2), 1]], bound: 0 } } } }] };
-const typedArrayEntries: GlobalEntry[] = ["Uint8Array", "Uint16Array", "Int32Array", "Float64Array"].map((name): GlobalEntry => (
+const typedArrayEntries: GlobalEntry[] = viewKinds.map(({ name, type }): GlobalEntry => (
   { host: transparent("a length or an array of numbers, which no node list is"), global: name,
     signature: `${name}: ${name}Constructor`, constructs: true, effect: emptyEffect,
-    forms: [{ binders: [], params: [atom("number")], result: bytes, effect: viewOfLength },
+    forms: [{ binders: [], params: [atom("number")], result: type, effect: viewOfLength },
       { binders: [], params: [{ k: "union", span: at, parts: [atom("number"), readonlyArray(atom("number"))] }],
-        result: bytes }], definitions: [stated.bytes] }));
+        result: type }], definitions: [...viewDefinitions] }));
 
 /** The standard library's `Intl.Segmenter` (SOURCE-CONTRACTS.md,
  * "`Intl.Segmenter`"), only constructed, at its one construct signature: a

@@ -624,7 +624,7 @@ theorem offers_self {G : NormalGraph ι} {arity E K start Cs vs} {kind : Invoke}
     rw [hp, CallEffects.Effect.promised_take (e := s.fixed.effect) hbelow hle] at hsafe
     exact ⟨_, .graph hrv hvals (hbS s hsm j U r hrr), HeapObservations.SafePostExc.weaken
       (fun _ _ h => CallEffects.Effect.post_args (CallEffects.Effect.below_ensures hbelow)
-      (CallEffects.Effect.below_grows hbelow) h) (fun _ h => h) hsafe⟩
+      (CallEffects.Effect.below_grows hbelow) (CallEffects.Effect.below_write hbelow) h) (fun _ h => h) hsafe⟩
 
 /-- **A class value's graph code** meets each construct signature it was
 checked at, with its effect, with `undefined` for its receiver: `new` enters it
@@ -718,7 +718,7 @@ theorem ctorRestsT_of_graph {G : NormalGraph ι} {arity E K start Cs vs n W} {U 
   rw [Effect.result_plain hplain] at hsafe ⊢
   exact ⟨_, ⟨fs, _, _, _, rfl, rfl, rfl⟩, HeapObservations.SafePostExc.weaken
     (fun _ _ h => Effect.post_args (Effect.below_ensures hspec.2.1)
-      (Effect.below_grows hspec.2.1) h) (fun _ h => h) hsafe⟩
+      (Effect.below_grows hspec.2.1) (Effect.below_write hspec.2.1) h) (fun _ h => h) hsafe⟩
 
 /-- The parts a variadic call writes past its fixed actuals fit its rest. With
 a spread among them, the rest is an element rest, each plain part at its

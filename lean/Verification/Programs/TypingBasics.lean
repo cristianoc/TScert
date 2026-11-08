@@ -647,7 +647,7 @@ theorem restsT_of_graph {G : NormalGraph ι} {arity E K start Cs vs n W} {kind :
   rw [hp, CallEffects.Effect.promised_take (e := s.fixed.effect) hbelow hle] at hsafe
   exact ⟨_, .graph hrv hvals (hb s hsm j U r hr), HeapObservations.SafePostExc.weaken
     (fun _ _ h => CallEffects.Effect.post_args (CallEffects.Effect.below_ensures hbelow)
-      (CallEffects.Effect.below_grows hbelow) h) (fun _ h => h) hsafe⟩
+      (CallEffects.Effect.below_grows hbelow) (CallEffects.Effect.below_write hbelow) h) (fun _ h => h) hsafe⟩
 
 /-- An equality established by a branch can refine one immutable slot. -/
 theorem EnvOk.refine {G : NormalGraph ι} {Γ ρ n W i A B}

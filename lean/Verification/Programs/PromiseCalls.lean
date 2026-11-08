@@ -1888,7 +1888,7 @@ theorem effectKept_holds {eff : Effect} {t : Tm} {k : HeapKnowledge.Knowledge} {
     (hk : HeapKnowledge.Holds k ρ h) (hw : eff.within (ExpressionEffects.receiverOf (instantiate 0 ρ t)) h h')
     (hg : eff.receiverGrows = true →
       CallEffects.ReceiverGrows (ExpressionEffects.receiverOf (instantiate 0 ρ t)) h h')
-    (hew : ∀ w, eff.elementWrite = some w → w.changes.Holds h h') :
+    (hew : ∀ w, eff.elementWrite = some w → w.Holds (ExpressionEffects.actualsOf (instantiate 0 ρ t)) h h') :
     HeapKnowledge.IndexHolds (effectKept eff t k) (push v ρ) h' := by
   unfold effectKept
   split
@@ -1905,7 +1905,7 @@ theorem effectKept_holds {eff : Effect} {t : Tm} {k : HeapKnowledge.Knowledge} {
       split
       · rename_i w hwr
         exact HeapKnowledge.shiftIndices_holds (HeapKnowledge.keptIndices_holds
-          (fun a ha hcd => hk.2.2.2.2.2 a (List.mem_filter.mp ha).1 hcd) (hew w hwr) HeapKnowledge.firstKept_none)
+          (fun a ha hcd => hk.2.2.2.2.2 a (List.mem_filter.mp ha).1 hcd) (hew w hwr).1 HeapKnowledge.firstKept_none)
       · exact HeapKnowledge.shiftIndices_holds (HeapKnowledge.keptIndices_holds
           (fun a ha hcd => hk.2.2.2.2.2 a (List.mem_filter.mp ha).1 hcd)
           (HeapKnowledge.Changes.ofClosed_holds (CallEffects.Effect.within_holds hw hs ho)) HeapKnowledge.firstKept_none)
@@ -2119,13 +2119,144 @@ theorem appendKept_holds {eff : Effect} {t : Tm} {k : Knowledge} {ρ : Env} {h h
     · cases hkept
   · exact indexHolds_nil _ _
 
+/-! ### Quantified facts across a typed array's element write (PROGRAM-TYPING.md, "Quantified clauses") -/
+
+/-- The change of a typed array's element write: stores keep their lengths,
+nothing else changes. -/
+def writeChanges : HeapKnowledge.Changes := CallEffects.ElementWrite.changes .exact
+
+open HeapKnowledge in
+/-- Whether the atoms `as` state a body fact of the value of the slot `x`
+written at the index the slot `i` holds: the fact with the index read as `i`
+and the element as `x`, each term defined and kept by the write. -/
+def writtenBody (as : List IndexAtom) (i x : Nat) (F : Linear.Fact Bound) : Bool :=
+  match F.mapVars (some ∘ Bound.inst i x) with
+  | some G => G.vars.all (fun t => termDefined as t && t.keptBy writeChanges (fun _ _ => false)) && entailsKnown as G
+  | none => false
+
+open HeapKnowledge in
+/-- Whether an exact write `b[i] = x` of a typed array keeps a quantified
+atom of its entry `k` (`every-write`): over the view of `b`'s class, its path
+empty, its bound and body kept by the write, and the index at or past the
+bound, or each body fact stated of `x` at `i`. -/
+def everyWritten (k : Knowledge) (b i x : Nat) (a : IndexAtom) : Bool :=
+  match a.fact with
+  | .every s [] st body =>
+    (s == b || (HeapLinks.aliases k.links b).contains s) &&
+      st.keptBy writeChanges (fun _ _ => false) && body.all (bodyKeptBy writeChanges (fun _ _ => false)) &&
+      intSlot k.indices i &&
+      (entailsKnown k.indices (.le [(st, 1), (.value i, -1)] 0) || body.all (writtenBody k.indices i x))
+  | _ => false
+
+/-- The quantified atoms of a call's entry `k` an exact element write keeps
+(`everyWritten`), renamed past the result; none of any other call. -/
+def writeKept (eff : Effect) (t : Tm) (k : HeapKnowledge.Knowledge) : List HeapKnowledge.IndexAtom :=
+  match eff.elementWrite, t with
+  | some .exact, .invoke _ _ [.var b, .var i, .var x] =>
+    HeapKnowledge.shiftIndices (k.indices.filter (everyWritten k b i x))
+  | _, _ => []
+
+open HeapKnowledge in
+/-- **An exact element write keeps a quantified fact over its view**
+(`every-write`): each element at another index is the same location, holding
+the same number; the element at the index is the written value, which meets
+the body or lies past the bound. -/
+theorem every_written {ρ : Env} {h h' : Heap} {b i x s : Nat} {st : Term} {body : List (Linear.Fact Bound)}
+    {as : List IndexAtom} (he : IndexHolds as ρ h) (hs : ρ s = ρ b)
+    (hc : writeChanges.Holds h h') (hx : CallEffects.ExactWrite [ρ b, ρ i, ρ x] h h')
+    (hst : st.keptBy writeChanges (fun _ _ => false) = true)
+    (hb : body.all (bodyKeptBy writeChanges (fun _ _ => false)) = true)
+    (hnew : entailsKnown as (.le [(st, 1), (.value i, -1)] 0) = true ∨ body.all (writtenBody as i x) = true)
+    (hF : (IndexFact.every s [] st body).HoldsAt ρ h) : (IndexFact.every s [] st body).HoldsAt ρ h' := by
+  obtain ⟨w, sto, ls, n, hw, hsto, hls, hn, hall⟩ := hF
+  simp only [readPath, Option.some.injEq] at hw
+  subst hw
+  obtain ⟨ls', kb, i0, hls', hkb, hi0, hlt, hj, l, hl, hlv⟩ := hx sto ls (by simpa [hs] using hsto) hls
+  simp only [List.getD_cons_succ, List.getD_cons_zero] at hkb hlv
+  have hki : intValue (ρ i) = some (i0 : Int) := by rw [hkb]; exact intValue_num hi0
+  have hn' := termValue_kept hc firstKept_none hst hn
+  refine ⟨ρ s, sto, ls', n, rfl, hsto, hls', hn', fun j hj' F hF => ?_⟩
+  have hbF := List.all_eq_true.mp hb F hF
+  by_cases hji : j = i0
+  · subst hji
+    rcases hnew with hent | hbody
+    · have := entailsKnown_sound he hent
+      simp only [Linear.Fact.Holds, Linear.Form.eval, termValuation, hn, termValue_value, hki,
+        Option.getD_some] at this
+      omega
+    · have hwb := List.all_eq_true.mp hbody F hF
+      unfold writtenBody at hwb
+      split at hwb
+      · rename_i G hG
+        simp only [Bool.and_eq_true, List.all_eq_true] at hwb
+        obtain ⟨hd, hent⟩ := hwb
+        have hG0 : (IndexFact.linear G).HoldsAt ρ h :=
+          ⟨fun t ht => termDefined_sound he (hd t ht).1, entailsKnown_sound he hent⟩
+        have hG1 := IndexFact.holdsAt_kept hc firstKept_none
+          (by simp only [IndexFact.keptBy, Bool.or_eq_true]; exact .inl (List.all_eq_true.mpr fun t ht => (hd t ht).2))
+          hG0
+        refine (factAt_mapVars (val' := termValue ρ h') hG fun y _ t ht => ?_).mp hG1
+        simp only [Function.comp_apply, Option.some.injEq] at ht
+        subst ht
+        cases y with
+        | index => simp only [Bound.inst, termValue_value, hki, boundValue]
+        | elem => simp only [Bound.inst, termValue_value, boundValue, elementInt, hl, hlv, Option.bind_some]
+        | free t => rfl
+      · cases hwb
+  · refine factAt_monotone (fun y m hky hy => ?_) (fun y m hgy hy => ?_) hbF (hall j hj' F hF)
+    · cases y with
+      | index => exact hy
+      | elem =>
+        simp only [boundValue, elementInt, hj j hji] at hy ⊢
+        split at hy
+        · rename_i l' hl'
+          obtain ⟨u, hu, hum⟩ := Option.bind_eq_some_iff.mp hy
+          obtain ⟨bu, rfl, -⟩ := intValue_safe hum
+          simp only [hc.1 l' _ hu (by simp [writeChanges, CallEffects.ElementWrite.changes, Changes.alters]),
+            Option.bind_some, hum]
+        · cases hy
+      | free t => exact termValue_kept hc firstKept_none hky hy
+    · cases y with
+      | index | elem => simp [Bound.grownBy] at hgy
+      | free t => simp [Bound.grownBy, Term.grownBy, writeChanges, CallEffects.ElementWrite.changes] at hgy
+
+open HeapKnowledge in
+theorem writeKept_holds {eff : Effect} {t : Tm} {k : Knowledge} {ρ : Env} {h h' : Heap} {v : Tm}
+    (hk : Holds k ρ h)
+    (hew : ∀ w, eff.elementWrite = some w → w.Holds (ExpressionEffects.actualsOf (instantiate 0 ρ t)) h h') :
+    IndexHolds (writeKept eff t k) (push v ρ) h' := by
+  unfold writeKept
+  split
+  · rename_i f r b i x hw
+    obtain ⟨hc, hx⟩ := hew _ hw
+    have hx := hx rfl
+    simp only [ExpressionEffects.actualsOf, instantiate, instantiateArgs, Nat.not_lt_zero, if_false,
+      Nat.sub_zero] at hx
+    refine shiftIndices_holds fun a ha hcd => ?_
+    obtain ⟨ha, hkept⟩ := List.mem_filter.mp ha
+    have hF := hk.2.2.2.2.2 a ha hcd
+    unfold everyWritten at hkept
+    split at hkept
+    · rename_i s st body hfa
+      rw [hfa] at hF ⊢
+      simp only [Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq, List.contains_iff_mem] at hkept
+      obtain ⟨⟨⟨⟨hcls, hst⟩, hb⟩, -⟩, hnew⟩ := hkept
+      have hs : ρ s = ρ b := by
+        rcases hcls with rfl | hm
+        · rfl
+        · exact HeapLinks.aliases_eq hk.2.2.1 hm
+      exact every_written hk.2.2.2.2.2 hs hc hx hst hb hnew hF
+    · cases hkept
+  · exact indexHolds_nil _ _
+
 /-- Knowledge with a call's result-fact atoms added, the atoms of its entry
 `k0` its footprint keeps (`effectKept`) and the quantified atoms its growth
 of its receiver's store keeps or extends (`appendKept`), then the instances
 of quantified facts the element reads among them state (`withElements`). -/
 def withEnsures (eff : Effect) (t : Tm) (k0 k : HeapKnowledge.Knowledge) : HeapKnowledge.Knowledge :=
   HeapKnowledge.withElements
-    { k with indices := k.indices ++ ensuresAtoms eff t ++ effectKept eff t k0 ++ appendKept eff t k0 }
+    { k with indices := k.indices ++ ensuresAtoms eff t ++ effectKept eff t k0 ++ appendKept eff t k0 ++
+        writeKept eff t k0 }
 
 theorem withEnsures_holds {eff : Effect} {t : Tm} {k0 k : HeapKnowledge.Knowledge} {ρ : Env} {h h' : Heap} {v : Tm}
     (hk : HeapKnowledge.Holds k (push v ρ) h') (hk0 : HeapKnowledge.Holds k0 ρ h)
@@ -2136,16 +2267,18 @@ theorem withEnsures_holds {eff : Effect} {t : Tm} {k0 k : HeapKnowledge.Knowledg
       CallEffects.ReceiverGrows (ExpressionEffects.receiverOf (instantiate 0 ρ t)) h h' ∧
       CallEffects.ReceiverAppends (ExpressionEffects.receiverOf (instantiate 0 ρ t))
         (ExpressionEffects.actualsOf (instantiate 0 ρ t)) h h')
-    (hew : ∀ w, eff.elementWrite = some w → w.changes.Holds h h') :
+    (hew : ∀ w, eff.elementWrite = some w → w.Holds (ExpressionEffects.actualsOf (instantiate 0 ρ t)) h h') :
     HeapKnowledge.Holds (withEnsures eff t k0 k) (push v ρ) h' := HeapKnowledge.withElements_holds
   ⟨hk.1, hk.2.1, hk.2.2.1, hk.2.2.2.1, hk.2.2.2.2.1, fun a ha hc => by
     rcases List.mem_append.mp ha with ha | ha
     · rcases List.mem_append.mp ha with ha | ha
       · rcases List.mem_append.mp ha with ha | ha
-        · exact hk.2.2.2.2.2 a ha hc
-        · exact ensuresAtoms_holds hp a ha hc
-      · exact effectKept_holds hk0 hw (fun hgr => (hg hgr).1) hew a ha hc
-    · exact appendKept_holds hk0 hg a ha hc⟩
+        · rcases List.mem_append.mp ha with ha | ha
+          · exact hk.2.2.2.2.2 a ha hc
+          · exact ensuresAtoms_holds hp a ha hc
+        · exact effectKept_holds hk0 hw (fun hgr => (hg hgr).1) hew a ha hc
+      · exact appendKept_holds hk0 hg a ha hc
+    · exact writeKept_holds hk0 hew a ha hc⟩
 
 /-- The selected signature of an ordinary step's evidence that `call-ensures`
 applies to: at the sequent `j`, a call checked as `selected_sound` or as
@@ -2158,8 +2291,8 @@ applies to: at the sequent `j`, a call checked as `selected_sound` or as
     if decide (claim p = j) && (ExpressionEffects.selectedOperands p && checkTreeUsing G images p codes sums ||
         requiresTree G images k codes sums p) then
       match ExpressionEffects.selectedEffect p with
-      | some eff => if eff.ensures.isEmpty && (effectKept eff j.term k).isEmpty && (appendKept eff j.term k).isEmpty
-          then none else some eff
+      | some eff => if eff.ensures.isEmpty && (effectKept eff j.term k).isEmpty && (appendKept eff j.term k).isEmpty &&
+          (writeKept eff j.term k).isEmpty then none else some eff
       | none => none
     else none
   | _ => none

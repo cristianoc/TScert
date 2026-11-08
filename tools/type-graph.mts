@@ -285,7 +285,7 @@ export function decodeCallEffect(v: JsonRead): Within<{ value: "any"; store: "gr
   const freshObject = v.freshObject;
   const receiverGrows = v.receiverGrows;
   const elementWrite = v.elementWrite;
-  if (elementWrite !== null && elementWrite !== "stores") return undefined;
+  if (elementWrite !== null && elementWrite !== "stores" && elementWrite !== "exact") return undefined;
   if (footprint === undefined || typeof fresh !== "boolean" || typeof receiverStore !== "boolean" ||
       typeof onThrow !== "boolean" || typeof receiverOwn !== "boolean" ||
       typeof freshObject !== "boolean" || typeof receiverGrows !== "boolean") return undefined;

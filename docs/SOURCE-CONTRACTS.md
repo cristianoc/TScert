@@ -1715,7 +1715,12 @@ The entries:
 
 - `Uint8Array`, the standard library's parts and Node's part adding `at`,
   and `Uint16Array`, `Int32Array` and `Float64Array`, the standard
-  library's parts: one type, the view of bytes $`V_\mathit{Uint8Array}`$, its members each a
+  library's parts: four types, the views of bytes $`V_\mathit{Uint8Array}`$,
+  $`V_\mathit{Uint16Array}`$, $`V_\mathit{Int32Array}`$ and
+  $`V_\mathit{Float64Array}`$, each $`\mathsf{host}_m`$ at its own marker,
+  `"node:bytes"`, `"node:bytes:uint16"`, `"node:bytes:int32"` and
+  `"node:bytes:float64"`, so the model's type of a view states its element
+  type; $`V`$ is their union. Its members each a
   method of `%TypedArray%.prototype`, called at numbers and views
   alone: ToNumber and ToIntegerOrInfinity of a number run no code, `set`
   of a view copies by SetTypedArrayFromTypedArray, which runs none, and
@@ -1726,7 +1731,8 @@ The entries:
   writes the view's elements alone, and throws a `RangeError` at an index
   out of range: `fill`, `copyWithin` and `set` change the heap as an
   element write does (`%ByteSet%` below), `subarray` within the empty
-  footprint. Every member holds of each of the four alike; the members
+  footprint, each returning a view of its own type and `set` taking any
+  view. Every member holds of each of the four alike; the members
   calling a callback or a species constructor's code (`map`, `filter`,
   `slice`, `every` with a `thisArg`, …) are not stated, so a read of one
   finds no member.
@@ -1817,7 +1823,34 @@ paths, lengths and typed-array lengths survives the write, and a quantified
 fact over any array's elements does not (`invalid-typed-array-element-read-after-write`,
 run under Node: a write through a `subarray` view changes the quantified view).
 `fill`, `copyWithin` and `set` change the heap alike; `subarray` allocates
-its view. A read after a write is still `%ByteAt%`'s, a number or
+its view.
+
+**An exact element write.** `%ByteSet%` has, after that signature, one for
+each element type, a write at a safe integer $`0\le k<\mathrm{view}(b)`$, a
+valid integer index, of a safe integer $`v`$ the element type holds
+unchanged, from $`0`$ to $`255`$ of a `Uint8Array`, to $`65535`$ of a
+`Uint16Array`, from $`-2^{31}`$ to $`2^{31}-1`$ of an `Int32Array`, any of a
+`Float64Array`:
+
+```math
+\%\mathrm{ByteSet}\%\colon(V_\mathit{Int32Array},\ \mathtt{number},\ \mathtt{number})\Rightarrow_{\{\mathsf{value}:\mathsf{keep},\ \mathsf{store}:\mathsf{grow}\},\ \mathsf{elementWrite}\ \mathsf{exact}}^{\ \mathrm{int}(2),\ 0\le 2\le\mathrm{view}(1)-1,\ \mathrm{int}(3),\ -2^{31}\le 3\le 2^{31}-1}\mathtt{number}
+```
+
+and alike of the others. There ToNumber of a number is the number, the
+conversion to the element type (ToInt32, ToUint8, ToUint16, the double
+itself) is the identity, and TypedArraySetElement writes the element's own
+bytes of the buffer, at the view's byte offset plus $`k`$ times the
+element size: no other element of the view reads them. So a normal return
+leaves the view's element store listing the same entries but at $`k`$, where
+it lists a location holding $`v`$ (`CallEffects.ExactWrite`), beside the
+change every write makes; other views over the bytes may change, as above.
+Outside the range the conversion is not the identity: an `Int32Array` write
+of $`2^{31}`$ stores $`-2^{31}`$ (`invalid-typed-array-element-write-int32-wrap`,
+run under Node) and a `Uint8Array` write of 260 stores 4
+(`invalid-typed-array-element-write-uint8-truncation`, run under Node), and
+the first signature, which states no element, is the call's. Audited against
+ECMA-262's TypedArraySetElement, IsValidIntegerIndex and the numeric
+conversions, and a probe under Node 26.13.0 (2026-11-08). A read after a write is still `%ByteAt%`'s, a number or
 `undefined`, where TypeScript narrows the element by the write
 (`invalid-typed-array-write-past-end`, run under Node: `undefined` past the
 end). A compound assignment or an update of an element is refused.
@@ -3880,7 +3913,8 @@ from ECMA-262's TypedArray constructors and probes run under Node 26.13.0
 The globals `Uint8Array`, `Uint16Array`, `Int32Array` and `Float64Array`
 are read only as constructors through `library-global-constructs`, at two
 forms, in this order, their result the
-[stated library type](#stated-library-types) $`V_\mathit{Uint8Array}`$:
+[stated library type](#stated-library-types) of their name, $`V_C`$ (shown
+for `Uint8Array`):
 
 ```math
 \mathtt{new}\ C\colon(\mathtt{number})\Rightarrow_\emptyset^{\mathrm{int}(1),\ 0\le 1;\ \mathsf{ensures}\ \mathrm{view}(0)=2}\mathit{Uint8Array}

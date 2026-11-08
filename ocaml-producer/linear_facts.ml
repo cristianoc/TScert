@@ -1286,8 +1286,32 @@ let egrown ~array env fs (es : efact list) (e : expr) : efact list option =
    keeps; where it writes no heap, those naming no binding it assigns (Lean
    keeps an atom across a step that keeps the heap); none otherwise, as Lean's
    `IndexFact.keptBy` keeps none. *)
+(* The quantified facts a typed array's element write `b[k] = v` keeps (Lean's
+   `PromiseCalls.everyWritten`, `every-write`): each over `b`'s array whose
+   bound the facts state at most `k`, or each of whose body facts they state
+   of `v` at the index `k`. A fact over any other array is dropped: views may
+   share bytes. *)
+let ewritten ~array env fs (es : efact list) (e : expr) : efact list option =
+  match e.node with
+  | Call ({node=Id "%ByteSet%";_},None,[{node=Id b;_};k;v],[],_) when !call_element_write env "%ByteSet%" ->
+    (match linear ~array env fs k, linear ~array env fs v with
+     | Some (kt,kc), Some (vt,vc) ->
+       let ranged extra = fs @ term_ranges ((kt,0) :: (vt,0) :: fs) @ term_ranges [extra,0] in
+       let past (ef : efact) = entails (ranged [ef.stop,1]) (norm ((ef.stop,1) :: scale (-1) kt), kc) in
+       let meets (ef : efact) = List.for_all (fun ((t,d) : fact) ->
+         let a = Option.value ~default:0 (List.assoc_opt index_var t) in
+         let c = Option.value ~default:0 (List.assoc_opt elem_var t) in
+         let t = List.concat_map (fun (n,x) ->
+           if n = index_var then scale x kt else if n = elem_var then scale x vt else [n,x]) t in
+         entails (ranged [ef.stop,1]) (norm t, d - a * kc - c * vc)) ef.body in
+       Some (List.filter (fun (ef : efact) -> ef.arr = (b,[]) && (past ef || meets ef)) es)
+     | _ -> Some [])
+  | _ -> None
+
 let estatement ?(array = fun _ _ -> false) ?(facts = []) env (es : efact list) (s : stmt) : efact list =
-  match (match s.statement with Effect e -> egrown ~array env facts es e | _ -> None) with
+  match (match s.statement with
+    | Effect e -> (match egrown ~array env facts es e with Some es -> Some es | None -> ewritten ~array env facts es e)
+    | _ -> None) with
   | Some es -> es
   | None ->
   if not (statement_heap_free env s) then [] else

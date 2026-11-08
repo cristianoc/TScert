@@ -572,7 +572,7 @@ let statements (expr:Analysis_state.expression_infer) execute_bindings owner_spa
   (* Whether every signature states a typed array's element write. *)
   let element_write t = match head t with
     | Atoms [Shape {calls;_}] -> calls <> [] && List.for_all (fun (s : Semantic.signature) ->
-        s.Semantic.call_effect.Semantic.element_write) calls
+        s.Semantic.call_effect.Semantic.element_write <> None) calls
     | _ -> false in
   Linear_facts.call_element_write := (fun env x ->
     let declared = match List.assoc_opt x env with

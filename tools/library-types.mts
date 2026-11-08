@@ -70,8 +70,11 @@ export const bytesMarker = "node:bytes";
  *       set(source: Uint8Array, offset?: number): undefined;
  *       subarray(begin: number, end?: number): Uint8Array };
  *
- * The four standard names denote this one type: every member it states
- * holds of each of them alike. Its elements and its `length` are read
+ * Each standard name denotes a type of its own, the marker naming its
+ * element type (`viewKinds`): `Uint8Array` and `Buffer` at "node:bytes",
+ * `Uint16Array`, `Int32Array` and `Float64Array` at "node:bytes:uint16",
+ * "node:bytes:int32" and "node:bytes:float64", each with the members
+ * below, its own type for `self`; `views` is their union. Its elements and its `length` are read
  * through `%ByteAt%` and `%ByteLength%`, and an element written through
  * `%ByteSet%` (`intrinsics.mts`), which the parser writes for an element
  * read or write at a number and a read of `length` of a value TypeScript
@@ -104,6 +107,14 @@ export const bytesMarker = "node:bytes";
  * callback's, are not stated. */
 const bytesIdentity = identity("Uint8Array");
 export const bytes: TypeTerm = named(bytesIdentity);
+const uint16Identity = identity("Uint16Array");
+const int32Identity = identity("Int32Array");
+const float64Identity = identity("Float64Array");
+export const uint16: TypeTerm = named(uint16Identity);
+export const int32: TypeTerm = named(int32Identity);
+export const float64: TypeTerm = named(float64Identity);
+/** Every view of bytes, of any element type. */
+export const views: TypeTerm = { k: "union", parts: [bytes, uint16, int32, float64], span: at };
 const optionalNumber = union(atom("number"), atom("undefined"));
 /** What a write of a view's elements changes: the element stores of the
  * views over the written bytes, each entry it writes a fresh location
@@ -114,7 +125,7 @@ const elementsWritten: CallEffect = footprintEffect({ value: "keep", store: "gro
 const viewMethods = (self: TypeTerm): Field[] => [
   field("fill", method([atom("number"), optionalNumber, optionalNumber], self, elementsWritten)),
   field("copyWithin", method([atom("number"), atom("number"), optionalNumber], self, elementsWritten)),
-  field("set", method([bytes, optionalNumber], atom("undefined"), elementsWritten)),
+  field("set", method([views, optionalNumber], atom("undefined"), elementsWritten)),
   field("subarray", method([atom("number"), optionalNumber], self, emptyEffect))];
 /** The typed-array length a view's model key `[[viewLength]]` holds, a
  * readonly `number` the host owns at a location no other object's field or
@@ -122,9 +133,22 @@ const viewMethods = (self: TypeTerm): Field[] => [
  * a stable key (HOST-FAMILIES.md, "Stable keys"), so every step keeps a
  * fact naming the count (PROGRAM-TYPING.md, "Linear facts"). */
 const viewLength: Field = field("[[viewLength]]", atom("number"));
-const bytesDefinition = definitionOf(bytesIdentity,
-  { k: "object", fields: [viewLength, ...viewMethods(bytes)], stringIndex: null, calls: [], host: bytesMarker,
+const viewDefinition = (id: DeclarationIdentity, self: TypeTerm, marker: string): TypeDefinition => definitionOf(id,
+  { k: "object", fields: [viewLength, ...viewMethods(self)], stringIndex: null, calls: [], host: marker,
     stable: ["[[viewLength]]"], span: at });
+const bytesDefinition = viewDefinition(bytesIdentity, bytes, bytesMarker);
+const uint16Definition = viewDefinition(uint16Identity, uint16, `${bytesMarker}:uint16`);
+const int32Definition = viewDefinition(int32Identity, int32, `${bytesMarker}:int32`);
+const float64Definition = viewDefinition(float64Identity, float64, `${bytesMarker}:float64`);
+/** The definitions of the views of bytes, each naming the others (`set`). */
+export const viewDefinitions: readonly TypeDefinition[] = [bytesDefinition, uint16Definition, int32Definition, float64Definition];
+/** A view's element type, by its standard name: the integers it stores
+ * unchanged (`%ByteSet%`'s exact signature), `null` for every safe integer. */
+export const viewKinds: readonly { name: string; type: TypeTerm; range: [number, number] | null }[] = [
+  { name: "Uint8Array", type: bytes, range: [0, 255] },
+  { name: "Uint16Array", type: uint16, range: [0, 65535] },
+  { name: "Int32Array", type: int32, range: [-2147483648, 2147483647] },
+  { name: "Float64Array", type: float64, range: null }];
 
 /** A `Buffer`, a view of bytes with the methods of `Buffer.prototype` the
  * overlay states (Node 26.13.0's `lib/buffer.js`),
@@ -491,7 +515,8 @@ export const definitions: { bytes: TypeDefinition; buffer: TypeDefinition; bigIn
  * `measureText` returns a `TextMetrics`, a canvas's `getContext` a context,
  * and the document's members an element and a canvas. */
 export function namedDefinitions(definition: TypeDefinition): TypeDefinition[] {
-  return definition === bufferDefinition ? [bytesDefinition]
+  return definition === bufferDefinition ? [...viewDefinitions]
+    : viewDefinitions.includes(definition) ? viewDefinitions.filter(d => d !== definition)
     : definition === segmenterDefinition ? [segmentsDefinition]
     : definition === segmentsDefinition ? [segmentDataDefinition]
     : definition === canvasContextDefinition ? [textMetricsDefinition]
@@ -527,9 +552,8 @@ export const typesOverlay: readonly TypeEntry[] = [
     { origin: library, heading: "interface Uint8Array<TArrayBuffer extends ArrayBufferLike> {" },
     { origin: node, heading: "interface Uint8Array extends RelativeIndexable<number> {" }] },
   // The standard library's `Uint16Array`, `Int32Array` and `Float64Array`,
-  // as it declares them in parts: views of bytes, at the type a
-  // `Uint8Array` is.
-  ...["Uint16Array", "Int32Array", "Float64Array"].map((name): TypeEntry => ({ name, definition: bytesDefinition, view: "bytes", parts: [
+  // as it declares them in parts: views of bytes, each at its own type.
+  ...([["Uint16Array", uint16Definition], ["Int32Array", int32Definition], ["Float64Array", float64Definition]] as const).map(([name, definition]): TypeEntry => ({ name, definition, view: "bytes", parts: [
     { origin: library, heading: `interface ${name}<TArrayBuffer extends ArrayBufferLike = ArrayBufferLike> {` },
     { origin: library, heading: `interface ${name}<TArrayBuffer extends ArrayBufferLike> {` }] })),
   { name: "Buffer", definition: bufferDefinition, view: "bytes", parts: [

@@ -97,8 +97,8 @@ let effect_of j = match j with
      ensures=List.map index_fact_of (list (field "ensures" j));
      receiver_grows=boolean (field "receiverGrows" j);
      element_write=(match field "elementWrite" j with
-       | Null -> false
-       | String "stores" -> true
+       | Null -> None
+       | String ("stores" | "exact" as w) -> Some w
        | _ -> unsupported "invalid element write")}
   | _ -> unsupported "unknown callable effect"
 let resolution_slots scope index j = match field "resolution" j with

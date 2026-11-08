@@ -277,9 +277,11 @@ where it returns `true` ([the elements fact](FOOTPRINTS.md#the-elements-fact)).
 receiver's array store, which it extended by the call's actuals, its old
 elements at their indices; only a native's audited signature states it
 ([native footprints](SOURCE-CONTRACTS.md#native-footprints)).
-`elementWrite` is `null` or `"stores"`: a normal return changed no location
-holding no store and kept every store's length, as a typed array's element
-write does; only a native's audited signature states it
+`elementWrite` is `null`, `"stores"` or `"exact"`: a normal return changed no
+location holding no store and kept every store's length, as a typed array's
+element write does, and, where `"exact"`, the store of elements of the first
+actual lists the same entries but at the second actual, where it lists a
+location holding the third; only a native's audited signature states it
 ([stated library types](SOURCE-CONTRACTS.md#stated-library-types)).
 Each requires corresponding evidence.
 

@@ -54,8 +54,11 @@ export type CallEffect = {
    * states it. */
   readonly elementWrite: ElementWrite | null;
 };
-/** What a typed array's element write keeps (`CallEffects.ElementWrite`). */
-export type ElementWrite = "stores";
+/** What a typed array's element write keeps (`CallEffects.ElementWrite`):
+ * every location holding no store and every store's length (`"stores"`);
+ * and besides, the view at position 1 holds the value at position 3 at the
+ * index at position 2 and its other elements unchanged (`"exact"`). */
+export type ElementWrite = "stores" | "exact";
 /** An index fact at numbered positions (`HeapKnowledge.IndexFact`, its
  * constructor's name holding its fields): an array index; the length of an
  * array's store; an index at most that length, below it where `strict`; a
