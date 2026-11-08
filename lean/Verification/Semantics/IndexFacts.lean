@@ -1204,6 +1204,84 @@ theorem formKept_eval {c : Changes} {first : Nat → String → Bool} {ρ : Env}
         have : a * n' ≤ a * n := Int.mul_le_mul_of_nonpos_left ha hle
         omega
 
+/-- Whether a fact over variables `V` holds at a valuation `val'` where it
+holds at `val`, every variable `kept` names keeping its value and every one
+`grown` names denoting at least as much (`factAt_monotone`): each variable
+kept, or, in a fact `F ≤ d`, grown at a coefficient at most `0`. -/
+def factMonotone {V : Type} (kept grown : V → Bool) : Linear.Fact V → Bool
+  | .le G _ => G.all fun p => kept p.1 || (decide (p.2 ≤ 0) && grown p.1)
+  | .ne G _ => G.all fun p => kept p.1
+
+theorem form_monotone {V : Type} {kept grown : V → Bool} {val val' : V → Option Int}
+    (hk : ∀ x n, kept x = true → val x = some n → val' x = some n)
+    (hg : ∀ x n, grown x = true → val x = some n → ∃ n', val' x = some n' ∧ n ≤ n') :
+    ∀ {G : Linear.Form V}, (G.all fun p => kept p.1 || (decide (p.2 ≤ 0) && grown p.1)) = true →
+      (∀ x ∈ G.map (·.1), (val x).isSome) →
+      (∀ x ∈ G.map (·.1), (val' x).isSome) ∧
+        Linear.Form.eval (fun x => (val' x).getD 0) G ≤ Linear.Form.eval (fun x => (val x).getD 0) G
+  | [], _, _ => ⟨by simp, Int.le_refl _⟩
+  | (x, a) :: G, hm, hd => by
+    simp only [List.all_cons, Bool.and_eq_true] at hm
+    obtain ⟨hm1, hm2⟩ := hm
+    obtain ⟨hdr, hev⟩ := form_monotone hk hg (G := G) hm2 (fun u hu => hd u (by simp [hu]))
+    obtain ⟨n, hn⟩ := Option.isSome_iff_exists.mp (hd x (by simp))
+    rcases Bool.or_eq_true_iff.mp hm1 with hkx | hgx
+    · have hn' := hk x n hkx hn
+      refine ⟨fun u hu => ?_, ?_⟩
+      · simp only [List.map_cons, List.mem_cons] at hu
+        rcases hu with rfl | hu
+        · simp [hn']
+        · exact hdr u hu
+      · simp only [Linear.Form.eval, hn, hn', Option.getD_some]; omega
+    · simp only [Bool.and_eq_true, decide_eq_true_eq] at hgx
+      obtain ⟨ha, hgx⟩ := hgx
+      obtain ⟨n', hn', hle⟩ := hg x n hgx hn
+      refine ⟨fun u hu => ?_, ?_⟩
+      · simp only [List.map_cons, List.mem_cons] at hu
+        rcases hu with rfl | hu
+        · simp [hn']
+        · exact hdr u hu
+      · simp only [Linear.Form.eval, hn, hn', Option.getD_some]
+        have : a * n' ≤ a * n := Int.mul_le_mul_of_nonpos_left ha hle
+        omega
+
+/-- **A fact holds where it held, each variable kept or grown as it allows**
+(`factMonotone`). -/
+theorem factAt_monotone {V : Type} {kept grown : V → Bool} {val val' : V → Option Int}
+    (hk : ∀ x n, kept x = true → val x = some n → val' x = some n)
+    (hg : ∀ x n, grown x = true → val x = some n → ∃ n', val' x = some n' ∧ n ≤ n')
+    {F : Linear.Fact V} (hm : factMonotone kept grown F = true) (hF : FactAt val F) : FactAt val' F := by
+  cases F with
+  | le G d =>
+    obtain ⟨hd, hev⟩ := form_monotone hk hg (G := G) (by simpa only [factMonotone] using hm)
+      (by simpa only [Linear.Fact.vars] using hF.1)
+    exact ⟨by simpa only [Linear.Fact.vars] using hd, Int.le_trans hev hF.2⟩
+  | ne G d =>
+    have he : ∀ x ∈ (Linear.Fact.ne G d).vars, val' x = val x := by
+      intro x hx
+      simp only [factMonotone, List.all_eq_true] at hm
+      simp only [Linear.Fact.vars, List.mem_map] at hx
+      obtain ⟨q, hq, rfl⟩ := hx
+      obtain ⟨n, hn⟩ := Option.isSome_iff_exists.mp (hF.1 q.1 (List.mem_map_of_mem hq))
+      rw [hn, hk q.1 n (hm q hq) hn]
+    exact factAt_congr he hF
+
+/-- Whether a change keeps what a body variable denotes (`Term.keptBy`): the
+index and the element are read apart. -/
+def Bound.keptBy (c : Changes) (first : Nat → String → Bool) : Bound → Bool
+  | .free t => t.keptBy c first
+  | _ => true
+
+/-- Whether a change grows what a body variable denotes (`Term.grownBy`). -/
+def Bound.grownBy (c : Changes) (first : Nat → String → Bool) : Bound → Bool
+  | .free t => t.grownBy c first
+  | _ => false
+
+/-- Whether a change keeps a body fact of a quantified fact at an index whose
+element it keeps: each term kept, or grown at a coefficient at most `0`. -/
+def bodyKeptBy (c : Changes) (first : Nat → String → Bool) : Linear.Fact Bound → Bool :=
+  factMonotone (Bound.keptBy c first) (Bound.grownBy c first)
+
 namespace IndexFact
 
 /-- Whether a change preserves a fact (`Term.keptBy`): `index` and `int` read

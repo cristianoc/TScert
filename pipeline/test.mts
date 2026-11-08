@@ -383,6 +383,35 @@ control(async (): Promise<void> => {
 });
 
 control(async (): Promise<void> => {
+  // A quantified fact claimed extended across a push that does not extend it
+  // (PROGRAM-TYPING.md, "Quantified clauses"): at each entry the producer
+  // claims without it, from the one after the push to the loop's,
+  // `ends[i] < widths.length` of every index of `ends`, after a push of
+  // `widths.length` into `ends` and after a push into an array no separation
+  // keeps apart from `ends`. Each is refused at the entry after the push
+  // where evidence is searched.
+  type Entry = SourceClaims["functions"][number]["entries"][number];
+  type Quantified = Entry["quantified"][number];
+  const strict: Quantified = { name: "ends", path: [], stop: { name: "ends", path: [], term: "length" },
+    body: [{ terms: [["elem", 1]], bound: 9007199254740991 }, { terms: [["elem", -1]], bound: 0 },
+      { terms: [["elem", 1], [{ term: { ref: { name: "widths", path: [], term: "length" } } }, -1]], bound: -1 }] };
+  for (const file of ["invalid-quantified-push-value", "invalid-quantified-push-alias"]) {
+    const artifacts = run(file);
+    const source = readFileSync(sourceKey(artifacts), "utf8");
+    const at = source.indexOf("let total = 0");
+    const claims = readClaims(artifacts);
+    const fn = must(claims.functions.find(f => f.name === "sumAfterPush"), `${file}'s claims`);
+    must(fn.entries.find(e => e.start === at), "the entry after the push");
+    for (const e of fn.entries) if (e.quantified.length === 0 && e.start >= at) e.quantified.push(strict);
+    const forged = writeClaims(artifacts, `push-forged-${file}`, claims);
+    const searched = produceWith(artifacts, forged, `push-forged-${file}`);
+    assert.equal(searched.status, 1, `${file}: ${searched.stdout}${searched.stderr}`);
+    assert.match(searched.stdout + searched.stderr, new RegExp(`edge obligation at \\[${at},[^\\n]*does not establish the claims`), file);
+  }
+  process.stdout.write("quantified facts: the strict element bound claimed extended across a push of the length and a push into a possible alias, each refused at the entry after it\n");
+});
+
+control(async (): Promise<void> => {
   // A sealed handle's invariant claimed where a resize broke it: the
   // handle's `segmentFlags.length === widths.length`, over its
   // representation's fields, forged at the entry of the walker's call after

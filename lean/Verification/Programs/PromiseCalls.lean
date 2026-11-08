@@ -1834,7 +1834,7 @@ theorem receiverGrows_changes {r : Tm} {h h' : Heap} (hg : CallEffects.ReceiverG
     · simp [growChanges, HeapKnowledge.Changes.alters] at ha
   · rcases hg l _ hls with hk | ⟨-, ls₀, ls', he, hls', hle, hmax⟩
     · exact ⟨ls, hk, Nat.le_refl _, id⟩
-    · cases he; exact ⟨ls', hls', hle, fun _ => hmax⟩
+    · cases he; exact ⟨ls', hls', hle.length_le, fun _ => hmax⟩
 
 /-- The locations a call growing the receiver slot `i`'s store keeps beside
 every object and number: each field of a slot a separation fact keeps apart
@@ -1901,11 +1901,222 @@ theorem effectKept_holds {eff : Effect} {t : Tm} {k : HeapKnowledge.Knowledge} {
         (fun a ha hcd => hk.2.2.2.2.2 a (List.mem_filter.mp ha).1 hcd)
         (HeapKnowledge.Changes.ofClosed_holds (CallEffects.Effect.within_holds hw hs ho)) HeapKnowledge.firstKept_none)
 
-/-- Knowledge with a call's result-fact atoms added, and the atoms of its
-entry `k0` its footprint keeps (`effectKept`), then the instances of
-quantified facts the element reads among them state (`withElements`). -/
+/-! ### Quantified facts across a growth (PROGRAM-TYPING.md, "Quantified clauses") -/
+
+open HeapKnowledge in
+/-- What a body variable denotes at an index a growth keeps: the index and
+the element there, each the same, and each term kept or grown as the change
+allows. -/
+theorem boundValue_grown {first : Nat → String → Bool} {ρ : Env} {h h' : Heap} {r : Tm}
+    {ls ls' : List (Option Nat)} (i : Nat)
+    (hg : CallEffects.ReceiverGrows r h h') (hf : FirstKept first ρ h h') (hp : ls <+: ls') :
+    (∀ x n, x.keptBy growChanges first = true → boundValue ρ h ls i x = some n →
+      boundValue ρ h' ls' i x = some n) ∧
+    (∀ x n, x.grownBy growChanges first = true → boundValue ρ h ls i x = some n →
+      ∃ n', boundValue ρ h' ls' i x = some n' ∧ n ≤ n') := by
+  have hc := receiverGrows_changes hg
+  refine ⟨fun x n hk hx => ?_, fun x n hgx hx => ?_⟩
+  · cases x with
+    | index => exact hx
+    | free t => exact termValue_kept hc hf hk hx
+    | elem =>
+      simp only [boundValue, elementInt] at hx ⊢
+      obtain ⟨t, rfl⟩ := hp
+      split at hx
+      · rename_i l hl
+        rw [List.getElem?_append_left (List.getElem?_eq_some_iff.mp hl).1, hl]
+        simp only [Option.bind_eq_some_iff] at hx ⊢
+        obtain ⟨w, hw, hwn⟩ := hx
+        rcases hg l w hw with hk' | ⟨-, ls0, -, rfl, -⟩
+        · exact ⟨w, hk', hwn⟩
+        · simp [intValue] at hwn
+      · cases hx
+  · cases x with
+    | index | elem => simp [Bound.grownBy] at hgx
+    | free t => exact termValue_grown hc hf hgx hx
+
+open HeapKnowledge in
+/-- **A growth keeps a quantified fact whose bound and body it keeps**
+(`every-grow`): the array its path reads is the same object, whose store is
+the receiver's, extended with its old elements at their indices, or one the
+growth keeps. -/
+theorem every_grown {first : Nat → String → Bool} {ρ : Env} {h h' : Heap} {r : Tm}
+    (hg : CallEffects.ReceiverGrows r h h') (hf : FirstKept first ρ h h')
+    {s : Nat} {p : List String} {st : Term} {body : List (Linear.Fact Bound)}
+    (hst : st.keptBy growChanges first = true) (hb : body.all (bodyKeptBy growChanges first) = true)
+    (hF : (IndexFact.every s p st body).HoldsAt ρ h) : (IndexFact.every s p st body).HoldsAt ρ h' := by
+  obtain ⟨w, sto, ls, n, hw, hsto, hls, hn, hall⟩ := hF
+  have hc := receiverGrows_changes hg
+  have hwa : growChanges.alters w = false := by
+    cases w <;> simp_all [Footprints.storeOf, Footprints.fieldsOf, growChanges, Changes.alters]
+  obtain ⟨ls', hls', hp⟩ : ∃ ls', h'[sto]? = some (.arr ls') ∧ ls <+: ls' := by
+    rcases hg sto _ hls with hk | ⟨-, ls0, ls', he, hls', hp, -⟩
+    · exact ⟨ls, hk, List.prefix_refl ls⟩
+    · cases he; exact ⟨ls', hls', hp⟩
+  refine ⟨w, sto, ls', n, readPath_kept hc p (ρ s) w hw (Or.inr hwa) (fun _ => rfl), hsto, hls',
+    termValue_kept hc hf hst hn, fun i hi F hF => ?_⟩
+  obtain ⟨hk, hgr⟩ := boundValue_grown i hg hf hp
+  exact factAt_monotone hk hgr (List.all_eq_true.mp hb F hF) (hall i hi F hF)
+
+/-- What a body variable of a quantified fact over the slot `i`'s array
+denotes at the value of the slot `a` appended to it: the index its old
+length, the element the slot's value, a term itself. -/
+def appendTerm (i a : Nat) : HeapKnowledge.Bound → HeapKnowledge.Term
+  | .index => .length i
+  | .elem => .value a
+  | .free t => t
+
+open HeapKnowledge in
+/-- **An append extends a quantified fact over the receiver's array by the
+appended value** (`every-push`): where the slot `x`'s value, a safe integer,
+is appended to the slot `i`'s array, the fact over its whole length holds
+after it where each body fact holds of the value at the old length, and the
+growth keeps each body fact. -/
+theorem every_appended {first : Nat → String → Bool} {ρ : Env} {h h' : Heap} {i x : Nat}
+    (hg : CallEffects.ReceiverGrows (ρ i) h h') (ha : CallEffects.ReceiverAppends (ρ i) [ρ x] h h')
+    (hf : FirstKept first ρ h h') (hx : (intValue (ρ x)).isSome)
+    {body : List (Linear.Fact Bound)} (hb : body.all (bodyKeptBy growChanges first) = true)
+    (hnew : ∀ F ∈ body, FactAt (fun b => termValue ρ h (appendTerm i x b)) F)
+    (hF : (IndexFact.every i [] (.length i) body).HoldsAt ρ h) :
+    (IndexFact.every i [] (.length i) body).HoldsAt ρ h' := by
+  obtain ⟨w, sto, ls, n, hw, hsto, hls, hn, hall⟩ := hF
+  simp only [readPath, Option.some.injEq] at hw
+  subst hw
+  simp only [termValue_length] at hn
+  obtain ⟨sto2, ls2, hs2, hls2, rfl, -⟩ := lengthOf_store hn
+  rw [hs2] at hsto
+  cases hsto
+  rw [hls2] at hls
+  cases hls
+  have hvx : isVal (ρ x) = true := by
+    obtain ⟨b, hb, -⟩ := intValue_safe (Option.get_mem hx)
+    rw [hb]; rfl
+  obtain ⟨ls', hls', hlen, hel⟩ := ha (by simpa using hvx) sto ls hs2 hls2
+  obtain ⟨l, hl, hlv⟩ := hel 0 (ρ x) rfl
+  obtain ⟨hp, hmax⟩ : ls <+: ls' ∧ ls'.length ≤ maxArrayLength := by
+    rcases hg sto _ hls2 with hk | ⟨-, ls0, ls1, he, hls1, hp, hm⟩
+    · rw [hk] at hls'; cases hls'; simp at hlen
+    · cases he; rw [hls1] at hls'; cases hls'; exact ⟨hp, hm⟩
+  refine ⟨ρ i, sto, ls', ls'.length, rfl, hs2, hls', ?_, fun j hj F hF => ?_⟩
+  · simp only [termValue_length]; exact lengthOf_of_store hs2 hls' hmax
+  obtain ⟨hk, hgr⟩ := boundValue_grown j hg hf hp
+  have hbF := List.all_eq_true.mp hb F hF
+  by_cases hj' : j < ls.length
+  · exact factAt_monotone hk hgr hbF (hall j (by exact_mod_cast hj') F hF)
+  · have hjl : j = ls.length := by simp only [List.length_singleton] at hlen; omega
+    subst hjl
+    have hc := receiverGrows_changes hg
+    refine factAt_monotone (val := fun b => termValue ρ h (appendTerm i x b)) (fun y n hky hy => ?_)
+      (fun y n hgy hy => ?_) hbF (hnew F hF)
+    · cases y with
+      | index =>
+        simp only [appendTerm, termValue_length, hn, Option.some.injEq] at hy
+        rw [← hy]; rfl
+      | elem =>
+        simp only [appendTerm, termValue_value] at hy
+        simp only [Nat.add_zero] at hl
+        simp only [boundValue, elementInt, hl, hlv, Option.bind_some, hy]
+      | free t => exact termValue_kept hc hf hky hy
+    · cases y with
+      | index | elem => simp [Bound.grownBy] at hgy
+      | free t => exact termValue_grown hc hf hgy hy
+
+open HeapKnowledge in
+/-- Whether the atoms `as` state a body fact of the value of the slot `a`
+appended to the slot `i`'s array: the fact with the index read as the
+array's old length and the element as the slot's value, each of its terms
+but that length defined. -/
+def appendedBody (as : List IndexAtom) (i a : Nat) (F : Linear.Fact Bound) : Bool :=
+  match F.mapVars (some ∘ appendTerm i a) with
+  | some G => G.vars.all (fun t => t == Term.length i || termDefined as t) && entailsKnown as G
+  | none => false
+
+open HeapKnowledge in
+theorem appendedBody_sound {as : List IndexAtom} {ρ : Env} {h : Heap} {i a : Nat}
+    (he : IndexHolds as ρ h) (hlen : (termValue ρ h (Term.length i)).isSome) {F : Linear.Fact Bound}
+    (hF : appendedBody as i a F = true) : FactAt (fun b => termValue ρ h (appendTerm i a b)) F := by
+  unfold appendedBody at hF
+  split at hF
+  · rename_i G hG
+    simp only [Bool.and_eq_true, List.all_eq_true, Bool.or_eq_true, beq_iff_eq] at hF
+    obtain ⟨hd, hent⟩ := hF
+    refine (factAt_mapVars (val' := termValue ρ h) hG fun y _ t ht => ?_).mp
+      ⟨fun t ht => ?_, entailsKnown_sound he hent⟩
+    · simp only [Function.comp_apply, Option.some.injEq] at ht
+      rw [← ht]
+    · rcases hd t ht with rfl | hdt
+      · exact hlen
+      · exact termDefined_sound he hdt
+  · cases hF
+
+open HeapKnowledge in
+/-- Whether a call growing its receiver's store keeps a quantified atom of
+its entry `k`: each body fact kept by the growth (`bodyKeptBy`), and its
+bound kept (`every-grow`) or, for the call `x.push(a)` of one actual a safe
+integer, the fact over `x`'s whole array, each body fact stated of the value
+at the old length (`every-push`). -/
+def everyGrown (k : Knowledge) (t : Tm) (a : IndexAtom) : Bool :=
+  match a.fact with
+  | .every s p st body =>
+    body.all (bodyKeptBy growChanges (growFirst k t)) &&
+      (st.keptBy growChanges (growFirst k t) ||
+        match t with
+        | .invoke _ (.var i) [.var x] => s == i && p.isEmpty && st == Term.length i && intSlot k.indices x &&
+            body.all (appendedBody k.indices i x)
+        | _ => false)
+  | _ => false
+
+/-- The quantified atoms of a call's entry `k` its growth of its receiver's
+store keeps or extends (`everyGrown`), renamed past the result; none of a call
+growing nothing. -/
+def appendKept (eff : Effect) (t : Tm) (k : HeapKnowledge.Knowledge) : List HeapKnowledge.IndexAtom :=
+  if eff.receiverGrows then HeapKnowledge.shiftIndices (k.indices.filter (everyGrown k t)) else []
+
+open HeapKnowledge in
+theorem appendKept_holds {eff : Effect} {t : Tm} {k : Knowledge} {ρ : Env} {h h' : Heap} {v : Tm}
+    (hk : Holds k ρ h)
+    (hg : eff.receiverGrows = true →
+      CallEffects.ReceiverGrows (ExpressionEffects.receiverOf (instantiate 0 ρ t)) h h' ∧
+      CallEffects.ReceiverAppends (ExpressionEffects.receiverOf (instantiate 0 ρ t))
+        (ExpressionEffects.actualsOf (instantiate 0 ρ t)) h h') :
+    IndexHolds (appendKept eff t k) (push v ρ) h' := by
+  unfold appendKept
+  split
+  · rename_i hgr
+    obtain ⟨hgrow, happ⟩ := hg hgr
+    have hf := growFirst_kept hk hgrow
+    refine shiftIndices_holds fun a ha hcd => ?_
+    obtain ⟨ha, hkept⟩ := List.mem_filter.mp ha
+    have hF := hk.2.2.2.2.2 a ha hcd
+    unfold everyGrown at hkept
+    split at hkept
+    · rename_i s p st body hfa
+      rw [hfa] at hF ⊢
+      simp only [Bool.and_eq_true, Bool.or_eq_true] at hkept
+      obtain ⟨hb, hst | hpush⟩ := hkept
+      · exact every_grown hgrow hf hst hb hF
+      · split at hpush
+        · rename_i f i x
+          simp only [Bool.and_eq_true, beq_iff_eq, List.isEmpty_iff] at hpush
+          obtain ⟨⟨⟨⟨rfl, rfl⟩, rfl⟩, hx⟩, hbody⟩ := hpush
+          simp only [ExpressionEffects.receiverOf, ExpressionEffects.actualsOf, instantiate, instantiateArgs,
+            Nat.not_lt_zero, if_false, Nat.sub_zero] at hgrow happ hf
+          have hlen : (termValue ρ h (Term.length s)).isSome := by
+            obtain ⟨w, sto, ls, n, -, -, -, hn, -⟩ := hF
+            rw [hn]; rfl
+          exact every_appended hgrow happ hf (intSlot_sound hk.2.2.2.2.2 hx) hb
+            (fun F hF' => appendedBody_sound hk.2.2.2.2.2 hlen (List.all_eq_true.mp hbody F hF')) hF
+        · simp at hpush
+    · cases hkept
+  · exact indexHolds_nil _ _
+
+/-- Knowledge with a call's result-fact atoms added, the atoms of its entry
+`k0` its footprint keeps (`effectKept`) and the quantified atoms its growth
+of its receiver's store keeps or extends (`appendKept`), then the instances
+of quantified facts the element reads among them state (`withElements`). -/
 def withEnsures (eff : Effect) (t : Tm) (k0 k : HeapKnowledge.Knowledge) : HeapKnowledge.Knowledge :=
-  HeapKnowledge.withElements { k with indices := k.indices ++ ensuresAtoms eff t ++ effectKept eff t k0 }
+  HeapKnowledge.withElements
+    { k with indices := k.indices ++ ensuresAtoms eff t ++ effectKept eff t k0 ++ appendKept eff t k0 }
 
 theorem withEnsures_holds {eff : Effect} {t : Tm} {k0 k : HeapKnowledge.Knowledge} {ρ : Env} {h h' : Heap} {v : Tm}
     (hk : HeapKnowledge.Holds k (push v ρ) h') (hk0 : HeapKnowledge.Holds k0 ρ h)
@@ -1913,14 +2124,18 @@ theorem withEnsures_holds {eff : Effect} {t : Tm} {k0 k : HeapKnowledge.Knowledg
     (hp : ∀ F ∈ eff.ensures, F.HoldsAt (CallEffects.ensuresEnv v (ExpressionEffects.receiverOf (instantiate 0 ρ t))
       (ExpressionEffects.actualsOf (instantiate 0 ρ t))) h')
     (hg : eff.receiverGrows = true →
-      CallEffects.ReceiverGrows (ExpressionEffects.receiverOf (instantiate 0 ρ t)) h h') :
+      CallEffects.ReceiverGrows (ExpressionEffects.receiverOf (instantiate 0 ρ t)) h h' ∧
+      CallEffects.ReceiverAppends (ExpressionEffects.receiverOf (instantiate 0 ρ t))
+        (ExpressionEffects.actualsOf (instantiate 0 ρ t)) h h') :
     HeapKnowledge.Holds (withEnsures eff t k0 k) (push v ρ) h' := HeapKnowledge.withElements_holds
   ⟨hk.1, hk.2.1, hk.2.2.1, hk.2.2.2.1, hk.2.2.2.2.1, fun a ha hc => by
     rcases List.mem_append.mp ha with ha | ha
     · rcases List.mem_append.mp ha with ha | ha
-      · exact hk.2.2.2.2.2 a ha hc
-      · exact ensuresAtoms_holds hp a ha hc
-    · exact effectKept_holds hk0 hw hg a ha hc⟩
+      · rcases List.mem_append.mp ha with ha | ha
+        · exact hk.2.2.2.2.2 a ha hc
+        · exact ensuresAtoms_holds hp a ha hc
+      · exact effectKept_holds hk0 hw (fun hgr => (hg hgr).1) a ha hc
+    · exact appendKept_holds hk0 hg a ha hc⟩
 
 /-- The selected signature of an ordinary step's evidence that `call-ensures`
 applies to: at the sequent `j`, a call checked as `selected_sound` or as
@@ -1933,7 +2148,8 @@ applies to: at the sequent `j`, a call checked as `selected_sound` or as
     if decide (claim p = j) && (ExpressionEffects.selectedOperands p && checkTreeUsing G images p codes sums ||
         requiresTree G images k codes sums p) then
       match ExpressionEffects.selectedEffect p with
-      | some eff => if eff.ensures.isEmpty && (effectKept eff j.term k).isEmpty then none else some eff
+      | some eff => if eff.ensures.isEmpty && (effectKept eff j.term k).isEmpty && (appendKept eff j.term k).isEmpty
+          then none else some eff
       | none => none
     else none
   | _ => none

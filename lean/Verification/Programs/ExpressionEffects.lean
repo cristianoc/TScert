@@ -684,8 +684,7 @@ private theorem callRest_local_sound [DecidableEq ι] {G : NormalGraph ι}
       (CallEffects.Effect.requires_none (CallEffects.Effect.plain_requires hplain)
         (CallEffects.Effect.plain_pre hplain) _ _ _)
     rw [CallEffects.Effect.result_plain hplain] at hs
-    replace hs := weaken (fun _ _ hp => CallEffects.Effect.post_forgetEnsures
-      (args' := actualsOf (instantiate 0 ρ (.invoke f r args))) hp) hs
+    replace hs := weaken (fun _ _ hp => CallEffects.Effect.post_forgetEnsures hp) hs
     simpa [htf, htr, hargs, vals, receiverOf, actualsOf, instantiate, instantiateArgs_eq_map, List.map_map,
       Function.comp_def] using hs
 
@@ -806,6 +805,18 @@ private theorem callRestSpread_local_sound [DecidableEq ι] {G : NormalGraph ι}
       intro q _
       rcases q with ⟨_ | _, p⟩ <;> rfl
     rw [hterm]
+    -- A spread among the parts: an actual of the call that is no value.
+    have hns : ∃ a ∈ (jas.take k).map (fun p => instantiate 0 ρ p.term) ++ parts.map RestCalls.partTerm,
+        isVal a = false := by
+      obtain ⟨b, hb, hbt⟩ := List.any_eq_true.mp hsp
+      obtain ⟨i, hi, rfl⟩ := List.getElem_of_mem hb
+      have hlen' : (jas.drop k).length = flags.length := by simp [hlen]
+      have hm : (flags[i], (jas.drop k)[i]'(by omega)) ∈ flags.zip (jas.drop k) :=
+        List.mem_iff_getElem.mpr ⟨i, by simp [List.length_zip]; omega, by simp⟩
+      refine ⟨.spread (instantiate 0 ρ ((jas.drop k)[i]'(by omega)).term), List.mem_append_right _ ?_, rfl⟩
+      refine List.mem_map.mpr ⟨_, List.mem_map.mpr ⟨_, hm, rfl⟩, ?_⟩
+      simp only [id] at hbt
+      simp [RestCalls.partTerm, hbt]
     have hpart : ∀ q ∈ flags.zip (jas.drop k), if q.1 then SpreadsInto G q.2.type El else q.2.type = El :=
       fun q hq => hparts (q.1, q.2.type) (List.mem_map_of_mem hq)
     apply spread_values_post (E := meaning G El) (meaning_adm G El) (meaning_valOnly G El) hfv hrv
@@ -873,7 +884,7 @@ private theorem callRestSpread_local_sound [DecidableEq ι] {G : NormalGraph ι}
       (CallEffects.Effect.requires_none (CallEffects.Effect.plain_requires hplain)
         (CallEffects.Effect.plain_pre hplain) _ _ _)
     rw [CallEffects.Effect.result_plain hplain] at hs
-    exact weaken (fun _ _ hp => CallEffects.Effect.post_forgetEnsures hp) hs
+    exact weaken (fun _ _ hp => CallEffects.Effect.post_forgetEnsures_spread hns hp) hs
 
 /-- **A selected call meets its signature's postcondition**, at its receiver,
 from the heap it starts in. -/

@@ -1805,7 +1805,8 @@ bounds of lengths (proved). These are the preservation rules:
   `out.push(v)` preserves every fact over values, paths and typed-array
   lengths, `i < other.length` whatever `other` is, and an upper bound of a
   length only of a store apart from `out`'s; a definition's code states no
-  `receiverGrows`.
+  `receiverGrows`. Its quantified facts are the
+  [growth's and the append's](#quantified-clauses).
 - **A call changing only its receiver's own locations** (`call-own`):
   $`\chi`$ alters everything, and $`\mathrm{first}(z,g)`$ is
   $`\mathrm{apart}(x.\star,z.g)`$. So an array iterator's step preserves the
@@ -2665,8 +2666,8 @@ so `itemSegments[index]!` under `forall i in itemSegments: safeInteger(itemSegme
 states its value a safe integer between $`0`$ and $`|\mathit{data}.\mathit{widths}|`$.
 
 **Frame conditions.** A quantified fact and an element fact read the heap: a
-step leaving the heap unchanged preserves them, and a heap change preserves
-neither, a stated limit. On an edge a target quantified fact follows from a
+step leaving the heap unchanged preserves them, and a heap change other than
+a growth of a receiver's store preserves neither, a stated limit. On an edge a target quantified fact follows from a
 source one whose root slot the edge maps it to, of the same path, whose bound
 and each body fact the target's follow term by term (proved), and a target
 element fact from the same one renamed. A read of field $`f`$ from slot
@@ -2674,10 +2675,40 @@ $`c`$ into slot $`v`$ restates of $`v`$ a quantified fact whose root, bound
 or body terms read through $`c.f`$ (proved), so `const { widths } = data`
 retains the fact of $`|\mathit{widths}|`$.
 
+**Across a push.** A normal return of `push` changes no old location but its
+receiver's store, which it extends: the old elements keep their indices, and
+the $`j`$-th actual, where the actuals are values, is the present element at
+the old length plus $`j`$ (the append relation of `push`'s trusted contract,
+[native footprints](SOURCE-CONTRACTS.md#native-footprints)). So a
+quantified fact's array is the receiver's, extended, or one the push keeps,
+and each index below its bound keeps its element. A body fact is kept where
+each of its terms is preserved by the growth $`\chi=(\bot,\bot,\mathsf{grow})`$
+or, in a fact $`\sum_t c_t\,t\le d`$, grown with $`c_t\le 0`$
+([frame conditions](#frame-conditions)), the index and the element read
+apart. Two rules follow (proved):
+
+```math
+\frac{\mathrm{every}(x.p,t,\Phi)\in\Sigma\quad \mathrm{kept}_\chi(t)\quad \forall F\in\Phi.\ \mathrm{kept}_\chi(F)}
+     {\Sigma\vdash r\leftarrow y.\mathtt{push}(\vec a)\dashv\Sigma',\ \mathrm{every}(x.p,t,\Phi)}\ \textsf{every-grow}
+\qquad
+\frac{\mathrm{every}(x,|x|,\Phi)\in\Sigma\quad \mathrm{int}(a)\quad \forall F\in\Phi.\ \mathrm{kept}_\chi(F)\land K\vdash F[\mathrm{index}\mapsto|x|,\ \mathrm{elem}\mapsto a]}
+     {\Sigma\vdash r\leftarrow x.\mathtt{push}(a)\dashv\Sigma',\ \mathrm{every}(x,|x|,\Phi)}\ \textsf{every-push}
+```
+
+with $`\mathrm{kept}_\chi(t)`$ of a length $`|z|`$ holding where
+$`\mathrm{first}(z,[\,])`$, a separation fact keeping $`z`$'s store apart
+from the receiver's. So `itemSegments.push(widths.length)` extends
+`forall i in itemSegments: … itemSegments[i] <= widths.length`, and a push of
+a value the body excludes, or into an array no separation keeps apart from
+the quantified one, keeps no fact over the whole quantified array. A push of
+several actuals extends none (`every-push` reads one).
+
 **The producer** carries each precondition's quantified facts to the entries
 it claims (an entry's `quantified`, [SOURCE-CLAIMS](SOURCE-CLAIMS.md)),
 preserves them across a statement writing no heap and naming none of their
-bindings, restates them at a path's read, and, at an element read at an index
+bindings, keeps them across a push as `every-grow` and `every-push` keep
+them, where its own frame analysis keeps their bounds, restates them at a
+path's read, and, at an element read at an index
 its facts bound below the fact's bound, names the read's value with the body
 facts instantiated, for the call typing and the linear facts of the
 statement.
@@ -2692,9 +2723,14 @@ stated in `tools/intrinsics.mts`; `every-read` is
 `IndexFact.keptBy`; the edge rule is `HeapKnowledge.boundFollows` and
 `bodyFactFollows` (proved: `every_follows`); the read's restatement is
 `HeapKnowledge.readEvery`, in `readAtoms` (proved: `readEvery_holds`, from
-`bridgeReads_path` and `bridgeReads_term`). The producer's facts are
-`Linear_facts.efact`, its element reads `Linear_facts.with_reads` and
-`element_facts`.
+`bridgeReads_path` and `bridgeReads_term`). The append relation is
+`CallEffects.ReceiverAppends`, beside `ReceiverGrows`, in `Effect.post`;
+`every-grow` and `every-push` are `PromiseCalls.everyGrown`, with
+`HeapKnowledge.bodyKeptBy` and `appendedBody`, added by `appendKept` in
+`withEnsures` (proved: `every_grown`, `every_appended`, from
+`boundValue_grown` and `factAt_monotone`; `appendKept_holds`). The producer's
+facts are `Linear_facts.efact`, its element reads `Linear_facts.with_reads`
+and `element_facts`, its facts across a push `Linear_facts.egrown`.
 
 **Cases.** Positive: `quantified-element-reads` (a read at an element, a loop
 to an element, pretext's `narrowsLine` through a destructured path). Negative,
@@ -2702,9 +2738,16 @@ each run under Node: `invalid-quantified-element-read-inclusive` (an element
 at most the length), `invalid-quantified-element-read-alias-write` (a write
 through an alias of the quantified array) and
 `invalid-quantified-element-read-shrunk` (a `pop` of the bounding array).
-Forged controls in `pipeline/test.mts`: the inclusive and alias-write
-negatives' reads claimed at `number` with the strict quantified fact claimed
-at the return's entry, refused there. An array with a hole reaches no `number[]`: a readable store
+Across a push: positive `quantified-push-builder` (pretext's builder pushing
+`widths.length`, then its `narrowsLine` consumer); negative, each run under
+Node, `invalid-quantified-push-value` (a push of a value the body excludes),
+`invalid-quantified-push-alias` (a push into an array that may be the
+quantified one) and `invalid-quantified-push-shrunk` (a push, then a `pop`
+of the bounding array). Forged controls in `pipeline/test.mts`: the
+inclusive and alias-write negatives' reads claimed at `number` with the
+strict quantified fact claimed at the return's entry, refused there; and the
+strict fact claimed at the entry after the push of the value and alias
+negatives, refused there. An array with a hole reaches no `number[]`: a readable store
 holds a hole only where `undefined` meets its element type, and the fragment
 makes none.
 

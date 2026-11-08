@@ -387,7 +387,7 @@ let statements callbacks flow_graph register_following owner_span env0 ss =
         | Flow.Statement (span,_), [e] ->
           let s = source span in
           [with_facts ~gs:(Linear_facts.gstatement ~bounds:bounds0 env facts0 guarded0 s)
-            ~es:(Linear_facts.estatement env every0 s) e
+            ~es:(Linear_facts.estatement ~array:(callbacks.array_binding env) ~facts:facts0 env every0 s) e
             (Linear_facts.statement ~array:(callbacks.array_binding env) ~bounds:bounds0 env facts0 s)
             (Linear_facts.statement_bounds ~facts:facts0 env bounds0 s)]
         | Flow.IteratorStart (span,b,_), [e] ->

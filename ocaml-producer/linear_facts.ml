@@ -1226,9 +1226,6 @@ let statement ~array ?(bounds=[]) env fs (s : stmt) =
   | Effect e -> with_reads ~array env fs e (fun fs -> statement ~array ~bounds env fs s) forget_all
   | _ -> statement ~array ~bounds env fs s
 
-(* The quantified facts a step keeps: where it writes no heap, those naming
-   no binding it assigns (Lean keeps an atom across a step that keeps the
-   heap); none otherwise, as Lean's `IndexFact.keptBy` keeps none. *)
 (* A quantified fact restated where a binding `name` is declared at the read
 of the path `(root, path)` (Lean's `readEvery`): its array, its bound and its
 body terms through the path, of the binding. *)
@@ -1244,7 +1241,45 @@ let erestate_read name (root,path) (e : efact) : efact option =
   let e' = { arr; stop = rename e.stop; body = List.map (fun ((t,d) : fact) -> List.map (fun (n,c) -> rename n,c) t, d) e.body } in
   if e' = e then None else Some e'
 
-let estatement env (es : efact list) (s : stmt) : efact list =
+(* The quantified facts a call growing its receiver's store keeps, `xs.push(a)`
+   or a growing method of another receiver (Lean's `PromiseCalls.everyGrown`):
+   each whose body facts the growth keeps, the index and the element read
+   apart, and whose bound it keeps (`every-grow`); and, for `xs.push(a)` of one
+   actual, a safe integer the facts give as a linear form, each over `xs`'s
+   whole array whose body facts the facts state of `a` at the index
+   `xs.length` (`every-push`). *)
+let egrown ~array env fs (es : efact list) (e : expr) : efact list option =
+  match e.node with
+  | Invoke ({node=Read (r,key);_},args,[],_) when heap_free env r && List.for_all (heap_free env) args &&
+      !method_grows env r key ->
+    let ch = { obj = false; num = false; store = `Grow; framed = no_frame; apart = false; cell_write = false } in
+    let body_kept ((t,_) : fact) =
+      List.for_all (fun (n,c) -> n = index_var || n = elem_var || term_kept ch n || (c <= 0 && term_grown ch n)) t in
+    let appended (ef : efact) = match r.node, args with
+      | Id xs, [a] when ef.arr = (xs,[]) && ef.stop = length_term xs ->
+        let int_actual = match a.node with Id x -> is_int fs x | _ -> true in
+        int_actual && (match linear ~array env fs a with
+          | Some (at,ac) ->
+            let ranged = fs @ term_ranges ((at,0) :: fs) @ term_ranges [[length_term xs,1],0] in
+            List.for_all (fun ((t,d) : fact) ->
+              let k = Option.value ~default:0 (List.assoc_opt elem_var t) in
+              let t = List.concat_map (fun (n,c) ->
+                if n = index_var then [length_term xs,c] else if n = elem_var then scale c at else [n,c]) t in
+              entails ranged (norm t, d - k * ac)) ef.body
+          | None -> false)
+      | _ -> false in
+    Some (List.filter (fun (ef : efact) -> List.for_all body_kept ef.body &&
+      (term_kept ch ef.stop || appended ef)) es)
+  | _ -> None
+
+(* The quantified facts a step keeps: across a growing call, those `egrown`
+   keeps; where it writes no heap, those naming no binding it assigns (Lean
+   keeps an atom across a step that keeps the heap); none otherwise, as Lean's
+   `IndexFact.keptBy` keeps none. *)
+let estatement ?(array = fun _ _ -> false) ?(facts = []) env (es : efact list) (s : stmt) : efact list =
+  match (match s.statement with Effect e -> egrown ~array env facts es e | _ -> None) with
+  | Some es -> es
+  | None ->
   if not (statement_heap_free env s) then [] else
   let assigned = names_assigned s env in
   let es = List.filter (fun e -> not (List.exists (fun b -> List.mem b assigned) (ebindings e))) es in
