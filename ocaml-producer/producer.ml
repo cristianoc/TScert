@@ -105,7 +105,7 @@ let remap_claim m (c:Proposal_types.function_claim) : Proposal_types.function_cl
           if k > j + 1 then (Buffer.add_char b ':'; Buffer.add_string b (number (j + 1) k); go k) else go j
         end
       end else begin
-        if not (plain n.[i] || n.[i] = '@' || n.[i] = ':') then generated := false;
+        if not (plain n.[i] || n.[i] = '@' || n.[i] = ':' || n.[i] = '-') then generated := false;
         Buffer.add_char b n.[i]; go (i + 1)
       end in
     go 0; Buffer.contents b in
