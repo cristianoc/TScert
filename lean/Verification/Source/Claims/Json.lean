@@ -233,7 +233,7 @@ def checkPlans (T : EquationStore.State) (plans : List (FunctionPlan EquationSto
 
 def checkDocument (ast claims : Json) (fileKey : String) (evidence : Json)
     (budget : PositiveCertificates.SearchBudget := {})
-    (qualified : List (String × Footprints.Closed × Bool) := []) : Except String Unit := do
+    (qualified : List (String × Footprints.Closed × Bool × Footprints.Closed) := []) : Except String Unit := do
   let (T, plans) ← extractPlans ast claims fileKey budget qualified
   checkPlans T plans evidence
 
@@ -327,7 +327,7 @@ def PlansSafe (T : EquationStore.State) (plans : List (FunctionPlan EquationStor
 /-- What a document's successful check gives: its plans, and what checking
 them gives (`PlansSafe`). -/
 def DocumentSafe (ast claims : Json) (fileKey : String) (evidence : Json)
-    (budget : PositiveCertificates.SearchBudget) (qualified : List (String × Footprints.Closed × Bool)) : Prop :=
+    (budget : PositiveCertificates.SearchBudget) (qualified : List (String × Footprints.Closed × Bool × Footprints.Closed)) : Prop :=
     ∃ T plans, extractPlans ast claims fileKey budget qualified = .ok (T, plans) ∧ PlansSafe T plans evidence
 
 /-- Every extracted plan crosses the exhaustive certification boundary, and its
@@ -363,7 +363,7 @@ theorem checkPlans_safe {T : EquationStore.State} {plans : List (FunctionPlan Eq
         · simp [hx] at h
 
 theorem checkDocument_safe {ast claims evidence : Json} {fileKey : String}
-    {budget : PositiveCertificates.SearchBudget} {qualified : List (String × Footprints.Closed × Bool)}
+    {budget : PositiveCertificates.SearchBudget} {qualified : List (String × Footprints.Closed × Bool × Footprints.Closed)}
     (h : checkDocument ast claims fileKey evidence budget qualified = .ok ()) :
     DocumentSafe ast claims fileKey evidence budget qualified := by
   unfold DocumentSafe
@@ -550,17 +550,19 @@ claims, and its own qualified reads with their footprints and on-throw
 flags. -/
 def ModuleRun.wire (m : ModuleRun) : Json :=
   Json.mkObj [("location", toJson m.location), ("ast", m.ast), ("claims", m.claims),
-    ("qualified", toJson (m.qualified.map fun (name, footprint, onThrow) =>
-      Json.mkObj [("name", toJson name), ("footprint", toJson footprint), ("onThrow", toJson onThrow)]))]
+    ("qualified", toJson (m.qualified.map fun (name, footprint, onThrow, result) =>
+      Json.mkObj [("name", toJson name), ("footprint", toJson footprint), ("onThrow", toJson onThrow),
+        ("resultFootprint", toJson result)]))]
 
 /-- A module run read from the wire, field by field. -/
 def ModuleRun.decode (j : Json) : Except String ModuleRun := do
   fieldsExactly j ["location", "ast", "claims", "qualified"]
   let qualified ← (← jArr j "qualified").mapM fun q => do
-    fieldsExactly q ["name", "footprint", "onThrow"]
+    fieldsExactly q ["name", "footprint", "onThrow", "resultFootprint"]
     let footprint : Footprints.Closed ← fromJson? (← jField q "footprint")
     let onThrow : Bool ← fromJson? (← jField q "onThrow")
-    return (← jStr (← jField q "name"), footprint, onThrow)
+    let result : Footprints.Closed ← fromJson? (← jField q "resultFootprint")
+    return (← jStr (← jField q "name"), footprint, onThrow, result)
   return ⟨← jStr (← jField j "location"), ← jField j "ast", ← jField j "claims", qualified⟩
 
 /-- **The verdict of a module run** at its evidence: its restricted document

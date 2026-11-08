@@ -294,9 +294,10 @@ const spanOf = (value: unknown): [number, number] | null =>
     ? [value[0], value[1]] : null;
 /** A read of an import the pipeline proposes qualified (certified imports):
  * the reading document's name of it, its declaration identity, its module,
- * and its unit's claimed footprint and on-throw flag. */
+ * its unit's claimed footprint and on-throw flag, and the footprint it claims
+ * for the function it returns. */
 type QualifiedRead = { local: string; declaration: unknown; module: string; name: string;
-  footprint: unknown; onThrow: boolean };
+  footprint: unknown; onThrow: boolean; resultFootprint: unknown };
 /** A module's claims, kept as text: a bigint literal's digits pass through
  * unrounded. */
 type ModuleClaims = { text: string; parsed: unknown };
@@ -328,7 +329,8 @@ function eligibleReads(declarations: unknown, units: Map<string, unknown[]>, cla
     });
     const onThrow = field(claimed, "onThrow");
     if (!claimed || typeof onThrow !== "boolean") return [];
-    return [{ local, declaration, module, name, footprint: field(claimed, "footprint"), onThrow }];
+    return [{ local, declaration, module, name, footprint: field(claimed, "footprint"), onThrow,
+      resultFootprint: field(claimed, "resultFootprint") }];
   });
 }
 type FlowDocument = ReturnType<typeof decodeFlowDocument>;
@@ -421,7 +423,8 @@ export class UnitProposal {
     const document: UnitReads = { members: unit.members, init: unit.init, pinned,
       readAsValues: unit.holdsInit ? this.facts.readAsValues : [],
       qualified: qualified.filter((q) => unit.names.includes(q.local))
-        .map(({ local, declaration, footprint, onThrow }) => ({ local, declaration, footprint, onThrow })) };
+        .map(({ local, declaration, footprint, onThrow, resultFootprint }) =>
+          ({ local, declaration, footprint, onThrow, resultFootprint })) };
     return JSON.stringify(document);
   }
   /** The document's claims at the qualified reads `qualified`. */
@@ -453,21 +456,21 @@ export class UnitProposal {
       proposals.push({ bin, deletions: files.deletions, symbols: files.symbols });
       const searchQualified = `${this.prefix}unit-${i}.search-qualified.json`;
       writeFileSync(searchQualified, JSON.stringify(qualified.filter((q) => unit.names.includes(q.local))
-        .map(({ local, footprint, onThrow }) => ({ name: local, footprint, onThrow }))));
+        .map(({ local, footprint, onThrow, resultFootprint }) => ({ name: local, footprint, onThrow, resultFootprint }))));
       this.searchable.set(i, { slice: files.slice, claims, qualified: searchQualified, deletions: files.deletions, symbols: files.symbols });
     }
     this.settled = interfaces;
     this.qualified = `${this.prefix}search-qualified.json`;
-    writeFileSync(this.qualified, JSON.stringify(qualified.map(({ local, footprint, onThrow }) =>
-      ({ name: local, footprint, onThrow }))));
+    writeFileSync(this.qualified, JSON.stringify(qualified.map(({ local, footprint, onThrow, resultFootprint }) =>
+      ({ name: local, footprint, onThrow, resultFootprint }))));
     const first = refused.sort((a, b) => a.order - b.order)[0];
     if (first) return { refusal: first.refusal };
     const canonical = `${this.prefix}canonical.json`, assembly = `${this.prefix}assembly.json`,
       qualifiedPath = `${this.prefix}qualified.json`;
     writeFileSync(canonical, canonicalDocument(this.document, this.local));
     writeFileSync(assembly, JSON.stringify(proposals.map((p): AssemblyEntry => ({ deletions: p.deletions, symbols: p.symbols }))));
-    writeFileSync(qualifiedPath, JSON.stringify(qualified.map(({ local, declaration, footprint, onThrow }) =>
-      ({ local, declaration, footprint, onThrow }))));
+    writeFileSync(qualifiedPath, JSON.stringify(qualified.map(({ local, declaration, footprint, onThrow, resultFootprint }) =>
+      ({ local, declaration, footprint, onThrow, resultFootprint }))));
     const assembled = this.run(producerCall(producerExecutable,
       ["--assemble", canonical, qualifiedPath, assembly, ...proposals.map((p) => p.bin)]));
     const refusal = producerRefusal(assembled);
@@ -554,10 +557,11 @@ export class UnitProposal {
 function decodeInterfaces(value: unknown): Interface[] {
   if (!Array.isArray(value)) throw Error("tool failure: producer --unit printed no interfaces");
   return value.map((v): Interface => {
-    const name = field(v, "name"), thrown = field(v, "thrown"), footprint = field(v, "footprint");
-    if (typeof name !== "string" || typeof thrown !== "boolean" || footprint === undefined)
+    const name = field(v, "name"), thrown = field(v, "thrown"), footprint = field(v, "footprint"),
+      resultFootprint = field(v, "resultFootprint");
+    if (typeof name !== "string" || typeof thrown !== "boolean" || footprint === undefined || resultFootprint === undefined)
       throw Error("tool failure: producer --unit printed a malformed interface");
-    return { name, footprint, thrown };
+    return { name, footprint, thrown, resultFootprint };
   });
 }
 type JsonObject = { [key: string]: import("../tools/calculus.mts").Json };

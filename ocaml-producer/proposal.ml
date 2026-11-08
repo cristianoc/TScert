@@ -144,9 +144,10 @@ let declaration_footprint ?(flows=[]) ?(module_names=[]) declarations values nam
    the functions of its group, and whether the initialization is one; each
    other function the slice holds at the footprint and on-throw flag its own
    unit's proposal settled on (none for a function proposing no footprint);
-   and the module constants the whole file reads as values. *)
+   with the footprint of the function it returns where its unit proposed
+   one, and the module constants the whole file reads as values. *)
 type unit_spec = { members: string list; init_member: bool;
-                   pinned: (string * footprint option * bool) list; read_as_values: string list }
+                   pinned: (string * footprint option * bool * footprint option) list; read_as_values: string list }
 
 (* The names a module reads as values: anywhere but as a called callee. *)
 let read_as_values (program:Source.program) =
@@ -156,6 +157,21 @@ let read_as_values (program:Source.program) =
     | _ -> List.concat_map valued (children e) in
   List.concat_map valued (List.concat_map statement_children
     (program.Source.init @ List.concat_map (fun (g:Source.fn) -> g.body) program.Source.functions))
+
+(* The footprint the claims of a declaration's returns state for the
+   function each returns: the join of their signatures' footprints, and the
+   one letting everything change where a return's claim is no function. *)
+let returned_footprint (claim:function_claim) =
+  let claims_at pos = List.filter_map (fun (x:expression) -> if x.pos = pos then Some x.type_ else None)
+      claim.expressions in
+  match Source.returned_stmts claim.source.body with
+  | [] -> top_footprint
+  | returns -> List.fold_left (fun acc (e:expr) -> match claims_at e.pos with
+    | [] -> top_footprint
+    | types -> List.fold_left (fun acc t -> match t with
+      | Atoms [Shape {calls=(_ :: _ as calls);_}] ->
+        List.fold_left (fun acc (s:signature) -> join_footprint acc s.call_effect.footprint) acc calls
+      | _ -> top_footprint) acc types) empty_footprint returns
 
 let rec infer ?(state = Proposal_diagnostics.create ()) ?unit ?on_settled flows program =
   let settled = ref None in
@@ -178,13 +194,24 @@ let rec infer ?(state = Proposal_diagnostics.create ()) ?unit ?on_settled flows 
   let member name = match unit with Some u -> List.mem name u.members | None -> true in
   let start = List.filter_map (fun (g:Source.fn) ->
     if effect_candidate g && member g.name then Some (g.name,empty_footprint) else None) program.Source.functions in
-  (* A unit's neighbours stay at their settled footprints and flags. *)
+  (* A unit's neighbours stay at their settled footprints, flags and result
+     footprints. *)
   let pinned_assumed = match unit with
-    | Some u -> List.filter_map (fun (n,f,_) -> Option.map (fun f -> n,f) f) u.pinned | None -> [] in
+    | Some u -> List.filter_map (fun (n,f,_,_) -> Option.map (fun f -> n,f) f) u.pinned | None -> [] in
   let pinned_names = match unit with
-    | Some u -> List.map (fun (n,_,_) -> n) u.pinned | None -> [] in
+    | Some u -> List.map (fun (n,_,_,_) -> n) u.pinned | None -> [] in
   let pinned_thrown = match unit with
-    | Some u -> List.filter_map (fun (n,_,t) -> if t then Some n else None) u.pinned | None -> [] in
+    | Some u -> List.filter_map (fun (n,_,t,_) -> if t then Some n else None) u.pinned | None -> [] in
+  let pinned_results = match unit with
+    | Some u -> List.filter_map (fun (n,_,_,r) -> Option.map (fun r -> n,r) r) u.pinned | None -> [] in
+  (* The footprint of the function a declaration returns is proposed at the
+     least fixpoint too, for a declaration of one unit whose result is one
+     function type stating no effect: assumed empty, and raised by a round to
+     what its returns' claims state (`returned_footprint`). *)
+  let results_start = List.filter_map (fun (g:Source.fn) ->
+    if effect_candidate g && member g.name && g.guard = None && result_candidate g.result
+       && List.length (List.filter (fun (h:Source.fn) -> h.name = g.name) program.Source.functions) = 1
+    then Some (g.name,empty_footprint) else None) program.Source.functions @ pinned_results in
   (* A footprint on a throw is proposed at the greatest fixpoint: every
      candidate is assumed to bound its throws, and a round withdraws the
      assumption from each whose body then does not. *)
@@ -215,8 +242,13 @@ let rec infer ?(state = Proposal_diagnostics.create ()) ?unit ?on_settled flows 
   (* Source-order rounds preserve the first refusal and limit typing before
      that refusal to its source prefix. Entry-environment caching is local
      to each typing pass. *)
-  let rec rounds assumed thrown =
-    let proposal : Proposal_types.t = infer_assuming ?unit ~thrown ~state flows program assumed in
+  let rec rounds assumed thrown results =
+    let proposal : Proposal_types.t = infer_assuming ?unit ~thrown ~results ~state flows program assumed in
+    let results_raised = List.map (fun (name,a) -> name,
+      if List.mem_assoc name pinned_results then a else
+      match List.find_opt (fun (c:function_claim) -> c.source.name = name) proposal.functions with
+      | Some c -> join_footprint a (returned_footprint c)
+      | None -> top_footprint) results in
     let selves_raised = raise_selves proposal in
     let footprints = List.map (fun c -> c,declaration_footprint ~flows ~module_names program.Source.declarations program.Source.values names c) proposal.functions in
     (* A stated declaration is assumed at most at its statement. *)
@@ -229,32 +261,36 @@ let rec infer ?(state = Proposal_diagnostics.create ()) ?unit ?on_settled flows 
     let kept = List.filter (fun name -> if List.mem name pinned_names then List.mem name pinned_thrown
       else List.exists (fun ((c:function_claim),(f,t)) ->
         c.source.name = name && t && f <> top_footprint) footprints) thrown in
-    if raised = assumed && kept = thrown && not selves_raised then begin
-      settled := Some (assumed,thrown);
+    if raised = assumed && kept = thrown && not selves_raised && results_raised = results then begin
+      settled := Some (assumed,thrown,results);
       {proposal with functions=List.map (fun ((c:function_claim),(f,_)) ->
         let footprint = match List.assoc_opt c.source.name assumed with
           | Some a -> join_footprint a f | None -> top_footprint in
         let footprint,on_throw = within_statement
           (footprint,footprint <> top_footprint && List.mem c.source.name thrown) c.source.stated in
-        {c with declared_footprint=footprint; declared_on_throw=on_throw}) footprints}
+        let result = Option.value (List.assoc_opt c.source.name results) ~default:top_footprint in
+        {c with declared_footprint=footprint; declared_on_throw=on_throw; declared_result_footprint=result}) footprints}
       end
-    else rounds raised kept in
-  let result = rounds (start @ pinned_assumed) (List.map fst start @ pinned_thrown) in
+    else rounds raised kept results_raised in
+  let result = rounds (start @ pinned_assumed) (List.map fst start @ pinned_thrown) results_start in
   (match on_settled, !settled with
-   | Some k, Some (assumed,thrown) -> k assumed thrown
+   | Some k, Some (assumed,thrown,results) -> k assumed thrown results
    | _ -> ());
   result
 
-and infer_assuming ?unit ?(thrown=[]) ~state flows program assumed =
+and infer_assuming ?unit ?(thrown=[]) ?(results=[]) ~state flows program assumed =
   (* A declaration with overloads is one unit per overload: its slot holds
      every overload's signature. *)
   let first_seen = List.fold_left (fun acc (g:Source.fn) -> if List.mem g.name acc then acc else acc @ [g.name]) []
     program.Source.functions in
   let module_functions = List.map (fun name -> name,lazy (
       let units = List.filter (fun (g:Source.fn) -> g.name = name) program.Source.functions in
+      let returning (g:Source.fn) = match List.assoc_opt g.name results with
+        | Some footprint -> {g with result=with_result_footprint footprint g.result}
+        | None -> g in
       let typed = List.map (fun (g:Source.fn) -> with_ensures g.ensures @@ with_pre g.requires (with_footprint
         ~on_throw:(List.mem g.name thrown)
-        (Option.value (List.assoc_opt g.name assumed) ~default:top_footprint) (module_type g))) units in
+        (Option.value (List.assoc_opt g.name assumed) ~default:top_footprint) (module_type (returning g)))) units in
       match typed with
       | [t] -> t
       | _ -> Atoms [Shape {fields=[];indexes=[];elements=None;calls=List.concat_map (function
@@ -263,11 +299,11 @@ and infer_assuming ?unit ?(thrown=[]) ~state flows program assumed =
     first_seen
     (* A qualified import is read as its unit's module reads the unit: at its
        certified footprint, its code discarding further actuals. *)
-    @ List.map (fun (name,t) -> name,lazy (match List.find_opt (fun (n,_,_,_) -> n = name) program.Source.qualified with
-        | Some (_,_,footprint,on_throw) -> with_footprint ~on_throw footprint t
+    @ List.map (fun (name,t) -> name,lazy (match List.find_opt (fun (n,_,_,_,_) -> n = name) program.Source.qualified with
+        | Some (_,_,footprint,on_throw,result) -> with_footprint ~on_throw footprint (with_returned_footprint result t)
         | None -> t)) program.Source.values in
   let arities = List.map (fun (g:Source.fn) -> g.name,arity g) program.Source.functions
-    @ List.map (fun (n,_,_,_) -> n,Module_contract.Discards) program.Source.qualified in
+    @ List.map (fun (n,_,_,_,_) -> n,Module_contract.Discards) program.Source.qualified in
   let infer_with module_functions f =
     infer_function state flows program.Source.declarations arities module_functions f in
   (* A class's instance members read the class as its own binding, `C.[[self]]`,

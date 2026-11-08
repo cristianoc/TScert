@@ -746,8 +746,9 @@ type program = { file: Json.t; digest: Json.t; declarations: declaration list;
                  init_quantified: quantifier list;
                  (* The imports read qualified (certified imports): each by
                     its name, its declaration identity, and its certified
-                    unit's footprint and on-throw flag. *)
-                 qualified: (string * Json.t * footprint * bool) list }
+                    unit's footprint and on-throw flag, and the footprint
+                    it proposes for the function it returns. *)
+                 qualified: (string * Json.t * footprint * bool * footprint) list }
 
 (* A pattern's defaults, in evaluation order. *)
 let rec pattern_defaults = function
@@ -1195,20 +1196,20 @@ let fresh_result ~callable (body:expr) =
 (* The expressions a body returns: an expression body itself, else every
    `return`'s operand in its statements, a nested closure's left out; an
    async body's, the payload its return resolves its promise with. *)
+let payload (e:expr) = match e.node with
+  | Call ({node=Id "%AsyncReturn%";_},None,[a],_,_) -> a
+  | _ -> e
+let rec returned_stmts ss = List.concat_map (fun s -> match s.statement with
+  | Return e -> [payload e]
+  | If (_,a,b) -> returned_stmts a @ returned_stmts b
+  | While (_,b,u) -> returned_stmts (b @ u)
+  | Block (_,b) | ForOf (_,_,_,_,b) -> returned_stmts b
+  | Try (b,h,f) -> returned_stmts (b @ (match h with Some (_,hs) -> hs | None -> []) @ Option.value f ~default:[])
+  | Closing (c,b) -> returned_stmts (b @ c)
+  | Declare _ | Destructure _ | Effect _ | Throw _ | Break _ | Continue -> []) ss
 let returned (body:expr) =
-  let payload (e:expr) = match e.node with
-    | Call ({node=Id "%AsyncReturn%";_},None,[a],_,_) -> a
-    | _ -> e in
-  let rec stmts ss = List.concat_map (fun s -> match s.statement with
-    | Return e -> [payload e]
-    | If (_,a,b) -> stmts a @ stmts b
-    | While (_,b,u) -> stmts (b @ u)
-    | Block (_,b) | ForOf (_,_,_,_,b) -> stmts b
-    | Try (b,h,f) -> stmts (b @ (match h with Some (_,hs) -> hs | None -> []) @ Option.value f ~default:[])
-    | Closing (c,b) -> stmts (b @ c)
-    | Declare _ | Destructure _ | Effect _ | Throw _ | Break _ | Continue -> []) ss in
   match body.node with
-  | BlockBody ss -> stmts ss
+  | BlockBody ss -> returned_stmts ss
   | _ -> [payload body]
 
 let arithmetic = function

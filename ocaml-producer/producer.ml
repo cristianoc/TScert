@@ -75,12 +75,15 @@ let units_facts (program:Source.program) =
 let strings j = List.map Json.str (Json.list j)
 
 (* The imports read qualified: each by its name, its declaration identity,
-   and its unit's certified footprint and on-throw flag. *)
+   its unit's certified footprint and on-throw flag, and the footprint the
+   unit certifies for the function it returns. *)
 let qualified_of j = List.map (fun q -> Json.str (Json.field "local" q),Json.field "declaration" q,
-  Source.footprint_of (Json.field "footprint" q),Json.boolean (Json.field "onThrow" q)) (Json.list j)
+  Source.footprint_of (Json.field "footprint" q),Json.boolean (Json.field "onThrow" q),
+  Source.footprint_of (Json.field "resultFootprint" q)) (Json.list j)
 
 (* A unit's reads document: its members, whether the initialization is one,
-   the settled footprint and flag of each other function its slice holds,
+   the settled footprint, flag and result footprint of each other function
+   its slice holds,
    the constants read as values, and its qualified reads. *)
 let unit_reads reads_file =
   let reads = Json.read reads_file in
@@ -89,7 +92,9 @@ let unit_reads reads_file =
     init_member=Json.boolean (Json.field "init" reads);
     pinned=List.map (fun p -> Json.str (Json.field "name" p),
       (match Json.field "footprint" p with Json.Null -> None | f -> Some (Source.footprint_of f)),
-      Json.boolean (Json.field "thrown" p)) (Json.list (Json.field "pinned" reads));
+      Json.boolean (Json.field "thrown" p),
+      (match Json.field "resultFootprint" p with Json.Null -> None | f -> Some (Source.footprint_of f)))
+      (Json.list (Json.field "pinned" reads));
     read_as_values=strings (Json.field "readAsValues" reads)} in
   spec,qualified_of (Json.field "qualified" reads)
 
@@ -201,10 +206,12 @@ let main () =
     let program = {(file |> Json.read |> Source.decode) with Source.qualified} in
     let flows = List.map Flow.decode (Json.list (Json.read flow_file)) in
     let interfaces = ref [] in
-    let proposal = Proposal.infer ~unit:spec ~on_settled:(fun assumed thrown ->
+    let proposal = Proposal.infer ~unit:spec ~on_settled:(fun assumed thrown results ->
       interfaces := List.map (fun name -> Json.Object ["name",Json.String name;
         "footprint",(match List.assoc_opt name assumed with Some f -> Claims.footprint_json f | None -> Json.Null);
-        "thrown",Json.Bool (List.mem name thrown)]) spec.Proposal.members) flows program in
+        "thrown",Json.Bool (List.mem name thrown);
+        "resultFootprint",(match List.assoc_opt name results with Some f -> Claims.footprint_json f | None -> Json.Null)])
+        spec.Proposal.members) flows program in
     let ch = open_out_bin out in
     Marshal.to_channel ch ((if spec.Proposal.init_member then proposal.init else None),proposal.functions) [];
     close_out ch;

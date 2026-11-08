@@ -18,5 +18,9 @@ type function_claim = { contracts: contract list; source: fn; entries: entry lis
                            Lean's check of its unit must establish. *)
                         declared_footprint: footprint;
                         (* Whether the footprint is proposed on a throw too. *)
-                        declared_on_throw: bool }
+                        declared_on_throw: bool;
+                        (* The footprint proposed for the signatures of the
+                           function the declaration returns, which Lean's
+                           check of its returns must establish. *)
+                        declared_result_footprint: footprint }
 type t = { program: program; functions: function_claim list; init: function_claim option }

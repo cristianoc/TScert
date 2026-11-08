@@ -206,7 +206,12 @@ did not mention grow it, and the request carries the result. -/
       let T ← table
       requireSameMeaning T f.namePos .entryClaim A B
           s!"claimed parameter type differs from the source annotation for '{name}'"
-    let R ← lower (Fragment.translate f.ret)
+    -- The result annotation, each signature of a returned function stating
+    -- the footprint the claim proposes for it, which every return meets.
+    let ret ← match resultWithFootprint (← table) f.ret fc.resultFootprint with
+      | .ok ret => pure ret
+      | .error reason => throw (locatedRefusal (← table) f.namePos .returnContract reason)
+    let R ← lower (Fragment.translate ret)
     let claimedR ← SourceClaims.resolve (← table) fc.ret
     requireSameMeaning (← table) f.namePos .returnContract R claimedR
         "claimed return type differs from the source annotation"

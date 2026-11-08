@@ -3025,6 +3025,9 @@ for (const [file, call] of [
   assert.equal(runExample(negative("invalid-call-replaces-view-path"),
     "typeof first({ segmentFlags: new Uint8Array([1]) })"), "undefined",
     "a call replaces the field holding the bounded view");
+  assert.equal(runExample(negative("invalid-returned-closure-footprint"),
+    'typeof lastRead(["a"])'), "undefined",
+    "the returned closure pops the array before the read below the loop's bound");
   assert.equal(runExample(negative("invalid-lazy-cache-initializer-pops"),
     "typeof last({ widths: [1, 2], segmentFlags: [3, 4] })"), "undefined",
     "the cache's initializer pops the flags before the read at the last index");

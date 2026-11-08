@@ -5969,6 +5969,46 @@ control(async (): Promise<void> => {
 });
 
 control(async (): Promise<void> => {
+  // A declaration's claim states the footprint of the function it returns,
+  // which its unit's return establishes. `popper` returns a closure popping
+  // its parameter, which keeps no store. Claiming the empty footprint for it
+  // with the result row unchanged is refused where the claimed return type
+  // is compared with the annotation; claiming it on the row too, which the
+  // closure is claimed at, is refused at the closure's pop, in search and in
+  // checking.
+  const artifacts = run("invalid-returned-closure-footprint");
+  const source = readFileSync(sourceKey(artifacts), "utf8");
+  const empty: ClosedFootprint = { value: "keep", store: "keep" };
+  const forgeries: [string, (claims: SourceClaims) => void, RegExp, RegExp][] = [
+    ["forged-returned-footprint", (claims) => {
+      must(claims.functions.find(f => f.name === "popper"), "popper's claims").resultFootprint = empty;
+    }, /claimed return type differs from the source annotation/, /^reject: source direct obligation at \[\d+,\d+\): claimed return type differs from the source annotation/m],
+    ["forged-returned-closure-effect", (claims) => {
+      const popper = must(claims.functions.find(f => f.name === "popper"), "popper's claims");
+      popper.resultFootprint = empty;
+      const result = popper.result;
+      if (!Array.isArray(result)) throw Error("popper's result: a row's label");
+      for (const label of result)
+        if (typeof label === "number") for (const clause of clauseRow(claims, label, "popper's result"))
+          if (typeof clause === "object" && "arrs" in clause)
+            for (const arrow of clause.arrs.arrows) arrow.effect = { ...arrow.effect, footprint: empty };
+    }, new RegExp(`source expression obligation at \\[${source.indexOf("() => {")},`),
+      /^reject: source effect refusal at \[\d+,\d+\): the footprint claimed for a closure in 'popper' is not established by its body/m],
+  ];
+  for (const [name, forge, searched, checked] of forgeries) {
+    const claims = readClaims(artifacts);
+    forge(claims);
+    const input = writeClaims(artifacts, name, claims);
+    const produce = produceWith(artifacts, input, name);
+    assert.ifError(produce.error);
+    assert.equal(produce.status, 1, produce.stdout + produce.stderr);
+    assert.match(produce.stdout + produce.stderr, searched);
+    invoke(input, join(artifacts, "evidence.json"), artifacts, checked);
+  }
+  process.stdout.write("forged returned-closure footprints: refused at the return type and at the closure's pop, in search and in checking\n");
+});
+
+control(async (): Promise<void> => {
   const artifacts = run("invalid-range-text-argument-write");
   const source = readFileSync(sourceKey(artifacts), "utf8");
   const claims = readClaims(artifacts);

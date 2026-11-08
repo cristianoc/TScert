@@ -106,6 +106,10 @@ structure Function (ι : Type) where
   footprint : Footprints.Closed := .top
   /-- Whether the footprint is proposed on a throw too. -/
   onThrow : Bool := false
+  /-- The footprint proposed for the signatures of the function a
+  declaration returns (`resultWithFootprint`), which its unit's returns
+  certify. -/
+  resultFootprint : Footprints.Closed := .top
   /-- At a flow node's entry, the execution points of the nodes reachable
   from it; `none` where the lowering states none. -/
   reachable : Option (List String) := none
