@@ -767,6 +767,15 @@ let write_changes ~facts ~bounds env (e : expr) : changes option =
   | IndexWrite ({node=Id xs;_},{node=Id k;_},rhs)
     when heap_free env rhs && slot_binding env xs && slot_binding env k && !source_elements env xs && strictly_bounded ~facts ~bounds xs k ->
     Some { obj = true; num = true; store = `Length; framed = no_frame; apart = false; cell_write = false }
+  (* `xs[j + 1] = v`: an index the facts give as a linear form, evaluated to
+     a slot before the write, below the length as a slot's index is. *)
+  | IndexWrite ({node=Id xs;_},k,rhs)
+    when heap_free env k && heap_free env rhs && slot_binding env xs && !source_elements env xs &&
+      (match linear env facts k with
+       | Some (t,c) -> let fs = facts @ term_ranges ((t,0) :: facts) in
+         entails fs (norm (scale (-1) t), c) && entails fs (norm ((length_term xs,-1) :: t), -1 - c)
+       | None -> false) ->
+    Some { obj = true; num = true; store = `Length; framed = no_frame; apart = false; cell_write = false }
   | Call ({node=Id f;_},None,args,[],_) when List.for_all (heap_free env) args ->
     if !call_element_write env f then Some { element_changes with framed = (fun b g -> slot_binding env b && !view_field env b g) }
     else Option.map (of_footprint env) (!call_footprint env f)
