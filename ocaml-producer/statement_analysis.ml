@@ -574,18 +574,14 @@ let statements (expr:Analysis_state.expression_infer) execute_bindings owner_spa
   let method_type env r key = match Option.bind (receiver_type env r) (fun t -> field_of t key) with
     | Some g when g.host && not g.optional -> Some g.read
     | _ -> None in
-  Linear_facts.method_footprint := (fun env r key -> Option.bind (method_type env r key) footprint_of);
-  (* Whether every signature states a typed array's element write. *)
-  let element_write t = match head t with
-    | Atoms [Shape {calls;_}] -> calls <> [] && List.for_all (fun (s : Semantic.signature) ->
-        s.Semantic.call_effect.Semantic.element_write <> None) calls
-    | _ -> false in
-  Linear_facts.call_element_write := (fun env x ->
-    let declared = match List.assoc_opt x env with
-      | Some b -> Some (binding_type b)
-      | None -> (try module_type x with Json.Error _ -> None) in
-    Option.fold ~none:false ~some:element_write declared);
-  Linear_facts.method_element_write := (fun env r key -> Option.fold ~none:false ~some:element_write (method_type env r key));
+  (* The member a method call reads: a host-relative member, or a
+     primitive's, its prototype's (`Type_queries.primitive_prototype`). *)
+  let method_member env r key = match Option.map head (receiver_type env r) with
+    | Some (Atoms [atom]) when Type_queries.primitive_prototype atom <> None ->
+      Option.map (fun (g:Semantic.field) -> g.read)
+        (field_of (Atoms [Named (Option.get (Type_queries.primitive_prototype atom),[])]) key)
+    | _ -> method_type env r key in
+  Linear_facts.method_footprint := (fun env r key -> Option.bind (method_member env r key) footprint_of);
   (* An array's method is the array prototype's member. *)
   Linear_facts.method_grows := (fun env r key ->
     let member = match Option.map head (receiver_type env r) with
@@ -599,12 +595,7 @@ let statements (expr:Analysis_state.expression_infer) execute_bindings owner_spa
   (* The signatures of a receiver's method: a host-relative member, or a
      primitive's, its prototype's (`Type_queries.primitive_prototype`). *)
   Linear_facts.method_signatures := (fun env r key ->
-    let member = match Option.map head (receiver_type env r) with
-      | Some (Atoms [atom]) when Type_queries.primitive_prototype atom <> None ->
-        Option.map (fun (g:Semantic.field) -> g.read)
-          (field_of (Atoms [Named (Option.get (Type_queries.primitive_prototype atom),[])]) key)
-      | _ -> method_type env r key in
-    match Option.map head member with
+    match Option.map head (method_member env r key) with
     | Some (Atoms [Shape {calls;_}]) -> calls
     | _ -> []);
   Linear_facts.call_ensures := (fun env x ->
@@ -634,7 +625,7 @@ let statements (expr:Analysis_state.expression_infer) execute_bindings owner_spa
     | Some (Atoms [Ctors (sigs,_)]) -> Linear_facts.signatures_keep sigs
     | _ -> false);
   Linear_facts.method_keeps_heap := (fun env r key ->
-    match Option.map head (method_type env r key) with
+    match Option.map head (method_member env r key) with
     | Some (Atoms [Shape {calls;_}]) -> Linear_facts.signatures_keep calls
     | _ -> false);
   Linear_facts.source_elements := (fun env xs ->
