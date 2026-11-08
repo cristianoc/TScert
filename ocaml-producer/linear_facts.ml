@@ -323,10 +323,17 @@ let in_safe = function Some (lo,hi) -> -max_safe <= lo && hi <= max_safe | None 
    eliminated by combining the rows of opposite signs on it, the variable
    combining the fewest pairs first, until a row `0 ≤ b` with `b < 0`
    appears. Lean searches the same way (`Linear.prove`) and checks what it
-   finds; a fact proposed here is a claim Lean checks. *)
-let fm_entails (fs : fact list) ((t,d) : fact) =
+   finds; a fact proposed here is a claim Lean checks. The answer is a
+   function of the facts and the goal, kept for the process: most calls
+   repeat an earlier call's arguments. *)
+let fm_memo : (fact list * fact, bool) Hashtbl.t = Hashtbl.create 1024
+let rec fm_entails (fs : fact list) (goal : fact) =
+  match Hashtbl.find_opt fm_memo (fs, goal) with
+  | Some r -> r
+  | None -> let r = fm_eliminate fs goal in Hashtbl.replace fm_memo (fs, goal) r; r
+and fm_eliminate (fs : fact list) ((t,d) : fact) =
   let limit = 400 and large = 1 lsl 58 in
-  let coeff x t = Option.value ~default:0 (List.assoc_opt x t) in
+  let rec coeff (x : string) = function [] -> 0 | (y,c) :: r -> if String.equal x y then c else coeff x r in
   (* A row holds of integers at its coefficients divided by their greatest
      common divisor, its bound rounded down, as Lean's tightening step
      concludes it (`Linear.preSteps`). *)
@@ -343,20 +350,21 @@ let fm_entails (fs : fact list) ((t,d) : fact) =
     match List.sort_uniq compare (List.concat_map (fun (t,_) -> List.map fst t) rows) with
     | [] -> false
     | vars ->
-      let pos x = List.filter (fun (t,_) -> coeff x t > 0) rows
-      and neg x = List.filter (fun (t,_) -> coeff x t < 0) rows in
-      let cost x = List.length (pos x) * List.length (neg x) in
+      let split x = List.filter (fun (t,_) -> coeff x t > 0) rows, List.filter (fun (t,_) -> coeff x t < 0) rows in
       (* A variable none of whose combinations leaves the integers held
-         first: a combination past them is dropped, losing its fact. *)
-      let fits x = List.for_all (fun p -> List.for_all (fun n -> not (overflows p n x)) (neg x)) (pos x) in
-      let key x = (not (fits x), cost x) in
-      let x = List.fold_left (fun y z -> if key z < key y then z else y) (List.hd vars) vars in
+         first: a combination past them is dropped, losing its fact. Then
+         the variable combining the fewest pairs. *)
+      let key x = let pos,neg = split x in
+        (not (List.for_all (fun p -> List.for_all (fun n -> not (overflows p n x)) neg) pos), List.length pos * List.length neg) in
+      let keyed = List.map (fun x -> x,key x) vars in
+      let x,_ = List.fold_left (fun (y,ky) (z,kz) -> if kz < ky then (z,kz) else (y,ky)) (List.hd keyed) keyed in
+      let pos_x,neg_x = split x in
       let zero = List.filter (fun (t,_) -> coeff x t = 0) rows in
       let combined = List.concat_map (fun (tp,bp) -> List.filter_map (fun (tn,bn) ->
         let a = coeff x tp and b = - (coeff x tn) in
         let bound = b * bp + a * bn in
         if overflows (tp,bp) (tn,bn) x then None
-        else Some (tight (norm (scale b tp @ scale a tn), bound))) (neg x)) (pos x) in
+        else Some (tight (norm (scale b tp @ scale a tn), bound))) neg_x) pos_x in
       let rows = zero @ combined in
       if List.length rows > limit then false else go rows in
   go rows
