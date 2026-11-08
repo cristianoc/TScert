@@ -3118,10 +3118,10 @@ assumes it; the loop's exit, the false branch of its test, starts from it.
      {\Sigma_{\mathit{head}}=\Sigma_{\mathit{claimed}},\ I}\ \textsf{loop-invariant}
 ```
 
-with $`I`$ the clause's facts rooted at the bindings it names: a value
-binding's slot, or an initialized cell's `value` field
-([cell terms](#terms-for-bindings-held-in-cells)). A clause naming any other
-binding is refused at the loop. A path's kind (an array's length, a typed-array length, a field) is
+with $`I`$ the clause's facts at the bindings it names. A value binding
+reads its slot; a binding held in a cell reads its `value` field
+([terms for bindings held in cells](#terms-for-bindings-held-in-cells)).
+An uninitialized binding is refused at the loop. A path's kind (an array's length, a typed-array length, a field) is
 read through the type the binding's declaration has. The invariant states
 what the loop needs that no fact of its entry names, such as `j <= 2 * i` of
 two counters stepping by 2 and by 1.

@@ -134,6 +134,33 @@ private def invariantFact (root : Nat → Option (Nat × List String))
         | _, _ => .linear (.le [(t, -1)] 0)) } : HeapKnowledge.IndexAtom))
     else pure [({ fact := wrap (.linear (.le form bound)) } : HeapKnowledge.IndexAtom)]
 
+/-- Interpret a written loop clause through each binding's value or cell path. -/
+private def invariantFact (scope : List (ScopeBinding Tree)) (names : List String)
+    (F : HeapKnowledge.IndexFact) : Option HeapKnowledge.IndexFact := do
+  let root := fun s p => do
+    let name ← names[s]?
+    let (x, pre) ← termRoot scope name
+    pure (x, pre ++ p)
+  let term := fun (t : HeapKnowledge.Term) => do
+    let (x, p) ← root t.slot t.path
+    pure ({ t with slot := x, path := p } : HeapKnowledge.Term)
+  match F with
+  | .int x =>
+    let (x, p) ← root x []
+    pure (if p.isEmpty then .int x else .linear (.le [(⟨.value, x, p⟩, 1)] (2^53-1)))
+  | .linear L => pure (.linear (← L.mapVars term))
+  | .either A B => pure (.either (← invariantFact scope names A) (← invariantFact scope names B))
+  | .guarded x p tag B =>
+    let (x,p) ← root x p
+    pure (.guarded x p tag (← invariantFact scope names B))
+  | .every x p stop body =>
+    let (x,p) ← root x p
+    let body ← body.mapM fun C => C.mapVars fun v => match v with
+      | .free t => HeapKnowledge.Bound.free <$> term t
+      | v => some v
+    pure (.every x p (← term stop) body)
+  | F => F.mapM (fun p => names[p]? >>= valueSlot scope)
+
 @[nospecialize] private partial def flowNode (recursive : RecursiveLowering) (graph : SourceFlow.Graph)
     (ambient : List (ScopeBinding Tree)) (base : SourceClaims.Function Tree)
     (R : Ty Tree) (incoming : List (ScopeBinding Tree)) (id : Nat) : Compiler Target := do
@@ -434,10 +461,10 @@ private def invariantFact (root : Nat → Option (Nat × List String))
   -- into the head establishes.
   let invariant ← match node.action with
     | .branch (.loop _ _ _ _ (names, facts)) _ _ => facts.mapM fun F => do
-      match invariantFact (fun p => names[p]? >>= termRoot scope) F with
+      match invariantFact scope names F with
       | some G => pure ({ fact := G } : HeapKnowledge.IndexAtom)
       | none => throw (locatedRefusal (← table) node.source .entryClaim
-          "a loop invariant names a binding that is no value binding or initialized cell at the loop's head")
+          "a loop invariant names a binding with no initialized value at the loop's head")
     | _ => pure []
   -- Each atom once, as the knowledge a search reaches holds it: a cut's
   -- knowledge is its assertion exactly (`checkAssertions`), and two claimed

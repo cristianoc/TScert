@@ -73,6 +73,21 @@ const mutationControl = (body: () => Promise<void>): void => {
 const serving: boolean = process.argv[2] === "--controls";
 
 control(async (): Promise<void> => {
+  const artifacts = run("invalid-pretext-clause-locals");
+  const source = readFileSync(sourceKey(artifacts), "utf8");
+  const claims = readClaims(artifacts);
+  const fn = must(claims.functions.find(f => f.name === "scan"), "scan's claims");
+  const at = source.indexOf("xs[i]!");
+  must(fn.expressions.find(e => e.pos[0] === at && e.pos[1] === at + "xs[i]".length), "the element read").type = [rowOf(claims, "num")];
+  for (const entry of fn.entries) entry.facts = [];
+  const forged = writeClaims(artifacts, "loop-cell-invariant-forged", claims);
+  const searched = produceWith(artifacts, forged, "loop-cell-invariant-forged");
+  assert.equal(searched.status, 1, `${searched.stdout}${searched.stderr}`);
+  assert.match(searched.stdout + searched.stderr, /edge obligation.*does not establish/);
+  process.stdout.write("loop cells: the strict invariant is checked independently of proposed facts\n");
+});
+
+control(async (): Promise<void> => {
   const artifacts = run("invalid-pretext-clause-order");
   const source = readFileSync(sourceKey(artifacts), "utf8");
   const claims = readClaims(artifacts);

@@ -51,6 +51,8 @@ const gap = (
   diagnostic: RegExp,
 ): Case => ({ file, area, kind: "gap", status, phase, diagnostic });
 export const cases: Case[] = [
+  positive("pretext-clause-locals", "Pretext getTerminalLetterSpacing/normalizePreparedLineStart: aliases and loop cells"),
+  negative("invalid-pretext-clause-locals", "An inclusive bound fails the strict loop-cell invariant (NaN under Node)", /no derivation|does not establish/),
   positive("pretext-clause-order", "Pretext setEmptyObjectFacts/setupClusterBoundaries: guarded adjacent-element ordering"),
   negative("invalid-pretext-clause-order", "A descending array violates its ordering precondition (NaN under Node)", /no derivation|does not establish|precondition/),
   positive("pretext-clause-element-path", "Pretext findSegmentSources/materializeRichInlineLineRange: quantified element lengths and paths"),
