@@ -892,6 +892,8 @@ let call_expression_facts ~array env fs name f args =
         let value = match t with
           | Semantic.Value_at (0,p) -> Some ([path_term name p,1],0)
           | Semantic.Length_at (0,p) -> Some ([length_term ~path:p name,1],0)
+          | Semantic.View_at (0,p) -> Some ([view_term ~path:p name,1],0)
+          | Semantic.Str_length_at (0,p) -> Some ([str_length_term ~path:p name,1],0)
           | Semantic.Value_at (p,[]) when p >= 2 ->
             Option.bind (List.nth_opt args (p - 2)) (result_form ~array env fs)
           | _ when term_position t >= 2 -> position_form ~array env fs (List.nth_opt args (term_position t - 2)) t
