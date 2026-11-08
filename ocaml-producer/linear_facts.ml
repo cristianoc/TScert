@@ -16,8 +16,9 @@ type fact = (string * int) list * int
    `.` (its path), then what the term reads of the value the path ends at:
    nothing for the value itself, `:length` for the length of its array store,
    `:view` for the length of the typed array it is, `:strlen` for the length
-   of the string it is. A binding's name and a field name have no `.` or `:`,
-   so the parts never meet. *)
+   of the string it is. A binding's name and a field name have no `.`; a
+   shadowing local's name (`ends@7:11`) has `:`, so the kind is the suffix
+   after the last one, where it names a kind. *)
 type kind = Value_term | Length_term | View_term | Str_length_term
 let make_term ?(path=[]) kind b =
   String.concat "." (b :: path) ^ (match kind with Value_term -> "" | Length_term -> ":length" | View_term -> ":view"
@@ -33,13 +34,14 @@ let path_term b path = make_term ~path Value_term b
    one. A binding's own name may hold `:` (a shadowing local's
    `after@26:11`, `Fragment.shadowName`), so the suffix is matched whole. *)
 let term_parts t : string * string list * kind =
-  let suffix s = let n = String.length t and m = String.length s in
-    if n > m && String.sub t (n - m) m = s then Some (String.sub t 0 (n - m)) else None in
-  let base,kind = match suffix ":length", suffix ":view", suffix ":strlen" with
-    | Some b,_,_ -> b, Length_term
-    | _,Some b,_ -> b, View_term
-    | _,_,Some b -> b, Str_length_term
-    | None,None,None -> t, Value_term in
+  let base,kind = match String.rindex_opt t ':' with
+    | Some i ->
+      (match String.sub t (i + 1) (String.length t - i - 1) with
+       | "length" -> String.sub t 0 i, Length_term
+       | "view" -> String.sub t 0 i, View_term
+       | "strlen" -> String.sub t 0 i, Str_length_term
+       | _ -> t, Value_term)
+    | None -> t, Value_term in
   match String.split_on_char '.' base with
   | root :: path -> root,path,kind
   | [] -> base,[],kind

@@ -2888,6 +2888,7 @@ export const cases: Case[] = [
     /edge obligation at \[515,580\)/),
   positive("quantified-freshness-frame", "Pretext itemSegments facts survive a string field write whose footprint keeps their numeric elements, stores, bound and free terms."),
   positive("quantified-freshness-write", "Pretext itemSegments facts survive a bounded write to a freshly allocated array, whose region facts keep its cells apart from the quantified array and the bound's array."),
+  positive("quantified-shadowed-builder", "Pretext prepareRichInline's block builder: a loop invariant naming a local that shadows a later binding of the function reads the fragment's name for it."),
   positive("quantified-freshness-builder", "Pretext builder loop retains itemSegments facts while a freshly allocated array grows by push and receives bounded writes, the region facts carried across its back edge."),
   negative("invalid-quantified-freshness-field-alias", "Different fields alias one store: the write invalidates the quantified bound, and Node reads undefined.", /no derivation of its cast claim/),
   negative("invalid-quantified-freshness-free-term", "The free body term box.widths.length changes: the subsequent read returns undefined under Node.", /no derivation|does not establish|precondition/),

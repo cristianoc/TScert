@@ -2241,7 +2241,7 @@ export function precondition(gate: Gate, clauses: readonly string[],
 /** A loop's invariant (`@invariant` in the JSDoc before it; PROGRAM-TYPING.md,
  * "Loop invariants"): its clauses elaborated to index facts at positions, the
  * i-th the i-th name its clauses' paths start at, each a binding in scope at
- * the loop's head, its paths read through the type TypeScript gives the
+ * the loop's head named as the fragment names it, its paths read through the type TypeScript gives the
  * binding's declaration (`loopBindings`). Null where the loop states none. */
 function loopInvariant(gate: Gate, loop: ts.Statement): LoopInvariant | null {
   const clauses = loopInvariantTags(gate.file, loop);
@@ -2256,7 +2256,12 @@ function loopInvariant(gate: Gate, loop: ts.Statement): LoopInvariant | null {
   });
   const elaborated = elaborateRequires(clauses, params);
   if ("refused" in elaborated) gate.fail(loop, `a loop invariant (\`@invariant\`): ${elaborated.refused}`);
-  return { names, facts: elaborated.facts };
+  // Each position names its binding as the fragment does: a local shadowing
+  // an enclosing binding by its own name (`shadowName`).
+  return { names: names.map((name) => {
+    const id = bindings.get(name);
+    return id === undefined ? name : gate.local(id);
+  }), facts: elaborated.facts };
 }
 
 /** A name a clause may use for a call position, each path's kind read
