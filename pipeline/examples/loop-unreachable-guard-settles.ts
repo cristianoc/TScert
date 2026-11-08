@@ -1,8 +1,6 @@
-// A counter guard, an inner loop, then `break`: the guarded body is never
-// reached (the loop breaks on its first pass, so `i` stays 0). The
-// producer's facts settle (pretext's measurement.ts#getFontKanaKerning has
-// this shape); the edge into the unreachable inner loop is refused, which
-// the gap records.
+// A counter guard and inner loop in a loop that breaks on its first pass.
+// The guarded body is unreachable: i stays 0. Pretext's
+// measurement.ts#getFontKanaKerning has this shape.
 export function settleMin(n: number): number {
   for (let i = 0; i < n; i++) {
     if (i > 0) {
