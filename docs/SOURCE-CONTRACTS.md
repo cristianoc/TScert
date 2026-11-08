@@ -3139,18 +3139,46 @@ JavaScript string's but where a lone surrogate reads as U+FFFD
 ([strings](SEMANTICS.md#operational-language)); the contract states only
 the length, which both share, and bounds on the result, which hold of both.
 
-#### `charCodeAt` of a string
+#### String method postconditions
 
-`String.prototype.charCodeAt(pos)` of a string primitive at a number runs no
-code, as `codePointAt` does ([ECMA-262](REFERENCES.md#ecma-262),
-`String.prototype.charCodeAt`). It answers `NaN` where the integer is
-negative or at least the string's length, and otherwise the code unit at
-that position. The overlay states, beside the declared form, the form at a
-safe integer $`i`$ with $`0\le i<\mathrm{strLength}(s)`$: a safe integer
-$`0\le r\le\mathtt{0xFFFF}`$, a bound that holds of the model's string and of
-JavaScript's alike. The search takes a form stating a precondition first where
-the knowledge at the call establishes it (`string-char-code-at-bounds`,
-`invalid-string-char-code-at-length`).
+The primitive receiver and the string or numeric actuals of these signatures
+run no client conversion callbacks. RequireObjectCoercible and ToString return
+the receiver string; numeric ToIntegerOrInfinity performs no property lookup.
+The prototype methods are standard under the [trust surface](DESIGN.md#trust-surface).
+The audits use [ECMA-262](REFERENCES.md#ecma-262)'s corresponding String.prototype
+algorithms. Each postcondition concerns normal return; allocation failure may throw.
+
+- `charCodeAt(i)` at a safe integer with $`0\le i<\mathrm{strLength}(s)`$
+  returns a **safe integer** $`r`$ with $`0\le r\le65535`$. Its general signature
+  returns `number`, including NaN. NaN passes both `r < 0` and `r > 65535`
+  tests without making the result an integer. `code_unit_safe` in
+  `Semantics/StringPostconditions.lean` proves the range and exact numeric
+  representation of a UTF-16 unit in the model.
+- `slice(a,b)` at safe integers with
+  $`0\le a\le b\le\mathrm{strLength}(s)`$ returns a string of length $`b-a`$.
+  These arguments are unchanged by conversion and clamping. `slice_length`
+  proves the length of the selected UTF-16 subsequence. A boundary through a
+  surrogate pair produces a lone surrogate in JavaScript; the model's
+  replacement character occupies the same single code unit. The host
+  correspondence asserts this length, not scalar-value equality.
+- `indexOf` and `lastIndexOf` at a string needle and an optional numeric
+  position return a safe integer $`-1\le r\le\mathrm{strLength}(s)`$.
+  At a needle with positive length, a second signature gives the strict
+  upper bound. An empty needle may return the length: `"a".lastIndexOf("") === 1`.
+  `search_bounds` proves the inclusive bounds from failure or a matching
+  substring's start. Position conversion and clamping, including NaN and
+  infinities, preserve that conclusion. No RegExp protocol is consulted.
+
+These native results are audited host contracts, consumed by the proved
+call-postcondition rule. The arithmetic lemmas do not prove a native engine's
+implementation. String addition has operational semantics in the model:
+`IndexWrites.linearAtoms_holds` proves the exact sum of the operands' UTF-16
+lengths on normal return for two string slots. The overflow outcome is a throw.
+
+The regex split contract's shape records captures and flags, without a
+nonempty-match condition. Its result therefore retains the general dense
+array contract; a nonempty prefix requires a further audited shape condition
+and a nonzero converted limit.
 
 **A non-empty `split`.** `String.prototype.split` with a non-empty string
 separator and no limit returns at least one element: the separator is no

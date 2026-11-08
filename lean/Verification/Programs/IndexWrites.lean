@@ -1,3 +1,5 @@
+import Verification.Semantics.StringPostconditions
+
 import Verification.Programs.HeapExpressionRules
 import Verification.Programs.ExpressionEffects
 import Verification.Semantics.IndexNumbers
@@ -661,6 +663,30 @@ def bitAtoms (op : Arith) (F : Linear.Form Nat) (c d : Int) : List IndexAtom :=
       ⟨.linear (valueFact (.le [(0, 1)] d)), none, false⟩,
       ⟨.linear (valueFact (.le ((0, 1) :: shiftForm (F.scale (-1))) c)), none, false⟩]
 
+/-- String-only addition operands whose types establish string membership. -/
+@[nospecialize] def concatOperands (G : NormalGraph ι) (Γ : List (Ty ι))
+    (op : Arith) : Tm → Tm → Option (Nat × Nat)
+  | .var a, .var b => if op == .add && stringSlot G Γ a && stringSlot G Γ b then some (a, b) else none
+  | _, _ => none
+
+/-- Exact UTF-16 length on normal return from string addition. -/
+def concatAtoms (a b : Nat) : List IndexAtom :=
+  [⟨.linear (.le [(.strLength 0, 1), (.strLength (a + 1), -1), (.strLength (b + 1), -1)] 0), none, false⟩,
+   ⟨.linear (.le [(.strLength 0, -1), (.strLength (a + 1), 1), (.strLength (b + 1), 1)] 0), none, false⟩]
+
+theorem concatOperands_sound {G : NormalGraph ι} {Γ : List (Ty ι)} {op a b x y}
+    (hc : concatOperands G Γ op a b = some (x, y)) :
+    op = .add ∧ a = .var x ∧ b = .var y ∧ stringSlot G Γ x = true ∧ stringSlot G Γ y = true := by
+  cases a <;> cases b <;> simp only [concatOperands] at hc
+  all_goals first | contradiction | skip
+  split at hc
+  · simp only [Bool.and_eq_true] at *
+    cases hc
+    rename_i h
+    have hop : op = .add := by cases op <;> simp_all (config := { decide := true })
+    exact ⟨hop, rfl, rfl, h.1.2, h.2⟩
+  · contradiction
+
 /-- The linear atoms a step on slots states of its result. -/
 def linearAtoms (G : NormalGraph ι) (Γ : List (Ty ι)) (k : Knowledge) : Tm → List IndexAtom
   | .num b => match SafeIntegers.safeIntOfBits b with
@@ -679,25 +705,27 @@ def linearAtoms (G : NormalGraph ι) (Γ : List (Ty ι)) (k : Knowledge) : Tm �
         ⟨.linear (.le [(.value 0, -1), (.strLength (s + 1), 1)] 0), none, false⟩]
     else []
   | .arith op a b =>
-    if operandIn Γ a && operandIn Γ b then
-      match operandForm k (op == .mul || op == .shr || op == .bitAnd) a, operandForm k (op == .mul || op == .shr || op == .bitAnd) b with
-      | some (fa, ca), some (fb, cb) =>
-        let sum := fun (F : Linear.Form Nat) (c : Int) =>
-          if entailsKnown k.indices (valueFact (.le F (maxSafe - c))) &&
-              entailsKnown k.indices (valueFact (.le (F.scale (-1)) (maxSafe + c))) then valueAtoms F c else []
-        match op with
-        | .add => sum (fa ++ fb) (ca + cb)
-        | .sub => sum (fa ++ fb.scale (-1)) (ca - cb)
-        -- A zero factor gives the constant `0`, a form naming no slot.
-        | .mul => if fa = [] then sum (if ca = 0 then [] else fb.scale ca) (ca * cb)
-          else if fb = [] then sum (if cb = 0 then [] else fa.scale cb) (ca * cb) else []
-        | .shr => if fb = [] ∧ 0 ≤ cb ∧ cb < 32 ∧ smallOperand k fa ca then bitAtoms op fa ca cb else []
-        | .bitAnd => if fb = [] ∧ 0 ≤ cb ∧ cb < 2 ^ 31 ∧ smallOperand k fa ca then bitAtoms op fa ca cb else []
-        | .lt | .le | .gt | .ge => compareAtoms op (fa ++ fb.scale (-1)) (ca - cb)
-        | .eq => equalAtoms (fa ++ fb.scale (-1)) (ca - cb)
-        | _ => []
-      | _, _ => []
-    else []
+    match concatOperands G Γ op a b with
+    | some (x, y) => concatAtoms x y
+    | none =>
+      if operandIn Γ a && operandIn Γ b then
+        match operandForm k (op == .mul || op == .shr || op == .bitAnd) a, operandForm k (op == .mul || op == .shr || op == .bitAnd) b with
+        | some (fa, ca), some (fb, cb) =>
+          let sum := fun (F : Linear.Form Nat) (c : Int) =>
+            if entailsKnown k.indices (valueFact (.le F (maxSafe - c))) &&
+                entailsKnown k.indices (valueFact (.le (F.scale (-1)) (maxSafe + c))) then valueAtoms F c else []
+          match op with
+          | .add => sum (fa ++ fb) (ca + cb)
+          | .sub => sum (fa ++ fb.scale (-1)) (ca - cb)
+          | .mul => if fa = [] then sum (fb.scale ca) (ca * cb)
+            else if fb = [] then sum (fa.scale cb) (ca * cb) else []
+          | .shr => if fb = [] ∧ 0 ≤ cb ∧ cb < 32 ∧ smallOperand k fa ca then bitAtoms op fa ca cb else []
+          | .bitAnd => if fb = [] ∧ 0 ≤ cb ∧ cb < 2 ^ 31 ∧ smallOperand k fa ca then bitAtoms op fa ca cb else []
+          | .lt | .le | .gt | .ge => compareAtoms op (fa ++ fb.scale (-1)) (ca - cb)
+          | .eq => equalAtoms (fa ++ fb.scale (-1)) (ca - cb)
+          | _ => []
+        | _, _ => []
+      else []
   | _ => []
 
 theorem eval_shiftForm (F : Linear.Form Nat) (u : Val) (ρ : Env) :
@@ -1065,117 +1093,148 @@ theorem linearAtoms_holds [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty �
   | arith op a b =>
     simp only [linearAtoms]
     split
-    · rename_i hin
-      simp only [Bool.and_eq_true] at hin
-      have ha := operandIn_value hval hin.1
-      have hb := operandIn_value hval hin.2
+    · rename_i x y hc
+      obtain ⟨rfl, rfl, rfl, hx, hy⟩ := concatOperands_sound hc
+      obtain ⟨s, hs0⟩ := stringSlot_sound hx he
+      obtain ⟨t, ht0⟩ := stringSlot_sound hy he
+      simp only [instantiate, Nat.not_lt_zero, if_false, Nat.sub_zero, hs0, ht0] at hs ⊢
+      refine weaken (fun h' u hq => ⟨hq.1, ?_⟩) (arith_run rfl rfl hs)
+      obtain ⟨-, -, hu⟩ := hq
+      have hu' : concatString s t = some u := by simpa (config := { decide := true }) [binop, Arith.relational] using hu
+      have hlen : (utf16Units (s ++ t)).length = (utf16Units s).length + (utf16Units t).length := by
+        simp [utf16Units, String.toList_append]
+      have hmax : (utf16Units s).length + (utf16Units t).length ≤ maxStringLength := by
+        unfold concatString concatOver at hu'
+        split at hu'
+        · contradiction
+        · rename_i hn; simpa using hn
+      obtain rfl := concatString_eq hu'
+      have h0 : termValue (push (.str (s ++ t)) ρ) h' (.strLength 0) =
+          some ((utf16Units s).length + (utf16Units t).length : Int) := by
+        simp [push, strLengthOf, hlen, hmax]
+      have hx' : termValue (push (.str (s ++ t)) ρ) h' (.strLength (x + 1)) =
+          some ((utf16Units s).length : Int) := by
+        simp [push, hs0, strLengthOf, show (utf16Units s).length ≤ maxStringLength by omega]
+      have hy' : termValue (push (.str (s ++ t)) ρ) h' (.strLength (y + 1)) =
+          some ((utf16Units t).length : Int) := by
+        simp [push, ht0, strLengthOf, show (utf16Units t).length ≤ maxStringLength by omega]
+      intro atom hat _
+      simp only [concatAtoms, List.mem_cons, List.not_mem_nil, or_false] at hat
+      rcases hat with rfl | rfl
+      all_goals
+        refine ⟨fun z hz => ?_, ?_⟩
+        · simp only [Linear.Fact.vars, List.map_cons, List.map_nil, List.mem_cons, List.not_mem_nil, or_false] at hz
+          rcases hz with rfl | rfl | rfl
+          · rw [h0]; rfl
+          · rw [hx']; rfl
+          · rw [hy']; rfl
+        · show Linear.Form.eval _ _ ≤ _
+          simp only [Linear.Form.eval, termValuation, h0, hx', hy', Option.getD_some]; omega
+    ·
       split
-      · rename_i fa ca fb cb hfa hfb
-        obtain ⟨hva, xa, hxa, hsa⟩ := operandForm_sound hfa hk
-        obtain ⟨hvb, xb, hxb, hsb⟩ := operandForm_sound hfb hk
-        simp only [instantiate] at hs ⊢
-        refine weaken (fun h' u hq => ⟨hq.1, ?_⟩) (arith_run ha hb hs)
-        obtain ⟨-, -, hu⟩ := hq
-        rw [hxa, hxb] at hu
-        have hlin := linearFacts_holds hk.2.2.2.2.2
-        have hsum : ∀ (F : Linear.Form Nat) (c : Int) (v : Int) (bits : UInt64) {h'' : Heap},
-            (∀ x ∈ F.map (·.1), (intValue (ρ x)).isSome) →
-            Linear.Form.eval (valuation ρ) F + c = v →
-            ((v.natAbs < 2 ^ 53) → SafeIntegers.SafeInt bits v) →
-            IndexHolds ((if entailsKnown k.indices (valueFact (.le F (maxSafe - c))) &&
-              entailsKnown k.indices (valueFact (.le (F.scale (-1)) (maxSafe + c))) then valueAtoms F c else []))
-              (push (.num bits) ρ) h'' := by
-          intro F c v bits h'' hF hv hsafe
-          split
-          · rename_i hc
-            simp only [Bool.and_eq_true] at hc
-            have h1 : Linear.Form.eval (valuation ρ) F ≤ maxSafe - c := holds_valueFact.mp (entailsKnown_sound hk.2.2.2.2.2 hc.1)
-            have h2 : Linear.Form.eval (valuation ρ) (F.scale (-1)) ≤ maxSafe + c := holds_valueFact.mp (entailsKnown_sound hk.2.2.2.2.2 hc.2)
-            rw [Linear.Form.eval_scale] at h2
-            refine valueAtoms_holds hF ?_
-            rw [hv]; apply hsafe; simp only [maxSafe] at h1 h2; omega
-          · exact indexHolds_nil _ _
-        have hvars : ∀ (G' : Linear.Form Nat), G'.map (·.1) = (fa ++ fb).map (·.1) →
-            ∀ x ∈ G'.map (·.1), (intValue (ρ x)).isSome := by
-          intro G' hG x hx
-          rw [hG, List.map_append] at hx
-          rcases List.mem_append.mp hx with hx | hx
-          · exact hva x hx
-          · exact hvb x hx
+      · rename_i hin
+        simp only [Bool.and_eq_true] at hin
+        have ha := operandIn_value hval hin.1
+        have hb := operandIn_value hval hin.2
         split
-        · -- add
-          rw [binop_num_arith (.inl rfl) hu]
-          exact hsum (fa ++ fb) (ca + cb)
-            ((Linear.Form.eval (valuation ρ) fa + ca) + (Linear.Form.eval (valuation ρ) fb + cb)) _
-            (hvars (fa ++ fb) rfl)
-            (by rw [Linear.Form.eval_append]; omega)
-            (fun hr => SafeIntegers.add_safe hsa hsb hr)
-        · -- sub
-          rw [binop_num_arith (.inr (.inl rfl)) hu]
-          exact hsum (fa ++ fb.scale (-1)) (ca - cb)
-            ((Linear.Form.eval (valuation ρ) fa + ca) - (Linear.Form.eval (valuation ρ) fb + cb)) _
-            (hvars (fa ++ fb.scale (-1)) (by simp only [List.map_append, scale_vars]))
-            (by rw [Linear.Form.eval_append, Linear.Form.eval_scale]; omega)
-            (fun hr => SafeIntegers.sub_safe hsa hsb hr)
-        · -- multiplication with one constant operand
-          rw [binop_num_arith (.inr (.inr rfl)) hu]
-          split
-          · rename_i hc
-            subst fa
-            exact hsum (if ca = 0 then [] else fb.scale ca) (ca * cb)
-              ((Linear.Form.eval (valuation ρ) [] + ca) * (Linear.Form.eval (valuation ρ) fb + cb)) _
-              (by split
-                  · simp
-                  · simpa only [scale_vars] using hvb)
-              (by split
-                  · rename_i h0; subst h0; simp [Linear.Form.eval]
-                  · simp only [Linear.Form.eval_scale, Linear.Form.eval, Int.zero_add, Int.mul_add])
-              (fun hr => SafeIntegers.mul_safe hsa hsb hr)
-          · split
+        · rename_i fa ca fb cb hfa hfb
+          obtain ⟨hva, xa, hxa, hsa⟩ := operandForm_sound hfa hk
+          obtain ⟨hvb, xb, hxb, hsb⟩ := operandForm_sound hfb hk
+          simp only [instantiate] at hs ⊢
+          refine weaken (fun h' u hq => ⟨hq.1, ?_⟩) (arith_run ha hb hs)
+          obtain ⟨-, -, hu⟩ := hq
+          rw [hxa, hxb] at hu
+          have hlin := linearFacts_holds hk.2.2.2.2.2
+          have hsum : ∀ (F : Linear.Form Nat) (c : Int) (v : Int) (bits : UInt64) {h'' : Heap},
+              (∀ x ∈ F.map (·.1), (intValue (ρ x)).isSome) →
+              Linear.Form.eval (valuation ρ) F + c = v →
+              ((v.natAbs < 2 ^ 53) → SafeIntegers.SafeInt bits v) →
+              IndexHolds ((if entailsKnown k.indices (valueFact (.le F (maxSafe - c))) &&
+                entailsKnown k.indices (valueFact (.le (F.scale (-1)) (maxSafe + c))) then valueAtoms F c else []))
+                (push (.num bits) ρ) h'' := by
+            intro F c v bits h'' hF hv hsafe
+            split
             · rename_i hc
-              subst fb
-              exact hsum (if cb = 0 then [] else fa.scale cb) (ca * cb)
-                ((Linear.Form.eval (valuation ρ) fa + ca) * (Linear.Form.eval (valuation ρ) [] + cb)) _
-                (by split
-                    · simp
-                    · simpa only [scale_vars] using hva)
-                (by split
-                    · rename_i h0; subst h0; simp [Linear.Form.eval]
-                    · simp only [Linear.Form.eval_scale, Linear.Form.eval, Int.zero_add, Int.add_mul]
-                      rw [Int.mul_comm cb])
-                (fun hr => SafeIntegers.mul_safe hsa hsb hr)
+              simp only [Bool.and_eq_true] at hc
+              have h1 : Linear.Form.eval (valuation ρ) F ≤ maxSafe - c := holds_valueFact.mp (entailsKnown_sound hk.2.2.2.2.2 hc.1)
+              have h2 : Linear.Form.eval (valuation ρ) (F.scale (-1)) ≤ maxSafe + c := holds_valueFact.mp (entailsKnown_sound hk.2.2.2.2.2 hc.2)
+              rw [Linear.Form.eval_scale] at h2
+              refine valueAtoms_holds hF ?_
+              rw [hv]; apply hsafe; simp only [maxSafe] at h1 h2; omega
             · exact indexHolds_nil _ _
-        · -- signed right shift
-          have hu' : u = .num (arithBits .shr xa xb) := by simpa [binop, Arith.relational] using hu.symm
-          rw [hu']
+          have hvars : ∀ (G' : Linear.Form Nat), G'.map (·.1) = (fa ++ fb).map (·.1) →
+              ∀ x ∈ G'.map (·.1), (intValue (ρ x)).isSome := by
+            intro G' hG x hx
+            rw [hG, List.map_append] at hx
+            rcases List.mem_append.mp hx with hx | hx
+            · exact hva x hx
+            · exact hvb x hx
           split
-          · rename_i hc
-            obtain ⟨rfl, hd, hdk, hc⟩ := hc
-            have hr := smallOperand_sound hc hk
-            exact bitAtoms_holds hva hsa (by simpa [Linear.Form.eval] using hsb) hr.1 hr.2 hd (.inl ⟨rfl, hdk⟩)
-          · exact indexHolds_nil _ _
-        · -- nonnegative mask
-          have hu' : u = .num (arithBits .bitAnd xa xb) := by simpa [binop, Arith.relational] using hu.symm
-          rw [hu']
-          split
-          · rename_i hc
-            obtain ⟨rfl, hd, hdm, hc⟩ := hc
-            have hr := smallOperand_sound hc hk
-            exact bitAtoms_holds hva hsa (by simpa [Linear.Form.eval] using hsb) hr.1 hr.2 hd (.inr ⟨rfl, hdm⟩)
-          · exact indexHolds_nil _ _
-        all_goals first
-          | (rw [binop_num_eq hu]
-             exact equalAtoms_holds (hvars (fa ++ fb.scale (-1)) (by simp only [List.map_append, scale_vars]))
-               (i := Linear.Form.eval (valuation ρ) fa + ca) (j := Linear.Form.eval (valuation ρ) fb + cb)
-               (by rw [Linear.Form.eval_append, Linear.Form.eval_scale]; omega) hsa hsb)
-          | (rename_i hop
-             rw [binop_num_relational (by first | rfl) hu]
-             exact compareAtoms_holds (hvars (fa ++ fb.scale (-1)) (by simp only [List.map_append, scale_vars]))
-               (i := Linear.Form.eval (valuation ρ) fa + ca) (j := Linear.Form.eval (valuation ρ) fb + cb)
-               (by rw [Linear.Form.eval_append, Linear.Form.eval_scale]; omega) hsa hsb)
-          | exact indexHolds_nil _ _
+          · -- add
+            rw [binop_num_arith (.inl rfl) hu]
+            exact hsum (fa ++ fb) (ca + cb)
+              ((Linear.Form.eval (valuation ρ) fa + ca) + (Linear.Form.eval (valuation ρ) fb + cb)) _
+              (hvars (fa ++ fb) rfl)
+              (by rw [Linear.Form.eval_append]; omega)
+              (fun hr => SafeIntegers.add_safe hsa hsb hr)
+          · -- sub
+            rw [binop_num_arith (.inr (.inl rfl)) hu]
+            exact hsum (fa ++ fb.scale (-1)) (ca - cb)
+              ((Linear.Form.eval (valuation ρ) fa + ca) - (Linear.Form.eval (valuation ρ) fb + cb)) _
+              (hvars (fa ++ fb.scale (-1)) (by simp only [List.map_append, scale_vars]))
+              (by rw [Linear.Form.eval_append, Linear.Form.eval_scale]; omega)
+              (fun hr => SafeIntegers.sub_safe hsa hsb hr)
+          · -- multiplication with one constant operand
+            rw [binop_num_arith (.inr (.inr rfl)) hu]
+            split
+            · rename_i hc
+              subst fa
+              exact hsum (fb.scale ca) (ca * cb)
+                ((Linear.Form.eval (valuation ρ) [] + ca) * (Linear.Form.eval (valuation ρ) fb + cb)) _
+                (by simpa only [scale_vars] using hvb)
+                (by simp only [Linear.Form.eval_scale, Linear.Form.eval, Int.zero_add, Int.mul_add])
+                (fun hr => SafeIntegers.mul_safe hsa hsb hr)
+            · split
+              · rename_i hc
+                subst fb
+                exact hsum (fa.scale cb) (ca * cb)
+                  ((Linear.Form.eval (valuation ρ) fa + ca) * (Linear.Form.eval (valuation ρ) [] + cb)) _
+                  (by simpa only [scale_vars] using hva)
+                  (by simp only [Linear.Form.eval_scale, Linear.Form.eval, Int.zero_add, Int.add_mul];
+                      rw [Int.mul_comm cb])
+                  (fun hr => SafeIntegers.mul_safe hsa hsb hr)
+              · exact indexHolds_nil _ _
+          · -- signed right shift
+            have hu' : u = .num (arithBits .shr xa xb) := by simpa [binop, Arith.relational] using hu.symm
+            rw [hu']
+            split
+            · rename_i hc
+              obtain ⟨rfl, hd, hdk, hc⟩ := hc
+              have hr := smallOperand_sound hc hk
+              exact bitAtoms_holds hva hsa (by simpa [Linear.Form.eval] using hsb) hr.1 hr.2 hd (.inl ⟨rfl, hdk⟩)
+            · exact indexHolds_nil _ _
+          · -- nonnegative mask
+            have hu' : u = .num (arithBits .bitAnd xa xb) := by simpa [binop, Arith.relational] using hu.symm
+            rw [hu']
+            split
+            · rename_i hc
+              obtain ⟨rfl, hd, hdm, hc⟩ := hc
+              have hr := smallOperand_sound hc hk
+              exact bitAtoms_holds hva hsa (by simpa [Linear.Form.eval] using hsb) hr.1 hr.2 hd (.inr ⟨rfl, hdm⟩)
+            · exact indexHolds_nil _ _
+          all_goals first
+            | (rw [binop_num_eq hu]
+               exact equalAtoms_holds (hvars (fa ++ fb.scale (-1)) (by simp only [List.map_append, scale_vars]))
+                 (i := Linear.Form.eval (valuation ρ) fa + ca) (j := Linear.Form.eval (valuation ρ) fb + cb)
+                 (by rw [Linear.Form.eval_append, Linear.Form.eval_scale]; omega) hsa hsb)
+            | (rename_i hop
+               rw [binop_num_relational (by first | rfl) hu]
+               exact compareAtoms_holds (hvars (fa ++ fb.scale (-1)) (by simp only [List.map_append, scale_vars]))
+                 (i := Linear.Form.eval (valuation ρ) fa + ca) (j := Linear.Form.eval (valuation ρ) fb + cb)
+                 (by rw [Linear.Form.eval_append, Linear.Form.eval_scale]; omega) hsa hsb)
+            | exact indexHolds_nil _ _
+        · exact none_case
       · exact none_case
-    · exact none_case
   | _ => simp only [linearAtoms]; exact none_case
 
 /-! ## A comparison with a length

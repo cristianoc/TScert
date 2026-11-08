@@ -1615,6 +1615,9 @@ $`i`$, of value $`i`$; $`r`$ is the result:
 \frac{\Gamma(s)\equiv_G\mathsf{list}(\tau)}{r\leftarrow\mathsf{lenOf}(s)\dashv\mathrm{int}(r),\ 0\le r\le 2^{32}-1}\ \textsf{length-range}
 \qquad
 \frac{\Gamma(s)\ \text{answers}\ \mathsf{isStr}}{r\leftarrow\mathsf{lenOf}(s)\dashv\mathrm{int}(r),\ r=\mathrm{strLength}(s)}\ \textsf{string-length}
+\qquad
+\frac{\Gamma(s),\Gamma(t)\ \text{answer}\ \mathsf{isStr}}
+{r\leftarrow s+t\dashv\mathrm{strLength}(r)=\mathrm{strLength}(s)+\mathrm{strLength}(t)}\ \textsf{string-concat}
 ```
 
 ```math
@@ -1752,6 +1755,12 @@ $`n`$:
       K\vdash 0\le k\le |x'|-1}
      {\mathrm{bound}_<(x,k)}\ \textsf{bound-linear-strict}
 ```
+
+String-only addition of two slots establishes its length equality on normal
+return. Concatenation past the string bound throws; its exceptional edge has
+no result length. `IndexWrites.linearAtoms_holds` proves the equality from
+`concatString` and the UTF-16 expansion of string append. Native method
+postconditions use the [audited string contracts](SOURCE-CONTRACTS.md#string-method-postconditions).
 
 **Implementation.** Linear facts are `Linear.Fact`, normal forms
 `Linear.normalize`; the certificate check is `Linear.check` (proved:

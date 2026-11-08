@@ -447,17 +447,11 @@ const primitiveOverlay: Readonly<Record<string, readonly OverlayEntry[]>> &
     { name: "toString", from: "String", signature: "toString(): string;" },
     { name: "valueOf", from: "String", signature: "valueOf(): string;" },
     { name: "charAt", from: "String", signature: "charAt(pos: number): string;" },
-    // `charCodeAt` of a string primitive at a number: RequireObjectCoercible
-    // and ToString of the receiver, and ToIntegerOrInfinity of the position,
-    // run no code; `NaN` where the integer is outside [0, length), the code
-    // unit there otherwise. Two signatures: any position, a number; and a
-    // safe integer `i`, `0 ≤ i < strLength(s)`, a safe integer in
-    // [0, 0xFFFF]: such an `i` is its own ToIntegerOrInfinity and inside the
-    // string (the receiver at position 0, the position at 1; the result at 0
-    // of the postcondition).
+    // Primitive receiver and numeric position have no coercion callbacks.
+    // The bounded form returns a safe integer code unit; the general form
+    // includes NaN for an out-of-range converted position.
     { name: "charCodeAt", from: "String", signature: "charCodeAt(index: number): number;",
       stated: [
-        { params: [atomOf("number")], result: atomOf("number") },
         { params: [atomOf("number")], result: atomOf("number"), effect: footprintEffect(emptyFootprint, {
           pre: [
             { int: { slot: 1 } },
@@ -469,14 +463,65 @@ const primitiveOverlay: Readonly<Record<string, readonly OverlayEntry[]>> &
             { int: { slot: 0 } },
             { linear: { fact: { le: { form: [[{ kind: "value", slot: 0, path: [] }, -1]], bound: 0 } } } },
             { linear: { fact: { le: { form: [[{ kind: "value", slot: 0, path: [] }, 1]], bound: 0xffff } } } },
-          ] }) },
+          ],
+        }) },
+        { params: [atomOf("number")], result: atomOf("number") }
       ] },
     { name: "concat", from: "String", signature: "concat(...strings: string[]): string;" },
-    { name: "indexOf", from: "String", signature: "indexOf(searchString: string, position?: number): number;" },
+    { name: "indexOf", from: "String", signature: "indexOf(searchString: string, position?: number): number;",
+      stated: [
+        { params: [atomOf("string"), optionalNumber], result: atomOf("number"),
+        effect: footprintEffect(emptyFootprint, {
+          pre: [{ linear: { fact: { le: { form: [[{ kind: "strLength", slot: 1, path: [] }, -1]], bound: -1 } } } }],
+          ensures: [
+          { int: { slot: 0 } },
+          { linear: { fact: { le: { form: [[{ kind: "value", slot: 0, path: [] }, -1]], bound: 1 } } } },
+          { linear: { fact: { le: { form: [[{ kind: "value", slot: 0, path: [] }, 1], [{ kind: "strLength", slot: 1, path: [] }, -1]], bound: -1 } } } },
+        ] }) },
+        { params: [atomOf("string"), optionalNumber], result: atomOf("number"),
+        effect: footprintEffect(emptyFootprint, { ensures: [
+          { int: { slot: 0 } },
+          { linear: { fact: { le: { form: [[{ kind: "value", slot: 0, path: [] }, -1]], bound: 1 } } } },
+          { linear: { fact: { le: { form: [[{ kind: "value", slot: 0, path: [] }, 1], [{ kind: "strLength", slot: 1, path: [] }, -1]], bound: 0 } } } },
+        ] }) }
+      ] },
     { name: "lastIndexOf", from: "String",
-      signature: "lastIndexOf(searchString: string, position?: number): number;" },
+      signature: "lastIndexOf(searchString: string, position?: number): number;",
+      stated: [
+        { params: [atomOf("string"), optionalNumber], result: atomOf("number"),
+        effect: footprintEffect(emptyFootprint, {
+          pre: [{ linear: { fact: { le: { form: [[{ kind: "strLength", slot: 1, path: [] }, -1]], bound: -1 } } } }],
+          ensures: [
+          { int: { slot: 0 } },
+          { linear: { fact: { le: { form: [[{ kind: "value", slot: 0, path: [] }, -1]], bound: 1 } } } },
+          { linear: { fact: { le: { form: [[{ kind: "value", slot: 0, path: [] }, 1], [{ kind: "strLength", slot: 1, path: [] }, -1]], bound: -1 } } } },
+        ] }) },
+        { params: [atomOf("string"), optionalNumber], result: atomOf("number"),
+        effect: footprintEffect(emptyFootprint, { ensures: [
+          { int: { slot: 0 } },
+          { linear: { fact: { le: { form: [[{ kind: "value", slot: 0, path: [] }, -1]], bound: 1 } } } },
+          { linear: { fact: { le: { form: [[{ kind: "value", slot: 0, path: [] }, 1], [{ kind: "strLength", slot: 1, path: [] }, -1]], bound: 0 } } } },
+        ] }) }
+      ] },
     { name: "localeCompare", from: "String", signature: "localeCompare(that: string): number;" },
-    { name: "slice", from: "String", signature: "slice(start?: number, end?: number): string;" },
+    { name: "slice", from: "String", signature: "slice(start?: number, end?: number): string;",
+      stated: [
+        { params: [atomOf("number"), atomOf("number")], result: atomOf("string"),
+          effect: footprintEffect(emptyFootprint, {
+            pre: [
+              { int: { slot: 1 } },
+              { int: { slot: 2 } },
+              { linear: { fact: { le: { form: [[{ kind: "value", slot: 1, path: [] }, -1]], bound: 0 } } } },
+              { linear: { fact: { le: { form: [[{ kind: "value", slot: 1, path: [] }, 1], [{ kind: "value", slot: 2, path: [] }, -1]], bound: 0 } } } },
+              { linear: { fact: { le: { form: [[{ kind: "value", slot: 2, path: [] }, 1], [{ kind: "strLength", slot: 0, path: [] }, -1]], bound: 0 } } } }
+            ],
+            ensures: [
+              { linear: { fact: { le: { form: [[{ kind: "strLength", slot: 0, path: [] }, 1], [{ kind: "value", slot: 3, path: [] }, -1], [{ kind: "value", slot: 2, path: [] }, 1]], bound: 0 } } } },
+              { linear: { fact: { le: { form: [[{ kind: "strLength", slot: 0, path: [] }, -1], [{ kind: "value", slot: 3, path: [] }, 1], [{ kind: "value", slot: 2, path: [] }, -1]], bound: 0 } } } }
+            ],
+          }) },
+        { params: [optionalNumber, optionalNumber], result: atomOf("string") }
+      ] },
     { name: "substring", from: "String", signature: "substring(start: number, end?: number): string;" },
     { name: "toLowerCase", from: "String", signature: "toLowerCase(): string;" },
     { name: "toUpperCase", from: "String", signature: "toUpperCase(): string;" },

@@ -954,7 +954,8 @@ came from a different context. No execution budget is inspected. -/
           -- Require every operand before searching the premises. A signature
           -- with more positions than the call writes is usable when each
           -- remaining contract admits `undefined`, the value bound there.
-          if args.length > p.arguments.length then none else do
+          if args.length > p.arguments.length ||
+              !(p.effect.requires.isNone && p.effect.pre.isEmpty || admits p.effect t) then none else do
             let omitted := p.arguments.drop args.length
             let ef ← recur Γ f F
             let er ← recur Γ recv p.receiver

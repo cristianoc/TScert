@@ -458,6 +458,14 @@ let bitwise_facts ~array env fs x (e : expr) = match e.node with
      | _ -> [])
   | _ -> []
 
+(* String addition states an equality of immutable UTF-16 lengths. *)
+let concat_facts env name (e : expr) = match e.node with
+  | Arith (Add,({node=Id a;_}),({node=Id b;_}))
+    when a <> name && b <> name && !string_path env a [] && !string_path env b [] ->
+    let r = str_length_term name and x = str_length_term a and y = str_length_term b in
+    [norm [r,1;x,-1;y,-1],0; norm [r,-1;x,1;y,1],0]
+  | _ -> []
+
 let assign ~array env fs x (e : expr) =
   if not (value_binding env x) then forget x fs else
   match distribute e with
@@ -470,7 +478,7 @@ let assign ~array env fs x (e : expr) =
       | Some a when not (is_int_fact f) -> t, d + a*c
       | _ -> f) fs
   | Some (t,c) when not (List.mem_assoc x t) -> forget x fs @ equal x (t,c)
-  | _ -> forget x fs @ bitwise_facts ~array env fs x e
+  | _ -> forget x fs @ bitwise_facts ~array env fs x e @ concat_facts env x e
 
 let names_assigned (s : stmt) env =
   List.filter (fun (n,_) -> not (is_fact n) && Source.assigns n s) env |> List.map fst
@@ -1185,6 +1193,7 @@ let declaration ~(array : string -> string list -> bool) env fs name (init : exp
   let fs = forget name fs in
   (* `const x = f(…)` of a function stating a postcondition: each of
      its facts, of `x`. *)
+  let fs = fs @ concat_facts env name init in
   let fs = match init.node with
     | ArrayLiteral ([],[]) -> fs @ [[length_term name,1],0; [length_term name,-1],0]
     | Call ({node=Id f;_},None,args,[],_) -> fs @ call_facts ~name env f args

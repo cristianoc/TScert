@@ -73,6 +73,32 @@ const mutationControl = (body: () => Promise<void>): void => {
 const serving: boolean = process.argv[2] === "--controls";
 
 control(async (): Promise<void> => {
+  assert.equal(runExample("invalid-string-method-nan", 'Number.isNaN(outOfBounds("a"))'), true);
+  assert.equal(runExample("invalid-string-method-slice", 'clamped("").length'), 0);
+  assert.equal(runExample("invalid-string-method-search", 'emptyNeedle("a")'), 1);
+  assert.equal(runExample("invalid-string-method-concat", 'numeric(123).length'), 3);
+  for (const [name, fnName, statement, binding, kind, bound] of [
+    ["invalid-string-method-nan", "outOfBounds", "return unit(c)", "c", "value", 0],
+    ["invalid-string-method-slice", "clamped", "return pair(part)", "part", "strLength", -2],
+    ["invalid-string-method-search", "emptyNeedle", "return inside(s, r)", "r", "value", -2],
+    ["invalid-string-method-concat", "numeric", "return one(s)", "s", "strLength", 1],
+  ] as const) {
+    const artifacts = run(name);
+    const source = readFileSync(sourceKey(artifacts), "utf8");
+    const claims = readClaims(artifacts);
+    const fn = must(claims.functions.find(f => f.name === fnName), `${fnName}'s claims`);
+    const entry = must(fn.entries.find(e => e.start === source.indexOf(statement)), "the call's entry");
+    // Zero coefficient is the wire's integer-definedness claim.
+    entry.facts.push({ guards: [], terms: [{ name: binding, path: [], term: kind,
+      coefficient: name === "invalid-string-method-nan" ? 0 : name === "invalid-string-method-concat" ? 1 : -1 }], bound });
+    const forged = writeClaims(artifacts, `string-method-forged-${name}`, claims);
+    const searched = produceWith(artifacts, forged, `string-method-forged-${name}`);
+    assert.equal(searched.status, 1, searched.stdout + searched.stderr);
+    assert.match(searched.stdout + searched.stderr, /does not establish the claims/);
+  }
+});
+
+control(async (): Promise<void> => {
   // A native variadic member keeps both its fixed numeric prefix and its
   // inserted element contract. A producer cannot widen that rest or erase
   // the exception allowing the receiver's store to change.
