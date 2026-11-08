@@ -1894,12 +1894,6 @@ bounds of lengths (proved). These are the preservation rules:
   length only of a store apart from `out`'s; a definition's code states no
   `receiverGrows`. Its quantified facts are the
   [growth's and the append's](#quantified-clauses).
-- **A typed array's element write**, a call at a selected signature stating
-  `elementWrite` (`%ByteSet%`, a view's `fill`, `copyWithin` and `set`,
-  [typed arrays](SOURCE-CONTRACTS.md#stated-library-types)):
-  $`\chi=(\bot,\bot,\mathsf{length})`$ (`ElementWrite.changes`), so it
-  preserves every fact over values, paths, lengths and typed-array lengths,
-  `segmentFlags[i] = f` keeping `i < widths.length`.
 - **A call changing only its receiver's own locations** (`call-own`):
   $`\chi`$ alters everything, and $`\mathrm{first}(z,g)`$ is
   $`\mathrm{apart}(x.\star,z.g)`$. So an array iterator's step preserves the
@@ -2828,39 +2822,13 @@ states its value a safe integer between $`0`$ and $`|\mathit{data}.\mathit{width
 
 **Frame conditions.** A quantified fact and an element fact read the heap: a
 step leaving the heap unchanged preserves them, and a heap change other than
-a growth of a receiver's store, an exact element write of a typed array,
-or a scalar field write satisfying the rule below preserves neither, a
-stated limit. On an edge a target quantified fact follows from a
+a growth of a receiver's store preserves neither, a stated limit. On an edge a target quantified fact follows from a
 source one whose root slot the edge maps it to, of the same path, whose bound
 and each body fact the target's follow term by term (proved), and a target
 element fact from the same one renamed. A read of field $`f`$ from slot
 $`c`$ into slot $`v`$ restates of $`v`$ a quantified fact whose root, bound
 or body terms read through $`c.f`$ (proved), so `const { widths } = data`
 retains the fact of $`|\mathit{widths}|`$.
-
-**Empty arrays.** A quantified fact over an array of length zero holds for
-any body (proved). Its body terms need no interpretation, since no index
-is below the bound. The edge checker establishes that the length term is
-defined and at most zero; array lengths are nonnegative.
-
-```math
-\frac{K\vdash |x.p|=0}
-     {\Sigma,\ \mathrm{every}(x.p,|x.p|,\Phi)}\ \textsf{every-empty}
-```
-
-An empty array literal states its result's length is zero. Its lowering
-evaluates the empty store and the object holding it in one inspection,
-whose postcondition records zero length and the allocation's fresh
-locations. The producer proposes the zero-length facts at the declaration
-and the written quantified invariant at the loop head; each incoming edge
-checks the invariant, including the entry from the empty literal.
-
-**Empty prefixes.** An existing quantified fact witnesses the element store
-of its array or view. Together with a defined bound at most zero, it
-establishes any quantified body at that bound (proved by
-`elementsKnown_sound` and `linearFollows_sound`). The numeric typed-array
-constructor's contract states a quantified fact with an empty body over its
-result, witnessing the store that represents the freshly allocated view.
 
 **Across a push.** A normal return of `push` changes no old location but its
 receiver's store, which it extends: the old elements keep their indices, and
@@ -2890,68 +2858,12 @@ a value the body excludes, or into an array no separation keeps apart from
 the quantified one, keeps no fact over the whole quantified array. A push of
 several actuals extends none (`every-push` reads one).
 
-**Across a typed array's element write.** `b[k] = v` of a view at a safe
-integer $`0\le k<\mathrm{view}(b)`$ of a safe integer $`v`$ the view's
-element type holds unchanged (from $`0`$ to $`255`$ of a `Uint8Array`, to
-$`65535`$ of a `Uint16Array`, from $`-2^{31}`$ to $`2^{31}-1`$ of an
-`Int32Array`, any of a `Float64Array`) is `%ByteSet%`'s exact signature
-([typed arrays](SOURCE-CONTRACTS.md#stated-library-types)): the view's element
-store lists the same entries after it but at $`k`$, where it lists a location
-holding $`v`$, and every other location holding no store keeps its value,
-every store its length. So each index but $`k`$ keeps its element, and the
-element at $`k`$ is $`v`$ (proved):
-
-```math
-\frac{\mathrm{every}(x,t,\Phi)\in\Sigma\quad x\in[b]\quad \mathrm{int}(k)\quad
-      (K\vdash t\le k\ \lor\ \forall F\in\Phi.\ K\vdash F[\mathrm{index}\mapsto k,\ \mathrm{elem}\mapsto v])}
-     {\Sigma\vdash r\leftarrow \%\mathsf{ByteSet}\%(b,k,v)\dashv\Sigma',\ \mathrm{every}(x,t,\Phi)}\ \textsf{every-write}
-```
-
-with the terms of $`t`$ and $`\Phi`$ kept by the write
-($`\chi=(\bot,\bot,\mathsf{length})`$, which keeps every term). A quantified
-fact over any other array or view is dropped: views over one buffer share its
-bytes, and the model holds each view's elements as a store of its own, so a
-fact over a view does not transfer to a `subarray` of it either
-(`typed-array-subarray-facts-gap`, a stated limit). An array's length is at
-most $`2^{32}-1`$, so a value bounded by one alone is not known to fit an
-`Int32Array`: the clause states the bound (`v <= 2147483647`).
-
-**Extending a prefix.** An exact element write at index $`k`$ establishes a
-prefix with bound $`m`$ where the old prefix has bound $`n`$,
-$`k\le n`$, $`m\le k+1`$, and the written value satisfies every body fact
-at $`k`$. The bound and body terms must survive the write. Every index
-below $`m`$ is either $`k`$, holding the written value, or below $`n`$,
-holding its previous element (proved: `PromiseCalls.every_written_prefix`).
-The checker proposes a known term equal to $`k+1`$ as the extended bound;
-the producer carries that fact across a value-binding assignment.
-
-**Across a scalar field write.** A field write that keeps stores preserves
-a prefix with a stable bound when its body does not name the index and the
-new field value satisfies the body. Every unchanged element keeps its
-value; an element location equal to the written location holds the new
-value, which satisfies the same body (proved:
-`HeapExpressionRules.fieldEvery_holds`). The body terms must be preserved
-by the write. This rule establishes preservation even where separation
-between the cell and element locations is unavailable.
-
-For `items[n++] = v`, the counter read restates the prefix on the old value
-of `n`; the field write preserves that prefix by the rule above; the exact
-element write extends it to the new value of `n`. The field write's read
-link restates that bound on `n`'s cell path (proved:
-`HeapKnowledge.liftEvery_holds`). An inclusive body such as
-`0 <= items[i] && items[i] <= size` admits the updated counter
-where the loop establishes `n <= size`. Saving a length in `size` lets the
-existing stable-length rule preserve `items.length === size` across the
-counter write. A strict body may exclude
-the updated counter; preserving it then requires separation between the
-cell and the element locations, a stated limit.
-
 **The producer** carries each precondition's quantified facts to the entries
 it claims (an entry's `quantified`, [SOURCE-CLAIMS](SOURCE-CLAIMS.md)),
 preserves them across a statement writing no heap and naming none of their
 bindings, keeps them across a push as `every-grow` and `every-push` keep
 them, where its own frame analysis keeps their bounds, restates them at a
-path's read, each read of a destructuring in turn, and, at an element read at an index
+path's read, and, at an element read at an index
 its facts bound below the fact's bound, names the read's value with the body
 facts instantiated, for the call typing and the linear facts of the
 statement.
@@ -2972,17 +2884,9 @@ elements is `HeapKnowledge.elementsOf`. Preservation is
 `every-grow` and `every-push` are `PromiseCalls.everyGrown`, with
 `HeapKnowledge.bodyKeptBy` and `appendedBody`, added by `appendKept` in
 `withEnsures` (proved: `every_grown`, `every_appended`, from
-`boundValue_grown` and `factAt_monotone`; `appendKept_holds`). `every-write`
-is `PromiseCalls.everyWritten`, with `writtenBody`, added by `writeKept` in
-`withEnsures` (proved: `every_written`, `writeKept_holds`), from the exact
-write `CallEffects.ExactWrite`. The producer's
+`boundValue_grown` and `factAt_monotone`; `appendKept_holds`). The producer's
 facts are `Linear_facts.efact`, its element reads `Linear_facts.with_reads`
 and `element_facts`, its facts across a push `Linear_facts.egrown`.
-
-`every-empty` is the `every` branch of `HeapKnowledge.linearFollows`
-(proved: `linearFollows_sound`). `IndexWrites.emptyArrayAtoms` states an
-empty literal's length (proved: `emptyArrayAtoms_holds`, by its finite
-execution); `Checker.emptyArrays` adds those facts and fresh locations.
 
 **Cases.** Positive: `quantified-element-reads` (a read at an element, a loop
 to an element, pretext's `narrowsLine` through a destructured path). Negative,
@@ -2990,33 +2894,14 @@ each run under Node: `invalid-quantified-element-read-inclusive` (an element
 at most the length), `invalid-quantified-element-read-alias-write` (a write
 through an alias of the quantified array) and
 `invalid-quantified-element-read-shrunk` (a `pop` of the bounding array).
-Empty entry: positive `quantified-empty-builder` (an empty literal, push
-under a written invariant, and a bounded consumer); negative
-`invalid-quantified-empty` (`[7]` claimed bounded by a one-element array,
-returning `NaN` under Node). Its forged control claims that quantified fact
-at the entry immediately following `[7]`.
 Across a push: positive `quantified-push-builder` (pretext's builder pushing
 `widths.length`, then its `narrowsLine` consumer); negative, each run under
 Node, `invalid-quantified-push-value` (a push of a value the body excludes),
 `invalid-quantified-push-alias` (a push into an array that may be the
 quantified one) and `invalid-quantified-push-shrunk` (a push, then a `pop`
-of the bounding array). Over a typed array: positive `typed-array-element-facts`
-(pretext's `getHyphenRooms`, a loop pushing an element-bounded read, and a
-typed array read through a destructured record); negative, each run under
-Node, `invalid-typed-array-element-read-inclusive` (a typed array's element
-at most the length) and `invalid-typed-array-element-read-after-write` (a
-write through a `subarray` view of the quantified view's bytes). Across an
-element write: positive `typed-array-element-writes` (a checked write, then
-reads at the written and another index; a loop clamping every element);
-negative, each run under Node, `invalid-typed-array-element-write-int32-wrap`
-(an `Int32Array` write of $`2^{31}`$), `invalid-typed-array-element-write-uint8-truncation`
-(a `Uint8Array` write of 260) and `invalid-typed-array-element-write-value`
-(a write of a value the body excludes), each refused where the fact the
-producer proposes after the write is checked; a gap,
-`typed-array-subarray-facts-gap`. Forged
-controls in `pipeline/test.mts`: the inclusive and alias-write negatives'
-reads claimed at `number` with the strict quantified fact claimed at the
-return's entry, refused there, and alike the two typed-array negatives'; and the
+of the bounding array). Forged controls in `pipeline/test.mts`: the
+inclusive and alias-write negatives' reads claimed at `number` with the
+strict quantified fact claimed at the return's entry, refused there; and the
 strict fact claimed at the entry after the push of the value and alias
 negatives, refused there. An array with a hole reaches no `number[]`: a readable store
 holds a hole only where `undefined` meets its element type, and the fragment

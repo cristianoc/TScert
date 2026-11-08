@@ -1504,8 +1504,41 @@ let erestate_read name (root,path) (e : efact) : efact option =
   let e' = { arr; stop = rename e.stop; body = List.map (fun ((t,d) : fact) -> List.map (fun (n,c) -> rename n,c) t, d) e.body } in
   if e' = e then None else Some e'
 
-let estatement env (es : efact list) (s : stmt) : efact list =
-  let es = if statement_heap_free env s then es else
+(* The quantified facts a call growing its receiver's store keeps, `xs.push(a)`
+   or a growing method of another receiver (Lean's `PromiseCalls.everyGrown`):
+   each whose body facts the growth keeps, the index and the element read
+   apart, and whose bound it keeps (`every-grow`); and, for `xs.push(a)` of one
+   actual, a safe integer the facts give as a linear form, each over `xs`'s
+   whole array whose body facts the facts state of `a` at the index
+   `xs.length` (`every-push`). *)
+let egrown ~array env fs (es : efact list) (e : expr) : efact list option =
+  match e.node with
+  | Invoke ({node=Read (r,key);_},args,[],_) when heap_free env r && List.for_all (heap_free env) args &&
+      !method_grows env r key ->
+    let ch = { obj = false; num = false; store = `Grow; framed = no_frame; apart = false; cell_write = false } in
+    let body_kept ((t,_) : fact) =
+      List.for_all (fun (n,c) -> n = index_var || n = elem_var || term_kept ch n || (c <= 0 && term_grown ch n)) t in
+    let appended (ef : efact) = match r.node, args with
+      | Id xs, [a] when ef.arr = (xs,[]) && ef.stop = length_term xs ->
+        let int_actual = match a.node with Id x -> is_int fs x | _ -> true in
+        int_actual && (match linear ~array env fs a with
+          | Some (at,ac) ->
+            let ranged = fs @ term_ranges ((at,0) :: fs) @ term_ranges [[length_term xs,1],0] in
+            List.for_all (fun ((t,d) : fact) ->
+              let k = Option.value ~default:0 (List.assoc_opt elem_var t) in
+              let t = List.concat_map (fun (n,c) ->
+                if n = index_var then [length_term xs,c] else if n = elem_var then scale c at else [n,c]) t in
+              entails ranged (norm t, d - k * ac)) ef.body
+          | None -> false)
+      | _ -> false in
+    Some (List.filter (fun (ef : efact) -> List.for_all body_kept ef.body &&
+      (term_kept ch ef.stop || appended ef)) es)
+  | _ -> None
+
+let estatement ?(array = fun _ _ -> false) ?(facts = []) env (es : efact list) (s : stmt) : efact list =
+  let es = match (match s.statement with Effect e -> egrown ~array env facts es e | _ -> None) with
+  | Some es -> es
+  | None -> if statement_heap_free env s then es else
     match statement_changes ~facts:[] ~bounds:[] env s with
     | Some ch when ch.store = `Keep && not ch.num ->
       List.filter (fun e -> term_kept ch (length_term ~path:(snd e.arr) (fst e.arr)) &&

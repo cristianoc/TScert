@@ -421,44 +421,6 @@ control(async (): Promise<void> => {
 });
 
 control(async (): Promise<void> => {
-  // Advancing the claimed prefix over an unwritten cell must fail independently
-  // of the producer's choice to drop the fact.
-  const artifacts = run("invalid-typed-array-prefix-past");
-  const source = readFileSync(sourceKey(artifacts), "utf8");
-  const claims = readClaims(artifacts);
-  const fn = must(claims.functions.find(f => f.name === "invalidPrefix"), "invalidPrefix's claims");
-  const before = must(fn.entries.find(e => e.quantified.some(q => q.name === "items" && q.stop.name === "n")), "the prefix");
-  const prefix = structuredClone(must(before.quantified.find(q => q.name === "items" && q.stop.name === "n"), "the prefix fact"));
-  prefix.stop = { name: "next", path: [], term: "value" };
-  const at = source.indexOf("if (j < 0");
-  must(fn.entries.find(e => e.start === at), "the entry after the write").quantified.push(prefix);
-  const forged = writeClaims(artifacts, "typed-prefix-past-forged", claims);
-  const searched = produceWith(artifacts, forged, "typed-prefix-past-forged");
-  assert.equal(searched.status, 1, `${searched.stdout}${searched.stderr}`);
-  assert.match(searched.stdout + searched.stderr, /does not establish the claims/);
-});
-
-control(async (): Promise<void> => {
-  // every-empty must establish zero length; a non-empty literal supplies no such proof.
-  // The invariant is forged at the entry after `[7]` and at every later entry
-  // the producer claims without it, up to the loop's head, so the one edge
-  // left to establish it is the one from `[7]`.
-  const artifacts = run("invalid-quantified-empty");
-  const source = readFileSync(sourceKey(artifacts), "utf8");
-  const claims = readClaims(artifacts);
-  const fn = must(claims.functions.find(f => f.name === "invalidEmpty"), "invalidEmpty's claims");
-  const quantified = must(fn.entries.find(e => e.quantified.length > 0), "the invariant").quantified;
-  const at = source.indexOf("let total = 0");
-  must(fn.entries.find(e => e.start === at), "the entry after [7]");
-  for (const e of fn.entries) if (e.quantified.length === 0 && e.start >= at) e.quantified = structuredClone(quantified);
-  const forged = writeClaims(artifacts, "every-empty-nonempty-forged", claims);
-  const searched = produceWith(artifacts, forged, "every-empty-nonempty-forged");
-  assert.equal(searched.status, 1, `${searched.stdout}${searched.stderr}`);
-  assert.match(searched.stdout + searched.stderr, new RegExp(`edge obligation at \\[${at},[^\\n]*does not establish the claims`));
-  process.stdout.write("every-empty: a quantified bound forged over [7] refused at its entry\n");
-});
-
-control(async (): Promise<void> => {
   // A quantified fact claimed extended across a push that does not extend it
   // (PROGRAM-TYPING.md, "Quantified clauses"): at each entry the producer
   // claims without it, from the one after the push to the loop's,
@@ -485,42 +447,6 @@ control(async (): Promise<void> => {
     assert.match(searched.stdout + searched.stderr, new RegExp(`edge obligation at \\[${at},[^\\n]*does not establish the claims`), file);
   }
   process.stdout.write("quantified facts: the strict element bound claimed extended across a push of the length and a push into a possible alias, each refused at the entry after it\n");
-});
-
-control(async (): Promise<void> => {
-  // A quantified fact over a typed array's elements claimed where nothing
-  // establishes it (PROGRAM-TYPING.md, "Quantified clauses"): each
-  // negative's outer read claimed at `number`, and at its return's entry
-  // `items[i] < widths.length` of every index below the view's typed-array
-  // length: over the inclusive precondition, and after a write through a
-  // `subarray` view of the same bytes. Each is refused at that entry.
-  type Entry = SourceClaims["functions"][number]["entries"][number];
-  type Quantified = Entry["quantified"][number];
-  const strict: Quantified = { name: "items", path: [], stop: { name: "items", path: [], term: "view" },
-    body: [{ terms: [["elem", 1]], bound: 9007199254740991 }, { terms: [["elem", -1]], bound: 0 },
-      { terms: [["elem", 1], [{ term: { ref: { name: "widths", path: [], term: "length" } } }, -1]], bound: -1 }] };
-  const variants: [string, string][] = [
-    ["invalid-typed-array-element-read-inclusive", "widthAt"],
-    ["invalid-typed-array-element-read-after-write", "widthAfterWrite"],
-  ];
-  for (const [file, name] of variants) {
-    const artifacts = run(file);
-    const source = readFileSync(sourceKey(artifacts), "utf8");
-    const fnStart = source.indexOf(`export function ${name}`);
-    const read = "widths[items[k]!]";
-    const at = source.indexOf(read, fnStart);
-    const claims = readClaims(artifacts);
-    const fn = must(claims.functions.find(f => f.name === name), `${name}'s claims`);
-    const claim = must(fn.expressions.find(e => e.pos[0] === at && e.pos[1] === at + read.length), "the read");
-    claim.type = [rowOf(claims, "num")];
-    must(fn.entries.find(e => e.start === source.indexOf("return widths", fnStart)), "the return's entry").quantified
-      .push(strict);
-    const forged = writeClaims(artifacts, `typed-quantified-forged-${name}`, claims);
-    const searched = produceWith(artifacts, forged, `typed-quantified-forged-${name}`);
-    assert.equal(searched.status, 1, `${name}: ${searched.stdout}${searched.stderr}`);
-    assert.match(searched.stdout + searched.stderr, /does not establish the claims/, name);
-  }
-  process.stdout.write("typed-array quantified facts: a strict element bound claimed over an inclusive precondition and after a subarray view's write, each refused at its entry\n");
 });
 
 control(async (): Promise<void> => {
