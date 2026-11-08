@@ -1,4 +1,4 @@
-// A clause outside the language read: a disjunction of atoms.
+// A comparison in a disjunction whose operand is not stated a safe integer.
 
 /** @requires i < 0 || safeInteger(i) */
 function at(xs: number[], i: number): number {

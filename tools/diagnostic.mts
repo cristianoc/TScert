@@ -114,6 +114,7 @@ export interface HeapKnowledge {
 type IndexFact = { index: { slot: number } } | { length: { array: number; length: number } } |
   { bound: { array: number; index: number; strict: boolean } } | { int: { slot: number } } |
   { linear: { fact: { le: { form: [LinearTerm, number][]; bound: number } } | { ne: { form: [LinearTerm, number][]; bound: number } } } } |
+  { either: { left: IndexFact; right: IndexFact } } |
   { guarded: { slot: number; path: string[]; tag: "null" | "undefined"; body: IndexFact } } |
   { element: { value: number; array: number; index: number } } |
   { every: { slot: number; path: string[]; stop: LinearTerm; body: { form: [BodyVariable, number][]; bound: number; ne: boolean }[] } } |
@@ -413,6 +414,10 @@ function knowledge(v: Json | undefined): HeapKnowledge | null {
 function indexFact(f: Json | undefined): IndexFact {
   if (f === null || typeof f !== "object" || Array.isArray(f)) throw Error("invalid index fact");
   let fact: IndexFact;
+  if ("either" in f) {
+    const e = record(record(f,["either"]).either,["left","right"]);
+    return { either: { left: indexFact(e.left), right: indexFact(e.right) } };
+  }
   if ("guarded" in f) {
     const g = record(record(f,["guarded"]).guarded,["slot","path","tag","body"]);
     const path = g.path;

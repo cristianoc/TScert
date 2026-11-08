@@ -118,7 +118,7 @@ interface GuardClaim {
 /** A linear fact proposed at a statement entry: where none of its guards,
  * in order, reads its tag's value, the sum of the terms is at most `bound`
  * (PROGRAM-TYPING.md, "Linear facts"). */
-interface LinearClaim {
+type LinearClaim = { either: { left: LinearClaim; right: LinearClaim } } | {
   guards: GuardClaim[];
   terms: LinearTermClaim[];
   bound: number;
@@ -365,28 +365,11 @@ function claimsDocument(v: JsonRead): SourceClaims {
     const r = record(x, "a named point", ["name", "type", "current"]);
     return { name: name(r.name, "a point's name"), type: claimType(r.type), current: current(r.current) };
   };
-  const entry = (x: JsonRead): EntryClaim => {
-    const r = record(x, "an entry", ["point", "start", "bindings", "bounds", "facts", "quantified", "apart"]);
-    const integer = (v: JsonRead, what: string): number => {
-      if (typeof v !== "number" || !Number.isSafeInteger(v)) fail(`${what} is a safe integer`);
-      return v;
-    };
-    const termRef = (t: JsonRead): TermRefClaim => {
-      const q = record(t, "a term", ["name", "path", "term"]);
-      const kind = q.term;
-      if (kind !== "value" && kind !== "length" && kind !== "view" && kind !== "strLength") fail("a term's kind is value, length, view or strLength");
-      return { name: name(q.name, "a term's name"), path: each(q.path, "a term's path", (f) => name(f, "a path's field")),
-        term: kind };
-    };
-    return { point: text(r.point, "an entry's point"), start: index(r.start, "an entry's start"),
-      bindings: each(r.bindings, "an entry's bindings", namedPoint),
-      bounds: each(r.bounds, "an entry's bounds", (b) => {
-        const q = record(b, "a bound", ["array", "index", "strict"]);
-        if (typeof q.strict !== "boolean") fail("a bound's strict is a Boolean");
-        return { array: name(q.array, "a bound's array"), index: name(q.index, "a bound's index"),
-          strict: q.strict };
-      }),
-      facts: each(r.facts, "an entry's facts", (f) => {
+  const linearClaim = (f: JsonRead): LinearClaim => {
+    if (isJsonObject(f) && "either" in f) {
+      const e = record(record(f, "a disjunction", ["either"]).either, "a disjunction's arms", ["left", "right"]);
+      return { either: { left: linearClaim(e.left), right: linearClaim(e.right) } };
+    }
         const q = record(f, "a linear fact", ["guards", "terms", "bound"]);
         const integer = (v: JsonRead, what: string): number => {
           if (typeof v !== "number" || !Number.isSafeInteger(v)) fail(`${what} is a safe integer`);
@@ -411,7 +394,29 @@ function claimsDocument(v: JsonRead): SourceClaims {
           }),
           bound: integer(q.bound, "a fact's bound"),
         };
+  };
+  const entry = (x: JsonRead): EntryClaim => {
+    const r = record(x, "an entry", ["point", "start", "bindings", "bounds", "facts", "quantified"]);
+    const integer = (v: JsonRead, what: string): number => {
+      if (typeof v !== "number" || !Number.isSafeInteger(v)) fail(`${what} is a safe integer`);
+      return v;
+    };
+    const termRef = (t: JsonRead): TermRefClaim => {
+      const q = record(t, "a term", ["name", "path", "term"]);
+      const kind = q.term;
+      if (kind !== "value" && kind !== "length" && kind !== "view" && kind !== "strLength") fail("a term's kind is value, length, view or strLength");
+      return { name: name(q.name, "a term's name"), path: each(q.path, "a term's path", (f) => name(f, "a path's field")),
+        term: kind };
+    };
+    return { point: text(r.point, "an entry's point"), start: index(r.start, "an entry's start"),
+      bindings: each(r.bindings, "an entry's bindings", namedPoint),
+      bounds: each(r.bounds, "an entry's bounds", (b) => {
+        const q = record(b, "a bound", ["array", "index", "strict"]);
+        if (typeof q.strict !== "boolean") fail("a bound's strict is a Boolean");
+        return { array: name(q.array, "a bound's array"), index: name(q.index, "a bound's index"),
+          strict: q.strict };
       }),
+      facts: each(r.facts, "an entry's facts", linearClaim),
       quantified: each(r.quantified, "an entry's quantified facts", (f) => {
         const q = record(f, "a quantified fact", ["name", "path", "stop", "body"]);
         return { name: name(q.name, "a quantified fact's array"),

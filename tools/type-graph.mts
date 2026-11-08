@@ -137,6 +137,11 @@ function fieldsOf(v: JsonRead, names: readonly string[]): JsonObject | undefined
 }
 function decodeIndexFact(v: JsonRead): IndexFact | undefined {
   if (!isJsonObject(v) || Object.keys(v).length !== 1) return undefined;
+  const either = fieldsOf(v.either, ["left", "right"]);
+  if (either) {
+    const left = decodeIndexFact(either.left), right = decodeIndexFact(either.right);
+    return left === undefined || right === undefined ? undefined : { either: { left, right } };
+  }
   const guarded = fieldsOf(v.guarded, ["slot", "path", "tag", "body"]);
   if (guarded) {
     const slot = decodeNat(guarded.slot);

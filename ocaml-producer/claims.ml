@@ -49,6 +49,7 @@ let rec index_fact_json fact =
   let linear k form d = Object ["linear",Object ["fact",Object [k,Object [
     "form",Array (List.map (fun (t,c) -> Array [term t;int c]) form);"bound",int d]]]] in
   match fact with
+  | Either (left,right) -> Object ["either",Object ["left",index_fact_json left;"right",index_fact_json right]]
   | Guarded (x,path,tag,body) -> Object ["guarded",Object ["slot",int x;"path",Array (List.map (fun f -> String f) path);
       "tag",String tag;"body",index_fact_json body]]
   | Index_at k -> Object ["index",Object ["slot",int k]]
@@ -600,7 +601,13 @@ let encode (proposal : Proposal_types.t) =
   let safe k = abs k <= 9007199254740991 in
   (* A guarded fact (`Linear_facts.gfact_key`) is its fact with its guards
      (PROGRAM-TYPING.md, "Guarded clauses"). *)
-  let facts bs = Array (List.filter_map (fun (n,_) ->
+  let rec disjunction = function
+    | Linear_facts.DAtom (terms,bound) -> Object ["guards",Array [];"terms",Array (List.map (fun (t,c) ->
+        let name,path,kind = Linear_facts.term_parts t in
+        Object ["name",String name;"path",Array (List.map (fun f -> String f) path);
+          "term",String (Linear_facts.kind_name kind);"coefficient",int c]) terms);"bound",int bound]
+    | Linear_facts.DEither (left,right) -> Object ["either",Object ["left",disjunction left;"right",disjunction right]] in
+  let facts bs = Array (List.map disjunction (Linear_facts.dfacts bs) @ List.filter_map (fun (n,_) ->
     let fact = match Environment.fact_parts n with
       | Some f -> Some ([],f)
       | None -> Linear_facts.gfact_parts n in

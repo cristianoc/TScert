@@ -110,6 +110,30 @@ private def invariantFact (root : Nat → Option (Nat × List String))
 
 /-- Elaborate one immutable control-flow action. Reserved entries permit
     cyclic edges; every entry retains the context required of its predecessors. -/
+@[nospecialize] private partial def clauseAtoms (scope : List (ScopeBinding Tree)) (source : Span) :
+    SourceClaims.ClauseClaim → Compiler (List HeapKnowledge.IndexAtom)
+  | .either left right => do
+    let left ← clauseAtoms scope source left
+    let right ← clauseAtoms scope source right
+    pure (left.flatMap fun a => right.map fun b => { fact := .either a.fact b.fact })
+  | .linear guards terms bound => do
+    let form ← terms.mapM fun (name, path, kind, c) => match termRoot scope name with
+      | some (x, pre) => pure ((⟨kind, x, pre ++ path⟩ : HeapKnowledge.Term), c)
+      | none => do throw (locatedRefusal (← table) source .entryClaim
+          s!"a linear fact names '{name}', which is no value binding or cell")
+    let guards ← guards.mapM fun (name, path, tag) => match termRoot scope name with
+      | some (x, pre) => pure (x, pre ++ path, tag)
+      | none => do throw (locatedRefusal (← table) source .entryClaim
+          s!"a linear fact's guard names '{name}', which is no value binding or cell")
+    let wrap := fun (F : HeapKnowledge.IndexFact) =>
+      guards.foldr (fun (x, path, tag) B => HeapKnowledge.IndexFact.guarded x path tag B) F
+    if form.all (·.2 == 0) && 0 ≤ bound then
+      pure (form.map fun (t, _) => ({ fact := wrap (match t.kind, t.path with
+        | .value, [] => .int t.slot
+        | .value, _ :: _ => .linear (.le [(t, 1)] (2 ^ 53 - 1))
+        | _, _ => .linear (.le [(t, -1)] 0)) } : HeapKnowledge.IndexAtom))
+    else pure [({ fact := wrap (.linear (.le form bound)) } : HeapKnowledge.IndexAtom)]
+
 @[nospecialize] private partial def flowNode (recursive : RecursiveLowering) (graph : SourceFlow.Graph)
     (ambient : List (ScopeBinding Tree)) (base : SourceClaims.Function Tree)
     (R : Ty Tree) (incoming : List (ScopeBinding Tree)) (id : Nat) : Compiler Target := do
@@ -369,23 +393,7 @@ private def invariantFact (root : Nat → Option (Nat × List String))
   -- A guarded fact (PROGRAM-TYPING.md, "Guarded clauses") is each such fact
   -- in a guarded fact of each guard, the first outermost, its path read
   -- from a value binding.
-  let linear ← ((fc.entryFacts.lookup node.source.1).getD []).flatMapM fun (guards, terms, bound) => do
-    let form ← terms.mapM fun (name, path, kind, c) => match termRoot scope name with
-      | some (x, pre) => pure ((⟨kind, x, pre ++ path⟩ : HeapKnowledge.Term), c)
-      | none => do throw (locatedRefusal (← table) node.source .entryClaim
-          s!"a linear fact names '{name}', which is no value binding or cell")
-    let guards ← guards.mapM fun (name, path, tag) => match termRoot scope name with
-      | some (x, pre) => pure (x, pre ++ path, tag)
-      | none => do throw (locatedRefusal (← table) node.source .entryClaim
-          s!"a linear fact's guard names '{name}', which is no value binding or cell")
-    let wrap := fun (F : HeapKnowledge.IndexFact) =>
-      guards.foldr (fun (x, path, tag) B => HeapKnowledge.IndexFact.guarded x path tag B) F
-    if form.all (·.2 == 0) && 0 ≤ bound then
-      pure (form.map fun (t, _) => ({ fact := wrap (match t.kind, t.path with
-        | .value, [] => .int t.slot
-        | .value, _ :: _ => .linear (.le [(t, 1)] (2 ^ 53 - 1))
-        | _, _ => .linear (.le [(t, -1)] 0)) } : HeapKnowledge.IndexAtom))
-    else pure [({ fact := wrap (.linear (.le form bound)) } : HeapKnowledge.IndexAtom)]
+  let linear ← ((fc.entryFacts.lookup node.source.1).getD []).flatMapM (clauseAtoms scope node.source)
   -- The quantified facts the producer proposes (PROGRAM-TYPING.md,
   -- "Quantified clauses"): the array, its bound and each body term rooted
   -- at a value binding or a cell, as a linear fact's.

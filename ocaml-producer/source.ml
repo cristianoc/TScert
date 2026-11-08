@@ -37,6 +37,9 @@ let rec index_fact_of j =
   else if only "bound" then
     let b = body "bound" ["array";"index";"strict"] in
     Bound_by (natural (field "array" b), natural (field "index" b), boolean (field "strict" b))
+  else if only "either" then
+    let b = body "either" ["left";"right"] in
+    Either (index_fact_of (field "left" b), index_fact_of (field "right" b))
   else if only "guarded" then
     let b = body "guarded" ["body";"path";"slot";"tag"] in
     let tag = str (field "tag" b) in

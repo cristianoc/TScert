@@ -629,6 +629,7 @@ inductive IndexFact where
   | bound (array index : Nat) (strict : Bool)
   | int (slot : Nat)
   | linear (fact : Linear.Fact Term)
+  | either (left right : IndexFact)
   | guarded (slot : Nat) (path : List String) (tag : GuardTag) (body : IndexFact)
   | element (value array index : Nat)
   | every (slot : Nat) (path : List String) (stop : Term) (body : List (Linear.Fact Bound))
@@ -644,6 +645,7 @@ def slots : IndexFact → List Nat
   | .bound x k _ => [x, k]
   | .int k => [k]
   | .linear F => F.vars.map Term.slot
+  | .either A B => A.slots ++ B.slots
   | .guarded s _ _ B => s :: B.slots
   | .element v x k => [v, x, k]
   | .every s _ stop body => s :: stop.slot :: body.flatMap fun F => F.vars.flatMap Bound.slots
@@ -688,6 +690,7 @@ def mapM (f : Nat → Option Nat) : IndexFact → Option IndexFact
   | .bound x k st => do pure (.bound (← f x) (← f k) st)
   | .int k => (f k).map .int
   | .linear F => (F.mapVars (Term.mapM f)).map .linear
+  | .either A B => do pure (.either (← A.mapM f) (← B.mapM f))
   | .guarded s p t B => do pure (.guarded (← f s) p t (← B.mapM f))
   | .element v x k => do pure (.element (← f v) (← f x) (← f k))
   | .every s p stop body => do
@@ -705,6 +708,7 @@ def HoldsAt : IndexFact → Env → Heap → Prop
       ρ k = .num b ∧ indexOfBits b = some i ∧ i + (if st then 1 else 0) ≤ ls.length
   | .int k, ρ, _ => (intValue (ρ k)).isSome
   | .linear F, ρ, h => (∀ t ∈ F.vars, (termValue ρ h t).isSome) ∧ F.Holds (termValuation ρ h)
+  | .either A B, ρ, h => A.HoldsAt ρ h ∨ B.HoldsAt ρ h
   | .guarded s p t B, ρ, h => ∃ v, readGuard h (ρ s) p = some v ∧ (v = t.val ∨ B.HoldsAt ρ h)
   | .element v x k, ρ, h => ∃ s ls b, ∃ i : Nat, elementsOf (ρ x) = some s ∧ h[s]? = some (.arr ls) ∧
       ρ k = .num b ∧ SafeIntegers.SafeInt b (i : Int) ∧ i < ls.length ∧
@@ -743,10 +747,11 @@ theorem holdsAt_mapM {F F' : IndexFact} {f : Nat → Option Nat} {ρ ρ' : Env} 
     (hm : F.mapM f = some F') (hf : ∀ s ∈ F.slots, ∀ t, f s = some t → ρ' t = ρ s) :
     F'.HoldsAt ρ' h ↔ F.HoldsAt ρ h := by
   induction F generalizing F' with
-  | apart a b =>
+  | either A B ihA ihB =>
     simp only [mapM, Option.bind_eq_bind, Option.bind_eq_some_iff, Option.pure_def, Option.some.injEq] at hm
-    obtain ⟨a', ha, b', hb, rfl⟩ := hm
-    simp only [HoldsAt, hf a (by simp [slots]) a' ha, hf b (by simp [slots]) b' hb]
+    obtain ⟨A', hA, B', hB, rfl⟩ := hm
+    exact or_congr (ihA hA (fun x hx y hy => hf x (by simp [slots, hx]) y hy))
+      (ihB hB (fun x hx y hy => hf x (by simp [slots, hx]) y hy))
   | guarded s p t B ih =>
     simp only [mapM, Option.bind_eq_bind, Option.bind_eq_some_iff, Option.pure_def, Option.some.injEq] at hm
     obtain ⟨s', hs, B', hB, rfl⟩ := hm
@@ -857,6 +862,10 @@ theorem mapM_total (f : Nat → Nat) : ∀ F : IndexFact, ∃ G, F.mapM (some �
   | .linear G => by
     obtain ⟨G', h⟩ := Linear.Fact.mapVars_some (Term.mapM' f) G
     exact ⟨.linear G', by simp only [mapM, Term.mapM_eq, h, Option.map_some]⟩
+  | .either A B => by
+    obtain ⟨A', hA⟩ := mapM_total f A
+    obtain ⟨B', hB⟩ := mapM_total f B
+    exact ⟨.either A' B', by simp [mapM, hA, hB]⟩
   | .guarded s p t B => by
     obtain ⟨B', hB⟩ := mapM_total f B
     exact ⟨.guarded (f s) p t B', by simp [mapM, hB]⟩
@@ -877,7 +886,7 @@ theorem holdsAt_map {F : IndexFact} {f : Nat → Nat} {ρ ρ' : Env} {h : Heap}
 theorem holdsAt_extend {F : IndexFact} {ρ : Env} {h : Heap} (vs : List Val) (hF : F.HoldsAt ρ h) :
     F.HoldsAt ρ (h ++ vs) := by
   induction F with
-  | apart a b => exact regionsApart_extend vs hF
+  | either A B ihA ihB => exact hF.imp ihA ihB
   | guarded s p t B ih =>
     obtain ⟨v, hv, hor⟩ := hF
     exact ⟨v, readGuard_extend vs hv, hor.imp id ih⟩
@@ -931,9 +940,9 @@ theorem holdsAt_extend {F : IndexFact} {ρ : Env} {h : Heap} (vs : List Val) (hF
 theorem holdsAt_congr {F : IndexFact} {ρ ρ' : Env} {h : Heap} (hs : ∀ s ∈ F.slots, ρ s = ρ' s) :
     F.HoldsAt ρ h ↔ F.HoldsAt ρ' h := by
   induction F with
-  | apart a b =>
-    simp only [slots, List.mem_cons, List.not_mem_nil, or_false, forall_eq_or_imp, forall_eq] at hs
-    simp only [HoldsAt, hs.1, hs.2]
+  | either A B ihA ihB =>
+    exact or_congr (ihA (fun x hx => hs x (by simp [slots, hx])))
+      (ihB (fun x hx => hs x (by simp [slots, hx])))
   | guarded s p t B ih =>
     simp only [slots, List.mem_cons, forall_eq_or_imp] at hs
     simp only [HoldsAt, hs.1, ih hs.2]
@@ -1539,6 +1548,7 @@ def keptBy (c : Changes) (first : Nat → String → Bool) : IndexFact → Bool
   | .linear F => F.vars.all (Term.keptBy c first) || match F with
     | .le G _ => Term.formKeptBy c first G
     | .ne _ _ => false
+  | .either A B => A.keptBy c first && B.keptBy c first
   | .guarded s p _ B => guardKept first s p && B.keptBy c first
   | .element .. | .every .. => false
   | .apart .. => c.store == .keep
@@ -1570,9 +1580,9 @@ theorem holdsAt_kept {c : Changes} {first : Nat → String → Bool} {F : IndexF
         exact ⟨ls', hls', hle, fun h => by simp [Changes.keepsLength, hcs] at h⟩
       | any => simp [hcs] at hk
   induction F with
-  | apart a b =>
-    simp only [keptBy, beq_iff_eq] at hk
-    exact regionsApart_kept hc hk hF
+  | either A B ihA ihB =>
+    simp only [keptBy, Bool.and_eq_true] at hk
+    exact hF.imp (ihA hk.1) (ihB hk.2)
   | guarded s p t B ih =>
     simp only [keptBy, Bool.and_eq_true] at hk
     obtain ⟨v, hv, hor⟩ := hF
@@ -1689,6 +1699,7 @@ theorem holdsAt_keptWith {c : Changes} {first views : Nat → String → Bool} {
   | int _ => exact holdsAt_kept hc hf (by simp [keptWith] at hk ⊢; exact hk) hF
   | length _ _ => exact holdsAt_kept hc hf (by simpa [keptWith] using hk) hF
   | bound _ _ _ => exact holdsAt_kept hc hf (by simpa [keptWith] using hk) hF
+  | either _ _ => exact holdsAt_kept hc hf (by simpa [keptWith] using hk) hF
   | guarded _ _ _ _ => exact holdsAt_kept hc hf (by simpa [keptWith] using hk) hF
   | element _ _ _ => exact holdsAt_kept hc hf (by simpa [keptWith] using hk) hF
   | every _ _ _ _ => exact holdsAt_kept hc hf (by simpa [keptWith] using hk) hF

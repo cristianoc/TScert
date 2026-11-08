@@ -73,29 +73,22 @@ const mutationControl = (body: () => Promise<void>): void => {
 const serving: boolean = process.argv[2] === "--controls";
 
 control(async (): Promise<void> => {
-  const scenarios: { file: string; fnName: string; terms: { name: string; path: string[]; term: "length" | "value"; coefficient: number }[]; bound: number }[] = [
-    { file: "indexof", fnName: "found", terms: [{ name: "at", path: [], term: "value", coefficient: -1 }], bound: 0 },
-    { file: "filled", fnName: "filled", terms: [{ name: "n", path: [], term: "value", coefficient: 1 },
-      { name: "xs", path: [], term: "length", coefficient: -1 }], bound: -1 },
-    { file: "map", fnName: "mapped", terms: [{ name: "xs", path: [], term: "length", coefficient: 1 },
-      { name: "ys", path: [], term: "length", coefficient: -1 }], bound: -1 },
-    { file: "push", fnName: "twice", terms: [{ name: "n", path: [], term: "value", coefficient: 1 },
-      { name: "xs", path: [], term: "length", coefficient: -1 }], bound: -3 },
-    { file: "literal", fnName: "literal", terms: [{ name: "xs", path: [], term: "length", coefficient: -1 }], bound: -3 },
-  ];
-  for (const { file, fnName, terms, bound } of scenarios) {
-    const artifacts = run(`native-length-${file}`);
-    const claims = readClaims(artifacts);
-    const source = readFileSync(sourceKey(artifacts), "utf8");
-    const fn = must(claims.functions.find(f => f.name === fnName), "native length function");
-    const entry = must(fn.entries.find(e => source.startsWith("return", e.start)), "return entry");
-    entry.facts.push({ guards: [], terms, bound });
-    const forged = writeClaims(artifacts, `${file}-forged-length`, claims);
-    const searched = produceWith(artifacts, forged, `${file}-forged-length`);
-    assert.equal(searched.status, 1, searched.stdout + searched.stderr);
-    assert.match(searched.stdout + searched.stderr, /does not establish the claims/, file);
-    invoke(forged, join(artifacts, "evidence.json"), artifacts, /^reject: source evidence /m);
-  }
+  const artifacts = run("invalid-pretext-clause-disjunction");
+  const source = readFileSync(sourceKey(artifacts), "utf8");
+  const claims = readClaims(artifacts);
+  const fn = must(claims.functions.find(f => f.name === "terminal"), "terminal's claims");
+  const at = source.indexOf("widths[index]!");
+  const read = must(fn.expressions.find(e => e.pos[0] === at && e.pos[1] === at + "widths[index]".length), "the element read");
+  read.type = [rowOf(claims, "num")];
+  const entry = must(fn.entries.find(e => e.start === source.indexOf("return widths")), "the return entry");
+  entry.facts.push({ guards: [], terms: [
+    { name: "index", path: [], term: "value", coefficient: 1 },
+    { name: "widths", path: [], term: "length", coefficient: -1 }], bound: -1 });
+  const forged = writeClaims(artifacts, "disjunction-strict-forged", claims);
+  const searched = produceWith(artifacts, forged, "disjunction-strict-forged");
+  assert.equal(searched.status, 1, `${searched.stdout}${searched.stderr}`);
+  assert.match(searched.stdout + searched.stderr, /does not establish the claims/);
+  process.stdout.write("linear disjunction: a strict bound forged from an inclusive arm is refused at its entry\n");
 });
 
 control(async (): Promise<void> => {
@@ -375,8 +368,9 @@ control(async (): Promise<void> => {
   const read = "prepared.hyphens[i]";
   const at = source.indexOf(read, fnStart);
   type Fact = SourceClaims["functions"][number]["entries"][number]["facts"][number];
-  type LinearTermClaim = Fact["terms"][number];
-  type GuardClaim = Fact["guards"][number];
+  type PlainFact = Exclude<Fact, { either: unknown }>;
+  type LinearTermClaim = PlainFact["terms"][number];
+  type GuardClaim = PlainFact["guards"][number];
   type LinearClaim = Fact;
   const term = (path: string[], coefficient: number): LinearTermClaim =>
     ({ name: "prepared", path, term: "length", coefficient });

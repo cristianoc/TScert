@@ -98,6 +98,7 @@ const equationReaders = [
     le: "an index fact's field, read by the instance EffectJson.lean derives for HeapKnowledge.IndexFact and Linear.Fact",
     length: "an index fact's field, read by the instance EffectJson.lean derives for HeapKnowledge.IndexFact and Linear.Fact",
     linear: "an index fact's field, read by the instance EffectJson.lean derives for HeapKnowledge.IndexFact and Linear.Fact",
+    either: "a disjunctive index fact, derived by EffectJson.lean",
     guarded: "an index fact's field, read by the instance EffectJson.lean derives for HeapKnowledge.IndexFact and Linear.Fact",
     tag: "a guarded index fact's field, read by the instance EffectJson.lean states for HeapKnowledge.GuardTag's fact",
     path: "a linear term's field, read by the instance EffectJson.lean derives for HeapKnowledge.Term",

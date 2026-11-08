@@ -122,7 +122,8 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
              bindings, as Lean reads an operand (`Linear_facts.linear`). *)
           let form p = Option.bind (if p = 0 then receiver else List.nth_opt args (p - 1))
             (Linear_facts.linear env !Linear_facts.current_facts) in
-          let holds = function
+          let rec holds = function
+            | Semantic.Either (a,b) -> holds a || holds b
             | Semantic.Bound_by (x,k,strict) -> (match name x, name k with
               | Some a, Some i when List.exists (fun (a',i',s) -> a' = a && i' = i && (s || not strict))
                   !Linear_facts.current_bounds -> true

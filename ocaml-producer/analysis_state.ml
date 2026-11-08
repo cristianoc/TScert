@@ -109,6 +109,7 @@ let create diagnostics flows offered declarations module_functions arities bound
       | _ -> None) f.requires in
     let env0 = if facts = [] && bounds = [] then env0 else Linear_facts.add_bounds (Linear_facts.add env0 facts) bounds in
     (* Its guarded facts (PROGRAM-TYPING.md, "Guarded clauses"), alike. *)
+    let env0 = Linear_facts.dadd env0 (Linear_facts.disjunctions name f.requires) in
     let guarded = List.filter_map (Linear_facts.of_guarded_fact name) f.requires in
     let env0 = if guarded = [] then env0 else Linear_facts.gadd env0 guarded in
     (* Its quantified facts (PROGRAM-TYPING.md, "Quantified clauses"), alike. *)

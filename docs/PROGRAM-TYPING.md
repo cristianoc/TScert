@@ -2444,7 +2444,7 @@ with guards ([guarded clauses](#guarded-clauses)) and end with a quantified
 atom ([quantified clauses](#quantified-clauses)). Every other form of the
 draft's grammar ([checked bound
 annotations](drafts/checked-bound-annotations.md): `old`, `result`, computed
-keys, a `||` after an atom, `!`) is refused with the declaration's location.
+keys) is refused with the declaration's location.
 
 **Calls the producer types.** A call selects a signature stating a
 precondition where the producer's own facts at the call's statement establish
@@ -2488,7 +2488,7 @@ index past the clause's bound). Exported: positive
 `precondition-exported` and `precondition-value-import` (an
 importer's calls of `imports-project/bounded.ts`'s functions); negative, run
 under Node, `invalid-precondition-value-import` (an importer's call
-at the length). Refused form: `precondition-disjunction-refused`.
+at the length). Refused operand: `precondition-disjunction-refused` (the comparison's value is not stated a safe integer).
 Over paths: positive `field-path-reads`; negative, each run under Node,
 `invalid-field-path-read-at-length` (a call at the flags' typed-array
 length), `invalid-field-path-read-other-record` (a read bounded by another
@@ -2627,7 +2627,7 @@ over `widths` and `segmentFlags`. A failing return is refused at its
 statement.
 
 **The excluded forms**, refused with the clause's location: a clause outside
-the language (a `||` after an atom, `!`), as a precondition's; guards are
+the language, as a precondition's; guards are
 [guarded clauses](#guarded-clauses). Closures, methods, overloaded and nested
 declarations state no invariant facts.
 
@@ -2710,6 +2710,36 @@ the first guard and `hyphenWidths`'s length past the second. Each fact the
 conjunction elaborates to, with every safe-integer obligation of its
 arithmetic, is wrapped in a **guarded fact** of each guard, the first
 outermost.
+
+**Linear disjunctions.** A clause also admits `A || B`, conjunctions in
+parentheses, and `!A` where `A` contains linear comparisons. Negation reverses
+each comparison and exchanges conjunction and disjunction; equality's
+negation is the disjunction of the two strict orders. Every branch states
+the safe-integer obligations of its arithmetic. A comparison's value terms
+must be stated safe integers by its conjunction or an unconditional clause.
+Thus `!(end > 0) || index < widths.length` expresses an implication over
+safe integers. The parser refuses more than 64 alternatives or a distribution
+requiring more than 1024 facts.
+
+A disjunction is an index fact with the ordinary disjunctive meaning:
+
+```math
+⟦A \lor B⟧_{\rho,h} \iff ⟦A⟧_{\rho,h} \lor ⟦B⟧_{\rho,h}
+```
+
+Conjunctions on either side distribute into conjuncts of disjunctions.
+Renaming, heap extension and preservation of both arms preserve the fact
+(proved). Entailment introduces a disjunction by either arm and uses a
+source disjunction by proving the target from each arm (proved). The search
+permits eight nested case splits and refuses an exhausted search.
+
+**Implementation of linear disjunctions.** The fact is `IndexFact.either`;
+`caseEntails_sound` proves case splitting and `guardEntails_sound` proves
+introduction. `guardFollows_sound` connects them to the edge and contract
+checks. Entry claims carry recursive `either` arms over guarded linear
+claims. The producer carries these facts across statements, retains common
+facts at joins, and proposes a surviving arm where its linear search refutes
+the other. Each proposed entry is checked by Lean.
 
 **Meaning.** A guard's path reads a value with each field the object's read
 of a string key: the location's value where the object owns the key,

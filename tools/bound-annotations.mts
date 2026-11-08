@@ -5,11 +5,11 @@
 // to index facts at the call's positions (`HeapKnowledge.IndexFact`: 0 the
 // receiver, i + 1 the i-th actual).
 //
-// The clause language read here is a conjunction of atoms over the
-// declaration's parameters, after guards:
+// The clause language read here combines linear atoms over the
+// declaration's parameters, with linear disjunction and negation after guards:
 //
 //   K ::= G || K | C        G ::= p === null | p === undefined
-//   C ::= A && C | A | forall i in p: B | forall i < n of p: B
+//   C ::= C && C | C || C | !C | (C) | A | forall i in p: B
 //   A ::= safeInteger(p) | E rel E      rel ∈ { <, <=, >, >=, === }
 //   E ::= n | p | p.length | n * p | n * p.length | E + E | E - E | -E | (E)
 //   p ::= x | p.f
@@ -37,12 +37,8 @@
 // `forall i in p: B`, the clause's last, states its body of every index `i`
 // below `p.length`, of its element `p[i]` and of the clause's other terms
 // (PROGRAM-TYPING.md, "Quantified clauses"; `IndexFact.every`). Every other
-// form of the draft's grammar (`old`, computed keys, a `||` after
-// an atom, `!`) is refused with the clause's location, as is a path whose field no type
-// resolves. A postcondition uses the same language with `result` at position
-// zero and parameters one position after their call positions. Its facts
-// hold in the return heap. Unconditional precondition integrality clauses
-// permit value terms; the return check proves every resulting fact.
+// form of the draft's grammar (`old`, `result`, computed keys) is refused with the clause's location, as is a path whose field no type
+// resolves.
 //
 // A type invariant (PROGRAM-TYPING.md, "Type invariants") is an
 // `@invariant C` tag of a type alias's or an interface's leading JSDoc, its
@@ -223,7 +219,7 @@ class Parser {
   done(): boolean { return this.at === this.ts.length; }
   /** A clause: its guards `p === null ||`, `p === undefined ||`, then a
    * conjunction. */
-  clause(): Clause {
+  clause(): Clause[] {
     const guards: Guard[] = [];
     for (;;) {
       const saved = this.at;
@@ -231,7 +227,56 @@ class Parser {
       if (g === null) { this.at = saved; break; }
       guards.push(g);
     }
-    return { guards, atoms: this.conjunction() };
+    const alternatives = this.disjunction();
+    if (!this.done()) throw new ClauseError("unexpected token after the clause");
+    return alternatives.map(atoms => ({ guards, atoms }));
+  }
+  private disjunction(): Atom[][] {
+    let out = this.booleanConjunction();
+    while (this.isOp("||")) { this.at++; out = [...out, ...this.booleanConjunction()]; }
+    if (out.length > 64) throw new ClauseError("the clause has more than 64 alternatives");
+    return out;
+  }
+  private booleanConjunction(): Atom[][] {
+    let out = this.booleanPrimary();
+    while (this.isOp("&&")) {
+      this.at++;
+      const right = this.booleanPrimary();
+      if (out.length * right.length > 64) throw new ClauseError("the clause has more than 64 alternatives");
+      out = out.flatMap(a => right.map(b => [...a, ...b]));
+    }
+    return out;
+  }
+  private booleanPrimary(): Atom[][] {
+    if (this.isOp("!")) {
+      this.at++;
+      const body = this.booleanPrimary();
+      let out: Atom[][] = [[]];
+      for (const conjunction of body) {
+        const negated = conjunction.flatMap(a => {
+          if (a.k !== "compare") throw new ClauseError("negation requires linear comparisons");
+          const opposite: Record<string, string> = { "<": ">=", "<=": ">", ">": "<=", ">=": "<" };
+          if (a.op === "===") return [{ ...a, op: "<" }, { ...a, op: ">" }];
+          const op = opposite[a.op];
+          if (op === undefined) throw new ClauseError("unsupported negated comparison");
+          return [{ ...a, op }];
+        });
+        if (out.length * negated.length > 64) throw new ClauseError("the clause has more than 64 alternatives");
+        out = out.flatMap(a => negated.map(b => [...a, b]));
+      }
+      return out;
+    }
+    const saved = this.at;
+    try { return [[this.atom()]]; }
+    catch (e) {
+      if (!(e instanceof ClauseError)) throw e;
+      this.at = saved;
+      if (!this.isOp("(")) throw e;
+      this.at++;
+      const out = this.disjunction();
+      this.expect(")");
+      return out;
+    }
   }
   private guard(): Guard | null {
     const x = this.peek();
@@ -244,12 +289,6 @@ class Parser {
     if (!this.isOp("||")) return null;
     this.at++;
     return { path, tag: v.v };
-  }
-  conjunction(): Atom[] {
-    const atoms = [this.atom()];
-    while (atoms[atoms.length - 1]?.k !== "forall" && this.isOp("&&")) { this.at++; atoms.push(this.atom()); }
-    if (!this.done()) throw new ClauseError("the clause is a conjunction of atoms (`&&`) after its guards (`p === null ||`, `p === undefined ||`), no other connective");
-    return atoms;
   }
   private atom(): Atom {
     const t = this.peek();
@@ -352,6 +391,7 @@ function computed(e: Linear): Linear {
 
 /** The positions an index fact names. */
 export function indexFactPositions(f: IndexFact): number[] {
+  if ("either" in f) return [...indexFactPositions(f.either.left), ...indexFactPositions(f.either.right)];
   if ("guarded" in f) return [f.guarded.slot, ...indexFactPositions(f.guarded.body)];
   if ("index" in f) return [f.index.slot];
   if ("int" in f) return [f.int.slot];
@@ -443,7 +483,7 @@ export function elaborateRequires(clauses: readonly string[], params: readonly C
       if (typeof ts === "string") throw new ClauseError(ts);
       return new Parser(ts).clause();
     });
-    if (parsed.some(c => c.guards.some(g => g.tag === "undefined")) && params.some(q => q.name === "undefined"))
+    if (parsed.flat().some(c => c.guards.some(g => g.tag === "undefined")) && params.some(q => q.name === "undefined"))
       throw new ClauseError("the clause's `undefined` is shadowed by a parameter");
     const param = (name: string): ClauseParameter => {
       const p = params.find(q => q.name === name);
@@ -558,19 +598,33 @@ export function elaborateRequires(clauses: readonly string[], params: readonly C
       }
     };
     /** The values the unguarded clauses state safe integers. */
-    const assumed = assumptions.map(text => {
-      const ts = tokens(text);
-      if (typeof ts === "string") throw new ClauseError(ts);
-      return new Parser(ts).clause();
-    });
-    const unguarded = new Set([...parsed, ...assumed].filter(c => c.guards.length === 0).flatMap(c => c.atoms.flatMap(a => {
+    const unguarded = new Set(parsed.filter(cs => cs.length === 1).flat().filter(c => c.guards.length === 0).flatMap(c => c.atoms.flatMap(a => {
       if (a.k !== "safeInteger") return [];
       const [x = "", ...fields] = a.of.split(".");
       return [JSON.stringify({ kind: "value", slot: param(x).position, path: fields })];
     })));
-    for (const c of parsed) elaborate(c, unguarded);
+    const result: IndexFact[] = [];
+    for (const alternatives of parsed) {
+      const branches = alternatives.map(c => {
+        intFacts.length = 0; compared.length = 0;
+        elaborate(c, unguarded);
+        return [...intFacts, ...compared];
+      });
+      const common = (branches[0] ?? []).filter(f => branches.every(bs => bs.some(g => JSON.stringify(f) === JSON.stringify(g))));
+      result.push(...common);
+      const residual = branches.map(bs => bs.filter(f => !common.some(g => JSON.stringify(f) === JSON.stringify(g))));
+      let distributed: IndexFact[] | undefined;
+      for (const branch of residual) {
+        if (distributed === undefined) distributed = branch;
+        else {
+          if (distributed.length * branch.length > 1024) throw new ClauseError("the clause expands to more than 1024 facts");
+          distributed = distributed.flatMap(left => branch.map(right => ({ either: { left, right } })));
+        }
+      }
+      result.push(...(distributed ?? []));
+    }
     const seen = new Set<string>();
-    const facts = [...intFacts, ...compared].filter(f => {
+    const facts = result.filter(f => {
       const key = JSON.stringify(f);
       return seen.has(key) ? false : (seen.add(key), true);
     });

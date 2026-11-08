@@ -23,6 +23,12 @@ read, the term bounding its indices, and its body's facts `Σ c·x ≤ d`. -/
 abbrev EveryClaim := (String × List String) × (String × List String × HeapKnowledge.Term.Kind) ×
   List (List (BodyRef × Int) × Int)
 
+/-- A clause proposed at an entry: a guarded linear fact or a disjunction. -/
+inductive ClauseClaim where
+  | linear (guards : List (String × List String × HeapKnowledge.GuardTag))
+      (terms : List (String × List String × HeapKnowledge.Term.Kind × Int)) (bound : Int)
+  | either (left right : ClauseClaim)
+
 /-- Claims attached to one execution point. Source spans locate the syntax
 inside that point; separate copies of a finalizer have separate point IDs. -/
 structure PointData (ι : Type) where
@@ -37,8 +43,7 @@ structure PointData (ι : Type) where
   guards, each a value binding's name, a path and a tag (PROGRAM-TYPING.md,
   "Guarded clauses"), then terms of value bindings' names with integer
   coefficients, and a bound. -/
-  entryFacts : List (Nat × List (List (String × List String × HeapKnowledge.GuardTag) ×
-    List (String × List String × HeapKnowledge.Term.Kind × Int) × Int)) := []
+  entryFacts : List (Nat × List ClauseClaim) := []
   /-- At a statement entry, the quantified facts the producer proposes. -/
   entryEvery : List (Nat × List EveryClaim) := []
   /-- At a statement entry, the region facts the producer proposes: pairs of
@@ -82,8 +87,7 @@ structure Function (ι : Type) where
   entryCurrent : List (Nat × List (String × List (List PropKey × Ty ι))) := []
   exprCurrent : List (Span × List (PropKey × Ty ι)) := []
   entryBounds : List (Nat × List (String × String × Bool)) := []
-  entryFacts : List (Nat × List (List (String × List String × HeapKnowledge.GuardTag) ×
-    List (String × List String × HeapKnowledge.Term.Kind × Int) × Int)) := []
+  entryFacts : List (Nat × List ClauseClaim) := []
   entryEvery : List (Nat × List EveryClaim) := []
   entryApart : List (Nat × List (String × String)) := []
   /-- The source closure's interior obligations, one per claimed signature. -/

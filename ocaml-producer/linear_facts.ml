@@ -174,6 +174,27 @@ let gfact_parts n : gfact option =
 let is_gfact n = gfact_parts n <> None
 let gfacts env : gfact list = List.filter_map (fun (n,_) -> gfact_parts n) env
 
+(* Disjunctions of linear facts, carried as entry claims. *)
+type dfact = DAtom of fact | DEither of dfact * dfact
+let rec djson = function
+  | DAtom (t,b) -> Json.String (fact_key t b)
+  | DEither (a,b) -> Json.Array [djson a;djson b]
+let rec ddecode = function
+  | Json.String s -> Option.map (fun f -> DAtom f) (fact_parts s)
+  | Json.Array [a;b] -> (match ddecode a,ddecode b with Some a,Some b -> Some (DEither (a,b)) | _ -> None)
+  | _ -> None
+let dfact_key d = "\003D" ^ Json.encode (djson d)
+let dfact_parts n =
+  if not (String.starts_with ~prefix:"\003D" n) then None
+  else ddecode (Json.parse (String.sub n 2 (String.length n - 2)))
+let is_dfact n = String.starts_with ~prefix:"\003D" n
+let dfacts env = List.filter_map (fun (n,_) -> dfact_parts n) env
+let rec datoms = function DAtom f -> [f] | DEither (a,b) -> datoms a @ datoms b
+let dbindings d = List.concat_map (fun (t,_) -> List.map (fun (n,_) -> term_binding n) t) (datoms d)
+let dadd env ds = List.filter (fun (n,_) -> not (is_dfact n)) env @
+  List.map (fun d -> dfact_key d,Value Semantic.top) (List.sort_uniq compare ds)
+let current_dfacts : dfact list ref = ref []
+
 (* A quantified fact (PROGRAM-TYPING.md, "Quantified clauses"; Lean's
    `IndexFact.every`): for every index below the term `stop` of the array a
    value binding's path reads, each body fact holds, its terms the index
@@ -234,7 +255,7 @@ let rapart (rs : rfact list) x y = List.mem (x,y) rs || List.mem (y,x) rs
 
 let add env (fs : fact list) =
   let fs = tighten fs in
-  List.filter (fun (n,_) -> not (is_fact n) || is_gfact n || is_efact n || is_rfact n) env @ List.map (fun (t,b) -> fact_key t b, Value Semantic.top) fs
+  List.filter (fun (n,_) -> not (is_fact n) || is_gfact n || is_efact n || is_dfact n) env @ List.map (fun (t,b) -> fact_key t b, Value Semantic.top) fs
 let gadd env (gs : gfact list) =
   List.filter (fun (n,_) -> not (is_gfact n)) env @
     List.map (fun g -> gfact_key g, Value Semantic.top) (List.sort_uniq compare gs)
@@ -353,6 +374,16 @@ let value_ranges (fs : fact list) : fact list =
    the facts, or, where they alone entail no goal, with the range of each
    safe integer they name. *)
 let entails fs (goal : fact) = entails_held fs goal || entails_held (fs @ value_ranges fs) goal
+let rec dpossible fs = function
+  | DAtom f -> not (entails (f :: fs) ([], -1))
+  | DEither (a,b) -> dpossible fs a || dpossible fs b
+let rec dfreed fs = function
+  | DAtom f -> [f]
+  | DEither (a,b) ->
+    if not (dpossible fs a) then dfreed fs b
+    else if not (dpossible fs b) then dfreed fs a else []
+let deliminate fs ds = List.sort_uniq compare (fs @ List.concat_map (dfreed fs) ds)
+
 
 (* The ranges Lean's knowledge states of each length, typed-array length and
    string's length the facts name (`HeapKnowledge.lengthRange`, `viewRange`). *)
@@ -1367,7 +1398,7 @@ let with_test env (c : expr) yes f =
     let array = !array_path env in
     let t,fl = comparison ~array env saved c in
     let freed,gs = geliminate (excluded env c yes) gsaved in
-    current_facts := saved @ (if yes then t else fl) @ freed;
+    current_facts := deliminate (saved @ (if yes then t else fl) @ freed) !current_dfacts;
     current_gfacts := gs;
     Fun.protect ~finally:(fun () -> current_facts := saved; current_gfacts := gsaved) f
   end
@@ -1404,6 +1435,17 @@ let rec of_guarded_fact (name : int -> string option) (fact : Semantic.index_fac
         | Semantic.Guarded _ -> Option.map (fun (gs,f) -> guard :: gs,f) (of_guarded_fact name body)
         | _ -> (match of_index_facts name [body] with [f] -> Some ([guard],f) | _ -> None)))
   | _ -> None
+
+let rec of_disjunction name = function
+  | Semantic.Either (a,b) -> (match of_disjunction name a,of_disjunction name b with
+    | Some a,Some b -> Some (DEither (a,b)) | _ -> None)
+  | f -> (match of_index_facts name [f] with [f] -> Some (DAtom f) | _ -> None)
+let disjunctions name fs = List.filter_map (function
+  | Semantic.Either _ as f -> of_disjunction name f | _ -> None) fs
+let dstatement env ds s =
+  let assigned = names_assigned s env in
+  List.filter (fun d -> not (List.exists (fun b -> List.mem b assigned) (dbindings d)) &&
+    (statement_heap_free env s || List.for_all (stable_fact env) (datoms d))) ds
 
 (* The guarded facts the signatures of the binding `f` state at a call's
    normal return, as `call_facts` states its facts. *)

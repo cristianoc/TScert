@@ -76,6 +76,7 @@ export type IndexFact =
   | { readonly bound: { readonly array: number; readonly index: number; readonly strict: boolean } }
   | { readonly int: { readonly slot: number } }
   | { readonly linear: { readonly fact: LinearFact } }
+  | { readonly either: { readonly left: IndexFact; readonly right: IndexFact } }
   | { readonly guarded: { readonly slot: number; readonly path: readonly string[]; readonly tag: GuardTag;
       readonly body: IndexFact } }
   | { readonly element: { readonly value: number; readonly array: number; readonly index: number } }

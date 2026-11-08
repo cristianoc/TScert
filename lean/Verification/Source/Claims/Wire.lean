@@ -138,11 +138,35 @@ structure FactGuard where
 /-- A linear fact the producer proposes at a statement entry: where none of
 its guards, in order, reads its tag's value, the sum of the terms is at most
 `bound`; every term denotes an integer. -/
-structure Fact where
+structure LinearFactClaim where
   guards : List FactGuard
   terms : List FactTerm
   bound : Int
   deriving ToJson, FromJson
+inductive Fact where
+  | linear (fact : LinearFactClaim)
+  | either (left right : Fact)
+
+partial def Fact.fromJson (j : Json) : Except String Fact := do
+  if let .ok e := j.getObjVal? "either" then
+    fieldsExactly j ["either"]
+    fieldsExactly e ["left", "right"]
+    return .either (← Fact.fromJson (← jField e "left")) (← Fact.fromJson (← jField e "right"))
+  fieldsExactly j ["guards", "terms", "bound"]
+  return .linear (← Lean.fromJson? j)
+
+instance : FromJson Fact := ⟨Fact.fromJson⟩
+
+def Fact.toJson : Fact → Json
+  | .linear f => Lean.toJson f
+  | .either left right => Json.mkObj [("either", Json.mkObj [("left", left.toJson), ("right", right.toJson)])]
+instance : ToJson Fact := ⟨Fact.toJson⟩
+
+def Fact.claim : Fact → SourceClaims.ClauseClaim
+  | .linear f => .linear (f.guards.map fun g => (g.name, g.path, g.tag))
+      (f.terms.map fun t => (t.name, t.path, t.term, t.coefficient)) f.bound
+  | .either left right => .either left.claim right.claim
+
 /-- A term a proposed quantified fact names: what the binding `name` holds,
 its named data fields `path` read from it in turn, read as `term` says. -/
 structure TermRef where
@@ -305,9 +329,7 @@ private def pointData (entries : List (Entry ι)) (expressions : List (Expressio
     exprs := expressions.map (fun e => (e.pos,e.type.ground))
     entryCurrent := entries.map (fun e => (e.start,e.bindings.filterMap fun b => b.current.map (b.name,·)))
     entryBounds := entries.map (fun e => (e.start,e.bounds.map fun b => (b.array, b.index, b.strict)))
-    entryFacts := entries.map (fun e => (e.start,e.facts.map fun f =>
-      (f.guards.map fun g => (g.name, g.path, g.tag),
-        f.terms.map fun t => (t.name, t.path, t.term, t.coefficient), f.bound)))
+    entryFacts := entries.map (fun e => (e.start,e.facts.map Fact.claim))
     entryEvery := entries.map (fun e => (e.start,e.quantified.map fun q =>
       ((q.name, q.path), (q.stop.name, q.stop.path, q.stop.term), q.body.map fun b =>
         (b.terms.map fun (v, c) => ((match v with

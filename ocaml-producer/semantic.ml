@@ -44,6 +44,7 @@ type index_fact = Index_at of int | Length_of of int * int | Bound_by of int * i
   (* Where the named data fields read from the position do not give the
      value the tag names, `null` or `undefined`, the body holds
      (PROGRAM-TYPING.md, "Guarded clauses"). *)
+  | Either of index_fact * index_fact
   | Guarded of int * string list * string * index_fact
   (* The value at the first position is what the array at the second holds
      at the index at the third, below its length (Lean's `IndexFact.element`). *)
