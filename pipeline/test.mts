@@ -300,6 +300,9 @@ control(async (): Promise<void> => {
   const source = readFileSync(sourceKey(artifacts), "utf8");
   const claims = readClaims(artifacts);
   const fn = must(claims.functions.find(f => f.name === "read"), "read's claims");
+  const readAt = source.indexOf("out[count - 1]", source.indexOf("return out[count"));
+  must(fn.expressions.find(e => e.pos[0] === readAt && e.pos[1] === readAt + "out[count - 1]".length),
+    "the element read").type = [rowOf(claims, "num")];
   const entry = must(fn.entries.find(e => e.start === source.indexOf("return out[count")), "the read's entry");
   entry.facts.push({ guards: [], terms: [
     { name: "count", path: [], term: "value", coefficient: 1 },
