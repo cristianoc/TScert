@@ -2176,8 +2176,10 @@ Defaulted and optional parameters may occur when the clause does not name them.
 
 The defining unit establishes each clause at every normal return through
 [return-ensures](#type-invariants). Module calls and analyzed importing calls
-receive the same facts through `call-ensures`; an exported declaration's
-postcondition adds no trust assumption. Acceptance's result-fact conclusion
+receive the same facts through `call-ensures`. An imported source signature
+stating result facts requires a [certified body](SOURCE-CONTRACTS.md#certified-imports);
+a failed or unavailable certification refuses that import. An exported
+declaration's postcondition adds no trust assumption. Acceptance's result-fact conclusion
 in `checkUnitJson_safe` covers these obligations with its existing statement.
 The front end's shared `postcondition` elaboration supplies both the
 function's `ensures` and every imported signature's `ensures`.
@@ -2187,7 +2189,9 @@ a string-length allocation and a result path; the builder's explicit length
 check establishes its return fact. `written-ensures-value-import` checks a
 caller across an analyzed import. `invalid-written-ensures-body` returns an
 array shorter than its contract, and `invalid-written-ensures-unstated`
-reads below a count absent from its callee's contract (under Node:
+reads below a count absent from its callee's contract.
+`invalid-written-ensures-value-import` reads through a false imported
+contract; withdrawing certification cannot retain that result fact (under Node:
 `undefined` and `NaN`). `written-ensures-reassigned-refused` and
 `written-ensures-old-refused` exercise the entry-value restrictions;
 `written-ensures-default-refused` checks a defaulted parameter reference. A control

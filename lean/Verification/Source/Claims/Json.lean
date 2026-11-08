@@ -43,9 +43,9 @@ def ensuresRefusal {σ ι : Type} [Labels ι] [StoreView σ ι] (name : String) 
     | some node => !GraphCode.edgesTrack T l node
     | none => false
   if losing then
-    some s!"source ensures refusal at [{pos.1},{pos.2}): an edge in '{name}' loses the slot holding a parameter whose type invariant its returns state"
+    some s!"source ensures refusal at [{pos.1},{pos.2}): an edge in '{name}' loses the slot holding a parameter named by its postcondition"
   else
-    some s!"source ensures refusal at [{pos.1},{pos.2}): a return of '{name}' does not establish the postcondition its result's and its parameters' type invariants state"
+    some s!"source ensures refusal at [{pos.1},{pos.2}): a return of '{name}' does not establish the postcondition stated by its declaration"
 
 /-- The located refusal of a footprint a unit claims for its declaration, or
 for a closure of its code, that its graph and certificate do not establish:

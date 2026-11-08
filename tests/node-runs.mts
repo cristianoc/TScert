@@ -10,6 +10,9 @@ import { join } from "node:path";
 import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-example.mts";
 import { cases } from "../pipeline/cases.mts";
 
+assert.equal(runNode("invalid-written-ensures-value-import", "console.log(Number.isNaN(read(1)));", {
+  "../imports-project/false-ensures.js": fileURLToPath(new URL("../pipeline/imports-project/false-ensures.ts", import.meta.url))
+}).stdout, "true", "a false imported result contract produces NaN under Node");
 assert.equal(runExample("invalid-written-ensures-body", "typeof short(1)[0]"), "undefined",
   "a false written result length returns an absent element");
 assert.equal(runExample("invalid-written-ensures-unstated", "Number.isNaN(read(1))"), true,

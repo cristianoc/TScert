@@ -313,6 +313,24 @@ control(async (): Promise<void> => {
 });
 
 control(async (): Promise<void> => {
+  // A result contract from source code requires the body's certification,
+  // including when a producer omits the qualified read altogether.
+  const artifacts = run("written-ensures-value-import");
+  const claims = readClaims(artifacts);
+  claims.qualified = [];
+  const forged = writeClaims(artifacts, "written-ensures-unqualified", claims);
+  for (const mode of ["--produce-units", "--check-units"]) {
+    const result = tested(verifierCall(verifier, [mode, join(artifacts, "fragment.json"), forged,
+      sourceKey(artifacts), join(artifacts, mode === "--produce-units" ? "unqualified-evidence.json" : "evidence.json"),
+      ...(mode === "--produce-units" ? ["12"] : [])]));
+    assert.ifError(result.error);
+    assert.equal(result.status, 1, result.stdout + result.stderr);
+    assert.match(result.stdout + result.stderr, /imported postcondition requires a certified body/);
+  }
+  process.stdout.write("written ensures: an imported result fact with its certification omitted, refused in production and consumption\n");
+});
+
+control(async (): Promise<void> => {
   // A type invariant claimed of a value no boundary gives it: the cast
   // record's `segmentFlags.length === widths.length` forged at the entry of
   // the walker's call, which requires it, is refused at that entry where
