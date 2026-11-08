@@ -2062,7 +2062,12 @@ claiming it.
   of parameters, the facts through the fields of a value binding declared
   before every cell it writes, whose record the cells' separation keeps
   apart. A test `a && f(…)` or `a || f(…)`, `a` writing no heap, gains each
-  fact `f` states at its returns that its entry's facts entail. Every other statement forgets them.
+  fact `f` states at its returns that its entry's facts entail. Of `a || b`,
+  the `true` answer states the facts both of its ways entail, `a`'s `true`
+  and `b`'s `true` after `a`'s `false`, and of `a && b` the `false` answer
+  likewise. A term names a binding by the fragment's name for it, a
+  shadowing local's `after@L:C` included. Every other statement forgets
+  them.
 - *Elimination.* A binding of a linear fact that an assignment rebinds or
   that leaves scope is eliminated as Lean eliminates a dropped slot, so
   `let j = i + 1; … i = j` retains $`1\le j`$, then $`0\le i`$, from
