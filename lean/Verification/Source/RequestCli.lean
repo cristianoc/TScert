@@ -334,25 +334,37 @@ def checkUnitsFile (astPath claimsPath fileKey evidencePath : String) (names : O
     -- The document's heads, matched with each slice's (`Translate.headMap`),
     -- their signatures computed once.
     let target ← IO.mkRef (none : Option SourceClaimJson.Translate.Target)
-    let translated (evidence : Json) : Option (Array EquationLowering.Draft) → IO (Except String Json)
-      | none => pure (.ok evidence)
-      | some heads => do
+    -- A slice's line is written over the document's store each way a head
+    -- may be chosen among equals (`Translate.Choice`), in turn until the
+    -- check accepts one: the verdict of that writing, or of the first.
+    let verdictOf (unit : String) (evidence : Json) : Option (Array EquationLowering.Draft) →
+        IO (Except String (List String))
+      | none => pure (SourceClaimJson.unitVerdict f budget unit evidence)
+      | some slice => do
         let t := (← target.get).getD (SourceClaimJson.Translate.Target.of f.F.store.heads.heads)
-        match SourceClaimJson.Translate.translate heads t evidence with
-        | .ok (e, t) => target.set (some t); pure (.ok e)
-        | .error reason => target.set (some t); pure (.error reason)
+        let (among, t) := SourceClaimJson.Translate.candidates slice t
+        target.set (some t)
+        let mut first : Option (Except String (List String)) := none
+        let mut seenWritings : List Json := []
+        for choice in [SourceClaimJson.Translate.Choice.named, .latest, .earliest] do
+          match SourceClaimJson.Translate.translate slice t.heads among choice evidence with
+          | .error reason => first := first.orElse fun _ => some (.error reason)
+          | .ok e =>
+            if seenWritings.contains e then continue
+            seenWritings := e :: seenWritings
+            let v := SourceClaimJson.unitVerdict f budget unit e
+            if v.isOk then return v
+            first := first.orElse fun _ => some v
+        return first.getD (.error s!"no evidence for unit {unit}")
     forEachLine evidencePath fun bytes => do
       match lineJson bytes >>= SourceClaimJson.readLine with
       | .error reason => note reason
       | .ok (unit, evidence, heads) =>
-        match ← translated evidence heads with
-        | .error reason => note reason
-        | .ok evidence =>
-          if let some (_, members) := wanted.find? (·.1 == unit) then
-            let verdict := SourceClaimJson.unitVerdict f budget unit evidence
-            print unit members verdict
-            seen.modify (·.insert unit)
-            if let .error reason := verdict then note reason
+        if let some (_, members) := wanted.find? (·.1 == unit) then
+          let verdict ← verdictOf unit evidence heads
+          print unit members verdict
+          seen.modify (·.insert unit)
+          if let .error reason := verdict then note reason
     let seen ← seen.get
     for (unit, members) in wanted do
       if !seen.contains unit then
