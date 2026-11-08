@@ -2286,7 +2286,7 @@ operand of `&&` and `||`, a strict equality's false branch among them),
 and a loop to `e !== n`), `derived-index-loop` (an index reassigned from one
 derived from it), `call-keeps-heap-loop` (a typed array's bound across a
 call of a function whose loop writes only its locals), `facts-across-writes`
-(bounds across field writes and an element write), `method-calls-keep-facts`
+(bounds across field writes and element writes, at a binding and at `j + 1`), `method-calls-keep-facts`
 (a `WeakMap`'s `get`, a `Map`'s construction and `set`),
 `weak-map-set-keeps-facts` (a `WeakMap`'s `set` and `delete`),
 `for-of-keeps-counter-facts` (an array iterator's step),
@@ -2296,7 +2296,8 @@ field's write) and `typed-array-reads-below-length` (a `Uint8Array`, a
 over a view's length). Negative, each run under Node:
 `invalid-bounded-element-read-inclusive` (a loop to `j <= xs.length`) and
 `invalid-bounded-element-read-shrunk` (a `pop` between the test and the
-read), `invalid-logical-guard-read-inclusive` (`e <= xs.length && xs[e]!`),
+read), `invalid-facts-across-write-at-length` (a write at `j + 1` past the
+last index, which grows the array), `invalid-logical-guard-read-inclusive` (`e <= xs.length && xs[e]!`),
 `invalid-logical-guard-read-wrong-answer` (`e < xs.length || xs[e]!`),
 `invalid-logical-guard-read-equal` (`e !== xs.length || xs[e]!`),
 `invalid-adjacent-pair-read-past` (a read at `i + 1` under `i < xs.length`),

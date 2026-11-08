@@ -37,3 +37,16 @@ export function filled(xs: number[]): number {
   }
   return s;
 }
+
+// pretext's `segmentAtLineBreaks`: a write at `j + 1`, an index the facts
+// bound below the length, keeps every length as a write at a binding does,
+// so the loop keeps `count === flags.length`, which bounds its reads.
+export function marked(flags: number[]): number {
+  const count = flags.length;
+  /** @invariant safeInteger(j) && safeInteger(count) && j + 2 <= count && count === flags.length */
+  for (let j = count - 2; j >= 0; j--) {
+    if ((flags[j]! & 15) === 8) continue;
+    flags[j + 1] = flags[j + 1]! | 32;
+  }
+  return count;
+}
