@@ -2174,13 +2174,18 @@ parameter of that name cannot state a postcondition. Async, nested and
 overloaded declarations, rest parameters and parameter patterns are refused.
 Defaulted and optional parameters may occur when the clause does not name them.
 
-The defining unit establishes each clause at every normal return through
-[return-ensures](#type-invariants). Module calls and analyzed importing calls
-receive the same facts through `call-ensures`. An imported source signature
-stating result facts requires a [certified body](SOURCE-CONTRACTS.md#certified-imports);
-a failed or unavailable certification refuses that import. An exported
-declaration's postcondition adds no trust assumption. Acceptance's result-fact conclusion
-in `checkUnitJson_safe` covers these obligations with its existing statement.
+A written postcondition is a contract of the declaration's signature, as its
+precondition is. The declaring unit proves it: its unit establishes each
+clause at every normal return through [return-ensures](#type-invariants).
+Callers assume it: the signature stating it enters a caller's environment
+exactly as a precondition's signature does, for module calls and analyzed
+importing calls alike, and `call-ensures` gives the caller its facts. A
+caller's accepted unit is safe given its callees' signatures:
+`checkUnitJson_safe` concludes its safety under `EnvOk` of its inputs at
+their signatures, postconditions included. The caller is
+[deep verified](DESIGN.md#function-coverage-and-release-thresholds) only when
+its callees' units are accepted too. A postcondition adds no trust
+assumption.
 The front end's shared `postcondition` elaboration supplies both the
 function's `ensures` and every imported signature's `ensures`.
 
@@ -2190,9 +2195,7 @@ check establishes its return fact. `written-ensures-push-refused` records
 the unchecked loop's unproved exact length. `written-ensures-value-import` checks a
 caller across an analyzed import. `invalid-written-ensures-body` returns an
 array shorter than its contract, and `invalid-written-ensures-unstated`
-reads below a count absent from its callee's contract.
-`invalid-written-ensures-value-import` reads through a false imported
-contract; withdrawing certification cannot retain that result fact (under Node:
+reads below a count absent from its callee's contract (under Node:
 `undefined` and `NaN`). `written-ensures-reassigned-refused` and
 `written-ensures-old-refused` exercise the entry-value restrictions;
 `written-ensures-default-refused` checks a defaulted parameter reference. A control

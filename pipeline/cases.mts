@@ -2838,7 +2838,6 @@ export const cases: Case[] = [
     /no derivation of its cast claim/),
   positive("written-ensures", "written result facts of pretext's zeros shape, checked at returns and consumed by a bounded caller; string lengths and result paths"),
   { ...positive("written-ensures-value-import", "a written result fact proved by an imported builder and consumed at its caller"), project: "pipeline/imports-project" },
-  { ...negative("invalid-written-ensures-value-import", "a false imported postcondition cannot survive withdrawal of its body's certification (run under Node)", /imported postcondition requires a certified body/), project: "pipeline/imports-project" },
   negative("invalid-written-ensures-body", "a body returns fewer elements than its written postcondition promises (run under Node)", /source ensures refusal/),
   negative("invalid-written-ensures-unstated", "a caller reads below a count no result contract promises (run under Node)", /no derivation of its cast claim/),
   gap("written-ensures-push-refused", "pretext zeros: exact length after an unchecked push loop", "unverified", "search", /source ensures refusal/),

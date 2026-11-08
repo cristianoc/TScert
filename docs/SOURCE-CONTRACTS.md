@@ -500,13 +500,6 @@ declaration's code, its claim within its statement. This is the checked evidence
 [inferred call effects](SOURCE-ELABORATION.md#inferred-call-effects-elaboration-and-certification)
 require; the import's TypeScript declaration supplies none.
 
-A source function's signature stating [postconditions](PROGRAM-TYPING.md#postconditions)
-requires a certified import. An ordinary read cannot supply those facts when
-certification is absent or withdrawn. The import planner checks this in every
-planned document (`planReads`); intrinsic and reviewed library signatures
-retain their existing trusted contracts. `invalid-written-ensures-value-import`
-exercises a false result length whose body fails certification.
-
 **Eligibility.** A read may be qualified only where its binding's value is
 stable: a named import of an exported function declaration that no code of
 its module reassigns, or a default import of an `export default function`,

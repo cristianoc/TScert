@@ -269,15 +269,6 @@ private def qualifiedRead (importer : Reading) (values : List Json) (fragmentMod
     throw s!"a qualified read names a unit claimed outside the effect its annotation states: {location}#{name}"
   return (localName, footprint, onThrow)
 
-/-- Result facts of a source function's declared call signatures require
-certification of its body. Intrinsics and reviewed library contracts carry
-result facts at their existing trusted boundary. -/
-private partial def statesEnsures (type : Json) : Except String Bool := do
-  match type.getObjValD "k" with
-  | .str "function" => return !(← jArr (← jField type "effect") "ensures").isEmpty
-  | .str "intersection" => return (← (← jArr type "parts").mapM statesEnsures).any id
-  | _ => return false
-
 /-- The qualified reads of one document: each read its claims list names an
 imported value of its declarations and an eligible unit whose two readings
 agree (`qualifiedRead`). Its importer's binding of each, with the unit's
@@ -300,14 +291,6 @@ private def planReads (declarations claims : Json) (fragmentModules : List Fragm
       (s!"certified import {location}#{name}: " ++ ·)
     qualified := qualified ++ [read]
     units := units ++ [(location, name)]
-  for v in values do
-    let declaration ← jField v "declaration"
-    let location ← jStr (← jField declaration "module")
-    if !(location.startsWith "tscert/") && !(location.startsWith "typescript/lib/") &&
-        (← statesEnsures (← jField v "type")) && !reads.contains declaration then
-      let name ← jStr (← jField declaration "name")
-      let pos : Span ← fromJson? (← jField (← jField v "binding") "span")
-      throw s!"source import refusal at [{pos.1},{pos.2}): an imported postcondition requires a certified body: {location}#{name}"
   let names := qualified.map (·.1)
   if names.eraseDups.length != names.length then throw "two qualified reads bind one name"
   return (qualified, units)
