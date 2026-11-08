@@ -330,7 +330,7 @@ inductive Expr where
   certified at `top` (`asyncEffects`). -/
   | lambda (pos : Span) (receiver : Option (Json × Invoke)) (typeParams : List TypeParam)
       (params : List (String × Json)) (defaults : List (Nat × Expr)) (rest : Bool)
-      (result : Option Json) (guard : Option Guard) (stated : Option CallEffects.Effect) (async : Bool) (body : Expr)
+      (result : Option Json) (guard : Option Guard) (stated : Option CallEffects.Effect) (async : Bool) (requires : List HeapKnowledge.IndexFact) (body : Expr)
   /-- A class value: its constructor `lambda` as construct-only code, and its
   static fields, each the binding its initializer bound, in member order. -/
   | ctor (pos : Span) (lam : Expr) (statics : List (PropKey × Expr))
@@ -481,7 +481,7 @@ executable source form cannot bypass parameter-initialization checks. -/
 partial def Expr.freeNames : Expr → List String
   | .var _ n => [n]
   | .lit .. => []
-  | .lambda _ receiver _ ps ds _ _ _ _ _ b =>
+  | .lambda _ receiver _ ps ds _ _ _ _ _ _ b =>
     -- An ordinary function binds its own `this`; an arrow captures it.
     ((ds.flatMap fun d => d.2.freeNames) ++ b.freeNames).filter
       (fun n => !(ps.map Prod.fst).contains n && (receiver.isNone || n != "this"))
@@ -516,7 +516,7 @@ span, the name, as `freeNames` binds names, and the explicit type arguments
 written on the call. -/
 partial def Expr.callees : Expr → List (Span × Span × String × List Json)
   | .var .. | .lit .. => []
-  | .lambda _ _ _ ps ds _ _ _ _ _ b =>
+  | .lambda _ _ _ ps ds _ _ _ _ _ _ b =>
     ((ds.flatMap fun d => d.2.callees) ++ b.callees).filter
       (fun c => !(ps.map Prod.fst).contains c.2.2.1)
   -- A read off a name instantiates it, as a call does, where it is a
@@ -650,7 +650,7 @@ def Expr.span : Expr → Span
   | .index p _ _ _ | .indexWrite p _ _ _ _ | .arith p _ _ _ | .update p _ _ _ _ | .logicalAssign p _ _ _ => p
   | .comma p _ _ | .inKeys p _ _ | .optional p _ _ _ | .withObject p _ _ _ | .block p _ => p
   | .arrayLit p _ _ | .elemAt p _ _ | .elemWrite p _ _ _ | .arrayAssign p _ _ _ => p
-  | .var p _ | .lit p _ | .shapeTest p _ _ _ | .tagMember p _ _ _ _ _ | .not p _ | .unary p _ _ | .cast p _ _ | .alloc p _ _ | .build p _ _ | .read p _ _ | .write p _ _ _ | .assign p _ _ _ | .nullishAssign p _ _ _ | .withValue p _ _ _ _ | .objectAssign p _ _ | .lambda p _ _ _ _ _ _ _ _ _ _ | .call p _ _ _ _ | .invoke p _ _ _ _ | .callWithReceiver p _ _ _ | .bindWithReceiver p _ _ _ | .applyWithReceiver p _ _ _ _ | .ctor p _ _ | .construct p _ _ _ _ => p
+  | .var p _ | .lit p _ | .shapeTest p _ _ _ | .tagMember p _ _ _ _ _ | .not p _ | .unary p _ _ | .cast p _ _ | .alloc p _ _ | .build p _ _ | .read p _ _ | .write p _ _ _ | .assign p _ _ _ | .nullishAssign p _ _ _ | .withValue p _ _ _ _ | .objectAssign p _ _ | .lambda p _ _ _ _ _ _ _ _ _ _ _ | .call p _ _ _ _ | .invoke p _ _ _ _ | .callWithReceiver p _ _ _ | .bindWithReceiver p _ _ _ | .applyWithReceiver p _ _ _ _ | .ctor p _ _ | .construct p _ _ _ _ => p
 
 /-- What evaluating an assignment target's reference evaluates: a field's
 receiver, then its key; nothing for a local. -/
@@ -1112,7 +1112,7 @@ partial def decodeExpr (j : Json) : Except String Expr := do
     -- whose constructor this one's code is (`decodeBindings`).
     let lam ← decodeExpr (← jField j "lambda")
     match lam with
-    | .lambda _ none [] _ [] false _ _ none false _ | .var .. => pure ()
+    | .lambda _ none [] _ [] false _ _ none false [] _ | .var .. => pure ()
     | _ => throw "a class value is a constructor lambda with plain parameters"
     -- Its static fields, each read from the binding its initializer bound,
     -- under a name a source property spells; the list is left out when
@@ -1136,7 +1136,7 @@ partial def decodeExpr (j : Json) : Except String Expr := do
     let spreads ← decodeSpreads j args.length (typeArgsField typeArgs)
     return .construct p (← decodeExpr (← jField j "callee")) args spreads typeArgs
   | "lambda" => do
-    fieldsExactly j ["k","pos","typeParams","receiver","params","result","guard","stated","completion","body"]
+    fieldsExactly j ["k","pos","typeParams","receiver","params","result","guard","stated","completion","requires","body"]
     -- An ordinary function records its receiver annotation and whether its
     -- code is strict, which decides its code's kind below.
     let receiver ← match ← jField j "receiver" with
@@ -1182,7 +1182,7 @@ partial def decodeExpr (j : Json) : Except String Expr := do
       | none => pure none
     let stated ← decodeStated (← jField j "stated")
     return .lambda p receiver typeParams params defaults (!restAt.isEmpty)
-      (if result == .null then none else some result) guard stated async body
+      (if result == .null then none else some result) guard stated async (← fromJson? (← jField j "requires")) body
   | "conditional" => do
     fieldsExactly j ["k","pos","cond","then","else_"]
     return .ifBody p (← decodeExpr (← jField j "cond"))

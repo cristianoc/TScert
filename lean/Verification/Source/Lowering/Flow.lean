@@ -159,7 +159,7 @@ private def invariantFact (root : Nat → Option (Nat × List String))
           let written ← lower (Fragment.translate annotation)
           requireSameMeaning (← table) b.init.span .bindingAnnotation C written
             s!"claimed storage contract differs from the source annotation for '{b.name}'"
-        | none, .lambda _ receiver [] params defaults false (some result) _ _ _ _ =>
+        | none, .lambda _ receiver [] params defaults false (some result) _ _ _ _ _ =>
           let Ds ← params.zipIdx.mapM fun ((_, j), i) => do
             let D ← lower (Fragment.translate j)
             pure (if defaults.any (·.1 == i) then (D ++ [Labels.undef]).eraseDups else D)

@@ -127,7 +127,7 @@ by subtyping; or a scheme row's variadic signatures. -/
 @[nospecialize] def lambdaSetup (fc : SourceClaims.Function Tree) (scope : List (ScopeBinding Tree))
     (Γ : List (Ty Tree)) (lam : Fragment.Expr) (A : Ty Tree) (mode : CodeMode Tree) :
     Compiler (LambdaSetup Tree) := do
-  let .lambda pos receiverAnnot typeParams params defaults hasRest ret guard stated async body := lam
+  let .lambda pos receiverAnnot typeParams params defaults hasRest ret guard stated async requires body := lam
     | throw "internal extraction error: a closure's code is a lambda's"
   let G := SourceTypes.graph (← table)
   let paramNames := params.map Prod.fst
@@ -257,6 +257,8 @@ by subtyping; or a scheme row's variadic signatures. -/
     | .ctor _ => "construct signature claim is outside the source annotation"
     | _ => "closure signature claim is outside the source annotation"
   for row in rows do
+    if !CallEffects.preCovers row.effect.pre requires then
+      throw (locatedRefusal T pos .bindingAnnotation "closure claim strengthens its written precondition")
     if arity > row.arguments.length then throw (locatedRefusal T pos .bindingAnnotation reason)
     for (D, B) in (row.arguments.take arity).zip sourceDs do
       requireWithin T pos .bindingAnnotation D B reason
@@ -311,7 +313,7 @@ by subtyping; or a scheme row's variadic signatures. -/
     let some written := ret | throw (locatedRefusal T pos .bindingAnnotation reason)
     let R ← lower (Fragment.callableType written)
     let T ← table
-    let some row := rows.find? (fun r => r.effect.covers s && r.arguments.length == arity)
+    let some row := rows.find? (fun r => r.effect.covers { s with pre := requires } && r.arguments.length == arity)
       | throw (locatedRefusal T pos .bindingAnnotation reason)
     requireWithin T pos .bindingAnnotation Rsource row.receiver reason
     for (D, B) in row.arguments.zip sourceDs do

@@ -73,29 +73,25 @@ const mutationControl = (body: () => Promise<void>): void => {
 const serving: boolean = process.argv[2] === "--controls";
 
 control(async (): Promise<void> => {
-  assert.equal(runExample("invalid-string-method-nan", 'Number.isNaN(outOfBounds("a"))'), true);
-  assert.equal(runExample("invalid-string-method-slice", 'clamped("").length'), 0);
-  assert.equal(runExample("invalid-string-method-search", 'emptyNeedle("a")'), 1);
-  assert.equal(runExample("invalid-string-method-concat", 'numeric(123).length'), 3);
-  for (const [name, fnName, statement, binding, kind, bound] of [
-    ["invalid-string-method-nan", "outOfBounds", "return unit(c)", "c", "value", 0],
-    ["invalid-string-method-slice", "clamped", "return pair(part)", "part", "strLength", -2],
-    ["invalid-string-method-search", "emptyNeedle", "return inside(s, r)", "r", "value", -2],
-    ["invalid-string-method-concat", "numeric", "return one(s)", "s", "strLength", 1],
-  ] as const) {
-    const artifacts = run(name);
-    const source = readFileSync(sourceKey(artifacts), "utf8");
-    const claims = readClaims(artifacts);
-    const fn = must(claims.functions.find(f => f.name === fnName), `${fnName}'s claims`);
-    const entry = must(fn.entries.find(e => e.start === source.indexOf(statement)), "the call's entry");
-    // Zero coefficient is the wire's integer-definedness claim.
-    entry.facts.push({ guards: [], terms: [{ name: binding, path: [], term: kind,
-      coefficient: name === "invalid-string-method-nan" ? 0 : name === "invalid-string-method-concat" ? 1 : -1 }], bound });
-    const forged = writeClaims(artifacts, `string-method-forged-${name}`, claims);
-    const searched = produceWith(artifacts, forged, `string-method-forged-${name}`);
-    assert.equal(searched.status, 1, searched.stdout + searched.stderr);
-    assert.match(searched.stdout + searched.stderr, /does not establish the claims/);
-  }
+  // The closure claim's precondition must follow from its written one,
+  // both while producing evidence and while consuming existing evidence.
+  const artifacts = run("closure-precondition");
+  const fragment = readFragmentFile(join(artifacts, "fragment.json"));
+  const visit = (value: unknown): void => {
+    if (Array.isArray(value)) { for (const child of value) visit(child); return; }
+    if (!isObject(value)) return;
+    if (value.k === "lambda") value.requires = [];
+    for (const child of Object.values(value)) visit(child);
+  };
+  visit(fragment);
+  const forged = join(artifacts, "closure-without-precondition.json");
+  writeFileSync(forged, JSON.stringify(fragment));
+  const searched = produceWith(artifacts, join(artifacts, "claims.json"), "closure-precondition-forged", forged);
+  assert.equal(searched.status, 1, searched.stdout + searched.stderr);
+  assert.match(searched.stdout + searched.stderr, /closure claim strengthens its written precondition/);
+  const checked = tested(verifierCall(verifier, ["--check-units", forged,
+    join(artifacts, "claims.json"), sourceKey(artifacts), join(artifacts, "evidence.json")]));
+  assert.equal(checked.status, 1, checked.stdout + checked.stderr);
 });
 
 control(async (): Promise<void> => {

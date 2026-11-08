@@ -236,6 +236,7 @@ export type Expr =
       /* The effect its result annotation states, `Within<F, T>`, of which
          `result` is `T`; null where it states none. */
       stated: StatedEffect | null;
+      requires: IndexFact[];
       /* How a call of it completes: its own `async` modifier. */
       completion: Completion;
       body: Expr;

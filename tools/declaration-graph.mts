@@ -44,7 +44,7 @@ import { messageOf, passToolFailure, toolFailureOf } from "./thrown.mts";
 // named-record.mts reads a named type's record shape, at which a mapped type read before its definition is expanded.
 import { definitionKey, deferredInDocument, identityText, settleDocument, termsText, termText } from "./named-record.mts";
 import { documentHolds } from "./fragment-parts.mts";
-import { ensuresTags, invariantTags, parameterKept, plainParameter, representationTags, requiresTags, type ImportedInvariants } from "./bound-annotations.mts";
+import { closureRequiresTags, invariantTags, parameterKept, plainParameter, representationTags, requiresTags, type ImportedInvariants } from "./bound-annotations.mts";
 // files.mts makes every file-system failure a tool failure.
 import { builtinModule, manifestMember, orAbsent, readText, realPath, remembered, type Remembered } from "./files.mts";
 import type { Json } from "./calculus.mts";
@@ -2014,7 +2014,16 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
           for (const part of [...(fn.typeParameters ?? []), ...fn.parameters, fn.type])
             clean(part, `${idOf(source)}#${node.name.text}`);
           const { names, typeParams } = bindersOf(reading, fn.typeParameters, fn, what);
-          return { declaration: { module: idOf(source), name: node.name.text, span }, construct: false, typeParams,
+          const declaration = { module: idOf(source), name: node.name.text, span };
+          const clauses = programFile(source) && !ambient(node) ? closureRequiresTags(fn) : [];
+          if (clauses.length > 0) {
+            const plain = !fn.modifiers?.some(m => m.kind === ts.SyntaxKind.AsyncKeyword) && fn.parameters.every(plainParameter);
+            observations.requires?.(declaration, clauses,
+              plain ? fn.parameters.map(p => ts.isIdentifier(p.name) ? p.name.text : "") : null,
+              { receiver: fn.parameters[0] !== undefined && ts.isIdentifier(fn.parameters[0].name) && fn.parameters[0].name.text === "this",
+                params: [], kept: [], result: false });
+          }
+          return { declaration, construct: false, typeParams,
             type: oneTerm(signature(valueScope(reading, fn, what, names), fn.parameters, fn.type, fn, span, true), span) };
         }
         if (!constant || !node.type)

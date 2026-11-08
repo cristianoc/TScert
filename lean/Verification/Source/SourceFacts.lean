@@ -11,7 +11,7 @@ choose which parameters are mutable. -/
 private partial def assignsExpr (name : String) : Fragment.Expr → Bool
   | .var .. | .lit .. => false
   | .assign _ target _ rhs | .nullishAssign _ target _ rhs => target == name || assignsExpr name rhs
-  | .lambda _ _ _ _ defaults _ _ _ _ _ e =>
+  | .lambda _ _ _ _ defaults _ _ _ _ _ _ e =>
     defaults.attach.any (fun ⟨d,_⟩ => assignsExpr name d.2) || assignsExpr name e
   | .not _ e | .unary _ _ e | .cast _ _ e | .read _ _ e | .shapeTest _ _ _ e | .tagMember _ _ _ _ _ e =>
     assignsExpr name e
@@ -266,7 +266,7 @@ partial def escapesExpr (n : String) : Fragment.Expr → Bool
 /-- The closures' statement bodies an expression creates, where their own
 owned objects are found. -/
 partial def closureBodies : Fragment.Expr → List (List Fragment.Stmt)
-  | .lambda _ _ _ _ ds _ _ _ _ _ b => ds.flatMap (fun d => closureBodies d.2) ++
+  | .lambda _ _ _ _ ds _ _ _ _ _ _ b => ds.flatMap (fun d => closureBodies d.2) ++
     (match b with | .block _ ss => [ss] | b => closureBodies b)
   | .ctor _ lam _ => closureBodies lam
   | .var .. | .lit .. => []
@@ -484,7 +484,7 @@ partial def moduleEscapes (n : String) : Fragment.Expr → Bool
   | .write _ _ (.var ..) rhs => moduleEscapes n rhs
   | .indexWrite _ _ (.var _ m) key rhs =>
     (m == n && !quietKey key) || moduleEscapes n key || moduleEscapes n rhs
-  | .lambda _ _ _ _ ds _ _ _ _ _ b => ds.any (fun d => moduleEscapes n d.2) || moduleEscapes n b
+  | .lambda _ _ _ _ ds _ _ _ _ _ _ b => ds.any (fun d => moduleEscapes n d.2) || moduleEscapes n b
   | .ctor _ lam statics => moduleEscapes n lam || statics.any (fun s => moduleEscapes n s.2)
   | .block _ ss => ss.any (moduleStmtEscapes n)
   -- An update, a logical assignment or a destructuring of a member, and the

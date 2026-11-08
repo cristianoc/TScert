@@ -25,7 +25,7 @@ private partial def exprSitesCore (includeBodies : Bool) : Fragment.Expr → Sit
   | .var p _ | .lit p _ => ([],[p],[])
   -- A defaulted parameter's expression is an ordinary source expression, so it
   -- is a claim site like any other; the parameter name is not one.
-  | .lambda p _ _ _ defaults _ _ _ _ _ e =>
+  | .lambda p _ _ _ defaults _ _ _ _ _ _ e =>
     if !includeBodies then ([],[p],[p]) else
     defaults.attach.foldl (fun acc ⟨d,_⟩ => joinSites acc (exprSitesCore includeBodies d.2))
       (joinSites ([],[p],[p]) (exprSitesCore includeBodies e))
@@ -64,7 +64,7 @@ private partial def exprSitesCore (includeBodies : Bool) : Fragment.Expr → Sit
   | .ctor p lam fs =>
     let own := fs.foldl (fun acc f => joinSites acc (exprSitesCore includeBodies f.2)) ([],[p],[])
     match lam with
-    | .lambda _ _ _ _ _ _ _ _ _ _ e => if !includeBodies then own else joinSites own (exprSitesCore includeBodies e)
+    | .lambda _ _ _ _ _ _ _ _ _ _ _ e => if !includeBodies then own else joinSites own (exprSitesCore includeBodies e)
     | _ => own
   | .construct p f args _ _ => args.foldl (fun acc a => joinSites acc (exprSitesCore includeBodies a)) (joinSites ([],[p],[]) (exprSitesCore includeBodies f))
   | .applyWithReceiver p f receiver list _ =>

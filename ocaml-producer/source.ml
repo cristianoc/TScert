@@ -845,6 +845,7 @@ let async_closures : (Json.t, unit) Hashtbl.t = Hashtbl.create 16
 (* The effects closures' result annotations state (`Within<F, T>`), by the
    literal's position: a footprint and whether it holds on a throw too. Lean
    requires a signature its code is checked at to cover it. *)
+let closure_preconditions : (Json.t, index_fact list) Hashtbl.t = Hashtbl.create 16
 let stated_closures : (Json.t, footprint * bool) Hashtbl.t = Hashtbl.create 16
 (* The method calls a statement is, by position: Lean reads and invokes the
    member in one node where its actuals are plain
@@ -1270,6 +1271,7 @@ let rec expr binders j =
              which the conversion leaves unchanged. *)
           Some (source_type inner (field "type" r)) in
       if async_completion j then Hashtbl.replace async_closures (field "pos" j) ();
+      Hashtbl.replace closure_preconditions (field "pos" j) (List.map index_fact_of (items "requires" j));
       Option.iter (Hashtbl.replace stated_closures (field "pos" j)) (stated_of j);
       Lambda (receiver,quantified,
         List.map (fun p -> text "name" p,source_type inner (field "type" p)) parameters,

@@ -14,6 +14,8 @@ import { nameOf, isTypeAlias, namedAccess, unparenthesized } from "./syntax.mts"
 import { asyncReturnName, elementAtName, hasPropertyName, literalTerm, ordinaryHasInstanceName } from "./intrinsics.mts";
 import { guardResult } from "./fragment-guards.mts";
 import { FUNCTION_TO_STRING, GENERATOR, HAS_INSTANCE, booleanForm, booleanReturn, TAG_WRITE, INSTANCE_STATIC, type ObjectPart, SPREAD_POSITION, STATIC_INIT_CLASS, STATIC_INIT_CLOSURE, bindingScope, callableAssign, classKey, completes, firstOptional, inKey, literalExpr, parameterName, propertyKeyText, prototypeName, elementBracket, wrappedMemberCallee, WRAPPED_MEMBER_CALL, skipParentheses, staticFieldOf, staticMethodOf, staticName, fileClasses, TYPEOF_SHAPES } from "./fragment-support.mts";
+import { closureRequiresTags, plainParameter } from "./bound-annotations.mts";
+import { precondition } from "./fragment-statements.mts";
 import type { Gate } from "./fragment-parse.mts";
 
 export function expr(this: Gate, node: Expression): Within<{ value: "any"; store: "grow" }, Expr> {
@@ -2327,6 +2329,13 @@ export function lambda(this: Gate,
       gate.fail(node.type ?? node, "`Within` on a generic closure or method is outside the fragment: its code is checked at the binder bounds its claim states, which need not cover its own");
     const declaredResult: TypeTerm | null = guard ? guardResult(guard)
       : written.result || instance ? gate.typeOf(written.result, node) : null;
+    const clauses = closureRequiresTags(node);
+    if (clauses.length && (isAsync || !node.parameters.every(plainParameter)))
+      gate.fail(node, "a precondition (`@requires`) needs a synchronous closure with plain required parameters");
+    const requires = precondition(gate, clauses, node.parameters.map(p => ({
+      name: ts.isIdentifier(p.name) ? p.name.text : "", type: gate.closureParamType(p),
+    })), receiverParam !== null);
+    if (typeof requires === "string") gate.fail(node, requires);
     const arrow = ts.isArrowFunction(node) ? gate.span(node.equalsGreaterThanToken) : null;
     const keyword = modifiers[0];
     const rest = (p: ts.ParameterDeclaration) => p.dotDotDotToken ? { rest: true as const } : {};
@@ -2400,6 +2409,7 @@ export function lambda(this: Gate,
         result: declaredResult,
         guard,
         stated: written.stated,
+        requires,
         completion: isAsync ? "async" : "sync",
         body: { k: "blockBody", pos: gate.span(body), body: [...bindings, ...statements] },
       };
@@ -2436,6 +2446,7 @@ export function lambda(this: Gate,
       result: declaredResult,
       guard,
       stated: written.stated,
+        requires,
       completion: isAsync ? "async" : "sync",
       body: inner,
     };

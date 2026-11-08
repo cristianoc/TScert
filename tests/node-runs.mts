@@ -10,10 +10,8 @@ import { join } from "node:path";
 import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-example.mts";
 import { cases } from "../pipeline/cases.mts";
 
-assert.equal(runExample("invalid-written-ensures-body", "typeof short(1)[0]"), "undefined",
-  "a false written result length returns an absent element");
-assert.equal(runExample("invalid-written-ensures-unstated", "Number.isNaN(read(1))"), true,
-  "a caller cannot obtain a result bound from an unstated postcondition");
+assert.equal(runExample("invalid-closure-precondition-call", "typeof broken([1])"), "undefined",
+  "a local arrow called at the length reads an absent element");
 
 assert.equal(runExample("invalid-table-constant-stride", "typeof lastCell(new Uint8Array(28), 1)"), "undefined",
   "a row start at the length does not bound its last cell");

@@ -2372,8 +2372,10 @@ function at its declared signature establishes the same facts. That a
 declaration's signature and its unit's request state the same precondition is
 a property of the front end, which reads both from the one clause.
 
-**The clause.** A function declaration states its precondition in its
-leading JSDoc comment, `/** @requires C */`, read from the source text and
+**The clause.** A function declaration, arrow or function expression states
+its precondition in its leading JSDoc comment, `/** @requires C */`. A
+function initializer may use its binding statement's leading comment. It is
+read from the source text and
 elaborated by the front end to index facts at the call's positions; Lean
 reads them from the Fragment into the unit's request and into the signature
 its callers see. The clause is a conjunction of atoms over the parameters:
@@ -2452,13 +2454,19 @@ it. Lean decides at the call (`call-requires`).
 `Request.entryIndices`, its safety `RequestsSafe`. The front end's
 elaboration is `tools/bound-annotations.mts`, with `fieldType`,
 `recordShape` and `namesView`; Lean reads `Fragment.Fn.requires` into the
-request and into `moduleArrow`. An import's precondition is
+request and into `moduleArrow`. A closure's `requires` bounds the facts each
+claimed signature may assume (`lambdaSetup`, `preCovers`); its body and calls
+use `GraphCode.codeChecked_sound` and `preconditionHolds_sound`. Evidence
+search seeds the same entry facts that graph-code checking consumes
+(`CodeRequest.asRequest`, `produceGraphUsing`). An import's precondition is
 `writtenPrecondition` and `writtenImport`, Lean's certified read
 `importedArrow` and `qualifiedRead`.
 
-**Cases.** Positive: `precondition`, `precondition-lengths`
+**Cases.** Positive: `closure-precondition` (const-bound and local arrows),
+`precondition`, `precondition-lengths`
 (`i + 1 < xs.length`, and `xs.length === ys.length` established by a test).
-Negative, each run under Node: `invalid-precondition-call` (a call at
+Negative, each run under Node: `invalid-closure-precondition-call` (a local
+arrow called at its array's length), `invalid-precondition-call` (a call at
 `xs.length`), `invalid-precondition-body` (a body reading past what
 its clause bounds), `invalid-precondition-lengths` (a call with no
 length equality), `invalid-precondition-lengths-shrunk` (an equality

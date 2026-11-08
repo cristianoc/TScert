@@ -767,7 +767,8 @@ table checked before it, not part of this request. -/
 @[nospecialize] def CodeRequest.asRequest (r : Request σ ι) (q : CodeRequest ι) : Request σ ι :=
   { types := r.types, program := GraphCode.program q.entry.exprs q.entry.conts, claims := q.claims,
     result := q.entry.row.result, start := q.entry.start,
-    inputs := codeFrame q.entry.arity q.entry.row q.entry.captures q.entry.store, codes := [] }
+    inputs := codeFrame q.entry.arity q.entry.row q.entry.captures q.entry.store, codes := [],
+    entryIndices := GraphCode.codeEntryIndices q.entry }
 
 /-- Search one graph's certificate, the codes of `table` admitted, in the
 producer's graph `G` and image check `I`: the request's own, built once by the
@@ -782,6 +783,9 @@ producer's caller for every search it makes (`produceResponseUsing`). -/
     (answers : CertificateProducer.Answered G := {})
     (recheck : Option ((i : PositiveCertificates.InstanceImageCheck G) → HeapExpressionRules.Checker G i) := none) :
     Except String (ControlFlow.Certificate ι × CertificateProducer.Answered G) :=
+  let entry := (requirements.lookup r.start).getD {}
+  let requirements := (r.start, { entry with indices := (entry.indices ++ r.entryIndices).eraseDups }) ::
+    requirements.filter (fun p => p.1 != r.start)
   match CertificateProducer.produceUsing G I labels fuel (goal.getD r.goal)
       r.program r.claims r.start [] r.inputs suggestions known
       requirements cuts (GraphCode.admits table) checker aliases answers recheck r.entrySeparation r.entryIndices with

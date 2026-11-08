@@ -200,7 +200,13 @@ let infer (expr:Analysis_state.expression_infer) execute_bindings (infer_body:An
         extend env n (if not assigned then Value (arms declarations input)
           else if held_in_cell n body.pos then holding t input
           else Local (t,arms declarations input))) env (List.mapi (fun i p -> i,p) ps) in
-      let inner = bind_params [] in
+      let requires = Option.value (Hashtbl.find_opt Source.closure_preconditions e.pos) ~default:[] in
+      let assume_pre env =
+        let name p = if p = 0 then Some "this" else Option.map fst (List.nth_opt ps (p - 1)) in
+        let env = Linear_facts.add env (Linear_facts.of_index_facts name requires) in
+        let env = Linear_facts.gadd env (List.filter_map (Linear_facts.of_guarded_fact name) requires) in
+        Linear_facts.eadd env (List.filter_map (Linear_facts.of_every_fact name) requires) in
+      let inner = assume_pre (bind_params []) in
       (* A closure literal without a result annotation expected at one
          signature taking at least its parameters has that signature's result
          as its contextual return type, as in TypeScript. *)
@@ -241,7 +247,16 @@ let infer (expr:Analysis_state.expression_infer) execute_bindings (infer_body:An
           with_current_point point (fun () ->
             let env=match prologue with None -> env | Some plan -> execute_bindings env plan in
             entry env body.pos;
-            expr ?expected env body) in
+            let bounds = !Linear_facts.current_bounds and facts = !Linear_facts.current_facts
+            and guarded = !Linear_facts.current_gfacts and every = !Linear_facts.current_efacts in
+            Fun.protect ~finally:(fun () ->
+              Linear_facts.current_bounds := bounds; Linear_facts.current_facts := facts;
+              Linear_facts.current_gfacts := guarded; Linear_facts.current_efacts := every) (fun () ->
+                Linear_facts.current_bounds := Linear_facts.bounds env;
+                Linear_facts.current_facts := Linear_facts.facts env;
+                Linear_facts.current_gfacts := Linear_facts.gfacts env;
+                Linear_facts.current_efacts := Linear_facts.efacts env;
+                expr ?expected env body)) in
       (* Without a result annotation, an object literal the body returns is
          claimed with its exact keys: the inferred result states the keys
          the literal lacks, as TypeScript's inferred union of literals does
@@ -341,6 +356,7 @@ let infer (expr:Analysis_state.expression_infer) execute_bindings (infer_body:An
           let footprint,on_throw = Source.within_statement (call_effect.footprint,call_effect.on_throw) (Some stated) in
           if footprint = call_effect.footprint && on_throw = call_effect.on_throw then call_effect
           else {Semantic.ordinary_effect with footprint; on_throw} in
+      let call_effect = {call_effect with pre=requires} in
       let own = match element with
         | Some element -> variadic_arrow ~call_effect ~quantified ~receiver params element result
         | None -> quantified_arrow ~call_effect ~receiver quantified params result in

@@ -79,12 +79,22 @@ export function requiresTags(trivia: string): string[] {
   return tagsOf(trivia, "requires");
 }
 
-/** The normal-return clauses of a function declaration. */
-export function ensuresTags(trivia: string): string[] {
-  return tagsOf(trivia, "ensures");
+/** The leading JSDoc of a function literal, or of the binding holding it. */
+export function closureRequiresTags(node: ts.Node): string[] {
+  const file = node.getSourceFile();
+  const own = requiresTags(file.text.slice(node.pos, node.getStart(file)));
+  let owner = node;
+  while (ts.isParenthesizedExpression(owner.parent)) owner = owner.parent;
+  if (ts.isVariableDeclaration(owner.parent) && owner.parent.initializer === owner) {
+    owner = owner.parent;
+    if (ts.isVariableDeclarationList(owner.parent) && owner.parent.declarations.length === 1 &&
+        ts.isVariableStatement(owner.parent.parent)) owner = owner.parent.parent;
+  }
+  return [...new Set([...own, ...requiresTags(file.text.slice(owner.pos, owner.getStart(file)))])];
 }
 
-/** The invariant clauses of a type declaration. */
+/** The text of each `@invariant` tag of the last JSDoc comment in a type
+ * declaration's leading trivia, alike. */
 export function invariantTags(trivia: string): string[] {
   return tagsOf(trivia, "invariant");
 }

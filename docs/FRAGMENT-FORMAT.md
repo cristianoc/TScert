@@ -116,7 +116,10 @@ leaves the result type to a checked producer proposal, and `guard` carries a
 guard's promise as a function's does, `stated` its result annotation's
 statement, which a signature its code is checked at covers over the
 annotation's whole domain, and `completion` its completion kind as a
-function's does. Its `receiver` is `null` for an arrow or
+function's does. Its `requires` lists the call-position index facts of its
+written precondition. Each offered signature assumes only facts in that list;
+the graph-code checker establishes the body from its signature's entry facts.
+Its `receiver` is `null` for an arrow or
 `{type,strict}` for an ordinary function.
 
 The call constructors (`apply`, `invoke`, `new`, `callWithReceiver`,
