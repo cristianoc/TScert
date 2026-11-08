@@ -1,6 +1,8 @@
 import Verification.Source.FlowJson
 -- FlowJson.lean supplies the claim-independent graphs the producer analyzes.
 import Verification.Source.Claims.Json
+-- Claims/Translate.lean writes a slice's evidence over its document's store, untrusted.
+import Verification.Source.Claims.Translate
 
 /-! File interface to the source adapter. Source parsing remains external;
 checking reconstructs each unit's request from the fragment and its claims. -/
@@ -244,37 +246,30 @@ def selection : Option String → Option (List String)
   | none => none
   | some names => some ((names.splitOn ",").filter (· != ""))
 
-/-- A file's units (`SourceClaimJson.unitsJson`), one per line; a front
-refused is a refusal of every unit. -/
-def unitsFile (astPath claimsPath fileKey : String) (names : Option String)
+/-- Search evidence for a unit's slice (`SourceClaimJson.slicePlans`): the
+selected groups' evidence written to `evidencePath` a line per unit, each
+with the heads of the slice's store its labels name
+(`SourceClaimJson.sliceLine`); each unit the search refuses on a line
+`refused: {"unit","refusal"}`. Untrusted: the check translates the evidence
+to the document's store and checks it there. -/
+def produceUnitFile (slicePath claimsPath qualifiedPath evidencePath : String) (fuel : Nat) (names : Option String)
     (budget : PositiveCertificates.SearchBudget := {}) : IO UInt32 := do
-  let ast ← readJson astPath
-  let claims ← readJson claimsPath
-  match do SourceClaimJson.unitsJson (← ast) (← claims) fileKey budget (selection names) with
-  | .ok units => units.forM (IO.println ·.compress); return 0
-  | .error e => refuse e
-
-/-- Search evidence for a file's selected units over its one front
-(`SourceClaimJson.filePlans`), written to `evidencePath` a line per unit as
-each is searched (`SourceClaimJson.unitLine`); each unit the search refuses on a line `refused: {"unit","refusal"}`;
-any refused, the first refusal is the command's. A unit's search state is
-released once its line is written. -/
-def produceUnitsFile (astPath claimsPath fileKey evidencePath : String) (fuel : Nat) (names : Option String)
-    (budget : PositiveCertificates.SearchBudget := {}) : IO UInt32 := do
-  if evidencePath == astPath || evidencePath == claimsPath then
+  if evidencePath == slicePath || evidencePath == claimsPath || evidencePath == qualifiedPath then
     return ← refuse "evidence output must differ from the input files"
-  let ast ← readJson astPath
+  let ast ← readJson slicePath
   let claims ← readJson claimsPath
-  match do SourceClaimJson.filePlans (← ast) (← claims) fileKey budget with
+  let qualified ← readJson qualifiedPath
+  match do
+      let ast ← ast
+      SourceClaimJson.slicePlans ast (← claims) (← qualified) (← jStr (← jField ast "file")) budget with
   | .error e => refuse e
   | .ok f =>
-    -- A file that cannot be written is no refusal: its error is thrown.
     let refusals ← IO.FS.withFile evidencePath .write fun h => do
       let mut refusals : Array (String × String) := #[]
       for i in f.fr.selected (selection names) do
         let unit := f.fr.unitId i
         let (evidence, refusal) := f.produceGroup fuel (f.fr.group i)
-        h.putStrLn (SourceClaimJson.unitLine unit evidence).compress
+        h.putStrLn (SourceClaimJson.sliceLine unit evidence f.F.store.heads).compress
         if let some reason := refusal then refusals := refusals.push (unit, reason)
       return refusals
     IO.println s!"checked source evidence written: {evidencePath}"
@@ -336,15 +331,28 @@ def checkUnitsFile (astPath claimsPath fileKey evidencePath : String) (names : O
     let seen ← IO.mkRef ({} : Std.HashSet String)
     let refused ← IO.mkRef (none : Option String)
     let note (reason : String) : IO Unit := refused.modify (·.orElse fun _ => some reason)
+    -- The document's heads, matched with each slice's (`Translate.headMap`),
+    -- their signatures computed once.
+    let target ← IO.mkRef (none : Option SourceClaimJson.Translate.Target)
+    let translated (evidence : Json) : Option (Array EquationLowering.Draft) → IO (Except String Json)
+      | none => pure (.ok evidence)
+      | some heads => do
+        let t := (← target.get).getD (SourceClaimJson.Translate.Target.of f.F.store.heads.heads)
+        match SourceClaimJson.Translate.translate heads t evidence with
+        | .ok (e, t) => target.set (some t); pure (.ok e)
+        | .error reason => target.set (some t); pure (.error reason)
     forEachLine evidencePath fun bytes => do
-      match lineJson bytes >>= SourceClaimJson.readUnitLine with
+      match lineJson bytes >>= SourceClaimJson.readLine with
       | .error reason => note reason
-      | .ok (unit, evidence) =>
-        if let some (_, members) := wanted.find? (·.1 == unit) then
-          let verdict := SourceClaimJson.unitVerdict f budget unit evidence
-          print unit members verdict
-          seen.modify (·.insert unit)
-          if let .error reason := verdict then note reason
+      | .ok (unit, evidence, heads) =>
+        match ← translated evidence heads with
+        | .error reason => note reason
+        | .ok evidence =>
+          if let some (_, members) := wanted.find? (·.1 == unit) then
+            let verdict := SourceClaimJson.unitVerdict f budget unit evidence
+            print unit members verdict
+            seen.modify (·.insert unit)
+            if let .error reason := verdict then note reason
     let seen ← seen.get
     for (unit, members) in wanted do
       if !seen.contains unit then

@@ -194,8 +194,8 @@ export function checkMutation(artifacts: string, claims: string, path: string, m
  * document under the intended mutation and its component-removal controls. */
 export function forgedEvidence(artifacts: string, claims: string, name: string, mutations: string): string {
   const path = join(artifacts, `${name}-generated.json`);
-  const result = tested(verifierCall(mutationVerifier(), ["--produce-units", join(artifacts, "fragment.json"),
-    claims, sourceKey(artifacts), path, "12"], { TSCERT_TEST_MUTATIONS: mutations }));
+  const result = tested(verifierCall(mutationVerifier(), ["--produce-unit", join(artifacts, "fragment.json"),
+    claims, join(artifacts, "search-qualified.json"), path, "12"], { TSCERT_TEST_MUTATIONS: mutations }));
   assert.ifError(result.error);
   assert.equal(result.status, 0, `${name}, ${mutations}: ${result.stdout}${result.stderr}`);
   checkMutation(artifacts, claims, path, mutations);

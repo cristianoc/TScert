@@ -164,7 +164,7 @@ const equationReaders = [
   const explanation = declared([], undefined);
   for (const n of (source.match(/interface Explanation \{([^}]*)\}/)?.[1] ?? "").matchAll(/(\w+)\s*:/g)) explanation.add(n[1] ?? "");
   assert.ok(explanation.size > 0, "the explanation's declared type is found");
-  for (const t of ["UnitFacts", "Interface"]) for (const n of typeFields(t)) explanation.add(n);
+  for (const t of ["UnitFacts", "Interface", "SliceClaimsRefusal"]) for (const n of typeFields(t)) explanation.add(n);
   const explained = ocamlWrites("ocaml-producer/producer.ml");
   expectSubset("OCaml writes of the producer's output documents", explained, explanation, {});
   expectSubset("Output-document fields OCaml omits", explanation, explained, {});

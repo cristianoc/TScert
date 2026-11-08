@@ -14,7 +14,7 @@ import { randomUUID } from "node:crypto";
 import { hostname, platform } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { runDirectory } from "../pipeline/run-directory.mts";
-import { Store, StoreError, pausePublicationForTests, pauseLockForTests } from "../pipeline/stage-store.mts";
+import { Store, StoreError, pausePublicationForTests, pauseLockForTests, type StoredResult } from "../pipeline/stage-store.mts";
 import { invokeProcess, readInvocationLog, Recorder, startEviction, type Invoked } from "../pipeline/stages.mts";
 import { auditForTests, canonical, linkedLibraries, runnerBuild, sha256, verifierCall, type ProcessCall }
   from "../pipeline/stage-execution.mts";
@@ -39,7 +39,8 @@ function file(name: string, text: string): string {
 const lower = (program: string, input: string): ProcessCall => verifierCall(program, ["--lower-control-flow", input]);
 /** A search by `program`, its evidence written to `out`. */
 const search = (program: string, out: string): ProcessCall =>
-  verifierCall(program, ["--produce-units", file("f.json", "fragment"), file("c.json", "claims"), "key", out, "12"]);
+  verifierCall(program, ["--produce-unit", file("f.json", "fragment"), file("c.json", "claims"), file("q.json", "[]"), out,
+    "12"]);
 const invoke = (call: ProcessCall, limitMs: number = 10_000, force: boolean = false, recorder: Recorder | null = null): Invoked =>
   invokeProcess(call, { limitMs, force, recorder });
 /** A fresh store, the one the mechanism uses from now on. */
@@ -580,26 +581,30 @@ if (eligible) sections.push((async (): Promise<void> => {
   const steady = script("steady.sh", `/bin/sleep 1; /bin/cat "$2"`, ["/bin/cat", "/bin/sleep"]);
   const input = file("concurrent.json", "same");
   const both = await Promise.all([child(steady, input), child(steady, input)]);
-  // One run executes; the other executes too when the two overlap, and
-  // replays the first's published result when load delays its start.
-  // Either way both give the same output.
+  // One run claims the key and executes; the other waits for its result and
+  // replays it, however the two overlap (`Store.claim`).
   const executed = JSON.stringify({ execution: "executed", stdout: "same" });
   const replayed = JSON.stringify({ execution: "replayed", stdout: "same" });
-  const runs = both.map((out) => JSON.stringify(parsed(out)));
-  assert.ok(runs.every((r) => r === executed || r === replayed), runs.join(" "));
-  assert.ok(runs.includes(executed), runs.join(" "));
+  const runs = both.map((out) => JSON.stringify(parsed(out))).sort();
+  assert.deepEqual(runs, [executed, replayed], runs.join(" "));
   assert.equal(readdirSync(join(store.root, "entries", "lower")).length, 1);
+  assert.deepEqual(readdirSync(join(store.root, "running", "lower")), [], "the claim is released");
   use(store);
   assert.equal(invoke(lower(steady, input)).record.execution, "replayed");
-  // Each run marks that it has started and waits for the other's mark, so
-  // both execute before either publishes, however late load starts one.
-  const varying = script("varying.sh",
-    `: > "${dir}/varying-started.$$"\n` +
-    `while set -- "${dir}"/varying-started.*; [ $# -lt 2 ]; do /bin/sleep 0.05; done\n` +
-    `echo $$`, ["/bin/sleep"]);
-  const outcomes = (await Promise.all([child(varying, input), child(varying, input)])).map(parsed);
-  assert.equal(outcomes.filter((o) => typeof o === "object" && o !== null && "error" in o && o.error === "store").length, 1, JSON.stringify(outcomes));
-  process.stdout.write("concurrent publication: one entry for two writers; two results for one key a store error\n");
+  // A claim of a stopped process is taken over.
+  const stale = join(store.root, "running", "lower", "f".repeat(64));
+  writeFileSync(stale, `${hostname()} 999999999`);
+  const taken = store.claim("lower", "f".repeat(64));
+  assert.ok(taken !== "held", "a stopped process's claim is taken over");
+  taken();
+  // Two results for one key are a store error.
+  const result = (text: string): StoredResult => ({ input: "{}", exitStatus: 0, stdout: Buffer.from(text),
+    stderr: Buffer.alloc(0), outputs: [], measurement: { attempt: text, elapsedMs: 1, limitMs: 1000,
+      cpu: { unavailable: "a test's result" } } });
+  store.publishFinished("lower", sha256("{}"), result("one"));
+  assert.throws(() => store.publishFinished("lower", sha256("{}"), result("two")), StoreError);
+  process.stdout.write("concurrent publication: one execution and one entry for two invocations of a key; two results " +
+    "for one key a store error\n");
 })());
 
 

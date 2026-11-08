@@ -621,8 +621,8 @@ run it refuses, proposes the importer again, and the import is read at its
 ordinary signature. A module run's refusal at a span within a function of
 the module that the round reads withdraws that read alone, the module's
 other reads kept (`functionAt` in `pipeline/verify-source.mts`); a refusal
-at no such function withdraws the module's every read. The search of the importer's units and of every module
-run is one search (`--produce-units`), a refusal of each unit its own.
+at no such function withdraws the module's every read. Each of the importer's units and each module run is searched on its own
+(`--produce-unit`, `--produce-module`), a refusal of each unit its own.
 Before proposing the importer at its
 reads, the pipeline plans them (`--plan-imports` over the reads and the
 modules' claims) and withdraws every read the plan refuses in one round:

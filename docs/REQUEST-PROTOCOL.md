@@ -20,9 +20,8 @@ Build from `lean` with `lake build`; the executable is
 `.lake/build/bin/verifier`. Its modes:
 
 ```sh
-verifier --produce-units      <ast.json> <source-claims.json> <file-key> <evidence.json> <depth> [<names>]
+verifier --produce-unit       <slice.json> <slice-claims.json> <qualified.json> <evidence.json> <depth> [<names>]
 verifier --check-units        <ast.json> <source-claims.json> <file-key> <evidence.json> [<names>]
-verifier --units              <ast.json> <source-claims.json> <file-key> [<names>]
 verifier --plan-imports       <ast.json> <plan.json>
 verifier --module-runs        <ast.json> <source-claims.json>
 verifier --produce-module     <module-run.json> <evidence.json> <depth>
@@ -42,26 +41,28 @@ verifier --lower-control-flow <ast.json>
   initialization); every unit without it. Each module run of the file's
   certified imports is a unit of its own, `module:<location>`, searched and
   checked by the module modes.
-- `--produce-units` searches each selected unit's evidence over the file's
-  one front and writes the evidence document to `<evidence.json>`, which
-  must differ from both inputs, a line per unit as each unit's search ends,
-  the unit's search state released then. It prints each unit its search
-  refuses on a line
-  `refused: {"refusal","unit"}`; with any, the first is the command's
-  refusal, the document written still. `<depth>` limits expression
-  proof-search depth; it is not an execution budget and is not part of the
-  request, evidence or safety theorem.
+- `--produce-unit` searches the evidence of a unit over its slice
+  ([units of a check](STAGE-STORE.md#units-of-a-check)): the selected groups
+  of the slice's front, built at the slice's claims and at the qualified
+  reads `<qualified.json>` lists, each `{"footprint","name","onThrow"}`. It
+  writes the evidence document to `<evidence.json>`, which must differ from
+  every input, a line per unit, `{"evidence","heads","unit"}`, `heads` the
+  slice's store as `EquationStore.State` spells it. It prints each unit its
+  search refuses on a line `refused: {"refusal","unit"}`; with any, the
+  first is the command's refusal, the document written still. Claims that
+  are the producer's refusal, `{"refusal"}`, are its refusal. `<depth>`
+  limits expression proof-search depth; it is not an execution budget and
+  is not part of the request, evidence or safety theorem. The search is
+  untrusted: a document given as its own slice is searched the same way.
 - `--check-units` never invokes the producer: it checks each selected unit's
   certified requests at the evidence its line gives, reading one line at a
-  time, and prints a verdict per unit, `{"accepted","depends","members","unit"}`
+  time; a line with `heads` is first written over the document's store
+  (`SourceClaimJson.Translate.translate`, untrusted), and prints a verdict per unit, `{"accepted","depends","members","unit"}`
   or `{"members","refusal","unit"}`, whose acceptance `checkUnitJson_safe`
   states; a selected unit no line gives is refused. With every unit accepted
   it prints
   `accept: stateful source <file-key>`; otherwise the first refusal is the
   command's.
-- `--units` prints the selected units, one per line,
-  `{"depends","members","unit"}`, with the units each reaches
-  (`SourceClaimJson.unitsJson`).
 - `--plan-imports` plans the
   [certified imports](SOURCE-CONTRACTS.md#certified-imports) a plan document
   names (`SourceClaimJson.planImports`) and prints nothing; a plan it
@@ -733,7 +734,7 @@ A type can also be read from recursive equations
 labels are trees over the equations' heads. The source path checks every
 request over them.
 
-**Source path.** `--check-units` and `--produce-units` never
+**Source path.** `--check-units` and `--produce-unit` never
 read equations from the wire. Lean lowers the declarations and the claims to
 heads, grows them while it extracts every unit of the file, and validates
 them with `Equations.ofRaw` once extraction is done
@@ -742,7 +743,9 @@ them with `Equations.ofRaw` once extraction is done
 those heads and names them by index, so evidence is valid only for the
 claims and the declarations it was produced for. Over other ones it fails to
 decode (for example `head 65 takes 1 arguments, given 0`) or fails its
-check. A tree is decoded through the validator (`Label.ofTree?`), and no
+check. A slice's evidence names the heads of the slice's store; its line
+carries them, and the check renames each to a head of the document's store
+whose rows unfold alike (`Translate.headMap`) before decoding it. A tree is decoded through the validator (`Label.ofTree?`), and no
 checked request holds a name placeholder.
 
 **Tree spelling.** Each tree form has exactly one spelling

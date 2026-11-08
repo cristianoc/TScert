@@ -34,7 +34,7 @@ ocaml-producer/_build/default/producer.exe --explain unit-0.slice.json unit-0.fl
 ```
 
 A document is proposed a unit at a time
-([units of a proposal](../docs/STAGE-STORE.md#units-of-a-proposal)):
+([units of a proposal](../docs/STAGE-STORE.md#units-of-a-check)):
 `--units` lists what each unit's proposal reads, `--unit` proposes one
 unit's slice (lowered by `verifier --lower-control-flow`) at its reads
 document and prints its members' settled footprints and on-throw flags,

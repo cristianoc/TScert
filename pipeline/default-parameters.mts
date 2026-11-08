@@ -26,10 +26,10 @@ export function checkPatternDefaults(verifier: string, artifacts: string): void 
   assert.equal(fn.expressions.length, before - 1);
   const forged = join(artifacts, "missing-pattern-default-claims.json");
   writeFileSync(forged, JSON.stringify(claims));
-  for (const mode of ["--produce-units", "--check-units"]) {
+  for (const mode of ["--produce-unit", "--check-units"]) {
     const result = tested(verifierCall(verifier, [mode, join(artifacts, "fragment.json"), forged,
-      sourceKey(artifacts), join(artifacts, mode === "--produce-units" ? "produced-evidence.json" : "evidence.json"),
-      ...(mode === "--produce-units" ? ["12"] : [])]));
+      mode === "--produce-unit" ? join(artifacts, "search-qualified.json") : sourceKey(artifacts), join(artifacts, mode === "--produce-unit" ? "produced-evidence.json" : "evidence.json"),
+      ...(mode === "--produce-unit" ? ["12"] : [])]));
     assert.ifError(result.error);
     assert.equal(result.signal, null);
     assert.equal(result.status, 1);
@@ -67,14 +67,14 @@ export function checkDefaults(verifier: string, artifacts: string): void {
   const badClaims = join(artifacts, "later-default-claims.json");
   writeFileSync(badAst, JSON.stringify(ast));
   writeFileSync(badClaims, JSON.stringify(claims));
-  for (const mode of ["--produce-units", "--check-units"]) {
+  for (const mode of ["--produce-unit", "--check-units"]) {
     const result = tested(verifierCall(verifier, [
         mode,
         badAst,
         badClaims,
-        source,
-        join(artifacts, mode === "--produce-units" ? "produced-evidence.json" : "evidence.json"),
-        ...(mode === "--produce-units" ? ["12"] : []),
+        mode === "--produce-unit" ? join(artifacts, "search-qualified.json") : source,
+        join(artifacts, mode === "--produce-unit" ? "produced-evidence.json" : "evidence.json"),
+        ...(mode === "--produce-unit" ? ["12"] : []),
       ]));
     assert.ifError(result.error);
     assert.equal(result.signal, null);
@@ -165,14 +165,14 @@ export function checkDefaults(verifier: string, artifacts: string): void {
  * emit. */
 export function checkSchemeDefaults(verifier: string, artifacts: string): void {
   writeFileSync(join(artifacts, "evidence.json"), "{}");
-  for (const mode of ["--produce-units", "--check-units"]) {
+  for (const mode of ["--produce-unit", "--check-units"]) {
     const result = tested(verifierCall(verifier, [
         mode,
         join(artifacts, "fragment.json"),
         join(artifacts, "claims.json"),
-        sourceKey(artifacts),
-        join(artifacts, mode === "--produce-units" ? "produced-evidence.json" : "evidence.json"),
-        ...(mode === "--produce-units" ? ["12"] : []),
+        mode === "--produce-unit" ? join(artifacts, "search-qualified.json") : sourceKey(artifacts),
+        join(artifacts, mode === "--produce-unit" ? "produced-evidence.json" : "evidence.json"),
+        ...(mode === "--produce-unit" ? ["12"] : []),
       ]));
     assert.ifError(result.error);
     assert.equal(result.signal, null);
@@ -213,14 +213,14 @@ export function checkEarlyDefault(verifier: string, artifacts: string): void {
   assert.equal(proposed.status, 0, proposed.stdout + proposed.stderr);
   writeFileSync(join(artifacts, "claims.json"), proposed.stdout);
   writeFileSync(join(artifacts, "evidence.json"), "{}");
-  for (const mode of ["--produce-units", "--check-units"]) {
+  for (const mode of ["--produce-unit", "--check-units"]) {
     const result = tested(verifierCall(verifier, [
         mode,
         join(artifacts, "fragment.json"),
         join(artifacts, "claims.json"),
-        sourceKey(artifacts),
-        join(artifacts, mode === "--produce-units" ? "produced-evidence.json" : "evidence.json"),
-        ...(mode === "--produce-units" ? ["12"] : []),
+        mode === "--produce-unit" ? join(artifacts, "search-qualified.json") : sourceKey(artifacts),
+        join(artifacts, mode === "--produce-unit" ? "produced-evidence.json" : "evidence.json"),
+        ...(mode === "--produce-unit" ? ["12"] : []),
       ]));
     assert.ifError(result.error);
     assert.equal(result.signal, null);

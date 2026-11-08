@@ -24,7 +24,7 @@ The protocol has three documents:
 The verifier reads the three documents in [its modes](REQUEST-PROTOCOL.md#run-the-verifier):
 `--lower-control-flow` prints the execution document, `--lower-program` the
 program graph each unit lowers to under the claims (`make lowering`), and
-`--produce-units` and `--check-units` search for and check the evidence of
+`--produce-unit` and `--check-units` search for and check the evidence of
 the obligations the claims reconstruct, a verdict per unit.
 `SourceClaimJson.checkUnitJson_safe` proves calculus safety for every function
 of an accepted unit, at every permitted interpretation of its type

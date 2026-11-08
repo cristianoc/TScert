@@ -168,6 +168,8 @@ let rec infer ?(state = Proposal_diagnostics.create ()) ?unit ?on_settled flows 
   (* A unit's neighbours stay at their settled footprints and flags. *)
   let pinned_assumed = match unit with
     | Some u -> List.filter_map (fun (n,f,_) -> Option.map (fun f -> n,f) f) u.pinned | None -> [] in
+  let pinned_names = match unit with
+    | Some u -> List.map (fun (n,_,_) -> n) u.pinned | None -> [] in
   let pinned_thrown = match unit with
     | Some u -> List.filter_map (fun (n,_,t) -> if t then Some n else None) u.pinned | None -> [] in
   (* A footprint on a throw is proposed at the greatest fixpoint: every
@@ -211,8 +213,9 @@ let rec infer ?(state = Proposal_diagnostics.create ()) ?unit ?on_settled flows 
           (Option.map (fun (s,_) -> s,false) c.source.stated)))
       | None -> None) footprints in
     let raised = List.filter (fun (n,_) -> not (List.mem_assoc n pinned_assumed)) raised @ pinned_assumed in
-    let kept = List.filter (fun name -> List.mem name pinned_thrown || List.exists (fun ((c:function_claim),(f,t)) ->
-      c.source.name = name && t && f <> top_footprint) footprints) thrown in
+    let kept = List.filter (fun name -> if List.mem name pinned_names then List.mem name pinned_thrown
+      else List.exists (fun ((c:function_claim),(f,t)) ->
+        c.source.name = name && t && f <> top_footprint) footprints) thrown in
     if raised = assumed && kept = thrown && not selves_raised then begin
       settled := Some (assumed,thrown);
       {proposal with functions=List.map (fun ((c:function_claim),(f,_)) ->

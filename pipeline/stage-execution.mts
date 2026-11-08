@@ -55,7 +55,10 @@ export const sha256 = (bytes: string | Buffer): string => createHash("sha256").u
  * inode, size, modification and change times): a file rewritten in place
  * changes its change time. */
 const digests = new Map<string, { signature: string; digest: string }>();
+/** The files whose digests an identity being held reads (`heldIdentity`). */
+let digestsRead: Set<string> | null = null;
 function known(path: string): { signature: string; digest: string } {
+  digestsRead?.add(path);
   const s = statSync(path, { bigint: true });
   const signature = `${s.dev}:${s.ino}:${s.size}:${s.mtimeNs}:${s.ctimeNs}`;
   const held = digests.get(path);
@@ -183,6 +186,7 @@ export function linkedLibraries(executable: string): Canonical | string {
     for (const p of paths) {
       if (seen.has(p)) continue;
       seen.add(p);
+      digestsRead?.add(p);
       if (onSystemVolume(p)) identified.push([p, `system ${build}`]);
       else {
         const real = realpathSync(p);
@@ -413,6 +417,43 @@ export function auditForTests(program: string, dependencies: readonly string[]):
   auditedForTests.set(realpathSync(program), dependencies);
 }
 
+/** A file's status, as the digests' memo reads it (`known`), or null where
+ * it names nothing. */
+function statusOf(path: string): string | null {
+  try {
+    const s = statSync(path, { bigint: true });
+    return `${s.dev}:${s.ino}:${s.size}:${s.mtimeNs}:${s.ctimeNs}`;
+  } catch {
+    return null;
+  }
+}
+/** Identities computed once and kept while the status of every file they
+ * were computed from is unchanged: the paths named, each file a digest was
+ * taken of while computing it, and those files' real paths. A file rewritten
+ * in place changes its change time, and a path re-pointed changes the file
+ * it names, so a kept identity is the one computing it again gives. */
+const heldIdentities = new Map<string, { files: [string, string | null][]; value: { identity: Canonical } | { unidentified: string } }>();
+function heldIdentity(key: string, named: readonly string[],
+    compute: () => { identity: Canonical } | { unidentified: string }): { identity: Canonical } | { unidentified: string } {
+  const held = heldIdentities.get(key);
+  if (held && held.files.every(([path, status]) => statusOf(path) === status)) return held.value;
+  const outer = digestsRead;
+  const read = new Set<string>(named);
+  digestsRead = read;
+  let value: { identity: Canonical } | { unidentified: string };
+  try {
+    value = compute();
+  } finally {
+    digestsRead = outer;
+    if (outer) for (const path of read) outer.add(path);
+  }
+  const files: [string, string | null][] = [...read].map((path) => [path, statusOf(path)]);
+  // A path's status read after the computation may postdate it: a file
+  // that changed meanwhile is computed again at the next call.
+  heldIdentities.set(key, { files, value });
+  return value;
+}
+
 /** The identity of an audited program's executable: its digest, its linked
  * libraries and the platform it runs on; or why it has none. Only the
  * repository's builds of the verifier and the producer are audited: their
@@ -424,6 +465,11 @@ export function auditForTests(program: string, dependencies: readonly string[]):
  * identified. A mutation verifier (`auditMutationVerifier`) is audited as
  * the verifier is, beside the one variable that selects its mutations. */
 function executableIdentity(program: string, environment: Readonly<Record<string, string>>):
+    { identity: Canonical } | { unidentified: string } {
+  return heldIdentity(`program ${program} ${canonical(environment)}`, [program],
+    () => computedExecutableIdentity(program, environment));
+}
+function computedExecutableIdentity(program: string, environment: Readonly<Record<string, string>>):
     { identity: Canonical } | { unidentified: string } {
   if (Object.keys(environment).some((name) => name.startsWith("DYLD_")))
     return { unidentified: "child DYLD_ environment variables have unidentified code dependencies" };
@@ -463,6 +509,9 @@ function executableIdentity(program: string, environment: Readonly<Record<string
 /** The runner's identity: its executable and linked libraries by content,
  * and the platform; or why it has none. */
 function runnerIdentity(): { identity: Canonical } | { unidentified: string } {
+  return heldIdentity("runner", [runnerBuild], computedRunnerIdentity);
+}
+function computedRunnerIdentity(): { identity: Canonical } | { unidentified: string } {
   let real: string;
   try {
     real = realpathSync(runnerBuild);
@@ -497,7 +546,8 @@ const loadedRuntime = diskNodeIdentity();
 export function nodeIdentity(): { identity: Canonical } | { unidentified: string } {
   if ("unidentified" in loadedRuntime) return loadedRuntime;
   try {
-    if (canonical(diskNodeIdentity()) === canonical(loadedRuntime)) return loadedRuntime;
+    if (canonical(heldIdentity("node", [process.execPath], diskNodeIdentity)) === canonical(loadedRuntime))
+      return loadedRuntime;
   } catch {
     // A missing or unreadable runtime dependency cannot authorize replay.
   }
@@ -574,8 +624,7 @@ export const producerProtocol: Protocol = { refusal: { status: 2, prefix: "unsup
 /** A verifier invocation, its command line read by its modes:
  * `[--subtype-rounds n] --lower-control-flow <fragment>`,
  * `… --plan-imports <fragment> <plan>`,
- * `… --units <fragment> <claims> <file-key> [<names>]`,
- * `… --produce-units <fragment> <claims> <file-key> <evidence-out> <depth> [<names>]`,
+ * `… --produce-unit <slice> <slice-claims> <qualified> <evidence-out> <depth> [<names>]`,
  * `… --check-units <fragment> <claims> <file-key> <evidence> [<names>]`,
  * `… --module-runs <fragment> <claims>`,
  * `… --produce-module <module-run> <evidence-out> <depth>`,
@@ -590,12 +639,10 @@ export function verifierCall(program: string, args: readonly string[],
     return call("lower", [{ input: "fragment.json", path: rest[0] }]);
   if (mode === "--plan-imports" && rest.length === 2)
     return call("plan", [{ input: "fragment.json", path: rest[0] }, { input: "claims.json", path: rest[1] }]);
-  if (mode === "--units" && (rest.length === 3 || rest.length === 4))
-    return call("plan", [{ input: "fragment.json", path: rest[0] }, { input: "claims.json", path: rest[1] },
-      ...rest.slice(2).map((text) => ({ text }))]);
-  if (mode === "--produce-units" && (rest.length === 5 || rest.length === 6))
-    return call("search", [{ input: "fragment.json", path: rest[0] }, { input: "claims.json", path: rest[1] },
-      { text: rest[2] }, { output: "evidence.json", path: rest[3] }, ...rest.slice(4).map((text) => ({ text }))]);
+  if (mode === "--produce-unit" && (rest.length === 5 || rest.length === 6))
+    return call("search", [{ input: "slice.json", path: rest[0] }, { input: "claims.json", path: rest[1] },
+      { input: "qualified.json", path: rest[2] }, { output: "evidence.json", path: rest[3] },
+      ...rest.slice(4).map((text) => ({ text }))]);
   if (mode === "--check-units" && (rest.length === 4 || rest.length === 5))
     return call("check", [{ input: "fragment.json", path: rest[0] }, { input: "claims.json", path: rest[1] },
       { text: rest[2] }, { input: "evidence.json", path: rest[3] }, ...rest.slice(4).map((text) => ({ text }))]);
@@ -609,9 +656,9 @@ export function verifierCall(program: string, args: readonly string[],
   throw Error(`not a verifier stage: ${args.join(" ")}`);
 }
 
-/** A producer invocation (STAGE-STORE.md, "Units of a proposal"):
+/** A producer invocation (STAGE-STORE.md, "Units of a check"):
  * `--units <fragment>` lists a document's units, `--unit <slice> <flow>
- * <reads> <proposal>` proposes one, `--assemble <fragment> <qualified>
+ * <reads> <proposal> <slice-claims>` proposes one, `--assemble <fragment> <qualified>
  * <assembly> <proposal>...` assembles the document's claims, and `--explain
  * <slice> <flow> <reads>` explains one unit. */
 export function producerCall(program: string, args: readonly string[]): ProcessCall {
@@ -619,9 +666,10 @@ export function producerCall(program: string, args: readonly string[]): ProcessC
     ({ stage, program, arguments: [{ text: args[0] ?? "" }, ...list], environment: {}, protocol });
   if (args[0] === "--units" && args.length === 2)
     return stageOf("facts", [{ input: "fragment.json", path: args[1] }], producerProtocol);
-  if (args[0] === "--unit" && args.length === 5)
+  if (args[0] === "--unit" && args.length === 6)
     return stageOf("propose", [{ input: "slice.json", path: args[1] }, { input: "flow.json", path: args[2] },
-      { input: "reads.json", path: args[3] }, { output: "proposal.bin", path: args[4] }], producerProtocol);
+      { input: "reads.json", path: args[3] }, { output: "proposal.bin", path: args[4] },
+      { output: "claims.json", path: args[5] }], producerProtocol);
   if (args[0] === "--assemble" && args.length >= 4)
     return stageOf("assemble", [{ input: "fragment.json", path: args[1] }, { input: "qualified.json", path: args[2] },
       { input: "assembly.json", path: args[3] }, ...args.slice(4).map((path, i) => ({ input: `unit-${i}.bin`, path }))],

@@ -698,16 +698,4 @@ def readUnitLine (line : Json) : Except String (String × Json) := do
   fieldsExactly line ["unit", "evidence"]
   return (← jStr (← jField line "unit"), ← jField line "evidence")
 
-/-- A file's units, one per line: each selected group by its first member,
-with its members and dependencies, then each module run. -/
-def unitsJson (ast claims : Json) (fileKey : String) (budget : PositiveCertificates.SearchBudget := {})
-    (names : Option (List String) := none) : Except String (List Json) := do
-  let p ← planImports ast claims
-  let fr ← fileFront p.ast p.claims fileKey budget p.qualified
-  let runs := p.modules.map ("module:" ++ ·.location)
-  return (fr.selected names).map fun i =>
-    let group := fr.group i
-    Json.mkObj [("unit", toJson (fr.unitId i)), ("members", toJson (group.map fr.unitId)),
-      ("depends", toJson ((fr.dependencies group).map fr.unitId ++ (if fr.readsQualified group then runs else [])))]
-
 end Verification.SourceClaimJson
