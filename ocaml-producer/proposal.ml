@@ -97,7 +97,7 @@ let declaration_footprint ?(flows=[]) ?(module_names=[]) declarations values nam
     match List.filter_map (fun (x:expression) -> if x.pos = e.pos then Some x.type_ else None) claim.expressions with
     | [] -> false
     | types -> List.for_all (fun t -> t = Atoms []) types in
-  let readable = List.map fst g.params @ names in
+  let readable = List.map fst g.params @ names @ module_names in
   let iteration name = Option.bind (List.assoc_opt name values) iteration_footprint in
   (* A method call dispatched on its object reads and invokes the member in
      one node (`Type_queries.dispatches_call`). *)
