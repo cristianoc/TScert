@@ -21,10 +21,10 @@ import type { Cpu } from "./stage-store.mts";
 const here = import.meta.dirname;
 
 /** The stages of the pipeline's entry point (STAGE-STORE.md). */
-export type StageName = "parse" | "module" | "lower" | "propose" | "assemble" | "plan" | "search" | "check" |
+export type StageName = "parse" | "module" | "lower" | "facts" | "propose" | "assemble" | "plan" | "search" | "check" |
   "module-search" | "module-check" | "explain" | "diagnostics";
-export const stageNames: readonly StageName[] = ["parse", "module", "lower", "propose", "assemble", "plan", "search", "check",
-  "module-search", "module-check", "explain", "diagnostics"];
+export const stageNames: readonly StageName[] = ["parse", "module", "lower", "facts", "propose", "assemble", "plan",
+  "search", "check", "module-search", "module-check", "explain", "diagnostics"];
 export const isStageName = (value: unknown): value is StageName => stageNames.some((s) => s === value);
 
 /** The repository's builds of the two audited programs, at their build
@@ -76,7 +76,7 @@ export const unkeyed: readonly string[] = [
   "pipeline/stages.mts", "pipeline/stage-store.mts", "pipeline/verify-source.mts", "pipeline/run-cases.mts",
   "pipeline/cases.mts", "pipeline/test.mts", "pipeline/default-parameters.mts", "pipeline/evidence-mutations.mts",
   "pipeline/generic-rest.mts", "pipeline/overload-claims.mts", "pipeline/rest-pack-instance.mts",
-  "pipeline/run-example.mts", "pipeline/fixture-links.mts", "tools/diagnostic.mts", "tools/diagnostic-view.mts",
+  "pipeline/run-example.mts", "pipeline/fixture-links.mts", "pipeline/unit-slices.mts", "pipeline/unit-documents.mts", "tools/diagnostic.mts", "tools/diagnostic-view.mts",
   "tools/claim-text.mts", "tools/unchecked.mts", "tools/shadow-contracts.mts", "tools/strip-types.mts",
   "tools/compiler-processes.mts", "tools/child-output.mts",
 ];
@@ -614,6 +614,20 @@ export function verifierCall(program: string, args: readonly string[],
 export function producerCall(program: string, args: readonly string[]): ProcessCall {
   const documents = (list: readonly string[]): Argument[] =>
     list.map((path, i) => ({ input: ["fragment.json", "flow.json", "qualified.json"][i], path }));
+  const stageOf = (stage: StageName, list: Argument[], protocol: Protocol): ProcessCall =>
+    ({ stage, program, arguments: [{ text: args[0] ?? "" }, ...list], environment: {}, protocol });
+  if (args[0] === "--units" && args.length === 2)
+    return stageOf("facts", [{ input: "fragment.json", path: args[1] }], producerProtocol);
+  if (args[0] === "--unit" && args.length === 5)
+    return stageOf("propose", [{ input: "slice.json", path: args[1] }, { input: "flow.json", path: args[2] },
+      { input: "reads.json", path: args[3] }, { output: "proposal.bin", path: args[4] }], producerProtocol);
+  if (args[0] === "--assemble" && args.length >= 4)
+    return stageOf("assemble", [{ input: "fragment.json", path: args[1] }, { input: "qualified.json", path: args[2] },
+      { input: "assembly.json", path: args[3] }, ...args.slice(4).map((path, i) => ({ input: `unit-${i}.bin`, path }))],
+      producerProtocol);
+  if (args[0] === "--explain" && args.length === 4)
+    return stageOf("explain", [{ input: "slice.json", path: args[1] }, { input: "flow.json", path: args[2] },
+      { input: "reads.json", path: args[3] }], { refusal: null });
   if (args[0] === "--explain" && args.length === 3)
     return { stage: "explain", program, arguments: [{ text: "--explain" }, ...documents(args.slice(1))],
       environment: {}, protocol: { refusal: null } };

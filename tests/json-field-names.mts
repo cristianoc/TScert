@@ -153,15 +153,21 @@ const equationReaders = [
   const written = new Set((source.match(/JSON\.stringify\(reads\.map\(\(\{([^}]*)\}\)/)?.[1] ?? "")
     .split(",").map((n) => n.trim()).filter((n) => n !== ""));
   assert.ok(written.size > 0, "the qualified-reads document's writer is found");
+  // The documents of a proposal a unit at a time (`unit-documents.mts`).
+  const units = read("pipeline/unit-documents.mts");
+  const typeFields = (name: string): Set<string> => new Set([...(units.match(new RegExp(`export type ${name} = \\{([\\s\\S]*?)\\};`))?.[1] ?? "")
+    .replace(/\/\*[\s\S]*?\*\//g, "").matchAll(/(?<![\w.])([A-Za-z_]\w*)\??\s*:(?!:)/g)].flatMap(captured));
+  for (const t of ["UnitReads", "Interface", "AssemblyEntry"]) for (const n of typeFields(t)) written.add(n);
   const reads = ocamlReads("ocaml-producer/producer.ml");
-  expectSubset("OCaml reads of qualified reads", reads, written, {});
-  expectSubset("Qualified-read fields OCaml ignores", written, reads, {});
+  expectSubset("OCaml reads of the producer's input documents", reads, written, {});
+  expectSubset("Input-document fields OCaml ignores", written, reads, {});
   const explanation = declared([], undefined);
   for (const n of (source.match(/interface Explanation \{([^}]*)\}/)?.[1] ?? "").matchAll(/(\w+)\s*:/g)) explanation.add(n[1] ?? "");
   assert.ok(explanation.size > 0, "the explanation's declared type is found");
+  for (const t of ["UnitFacts", "Interface"]) for (const n of typeFields(t)) explanation.add(n);
   const explained = ocamlWrites("ocaml-producer/producer.ml");
-  expectSubset("OCaml writes of explanations", explained, explanation, {});
-  expectSubset("Explanation fields OCaml omits", explanation, explained, {});
+  expectSubset("OCaml writes of the producer's output documents", explained, explanation, {});
+  expectSubset("Output-document fields OCaml omits", explanation, explained, {});
 }
 
 // The equation tree's spelling: Lean alone writes and reads it (the evidence
