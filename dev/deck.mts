@@ -20,14 +20,17 @@
  * - a sub- or superscript is written with the Unicode sub- and superscript
  *   characters where every character has one, and as `_x` or `^x` otherwise;
  * - small capitals (a formula's constructors) are drawn by colour alone;
- * - a code block is one paragraph per line, its indentation non-breaking
- *   spaces, an added or removed line marked by its background;
+ * - a code block is one paragraph, its lines joined by line breaks and its
+ *   indentation non-breaking spaces, so the format shrinks it, if ever, as
+ *   one; a block marking added or removed lines is one paragraph per line,
+ *   each marked by its background;
  * - slides use the light colours: the format has no dark scheme. */
 import {
   changeHead, codeTokens, dedent, mathRoles, mathTokens, parts, parseRecord, versions,
   CODE_KINDS, MATH_KINDS, PLAIN_KINDS, type CommitRecord, type MathRole, type Section,
 } from "./record-render.mts";
-import { FACES, FONTS, LIGHT, SYNTAX } from "./style-tokens.mts";
+import { readFileSync } from "node:fs";
+import { DARK, FACES, FONTS, LIGHT, SYNTAX } from "./style-tokens.mts";
 
 /** One slide: its id, and its `<section>` in the slide format. */
 export type Slide = { id: string; html: string };
@@ -76,7 +79,7 @@ export function slide(id: string, o: { label: string; title: string; body: strin
     : label(o.label);
   return { id, html: `<section id="${id}" style="background:${o.tone === "code" ? C["code-bg"] : C.bg};color:${C.ink};${SANS};padding:120px 128px;display:flex;flex-direction:column;gap:${o.gap ?? 24}px">
 ${lab}
-<h2 style="${SERIF};font-size:56px;font-weight:500;line-height:1.15">${o.title}</h2>
+<h2 style="${SERIF};font-size:56px;font-weight:700;line-height:1.15">${o.title}</h2>
 ${o.body}
 </section>
 ` };
@@ -85,9 +88,29 @@ ${o.body}
 /** The cover: a label, the title, and a paragraph. */
 export function cover(id: string, o: { label: string; title: string; text: string }): Slide {
   return { id, html: `<section id="${id}" style="background:${C.bg};color:${C.ink};${SANS};padding:128px;display:flex;flex-direction:column;gap:40px">
+${TURNY}
 ${label(o.label)}
-<h1 style="${SERIF};font-size:88px;font-weight:500;line-height:1.1">${o.title}</h1>
-<p style="font-size:28px;color:${C.ink};line-height:1.4;width:1500px">${o.text}</p>
+<h1 style="${SERIF};font-size:88px;font-weight:700;line-height:1.1;width:1340px">${o.title}</h1>
+<p style="font-size:28px;color:${C.ink};line-height:1.4;width:1340px">${o.text}</p>
+</section>
+` };
+}
+
+/** Turny, the cast's turnstile (TScert-media, "The cast"), reading with its
+ * magnifier: `assets/turny-magnifier.svg`, traced from its pose, pinned in
+ * the cover's lower right within the margins. Every deck's cover carries it. */
+const TURNY = readFileSync(new URL("../assets/turny-magnifier.svg", import.meta.url), "utf8")
+  .replace("<svg ", `<svg style="position:absolute;right:128px;bottom:128px;width:280px;height:400px" `);
+
+/** A statement slide (STYLE.md, "Decks"), at most one or two per deck: on
+ * the dark tokens, a label, one sentence at the heading's size, the rule bar
+ * under it as under a takeaway, and one plain line. */
+export function statement(id: string, o: { label: string; title: string; text: string }): Slide {
+  return { id, html: `<section id="${id}" style="background:${DARK.bg};color:${DARK.ink};${SANS};padding:128px;display:flex;flex-direction:column;justify-content:center;gap:40px">
+<p style="font-size:24px;color:${DARK.muted};font-weight:600;letter-spacing:2px;text-transform:uppercase">${o.label}</p>
+<h2 style="${SERIF};font-size:60px;font-weight:700;line-height:1.15;width:1500px">${o.title}</h2>
+<div style="width:240px;height:6px;background:${DARK["brand-gold"]}"></div>
+<p style="font-size:28px;color:${DARK.ink};line-height:1.4;width:1450px">${o.text}</p>
 </section>
 ` };
 }
@@ -166,9 +189,11 @@ export function code(lines: string[], marks: ("add" | "del" | "")[] = []): strin
     }).join("") || "&#160;";
     const mark = marks[i] ?? "";
     const bg = mark === "add" ? `;background:${C["ok-bg"]}` : mark === "del" ? `;background:${C["neg-bg"]}` : "";
-    return `<p style="${MONO};font-size:24px;line-height:1.45;white-space:nowrap${bg}">${body}</p>`;
+    return marked ? `<p style="${MONO};font-size:24px;line-height:1.45;white-space:nowrap${bg}">${body}</p>` : body;
   };
-  return `<div style="background:${C["code-bg"]};padding:16px 22px;border-radius:12px;display:flex;flex-direction:column">${lines.map(line).join("")}</div>`;
+  const marked = marks.some(m => m !== "");
+  return `<div style="background:${C["code-bg"]};padding:16px 22px;border-radius:12px;display:flex;flex-direction:column">` +
+    (marked ? lines.map(line).join("") : `<p style="${MONO};font-size:24px;line-height:1.45;white-space:nowrap">${lines.map(line).join("<br>")}</p>`) + `</div>`;
 }
 
 const SUB: Readonly<Record<string, string>> = Object.fromEntries([..."0123456789+-=()aeoxhklmnpstijruv"].map((c, i) =>

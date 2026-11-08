@@ -203,6 +203,13 @@ A slide is 1920×1080. The page's styles scale to it:
   that set a contrast; cards on `--surface` with a 1 px `--rule` border and
   a 16 px radius; code on `--code-bg` with a 12 px radius; typeset rules on
   `--math-bg` with a 6 px `--accent` left border.
+- **Cover:** the label, the title, a paragraph, and Turny, the cast's
+  turnstile reading with its magnifier
+  ([`assets/turny-magnifier.svg`](../assets/turny-magnifier.svg), traced from
+  its pose in TScert-media), in the lower right; every deck's cover carries
+  it.
+- **Code:** a block is one paragraph, so the format shrinks it, if ever, as
+  one.
 - **Statement slides:** at most one or two per deck, on the dark tokens.
 - **Status:** a status in a table or card uses its pair's text colour and
   its word (verified, refused, gap, trust change), as the pages do.

@@ -1,6 +1,6 @@
 <section id="limits" style="background:#fbfcfd;color:#0b1a2e;font-family:'Inter','Helvetica Neue',Arial,sans-serif;padding:120px 128px;display:flex;flex-direction:column;gap:16px">
 <div style="display:flex;gap:24px;align-items:baseline;flex-wrap:wrap"><p style="font-size:24px;color:#56627a;font-weight:600;letter-spacing:2px;text-transform:uppercase">Refused forms</p><p style="font-size:24px;color:#56627a">the main ones; docs/SOURCE-FRAGMENT.md lists the rest</p></div>
-<h2 style="font-family:'Bricolage Grotesque','Helvetica Neue',Arial,sans-serif;font-size:56px;font-weight:500;line-height:1.15">Forms that cannot carry a statement</h2>
+<h2 style="font-family:'Bricolage Grotesque','Helvetica Neue',Arial,sans-serif;font-size:56px;font-weight:700;line-height:1.15">Forms that cannot carry a statement</h2>
 <table style="font-size:24px;color:#0b1a2e">
 <tr><th style="width:30%;text-align:left;font-weight:600"><span style="color:#9b3524">Refused</span></th><th style="width:70%;text-align:left;font-weight:600">Why</th></tr>
 <tr><td>async functions</td><td>the body may run on after an await, once the call has returned, and a throw in it rejects the returned Promise instead of leaving the call, so no statement covers the body</td></tr>

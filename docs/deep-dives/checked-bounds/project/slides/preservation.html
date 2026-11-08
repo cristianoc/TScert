@@ -1,0 +1,12 @@
+<section id="preservation" style="background:#fbfcfd;color:#0b1a2e;font-family:'Inter','Helvetica Neue',Arial,sans-serif;padding:120px 128px;display:flex;flex-direction:column;gap:22px">
+<div style="display:flex;gap:24px;align-items:baseline;flex-wrap:wrap"><p style="font-size:24px;color:#56627a;font-weight:600;letter-spacing:2px;text-transform:uppercase">Frame conditions</p><p style="font-size:24px;color:#56627a">the preservation rules <span style="color:#2f6b47">proved</span></p></div>
+<h2 style="font-family:'Bricolage Grotesque','Helvetica Neue',Arial,sans-serif;font-size:56px;font-weight:700;line-height:1.15">Mutations preserve facts through checked effects</h2>
+<p style="font-size:26px;color:#0b1a2e;line-height:1.4">A fact over the heap reads particular locations. TScert’s footprint mechanism, its frame conditions, checks whether an operation leaves those locations unchanged, or changes them in a way that preserves the inequality.</p><table style="font-size:24px;color:#0b1a2e">
+<tr><th style="width:38%;text-align:left;font-weight:600">Operation</th><th style="width:62%;text-align:left;font-weight:600">Preservation</th></tr>
+<tr><td>Write a numeric field</td><td>array lengths preserved; facts about that field restated from the written value</td></tr>
+<tr><td>Write <span style="color:#2c4f7c">xs[k]</span> below the length</td><td>the length preserved</td></tr>
+<tr><td><span style="color:#2c4f7c">out.push(v)</span></td><td>lower bounds on <span style="color:#2c4f7c">out.length</span> preserved; upper bounds dropped</td></tr>
+<tr><td>Call with a checked frame condition</td><td>facts whose locations its frame protects</td></tr>
+<tr><td>Any step</td><td>a typed array’s length: fixed for its life (trusted)</td></tr>
+</table><p style="font-size:24px;color:#0b1a2e;line-height:1.4">These rules concern normal returns; a throw carries a frame condition only where one is stated for it.</p>
+</section>

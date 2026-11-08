@@ -97,7 +97,7 @@ const slides: Slide[] = [
       ["compiler-API members outside TScert's reviewed lists", "20", "3,091", "20 / 0"],
       ["the sync API's conditional member type", "17", "119", "14 / 3"],
       ["crypto's hash options", "13", "404", "5 / 8"],
-    ].map(r => r.map(t)), [55, 13, 14, 18]) + bullets([
+    ].map(r => r.map(t)), [55, 13, 14, 18], { compact: true }) + bullets([
       "Functions: distinct functions whose slice meets the family; statements: those functions' statements. Families overlap, so the columns do not add up.",
       "The last column counts functions meeting the family as their first refusal and after a rewrite; a function can meet it both ways, so the two may add to more than the total. No slice meets the callback parameter typed any first.",
       "The 20 functions of a later slide, “An empty array written into a field”, are among the 56 of the first row.",
