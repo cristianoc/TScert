@@ -747,7 +747,10 @@ item, a replay racing
 passes a miss or the entry's own result, and a pass an orchestrator starts
 leaving the store within its budget. The replay control evicts its store
 whole and runs again: every stage executes, to the same outcome, documents
-and logs.
+and logs. The edit replay control of `pipeline/test.mts` edits an importer
+of a certified module in its own code: the module run's search and check
+replay, the importer's search executes, and the edited run's outcome is a
+cold run's in a fresh store.
 
 ## Timing
 
