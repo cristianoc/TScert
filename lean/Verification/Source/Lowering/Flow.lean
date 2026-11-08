@@ -51,6 +51,33 @@ private def reachablePoints (graph : SourceFlow.Graph) (id : Nat) : List String 
       work := later
   return found.reverse.map (SourceFlow.pointId graph.owner)
 
+/-- Clause terms use a binding's value, including the `value` field of a
+cell. Integer claims over a cell are defined linear terms, as entry facts
+are; all array paths, bounds, guards and free body terms use the same map. -/
+private def invariantFact (root : Nat → Option (Nat × List String))
+    (F : HeapKnowledge.IndexFact) : Option HeapKnowledge.IndexFact :=
+  let term := fun (t : HeapKnowledge.Term) => do
+    let (s, p) ← root t.slot
+    pure { t with slot := s, path := p ++ t.path }
+  match F with
+  | .int x => do
+    let (s, p) ← root x
+    pure (if p.isEmpty then .int s else .linear (.le [(⟨.value, s, p⟩, 1)] (2 ^ 53 - 1)))
+  | .linear G => (G.mapVars term).map .linear
+  | .guarded x p tag G => do
+    let (s, pre) ← root x
+    pure (.guarded s (pre ++ p) tag (← invariantFact root G))
+  | .every x p stop body => do
+    let (s, pre) ← root x
+    let body ← body.mapM fun G => G.mapVars fun
+      | .index => some .index
+      | .elem => some .elem
+      | .free t => (term t).map .free
+    pure (.every s (pre ++ p) (← term stop) body)
+  | F => F.mapM fun x => do
+    let (s, p) ← root x
+    if p.isEmpty then some s else none
+
 /-- Elaborate one immutable control-flow action. Reserved entries permit
     cyclic edges; every entry retains the context required of its predecessors. -/
 @[nospecialize] private partial def flowNode (recursive : RecursiveLowering) (graph : SourceFlow.Graph)
@@ -354,10 +381,10 @@ private def reachablePoints (graph : SourceFlow.Graph) (id : Nat) : List String 
   -- into the head establishes.
   let invariant ← match node.action with
     | .branch (.loop _ _ _ _ (names, facts)) _ _ => facts.mapM fun F => do
-      match F.mapM (fun p => names[p]? >>= valueSlot scope) with
+      match invariantFact (fun p => names[p]? >>= termRoot scope) F with
       | some G => pure ({ fact := G } : HeapKnowledge.IndexAtom)
       | none => throw (locatedRefusal (← table) node.source .entryClaim
-          "a loop invariant names a binding that is no value binding at the loop's head")
+          "a loop invariant names a binding that is no value binding or initialized cell at the loop's head")
     | _ => pure []
   -- Each atom once, as the knowledge a search reaches holds it: a cut's
   -- knowledge is its assertion exactly (`checkAssertions`), and two claimed

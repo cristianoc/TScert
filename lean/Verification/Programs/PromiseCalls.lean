@@ -2148,12 +2148,32 @@ def everyWritten (k : Knowledge) (b i x : Nat) (a : IndexAtom) : Bool :=
       (entailsKnown k.indices (.le [(st, 1), (.value i, -1)] 0) || body.all (writtenBody k.indices i x))
   | _ => false
 
+open HeapKnowledge in
+/-- A prefix ending at a known term after the written index. The old prefix
+covers every smaller index, and the written value satisfies the body. -/
+def writtenPrefix (k : Knowledge) (b i x : Nat) (a : IndexAtom) (next : Term) : Option IndexAtom :=
+  match a.fact with
+  | .every s [] st body =>
+    if (s == b || (HeapLinks.aliases k.links b).contains s) &&
+        termDefined k.indices next && next.keptBy writeChanges (fun _ _ => false) &&
+        body.all (bodyKeptBy writeChanges (fun _ _ => false)) &&
+        entailsKnown k.indices (.le [(next, 1), (.value i, -1)] 1) &&
+        entailsKnown k.indices (.le [(.value i, 1), (st, -1)] 0) &&
+        body.all (writtenBody k.indices i x)
+    then some { a with fact := .every s [] next body } else none
+  | _ => none
+
 /-- The quantified atoms of a call's entry `k` an exact element write keeps
 (`everyWritten`), renamed past the result; none of any other call. -/
 def writeKept (eff : Effect) (t : Tm) (k : HeapKnowledge.Knowledge) : List HeapKnowledge.IndexAtom :=
   match eff.elementWrite, t with
   | some .exact, .invoke _ _ [.var b, .var i, .var x] =>
-    HeapKnowledge.shiftIndices (k.indices.filter (everyWritten k b i x))
+    let i := HeapKnowledge.pick (HeapLinks.aliases k.links) (HeapKnowledge.intSlot k.indices) i
+    let x := HeapKnowledge.pick (HeapLinks.aliases k.links) (HeapKnowledge.intSlot k.indices) x
+    HeapKnowledge.shiftIndices (k.indices.filter (everyWritten k b i x) ++
+      k.indices.flatMap fun a => (HeapKnowledge.definedTerms k.indices).eraseDups.filterMap fun next =>
+        if HeapKnowledge.entailsKnown k.indices (.le [(.value i, 1), (next, -1)] (-1))
+        then writtenPrefix k b i x a next else none)
   | _, _ => []
 
 open HeapKnowledge in
@@ -2221,6 +2241,72 @@ theorem every_written {ρ : Env} {h h' : Heap} {b i x s : Nat} {st : Term} {body
       | free t => simp [Bound.grownBy, Term.grownBy, writeChanges, CallEffects.ElementWrite.changes] at hgy
 
 open HeapKnowledge in
+/-- **An exact element write establishes a prefix through its index**
+Every target index other than the written index belongs to the old prefix;
+the written index holds the value checked against the body. -/
+theorem every_written_prefix {ρ : Env} {h h' : Heap} {b i x s : Nat} {st next : Term} {body : List (Linear.Fact Bound)}
+    {as : List IndexAtom} (he : IndexHolds as ρ h) (hs : ρ s = ρ b)
+    (hc : writeChanges.Holds h h') (hx : CallEffects.ExactWrite [ρ b, ρ i, ρ x] h h')
+    (hnext : termDefined as next = true)
+    (hcover : entailsKnown as (.le [(next, 1), (.value i, -1)] 1) = true)
+    (hstart : entailsKnown as (.le [(.value i, 1), (st, -1)] 0) = true)
+    (hst : next.keptBy writeChanges (fun _ _ => false) = true)
+    (hb : body.all (bodyKeptBy writeChanges (fun _ _ => false)) = true)
+    (hbody : body.all (writtenBody as i x) = true)
+    (hF : (IndexFact.every s [] st body).HoldsAt ρ h) : (IndexFact.every s [] next body).HoldsAt ρ h' := by
+  obtain ⟨w, sto, ls, n, hw, hsto, hls, hn, hall⟩ := hF
+  simp only [readPath, Option.some.injEq] at hw
+  subst hw
+  obtain ⟨ls', kb, i0, hls', hkb, hi0, hlt, hj, l, hl, hlv⟩ := hx sto ls (by simpa [hs] using hsto) hls
+  simp only [List.getD_cons_succ, List.getD_cons_zero] at hkb hlv
+  have hki : intValue (ρ i) = some (i0 : Int) := by rw [hkb]; exact intValue_num hi0
+  obtain ⟨n', hn0⟩ := Option.isSome_iff_exists.mp (termDefined_sound he hnext)
+  have hn' := termValue_kept hc firstKept_none hst hn0
+  have hcoverage := entailsKnown_sound he hcover
+  have hbegin := entailsKnown_sound he hstart
+  simp only [Linear.Fact.Holds, Linear.Form.eval, termValuation, hn0, hn, termValue_value, hki,
+    Option.getD_some] at hcoverage hbegin
+  refine ⟨ρ s, sto, ls', n', rfl, hsto, hls', hn', fun j hj' F hF => ?_⟩
+  have hbF := List.all_eq_true.mp hb F hF
+  by_cases hji : j = i0
+  · subst hji
+    have hwb := List.all_eq_true.mp hbody F hF
+    unfold writtenBody at hwb
+    split at hwb
+    · rename_i G hG
+      simp only [Bool.and_eq_true, List.all_eq_true] at hwb
+      obtain ⟨hd, hent⟩ := hwb
+      have hG0 : (IndexFact.linear G).HoldsAt ρ h :=
+        ⟨fun t ht => termDefined_sound he (hd t ht).1, entailsKnown_sound he hent⟩
+      have hG1 := IndexFact.holdsAt_kept hc firstKept_none
+        (by simp only [IndexFact.keptBy, Bool.or_eq_true]; exact .inl (List.all_eq_true.mpr fun t ht => (hd t ht).2))
+        hG0
+      refine (factAt_mapVars (val' := termValue ρ h') hG fun y _ t ht => ?_).mp hG1
+      simp only [Function.comp_apply, Option.some.injEq] at ht
+      subst ht
+      cases y with
+      | index => simp only [Bound.inst, termValue_value, hki, boundValue]
+      | elem => simp only [Bound.inst, termValue_value, boundValue, elementInt, hl, hlv, Option.bind_some]
+      | free t => rfl
+    · cases hwb
+  · refine factAt_monotone (fun y m hky hy => ?_) (fun y m hgy hy => ?_) hbF (hall j (by omega) F hF)
+    · cases y with
+      | index => exact hy
+      | elem =>
+        simp only [boundValue, elementInt, hj j hji] at hy ⊢
+        split at hy
+        · rename_i l' hl'
+          obtain ⟨u, hu, hum⟩ := Option.bind_eq_some_iff.mp hy
+          obtain ⟨bu, rfl, -⟩ := intValue_safe hum
+          simp only [hc.1 l' _ hu (by simp [writeChanges, CallEffects.ElementWrite.changes, Changes.alters]),
+            Option.bind_some, hum]
+        · cases hy
+      | free t => exact termValue_kept hc firstKept_none hky hy
+    · cases y with
+      | index | elem => simp [Bound.grownBy] at hgy
+      | free t => simp [Bound.grownBy, Term.grownBy, writeChanges, CallEffects.ElementWrite.changes] at hgy
+
+open HeapKnowledge in
 theorem writeKept_holds {eff : Effect} {t : Tm} {k : Knowledge} {ρ : Env} {h h' : Heap} {v : Tm}
     (hk : Holds k ρ h)
     (hew : ∀ w, eff.elementWrite = some w → w.Holds (ExpressionEffects.actualsOf (instantiate 0 ρ t)) h h') :
@@ -2232,21 +2318,52 @@ theorem writeKept_holds {eff : Effect} {t : Tm} {k : Knowledge} {ρ : Env} {h h'
     have hx := hx rfl
     simp only [ExpressionEffects.actualsOf, instantiate, instantiateArgs, Nat.not_lt_zero, if_false,
       Nat.sub_zero] at hx
+    have hi := pick_eq (fun a b hab => HeapLinks.aliases_eq hk.2.2.1 hab)
+      (p := intSlot k.indices) i
+    have hv := pick_eq (fun a b hab => HeapLinks.aliases_eq hk.2.2.1 hab)
+      (p := intSlot k.indices) x
+    have hx' : CallEffects.ExactWrite [ρ b,
+        ρ (pick (HeapLinks.aliases k.links) (intSlot k.indices) i),
+        ρ (pick (HeapLinks.aliases k.links) (intSlot k.indices) x)] h h' := by
+      simpa only [hi, hv] using hx
+    clear hx
+    have hx := hx'
     refine shiftIndices_holds fun a ha hcd => ?_
-    obtain ⟨ha, hkept⟩ := List.mem_filter.mp ha
-    have hF := hk.2.2.2.2.2 a ha hcd
-    unfold everyWritten at hkept
-    split at hkept
-    · rename_i s st body hfa
-      rw [hfa] at hF ⊢
-      simp only [Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq, List.contains_iff_mem] at hkept
-      obtain ⟨⟨⟨⟨hcls, hst⟩, hb⟩, -⟩, hnew⟩ := hkept
-      have hs : ρ s = ρ b := by
-        rcases hcls with rfl | hm
-        · rfl
-        · exact HeapLinks.aliases_eq hk.2.2.1 hm
-      exact every_written hk.2.2.2.2.2 hs hc hx hst hb hnew hF
-    · cases hkept
+    rcases List.mem_append.mp ha with ha | ha
+    · obtain ⟨ha, hkept⟩ := List.mem_filter.mp ha
+      have hF := hk.2.2.2.2.2 a ha hcd
+      unfold everyWritten at hkept
+      split at hkept
+      · rename_i s st body hfa
+        rw [hfa] at hF ⊢
+        simp only [Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq, List.contains_iff_mem] at hkept
+        obtain ⟨⟨⟨⟨hcls, hst⟩, hb⟩, -⟩, hnew⟩ := hkept
+        have hs : ρ s = ρ b := by
+          rcases hcls with rfl | hm
+          · rfl
+          · exact HeapLinks.aliases_eq hk.2.2.1 hm
+        exact every_written hk.2.2.2.2.2 hs hc hx hst hb hnew hF
+      · cases hkept
+    · obtain ⟨a0, ha0, ha⟩ := List.mem_flatMap.mp ha
+      obtain ⟨next, -, hnext⟩ := List.mem_filterMap.mp ha
+      split at hnext <;> try contradiction
+      unfold writtenPrefix at hnext
+      split at hnext
+      · rename_i s st body hfact
+        split at hnext
+        · rename_i hcheck
+          cases hnext
+          simp only [Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq, List.contains_iff_mem] at hcheck
+          obtain ⟨⟨⟨⟨⟨⟨hcls, hd⟩, hst⟩, hb⟩, hcover⟩, hstart⟩, hbody⟩ := hcheck
+          have hs : ρ s = ρ b := by
+            rcases hcls with rfl | hm
+            · rfl
+            · exact HeapLinks.aliases_eq hk.2.2.1 hm
+          have hF := hk.2.2.2.2.2 a0 ha0 hcd
+          rw [hfact] at hF
+          exact every_written_prefix hk.2.2.2.2.2 hs hc hx hd hcover hstart hst hb hbody hF
+        · cases hnext
+      · cases hnext
   · exact indexHolds_nil _ _
 
 /-- Knowledge with a call's result-fact atoms added, the atoms of its entry

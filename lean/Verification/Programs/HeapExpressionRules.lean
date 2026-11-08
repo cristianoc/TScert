@@ -1194,6 +1194,75 @@ def writeKeeps (k : Knowledge) (i : Nat) (fld : PropKey) (owned : Bool) (s : Nat
   HeapSeparation.apartBy M k.separation i fld s g ||
     (owned && g != fld && (s == i || (M i).contains s))
 
+/-- A field write preserves a quantified body independent of its index where
+its new value satisfies that body too. This also covers an element location
+that aliases the written cell; no separation is assumed. -/
+def fieldEveryBody (as : List IndexAtom) (chg : Changes) (first : Nat → String → Bool)
+    (v : Nat) (F : Linear.Fact Bound) : Bool :=
+  !F.vars.contains .index && bodyKeptBy chg first F &&
+    match F.mapVars (some ∘ Bound.inst 0 v) with
+    | some G => G.vars.all (fun t => termDefined as t && t.keptBy chg first) && entailsKnown as G
+    | none => false
+
+def fieldEvery (as : List IndexAtom) (chg : Changes) (first : Nat → String → Bool)
+    (v : Nat) (a : IndexAtom) : Bool :=
+  match a.fact with
+  | .every _ [] stop body => chg.store == .keep && stop.keptBy chg first && body.all (fieldEveryBody as chg first v)
+  | _ => false
+
+theorem fieldEvery_holds {as : List IndexAtom} {chg : Changes} {first : Nat → String → Bool}
+    {v : Nat} {a : IndexAtom} {ρ : Env} {h : Heap} {l : Nat}
+    (he : IndexHolds as ρ h) (hc : chg.Holds h (h.set l (ρ v)))
+    (hf : FirstKept first ρ h (h.set l (ρ v))) (hlt : l < h.length)
+    (ha : a.fact.HoldsAt ρ h) (hk : fieldEvery as chg first v a = true) :
+    a.fact.HoldsAt ρ (h.set l (ρ v)) := by
+  unfold fieldEvery at hk
+  split at hk
+  · rename_i s st body hfact
+    rw [hfact] at ha ⊢
+    simp only [Bool.and_eq_true, beq_iff_eq] at hk
+    obtain ⟨⟨hstore, hst⟩, hb⟩ := hk
+    obtain ⟨w, sto, ls, n, hw, hs, hl, hn, hall⟩ := ha
+    have hl' := hc.1 sto _ hl (by simp [Changes.alters, hstore])
+    refine ⟨w, sto, ls, n, hw, hs, hl', termValue_kept hc hf hst hn, fun j hj F hF => ?_⟩
+    have hB := List.all_eq_true.mp hb F hF
+    simp only [fieldEveryBody, Bool.and_eq_true, Bool.not_eq_true'] at hB
+    obtain ⟨⟨hno, hkept⟩, hnew⟩ := hB
+    by_cases hloc : ls[j]? = some (some l)
+    · split at hnew
+      · rename_i G hG
+        simp only [Bool.and_eq_true, List.all_eq_true] at hnew
+        have hG0 : (IndexFact.linear G).HoldsAt ρ h :=
+          ⟨fun t ht => termDefined_sound he (hnew.1 t ht).1, entailsKnown_sound he hnew.2⟩
+        have hG1 := IndexFact.holdsAt_kept hc hf
+          (by simp only [IndexFact.keptBy, Bool.or_eq_true]; exact .inl (List.all_eq_true.mpr fun t ht => (hnew.1 t ht).2)) hG0
+        refine (factAt_mapVars hG fun y hy t ht => ?_).mp hG1
+        simp only [Function.comp_apply, Option.some.injEq] at ht
+        subst ht
+        cases y with
+        | index =>
+          have := List.contains_iff_mem.mpr hy
+          rw [hno] at this
+          contradiction
+        | elem => simp [Bound.inst, termValue_value, boundValue, elementInt, hloc, hlt]
+        | free t => rfl
+      · cases hnew
+    · refine factAt_monotone (fun y m hky hy => ?_) (fun y m hgy hy => ?_) hkept (hall j hj F hF)
+      · cases y with
+        | index => exact hy
+        | elem =>
+          simp only [boundValue, elementInt] at hy ⊢
+          split at hy
+          · rename_i l' hl0
+            have hne : l ≠ l' := by intro hh; subst hh; exact hloc hl0
+            simpa only [List.getElem?_set_ne hne] using hy
+          · exact hy
+        | free t => exact termValue_kept hc hf hky hy
+      · cases y with
+        | index | elem => simp [Bound.grownBy] at hgy
+        | free t => simp [Bound.grownBy, Term.grownBy, hstore] at hgy
+  · cases hk
+
 /-- A write forgets old cell observations, except those about locations known
 to be distinct from the written one, establishes its new contents where the
 written value is a known primitive (`R`), states that reading the field from
@@ -1201,14 +1270,16 @@ the receiver gives the written slot's value (a read link, `write-link`), and
 retains immutable values already read into slots. -/
 def writeOutput (k : Knowledge) (i v : Nat) (fld : PropKey) (R : Option ValueSets.ValueSet) (owned : Bool)
     (chg : Changes) (views : Nat → String → Bool) : Knowledge :=
-  ⟨(R.map fun R => (HeapLinks.aliases k.links i).map (fun j => (⟨j+1,R,fld⟩ : Fact))).getD [] ++
+  HeapKnowledge.withReadAtoms ⟨(R.map fun R => (HeapLinks.aliases k.links i).map (fun j => (⟨j+1,R,fld⟩ : Fact))).getD [] ++
       (k.cells.filter fun f => writeKeeps k i fld owned f.slot f.field).map
         (fun f => {f with slot := f.slot + 1}),
     ⟨0,{ nul := true },valueField⟩ :: HeapFacts.shift k.values,
     ⟨i+1, v+1, false, fld, false⟩ :: HeapLinks.stable (HeapKnowledge.shift k).links,
     HeapSeparation.shift k.separation, [],
     HeapKnowledge.shiftIndices
-      (HeapKnowledge.keptIndicesWith chg (fun s g => writeKeeps k i fld owned s (.str g)) views k.indices)⟩
+      (HeapKnowledge.keptIndicesWith chg (fun s g => writeKeeps k i fld owned s (.str g)) views k.indices ++
+        k.indices.filter (fieldEvery k.indices chg (fun s g => writeKeeps k i fld owned s (.str g))
+          (pick (HeapLinks.aliases k.links) (intSlot k.indices) v)))⟩
 
 /-- **A kept location differs from the written one**: a separation fact
 states it, or `write-sibling` (`ownedField_sound`). -/
@@ -1310,22 +1381,35 @@ theorem write_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImag
       have hindex : HeapKnowledge.IndexHolds (HeapKnowledge.shiftIndices (HeapKnowledge.keptIndicesWith
           (fieldChanges G (expand G (Γ.getD i [])) fld)
           (fun s g => writeKeeps k i fld (ownedField (expand G (Γ.getD i [])) fld) s (.str g))
-          (writeViews G Γ) k.indices))
+          (writeViews G Γ) k.indices ++
+          k.indices.filter (fieldEvery k.indices (fieldChanges G (expand G (Γ.getD i [])) fld)
+            (fun s g => writeKeeps k i fld (ownedField (expand G (Γ.getD i [])) fld) s (.str g))
+            (pick (HeapLinks.aliases k.links) (intSlot k.indices) j))))
           (push .nul ρ) (h.set l (ρ j)) := by
         obtain ⟨u, hu⟩ : ∃ u, h[l]? = some u := ⟨h[l], List.getElem?_eq_getElem hlt⟩
         have hRef : meaning G (Γ.getD i []) (m + 1 + 1) W (ρ i) :=
           he.2 i (Γ.getD i []) (by simp [List.getD_eq_getElem?_getD, List.getElem?_eq_getElem hi])
-        refine HeapKnowledge.shiftIndices_holds (HeapKnowledge.keptIndicesWith_holds hk.2.2.2.2.2
-          (set_changes hu (fieldChanges_alters hRef hh hl hfd hu) (fieldChanges_store _ _ _)) ?_ hviews)
-        intro s g fs cd o l0 v hfirst hs0 hl0 hv
-        rw [List.getElem?_set_ne (writeKeeps_ne he hk hi hfirst hl hfd hs0 hl0)]
-        exact hv
+        have hc := set_changes (b := ρ j) hu (fieldChanges_alters hRef hh hl hfd hu) (fieldChanges_store _ _ _)
+        have hf : FirstKept (fun s g => writeKeeps k i fld (ownedField (expand G (Γ.getD i [])) fld) s (.str g))
+            ρ h (h.set l (ρ j)) := by
+          intro s g fs cd o l0 v hfirst hs0 hl0 hv
+          rw [List.getElem?_set_ne (writeKeeps_ne he hk hi hfirst hl hfd hs0 hl0)]
+          exact hv
+        refine HeapKnowledge.shiftIndices_holds fun a ha hcond => ?_
+        rcases List.mem_append.mp ha with ha | ha
+        · exact HeapKnowledge.keptIndicesWith_holds hk.2.2.2.2.2 hc hf hviews a ha hcond
+        · obtain ⟨ha, hkeep⟩ := List.mem_filter.mp ha
+          have hv := pick_eq (fun a b hab => HeapLinks.aliases_eq hk.2.2.1 hab) (p := intSlot k.indices) j
+          have hout := fieldEvery_holds hk.2.2.2.2.2 (by simpa only [hv] using hc)
+            (by simpa only [hv] using hf) hlt (hk.2.2.2.2.2 a ha hcond) hkeep
+          simpa only [hv] using hout
       have hlinks : HeapLinks.Holds (⟨i+1, j+1, false, fld, false⟩ ::
           HeapLinks.stable (HeapKnowledge.shift k).links) (push .nul ρ) (h.set l (ρ j)) := by
         intro g hg
         rcases List.mem_cons.mp hg with rfl | hg
         · exact ⟨flds, c, oid, l, by simpa [push] using hl, hfd, by simp [push, hlt]⟩
         · exact HeapLinks.stable_holds (HeapKnowledge.shift_holds (v := .nul) hk).2.2.1 g hg
+      apply HeapKnowledge.withReadAtoms_holds
       refine ⟨?_,?_,hlinks,
         (HeapKnowledge.shift_holds (v := .nul) hk).2.2.2.1, HeapKnowledge.elemsHolds_nil _ _, hindex⟩
       · intro f hf

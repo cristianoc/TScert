@@ -9,7 +9,7 @@
 // declaration's parameters, after guards:
 //
 //   K ::= G || K | C        G ::= p === null | p === undefined
-//   C ::= A && C | A | forall i in p: B
+//   C ::= A && C | A | forall i in p: B | forall i < n of p: B
 //   A ::= safeInteger(p) | E rel E      rel ∈ { <, <=, >, >=, === }
 //   E ::= n | p | p.length | n * p | n * p.length | E + E | E - E | -E | (E)
 //   p ::= x | p.f
@@ -184,7 +184,7 @@ function tokens(text: string): Token[] | string {
  * on the way (`steps`), each a sum, difference or product. */
 type Linear = { terms: Map<string, number>; constant: number; steps: Linear[] };
 type Atom = { k: "safeInteger"; of: string } | { k: "compare"; op: string; left: Linear; right: Linear } |
-  { k: "forall"; binder: string; array: string; body: Atom[] };
+  { k: "forall"; binder: string; array: string; stop: string | null; body: Atom[] };
 /** A guard `p === tag ||`, and a clause: its guards in order, then its
  * conjunction. */
 type Guard = { path: string; tag: GuardTag };
@@ -239,14 +239,15 @@ class Parser {
       this.at++;
       const binder = this.take();
       if (!binder || binder.k !== "name") throw new ClauseError("`forall` names its index");
+      const stop = this.isOp("<") ? (this.at++, this.variable()) : null;
       const word = this.take();
-      if (!word || word.k !== "name" || word.v !== "in") throw new ClauseError("`forall i` is followed by `in` and an array's path");
+      if (!word || word.k !== "name" || word.v !== (stop === null ? "in" : "of")) throw new ClauseError("`forall i` is followed by `in P` or `< n of P`");
       const array = this.variable();
       this.expect(":");
       const body = [this.atom()];
       while (this.isOp("&&")) { this.at++; body.push(this.atom()); }
       if (body.some(a => a.k === "forall")) throw new ClauseError("a `forall` body states no `forall`");
-      return { k: "forall", binder: binder.v, array, body };
+      return { k: "forall", binder: binder.v, array, stop, body };
     }
     if (t && t.k === "name" && t.v === "safeInteger") {
       this.at++;
@@ -358,6 +359,7 @@ export function clauseRoots(text: string): string[] {
     if (t.k !== "name") return;
     if (before?.k === "name" && before.v === "forall") { binders.add(t.v); return; }
     if (before?.k === "op" && before.v === ".") return;
+    if (t.v === "of" && before?.k === "name" && ts[i + 1]?.k === "name") return;
     if (words.has(t.v) || binders.has(t.v) || roots.includes(t.v)) return;
     roots.push(t.v);
   });
@@ -532,7 +534,7 @@ export function elaborateRequires(clauses: readonly string[], params: readonly C
             bound } });
         });
         compared.push(wrap({ every: { slot: p.position, path: fields,
-          stop: { kind: ranged === "array" ? "length" : "view", slot: p.position, path: fields }, body } }));
+          stop: a.stop === null ? { kind: ranged === "array" ? "length" : "view", slot: p.position, path: fields } : term(a.stop), body } }));
       }
     };
     /** The values the unguarded clauses state safe integers. */

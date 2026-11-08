@@ -412,6 +412,24 @@ control(async (): Promise<void> => {
 });
 
 control(async (): Promise<void> => {
+  // Advancing the claimed prefix over an unwritten cell must fail independently
+  // of the producer's choice to drop the fact.
+  const artifacts = run("invalid-typed-array-prefix-past");
+  const source = readFileSync(sourceKey(artifacts), "utf8");
+  const claims = readClaims(artifacts);
+  const fn = must(claims.functions.find(f => f.name === "invalidPrefix"), "invalidPrefix's claims");
+  const before = must(fn.entries.find(e => e.quantified.some(q => q.name === "items" && q.stop.name === "n")), "the prefix");
+  const prefix = structuredClone(must(before.quantified.find(q => q.name === "items" && q.stop.name === "n"), "the prefix fact"));
+  prefix.stop = { name: "next", path: [], term: "value" };
+  const at = source.indexOf("if (j < 0");
+  must(fn.entries.find(e => e.start === at), "the entry after the write").quantified.push(prefix);
+  const forged = writeClaims(artifacts, "typed-prefix-past-forged", claims);
+  const searched = produceWith(artifacts, forged, "typed-prefix-past-forged");
+  assert.equal(searched.status, 1, `${searched.stdout}${searched.stderr}`);
+  assert.match(searched.stdout + searched.stderr, /does not establish the claims/);
+});
+
+control(async (): Promise<void> => {
   // every-empty must establish zero length; a non-empty literal supplies no such proof.
   const artifacts = run("invalid-quantified-empty");
   const source = readFileSync(sourceKey(artifacts), "utf8");

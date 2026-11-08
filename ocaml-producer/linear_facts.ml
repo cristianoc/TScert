@@ -1520,7 +1520,15 @@ let ewritten ~array env fs (es : efact list) (e : expr) : efact list option =
          let t = List.concat_map (fun (n,x) ->
            if n = index_var then scale x kt else if n = elem_var then scale x vt else [n,x]) t in
          entails (ranged [ef.stop,1]) (norm t, d - a * kc - c * vc)) ef.body in
-       Some (List.filter (fun (ef : efact) -> ef.arr = (b,[]) && (past ef || meets ef)) es)
+       let terms = List.sort_uniq String.compare (List.concat_map (fun (t,_) -> List.map fst t) fs) in
+       Some (List.concat_map (fun (ef : efact) ->
+         if ef.arr <> (b,[]) || ef.body = [] then [] else
+         (if past ef || meets ef then [ef] else []) @
+         (if not (meets ef) || not (entails (ranged [ef.stop,1]) (norm (kt @ [ef.stop,-1]), -kc)) then [] else
+          List.filter_map (fun stop ->
+            if entails (ranged [stop,1]) (norm ((stop,1) :: scale (-1) kt), kc + 1) &&
+               entails (ranged [stop,1]) (norm (kt @ [stop,-1]), -kc - 1)
+            then Some { ef with stop } else None) terms)) es)
      | _ -> Some [])
   | _ -> None
 
@@ -1539,10 +1547,20 @@ let estatement ?(array = fun _ _ -> false) ?(facts = []) env (es : efact list) (
       | Declare (_,bindings) -> List.filter_map (fun (n,_,init) -> match path_of env init with
           | Some (root,(_ :: _ as path)) when root <> n -> Some (n,(root,path))
           | _ -> None) bindings
+      | Effect {node=Assign (n,_,{node=Id root;_});_} when slot_binding env n -> [n,(root,[])]
       | _ -> []) in
   (* Each read in turn restates the facts the reads before it gave, as Lean's
      reads do one after another. *)
-  List.fold_left (fun es (n,rp) -> es @ List.filter_map (erestate_read n rp) es) es reads
+  let es = List.fold_left (fun es (n,rp) -> es @ List.filter_map (erestate_read n rp) es) es reads in
+  match s.statement with
+  | Declare (_,bindings) -> es @ List.filter_map (fun (name,_,init) -> match init.node with
+      | New ({node=Id c;_},_,([_] as args),[]) when
+          List.mem c ["Uint8Array"; "Uint16Array"; "Int32Array"; "Float64Array"] &&
+          List.exists (fun (terms,_) -> List.mem_assoc (view_term name) terms)
+            (construct_ensures ~array env facts name c args) ->
+          Some { arr = (name,[]); stop = view_term name; body = [] }
+      | _ -> None) bindings
+  | _ -> es
 
 (* A precondition's quantified facts over bindings, `name p` the binding the
    position `p` holds; a fact naming a position no binding holds is left out. *)

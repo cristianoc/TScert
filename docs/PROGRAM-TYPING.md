@@ -2786,6 +2786,11 @@ of the body to a linear fact over the index, the element and terms, its
 computed sums ranged as a clause's are. A hole denotes no element, so a body
 naming the element holds of no index holding a hole.
 
+A prefix clause `forall i < n of P: B` uses the same quantified fact with
+its bound the term `n`. The clause states `safeInteger(n)` when `n` names a
+value. Length paths are terms too. A bound is one term; a named successor
+`const next = n + 1` supplies the bound for an extended prefix.
+
 **Reading an element.** The bounded signature of
 $`\%\mathsf{ElementAt}\%`$ ([reads below the length](#reads-below-the-length))
 states in its postcondition the element fact $`\mathrm{element}(0,2,3)`$: the
@@ -2810,8 +2815,9 @@ states its value a safe integer between $`0`$ and $`|\mathit{data}.\mathit{width
 
 **Frame conditions.** A quantified fact and an element fact read the heap: a
 step leaving the heap unchanged preserves them, and a heap change other than
-a growth of a receiver's store or an exact element write of a typed array
-preserves neither, a stated limit. On an edge a target quantified fact follows from a
+a growth of a receiver's store, an exact element write of a typed array,
+or a scalar field write satisfying the rule below preserves neither, a
+stated limit. On an edge a target quantified fact follows from a
 source one whose root slot the edge maps it to, of the same path, whose bound
 and each body fact the target's follow term by term (proved), and a target
 element fact from the same one renamed. A read of field $`f`$ from slot
@@ -2835,6 +2841,13 @@ whose postcondition records zero length and the allocation's fresh
 locations. The producer proposes the zero-length facts at the declaration
 and the written quantified invariant at the loop head; each incoming edge
 checks the invariant, including the entry from the empty literal.
+
+**Empty prefixes.** An existing quantified fact witnesses the element store
+of its array or view. Together with a defined bound at most zero, it
+establishes any quantified body at that bound (proved by
+`elementsKnown_sound` and `linearFollows_sound`). The numeric typed-array
+constructor's contract states a quantified fact with an empty body over its
+result, witnessing the store that represents the freshly allocated view.
 
 **Across a push.** A normal return of `push` changes no old location but its
 receiver's store, which it extends: the old elements keep their indices, and
@@ -2889,6 +2902,36 @@ fact over a view does not transfer to a `subarray` of it either
 (`typed-array-subarray-facts-gap`, a stated limit). An array's length is at
 most $`2^{32}-1`$, so a value bounded by one alone is not known to fit an
 `Int32Array`: the clause states the bound (`v <= 2147483647`).
+
+**Extending a prefix.** An exact element write at index $`k`$ establishes a
+prefix with bound $`m`$ where the old prefix has bound $`n`$,
+$`k\le n`$, $`m\le k+1`$, and the written value satisfies every body fact
+at $`k`$. The bound and body terms must survive the write. Every index
+below $`m`$ is either $`k`$, holding the written value, or below $`n`$,
+holding its previous element (proved: `PromiseCalls.every_written_prefix`).
+The checker proposes a known term equal to $`k+1`$ as the extended bound;
+the producer carries that fact across a value-binding assignment.
+
+**Across a scalar field write.** A field write that keeps stores preserves
+a prefix with a stable bound when its body does not name the index and the
+new field value satisfies the body. Every unchanged element keeps its
+value; an element location equal to the written location holds the new
+value, which satisfies the same body (proved:
+`HeapExpressionRules.fieldEvery_holds`). The body terms must be preserved
+by the write. This rule establishes preservation even where separation
+between the cell and element locations is unavailable.
+
+For `items[n++] = v`, the counter read restates the prefix on the old value
+of `n`; the field write preserves that prefix by the rule above; the exact
+element write extends it to the new value of `n`. The field write's read
+link restates that bound on `n`'s cell path (proved:
+`HeapKnowledge.liftEvery_holds`). An inclusive body such as
+`0 <= items[i] && items[i] <= size` admits the updated counter
+where the loop establishes `n <= size`. Saving a length in `size` lets the
+existing stable-length rule preserve `items.length === size` across the
+counter write. A strict body may exclude
+the updated counter; preserving it then requires separation between the
+cell and the element locations, a stated limit.
 
 **The producer** carries each precondition's quantified facts to the entries
 it claims (an entry's `quantified`, [SOURCE-CLAIMS](SOURCE-CLAIMS.md)),
@@ -2981,9 +3024,10 @@ assumes it; the loop's exit, the false branch of its test, starts from it.
      {\Sigma_{\mathit{head}}=\Sigma_{\mathit{claimed}},\ I}\ \textsf{loop-invariant}
 ```
 
-with $`I`$ the clause's facts at the slots of the bindings it names, each a
-value binding at the head; a clause naming any other binding is refused at
-the loop. A path's kind (an array's length, a typed-array length, a field) is
+with $`I`$ the clause's facts at the bindings it names, each a value
+binding or initialized cell at the head. A cell is read through its `value`
+field, including the bound and body terms of a quantified clause; a clause
+naming any other binding is refused at the loop. A path's kind (an array's length, a typed-array length, a field) is
 read through the type the binding's declaration has. The invariant states
 what the loop needs that no fact of its entry names, such as `j <= 2 * i` of
 two counters stepping by 2 and by 1.
@@ -2995,7 +3039,7 @@ binding's declaration (a static type request), and elaborates the clause
 (`elaborateRequires`) to index facts at positions naming the bindings, the
 `while` node's `invariant` (`LoopInvariant`, `tools/fragment.mts`;
 `Fragment.Stmt.loop`). Lean asserts the facts at the head's cut, its
-bindings resolved to the head's value slots (`Lowering.Flow`), so the check
+bindings resolved to the head's value slots or cell paths (`Lowering.Flow`), so the check
 of each edge into the head (`checkAssertions`) decides it whatever the
 producer proposes. The producer adds them to the head's state
 (`Source.loop_invariants`, `Proposal_flow`), so the entries of the body claim

@@ -381,7 +381,7 @@ let statements callbacks flow_graph register_following owner_span env0 ss =
                | Some (_,_,init) -> Linear_facts.gdeclaration env guarded0 facts0 name init
                | None -> [])
             | _ -> [] in
-          [with_facts ~gs ~es:(Linear_facts.estatement env every0 (source span)) e fs
+          [with_facts ~gs ~es:(Linear_facts.estatement ~array:(callbacks.array_binding env) ~facts:facts0 env every0 (source span)) e fs
              (Linear_facts.statement_bounds env bounds0 (source span))]
         | Flow.Statement (span,_), [e] ->
           let s = source span in
