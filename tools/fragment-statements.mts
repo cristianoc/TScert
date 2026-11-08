@@ -2458,6 +2458,7 @@ function fieldType(gate: Gate, t: TypeTerm, f: string, depth: number = 0, option
   if (records === null || depth > 16) return null;
   const refused = (): never => { throw new UnresolvedField(); };
   try {
+    if (f === "[]" && t.k === "array") return t.element;
     if (t.k === "object") {
       const field = t.fields.find(x => x.name === f);
       return field !== undefined && (optional || !field.optional) ? field.type : null;

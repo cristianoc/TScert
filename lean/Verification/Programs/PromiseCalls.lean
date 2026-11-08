@@ -1939,6 +1939,7 @@ theorem boundValue_grown {first : Nat → String → Bool} {ρ : Env} {h h' : He
   refine ⟨fun x n hk hx => ?_, fun x n hgx hx => ?_⟩
   · cases x with
     | index => exact hx
+    | project _ _ => simp [Bound.keptBy] at hk
     | free t => exact termValue_kept hc hf hk hx
     | elem =>
       simp only [boundValue, elementInt] at hx ⊢
@@ -1953,7 +1954,7 @@ theorem boundValue_grown {first : Nat → String → Bool} {ρ : Env} {h h' : He
         · simp [intValue] at hwn
       · cases hx
   · cases x with
-    | index | elem => simp [Bound.grownBy] at hgx
+    | index | elem | project _ _ => simp [Bound.grownBy] at hgx
     | free t => exact termValue_grown hc hf hgx hx
 
 open HeapKnowledge in
@@ -1985,6 +1986,7 @@ length, the element the slot's value, a term itself. -/
 def appendTerm (i a : Nat) : HeapKnowledge.Bound → HeapKnowledge.Term
   | .index => .length i
   | .elem => .value a
+  | .project k p => ⟨k, a, p⟩
   | .free t => t
 
 open HeapKnowledge in
@@ -2037,9 +2039,10 @@ theorem every_appended {first : Nat → String → Bool} {ρ : Env} {h h' : Heap
         simp only [appendTerm, termValue_value] at hy
         simp only [Nat.add_zero] at hl
         simp only [boundValue, elementInt, hl, hlv, Option.bind_some, hy]
+      | project _ _ => simp [Bound.keptBy] at hky
       | free t => exact termValue_kept hc hf hky hy
     · cases y with
-      | index | elem => simp [Bound.grownBy] at hgy
+      | index | elem | project _ _ => simp [Bound.grownBy] at hgy
       | free t => exact termValue_grown hc hf hgy hy
 
 open HeapKnowledge in
@@ -2185,18 +2188,43 @@ theorem append_fact_holds {i count : Nat} {ρ : Env} {h h' : Heap} {F : Linear.F
       have hi := ih (fun t ht => hm t (by simp [ht]))
       simp only [Linear.Form.eval, termValuation, hn, hn', Option.getD_some, Int.mul_add, hi]
       omega
-  cases F with
-  | le G d =>
-    refine ⟨hd', ?_⟩
-    have he := eval G (fun _ ht => ht)
-    simp only [appendFact, Linear.Fact.Holds] at hF ⊢
-    omega
-  | ne G d =>
-    refine ⟨hd', ?_⟩
-    have he := eval G (fun _ ht => ht)
-    simp only [appendFact, Linear.Fact.Holds] at hF ⊢
-    omega
-
+    · have hwb := List.all_eq_true.mp hbody F hF
+      unfold writtenBody at hwb
+      split at hwb
+      · rename_i G hG
+        simp only [Bool.and_eq_true, List.all_eq_true] at hwb
+        obtain ⟨hd, hent⟩ := hwb
+        have hG0 : (IndexFact.linear G).HoldsAt ρ h :=
+          ⟨fun t ht => termDefined_sound he (hd t ht).1, entailsKnown_sound he hent⟩
+        have hG1 := IndexFact.holdsAt_kept hc firstKept_none
+          (by simp only [IndexFact.keptBy, Bool.or_eq_true]; exact .inl (List.all_eq_true.mpr fun t ht => (hd t ht).2))
+          hG0
+        refine (factAt_mapVars (val' := termValue ρ h') hG fun y _ t ht => ?_).mp hG1
+        simp only [Function.comp_apply, Option.some.injEq] at ht
+        subst ht
+        cases y with
+        | index => simp only [Bound.inst, termValue_value, hki, boundValue]
+        | elem => simp only [Bound.inst, termValue_value, boundValue, elementInt, hl, hlv, Option.bind_some]
+        | project k p => simp only [Bound.inst, boundValue, hl, hlv, Option.bind_some, termValue]
+        | free t => rfl
+      · cases hwb
+  · refine factAt_monotone (fun y m hky hy => ?_) (fun y m hgy hy => ?_) hbF (hall j hj' F hF)
+    · cases y with
+      | index => exact hy
+      | elem =>
+        simp only [boundValue, elementInt, hj j hji] at hy ⊢
+        split at hy
+        · rename_i l' hl'
+          obtain ⟨u, hu, hum⟩ := Option.bind_eq_some_iff.mp hy
+          obtain ⟨bu, rfl, -⟩ := intValue_safe hum
+          simp only [hc.1 l' _ hu (by simp [writeChanges, CallEffects.ElementWrite.changes, Changes.alters]),
+            Option.bind_some, hum]
+        · cases hy
+      | project _ _ => simp [Bound.keptBy] at hky
+      | free t => exact termValue_kept hc firstKept_none hky hy
+    · cases y with
+      | index | elem | project _ _ => simp [Bound.grownBy] at hgy
+      | free t => simp [Bound.grownBy, Term.grownBy, writeChanges, CallEffects.ElementWrite.changes] at hgy
 
 open HeapKnowledge in
 def linearAppended (i count : Nat) (first : Nat → String → Bool) (a : IndexAtom) : Option IndexAtom :=

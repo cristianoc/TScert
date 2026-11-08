@@ -13,7 +13,7 @@
 //   A ::= safeInteger(p) | E rel E      rel ∈ { <, <=, >, >=, === }
 //   E ::= n | p | p.length | n * p | n * p.length | E + E | E - E | -E | (E)
 //   p ::= x | p.f
-//   B ::= A' && B | A'      A' an atom over E, i and p[i] (`safeInteger(p[i])`)
+//   B ::= A' && B | A'      A' an atom over E, i, p[i], its paths and lengths
 //
 // with n an integer literal, x a parameter and f a field name: a path `p`
 // reads the named data fields from the parameter in turn, each a required
@@ -340,7 +340,14 @@ class Parser {
     const i = this.take();
     if (!i || i.k !== "name") throw new ClauseError("an element is read at a `forall`'s index");
     this.expect("]");
-    return `${path}[${i.v}]`;
+    let out = `${path}[${i.v}]`;
+    while (this.isOp(".")) {
+      this.at++;
+      const f = this.take();
+      if (!f || f.k !== "name") throw new ClauseError("an element path reads named fields");
+      out += `.${f.v}`;
+    }
+    return out;
   }
   private product(): Linear {
     if (this.isOp("-")) { this.at++; return scale(this.product(), -1); }
@@ -387,7 +394,7 @@ export function indexFactPositions(f: IndexFact): number[] {
   if ("bound" in f) return [f.bound.array, f.bound.index];
   if ("element" in f) return [f.element.value, f.element.array, f.element.index];
   if ("every" in f) return [f.every.slot, f.every.stop.slot, ...f.every.body.flatMap(F =>
-    ("le" in F ? F.le.form : F.ne.form).flatMap(([x]) => typeof x === "string" ? [] : [x.free.t.slot]))];
+    ("le" in F ? F.le.form : F.ne.form).flatMap(([x]) => typeof x === "string" || "project" in x ? [] : [x.free.t.slot]))];
   const F = f.linear.fact;
   return ("le" in F ? F.le.form : F.ne.form).map(([t]) => t.slot);
 }
@@ -562,20 +569,32 @@ export function elaborateRequires(clauses: readonly string[], params: readonly C
         if (params.some(q => q.name === a.binder)) throw new ClauseError(`the index ${a.binder} is a parameter's name`);
         const elem = `${a.array}[${a.binder}]`;
         const body: BodyFact[] = [];
-        for (const b of a.body) {
-          if (b.k !== "safeInteger") continue;
-          if (b.of !== elem) throw new ClauseError(`a \`forall\` body states safeInteger(${elem}) alone`);
-          body.push({ le: { form: [["elem", 1]], bound: MAX_SAFE } });
-        }
         const variable = (key: string): BodyVariable => {
           if (key === a.binder) return "index";
-          if (key === elem) {
-            if (!a.body.some(b => b.k === "safeInteger")) throw new ClauseError(`the comparison names ${elem}, which the clause does not state a safe integer`);
-            return "elem";
+          if (key === elem || key.startsWith(`${elem}.`)) {
+            const fields = key === elem ? [] : key.slice(elem.length + 1).split(".");
+            const length = fields.at(-1) === "length";
+            const path = length ? fields.slice(0, -1) : fields;
+            const kind = p.at([...a.array.split(".").slice(1), "[]", ...path]);
+            if (length) {
+              if (kind !== "array" && kind !== "view" && kind !== "string")
+                throw new ClauseError(`the element path ${key} has no length contract`);
+              return { project: { kind: kind === "array" ? "length" : kind === "view" ? "view" : "strLength", path } };
+            }
+            if (!a.body.some(b => b.k === "safeInteger" && b.of === key))
+              throw new ClauseError(`the comparison names ${key}, which the clause does not state a safe integer`);
+            if (path.length === 0) return "elem";
+            if (kind === null) throw new ClauseError(`the element path ${key} has no field contract`);
+            return { project: { kind: "value", path } };
           }
           if (key.includes("[")) throw new ClauseError(`${key} is no element of the array ${a.array} at the index ${a.binder}`);
           return { free: { t: term(key) } };
         };
+        for (const b of a.body) {
+          if (b.k !== "safeInteger") continue;
+          if (b.of !== elem && !b.of.startsWith(`${elem}.`)) throw new ClauseError(`a quantified safe integer must name ${elem} or its path`);
+          body.push({ le: { form: [[variable(b.of), 1]], bound: MAX_SAFE } });
+        }
         compareAtoms(a.body, (terms, bound) => {
           if (!Number.isSafeInteger(bound)) throw new ClauseError("the clause's constants lie outside the safe integers");
           body.push({ le: { form: [...terms].filter(([, c]) => c !== 0).map(([x, c]): [BodyVariable, number] => [variable(x), c]),

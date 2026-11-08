@@ -120,7 +120,7 @@ type IndexFact = { index: { slot: number } } | { length: { array: number; length
   { every: { slot: number; path: string[]; stop: LinearTerm; body: { form: [BodyVariable, number][]; bound: number; ne: boolean }[] } } |
   { apart: { slot: number; other: number } };
 /** A variable of a quantified fact's body: the index, the element, or a term. */
-type BodyVariable = "index" | "elem" | LinearTerm;
+type BodyVariable = "index" | "elem" | LinearTerm | { project: LinearTerm };
 /** A linear fact's term: a root slot, the named data fields read from it
  * (`path`), and what it reads of the value they end at: the value, the length
  * of its array store, or the length of its typed array. */
@@ -440,8 +440,14 @@ function indexFact(f: Json | undefined): IndexFact {
     if (!Array.isArray(path) || !path.every((x: Json) => typeof x === "string")) throw Error("a quantified fact's path");
     if (!Array.isArray(e.body)) throw Error("a quantified fact's body");
     const body = e.body.map((b: Json) => {
-      const { form, bound, ne } = linearForm(b, (x) => x === "index" || x === "elem" ? x
-        : linearTerm(record(record(x,["free"]).free,["t"]).t));
+      const { form, bound, ne } = linearForm<BodyVariable>(b, (x) => {
+        if (x === "index" || x === "elem") return x;
+        if (typeof x === "object" && x !== null && !Array.isArray(x) && "project" in x) {
+          const p = record(record(x,["project"]).project,["kind","path"]);
+          return { project: linearTerm({ kind: p.kind, path: p.path, slot: 0 }) };
+        }
+        return linearTerm(record(record(x,["free"]).free,["t"]).t);
+      });
       return { form, bound, ne };
     });
     return { every: { slot: nat(e.slot), path: path.filter((x: Json): x is string => typeof x === "string"),

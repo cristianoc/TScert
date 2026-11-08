@@ -106,6 +106,7 @@ const equationReaders = [
     every: "a quantified index fact's field, read by the instance EffectJson.lean derives for HeapKnowledge.IndexFact",
     stop: "a quantified index fact's field, read by the instance EffectJson.lean derives for HeapKnowledge.IndexFact",
     free: "a quantified fact's body variable, read by the instance EffectJson.lean derives for HeapKnowledge.Bound",
+    project: "an element projection, read by the derived HeapKnowledge.Bound and Wire.BodyVariable instances",
     t: "a quantified fact's body term, read by the instance EffectJson.lean derives for HeapKnowledge.Bound",
   });
 }
@@ -124,6 +125,7 @@ const equationReaders = [
     declared(["tools/source-claims.mts"], "export function decodeSourceClaims"), leanNames, {
     labels: "a tuple element's label, not a field",
     ref: "a body variable's term, read by the instance Wire.lean derives for the inductive BodyVariable",
+    project: "an element projection, read by the derived Wire.BodyVariable instance",
   });
 }
 

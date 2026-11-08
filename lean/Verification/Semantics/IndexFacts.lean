@@ -467,6 +467,7 @@ theorem factAt_congr {V : Type} {val val' : V → Option Int} {F : Linear.Fact V
 inductive Bound where
   | index
   | elem
+  | project (kind : Term.Kind) (path : List String)
   | free (t : Term)
   deriving DecidableEq, Repr, Hashable
 
@@ -476,12 +477,14 @@ namespace Bound
 def mapM (f : Nat → Option Nat) : Bound → Option Bound
   | .index => some .index
   | .elem => some .elem
+  | .project k p => some (.project k p)
   | .free t => (t.mapM f).map .free
 
 /-- The variable with a term's slot renamed by a total map. -/
 def mapTotal (f : Nat → Nat) : Bound → Bound
   | .index => .index
   | .elem => .elem
+  | .project k p => .project k p
   | .free t => .free (t.mapM' f)
 
 theorem mapM_total (f : Nat → Nat) : Bound.mapM (some ∘ f) = some ∘ mapTotal f := by
@@ -492,6 +495,7 @@ element is the slot `r`'s value. -/
 def inst (k r : Nat) : Bound → Term
   | .index => .value k
   | .elem => .value r
+  | .project k p => ⟨k, r, p⟩
   | .free t => t
 
 /-- The slots of the terms a variable names. -/
@@ -557,6 +561,9 @@ theorem elementInt_frame {h h' : Heap} {ls : List (Option Nat)} {i : Nat} {z : I
 def boundValue (ρ : Env) (h : Heap) (ls : List (Option Nat)) (i : Nat) : Bound → Option Int
   | .index => some (i : Int)
   | .elem => elementInt h ls i
+  | .project k p => match ls[i]? with
+    | some (some l) => h[l]?.bind fun v => termValue (fun _ => v) h ⟨k, 0, p⟩
+    | _ => none
   | .free t => termValue ρ h t
 
 /-- The region of a value (FOOTPRINTS.md, "Element regions"): a raw store
@@ -780,6 +787,7 @@ theorem holdsAt_mapM {F F' : IndexFact} {f : Nat → Option Nat} {ρ ρ' : Env} 
       cases x with
       | index => cases hy; rfl
       | elem => cases hy; rfl
+      | project _ _ => cases hy; rfl
       | free t =>
         simp only [Bound.mapM, Option.map_eq_some_iff] at hy
         obtain ⟨t', ht', rfl⟩ := hy
@@ -920,6 +928,15 @@ theorem holdsAt_extend {F : IndexFact} {ρ : Env} {h : Heap} (vs : List Val) (hF
         obtain ⟨u, hu, hi'⟩ := hm
         exact ⟨u, by rw [List.getElem?_append_left (List.getElem?_eq_some_iff.mp hu).1]; exact hu, hi'⟩
       · cases hm
+    | project k p =>
+      simp only [boundValue] at hm ⊢
+      split at hm
+      · rename_i l _
+        obtain ⟨v, hv, ht⟩ := Option.bind_eq_some_iff.mp hm
+        exact Option.bind_eq_some_iff.mpr ⟨v, by
+          rw [List.getElem?_append_left (List.getElem?_eq_some_iff.mp hv).1]; exact hv,
+          termValue_extend vs ht⟩
+      · cases hm
     | free t => exact termValue_extend vs hm
   | index k => exact hF
   | length x n =>
@@ -963,6 +980,7 @@ theorem holdsAt_congr {F : IndexFact} {ρ ρ' : Env} {h : Heap} (hs : ∀ s ∈ 
       cases x with
       | index => rfl
       | elem => rfl
+      | project _ _ => rfl
       | free t =>
         simp only [boundValue, termValue, hs t.slot (by
           simp only [slots, List.mem_cons, List.mem_flatMap]
@@ -1476,6 +1494,7 @@ theorem factAt_monotone {V : Type} {kept grown : V → Bool} {val val' : V → O
 /-- Whether a change keeps what a body variable denotes (`Term.keptBy`): the
 index and the element are read apart. -/
 def Bound.keptBy (c : Changes) (first : Nat → String → Bool) : Bound → Bool
+  | .project _ _ => false
   | .free t => t.keptBy c first
   | _ => true
 

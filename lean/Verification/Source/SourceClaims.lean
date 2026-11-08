@@ -15,6 +15,7 @@ value binding's name, its path the named fields read from it in turn. -/
 inductive BodyRef where
   | index
   | elem
+  | project (kind : HeapKnowledge.Term.Kind) (path : List String)
   | term (name : String) (path : List String) (kind : HeapKnowledge.Term.Kind)
   deriving Repr, Inhabited
 

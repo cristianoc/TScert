@@ -237,6 +237,12 @@ function decodeLinearForm<V>(v: JsonRead, decode: (x: JsonRead) => V | undefined
 /** A variable of a quantified fact's body (`HeapKnowledge.Bound`). */
 function decodeBodyVariable(v: JsonRead): BodyVariable | undefined {
   if (v === "index" || v === "elem") return v;
+  const projected = fieldsOf(v, ["project"]);
+  if (projected !== undefined) {
+    const p = fieldsOf(projected.project, ["kind", "path"]);
+    const t = p === undefined ? undefined : decodeLinearTerm({ kind: p.kind, path: p.path, slot: 0 });
+    return t === undefined ? undefined : { project: { kind: t.kind, path: t.path } };
+  }
   const free = fieldsOf(v, ["free"]);
   const t = free === undefined ? undefined : fieldsOf(free.free, ["t"]);
   const term = t === undefined ? undefined : decodeLinearTerm(t.t);

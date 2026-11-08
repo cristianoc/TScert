@@ -410,6 +410,7 @@ private def invariantFact (root : Nat → Option (Nat × List String))
         let b : HeapKnowledge.Bound ← match v with
           | .index => pure .index
           | .elem => pure .elem
+          | .project k p => pure (.project k p)
           | .term n path kind => do let (z, r) ← root n path; pure (.free ⟨kind, z, r⟩)
         pure (b, c)
       pure (Linear.Fact.le form bound)

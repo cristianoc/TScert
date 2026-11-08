@@ -226,7 +226,7 @@ let efacts env : efact list = List.filter_map (fun (n,_) -> efact_parts n) env
 let ebindings (e : efact) =
   fst e.arr :: term_binding e.stop ::
     List.concat_map (fun ((t,_) : fact) -> List.filter_map (fun (n,_) ->
-      if n = index_var || n = elem_var then None else Some (term_binding n)) t) e.body
+      if n = index_var || term_binding n = elem_var then None else Some (term_binding n)) t) e.body
 (* The quantified facts holding where the statement being analysed starts,
    and the element reads of it they instantiate, each by the expression's
    position and the name of its value (`with_reads`). *)
@@ -408,6 +408,9 @@ let literal_int s =
 (* The path an expression reads: a value binding and the named fields read
    from it in turn. *)
 let rec path_of env (e : expr) = match e.node with
+  | Cast ("nonNull",_,a) -> path_of env a
+  | Call ({node=Id ("%ElementAt%" | "%ByteAt%");_},None,[_;_],[],_)
+    when List.mem_assoc e.pos !element_reads -> Some (List.assoc e.pos !element_reads,[])
   | Id x when value_binding env x -> Some (x,[])
   | Read (o,Semantic.Name f) when not (String.contains f '.') && not (String.contains f ':') ->
     Option.map (fun (b,p) -> b,p @ [f]) (path_of env o)
@@ -435,14 +438,21 @@ let rec linear ?(array = fun _ _ -> false) env fs (e : expr) : ((string * int) l
     (match path_of env e with Some (b,p) -> Some ([path_term b p,1],0) | None -> None)
   (* An element read a quantified fact instantiates (`with_reads`), its
      value named, read through a non-null assertion. *)
-  | Call ({node=Id ("%ElementAt%" | "%ByteAt%");_},None,[_;_],[],_) when List.mem_assoc e.pos !element_reads ->
+  | Call ({node=Id ("%ElementAt%" | "%ByteAt%");_},None,[_;_],[],_) when List.mem_assoc e.pos !element_reads && is_int fs (List.assoc e.pos !element_reads) ->
     Some ([List.assoc e.pos !element_reads,1],0)
   | Cast ("nonNull",_,({node=Call ({node=Id ("%ElementAt%" | "%ByteAt%");_},None,[_;_],[],_);_} as a))
-    when List.mem_assoc a.pos !element_reads ->
+    when List.mem_assoc a.pos !element_reads && is_int fs (List.assoc a.pos !element_reads) ->
     Some ([List.assoc a.pos !element_reads,1],0)
   (* `s.length` of a string, the string's length (Lean's `string-length`). *)
   | Read (o,Semantic.Name "length") when (match path_of env o with Some (b,p) -> !string_path env b p | None -> false) ->
     (match path_of env o with Some (b,path) -> Some ([str_length_term ~path b,1],0) | None -> None)
+  | Read (o,Semantic.Name "length") when (match path_of env o with
+      | Some (b,p) -> List.exists (is_int fs) [length_term ~path:p b; view_term ~path:p b; str_length_term ~path:p b]
+      | None -> false) ->
+    (match path_of env o with
+     | Some (b,p) -> Option.map (fun t -> [t,1],0)
+         (List.find_opt (is_int fs) [length_term ~path:p b; view_term ~path:p b; str_length_term ~path:p b])
+     | None -> None)
   (* `b.length` of a typed array, `%ByteLength%(b)`, whose postcondition
      states it the typed-array length. *)
   | Call ({node=Id "%ByteLength%";_},None,[o],[],_) when path_of env o <> None ->
@@ -1549,7 +1559,7 @@ let instantiate (e : efact) ((kt,kc) : (string * int) list * int) (name : string
   List.map (fun ((t,d) : fact) ->
     let a = Option.value ~default:0 (List.assoc_opt index_var t) in
     let t = List.concat_map (fun (n,c) ->
-      if n = index_var then scale c kt else if n = elem_var then [name,c] else [n,c]) t in
+      if n = index_var then scale c kt else if term_binding n = elem_var then (let _,p,k = term_parts n in [make_term ~path:p k name,c]) else [n,c]) t in
     norm t, d - a * kc) e.body
 
 (* The same local names carry bounded shifts and masks inside a larger
@@ -1608,7 +1618,15 @@ let test ~array env fs (cond : expr) =
             (answer f, List.filter (fun (_,i,_) -> not (List.mem i names)) bf)))
   |> snd
 let declaration ~array env fs name (init : expr) =
-  with_reads ~array env fs init (fun fs -> declaration ~array env fs name init) forget_all
+  with_reads ~array env fs init (fun fs ->
+    let stated = declaration ~array env fs name init in
+    let rec uncast e = match e.node with Cast (_,_,a) -> uncast a | _ -> e in
+    match List.assoc_opt (uncast init).pos !element_reads with
+    | None -> stated
+    | Some read ->
+      let projected = List.filter (fun (t,_) -> List.exists (fun (n,_) -> term_binding n = read) t) fs in
+      stated @ List.map (fun (t,d) -> List.map (fun (n,c) ->
+        let b,p,k = term_parts n in (if b = read then make_term ~path:p k name else n),c) t,d) projected) forget_all
 let statement ~array ?(bounds=[]) env fs (s : stmt) =
   match s.statement with
   | Effect e -> with_reads ~array env fs e (fun fs -> statement ~array ~bounds env fs s) forget_all
@@ -1622,7 +1640,7 @@ let erestate_read name (root,path) (e : efact) : efact option =
     | [],rest -> Some rest
     | f :: p,g :: q when f = g -> prefix p q
     | _ -> None in
-  let rename t = if t = index_var || t = elem_var then t else
+  let rename t = if t = index_var || term_binding t = elem_var then t else
     let b,p,kind = term_parts t in
     if b <> root then t else match prefix path p with Some rest -> make_term ~path:rest kind name | None -> t in
   let arr = if fst e.arr = root then (match prefix path (snd e.arr) with Some rest -> (name,rest) | None -> e.arr) else e.arr in
@@ -1648,7 +1666,7 @@ let egrown ?(regions = []) ~array env fs (es : efact list) (e : expr) : efact li
       | _ -> false in
     let term_kept ch n = term_kept ch n || region_kept n in
     let body_kept ((t,_) : fact) =
-      List.for_all (fun (n,c) -> n = index_var || n = elem_var || term_kept ch n || (c <= 0 && term_grown ch n)) t in
+      List.for_all (fun (n,c) -> n = index_var || n = elem_var || (term_binding n <> elem_var && (term_kept ch n || (c <= 0 && term_grown ch n)))) t in
     let appended (ef : efact) = match r.node, args with
       | Id xs, [a] when ef.arr = (xs,[]) && ef.stop = length_term xs ->
         let int_actual = match a.node with Id x -> is_int fs x | _ -> true in
@@ -1731,6 +1749,8 @@ let of_every_fact (name : int -> string option) (fact : Semantic.index_fact) : e
     let var = function
       | Semantic.Body_index -> Some index_var
       | Semantic.Body_elem -> Some elem_var
+      | Semantic.Body_project (k,p) -> Some (make_term ~path:p (match k with
+        | "length" -> Length_term | "view" -> View_term | "strLength" -> Str_length_term | _ -> Value_term) elem_var)
       | Semantic.Body_term t -> term t in
     let fact = function
       | Semantic.Body_le (form,d) ->

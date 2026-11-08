@@ -282,6 +282,7 @@ or a term `termFollows` relates. -/
 def boundFollows (M : Nat → List Nat) (m : PointClaims.Mapping) : Bound → Bound → Bool
   | .index, .index => true
   | .elem, .elem => true
+  | .project k p, .project k' p' => k == k' && p == p'
   | .free t, .free t' => termFollows M m t t'
   | _, _ => false
 
@@ -291,6 +292,9 @@ theorem boundFollows_sound {M : Nat → List Nat} {m : PointClaims.Mapping} {ρ 
   cases x <;> cases y <;> simp only [boundFollows, Bool.false_eq_true] at hf
   · rfl
   · rfl
+  · simp only [Bool.and_eq_true, beq_iff_eq] at hf
+    obtain ⟨rfl, rfl⟩ := hf
+    rfl
   · exact termFollows_sound hM hf
 
 theorem lookup_mem' {α β : Type} [BEq α] [LawfulBEq α] : ∀ {l : List (α × β)} {a : α} {b : β},
@@ -967,6 +971,7 @@ theorem readEvery_holds {ls : HeapLinks.Links} {ρ : Env} {h : Heap} (hl : HeapL
       cases x with
       | index => rfl
       | elem => rfl
+      | project _ _ => rfl
       | free t => exact lowerTerm_eq hl hr t
     · cases hab
   · cases hab
@@ -2959,6 +2964,14 @@ theorem instantiateEvery_holds {as : List IndexAtom} {cls : List Nat} {r x k : N
           cases o with
           | none => rw [hhole hli]; rfl
           | some l => simp only [hpres l hli, Option.bind_some]
+      | project kind path =>
+        simp only [Bound.inst, boundValue]
+        cases hli : ls[i]? with
+        | none => simp at hli; omega
+        | some o =>
+          cases o with
+          | none => simp only [termValue, hhole hli]; cases kind <;> cases path <;> rfl
+          | some l => simp only [hpres l hli, Option.bind_some, termValue]
       | free t => rfl
     · cases hc
   | ⟨.every _ [] _ _, some _, _⟩, _, hc => simp [instantiateEvery] at hc

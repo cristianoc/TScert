@@ -132,7 +132,8 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
                    (below it where strict), as Lean's `lengthBound` reads it
                    of the index's slot, the array a binding or a path. *)
                 (match path x, form k with
-                 | Some (a,p), Some (t,c) -> let fs = !Linear_facts.current_facts in
+                 | Some (a,p), Some (t,c) ->
+                   let fs = !Linear_facts.current_facts @ Linear_facts.term_ranges ((t,0) :: !Linear_facts.current_facts) in
                    Linear_facts.entails fs (Linear_facts.scale (-1) t, c) &&
                    Linear_facts.entails fs (Linear_facts.norm (t @ [Linear_facts.length_term ~path:p a,-1]),
                      (if strict then -1 else 0) - c)
@@ -151,7 +152,7 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
                let terms = Linear_facts.norm (List.concat_map fst parts) in
                let constant = List.fold_left (fun acc (_,k) -> acc + k) 0 parts in
                terms = [] && constant <= d ||
-               Linear_facts.entails !Linear_facts.current_facts (terms, d - constant))
+               Linear_facts.entails (!Linear_facts.current_facts @ Linear_facts.term_ranges ((terms,0) :: !Linear_facts.current_facts)) (terms, d - constant))
             | _ -> false in
           let established = List.filter (fun (s:Semantic.signature) ->
             s.call_effect.pre <> [] && List.for_all holds s.call_effect.pre) calls in

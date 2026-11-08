@@ -133,7 +133,7 @@ interface TermRefClaim {
 }
 
 /** A variable of a quantified fact's body: the index, the element at it, or a term. */
-type BodyVariableClaim = "index" | "elem" | { term: { ref: TermRefClaim } };
+type BodyVariableClaim = "index" | "elem" | { project: { kind: TermRefClaim["term"]; path: string[] } } | { term: { ref: TermRefClaim } };
 
 /** A quantified fact proposed at a statement entry (PROGRAM-TYPING.md,
  * "Quantified clauses"): for every index below `stop` of the array the path
@@ -426,7 +426,10 @@ function claimsDocument(v: JsonRead): SourceClaims {
             return { terms: each(r.terms, "a body fact's terms", (t): [BodyVariableClaim, number] => {
               if (!isJsonList(t) || t.length !== 2) fail("a body term is a variable and a coefficient");
               const v = t[0];
+              const projected = isJsonObject(v) && "project" in v ? record(record(v, "a projected body variable", ["project"]).project, "an element projection", ["kind", "path"]) : undefined;
+              const projection = projected === undefined ? undefined : termRef({ name: "%elem", term: projected.kind, path: projected.path });
               const variable: BodyVariableClaim = v === "index" || v === "elem" ? v
+                : projection !== undefined ? { project: { kind: projection.term, path: projection.path } }
                 : { term: { ref: termRef(record(record(v, "a body variable", ["term"]).term, "a body term", ["ref"]).ref) } };
               return [variable, integer(t[1], "a body term's coefficient")];
             }), bound: integer(r.bound, "a body fact's bound") };

@@ -73,6 +73,25 @@ const mutationControl = (body: () => Promise<void>): void => {
 const serving: boolean = process.argv[2] === "--controls";
 
 control(async (): Promise<void> => {
+  const artifacts = run("invalid-pretext-clause-element-path");
+  const source = readFileSync(sourceKey(artifacts), "utf8");
+  const claims = readClaims(artifacts);
+  const fn = must(claims.functions.find(f => f.name === "byLength"), "byLength");
+  const at = source.indexOf("bounds[text.length]!");
+  const read = must(fn.expressions.find(e => e.pos[0] === at && e.pos[1] === at + "bounds[text.length]".length), "the element read");
+  read.type = [rowOf(claims, "num")];
+  const entry = must(fn.entries.find(e => e.start === source.indexOf("return bounds")), "the return entry");
+  entry.facts.push({ guards: [], terms: [
+    { name: "text", path: [], term: "strLength", coefficient: 1 },
+    { name: "bounds", path: [], term: "length", coefficient: -1 }], bound: -1 });
+  const forged = writeClaims(artifacts, "projected-length-forged", claims);
+  const searched = produceWith(artifacts, forged, "projected-length-forged");
+  assert.equal(searched.status, 1, `${searched.stdout}${searched.stderr}`);
+  assert.match(searched.stdout + searched.stderr, /does not establish the claims/);
+  process.stdout.write("element paths: a strict length bound forged from an inclusive clause is refused\n");
+});
+
+control(async (): Promise<void> => {
   const artifacts = run("pretext-clause-postcondition");
   const ast = readFragmentFile(join(artifacts, "fragment.json"));
   const fn = must(ast.functions.find(f => f.name === "advance"), "advance");

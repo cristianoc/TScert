@@ -179,6 +179,7 @@ structure TermRef where
 inductive BodyVariable where
   | index
   | elem
+  | project (kind : HeapKnowledge.Term.Kind) (path : List String)
   | term (ref : TermRef)
   deriving ToJson, FromJson
 /-- A fact of a quantified fact's body: the sum of the terms is at most `bound`. -/
@@ -335,6 +336,7 @@ private def pointData (entries : List (Entry ι)) (expressions : List (Expressio
         (b.terms.map fun (v, c) => ((match v with
           | .index => .index
           | .elem => .elem
+          | .project k p => .project k p
           | .term r => .term r.name r.path r.term : SourceClaims.BodyRef), c), b.bound))))
     entryApart := entries.map (fun e => (e.start, e.apart.map fun r => (r.name, r.other)))
     -- An expression's assertion is of one field each (`validCurrent`).

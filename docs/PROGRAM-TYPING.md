@@ -2887,14 +2887,15 @@ field, each refused at its entry.
 
 A [precondition](#preconditions) may end with a **quantified atom** over the
 indices of an array or a typed array a path reads, its body the clause language's atoms over
-the parameters' paths, the index `x` and the element `P[x]`:
+the parameters' paths, the index `x`, the element `P[x]`, its data paths
+and their array, typed-array or string lengths:
 
 ```math
 A ::= \cdots \mid \mathtt{forall}\ x\ \mathtt{in}\ P\texttt{:}\ B
 \qquad
 B ::= A' \mid A'\ \texttt{\&\&}\ B
 \qquad
-E' ::= E \mid x \mid P[x] \mid n\cdot P[x]
+E' ::= E \mid x \mid P[x] \mid P[x].p \mid |P[x].p| \mid n\cdot E'
 ```
 
 with $`A'`$ an atom over terms $`E'`$, `safeInteger(P[x])` among them; the
@@ -2917,7 +2918,13 @@ clause `forall x in P: B` elaborates to it with $`t=|P|`$ of an array,
 $`t=\mathrm{view}(P)`$ of a typed array, each comparison
 of the body to a linear fact over the index, the element and terms, its
 computed sums ranged as a clause's are. A hole denotes no element, so a body
-naming the element holds of no index holding a hole.
+naming the element holds of no index holding a hole. A projected term reads
+the element's data path in the same heap and then its safe-integer value or
+length. For example, `forall i in xs: xs[i].text.length < bounds.length`
+bounds the string length read through each element's `text` field. A
+numeric data path requires its own `safeInteger(xs[i].offset)` atom.
+Projected terms are instantiated by `every-read` with the read value as
+their root; mapping and heap extension preserve their meaning (proved).
 
 A prefix clause `forall i < n of P: B` uses the same quantified fact with
 its bound the term `n`. The clause states `safeInteger(n)` when `n` names a
@@ -2946,12 +2953,15 @@ $`k`$ and $`r`$ (proved):
 so `itemSegments[index]!` under `forall i in itemSegments: safeInteger(itemSegments[i]) && 0 <= itemSegments[i] && itemSegments[i] <= data.widths.length`
 states its value a safe integer between $`0`$ and $`|\mathit{data}.\mathit{widths}|`$.
 
-**Frame conditions.** A quantified fact and an element fact read the heap: a
-step leaving the heap unchanged preserves them; a growth of a receiver's
-store preserves a quantified fact as below, and a write at a checked index
-one over an array whose [element region](FOOTPRINTS.md#element-regions) is
-apart from the written one (`every-write`); any other heap change preserves
-neither, a stated limit. On an edge a target quantified fact follows from a
+**Frame conditions.** A body containing an element projection is preserved
+across heap extension and unchanged heaps. The growth and element-write
+checks require its projected terms to be re-established; their generic
+preservation checks refuse them.
+
+A quantified fact and an element fact read the heap: a
+step leaving the heap unchanged preserves them, and a heap change other than
+a growth of a receiver's store or an exact element write of a typed array
+preserves neither, a stated limit. On an edge a target quantified fact follows from a
 source one whose root slot the edge maps it to, of the same path, whose bound
 and each body fact the target's follow term by term (proved), and a target
 element fact from the same one renamed. A read of field $`f`$ from slot

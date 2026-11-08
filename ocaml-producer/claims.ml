@@ -62,6 +62,7 @@ let rec index_fact_json fact =
   | Every (x,path,stop,body) ->
     let var = function
       | Body_index -> String "index" | Body_elem -> String "elem"
+      | Body_project (k,p) -> Object ["project",Object ["kind",String k;"path",Array (List.map (fun f -> String f) p)]]
       | Body_term t -> Object ["free",Object ["t",term t]] in
     let fact k form d = Object [k,Object ["form",Array (List.map (fun (v,c) -> Array [var v;int c]) form);"bound",int d]] in
     Object ["every",Object ["slot",int x;"path",Array (List.map (fun f -> String f) path);"stop",term stop;
@@ -635,6 +636,9 @@ let encode (proposal : Proposal_types.t) =
         "body",Array (List.map (fun ((t,d) : Linear_facts.fact) -> Object [
           "terms",Array (List.map (fun (v,c) ->
             Array [(if v = Linear_facts.index_var then String "index" else if v = Linear_facts.elem_var then String "elem"
+                    else if Linear_facts.term_binding v = Linear_facts.elem_var then
+                      (let _,path,kind = Linear_facts.term_parts v in
+                       Object ["project",Object ["kind",String (Linear_facts.kind_name kind);"path",Array (List.map (fun p -> String p) path)]])
                     else Object ["term",Object ["ref",term_ref v]]); Number (string_of_int c)]) t);
           "bound",Number (string_of_int d)]) e.Linear_facts.body)])
     | _ -> None) bs) in
