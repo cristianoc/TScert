@@ -1531,7 +1531,25 @@ stated by [facts across a heap change](#linear-facts). The linear facts a knowle
 the range $`0\le|x|\le 2^{32}-1`$ of every length and the range
 $`0\le\mathrm{view}(x)\le 2^{53}-1`$ of every element count it names
 (`lengthRange`, `viewRange`), and, for each length atom
-$`\mathrm{length}(x,n)`$, the equality $`n=|x|`$ with its range. Facts are renamed with their slots and
+$`\mathrm{length}(x,n)`$, the equality $`n=|x|`$ with its range. A value term
+denotes a safe integer, whose magnitude is below $`2^{53}`$
+(`SafeIntegers.SafeInt`); an entailment $`K\vdash F`$ from a knowledge
+$`\Sigma`$ reads its linear facts $`\mathrm{lin}(\Sigma)`$ and, where they
+alone entail no $`F`$, also the range of each value term $`\Sigma`$ states
+defined, by a linear fact naming it, an $`\mathrm{int}`$ atom or a length atom
+(`HeapKnowledge.entailsKnown`, `valueRanges`; `Linear.entailsWith`; proved:
+`entailsKnown_sound`, from `valueRange_holds`):
+
+```math
+\frac{\mathrm{lin}(\Sigma)\vdash F}{K\vdash F}
+\qquad
+\frac{\mathrm{lin}(\Sigma)\cup\{-(2^{53}-1)\le t\le 2^{53}-1\mid t\ \text{a value term}\ \Sigma\ \text{states defined}\}\vdash F}{K\vdash F}\ \textsf{value-range}
+```
+
+so `i - 1` under $`1\le i`$ and `i + 1` under $`i<n`$ are safe integers. The
+search over $`\mathrm{lin}(\Sigma)`$ alone comes first, since each range adds
+a row to every elimination of its term. Elimination
+(`eliminateIndices`) reads $`\mathrm{lin}(\Sigma)`$. Facts are renamed with their slots and
 carried as the other index facts are. On an edge, a target atom holds where a
 source atom gives it, term by term of the same kind, or, unconditional, where
 the source's linear facts entail it, each target term renamed to a source
@@ -1598,8 +1616,8 @@ value $`i`$; $`r`$ is the result:
 \frac{}{K\vdash c\leftarrow a\ \texttt{===}\ b\dashv (a=b\ \text{if}\ c),\ (a\ne b\ \text{if}\ \neg c)}\ \textsf{int-equal}
 ```
 
-with $`K\vdash`$ the entailment of `Linear.entails` from the step's unconditional
-linear facts, $`\lhd`$ one of `<`, `<=`, `>`, `>=`, and each answer's fact over
+with $`K\vdash`$ the entailment from the step's knowledge
+([in heap knowledge](#linear-facts), `value-range` included), $`\lhd`$ one of `<`, `<=`, `>`, `>=`, and each answer's fact over
 the integers ($`\neg(a<b)`$ is $`b\le a`$: two safe integers are never NaN).
 `int-equal` reads `Number::equal`, which on two safe integers is their
 equality, the zeros included (proved: `SafeIntegers.numberEqual_safe`, and

@@ -524,8 +524,8 @@ def linearAtoms (G : NormalGraph ι) (Γ : List (Ty ι)) (k : Knowledge) : Tm �
       match operandForm k a, operandForm k b with
       | some (fa, ca), some (fb, cb) =>
         let sum := fun (F : Linear.Form Nat) (c : Int) =>
-          if Linear.entails (linearFacts k.indices) (valueFact (.le F (maxSafe - c))) &&
-              Linear.entails (linearFacts k.indices) (valueFact (.le (F.scale (-1)) (maxSafe + c))) then valueAtoms F c else []
+          if entailsKnown k.indices (valueFact (.le F (maxSafe - c))) &&
+              entailsKnown k.indices (valueFact (.le (F.scale (-1)) (maxSafe + c))) then valueAtoms F c else []
         match op with
         | .add => sum (fa ++ fb) (ca + cb)
         | .sub => sum (fa ++ fb.scale (-1)) (ca - cb)
@@ -818,15 +818,15 @@ theorem linearAtoms_holds [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty �
             (∀ x ∈ F.map (·.1), (intValue (ρ x)).isSome) →
             Linear.Form.eval (valuation ρ) F + c = v →
             ((v.natAbs < 2 ^ 53) → SafeIntegers.SafeInt bits v) →
-            IndexHolds ((if Linear.entails (linearFacts k.indices) (valueFact (.le F (maxSafe - c))) &&
-              Linear.entails (linearFacts k.indices) (valueFact (.le (F.scale (-1)) (maxSafe + c))) then valueAtoms F c else []))
+            IndexHolds ((if entailsKnown k.indices (valueFact (.le F (maxSafe - c))) &&
+              entailsKnown k.indices (valueFact (.le (F.scale (-1)) (maxSafe + c))) then valueAtoms F c else []))
               (push (.num bits) ρ) h'' := by
           intro F c v bits h'' hF hv hsafe
           split
           · rename_i hc
             simp only [Bool.and_eq_true] at hc
-            have h1 : Linear.Form.eval (valuation ρ) F ≤ maxSafe - c := holds_valueFact.mp (Linear.entails_sound hc.1 hlin)
-            have h2 : Linear.Form.eval (valuation ρ) (F.scale (-1)) ≤ maxSafe + c := holds_valueFact.mp (Linear.entails_sound hc.2 hlin)
+            have h1 : Linear.Form.eval (valuation ρ) F ≤ maxSafe - c := holds_valueFact.mp (entailsKnown_sound hk.2.2.2.2.2 hc.1)
+            have h2 : Linear.Form.eval (valuation ρ) (F.scale (-1)) ≤ maxSafe + c := holds_valueFact.mp (entailsKnown_sound hk.2.2.2.2.2 hc.2)
             rw [Linear.Form.eval_scale] at h2
             refine valueAtoms_holds hF ?_
             rw [hv]; apply hsafe; simp only [maxSafe] at h1 h2; omega
@@ -898,7 +898,7 @@ def lengthPair (k : Knowledge) (i n : Nat) (q : Bool) : List IndexAtom :=
   match lengthsOf k n with
   | [] => []
   | xs => ⟨.linear (valueFact (.le [(i + 1, 1)] (maxArrayLength - 1))), some 0, !q⟩ ::
-      (if Linear.entails (linearFacts k.indices) (valueFact (.le [(i, -1)] 0)) then
+      (if entailsKnown k.indices (valueFact (.le [(i, -1)] 0)) then
         xs.map fun x => ⟨.bound (x + 1) (i + 1) true, some 0, !q⟩ else [])
 
 def lengthAtoms (k : Knowledge) (Γ : List (Ty ι)) : Tm → List IndexAtom
@@ -949,7 +949,7 @@ theorem lengthPair_holds {k : Knowledge} {i n : Nat} {q : Bool} {ρ h} {u : Val}
         obtain ⟨s, ls, hs, hl, hn, hmax⟩ := lengthsOf_sound hx hk
         have hlt := below ls hn hmax hq
         have f0 : -j ≤ 0 := by
-          have := holds_valueFact.mp (Linear.entails_sound h0 hlin)
+          have := holds_valueFact.mp (entailsKnown_sound hk.2.2.2.2.2 h0)
           simp only [Linear.Fact.Holds, Linear.Form.eval, hj] at this; omega
         exact ⟨s, ls, bj, j.toNat, by simpa [push] using hs, hl, by simpa [push] using hbj,
           HeapKnowledge.indexOfBits_safe hsafe (by omega) (by simp [maxArrayLength] at hmax; omega), by simp; omega⟩

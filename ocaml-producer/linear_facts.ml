@@ -217,13 +217,25 @@ let fm_entails (fs : fact list) ((t,d) : fact) =
    one term by its range, any other by a held fact of the same form at a
    bound at most `d`, or by elimination (`fm_entails`). Lean decides the same
    entailment by its own search. *)
-let entails fs ((terms,d) : fact) =
+let entails_held fs ((terms,d) : fact) =
   let terms = norm terms in
   (match terms with
    | [x,1] -> (match range fs x with _,Some h -> h <= d | _ -> false)
    | [x,-1] -> (match range fs x with Some l,_ -> -l <= d | _ -> false)
    | _ -> List.exists (fun ((t,b) : fact) -> norm t = terms && b <= d) fs)
   || fm_entails fs (terms,d)
+
+(* The safe-integer range of each value term the facts name (Lean's
+   `HeapKnowledge.valueRanges`). *)
+let value_ranges (fs : fact list) : fact list =
+  List.concat_map (fun ((t,_) : fact) -> List.concat_map (fun (n,_) -> match (let _,_,k = term_parts n in k) with
+    | Value_term -> [[n,-1],max_safe; [n,1],max_safe]
+    | Length_term | View_term -> []) t) fs |> List.sort_uniq compare
+
+(* Entailment as Lean decides it (`Linear.entailsWith`, `entailsKnown`): by
+   the facts, or, where they alone entail no goal, with the range of each
+   safe integer they name. *)
+let entails fs (goal : fact) = entails_held fs goal || entails_held (fs @ value_ranges fs) goal
 
 (* The ranges Lean's knowledge states of each length and element count the
    facts name (`HeapKnowledge.lengthRange`, `viewRange`). *)
@@ -748,6 +760,11 @@ let join (l : fact list) (r : fact list) : fact list =
     | Some d, Some d' when d' <= max_index + 1 && d < max_index + 1 -> Some (t, max_index + 1)
     | Some d, Some d' when d' <= max_safe && d < max_safe -> Some (t, max_safe)
     | _ -> None) forms
+  (* A binding's own safe-integer range, which the knowledge states of each
+     safe integer it names (`HeapKnowledge.valueRange`), is not restated. *)
+  |> fun fs -> List.filter (fun ((t,d) : fact) -> match t with
+    | [x,(1 | -1)] when not (reads_heap x) && d >= max_safe -> not (List.mem ([x,0],0) fs)
+    | _ -> true) fs
 
 let declaration ~(array : string -> string list -> bool) env fs name (init : expr) : fact list =
   let fs = if heap_free env init then fs else keep_stable env fs in

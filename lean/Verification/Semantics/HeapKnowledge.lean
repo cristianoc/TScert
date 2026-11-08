@@ -331,8 +331,12 @@ integer. -/
 def viewRange (t : Term) : List (Linear.Fact Term) :=
   [.le [(t, -1)] 0, .le [(t, 1)] (2 ^ 53 - 1)]
 
+/-- A safe integer lies between `-(2^53 - 1)` and `2^53 - 1`. -/
+def valueRange (t : Term) : List (Linear.Fact Term) :=
+  [.le [(t, -1)] (2 ^ 53 - 1), .le [(t, 1)] (2 ^ 53 - 1)]
+
 /-- The range a term's kind gives it: a length's, an element count's, none of
-a value. -/
+a value, whose range the entailment reads apart (`valueRanges`). -/
 def termRange (t : Term) : List (Linear.Fact Term) :=
   match t.kind with
   | .length => lengthRange t
@@ -396,6 +400,16 @@ theorem viewRange_holds {ρ h} {t : Term} (hk : t.kind = .view) (hx : (termValue
   have hv : termValuation ρ h t = n := by simp [termValuation, hn]
   intro F hF
   simp only [viewRange, List.mem_cons, List.not_mem_nil, or_false] at hF
+  rcases hF with rfl | rfl <;> simp only [Linear.Fact.Holds, Linear.Form.eval, hv] <;> omega
+
+theorem valueRange_holds {ρ h} {t : Term} (hk : t.kind = .value) (hx : (termValue ρ h t).isSome) :
+    ∀ F ∈ valueRange t, F.Holds (termValuation ρ h) := by
+  obtain ⟨v, n, -, hkv, hn⟩ := termValue_isSome hx
+  rw [hk] at hkv
+  obtain ⟨b, -, hs, -⟩ := intValue_safe hkv
+  have hv : termValuation ρ h t = n := by simp [termValuation, hn]
+  intro F hF
+  simp only [valueRange, List.mem_cons, List.not_mem_nil, or_false] at hF
   rcases hF with rfl | rfl <;> simp only [Linear.Fact.Holds, Linear.Form.eval, hv] <;> omega
 
 theorem termRange_holds {ρ h} {t : Term} (hx : (termValue ρ h t).isSome) :
@@ -513,6 +527,28 @@ theorem definedTerms_sound {as : List IndexAtom} {ρ h} (he : IndexHolds as ρ h
     | index _ | bound _ _ _ | guarded _ _ _ _ => rw [hfa] at hm; cases hm
   · cases hm
 
+/-- The safe-integer range of each value term the unconditional atoms state
+defined (`definedTerms`): the facts an entailment reads where the linear facts
+alone entail no goal (`entailsKnown`). -/
+def valueRanges (as : List IndexAtom) : List (Linear.Fact Term) :=
+  ((definedTerms as).filter (·.kind == .value)).eraseDups.flatMap valueRange
+
+theorem valueRanges_holds {as : List IndexAtom} {ρ h} (he : IndexHolds as ρ h) :
+    ∀ F ∈ valueRanges as, F.Holds (termValuation ρ h) := by
+  intro F hF
+  obtain ⟨t, ht, hF⟩ := List.mem_flatMap.mp hF
+  obtain ⟨ht, hk⟩ := List.mem_filter.mp (List.mem_eraseDups.mp ht)
+  exact valueRange_holds (by simpa using hk) (definedTerms_sound he ht) F hF
+
+/-- Whether the atoms' linear facts entail a goal, alone or with the range of
+each safe integer they name. -/
+def entailsKnown (as : List IndexAtom) (goal : Linear.Fact Term) : Bool :=
+  Linear.entailsWith (linearFacts as) (valueRanges as) goal
+
+theorem entailsKnown_sound {as : List IndexAtom} {ρ h} {goal : Linear.Fact Term} (he : IndexHolds as ρ h)
+    (hg : entailsKnown as goal = true) : goal.Holds (termValuation ρ h) :=
+  Linear.entailsWith_sound hg (linearFacts_holds he) (valueRanges_holds he)
+
 /-- The first slot of `M z` meeting `p`, or `z`. -/
 def pick (M : Nat → List Nat) (p : Nat → Bool) (z : Nat) : Nat := ((M z).find? p).getD z
 
@@ -549,9 +585,9 @@ class defined, and the linear facts entailing `0 ≤ k`, `k ≤ length` (`k <
 length` where `strict`) and `k ≤ maxArrayLength - 1`. -/
 def lengthBound (M : List Nat) (a : List IndexAtom) (k : Nat) (strict : Bool) : Bool :=
   intSlot a k && M.any fun y => termDefined a (.length y) &&
-    Linear.entails (linearFacts a) (.le [(.value k, -1)] 0) &&
-    Linear.entails (linearFacts a) (.le [(.value k, 1), (.length y, -1)] (if strict then -1 else 0)) &&
-    Linear.entails (linearFacts a) (.le [(.value k, 1)] ((maxArrayLength : Int) - 1))
+    entailsKnown a (.le [(.value k, -1)] 0) &&
+    entailsKnown a (.le [(.value k, 1), (.length y, -1)] (if strict then -1 else 0)) &&
+    entailsKnown a (.le [(.value k, 1)] ((maxArrayLength : Int) - 1))
 
 theorem indexOfBits_safe {b : UInt64} {j : Int} (hb : SafeIntegers.SafeInt b j) (h0 : 0 ≤ j)
     (h1 : j < maxArrayLength) : indexOfBits b = some j.toNat := by
@@ -575,10 +611,9 @@ theorem lengthBound_sound {M : List Nat} {a : List IndexAtom} {k : Nat} {strict 
   obtain ⟨y, hy, hm⟩ := List.any_eq_true.mp hany
   simp only [Bool.and_eq_true] at hm
   obtain ⟨⟨⟨hd, e1⟩, e2⟩, e3⟩ := hm
-  have hlin := linearFacts_holds ha
-  have f1 := Linear.entails_sound e1 hlin
-  have f2 := Linear.entails_sound e2 hlin
-  have f3 := Linear.entails_sound e3 hlin
+  have f1 := entailsKnown_sound ha e1
+  have f2 := entailsKnown_sound ha e2
+  have f3 := entailsKnown_sound ha e3
   simp only [Linear.Fact.Holds, Linear.Form.eval] at f1 f2 f3
   obtain ⟨n, hn⟩ := Option.isSome_iff_exists.mp (termDefined_sound ha hd)
   obtain ⟨s, ls, hs, hl, rfl, -⟩ := lengthOf_store hn
@@ -816,13 +851,14 @@ theorem bridgedDefined_sound {c : Term → Term} {a : List IndexAtom} {t : Term}
 and length defined, the restated facts entailing the same bounds. -/
 def lengthBoundVia (c : Term → Term) (M : List Nat) (a : List IndexAtom) (k : Nat) (strict : Bool) : Bool :=
   let known := bridgeFacts c (linearFacts a)
+  let extra := bridgeFacts c (valueRanges a)
   let i := c (.value k)
   bridgedDefined c a i && M.any fun y =>
     let n := c (.length y)
     bridgedDefined c a n &&
-    Linear.entails known (.le [(i, -1)] 0) &&
-    Linear.entails known (.le [(i, 1), (n, -1)] (if strict then -1 else 0)) &&
-    Linear.entails known (.le [(i, 1)] ((maxArrayLength : Int) - 1))
+    Linear.entailsWith known extra (.le [(i, -1)] 0) &&
+    Linear.entailsWith known extra (.le [(i, 1), (n, -1)] (if strict then -1 else 0)) &&
+    Linear.entailsWith known extra (.le [(i, 1)] ((maxArrayLength : Int) - 1))
 
 theorem lengthBoundVia_sound {c : Term → Term} {M : List Nat} {a : List IndexAtom} {k : Nat} {strict : Bool}
     {ρ h} {v : Val} (hc : ∀ t, termValue ρ h (c t) = termValue ρ h t)
@@ -835,9 +871,10 @@ theorem lengthBoundVia_sound {c : Term → Term} {M : List Nat} {a : List IndexA
   simp only [Bool.and_eq_true] at hm
   obtain ⟨⟨⟨hd, e1⟩, e2⟩, e3⟩ := hm
   have hlin := bridgeFacts_holds hc (linearFacts_holds ha)
-  have f1 := Linear.entails_sound e1 hlin
-  have f2 := Linear.entails_sound e2 hlin
-  have f3 := Linear.entails_sound e3 hlin
+  have hext := bridgeFacts_holds hc (valueRanges_holds ha)
+  have f1 := Linear.entailsWith_sound e1 hlin hext
+  have f2 := Linear.entailsWith_sound e2 hlin hext
+  have f3 := Linear.entailsWith_sound e3 hlin hext
   simp only [Linear.Fact.Holds, Linear.Form.eval] at f1 f2 f3
   have hdn := bridgedDefined_sound hc ha hd
   rw [hc] at hdn
@@ -864,10 +901,11 @@ def linearEntailed (M : Nat → List Nat) (m : PointClaims.Mapping) (a : List In
     (B : Option (Term → Term)) (known : List (Linear.Fact Term)) (F : Linear.Fact Term) : Bool :=
   match B with
   | none => match F.mapVars (fun t => some (pickTerm M m a t)) with
-    | some F' => F'.vars.all (termDefined a) && Linear.entails known F'
+    | some F' => F'.vars.all (termDefined a) && Linear.entailsWith known (valueRanges a) F'
     | none => false
   | some c => match F.mapVars (fun t => some (c (pickTerm M m a t))) with
-    | some F' => F'.vars.all (bridgedDefined c a) && Linear.entails (bridgeFacts c known) F'
+    | some F' => F'.vars.all (bridgedDefined c a) &&
+        Linear.entailsWith (bridgeFacts c known) (bridgeFacts c (valueRanges a)) F'
     | none => false
 
 /-- Whether a target atom follows from the source's linear facts: an
@@ -907,7 +945,8 @@ theorem linearEntailed_sound {M : Nat → List Nat} {m : PointClaims.Mapping} {a
       have hv' : ∀ x ∈ F.vars, ∀ y, (fun t => some (pickTerm M m a t)) x = some y →
           termValuation ρ h y = termValuation (PointClaims.mapEnv m ρ) h x := by
         intro x _ y hy; cases hy; simp only [termValuation, pickTerm_eq hM]
-      refine ⟨fun x hx => ?_, (Linear.Fact.holds_mapVars hF' hv').mp (Linear.entails_sound he hk)⟩
+      refine ⟨fun x hx => ?_, (Linear.Fact.holds_mapVars hF' hv').mp
+        (Linear.entailsWith_sound he hk (valueRanges_holds ha))⟩
       obtain ⟨y, hy, hxy⟩ := Linear.Fact.mapVars_vars_fwd hF' x hx
       cases hxy
       have := termDefined_sound ha (hv _ hy)
@@ -924,7 +963,7 @@ theorem linearEntailed_sound {M : Nat → List Nat} {m : PointClaims.Mapping} {a
           termValuation ρ h y = termValuation (PointClaims.mapEnv m ρ) h x := by
         intro x _ y hy; cases hy; simp only [termValuation, hc, pickTerm_eq hM]
       refine ⟨fun x hx => ?_, (Linear.Fact.holds_mapVars hF' hv').mp
-        (Linear.entails_sound he (bridgeFacts_holds hc hk))⟩
+        (Linear.entailsWith_sound he (bridgeFacts_holds hc hk) (bridgeFacts_holds hc (valueRanges_holds ha)))⟩
       obtain ⟨y, hy, hxy⟩ := Linear.Fact.mapVars_vars_fwd hF' x hx
       cases hxy
       have hd := bridgedDefined_sound hc ha (hv _ hy)
@@ -1099,7 +1138,8 @@ restatement, reads the tag's value. -/
 def guardEntails (lt : Term → Term) (lg ld : Nat → List String → Nat × List String)
     (tags : Nat → List String → GuardTag → Bool) : List IndexAtom → IndexFact → Bool
   | as, .linear F => match F.mapVars (some ∘ lt) with
-    | some F' => F'.vars.all (bridgedDefined lt as) && Linear.entails (bridgeFacts lt (linearFacts as)) F'
+    | some F' => F'.vars.all (bridgedDefined lt as) &&
+        Linear.entailsWith (bridgeFacts lt (linearFacts as)) (bridgeFacts lt (valueRanges as)) F'
     | none => false
   | as, .guarded s p t B =>
     tags s p t || tags (ld s p).1 (ld s p).2 t ||
@@ -1129,7 +1169,8 @@ theorem guardEntails_sound {lt : Term → Term} {lg ld : Nat → List String →
       have hv' : ∀ x ∈ F.vars, ∀ y, (some ∘ lt) x = some y → termValuation ρ h y = termValuation ρ h x := by
         intro x _ y hy; cases hy; simp only [termValuation, hlt]
       refine ⟨fun x hx => ?_, (Linear.Fact.holds_mapVars hF' hv').mp
-        (Linear.entails_sound he (bridgeFacts_holds hlt (linearFacts_holds ha)))⟩
+        (Linear.entailsWith_sound he (bridgeFacts_holds hlt (linearFacts_holds ha))
+          (bridgeFacts_holds hlt (valueRanges_holds ha)))⟩
       obtain ⟨y, hy, hxy⟩ := Linear.Fact.mapVars_vars_fwd hF' x hx
       cases hxy
       have hd := bridgedDefined_sound hlt ha (hv _ hy)

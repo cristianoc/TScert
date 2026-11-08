@@ -595,6 +595,20 @@ theorem entails_sound [DecidableEq V] [LT V] [DecidableRel (α := V) (· < ·)] 
   · exact entailsDirect_sound h hk
   · exact entailsDirect_sound (Bool.and_eq_true_iff.mp h).2 (strengthen_holds hk)
 
+/-- Whether the held facts entail `goal`, or, where they alone do not, the
+held facts with `extra`: facts read only where needed, so the search over
+the held facts alone stays as small as it was. -/
+def entailsWith [DecidableEq V] [LT V] [DecidableRel (α := V) (· < ·)] (known extra : List (Fact V)) (goal : Fact V) : Bool :=
+  entails known goal || entails (known ++ extra) goal
+
+theorem entailsWith_sound [DecidableEq V] [LT V] [DecidableRel (α := V) (· < ·)] {v : V → Int} {known extra : List (Fact V)}
+    {goal : Fact V} (h : entailsWith known extra goal = true)
+    (hk : ∀ F ∈ known, F.Holds v) (he : ∀ F ∈ extra, F.Holds v) : goal.Holds v := by
+  unfold entailsWith at h
+  rcases Bool.or_eq_true_iff.mp h with h | h
+  · exact entails_sound h hk
+  · exact entails_sound h fun F hF => (List.mem_append.mp hF).elim (hk F) (he F)
+
 /-! ## Eliminating a variable
 
 The facts implied by held `≤` facts that do not name a variable `x`: each
