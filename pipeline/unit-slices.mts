@@ -193,6 +193,9 @@ function mapped(local: string, at: (x: number) => number, ordinals: Map<string, 
       const out: JsonRecord = {};
       for (const [k, x] of Object.entries(v))
         out[k] = (k === "pos" || k === "span" || k === "namePos") && isSpan(x) ? [at(x[0]), at(x[1])]
+          // A reference's type arguments, each at its span.
+          : k === "arguments" && isList(x) && x.length > 0 && x.every(isSpan)
+          ? x.map((a) => (isSpan(a) ? [at(a[0]), at(a[1])] : a))
           // A name the parser makes at a position, `…@N…`: no source name has `@`.
           : (k === "name" || k === "label") && typeof x === "string" && x.startsWith("%")
           ? replaceNumbers(x, /@(\d+)(?::(\d+))?/g, at)
@@ -215,6 +218,8 @@ function declarationsOf(declarations: Json, walk: (v: Json) => Json, erase: (v: 
   const out: JsonRecord = {};
   for (const [k, v] of Object.entries(declarations))
     out[k] = k === "definitions" ? listOf(v).map((d) => own(d) ? walk(d) : erase(d))
+      // The applications the document writes are read by the check alone.
+      : k === "applications" ? []
       : k === "values" ? listOf(v).map((d) => own(d) || !isRecord(d) ? walk(d)
         : { ...asRecord(erase(d)), binding: walk(d.binding ?? null) })
       : walk(v);
