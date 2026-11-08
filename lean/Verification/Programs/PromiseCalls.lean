@@ -2171,9 +2171,10 @@ def writeKept (eff : Effect) (t : Tm) (k : HeapKnowledge.Knowledge) : List HeapK
     let i := HeapKnowledge.pick (HeapLinks.aliases k.links) (HeapKnowledge.intSlot k.indices) i
     let x := HeapKnowledge.pick (HeapLinks.aliases k.links) (HeapKnowledge.intSlot k.indices) x
     HeapKnowledge.shiftIndices (k.indices.filter (everyWritten k b i x) ++
-      k.indices.flatMap fun a => (HeapKnowledge.definedTerms k.indices).eraseDups.filterMap fun next =>
-        if HeapKnowledge.entailsKnown k.indices (.le [(.value i, 1), (next, -1)] (-1))
-        then writtenPrefix k b i x a next else none)
+      (k.indices.filter fun a => match a.fact with | .every _ [] _ _ => true | _ => false).flatMap fun a =>
+        (HeapKnowledge.definedTerms k.indices).eraseDups.filterMap fun next =>
+          if HeapKnowledge.entailsKnown k.indices (.le [(.value i, 1), (next, -1)] (-1))
+          then writtenPrefix k b i x a next else none)
   | _, _ => []
 
 open HeapKnowledge in
@@ -2345,6 +2346,7 @@ theorem writeKept_holds {eff : Effect} {t : Tm} {k : Knowledge} {ρ : Env} {h h'
         exact every_written hk.2.2.2.2.2 hs hc hx hst hb hnew hF
       · cases hkept
     · obtain ⟨a0, ha0, ha⟩ := List.mem_flatMap.mp ha
+      have ha0 := (List.mem_filter.mp ha0).1
       obtain ⟨next, -, hnext⟩ := List.mem_filterMap.mp ha
       split at hnext <;> try contradiction
       unfold writtenPrefix at hnext
