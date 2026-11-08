@@ -128,8 +128,8 @@ listed slot's fields, addressed by level at the context's depth. -/
       -- allocated is left out: the edge from a key-adding write to it does
       -- not carry that separation (`blocker-loop-key-adding-write`). A
       -- constant holding an array literal's object keeps its store field
-      -- apart from the store fields of the older slots' arrays, a fresh
-      -- one's among them.
+      -- apart from the store fields of the older slots' arrays no write
+      -- replaces, a fresh one's among them.
       let array := b.fresh && !b.iterator
       if !(b.iterator || array) || Γ.length ≤ i then [] else
       match b.apart with
@@ -137,6 +137,8 @@ listed slot's fields, addressed by level at the context's depth. -/
       | some older =>
         [⟨Γ.length - 1 - i, if array then some [arrayStoreKey] else none, Γ.zipIdx.filterMap fun (A,j) =>
           if j ≤ i || (!array && scope[j]?.any (·.fresh)) then none else
+          -- An array constant's partners are values no write replaces.
+          if array && !(scope[j]?.any fun o => match o.storage with | .value => true | _ => false) then none else
           let fields := match older[j - i - 1]? with
             | some B => (commonFields G A).filter (commonFields G B).contains
             | none => []

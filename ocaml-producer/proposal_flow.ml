@@ -97,7 +97,7 @@ let statements callbacks flow_graph register_following owner_span env0 ss =
     if graph.body_spans <> spans then Json.fail "Lean control-flow body disagrees with source statements";
     (* The constants holding an array literal's object: Lean states each
        one's store field apart from the store fields of the arrays of the
-       older slots in its scope (`Observations.separationFacts`), whatever
+       older slots in its scope no write replaces (`Observations.separationFacts`), whatever
        the heap holds, so a push into one keeps the other's length. *)
     let array_constants =
       let rec collect ss = List.concat_map (fun (s:Source.stmt) -> match s.statement with
@@ -117,6 +117,7 @@ let statements callbacks flow_graph register_following owner_span env0 ss =
         | x :: older ->
           (if List.mem x array_constants then
              List.filter_map (fun m -> if m <> x && Linear_facts.slot_binding env m && callbacks.array_binding env m []
+               && not (List.exists (Source.assigns m) ss)
                then Some (x,m) else None) older
            else []) @ pairs older in
       pairs names in
