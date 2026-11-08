@@ -146,18 +146,18 @@ const equationReaders = [
   expectSubset("Source flow fields Lean omits", ts, writes, {});
 }
 
-// The producer's side documents: the qualified reads the pipeline writes for
-// it (`verify-source.mts`), and the explanations `producer --explain` prints.
+// The producer's side documents: the reads documents the pipeline writes for
+// it (`unit-documents.mts`), and what `producer --units`, `--unit` and
+// `--explain` print.
 {
   const source = read("pipeline/verify-source.mts");
-  const written = new Set((source.match(/JSON\.stringify\(reads\.map\(\(\{([^}]*)\}\)/)?.[1] ?? "")
-    .split(",").map((n) => n.trim()).filter((n) => n !== ""));
-  assert.ok(written.size > 0, "the qualified-reads document's writer is found");
   // The documents of a proposal a unit at a time (`unit-documents.mts`).
   const units = read("pipeline/unit-documents.mts");
   const typeFields = (name: string): Set<string> => new Set([...(units.match(new RegExp(`export type ${name} = \\{([\\s\\S]*?)\\};`))?.[1] ?? "")
     .replace(/\/\*[\s\S]*?\*\//g, "").matchAll(/(?<![\w.])([A-Za-z_]\w*)\??\s*:(?!:)/g)].flatMap(captured));
-  for (const t of ["UnitReads", "Interface", "AssemblyEntry"]) for (const n of typeFields(t)) written.add(n);
+  const written = new Set<string>();
+  for (const t of ["UnitReads", "Interface", "QualifiedEntry", "AssemblyEntry"]) for (const n of typeFields(t)) written.add(n);
+  assert.ok(written.has("onThrow"), "the qualified-read document's type is found");
   const reads = ocamlReads("ocaml-producer/producer.ml");
   expectSubset("OCaml reads of the producer's input documents", reads, written, {});
   expectSubset("Input-document fields OCaml ignores", written, reads, {});
