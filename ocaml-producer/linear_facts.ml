@@ -934,11 +934,14 @@ and statement_slots ~(array : string -> string list -> bool) ?(bounds=[]) env fs
     List.fold_left (fun fs x -> forget x fs) fs (names_assigned s env) @ call_facts env f args
   | Destructure _ ->
     let fs = List.fold_left (fun fs x -> forget x fs) fs (names_assigned s env) in
-    (* Each field's read restated of the name it is bound to. *)
+    (* Each field's read restated of the name it is bound to, in the
+       pattern's order, each over the facts the earlier ones restated, as
+       the declarations `const n = root.path.f` one after another restate
+       them: a fact naming two of the fields is restated of both names. *)
     (match destructure_reads env s with
      | Some ((root,path),fields) ->
        let fs = List.fold_left (fun fs (_,n) -> forget n fs) fs fields in
-       fs @ List.concat_map (fun (f,n) -> restate_read n (root,path @ [f]) fs) fields
+       List.fold_left (fun fs (f,n) -> fs @ restate_read n (root,path @ [f]) fs) fs fields
      | None -> fs)
   | _ -> List.fold_left (fun fs x -> forget x fs) fs (names_assigned s env)
 
