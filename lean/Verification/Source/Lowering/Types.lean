@@ -759,6 +759,37 @@ negation. -/
 
 end
 
+/-- A declaration's result annotation with the footprint its claim proposes
+for the function it returns (`resultFootprint`, SOURCE-ELABORATION.md,
+"Returned closures"): the annotation's one function type, each of its
+signatures stating that footprint. Its signatures state no footprint, promise
+or throw bound of their own, and take fixed actuals; `top` leaves the
+annotation as written. The declaration's unit is checked at the result this
+gives, so its returns establish the footprint. -/
+def resultWithFootprint (T : EquationStore.State) (ret : Json) (footprint : Footprints.Closed) :
+    Except String Json := do
+  if footprint = .top then return ret
+  let refusal := "a returned function's footprint needs a result annotation of one function type \
+    whose signatures state no effect and take fixed actuals"
+  let .ok false := (ret.getObjValD "top").getBool? | throw refusal
+  let .ok #[atom] := (ret.getObjValD "atoms").getArr? | throw refusal
+  let .ok "graph" := (atom.getObjValD "a").getStr? | throw refusal
+  let label : Tree ← fromJson? (atom.getObjValD "label")
+  let claim (U : List Tree) : Json := Json.mkObj [("top", toJson false), ("atoms", Json.arr (U.map fun l =>
+    Json.mkObj [("a", toJson "graph"), ("label", Tree.toJson l)]).toArray)]
+  match PositiveRules.expand (SourceTypes.graph T) [label] with
+  | [.arrs (s :: ss) []] =>
+    let signature (a : Arrow (List Tree)) : Except String Json := do
+      if a.effect.footprint != .top || a.effect.onThrow || a.effect.promise.isSome then throw refusal
+      return Json.mkObj [("a", toJson "function"), ("this", claim a.receiver),
+        ("params", toJson (a.arguments.map claim)), ("result", claim a.result), ("construct", toJson "unknown"),
+        ("array", toJson "unknown"), ("effect", toJson { a.effect with footprint })]
+    let plain ← signature s
+    let others ← ss.mapM signature
+    let atom := if others.isEmpty then plain else plain.setObjVal! "and" (toJson others)
+    return Json.mkObj [("top", toJson false), ("atoms", toJson [atom])]
+  | _ => throw refusal
+
 /-- A module function's value as its callers see it: an ordinary function at
 its annotated parameters and result. A leading `this: T` parameter
 is its receiver, which every call passes (a plain call `undefined`), and no

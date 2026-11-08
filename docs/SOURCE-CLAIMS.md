@@ -74,6 +74,7 @@ Each function object has these fields:
 | `contracts` | Mutable declaration contracts: `{pos,name,type}` |
 | `footprint` | The [closed footprint](FOOTPRINTS.md#changes-and-footprints) proposed for the declaration's signature: `{"value":v,"store":s}` |
 | `onThrow` | Whether the footprint is proposed on a throw too, which the unit's graph must then establish as well: `true` or `false` |
+| `resultFootprint` | The closed footprint proposed for the signatures of the function the declaration returns, which its returns must establish ([returned closures](SOURCE-ELABORATION.md#returned-closures)): `{"value":v,"store":s}`, the one letting everything change where it proposes none |
 | `entries` | Entry claims: `{point,start,bindings,bounds,facts,quantified}` |
 | `expressions` | Expression claims: `{point,pos,type,current}` |
 | `arrows` | Optional per-signature interior claims, described below |

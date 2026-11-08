@@ -15,7 +15,7 @@ structure ModuleRun where
   location : String
   ast : Json
   claims : Json
-  qualified : List (String × Footprints.Closed × Bool)
+  qualified : List (String × Footprints.Closed × Bool × Footprints.Closed)
 
 /-- What certified imports give the check: the importer's document and claims
 without modules, the importer's qualified reads by name, each with its unit's
@@ -23,7 +23,7 @@ footprint and on-throw flag, and the module runs. -/
 structure ImportPlan where
   ast : Json
   claims : Json
-  qualified : List (String × Footprints.Closed × Bool)
+  qualified : List (String × Footprints.Closed × Bool × Footprints.Closed)
   modules : List ModuleRun
 
 section correspondence
@@ -202,7 +202,7 @@ footprint and on-throw flag, where the read names an eligible unit of its
 origin whose two signature readings agree. -/
 private def qualifiedRead (importer : Reading) (values : List Json) (fragmentModules : List Fragment.ModuleAst)
     (claimModules : List Json) (q : Json) (location name : String) (span : Span) :
-    Except String (String × Footprints.Closed × Bool) := do
+    Except String (String × Footprints.Closed × Bool × Footprints.Closed) := do
   let some v := values.find? fun v => (v.getObjVal? "declaration").toOption == some q
     | throw s!"a qualified read names no imported value: {q.compress}"
   let binding ← jField v "binding"
@@ -267,7 +267,10 @@ private def qualifiedRead (importer : Reading) (values : List Json) (fragmentMod
   -- run requires (`RequestJson.statedWithin`).
   if !RequestJson.statedWithin async footprint onThrow (← Fragment.decodeStated (← jField unit "stated")) then
     throw s!"a qualified read names a unit claimed outside the effect its annotation states: {location}#{name}"
-  return (localName, footprint, onThrow)
+  -- The footprint the unit proposes for the function it returns, which its
+  -- returns establish (`resultWithFootprint`).
+  let result : Footprints.Closed ← fromJson? (← jField uc "resultFootprint")
+  return (localName, footprint, onThrow, result)
 
 /-- The qualified reads of one document: each read its claims list names an
 imported value of its declarations and an eligible unit whose two readings
@@ -275,12 +278,12 @@ agree (`qualifiedRead`). Its importer's binding of each, with the unit's
 footprint and on-throw flag, and the units, by module and name. -/
 private def planReads (declarations claims : Json) (fragmentModules : List Fragment.ModuleAst)
     (claimModules : List Json) :
-    Except String (List (String × Footprints.Closed × Bool) × List (String × String)) := do
+    Except String (List (String × Footprints.Closed × Bool × Footprints.Closed) × List (String × String)) := do
   let reads ← jArr claims "qualified"
   if reads.eraseDups.length != reads.length then throw "a qualified read is listed twice"
   let values ← jArr declarations "values"
   let importer ← Reading.of declarations
-  let mut qualified : List (String × Footprints.Closed × Bool) := []
+  let mut qualified : List (String × Footprints.Closed × Bool × Footprints.Closed) := []
   let mut units : List (String × String) := []
   for q in reads do
     fieldsExactly q ["module", "name", "span"]
@@ -337,7 +340,7 @@ def planImports (ast claims : Json) : Except String ImportPlan := do
   let (qualified, importerUnits) ← planReads (← jField ast "declarations") claims fragmentModules claimModules
   -- The modules a planned read names, each planned once, its reads in turn.
   let mut units := importerUnits
-  let mut planned : List (String × List (String × Footprints.Closed × Bool)) := []
+  let mut planned : List (String × List (String × Footprints.Closed × Bool × Footprints.Closed)) := []
   let mut edges : List (String × String) := []
   for _ in [0:fragmentModules.length + 1] do
     let some location := (units.map (·.1)).find? fun l => !(planned.map (·.1)).contains l | break

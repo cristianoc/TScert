@@ -16,12 +16,14 @@ export type UnitFacts = {
 };
 
 /** A function a unit reads, at the footprint (none where it proposes none)
- * and on-throw flag its own unit's proposal settled on: one line of what
+ * on-throw flag and result footprint (none where it proposes none) its own
+ * unit's proposal settled on: one line of what
  * `producer --unit` prints, and an entry of a reads document. */
-export type Interface = { name: string; footprint: unknown; thrown: boolean };
+export type Interface = { name: string; footprint: unknown; thrown: boolean; resultFootprint: unknown };
 
 /** A qualified read as the producer reads it. */
-export type QualifiedEntry = { local: string; declaration: unknown; footprint: unknown; onThrow: boolean };
+export type QualifiedEntry = { local: string; declaration: unknown; footprint: unknown; onThrow: boolean;
+  resultFootprint: unknown };
 
 /** A unit's reads document: its members, whether the initialization is one,
  * the functions it reads, the constants read as values, its qualified reads. */

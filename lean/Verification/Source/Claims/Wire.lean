@@ -311,6 +311,9 @@ structure Function (ι : Type) where
   /-- Whether the footprint is proposed on a throw too, which the unit's
   graph must certify as well. -/
   onThrow : Bool
+  /-- The footprint the producer proposes for the signatures of the function
+  the declaration returns, which the unit's returns must certify. -/
+  resultFootprint : Footprints.Closed
   /-- Omitted by a document whose closures each advertise one signature. -/
   arrows : Option (List (ArrowClaims ι)) := none
   deriving FromJson
@@ -321,7 +324,8 @@ instance [ToJson ι] : ToJson (Function ι) where
   toJson f := Json.mkObj ([("name", toJson f.name), ("namePos", toJson f.namePos),
     ("params", toJson f.params), ("result", toJson f.result),
     ("entries", toJson f.entries), ("expressions", toJson f.expressions),
-    ("contracts", toJson f.contracts), ("footprint", toJson f.footprint), ("onThrow", toJson f.onThrow)] ++
+    ("contracts", toJson f.contracts), ("footprint", toJson f.footprint), ("onThrow", toJson f.onThrow),
+    ("resultFootprint", toJson f.resultFootprint)] ++
     (match f.arrows with
      | none | some [] => []
      | some rows => [("arrows", toJson rows)]))
@@ -386,6 +390,7 @@ def Function.normalized (f : Function ι) : SourceClaims.Function ι :=
     points := pointTable f.entries f.expressions, contracts := storageContracts f.contracts
     footprint := f.footprint
     onThrow := f.onThrow
+    resultFootprint := f.resultFootprint
     arrowClaims := (f.arrows.getD []).map fun a => (a.pos, a.rows.map fun row =>
       { toPointData := pointData row.entries row.expressions
         points := pointTable row.entries row.expressions

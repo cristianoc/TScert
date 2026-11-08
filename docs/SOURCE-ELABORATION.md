@@ -3958,6 +3958,39 @@ the first node that does not preserve the heap, in evidence production and
 in checking (`declaration-preserving-callback`,
 `declaration-field-write-callback`, `invalid-declaration-pop-callback`).
 
+### Returned closures
+
+A declaration whose result annotation is one function type, its signatures
+stating no effect and taking fixed actuals, may claim a closed footprint
+$`\Phi_r`$ for the function it returns (`resultFootprint` in the
+[claims](SOURCE-CLAIMS.md)). Its unit is checked at the annotation's result
+with each of its signatures stating $`\Phi_r`$, $`B_{\Phi_r}`$
+(`resultWithFootprint`), so every return meets that type: a returned
+closure's code is certified at a row whose effect covers $`\Phi_r`$, as any
+closure flowing to a qualified arrow is. Every other unit reads the
+declaration at its signature with that result (`moduleArrow`), and a
+certified import at its unit's claim (`importedArrow`):
+
+```math
+\frac{\vdash P:\Gamma\to B_{\Phi_r}\;!\;\Phi\qquad B=\mathcal F_{\top}(R,\vec A,C)}
+     {\vdash d:\mathcal F_{\Phi}(\Gamma\to\mathcal F_{\Phi_r}(R,\vec A,C))}\ \textsf{returned-effect}
+```
+
+The premise is the unit's ordinary check at the stronger result, so
+`SourceClaimJson.checkUnitJson_safe` covers it unchanged; that each
+declaration meets the signature the others read it at is
+[module composition](../WORK.md#module-composition), as for its own
+footprint. OCaml proposes $`\Phi_r`$ at the least fixpoint over the module,
+with the declarations' own footprints: assumed empty, and raised by each
+round to the join of the footprints its returns' claims state. A call of the
+returned closure then keeps what a call at $`\Phi_r`$ keeps
+(`returned-closure-footprint`). A closure changing a store gets no
+footprint, and a read after its call is refused
+(`invalid-returned-closure-footprint`, run under Node); a forged
+$`\Phi_r`$ is refused where the claimed return type is compared with the
+annotation, and, forged on the result's row too, at the closure's node
+changing the store, in search and in checking.
+
 ### Stated effects
 
 A written signature's result annotation may state the signature's effect:

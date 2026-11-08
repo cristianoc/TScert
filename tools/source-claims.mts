@@ -220,6 +220,9 @@ interface FunctionClaims<L = Label> extends BodyClaims<L> {
   /** Whether the footprint is proposed on a throw too, which the unit's
    * graph must establish as well. */
   onThrow: boolean;
+  /** The footprint proposed for the signatures of the function the
+   * declaration returns, which the unit's returns must establish. */
+  resultFootprint: ClosedFootprint;
 }
 
 export interface SourceClaims<L = Label> {
@@ -502,13 +505,16 @@ function claimsDocument(v: JsonRead): SourceClaims {
   };
   const fn = (x: JsonRead): FunctionClaims => {
     const r = record(x, "a function's claims",
-      ["name", "namePos", "params", "result", "contracts", "footprint", "onThrow", "entries", "expressions"], ["arrows"]);
+      ["name", "namePos", "params", "result", "contracts", "footprint", "onThrow", "resultFootprint", "entries",
+        "expressions"], ["arrows"]);
     const footprint = decodeClosedFootprint(r.footprint);
     if (footprint === undefined) fail("a function's footprint");
+    const resultFootprint = decodeClosedFootprint(r.resultFootprint);
+    if (resultFootprint === undefined) fail("a function's result footprint");
     const { contracts, entries, expressions, arrows } = body(r);
     const claims: FunctionClaims = { name: name(r.name, "a function's name"), namePos: span(r.namePos, "a function's name span"),
       params: each(r.params, "a function's parameters", namedPoint), result: claimType(r.result),
-      footprint, onThrow: flag(r.onThrow, "a function's onThrow flag"), contracts, entries, expressions };
+      footprint, onThrow: flag(r.onThrow, "a function's onThrow flag"), resultFootprint, contracts, entries, expressions };
     if (arrows !== undefined) claims.arrows = arrows;
     return claims;
   };

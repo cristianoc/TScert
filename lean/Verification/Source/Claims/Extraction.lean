@@ -13,15 +13,17 @@ variable {ι : Type} [Labels ι]
 
 /-- An import a certified unit stands for, read as the unit's module reads
 the unit (`moduleArrow`): its declared signature, `U`'s one call signature,
-with the unit's footprint and on-throw flag, and its extension discarding
-further actuals, which the unit's code does. -/
-def importedArrow (T : EquationStore.State) (U : List Tree) (footprint : Footprints.Closed) (onThrow : Bool) :
-    Except String Json := do
+with the unit's footprint and on-throw flag, its returned function's
+signature with the footprint the unit proposes for it, and its extension
+discarding further actuals, which the unit's code does. -/
+def importedArrow (T : EquationStore.State) (U : List Tree) (footprint : Footprints.Closed) (onThrow : Bool)
+    (result : Footprints.Closed) : Except String Json := do
   match PositiveRules.expand (SourceTypes.graph T) U with
   | [.arrs [a] []] =>
     if a.effect.promise.isSome then throw "a certified import's signature states no promise"
     let params : List Fragment.Param := a.arguments.zipIdx.map fun (A, i) => ⟨s!"p{i}", graphClaim A, false⟩
-    moduleArrow ⟨"", (0, 0), params, graphClaim a.result, [], false, none, false, none, a.effect.pre, a.effect.ensures⟩
+    let ret ← resultWithFootprint T (graphClaim a.result) result
+    moduleArrow ⟨"", (0, 0), params, ret, [], false, none, false, none, a.effect.pre, a.effect.ensures⟩
       footprint onThrow
   | _ => throw "a certified import needs one fixed call signature"
 
@@ -92,7 +94,7 @@ at its certified unit's footprint and on-throw flag (`importedArrow`); every
 other at its declared type. -/
 def fileFront (ast claims : Json) (fileKey : String)
     (budget : PositiveCertificates.SearchBudget := {})
-    (qualified : List (String × Footprints.Closed × Bool) := []) :
+    (qualified : List (String × Footprints.Closed × Bool × Footprints.Closed) := []) :
     Except String Front := do
   -- A source with arrays lists `ArrayProto`: its units see `Array.prototype`.
   let arrays := match (ast.getObjVal? "declarations").toOption.bind
@@ -131,6 +133,12 @@ def fileFront (ast claims : Json) (fileKey : String)
     ((d.functions.find? fun c => c.name == g.name && c.namePos == g.namePos).map (·.footprint)).getD .top
   let onThrowOf (g : Fragment.Fn) : Bool :=
     ((d.functions.find? fun c => c.name == g.name && c.namePos == g.namePos).map (·.onThrow)).getD false
+  -- Its result states the footprint its claim proposes for the function it
+  -- returns, which its unit's returns establish (`resultWithFootprint`).
+  let returning (g : Fragment.Fn) : Except String Fragment.Fn := do
+    let footprint := ((d.functions.find? fun c => c.name == g.name && c.namePos == g.namePos).map
+      (·.resultFootprint)).getD .top
+    return { g with ret := ← resultWithFootprint d.types g.ret footprint }
   -- A declaration with overloads is one unit per overload, each its code at
   -- that overload's signature (SOURCE-ELABORATION.md, "Module functions"):
   -- the units of one name run one code, and its slot holds every overload.
@@ -141,9 +149,9 @@ def fileFront (ast claims : Json) (fileKey : String)
       let units := ordinary.filter (·.name == name)
       let g ← units.head?
       some (name, g.namePos, (do
-        overloadSlot (← units.mapM fun u => moduleArrow u (footprintOf u) (onThrowOf u))).map .written)) ++
+        overloadSlot (← units.mapM fun u => do moduleArrow (← returning u) (footprintOf u) (onThrowOf u))).map .written)) ++
     (imported.map fun (name, span, U) => (name, span, match qualified.lookup name with
-      | some (footprint, onThrow) => (importedArrow d.types U footprint onThrow).map .written
+      | some (footprint, onThrow, result) => (importedArrow d.types U footprint onThrow result).map .written
       | none => .ok (.written (graphClaim U)))) ++
     (if arrays then [(SourceExtraction.arrayPrototypeName, (0, 0),
       Except.ok (.written (Json.mkObj [("top", toJson false), ("atoms", toJson [Json.mkObj
@@ -200,7 +208,7 @@ def fileFront (ast claims : Json) (fileKey : String)
         throw "the module initialization's binders are not its generic classes'"
       -- Nothing calls the initialization unit with a receiver.
       pure [(⟨"", span, [], undefinedType, init, false, none, false, none, [], []⟩, binders,
-        ⟨"", span, [], .labels [Labels.undef], c.entries, c.expressions, c.contracts, .top, false, c.arrows⟩)]
+        ⟨"", span, [], .labels [Labels.undef], c.entries, c.expressions, c.contracts, .top, false, .top, c.arrows⟩)]
   -- Initialization order is the initialization unit's own obligation.
   let initOrder := if initUnit.isEmpty then none else match checkInitializationOrder d.types all init with
     | .ok () => none
@@ -451,7 +459,7 @@ def Front.readsQualified (fr : Front) (group : List Nat) : Bool :=
 through them all. A module run's check reads its document this way. -/
 def extractPlans (ast claims : Json) (fileKey : String)
     (budget : PositiveCertificates.SearchBudget := {})
-    (qualified : List (String × Footprints.Closed × Bool) := []) :
+    (qualified : List (String × Footprints.Closed × Bool × Footprints.Closed) := []) :
     Except String (EquationStore.State × List (FunctionPlan EquationStore.State Tree)) := do
   let fr ← fileFront ast claims fileKey budget qualified
   fr.units.foldlM (init := (fr.d.types, [])) fun (T, plans) u => do

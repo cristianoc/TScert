@@ -513,10 +513,11 @@ def slicePlans (ast claims qualified : Json) (fileKey : String) (budget : Positi
     Except String FilePlans := do
   if let .ok reason := claims.getObjValAs? String "refusal" then throw reason
   let qualified ← (← qualified.getArr?).toList.mapM fun q => do
-    fieldsExactly q ["name", "footprint", "onThrow"]
+    fieldsExactly q ["name", "footprint", "onThrow", "resultFootprint"]
     let footprint : Footprints.Closed ← fromJson? (← jField q "footprint")
     let onThrow : Bool ← fromJson? (← jField q "onThrow")
-    return (← jStr (← jField q "name"), footprint, onThrow)
+    let result : Footprints.Closed ← fromJson? (← jField q "resultFootprint")
+    return (← jStr (← jField q "name"), footprint, onThrow, result)
   let ast := ast.setObjVal! "modules" (Json.arr #[])
   let claims := claims.setObjVal! "modules" (Json.arr #[])
   let fr ← fileFront ast claims fileKey budget qualified
@@ -631,8 +632,9 @@ theorem lineVerdict_safe {f : FilePlans} {budget : PositiveCertificates.SearchBu
 Every member has one response and one obligation list; the complete bundle
 is subsequently judged by `moduleVerdict`. -/
 def moduleLines (m : ModuleRun) (budget : PositiveCertificates.SearchBudget) (lines : Json) : Except String Json := do
-  let qualified := toJson (m.qualified.map fun (name, footprint, onThrow) =>
-    Json.mkObj [("name", toJson name), ("footprint", toJson footprint), ("onThrow", toJson onThrow)])
+  let qualified := toJson (m.qualified.map fun (name, footprint, onThrow, result) =>
+    Json.mkObj [("name", toJson name), ("footprint", toJson footprint), ("onThrow", toJson onThrow),
+      ("resultFootprint", toJson result)])
   let f ← slicePlans m.ast m.claims qualified m.location budget
   let lines ← (← lines.getArr?).toList.mapM readLine
   let mut target := Translate.Target.of f.F.store.heads

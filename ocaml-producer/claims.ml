@@ -689,10 +689,11 @@ let encode (proposal : Proposal_types.t) =
                   "entries",entries o.row_entries]) rows)]) f.arrows)] in
     Object (["name",String source.name; "namePos",source.name_pos;
       "params",Array (List.map (fun (n,t) -> named (n,Value t)) source.params);
-      "result",claim_type source.result;
+      "result",claim_type (with_result_footprint f.declared_result_footprint source.result);
       "contracts",contracts f.contracts;
       "footprint",footprint_json f.declared_footprint;
       "onThrow",Bool f.declared_on_throw;
+      "resultFootprint",footprint_json f.declared_result_footprint;
       "entries",entries f.entries;
       "expressions",expressions f.expressions]
       @ arrows)) proposal.functions in
@@ -705,4 +706,4 @@ let encode (proposal : Proposal_types.t) =
      places beside these. *)
   Object (["file",proposal.program.file; "sourceSha256",proposal.program.digest;
     "types",Array !rows; "functions",Array functions] @ init @ ["modules",Array [];
-    "qualified",Array (List.map (fun (_,identity,_,_) -> identity) proposal.program.qualified)])
+    "qualified",Array (List.map (fun (_,identity,_,_,_) -> identity) proposal.program.qualified)])

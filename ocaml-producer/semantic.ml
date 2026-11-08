@@ -242,6 +242,26 @@ let with_ensures ensures t = match t with
       {s with call_effect={s.call_effect with ensures}}) calls}]
   | _ -> t
 
+(* Whether a declaration's result is one function type whose signatures
+   state no footprint and no promise: the type a footprint proposed for the
+   function it returns can be stated on (Lean's `resultWithFootprint`). *)
+let result_candidate t = match t with
+  | Atoms [Shape {calls=(_ :: _ as calls);fields=[];indexes=[];elements=None}] ->
+    List.for_all (fun (s:signature) -> s.call_effect.footprint = top_footprint && not s.call_effect.on_throw
+      && s.call_effect.promise = None && s.quantified = [] && s.rest_pack = None) calls
+  | _ -> false
+(* A declaration's result type with the footprint proposed for the function
+   it returns stated on each of its signatures. *)
+let with_result_footprint footprint t =
+  if footprint = top_footprint || not (result_candidate t) then t else with_footprint footprint t
+(* A callable's type whose signatures' results state the footprint proposed
+   for the function they return. *)
+let with_returned_footprint footprint t = match t with
+  | Atoms [Shape ({calls;_} as shape)] when footprint <> top_footprint ->
+    Atoms [Shape {shape with calls=List.map (fun (s:signature) ->
+      {s with result=with_result_footprint footprint s.result}) calls}]
+  | _ -> t
+
 let record fields = Atoms [Shape {fields;indexes=[];calls=[];elements=None}]
 (* Whether a type mentions a type parameter. *)
 let rec mentions_rigid = function
