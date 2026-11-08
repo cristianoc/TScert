@@ -1994,12 +1994,17 @@ theorem eliminateLinear_holds {drop : List Nat} {as : List IndexAtom} {ρ h} (he
 (`eliminateLinear`), after the sum rule's disjunctions it decides are released
 (`releasePast`). -/
 def eliminateIndices (drop : List Nat) (as : List IndexAtom) : List IndexAtom :=
-  eliminateLinear drop (as ++ releasePast as)
+  eliminateLinear drop (as ++ if drop.any (fun d => as.any fun a => a.fact == .pastSafe d ||
+    match a.fact with | .either _ (.pastSafe k) => k == d | _ => false) then releasePast as else [])
 
 theorem eliminateIndices_holds {drop : List Nat} {as : List IndexAtom} {ρ h} (he : IndexHolds as ρ h) :
     IndexHolds (eliminateIndices drop as) ρ h :=
-  eliminateLinear_holds fun a ha hc => (List.mem_append.mp ha).elim (fun ha => he a ha hc)
-    (fun ha => releasePast_holds he a ha hc)
+  eliminateLinear_holds fun a ha hc => by
+    rcases List.mem_append.mp ha with ha | ha
+    · exact he a ha hc
+    · split at ha
+      · exact releasePast_holds he a ha hc
+      · cases ha
 
 /-- The linear facts, each with its terms defined, an atom's fact states: a
 linear fact itself, and a length atom `length(x, n)` as the equality of `n`'s

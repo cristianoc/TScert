@@ -464,10 +464,6 @@ let rec linear ?(array = fun _ _ -> false) env fs (e : expr) : ((string * int) l
     Some ([List.assoc e.pos !element_reads,1],0)
   | Literal (LNumber s) -> Option.map (fun i -> [],i) (literal_int s)
   | Id x when value_binding env x && is_int fs x -> Some ([x,1],0)
-  (* A constant whose type is one safe integer's literal (`const TEXT = 0`),
-     a binding of the body or a module constant: that integer (Lean's
-     `litSlot`). *)
-  | Id x when literal_constant env x <> None -> Option.map (fun i -> [],i) (literal_constant env x)
   | Read (o,Semantic.Name "length") when (match path_of env o with Some (b,p) -> array b p | None -> false) ->
     (match path_of env o with Some (b,path) -> Some ([length_term ~path b,1],0) | None -> None)
   | Read (_,Semantic.Name _) when (match path_of env e with Some (b,p) -> p <> [] && is_int fs (path_term b p) | None -> false) ->
@@ -572,6 +568,12 @@ let assign ~array env fs x (e : expr) =
   if not (value_binding env x) then forget x fs else
   match distribute e with
   | Some (c,p,q) -> (match !assign_arms ~array env fs x c p q with Some fs -> fs | None -> forget x fs)
+  | None ->
+  (* A constant whose type is one safe integer's literal (`lastKind = TEXT`,
+     `const TEXT = 0`), a binding of the body or a module constant: that
+     integer (Lean's `litSlot`). *)
+  match (match e.node with Id y -> literal_constant env y | _ -> None) with
+  | Some i -> forget x fs @ equal x ([],i)
   | None ->
   match linear ~array env fs e with
   | Some ([y,1],c) when y = x ->
