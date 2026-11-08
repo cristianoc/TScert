@@ -1886,7 +1886,13 @@ bounds of lengths (proved). These are the preservation rules:
   a caller keeps its facts across the call (positive `lazy-cache-keeps-facts`;
   negative, run under Node, `invalid-lazy-cache-initializer-pops`, an
   initializer popping the flags; a forged control, a cell written whatever it
-  holds claimed at `init`, refused at the write):
+  holds claimed at `init`, refused at the write). A definition's proposed
+  footprint reads a module binding as a read of its cell, changing no
+  location, and a field update `s.f++` as the field's write, so a counter
+  kept in a module cache's field is within `{value: any, store: keep}`
+  (positive `module-cache-keeps-lengths`; negative, run under Node,
+  `invalid-module-cache-keeps-lengths-pop`, a callee popping the counted
+  module array):
 
 ```math
 \frac{\Gamma;\Sigma\vdash x.f:=y\qquad \Sigma\vdash x.f\in\{\mathtt{null},\mathtt{undefined}\}\qquad \Gamma(y)\ \text{source}}

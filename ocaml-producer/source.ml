@@ -1058,6 +1058,8 @@ let rec footprint_expr ?(fresh=[]) ?(dispatched=fun _ _ -> false) ?(field_write=
   | Write (o,k,v) when field_write o k -> join_bound cell_write (all [o;v])
   (* `x.f ??= v`, `||=` and `&&=` read the field, then may write it. *)
   | LogicalAssign (_,{node=Read (o,k);_},v) when field_write o k -> join_bound cell_write (all [o;v])
+  (* `x.f++` and `x.f += v` read the field, then write it, as `Write`. *)
+  | Update (_,{node=Read (o,k);_},r,_) when field_write o k -> join_bound cell_write (all (o :: Option.to_list r))
   | BlockBody body -> footprint_stmts ~fresh ~dispatched ~field_write ~element_key ~dead_throw ~callable ~no_return ~iteration ~readable body
   | InstanceTest _
   | Write _ | Update _ | LogicalAssign _
