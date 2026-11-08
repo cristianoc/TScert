@@ -84,7 +84,7 @@ const slides: Slide[] = [
       para(t("The clause language expresses scalar linear relations. Quantified bounds over array elements and written loop invariants are " + "proposed" + " extensions."), 26),
   }),
   slide("invariants", {
-    label: "Type invariants", note: t("a regression case modeled on pretext’s opaque handle · the boundary checks ") + proved,
+    label: "Type invariants", note: t("pretext’s handle type, annotated as in TScert’s regression case; the measured target does not use it · the boundary checks ") + proved,
     title: "Re-establish the invariant at function boundaries", gap: 22,
     body: columns([
       code(["/** @invariant this.segmentFlags.length", " *     === this.widths.length", " *  @representation PreparedLineBreakData */", "export type PreparedText = {", "  readonly [preparedTextBrand]: true", "}"]),
