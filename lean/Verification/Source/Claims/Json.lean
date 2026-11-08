@@ -508,49 +508,32 @@ def FilePlans.groupEvidence (f : FilePlans) (group : List Nat) (evidence : Json)
     throw "evidence for another set of units"
   return b
 
-/-- **The verdict of a unit** at its evidence. A module run is checked as its
-document; a group's plans, certified, are checked at the group's evidence.
-Accepted, its dependencies. -/
-def unitVerdict (f : FilePlans) (budget : PositiveCertificates.SearchBudget) (unit : String) (evidence : Json) :
-    Except String (List String) :=
-  match f.p.modules.find? (fun m => "module:" ++ m.location == unit) with
-  | some m => do
-    (checkDocument m.ast m.claims m.location evidence budget m.qualified).mapError (s!"module {m.location}: " ++ ·)
-    return []
-  | none => do
-    let some i := (List.range f.fr.units.length).find? (f.fr.unitId · == unit) | throw s!"no unit {unit}"
-    let group := f.fr.group i
-    let certified ← f.certified group
-    let b ← f.groupEvidence group evidence
-    let checked := checkRequestsResult (CertifiedPlan.requests certified) b
-    if checked.accepted then return f.dependencies group
-    throw (requestsRefusal certified b checked)
+/-- **The verdict of a unit** at its evidence: the group's plans, certified,
+checked at the group's evidence. Accepted, its dependencies. A module run is
+checked as its own document (`moduleVerdict`). -/
+def unitVerdict (f : FilePlans) (_budget : PositiveCertificates.SearchBudget) (unit : String) (evidence : Json) :
+    Except String (List String) := do
+  let some i := (List.range f.fr.units.length).find? (f.fr.unitId · == unit) | throw s!"no unit {unit}"
+  let group := f.fr.group i
+  let certified ← f.certified group
+  let b ← f.groupEvidence group evidence
+  let checked := checkRequestsResult (CertifiedPlan.requests certified) b
+  if checked.accepted then return f.dependencies group
+  throw (requestsRefusal certified b checked)
 
-/-- What a unit's accepted verdict at its evidence gives: for a module run,
-its document's check (`DocumentSafe`); for a group, its plans crossing the
-exhaustive certification boundary and every certified request safe, and
-within its footprint where it claims one (`RequestsSafe`). -/
-def UnitSafe (f : FilePlans) (budget : PositiveCertificates.SearchBudget) (unit : String) (evidence : Json) :
+/-- What a unit's accepted verdict at its evidence gives: its group's plans
+crossing the exhaustive certification boundary and every certified request
+safe, and within its footprint where it claims one (`RequestsSafe`). -/
+def UnitSafe (f : FilePlans) (_budget : PositiveCertificates.SearchBudget) (unit : String) (evidence : Json) :
     Prop :=
-  (∃ m ∈ f.p.modules, "module:" ++ m.location = unit ∧
-    DocumentSafe m.ast m.claims m.location evidence budget m.qualified) ∨
-  (∃ i certified b, f.fr.unitId i = unit ∧ f.certified (f.fr.group i) = .ok certified ∧
-    f.groupEvidence (f.fr.group i) evidence = .ok b ∧ RequestsSafe f.F (CertifiedPlan.requests certified) b)
+  ∃ i certified b, f.fr.unitId i = unit ∧ f.certified (f.fr.group i) = .ok certified ∧
+    f.groupEvidence (f.fr.group i) evidence = .ok b ∧ RequestsSafe f.F (CertifiedPlan.requests certified) b
 
 theorem unitVerdict_safe {f : FilePlans} {budget : PositiveCertificates.SearchBudget} {unit : String}
     {evidence : Json} {deps : List String} (h : unitVerdict f budget unit evidence = .ok deps) :
     UnitSafe f budget unit evidence := by
   unfold unitVerdict at h
-  split at h
-  · rename_i m hm
-    left
-    cases hd : checkDocument m.ast m.claims m.location evidence budget m.qualified with
-    | error err => simp [hd, Except.mapError, Bind.bind, Except.bind] at h
-    | ok u =>
-      have hunit : "module:" ++ m.location = unit := by simpa using List.find?_some hm
-      exact ⟨m, List.mem_of_find?_eq_some hm, hunit, checkDocument_safe hd⟩
-  · right
-    cases hi : (List.range f.fr.units.length).find? (f.fr.unitId · == unit) with
+  · cases hi : (List.range f.fr.units.length).find? (f.fr.unitId · == unit) with
     | none => simp [hi] at h
     | some i =>
       simp only [hi] at h
@@ -566,19 +549,6 @@ theorem unitVerdict_safe {f : FilePlans} {budget : PositiveCertificates.SearchBu
           by_cases hx : (checkRequestsResult (CertifiedPlan.requests certified) b).accepted = true
           · exact ⟨i, certified, b, hid, hc, hb, requestsSafe_of_check hx⟩
           · simp [hx] at h
-
-/-- **The acceptance theorem.** The CLI check of a file's units computes the
-file's one front (`filePlans`), then each unit's verdict at the evidence the
-file gives it (`unitVerdict`). A unit accepted is safe as `UnitSafe` states:
-its certified requests safe under `EnvOk` of their inputs (the file's module
-values at their claimed signatures and effects, its qualified reads and every
-imported, ambient and host value among them), and within their footprints
-where they claim one. -/
-theorem checkUnitJson_safe {ast claims evidence : Json} {fileKey : String}
-    {budget : PositiveCertificates.SearchBudget} {f : FilePlans} {unit : String} {deps : List String}
-    (_hf : filePlans ast claims fileKey budget = .ok f) (h : unitVerdict f budget unit evidence = .ok deps) :
-    UnitSafe f budget unit evidence :=
-  unitVerdict_safe h
 
 /-- The first extraction refusal among the groups `names` selects: a check
 reports it before any refusal at the evidence. -/
@@ -651,6 +621,74 @@ def produceModule (m : ModuleRun) (fuel : Nat) (budget : PositiveCertificates.Se
   | .ok e => (e, none)
   | .error reason => (Json.null, some (s!"module {m.location}: " ++ reason))
 
+/-- A module run on the wire: its location, its restricted document and
+claims, and its own qualified reads with their footprints and on-throw
+flags. -/
+def ModuleRun.wire (m : ModuleRun) : Json :=
+  Json.mkObj [("location", toJson m.location), ("ast", m.ast), ("claims", m.claims),
+    ("qualified", toJson (m.qualified.map fun (name, footprint, onThrow) =>
+      Json.mkObj [("name", toJson name), ("footprint", toJson footprint), ("onThrow", toJson onThrow)]))]
+
+/-- A module run read from the wire, field by field. -/
+def ModuleRun.decode (j : Json) : Except String ModuleRun := do
+  fieldsExactly j ["location", "ast", "claims", "qualified"]
+  let qualified ← (← jArr j "qualified").mapM fun q => do
+    fieldsExactly q ["name", "footprint", "onThrow"]
+    let footprint : Footprints.Closed ← fromJson? (← jField q "footprint")
+    let onThrow : Bool ← fromJson? (← jField q "onThrow")
+    return (← jStr (← jField q "name"), footprint, onThrow)
+  return ⟨← jStr (← jField j "location"), ← jField j "ast", ← jField j "claims", qualified⟩
+
+/-- **The verdict of a module run** at its evidence: its restricted document
+checked at its claims and qualified reads (`checkDocument`). -/
+def moduleVerdict (m : ModuleRun) (budget : PositiveCertificates.SearchBudget) (evidence : Json) :
+    Except String Unit :=
+  (checkDocument m.ast m.claims m.location evidence budget m.qualified).mapError (s!"module {m.location}: " ++ ·)
+
+/-- What the CLI checks of a unit: a group of a file, by the file's document,
+claims and key and the unit's identity (`--check-units`), or a module run, by
+its wire form (`--check-module`). -/
+inductive UnitInput where
+  | file (ast claims : Json) (fileKey unit : String)
+  | module (run : Json)
+
+/-- The exact CLI condition for a unit's accepted verdict at its evidence: a
+group's, the file's one front (`filePlans`) and the unit's verdict there
+(`unitVerdict`); a module run's, its decoding (`ModuleRun.decode`) and its
+document's check (`moduleVerdict`). -/
+def UnitInput.Accepted (budget : PositiveCertificates.SearchBudget) (evidence : Json) : UnitInput → Prop
+  | .file ast claims fileKey unit =>
+    ∃ f deps, filePlans ast claims fileKey budget = .ok f ∧ unitVerdict f budget unit evidence = .ok deps
+  | .module run => ∃ m, ModuleRun.decode run = .ok m ∧ moduleVerdict m budget evidence = .ok ()
+
+/-- What an accepted unit gives: a group's `UnitSafe` over its file's front;
+a module run's `DocumentSafe` of its restricted document. -/
+def UnitInput.Safe (budget : PositiveCertificates.SearchBudget) (evidence : Json) : UnitInput → Prop
+  | .file ast claims fileKey unit =>
+    ∃ f, filePlans ast claims fileKey budget = .ok f ∧ UnitSafe f budget unit evidence
+  | .module run => ∃ m, ModuleRun.decode run = .ok m ∧
+    DocumentSafe m.ast m.claims m.location evidence budget m.qualified
+
+/-- **The acceptance theorem.** A unit the CLI accepts (`UnitInput.Accepted`)
+is safe (`UnitInput.Safe`): a group of a file, its certified requests safe
+under `EnvOk` of their inputs (the file's module values at their claimed
+signatures and effects, its qualified reads and every imported, ambient and
+host value among them), and within their footprints where they claim one; a
+module run, its restricted document's plans checked at its evidence. -/
+theorem checkUnitJson_safe {budget : PositiveCertificates.SearchBudget} {evidence : Json} {i : UnitInput}
+    (h : i.Accepted budget evidence) : i.Safe budget evidence := by
+  cases i with
+  | file ast claims fileKey unit =>
+    obtain ⟨f, _, hf, hv⟩ := h
+    exact ⟨f, hf, unitVerdict_safe hv⟩
+  | module run =>
+    obtain ⟨m, hm, hv⟩ := h
+    refine ⟨m, hm, ?_⟩
+    unfold moduleVerdict at hv
+    cases hd : checkDocument m.ast m.claims m.location evidence budget m.qualified with
+    | error err => simp [hd, Except.mapError] at hv
+    | ok u => exact checkDocument_safe hd
+
 /-- A unit's line of an evidence document: the unit, and its evidence. -/
 def unitLine (unit : String) (evidence : Json) : Json :=
   Json.mkObj [("unit", toJson unit), ("evidence", evidence)]
@@ -667,13 +705,9 @@ def unitsJson (ast claims : Json) (fileKey : String) (budget : PositiveCertifica
   let p ← planImports ast claims
   let fr ← fileFront p.ast p.claims fileKey budget p.qualified
   let runs := p.modules.map ("module:" ++ ·.location)
-  let groups := (fr.selected names).map fun i =>
+  return (fr.selected names).map fun i =>
     let group := fr.group i
     Json.mkObj [("unit", toJson (fr.unitId i)), ("members", toJson (group.map fr.unitId)),
       ("depends", toJson ((fr.dependencies group).map fr.unitId ++ (if fr.readsQualified group then runs else [])))]
-  let modules := p.modules.map fun m =>
-    Json.mkObj [("unit", toJson ("module:" ++ m.location)), ("members", toJson ([] : List String)),
-      ("depends", toJson (if m.qualified.isEmpty then [] else runs.filter (· != "module:" ++ m.location)))]
-  return groups ++ modules
 
 end Verification.SourceClaimJson

@@ -24,6 +24,9 @@ verifier --produce-units      <ast.json> <source-claims.json> <file-key> <eviden
 verifier --check-units        <ast.json> <source-claims.json> <file-key> <evidence.json> [<names>]
 verifier --units              <ast.json> <source-claims.json> <file-key> [<names>]
 verifier --plan-imports       <ast.json> <plan.json>
+verifier --module-runs        <ast.json> <source-claims.json>
+verifier --produce-module     <module-run.json> <evidence.json> <depth>
+verifier --check-module       <module-run.json> <evidence.json>
 verifier --lower-program      <ast.json> <source-claims.json> <file-key>
 verifier --lower-control-flow <ast.json>
 ```
@@ -31,14 +34,14 @@ verifier --lower-control-flow <ast.json>
 - `<file-key>` is the identity of the checked file: the key the claims and
   the requests are reconstructed under, the Fragment's `file`.
 - A file's **units** are the groups of its functions that reach each other
-  by name, its initialization among them where its mentions place it, and
-  each module run of its certified imports
+  by name, its initialization among them where its mentions place it
   ([units](DESIGN.md#function-coverage-and-release-thresholds)). A group is
   named by its first member, `name@offset` for a function and `init` for the
-  initialization; a module run by `module:<location>`. `<names>` selects the
-  groups with a member of one of the comma-separated names (a function's
-  name, `:init` for the initialization); every unit without it. Module runs
-  are always selected.
+  initialization. `<names>` selects the groups with a member of one of the
+  comma-separated names (a function's name, `:init` for the
+  initialization); every unit without it. Each module run of the file's
+  certified imports is a unit of its own, `module:<location>`, searched and
+  checked by the module modes.
 - `--produce-units` searches each selected unit's evidence over the file's
   one front and writes the evidence document to `<evidence.json>`, which
   must differ from both inputs, a line per unit as each unit's search ends,
@@ -63,6 +66,19 @@ verifier --lower-control-flow <ast.json>
   [certified imports](SOURCE-CONTRACTS.md#certified-imports) a plan document
   names (`SourceClaimJson.planImports`) and prints nothing; a plan it
   refuses is its refusal, each other read it refuses on a line of its own.
+- `--module-runs` prints each module run the claims plan
+  (`SourceClaimJson.planImports`), one per line,
+  `{"ast","claims","location","qualified"}`: the module's document and
+  claims restricted to the read closure of the functions read qualified of
+  it, its initialization kept, and its own qualified reads, each
+  `{"footprint","name","onThrow"}`. A plan refused is its refusal.
+- `--produce-module` searches one module run's evidence and writes it to
+  `<evidence.json>`; a search refused is its refusal, prefixed
+  `module <location>: `.
+- `--check-module` checks one module run's document at its evidence and
+  prints its verdict, `{"accepted","depends","members","unit"}` or
+  `{"members","refusal","unit"}`, whose acceptance `checkUnitJson_safe`
+  states (`DocumentSafe` of the restricted document).
 - `--lower-program` prints the program graph each unit lowers to, with the
   graph code it creates (`SourceClaimJson.lowerJson`), for inspection;
   `make lowering` runs it.

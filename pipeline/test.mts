@@ -6442,8 +6442,27 @@ control(async (): Promise<void> => {
   const tally = must(narrowed.modules.flatMap(m => m.functions).find(f => f.name === "tally"), "tally's claims");
   assert.notDeepEqual(tally.footprint, emptyFootprint, "tally: its honest footprint");
   tally.footprint = emptyFootprint;
-  refuse(imported, "forged-certified-footprint", narrowed,
-    /module \.\/certified\.ts: .*the footprint claimed for 'tally' is not established by its body/s);
+  {
+    // The module's run, planned from the forged claims, is refused where its
+    // evidence is produced and where the honest run's evidence is checked.
+    const forged = writeClaims(imported, "forged-certified-footprint", narrowed);
+    const planned = tested(verifierCall(verifier, ["--module-runs", join(imported, "fragment.json"), forged]));
+    assert.equal(planned.status, 0, planned.stdout + planned.stderr);
+    const runLine = must(planned.stdout.split("\n").find((l) => l.includes('"location":"./certified.ts"')), "the module's run");
+    const runPath = join(imported, "forged-certified-footprint.module-run.json");
+    writeFileSync(runPath, runLine);
+    const footprintRefusal = /module \.\/certified\.ts: .*the footprint claimed for 'tally' is not established by its body/s;
+    const searched = tested(verifierCall(verifier, ["--produce-module", runPath,
+      join(imported, "forged-certified-footprint.module-evidence.json"), "12"]));
+    assert.equal(searched.status, 1, searched.stdout + searched.stderr);
+    assert.match(searched.stdout + searched.stderr, footprintRefusal);
+    const honest = must(readdirSync(imported).filter((f) => /^module-run-\d+\.json$/.test(f))
+      .find((f) => readFileSync(join(imported, f), "utf8").includes('"location":"./certified.ts"')), "the honest run");
+    const checked = tested(verifierCall(verifier, ["--check-module", runPath,
+      join(imported, honest.replace(/\.json$/, ".evidence.json"))]));
+    assert.equal(checked.status, 1, checked.stdout + checked.stderr);
+    assert.match(checked.stdout + checked.stderr, /module \.\/certified\.ts: /);
+  }
   assert.deepEqual(readClaims(writing).qualified.map(q => q.name), ["drop"], "drop is read qualified");
   // The importer's claims without their qualified reads: the imports are
   // read at their declared types, and the dense results are refused.
@@ -9802,7 +9821,8 @@ process.stdout.write(JSON.stringify(await checkApart(${JSON.stringify(source)}, 
     "proposal.log", "search.log", "check.log", "typescript-diagnostics.json"];
   const contents = (artifacts: string): Map<string, string> => new Map(documents.flatMap((name): [string, string][] =>
     present(join(artifacts, name)) ? [[name, readFileSync(join(artifacts, name), "utf8")]] : []));
-  const replayed = new Set(["parse", "lower", "propose", "assemble", "plan", "search", "check", "explain", "diagnostics"]);
+  const replayed = new Set(["parse", "lower", "propose", "assemble", "plan", "search", "check", "module-search",
+    "module-check", "explain", "diagnostics"]);
   const runs: [string, string | null][] = [["certified-nested-value-import", "pipeline/imports-project"],
     ["invalid-closure-contextual-result", null]];
   for (const [name, project] of runs) {

@@ -441,10 +441,13 @@ its name, the initialization for a binding it owns (a constant, a cell, a
 class, an enum, a class's self binding), and the module runs of the
 certified imports it reads. Mentions over-approximate reads, as the
 initialization order check relies on. Each module run of a certified import
-is a unit of its own, checked as its document. One search
-(`--produce-units`) writes each selected unit's evidence; one check
-(`--check-units`) gives each its verdict, accepted with its dependencies or
-refused ([the modes](REQUEST-PROTOCOL.md#run-the-verifier)). A
+is a unit of its own: its document restricted to the read closure of the
+functions read qualified of it, searched and checked on its own
+(`--produce-module`, `--check-module`), whose acceptance
+`checkUnitJson_safe` states. One search (`--produce-units`) writes each
+selected unit's evidence; one check (`--check-units`) gives each its
+verdict, accepted with its dependencies or refused
+([the modes](REQUEST-PROTOCOL.md#run-the-verifier)). A
 `checkUnitJson_safe` conclusion is per unit: an accepted unit's certified
 requests are safe under `EnvOk` of their inputs, the module values among
 them at their claimed signatures, whatever the other units' verdicts. The

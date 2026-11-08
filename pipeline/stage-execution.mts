@@ -21,10 +21,10 @@ import type { Cpu } from "./stage-store.mts";
 const here = import.meta.dirname;
 
 /** The stages of the pipeline's entry point (STAGE-STORE.md). */
-export type StageName = "parse" | "module" | "lower" | "propose" | "assemble" | "plan" | "search" | "check" | "explain" |
-  "diagnostics";
+export type StageName = "parse" | "module" | "lower" | "propose" | "assemble" | "plan" | "search" | "check" |
+  "module-search" | "module-check" | "explain" | "diagnostics";
 export const stageNames: readonly StageName[] = ["parse", "module", "lower", "propose", "assemble", "plan", "search", "check",
-  "explain", "diagnostics"];
+  "module-search", "module-check", "explain", "diagnostics"];
 export const isStageName = (value: unknown): value is StageName => stageNames.some((s) => s === value);
 
 /** The repository's builds of the two audited programs, at their build
@@ -576,7 +576,10 @@ export const producerProtocol: Protocol = { refusal: { status: 2, prefix: "unsup
  * `… --plan-imports <fragment> <plan>`,
  * `… --units <fragment> <claims> <file-key> [<names>]`,
  * `… --produce-units <fragment> <claims> <file-key> <evidence-out> <depth> [<names>]`,
- * `… --check-units <fragment> <claims> <file-key> <evidence> [<names>]`. */
+ * `… --check-units <fragment> <claims> <file-key> <evidence> [<names>]`,
+ * `… --module-runs <fragment> <claims>`,
+ * `… --produce-module <module-run> <evidence-out> <depth>`,
+ * `… --check-module <module-run> <evidence>`. */
 export function verifierCall(program: string, args: readonly string[],
     environment: Readonly<Record<string, string>> = {}): ProcessCall {
   const budget = args[0] === "--subtype-rounds" ? args.slice(0, 2).map((t) => ({ text: t })) : [];
@@ -596,6 +599,13 @@ export function verifierCall(program: string, args: readonly string[],
   if (mode === "--check-units" && (rest.length === 4 || rest.length === 5))
     return call("check", [{ input: "fragment.json", path: rest[0] }, { input: "claims.json", path: rest[1] },
       { text: rest[2] }, { input: "evidence.json", path: rest[3] }, ...rest.slice(4).map((text) => ({ text }))]);
+  if (mode === "--module-runs" && rest.length === 2)
+    return call("plan", [{ input: "fragment.json", path: rest[0] }, { input: "claims.json", path: rest[1] }]);
+  if (mode === "--produce-module" && rest.length === 3)
+    return call("module-search", [{ input: "module-run.json", path: rest[0] }, { output: "evidence.json", path: rest[1] },
+      { text: rest[2] }]);
+  if (mode === "--check-module" && rest.length === 2)
+    return call("module-check", [{ input: "module-run.json", path: rest[0] }, { input: "evidence.json", path: rest[1] }]);
   throw Error(`not a verifier stage: ${args.join(" ")}`);
 }
 

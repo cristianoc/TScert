@@ -507,9 +507,11 @@ function failedRun(artifacts: string, reason: string): RunFailure {
   }
 }
 
-/** One round of a check of each unit: the search of the file's selected
-units (`--produce-units`) and their check (`--check-units`), each over the
-file's one front. Where the search of the file does not finish within its
+/** One round of a check of each unit: each module run the file's claims plan
+(`--module-runs`), searched and checked on its own over its restricted
+document (`--produce-module`, `--check-module`), then the search of the
+file's selected units (`--produce-units`) and their check (`--check-units`),
+each over the file's one front. Where the search of the file does not finish within its
 limit, each unit is searched and checked on its own, so the limit is each
 unit's. A refusal naming a certified import asks for that import's
 withdrawal, every such import of the round at once, before the check; a
@@ -571,6 +573,40 @@ function unitRound(recorder: Recorder, artifacts: string, ast: string, claims: s
     }
     return keys.size ? { withdraw: [...keys] } : null;
   };
+  // The module runs, each keyed on its restricted document: an importer's
+  // edit that keeps a closure replays its search and check.
+  const planned = runStep(verifierCall(verifier, [...budget, "--module-runs", ast, claims]), recorder);
+  const planRefusal = verifierRefusal(planned, "--module-runs");
+  if (planRefusal !== null) return withdrawal([planRefusal]) ?? { front: planRefusal };
+  const moduleResults: UnitResult[] = [];
+  const moduleSearchRefusals: string[] = [];
+  for (const [index, line] of planned.out.split("\n").filter((l) => l.startsWith("{")).entries()) {
+    const run = join(artifacts, `module-run-${index}.json`), own = join(artifacts, `module-run-${index}.evidence.json`);
+    writeFileSync(run, line);
+    const produced = runStep(verifierCall(verifier, [...budget, "--produce-module", run, own, String(searchDepth)]),
+      recorder);
+    const refused = verifierRefusal(produced, "--produce-module");
+    if (refused !== null) {
+      moduleSearchRefusals.push(refused);
+      continue;
+    }
+    const checked = runStep(verifierCall(verifier, [...budget, "--check-module", run, own]), recorder);
+    const verdict = checked.out.split("\n").find((l) => l.startsWith("{"));
+    const refusal = verifierRefusal(checked, "--check-module");
+    if (verdict === undefined) throw Error(`tool failure: verifier --check-module printed no verdict: ${refusal ?? ""}`);
+    const value: unknown = JSON.parse(verdict);
+    const unit = field(value, "unit"), reason = field(value, "refusal");
+    if (typeof unit !== "string") throw Error("tool failure: verifier --check-module printed a verdict without its unit");
+    if (field(value, "accepted") === true)
+      moduleResults.push({ unit, members: [], status: "verified", phase: "check", detail: "", depends: [] });
+    else if (typeof reason === "string") {
+      const detail = `reject: ${reason}`;
+      moduleResults.push({ unit, members: [], status: refusalStatus(detail), phase: "check", detail, depends: [] });
+    } else throw Error("tool failure: verifier --check-module printed a verdict without its refusal");
+  }
+  const moduleWithdrawn = withdrawal([...moduleSearchRefusals,
+    ...moduleResults.filter((r) => r.status !== "verified").map((r) => r.detail)]);
+  if (moduleWithdrawn) return moduleWithdrawn;
   const evidence = join(artifacts, "evidence.json");
   let results: UnitResult[];
   try {
@@ -594,22 +630,21 @@ function unitRound(recorder: Recorder, artifacts: string, ast: string, claims: s
       const unit = field(value, "unit"), members = strings(field(value, "members"));
       if (typeof unit !== "string") throw Error("tool failure: verifier --units listed a unit without its identity");
       const first = members[0];
-      // A module run is checked with every unit of its file.
-      if (first === undefined) continue;
+      if (first === undefined) throw Error("tool failure: verifier --units listed a unit without members");
       const own = join(artifacts, `unit-${index}.evidence.json`);
       try {
         const searched = search(own, [memberName(first)]);
         const checked = searched.front ?? check(own, [memberName(first)], searched.refused);
         if (typeof checked === "string")
           results.push({ unit, members, status: refusalStatus(checked), phase: "search", detail: checked, depends: [] });
-        else results.push(...checked.filter((r) => r.unit === unit || (r.unit.startsWith("module:") &&
-          !results.some((x) => x.unit === r.unit))));
+        else results.push(...checked.filter((r) => r.unit === unit));
       } catch (unitError) {
         results.push({ unit, members, status: "error", phase: "search", detail: messageOf(unitError), depends: [] });
       }
     }
   }
-  return withdrawal(results.filter((r) => r.status !== "verified").map((r) => r.detail)) ?? { results };
+  return withdrawal(results.filter((r) => r.status !== "verified").map((r) => r.detail)) ??
+    { results: [...results, ...moduleResults] };
 }
 
 /** Whether a whole-file search or check ended at a limit: its time limit, or
@@ -695,8 +730,9 @@ function checkUnowned(artifacts: string, source: string, tsconfigPath?: string, 
     // Certified imports: each module's claims, and the reads they may
     // qualify. A read the search or the check refuses, or a module run it
     // refuses, is withdrawn, and the documents proposed again without it.
-    // A document with qualified reads is searched run by run
-    // (`searchRuns`), so a later round replays the runs it leaves unchanged.
+    // Each module run is searched and checked in stages of its own, keyed on
+    // its restricted document (`unitRound`), so a later round, and a later
+    // edit of the importer, replays the runs it leaves unchanged.
     const modules = new ModuleRuns(recorder, artifacts, parsedData);
     const withdrawn = new Set<string>();
     const claims = join(artifacts, "claims.json");
