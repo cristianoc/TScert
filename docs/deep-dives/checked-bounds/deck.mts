@@ -79,10 +79,10 @@ const slides: Slide[] = [
     body: table(["Contract", "Support"], [
       ["Precondition", status("ok", "written") + t(" as `@requires C`; checked at analyzed calls, assumed by the body")],
       ["Postcondition", status("gap", "partial") + ": result facts from native specifications and type invariants; no written postcondition syntax"],
-      ["Type invariant", status("ok", "written") + t(" as `@invariant C`; obligations at function boundaries")],
-      ["Loop invariant", status("gap", "inferred") + ": checked on incoming edges; no written loop-invariant syntax"],
+      ["Type invariant", status("ok", "written") + t(" as `@invariant C` on a type; obligations at function boundaries")],
+      ["Loop invariant", status("ok", "written") + t(" as `@invariant C` before a loop, or inferred; checked on every edge into the head")],
     ], [24, 76]) +
-      para(t("The clause language expresses scalar linear relations. Quantified bounds over array elements and written loop invariants are " + "proposed" + " extensions."), 26),
+      para(t("Clauses are linear relations over values, field paths and lengths, under null guards, and quantified clauses `forall i in xs: B` over an array’s elements. A heap change preserves no quantified fact: a stated limit."), 26),
   }),
   slide("invariants", {
     label: "Type invariants", note: t("an opaque-type regression example, after pretext’s handle · the boundary rules ") + proved,
@@ -142,27 +142,28 @@ const slides: Slide[] = [
     ], [50, 50]),
   }),
   slide("pretext", {
-    label: "pretext", note: t("measured at TScert `5701f1e9`, each stage limited to 300 s · ") + measured,
-    title: "148 of 211 functions verified without bound checks", gap: 22,
+    label: "pretext", note: t("measured at TScert `4775efde`, each stage limited to 300 s · ") + measured,
+    title: "149 of 211 functions verified without bound checks", gap: 22,
     body: cards([
-      stat("148 / 211", "shallow: each function’s own unit accepted, its callees read at their contracts.", "ok"),
-      stat("129 / 211", "deep: every unit it depends on accepted too, module initialization included.", "ok"),
+      stat("149 / 211", "shallow: each function’s own unit accepted, its callees read at their contracts.", "ok"),
+      stat("130 / 211", "deep: every unit it depends on accepted too, module initialization included.", "ok"),
       stat("3 sites", "unsafe within pretext’s own contract, marked in the code as described exceptions.", "neg"),
     ], 3) +
       para(t("The target: pretext’s checked rewrite with its 501 bound checks reverted and arithmetic annotations added. The unsafe class (" + "observed" + " under Node): a line range kept from a longer text, materialized on a shorter one, reads past a segment’s graphemes; original pretext returns wrong text, or `NaN` offsets in rich inline text. No annotation makes it safe; the code needs an index check."), 25),
   }),
   slide("remains", {
-    label: "Remaining obligations", note: `by hand, over the 63 unverified functions · estimates`,
-    title: "Element bounds are the largest gap", gap: 22,
-    body: table(["Capability needed", "Functions, estimated"], [
-      [t("quantified bounds over array elements: every `xs[i] ≤ ys.length`"), "about 25"],
-      ["contract facts kept across calls and parameter defaults", "about 11"],
-      ["string lengths as terms", "7"],
-      ["indices from shifts and products (non-linear)", "7"],
-      ["facts about library results", "4"],
-      ["calls in loops; run-time keys; unclassified", "4; 2; 3"],
-    ], [72, 28]) +
-      para(t("The estimates overlap: they are not a partition of the 63. Element bounds, call frames and string lengths have " + "proposed" + " designs; their gains are not yet measured."), 25),
+    label: "Remaining obligations", note: `the 62 unverified functions, classed by their first refusal · estimates`,
+    title: "Element bounds need more than a quantified clause", gap: 22,
+    body: table(["Capability needed", "Functions"], [
+      ["type invariants across calls with coarse frame conditions", "11"],
+      ["element facts of typed arrays, whose writes the model does not track", "11"],
+      ["generated tables: checked decoding, strides, bit arithmetic", "10"],
+      [t("string lengths as terms (`text.codePointAt(i)!`)"), "6"],
+      ["lengths of the elements of arrays of arrays", "3"],
+      ["element writes; key-adding writes; facts at edges, cause unknown", "3; 2; 3"],
+      ["other element and index reads, not yet classified", "13"],
+    ], [80, 20]) +
+      para(t("Quantified clauses gained one function: the other element-bound functions also write their arrays, and a heap change preserves no quantified fact. Keeping one across an element write is a design choice; extending it across `push` needs an append relation in that native contract, new trust."), 25),
   }),
   statement("moral", {
     label: "The takeaway",

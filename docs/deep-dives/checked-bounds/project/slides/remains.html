@@ -1,13 +1,14 @@
 <section id="remains" style="background:#fbfcfd;color:#0b1a2e;font-family:'Inter','Helvetica Neue',Arial,sans-serif;padding:120px 128px;display:flex;flex-direction:column;gap:22px">
-<div style="display:flex;gap:24px;align-items:baseline;flex-wrap:wrap"><p style="font-size:24px;color:#56627a;font-weight:600;letter-spacing:2px;text-transform:uppercase">Remaining obligations</p><p style="font-size:24px;color:#56627a">by hand, over the 63 unverified functions · estimates</p></div>
-<h2 style="font-family:'Bricolage Grotesque','Helvetica Neue',Arial,sans-serif;font-size:56px;font-weight:700;line-height:1.15">Element bounds are the largest gap</h2>
+<div style="display:flex;gap:24px;align-items:baseline;flex-wrap:wrap"><p style="font-size:24px;color:#56627a;font-weight:600;letter-spacing:2px;text-transform:uppercase">Remaining obligations</p><p style="font-size:24px;color:#56627a">the 62 unverified functions, classed by their first refusal · estimates</p></div>
+<h2 style="font-family:'Bricolage Grotesque','Helvetica Neue',Arial,sans-serif;font-size:56px;font-weight:700;line-height:1.15">Element bounds need more than a quantified clause</h2>
 <table style="font-size:24px;color:#0b1a2e">
-<tr><th style="width:72%;text-align:left;font-weight:600">Capability needed</th><th style="width:28%;text-align:left;font-weight:600">Functions, estimated</th></tr>
-<tr><td>quantified bounds over array elements: every <span style="color:#2c4f7c">xs[i] ≤ ys.length</span></td><td>about 25</td></tr>
-<tr><td>contract facts kept across calls and parameter defaults</td><td>about 11</td></tr>
-<tr><td>string lengths as terms</td><td>7</td></tr>
-<tr><td>indices from shifts and products (non-linear)</td><td>7</td></tr>
-<tr><td>facts about library results</td><td>4</td></tr>
-<tr><td>calls in loops; run-time keys; unclassified</td><td>4; 2; 3</td></tr>
-</table><p style="font-size:25px;color:#0b1a2e;line-height:1.4">The estimates overlap: they are not a partition of the 63. Element bounds, call frames and string lengths have proposed designs; their gains are not yet measured.</p>
+<tr><th style="width:80%;text-align:left;font-weight:600">Capability needed</th><th style="width:20%;text-align:left;font-weight:600">Functions</th></tr>
+<tr><td>type invariants across calls with coarse frame conditions</td><td>11</td></tr>
+<tr><td>element facts of typed arrays, whose writes the model does not track</td><td>11</td></tr>
+<tr><td>generated tables: checked decoding, strides, bit arithmetic</td><td>10</td></tr>
+<tr><td>string lengths as terms (<span style="color:#2c4f7c">text.codePointAt(i)!</span>)</td><td>6</td></tr>
+<tr><td>lengths of the elements of arrays of arrays</td><td>3</td></tr>
+<tr><td>element writes; key-adding writes; facts at edges, cause unknown</td><td>3; 2; 3</td></tr>
+<tr><td>other element and index reads, not yet classified</td><td>13</td></tr>
+</table><p style="font-size:25px;color:#0b1a2e;line-height:1.4">Quantified clauses gained one function: the other element-bound functions also write their arrays, and a heap change preserves no quantified fact. Keeping one across an element write is a design choice; extending it across <span style="color:#2c4f7c">push</span> needs an append relation in that native contract, new trust.</p>
 </section>

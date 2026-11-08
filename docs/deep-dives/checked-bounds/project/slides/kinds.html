@@ -5,7 +5,7 @@
 <tr><th style="width:24%;text-align:left;font-weight:600">Contract</th><th style="width:76%;text-align:left;font-weight:600">Support</th></tr>
 <tr><td>Precondition</td><td><span style="color:#2f6b47">written</span> as <span style="color:#2c4f7c">@requires C</span>; checked at analyzed calls, assumed by the body</td></tr>
 <tr><td>Postcondition</td><td><span style="color:#6b6f78">partial</span>: result facts from native specifications and type invariants; no written postcondition syntax</td></tr>
-<tr><td>Type invariant</td><td><span style="color:#2f6b47">written</span> as <span style="color:#2c4f7c">@invariant C</span>; obligations at function boundaries</td></tr>
-<tr><td>Loop invariant</td><td><span style="color:#6b6f78">inferred</span>: checked on incoming edges; no written loop-invariant syntax</td></tr>
-</table><p style="font-size:26px;color:#0b1a2e;line-height:1.4">The clause language expresses scalar linear relations. Quantified bounds over array elements and written loop invariants are proposed extensions.</p>
+<tr><td>Type invariant</td><td><span style="color:#2f6b47">written</span> as <span style="color:#2c4f7c">@invariant C</span> on a type; obligations at function boundaries</td></tr>
+<tr><td>Loop invariant</td><td><span style="color:#2f6b47">written</span> as <span style="color:#2c4f7c">@invariant C</span> before a loop, or inferred; checked on every edge into the head</td></tr>
+</table><p style="font-size:26px;color:#0b1a2e;line-height:1.4">Clauses are linear relations over values, field paths and lengths, under null guards, and quantified clauses <span style="color:#2c4f7c">forall i in xs: B</span> over an array’s elements. A heap change preserves no quantified fact: a stated limit.</p>
 </section>
