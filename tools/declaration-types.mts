@@ -62,7 +62,7 @@ export type ElementWrite = "stores" | "exact";
 /** An index fact at numbered positions (`HeapKnowledge.IndexFact`, its
  * constructor's name holding its fields): an array index; the length of an
  * array's store; an index at most that length, below it where `strict`; a
- * safe integer; a linear fact `Σ c·t ≤ d` or `≠ d`; a guarded fact, which
+ * safe integer; the double `2^53`, past the safe integers (`pastSafe`); a linear fact `Σ c·t ≤ d` or `≠ d`; a guarded fact, which
  * holds where the named data fields `path` read from the position `slot`
  * give the value `tag` names, or where its body holds (PROGRAM-TYPING.md,
  * "Guarded clauses"); the value at position `value` is what the array at
@@ -75,6 +75,7 @@ export type IndexFact =
   | { readonly length: { readonly array: number; readonly length: number } }
   | { readonly bound: { readonly array: number; readonly index: number; readonly strict: boolean } }
   | { readonly int: { readonly slot: number } }
+  | { readonly pastSafe: { readonly slot: number } }
   | { readonly linear: { readonly fact: LinearFact } }
   | { readonly either: { readonly left: IndexFact; readonly right: IndexFact } }
   | { readonly guarded: { readonly slot: number; readonly path: readonly string[]; readonly tag: GuardTag;

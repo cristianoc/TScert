@@ -56,6 +56,7 @@ let rec index_fact_json fact =
   | Length_of (x,n) -> Object ["length",Object ["array",int x;"length",int n]]
   | Bound_by (x,k,strict) -> Object ["bound",Object ["array",int x;"index",int k;"strict",Bool strict]]
   | Int_at k -> Object ["int",Object ["slot",int k]]
+  | Past_safe k -> Object ["pastSafe",Object ["slot",int k]]
   | Linear_le (form,d) -> linear "le" form d
   | Linear_ne (form,d) -> linear "ne" form d
   | Element (v,x,k) -> Object ["element",Object ["value",int v;"array",int x;"index",int k]]

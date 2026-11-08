@@ -784,4 +784,69 @@ theorem bitAnd_safe {x y : UInt64} {i m : Int} (hx : SafeInt x i) (hy : SafeInt 
   simp only [arithBits, hx32, hy32, hand, int32Bits_nat]
   exact ⟨by omega, .inl ⟨by omega, by simp⟩⟩
 
+/-! ## The sum `2^53`, past the safe integers -/
+
+/-- The double `2^53`, the least integer past the safe integers: biased
+exponent `1076`, mantissa bits `0`. -/
+def pastSafeBits : UInt64 := 0x4340000000000000
+
+/-- Rounding `2^53`, given as `2^53 · 2^K` at exponent `-K`, is exact: the
+finite `2^52 · 2^1`. -/
+theorem round_two53 (K : Nat) :
+    round .binary64 .positive (2 ^ 53 * 2 ^ K) (-(K : Int)) = .finite .positive (2 ^ 52) 1 (by decide) := by
+  have hl : (2 ^ 53 * 2 ^ K : Nat).log2 = 53 + K := by
+    rw [log2_mul_pow (by decide), show (2 ^ 53 : Nat).log2 = 53 from Nat.log2_two_pow]
+  have ht : Format.targetExponent .binary64 (totalExponent (2 ^ 53 * 2 ^ K) (-(K : Int))) = 1 := by
+    simp only [Format.targetExponent, totalExponent, hl, Format.mantissaBits, Format.minExponent]
+    omega
+  simp only [round, ht, decreaseExponent]
+  rw [show (-(K : Int) - 1).toNat = 0 by omega, Nat.shiftLeft_zero,
+    show (2 ^ 53 * 2 ^ K : Nat) = 2 ^ 52 * 2 ^ (K + 1) by rw [Nat.pow_succ 2 K, show (2 ^ 53 : Nat) = 2 ^ 52 * 2 by decide]; ac_rfl]
+  exact roundWithAccuracy_exact .positive (by decide) (by decide) (by decide) (by push_cast; omega)
+
+/-- Normalizing `2^53 · 2^K` at exponent `-K` gives the double `2^53`. -/
+theorem normalize_two53 {S : Int} {K : Nat} (hS : S = 2 ^ 53 * 2 ^ K) :
+    UInt64.ofBitVec (UnpackedFloat.pack .binary64 (normalize .binary64 S (-(K : Int)) .positive)) = pastSafeBits := by
+  have hP : (0 : Int) < 2 ^ K := Int.pow_pos (by decide)
+  have hSp : 0 < S := by rw [hS]; exact Int.mul_pos (by decide) hP
+  simp only [normalize]
+  rw [show compare S 0 = .gt from Int.compare_eq_gt.mpr hSp]
+  simp only
+  rw [show S.toNat = 2 ^ 53 * 2 ^ K by rw [hS]; exact_mod_cast Int.toNat_natCast (2 ^ 53 * 2 ^ K), round_two53 K]
+  have hp := pack_finite .positive (2 ^ 52) 1 (by decide) (by decide) (by decide) (by decide) (by decide)
+  apply UInt64.toNat_inj.mp
+  simp only [UInt64.toNat_ofBitVec, hp]
+  rfl
+
+/-- **The sum `2^53`.** Doubles of safe integers whose sum is `2^53` add to
+the double `2^53`. -/
+theorem add_two53 {x y : UInt64} {i j : Int} (hx : SafeInt x i) (hy : SafeInt y j)
+    (hr : i + j = 2 ^ 53) : arithBits .add x y = pastSafeBits := by
+  rw [arithBits_add]
+  rcases model_safe_cases hx with ⟨rfl, s, hu⟩ | ⟨h, hu⟩
+  · have := hy.1; omega
+  rcases model_safe_cases hy with ⟨rfl, t, hv⟩ | ⟨h', hv⟩
+  · have := hx.1; omega
+  rw [hu, hv]
+  simp only [canonical, UnpackedFloat.add]
+  have hl := log2_lt53 (by omega) hx.1
+  have hl' := log2_lt53 (by omega) hy.1
+  obtain ⟨K, hK⟩ : ∃ K : Nat, min ((i.natAbs.log2 : Int) - 52) ((j.natAbs.log2 : Int) - 52) = -(K : Int) :=
+    ⟨(-(min ((i.natAbs.log2 : Int) - 52) ((j.natAbs.log2 : Int) - 52))).toNat, by omega⟩
+  simp only [decreaseExponent, hK]
+  rw [shift_canonical i h hx.1 (by omega), shift_canonical j h' hy.1 (by omega)]
+  exact normalize_two53 (by rw [← Int.add_mul, hr])
+
+/-- The double `2^53` is no safe integer. -/
+theorem pastSafe_not_safe (i : Int) : ¬ SafeInt pastSafeBits i := by
+  intro hx
+  have hb := bitsOfNat_finite hx.1
+  have hv : pastSafeBits.toNat = 1076 * 2 ^ 52 := rfl
+  rcases hx.2 with ⟨-, he⟩ | ⟨-, he⟩ <;> omega
+
+theorem safeIntOfBits_pastSafe : safeIntOfBits pastSafeBits = none := by
+  cases h : safeIntOfBits pastSafeBits with
+  | none => rfl
+  | some i => exact absurd (safeIntOfBits_sound h) (pastSafe_not_safe i)
+
 end Verification.SafeIntegers

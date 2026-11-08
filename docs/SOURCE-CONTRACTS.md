@@ -4019,7 +4019,7 @@ forms, in this order, their result the
 for `Uint8Array`):
 
 ```math
-\mathtt{new}\ C\colon(\mathtt{number})\Rightarrow_\emptyset^{\mathrm{int}(1),\ 0\le 1;\ \mathsf{ensures}\ \mathrm{view}(0)=2}\mathit{Uint8Array}
+\mathtt{new}\ C\colon(\mathtt{number})\Rightarrow_\emptyset^{\mathrm{int}(1)\lor\mathrm{past}(1),\ 0\le 1\lor\mathrm{past}(1);\ \mathsf{ensures}\ \mathrm{view}(0)=2}\mathit{Uint8Array}
 \ \land\
 (\mathtt{number}\mid\mathtt{readonly}\ \mathtt{number}[\,])\Rightarrow_\emptyset\mathit{Uint8Array}
 ```
@@ -4031,7 +4031,13 @@ $`n\ge 0`$, ToIndex returns $`n`$ itself (ToIntegerOrInfinity of an integer
 is the integer, and $`n\le 2^{53}-1`$ is its own ToLength), and
 AllocateTypedArray with that length makes a fresh fixed-length buffer of
 $`n`$ elements, so a normal return's view has typed-array length $`n`$; a
-length the buffer cannot hold throws a `RangeError`, no normal return. At a
+length the buffer cannot hold throws a `RangeError`, no normal return. At
+the double $`2^{53}`$, $`\mathrm{past}(1)`$, ToIndex throws a `RangeError`
+($`2^{53}>2^{53}-1`$), no normal return, so the postcondition holds of every
+normal return; a sum `length + 1` of a string's length is such a value or a
+safe integer ([a sum reaching $`2^{53}`$](PROGRAM-TYPING.md#linear-facts),
+`typed-array-length-at-sum`; negative `invalid-typed-array-length-at-sum`,
+run under Node: a read past the last element is `undefined`). At a
 fraction ToIndex truncates (`new Uint8Array(1.5)` has one element under
 Node), which the precondition excludes. The fact lies within the
 owner-approved typed-array trust (the view's typed-array length is the stable

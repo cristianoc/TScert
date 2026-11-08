@@ -40,6 +40,9 @@ type promise = Guards of int | Asserts of int
 type term = Value_at of int * string list | Length_at of int * string list | View_at of int * string list
   | Str_length_at of int * string list
 type index_fact = Index_at of int | Length_of of int * int | Bound_by of int * int * bool | Int_at of int
+  (* The position holds the double 2^53, past the safe integers (Lean's
+     `IndexFact.pastSafe`). *)
+  | Past_safe of int
   | Linear_le of (term * int) list * int | Linear_ne of (term * int) list * int
   (* Where the named data fields read from the position do not give the
      value the tag names, `null` or `undefined`, the body holds

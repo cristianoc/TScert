@@ -178,6 +178,8 @@ function decodeIndexFact(v: JsonRead): IndexFact | undefined {
   if (index) { const slot = decodeNat(index.slot); return slot === undefined ? undefined : { index: { slot } }; }
   const int = fieldsOf(v.int, ["slot"]);
   if (int) { const slot = decodeNat(int.slot); return slot === undefined ? undefined : { int: { slot } }; }
+  const pastSafe = fieldsOf(v.pastSafe, ["slot"]);
+  if (pastSafe) { const slot = decodeNat(pastSafe.slot); return slot === undefined ? undefined : { pastSafe: { slot } }; }
   const length = fieldsOf(v.length, ["array", "length"]);
   if (length) {
     const array = decodeNat(length.array);

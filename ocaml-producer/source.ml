@@ -32,6 +32,7 @@ let rec index_fact_of j =
   let body k ks = let b = field k j in if keys b = List.sort String.compare ks then b else unsupported "invalid index fact" in
   if only "index" then Index_at (natural (field "slot" (body "index" ["slot"])))
   else if only "int" then Int_at (natural (field "slot" (body "int" ["slot"])))
+  else if only "pastSafe" then Past_safe (natural (field "slot" (body "pastSafe" ["slot"])))
   else if only "length" then
     let b = body "length" ["array";"length"] in Length_of (natural (field "array" b), natural (field "length" b))
   else if only "bound" then
