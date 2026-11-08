@@ -4,7 +4,7 @@
 // Every operation a control runs replays from the stage store like any stage
 // (STAGE-STORE.md, "Controls"). The pipeline cases are run-cases.mts's.
 import assert from "node:assert/strict";
-import { chmodSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, symlinkSync, writeFileSync } from "node:fs";
 import { present } from "../tools/files.mts";
 import { fieldOf } from "../tools/thrown.mts";
 import { join, resolve } from "node:path";
@@ -63,7 +63,7 @@ const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "obj
  * mutation verifier registers with `mutationControl` and is given once its
  * build, beside the others, is done. */
 /** A document's proposal through the stages a check proposes it by, a unit
- * at a time (STAGE-STORE.md, "Units of a proposal"), read as one producer
+ * at a time (STAGE-STORE.md, "Units of a check"), read as one producer
  * process's run: exit 0 with the claims, or 2 with the refusal record. */
 function proposedDocument(fragment: string): { status: number; stdout: string; stderr: string } {
   const document: unknown = JSON.parse(readFileSync(fragment, "utf8"));
@@ -1681,11 +1681,23 @@ const invoke = (claims: string, evidence: string, artifacts: string, refusal: Re
   recordsDecode(words, "a check's refusal");
   return words;
 };
-/** Search for evidence of forged claims, or of a forged parser document. */
+/** An evidence document's lines without the heads of the store they were
+ * searched over: evidence the check reads as written over the document it
+ * checks, as a search over that document writes it. */
+const withoutHeads = (path: string): void => {
+  if (!existsSync(path)) return;
+  writeFileSync(path, readFileSync(path, "utf8").split("\n").filter((l) => l !== "").map((line) => {
+    const heads = line.lastIndexOf(',"heads":'), unit = line.lastIndexOf(',"unit":');
+    return (heads < 0 || unit < heads ? line : line.slice(0, heads) + line.slice(unit)) + "\n";
+  }).join(""));
+};
+/** Search for evidence of forged claims, or of a forged parser document,
+ * over the document searched, its lines without heads. */
 const produceWith = (artifacts: string, claims: string, name: string,
     fragmentPath: string = join(artifacts, "fragment.json")): Invoked => {
-  const searched = tested(verifierCall(verifier, ["--produce-units", fragmentPath, claims, sourceKey(artifacts),
+  const searched = tested(verifierCall(verifier, ["--produce-unit", fragmentPath, claims, join(artifacts, "search-qualified.json"),
     join(artifacts, `${name}-evidence.json`), "12"]));
+  withoutHeads(join(artifacts, `${name}-evidence.json`));
   recordsDecode(searched.stdout + searched.stderr, `search ${name}`);
   return searched;
 };
@@ -1757,20 +1769,38 @@ const run = (file: string): string => {
   const outcome = check(join(here, "examples", `${file}.ts`),
     test.project ? tsconfigOf(resolve(here, "..", test.project)) : undefined, test.typescriptErrors);
   const { artifacts } = expectOutcome(test, outcome);
+  // The controls forge claims and evidence over the document's store: the
+  // run's `evidence.json` is the search of every unit over the document,
+  // each line without heads, the run's own searches over slices kept beside.
+  const qualified = join(artifacts, "search-qualified.json"), evidence = join(artifacts, "evidence.json");
+  // A run refused before its search states no qualified read.
+  if (!existsSync(qualified)) writeFileSync(qualified, "[]");
+  if (existsSync(evidence)) {
+    renameSync(evidence, join(artifacts, "unit-evidence.json"));
+    const document = join(artifacts, "document-search.json");
+    tested(verifierCall(verifier, ["--produce-unit", join(artifacts, "fragment.json"), join(artifacts, "claims.json"),
+      qualified, document, "12"]));
+    withoutHeads(document);
+    if (existsSync(document)) renameSync(document, evidence);
+  }
   caseRuns.set(file, artifacts);
   return artifacts;
 };
 
 control(async (): Promise<void> => {
-  // Each unit checked on its own over its file's one front (`--units`, `--produce-units`, `--check-units`): the
-  // front lists each unit with the units it depends on; one unit's evidence is no evidence of another; and a unit
+  // Each unit checked on its own over its file's one front (`--produce-unit`, `--check-units`): the check
+  // states each unit with the units it depends on; one unit's evidence is no evidence of another; and a unit
   // whose claimed footprint its code does not establish is refused alone, the units relying on that claim
   // accepted, so their deep status is what its refusal blocks.
   const artifacts = run("module-cells");
   const fragment = join(artifacts, "fragment.json"), claimsPath = join(artifacts, "claims.json");
-  const p = tested(verifierCall(verifier, ["--units", fragment, claimsPath, sourceKey(artifacts)]));
+  const everyUnit = join(artifacts, "all-units.evidence.json");
+  const produced = tested(verifierCall(verifier, ["--produce-unit", fragment, claimsPath,
+    join(artifacts, "search-qualified.json"), everyUnit, "12"]));
+  assert.equal(produced.status, 0, produced.stdout + produced.stderr);
+  const p = tested(verifierCall(verifier, ["--check-units", fragment, claimsPath, sourceKey(artifacts), everyUnit]));
   assert.equal(p.status, 0, p.stdout + p.stderr);
-  const listed = p.stdout.split("\n").filter((line) => line !== "").map((line) => {
+  const listed = p.stdout.split("\n").filter((line) => line.startsWith("{")).map((line) => {
     const v = jsonObject(JSON.parse(line));
     return { unit: String(v.unit), depends: jsonArray(v.depends).map(String) };
   });
@@ -1779,7 +1809,7 @@ control(async (): Promise<void> => {
   assert.deepEqual(listed.find((u) => u.unit === id("afterCall"))?.depends, [id("bump"), "init"]);
   const searched = (claims: string, name: string, names: string[]): Invoked & { evidence: string } => {
     const evidence = join(artifacts, `${name}.evidence.json`);
-    return { ...tested(verifierCall(verifier, ["--produce-units", fragment, claims, sourceKey(artifacts), evidence, "12",
+    return { ...tested(verifierCall(verifier, ["--produce-unit", fragment, claims, join(artifacts, "search-qualified.json"), evidence, "12",
       ...names])), evidence };
   };
   const verdicts = (claims: string, evidence: string, names: string[]): { invoked: Invoked; of: Map<string, boolean> } => {
@@ -1928,8 +1958,8 @@ control(async (): Promise<void> => {
   for (const name of ["fragment.json", "claims.json"]) {
     const input = join(good, name);
     const before = readFileSync(input);
-    const result = tested(verifierCall(verifier, ["--produce-units",
-      join(good, "fragment.json"), join(good, "claims.json"), sourceKey(good), input, "12"]));
+    const result = tested(verifierCall(verifier, ["--produce-unit",
+      join(good, "fragment.json"), join(good, "claims.json"), join(good, "search-qualified.json"), input, "12"]));
     assert.ifError(result.error);
     assert.equal(result.signal, null);
     assert.equal(result.status, 1, result.stdout + result.stderr);
@@ -2003,8 +2033,8 @@ control(async (): Promise<void> => {
   const evidence = join(erased, "forged-evidence.json");
   writeFileSync(claims, proposal.stdout);
   writeFileSync(evidence, "{}");
-  const searched = tested(verifierCall(verifier, ["--produce-units",
-    join(erased, "fragment.json"), claims, sourceKey(erased), evidence, "12"]));
+  const searched = tested(verifierCall(verifier, ["--produce-unit",
+    join(erased, "fragment.json"), claims, join(erased, "search-qualified.json"), evidence, "12"]));
   assert.equal(searched.status, 1, searched.stdout + searched.stderr);
   assert.match(searched.stdout + searched.stderr, /generic contract.*cannot be erased/);
   invoke(claims, evidence, erased, /generic contract.*cannot be erased/);
@@ -2036,8 +2066,8 @@ control(async (): Promise<void> => {
     const claims = join(artifacts, "forged-signed-claims.json");
     const evidence = join(artifacts, "forged-signed-evidence.json");
     writeFileSync(claims, proposal.stdout);
-    const searched = tested(verifierCall(verifier, ["--produce-units",
-      join(artifacts, "fragment.json"), claims, sourceKey(artifacts), evidence, "12"]));
+    const searched = tested(verifierCall(verifier, ["--produce-unit",
+      join(artifacts, "fragment.json"), claims, join(artifacts, "search-qualified.json"), evidence, "12"]));
     assert.equal(searched.status, 1, searched.stdout + searched.stderr);
     if (!present(evidence)) writeFileSync(evidence, "{}");
     invoke(claims, evidence, artifacts,
@@ -2284,13 +2314,13 @@ control(async (): Promise<void> => {
       evidence: string = join(good, "evidence.json")): void => {
     const path = join(good, `${name}.fragment.json`);
     writeFileSync(path, edit(readFragmentFile(join(good, "fragment.json"))));
-    for (const mode of ["--produce-units", "--check-units"]) {
-      const result = tested(verifierCall(verifier, [mode, path, claims, sourceKey(good),
-        mode === "--produce-units" ? join(good, `${name}-evidence.json`) : evidence,
-        ...(mode === "--produce-units" ? ["12"] : [])]));
+    for (const mode of ["--produce-unit", "--check-units"]) {
+      const result = tested(verifierCall(verifier, [mode, path, claims, mode === "--produce-unit" ? join(good, "search-qualified.json") : sourceKey(good),
+        mode === "--produce-unit" ? join(good, `${name}-evidence.json`) : evidence,
+        ...(mode === "--produce-unit" ? ["12"] : [])]));
       assert.ifError(result.error);
       assert.equal(result.status, 1, result.stdout + result.stderr);
-      assert.match(result.stdout + result.stderr, mode === "--produce-units" ? refusal : checked);
+      assert.match(result.stdout + result.stderr, mode === "--produce-unit" ? refusal : checked);
     }
   };
   const wellKnown = '"module":"typescript/lib/lib.es2015.symbol.wellknown.d.ts","name":"toStringTag"';
@@ -2376,8 +2406,8 @@ control(async (): Promise<void> => {
   {
     const exact = join(inherited, "tag-fake-exact.fragment.json");
     writeFileSync(exact, fakeAt(readFragmentFile(join(inherited, "fragment.json")), "exact"));
-    const produced = tested(verifierCall(verifier, ["--produce-units", exact, join(inherited, "claims.json"),
-      sourceKey(inherited), join(inherited, "tag-fake-exact-evidence.json"), "12"]));
+    const produced = tested(verifierCall(verifier, ["--produce-unit", exact, join(inherited, "claims.json"),
+      join(inherited, "search-qualified.json"), join(inherited, "tag-fake-exact-evidence.json"), "12"]));
     assert.equal(produced.status, 0, produced.stdout + produced.stderr);
   }
   tagged(inherited, "tag-fake-untagged", ast => fakeAt(ast, "untagged"),
@@ -2544,10 +2574,10 @@ control(async (): Promise<void> => {
     assert.ok(text.includes(field), `the computed field ${from}`);
     const path = join(keyed, `${name}.fragment.json`);
     writeFileSync(path, text.replace(field, `{"name":${to},"e":{"k":"comma"`));
-    for (const mode of ["--produce-units", "--check-units"]) {
-      const result = tested(verifierCall(verifier, [mode, path, join(keyed, "claims.json"), sourceKey(keyed),
-        join(keyed, mode === "--produce-units" ? `${name}-evidence.json` : "evidence.json"),
-        ...(mode === "--produce-units" ? ["12"] : [])]));
+    for (const mode of ["--produce-unit", "--check-units"]) {
+      const result = tested(verifierCall(verifier, [mode, path, join(keyed, "claims.json"), mode === "--produce-unit" ? join(keyed, "search-qualified.json") : sourceKey(keyed),
+        join(keyed, mode === "--produce-unit" ? `${name}-evidence.json` : "evidence.json"),
+        ...(mode === "--produce-unit" ? ["12"] : [])]));
       assert.equal(result.status, 1, result.stdout + result.stderr);
       assert.match(result.stdout + result.stderr, /is not the key .* its literal converts to/);
     }
@@ -2950,11 +2980,11 @@ control(async (): Promise<void> => {
   const read = must(fn.expressions.find(e => e.pos[0] === start && e.pos[1] === start + 1), "the read of v");
   read.type = [rowOf(claims, "num")];
   const forged = writeClaims(good, "untested-number", claims);
-  for (const mode of ["--produce-units", "--check-units"]) {
+  for (const mode of ["--produce-unit", "--check-units"]) {
     const result = tested(verifierCall(verifier, [mode, join(good, "fragment.json"), forged,
-      sourceKey(good), join(good, mode === "--produce-units"
+      mode === "--produce-unit" ? join(good, "search-qualified.json") : sourceKey(good), join(good, mode === "--produce-unit"
         ? "untested-number-evidence.json" : "evidence.json"),
-      ...(mode === "--produce-units" ? ["12"] : [])]));
+      ...(mode === "--produce-unit" ? ["12"] : [])]));
     assert.ifError(result.error);
     assert.equal(result.status, 1, result.stdout + result.stderr);
   }
@@ -2978,11 +3008,11 @@ control(async (): Promise<void> => {
     throw new Error("the first read of rest is claimed as a union with undefined");
   read.type = claimed.filter(t => t !== undefinedRow);
   const forged = writeClaims(good, "chain-entry-defined", claims);
-  for (const mode of ["--produce-units", "--check-units"]) {
+  for (const mode of ["--produce-unit", "--check-units"]) {
     const result = tested(verifierCall(verifier, [mode, join(good, "fragment.json"), forged,
-      sourceKey(good), join(good, mode === "--produce-units"
+      mode === "--produce-unit" ? join(good, "search-qualified.json") : sourceKey(good), join(good, mode === "--produce-unit"
         ? "chain-entry-defined-evidence.json" : "evidence.json"),
-      ...(mode === "--produce-units" ? ["12"] : [])]));
+      ...(mode === "--produce-unit" ? ["12"] : [])]));
     assert.ifError(result.error);
     assert.equal(result.status, 1, result.stdout + result.stderr);
   }
@@ -3319,10 +3349,10 @@ control(async (): Promise<void> => {
     assert.ok(text.includes(declaration), "early-cell-update-order: the declaration of `k`");
     const path = join(order, "early-const-write.fragment.json");
     writeFileSync(path, text.replace(declaration, `{"k":"const","pos":[${at},`));
-    for (const mode of ["--produce-units", "--check-units"]) {
-      const result = tested(verifierCall(verifier, [mode, path, join(order, "claims.json"), sourceKey(order),
-        join(order, mode === "--produce-units" ? "early-const-write-evidence.json" : "evidence.json"),
-        ...(mode === "--produce-units" ? ["12"] : [])]));
+    for (const mode of ["--produce-unit", "--check-units"]) {
+      const result = tested(verifierCall(verifier, [mode, path, join(order, "claims.json"), mode === "--produce-unit" ? join(order, "search-qualified.json") : sourceKey(order),
+        join(order, mode === "--produce-unit" ? "early-const-write-evidence.json" : "evidence.json"),
+        ...(mode === "--produce-unit" ? ["12"] : [])]));
       assert.equal(result.status, 1, result.stdout + result.stderr);
       assert.match(result.stdout + result.stderr, /a write of the constant 'k'/);
     }
@@ -3342,14 +3372,14 @@ control(async (): Promise<void> => {
   assert.ok(Array.isArray(read.type) && read.type.length === 3, JSON.stringify(read.type));
   read.type = read.type.slice(0, 1);
   const forged = writeClaims(good, "disjunction-one-arm", claims);
-  for (const mode of ["--produce-units", "--check-units"]) {
+  for (const mode of ["--produce-unit", "--check-units"]) {
     const result = tested(verifierCall(verifier, [mode, join(good, "fragment.json"), forged,
-      sourceKey(good), join(good, mode === "--produce-units"
+      mode === "--produce-unit" ? join(good, "search-qualified.json") : sourceKey(good), join(good, mode === "--produce-unit"
         ? "disjunction-one-arm-evidence.json" : "evidence.json"),
-      ...(mode === "--produce-units" ? ["12"] : [])]));
+      ...(mode === "--produce-unit" ? ["12"] : [])]));
     assert.ifError(result.error);
     assert.equal(result.status, 1, result.stdout + result.stderr);
-    if (mode === "--produce-units")
+    if (mode === "--produce-unit")
       assert.match(result.stdout + result.stderr, new RegExp(`at \\[${start},${start + 1}\\)`));
   }
   process.stdout.write("forged disjunction: an object read claimed at one arm where another object's test holds refused\n");
@@ -3370,11 +3400,11 @@ control(async (): Promise<void> => {
     "copy claim");
   copy.type = other.result;
   const forged = writeClaims(good, "spread-meet-forged", claims);
-  for (const mode of ["--produce-units", "--check-units"]) {
+  for (const mode of ["--produce-unit", "--check-units"]) {
     const result = tested(verifierCall(verifier, [mode, join(good, "fragment.json"), forged,
-      sourceKey(good), join(good, mode === "--produce-units"
+      mode === "--produce-unit" ? join(good, "search-qualified.json") : sourceKey(good), join(good, mode === "--produce-unit"
         ? "spread-meet-forged-evidence.json" : "evidence.json"),
-      ...(mode === "--produce-units" ? ["12"] : [])]));
+      ...(mode === "--produce-unit" ? ["12"] : [])]));
     assert.ifError(result.error);
     assert.equal(result.status, 1, result.stdout + result.stderr);
     assert.match(result.stdout + result.stderr, new RegExp(`\\[${start},${start + "{ ...x }".length}\\)`));
@@ -3396,11 +3426,11 @@ control(async (): Promise<void> => {
     optional: [{ key: "name", readonly: false, type: [] }],
   } }]) - 1];
   const forged = writeClaims(good, "spread-forged-absent-key", claims);
-  for (const mode of ["--produce-units", "--check-units"]) {
+  for (const mode of ["--produce-unit", "--check-units"]) {
     const result = tested(verifierCall(verifier, [mode, join(good, "fragment.json"), forged,
-      sourceKey(good), join(good, mode === "--produce-units"
+      mode === "--produce-unit" ? join(good, "search-qualified.json") : sourceKey(good), join(good, mode === "--produce-unit"
         ? "spread-forged-absent-key-evidence.json" : "evidence.json"),
-      ...(mode === "--produce-units" ? ["12"] : [])]));
+      ...(mode === "--produce-unit" ? ["12"] : [])]));
     assert.ifError(result.error);
     assert.equal(result.status, 1, result.stdout + result.stderr);
   }
@@ -3419,11 +3449,11 @@ control(async (): Promise<void> => {
     rest: [rowOf(claims, "str")], readonly: true, presence: "readable" }, rest: [] } });
   operand.type = [{ array: [store], readonly: true }];
   const forged = writeClaims(good, "mapped-spread-string-view", claims);
-  for (const mode of ["--produce-units", "--check-units"]) {
+  for (const mode of ["--produce-unit", "--check-units"]) {
     const result = tested(verifierCall(verifier, [mode, join(good, "fragment.json"), forged,
-      sourceKey(good), join(good, mode === "--produce-units"
+      mode === "--produce-unit" ? join(good, "search-qualified.json") : sourceKey(good), join(good, mode === "--produce-unit"
         ? "mapped-spread-forged-evidence.json" : "evidence.json"),
-      ...(mode === "--produce-units" ? ["12"] : [])]));
+      ...(mode === "--produce-unit" ? ["12"] : [])]));
     assert.ifError(result.error);
     assert.equal(result.status, 1, result.stdout + result.stderr);
   }
@@ -3446,11 +3476,11 @@ control(async (): Promise<void> => {
     assert(number >= 0);
     operand.type = [number];
     const forged = writeClaims(good, "spread-number", claims);
-    for (const mode of ["--produce-units", "--check-units"]) {
+    for (const mode of ["--produce-unit", "--check-units"]) {
       const result = tested(verifierCall(verifier, [mode, join(good, "fragment.json"), forged,
-        sourceKey(good), join(good, mode === "--produce-units"
+        mode === "--produce-unit" ? join(good, "search-qualified.json") : sourceKey(good), join(good, mode === "--produce-unit"
           ? "spread-forged-evidence.json" : "evidence.json"),
-        ...(mode === "--produce-units" ? ["12"] : [])]));
+        ...(mode === "--produce-unit" ? ["12"] : [])]));
       assert.ifError(result.error);
       assert.equal(result.status, 1, result.stdout + result.stderr);
     }
@@ -3512,11 +3542,11 @@ control(async (): Promise<void> => {
   const read = must(fn.expressions.find(e => JSON.stringify(e.pos) === JSON.stringify(snapshot.source)), "spread operand claim");
   read.type = [number];
   const forged = writeClaims(good, "constructor-spread-number", claims);
-  for (const mode of ["--produce-units", "--check-units"]) {
+  for (const mode of ["--produce-unit", "--check-units"]) {
     const result = tested(verifierCall(verifier, [mode, join(good, "fragment.json"), forged,
-      sourceKey(good), join(good, mode === "--produce-units"
+      mode === "--produce-unit" ? join(good, "search-qualified.json") : sourceKey(good), join(good, mode === "--produce-unit"
         ? "constructor-forged-evidence.json" : "evidence.json"),
-      ...(mode === "--produce-units" ? ["12"] : [])]));
+      ...(mode === "--produce-unit" ? ["12"] : [])]));
     assert.ifError(result.error);
     assert.equal(result.status, 1, result.stdout + result.stderr);
     assert.match(result.stdout + result.stderr, /constructor spread needs a tuple contract/);
@@ -3536,11 +3566,11 @@ control(async (): Promise<void> => {
     assert(number >= 0);
     read.type = variant === "number" ? [number] : [{ binder: "UnboundPrototypeParameter" }];
     const forged = writeClaims(good, `prototype-${variant}`, claims);
-    for (const mode of ["--produce-units", "--check-units"]) {
+    for (const mode of ["--produce-unit", "--check-units"]) {
       const result = tested(verifierCall(verifier, [mode, join(good, "fragment.json"), forged,
-        sourceKey(good), join(good, mode === "--produce-units"
+        mode === "--produce-unit" ? join(good, "search-qualified.json") : sourceKey(good), join(good, mode === "--produce-unit"
           ? `prototype-${variant}-evidence.json` : "evidence.json"),
-        ...(mode === "--produce-units" ? ["12"] : [])]));
+        ...(mode === "--produce-unit" ? ["12"] : [])]));
       assert.ifError(result.error);
       assert.equal(result.status, 1, result.stdout + result.stderr);
       assert.match(result.stdout + result.stderr, variant === "unbound"
@@ -6442,17 +6472,14 @@ control(async (): Promise<void> => {
   // the importer's claims list the read qualified, the module's claims are
   // about the module's bytes, the two readings of the unit's signature agree
   // and the module's own run is certified. Each forgery bypasses the producer
-  // and is refused where evidence is produced and where the honest evidence
-  // is checked.
+  // and is refused where the honest evidence is checked: the plan is the
+  // check's, and a unit's search, untrusted, reads the qualified reads the
+  // plan admitted.
   const imported = run("certified-value-import");
   const writing = run("invalid-certified-write-value-import");
   const refuse = (artifacts: string, name: string, claims: SourceClaims, refusal: RegExp,
       ast = join(artifacts, "fragment.json"), checked = refusal): void => {
     const input = writeClaims(artifacts, name, claims);
-    const searched = produceWith(artifacts, input, name, ast);
-    assert.ifError(searched.error);
-    assert.equal(searched.status, 1, searched.stdout + searched.stderr);
-    assert.match(searched.stdout + searched.stderr, refusal);
     invoke(input, join(artifacts, "evidence.json"), artifacts, checked, ast);
   };
   // A unit claimed within the empty footprint whose body pushes onto its
@@ -8861,7 +8888,7 @@ control(async (): Promise<void> => {
   // run asserts that the failing stage ran.
   const dir = runDirectory("tscert-step-failures-");
   type Failure = { FAIL_MODE: string; FAIL_TEXT?: string; FAIL_STATUS?: string; FAIL_OUT?: string };
-  const stageOfMode: Record<string, string> = { "--lower-control-flow": "lower", "--produce-units": "search",
+  const stageOfMode: Record<string, string> = { "--lower-control-flow": "lower", "--produce-unit": "search",
     "--check-units": "check", "--explain": "explain" };
   const fake = (at: string, name: string, real: string, status: number, failure: Failure): string => {
     const path = join(at, name);
@@ -8887,7 +8914,7 @@ control(async (): Promise<void> => {
     assert.ok(failing && ranStage(failing) && failing.key === null, `${failure.FAIL_MODE}: the failing stage ran, without a key`);
     return outcome;
   };
-  for (const mode of ["--lower-control-flow", "--produce-units", "--check-units"])
+  for (const mode of ["--lower-control-flow", "--produce-unit", "--check-units"])
     for (const text of ["", "uncaught exception: forced by pipeline/test.mts", "reject: a record cut short"]) {
       const outcome = outcomeOf("optional-chain-element-receiver.ts", { FAIL_MODE: mode, FAIL_TEXT: text });
       assert.equal(outcome.status, "error", `${mode} ${JSON.stringify(text)}: ${JSON.stringify(outcome)}`);
@@ -9511,8 +9538,8 @@ mutationControl(async (): Promise<void> => {
   const claims = join(artifacts, "claims.json");
   const call = (args: string[], mutations: string): Invoked =>
     tested(verifierCall(mutationVerifier(), args, { TSCERT_TEST_MUTATIONS: mutations }));
-  const search = (mutations: string): Invoked => call(["--produce-units", join(artifacts, "fragment.json"),
-    claims, sourceKey(artifacts), join(artifacts, `presence-${mutations || "none"}-evidence.json`), "12"], mutations);
+  const search = (mutations: string): Invoked => call(["--produce-unit", join(artifacts, "fragment.json"),
+    claims, join(artifacts, "search-qualified.json"), join(artifacts, `presence-${mutations || "none"}-evidence.json`), "12"], mutations);
   const check = (mutations: string): Invoked => call(["--check-units", join(artifacts, "fragment.json"),
     claims, sourceKey(artifacts), join(artifacts, "evidence.json")], mutations);
   const words = (p: Invoked): string => p.stdout + p.stderr;
@@ -9893,10 +9920,11 @@ process.stdout.write(JSON.stringify(await checkApart(${JSON.stringify(source)}, 
   const before = runAt(join(here, "examples", "values.ts"), null);
   const after = runAt(changed, null);
   assert.equal(after.outcome.status, before.outcome.status);
-  // A comment after the code changes no unit's slice: the units' lower and
-  // propose stages may replay; every stage over the whole document executes.
+  // A comment after the code changes no unit's slice: the units' lower,
+  // propose and search stages may replay; every stage over the whole
+  // document executes.
   for (const r of after.records)
-    assert.ok(ranStage(r) || (r.execution === "replayed" && (r.stage === "lower" || r.stage === "propose")),
+    assert.ok(ranStage(r) || (r.execution === "replayed" && ["lower", "propose", "search"].includes(r.stage)),
       `a changed source: ${r.stage} executed`);
   assert.ok(after.records.some((r) => r.stage === "parse" && ranStage(r)), "a changed source: its parse executes");
   process.stdout.write("replay: cold and warm workers with different request histories agree on outcomes, documents and logs; the warm run " +
@@ -9970,6 +9998,69 @@ process.stdout.write(JSON.stringify(await checkApart(${JSON.stringify(importer)}
   assert.deepEqual(editedOutcome, editedFreshOutcome, "the run after a function's edit has a cold run's outcome");
   process.stdout.write("edit replay: an edit of an importer replays its module run's search and check, and an " +
     "edit of one function replays the other functions' proposals, each outcome a cold run's\n");
+});
+
+control(async (): Promise<void> => {
+  // Replay of a file's units across edits of one function (STAGE-STORE.md,
+  // "Units of a check"): each unit's proposal and search are keyed on its
+  // slice and the interfaces it reads, so an edit executes the edited unit's
+  // stages and those of the units reading an interface the edit changed;
+  // every other unit's replay. Each edited run's outcome is a cold run's of
+  // the same source in a fresh store.
+  const tree = runDirectory("tscert-unit-replay-");
+  const file = join(tree, "units.ts");
+  const original = [
+    "let total: number = 0;",
+    "function f(n: number): number {", "  return n + 1;", "}",
+    "function g(n: number): number {", "  return f(n) * 2;", "}",
+    "function h(s: string): string {", "  return s + \"!\";", "}",
+    // `p` and `q` are one unit, `r` between them.
+    "function p(n: number): number {", "  return n > 0 ? q(n - 1) : 0;", "}",
+    "function r(n: number): number {", "  return n - 1;", "}",
+    "function q(n: number): number {", "  return n > 0 ? p(n - 1) : 1;", "}", ""].join("\n");
+  const runIn = (store: string): { outcome: Outcome; records: AttemptRecord[] } => {
+    const root = runDirectory("tscert-unit-replay-root-");
+    const driver = `import { checkApart } from ${JSON.stringify(pathToFileURL(join(here, "verify-source.mts")).href)};
+process.stdout.write(JSON.stringify(await checkApart(${JSON.stringify(file)}, undefined, false, undefined, true)));`;
+    const driverPath = join(root, "driver.mts");
+    writeFileSync(driverPath, driver);
+    const ran = spawnSync(process.execPath, [driverPath],
+      { encoding: "utf8", timeout: 240_000, env: { ...process.env, TSCERT_STAGE_STORE: store, TSCERT_RUN_ROOT: root } });
+    assert.equal(ran.status, 0, ran.stderr);
+    const outcome = readOutcome(JSON.parse(ran.stdout.slice(ran.stdout.indexOf("{"))));
+    return { outcome, records: readInvocationLog(join(outcome.artifacts, invocationLog)) };
+  };
+  const executed = (records: readonly AttemptRecord[], stage: string): number =>
+    records.filter((r) => r.stage === stage && ranStage(r)).length;
+  const replayed = (records: readonly AttemptRecord[], stage: string): number =>
+    records.filter((r) => r.stage === stage && r.execution === "replayed").length;
+  const store = runDirectory("tscert-unit-replay-store-");
+  writeFileSync(file, original);
+  const cold = runIn(store);
+  assert.equal(cold.outcome.status, "verified", JSON.stringify(cold.outcome));
+  const edit = (name: string, text: string, proposals: number, searches: number): void => {
+    assert.notEqual(text, original, `${name}: the edit applies`);
+    writeFileSync(file, text);
+    const warm = runIn(store);
+    assert.equal(executed(warm.records, "propose"), proposals, `${name}: units proposed again`);
+    assert.equal(executed(warm.records, "search"), searches, `${name}: units searched again`);
+    assert.equal(replayed(warm.records, "search"), 6 - searches, `${name}: every other unit's search replays`);
+    assert.ok(warm.records.every((r) => r.execution !== "timeout-replayed"), `${name}: no timeout replays`);
+    const fresh = runIn(runDirectory("tscert-unit-replay-fresh-"));
+    const { artifacts: _warmArtifacts, ...warmOutcome } = warm.outcome;
+    const { artifacts: _freshArtifacts, ...freshOutcome } = fresh.outcome;
+    assert.deepEqual(warmOutcome, freshOutcome, `${name}: the edited run's outcome is a cold run's`);
+    writeFileSync(file, original);
+  };
+  // An edit of `f`'s body keeping its interface: `f` alone, and `g` reads
+  // the same interface.
+  edit("body", original.replace("  return n + 1;", "  return 1 + n;"), 1, 1);
+  // `r` lengthened by several lines, between the members of `p` and `q`'s unit.
+  edit("length", original.replace("  return n - 1;", "  // one\n  // two\n  // three\n  return n - 1;"), 1, 1);
+  // `f` writes a module cell: its footprint, so `g`'s reads, change.
+  edit("interface", original.replace("  return n + 1;", "  total = n;\n  return n + 1;"), 2, 2);
+  process.stdout.write("unit replay: an edit of one function executes its unit's stages and those of the units reading " +
+    "a changed interface, every other unit's replaying, each outcome a cold run's\n");
 });
 
 // A callable type's methods cross the type graph's TypeScript decoder: a

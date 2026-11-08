@@ -34,3 +34,8 @@ export type UnitReads = {
 /** An entry of an assembly: the intervals of the document the unit's slice
  * leaves out. */
 export type AssemblyEntry = { deletions: [number, number][] };
+
+/** A slice's claims document where the producer refuses the functions the
+ * slice holds by their signatures (`producer --unit`): the refusal, which
+ * the unit's search states (`verifier --produce-unit`). */
+export type SliceClaimsRefusal = { refusal: string };

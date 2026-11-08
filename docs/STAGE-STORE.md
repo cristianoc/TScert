@@ -60,7 +60,7 @@ Excluded from every key (`unkeyed`), by role:
   values to the stages' calls, and its outcome;
 - `pipeline/unit-slices.mts` and `pipeline/unit-documents.mts`: a
   document's units of proposal and each unit's slice, inputs of the stages
-  that read them ([units of a proposal](#units-of-a-proposal)), and the
+  that read them ([units of a proposal](#units-of-a-check)), and the
   documents' types;
 - `pipeline/run-cases.mts`, `pipeline/cases.mts`: the case runner and the
   case inventory;
@@ -173,23 +173,24 @@ execution of a replay-eligible invocation retains its complete stage key.
 | parse | source bytes and logical identity; project and resolution context; active host-family descriptions; the functions read at their declared signatures (`omitted`); the complete filesystem observations of parsing, declaration collection and host activation, its imported modules' stages' included |
 | module | an imported module's path and identity in the importer's documents; the project; active host-family descriptions; whether the run gives a tag selection; its observations, its reads of the selection by family among them ([shared work](#shared-work)) |
 | lower | the exact Fragment document, or a unit's slice |
-| facts | the exact Fragment ([units of a proposal](#units-of-a-proposal)) |
-| propose | a unit's slice, its flow and its reads document ([units of a proposal](#units-of-a-proposal)) |
+| facts | the exact Fragment ([units of a proposal](#units-of-a-check)) |
+| propose | a unit's slice, its flow and its reads document ([units of a proposal](#units-of-a-check)) |
 | assemble | the units' proposals, each with the intervals its slice leaves out; the Fragment with its own declarations named canonically; the qualified-read document |
 | assemble claims | the assembled proposal and ordered transitive module-claim documents selected by the reads |
-| plan | the exact Fragment and assembled claims; for a listing of units, its file identity |
+| plan | the exact Fragment and assembled claims |
 | module search | the exact module run the plan printed: an imported module's document restricted to the read closure of the functions read qualified of it, its claims and its own qualified reads; search depth and subtype rounds |
 | module check | the same module run and its evidence; subtype rounds |
-| search | the exact Fragment and assembled claims; explicit file identity; source snapshot binding; search depth and subtype rounds; the selected units |
-| check | the exact Fragment, assembled claims and evidence; explicit file identity; source snapshot binding; subtype rounds; the selected units |
+| search | a unit's slice, its claims and the qualified reads it is searched at, or the exact Fragment, assembled claims and qualified reads for a search over the document; search depth and subtype rounds; the unit's members |
+| check | the exact Fragment, assembled claims and the units' evidence, each slice's line with its store's heads; explicit file identity; source snapshot binding; subtype rounds; the selected units |
 | explain | a unit's slice, its flow and its reads document, the imports read at their ordinary signatures |
 | TypeScript diagnostics | source identity, project context and the complete compiler dependency observations |
 
-## Units of a proposal
+## Units of a check
 
 A document, the checked file's or an imported module's, is proposed a unit
-at a time, so an edit of one function proposes again only the units whose
-inputs it changes.
+at a time, and the checked file's units are searched a unit at a time, so an
+edit of one function proposes and searches again only the units whose
+inputs it changes. The check reads the whole document.
 
 - *Units.* `producer --units` reads the whole document and prints, for each
   function name, the module functions its code mentions and whether it
@@ -221,15 +222,36 @@ inputs it changes.
   (`producer --unit` prints them), the constants read as values, and the
   qualified reads. The producer solves footprints and on-throw flags for the
   unit's members alone, its neighbours fixed at those values.
+- *Slice claims.* `producer --unit` also writes the slice's claims: its
+  members' claims, and each function the slice holds by its signature
+  proposed at the footprint and on-throw flag its reads document gives.
 - *Assembly.* `producer --assemble` reads the units' proposals, maps each
   position, binding name and refusal span of a slice back to the document,
   and writes the document's claims as one proposal of the whole document
   would. A unit the producer refuses refuses the document's proposal, the
   initialization's refusal first, then in source order.
 
-The slices, the reads documents and the assembly's inputs are stage inputs,
-keyed by their content; `pipeline/unit-slices.mts`, which computes them, is
-outside every key.
+- *Search.* Each unit of the checked file is searched over its slice
+  (`verifier --produce-unit`) at the slice's claims and the qualified reads
+  the importer's plan admits, its evidence written over the slice's store
+  with that store's heads beside it. Its spans and its unit's name are
+  mapped back to the document's positions outside every key.
+- *Check.* One check (`verifier --check-units`) builds the document's front,
+  renames each line's labels from the slice's heads to the document's heads
+  whose rows unfold alike (`Translate.headMap`, untrusted), and checks each
+  unit at that evidence, as `checkUnitJson_safe` states. It reads the whole
+  document and executes after every edit of it.
+- *Search over the document.* A slice's store can number heads otherwise
+  than the document's, and a union's members, and the cases of evidence
+  over it, follow that order. A unit whose translated evidence the check
+  refuses is searched again over the whole document (`--produce-unit` with
+  the document as its slice) and checked at that evidence, its line
+  without heads; that search is keyed on the document and executes after
+  every edit of it.
+
+The slices, the reads documents, the slice claims and the assembly's inputs
+are stage inputs, keyed by their content; `pipeline/unit-slices.mts`, which
+computes them, is outside every key.
 
 ## Observed stages
 
@@ -695,6 +717,16 @@ identities, timings and load measurements are excluded. Different result
 payloads for one key are a store error. If the existing entry is invalid,
 the caller may use its freshly computed result without publishing it;
 replacement requires coordinated removal of the invalid entry.
+
+One process executes a replay-eligible key at a time. Before executing, it
+claims the key: a file `running/<stage>/<key>` made exclusively, naming its
+host and process (`Store.claim`), removed when the execution ends. A
+process finding a key claimed by another live process waits, looking every
+50 ms for a finished entry or a timeout observation at the key, which it
+replays, or for the claim's removal, after which it claims the key itself.
+A claim of a process of this host that has stopped is taken over. So
+within a run, and across the runs sharing a store, each key executes once
+while its result is published.
 
 Finished entries and timeout observations have separate destinations.
 Publication never deletes a timeout entry to replace it with a finished

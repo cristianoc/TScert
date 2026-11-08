@@ -158,6 +158,11 @@ export type InvokeOptions = {
   recorder: Recorder | null;
 };
 
+/** How often a process waiting for another's execution of a key looks
+ * again, and what it waits on. */
+const claimPollMs = 50;
+const pause = new Int32Array(new SharedArrayBuffer(4));
+
 /** Run a process stage through its adapter (`bindProcess`,
  * `executeProcess`). A replay-eligible invocation of a replayed stage, not
  * forced, replays a finished result stored at its key, or reports a timeout
@@ -173,6 +178,7 @@ export function invokeProcess(call: ProcessCall, options: InvokeOptions): Invoke
   const store = currentStore();
   const forced = options.force || store === null;
   const directory = executionDirectory(call.stage);
+  let release: (() => void) | null = null;
   try {
     const bound = bindProcess(call);
     const { input } = bound;
@@ -185,7 +191,11 @@ export function invokeProcess(call: ProcessCall, options: InvokeOptions): Invoke
     });
     options.recorder?.start(record("interrupted", null, null, { unavailable: "the attempt was interrupted" }), startedAt);
     const replaying = key !== null && store !== null && replayedStages.has(call.stage) ? { key, store } : null;
-    if (replaying && !forced) {
+    // Within the store, one process executes a key at a time: another
+    // process's execution of the same key is waited for, and its result
+    // replayed (`Store.claim`).
+    for (let waited = 0; replaying && !forced; waited++) {
+      if (waited > 0) Atomics.wait(pause, 0, 0, claimPollMs);
       const found = replaying.store.finished(call.stage, replaying.key, input);
       if (found) {
         const materializing = performance.now();
@@ -209,6 +219,10 @@ export function invokeProcess(call: ProcessCall, options: InvokeOptions): Invoke
         return { status: null, signal: null, error: undefined, stdoutBytes: Buffer.alloc(0), stderrBytes: Buffer.alloc(0),
           stdout: "", stderr: "", record: done };
       }
+      const claimed = replaying.store.claim(call.stage, replaying.key);
+      if (claimed === "held") continue;
+      release = claimed;
+      break;
     }
     const run = executeProcess(bound, directory, options.limitMs);
     const elapsedMs = performance.now() - started;
@@ -224,10 +238,13 @@ export function invokeProcess(call: ProcessCall, options: InvokeOptions): Invoke
     if (publishing && run.ran === "timed-out")
       publishing.store.publishTimeout(call.stage, publishing.key, { input, attempt, elapsedMs, limitMs: options.limitMs,
         policy: resourcePolicy, cpu: done.cpu });
+    release?.();
+    release = null;
     options.recorder?.finish(done);
     return { status: run.status, signal: run.signal, error: run.error, stdoutBytes: run.stdoutBytes,
       stderrBytes: run.stderrBytes, stdout: run.stdout, stderr: run.stderr, record: done };
   } finally {
+    release?.();
     rmSync(directory, { recursive: true, force: true });
   }
 }

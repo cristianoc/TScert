@@ -335,6 +335,42 @@ export class Store {
     log.recorded.set(item, now);
   }
 
+  /** Claim the execution of `key` for this process: a file
+   * `running/<stage>/<key>` made exclusively, naming the host and process.
+   * Another live process's claim leaves it held (`"held"`); a claim of a
+   * stopped process on this host is taken over. The returned release
+   * removes the claim. */
+  claim(stage: string, key: string): (() => void) | "held" {
+    const path = join(this.root, "running", stage, key);
+    const own = `${hostname()} ${process.pid}`;
+    for (let tries = 0; tries < 3; tries++) {
+      mkdirSync(dirname(path), { recursive: true });
+      try {
+        writeFileSync(path, own, { flag: "wx" });
+        return () => {
+          try {
+            if (readFileSync(path, "utf8") === own) rmSync(path, { force: true });
+          } catch (error) {
+            if (!failedWith(error, "ENOENT")) throw error;
+          }
+        };
+      } catch (error) {
+        if (!failedWith(error, "EEXIST")) throw error;
+      }
+      let holder: string;
+      try {
+        holder = readFileSync(path, "utf8");
+      } catch (error) {
+        if (failedWith(error, "ENOENT")) continue;
+        throw error;
+      }
+      const [host, pid] = holder.split(" ");
+      if (host !== hostname() || pid === undefined || alive(Number(pid))) return "held";
+      rmSync(path, { force: true });
+    }
+    return "held";
+  }
+
   /** The finished result stored for `key` at exactly `input`: the entry is
    * read whole into this process's memory, and that copy validated (its
    * manifest, its key, its input, every file's digest and no file beyond

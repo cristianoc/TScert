@@ -20,14 +20,11 @@ def command (args : List String) : IO UInt32 := do
       Verification.RequestCli.lowerFile astPath claimsPath fileKey
   | ["--plan-imports", astPath, claimsPath] =>
       Verification.RequestCli.planFile astPath claimsPath
-  | "--units" :: astPath :: claimsPath :: fileKey :: names =>
-      if names.length > 1 then usage
-      else Verification.RequestCli.unitsFile astPath claimsPath fileKey names.head? budget
-  | "--produce-units" :: astPath :: claimsPath :: fileKey :: evidencePath :: depth :: names =>
+  | "--produce-unit" :: slicePath :: claimsPath :: qualifiedPath :: evidencePath :: depth :: names =>
       if names.length > 1 then usage
       else match depth.toNat? with
         | some fuel =>
-          Verification.RequestCli.produceUnitsFile astPath claimsPath fileKey evidencePath fuel names.head? budget
+          Verification.RequestCli.produceUnitFile slicePath claimsPath qualifiedPath evidencePath fuel names.head? budget
         | none => do IO.eprintln "usage: search depth must be a natural number"; return 2
   | "--check-units" :: astPath :: claimsPath :: fileKey :: evidencePath :: names =>
       if names.length > 1 then usage
@@ -46,8 +43,7 @@ where
     IO.eprintln "usage: verifier --lower-control-flow <ast.json>"
     IO.eprintln "       verifier --lower-program <ast.json> <source-claims.json> <file-key>"
     IO.eprintln "       verifier --plan-imports <ast.json> <source-claims.json>"
-    IO.eprintln "       verifier --units <ast.json> <source-claims.json> <file-key> [<names>]"
-    IO.eprintln "       verifier --produce-units <ast.json> <source-claims.json> <file-key> <evidence.json> <depth> [<names>]"
+    IO.eprintln "       verifier --produce-unit <slice.json> <slice-claims.json> <qualified.json> <evidence.json> <depth> [<names>]"
     IO.eprintln "       verifier --check-units <ast.json> <source-claims.json> <file-key> <evidence.json> [<names>]"
     IO.eprintln "       verifier --module-runs <ast.json> <source-claims.json>"
     IO.eprintln "       verifier --produce-module <module-run.json> <evidence.json> <depth>"

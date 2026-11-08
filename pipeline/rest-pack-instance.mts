@@ -22,9 +22,9 @@ export function checkRestPackInstance(verifier: string, artifacts: string, at: s
   call.instantiate[0].type = [1, 2];
   const claimed = join(artifacts, "forged-pack-instance-claims.json");
   writeFileSync(claimed, JSON.stringify(forged));
-  for (const mode of ["--produce-units", "--check-units"]) {
-    const p = tested(verifierCall(verifier, [mode, join(artifacts, "fragment.json"), claimed, sourceKey(artifacts),
-      join(artifacts, mode === "--produce-units" ? "produced-evidence.json" : "evidence.json"), ...(mode === "--produce-units" ? ["12"] : [])]));
+  for (const mode of ["--produce-unit", "--check-units"]) {
+    const p = tested(verifierCall(verifier, [mode, join(artifacts, "fragment.json"), claimed, mode === "--produce-unit" ? join(artifacts, "search-qualified.json") : sourceKey(artifacts),
+      join(artifacts, mode === "--produce-unit" ? "produced-evidence.json" : "evidence.json"), ...(mode === "--produce-unit" ? ["12"] : [])]));
     assert.ifError(p.error);
     assert.equal(p.status, 1, p.stdout + p.stderr);
     assert.match(p.stdout + p.stderr, /a type parameter typing a value and a rest's argument list, is no array or tuple type/);

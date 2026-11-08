@@ -124,7 +124,7 @@ let main () =
   match Array.to_list Sys.argv with
   | [_;"--units";file] ->
     print_endline (Json.encode (units_facts (file |> Json.read |> Source.decode)))
-  | [_;"--unit";file;flow_file;reads_file;out] ->
+  | [_;"--unit";file;flow_file;reads_file;out;claims_out] ->
     let spec,qualified = unit_reads reads_file in
     let program = {(file |> Json.read |> Source.decode) with Source.qualified} in
     let flows = List.map Flow.decode (Json.list (Json.read flow_file)) in
@@ -135,6 +135,26 @@ let main () =
         "thrown",Json.Bool (List.mem name thrown)]) spec.Proposal.members) flows program in
     let ch = open_out_bin out in
     Marshal.to_channel ch ((if spec.Proposal.init_member then proposal.init else None),proposal.functions) [];
+    close_out ch;
+    (* The slice's claims, what the unit's search reads: the members' claims,
+       and each other function the slice holds, by its signature alone, at
+       its settled footprint and flag. Where the producer refuses those, the
+       claims are that refusal, and the unit's search refuses with it. *)
+    let others = List.filter (fun n -> not (List.mem n spec.Proposal.members))
+      (List.sort_uniq compare (List.map (fun (g:Source.fn) -> g.name) program.Source.functions)) in
+    let slice_claims = try
+        let stubs = if others = [] then [] else
+          (Proposal.infer ~unit:{spec with Proposal.members=others;init_member=false} flows program).functions in
+        let claims = proposal.functions @ stubs in
+        let functions = List.map (fun (g:Source.fn) ->
+          match List.find_opt (fun (c:Proposal_types.function_claim) ->
+            c.source.name = g.name && c.source.name_pos = g.name_pos) claims with
+          | Some c -> c
+          | None -> Json.fail ("no claim of " ^ g.name)) program.Source.functions in
+        Claims.encode {program;functions;init=proposal.init}
+      with Json.Error e -> Json.Object ["refusal",Json.String (Json.message e)] in
+    let ch = open_out_bin claims_out in
+    output_string ch (Json.encode slice_claims);
     close_out ch;
     print_endline (Json.encode (Json.Array !interfaces))
   | _ :: "--assemble" :: file :: qualified_file :: assembly_file :: proposals ->
@@ -172,7 +192,7 @@ let main () =
     (try ignore (Proposal.infer ~unit:spec ~state flows program) with Json.Error _ -> ());
     print_endline (Json.encode (Json.Array (List.rev_map (fun (pos,reason) ->
       Json.Object ["pos",pos;"reason",Json.String reason]) !(state.Proposal_diagnostics.explanations))))
-  | _ -> Json.fail ("usage: producer --units fragment.json | --unit slice.json flow.json reads.json proposal.bin"
+  | _ -> Json.fail ("usage: producer --units fragment.json | --unit slice.json flow.json reads.json proposal.bin claims.json"
       ^ " | --assemble fragment.json qualified.json assembly.json proposal.bin... | --explain slice.json flow.json reads.json")
 
 (* Every `Json.Error` exits 2 with its message, then `end of refusal`: a refusal
