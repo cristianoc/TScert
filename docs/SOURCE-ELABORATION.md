@@ -2801,7 +2801,13 @@ the module's functions at
 \mathrm{type}(\mathtt{const}\ c=e_c)=Q_{\mathit{init}}(e_c),
 ```
 
-the initialization unit's claim for its initializer. That unit checks
+the initialization unit's claim for its initializer. A constant whose
+initializer shows the native object it makes, a regular expression literal
+or a construction of `Map`, is read at that claim too, annotated or not
+(`showsNativeObject`): the annotation, which TypeScript checks the
+initializer against, states less than the initialization establishes. A
+module importing a constant initialized by a regular expression literal
+reads it at the literal's native type. That unit checks
 $`\Gamma\vdash e_c:Q_{\mathit{init}}(e_c)`$ where it binds $`c`$, exactly as it
 checks an annotation, and a constant never changes, so the functions'
 assumption is what the unit establishes. Each unit's theorem gives safety

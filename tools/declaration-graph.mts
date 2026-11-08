@@ -1681,7 +1681,7 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
         for (const { name: member, text } of reviewedRegExpMembers)
           if (!members.includes(text)) throw Error(`RegExp.${member} is not declared as reviewed: ${text}`);
       }
-      return libraryRegExpTerm(name, () => regexpKeys(reading));
+      return libraryRegExpTerm(name, () => { nativeMatches(); return regexpKeys(reading); });
     };
     // A computed key names a `unique symbol` constant. Each such declaration
     // is listed once, and its position in the list is the symbol's identity.
@@ -2017,6 +2017,17 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
           clean(node, `${idOf(source)}#${node.name.text}`);
           return { declaration: { module: idOf(source), name: node.name.text, span }, construct: false,
             typeParams: [], type: term };
+        }
+        // A constant initialized by a regular expression literal is read at
+        // the literal's native type, its annotation or none: the binding
+        // never changes, and evaluating the literal allocates a native regex
+        // of its shape (`showsNativeObject`, SOURCE-ELABORATION.md,
+        // "Constants").
+        if (constant && node.initializer && skipParenthesized(node.initializer).kind === ts.SyntaxKind.RegularExpressionLiteral) {
+          const { pattern, flags } = literalParts(skipParenthesized(node.initializer).getText(node.getSourceFile()));
+          clean(node, `${idOf(source)}#${node.name.text}`);
+          return { declaration: { module: idOf(source), name: node.name.text, span }, construct: false,
+            typeParams: [], type: nativeRegExp(regexpShape(pattern, flags), nativeMatches()) };
         }
         // A constant initialized by a function literal states its type by
         // the literal's parameter and result annotations, as a function
@@ -2375,6 +2386,89 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
         completed.push(instantiateAt(reading, declaration, completed, use)(parameter.default));
       }
       return completed;
+    };
+    // The prototypes' contracts, `Array.prototype`'s and the primitive
+    // wrappers', read before the graph is collected so that the library
+    // interfaces they name join it.
+    // A standard library interface by name, as the overlays name one: its
+    // merged declarations, each clean, the first its identity.
+    const libraryInterface = (name: string): TypeDeclaration => resolutionLibraryInterface(checker, client, libraryFile, clean, idOf, partners, name);
+    // A reference to one, at `args`, from a statement of the overlay of
+    // library globals: the interface joins the graph.
+    const libraryReference = (reading: DeclarationReading, name: string, args: TypeTerm[]): TypeTerm => {
+      const node = libraryInterface(name);
+      valueStarts.push(node);
+      const target = identityOf(node);
+      return { k: "reference", reference: { name, span: [0, 0], arguments: args.map((): Span => [0, 0]), target },
+        args: completeArguments(reading, node, args, null, name), span: [0, 0] };
+    };
+    const overlayLibrary: OverlayLibrary = {
+      symbol: symbolOf,
+      wellKnownSymbol: name => compatibilityWellKnownSymbol(checker, client, libraryFile, symbolOf, name),
+      reference: (node, args, span) => {
+        valueStarts.push(node);
+        const target = identityOf(node);
+        return { k: "reference", reference: { name: target.name, span, arguments: args.map(() => span),
+          target }, args: completeArguments(emptyDeclarationReading, node, args, null, target.name), span };
+      },
+      libraryFile,
+      // The reviewed text as an interface appended to the client, in a probe
+      // program of its own, at a name the client does not spell.
+      // The declaration read is the one at the appended text's exact start
+      // and end, whatever the client declares under any name; only its own
+      // syntax is read, so a client declaration merging with it adds nothing.
+      reviewed: (body, read) => compatibilityReviewed(client, probeProgram, body, read),
+    };
+    // The keys a regex's type states (`regexp.mts`): the well-known symbols
+    // its methods are keyed by, and the marks, synthetic symbols no source
+    // declaration has.
+    const markOf = (identity: DeclarationIdentity): number => resolutionMarkOf(symbolIndex, symbols, identity);
+    // The native collection iterator a `Set`'s or a `Map`'s members return,
+    // its declaration listed with its first use (`array-prototype.mts`).
+    const collectionDefinitions: TypeDefinition[] = [];
+    const collectionIterator = (reading: DeclarationReading, element: TypeTerm): TypeTerm => {
+      if (!collectionDefinitions.length) collectionDefinitions.push(nativeCollectionIteratorDefinition(
+        markOf(collectionIteratorMark), argument => libraryReference(reading, "IterableIterator", [argument])));
+      return nativeCollectionIterator(element);
+    };
+    // A host collection's reading view, its declaration listed with its
+    // first use, keyed by the well-known symbols its members are.
+    const viewsListed = new Set<CollectionKind>();
+    const collectionView = (reading: DeclarationReading, kind: CollectionKind, args: TypeTerm[]): TypeTerm => {
+      if (!viewsListed.has(kind)) {
+        const iterator = overlayLibrary.wellKnownSymbol("iterator");
+        const toStringTag = overlayLibrary.wellKnownSymbol("toStringTag");
+        if (iterator === null || toStringTag === null)
+          throw Error(`the standard library declares no Symbol.iterator or Symbol.toStringTag, which a ${kind} is read by`);
+        collectionDefinitions.push(nativeCollectionViewDefinition(kind, { iterator, toStringTag }, element => collectionIterator(reading, element)));
+        viewsListed.add(kind);
+      }
+      return nativeCollectionView(kind, args);
+    };
+    // Read once; the native match iterator's declaration joins the
+    // definitions with them.
+    let keysRead: Omit<RegExpKeys, "iterator"> | undefined;
+    const regexpDefinitions: TypeDefinition[] = [];
+    const regexpKeys = (reading: DeclarationReading): RegExpKeys => {
+      if (!keysRead) {
+        const known = (name: string): number => {
+          const symbol = overlayLibrary.wellKnownSymbol(name);
+          if (symbol === null) throw Error(`the standard library declares no Symbol.${name}, which a regex's methods are keyed by`);
+          return symbol;
+        };
+        keysRead = { match: known("match"), matchAll: known("matchAll"), replace: known("replace"),
+          search: known("search"), split: known("split"), matcher: markOf(marks.matcher),
+          stringIterator: markOf(marks.stringIterator) };
+      }
+      return { ...keysRead, iterator: element => libraryReference(reading, "Iterator", [element]) };
+    };
+    // The native match iterator's declaration, which names the library's
+    // `Iterator`: listed where a native regex or its iteration is, before
+    // the graph is collected.
+    const nativeMatches = (): RegExpKeys => {
+      const keys = regexpKeys(emptyDeclarationReading);
+      if (!regexpDefinitions.length) regexpDefinitions.push(nativeIteratorDefinition(keys));
+      return keys;
     };
     // A module exporting a function merged with a namespace, read by its
     // default import (`import assert from "node:assert/strict"`): one value,
@@ -2764,89 +2858,6 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
         refuseAt(span, error);
       }
     }
-    // The prototypes' contracts, `Array.prototype`'s and the primitive
-    // wrappers', read before the graph is collected so that the library
-    // interfaces they name join it.
-    // A standard library interface by name, as the overlays name one: its
-    // merged declarations, each clean, the first its identity.
-    const libraryInterface = (name: string): TypeDeclaration => resolutionLibraryInterface(checker, client, libraryFile, clean, idOf, partners, name);
-    // A reference to one, at `args`, from a statement of the overlay of
-    // library globals: the interface joins the graph.
-    const libraryReference = (reading: DeclarationReading, name: string, args: TypeTerm[]): TypeTerm => {
-      const node = libraryInterface(name);
-      valueStarts.push(node);
-      const target = identityOf(node);
-      return { k: "reference", reference: { name, span: [0, 0], arguments: args.map((): Span => [0, 0]), target },
-        args: completeArguments(reading, node, args, null, name), span: [0, 0] };
-    };
-    const overlayLibrary: OverlayLibrary = {
-      symbol: symbolOf,
-      wellKnownSymbol: name => compatibilityWellKnownSymbol(checker, client, libraryFile, symbolOf, name),
-      reference: (node, args, span) => {
-        valueStarts.push(node);
-        const target = identityOf(node);
-        return { k: "reference", reference: { name: target.name, span, arguments: args.map(() => span),
-          target }, args: completeArguments(emptyDeclarationReading, node, args, null, target.name), span };
-      },
-      libraryFile,
-      // The reviewed text as an interface appended to the client, in a probe
-      // program of its own, at a name the client does not spell.
-      // The declaration read is the one at the appended text's exact start
-      // and end, whatever the client declares under any name; only its own
-      // syntax is read, so a client declaration merging with it adds nothing.
-      reviewed: (body, read) => compatibilityReviewed(client, probeProgram, body, read),
-    };
-    // The keys a regex's type states (`regexp.mts`): the well-known symbols
-    // its methods are keyed by, and the marks, synthetic symbols no source
-    // declaration has.
-    const markOf = (identity: DeclarationIdentity): number => resolutionMarkOf(symbolIndex, symbols, identity);
-    // The native collection iterator a `Set`'s or a `Map`'s members return,
-    // its declaration listed with its first use (`array-prototype.mts`).
-    const collectionDefinitions: TypeDefinition[] = [];
-    const collectionIterator = (reading: DeclarationReading, element: TypeTerm): TypeTerm => {
-      if (!collectionDefinitions.length) collectionDefinitions.push(nativeCollectionIteratorDefinition(
-        markOf(collectionIteratorMark), argument => libraryReference(reading, "IterableIterator", [argument])));
-      return nativeCollectionIterator(element);
-    };
-    // A host collection's reading view, its declaration listed with its
-    // first use, keyed by the well-known symbols its members are.
-    const viewsListed = new Set<CollectionKind>();
-    const collectionView = (reading: DeclarationReading, kind: CollectionKind, args: TypeTerm[]): TypeTerm => {
-      if (!viewsListed.has(kind)) {
-        const iterator = overlayLibrary.wellKnownSymbol("iterator");
-        const toStringTag = overlayLibrary.wellKnownSymbol("toStringTag");
-        if (iterator === null || toStringTag === null)
-          throw Error(`the standard library declares no Symbol.iterator or Symbol.toStringTag, which a ${kind} is read by`);
-        collectionDefinitions.push(nativeCollectionViewDefinition(kind, { iterator, toStringTag }, element => collectionIterator(reading, element)));
-        viewsListed.add(kind);
-      }
-      return nativeCollectionView(kind, args);
-    };
-    // Read once; the native match iterator's declaration joins the
-    // definitions with them.
-    let keysRead: Omit<RegExpKeys, "iterator"> | undefined;
-    const regexpDefinitions: TypeDefinition[] = [];
-    const regexpKeys = (reading: DeclarationReading): RegExpKeys => {
-      if (!keysRead) {
-        const known = (name: string): number => {
-          const symbol = overlayLibrary.wellKnownSymbol(name);
-          if (symbol === null) throw Error(`the standard library declares no Symbol.${name}, which a regex's methods are keyed by`);
-          return symbol;
-        };
-        keysRead = { match: known("match"), matchAll: known("matchAll"), replace: known("replace"),
-          search: known("search"), split: known("split"), matcher: markOf(marks.matcher),
-          stringIterator: markOf(marks.stringIterator) };
-      }
-      return { ...keysRead, iterator: element => libraryReference(reading, "Iterator", [element]) };
-    };
-    // The native match iterator's declaration, which names the library's
-    // `Iterator`: listed where a native regex or its iteration is, before
-    // the graph is collected.
-    const nativeMatches = (): RegExpKeys => {
-      const keys = regexpKeys(emptyDeclarationReading);
-      if (!regexpDefinitions.length) regexpDefinitions.push(nativeIteratorDefinition(keys));
-      return keys;
-    };
     // A primitive's members are read through its wrapper's prototype: its
     // contract joins the definitions, and the built-in prototype the values,
     // an assumption at that contract as an import is at its type. A string's

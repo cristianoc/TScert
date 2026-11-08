@@ -567,7 +567,10 @@ export function intrinsics(promise: (argument: TypeTerm) => TypeTerm, needed: Re
     // `RangeError` on a value outside the option's list. NewTarget is the
     // constructor itself, whose `prototype` is a non-writable data property.
     // It runs no code and allocates the segmenter alone.
-    [newDateTimeFormatName]: () => ({ typeParams: [], type: fn([], dateTimeFormat) }),
+    // `new Intl.DateTimeFormat()` (ECMA-402, `CreateDateTimeFormat`): an empty
+    // locale list and options read from an object it creates with a `null`
+    // prototype, so it runs no code and allocates the formatter alone.
+    [newDateTimeFormatName]: () => ({ typeParams: [], type: { ...fn([], dateTimeFormat), effect: emptyEffect } }),
     [newSegmenterName]: () => {
       const literals = (...texts: string[]): TypeTerm =>
         either(...texts.map((text): TypeTerm => ({ k: "literal", name: "string", text, span })), atom("undefined"));
@@ -753,12 +756,14 @@ export function intrinsics(promise: (argument: TypeTerm) => TypeTerm, needed: Re
     // state, runs no code and writes nothing.
     ...Object.fromEntries(canvasGetters.map(g => [g.intrinsic, () => ({ typeParams: [],
       type: { ...fn([canvasContext], g.type), effect: emptyEffect } })])),
+    // An element's setter (`domSetters`): it changes the element's style
+    // attribute or children, host slots, and answers the value.
+    ...Object.fromEntries(domSetters.map(s => [s.intrinsic, () => ({ typeParams: [],
+      type: { ...fn([s.receiver, s.value], s.value), effect: emptyEffect } })])),
     // A 2D context's setter (`canvasSetters`): Web IDL converts the value,
     // a string, to a DOMString, which runs no code, and the setter changes
     // the context's state alone, which the model holds no location of. It
     // answers the value, the value the assignment is.
-    ...Object.fromEntries(domSetters.map(s => [s.intrinsic, () => ({ typeParams: [],
-      type: fn([s.receiver, s.value], s.value) })])),
     ...Object.fromEntries(canvasSetters.map(s => [s.intrinsic, () => ({ typeParams: [],
       type: { ...fn([canvasContext, s.value], s.value), effect: emptyEffect } })])),
     // Two signatures: any read, an element or `undefined`; and a read at an

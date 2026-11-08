@@ -4,16 +4,18 @@
  *
  * - A literal `/P/F` is a call of `%RegExp:Σ%`, a native regex of its shape
  *   Σ (`regexp-shape.mts`): `nativeRegExp(Σ)`.
- * - An annotation `RegExp` is the conservative structural type
- *   `structuralRegExp`, every capture `string | undefined`.
+ * - An annotation `RegExp`, and `new RegExp` of strings, is
+ *   `annotatedRegExp`, a native regex of the conservative shape, every
+ *   capture `string | undefined`, without `[Symbol.matchAll]`.
  * - Both are records of host-relative methods: `exec`, `test` and the
  *   well-known-symbol methods `String.prototype`'s `match`, `matchAll`,
  *   `replace`, `search` and `split` dispatch to. No property is stated (a
  *   regex's `lastIndex`, `source` and flags are read through no type), so a
  *   regex meets no record view stating one.
- * - A native regex also states `[⟨RegExpMatcher⟩]: undefined`, keyed by a
- *   symbol only this module names (`marks`): the model's reading of the
- *   `[[RegExpMatcher]]` slot a native regex has. Only `%RegExp:Σ%` returns a
+ * - Both state `[⟨RegExpMatcher⟩]: undefined`, keyed by a symbol only this
+ *   module names (`marks`): the model's reading of the `[[RegExpMatcher]]`
+ *   slot a native regex has. Only `%RegExp:Σ%`, `new RegExp` and a `RegExp`
+ *   annotation give a
  *   value whose type states it, and `String.prototype.matchAll` requires it,
  *   where ECMA-262 reads `Symbol.match` and `flags` and converts `flags`
  *   before dispatching. Its `[Symbol.matchAll]` returns a native match
@@ -115,13 +117,9 @@ function replacer(shape: RegExpShape): TypeTerm {
     params: [atom("string"), ...captures, atom("number"), atom("string"), ...groups], result: atom("string") };
 }
 
-/** The members of a regex of `shape` (`null`: the conservative shape). A
- * native one's `[Symbol.matchAll]` gives the native iterator; the structural
- * type states no `[Symbol.matchAll]`, which `matchAll` reaches only on a
- * native regex.
- *
- * A native regex's standard members at string arguments run no client
- * code (the callback overload aside, `replacer`): each reads the
+/** The members of a regex of `shape` (`null`: the conservative shape), a
+ * native regex, which runs its standard members at string arguments without
+ * client code (the callback overload aside, `replacer`): each reads the
  * regex's pattern, flags and `lastIndex` (a number by its contract),
  * allocates only its result, and writes `lastIndex` only where the regex is
  * global or sticky. Their `exec` and `test` take `undefined` too, as the
@@ -129,33 +127,32 @@ function replacer(shape: RegExpShape): TypeTerm {
  * `[Symbol.split]` and `[Symbol.matchAll]` step a fresh clone: the empty
  * footprint. `exec`, `test`, `[Symbol.match]` and `[Symbol.replace]` (at a
  * string replacement) state the empty footprint where the regex is neither
- * global nor sticky, and where it is, `{value: any, store: keep}`: they
- * leave `lastIndex`, a location holding a number, where the last match
- * ended (0 after the last). The conservative shape, whose flags are not
- * read, and a structural regex's members are any value's and state none
- * (SOURCE-CONTRACTS.md, "Native footprints"). */
-function members(shape: RegExpShape | null, keys: RegExpKeys, native: boolean, callback: boolean = false): Field[] {
+ * global nor sticky, and where it is, or where the shape is the conservative
+ * one, whose flags are not read, `{value: any, store: keep}`: they leave
+ * `lastIndex`, a location holding a number, where the last match ended (0
+ * after the last). `[Symbol.search]` and `[Symbol.split]` of the
+ * conservative shape state none (SOURCE-CONTRACTS.md, "Native footprints"). */
+function members(shape: RegExpShape | null, keys: RegExpKeys, callback: boolean = false): Field[] {
   const exec = execResult(shape);
   const optionalNumber = either(atom("number"), atom("undefined"));
-  const restoring: Effect = native && shape !== null ? emptyEffect : ordinaryEffect;
-  const stateless: Effect = !native || shape === null ? ordinaryEffect
-    : shape.global || shape.sticky ? footprintEffect({ value: "any", store: "keep" }) : emptyEffect;
+  const restoring: Effect = shape !== null ? emptyEffect : ordinaryEffect;
+  const stateless: Effect = shape === null || shape.global || shape.sticky
+    ? footprintEffect({ value: "any", store: "keep" }) : emptyEffect;
   // A native `exec` and `test` convert their argument by `ToString`, which
-  // runs no code on `undefined` (`"undefined"`): stated there too. A
-  // structural regex's keep their declared parameter.
-  const input = native ? either(atom("string"), atom("undefined")) : atom("string");
+  // runs no code on `undefined` (`"undefined"`): stated there too.
+  const input = either(atom("string"), atom("undefined"));
   return [
     methodField("exec", [input], either(exec, atom("null")), stateless),
     methodField("test", [input], atom("boolean"), stateless),
     methodField({ symbol: keys.match }, [atom("string")], either(matchResult(shape), atom("null")), stateless),
     { name: { symbol: keys.replace }, optional: false, readonly: false, span,
-      type: native && shape !== null && callback ? { k: "intersection", span, parts: [
+      type: shape !== null && callback ? { k: "intersection", span, parts: [
         method([atom("string"), atom("string")], atom("string"), stateless),
         method([atom("string"), replacer(shape)], atom("string"), ordinaryEffect)] }
         : method([atom("string"), atom("string")], atom("string"), stateless) },
     methodField({ symbol: keys.search }, [atom("string")], atom("number"), restoring),
     methodField({ symbol: keys.split }, [atom("string"), optionalNumber], splitResult(shape), restoring),
-    ...(native ? [methodField({ symbol: keys.matchAll }, [atom("string")], nativeIterator(exec), restoring)] : []),
+    methodField({ symbol: keys.matchAll }, [atom("string")], nativeIterator(exec), restoring),
   ];
 }
 
@@ -180,12 +177,15 @@ export function nativeIterator(element: TypeTerm): TypeTerm {
 
 /** `N(Σ)`: what a literal of shape Σ evaluates to. */
 export function nativeRegExp(shape: RegExpShape | null, keys: RegExpKeys, callback: boolean = false): TypeTerm {
-  return record([...members(shape, keys, true, callback), readonlyField({ symbol: keys.matcher }, atom("undefined"))]);
+  return record([...members(shape, keys, callback), readonlyField({ symbol: keys.matcher }, atom("undefined"))]);
 }
 
-/** `R(Σ⊤)`: what an annotation `RegExp` states. */
-export function structuralRegExp(keys: RegExpKeys): TypeTerm {
-  return record(members(null, keys, false));
+/** `R(Σ⊤)`: what an annotation `RegExp` states, a native regex of the
+ * conservative shape without `[Symbol.matchAll]`, whose iterator's element
+ * follows the shape: a literal of any shape meets it. */
+export function annotatedRegExp(keys: RegExpKeys): TypeTerm {
+  const matchAll = (f: Field): boolean => typeof f.name === "object" && "symbol" in f.name && f.name.symbol === keys.matchAll;
+  return record([...members(null, keys).filter(f => !matchAll(f)), readonlyField({ symbol: keys.matcher }, atom("undefined"))]);
 }
 
 const binder = (name: string): TypeTerm => ({ k: "binder", name, span });
@@ -233,13 +233,13 @@ export function dispatchIntrinsic(method: DispatchMethod, keys: RegExpKeys):
 }
 
 /** The standard library's regex interfaces, as an annotation or a contextual
- * type names them: `RegExp` the conservative structural regex,
+ * type names them: `RegExp` the native regex of the conservative shape,
  * `RegExpExecArray` and `RegExpMatchArray` the conservative match views, a
  * supertype of each declaration with its element type corrected (TypeScript
  * types every capture `string`). `null` for another name. */
 export const libraryRegExpNames: readonly string[] = ["RegExp", "RegExpExecArray", "RegExpMatchArray"];
 export function libraryRegExpTerm(name: string, keys: () => RegExpKeys): TypeTerm | null {
-  return name === "RegExp" ? structuralRegExp(keys())
+  return name === "RegExp" ? annotatedRegExp(keys())
     : name === "RegExpExecArray" ? execResult(null)
     : name === "RegExpMatchArray" ? matchResult(null)
     : null;
@@ -254,7 +254,7 @@ export function regexpIntrinsicName(shape: RegExpShape | null, callback: boolean
 }
 
 /** The declarations of the library's regex interfaces, as reviewed: the
- * members `structuralRegExp` states, each with its declaration's text. A
+ * members `annotatedRegExp` states, each with its declaration's text. A
  * library declaring any of them otherwise is refused. */
 export const reviewedRegExpMembers: readonly { name: string; text: string }[] = [
   { name: "exec", text: "exec(string: string): RegExpExecArray | null;" },

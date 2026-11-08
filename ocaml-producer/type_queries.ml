@@ -994,9 +994,12 @@ let dispatches_call declarations (object_claim:ty) (k:key) (member_claim:ty opti
         List.exists (host_method (m :: seen)) (unfolded_arms declarations [] part)) (t :: ts)
     | _ -> false in
   let one_atom = match member_claim with Some (Atoms [_]) -> true | _ -> false in
+  (* A string, each arm reading the member off `String.prototype`. *)
+  let string_arm = function Atoms [(Str | StrLit _)] -> true | _ -> false in
   plain_actuals args
   && List.length arms > 1
-  && not (one_atom && (List.for_all prototype_read arms || List.for_all (host_method []) arms))
+  && not (one_atom && (List.for_all prototype_read arms || List.for_all (host_method []) arms
+                       || List.for_all string_arm arms))
 (* Whether a write of field [k] of an object claimed at [object_claim] is a
    typed write of a location holding a value (Lean's `fieldWriteWithin`):
    every alternative of the claim, its declarations unfolded, is a record

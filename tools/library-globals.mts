@@ -982,10 +982,9 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // regex `pattern` would be read by its `Symbol.match`, `source` and
   // `flags`, which an object may hold as accessors: stated at strings. The
   // pattern is known only at run time, so its capture shape and flags are
-  // not: the result is the structural regex a `RegExp` annotation states
-  // (SOURCE-CONTRACTS.md, "Regular expressions"), whose members state no
-  // effect, the native mark not stated. It writes nothing it did not
-  // allocate, on its throw too.
+  // not: the result is the native regex of the conservative shape a
+  // `RegExp` annotation states (SOURCE-CONTRACTS.md, "Regular
+  // expressions"). It writes nothing it did not allocate, on its throw too.
   ...["new (pattern: RegExp | string, flags?: string): RegExp;", "new (pattern: string, flags?: string): RegExp;",
     "new (pattern: RegExp | string): RegExp;"].map((signature): GlobalEntry => ({ host: contract, global: "RegExp", signature,
       effect: footprintEffect(emptyFootprint, { onThrow: true }),
