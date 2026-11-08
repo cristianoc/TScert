@@ -591,6 +591,9 @@ let rec heap_free env (e : expr) = match e.node with
   | Arith (_,a,b) | Equality (_,a,b) | Logical (_,a,b) | Coalesce (a,b) | Comma (a,b) -> heap_free env a && heap_free env b
   | Conditional (c,a,b) -> heap_free env c && heap_free env a && heap_free env b
   | Call ({node=Id "%ElementAt%";_},None,args,[],_) -> List.for_all (heap_free env) args
+  (* An index read of a string, a primitive, which reads no location. *)
+  | Index (a,k) when (match path_of env a with Some (b,p) -> !string_path env b p | None -> false) ->
+    heap_free env a && heap_free env k
   | Call ({node=Id f;_},None,args,_,_) when !keeps_heap env f -> List.for_all (heap_free env) args
   | Invoke ({node=Read (r,key);_},args,[],_) when heap_free env r && !method_keeps_heap env r key ->
     List.for_all (heap_free env) args
@@ -1062,7 +1065,7 @@ let after_cell_updates env (e : expr) (fs : fact list) : fact list =
 (* A statement's effect on the facts: an assignment or update of a slot
    binding by a linear expression, and every other assigned binding
    forgotten. *)
-let rec statement ~(array : string -> string list -> bool) ?(bounds=[]) env fs (s : stmt) : fact list =
+let rec statement ~(array : string -> string list -> bool) ?(bounds=[]) ?(regions=[]) env fs (s : stmt) : fact list =
   match s.statement with
   (* `i++;` of a binding held in a cell: its read, step and write. *)
   | Effect ({node=Update (_,{node=Id x;_},None,_);_} as e) when !cell_terms x -> after_cell_updates env e fs
@@ -1074,10 +1077,10 @@ let rec statement ~(array : string -> string list -> bool) ?(bounds=[]) env fs (
      facts, then the statement as one writing no other location. *)
   | Effect e ->
     let updated = after_cell_updates env e fs in
-    if updated == fs then statement_slots ~array ~bounds env fs s
+    if updated == fs then statement_slots ~array ~bounds ~regions env fs s
     else with_cells true (fun () -> statement_slots ~array ~bounds env updated s)
-  | _ -> statement_slots ~array ~bounds env fs s
-and statement_slots ~(array : string -> string list -> bool) ?(bounds=[]) env fs (s : stmt) : fact list =
+  | _ -> statement_slots ~array ~bounds ~regions env fs s
+and statement_slots ~(array : string -> string list -> bool) ?(bounds=[]) ?(regions=[]) env fs (s : stmt) : fact list =
   (* A write `x.f = e` of a field the receiver's type states, of a value
      binding, by a linear expression: the field's new value is `e`'s, read through the old value where `e`
      reads it (Lean's `write-link`, a read link from `x.f` to the written
@@ -1099,8 +1102,12 @@ and statement_slots ~(array : string -> string list -> bool) ?(bounds=[]) env fs
         when !method_grows env r key && List.for_all (heap_free env) args ->
       let length = length_term x in
       let ch = { obj=false; num=false; store=`Grow; framed=no_frame; apart=false; cell_write=false } in
+      (* The length of an array a region fact keeps apart from the
+         receiver's, whose store cell the growth keeps (Lean's `growFirst`). *)
+      let region_kept t = let b,path,kind = term_parts t in
+        path = [] && kind = Length_term && rapart regions x b in
       List.filter_map (fun ((form,d) : fact) ->
-        if List.for_all (fun (t,_) -> t = length || term_kept ch t) form then
+        if List.for_all (fun (t,_) -> t = length || term_kept ch t || region_kept t) form then
           Some (form, d + List.fold_left (fun acc (t,c) ->
             if t = length then acc + c * List.length args else acc) 0 form)
         else None) (fs @ term_ranges fs)
@@ -1684,10 +1691,10 @@ let declaration ~array env fs name (init : expr) =
       let projected = List.filter (fun (t,_) -> List.exists (fun (n,_) -> term_binding n = read) t) fs in
       stated @ List.map (fun (t,d) -> List.map (fun (n,c) ->
         let b,p,k = term_parts n in (if b = read then make_term ~path:p k name else n),c) t,d) projected) forget_all
-let statement ~array ?(bounds=[]) env fs (s : stmt) =
+let statement ~array ?(bounds=[]) ?(regions=[]) env fs (s : stmt) =
   match s.statement with
-  | Effect e -> with_reads ~array env fs e (fun fs -> statement ~array ~bounds env fs s) forget_all
-  | _ -> statement ~array ~bounds env fs s
+  | Effect e -> with_reads ~array env fs e (fun fs -> statement ~array ~bounds ~regions env fs s) forget_all
+  | _ -> statement ~array ~bounds ~regions env fs s
 
 (* A quantified fact restated where a binding `name` is declared at the read
 of the path `(root, path)` (Lean's `readEvery`): its array, its bound and its
@@ -1870,7 +1877,7 @@ let of_every_fact (name : int -> string option) (fact : Semantic.index_fact) : e
 
 (* The region facts a statement keeps and states (Lean's `writeAtoms`,
    `grownRegions` and `regionAtoms`): each across a statement writing no heap;
-   across `xs.push(a)` of slots, each between two arrays; across `xs[k] = v`, one side `xs` and the other an
+   across `xs.push(a)` of actuals writing no heap, each between two arrays; across `xs[k] = v`, one side `xs` and the other an
    array apart from it, or both apart from it; none naming a binding the
    statement assigns. A declaration of an array literal states its binding
    apart from every older array binding `visible` names, one Lean's scope
@@ -1885,8 +1892,7 @@ let rstatement ?(array = fun _ _ -> false) ?(visible = fun _ -> true) env (rs : 
     (* A call growing its receiver's store appends cells past the old heap:
        each fact between two arrays is kept (Lean's `grownRegions`). *)
     | Effect {node=Invoke ({node=Read (r,key);_},args,[],_);_}
-      when heap_free env r && List.for_all (fun (a:expr) -> match a.node with
-        | Id x -> slot_binding env x | _ -> false) args && !method_grows env r key ->
+      when heap_free env r && List.for_all (heap_free env) args && !method_grows env r key ->
       List.filter (fun (x,y) -> array x [] && array y []) rs
     | _ -> [] in
   let assigned = names_assigned s env in

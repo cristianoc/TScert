@@ -465,13 +465,20 @@ fact too.
 
 The producer states $`\mathrm{apart}(x,y)`$ at a declaration of an array
 literal for every older array binding of the unit, and carries it across a
-statement writing no heap, a bounded write and a push of slots, as the rules
-keep it; Lean checks each entry's region facts on every edge into it. A fact
-naming a binding the statement assigns is dropped. Cases: positives
+statement writing no heap, a bounded write and a push of actuals writing no
+heap, as the rules keep it; Lean checks each entry's region facts on every
+edge into it. A fact naming a binding the statement assigns is dropped.
+Across a push, the producer translates a linear fact by the append relation
+where each other length it names is of an array apart from the receiver
+(`growFirst`). Cases: positives
 `quantified-freshness-write` and `quantified-freshness-builder` (a fresh
-array written and pushed while a precondition's quantified fact is kept);
-negatives, run under Node, `invalid-quantified-freshness-field-alias` and
-`invalid-quantified-freshness-free-term`; a forged control claims an alias
+array written and pushed while a precondition's quantified fact is kept),
+`push-keeps-apart-lengths` (pretext's texts loop: `count === flags.length`
+across `texts.push(…)`);
+negatives, run under Node, `invalid-quantified-freshness-field-alias`,
+`invalid-quantified-freshness-free-term` and
+`invalid-push-keeps-apart-lengths-alias` (a push into a parameter that may
+be the counted array); a forged control claims an alias
 apart from its array and is refused at the first entry claiming it.
 
 ## The elements fact

@@ -411,7 +411,7 @@ let statements callbacks flow_graph register_following owner_span env0 ss =
           [with_facts ~ds:(Linear_facts.dstatement env disjunctions0 s) ~gs:(Linear_facts.gstatement ~bounds:bounds0 env facts0 guarded0 s)
             ~es:(Linear_facts.estatement ~array:(callbacks.array_binding env) ~facts:facts0 ~regions:regions0 env every0 s)
             ~rs:(Linear_facts.rstatement ~array:(callbacks.array_binding env) env regions0 s) e
-            (Linear_facts.statement ~array:(callbacks.array_binding env) ~bounds:bounds0 env facts0 s)
+            (Linear_facts.statement ~array:(callbacks.array_binding env) ~bounds:bounds0 ~regions:regions0 env facts0 s)
             (Linear_facts.statement_bounds ~facts:facts0 env bounds0 s)]
         | Flow.IteratorStart (span,b,_), [e] ->
           (* `%Iterate%` of an array binding allocates its iterator and keeps
