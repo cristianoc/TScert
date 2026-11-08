@@ -23,6 +23,8 @@ import { createHash } from "node:crypto";
 // files.mts makes every file-system failure a tool failure.
 import { noteInput, readText, writeText } from "./files.mts";
 import { dirname, resolve } from "node:path";
+// declaration-session.mts names the project a module is lowered in, rooted at the module.
+import { moduleProject, moduleProjectText } from "./declaration-session.mts";
 import type { DeclarationIdentity, ResolutionSlots, StatedEffect, TypeDefinition, TypeTerm, ValueRoot } from "./declaration-types.mts";
 import { deepPartMap, mapDocument, mapFunctionParts } from "./fragment-parts.mts";
 import { computedAlias, computedForm, optionalTerm, resolutionSlots, restPositions, restRefusal, restTerm, REST_PACK_BOUND, REST_PACK_VALUE, statedResult, substitute, typeTerm, visitType, mapTypeParts, type MappedMember, type TermScope } from "./type-term.mts";
@@ -38,7 +40,7 @@ import { enclosingBinders } from "./computed-types.mts";
 // named-record.mts reads a named type's record shape, which a mapped type over it maps.
 import { aliasMeaning, definitionKey, deferredInAst, deferredInModule, recordShape, settleTerm, type NamedRecords } from "./named-record.mts";
 // declaration-graph.mts collects the declarations the source reaches: the declaration document the Fragment carries for Lean to lower.
-import { collectDeclarations, expressionAt, libraryArguments, libraryTerm, declarationSpanOf, tsconfigOf, type Answered,
+import { collectDeclarations, expressionAt, libraryArguments, libraryTerm, declarationSpanOf, rootedAtModule, tsconfigOf, type Answered,
   type BlockType, type LibraryType, type SeenDiagnostic }
   from "./declaration-graph.mts";
 // compiler-channel.mts opens and releases the compiler, every request's failure a tool failure.
@@ -80,11 +82,22 @@ export const parserOpenings = (): number => openings;
  * or an inferred one. Exported because a checker-side consumer of this parse
  * needs the same project (and the same compiler process) the gate used.
  */
-function projectFor(absolute: string): Project {
+function projectFor(absolute: string, rootedIn?: string): Project {
   if (!compiler) {
     const created = openFrontEndCompiler(dirname(absolute), contents);
     openings++;
     compiler = created;
+  }
+  // A module lowered on its own is read in the named project rooted at it
+  // (`moduleProject`), opened by its configuration alone: opening the module
+  // as a document would load the named project, every file of it.
+  if (rootedIn !== undefined) {
+    const named = resolve(rootedIn), config = moduleProject(named, absolute);
+    contents.set(config, moduleProjectText(compiler, named, absolute));
+    const project = compiler.updateSnapshot({ openProjects: [config] }).getProject(config);
+    if (!project) throw new Error(`the compiler did not open ${absolute}`);
+    opened.add(absolute);
+    return project;
   }
   // A file the compiler already holds is re-read rather than reused: the text
   // for a path can change between two opens in one process, and reusing the
@@ -117,9 +130,9 @@ export function openText(absolute: string, text: string): SourceFile {
   return file;
 }
 
-function openFile(absolute: string, text: string): { file: SourceFile; checker: Checker } {
+function openFile(absolute: string, text: string, rootedIn?: string): { file: SourceFile; checker: Checker } {
   contents.set(absolute, text);
-  const project = projectFor(absolute);
+  const project = projectFor(absolute, rootedIn);
   const syntax = project.program.getSyntacticDiagnostics(absolute);
   if (syntax.length > 0)
     throw new Error(`gate: parse error: ${syntax[0].text}`);
@@ -1251,12 +1264,13 @@ export function lowerModule(request: ModuleRequest): LoweredModule<ModuleAst> {
     const selection = request.selection;
     // Each read of the run's selection, by family, is a read of the stage's
     // named input (STAGE-STORE.md, "Shared work").
-    lowered = lowerFile(request.absolute, false, request.tsconfigPath, request.absolute, undefined,
-      request.location, selection ? { given: (marker) => {
+    // Its declarations are read in the project rooted at the module.
+    lowered = rootedAtModule(request.absolute, () => lowerFile(request.absolute, false, request.tsconfigPath,
+      request.absolute, undefined, request.location, selection ? { given: (marker) => {
         const tags = selection.get(marker);
         noteInput(selectionRead(marker), JSON.stringify(tags ?? null) ?? "null");
         return tags;
-      } } : {});
+      } } : {}));
   } catch (error) {
     // The gate's refusal leaves the module out; a tool failure is no
     // refusal, and is reported in that module.
@@ -1425,7 +1439,8 @@ function lowerFile(file: string, carriesContext: boolean,
   omitted: ReadonlySet<string> = new Set()): Lowered {
   const absolute = resolve(file);
   const text = readText(absolute);
-  const { file: source, checker } = openFile(absolute, text);
+  // An imported module's lowering reads its project rooted at the module.
+  const { file: source, checker } = openFile(absolute, text, location !== null ? tsconfigPath : undefined);
   const gate = new Gate(source);
   // An omitted function, one a census refused in an earlier round, is read
   // as an ambient declaration is, at its declared signature: its body is

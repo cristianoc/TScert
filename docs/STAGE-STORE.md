@@ -151,7 +151,11 @@ entries it could have written (`make clean-store`).
 Each invocation fixes or records its arguments, working directory,
 observable environment and runtime options. Executable dependencies and
 in-process configuration are inputs too. An invocation whose dependencies
-cannot be identified executes without replay.
+cannot be identified executes without replay. An executable's identity is
+computed once and kept while every file it was computed from has the
+status (device, inode, size, modification and change times) observed before
+it was read; a file whose status changes while the identity is computed has
+it computed again (`heldIdentity`, `pipeline/stage-execution.mts`).
 
 All stages use the common invocation mechanism. Replay requires complete
 dependency identification, consistent compiler state where applicable,
@@ -180,7 +184,7 @@ execution of a replay-eligible invocation retains its complete stage key.
 | plan | the exact Fragment and assembled claims |
 | module search | the exact module run the plan printed: an imported module's document restricted to the read closure of the functions read qualified of it, its claims and its own qualified reads; search depth and subtype rounds |
 | module check | the same module run and its evidence; subtype rounds |
-| search | a unit's slice, its claims and the qualified reads it is searched at, or the exact Fragment, assembled claims and qualified reads for a search over the document; search depth and subtype rounds; the unit's members |
+| search | a unit's slice, its claims and the qualified reads it is searched at; search depth and subtype rounds; the unit's members |
 | check | the exact Fragment, assembled claims and the units' evidence, each slice's line with its store's heads; explicit file identity; source snapshot binding; subtype rounds; the selected units |
 | explain | a unit's slice, its flow and its reads document, the imports read at their ordinary signatures |
 | TypeScript diagnostics | source identity, project context and the complete compiler dependency observations |
@@ -193,11 +197,11 @@ edit of one function proposes and searches again only the units whose
 inputs it changes. The check reads the whole document.
 
 - *Units.* `producer --units` reads the whole document and prints, for each
-  function name, the module functions its code mentions and whether it
-  mentions a name the initialization declares; the initialization's
-  mentions; and the constants of the initialization the document reads as
-  values anywhere, which decide the signatures the initialization offers its
-  closures. A unit of proposal is a strongly connected component of the
+  function name, the module functions its code mentions, whether it
+  mentions a name the initialization declares, and every name it mentions;
+  the initialization's mentions and names; and the constants of the
+  initialization the document reads as values anywhere, which decide the
+  signatures the initialization offers its closures. A unit of proposal is a strongly connected component of the
   graph of these mentions, the initialization one of its nodes
   (`pipeline/unit-slices.mts`); units are proposed after the units they
   read.
@@ -214,14 +218,19 @@ inputs it changes. The check reads the whole document.
   document's reads of its members alike; a slice holds them with every
   span zero, each declaration's identity kept, a reference's type
   arguments at their mapped spans, and no written application, which the
-  check alone reads. An edit of a function's body leaves
-  every other unit's slice unchanged.
+  check alone reads. An edit of a function's body that keeps the
+  functions and initialization names it mentions leaves unchanged the
+  slice of every unit that neither holds it whole nor holds the
+  initialization: a changed mention changes the units and the slices that
+  hold the function by its signature, and an edit of the initialization, or
+  of what it mentions, changes the slice of every unit that holds it.
 - *Reads.* A unit's reads document holds its members, whether the
   initialization is one, the footprint and on-throw flag each function the
   slice holds by its signature settled on in its own unit's proposal
-  (`producer --unit` prints them), the constants read as values, and the
-  qualified reads. The producer solves footprints and on-throw flags for the
-  unit's members alone, its neighbours fixed at those values.
+  (`producer --unit` prints them); where the slice holds the
+  initialization, the constants read as values; and the qualified reads of
+  the imports its code names. The producer solves footprints and on-throw
+  flags for the unit's members alone, its neighbours fixed at those values.
 - *Slice claims.* `producer --unit` also writes the slice's claims: its
   members' claims, and each function the slice holds by its signature
   proposed at the footprint and on-throw flag its reads document gives.
@@ -233,21 +242,32 @@ inputs it changes. The check reads the whole document.
 
 - *Search.* Each unit of the checked file is searched over its slice
   (`verifier --produce-unit`) at the slice's claims and the qualified reads
-  the importer's plan admits, its evidence written over the slice's store
-  with that store's heads beside it. Its spans and its unit's name are
-  mapped back to the document's positions outside every key.
-- *Check.* One check (`verifier --check-units`) builds the document's front,
-  renames each line's labels from the slice's heads to the document's heads
-  whose rows unfold alike (`Translate.headMap`, untrusted), and checks each
-  unit at that evidence, as `checkUnitJson_safe` states. It reads the whole
-  document and executes after every edit of it.
-- *Search over the document.* A slice's store can number heads otherwise
-  than the document's, and a union's members, and the cases of evidence
-  over it, follow that order. A unit whose translated evidence the check
-  refuses is searched again over the whole document (`--produce-unit` with
-  the document as its slice) and checked at that evidence, its line
-  without heads; that search is keyed on the document and executes after
-  every edit of it.
+  of its code the importer's plan admits, its evidence written over the
+  slice's store, with that store's heads and the unit's anchors beside it:
+  each member's request with its labels marked, its search hints and its
+  obligations' sequents (`FilePlans.anchors`). Its spans and its unit's
+  name are mapped back to the document's positions outside every key.
+- *Check.* One check (`verifier --check-units`) builds the document's front
+  and writes each line's evidence over the document's store
+  (`Translate.translate`, untrusted): the unit's requests in the slice and
+  in the document are extracted from the same code, so each label of the
+  slice's anchors is paired with the label at the same place of the
+  document's, each pair of heads pairs their templates' labels, and a
+  union pairs its members, a member whose image is known with that image
+  and the others by their shape at the heads' signature classes. Every label
+  of the evidence is renamed by that correspondence, and a union written in
+  the slice's canonical order is written in the document's. Each unit is
+  checked at the evidence so written (`lineVerdict`), as
+  `checkUnitJson_safe` states. The check reads the whole document and
+  executes after every edit of it.
+- *One store per equation.* The pairing renames heads, one document head
+  for each slice head: the document's store holds one head for equal
+  templates where the slice's does. Every producer row has its head before
+  the lowering's heads are hash-consed, and the hash-consing compares
+  templates with their unions normalized after renaming (`hashCons`,
+  `lean/Verification/Source/Equations/Finishing.lean`), so a row equal to a
+  declaration's literal is one head whether or not a unit's extraction
+  names it first.
 
 The slices, the reads documents, the slice claims and the assembly's inputs
 are stage inputs, keyed by their content; `pipeline/unit-slices.mts`, which
@@ -598,16 +618,28 @@ stage of its own, `module`, nested in the parse (`moduleCall`,
 `pipeline/parse-stage.mts`): the module's lowering as a run of that module
 alone lowers it, in a parser compiler of its own at the module's directory
 (`lowerModule`, `tools/fragment-parse.mts`), its value the module's entry
-as text, its imports, or the gate's refusal. The parse releases its own
+as text, its imports, or the gate's refusal. Both its compilers, the
+parser's and a declaration session of its own released after it, read the
+named project rooted at the module (`moduleProject`,
+`tools/declaration-session.mts`): the project's options, its root files the
+module and the declaration files among the project's roots, which state
+what every file of it sees, held as a configuration of its own beside the
+project's that no probe replaces. A collection that names no project reads
+the project its file belongs to, every file of it. The parse releases its own
 parser compiler before it lowers a module, and splices each module's text
 into its Fragment in the order it reaches the modules, the bytes
 `JSON.stringify` writes of the same value. A nested invocation is forced and
 recorded as its enclosing one is (`invokeNested`). Executed, the module's
 answers are noted in the parse's record as they are made; replayed, its
 file-system observations are made again while the parse's record is made:
-either way the parse's observations hold them. A module's read set holds the
-declaration session's ledger, every file of the project its compiler read,
-so a change to any of them misses every module's entry.
+either way the parse's observations hold them. A module's read set holds
+what its compilers read: the module, the modules it imports, the project's
+configuration and declaration files, and the host libraries it reaches. An
+edit of an importer, or of another module, changes none of it, and the
+module's entry replays. A process cache's value computed while a compiler's
+ledger was kept is used again only while that ledger is kept, and computed
+again elsewhere (`remembered`, `tools/files.mts`), so a module's record holds
+no answer of the importer's compilers.
 
 *Named inputs read.* The run's tag selection of each host family
 (HOST-FAMILIES.md, residuals) is computed by the checked file's parse and
@@ -635,8 +667,8 @@ compiler, a record holding it seeing its later growth and incompleteness. The
 fidelity controls of `tests/session-reuse.mts` compare each parse, its work
 shared in a reused session, with the parse in fresh compilers with no work
 shared (`sharingForTests`), byte for byte. `tests/observed-stages.mts` shows a
-parse executing again replay its modules' entries and a project file's change
-miss them; and, in a process of its own (`--selection`), a module's entry
+parse executing again replay its modules' entries, a module's change miss
+its own entry alone, and an importer's edit replay every module's; and, in a process of its own (`--selection`), a module's entry
 replay where an unconsulted family changes and miss where a consulted
 family's tags change or it is absent, a module consulting no family replay
 across selections, no input observation reach the enclosing record, and a
@@ -719,14 +751,18 @@ the caller may use its freshly computed result without publishing it;
 replacement requires coordinated removal of the invalid entry.
 
 One process executes a replay-eligible key at a time. Before executing, it
-claims the key: a file `running/<stage>/<key>` made exclusively, naming its
-host and process (`Store.claim`), removed when the execution ends. A
-process finding a key claimed by another live process waits, looking every
-50 ms for a finished entry or a timeout observation at the key, which it
-replays, or for the claim's removal, after which it claims the key itself.
-A claim of a process of this host that has stopped is taken over. So
-within a run, and across the runs sharing a store, each key executes once
-while its result is published.
+claims the key: the lock `running/<stage>/<key>`, acquired as the eviction
+lock is ([the lock](#location-and-size)), so a claim present names its
+owner, a claim of a stopped owner or without an owner file is taken over,
+of two processes taking one over the one whose claim is in place keeps it,
+and a release removes only its own claim (`Store.claim`). A process finding
+a key claimed by another running process waits, looking every 50 ms for a
+finished entry or a timeout observation at the key, which it replays, or
+for the claim's removal, after which it claims the key itself; after twice
+the stage's limit (`claimWaitMs`), past which the holder's execution has
+been killed, it executes the key itself. So within a run, and across the
+runs sharing a store, each key executes once while its result is
+published.
 
 Finished entries and timeout observations have separate destinations.
 Publication never deletes a timeout entry to replace it with a finished
