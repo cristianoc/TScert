@@ -84,11 +84,46 @@ structure Built where
 
 def Built.rn (b : Built) (U : Union) : Union := normUnion (U.map (treeRename b.rename))
 
-/-- Merge equal templates and compact (§8.1): the kept heads in order, so
-the four primitives stay first. -/
+/-- Each head's class of unfolding: rounds of hashes of its parameter
+kinds, binders and row, each head the row names read as its previous hash,
+until a round tells no more heads apart. The store's numbering and the
+heads' names are nowhere in it, so two stores holding the same equations
+give their heads the same classes. -/
+def unfoldingClasses (heads : Array Draft) : Array UInt64 := Id.run do
+  let mut previous : Array UInt64 := heads.map fun _ => 0
+  let mut count := 1
+  for _ in [0:heads.size + 1] do
+    let prev := previous
+    let next := heads.mapIdx fun i d =>
+      let at_ (h : Nat) : Nat := (prev[h]?.getD 0).toNat
+      let body := (d.body.map (mapRow fun U => normUnion (U.map (treeRename at_)))).map
+        (fun b => (toJson (b.map (treeRename at_) id)).compress)
+      hash (spelling d.kinds, bindersSpelling d.binders, prev[i]?.getD 0, body.getD "none")
+    let c := (next.foldl (fun (m : Std.HashSet UInt64) x => m.insert x) {}).size
+    previous := next
+    if c == count then break
+    count := c
+  return previous
+
+/-- Merge equal templates and compact (§8.1): the kept heads with the
+primitive values' and kinds' heads first, then every head no hash-consing
+merges, in order, then the literal, scheme and primitive heads by their
+class of unfolding
+(`unfoldingClasses`), equal classes in order. Unions are ordered by their
+members' heads, so two stores lowering the same literals order them alike
+whatever order their sources wrote them in (STAGE-STORE.md, "Units of a
+check"). -/
 def compact (s : State) : Except String Built := do
   let rep := hashCons s.heads
-  let kept := (List.range s.heads.size).filter fun h => rep[h]! == h
+  -- The primitive values' and the primitive kinds' heads, made first
+  -- (`primitives`), keep their places.
+  let mergeable (h : Nat) : Bool := h ≥ 9 && match s.heads[h]? with
+    | some d => d.kind == .literal || d.kind == .scheme || d.kind == .primitive
+    | none => false
+  let classes := unfoldingClasses s.heads
+  let all := (List.range s.heads.size).filter fun h => rep[h]! == h
+  let kept := all.filter (!mergeable ·) ++
+    ((all.filter mergeable).mergeSort fun a b => classes[a]! < classes[b]! || (classes[a]! == classes[b]! && a ≤ b))
   let index : Std.HashMap Nat Nat := kept.zipIdx.foldl (fun m (h, i) => m.insert h i) {}
   let f (h : Nat) : Nat := (index.get? rep[h]!).getD 0
   let rn (U : Union) : Union := normUnion (U.map (treeRename f))

@@ -119,11 +119,14 @@ where
       return .cons (← ts.toList.foldr (fun t acc => do return .cons (← image m t) (← acc)) (some .nil))
         (← imageArgs m rest)
 
-/-- Pair a slice head with a document head; a head already paired keeps its
-first partner. -/
+/-- Pair a slice head with a document head of as many parameters and
+binders; a head already paired keeps its first partner. -/
 def pairHead (h h' : Nat) : PairM Unit := do
   let p ← get
   if p.map.contains h then return
+  let sides ← read
+  let shape (d : Option Draft) := d.map fun d => (d.kinds, d.binders.map (·.kind))
+  if shape sides.slice[h]? != shape sides.document[h']? then return
   set { p with map := p.map.insert h h', pending := (h, h') :: p.pending }
 
 mutual
@@ -287,15 +290,18 @@ def translate (slice : Array Draft) (anchors : Json) (target : Target) (document
   let written : Except String Json := do
     let _ : FromJson Moved := ⟨fun j => do let t ← Tree.fromJson j; return ⟨mapTree f t, t⟩⟩
     let d : EvidenceWire.Document Moved ← fromJson? evidence
-    -- A union the slice wrote in an order of its own keeps it, each member
-    -- once. One it wrote in its canonical order is written as the document
+    -- A union the slice wrote in an order of its own keeps it. One it wrote in its canonical order is written as the document
     -- writes its members where its anchors or its heads' rows write them
     -- (`orders`), else in the document's canonical order.
     let known := orders target.heads documentAnchors
     let types := d.types.map fun ty =>
       let original := ty.map (·.original)
       let moved := ty.map (·.tree)
-      let written := if canonUnion original != original then moved.eraseDups
+      -- Two members the slice holds apart and the document holds as one
+      -- are one member; a member the slice wrote twice stays twice.
+      let merged := (ty.foldl (fun (kept : List Moved) m =>
+        if kept.any (fun k => k.tree == m.tree && k.original != m.original) then kept else kept ++ [m]) []).map (·.tree)
+      let written := if canonUnion original != original then merged
         else (known.get? (canonUnion moved)).getD (canonUnion moved)
       written.map fun t => ⟨t, t⟩
     return toJson { d with types }
