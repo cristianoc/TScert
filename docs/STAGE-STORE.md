@@ -262,11 +262,7 @@ inputs it changes. The check reads the whole document.
   executes after every edit of it.
 - *One store per equation.* The pairing renames heads, one document head
   for each slice head: the document's store holds one head for equal
-  templates where the slice's does, and orders them alike, so a union and
-  the cases of evidence over it come in one order in both. The primitive
-  kinds' heads are made first, after the primitive values'; compaction
-  places the literal, scheme and primitive heads by their class of
-  unfolding (`unfoldingClasses`), which no numbering enters. Every producer row has its head before
+  templates where the slice's does. Every producer row has its head before
   the lowering's heads are hash-consed, and the hash-consing compares
   templates with their unions normalized after renaming (`hashCons`,
   `lean/Verification/Source/Equations/Finishing.lean`), so a row equal to a
