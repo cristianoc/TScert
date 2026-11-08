@@ -17,7 +17,7 @@ const slides: Slide[] = [
   cover("cover", {
     label: "TScert · checked array bounds",
     title: "From type safety to checked array bounds",
-    text: t("TScert checks safety claims about TypeScript programs. Linear arithmetic over integers extends those claims to relations between indices and array lengths. An untrusted producer proposes invariants and certificates; a checker proved sound in Lean validates them under explicit assumptions. The case study is pretext, a text-layout library: which run-time bound checks can proofs replace, and which obligations remain?"),
+    text: t("TScert checks safety claims about TypeScript programs. Linear arithmetic over integers extends those claims to relations between indices and array lengths. An untrusted producer proposes types and invariants, an untrusted search proposes certificates, and a checker proved sound in Lean validates them under explicit assumptions. The case study is pretext, a text-layout library: which run-time bound checks can proofs replace, and which obligations remain?"),
   }),
   slide("problem", {
     label: "The obligation", note: `Node 26.13.0 · ${observed}`,
@@ -55,7 +55,7 @@ const slides: Slide[] = [
           ["Back edge", "j + 1 ≤ |xs|; the increment is exact"],
         ], [40, 60]),
       bullets([
-        point("Untrusted inference", "the producer proposes facts at each program point, loop invariants included."),
+        point("Untrusted inference", "the producer proposes facts at each program point, loop invariants included; a search turns them into certificates."),
         point("Proved checking", "the checker validates establishment and preservation on every incoming edge."),
         point("Linear certificates", "each step is a nonnegative combination of known facts, rounded over the integers; ≠ with a bound gives a strict bound. Fourier–Motzkin elimination removes variables that go out of scope."),
       ], 26),
@@ -109,11 +109,25 @@ const slides: Slide[] = [
       ], [38, 62]) +
       para("These rules concern normal returns; a throw carries a frame condition only where one is stated for it.", 24),
   }),
+  slide("frame-cost", {
+    label: "Type invariants on pretext", note: t("the target with and without the invariants, at one TScert commit · ") + measured,
+    title: "A coarse frame condition costs the handle its invariant", gap: 22,
+    body: columns([
+      code(["/** @invariant this.segmentFlags.length", " *     === this.widths.length */", "type PreparedLineBreakData = { … }", "", "function layout(prepared: PreparedText, …) {", "  const lineCount = countPreparedLines(…)", "  // inside: getEngineProfile() writes a", "  // module cache; frame condition value: any", "  return { lineCount, … }", "  // obligation: prepared meets its invariant", "}"]),
+      bullets([
+        point("Measured", "with the length invariants on pretext’s handle, 137 functions verify, against 144 without them: 9 lost, 2 gained."),
+        point("Return obligation", "a parameter never reassigned must meet its invariant again at every return, so its callers keep it."),
+        point("Coarse frames", t("a call whose frame condition is `value: any` (a `Map.set` on a module cache, `getEngineProfile`, an `onLine` callback) may rewrite any field, so the facts are lost and the return obligation fails.")),
+        point("Defaults", t("a parameter with a default, `start = TEXT_START_CURSOR`, gets no precondition, so its invariant is never assumed.")),
+        point("What closes it", t("frame conditions that separate a module cache from the arguments, and preconditions on defaulted parameters (" + "proposed" + "). The invariant is the right specification; the frame is too coarse.")),
+      ], 25),
+    ], [46, 54]),
+  }),
   slide("trust", {
     label: "Soundness and trust", title: "What an accepted certificate guarantees", gap: 20,
     body: columns([
       panel(`Proved in Lean: ${proved}`, para("Acceptance implies modeled safety for every function of the accepted unit, given its input types, entry facts, separation requirements and environment contracts; each normal return meets the checked result facts. Safety admits exceptions and divergence.", 26)) +
-        panel(`Untrusted: ${proposed}`, para("The producer’s proposed types, invariants and certificates.", 26)),
+        panel(`Untrusted: ${proposed}`, para("The producer’s types and invariants, and the certificates the search proposes from them.", 26)),
       panel(`Trusted computing base: ${trusted}`, bullets([
         "Source and annotation translation; the model’s correspondence with JavaScript.",
         "Lean’s kernel and compiler, and the executed checker.",

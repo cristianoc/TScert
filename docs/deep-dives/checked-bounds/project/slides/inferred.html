@@ -8,7 +8,7 @@
 <tr><td>Body entry</td><td>0 ≤ j < |xs|</td></tr>
 <tr><td>Back edge</td><td>j + 1 ≤ |xs|; the increment is exact</td></tr>
 </table></div><div style="display:flex;flex-direction:column;gap:14px"><ul style="font-size:26px;color:#0b1a2e;line-height:1.36">
-<li><b style="font-weight:600">Untrusted inference:</b> the producer proposes facts at each program point, loop invariants included.</li>
+<li><b style="font-weight:600">Untrusted inference:</b> the producer proposes facts at each program point, loop invariants included; a search turns them into certificates.</li>
 <li><b style="font-weight:600">Proved checking:</b> the checker validates establishment and preservation on every incoming edge.</li>
 <li><b style="font-weight:600">Linear certificates:</b> each step is a nonnegative combination of known facts, rounded over the integers; ≠ with a bound gives a strict bound. Fourier–Motzkin elimination removes variables that go out of scope.</li>
 </ul></div></div>
