@@ -1977,7 +1977,9 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
             node.parameters[0].name.text === "this",
           params: node.parameters.map(p => own && synchronous && plainParameter(p)),
           kept: node.parameters.map(p => own && synchronous && plainParameter(p) && parameterKept(p, node.body)),
-          result: own && synchronous, ensures: own ? ensuresTags(source.text.slice(node.pos, node.getStart(source))) : [] };
+          result: own && synchronous, ensures: own ? ensuresTags(source.text.slice(node.pos, node.getStart(source))) : [],
+          ensuresParameters: synchronous && node.parameters.every(p => !p.dotDotDotToken && ts.isIdentifier(p.name))
+            ? node.parameters.map(p => ts.isIdentifier(p.name) ? p.name.text : "") : null };
         if (clauses.length > 0 || own)
           observations.requires?.(declaration, clauses,
             plainNames ? node.parameters.map(p => ts.isIdentifier(p.name) ? p.name.text : "") : null, invariants);

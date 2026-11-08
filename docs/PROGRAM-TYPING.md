@@ -2145,7 +2145,7 @@ renamed facts hold on its normal return (proved, joining the two
 postconditions of the one run).
 
 **Written clauses.** A synchronous module function declaration with one
-signature and plain required parameters writes `@ensures C` in its leading
+signature and named non-rest parameters writes `@ensures C` in its leading
 JSDoc comment. The clause uses the [precondition](#preconditions) language,
 including guards and quantified clauses, with `result` naming the return
 value and its paths. An unguarded `safeInteger` clause in `@requires` also
@@ -2166,11 +2166,13 @@ export function zeros(count: number): number[] {
 ```
 
 A named parameter denotes its entry value; the clause may name it only when
-its binding is unchanged throughout the body (`parameterKept`). Its paths
+it is a plain required parameter and its binding is unchanged throughout the
+body (`parameterKept`). Its paths
 read the heap at normal return. `old(...)` is refused: the written language
 has no entry-heap snapshots. `result` is reserved, so a function with a
 parameter of that name cannot state a postcondition. Async, nested and
-overloaded declarations and nonplain parameters are refused.
+overloaded declarations, rest parameters and parameter patterns are refused.
+Defaulted and optional parameters may occur when the clause does not name them.
 
 The defining unit establishes each clause at every normal return through
 [return-ensures](#type-invariants). Module calls and analyzed importing calls
@@ -2187,7 +2189,8 @@ caller across an analyzed import. `invalid-written-ensures-body` returns an
 array shorter than its contract, and `invalid-written-ensures-unstated`
 reads below a count absent from its callee's contract (under Node:
 `undefined` and `NaN`). `written-ensures-reassigned-refused` and
-`written-ensures-old-refused` exercise the entry-value restrictions. A control
+`written-ensures-old-refused` exercise the entry-value restrictions;
+`written-ensures-default-refused` checks a defaulted parameter reference. A control
 in `pipeline/test.mts` forges the unstated result bound after the call; its
 incoming edge must establish it.
 

@@ -2841,6 +2841,7 @@ export const cases: Case[] = [
   negative("invalid-written-ensures-body", "a body returns fewer elements than its written postcondition promises (run under Node)", /source ensures refusal/),
   negative("invalid-written-ensures-unstated", "a caller reads below a count no result contract promises (run under Node)", /no derivation of its cast claim/),
   gap("written-ensures-reassigned-refused", "a written postcondition names a reassigned parameter", "unsupported", "source", /postcondition.*reassigned parameter/),
+  gap("written-ensures-default-refused", "a postcondition names a parameter whose default may replace its entry value", "unsupported", "source", /postcondition.*nonplain parameter/),
   gap("written-ensures-old-refused", "entry-heap snapshots are outside the written clause language", "unsupported", "source", /postcondition/),
   positive("type-invariant-walker", "a type invariant (`@invariant`) as a boundary contract, pretext's `line-break.ts` walkers: `segmentFlags.length === widths.length` is each walker's precondition and a fact of the constructor's result, proved at its return (PROGRAM-TYPING.md, \"Type invariants\")"),
   negative("invalid-type-invariant-constructor", "a constructor returning a view one element short of `widths`: refused at its return; a walker reads `undefined` at `number` (run under Node)",

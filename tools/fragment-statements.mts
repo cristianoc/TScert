@@ -2191,7 +2191,7 @@ export function functionDecl(this: Gate, node: FunctionDeclaration, signature: F
     if (signature === node && ts.isSourceFile(node.parent)) {
       const contract = typeInvariants(gate,
         isAsync ? [] : node.parameters.map((p, i) => plainParameter(p)
-          ? { type: parameterTypes[i], kept: parameterKept(p, node.body) } : { type: undefined, kept: false }),
+          ? { type: parameterTypes[i], kept: plainParameter(p) && parameterKept(p, node.body) } : { type: undefined, kept: false }),
         !!receiverParam, isAsync ? undefined : retType);
       if (typeof contract === "string") gate.fail(node, contract);
       else {
@@ -2201,10 +2201,10 @@ export function functionDecl(this: Gate, node: FunctionDeclaration, signature: F
     }
     const post = ensuresTags(gate.file.text.slice(node.pos, node.getStart(gate.file)));
     if (post.length > 0) {
-      if (isAsync || signature !== node || !ts.isSourceFile(node.parent) || node.parameters.some(p => !plainParameter(p)))
-        gate.fail(node, "a postcondition (`@ensures`) requires a synchronous module function declaration with plain required parameters and one signature");
+      if (isAsync || signature !== node || !ts.isSourceFile(node.parent) || node.parameters.some(p => p.dotDotDotToken || !ts.isIdentifier(p.name)))
+        gate.fail(node, "a postcondition (`@ensures`) requires a synchronous module function declaration with named non-rest parameters and one signature");
       const written = postcondition(gate, post, clauses, node.parameters.map((p, i) => ({
-        name: ts.isIdentifier(p.name) ? p.name.text : "", type: parameterTypes[i], kept: parameterKept(p, node.body)
+        name: ts.isIdentifier(p.name) ? p.name.text : "", type: parameterTypes[i], kept: plainParameter(p) && parameterKept(p, node.body)
       })), !!receiverParam, retType);
       if (typeof written === "string") gate.fail(node, written);
       else ensures.push(...written);
@@ -2262,7 +2262,7 @@ export function postcondition(gate: Gate, clauses: readonly string[], requires: 
   const roots = clauses.flatMap(clauseRoots);
   for (const p of parameters)
     if (roots.includes(p.name) && !p.kept)
-      return `a postcondition (\`@ensures\`) names reassigned parameter ${p.name}; entry values require an unchanged parameter binding`;
+      return `a postcondition (\`@ensures\`) names reassigned parameter or nonplain parameter ${p.name}; entry values require an unchanged plain parameter binding`;
   const named = [clauseParameter(gate, "result", 0, result),
     ...parameters.map(({ name, type }, i) => clauseParameter(gate, name, receiver ? i + 1 : i + 2, type))];
   const elaborated = elaborateRequires(clauses, named, requires);

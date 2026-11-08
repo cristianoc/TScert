@@ -8,3 +8,9 @@ export function zeros(count: number): number[] {
   if (out.length !== count) throw new Error("length mismatch");
   return out;
 }
+
+/** @ensures result.length === source.length */
+export function defaults(source: string, ignored: boolean = false): Uint8Array {
+  const out = new Uint8Array(source.length);
+  return out;
+}

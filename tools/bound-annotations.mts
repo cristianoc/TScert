@@ -142,7 +142,7 @@ export function parameterKept(p: ts.ParameterDeclaration, body: ts.Node | undefi
  * each plain required name's type, where it is not async, at its returns too
  * where its body writes no binding of its name (`kept`, `parameterKept`);
  * and its result type's, where it is not async. */
-export type ImportedInvariants = { receiver: boolean; params: readonly boolean[]; kept: readonly boolean[]; result: boolean; ensures: readonly string[] };
+export type ImportedInvariants = { receiver: boolean; params: readonly boolean[]; kept: readonly boolean[]; result: boolean; ensures: readonly string[]; ensuresParameters: readonly string[] | null };
 
 function tagsOf(trivia: string, name: string): string[] {
   const open = trivia.lastIndexOf("/**");
