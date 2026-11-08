@@ -1,4 +1,4 @@
-// A `RegExp` annotation is the conservative structural regex: every capture
+// A `RegExp` annotation is the native regex of the conservative shape: every capture
 // may be unmatched, a split is a readonly view, and a literal of any shape
 // meets it, stored in records and arrays as expected-diagnostic patterns are.
 type Expectation = { file: string; diagnostic: RegExp };

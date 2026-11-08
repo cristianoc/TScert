@@ -398,9 +398,13 @@ const canvasDefinition = definitionOf(canvasIdentity, { k: "object", stringIndex
  *
  * `lang` is `HTMLElement`'s attribute, the getter reflecting the content
  * attribute, a string; an element of another namespace (an SVG document's
- * root) has none on its chain and reads `undefined`. Tree mutation and
- * rectangle measurement retain unrestricted effects. HTML elements
- * additionally expose their inline style. */
+ * root) has none on its chain and reads `undefined`. `appendChild` and
+ * `removeChild` change the tree and `getBoundingClientRect` lays it out,
+ * running no code of the program's, which defines no custom element: the
+ * empty footprint, under the trust surface's assumption that no custom
+ * element or legacy mutation-event listener of the page reaches the
+ * program (SOURCE-CONTRACTS.md, "The DOM's canvas, document and
+ * navigator"). HTML elements additionally expose their inline style. */
 export const elementMarker = "dom:element";
 const elementIdentity = domIdentity("Element");
 export const element: TypeTerm = named(elementIdentity);
@@ -410,16 +414,19 @@ const rectangleDefinition = definitionOf(rectangleIdentity, { k: "object", strin
   host: "dom:rectangle", span: at, fields: [field("width", atom("number"))] });
 const elementDefinition = definitionOf(elementIdentity, { k: "object", stringIndex: null, calls: [],
   host: elementMarker, span: at, fields: [field("lang", union(atom("string"), atom("undefined"))),
-    field("appendChild", method([element], element)), field("removeChild", method([element], element)),
-    field("getBoundingClientRect", method([], rectangle))] });
+    field("appendChild", method([element], element, emptyEffect)),
+    field("removeChild", method([element], element, emptyEffect)),
+    field("getBoundingClientRect", method([], rectangle, emptyEffect))] });
 
-/** Browser inline declarations and rectangles. Mutating calls retain unrestricted
- * effects, including custom-element reactions and exceptional exits. */
+/** Browser inline declarations and rectangles. `setProperty` changes the
+ * element's style attribute, a host slot, running no code of the program's:
+ * the empty footprint on normal return, as for the tree operations. */
 const inlineStyleIdentity = domIdentity("InlineStyle");
 export const inlineStyle: TypeTerm = named(inlineStyleIdentity);
 const inlineStyleDefinition = definitionOf(inlineStyleIdentity, { k: "object", stringIndex: null, calls: [],
   host: "dom:inline-style", span: at, fields: [
-    field("setProperty", method([atom("string"), atom("string"), union(atom("string"), atom("undefined"))], atom("undefined")))] });
+    field("setProperty", method([atom("string"), atom("string"), union(atom("string"), atom("undefined"))], atom("undefined"),
+      emptyEffect))] });
 const htmlElementIdentity = domIdentity("HTMLElement");
 export const htmlElement: TypeTerm = named(htmlElementIdentity);
 const htmlElementDefinition = definitionOf(htmlElementIdentity, { k: "intersection", span: at, parts: [element,
@@ -433,7 +440,9 @@ const spanElementDefinition = definitionOf(spanElementIdentity, { k: "intersecti
   { k: "object", stringIndex: null, calls: [], span: at,
     fields: [field("style", union(inlineStyle, atom("undefined")))] }] });
 
-/** Accessor assignments execute a host operation and return the assigned value.
+/** Accessor assignments execute a host operation and return the assigned
+ * value, changing the element's style attribute or children, host slots:
+ * the empty footprint on normal return, as for the tree operations.
  * CSSStyleDeclaration annotations remain the readonly computed-style view;
  * the cssText operation additionally requires the inline-style host marker. */
 export const domSetters: readonly { member: string; value: TypeTerm; receiver: TypeTerm; intrinsic: string }[] = [
@@ -441,11 +450,15 @@ export const domSetters: readonly { member: string; value: TypeTerm; receiver: T
   { member: "textContent", value: union(atom("string"), atom("null")), receiver: element, intrinsic: "%DOMSet:textContent%" },
 ];
 
+/** A formatter `new Intl.DateTimeFormat()` makes (SOURCE-CONTRACTS.md,
+ * "Formatter locale"), at `resolvedOptions`, which creates a fresh object of
+ * the formatter's slots by `CreateDataPropertyOrThrow`, running no code: the
+ * empty footprint. */
 const dateTimeFormatIdentity = { module: "tscert/intl", name: "DateTimeFormat", span: at };
 export const dateTimeFormat: TypeTerm = named(dateTimeFormatIdentity);
 const dateTimeFormatDefinition = definitionOf(dateTimeFormatIdentity, { k: "object", stringIndex: null, calls: [],
   host: "intl:date-time-format", span: at, fields: [field("resolvedOptions", method([], {
-    k: "object", stringIndex: null, calls: [], span: at, fields: [field("locale", atom("string"))] }))] });
+    k: "object", stringIndex: null, calls: [], span: at, fields: [field("locale", atom("string"))] }, emptyEffect))] });
 
 /** What `getComputedStyle(element)` returns (CSSOM, "Extensions to the
  * Window interface"): the element's resolved style, a `CSSStyleDeclaration`
@@ -473,9 +486,9 @@ const computedStyleDefinition = definitionOf(computedStyleIdentity, { k: "object
  *
  * `documentElement` is the getter answering the document's root element,
  * `null` in a document with none. `createElement("canvas")` makes a fresh
- * canvas element: the name is no valid custom element name, so no
- * constructor of the program's runs, and it writes nothing the model holds,
- * within the empty footprint. */
+ * canvas element and `createElement("span")` a fresh span: neither name is a
+ * valid custom element name, so no constructor runs, and each writes nothing
+ * the model holds, within the empty footprint. */
 export const documentMarker = "dom:document";
 const documentIdentity = domIdentity("Document");
 export const documentType: TypeTerm = named(documentIdentity);
@@ -483,7 +496,7 @@ const documentDefinition = definitionOf(documentIdentity, { k: "object", stringI
   host: documentMarker, span: at, fields: [field("documentElement", union(element, atom("null"))),
     field("body", union(htmlElement, atom("null"))), field("head", union(htmlElement, atom("null"))),
     field("createElement", { k: "intersection", span: at, parts: [method([text("canvas")], canvas, emptyEffect),
-      method([text("span")], spanElement)] })] });
+      method([text("span")], spanElement, emptyEffect)] })] });
 
 /** The global `navigator` (HTML, `Window`'s `readonly attribute Navigator
  * navigator`, and `WorkerGlobalScope`'s), at the members a client reads,

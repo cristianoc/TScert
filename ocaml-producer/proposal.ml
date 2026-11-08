@@ -124,7 +124,20 @@ let declaration_footprint ?(flows=[]) ?(module_names=[]) declarations values nam
       | [] -> false
       | ts -> List.for_all (query declarations) ts in
     all Type_queries.writable_array o && all Type_queries.number_like k in
-  Option.value (footprint_stmts ~dispatched ~field_write ~element_key ~callable ~no_return ~iteration ~readable g.body) ~default:top_footprint,
+  (* A write at a string key of a module binding holding a record: the
+     parser lowers it to the key's record, a merge and the binding's cell
+     write (`Source.footprint_expr`). *)
+  let dictionary_key (o:expr) (k:expr) = match o.node with
+    | Id name when List.mem name module_names && not (slot name) ->
+      let strings = match claims_at k.pos with
+        | [] -> false
+        | ts -> List.for_all (fun t -> List.for_all (function Atoms [(Str | StrLit _)] -> true | _ -> false)
+            (Type_queries.unfolded_arms declarations [] t)) ts in
+      strings && (match claims_at o.pos with
+        | [] -> false
+        | ts -> List.for_all (fun t -> not (Type_queries.writable_array declarations t)) ts)
+    | _ -> false in
+  Option.value (footprint_stmts ~dispatched ~field_write ~element_key ~dictionary_key ~callable ~no_return ~iteration ~readable g.body) ~default:top_footprint,
   throws_stmts ~callable g.body
 
 (* One unit of a file proposed on its own (`producer --unit`): its members,

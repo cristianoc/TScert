@@ -3732,9 +3732,9 @@ Node), as is every other function of `Reflect` (`invalid-reflect-unreviewed`,
   stating no effect (`array-from-length`; `invalid-array-from-iterator`, run
   under Node).
 - `new RegExp(p, flags)` of strings compiles a pattern known only at run
-  time, a SyntaxError where it or the flags are invalid: the structural regex
-  $`⟦\mathtt{RegExp}⟧=P(\Sigma_\top)`$ ([regular expressions](#regular-expressions)),
-  no native mark stated, within the empty footprint on its throw too
+  time, a SyntaxError where it or the flags are invalid: the regex
+  $`⟦\mathtt{RegExp}⟧`$ of the conservative shape ([regular expressions](#regular-expressions)),
+  within the empty footprint on its throw too
   (`regexp-dynamic`). A regex pattern would be read by its `Symbol.match`,
   `source` and `flags` (`invalid-regexp-object-pattern`, run under Node).
 - `e instanceof Error` walks `e`'s prototype chain for `Error.prototype`,
@@ -4056,8 +4056,14 @@ argument (`new Uint8Array(v)`) is refused, an argument no form states
 The library overlay states `new Intl.DateTimeFormat()` at zero arguments and
 `resolvedOptions()` at a result with readonly `locale: string`. The host assumption
 is [ECMA-402](REFERENCES.md#ecma-402)'s construction and resolved-options behavior
-under the stable-standard-objects policy. Both calls have unrestricted effects.
-Other construction arguments have no contract in this entry.
+under the stable-standard-objects policy. Construction at no arguments takes
+the default locale and options: `CanonicalizeLocaleList(undefined)` is empty
+and `CreateDateTimeFormat` reads its options from an object it creates with a
+`null` prototype, so it runs no code and allocates the formatter alone.
+`resolvedOptions()` creates a fresh object of the formatter's internal slots
+with `CreateDataPropertyOrThrow`, which runs no code. Each is within the empty
+footprint (`pretext-host-locale`). Other construction arguments have no
+contract in this entry.
 
 #### `Intl.Segmenter`
 
@@ -4297,10 +4303,31 @@ setter's marker.
 An element's `appendChild` and `removeChild` take and return an element. The host
 returns the supplied child on normal completion; the contract promises its element
 type. `getBoundingClientRect()` returns a host rectangle with readonly numeric
-`width`. These calls, inline `setProperty`, and span creation have unrestricted
-effects. Tree operations and text replacement can run custom-element reactions;
-style mutation can trigger attribute reactions. No heap-preservation guarantee
-passes across these operations, including a caught exception.
+`width`. Each of these, inline `setProperty`, the `cssText` and `textContent`
+assignments and `createElement("span")` is within the empty footprint, on
+normal return, by the reason each states:
+
+- `createElement("span")` makes a fresh element: `span` is no valid custom
+  element name and no `is` option is passed, so no constructor runs.
+- A write of an element's inline style (`cssText`, `setProperty`) and of its
+  text (`textContent`) changes the element's style attribute or its children,
+  host slots the model holds no location of. A custom element's attribute
+  reaction is the only code such a write runs synchronously, and mutation
+  observers are notified in a later microtask.
+- An insertion or removal (`appendChild`, `removeChild`) changes the tree, and
+  `getBoundingClientRect()` and `getComputedStyle` update style and layout,
+  which run no script; a custom element's connected and disconnected
+  reactions and the legacy mutation events (`DOMNodeInserted`,
+  `DOMNodeRemoved`, `DOMSubtreeModified`, `DOMAttrModified`), dispatched
+  synchronously where a host still fires them, are the code an insertion or
+  a removal may run.
+
+A program defines no custom element: `customElements` and the element
+constructors are no globals the fragment reads (`invalid-dom-custom-element`,
+run under Node with stand-ins). The custom elements and mutation-event
+listeners of the page are external code; the [trust surface](DESIGN.md#trust-surface)
+states that none of them reaches a location the program holds, by calling
+the program or otherwise (`dom-span-keeps-lengths`).
 
 The assumptions concern browser implementations of [DOM](REFERENCES.md#dom),
 [HTML](REFERENCES.md#html), [CSSOM](REFERENCES.md#cssom), and
@@ -5402,11 +5429,12 @@ leaves the callback by its throw.
 ## Regular expressions
 
 A regex is an object of host-relative methods (`regexp.mts`), read in two
-forms: the **native** regex a literal evaluates to, which states its
-literal's capture shape and a mark only the host's construction gives, and
-the **structural** regex a `RegExp` annotation states, a behavioural
-contract any value may meet. Neither states a property: a regex's
-`lastIndex`, `source` and flags are read through no type.
+forms: the regex a literal evaluates to, which states its literal's capture
+shape, and the regex a `RegExp` annotation states, of the conservative
+shape. Both state a mark only the host's construction gives, so every value
+meeting either is a native regex, made by a literal or by `new RegExp`. Neither
+states a property: a regex's `lastIndex`, `source` and flags are read
+through no type.
 
 **Shapes.** A literal's shape $`\Sigma=(A,\nu,g)`$ lists, for each capture
 group $`k`$ in order, whether it takes part in every successful match
@@ -5451,12 +5479,13 @@ of host-relative methods
 P(\Sigma)=\{\ \mathtt{exec}\colon(\mathtt{string})\Rightarrow\mathsf{Exec}(\Sigma)\mid\mathtt{null};\ \mathtt{test}\colon(\mathtt{string})\Rightarrow\mathtt{boolean};\ [@@\mathrm{match}]\colon(\mathtt{string})\Rightarrow\mathsf{Match}(\Sigma)\mid\mathtt{null};\ [@@\mathrm{replace}]\colon(\mathtt{string},\mathtt{string})\Rightarrow\mathtt{string};\ [@@\mathrm{search}]\colon(\mathtt{string})\Rightarrow\mathtt{number};\ [@@\mathrm{split}]\colon(\mathtt{string},\mathtt{number}\mid\mathtt{undefined})\Rightarrow\mathsf{Split}(\Sigma)\ \}
 ```
 
-with each member's effect below; the native and structural regexes are
+with each member's effect below; the regex of a literal and the annotated
+regex are
 
 ```math
 N(\Sigma)=P(\Sigma)\ \&\ \{[@@\mathrm{matchAll}]\colon(\mathtt{string})\Rightarrow I_N(\mathsf{Exec}(\Sigma));\ \mathtt{readonly}\ [\mu]\colon\mathtt{undefined}\}
 \qquad
-⟦\mathtt{RegExp}⟧=P(\Sigma_\top)
+⟦\mathtt{RegExp}⟧=P(\Sigma_\top)\ \&\ \{\mathtt{readonly}\ [\mu]\colon\mathtt{undefined}\}
 ```
 
 where $`\mu`$ is the synthetic symbol `RegExpMatcher` (`tscert/regexp`), the
@@ -5497,9 +5526,11 @@ parameters is claimed at $`\mathsf{Rep}(\Sigma)`$, the further actuals
 discarded at binding, and its body is checked there. No
 source declaration has a synthetic symbol's identity, so no source type,
 literal or class states $`\mu`$ or $`\mu_I`$; a source `unique symbol` of the
-same name is a key of its own (`invalid-regexp-forged-mark`).
-$`N(\Sigma)\le⟦\mathtt{RegExp}⟧`$: results widen by readonly covariance and the
-mark and `[@@matchAll]` are left out. TypeScript's `RegExpExecArray` and
+same name is a key of its own. A value the program makes otherwise, an
+object stating the members, meets no `RegExp` annotation
+(`invalid-regexp-annotation-object`, run under Node).
+$`N(\Sigma)\le⟦\mathtt{RegExp}⟧`$: results widen by readonly covariance and
+`[@@matchAll]` is left out. TypeScript's `RegExpExecArray` and
 `RegExpMatchArray` are $`\mathsf{Exec}(\Sigma_\top)`$ and $`\mathsf{Match}(\Sigma_\top)`$,
 a supertype of each declaration with its element type corrected, and an
 array pattern or loop over one steps it as an array. `RegExp`'s stated
@@ -5524,11 +5555,14 @@ $`g`$ and $`y`$ whether the flags hold `g` and `y`,
 `[@@matchAll]` step a fresh clone, and a regex neither global nor sticky
 writes no `lastIndex`; one that is leaves it where its last match ended,
 changing one location, which holds a number by its contract
-(`map-stable-regexp-test`). At $`\Sigma_\top`$ the flags are not read, and
-no member states an effect. A native regex's `exec` and `test` take
+(`map-stable-regexp-test`). At $`\Sigma_\top`$ the flags are not read:
+`exec`, `test`, `[@@match]` and `[@@replace]` state
+$`\{\mathit{value}\colon\mathsf{any},\ \mathit{store}\colon\mathsf{keep}\}`$,
+the bound of a global or sticky regex, and `[@@search]` and `[@@split]`
+state none. A regex's `exec` and `test` take
 `string | undefined`: they convert their argument by `ToString`, which runs no
 code on `undefined` and gives `"undefined"` (`/^undefined$/.test(undefined)`
-is true); a structural regex's keep their declared `string` (audited).
+is true).
 
 **Literals and dispatch.** Each evaluation of a literal allocates a regex;
 a call of `String.prototype`'s `match`, `matchAll`, `replace`, `replaceAll`,
@@ -5570,11 +5604,12 @@ converts only strings, so it writes nothing the member does not
  `matchAll` and `replaceAll` first read
 `o[@@match]` and `o.flags` and convert `flags` (ECMA-262,
 `String.prototype.matchAll`), client code for an object `flags`
-(`invalid-regexp-structural-matchall`): their argument must be native, whose
-standard `flags` is a string. A non-global native regex makes them throw, an
+(`invalid-regexp-structural-matchall`): their argument must be a regex of a
+literal, whose standard `flags` is a string, and $`⟦\mathtt{RegExp}⟧`$ states
+no `[@@matchAll]`. A non-global native regex makes them throw, an
 outcome. A loop or spread over what TypeScript types `RegExpStringIterator`
-steps `%Iterate:RegExpString%`, whose parameter is $`I_N(T)`$: a structural
-iterator meets it not, and is refused there.
+steps `%Iterate:RegExpString%`, whose parameter is $`I_N(T)`$: an iterator
+without the mark meets it not, and is refused there.
 
 **What is refused.** A property of a regex is no member of either type:
 `re.lastIndex`, `re.source`, `re.flags` are refused at the read, a regex meets
@@ -5583,8 +5618,8 @@ no view stating one (a copy would lack the non-enumerable `lastIndex`,
 inherits from `RegExp.prototype` is refused whatever the operand
 (`inKeyRefusal`, `invalid-regexp-lastindex-in`). `compile`, which replaces a
 regex's pattern and so its shape, is no member (`invalid-regexp-compile`); a
-library class is no base (`invalid-regexp-subclass`). A structural regex's
-`[@@replace]` takes no replacement callback. `new RegExp` of strings is the structural regex
+library class is no base (`invalid-regexp-subclass`). The annotated regex's
+`[@@replace]` takes no replacement callback. `new RegExp` of strings is the regex
 $`⟦\mathtt{RegExp}⟧`$ ([library globals](#library-globals); `regexp-dynamic`).
 Match results are readonly views.
 

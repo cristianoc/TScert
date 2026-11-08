@@ -1594,11 +1594,6 @@ assert.equal(runExample("invalid-named-implicit-index", 'typeof asDictionary({ a
   // same line tests true, then false.
   assert.equal(runExample("map-stable-regexp-test", `marks(["ab", "ab"]).join()`), "true,false",
     "map-stable-regexp-test: the callback's call writes the regex it captures, and the result is dense");
-  assert.equal(runExample("invalid-map-structural-replace", `(() => {
-      const xs = ["a", "b", "c"];
-      const out = rewrite(xs, { [Symbol.replace](s, r) { xs.pop(); return r; } });
-      return out.length + ":" + Object.keys(out).length;
-    })()`), "3:2", "invalid-map-structural-replace: a structural replacement pops the mapped array, leaving a hole");
   assert.equal(runExample("map-stable-regexp-replace", `JSON.stringify(collapsed(["a  b", "c\\td"]))`), '["a b","c d"]',
     "map-stable-regexp-replace: each call replaces through a regex the literal allocates");
   // `Number` of an object calls its `valueOf`, which here writes `seen.value`.
@@ -2514,6 +2509,9 @@ assert.equal(runExample("invalid-named-implicit-index", 'typeof asDictionary({ a
     count({ [Symbol.match]: true, flags: { toString() { seen.ran = true; return "g"; } },
       [Symbol.matchAll]: () => [][Symbol.iterator]() }, "x");
     seen.ran`), true);
+  // An object asserted to `RegExp` answers what its own `exec` answers.
+  assert.equal(runExample("invalid-regexp-annotation-object",
+    `run({ exec: () => [42], test: () => true }, "x")`), 42);
   // `compile` gives an existing regex another pattern: one group fewer.
   assert.equal(runExample("invalid-regexp-compile", `recompiled().exec("c").length`), 1);
   // A subclass's `exec` is what `replace` calls: no match is replaced.
@@ -3039,6 +3037,16 @@ for (const [file, call] of [
     "a spread copies no attribute of a platform object, an accessor of its prototype");
   assert.equal(runExample(negative("invalid-dom-typeof-absent"), "typeof absent([])"), "undefined",
     "where the host defines no document the branch runs and reads past the array's end");
+  assert.equal(runExample(negative("invalid-module-dictionary-keeps-lengths"), `(first("a"), typeof first("b"))`),
+    "undefined", "the second lookup pops the last element the caller then reads");
+  assert.equal(runExample(negative("invalid-native-constant-let"),
+    `(() => { const xs = [1, 2, 3, 4, 5, 6]; return typeof first(xs, { get() { xs.length = 0; } }); })()`),
+    "undefined", "the other map's get empties the array the function then reads");
+  assert.equal(runExample(negative("invalid-dom-custom-element"),
+    "globalThis.HTMLElement = class {}; globalThis.customElements = { define(_n, c) { globalThis.made = c; } };" +
+    " globalThis.document = { createElement: () => new globalThis.made() };" +
+    " typeof first({ appendChild(e) { e.connectedCallback(); } })"), "undefined",
+    "an insertion runs the custom element's reaction, which empties the array");
   assert.equal(runExample(negative("invalid-dom-document-element-lang"),
     "globalThis.document = { documentElement: {} }; typeof language()"), "undefined",
     "a root element of another namespace has no lang");

@@ -147,6 +147,7 @@ fragment.
 | `readdirSync` with `recursive: true` | The recursive walk collects entries from subdirectories and has no reviewed contract | [library modules](SOURCE-CONTRACTS.md#library-modules) | `invalid-node-readdir-recursive` (Node) |
 | `RegExp.prototype.compile` | It replaces the pattern, and with it the capture shape the type states | [regular expressions](SOURCE-CONTRACTS.md#regular-expressions) | `invalid-regexp-compile` (Node) |
 | `matchAll` or `replaceAll` of a regex no literal made | The host reads and converts the argument's `flags`, running an object `flags`'s `toString` | [regular expressions](SOURCE-CONTRACTS.md#regular-expressions) | `invalid-regexp-structural-matchall` (Node) |
+| A value of the program's at a `RegExp` annotation | The annotation reads as a native regex, whose members run no code of the program's | [regular expressions](SOURCE-CONTRACTS.md#regular-expressions) | `invalid-regexp-annotation-object` (Node) |
 
 **Modules and enums**
 

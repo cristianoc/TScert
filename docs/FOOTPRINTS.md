@@ -157,11 +157,15 @@ locations below the heap the body started in; the runs compose by
   literal's spread parts included, which read their stores' elements in
   place (an operand that is one of several arrays reads the store of the
   one its slot holds, the read derived at each alternative by `unionVar`:
-  `arrayStoreAt`), and a merge, which reads its operands' own properties and steps to
-  the allocation of their copy, which preserves the heap
-  (`ExpressionEffects.check`, `Purity.inspectTerm`; proved: `inspect_safe`,
-  from `inspect_step`, whose merge case is `mergeParts_vals`: every copied
-  value is a value);
+  `arrayStoreAt`), a merge, which reads its operands' own properties and steps to
+  the allocation of their copy, and a key's record (`makeKey`), which converts
+  a primitive key and steps to the allocation of a record of the key, each
+  preserving the heap (`ExpressionEffects.check`, `Purity.inspectTerm`;
+  proved: `inspect_safe`, from `inspect_step`, whose merge case is
+  `mergeParts_vals`: every copied value is a value). A write at a string key
+  of a module binding holding a record lowers to these and the binding's
+  cell write, within `{value: any, store: keep}`
+  (`module-dictionary-keeps-lengths`);
 - a **typed write** of a field whose contract, at the written object's type,
   admits only source values, within `{value: any, store: keep}`: the written
   location holds no store, by its contract (`writeWithin`; proved:

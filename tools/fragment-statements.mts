@@ -1777,7 +1777,7 @@ export function declarationsOf(this: Gate, list: ts.VariableDeclarationList, ds:
     return {
       name: gate.local(d.name),
       namePos: gate.span(d.name),
-      annot: d.type ? gate.typeOf(d.type)
+      annot: d.type && !(!mutable && showsNativeObject(d.initializer)) ? gate.typeOf(d.type)
         : early && list.flags & ts.NodeFlags.Let ? literalDeclaredType(d.initializer, gate.span(d.initializer)) : null,
       init: gate.expr(d.initializer),
       early,
@@ -1785,6 +1785,18 @@ export function declarationsOf(this: Gate, list: ts.VariableDeclarationList, ds:
   });
   if (mutable) return { k: "let", pos, bindings };
   return { k: "const", pos, bindings };
+}
+
+/** Whether a constant's initializer shows the native object it evaluates
+ * to: a regular expression literal, or a construction of `Map`, parenthesized
+ * or not. Such a constant is read at its initializer's claim, as an
+ * unannotated one is (SOURCE-ELABORATION.md, "Constants"): the binding never
+ * changes, so its annotation, which TypeScript checks the initializer
+ * against, states less than the initialization establishes. */
+export function showsNativeObject(e: Expression): boolean {
+  while (ts.isParenthesizedExpression(e)) e = e.expression;
+  return e.kind === ts.SyntaxKind.RegularExpressionLiteral ||
+    (ts.isNewExpression(e) && ts.isIdentifier(e.expression) && e.expression.text === "Map");
 }
 
 /** TypeScript's declared type for a `let` that `e` initializes, where the

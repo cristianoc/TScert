@@ -221,8 +221,9 @@ def initTerm : Tm → Bool
   | t => operandTerm t
 
 /-- Computations that read the heap and only append to it: the pure forms,
-field, key and element reads, allocations whose initializers are operands, and
-merges, which read their operands' own properties and allocate the copy. A
+field, key and element reads, allocations whose initializers are operands,
+merges, which read their operands' own properties and allocate the copy, and
+a key's record, which converts a primitive key and allocates the record. A
 read gives the value its location holds; an allocation appends fresh
 locations. No step of one writes a location it did not allocate, nor runs
 code. -/
@@ -240,6 +241,7 @@ def inspectTerm : Tm → Bool
   | .makeAt _ _ inits => inits.all operandTerm
   | .arrLit inits => inits.all initTerm
   | .merge _ a b => inspectTerm a && inspectTerm b
+  | .makeKey k a => inspectTerm k && inspectTerm a
   | t => isVal t
 
 theorem inspect_value {v : Tm} (hv : isVal v = true) : inspectTerm v = true := by
@@ -314,6 +316,9 @@ theorem inspect_subst {t a : Tm} {j : Nat}
     | (simp_all; done)
     | simp [isVal] at ht ⊢
 
+theorem operand_of_val {a : Tm} (hv : isVal a = true) : operandTerm a = true := by
+  cases a <;> simp_all [operandTerm, isVal]
+
 theorem operand_no_step {a : Tm} (ho : operandTerm a = true) {h h' a'} : ¬ Step h a h' a' := by
   intro st
   cases a <;> simp only [operandTerm, isVal, Bool.false_eq_true] at ho <;>
@@ -377,6 +382,11 @@ theorem inspect_step {h t h' t'} (hs : Step h t h' t') (hp : inspectTerm t = tru
     generalize p.2 = x
     intro hval
     cases x <;> simp_all [operandTerm, isVal]
+  case makeKeyV hva _ =>
+    refine ⟨List.prefix_refl _, ?_⟩
+    simp only [inspectTerm, List.all_eq_true, List.mem_singleton]
+    rintro _ rfl
+    exact operand_of_val hva
   case makeArg =>
     rename_i hg _ st _
     exact (operand_no_step (List.all_eq_true.mp (by simpa [inspectTerm] using hp) _
