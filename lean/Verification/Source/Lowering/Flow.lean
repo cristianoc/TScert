@@ -376,6 +376,16 @@ private def invariantFact (root : Nat → Option (Nat × List String))
         pure (b, c)
       pure (Linear.Fact.le form bound)
     pure ({ fact := .every x p ⟨sk, y, q⟩ body } : HeapKnowledge.IndexAtom)
+  -- The region facts the producer proposes (FOOTPRINTS.md, "Element
+  -- regions"): both sides value bindings; a claim naming any other is
+  -- refused rather than dropped.
+  let apart ← ((fc.entryApart.lookup node.source.1).getD []).mapM fun (name, other) =>
+    match valueSlot scope name, valueSlot scope other with
+    | some x, some y => pure ({ fact := .apart x y } : HeapKnowledge.IndexAtom)
+    | none, _ => do throw (locatedRefusal (← table) node.source .entryClaim
+        s!"a region fact names '{name}', which is no value binding")
+    | _, none => do throw (locatedRefusal (← table) node.source .entryClaim
+        s!"a region fact names '{other}', which is no value binding")
   -- A loop's invariant (PROGRAM-TYPING.md, "Loop invariants"): at its head,
   -- each fact at the slots of the value bindings it names, which every edge
   -- into the head establishes.
@@ -390,7 +400,7 @@ private def invariantFact (root : Nat → Option (Nat × List String))
   -- knowledge is its assertion exactly (`checkAssertions`), and two claimed
   -- facts may lower to one atom (a cell's value term stated an integer and
   -- bounded by `2^53 - 1`).
-  let bounds := (bounds ++ linear ++ quantified ++ invariant).eraseDups
+  let bounds := (bounds ++ linear ++ quantified ++ apart ++ invariant).eraseDups
   if !facts.isEmpty || !links.isEmpty || !separation.facts.isEmpty || !bounds.isEmpty then
     recordAssertion reserved ⟨facts, [], links, separation, [], bounds⟩
   recordCut reserved

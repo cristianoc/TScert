@@ -52,11 +52,8 @@ let cell_terms : (string -> bool) ref = ref (fun _ -> false)
 (* The body's parameters held in slots, whose objects are older than its
    cells. Set by the flow around each body. *)
 let parameter_binding : (string -> bool) ref = ref (fun _ -> false)
-(* Whether a binding was declared before every cell the write at hand
-   writes, set by `after_cell_updates`: its object is older than those
-   cells, which Lean's separation at each cut keeps apart from the fields
-   its record names (`Observations.separationFacts`). *)
-let older_than_written : (string -> bool) ref = ref (fun _ -> false)
+(* How many bodies' flows are being solved, a closure's inside its owner's. *)
+let body_depth = ref 0
 (* A path, a length or a typed-array length reads the heap (Lean's
    `Term.envOnly`), as does a term rooted at a cell; a binding's value and
    the length of the string it holds read the environment alone. *)
@@ -216,9 +213,26 @@ let eadd env (es : efact list) =
   List.filter (fun (n,_) -> not (is_efact n)) env @
     List.map (fun e -> efact_key e, Value Semantic.top) (List.sort_uniq compare es)
 
+(* A region fact (Lean's `IndexFact.apart`; FOOTPRINTS.md, "Element
+   regions"): the regions of the arrays two value bindings hold share no
+   location. Held as a pseudo-binding whose name, after `\003R`, names both. *)
+type rfact = string * string
+let rfact_key ((x,y) : rfact) = "\003R" ^ x ^ "\007" ^ y
+let rfact_parts n : rfact option =
+  if String.length n < 2 || String.sub n 0 2 <> "\003R" then None else
+  match String.split_on_char '\007' (String.sub n 2 (String.length n - 2)) with
+  | [x; y] -> Some (x, y)
+  | _ -> None
+let is_rfact n = rfact_parts n <> None
+let rfacts env : rfact list = List.filter_map (fun (n,_) -> rfact_parts n) env
+let radd env (rs : rfact list) =
+  List.filter (fun (n,_) -> not (is_rfact n)) env @
+    List.map (fun r -> rfact_key r, Value Semantic.top) (List.sort_uniq compare rs)
+let rapart (rs : rfact list) x y = List.mem (x,y) rs || List.mem (y,x) rs
+
 let add env (fs : fact list) =
   let fs = tighten fs in
-  List.filter (fun (n,_) -> not (is_fact n) || is_gfact n || is_efact n) env @ List.map (fun (t,b) -> fact_key t b, Value Semantic.top) fs
+  List.filter (fun (n,_) -> not (is_fact n) || is_gfact n || is_efact n || is_rfact n) env @ List.map (fun (t,b) -> fact_key t b, Value Semantic.top) fs
 let gadd env (gs : gfact list) =
   List.filter (fun (n,_) -> not (is_gfact n)) env @
     List.map (fun g -> gfact_key g, Value Semantic.top) (List.sort_uniq compare gs)
@@ -1511,11 +1525,17 @@ let erestate_read name (root,path) (e : efact) : efact option =
    actual, a safe integer the facts give as a linear form, each over `xs`'s
    whole array whose body facts the facts state of `a` at the index
    `xs.length` (`every-push`). *)
-let egrown ~array env fs (es : efact list) (e : expr) : efact list option =
+let egrown ?(regions = []) ~array env fs (es : efact list) (e : expr) : efact list option =
   match e.node with
   | Invoke ({node=Read (r,key);_},args,[],_) when heap_free env r && List.for_all (heap_free env) args &&
       !method_grows env r key ->
     let ch = { obj = false; num = false; store = `Grow; framed = no_frame; apart = false; cell_write = false } in
+    (* The length of an array a region fact keeps apart from the receiver's,
+       whose store cell the growth keeps (Lean's `growFirst`). *)
+    let region_kept n = match r.node with
+      | Id xs -> let b,path,kind = term_parts n in path = [] && kind = Length_term && rapart regions xs b
+      | _ -> false in
+    let term_kept ch n = term_kept ch n || region_kept n in
     let body_kept ((t,_) : fact) =
       List.for_all (fun (n,c) -> n = index_var || n = elem_var || term_kept ch n || (c <= 0 && term_grown ch n)) t in
     let appended (ef : efact) = match r.node, args with
@@ -1535,10 +1555,29 @@ let egrown ~array env fs (es : efact list) (e : expr) : efact list option =
       (term_kept ch ef.stop || appended ef)) es)
   | _ -> None
 
-let estatement ?(array = fun _ _ -> false) ?(facts = []) env (es : efact list) (s : stmt) : efact list =
-  let es = match (match s.statement with Effect e -> egrown ~array env facts es e | _ -> None) with
+(* Whether a term reads, through the heap, nothing of the region of the array
+   `xs` holds: a binding's value, a string's length, or the length of an array
+   a region fact keeps apart from it (Lean's `termApart`). *)
+let term_apart (rs : rfact list) xs t =
+  t = index_var || t = elem_var ||
+  (let b,path,kind = term_parts t in
+   path = [] && (match kind with
+     | Value_term | Str_length_term -> true
+     | Length_term -> rapart rs xs b
+     | View_term -> false))
+
+let estatement ?(array = fun _ _ -> false) ?(facts = []) ?(regions = []) env (es : efact list) (s : stmt) : efact list =
+  let es = match (match s.statement with Effect e -> egrown ~regions ~array env facts es e | _ -> None) with
   | Some es -> es
   | None -> if statement_heap_free env s then es else
+    match s.statement with
+    (* A write at an index of `xs` keeps each quantified fact over an array
+       apart from it whose bound and free terms read nothing of its region
+       (Lean's `writeAtoms`, `every-write`). *)
+    | Effect {node=IndexWrite ({node=Id xs;_},{node=Id _;_},rhs);_} when heap_free env rhs && slot_binding env xs ->
+      List.filter (fun e -> snd e.arr = [] && rapart regions xs (fst e.arr) && term_apart regions xs e.stop &&
+        List.for_all (fun ((t,_) : fact) -> List.for_all (fun (n,_) -> term_apart regions xs n) t) e.body) es
+    | _ ->
     match statement_changes ~facts:[] ~bounds:[] env s with
     | Some ch when ch.store = `Keep && not ch.num ->
       List.filter (fun e -> term_kept ch (length_term ~path:(snd e.arr) (fst e.arr)) &&
@@ -1593,3 +1632,35 @@ let of_every_fact (name : int -> string option) (fact : Semantic.index_fact) : e
        Some { arr = (root,path); stop; body = List.filter_map Fun.id body }
      | _ -> None)
   | _ -> None
+
+(* The region facts a statement keeps and states (Lean's `writeAtoms`,
+   `grownRegions` and `regionAtoms`): each across a statement writing no heap;
+   across `xs.push(a)` of slots, each between two arrays; across `xs[k] = v`, one side `xs` and the other an
+   array apart from it, or both apart from it; none naming a binding the
+   statement assigns. A declaration of an array literal states its binding
+   apart from every older array binding `visible` names, one Lean's scope
+   holds (`region-alloc`). *)
+let rstatement ?(array = fun _ _ -> false) ?(visible = fun _ -> true) env (rs : rfact list) (s : stmt) : rfact list =
+  let rs = if statement_heap_free env s then rs else match s.statement with
+    | Effect {node=IndexWrite ({node=Id xs;_},{node=Id _;_},rhs);_} when heap_free env rhs && slot_binding env xs ->
+      List.filter (fun (x,y) ->
+        if x = xs then y <> xs && rapart rs xs y && array y []
+        else if y = xs then rapart rs xs x && array x []
+        else rapart rs xs x && rapart rs xs y) rs
+    (* A call growing its receiver's store appends cells past the old heap:
+       each fact between two arrays is kept (Lean's `grownRegions`). *)
+    | Effect {node=Invoke ({node=Read (r,key);_},args,[],_);_}
+      when heap_free env r && List.for_all (fun (a:expr) -> match a.node with
+        | Id x -> slot_binding env x | _ -> false) args && !method_grows env r key ->
+      List.filter (fun (x,y) -> array x [] && array y []) rs
+    | _ -> [] in
+  let assigned = names_assigned s env in
+  let rs = List.filter (fun (x,y) -> not (List.mem x assigned) && not (List.mem y assigned)) rs in
+  let fresh = match s.statement with
+    | Declare (_,bindings) -> List.concat_map (fun (n,_,(init:expr)) -> match init.node with
+        | ArrayLiteral (_,[]) -> List.filter_map (fun (m,_) ->
+            if m <> n && visible m && not (is_fact m) && not (is_bound m) && not (is_field m) && slot_binding env m && array m []
+            then Some (n,m) else None) env
+        | _ -> []) bindings
+    | _ -> [] in
+  List.sort_uniq compare (rs @ fresh)

@@ -85,6 +85,9 @@ let guard_bounds (cond:Source.expr) =
   scan [] (false_facts cond)
 let statements callbacks flow_graph register_following owner_span env0 ss =
     let open Flow in
+    (* A closure's body holds its own bindings, not those it captures: only
+       an outermost body's inputs are slots of its unit. *)
+    let outermost = !Linear_facts.body_depth = 0 in
     let spans = List.map (fun (s:Source.stmt) -> s.span) ss in
     let graph = match flow_graph owner_span with
       | Some g -> g
@@ -121,6 +124,7 @@ let statements callbacks flow_graph register_following owner_span env0 ss =
       List.filter (fun (n,_) -> live n || (is_field n && live (owner n)) ||
         (match Linear_facts.gfact_parts n with Some g -> List.for_all live (Linear_facts.gbindings g) | None -> false) ||
         (match Linear_facts.efact_parts n with Some e -> List.for_all live (Linear_facts.ebindings e) | None -> false) ||
+        (match Linear_facts.rfact_parts n with Some (x,y) -> live x && live y | None -> false) ||
         (match bound_parts n with Some (a,i,_) -> live a && live i | None -> false) ||
         (match fact_parts n with Some (t,_) -> List.for_all (fun (x,_) -> live (Linear_facts.term_binding x)) t | None -> false)) env in
     let capture env =
@@ -143,8 +147,10 @@ let statements callbacks flow_graph register_following owner_span env0 ss =
       let joined_bounds=Linear_facts.join_bounds (Linear_facts.bounds left) (Linear_facts.bounds right) in
       let joined_guarded=let r=Linear_facts.gfacts right in List.filter (fun g -> List.mem g r) (Linear_facts.gfacts left) in
       let joined_every=let r=Linear_facts.efacts right in List.filter (fun e -> List.mem e r) (Linear_facts.efacts left) in
+      let joined_regions=let r=Linear_facts.rfacts right in List.filter (fun e -> List.mem e r) (Linear_facts.rfacts left) in
       let left=Linear_facts.strip_bounds (Linear_facts.strip left)
       and right=Linear_facts.strip_bounds (Linear_facts.strip right) in
+      Fun.flip Linear_facts.radd joined_regions @@
       Fun.flip Linear_facts.eadd joined_every @@
       Fun.flip Linear_facts.gadd joined_guarded @@
       Fun.flip Linear_facts.add_bounds joined_bounds @@
@@ -217,6 +223,7 @@ let statements callbacks flow_graph register_following owner_span env0 ss =
       let bounds0 = Linear_facts.bounds env in
       let guarded0 = Linear_facts.gfacts env in
       let every0 = Linear_facts.efacts env in
+      let regions0 = Linear_facts.rfacts env in
       let env = Linear_facts.strip_bounds (Linear_facts.strip env) in
       (* A call stating a precondition is offered the bounds and facts of its
          statement's start: a proposal, which Lean refuses where an earlier
@@ -360,16 +367,17 @@ let statements callbacks flow_graph register_following owner_span env0 ss =
         (* A cell a fact names is one of the body's own (`cell_terms`); an
            early one names none. *)
         let unnamed n = cell n && not (!Linear_facts.cell_terms n) in
-        let with_facts ?(gs=[]) ?(es=[]) (id,state) fs bs =
+        let with_facts ?(gs=[]) ?(es=[]) ?(rs=[]) (id,state) fs bs =
           let fs = Linear_facts.close fs in
           let fs = List.filter (fun ((t,_) : Linear_facts.fact) -> not (List.exists (fun (n,_) -> unnamed (Linear_facts.term_binding n)) t)) fs in
           let gs = List.filter (fun g -> not (List.exists unnamed (Linear_facts.gbindings g))) gs in
           let es = List.filter (fun e -> not (List.exists unnamed (Linear_facts.ebindings e))) es in
+          let rs = List.filter (fun (x,y) -> not (cell x) && not (cell y)) rs in
           let bs = List.filter (fun (a,i,_) -> not (cell a) && not (cell i)) (Linear_facts.bounds state.env @ bs) in
           id,{state with env=scope graph.nodes.(id).scope
-            (Linear_facts.eadd (Linear_facts.gadd (Linear_facts.add_bounds (Linear_facts.add state.env fs) bs) gs) es)} in
+            (Linear_facts.radd (Linear_facts.eadd (Linear_facts.gadd (Linear_facts.add_bounds (Linear_facts.add state.env fs) bs) gs) es) rs)} in
         match node.action, edges with
-        | Flow.Jump _, [e] -> [with_facts ~gs:guarded0 ~es:every0 e facts0 bounds0]
+        | Flow.Jump _, [e] -> [with_facts ~gs:guarded0 ~es:every0 ~rs:regions0 e facts0 bounds0]
         | Flow.Declaration (span,name,initial_source,_,_), [e] when not (List.mem (span,name) early_bindings) ->
           let fs = match (source span).statement with
             | Declare (_,bindings) ->
@@ -383,12 +391,19 @@ let statements callbacks flow_graph register_following owner_span env0 ss =
                | Some (_,_,init) -> Linear_facts.gdeclaration env guarded0 facts0 name init
                | None -> [])
             | _ -> [] in
-          [with_facts ~gs ~es:(Linear_facts.estatement ~array:(callbacks.array_binding env) ~facts:facts0 env every0 (source span)) e fs
+          let declared = let s = source span in match s.statement with
+            | Declare (m,bindings) -> {s with statement=Declare (m,
+                List.filter (fun (b,_,(init:Source.expr)) -> b=name && init.pos=initial_source) bindings)}
+            | _ -> s in
+          let visible m = List.exists (fun (b:Flow.binding) -> b.name=m) node.scope || (outermost && List.mem_assoc m env0) in
+          let rs = Linear_facts.rstatement ~array:(callbacks.array_binding env) ~visible env regions0 declared in
+          [with_facts ~gs ~es:(Linear_facts.estatement ~regions:regions0 env every0 (source span)) ~rs e fs
              (Linear_facts.statement_bounds env bounds0 (source span))]
         | Flow.Statement (span,_), [e] ->
           let s = source span in
           [with_facts ~gs:(Linear_facts.gstatement ~bounds:bounds0 env facts0 guarded0 s)
-            ~es:(Linear_facts.estatement ~array:(callbacks.array_binding env) ~facts:facts0 env every0 s) e
+            ~es:(Linear_facts.estatement ~array:(callbacks.array_binding env) ~facts:facts0 ~regions:regions0 env every0 s)
+            ~rs:(Linear_facts.rstatement ~array:(callbacks.array_binding env) env regions0 s) e
             (Linear_facts.statement ~array:(callbacks.array_binding env) ~bounds:bounds0 env facts0 s)
             (Linear_facts.statement_bounds ~facts:facts0 env bounds0 s)]
         | Flow.IteratorStart (span,b,_), [e] ->
@@ -452,8 +467,9 @@ let statements callbacks flow_graph register_following owner_span env0 ss =
                Linear_facts.geliminate (Linear_facts.excluded env c answer) (gs @ introduced) in
              let ty,gy = guarded true and tn,gn = guarded false in
              let es = if heap_free then every0 else [] in
-             [with_facts ~gs:gy ~es y (reading (facts0 @ t @ ty)) (kept @ bounds bt);
-              with_facts ~gs:gn ~es n (reading (facts0 @ f @ tn)) (kept @ bounds bf)]
+             let rs = if heap_free then regions0 else [] in
+             [with_facts ~gs:gy ~es ~rs y (reading (facts0 @ t @ ty)) (kept @ bounds bt);
+              with_facts ~gs:gn ~es ~rs n (reading (facts0 @ f @ tn)) (kept @ bounds bf)]
            | _ -> edges)
         | _ -> edges in
       let edges=match node.handler with
@@ -477,8 +493,10 @@ let statements callbacks flow_graph register_following owner_span env0 ss =
       not (List.exists (fun (_,m) -> m = n) early_bindings) in
     let saved_parameters = !Linear_facts.parameter_binding in
     let own_parameters n = List.mem_assoc n env0 && not (own_cells n) in
+    let saved_depth = !Linear_facts.body_depth in
     let states=Fun.protect ~finally:(fun () -> Linear_facts.cell_terms := saved_cells;
-        Linear_facts.parameter_binding := saved_parameters) @@ fun () ->
+        Linear_facts.parameter_binding := saved_parameters; Linear_facts.body_depth := saved_depth) @@ fun () ->
+      Linear_facts.body_depth := saved_depth + 1;
       Linear_facts.cell_terms := own_cells;
       Linear_facts.parameter_binding := own_parameters;
       Flow.solve ~join ~transfer
@@ -492,7 +510,9 @@ let statements callbacks flow_graph register_following owner_span env0 ss =
           List.filter (fun g -> List.mem g p) (Linear_facts.gfacts state.env) in
         let kept_every=let p=Linear_facts.efacts previous.env in
           List.filter (fun e -> List.mem e p) (Linear_facts.efacts state.env) in
-        {state with env=Fun.flip Linear_facts.eadd kept_every @@ Fun.flip Linear_facts.gadd kept_guarded @@ Fun.flip Linear_facts.add_bounds kept_bounds @@
+        let kept_regions=let p=Linear_facts.rfacts previous.env in
+          List.filter (fun e -> List.mem e p) (Linear_facts.rfacts state.env) in
+        {state with env=Fun.flip Linear_facts.radd kept_regions @@ Fun.flip Linear_facts.eadd kept_every @@ Fun.flip Linear_facts.gadd kept_guarded @@ Fun.flip Linear_facts.add_bounds kept_bounds @@
           Linear_facts.add (List.map (fun (n,b) -> match b with
           | Local (contract,_) when not (settled n b) -> n,Local (contract,callbacks.widen_slot contract)
           | _ -> n,b) (forget (Linear_facts.strip_bounds (Linear_facts.strip state.env)))) kept}) graph (capture env0) in

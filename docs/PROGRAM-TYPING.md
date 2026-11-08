@@ -2821,8 +2821,11 @@ so `itemSegments[index]!` under `forall i in itemSegments: safeInteger(itemSegme
 states its value a safe integer between $`0`$ and $`|\mathit{data}.\mathit{widths}|`$.
 
 **Frame conditions.** A quantified fact and an element fact read the heap: a
-step leaving the heap unchanged preserves them, and a heap change other than
-a growth of a receiver's store preserves neither, a stated limit. On an edge a target quantified fact follows from a
+step leaving the heap unchanged preserves them; a growth of a receiver's
+store preserves a quantified fact as below, and a write at a checked index
+one over an array whose [element region](FOOTPRINTS.md#element-regions) is
+apart from the written one (`every-write`); any other heap change preserves
+neither, a stated limit. On an edge a target quantified fact follows from a
 source one whose root slot the edge maps it to, of the same path, whose bound
 and each body fact the target's follow term by term (proved), and a target
 element fact from the same one renamed. A read of field $`f`$ from slot

@@ -563,6 +563,10 @@ theorem ensuresCall_reassign (j : Sequent ι) (k : HeapKnowledge.Knowledge) (e :
     rw [checkTree_reassign G η images p codes sums, requiresTree_reassign]
   · rfl
 
+omit [DecidableEq ι] in
+theorem grownRegions_reassign (Γ : List (List ι)) (k : HeapKnowledge.Knowledge) (t : Tm) :
+    IndexWrites.grownRegions (reassign G η) Γ k t = IndexWrites.grownRegions G Γ k t := rfl
+
 theorem ensuringCalls_value_reassign (j : Sequent ι) (k : HeapKnowledge.Knowledge)
     (e : StepEvidence ι) (codes : CodeEntry ι → Bool) (sums : List (ReadSummary ι)) :
     ((Checker.steps (reassign G η) (images.reassign η)).keepingCalls.keepingOwnCalls.allocatingCalls.requiringCalls.elementCalls.ensuringCalls.run
@@ -571,7 +575,7 @@ theorem ensuringCalls_value_reassign (j : Sequent ι) (k : HeapKnowledge.Knowled
         j k e codes sums).value := by
   simp only [Checker.ensuringCalls, ensuresCall_reassign]
   split
-  · simp only [CheckResult.map]
+  · simp only [CheckResult.map, grownRegions_reassign]
     rw [elementCalls_value_reassign]
   · exact elementCalls_value_reassign G η images j k e codes sums
 
@@ -608,6 +612,10 @@ theorem boundedWriteCheck_reassign (j : Sequent ι) (k : HeapKnowledge.Knowledge
 theorem keepsLengths_reassign (j : Sequent ι) (k : HeapKnowledge.Knowledge) (a i : Nat) :
     IndexWrites.keepsLengths (reassign G η) j k a i = IndexWrites.keepsLengths G j k a i := rfl
 
+omit [DecidableEq ι] in
+theorem writeAtoms_reassign (Γ : List (List ι)) (k : HeapKnowledge.Knowledge) (a : Nat) :
+    IndexWrites.writeAtoms (reassign G η) Γ k a = IndexWrites.writeAtoms G Γ k a := rfl
+
 theorem boundedWrites_value_reassign (j : Sequent ι) (k : HeapKnowledge.Knowledge)
     (e : StepEvidence ι) (codes : CodeEntry ι → Bool) (sums : List (ReadSummary ι)) :
     ((Checker.steps (reassign G η) (images.reassign η)).keepingCalls.keepingOwnCalls.allocatingCalls.requiringCalls.elementCalls.ensuringCalls.negatingSlots.indexing.boundedWrites.run
@@ -616,7 +624,7 @@ theorem boundedWrites_value_reassign (j : Sequent ι) (k : HeapKnowledge.Knowled
         j k e codes sums).value := by
   simp only [Checker.boundedWrites]
   split
-  · rw [boundedWriteCheck_reassign, keepsLengths_reassign]
+  · rw [boundedWriteCheck_reassign, keepsLengths_reassign, writeAtoms_reassign]
   · exact indexing_value_reassign G η images j k e codes sums
 
 theorem checkNode_reassign (Rty : ControlFlow.Goal ι) (P : Program) (C : ControlFlow.Certificate ι) (node : Node)

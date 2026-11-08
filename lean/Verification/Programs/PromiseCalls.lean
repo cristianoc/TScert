@@ -1841,7 +1841,8 @@ every object and number: each field of a slot a separation fact keeps apart
 from every own location of `i`. -/
 def growFirst (k : HeapKnowledge.Knowledge) (t : Tm) : Nat → String → Bool :=
   match receiverSlot t with
-  | some i => fun s g => HeapSeparation.apartAll k.separation i s (.str g)
+  | some i => fun s g => HeapSeparation.apartAll k.separation i s (.str g) ||
+      (g == "[]" && IndexWrites.apartFrom k i s)
   | none => fun _ _ => false
 
 theorem growFirst_kept {k : HeapKnowledge.Knowledge} {t : Tm} {ρ : Env} {h h' : Heap}
@@ -1852,11 +1853,21 @@ theorem growFirst_kept {k : HeapKnowledge.Knowledge} {t : Tm} {ρ : Env} {h h' :
   cases hi : receiverSlot t with
   | none => simp [growFirst, hi] at hf
   | some i =>
-    simp only [growFirst, hi] at hf
+    simp only [growFirst, hi, Bool.or_eq_true, Bool.and_eq_true, beq_iff_eq] at hf
     obtain ⟨f, args, rfl⟩ := receiverSlot_term hi
     rcases hg l v hv with hk' | ⟨hst, -⟩
     · exact hk'
     · simp only [ExpressionEffects.receiverOf, instantiate, Nat.not_lt_zero, if_false, Nat.sub_zero] at hst
+      rcases hf with hf | ⟨rfl, hf⟩
+      case inr =>
+        -- A region fact keeps the receiver's store cell apart from the
+        -- store cell of the slot's array.
+        obtain ⟨sa, xs, sb, ys, hra, hrb, hsep⟩ := IndexWrites.apartFrom_sound hf hk
+        have hss : Footprints.storeOf (ρ s) = some l := by
+          simpa [hs, Footprints.storeOf, Footprints.fieldsOf, arrayStoreKey] using hl
+        rw [HeapKnowledge.regionOf_store hra hst] at hsep
+        rw [HeapKnowledge.regionOf_store hrb hss] at hsep
+        exact absurd rfl (hsep l (.inl rfl) l (.inl rfl))
       have hat : HeapSeparation.At none (ρ i) l := by
         cases hr : ρ i with
         | objAt flds' c' o' =>
@@ -2145,6 +2156,24 @@ theorem withEnsures_holds {eff : Effect} {t : Tm} {k0 k : HeapKnowledge.Knowledg
         · exact ensuresAtoms_holds hp a ha hc
       · exact effectKept_holds hk0 hw (fun hgr => (hg hgr).1) a ha hc
     · exact appendKept_holds hk0 hg a ha hc⟩
+
+/-- Knowledge with the region facts a call growing its receiver's store keeps
+(`IndexWrites.grownRegions`) added, renamed past the result; none of a call
+growing nothing. -/
+def withGrown (eff : Effect) (out : HeapKnowledge.Knowledge) (kept : List HeapKnowledge.IndexAtom) :
+    HeapKnowledge.Knowledge :=
+  if eff.receiverGrows then { out with indices := out.indices ++ HeapKnowledge.shiftIndices kept } else out
+
+theorem withGrown_holds {eff : Effect} {out : HeapKnowledge.Knowledge} {kept : List HeapKnowledge.IndexAtom}
+    {ρ : Env} {h' : Heap} {v : Tm} (ho : HeapKnowledge.Holds out (push v ρ) h')
+    (hk : eff.receiverGrows = true → HeapKnowledge.IndexHolds kept ρ h') :
+    HeapKnowledge.Holds (withGrown eff out kept) (push v ρ) h' := by
+  unfold withGrown
+  split
+  · rename_i hg
+    exact ⟨ho.1, ho.2.1, ho.2.2.1, ho.2.2.2.1, ho.2.2.2.2.1,
+      IndexWrites.indexHolds_cat ho.2.2.2.2.2 (HeapKnowledge.shiftIndices_holds (hk hg))⟩
+  · exact ho
 
 /-- The selected signature of an ordinary step's evidence that `call-ensures`
 applies to: at the sequent `j`, a call checked as `selected_sound` or as
@@ -2524,11 +2553,13 @@ other step is `base`'s. -/
     (base : Checker G images) : Checker G images where
   run := fun j k e codes sums =>
     match PromiseCalls.ensuresCall G images j k e codes sums with
-    | some eff => (base.run j k e codes sums).map (PromiseCalls.withEnsures eff j.term k)
+    | some eff => (base.run j k e codes sums).map fun out => PromiseCalls.withGrown eff
+        (PromiseCalls.withEnsures eff j.term k out) (IndexWrites.grownRegions G j.context k j.term)
     | none => base.run j k e codes sums
   select := fun j k e codes sums =>
     match PromiseCalls.ensuresCall G images j k e codes sums with
-    | some eff => (base.select j k e codes sums).map (PromiseCalls.withEnsures eff j.term k)
+    | some eff => (base.select j k e codes sums).map fun out => PromiseCalls.withGrown eff
+        (PromiseCalls.withEnsures eff j.term k out) (IndexWrites.grownRegions G j.context k j.term)
     | none => base.select j k e codes sums
   sound := by
     intro j k e out codes sums hc hcodes hsums ρ n W h he hk hw hh
@@ -2536,11 +2567,15 @@ other step is `base`'s. -/
     · rename_i eff hens
       simp only [CheckResult.map, Option.map_eq_some_iff] at hc
       obtain ⟨out0, hrun, rfl⟩ := hc
+      cases n with
+      | zero => trivial
+      | succ n =>
       have hs := base.sound hrun hcodes hsums he hk hw hh
       have hp := PromiseCalls.ensuresCall_sound hens hcodes hsums he hk hw hh
-      exact HeapObservations.weaken (fun h' v hq =>
-        PromiseCalls.withEnsures_holds hq.1 hk hq.2.1 hq.2.2.2.2.2.1 hq.2.2.2.2.2.2.1 hq.2.2.2.2.2.2.2)
-        (HeapObservations.cross_upto n (fun _ _ _ _ _ _ _ _ hb _ => hb) W W h _ hh hh hs hp)
+      exact HeapObservations.weaken (fun h' v hq => PromiseCalls.withGrown_holds
+        (PromiseCalls.withEnsures_holds hq.1 hk hq.2.1 hq.2.2.2.2.2.1 hq.2.2.2.2.2.2)
+        (fun hgr => IndexWrites.grownRegions_holds he hh hk (hq.2.2.2.2.2.2 hgr).1 (hq.2.2.2.2.2.2 hgr).2))
+        (HeapObservations.cross_upto (n + 1) (fun _ _ _ _ _ _ _ _ hb _ => hb) W W h _ hh hh hs hp)
     · exact base.sound hc hcodes hsums he hk hw hh
 
 /-- The steps' rules, a call keeping the heap keeping every heap fact, a call

@@ -171,6 +171,13 @@ structure Quantified where
   stop : TermRef
   body : List BodyFact
   deriving ToJson, FromJson
+/-- A region fact the producer proposes at a statement entry: the regions of
+the arrays the value bindings `name` and `other` hold share no location
+(FOOTPRINTS.md, "Element regions"). -/
+structure Apart where
+  name : String
+  other : String
+  deriving ToJson, FromJson
 structure Entry (ι : Type) where
   point : String
   start : Nat
@@ -178,6 +185,7 @@ structure Entry (ι : Type) where
   bounds : List Bound
   facts : List Fact
   quantified : List Quantified
+  apart : List Apart
   deriving ToJson, FromJson
 /-- The type arguments one call supplies for a scheme's binders. It is the
 producer's proposed elimination, re-checked here; it is never itself evidence. -/
@@ -306,6 +314,7 @@ private def pointData (entries : List (Entry ι)) (expressions : List (Expressio
           | .index => .index
           | .elem => .elem
           | .term r => .term r.name r.path r.term : SourceClaims.BodyRef), c), b.bound))))
+    entryApart := entries.map (fun e => (e.start, e.apart.map fun r => (r.name, r.other)))
     -- An expression's assertion is of one field each (`validCurrent`).
     exprCurrent := expressions.filterMap (fun e => e.current.map fun fs =>
       (e.pos, fs.filterMap fun (p, A) => match p with | [k] => some (k, A) | _ => none)) }
@@ -325,6 +334,7 @@ def Function.normalized (f : Function ι) : SourceClaims.Function ι :=
     entryCurrent := sites.entryCurrent, exprCurrent := sites.exprCurrent, entryBounds := sites.entryBounds
     entryFacts := sites.entryFacts
     entryEvery := sites.entryEvery
+    entryApart := sites.entryApart
     points := pointTable f.entries f.expressions, contracts := storageContracts f.contracts
     footprint := f.footprint
     onThrow := f.onThrow

@@ -631,6 +631,11 @@ let encode (proposal : Proposal_types.t) =
                     else Object ["term",Object ["ref",term_ref v]]); Number (string_of_int c)]) t);
           "bound",Number (string_of_int d)]) e.Linear_facts.body)])
     | _ -> None) bs) in
+  (* A region fact (`Linear_facts.rfact_key`, FOOTPRINTS.md, "Element
+     regions"): the two bindings whose arrays' regions share no location. *)
+  let apart bs = Array (List.filter_map (fun (n,_) -> match Linear_facts.rfact_parts n with
+    | Some (x,y) -> Some (Object ["name",String x;"other",String y])
+    | None -> None) bs) in
   let contracts row = Array (List.map (fun (c : Proposal_types.contract) ->
     Object ["pos",c.pos;"name",String c.name;"type",claim_type c.type_]) row) in
   let interior (f : Proposal_types.function_claim) =
@@ -640,7 +645,7 @@ let encode (proposal : Proposal_types.t) =
     let entries es = Array (List.map (fun (e : Proposal_types.entry) ->
       Object ["point",String e.point; "start",e.start;"bindings",bindings e.bindings;
               "bounds",bounds e.bindings; "facts",facts e.bindings;
-              "quantified",quantified e.bindings]) es) in
+              "quantified",quantified e.bindings; "apart",apart e.bindings]) es) in
     let arrows = if f.arrows = [] then [] else
       ["arrows",Array (List.map (fun (pos,rows) ->
         Object ["pos",pos;"rows",Array (List.map (fun (o : Proposal_types.overlay) ->
@@ -657,7 +662,7 @@ let encode (proposal : Proposal_types.t) =
     let entries es = Array (List.map (fun (e : Proposal_types.entry) ->
       Object ["point",String e.point; "start",e.start;"bindings",bindings e.bindings;
               "bounds",bounds e.bindings; "facts",facts e.bindings;
-              "quantified",quantified e.bindings]) es) in
+              "quantified",quantified e.bindings; "apart",apart e.bindings]) es) in
     let arrows = if f.arrows = [] then [] else
       ["arrows",Array (List.map (fun (pos,rows) ->
         Object ["pos",pos;"rows",Array (List.map (fun (o : Proposal_types.overlay) ->

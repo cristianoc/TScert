@@ -145,6 +145,14 @@ interface QuantifiedClaim {
   body: { terms: [BodyVariableClaim, number][]; bound: number }[];
 }
 
+/** A region fact proposed at a statement entry (FOOTPRINTS.md, "Element
+ * regions"): the regions of the arrays the value bindings `name` and `other`
+ * hold share no location. */
+interface ApartClaim {
+  name: string;
+  other: string;
+}
+
 /** The environment at one shared control-flow point, with source provenance. */
 interface EntryClaim<L = Label> {
   point: string;
@@ -153,6 +161,7 @@ interface EntryClaim<L = Label> {
   bounds: BoundClaim[];
   facts: LinearClaim[];
   quantified: QuantifiedClaim[];
+  apart: ApartClaim[];
 }
 
 /** The type arguments one call supplies for a scheme's binders. It records the
@@ -357,7 +366,7 @@ function claimsDocument(v: JsonRead): SourceClaims {
     return { name: name(r.name, "a point's name"), type: claimType(r.type), current: current(r.current) };
   };
   const entry = (x: JsonRead): EntryClaim => {
-    const r = record(x, "an entry", ["point", "start", "bindings", "bounds", "facts", "quantified"]);
+    const r = record(x, "an entry", ["point", "start", "bindings", "bounds", "facts", "quantified", "apart"]);
     const integer = (v: JsonRead, what: string): number => {
       if (typeof v !== "number" || !Number.isSafeInteger(v)) fail(`${what} is a safe integer`);
       return v;
@@ -417,6 +426,10 @@ function claimsDocument(v: JsonRead): SourceClaims {
               return [variable, integer(t[1], "a body term's coefficient")];
             }), bound: integer(r.bound, "a body fact's bound") };
           }) };
+      }),
+      apart: each(r.apart, "an entry's region facts", (f) => {
+        const q = record(f, "a region fact", ["name", "other"]);
+        return { name: name(q.name, "a region fact's binding"), other: name(q.other, "a region fact's other binding") };
       }) };
   };
   const certificate = (x: JsonRead): ResolutionCertificate => {

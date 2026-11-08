@@ -421,6 +421,40 @@ control(async (): Promise<void> => {
 });
 
 control(async (): Promise<void> => {
+  // A region fact claimed between aliases (FOOTPRINTS.md, "Element regions"):
+  // in `invalid-quantified-element-read-alias-write`, `alias` holds `ends`'s
+  // array; at every entry from the one after `const alias = ends` to the
+  // return, `alias` claimed apart from `ends` and `widths`, the quantified
+  // fact over `ends` carried, and the outer read claimed at `number`. No
+  // allocation states the fact: it is refused at the first entry claiming it.
+  type Entry = SourceClaims["functions"][number]["entries"][number];
+  type Quantified = Entry["quantified"][number];
+  const strict: Quantified = { name: "ends", path: [], stop: { name: "ends", path: [], term: "length" },
+    body: [{ terms: [["elem", 1]], bound: 9007199254740991 }, { terms: [["elem", -1]], bound: 0 },
+      { terms: [["elem", 1], [{ term: { ref: { name: "widths", path: [], term: "length" } } }, -1]], bound: -1 }] };
+  const artifacts = run("invalid-quantified-element-read-alias-write");
+  const source = readFileSync(sourceKey(artifacts), "utf8");
+  const fnStart = source.indexOf("export function widthAfterWrite");
+  const read = "widths[ends[k]!]";
+  const readAt = source.indexOf(read, fnStart);
+  const at = source.indexOf("if (k < alias.length)", fnStart);
+  const claims = readClaims(artifacts);
+  const fn = must(claims.functions.find(f => f.name === "widthAfterWrite"), "widthAfterWrite's claims");
+  must(fn.expressions.find(e => e.pos[0] === readAt && e.pos[1] === readAt + read.length), "the read").type =
+    [rowOf(claims, "num")];
+  must(fn.entries.find(e => e.start === at), "the entry after the alias");
+  for (const e of fn.entries) if (e.start >= at) {
+    e.apart.push({ name: "alias", other: "ends" }, { name: "alias", other: "widths" });
+    if (e.quantified.length === 0) e.quantified.push(strict);
+  }
+  const forged = writeClaims(artifacts, "region-forged-alias", claims);
+  const searched = produceWith(artifacts, forged, "region-forged-alias");
+  assert.equal(searched.status, 1, `${searched.stdout}${searched.stderr}`);
+  assert.match(searched.stdout + searched.stderr, new RegExp(`edge obligation at \\[${at},[^\\n]*does not establish the claims`));
+  process.stdout.write("region facts: aliases claimed apart before a write through one refused at the entry claiming it\n");
+});
+
+control(async (): Promise<void> => {
   // every-empty must establish zero length; a non-empty literal supplies no such proof.
   const artifacts = run("invalid-quantified-empty");
   const source = readFileSync(sourceKey(artifacts), "utf8");

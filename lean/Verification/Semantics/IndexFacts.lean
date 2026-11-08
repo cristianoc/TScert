@@ -527,14 +527,6 @@ def ElementsBelow (b : Nat) (ls : List (Option Nat)) : Prop :=
 def ElementsAbove (b : Nat) (ls : List (Option Nat)) : Prop :=
   ∀ l, some l ∈ ls → b ≤ l
 
-/-- Two store views share no element cell. Store-cell separation is a
-separate obligation (FOOTPRINTS.md, "Fresh array storage"). -/
-def ElementsApart (xs ys : List (Option Nat)) : Prop :=
-  ∀ l, some l ∈ xs → ∀ m, some m ∈ ys → l ≠ m
-
-theorem elementsApart_symm {xs ys} (h : ElementsApart xs ys) : ElementsApart ys xs :=
-  fun l hl m hm he => h m hm l hl he.symm
-
 /-- Allocation reserves distinct cells, all past the old heap's end.
 This is exactly the list returned by `Step.arrAlloc`. -/
 theorem elemSlots_above (base n : Nat) : ElementsAbove base (elemSlots base n) := by
@@ -542,37 +534,6 @@ theorem elemSlots_above (base n : Nat) : ElementsAbove base (elemSlots base n) :
   obtain ⟨i, _, hi⟩ := List.mem_map.mp hl
   simp only [Option.some.injEq] at hi
   omega
-
-theorem elemSlots_distinct (base n : Nat) : (elemSlots base n).Nodup := by
-  unfold elemSlots List.Nodup
-  apply List.pairwise_map.mpr
-  exact (List.nodup_range (n := n)).imp (fun {i j} hij he => by
-    have : base + i = base + j := Option.some.inj he
-    exact hij (by omega))
-
-/-- Existing element cells and a fresh allocation are apart. No ownership
-condition is imposed on the old store: its cells may repeat. -/
-theorem elementsApart_fresh {b xs ys} (hx : ElementsBelow b xs) (hy : ElementsAbove b ys) :
-    ElementsApart xs ys := by
-  intro l hl m hm
-  have := hx l hl
-  have := hy m hm
-  omega
-
-theorem elementsApart_alloc {h : Heap} {xs : List (Option Nat)}
-    (hx : ElementsBelow h.length xs) (vs : List Val) :
-    ElementsApart xs (elemSlots h.length vs.length) :=
-  elementsApart_fresh hx (elemSlots_above _ _)
-
-/-- The literal-allocation transition reserves fresh, pairwise distinct
-cells, apart from every listed cell already allocated in the input heap. -/
-theorem arrAlloc_fresh {h : Heap} {vs : List Val}
-    (hv : ∀ v ∈ vs, isVal v = true) (hn : vs.length ≤ maxArrayLength) :
-    Step h (.arrLit vs) (h ++ vs) (.arr (elemSlots h.length vs.length)) ∧
-    ElementsAbove h.length (elemSlots h.length vs.length) ∧
-    (elemSlots h.length vs.length).Nodup ∧
-    ∀ xs, ElementsBelow h.length xs → ElementsApart xs (elemSlots h.length vs.length) :=
-  ⟨.arrAlloc hv hn, elemSlots_above _ _, elemSlots_distinct _ _, fun _ hx => elementsApart_alloc hx vs⟩
 
 /-- A defined element remains defined with the same integer whenever the
 location it reads keeps its contents. -/
@@ -594,6 +555,53 @@ def boundValue (ρ : Env) (h : Heap) (ls : List (Option Nat)) (i : Nat) : Bound 
   | .elem => elementInt h ls i
   | .free t => termValue ρ h t
 
+/-- The region of a value (FOOTPRINTS.md, "Element regions"): a raw store
+lists its element cells and has no store cell; an array object has its store
+field's location and the cells the store there lists. -/
+def RegionOf (h : Heap) (v : Val) (store : Option Nat) (cells : List (Option Nat)) : Prop :=
+  (store = none ∧ v = .arr cells) ∨
+    ∃ st, store = some st ∧ Footprints.storeOf v = some st ∧ h[st]? = some (.arr cells)
+
+/-- A location of a region: its store cell or a listed element cell. -/
+def InRegion (store : Option Nat) (cells : List (Option Nat)) (l : Nat) : Prop :=
+  store = some l ∨ some l ∈ cells
+
+/-- Two values' regions share no location. -/
+def RegionsApart (h : Heap) (u v : Val) : Prop :=
+  ∃ sa xs sb ys, RegionOf h u sa xs ∧ RegionOf h v sb ys ∧
+    ∀ l, InRegion sa xs l → ∀ m, InRegion sb ys m → l ≠ m
+
+theorem regionOf_extend {h : Heap} {v : Val} {s xs} (vs : List Val) (hr : RegionOf h v s xs) :
+    RegionOf (h ++ vs) v s xs := by
+  rcases hr with hr | ⟨st, hs, hst, hx⟩
+  · exact .inl hr
+  · exact .inr ⟨st, hs, hst, by rw [List.getElem?_append_left (List.getElem?_eq_some_iff.mp hx).1]; exact hx⟩
+
+theorem regionsApart_extend {h : Heap} {u v : Val} (vs : List Val) (ha : RegionsApart h u v) :
+    RegionsApart (h ++ vs) u v := by
+  obtain ⟨sa, xs, sb, ys, hx, hy, hab⟩ := ha
+  exact ⟨sa, xs, sb, ys, regionOf_extend vs hx, regionOf_extend vs hy, hab⟩
+
+theorem regionsApart_symm {h : Heap} {u v : Val} (ha : RegionsApart h u v) : RegionsApart h v u := by
+  obtain ⟨sa, xs, sb, ys, hx, hy, hab⟩ := ha
+  exact ⟨sb, ys, sa, xs, hy, hx, fun l hl m hm he => hab m hm l hl he.symm⟩
+
+/-- An array object's region has its store cell. -/
+theorem regionOf_store {h : Heap} {v : Val} {s xs l} (hr : RegionOf h v s xs)
+    (hs : Footprints.storeOf v = some l) : s = some l := by
+  rcases hr with ⟨-, rfl⟩ | ⟨st, rfl, hst, -⟩
+  · simp [Footprints.storeOf, Footprints.fieldsOf] at hs
+  · rw [hst] at hs; exact hs
+
+/-- A region's value determines it, in a given heap. -/
+theorem regionOf_unique {h : Heap} {v : Val} {s s' xs xs'} (hr : RegionOf h v s xs) (hr' : RegionOf h v s' xs') :
+    s = s' ∧ xs = xs' := by
+  rcases hr with ⟨rfl, rfl⟩ | ⟨st, rfl, hst, hx⟩ <;> rcases hr' with ⟨rfl, he⟩ | ⟨st', rfl, hst', hx'⟩
+  · cases he; exact ⟨rfl, rfl⟩
+  · simp [Footprints.storeOf, Footprints.fieldsOf] at hst'
+  · subst he; simp [Footprints.storeOf, Footprints.fieldsOf] at hst
+  · rw [hst] at hst'; cases hst'; rw [hx] at hx'; cases hx'; exact ⟨rfl, rfl⟩
+
 /-- An index fact (DESIGN of the guarded write, PROGRAM-TYPING.md, "Writes at
 a checked index"): the slot `k` holds a number that is an array index
 (`index`); the slot `n` holds the length of the store the array in slot `x`
@@ -611,7 +619,10 @@ the slot `index` holds, below its length: the present element's value, or
 `undefined` at a hole. A quantified fact (`every`) states, of the array the
 path `path` reads from the slot `slot`, that for every index `i` with
 `0 ≤ i < stop` each fact of its body holds, its variables the index, the
-element at it (a present safe integer) and terms, each denoting an integer. -/
+element at it (a present safe integer) and terms, each denoting an integer.
+A region fact (`apart`, FOOTPRINTS.md, "Element regions") states that the
+regions of the values in slots `slot` and `other` share no location
+(`RegionsApart`). -/
 inductive IndexFact where
   | index (slot : Nat)
   | length (array length : Nat)
@@ -621,6 +632,7 @@ inductive IndexFact where
   | guarded (slot : Nat) (path : List String) (tag : GuardTag) (body : IndexFact)
   | element (value array index : Nat)
   | every (slot : Nat) (path : List String) (stop : Term) (body : List (Linear.Fact Bound))
+  | apart (slot other : Nat)
   deriving DecidableEq, Repr, Hashable
 
 namespace IndexFact
@@ -635,6 +647,7 @@ def slots : IndexFact → List Nat
   | .guarded s _ _ B => s :: B.slots
   | .element v x k => [v, x, k]
   | .every s _ stop body => s :: stop.slot :: body.flatMap fun F => F.vars.flatMap Bound.slots
+  | .apart a b => [a, b]
 
 /-- A quantified fact's body with each term's slot renamed, where the map
 names every one. -/
@@ -679,6 +692,7 @@ def mapM (f : Nat → Option Nat) : IndexFact → Option IndexFact
   | .element v x k => do pure (.element (← f v) (← f x) (← f k))
   | .every s p stop body => do
     pure (.every (← f s) p (← stop.mapM f) (← mapBody f body))
+  | .apart a b => do pure (.apart (← f a) (← f b))
 
 /-- The fact with each slot renamed. -/
 def map (f : Nat → Nat) (F : IndexFact) : IndexFact := (F.mapM (some ∘ f)).getD F
@@ -698,6 +712,7 @@ def HoldsAt : IndexFact → Env → Heap → Prop
   | .every s p stop body, ρ, h => ∃ w st ls n, readPath h (ρ s) p = some w ∧ elementsOf w = some st ∧
       h[st]? = some (.arr ls) ∧ termValue ρ h stop = some n ∧
       ∀ i : Nat, (i : Int) < n → ∀ F ∈ body, FactAt (boundValue ρ h ls i) F
+  | .apart a b, ρ, h => RegionsApart h (ρ a) (ρ b)
 
 /-- A quantified clause is framed by its array path, store view, bound,
 element reads and every free body term. The premises name the actual
@@ -724,106 +739,14 @@ theorem every_frame {s p stop body ρ h h'}
   | elem => exact hv w st ls i a hw hst hls ha
   | free t => exact hf F hF t hx a ha
 
-/-- The two updates of a present element write preserve a clause on an
-apart store view. The path, bound and free terms are framed across both
-updates. Element separation is an explicit proved premise. -/
-theorem every_apart_write {s p stop body ρ h w st ys xs target cell value}
-    (he : (IndexFact.every s p stop body).HoldsAt ρ h)
-    (hp : readPath h (ρ s) p = some w) (hst : Footprints.storeOf w = some st)
-    (hys : h[st]? = some (.arr ys)) (hxs : h[target]? = some (.arr xs))
-    (hstores : st ≠ target) (hcell : some cell ∈ xs) (hstorecell : st ≠ cell)
-    (ha : ElementsApart ys xs)
-    (hpath : ∀ u, readPath h (ρ s) p = some u →
-      readPath ((h.set cell value).set target (.arr xs)) (ρ s) p = some u)
-    (hstop : ∀ z, termValue ρ h stop = some z →
-      termValue ρ ((h.set cell value).set target (.arr xs)) stop = some z)
-    (hfree : ∀ F ∈ body, ∀ t, Bound.free t ∈ F.vars → ∀ z,
-      termValue ρ h t = some z →
-      termValue ρ ((h.set cell value).set target (.arr xs)) t = some z) :
-    (IndexFact.every s p stop body).HoldsAt ρ ((h.set cell value).set target (.arr xs)) := by
-  apply every_frame he hpath _ hstop _ hfree
-  · intro u st' ls hu hs hl
-    have : u = w := Option.some.inj (hu.symm.trans hp)
-    subst u
-    have : st' = st := Option.some.inj (hs.symm.trans hst)
-    subst st'
-    rw [List.getElem?_set_ne hstores.symm, List.getElem?_set_ne hstorecell.symm]
-    exact hl
-  · intro u st' ls i z hu hs hl hz
-    have : u = w := Option.some.inj (hu.symm.trans hp)
-    subst u
-    have : st' = st := Option.some.inj (hs.symm.trans hst)
-    subst st'
-    have : ls = ys := by cases hl.symm.trans hys; rfl
-    subst ls
-    apply elementInt_frame hz
-    intro l v hli hv
-    have hmem : some l ∈ ys := List.mem_of_getElem? hli
-    have hne : l ≠ cell := ha l hmem cell hcell
-    have hnum : ∃ b, v = .num b := by
-      simp only [elementInt, hli, hv, Option.bind_some] at hz
-      obtain ⟨b, hb, _⟩ := intValue_safe hz
-      exact ⟨b, hb⟩
-    have hnt : l ≠ target := by
-      intro eq
-      subst l
-      obtain ⟨b, rfl⟩ := hnum
-      rw [hxs] at hv
-      cases hv
-    rw [List.getElem?_set_ne hnt.symm, List.getElem?_set_ne hne.symm]
-    exact hv
-
-/-- Filling a hole allocates one fresh cell. An apart store and every
-numeric element it previously read survive the allocation and store update.
-The bound and free terms require their own frame proofs. -/
-theorem every_apart_fill {s p stop body ρ h w st ys target updated value}
-    (he : (IndexFact.every s p stop body).HoldsAt ρ h)
-    (hp : readPath h (ρ s) p = some w) (hst : Footprints.storeOf w = some st)
-    (hys : h[st]? = some (.arr ys))
-    (htarget : ∃ xs, h[target]? = some (.arr xs)) (hstores : st ≠ target)
-    (hpath : ∀ u, readPath h (ρ s) p = some u →
-      readPath ((h ++ [value]).set target (.arr updated)) (ρ s) p = some u)
-    (hstop : ∀ z, termValue ρ h stop = some z →
-      termValue ρ ((h ++ [value]).set target (.arr updated)) stop = some z)
-    (hfree : ∀ F ∈ body, ∀ t, Bound.free t ∈ F.vars → ∀ z,
-      termValue ρ h t = some z →
-      termValue ρ ((h ++ [value]).set target (.arr updated)) t = some z) :
-    (IndexFact.every s p stop body).HoldsAt ρ ((h ++ [value]).set target (.arr updated)) := by
-  apply every_frame he hpath _ hstop _ hfree
-  · intro u st' ls hu hs hl
-    have : u = w := Option.some.inj (hu.symm.trans hp)
-    subst u
-    have : st' = st := Option.some.inj (hs.symm.trans hst)
-    subst st'
-    rw [List.getElem?_set_ne hstores.symm,
-      List.getElem?_append_left (List.getElem?_eq_some_iff.mp hys).1]
-    exact hl
-  · intro u st' ls i z hu hs hl hz
-    have : u = w := Option.some.inj (hu.symm.trans hp)
-    subst u
-    have : st' = st := Option.some.inj (hs.symm.trans hst)
-    subst st'
-    apply elementInt_frame hz
-    intro l v hli hv
-    have hnum : ∃ b, v = .num b := by
-      simp only [elementInt, hli, hv, Option.bind_some] at hz
-      obtain ⟨b, hb, _⟩ := intValue_safe hz
-      exact ⟨b, hb⟩
-    have hnt : l ≠ target := by
-      intro eq
-      subst l
-      obtain ⟨b, rfl⟩ := hnum
-      obtain ⟨xs, hxs⟩ := htarget
-      rw [hxs] at hv
-      cases hv
-    rw [List.getElem?_set_ne hnt.symm,
-      List.getElem?_append_left (List.getElem?_eq_some_iff.mp hv).1]
-    exact hv
-
 theorem holdsAt_mapM {F F' : IndexFact} {f : Nat → Option Nat} {ρ ρ' : Env} {h : Heap}
     (hm : F.mapM f = some F') (hf : ∀ s ∈ F.slots, ∀ t, f s = some t → ρ' t = ρ s) :
     F'.HoldsAt ρ' h ↔ F.HoldsAt ρ h := by
   induction F generalizing F' with
+  | apart a b =>
+    simp only [mapM, Option.bind_eq_bind, Option.bind_eq_some_iff, Option.pure_def, Option.some.injEq] at hm
+    obtain ⟨a', ha, b', hb, rfl⟩ := hm
+    simp only [HoldsAt, hf a (by simp [slots]) a' ha, hf b (by simp [slots]) b' hb]
   | guarded s p t B ih =>
     simp only [mapM, Option.bind_eq_bind, Option.bind_eq_some_iff, Option.pure_def, Option.some.injEq] at hm
     obtain ⟨s', hs, B', hB, rfl⟩ := hm
@@ -941,6 +864,7 @@ theorem mapM_total (f : Nat → Nat) : ∀ F : IndexFact, ∃ G, F.mapM (some �
   | .every s p stop body => by
     obtain ⟨body', hb⟩ := mapBody_some f body
     exact ⟨.every (f s) p (Term.mapM' f stop) body', by simp [mapM, hb, Term.mapM]; rfl⟩
+  | .apart a b => ⟨_, rfl⟩
 
 /-- A fact reads its slots' values alone. -/
 theorem holdsAt_map {F : IndexFact} {f : Nat → Nat} {ρ ρ' : Env} {h : Heap}
@@ -953,6 +877,7 @@ theorem holdsAt_map {F : IndexFact} {f : Nat → Nat} {ρ ρ' : Env} {h : Heap}
 theorem holdsAt_extend {F : IndexFact} {ρ : Env} {h : Heap} (vs : List Val) (hF : F.HoldsAt ρ h) :
     F.HoldsAt ρ (h ++ vs) := by
   induction F with
+  | apart a b => exact regionsApart_extend vs hF
   | guarded s p t B ih =>
     obtain ⟨v, hv, hor⟩ := hF
     exact ⟨v, readGuard_extend vs hv, hor.imp id ih⟩
@@ -1006,6 +931,9 @@ theorem holdsAt_extend {F : IndexFact} {ρ : Env} {h : Heap} (vs : List Val) (hF
 theorem holdsAt_congr {F : IndexFact} {ρ ρ' : Env} {h : Heap} (hs : ∀ s ∈ F.slots, ρ s = ρ' s) :
     F.HoldsAt ρ h ↔ F.HoldsAt ρ' h := by
   induction F with
+  | apart a b =>
+    simp only [slots, List.mem_cons, List.not_mem_nil, or_false, forall_eq_or_imp, forall_eq] at hs
+    simp only [HoldsAt, hs.1, hs.2]
   | guarded s p t B ih =>
     simp only [slots, List.mem_cons, forall_eq_or_imp] at hs
     simp only [HoldsAt, hs.1, ih hs.2]
@@ -1589,6 +1517,19 @@ theorem everyKept_sound {c : Changes} {first : Nat → String → Bool} {F : Ind
     obtain ⟨b, rfl, _⟩ := intValue_safe hz'
     exact hc.1 l _ hv (by simp [Changes.alters, hnum])
 
+/-- A change keeping every store keeps every region: its store cell holds
+the same store, and a raw store reads no heap. -/
+theorem regionOf_kept {c : Changes} {h h' : Heap} {v : Val} {s xs}
+    (hc : c.Holds h h') (hk : c.store = .keep) (hr : RegionOf h v s xs) : RegionOf h' v s xs := by
+  rcases hr with hr | ⟨st, hs, hst, hx⟩
+  · exact .inl hr
+  · exact .inr ⟨st, hs, hst, hc.1 st _ hx (by simp [Changes.alters, hk])⟩
+
+theorem regionsApart_kept {c : Changes} {h h' : Heap} {u v : Val}
+    (hc : c.Holds h h') (hk : c.store = .keep) (ha : RegionsApart h u v) : RegionsApart h' u v := by
+  obtain ⟨sa, xs, sb, ys, hx, hy, hab⟩ := ha
+  exact ⟨sa, xs, sb, ys, regionOf_kept hc hk hx, regionOf_kept hc hk hy, hab⟩
+
 /-- Whether a change preserves a fact (`Term.keptBy`): `index` and `int` read
 no heap, `length` and `bound` a store's length. -/
 def keptBy (c : Changes) (first : Nat → String → Bool) : IndexFact → Bool
@@ -1600,6 +1541,7 @@ def keptBy (c : Changes) (first : Nat → String → Bool) : IndexFact → Bool
     | .ne _ _ => false
   | .guarded s p _ B => guardKept first s p && B.keptBy c first
   | .element .. | .every .. => false
+  | .apart .. => c.store == .keep
 
 theorem holdsAt_kept {c : Changes} {first : Nat → String → Bool} {F : IndexFact} {ρ : Env} {h h' : Heap}
     (hc : c.Holds h h') (hf : FirstKept first ρ h h') (hk : F.keptBy c first = true) (hF : F.HoldsAt ρ h) :
@@ -1628,6 +1570,9 @@ theorem holdsAt_kept {c : Changes} {first : Nat → String → Bool} {F : IndexF
         exact ⟨ls', hls', hle, fun h => by simp [Changes.keepsLength, hcs] at h⟩
       | any => simp [hcs] at hk
   induction F with
+  | apart a b =>
+    simp only [keptBy, beq_iff_eq] at hk
+    exact regionsApart_kept hc hk hF
   | guarded s p t B ih =>
     simp only [keptBy, Bool.and_eq_true] at hk
     obtain ⟨v, hv, hor⟩ := hF
@@ -1747,6 +1692,7 @@ theorem holdsAt_keptWith {c : Changes} {first views : Nat → String → Bool} {
   | guarded _ _ _ _ => exact holdsAt_kept hc hf (by simpa [keptWith] using hk) hF
   | element _ _ _ => exact holdsAt_kept hc hf (by simpa [keptWith] using hk) hF
   | every _ _ _ _ => exact holdsAt_kept hc hf (by simpa [keptWith] using hk) hF
+  | apart _ _ => exact holdsAt_kept hc hf (by simpa [keptWith] using hk) hF
 
 end IndexFact
 

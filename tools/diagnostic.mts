@@ -116,7 +116,8 @@ type IndexFact = { index: { slot: number } } | { length: { array: number; length
   { linear: { fact: { le: { form: [LinearTerm, number][]; bound: number } } | { ne: { form: [LinearTerm, number][]; bound: number } } } } |
   { guarded: { slot: number; path: string[]; tag: "null" | "undefined"; body: IndexFact } } |
   { element: { value: number; array: number; index: number } } |
-  { every: { slot: number; path: string[]; stop: LinearTerm; body: { form: [BodyVariable, number][]; bound: number; ne: boolean }[] } };
+  { every: { slot: number; path: string[]; stop: LinearTerm; body: { form: [BodyVariable, number][]; bound: number; ne: boolean }[] } } |
+  { apart: { slot: number; other: number } };
 /** A variable of a quantified fact's body: the index, the element, or a term. */
 type BodyVariable = "index" | "elem" | LinearTerm;
 /** A linear fact's term: a root slot, the named data fields read from it
@@ -419,6 +420,10 @@ function indexFact(f: Json | undefined): IndexFact {
     if (g.tag !== "null" && g.tag !== "undefined") throw Error("a guard's tag");
     return { guarded: { slot: nat(g.slot), path: path.filter((x: Json): x is string => typeof x === "string"), tag: g.tag,
       body: indexFact(g.body) } };
+  }
+  if ("apart" in f) {
+    const r = record(record(f,["apart"]).apart,["slot","other"]);
+    return { apart: { slot: nat(r.slot), other: nat(r.other) } };
   }
   if ("element" in f) {
     const e = record(record(f,["element"]).element,["value","array","index"]);

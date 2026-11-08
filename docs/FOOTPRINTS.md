@@ -413,6 +413,67 @@ is the case; controls in `pipeline/test.mts` certify `keep` claimed at a
 required position, through search and checking, and refuse it at an
 optional one.
 
+## Element regions
+
+The existing mechanism this extends is the index fact of
+[quantified clauses](PROGRAM-TYPING.md#quantified-clauses): a region fact is
+one more `IndexFact`, carried by the same edge renaming and cut assertions,
+and framed by the same change $`\chi`$ of
+[frame conditions](PROGRAM-TYPING.md#frame-conditions).
+
+**Regions.** The region of a value in a heap $`h`$ is the set of locations
+its elements occupy: of a raw store $`\mathsf{arr}\,\ell`$, its listed cells;
+of an array object, the location $`s`$ of its store field and the cells
+$`h(s)`$ lists. A region fact $`\mathrm{apart}(x,y)`$ states that the
+regions of the values in slots $`x`$ and $`y`$ are disjoint
+(`IndexFact.apart`, `RegionsApart`). An array slot, one whose type is one
+record clause with a store field (written or read only) of one list
+contract, has its region in the heap: its store field's location and every
+listed cell are locations of the world (`arraySlot_region`, proved).
+
+**Rules.** An array literal's store, of slots, and the empty literal's object
+are apart from every array slot of the context; an array object built from
+the raw store in slot 0 is apart from every array slot that store is apart
+from (`region-alloc`, `regionAtoms`, proved). A fact is kept by a change
+keeping every store ($`s=\mathsf{keep}`$), whose store cells hold the same
+stores. A write at a checked index of $`a`$'s store keeps a fact whose one
+side is $`a`$ and other an array slot apart from it, or both of whose sides
+are apart from it (`region-write`); a call growing its receiver's store
+keeps a fact between two array slots (`region-grow`), each appended cell
+lying past the old heap ([native footprints](SOURCE-CONTRACTS.md#native-footprints),
+the append relation of `push`). Both proved (`writeAtoms_holds`,
+`grownRegions_holds`):
+
+```math
+\frac{\mathrm{apart}(x,y)\in\Sigma\quad (x\in[a]\land \mathrm{apart}(a,y)\in\Sigma\land \mathrm{array}(y))\lor(\mathrm{apart}(a,x),\mathrm{apart}(a,y)\in\Sigma)}
+     {\Sigma\vdash a[k]:=v\dashv\Sigma',\ \mathrm{apart}(x,y)}\ \textsf{region-write}
+```
+
+**Quantified facts across a write.** A write at a checked index of $`a`$'s
+store keeps $`\mathrm{every}(z,t,\Phi)`$ where $`\mathrm{apart}(a,z)`$ and
+the bound and every free body term read nothing of $`a`$'s region: a slot's
+value, a string's length, or the length of a slot $`w`$ with
+$`\mathrm{apart}(a,w)`$ (`every-write`, proved: `writeAtoms_holds`, through
+`IndexFact.every_frame`). Across a growth of $`a`$'s store, the length of a
+slot apart from $`a`$ is kept (`growFirst`), so `every-grow` keeps such a
+fact too.
+
+```math
+\frac{\mathrm{every}(z,t,\Phi)\in\Sigma\quad \mathrm{apart}(a,z)\in\Sigma\quad \mathrm{apart}_a(t)\quad \forall F\in\Phi.\ \mathrm{apart}_a(F)}
+     {\Sigma\vdash a[k]:=v\dashv\Sigma',\ \mathrm{every}(z,t,\Phi)}\ \textsf{every-write}
+```
+
+The producer states $`\mathrm{apart}(x,y)`$ at a declaration of an array
+literal for every older array binding of the unit, and carries it across a
+statement writing no heap, a bounded write and a push of slots, as the rules
+keep it; Lean checks each entry's region facts on every edge into it. A fact
+naming a binding the statement assigns is dropped. Cases: positives
+`quantified-freshness-write` and `quantified-freshness-builder` (a fresh
+array written and pushed while a precondition's quantified fact is kept);
+negatives, run under Node, `invalid-quantified-freshness-field-alias` and
+`invalid-quantified-freshness-free-term`; a forged control claims an alias
+apart from its array and is refused at the first entry claiming it.
+
 ## The elements fact
 
 A second instance of the mechanism. `xs.every(g)` at a guard `g` promising
