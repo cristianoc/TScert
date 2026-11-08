@@ -3025,6 +3025,9 @@ for (const [file, call] of [
   assert.equal(runExample(negative("invalid-call-replaces-view-path"),
     "typeof first({ segmentFlags: new Uint8Array([1]) })"), "undefined",
     "a call replaces the field holding the bounded view");
+  assert.equal(runExample(negative("invalid-regexp-replace-callback-pops"),
+    'typeof lastRead(["a"])'), "undefined",
+    "the replacement callback pops the array before the read below the loop's bound");
   assert.equal(runExample(negative("invalid-returned-closure-footprint"),
     'typeof lastRead(["a"])'), "undefined",
     "the returned closure pops the array before the read below the loop's bound");

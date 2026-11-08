@@ -273,9 +273,13 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
           match known with
           | Some (Atoms [Shape {calls;_}]) -> List.exists (fun (s:Semantic.signature) ->
               (* A fresh result, or a footprint on a throw, the offer does
-                 not state is not asked for. *)
-              {s.call_effect with fresh=s.call_effect.fresh && offered.call_effect.fresh;
-                 on_throw=s.call_effect.on_throw && offered.call_effect.on_throw}=offered.call_effect) calls
+                 not state is not asked for; a footprint within the offer's
+                 is one the offer's covers. *)
+              let own = {s.call_effect with fresh=s.call_effect.fresh && offered.call_effect.fresh;
+                 on_throw=s.call_effect.on_throw && offered.call_effect.on_throw} in
+              own=offered.call_effect ||
+              ({own with footprint=offered.call_effect.footprint}=offered.call_effect
+               && Semantic.footprint_le own.footprint offered.call_effect.footprint)) calls
           | _ -> false in
         let offered arity = match param with
           | Atoms [Shape {calls=[offered];fields=[];indexes=[];elements=None}] as t
@@ -443,10 +447,12 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
         (* A closure literal at a parameter that is a binder, which an
            earlier parameter's method takes at one of its positions: the
            binder is the callback type the earlier actual's method takes
-           there, where exactly one of its signatures of that arity takes a
-           callable, as TypeScript infers it from the earlier argument
+           there, of its signatures of that arity taking a callable the last
+           within the wanted method's effect, the least restrictive, or the
+           first where none is, as TypeScript infers it from the earlier argument
            (`String.prototype.replace` dispatching to a native regex's
-           `[Symbol.replace]`, whose replacer overload takes the callback). *)
+           `[Symbol.replace]`, whose replacer overloads take the callback,
+           one per footprint its callback keeps). *)
         let from_actuals (s:Semantic.signature) =
           let own = List.map (fun (q:Semantic.quantifier) -> q.identity) s.quantified in
           let binders = List.concat (List.mapi (fun i (arg:expr) ->
@@ -465,13 +471,15 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
                    | Atoms [Shape {calls=[c];_}],Some {read=Atoms [Shape {calls;_}];_} ->
                      List.concat (List.mapi (fun j p -> match p with
                        | Rigid r when List.mem r binders ->
-                         (match List.filter_map (fun (a:Semantic.signature) ->
+                         (let callables = List.filter_map (fun (a:Semantic.signature) ->
                             match List.nth_opt a.params j with
                             | Some (Atoms [Shape {calls=_::_;_}] as t)
-                                when List.length a.params = List.length c.params -> Some t
-                            | _ -> None) calls with
-                          | [t] -> [r,t]
-                          | _ -> [])
+                                when List.length a.params = List.length c.params -> Some (a,t)
+                            | _ -> None) calls in
+                          match List.rev (List.filter (fun ((a:Semantic.signature),_) ->
+                            Semantic.effect_covers a.call_effect c.call_effect) callables), callables with
+                          | (_,t) :: _,_ | [],(_,t) :: _ -> [r,t]
+                          | [],[] -> [])
                        | _ -> []) c.params)
                    | _ -> []) fields
                | _ -> [])
