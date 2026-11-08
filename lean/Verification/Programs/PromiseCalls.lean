@@ -2001,7 +2001,7 @@ theorem every_appended {first : Nat → String → Bool} {ρ : Env} {h h' : Heap
     obtain ⟨b, hb, -⟩ := intValue_safe (Option.get_mem hx)
     rw [hb]; rfl
   obtain ⟨ls', hls', hlen, hel⟩ := ha (by simpa using hvx) sto ls hs2 hls2
-  obtain ⟨l, hl, hlv⟩ := hel 0 (ρ x) rfl
+  obtain ⟨l, hl, hlv, -⟩ := hel 0 (ρ x) rfl
   obtain ⟨hp, hmax⟩ : ls <+: ls' ∧ ls'.length ≤ maxArrayLength := by
     rcases hg sto _ hls2 with hk | ⟨-, ls0, ls1, he, hls1, hp, hm⟩
     · rw [hk] at hls'; cases hls'; simp at hlen

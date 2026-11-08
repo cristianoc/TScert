@@ -333,21 +333,25 @@ def ReceiverGrows (r : Tm) (before after : Heap) : Prop :=
 /-- A change from `before` to `after` appending the actuals `args`, where each
 is a value, to the receiver `r`'s store: the store it held holds one longer
 by the actuals' number, whose element at the old length plus `j` is present
-and holds the `j`-th actual: `Array.prototype.push` on an ordinary array
+and holds the `j`-th actual at a location beyond the input heap: `Array.prototype.push` on an ordinary array
 (SOURCE-CONTRACTS.md, "Native footprints"). -/
 def ReceiverAppends (r : Tm) (args : List Tm) (before after : Heap) : Prop :=
   (∀ a ∈ args, isVal a = true) → ∀ s ls, Footprints.storeOf r = some s → before[s]? = some (.arr ls) →
     ∃ ls', after[s]? = some (.arr ls') ∧ ls'.length = ls.length + args.length ∧
-      ∀ j a, args[j]? = some a → ∃ l, ls'[ls.length + j]? = some (some l) ∧ after[l]? = some a
+      ∀ j a, args[j]? = some a → ∃ l, ls'[ls.length + j]? = some (some l) ∧ after[l]? = some a ∧ before.length ≤ l
 
 /-- An append to a heap extending `before` is one to `before`. -/
 theorem ReceiverAppends.prefix_left {r : Tm} {args : List Tm} {before middle after : Heap}
     (ha : ReceiverAppends r args middle after) (hprefix : before.IsPrefix middle) :
     ReceiverAppends r args before after := by
   intro hv s ls hs hls
-  apply ha hv s ls hs
   obtain ⟨t, rfl⟩ := hprefix
-  rw [List.getElem?_append_left (List.getElem?_eq_some_iff.mp hls).1, hls]
+  have hmid : (before ++ t)[s]? = some (.arr ls) := by
+    rw [List.getElem?_append_left (List.getElem?_eq_some_iff.mp hls).1, hls]
+  obtain ⟨ls', hout, hlen, hel⟩ := ha hv s ls hs hmid
+  refine ⟨ls', hout, hlen, fun j a hj => ?_⟩
+  obtain ⟨l, hl, hv, hfresh⟩ := hel j a hj
+  exact ⟨l, hl, hv, by simp only [List.length_append] at hfresh; omega⟩
 
 /-- Actuals one of which is no value append nothing a call states. -/
 theorem ReceiverAppends.of_not_values {r : Tm} {args : List Tm} {before after : Heap}

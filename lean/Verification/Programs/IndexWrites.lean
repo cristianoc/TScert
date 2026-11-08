@@ -1,3 +1,4 @@
+import Verification.Semantics.ElementRegions
 import Verification.Programs.HeapExpressionRules
 import Verification.Programs.ExpressionEffects
 import Verification.Semantics.IndexNumbers
@@ -1457,6 +1458,44 @@ theorem elementWrite_every {Ξ T : Fam}
   · intro i hi hn
     obtain ⟨hp, hstop, hf⟩ := hframe _ (.inr ⟨i, hi, hn, rfl⟩)
     exact IndexFact.every_apart_fill hevery hpath hstore hys ⟨xs, hxs⟩ hstores hp hstop hf
+
+/-- Allocated region evidence supplies the store and element separation
+premises of the complete quantified-write rule. Path and scalar-term
+framing remain explicit obligations of the caller. -/
+theorem elementWrite_region {Ξ T : Fam}
+    {h : Heap} {flds : List (PropKey × Nat)} {cd : CallCode} {oid target : Nat}
+    {xs : List (Option Nat)} {b : UInt64} {value : Val} {n W}
+    {a s p stop body ρ}
+    (hobject : ρ a = .objAt flds cd oid)
+    (hfield : flds.lookup arrayStoreKey = some target)
+    (hxs : h[target]? = some (.arr xs)) (hv : isVal value = true)
+    (hevery : (IndexFact.every s p stop body).HoldsAt ρ h)
+    (hregion : ElementRegions.Apart (.array s p) (.array a []) ρ h)
+    (hframe : ∀ h',
+      ((∃ cell, elemLoc xs b = some cell ∧ h' = (h.set cell value).set target (.arr xs)) ∨
+       (∃ i, indexOfBits b = some i ∧ elemLoc xs b = none ∧
+         h' = (h ++ [value]).set target (.arr (placeAt xs i h.length)))) →
+      (∀ u, readPath h (ρ s) p = some u → readPath h' (ρ s) p = some u) ∧
+      (∀ z, termValue ρ h stop = some z → termValue ρ h' stop = some z) ∧
+      (∀ F ∈ body, ∀ t, Bound.free t ∈ F.vars → ∀ z,
+        termValue ρ h t = some z → termValue ρ h' t = some z))
+    (hs : Safe Ξ T n W h (.writeAt arrayStoreKey (.objAt flds cd oid)
+      (.setElem (.readAt arrayStoreKey (.objAt flds cd oid)) (.num b) value))) :
+    SafePost Ξ T (fun h' _ => (IndexFact.every s p stop body).HoldsAt ρ h') n W h
+      (.writeAt arrayStoreKey (.objAt flds cd oid)
+        (.setElem (.readAt arrayStoreKey (.objAt flds cd oid)) (.num b) value)) := by
+  obtain ⟨sa, ys, sb, zs, ⟨⟨w, st, rfl, hp, hst, hys⟩, _⟩,
+    ⟨⟨u, tg, rfl, hu, htg, hzs⟩, _⟩, hsep⟩ := hregion
+  simp only [readPath, hobject, Option.some.injEq] at hu
+  subst u
+  simp only [Footprints.storeOf, Footprints.fieldsOf, hfield, Option.some.injEq] at htg
+  subst tg
+  rw [hxs] at hzs
+  cases hzs
+  exact elementWrite_every hfield hxs hv hevery hp hst hys
+    (hsep st (.inl rfl) target (.inl rfl))
+    (fun cell hc => hsep st (.inl rfl) cell (.inr hc))
+    (fun l hl m hm => hsep l (.inr hl) m (.inr hm)) hframe hs
 
 /-- Whether an unconditional atom bounds a slot of `i`'s class by the store of
 an array of `a`'s class, strictly where `strict`. -/
