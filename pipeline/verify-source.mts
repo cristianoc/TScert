@@ -1,5 +1,5 @@
 import { fork, type ChildProcess } from "node:child_process";
-import { appendFileSync, copyFileSync, readFileSync, writeFileSync, rmSync } from "node:fs";
+import { readFileSync, writeFileSync, rmSync } from "node:fs";
 import { Socket } from "node:net";
 import { availableParallelism } from "node:os";
 import { basename, resolve, join } from "node:path";
@@ -447,31 +447,6 @@ export class UnitProposal {
     return readExplanations(this.run(producerCall(producerExecutable, ["--explain", files.slice, files.flow, reads]))).map((e) => ({ ...e, pos: [toDocument(files.deletions, e.pos[0]), toDocument(files.deletions, e.pos[1])] }));
   }
 }
-/** The proposal of a document unit by unit; with `TSCERT_COMPARE_PROPOSAL`
- * set, also the whole document's in one process, a difference appended to
- * that file. */
-function compared(recorder: Recorder, proposal: UnitProposal, ast: string, flow: string, reads: QualifiedRead[],
-    qualifiedPath: string): Proposed {
-  const units = proposal.propose(reads);
-  const log = process.env.TSCERT_COMPARE_PROPOSAL;
-  if (!log) return units;
-  writeFileSync(qualifiedPath, JSON.stringify(reads.map(({ local, declaration, footprint, onThrow }) =>
-    ({ local, declaration, footprint, onThrow }))));
-  const whole = runStep(producerCall(producerExecutable, reads.length ? [ast, flow, qualifiedPath] : [ast, flow]), recorder);
-  const refusal = producerRefusal(whole);
-  const same = refusal !== null ? "refusal" in units && units.refusal === refusal
-    : "claims" in units && units.claims === whole.out.trim();
-  appendFileSync(log, `${same ? "same" : "DIFFERENT"}\t${ast}\t${createHash("sha256").update(ast).digest("hex").slice(0, 12)}\t${refusal !== null ? "refused" : "proposed"}\t${
-    "refusal" in units ? "refused" : "proposed"}\n`);
-  if (!same) {
-    const at = `${log}.${createHash("sha256").update(ast).digest("hex").slice(0, 12)}`;
-    copyFileSync(ast, `${at}.fragment.json`);
-    copyFileSync(join(ast, "..", "request.json"), `${at}.request.json`);
-    writeFileSync(`${at}.whole.out`, refusal ?? whole.out.trim());
-    writeFileSync(`${at}.units.out`, "refusal" in units ? units.refusal : units.claims);
-  }
-  return units;
-}
 function decodeInterfaces(value: unknown): Interface[] {
   if (!Array.isArray(value)) throw Error("tool failure: producer --unit printed no interfaces");
   return value.map((v): Interface => {
@@ -553,8 +528,7 @@ class ModuleRuns {
       readsOf.set(location, reads);
       const key = `${location}\n${JSON.stringify(reads)}`;
       if (!this.proposed.has(key)) {
-        const proposed = compared(this.recorder, doc.proposal, doc.ast, doc.flow, reads,
-          join(this.artifacts, `module-${doc.index}.whole-qualified.json`));
+        const proposed = doc.proposal.propose(reads);
         writeFileSync(join(this.artifacts, `module-${doc.index}.proposal.log`), "refusal" in proposed ? proposed.refusal : "");
         // A module the producer refuses is read at its declared types.
         this.proposed.set(key, "refusal" in proposed ? null : { text: proposed.claims, parsed: JSON.parse(proposed.claims) });
@@ -906,7 +880,7 @@ function checkUnowned(artifacts: string, source: string, tsconfigPath?: string, 
         for (const r of fresh) withdrawn.add(r);
         continue;
       }
-      const proposed = compared(recorder, fileProposal, ast, flow, reads, join(artifacts, "whole-qualified.json"));
+      const proposed = fileProposal.propose(reads);
       writeFileSync(join(artifacts, "proposal.log"), "refusal" in proposed ? proposed.refusal : "");
       if ("refusal" in proposed)
         return { status: "unsupported", artifacts, phase, detail: refusedByTypeScript(proposed.refusal, refusedErrors) };

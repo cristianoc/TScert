@@ -27,16 +27,23 @@ Lean sources, and `PRODUCER` a producer executable built from these.
 For direct use, with a run's artifacts:
 
 ```sh
-lean/.lake/build/bin/verifier --lower-control-flow fragment.json > flow.json
-ocaml-producer/_build/default/producer.exe fragment.json flow.json [qualified.json] > claims.json
-ocaml-producer/_build/default/producer.exe --explain fragment.json flow.json
+ocaml-producer/_build/default/producer.exe --units fragment.json > units.json
+ocaml-producer/_build/default/producer.exe --unit unit-0.slice.json unit-0.flow.json unit-0.reads.json unit-0.proposal.bin
+ocaml-producer/_build/default/producer.exe --assemble canonical.json qualified.json assembly.json unit-0.proposal.bin … > claims.json
+ocaml-producer/_build/default/producer.exe --explain unit-0.slice.json unit-0.flow.json unit-0.reads.json
 ```
 
+A document is proposed a unit at a time
+([units of a proposal](../docs/STAGE-STORE.md#units-of-a-proposal)):
+`--units` lists what each unit's proposal reads, `--unit` proposes one
+unit's slice (lowered by `verifier --lower-control-flow`) at its reads
+document and prints its members' settled footprints and on-throw flags,
+and `--assemble` writes the document's claims from the units' proposals.
 `qualified.json` lists the imports the pipeline reads at their certified
 effects, each by its local name, its declaration identity, its unit's
-footprint and on-throw flag. `--explain` prints the known causes of
-proposal failure with source spans: an aid to diagnosis, not a verification
-result. A refusal exits 2 with a first line `unsupported: …` and a last line
+footprint and on-throw flag. `--explain` prints the known causes of a
+unit's proposal failure with source spans: an aid to diagnosis, not a
+verification result. A refusal exits 2 with a first line `unsupported: …` and a last line
 `end of refusal`. Malformed input and a usage error exit 2 with the same last
 line and a first line naming the fault (`JSON byte n: unexpected end`,
 `missing field: declarations`, `usage: …`); the pipeline reads a record as

@@ -31,9 +31,10 @@ The outcome stays the unverified search Lean decided on the ordinary
 proposal; the line only names why it found no derivation. Two sources give
 it, in this order:
 
-- The producer's explanation: `producer --explain fragment.json` runs the
-  ordinary inference and prints, instead of claims, the forms it met whose
-  failure has a stated reason, each at its source span
+- The producer's explanation: `producer --explain` runs the ordinary
+  inference of the unit holding the failed obligation and prints, instead
+  of claims, the forms it met whose failure has a stated reason, each at
+  its source span
   (`Proposal_diagnostics.explain`). The innermost one whose span meets the
   failed obligation's names it. The forms and their reasons:
   - a `for...of` loop or a spread over an iterable an arm of which is no

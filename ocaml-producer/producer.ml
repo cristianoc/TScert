@@ -172,31 +172,8 @@ let main () =
     (try ignore (Proposal.infer ~unit:spec ~state flows program) with Json.Error _ -> ());
     print_endline (Json.encode (Json.Array (List.rev_map (fun (pos,reason) ->
       Json.Object ["pos",pos;"reason",Json.String reason]) !(state.Proposal_diagnostics.explanations))))
-  | [_;"--explain";file;flow_file] ->
-    let state = Proposal_diagnostics.create ~explaining:true () in
-    (* The documents are read and decoded first: one it cannot read refuses
-       the run. A refusal of the inference ends it, the explanations met
-       before it printed. *)
-    let program = file |> Json.read |> Source.decode in
-    let flows = List.map Flow.decode (Json.list (Json.read flow_file)) in
-    (try ignore (Proposal.infer ~state flows program) with Json.Error _ -> ());
-    print_endline (Json.encode (Json.Array (List.rev_map (fun (pos,reason) ->
-      Json.Object ["pos",pos;"reason",Json.String reason]) !(state.Proposal_diagnostics.explanations))))
-  | _ ->
-    let file,flow_file,qualified_file = match Array.to_list Sys.argv with
-      | [_;file;flow_file] -> file,flow_file,None
-      | [_;file;flow_file;qualified] -> file,flow_file,Some qualified
-      | _ -> Json.fail "usage: producer [--explain] fragment.json flow.json [qualified.json]" in
-    (* The imports the pipeline reads qualified: each by its name, its
-       declaration identity, and its unit's certified footprint and on-throw
-       flag. *)
-    let qualified = match qualified_file with
-      | None -> []
-      | Some f -> List.map (fun q -> Json.str (Json.field "local" q),Json.field "declaration" q,
-          Source.footprint_of (Json.field "footprint" q),Json.boolean (Json.field "onThrow" q)) (Json.list (Json.read f)) in
-    let program = {(file |> Json.read |> Source.decode) with Source.qualified} in
-    let result = program |> Proposal.infer (List.map Flow.decode (Json.list (Json.read flow_file))) |> Claims.encode in
-    print_endline (Json.encode result)
+  | _ -> Json.fail ("usage: producer --units fragment.json | --unit slice.json flow.json reads.json proposal.bin"
+      ^ " | --assemble fragment.json qualified.json assembly.json proposal.bin... | --explain slice.json flow.json reads.json")
 
 (* Every `Json.Error` exits 2 with its message, then `end of refusal`: a refusal
    (`unsupported: …`), malformed input or a usage error, told apart by the

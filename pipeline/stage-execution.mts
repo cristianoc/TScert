@@ -609,11 +609,12 @@ export function verifierCall(program: string, args: readonly string[],
   throw Error(`not a verifier stage: ${args.join(" ")}`);
 }
 
-/** A producer invocation: `<fragment> <flow> [<qualified reads>]` proposes,
- * `--explain <fragment> <flow>` explains. */
+/** A producer invocation (STAGE-STORE.md, "Units of a proposal"):
+ * `--units <fragment>` lists a document's units, `--unit <slice> <flow>
+ * <reads> <proposal>` proposes one, `--assemble <fragment> <qualified>
+ * <assembly> <proposal>...` assembles the document's claims, and `--explain
+ * <slice> <flow> <reads>` explains one unit. */
 export function producerCall(program: string, args: readonly string[]): ProcessCall {
-  const documents = (list: readonly string[]): Argument[] =>
-    list.map((path, i) => ({ input: ["fragment.json", "flow.json", "qualified.json"][i], path }));
   const stageOf = (stage: StageName, list: Argument[], protocol: Protocol): ProcessCall =>
     ({ stage, program, arguments: [{ text: args[0] ?? "" }, ...list], environment: {}, protocol });
   if (args[0] === "--units" && args.length === 2)
@@ -628,11 +629,6 @@ export function producerCall(program: string, args: readonly string[]): ProcessC
   if (args[0] === "--explain" && args.length === 4)
     return stageOf("explain", [{ input: "slice.json", path: args[1] }, { input: "flow.json", path: args[2] },
       { input: "reads.json", path: args[3] }], { refusal: null });
-  if (args[0] === "--explain" && args.length === 3)
-    return { stage: "explain", program, arguments: [{ text: "--explain" }, ...documents(args.slice(1))],
-      environment: {}, protocol: { refusal: null } };
-  if (args.length === 2 || args.length === 3)
-    return { stage: "propose", program, arguments: documents(args), environment: {}, protocol: producerProtocol };
   throw Error(`not a producer stage: ${args.join(" ")}`);
 }
 
