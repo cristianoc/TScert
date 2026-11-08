@@ -687,7 +687,9 @@ theorem regionOf_unique {h : Heap} {v : Val} {s s' xs xs'} (hr : RegionOf h v s 
 a checked index"): the slot `k` holds a number that is an array index
 (`index`); the slot `n` holds the length of the store the array in slot `x`
 holds (`length`); the slot `k` holds an array index at most that length
-(`bound`), below it where `strict`; the slot `k` holds a safe integer (`int`); the slots of a linear
+(`bound`), below it where `strict`; the slot `k` holds a safe integer (`int`);
+the slot `k` holds the double `2^53`, past the safe integers (`pastSafe`);
+the slots of a linear
 fact denote integers meeting it (`linear`, PROGRAM-TYPING.md, "Linear
 facts"), its terms (`Term`) rooted at slots. `index`, `int` and a linear fact
 of slots' values read no heap; the others read the locations their terms or
@@ -709,6 +711,7 @@ inductive IndexFact where
   | length (array length : Nat)
   | bound (array index : Nat) (strict : Bool)
   | int (slot : Nat)
+  | pastSafe (slot : Nat)
   | linear (fact : Linear.Fact Term)
   | either (left right : IndexFact)
   | guarded (slot : Nat) (path : List String) (tag : GuardTag) (body : IndexFact)
@@ -725,6 +728,7 @@ def slots : IndexFact → List Nat
   | .length x n => [x, n]
   | .bound x k _ => [x, k]
   | .int k => [k]
+  | .pastSafe k => [k]
   | .linear F => F.vars.map Term.slot
   | .either A B => A.slots ++ B.slots
   | .guarded s _ _ B => s :: B.slots
@@ -770,6 +774,7 @@ def mapM (f : Nat → Option Nat) : IndexFact → Option IndexFact
   | .length x n => do pure (.length (← f x) (← f n))
   | .bound x k st => do pure (.bound (← f x) (← f k) st)
   | .int k => (f k).map .int
+  | .pastSafe k => (f k).map .pastSafe
   | .linear F => (F.mapVars (Term.mapM f)).map .linear
   | .either A B => do pure (.either (← A.mapM f) (← B.mapM f))
   | .guarded s p t B => do pure (.guarded (← f s) p t (← B.mapM f))
@@ -788,6 +793,7 @@ def HoldsAt : IndexFact → Env → Heap → Prop
   | .bound x k st, ρ, h => ∃ s ls b i, Footprints.storeOf (ρ x) = some s ∧ h[s]? = some (.arr ls) ∧
       ρ k = .num b ∧ indexOfBits b = some i ∧ i + (if st then 1 else 0) ≤ ls.length
   | .int k, ρ, _ => (intValue (ρ k)).isSome
+  | .pastSafe k, ρ, _ => ρ k = .num SafeIntegers.pastSafeBits
   | .linear F, ρ, h => (∀ t ∈ F.vars, (termValue ρ h t).isSome) ∧ F.Holds (termValuation ρ h)
   | .either A B, ρ, h => A.HoldsAt ρ h ∨ B.HoldsAt ρ h
   | .guarded s p t B, ρ, h => ∃ v, readGuard h (ρ s) p = some v ∧ (v = t.val ∨ B.HoldsAt ρ h)
@@ -891,6 +897,10 @@ theorem holdsAt_mapM {F F' : IndexFact} {f : Nat → Option Nat} {ρ ρ' : Env} 
     simp only [mapM, Option.map_eq_some_iff] at hm
     obtain ⟨t, ht, rfl⟩ := hm
     simp only [HoldsAt, hf k (by simp [slots]) t ht]
+  | pastSafe k =>
+    simp only [mapM, Option.map_eq_some_iff] at hm
+    obtain ⟨t, ht, rfl⟩ := hm
+    simp only [HoldsAt, hf k (by simp [slots]) t ht]
   | linear G =>
     simp only [mapM, Option.map_eq_some_iff] at hm
     obtain ⟨G', hG, rfl⟩ := hm
@@ -939,6 +949,7 @@ theorem mapM_total (f : Nat → Nat) : ∀ F : IndexFact, ∃ G, F.mapM (some �
   | .length x n => ⟨_, rfl⟩
   | .bound x k st => ⟨_, rfl⟩
   | .int k => ⟨_, rfl⟩
+  | .pastSafe k => ⟨_, rfl⟩
   | .linear G => by
     obtain ⟨G', h⟩ := Linear.Fact.mapVars_some (Term.mapM' f) G
     exact ⟨.linear G', by simp only [mapM, Term.mapM_eq, h, Option.map_some]⟩
@@ -1014,6 +1025,7 @@ theorem holdsAt_extend {F : IndexFact} {ρ : Env} {h : Heap} (vs : List Val) (hF
     exact ⟨s, ls, b, i, hs, by rw [List.getElem?_append_left (List.getElem?_eq_some_iff.mp hl).1]; exact hl,
       hk, hi, hle⟩
   | int k => exact hF
+  | pastSafe k => exact hF
   | linear G =>
     obtain ⟨hi, hh⟩ := hF
     have heq : ∀ t ∈ G.vars, termValue ρ (h ++ vs) t = termValue ρ h t := by
@@ -1071,6 +1083,7 @@ theorem holdsAt_congr {F : IndexFact} {ρ ρ' : Env} {h : Heap} (hs : ∀ s ∈ 
     simp only [slots, List.mem_cons, List.not_mem_nil, or_false, forall_eq_or_imp, forall_eq] at hs
     simp only [HoldsAt, hs.1, hs.2]
   | int k => simp only [slots, List.mem_singleton, forall_eq] at hs; simp only [HoldsAt, hs]
+  | pastSafe k => simp only [slots, List.mem_singleton, forall_eq] at hs; simp only [HoldsAt, hs]
   | linear G =>
     simp only [slots] at hs
     simp only [HoldsAt]
@@ -1669,7 +1682,7 @@ theorem regionsApart_kept {c : Changes} {h h' : Heap} {u v : Val}
 /-- Whether a change preserves a fact (`Term.keptBy`): `index` and `int` read
 no heap, `length` and `bound` a store's length. -/
 def keptBy (c : Changes) (first : Nat → String → Bool) : IndexFact → Bool
-  | .index _ | .int _ => true
+  | .index _ | .int _ | .pastSafe _ => true
   | .length x _ => c.keepsLength || first x "[]"
   | .bound x _ _ => c.store != .any || first x "[]"
   | .linear F => F.vars.all (Term.keptBy c first) || match F with
@@ -1721,6 +1734,7 @@ theorem holdsAt_kept {c : Changes} {first : Nat → String → Bool} {F : IndexF
   | every _ _ _ _ => simp [keptBy] at hk
   | index k => exact hF
   | int k => exact hF
+  | pastSafe k => exact hF
   | length x m =>
     simp only [keptBy] at hk
     obtain ⟨s, ls, hs, hls, hm, hmax⟩ := hF
@@ -1827,6 +1841,7 @@ theorem holdsAt_keptWith {c : Changes} {first views : Nat → String → Bool} {
     · exact termValue_viewFramed hc hf hv hk hm
   | index _ => exact holdsAt_kept hc hf (by simp [keptWith] at hk ⊢; exact hk) hF
   | int _ => exact holdsAt_kept hc hf (by simp [keptWith] at hk ⊢; exact hk) hF
+  | pastSafe _ => exact holdsAt_kept hc hf (by simp [keptWith] at hk ⊢; exact hk) hF
   | length _ _ => exact holdsAt_kept hc hf (by simpa [keptWith] using hk) hF
   | bound _ _ _ => exact holdsAt_kept hc hf (by simpa [keptWith] using hk) hF
   | either _ _ => exact holdsAt_kept hc hf (by simpa [keptWith] using hk) hF

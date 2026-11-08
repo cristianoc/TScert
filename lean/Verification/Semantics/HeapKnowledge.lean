@@ -329,6 +329,7 @@ def factFollows (M : Nat → List Nat) (m : PointClaims.Mapping) : IndexFact →
   | .bound x k st, .bound x' k' st' =>
     (M (PointClaims.slot m x')).contains x && (M (PointClaims.slot m k')).contains k && (st || !st')
   | .int k, .int k' => (M (PointClaims.slot m k')).contains k
+  | .pastSafe k, .pastSafe k' => (M (PointClaims.slot m k')).contains k
   | .linear F, .linear F' => formFollows M m F F'
   | .element v x k, .element v' x' k' =>
     (M (PointClaims.slot m v')).contains v && (M (PointClaims.slot m x')).contains x &&
@@ -374,6 +375,8 @@ theorem factFollows_sound {M : Nat → List Nat} {m : PointClaims.Mapping} {s t 
     refine ⟨s, ls, b, i, by simpa only [PointClaims.mapEnv, hM _ _ hx] using hs', hl,
       by simpa only [PointClaims.mapEnv, hM _ _ hk] using hb, hi, ?_⟩
     cases st <;> cases st' <;> simp_all <;> omega
+  · rename_i k k'
+    simpa only [IndexFact.HoldsAt, PointClaims.mapEnv, hM _ _ hf] using hs
   · rename_i k k'
     simpa only [IndexFact.HoldsAt, PointClaims.mapEnv, hM _ _ hf] using hs
   · rename_i F F'
@@ -538,7 +541,7 @@ theorem factLinear_holds {f : IndexFact} {ρ h} (hf : f.HoldsAt ρ h) :
     · simp only [Linear.Fact.Holds, Linear.Form.eval, v1, v2]; omega
     · simp only [Linear.Fact.Holds, Linear.Form.eval, v1, v2]; omega
     · exact lengthRange_holds rfl (by rw [hlen]; rfl) F hF
-  | index _ | bound _ _ _ | int _ | either _ _ | guarded _ _ _ _ | element _ _ _ | every _ _ _ _ | apart _ _ => simp [factLinear] at hF
+  | index _ | bound _ _ _ | int _ | pastSafe _ | either _ _ | guarded _ _ _ _ | element _ _ _ | every _ _ _ _ | apart _ _ => simp [factLinear] at hF
 
 theorem linearFacts_holds {as : List IndexAtom} {ρ h} (he : IndexHolds as ρ h) :
     ∀ F ∈ linearFacts as, F.Holds (termValuation ρ h) := by
@@ -562,7 +565,7 @@ theorem intSlot_sound {as : List IndexAtom} {ρ h s} (he : IndexHolds as ρ h) (
     obtain ⟨_, ls, -, -, hnv, hm⟩ := hat
     rw [hnv, intValue_length hm]; rfl
   | linear G => rw [hfa] at hf hat; exact hat.1 (.value s) (List.contains_iff_mem.mp hf)
-  | index _ | bound _ _ _ | either _ _ | guarded _ _ _ _ | element _ _ _ | every _ _ _ _ | apart _ _ => rw [hfa] at hf; cases hf
+  | index _ | bound _ _ _ | pastSafe _ | either _ _ | guarded _ _ _ _ | element _ _ _ | every _ _ _ _ | apart _ _ => rw [hfa] at hf; cases hf
 
 theorem termDefined_sound {as : List IndexAtom} {ρ h} (he : IndexHolds as ρ h) {t : Term}
     (ht : termDefined as t = true) : (termValue ρ h t).isSome := by
@@ -586,7 +589,7 @@ theorem termDefined_sound {as : List IndexAtom} {ρ h} (he : IndexHolds as ρ h)
         rw [hfa] at hf hat; simp only [beq_iff_eq] at hf; subst hf
         obtain ⟨s, ls, hs, hl, -, hm⟩ := hat
         simp only [termValue_nil, kindValue, lengthOf_of_store hs hl hm, Option.isSome_some]
-      | linear _ | index _ | bound _ _ _ | int _ | either _ _ | guarded _ _ _ _ | element _ _ _ | every _ _ _ _ | apart _ _ => rw [hfa] at hf; cases hf
+      | linear _ | index _ | bound _ _ _ | int _ | pastSafe _ | either _ _ | guarded _ _ _ _ | element _ _ _ | every _ _ _ _ | apart _ _ => rw [hfa] at hf; cases hf
     | view | strLength => cases ht
   · obtain ⟨a, ha, hm⟩ := List.any_eq_true.mp ht
     simp only [Bool.and_eq_true, Option.isNone_iff_eq_none] at hm
@@ -594,7 +597,7 @@ theorem termDefined_sound {as : List IndexAtom} {ρ h} (he : IndexHolds as ρ h)
     have hat := he a ha fun b hb => by rw [hn] at hb; cases hb
     cases hfa : a.fact with
     | linear G => rw [hfa] at hf hat; exact hat.1 t (List.contains_iff_mem.mp hf)
-    | index _ | length _ _ | bound _ _ _ | int _ | either _ _ | guarded _ _ _ _ | element _ _ _ | every _ _ _ _ | apart _ _ => rw [hfa] at hf; cases hf
+    | index _ | length _ _ | bound _ _ _ | int _ | pastSafe _ | either _ _ | guarded _ _ _ _ | element _ _ _ | every _ _ _ _ | apart _ _ => rw [hfa] at hf; cases hf
 
 /-- The terms the unconditional atoms state defined: each term of a linear
 fact, a safe integer's slot's value, a length atom's length and value. -/
@@ -621,7 +624,7 @@ theorem definedTerms_sound {as : List IndexAtom} {ρ h} (he : IndexHolds as ρ h
       rcases hm with rfl | rfl
       · simp only [termValue_length, lengthOf_of_store hs hl hmx, Option.isSome_some]
       · simp only [termValue_value, hnv, intValue_length hmx, Option.isSome_some]
-    | index _ | bound _ _ _ | either _ _ | guarded _ _ _ _ | element _ _ _ | every _ _ _ _ | apart _ _ => rw [hfa] at hm; cases hm
+    | index _ | bound _ _ _ | pastSafe _ | either _ _ | guarded _ _ _ _ | element _ _ _ | every _ _ _ _ | apart _ _ => rw [hfa] at hm; cases hm
   · cases hm
 
 /-- The safe-integer range of each value term the unconditional atoms state
@@ -739,7 +742,7 @@ theorem condFacts_holds {as : List IndexAtom} {c : Nat} {neg : Bool} {ρ h} (he 
     have hat := he a ha fun c' hc' => by rw [hk.1] at hc'; cases hc'; rw [hk.2]; exact hc
     cases hfa : a.fact with
     | linear G => rw [hfa] at hm hat; cases hm; exact hat.2
-    | index _ | length _ _ | bound _ _ _ | int _ | either _ _ | guarded _ _ _ _ | element _ _ _ | every _ _ _ _ | apart _ _ => rw [hfa] at hm; cases hm
+    | index _ | length _ _ | bound _ _ _ | int _ | pastSafe _ | either _ _ | guarded _ _ _ _ | element _ _ _ | every _ _ _ _ | apart _ _ => rw [hfa] at hm; cases hm
   · cases hm
 
 /-! ## Read bridges
@@ -1369,7 +1372,7 @@ theorem linearFollows_sound {M : Nat → List Nat} {m : PointClaims.Mapping} {a 
       have hle := hlin.2
       simp only [Linear.Fact.Holds, Linear.Form.eval, termValuation, hn, Option.getD_some] at hle
       exact ⟨w, sto, ls, n, hp, hs, hl, hn, fun i hi => by omega⟩
-  | index _ | length _ _ | either _ _ | guarded _ _ _ _ | element _ _ _ | apart _ _ => rw [ht] at hf; cases hf
+  | index _ | length _ _ | pastSafe _ | either _ _ | guarded _ _ _ _ | element _ _ _ | apart _ _ => rw [ht] at hf; cases hf
 
 /-! ## Guarded facts (PROGRAM-TYPING.md, "Guarded clauses")
 
@@ -1475,6 +1478,58 @@ theorem lowerGuard_eq {ls : HeapLinks.Links} {ρ : Env} {h : Heap} (hl : HeapLin
         rw [ih, ← guardReads_read hl hm q, HeapLinks.aliases_eq hl hcs]
       · rfl
 
+/-- The left sides of the sum rule's disjunctions on slot `k`: where `k`
+holds no double `2^53`, each holds. -/
+def pastLefts (as : List IndexAtom) (k : Nat) : List IndexAtom :=
+  as.filterMap fun a => match a.cond, a.fact with
+    | none, .either A (.pastSafe k') => if k' == k then some { fact := A } else none
+    | _, _ => none
+
+theorem pastLefts_holds {as : List IndexAtom} {ρ h k} (he : IndexHolds as ρ h)
+    (hk : ¬ (IndexFact.pastSafe k).HoldsAt ρ h) : IndexHolds (pastLefts as k) ρ h := by
+  intro b hb _
+  obtain ⟨a, ha, hm⟩ := List.mem_filterMap.mp hb
+  split at hm
+  · rename_i A k' hcn hf
+    split at hm
+    · rename_i hkk
+      cases hm
+      have hat := he a ha (fun c hc => by rw [hcn] at hc; cases hc)
+      rw [hf] at hat
+      simp only [beq_iff_eq] at hkk
+      subst hkk
+      exact hat.resolve_right hk
+    · cases hm
+  · cases hm
+
+/-- The left sides of the sum rule's disjunctions (`IndexFact.pastSafe` on
+the right) whose slot the atoms state a safe integer: the right side, the
+double `2^53`, is no safe integer (`pastClash`). -/
+def releasePast (as : List IndexAtom) : List IndexAtom :=
+  as.filterMap fun a => match a.cond, a.fact with
+    | none, .either A (.pastSafe k) => if intSlot as k then some { fact := A } else none
+    | _, _ => none
+
+theorem releasePast_holds {as : List IndexAtom} {ρ h} (he : IndexHolds as ρ h) :
+    IndexHolds (releasePast as) ρ h := by
+  intro b hb _
+  obtain ⟨a, ha, hm⟩ := List.mem_filterMap.mp hb
+  split at hm
+  · rename_i A k hcn hf
+    split at hm
+    · rename_i hk
+      cases hm
+      have hat := he a ha (fun c hc => by rw [hcn] at hc; cases hc)
+      rw [hf] at hat
+      rcases hat with hA | hB
+      · exact hA
+      · have hi := intSlot_sound he hk
+        simp only [IndexFact.HoldsAt] at hB
+        rw [hB] at hi
+        simp [intValue, SafeIntegers.safeIntOfBits_pastSafe] at hi
+    · cases hm
+  · cases hm
+
 /-- Whether atoms `as` entail a fact, its terms and guard paths restated by
 `lt` and `lg`: a linear fact as `linearEntailed` reads one; a guarded fact
 where an unconditional atom states a guard of the same tag at a path
@@ -1484,7 +1539,10 @@ and its body follows; or where `tags` states the guard's path, or its
 restatement, reads the tag's value. -/
 def guardEntails (lt : Term → Term) (lg ld : Nat → List String → Nat × List String)
     (tags : Nat → List String → GuardTag → Bool) : List IndexAtom → IndexFact → Bool
-  | as, .either A B => guardEntails lt lg ld tags as A || guardEntails lt lg ld tags as B
+  | as, .either A B => guardEntails lt lg ld tags as A || guardEntails lt lg ld tags as B ||
+      match B with
+      | .pastSafe k => guardEntails lt lg ld tags (as ++ pastLefts as k) A && pastLefts as k != []
+      | _ => false
   | as, .linear F => match F.mapVars (some ∘ lt) with
     | some F' => F'.vars.all (bridgedDefined lt as) &&
         Linear.entailsWith (bridgeFacts lt (linearFacts as)) (bridgeFacts lt (valueRanges as)) F'
@@ -1495,6 +1553,8 @@ def guardEntails (lt : Term → Term) (lg ld : Nat → List String → Nat × Li
       | .guarded s' p' t' B' => t' == t && lg s' p' == lg s p && guardEntails lt lg ld tags (as ++ [{ fact := B' }]) B
       | _ => false) ||
     ((ld s p).2.isEmpty && guardEntails lt lg ld tags as B)
+  | as, .int k => intSlot as k
+  | as, .pastSafe k => as.any fun a => a.cond.isNone && a.fact == .pastSafe k
   | _, _ => false
 
 theorem guardEntails_sound {lt : Term → Term} {lg ld : Nat → List String → Nat × List String}
@@ -1509,9 +1569,21 @@ theorem guardEntails_sound {lt : Term → Term} {lg ld : Nat → List String →
   induction F with
   | either A B ihA ihB =>
     intro as hf ha
-    rcases Bool.or_eq_true_iff.mp hf with hA | hB
-    · exact .inl (ihA as hA ha)
-    · exact .inr (ihB as hB ha)
+    simp only [guardEntails] at hf
+    rcases Bool.or_eq_true_iff.mp hf with hf | hP
+    · rcases Bool.or_eq_true_iff.mp hf with hA | hB
+      · exact .inl (ihA as hA ha)
+      · exact .inr (ihB as hB ha)
+    · split at hP
+      · rename_i k
+        obtain ⟨hA, -⟩ := Bool.and_eq_true_iff.mp hP
+        by_cases hk : (IndexFact.pastSafe k).HoldsAt ρ h
+        · exact .inr hk
+        · refine .inl (ihA _ hA fun b hb hc => ?_)
+          rcases List.mem_append.mp hb with hb | hb
+          · exact ha b hb hc
+          · exact pastLefts_holds ha hk b hb hc
+      · cases hP
   | linear F =>
     intro as hf ha
     simp only [guardEntails] at hf
@@ -1554,14 +1626,46 @@ theorem guardEntails_sound {lt : Term → Term} {lg ld : Nat → List String →
       · cases hm
     · refine ⟨ρ (ld s p).1, ?_, .inr (ih as hB ha)⟩
       rw [← hld s p, hp]; rfl
-  | index _ | length _ _ | bound _ _ _ | int _ | element _ _ _ | every _ _ _ _ | apart _ _ =>
+  | int k =>
+    intro as hf ha
+    exact intSlot_sound ha hf
+  | pastSafe k =>
+    intro as hf ha
+    obtain ⟨a, haa, hm⟩ := List.any_eq_true.mp hf
+    simp only [Bool.and_eq_true, Option.isNone_iff_eq_none, beq_iff_eq] at hm
+    have hat := ha a haa fun b hb => by rw [hm.1] at hb; cases hb
+    rw [hm.2] at hat
+    exact hat
+  | index _ | length _ _ | bound _ _ _ | element _ _ _ | every _ _ _ _ | apart _ _ =>
     intro as hf; simp [guardEntails] at hf
+
+/-- Whether an unconditional atom states that a slot holds the double `2^53`
+while the atoms state it a safe integer: no heap meets them both. -/
+def pastClash (as : List IndexAtom) : Bool :=
+  as.any fun a => a.cond.isNone && match a.fact with
+    | .pastSafe k => intSlot as k
+    | _ => false
+
+theorem pastClash_sound {as : List IndexAtom} {ρ h} (hc : pastClash as = true) (ha : IndexHolds as ρ h) : False := by
+  obtain ⟨a, haa, hm⟩ := List.any_eq_true.mp hc
+  simp only [Bool.and_eq_true, Option.isNone_iff_eq_none] at hm
+  obtain ⟨hn, hm⟩ := hm
+  have hat := ha a haa fun b hb => by rw [hn] at hb; cases hb
+  split at hm
+  · rename_i k hfa
+    rw [hfa] at hat
+    have hi := intSlot_sound ha hm
+    simp only [IndexFact.HoldsAt] at hat
+    rw [hat] at hi
+    simp [intValue, SafeIntegers.safeIntOfBits_pastSafe] at hi
+  · cases hm
 
 /-- Entailment by finite case splitting. Both arms of an unconditional
  disjunction must entail the target. Exhausting the fuel refuses the split. -/
 def caseEntails (check : List IndexAtom → IndexFact → Bool) : Nat → List IndexAtom → IndexFact → Bool
-  | 0, as, F => check as F || check as (.linear (.le [] (-1)))
+  | 0, as, F => check as F || check as (.linear (.le [] (-1))) || pastClash as
   | n + 1, as, F => caseEntails check 0 as F || as.any fun a => a.cond.isNone && match a.fact with
+    | .either _ (.pastSafe _) => false
     | .either A B =>
       caseEntails check n (as.erase a ++ [{ fact := A }]) F &&
       caseEntails check n (as.erase a ++ [{ fact := B }]) F
@@ -1576,22 +1680,27 @@ theorem caseEntails_sound {check : List IndexAtom → IndexFact → Bool} {ρ : 
     intro as F hf ha
     simp only [caseEntails] at hf
     rcases Bool.or_eq_true_iff.mp hf with hf | hf
-    · exact hcheck as F hf ha
-    · have bad := (hcheck as (.linear (.le [] (-1))) hf ha).2
-      simp [Linear.Fact.Holds, Linear.Form.eval] at bad
+    · rcases Bool.or_eq_true_iff.mp hf with hf | hf
+      · exact hcheck as F hf ha
+      · have bad := (hcheck as (.linear (.le [] (-1))) hf ha).2
+        simp [Linear.Fact.Holds, Linear.Form.eval] at bad
+    · exact (pastClash_sound hf ha).elim
   | succ n ih =>
     intro as F hf ha
     simp only [caseEntails] at hf
     rcases Bool.or_eq_true_iff.mp hf with hf | hf
     · rcases Bool.or_eq_true_iff.mp hf with hf | hf
-      · exact hcheck as F hf ha
-      · have bad := (hcheck as (.linear (.le [] (-1))) hf ha).2
-        simp [Linear.Fact.Holds, Linear.Form.eval] at bad
+      · rcases Bool.or_eq_true_iff.mp hf with hf | hf
+        · exact hcheck as F hf ha
+        · have bad := (hcheck as (.linear (.le [] (-1))) hf ha).2
+          simp [Linear.Fact.Holds, Linear.Form.eval] at bad
+      · exact (pastClash_sound hf ha).elim
     · obtain ⟨a, haa, ht⟩ := List.any_eq_true.mp hf
       obtain ⟨hc, ht⟩ := Bool.and_eq_true_iff.mp ht
       have hc : a.cond = none := Option.isNone_iff_eq_none.mp hc
       split at ht
-      · rename_i A B he
+      · cases ht
+      · rename_i A B _ he
         obtain ⟨hA, hB⟩ := Bool.and_eq_true_iff.mp ht
         have hab := ha a haa (fun b hb => by rw [hc] at hb; cases hb)
         rw [he] at hab
@@ -1618,7 +1727,7 @@ def guardFollows (M : Nat → List Nat) (m : PointClaims.Mapping) (ls : HeapLink
       let reads := bridgeReads ls
       let greads := guardReads ls
       caseEntails (guardEntails (liftTerm r reads reads.length) (liftGuard r greads greads.length)
-        (lowerGuard greads (HeapLinks.aliases ls) greads.length) tags) 8 a F
+        (lowerGuard greads (HeapLinks.aliases ls) greads.length) tags) 8 (a ++ releasePast a) F
     | none => false
   | _ => false
 
@@ -1637,7 +1746,8 @@ theorem guardFollows_sound {M : Nat → List Nat} {m : PointClaims.Mapping} {ls 
       have hr := HeapLinks.rep_eq (HeapLinks.classes_one hl)
       have hF' := caseEntails_sound
         (fun as F => guardEntails_sound (liftTerm_eq hl hr _) (liftGuard_eq hl hr _)
-          (lowerGuard_eq hl _) htags F as) 8 a F hf ha
+          (lowerGuard_eq hl _) htags F as) 8 (a ++ releasePast a) F hf
+          fun b hb hc => (List.mem_append.mp hb).elim (fun hb => ha b hb hc) (fun hb => releasePast_holds ha b hb hc)
       exact (IndexFact.holdsAt_mapM hF fun s _ y hy => by cases hy; exact pickSlot_eq hM s).mp hF'
     · cases hf
 
@@ -1766,7 +1876,7 @@ theorem shiftIndices_holds {as : List IndexAtom} {ρ h v} (he : IndexHolds as ρ
 /-- Whether a fact reads the environment alone: `index`, `int`, and a linear
 fact of values. -/
 def IndexFact.envOnly : IndexFact → Bool
-  | .index _ | .int _ => true
+  | .index _ | .int _ | .pastSafe _ => true
   | .linear F => F.vars.all Term.envOnly
   | .length _ _ | .bound _ _ _ | .element _ _ _ | .every _ _ _ _ | .apart _ _ => false
   | .either A B => A.envOnly && B.envOnly
@@ -1780,7 +1890,7 @@ theorem IndexFact.holdsAt_envOnly {F : IndexFact} {ρ : Env} {h : Heap} (henv : 
     simp only [IndexFact.envOnly, Bool.and_eq_true] at henv
     exact hF.imp (ihA henv.1) (ihB henv.2)
   | linear F => exact IndexFact.holdsAt_linear_heap henv hF
-  | index _ | int _ => exact hF
+  | index _ | int _ | pastSafe _ => exact hF
   | length _ _ | bound _ _ _ | element _ _ _ | every _ _ _ _ | apart _ _ => simp [IndexFact.envOnly] at henv
   | guarded s p t B ih =>
     simp only [IndexFact.envOnly, Bool.and_eq_true, List.isEmpty_iff] at henv
@@ -1841,7 +1951,7 @@ linear facts with the strict bounds their inequalities give
 those with each condition's atoms, the derived facts naming none of them,
 each of whose terms an atom states defined, appended under the condition
 they were derived under. -/
-def eliminateIndices (drop : List Nat) (as : List IndexAtom) : List IndexAtom :=
+def eliminateLinear (drop : List Nat) (as : List IndexAtom) : List IndexAtom :=
   let used := (linearTerms as).filter fun t => drop.contains t.slot
   if used.isEmpty then as else
   let keep := fun (known : List (Linear.Fact Term)) (F : Linear.Fact Term) =>
@@ -1855,9 +1965,9 @@ def eliminateIndices (drop : List Nat) (as : List IndexAtom) : List IndexAtom :=
       let known := linearFacts as ++ condFacts as c neg
       ((Linear.eliminateAll (Linear.strengthen known) used).filter (keep known)).map fun F => ⟨.linear F, some c, neg⟩
 
-theorem eliminateIndices_holds {drop : List Nat} {as : List IndexAtom} {ρ h} (he : IndexHolds as ρ h) :
-    IndexHolds (eliminateIndices drop as) ρ h := by
-  simp only [eliminateIndices]
+theorem eliminateLinear_holds {drop : List Nat} {as : List IndexAtom} {ρ h} (he : IndexHolds as ρ h) :
+    IndexHolds (eliminateLinear drop as) ρ h := by
+  simp only [eliminateLinear]
   split
   · exact he
   · intro a ha hc
@@ -1879,6 +1989,17 @@ theorem eliminateIndices_holds {drop : List Nat} {as : List IndexAtom} {ρ h} (h
       rcases List.mem_append.mp hG with hG | hG
       · exact linearFacts_holds he G hG
       · exact condFacts_holds he hcv G hG
+
+/-- The atoms with the terms of the slots of `drop` eliminated
+(`eliminateLinear`), after the sum rule's disjunctions it decides are released
+(`releasePast`). -/
+def eliminateIndices (drop : List Nat) (as : List IndexAtom) : List IndexAtom :=
+  eliminateLinear drop (as ++ releasePast as)
+
+theorem eliminateIndices_holds {drop : List Nat} {as : List IndexAtom} {ρ h} (he : IndexHolds as ρ h) :
+    IndexHolds (eliminateIndices drop as) ρ h :=
+  eliminateLinear_holds fun a ha hc => (List.mem_append.mp ha).elim (fun ha => he a ha hc)
+    (fun ha => releasePast_holds he a ha hc)
 
 /-- The linear facts, each with its terms defined, an atom's fact states: a
 linear fact itself, and a length atom `length(x, n)` as the equality of `n`'s
@@ -1912,7 +2033,7 @@ theorem atomLinear_holds {f : IndexFact} {ρ h} (hf : f.HoldsAt ρ h) :
         by simp only [Linear.Fact.Holds, Linear.Form.eval, v1, v2]; omega⟩
     · exact ⟨fun t ht => hdef t (by simpa [Linear.Fact.vars, or_comm] using ht),
         by simp only [Linear.Fact.Holds, Linear.Form.eval, v1, v2]; omega⟩
-  | index _ | bound _ _ _ | int _ | either _ _ | guarded _ _ _ _ | element _ _ _ | every _ _ _ _ | apart _ _ => simp [atomLinear] at hF
+  | index _ | bound _ _ _ | int _ | pastSafe _ | either _ _ | guarded _ _ _ _ | element _ _ _ | every _ _ _ _ | apart _ _ => simp [atomLinear] at hF
 
 /-- A term rooted at a dropped slot restated by reads toward a kept root:
 while its root is dropped, where a read gives the root's value as field `f`
@@ -3120,7 +3241,7 @@ theorem releaseEither_holds {as : List IndexAtom} {a : IndexAtom} {ρ : Env} {h 
       · cases hb
   | ⟨.either _ _, some _, _⟩ => simp [releaseEither, IndexHolds]
   | ⟨.index _, _, _⟩ | ⟨.length _ _, _, _⟩ | ⟨.bound _ _ _, _, _⟩
-  | ⟨.int _, _, _⟩ | ⟨.linear _, _, _⟩ | ⟨.guarded _ _ _ _, _, _⟩
+  | ⟨.int _, _, _⟩ | ⟨.pastSafe _, _, _⟩ | ⟨.linear _, _, _⟩ | ⟨.guarded _ _ _ _, _, _⟩
   | ⟨.element _ _ _, _, _⟩ | ⟨.every _ _ _ _, _, _⟩ | ⟨.apart _ _, _, _⟩ => simp [releaseEither, IndexHolds]
 
 def withElements (k : Knowledge) : Knowledge :=

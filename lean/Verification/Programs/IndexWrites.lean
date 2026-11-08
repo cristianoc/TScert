@@ -268,7 +268,7 @@ theorem indexed_sound {k : Knowledge} {a : Nat} {ρ h} (hc : indexed k a = true)
   | bound _ _ _ => rw [hfact] at hf; cases hf
   | int _ => rw [hfact] at hf; cases hf
   | linear _ => rw [hfact] at hf; cases hf
-  | either _ _ | guarded _ _ _ _ | element _ _ _ | every _ _ _ _ | apart _ _ => rw [hfact] at hf; cases hf
+  | pastSafe _ | either _ _ | guarded _ _ _ _ | element _ _ _ | every _ _ _ _ | apart _ _ => rw [hfact] at hf; cases hf
 
 /-- The arrays whose store's length a slot of `n`'s class holds, by unconditional ats. -/
 def lengthsOf (k : Knowledge) (n : Nat) : List Nat :=
@@ -301,7 +301,7 @@ theorem lengthsOf_sound {k : Knowledge} {n x : Nat} {ρ h} (hx : x ∈ lengthsOf
     | bound _ _ _ => rw [hfact] at hm; cases hm
     | int _ => rw [hfact] at hm; cases hm
     | linear _ => rw [hfact] at hm; cases hm
-    | either _ _ | guarded _ _ _ _ | element _ _ _ | every _ _ _ _ | apart _ _ => rw [hfact] at hm; cases hm
+    | pastSafe _ | either _ _ | guarded _ _ _ _ | element _ _ _ | every _ _ _ _ | apart _ _ => rw [hfact] at hm; cases hm
   · cases hm
 
 /-- The arrays a slot of `s`'s class was read from as their store: read links
@@ -659,6 +659,12 @@ def valueAtoms (F : Linear.Form Nat) (c : Int) : List IndexAtom :=
   [⟨.int 0, none, false⟩, ⟨.linear (valueFact (.le ((0, 1) :: shiftForm (F.scale (-1))) c)), none, false⟩,
     ⟨.linear (valueFact (.le ((0, -1) :: shiftForm F) (-c))), none, false⟩]
 
+/-- The atoms of a sum of two nonnegative safe integers bounded by `2^53`:
+each atom of the exact sum's (`valueAtoms`), or the result is the double
+`2^53` (`IndexFact.pastSafe`, `SafeIntegers.add_two53`). -/
+def pastSafeAtoms (F : Linear.Form Nat) (c : Int) : List IndexAtom :=
+  (valueAtoms F c).map fun a => { a with fact := .either a.fact (.pastSafe 0) }
+
 /-- The atoms of a comparison's two answers, on the result slot 0, of operands
 whose difference is `D + c`: the fact each answer gives, conditional on it. -/
 def compareAtoms (op : Arith) (D : Linear.Form Nat) (c : Int) : List IndexAtom :=
@@ -700,6 +706,33 @@ theorem copiedAtoms_holds {k : Knowledge} {a : Nat} {ρ h} (hk : Holds k ρ h) :
     rw [hcond] at hb; cases hb
     simpa [push] using hc 0 rfl)
   exact (IndexFact.holdsAt_mapM hF (fun s _ t ht => by cases ht; rfl)).mpr hsrc
+
+/-- A copy of slot `a` restates the sum rule's atoms on `a`
+(`pastSafeAtoms`), unconditional disjunctions whose right side states `a` the
+double `2^53`, on the copy, the result slot 0: the copy holds the same value. -/
+def pastCopies (k : Knowledge) (a : Nat) : List IndexAtom :=
+  k.indices.filterMap fun atom => match atom.cond, atom.fact with
+    | none, .either _ (.pastSafe b) => if b == a then
+        (atom.fact.mapM (fun i => some (if i == a then 0 else i + 1))).map fun F => { atom with fact := F }
+      else none
+    | _, _ => none
+
+theorem pastCopies_holds {k : Knowledge} {a : Nat} {ρ h} (hk : Holds k ρ h) :
+    IndexHolds (pastCopies k a) (push (ρ a) ρ) h := by
+  intro atom' hat hc
+  obtain ⟨atom, hat0, hm⟩ := List.mem_filterMap.mp hat
+  split at hm
+  · rename_i _ b hcn hf
+    split at hm
+    · obtain ⟨F, hF, rfl⟩ := Option.map_eq_some_iff.mp hm
+      have hsrc := hk.2.2.2.2.2 atom hat0 (fun c hcc => by rw [hcn] at hcc; cases hcc)
+      refine (IndexFact.holdsAt_mapM hF (fun s _ t ht => ?_)).mpr hsrc
+      cases ht
+      by_cases hs : s = a
+      · subst hs; simp [push]
+      · simp [hs, push]
+    · cases hm
+  · cases hm
 
 theorem indexHolds_cat {as bs : List IndexAtom} {ρ h}
     (ha : IndexHolds as ρ h) (hb : IndexHolds bs ρ h) : IndexHolds (as ++ bs) ρ h := fun a hm hc =>
@@ -753,7 +786,7 @@ def linearAtoms (G : NormalGraph ι) (Γ : List (Ty ι)) (k : Knowledge) : Tm �
     | none => []
   | .var a =>
     (if a < Γ.length ∧ intSlot k.indices a = true then valueAtoms [(a, 1)] 0 else []) ++
-      (if a < Γ.length then copiedAtoms k a else [])
+      (if a < Γ.length then copiedAtoms k a ++ pastCopies k a else [])
   | .lenOf (.var s) =>
     if storeSlot G Γ s then
       [⟨.int 0, none, false⟩, ⟨.linear (valueFact (.le [(0, -1)] 0)), none, false⟩,
@@ -774,7 +807,14 @@ def linearAtoms (G : NormalGraph ι) (Γ : List (Ty ι)) (k : Knowledge) : Tm �
             if entailsKnown k.indices (valueFact (.le F (maxSafe - c))) &&
                 entailsKnown k.indices (valueFact (.le (F.scale (-1)) (maxSafe + c))) then valueAtoms F c else []
           match op with
-          | .add => sum (fa ++ fb) (ca + cb)
+          | .add => if !(entailsKnown k.indices (valueFact (.le (fa ++ fb) (maxSafe - (ca + cb)))) &&
+                entailsKnown k.indices (valueFact (.le ((fa ++ fb).scale (-1)) (maxSafe + (ca + cb))))) &&
+                entailsKnown k.indices (valueFact (.le ((fa ++ fb).scale (-1)) (maxSafe + (ca + cb)))) &&
+                entailsKnown k.indices (valueFact (.le (fa ++ fb) (maxSafe + 1 - (ca + cb)))) &&
+                entailsKnown k.indices (valueFact (.le (fa.scale (-1)) ca)) &&
+                entailsKnown k.indices (valueFact (.le (fb.scale (-1)) cb)) then
+                pastSafeAtoms (fa ++ fb) (ca + cb)
+              else sum (fa ++ fb) (ca + cb)
           | .sub => sum (fa ++ fb.scale (-1)) (ca - cb)
           -- A zero factor gives the constant `0`, a form naming no slot.
           | .mul => if fa = [] then sum (if ca = 0 then [] else fb.scale ca) (ca * cb)
@@ -1084,7 +1124,7 @@ theorem linearAtoms_holds [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty �
     · simp only [instantiate, Nat.not_lt_zero, if_false, Nat.sub_zero, ha, true_and, if_true] at hs ⊢
       refine weaken (fun h' u hq => ⟨hq.1, ?_⟩) (value_run (hval a ha) hs)
       obtain ⟨-, rfl, rfl⟩ := hq
-      refine indexHolds_cat ?_ (copiedAtoms_holds hk)
+      refine indexHolds_cat ?_ (indexHolds_cat (copiedAtoms_holds hk) (pastCopies_holds hk))
       split
       · rename_i hi
         have hs' := intSlot_sound hk.2.2.2.2.2 hi
@@ -1232,11 +1272,28 @@ theorem linearAtoms_holds [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty �
           split
           · -- add
             rw [binop_num_arith (.inl rfl) hu]
-            exact hsum (fa ++ fb) (ca + cb)
-              ((Linear.Form.eval (valuation ρ) fa + ca) + (Linear.Form.eval (valuation ρ) fb + cb)) _
-              (hvars (fa ++ fb) rfl)
-              (by rw [Linear.Form.eval_append]; omega)
-              (fun hr => SafeIntegers.add_safe hsa hsb hr)
+            split
+            · rename_i hc
+              obtain ⟨hc, -⟩ := Bool.and_eq_true_iff.mp hc
+              obtain ⟨hc, -⟩ := Bool.and_eq_true_iff.mp hc
+              obtain ⟨hc, hc3⟩ := Bool.and_eq_true_iff.mp hc
+              obtain ⟨-, hc2⟩ := Bool.and_eq_true_iff.mp hc
+              have hn1 := holds_valueFact.mp (entailsKnown_sound hk.2.2.2.2.2 hc2)
+              have hn2 := holds_valueFact.mp (entailsKnown_sound hk.2.2.2.2.2 hc3)
+              simp only [Linear.Fact.Holds, Linear.Form.eval_scale, Linear.Form.eval_append, maxSafe] at hn1 hn2
+              intro a ha hcond
+              obtain ⟨a0, ha0, rfl⟩ := List.mem_map.mp ha
+              by_cases hr : ((Linear.Form.eval (valuation ρ) fa + ca) + (Linear.Form.eval (valuation ρ) fb + cb)).natAbs < 2 ^ 53
+              · refine .inl (valueAtoms_holds (hvars (fa ++ fb) rfl) ?_ a0 ha0 hcond)
+                rw [Linear.Form.eval_append, show Linear.Form.eval (valuation ρ) fa + Linear.Form.eval (valuation ρ) fb + (ca + cb) =
+                  (Linear.Form.eval (valuation ρ) fa + ca) + (Linear.Form.eval (valuation ρ) fb + cb) by omega]
+                exact SafeIntegers.add_safe hsa hsb hr
+              · exact .inr (by simp only [IndexFact.HoldsAt, push]; rw [SafeIntegers.add_two53 hsa hsb (by omega)])
+            · exact hsum (fa ++ fb) (ca + cb)
+                ((Linear.Form.eval (valuation ρ) fa + ca) + (Linear.Form.eval (valuation ρ) fb + cb)) _
+                (hvars (fa ++ fb) rfl)
+                (by rw [Linear.Form.eval_append]; omega)
+                (fun hr => SafeIntegers.add_safe hsa hsb hr)
           · -- sub
             rw [binop_num_arith (.inr (.inl rfl)) hu]
             exact hsum (fa ++ fb.scale (-1)) (ca - cb)
@@ -1566,7 +1623,7 @@ theorem boundAtom_sound {k : Knowledge} {a i : Nat} {strict : Bool} {ρ h} (hc :
   | length _ _ => rw [hfact] at hf; cases hf
   | int _ => rw [hfact] at hf; cases hf
   | linear _ => rw [hfact] at hf; cases hf
-  | either _ _ | guarded _ _ _ _ | element _ _ _ | every _ _ _ _ | apart _ _ => rw [hfact] at hf; cases hf
+  | pastSafe _ | either _ _ | guarded _ _ _ _ | element _ _ _ | every _ _ _ _ | apart _ _ => rw [hfact] at hf; cases hf
 
 /-- Whether the linear facts bound a slot `i` by the length of the store of an
 array of `a`'s class (`HeapKnowledge.lengthBound`). -/

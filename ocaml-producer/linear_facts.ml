@@ -815,6 +815,21 @@ let restate_read name (root,path) (fs : fact list) : fact list =
       Some (norm (List.map (fun (n,c) -> (match rename n with Some m -> m | None -> n),c) t),d)
     else None) fs
 
+(* A sum of two linear operands whose value the facts bound within the safe
+   integers or by 2^53 (Lean's sum rule: the exact sum, or the double 2^53,
+   `IndexFact.pastSafe`), as a construction's actual reads it. *)
+let linear_or_past ~array env fs (e : expr) = match linear ~array env fs e with
+  | Some f -> Some f
+  | None -> (match e.node with
+    | Arith (Add,a,b) ->
+      (match linear ~array env fs a, linear ~array env fs b with
+       | Some (ta,ca),Some (tb,cb) ->
+         let t,c = norm (ta @ tb),ca+cb in
+         let fs = fs @ term_ranges ((t,0) :: fs) in
+         if entails fs (t, max_safe + 1 - c) && entails fs (scale (-1) t, max_safe + c) then Some (t,c) else None
+       | _ -> None)
+    | _ -> None)
+
 (* Index facts at a call's positions restated over bindings, `name p` the
    binding the position `p` holds; a fact naming a position no binding holds
    is left out. *)
@@ -846,9 +861,12 @@ let ctor_signatures : ((string * Environment.binding) list -> string -> Semantic
    its positions 0 the result and `i + 2` the `i`-th actual, each actual a
    linear expression. A fact naming another position is left out. *)
 let construct_ensures ~array env fs name c (args : expr list) : fact list =
-  let form p = if p >= 1 then Option.bind (List.nth_opt args (p - 1)) (linear ~array env fs) else None in
-  let holds = function
+  let form p = if p >= 1 then Option.bind (List.nth_opt args (p - 1)) (linear_or_past ~array env fs) else None in
+  let rec holds = function
     | Semantic.Int_at k -> Option.is_some (form k)
+    (* A safe integer meets the left side; the right, the double 2^53, is the
+       case Lean's sum rule adds where the actual's bound reaches it. *)
+    | Semantic.Either (a,Semantic.Past_safe _) -> holds a
     | Semantic.Linear_le (f,d) ->
       let parts = List.map (fun (t,c) -> match (t : Semantic.term) with
         | Semantic.Value_at (x,[]) -> Option.map (fun (t,k) -> scale c t, c * k) (form x)

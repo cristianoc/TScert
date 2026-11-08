@@ -390,7 +390,8 @@ const bytesEntries: GlobalEntry[] = [
  * length or an array of numbers: `new Uint8Array(n)` converts `n` by
  * ToIndex, a number's own value, throwing a `RangeError` where it is
  * negative or too large, and allocates a view of that many zeros, so at a
- * safe integer `n ≥ 0` a normal return's view has exactly `n` elements (the
+ * safe integer `n ≥ 0` a normal return's view has exactly `n` elements, and
+ * at the double `2^53` ToIndex throws a `RangeError`, no normal return (the
  * first form's precondition and postcondition); `new
  * Uint8Array(xs)` of an array gets the array's `Symbol.iterator`, which an
  * array owns none of, from the untampered `Array.prototype`, steps the
@@ -402,8 +403,11 @@ const bytesEntries: GlobalEntry[] = [
  * not allocate. */
 const lengthTerm = (kind: "value" | "view", slot: number): LinearTerm => ({ kind, slot, path: [] });
 const viewOfLength: CallEffect = { ...emptyEffect,
-  // At a call's positions: 1 the length, `int(1) ∧ 0 ≤ 1`.
-  pre: [{ int: { slot: 1 } }, { linear: { fact: { le: { form: [[lengthTerm("value", 1), -1]], bound: 0 } } } }],
+  // At a call's positions: 1 the length, `(int(1) ∧ 0 ≤ 1) ∨ past(1)`, a
+  // safe integer at least 0 or the double 2^53, at which ToIndex throws.
+  pre: [{ either: { left: { int: { slot: 1 } }, right: { pastSafe: { slot: 1 } } } },
+    { either: { left: { linear: { fact: { le: { form: [[lengthTerm("value", 1), -1]], bound: 0 } } } },
+      right: { pastSafe: { slot: 1 } } } }],
   // At a return's positions: 0 the view, 2 the length, `view(0) = 2`.
   ensures: [
     { every: { slot: 0, path: [], stop: lengthTerm("view", 0), body: [] } },

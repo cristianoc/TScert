@@ -416,6 +416,7 @@ export function indexFactPositions(f: IndexFact): number[] {
   if ("guarded" in f) return [f.guarded.slot, ...indexFactPositions(f.guarded.body)];
   if ("index" in f) return [f.index.slot];
   if ("int" in f) return [f.int.slot];
+  if ("pastSafe" in f) return [f.pastSafe.slot];
   if ("length" in f) return [f.length.array, f.length.length];
   if ("bound" in f) return [f.bound.array, f.bound.index];
   if ("element" in f) return [f.element.value, f.element.array, f.element.index];

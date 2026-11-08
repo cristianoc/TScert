@@ -1629,6 +1629,28 @@ $`i`$, of value $`i`$; $`r`$ is the result:
 \frac{}{K\vdash c\leftarrow a\ \texttt{===}\ b\dashv (a=b\ \text{if}\ c),\ (a\ne b\ \text{if}\ \neg c)}\ \textsf{int-equal}
 ```
 
+**A sum reaching $`2^{53}`$.** Two safe integers $`a,b\ge 0`$ whose sum
+the knowledge bounds by $`2^{53}`$, and not by $`2^{53}-1`$, add to their
+exact sum or to the double $`2^{53}`$, the least integer past the safe
+integers, $`\mathrm{past}(r)`$ (`IndexFact.pastSafe`): $`a+b<2^{53}`$ is
+exact, and $`a+b=2^{53}`$ is exactly representable (proved:
+`SafeIntegers.add_two53`). The step states each atom of `int-exact`'s
+conclusion as a disjunction with $`\mathrm{past}(r)`$:
+
+```math
+\frac{K\vdash 0\le a\qquad K\vdash 0\le b\qquad K\vdash a+b\le 2^{53}\qquad K\nvdash a+b\le 2^{53}-1}
+     {K\vdash r\leftarrow a+b\dashv\mathrm{int}(r)\lor\mathrm{past}(r),\ (r\le a+b)\lor\mathrm{past}(r),\ (r\ge a+b)\lor\mathrm{past}(r)}\ \textsf{int-sum-past}
+```
+
+The double $`2^{53}`$ is no safe integer (proved:
+`SafeIntegers.pastSafe_not_safe`), so knowledge stating $`r`$ a safe integer
+decides each disjunction for its left side (`releasePast`, applied where an
+edge's target is checked and before a dropped slot is eliminated), and a
+target $`F\lor\mathrm{past}(r)`$ follows where $`F`$ follows from the left
+sides (`guardEntails`). A copy of $`r`$ restates the disjunctions
+(`pastCopies`). A typed array's construction takes such a sum as its length
+([the standard library's typed arrays](SOURCE-CONTRACTS.md#the-standard-librarys-typed-arrays)).
+
 with $`K\vdash`$ the entailment from the step's knowledge
 ([entailment](#linear-facts), `value-range` included), $`\lhd`$ one of `<`,
 `<=`, `>`, `>=`, and each branch's fact over the integers ($`\neg(a<b)`$ is

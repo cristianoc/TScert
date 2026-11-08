@@ -113,6 +113,7 @@ export interface HeapKnowledge {
 }
 type IndexFact = { index: { slot: number } } | { length: { array: number; length: number } } |
   { bound: { array: number; index: number; strict: boolean } } | { int: { slot: number } } |
+  { pastSafe: { slot: number } } |
   { linear: { fact: { le: { form: [LinearTerm, number][]; bound: number } } | { ne: { form: [LinearTerm, number][]; bound: number } } } } |
   { either: { left: IndexFact; right: IndexFact } } |
   { guarded: { slot: number; path: string[]; tag: "null" | "undefined" | "true" | "false"; body: IndexFact } } |
@@ -471,6 +472,8 @@ function indexFact(f: Json | undefined): IndexFact {
     fact = { bound: { array: nat(b.array), index: nat(b.index), strict: b.strict } };
   } else if ("int" in f) {
     fact = { int: { slot: nat(record(record(f,["int"]).int,["slot"]).slot) } };
+  } else if ("pastSafe" in f) {
+    fact = { pastSafe: { slot: nat(record(record(f,["pastSafe"]).pastSafe,["slot"]).slot) } };
   } else {
     const stated = record(record(f,["linear"]).linear,["fact"]).fact;
     const le = isParsedObject(stated) && "le" in stated;
