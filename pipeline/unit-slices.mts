@@ -212,7 +212,9 @@ function mappedDeclarations(declarations: Json, walk: (v: Json) => Json, canon: 
   // of the document it names is named canonically.
   const out: JsonRecord = {};
   for (const [k, v] of Object.entries(declarations)) {
-    if (k === "definitions") out[k] = listOf(v).map((d) => own(d) ? walk(d) : canon(d));
+    // Another module's definition keeps its own identity, but the members
+    // the document reads carry spans of their reads in the document.
+    if (k === "definitions") out[k] = listOf(v).map(walk);
     else if (k === "values")
       out[k] = listOf(v).map((d) => own(d) || !isRecord(d) ? walk(d) : { ...canonRecord(d, canon), binding: walk(d.binding ?? null) });
     else out[k] = walk(v);
