@@ -943,6 +943,12 @@ the one the graph checker computes for the dispatch. -/
         | _, _, _ => operation
       | _ => operation
     let A ← executionOperationType fc scope Γ operation
+    -- A checked empty result leaves no normal continuation. The operation
+    -- itself retains its handler.
+    if A.isEmpty then
+      let stop ← emitAt source (.var 0) .ret (A::Γ) A "unreachable"
+        (scope := held ⟨"",some source⟩ :: scope)
+      return ← compileExecutionOperation recursive fc scope Γ source operation stop
     let previous ← executionOrigins
     let preservesReads := match operation with
       | .evaluate _ _ .none | .methodRead .. | .referenceRead .. | .positionRead .. => true

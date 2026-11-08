@@ -73,8 +73,8 @@ The producer interprets these plans to compute point states. It uses a work
 queue: a changed input state causes a node to be visited again, and outgoing
 states are joined at successors. Scope projection retains only live bindings;
 impossible paths do not contribute types to a feasible join. Exception edges
-conservatively forget mutable contents and field facts. Repeated visits can
-widen a state by forgetting those facts. Claims for each node come from its
+conservatively forget mutable contents and field facts. Widening on repeated
+visits keeps field facts that agree before and after the join. Claims for each node come from its
 latest transfer, and the producer assembles them after the work queue settles.
 
 Expression inference also reads the source tree to obtain contextual types,

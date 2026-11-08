@@ -502,6 +502,7 @@ let statements callbacks flow_graph register_following owner_span env0 ss =
         (* A slot still changing here is widened to its contract; one that
            settled keeps what it holds, a branch's narrowing included. *)
         let settled n b = List.assoc_opt n previous.env = Some b in
+        let keep_field n = List.assoc_opt n previous.env = List.assoc_opt n state.env in
         let kept=Linear_facts.widen (Linear_facts.facts previous.env) (Linear_facts.facts state.env) in
         let kept_bounds=Linear_facts.join_bounds (Linear_facts.bounds previous.env) (Linear_facts.bounds state.env) in
         let kept_guarded=let p=Linear_facts.gfacts previous.env in
@@ -513,7 +514,7 @@ let statements callbacks flow_graph register_following owner_span env0 ss =
         {state with env=Fun.flip Linear_facts.dadd kept_disjunctions @@ Fun.flip Linear_facts.eadd kept_every @@ Fun.flip Linear_facts.gadd kept_guarded @@ Fun.flip Linear_facts.add_bounds kept_bounds @@
           Linear_facts.add (List.map (fun (n,b) -> match b with
           | Local (contract,_) when not (settled n b) -> n,Local (contract,callbacks.widen_slot contract)
-          | _ -> n,b) (forget (Linear_facts.strip_bounds (Linear_facts.strip state.env)))) kept}) graph (capture env0) in
+          | _ -> n,b) (forget ~keep:keep_field (Linear_facts.strip_bounds (Linear_facts.strip state.env)))) kept}) graph (capture env0) in
     Array.iter callbacks.publish_output publications;
     let completed=Array.to_list (Array.mapi (fun id state -> match graph.nodes.(id).action,state with
       | Flow.End,Some state -> Some (scope [] state.env) | _ -> None) states) |> List.filter_map Fun.id in

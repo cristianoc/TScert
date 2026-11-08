@@ -4777,13 +4777,11 @@ target claim, whatever its slots, links and implications:
 clause row without clauses) once the target exists, and
 `unsatisfiable_sound` proves no environment meets $`\Gamma`$, so
 `target_state`, `branch_target_state` and `witness_edge_sound` have no case
-to establish. A call
-claimed at the empty type, of a function declared to return `never`, returns
-normally into no environment: its result slot is in the context of each node
-up to the statement's end, whose edge to the next statement is
-`vacuous-edge`. The producer proposes the next statement's slots at the
-empty type along it, which a join with another edge drops, and a handler
-edge as for any call. After `if (!ok(x)) fail(…)` the next statement is
+to establish. A dispatch edge also establishes every target claim when the
+tested type rules out its answer (`BranchRefinement.impossible_sound`).
+An operation checked at the empty type has no normal result. The expression
+plan terminates that path with a read of the empty result slot and preserves
+the operation's handler. After `if (!ok(x)) fail(…)` the next statement is
 reached by the condition's `false` edge alone and sees its refinement
 (`never-call-narrowing`, `compiler-api-never-guard`). The claim is the
 call's, checked at the callee's signature: a call of a function returning a

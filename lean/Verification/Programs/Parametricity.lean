@@ -292,7 +292,7 @@ theorem checkBranchTarget_reassign (P : Program) (C : ControlFlow.Certificate ι
     (xs : List (PromiseCalls.Implication ι)) (sources : List Nat) :
     checkBranchTargetUsing (reassign G η) (images.reassign η) P C Γ o t p facts xs sources =
       checkBranchTargetUsing G images P C Γ o t p facts xs sources := by
-  simp only [checkBranchTargetUsing_eq, checkObserved_reassign, carries_reassign, unsatisfiable_reassign,
+  simp only [checkBranchTargetUsing_eq, checkObserved_reassign, carries_reassign, branchUnreachable, unsatisfiable_reassign,
     withTypedCells_reassign]
   rfl
 

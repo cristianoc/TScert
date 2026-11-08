@@ -373,11 +373,16 @@ theorem optionalFields_holds {facts : HeapKnowledge.Knowledge} {slot ρ h}
       simpa [hc.2] using hr
   · cases he
 
+/-- A dispatch edge has no execution if its context is empty or its tested
+value cannot give the selected answer. -/
+@[nospecialize] def branchUnreachable [DecidableEq ι] (G : NormalGraph ι) (Γ : List (Ty ι)) (o : Observation) : Bool :=
+  unsatisfiable G Γ || (Γ[0]?).any (impossible G · o)
+
 @[nospecialize] def checkBranchTargetResult [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (P : Program) (C : Certificate ι)
     (Γ : List (Ty ι)) (o : Observation) (target : Target) (p : EdgeEvidence ι) (facts : HeapKnowledge.Knowledge := {})
     (xs : List (Implication ι) := []) (sources : List Nat := []) : CheckResult ι Unit :=
   match P[target.label]?, C[target.label]? with
-  | some _, some c => (CheckResult.ofBool (unsatisfiable G Γ)).orElse fun _ =>
+  | some _, some c => (CheckResult.ofBool (branchUnreachable G Γ o)).orElse fun _ =>
       (checkObservedResult G images Γ (entry c) 0 o target.mapping p
         (readFields facts 0) (optionalFields facts 0) (HeapKnowledge.aliasCells (HeapKnowledge.observeTyped G Γ facts 0 o))).bind fun _ =>
       CheckResult.ofBool (KnowledgeExpand.checkIn (KnowledgeExpand.ctxOf G (entry c)) (HeapKnowledge.observeTyped G Γ (withTypedCells G Γ c.knowledge target.mapping facts) 0 o) c.knowledge target.mapping &&
@@ -394,7 +399,7 @@ theorem checkBranchTargetUsing_eq [DecidableEq ι] (G : NormalGraph ι) (images 
     (xs : List (Implication ι)) (sources : List Nat) :
     checkBranchTargetUsing G images P C Γ o target p facts xs sources = (
   match P[target.label]?, C[target.label]? with
-  | some _, some c => unsatisfiable G Γ || (checkObservedUsing G images Γ (entry c) 0 o target.mapping p (readFields facts 0)
+  | some _, some c => branchUnreachable G Γ o || (checkObservedUsing G images Γ (entry c) 0 o target.mapping p (readFields facts 0)
       (optionalFields facts 0) (HeapKnowledge.aliasCells (HeapKnowledge.observeTyped G Γ facts 0 o)) && (KnowledgeExpand.checkIn (KnowledgeExpand.ctxOf G (entry c)) (HeapKnowledge.observeTyped G Γ (withTypedCells G Γ c.knowledge target.mapping facts) 0 o) c.knowledge target.mapping &&
         carries G Γ facts xs sources target c))
   | _, _ => false
@@ -825,7 +830,7 @@ def TargetOk [DecidableEq ι] (G : NormalGraph ι) (C : Certificate ι) (Γ : Li
 def BranchTargetOk [DecidableEq ι] (G : NormalGraph ι) (C : Certificate ι)
     (Γ : List (Ty ι)) (o : Observation) (l : Target) (facts : HeapKnowledge.Knowledge)
     (xs : List (Implication ι)) (sources : List Nat) : Prop :=
-  ∃ c, C[l.label]? = some c ∧ (unsatisfiable G Γ = true ∨ (ObservedCovers G Γ (entry c) 0 o l.mapping (readFields facts 0)
+  ∃ c, C[l.label]? = some c ∧ (branchUnreachable G Γ o = true ∨ (ObservedCovers G Γ (entry c) 0 o l.mapping (readFields facts 0)
     (optionalFields facts 0) (HeapKnowledge.aliasCells (HeapKnowledge.observeTyped G Γ facts 0 o)) ∧ KnowledgeExpand.checkIn (KnowledgeExpand.ctxOf G (entry c)) (HeapKnowledge.observeTyped G Γ (withTypedCells G Γ c.knowledge l.mapping facts) 0 o) c.knowledge l.mapping = true ∧
     carries G Γ facts xs sources l c = true))
 
@@ -1086,7 +1091,12 @@ theorem branch_target_state [DecidableEq ι] {G : NormalGraph ι} {Rty C Γ q l 
     StateOk G Rty C v0 n (trunc n (Nat.le_succ n) W) h (.at l.label (mapEnv l.mapping ρ)) := by
   obtain ⟨c,hc,hcases⟩ := ht
   rcases hcases with hu | ⟨hcov,hfact,hcar⟩
-  · exact (unsatisfiable_sound hu he).elim
+  · simp only [branchUnreachable, Bool.or_eq_true] at hu
+    rcases hu with hcontext | hanswer
+    · exact (unsatisfiable_sound hcontext he).elim
+    cases htype : Γ[0]? with
+    | none => simp [htype] at hanswer
+    | some A => exact (impossible_sound (by simpa [htype] using hanswer) (he.2 0 A htype) hq).elim
   simp only [carries, Bool.and_eq_true] at hcar
   exact ⟨c,hc,(hcov.env he hq hh (readFields_holds hf) (optionalFields_holds hf)
     (HeapKnowledge.aliasCells_holds (HeapKnowledge.observeTyped_holds he hf hq))).transfer n

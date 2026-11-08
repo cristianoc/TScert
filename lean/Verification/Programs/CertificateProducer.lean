@@ -2263,14 +2263,17 @@ heap entailment; it is not limited to ordinary subtype proof construction. -/
   for (node,l) in P.zipIdx do
     let some c := C[l]? | return some .claimCount
     for (target,index) in (successors node.continuation).zipIdx do
-      let facts := edgeKnowledge G ((claim c.expression).type :: (claim c.expression).context) (ControlFlow.outFacts G c) node.continuation index
       let some destination := C[target.label]? | return some .claimCount
-      -- An edge out of a context no environment meets establishes its
-      -- target's knowledge too (`vacuous-edge`).
-      if ControlFlow.unsatisfiable G (edgeContextOf G c node.continuation index) then continue
+      let Γ := edgeContextOf G c node.continuation index
+      let unreachable := match node.continuation with
+        | .tagBind tag _ _ => ControlFlow.branchUnreachable G Γ (.tag tag (index == 0))
+        | .branchBind _ _ => ControlFlow.branchUnreachable G Γ (.boolean (index == 0))
+        | _ => ControlFlow.unsatisfiable G Γ
+      if unreachable then continue
+      let facts := edgeKnowledge G ((claim c.expression).type :: (claim c.expression).context) (ControlFlow.outFacts G c) node.continuation index
       if !KnowledgeExpand.checkIn (KnowledgeExpand.ctxOf G (ControlFlow.entry destination))
-          (HeapKnowledge.withTypedLinks G (edgeContextOf G c node.continuation index)
-            (ControlFlow.withTypedCells G (edgeContextOf G c node.continuation index) destination.knowledge target.mapping facts))
+          (HeapKnowledge.withTypedLinks G Γ
+            (ControlFlow.withTypedCells G Γ destination.knowledge target.mapping facts))
           destination.knowledge target.mapping then
         return some (.edge l target.label index)
   return none
