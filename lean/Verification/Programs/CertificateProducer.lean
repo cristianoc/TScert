@@ -2006,7 +2006,8 @@ Every edge is still checked by the independent consumer. -/
   -- round that fails at a node goes on with the others, so the cuts after
   -- it are met; a successful round keeps its evidence, and a failure is the
   -- first round's, or a later round's at a node's expression where the
-  -- first round's is an edge's.
+  -- first round's is an edge's. Within a round, a node's expression failing
+  -- is reported over an edge's.
   let mut seeds : List (Nat × List (PromiseCalls.Implication ι)) := []
   -- A cut's elements atoms: likewise, those every entering edge carries.
   let mut elemSeeds : List (Nat × List HeapKnowledge.ElemAtom) := []
@@ -2171,7 +2172,9 @@ Every edge is still checked by the independent consumer. -/
           -- The first round fails as before where no cut's implications
           -- could follow; a later one rethrows the first round's failure.
           if seeds.isEmpty && cuts.isEmpty then throw e
-          failed := failed <|> some e
+          -- A node's own expression failing is reported over an edge's
+          -- failing before it: the edges after a failed node fail with it.
+          failed := if Failure.atEdge failed && !Failure.atEdge (some e) then some e else failed <|> some e
           failedAt := failedAt.set! l true
           progress := true
       if !progress then
