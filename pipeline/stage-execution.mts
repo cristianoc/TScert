@@ -55,12 +55,17 @@ export const sha256 = (bytes: string | Buffer): string => createHash("sha256").u
  * inode, size, modification and change times): a file rewritten in place
  * changes its change time. */
 const digests = new Map<string, { signature: string; digest: string }>();
-/** The files whose digests an identity being held reads (`heldIdentity`). */
-let digestsRead: Set<string> | null = null;
+/** The files an identity being held reads (`heldIdentity`), each with its
+ * status when first read. */
+let digestsRead: Map<string, string | null> | null = null;
+/** Note that the identity being held read `path`, at `status`. */
+function noteRead(path: string, status: string | null): void {
+  if (digestsRead && !digestsRead.has(path)) digestsRead.set(path, status);
+}
 function known(path: string): { signature: string; digest: string } {
-  digestsRead?.add(path);
   const s = statSync(path, { bigint: true });
   const signature = `${s.dev}:${s.ino}:${s.size}:${s.mtimeNs}:${s.ctimeNs}`;
+  noteRead(path, signature);
   const held = digests.get(path);
   if (held?.signature === signature) return held;
   const fresh = { signature, digest: sha256(readFileSync(path)) };
@@ -186,7 +191,7 @@ export function linkedLibraries(executable: string): Canonical | string {
     for (const p of paths) {
       if (seen.has(p)) continue;
       seen.add(p);
-      digestsRead?.add(p);
+      noteRead(p, statusOf(p));
       if (onSystemVolume(p)) identified.push([p, `system ${build}`]);
       else {
         const real = realpathSync(p);
@@ -429,31 +434,46 @@ function statusOf(path: string): string | null {
 }
 /** Identities computed once and kept while the status of every file they
  * were computed from is unchanged: the paths named, each file a digest was
- * taken of while computing it, and those files' real paths. A file rewritten
- * in place changes its change time, and a path re-pointed changes the file
- * it names, so a kept identity is the one computing it again gives. */
+ * taken of while computing it, and those files' real paths. Each file's
+ * status is the one observed before it was read, and the identity is kept
+ * only where every status is still the same after the computation: a file
+ * that changed during it has the identity computed again, so a kept
+ * identity is the one computing it again gives. A file rewritten in place
+ * changes its change time, and a path re-pointed changes the file it names.
+ * Files changing during every one of three computations leave the program
+ * unidentified. */
 const heldIdentities = new Map<string, { files: [string, string | null][]; value: { identity: Canonical } | { unidentified: string } }>();
+/** An in-process test barrier after an identity is computed and before its
+ * files' statuses are compared again. */
+let identifiedForTests: (() => void) | null = null;
+export function pauseIdentificationForTests(hook: (() => void) | null): void {
+  identifiedForTests = hook;
+}
 function heldIdentity(key: string, named: readonly string[],
     compute: () => { identity: Canonical } | { unidentified: string }): { identity: Canonical } | { unidentified: string } {
   const held = heldIdentities.get(key);
   if (held && held.files.every(([path, status]) => statusOf(path) === status)) return held.value;
-  const outer = digestsRead;
-  const read = new Set<string>(named);
-  digestsRead = read;
-  let value: { identity: Canonical } | { unidentified: string };
-  try {
-    value = compute();
-  } finally {
-    digestsRead = outer;
-    if (outer) for (const path of read) outer.add(path);
+  heldIdentities.delete(key);
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const outer = digestsRead;
+    const read = new Map<string, string | null>(named.map((path) => [path, statusOf(path)]));
+    digestsRead = read;
+    let value: { identity: Canonical } | { unidentified: string };
+    try {
+      value = compute();
+    } finally {
+      digestsRead = outer;
+      if (outer) for (const [path, status] of read) if (!outer.has(path)) outer.set(path, status);
+    }
+    identifiedForTests?.();
+    const files = [...read];
+    if (files.every(([path, status]) => statusOf(path) === status)) {
+      heldIdentities.set(key, { files, value });
+      return value;
+    }
   }
-  const files: [string, string | null][] = [...read].map((path) => [path, statusOf(path)]);
-  // A path's status read after the computation may postdate it: a file
-  // that changed meanwhile is computed again at the next call.
-  heldIdentities.set(key, { files, value });
-  return value;
+  return { unidentified: "the files identifying it changed while it was identified" };
 }
-
 /** The identity of an audited program's executable: its digest, its linked
  * libraries and the platform it runs on; or why it has none. Only the
  * repository's builds of the verifier and the producer are audited: their

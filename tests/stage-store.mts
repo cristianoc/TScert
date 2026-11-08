@@ -15,8 +15,8 @@ import { hostname, platform } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { runDirectory } from "../pipeline/run-directory.mts";
 import { Store, StoreError, pausePublicationForTests, pauseLockForTests, type StoredResult } from "../pipeline/stage-store.mts";
-import { invokeProcess, readInvocationLog, Recorder, startEviction, type Invoked } from "../pipeline/stages.mts";
-import { auditForTests, canonical, linkedLibraries, runnerBuild, sha256, verifierCall, type ProcessCall }
+import { claimWaitMs, invokeProcess, readInvocationLog, Recorder, startEviction, type Invoked } from "../pipeline/stages.mts";
+import { auditForTests, canonical, pauseIdentificationForTests, linkedLibraries, runnerBuild, sha256, verifierCall, type ProcessCall }
   from "../pipeline/stage-execution.mts";
 
 const dir = runDirectory("tscert-stage-store-");
@@ -591,12 +591,22 @@ if (eligible) sections.push((async (): Promise<void> => {
   assert.deepEqual(readdirSync(join(store.root, "running", "lower")), [], "the claim is released");
   use(store);
   assert.equal(invoke(lower(steady, input)).record.execution, "replayed");
-  // A claim of a stopped process is taken over.
-  const stale = join(store.root, "running", "lower", "f".repeat(64));
-  writeFileSync(stale, `${hostname()} 999999999`);
-  const taken = store.claim("lower", "f".repeat(64));
-  assert.ok(taken !== "held", "a stopped process's claim is taken over");
-  taken();
+  // A claim never released (its owner running) is waited for until the
+  // deadline, then the waiter executes the key itself.
+  const quick = script("quick.sh", `/bin/cat "$2"`, ["/bin/cat"]);
+  const pending = file("deadline.json", "deadline");
+  const first = invoke(lower(quick, pending), 500);
+  const pendingKey = first.record.key;
+  assert.ok(pendingKey !== null);
+  rmSync(join(store.root, "entries", "lower", pendingKey), { recursive: true });
+  const claimed = join(store.root, "running", "lower", pendingKey);
+  mkdirSync(claimed, { recursive: true });
+  writeFileSync(join(claimed, "owner"), `${hostname()} ${process.pid} ${randomUUID().slice(0, 8)}`);
+  const waitStarted = performance.now();
+  const late = invoke(lower(quick, pending), 500);
+  assert.equal(late.record.execution, "executed", "the waiter executes after the deadline");
+  assert.ok(performance.now() - waitStarted >= claimWaitMs(500), "the waiter waits until the deadline");
+  rmSync(claimed, { recursive: true });
   // Two results for one key are a store error.
   const result = (text: string): StoredResult => ({ input: "{}", exitStatus: 0, stdout: Buffer.from(text),
     stderr: Buffer.alloc(0), outputs: [], measurement: { attempt: text, elapsedMs: 1, limitMs: 1000,
@@ -1142,6 +1152,75 @@ sections.push((async (): Promise<void> => {
   assert.equal(readFileSync(join(lock, "owner"), "utf8"), other, "a release removes only its own lock");
   rmSync(lock, { recursive: true });
 }
+{
+  // Execution claims are locks as the eviction lock is: a running owner's
+  // claim is held, a stopped owner's and one interrupted before its owner
+  // file was written are taken over; of two processes taking a stale claim
+  // over, the one whose claim is in place keeps it; a release removes only
+  // its own claim; a wait for a claim that is never released ends at its
+  // deadline, and the waiter executes the key itself.
+  const store = new Store(join(dir, "claims"));
+  const key = "f".repeat(64);
+  const claimLock = join(store.root, "running", "lower", key);
+  const placeClaim = (owner: string | null): void => {
+    rmSync(claimLock, { recursive: true, force: true });
+    mkdirSync(claimLock, { recursive: true });
+    writeFileSync(join(claimLock, owner === null ? "partial" : "owner"), owner ?? "");
+  };
+  const named = (pid: number): string => `${hostname()} ${pid} ${randomUUID().slice(0, 8)}`;
+  placeClaim(named(process.pid));
+  assert.equal(store.claim("lower", key), "held", "a running owner's claim is held");
+  placeClaim(named(stoppedPid()));
+  const taken = store.claim("lower", key);
+  assert.ok(taken !== "held", "a stopped owner's claim is taken over");
+  taken();
+  assert.ok(!existsSync(claimLock), "a release removes the claim");
+  placeClaim(null);
+  const interrupted = store.claim("lower", key);
+  assert.ok(interrupted !== "held", "a claim interrupted before its owner file is taken over");
+  interrupted();
+  const other = named(process.pid);
+  placeClaim(named(stoppedPid()));
+  pauseLockForTests((point) => {
+    if (point !== "takeover") return;
+    pauseLockForTests(null);
+    placeClaim(other);
+  });
+  assert.equal(store.claim("lower", key), "held", "a competing takeover's claim is kept");
+  assert.equal(readFileSync(join(claimLock, "owner"), "utf8"), other);
+  rmSync(claimLock, { recursive: true });
+  const own = store.claim("lower", key);
+  assert.ok(own !== "held");
+  pauseLockForTests((point) => {
+    if (point !== "release") return;
+    pauseLockForTests(null);
+    placeClaim(other);
+  });
+  own();
+  assert.equal(readFileSync(join(claimLock, "owner"), "utf8"), other, "a release removes only its own claim");
+  rmSync(claimLock, { recursive: true });
+}
+
+{
+  // An executable replaced while its identity is computed: the identity
+  // kept is the replacement's, not the one computed from the file before.
+  freshStore("identity-race");
+  const program = script("replaced.sh", `/bin/cat "$2"`);
+  const input = file("replaced.json", "replaced");
+  const keyOf = (): string | null => invoke(lower(program, input)).record.key;
+  keyOf();
+  writeFileSync(program, `#!/bin/sh\n/bin/cat "$2" # B\n`);
+  pauseIdentificationForTests(() => {
+    pauseIdentificationForTests(null);
+    writeFileSync(program, `#!/bin/sh\n/bin/cat "$2" # C\n`);
+  });
+  const replaced = keyOf();
+  writeFileSync(program, `#!/bin/sh\n/bin/cat "$2" # B\n`);
+  assert.notEqual(keyOf(), replaced, "the identity kept is the replacement's");
+  writeFileSync(program, `#!/bin/sh\n/bin/cat "$2" # C\n`);
+  assert.equal(keyOf(), replaced, "and it is the one computing it again gives");
+}
+
 {
   // A use around a removal's second read of the use logs: a use whose line
   // precedes that read keeps the store's snapshot; one after it does without

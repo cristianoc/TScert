@@ -335,40 +335,20 @@ export class Store {
     log.recorded.set(item, now);
   }
 
-  /** Claim the execution of `key` for this process: a file
-   * `running/<stage>/<key>` made exclusively, naming the host and process.
-   * Another live process's claim leaves it held (`"held"`); a claim of a
-   * stopped process on this host is taken over. The returned release
-   * removes the claim. */
+  /** Claim the execution of `key` for this process: the lock
+   * `running/<stage>/<key>`, acquired as the eviction lock is (`acquire`),
+   * so a claim present names its owner, a stopped owner's claim is taken
+   * over, and of two processes taking one over, one keeps it. Another
+   * running process's claim leaves it held (`"held"`). The returned release
+   * removes the claim where it is still this process's. */
   claim(stage: string, key: string): (() => void) | "held" {
-    const path = join(this.root, "running", stage, key);
-    const own = `${hostname()} ${process.pid}`;
-    for (let tries = 0; tries < 3; tries++) {
-      mkdirSync(dirname(path), { recursive: true });
-      try {
-        writeFileSync(path, own, { flag: "wx" });
-        return () => {
-          try {
-            if (readFileSync(path, "utf8") === own) rmSync(path, { force: true });
-          } catch (error) {
-            if (!failedWith(error, "ENOENT")) throw error;
-          }
-        };
-      } catch (error) {
-        if (!failedWith(error, "EEXIST")) throw error;
-      }
-      let holder: string;
-      try {
-        holder = readFileSync(path, "utf8");
-      } catch (error) {
-        if (failedWith(error, "ENOENT")) continue;
-        throw error;
-      }
-      const [host, pid] = holder.split(" ");
-      if (host !== hostname() || pid === undefined || alive(Number(pid))) return "held";
-      rmSync(path, { force: true });
-    }
-    return "held";
+    const lock = join(this.root, "running", stage, key);
+    const owner = this.acquire(lock, false);
+    if (owner === null) return "held";
+    return () => {
+      lockBarrierForTests?.("release");
+      this.moveLock(lock, owner);
+    };
   }
 
   /** The finished result stored for `key` at exactly `input`: the entry is
@@ -637,25 +617,21 @@ export class Store {
       if (!failedWith(error, "EEXIST", "ENOTEMPTY")) throw error;
     }
   }
-  /** Run `body` holding the store's eviction lock; null where a running
-   * process holds it and `wait` is false. The lock is the directory
-   * `eviction/`, built whole with its owner file (host, process, a random
-   * id) in a temporary directory and renamed into place, so a lock present
-   * names its owner. A lock whose owner has stopped, or one without an owner
-   * file, is taken over by `moveLock`, as the holder releases its own. The
-   * lock keeps passes from repeating each other's work; two passes at once
-   * remove nothing a running process holds either (each snapshot removal
-   * has a marker of its own). */
-  private locked<T>(wait: boolean, body: () => T): T | null {
-    const lock = join(this.root, "eviction");
+  /** Acquire the lock directory `lock` for this process and return its
+   * owner (host, process, a random id); null where a running process holds
+   * it and `wait` is false. The lock is built whole with its owner file in
+   * a temporary directory and renamed into place, so a lock present names
+   * its owner. A lock whose owner has stopped, or one without an owner file,
+   * is taken over by `moveLock`, as the holder releases its own. */
+  private acquire(lock: string, wait: boolean): string | null {
     const owner = `${hostname()} ${process.pid} ${randomUUID().slice(0, 8)}`;
-    mkdirSync(this.root, { recursive: true });
+    mkdirSync(dirname(lock), { recursive: true });
     for (;;) {
       const building = this.temporary(`lock-${randomUUID().slice(0, 8)}`);
       writeFileSync(join(building, "owner"), owner);
       try {
         renameSync(building, lock);
-        break;
+        return owner;
       } catch (error) {
         rmSync(building, { recursive: true, force: true });
         if (!failedWith(error, "EEXIST", "ENOTEMPTY")) throw error;
@@ -670,6 +646,17 @@ export class Store {
       if (!wait) return null;
       pause(200);
     }
+  }
+  /** Run `body` holding the store's eviction lock, `eviction/`
+   * (`acquire`); null where a running process holds it and `wait` is
+   * false. The lock keeps passes from repeating each other's work; two
+   * passes at once remove nothing a running process holds either (each
+   * snapshot removal has a marker of its own). */
+  private locked<T>(wait: boolean, body: () => T): T | null {
+    const lock = join(this.root, "eviction");
+    mkdirSync(this.root, { recursive: true });
+    const owner = this.acquire(lock, wait);
+    if (owner === null) return null;
     try {
       return body();
     } finally {

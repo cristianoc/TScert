@@ -161,6 +161,10 @@ export type InvokeOptions = {
 /** How often a process waiting for another's execution of a key looks
  * again, and what it waits on. */
 const claimPollMs = 50;
+/** How long a process waits for another's claim of a key before executing
+ * the key itself: the stage's limit, after which the holder's execution is
+ * killed, and as long again for its publication. */
+export const claimWaitMs = (limitMs: number): number => 2 * limitMs;
 const pause = new Int32Array(new SharedArrayBuffer(4));
 
 /** Run a process stage through its adapter (`bindProcess`,
@@ -193,9 +197,15 @@ export function invokeProcess(call: ProcessCall, options: InvokeOptions): Invoke
     const replaying = key !== null && store !== null && replayedStages.has(call.stage) ? { key, store } : null;
     // Within the store, one process executes a key at a time: another
     // process's execution of the same key is waited for, and its result
-    // replayed (`Store.claim`).
+    // replayed (`Store.claim`). A wait outlasting the holder's own limit and
+    // its grace (`claimWaitMs`) ends, and this process executes the key
+    // itself.
+    const deadline = performance.now() + claimWaitMs(options.limitMs);
     for (let waited = 0; replaying && !forced; waited++) {
-      if (waited > 0) Atomics.wait(pause, 0, 0, claimPollMs);
+      if (waited > 0) {
+        if (performance.now() > deadline) break;
+        Atomics.wait(pause, 0, 0, claimPollMs);
+      }
       const found = replaying.store.finished(call.stage, replaying.key, input);
       if (found) {
         const materializing = performance.now();
