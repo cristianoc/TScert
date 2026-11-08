@@ -9,7 +9,9 @@ Each item below is checked at the end by a measurement or a test. The result goe
 ## What you get
 
 1. **Imported files are never re-analysed because you edited the file that imports them.** An imported module's search and check run again only when that module's own inputs change. Those inputs are its source, and the run's choice of host-library models for the libraries that module itself uses. An edit to the importer that changes that choice really changes the module's lowered text, so re-running it is correct. Changes to models the module doesn't use don't re-run it. Changing which of a module's functions you import is also a change of its inputs: the module is checked once for the new set of functions, and a set it was already checked for replays. Today they run again after every edit: 43.5 s of a 75 s check, and 185 s of a 390 s one.
-2. **Editing one function re-analyses only that function and what reads it.** The other functions of the same file replay, through every stage: proposal, search, check and explanation. A function whose proposal reads the edited one at its declared signature does not re-run, because that signature is unchanged.
+2. **Editing one function re-analyses only that function and what reads it.** The other functions of the same file replay through proposal, search and explanation. A function whose proposal reads the edited one at its declared signature does not re-run, because that signature is unchanged.
+
+   One exception, kept for soundness: the final trusted check of a function still reads the whole file. The proof that an accepted function is safe is about the whole file, and the Lean code that reads a file cannot be proved to give the same result on a slice. That check runs only for the functions being checked. It costs one read of the whole file, measured at 0.5 s for `analysis.ts` and 5 s for `rich-inline.ts`, plus the function's own check, measured at 0.05–0.1 s.
 3. **Edit-check time, measured on pretext with a warm store after a one-line edit:**
    - `removeItemsSkippableSegmentBreaks` (`analysis.ts`): **at most 5 s**, from 75 s today. Its own search and check are 0.36 s. The rest is reading and type-checking the edited file, which this change keeps whole-file.
    - `createLine` (`rich-inline.ts`): it pays nothing for `prepareRichInline`, the slow function next to it. Today it pays that function's 117 s proposal.
@@ -51,8 +53,8 @@ stages, and every imported module's, replay.
 **Evidence labels.** **Proved** names existing Lean theorems and their
 scope. **Cited** names inspected code or a supplied measurement.
 **Conjectured** marks the proposed design, its proof obligations and its
-estimates. Every proposed lemma requires a Lean proof, and lands before the
-whole-file modes are deleted.
+estimates. The design adds no lemma: the acceptance stays the existing
+theorems over the whole document.
 
 ## The existing mechanism this extends
 
@@ -121,11 +123,9 @@ compares against a baseline that carries it.
 
 This design replaces, and its implementation deletes:
 
-- the modes `--produce-units`, `--check-units` and the whole-file
-  `--units`, the unit selection by names, and the evidence document with a
-  line per unit;
-- the module branch of `unitVerdict` and of `UnitSafe`
-  ([module runs](#module-runs));
+- the whole-file `--produce-units`, whose search moves to the slices;
+- the module runs inside `--produce-units` and `--check-units`, which move
+  to their own stages ([module runs](#module-runs));
 - the whole-file proposal and the whole-file `--explain`;
 - `unitRound`'s fallback to a search and check of each unit after a
   whole-file limit;
@@ -137,9 +137,12 @@ This design replaces, and its implementation deletes:
 
 ## Stages
 
-One check of a source runs these stages. Each unit's stages read only that
-unit's documents, except the claims check, which reads the whole claims
-document by design.
+One check of a source runs these stages. Each unit's untrusted stages
+(proposal, search, explanation) read only that unit's documents. The
+trusted check reads the whole document and its whole claims document: the
+acceptance theorem is about the whole document, and the Lean code that
+reads a document (its decoding, its store and its lowering are partial
+definitions) admits no proof that a slice gives the same plans.
 
 | Stage | Runs | Inputs beside its implementation |
 | --- | --- | --- |
@@ -150,10 +153,12 @@ document by design.
 | lower | once per unit | the unit's slice |
 | propose | once per unit, in dependency order | the unit's slice and flow, its reads and facts documents |
 | assemble | once per unit | the unit's proposal, its reads document |
-| claims check | once per document | the document's identity list, its whole claims document |
-| plan | once per unit with qualified reads | the slice and its assembled claims |
+| plan | once per document | the document and its assembled claims |
 | search | once per unit | the slice, its assembled claims, search depth, subtype rounds |
-| check | once per unit | the slice, its assembled claims, its evidence, subtype rounds |
+| translate | once per checked unit | the slice, its claims and evidence, the document and its claims |
+| module search | once per restricted module document | the restricted document, its claims and qualified reads |
+| module check | once per restricted module document | the same, and the module's evidence |
+| check | once per check of a file | the document, its claims, the selected units' translated evidence |
 | explain | once per refused unit | the unit's slice, flow, reads and facts documents |
 | TypeScript diagnostics | once per file | as today |
 
@@ -183,56 +188,50 @@ implementation audits every read the producer makes of
 being inferred, and each becomes a field of the facts entry; the criterion
 under [propose](#propose) checks the audit.
 
-**Claims check.** `verifier --check-claims <identities.json> <claims.json>`
-runs every check `fileFront` and `equationFront` make of a claims document
-as a whole: the function claim count and identities against the identity
-list, the initialization's claims present exactly where it has code, the
-claims' shape and the identities of their entries. The claims document is
-the assembly of every unit's proposal, the document a whole-file proposal
-gives today (the criterion under [propose](#propose)). Its refusal refuses
-every unit of the document, exactly as `fileFront` refuses today; a unit's
-verdict is accepted only where its document's claims check passes. The
-stage executes on every edit, at the cost of decoding one claims document;
-its result for unchanged claims replays.
-
-**Search and check.** Each unit has two stages, each with today's limit
-for its kind. Extraction from a slice and the work of one process differ
-from today's, so a unit's timeout outcomes are measured on the census, not
-assumed equal to today's:
+**Search, translation and check.**
 
 - `verifier --produce-unit <slice.json> <claims.json> <evidence.json> <depth>`
   builds the front of its slice, searches the unit's evidence and writes
-  it; a search it refuses prints `refused: {"refusal","unit"}`.
-- `verifier --check-unit <slice.json> <claims.json> <evidence.json>` builds
-  the front of its slice, checks the unit at its evidence and prints the
-  unit's verdict, `{"accepted","assumes","certifies","members","unit"}` or
-  `{"members","refusal","unit"}` ([interfaces](#interfaces)). The controls
-  that forge or mutate evidence use it (`pipeline/evidence-mutations.mts`
-  and the forged evidence controls of `pipeline/test.mts`).
-
-The evidence document is one unit's bundle. Each process holds one unit,
-and the front of a slice is built twice per unit, by the search and by the
-check.
+  it; a search it refuses prints `refused: {"refusal","unit"}`. It is
+  untrusted: its evidence is a proposal the check verifies.
+- `verifier --translate <slice.json> <claims.json> <evidence.json> <ast.json> <file-claims.json> <out.json>`
+  maps the store labels of the slice's evidence to the document's labels
+  of the same equations and writes the unit's evidence over the document.
+  It is untrusted: a wrong map gives evidence the check refuses.
+- `verifier --check-units <ast.json> <claims.json> <file-key> <evidence.json> <names>`
+  is today's trusted check: one process builds the document's front once
+  and checks the selected units at their translated evidence, each verdict
+  by `unitVerdict`, whose acceptance `checkUnitJson_safe` states. It
+  re-executes after every edit of the file, at the cost of one front and
+  the selected units' checks.
+- `verifier --produce-module` and `--check-module`, each over one restricted
+  module document (`--plan-imports` prints it with its claims and
+  qualified reads), search and check a module run as `--produce-units` and
+  `--check-units` do today inside the importer's process; the check's
+  acceptance is `checkDocument_safe`'s.
 
 **Command lines.** One shape each; no compatibility mode:
 
 ```sh
 verifier --units              <ast.json>
-verifier --check-claims       <identities.json> <claims.json>
 verifier --produce-unit       <slice.json> <claims.json> <evidence.json> <depth>
-verifier --check-unit         <slice.json> <claims.json> <evidence.json>
-verifier --plan-imports       <slice.json> <claims.json>
-verifier --lower-program      <slice.json> <claims.json>
+verifier --translate          <slice.json> <claims.json> <evidence.json> <ast.json> <file-claims.json> <out.json>
+verifier --check-units        <ast.json> <claims.json> <file-key> <evidence.json> <names>
+verifier --produce-module     <module.json> <evidence.json> <depth>
+verifier --check-module       <module.json> <evidence.json>
+verifier --plan-imports       <ast.json> <claims.json>
+verifier --lower-program      <ast.json> <claims.json> <file-key>
 verifier --lower-control-flow <slice.json>
 producer --facts   <ast.json>
 producer           <slice.json> <flow.json> <reads.json> <facts.json>
 producer --explain <slice.json> <flow.json> <reads.json> <facts.json>
 ```
 
-`--subtype-rounds <n>` keeps its place before any verifier mode. The
-`<file-key>` argument goes: a slice's identity is its fingerprint
-([canonical form](#canonical-form)). `--plan-imports` also prints each
-planned module's restricted document ([module runs](#module-runs)).
+`--subtype-rounds <n>` keeps its place before any verifier mode. A
+slice's identity is its fingerprint ([canonical form](#canonical-form)).
+`--plan-imports` also prints each planned module's restricted document,
+its claims and its qualified reads (`<module.json>`,
+[module runs](#module-runs)).
 
 **Adapters, decoders and consumers.** Each command line has its argument
 shape in `pipeline/stage-execution.mts`; each new document (a `--units`
@@ -303,11 +302,11 @@ stages:
   the module to the read closure of the functions the importer reads
   qualified of it, its initialization kept, as `planImports` does today
   (`lean/Verification/Source/Claims/Imports.lean`), and prints that
-  restricted document. `--units` runs again on it and gives the slices of
-  certification; the claims check, the search and the check run on those, so `owned`, `reaches` and every extraction fact are
-  computed over the restricted document, as today. The restricted
-  document, and so the closure, is part of every one of these stages'
-  keys; importers asking for the same closure share one entry.
+  restricted document with its claims and qualified reads. The module
+  search and the module check run on it, so `owned`, `reaches` and every
+  extraction fact are computed over the restricted document, as today. The
+  restricted document, and so the closure, is the key of both stages;
+  importers asking for the same closure share one entry.
 - *Cycles.* Within each import cycle, a strongly connected component of
   the module graph, the reads into the component's least module by
   location are read at their ordinary signatures; the rule is applied
@@ -327,17 +326,12 @@ otherwise only through the tag selection of families the module consults
 module's own inputs, as item 1 states them: a set of imported functions
 is checked once, and a set checked before replays.
 
-**DocumentSafe.** Today a module run's acceptance is `checkDocument` of
-the restricted document at its restricted claims, through the module
-branch of `unitVerdict`. **Lemma `documentSafe_of_units`** (conjectured):
-for a restricted document `D` and its one claims document `C` (the module's
-claims restricted as `planImports` restricts them), if the claims check of
-`C` against `D` passes and every unit `u` of `D` is accepted at
-`sliceOf D u` and `sliceClaims C u`, then `DocumentSafe D C` holds, with the
-evidence assembled from the units' bundles transported by `slicePlans`.
-Every unit's assumed interfaces are then the certified ones of the same
-`C`, by construction. The module branch of `unitVerdict` and of `UnitSafe`
-has no caller and is deleted, which narrows `UnitSafe` to its group branch.
+**Acceptance of a module run.** The module check's acceptance is
+`checkDocument` of the restricted document at its claims, which
+`checkDocument_safe` states, as the module branch of `unitVerdict` states
+it today. The importer's verdict lists the module run among its
+dependencies; deep status binds it to the module check of the same
+restricted document in the same run.
 
 ## Slices
 
@@ -381,41 +375,9 @@ entries, and the initialization's claims for its group) and the interface
 entries of `u`'s dependencies. The checks of `C` as a whole are the claims
 check's.
 
-**Lemma `slicePlans` (conjectured).** For every document `A`, claims `C`
-and unit `u` that `--units A` prints with slice `s = sliceOf A u` and
-members `M`:
-
-1. *Membership.* The groups of `s` are one group, of members `M`, the group
-   of `u` in the front of `A`: the recursive boundary certified together is
-   the same.
-2. *Refusals.* Extraction of `u` from `fileFront A C` fails if and only if
-   `--units A` refuses, or the claims check of `C` against `A`'s identity
-   list refuses, or extraction from `filePlans s (sliceClaims C u)` fails.
-   The original refusing while the slice accepts is impossible: a refusal
-   of the whole claims document reaches every unit through the claims
-   check.
-3. *Stores.* With `F` the frozen store of `A` and `Fs` the slice's, a map
-   `h` of `Fs`'s heads to `F`'s heads sends every equation reachable from
-   the labels of `u`'s requests and environment to `F`'s equation of its
-   image: `Fs`'s graph below those labels is `F`'s graph below their
-   images, so each label's interpretation in `Fs` is its image's in `F`.
-4. *Plans.* `u`'s plans from `s`, mapped by `h` and by the canonical
-   renaming, are `u`'s plans from `A`: the same requests, the same input
-   contracts (`EnvOk` of the same module values at the same signatures,
-   effects and storage contracts), the same qualified reads with their
-   footprints and on-throw flags.
-5. *Evidence.* Evidence accepted for `u` at `s`, mapped by `h`, is accepted
-   for `u` in `A`'s front, so `UnitSafe` over `s` gives the safety of `u`'s
-   requests over `A`.
-6. *The emitted slice.* The slice `--units` prints decodes, under the
-   strict decoder `--produce-unit` and `--check-unit` use, to
-   `sliceOf A u`, and the members a verdict reports are `M` mapped by
-   `positions`.
-
-A slice lacking a declaration its unit's extraction reads fails extraction
-(part 2), a refusal. A slice whose `owned` or `reaches` is not `sliceOf`'s
-is a different document, as a forged Fragment is today; the pipeline passes
-only `--units`'s output.
+A slice is an input of untrusted stages only (proposal, search,
+explanation). A slice lacking a declaration its unit's extraction reads
+makes its search refuse or its evidence fail the check; neither accepts.
 
 ## Canonical form
 
@@ -452,7 +414,7 @@ another unit changes. A slice's canonical form fixes three things:
 
 The renaming is injective on each slice, and extraction compares
 identities for equality and positions only for order within one member
-(conjectured, part 4 of `slicePlans`). Two documents with byte-identical
+(conjectured; a slice that breaks this makes its search's evidence fail the check). Two documents with byte-identical
 slices, claims, reads and facts of a unit share its entries.
 
 ## Interfaces
@@ -473,56 +435,26 @@ binding's stable identity (its scope-based identity, with the module
 location for an import) and its interface, and of nothing else: no body
 and no slice or source fingerprint. An edit of a function's body that
 keeps its interface keeps its digest, and its callers' reads documents are
-unchanged. One Lean function, `interfaceOf`, computes it from a slice and
-claims, on both sides:
-
-- `--check-unit`'s accepted verdict lists `certifies`, the digest of the
-  interface of each member its claims state;
-- it lists `assumes`, for each dependency its slice reads, the
-  dependency's identity and the digest of the interface the slice's reads
-  entry states;
-- the plan's comparison of an importer's reading with a module's
-  (`sameReading`) compares the same canonical form.
-
-Deep status (`dev/census.mts`, node code without a proof, a row of the
-[trust surface](../DESIGN.md#trust-surface)) binds each dependency to the
-artifact checked in the same run: it counts a dependency accepted only
-where the verdict the run produced for that dependency's current slice is
-accepted, its `certifies` digest equals the dependent's `assumes` digest,
-and its initialization and transitive dependencies are accepted. This keeps
-computed deep status consistent; it does not discharge the composition of a
-module's units, which remains [open work](../../WORK.md#module-composition).
+unchanged. One Lean function, `interfaceOf`, computes it from a document
+and claims; the reads documents of the proposal stages hold it, and the
+plan's comparison of an importer's reading with a module's (`sameReading`)
+compares the same canonical form. Deep status is computed as today, from
+the whole-file check's verdicts.
 
 ## Soundness
 
 `checkUnitJson_safe` (proved, `lean/Verification/Source/Claims/Json.lean`)
 states: `filePlans ast claims fileKey budget = .ok f` and
 `unitVerdict f budget unit evidence = .ok deps` give
-`UnitSafe f budget unit evidence`. It applies to the slice: `ast` is the
-slice, `claims` its assembled claims, `fileKey` its fingerprint, and the
-slice has exactly one unit. The CLI condition for an accepted verdict of
-`--check-unit` is that premise over the three files its arguments name; it
-reaches the verdict through `unitVerdict` alone, and the acceptance path
-keeps its one exhaustive conversion to `CertifiedPlan`
-(`FilePlans.certified`). Deleting the module branch narrows `UnitSafe` to
-the group branch; the theorem's meaning, an accepted unit is safe, is
-unchanged.
+`UnitSafe f budget unit evidence`. The check stage runs that premise over
+the whole document and its assembled claims, as today; nothing a slice
+holds reaches it except through the evidence, which it checks. The module
+check's acceptance is `checkDocument_safe`'s over the restricted document.
+No theorem changes, and the change adds no trust row and no axiom (item 7).
 
-The theorem speaks of the slice's requests. `slicePlans` carries it to the
-unit of the source document, under the claims check of the whole claims
-document: the same group, the same requests at the same input contracts and
-qualified reads, interpreted over the same equations, refused exactly where
-the whole front refuses. `documentSafe_of_units` carries the units of a
-restricted module document to today's module-run acceptance. Both are Lean
-lemmas, so the change adds no trust row and no axiom (item 7).
-
-A replayed check is the verifier's judgment of exactly the slice, claims
-and evidence its key binds, under the binding and validation the trust
-surface's replayed-check row states. The
-[source boundaries](../DESIGN.md#trust-surface) (annotation lowering,
-native contracts, inferred call effects) are read from the same
-declarations and claims; a slice holds every declaration its unit's code,
-annotations and reads reach, so no contract is cut.
+The assembled claims are the producer's, untrusted as today; the criterion
+under [propose](#propose) checks that they equal the whole-file proposal,
+which bears on verdicts (item 6), not on soundness.
 
 ## The census
 
@@ -596,19 +528,21 @@ replay.
 
 Each decision follows from the promise and the project's principles.
 
-1. **Search and check stay separate stages per unit, each with today's
-   limit.** Consequence: limits are preserved per stage, and timeout
-   outcomes are measured on the census, not claimed identical; the front
-   of a slice is built twice per unit, which the cost budgets include.
-2. **Slicing is proved, not trusted** (`slicePlans`,
-   `documentSafe_of_units`). Item 7 allows no new trust. Consequence: the
-   lemmas land before the whole-file modes are deleted; `fileFront` stays a
-   Lean definition, the reference the lemma names, reached by no command
-   line.
-3. **Whole-document checks are their own stages:** `--units` for the
-   document, the claims check for the whole claims document. Their refusal
-   refuses every unit, as `fileFront` does today. Consequence: the
-   refusal clause of `slicePlans` holds for every claims document.
+1. **Search is per unit, the check per file.** The search of a unit is
+   keyed on its slice and replays; the trusted check builds the whole
+   front once and checks the selected units. Consequence: an edit
+   executes the check of the selected units every time, at the cost of one
+   whole front, measured at 0.5 s for `analysis.ts` and 5 s for
+   `rich-inline.ts`.
+2. **Slicing is untrusted** (route chosen by the lead, 2026-11-08). The
+   Lean code that reads a document is partial, so no lemma relating a
+   slice's plans to the document's can be proved. Consequence: slices feed
+   only proposal, search and explanation; slice evidence is translated to
+   the document's labels by untrusted code and the check verifies it.
+3. **Module runs are their own stages** over the restricted document,
+   searched and checked as today. Consequence: an importer's edit replays
+   them unless it changes the closure or a tag selection the module
+   consults.
 4. **File-wide facts reach a slice as fields computed from the whole
    document,** in keyed code: `owned` and `reaches` by `--units`, the
    producer's facts by `--facts`. Consequence: a slice cannot gain an
@@ -659,23 +593,22 @@ Each decision follows from the promise and the project's principles.
    and another unit's inputs only where it changes `f`'s interface or a
    file-wide fact that unit reads ([canonical form](#canonical-form),
    [interfaces](#interfaces), decision 4). Every other unit's propose,
-   search, check and explain stages replay.
+   search and explain stages replay; the check of the selected units runs
+   over the whole front (decision 1).
 3. *Edit-check time.* After a one-line edit the stages that execute are the
    parse (with TypeScript's diagnostics where enabled), `--units`,
-   `--facts`, the claims check, and the edited unit's lower, propose,
-   assemble, plan, search and check; every other stage is a store lookup.
-   Budgets, each measured per component from `invocations.jsonl`:
-   - `removeItemsSkippableSegmentBreaks`: its search and check 0.36 s and
-     two fronts of its slice (at most 0.5 s each); the parse, `--units`,
-     `--facts`, the claims check, its proposal and the lookups share the
-     rest of 5 s.
-   - `createLine`: no stage of `prepareRichInline`'s unit executes; its
-     interface is read from the store.
+   `--facts`, the plan, the edited unit's lower, propose, assemble, search
+   and translate, and the check of the selected units; every other stage,
+   the module runs included, is a store lookup. Budgets, each measured per
+   component from `invocations.jsonl`:
+   - `removeItemsSkippableSegmentBreaks`: its search and check 0.36 s, a
+     front of its slice and the whole front (0.5 s); the parse, `--units`,
+     `--facts`, its proposal and the lookups share the rest of 5 s.
+   - `createLine`: no proposal or search of `prepareRichInline`'s unit
+     executes; the check reads the whole front.
    - `prepareRichInline`: its search about 80 s and its proposal at most
-     12 s with the memo leave 8 s for two fronts of its slice, its check,
-     the parse, the whole-document stages and the lookups. The whole file's
-     front is 5.1 s; the budget holds only if its slice's front is at most
-     about 2 s, which the implementation measures first.
+     12 s with the memo leave 8 s for its slice's front, the whole front
+     (5.1 s), its check, the parse and the lookups.
 4. *One mode.* `verify-source.mts` runs the per-unit stages; the cases,
    the census and the census's function selection call it. The modes
    listed above are deleted, and `grep` finds none.
@@ -686,15 +619,13 @@ Each decision follows from the promise and the project's principles.
    process start, serialization and publication per stage. The cold census
    of `tools/`, timed before and after on one machine against the baseline
    with the memo, decides the item.
-6. *Same verdicts.* `slicePlans` gives each unit the plans and refusals it
-   has today; the claims check refuses what the whole front refuses;
-   module certification keeps its restricted document; withdrawal keeps
+6. *Same verdicts.* The check is today's, over the whole front; module certification keeps its restricted document; withdrawal keeps
    today's policies and each stage today's limit, timeouts measured; the
    cycle rule is gated by the pipeline cases; per-unit proposals equal the
    whole-file proposal on every census file. Every case keeps its expected
    outcome, and pretext at `2b11a4c` verifies 210 of 210 functions.
-7. *Same soundness.* `checkUnitJson_safe` keeps its meaning; `slicePlans`
-   and `documentSafe_of_units` are proved; no axiom and no trust row is
-   added; a slice missing what its check needs is refused.
+7. *Same soundness.* `checkUnitJson_safe` and `checkDocument_safe` are
+   unchanged and are the acceptance; no axiom and no trust row is added;
+   slices reach only untrusted stages.
 8. *The controls.* [The controls](#the-controls) run in `make test`.
 9. *The docs.* Decision 10.
