@@ -2057,7 +2057,12 @@ claiming it.
   never assumed. An array iterator's start preserves every fact, and its step
   those naming only values and the lengths of the arrays in scope where it
   started but the constants bound to an array or object literal, which the
-  iterator's separation leaves out. Every other statement forgets them.
+  iterator's separation leaves out. A comma expression's statement is its
+  operands' in turn. A write of the body's own cell preserves, besides those
+  of parameters, the facts through the fields of a value binding declared
+  before every cell it writes, whose record the cells' separation keeps
+  apart. A test `a && f(…)` or `a || f(…)`, `a` writing no heap, gains each
+  fact `f` states at its returns that its entry's facts entail. Every other statement forgets them.
 - *Elimination.* A binding of a linear fact that an assignment rebinds or
   that leaves scope is eliminated as Lean eliminates a dropped slot, so
   `let j = i + 1; … i = j` retains $`1\le j`$, then $`0\le i`$, from

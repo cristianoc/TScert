@@ -442,7 +442,7 @@ let statements callbacks flow_graph register_following owner_span env0 ss =
                  (* A test whose one write is a call's: the facts its
                     footprint keeps (`fact-kept`), as at a statement. *)
                  | Some ch -> List.filter (fun f -> Linear_facts.fact_kept ch f || Linear_facts.stable_fact env f) fs
-                 | None -> Linear_facts.keep_stable env fs) @ Linear_facts.test_call_facts env c in
+                 | None -> Linear_facts.keep_stable env fs) @ Linear_facts.test_call_facts ~held:facts0 env c in
              let bounds bs = if heap_free then bs else [] in
              (* Each answer's guard eliminations (`unguardIndices`): what its
                 test excludes of a path frees the facts guarded by it. *)

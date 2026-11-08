@@ -46,6 +46,11 @@ let cell_terms : (string -> bool) ref = ref (fun _ -> false)
 (* The body's parameters held in slots, whose objects are older than its
    cells. Set by the flow around each body. *)
 let parameter_binding : (string -> bool) ref = ref (fun _ -> false)
+(* Whether a binding was declared before every cell the write at hand
+   writes, set by `after_cell_updates`: its object is older than those
+   cells, which Lean's separation at each cut keeps apart from the fields
+   its record names (`Observations.separationFacts`). *)
+let older_than_written : (string -> bool) ref = ref (fun _ -> false)
 (* A path, a length or a typed-array length reads the heap (Lean's
    `Term.envOnly`), as does a term rooted at a cell; a binding's value and
    the length of the string it holds read the environment alone. *)
@@ -479,7 +484,7 @@ let with_cells admitted f =
 let rec heap_free env (e : expr) = match e.node with
   | Id _ | Literal _ -> true
   | Not a | Unary (_,a) | Cast (_,_,a) | Read (a,_) -> heap_free env a
-  | Arith (_,a,b) | Equality (_,a,b) | Logical (_,a,b) | Coalesce (a,b) -> heap_free env a && heap_free env b
+  | Arith (_,a,b) | Equality (_,a,b) | Logical (_,a,b) | Coalesce (a,b) | Comma (a,b) -> heap_free env a && heap_free env b
   | Conditional (c,a,b) -> heap_free env c && heap_free env a && heap_free env b
   | Call ({node=Id "%ElementAt%";_},None,args,[],_) -> List.for_all (heap_free env) args
   | Call ({node=Id f;_},None,args,_,_) when !keeps_heap env f -> List.for_all (heap_free env) args
@@ -492,7 +497,7 @@ let rec heap_free env (e : expr) = match e.node with
   (* An array literal without spreads allocates only its store and its
      elements' fresh locations, as Lean's allocation keeps every index atom. *)
   | ArrayLiteral (es,[]) -> List.for_all (heap_free env) es
-  | Assign (x,_,rhs) -> slot_binding env x && heap_free env rhs
+  | Assign (x,_,rhs) -> (slot_binding env x || (!cells_written && !cell_terms x)) && heap_free env rhs
   | Update (_,{node=Id x;_},rhs,_) -> (slot_binding env x || (!cells_written && !cell_terms x)) &&
     Option.fold ~none:true ~some:(heap_free env) rhs
   | _ -> false
@@ -596,7 +601,7 @@ let term_kept ch t =
      cell's and the term rooted at a parameter, whose object is older. *)
   let cell = !cell_terms b in
   let path = if cell then "value" :: path else path in
-  let first = (ch.apart && cell) || (ch.cell_write && !parameter_binding b) in
+  let first = (ch.apart && cell) || (ch.cell_write && (!parameter_binding b || !older_than_written b)) in
   let last = if kind = Value_term then ch.num else ch.obj in
   ((match path with
    | [] -> true
@@ -633,7 +638,7 @@ let rec object_calls env (e : expr) : Semantic.footprint option =
   let all es = List.fold_left (fun acc e -> join acc (object_calls env e)) (Some Semantic.empty_footprint) es in
   if heap_free env e then Some Semantic.empty_footprint else match e.node with
   | Not a | Unary (_,a) | Cast (_,_,a) | Read (a,_) -> object_calls env a
-  | Arith (_,a,b) | Equality (_,a,b) | Logical (_,a,b) | Coalesce (a,b) -> all [a;b]
+  | Arith (_,a,b) | Equality (_,a,b) | Logical (_,a,b) | Coalesce (a,b) | Comma (a,b) -> all [a;b]
   | Conditional (c,a,b) -> all [c;a;b]
   | Call ({node=Id f;_},None,args,[],_) -> join (all args) (Option.bind (!call_footprint env f) within)
   | Invoke ({node=Read (r,key);_},args,[],_) when not (!method_grows env r key) ->
@@ -842,8 +847,14 @@ let call_facts ?name env f (args : expr list) : fact list =
     else None) (!call_ensures env f)
 
 (* The facts a test's call states at its normal return, `f(…)` or `!f(…)`. *)
-let test_call_facts env (c : expr) : fact list = match c.node with
+let rec test_call_facts ?(held = []) env (c : expr) : fact list = match c.node with
   | Call ({node=Id f;_},None,args,[],_) | Not {node=Call ({node=Id f;_},None,args,[],_);_} -> call_facts env f args
+  (* `a && f(…)` or `a || f(…)`, `a` writing no heap: where `f` runs, its
+     facts hold after it; where it does not, the heap is the test's entry
+     one. So each of `f`'s facts the entry's facts (`held`) entail holds on
+     either answer, as Lean's merge of the two paths keeps it. *)
+  | Logical (_,a,b) when heap_free env a ->
+    List.filter (fun f -> entails held f) (test_call_facts ~held env b)
   | _ -> []
 
 (* The facts after the updates an expression makes of bindings held in
@@ -874,7 +885,14 @@ let after_cell_updates env (e : expr) (fs : fact list) : fact list =
     let fs = List.fold_left (fun fs (x,_,old) ->
       List.map (fun ((t,b) as f : fact) -> let t' = List.map (fun (n,c) -> renamed x old n,c) t in
         (if is_int_fact f then t' else norm t'), b) fs) fs steps in
-    let fs = List.filter (fun f -> fact_kept change f || stable_fact env f) fs in
+    let position n = let rec go i = function [] -> None | (m,_) :: t -> if m = n then Some i else go (i+1) t in go 0 env in
+    let older b = value_binding env b && not (!cell_terms b) && match position b with
+      | Some p -> List.for_all (fun (x,_) -> match position x with Some q -> p < q | None -> false) ups
+      | None -> false in
+    let saved = !older_than_written in
+    older_than_written := older;
+    let fs = Fun.protect ~finally:(fun () -> older_than_written := saved) (fun () ->
+      List.filter (fun f -> fact_kept change f || stable_fact env f) fs) in
     List.fold_left (fun fs (x,d,old) -> match d with
       | Some d when is_int fs old && safe fs ([old,1],d) -> forget old (fs @ equal x ([old,1],d))
       | _ -> forget old fs) fs steps
@@ -886,6 +904,10 @@ let rec statement ~(array : string -> string list -> bool) ?(bounds=[]) env fs (
   match s.statement with
   (* `i++;` of a binding held in a cell: its read, step and write. *)
   | Effect ({node=Update (_,{node=Id x;_},None,_);_} as e) when !cell_terms x -> after_cell_updates env e fs
+  (* `a, b` (a loop's update `j = k, k = s.charCodeAt(i), i++`): `a`'s
+     statement, then `b`'s, as Lean's steps run them in turn. *)
+  | Effect {node=Comma (a,b);_} ->
+    statement ~array ~bounds env (statement ~array ~bounds env fs {s with statement=Effect a}) {s with statement=Effect b}
   (* A statement updating a cell inside it (`s += xs[at++]!`): the update's
      facts, then the statement as one writing no other location. *)
   | Effect e ->
