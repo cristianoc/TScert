@@ -363,6 +363,16 @@ def lowerSource (ast claims : Json) : M (List (String × Union) × List (String 
     throw "invalid source claims: the type table must start with the primitives"
   let claims ← documentForm (fun A => do return unionJson (← claimUnion [] A)) claims
   drain
+  -- Every producer row has its head before the heads are hash-consed, so a
+  -- row equal to a declaration's literal is merged with it (§8.1) whether or
+  -- not a unit's extraction names it first. A row whose lowering is refused
+  -- is left to the unit that names it, which meets the refusal there.
+  for n in [4:P.rows.size] do
+    let saved ← get
+    try
+      let _ ← rowHead n
+      drain
+    catch _ => set saved
   return (annotations ++ initAnnotations, values, generics, units, initBinders, claims)
 
 

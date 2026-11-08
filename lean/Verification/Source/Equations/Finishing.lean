@@ -21,7 +21,8 @@ def hashCons (heads : Array Draft) : Array Nat := Id.run do
       let d := heads[h]!
       if !mergeable d then continue
       let r := rep
-      let body := d.body.map (mapRow fun U => U.map (treeRename fun g => r[g]!))
+      -- Renamed, a union is normalized again, as `compact` writes it.
+      let body := d.body.map (mapRow fun U => normUnion (U.map (treeRename fun g => r[g]!)))
       let key := s!"{spelling d.kinds}|{bindersSpelling d.binders}|{spelling body}"
       match seen.get? key with
       | some g => next := next.set! h (min g next[h]!)

@@ -744,8 +744,10 @@ those heads and names them by index, so evidence is valid only for the
 claims and the declarations it was produced for. Over other ones it fails to
 decode (for example `head 65 takes 1 arguments, given 0`) or fails its
 check. A slice's evidence names the heads of the slice's store; its line
-carries them, and the check renames each to a head of the document's store
-whose rows unfold alike (`Translate.headMap`) before decoding it. A tree is decoded through the validator (`Label.ofTree?`), and no
+carries them and its unit's anchors, and the check renames each head to the
+document head its unit's requests pair it with
+([units of a check](STAGE-STORE.md#units-of-a-check), `Translate.translate`)
+before decoding it. A tree is decoded through the validator (`Label.ofTree?`), and no
 checked request holds a name placeholder.
 
 **Tree spelling.** Each tree form has exactly one spelling
