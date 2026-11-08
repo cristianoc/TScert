@@ -2235,7 +2235,10 @@ precondition is. The declaring unit proves it: its unit establishes each
 clause at every normal return through [return-ensures](#type-invariants).
 Callers assume it: the signature stating it enters a caller's environment
 exactly as a precondition's signature does, for module calls and analyzed
-importing calls alike, and `call-ensures` gives the caller its facts. A
+importing calls alike, and `call-ensures` gives the caller its facts, of a
+binding a declaration or an assignment binds the result to, in each arm of a
+conditional (`assignment-call-postcondition`; negative
+`invalid-assignment-call-postcondition`, run under Node). A
 caller's accepted unit is safe given its callees' signatures:
 `checkUnitJson_safe` concludes its safety under `EnvOk` of its inputs at
 their signatures, postconditions included. The caller is
