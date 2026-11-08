@@ -846,18 +846,21 @@ let restate_read name (root,path) (fs : fact list) : fact list =
       Some (norm (List.map (fun (n,c) -> (match rename n with Some m -> m | None -> n),c) t),d)
     else None) fs
 
-(* A sum of two linear operands whose value the facts bound within the safe
-   integers or by 2^53 (Lean's sum rule: the exact sum, or the double 2^53,
-   `IndexFact.pastSafe`), as a construction's actual reads it. *)
+(* A string's length plus one (Lean's sum rule `int-sum-past`: the exact
+   sum, or the double 2^53, `IndexFact.pastSafe`), as a construction's actual
+   reads it: one operand a string's length or a binding the facts state
+   equal to one, the other the literal 1. *)
 let linear_or_past ~array env fs (e : expr) = match linear ~array env fs e with
   | Some f -> Some f
   | None -> (match e.node with
     | Arith (Add,a,b) ->
+      let is_length n = (let _,_,k = term_parts n in k = Str_length_term) ||
+        List.exists (fun ((t,d) : fact) -> d = 0 && match t with
+          | [(x,1);(l,-1)] | [(l,-1);(x,1)] when x = n ->
+            let _,_,k = term_parts l in k = Str_length_term && List.mem (norm [x,-1;l,1],0) fs
+          | _ -> false) fs in
       (match linear ~array env fs a, linear ~array env fs b with
-       | Some (ta,ca),Some (tb,cb) ->
-         let t,c = norm (ta @ tb),ca+cb in
-         let fs = fs @ term_ranges ((t,0) :: fs) in
-         if entails fs (t, max_safe + 1 - c) && entails fs (scale (-1) t, max_safe + c) then Some (t,c) else None
+       | Some ([n,1],0),Some ([],1) | Some ([],1),Some ([n,1],0) when is_length n -> Some ([n,1],1)
        | _ -> None)
     | _ -> None)
 
