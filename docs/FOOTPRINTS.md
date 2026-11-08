@@ -485,6 +485,27 @@ negatives, run under Node, `invalid-quantified-freshness-field-alias`,
 be the counted array); a forged control claims an alias
 apart from its array and is refused at the first entry claiming it.
 
+**Store fields apart.** A constant holding an array literal's object has
+its store field apart from the store field of every older slot's array, a
+fresh constant's among them: a [separation fact](PROGRAM-TYPING.md#separation-facts)
+the allocation establishes and each cut restates (`separationFacts`), which
+names no heap and so survives every heap change, a typed array's write and
+a call included. A push into either keeps the other's length
+(`growFirst`, through `HeapSeparation.apart` in either orientation; proved:
+`growFirst_kept`):
+
+```math
+\frac{x=[\,\vec e\,]\ \text{a constant}\qquad y\ \text{an older array slot}\qquad \Sigma\vdash |y|=n}
+     {\Sigma\vdash x.\mathtt{push}(\vec v)\dashv\Sigma',\ |y|=n}\ \textsf{push-apart}
+```
+
+and symmetrically for a push into $`y`$. The producer keeps such a length at
+each statement from the constants' declarations in the node's scope. Cases:
+`push-keeps-fresh-lengths` (pretext's `segmentAtLineBreaks`: two literals
+pushed around a typed array's write stay equally long); negative
+`invalid-push-keeps-fresh-lengths-alias`, run under Node (a constant a
+conditional initializes may hold the older array).
+
 ## The elements fact
 
 A second instance of the mechanism. `xs.every(g)` at a guard `g` promising

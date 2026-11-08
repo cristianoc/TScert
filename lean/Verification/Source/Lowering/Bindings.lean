@@ -22,7 +22,10 @@ set_option maxHeartbeats 1000000
   let A ← exprType fc b.init
   let B ← match b.annot with | none => pure A | some ty => lower (Fragment.translate ty)
   let fresh := match b.init with | .alloc .. | .arrayLit .. => true | _ => false
-  let bound : ScopeBinding Tree := { source := ⟨b.name,some pos⟩, fresh := fresh }
+  -- An array literal's object is separated from the fields the older slots'
+  -- records name (`separationFacts`).
+  let apart := match b.init with | .arrayLit .. => some Γ | _ => none
+  let bound : ScopeBinding Tree := { source := ⟨b.name,some pos⟩, fresh := fresh, apart := apart }
   -- The condition as its tests run it: an equality with a claimed singleton
   -- is that singleton's tag test (`comparisonsExpr`), which
   -- `constantImplications` narrows by as the test's own edge does.
