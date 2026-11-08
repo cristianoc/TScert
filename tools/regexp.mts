@@ -109,11 +109,11 @@ function splitResult(shape: RegExpShape | null): TypeTerm {
  * argument of a string's `replace` or `replaceAll` states this overload
  * (`callback`, `%RegExp:Σ:replacer%`): a fresh regex no other code holds,
  * whose `lastIndex` is the number 0 when `[Symbol.replace]` reads it. */
-function replacer(shape: RegExpShape): TypeTerm {
+function replacer(shape: RegExpShape, effect: Effect = ordinaryEffect): TypeTerm {
   const captures: TypeTerm[] = shape.always.map(a => a ? atom("string") : maybeString);
   const groups: TypeTerm[] = shape.named ? [{ k: "object", fields: [], calls: [], span,
     stringIndex: { readonly: true, value: maybeString, span } }] : [];
-  return { k: "function", effect: ordinaryEffect, receiver: null, rest: null, span,
+  return { k: "function", effect, receiver: null, rest: null, span,
     params: [atom("string"), ...captures, atom("number"), atom("string"), ...groups], result: atom("string") };
 }
 
@@ -136,6 +136,9 @@ function members(shape: RegExpShape | null, keys: RegExpKeys, callback: boolean 
   const exec = execResult(shape);
   const optionalNumber = either(atom("number"), atom("undefined"));
   const restoring: Effect = shape !== null ? emptyEffect : ordinaryEffect;
+  // A callback keeping every store, called by `[Symbol.replace]`, which
+  // writes the fresh regex's `lastIndex`, a location holding a number.
+  const keepsStores: Effect = footprintEffect({ value: "any", store: "keep" });
   const stateless: Effect = shape === null || shape.global || shape.sticky
     ? footprintEffect({ value: "any", store: "keep" }) : emptyEffect;
   // A native `exec` and `test` convert their argument by `ToString`, which
@@ -148,6 +151,7 @@ function members(shape: RegExpShape | null, keys: RegExpKeys, callback: boolean 
     { name: { symbol: keys.replace }, optional: false, readonly: false, span,
       type: shape !== null && callback ? { k: "intersection", span, parts: [
         method([atom("string"), atom("string")], atom("string"), stateless),
+        method([atom("string"), replacer(shape, keepsStores)], atom("string"), keepsStores),
         method([atom("string"), replacer(shape)], atom("string"), ordinaryEffect)] }
         : method([atom("string"), atom("string")], atom("string"), stateless) },
     methodField({ symbol: keys.search }, [atom("string")], atom("number"), restoring),

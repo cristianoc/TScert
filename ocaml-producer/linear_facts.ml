@@ -732,12 +732,12 @@ let strictly_bounded ~facts ~bounds xs k =
    entails fs ([k,-1],0) && entails fs (norm [k,1; length_term xs,-1],-1))
 
 (* The footprint of an expression whose heap writes are calls each keeping
-   every location holding an object or a store, within `{value: scalar,
-   store: keep}`, its other parts writing none: the join of the calls'
+   every location holding a store, within `{value: any, store: keep}`, its
+   other parts writing none: the join of the calls'
    footprints, which the facts a call at it keeps bound (Lean's
    `Changes.ofClosed`); none for any other expression. *)
 let rec object_calls env (e : expr) : Semantic.footprint option =
-  let within fp = if Semantic.footprint_le fp {Semantic.on_value=Semantic.Scalar;on_store=Semantic.Keep} then Some fp else None in
+  let within fp = if Semantic.footprint_le fp {Semantic.on_value=Semantic.Any;on_store=Semantic.Keep} then Some fp else None in
   let join a b = match a,b with
     | Some a,Some b -> Some {Semantic.on_value=Semantic.join_change a.Semantic.on_value b.Semantic.on_value;
         on_store=Semantic.join_change a.Semantic.on_store b.Semantic.on_store}
@@ -1097,9 +1097,14 @@ and statement_slots ~(array : string -> string list -> bool) ?(bounds=[]) ?(regi
     | None -> fs in
   (* A fact naming a length or a typed-array length reads the heap: kept where
      the statement writes none, as Lean keeps it (`IndexFact.envOnly`). *)
+  (* Whether an expression reads the binding `x`. *)
+  let rec reads x (e : expr) = match e.node with
+    | Id n -> n = x
+    | _ -> List.exists (reads x) (Source.children e) in
   let appended = match s.statement with
     | Effect {node=Invoke ({node=Read (({node=Id x;_} as r),key);_},args,[],_);_}
-        when !method_grows env r key && List.for_all (heap_free env) args ->
+        when !method_grows env r key && List.for_all (heap_free env) args
+          && not (List.exists (reads x) args) ->
       let length = length_term x in
       let ch = { obj=false; num=false; store=`Grow; framed=no_frame; apart=false; cell_write=false } in
       (* The length of an array a region fact keeps apart from the
