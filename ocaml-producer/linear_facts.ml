@@ -367,6 +367,8 @@ let cell_step op (rhs : expr option) = match rhs with
    in range. `array b path` tells whether the path from `b` holds an array,
    whose `length` is its store's. *)
 let rec linear ?(array = fun _ _ -> false) env fs (e : expr) : ((string * int) list * int) option = match e.node with
+  | Arith ((Shr | BitAnd),_,_) when List.mem_assoc e.pos !element_reads ->
+    Some ([List.assoc e.pos !element_reads,1],0)
   | Literal (LNumber s) -> Option.map (fun i -> [],i) (literal_int s)
   | Id x when value_binding env x && is_int fs x -> Some ([x,1],0)
   | Read (o,Semantic.Name "length") when (match path_of env o with Some (b,p) -> array b p | None -> false) ->
@@ -1388,12 +1390,26 @@ let instantiate (e : efact) ((kt,kc) : (string * int) list * int) (name : string
       if n = index_var then scale c kt else if n = elem_var then [name,c] else [n,c]) t in
     norm t, d - a * kc) e.body
 
+(* The same local names carry bounded shifts and masks inside a larger
+   expression. Their facts are the arithmetic postconditions checked by
+   Lean's `IndexWrites.bitAtoms`; children are named before their parents. *)
 let element_facts ~array env fs (e : expr) : fact list * (Json.t * string) list =
   let found = ref [] and extra = ref [] in
   let rec go (e : expr) =
     List.iter go (Source.children e);
+    let saved = !element_reads in
+    element_reads := !found @ saved;
+    Fun.protect ~finally:(fun () -> element_reads := saved) (fun () ->
+    let fs = fs @ !extra in
     match e.node with
-    | Call ({node=Id ("%ElementAt%" | "%ByteAt%");_},None,[xs;k],[],_) when not (List.mem_assoc e.pos !found) ->
+    | Arith ((Shr | BitAnd),_,_) when not (List.mem_assoc e.pos !found) ->
+      let name = "%bit" ^ string_of_int (List.length !found) in
+      let facts = bitwise_facts ~array env fs name e in
+      if facts <> [] then begin
+        found := (e.pos,name) :: !found;
+        extra := !extra @ facts
+      end
+    | Call ({node=Id "%ElementAt%";_},None,[xs;k],[],_) when not (List.mem_assoc e.pos !found) ->
       (match path_of env xs, linear ~array env fs k with
        | Some (root,path), Some (kt,kc) ->
          let ranged = fs @ term_ranges ((kt,0) :: fs) in
@@ -1406,7 +1422,7 @@ let element_facts ~array env fs (e : expr) : fact list * (Json.t * string) list 
             found := (e.pos,name) :: !found;
             extra := !extra @ List.concat_map (fun ef -> instantiate ef (kt,kc) name) efs)
        | _ -> ())
-    | _ -> () in
+    | _ -> ()) in
   go e;
   !extra, !found
 

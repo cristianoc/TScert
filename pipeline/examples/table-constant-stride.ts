@@ -28,3 +28,14 @@ export function maskedColumn(table: Uint8Array, codePoint: number): number {
   const byte = codePoint & 255;
   return table[byte]!;
 }
+
+// The generated-table consumers also use the operations inside the read.
+/** @requires safeInteger(row) && safeInteger(column) && 0 <= row && row <= 222 && 0 <= column && column <= 222 && 6244 <= table.length */
+export function inlineShiftedColumn(table: Uint8Array, row: number, column: number): number {
+  return table[row * 28 + (column >> 3)]!;
+}
+
+/** @requires safeInteger(codePoint) && 0 <= codePoint && codePoint <= 1114111 && 256 <= table.length */
+export function inlineMaskedColumn(table: Uint8Array, codePoint: number): number {
+  return table[codePoint & 255]!;
+}

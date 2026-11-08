@@ -240,11 +240,10 @@ let statements callbacks flow_graph register_following owner_span env0 ss =
         | Some e -> Linear_facts.after_cell_updates env e facts0
         | None -> facts0 in
       Linear_facts.current_bounds := (if typed_with_bounds then bounds0 else []);
-      (* The element reads of the statement that its quantified facts
-         instantiate, their values named, as the calls typed in it read
-         them (`Linear_facts.with_reads`). *)
+      (* Element reads and bounded bitwise expressions have local names
+         while calls in the statement are typed (`Linear_facts.with_reads`). *)
       let read_facts, reads = match updating with
-        | Some e when typed_with_bounds && every0 <> [] ->
+        | Some e when typed_with_bounds ->
           Linear_facts.with_cells true (fun () ->
             Linear_facts.current_efacts := every0;
             Linear_facts.element_facts ~array:(callbacks.array_binding env) env facts_at_calls e)
