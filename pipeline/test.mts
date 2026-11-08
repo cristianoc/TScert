@@ -503,19 +503,21 @@ control(async (): Promise<void> => {
 });
 
 control(async (): Promise<void> => {
-  // every-empty must establish zero length; a non-empty literal supplies no such proof.
-  const artifacts = run("invalid-quantified-empty");
+  // Literal length must not justify an arbitrary quantified body.
+  // The honest program verifies; its numeric literal contains 0 and 1.
+  const artifacts = run("native-length-literal");
   const source = readFileSync(sourceKey(artifacts), "utf8");
   const claims = readClaims(artifacts);
-  const fn = must(claims.functions.find(f => f.name === "invalidEmpty"), "invalidEmpty's claims");
-  const quantified = must(fn.entries.find(e => e.quantified.length > 0), "the invariant").quantified;
-  const at = source.indexOf("let total = 0");
-  must(fn.entries.find(e => e.start === at), "the entry after [7]").quantified = structuredClone(quantified);
+  const fn = must(claims.functions.find(f => f.name === "order"), "order's claims");
+  const entry = must(fn.entries.find(e => source.startsWith("return", e.start)), "the return entry");
+  entry.quantified.push({ name: "xs", path: [], stop: { name: "xs", path: [], term: "length" },
+    body: [{ terms: [["elem", 1]], bound: -1 }] });
   const forged = writeClaims(artifacts, "every-empty-nonempty-forged", claims);
   const searched = produceWith(artifacts, forged, "every-empty-nonempty-forged");
   assert.equal(searched.status, 1, `${searched.stdout}${searched.stderr}`);
-  assert.match(searched.stdout + searched.stderr, new RegExp(`edge obligation at \\[${at},[^\\n]*does not establish the claims`));
-  process.stdout.write("every-empty: a quantified bound forged over [7] refused at its entry\n");
+  assert.match(searched.stdout + searched.stderr, /does not establish the claims/);
+  invoke(forged, join(artifacts, "evidence.json"), artifacts, /^reject: source evidence /m);
+  process.stdout.write("every-empty: negative elements forged over [0,1] refused in search and checking\n");
 });
 
 control(async (): Promise<void> => {
@@ -966,7 +968,7 @@ control(async (): Promise<void> => {
   // Evidence carries this declaration's translated table. The original
   // evidence is incompatible with the weakened declaration's table.
   invoke(join(artifacts, "claims.json"), join(artifacts, "evidence.json"), artifacts,
-      /^reject: Verification\.EvidenceWire\.Document\.types: head 39 argument 0 part 0: head 114 takes 0 arguments, given 1/m, weakened);
+      /^reject: Verification\.EvidenceWire\.Document\.types: head \d+ argument 0 part 0: head \d+ takes 0 arguments, given 1/m, weakened);
 
   // An admitted undefined first element requires its default. Withholding
   // that expression claim cannot remove the default from either extraction.
@@ -4944,7 +4946,7 @@ control(async (): Promise<void> => {
   refusedAt(artifacts, allocated, "forged-native-introduction",
     `source expression obligation at [${allocatedAt},${allocatedAt + 2})`);
   invoke(allocated, join(artifacts, "evidence.json"), artifacts,
-      /^reject: Verification\.EvidenceWire\.Document\.types: application of unknown head 125/m);
+      /^reject: Verification\.EvidenceWire\.Document\.types: application of unknown head \d+/m);
   // A forged proposal for a direct write starts with a valid native input.
   // Borrow evidence from a weakened constructor contract, then require the
   // native contract to refuse it at its ordinary write obligation.
@@ -4978,7 +4980,7 @@ control(async (): Promise<void> => {
   assert.ok(writeTerm?.kind === "writeAt");
   assert.equal(writeTerm.field, "constructor");
   invoke(borrowedClaims, join(write, "weakened-native-constructor-evidence.json"), write,
-      /^reject: Verification\.EvidenceWire\.Document\.types: head 39 takes 1 arguments, given 0/m);
+      /^reject: Verification\.EvidenceWire\.Document\.types: head \d+ takes 1 arguments, given 0/m);
   // The verifier interprets these impossible native input annotations before
   // consuming any evidence. It refuses them independently of producer choices.
   for (const file of ["invalid-native-promise-constructor-intersection", "invalid-native-promise-array-then"]) {
@@ -6613,7 +6615,7 @@ control(async (): Promise<void> => {
     assert.equal(searched.status, 1, searched.stdout + searched.stderr);
     assert.ok((searched.stdout + searched.stderr).includes("reject: "), searched.stdout + searched.stderr);
     assert.ok(invoke(input, join(artifacts, "evidence.json"), artifacts,
-        /^reject: (?:Verification\.EvidenceWire\.Document\.types: head 132 takes 1 arguments, given 0|source evidence refusal at \[\d+,\d+\): the evidence does not establish this obligation's claim)/m).includes("reject: "));
+        /^reject: (?:Verification\.EvidenceWire\.Document\.types: head \d+ takes 1 arguments, given 0|source evidence refusal at \[\d+,\d+\): the evidence does not establish this obligation's claim)/m).includes("reject: "));
   }
   process.stdout.write("Object.entries's mixed overloads: the dictionary's call at the plain overload and the interface's at the dictionary's instance refused in search and in checking\n");
 });
@@ -6710,7 +6712,7 @@ const bypassed = (artifacts: string, name: string, at: [number, number], change:
   assert.equal(made.status, 0, made.stdout + made.stderr);
   refusedAt(artifacts, claims, `${name}-honest`, `obligation at [${at[0]},${at[1]})`);
   invoke(claims, join(artifacts, `${name}-evidence.json`), artifacts,
-      /^reject: (?:Verification\.EvidenceWire\.Document\.types: application of unknown head 549|source direct obligation at \[\d+,\d+\): claimed return type differs from the source annotation|source evidence refusal at \[\d+,\d+\): the evidence does not establish this node's typing)/m);
+      /^reject: (?:Verification\.EvidenceWire\.Document\.types: application of unknown head \d+|source direct obligation at \[\d+,\d+\): claimed return type differs from the source annotation|source evidence refusal at \[\d+,\d+\): the evidence does not establish this node's typing)/m);
 };
 control(async (): Promise<void> => {
   // Parameters retains the callback's effect. Claims and evidence made

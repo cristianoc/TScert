@@ -512,7 +512,7 @@ let with_cells admitted f =
   cells_written := admitted;
   Fun.protect ~finally:(fun () -> cells_written := saved) f
 let rec heap_free env (e : expr) = match e.node with
-  | Id _ | Literal _ | Lambda _ -> true
+  | Id _ | Literal _ -> true
   | Not a | Unary (_,a) | Cast (_,_,a) | Read (a,_) -> heap_free env a
   | Arith (_,a,b) | Equality (_,a,b) | Logical (_,a,b) | Coalesce (a,b) | Comma (a,b) -> heap_free env a && heap_free env b
   | Conditional (c,a,b) -> heap_free env c && heap_free env a && heap_free env b
@@ -661,6 +661,7 @@ let rec object_calls env (e : expr) : Semantic.footprint option =
     | _ -> None in
   let all es = List.fold_left (fun acc e -> join acc (object_calls env e)) (Some Semantic.empty_footprint) es in
   if heap_free env e then Some Semantic.empty_footprint else match e.node with
+  | Lambda _ -> Some Semantic.empty_footprint
   | Not a | Unary (_,a) | Cast (_,_,a) | Read (a,_) -> object_calls env a
   | Arith (_,a,b) | Equality (_,a,b) | Logical (_,a,b) | Coalesce (a,b) | Comma (a,b) -> all [a;b]
   | Conditional (c,a,b) -> all [c;a;b]
@@ -924,6 +925,7 @@ let rec test_call_facts ?(held = []) env (c : expr) : fact list = match c.node w
    gives is forgotten. *)
 let after_cell_updates env (e : expr) (fs : fact list) : fact list =
   let rec updates (e : expr) acc =
+    if (match e.node with Lambda _ -> true | _ -> false) then acc else
     let acc = match e.node with
       | Update ((Add | Sub) as op,{node=Id x;_},rhs,_) when !cell_terms x -> (x,cell_step op rhs) :: acc
       | Assign (x,_,_) when !cell_terms x -> (x,None) :: acc
