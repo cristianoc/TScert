@@ -575,8 +575,12 @@ let statements (expr:Analysis_state.expression_infer) execute_bindings owner_spa
     | Some g when g.host && not g.optional -> Some g.read
     | _ -> None in
   (* The member a method call reads: a host-relative member, or a
-     primitive's, its prototype's (`Type_queries.primitive_prototype`). *)
-  let method_member env r key = match Option.map head (receiver_type env r) with
+     primitive's, its prototype's (`Type_queries.primitive_prototype`), the
+     primitive read off the receiver's declared type or, for a receiver no
+     binding's path is (`xs[i]!`), its claimed one. *)
+  let method_member env r key =
+    let receiver = match receiver_type env r with Some t -> Some t | None -> claimed_type r.Source.pos in
+    match Option.map head receiver with
     | Some (Atoms [atom]) when Type_queries.primitive_prototype atom <> None ->
       Option.map (fun (g:Semantic.field) -> g.read)
         (field_of (Atoms [Named (Option.get (Type_queries.primitive_prototype atom),[])]) key)
