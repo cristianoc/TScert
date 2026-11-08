@@ -559,6 +559,19 @@ def utf16Units (s : String) : List Nat :=
     if v < 0x10000 then [v]
     else [0xD800 + (v - 0x10000) / 0x400, 0xDC00 + (v - 0x10000) % 0x400]
 
+/-- The most UTF-16 code units a JavaScript string holds, `2^53 - 1`: the
+String type's bound (ECMA-262, "The String Type"). A model string is a Lean
+string and may be longer; no JavaScript run holds one. -/
+def maxStringLength : Nat := 2 ^ 53 - 1
+
+/-- Whether the concatenation of two strings is longer than a JavaScript string
+can be. -/
+def concatOver (s t : String) : Bool := decide (maxStringLength < (utf16Units s).length + (utf16Units t).length)
+
+/-- The concatenation of two strings, where it is within the String type's
+bound; past it JavaScript throws a `RangeError` (`binopThrows`). -/
+def concatString (s t : String) : Option Tm := if concatOver s t then none else some (.str (s ++ t))
+
 /-- Lexicographic order of code-unit sequences: a proper prefix is less. -/
 def unitsOrder : List Nat → List Nat → Ordering
   | [], [] => .eq
@@ -919,10 +932,23 @@ def binop (op : Arith) (a b : Tm) : Option Tm :=
   match a, b with
   | .num x, .num y => some (.num (arithBits op x y))
   | .bigint x, .bigint y => (bigintArith op x y).map .bigint
-  | .str s, .str t => if op == .add then some (.str (s ++ t)) else none
-  | .str s, b => if op == .add then (primString b).map fun t => .str (s ++ t) else none
-  | a, .str t => if op == .add then (primString a).map fun s => .str (s ++ t) else none
+  | .str s, .str t => if op == .add then concatString s t else none
+  | .str s, b => if op == .add then (primString b).bind (concatString s) else none
+  | a, .str t => if op == .add then (primString a).bind (concatString · t) else none
   | _, _ => none
+
+/-- Whether `+` of two primitives concatenates past the String type's bound:
+a string and a primitive `ToString` converts without running code
+(`primString`), in either order, whose code units together exceed
+`maxStringLength`. -/
+def concatOverflows : Tm → Tm → Bool
+  | .str s, b => match primString b with
+    | some t => concatOver s t
+    | none => false
+  | a, .str t => match primString a with
+    | some s => concatOver s t
+    | none => false
+  | _, _ => false
 
 /-- **Where a binary operator throws** on two values, as JavaScript's does,
 with no code of the program's run first: a bigint division or remainder by
@@ -940,7 +966,7 @@ def binopThrows : Arith → Tm → Tm → Bool
     | .pow => decide (y < 0)
     | _ => false
   | op, .num _, .bigint _ | op, .bigint _, .num _ => !op.relational
-  | _, a, b => isSym a && isPrim b || isPrim a && isSym b
+  | op, a, b => isSym a && isPrim b || isPrim a && isSym b || op == .add && concatOverflows a b
 
 /-- The object a primitive operation throws: an object with no field, which
 takes no location, as `{}` allocates. It stands for the `TypeError` or
@@ -1352,6 +1378,12 @@ theorem relationalValue_result {op : Arith} {a b v : Tm} (h : relationalValue op
     obtain ⟨y, hy, h⟩ := Option.bind_eq_some_iff.mp h
     exact ⟨relNumeric_val hx, relNumeric_val hy, numericRelation_bool h⟩
 
+theorem concatString_eq {s t : String} {v : Tm} (h : concatString s t = some v) : v = .str (s ++ t) := by
+  unfold concatString at h
+  split at h
+  · cases h
+  · exact (Option.some.inj h).symm
+
 theorem binop_result {op : Arith} {a b v : Tm} (h : binop op a b = some v) :
     isVal a = true ∧ isVal b = true ∧
       (v = .tru ∨ v = .fls ∨ (∃ x, v = .num x) ∨ (∃ i, v = .bigint i) ∨ ∃ s, v = .str s) := by
@@ -1382,8 +1414,11 @@ theorem binop_result {op : Arith} {a b v : Tm} (h : binop op a b = some v) :
     | (obtain rfl := Option.some.inj h; exact ⟨rfl, rfl, by rcases hb _ with h | h <;> rw [h] <;> simp⟩)
     | (obtain rfl := Option.some.inj h; exact ⟨rfl, rfl, by simp⟩)
     | (obtain ⟨_, _, rfl⟩ := Option.map_eq_some_iff.mp h; exact ⟨rfl, rfl, by simp⟩)
-    | (obtain ⟨_, ht, rfl⟩ := Option.map_eq_some_iff.mp h; exact ⟨rfl, primString_val ht, by simp⟩)
-    | (obtain ⟨_, ht, rfl⟩ := Option.map_eq_some_iff.mp h; exact ⟨primString_val ht, rfl, by simp⟩)
+    | (obtain rfl := concatString_eq h; exact ⟨rfl, rfl, by simp⟩)
+    | (obtain ⟨_, ht, h⟩ := Option.bind_eq_some_iff.mp h; obtain rfl := concatString_eq h
+       exact ⟨rfl, primString_val ht, by simp⟩)
+    | (obtain ⟨_, ht, h⟩ := Option.bind_eq_some_iff.mp h; obtain rfl := concatString_eq h
+       exact ⟨primString_val ht, rfl, by simp⟩)
 
 theorem binop_values {op : Arith} {a b v : Tm} (h : binop op a b = some v) :
     isVal a = true ∧ isVal b = true ∧ isVal v = true := by
@@ -1397,6 +1432,45 @@ theorem isPrim_val {a : Tm} (h : isPrim a = true) : isVal a = true := by
 theorem isSym_val {a : Tm} (h : isSym a = true) : isVal a = true := by
   cases a <;> simp_all [isSym, isVal]
 
+/-- A concatenation past the bound is of two values. -/
+theorem concatOverflows_values {a b : Tm} (h : concatOverflows a b = true) :
+    isVal a = true ∧ isVal b = true := by
+  unfold concatOverflows at h
+  split at h
+  · split at h
+    · exact ⟨rfl, primString_val (by assumption)⟩
+    · cases h
+  · split at h
+    · exact ⟨primString_val (by assumption), rfl⟩
+    · cases h
+  · cases h
+
+/-- `+` of a string and another operand concatenates it with what `ToString`
+gives of the other. -/
+theorem binop_add_str_left (s : String) (b : Tm) :
+    binop .add (.str s) b = (primString b).bind (concatString s) := by
+  cases b <;> rfl
+
+theorem binop_add_str_right (a : Tm) (t : String) :
+    binop .add a (.str t) = (primString a).bind (concatString · t) := by
+  cases a <;> rfl
+
+/-- `+` has no answer where it concatenates past the bound. -/
+theorem concatOverflows_binop {a b : Tm} (h : concatOverflows a b = true) : binop .add a b = none := by
+  unfold concatOverflows at h
+  split at h
+  · split at h
+    · rename_i ht
+      rw [binop_add_str_left, ht]
+      simp [concatString, h]
+    · cases h
+  · split at h
+    · rename_i ht
+      rw [binop_add_str_right, ht]
+      simp [concatString, h]
+    · cases h
+  · cases h
+
 /-- An operator throws only on two values. -/
 theorem binopThrows_values {op : Arith} {a b : Tm} (h : binopThrows op a b = true) :
     isVal a = true ∧ isVal b = true := by
@@ -1408,9 +1482,10 @@ theorem binopThrows_values {op : Arith} {a b : Tm} (h : binopThrows op a b = tru
   · exact ⟨rfl, rfl⟩
   · exact ⟨rfl, rfl⟩
   · simp only [Bool.or_eq_true, Bool.and_eq_true] at h
-    rcases h with ⟨h1, h2⟩ | ⟨h1, h2⟩
+    rcases h with (⟨h1, h2⟩ | ⟨h1, h2⟩) | ⟨-, h⟩
     · exact ⟨isSym_val h1, isPrim_val h2⟩
     · exact ⟨isPrim_val h1, isSym_val h2⟩
+    · exact concatOverflows_values h
 
 /-- An operator never both answers and throws. -/
 theorem binop_not_throws {op : Arith} {a b v : Tm} (h : binop op a b = some v) :
@@ -1427,9 +1502,13 @@ theorem binop_not_throws {op : Arith} {a b v : Tm} (h : binop op a b = some v) :
   -- A number and a bigint answer only a comparison.
   · simp_all [binop]
   · simp_all [binop]
-  -- A symbol and another primitive have no answer.
+  -- A symbol and another primitive have no answer, nor a concatenation past
+  -- the bound.
   · simp only [Bool.or_eq_true, Bool.and_eq_true] at hc
-    rcases hc with ⟨h1, h2⟩ | ⟨h1, h2⟩
+    rcases hc with (⟨h1, h2⟩ | ⟨h1, h2⟩) | ⟨hadd, ho⟩
+    rotate_left 2
+    · obtain rfl : op = .add := by cases op <;> first | rfl | exact absurd hadd (by decide)
+      simp [concatOverflows_binop ho] at h
     · cases a <;> simp only [isSym, Bool.false_eq_true] at h1
       cases b <;> simp only [isPrim, Bool.false_eq_true] at h2 <;>
         simp_all [binop, primString, relationalValue, relNumeric]
@@ -2056,9 +2135,15 @@ inductive Step : Heap → Tm → Heap → Tm → Prop where
       Step h (.setElem (.arr ls) (.num b) v) (h ++ [v]) (.arr (placeAt ls k h.length))
   | lenC : Step h a h' a' → Step h (.lenOf a) h' (.lenOf a')
   | lenV {ls : List (Option Nat)} {h : Heap} : Step h (.lenOf (.arr ls)) h (.num (bitsOfNat ls.length))
-  /-- A string's length is its count of UTF-16 code units. -/
-  | lenStr {s : String} {h : Heap} :
+  /-- A string's length is its count of UTF-16 code units, at most
+  `maxStringLength`. -/
+  | lenStr {s : String} {h : Heap} : (utf16Units s).length ≤ maxStringLength →
       Step h (.lenOf (.str s)) h (.num (bitsOfNat (utf16Units s).length))
+  /-- A model string longer than any JavaScript string throws where its
+  length is read: no JavaScript run holds one, so the read has no
+  JavaScript answer to give. -/
+  | lenStrThrow {s : String} {h : Heap} : maxStringLength < (utf16Units s).length →
+      Step h (.lenOf (.str s)) (h ++ [.nul]) (.throw (thrownError h.length))
   /-- A string's own index property: the code unit at an index below its
   length, `undefined` at any other number. -/
   | elemStr {s : String} {b : UInt64} {h : Heap} :
@@ -2493,6 +2578,7 @@ theorem raises_no_step {t v : Tm} (hr : Raises t v) : ∀ {h h' t'}, ¬ Step h t
     | lenC s => exact ih s
     | lenV => cases hr
     | lenStr => cases hr
+    | lenStrThrow => cases hr
   | mergeC1 hr ih =>
     intro _ _ _ s
     cases s with
@@ -3123,14 +3209,21 @@ theorem Step_det {h t h1 t1 h2 t2} (s1 : Step h t h1 t1) (s2 : Step h t h2 t2) :
     | lenC s' => exact (ih s').imp id (congrArg Tm.lenOf)
     | lenV => exact absurd s (by intro hs; exact value_no_step rfl hs)
     | lenStr => exact absurd s (by intro hs; exact value_no_step rfl hs)
+    | lenStrThrow => exact absurd s (by intro hs; exact value_no_step rfl hs)
   | lenV =>
     cases s2 with
     | lenC s' => exact absurd s' (by intro hs; exact value_no_step rfl hs)
     | lenV => exact ⟨rfl, rfl⟩
-  | lenStr =>
+  | lenStr hl =>
     cases s2 with
     | lenC s' => exact absurd s' (by intro hs; exact value_no_step rfl hs)
     | lenStr => exact ⟨rfl, rfl⟩
+    | lenStrThrow ho => exact absurd hl (by omega)
+  | lenStrThrow ho =>
+    cases s2 with
+    | lenC s' => exact absurd s' (by intro hs; exact value_no_step rfl hs)
+    | lenStr hl => exact absurd hl (by omega)
+    | lenStrThrow => exact ⟨rfl, rfl⟩
   | elemStr =>
     cases s2 with
     | elemC1 s' => exact absurd s' (by intro hs; exact value_no_step rfl hs)

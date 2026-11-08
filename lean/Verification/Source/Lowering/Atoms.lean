@@ -650,6 +650,12 @@ Mappings discard only the temporaries introduced by this expression. -/
       let test ← emitAt e.span (.var 0) (.tagBind .isArray (refined array) (refined other)) (B::Γ) B
         "tag-dispatch" (scope := receiver :: scope)
       return ← finish (← operand (← behind test))
+    -- A string's `length` is its count of code units, read with no test:
+    -- the step states it of the string (`string-length`).
+    if fld == "length" && decide (Answers G B .isStr true) then
+      let node ← emitAt e.span (.lenOf (.var 0)) (.bind drop) (B::Γ) A
+        (scope := held ⟨"",some a.span⟩ :: scope)
+      return ← finish (← operand (← behind node))
     -- `length` through a view admits an array: the read tests the receiver
     -- (`lenView`).
     let object := if fld == "length" && arraysOnly G B

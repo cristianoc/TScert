@@ -15,17 +15,24 @@ type fact = (string * int) list * int
    then the named data fields read from what it holds in turn, each after a
    `.` (its path), then what the term reads of the value the path ends at:
    nothing for the value itself, `:length` for the length of its array store,
-   `:view` for the length of the typed array it is. A binding's name
-   and a field name have no `.` or `:`, so the parts never meet. *)
-type kind = Value_term | Length_term | View_term
+   `:view` for the length of the typed array it is, `:strlen` for the length
+   of the string it is. A binding's name and a field name have no `.` or `:`,
+   so the parts never meet. *)
+type kind = Value_term | Length_term | View_term | Str_length_term
 let make_term ?(path=[]) kind b =
-  String.concat "." (b :: path) ^ (match kind with Value_term -> "" | Length_term -> ":length" | View_term -> ":view")
+  String.concat "." (b :: path) ^ (match kind with Value_term -> "" | Length_term -> ":length" | View_term -> ":view"
+    | Str_length_term -> ":strlen")
+(* A kind's name on the wire (`HeapKnowledge.Term.Kind`). *)
+let kind_name = function Value_term -> "value" | Length_term -> "length" | View_term -> "view"
+  | Str_length_term -> "strLength"
 let length_term ?path xs = make_term ?path Length_term xs
 let view_term ?path b = make_term ?path View_term b
+let str_length_term ?path b = make_term ?path Str_length_term b
 let path_term b path = make_term ~path Value_term b
 let term_parts t : string * string list * kind =
   let base,kind = match String.index_opt t ':' with
-    | Some i -> String.sub t 0 i, (if String.sub t (i + 1) (String.length t - i - 1) = "view" then View_term else Length_term)
+    | Some i -> String.sub t 0 i, (match String.sub t (i + 1) (String.length t - i - 1) with
+      | "view" -> View_term | "strlen" -> Str_length_term | _ -> Length_term)
     | None -> t, Value_term in
   match String.split_on_char '.' base with
   | root :: path -> root,path,kind
@@ -40,9 +47,18 @@ let cell_terms : (string -> bool) ref = ref (fun _ -> false)
    cells. Set by the flow around each body. *)
 let parameter_binding : (string -> bool) ref = ref (fun _ -> false)
 (* A path, a length or a typed-array length reads the heap (Lean's
-   `Term.envOnly`), as does a term rooted at a cell. *)
-let reads_heap t = let b,path,kind = term_parts t in kind <> Value_term || path <> [] || !cell_terms b
+   `Term.envOnly`), as does a term rooted at a cell; a binding's value and
+   the length of the string it holds read the environment alone. *)
+let reads_heap t = let b,path,kind = term_parts t in
+  (kind <> Value_term && kind <> Str_length_term) || path <> [] || !cell_terms b
 let has_heap_term ((t,_) : fact) = List.exists (fun (n,_) -> reads_heap n) t
+(* A slot's own value, which an `int` fact states defined (Lean's `intSlot`);
+   any other term is defined by a fact naming it (`termDefined`). *)
+let slot_value t = let _,_,kind = term_parts t in kind = Value_term && not (reads_heap t)
+
+(* Whether the path from a binding holds a string, set by the statement
+   analysis, which reads the type. *)
+let string_path : ((string * Environment.binding) list -> string -> string list -> bool) ref = ref (fun _ _ _ -> false)
 
 let max_safe = 9007199254740991
 let max_index = 4294967294
@@ -245,23 +261,36 @@ let in_safe = function Some (lo,hi) -> -max_safe <= lo && hi <= max_safe | None 
 let fm_entails (fs : fact list) ((t,d) : fact) =
   let limit = 400 and large = 1 lsl 58 in
   let coeff x t = Option.value ~default:0 (List.assoc_opt x t) in
-  let rows = (norm (scale (-1) t), -d-1) :: List.map (fun (t,b) -> norm t, b) fs in
+  (* A row holds of integers at its coefficients divided by their greatest
+     common divisor, its bound rounded down, as Lean's tightening step
+     concludes it (`Linear.preSteps`). *)
+  let rec gcd a b = if b = 0 then a else gcd b (a mod b) in
+  let floor_div b g = if b >= 0 then b / g else - ((- b + g - 1) / g) in
+  let tight (t,b) =
+    let g = List.fold_left (fun g (_,c) -> gcd g (abs c)) 0 t in
+    if g > 1 then List.map (fun (n,c) -> n, c / g) t, floor_div b g else t,b in
+  let rows = List.map tight ((norm (scale (-1) t), -d-1) :: List.map (fun (t,b) -> norm t, b) fs) in
+  let overflows (tp,bp) (tn,bn) x =
+    let a = coeff x tp and b = - (coeff x tn) in abs bp > large / (b + 1) || abs bn > large / (a + 1) in
   let rec go rows =
     if List.exists (fun (t,b) -> t = [] && b < 0) rows then true else
     match List.sort_uniq compare (List.concat_map (fun (t,_) -> List.map fst t) rows) with
     | [] -> false
     | vars ->
-      let sign x k = List.length (List.filter (fun (t,_) -> k * coeff x t > 0) rows) in
-      let cost x = sign x 1 * sign x (-1) in
-      let x = List.fold_left (fun y z -> if cost z < cost y then z else y) (List.hd vars) vars in
-      let pos = List.filter (fun (t,_) -> coeff x t > 0) rows
-      and neg = List.filter (fun (t,_) -> coeff x t < 0) rows
-      and zero = List.filter (fun (t,_) -> coeff x t = 0) rows in
+      let pos x = List.filter (fun (t,_) -> coeff x t > 0) rows
+      and neg x = List.filter (fun (t,_) -> coeff x t < 0) rows in
+      let cost x = List.length (pos x) * List.length (neg x) in
+      (* A variable none of whose combinations leaves the integers held
+         first: a combination past them is dropped, losing its fact. *)
+      let fits x = List.for_all (fun p -> List.for_all (fun n -> not (overflows p n x)) (neg x)) (pos x) in
+      let key x = (not (fits x), cost x) in
+      let x = List.fold_left (fun y z -> if key z < key y then z else y) (List.hd vars) vars in
+      let zero = List.filter (fun (t,_) -> coeff x t = 0) rows in
       let combined = List.concat_map (fun (tp,bp) -> List.filter_map (fun (tn,bn) ->
         let a = coeff x tp and b = - (coeff x tn) in
         let bound = b * bp + a * bn in
-        if abs bp > large / (b + 1) || abs bn > large / (a + 1) then None
-        else Some (norm (scale b tp @ scale a tn), bound)) neg) pos in
+        if overflows (tp,bp) (tn,bn) x then None
+        else Some (tight (norm (scale b tp @ scale a tn), bound))) (neg x)) (pos x) in
       let rows = zero @ combined in
       if List.length rows > limit then false else go rows in
   go rows
@@ -283,19 +312,19 @@ let entails_held fs ((terms,d) : fact) =
 let value_ranges (fs : fact list) : fact list =
   List.concat_map (fun ((t,_) : fact) -> List.concat_map (fun (n,_) -> match (let _,_,k = term_parts n in k) with
     | Value_term -> [[n,-1],max_safe; [n,1],max_safe]
-    | Length_term | View_term -> []) t) fs |> List.sort_uniq compare
+    | Length_term | View_term | Str_length_term -> []) t) fs |> List.sort_uniq compare
 
 (* Entailment as Lean decides it (`Linear.entailsWith`, `entailsKnown`): by
    the facts, or, where they alone entail no goal, with the range of each
    safe integer they name. *)
 let entails fs (goal : fact) = entails_held fs goal || entails_held (fs @ value_ranges fs) goal
 
-(* The ranges Lean's knowledge states of each length and typed-array length the
-   facts name (`HeapKnowledge.lengthRange`, `viewRange`). *)
+(* The ranges Lean's knowledge states of each length, typed-array length and
+   string's length the facts name (`HeapKnowledge.lengthRange`, `viewRange`). *)
 let term_ranges (fs : fact list) : fact list =
   List.concat_map (fun ((t,_) : fact) -> List.concat_map (fun (n,_) -> match (let _,_,k = term_parts n in k) with
     | Length_term -> [[n,-1],0; [n,1],max_index + 1]
-    | View_term -> [[n,-1],0; [n,1],max_safe]
+    | View_term | Str_length_term -> [[n,-1],0; [n,1],max_safe]
     | Value_term -> []) t) fs |> List.sort_uniq compare
 
 (* Whether `t + c` is a safe integer: by the ranges of its terms, or as Lean
@@ -343,6 +372,9 @@ let rec linear ?(array = fun _ _ -> false) env fs (e : expr) : ((string * int) l
   | Cast ("nonNull",_,({node=Call ({node=Id ("%ElementAt%" | "%ByteAt%");_},None,[_;_],[],_);_} as a))
     when List.mem_assoc a.pos !element_reads ->
     Some ([List.assoc a.pos !element_reads,1],0)
+  (* `s.length` of a string, the string's length (Lean's `string-length`). *)
+  | Read (o,Semantic.Name "length") when (match path_of env o with Some (b,p) -> !string_path env b p | None -> false) ->
+    (match path_of env o with Some (b,path) -> Some ([str_length_term ~path b,1],0) | None -> None)
   (* `b.length` of a typed array, `%ByteLength%(b)`, whose postcondition
      states it the typed-array length. *)
   | Call ({node=Id "%ByteLength%";_},None,[o],[],_) when path_of env o <> None ->
@@ -366,8 +398,26 @@ let rec linear ?(array = fun _ _ -> false) env fs (e : expr) : ((string * int) l
 let equal x (t,c) : fact list =
   [int_fact x; norm ((x,1) :: scale (-1) t), c; norm ((x,-1) :: t), -c]
 
+(* `a ± (c ? p : q)` read as `c ? a ± p : a ± q`, as Lean's lowering runs
+   the rest of the expression in each arm, where `a` is a binding or a
+   literal `c` does not assign. *)
+let distribute (e : expr) = match e.node with
+  | Arith ((Add | Sub) as op,({node=(Id _ | Literal _);_} as a),{node=Conditional (c,p,q);_})
+    when (match a.node with Id x -> not (Source.assigns_expr x c) | _ -> true) ->
+    Some (c,{e with node=Arith (op,a,p)},{e with node=Arith (op,a,q)})
+  | _ -> None
+
+(* The facts after `x = c ? p : q`, each arm assigned under what its answer
+   of `c` states and the two joined (set below, where the comparison and the
+   join are defined). *)
+let assign_arms : (array:(string -> string list -> bool) -> (string * Environment.binding) list -> fact list ->
+    string -> expr -> expr -> expr -> fact list option) ref = ref (fun ~array:_ _ _ _ _ _ _ -> None)
+
 let assign ~array env fs x (e : expr) =
   if not (value_binding env x) then forget x fs else
+  match distribute e with
+  | Some (c,p,q) -> (match !assign_arms ~array env fs x c p q with Some fs -> fs | None -> forget x fs)
+  | None ->
   match linear ~array env fs e with
   | Some ([y,1],c) when y = x ->
     (* `x = x + c`: each fact of the old value restated of the new one. *)
@@ -533,7 +583,8 @@ let term_kept ch t =
   ((match path with
    | [] -> true
    | _ :: q -> (first || not (if q = [] then last else ch.obj)) && (q = [] || (not last && (List.length q = 1 || not ch.obj)))) &&
-  (match kind with Value_term -> true | Length_term -> ch.store = `Keep || ch.store = `Length | View_term -> not ch.num)) ||
+  (match kind with Value_term -> true | Length_term -> ch.store = `Keep || ch.store = `Length | View_term -> not ch.num
+    | Str_length_term -> path = [])) ||
   (* A view's count read through one field the write keeps, its type stating
      the count stable (Lean's `Term.viewFramed`). *)
   (match kind, path with View_term, [g] -> not ch.obj && ch.framed b g | _ -> false)
@@ -601,7 +652,8 @@ let of_index_facts (name : int -> string option) (fs : Semantic.index_fact list)
       let terms = List.map (fun (t,c) -> match (t : Semantic.term) with
         | Semantic.Value_at (x,path) -> Option.map (fun n -> path_term n path,c) (name x)
         | Semantic.Length_at (x,path) -> Option.map (fun n -> length_term ~path n,c) (name x)
-        | Semantic.View_at (x,path) -> Option.map (fun n -> view_term ~path n,c) (name x)) form in
+        | Semantic.View_at (x,path) -> Option.map (fun n -> view_term ~path n,c) (name x)
+        | Semantic.Str_length_at (x,path) -> Option.map (fun n -> str_length_term ~path n,c) (name x)) form in
       if List.for_all Option.is_some terms then Some (norm (List.filter_map Fun.id terms),d) else None
     | _ -> None) fs
 
@@ -646,6 +698,7 @@ let construct_ensures ~array env fs name c (args : expr list) : fact list =
         | Semantic.Value_at (0,path) -> Some ([path_term name path,k],0)
         | Semantic.Length_at (0,path) -> Some ([length_term ~path name,k],0)
         | Semantic.View_at (0,path) -> Some ([view_term ~path name,k],0)
+        | Semantic.Str_length_at (0,path) -> Some ([str_length_term ~path name,k],0)
         | Semantic.Value_at (p,[]) when p >= 2 -> Option.map (fun (t,c) -> scale k t, k * c) (form (p - 1))
         | _ -> None) f in
       if List.for_all Option.is_some parts then
@@ -653,6 +706,72 @@ let construct_ensures ~array env fs name c (args : expr list) : fact list =
         Some (norm (List.concat_map fst parts), d - List.fold_left (fun acc (_,c) -> acc + c) 0 parts)
       else None
     | _ -> None) s.Semantic.call_effect.Semantic.ensures
+
+(* The signatures of a receiver's method, set by the statement analysis. *)
+let method_signatures : ((string * Environment.binding) list -> expr -> Semantic.key -> Semantic.signature list) ref =
+  ref (fun _ _ _ -> [])
+
+(* A term at a call's position over bindings: the actual there as a linear
+   expression, for a value term with no path, else as a path, with the
+   term's path after it. *)
+let position_form ~array env fs (actual : expr option) (t : Semantic.term) =
+  let at q kind = Option.bind actual (fun e -> Option.map (fun (b,p) -> [make_term ~path:(p @ q) kind b,1],0) (path_of env e)) in
+  match t with
+  | Semantic.Value_at (_,[]) -> Option.bind actual (linear ~array env fs)
+  | Semantic.Value_at (_,q) -> at q Value_term
+  | Semantic.Length_at (_,q) -> at q Length_term
+  | Semantic.View_at (_,q) -> at q View_term
+  | Semantic.Str_length_at (_,q) -> at q Str_length_term
+
+let term_position (t : Semantic.term) = match t with
+  | Semantic.Value_at (p,_) | Semantic.Length_at (p,_) | Semantic.View_at (p,_) | Semantic.Str_length_at (p,_) -> p
+
+(* The postcondition of `r.m(args)` bound to `name` (Lean's `call-ensures`):
+   that of the first of the method's signatures stating a precondition the
+   facts establish of the receiver and the actuals (positions 0 the
+   receiver, `i + 1` the `i`-th actual, as `call-requires` reads them), or,
+   where none does, of every signature stating none, where they state the
+   same; its positions 0 the result, 1 the receiver and `i + 2` the `i`-th
+   actual. A fact naming a position no term reads is left out. *)
+let method_ensures ~array env fs name (recv : expr) key (args : expr list) : fact list =
+  let sigs = !method_signatures env recv key in
+  let combine form parts = List.map (fun (t,c) -> Option.map (fun (t',k) -> scale c t', c * k) (form t)) parts in
+  let sum parts = let parts = List.filter_map Fun.id parts in
+    norm (List.concat_map fst parts), List.fold_left (fun acc (_,k) -> acc + k) 0 parts in
+  let pre_actual p = if p = 0 then Some recv else List.nth_opt args (p - 1) in
+  let holds = function
+    | Semantic.Int_at k -> Option.bind (pre_actual k) (linear ~array env fs) <> None
+    | Semantic.Linear_le (f,d) ->
+      let parts = combine (fun t -> position_form ~array env fs (pre_actual (term_position t)) t) f in
+      List.for_all Option.is_some parts &&
+      (let terms,constant = sum parts in
+       terms = [] && constant <= d || entails (fs @ term_ranges ((terms,0) :: fs)) (terms, d - constant))
+    | _ -> false in
+  let plain (s : Semantic.signature) = s.Semantic.call_effect.Semantic.pre = [] in
+  let chosen = match List.find_opt (fun (s : Semantic.signature) -> not (plain s) &&
+      s.Semantic.call_effect.Semantic.promise = None && List.for_all holds s.Semantic.call_effect.Semantic.pre) sigs with
+    | Some s -> Some s.Semantic.call_effect.Semantic.ensures
+    | None -> (match List.filter plain sigs with
+      | s :: rest when List.for_all (fun (r : Semantic.signature) ->
+          r.Semantic.call_effect.Semantic.ensures = s.Semantic.call_effect.Semantic.ensures) rest ->
+        Some s.Semantic.call_effect.Semantic.ensures
+      | _ -> None) in
+  let post_actual p = if p = 1 then Some recv else List.nth_opt args (p - 2) in
+  match chosen with
+  | None -> []
+  | Some ensures -> List.filter_map (fun (fact : Semantic.index_fact) -> match fact with
+    | Semantic.Int_at 0 -> Some (int_fact name)
+    | Semantic.Linear_le (f,d) ->
+      let parts = combine (fun t -> match t with
+        | Semantic.Value_at (0,path) -> Some ([path_term name path,1],0)
+        | Semantic.Length_at (0,path) -> Some ([length_term ~path name,1],0)
+        | Semantic.View_at (0,path) -> Some ([view_term ~path name,1],0)
+        | Semantic.Str_length_at (0,path) -> Some ([str_length_term ~path name,1],0)
+        | t -> position_form ~array env fs (post_actual (term_position t)) t) f in
+      if List.for_all Option.is_some parts then
+        let terms,constant = sum parts in Some (terms, d - constant)
+      else None
+    | _ -> None) ensures
 
 (* The facts the signatures of the binding `f` state at a call's normal
    return (Lean's `call-ensures`), over bindings: position `0` the result
@@ -889,7 +1008,7 @@ let comparison_bounds ~array env fs cond = let (_,t),(_,f) = test ~array env fs 
    the largest length, or `2^53 - 1`, the largest safe integer, where it is
    at most that, and forgotten otherwise, so each form changes at most four
    times and a loop settles as it would without facts. *)
-let join (l : fact list) (r : fact list) : fact list =
+let join ?(keep = true) (l : fact list) (r : fact list) : fact list =
   let l = tighten l and r = tighten r in
   (* Each path's bound of a form: the least of the bounds either path
      states, `0` and the largest length that its facts, with the ranges of
@@ -900,12 +1019,12 @@ let join (l : fact list) (r : fact list) : fact list =
      `i - xs.length ≤ -1` keep `i ≤ 2^32 - 1` where the iteration bounds
      `i` by the length. *)
   let defines side ((t,_) : fact) = List.for_all (fun (n,_) ->
-    if reads_heap n then List.exists (fun ((t',_) : fact) -> List.mem_assoc n t') side
+    if not (slot_value n) then List.exists (fun ((t',_) : fact) -> List.mem_assoc n t') side
     else List.mem ([n,0],0) side) t in
   (* The earlier state (`l`) keeps a bound it states, so the join is never
      stronger than it and a loop settles; the later state, and an earlier one
      not stating the form, are read at the least candidate their facts
-     entail. *)
+     entail. Two arms of one test (`keep` false) are both read so. *)
   let bound ?(keep = false) side candidates ((t,_) as f : fact) =
     match List.assoc_opt t side with
     | Some d when keep -> Some d
@@ -918,7 +1037,7 @@ let join (l : fact list) (r : fact list) : fact list =
     let dl = List.assoc_opt t l and dr = List.assoc_opt t r in
     if is_int_fact (t,0) then (match dl,dr with Some d,Some _ -> Some (t,d) | _ -> None) else
     let candidates = List.sort_uniq compare (List.filter_map Fun.id [dl; dr] @ [0; max_index + 1; max_safe]) in
-    match bound ~keep:true l candidates (t,0), bound r candidates (t,0) with
+    match bound ~keep l candidates (t,0), bound r candidates (t,0) with
     | Some d, Some d' when d' <= d -> Some (t,d)
     | Some d, Some d' when d' <= 0 && d < 0 -> Some (t, 0)
     | Some d, Some d' when d' <= max_index + 1 && d < max_index + 1 -> Some (t, max_index + 1)
@@ -927,8 +1046,16 @@ let join (l : fact list) (r : fact list) : fact list =
   (* A binding's own safe-integer range, which the knowledge states of each
      safe integer it names (`HeapKnowledge.valueRange`), is not restated. *)
   |> fun fs -> List.filter (fun ((t,d) : fact) -> match t with
-    | [x,(1 | -1)] when not (reads_heap x) && d >= max_safe -> not (List.mem ([x,0],0) fs)
+    | [x,(1 | -1)] when slot_value x && d >= max_safe -> not (List.mem ([x,0],0) fs)
     | _ -> true) fs
+
+let () = assign_arms := (fun ~array env fs x c p q ->
+  let t,f = comparison ~array env fs c in
+  let l = assign ~array env (fs @ t) x p and r = assign ~array env (fs @ f) x q in
+  (* The facts of each arm joined, neither arm the earlier state, beside
+     those naming no `x`, which neither arm changes. *)
+  let fs' = forget x fs in
+  Some (fs' @ List.filter (fun f -> not (List.mem f fs')) (join ~keep:false l r)))
 
 let declaration ~(array : string -> string list -> bool) env fs name (init : expr) : fact list =
   (* An initializer updating a cell (`xs[at++]!`): the update's facts, then
@@ -946,6 +1073,11 @@ let declaration ~(array : string -> string list -> bool) env fs name (init : exp
     (* `const x = new c(…)` at a construct signature stating facts of its
        result: each of them, of `x`, over the actuals. *)
     | New ({node=Id c;_},_,args,[]) -> fs @ construct_ensures ~array env fs name c args
+    (* `const x = r.m(…)`, or its non-null assertion, of a method stating a
+       postcondition: each of its facts, of `x`. *)
+    | Invoke ({node=Read (r,key);_},args,[],_)
+    | Cast ("nonNull",_,{node=Invoke ({node=Read (r,key);_},args,[],_);_}) ->
+      fs @ method_ensures ~array env fs name r key args
     (* `const x = { f: e, … }`: each named field's value, a linear
        expression, is the path's (Lean's `freshLinks`, a read link from each
        field of the allocated object to its initializer's slot). *)
@@ -966,6 +1098,9 @@ let declaration ~(array : string -> string list -> bool) env fs name (init : exp
     | Some (root,(_ :: _ as path)) when root <> name && heap_free env init -> fs @ restate_read name (root,path) fs
     | Some (root,[]) when root <> name && init != uncast init -> fs @ restate_read name (root,[]) fs
     | _ -> fs in
+  let init = match distribute init with
+    | Some (c,p,q) -> {init with node=Conditional (c,p,q)}
+    | None -> init in
   match init.node with
   (* `const x = c ? a : b`: on each arm, what the arm's answer of `c` states
      and `x` the arm's value, the two joined (Lean's branch on `c`, each arm
@@ -1335,7 +1470,8 @@ let of_every_fact (name : int -> string option) (fact : Semantic.index_fact) : e
   let term (t : Semantic.term) = match t with
     | Semantic.Value_at (x,path) -> Option.map (fun n -> path_term n path) (name x)
     | Semantic.Length_at (x,path) -> Option.map (fun n -> length_term ~path n) (name x)
-    | Semantic.View_at (x,path) -> Option.map (fun n -> view_term ~path n) (name x) in
+    | Semantic.View_at (x,path) -> Option.map (fun n -> view_term ~path n) (name x)
+    | Semantic.Str_length_at (x,path) -> Option.map (fun n -> str_length_term ~path n) (name x) in
   match fact with
   | Semantic.Every (x,path,stop,body) ->
     let var = function

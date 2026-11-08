@@ -29,9 +29,10 @@ type promise = Guards of int | Asserts of int
    array's store; an index at most that length, below it where strict; a safe
    integer; a linear fact `Σ c·t ≤ d` or `≠ d`, each term the value at a
    position or at the named data fields read from it in turn (its path), the
-   length of the array store there, or the length of the typed array
-   there (Lean's `HeapKnowledge.Term`). *)
+   length of the array store there, the length of the typed array
+   there, or the length of the string there (Lean's `HeapKnowledge.Term`). *)
 type term = Value_at of int * string list | Length_at of int * string list | View_at of int * string list
+  | Str_length_at of int * string list
 type index_fact = Index_at of int | Length_of of int * int | Bound_by of int * int * bool | Int_at of int
   | Linear_le of (term * int) list * int | Linear_ne of (term * int) list * int
   (* Where the named data fields read from the position do not give the

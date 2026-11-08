@@ -243,7 +243,7 @@ function decodeLinearTerm(v: JsonRead): LinearTerm | undefined {
   const t = fieldsOf(v, ["kind", "slot", "path"]);
   if (t === undefined) return undefined;
   const kind = t.kind;
-  if (kind !== "value" && kind !== "length" && kind !== "view") return undefined;
+  if (kind !== "value" && kind !== "length" && kind !== "view" && kind !== "strLength") return undefined;
   const slot = decodeNat(t.slot);
   if (slot === undefined || !isJsonList(t.path)) return undefined;
   const path: string[] = [];

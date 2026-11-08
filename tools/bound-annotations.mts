@@ -55,9 +55,10 @@ import * as ts from "typescript/unstable/ast";
 import type { BodyFact, BodyVariable, GuardTag, IndexFact, LinearFact, LinearTerm } from "./declaration-types.mts";
 
 /** What a path's type names: an array, whose `length` is its store's length;
- * a typed array, whose `length` is its typed-array length (`view`); a record or any
- * other value (`other`); or no type a field resolves (`null`). */
-export type PathType = "array" | "view" | "other" | null;
+ * a typed array, whose `length` is its typed-array length (`view`); a string,
+ * whose `length` is its count of code units (`string`); a record or any other
+ * value (`other`); or no type a field resolves (`null`). */
+export type PathType = "array" | "view" | "string" | "other" | null;
 /** The tags a clause's guards exclude of a path's prefix of `depth` fields,
  * where the clause holds past them. */
 export type Excluded = (depth: number) => readonly GuardTag[];
@@ -465,14 +466,15 @@ export function elaborateRequires(clauses: readonly string[], params: readonly C
         ...atoms.flatMap(a => a.k === "safeInteger" ? [JSON.stringify(value(a.of))] : [])]);
       const term = (key: string): LinearTerm => {
         const names = key.split(".");
-        // `p.length` of an array or a typed array path is its length; of any
-        // other, the field `length` read from it.
+        // `p.length` of an array, a typed array or a string path is its
+        // length; of any other, the field `length` read from it.
         if (names.length > 1 && names[names.length - 1] === "length") {
           const prefix = names.slice(0, -1).join(".");
           const { p, path: fields } = path(prefix);
           const at = p.at(fields, excludedBy(guards.length, names[0] ?? ""));
           if (at === "array") return { kind: "length", slot: p.position, path: fields };
           if (at === "view") return { kind: "view", slot: p.position, path: fields };
+          if (at === "string") return { kind: "strLength", slot: p.position, path: fields };
         }
         const t = value(key);
         if (!ints.has(JSON.stringify(t))) throw new ClauseError(`the comparison names ${key}, which the clause does not state a safe integer`);
@@ -588,9 +590,11 @@ const MAX_SAFE = Number.MAX_SAFE_INTEGER;
 
 /** Terms in the order of a normal form (`HeapKnowledge.Term.before`): by
  * position and kind, a position's value, then its length, then its element
- * count; then by path, lexicographically, the empty path first. */
+ * count, then its string's length; then by path, lexicographically, the empty
+ * path first. */
 function order(a: LinearTerm, b: LinearTerm): number {
-  const code = (t: LinearTerm): number => 3 * t.slot + (t.kind === "value" ? 0 : t.kind === "length" ? 1 : 2);
+  const kindCode = { value: 0, length: 1, view: 2, strLength: 3 } as const;
+  const code = (t: LinearTerm): number => 4 * t.slot + kindCode[t.kind];
   if (code(a) !== code(b)) return code(a) - code(b);
   for (let i = 0; i < Math.min(a.path.length, b.path.length); i++) {
     const x = a.path[i] ?? "", y = b.path[i] ?? "";

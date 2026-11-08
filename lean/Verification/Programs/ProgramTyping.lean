@@ -1464,7 +1464,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
     have hstr := answers_sound hs ha'
     obtain ⟨s, rfl⟩ : ∃ s, av = .str s := by
       cases av <;> simp [tagHolds] at hstr; exact ⟨_, rfl⟩
-    exact len_str_rule j U heap hu hok (fun m U' => (represents_back hn m U' _) ⟨_, rfl⟩)
+    exact len_str_rule j U heap hu hok (builtinExc_errors G _) (fun _ m U' => (represents_back hn m U' _) ⟨_, rfl⟩)
   | @elemStr Γ a i S I T U ha hs hi hq hT hU iha ihi =>
     intro n W h ρ he hw hh
     apply Safe_bind (fun a => .elemAt a (instantiate 0 ρ i)) Step.elemC1 Raises.elemC1 n W h _ hw hh (iha n W h ρ he hw hh)

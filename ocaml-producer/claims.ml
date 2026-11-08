@@ -42,8 +42,9 @@ let footprint_json f = Object ["value",change_json f.on_value;"store",change_jso
 let kinds_json = function None -> Null | Some ks -> Array (List.map (fun k -> String k) ks)
 let rec index_fact_json fact =
   let term t =
-    let x,path = match t with Value_at (x,p) | Length_at (x,p) | View_at (x,p) -> x,p in
-    let kind = match t with Value_at _ -> "value" | Length_at _ -> "length" | View_at _ -> "view" in
+    let x,path = match t with Value_at (x,p) | Length_at (x,p) | View_at (x,p) | Str_length_at (x,p) -> x,p in
+    let kind = match t with Value_at _ -> "value" | Length_at _ -> "length" | View_at _ -> "view"
+      | Str_length_at _ -> "strLength" in
     Object ["kind",String kind;"slot",int x;"path",Array (List.map (fun f -> String f) path)] in
   let linear k form d = Object ["linear",Object ["fact",Object [k,Object [
     "form",Array (List.map (fun (t,c) -> Array [term t;int c]) form);"bound",int d]]]] in
@@ -609,7 +610,7 @@ let encode (proposal : Proposal_types.t) =
         Object ["name",String x;"path",Array (List.map (fun f -> String f) path);"tag",String tag]) guards);
       "terms",Array (List.map (fun (t,c) ->
         let name,path,kind = Linear_facts.term_parts t in
-        let kind = match kind with Linear_facts.Value_term -> "value" | Linear_facts.Length_term -> "length" | Linear_facts.View_term -> "view" in
+        let kind = Linear_facts.kind_name kind in
         Object ["name",String name;"path",Array (List.map (fun f -> String f) path);"term",String kind;
                 "coefficient",Number (string_of_int c)]) terms);
       "bound",Number (string_of_int bound)])
@@ -618,7 +619,7 @@ let encode (proposal : Proposal_types.t) =
      "Quantified clauses"): its array, its bound and its body, in order. *)
   let term_ref t =
     let name,path,kind = Linear_facts.term_parts t in
-    let kind = match kind with Linear_facts.Value_term -> "value" | Linear_facts.Length_term -> "length" | Linear_facts.View_term -> "view" in
+    let kind = Linear_facts.kind_name kind in
     Object ["name",String name;"path",Array (List.map (fun f -> String f) path);"term",String kind] in
   let quantified bs = Array (List.filter_map (fun (n,_) -> match Linear_facts.efact_parts n with
     | Some (e : Linear_facts.efact) when List.for_all (fun ((t,d) : Linear_facts.fact) -> safe d && List.for_all (fun (_,c) -> safe c) t) e.Linear_facts.body ->

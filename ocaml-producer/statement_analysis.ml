@@ -489,9 +489,9 @@ let statements (expr:Analysis_state.expression_infer) execute_bindings owner_spa
     match Option.map (fun t -> try declared_head declarations [] t with Json.Error _ -> Atoms []) declared with
     | Some (Atoms [Shape {calls;_}]) -> Linear_facts.signatures_keep calls
     | _ -> false);
-  (* Whether the path from a binding holds an array: each field a required
-     one of the record type before it, the last an array's. *)
-  let array_binding env x path = match List.assoc_opt x env with
+  (* The type of the path from a binding, each field a required one of the
+     record type before it, expanded to its head. *)
+  let path_head env x path = match List.assoc_opt x env with
     | Some b ->
       let head t = try declared_head declarations [] t with Json.Error _ -> Atoms [] in
       let step t f = match t with
@@ -501,13 +501,19 @@ let statements (expr:Analysis_state.expression_infer) execute_bindings owner_spa
             | _ -> None)
           | _ -> None)
         | None -> None in
-      (match List.fold_left step (Some (binding_type b)) path with
-       | Some t -> (match head t with
-         | Atoms [Shape {elements=Some _;indexes=[];calls=[];_}] -> true
-         | _ -> false)
-       | None -> false)
-    | None -> false in
+      Option.map head (List.fold_left step (Some (binding_type b)) path)
+    | None -> None in
+  (* Whether the path from a binding holds an array, the last field an
+     array's. *)
+  let array_binding env x path = match path_head env x path with
+    | Some (Atoms [Shape {elements=Some _;indexes=[];calls=[];_}]) -> true
+    | _ -> false in
   Linear_facts.array_path := array_binding;
+  (* Whether the path from a binding holds a string, its type's every arm a
+     string (Lean's `stringSlot`). *)
+  Linear_facts.string_path := (fun env x path -> match path_head env x path with
+    | Some (Atoms (_ :: _ as atoms)) -> List.for_all (function Str | StrLit _ -> true | _ -> false) atoms
+    | _ -> false);
   (* Whether the path holds an array where it is not `null` or `undefined`:
      its type's arms but those an array's (PROGRAM-TYPING.md, "Guarded
      clauses"). *)
@@ -590,6 +596,17 @@ let statements (expr:Analysis_state.expression_infer) execute_bindings owner_spa
     | Some (Atoms [Shape {calls;_}]) -> calls <> [] && List.for_all (fun (s : Semantic.signature) ->
         s.Semantic.call_effect.Semantic.receiver_grows) calls
     | _ -> false);
+  (* The signatures of a receiver's method: a host-relative member, or a
+     primitive's, its prototype's (`Type_queries.primitive_prototype`). *)
+  Linear_facts.method_signatures := (fun env r key ->
+    let member = match Option.map head (receiver_type env r) with
+      | Some (Atoms [atom]) when Type_queries.primitive_prototype atom <> None ->
+        Option.map (fun (g:Semantic.field) -> g.read)
+          (field_of (Atoms [Named (Option.get (Type_queries.primitive_prototype atom),[])]) key)
+      | _ -> method_type env r key in
+    match Option.map head member with
+    | Some (Atoms [Shape {calls;_}]) -> calls
+    | _ -> []);
   Linear_facts.call_ensures := (fun env x ->
     let declared = match List.assoc_opt x env with
       | Some b -> Some (binding_type b)

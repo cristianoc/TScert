@@ -3117,6 +3117,27 @@ where the native is modelled, and audited otherwise:
 | `Set` and `Map` `add`, `set`, `delete`, `clear`; `Date` `setTime` | `{value: any, store: keep}` | they run no code and write only the receiver's internal slots, which hold no array store (audited) |
 
 
+#### `codePointAt` of a string
+
+`String.prototype.codePointAt(pos)` of a string primitive at a number runs no
+code: RequireObjectCoercible and ToString of a string return it, and
+ToIntegerOrInfinity of a number converts it without a call
+([ECMA-262](REFERENCES.md#ecma-262), `String.prototype.codePointAt`). It
+answers `undefined` where the integer is negative or at least the string's
+length, and otherwise CodePointAt's code point at that position: the code
+unit there, unless it is a leading surrogate whose next position, inside
+the string, holds a trailing one, where it is the pair's code point,
+between `0x10000` and `0x10FFFF`. The overlay states, beside the declared
+form, the form at a safe integer $`i`$ with $`0\le i<\mathrm{strLength}(s)`$,
+which is its own ToIntegerOrInfinity: a number, a safe integer
+$`0\le r\le\mathtt{0x10FFFF}`$ with
+$`r\le\mathtt{0xFFFF}+2^{20}(\mathrm{strLength}(s)-i-1)`$, since a code point past
+`0xFFFF` takes positions $`i`$ and $`i+1`$ ([code points](PROGRAM-TYPING.md#code-points)).
+The model's string is a sequence of scalar values, its UTF-16 code units the
+JavaScript string's but where a lone surrogate reads as U+FFFD
+([strings](SEMANTICS.md#operational-language)); the contract states only
+the length, which both share, and bounds on the result, which hold of both.
+
 **A non-empty `split`.** `String.prototype.split` with a non-empty string
 separator and no limit returns at least one element: the separator is no
 `RegExp`, so no `[Symbol.split]` runs, and ECMA-262's `split` returns `[S]`

@@ -91,97 +91,33 @@ theorem len_run {Ξ T : Fam} {Q : Post} {ls : List (Option Nat)} :
           · exact absurd (raises_not_val hr) (by simp [isVal])
           · exact absurd step' (value_no_step rfl)
 
-/-- A finite execution to a value determines its final heap and value. -/
-theorem steps_run {Ξ T : Fam} {Q : Post} {h t h' v steps}
-    (run : Steps steps h t h' v) (hv : isVal v = true) :
-    ∀ {n W}, SafePost Ξ T Q n W h t →
-      SafePost Ξ T (fun heap u => Q heap u ∧ heap = h' ∧ u = v) n W h t := by
-  induction run with
-  | refl =>
-    intro n W hs
-    cases n with
-    | zero => trivial
-    | succ n =>
-      rcases hs with (⟨hv', ht, hq⟩ | hr) | ⟨_, _, _, _, _, step, _, _⟩
-      · exact .inl (.inl ⟨hv', ht, hq, rfl, rfl⟩)
-      · exact absurd hr (val_not_thrown hv)
-      · exact False.elim (value_no_step hv step)
-  | next step run ih =>
-    intro n W hs
-    cases n with
-    | zero => trivial
-    | succ n =>
-      rcases hs with (⟨hv', _, _⟩ | hr) | ⟨U, h2, t2, hx, hu, step', hh, hs⟩
-      · exact False.elim (value_no_step hv' step)
-      · exact absurd step hr.no_step
-      · obtain ⟨rfl, rfl⟩ := Step_det step step'
-        exact .inr ⟨U, _, _, hx, hu, step', hh, ih hv hs⟩
-
-/-- A fresh empty store and its array object, evaluated together. -/
-def emptyArrayAtoms (n : Nat) (t : Tm) : List IndexAtom :=
-  match t with
-  | .letE (.arrLit []) (.makeAt .absent [s, p] [.var 0, .var proto]) =>
-    if s == arrayStoreKey && p == CallArguments.protoField && decide (proto < n + 1) then
-      [{ fact := .linear (.le [(.length 0, 1)] 0) },
-       { fact := .linear (.le [(.length 0, -1)] 0) }]
-    else []
-  | _ => []
-
-theorem emptyArrayAtoms_holds [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)} {Ξ T : Fam} {Q : Post} {ρ n W h t k}
-    (he : EnvOk G Γ ρ n W) (hk : Holds k ρ h) (hh : HeapOk n W h)
-    (hs : SafePost Ξ T Q n W h (instantiate 0 ρ t)) :
-    SafePost Ξ T (fun h' u => Q h' u ∧ IndexHolds (emptyArrayAtoms Γ.length t) (push u ρ) h' ∧
-      (if (emptyArrayAtoms Γ.length t).isEmpty then True else
-        HeapSeparation.Holds (HeapSeparation.allocate k.separation Γ.length
-          (HeapExpressionRules.contractFields G Γ)) (push u ρ)))
-      n W h (instantiate 0 ρ t) := by
-  unfold emptyArrayAtoms
-  split
-  · rename_i s p proto
-    split
-    · rename_i hp
-      simp only [Bool.and_eq_true, beq_iff_eq] at hp
-      obtain ⟨⟨rfl, rfl⟩, hp⟩ := hp
-      have hproto : proto < Γ.length + 1 := of_decide_eq_true hp
-      have run : Steps 3 h (instantiate 0 ρ (.letE (.arrLit [])
-          (.makeAt .absent [arrayStoreKey, CallArguments.protoField] [.var 0, .var proto])))
-          (h ++ [.arr [], (push (.arr []) ρ) proto] ++ [.nul])
-          (.objAt (slots h.length [arrayStoreKey, CallArguments.protoField]) .absent (h.length + 2)) := by
-        simp only [instantiate, instantiateArgs_eq_map, List.map_cons, List.map_nil]
-        apply Steps.next (Step.letC (Step.arrAlloc (by simp) (by simp [maxArrayLength])))
-        simp only [List.append_nil, elemSlots]
-        apply Steps.next (Step.letV rfl)
-        have hb := instantiate_beta ρ he.1 (.arr [])
-          (.makeAt .absent [arrayStoreKey, CallArguments.protoField] [.var 0, .var proto]) 0
-        simp only [instantiate, instantiateArgs_eq_map, List.map_cons, List.map_nil] at hb
-        simp only [List.length_nil, List.range_zero, List.map_nil]
-        rw [hb]
-        simp only [Nat.not_lt_zero, if_false, Nat.sub_zero]
-        apply Steps.next (Step.makeFields ?_ rfl) Steps.refl
-        intro v hv
-        simp only [List.mem_cons, List.not_mem_nil, or_false] at hv
-        rcases hv with rfl | rfl
-        · rfl
-        · cases proto with
-          | zero => rfl
-          | succ i => exact (meaning_value (he.2 i _ (List.getElem?_eq_getElem (by omega)))).1
-      refine weaken (fun heap u hq => ?_) (steps_run run rfl hs)
-      obtain ⟨hq, rfl, rfl⟩ := hq
-      refine ⟨hq, ?_, ?_⟩
-      · have hl : termValue (push (.objAt (slots h.length [arrayStoreKey, CallArguments.protoField]) .absent (h.length + 2)) ρ)
-            (h ++ [.arr [], (push (.arr []) ρ) proto] ++ [.nul]) (.length 0) = some 0 := by
-          simp [termValue_length, push, lengthOf, Footprints.storeOf, Footprints.fieldsOf, slots,
-            maxArrayLength, arrayStoreKey, CallArguments.protoField]
-        simp only [termValue_length] at hl
-        simp only [List.append_assoc, List.cons_append, List.nil_append] at hl
-        intro a ha _
-        simp only [List.mem_cons, List.not_mem_nil, or_false] at ha
-        rcases ha with rfl | rfl <;>
-          simp [IndexFact.HoldsAt, Linear.Fact.vars, Linear.Fact.Holds, Linear.Form.eval, termValuation, hl]
-      · exact (HeapExpressionRules.fresh_holds he hk hh
-          [arrayStoreKey, CallArguments.protoField] [.arr [], push (.arr []) ρ proto] .absent).2.2.2.1
-    · exact weaken (fun _ _ hq => ⟨hq, indexHolds_nil _ _, trivial⟩) hs
-  · exact weaken (fun _ _ hq => ⟨hq, indexHolds_nil _ _, trivial⟩) hs
+/-- A string's length gives, where it returns, its count of UTF-16 code
+units, at most `maxStringLength`, in the heap it started in: a longer model
+string throws (`Step.lenStrThrow`). -/
+theorem len_str_run {Ξ T : Fam} {Q : Post} {str : String} :
+    ∀ {n W h}, SafePost Ξ T Q n W h (.lenOf (.str str)) →
+      SafePost Ξ T (fun h' u => Q h' u ∧ h' = h ∧ u = .num (bitsOfNat (utf16Units str).length) ∧
+        (utf16Units str).length ≤ maxStringLength) n W h (.lenOf (.str str)) := by
+  intro n W h hs
+  cases n with
+  | zero => trivial
+  | succ n =>
+    rcases hs with (⟨hval, -, -⟩ | ⟨u, hr, -⟩) | ⟨U, h', t', hx, hu, step, hh, hs⟩
+    · simp [isVal] at hval
+    · cases hr with
+      | lenC hr => exact absurd (raises_not_val hr) (by simp [isVal])
+    · refine .inr ⟨U, h', t', hx, hu, step, hh, ?_⟩
+      cases step with
+      | lenC s => exact absurd s (value_no_step rfl)
+      | lenStr hl =>
+        cases n with
+        | zero => trivial
+        | succ m =>
+          rcases hs with (⟨hval, ht, hq⟩ | ⟨u, hr, -⟩) | ⟨U', h'', t'', -, -, step', -, -⟩
+          · exact .inl (.inl ⟨hval, ht, hq, rfl, rfl, hl⟩)
+          · exact absurd (raises_not_val hr) (by simp [isVal])
+          · exact absurd step' (value_no_step rfl)
+      | lenStrThrow _ => exact throw_post rfl hs
 
 /-! ## What the knowledge states of a slot -/
 
@@ -329,6 +265,23 @@ theorem storeSlot_sound {G : NormalGraph ι} {Γ : List (Ty ι)} {s : Nat} {ρ n
       obtain ⟨ls, hls, -, -, hmax, -⟩ := ((represents_raw (c := .list T []) hT n W (ρ s)) (he.2 s S hS)).1
       exact ⟨ls, hls, hmax⟩
     · cases hc
+  · cases hc
+
+/-- Whether slot `s` holds a string: its type answers the string test. -/
+def stringSlot (G : NormalGraph ι) (Γ : List (Ty ι)) (s : Nat) : Bool :=
+  match Γ[s]? with
+  | some S => G.plainTy S && (expand G S).all fun c => tagClause .isStr c == some true
+  | none => false
+
+theorem stringSlot_sound {G : NormalGraph ι} {Γ : List (Ty ι)} {s : Nat} {ρ n W}
+    (hc : stringSlot G Γ s = true) (he : EnvOk G Γ ρ n W) : ∃ str, ρ s = .str str := by
+  unfold stringSlot at hc
+  split at hc
+  · rename_i S hS
+    simp only [Bool.and_eq_true, List.all_eq_true, beq_iff_eq] at hc
+    have hstr := answers_sound (q := true) ⟨hc.1, hc.2⟩ (he.2 s S hS)
+    cases hv : ρ s <;> simp [hv, tagHolds] at hstr
+    exact ⟨_, rfl⟩
   · cases hc
 
 /-! ## The atoms a step states -/
@@ -610,6 +563,10 @@ def linearAtoms (G : NormalGraph ι) (Γ : List (Ty ι)) (k : Knowledge) : Tm �
     if storeSlot G Γ s then
       [⟨.int 0, none, false⟩, ⟨.linear (valueFact (.le [(0, -1)] 0)), none, false⟩,
         ⟨.linear (valueFact (.le [(0, 1)] maxArrayLength)), none, false⟩]
+    else if stringSlot G Γ s then
+      [⟨.int 0, none, false⟩,
+        ⟨.linear (.le [(.value 0, 1), (.strLength (s + 1), -1)] 0), none, false⟩,
+        ⟨.linear (.le [(.value 0, -1), (.strLength (s + 1), 1)] 0), none, false⟩]
     else []
   | .arith op a b =>
     if operandIn Γ a && operandIn Γ b then
@@ -888,7 +845,38 @@ theorem linearAtoms_holds [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty �
           show Linear.Form.eval _ _ ≤ _; simp [Linear.Form.eval, hv0]
         · refine IndexFact.holdsAt_valueFact.mpr ⟨by simp [Linear.Fact.vars, h0], ?_⟩
           show Linear.Form.eval _ _ ≤ _; simp [Linear.Form.eval, hv0]; simpa [maxArrayLength] using hmax
-      · exact none_case
+      · split
+        · -- `string-length`
+          rename_i hst
+          obtain ⟨str, hstr⟩ := stringSlot_sound hst he
+          simp only [instantiate, Nat.not_lt_zero, if_false, Nat.sub_zero, hstr] at hs ⊢
+          refine weaken (fun h' u hq => ⟨hq.1, ?_⟩) (len_str_run hs)
+          obtain ⟨-, rfl, rfl, hmax⟩ := hq
+          have hsafe : SafeIntegers.SafeInt (bitsOfNat (utf16Units str).length) ((utf16Units str).length : Int) :=
+            ⟨by simp [maxStringLength] at hmax ⊢; omega, .inl ⟨by simp [maxStringLength] at hmax; omega, by simp⟩⟩
+          have h0 : intValue (push (.num (bitsOfNat (utf16Units str).length)) ρ 0) =
+              some ((utf16Units str).length : Int) := intValue_num hsafe
+          have hl : termValue (push (.num (bitsOfNat (utf16Units str).length)) ρ) h' (.strLength (s + 1)) =
+              some ((utf16Units str).length : Int) := by
+            simp [push, hstr, strLengthOf, hmax]
+          have hv0 : termValuation (push (.num (bitsOfNat (utf16Units str).length)) ρ) h' (.value 0) =
+              (utf16Units str).length := by simp [termValuation, h0]
+          have hv1 : termValuation (push (.num (bitsOfNat (utf16Units str).length)) ρ) h' (.strLength (s + 1)) =
+              (utf16Units str).length := by simp only [termValuation, hl, Option.getD_some]
+          intro atom hat _
+          simp only [List.mem_cons, List.not_mem_nil, or_false] at hat
+          rcases hat with rfl | rfl | rfl
+          · show (intValue _).isSome; rw [h0]; rfl
+          all_goals
+            refine ⟨fun t ht => ?_, ?_⟩
+            · simp only [Linear.Fact.vars, List.map_cons, List.map_nil, List.mem_cons, List.not_mem_nil,
+                or_false] at ht
+              rcases ht with rfl | rfl
+              · rw [termValue_value, h0]; rfl
+              · rw [hl]; rfl
+            · show Linear.Form.eval _ _ ≤ _
+              simp only [Linear.Form.eval, hv0, hv1]; omega
+        · exact none_case
     | _ => simp only [linearAtoms]; exact none_case
   | arith op a b =>
     simp only [linearAtoms]

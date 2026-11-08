@@ -122,7 +122,7 @@ type BodyVariable = "index" | "elem" | LinearTerm;
 /** A linear fact's term: a root slot, the named data fields read from it
  * (`path`), and what it reads of the value they end at: the value, the length
  * of its array store, or the length of its typed array. */
-type LinearTerm = { kind: "value" | "length" | "view"; slot: number; path: string[] };
+type LinearTerm = { kind: "value" | "length" | "view" | "strLength"; slot: number; path: string[] };
 type SeparationKey = string | { symbol: number };
 /** The value kinds an elements fact's predicate names. */
 const ELEM_KINDS = ["nul", "undef", "bool", "num", "str", "big", "sym", "obj"] as const;
@@ -457,7 +457,7 @@ function indexFact(f: Json | undefined): IndexFact {
       if (!Array.isArray(t) || t.length !== 2 || typeof t[1] !== "number") throw Error("a linear fact's term");
       const term = record(t[0], ["kind", "slot", "path"]);
       const kind = term.kind;
-      if (kind !== "value" && kind !== "length" && kind !== "view") throw Error("a linear term's kind");
+      if (kind !== "value" && kind !== "length" && kind !== "view" && kind !== "strLength") throw Error("a linear term's kind");
       const path = term.path;
       if (!Array.isArray(path) || !path.every((f: Json) => typeof f === "string")) throw Error("a linear term's path");
       return [{ kind, slot: nat(term.slot), path: path.filter((f: Json): f is string => typeof f === "string") }, t[1]];
@@ -471,7 +471,7 @@ function indexFact(f: Json | undefined): IndexFact {
 function linearTerm(t: Json | undefined): LinearTerm {
   const term = record(t, ["kind", "slot", "path"]);
   const kind = term.kind;
-  if (kind !== "value" && kind !== "length" && kind !== "view") throw Error("a linear term's kind");
+  if (kind !== "value" && kind !== "length" && kind !== "view" && kind !== "strLength") throw Error("a linear term's kind");
   const path = term.path;
   if (!Array.isArray(path) || !path.every((f: Json) => typeof f === "string")) throw Error("a linear term's path");
   return { kind, slot: nat(term.slot), path: path.filter((f: Json): f is string => typeof f === "string") };

@@ -2276,7 +2276,8 @@ function clauseParameter(gate: Gate, name: string, position: number, type: TypeT
         const field = fieldType(gate, t, f, 0, out.includes("undefined") || (optionalLast && i === path.length - 1));
         t = field === null ? null : withoutTags(field, out);
       }
-      return t === null ? null : t.k === "array" ? "array" : namesView(t) ? "view" : "other";
+      return t === null ? null : t.k === "array" ? "array" : namesView(t) ? "view"
+        : t.k === "atom" && t.name === "string" ? "string" : "other";
     },
   };
 }

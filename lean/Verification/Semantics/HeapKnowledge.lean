@@ -396,8 +396,8 @@ def indexFollows (M : Nat → List Nat) (m : PointClaims.Mapping) (s t : IndexAt
 def lengthRange (t : Term) : List (Linear.Fact Term) :=
   [.le [(t, -1)] 0, .le [(t, 1)] (maxArrayLength : Int)]
 
-/-- A typed array's length lies between `0` and `2^53 - 1`, a safe
-integer. -/
+/-- A typed array's length, and a string's, lies between `0` and
+`2^53 - 1`, a safe integer. -/
 def viewRange (t : Term) : List (Linear.Fact Term) :=
   [.le [(t, -1)] 0, .le [(t, 1)] (2 ^ 53 - 1)]
 
@@ -405,12 +405,13 @@ def viewRange (t : Term) : List (Linear.Fact Term) :=
 def valueRange (t : Term) : List (Linear.Fact Term) :=
   [.le [(t, -1)] (2 ^ 53 - 1), .le [(t, 1)] (2 ^ 53 - 1)]
 
-/-- The range a term's kind gives it: a length's, a typed-array length's, none of
-a value, whose range the entailment reads apart (`valueRanges`). -/
+/-- The range a term's kind gives it: a length's, a typed-array length's or a
+string's length's, none of a value, whose range the entailment reads apart
+(`valueRanges`). -/
 def termRange (t : Term) : List (Linear.Fact Term) :=
   match t.kind with
   | .length => lengthRange t
-  | .view => viewRange t
+  | .view | .strLength => viewRange t
   | .value => []
 
 /-- The linear facts a fact states: a linear fact itself, with the range of
@@ -442,7 +443,7 @@ def termDefined (as : List IndexAtom) (t : Term) : Bool :=
     | .length => as.any fun a => a.cond.isNone && match a.fact with
       | .length y _ => y == t.slot
       | _ => false
-    | .view => false) ||
+    | .view | .strLength => false) ||
   as.any fun a => a.cond.isNone && match a.fact with
     | .linear F => F.vars.contains t
     | _ => false
@@ -472,6 +473,16 @@ theorem viewRange_holds {ρ h} {t : Term} (hk : t.kind = .view) (hx : (termValue
   simp only [viewRange, List.mem_cons, List.not_mem_nil, or_false] at hF
   rcases hF with rfl | rfl <;> simp only [Linear.Fact.Holds, Linear.Form.eval, hv] <;> omega
 
+theorem strRange_holds {ρ h} {t : Term} (hk : t.kind = .strLength) (hx : (termValue ρ h t).isSome) :
+    ∀ F ∈ viewRange t, F.Holds (termValuation ρ h) := by
+  obtain ⟨v, n, -, hkv, hn⟩ := termValue_isSome hx
+  rw [hk] at hkv
+  obtain ⟨h0, h1⟩ := strLengthOf_range (v := v) hkv
+  have hv : termValuation ρ h t = n := by simp [termValuation, hn]
+  intro F hF
+  simp only [viewRange, List.mem_cons, List.not_mem_nil, or_false] at hF
+  rcases hF with rfl | rfl <;> simp only [Linear.Fact.Holds, Linear.Form.eval, hv] <;> omega
+
 theorem valueRange_holds {ρ h} {t : Term} (hk : t.kind = .value) (hx : (termValue ρ h t).isSome) :
     ∀ F ∈ valueRange t, F.Holds (termValuation ρ h) := by
   obtain ⟨v, n, -, hkv, hn⟩ := termValue_isSome hx
@@ -488,6 +499,7 @@ theorem termRange_holds {ρ h} {t : Term} (hx : (termValue ρ h t).isSome) :
   split
   · exact lengthRange_holds (by assumption) hx
   · exact viewRange_holds (by assumption) hx
+  · exact strRange_holds (by assumption) hx
   · simp
 
 theorem factLinear_holds {f : IndexFact} {ρ h} (hf : f.HoldsAt ρ h) :
@@ -560,7 +572,7 @@ theorem termDefined_sound {as : List IndexAtom} {ρ h} (he : IndexHolds as ρ h)
         obtain ⟨s, ls, hs, hl, -, hm⟩ := hat
         simp only [termValue_nil, kindValue, lengthOf_of_store hs hl hm, Option.isSome_some]
       | linear _ | index _ | bound _ _ _ | int _ | guarded _ _ _ _ | element _ _ _ | every _ _ _ _ => rw [hfa] at hf; cases hf
-    | view => cases ht
+    | view | strLength => cases ht
   · obtain ⟨a, ha, hm⟩ := List.any_eq_true.mp ht
     simp only [Bool.and_eq_true, Option.isNone_iff_eq_none] at hm
     obtain ⟨hn, hf⟩ := hm
@@ -755,8 +767,8 @@ theorem readBridge {ls : HeapLinks.Links} {ρ : Env} {h : Heap} (hl : HeapLinks.
       have hnone : readPath h (ρ g.cell) (f :: p) = none := by simp [he, readPath, hlk]
       simp only [termValue, hnone, Option.bind_none, hr.2]
       cases p with
-      | nil => cases k <;> simp [readPath, kindValue, intValue, lengthOf, viewLengthOf, Footprints.storeOf,
-          Footprints.fieldsOf]
+      | nil => cases k <;> simp [readPath, kindValue, intValue, lengthOf, viewLengthOf, strLengthOf,
+          Footprints.storeOf, Footprints.fieldsOf]
       | cons q p => simp [readPath]
 
 /-- The read links a bridge follows, as `(cell, field, value)`: the reads of

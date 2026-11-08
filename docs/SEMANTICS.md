@@ -179,8 +179,8 @@ coercions the calculus does not have:
 | two numbers | the IEEE-754 double operation; $`{*}{*}`$ is `Number::exponentiate` (C's `pow`, but NaN for a NaN exponent and for a base of magnitude 1 to an infinite power); $`\hat{}`$, $`\&`$ and $`\vert`$ are exclusive or, and and or after `ToInt32` on both; $`\ll`$ and $`\gg`$ shift the left operand's `ToInt32` left (modulo $`2^{32}`$, read as signed) or right (sign-propagating) by the right operand's `ToUint32` modulo 32, and $`\ggg`$ shifts its `ToUint32` right by that count, zero-filling; $`\%`$ is `Number::remainder`, exact: $`n-d\cdot q`$ for $`q`$ the quotient truncated toward zero, with $`n`$'s sign (so `-4 % 2` is $`-0`$), NaN for a NaN or infinite $`n`$ or a NaN or zero $`d`$, and $`n`$ itself for an infinite $`d`$ or a zero $`n`$ | the IEEE order: false when either is NaN, the two zeros equal |
 | two bigints | the integer operation; $`/`$ truncates toward zero and $`\%`$ is the remainder it leaves, with the dividend's sign; throws for $`/`$ or $`\%`$ by $`0`$ and $`{*}{*}`$ by a negative exponent (a `RangeError`); none for $`\&,\vert,\ll,\gg,\ggg`$ (`numberOnly`) | the integer order |
 | a number and a bigint | throws (a `TypeError`) | the exact order of the double's rational value and the integer; false when the number is NaN, an infinity beyond every integer |
-| two strings | $`+`$ concatenates; others none | lexicographic over UTF-16 code units, a proper prefix less |
-| a string and a number, bigint, Boolean, `null` or `undefined`, either order | $`+`$ concatenates the string with $`\mathsf{str}`$ of the other, in operand order; others none | none |
+| two strings | $`+`$ concatenates, and throws (a `RangeError`) past $`2^{53}-1`$ code units; others none | lexicographic over UTF-16 code units, a proper prefix less |
+| a string and a number, bigint, Boolean, `null` or `undefined`, either order | $`+`$ concatenates the string with $`\mathsf{str}`$ of the other, in operand order, and throws (a `RangeError`) past $`2^{53}-1`$ code units; others none | none |
 | a Boolean, `null` or `undefined` and a number, bigint, Boolean, `null` or `undefined`, either order | none | the order of the two after `ToNumeric` (`relNumeric`): `undefined` is NaN, `null` and `false` are $`+0`$, `true` is $`1`$; so false where `undefined` is an operand |
 | a symbol and a primitive, either order | throws (a `TypeError`: `ToString` or `ToNumeric` of a symbol) | throws |
 | anything else | none | none |
@@ -310,7 +310,9 @@ no safe integer, so no sum fact states it (a witness of
 `lenOf` and `elemAt` read them as they read a store's:
 
 ```math
-\frac{}{h,\ \mathsf{lenOf}\;\mathsf{str}(s)\ \to\ h,\ \mathsf{num}(|\mathit{units}(s)|)}\ (\texttt{lenStr})
+\frac{|\mathit{units}(s)|\le 2^{53}-1}{h,\ \mathsf{lenOf}\;\mathsf{str}(s)\ \to\ h,\ \mathsf{num}(|\mathit{units}(s)|)}\ (\texttt{lenStr})
+\qquad
+\frac{2^{53}-1<|\mathit{units}(s)|}{h,\ \mathsf{lenOf}\;\mathsf{str}(s)\ \to\ h\mathbin{+\!\!+}[\mathsf{null}],\ \mathsf{throw}\ \mathit{err}_{|h|}}\ (\texttt{lenStrThrow})
 \qquad
 \frac{}{h,\ \mathsf{elemAt}\;\mathsf{str}(s)\;\mathsf{num}(b)\ \to\ h,\ \mathit{codeUnitAt}(s,b)}\ (\texttt{elemStr})
 ```
@@ -323,8 +325,15 @@ infinite, JavaScript finds no own property and the built-in `String.prototype`
 and `Object.prototype` own no numeric key. A model string is a sequence of
 Unicode scalar values, as Lean's `String` is, so half of a surrogate pair has
 no string of its own: it reads as U+FFFD (`unitString`), where JavaScript
-yields the lone half. This is the one place the model's strings differ from
-JavaScript's; the fragment computes on a string only by equality, order,
+yields the lone half. A JavaScript string holds at most $`2^{53}-1`$ code
+units ([ECMA-262](REFERENCES.md#ecma-262), "The String Type",
+`maxStringLength`); a Lean string may hold more. Concatenation past that
+bound throws a `RangeError`, as JavaScript's does (`concatString`,
+`concatOverflows`), so no step builds such a string; the length of one given
+to a unit throws (`lenStrThrow`), a state no JavaScript run reaches. An
+engine's own string limit, below $`2^{53}-1`$, is an allocation failure,
+which the model, as for any allocation, does not state. These are the places
+the model's strings differ from JavaScript's; the fragment computes on a string only by equality, order,
 length and these reads, and both are strings of one code unit.
 
 Every other member of a primitive is its wrapper prototype's: JavaScript's

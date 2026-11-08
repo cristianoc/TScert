@@ -483,7 +483,38 @@ const primitiveOverlay: Readonly<Record<string, readonly OverlayEntry[]>> &
     { name: "replaceAll", from: "String",
       signature: "replaceAll(searchValue: string | RegExp, replaceValue: string): string;",
       stated: [{ params: [atomOf("string"), atomOf("string")], result: atomOf("string") }] },
-    { name: "codePointAt", from: "String", signature: "codePointAt(pos: number): number | undefined;" },
+    // `codePointAt` of a string primitive at a number: RequireObjectCoercible
+    // and ToString of the receiver, and ToIntegerOrInfinity of the position,
+    // run no code; `undefined` where the integer is outside [0, length), the
+    // code point starting there otherwise (CodePointAt), a code unit where it
+    // is no leading surrogate followed by a trailing one. Two signatures: any
+    // position, a number or `undefined`; and a safe integer `i`,
+    // `0 ≤ i < strLength(s)`, a number, a safe integer in [0, 0x10FFFF]: such
+    // an `i` is its own ToIntegerOrInfinity and inside the string (the
+    // receiver at position 0, the position at 1; the result at 0 of the
+    // postcondition).
+    { name: "codePointAt", from: "String", signature: "codePointAt(pos: number): number | undefined;",
+      stated: [
+        { params: [atomOf("number")], result: optionalNumber },
+        { params: [atomOf("number")], result: atomOf("number"), effect: footprintEffect(emptyFootprint, {
+          pre: [
+            { int: { slot: 1 } },
+            { linear: { fact: { le: { form: [[{ kind: "value", slot: 1, path: [] }, -1]], bound: 0 } } } },
+            { linear: { fact: { le: { form: [[{ kind: "value", slot: 1, path: [] }, 1],
+              [{ kind: "strLength", slot: 0, path: [] }, -1]], bound: -1 } } } },
+          ],
+          ensures: [
+            { int: { slot: 0 } },
+            { linear: { fact: { le: { form: [[{ kind: "value", slot: 0, path: [] }, -1]], bound: 0 } } } },
+            { linear: { fact: { le: { form: [[{ kind: "value", slot: 0, path: [] }, 1]], bound: 0x10ffff } } } },
+            // A code point past 0xFFFF is a surrogate pair's, two code units
+            // from `i`: `r ≤ 0xFFFF + 0x100000·(strLength(s) − i − 1)`, so
+            // `0xFFFF < r` gives `i + 2 ≤ strLength(s)`.
+            { linear: { fact: { le: { form: [[{ kind: "value", slot: 0, path: [] }, 1],
+              [{ kind: "value", slot: 2, path: [] }, 0x100000], [{ kind: "strLength", slot: 1, path: [] }, -0x100000]],
+              bound: 0xffff - 0x100000 } } } },
+          ] }) },
+      ] },
     { name: "trimStart", from: "String", signature: "trimStart(): string;" },
     { name: "trimEnd", from: "String", signature: "trimEnd(): string;" },
     // The pad is a string; a length past the host's string limit is a

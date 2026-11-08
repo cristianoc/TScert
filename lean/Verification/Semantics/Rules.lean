@@ -471,17 +471,27 @@ theorem len_rule {ls : List (Option Nat)} {Q : Fam}
       .lenV, HeapOk_trunc p W h hok, ?_⟩
     exact value_safe _ _ _ _ _ rfl (hq _ _)
 
-/-- **A string's length** is a number. -/
+/-- **A string's length** is a number, its count of code units, where that
+is at most `maxStringLength`; the length of a longer model string throws a
+fresh error object, an outcome at every type. -/
 theorem len_str_rule {s : String} {Q : Fam}
-    (n : Nat) (W : WorldT n) (h : Heap) (hadm : WorldAdm W) (hok : HeapOk n W h)
-    (hq : ∀ m (U : WorldT m), Q m U (.num (bitsOfNat (utf16Units s).length))) :
+    (n : Nat) (W : WorldT n) (h : Heap) (hadm : WorldAdm W) (hok : HeapOk n W h) (hΞ : ErrorsIn Ξ)
+    (hq : (utf16Units s).length ≤ maxStringLength → ∀ m (U : WorldT m), Q m U (.num (bitsOfNat (utf16Units s).length))) :
     Safe Ξ Q n W h (.lenOf (.str s)) := by
   cases n with
   | zero => trivial
   | succ p =>
-    refine Or.inr ⟨trunc p (Nat.le_succ p) W, h, _, WExt_refl _, WorldAdm_trunc _ hadm,
-      .lenStr, HeapOk_trunc p W h hok, ?_⟩
-    exact value_safe _ _ _ _ _ rfl (hq _ _)
+    by_cases hl : (utf16Units s).length ≤ maxStringLength
+    · refine Or.inr ⟨trunc p (Nat.le_succ p) W, h, _, WExt_refl _, WorldAdm_trunc _ hadm,
+        .lenStr hl, HeapOk_trunc p W h hok, ?_⟩
+      exact value_safe _ _ _ _ _ rfl (hq hl _ _)
+    · have hcadm : CtrAdm (res nulT : Ctr p) :=
+        ⟨fun _ _ _ _ _ _ h => h, fun _ _ _ _ h => by rw [show _ = Tm.nul from h]; rfl⟩
+      refine Or.inr ⟨appendW (trunc p (Nat.le_succ p) W) (res nulT), h ++ [.nul], _,
+        WExt_appendW _ _, WorldAdm_append (WorldAdm_trunc _ hadm) hcadm, .lenStrThrow (by omega),
+        heap_alloc p _ h (res nulT) .nul (HeapOk_trunc p W h hok) (WorldAdm_trunc _ hadm)
+          (fun _ _ => rfl), ?_⟩
+      exact thrown_safe _ _ _ _ ⟨thrownError h.length, .throwV rfl rfl, by simp [thrownError, Scoped], hΞ _ _ _⟩
 
 /-- **A string's index property** is a one-code-unit string or `undefined`. -/
 theorem elem_str_rule {s : String} {b : UInt64} {Q : Fam}

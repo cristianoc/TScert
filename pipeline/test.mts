@@ -265,6 +265,35 @@ control(async (): Promise<void> => {
 });
 
 control(async (): Promise<void> => {
+  // A string's length claimed at an entry where no test stated it: the
+  // code point read of each unsafe program claimed at `number`, the result
+  // of `codePointAt`'s bounded signature, with `i < text.length` (`b`'s, for
+  // the read of another string) forged at the read's statement entry, is
+  // refused where evidence is searched: the read at the length of a loop
+  // running to `i <= text.length`, and the read of `b` below `a`'s length.
+  for (const [name, fnName, string, read, statement] of [
+    ["invalid-string-code-point-at-length", "last", "text", "text.codePointAt(i)", "x = text.codePointAt(i)!"],
+    ["invalid-string-code-point-other", "other", "b", "b.codePointAt(i)", "x = b.codePointAt(i)!"],
+  ] as const) {
+    const artifacts = run(name);
+    const source = readFileSync(sourceKey(artifacts), "utf8");
+    const at = source.indexOf(read, source.indexOf(statement));
+    const claims = readClaims(artifacts);
+    const fn = must(claims.functions.find(f => f.name === fnName), `${fnName}'s claims`);
+    const claim = must(fn.expressions.find(e => e.pos[0] === at && e.pos[1] === at + read.length), "the read");
+    claim.type = [rowOf(claims, "num")];
+    must(fn.entries.find(e => e.start === source.indexOf(statement)), "the read's entry").facts.push(
+      { guards: [], terms: [{ name: "i", path: [], term: "value", coefficient: 1 },
+        { name: string, path: [], term: "strLength", coefficient: -1 }], bound: -1 });
+    const forged = writeClaims(artifacts, `string-length-forged-${name}`, claims);
+    const searched = produceWith(artifacts, forged, `string-length-forged-${name}`);
+    assert.equal(searched.status, 1, `${name}: ${searched.stdout}${searched.stderr}`);
+    assert.match(searched.stdout + searched.stderr, /does not establish the claims/);
+  }
+  process.stdout.write("string lengths: a code point read below a string's length claimed where no test stated it, at the length and below another string's, refused at its entry\n");
+});
+
+control(async (): Promise<void> => {
   // A type invariant claimed of a value no boundary gives it: the cast
   // record's `segmentFlags.length === widths.length` forged at the entry of
   // the walker's call, which requires it, is refused at that entry where

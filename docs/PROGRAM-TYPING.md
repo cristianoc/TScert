@@ -1497,8 +1497,11 @@ and what the term reads of the value $`v`$ the path ends at: $`x.p`$, the
 safe integer $`v`$ is; $`|x.p|`$, the length of $`v`$'s array store, where
 that is at most $`2^{32}-1`$; and $`\mathrm{view}(x.p)`$, the **typed-array
 length** of $`v`$, the safe integer at least $`0`$ that the location of its
-model key $`[[\mathrm{viewLength}]]`$ holds. The empty path reads the slot's
-value itself, $`x`$, $`|x|`$ and $`\mathrm{view}(x)`$:
+model key $`[[\mathrm{viewLength}]]`$ holds; and $`\mathrm{strLength}(x.p)`$,
+the **string's length** of $`v`$, its count of UTF-16 code units, where that
+is at most $`2^{53}-1`$, the most a JavaScript string holds. The empty path
+reads the slot's value itself, $`x`$, $`|x|`$, $`\mathrm{view}(x)`$ and
+$`\mathrm{strLength}(x)`$:
 
 ```math
 \begin{aligned}
@@ -1508,6 +1511,7 @@ value itself, $`x`$, $`|x|`$ and $`\mathrm{view}(x)`$:
 ⟦x.p⟧_{\rho,h} &= i \iff \exists b.\ \mathrm{read}(\rho,h,x.p)=\mathsf{num}\,b\land\mathrm{SafeInt}(b,i)\\
 ⟦|x.p|⟧_{\rho,h} &= n \iff \mathrm{store}(\mathrm{read}(\rho,h,x.p))=s\land h(s)=\mathsf{arr}\,\ell\land n=|\ell|\le 2^{32}-1\\
 ⟦\mathrm{view}(x.p)⟧_{\rho,h} &= n \iff \mathrm{read}(\rho,h,x.p)=\mathsf{objAt}\,fs\,c\,i\land fs([[\mathrm{host}]])\ \text{defined}\land fs([[\mathrm{viewLength}]])=\ell\land h(\ell)=\mathsf{num}\,b\land\mathrm{SafeInt}(b,n)\land 0\le n\\
+⟦\mathrm{strLength}(x.p)⟧_{\rho,h} &= n \iff \mathrm{read}(\rho,h,x.p)=\mathsf{str}\,s\land n=|\mathit{units}(s)|\le 2^{53}-1\\
 \mathrm{linear}(F)(\rho,h) &\iff (\forall t\in\mathrm{vars}(F).\ ⟦t⟧_{\rho,h}\ \text{is defined})\land F\ \text{holds at}\ t\mapsto⟦t⟧_{\rho,h}
 \end{aligned}
 ```
@@ -1525,15 +1529,18 @@ is the host's trust ([typed arrays](SOURCE-CONTRACTS.md#stated-library-types)).
 
 **The locations a fact reads.** A term reads the location of each field its
 path reads, then, for a length, the location of the store's elements, and for
-a typed-array length, the location of the view's length. A fact reads the
-locations its terms read; a fact of slots' values alone reads only the
-environment, and a heap extension preserves every read (proved). Which other
+a typed-array length, the location of the view's length; a string's length
+reads no location past its path, a string being a value. A fact reads the
+locations its terms read; a fact of slots' values and slots' strings'
+lengths alone reads only the environment, so every heap change preserves it,
+and a heap extension preserves every read (proved). Which other
 heap changes preserve a fact is stated by [frame conditions](#frame-conditions).
 
 **Entailment.** The linear facts a knowledge $`\Sigma`$ states,
 $`\mathrm{lin}(\Sigma)`$, are its unconditional linear atoms, each with the
 range $`0\le|x|\le 2^{32}-1`$ of every length and the range
-$`0\le\mathrm{view}(x)\le 2^{53}-1`$ of every typed-array length it names,
+$`0\le\mathrm{view}(x)\le 2^{53}-1`$ of every typed-array length and
+$`0\le\mathrm{strLength}(x)\le 2^{53}-1`$ of every string's length it names,
 and, for each length atom $`\mathrm{length}(x,n)`$, the equality $`n=|x|`$
 with its range. A value term denotes a safe integer, whose magnitude is below
 $`2^{53}`$; an entailment $`K\vdash F`$ reads $`\mathrm{lin}(\Sigma)`$ and,
@@ -1606,6 +1613,8 @@ $`i`$, of value $`i`$; $`r`$ is the result:
 \frac{\mathrm{int}(x)}{r\leftarrow x\dashv\mathrm{int}(r),\ r=x}\ \textsf{int-copy}
 \qquad
 \frac{\Gamma(s)\equiv_G\mathsf{list}(\tau)}{r\leftarrow\mathsf{lenOf}(s)\dashv\mathrm{int}(r),\ 0\le r\le 2^{32}-1}\ \textsf{length-range}
+\qquad
+\frac{\Gamma(s)\ \text{answers}\ \mathsf{isStr}}{r\leftarrow\mathsf{lenOf}(s)\dashv\mathrm{int}(r),\ r=\mathrm{strLength}(s)}\ \textsf{string-length}
 ```
 
 ```math
@@ -1640,7 +1649,12 @@ the store contract's bound ([arrays](POSITIVE-TYPES.md#arrays)). Proved, from
 the exactness of safe-integer addition and subtraction and the order of two
 doubles that are safe integers. A length atom $`\mathrm{length}(x,n)`$ also
 states the store's length at most $`2^{32}-1`$, which `length-observed` reads
-from the store contract.
+from the store contract. `string-length` holds on the read's normal return:
+a string longer than $`2^{53}-1`$ code units throws there
+([strings](SEMANTICS.md#operational-language)), and the length of any other
+is a safe integer. The lowering reads `length` of a value whose type answers
+the string test with no test of its own, so the step is `lenOf` of the
+string's slot.
 
 **Dropping a slot.** Where a step's output drops a slot, or an edge's mapping
 retains no slot of a fact's class, the slot is first eliminated from the
@@ -1697,11 +1711,12 @@ $`n`$:
 `Linear.strengthen` (proved: `strengthen_holds`). The index facts are
 `IndexFact.int` and `IndexFact.linear`, terms `HeapKnowledge.Term`, the
 length `lengthOf` (the length `Step.lenV` gives), the typed-array length
-`viewLengthOf` at `Calculus.viewLengthKey`, the path read
+`viewLengthOf` at `Calculus.viewLengthKey`, the string's length `strLengthOf`
+(the length `Step.lenStr` gives, at most `maxStringLength`), the path read
 `IndexFacts.readPath`, the key never copied by `copiedKey`. A fact reading
 only the environment is `IndexFact.envOnly`; the heap extension's proof is
 `readPath_extend`. $`\mathrm{lin}(\Sigma)`$ is `HeapKnowledge.linearFacts`
-with `lengthRange` and `viewRange`; entailment is
+with `lengthRange` and `viewRange` (a string's length's too, `strRange_holds`); entailment is
 `HeapKnowledge.entailsKnown` with `valueRanges` (proved:
 `entailsKnown_sound`, from `valueRange_holds`); the safe integers are
 `SafeIntegers.SafeInt`; the edge rule is `linearFollows` (proved:
@@ -1713,7 +1728,8 @@ restatement is `readAtoms` (proved: `readAtoms_holds`) and
 dropped slot's is `restateReads` (proved: `restateReads_holds`). The steps
 are a layer of `Checker.indexing` (`IndexWrites.linearAtoms`; proved:
 `IndexWrites.linearAtoms_holds`, from `SafeIntegers.add_safe`, `sub_safe`
-and `doubleOrder_safe`); `int-equal` is proved by
+and `doubleOrder_safe`; `string-length` from `stringSlot_sound` and
+`len_str_run`); `int-equal` is proved by
 `SafeIntegers.numberEqual_safe` and `numberEqual_of_safe`, `num-equal` by
 `HeapKnowledge.numEqIndices` (proved: `numEqIndices_holds`), which every tag
 observation reads. Elimination is `HeapKnowledge.eliminateIndices` over
@@ -2136,6 +2152,47 @@ claimed at its statement; each typed array negative's read claimed at
 negative's read claimed at `number` with the bound its write or call takes
 away claimed at its statement.
 
+### Code points
+
+`String.prototype.codePointAt` of a string primitive at a number is the
+overlay's member at two signatures
+([`codePointAt`](SOURCE-CONTRACTS.md#codepointat-of-a-string)), the second
+reading a safe integer below the string's length, its positions `0` the
+receiver and `1` the position, its result's at `0`, `1` and `2`:
+
+```math
+\mathtt{codePointAt}:(\mathtt{number})\Rightarrow_{\emptyset}\mathtt{number}\mid\mathtt{undefined}
+\ \land\ (\mathtt{number})\Rightarrow_{\emptyset}^{\mathrm{int}(1),\ 0\le 1,\ 1\le\mathrm{strLength}(0)-1}\mathtt{number}
+```
+
+whose postcondition states the result $`r`$ a safe integer, $`0\le r\le\mathtt{0x10FFFF}`$,
+and $`r+2^{20}\,i-2^{20}\,\mathrm{strLength}(s)\le\mathtt{0xFFFF}-2^{20}`$ of the
+position $`i`$: a code point past `0xFFFF` is a surrogate pair's, so
+$`\mathtt{0xFFFF}<r`$ gives $`i+2\le\mathrm{strLength}(s)`$. So in
+`for (let i = 0; i < text.length;) { const c = text.codePointAt(i)!; i += c > 0xFFFF ? 2 : 1 }`,
+`string-length` and `int-compare` state $`i<\mathrm{strLength}(\mathit{text})`$ in the
+body, the read selects the second signature, and each arm's sum is exact:
+$`i+1\le\mathrm{strLength}(\mathit{text})`$, and $`i+2\le\mathrm{strLength}(\mathit{text})`$
+where the code point is past `0xFFFF`, each at most $`2^{53}-1`$. A clause names
+a string parameter's length as `text.length` ([the clause](#preconditions)).
+The producer names the term `text:strlen` of a value binding `text` whose type
+is a string, keeps a fact naming it as it keeps a slot's value, and selects a
+method's signature and states its postcondition as at a function's.
+
+**Cases.** Positive: `string-length-code-points` (a loop of code points
+stepping two code units past a pair, a `@requires 0 <= i && i < text.length`
+helper and its caller, the lengths of the empty and an astral string) and
+`blocker-pretext-code-point-at-assertion`. Negative, each run under Node:
+`invalid-string-code-point-at-length` (a loop to `i <= text.length`),
+`invalid-string-code-point-negative` (a read at `i - 1` from `0`),
+`invalid-string-code-point-other` (a read of `b` below `a`'s length) and
+`invalid-string-code-point-pair` (a read at `i + 1` after a code point at most
+`0xFFFF`). Forged controls in `pipeline/test.mts`: the first and third
+negatives' reads claimed at `number`, with `i < text.length` (`b`'s) claimed at
+their statements. A fractional position is no negative case: `codePointAt`
+truncates it, and a read at one inside the string gives a number; the
+bounded signature, reading safe integers, does not admit it.
+
 ### Preconditions
 
 A function's signature may state a precondition on the call's values
@@ -2191,7 +2248,8 @@ to its equation and an intersection to the one part stating the field; a path
 whose field no type resolves is refused. A path $`P`$ as a term is its value,
 which the clause states $`\mathrm{int}`$; `P.length` is the length $`|P|`$
 where $`P`$'s type is an array, the typed-array length $`\mathrm{view}(P)`$
-where it is a view of bytes the overlay of library types states, and the
+where it is a view of bytes the overlay of library types states, the
+string's length $`\mathrm{strLength}(P)`$ where it is `string`, and the
 field `length` read from $`P`$ otherwise. The type decides only which term a
 clause names: callers prove the fact as stated, so a term misread would be
 unprovable, never assumed. A clause runs no code: it is no expression of the

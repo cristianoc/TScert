@@ -37,6 +37,7 @@ theorem pure_step {h t h' t'} (hs : Step h t h' t') (hp : pureTerm t = true) :
   case arithV hb =>
     rcases (binop_result hb).2.2 with rfl | rfl | ⟨_, rfl⟩ | ⟨_, rfl⟩ | ⟨_, rfl⟩ <;> rfl
   case arithThrow => rfl
+  case lenStrThrow => rfl
   case letV => exact pure_subst hp.2 hp.1
 
 /-- Substituting values for all free variables preserves purity. The graph
@@ -359,6 +360,7 @@ theorem inspect_step {h t h' t'} (hs : Step h t h' t') (hp : inspectTerm t = tru
     refine ⟨List.prefix_refl _, ?_⟩
     rcases (binop_result hb).2.2 with rfl | rfl | ⟨_, rfl⟩ | ⟨_, rfl⟩ | ⟨_, rfl⟩ <;> rfl
   case arithThrow => exact ⟨⟨[.nul], rfl⟩, rfl⟩
+  case lenStrThrow => exact ⟨⟨[.nul], rfl⟩, rfl⟩
   case makeFields => exact ⟨⟨_, (List.append_assoc _ _ _).symm⟩, rfl⟩
   case arrAlloc => exact ⟨⟨_, rfl⟩, rfl⟩
   case arrAllocThrow => exact ⟨⟨[.nul], rfl⟩, rfl⟩

@@ -199,11 +199,33 @@ theorem strictEquals_some {v w : Tm} (hv : isVal v = true) (hw : isVal w = true)
   · cases w <;> simp_all [isPrim, isVal]
   · cases v <;> simp_all [isPrim, isVal]
 
-/-- `+` of a string and a printable value, in either order, is a string. -/
+/-- `+` of a string and a printable value, in either order, concatenates
+them, a string where it is within the String type's bound (`concatString`). -/
 theorem add_string {s : String} {w : Tm} {t : String} (ht : primString w = some t) :
-    binop .add (.str s) w = some (.str (s ++ t)) ∧ binop .add w (.str s) = some (.str (t ++ s)) := by
-  cases w <;> simp [primString] at ht <;> subst ht <;> simp [binop, primString, Arith.relational]
-  all_goals rfl
+    binop .add (.str s) w = concatString s t ∧ binop .add w (.str s) = concatString t s := by
+  rw [binop_add_str_left, binop_add_str_right, ht]
+  exact ⟨rfl, rfl⟩
+
+/-- Past the bound, `+` of a string and a printable value throws, in either
+order. -/
+theorem add_string_throws {s : String} {w : Tm} {t : String} (ht : primString w = some t) :
+    (concatOver s t = true → binopThrows .add (.str s) w = true) ∧
+      (concatOver t s = true → binopThrows .add w (.str s) = true) := by
+  cases w <;> simp [primString] at ht <;> subst ht <;>
+    simp (config := { decide := true }) [binopThrows, concatOverflows, primString, isSym, isPrim]
+
+/-- `+` of a string and a printable value, in either order, answers a string
+or throws. -/
+theorem add_string_result {s : String} {w : Tm} {t : String} (ht : primString w = some t) :
+    ((∃ z, binop .add (.str s) w = some z ∧ ∃ u, z = .str u) ∨ binopThrows .add (.str s) w = true) ∧
+      ((∃ z, binop .add w (.str s) = some z ∧ ∃ u, z = .str u) ∨ binopThrows .add w (.str s) = true) := by
+  refine ⟨?_, ?_⟩
+  · cases ho : concatOver s t
+    · exact .inl ⟨.str (s ++ t), by rw [(add_string ht).1]; simp [concatString, ho], _, rfl⟩
+    · exact .inr ((add_string_throws ht).1 ho)
+  · cases ho : concatOver t s
+    · exact .inl ⟨.str (t ++ s), by rw [(add_string ht).2]; simp [concatString, ho], _, rfl⟩
+    · exact .inr ((add_string_throws ht).2 ho)
 
 theorem boolVal_holds (q : Bool) : OpResult.holds .bool (boolVal q) := by
   cases q <;> simp [OpResult.holds, boolVal]
@@ -281,10 +303,10 @@ theorem opResult_sound {X : α → Fam} {P : α → ArgFam} {op : Arith} {c d : 
         obtain rfl : op = .add := by cases op <;> first | rfl | exact absurd hadd (by decide)
       · obtain ⟨x, rfl⟩ := stringClause_member hc hv
         obtain ⟨t, ht⟩ := printableClause_member hd hw
-        exact .inl ⟨_, (add_string ht).1, _, rfl⟩
+        exact (add_string_result ht).1
       · obtain ⟨t, ht⟩ := printableClause_member hc hv
         obtain ⟨y, rfl⟩ := stringClause_member hd hw
-        exact .inl ⟨_, (add_string ht).2, _, rfl⟩
+        exact (add_string_result ht).2
     split at h
     · rename_i hops
       cases h

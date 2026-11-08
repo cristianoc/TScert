@@ -73,6 +73,7 @@ and linear_term t =
   | "value" -> Value_at (slot,path)
   | "length" -> Length_at (slot,path)
   | "view" -> View_at (slot,path)
+  | "strLength" -> Str_length_at (slot,path)
   | _ -> unsupported "invalid linear term"
 (* The form and bound of a linear fact's `le` or `ne` part, its variables read by `var`. *)
 and linear_parts : 'v. (Json.t -> 'v) -> Json.t -> string -> ('v * int) list * int = fun var f k ->

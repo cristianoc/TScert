@@ -98,10 +98,10 @@ export type LinearFact =
 /** A term of a linear fact (`HeapKnowledge.Term`): a root position, the
  * named data fields read from what it holds in turn (`path`, empty for the
  * position's own value), and what the term reads of the value the path ends
- * at (`kind`): the safe integer it is, the length of its array store, or the
- * length of the typed array it is. */
+ * at (`kind`): the safe integer it is, the length of its array store, the
+ * length of the typed array it is, or the length of the string it is. */
 export type LinearTerm = {
-  readonly kind: "value" | "length" | "view";
+  readonly kind: "value" | "length" | "view" | "strLength";
   readonly slot: number;
   readonly path: readonly string[];
 };

@@ -26,12 +26,14 @@ theorem intValue_num {b : UInt64} {i : Int} (h : SafeIntegers.SafeInt b i) : int
   SafeIntegers.safeIntOfBits_complete h
 
 /-- What a term reads of the value its path ends at: the safe integer it is
-(`value`), the length of its array store (`length`), or the length of
-the typed array it is (`view`). -/
+(`value`), the length of its array store (`length`), the length of
+the typed array it is (`view`), or the count of UTF-16 code units of the
+string it is (`strLength`). -/
 inductive Term.Kind where
   | value
   | length
   | view
+  | strLength
   deriving DecidableEq, Repr, Hashable
 
 /-- A term of a linear fact (PROGRAM-TYPING.md, "Linear facts"): a root slot,
@@ -40,8 +42,9 @@ the term reads of the value the path ends at (`Term.Kind`): the safe integer
 it is; the length of its array store, as the calculus's `lenOf` gives it
 (`Step.lenV`), at most `maxArrayLength`; or the length of the typed
 array it is, the safe integer at least `0` the location of its
-`viewLengthKey` holds (`viewLengthOf`). The empty path reads the slot's
-value itself. -/
+`viewLengthKey` holds (`viewLengthOf`); or the count of UTF-16 code units of
+the string it is, at most `maxStringLength` (`strLengthOf`). The empty path
+reads the slot's value itself. -/
 structure Term where
   kind : Term.Kind
   slot : Nat
@@ -56,20 +59,24 @@ def value (s : Nat) : Term := ⟨.value, s, []⟩
 def length (s : Nat) : Term := ⟨.length, s, []⟩
 /-- The length of the typed array a slot holds. -/
 def view (s : Nat) : Term := ⟨.view, s, []⟩
+/-- The length of the string a slot holds. -/
+def strLength (s : Nat) : Term := ⟨.strLength, s, []⟩
 
 /-- The term of a kind at a slot, its path empty. -/
 def ofKind (k : Kind) (s : Nat) : Term := ⟨k, s, []⟩
 
-/-- Whether a term reads the environment alone: a slot's own value. -/
-def envOnly (t : Term) : Bool := t.kind == .value && t.path.isEmpty
+/-- Whether a term reads the environment alone: a slot's own value, or the
+length of the string it is. -/
+def envOnly (t : Term) : Bool := (t.kind == .value || t.kind == .strLength) && t.path.isEmpty
 
 def Kind.code : Kind → Nat
   | .value => 0
   | .length => 1
   | .view => 2
+  | .strLength => 3
 
 /-- A term's place by slot and kind, which normal forms sort by. -/
-def code (t : Term) : Nat := 3 * t.slot + t.kind.code
+def code (t : Term) : Nat := 4 * t.slot + t.kind.code
 
 /-- Paths in lexicographic order, the empty path first. -/
 def pathBefore : List String → List String → Bool
@@ -312,11 +319,36 @@ theorem viewLengthOf_extend {h : Heap} (vs : List Val) {v : Val} {n : Int} (hl :
     · cases hl
   · cases hl
 
+/-- The length of the string a value is: its count of UTF-16 code units,
+where that is at most `maxStringLength`, the most a JavaScript string holds. -/
+def strLengthOf : Val → Option Int
+  | .str s => if (utf16Units s).length ≤ maxStringLength then some (utf16Units s).length else none
+  | _ => none
+
+theorem strLengthOf_range {v : Val} {n : Int} (hv : strLengthOf v = some n) :
+    0 ≤ n ∧ n ≤ 2 ^ 53 - 1 := by
+  unfold strLengthOf at hv
+  split at hv
+  · split at hv
+    · cases hv; rename_i hl; simp only [maxStringLength] at hl; omega
+    · cases hv
+  · cases hv
+
+theorem strLengthOf_inv {v : Val} {n : Int} (hv : strLengthOf v = some n) :
+    ∃ s, v = .str s ∧ (utf16Units s).length ≤ maxStringLength ∧ n = (utf16Units s).length := by
+  unfold strLengthOf at hv
+  split at hv
+  · split at hv
+    · cases hv; exact ⟨_, rfl, by assumption, rfl⟩
+    · cases hv
+  · cases hv
+
 /-- What a kind of term reads of a value. -/
 def kindValue (h : Heap) : Term.Kind → Val → Option Int
   | .value, v => intValue v
   | .length, v => lengthOf h v
   | .view, v => viewLengthOf h v
+  | .strLength, v => strLengthOf v
 
 /-- The integer a term denotes, where it denotes one: what its kind reads of
 the value its path reads from its slot's value. -/
@@ -329,6 +361,7 @@ theorem termValue_nil {ρ : Env} {h : Heap} {k : Term.Kind} {s : Nat} :
 @[simp] theorem termValue_value {ρ : Env} {h : Heap} {s : Nat} : termValue ρ h (.value s) = intValue (ρ s) := rfl
 @[simp] theorem termValue_length {ρ : Env} {h : Heap} {s : Nat} : termValue ρ h (.length s) = lengthOf h (ρ s) := rfl
 @[simp] theorem termValue_view {ρ : Env} {h : Heap} {s : Nat} : termValue ρ h (.view s) = viewLengthOf h (ρ s) := rfl
+@[simp] theorem termValue_strLength {ρ : Env} {h : Heap} {s : Nat} : termValue ρ h (.strLength s) = strLengthOf (ρ s) := rfl
 
 theorem termValue_slot {ρ ρ' : Env} {h : Heap} {t : Term} {s : Nat} (hs : ρ' s = ρ t.slot) :
     termValue ρ' h { t with slot := s } = termValue ρ h t := by
@@ -377,9 +410,8 @@ theorem lengthOf_extend {h : Heap} (vs : List Val) {v : Val} {n : Int} (hl : len
 theorem termValue_envOnly {ρ : Env} {h h' : Heap} {t : Term} (ht : t.envOnly = true) :
     termValue ρ h t = termValue ρ h' t := by
   obtain ⟨k, s, p⟩ := t
-  simp only [Term.envOnly, Bool.and_eq_true, beq_iff_eq, List.isEmpty_iff] at ht
-  obtain ⟨rfl, rfl⟩ := ht
-  rfl
+  simp only [Term.envOnly, Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq, List.isEmpty_iff] at ht
+  obtain ⟨rfl | rfl, rfl⟩ := ht <;> rfl
 
 theorem kindValue_extend {h : Heap} (vs : List Val) {k : Term.Kind} {v : Val} {n : Int} (hk : kindValue h k v = some n) :
     kindValue (h ++ vs) k v = some n := by
@@ -387,6 +419,7 @@ theorem kindValue_extend {h : Heap} (vs : List Val) {k : Term.Kind} {v : Val} {n
   | value => exact hk
   | length => exact lengthOf_extend vs hk
   | view => exact viewLengthOf_extend vs hk
+  | strLength => exact hk
 
 theorem termValue_extend {ρ : Env} {h : Heap} (vs : List Val) {t : Term} {n : Int} (ht : termValue ρ h t = some n) :
     termValue ρ (h ++ vs) t = some n := by
@@ -984,7 +1017,8 @@ def Term.keptBy (c : Changes) (first : Nat → String → Bool) (t : Term) : Boo
   (match t.kind with
     | .value => true
     | .length => c.keepsLength || (t.path.isEmpty && first t.slot "[]")
-    | .view => !c.num)
+    | .view => !c.num
+    | .strLength => t.path.isEmpty)
 
 /-- A change keeps what a path reads: each location it reads holds an object
 the change keeps, but the last, which holds the value read. -/
@@ -1048,6 +1082,7 @@ theorem kindValue_kept {c : Changes} {h h' : Heap} (hc : c.Holds h h') {k : Term
     kindValue h' k w = some n := by
   cases k with
   | value => exact hk
+  | strLength => exact hk
   | length =>
     obtain ⟨s, ls, hs, hls, rfl, hm⟩ := lengthOf_store hk
     have hst := hlen rfl
@@ -1116,6 +1151,12 @@ theorem termValue_kept {c : Changes} {first : Nat → String → Bool} {ρ : Env
   obtain ⟨w, hw, hkw⟩ := ht
   simp only [Term.keptBy, Term.pathKeptBy, Bool.and_eq_true] at hk
   obtain ⟨hpath, hkind⟩ := hk
+  by_cases hstr : kind = .strLength
+  · -- A string's length reads the slot's own value alone.
+    subst hstr
+    simp only [List.isEmpty_iff] at hkind
+    subst hkind
+    exact ⟨w, hw, hkw⟩
   have hlast : c.alters w = (if kind == .value then c.num else c.obj) := by
     cases kind with
     | value =>
@@ -1130,6 +1171,7 @@ theorem termValue_kept {c : Changes} {first : Nat → String → Bool} {ρ : Env
     | view =>
       obtain ⟨fs, cd, o, l, b, rfl, -⟩ := viewLengthOf_inv hkw
       rfl
+    | strLength => exact absurd rfl hstr
   by_cases hfs : kind = .length ∧ p = [] ∧ first s "[]" = true
   · -- The store at field `[]` of the root's object, kept by `first`.
     obtain ⟨rfl, rfl, hfs⟩ := hfs
@@ -1148,9 +1190,11 @@ theorem termValue_kept {c : Changes} {first : Nat → String → Bool} {ρ : Env
   have hkind' : (match kind with
       | .value => true
       | .length => c.keepsLength
-      | .view => !c.num) = true := by
+      | .view => !c.num
+      | .strLength => true) = true := by
     cases kind with
     | value => rfl
+    | strLength => rfl
     | view => simpa using hkind
     | length =>
       simp only [Bool.or_eq_true, Bool.and_eq_true, List.isEmpty_iff] at hkind

@@ -106,6 +106,12 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
       let callee = match callee with
         | Atoms [Shape ({calls;_} as shape)]
           when List.exists (fun (s:Semantic.signature) -> s.call_effect.pre <> []) calls ->
+          (* The receiver at position 0: the `.call` operand, or the object a
+             method is read from. *)
+          let receiver = match receiver, target.node, e.node with
+            | Some r, _, _ -> Some r
+            | None, Read (o,_), Invoke _ -> Some o
+            | None, _, _ -> None in
           let name p = match (if p = 0 then receiver else List.nth_opt args (p - 1)) with
             | Some {node=Id x;_} -> Some x
             | _ -> None in
@@ -136,7 +142,9 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
                 | Value_at (x,[]) -> Option.map (fun (t,k) -> Linear_facts.scale c t, c * k) (form x)
                 | Value_at (x,q) -> Option.map (fun (b,p) -> [Linear_facts.path_term b (p @ q),c],0) (path x)
                 | Length_at (x,q) -> Option.map (fun (b,p) -> [Linear_facts.length_term ~path:(p @ q) b,c],0) (path x)
-                | View_at (x,q) -> Option.map (fun (b,p) -> [Linear_facts.view_term ~path:(p @ q) b,c],0) (path x)) fact in
+                | View_at (x,q) -> Option.map (fun (b,p) -> [Linear_facts.view_term ~path:(p @ q) b,c],0) (path x)
+                | Str_length_at (x,q) ->
+                  Option.map (fun (b,p) -> [Linear_facts.str_length_term ~path:(p @ q) b,c],0) (path x)) fact in
               List.for_all Option.is_some parts &&
               (let parts = List.filter_map Fun.id parts in
                let terms = Linear_facts.norm (List.concat_map fst parts) in

@@ -97,12 +97,12 @@ interface BoundClaim {
 /** A term of a proposed linear fact: what the binding `name` holds, the named
  * data fields `path` read from it in turn, read as `term` says
  * (`HeapKnowledge.Term.Kind`): the safe integer it is (`value`), the length of
- * its array store (`length`), or the length of its typed array
- * (`view`); with an integer coefficient. */
+ * its array store (`length`), the length of its typed array (`view`), or
+ * the length of the string it is (`strLength`); with an integer coefficient. */
 interface LinearTermClaim {
   name: string;
   path: string[];
-  term: "value" | "length" | "view";
+  term: "value" | "length" | "view" | "strLength";
   coefficient: number;
 }
 
@@ -129,7 +129,7 @@ interface LinearClaim {
 interface TermRefClaim {
   name: string;
   path: string[];
-  term: "value" | "length" | "view";
+  term: "value" | "length" | "view" | "strLength";
 }
 
 /** A variable of a quantified fact's body: the index, the element at it, or a term. */
@@ -365,7 +365,7 @@ function claimsDocument(v: JsonRead): SourceClaims {
     const termRef = (t: JsonRead): TermRefClaim => {
       const q = record(t, "a term", ["name", "path", "term"]);
       const kind = q.term;
-      if (kind !== "value" && kind !== "length" && kind !== "view") fail("a term's kind is value, length or view");
+      if (kind !== "value" && kind !== "length" && kind !== "view" && kind !== "strLength") fail("a term's kind is value, length, view or strLength");
       return { name: name(q.name, "a term's name"), path: each(q.path, "a term's path", (f) => name(f, "a path's field")),
         term: kind };
     };
@@ -394,7 +394,7 @@ function claimsDocument(v: JsonRead): SourceClaims {
           terms: each(q.terms, "a fact's terms", (t) => {
             const r = record(t, "a fact's term", ["name", "path", "term", "coefficient"]);
             const kind = r.term;
-            if (kind !== "value" && kind !== "length" && kind !== "view") fail("a term's kind is value, length or view");
+            if (kind !== "value" && kind !== "length" && kind !== "view" && kind !== "strLength") fail("a term's kind is value, length, view or strLength");
             const term: LinearTermClaim = { name: name(r.name, "a term's name"),
               path: each(r.path, "a term's path", (f) => name(f, "a path's field")), term: kind,
               coefficient: integer(r.coefficient, "a term's coefficient") };
