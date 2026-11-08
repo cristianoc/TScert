@@ -204,27 +204,23 @@ function mapped(local: string, at: (x: number) => number, ordinals: Map<string, 
   };
   return walk;
 }
-function mappedDeclarations(declarations: Json, walk: (v: Json) => Json, canon: (v: Json) => Json, local: string): Json {
-  if (!isRecord(declarations)) return declarations;
+/** The declarations of a slice. The document's own are mapped by `walk`.
+ * Another module's definition, and an imported value's type, hold spans of
+ * that module and spans of the document's reads of its members alike: both
+ * are erased (`erase`), each declaration's identity kept. */
+function declarationsOf(declarations: Json, walk: (v: Json) => Json, erase: (v: Json) => Json, local: string): Json {
+  if (!isRecord(declarations)) return walk(declarations);
   const own = (d: Json): boolean => isRecord(d) && isRecord(d.declaration) && typeof d.declaration.module === "string" &&
     d.declaration.module.endsWith(local);
-  // Another module's declaration keeps its module's positions; a declaration
-  // of the document it names is named canonically.
   const out: JsonRecord = {};
-  for (const [k, v] of Object.entries(declarations)) {
-    // Another module's definition keeps its own identity, but the members
-    // the document reads carry spans of their reads in the document.
-    if (k === "definitions") out[k] = listOf(v).map(walk);
-    else if (k === "values")
-      out[k] = listOf(v).map((d) => own(d) || !isRecord(d) ? walk(d) : { ...canonRecord(d, canon), binding: walk(d.binding ?? null) });
-    else out[k] = walk(v);
-  }
+  for (const [k, v] of Object.entries(declarations))
+    out[k] = k === "definitions" ? listOf(v).map((d) => own(d) ? walk(d) : erase(d))
+      : k === "values" ? listOf(v).map((d) => own(d) || !isRecord(d) ? walk(d)
+        : { ...asRecord(erase(d)), binding: walk(d.binding ?? null) })
+      : walk(v);
   return out;
 }
-function canonRecord(d: JsonRecord, canon: (v: Json) => Json): JsonRecord {
-  const out = canon(d);
-  return isRecord(out) ? out : d;
-}
+const asRecord = (v: Json): JsonRecord => (isRecord(v) ? v : {});
 
 /** A unit's slice: the document with the unit's members whole, each function
  * it reads by its signature (its body left out), the initialization where it
@@ -270,12 +266,12 @@ export function sliceOf(document: JsonRecord, local: string, unit: ProposalUnit)
     else merged.push([d[0], d[1]]);
   }
   const ordinals = localIdentities(document, local);
-  const walk = mapped(local, (x) => toSlice(merged, x), ordinals), canon = mapped(local, (x) => x, ordinals);
+  const walk = mapped(local, (x) => toSlice(merged, x), ordinals), erase = mapped(local, () => 0, ordinals);
   const slice: JsonRecord = {};
   for (const [k, v] of Object.entries(document)) {
     if (k === "file") slice[k] = "unit.ts";
     else if (k === "sourceSha256") slice[k] = "";
-    else if (k === "declarations") slice[k] = mappedDeclarations(v, walk, canon, local);
+        else if (k === "declarations") slice[k] = declarationsOf(v, walk, erase, local);
     else if (k === "functions") slice[k] = functions.map(walk);
     else if (k === "init") slice[k] = init.map(walk);
     // A slice's proposal reads no imported module's document.
@@ -292,7 +288,6 @@ export function canonicalDocument(document: JsonRecord, local: string): string {
   const walk = mapped(local, (x) => x, localIdentities(document, local));
   const out: JsonRecord = {};
   for (const [k, v] of Object.entries(document))
-    out[k] = k === "declarations" ? mappedDeclarations(v, walk, walk, local) : k === "modules" || k === "file" ||
-      k === "sourceSha256" ? v : walk(v);
+    out[k] = k === "modules" || k === "file" || k === "sourceSha256" ? v : walk(v);
   return JSON.stringify(out);
 }
