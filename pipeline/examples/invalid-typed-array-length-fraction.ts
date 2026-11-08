@@ -1,5 +1,5 @@
 // A view allocated at a fraction: ToIndex truncates `1.5` to `1`, so the
-// view's element count is not the argument, and the construct signature
+// view's length is not the argument, and the construct signature
 // stating `view(result) = n`, which requires a safe integer `n ≥ 0`, is not
 // the construction's; its return does not establish the invariant, and is
 // refused. A walker then reads past the view's end (run under Node:

@@ -73,7 +73,7 @@ one, and the field map is fixed at allocation: an object's classification
 never changes. The steps that copy an object's own keys are stuck on one. -/
 def hostKey : PropKey := "[[host]]"
 
-/-- The key a typed array, a host object, holds its element count under
+/-- The key a typed array, a host object, holds its typed-array length under
 (SOURCE-CONTRACTS.md, "Stated library types"; `HeapKnowledge.Term.view`): its
 location holds the count, a safe integer, which no step of the program
 changes, every typed array viewing a fixed-size `ArrayBuffer` that is never
@@ -1612,7 +1612,7 @@ theorem tagHolds_of_heap {h : List Tm} {t : Tag} {v : Tm} {q : Bool} (hq : tagHo
 
 /-- A key a spread copies: a string key the model does not keep for itself
 (the prototype, the array store, a function object's code field, the host
-classification, a typed array's element count, an early binding's
+classification, a typed array's length, an early binding's
 uninitialized marker). A
 symbol-keyed field is never copied: the model's are the library's, whose
 enumerability it does not record, and

@@ -1,4 +1,4 @@
-// Imported functions stating written preconditions: the imported signature
+// Imported functions stating preconditions: the imported signature
 // keeps the clause, and each call here establishes it, `at(xs, j)` below the
 // length in a loop and `pairSum(xs, 0)` under a test of the length.
 import { at, pairSum } from "@fixture/bounded";

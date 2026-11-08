@@ -6,7 +6,7 @@
 // rich-inline.ts#getSourceUnits, rich-inline.ts#isSoftHyphenSegment.
 // A non-null assertion of a typed array's element read inside its length,
 // `flags[i]!` with `i < flags.length`: the test states `i` below the view's
-// element count, and the read is `%ByteAt%`'s bounded signature's, a number.
+// typed-array length, and the read is `%ByteAt%`'s bounded signature's, a number.
 export function total(flags: Uint8Array): number {
   let sum = 0;
   for (let i = 0; i < flags.length; i++) sum += flags[i]!;

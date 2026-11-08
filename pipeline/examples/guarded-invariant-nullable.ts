@@ -1,4 +1,4 @@
-// A guarded record invariant (PROGRAM-TYPING.md, "Guarded clauses"), in the
+// A guarded type invariant (PROGRAM-TYPING.md, "Guarded clauses"), in the
 // shape of pretext's `line-break.ts`: `discretionaryHyphenContexts` is null
 // where the text has no soft hyphen, and otherwise holds one entry per
 // segment, parallel to `widths`. The invariant

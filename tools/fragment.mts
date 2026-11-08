@@ -401,7 +401,7 @@ export interface FunctionAst {
   /** The effect the result annotation states, `Within<F, T>`, of which
    * `retType` is `T`; null where it states none. */
   stated: StatedEffect | null;
-  /** The written precondition, its `@requires` clauses elaborated to index
+  /** The precondition, its `@requires` clauses elaborated to index
    * facts at the call's positions: 0 the receiver, i + 1 the i-th actual
    * (`bound-annotations.mts`; PROGRAM-TYPING.md, "Preconditions"). */
   requires: IndexFact[];

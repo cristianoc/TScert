@@ -40,7 +40,7 @@ export type CallEffect = {
    * the heap the call starts in, read at the call's positions (0 the
    * receiver, i + 1 the i-th actual) (`CallEffects.Effect.pre`). */
   readonly pre: readonly IndexFact[];
-  /** Result facts: each index fact holds in the heap a normal return leaves,
+  /** Postcondition: each index fact holds in the heap a normal return leaves,
    * read at the return's positions (0 the result, i + 1 the call's position
    * i) (`CallEffects.Effect.ensures`). Only a trusted signature states one. */
   readonly ensures: readonly IndexFact[];
@@ -89,7 +89,7 @@ export type LinearFact =
  * named data fields read from what it holds in turn (`path`, empty for the
  * position's own value), and what the term reads of the value the path ends
  * at (`kind`): the safe integer it is, the length of its array store, or the
- * element count of the typed array it is. */
+ * length of the typed array it is. */
 export type LinearTerm = {
   readonly kind: "value" | "length" | "view";
   readonly slot: number;

@@ -1,4 +1,4 @@
-// The written preconditions of a function declaration (RFC #115, the draft
+// The preconditions of a function declaration (RFC #115, the draft
 // docs/drafts/checked-bound-annotations.md; PROGRAM-TYPING.md, 
 // "Preconditions"): a `@requires C` tag of the declaration's leading JSDoc
 // comment, read from the source text, its clause parsed here and elaborated
@@ -19,7 +19,7 @@
 // reads the named data fields from the parameter in turn, each a required
 // field of the record type the path before it has. A value term `p` is a
 // path the clause states a safe integer; `p.length` is the length of an
-// array or the element count of a typed array the path's type names. Each
+// array or the length of a typed array the path's type names. Each
 // atom's meaning is the index facts it elaborates to: `safeInteger(x)` is
 // `int(x)`, `safeInteger(p.f)` the fact `p.f ≤ 2^53 - 1`, which holds of a
 // path exactly where it reads a safe integer; a comparison is the linear fact
@@ -41,7 +41,7 @@
 // an atom, `!`) is refused with the clause's location, as is a path whose field no type
 // resolves.
 //
-// A record invariant (PROGRAM-TYPING.md, "Type invariants") is an
+// A type invariant (PROGRAM-TYPING.md, "Type invariants") is an
 // `@invariant C` tag of a type alias's or an interface's leading JSDoc, its
 // clause in the same language over `this`'s field paths, each resolved
 // through the declaration's own type or, for a sealed handle, the
@@ -50,12 +50,12 @@
 // declaration's parameter or result is of a type naming the record, the
 // clause is elaborated with `this` at that parameter's call position, a
 // conjunct of the precondition, or at the result's position `0`, a fact of
-// its result (`recordInvariants`, fragment-statements.mts).
+// its result (`typeInvariants`, fragment-statements.mts).
 import * as ts from "typescript/unstable/ast";
 import type { BodyFact, BodyVariable, GuardTag, IndexFact, LinearFact, LinearTerm } from "./declaration-types.mts";
 
 /** What a path's type names: an array, whose `length` is its store's length;
- * a typed array, whose `length` is its element count (`view`); a record or any
+ * a typed array, whose `length` is its typed-array length (`view`); a record or any
  * other value (`other`); or no type a field resolves (`null`). */
 export type PathType = "array" | "view" | "other" | null;
 /** The tags a clause's guards exclude of a path's prefix of `depth` fields,
@@ -128,7 +128,7 @@ export function parameterKept(p: ts.ParameterDeclaration, body: ts.Node | undefi
   return !writes(body);
 }
 
-/** Which record invariants an importer reads of an imported function
+/** Which type invariants an importer reads of an imported function
  * declaration of the program's sources (`writtenImport`): by its
  * declaration's parameters in order, `this` included (`receiver`), those of
  * each plain required name's type, where it is not async, at its returns too

@@ -105,7 +105,7 @@ const viewMethods = (self: TypeTerm): Field[] => [
   field("copyWithin", method([atom("number"), atom("number"), optionalNumber], self, emptyEffect)),
   field("set", method([bytes, optionalNumber], atom("undefined"), emptyEffect)),
   field("subarray", method([atom("number"), optionalNumber], self, emptyEffect))];
-/** The element count a view's model key `[[viewLength]]` holds, a
+/** The typed-array length a view's model key `[[viewLength]]` holds, a
  * readonly `number` the host owns at a location no other object's field or
  * store shares, one value for the view's life (DESIGN.md, "Trust surface"):
  * a stable key (HOST-FAMILIES.md, "Stable keys"), so every step keeps a

@@ -1,11 +1,11 @@
 // pretext's `PreparedLineBreakData` holds its flags in a `Uint8Array`, and
-// its invariant equates the view's element count with `widths.length`. A
+// its invariant equates the view's length with `widths.length`. A
 // helper receiving the record and a cursor states the record's invariant at
 // its returns after writing `cursor.segmentIndex`, a number field: the write
-// keeps the field `segmentFlags` (it alters no object), and the element count
+// keeps the field `segmentFlags` (it alters no object), and the typed-array length
 // of the view the field holds is read from a location its type states stable,
-// so the count read through the field is kept (`view-path-stable`). A bound
-// read through the field is kept across the same write.
+// so the length read through the field is preserved (`view-path-stable`). A bound
+// read through the field is preserved across the same write.
 
 /** @invariant safeInteger(this.segmentIndex) && 0 <= this.segmentIndex */
 export type Cursor = { segmentIndex: number };

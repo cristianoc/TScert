@@ -1,7 +1,7 @@
-// A typed array's element count across a write of a number field: the count
+// A typed array's length across a write of a number field: the length
 // is the number the location of the view's `[[viewLength]]` holds, a stable
-// key of the view's type, a location of one value, so every step keeps a
-// fact naming the count, the write of `c.at` among them, and the read below
+// key of the view's type, a location of one value, so every step preserves a
+// fact naming the length, the write of `c.at` among them, and the read below
 // it after the write is accepted.
 
 type Cursor = { at: number };

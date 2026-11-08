@@ -218,7 +218,7 @@ control(async (): Promise<void> => {
   // `xs.length > 0` was tested, the call then typed at the precondition's
   // signature by the producer's own selection, is refused where evidence is
   // searched, at the entry the forged facts are claimed.
-  const artifacts = run("invalid-written-precondition-lengths");
+  const artifacts = run("invalid-precondition-lengths");
   const source = readFileSync(sourceKey(artifacts), "utf8");
   const claims = readClaims(artifacts);
   const fn = must(claims.functions.find(f => f.name === "second"), "second's claims");
@@ -234,7 +234,7 @@ control(async (): Promise<void> => {
 });
 
 control(async (): Promise<void> => {
-  // A typed array's element count claimed at an entry where no test stated
+  // A typed array's length claimed at an entry where no test stated
   // it: the read of each unsafe program claimed at `number`, the
   // precondition's of `%ByteAt%`'s bounded signature, with `i < b.length`
   // forged at the read's statement entry, is refused where evidence is
@@ -244,7 +244,7 @@ control(async (): Promise<void> => {
   for (const [name, fnName, read, statement] of [
     ["invalid-typed-array-read-at-length", "last", "b[i]", "x = b[i]!"],
     ["invalid-typed-array-read-other-length", "across", "b[i]", "x = b[i]!"],
-    ["invalid-view-count-across-field-write-other", "other", "b[i]", "const f = b[i]!"],
+    ["invalid-typed-array-length-across-field-write-other", "other", "b[i]", "const f = b[i]!"],
   ] as const) {
     const artifacts = run(name);
     const source = readFileSync(sourceKey(artifacts), "utf8");
@@ -261,15 +261,15 @@ control(async (): Promise<void> => {
     assert.equal(searched.status, 1, `${name}: ${searched.stdout}${searched.stderr}`);
     assert.match(searched.stdout + searched.stderr, /does not establish the claims/);
   }
-  process.stdout.write("view lengths: a read below a typed array's element count claimed where no test stated it, at the length and below another view's, refused at its entry\n");
+  process.stdout.write("typed-array lengths: a read below a typed array's length claimed where no test stated it, at the length and below another view's, refused at its entry\n");
 });
 
 control(async (): Promise<void> => {
-  // A record invariant claimed of a value no boundary gives it: the cast
+  // A type invariant claimed of a value no boundary gives it: the cast
   // record's `segmentFlags.length === widths.length` forged at the entry of
   // the walker's call, which requires it, is refused at that entry where
   // evidence is searched.
-  const artifacts = run("invalid-record-invariant-cast");
+  const artifacts = run("invalid-type-invariant-cast");
   const source = readFileSync(sourceKey(artifacts), "utf8");
   const claims = readClaims(artifacts);
   const fn = must(claims.functions.find(f => f.name === "forged"), "forged's claims");
@@ -278,11 +278,11 @@ control(async (): Promise<void> => {
   must(fn.entries.find(e => e.start === source.indexOf("return lastFlag(prepared)")), "the call's entry").facts.push(
     { guards: [], terms: [term(["segmentFlags"], "view", 1), term(["widths"], "length", -1)], bound: 0 },
     { guards: [], terms: [term(["segmentFlags"], "view", -1), term(["widths"], "length", 1)], bound: 0 });
-  const forged = writeClaims(artifacts, "record-invariant-forged", claims);
-  const searched = produceWith(artifacts, forged, "record-invariant-forged");
+  const forged = writeClaims(artifacts, "type-invariant-forged", claims);
+  const searched = produceWith(artifacts, forged, "type-invariant-forged");
   assert.equal(searched.status, 1, `${searched.stdout}${searched.stderr}`);
   assert.match(searched.stdout + searched.stderr, /does not establish the claims/);
-  process.stdout.write("record invariants: an invariant claimed of a cast record at a call's entry, refused there\n");
+  process.stdout.write("type invariants: an invariant claimed of a cast record at a call's entry, refused there\n");
 });
 
 control(async (): Promise<void> => {
@@ -406,7 +406,7 @@ control(async (): Promise<void> => {
 
 control(async (): Promise<void> => {
   // The precondition of the construct signature stating a typed array's
-  // element count, `n` a safe integer at least 0, claimed of a fraction at
+  // typed-array length, `n` a safe integer at least 0, claimed of a fraction at
   // the construction's entry: refused there, so the construction is typed at
   // the signature stating no result fact.
   const artifacts = run("invalid-typed-array-length-fraction");
@@ -424,11 +424,11 @@ control(async (): Promise<void> => {
 });
 
 control(async (): Promise<void> => {
-  // Result facts the front end does not state, forged into the parser's
+  // A postcondition the front end does not state, forged into the parser's
   // document: `countBreaks`, returning a count of at least 0, stated to
   // return one below 0, is refused at its return, the checker reading the
   // facts from the document whatever the claims say.
-  const artifacts = run("record-invariant-walker");
+  const artifacts = run("type-invariant-walker");
   const ast: Ast = readFragmentFile(join(artifacts, "fragment.json"));
   const fn = must(ast.functions.find(f => f.name === "countBreaks"), "countBreaks");
   assert.ok(fn.ensures.every(f => !JSON.stringify(f).includes('"slot":0')), "countBreaks states no result fact");
@@ -440,7 +440,7 @@ control(async (): Promise<void> => {
   assert.equal(searched.status, 1, `${searched.stdout}${searched.stderr}`);
   assert.match(searched.stdout + searched.stderr,
     /source ensures refusal at \[\d+,\d+\): a return of 'countBreaks' does not establish/);
-  process.stdout.write("record invariants: result facts forged into the document, refused at the return\n");
+  process.stdout.write("type invariants: a postcondition forged into the document, refused at the return\n");
 });
 
 control(async (): Promise<void> => {
@@ -460,7 +460,7 @@ control(async (): Promise<void> => {
   assert.equal(searched.status, 1, `${searched.stdout}${searched.stderr}`);
   assert.match(searched.stdout + searched.stderr,
     /source ensures refusal at \[\d+,\d+\): a return of 'step' does not establish/);
-  process.stdout.write("record invariants: a parameter's fact at the returns forged into the document, refused at a return\n");
+  process.stdout.write("type invariants: a parameter's fact at the returns forged into the document, refused at a return\n");
 });
 
 control(async (): Promise<void> => {

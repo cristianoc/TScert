@@ -1,7 +1,7 @@
 // Reads of typed arrays below their length: `b[i]!` at `i < b.length` is the
 // element, a number, by `%ByteAt%`'s bounded signature; the loop's test
-// states `i < b.length`, which `%ByteLength%`'s result facts relate to the
-// view's element count, and an element write keeps it.
+// states `i < b.length`, which `%ByteLength%`'s postcondition relates to the
+// typed-array length, and an element write preserves it.
 
 export function sumBytes(b: Uint8Array): number {
   let s = 0;

@@ -1,4 +1,4 @@
-// A record invariant as a boundary contract (PROGRAM-TYPING.md, "Type
+// A type invariant as a boundary contract (PROGRAM-TYPING.md, "Type
 // invariants"), in the shape of pretext's `line-break.ts`:
 // `PreparedLineBreakData` holds per-segment data in parallel, `widths` and
 // the typed array `segmentFlags`, and its walkers (`countPreparedLines`,
@@ -7,7 +7,7 @@
 // `segmentFlags.length === widths.length` is each walker's precondition, its
 // body assumes it and each call establishes it, and a fact of the result of
 // `prepare`, which its return establishes from the arrays it builds, a view
-// allocated at `widths.length`, whose construction states that element count.
+// allocated at `widths.length`, whose construction states that length.
 
 /** @invariant this.segmentFlags.length === this.widths.length */
 export type PreparedLineBreakData = {

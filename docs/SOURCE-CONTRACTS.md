@@ -1839,7 +1839,7 @@ states the key a readonly `number` member and a stable key
 the same host assumption: its location holds one value for the view's life.
 So every step preserves a fact naming the length, a write of a number field
 among them ([frame conditions](PROGRAM-TYPING.md#frame-conditions),
-`view-count-across-field-write`). A read at the length is `undefined` (`invalid-typed-array-read-at-length`,
+`typed-array-length-across-field-write`). A read at the length is `undefined` (`invalid-typed-array-read-at-length`,
 run under Node), and so is a read of one view below another's length
 (`invalid-typed-array-read-other-length`, run under Node); both are refused.
 The case is `typed-array-reads-below-length`.

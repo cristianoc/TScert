@@ -280,7 +280,7 @@ did not mention grow it, and the request carries the result. -/
     let base := inputs.length - siblingScope.length
     let entrySeparation := moduleCellSeparation inputs.length
       (siblingScope.zipIdx.filterMap fun (b, j) => b.moduleCell.map (base + j, ·))
-    -- The written precondition, which the unit assumes of its inputs: each
+    -- The precondition, which the unit assumes of its inputs: each
     -- call position at the input slot that holds it, the receiver at slot 0
     -- where a `this` parameter declares it, each parameter after it.
     let receiverInput := (f.params.head?.map (·.name == "this")).getD false
@@ -294,7 +294,7 @@ did not mention grow it, and the request carries the result. -/
     if !entrySeparation.facts.isEmpty || !entryIndices.isEmpty then
       recordAssertion entry ⟨[], [], [], entrySeparation, [], entryIndices⟩
     return (inputs, R, entry, promise, entrySeparation, entryIndices)
-  -- The result facts its unit proves at each return: position `0` the
+  -- The postcondition its unit proves at each return: position `0` the
   -- result, each call position `p` (`i + 1` of the signature's `ensures`)
   -- at `q + 1` for the input slot `q` that holds it on entry.
   let receiverInput := (f.params.head?.map (·.name == "this")).getD false

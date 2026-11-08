@@ -2,7 +2,7 @@
 // `normalizePreparedLineStart` with its update a statement of its own: the
 // cursor's invariant (`0 ≤ segmentIndex`, a safe integer) bounds the index
 // read from it, and the writes of `cursor.segmentIndex` in the loop keep the
-// facts over `flags`, whose element count is stable. From the invariant's
+// facts over `flags`, whose typed-array length is stable. From the invariant's
 // `segmentIndex ≤ 2^53 − 1` the producer derives after `segmentIndex++` a
 // fact whose bound is 2^53, past what the claims document states, and leaves
 // it out, a weaker claim.

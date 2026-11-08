@@ -396,7 +396,7 @@ def indexFollows (M : Nat → List Nat) (m : PointClaims.Mapping) (s t : IndexAt
 def lengthRange (t : Term) : List (Linear.Fact Term) :=
   [.le [(t, -1)] 0, .le [(t, 1)] (maxArrayLength : Int)]
 
-/-- A typed array's element count lies between `0` and `2^53 - 1`, a safe
+/-- A typed array's length lies between `0` and `2^53 - 1`, a safe
 integer. -/
 def viewRange (t : Term) : List (Linear.Fact Term) :=
   [.le [(t, -1)] 0, .le [(t, 1)] (2 ^ 53 - 1)]
@@ -405,7 +405,7 @@ def viewRange (t : Term) : List (Linear.Fact Term) :=
 def valueRange (t : Term) : List (Linear.Fact Term) :=
   [.le [(t, -1)] (2 ^ 53 - 1), .le [(t, 1)] (2 ^ 53 - 1)]
 
-/-- The range a term's kind gives it: a length's, an element count's, none of
+/-- The range a term's kind gives it: a length's, a typed-array length's, none of
 a value, whose range the entailment reads apart (`valueRanges`). -/
 def termRange (t : Term) : List (Linear.Fact Term) :=
   match t.kind with
@@ -414,7 +414,7 @@ def termRange (t : Term) : List (Linear.Fact Term) :=
   | .value => []
 
 /-- The linear facts a fact states: a linear fact itself, with the range of
-each length and element count it names; a length atom `length(x, n)` as the
+each length and typed-array length it names; a length atom `length(x, n)` as the
 equality of `n`'s value with `x`'s length, with its range. -/
 def factLinear : IndexFact → List (Linear.Fact Term)
   | .linear F => F :: F.vars.flatMap termRange

@@ -2,8 +2,8 @@
 // `getTerminalLetterSpacing` (src/line-break.ts) reads `segmentFlags[i]!`,
 // `segmentFlags` a field of its `PreparedLineBreakData` parameter, and
 // `getSegmentIndex` (src/rich-inline.ts) reads `itemSegments[cursor.itemIndex]!`,
-// the index a field of its cursor. A written precondition names the field's
-// element count or the cursor's index as a path, `prepared.segmentFlags.length`
+// the index a field of its cursor. A precondition names the field's
+// typed-array length or the cursor's index as a path, `prepared.segmentFlags.length`
 // or `cursor.itemIndex`; the read through the path, or through a binding the
 // field is destructured into, is below the length; callers establish each
 // precondition by a test of the path, in a loop through calls keeping the

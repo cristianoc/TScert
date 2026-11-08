@@ -26,7 +26,7 @@ theorem intValue_num {b : UInt64} {i : Int} (h : SafeIntegers.SafeInt b i) : int
   SafeIntegers.safeIntOfBits_complete h
 
 /-- What a term reads of the value its path ends at: the safe integer it is
-(`value`), the length of its array store (`length`), or the element count of
+(`value`), the length of its array store (`length`), or the length of
 the typed array it is (`view`). -/
 inductive Term.Kind where
   | value
@@ -38,7 +38,7 @@ inductive Term.Kind where
 a path of named data fields read in turn from the value it holds, and what
 the term reads of the value the path ends at (`Term.Kind`): the safe integer
 it is; the length of its array store, as the calculus's `lenOf` gives it
-(`Step.lenV`), at most `maxArrayLength`; or the element count of the typed
+(`Step.lenV`), at most `maxArrayLength`; or the length of the typed
 array it is, the safe integer at least `0` the location of its
 `viewLengthKey` holds (`viewLengthOf`). The empty path reads the slot's
 value itself. -/
@@ -54,7 +54,7 @@ namespace Term
 def value (s : Nat) : Term := ⟨.value, s, []⟩
 /-- The length of the array store a slot holds. -/
 def length (s : Nat) : Term := ⟨.length, s, []⟩
-/-- The element count of the typed array a slot holds. -/
+/-- The length of the typed array a slot holds. -/
 def view (s : Nat) : Term := ⟨.view, s, []⟩
 
 /-- The term of a kind at a slot, its path empty. -/
@@ -255,7 +255,7 @@ theorem lengthOf_of_store {h : Heap} {v : Val} {s : Nat} {ls : List (Option Nat)
     (hl : h[s]? = some (.arr ls)) (hm : ls.length ≤ maxArrayLength) : lengthOf h v = some (ls.length : Int) := by
   simp only [lengthOf, hs, hl, hm, ite_true]
 
-/-- The element count of the typed array a value is, read in the heap: the
+/-- The length of the typed array a value is, read in the heap: the
 value is an object owning `hostKey`, a host object, whose field map gives
 `viewLengthKey` a location holding a safe integer at least `0`. -/
 def viewLengthOf (h : Heap) : Val → Option Int
@@ -294,7 +294,7 @@ theorem viewLengthOf_range {h : Heap} {v : Val} {n : Int} (hv : viewLengthOf h v
     · cases hv
   · cases hv
 
-/-- A heap extension keeps the element count of what a value is: its
+/-- A heap extension keeps the typed-array length of what a value is: its
 location lies in the old heap. -/
 theorem viewLengthOf_extend {h : Heap} (vs : List Val) {v : Val} {n : Int} (hl : viewLengthOf h v = some n) :
     viewLengthOf (h ++ vs) v = some n := by
@@ -711,7 +711,7 @@ theorem holdsAt_map {F : IndexFact} {f : Nat → Nat} {ρ ρ' : Env} {h : Heap}
   simp only [map, hG, Option.getD_some]
   exact holdsAt_mapM hG (fun s hs t ht => by cases ht; exact hf s hs)
 
-/-- A heap extension keeps a fact: the store lies in the old heap. -/
+/-- A heap extension preserves a fact: the store lies in the old heap. -/
 theorem holdsAt_extend {F : IndexFact} {ρ : Env} {h : Heap} (vs : List Val) (hF : F.HoldsAt ρ h) :
     F.HoldsAt ρ (h ++ vs) := by
   induction F with
@@ -1206,7 +1206,7 @@ theorem formKept_eval {c : Changes} {first : Nat → String → Bool} {ρ : Env}
 
 namespace IndexFact
 
-/-- Whether a change keeps a fact (`Term.keptBy`): `index` and `int` read
+/-- Whether a change preserves a fact (`Term.keptBy`): `index` and `int` read
 no heap, `length` and `bound` a store's length. -/
 def keptBy (c : Changes) (first : Nat → String → Bool) : IndexFact → Bool
   | .index _ | .int _ => true
@@ -1290,14 +1290,14 @@ end IndexFact
 
 
 /-- Where `views s g` holds, the view the field `g` of slot `s`'s object held
-keeps its element count from `h` to `h'`. -/
+preserves its length from `h` to `h'`. -/
 def ViewsKept (views : Nat → String → Bool) (ρ : Env) (h h' : Heap) : Prop :=
   ∀ s g fs cd o l w, views s g = true → ρ s = .objAt fs cd o → fs.lookup (.str g) = some l →
     h[l]? = some w → viewLengthOf h' w = viewLengthOf h w
 
-/-- Whether a change keeps the element count of a view read through one
+/-- Whether a change keeps the length of a view read through one
 field (`view-path-stable`): the field's location is one `first` keeps or holds
-an object the change keeps, and `views` frames the view's count. -/
+an object the change keeps, and `views` frames the view's length. -/
 def Term.viewFramed (c : Changes) (first views : Nat → String → Bool) (t : Term) : Bool :=
   t.kind == .view && match t.path with
     | [g] => (first t.slot g || !c.obj) && views t.slot g
@@ -1339,7 +1339,7 @@ theorem termValue_viewFramed {c : Changes} {first views : Nat → String → Boo
 
 namespace IndexFact
 
-/-- Whether a change keeps a fact, each of its terms kept by `Term.keptBy` or
+/-- Whether a change preserves a fact, each of its terms kept by `Term.keptBy` or
 framed by `Term.viewFramed`. -/
 def keptWith (c : Changes) (first views : Nat → String → Bool) : IndexFact → Bool
   | .linear F => F.vars.all fun t => t.keptBy c first || t.viewFramed c first views

@@ -2101,7 +2101,7 @@ call of a function whose loop writes only its locals), `facts-across-writes`
 (a `WeakMap`'s `get`, a `Map`'s construction and `set`),
 `weak-map-set-keeps-facts` (a `WeakMap`'s `set` and `delete`),
 `for-of-keeps-counter-facts` (an array iterator's step),
-`view-count-across-field-write` (a typed array's length across a number
+`typed-array-length-across-field-write` (a typed array's length across a number
 field's write) and `typed-array-reads-below-length` (a `Uint8Array`, a
 `Float64Array`, an `Int32Array` written and read back, and a `@requires`
 over a view's length). Negative, each run under Node:
@@ -2120,7 +2120,7 @@ write through a parameter that may be the object a path names),
 counted array), `invalid-facts-across-for-of-pop` (a `pop` in a `for...of`
 body), `invalid-typed-array-read-at-length` (a loop to `i <= b.length`),
 `invalid-typed-array-read-other-length` (a read of `b` below another view's
-length) and `invalid-view-count-across-field-write-other` (alike, across a
+length) and `invalid-typed-array-length-across-field-write-other` (alike, across a
 number field's write). Forged controls in `pipeline/test.mts`: each array
 negative's read claimed at the element type, with and without a strict bound
 claimed at its statement; each typed array negative's read claimed at
@@ -2243,18 +2243,18 @@ request and into `moduleArrow`. An import's precondition is
 `writtenPrecondition` and `writtenImport`, Lean's certified read
 `importedArrow` and `qualifiedRead`.
 
-**Cases.** Positive: `written-precondition`, `written-precondition-lengths`
+**Cases.** Positive: `precondition`, `precondition-lengths`
 (`i + 1 < xs.length`, and `xs.length === ys.length` established by a test).
-Negative, each run under Node: `invalid-written-precondition-call` (a call at
-`xs.length`), `invalid-written-precondition-body` (a body reading past what
-its clause bounds), `invalid-written-precondition-lengths` (a call with no
-length equality), `invalid-written-precondition-lengths-shrunk` (an equality
-a `pop` changed) and `invalid-written-precondition-literal-index` (a literal
+Negative, each run under Node: `invalid-precondition-call` (a call at
+`xs.length`), `invalid-precondition-body` (a body reading past what
+its clause bounds), `invalid-precondition-lengths` (a call with no
+length equality), `invalid-precondition-lengths-shrunk` (an equality
+a `pop` changed) and `invalid-precondition-literal-index` (a literal
 index past the clause's bound). Exported: positive
-`written-precondition-exported` and `written-precondition-value-import` (an
+`precondition-exported` and `precondition-value-import` (an
 importer's calls of `imports-project/bounded.ts`'s functions); negative, run
-under Node, `invalid-written-precondition-value-import` (an importer's call
-at the length). Refused form: `written-precondition-disjunction-refused`.
+under Node, `invalid-precondition-value-import` (an importer's call
+at the length). Refused form: `precondition-disjunction-refused`.
 Over paths: positive `field-path-reads`; negative, each run under Node,
 `invalid-field-path-read-at-length` (a call at the flags' typed-array
 length), `invalid-field-path-read-other-record` (a read bounded by another
@@ -2413,12 +2413,12 @@ units, `SourceRequests.checkRequests_ensures_at`, a conjunct of
 `RequestsSafe`. A literal's read links are `HeapExpressionRules.freshLinks`
 (proved in `alloc_sound`); a failing return's refusal is `ensuresRefusal`.
 
-**Cases.** Positive: `record-invariant-walker` (pretext's `line-break.ts`
+**Cases.** Positive: `type-invariant-walker` (pretext's `line-break.ts`
 shape: a constructor building `widths` and a view allocated at its length,
 walkers reading `prepared.segmentFlags[i]!` below `prepared.widths.length`).
-Negative, each run under Node: `invalid-record-invariant-constructor` (a
-return of a view one element short), `invalid-record-invariant-push` (a
-`push` before passing the value on) and `invalid-record-invariant-cast` (a
+Negative, each run under Node: `invalid-type-invariant-constructor` (a
+return of a view one element short), `invalid-type-invariant-push` (a
+`push` before passing the value on) and `invalid-type-invariant-cast` (a
 value typed by a cast). Forged controls in `pipeline/test.mts`: the
 invariant claimed of the cast value at the call's entry, refused there, and a
 postcondition forged into the parser's document, refused at the return. A

@@ -391,7 +391,7 @@ const bytesEntries: GlobalEntry[] = [
  * ToIndex, a number's own value, throwing a `RangeError` where it is
  * negative or too large, and allocates a view of that many zeros, so at a
  * safe integer `n ≥ 0` a normal return's view has exactly `n` elements (the
- * first form's precondition and result facts); `new
+ * first form's precondition and postcondition); `new
  * Uint8Array(xs)` of an array gets the array's `Symbol.iterator`, which an
  * array owns none of, from the untampered `Array.prototype`, steps the
  * standard array iterator, which reads `length` and each element, own data

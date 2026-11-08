@@ -2155,7 +2155,7 @@ export function functionDecl(this: Gate, node: FunctionDeclaration, signature: F
     });
     gate.initializedBefore(node, params.map((p): [PatternAst, Expr | null] =>
       bound.get(p.name) ?? [{ k: "name", name: p.name, pos: p.pos }, null]));
-    // The written precondition (`@requires`), at the call's positions: the
+    // The precondition (`@requires`), at the call's positions: the
     // receiver at 0 where a `this` parameter names it, each other parameter
     // at its place after it. An async declaration and one whose parameters
     // are not plain names state none: their callers establish nothing it
@@ -2167,12 +2167,12 @@ export function functionDecl(this: Gate, node: FunctionDeclaration, signature: F
       if (isAsync) gate.fail(node, "a precondition (`@requires`) on an async function");
       if (node.parameters.some(p => p.dotDotDotToken || p.initializer || p.questionToken || !ts.isIdentifier(p.name)))
         gate.fail(node, "a precondition (`@requires`) on a function whose parameters are not plain required names");
-      const elaborated = writtenPrecondition(gate, clauses, node.parameters.map((p, i) => ({
+      const elaborated = precondition(gate, clauses, node.parameters.map((p, i) => ({
         name: ts.isIdentifier(p.name) ? p.name.text : "", type: parameterTypes[i] })), !!receiverParam);
       if (typeof elaborated === "string") gate.fail(node, elaborated);
       else requires = elaborated;
     }
-    // The record invariants its parameters' and result's types name
+    // The type invariants its parameters' and result's types name
     // (`@invariant`; PROGRAM-TYPING.md, "Type invariants"), of a function
     // declaration of the module read at its own signature: each parameter's,
     // `this` at its call position, a conjunct of the precondition, of each
@@ -2185,7 +2185,7 @@ export function functionDecl(this: Gate, node: FunctionDeclaration, signature: F
     // alike (`writtenImport`).
     let ensures: IndexFact[] = [];
     if (signature === node && ts.isSourceFile(node.parent)) {
-      const contract = recordInvariants(gate,
+      const contract = typeInvariants(gate,
         isAsync ? [] : node.parameters.map((p, i) => plainParameter(p)
           ? { type: parameterTypes[i], kept: parameterKept(p, node.body) } : { type: undefined, kept: false }),
         !!receiverParam, isAsync ? undefined : retType);
@@ -2220,14 +2220,14 @@ export function functionDecl(this: Gate, node: FunctionDeclaration, signature: F
   }
 }
 
-/** A written precondition's clauses elaborated to index facts at the call's
+/** A precondition's clauses elaborated to index facts at the call's
  * positions (`elaborateRequires`), over parameters named in order, a leading
  * `this` the receiver at 0 where `receiver` holds and each other parameter at
  * its place after it; each path's kind read through its declared type
  * (`fieldType`). A function's own module and a module importing it read its
  * clause through this one elaboration. The refusal's message where it is
  * refused. */
-export function writtenPrecondition(gate: Gate, clauses: readonly string[],
+export function precondition(gate: Gate, clauses: readonly string[],
     parameters: readonly { name: string; type: TypeTerm | undefined }[], receiver: boolean): Within<{ value: "any"; store: "grow" }, IndexFact[] | string> {
   const named = parameters.map(({ name, type }, i): ClauseParameter =>
     clauseParameter(gate, name, receiver ? i : i + 1, type));
@@ -2290,7 +2290,7 @@ function withoutTags(t: TypeTerm, tags: readonly GuardTag[]): TypeTerm {
   return parts.length === 1 ? parts[0] ?? t : { ...t, parts };
 }
 
-/** A function declaration's record invariants (`@invariant`;
+/** A function declaration's type invariants (`@invariant`;
  * PROGRAM-TYPING.md, "Type invariants") elaborated to index facts: those
  * the type of its parameter `i` names (`invariantsNamed`), `this` that
  * parameter's call position, conjuncts of its precondition, and, where the
@@ -2299,7 +2299,7 @@ function withoutTags(t: TypeTerm, tags: readonly GuardTag[]): TypeTerm {
  * its result's type names, `this` the result's position `0`, facts of its
  * result; none of a type `undefined` stands for. The refusal's message where
  * a clause is refused. */
-export function recordInvariants(gate: Gate, params: readonly { type: TypeTerm | undefined; kept: boolean }[],
+export function typeInvariants(gate: Gate, params: readonly { type: TypeTerm | undefined; kept: boolean }[],
     receiver: boolean, result: TypeTerm | undefined): { pre: IndexFact[]; ensures: IndexFact[] } | string {
   const facts = (type: TypeTerm | undefined, position: number): IndexFact[] | string => {
     const named = type === undefined ? [] : invariantsNamed(gate, type);
@@ -2308,7 +2308,7 @@ export function recordInvariants(gate: Gate, params: readonly { type: TypeTerm |
     for (const { declaration, clauses, through } of named) {
       const elaborated = elaborateRequires(clauses, [clauseParameter(gate, "this", position, through)]);
       if ("refused" in elaborated)
-        return `a record invariant (\`@invariant\`) of ${declaration.name}: ${elaborated.refused}`;
+        return `a type invariant (\`@invariant\`) of ${declaration.name}: ${elaborated.refused}`;
       // A fact two named invariants state alike is stated once.
       for (const f of elaborated.facts)
         if (!out.some(g => JSON.stringify(g) === JSON.stringify(f))) out.push(f);
@@ -2333,12 +2333,12 @@ export function recordInvariants(gate: Gate, params: readonly { type: TypeTerm |
   return { pre, ensures: [...ensures, ...kept] };
 }
 
-/** A record invariant a type names: the declaration stating it, its clauses,
+/** A type invariant a type names: the declaration stating it, its clauses,
  * and the type its paths are read through, the declaration's own or the
  * representation its `@representation` names. */
 type NamedInvariant = { declaration: DeclarationIdentity; clauses: readonly string[]; through: TypeTerm };
 
-/** The record invariants a type names (PROGRAM-TYPING.md, "Type
+/** The type invariants a type names (PROGRAM-TYPING.md, "Type
  * invariants"): a reference without type arguments to a declaration stating
  * one (`Gate.invariants`), with those its definition's equation names in
  * turn; every part's of an intersection; those every arm of a union names.
@@ -2392,7 +2392,7 @@ function invariantsNamed(gate: Gate, t: TypeTerm, depth: number = 0): NamedInvar
   return typeof named === "string" ? named : distinct([...own, ...named]);
 }
 
-/** Whether a declaration is a representation a record invariant's paths read
+/** Whether a declaration is a representation a type invariant's paths read
  * fields of: a record type, or an alias without parameters of an intersection
  * each of whose parts is a record type literal or a reference without
  * arguments to such a declaration; a value of the intersection has the fields

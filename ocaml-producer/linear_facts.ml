@@ -15,7 +15,7 @@ type fact = (string * int) list * int
    then the named data fields read from what it holds in turn, each after a
    `.` (its path), then what the term reads of the value the path ends at:
    nothing for the value itself, `:length` for the length of its array store,
-   `:view` for the element count of the typed array it is. A binding's name
+   `:view` for the length of the typed array it is. A binding's name
    and a field name have no `.` or `:`, so the parts never meet. *)
 type kind = Value_term | Length_term | View_term
 let make_term ?(path=[]) kind b =
@@ -39,7 +39,7 @@ let cell_terms : (string -> bool) ref = ref (fun _ -> false)
 (* The body's parameters held in slots, whose objects are older than its
    cells. Set by the flow around each body. *)
 let parameter_binding : (string -> bool) ref = ref (fun _ -> false)
-(* A path, a length or an element count reads the heap (Lean's
+(* A path, a length or a typed-array length reads the heap (Lean's
    `Term.envOnly`), as does a term rooted at a cell. *)
 let reads_heap t = let b,path,kind = term_parts t in kind <> Value_term || path <> [] || !cell_terms b
 let has_heap_term ((t,_) : fact) = List.exists (fun (n,_) -> reads_heap n) t
@@ -206,7 +206,7 @@ let value_binding env x = slot_binding env x ||
 let stable_view : ((string * Environment.binding) list -> string -> bool) ref = ref (fun _ _ -> false)
 
 (* A term every step keeps (Lean's `HeapExpressionRules.stableTerm`): a
-   binding's own value, or the element count of a typed array a value
+   binding's own value, or the length of a typed array a value
    binding holds whose type states `[[viewLength]]` stable, a location of
    one value. *)
 let stable_term env t = not (reads_heap t) ||
@@ -290,7 +290,7 @@ let value_ranges (fs : fact list) : fact list =
    safe integer they name. *)
 let entails fs (goal : fact) = entails_held fs goal || entails_held (fs @ value_ranges fs) goal
 
-(* The ranges Lean's knowledge states of each length and element count the
+(* The ranges Lean's knowledge states of each length and typed-array length the
    facts name (`HeapKnowledge.lengthRange`, `viewRange`). *)
 let term_ranges (fs : fact list) : fact list =
   List.concat_map (fun ((t,_) : fact) -> List.concat_map (fun (n,_) -> match (let _,_,k = term_parts n in k) with
@@ -343,8 +343,8 @@ let rec linear ?(array = fun _ _ -> false) env fs (e : expr) : ((string * int) l
   | Cast ("nonNull",_,({node=Call ({node=Id "%ElementAt%";_},None,[_;_],[],_);_} as a))
     when List.mem_assoc a.pos !element_reads ->
     Some ([List.assoc a.pos !element_reads,1],0)
-  (* `b.length` of a typed array, `%ByteLength%(b)`, whose result facts
-     state it the view's element count. *)
+  (* `b.length` of a typed array, `%ByteLength%(b)`, whose postcondition
+     states it the typed-array length. *)
   | Call ({node=Id "%ByteLength%";_},None,[o],[],_) when path_of env o <> None ->
     (match path_of env o with Some (b,path) -> Some ([view_term ~path b,1],0) | None -> None)
   (* `++x` or `x++` of a binding held in a cell, read against the facts
@@ -385,7 +385,7 @@ let names_assigned (s : stmt) env =
    writes nothing) and assignments of value bindings. *)
 (* Whether every signature the binding `f` holds keeps the heap: its
    footprint keeps every location's value and store, and it changes neither
-   its receiver's store nor its own locations, so Lean keeps every fact
+   its receiver's store nor its own locations, so Lean preserves every fact
    across a normal return (`call-keep`, `PromiseCalls.keepsHeap`). Set by the
    statement analysis, which reads the binding's declared type. *)
 let keeps_heap : ((string * Environment.binding) list -> string -> bool) ref = ref (fun _ _ -> false)
@@ -469,7 +469,7 @@ let current_gfacts : gfact list ref = ref []
    store (its contents kept, its length kept, grown, or neither). A fact is
    kept where no location its terms read holds what the write may change
    (`Term.keptBy`): a path's locations hold objects, its last a number for a
-   value term; a length reads a store, an element count a number; or, where
+   value term; a length reads a store, a typed-array length a number; or, where
    the write grows stores, where each length it names that is not kept has a
    coefficient at most 0 (`Term.formKeptBy`). *)
 type changes = { obj : bool; num : bool; store : [`Keep | `Length | `Grow | `Any];
@@ -503,7 +503,7 @@ let method_grows : ((string * Environment.binding) list -> expr -> Semantic.key 
 let source_elements : ((string * Environment.binding) list -> string -> bool) ref = ref (fun _ _ -> false)
 (* Whether every type the binding's type states for a field states
    `[[viewLength]]` stable (Lean's `viewField`): a field write keeps the
-   element count of the view the field holds (`view-path-stable`). *)
+   typed-array length of the view the field holds (`view-path-stable`). *)
 let view_field : ((string * Environment.binding) list -> string -> string -> bool) ref = ref (fun _ _ _ -> false)
 
 let no_frame _ _ = false
@@ -606,7 +606,7 @@ let call_ensures : ((string * Environment.binding) list -> string -> Semantic.in
 let ctor_signatures : ((string * Environment.binding) list -> string -> Semantic.signature list) ref =
   ref (fun _ _ -> [])
 
-(* The result facts of `new c(args)` bound to `name`: those of the first
+(* The postcondition of `new c(args)` bound to `name`: that of the first
    construct signature, in order, that states no precondition or one the
    facts establish of the actuals (as Lean's search admits it, `call-requires`),
    its positions 0 the result and `i + 2` the `i`-th actual, each actual a
@@ -724,7 +724,7 @@ and statement_slots ~(array : string -> string list -> bool) ?(bounds=[]) env fs
   let fs = match written with
     | Some (p,_) -> List.map (fun ((t,d) : fact) -> List.map (fun (n,c) -> (if n = p then old else n),c) t, d) fs
     | None -> fs in
-  (* A fact naming a length or an element count reads the heap: kept where
+  (* A fact naming a length or a typed-array length reads the heap: kept where
      the statement writes none, as Lean keeps it (`IndexFact.envOnly`). *)
   let fs = if statement_heap_free env s then fs else match statement_changes ~facts:fs ~bounds env s with
     | Some ch -> List.filter (fun f -> fact_kept ch f || stable_fact env f) fs
@@ -840,7 +840,7 @@ let atom_bounds ~array env fs (cond : expr) : bound list * bound list =
    by the statement analysis. *)
 let array_path : ((string * Environment.binding) list -> string -> string list -> bool) ref = ref (fun _ _ _ -> false)
 
-(* The true answer of `j < xs.length`, with `0 ≤ j` known: `j` is at most
+(* The true branch of `j < xs.length`, with `0 ≤ j` known: `j` is at most
    `2^32 - 2`, which Lean derives from the length's range. *)
 let atom_length_test ~array env fs (cond : expr) =
   match atom_bounds ~array env fs cond with
@@ -884,8 +884,8 @@ let join (l : fact list) (r : fact list) : fact list =
   let l = tighten l and r = tighten r in
   (* Each path's bound of a form: the least of the bounds either path
      states, `0` and the largest length that its facts, with the ranges of
-     the lengths and element counts they name, entail, where its facts name
-     every length, element count and path the form does and state each
+     the lengths and typed-array lengths they name, entail, where its facts name
+     every length, typed-array length and path the form does and state each
      binding it names a safe integer, as Lean requires of an edge's source
      (`linearFollows`). So a loop's entry, `i = 0`, and its iteration's
      `i - xs.length ≤ -1` keep `i ≤ 2^32 - 1` where the iteration bounds
@@ -929,8 +929,8 @@ let declaration ~(array : string -> string list -> bool) env fs name (init : exp
   let fs = updated in
   let fs = if heap_free env init then fs else keep_stable env fs in
   let fs = forget name fs in
-  (* `const x = f(…)` of a function stating facts of its result: each of
-     them, of `x`. *)
+  (* `const x = f(…)` of a function stating a postcondition: each of
+     its facts, of `x`. *)
   let fs = match init.node with
     | Call ({node=Id f;_},None,args,[],_) -> fs @ call_facts ~name env f args
     (* `const x = new c(…)` at a construct signature stating facts of its
@@ -973,7 +973,7 @@ let declaration ~(array : string -> string list -> bool) env fs name (init : exp
   | Some (t,c) when not (List.mem_assoc name t) -> fs @ equal name (t,c)
   | _ -> fs
 
-(* Widening keeps the facts that did not change. *)
+(* Widening preserves the facts that did not change. *)
 let widen (previous : fact list) (current : fact list) =
   let previous = tighten previous in
   List.filter (fun (t,d) -> match List.assoc_opt t previous with
@@ -1107,7 +1107,7 @@ let call_gfacts ?name env f (args : expr list) : gfact list =
 let gdeclaration env (gs : gfact list) (fs : fact list) name (init : expr) : gfact list =
   let gs = if heap_free env init then gs else gkept env gs in
   let gs = gforget name gs in
-  (* `const x = f(…)` of a function stating guarded facts of its result. *)
+  (* `const x = f(…)` of a function stating a guarded postcondition. *)
   let gs = match init.node with
     | Call ({node=Id f;_},None,args,[],_) -> gs @ call_gfacts ~name env f args
     | _ -> gs in

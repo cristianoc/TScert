@@ -55,7 +55,7 @@ type 'output callbacks = {
 
 let unsupported = Json.unsupported
 
-(* What a condition's false answer states of names (PROGRAM-TYPING.md,
+(* What a condition's false branch states of names (PROGRAM-TYPING.md,
    "Writes at a checked index"): `a || b` false, both false; `(k & m) !== k`
    false, with `m` a number literal on either side of `&` and either operand
    of `!==` the other, `k` an index; `k > xs.length` or `k >= xs.length`
@@ -72,7 +72,7 @@ let rec false_facts (cond:Source.expr) = match cond.node with
   | Arith ((Gt | Ge),{node=Id k;_},{node=Read ({node=Id xs;_},Name "length");_})
   | Arith ((Lt | Le),{node=Read ({node=Id xs;_},Name "length");_},{node=Id k;_}) -> [AtMost (xs,k)]
   | _ -> []
-(* The array and index pairs a guard's false answer bounds: `k` an index at
+(* The array and index pairs a guard's false branch bounds: `k` an index at
    most `xs.length`, its comparison evaluated after the test making `k` an
    index, as Lean's `bound-compare` reads the index fact the comparison's
    operand already has. *)
@@ -184,7 +184,7 @@ let statements callbacks flow_graph register_following owner_span env0 ss =
     (* The array bindings in scope where each iterator starts, by the
        iterator's binding: Lean's array iterator is allocated apart from
        their stores, and its step changes only its own locations
-       (`call-own`), so their lengths' facts survive the step. *)
+       (`call-own`), so the step preserves their lengths' facts. *)
     let iterator_arrays : (string, string list) Hashtbl.t = Hashtbl.create 4 in
     let transfer (node:Flow.node) state =
       let saved_metadata=capture env0 in
@@ -392,7 +392,7 @@ let statements callbacks flow_graph register_following owner_span env0 ss =
             (Linear_facts.statement_bounds ~facts:facts0 env bounds0 s)]
         | Flow.IteratorStart (span,b,_), [e] ->
           (* `%Iterate%` of an array binding allocates its iterator and keeps
-             the heap (`call-fresh`); any other iterable keeps the facts
+             the heap (`call-fresh`); any other iterable preserves the facts
              reading no heap. *)
           let array_iterable = match (source span).statement with
             | ForOf (_,_,_,{node=Id x;_},_) -> Linear_facts.value_binding env x && callbacks.array_binding env x []
@@ -428,9 +428,9 @@ let statements callbacks flow_graph register_following owner_span env0 ss =
              let (t,bt),(f,bf) = Linear_facts.test ~array:(callbacks.array_binding env) env facts0 c in
              let kept = Linear_facts.statement_bounds env bounds0 s in
              (* A test that may write the heap, a call of a function changing
-                it, keeps the facts its footprint keeps, as Lean keeps them
-                past the call, and every other test none reading the heap:
-                its own answers' included, and no bound. *)
+                it, preserves the facts its footprint preserves, as Lean preserves
+                them past the call, and every other test none reading the heap:
+                its own branches' included, and no bound. *)
              let heap_free = Linear_facts.statement_heap_free env s in
              (* A test that calls a function stating facts at its returns
                 gains them, as Lean's `call-ensures` states them after the

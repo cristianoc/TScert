@@ -1,6 +1,6 @@
-// A typed array's element count from its construction (PROGRAM-TYPING.md,
+// A typed array's length from its construction (PROGRAM-TYPING.md,
 // "Typed arrays"): `new Uint8Array(n)` at a safe integer `n ≥ 0` states
-// `view(result) = n` (its construct signature's result facts), so a builder
+// `view(result) = n` (its construct signature's postcondition), so a builder
 // allocating the view at `widths.length` returns a record whose invariant
 // equates the two, with no test of the view's length, and so do the other
 // typed arrays the overlay states.

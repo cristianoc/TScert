@@ -275,7 +275,7 @@ structure Request (σ ι : Type) where
   unit's module cells (SOURCE-ELABORATION.md, "Module cells"). The entry may
   know it, and the safety theorems assume it of the environment. -/
   entrySeparation : HeapSeparation.Separation := {}
-  /-- The index facts the request assumes of its inputs: the written
+  /-- The index facts the request assumes of its inputs: the
   precondition of the function it checks (PROGRAM-TYPING.md, 
   "Preconditions"). The entry may know them, and the safety theorems assume
   them of the environment. -/

@@ -1,4 +1,4 @@
-// Written preconditions (`@requires`): a function assumes its clause, and
+// Preconditions (`@requires`): a function assumes its clause, and
 // every call establishes it. `at` reads `xs[i]!` with no check; `sum` calls it
 // in a loop below the length; `plus` assumes a safe integer, which a literal is.
 

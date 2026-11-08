@@ -1,4 +1,4 @@
-// An imported function's written precondition violated by its caller:
+// An imported function's precondition violated by its caller:
 // `at(xs, xs.length)` reads past the end, so `at` returns `undefined` at
 // `number`; under Node, `last([1, 2])` is `undefined`.
 import { at } from "@fixture/bounded";

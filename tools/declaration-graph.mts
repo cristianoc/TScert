@@ -897,17 +897,17 @@ export interface DeclarationObservations {
    * type (`NamedRecords`, named-record.mts). */
   record?: (declaration: DeclarationIdentity) => void;
   /** Told each value that is a function declaration of the program's
-   * sources stating a written precondition (`@requires`): its identity, its
+   * sources stating a precondition (`@requires`): its identity, its
    * clauses, and its parameters' names in order, `this` included, where its
    * declaration admits one (synchronous, every parameter a plain required
    * name), else null. The client elaborates the clauses over the value's
-   * signature, as the declaration's own module does; with which record
+   * signature, as the declaration's own module does; with which type
    * invariants of its parameters' and result's types the client reads
    * (`ImportedInvariants`), told also of a declaration of the program's
    * sources stating no clause. */
   requires?: (declaration: DeclarationIdentity, clauses: readonly string[], parameters: readonly string[] | null,
     invariants: ImportedInvariants) => void;
-  /** Told each definition the graph reads that states a record invariant
+  /** Told each definition the graph reads that states a type invariant
    * (`@invariant`; PROGRAM-TYPING.md, "Type invariants"): a type alias or
    * an interface of the program's sources, without type parameters or merged
    * declarations, its clauses, and the declaration its `@representation`
@@ -990,7 +990,7 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
     const { idOf, libraryFile } = moduleIds(clientFile, root, program);
     // A module of the program: a source file outside the standard library,
     // the host packages and any installed package.
-    // A function declaration's written precondition, of the program's
+    // A function declaration's precondition, of the program's
     // sources alone: its `@requires` clauses (`requiresTags`).
     const writtenClauses = (node: ts.FunctionDeclaration): string[] => {
       const file = node.getSourceFile();
@@ -1927,7 +1927,7 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
         if (nodes.some(n => ts.isFunctionDeclaration(n) && statedResult(valueScope(reading, n, what), n.type, n).stated))
           throw Error(`a statement (\`Within\`) on an overloaded declaration is outside the fragment: ${what}`);
         if (nodes.some(n => ts.isFunctionDeclaration(n) && writtenClauses(n).length > 0))
-          throw Error(`a written precondition (\`@requires\`) on an overloaded declaration is outside the fragment: ${what}`);
+          throw Error(`a precondition (\`@requires\`) on an overloaded declaration is outside the fragment: ${what}`);
         if (overloads.length > 1) {
           // Generic overloads are read as one generic declaration when every
           // overload states the same type parameters, each with the same
@@ -1966,9 +1966,9 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
         const synchronous = !node.modifiers?.some(m => m.kind === ts.SyntaxKind.AsyncKeyword);
         const plainNames = synchronous &&
           node.parameters.every(p => !p.dotDotDotToken && !p.initializer && !p.questionToken && ts.isIdentifier(p.name));
-        // The record invariants its types name, of the program's sources
+        // The type invariants its types name, of the program's sources
         // alone, which the client reads off its signature as its own module
-        // reads them (`recordInvariants`).
+        // reads them (`typeInvariants`).
         const own = programFile(node.getSourceFile()) && !ambient(node) && !!node.body;
         const invariants: ImportedInvariants = {
           receiver: node.parameters[0] !== undefined && ts.isIdentifier(node.parameters[0].name) &&
@@ -6004,7 +6004,7 @@ interface DeclarationElaborationContext {
   /** Told each definition that is a record written as one (`NamedRecords`). */
   record: (identity: DeclarationIdentity) => void;
   /** Told each declaration read, under its identity: the declaration a
-   * record invariant's `@representation` names, a dependency to collect,
+   * type invariant's `@representation` names, a dependency to collect,
    * where it states one (`DeclarationObservations.invariant`). */
   invariant: (node: TypeDeclaration, identity: DeclarationIdentity) => TypeDeclaration | null;
   /** A mapped type over `keyof` as TypeScript resolves it. */

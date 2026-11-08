@@ -714,7 +714,7 @@ and fn = { quantified: quantifier list; name: string; name_pos: Json.t; params: 
               footprint and whether it holds on a throw too. Its claim must
               lie within it. *)
            stated: (footprint * bool) option;
-           (* Its written precondition, index facts at the call's positions
+           (* Its precondition, index facts at the call's positions
               (Lean's `Fn.requires`: 0 the receiver, i + 1 the i-th actual). *)
            requires: index_fact list; ensures: index_fact list; body: stmt list }
 type declaration = { id: string; native_promise: bool; parameters: rigid list;

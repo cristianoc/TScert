@@ -1,5 +1,5 @@
 // A builder allocating its view one element short of `widths`: the view's
-// element count is `widths.length - 1`, so its return does not establish the
+// typed-array length is `widths.length - 1`, so its return does not establish the
 // invariant, and is refused. A walker then reads past the view's end (run
 // under Node: `countBreaks(prepare(["a", "b"]))` reads `undefined` at
 // `number` at `i = 1`).

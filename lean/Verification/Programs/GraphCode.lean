@@ -586,7 +586,7 @@ theorem goto_bounded [DecidableEq ι] {G : NormalGraph ι} {images : InstanceIma
       rw [hstart]; intro i hi; cases hi
   · contradiction
 
-/-! ## Result facts a graph's returns establish
+/-! ## The postcondition a graph's returns establish
 
 A unit stating facts of its result and of its inputs (`Effect.ensures`:
 position `0` the result, `q + 1` the entry value of input `q`) is checked at
@@ -856,7 +856,7 @@ theorem returnsEnsure_at {G : NormalGraph ι} {P : Program} {C : Certificate ι}
   rw [hn, hc] at this
   simpa only [Bool.and_eq_true] using this
 
-/-- What the run reads of a state for the result facts, `ρ0` the inputs'
+/-- What the run reads of a state for the postcondition, `ρ0` the inputs'
 entry values: at a node, its pairs hold; a return's expression returns
 values meeting the facts, and each edge's target holds its pairs; a
 finished run's value meets them in its heap. -/
@@ -911,8 +911,8 @@ theorem ensures_step [DecidableEq ι] {G : NormalGraph ι} {images : InstanceIma
   | @handle _ v _ _ _ l hr => exact hp.2 (l, true) (List.mem_append_right _ (by simp)) v
   | raise hr => trivial
 
-/-- **A graph's returns meet its result facts**: run from a state the safety
-proof and the result facts' reading admit, it is safe, and every value it
+/-- **A graph's returns meet its postcondition**: run from a state the safety
+proof and the postcondition's reading admit, it is safe, and every value it
 returns meets the facts, with the inputs' entry values `ρ0`, in the heap it
 returns in. -/
 theorem ensures_safe_of_sim [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
@@ -941,7 +941,7 @@ theorem ensures_safe_of_sim [DecidableEq ι] {G : NormalGraph ι} {images : Inst
         ih U h' ts' s' sim' hu hok hs' (ensures_step hg hcodes hsums hens hw hh hs hp st)⟩
 
 /-- A graph run started at an entry the checker accepted, whose returns
-entail the result facts, is safe, and every value it returns meets them,
+entail the postcondition, is safe, and every value it returns meets it,
 with the inputs' values at the start. -/
 theorem goto_ensures [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
     {sums : List (ProgramCertificates.ReadSummary ι)} {Rty : Goal ι} {E : List Tm}

@@ -23,7 +23,7 @@ namespace Verification.SourceClaimJson
 open Lean ProgramTyping RequestJson SourceExtraction ControlFlow PositiveGraphs PositiveRules LabelStore
 open EquationGraphs (Tree)
 
-/-- A unit stating result facts whose return does not establish them:
+/-- A unit stating a postcondition whose return does not establish it:
 refused at that return, at a node whose edge loses a slot holding an input
 the facts name, or at the definition where the unit is qualified. -/
 def ensuresRefusal {σ ι : Type} [Labels ι] [StoreView σ ι] (name : String) (namePos : Span)
@@ -43,9 +43,9 @@ def ensuresRefusal {σ ι : Type} [Labels ι] [StoreView σ ι] (name : String) 
     | some node => !GraphCode.edgesTrack T l node
     | none => false
   if losing then
-    some s!"source ensures refusal at [{pos.1},{pos.2}): an edge in '{name}' loses the slot holding a parameter whose record invariant its returns state"
+    some s!"source ensures refusal at [{pos.1},{pos.2}): an edge in '{name}' loses the slot holding a parameter whose type invariant its returns state"
   else
-    some s!"source ensures refusal at [{pos.1},{pos.2}): a return of '{name}' does not establish the facts its result's and its parameters' record invariants state"
+    some s!"source ensures refusal at [{pos.1},{pos.2}): a return of '{name}' does not establish the postcondition its result's and its parameters' type invariants state"
 
 /-- The located refusal of a footprint a unit claims for its declaration, or
 for a closure of its code, that its graph and certificate do not establish:
@@ -323,11 +323,11 @@ def lowerJson (ast claims : Json) (fileKey : String) : Except String Json := do
 
 /-- What requests a bundle justifies give: the check accepts them, each is
 safe, within its footprint where it claims one, returning values meeting its
-result facts where it states some, and its stated assertions are entailed by
+its postcondition where it states one, and its stated assertions are entailed by
 its certificate, as `checkRequests_safe_at`, `checkRequests_footprint_at`,
 `checkRequests_ensures_at` and `checkRequests_assertions_at` state; each for
 an environment meeting what the request assumes of its inputs, their types,
-their separation and the index facts of its written precondition
+their separation and the index facts of its precondition
 (`entryIndices`). -/
 def RequestsSafe (F : EquationStore.Frozen)
     (rs : List (SourceRequest (EquationStore.Checked F.equations F.primitive)

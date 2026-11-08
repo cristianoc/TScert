@@ -674,7 +674,7 @@ export function intrinsics(promise: (argument: TypeTerm) => TypeTerm, needed: Re
     // its buffer is detached: it reads the view's slots, runs no code and
     // writes nothing. Every view's buffer being of fixed size and never
     // detached (DESIGN.md, "Trust surface"), the length is the view's
-    // element count, which it states of its result: a safe integer equal
+    // typed-array length, which it states of its result: a safe integer equal
     // to `view(b)`, at the return's positions (0 the result, 2 the view, the
     // call's first actual).
     [byteLengthName]: () => ({ typeParams: [], type: { ...fn([bytes], atom("number")),

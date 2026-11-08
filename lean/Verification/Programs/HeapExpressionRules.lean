@@ -1173,13 +1173,13 @@ theorem stableField_at {G : NormalGraph ι} {A : Ty ι} {fld : PropKey} {n W v}
   exact semWithArgs_stable hsem (List.contains_iff_mem.mp (hall c hc))
 
 /-- Whether every clause of `A` states `fld` a field whose every type states
-`viewLengthKey` stable: the view the field holds keeps its element count
+`viewLengthKey` stable: the view the field holds preserves its length
 through every step (`view-path-stable`). -/
 def viewField (G : NormalGraph ι) (A : Ty ι) (fld : PropKey) : Bool :=
   fieldOperand (expand G A) fld && (fieldTys (expand G A) fld).all fun B => stableField G B viewLengthKey
 
-/-- The slots and fields of a context whose view's element count a step
-keeps (`viewField`). -/
+/-- The slots and fields of a context whose view's length a step
+preserves (`viewField`). -/
 def writeViews (G : NormalGraph ι) (Γ : List (Ty ι)) (s : Nat) (g : String) : Bool :=
   match Γ[s]? with
   | some A => viewField G A (.str g)
@@ -2111,7 +2111,7 @@ def stableCells (G : NormalGraph ι) (Γ : List (Ty ι)) (k : Knowledge) : Facts
     | none => false
 
 /-- A term a step keeps through its every effect: a slot's own value, or the
-element count of the typed array a slot holds, where every clause of the
+length of the typed array a slot holds, where every clause of the
 slot's type states `viewLengthKey` stable (PROGRAM-TYPING.md, "Linear
 facts"): the count is read from a location whose contract admits one
 value. -/
@@ -2248,9 +2248,9 @@ private def viewSlots (G : NormalGraph ι) (Γ : List (Ty ι)) : List Nat :=
     | some A => stableField G A viewLengthKey
     | none => false
 
-/-- **A stable element count frames its read**: every heap a normally
+/-- **A stable typed-array length frames its read**: every heap a normally
 returning execution reaches gives each typed array at a slot of `S` the
-element count the heap it starts in gives it. -/
+typed-array length the heap it starts in gives it. -/
 private theorem view_frames {G : NormalGraph ι} {Γ : List (Ty ι)} {ρ n W h t}
     {T : Fam} {Q : Post} (he : EnvOk G Γ ρ n W) (hh : HeapOk n W h) :
     ∀ (S : List Nat), (∀ s ∈ S, s ∈ viewSlots G Γ) →

@@ -794,9 +794,9 @@ def moduleArrow (g : Fragment.Fn) (footprint : Footprints.Closed := .top) (onThr
   -- The plain signature states the footprint the declaration's claim
   -- proposes, which the declaration's own unit certifies; its extension
   -- discarding further actuals runs the same code, so it states the same.
-  -- The written precondition is every signature's: the code is checked
+  -- The precondition is every signature's: the code is checked
   -- assuming it, so a call establishes it whichever signature it takes.
-  -- Its result facts too (`Fn.ensures`), which its unit certifies at each
+  -- Its postcondition too (`Fn.ensures`), which its unit certifies at each
   -- return (`SourceRequests.ensuresResult`).
   let plain : List (String × Json) :=
     if footprint = .top ∧ onThrow = false ∧ g.requires.isEmpty ∧ g.ensures.isEmpty then [] else

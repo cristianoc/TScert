@@ -1,7 +1,7 @@
 // `Array.prototype.push` on an ordinary array changes no old location but its
 // receiver's store, which it grows (SOURCE-CONTRACTS.md, "Native
 // footprints"; PROGRAM-TYPING.md, "Linear facts", `receiverGrows`): a push
-// keeps every fact over values, paths and element counts, and every fact
+// preserves every fact over values, paths and typed-array lengths, and every fact
 // whose lengths have coefficients at most 0, the lower bounds of lengths.
 
 export type Prepared = {

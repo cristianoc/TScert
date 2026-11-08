@@ -1,4 +1,4 @@
-// Written preconditions over lengths: `pair` reads `xs[i]` and `xs[i + 1]`
+// Preconditions over lengths: `pair` reads `xs[i]` and `xs[i + 1]`
 // under `i + 1 < xs.length`, and `both` reads two arrays at one index under
 // `xs.length === ys.length`, each with no check. Their callers establish the
 // clauses by a comparison with the length and by a test of the two lengths.

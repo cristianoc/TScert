@@ -1769,9 +1769,9 @@ theorem requiresCall_sound {G : NormalGraph ι} {images : InstanceImageCheck G} 
     exact promiseOutput_holds hk hp
   · cases hc
 
-/-! ### A call stating result facts (PROGRAM-TYPING.md, "Reads below the length")
+/-! ### A call stating a postcondition (PROGRAM-TYPING.md, "Reads below the length")
 
-A call whose selected signature states result facts (`Effect.ensures`)
+A call whose selected signature states a postcondition (`Effect.ensures`)
 returns normally in a heap where each holds at the return's positions: the
 result, and the call's receiver and actuals. Renamed to the slots after the
 return, the result's slot `0` and each position's slot one higher, each fact
@@ -1924,7 +1924,7 @@ theorem withEnsures_holds {eff : Effect} {t : Tm} {k0 k : HeapKnowledge.Knowledg
 
 /-- The selected signature of an ordinary step's evidence that `call-ensures`
 applies to: at the sequent `j`, a call checked as `selected_sound` or as
-`call-requires` admits it, at a selected signature stating result facts. -/
+`call-requires` admits it, at a selected signature stating a postcondition. -/
 @[nospecialize] def ensuresCall (G : NormalGraph ι) (images : InstanceImageCheck G) (j : Sequent ι)
     (k : HeapKnowledge.Knowledge) (e : HeapExpressionRules.StepEvidence ι) (codes : CodeEntry ι → Bool)
     (sums : List (ReadSummary ι)) : Option Effect :=
@@ -1939,7 +1939,7 @@ applies to: at the sequent `j`, a call checked as `selected_sound` or as
   | _ => none
 
 /-- **`call-ensures`**: such a call's normal return meets its selected
-signature's postcondition at its receiver and actuals, its result facts
+signature's postcondition at its receiver and actuals, its `ensures` facts
 included. -/
 theorem ensuresCall_sound {G : NormalGraph ι} {images : InstanceImageCheck G} {j : Sequent ι}
     {k : HeapKnowledge.Knowledge} {e : HeapExpressionRules.StepEvidence ι} {codes : CodeEntry ι → Bool}
@@ -2292,7 +2292,7 @@ receiver's elements are checked against the entry's atoms
       exact PromiseCalls.requiresCall_sound hreq hcodes hsums he hk hw hh
     · exact base.sound hc hcodes hsums he hk hw hh
 
-/-- A checker whose ordinary steps that are calls stating result facts add
+/-- A checker whose ordinary steps that are calls stating a postcondition add
 their atoms to what `base` gives the step (`PromiseCalls.ensuresCall`); every
 other step is `base`'s. -/
 @[nospecialize] def Checker.ensuringCalls [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
@@ -2320,7 +2320,7 @@ other step is `base`'s. -/
 
 /-- The steps' rules, a call keeping the heap keeping every heap fact, a call
 allocating its result separating it, a call changing only its receiver's own
-locations keeping the facts separated from them, a call stating result facts
+locations keeping the facts separated from them, a call stating a postcondition
 adding their atoms, the index atoms a step states and the write at a checked
 index (`IndexWrites`), each keeping its input's stable links. -/
 @[nospecialize] def Checker.ordinary [DecidableEq ι] (G : NormalGraph ι)

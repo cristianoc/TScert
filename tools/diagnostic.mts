@@ -121,7 +121,7 @@ type IndexFact = { index: { slot: number } } | { length: { array: number; length
 type BodyVariable = "index" | "elem" | LinearTerm;
 /** A linear fact's term: a root slot, the named data fields read from it
  * (`path`), and what it reads of the value they end at: the value, the length
- * of its array store, or the element count of its typed array. */
+ * of its array store, or the length of its typed array. */
 type LinearTerm = { kind: "value" | "length" | "view"; slot: number; path: string[] };
 type SeparationKey = string | { symbol: number };
 /** The value kinds an elements fact's predicate names. */

@@ -65,7 +65,7 @@ private def predOf : Json → Except String (Option ElemPred)
   | j => do pure (some (predOfKinds (← fromJson? j)))
 
 -- An index fact, in a precondition at the call's positions (`0` the
--- receiver, `i + 1` the `i`-th actual), in result facts at the return's
+-- receiver, `i + 1` the `i`-th actual), in a postcondition at the return's
 -- positions (`0` the result, `i + 1` the call's position `i`) and in
 -- diagnostics' knowledge: its
 -- constructor's name holding its fields; a linear term is `{"kind", "slot",

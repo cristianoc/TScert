@@ -29,7 +29,7 @@ type promise = Guards of int | Asserts of int
    array's store; an index at most that length, below it where strict; a safe
    integer; a linear fact `Σ c·t ≤ d` or `≠ d`, each term the value at a
    position or at the named data fields read from it in turn (its path), the
-   length of the array store there, or the element count of the typed array
+   length of the array store there, or the length of the typed array
    there (Lean's `HeapKnowledge.Term`). *)
 type term = Value_at of int * string list | Length_at of int * string list | View_at of int * string list
 type index_fact = Index_at of int | Length_of of int * int | Bound_by of int * int * bool | Int_at of int
@@ -76,7 +76,7 @@ let promise_effect promise = {(footprint_effect top_footprint) with promise=Some
 (* A bound function's effect (Lean's `Effect.drop`): the receiver it saved is
    not the receiver of a call of it, so an exception of the receiver's store
    is an exception of every location; its positions are not the target's, so
-   it states no result facts. *)
+   it states no postcondition. *)
 let bound_effect e = if e.receiver_store || e.receiver_own then
     {e with footprint=top_footprint; receiver_store=false; receiver_own=false; elements=None; ensures=[];
       receiver_grows=false}
@@ -212,7 +212,7 @@ let with_footprint ?(on_throw=false) footprint t = match t with
       {s with call_effect={s.call_effect with footprint;on_throw}}) calls}]
   | _ -> t
 
-(* A function's written precondition on every signature of its type: its code
+(* A function's precondition on every signature of its type: its code
    is checked assuming it, so each call establishes it (Lean's `moduleArrow`). *)
 let with_pre pre t = match t with
   | Atoms [Shape ({calls;_} as shape)] when pre <> [] ->
@@ -220,7 +220,7 @@ let with_pre pre t = match t with
       {s with call_effect={s.call_effect with pre}}) calls}]
   | _ -> t
 
-(* Every signature stating the facts of its result a declaration's record
+(* Every signature stating the postcondition a declaration's type
    invariants give (Lean's `moduleArrow`, `Fn.ensures`). *)
 let with_ensures ensures t = match t with
   | Atoms [Shape ({calls;_} as shape)] when ensures <> [] ->

@@ -308,7 +308,7 @@ private def reachablePoints (graph : SourceFlow.Graph) (id : Nat) : List String 
   -- from it, or at a binding held in a cell, its path read from the cell's
   -- `value` (`termRoot`); a fact whose coefficients are all zero states only that its
   -- terms denote integers: a binding's value a safe integer, a path's value
-  -- one at most `2^53 - 1`, a length or element count one at least `0`.
+  -- one at most `2^53 - 1`, a length or typed-array length one at least `0`.
   -- A guarded fact (PROGRAM-TYPING.md, "Guarded clauses") is each such fact
   -- in a guarded fact of each guard, the first outermost, its path read
   -- from a value binding.

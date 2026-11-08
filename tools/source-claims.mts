@@ -97,7 +97,7 @@ interface BoundClaim {
 /** A term of a proposed linear fact: what the binding `name` holds, the named
  * data fields `path` read from it in turn, read as `term` says
  * (`HeapKnowledge.Term.Kind`): the safe integer it is (`value`), the length of
- * its array store (`length`), or the element count of its typed array
+ * its array store (`length`), or the length of its typed array
  * (`view`); with an integer coefficient. */
 interface LinearTermClaim {
   name: string;

@@ -234,7 +234,7 @@ theorem effectResult_stated {r : SourceRequest σ ι} {c : Response ι}
   · rw [hso] at ho; cases ho
   · exact ho
 
-/-- A unit's result facts, established by its own graph: none, or facts of
+/-- A unit's postcondition, established by its own graph: none, or facts of
 its result and of its inputs' entry values, which each return its graph may
 reach entails (`GraphCode.returnsEnsure`), for a unit checked by the ordinary
 checker. -/
@@ -444,7 +444,7 @@ theorem checkRequests_footprint_at {rs : List (SourceRequest σ ι)} {b : Bundle
       exact HeapObservations.SafePostExc.weaken (fun _ _ hq => hq.1) (fun _ hq => hq) hb
   · contradiction
 
-/-- **A unit stating result facts meets them.** A unit whose declaration
+/-- **A unit stating a postcondition meets it.** A unit whose declaration
 states facts of its result and its inputs (`ensures`), run as the code its
 graph describes from any environment of values its inputs admit, is safe,
 and every value it returns meets the facts, with the inputs' entry values,

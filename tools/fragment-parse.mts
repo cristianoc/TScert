@@ -406,7 +406,7 @@ export class Gate {
   /** The identifiers spelled `undefined` that TypeScript binds to the global
    * `undefined`, by span: those alone read the value `undefined`. */
   readonly globalUndefined: Set<string> = new Set();
-  /** The record invariants (`@invariant`) of the definitions the
+  /** The type invariants (`@invariant`) of the definitions the
    * declaration graph read, by `definitionKey`: each one's clauses and the
    * declaration its `@representation` names (`DeclarationObservations.invariant`). */
   readonly invariants: Map<string, { declaration: DeclarationIdentity; clauses: readonly string[];
@@ -2468,7 +2468,7 @@ function lowerFile(file: string, carriesContext: boolean,
     for (const { declaration } of declarations.definitions)
       gate.typeIdentities.add(JSON.stringify([declaration.module, declaration.span, declaration.name]));
     gate.recordDefinitions = new Map(declarations.definitions.map(d => [definitionKey(d.declaration), d]));
-    // An imported function's written precondition is its signature's, every
+    // An imported function's precondition is its signature's, every
     // form's, as its own module reads it (`moduleArrow`): the importer's
     // calls establish it (PROGRAM-TYPING.md, "Preconditions").
     if (written.length > 0)
@@ -2685,9 +2685,9 @@ if (process.argv[1] && import.meta.filename === resolve(process.argv[1])) {
   }
 }
 
-/** An imported function's signature with its written precondition
- * (`writtenPrecondition`) and the record invariants of its parameters' and
- * result's types (`recordInvariants`) stated by every form, its parameters'
+/** An imported function's signature with its precondition
+ * (`precondition`) and the type invariants of its parameters' and
+ * result's types (`typeInvariants`) stated by every form, its parameters'
  * types read from its plain form; refused at `at` where its declaration
  * admits no precondition or its signature is not one function's; the
  * signature as read where it states neither. */
@@ -2704,9 +2704,9 @@ function writtenImport(gate: Gate, value: ValueRoot, clauses: readonly string[],
   const receiver = invariants.receiver;
   const types = plain === undefined ? [] : receiver ? [plain.receiver ?? undefined, ...plain.params] : plain.params;
   // The invariants of the record types its parameters and result name, read
-  // as its own module's unit reads them (`recordInvariants`).
+  // as its own module's unit reads them (`typeInvariants`).
   const contract = !one || plain === undefined ? { pre: [], ensures: [] } :
-    statements.recordInvariants(gate, invariants.params.map((read, i) =>
+    statements.typeInvariants(gate, invariants.params.map((read, i) =>
       ({ type: read ? types[i] : undefined, kept: read && (invariants.kept[i] ?? false) })), receiver,
       invariants.result ? plain.result : undefined);
   if (typeof contract === "string") return gate.fail(at ?? null, `${contract}: ${what}`);
@@ -2716,7 +2716,7 @@ function writtenImport(gate: Gate, value: ValueRoot, clauses: readonly string[],
   if (parameters !== null && types.length !== parameters.length)
     return gate.fail(at ?? null, `an imported precondition (\`@requires\`) whose signature's parameters are not its declaration's: ${what}`);
   const written = parameters === null ? [] :
-    statements.writtenPrecondition(gate, clauses, parameters.map((name, i) => ({ name, type: types[i] })), receiver);
+    statements.precondition(gate, clauses, parameters.map((name, i) => ({ name, type: types[i] })), receiver);
   if (typeof written === "string") return gate.fail(at ?? null, `${written}: ${what}`);
   const pre = [...written, ...contract.pre];
   const ensures = contract.ensures;

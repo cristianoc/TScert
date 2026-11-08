@@ -1,7 +1,7 @@
-// Method calls keep the facts their signatures' footprints keep: a
+// Method calls preserve the facts their signatures' footprints preserve: a
 // `WeakMap`'s `get` and a `Map`'s construction state the empty footprint,
-// whose calls keep every heap fact (`call-keep`), so a path's length bound a
-// precondition states survives the lookup (`cached`); a `Map`'s `set` states
+// whose calls preserve every heap fact (`call-keep`), so a path's length bound a
+// precondition states is preserved by the lookup (`cached`); a `Map`'s `set` states
 // `{value: any, store: keep}`, which keeps every store, so a length bound
 // survives it (`mapped`) (SOURCE-CONTRACTS.md, "Weak tables").
 

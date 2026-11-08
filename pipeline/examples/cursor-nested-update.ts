@@ -3,7 +3,7 @@
 // keeps the binding in a cell (SourceFacts.lean, "Bindings held in cells"),
 // whose value the linear facts name as the path `value` of the cell
 // (PROGRAM-TYPING.md, "Terms for bindings held in cells"), so the test's
-// false answer bounds the stored value and the read `flags[segmentIndex]!`
+// false branch bounds the stored value and the read `flags[segmentIndex]!`
 // at the loop's next iteration is below the count;
 // `cursor-invariant-loop-write` is the same loop with the update a statement.
 

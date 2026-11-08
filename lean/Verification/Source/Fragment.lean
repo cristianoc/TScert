@@ -702,7 +702,7 @@ structure Fn where
   /-- The effect its result annotation states (`Within<F, T>`), which its
   unit's claim must lie within (`RequestJson.statedWithin`). -/
   stated : Option CallEffects.Effect
-  /-- Its written precondition, index facts at the call's positions: `0` the
+  /-- Its precondition, index facts at the call's positions: `0` the
   receiver, `i + 1` the `i`-th actual (PROGRAM-TYPING.md, 
   "Preconditions"). -/
   requires : List HeapKnowledge.IndexFact := []

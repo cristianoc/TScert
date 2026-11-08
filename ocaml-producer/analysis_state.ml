@@ -87,7 +87,7 @@ let create diagnostics flows offered declarations module_functions arities bound
   let env0 = List.map (fun (n,t) ->
     n,if List.exists (assigns n) f.body then (if in_cell n then cell t else Local (t,arms declarations t))
       else Value (arms declarations t)) f.params in
-  (* The written precondition, assumed where the body starts: its bounds and
+  (* The precondition, assumed where the body starts: its bounds and
      linear facts over the parameters the call's positions name. *)
   let env0 =
     let has_this = match f.params with (n,_) :: _ -> n = "this" | [] -> false in

@@ -1,4 +1,4 @@
-// A read of `b` below the element count of another view, `a`, across a write
+// A read of `b` below the length of another view, `a`, across a write
 // of a number field: the write keeps `i < a.length`, which bounds no read of
 // `b`, and `b[i]!` past `b`'s end is `undefined` at `number`, bound to `f`
 // (run under Node: `other(new Uint8Array(3), new Uint8Array(1), { at: 0 })`

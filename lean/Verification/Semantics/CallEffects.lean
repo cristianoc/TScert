@@ -458,7 +458,7 @@ def Effect.promiseBelow (n : Nat) (e : Effect) : Bool :=
 /-- Whether what a signature states of the call's values is about the
 receiver and the first `n` parameters, the ones code of arity `n` binds: its
 promise, and each position its precondition `pre` names. Code states no
-result facts: a fact over a parameter needs its entry value, which a
+postcondition: a fact over a parameter needs its entry value, which a
 reassigned parameter no longer holds. -/
 def Effect.below (n : Nat) (e : Effect) : Bool :=
   e.promiseBelow n && e.pre.all (fun F => F.slots.all (· ≤ n)) && e.ensures.isEmpty
@@ -473,8 +473,8 @@ theorem Effect.below_pre {e : Effect} {n : Nat} (h : e.below n = true) :
 theorem Effect.below_ensures {e : Effect} {n : Nat} (h : e.below n = true) : e.ensures = [] := by
   simp only [Effect.below, Bool.and_eq_true, List.isEmpty_iff] at h; exact h.2
 
-/-- A signature stating no result facts has a postcondition independent of
-the actuals. -/
+/-- A signature stating no postcondition (`ensures`) has a `post` independent
+of the actuals. -/
 theorem Effect.post_args {e : Effect} (he : e.ensures = []) {r : Tm} {args args' : List Tm} {before after : Heap}
     {v : Val} (h : e.post r args before after v) : e.post r args' before after v :=
   ⟨h.1, h.2.1, h.2.2.1, h.2.2.2.1, fun F hF => (by rw [he] at hF; cases hF), h.2.2.2.2.2⟩
@@ -580,7 +580,7 @@ theorem Effect.excPost_drop {e : Effect} (n : Nat) {rv r : Tm} {before after : H
     (h : e.excPost rv before after) : (e.drop n).excPost r before after :=
   fun ho => Effect.within_drop n (h ho)
 
-/-- A signature without its result facts: what a call whose actuals are not
+/-- A signature without its postcondition: what a call whose actuals are not
 its positions' values (a variadic call) concludes. -/
 def Effect.forgetEnsures (e : Effect) : Effect := { e with ensures := [] }
 
@@ -762,7 +762,7 @@ def elementsCovers : Option ElemPred → Option ElemPred → Bool
 other's is one of this one's. -/
 def preCovers (a b : List HeapKnowledge.IndexFact) : Bool := a.all b.contains
 
-/-- Result facts implying another's: each of the other's is one of these. -/
+/-- A postcondition implying another: each of the other's facts is one of its facts. -/
 def ensuresCovers (a b : List HeapKnowledge.IndexFact) : Bool := b.all a.contains
 
 theorem requiresCovers_sound {a b : Effect} (h : requiresCovers a.requires b.requires = true)

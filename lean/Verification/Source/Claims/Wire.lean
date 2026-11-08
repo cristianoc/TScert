@@ -119,7 +119,7 @@ structure Bound where
 /-- A term of a linear fact the producer proposes: what the binding `name`
 holds, its named data fields `path` read from it in turn, read as `term` says
 (`HeapKnowledge.Term.Kind`): the safe integer it is, the length of its array
-store, or the element count of its typed array; with an integer
+store, or the length of its typed array; with an integer
 coefficient. -/
 structure FactTerm where
   name : String

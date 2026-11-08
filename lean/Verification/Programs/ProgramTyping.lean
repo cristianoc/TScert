@@ -283,7 +283,7 @@ inductive HasTyWith (G : NormalGraph ι) (images : PositiveCertificates.Instance
       HasTyWith G images subtyping Γ (.arith op a b) N
   /-- A literal allocates a store: one fresh location per element, each
   under the position's contract of the tuple the store is claimed at, whose
-  bounds the element count respects. -/
+  bounds the typed-array length respects. -/
   | arrLit {Γ : List (Ty ι)} {L : Ty ι} {T : Tuple (Ty ι)} {xs : List (Ty ι × Tm)} :
       Represents G L (.list T []) → T.required.length ≤ xs.length →
       (T.rest = none → xs.length ≤ T.required.length + T.optional.length) →
