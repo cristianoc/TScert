@@ -8,7 +8,7 @@ Each item below is checked at the end by a measurement or a test. The result goe
 
 ## What you get
 
-1. **Imported files are never re-analysed because you edited the file that imports them.** An imported module's search and check run again only when that module's own inputs change. Those inputs are its source, and the run's choice of host-library models for the libraries that module itself uses. An edit to the importer that changes that choice really changes the module's lowered text, so re-running it is correct. Changes to models the module doesn't use don't re-run it. Today they run again after every edit: 43.5 s of a 75 s check, and 185 s of a 390 s one.
+1. **Imported files are never re-analysed because you edited the file that imports them.** An imported module's search and check run again only when that module's own inputs change. Those inputs are its source, and the run's choice of host-library models for the libraries that module itself uses. An edit to the importer that changes that choice really changes the module's lowered text, so re-running it is correct. Changes to models the module doesn't use don't re-run it. Changing which of a module's functions you import is also a change of its inputs: the module is checked once for the new set of functions, and a set it was already checked for replays. Today they run again after every edit: 43.5 s of a 75 s check, and 185 s of a 390 s one.
 2. **Editing one function re-analyses only that function and what reads it.** The other functions of the same file replay, through every stage: proposal, search, check and explanation. A function whose proposal reads the edited one at its declared signature does not re-run, because that signature is unchanged.
 3. **Edit-check time, measured on pretext with a warm store after a one-line edit:**
    - `removeItemsSkippableSegmentBreaks` (`analysis.ts`): **at most 5 s**, from 75 s today. Its own search and check are 0.36 s. The rest is reading and type-checking the edited file, which this change keeps whole-file.
@@ -145,7 +145,7 @@ document by design.
 | --- | --- | --- |
 | parse | once per file | as today |
 | module | once per imported module, nested in the parse | as today |
-| units | once per document (the file, each imported module's restricted document) | the document |
+| units | once per document: the file; each imported module's whole document, for its proposal; each restricted document `--plan-imports` prints, for its certification | the document |
 | facts | once per proposed document (the file, each imported module's whole document) | the document |
 | lower | once per unit | the unit's slice |
 | propose | once per unit, in dependency order | the unit's slice and flow, its reads and facts documents |
@@ -195,8 +195,10 @@ verdict is accepted only where its document's claims check passes. The
 stage executes on every edit, at the cost of decoding one claims document;
 its result for unchanged claims replays.
 
-**Search and check.** Each unit has two stages, with today's separate
-limits, so a unit's timeout outcomes are today's:
+**Search and check.** Each unit has two stages, each with today's limit
+for its kind. Extraction from a slice and the work of one process differ
+from today's, so a unit's timeout outcomes are measured on the census, not
+assumed equal to today's:
 
 - `verifier --produce-unit <slice.json> <claims.json> <evidence.json> <depth>`
   builds the front of its slice, searches the unit's evidence and writes
@@ -291,8 +293,9 @@ an acceptance unsound.
 An imported module is proposed and checked as today, through the unit
 stages:
 
-- *Proposal over the whole document.* The module's whole document, as the
-  `module` stage lowers it, is proposed unit by unit at its own eligible
+- *Proposal over the whole document.* `--units` runs on the module's
+  whole document, as the `module` stage lowers it, and its slices are
+  proposed unit by unit at its own eligible
   reads, its producer facts computed by `--facts` over that document, as
   the producer sees the whole document today. Its proposal stages are
   keyed on the module's slices, reads and facts, which no importer changes.
@@ -300,16 +303,20 @@ stages:
   the module to the read closure of the functions the importer reads
   qualified of it, its initialization kept, as `planImports` does today
   (`lean/Verification/Source/Claims/Imports.lean`), and prints that
-  restricted document. `--units`, the claims check, the search and the
-  check run on it, so `owned`, `reaches` and every extraction fact are
+  restricted document. `--units` runs again on it and gives the slices of
+  certification; the claims check, the search and the check run on those, so `owned`, `reaches` and every extraction fact are
   computed over the restricted document, as today. The restricted
   document, and so the closure, is part of every one of these stages'
   keys; importers asking for the same closure share one entry.
-- *Cycles.* A read closing a cycle of imports is read at its ordinary
-  signature, today's rule, with the module graph traversed in an order
-  fixed by the graph alone: depth first from each module in order of
-  location, each module's imports in order of location. The read chosen
-  ordinary is therefore the same in every importer.
+- *Cycles.* Within each import cycle, a strongly connected component of
+  the module graph, the reads into the component's least module by
+  location are read at their ordinary signatures; the rule is applied
+  again to each strongly connected component of what remains, until no
+  cycle is left. The choice depends on the component alone, so it is the
+  same in every importer. It can differ from today's choice, which follows
+  the order the importer's parse reaches the modules; the pipeline cases
+  are the gate: a case whose verdict changes is investigated and
+  reported.
 
 An importer's edit that changes which functions it reads qualified of a
 module changes the restricted document, an input of the module's run: a
@@ -317,7 +324,8 @@ closure no importer asked for before executes for the first time, and one
 asked for before replays. The module's document changes with the importer
 otherwise only through the tag selection of families the module consults
 ([shared work](../STAGE-STORE.md#shared-work)). Both are changes of the
-module's own inputs, as item 1 states them.
+module's own inputs, as item 1 states them: a set of imported functions
+is checked once, and a set checked before replays.
 
 **DocumentSafe.** Today a module run's acceptance is `checkDocument` of
 the restricted document at its restricted claims, through the module
@@ -588,9 +596,10 @@ replay.
 
 Each decision follows from the promise and the project's principles.
 
-1. **Search and check stay separate stages per unit, with today's limits.**
-   Consequence: timeout outcomes are today's (item 6); the front of a slice
-   is built twice per unit, which the cost budgets include.
+1. **Search and check stay separate stages per unit, each with today's
+   limit.** Consequence: limits are preserved per stage, and timeout
+   outcomes are measured on the census, not claimed identical; the front
+   of a slice is built twice per unit, which the cost budgets include.
 2. **Slicing is proved, not trusted** (`slicePlans`,
    `documentSafe_of_units`). Item 7 allows no new trust. Consequence: the
    lemmas land before the whole-file modes are deleted; `fileFront` stays a
@@ -610,11 +619,13 @@ Each decision follows from the promise and the project's principles.
    extraction facts computed there and the closure part of the key.
    Consequence: verdicts are unchanged (item 6); importers asking for one
    closure share one entry, and a new closure executes once.
-6. **Withdrawal and cycle policies are today's.** Same-file neighbours are
-   never withdrawn; module withdrawal keeps its scope; the read closing an
-   import cycle is chosen by the module graph alone. Consequence: shallow
-   verdicts are unchanged, and a module's interfaces are the same in every
-   importer.
+6. **Withdrawal policies are today's; the cycle rule is fixed by each
+   import cycle alone.** Same-file neighbours are never withdrawn; module
+   withdrawal keeps its scope; the reads made ordinary in an import cycle
+   are those into its least module by location. Consequence: shallow
+   verdicts are unchanged where no import cycle is involved, a module's
+   interfaces are the same in every importer, and a case whose verdict the
+   cycle rule changes is investigated and reported.
 7. **Interfaces are canonical readings bound to stable identities,** with
    no body or fingerprint in their digest; the binding to the current
    artifact is deep status's. Consequence: an interface-preserving edit
@@ -677,8 +688,9 @@ Each decision follows from the promise and the project's principles.
    with the memo, decides the item.
 6. *Same verdicts.* `slicePlans` gives each unit the plans and refusals it
    has today; the claims check refuses what the whole front refuses;
-   module certification keeps its restricted document; withdrawal, cycles
-   and limits keep today's policies; per-unit proposals equal the
+   module certification keeps its restricted document; withdrawal keeps
+   today's policies and each stage today's limit, timeouts measured; the
+   cycle rule is gated by the pipeline cases; per-unit proposals equal the
    whole-file proposal on every census file. Every case keeps its expected
    outcome, and pretext at `2b11a4c` verifies 210 of 210 functions.
 7. *Same soundness.* `checkUnitJson_safe` keeps its meaning; `slicePlans`
