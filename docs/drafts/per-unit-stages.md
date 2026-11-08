@@ -44,7 +44,7 @@ unit is a group of a file's code units that reach each other by the names
 their code mentions, the initialization among them where its mentions
 place it ([units of a check](../DESIGN.md#modules-and-code-units)). An
 imported module is checked through the same unit stages, over its own
-document. An edit of one function executes the stages of that function's
+document, restricted as today. An edit of one function executes the stages of that function's
 unit and of the units whose inputs the edit changes; every other unit's
 stages, and every imported module's, replay.
 
@@ -138,27 +138,32 @@ This design replaces, and its implementation deletes:
 ## Stages
 
 One check of a source runs these stages. Each unit's stages read only that
-unit's documents.
+unit's documents, except the claims check, which reads the whole claims
+document by design.
 
 | Stage | Runs | Inputs beside its implementation |
 | --- | --- | --- |
 | parse | once per file | as today |
 | module | once per imported module, nested in the parse | as today |
-| units | once per document (the file's, each imported module's) | the document |
-| facts | once per document | the document |
+| units | once per document (the file, each imported module's restricted document) | the document |
+| facts | once per proposed document (the file, each imported module's whole document) | the document |
 | lower | once per unit | the unit's slice |
 | propose | once per unit, in dependency order | the unit's slice and flow, its reads and facts documents |
 | assemble | once per unit | the unit's proposal, its reads document |
+| claims check | once per document | the document's identity list, its whole claims document |
 | plan | once per unit with qualified reads | the slice and its assembled claims |
-| unit | once per unit | the slice, its assembled claims, search depth, subtype rounds |
+| search | once per unit | the slice, its assembled claims, search depth, subtype rounds |
+| check | once per unit | the slice, its assembled claims, its evidence, subtype rounds |
 | explain | once per refused unit | the unit's slice, flow, reads and facts documents |
 | TypeScript diagnostics | once per file | as today |
 
 **Units.** `verifier --units <ast.json>` reads a document alone (no
 claims). It runs every check `fileFront` makes of the document as a whole
-before any unit (the source gates, duplicate identities, the declaration
-document's shape); one failing prints the refusal for every unit, as the
-whole front refuses every unit today. Otherwise it prints one line per
+before any unit and independent of claims (the source gates, duplicate
+identities, the declaration document's shape); one failing prints the
+refusal for every unit, as the whole front refuses every unit today.
+Otherwise it prints the document's identity list (the canonical identities
+of its functions and whether it has an initialization) and one line per
 unit, `{"unit","members","depends","slice","positions"}`: `members` the
 unit's code units, `depends` the units its code mentions, `slice` the
 unit's [slice](#slices) in [canonical form](#canonical-form), and
@@ -178,31 +183,41 @@ implementation audits every read the producer makes of
 being inferred, and each becomes a field of the facts entry; the criterion
 under [propose](#propose) checks the audit.
 
-**Unit.** `verifier --unit <slice.json> <claims.json> <evidence.json> <depth>`
-builds the front of its slice once, searches the unit's evidence, writes
-it, releases the search state, reads the evidence back and checks it, and
-prints the unit's verdict, `{"accepted","assumes","certifies","members","unit"}`
-or `{"members","refusal","unit"}` ([interfaces](#interfaces)).
-`verifier --check-unit <slice.json> <claims.json> <evidence.json>` checks
-given evidence and prints the same verdict; the controls that forge or
-mutate evidence use it (`pipeline/evidence-mutations.mts` and the forged
-evidence controls of `pipeline/test.mts`). The evidence document is one
-unit's bundle.
+**Claims check.** `verifier --check-claims <identities.json> <claims.json>`
+runs every check `fileFront` and `equationFront` make of a claims document
+as a whole: the function claim count and identities against the identity
+list, the initialization's claims present exactly where it has code, the
+claims' shape and the identities of their entries. The claims document is
+the assembly of every unit's proposal, the document a whole-file proposal
+gives today (the criterion under [propose](#propose)). Its refusal refuses
+every unit of the document, exactly as `fileFront` refuses today; a unit's
+verdict is accepted only where its document's claims check passes. The
+stage executes on every edit, at the cost of decoding one claims document;
+its result for unchanged claims replays.
 
-**Limits.** The `unit` stage's time limit is twice a stage's limit (120 s
-by default, 600 s in the census), the sum of the two limits the search and
-the check have as separate processes today; `TSCERT_STEP_LIMIT` sets the
-base. Its memory limit stays `TSCERT_STAGE_MEMORY`: the search state is
-released before the check reads the evidence, so the process's peak is the
-larger of the two phases (conjectured; measured on the largest unit of
-`fragment-statements.mts`, whose search alone peaks at 2.0 GB, cited from
-commit `7cfce13f`).
+**Search and check.** Each unit has two stages, with today's separate
+limits, so a unit's timeout outcomes are today's:
+
+- `verifier --produce-unit <slice.json> <claims.json> <evidence.json> <depth>`
+  builds the front of its slice, searches the unit's evidence and writes
+  it; a search it refuses prints `refused: {"refusal","unit"}`.
+- `verifier --check-unit <slice.json> <claims.json> <evidence.json>` builds
+  the front of its slice, checks the unit at its evidence and prints the
+  unit's verdict, `{"accepted","assumes","certifies","members","unit"}` or
+  `{"members","refusal","unit"}` ([interfaces](#interfaces)). The controls
+  that forge or mutate evidence use it (`pipeline/evidence-mutations.mts`
+  and the forged evidence controls of `pipeline/test.mts`).
+
+The evidence document is one unit's bundle. Each process holds one unit,
+and the front of a slice is built twice per unit, by the search and by the
+check.
 
 **Command lines.** One shape each; no compatibility mode:
 
 ```sh
 verifier --units              <ast.json>
-verifier --unit               <slice.json> <claims.json> <evidence.json> <depth>
+verifier --check-claims       <identities.json> <claims.json>
+verifier --produce-unit       <slice.json> <claims.json> <evidence.json> <depth>
 verifier --check-unit         <slice.json> <claims.json> <evidence.json>
 verifier --plan-imports       <slice.json> <claims.json>
 verifier --lower-program      <slice.json> <claims.json>
@@ -214,17 +229,18 @@ producer --explain <slice.json> <flow.json> <reads.json> <facts.json>
 
 `--subtype-rounds <n>` keeps its place before any verifier mode. The
 `<file-key>` argument goes: a slice's identity is its fingerprint
-([canonical form](#canonical-form)).
+([canonical form](#canonical-form)). `--plan-imports` also prints each
+planned module's restricted document ([module runs](#module-runs)).
 
 **Adapters, decoders and consumers.** Each command line has its argument
 shape in `pipeline/stage-execution.mts`; each new document (a `--units`
-line, a reads document, a facts document, a verdict) has one TypeScript
-type and one strict decoder in `tools/`, and its Lean and OCaml readers use
-the same field names (`tests/json-field-names.mts`). The census record
-keeps, per unit, its stage invocations, its verdict, its `positions` map and
-its interface digests; `dev/census.mts` reads deep status from them
-([interfaces](#interfaces)). `make lowering` runs `--units`, then
-`--lower-program` on the unit it names.
+line, an identity list, a reads document, a facts document, a verdict) has
+one TypeScript type and one strict decoder in `tools/`, and its Lean and
+OCaml readers use the same field names (`tests/json-field-names.mts`). The
+census record keeps, per unit, its stage invocations, its verdict, its
+`positions` map and its interface digests; `dev/census.mts` reads deep
+status from them ([interfaces](#interfaces)). `make lowering` runs
+`--units`, then `--lower-program` on the unit it names.
 
 ### Propose
 
@@ -255,51 +271,73 @@ key's inputs whatever the producer computes: a dependency the audit misses
 can change a proposal, and so a verdict, but never makes a replay stale or
 an acceptance unsound.
 
-**Withdrawal.** A read the plan refuses (`--plan-imports`) or a dependency
-unit refused is withdrawn from the reads document of the unit naming it,
-which then reads the dependency at its declared signature. The unit is
-proposed again; where its interface changes, every unit whose reads
-document names it is assembled and proposed again, in dependency order,
-transitively. Withdrawals only grow, so the rounds end; a withdrawal named
-twice is an error, as today.
+**Withdrawal.** Today's policies, unchanged:
+
+- A same-file neighbour is never withdrawn. A unit is read by its callers
+  at its proposed interface whatever its own verdict; a caller accepted
+  under a refused neighbour's interface is shallow verified, and deep
+  status records the neighbour as its blocker.
+- A qualified read the plan refuses (`--plan-imports`) is withdrawn alone
+  (`module#name`); a module run refused, any unit of its restricted
+  document refused, withdraws every read of that module (`module#*`).
+- A withdrawal changes the reads document of every unit naming the
+  withdrawn read; each such unit is proposed again, and where its
+  interface changes, every unit whose reads document names it is assembled
+  and proposed again, in dependency order, transitively. Withdrawals only
+  grow, so the rounds end; a withdrawal named twice is an error, as today.
 
 ### Module runs
 
-An imported module is a document like the checked file: `--units` and
-`--facts` run on it, and its units are proposed, assembled and checked by
-the same stages, at its own qualified reads. Which of its units are checked
-is today's choice: the read closure of the functions the importer reads
-qualified of it, its initialization kept (`planImports`,
-`lean/Verification/Source/Claims/Imports.lean`). A qualified read stays in
-the importer's reads document only while every unit of that closure is
-accepted; otherwise it is withdrawn, as a refused module run withdraws its
-reads today. A unit of a module outside every importer's read closure is
-not run, so an unrelated failing function of a module does not withdraw
-another's read (item 6).
+An imported module is proposed and checked as today, through the unit
+stages:
 
-Every stage of a module's unit is keyed on that unit's slice, reads, facts
-and claims, which an edit of the importer leaves unchanged, and two
-importers reading the same module share its entries. The module's document
-changes with the importer only through the host-family tags the run
-selects and the module consults ([shared work](../STAGE-STORE.md#shared-work)),
-which is item 1's stated exception.
+- *Proposal over the whole document.* The module's whole document, as the
+  `module` stage lowers it, is proposed unit by unit at its own eligible
+  reads, its producer facts computed by `--facts` over that document, as
+  the producer sees the whole document today. Its proposal stages are
+  keyed on the module's slices, reads and facts, which no importer changes.
+- *Certification over the restricted document.* `--plan-imports` restricts
+  the module to the read closure of the functions the importer reads
+  qualified of it, its initialization kept, as `planImports` does today
+  (`lean/Verification/Source/Claims/Imports.lean`), and prints that
+  restricted document. `--units`, the claims check, the search and the
+  check run on it, so `owned`, `reaches` and every extraction fact are
+  computed over the restricted document, as today. The restricted
+  document, and so the closure, is part of every one of these stages'
+  keys; importers asking for the same closure share one entry.
+- *Cycles.* A read closing a cycle of imports is read at its ordinary
+  signature, today's rule, with the module graph traversed in an order
+  fixed by the graph alone: depth first from each module in order of
+  location, each module's imports in order of location. The read chosen
+  ordinary is therefore the same in every importer.
+
+An importer's edit that changes which functions it reads qualified of a
+module changes the restricted document, an input of the module's run: a
+closure no importer asked for before executes for the first time, and one
+asked for before replays. The module's document changes with the importer
+otherwise only through the tag selection of families the module consults
+([shared work](../STAGE-STORE.md#shared-work)). Both are changes of the
+module's own inputs, as item 1 states them.
 
 **DocumentSafe.** Today a module run's acceptance is `checkDocument` of
-the restricted document, through the module branch of `unitVerdict`. The
-per-unit form proves it from the units: **lemma `documentSafe_of_units`**
-(conjectured): if every unit of a document is accepted at its slice, then
-`DocumentSafe` holds of the document, with the evidence assembled from the
-units' bundles transported by `slicePlans`. The module branch of
-`unitVerdict` and of `UnitSafe` then has no caller and is deleted, which
-narrows `UnitSafe` to its group branch.
+the restricted document at its restricted claims, through the module
+branch of `unitVerdict`. **Lemma `documentSafe_of_units`** (conjectured):
+for a restricted document `D` and its one claims document `C` (the module's
+claims restricted as `planImports` restricts them), if the claims check of
+`C` against `D` passes and every unit `u` of `D` is accepted at
+`sliceOf D u` and `sliceClaims C u`, then `DocumentSafe D C` holds, with the
+evidence assembled from the units' bundles transported by `slicePlans`.
+Every unit's assumed interfaces are then the certified ones of the same
+`C`, by construction. The module branch of `unitVerdict` and of `UnitSafe`
+has no caller and is deleted, which narrows `UnitSafe` to its group branch.
 
 ## Slices
 
 A unit's slice is a Fragment holding exactly what its extraction reads, in
 [canonical form](#canonical-form). `sliceOf A u` and the claims projection
 `sliceClaims C u` are Lean definitions; `--units` prints `sliceOf`, and the
-assemble stage builds `sliceClaims` of the unit's claims from its proposal and
-its reads document. The fields of `Front` (cited:
+assemble stage builds `sliceClaims` of the unit's claims from its proposal
+and its reads document. The fields of `Front` (cited:
 `lean/Verification/Source/Claims/Extraction.lean`) state what a slice holds
 for a unit `u` of a document `A`:
 
@@ -330,10 +368,10 @@ its document does not have. An edit of a function changes another unit's
 slice only where it changes that unit's `owned` or `reaches` entries, which
 are inputs of that unit.
 
-`sliceClaims C u` keeps the claims of `u`'s members (their `functions` entries,
-and the initialization's claims for its group) and the interface entries of
-`u`'s dependencies, and nothing else; the counts and the initialization's
-presence that `fileFront` checks are those of the slice.
+`sliceClaims C u` keeps the claims of `u`'s members (their `functions`
+entries, and the initialization's claims for its group) and the interface
+entries of `u`'s dependencies. The checks of `C` as a whole are the claims
+check's.
 
 **Lemma `slicePlans` (conjectured).** For every document `A`, claims `C`
 and unit `u` that `--units A` prints with slice `s = sliceOf A u` and
@@ -343,8 +381,11 @@ members `M`:
    of `u` in the front of `A`: the recursive boundary certified together is
    the same.
 2. *Refusals.* Extraction of `u` from `fileFront A C` fails if and only if
-   `--units A` refuses or extraction from `filePlans s (sliceClaims C u)`
-   fails. The original refusing while the slice accepts is impossible.
+   `--units A` refuses, or the claims check of `C` against `A`'s identity
+   list refuses, or extraction from `filePlans s (sliceClaims C u)` fails.
+   The original refusing while the slice accepts is impossible: a refusal
+   of the whole claims document reaches every unit through the claims
+   check.
 3. *Stores.* With `F` the frozen store of `A` and `Fs` the slice's, a map
    `h` of `Fs`'s heads to `F`'s heads sends every equation reachable from
    the labels of `u`'s requests and environment to `F`'s equation of its
@@ -359,8 +400,9 @@ members `M`:
    for `u` in `A`'s front, so `UnitSafe` over `s` gives the safety of `u`'s
    requests over `A`.
 6. *The emitted slice.* The slice `--units` prints decodes, under the
-   strict decoder `--unit` uses, to `sliceOf A u`, and the members a verdict
-   reports are `M` mapped by `positions`.
+   strict decoder `--produce-unit` and `--check-unit` use, to
+   `sliceOf A u`, and the members a verdict reports are `M` mapped by
+   `positions`.
 
 A slice lacking a declaration its unit's extraction reads fails extraction
 (part 2), a refusal. A slice whose `owned` or `reaches` is not `sliceOf`'s
@@ -375,18 +417,25 @@ another unit changes. A slice's canonical form fixes three things:
 - *Coordinates.* Each member (a function, or one top-level statement of the
   initialization's group) is placed at a canonical origin, the sum of the
   lengths of the members before it; a position inside a member is its
-  offset from the member's start plus that origin. Lengthening a function
-  between two members of one group, or between two top-level statements,
-  changes no position of the slice. `positions` lists each member's
-  canonical origin, document offset and length; the orchestration maps every
-  span of a verdict, refusal or explanation back through it before
+  offset from the member's start plus that origin. Each declaration and
+  module value outside the members that the slice holds (a neighbour's
+  declared signature, a local type's definition, a constant's annotation)
+  is placed after the members the same way, as an entry of its own.
+  Lengthening a function between two members of one group, or between two
+  top-level statements, changes no position of the slice. `positions` lists
+  each entry's canonical origin, document offset and length; the
+  orchestration maps every span of a verdict, refusal or explanation back
+  through it, a span at a neighbour's declaration included, before
   presenting it, outside every key.
-- *Identities.* An identity outside the slice's members is canonical: a
-  function by its name and its index among the document's functions of that
-  name, a local declaration by its name and its index among the document's
-  declarations of that name, the initialization as `init`, an imported
-  module's declaration by its module location and its own canonical
-  identity. A unit's identity is its first member's canonical identity.
+- *Identities.* An identity outside the slice's members is scope-based: a
+  declaration by the canonical identity of its enclosing scope (the
+  document's top level, a function, or a block within one by its index
+  among that function's blocks), its name, and its index among the
+  declarations of that name in that scope alone. A function is a
+  declaration of the top level; the initialization is `init`; an imported
+  module's declaration is its module location with its own scope-based
+  identity. A declaration inserted in one scope renumbers no declaration of
+  another. A unit's identity is its first member's.
 - *Fingerprint.* The slice's `file` and `sourceSha256` are its fingerprint,
   the SHA-256 of its canonical encoding with those two fields empty;
   `checkIdentity` compares the claims' fields with the slice's, so claims
@@ -412,24 +461,29 @@ reach, transitively, and the implicit dependencies they trigger
 head index appears in an interface.
 
 The interface digest is the SHA-256 of the canonical encoding of the
-dependency's identity (its document's fingerprint chain and its canonical
-unit identity) with its interface. One Lean function, `interfaceOf`,
-computes it from a slice and claims, on both sides:
+binding's stable identity (its scope-based identity, with the module
+location for an import) and its interface, and of nothing else: no body
+and no slice or source fingerprint. An edit of a function's body that
+keeps its interface keeps its digest, and its callers' reads documents are
+unchanged. One Lean function, `interfaceOf`, computes it from a slice and
+claims, on both sides:
 
-- `--unit`'s accepted verdict lists `certifies`, the digest of the interface
-  of each member its claims state;
-- it lists `assumes`, for each dependency its slice reads, the dependency's
-  identity and the digest of the interface the slice's reads entry states;
+- `--check-unit`'s accepted verdict lists `certifies`, the digest of the
+  interface of each member its claims state;
+- it lists `assumes`, for each dependency its slice reads, the
+  dependency's identity and the digest of the interface the slice's reads
+  entry states;
 - the plan's comparison of an importer's reading with a module's
   (`sameReading`) compares the same canonical form.
 
 Deep status (`dev/census.mts`, node code without a proof, a row of the
-[trust surface](../DESIGN.md#trust-surface)) counts a dependency accepted
-only where its verdict is accepted and its `certifies` digest equals the
-dependent's `assumes` digest, and keeps its initialization and transitive
-dependency checks. This keeps computed deep status consistent; it does not
-discharge the composition of a module's units, which remains
-[open work](../../WORK.md#module-composition).
+[trust surface](../DESIGN.md#trust-surface)) binds each dependency to the
+artifact checked in the same run: it counts a dependency accepted only
+where the verdict the run produced for that dependency's current slice is
+accepted, its `certifies` digest equals the dependent's `assumes` digest,
+and its initialization and transitive dependencies are accepted. This keeps
+computed deep status consistent; it does not discharge the composition of a
+module's units, which remains [open work](../../WORK.md#module-composition).
 
 ## Soundness
 
@@ -439,29 +493,26 @@ states: `filePlans ast claims fileKey budget = .ok f` and
 `UnitSafe f budget unit evidence`. It applies to the slice: `ast` is the
 slice, `claims` its assembled claims, `fileKey` its fingerprint, and the
 slice has exactly one unit. The CLI condition for an accepted verdict of
-`--unit` and of `--check-unit` is that premise over the files their
-arguments name, the evidence read back from the file `--unit` wrote; both
-reach the verdict through `unitVerdict` alone, and the acceptance path
+`--check-unit` is that premise over the three files its arguments name; it
+reaches the verdict through `unitVerdict` alone, and the acceptance path
 keeps its one exhaustive conversion to `CertifiedPlan`
 (`FilePlans.certified`). Deleting the module branch narrows `UnitSafe` to
 the group branch; the theorem's meaning, an accepted unit is safe, is
 unchanged.
 
 The theorem speaks of the slice's requests. `slicePlans` carries it to the
-unit of the source document: the same group, the same requests at the same
-input contracts and qualified reads, interpreted over the same equations,
-refused exactly where the whole front refuses. `documentSafe_of_units`
-carries the units of an imported module to today's module-run acceptance.
-Both are Lean lemmas, so the change adds no trust row and no axiom
-(item 7).
+unit of the source document, under the claims check of the whole claims
+document: the same group, the same requests at the same input contracts and
+qualified reads, interpreted over the same equations, refused exactly where
+the whole front refuses. `documentSafe_of_units` carries the units of a
+restricted module document to today's module-run acceptance. Both are Lean
+lemmas, so the change adds no trust row and no axiom (item 7).
 
-A replayed `--unit` result is the verifier's judgment of exactly the
-slice and claims its key binds, under the binding and validation the trust
-surface's replayed-check row states; that row's "check mode reads the three
-files its arguments name" becomes "`--unit` reads the two files its
-arguments name and the evidence file it writes; `--check-unit` reads the
-three". The [source boundaries](../DESIGN.md#trust-surface) (annotation
-lowering, native contracts, inferred call effects) are read from the same
+A replayed check is the verifier's judgment of exactly the slice, claims
+and evidence its key binds, under the binding and validation the trust
+surface's replayed-check row states. The
+[source boundaries](../DESIGN.md#trust-surface) (annotation lowering,
+native contracts, inferred call effects) are read from the same
 declarations and claims; a slice holds every declaration its unit's code,
 annotations and reads reach, so no contract is cut.
 
@@ -472,8 +523,8 @@ takes any stage whose inputs exist, the proposals of a document in
 dependency order, the other stages of different units concurrently. Within
 one census run each stage key executes once: a stage whose key is being
 executed by another worker waits for that execution's result, so a module
-two importers reach, or a slice two documents share, runs once though the
-store would allow both to miss.
+closure two importers ask for, or a slice two documents share, runs once
+though the store would allow both to miss.
 
 The memory reasons for writing and checking evidence a unit at a time
 (cited, commit `7cfce13f`: the whole-file search held every unit's
@@ -481,8 +532,8 @@ certificates and the memo of all units, and the check decoded the whole
 evidence before its first unit; on `fragment-statements.mts` the front
 alone peaked at 0.36 GB and the search of its largest unit alone at
 2.0 GB) hold by construction: each process holds one unit's slice, front,
-memo and evidence, and ends with it. A unit over its time or memory limit
-is that unit's outcome, and no fallback runs.
+memo and evidence, and ends with it. A unit's search or check over its time
+or memory limit is that unit's outcome, as today, and no fallback runs.
 
 ## The controls
 
@@ -494,27 +545,40 @@ of a finished entry, never of a timeout; each edited run's outcome must
 equal a cold run's of the same edited source in a fresh store.
 
 1. *Imports.* A file imports a certified function from a module and defines
-   `f`, `g` calling `f`, and `h`. An edit of `f` that keeps its interface:
-   every stage of the module's units replays; `g`'s and `h`'s lower,
-   propose, assemble and unit stages replay; `f`'s execute.
-2. *Shared imports.* Two importers of the same module checked in one
-   census run: each stage of the module's units executes once.
+   `f`, `g` calling `f`, and `h`. An edit of `f`'s body that keeps its
+   interface: every stage of the module's run replays; `g`'s and `h`'s
+   lower, propose, assemble, search and check replay; `f`'s execute, and
+   `g`'s reads document is byte-identical.
+2. *Shared imports.* Two importers asking for the same closure of one
+   module, checked in one census run: each stage of the module's run
+   executes once.
 3. *Changed interface.* An edit of `f` that changes its footprint: `f`'s
-   stages and `g`'s propose, assemble and unit stages execute; `h`'s and
+   stages and `g`'s propose, assemble, search and check execute; `h`'s and
    the module's replay.
-4. *Length-changing edit.* An edit lengthening `f` by several lines: every
-   unit after `f` replays, and a local type alias declared after `f` keeps
-   its canonical identity.
+4. *Length-changing edit.* An edit lengthening `f` by several lines, which
+   keeps every interface and every file-wide fact (`owned`, `reaches`, the
+   producer's facts): every unit after `f` replays, and a local type alias
+   declared after `f` keeps its identity.
 5. *Noncontiguous group.* Mutually recursive `p` and `q` around an
-   unrelated `r`, and a top-level statement after `r`: an edit lengthening
-   `r` leaves the stages of `p` and `q`'s unit and of the initialization
-   replaying.
-6. *Explanations.* A file with a refused unit and an accepted one: an edit
+   unrelated `r`, and a top-level statement after `r`; an edit lengthening
+   `r` that keeps its interface and the file-wide facts: the stages of `p`
+   and `q`'s unit and of the initialization replay.
+6. *Same-named declaration.* A local type `T` inserted in one function, in
+   a file where another function declares its own `T`: every unit but the
+   edited one replays.
+7. *Explanations.* A file with a refused unit and an accepted one: an edit
    of the accepted unit replays the refused unit's stages and its
    `explain`.
-7. *Ownership.* A file whose function `e` lets a module cell's object
+8. *Ownership.* A file whose function `e` lets a module cell's object
    escape: the slices of the units mentioning the cell carry it as not
    owned, and an edit removing the escape executes those units.
+9. *Restricted module facts.* A module defining `good`, which uses a module
+   cell, and an unrelated `escape`, which returns that cell's object; an
+   importer reading only `good`: the module's run is over the restricted
+   document without `escape`, its outcome today's, and an importer reading
+   `escape` too executes a run of the other closure.
+10. *Claims check.* A claims document missing one function's claim: every
+    unit of the document is refused, as the whole front refuses today.
 
 The replay control asserts today that an unchanged source replays and a
 changed source executes; these controls assert what an edit leaves to
@@ -524,85 +588,101 @@ replay.
 
 Each decision follows from the promise and the project's principles.
 
-1. **A unit's search and check run in one stage,** at twice a stage's time
-   limit. Separate stages would bind the same executable, slice and claims,
-   so they always execute together and would build the front twice.
-   Consequence: one front per unit (item 5); `--check-unit` remains for
-   the evidence controls.
+1. **Search and check stay separate stages per unit, with today's limits.**
+   Consequence: timeout outcomes are today's (item 6); the front of a slice
+   is built twice per unit, which the cost budgets include.
 2. **Slicing is proved, not trusted** (`slicePlans`,
    `documentSafe_of_units`). Item 7 allows no new trust. Consequence: the
    lemmas land before the whole-file modes are deleted; `fileFront` stays a
    Lean definition, the reference the lemma names, reached by no command
    line.
-3. **File-wide facts reach a slice as fields computed from the whole
+3. **Whole-document checks are their own stages:** `--units` for the
+   document, the claims check for the whole claims document. Their refusal
+   refuses every unit, as `fileFront` does today. Consequence: the
+   refusal clause of `slicePlans` holds for every claims document.
+4. **File-wide facts reach a slice as fields computed from the whole
    document,** in keyed code: `owned` and `reaches` by `--units`, the
    producer's facts by `--facts`. Consequence: a slice cannot gain an
    ownership premise by dropping a body, and an edit that changes such a
    fact executes exactly the units that read it.
-4. **A module is certified over the read closure of its imported functions
-   plus its initialization,** as today, through its own unit stages.
-   Consequence: verdicts are unchanged (item 6), and each module unit's
-   stages are shared by every importer.
-5. **Interfaces are canonical readings, not store entries,** and one
-   function computes them for neighbours and certified imports.
-   Consequence: deep status compares digests that denote the same types
-   whatever store each unit built.
-6. **The census runs each stage key once per run,** and every timing
+5. **A module is certified over its restricted document,** the read closure
+   of its imported functions plus its initialization, as today, its
+   extraction facts computed there and the closure part of the key.
+   Consequence: verdicts are unchanged (item 6); importers asking for one
+   closure share one entry, and a new closure executes once.
+6. **Withdrawal and cycle policies are today's.** Same-file neighbours are
+   never withdrawn; module withdrawal keeps its scope; the read closing an
+   import cycle is chosen by the module graph alone. Consequence: shallow
+   verdicts are unchanged, and a module's interfaces are the same in every
+   importer.
+7. **Interfaces are canonical readings bound to stable identities,** with
+   no body or fingerprint in their digest; the binding to the current
+   artifact is deep status's. Consequence: an interface-preserving edit
+   leaves its callers' inputs unchanged.
+8. **Declaration identities are scope-based.** Consequence: a declaration
+   added in one scope renumbers none in another.
+9. **The census runs each stage key once per run,** and every timing
    compares against a baseline carrying the `fm_entails` memo.
    Consequence: shared dependencies cost once in a cold census, and the
    memo's saving cannot hide a cost of staging.
-7. **The stage design is written once.** At the implementation, this
-   draft's stages, keys and slices move into
-   [STAGE-STORE](../STAGE-STORE.md), its units and lemmas into
-   [DESIGN](../DESIGN.md#modules-and-code-units), module runs into
-   [certified imports](../SOURCE-CONTRACTS.md#certified-imports), the
-   command lines into [REQUEST-PROTOCOL](../REQUEST-PROTOCOL.md#run-the-verifier);
-   the stale paragraph and comment are corrected, and the draft is deleted.
+10. **The stage design is written once.** At the implementation, this
+    draft's stages, keys and slices move into
+    [STAGE-STORE](../STAGE-STORE.md), its units and lemmas into
+    [DESIGN](../DESIGN.md#modules-and-code-units), module runs into
+    [certified imports](../SOURCE-CONTRACTS.md#certified-imports), the
+    command lines into [REQUEST-PROTOCOL](../REQUEST-PROTOCOL.md#run-the-verifier);
+    the stale paragraph and comment are corrected, and the draft is
+    deleted.
 
 ## How the design meets each item
 
-1. *Imported files.* A module's unit stages are keyed on its own slices,
-   reads, facts and claims. An edit of the importer re-executes the parse
-   and its nested module lowerings; a lowering giving the same document
-   leaves every key of the module's units unchanged. The document changes
-   with the importer only through the tag selection of families the module
-   consults, which the item states as a correct re-run.
+1. *Imported files.* A module run's stages are keyed on its whole
+   document's slices for proposal and on its restricted document for
+   certification. An edit of the importer re-executes the parse and its
+   nested module lowerings; a lowering giving the same document, and an
+   importer asking for the same closure, leave every key of the module's
+   run unchanged. A changed tag selection the module consults, or a changed
+   set of functions the importer reads of it, is a change of the module's
+   own inputs, as the item states.
 2. *One function and what reads it.* An edit of `f` changes `f`'s slice,
    and another unit's inputs only where it changes `f`'s interface or a
    file-wide fact that unit reads ([canonical form](#canonical-form),
-   [decision 3](#decisions)). Every other unit's propose, unit and explain
-   stages replay.
+   [interfaces](#interfaces), decision 4). Every other unit's propose,
+   search, check and explain stages replay.
 3. *Edit-check time.* After a one-line edit the stages that execute are the
    parse (with TypeScript's diagnostics where enabled), `--units`,
-   `--facts`, and the edited unit's lower, propose, assemble, plan and
-   `--unit`; every other stage is a store lookup. Budgets, each measured
-   per component from `invocations.jsonl`:
+   `--facts`, the claims check, and the edited unit's lower, propose,
+   assemble, plan, search and check; every other stage is a store lookup.
+   Budgets, each measured per component from `invocations.jsonl`:
    - `removeItemsSkippableSegmentBreaks`: its search and check 0.36 s and
-     one front of its slice (at most 0.5 s); the parse, `--units`,
-     `--facts`, its proposal and the lookups share the rest of 5 s.
+     two fronts of its slice (at most 0.5 s each); the parse, `--units`,
+     `--facts`, the claims check, its proposal and the lookups share the
+     rest of 5 s.
    - `createLine`: no stage of `prepareRichInline`'s unit executes; its
      interface is read from the store.
-   - `prepareRichInline`: its search about 80 s, one front of its slice
-     (at most 5.1 s), its proposal (at most 12 s with the memo): 97 s, so
-     the parse, its check and the lookups have 3 s, the tightest budget of
-     the promise.
+   - `prepareRichInline`: its search about 80 s and its proposal at most
+     12 s with the memo leave 8 s for two fronts of its slice, its check,
+     the parse, the whole-document stages and the lookups. The whole file's
+     front is 5.1 s; the budget holds only if its slice's front is at most
+     about 2 s, which the implementation measures first.
 4. *One mode.* `verify-source.mts` runs the per-unit stages; the cases,
    the census and the census's function selection call it. The modes
    listed above are deleted, and `grep` finds none.
-5. *Cold runs.* Each module unit executes once per census run instead of
-   once per importer; each unit builds one front of its slice where each
-   file builds two whole fronts today. The adverse case is many small units
-   sharing a large declaration closure, each lowering it, with process
-   start, serialization and publication per unit. The cold census of
-   `tools/`, timed before and after on one machine against the baseline
+5. *Cold runs.* Each module closure executes once per census run instead of
+   once per importer. Each unit builds two fronts of its slice where each
+   file builds two whole fronts today; the adverse case is many small
+   units sharing a large declaration closure, each lowering it, with
+   process start, serialization and publication per stage. The cold census
+   of `tools/`, timed before and after on one machine against the baseline
    with the memo, decides the item.
 6. *Same verdicts.* `slicePlans` gives each unit the plans and refusals it
-   has today; module certification keeps its read closure; per-unit
-   proposals equal the whole-file proposal on every census file. Every case
-   keeps its expected outcome, and pretext at `2b11a4c` verifies 210 of 210
-   functions.
-7. *Same soundness.* `checkUnitJson_safe` keeps its meaning;
-   `slicePlans` and `documentSafe_of_units` are proved; no axiom and no
-   trust row is added; a slice missing what its check needs is refused.
+   has today; the claims check refuses what the whole front refuses;
+   module certification keeps its restricted document; withdrawal, cycles
+   and limits keep today's policies; per-unit proposals equal the
+   whole-file proposal on every census file. Every case keeps its expected
+   outcome, and pretext at `2b11a4c` verifies 210 of 210 functions.
+7. *Same soundness.* `checkUnitJson_safe` keeps its meaning; `slicePlans`
+   and `documentSafe_of_units` are proved; no axiom and no trust row is
+   added; a slice missing what its check needs is refused.
 8. *The controls.* [The controls](#the-controls) run in `make test`.
-9. *The docs.* Decision 7.
+9. *The docs.* Decision 10.
