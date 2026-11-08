@@ -208,9 +208,10 @@ inputs it changes.
   by its length, an interval holding kept code is kept, a name the parser
   makes at a position (`%…@N`) names the moved position, and the document's
   own declarations are named by module `local`, their name and their index
-  among the declarations of that name. A span within another module's
-  definition is mapped too: the members the document reads carry the
-  spans of their reads in the document. An edit of a function's body leaves
+  among the declarations of that name. Another module's definition and
+  an imported value's type hold that module's spans and spans of the
+  document's reads of its members alike; a slice holds them with every
+  span zero, each declaration's identity kept. An edit of a function's body leaves
   every other unit's slice unchanged.
 - *Reads.* A unit's reads document holds its members, whether the
   initialization is one, the footprint and on-throw flag each function the
