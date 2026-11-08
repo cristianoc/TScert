@@ -1669,7 +1669,9 @@ the constant; this includes the slots holding literals during evaluation.
 ```
 
 with $`c`$ an integer constant and $`b`$ a safe-integer operand; the
-symmetric form reads $`b*a`$. The clause language's constant coefficients
+symmetric form reads $`b*a`$. Where $`c=0`$ the fact is $`r=0`$, naming no
+slot of $`a`$, so it outlives $`a`$'s slot (`-0` is the safe integer $`0`$,
+`stateful-source/arithmetic`). The clause language's constant coefficients
 therefore bound computed row offsets such as `row * 28 + 27`. Proved:
 `SafeIntegers.mul_safe` establishes exact multiplication against the float
 model, `IndexWrites.knownConstant_sound` establishes the operand's constant

@@ -624,8 +624,9 @@ def linearAtoms (G : NormalGraph ι) (Γ : List (Ty ι)) (k : Knowledge) : Tm �
         match op with
         | .add => sum (fa ++ fb) (ca + cb)
         | .sub => sum (fa ++ fb.scale (-1)) (ca - cb)
-        | .mul => if fa = [] then sum (fb.scale ca) (ca * cb)
-          else if fb = [] then sum (fa.scale cb) (ca * cb) else []
+        -- A zero factor gives the constant `0`, a form naming no slot.
+        | .mul => if fa = [] then sum (if ca = 0 then [] else fb.scale ca) (ca * cb)
+          else if fb = [] then sum (if cb = 0 then [] else fa.scale cb) (ca * cb) else []
         | .shr => if fb = [] ∧ 0 ≤ cb ∧ cb < 32 ∧ smallOperand k fa ca then bitAtoms op fa ca cb else []
         | .bitAnd => if fb = [] ∧ 0 ≤ cb ∧ cb < 2 ^ 31 ∧ smallOperand k fa ca then bitAtoms op fa ca cb else []
         | .lt | .le | .gt | .ge => compareAtoms op (fa ++ fb.scale (-1)) (ca - cb)
@@ -1057,19 +1058,27 @@ theorem linearAtoms_holds [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty �
           split
           · rename_i hc
             subst fa
-            exact hsum (fb.scale ca) (ca * cb)
+            exact hsum (if ca = 0 then [] else fb.scale ca) (ca * cb)
               ((Linear.Form.eval (valuation ρ) [] + ca) * (Linear.Form.eval (valuation ρ) fb + cb)) _
-              (by simpa only [scale_vars] using hvb)
-              (by simp only [Linear.Form.eval_scale, Linear.Form.eval, Int.zero_add, Int.mul_add])
+              (by split
+                  · simp
+                  · simpa only [scale_vars] using hvb)
+              (by split
+                  · rename_i h0; subst h0; simp [Linear.Form.eval]
+                  · simp only [Linear.Form.eval_scale, Linear.Form.eval, Int.zero_add, Int.mul_add])
               (fun hr => SafeIntegers.mul_safe hsa hsb hr)
           · split
             · rename_i hc
               subst fb
-              exact hsum (fa.scale cb) (ca * cb)
+              exact hsum (if cb = 0 then [] else fa.scale cb) (ca * cb)
                 ((Linear.Form.eval (valuation ρ) fa + ca) * (Linear.Form.eval (valuation ρ) [] + cb)) _
-                (by simpa only [scale_vars] using hva)
-                (by simp only [Linear.Form.eval_scale, Linear.Form.eval, Int.zero_add, Int.add_mul];
-                    rw [Int.mul_comm cb])
+                (by split
+                    · simp
+                    · simpa only [scale_vars] using hva)
+                (by split
+                    · rename_i h0; subst h0; simp [Linear.Form.eval]
+                    · simp only [Linear.Form.eval_scale, Linear.Form.eval, Int.zero_add, Int.add_mul]
+                      rw [Int.mul_comm cb])
                 (fun hr => SafeIntegers.mul_safe hsa hsb hr)
             · exact indexHolds_nil _ _
         · -- signed right shift
