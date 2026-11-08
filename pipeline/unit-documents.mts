@@ -8,8 +8,8 @@
  * initialization declares; the initialization's mentions; the constants the
  * document reads as values. */
 export type UnitFacts = {
-  functions: { name: string; mentions: string[]; init: boolean }[];
-  init: { mentions: string[] } | null;
+  functions: { name: string; mentions: string[]; init: boolean; names: string[] }[];
+  init: { mentions: string[]; names: string[] } | null;
   readAsValues: string[];
 };
 

@@ -20,7 +20,8 @@
  * The ledger is noted in every record a reused session's collection makes,
  * and accumulates its new answers. `settleDeclarationSession` checks it
  * again at an attempt's end, before its publication. */
-import { dirname, resolve } from "node:path";
+import { createHash } from "node:crypto";
+import { dirname, join, resolve } from "node:path";
 import type { API, Project, Snapshot } from "typescript/unstable/sync";
 /** What a snapshot request asks: the parameter of `API.updateSnapshot`. */
 import type { UpdateSnapshotParams } from "typescript/unstable/proto";
@@ -28,7 +29,7 @@ import { abandonCompiler, compilerChoice, openDocuments, openFrontEndCompiler, r
 import { activeFamilies } from "./family-activation.mts";
 import { importLedger, ledgerAnswers, ledgerState, newLedger, processInconsistency, processRetirement, unobservable, validateLedger,
   withLedger, type Ledger, type Noted } from "./files.mts";
-import { messageOf, toolFailureOf } from "./thrown.mts";
+import { fieldOf, messageOf, toolFailureOf } from "./thrown.mts";
 import type { ProbeProgram } from "./type-probe.mts";
 
 /** A session: its compiler, the overlay its probes write, what it is
@@ -183,15 +184,54 @@ function incompatibility(s: Session, descriptor: string): string | null {
   return validateLedger(s.ledger);
 }
 
+/** The project of a module's lowering: the named project's options, its
+ * root files the module and the declaration files among the named
+ * project's roots, which state what every file of it sees, a file of its own
+ * name beside the named project's (`fixed`, which no probe replaces). Its
+ * compiler reads the module, what it imports and those declarations, and no
+ * other file of the named project, so an edit of an importer leaves the
+ * module's observations unchanged (STAGE-STORE.md, "Shared work"). */
+export const moduleProject = (named: string, root: string): string =>
+  join(dirname(named), `tsconfig.module-${createHash("sha256").update(root).digest("hex").slice(0, 16)}.json`);
+export function moduleProjectText(api: API, named: string, root: string): string {
+  const names = fieldOf(api.parseConfigFile(named), "fileNames");
+  const declarations = Array.isArray(names)
+    ? names.filter((n): n is string => typeof n === "string" && n.endsWith(".d.ts")).map((n) => resolve(dirname(named), n))
+    : [];
+  return JSON.stringify({ extends: named, files: [root, ...declarations], include: [root, ...declarations] });
+}
+
 /** `use` over the project `tsconfigPath` names, as it loads with `file`
- * resolved from its directory: in the retained session where it is
- * compatible, else in a new one, retained afterwards where retention is on
- * and its state is clean. `use` receives the project (or undefined where the
- * compiler did not load it) and the probe of its files. */
+ * resolved from its directory, or, given a module `root`, over that
+ * project rooted at the module (`moduleProject`): in the retained session
+ * where it is compatible, else in a new one, retained afterwards where
+ * retention is on and its state is clean. `use` receives the project (or
+ * undefined where the compiler did not load it) and the probe of its files. */
 export function inDeclarationSession<T>(file: string, tsconfigPath: string,
-    use: (project: Project | undefined, probe: ProbeProgram) => T): T {
-  const config = resolve(tsconfigPath);
+    use: (project: Project | undefined, probe: ProbeProgram) => T, root?: string): T {
+  const named = resolve(tsconfigPath);
   const cwd = dirname(file);
+  if (root !== undefined) {
+    // A module's lowering opens a session of its own, released after it,
+    // and leaves the retained session as it is: its compiler gets no
+    // request, so its ledger reaches no record of the module's stage.
+    const config = moduleProject(named, resolve(root));
+    const overlay = new Map<string, string>(), fixed = new Map<string, string>();
+    const ledger = newLedger();
+    const api = openFrontEndCompiler(cwd, overlay, ledger, fixed);
+    fixed.set(config, withLedger(ledger, () => moduleProjectText(api, named, resolve(root))));
+    const descriptor = JSON.stringify({ role: "module", config, cwd, compiler: compilerChoice(), families: activeFamilies() });
+    const own: Session = { api, overlay, cwd, config, descriptor, generation: ++generations, uses: 1, ledger, idle: null };
+    for (const used of attempts) if (!used.includes(ledger)) used.push(ledger);
+    const was = retaining;
+    retaining = false;
+    try {
+      return collect(own, use);
+    } finally {
+      retaining = was;
+    }
+  }
+  const config = named;
   const descriptor = JSON.stringify({ role: "declaration", config, cwd, compiler: compilerChoice(),
     families: activeFamilies() });
   let session: Session | null = null;
@@ -214,8 +254,8 @@ export function inDeclarationSession<T>(file: string, tsconfigPath: string,
     const overlay = new Map<string, string>();
     // The session's ledger is its compiler's (`compilerLedger`).
     const ledger = newLedger();
-    session = { api: openFrontEndCompiler(cwd, overlay, ledger), overlay, cwd, config, descriptor, generation: ++generations,
-      uses: 1, ledger, idle: null };
+    session = { api: openFrontEndCompiler(cwd, overlay, ledger), overlay, cwd, config, descriptor,
+      generation: ++generations, uses: 1, ledger, idle: null };
     telemetry.opens++;
   }
   for (const used of attempts) if (!used.includes(session.ledger)) used.push(session.ledger);

@@ -550,11 +550,20 @@ if (process.argv[2] !== "--node-only") {
   write("dep.ts", "export function dep(x: number): number {\n  return x + 1;\n}\n");
   const changed = run();
   assert.equal(changed.execution, "executed", "an imported module changed: the parse's entry no longer holds");
-  // Each module's read set holds the declaration session's ledger, every
-  // file of the project its compiler read: a project file's change misses
-  // every module's entry.
-  assert.deepEqual(changed.modules, ["executed", "executed"], `the modules execute again: ${JSON.stringify(changed)}`);
+  // Each module is lowered in the project rooted at it: its read set holds
+  // what that project's compilers read, the module, what it imports and
+  // the project's declaration files. A module's change misses its own
+  // entry; another module's entry replays.
+  assert.deepEqual(changed.modules, ["executed", "replayed"], `the changed module executes again: ${JSON.stringify(changed)}`);
   assert.equal(run().execution, "replayed", "an imported module changed, then unchanged");
+  // An edit of the importer executes its parse and replays every module.
+  const importer = readFileSync(main, "utf8");
+  write("main.ts", importer + "export const edited: number = 1;\n");
+  const edited = run();
+  assert.equal(edited.execution, "executed", "the importer changed");
+  assert.deepEqual(edited.modules, ["replayed", "replayed"], `the modules replay: ${JSON.stringify(edited)}`);
+  write("main.ts", importer);
+  assert.equal(run().execution, "replayed", "the importer changed, then unchanged");
   const selection = spawnSync(process.execPath, [import.meta.filename, "--selection", fixture, join(repository, "pipeline")],
     { encoding: "utf8", env: { ...process.env, TSCERT_STAGE_STORE: join(dir, "selection-store") } });
   assert.equal(selection.status, 0, selection.stderr);

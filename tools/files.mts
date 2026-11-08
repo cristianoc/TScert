@@ -354,18 +354,24 @@ function inheritLedger(into: Recording, kept: Recording): void {
   if (kept.inconsistent !== null) into.inconsistent ??= kept.inconsistent;
 }
 
-/** A value of a process cache, with the observations it was computed from
- * and the outermost record during which they were last made. */
-export type Remembered<V> = { value: V; noted: readonly Noted[]; incomplete: string | null; epoch: number };
+/** A value of a process cache, with the observations it was computed from,
+ * the outermost record during which they were last made, and the compiler
+ * ledgers kept while it was computed, whose answers it holds. */
+export type Remembered<V> = { value: V; noted: readonly Noted[]; incomplete: string | null; epoch: number;
+  under: readonly Recording[] };
 
 /** The value `compute` gives for `key`, kept in `cache` with the
  * observations it was computed from: its first use during an outermost
  * record makes them again, computing the value again where one answers
  * otherwise, and every use notes them in the records being made, and
- * whether they are incomplete. */
+ * whether they are incomplete. A value computed while a compiler's ledger
+ * was kept is used again only while that ledger is kept: elsewhere its
+ * observations would bring that compiler's answers into records that read
+ * no other file through it (a module's lowering in a project rooted at the
+ * module, STAGE-STORE.md, "Shared work"), and it is computed again. */
 export function remembered<K, V>(cache: Map<K, Remembered<V>>, key: K, compute: () => V): V {
   const known = cache.get(key);
-  if (known && (known.epoch === epoch || known.noted.every(holds))) {
+  if (known && known.under.every((l) => recordings.has(l)) && (known.epoch === epoch || known.noted.every(holds))) {
     known.epoch = epoch;
     if (known.incomplete !== null) unobservable(known.incomplete);
     for (const recording of recordings)
@@ -384,7 +390,8 @@ export function remembered<K, V>(cache: Map<K, Remembered<V>>, key: K, compute: 
   // A value computed from a stage's named input is the stage's alone: kept
   // for none.
   if (made.readsInput) return made.value;
-  const entry: Remembered<V> = { value: made.value, noted: made.noted, incomplete: made.incomplete, epoch };
+  const entry: Remembered<V> = { value: made.value, noted: made.noted, incomplete: made.incomplete, epoch,
+    under: [...recordings].filter((r) => r.ledger) };
   for (const recording of recordings) recording.holding.add(entry);
   cache.set(key, entry);
   return made.value;
@@ -588,11 +595,12 @@ export type CompilerOverlay = {
   readonly has: (path: string) => Within<{ value: "keep"; store: "keep" }, boolean>;
 };
 
-/** A live read view of the native map, retaining its methods' effects. */
-export function compilerOverlay(overlay: Map<string, string>): CompilerOverlay {
+/** A live read view of the native map, retaining its methods' effects, and
+ * beneath it the texts of `fixed`, which no probe replaces. */
+export function compilerOverlay(overlay: Map<string, string>, fixed: Map<string, string> = new Map()): CompilerOverlay {
   return {
-    get: (path: string): Within<{ value: "keep"; store: "keep" }, string | undefined> => overlay.get(path),
-    has: (path: string): Within<{ value: "keep"; store: "keep" }, boolean> => overlay.has(path),
+    get: (path: string): Within<{ value: "keep"; store: "keep" }, string | undefined> => overlay.get(path) ?? fixed.get(path),
+    has: (path: string): Within<{ value: "keep"; store: "keep" }, boolean> => overlay.has(path) || fixed.has(path),
   };
 }
 

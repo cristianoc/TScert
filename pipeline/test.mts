@@ -9971,6 +9971,10 @@ process.stdout.write(JSON.stringify(await checkApart(${JSON.stringify(importer)}
   writeFileSync(importer, original + "\nexport const edited: number = 1;\n");
   const warm = runIn(store);
   assert.ok(moduleStages(warm.records).length >= 2, "the edited run plans the module run");
+  // The imported module's lowering is keyed on its own inputs alone.
+  const lowerings = warm.records.filter((r) => r.stage === "module");
+  assert.ok(lowerings.length >= 1, "the edited run lowers the imported module");
+  for (const r of lowerings) assert.equal(r.execution, "replayed", "after the edit, the module's lowering replays");
   for (const r of moduleStages(warm.records)) {
     assert.ok(r.key !== null, `${r.stage} has a key`);
     assert.equal(r.execution, "replayed", `after the edit, ${r.stage} replays`);
@@ -10011,6 +10015,7 @@ control(async (): Promise<void> => {
   const file = join(tree, "units.ts");
   const original = [
     "let total: number = 0;",
+    "const k = (n: number): number => n;",
     "function f(n: number): number {", "  return n + 1;", "}",
     "function g(n: number): number {", "  return f(n) * 2;", "}",
     "function h(s: string): string {", "  return s + \"!\";", "}",
@@ -10032,16 +10037,27 @@ process.stdout.write(JSON.stringify(await checkApart(${JSON.stringify(file)}, un
   };
   const executed = (records: readonly AttemptRecord[], stage: string): number =>
     records.filter((r) => r.stage === stage && ranStage(r)).length;
+  // Every search is a unit's over its slice: none reads the document.
+  const overSlices = (name: string, records: readonly AttemptRecord[]): void => {
+    for (const r of records.filter((x) => x.stage === "search")) {
+      const argv = fieldOf(r.manifest, "argv");
+      const at = Array.isArray(argv) ? argv.indexOf("--produce-unit") : -1;
+      const slice: unknown = Array.isArray(argv) ? argv[at + 1] : undefined;
+      assert.ok(typeof slice === "string" && slice.endsWith(".slice.json"), `${name}: a search reads a unit's slice`);
+    }
+  };
   const replayed = (records: readonly AttemptRecord[], stage: string): number =>
     records.filter((r) => r.stage === stage && r.execution === "replayed").length;
   const store = runDirectory("tscert-unit-replay-store-");
   writeFileSync(file, original);
   const cold = runIn(store);
   assert.equal(cold.outcome.status, "verified", JSON.stringify(cold.outcome));
+  overSlices("cold", cold.records);
   const edit = (name: string, text: string, proposals: number, searches: number): void => {
     assert.notEqual(text, original, `${name}: the edit applies`);
     writeFileSync(file, text);
     const warm = runIn(store);
+    overSlices(name, warm.records);
     assert.equal(executed(warm.records, "propose"), proposals, `${name}: units proposed again`);
     assert.equal(executed(warm.records, "search"), searches, `${name}: units searched again`);
     assert.equal(replayed(warm.records, "search"), 6 - searches, `${name}: every other unit's search replays`);
@@ -10059,8 +10075,28 @@ process.stdout.write(JSON.stringify(await checkApart(${JSON.stringify(file)}, un
   edit("length", original.replace("  return n - 1;", "  // one\n  // two\n  // three\n  return n - 1;"), 1, 1);
   // `f` writes a module cell: its footprint, so `g`'s reads, change.
   edit("interface", original.replace("  return n + 1;", "  total = n;\n  return n + 1;"), 2, 2);
+  // `f` reads the constant `k` as a value: the initialization, which offers
+  // `k`'s signature by that read, and `f` are proposed again; `h`, reading
+  // neither, replays.
+  edit("value read", original.replace("  return n + 1;", "  const read = k;\n  return read(n) + 1;"), 2, 2);
+  // A refused unit's explanation is keyed on its slice: an edit of another
+  // function replays it.
+  const refused = [
+    "function f(n: number): number {", "  return n + 1;", "}",
+    "function bad(xs: (number | undefined)[]): number {", "  const x = xs[0];", "  return x as number;", "}", ""].join("\n");
+  writeFileSync(file, refused);
+  const explained = runIn(store);
+  overSlices("explained", explained.records);
+  assert.equal(explained.outcome.status, "unverified", JSON.stringify(explained.outcome));
+  assert.equal(executed(explained.records, "explain"), 1, "the refused unit is explained");
+  writeFileSync(file, refused.replace("  return n + 1;", "  return 1 + n;"));
+  const reexplained = runIn(store);
+  assert.equal(replayed(reexplained.records, "explain"), 1, "after an edit of another function, its explanation replays");
+  assert.equal(executed(reexplained.records, "explain"), 0, "and nothing is explained again");
+  writeFileSync(file, original);
   process.stdout.write("unit replay: an edit of one function executes its unit's stages and those of the units reading " +
-    "a changed interface, every other unit's replaying, each outcome a cold run's\n");
+    "a changed interface, every other unit's replaying, each outcome a cold run's; every search reads a slice; a " +
+    "refused unit's explanation replays across another function's edit\n");
 });
 
 // A callable type's methods cross the type graph's TypeScript decoder: a

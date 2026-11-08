@@ -26,10 +26,12 @@ export function decodeUnitFacts(value: Json): UnitFacts {
   const functions = value.functions.map((f) => {
     if (!isRecord(f) || typeof f.name !== "string" || typeof f.init !== "boolean")
       throw Error("tool failure: producer --units printed a malformed function");
-    return { name: f.name, mentions: strings(f.mentions, "a function"), init: f.init };
+    return { name: f.name, mentions: strings(f.mentions, "a function"), init: f.init,
+      names: strings(f.names, "a function's names") };
   });
   const init = value.init === null ? null
-    : isRecord(value.init) ? { mentions: strings(value.init.mentions, "the initialization") }
+    : isRecord(value.init) ? { mentions: strings(value.init.mentions, "the initialization"),
+      names: strings(value.init.names, "the initialization's names") }
     : null;
   if (value.init !== null && init === null) throw Error("tool failure: producer --units printed a malformed initialization");
   return { functions, init, readAsValues: strings(value.readAsValues, "the constants read as values") };
@@ -37,9 +39,10 @@ export function decodeUnitFacts(value: Json): UnitFacts {
 
 /** A unit of proposal: a strongly connected component of the graph of
  * mentions, the initialization a node of it; its members, whether the
- * initialization is one, whether its slice holds the initialization, and
- * the functions its slice holds by signature alone. */
-export type ProposalUnit = { members: string[]; init: boolean; holdsInit: boolean; reads: string[] };
+ * initialization is one, whether its slice holds the initialization, the
+ * functions its slice holds by signature alone, and every name the code its
+ * slice holds whole mentions. */
+export type ProposalUnit = { members: string[]; init: boolean; holdsInit: boolean; reads: string[]; names: string[] };
 
 const initNode = "\u0000init";
 /** The units of `facts`, each after the units it reads (Tarjan's order). */
@@ -82,7 +85,11 @@ export function proposalUnits(facts: UnitFacts): ProposalUnit[] {
     const read = new Set<string>();
     for (const m of members) for (const n of facts.functions.find((f) => f.name === m)?.mentions ?? []) read.add(n);
     if (holdsInit) for (const n of facts.init?.mentions ?? []) read.add(n);
-    return { members, init, holdsInit, reads: order.filter((n) => n !== initNode && read.has(n) && !members.includes(n)) };
+    const names = new Set<string>();
+    for (const m of members) for (const n of facts.functions.find((f) => f.name === m)?.names ?? []) names.add(n);
+    if (holdsInit) for (const n of facts.init?.names ?? []) names.add(n);
+    return { members, init, holdsInit, reads: order.filter((n) => n !== initNode && read.has(n) && !members.includes(n)),
+      names: [...names].sort() };
   });
 }
 

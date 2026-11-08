@@ -241,11 +241,12 @@ export const launcherForTests = (): string | null => launcher();
 /** The front end's compiler, its working directory `cwd`: the texts of
  * `overlay` at their paths, every other file-system query an observation,
  * and, where it can be, the process confined to them. */
-export function openFrontEndCompiler(cwd: string, overlay: Map<string, string>, ledger: Ledger = newLedger()): API {
+export function openFrontEndCompiler(cwd: string, overlay: Map<string, string>, ledger: Ledger = newLedger(),
+    fixed: Map<string, string> = new Map()): API {
   const confined = launcher();
   const { installation, implementation } = using;
   if (confined === null && implementation.unobserved !== undefined) unobservable(implementation.unobserved);
-  const api = openCompiler({ cwd, fs: compilerFileSystem(compilerOverlay(overlay), installation.missing !== undefined ? null : installation.executablePackage),
+  const api = openCompiler({ cwd, fs: compilerFileSystem(compilerOverlay(overlay, fixed), installation.missing !== undefined ? null : installation.executablePackage),
     ...(confined ? { tsserverPath: confined } : {}) });
   ledgers.set(privateClient(api), ledger);
   return api;

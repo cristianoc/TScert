@@ -20,13 +20,15 @@ let init_names (program:Source.program) = List.concat_map (fun (s:Source.stmt) -
 
 (* `--units`: what a unit's proposal reads beyond its own code. For each
    function name, the module functions and whether a name of the
-   initialization its code mentions; the initialization's mentions; and the
-   constants of the initialization the file reads as values. *)
+   initialization its code mentions, and every name it mentions; the
+   initialization's mentions and names; and the constants of the
+   initialization the file reads as values. *)
 let units_facts (program:Source.program) =
   let names = List.sort_uniq compare (List.map (fun (g:Source.fn) -> g.name) program.functions) in
   let declared = init_names program in
   let of_body stmts = List.filter (fun n -> List.mem n names) (mentioned stmts),
     List.exists (fun n -> List.mem n declared) (mentioned stmts) in
+  let strings ns = Json.Array (List.map (fun n -> Json.String n) ns) in
   let first_seen = List.fold_left (fun acc (g:Source.fn) -> if List.mem g.name acc then acc else acc @ [g.name]) []
     program.functions in
   let constants = List.concat_map (fun (s:Source.stmt) -> match s.statement with
@@ -36,11 +38,11 @@ let units_facts (program:Source.program) =
   Json.Object ["functions",Json.Array (List.map (fun name ->
       let bodies = List.concat_map (fun (g:Source.fn) -> if g.name = name then g.body else []) program.functions in
       let fs,init = of_body bodies in
-      Json.Object ["name",Json.String name;"mentions",Json.Array (List.map (fun n -> Json.String n) fs);
-        "init",Json.Bool init]) first_seen);
+      Json.Object ["name",Json.String name;"mentions",strings fs;"init",Json.Bool init;
+        "names",strings (mentioned bodies)]) first_seen);
     "init",(match program.init with
       | [] -> Json.Null
-      | stmts -> Json.Object ["mentions",Json.Array (List.map (fun n -> Json.String n) (fst (of_body stmts)))]);
+      | stmts -> Json.Object ["mentions",strings (fst (of_body stmts));"names",strings (mentioned stmts)]);
     "readAsValues",Json.Array (List.filter_map (fun n ->
       if List.mem n read then Some (Json.String n) else None) constants)]
 

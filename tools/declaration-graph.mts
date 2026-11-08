@@ -179,12 +179,26 @@ export function tsconfigOf(path: string): string {
  * a compiler of its own. The compiler reads the files on disk; only a probe
  * program (`type-probe.mts`) reads some of them with text of its own, in a
  * snapshot of its own. */
+/** The module whose lowering is being made, if one is (`rootedAtModule`). */
+let moduleRoot: string | undefined;
+/** `run` lowering the module `root`: a named project's collections in it
+ * read that project rooted at the module (`inDeclarationSession`). */
+export function rootedAtModule<T>(root: string, run: () => T): T {
+  const outer = moduleRoot;
+  moduleRoot = root;
+  try {
+    return run();
+  } finally {
+    moduleRoot = outer;
+  }
+}
 function withProject<T>(file: string, tsconfigPath: string | undefined,
   use: (checker: Checker, client: SourceFile, root: string, program: Program, probe: ProbeProgram, exactOptional: ExactOptional) => T): T {
   if (tsconfigPath === undefined) return withOwnProject(file, use);
   // A named project is opened alone: opening the file as well would load
   // the project the compiler finds for it besides the named one.
-  return inDeclarationSession(file, tsconfigPath, (project, probe) => useProject(file, project, () => {}, use, probe));
+  return inDeclarationSession(file, tsconfigPath, (project, probe) => useProject(file, project, () => {}, use, probe),
+    moduleRoot);
 }
 
 /** `use` over `project` as loaded for `file`: a strict configured project

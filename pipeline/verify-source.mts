@@ -350,7 +350,7 @@ export class UnitProposal {
   private readonly slices = new Map<number, { slice: string; flow: string; deletions: [number, number][] }>();
   private settled = new Map<string, Interface>();
   /** Each proposed unit's slice and claims, what its search reads. */
-  private searchable = new Map<number, { slice: string; claims: string; deletions: [number, number][] }>();
+  private searchable = new Map<number, { slice: string; claims: string; qualified: string; deletions: [number, number][] }>();
   private qualified = "";
   private readonly refusal: string | null;
   constructor(run: (call: ProcessCall) => StepRun, prefix: string, ast: string, local: string) {
@@ -389,8 +389,13 @@ export class UnitProposal {
       if (!settled) throw Error(`tool failure: unit read ${name} before its proposal`);
       return settled;
     });
-    const document: UnitReads = { members: unit.members, init: unit.init, pinned, readAsValues: this.facts.readAsValues,
-      qualified: qualified.map(({ local, declaration, footprint, onThrow }) => ({ local, declaration, footprint, onThrow })) };
+    // The constants read as values are read by the initialization alone, and
+    // a qualified read by the code that names it: a unit's slice holds each
+    // only where they are among its inputs.
+    const document: UnitReads = { members: unit.members, init: unit.init, pinned,
+      readAsValues: unit.holdsInit ? this.facts.readAsValues : [],
+      qualified: qualified.filter((q) => unit.names.includes(q.local))
+        .map(({ local, declaration, footprint, onThrow }) => ({ local, declaration, footprint, onThrow })) };
     return JSON.stringify(document);
   }
   /** The document's claims at the qualified reads `qualified`. */
@@ -420,7 +425,10 @@ export class UnitProposal {
       }
       for (const entry of decodeInterfaces(JSON.parse(proposed.out))) interfaces.set(entry.name, entry);
       proposals.push({ bin, deletions: files.deletions });
-      this.searchable.set(i, { slice: files.slice, claims, deletions: files.deletions });
+      const searchQualified = `${this.prefix}unit-${i}.search-qualified.json`;
+      writeFileSync(searchQualified, JSON.stringify(qualified.filter((q) => unit.names.includes(q.local))
+        .map(({ local, footprint, onThrow }) => ({ name: local, footprint, onThrow }))));
+      this.searchable.set(i, { slice: files.slice, claims, qualified: searchQualified, deletions: files.deletions });
     }
     this.settled = interfaces;
     this.qualified = `${this.prefix}search-qualified.json`;
@@ -465,7 +473,7 @@ export class UnitProposal {
       const evidence = `${this.prefix}unit-${i}.evidence.json`;
       let produced: StepRun;
       try {
-        produced = this.run(verifierCall(verifier, [...budget, "--produce-unit", files.slice, files.claims, this.qualified,
+        produced = this.run(verifierCall(verifier, [...budget, "--produce-unit", files.slice, files.claims, files.qualified,
           evidence, String(searchDepth), names.join(",")]));
       } catch (error) {
         if (!overLimit(messageOf(error))) throw error;
@@ -494,44 +502,6 @@ export class UnitProposal {
           throw Error("tool failure: verifier --produce-unit wrote a line without its unit");
         lines.push(`${line.slice(0, unitAt.index)}"unit":${JSON.stringify(named(id))}}`);
       }
-    }
-    return { lines, refused, failed };
-  }
-  /** The search of the units `names` names over the whole document `ast`
-   * at its claims `claims` (`verifier --produce-unit`), its lines without
-   * the store's heads, which the check then reads as the document's: for a
-   * unit whose slice's evidence the check refuses (`unitRound`). */
-  searchDocument(budget: string[], names: string[], ast: string, claims: string):
-      { lines: string[]; refused: Map<string, string>; failed: Map<string, string> } {
-    const lines: string[] = [], refused = new Map<string, string>(), failed = new Map<string, string>();
-    const evidence = `${this.prefix}document.evidence.json`;
-    let produced: StepRun;
-    try {
-      produced = this.run(verifierCall(verifier, [...budget, "--produce-unit", ast, claims, this.qualified, evidence,
-        String(searchDepth), names.join(",")]));
-    } catch (error) {
-      if (!overLimit(messageOf(error))) throw error;
-      for (const n of names) failed.set(n, messageOf(error));
-      return { lines, refused, failed };
-    }
-    const refusal = verifierRefusal(produced, "--produce-unit");
-    const out = produced.out.split("\n");
-    if (refusal !== null && !out.some((l) => l.startsWith("checked source evidence written: "))) {
-      for (const n of names) refused.set(n, refusal);
-      return { lines, refused, failed };
-    }
-    for (const l of out.filter((l) => l.startsWith("refused: "))) {
-      const value: unknown = JSON.parse(l.slice("refused: ".length));
-      const id = field(value, "unit"), detail = field(value, "refusal");
-      if (typeof id !== "string" || typeof detail !== "string")
-        throw Error("tool failure: verifier --produce-unit printed a malformed refusal");
-      refused.set(memberName(id), detail);
-    }
-    for (const line of readFileSync(evidence, "utf8").split("\n").filter((l) => l !== "")) {
-      // A line's fields are in key order: the heads between the evidence and the unit.
-      const heads = line.lastIndexOf(',"heads":'), unit = line.lastIndexOf(',"unit":');
-      if (heads < 0 || unit < heads) throw Error("tool failure: verifier --produce-unit wrote a line without its heads");
-      lines.push(line.slice(0, heads) + line.slice(unit));
     }
     return { lines, refused, failed };
   }
@@ -829,32 +799,7 @@ function unitRound(recorder: Recorder, artifacts: string, ast: string, claims: s
   writeFileSync(evidence, searched.lines.map((l) => l + "\n").join(""));
   const checked = check(evidence, named, searched.refused, searched.failed);
   if (typeof checked === "string") return withdrawal([checked]) ?? { front: checked };
-  // A unit whose slice's evidence the check refuses is searched again over
-  // the document (`UnitProposal.searchDocument`): a slice's store can order
-  // a union's members otherwise than the document's, and the evidence's
-  // cases follow that order.
-  const again = checked.filter((r) => r.status !== "verified" && r.phase === "check" &&
-    !searched.refused.has(memberName(r.unit)) && !searched.failed.has(memberName(r.unit)));
   let results = checked;
-  if (again.length > 0) {
-    const names = [...new Set(again.map((r) => memberName(r.unit)))];
-    const whole = proposal.searchDocument(budget, names, ast, claims);
-    const own = join(artifacts, "document-evidence.json");
-    writeFileSync(own, whole.lines.map((l) => l + "\n").join(""));
-    const rechecked = check(own, [names.join(",")], whole.refused, whole.failed);
-    if (typeof rechecked === "string") return withdrawal([rechecked]) ?? { front: rechecked };
-    results = checked.map((r) => rechecked.find((x) => x.unit === r.unit) ?? r);
-    // The run's evidence is what its verdicts were checked at: each unit
-    // searched again, its line over the document.
-    const unitOf = (line: string): string | undefined => {
-      const at = /"unit":("(?:[^"\\]|\\.)*")\}$/.exec(line)?.[1];
-      const id: unknown = at === undefined ? undefined : JSON.parse(at);
-      return typeof id === "string" ? id : undefined;
-    };
-    const searchedAgain = new Set(whole.lines.map(unitOf));
-    writeFileSync(evidence, [...searched.lines.filter((l) => !searchedAgain.has(unitOf(l))), ...whole.lines]
-      .map((l) => l + "\n").join(""));
-  }
   // In the front's order, the file's functions by position, then its
   // initialization: the order the units' searches end in is the slices'.
   const place = (unit: string): number => unit === "init" ? Infinity : Number(/@(\d+)$/.exec(unit)?.[1] ?? Infinity);
