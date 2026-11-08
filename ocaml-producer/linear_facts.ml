@@ -31,9 +31,17 @@ let term_parts t : string * string list * kind =
   | root :: path -> root,path,kind
   | [] -> base,[],kind
 let term_binding t = let b,_,_ = term_parts t in b
+(* The bindings of the body being analysed held in cells, early ones
+   aside (PROGRAM-TYPING.md, "Terms for bindings held in cells"): a term
+   rooted at one reads the cell's field `value`, as Lean's lowering roots it
+   (`termRoot`). Set by the flow around each body. *)
+let cell_terms : (string -> bool) ref = ref (fun _ -> false)
+(* The body's parameters held in slots, whose objects are older than its
+   cells. Set by the flow around each body. *)
+let parameter_binding : (string -> bool) ref = ref (fun _ -> false)
 (* A path, a length or an element count reads the heap (Lean's
-   `Term.envOnly`). *)
-let reads_heap t = let _,path,kind = term_parts t in kind <> Value_term || path <> []
+   `Term.envOnly`), as does a term rooted at a cell. *)
+let reads_heap t = let b,path,kind = term_parts t in kind <> Value_term || path <> [] || !cell_terms b
 let has_heap_term ((t,_) : fact) = List.exists (fun (n,_) -> reads_heap n) t
 
 let max_safe = 9007199254740991
@@ -143,10 +151,14 @@ let gbindings ((gs,(t,_)) : gfact) = List.map (fun (x,_,_) -> x) gs @ List.map (
 let gmentions x g = List.mem x (gbindings g)
 let gforget x (gs : gfact list) = List.filter (fun g -> not (gmentions x g)) gs
 
-(* A binding a fact may name: a value or a slot local, never a cell. *)
-let value_binding env x = match List.assoc_opt x env with
+(* A binding held in a slot: a value or a slot local. *)
+let slot_binding env x = match List.assoc_opt x env with
   | Some (Value _) | Some (Local _) -> true
   | _ -> false
+(* A binding a fact may name: a slot's, or one held in a cell of the body
+   (`cell_terms`). *)
+let value_binding env x = slot_binding env x ||
+  (match List.assoc_opt x env with Some (Storage _) -> !cell_terms x | _ -> false)
 
 (* Whether a binding's type states a view's `[[viewLength]]` stable, set by
    the statement analysis, which reads the type. *)
@@ -157,7 +169,7 @@ let stable_view : ((string * Environment.binding) list -> string -> bool) ref = 
    binding holds whose type states `[[viewLength]]` stable, a location of
    one value. *)
 let stable_term env t = not (reads_heap t) ||
-  (let b,path,kind = term_parts t in kind = View_term && path = [] && value_binding env b && !stable_view env b)
+  (let b,path,kind = term_parts t in kind = View_term && path = [] && slot_binding env b && !stable_view env b)
 let stable_fact env ((t,_) : fact) = List.for_all (fun (n,_) -> stable_term env n) t
 (* The facts a step writing the heap keeps whatever it writes. *)
 let keep_stable env fs = List.filter (stable_fact env) fs
@@ -265,6 +277,13 @@ let rec path_of env (e : expr) = match e.node with
     Option.map (fun (b,p) -> b,p @ [f]) (path_of env o)
   | _ -> None
 
+(* The step an update adds: `1` for `++`, the literal of `+= n`, negated
+   for a subtraction. *)
+let cell_step op (rhs : expr option) = match rhs with
+  | None -> Some (if op = Add then 1 else -1)
+  | Some {node=Literal (LNumber n);_} -> Option.map (fun d -> if op = Add then d else -d) (literal_int n)
+  | Some _ -> None
+
 (* An operand Lean reads as a safe integer: a literal, or a binding or a
    path a fact states one; a sum or a difference of such, each step's result
    in range. `array b path` tells whether the path from `b` holds an array,
@@ -280,6 +299,13 @@ let rec linear ?(array = fun _ _ -> false) env fs (e : expr) : ((string * int) l
      state it the view's element count. *)
   | Call ({node=Id "%ByteLength%";_},None,[o],[],_) when path_of env o <> None ->
     (match path_of env o with Some (b,path) -> Some ([view_term ~path b,1],0) | None -> None)
+  (* `++x` or `x++` of a binding held in a cell, read against the facts
+     after the update (`after_cell_updates`): the new value is `x`, the old
+     one `x` less the step. *)
+  | Update ((Add | Sub) as op,{node=Id x;_},rhs,post) when !cell_terms x && is_int fs x ->
+    (match cell_step op rhs with
+     | Some d -> Some ([x,1], if post then -d else 0)
+     | None -> None)
   | Arith ((Add | Sub) as op,a,b) ->
     (match linear ~array env fs a, linear ~array env fs b with
      | Some (ta,ca),Some (tb,cb) ->
@@ -327,6 +353,13 @@ let signatures_keep (calls : Semantic.signature list) =
     e.Semantic.footprint.Semantic.on_value = Semantic.Keep && e.Semantic.footprint.Semantic.on_store = Semantic.Keep &&
     not e.Semantic.receiver_store && not e.Semantic.receiver_own) calls
 
+(* Whether `heap_free` admits updates of cells (`cell_terms`), whose
+   facts the caller states (`after_cell_updates`). *)
+let cells_written = ref false
+let with_cells admitted f =
+  let saved = !cells_written in
+  cells_written := admitted;
+  Fun.protect ~finally:(fun () -> cells_written := saved) f
 let rec heap_free env (e : expr) = match e.node with
   | Id _ | Literal _ -> true
   | Not a | Unary (_,a) | Cast (_,_,a) | Read (a,_) -> heap_free env a
@@ -343,8 +376,9 @@ let rec heap_free env (e : expr) = match e.node with
   (* An array literal without spreads allocates only its store and its
      elements' fresh locations, as Lean's allocation keeps every index atom. *)
   | ArrayLiteral (es,[]) -> List.for_all (heap_free env) es
-  | Assign (x,_,rhs) -> value_binding env x && heap_free env rhs
-  | Update (_,{node=Id x;_},rhs,_) -> value_binding env x && Option.fold ~none:true ~some:(heap_free env) rhs
+  | Assign (x,_,rhs) -> slot_binding env x && heap_free env rhs
+  | Update (_,{node=Id x;_},rhs,_) -> (slot_binding env x || (!cells_written && !cell_terms x)) &&
+    Option.fold ~none:true ~some:(heap_free env) rhs
   | _ -> false
 
 (* A destructuring that reads fields of a path alone, `const { f, g: h } = p`:
@@ -391,7 +425,14 @@ let current_gfacts : gfact list ref = ref []
    the write grows stores, where each length it names that is not kept has a
    coefficient at most 0 (`Term.formKeptBy`). *)
 type changes = { obj : bool; num : bool; store : [`Keep | `Length | `Grow | `Any];
-                 framed : string -> string -> bool }
+                 framed : string -> string -> bool;
+                 (* The write's location is apart from every cell of the
+                    body (Lean's `first`): a field of a parameter's object,
+                    allocated before the body's cells. *)
+                 apart : bool;
+                 (* The write is a cell's of the body, apart from every
+                    parameter's object. *)
+                 cell_write : bool }
 
 (* The classes a field's type admits, `(object, number, store)`, where the
    receiver's type states the field (Lean's `fieldChanges`); set by the
@@ -419,17 +460,24 @@ let view_field : ((string * Environment.binding) list -> string -> string -> boo
 
 let no_frame _ _ = false
 let of_classes env (o,n,a) = { obj = o; num = n; store = (if a then `Any else `Keep);
-  framed = (fun b g -> value_binding env b && !view_field env b g) }
+  framed = (fun b g -> slot_binding env b && !view_field env b g); apart = false; cell_write = false }
 let of_footprint (fp : Semantic.footprint) =
   { obj = fp.Semantic.on_value = Semantic.Any; num = fp.Semantic.on_value = Semantic.Any;
-    store = (if fp.Semantic.on_store = Semantic.Keep then `Keep else `Any); framed = no_frame }
+    store = (if fp.Semantic.on_store = Semantic.Keep then `Keep else `Any); framed = no_frame; apart = false; cell_write = false }
 
 let term_kept ch t =
   let b,path,kind = term_parts t in
+  (* A cell's term reads its field `value` first. The first location a
+     term reads is one the write keeps (Lean's `first`) where the write is
+     apart from the body's cells and the term a cell's, or the write is a
+     cell's and the term rooted at a parameter, whose object is older. *)
+  let cell = !cell_terms b in
+  let path = if cell then "value" :: path else path in
+  let first = (ch.apart && cell) || (ch.cell_write && !parameter_binding b) in
   let last = if kind = Value_term then ch.num else ch.obj in
   ((match path with
    | [] -> true
-   | _ :: q -> not (if q = [] then last else ch.obj) && (q = [] || (not last && (List.length q = 1 || not ch.obj)))) &&
+   | _ :: q -> (first || not (if q = [] then last else ch.obj)) && (q = [] || (not last && (List.length q = 1 || not ch.obj)))) &&
   (match kind with Value_term -> true | Length_term -> ch.store = `Keep || ch.store = `Length | View_term -> not ch.num)) ||
   (* A view's count read through one field the write keeps, its type stating
      the count stable (Lean's `Term.viewFramed`). *)
@@ -452,16 +500,17 @@ let strictly_bounded ~facts ~bounds xs k =
 let write_changes ~facts ~bounds env (e : expr) : changes option =
   match e.node with
   | Write (recv,key,rhs) when heap_free env recv && heap_free env rhs ->
-    Option.map (of_classes env) (!field_classes env recv key)
+    Option.map (fun c -> { (of_classes env c) with apart = (match recv.node with
+      | Id x -> !parameter_binding x | _ -> false) }) (!field_classes env recv key)
   | Update (_,{node=Read (recv,key);_},rhs,_) when heap_free env recv && Option.fold ~none:true ~some:(heap_free env) rhs ->
     Option.map (of_classes env) (!field_classes env recv key)
   | IndexWrite ({node=Id xs;_},{node=Id k;_},rhs)
-    when heap_free env rhs && value_binding env xs && value_binding env k && !source_elements env xs && strictly_bounded ~facts ~bounds xs k ->
-    Some { obj = true; num = true; store = `Length; framed = no_frame }
+    when heap_free env rhs && slot_binding env xs && slot_binding env k && !source_elements env xs && strictly_bounded ~facts ~bounds xs k ->
+    Some { obj = true; num = true; store = `Length; framed = no_frame; apart = false; cell_write = false }
   | Call ({node=Id f;_},None,args,[],_) when List.for_all (heap_free env) args ->
     Option.map of_footprint (!call_footprint env f)
   | Invoke ({node=Read (r,key);_},args,[],_) when heap_free env r && List.for_all (heap_free env) args ->
-    if !method_grows env r key then Some { obj = false; num = false; store = `Grow; framed = no_frame }
+    if !method_grows env r key then Some { obj = false; num = false; store = `Grow; framed = no_frame; apart = false; cell_write = false }
     else Option.map of_footprint (!method_footprint env r key)
   | _ -> None
 
@@ -565,10 +614,54 @@ let test_call_facts env (c : expr) : fact list = match c.node with
   | Call ({node=Id f;_},None,args,[],_) | Not {node=Call ({node=Id f;_},None,args,[],_);_} -> call_facts env f args
   | _ -> []
 
+(* The facts after the updates an expression makes of bindings held in
+   cells (PROGRAM-TYPING.md, "Terms for bindings held in cells"): Lean reads
+   the cell's `value` into a slot, the old value, computes the new one, and
+   writes it back, a number field's write that its read link restates. So
+   each updated binding's facts are restated of its old value, the write's
+   change applied (a number's: every cell's term goes), and the new value
+   stated the old one plus the step, the old one then eliminated. A binding
+   updated twice, read elsewhere in the expression, or by a step no literal
+   gives is forgotten. *)
+let after_cell_updates env (e : expr) (fs : fact list) : fact list =
+  let rec updates (e : expr) acc =
+    let acc = match e.node with
+      | Update ((Add | Sub) as op,{node=Id x;_},rhs,_) when !cell_terms x -> (x,cell_step op rhs) :: acc
+      | Assign (x,_,_) when !cell_terms x -> (x,None) :: acc
+      | _ -> acc in
+    List.fold_left (fun acc c -> updates c acc) acc (Source.children e) in
+  let rec mentions_id x (e : expr) =
+    (match e.node with Id y | Assign (y,_,_) -> if y = x then 1 else 0 | _ -> 0) +
+    List.fold_left (fun n c -> n + mentions_id x c) 0 (Source.children e) in
+  match updates e [] with
+  | [] -> fs
+  | ups ->
+    let change = { obj = false; num = true; store = `Keep; framed = no_frame; apart = false; cell_write = true } in
+    let renamed x old t = let b,path,kind = term_parts t in if b = x then make_term ~path kind old else t in
+    let steps = List.map (fun (x,d) -> x, (if mentions_id x e = 1 then d else None), "%old" ^ x) ups in
+    let fs = List.fold_left (fun fs (x,_,old) ->
+      List.map (fun ((t,b) as f : fact) -> let t' = List.map (fun (n,c) -> renamed x old n,c) t in
+        (if is_int_fact f then t' else norm t'), b) fs) fs steps in
+    let fs = List.filter (fun f -> fact_kept change f || stable_fact env f) fs in
+    List.fold_left (fun fs (x,d,old) -> match d with
+      | Some d when is_int fs old && safe fs ([old,1],d) -> forget old (fs @ equal x ([old,1],d))
+      | _ -> forget old fs) fs steps
+
 (* A statement's effect on the facts: an assignment or update of a slot
    binding by a linear expression, and every other assigned binding
    forgotten. *)
-let statement ~(array : string -> string list -> bool) ?(bounds=[]) env fs (s : stmt) : fact list =
+let rec statement ~(array : string -> string list -> bool) ?(bounds=[]) env fs (s : stmt) : fact list =
+  match s.statement with
+  (* `i++;` of a binding held in a cell: its read, step and write. *)
+  | Effect ({node=Update (_,{node=Id x;_},None,_);_} as e) when !cell_terms x -> after_cell_updates env e fs
+  (* A statement updating a cell inside it (`s += xs[at++]!`): the update's
+     facts, then the statement as one writing no other location. *)
+  | Effect e ->
+    let updated = after_cell_updates env e fs in
+    if updated == fs then statement_slots ~array ~bounds env fs s
+    else with_cells true (fun () -> statement_slots ~array ~bounds env updated s)
+  | _ -> statement_slots ~array ~bounds env fs s
+and statement_slots ~(array : string -> string list -> bool) ?(bounds=[]) env fs (s : stmt) : fact list =
   (* A write `x.f = e` of a field the receiver's type states, of a value
      binding, by a linear expression: the field's new value is `e`'s, read through the old value where `e`
      reads it (Lean's `write-link`, a read link from `x.f` to the written
@@ -577,7 +670,7 @@ let statement ~(array : string -> string list -> bool) ?(bounds=[]) env fs (s : 
   let old = "%written" in
   let written = match s.statement with
     | Effect {node=Write (({node=Id x;_} as recv),(Semantic.Name f as key),rhs);_}
-      when value_binding env x && heap_free env rhs && !field_classes env recv key <> None ->
+      when slot_binding env x && heap_free env rhs && !field_classes env recv key <> None ->
       Option.map (fun form -> path_term x [f], form) (linear ~array env fs rhs)
     | _ -> None in
   let fs = match written with
@@ -781,6 +874,11 @@ let join (l : fact list) (r : fact list) : fact list =
     | _ -> true) fs
 
 let declaration ~(array : string -> string list -> bool) env fs name (init : expr) : fact list =
+  (* An initializer updating a cell (`xs[at++]!`): the update's facts, then
+     the initializer as one writing no other location. *)
+  let updated = after_cell_updates env init fs in
+  with_cells (updated != fs) @@ fun () ->
+  let fs = updated in
   let fs = if heap_free env init then fs else keep_stable env fs in
   let fs = forget name fs in
   (* `const x = f(…)` of a function stating facts of its result: each of

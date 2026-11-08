@@ -1,8 +1,10 @@
 // pretext's `normalizePreparedLineStart` steps its index in its loop's test,
 // `if (++segmentIndex >= count) return 0`: an update nested in an expression
 // keeps the binding in a cell (SourceFacts.lean, "Bindings held in cells"),
-// which no index fact names, so the read `flags[segmentIndex]!` at the
-// loop's next iteration has no bound and is refused. The program is safe;
+// whose value the linear facts name as the path `value` of the cell
+// (PROGRAM-TYPING.md, "Terms for bindings held in cells"), so the test's
+// false answer bounds the stored value and the read `flags[segmentIndex]!`
+// at the loop's next iteration is below the count;
 // `cursor-invariant-loop-write` is the same loop with the update a statement.
 
 /** @invariant safeInteger(this.segmentIndex) && 0 <= this.segmentIndex */

@@ -2488,6 +2488,46 @@ contexts, refused at its return), `invalid-guarded-invariant-other-field`
 removed from a claimed fact, and a guard naming another field, each refused
 at its entry.
 
+### Terms for bindings held in cells
+
+A binding an update inside an expression writes, or a closure captures, is
+held in a cell (`SourceFacts`, "Bindings held in cells"): an object whose
+field `value` holds the binding's value. A linear fact or guard over such a
+binding $`x`$, held in the cell at slot $`c`$, names the path term rooted at
+the cell, its path starting with `value` (`Lowering.termRoot`); a binding
+whose cell may hold the uninitialized marker (an early one) names none:
+
+```math
+\frac{x\ \text{held in the cell at}\ c}
+     {⟦x.p⟧_{\rho,h}=⟦c.\mathsf{value}.p⟧_{\rho,h},\quad ⟦|x.p|⟧_{\rho,h}=⟦|c.\mathsf{value}.p|⟧_{\rho,h},\quad ⟦\mathrm{view}(x.p)⟧_{\rho,h}=⟦\mathrm{view}(c.\mathsf{value}.p)⟧_{\rho,h}}\ \textsf{cell-term}
+```
+
+These are path terms of [linear facts](#linear-facts), so the rules there
+state and keep them. An update $`\texttt{++}x`$, $`x\texttt{++}`$,
+$`x\texttt{ += }n`$ or $`x\texttt{ -= }n`$, $`n`$ a safe-integer literal, is a
+read of $`c.\mathsf{value}`$ into a slot $`r`$, whose link restates the cell's
+facts of $`r`$ (`readAtoms`); the sum $`r'=r\pm d`$, a safe integer by
+`int-exact`; and the write $`c.\mathsf{value}:=r'`$, a number field's write,
+whose change drops the facts over the field and whose read link restates
+the facts of $`r'`$ of it (`write-link`, `read-bridge`). The update's value is
+$`r'`$ for a prefix update and $`r`$ for a postfix one, so `xs[at++]!` reads
+at $`r=c.\mathsf{value}-1`$ while the cell holds $`r'`$, and `++at` reads at
+$`r'`$. No rule is added for cells: a cell is an object allocated by the
+lowering, and these steps are the field read, sum and write rules above. A
+cell's facts are kept across a field write where a separation fact keeps the
+written field apart from the cell's `value` (`first`; the producer proposes
+this for a field of a parameter's object, allocated before the cell), and
+across a call as its footprint keeps a path's.
+
+The producer reads an expression updating a cell against the facts after
+the update (`Linear_facts.after_cell_updates`): each fact of the binding
+restated of its old value, the write's change applied, the new value stated
+the old one plus the step, the old one eliminated; a binding the expression
+updates twice, reads elsewhere, or steps by a non-literal is forgotten. An
+entry claim's facts lower to atoms each stated once (`Lowering.Flow`): a cut's
+knowledge is its assertion exactly (`checkAssertions`), and two claimed facts
+over a cell's value can lower to one atom.
+
 ### A literal with spreads
 
 A store literal evaluates its parts left to right, and a spread of a ready

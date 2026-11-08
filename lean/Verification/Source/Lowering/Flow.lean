@@ -305,21 +305,22 @@ private def reachablePoints (graph : SourceFlow.Graph) (id : Nat) : List String 
         s!"a bound names '{index}' as its index, which is no value binding")
   -- The linear facts the producer proposes (PROGRAM-TYPING.md, "Linear
   -- facts"): each term rooted at a value binding, its path the fields read
-  -- from it; a fact whose coefficients are all zero states only that its
+  -- from it, or at a binding held in a cell, its path read from the cell's
+  -- `value` (`termRoot`); a fact whose coefficients are all zero states only that its
   -- terms denote integers: a binding's value a safe integer, a path's value
   -- one at most `2^53 - 1`, a length or element count one at least `0`.
   -- A guarded fact (PROGRAM-TYPING.md, "Guarded clauses") is each such fact
   -- in a guarded fact of each guard, the first outermost, its path read
   -- from a value binding.
   let linear ← ((fc.entryFacts.lookup node.source.1).getD []).flatMapM fun (guards, terms, bound) => do
-    let form ← terms.mapM fun (name, path, kind, c) => match valueSlot scope name with
-      | some x => pure ((⟨kind, x, path⟩ : HeapKnowledge.Term), c)
+    let form ← terms.mapM fun (name, path, kind, c) => match termRoot scope name with
+      | some (x, pre) => pure ((⟨kind, x, pre ++ path⟩ : HeapKnowledge.Term), c)
       | none => do throw (locatedRefusal (← table) node.source .entryClaim
-          s!"a linear fact names '{name}', which is no value binding")
-    let guards ← guards.mapM fun (name, path, tag) => match valueSlot scope name with
-      | some x => pure (x, path, tag)
+          s!"a linear fact names '{name}', which is no value binding or cell")
+    let guards ← guards.mapM fun (name, path, tag) => match termRoot scope name with
+      | some (x, pre) => pure (x, pre ++ path, tag)
       | none => do throw (locatedRefusal (← table) node.source .entryClaim
-          s!"a linear fact's guard names '{name}', which is no value binding")
+          s!"a linear fact's guard names '{name}', which is no value binding or cell")
     let wrap := fun (F : HeapKnowledge.IndexFact) =>
       guards.foldr (fun (x, path, tag) B => HeapKnowledge.IndexFact.guarded x path tag B) F
     if form.all (·.2 == 0) && 0 ≤ bound then
@@ -328,7 +329,11 @@ private def reachablePoints (graph : SourceFlow.Graph) (id : Nat) : List String 
         | .value, _ :: _ => .linear (.le [(t, 1)] (2 ^ 53 - 1))
         | _, _ => .linear (.le [(t, -1)] 0)) } : HeapKnowledge.IndexAtom))
     else pure [({ fact := wrap (.linear (.le form bound)) } : HeapKnowledge.IndexAtom)]
-  let bounds := bounds ++ linear
+  -- Each atom once, as the knowledge a search reaches holds it: a cut's
+  -- knowledge is its assertion exactly (`checkAssertions`), and two claimed
+  -- facts may lower to one atom (a cell's value term stated an integer and
+  -- bounded by `2^53 - 1`).
+  let bounds := (bounds ++ linear).eraseDups
   if !facts.isEmpty || !links.isEmpty || !separation.facts.isEmpty || !bounds.isEmpty then
     recordAssertion reserved ⟨facts, [], links, separation, [], bounds⟩
   recordCut reserved

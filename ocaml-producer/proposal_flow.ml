@@ -205,8 +205,25 @@ let statements callbacks flow_graph register_following owner_span env0 ss =
       let typed_with_bounds = match node.action with
         | Flow.Statement _ | Flow.Declaration _ | Flow.Branch _ | Flow.Return _ | Flow.ReturnSave _ -> true
         | _ -> false in
+      (* An update of a cell inside the statement (`xs[at++]!`) is read
+         against the facts after it (`Linear_facts.linear`), as Lean reads
+         the call's operands after the update's write. *)
+      let updating = match node.action with
+        | Flow.Statement (span,_) | Flow.Branch (span,_,_) | Flow.Return span | Flow.ReturnSave (span,_,_) ->
+          (match (source span).statement with
+           | Effect e | Return e | If (e,_,_) | While (e,_,_) -> Some e
+           | _ -> None)
+        | Flow.Declaration (span,name,initial_source,_,_) ->
+          (match (source span).statement with
+           | Declare (_,bindings) -> Option.map (fun (_,_,init) -> init)
+               (List.find_opt (fun (b,_,(init:Source.expr)) -> b=name && init.pos=initial_source) bindings)
+           | _ -> None)
+        | _ -> None in
+      let facts_at_calls = match updating with
+        | Some e -> Linear_facts.after_cell_updates env e facts0
+        | None -> facts0 in
       Linear_facts.current_bounds := (if typed_with_bounds then bounds0 else []);
-      Linear_facts.current_facts := (if typed_with_bounds then facts0 else []);
+      Linear_facts.current_facts := (if typed_with_bounds then facts_at_calls else []);
       Linear_facts.current_gfacts := (if typed_with_bounds then guarded0 else []);
       let next id env = id,capture (scope graph.nodes.(id).scope env) in
       let infer_return span = match (source span).statement with
@@ -309,10 +326,13 @@ let statements callbacks flow_graph register_following owner_span env0 ss =
         (* A cell (a binding a closure assigns, or an early one) holds no
            value slot a fact could name. *)
         let cell n = List.exists (fun (b:Flow.binding) -> b.name=n) graph.cells in
+        (* A cell a fact names is one of the body's own (`cell_terms`); an
+           early one names none. *)
+        let unnamed n = cell n && not (!Linear_facts.cell_terms n) in
         let with_facts ?(gs=[]) (id,state) fs bs =
           let fs = Linear_facts.close fs in
-          let fs = List.filter (fun ((t,_) : Linear_facts.fact) -> not (List.exists (fun (n,_) -> cell (Linear_facts.term_binding n)) t)) fs in
-          let gs = List.filter (fun g -> not (List.exists cell (Linear_facts.gbindings g))) gs in
+          let fs = List.filter (fun ((t,_) : Linear_facts.fact) -> not (List.exists (fun (n,_) -> unnamed (Linear_facts.term_binding n)) t)) fs in
+          let gs = List.filter (fun g -> not (List.exists unnamed (Linear_facts.gbindings g))) gs in
           let bs = List.filter (fun (a,i,_) -> not (cell a) && not (cell i)) (Linear_facts.bounds state.env @ bs) in
           id,{state with env=scope graph.nodes.(id).scope
             (Linear_facts.gadd (Linear_facts.add_bounds (Linear_facts.add state.env fs) bs) gs)} in
@@ -365,6 +385,12 @@ let statements callbacks flow_graph register_following owner_span env0 ss =
           let s = source span in
           (match s.statement with
            | If (c,_,_) | While (c,_,_) ->
+             (* A test updating a cell (`++i >= n`): the update's facts,
+                then the test as one writing no other location
+                (`after_cell_updates`). *)
+             let updated = Linear_facts.after_cell_updates env c facts0 in
+             Linear_facts.with_cells (updated != facts0) @@ fun () ->
+             let facts0 = updated in
              let (t,bt),(f,bf) = Linear_facts.test ~array:(callbacks.array_binding env) env facts0 c in
              let kept = Linear_facts.statement_bounds env bounds0 s in
              (* A test that may write the heap, a call of a function changing
@@ -408,7 +434,17 @@ let statements callbacks flow_graph register_following owner_span env0 ss =
       edges)) in
       publications.(node.id) <- output;
       edges in
-    let states=Flow.solve ~join ~transfer
+    (* The body's cells a fact may name: its own, early ones aside. *)
+    let saved_cells = !Linear_facts.cell_terms in
+    let own_cells n = List.exists (fun (b:Flow.binding) -> b.name=n) graph.cells &&
+      not (List.exists (fun (_,m) -> m = n) early_bindings) in
+    let saved_parameters = !Linear_facts.parameter_binding in
+    let own_parameters n = List.mem_assoc n env0 && not (own_cells n) in
+    let states=Fun.protect ~finally:(fun () -> Linear_facts.cell_terms := saved_cells;
+        Linear_facts.parameter_binding := saved_parameters) @@ fun () ->
+      Linear_facts.cell_terms := own_cells;
+      Linear_facts.parameter_binding := own_parameters;
+      Flow.solve ~join ~transfer
       ~widen:(fun _ previous state ->
         (* A slot still changing here is widened to its contract; one that
            settled keeps what it holds, a branch's narrowing included. *)
