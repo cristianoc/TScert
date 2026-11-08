@@ -98,7 +98,6 @@ const equationReaders = [
     le: "an index fact's field, read by the instance EffectJson.lean derives for HeapKnowledge.IndexFact and Linear.Fact",
     length: "an index fact's field, read by the instance EffectJson.lean derives for HeapKnowledge.IndexFact and Linear.Fact",
     linear: "an index fact's field, read by the instance EffectJson.lean derives for HeapKnowledge.IndexFact and Linear.Fact",
-    either: "a disjunctive index fact, derived by EffectJson.lean",
     guarded: "an index fact's field, read by the instance EffectJson.lean derives for HeapKnowledge.IndexFact and Linear.Fact",
     tag: "a guarded index fact's field, read by the instance EffectJson.lean states for HeapKnowledge.GuardTag's fact",
     path: "a linear term's field, read by the instance EffectJson.lean derives for HeapKnowledge.Term",
@@ -106,6 +105,8 @@ const equationReaders = [
     every: "a quantified index fact's field, read by the instance EffectJson.lean derives for HeapKnowledge.IndexFact",
     stop: "a quantified index fact's field, read by the instance EffectJson.lean derives for HeapKnowledge.IndexFact",
     free: "a quantified fact's body variable, read by the instance EffectJson.lean derives for HeapKnowledge.Bound",
+    offset: "an element offset, read by derived quantified-body variable instances",
+    delta: "an element offset, read by derived quantified-body variable instances",
     project: "an element projection, read by the derived HeapKnowledge.Bound and Wire.BodyVariable instances",
     t: "a quantified fact's body term, read by the instance EffectJson.lean derives for HeapKnowledge.Bound",
   });
@@ -125,6 +126,8 @@ const equationReaders = [
     declared(["tools/source-claims.mts"], "export function decodeSourceClaims"), leanNames, {
     labels: "a tuple element's label, not a field",
     ref: "a body variable's term, read by the instance Wire.lean derives for the inductive BodyVariable",
+    offset: "an element offset, read by derived quantified-body variable instances",
+    delta: "an element offset, read by derived quantified-body variable instances",
     project: "an element projection, read by the derived Wire.BodyVariable instance",
   });
 }

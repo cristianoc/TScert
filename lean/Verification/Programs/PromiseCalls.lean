@@ -1939,7 +1939,7 @@ theorem boundValue_grown {first : Nat → String → Bool} {ρ : Env} {h h' : He
   refine ⟨fun x n hk hx => ?_, fun x n hgx hx => ?_⟩
   · cases x with
     | index => exact hx
-    | project _ _ => simp [Bound.keptBy] at hk
+    | project _ _ | offset _ => simp [Bound.keptBy] at hk
     | free t => exact termValue_kept hc hf hk hx
     | elem =>
       simp only [boundValue, elementInt] at hx ⊢
@@ -1954,7 +1954,7 @@ theorem boundValue_grown {first : Nat → String → Bool} {ρ : Env} {h h' : He
         · simp [intValue] at hwn
       · cases hx
   · cases x with
-    | index | elem | project _ _ => simp [Bound.grownBy] at hgx
+    | index | elem | project _ _ | offset _ => simp [Bound.grownBy] at hgx
     | free t => exact termValue_grown hc hf hgx hx
 
 open HeapKnowledge in
@@ -1964,7 +1964,7 @@ the receiver's, extended with its old elements at their indices, or one the
 growth keeps. -/
 theorem every_grown {first : Nat → String → Bool} {ρ : Env} {h h' : Heap} {r : Tm}
     (hg : CallEffects.ReceiverGrows r h h') (hf : FirstKept first ρ h h')
-    {s : Nat} {p : List String} {st : Term} {body : List (Linear.Fact Bound)}
+    {s : Nat} {p : List String} {st : Term} {body : List (LinearClause Bound)}
     (hst : st.keptBy growChanges first = true) (hb : body.all (bodyKeptBy growChanges first) = true)
     (hF : (IndexFact.every s p st body).HoldsAt ρ h) : (IndexFact.every s p st body).HoldsAt ρ h' := by
   obtain ⟨w, sto, ls, n, hw, hsto, hls, hn, hall⟩ := hF
@@ -1978,7 +1978,7 @@ theorem every_grown {first : Nat → String → Bool} {ρ : Env} {h h' : Heap} {
   refine ⟨w, sto, ls', n, readPath_kept hc p (ρ s) w hw (Or.inr hwa) (fun _ => rfl), hsto, hls',
     termValue_kept hc hf hst hn, fun i hi F hF => ?_⟩
   obtain ⟨hk, hgr⟩ := boundValue_grown i hg hf hp
-  exact factAt_monotone hk hgr (List.all_eq_true.mp hb F hF) (hall i hi F hF)
+  exact LinearClause.holdsAt_monotone hk hgr (List.all_eq_true.mp hb F hF) (hall i hi F hF)
 
 /-- What a body variable of a quantified fact over the slot `i`'s array
 denotes at the value of the slot `a` appended to it: the index its old
@@ -1986,6 +1986,7 @@ length, the element the slot's value, a term itself. -/
 def appendTerm (i a : Nat) : HeapKnowledge.Bound → HeapKnowledge.Term
   | .index => .length i
   | .elem => .value a
+  | .offset _ => .value a
   | .project k p => ⟨k, a, p⟩
   | .free t => t
 
@@ -1998,8 +1999,8 @@ growth keeps each body fact. -/
 theorem every_appended {first : Nat → String → Bool} {ρ : Env} {h h' : Heap} {i x : Nat}
     (hg : CallEffects.ReceiverGrows (ρ i) h h') (ha : CallEffects.ReceiverAppends (ρ i) [ρ x] h h')
     (hf : FirstKept first ρ h h') (hx : (intValue (ρ x)).isSome)
-    {body : List (Linear.Fact Bound)} (hb : body.all (bodyKeptBy growChanges first) = true)
-    (hnew : ∀ F ∈ body, FactAt (fun b => termValue ρ h (appendTerm i x b)) F)
+    {body : List (LinearClause Bound)} (hb : body.all (bodyKeptBy growChanges first) = true)
+    (hnew : ∀ F ∈ body, F.HoldsAt (fun b => termValue ρ h (appendTerm i x b)))
     (hF : (IndexFact.every i [] (.length i) body).HoldsAt ρ h) :
     (IndexFact.every i [] (.length i) body).HoldsAt ρ h' := by
   obtain ⟨w, sto, ls, n, hw, hsto, hls, hn, hall⟩ := hF
@@ -2025,11 +2026,11 @@ theorem every_appended {first : Nat → String → Bool} {ρ : Env} {h h' : Heap
   obtain ⟨hk, hgr⟩ := boundValue_grown j hg hf hp
   have hbF := List.all_eq_true.mp hb F hF
   by_cases hj' : j < ls.length
-  · exact factAt_monotone hk hgr hbF (hall j (by exact_mod_cast hj') F hF)
+  · exact LinearClause.holdsAt_monotone hk hgr hbF (hall j (by exact_mod_cast hj') F hF)
   · have hjl : j = ls.length := by simp only [List.length_singleton] at hlen; omega
     subst hjl
     have hc := receiverGrows_changes hg
-    refine factAt_monotone (val := fun b => termValue ρ h (appendTerm i x b)) (fun y n hky hy => ?_)
+    refine LinearClause.holdsAt_monotone (val := fun b => termValue ρ h (appendTerm i x b)) (fun y n hky hy => ?_)
       (fun y n hgy hy => ?_) hbF (hnew F hF)
     · cases y with
       | index =>
@@ -2039,10 +2040,10 @@ theorem every_appended {first : Nat → String → Bool} {ρ : Env} {h h' : Heap
         simp only [appendTerm, termValue_value] at hy
         simp only [Nat.add_zero] at hl
         simp only [boundValue, elementInt, hl, hlv, Option.bind_some, hy]
-      | project _ _ => simp [Bound.keptBy] at hky
+      | project _ _ | offset _ => simp [Bound.keptBy] at hky
       | free t => exact termValue_kept hc hf hky hy
     · cases y with
-      | index | elem | project _ _ => simp [Bound.grownBy] at hgy
+      | index | elem | project _ _ | offset _ => simp [Bound.grownBy] at hgy
       | free t => exact termValue_grown hc hf hgy hy
 
 open HeapKnowledge in
@@ -2050,28 +2051,33 @@ open HeapKnowledge in
 appended to the slot `i`'s array: the fact with the index read as the
 array's old length and the element as the slot's value, each of its terms
 but that length defined. -/
-def appendedBody (as : List IndexAtom) (i a : Nat) (F : Linear.Fact Bound) : Bool :=
-  match F.mapVars (some ∘ appendTerm i a) with
-  | some G => G.vars.all (fun t => t == Term.length i || termDefined as t) && entailsKnown as G
-  | none => false
+def appendedBody (as : List IndexAtom) (i a : Nat) : LinearClause Bound → Bool
+  | .either _ _ => false
+  | .atom F => match F.mapVars (some ∘ appendTerm i a) with
+    | some G => G.vars.all (fun t => t == Term.length i || termDefined as t) && entailsKnown as G
+    | none => false
 
 open HeapKnowledge in
 theorem appendedBody_sound {as : List IndexAtom} {ρ : Env} {h : Heap} {i a : Nat}
-    (he : IndexHolds as ρ h) (hlen : (termValue ρ h (Term.length i)).isSome) {F : Linear.Fact Bound}
-    (hF : appendedBody as i a F = true) : FactAt (fun b => termValue ρ h (appendTerm i a b)) F := by
-  unfold appendedBody at hF
-  split at hF
-  · rename_i G hG
-    simp only [Bool.and_eq_true, List.all_eq_true, Bool.or_eq_true, beq_iff_eq] at hF
-    obtain ⟨hd, hent⟩ := hF
-    refine (factAt_mapVars (val' := termValue ρ h) hG fun y _ t ht => ?_).mp
-      ⟨fun t ht => ?_, entailsKnown_sound he hent⟩
-    · simp only [Function.comp_apply, Option.some.injEq] at ht
-      rw [← ht]
-    · rcases hd t ht with rfl | hdt
-      · exact hlen
-      · exact termDefined_sound he hdt
-  · cases hF
+    (he : IndexHolds as ρ h) (hlen : (termValue ρ h (Term.length i)).isSome) {F : LinearClause Bound}
+    (hF : appendedBody as i a F = true) : F.HoldsAt (fun b => termValue ρ h (appendTerm i a b)) := by
+  cases F with
+  | either A B => cases hF
+  | atom F =>
+    simp only [appendedBody] at hF
+    cases hG : F.mapVars (some ∘ appendTerm i a) with
+    | some G =>
+      rw [hG] at hF
+      simp only [Bool.and_eq_true, List.all_eq_true, Bool.or_eq_true, beq_iff_eq] at hF
+      obtain ⟨hd, hent⟩ := hF
+      refine (factAt_mapVars (val' := termValue ρ h) hG fun y _ t ht => ?_).mp
+        ⟨fun t ht => ?_, entailsKnown_sound he hent⟩
+      · simp only [Function.comp_apply, Option.some.injEq] at ht
+        rw [← ht]
+      · rcases hd t ht with rfl | hdt
+        · exact hlen
+        · exact termDefined_sound he hdt
+    | none => simp [hG] at hF
 
 open HeapKnowledge in
 /-- Whether a call growing its receiver's store keeps a quantified atom of
@@ -2152,9 +2158,15 @@ theorem appended_length {ρ : Env} {h h' : Heap} {i : Nat} {args : List Tm} {n :
   simpa [hlen] using hl
 
 open HeapKnowledge in
-/-- The change of a term: the receiver's length grows by the actual count. -/
-def appendDelta (i count : Nat) (t : Term) : Int :=
-  if t == Term.length i then count else 0
+/-- Whether the atoms `as` state a body fact of the value of the slot `x`
+written at the index the slot `i` holds: the fact with the index read as `i`
+and the element as `x`, each term defined and kept by the write. -/
+def writtenBody (as : List IndexAtom) (i x : Nat) : LinearClause Bound → Bool
+  | .either _ _ => false
+  | .atom F => (F.vars.all fun v => match v with | .offset _ => false | _ => true) &&
+    match F.mapVars (some ∘ Bound.inst i x) with
+    | some G => G.vars.all (fun t => termDefined as t && t.keptBy writeChanges (fun _ _ => false)) && entailsKnown as G
+    | none => false
 
 open HeapKnowledge in
 def appendFact (i count : Nat) : Linear.Fact Term → Linear.Fact Term
@@ -2162,53 +2174,60 @@ def appendFact (i count : Nat) : Linear.Fact Term → Linear.Fact Term
   | .ne F d => .ne F (d + Linear.Form.eval (appendDelta i count) F)
 
 open HeapKnowledge in
-/-- A linear fact translated by the exact change of its terms. -/
-theorem append_fact_holds {i count : Nat} {ρ : Env} {h h' : Heap} {F : Linear.Fact Term}
-    (terms : ∀ t ∈ F.vars, ∀ n, termValue ρ h t = some n →
-      termValue ρ h' t = some (n + appendDelta i count t))
-    (hF : (IndexFact.linear F).HoldsAt ρ h) :
-    (IndexFact.linear (appendFact i count F)).HoldsAt ρ h' := by
-  obtain ⟨hd, hF⟩ := hF
-  have hd' : ∀ t ∈ F.vars, (termValue ρ h' t).isSome := by
-    intro t ht
-    obtain ⟨n, hn⟩ := Option.isSome_iff_exists.mp (hd t ht)
-    simp [terms t ht n hn]
-  have eval : ∀ G : Linear.Form Term, (∀ t ∈ G.map (·.1), t ∈ F.vars) →
-      Linear.Form.eval (termValuation ρ h') G =
-        Linear.Form.eval (termValuation ρ h) G + Linear.Form.eval (appendDelta i count) G := by
-    intro G
-    induction G with
-    | nil => intro _; simp [Linear.Form.eval]
-    | cons tc G ih =>
-      obtain ⟨t,c⟩ := tc
-      intro hm
-      have ht := hm t (by simp)
-      obtain ⟨n, hn⟩ := Option.isSome_iff_exists.mp (hd t ht)
-      have hn' := terms t ht n hn
-      have hi := ih (fun t ht => hm t (by simp [ht]))
-      simp only [Linear.Form.eval, termValuation, hn, hn', Option.getD_some, Int.mul_add, hi]
+/-- **An exact element write keeps a quantified fact over its view**
+(`every-write`): each element at another index is the same location, holding
+the same number; the element at the index is the written value, which meets
+the body or lies past the bound. -/
+theorem every_written {ρ : Env} {h h' : Heap} {b i x s : Nat} {st : Term} {body : List (LinearClause Bound)}
+    {as : List IndexAtom} (he : IndexHolds as ρ h) (hs : ρ s = ρ b)
+    (hc : writeChanges.Holds h h') (hx : CallEffects.ExactWrite [ρ b, ρ i, ρ x] h h')
+    (hst : st.keptBy writeChanges (fun _ _ => false) = true)
+    (hb : body.all (bodyKeptBy writeChanges (fun _ _ => false)) = true)
+    (hnew : entailsKnown as (.le [(st, 1), (.value i, -1)] 0) = true ∨ body.all (writtenBody as i x) = true)
+    (hF : (IndexFact.every s [] st body).HoldsAt ρ h) : (IndexFact.every s [] st body).HoldsAt ρ h' := by
+  obtain ⟨w, sto, ls, n, hw, hsto, hls, hn, hall⟩ := hF
+  simp only [readPath, Option.some.injEq] at hw
+  subst hw
+  obtain ⟨ls', kb, i0, hls', hkb, hi0, hlt, hj, l, hl, hlv⟩ := hx sto ls (by simpa [hs] using hsto) hls
+  simp only [List.getD_cons_succ, List.getD_cons_zero] at hkb hlv
+  have hki : intValue (ρ i) = some (i0 : Int) := by rw [hkb]; exact intValue_num hi0
+  have hn' := termValue_kept hc firstKept_none hst hn
+  refine ⟨ρ s, sto, ls', n, rfl, hsto, hls', hn', fun j hj' F hF => ?_⟩
+  have hbF := List.all_eq_true.mp hb F hF
+  by_cases hji : j = i0
+  · subst hji
+    rcases hnew with hent | hbody
+    · have := entailsKnown_sound he hent
+      simp only [Linear.Fact.Holds, Linear.Form.eval, termValuation, hn, termValue_value, hki,
+        Option.getD_some] at this
       omega
     · have hwb := List.all_eq_true.mp hbody F hF
-      unfold writtenBody at hwb
-      split at hwb
-      · rename_i G hG
-        simp only [Bool.and_eq_true, List.all_eq_true] at hwb
-        obtain ⟨hd, hent⟩ := hwb
-        have hG0 : (IndexFact.linear G).HoldsAt ρ h :=
-          ⟨fun t ht => termDefined_sound he (hd t ht).1, entailsKnown_sound he hent⟩
-        have hG1 := IndexFact.holdsAt_kept hc firstKept_none
-          (by simp only [IndexFact.keptBy, Bool.or_eq_true]; exact .inl (List.all_eq_true.mpr fun t ht => (hd t ht).2))
-          hG0
-        refine (factAt_mapVars (val' := termValue ρ h') hG fun y _ t ht => ?_).mp hG1
-        simp only [Function.comp_apply, Option.some.injEq] at ht
-        subst ht
-        cases y with
-        | index => simp only [Bound.inst, termValue_value, hki, boundValue]
-        | elem => simp only [Bound.inst, termValue_value, boundValue, elementInt, hl, hlv, Option.bind_some]
-        | project k p => simp only [Bound.inst, boundValue, hl, hlv, Option.bind_some, termValue]
-        | free t => rfl
-      · cases hwb
-  · refine factAt_monotone (fun y m hky hy => ?_) (fun y m hgy hy => ?_) hbF (hall j hj' F hF)
+      cases F with
+      | either A B => cases hwb
+      | atom F =>
+        simp only [writtenBody, Bool.and_eq_true] at hwb
+        obtain ⟨hvalid, hwb⟩ := hwb
+        cases hG : F.mapVars (some ∘ Bound.inst i x) with
+        | some G =>
+          rw [hG] at hwb
+          simp only [Bool.and_eq_true, List.all_eq_true] at hwb
+          obtain ⟨hd, hent⟩ := hwb
+          have hG0 : (IndexFact.linear G).HoldsAt ρ h :=
+            ⟨fun t ht => termDefined_sound he (hd t ht).1, entailsKnown_sound he hent⟩
+          have hG1 := IndexFact.holdsAt_kept hc firstKept_none
+            (by simp only [IndexFact.keptBy, Bool.or_eq_true]; exact .inl (List.all_eq_true.mpr fun t ht => (hd t ht).2))
+            hG0
+          refine (factAt_mapVars (val' := termValue ρ h') hG fun y hy t ht => ?_).mp hG1
+          simp only [Function.comp_apply, Option.some.injEq] at ht
+          subst ht
+          cases y with
+          | index => simp only [Bound.inst, termValue_value, hki, boundValue]
+          | elem => simp only [Bound.inst, termValue_value, boundValue, elementInt, hl, hlv, Option.bind_some]
+          | offset d => have := List.all_eq_true.mp hvalid (.offset d) hy; simp at this
+          | project k p => simp only [Bound.inst, boundValue, hl, hlv, Option.bind_some, termValue]
+          | free t => rfl
+        | none => simp [hG] at hwb
+  · refine LinearClause.holdsAt_monotone (fun y m hky hy => ?_) (fun y m hgy hy => ?_) hbF (hall j hj' F hF)
     · cases y with
       | index => exact hy
       | elem =>
@@ -2220,10 +2239,10 @@ theorem append_fact_holds {i count : Nat} {ρ : Env} {h h' : Heap} {F : Linear.F
           simp only [hc.1 l' _ hu (by simp [writeChanges, CallEffects.ElementWrite.changes, Changes.alters]),
             Option.bind_some, hum]
         · cases hy
-      | project _ _ => simp [Bound.keptBy] at hky
+      | project _ _ | offset _ => simp [Bound.keptBy] at hky
       | free t => exact termValue_kept hc firstKept_none hky hy
     · cases y with
-      | index | elem | project _ _ => simp [Bound.grownBy] at hgy
+      | index | elem | project _ _ | offset _ => simp [Bound.grownBy] at hgy
       | free t => simp [Bound.grownBy, Term.grownBy, writeChanges, CallEffects.ElementWrite.changes] at hgy
 
 open HeapKnowledge in

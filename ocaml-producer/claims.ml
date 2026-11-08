@@ -62,11 +62,15 @@ let rec index_fact_json fact =
   | Every (x,path,stop,body) ->
     let var = function
       | Body_index -> String "index" | Body_elem -> String "elem"
+      | Body_offset d -> Object ["offset",Object ["delta",int d]]
       | Body_project (k,p) -> Object ["project",Object ["kind",String k;"path",Array (List.map (fun f -> String f) p)]]
       | Body_term t -> Object ["free",Object ["t",term t]] in
     let fact k form d = Object [k,Object ["form",Array (List.map (fun (v,c) -> Array [var v;int c]) form);"bound",int d]] in
+    let rec clause = function
+      | Body_le (f,d) -> fact "le" f d | Body_ne (f,d) -> fact "ne" f d
+      | Body_either (a,b) -> Object ["either",Object ["left",clause a;"right",clause b]] in
     Object ["every",Object ["slot",int x;"path",Array (List.map (fun f -> String f) path);"stop",term stop;
-      "body",Array (List.map (function Body_le (f,d) -> fact "le" f d | Body_ne (f,d) -> fact "ne" f d) body)]]
+      "body",Array (List.map clause body)]]
 let effect_json e = Object ["footprint",footprint_json e.footprint;
   "promise",(match e.promise with
     | None -> Null
@@ -629,18 +633,22 @@ let encode (proposal : Proposal_types.t) =
     let name,path,kind = Linear_facts.term_parts t in
     let kind = Linear_facts.kind_name kind in
     Object ["name",String name;"path",Array (List.map (fun f -> String f) path);"term",String kind] in
+  let rec quantified_clause = function
+    | Linear_facts.DEither (a,b) -> Object ["either",Object ["left",quantified_clause a;"right",quantified_clause b]]
+    | Linear_facts.DAtom (t,d) -> Object [
+      "terms",Array (List.map (fun (v,c) ->
+        Array [(if v = Linear_facts.index_var then String "index" else if v = Linear_facts.elem_var then String "elem"
+          else if String.starts_with ~prefix:"%offset" v then Object ["offset",Object ["delta",Number (String.sub v 7 (String.length v - 7))]]
+          else if Linear_facts.term_binding v = Linear_facts.elem_var then
+            (let _,path,kind = Linear_facts.term_parts v in
+             Object ["project",Object ["kind",String (Linear_facts.kind_name kind);"path",Array (List.map (fun p -> String p) path)]])
+          else Object ["term",Object ["ref",term_ref v]]); Number (string_of_int c)]) t);
+      "bound",Number (string_of_int d)] in
   let quantified bs = Array (List.filter_map (fun (n,_) -> match Linear_facts.efact_parts n with
-    | Some (e : Linear_facts.efact) when List.for_all (fun ((t,d) : Linear_facts.fact) -> safe d && List.for_all (fun (_,c) -> safe c) t) e.Linear_facts.body ->
+    | Some (e : Linear_facts.efact) when List.for_all (fun ((t,d) : Linear_facts.fact) -> safe d && List.for_all (fun (_,c) -> safe c) t) (e.Linear_facts.body @ List.concat_map Linear_facts.datoms e.Linear_facts.choices) ->
       Some (Object ["name",String (fst e.Linear_facts.arr);"path",Array (List.map (fun f -> String f) (snd e.Linear_facts.arr));
         "stop",term_ref e.Linear_facts.stop;
-        "body",Array (List.map (fun ((t,d) : Linear_facts.fact) -> Object [
-          "terms",Array (List.map (fun (v,c) ->
-            Array [(if v = Linear_facts.index_var then String "index" else if v = Linear_facts.elem_var then String "elem"
-                    else if Linear_facts.term_binding v = Linear_facts.elem_var then
-                      (let _,path,kind = Linear_facts.term_parts v in
-                       Object ["project",Object ["kind",String (Linear_facts.kind_name kind);"path",Array (List.map (fun p -> String p) path)]])
-                    else Object ["term",Object ["ref",term_ref v]]); Number (string_of_int c)]) t);
-          "bound",Number (string_of_int d)]) e.Linear_facts.body)])
+        "body",Array (List.map quantified_clause (List.map (fun f -> Linear_facts.DAtom f) e.Linear_facts.body @ e.Linear_facts.choices))])
     | _ -> None) bs) in
   (* A region fact (`Linear_facts.rfact_key`, FOOTPRINTS.md, "Element
      regions"): the two bindings whose arrays' regions share no location. *)

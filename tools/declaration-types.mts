@@ -84,9 +84,10 @@ export type IndexFact =
       readonly body: readonly BodyFact[] } };
 /** A variable of a quantified fact's body (`HeapKnowledge.Bound`): the bound
  * index, the element at it, or a linear term. */
-export type BodyVariable = "index" | "elem" | { readonly project: { readonly kind: LinearTerm["kind"]; readonly path: readonly string[] } } | { readonly free: { readonly t: LinearTerm } };
+export type BodyVariable = "index" | "elem" | { offset: { delta: number } } | { readonly project: { readonly kind: LinearTerm["kind"]; readonly path: readonly string[] } } | { readonly free: { readonly t: LinearTerm } };
 /** A linear fact of a quantified fact's body, over its variables. */
 export type BodyFact =
+  | { readonly either: { readonly left: BodyFact; readonly right: BodyFact } }
   | { readonly le: { readonly form: readonly (readonly [BodyVariable, number])[]; readonly bound: number } }
   | { readonly ne: { readonly form: readonly (readonly [BodyVariable, number])[]; readonly bound: number } };
 /** The value a guard compares a path's read with (`HeapKnowledge.GuardTag`). */

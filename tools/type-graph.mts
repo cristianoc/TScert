@@ -168,9 +168,9 @@ function decodeIndexFact(v: JsonRead): IndexFact | undefined {
     for (const f of every.path) { if (typeof f !== "string") return undefined; fields.push(f); }
     const body: BodyFact[] = [];
     for (const b of every.body) {
-      const fact = decodeLinearForm(b, decodeBodyVariable);
+      const fact = decodeBodyFact(b);
       if (fact === undefined) return undefined;
-      body.push(fact.le ? { le: fact.le } : { ne: fact.ne });
+      body.push(fact);
     }
     return { every: { slot, path: fields, stop, body } };
   }
@@ -234,9 +234,26 @@ function decodeLinearForm<V>(v: JsonRead, decode: (x: JsonRead) => V | undefined
   if (d === undefined) return undefined;
   return le ? { le: { form, bound: d } } : { ne: { form, bound: d } };
 }
+function decodeBodyFact(v: JsonRead): BodyFact | undefined {
+  const e = fieldsOf(v, ["either"]);
+  if (e !== undefined) {
+    const b = fieldsOf(e.either, ["left", "right"]);
+    if (b === undefined) return undefined;
+    const left = decodeBodyFact(b.left), right = decodeBodyFact(b.right);
+    return left === undefined || right === undefined ? undefined : { either: { left, right } };
+  }
+  const f = decodeLinearForm(v, decodeBodyVariable);
+  return f === undefined ? undefined : f.le ? { le: f.le } : { ne: f.ne };
+}
+
 /** A variable of a quantified fact's body (`HeapKnowledge.Bound`). */
 function decodeBodyVariable(v: JsonRead): BodyVariable | undefined {
   if (v === "index" || v === "elem") return v;
+  const offset = fieldsOf(v, ["offset"]);
+  if (offset !== undefined) {
+    const o = fieldsOf(offset.offset, ["delta"]);
+    return o !== undefined && typeof o.delta === "number" && Number.isSafeInteger(o.delta) && o.delta >= 0 ? { offset: { delta: o.delta } } : undefined;
+  }
   const projected = fieldsOf(v, ["project"]);
   if (projected !== undefined) {
     const p = fieldsOf(projected.project, ["kind", "path"]);

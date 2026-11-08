@@ -187,7 +187,7 @@ function tokens(text: string): Token[] | string {
  * on the way (`steps`), each a sum, difference or product. */
 type Linear = { terms: Map<string, number>; constant: number; steps: Linear[] };
 type Atom = { k: "safeInteger"; of: string } | { k: "compare"; op: string; left: Linear; right: Linear } |
-  { k: "forall"; binder: string; array: string; stop: string | null; body: Atom[] };
+  { k: "forall"; binder: string; array: string; body: Atom[][] };
 /** A guard `p === tag ||`, and a clause: its guards in order, then its
  * conjunction. */
 type Guard = { path: string; tag: GuardTag };
@@ -290,10 +290,9 @@ class Parser {
       if (!word || word.k !== "name" || word.v !== (stop === null ? "in" : "of")) throw new ClauseError("`forall i` is followed by `in P` or `< n of P`");
       const array = this.variable();
       this.expect(":");
-      const body = [this.atom()];
-      while (this.isOp("&&")) { this.at++; body.push(this.atom()); }
-      if (body.some(a => a.k === "forall")) throw new ClauseError("a `forall` body states no `forall`");
-      return { k: "forall", binder: binder.v, array, stop, body };
+      const body = this.disjunction();
+      if (body.some(bs => bs.some(a => a.k === "forall"))) throw new ClauseError("a `forall` body states no `forall`");
+      return { k: "forall", binder: binder.v, array, body };
     }
     if (t && t.k === "name" && t.v === "safeInteger") {
       this.at++;
@@ -339,8 +338,10 @@ class Parser {
     this.at++;
     const i = this.take();
     if (!i || i.k !== "name") throw new ClauseError("an element is read at a `forall`'s index");
+    let delta = 0;
+    if (this.isOp("+")) { this.at++; const d = this.take(); if (!d || d.k !== "num" || !Number.isSafeInteger(d.v) || d.v < 0) throw new ClauseError("an element offset is a nonnegative integer"); delta = d.v; }
     this.expect("]");
-    let out = `${path}[${i.v}]`;
+    let out = `${path}[${i.v}${delta === 0 ? "" : `+${delta}`}]`;
     while (this.isOp(".")) {
       this.at++;
       const f = this.take();
@@ -384,6 +385,12 @@ function computed(e: Linear): Linear {
   return { ...e, steps: [...e.steps, { terms: e.terms, constant: e.constant, steps: [] }] };
 }
 
+function bodyPositions(f: BodyFact): number[] {
+  if ("either" in f) return [...bodyPositions(f.either.left), ...bodyPositions(f.either.right)];
+  return ("le" in f ? f.le.form : f.ne.form).flatMap(([x]) =>
+    typeof x === "string" || "project" in x || "offset" in x ? [] : [x.free.t.slot]);
+}
+
 /** The positions an index fact names. */
 export function indexFactPositions(f: IndexFact): number[] {
   if ("either" in f) return [...indexFactPositions(f.either.left), ...indexFactPositions(f.either.right)];
@@ -393,8 +400,7 @@ export function indexFactPositions(f: IndexFact): number[] {
   if ("length" in f) return [f.length.array, f.length.length];
   if ("bound" in f) return [f.bound.array, f.bound.index];
   if ("element" in f) return [f.element.value, f.element.array, f.element.index];
-  if ("every" in f) return [f.every.slot, f.every.stop.slot, ...f.every.body.flatMap(F =>
-    ("le" in F ? F.le.form : F.ne.form).flatMap(([x]) => typeof x === "string" || "project" in x ? [] : [x.free.t.slot]))];
+  if ("every" in f) return [f.every.slot, f.every.stop.slot, ...f.every.body.flatMap(bodyPositions)];
   const F = f.linear.fact;
   return ("le" in F ? F.le.form : F.ne.form).map(([t]) => t.slot);
 }
@@ -568,9 +574,14 @@ export function elaborateRequires(clauses: readonly string[], params: readonly C
           throw new ClauseError(`\`forall\` ranges over the indices of an array or a typed array, which ${a.array} is not`);
         if (params.some(q => q.name === a.binder)) throw new ClauseError(`the index ${a.binder} is a parameter's name`);
         const elem = `${a.array}[${a.binder}]`;
+        const branchBody = (atoms: Atom[]): BodyFact[] => {
         const body: BodyFact[] = [];
         const variable = (key: string): BodyVariable => {
           if (key === a.binder) return "index";
+          if (key.startsWith(`${a.array}[${a.binder}+`) && key.endsWith("]")) {
+            if (!atoms.some(b => b.k === "safeInteger" && b.of === key)) throw new ClauseError(`the comparison names ${key}, which the clause does not state a safe integer`);
+            return { offset: { delta: Number(key.slice(`${a.array}[${a.binder}+`.length, -1)) } };
+          }
           if (key === elem || key.startsWith(`${elem}.`)) {
             const fields = key === elem ? [] : key.slice(elem.length + 1).split(".");
             const length = fields.at(-1) === "length";
@@ -581,7 +592,7 @@ export function elaborateRequires(clauses: readonly string[], params: readonly C
                 throw new ClauseError(`the element path ${key} has no length contract`);
               return { project: { kind: kind === "array" ? "length" : kind === "view" ? "view" : "strLength", path } };
             }
-            if (!a.body.some(b => b.k === "safeInteger" && b.of === key))
+            if (!atoms.some(b => b.k === "safeInteger" && b.of === key))
               throw new ClauseError(`the comparison names ${key}, which the clause does not state a safe integer`);
             if (path.length === 0) return "elem";
             if (kind === null) throw new ClauseError(`the element path ${key} has no field contract`);
@@ -590,16 +601,28 @@ export function elaborateRequires(clauses: readonly string[], params: readonly C
           if (key.includes("[")) throw new ClauseError(`${key} is no element of the array ${a.array} at the index ${a.binder}`);
           return { free: { t: term(key) } };
         };
-        for (const b of a.body) {
+        for (const b of atoms) {
           if (b.k !== "safeInteger") continue;
-          if (b.of !== elem && !b.of.startsWith(`${elem}.`)) throw new ClauseError(`a quantified safe integer must name ${elem} or its path`);
+          if (b.of !== elem && !b.of.startsWith(`${elem}.`) && !b.of.startsWith(`${a.array}[${a.binder}+`)) throw new ClauseError(`a quantified safe integer must name ${elem} or its path`);
           body.push({ le: { form: [[variable(b.of), 1]], bound: MAX_SAFE } });
         }
-        compareAtoms(a.body, (terms, bound) => {
+        compareAtoms(atoms, (terms, bound) => {
           if (!Number.isSafeInteger(bound)) throw new ClauseError("the clause's constants lie outside the safe integers");
           body.push({ le: { form: [...terms].filter(([, c]) => c !== 0).map(([x, c]): [BodyVariable, number] => [variable(x), c]),
             bound } });
         });
+          return body;
+        };
+        let body: BodyFact[] | undefined;
+        for (const atoms of a.body) {
+          const branch = branchBody(atoms);
+          if (body === undefined) body = branch;
+          else {
+            if (body.length * branch.length > 1024) throw new ClauseError("a quantified clause expands to more than 1024 facts");
+            body = body.flatMap(left => branch.map(right => ({ either: { left, right } })));
+          }
+        }
+        body ??= [];
         compared.push(wrap({ every: { slot: p.position, path: fields,
           stop: a.stop === null ? { kind: ranged === "array" ? "length" : "view", slot: p.position, path: fields } : term(a.stop), body } }));
       }

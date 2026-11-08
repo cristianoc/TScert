@@ -117,10 +117,11 @@ type IndexFact = { index: { slot: number } } | { length: { array: number; length
   { either: { left: IndexFact; right: IndexFact } } |
   { guarded: { slot: number; path: string[]; tag: "null" | "undefined" | "true" | "false"; body: IndexFact } } |
   { element: { value: number; array: number; index: number } } |
-  { every: { slot: number; path: string[]; stop: LinearTerm; body: { form: [BodyVariable, number][]; bound: number; ne: boolean }[] } } |
-  { apart: { slot: number; other: number } };
+  { every: { slot: number; path: string[]; stop: LinearTerm; body: BodyFormula[] } };
 /** A variable of a quantified fact's body: the index, the element, or a term. */
-type BodyVariable = "index" | "elem" | LinearTerm | { project: LinearTerm };
+type BodyFormula = { form: [BodyVariable, number][]; bound: number; ne: boolean } |
+  { either: { left: BodyFormula; right: BodyFormula } };
+type BodyVariable = "index" | "elem" | { offset: { delta: number } } | LinearTerm | { project: LinearTerm };
 /** A linear fact's term: a root slot, the named data fields read from it
  * (`path`), and what it reads of the value they end at: the value, the length
  * of its array store, or the length of its typed array. */
@@ -439,9 +440,14 @@ function indexFact(f: Json | undefined): IndexFact {
     const path = e.path;
     if (!Array.isArray(path) || !path.every((x: Json) => typeof x === "string")) throw Error("a quantified fact's path");
     if (!Array.isArray(e.body)) throw Error("a quantified fact's body");
-    const body = e.body.map((b: Json) => {
+    const bodyFormula = (b: Json): BodyFormula => {
+      if (typeof b === "object" && b !== null && !Array.isArray(b) && "either" in b) {
+        const e = record(record(b,["either"]).either,["left","right"]);
+        return { either: { left: bodyFormula(e.left), right: bodyFormula(e.right) } };
+      }
       const { form, bound, ne } = linearForm<BodyVariable>(b, (x) => {
         if (x === "index" || x === "elem") return x;
+        if (typeof x === "object" && x !== null && !Array.isArray(x) && "offset" in x) return { offset: { delta: nat(record(record(x,["offset"]).offset,["delta"]).delta) } };
         if (typeof x === "object" && x !== null && !Array.isArray(x) && "project" in x) {
           const p = record(record(x,["project"]).project,["kind","path"]);
           return { project: linearTerm({ kind: p.kind, path: p.path, slot: 0 }) };
@@ -449,7 +455,8 @@ function indexFact(f: Json | undefined): IndexFact {
         return linearTerm(record(record(x,["free"]).free,["t"]).t);
       });
       return { form, bound, ne };
-    });
+    };
+    const body = e.body.map(bodyFormula);
     return { every: { slot: nat(e.slot), path: path.filter((x: Json): x is string => typeof x === "string"),
       stop: linearTerm(e.stop), body } };
   }

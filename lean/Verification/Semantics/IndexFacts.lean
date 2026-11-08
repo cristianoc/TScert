@@ -462,11 +462,77 @@ theorem factAt_congr {V : Type} {val val' : V → Option Int} {F : Linear.Fact V
   refine ⟨fun x hx => by rw [he x hx]; exact hF.1 x hx, ?_⟩
   exact (Linear.Fact.holds_congr (v' := fun x => (val' x).getD 0) (fun x hx => by simp only [he x hx])).mp hF.2
 
+/-- A disjunction of linear facts, with each alternative requiring its own
+variables to denote integers. -/
+inductive LinearClause (V : Type) where
+  | atom (fact : Linear.Fact V)
+  | either (left right : LinearClause V)
+  deriving DecidableEq, Repr, Hashable
+
+namespace LinearClause
+
+def vars : LinearClause V → List V
+  | .atom F => F.vars
+  | .either A B => A.vars ++ B.vars
+
+def mapVars (f : V → Option W) : LinearClause V → Option (LinearClause W)
+  | .atom F => (F.mapVars f).map .atom
+  | .either A B => do pure (.either (← A.mapVars f) (← B.mapVars f))
+
+def HoldsAt (val : V → Option Int) : LinearClause V → Prop
+  | .atom F => FactAt val F
+  | .either A B => A.HoldsAt val ∨ B.HoldsAt val
+
+theorem mapVars_some (f : V → W) : ∀ F : LinearClause V, ∃ G, F.mapVars (some ∘ f) = some G
+  | .atom F => by
+    obtain ⟨G, hG⟩ := Linear.Fact.mapVars_some f F
+    exact ⟨.atom G, by simp [mapVars, hG]⟩
+  | .either A B => by
+    obtain ⟨A', hA⟩ := mapVars_some f A
+    obtain ⟨B', hB⟩ := mapVars_some f B
+    exact ⟨.either A' B', by simp [mapVars, hA, hB]⟩
+
+theorem holdsAt_mapVars {f : V → Option W} {val : V → Option Int} {val' : W → Option Int}
+    {F : LinearClause V} {G : LinearClause W} (hm : F.mapVars f = some G)
+    (hf : ∀ x ∈ F.vars, ∀ y, f x = some y → val' y = val x) : G.HoldsAt val' ↔ F.HoldsAt val := by
+  induction F generalizing G with
+  | atom F =>
+    obtain ⟨G, hG, rfl⟩ := Option.map_eq_some_iff.mp hm
+    exact factAt_mapVars hG hf
+  | either A B ihA ihB =>
+    simp only [mapVars, Option.bind_eq_bind, Option.bind_eq_some_iff, Option.pure_def, Option.some.injEq] at hm
+    obtain ⟨A', hA, B', hB, rfl⟩ := hm
+    exact or_congr (ihA hA fun x hx => hf x (List.mem_append_left _ hx))
+      (ihB hB fun x hx => hf x (List.mem_append_right _ hx))
+
+theorem holdsAt_congr {val val' : V → Option Int} {F : LinearClause V}
+    (he : ∀ x ∈ F.vars, val' x = val x) (hF : F.HoldsAt val) : F.HoldsAt val' := by
+  induction F with
+  | atom F => exact factAt_congr he hF
+  | either A B ihA ihB =>
+    exact hF.imp (ihA fun x hx => he x (List.mem_append_left _ hx))
+      (ihB fun x hx => he x (List.mem_append_right _ hx))
+
+theorem holdsAt_extend {val val' : V → Option Int} {F : LinearClause V}
+    (he : ∀ x ∈ F.vars, ∀ n, val x = some n → val' x = some n)
+    (hF : F.HoldsAt val) : F.HoldsAt val' := by
+  induction F with
+  | atom F =>
+    refine factAt_congr (fun x hx => ?_) hF
+    obtain ⟨n, hn⟩ := Option.isSome_iff_exists.mp (hF.1 x hx)
+    rw [hn]; exact he x hx n hn
+  | either A B ihA ihB =>
+    exact hF.imp (ihA fun x hx => he x (List.mem_append_left _ hx))
+      (ihB fun x hx => he x (List.mem_append_right _ hx))
+
+end LinearClause
+
 /-- A variable of the body of a quantified clause (PROGRAM-TYPING.md,
 "Quantified clauses"): the bound index, the element at it, or a term. -/
 inductive Bound where
   | index
   | elem
+  | offset (delta : Nat)
   | project (kind : Term.Kind) (path : List String)
   | free (t : Term)
   deriving DecidableEq, Repr, Hashable
@@ -477,6 +543,7 @@ namespace Bound
 def mapM (f : Nat → Option Nat) : Bound → Option Bound
   | .index => some .index
   | .elem => some .elem
+  | .offset d => some (.offset d)
   | .project k p => some (.project k p)
   | .free t => (t.mapM f).map .free
 
@@ -484,6 +551,7 @@ def mapM (f : Nat → Option Nat) : Bound → Option Bound
 def mapTotal (f : Nat → Nat) : Bound → Bound
   | .index => .index
   | .elem => .elem
+  | .offset d => .offset d
   | .project k p => .project k p
   | .free t => .free (t.mapM' f)
 
@@ -495,6 +563,7 @@ element is the slot `r`'s value. -/
 def inst (k r : Nat) : Bound → Term
   | .index => .value k
   | .elem => .value r
+  | .offset _ => .value r
   | .project k p => ⟨k, r, p⟩
   | .free t => t
 
@@ -561,6 +630,7 @@ theorem elementInt_frame {h h' : Heap} {ls : List (Option Nat)} {i : Nat} {z : I
 def boundValue (ρ : Env) (h : Heap) (ls : List (Option Nat)) (i : Nat) : Bound → Option Int
   | .index => some (i : Int)
   | .elem => elementInt h ls i
+  | .offset d => elementInt h ls (i + d)
   | .project k p => match ls[i]? with
     | some (some l) => h[l]?.bind fun v => termValue (fun _ => v) h ⟨k, 0, p⟩
     | _ => none
@@ -643,8 +713,7 @@ inductive IndexFact where
   | either (left right : IndexFact)
   | guarded (slot : Nat) (path : List String) (tag : GuardTag) (body : IndexFact)
   | element (value array index : Nat)
-  | every (slot : Nat) (path : List String) (stop : Term) (body : List (Linear.Fact Bound))
-  | apart (slot other : Nat)
+  | every (slot : Nat) (path : List String) (stop : Term) (body : List (LinearClause Bound))
   deriving DecidableEq, Repr, Hashable
 
 namespace IndexFact
@@ -664,12 +733,12 @@ def slots : IndexFact → List Nat
 
 /-- A quantified fact's body with each term's slot renamed, where the map
 names every one. -/
-def mapBody (f : Nat → Option Nat) : List (Linear.Fact Bound) → Option (List (Linear.Fact Bound))
+def mapBody (f : Nat → Option Nat) : List (LinearClause Bound) → Option (List (LinearClause Bound))
   | [] => some []
   | F :: t => do pure ((← F.mapVars (Bound.mapM f)) :: (← mapBody f t))
 
 theorem mapBody_pairs {f : Nat → Option Nat} :
-    ∀ {body body' : List (Linear.Fact Bound)}, mapBody f body = some body' →
+    ∀ {body body' : List (LinearClause Bound)}, mapBody f body = some body' →
       (∀ F' ∈ body', ∃ F ∈ body, F.mapVars (Bound.mapM f) = some F') ∧
       (∀ F ∈ body, ∃ F' ∈ body', F.mapVars (Bound.mapM f) = some F')
   | [], body', h => by simp only [mapBody, Option.some.injEq] at h; subst h; simp
@@ -685,10 +754,10 @@ theorem mapBody_pairs {f : Nat → Option Nat} :
       · exact ⟨G, List.mem_cons_self .., hG⟩
       · obtain ⟨F1, hF1, hm⟩ := h2 F0 hF0; exact ⟨F1, List.mem_cons_of_mem _ hF1, hm⟩
 
-theorem mapBody_some (f : Nat → Nat) : ∀ body : List (Linear.Fact Bound), ∃ body', mapBody (some ∘ f) body = some body'
+theorem mapBody_some (f : Nat → Nat) : ∀ body : List (LinearClause Bound), ∃ body', mapBody (some ∘ f) body = some body'
   | [] => ⟨[], rfl⟩
   | F :: t => by
-    obtain ⟨G, hG⟩ := Linear.Fact.mapVars_some (Bound.mapTotal f) F
+    obtain ⟨G, hG⟩ := LinearClause.mapVars_some (Bound.mapTotal f) F
     obtain ⟨t', ht⟩ := mapBody_some f t
     refine ⟨G :: t', ?_⟩
     simp only [mapBody, Bound.mapM_total, hG, ht]
@@ -726,33 +795,7 @@ def HoldsAt : IndexFact → Env → Heap → Prop
       (∀ l, ls[i]? = some (some l) → h[l]? = some (ρ v)) ∧ (ls[i]? = some none → ρ v = .undef)
   | .every s p stop body, ρ, h => ∃ w st ls n, readPath h (ρ s) p = some w ∧ elementsOf w = some st ∧
       h[st]? = some (.arr ls) ∧ termValue ρ h stop = some n ∧
-      ∀ i : Nat, (i : Int) < n → ∀ F ∈ body, FactAt (boundValue ρ h ls i) F
-  | .apart a b, ρ, h => RegionsApart h (ρ a) (ρ b)
-
-/-- A quantified clause is framed by its array path, store view, bound,
-element reads and every free body term. The premises name the actual
-locations and values read; store identity alone is insufficient. -/
-theorem every_frame {s p stop body ρ h h'}
-    (he : (IndexFact.every s p stop body).HoldsAt ρ h)
-    (hp : ∀ w, readPath h (ρ s) p = some w → readPath h' (ρ s) p = some w)
-    (hs : ∀ w st ls, readPath h (ρ s) p = some w → Footprints.storeOf w = some st →
-      h[st]? = some (.arr ls) → h'[st]? = some (.arr ls))
-    (hn : ∀ z, termValue ρ h stop = some z → termValue ρ h' stop = some z)
-    (hv : ∀ w st ls i z, readPath h (ρ s) p = some w → Footprints.storeOf w = some st →
-      h[st]? = some (.arr ls) → elementInt h ls i = some z → elementInt h' ls i = some z)
-    (hf : ∀ F ∈ body, ∀ t, Bound.free t ∈ F.vars → ∀ z,
-      termValue ρ h t = some z → termValue ρ h' t = some z) :
-    (IndexFact.every s p stop body).HoldsAt ρ h' := by
-  obtain ⟨w, st, ls, z, hw, hst, hls, hz, hall⟩ := he
-  refine ⟨w, st, ls, z, hp w hw, hst, hs w st ls hw hst hls, hn z hz, fun i hi F hF => ?_⟩
-  have hA := hall i hi F hF
-  refine factAt_congr (fun x hx => ?_) hA
-  obtain ⟨a, ha⟩ := Option.isSome_iff_exists.mp (hA.1 x hx)
-  rw [ha]
-  cases x with
-  | index => exact ha
-  | elem => exact hv w st ls i a hw hst hls ha
-  | free t => exact hf F hF t hx a ha
+      ∀ i : Nat, (i : Int) < n → ∀ F ∈ body, F.HoldsAt (boundValue ρ h ls i)
 
 theorem holdsAt_mapM {F F' : IndexFact} {f : Nat → Option Nat} {ρ ρ' : Env} {h : Heap}
     (hm : F.mapM f = some F') (hf : ∀ s ∈ F.slots, ∀ t, f s = some t → ρ' t = ρ s) :
@@ -781,12 +824,13 @@ theorem holdsAt_mapM {F F' : IndexFact} {f : Nat → Option Nat} {ρ ρ' : Env} 
       exact termValue_slot (hf stop.slot (by simp [slots]) stop'.slot (Term.mapM_slot hstop))
     obtain ⟨hb1, hb2⟩ := mapBody_pairs hbody
     have hval : ∀ (ls : List (Option Nat)) (i : Nat), ∀ F ∈ body, ∀ F', F.mapVars (Bound.mapM f) = some F' →
-        (FactAt (boundValue ρ' h ls i) F' ↔ FactAt (boundValue ρ h ls i) F) := by
+        (F'.HoldsAt (boundValue ρ' h ls i) ↔ F.HoldsAt (boundValue ρ h ls i)) := by
       intro ls i F hF F' hm
-      refine factAt_mapVars hm fun x hx y hy => ?_
+      refine LinearClause.holdsAt_mapVars hm fun x hx y hy => ?_
       cases x with
       | index => cases hy; rfl
       | elem => cases hy; rfl
+      | offset _ => cases hy; rfl
       | project _ _ => cases hy; rfl
       | free t =>
         simp only [Bound.mapM, Option.map_eq_some_iff] at hy
@@ -915,12 +959,10 @@ theorem holdsAt_extend {F : IndexFact} {ρ : Env} {h : Heap} (vs : List Val) (hF
       by rw [List.getElem?_append_left (List.getElem?_eq_some_iff.mp hls).1]; exact hls,
       termValue_extend vs hn, fun i hi F hF => ?_⟩
     have hA := hall i hi F hF
-    refine factAt_congr (fun x hx => ?_) hA
-    obtain ⟨m, hm⟩ := Option.isSome_iff_exists.mp (hA.1 x hx)
-    rw [hm]
+    refine LinearClause.holdsAt_extend (fun x hx m hm => ?_) hA
     cases x with
     | index => exact hm
-    | elem =>
+    | elem | offset _ =>
       simp only [boundValue, elementInt] at hm ⊢
       split at hm
       · rename_i l _
@@ -980,6 +1022,7 @@ theorem holdsAt_congr {F : IndexFact} {ρ ρ' : Env} {h : Heap} (hs : ∀ s ∈ 
       cases x with
       | index => rfl
       | elem => rfl
+      | offset _ => rfl
       | project _ _ => rfl
       | free t =>
         simp only [boundValue, termValue, hs t.slot (by
@@ -988,10 +1031,10 @@ theorem holdsAt_congr {F : IndexFact} {ρ ρ' : Env} {h : Heap} (hs : ∀ s ∈ 
     simp only [HoldsAt, h0, hst]
     constructor
     · rintro ⟨w, st, ls, n, hw, hsto, hls, hn, hall⟩
-      exact ⟨w, st, ls, n, hw, hsto, hls, hn, fun i hi F hF => factAt_congr (hb ls i F hF) (hall i hi F hF)⟩
+      exact ⟨w, st, ls, n, hw, hsto, hls, hn, fun i hi F hF => LinearClause.holdsAt_congr (hb ls i F hF) (hall i hi F hF)⟩
     · rintro ⟨w, st, ls, n, hw, hsto, hls, hn, hall⟩
       exact ⟨w, st, ls, n, hw, hsto, hls, hn, fun i hi F hF =>
-        factAt_congr (fun x hx => (hb ls i F hF x hx).symm) (hall i hi F hF)⟩
+        LinearClause.holdsAt_congr (fun x hx => (hb ls i F hF x hx).symm) (hall i hi F hF)⟩
   | index k => simp only [slots, List.mem_singleton, forall_eq] at hs; simp only [HoldsAt, hs]
   | length x n =>
     simp only [slots, List.mem_cons, List.not_mem_nil, or_false, forall_eq_or_imp, forall_eq] at hs
@@ -1035,6 +1078,21 @@ theorem holdsAt_linear_terms {F : Linear.Fact Term} {ρ : Env} {h h' : Heap}
     (fun t ht => by simp only [termValuation, heq t ht])).mp hF.2
 
 end IndexFact
+
+namespace LinearClause
+
+def toIndexFact : LinearClause Term → IndexFact
+  | .atom F => .linear F
+  | .either A B => .either A.toIndexFact B.toIndexFact
+
+theorem toIndexFact_holds {F : LinearClause Term} {ρ : Env} {h : Heap} :
+    F.toIndexFact.HoldsAt ρ h ↔ F.HoldsAt (termValue ρ h) := by
+  induction F with
+  | atom F => rfl
+  | either A B ihA ihB => exact or_congr ihA ihB
+
+end LinearClause
+
 
 /-! ## Facts a heap change keeps (PROGRAM-TYPING.md, "Linear facts")
 
@@ -1491,10 +1549,25 @@ theorem factAt_monotone {V : Type} {kept grown : V → Bool} {val val' : V → O
       rw [hn, hk q.1 n (hm q hq) hn]
     exact factAt_congr he hF
 
+/-- Each alternative is preserved by a checked monotone change. -/
+def LinearClause.monotone (kept grown : V → Bool) : LinearClause V → Bool
+  | .atom F => factMonotone kept grown F
+  | .either A B => A.monotone kept grown && B.monotone kept grown
+
+theorem LinearClause.holdsAt_monotone {val val' : V → Option Int} {kept grown : V → Bool}
+    (hk : ∀ x n, kept x = true → val x = some n → val' x = some n)
+    (hg : ∀ x n, grown x = true → val x = some n → ∃ n', val' x = some n' ∧ n ≤ n')
+    {F : LinearClause V} (hm : F.monotone kept grown = true) (hF : F.HoldsAt val) : F.HoldsAt val' := by
+  induction F with
+  | atom F => exact factAt_monotone hk hg hm hF
+  | either A B ihA ihB =>
+    obtain ⟨hA, hB⟩ := Bool.and_eq_true_iff.mp hm
+    exact hF.imp (ihA hA) (ihB hB)
+
 /-- Whether a change keeps what a body variable denotes (`Term.keptBy`): the
 index and the element are read apart. -/
 def Bound.keptBy (c : Changes) (first : Nat → String → Bool) : Bound → Bool
-  | .project _ _ => false
+  | .project _ _ | .offset _ => false
   | .free t => t.keptBy c first
   | _ => true
 
@@ -1505,8 +1578,8 @@ def Bound.grownBy (c : Changes) (first : Nat → String → Bool) : Bound → Bo
 
 /-- Whether a change keeps a body fact of a quantified fact at an index whose
 element it keeps: each term kept, or grown at a coefficient at most `0`. -/
-def bodyKeptBy (c : Changes) (first : Nat → String → Bool) : Linear.Fact Bound → Bool :=
-  factMonotone (Bound.keptBy c first) (Bound.grownBy c first)
+def bodyKeptBy (c : Changes) (first : Nat → String → Bool) : LinearClause Bound → Bool :=
+  LinearClause.monotone (Bound.keptBy c first) (Bound.grownBy c first)
 
 namespace IndexFact
 

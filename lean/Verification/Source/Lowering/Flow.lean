@@ -402,18 +402,22 @@ private def invariantFact (root : Nat → Option (Nat × List String))
     | some (x, pre) => pure (x, pre ++ path)
     | none => throw (locatedRefusal (← table) node.source .entryClaim
         s!"a quantified fact names '{name}', which is no value binding or cell")
-  let quantified ← ((fc.entryEvery.lookup node.source.1).getD []).mapM fun ((name, path), (sn, sp, sk), body) => do
-    let (x, p) ← root name path
-    let (y, q) ← root sn sp
-    let body ← body.mapM fun (terms, bound) => do
+  let rec bodyClause : SourceClaims.BodyClaim → Compiler (HeapKnowledge.LinearClause HeapKnowledge.Bound)
+    | .linear terms bound => do
       let form ← terms.mapM fun (v, c) => do
         let b : HeapKnowledge.Bound ← match v with
           | .index => pure .index
           | .elem => pure .elem
+          | .offset d => pure (.offset d)
           | .project k p => pure (.project k p)
           | .term n path kind => do let (z, r) ← root n path; pure (.free ⟨kind, z, r⟩)
         pure (b, c)
-      pure (Linear.Fact.le form bound)
+      pure (.atom (.le form bound))
+    | .either A B => do pure (.either (← bodyClause A) (← bodyClause B))
+  let quantified ← ((fc.entryEvery.lookup node.source.1).getD []).mapM fun ((name, path), (sn, sp, sk), body) => do
+    let (x, p) ← root name path
+    let (y, q) ← root sn sp
+    let body ← body.mapM bodyClause
     pure ({ fact := .every x p ⟨sk, y, q⟩ body } : HeapKnowledge.IndexAtom)
   -- The region facts the producer proposes (FOOTPRINTS.md, "Element
   -- regions"): both sides value bindings; a claim naming any other is

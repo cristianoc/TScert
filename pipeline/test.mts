@@ -73,6 +73,22 @@ const mutationControl = (body: () => Promise<void>): void => {
 const serving: boolean = process.argv[2] === "--controls";
 
 control(async (): Promise<void> => {
+  const artifacts = run("invalid-pretext-clause-order");
+  const source = readFileSync(sourceKey(artifacts), "utf8");
+  const claims = readClaims(artifacts);
+  const fn = must(claims.functions.find(f => f.name === "descending"), "descending's claims");
+  const entry = must(fn.entries.find(e => e.start === source.indexOf("return ordered")), "the return entry");
+  entry.quantified.push({ name: "xs", path: [], stop: { name: "xs", path: [], term: "length" }, body: [
+    { either: { left: { terms: [["index", -1], [{ term: { ref: { name: "xs", path: [], term: "length" } } }, 1]], bound: 1 },
+      right: { terms: [["elem", 1], [{ offset: { delta: 1 } }, -1]], bound: 0 } } } ] });
+  const forged = writeClaims(artifacts, "ordered-array-forged", claims);
+  const searched = produceWith(artifacts, forged, "ordered-array-forged");
+  assert.equal(searched.status, 1, `${searched.stdout}${searched.stderr}`);
+  assert.match(searched.stdout + searched.stderr, /does not establish|no derivation/);
+  process.stdout.write("ordered arrays: a forged adjacent-element clause is refused\n");
+});
+
+control(async (): Promise<void> => {
   const artifacts = run("invalid-pretext-clause-element-path");
   const source = readFileSync(sourceKey(artifacts), "utf8");
   const claims = readClaims(artifacts);

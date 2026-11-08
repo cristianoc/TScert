@@ -133,7 +133,9 @@ interface TermRefClaim {
 }
 
 /** A variable of a quantified fact's body: the index, the element at it, or a term. */
-type BodyVariableClaim = "index" | "elem" | { project: { kind: TermRefClaim["term"]; path: string[] } } | { term: { ref: TermRefClaim } };
+type BodyVariableClaim = "index" | "elem" | { offset: { delta: number } } | { project: { kind: TermRefClaim["term"]; path: string[] } } | { term: { ref: TermRefClaim } };
+
+type BodyClaim = { terms: [BodyVariableClaim, number][]; bound: number } | { either: { left: BodyClaim; right: BodyClaim } };
 
 /** A quantified fact proposed at a statement entry (PROGRAM-TYPING.md,
  * "Quantified clauses"): for every index below `stop` of the array the path
@@ -142,7 +144,7 @@ interface QuantifiedClaim {
   name: string;
   path: string[];
   stop: TermRefClaim;
-  body: { terms: [BodyVariableClaim, number][]; bound: number }[];
+  body: BodyClaim[];
 }
 
 /** A region fact proposed at a statement entry (FOOTPRINTS.md, "Element
@@ -419,9 +421,11 @@ function claimsDocument(v: JsonRead): SourceClaims {
       facts: each(r.facts, "an entry's facts", linearClaim),
       quantified: each(r.quantified, "an entry's quantified facts", (f) => {
         const q = record(f, "a quantified fact", ["name", "path", "stop", "body"]);
-        return { name: name(q.name, "a quantified fact's array"),
-          path: each(q.path, "a quantified fact's path", (g) => name(g, "a path's field")), stop: termRef(q.stop),
-          body: each(q.body, "a quantified fact's body", (b) => {
+        const bodyClaim = (b: JsonRead): BodyClaim => {
+          if (isJsonObject(b) && "either" in b) {
+            const e = record(record(b, "a body disjunction", ["either"]).either, "body alternatives", ["left", "right"]);
+            return { either: { left: bodyClaim(e.left), right: bodyClaim(e.right) } };
+          }
             const r = record(b, "a body fact", ["terms", "bound"]);
             return { terms: each(r.terms, "a body fact's terms", (t): [BodyVariableClaim, number] => {
               if (!isJsonList(t) || t.length !== 2) fail("a body term is a variable and a coefficient");
@@ -429,15 +433,15 @@ function claimsDocument(v: JsonRead): SourceClaims {
               const projected = isJsonObject(v) && "project" in v ? record(record(v, "a projected body variable", ["project"]).project, "an element projection", ["kind", "path"]) : undefined;
               const projection = projected === undefined ? undefined : termRef({ name: "%elem", term: projected.kind, path: projected.path });
               const variable: BodyVariableClaim = v === "index" || v === "elem" ? v
+                : isJsonObject(v) && "offset" in v ? { offset: { delta: index(record(record(v, "an offset variable", ["offset"]).offset, "an offset", ["delta"]).delta, "an offset") } }
                 : projection !== undefined ? { project: { kind: projection.term, path: projection.path } }
                 : { term: { ref: termRef(record(record(v, "a body variable", ["term"]).term, "a body term", ["ref"]).ref) } };
               return [variable, integer(t[1], "a body term's coefficient")];
             }), bound: integer(r.bound, "a body fact's bound") };
-          }) };
-      }),
-      apart: each(r.apart, "an entry's region facts", (f) => {
-        const q = record(f, "a region fact", ["name", "other"]);
-        return { name: name(q.name, "a region fact's binding"), other: name(q.other, "a region fact's other binding") };
+        };
+        return { name: name(q.name, "a quantified fact's array"),
+          path: each(q.path, "a quantified fact's path", (g) => name(g, "a path's field")), stop: termRef(q.stop),
+          body: each(q.body, "a quantified fact's body", bodyClaim) };
       }) };
   };
   const certificate = (x: JsonRead): ResolutionCertificate => {

@@ -102,7 +102,7 @@ let forget x fs =
       let made = List.concat_map (fun (tp,bp) -> List.map (fun (tn,bn) ->
         let a = coeff n tp and b = - (coeff n tn) in
         norm (List.map (fun (m,c) -> m,b*c) tp @ List.map (fun (m,c) -> m,a*c) tn), b * bp + a * bn) neg) pos in
-      eliminate (zero @ List.filteri (fun i _ -> i < 64) (List.filter (fun ((t,_) : fact) -> t <> []) made)) rest in
+      eliminate (zero @ List.filteri (fun i _ -> i < 64) (List.filter (fun ((t,d) : fact) -> t <> [] || d < 0) made)) rest in
   let fs = List.filter (fun f -> not (is_int_fact f && mentions x f)) fs in
   let terms = List.sort_uniq compare (List.concat_map (fun ((t,_) : fact) ->
     List.filter_map (fun (n,_) -> if term_binding n = x then Some n else None) t) fs) in
@@ -137,7 +137,7 @@ let close (fs : fact list) : fact list =
       let made = List.concat_map (fun (tp,bp) -> List.map (fun (tn,bn) ->
         let a = coeff n tp and b = - (coeff n tn) in
         norm (List.map (fun (m,c) -> m,b*c) tp @ List.map (fun (m,c) -> m,a*c) tn), b * bp + a * bn) neg) pos in
-      eliminate (zero @ List.filteri (fun i _ -> i < 64) (List.filter (fun ((t,_) : fact) -> t <> []) made)) rest in
+      eliminate (zero @ List.filteri (fun i _ -> i < 64) (List.filter (fun ((t,d) : fact) -> t <> [] || d < 0) made)) rest in
   let rooted ((t,_) : fact) = List.for_all (fun (n,_) -> not (path_term n)) t in
   let derived = List.filter (fun ((t,_) as f) -> rooted f && List.exists (fun (n,_) -> reads_heap n) t &&
     not (List.mem f fs)) (eliminate (List.filter (fun f -> not (is_int_fact f)) fs) terms) in
@@ -201,11 +201,12 @@ let current_dfacts : dfact list ref = ref []
    (`%index`), the element at it (`%elem`) and terms over bindings. Held as
    a pseudo-binding whose name, after `\003E`, encodes it; `fact_parts` and
    `gfact_parts` read none of these. *)
-type efact = { arr : string * string list; stop : string; body : fact list }
+type efact = { arr : string * string list; stop : string; body : fact list; choices : dfact list }
+let rec dmap f = function DAtom a -> DAtom (f a) | DEither (a,b) -> DEither (dmap f a,dmap f b)
 let index_var = "%index" and elem_var = "%elem"
 let efact_key (e : efact) =
   "\003E" ^ fst e.arr ^ "\007" ^ String.concat "." (snd e.arr) ^ "\007" ^ e.stop ^ "\006" ^
-  String.concat "\008" (List.map (fun (t,b) -> fact_key t b) e.body)
+  String.concat "\008" (List.map (fun (t,b) -> fact_key t b) e.body) ^ "\009" ^ Json.encode (Json.Array (List.map djson e.choices))
 let efact_parts n : efact option =
   if String.length n < 2 || String.sub n 0 2 <> "\003E" then None else
   match String.index_opt n '\006' with
@@ -214,10 +215,14 @@ let efact_parts n : efact option =
     let head = String.sub n 2 (i - 2) and rest = String.sub n (i + 1) (String.length n - i - 1) in
     (match String.split_on_char '\007' head with
      | [root; path; stop] ->
-       let body = if rest = "" then [] else List.map fact_parts (String.split_on_char '\008' rest) in
-       if List.exists Option.is_none body then None else
-       Some { arr = (root, if path = "" then [] else String.split_on_char '.' path); stop;
-              body = List.filter_map Fun.id body }
+       (match String.split_on_char '\009' rest with
+        | [rest;choices] ->
+          let body = if rest = "" then [] else List.map fact_parts (String.split_on_char '\008' rest) in
+          let choices = try match Json.parse choices with Json.Array xs -> List.map ddecode xs | _ -> [None] with _ -> [None] in
+          if List.exists Option.is_none body || List.exists Option.is_none choices then None else
+          Some { arr = (root, if path = "" then [] else String.split_on_char '.' path); stop;
+                 body = List.filter_map Fun.id body; choices = List.filter_map Fun.id choices }
+        | _ -> None)
      | _ -> None)
 let is_efact n = efact_parts n <> None
 let efacts env : efact list = List.filter_map (fun (n,_) -> efact_parts n) env
@@ -226,7 +231,7 @@ let efacts env : efact list = List.filter_map (fun (n,_) -> efact_parts n) env
 let ebindings (e : efact) =
   fst e.arr :: term_binding e.stop ::
     List.concat_map (fun ((t,_) : fact) -> List.filter_map (fun (n,_) ->
-      if n = index_var || term_binding n = elem_var then None else Some (term_binding n)) t) e.body
+      if n = index_var || term_binding n = elem_var || String.starts_with ~prefix:"%offset" n then None else Some (term_binding n)) t) (e.body @ List.concat_map datoms e.choices)
 (* The quantified facts holding where the statement being analysed starts,
    and the element reads of it they instantiate, each by the expression's
    position and the name of its value (`with_reads`). *)
@@ -1553,20 +1558,27 @@ let gstatement ?(bounds=[]) env (fs : fact list) (gs : gfact list) (s : stmt) : 
    read's value is named (`element_reads`) while an expression is analysed,
    its body facts added, and the name eliminated after, as Lean drops the
    read's slot. *)
-let instantiate (e : efact) ((kt,kc) : (string * int) list * int) (name : string) : fact list =
-  let named = List.exists (fun ((t,_) : fact) -> List.mem_assoc elem_var t) e.body in
-  (if named then [int_fact name] else []) @
-  List.map (fun ((t,d) : fact) ->
+let instantiate fs reads (e : efact) ((kt,kc) : (string * int) list * int) (name : string) : fact list =
+  let offset n = if String.starts_with ~prefix:"%offset" n then int_of_string_opt (String.sub n 7 (String.length n - 7)) else None in
+  let shifted d = List.find_map (fun (arr,(jt,jc),r) ->
+    if arr = e.arr && entails fs (norm (jt @ scale (-1) kt), kc+d-jc) && entails fs (norm (kt @ scale (-1) jt), jc-kc-d) then Some r else None) reads in
+  let available f = List.for_all (fun (n,_) -> match offset n with None -> true | Some d -> shifted d <> None) (fst f) in
+  let body = List.filter available e.body in
+  let choices = List.filter (fun d -> List.for_all available (datoms d)) e.choices in
+  let named = List.exists (fun ((t,_) : fact) -> List.mem_assoc elem_var t) body in
+  let rename ((t,d) : fact) =
     let a = Option.value ~default:0 (List.assoc_opt index_var t) in
     let t = List.concat_map (fun (n,c) ->
-      if n = index_var then scale c kt else if term_binding n = elem_var then (let _,p,k = term_parts n in [make_term ~path:p k name,c]) else [n,c]) t in
-    norm t, d - a * kc) e.body
+      if n = index_var then scale c kt else if offset n <> None then [Option.get (shifted (Option.get (offset n))),c] else if term_binding n = elem_var then (let _,p,k = term_parts n in [make_term ~path:p k name,c]) else [n,c]) t in
+    norm t, d - a * kc in
+  let facts = (if named then [int_fact name] else []) @ List.map rename body in
+  deliminate (fs @ facts) (List.map (dmap rename) choices)
 
 (* The same local names carry bounded shifts and masks inside a larger
    expression. Their facts are the arithmetic postconditions checked by
    Lean's `IndexWrites.bitAtoms`; children are named before their parents. *)
 let element_facts ~array env fs (e : expr) : fact list * (Json.t * string) list =
-  let found = ref [] and extra = ref [] in
+  let found = ref [] and extra = ref [] and reads = ref [] in
   let rec go (e : expr) =
     List.iter go (Source.children e);
     let saved = !element_reads in
@@ -1592,7 +1604,9 @@ let element_facts ~array env fs (e : expr) : fact list * (Json.t * string) list 
           | efs ->
             let name = "%elem" ^ string_of_int (List.length !found) in
             found := (e.pos,name) :: !found;
-            extra := !extra @ List.concat_map (fun ef -> instantiate ef (kt,kc) name) efs)
+            reads := ((root,path),(kt,kc),name) :: !reads;
+            extra := !extra @ List.concat_map (fun (arr,idx,r) ->
+              List.concat_map (fun ef -> if ef.arr = arr then instantiate (fs @ !extra) !reads ef idx r else []) efs) !reads)
        | _ -> ())
     | _ -> ()) in
   go e;
@@ -1640,11 +1654,12 @@ let erestate_read name (root,path) (e : efact) : efact option =
     | [],rest -> Some rest
     | f :: p,g :: q when f = g -> prefix p q
     | _ -> None in
-  let rename t = if t = index_var || term_binding t = elem_var then t else
+  let rename t = if t = index_var || term_binding t = elem_var || String.starts_with ~prefix:"%offset" t then t else
     let b,p,kind = term_parts t in
     if b <> root then t else match prefix path p with Some rest -> make_term ~path:rest kind name | None -> t in
   let arr = if fst e.arr = root then (match prefix path (snd e.arr) with Some rest -> (name,rest) | None -> e.arr) else e.arr in
-  let e' = { arr; stop = rename e.stop; body = List.map (fun ((t,d) : fact) -> List.map (fun (n,c) -> rename n,c) t, d) e.body } in
+  let e' = { arr; stop = rename e.stop; body = List.map (fun ((t,d) : fact) -> List.map (fun (n,c) -> rename n,c) t, d) e.body;
+    choices = List.map (dmap (fun (t,d) -> List.map (fun (n,c) -> rename n,c) t,d)) e.choices } in
   if e' = e then None else Some e'
 
 (* The quantified facts a call growing its receiver's store keeps, `xs.push(a)`
@@ -1654,7 +1669,8 @@ let erestate_read name (root,path) (e : efact) : efact option =
    actual, a safe integer the facts give as a linear form, each over `xs`'s
    whole array whose body facts the facts state of `a` at the index
    `xs.length` (`every-push`). *)
-let egrown ?(regions = []) ~array env fs (es : efact list) (e : expr) : efact list option =
+let egrown ~array env fs (es : efact list) (e : expr) : efact list option =
+  let es = List.filter (fun e -> e.choices = []) es in
   match e.node with
   | Invoke ({node=Read (r,key);_},args,[],_) when heap_free env r && List.for_all (heap_free env) args &&
       !method_grows env r key ->
@@ -1680,20 +1696,36 @@ let egrown ?(regions = []) ~array env fs (es : efact list) (e : expr) : efact li
               entails ranged (norm t, d - k * ac)) ef.body
           | None -> false)
       | _ -> false in
-    Some (List.filter (fun (ef : efact) -> List.for_all body_kept ef.body &&
+    Some (List.filter (fun (ef : efact) -> ef.choices = [] && List.for_all body_kept ef.body &&
       (term_kept ch ef.stop || appended ef)) es)
   | _ -> None
 
-(* Whether a term reads, through the heap, nothing of the region of the array
-   `xs` holds: a binding's value, a string's length, or the length of an array
-   a region fact keeps apart from it (Lean's `termApart`). *)
-let term_apart (rs : rfact list) xs t =
-  t = index_var || t = elem_var ||
-  (let b,path,kind = term_parts t in
-   path = [] && (match kind with
-     | Value_term | Str_length_term -> true
-     | Length_term -> rapart rs xs b
-     | View_term -> false))
+(* The quantified facts a step keeps: across a growing call, those `egrown`
+   keeps; where it writes no heap, those naming no binding it assigns (Lean
+   keeps an atom across a step that keeps the heap); none otherwise, as Lean's
+   `IndexFact.keptBy` keeps none. *)
+(* The quantified facts a typed array's element write `b[k] = v` keeps (Lean's
+   `PromiseCalls.everyWritten`, `every-write`): each over `b`'s array whose
+   bound the facts state at most `k`, or each of whose body facts they state
+   of `v` at the index `k`. A fact over any other array is dropped: views may
+   share bytes. *)
+let ewritten ~array env fs (es : efact list) (e : expr) : efact list option =
+  let es = List.filter (fun e -> e.choices = []) es in
+  match e.node with
+  | Call ({node=Id "%ByteSet%";_},None,[{node=Id b;_};k;v],[],_) when !call_element_write env "%ByteSet%" ->
+    (match linear ~array env fs k, linear ~array env fs v with
+     | Some (kt,kc), Some (vt,vc) ->
+       let ranged extra = fs @ term_ranges ((kt,0) :: (vt,0) :: fs) @ term_ranges [extra,0] in
+       let past (ef : efact) = entails (ranged [ef.stop,1]) (norm ((ef.stop,1) :: scale (-1) kt), kc) in
+       let meets (ef : efact) = List.for_all (fun ((t,d) : fact) ->
+         let a = Option.value ~default:0 (List.assoc_opt index_var t) in
+         let c = Option.value ~default:0 (List.assoc_opt elem_var t) in
+         let t = List.concat_map (fun (n,x) ->
+           if n = index_var then scale x kt else if n = elem_var then scale x vt else [n,x]) t in
+         entails (ranged [ef.stop,1]) (norm t, d - a * kc - c * vc)) ef.body in
+       Some (List.filter (fun (ef : efact) -> ef.arr = (b,[]) && (past ef || meets ef)) es)
+     | _ -> Some [])
+  | _ -> None
 
 let estatement ?(array = fun _ _ -> false) ?(facts = []) ?(regions = []) env (es : efact list) (s : stmt) : efact list =
   let es = match (match s.statement with Effect e -> egrown ~regions ~array env facts es e | _ -> None) with
@@ -1749,18 +1781,23 @@ let of_every_fact (name : int -> string option) (fact : Semantic.index_fact) : e
     let var = function
       | Semantic.Body_index -> Some index_var
       | Semantic.Body_elem -> Some elem_var
+      | Semantic.Body_offset d -> Some ("%offset" ^ string_of_int d)
       | Semantic.Body_project (k,p) -> Some (make_term ~path:p (match k with
         | "length" -> Length_term | "view" -> View_term | "strLength" -> Str_length_term | _ -> Value_term) elem_var)
       | Semantic.Body_term t -> term t in
-    let fact = function
+    let rec fact = function
+      | Semantic.Body_either (a,b) -> (match fact a,fact b with Some a,Some b -> Some (DEither (a,b)) | _ -> None)
       | Semantic.Body_le (form,d) ->
         let terms = List.map (fun (v,c) -> Option.map (fun n -> n,c) (var v)) form in
-        if List.for_all Option.is_some terms then Some (List.filter_map Fun.id terms, d) else None
+        if List.for_all Option.is_some terms then Some (DAtom (List.filter_map Fun.id terms, d)) else None
       | Semantic.Body_ne _ -> None in
     let body = List.map fact body in
     (match name x, term stop with
      | Some root, Some stop when List.for_all Option.is_some body ->
-       Some { arr = (root,path); stop; body = List.filter_map Fun.id body }
+       let clauses = List.filter_map Fun.id body in
+       Some { arr = (root,path); stop;
+         body = List.filter_map (function DAtom f -> Some f | DEither _ -> None) clauses;
+         choices = List.filter (function DAtom _ -> false | DEither _ -> true) clauses }
      | _ -> None)
   | _ -> None
 

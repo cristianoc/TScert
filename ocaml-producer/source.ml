@@ -53,13 +53,17 @@ let rec index_fact_of j =
     let var v = match v with
       | String "index" -> Body_index
       | String "elem" -> Body_elem
+      | Object ["offset",o] when keys o = ["delta"] -> let d = natural (field "delta" o) in Body_offset d
       | Object ["project",p] when keys p = ["kind";"path"] ->
         let k = str (field "kind" p) in
         if not (List.mem k ["value";"length";"view";"strLength"]) then unsupported "invalid element projection kind";
         Body_project (k, List.map str (list (field "path" p)))
       | Object ["free",t] when keys t = ["t"] -> Body_term (linear_term (field "t" t))
       | _ -> unsupported "invalid quantified fact's variable" in
-    let fact f = match keys f with
+    let rec fact f = match keys f with
+      | ["either"] -> let b = field "either" f in
+        if keys b <> ["left";"right"] then unsupported "invalid quantified disjunction";
+        Body_either (fact (field "left" b),fact (field "right" b))
       | ["le"] -> let form,d = linear_parts var f "le" in Body_le (form,d)
       | ["ne"] -> let form,d = linear_parts var f "ne" in Body_ne (form,d)
       | _ -> unsupported "invalid quantified fact's body" in

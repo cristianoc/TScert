@@ -51,6 +51,8 @@ const gap = (
   diagnostic: RegExp,
 ): Case => ({ file, area, kind: "gap", status, phase, diagnostic });
 export const cases: Case[] = [
+  positive("pretext-clause-order", "Pretext setEmptyObjectFacts/setupClusterBoundaries: guarded adjacent-element ordering"),
+  negative("invalid-pretext-clause-order", "A descending array violates its ordering precondition (NaN under Node)", /no derivation|does not establish|precondition/),
   positive("pretext-clause-element-path", "Pretext findSegmentSources/materializeRichInlineLineRange: quantified element lengths and paths"),
   negative("invalid-pretext-clause-element-path", "An inclusive element-length bound permits an out-of-bounds read (NaN under Node)", /no derivation|does not establish/),
   { ...positive("pretext-clause-postcondition-import", "Pretext countSteppedLines: a checked imported Boolean postcondition"), project: "pipeline/imports-project" },

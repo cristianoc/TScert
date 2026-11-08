@@ -179,14 +179,43 @@ structure TermRef where
 inductive BodyVariable where
   | index
   | elem
+  | offset (delta : Nat)
   | project (kind : HeapKnowledge.Term.Kind) (path : List String)
   | term (ref : TermRef)
   deriving ToJson, FromJson
 /-- A fact of a quantified fact's body: the sum of the terms is at most `bound`. -/
-structure BodyFact where
+structure LinearBodyFact where
   terms : List (BodyVariable × Int)
   bound : Int
   deriving ToJson, FromJson
+inductive BodyFact where
+  | linear (fact : LinearBodyFact)
+  | either (left right : BodyFact)
+
+private def bodyFactJson : BodyFact → Json
+  | .linear f => toJson f
+  | .either A B => Json.mkObj [("either", Json.mkObj [("left", bodyFactJson A), ("right", bodyFactJson B)])]
+
+instance : ToJson BodyFact := ⟨bodyFactJson⟩
+
+private partial def bodyFactOf (j : Json) : Except String BodyFact := do
+  let f ← match j.getObjVal? "either" with
+    | .ok b => do pure (.either (← bodyFactOf (← b.getObjVal? "left")) (← bodyFactOf (← b.getObjVal? "right")))
+    | .error _ => BodyFact.linear <$> fromJson? j
+  if toJson f != j then throw "a body fact has exactly its constructor's fields"
+  pure f
+
+instance : FromJson BodyFact := ⟨bodyFactOf⟩
+
+private def BodyFact.claim : BodyFact → SourceClaims.BodyClaim
+  | .linear b => .linear (b.terms.map fun (v,c) => ((match v with
+      | .index => .index
+      | .elem => .elem
+      | .offset d => .offset d
+      | .project k p => .project k p
+      | .term r => .term r.name r.path r.term : SourceClaims.BodyRef), c)) b.bound
+  | .either A B => .either A.claim B.claim
+
 /-- A quantified fact the producer proposes at a statement entry: for every
 index below `stop` of the array the path `path` reads from what the binding
 `name` holds, each body fact holds. -/
@@ -332,13 +361,7 @@ private def pointData (entries : List (Entry ι)) (expressions : List (Expressio
     entryBounds := entries.map (fun e => (e.start,e.bounds.map fun b => (b.array, b.index, b.strict)))
     entryFacts := entries.map (fun e => (e.start,e.facts.map Fact.claim))
     entryEvery := entries.map (fun e => (e.start,e.quantified.map fun q =>
-      ((q.name, q.path), (q.stop.name, q.stop.path, q.stop.term), q.body.map fun b =>
-        (b.terms.map fun (v, c) => ((match v with
-          | .index => .index
-          | .elem => .elem
-          | .project k p => .project k p
-          | .term r => .term r.name r.path r.term : SourceClaims.BodyRef), c), b.bound))))
-    entryApart := entries.map (fun e => (e.start, e.apart.map fun r => (r.name, r.other)))
+      ((q.name, q.path), (q.stop.name, q.stop.path, q.stop.term), q.body.map BodyFact.claim)))
     -- An expression's assertion is of one field each (`validCurrent`).
     exprCurrent := expressions.filterMap (fun e => e.current.map fun fs =>
       (e.pos, fs.filterMap fun (p, A) => match p with | [k] => some (k, A) | _ => none)) }

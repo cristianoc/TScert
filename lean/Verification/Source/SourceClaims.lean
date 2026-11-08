@@ -15,14 +15,19 @@ value binding's name, its path the named fields read from it in turn. -/
 inductive BodyRef where
   | index
   | elem
+  | offset (delta : Nat)
   | project (kind : HeapKnowledge.Term.Kind) (path : List String)
   | term (name : String) (path : List String) (kind : HeapKnowledge.Term.Kind)
   deriving Repr, Inhabited
 
+inductive BodyClaim where
+  | linear (terms : List (BodyRef × Int)) (bound : Int)
+  | either (left right : BodyClaim)
+
 /-- A proposed quantified fact: an array a value binding's name and path
 read, the term bounding its indices, and its body's facts `Σ c·x ≤ d`. -/
 abbrev EveryClaim := (String × List String) × (String × List String × HeapKnowledge.Term.Kind) ×
-  List (List (BodyRef × Int) × Int)
+  List BodyClaim
 
 /-- A clause proposed at an entry: a guarded linear fact or a disjunction. -/
 inductive ClauseClaim where

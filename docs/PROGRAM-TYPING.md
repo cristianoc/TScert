@@ -2893,9 +2893,9 @@ and their array, typed-array or string lengths:
 ```math
 A ::= \cdots \mid \mathtt{forall}\ x\ \mathtt{in}\ P\texttt{:}\ B
 \qquad
-B ::= A' \mid A'\ \texttt{\&\&}\ B
+B ::= A' \mid B\ \texttt{\&\&}\ B \mid B\ \texttt{||}\ B
 \qquad
-E' ::= E \mid x \mid P[x] \mid P[x].p \mid |P[x].p| \mid n\cdot E'
+E' ::= E \mid x \mid P[x] \mid P[x+d] \mid P[x].p \mid |P[x].p| \mid n\cdot E'
 ```
 
 with $`A'`$ an atom over terms $`E'`$, `safeInteger(P[x])` among them; the
@@ -2953,10 +2953,27 @@ $`k`$ and $`r`$ (proved):
 so `itemSegments[index]!` under `forall i in itemSegments: safeInteger(itemSegments[i]) && 0 <= itemSegments[i] && itemSegments[i] <= data.widths.length`
 states its value a safe integer between $`0`$ and $`|\mathit{data}.\mathit{widths}|`$.
 
-**Frame conditions.** A body containing an element projection is preserved
+An offset term `P[i+d]`, for a nonnegative constant `d`, denotes the
+safe-integer value of the element at that index. Alternatives within a body
+have the same disjunctive meaning as other clauses; each selected arm
+requires its own terms to denote. Thus an ordering contract can state:
+
+```ts
+/** @requires forall i in xs: i + 1 >= xs.length || (safeInteger(xs[i]) && safeInteger(xs[i + 1]) && xs[i] <= xs[i + 1]) */
+```
+
+The read rule instantiates an offset with a second element read only when
+linear entailment establishes that its index equals the first index plus
+that offset. `offsetSlot_value` and `instantiateEvery_holds` prove that
+substitution preserves the body's meaning. The producer proposes these
+instances for reads within the same expression.
+
+**Frame conditions.** A body containing an element projection or offset is preserved
 across heap extension and unchanged heaps. The growth and element-write
 checks require its projected terms to be re-established; their generic
-preservation checks refuse them.
+preservation checks refuse them. Disjunctive bodies also require explicit
+checking at an appended or overwritten element; the generic write checks
+refuse these bodies.
 
 A quantified fact and an element fact read the heap: a
 step leaving the heap unchanged preserves them, and a heap change other than

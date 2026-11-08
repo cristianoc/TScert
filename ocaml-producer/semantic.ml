@@ -54,8 +54,8 @@ type index_fact = Index_at of int | Length_of of int * int | Bound_by of int * i
      at it and its terms (PROGRAM-TYPING.md, "Quantified clauses"). *)
   | Every of int * string list * term * body_fact list
 (* A variable of a quantified fact's body: the index, the element at it, or a term. *)
-and body_var = Body_index | Body_elem | Body_project of string * string list | Body_term of term
-and body_fact = Body_le of (body_var * int) list * int | Body_ne of (body_var * int) list * int
+and body_var = Body_index | Body_elem | Body_offset of int | Body_project of string * string list | Body_term of term
+and body_fact = Body_either of body_fact * body_fact | Body_le of (body_var * int) list * int | Body_ne of (body_var * int) list * int
 type call_effect = { footprint: footprint; promise: promise option; fresh: bool; receiver_store: bool; on_throw: bool;
   receiver_own: bool; fresh_object: bool;
   (* The kinds the receiver's present elements have where the call starts,

@@ -88,6 +88,21 @@ deriving instance ToJson, FromJson for HeapKnowledge.Term.Kind
 deriving instance ToJson, FromJson for HeapKnowledge.Term
 deriving instance ToJson, FromJson for HeapKnowledge.Bound
 deriving instance ToJson, FromJson for Linear.Fact
+private def clauseJson [ToJson V] : HeapKnowledge.LinearClause V → Json
+  | .atom F => toJson F
+  | .either A B => Json.mkObj [("either", Json.mkObj [("left", clauseJson A), ("right", clauseJson B)])]
+
+instance [ToJson V] : ToJson (HeapKnowledge.LinearClause V) := ⟨clauseJson⟩
+
+private partial def clauseOf [ToJson V] [FromJson V] (j : Json) : Except String (HeapKnowledge.LinearClause V) := do
+  let c ← match j.getObjVal? "either" with
+    | .ok b => do pure (.either (← clauseOf (← b.getObjVal? "left")) (← clauseOf (← b.getObjVal? "right")))
+    | .error _ => HeapKnowledge.LinearClause.atom <$> fromJson? j
+  if toJson c != j then throw "a linear clause has exactly its constructor's fields"
+  pure c
+
+instance [ToJson V] [FromJson V] : FromJson (HeapKnowledge.LinearClause V) := ⟨clauseOf⟩
+
 -- A guard's tag is a nullish or Boolean literal; a guarded fact is
 -- `{"guarded": {"slot", "path", "tag", "body"}}`.
 instance : ToJson HeapKnowledge.GuardTag := ⟨fun
