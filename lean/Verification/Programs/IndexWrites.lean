@@ -398,6 +398,34 @@ def stringSlot (G : NormalGraph ι) (Γ : List (Ty ι)) (s : Nat) : Bool :=
   | some S => G.plainTy S && (expand G S).all fun c => tagClause .isStr c == some true
   | none => false
 
+/-- The safe integer a slot's type admits alone: a plain type whose one
+clause is that number's literal. -/
+def litSlot (G : NormalGraph ι) (Γ : List (Ty ι)) (a : Nat) : Option Int :=
+  match Γ[a]? with
+  | some S => if G.plainTy S then match expand G S with
+      | [.numLit b] => SafeIntegers.safeIntOfBits b
+      | _ => none else none
+  | none => none
+
+theorem litSlot_sound {G : NormalGraph ι} {Γ : List (Ty ι)} {a : Nat} {i : Int} {ρ n W}
+    (hc : litSlot G Γ a = some i) (he : EnvOk G Γ ρ n W) : ∃ b, ρ a = .num b ∧ SafeIntegers.SafeInt b i := by
+  unfold litSlot at hc
+  split at hc
+  · rename_i S hS
+    split at hc
+    · rename_i hp
+      split at hc
+      · rename_i b hx
+        have hm := (expand_sem G S hp n W (ρ a)).mp (he.2 a S hS)
+        rw [hx] at hm
+        obtain ⟨c, hc', hsem⟩ := hm
+        simp only [List.mem_singleton] at hc'
+        subst hc'
+        exact ⟨b, by simpa [clauseSem, rowSem, semWithArgs] using hsem.1, SafeIntegers.safeIntOfBits_sound hc⟩
+      · cases hc
+    · cases hc
+  · cases hc
+
 theorem stringSlot_sound {G : NormalGraph ι} {Γ : List (Ty ι)} {s : Nat} {ρ n W}
     (hc : stringSlot G Γ s = true) (he : EnvOk G Γ ρ n W) : ∃ str, ρ s = .str str := by
   unfold stringSlot at hc
@@ -786,6 +814,7 @@ def linearAtoms (G : NormalGraph ι) (Γ : List (Ty ι)) (k : Knowledge) : Tm �
     | none => []
   | .var a =>
     (if a < Γ.length ∧ intSlot k.indices a = true then valueAtoms [(a, 1)] 0 else []) ++
+      (match litSlot G Γ a with | some i => valueAtoms [] i | none => []) ++
       (if a < Γ.length then copiedAtoms k a ++ pastCopies k a else [])
   | .lenOf (.var s) =>
     if storeSlot G Γ s then
@@ -1124,7 +1153,14 @@ theorem linearAtoms_holds [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty �
     · simp only [instantiate, Nat.not_lt_zero, if_false, Nat.sub_zero, ha, true_and, if_true] at hs ⊢
       refine weaken (fun h' u hq => ⟨hq.1, ?_⟩) (value_run (hval a ha) hs)
       obtain ⟨-, rfl, rfl⟩ := hq
-      refine indexHolds_cat ?_ (indexHolds_cat (copiedAtoms_holds hk) (pastCopies_holds hk))
+      refine indexHolds_cat (indexHolds_cat ?_ ?_) (indexHolds_cat (copiedAtoms_holds hk) (pastCopies_holds hk))
+      rotate_left
+      · split
+        · rename_i i hl
+          obtain ⟨b, hb, hsafe⟩ := litSlot_sound hl he
+          rw [hb]
+          exact valueAtoms_holds (by simp) (by simpa [Linear.Form.eval] using hsafe)
+        · exact indexHolds_nil _ _
       split
       · rename_i hi
         have hs' := intSlot_sound hk.2.2.2.2.2 hi
@@ -1134,7 +1170,9 @@ theorem linearAtoms_holds [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty �
         refine valueAtoms_holds (by simp [hs']) ?_
         simpa [Linear.Form.eval, valuation, hi'] using hsafe
       · exact indexHolds_nil _ _
-    · simp only [ha, false_and, if_false, List.append_nil]; exact none_case
+    · have hl : litSlot G Γ a = none := by
+        simp [litSlot, List.getElem?_eq_none (show Γ.length ≤ a by omega)]
+      simp only [ha, false_and, if_false, List.append_nil, hl]; exact none_case
   | lenOf a =>
     cases a with
     | var s =>

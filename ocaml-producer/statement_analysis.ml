@@ -641,6 +641,7 @@ let statements (expr:Analysis_state.expression_infer) execute_bindings owner_spa
     | s :: _ when s.call_effect.pre = [] && s.call_effect.requires = None &&
         not s.call_effect.receiver_store && not s.call_effect.receiver_own -> Some s.call_effect.footprint
     | _ -> None);
+  Linear_facts.module_constant_type := (fun x -> try module_type x with Json.Error _ -> None);
   Linear_facts.call_ensures := (fun env x ->
     let declared = match List.assoc_opt x env with
       | Some b -> Some (binding_type b)

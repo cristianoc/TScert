@@ -445,11 +445,29 @@ let cell_step op (rhs : expr option) = match rhs with
    path a fact states one; a sum or a difference of such, each step's result
    in range. `array b path` tells whether the path from `b` holds an array,
    whose `length` is its store's. *)
+(* The type of a module constant, set by the statement analysis. *)
+let module_constant_type : (string -> Semantic.ty option) ref = ref (fun _ -> None)
+
+(* The safe integer a binding's type admits alone: a value binding of the
+   body, or else a module constant, whose type is one number's literal. *)
+let literal_constant env x =
+  let literal = function
+    | Some (Semantic.Atoms [Semantic.NumLit bits]) -> literal_int (Printf.sprintf "%.17g" (Int64.float_of_bits bits))
+    | _ -> None in
+  match List.assoc_opt x env with
+  | Some (Environment.Value t) -> literal (Some t)
+  | Some _ -> None
+  | None -> literal (!module_constant_type x)
+
 let rec linear ?(array = fun _ _ -> false) env fs (e : expr) : ((string * int) list * int) option = match e.node with
   | Arith ((Shr | BitAnd),_,_) when List.mem_assoc e.pos !element_reads ->
     Some ([List.assoc e.pos !element_reads,1],0)
   | Literal (LNumber s) -> Option.map (fun i -> [],i) (literal_int s)
   | Id x when value_binding env x && is_int fs x -> Some ([x,1],0)
+  (* A constant whose type is one safe integer's literal (`const TEXT = 0`),
+     a binding of the body or a module constant: that integer (Lean's
+     `litSlot`). *)
+  | Id x when literal_constant env x <> None -> Option.map (fun i -> [],i) (literal_constant env x)
   | Read (o,Semantic.Name "length") when (match path_of env o with Some (b,p) -> array b p | None -> false) ->
     (match path_of env o with Some (b,path) -> Some ([length_term ~path b,1],0) | None -> None)
   | Read (_,Semantic.Name _) when (match path_of env e with Some (b,p) -> p <> [] && is_int fs (path_term b p) | None -> false) ->
