@@ -1603,7 +1603,7 @@ theorem elem_var_write_core [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty
     exact elem_grow_holds hfu
 
 theorem Changes.length_refl (h : Heap) : (⟨true, true, .length⟩ : HeapKnowledge.Changes).Holds h h :=
-  ⟨fun _ _ hv _ => hv, fun _ _ ls hls => ⟨ls, hls, rfl⟩⟩
+  ⟨fun _ _ hv _ => hv, fun _ _ ls hls => ⟨ls, hls, rfl⟩, fun hg => by simp at hg⟩
 
 /-- **An element write below its store's length keeps every store's
 length** (PROGRAM-TYPING.md, "Linear facts"): it writes a listed element's
@@ -1684,7 +1684,8 @@ theorem elem_var_write_length [DecidableEq ι] {G : NormalGraph ι} {Γ : List (
       have := sourceTy_sound hpos hmA
       cases w <;> simp_all [isSourceVal, Footprints.isArr]
     refine .inr ⟨U2, _, _, hx2, hu2, step2, hh2, write_back_post hfl ?_ hs2⟩
-    refine ⟨fun _ _ _ ha => by cases ‹Val› <;> simp_all [HeapKnowledge.Changes.alters], fun _ l' ls' hls' => ?_⟩
+    refine ⟨fun _ _ _ ha => by cases ‹Val› <;> simp_all [HeapKnowledge.Changes.alters], fun _ l' ls' hls' => ?_,
+      fun hg => by simp at hg⟩
     by_cases hf : l' = fl
     · subst hf; rw [hls0] at hls'; cases hls'
       exact ⟨ls0, by rw [List.getElem?_set_self (by simpa using hflt)], rfl⟩
@@ -1695,7 +1696,8 @@ theorem elem_var_write_length [DecidableEq ι] {G : NormalGraph ι} {Γ : List (
       · rw [List.getElem?_set_ne (Ne.symm hll)]; exact hls'
   · refine .inr ⟨U2, _, _, hx2, hu2, step2, hh2, write_back_post hfl ?_ hs2⟩
     rw [hidx] at hk'; cases hk'
-    refine ⟨fun _ _ _ ha => by cases ‹Val› <;> simp_all [HeapKnowledge.Changes.alters], fun _ l' ls' hls' => ?_⟩
+    refine ⟨fun _ _ _ ha => by cases ‹Val› <;> simp_all [HeapKnowledge.Changes.alters], fun _ l' ls' hls' => ?_,
+      fun hg => by simp at hg⟩
     by_cases hf : l' = fl
     · subst hf; rw [hls0] at hls'; cases hls'
       refine ⟨placeAt ls0 idx h.length, by rw [List.getElem?_set_self (by simp; omega)], ?_⟩

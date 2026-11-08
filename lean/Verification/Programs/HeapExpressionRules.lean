@@ -1137,22 +1137,23 @@ theorem fieldChanges_alters [DecidableEq ι] {G : NormalGraph ι} {Ref : Ty ι} 
   · exact Changes.top_alters u
 
 /-- A write of one location meets a change altering what it held, where the
-change keeps no store's length alone. -/
+change keeps no store's length alone and grows none. -/
 theorem set_changes {c : Changes} {h : Heap} {l : Nat} {u b : Val} (hu : h[l]? = some u) (ha : c.alters u = true)
-    (hs : c.store ≠ .length) : c.Holds h (h.set l b) := by
-  refine ⟨fun l' v hv hna => ?_, fun hl => absurd hl hs⟩
+    (hs : c.store ≠ .length ∧ c.store ≠ .grow) : c.Holds h (h.set l b) := by
+  refine ⟨fun l' v hv hna => ?_, fun hl => absurd hl hs.1, fun hl => absurd hl hs.2⟩
   have hne : l ≠ l' := by
     rintro rfl; rw [hu] at hv; cases hv; rw [ha] at hna; cases hna
   rw [List.getElem?_set_ne hne]; exact hv
 
 theorem foldr_join_store (cs : List Changes) :
-    (cs.foldr Changes.join ⟨false, false, .keep⟩).store ≠ .length := by
+    (cs.foldr Changes.join ⟨false, false, .keep⟩).store ≠ .length ∧
+      (cs.foldr Changes.join ⟨false, false, .keep⟩).store ≠ .grow := by
   cases cs with
   | nil => simp
   | cons d ds => simp only [List.foldr_cons, Changes.join]; split <;> simp
 
 theorem fieldChanges_store [DecidableEq ι] (G : NormalGraph ι) (cs : List (PositiveNormalization.Clause (Ty ι)))
-    (fld : PropKey) : (fieldChanges G cs fld).store ≠ .length := by
+    (fld : PropKey) : (fieldChanges G cs fld).store ≠ .length ∧ (fieldChanges G cs fld).store ≠ .grow := by
   unfold fieldChanges
   split
   · exact foldr_join_store _

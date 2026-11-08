@@ -569,6 +569,16 @@ let statements (expr:Analysis_state.expression_infer) execute_bindings owner_spa
     | Some g when g.host && not g.optional -> Some g.read
     | _ -> None in
   Linear_facts.method_footprint := (fun env r key -> Option.bind (method_type env r key) footprint_of);
+  (* An array's method is the array prototype's member. *)
+  Linear_facts.method_grows := (fun env r key ->
+    let member = match Option.map head (receiver_type env r) with
+      | Some (Atoms [Shape {elements=Some _;fields;_}]) when not (List.exists (fun (g:Semantic.field) -> g.name = key) fields) ->
+        Option.map (fun (g:Semantic.field) -> g.read) (field_of (Atoms [Named (Type_queries.array_prototype,[])]) key)
+      | _ -> method_type env r key in
+    match Option.map head member with
+    | Some (Atoms [Shape {calls;_}]) -> calls <> [] && List.for_all (fun (s : Semantic.signature) ->
+        s.Semantic.call_effect.Semantic.receiver_grows) calls
+    | _ -> false);
   Linear_facts.call_ensures := (fun env x ->
     let declared = match List.assoc_opt x env with
       | Some b -> Some (binding_type b)

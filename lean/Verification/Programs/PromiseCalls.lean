@@ -1822,45 +1822,104 @@ theorem ensuresAtoms_holds {eff : Effect} {t : Tm} {ρ : Env} {h' : Heap} {v : T
       exact hp F hF
   · exact HeapKnowledge.indexHolds_nil _ _
 
+/-- The change of a call growing its receiver's store (`ReceiverGrows`):
+no object or number altered, every store grown. -/
+def growChanges : HeapKnowledge.Changes := ⟨false, false, .grow⟩
+
+theorem receiverGrows_changes {r : Tm} {h h' : Heap} (hg : CallEffects.ReceiverGrows r h h') :
+    growChanges.Holds h h' := by
+  refine ⟨fun l v hv ha => ?_, fun hs => by simp [growChanges] at hs, fun _ l ls hls => ?_⟩
+  · rcases hg l v hv with hk | ⟨-, ls, ls', rfl, -⟩
+    · exact hk
+    · simp [growChanges, HeapKnowledge.Changes.alters] at ha
+  · rcases hg l _ hls with hk | ⟨-, ls₀, ls', he, hls', hle, hmax⟩
+    · exact ⟨ls, hk, Nat.le_refl _, id⟩
+    · cases he; exact ⟨ls', hls', hle, fun _ => hmax⟩
+
+/-- The locations a call growing the receiver slot `i`'s store keeps beside
+every object and number: each field of a slot a separation fact keeps apart
+from every own location of `i`. -/
+def growFirst (k : HeapKnowledge.Knowledge) (t : Tm) : Nat → String → Bool :=
+  match receiverSlot t with
+  | some i => fun s g => HeapSeparation.apartAll k.separation i s (.str g)
+  | none => fun _ _ => false
+
+theorem growFirst_kept {k : HeapKnowledge.Knowledge} {t : Tm} {ρ : Env} {h h' : Heap}
+    (hk : HeapKnowledge.Holds k ρ h)
+    (hg : CallEffects.ReceiverGrows (ExpressionEffects.receiverOf (instantiate 0 ρ t)) h h') :
+    HeapKnowledge.FirstKept (growFirst k t) ρ h h' := by
+  intro s g fs cd o l v hf hs hl hv
+  cases hi : receiverSlot t with
+  | none => simp [growFirst, hi] at hf
+  | some i =>
+    simp only [growFirst, hi] at hf
+    obtain ⟨f, args, rfl⟩ := receiverSlot_term hi
+    rcases hg l v hv with hk' | ⟨hst, -⟩
+    · exact hk'
+    · simp only [ExpressionEffects.receiverOf, instantiate, Nat.not_lt_zero, if_false, Nat.sub_zero] at hst
+      have hat : HeapSeparation.At none (ρ i) l := by
+        cases hr : ρ i with
+        | objAt flds' c' o' =>
+          rw [hr] at hst
+          simp only [HeapSeparation.At]
+          exact Footprints.lookup_mem_snd hst
+        | _ => rw [hr] at hst; simp [Footprints.storeOf, Footprints.fieldsOf] at hst
+      exact absurd rfl (HeapSeparation.apartAll_sound hf hk.2.2.2.1 hat hs hl)
+
 /-- The heap-reading atoms of a call's entry its footprint keeps, renamed past
-the result (`Changes.ofClosed`, PROGRAM-TYPING.md, "Linear facts"): none
-where its signature keeps the heap, whose output keeps every atom
-(`call-keep`), or excepts its receiver's store or own locations. -/
-def effectKept (eff : Effect) (k : HeapKnowledge.Knowledge) : List HeapKnowledge.IndexAtom :=
-  if keepsHeap eff || eff.receiverStore || eff.receiverOwn then [] else
+the result (`Changes.ofClosed`, PROGRAM-TYPING.md, "Linear facts"): with
+`receiverGrows`, those `growChanges` keeps, a field apart from the receiver's
+own locations kept besides (`growFirst`); none where its signature keeps the
+heap, whose output keeps every atom (`call-keep`), or excepts its receiver's
+store or own locations. -/
+def effectKept (eff : Effect) (t : Tm) (k : HeapKnowledge.Knowledge) : List HeapKnowledge.IndexAtom :=
+  if eff.receiverGrows then
+    HeapKnowledge.shiftIndices (HeapKnowledge.keptIndices growChanges (growFirst k t)
+      (k.indices.filter fun a => !a.fact.envOnly))
+  else if keepsHeap eff || eff.receiverStore || eff.receiverOwn then [] else
     HeapKnowledge.shiftIndices (HeapKnowledge.keptIndices (HeapKnowledge.Changes.ofClosed eff.footprint)
       (fun _ _ => false) (k.indices.filter fun a => !a.fact.envOnly))
 
-theorem effectKept_holds {eff : Effect} {k : HeapKnowledge.Knowledge} {ρ : Env} {h h' : Heap} {r : Tm} {v : Tm}
-    (hk : HeapKnowledge.Holds k ρ h) (hw : eff.within r h h') :
-    HeapKnowledge.IndexHolds (effectKept eff k) (push v ρ) h' := by
+theorem effectKept_holds {eff : Effect} {t : Tm} {k : HeapKnowledge.Knowledge} {ρ : Env} {h h' : Heap} {v : Tm}
+    (hk : HeapKnowledge.Holds k ρ h) (hw : eff.within (ExpressionEffects.receiverOf (instantiate 0 ρ t)) h h')
+    (hg : eff.receiverGrows = true →
+      CallEffects.ReceiverGrows (ExpressionEffects.receiverOf (instantiate 0 ρ t)) h h') :
+    HeapKnowledge.IndexHolds (effectKept eff t k) (push v ρ) h' := by
   unfold effectKept
   split
-  · exact HeapKnowledge.indexHolds_nil _ _
-  · rename_i hc
-    simp only [Bool.or_eq_true, not_or, Bool.not_eq_true] at hc
-    obtain ⟨⟨-, hs⟩, ho⟩ := hc
+  · rename_i hgr
+    have hg := hg hgr
     exact HeapKnowledge.shiftIndices_holds (HeapKnowledge.keptIndices_holds
       (fun a ha hcd => hk.2.2.2.2.2 a (List.mem_filter.mp ha).1 hcd)
-      (HeapKnowledge.Changes.ofClosed_holds (CallEffects.Effect.within_holds hw hs ho)) HeapKnowledge.firstKept_none)
+      (receiverGrows_changes hg) (growFirst_kept hk hg))
+  · split
+    · exact HeapKnowledge.indexHolds_nil _ _
+    · rename_i hc
+      simp only [Bool.or_eq_true, not_or, Bool.not_eq_true] at hc
+      obtain ⟨⟨-, hs⟩, ho⟩ := hc
+      exact HeapKnowledge.shiftIndices_holds (HeapKnowledge.keptIndices_holds
+        (fun a ha hcd => hk.2.2.2.2.2 a (List.mem_filter.mp ha).1 hcd)
+        (HeapKnowledge.Changes.ofClosed_holds (CallEffects.Effect.within_holds hw hs ho)) HeapKnowledge.firstKept_none)
 
 /-- Knowledge with a call's result-fact atoms added, and the atoms of its
 entry `k0` its footprint keeps (`effectKept`). -/
 def withEnsures (eff : Effect) (t : Tm) (k0 k : HeapKnowledge.Knowledge) : HeapKnowledge.Knowledge :=
-  { k with indices := k.indices ++ ensuresAtoms eff t ++ effectKept eff k0 }
+  { k with indices := k.indices ++ ensuresAtoms eff t ++ effectKept eff t k0 }
 
 theorem withEnsures_holds {eff : Effect} {t : Tm} {k0 k : HeapKnowledge.Knowledge} {ρ : Env} {h h' : Heap} {v : Tm}
     (hk : HeapKnowledge.Holds k (push v ρ) h') (hk0 : HeapKnowledge.Holds k0 ρ h)
     (hw : eff.within (ExpressionEffects.receiverOf (instantiate 0 ρ t)) h h')
     (hp : ∀ F ∈ eff.ensures, F.HoldsAt (CallEffects.ensuresEnv v (ExpressionEffects.receiverOf (instantiate 0 ρ t))
-      (ExpressionEffects.actualsOf (instantiate 0 ρ t))) h') :
+      (ExpressionEffects.actualsOf (instantiate 0 ρ t))) h')
+    (hg : eff.receiverGrows = true →
+      CallEffects.ReceiverGrows (ExpressionEffects.receiverOf (instantiate 0 ρ t)) h h') :
     HeapKnowledge.Holds (withEnsures eff t k0 k) (push v ρ) h' :=
   ⟨hk.1, hk.2.1, hk.2.2.1, hk.2.2.2.1, hk.2.2.2.2.1, fun a ha hc => by
     rcases List.mem_append.mp ha with ha | ha
     · rcases List.mem_append.mp ha with ha | ha
       · exact hk.2.2.2.2.2 a ha hc
       · exact ensuresAtoms_holds hp a ha hc
-    · exact effectKept_holds hk0 hw a ha hc⟩
+    · exact effectKept_holds hk0 hw hg a ha hc⟩
 
 /-- The selected signature of an ordinary step's evidence that `call-ensures`
 applies to: at the sequent `j`, a call checked as `selected_sound` or as
@@ -1873,7 +1932,7 @@ applies to: at the sequent `j`, a call checked as `selected_sound` or as
     if decide (claim p = j) && (ExpressionEffects.selectedOperands p && checkTreeUsing G images p codes sums ||
         requiresTree G images k codes sums p) then
       match ExpressionEffects.selectedEffect p with
-      | some eff => if eff.ensures.isEmpty && (effectKept eff k).isEmpty then none else some eff
+      | some eff => if eff.ensures.isEmpty && (effectKept eff j.term k).isEmpty then none else some eff
       | none => none
     else none
   | _ => none
@@ -2253,7 +2312,8 @@ other step is `base`'s. -/
       obtain ⟨out0, hrun, rfl⟩ := hc
       have hs := base.sound hrun hcodes hsums he hk hw hh
       have hp := PromiseCalls.ensuresCall_sound hens hcodes hsums he hk hw hh
-      exact HeapObservations.weaken (fun h' v hq => PromiseCalls.withEnsures_holds hq.1 hk hq.2.1 hq.2.2.2.2.2)
+      exact HeapObservations.weaken (fun h' v hq =>
+        PromiseCalls.withEnsures_holds hq.1 hk hq.2.1 hq.2.2.2.2.2.1 hq.2.2.2.2.2.2)
         (HeapObservations.cross_upto n (fun _ _ _ _ _ _ _ _ hb _ => hb) W W h _ hh hh hs hp)
     · exact base.sound hc hcodes hsums he hk hw hh
 

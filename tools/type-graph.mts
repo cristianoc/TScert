@@ -60,12 +60,13 @@ export const footprintEffect = (footprint: ClosedFootprint, options?: EffectOpti
     receiverStore: options?.receiverStore ?? false, onThrow: options?.onThrow ?? false,
     receiverOwn: options?.receiverOwn ?? false, freshObject: options?.freshObject ?? false,
     requires: options?.requires ?? null, elements: options?.elements ?? null, pre: options?.pre ?? [],
-    ensures: options?.ensures ?? [] });
+    ensures: options?.ensures ?? [], receiverGrows: options?.receiverGrows ?? false });
 /** A fresh effect with a replacement promise and every other guarantee retained. */
 export const withPromise = (effect: CallEffect, promise: CallPromise | null): Within<{ value: "keep"; store: "keep" }, CallEffect> =>
   ({ footprint: effect.footprint, promise, fresh: effect.fresh, receiverStore: effect.receiverStore,
     onThrow: effect.onThrow, receiverOwn: effect.receiverOwn, freshObject: effect.freshObject,
-    requires: effect.requires, elements: effect.elements, pre: effect.pre, ensures: effect.ensures });
+    requires: effect.requires, elements: effect.elements, pre: effect.pre, ensures: effect.ensures,
+    receiverGrows: effect.receiverGrows });
 /** Heap preservation: no location may change, no promise. */
 export const emptyEffect: CallEffect = footprintEffect(emptyFootprint);
 /** An ordinary arrow's effect: every location may change, no promise. */
@@ -84,7 +85,8 @@ export const sameEffect = (a: CallEffect, b: CallEffect): boolean =>
   sameFootprint(a.footprint, b.footprint) && samePromise(a.promise, b.promise) && a.fresh === b.fresh &&
     a.receiverStore === b.receiverStore && a.onThrow === b.onThrow && a.receiverOwn === b.receiverOwn &&
     a.freshObject === b.freshObject && sameKinds(a.requires, b.requires) && sameKinds(a.elements, b.elements) &&
-    JSON.stringify(a.pre) === JSON.stringify(b.pre) && JSON.stringify(a.ensures) === JSON.stringify(b.ensures);
+    JSON.stringify(a.pre) === JSON.stringify(b.pre) && JSON.stringify(a.ensures) === JSON.stringify(b.ensures) &&
+    a.receiverGrows === b.receiverGrows;
 /** The kinds an elements predicate lists, each at most once, in this order. */
 const elementKindOrder: readonly ElementKind[] =
   ["null", "undefined", "boolean", "number", "string", "bigint", "symbol", "object"];
@@ -217,7 +219,7 @@ function isFootprintStore(v: unknown): v is ClosedFootprint["store"] {
 /** The call effect a value states, as fresh objects of its fields, or
  * `undefined` where the value states none. */
 export function decodeCallEffect(v: JsonRead): Within<{ value: "any"; store: "grow" }, CallEffect | undefined> {
-  if (!isJsonObject(v) || Object.keys(v).length !== 11) return undefined;
+  if (!isJsonObject(v) || Object.keys(v).length !== 12) return undefined;
   const requires = decodeKinds(v.requires);
   const elements = decodeKinds(v.elements);
   const pre = decodeIndexFacts(v.pre);
@@ -229,9 +231,10 @@ export function decodeCallEffect(v: JsonRead): Within<{ value: "any"; store: "gr
   const onThrow = v.onThrow;
   const receiverOwn = v.receiverOwn;
   const freshObject = v.freshObject;
+  const receiverGrows = v.receiverGrows;
   if (footprint === undefined || typeof fresh !== "boolean" || typeof receiverStore !== "boolean" ||
       typeof onThrow !== "boolean" || typeof receiverOwn !== "boolean" ||
-      typeof freshObject !== "boolean") return undefined;
+      typeof freshObject !== "boolean" || typeof receiverGrows !== "boolean") return undefined;
   const stated = v.promise;
   let promise: CallPromise | null = null;
   if (stated !== null) {
@@ -244,7 +247,7 @@ export function decodeCallEffect(v: JsonRead): Within<{ value: "any"; store: "gr
     promise = guards ? { guards: { param } } : { asserts: { param } };
   }
   return { footprint, promise, fresh, receiverStore, onThrow, receiverOwn, freshObject, requires, elements, pre,
-    ensures };
+    ensures, receiverGrows };
 }
 /** One contract representation; every operand mapping must retain its effect. */
 type CallContract<Receiver, Arguments, L = number> = {

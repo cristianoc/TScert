@@ -1648,9 +1648,11 @@ dropped.
 **Facts across a heap change.** A change is described by what a location it
 may alter held before it: $`\chi=(o,n,s)`$ states whether it may alter a
 location holding an object ($`o`$) or a number ($`n`$), and what it does to
-one holding a store ($`s`$: keeps its contents, keeps its length, or
-neither); a location holding any other value may change
-(`HeapKnowledge.Changes`, its meaning `Changes.Holds`). The locations a term
+one holding a store ($`s`$: keeps its contents, keeps its length, grows it,
+or neither: $`\mathsf{keep}`$, $`\mathsf{length}`$, $`\mathsf{grow}`$,
+$`\mathsf{any}`$); a location holding any other value may change
+(`HeapKnowledge.Changes`, its meaning `Changes.Holds`). A store grown holds a
+store at least as long, at most $`2^{32}-1`$ long where it was. The locations a term
 reads hold, in turn, an object for each field of its path but the last, the
 last a number for a value term and an object otherwise, then, for a length
 term, a store, and for an element count, a number. A term is kept by
@@ -1666,18 +1668,27 @@ the root's own `[]` field and $`\mathrm{first}(x,[\,])`$ holds
 \qquad c_i=\begin{cases}\mathsf{num}&i=m,\ \text{a value term}\\\mathsf{obj}&\text{otherwise}\end{cases}
 ```
 
-and a length term needs besides $`s\ne\mathsf{any}`$ or, of an empty path,
+and a length term needs besides $`s\in\{\mathsf{keep},\mathsf{length}\}`$ or, of an empty path,
 $`\mathrm{first}(x,[\,])`$, an element count $`\neg n`$. A fact is kept where
-each of its terms is; `length` and `bound` read a store, kept where
-$`s\ne\mathsf{any}`$ or $`\mathrm{first}(x,[\,])`$ (`IndexFact.keptBy`,
-proved: `holdsAt_kept`):
+each of its terms is; `length` reads a store's length, kept where
+$`s\in\{\mathsf{keep},\mathsf{length}\}`$ or $`\mathrm{first}(x,[\,])`$, and `bound`, which
+a longer store keeps, where $`s\ne\mathsf{any}`$ or $`\mathrm{first}(x,[\,])`$
+(`IndexFact.keptBy`, proved: `holdsAt_kept`). Where $`s=\mathsf{grow}`$, a
+length term whose path the change keeps is **grown**: after the change it
+denotes at least what it denoted ($`\mathrm{grown}_\chi(t)`$, `Term.grownBy`,
+proved: `termValue_grown`), so a fact $`\sum_t c_t\,t\le d`$ is kept where
+each term is kept or grown with $`c_t\le 0`$, the lower bounds of lengths
+(`Term.formKeptBy`, proved: `formKept_eval`):
 
 ```math
 \frac{F\in\Sigma\qquad \forall t\in\mathrm{vars}(F).\ \mathrm{kept}_\chi(t)\qquad h\to h'\ \text{within}\ \chi}
      {F\ \text{holds in}\ h'}\ \textsf{fact-kept}
+\qquad
+\frac{\textstyle\sum_t c_t\,t\le d\in\Sigma\qquad \forall t.\ \mathrm{kept}_\chi(t)\lor(c_t\le 0\land\mathrm{grown}_\chi(t))\qquad h\to h'\ \text{within}\ \chi}
+     {\textstyle\sum_t c_t\,t\le d\ \text{holds in}\ h'}\ \textsf{fact-grown}
 ```
 
-Four steps state their change:
+Five steps state their change:
 
 - **A field write** $`x.f=y`$: its location held a member of a type the
   receiver's type states for $`f`$ (`fieldOperand_typed`), so $`\chi`$ is
@@ -1698,12 +1709,21 @@ Four steps state their change:
   `lengthOutput`; proved: `ExpressionEffects.elem_var_write_length`, the
   present element's location held no store, and a hole's write gives a
   store of the same length, `placeAt_length`).
-- **A call** at a selected signature $`\mathcal F_\epsilon`$ stating neither
-  `receiverStore` nor `receiverOwn` and not keeping the heap:
+- **A call** at a selected signature $`\mathcal F_\epsilon`$ stating none of
+  `receiverStore`, `receiverOwn` and `receiverGrows` and not keeping the heap:
   $`\chi`$ is its footprint's, `grow` on a value being `keep`
   (`Changes.ofClosed`, proved: `ofClosed_holds`; `PromiseCalls.effectKept`,
   added by `Checker.ensuringCalls`). `{value: any, store: keep}`, a `Map`'s
   `set`, keeps every length.
+- **A call growing its receiver's store**, at a selected signature stating
+  `receiverGrows` (`Array.prototype.push`, [native footprints](SOURCE-CONTRACTS.md#native-footprints)):
+  $`\chi=(\bot,\bot,\mathsf{grow})`$, and $`\mathrm{first}(z,g)`$ is
+  $`\mathrm{apart}(x.\star,z.g)`$ for a receiver slot $`x`$
+  (`PromiseCalls.growChanges`, `growFirst`; proved: `receiverGrows_changes`,
+  `growFirst_kept`, in `effectKept_holds`). So `out.push(v)` keeps every fact
+  over values, paths and element counts, `i < other.length` whatever `other`
+  is, and an upper bound of a length only of a store apart from `out`'s; a
+  definition's code states no `receiverGrows` (`GraphCode.effectChecked`).
 - **A call changing only its receiver's own locations** (`call-own`):
   $`\chi`$ alters everything, and $`\mathrm{first}(z,g)`$ is
   $`\mathrm{apart}(x.\star,z.g)`$ (`PromiseCalls.ownKept`). So an array

@@ -340,6 +340,9 @@ let rec heap_free env (e : expr) = match e.node with
   (* An object literal of named fields allocates and writes only its own
      fresh locations (Lean's `allocOutput` keeps every index atom). *)
   | Alloc fields -> List.for_all (fun (_,v) -> heap_free env v) fields
+  (* An array literal without spreads allocates only its store and its
+     elements' fresh locations, as Lean's allocation keeps every index atom. *)
+  | ArrayLiteral (es,[]) -> List.for_all (heap_free env) es
   | Assign (x,_,rhs) -> value_binding env x && heap_free env rhs
   | Update (_,{node=Id x;_},rhs,_) -> value_binding env x && Option.fold ~none:true ~some:(heap_free env) rhs
   | _ -> false
@@ -381,11 +384,13 @@ let current_gfacts : gfact list ref = ref []
 
 (* What a statement's one heap write may change, by what a location held
    before it (Lean's `HeapKnowledge.Changes`): an object, a number, an array
-   store (its contents kept, its length kept, or neither). A fact is kept
-   where no location its terms read holds what the write may change
+   store (its contents kept, its length kept, grown, or neither). A fact is
+   kept where no location its terms read holds what the write may change
    (`Term.keptBy`): a path's locations hold objects, its last a number for a
-   value term; a length reads a store, an element count a number. *)
-type changes = { obj : bool; num : bool; store : [`Keep | `Length | `Any];
+   value term; a length reads a store, an element count a number; or, where
+   the write grows stores, where each length it names that is not kept has a
+   coefficient at most 0 (`Term.formKeptBy`). *)
+type changes = { obj : bool; num : bool; store : [`Keep | `Length | `Grow | `Any];
                  framed : string -> string -> bool }
 
 (* The classes a field's type admits, `(object, number, store)`, where the
@@ -400,6 +405,10 @@ let call_footprint : ((string * Environment.binding) list -> string -> Semantic.
 (* The footprint every signature of a receiver's method states, alike. *)
 let method_footprint : ((string * Environment.binding) list -> expr -> Semantic.key -> Semantic.footprint option) ref =
   ref (fun _ _ _ -> None)
+(* Whether every signature of a receiver's method grows only its receiver's
+   store (Lean's `Effect.receiverGrows`, `PromiseCalls.growChanges`). *)
+let method_grows : ((string * Environment.binding) list -> expr -> Semantic.key -> bool) ref =
+  ref (fun _ _ _ -> false)
 (* Whether the array binding's store holds source values at every position,
    one writable homogeneous contract (Lean's `keepsLengths`). *)
 let source_elements : ((string * Environment.binding) list -> string -> bool) ref = ref (fun _ _ -> false)
@@ -421,11 +430,15 @@ let term_kept ch t =
   ((match path with
    | [] -> true
    | _ :: q -> not (if q = [] then last else ch.obj) && (q = [] || (not last && (List.length q = 1 || not ch.obj)))) &&
-  (match kind with Value_term -> true | Length_term -> ch.store <> `Any | View_term -> not ch.num)) ||
+  (match kind with Value_term -> true | Length_term -> ch.store = `Keep || ch.store = `Length | View_term -> not ch.num)) ||
   (* A view's count read through one field the write keeps, its type stating
      the count stable (Lean's `Term.viewFramed`). *)
   (match kind, path with View_term, [g] -> not ch.obj && ch.framed b g | _ -> false)
-let fact_kept ch ((t,_) : fact) = List.for_all (fun (n,_) -> term_kept ch n) t
+(* A length a growing change grows, its path kept (Lean's `Term.grownBy`). *)
+let term_grown ch t = let _,_,kind = term_parts t in
+  kind = Length_term && ch.store = `Grow && term_kept { ch with store = `Keep } t
+let fact_kept ch ((t,_) : fact) =
+  List.for_all (fun (n,c) -> term_kept ch n || (c <= 0 && term_grown ch n)) t
 
 (* An index below an array's length: a strict bound, or `0 ≤ k` and
    `k ≤ |xs| - 1` from the facts (Lean's `bounded`, strict). *)
@@ -448,7 +461,8 @@ let write_changes ~facts ~bounds env (e : expr) : changes option =
   | Call ({node=Id f;_},None,args,[],_) when List.for_all (heap_free env) args ->
     Option.map of_footprint (!call_footprint env f)
   | Invoke ({node=Read (r,key);_},args,[],_) when heap_free env r && List.for_all (heap_free env) args ->
-    Option.map of_footprint (!method_footprint env r key)
+    if !method_grows env r key then Some { obj = false; num = false; store = `Grow; framed = no_frame }
+    else Option.map of_footprint (!method_footprint env r key)
   | _ -> None
 
 let statement_changes ~facts ~bounds env (s : stmt) = match s.statement with

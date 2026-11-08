@@ -133,7 +133,7 @@ function effectText(e: CallEffect): Within<{ value: "keep"; store: "keep" }, str
     `"receiverStore":${JSON.stringify(e.receiverStore)},"onThrow":${JSON.stringify(e.onThrow)},` +
     `"receiverOwn":${JSON.stringify(e.receiverOwn)},"freshObject":${JSON.stringify(e.freshObject)},` +
     `"requires":${kindsText(e.requires)},"elements":${kindsText(e.elements)},"pre":${JSON.stringify(e.pre)},` +
-    `"ensures":${JSON.stringify(e.ensures)}}`;
+    `"ensures":${JSON.stringify(e.ensures)},"receiverGrows":${JSON.stringify(e.receiverGrows)}}`;
 }
 
 /** An elements predicate as text: `null` or its kinds' list. */

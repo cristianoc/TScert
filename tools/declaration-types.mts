@@ -44,6 +44,10 @@ export type CallEffect = {
    * read at the return's positions (0 the result, i + 1 the call's position
    * i) (`CallEffects.Effect.ensures`). Only a trusted signature states one. */
   readonly ensures: readonly IndexFact[];
+  /** A normal return changed no old location but the receiver's array store,
+   * which it grew: a store at least as long, at most 2^32 - 1 long
+   * (`CallEffects.ReceiverGrows`). Only a trusted signature states it. */
+  readonly receiverGrows: boolean;
 };
 /** An index fact at numbered positions (`HeapKnowledge.IndexFact`, its
  * constructor's name holding its fields): an array index; the length of an

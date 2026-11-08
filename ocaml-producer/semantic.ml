@@ -49,10 +49,14 @@ type call_effect = { footprint: footprint; promise: promise option; fresh: bool;
   (* Facts a normal return states, at the return's positions: 0 the result,
      i + 1 the call's position i (Lean's `Effect.ensures`). Only a trusted
      signature states them. *)
-  ensures: index_fact list }
+  ensures: index_fact list;
+  (* A normal return changed no old location but the receiver's store, which
+     it grew (Lean's `Effect.receiverGrows`). Only a trusted signature states
+     it. *)
+  receiver_grows: bool }
 let footprint_effect footprint =
   {footprint;promise=None;fresh=false;receiver_store=false;on_throw=false;receiver_own=false;fresh_object=false;
-   requires=None;elements=None;pre=[];ensures=[]}
+   requires=None;elements=None;pre=[];ensures=[];receiver_grows=false}
 (* An ordinary arrow's: every location may change. *)
 let ordinary_effect = footprint_effect top_footprint
 (* Heap preservation: no location may change. *)
@@ -64,8 +68,9 @@ let promise_effect promise = {(footprint_effect top_footprint) with promise=Some
    is an exception of every location; its positions are not the target's, so
    it states no result facts. *)
 let bound_effect e = if e.receiver_store || e.receiver_own then
-    {e with footprint=top_footprint; receiver_store=false; receiver_own=false; elements=None; ensures=[]}
-  else {e with elements=None; ensures=[]}
+    {e with footprint=top_footprint; receiver_store=false; receiver_own=false; elements=None; ensures=[];
+      receiver_grows=false}
+  else {e with elements=None; ensures=[]; receiver_grows=false}
 (* Whether a signature's result is the call's: one without a promise. *)
 let plain_effect e = e.promise = None
 (* A smaller footprint and the same promise, a fresh result where the other
@@ -80,7 +85,7 @@ let effect_covers a b = footprint_le a.footprint b.footprint && a.promise = b.pr
   (match a.requires, b.requires with
    | None, _ -> true | Some ka, Some kb -> List.for_all (fun k -> List.mem k ka) kb | Some _, None -> false) &&
   List.for_all (fun f -> List.mem f b.pre) a.pre &&
-  List.for_all (fun f -> List.mem f a.ensures) b.ensures &&
+  List.for_all (fun f -> List.mem f a.ensures) b.ensures && (not b.receiver_grows || a.receiver_grows) &&
   (match a.elements, b.elements with
    | _, None -> true | Some ka, Some kb -> List.for_all (fun k -> List.mem k kb) ka | None, Some _ -> false)
 

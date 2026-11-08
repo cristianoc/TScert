@@ -243,7 +243,7 @@ makes `o` and `r` binders of the same scheme;
 and `rest` is `null` or the surplus-element type. Binder names resolve
 lexically; a nested scheme's binders hide outer binders of the same names.
 The effect is `{"footprint": f, "promise": p, "fresh": b, "receiverStore": c, "onThrow": o, "receiverOwn": w,
-"freshObject": j, "requires": q, "elements": e}`. The footprint `f` is a
+"freshObject": j, "requires": q, "elements": e, "pre": P, "ensures": E, "receiverGrows": g}`. The footprint `f` is a
 [closed footprint](FOOTPRINTS.md#changes-and-footprints), `{"value":v,"store":s}`
 with `v` one of `keep` and `any` and `s` one of `keep`, `grow` and `any`: on
 normal return, the locations of the entry heap holding a value change at most
@@ -265,6 +265,9 @@ receiver's array store, which the call may change arbitrarily
 `"symbol"` and `"object"`, each at most once and in this order: a predicate the
 receiver's present elements meet where the call starts, and one they meet
 where it returns `true` ([the elements fact](FOOTPRINTS.md#the-elements-fact)).
+`receiverGrows` states that a normal return changed no location but the
+receiver's array store, which it grew; only a native's audited signature
+states it ([native footprints](SOURCE-CONTRACTS.md#native-footprints)).
 Each requires corresponding evidence.
 
 A call expression can propose an instance with:

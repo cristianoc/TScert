@@ -744,7 +744,7 @@ control(async (): Promise<void> => {
   // Evidence carries this declaration's translated table. The original
   // evidence is incompatible with the weakened declaration's table.
   invoke(join(artifacts, "claims.json"), join(artifacts, "evidence.json"), artifacts,
-      /^reject: Verification\.EvidenceWire\.Document\.types: head 38 argument 0 part 0: head 113 takes 0 arguments, given 1/m, weakened);
+      /^reject: Verification\.EvidenceWire\.Document\.types: head 39 argument 0 part 0: head 114 takes 0 arguments, given 1/m, weakened);
 
   // An admitted undefined first element requires its default. Withholding
   // that expression claim cannot remove the default from either extraction.
@@ -1787,7 +1787,7 @@ control(async (): Promise<void> => {
     for (const field of fields) if (field && typeof field === "object" && "readonly" in field) field.readonly = false;
     prototype.calls = [{ k: "function", effect: { footprint: { value: "any", store: "any" }, promise: null, fresh: false,
       receiverStore: false, onThrow: false, receiverOwn: false, freshObject: false, requires: null, elements: null,
-      pre: [], ensures: [] },
+      pre: [], ensures: [], receiverGrows: false },
       receiver: null, params: [], rest: null,
       result: { k: "atom", name: "unknown", span: [0, 0] }, span: [0, 0] }];
     return must(JSON.stringify(contract), "the callable contract's text");
@@ -4722,7 +4722,7 @@ control(async (): Promise<void> => {
   refusedAt(artifacts, allocated, "forged-native-introduction",
     `source expression obligation at [${allocatedAt},${allocatedAt + 2})`);
   invoke(allocated, join(artifacts, "evidence.json"), artifacts,
-      /^reject: Verification\.EvidenceWire\.Document\.types: application of unknown head 124/m);
+      /^reject: Verification\.EvidenceWire\.Document\.types: application of unknown head 125/m);
   // A forged proposal for a direct write starts with a valid native input.
   // Borrow evidence from a weakened constructor contract, then require the
   // native contract to refuse it at its ordinary write obligation.
@@ -4756,7 +4756,7 @@ control(async (): Promise<void> => {
   assert.ok(writeTerm?.kind === "writeAt");
   assert.equal(writeTerm.field, "constructor");
   invoke(borrowedClaims, join(write, "weakened-native-constructor-evidence.json"), write,
-      /^reject: Verification\.EvidenceWire\.Document\.types: head 38 takes 1 arguments, given 0/m);
+      /^reject: Verification\.EvidenceWire\.Document\.types: head 39 takes 1 arguments, given 0/m);
   // The verifier interprets these impossible native input annotations before
   // consuming any evidence. It refuses them independently of producer choices.
   for (const file of ["invalid-native-promise-constructor-intersection", "invalid-native-promise-array-then"]) {
@@ -6363,7 +6363,7 @@ control(async (): Promise<void> => {
     assert.equal(searched.status, 1, searched.stdout + searched.stderr);
     assert.ok((searched.stdout + searched.stderr).includes("reject: "), searched.stdout + searched.stderr);
     assert.ok(invoke(input, join(artifacts, "evidence.json"), artifacts,
-        /^reject: (?:Verification\.EvidenceWire\.Document\.types: head 131 takes 1 arguments, given 0|source evidence refusal at \[\d+,\d+\): the evidence does not establish this obligation's claim)/m).includes("reject: "));
+        /^reject: (?:Verification\.EvidenceWire\.Document\.types: head 132 takes 1 arguments, given 0|source evidence refusal at \[\d+,\d+\): the evidence does not establish this obligation's claim)/m).includes("reject: "));
   }
   process.stdout.write("Object.entries's mixed overloads: the dictionary's call at the plain overload and the interface's at the dictionary's instance refused in search and in checking\n");
 });
@@ -6460,7 +6460,7 @@ const bypassed = (artifacts: string, name: string, at: [number, number], change:
   assert.equal(made.status, 0, made.stdout + made.stderr);
   refusedAt(artifacts, claims, `${name}-honest`, `obligation at [${at[0]},${at[1]})`);
   invoke(claims, join(artifacts, `${name}-evidence.json`), artifacts,
-      /^reject: (?:Verification\.EvidenceWire\.Document\.types: application of unknown head 548|source direct obligation at \[\d+,\d+\): claimed return type differs from the source annotation|source evidence refusal at \[\d+,\d+\): the evidence does not establish this node's typing)/m);
+      /^reject: (?:Verification\.EvidenceWire\.Document\.types: application of unknown head 549|source direct obligation at \[\d+,\d+\): claimed return type differs from the source annotation|source evidence refusal at \[\d+,\d+\): the evidence does not establish this node's typing)/m);
 };
 control(async (): Promise<void> => {
   // Parameters retains the callback's effect. Claims and evidence made

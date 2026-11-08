@@ -391,7 +391,7 @@ export const overlay: readonly OverlayEntry[] = [
   // specification steps (FootprintNatives.lean); that each native changes
   // nothing but its store and element contents is this entry's audit.
   { name: "push", from: "Array", signature: "push(...items: T[]): number;",
-    effect: footprintEffect({ value: "any", store: "grow" }) },
+    effect: footprintEffect({ value: "any", store: "grow" }, { receiverGrows: true }) },
   { name: "pop", from: "Array", signature: "pop(): T | undefined;", effect: receiverStoreEffect },
   { name: "shift", from: "Array", signature: "shift(): T | undefined;", effect: receiverStoreEffect },
   { name: "unshift", from: "Array", signature: "unshift(...items: T[]): number;",

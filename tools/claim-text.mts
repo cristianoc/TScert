@@ -57,7 +57,8 @@ const isOrdinary = (effect: JsonRead): boolean => {
     d.requires === o.requires &&
     d.elements === o.elements &&
     d.pre.length === 0 &&
-    d.ensures.length === 0
+    d.ensures.length === 0 &&
+    d.receiverGrows === o.receiverGrows
   );
 };
 /** The atoms whose kind is all there is to them, read off `Atom` rather than

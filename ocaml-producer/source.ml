@@ -63,8 +63,8 @@ let rec index_fact_of j =
   else unsupported "unknown index fact"
 let effect_of j = match j with
   | Object fields when List.sort String.compare (List.map fst fields) =
-      ["elements";"ensures";"footprint";"fresh";"freshObject";"onThrow";"pre";"promise";"receiverOwn";
-       "receiverStore";"requires"] ->
+      ["elements";"ensures";"footprint";"fresh";"freshObject";"onThrow";"pre";"promise";"receiverGrows";
+       "receiverOwn";"receiverStore";"requires"] ->
     let kinds k = match field k j with
       | Null -> None
       | Array ks -> Some (List.map str ks)
@@ -75,7 +75,8 @@ let effect_of j = match j with
      on_throw=boolean (field "onThrow" j); receiver_own=boolean (field "receiverOwn" j);
      fresh_object=boolean (field "freshObject" j); requires=kinds "requires"; elements=kinds "elements";
      pre=List.map index_fact_of (list (field "pre" j));
-     ensures=List.map index_fact_of (list (field "ensures" j))}
+     ensures=List.map index_fact_of (list (field "ensures" j));
+     receiver_grows=boolean (field "receiverGrows" j)}
   | _ -> unsupported "unknown callable effect"
 let resolution_slots scope index j = match field "resolution" j with
   | Null -> None

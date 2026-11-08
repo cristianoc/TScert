@@ -7,7 +7,8 @@ closed `footprint`, `{"value", "store"}`; a `promise`, `null` or
 `{"guards": {"param": p}}` or `{"asserts": {"param": p}}`; the Booleans
 `fresh`, `receiverStore`, `onThrow`, `receiverOwn` and `freshObject`; and the
 element predicates `requires` and `elements`, each `null` or its kinds in
-order; and the index-fact lists `pre` and `ensures`. Each decoder
+order; the index-fact lists `pre` and `ensures`; and the Boolean
+`receiverGrows`. Each decoder
 re-encodes what it read and refuses a document that differs, so a field
 outside these, or a `grow` on `value`, is refused. -/
 namespace Verification.EffectJson
@@ -95,7 +96,7 @@ instance : ToJson Effect := ⟨fun e => Json.mkObj [("footprint", toJson e.footp
   ("fresh", toJson e.fresh), ("receiverStore", toJson e.receiverStore), ("onThrow", toJson e.onThrow),
   ("receiverOwn", toJson e.receiverOwn), ("freshObject", toJson e.freshObject),
   ("requires", predJson e.requires), ("elements", predJson e.elements), ("pre", toJson e.pre),
-  ("ensures", toJson e.ensures)]⟩
+  ("ensures", toJson e.ensures), ("receiverGrows", toJson e.receiverGrows)]⟩
 
 instance : FromJson Effect := ⟨fun j => do
   let footprint ← j.getObjValAs? Footprints.Closed "footprint"
@@ -105,10 +106,11 @@ instance : FromJson Effect := ⟨fun j => do
   let e : Effect := ⟨footprint, promise, ← j.getObjValAs? Bool "fresh", ← j.getObjValAs? Bool "receiverStore",
     ← j.getObjValAs? Bool "onThrow", ← j.getObjValAs? Bool "receiverOwn", ← j.getObjValAs? Bool "freshObject",
     ← predOf (← j.getObjVal? "requires"), ← predOf (← j.getObjVal? "elements"),
-    ← fromJson? (← j.getObjVal? "pre"), ← fromJson? (← j.getObjVal? "ensures")⟩
+    ← fromJson? (← j.getObjVal? "pre"), ← fromJson? (← j.getObjVal? "ensures"),
+    ← j.getObjValAs? Bool "receiverGrows"⟩
   if toJson e != j then
     throw ("an effect has exactly the fields footprint, promise, fresh, receiverStore, onThrow, receiverOwn, " ++
-      "freshObject, requires, elements, a predicate its kinds in order, pre and ensures")
+      "freshObject, requires, elements, a predicate its kinds in order, pre, ensures and receiverGrows")
   pure e⟩
 
 end Verification.EffectJson
