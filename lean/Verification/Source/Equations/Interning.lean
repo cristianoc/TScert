@@ -132,6 +132,13 @@ def primitives : M Unit := do
   let _ ← prim "true" (.boolLit true)
   let _ ← prim "false" (.boolLit false)
   let _ ← prim "undefined" .undef
+  -- The primitive kinds' heads, made here whether or not a declaration
+  -- names one, so every store holds them in one order.
+  let _ ← prim "number" .num
+  let _ ← prim "string" .str
+  let _ ← prim "bigint" .bigint
+  let _ ← prim "symbol" .symbol
+  let _ ← prim "unknown" .source
 
 def top : M Tree := prim "unknown" .source
 
