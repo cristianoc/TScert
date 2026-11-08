@@ -1629,6 +1629,13 @@ $`i`$, of value $`i`$; $`r`$ is the result:
 \frac{}{K\vdash c\leftarrow a\ \texttt{===}\ b\dashv (a=b\ \text{if}\ c),\ (a\ne b\ \text{if}\ \neg c)}\ \textsf{int-equal}
 ```
 
+**A literal's value.** A slot whose type is one safe integer's literal
+$`k`$, a module constant `const TEXT = 0` among them, holds $`k`$
+(`IndexWrites.litSlot`, proved: `litSlot_sound`), so a read of it states
+$`\mathrm{int}(r),\ r=k`$; the producer reads such a constant at its value
+(`literal-constant-value`; negative `invalid-literal-constant-value`, run
+under Node).
+
 **A sum reaching $`2^{53}`$.** Two safe integers $`a,b\ge 0`$ whose sum
 the knowledge bounds by $`2^{53}`$, and not by $`2^{53}-1`$, add to their
 exact sum or to the double $`2^{53}`$, the least integer past the safe
