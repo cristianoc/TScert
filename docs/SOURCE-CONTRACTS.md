@@ -1723,8 +1723,9 @@ The entries:
   its `Symbol.species`, which the host assumption below makes the standard
   constructor and `%TypedArray%`'s getter, and constructs a fresh view over
   the same memory. `fill` and `copyWithin` return the receiver. Each
-  writes the view's elements alone, which the model holds no location of,
-  and throws a `RangeError` at an index out of range: within the empty
+  writes the view's elements alone, and throws a `RangeError` at an index
+  out of range: `fill`, `copyWithin` and `set` change the heap as an
+  element write does (`%ByteSet%` below), `subarray` within the empty
   footprint. Every member holds of each of the four alike; the members
   calling a callback or a species constructor's code (`map`, `filter`,
   `slice`, `every` with a `thisArg`, …) are not stated, so a read of one
@@ -1777,7 +1778,11 @@ is an integer-indexed exotic object (ECMA-262, "TypedArray Objects"): its
 number of the view's element type (an integer in its range, or for a
 `Float64Array` any double, `NaN` included), and `undefined` at any other, never reading the
 prototype chain, and its `length` is `%TypedArray%.prototype`'s getter.
-The model holds neither: an element read at a number and a read of
+The model holds a view's elements as a store under the model key
+$`[[\mathrm{viewElements}]]`$ (`Calculus.viewElementsKey`), one location
+per element, each holding the element, which no step of the program reads or
+copies and only the intrinsics' and the view methods' contracts state; it
+holds no `length` of it. An element read at a number and a read of
 `length` of a value TypeScript types as views of bytes only are calls of
 the intrinsics stating them, and so is an element write at a number,
 
@@ -1790,7 +1795,7 @@ the intrinsics stating them, and so is an element write at a number,
 \qquad
 \%\mathrm{ByteLength}\%\colon(\mathit{Uint8Array})\Rightarrow_\emptyset\mathtt{number}
 \qquad
-\%\mathrm{ByteSet}\%\colon(\mathit{Uint8Array},\ \mathtt{number},\ \mathtt{number})\Rightarrow_\emptyset\mathtt{number}
+\%\mathrm{ByteSet}\%\colon(\mathit{Uint8Array},\ \mathtt{number},\ \mathtt{number})\Rightarrow_{\{\mathsf{value}:\mathsf{keep},\ \mathsf{store}:\mathsf{grow}\},\ \mathsf{elementWrite}}\mathtt{number}
 ```
 
 each checked at its argument as any call is, so a read the parser writes
@@ -1801,7 +1806,18 @@ number, the only value `%ByteSet%` takes, and sets the element at a valid
 index to it converted to the view's element type, modulo 256 for a
 `Uint8Array` (`node-bytes-write`, run under Node: 300 reads back as 44),
 setting none at any other key; it answers the number, the value the
-assignment is. A read after a write is still `%ByteAt%`'s, a number or
+assignment is. The views over one buffer share its bytes (`subarray`), so a
+write changes the elements of every view over the written bytes: in the
+model it replaces the written entries of those views' element stores by
+fresh locations holding what each view then reads there. It changes stores
+alone and keeps their lengths: the store-growth footprint, values kept, with
+`elementWrite` (`CallEffects.ElementWrite`): every location holding no
+store keeps its value and every store its length, so a fact of values,
+paths, lengths and typed-array lengths survives the write, and a quantified
+fact over any array's elements does not (`invalid-typed-array-element-read-after-write`,
+run under Node: a write through a `subarray` view changes the quantified view).
+`fill`, `copyWithin` and `set` change the heap alike; `subarray` allocates
+its view. A read after a write is still `%ByteAt%`'s, a number or
 `undefined`, where TypeScript narrows the element by the write
 (`invalid-typed-array-write-past-end`, run under Node: `undefined` past the
 end). A compound assignment or an update of an element is refused.
@@ -1814,12 +1830,13 @@ length never changes: the model's view owns the key $`[[\mathrm{viewLength}]]`$
 store shares, holds that length, the linear term $`\mathrm{view}(b)`$
 ([linear facts](PROGRAM-TYPING.md#linear-facts)). `%ByteLength%`'s
 postcondition states its result that length, and `%ByteAt%` has a second signature, a read at a safe
-integer below it, whose result is the element, a number:
+integer below it, whose result is the element, a number, and the element
+the view's element store holds at that index (`IndexFact.element`):
 
 ```math
 \%\mathrm{ByteLength}\%\colon(\mathit{Uint8Array})\Rightarrow_\emptyset^{\ \mathsf{ensures}\ \mathrm{int}(0),\ 0=\mathrm{view}(2)}\mathtt{number}
 \qquad
-\%\mathrm{ByteAt}\%\colon(\mathit{Uint8Array},\ \mathtt{number})\Rightarrow_\emptyset^{\ \mathrm{int}(2),\ 0\le 2,\ 2\le\mathrm{view}(1)-1}\mathtt{number}
+\%\mathrm{ByteAt}\%\colon(\mathit{Uint8Array},\ \mathtt{number})\Rightarrow_\emptyset^{\ \mathrm{int}(2),\ 0\le 2,\ 2\le\mathrm{view}(1)-1;\ \mathsf{ensures}\ \mathrm{element}(0,2,3)}\mathtt{number}
 ```
 
 at the positions of a [postcondition](PROGRAM-TYPING.md#postconditions)
@@ -1829,8 +1846,9 @@ $`0\le k<\mathrm{view}(b)`$ is a valid integer index (IsValidIntegerIndex:
 integral, not `-0`, below the length; the key `-0` is `0` after
 ToPropertyKey's canonical numeric string), so the read is the element there,
 of the view's element type, a number (a `Float64Array`'s any double, `NaN`
-included). The getter reads the view's slots and the read runs no code;
-neither writes. The key is never copied (`copiedKey`) and no source property
+included), and the element the view's element store holds there, which the
+model's write keeps current. The getter reads the view's slots and the read
+runs no code; neither writes. The key is never copied (`copiedKey`) and no source property
 names it (`RequestJson.reservedKey`);
 the term is defined only of a host object, which no allocation of the
 program makes, so no program value states a view's length. The view's type

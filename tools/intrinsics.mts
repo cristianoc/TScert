@@ -657,7 +657,12 @@ export function intrinsics(promise: (argument: TypeTerm) => TypeTerm, needed: Re
     // element there, a number (a `Float64Array`'s any double, `NaN`
     // included): such a `k` is a valid integer index (IsValidIntegerIndex:
     // integral, not `-0`, below the length, `-0` reading as `0` after
-    // ToPropertyKey's canonical numeric string).
+    // ToPropertyKey's canonical numeric string). The second states its
+    // result the element the view's elements hold at the index
+    // (`IndexFact.element`, at the return's positions: 0 the result, 2 the
+    // view, 3 the index): the model holds a view's elements as a store under
+    // `[[viewElements]]`, one location per element below the typed-array
+    // length, each holding the element (DESIGN.md, "Trust surface").
     [byteAtName]: () => {
       const params = [bytes, atom("number")];
       return { typeParams: [], type: { k: "intersection", span, parts: [
@@ -667,7 +672,7 @@ export function intrinsics(promise: (argument: TypeTerm) => TypeTerm, needed: Re
           { linear: { fact: { le: { form: [[{ kind: "value", slot: 2, path: [] }, -1]], bound: 0 } } } },
           { linear: { fact: { le: { form: [[{ kind: "value", slot: 2, path: [] }, 1],
             [{ kind: "view", slot: 1, path: [] }, -1]], bound: -1 } } } },
-        ] }) },
+        ], ensures: [{ element: { value: 0, array: 2, index: 3 } }] }) },
       ] } };
     },
     // `%TypedArray%.prototype`'s `length` getter, the view's length, 0 where
@@ -690,10 +695,17 @@ export function intrinsics(promise: (argument: TypeTerm) => TypeTerm, needed: Re
     // TypedArraySetElement): ToNumber of the number, which runs no code, and
     // the element at a valid index set to it converted to the view's element
     // type, no element at any other key, the prototype chain never read. It
-    // writes the view's element alone, which the model holds no location of,
-    // and answers a number, the value the assignment is.
+    // writes the view's element alone, and answers a number, the value the
+    // assignment is. The model holds each view's elements as a store
+    // (`[[viewElements]]`), and the views over one buffer share its bytes: a
+    // write sets the element's entry of the store of every view over the
+    // written bytes to a fresh location holding what that view now reads
+    // there, which changes stores alone, keeps their lengths and present
+    // entries and lists no old location they did not list: the store-growth
+    // footprint, values kept, every store's length kept (`elementWrite`).
     [byteSetName]: () => ({ typeParams: [],
-      type: { ...fn([bytes, atom("number"), atom("number")], atom("number")), effect: emptyEffect } }),
+      type: { ...fn([bytes, atom("number"), atom("number")], atom("number")),
+        effect: footprintEffect({ value: "keep", store: "grow" }, { elementWrite: "stores" }) } }),
     // `typeof X` of a DOM global some hosts define (`GlobalEntry.typeOf`):
     // the lookup of the binding runs no code, no global being a getter of
     // the program's under the untampered-standard-objects policy, and

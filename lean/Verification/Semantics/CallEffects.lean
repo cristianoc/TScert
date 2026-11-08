@@ -74,6 +74,21 @@ theorem ElemsAt.mono {R R' : ElemPred} {r : Tm} {h : Heap} (hle : R.le R' = true
   obtain ⟨s, ls, hs, hl, hall⟩ := he
   exact ⟨s, ls, hs, hl, fun l hm => let ⟨v, hv, hr⟩ := hall l hm; ⟨v, hv, ElemPred.le_sound hle hr⟩⟩
 
+/-- What a typed array's element write keeps (`%ByteSet%`, a view's `fill`,
+`copyWithin` and `set`; SOURCE-CONTRACTS.md, "Stated library types"). The
+model holds a view's elements as a store (`viewElementsKey`), and a write
+replaces entries of the stores of the views over the written bytes: every
+old location holding no store keeps its value, and every store keeps its
+length (`HeapKnowledge.Changes` with no object or number altered and every
+store's length kept). -/
+inductive ElementWrite where
+  | stores
+  deriving Repr, DecidableEq
+
+/-- The change an element write allows. -/
+def ElementWrite.changes : ElementWrite → HeapKnowledge.Changes
+  | .stores => ⟨false, false, .length⟩
+
 /-- What a call signature guarantees beyond its contract: a closed footprint
 (`Footprints.Closed`) bounding the change from its entry heap to the heap a
 normal return leaves, and an optional promise. Without a promise the
@@ -95,7 +110,8 @@ actual's store; `elements` a promise: a normal return of `true` leaves the
 receiver's elements meeting it; `receiverGrows` that a normal return changed
 no old location but the receiver's store, which it extended
 (`ReceiverGrows`), the actuals, where each is a value, appended in order
-(`ReceiverAppends`). -/
+(`ReceiverAppends`); `elementWrite` that a normal return changed the heap as
+a typed array's element write may (`ElementWrite.changes`). -/
 structure Effect where
   footprint : Footprints.Closed
   promise : Option TypePromise
@@ -113,10 +129,13 @@ structure Effect where
   /-- A normal return changed no old location but the receiver's store, which
   it extended (`ReceiverGrows`) by the actuals (`ReceiverAppends`). -/
   receiverGrows : Bool := false
+  /-- A normal return changed the heap as a typed array's element write may
+  (`ElementWrite.changes`). -/
+  elementWrite : Option ElementWrite := none
   deriving Repr, DecidableEq
 
 /-- A signature with a footprint and no promise. -/
-def Effect.ofFootprint (c : Footprints.Closed) : Effect := ⟨c, none, false, false, false, false, false, none, none, [], [], false⟩
+def Effect.ofFootprint (c : Footprints.Closed) : Effect := ⟨c, none, false, false, false, false, false, none, none, [], [], false, none⟩
 
 /-- A call's values by position: `0` the receiver, `i + 1` the `i`-th actual,
 `undefined` past the last. -/
@@ -320,13 +339,14 @@ theorem ReceiverGrows.prefix_left {r : Tm} {before middle after : Heap} (hg : Re
 /-- A signature's normal-return postcondition for a call with receiver `r`,
 from the heap the call starts in: its footprint, and, where it states one, a
 fresh store for the result; with `receiverGrows`, `ReceiverGrows` and
-`ReceiverAppends` at the actuals. -/
+`ReceiverAppends` at the actuals; with `elementWrite`, its change. -/
 def Effect.post (e : Effect) (r : Tm) (args : List Tm) : Heap → Post := fun before after v =>
   e.within r before after ∧ (e.fresh = true → Footprints.FreshAt before.length v) ∧
     (e.freshObject = true → Footprints.FreshObjectAt before.length v) ∧
     (∀ R, e.elements = some R → v = .tru → ElemsAt R r after) ∧
     (∀ F ∈ e.ensures, F.HoldsAt (ensuresEnv v r args) after) ∧
-    (e.receiverGrows = true → ReceiverGrows r before after ∧ ReceiverAppends r args before after)
+    (e.receiverGrows = true → ReceiverGrows r before after ∧ ReceiverAppends r args before after) ∧
+    (∀ w, e.elementWrite = some w → w.changes.Holds before after)
 
 /-- A signature's postcondition on a throw, from the heap the call starts in:
 its footprint where it states `onThrow`, and nothing otherwise. -/
@@ -452,7 +472,7 @@ def TypePromise.drop (n : Nat) : TypePromise → TypePromise
 
 def Effect.drop (n : Nat) (e : Effect) : Effect :=
   ⟨if e.receiverStore || e.receiverOwn then .top else e.footprint, e.promise.map (TypePromise.drop n), e.fresh, false,
-    e.onThrow, false, e.freshObject, e.requires, none, e.pre, [], false⟩
+    e.onThrow, false, e.freshObject, e.requires, none, e.pre, [], false, e.elementWrite⟩
 
 /-- Whether binding `n` actuals keeps the promise about an actual of the
 bound call. A precondition or an elements promise is about the receiver the
@@ -520,7 +540,8 @@ theorem Effect.below_grows {e : Effect} {n : Nat} (h : e.below n = true) : e.rec
 theorem Effect.post_args {e : Effect} (he : e.ensures = []) (hg : e.receiverGrows = false) {r : Tm}
     {args args' : List Tm} {before after : Heap}
     {v : Val} (h : e.post r args before after v) : e.post r args' before after v :=
-  ⟨h.1, h.2.1, h.2.2.1, h.2.2.2.1, fun F hF => (by rw [he] at hF; cases hF), fun h => by rw [hg] at h; cases h⟩
+  ⟨h.1, h.2.1, h.2.2.1, h.2.2.2.1, fun F hF => (by rw [he] at hF; cases hF), (fun h' => by rw [hg] at h'; cases h'),
+    h.2.2.2.2.2.2⟩
 
 private theorem parameters_getD : ∀ (n : Nat) (args : List Tm) (p : Nat), p < n →
     (CallArguments.parameters n args).getD p .undef = args.getD p .undef
@@ -617,7 +638,7 @@ theorem Effect.within_drop {e : Effect} (n : Nat) {rv r : Tm} {before after : He
 theorem Effect.post_drop {e : Effect} (n : Nat) {rv r : Tm} {argsv args : List Tm} {before after : Heap} {v : Val}
     (h : e.post rv argsv before after v) : (e.drop n).post r args before after v :=
   ⟨Effect.within_drop n h.1, h.2.1, h.2.2.1, fun _ hR => by simp [Effect.drop] at hR,
-    fun _ hF => (by simp [Effect.drop] at hF), fun hg => by simp [Effect.drop] at hg⟩
+    fun _ hF => (by simp [Effect.drop] at hF), fun hg => by simp [Effect.drop] at hg, h.2.2.2.2.2.2⟩
 
 theorem Effect.excPost_drop {e : Effect} (n : Nat) {rv r : Tm} {before after : Heap}
     (h : e.excPost rv before after) : (e.drop n).excPost r before after :=
@@ -629,7 +650,8 @@ def Effect.forgetEnsures (e : Effect) : Effect := { e with ensures := [] }
 
 theorem Effect.post_forgetEnsures {e : Effect} {r : Tm} {args : List Tm} {before after : Heap} {v : Val}
     (h : e.post r args before after v) : e.forgetEnsures.post r args before after v :=
-  ⟨h.1, h.2.1, h.2.2.1, h.2.2.2.1, fun F hF => (by simp [Effect.forgetEnsures] at hF), h.2.2.2.2.2⟩
+  ⟨h.1, h.2.1, h.2.2.1, h.2.2.2.1, fun F hF => (by simp [Effect.forgetEnsures] at hF), h.2.2.2.2.2.1,
+    h.2.2.2.2.2.2⟩
 
 /-- A variadic call with a spread among its actuals concludes the signature's
 postcondition without its postcondition facts at those actuals: an append
@@ -638,7 +660,7 @@ theorem Effect.post_forgetEnsures_spread {e : Effect} {r : Tm} {args args' : Lis
     {v : Val} (hs : ∃ a ∈ args', isVal a = false)
     (h : e.post r args before after v) : e.forgetEnsures.post r args' before after v :=
   ⟨h.1, h.2.1, h.2.2.1, h.2.2.2.1, fun F hF => (by simp [Effect.forgetEnsures] at hF),
-    fun hg => ⟨(h.2.2.2.2.2 hg).1, ReceiverAppends.of_not_values hs⟩⟩
+    fun hg => ⟨(h.2.2.2.2.2.1 hg).1, ReceiverAppends.of_not_values hs⟩, h.2.2.2.2.2.2⟩
 
 /-- A postcondition at actuals padded with `undefined` is the one at the
 actuals, of a receiver holding no store. -/
@@ -646,7 +668,7 @@ theorem Effect.post_pad {e : Effect} {r : Tm} (hr : Footprints.storeOf r = none)
     (hpad : ∀ a ∈ pad, a = .undef)
     {before after : Heap} {v : Val} (h : e.post r (args ++ pad) before after v) : e.post r args before after v := by
   refine ⟨h.1, h.2.1, h.2.2.1, h.2.2.2.1, fun F hF => ?_,
-    fun hg => ⟨(h.2.2.2.2.2 hg).1, ReceiverAppends.of_no_store hr⟩⟩
+    fun hg => ⟨(h.2.2.2.2.2.1 hg).1, ReceiverAppends.of_no_store hr⟩, h.2.2.2.2.2.2⟩
   have := h.2.2.2.2.1 F hF
   have he : ensuresEnv v r (args ++ pad) = ensuresEnv v r args := by
     funext i; simp only [ensuresEnv, callEnv_pad r args hpad]
@@ -655,9 +677,9 @@ theorem Effect.post_pad {e : Effect} {r : Tm} (hr : Footprints.storeOf r = none)
 /-- Fresh entry allocation composes with the body's footprint. -/
 theorem Effect.post_prefix (effect : Effect) {r : Tm} {args : List Tm} {before middle after : Heap} {v : Val}
     (hprefix : before.IsPrefix middle) : effect.post r args middle after v → effect.post r args before after v := by
-  rintro ⟨hw, hf, ho, hel, hen, hg⟩
+  rintro ⟨hw, hf, ho, hel, hen, hg, hew⟩
   refine ⟨?_, fun h => (hf h).lower hprefix.length_le, fun h => (ho h).lower hprefix.length_le, hel, hen,
-    fun h => ⟨(hg h).1.prefix_left hprefix, (hg h).2.prefix_left hprefix⟩⟩
+    fun h => ⟨(hg h).1.prefix_left hprefix, (hg h).2.prefix_left hprefix⟩, fun w h => (hew w h).prefix_left hprefix⟩
   unfold Effect.within at hw ⊢
   split
   · rename_i hs; simp only [hs, if_true] at hw; exact ⟨hw.1.prefix_left hprefix, hw.2.prefix_left hprefix⟩
@@ -685,25 +707,26 @@ states one. -/
 def Effect.meet (a b : Effect) : Effect :=
   ⟨a.footprint.meet b.footprint, a.promise, a.fresh || b.fresh, a.receiverStore, a.onThrow && b.onThrow,
     a.receiverOwn, a.freshObject || b.freshObject, a.requires, a.elements, a.pre, a.ensures ++ b.ensures,
-    a.receiverGrows || b.receiverGrows⟩
+    a.receiverGrows || b.receiverGrows, a.elementWrite⟩
 
 /-- Two guarantees whose results mean the same: the same promise, or none,
 the same precondition and elements promise, and footprints over the same
-locations. Only these combine. -/
+locations, and the same element write. Only these combine. -/
 def Effect.sameResult (a b : Effect) : Bool :=
-  a.promise == b.promise && a.receiverStore == b.receiverStore && a.receiverOwn == b.receiverOwn &&
-    a.requires == b.requires && a.elements == b.elements && a.pre == b.pre
+  (a.promise == b.promise && a.receiverStore == b.receiverStore && a.receiverOwn == b.receiverOwn &&
+    a.requires == b.requires && a.elements == b.elements && a.pre == b.pre) && a.elementWrite == b.elementWrite
 
 theorem Effect.within_meet {a b : Effect} (hs : a.sameResult b = true) {r : Tm} {before after : Heap} :
     (a.meet b).within r before after ↔ a.within r before after ∧ b.within r before after := by
   simp only [Effect.sameResult, Bool.and_eq_true, beq_iff_eq] at hs
+  replace hs := hs.1
   unfold Effect.within Effect.meet
   simp only
   rw [← hs.1.1.1.1.2, ← hs.1.1.1.2]
   split
   · have hc : Effect.ownChange ⟨a.footprint.meet b.footprint, a.promise, a.fresh || b.fresh, a.receiverStore,
         a.onThrow && b.onThrow, a.receiverOwn, a.freshObject || b.freshObject, a.requires, a.elements, a.pre,
-        a.ensures ++ b.ensures, a.receiverGrows || b.receiverGrows⟩ =
+        a.ensures ++ b.ensures, a.receiverGrows || b.receiverGrows, a.elementWrite⟩ =
         a.ownChange.meet b.ownChange := by
       rfl
     rw [hc, Footprints.Closed.holdsOn_meet, Footprints.Closed.holdsOn_meet]
@@ -722,18 +745,21 @@ theorem Effect.post_meet {a b : Effect} (hs : a.sameResult b = true) (r : Tm) (a
   have hen : (a.meet b).ensures = a.ensures ++ b.ensures := rfl
   have hg : (a.meet b).receiverGrows = (a.receiverGrows || b.receiverGrows) := rfl
   have hbe : b.elements = a.elements := by
-    simp only [Effect.sameResult, Bool.and_eq_true, beq_iff_eq] at hs; exact hs.1.2.symm
+    simp only [Effect.sameResult, Bool.and_eq_true, beq_iff_eq] at hs; exact hs.1.1.2.symm
+  have hew : (a.meet b).elementWrite = a.elementWrite := rfl
+  have hbw : b.elementWrite = a.elementWrite := by
+    simp only [Effect.sameResult, Bool.and_eq_true, beq_iff_eq] at hs; exact hs.2.symm
   unfold Effect.post
-  rw [hw, hf, ho, he, hen, hbe, hg, Bool.or_eq_true, Bool.or_eq_true, Bool.or_eq_true]
+  rw [hw, hf, ho, he, hen, hbe, hg, hew, hbw, Bool.or_eq_true, Bool.or_eq_true, Bool.or_eq_true]
   constructor
-  · rintro ⟨⟨ha, hb⟩, hf, ho, hel, hens, hgr⟩
+  · rintro ⟨⟨ha, hb⟩, hf, ho, hel, hens, hgr, hwr⟩
     exact ⟨⟨ha, fun h => hf (.inl h), fun h => ho (.inl h), hel, fun F hF => hens F (List.mem_append_left _ hF),
-        fun h => hgr (.inl h)⟩,
+        fun h => hgr (.inl h), hwr⟩,
       ⟨hb, fun h => hf (.inr h), fun h => ho (.inr h), hel, fun F hF => hens F (List.mem_append_right _ hF),
-        fun h => hgr (.inr h)⟩⟩
-  · rintro ⟨⟨ha, hfa, hoa, hel, hena, hga⟩, ⟨hb, hfb, hob, -, henb, hgb⟩⟩
+        fun h => hgr (.inr h), hwr⟩⟩
+  · rintro ⟨⟨ha, hfa, hoa, hel, hena, hga, hwa⟩, ⟨hb, hfb, hob, -, henb, hgb, -⟩⟩
     exact ⟨⟨ha, hb⟩, fun h => h.elim hfa hfb, fun h => h.elim hoa hob, hel,
-      fun F hF => (List.mem_append.mp hF).elim (hena F) (henb F), fun h => h.elim hga hgb⟩
+      fun F hF => (List.mem_append.mp hF).elim (hena F) (henb F), fun h => h.elim hga hgb, hwa⟩
 
 /-- Both guarantees' throw postconditions give the meet's: it states
 `onThrow` only where both do. -/
@@ -747,7 +773,7 @@ theorem Effect.meet_same {a b : Effect} (hs : a.sameResult b = true) :
     (a.meet b).result = a.result ∧ (a.meet b).promised = a.promised ∧
       b.result = a.result ∧ b.promised = a.promised := by
   simp only [Effect.sameResult, Bool.and_eq_true, beq_iff_eq] at hs
-  replace hs := hs.1.1.1.1
+  replace hs := hs.1.1.1.1.1
   refine ⟨rfl, rfl, ?_, ?_⟩
   · funext R x; simp [Effect.result, hs]
   · funext args; simp [Effect.promised, hs]
@@ -847,7 +873,8 @@ def Effect.covers (a b : Effect) : Bool :=
     (!a.receiverStore || (b.receiverStore && !b.receiverOwn) || b.footprint == .top) && (!b.onThrow || a.onThrow) &&
     (!a.receiverOwn || b.receiverOwn || b.footprint == .top) && (!b.freshObject || a.freshObject) &&
     requiresCovers a.requires b.requires && elementsCovers a.elements b.elements && preCovers a.pre b.pre &&
-    ensuresCovers a.ensures b.ensures && (!b.receiverGrows || a.receiverGrows)
+    ensuresCovers a.ensures b.ensures && (!b.receiverGrows || a.receiverGrows) &&
+    (b.elementWrite.isNone || a.elementWrite == b.elementWrite)
 
 private theorem Effect.within_top_of {e : Effect} {r : Tm} {before after : Heap}
     (ht : e.footprint = .top) (h : Footprints.Closed.top.Holds before after) : e.within r before after := by
@@ -856,7 +883,7 @@ private theorem Effect.within_top_of {e : Effect} {r : Tm} {before after : Heap}
 
 theorem Effect.covers_sound {a b : Effect} (h : a.covers b = true) : a.Covers b := by
   simp only [Effect.covers, Bool.and_eq_true] at h
-  obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨hle, hp⟩, hf⟩, hs⟩, ho⟩, hw⟩, hfo⟩, hrq⟩, hel⟩, hpre⟩, hens⟩, hgr⟩ := h
+  obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨hle, hp⟩, hf⟩, hs⟩, ho⟩, hw⟩, hfo⟩, hrq⟩, hel⟩, hpre⟩, hens⟩, hgr⟩, hwr⟩ := h
   simp only [beq_iff_eq] at hp
   have hown : a.ownChange.le b.ownChange = true := by
     simp only [Footprints.Closed.le, Bool.and_eq_true] at hle
@@ -884,10 +911,12 @@ theorem Effect.covers_sound {a b : Effect} (h : a.covers b = true) : a.Covers b 
         · exact Effect.within_top_of htop (Effect.within_top hwa)
       · simp only [Bool.not_eq_true] at has
         exact Effect.within_of_holds ((Effect.within_holds hwa has hao).mono hle)
-  refine ⟨fun r args before after v ⟨hw, hfr, hfro, hels, hen, hga⟩ => ⟨within r before after hw, fun hb => hfr ?_,
+  refine ⟨fun r args before after v ⟨hw, hfr, hfro, hels, hen, hga, hwa⟩ => ⟨within r before after hw, fun hb => hfr ?_,
       fun hb => hfro ?_, elementsCovers_sound hel hels,
       fun F hF => hen F (List.contains_iff_mem.mp (List.all_eq_true.mp hens F hF)),
-      fun hb => hga (by simp only [hb, Bool.not_true, Bool.false_or] at hgr; exact hgr)⟩,
+      fun hb => hga (by simp only [hb, Bool.not_true, Bool.false_or] at hgr; exact hgr),
+      fun w hb => hwa w (by
+        simp only [hb, Option.isNone_some, Bool.false_or, beq_iff_eq] at hwr; exact hwr)⟩,
     fun R args k W u hu => ?_, fun r before after he hb => within r before after (he ?_),
     fun r args heap hq => requiresCovers_sound hrq hpre hq⟩
   · rw [hb] at hf; simpa using hf
@@ -1142,8 +1171,8 @@ theorem PromiseWith.combine {effect other Acc Rc B C D k W v}
   intro j hj U hx hu heap hh r hrv hr args hv ha hq
   have hq' : other.Requires r args heap := by
     simp only [Effect.sameResult, Bool.and_eq_true, beq_iff_eq] at hs
-    exact ⟨fun R hR => hq.1 R (by simp only [Effect.meet]; rw [hs.1.1.2]; exact hR),
-      fun F hF => hq.2 F (by simp only [Effect.meet]; rw [hs.2]; exact hF)⟩
+    exact ⟨fun R hR => hq.1 R (by simp only [Effect.meet]; rw [hs.1.1.1.2]; exact hR),
+      fun F hF => hq.2 F (by simp only [Effect.meet]; rw [hs.1.2]; exact hF)⟩
   obtain ⟨b, hib, hsb⟩ := hb j hj U hx hu heap hh r hrv hr args hv ha ⟨hq.1, hq.2⟩
   obtain ⟨c, hic, hsc⟩ := hc j hj U hx hu heap hh r hrv hr args hv ha hq'
   cases CallArguments.invoke_deterministic hib hic

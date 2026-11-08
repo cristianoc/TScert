@@ -905,7 +905,7 @@ theorem indexKey_of_not_copied {k : PropKey} (h : copiedKey k = false) : indexKe
   | sym => rfl
   | str s =>
     simp only [copiedKey, Bool.and_eq_false_iff, bne_eq_false_iff_eq] at h
-    rcases h with ((((rfl | rfl) | rfl) | rfl) | rfl) | rfl <;> decide
+    rcases h with (((((rfl | rfl) | rfl) | rfl) | rfl) | rfl) | rfl <;> decide
 
 theorem src_never {G : NormalGraph ι} {o : Obj ι} {n : Nat} {W : WorldT n} {fs : List (PropKey × Nat)}
     (hf : ObjFacts G o n W fs) {h : List Tm} {qs : List (PropKey × Tm)}

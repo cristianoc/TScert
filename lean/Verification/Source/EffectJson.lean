@@ -7,12 +7,21 @@ closed `footprint`, `{"value", "store"}`; a `promise`, `null` or
 `{"guards": {"param": p}}` or `{"asserts": {"param": p}}`; the Booleans
 `fresh`, `receiverStore`, `onThrow`, `receiverOwn` and `freshObject`; and the
 element predicates `requires` and `elements`, each `null` or its kinds in
-order; the index-fact lists `pre` and `ensures`; and the Boolean
-`receiverGrows`. Each decoder
+order; the index-fact lists `pre` and `ensures`; the Boolean
+`receiverGrows`; and `elementWrite`, `null` or `"stores"`. Each decoder
 re-encodes what it read and refuses a document that differs, so a field
 outside these, or a `grow` on `value`, is refused. -/
 namespace Verification.EffectJson
 open Lean CallEffects
+
+/-- An element write's wire name. -/
+def elementWriteName : ElementWrite → String
+  | .stores => "stores"
+
+private def elementWriteOf (name : String) : Except String ElementWrite :=
+  match [ElementWrite.stores].find? (elementWriteName · == name) with
+  | some w => pure w
+  | none => throw s!"invalid element write '{name}'"
 
 /-- A change's wire name. -/
 def changeName : Footprints.Change → String
@@ -97,7 +106,8 @@ instance : ToJson Effect := ⟨fun e => Json.mkObj [("footprint", toJson e.footp
   ("fresh", toJson e.fresh), ("receiverStore", toJson e.receiverStore), ("onThrow", toJson e.onThrow),
   ("receiverOwn", toJson e.receiverOwn), ("freshObject", toJson e.freshObject),
   ("requires", predJson e.requires), ("elements", predJson e.elements), ("pre", toJson e.pre),
-  ("ensures", toJson e.ensures), ("receiverGrows", toJson e.receiverGrows)]⟩
+  ("ensures", toJson e.ensures), ("receiverGrows", toJson e.receiverGrows),
+  ("elementWrite", match e.elementWrite with | some w => toJson (elementWriteName w) | none => Json.null)]⟩
 
 instance : FromJson Effect := ⟨fun j => do
   let footprint ← j.getObjValAs? Footprints.Closed "footprint"
@@ -108,10 +118,12 @@ instance : FromJson Effect := ⟨fun j => do
     ← j.getObjValAs? Bool "onThrow", ← j.getObjValAs? Bool "receiverOwn", ← j.getObjValAs? Bool "freshObject",
     ← predOf (← j.getObjVal? "requires"), ← predOf (← j.getObjVal? "elements"),
     ← fromJson? (← j.getObjVal? "pre"), ← fromJson? (← j.getObjVal? "ensures"),
-    ← j.getObjValAs? Bool "receiverGrows"⟩
+    ← j.getObjValAs? Bool "receiverGrows", ← match ← j.getObjVal? "elementWrite" with
+      | .null => pure none
+      | w => do some <$> elementWriteOf (← w.getStr?)⟩
   if toJson e != j then
     throw ("an effect has exactly the fields footprint, promise, fresh, receiverStore, onThrow, receiverOwn, " ++
-      "freshObject, requires, elements, a predicate its kinds in order, pre, ensures and receiverGrows")
+      "freshObject, requires, elements, a predicate its kinds in order, pre, ensures, receiverGrows and elementWrite")
   pure e⟩
 
 end Verification.EffectJson

@@ -1774,7 +1774,7 @@ bounds of lengths (proved). These are the preservation rules:
      {\textstyle\sum_t c_t\,t\le d\ \text{holds in}\ h'}\ \textsf{fact-grown}
 ```
 
-**The steps' frame conditions.** Five steps state their change:
+**The steps' frame conditions.** Six steps state their change:
 
 - **A field write** $`x.f=y`$: its location held a member of a type the
   receiver's type states for $`f`$, so $`\chi`$ is the classes those types
@@ -1807,6 +1807,12 @@ bounds of lengths (proved). These are the preservation rules:
   length only of a store apart from `out`'s; a definition's code states no
   `receiverGrows`. Its quantified facts are the
   [growth's and the append's](#quantified-clauses).
+- **A typed array's element write**, a call at a selected signature stating
+  `elementWrite` (`%ByteSet%`, a view's `fill`, `copyWithin` and `set`,
+  [typed arrays](SOURCE-CONTRACTS.md#stated-library-types)):
+  $`\chi=(\bot,\bot,\mathsf{length})`$ (`ElementWrite.changes`), so it
+  preserves every fact over values, paths, lengths and typed-array lengths,
+  `segmentFlags[i] = f` keeping `i < widths.length`.
 - **A call changing only its receiver's own locations** (`call-own`):
   $`\chi`$ alters everything, and $`\mathrm{first}(z,g)`$ is
   $`\mathrm{apart}(x.\star,z.g)`$. So an array iterator's step preserves the
@@ -1870,7 +1876,8 @@ which also proves `write-link`). The element write's is
 `IndexWrites.keepsLengths` and `lengthOutput` (proved:
 `ExpressionEffects.elem_var_write_length`, `placeAt_length`). A call's is
 `Changes.ofClosed` (proved: `ofClosed_holds`) in `PromiseCalls.effectKept`,
-added by `Checker.ensuringCalls`; growth is `PromiseCalls.growChanges` and
+added by `Checker.ensuringCalls`; an element write's is `CallEffects.ElementWrite.changes` in
+`PromiseCalls.effectKept` (proved in `effectKept_holds`); growth is `PromiseCalls.growChanges` and
 `growFirst` (proved: `receiverGrows_changes`, `growFirst_kept`, in
 `effectKept_holds`), and a definition's code is checked by
 `GraphCode.effectChecked`; the own-location call is `PromiseCalls.ownKept`.
@@ -2615,7 +2622,7 @@ field, each refused at its entry.
 ### Quantified clauses
 
 A [precondition](#preconditions) may end with a **quantified atom** over the
-indices of an array a path reads, its body the clause language's atoms over
+indices of an array or a typed array a path reads, its body the clause language's atoms over
 the parameters' paths, the index `x` and the element `P[x]`:
 
 ```math
@@ -2629,17 +2636,21 @@ E' ::= E \mid x \mid P[x] \mid n\cdot P[x]
 with $`A'`$ an atom over terms $`E'`$, `safeInteger(P[x])` among them; the
 body extends to the clause's end. An element is named in a comparison only
 where the body states it a safe integer, as a path is. Its meaning is one
-index fact: the path reads an array whose store holds elements $`\ell`$, the
-bound term denotes $`n`$, and for every index below it each body fact holds,
-its variables denoting, the element only where it is present and a safe
-integer:
+index fact: the path reads a value whose store of elements holds locations
+$`\ell`$, the bound term denotes $`n`$, and for every index below it each
+body fact holds, its variables denoting, the element only where it is
+present and a safe integer:
 
 ```math
-\mathrm{every}(x.p,\,t,\,\Phi)(\rho,h) \iff \mathrm{read}(\rho,h,x.p)=v\land\mathrm{store}(v)=s\land h(s)=\mathsf{arr}\,\ell\land⟦t⟧_{\rho,h}=n\land
+\mathrm{every}(x.p,\,t,\,\Phi)(\rho,h) \iff \mathrm{read}(\rho,h,x.p)=v\land\mathrm{elems}(v)=s\land h(s)=\mathsf{arr}\,\ell\land⟦t⟧_{\rho,h}=n\land
 \forall i<n.\ \forall F\in\Phi.\ F\ \text{holds at}\ (i,\ \ell_i,\ ⟦\cdot⟧_{\rho,h})
 ```
 
-A clause `forall x in P: B` elaborates to it with $`t=|P|`$, each comparison
+with $`\mathrm{elems}(v)`$ an array's store, or, of a host object owning no
+store, the location of its model key `[[viewElements]]`: a typed array's
+elements ([typed arrays](SOURCE-CONTRACTS.md#stated-library-types)). A
+clause `forall x in P: B` elaborates to it with $`t=|P|`$ of an array,
+$`t=\mathrm{view}(P)`$ of a typed array, each comparison
 of the body to a linear fact over the index, the element and terms, its
 computed sums ranged as a clause's are. A hole denotes no element, so a body
 naming the element holds of no index holding a hole.
@@ -2651,7 +2662,8 @@ result is what the store of the array at position 2 holds at the index at
 position 3, below its length, the present element's value or `undefined` at
 a hole. That is the read's meaning in JavaScript on an ordinary array, whose
 element read runs no code ([trust surface](DESIGN.md#trust-surface)), stated
-in the intrinsic's trusted signature. Where a call's postcondition states an
+in the intrinsic's trusted signature; `%ByteAt%`'s bounded signature states
+the same of a typed array's element store ([typed arrays](#typed-arrays)). Where a call's postcondition states an
 element fact $`\mathrm{element}(r,a,k)`$ and the knowledge states a
 quantified fact over an array of $`a`$'s alias class, each body fact holds of
 $`k`$ and $`r`$ (proved):
@@ -2667,7 +2679,9 @@ states its value a safe integer between $`0`$ and $`|\mathit{data}.\mathit{width
 
 **Frame conditions.** A quantified fact and an element fact read the heap: a
 step leaving the heap unchanged preserves them, and a heap change other than
-a growth of a receiver's store preserves neither, a stated limit. On an edge a target quantified fact follows from a
+a growth of a receiver's store preserves neither, a stated limit; an element
+write of a typed array among them, which may change the elements of every
+view over the written bytes. On an edge a target quantified fact follows from a
 source one whose root slot the edge maps it to, of the same path, whose bound
 and each body fact the target's follow term by term (proved), and a target
 element fact from the same one renamed. A read of field $`f`$ from slot
@@ -2708,7 +2722,7 @@ it claims (an entry's `quantified`, [SOURCE-CLAIMS](SOURCE-CLAIMS.md)),
 preserves them across a statement writing no heap and naming none of their
 bindings, keeps them across a push as `every-grow` and `every-push` keep
 them, where its own frame analysis keeps their bounds, restates them at a
-path's read, and, at an element read at an index
+path's read, each read of a destructuring in turn, and, at an element read at an index
 its facts bound below the fact's bound, names the read's value with the body
 facts instantiated, for the call typing and the linear facts of the
 statement.
@@ -2719,7 +2733,8 @@ statement.
 `Bound.elem` and `Bound.free`. The element fact is `IndexFact.element`,
 stated in `tools/intrinsics.mts`; `every-read` is
 `HeapKnowledge.instantiateEvery`, applied by `PromiseCalls.withEnsures`
-(proved: `instantiateEvery_holds`, `withElements_holds`). Preservation is
+(proved: `instantiateEvery_holds`, `withElements_holds`); the store of
+elements is `HeapKnowledge.elementsOf`. Preservation is
 `IndexFact.keptBy`; the edge rule is `HeapKnowledge.boundFollows` and
 `bodyFactFollows` (proved: `every_follows`); the read's restatement is
 `HeapKnowledge.readEvery`, in `readAtoms` (proved: `readEvery_holds`, from
@@ -2733,7 +2748,9 @@ facts are `Linear_facts.efact`, its element reads `Linear_facts.with_reads`
 and `element_facts`, its facts across a push `Linear_facts.egrown`.
 
 **Cases.** Positive: `quantified-element-reads` (a read at an element, a loop
-to an element, pretext's `narrowsLine` through a destructured path). Negative,
+to an element, pretext's `narrowsLine` through a destructured path) and
+`typed-array-element-facts` (pretext's `getHyphenRooms`, a loop pushing an
+element-bounded read, and a typed array read through a destructured record). Negative,
 each run under Node: `invalid-quantified-element-read-inclusive` (an element
 at most the length), `invalid-quantified-element-read-alias-write` (a write
 through an alias of the quantified array) and
@@ -2743,9 +2760,15 @@ Across a push: positive `quantified-push-builder` (pretext's builder pushing
 Node, `invalid-quantified-push-value` (a push of a value the body excludes),
 `invalid-quantified-push-alias` (a push into an array that may be the
 quantified one) and `invalid-quantified-push-shrunk` (a push, then a `pop`
-of the bounding array). Forged controls in `pipeline/test.mts`: the
-inclusive and alias-write negatives' reads claimed at `number` with the
-strict quantified fact claimed at the return's entry, refused there; and the
+of the bounding array). Over a typed array: positive `typed-array-element-facts`
+(pretext's `getHyphenRooms`, a loop pushing an element-bounded read, and a
+typed array read through a destructured record); negative, each run under
+Node, `invalid-typed-array-element-read-inclusive` (a typed array's element
+at most the length) and `invalid-typed-array-element-read-after-write` (a
+write through a `subarray` view of the quantified view's bytes). Forged
+controls in `pipeline/test.mts`: the inclusive and alias-write negatives'
+reads claimed at `number` with the strict quantified fact claimed at the
+return's entry, refused there, and alike the two typed-array negatives'; and the
 strict fact claimed at the entry after the push of the value and alias
 negatives, refused there. An array with a hole reaches no `number[]`: a readable store
 holds a hole only where `undefined` meets its element type, and the fragment

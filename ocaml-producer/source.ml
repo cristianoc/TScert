@@ -82,7 +82,7 @@ and linear_parts : 'v. (Json.t -> 'v) -> Json.t -> string -> ('v * int) list * i
   integer (field "bound" b)
 let effect_of j = match j with
   | Object fields when List.sort String.compare (List.map fst fields) =
-      ["elements";"ensures";"footprint";"fresh";"freshObject";"onThrow";"pre";"promise";"receiverGrows";
+      ["elementWrite";"elements";"ensures";"footprint";"fresh";"freshObject";"onThrow";"pre";"promise";"receiverGrows";
        "receiverOwn";"receiverStore";"requires"] ->
     let kinds k = match field k j with
       | Null -> None
@@ -95,7 +95,11 @@ let effect_of j = match j with
      fresh_object=boolean (field "freshObject" j); requires=kinds "requires"; elements=kinds "elements";
      pre=List.map index_fact_of (list (field "pre" j));
      ensures=List.map index_fact_of (list (field "ensures" j));
-     receiver_grows=boolean (field "receiverGrows" j)}
+     receiver_grows=boolean (field "receiverGrows" j);
+     element_write=(match field "elementWrite" j with
+       | Null -> false
+       | String "stores" -> true
+       | _ -> unsupported "invalid element write")}
   | _ -> unsupported "unknown callable effect"
 let resolution_slots scope index j = match field "resolution" j with
   | Null -> None

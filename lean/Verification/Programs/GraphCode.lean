@@ -1393,7 +1393,7 @@ result is established node by node whatever the footprint. -/
     (sums : List (ProgramCertificates.ReadSummary ι))
     (c : CodeEntry ι) (C : Certificate ι) : ProgramCertificates.CheckResult ι Unit :=
   (ProgramCertificates.CheckResult.ofBool (!c.row.effect.freshObject &&
-    (c.row.effect.requires.isNone && (c.row.effect.elements.isNone && !c.row.effect.receiverGrows)))).bind fun _ =>
+    (c.row.effect.requires.isNone && (c.row.effect.elements.isNone && (!c.row.effect.receiverGrows && c.row.effect.elementWrite.isNone))))).bind fun _ =>
   if c.row.effect.footprint = .top ∧ c.row.effect.fresh = false ∧ c.row.effect.onThrow = false then pure () else
     (ProgramCertificates.CheckResult.ofBool (!c.row.effect.fresh && c.exprs.all Purity.pureTerm)).orElse fun _ =>
     compositionalCheckedResult G images sums c.row.effect.footprint c.row.effect.fresh c.row.effect.onThrow c.start
@@ -1408,13 +1408,13 @@ theorem effectChecked_eq [DecidableEq ι] (G : NormalGraph ι) (images : Instanc
     (sums : List (ProgramCertificates.ReadSummary ι))
     (c : CodeEntry ι) (C : Certificate ι) :
     effectChecked G images sums c C = (!c.row.effect.freshObject &&
-      (c.row.effect.requires.isNone && (c.row.effect.elements.isNone && !c.row.effect.receiverGrows)) && (
+      (c.row.effect.requires.isNone && (c.row.effect.elements.isNone && (!c.row.effect.receiverGrows && c.row.effect.elementWrite.isNone))) && (
   decide (c.row.effect.footprint = .top ∧ c.row.effect.fresh = false ∧ c.row.effect.onThrow = false) ||
     ((!c.row.effect.fresh && c.exprs.all Purity.pureTerm) ||
       compositionalChecked G images sums c.row.effect.footprint c.row.effect.fresh c.row.effect.onThrow c.start
         (program c.exprs c.conts) C)
   )) := by
-  cases hfo : (!c.row.effect.freshObject && (c.row.effect.requires.isNone && (c.row.effect.elements.isNone && !c.row.effect.receiverGrows)))
+  cases hfo : (!c.row.effect.freshObject && (c.row.effect.requires.isNone && (c.row.effect.elements.isNone && (!c.row.effect.receiverGrows && c.row.effect.elementWrite.isNone))))
   · simp only [effectChecked, effectCheckedResult, hfo, ProgramCertificates.CheckResult.accepted_ofBool,
       ProgramCertificates.CheckResult.accepted_bind, Bool.false_and]
   · by_cases h : c.row.effect.footprint = .top ∧ c.row.effect.fresh = false ∧ c.row.effect.onThrow = false <;>
@@ -1528,14 +1528,16 @@ theorem codeChecked_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instan
     simp only [Option.isNone_iff_eq_none] at hel
     rw [hel.2.1] at hR; cases hR
   have hngr : c.row.effect.receiverGrows = true → False := fun hg => by
-    have := hel.2.2; rw [hg] at this; cases this
+    have := hel.2.2.1; rw [hg] at this; cases this
+  have hnew : ∀ w, c.row.effect.elementWrite = some w → False := fun w hw => by
+    have := hel.2.2.2; rw [hw] at this; cases this
   by_cases htop : c.row.effect.footprint = .top ∧ c.row.effect.fresh = false ∧ c.row.effect.onThrow = false
   · -- No footprint on a throw: the throw's postcondition is vacuous.
     apply HeapObservations.SafePostExc.of_post (fun _ r h => absurd h (by simp [htop.2.2]))
     refine HeapObservations.weaken (fun h' v hp r args => ?_) (Footprints.Closed.top_safe hsafe)
     refine ⟨CallEffects.Effect.within_of_holds ?_, fun hf => (by rw [htop.2.1] at hf; cases hf),
       fun hf => (by rw [hfo] at hf; cases hf), fun R hR => (hnel R hR).elim, fun F hF => (hnen F hF).elim,
-      fun hg => (hngr hg).elim⟩
+      fun hg => (hngr hg).elim, fun w hw => (hnew w hw).elim⟩
     rw [htop.1]
     exact hp
   · simp only [htop, decide_false, Bool.false_or, Bool.and_eq_true, Bool.or_eq_true] at heff
@@ -1548,7 +1550,7 @@ theorem codeChecked_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instan
           (Footprints.Closed.Holds.mono (Footprints.Closed.empty_le _)
             ((CallEffects.Effect.post_ofFootprint _ .undef [] _ _ _).mp hq)), fun hf => (by rw [hfresh] at hf; cases hf),
           fun hf => (by rw [hfo] at hf; cases hf), fun R hR => (hnel R hR).elim, fun F hF => (hnen F hF).elim,
-      fun hg => (hngr hg).elim⟩)
+      fun hg => (hngr hg).elim, fun w hw => (hnew w hw).elim⟩)
         (fun h' hq r _ => CallEffects.Effect.within_of_holds
           (Footprints.Closed.Holds.mono (Footprints.Closed.empty_le _) hq))
         (CallEffects.pure_safe_exc (r := .undef) (args := []) (.goto hp hvalues rfl) hsafe)
@@ -1565,7 +1567,7 @@ theorem codeChecked_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instan
       exact HeapObservations.SafePostExc.weaken
         (fun h' v hq r _ => ⟨CallEffects.Effect.within_of_holds hq.1, hq.2, fun hf => (by rw [hfo] at hf; cases hf),
           fun R hR => (hnel R hR).elim, fun F hF => (hnen F hF).elim,
-      fun hg => (hngr hg).elim⟩)
+      fun hg => (hngr hg).elim, fun w hw => (hnew w hw).elim⟩)
         (fun h' hq r ho => CallEffects.Effect.within_of_holds (hq ho)) hb
 
 /-- Check codes in order, each against the table of those before it. -/

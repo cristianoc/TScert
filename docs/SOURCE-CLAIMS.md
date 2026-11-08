@@ -251,7 +251,7 @@ makes `o` and `r` binders of the same scheme;
 and `rest` is `null` or the surplus-element type. Binder names resolve
 lexically; a nested scheme's binders hide outer binders of the same names.
 The effect is `{"footprint": f, "promise": p, "fresh": b, "receiverStore": c, "onThrow": o, "receiverOwn": w,
-"freshObject": j, "requires": q, "elements": e, "pre": P, "ensures": E, "receiverGrows": g}`. The footprint `f` is a
+"freshObject": j, "requires": q, "elements": e, "pre": P, "ensures": E, "receiverGrows": g, "elementWrite": x}`. The footprint `f` is a
 [closed footprint](FOOTPRINTS.md#changes-and-footprints), `{"value":v,"store":s}`
 with `v` one of `keep` and `any` and `s` one of `keep`, `grow` and `any`: on
 normal return, the locations of the entry heap holding a value change at most
@@ -277,6 +277,10 @@ where it returns `true` ([the elements fact](FOOTPRINTS.md#the-elements-fact)).
 receiver's array store, which it extended by the call's actuals, its old
 elements at their indices; only a native's audited signature states it
 ([native footprints](SOURCE-CONTRACTS.md#native-footprints)).
+`elementWrite` is `null` or `"stores"`: a normal return changed no location
+holding no store and kept every store's length, as a typed array's element
+write does; only a native's audited signature states it
+([stated library types](SOURCE-CONTRACTS.md#stated-library-types)).
 Each requires corresponding evidence.
 
 A call expression can propose an instance with:

@@ -73,7 +73,8 @@ let effect_json e = Object ["footprint",footprint_json e.footprint;
   "receiverOwn",Bool e.receiver_own;"freshObject",Bool e.fresh_object;
   "requires",kinds_json e.requires;"elements",kinds_json e.elements;
   "pre",Array (List.map index_fact_json e.pre);"ensures",Array (List.map index_fact_json e.ensures);
-  "receiverGrows",Bool e.receiver_grows]
+  "receiverGrows",Bool e.receiver_grows;
+  "elementWrite",(if e.element_write then String "stores" else Null)]
 let rec resolution_json = function
   | StableResolution -> Object ["k",String "stable"]
   | NativeResolution child -> Object ["k",String "native";"child",resolution_json child]

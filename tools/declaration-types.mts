@@ -45,10 +45,17 @@ export type CallEffect = {
    * i) (`CallEffects.Effect.ensures`). Only a trusted signature states one. */
   readonly ensures: readonly IndexFact[];
   /** A normal return changed no old location but the receiver's array store,
-   * which it grew: a store at least as long, at most 2^32 - 1 long
-   * (`CallEffects.ReceiverGrows`). Only a trusted signature states it. */
+   * which it grew: a store listing the old entries first, at most 2^32 - 1
+   * long (`CallEffects.ReceiverGrows`). Only a trusted signature states it. */
   readonly receiverGrows: boolean;
+  /** A normal return changed the heap as a typed array's element write may:
+   * every location holding no store kept, every store's length kept
+   * (`"stores"`, `CallEffects.ElementWrite`). Only a trusted signature
+   * states it. */
+  readonly elementWrite: ElementWrite | null;
 };
+/** What a typed array's element write keeps (`CallEffects.ElementWrite`). */
+export type ElementWrite = "stores";
 /** An index fact at numbered positions (`HeapKnowledge.IndexFact`, its
  * constructor's name holding its fields): an array index; the length of an
  * array's store; an index at most that length, below it where `strict`; a

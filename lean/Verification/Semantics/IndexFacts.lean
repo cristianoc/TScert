@@ -464,6 +464,20 @@ def slots : Bound → List Nat
 
 end Bound
 
+/-- The location of the store of elements a value holds, which an element
+fact and a quantified fact read: an array's store (`Footprints.storeOf`), or,
+of a host object owning no store, the location of its `viewElementsKey`, a
+typed array's elements (SOURCE-CONTRACTS.md, "Stated library types"). -/
+def elementsOf : Val → Option Nat
+  | v@(.objAt fs _ _) => match Footprints.storeOf v with
+    | some s => some s
+    | none => if (fs.lookup hostKey).isSome then fs.lookup viewElementsKey else none
+  | v => Footprints.storeOf v
+
+/-- An array's store is the store of elements it holds. -/
+theorem elementsOf_store {v : Val} {s : Nat} (h : Footprints.storeOf v = some s) : elementsOf v = some s := by
+  cases v <;> simp_all [elementsOf]
+
 /-- The safe integer the element at index `i` of the store elements `ls` is,
 where it is present and one. -/
 def elementInt (h : Heap) (ls : List (Option Nat)) (i : Nat) : Option Int :=
@@ -575,10 +589,10 @@ def HoldsAt : IndexFact → Env → Heap → Prop
   | .int k, ρ, _ => (intValue (ρ k)).isSome
   | .linear F, ρ, h => (∀ t ∈ F.vars, (termValue ρ h t).isSome) ∧ F.Holds (termValuation ρ h)
   | .guarded s p t B, ρ, h => ∃ v, readGuard h (ρ s) p = some v ∧ (v = t.val ∨ B.HoldsAt ρ h)
-  | .element v x k, ρ, h => ∃ s ls b, ∃ i : Nat, Footprints.storeOf (ρ x) = some s ∧ h[s]? = some (.arr ls) ∧
+  | .element v x k, ρ, h => ∃ s ls b, ∃ i : Nat, elementsOf (ρ x) = some s ∧ h[s]? = some (.arr ls) ∧
       ρ k = .num b ∧ SafeIntegers.SafeInt b (i : Int) ∧ i < ls.length ∧
       (∀ l, ls[i]? = some (some l) → h[l]? = some (ρ v)) ∧ (ls[i]? = some none → ρ v = .undef)
-  | .every s p stop body, ρ, h => ∃ w st ls n, readPath h (ρ s) p = some w ∧ Footprints.storeOf w = some st ∧
+  | .every s p stop body, ρ, h => ∃ w st ls n, readPath h (ρ s) p = some w ∧ elementsOf w = some st ∧
       h[st]? = some (.arr ls) ∧ termValue ρ h stop = some n ∧
       ∀ i : Nat, (i : Int) < n → ∀ F ∈ body, FactAt (boundValue ρ h ls i) F
 
@@ -884,6 +898,15 @@ def Holds (c : Changes) (h h' : Heap) : Prop :=
   (c.store = .grow → ∀ (l : Nat) (ls : List (Option Nat)), h[l]? = some (.arr ls) →
     ∃ ls' : List (Option Nat), h'[l]? = some (.arr ls') ∧ ls.length ≤ ls'.length ∧
       (ls.length ≤ maxArrayLength → ls'.length ≤ maxArrayLength))
+
+/-- A change from a heap extending `before` is one from `before`. -/
+theorem Holds.prefix_left {c : Changes} {before middle after : Heap} (hc : c.Holds middle after)
+    (hprefix : before.IsPrefix middle) : c.Holds before after := by
+  obtain ⟨t, rfl⟩ := hprefix
+  have hget : ∀ {l : Nat} {v : Val}, before[l]? = some v → (before ++ t)[l]? = some v := fun hv => by
+    rw [List.getElem?_append_left (List.getElem?_eq_some_iff.mp hv).1, hv]
+  exact ⟨fun l v hv ha => hc.1 l v (hget hv) ha, fun hs l ls hl => hc.2.1 hs l ls (hget hl),
+    fun hs l ls hl => hc.2.2 hs l ls (hget hl)⟩
 
 /-- Every change: where nothing is known of a location's contents. -/
 def top : Changes := ⟨true, true, .any⟩

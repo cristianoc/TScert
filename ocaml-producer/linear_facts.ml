@@ -338,9 +338,9 @@ let rec linear ?(array = fun _ _ -> false) env fs (e : expr) : ((string * int) l
     (match path_of env e with Some (b,p) -> Some ([path_term b p,1],0) | None -> None)
   (* An element read a quantified fact instantiates (`with_reads`), its
      value named, read through a non-null assertion. *)
-  | Call ({node=Id "%ElementAt%";_},None,[_;_],[],_) when List.mem_assoc e.pos !element_reads ->
+  | Call ({node=Id ("%ElementAt%" | "%ByteAt%");_},None,[_;_],[],_) when List.mem_assoc e.pos !element_reads ->
     Some ([List.assoc e.pos !element_reads,1],0)
-  | Cast ("nonNull",_,({node=Call ({node=Id "%ElementAt%";_},None,[_;_],[],_);_} as a))
+  | Cast ("nonNull",_,({node=Call ({node=Id ("%ElementAt%" | "%ByteAt%");_},None,[_;_],[],_);_} as a))
     when List.mem_assoc a.pos !element_reads ->
     Some ([List.assoc a.pos !element_reads,1],0)
   (* `b.length` of a typed array, `%ByteLength%(b)`, whose postcondition
@@ -494,6 +494,12 @@ let call_footprint : ((string * Environment.binding) list -> string -> Semantic.
 (* The footprint every signature of a receiver's method states, alike. *)
 let method_footprint : ((string * Environment.binding) list -> expr -> Semantic.key -> Semantic.footprint option) ref =
   ref (fun _ _ _ -> None)
+(* Whether every signature of the binding `f`, or of a receiver's method,
+   states a typed array's element write, which alters no object or number and
+   keeps every store's length (Lean's `Effect.elementWrite`). *)
+let call_element_write : ((string * Environment.binding) list -> string -> bool) ref = ref (fun _ _ -> false)
+let method_element_write : ((string * Environment.binding) list -> expr -> Semantic.key -> bool) ref =
+  ref (fun _ _ _ -> false)
 (* Whether every signature of a receiver's method grows only its receiver's
    store (Lean's `Effect.receiverGrows`, `PromiseCalls.growChanges`). *)
 let method_grows : ((string * Environment.binding) list -> expr -> Semantic.key -> bool) ref =
@@ -507,6 +513,7 @@ let source_elements : ((string * Environment.binding) list -> string -> bool) re
 let view_field : ((string * Environment.binding) list -> string -> string -> bool) ref = ref (fun _ _ _ -> false)
 
 let no_frame _ _ = false
+let element_changes = { obj = false; num = false; store = `Length; framed = no_frame; apart = false; cell_write = false }
 let of_classes env (o,n,a) = { obj = o; num = n; store = (if a then `Any else `Keep);
   framed = (fun b g -> slot_binding env b && !view_field env b g); apart = false; cell_write = false }
 let of_footprint (fp : Semantic.footprint) =
@@ -556,9 +563,11 @@ let write_changes ~facts ~bounds env (e : expr) : changes option =
     when heap_free env rhs && slot_binding env xs && slot_binding env k && !source_elements env xs && strictly_bounded ~facts ~bounds xs k ->
     Some { obj = true; num = true; store = `Length; framed = no_frame; apart = false; cell_write = false }
   | Call ({node=Id f;_},None,args,[],_) when List.for_all (heap_free env) args ->
-    Option.map of_footprint (!call_footprint env f)
+    if !call_element_write env f then Some element_changes
+    else Option.map of_footprint (!call_footprint env f)
   | Invoke ({node=Read (r,key);_},args,[],_) when heap_free env r && List.for_all (heap_free env) args ->
     if !method_grows env r key then Some { obj = false; num = false; store = `Grow; framed = no_frame; apart = false; cell_write = false }
+    else if !method_element_write env r key then Some element_changes
     else Option.map of_footprint (!method_footprint env r key)
   | _ -> None
 
@@ -1163,7 +1172,8 @@ let gstatement ?(bounds=[]) env (fs : fact list) (gs : gfact list) (s : stmt) : 
 
 (* Element reads of quantified facts (PROGRAM-TYPING.md, "Quantified
    clauses"; Lean's `HeapKnowledge.instantiateEvery`): a read `xs[k]` of an
-   array a quantified fact holding where the statement starts names, at an
+   array or a typed array (`%ElementAt%`, `%ByteAt%`) a quantified fact
+   holding where the statement starts names, at an
    index the facts state `0 ≤ k < stop`, gives a value of which each body
    fact holds, the index read as `k` and the element as the value. Each such
    read's value is named (`element_reads`) while an expression is analysed,
@@ -1183,7 +1193,7 @@ let element_facts ~array env fs (e : expr) : fact list * (Json.t * string) list 
   let rec go (e : expr) =
     List.iter go (Source.children e);
     match e.node with
-    | Call ({node=Id "%ElementAt%";_},None,[xs;k],[],_) when not (List.mem_assoc e.pos !found) ->
+    | Call ({node=Id ("%ElementAt%" | "%ByteAt%");_},None,[xs;k],[],_) when not (List.mem_assoc e.pos !found) ->
       (match path_of env xs, linear ~array env fs k with
        | Some (root,path), Some (kt,kc) ->
          let ranged = fs @ term_ranges ((kt,0) :: fs) in
@@ -1290,7 +1300,9 @@ let estatement ?(array = fun _ _ -> false) ?(facts = []) env (es : efact list) (
           | Some (root,(_ :: _ as path)) when root <> n -> Some (n,(root,path))
           | _ -> None) bindings
       | _ -> []) in
-  es @ List.concat_map (fun (n,rp) -> List.filter_map (erestate_read n rp) es) reads
+  (* Each read in turn restates the facts the reads before it gave, as Lean's
+     reads do one after another. *)
+  List.fold_left (fun es (n,rp) -> es @ List.filter_map (erestate_read n rp) es) es reads
 
 (* A precondition's quantified facts over bindings, `name p` the binding the
    position `p` holds; a fact naming a position no binding holds is left out. *)

@@ -495,16 +495,18 @@ export function elaborateRequires(clauses: readonly string[], params: readonly C
       };
       compareAtoms(atoms, lessEq);
       // `forall i in p: C` (PROGRAM-TYPING.md, "Quantified clauses"): for
-      // every index of the array `p` reads, below its length, `C` holds of
-      // the index `i`, the element `p[i]` and the clause's other terms; an
-      // element named in a comparison is stated a safe integer by
-      // `safeInteger(p[i])`, as a path is.
+      // every index of the array or typed array `p` reads, below its length
+      // or its typed-array length, `C` holds of the index `i`, the element
+      // `p[i]` and the clause's other terms; an element named in a
+      // comparison is stated a safe integer by `safeInteger(p[i])`, as a
+      // path is.
       for (const a of atoms) {
         if (a.k !== "forall") continue;
         const root = a.array.split(".")[0] ?? "";
         const { p, path: fields } = path(a.array);
-        if (p.at(fields, excludedBy(guards.length, root)) !== "array")
-          throw new ClauseError(`\`forall\` ranges over the indices of an array, which ${a.array} is not`);
+        const ranged = p.at(fields, excludedBy(guards.length, root));
+        if (ranged !== "array" && ranged !== "view")
+          throw new ClauseError(`\`forall\` ranges over the indices of an array or a typed array, which ${a.array} is not`);
         if (params.some(q => q.name === a.binder)) throw new ClauseError(`the index ${a.binder} is a parameter's name`);
         const elem = `${a.array}[${a.binder}]`;
         const body: BodyFact[] = [];
@@ -527,8 +529,8 @@ export function elaborateRequires(clauses: readonly string[], params: readonly C
           body.push({ le: { form: [...terms].filter(([, c]) => c !== 0).map(([x, c]): [BodyVariable, number] => [variable(x), c]),
             bound } });
         });
-        compared.push(wrap({ every: { slot: p.position, path: fields, stop: { kind: "length", slot: p.position, path: fields },
-          body } }));
+        compared.push(wrap({ every: { slot: p.position, path: fields,
+          stop: { kind: ranged === "array" ? "length" : "view", slot: p.position, path: fields }, body } }));
       }
     };
     /** The values the unguarded clauses state safe integers. */

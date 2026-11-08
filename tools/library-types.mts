@@ -12,7 +12,7 @@
  * The declarations are not read, so the types they name (`ArrayBufferLike`,
  * `ImplicitArrayBuffer`) are not collected. */
 import type { DeclarationIdentity, TypeDefinition, TypeTerm } from "./declaration-types.mts";
-import { emptyEffect, ordinaryEffect } from "./type-graph.mts";
+import { emptyEffect, footprintEffect, ordinaryEffect } from "./type-graph.mts";
 import type { CallEffect } from "./type-graph.mts";
 
 export type TypeEntry = {
@@ -77,8 +77,10 @@ export const bytesMarker = "node:bytes";
  * read or write at a number and a read of `length` of a value TypeScript
  * types as a view: the host's [[Get]] and [[Set]] of an integer-indexed
  * exotic object at a canonical numeric key, which never read the prototype
- * chain, and `%TypedArray%.prototype`'s `length` getter. The model holds no
- * element and no `length` of it: a host object refuses the operations
+ * chain, and `%TypedArray%.prototype`'s `length` getter. The model holds its
+ * elements under `[[viewElements]]`, which only those intrinsics' and the
+ * methods' contracts read and write, and no `length` of it: a host object
+ * refuses the operations
  * copying its own properties or exposing their values, `Object.keys` and
  * `Object.hasOwn` answer strings and Booleans no type tells, and no record
  * type naming `length` admits a view.
@@ -91,19 +93,28 @@ export const bytesMarker = "node:bytes";
  * `Symbol.species`, the standard constructor and `%TypedArray%`'s getter
  * under the host assumption below, and constructs a fresh view over the
  * same memory. `fill` and `copyWithin` return the receiver. Each writes the
- * view's elements alone, which the model holds no location of, and throws
- * a `RangeError` where an index is out of range: within the empty
- * footprint. `map`, `filter`, `slice` and the other members, a species
- * constructor's or a callback's, are not stated. */
+ * view's elements alone, and throws a `RangeError` where an index is out of
+ * range. The model holds a view's elements as a store under the model key
+ * `[[viewElements]]`, one location per element, each holding the element:
+ * `fill`, `copyWithin` and `set` replace the written entries of the store
+ * of every view over the written bytes by fresh locations holding what
+ * each view now reads there, within the store-growth footprint, values
+ * kept, every store's length kept (`elementWrite`); `subarray` allocates its view, within the empty footprint. `map`,
+ * `filter`, `slice` and the other members, a species constructor's or a
+ * callback's, are not stated. */
 const bytesIdentity = identity("Uint8Array");
 export const bytes: TypeTerm = named(bytesIdentity);
 const optionalNumber = union(atom("number"), atom("undefined"));
+/** What a write of a view's elements changes: the element stores of the
+ * views over the written bytes, each entry it writes a fresh location
+ * (`%ByteSet%`, `intrinsics.mts`). */
+const elementsWritten: CallEffect = footprintEffect({ value: "keep", store: "grow" }, { elementWrite: "stores" });
 /** The members of `%TypedArray%.prototype` a view states, each returning
  * `self` where it returns the receiver or a view of its kind. */
 const viewMethods = (self: TypeTerm): Field[] => [
-  field("fill", method([atom("number"), optionalNumber, optionalNumber], self, emptyEffect)),
-  field("copyWithin", method([atom("number"), atom("number"), optionalNumber], self, emptyEffect)),
-  field("set", method([bytes, optionalNumber], atom("undefined"), emptyEffect)),
+  field("fill", method([atom("number"), optionalNumber, optionalNumber], self, elementsWritten)),
+  field("copyWithin", method([atom("number"), atom("number"), optionalNumber], self, elementsWritten)),
+  field("set", method([bytes, optionalNumber], atom("undefined"), elementsWritten)),
   field("subarray", method([atom("number"), optionalNumber], self, emptyEffect))];
 /** The typed-array length a view's model key `[[viewLength]]` holds, a
  * readonly `number` the host owns at a location no other object's field or
@@ -134,7 +145,8 @@ const bytesDefinition = definitionOf(bytesIdentity,
  * receiver. `copyWithin` and `set` are `%TypedArray%.prototype`'s, as for
  * any view. Under the host assumption that these members are the host's
  * own (SOURCE-CONTRACTS.md, "Stated library types"), none runs code of the
- * client's nor writes a location the model holds. A `Buffer` is a
+ * client's, and none writes a location the model holds but the element
+ * stores `fill`, `copyWithin` and `set` write, as a view's. A `Buffer` is a
  * `Uint8Array`: it has the marker and more. */
 const bufferIdentity = identity("Buffer");
 export const buffer: TypeTerm = named(bufferIdentity);

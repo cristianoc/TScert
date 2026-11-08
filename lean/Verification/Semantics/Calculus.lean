@@ -82,6 +82,15 @@ detached (DESIGN.md, "Trust surface"). No source property names it
 count only on an object owning `hostKey`. -/
 def viewLengthKey : PropKey := "[[viewLength]]"
 
+/-- The key a typed array, a host object, holds its elements under
+(SOURCE-CONTRACTS.md, "Stated library types"; `HeapKnowledge.elementsOf`):
+its location holds a store listing one location per element, each holding
+the element, a number. The host's element reads and writes are stated over
+it (`%ByteAt%`, `%ByteSet%`); no step of the program reads it, no source
+property names it (`RequestJson.reservedKey`) and no step copies it
+(`copiedKey`). It means the elements only on an object owning `hostKey`. -/
+def viewElementsKey : PropKey := "[[viewElements]]"
+
 /-- The key an early binding's uninitialized marker owns (SOURCE-ELABORATION.md,
 "Lexical bindings before initialization"): a fresh object per entry of the
 binding's statement list, the cell's contents until the declaration writes
@@ -1619,6 +1628,7 @@ enumerability it does not record, and
 no allocation of the fragment makes one. -/
 def copiedKey : PropKey → Bool
   | .str s => s != "[[proto]]" && s != "[]" && s != "[[code]]" && s != "[[host]]" && s != "[[viewLength]]" &&
+      s != "[[viewElements]]" &&
       s != "[[uninitialized]]"
   | .sym _ => false
 
