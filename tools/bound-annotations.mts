@@ -79,7 +79,8 @@ export function requiresTags(trivia: string): string[] {
   return tagsOf(trivia, "requires");
 }
 
-/** The leading JSDoc of a function literal, or of the binding holding it. */
+/** The leading JSDoc of a function literal or its binding statement.
+ * A statement's clauses apply to each function literal it binds. */
 export function closureRequiresTags(node: ts.Node): string[] {
   const file = node.getSourceFile();
   const own = requiresTags(file.text.slice(node.pos, node.getStart(file)));
@@ -87,8 +88,7 @@ export function closureRequiresTags(node: ts.Node): string[] {
   while (ts.isParenthesizedExpression(owner.parent)) owner = owner.parent;
   if (ts.isVariableDeclaration(owner.parent) && owner.parent.initializer === owner) {
     owner = owner.parent;
-    if (ts.isVariableDeclarationList(owner.parent) && owner.parent.declarations.length === 1 &&
-        ts.isVariableStatement(owner.parent.parent)) owner = owner.parent.parent;
+    if (ts.isVariableDeclarationList(owner.parent) && ts.isVariableStatement(owner.parent.parent)) owner = owner.parent.parent;
   }
   return [...new Set([...own, ...requiresTags(file.text.slice(owner.pos, owner.getStart(file)))])];
 }
