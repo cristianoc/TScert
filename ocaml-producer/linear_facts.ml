@@ -29,11 +29,17 @@ let length_term ?path xs = make_term ?path Length_term xs
 let view_term ?path b = make_term ?path View_term b
 let str_length_term ?path b = make_term ?path Str_length_term b
 let path_term b path = make_term ~path Value_term b
+(* A term's binding, path and kind: the kind its suffix names, where it has
+   one. A binding's own name may hold `:` (a shadowing local's
+   `after@26:11`, `Fragment.shadowName`), so the suffix is matched whole. *)
 let term_parts t : string * string list * kind =
-  let base,kind = match String.index_opt t ':' with
-    | Some i -> String.sub t 0 i, (match String.sub t (i + 1) (String.length t - i - 1) with
-      | "view" -> View_term | "strlen" -> Str_length_term | _ -> Length_term)
-    | None -> t, Value_term in
+  let suffix s = let n = String.length t and m = String.length s in
+    if n > m && String.sub t (n - m) m = s then Some (String.sub t 0 (n - m)) else None in
+  let base,kind = match suffix ":length", suffix ":view", suffix ":strlen" with
+    | Some b,_,_ -> b, Length_term
+    | _,Some b,_ -> b, View_term
+    | _,_,Some b -> b, Str_length_term
+    | None,None,None -> t, Value_term in
   match String.split_on_char '.' base with
   | root :: path -> root,path,kind
   | [] -> base,[],kind
@@ -1079,8 +1085,14 @@ let rec test ~array env fs (cond : expr) : (fact list * bound list) * (fact list
     let (ta,bta),(fa,bfa) = test ~array env fs a in
     let left,left_bounds = if conjunction then ta,bta else fa,bfa in
     let (tb,btb),(fb,bfb) = test ~array env (fs @ left) b in
-    if conjunction then (left @ tb, left_bounds @ btb),([],[])
-    else ([],[]),(left @ fb, left_bounds @ bfb)
+    (* The other answer: `a`'s own, where `b` is not evaluated, or `b`'s
+       after `a`'s other answer; Lean merges the two paths, so each fact
+       both entail holds, and each bound both state. *)
+    let either (sa,ba) (sb,bb) =
+      List.filter (fun f -> entails (fs @ sa) f && entails (fs @ left @ sb) f) (sa @ left @ sb),
+      List.filter (fun x -> List.mem x bb) ba in
+    if conjunction then (left @ tb, left_bounds @ btb),either (fa,bfa) (fb,bfb)
+    else either (ta,bta) (tb,btb),(left @ fb, left_bounds @ bfb)
   | _ ->
     let t,f = atom_comparison ~array env fs cond and bt,bf = atom_bounds ~array env fs cond in
     (t @ atom_length_test ~array env fs cond, bt),(f,bf)
