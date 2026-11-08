@@ -12,11 +12,12 @@ type Awaitable = unknown;
 // A signature's result `Within<F, T>` states the signature's effect: on a
 // normal return, and on a throw where `onThrow` is written, the call changes
 // the previously allocated locations holding a value (`value`: `init` only
-// those holding `null` or `undefined`) and those holding an array store
-// (`store`) at most as `F` says (SOURCE-ELABORATION.md, "Stated effects"). As a type it is `T`; the verifier certifies the
+// those holding `null` or `undefined`, `scalar` only those holding neither an
+// object nor a store) and those holding an array store (`store`) at most as
+// `F` says (SOURCE-ELABORATION.md, "Stated effects"). As a type it is `T`; the verifier certifies the
 // statement from the definition's code.
 type Footprint = {
-  value: "keep" | "init" | "any";
+  value: "keep" | "init" | "scalar" | "any";
   store: "keep" | "grow" | "any";
   onThrow?: true;
 };

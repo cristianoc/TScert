@@ -575,8 +575,8 @@ let element_changes = { obj = false; num = false; store = `Length; framed = no_f
 let of_classes env (o,n,a) = { obj = o; num = n; store = (if a then `Any else `Keep);
   framed = (fun b g -> slot_binding env b && !view_field env b g); apart = false; cell_write = false }
 let of_footprint (fp : Semantic.footprint) =
-  { obj = fp.Semantic.on_value = Semantic.Any; num = fp.Semantic.on_value = Semantic.Any;
-    store = (match fp.Semantic.on_store with Semantic.Keep | Semantic.Init -> `Keep | _ -> `Any); framed = no_frame; apart = false; cell_write = false }
+  { obj = fp.Semantic.on_value = Semantic.Any; num = not (Semantic.change_le fp.Semantic.on_value Semantic.Init);
+    store = (match fp.Semantic.on_store with Semantic.Keep | Semantic.Init | Semantic.Scalar -> `Keep | _ -> `Any); framed = no_frame; apart = false; cell_write = false }
 
 let term_kept ch t =
   let b,path,kind = term_parts t in
@@ -609,21 +609,31 @@ let strictly_bounded ~facts ~bounds xs k =
   (let fs = facts @ term_ranges facts in
    entails fs ([k,-1],0) && entails fs (norm [k,1; length_term xs,-1],-1))
 
-(* Whether an expression's heap writes are calls each within `{value: init,
-   store: keep}`, its other parts writing none: a call initializing cells
-   holding `null` or `undefined` alone, which alters no location holding an
-   object, a number or a store (Lean's `Changes.ofClosed`). *)
-let rec init_free env (e : expr) = heap_free env e || match e.node with
-  | Not a | Unary (_,a) | Cast (_,_,a) | Read (a,_) -> init_free env a
-  | Arith (_,a,b) | Equality (_,a,b) | Logical (_,a,b) | Coalesce (a,b) -> init_free env a && init_free env b
-  | Conditional (c,a,b) -> init_free env c && init_free env a && init_free env b
-  | Call ({node=Id f;_},None,args,[],_) -> List.for_all (init_free env) args &&
-    (match !call_footprint env f with
-     | Some fp -> Semantic.footprint_le fp {Semantic.on_value=Semantic.Init;on_store=Semantic.Keep}
-     | None -> false)
-  | Alloc fields -> List.for_all (fun (_,v) -> init_free env v) fields
-  | _ -> false
-let init_changes = { obj = false; num = false; store = `Keep; framed = no_frame; apart = false; cell_write = false }
+(* The footprint of an expression whose heap writes are calls each keeping
+   every location holding an object or a store, within `{value: scalar,
+   store: keep}`, its other parts writing none: the join of the calls'
+   footprints, which the facts a call at it keeps bound (Lean's
+   `Changes.ofClosed`); none for any other expression. *)
+let rec object_calls env (e : expr) : Semantic.footprint option =
+  let within fp = if Semantic.footprint_le fp {Semantic.on_value=Semantic.Scalar;on_store=Semantic.Keep} then Some fp else None in
+  let join a b = match a,b with
+    | Some a,Some b -> Some {Semantic.on_value=Semantic.join_change a.Semantic.on_value b.Semantic.on_value;
+        on_store=Semantic.join_change a.Semantic.on_store b.Semantic.on_store}
+    | _ -> None in
+  let all es = List.fold_left (fun acc e -> join acc (object_calls env e)) (Some Semantic.empty_footprint) es in
+  if heap_free env e then Some Semantic.empty_footprint else match e.node with
+  | Not a | Unary (_,a) | Cast (_,_,a) | Read (a,_) -> object_calls env a
+  | Arith (_,a,b) | Equality (_,a,b) | Logical (_,a,b) | Coalesce (a,b) -> all [a;b]
+  | Conditional (c,a,b) -> all [c;a;b]
+  | Call ({node=Id f;_},None,args,[],_) -> join (all args) (Option.bind (!call_footprint env f) within)
+  | Invoke ({node=Read (r,key);_},args,[],_) when not (!method_grows env r key) ->
+    join (all (r :: args)) (if !method_keeps_heap env r key then Some Semantic.empty_footprint
+      else Option.bind (!method_footprint env r key) within)
+  | Alloc fields -> all (List.map snd fields)
+  | Assign (x,_,rhs) when slot_binding env x -> object_calls env rhs
+  | Update (_,{node=Id x;_},Some rhs,_) when slot_binding env x -> object_calls env rhs
+  | _ -> None
+let object_changes env e = Option.map of_footprint (object_calls env e)
 
 (* The change of an expression whose one heap write is a field's, a checked
    element's or a call's, its operands writing none. *)
@@ -644,14 +654,17 @@ let write_changes ~facts ~bounds env (e : expr) : changes option =
     if !method_grows env r key then Some { obj = false; num = false; store = `Grow; framed = no_frame; apart = false; cell_write = false }
     else if !method_element_write env r key then Some element_changes
     else Option.map of_footprint (!method_footprint env r key)
-  | _ -> if init_free env e then Some init_changes else None
+  | _ -> object_changes env e
 
 let statement_changes ~facts ~bounds env (s : stmt) = match s.statement with
   | Effect e -> (match write_changes ~facts ~bounds env e with
     | Some ch -> Some ch
-    | None -> if init_free env e then Some init_changes else None)
-  | Declare (_,bs) when List.for_all (fun (_,_,e) -> init_free env e) bs -> Some init_changes
-  | Return e when init_free env e -> Some init_changes
+    | None -> object_changes env e)
+  | Declare (_,bs) -> List.fold_left (fun acc (_,_,e) -> match acc, object_calls env e with
+      | Some a, Some b -> Some {Semantic.on_value=Semantic.join_change a.Semantic.on_value b.Semantic.on_value;
+          on_store=Semantic.join_change a.Semantic.on_store b.Semantic.on_store}
+      | _ -> None) (Some Semantic.empty_footprint) bs |> Option.map of_footprint
+  | Return e -> object_changes env e
   | _ -> None
 
 (* The facts restated where a binding is declared at a path's read
@@ -1103,8 +1116,9 @@ let declaration ~(array : string -> string list -> bool) env fs name (init : exp
   with_cells (updated != fs) @@ fun () ->
   let fs = updated in
   let fs = if heap_free env init then fs
-    else if init_free env init then List.filter (fun f -> fact_kept init_changes f || stable_fact env f) fs
-    else keep_stable env fs in
+    else match object_changes env init with
+      | Some ch -> List.filter (fun f -> fact_kept ch f || stable_fact env f) fs
+      | None -> keep_stable env fs in
   let fs = forget name fs in
   (* `const x = f(…)` of a function stating a postcondition: each of
      its facts, of `x`. *)
@@ -1292,7 +1306,7 @@ let call_gfacts ?name env f (args : expr list) : gfact list =
    `x === null`: on the literal's arm the guard reads its tag's value. *)
 let gdeclaration env (gs : gfact list) (fs : fact list) name (init : expr) : gfact list =
   let gs = if heap_free env init then gs
-    else gkept ?ch:(if init_free env init then Some init_changes else None) env gs in
+    else gkept ?ch:(object_changes env init) env gs in
   let gs = gforget name gs in
   (* `const x = f(…)` of a function stating a guarded postcondition. *)
   let gs = match init.node with

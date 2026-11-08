@@ -10,7 +10,7 @@ element predicates `requires` and `elements`, each `null` or its kinds in
 order; the index-fact lists `pre` and `ensures`; the Boolean
 `receiverGrows`; and `elementWrite`, `null`, `"stores"` or `"exact"`. Each decoder
 re-encodes what it read and refuses a document that differs, so a field
-outside these, a `grow` on `value` or an `init` on `store`, is refused. -/
+outside these, a `grow` on `value` or an `init` or `scalar` on `store`, is refused. -/
 namespace Verification.EffectJson
 open Lean CallEffects
 
@@ -28,6 +28,7 @@ private def elementWriteOf (name : String) : Except String ElementWrite :=
 def changeName : Footprints.Change → String
   | .keep => "keep"
   | .init => "init"
+  | .scalar => "scalar"
   | .grow => "grow"
   | .any => "any"
 
@@ -39,10 +40,11 @@ private def changeOf (allowed : List Footprints.Change) (name : String) : Except
 instance : ToJson Footprints.Closed :=
   ⟨fun c => Json.mkObj [("value", toJson (changeName c.value)), ("store", toJson (changeName c.store))]⟩
 
-/-- On a value `grow` is `init`, so `value` is `keep`, `init` or `any`; on a
-store `init` is `keep`, so `store` is `keep`, `grow` or `any`. -/
+/-- On a value `grow` is `scalar`, so `value` is `keep`, `init`, `scalar` or
+`any`; on a store `init` and `scalar` are `keep`, so `store` is `keep`,
+`grow` or `any`. -/
 instance : FromJson Footprints.Closed := ⟨fun j => do
-  let c : Footprints.Closed := ⟨← changeOf [.keep, .init, .any] (← j.getObjValAs? String "value"),
+  let c : Footprints.Closed := ⟨← changeOf [.keep, .init, .scalar, .any] (← j.getObjValAs? String "value"),
     ← changeOf [.keep, .grow, .any] (← j.getObjValAs? String "store")⟩
   if toJson c != j then throw "a closed footprint has exactly the fields value and store"
   pure c⟩

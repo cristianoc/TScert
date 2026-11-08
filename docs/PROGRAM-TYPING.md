@@ -1810,12 +1810,14 @@ bounds of lengths (proved). These are the preservation rules:
   held no store, and a hole's write gives a store of the same length).
 - **A call** at a selected signature $`\mathcal F_\epsilon`$ stating none of
   `receiverStore`, `receiverOwn` and `receiverGrows` and not leaving the heap
-  unchanged: $`\chi`$ is its footprint's: $`o`$ and $`n`$ where it states
-  `any` for values, $`s`$ $`\mathsf{keep}`$ where it states `keep` for
-  stores (proved). `{value: any, store: keep}`, a `Map`'s `set`, preserves
-  every length; `{value: init, store: keep}` alters no location holding an
-  object, a number or a store, so it preserves every fact over values, paths
-  and lengths.
+  unchanged: $`\chi`$ is its footprint's: $`o`$ where it states `any` for
+  values, $`n`$ where it states `scalar` or `any`, $`s`$ $`\mathsf{keep}`$
+  where it states `keep` for stores (proved). `{value: scalar, store: keep}`,
+  a `Map`'s `set`, alters no location holding an object or a store, so it
+  preserves every length and every path's objects (positive
+  `map-insert-keeps-paths`, pretext's `getGraphemeEnds`);
+  `{value: init, store: keep}` alters none holding a number either, so it
+  preserves every fact over values, paths and lengths.
 - **An initializing write** $`x.f=y`$ of a source value, where the knowledge
   at the write states that the field's location holds `null` or `undefined`
   (a cell fact, or a read link from it to a slot a value fact bounds so):

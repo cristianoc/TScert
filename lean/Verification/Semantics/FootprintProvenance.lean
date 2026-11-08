@@ -219,7 +219,7 @@ theorem dense_support {x n ρ h h'} (hd : Dense x n ρ h)
   rcases hh with rfl | ⟨ls₁, ls', h₁, rfl, hd, -⟩ | hi
   · exact ⟨s, ls, hsl, hv', hn⟩
   · cases h₁; exact ⟨s, ls', hsl, hv', hd n hn⟩
-  · exact absurd hi.1 (by simp [nullish])
+  · exact absurd hi.2.1 (by simp [isArr])
 
 /-- A footprint whose entries covering the store change it at most by `grow`
 supports `Dense`. -/

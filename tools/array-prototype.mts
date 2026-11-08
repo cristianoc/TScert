@@ -574,14 +574,15 @@ const primitiveOverlay: Readonly<Record<string, readonly OverlayEntry[]>> &
  * `[Symbol.iterator]` allocate a fresh iterator, and `Date`'s getters,
  * `valueOf`, `toString` and `toISOString` read its time value. The members
  * that change a collection or a date (`add`, `set`, `delete`, `clear`,
- * `setTime`) state `{value: any, store: keep}`: they compare keys by
+ * `setTime`) state `{value: scalar, store: keep}`: they compare keys by
  * SameValueZero or take a number, run no code, and write only the receiver's
- * internal slots, which hold values and no array store; a `Set`'s and a
- * `Map`'s `size`, a readonly view, changes with them. A `WeakMap`'s `set`
+ * internal slots, which no location of the model holds, and a `Set`'s and a
+ * `Map`'s `size`, a readonly view holding a number, which they set to a
+ * number: no location holding an object or a store changes. A `WeakMap`'s `set`
  * and `delete` state the empty footprint: it has no `size`. `forEach`, which
  * calls its callback, states none (SOURCE-CONTRACTS.md, "Native
  * footprints"). */
-const changesValues = footprintEffect({ value: "any", store: "keep" });
+const changesValues = footprintEffect({ value: "scalar", store: "keep" });
 export const interfaceOverlay: Map<string, readonly OverlayEntry[]> = new Map<string, readonly OverlayEntry[]>([
   ["Set", [
     { name: "add", from: "Set", signature: "add(value: T): this;", resultIsReceiver: true, effect: changesValues },

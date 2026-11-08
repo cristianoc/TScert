@@ -1342,7 +1342,7 @@ const rowOf = (claims: SourceClaims, clause: Row[number]): number => {
   return i >= 0 ? i : claims.types.push([clause]) - 1;
 };
 /** The closed footprints other than the one letting everything change. */
-const narrowerFootprints: ClosedFootprint[] = (["keep", "init", "any"] as const).flatMap((value) =>
+const narrowerFootprints: ClosedFootprint[] = (["keep", "init", "scalar", "any"] as const).flatMap((value) =>
   (["keep", "grow", "any"] as const).map((store) => ({ value, store })))
   .filter((f) => f.value !== "any" || f.store !== "any");
 const readClaims = (artifacts: string): SourceClaims => readClaimsFile(join(artifacts, "claims.json"));

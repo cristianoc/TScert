@@ -27,17 +27,31 @@ def isArr : Val → Bool
   | .arr _ => true
   | _ => false
 
+def isObj : Val → Bool
+  | .objAt .. => true
+  | _ => false
+
 /-- An initialization's step: a location holding `null` or `undefined` takes
 a value that is no store. -/
 def InitStep (v v' : Val) : Prop := nullish v = true ∧ isArr v' = false
 
+/-- A scalar's step: a location holding neither an object nor a store takes a
+value that is no store. -/
+def ScalarStep (v v' : Val) : Prop := isObj v = false ∧ isArr v = false ∧ isArr v' = false
+
+theorem InitStep.scalar {v v' : Val} (h : InitStep v v') : ScalarStep v v' := by
+  obtain ⟨hn, ha⟩ := h
+  refine ⟨?_, ?_, ha⟩ <;> cases v <;> simp_all [nullish, isObj, isArr]
+
 /-- How an entry may change a location's contents: not at all, by an
-initialization of `null` or `undefined`, as a store that keeps every dense
-prefix (or by an initialization), or arbitrarily. They form the chain
-`keep ⊑ init ⊑ grow ⊑ any`. -/
+initialization of `null` or `undefined`, by a scalar's step (contents
+neither an object nor a store replaced by contents that are no store), as a
+store that keeps every dense prefix (or by a scalar's step), or arbitrarily.
+They form the chain `keep ⊑ init ⊑ scalar ⊑ grow ⊑ any`. -/
 inductive Change where
   | keep
   | init
+  | scalar
   | grow
   | any
   deriving DecidableEq, Repr
@@ -46,8 +60,9 @@ inductive Change where
 def Change.rank : Change → Nat
   | .keep => 0
   | .init => 1
-  | .grow => 2
-  | .any => 3
+  | .scalar => 2
+  | .grow => 3
+  | .any => 4
 
 def Change.le (a b : Change) : Bool := a.rank ≤ b.rank
 
@@ -63,18 +78,25 @@ not already list. -/
 def Change.Holds : Change → Nat → Val → Val → Prop
   | .keep, _, v, v' => v' = v
   | .init, _, v, v' => v' = v ∨ InitStep v v'
+  | .scalar, _, v, v' => v' = v ∨ ScalarStep v v'
   | .grow, b, v, v' => v' = v ∨ (∃ ls ls', v = .arr ls ∧ v' = .arr ls' ∧
-      (∀ n, DensePrefix n ls → DensePrefix n ls') ∧ ∀ l, some l ∈ ls' → some l ∈ ls ∨ b ≤ l) ∨ InitStep v v'
+      (∀ n, DensePrefix n ls → DensePrefix n ls') ∧ ∀ l, some l ∈ ls' → some l ∈ ls ∨ b ≤ l) ∨ ScalarStep v v'
   | .any, _, _, _ => True
 
 theorem Change.Holds.refl (δ : Change) (b : Nat) (v : Val) : δ.Holds b v v := by
   cases δ <;> simp [Change.Holds]
 
-/-- An initialization's step is within `init`, so within `grow`. -/
-theorem Change.init_le_grow {b v v'} (h : Change.init.Holds b v v') : Change.grow.Holds b v v' := by
+/-- A scalar's step is within `scalar`, so within `grow`. -/
+theorem Change.scalar_le_grow {b v v'} (h : Change.scalar.Holds b v v') : Change.grow.Holds b v v' := by
   rcases h with h | h
   · exact .inl h
   · exact .inr (.inr h)
+
+theorem Change.init_le_scalar {b v v'} (h : Change.init.Holds b v v') : Change.scalar.Holds b v v' :=
+  h.imp id InitStep.scalar
+
+theorem Change.init_le_grow {b v v'} (h : Change.init.Holds b v v') : Change.grow.Holds b v v' :=
+  Change.scalar_le_grow (Change.init_le_scalar h)
 
 theorem Change.Holds.mono {δ δ' : Change} {b v v'} (hle : δ.le δ' = true)
     (h : δ.Holds b v v') : δ'.Holds b v v' := by
@@ -83,15 +105,16 @@ theorem Change.Holds.mono {δ δ' : Change} {b v v'} (hle : δ.le δ' = true)
     | exact h
     | trivial
     | exact Change.init_le_grow h
+    | exact Change.init_le_scalar h
+    | exact Change.scalar_le_grow h
     | exact .inl h
-    | exact Change.init_le_grow (.inl h)
 
 /-- A larger starting heap only strengthens what `grow` requires of new
 element locations. -/
 theorem Change.Holds.lower {δ : Change} {b b' v v'} (hb : b ≤ b')
     (h : δ.Holds b' v v') : δ.Holds b v v' := by
   cases δ with
-  | keep | init | any => exact h
+  | keep | init | scalar | any => exact h
   | grow =>
     rcases h with h | ⟨ls, ls', rfl, rfl, hd, hl⟩ | h
     · exact .inl h
@@ -104,12 +127,22 @@ private theorem InitStep.trans {v v' v'' : Val} (h₁ : InitStep v v') (h₂ : v
   · exact h₁
   · exact ⟨h₁.1, h₂.2⟩
 
+private theorem ScalarStep.trans {v v' v'' : Val} (h₁ : ScalarStep v v') (h₂ : v'' = v' ∨ ScalarStep v' v'') :
+    ScalarStep v v'' := by
+  rcases h₂ with rfl | h₂
+  · exact h₁
+  · exact ⟨h₁.1, h₁.2.1, h₂.2.2⟩
+
 theorem Change.Holds.trans {δ : Change} {b b' v v' v''} (hb : b ≤ b')
     (h₁ : δ.Holds b v v') (h₂ : δ.Holds b' v' v'') : δ.Holds b v v'' := by
   cases δ with
   | any => trivial
   | keep => simp only [Change.Holds] at h₁ h₂ ⊢; rw [h₂, h₁]
   | init =>
+    rcases h₁ with rfl | h₁
+    · exact h₂
+    · exact .inr (h₁.trans h₂)
+  | scalar =>
     rcases h₁ with rfl | h₁
     · exact h₂
     · exact .inr (h₁.trans h₂)
@@ -123,10 +156,10 @@ theorem Change.Holds.trans {δ : Change} {b b' v v' v''} (hb : b ≤ b')
         rcases hl₂ l hm with hm' | hle
         · exact hl₁ l hm'
         · exact .inr (Nat.le_trans hb hle)
-      · exact absurd h₂.1 (by simp [nullish])
+      · exact absurd h₂.2.1 (by simp [isArr])
     · rcases h₂ with rfl | ⟨ms, ls'', hms, rfl, -, -⟩ | h₂
       · exact .inr (.inr h₁)
-      · subst hms; exact absurd h₁.2 (by simp [isArr])
+      · subst hms; exact absurd h₁.2.2 (by simp [isArr])
       · exact .inr (.inr (h₁.trans (.inr h₂)))
 
 theorem Change.le_max_left (a b : Change) : a.le (a.max b) = true := by
@@ -159,24 +192,28 @@ def Cls.has : Cls → Val → Bool
 /-- Only `any` changes the class of a location's contents. -/
 theorem Change.Holds.same_class {δ : Change} {b v v'} (hδ : δ ≠ .any)
     (h : δ.Holds b v v') (c : Cls) : c.has v' = c.has v := by
-  have init_class : InitStep v v' → c.has v' = c.has v := fun ⟨hn, ha⟩ => by
-    cases c <;> simp only [Cls.has, ha] <;> cases v <;> simp_all [nullish, isArr]
+  have scalar_class : ScalarStep v v' → c.has v' = c.has v := fun ⟨_, hv, ha⟩ => by
+    cases c <;> simp only [Cls.has, ha, hv]
   cases δ with
   | any => exact absurd rfl hδ
   | keep => simp only [Change.Holds] at h; rw [h]
   | init =>
     rcases h with rfl | h
     · rfl
-    · exact init_class h
+    · exact scalar_class h.scalar
+  | scalar =>
+    rcases h with rfl | h
+    · rfl
+    · exact scalar_class h
   | grow =>
     rcases h with rfl | ⟨_, _, rfl, rfl, _, _⟩ | h
     · rfl
     · cases c <;> rfl
-    · exact init_class h
+    · exact scalar_class h
 
-/-- On contents that are no store, `grow` is `init`. -/
+/-- On contents that are no store, `grow` is `scalar`. -/
 theorem Change.Holds.grow_value {b v v'} (h : Change.grow.Holds b v v') (hv : isArr v = false) :
-    Change.init.Holds b v v' := by
+    Change.scalar.Holds b v v' := by
   rcases h with h | ⟨_, _, rfl, _, _, _⟩ | h
   · exact .inl h
   · simp [isArr] at hv
@@ -190,15 +227,31 @@ theorem Change.Holds.init_defined {b v v'} (h : Change.init.Holds b v v') (hv : 
   · exact h
   · rw [h.1] at hv; cases hv
 
-/-- A change other than `any` keeps contents that are no store and neither
-`null` nor `undefined`. -/
-theorem Change.Holds.defined_kept {δ : Change} {b v v'} (hδ : δ ≠ .any) (h : δ.Holds b v v')
-    (ha : isArr v = false) (hn : nullish v = false) : v' = v := by
+/-- `keep` and `init` keep contents neither `null` nor `undefined`. -/
+theorem Change.Holds.defined_kept {δ : Change} {b v v'} (hδ : δ.le .init = true) (h : δ.Holds b v v')
+    (hn : nullish v = false) : v' = v := by
   cases δ with
   | keep => exact h
   | init => exact h.init_defined hn
-  | grow => exact (h.grow_value ha).init_defined hn
+  | _ => simp [Change.le, Change.rank] at hδ
+
+/-- A change other than `any` keeps an object. -/
+theorem Change.Holds.object_kept {δ : Change} {b v v'} (hδ : δ ≠ .any) (h : δ.Holds b v v')
+    (ho : isObj v = true) : v' = v := by
+  have hn : nullish v = false := by cases v <;> simp_all [isObj, nullish]
+  have ha : isArr v = false := by cases v <;> simp_all [isObj, isArr]
+  have hs : Change.scalar.Holds b v v' → v' = v := fun h => h.resolve_right fun hs => by
+    rw [hs.1] at ho; cases ho
+  cases δ with
+  | keep => exact h
+  | init => exact h.init_defined hn
+  | scalar => exact hs h
+  | grow => exact hs (h.grow_value ha)
   | any => exact absurd rfl hδ
+
+/-- On a store, `scalar` is `keep`. -/
+theorem Change.Holds.scalar_store {b ls v'} (h : Change.scalar.Holds b (.arr ls) v') : v' = .arr ls :=
+  h.resolve_right fun hs => absurd hs.2.1 (by simp [isArr])
 
 /-- On a store, `init` is `keep`. -/
 theorem Change.Holds.init_store {b ls v'} (h : Change.init.Holds b (.arr ls) v') : v' = .arr ls :=
@@ -480,12 +533,13 @@ theorem preserves_dense_iff (ls ls' : List (Option Nat)) :
 def Change.holdsB : Change → Nat → Val → Val → Bool
   | .keep, _, v, v' => v' == v
   | .init, _, v, v' => v' == v || (nullish v && !isArr v')
+  | .scalar, _, v, v' => v' == v || (!isObj v && (!isArr v && !isArr v'))
   | .grow, b, v, v' => v' == v || ((match v, v' with
     | .arr ls, .arr ls' => decide (denseLen ls ≤ denseLen ls') &&
         ls'.all fun o => match o with
           | some l => ls.contains (some l) || decide (b ≤ l)
           | none => true
-    | _, _ => false) || (nullish v && !isArr v'))
+    | _, _ => false) || (!isObj v && (!isArr v && !isArr v')))
   | .any, _, _, _ => true
 
 theorem Change.holdsB_iff (δ : Change) (b : Nat) (v v' : Val) : δ.holdsB b v v' = true ↔ δ.Holds b v v' := by
@@ -493,9 +547,10 @@ theorem Change.holdsB_iff (δ : Change) (b : Nat) (v v' : Val) : δ.holdsB b v v
   | keep => simp [Change.holdsB, Change.Holds]
   | any => simp [Change.holdsB, Change.Holds]
   | init => simp [Change.holdsB, Change.Holds, InitStep]
+  | scalar => simp [Change.holdsB, Change.Holds, ScalarStep]
   | grow =>
     simp only [Change.holdsB, Change.Holds, Bool.or_eq_true, beq_iff_eq, Bool.and_eq_true, Bool.not_eq_true',
-      InitStep]
+      ScalarStep]
     apply or_congr Iff.rfl
     apply or_congr _ Iff.rfl
     cases v <;> cases v' <;> simp

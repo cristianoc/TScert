@@ -37,7 +37,7 @@ let key_json = function
 let unsupported = Json.unsupported
 (* The graph's sole callable contract shape. Effects become definition
    obligations when a qualified signature is proposed. *)
-let change_json = function Keep -> String "keep" | Init -> String "init" | Grow -> String "grow" | Any -> String "any"
+let change_json = function Keep -> String "keep" | Init -> String "init" | Scalar -> String "scalar" | Grow -> String "grow" | Any -> String "any"
 let footprint_json f = Object ["value",change_json f.on_value;"store",change_json f.on_store]
 let kinds_json = function None -> Null | Some ks -> Array (List.map (fun k -> String k) ks)
 let rec index_fact_json fact =

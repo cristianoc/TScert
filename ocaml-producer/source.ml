@@ -8,12 +8,12 @@ let natural j = match j with
   | _ -> fail "expected a natural number"
 (* A closed footprint and a signature's effect, as the wire spells them. *)
 let change_of allowed j =
-  match List.assoc_opt (str j) ["keep",Keep;"init",Init;"grow",Grow;"any",Any] with
+  match List.assoc_opt (str j) ["keep",Keep;"init",Init;"scalar",Scalar;"grow",Grow;"any",Any] with
   | Some d when List.mem d allowed -> d
   | _ -> unsupported "unknown footprint change"
 let footprint_of j = match j with
   | Object fields when List.sort String.compare (List.map fst fields) = ["store";"value"] ->
-    {on_value=change_of [Keep;Init;Any] (field "value" j);on_store=change_of [Keep;Grow;Any] (field "store" j)}
+    {on_value=change_of [Keep;Init;Scalar;Any] (field "value" j);on_store=change_of [Keep;Grow;Any] (field "store" j)}
   | _ -> unsupported "invalid footprint"
 let promise_of = function
   | Object [("guards",Object [("param",p)])] -> Guards (natural p)

@@ -26,14 +26,14 @@ structure Closed where
 
 def Closed.fp (c : Closed) : Footprint := [(.cls .value, c.value), (.cls .store, c.store)]
 
-/-- On contents of class `value`, `grow` is `init`. -/
+/-- On contents of class `value`, `grow` is `scalar`. -/
 def Change.onValue : Change → Change
-  | .grow => .init
+  | .grow => .scalar
   | d => d
 
-/-- On a store, `init` is `keep`. -/
+/-- On a store, `init` and `scalar` are `keep`. -/
 def Change.onStore : Change → Change
-  | .init => .keep
+  | .init | .scalar => .keep
   | d => d
 
 def Closed.le (a b : Closed) : Bool := a.value.onValue.le b.value.onValue && a.store.onStore.le b.store.onStore
@@ -46,7 +46,7 @@ private theorem value_change {δ δ' : Change} {b v v'} (hv : isArr v = false)
     | _ => exact h
   have h'' := h'.mono hle
   cases δ' with
-  | grow => exact Change.init_le_grow h''
+  | grow => exact Change.scalar_le_grow h''
   | _ => exact h''
 
 private theorem store_change {δ δ' : Change} {b ls v'}
@@ -54,10 +54,12 @@ private theorem store_change {δ δ' : Change} {b ls v'}
   have h' : δ.onStore.Holds b (.arr ls) v' := by
     cases δ with
     | init => exact h.init_store
+    | scalar => exact h.scalar_store
     | _ => exact h
   have h'' := h'.mono hle
   cases δ' with
   | init => exact .inl h''
+  | scalar => exact .inl h''
   | _ => exact h''
 
 private theorem class_change {δ δ' : Change} {b v v'}
@@ -156,20 +158,23 @@ theorem closed_order_exact (a b : Closed) :
     simp only [List.length_singleton] at h2
     rw [h2] at hb
     cases hb
-  have atv : ∀ c : Closed, c.at .nul = c.value ∧ c.at .tru = c.value := fun c => by simp [Closed.at, isArr]
+  have atv : ∀ c : Closed, c.at .nul = c.value := fun c => by simp [Closed.at, isArr]
   have ats : ∀ (c : Closed) ls, c.at (.arr ls) = c.store := fun c ls => by simp [Closed.at, isArr]
   simp only [Closed.le, Bool.and_eq_true]
   refine ⟨?_, ?_⟩
-  · -- a value location initialized, or changed from a defined value
+  · -- a value location initialized, a number changed, or a number replaced by a store
     have v1 := refute .nul .tru
-    have v2 := refute .tru .nul
-    rw [(atv a).1, (atv b).1] at v1
-    rw [(atv a).2, (atv b).2] at v2
-    cases ha : a.value <;> cases hb : b.value <;> rw [ha, hb] at v1 v2 <;>
+    have v2 := refute (.num 0) (.num 1)
+    have v3 := refute (.num 0) (.arr [])
+    have atn : ∀ (c : Closed) b, c.at (.num b) = c.value := fun c b => by simp [Closed.at, isArr]
+    rw [atv a, atv b] at v1
+    rw [atn a, atn b] at v2 v3
+    cases ha : a.value <;> cases hb : b.value <;> rw [ha, hb] at v1 v2 v3 <;>
       simp only [Change.onValue, Change.le, Change.rank] <;> first
         | decide
         | exact (v1 (by decide) (by decide)).elim
         | exact (v2 (by decide) (by decide)).elim
+        | exact (v3 (by decide) (by decide)).elim
   · -- a store gaining a fresh element location, or losing a present one
     have s1 := refute (.arr []) (.arr [some 1])
     have s2 := refute (.arr [some 0]) (.arr [])

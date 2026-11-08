@@ -2941,8 +2941,9 @@ entry's effect: the empty footprint for the readers, `has`, `get`, `keys`,
 ([weak tables](#weak-tables)); `{value: any, store: keep}` for the members
 that change a `Set`, a `Map` or a date, `add`, `set`, `delete`, `clear` and
 `setTime`, which compare by SameValueZero or take a number, run no code and
-write only the receiver's internal slots, which hold no array store, and
-change a collection's `size`, a readonly view the model holds; none for
+write only the receiver's internal slots, which no location of the model
+holds, and change a collection's `size`, a readonly view the model holds as a
+number, so they state `{value: scalar, store: keep}`; none for
 `forEach`, which calls a callback. `new Set` and `new Map` of an array, of a
 host collection or of nothing state the empty footprint on their construct
 signatures: they read the array or the collection through the host's iterator
@@ -2990,7 +2991,7 @@ held, which met `V` when `set` stored it and meets it in every later world;
 no fact of the program relates a lookup to an earlier `set`, so a later `get`
 needs nothing the footprint drops. `Map`'s and `Set`'s changes are not alike:
 they change `size`, a readonly view the model holds, and keep
-`{value: any, store: keep}`. The case is `weak-map-set-keeps-facts`. A weak key is an object (including a function) or a
+`{value: scalar, store: keep}`. The case is `weak-map-set-keeps-facts`. A weak key is an object (including a function) or a
 non-registered symbol. `set` throws `TypeError` for every other key;
 `get` returns `undefined`, and `has` and `delete` return `false` for such
 keys. The overlay retains TypeScript's key parameter, so calls outside
@@ -3114,7 +3115,7 @@ where the native is modelled, and audited otherwise:
 | `Math.max`, `Math.min`, `String.fromCodePoint`, `String.fromCharCode` at primitives | the empty footprint | they convert primitives, which runs no code, and allocate only their result (audited) |
 | `forEach`, `every`, `some`, `filter`, `find`, `findIndex`, `flatMap`, and `reduce`, `reduceRight` with an initial value, at a callback within `ε` | `ε` | one signature per closed footprint; beside the callback each reads the receiver and allocates only its result (audited) |
 | `new Set`, `new Map` of an array, a host collection or nothing | the empty footprint | they read the array or the collection through the host's iterator and allocate (audited) |
-| `Set` and `Map` `add`, `set`, `delete`, `clear`; `Date` `setTime` | `{value: any, store: keep}` | they run no code and write only the receiver's internal slots, which hold no array store (audited) |
+| `Set` and `Map` `add`, `set`, `delete`, `clear`; `Date` `setTime` | `{value: scalar, store: keep}` | they run no code and write only the receiver's internal slots, which no location of the model holds, and a collection's `size`, a location holding a number, which they set to the number of entries (ECMA-262, `Map.prototype.set`, `Set.prototype.add`, `get Map.prototype.size`): no location holding an object or a store changes (audited) |
 
 
 #### `codePointAt` of a string

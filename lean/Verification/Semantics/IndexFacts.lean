@@ -961,10 +961,11 @@ theorem top_holds (h h' : Heap) : top.Holds h h' :=
   ⟨fun _ v _ ha => (by rw [top_alters] at ha; cases ha), fun hs => (by simp [top] at hs),
     fun hs => (by simp [top] at hs)⟩
 
-/-- The change a closed footprint allows: below `any`, a value changes only
-from `null` or `undefined`, and `init` on a store is `keep`. -/
+/-- The change a closed footprint allows: below `any` no location holding an
+object changes, at most `init` none holding a number, and `init` or `scalar`
+on a store is `keep`. -/
 def ofClosed (Φ : Footprints.Closed) : Changes :=
-  ⟨Φ.value == .any, Φ.value == .any, if Φ.store.onStore == .keep then .keep else .any⟩
+  ⟨Φ.value == .any, !(Φ.value.le .init), if Φ.store.onStore == .keep then .keep else .any⟩
 
 theorem ofClosed_holds {Φ : Footprints.Closed} {h h' : Heap} (hp : Φ.Holds h h') : (ofClosed Φ).Holds h h' := by
   rw [Footprints.Closed.holds_iff] at hp
@@ -974,19 +975,24 @@ theorem ofClosed_holds {Φ : Footprints.Closed} {h h' : Heap} (hp : Φ.Holds h h
       cases v
       case arr ls =>
         simp only [alters, ofClosed] at ha
-        have hst : Φ.store = .keep ∨ Φ.store = .init := by
+        have hst : Φ.store = .keep ∨ Φ.store = .init ∨ Φ.store = .scalar := by
           cases hΦ : Φ.store <;> simp_all [Footprints.Change.onStore]
         simp only [Footprints.Closed.at, Footprints.isArr, ite_true] at hc
-        rcases hst with hst | hst
+        rcases hst with hst | hst | hst
         · rw [hst] at hc; exact hc
         · rw [hst] at hc; exact hc.init_store
-      all_goals
+        · rw [hst] at hc; exact hc.scalar_store
+      case objAt =>
         have hva : Φ.value ≠ .any := by
           intro he; simp [alters, ofClosed, he] at ha
         simp only [Footprints.Closed.at, Footprints.isArr] at hc
-        first
-          | exact hc.defined_kept hva rfl rfl
-          | simp [alters] at ha
+        exact hc.object_kept hva rfl
+      case num =>
+        have hva : Φ.value.le .init = true := by
+          simpa [alters, ofClosed] using ha
+        simp only [Footprints.Closed.at, Footprints.isArr] at hc
+        exact hc.defined_kept hva rfl
+      all_goals simp [alters] at ha
     exact hkeep ▸ hv'
   · revert hs; simp only [ofClosed]; split <;> simp
   · revert hs; simp only [ofClosed]; split <;> simp
