@@ -10,6 +10,8 @@ import { join } from "node:path";
 import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-example.mts";
 import { cases } from "../pipeline/cases.mts";
 
+assert.ok(Number.isNaN(Number(runExample("invalid-string-char-code-at-length", 'last("ab")'))),
+  "a code unit read at the length is NaN");
 assert.equal(runExample("invalid-table-constant-stride", "typeof lastCell(new Uint8Array(28), 1)"), "undefined",
   "a row start at the length does not bound its last cell");
 

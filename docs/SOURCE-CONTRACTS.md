@@ -3139,6 +3139,19 @@ JavaScript string's but where a lone surrogate reads as U+FFFD
 ([strings](SEMANTICS.md#operational-language)); the contract states only
 the length, which both share, and bounds on the result, which hold of both.
 
+#### `charCodeAt` of a string
+
+`String.prototype.charCodeAt(pos)` of a string primitive at a number runs no
+code, as `codePointAt` does ([ECMA-262](REFERENCES.md#ecma-262),
+`String.prototype.charCodeAt`). It answers `NaN` where the integer is
+negative or at least the string's length, and otherwise the code unit at
+that position. The overlay states, before the declared form, the form at a
+safe integer $`i`$ with $`0\le i<\mathrm{strLength}(s)`$: a safe integer
+$`0\le r\le\mathtt{0xFFFF}`$, a bound that holds of the model's string and of
+JavaScript's alike. The search reaches it first, and the declared form, a
+number, where its precondition does not hold (`string-char-code-at-bounds`,
+`invalid-string-char-code-at-length`).
+
 **A non-empty `split`.** `String.prototype.split` with a non-empty string
 separator and no limit returns at least one element: the separator is no
 `RegExp`, so no `[Symbol.split]` runs, and ECMA-262's `split` returns `[S]`
