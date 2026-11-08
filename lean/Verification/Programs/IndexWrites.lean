@@ -1,4 +1,4 @@
-import Verification.Semantics.ElementRegions
+import Verification.Semantics.ElementRegionKnowledge
 import Verification.Programs.HeapExpressionRules
 import Verification.Programs.ExpressionEffects
 import Verification.Semantics.IndexNumbers
