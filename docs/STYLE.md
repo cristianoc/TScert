@@ -210,7 +210,8 @@ A slide is 1920×1080. The page's styles scale to it:
   it.
 - **Code:** a block is one paragraph, so the format shrinks it, if ever, as
   one.
-- **Statement slides:** at most one or two per deck, on the dark tokens.
+- **Statement slides:** at most one or two per deck, on `--bg` like every
+  slide, the takeaway marked by the rule bar.
 - **Status:** a status in a table or card uses its pair's text colour and
   its word (verified, refused, gap, trust change), as the pages do.
 

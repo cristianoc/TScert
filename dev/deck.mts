@@ -30,7 +30,7 @@ import {
   CODE_KINDS, MATH_KINDS, PLAIN_KINDS, type CommitRecord, type MathRole, type Section,
 } from "./record-render.mts";
 import { readFileSync } from "node:fs";
-import { DARK, FACES, FONTS, LIGHT, SYNTAX } from "./style-tokens.mts";
+import { FACES, FONTS, LIGHT, SYNTAX } from "./style-tokens.mts";
 
 /** One slide: its id, and its `<section>` in the slide format. */
 export type Slide = { id: string; html: string };
@@ -102,15 +102,15 @@ ${label(o.label)}
 const TURNY = readFileSync(new URL("../assets/turny-magnifier.svg", import.meta.url), "utf8")
   .replace("<svg ", `<svg style="position:absolute;right:128px;bottom:128px;width:280px;height:400px" `);
 
-/** A statement slide (STYLE.md, "Decks"), at most one or two per deck: on
- * the dark tokens, a label, one sentence at the heading's size, the rule bar
- * under it as under a takeaway, and one plain line. */
+/** A statement slide (STYLE.md, "Decks"), at most one or two per deck: a
+ * label, one sentence at the heading's size, the rule bar under it as under
+ * a takeaway, and one plain line. */
 export function statement(id: string, o: { label: string; title: string; text: string }): Slide {
-  return { id, html: `<section id="${id}" style="background:${DARK.bg};color:${DARK.ink};${SANS};padding:128px;display:flex;flex-direction:column;justify-content:center;gap:40px">
-<p style="font-size:24px;color:${DARK.muted};font-weight:600;letter-spacing:2px;text-transform:uppercase">${o.label}</p>
+  return { id, html: `<section id="${id}" style="background:${C.bg};color:${C.ink};${SANS};padding:128px;display:flex;flex-direction:column;justify-content:center;gap:40px">
+<p style="font-size:24px;color:${C.muted};font-weight:600;letter-spacing:2px;text-transform:uppercase">${o.label}</p>
 <h2 style="${SERIF};font-size:60px;font-weight:700;line-height:1.15;width:1500px">${o.title}</h2>
-<div style="width:240px;height:6px;background:${DARK["brand-gold"]}"></div>
-<p style="font-size:28px;color:${DARK.ink};line-height:1.4;width:1450px">${o.text}</p>
+<div style="width:240px;height:6px;background:${C["brand-gold"]}"></div>
+<p style="font-size:28px;color:${C.ink};line-height:1.4;width:1450px">${o.text}</p>
 </section>
 ` };
 }
