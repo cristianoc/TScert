@@ -380,35 +380,44 @@ control(async (): Promise<void> => {
   // (PROGRAM-TYPING.md, "Quantified clauses"): each negative's outer read
   // claimed at `number`, and at its return's entry the quantified fact that
   // would bound it, `ends[i] < widths.length` of every index of `ends`: over
-  // the inclusive precondition and after a write through an alias of `ends`.
+  // the inclusive precondition, after a direct alias write, and after a
+  // write through another field holding the quantified array.
   // Each is refused at that entry where evidence is searched.
   type Entry = SourceClaims["functions"][number]["entries"][number];
   type Quantified = Entry["quantified"][number];
   const strict: Quantified = { name: "ends", path: [], stop: { name: "ends", path: [], term: "length" },
     body: [{ terms: [["elem", 1]], bound: 9007199254740991 }, { terms: [["elem", -1]], bound: 0 },
       { terms: [["elem", 1], [{ term: { ref: { name: "widths", path: [], term: "length" } } }, -1]], bound: -1 }] };
-  const variants: [string, string][] = [
-    ["invalid-quantified-element-read-inclusive", "widthAt"],
-    ["invalid-quantified-element-read-alias-write", "widthAfterWrite"],
+  const fieldStrict: Quantified = { ...strict, name: "pair", path: ["right"],
+    stop: { name: "pair", path: ["right"], term: "length" } };
+  const variants: [string, string, Quantified, string][] = [
+    ["invalid-quantified-element-read-inclusive", "widthAt", strict, "widths[ends[k]!]"],
+    ["invalid-quantified-element-read-alias-write", "widthAfterWrite", strict, "widths[ends[k]!]"],
+    ["invalid-quantified-freshness-field-alias", "afterFieldAlias", fieldStrict, "widths[pair.right[k]!]"],
   ];
-  for (const [file, name] of variants) {
+  for (const [file, name, fact, read] of variants) {
     const artifacts = run(file);
     const source = readFileSync(sourceKey(artifacts), "utf8");
     const fnStart = source.indexOf(`export function ${name}`);
-    const read = "widths[ends[k]!]";
     const at = source.indexOf(read, fnStart);
     const claims = readClaims(artifacts);
     const fn = must(claims.functions.find(f => f.name === name), `${name}'s claims`);
     const claim = must(fn.expressions.find(e => e.pos[0] === at && e.pos[1] === at + read.length), "the read");
     claim.type = [rowOf(claims, "num")];
+    if (name === "afterFieldAlias") {
+      const inner = "pair.right[k]";
+      const innerAt = source.indexOf(inner, at);
+      must(fn.expressions.find(e => e.pos[0] === innerAt && e.pos[1] === innerAt + inner.length),
+        "the field-alias element read").type = [rowOf(claims, "num")];
+    }
     must(fn.entries.find(e => e.start === source.indexOf("return widths", fnStart)), "the return's entry").quantified
-      .push(strict);
+      .push(fact);
     const forged = writeClaims(artifacts, `quantified-forged-${name}`, claims);
     const searched = produceWith(artifacts, forged, `quantified-forged-${name}`);
     assert.equal(searched.status, 1, `${name}: ${searched.stdout}${searched.stderr}`);
-    assert.match(searched.stdout + searched.stderr, /does not establish the claims/, name);
+    assert.match(searched.stdout + searched.stderr, /does not establish the claims/, `${name}: ${searched.stdout}${searched.stderr}`);
   }
-  process.stdout.write("quantified facts: a strict element bound claimed over an inclusive precondition and after an alias's write, each refused at its entry\n");
+  process.stdout.write("quantified facts: a strict element bound claimed over an inclusive precondition and after direct and field alias writes, each refused at its entry\n");
 });
 
 control(async (): Promise<void> => {

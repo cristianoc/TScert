@@ -1711,26 +1711,30 @@ theorem envIndices_holds {as : List IndexAtom} {ρ h} (he : IndexHolds as ρ h) 
 /-- The atoms a change keeps (`IndexFact.keptBy`), the facts reading no heap
 among them. -/
 def keptIndices (c : Changes) (first : Nat → String → Bool) (as : List IndexAtom) : List IndexAtom :=
-  as.filter (·.fact.keptBy c first)
+  as.filter (fun a => a.fact.keptBy c first || a.fact.everyKept c first)
 
 theorem keptIndices_holds {c : Changes} {first : Nat → String → Bool} {as : List IndexAtom} {ρ h h'}
     (he : IndexHolds as ρ h) (hc : c.Holds h h') (hf : FirstKept first ρ h h') :
     IndexHolds (keptIndices c first as) ρ h' := by
   intro a ha hcd
   obtain ⟨ha, hk⟩ := List.mem_filter.mp ha
-  exact IndexFact.holdsAt_kept hc hf hk (he a ha hcd)
+  exact (Bool.or_eq_true_iff.mp hk).elim
+    (fun hk => IndexFact.holdsAt_kept hc hf hk (he a ha hcd))
+    (fun hk => IndexFact.everyKept_sound hc hf hk (he a ha hcd))
 
 /-- The atoms a change keeps, a view's count read through a field among them
 where `views` frames it (`IndexFact.keptWith`). -/
 def keptIndicesWith (c : Changes) (first views : Nat → String → Bool) (as : List IndexAtom) : List IndexAtom :=
-  as.filter (·.fact.keptWith c first views)
+  as.filter (fun a => a.fact.keptWith c first views || a.fact.everyKept c first)
 
 theorem keptIndicesWith_holds {c : Changes} {first views : Nat → String → Bool} {as : List IndexAtom} {ρ h h'}
     (he : IndexHolds as ρ h) (hc : c.Holds h h') (hf : FirstKept first ρ h h') (hv : ViewsKept views ρ h h') :
     IndexHolds (keptIndicesWith c first views as) ρ h' := by
   intro a ha hcd
   obtain ⟨ha, hk⟩ := List.mem_filter.mp ha
-  exact IndexFact.holdsAt_keptWith hc hf hv hk (he a ha hcd)
+  exact (Bool.or_eq_true_iff.mp hk).elim
+    (fun hk => IndexFact.holdsAt_keptWith hc hf hv hk (he a ha hcd))
+    (fun hk => IndexFact.everyKept_sound hc hf hk (he a ha hcd))
 
 /-- Nothing is kept by `first` where it names no location. -/
 theorem firstKept_none {ρ : Env} {h h' : Heap} : FirstKept (fun _ _ => false) ρ h h' := by

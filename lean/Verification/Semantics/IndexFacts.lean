@@ -518,6 +518,76 @@ def elementInt (h : Heap) (ls : List (Option Nat)) (i : Nat) : Option Int :=
   | some (some l) => h[l]?.bind intValue
   | _ => none
 
+/-- Every listed element cell is allocated below `b`. This describes a
+particular store view; a later store replacement needs a new proof. -/
+def ElementsBelow (b : Nat) (ls : List (Option Nat)) : Prop :=
+  ∀ l, some l ∈ ls → l < b
+
+/-- Every listed element cell is at or above the allocation boundary `b`. -/
+def ElementsAbove (b : Nat) (ls : List (Option Nat)) : Prop :=
+  ∀ l, some l ∈ ls → b ≤ l
+
+/-- Two store views share no element cell. Store-cell separation is a
+separate obligation (FOOTPRINTS.md, "Fresh array storage"). -/
+def ElementsApart (xs ys : List (Option Nat)) : Prop :=
+  ∀ l, some l ∈ xs → ∀ m, some m ∈ ys → l ≠ m
+
+theorem elementsApart_symm {xs ys} (h : ElementsApart xs ys) : ElementsApart ys xs :=
+  fun l hl m hm he => h m hm l hl he.symm
+
+/-- Allocation reserves distinct cells, all past the old heap's end.
+This is exactly the list returned by `Step.arrAlloc`. -/
+theorem elemSlots_above (base n : Nat) : ElementsAbove base (elemSlots base n) := by
+  intro l hl
+  obtain ⟨i, _, hi⟩ := List.mem_map.mp hl
+  simp only [Option.some.injEq] at hi
+  omega
+
+theorem elemSlots_distinct (base n : Nat) : (elemSlots base n).Nodup := by
+  unfold elemSlots List.Nodup
+  apply List.pairwise_map.mpr
+  exact (List.nodup_range (n := n)).imp (fun {i j} hij he => by
+    have : base + i = base + j := Option.some.inj he
+    exact hij (by omega))
+
+/-- Existing element cells and a fresh allocation are apart. No ownership
+condition is imposed on the old store: its cells may repeat. -/
+theorem elementsApart_fresh {b xs ys} (hx : ElementsBelow b xs) (hy : ElementsAbove b ys) :
+    ElementsApart xs ys := by
+  intro l hl m hm
+  have := hx l hl
+  have := hy m hm
+  omega
+
+theorem elementsApart_alloc {h : Heap} {xs : List (Option Nat)}
+    (hx : ElementsBelow h.length xs) (vs : List Val) :
+    ElementsApart xs (elemSlots h.length vs.length) :=
+  elementsApart_fresh hx (elemSlots_above _ _)
+
+/-- The literal-allocation transition reserves fresh, pairwise distinct
+cells, apart from every listed cell already allocated in the input heap. -/
+theorem arrAlloc_fresh {h : Heap} {vs : List Val}
+    (hv : ∀ v ∈ vs, isVal v = true) (hn : vs.length ≤ maxArrayLength) :
+    Step h (.arrLit vs) (h ++ vs) (.arr (elemSlots h.length vs.length)) ∧
+    ElementsAbove h.length (elemSlots h.length vs.length) ∧
+    (elemSlots h.length vs.length).Nodup ∧
+    ∀ xs, ElementsBelow h.length xs → ElementsApart xs (elemSlots h.length vs.length) :=
+  ⟨.arrAlloc hv hn, elemSlots_above _ _, elemSlots_distinct _ _, fun _ hx => elementsApart_alloc hx vs⟩
+
+/-- A defined element remains defined with the same integer whenever the
+location it reads keeps its contents. -/
+theorem elementInt_frame {h h' : Heap} {ls : List (Option Nat)} {i : Nat} {z : Int}
+    (he : elementInt h ls i = some z)
+    (hf : ∀ l v, ls[i]? = some (some l) → h[l]? = some v → h'[l]? = some v) :
+    elementInt h' ls i = some z := by
+  simp only [elementInt] at he ⊢
+  split at he
+  · rename_i l hl
+    simp only [Option.bind_eq_some_iff] at he ⊢
+    obtain ⟨v, hv, hz⟩ := he
+    exact ⟨v, hf l v hl hv, hz⟩
+  · cases he
+
 /-- What a body variable denotes at the index `i` of the store elements `ls`. -/
 def boundValue (ρ : Env) (h : Heap) (ls : List (Option Nat)) (i : Nat) : Bound → Option Int
   | .index => some (i : Int)
@@ -628,6 +698,127 @@ def HoldsAt : IndexFact → Env → Heap → Prop
   | .every s p stop body, ρ, h => ∃ w st ls n, readPath h (ρ s) p = some w ∧ elementsOf w = some st ∧
       h[st]? = some (.arr ls) ∧ termValue ρ h stop = some n ∧
       ∀ i : Nat, (i : Int) < n → ∀ F ∈ body, FactAt (boundValue ρ h ls i) F
+
+/-- A quantified clause is framed by its array path, store view, bound,
+element reads and every free body term. The premises name the actual
+locations and values read; store identity alone is insufficient. -/
+theorem every_frame {s p stop body ρ h h'}
+    (he : (IndexFact.every s p stop body).HoldsAt ρ h)
+    (hp : ∀ w, readPath h (ρ s) p = some w → readPath h' (ρ s) p = some w)
+    (hs : ∀ w st ls, readPath h (ρ s) p = some w → Footprints.storeOf w = some st →
+      h[st]? = some (.arr ls) → h'[st]? = some (.arr ls))
+    (hn : ∀ z, termValue ρ h stop = some z → termValue ρ h' stop = some z)
+    (hv : ∀ w st ls i z, readPath h (ρ s) p = some w → Footprints.storeOf w = some st →
+      h[st]? = some (.arr ls) → elementInt h ls i = some z → elementInt h' ls i = some z)
+    (hf : ∀ F ∈ body, ∀ t, Bound.free t ∈ F.vars → ∀ z,
+      termValue ρ h t = some z → termValue ρ h' t = some z) :
+    (IndexFact.every s p stop body).HoldsAt ρ h' := by
+  obtain ⟨w, st, ls, z, hw, hst, hls, hz, hall⟩ := he
+  refine ⟨w, st, ls, z, hp w hw, hst, hs w st ls hw hst hls, hn z hz, fun i hi F hF => ?_⟩
+  have hA := hall i hi F hF
+  refine factAt_congr (fun x hx => ?_) hA
+  obtain ⟨a, ha⟩ := Option.isSome_iff_exists.mp (hA.1 x hx)
+  rw [ha]
+  cases x with
+  | index => exact ha
+  | elem => exact hv w st ls i a hw hst hls ha
+  | free t => exact hf F hF t hx a ha
+
+/-- The two updates of a present element write preserve a clause on an
+apart store view. The path, bound and free terms are framed across both
+updates. Element separation is an explicit proved premise. -/
+theorem every_apart_write {s p stop body ρ h w st ys xs target cell value}
+    (he : (IndexFact.every s p stop body).HoldsAt ρ h)
+    (hp : readPath h (ρ s) p = some w) (hst : Footprints.storeOf w = some st)
+    (hys : h[st]? = some (.arr ys)) (hxs : h[target]? = some (.arr xs))
+    (hstores : st ≠ target) (hcell : some cell ∈ xs) (hstorecell : st ≠ cell)
+    (ha : ElementsApart ys xs)
+    (hpath : ∀ u, readPath h (ρ s) p = some u →
+      readPath ((h.set cell value).set target (.arr xs)) (ρ s) p = some u)
+    (hstop : ∀ z, termValue ρ h stop = some z →
+      termValue ρ ((h.set cell value).set target (.arr xs)) stop = some z)
+    (hfree : ∀ F ∈ body, ∀ t, Bound.free t ∈ F.vars → ∀ z,
+      termValue ρ h t = some z →
+      termValue ρ ((h.set cell value).set target (.arr xs)) t = some z) :
+    (IndexFact.every s p stop body).HoldsAt ρ ((h.set cell value).set target (.arr xs)) := by
+  apply every_frame he hpath _ hstop _ hfree
+  · intro u st' ls hu hs hl
+    have : u = w := Option.some.inj (hu.symm.trans hp)
+    subst u
+    have : st' = st := Option.some.inj (hs.symm.trans hst)
+    subst st'
+    rw [List.getElem?_set_ne hstores.symm, List.getElem?_set_ne hstorecell.symm]
+    exact hl
+  · intro u st' ls i z hu hs hl hz
+    have : u = w := Option.some.inj (hu.symm.trans hp)
+    subst u
+    have : st' = st := Option.some.inj (hs.symm.trans hst)
+    subst st'
+    have : ls = ys := by cases hl.symm.trans hys; rfl
+    subst ls
+    apply elementInt_frame hz
+    intro l v hli hv
+    have hmem : some l ∈ ys := List.mem_of_getElem? hli
+    have hne : l ≠ cell := ha l hmem cell hcell
+    have hnum : ∃ b, v = .num b := by
+      simp only [elementInt, hli, hv, Option.bind_some] at hz
+      obtain ⟨b, hb, _⟩ := intValue_safe hz
+      exact ⟨b, hb⟩
+    have hnt : l ≠ target := by
+      intro eq
+      subst l
+      obtain ⟨b, rfl⟩ := hnum
+      rw [hxs] at hv
+      cases hv
+    rw [List.getElem?_set_ne hnt.symm, List.getElem?_set_ne hne.symm]
+    exact hv
+
+/-- Filling a hole allocates one fresh cell. An apart store and every
+numeric element it previously read survive the allocation and store update.
+The bound and free terms require their own frame proofs. -/
+theorem every_apart_fill {s p stop body ρ h w st ys target updated value}
+    (he : (IndexFact.every s p stop body).HoldsAt ρ h)
+    (hp : readPath h (ρ s) p = some w) (hst : Footprints.storeOf w = some st)
+    (hys : h[st]? = some (.arr ys))
+    (htarget : ∃ xs, h[target]? = some (.arr xs)) (hstores : st ≠ target)
+    (hpath : ∀ u, readPath h (ρ s) p = some u →
+      readPath ((h ++ [value]).set target (.arr updated)) (ρ s) p = some u)
+    (hstop : ∀ z, termValue ρ h stop = some z →
+      termValue ρ ((h ++ [value]).set target (.arr updated)) stop = some z)
+    (hfree : ∀ F ∈ body, ∀ t, Bound.free t ∈ F.vars → ∀ z,
+      termValue ρ h t = some z →
+      termValue ρ ((h ++ [value]).set target (.arr updated)) t = some z) :
+    (IndexFact.every s p stop body).HoldsAt ρ ((h ++ [value]).set target (.arr updated)) := by
+  apply every_frame he hpath _ hstop _ hfree
+  · intro u st' ls hu hs hl
+    have : u = w := Option.some.inj (hu.symm.trans hp)
+    subst u
+    have : st' = st := Option.some.inj (hs.symm.trans hst)
+    subst st'
+    rw [List.getElem?_set_ne hstores.symm,
+      List.getElem?_append_left (List.getElem?_eq_some_iff.mp hys).1]
+    exact hl
+  · intro u st' ls i z hu hs hl hz
+    have : u = w := Option.some.inj (hu.symm.trans hp)
+    subst u
+    have : st' = st := Option.some.inj (hs.symm.trans hst)
+    subst st'
+    apply elementInt_frame hz
+    intro l v hli hv
+    have hnum : ∃ b, v = .num b := by
+      simp only [elementInt, hli, hv, Option.bind_some] at hz
+      obtain ⟨b, hb, _⟩ := intValue_safe hz
+      exact ⟨b, hb⟩
+    have hnt : l ≠ target := by
+      intro eq
+      subst l
+      obtain ⟨b, rfl⟩ := hnum
+      obtain ⟨xs, hxs⟩ := htarget
+      rw [hxs] at hv
+      cases hv
+    rw [List.getElem?_set_ne hnt.symm,
+      List.getElem?_append_left (List.getElem?_eq_some_iff.mp hv).1]
+    exact hv
 
 theorem holdsAt_mapM {F F' : IndexFact} {f : Nat → Option Nat} {ρ ρ' : Env} {h : Heap}
     (hm : F.mapM f = some F') (hf : ∀ s ∈ F.slots, ∀ t, f s = some t → ρ' t = ρ s) :
@@ -1358,6 +1549,45 @@ def bodyKeptBy (c : Changes) (first : Nat → String → Bool) : Linear.Fact Bou
   factMonotone (Bound.keptBy c first) (Bound.grownBy c first)
 
 namespace IndexFact
+
+/-- A footprint frames a quantified clause when it keeps the store and
+numeric element cells, its array path, bound and every free body term. -/
+def everyKept (c : Changes) (first : Nat → String → Bool) : IndexFact → Bool
+  | .every s p stop body => c.store == .keep && !c.num &&
+      (Term.mk .length s p).pathKeptBy c first && stop.keptBy c first &&
+      body.all (fun F => F.vars.all fun b => match b with
+        | .free t => t.keptBy c first
+        | _ => true)
+  | _ => false
+
+theorem everyKept_sound {c : Changes} {first : Nat → String → Bool} {F : IndexFact} {ρ h h'}
+    (hc : c.Holds h h') (hf : FirstKept first ρ h h')
+    (hk : F.everyKept c first = true) (hF : F.HoldsAt ρ h) : F.HoldsAt ρ h' := by
+  cases F <;> simp only [everyKept] at hk
+  all_goals try contradiction
+  rename_i s p stop body
+  simp only [Bool.and_eq_true, beq_iff_eq, Bool.not_eq_true', List.all_eq_true] at hk
+  obtain ⟨⟨⟨⟨hstore, hnum⟩, hpath⟩, hstop⟩, hbody⟩ := hk
+  obtain ⟨w, st, ls, z, hw, hst, hls, hz, hall⟩ := hF
+  have hobj : c.alters w = c.obj := by
+    cases w <;> simp_all [Footprints.storeOf, Footprints.fieldsOf, Changes.alters]
+  have hpath' := pathRead_kept (kind := .length) hc hf hpath hobj hw
+  refine ⟨w, st, ls, z, hpath', hst, hc.1 st _ hls (by simp [Changes.alters, hstore]),
+    termValue_kept hc hf hstop hz, fun i hi F hm => ?_⟩
+  have hA := hall i hi F hm
+  refine factAt_congr (fun x hx => ?_) hA
+  obtain ⟨a, ha⟩ := Option.isSome_iff_exists.mp (hA.1 x hx)
+  rw [ha]
+  cases x with
+  | index => exact ha
+  | free t => exact termValue_kept hc hf (hbody F hm (.free t) hx) ha
+  | elem =>
+    apply elementInt_frame ha
+    intro l v hl hv
+    have hz' : intValue v = some a := by
+      simpa only [boundValue, elementInt, hl, hv, Option.bind_some] using ha
+    obtain ⟨b, rfl, _⟩ := intValue_safe hz'
+    exact hc.1 l _ hv (by simp [Changes.alters, hnum])
 
 /-- Whether a change preserves a fact (`Term.keptBy`): `index` and `int` read
 no heap, `length` and `bound` a store's length. -/

@@ -1496,6 +1496,28 @@ theorem boundedLength_sound [DecidableEq ι] {G : NormalGraph ι} {images : Inst
     HeapLinks.stable_holds (shift_holds (v := u) hk).2.2.1, (shift_holds (v := u) hk).2.2.2.1,
     elemsHolds_nil _ _, shiftIndices_holds (keptIndices_holds hk.2.2.2.2.2 hq firstKept_none)⟩
 
+/-- A hole fill lists only the old cells and its newly allocated cell
+(`ExpressionEffects.placeAt_mem`). Separation from an allocated old view
+therefore survives, even when the old view contains repeated cells. -/
+theorem elementsApart_placeAt {h : Heap} {ys xs : List (Option Nat)} {k : Nat}
+    (hbelow : ElementsBelow h.length ys) (hapart : ElementsApart ys xs) :
+    ElementsApart ys (placeAt xs k h.length) := by
+  intro l hl m hm
+  rcases ExpressionEffects.placeAt_mem hm with hm | rfl
+  · exact hapart l hl m hm
+  · have := hbelow l hl; omega
+
+/-- The hole-fill allocation transition preserves element-region separation
+from every old view whose listed cells were allocated and apart. This
+covers `Step.setGrow`; it makes no statement about installing an arbitrary
+store returned by external code. -/
+theorem setGrow_fresh {h : Heap} {xs ys : List (Option Nat)} {b : UInt64} {k : Nat} {v : Val}
+    (hv : isVal v = true) (hi : indexOfBits b = some k) (hhole : elemLoc xs b = none)
+    (hbelow : ElementsBelow h.length ys) (hapart : ElementsApart ys xs) :
+    Step h (.setElem (.arr xs) (.num b) v) (h ++ [v]) (.arr (placeAt xs k h.length)) ∧
+    ElementsApart ys (placeAt xs k h.length) :=
+  ⟨.setGrow hv hi hhole, elementsApart_placeAt hbelow hapart⟩
+
 end Verification.IndexWrites
 
 namespace Verification.HeapExpressionRules
