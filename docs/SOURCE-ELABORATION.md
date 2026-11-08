@@ -3735,6 +3735,15 @@ The body-effect checker recognizes a subset of programs satisfying the
 semantic contract. An unrecognized body therefore represents an inference or
 checking limit, not a restriction on the meaning of heap preservation.
 
+A callback parameter may state its result as `Within<F, T>` too:
+`bounds-callback-footprint` states a visitor within
+`{value: any, store: keep}`, so its caller retains array-length bounds, and
+an analyzed callback writing a captured counter meets the contract.
+`invalid-bounds-callback-footprint` passes a shrinking callback and is
+refused; its Node run reads `undefined`. A forged control claiming heap
+preservation of the counter-writing callback is refused by evidence
+production and consumption.
+
 The source acceptance theorem includes effect checking. Pipeline controls
 exercise qualified callbacks passed or returned as values, ordinary-call
 fallbacks, and forged effect claims on bodies that mutate captured storage.

@@ -13,6 +13,36 @@ namespace LoweringFlow
 
 set_option maxHeartbeats 1000000
 
+/-- A clause term rooted at a value binding or its initialized cell. -/
+def invariantTerm (root : Nat → Option (Nat × List String)) (t : HeapKnowledge.Term) :
+    Option HeapKnowledge.Term := do
+  let (slot, path) ← root t.slot
+  pure { t with slot, path := path ++ t.path }
+
+/-- A loop clause read through the same roots as producer index facts.
+A cell's integer fact is a path term, whose definedness states safe integrality;
+the upper bound is the range every such term already has. -/
+def invariantFact (root : Nat → Option (Nat × List String)) :
+    HeapKnowledge.IndexFact → Option HeapKnowledge.IndexFact
+  | .int p => do
+    let (slot, path) ← root p
+    pure (if path.isEmpty then .int slot else .linear (.le [(⟨.value, slot, path⟩, 1)] (2 ^ 53 - 1)))
+  | .linear f => (f.mapVars (invariantTerm root)).map .linear
+  | .guarded p path tag body => do
+    let (slot, pre) ← root p
+    pure (.guarded slot (pre ++ path) tag (← invariantFact root body))
+  | .every p path stop body => do
+    let (slot, pre) ← root p
+    let stop ← invariantTerm root stop
+    let body ← body.mapM fun f => f.mapVars fun
+      | .free t => (invariantTerm root t).map HeapKnowledge.Bound.free
+      | .index => some .index
+      | .elem => some .elem
+    pure (.every slot (pre ++ path) stop body)
+  | f => f.mapM fun p => do
+    let (slot, path) ← root p
+    if path.isEmpty then some slot else none
+
 /-- Project lexical graph identities onto typed slots. Ambient parameters and
     captures are shared by every action of a body. -/
 @[nospecialize] private partial def flowScope (ambient incoming : List (ScopeBinding Tree))
@@ -387,7 +417,7 @@ private def invariantFact (root : Nat → Option (Nat × List String))
     | _, none => do throw (locatedRefusal (← table) node.source .entryClaim
         s!"a region fact names '{other}', which is no value binding")
   -- A loop's invariant (PROGRAM-TYPING.md, "Loop invariants"): at its head,
-  -- each fact at the slots of the value bindings it names, which every edge
+  -- each fact rooted at the value bindings or initialized cells it names, which every edge
   -- into the head establishes.
   let invariant ← match node.action with
     | .branch (.loop _ _ _ _ (names, facts)) _ _ => facts.mapM fun F => do

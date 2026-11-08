@@ -2634,10 +2634,13 @@ units, `SourceRequests.checkRequests_ensures_at`, a conjunct of
 `RequestsSafe`. A literal's read links are `HeapExpressionRules.freshLinks`
 (proved in `alloc_sound`); a failing return's refusal is `ensuresRefusal`.
 
-**Cases.** Positive: `type-invariant-walker` (pretext's `line-break.ts`
+**Cases.** Positive: `bounds-quantified-invariant` (pretext's `createLine`
+flow record, with a quantified index bound at its input and return), and
+`type-invariant-walker` (pretext's `line-break.ts`
 shape: a constructor building `widths` and a view allocated at its length,
 walkers reading `prepared.segmentFlags[i]!` below `prepared.widths.length`).
-Negative, each run under Node: `invalid-type-invariant-constructor` (a
+Negative, each run under Node: `invalid-bounds-quantified-invariant` (an
+index at the array length), `invalid-type-invariant-constructor` (a
 return of a view one element short), `invalid-type-invariant-push` (a
 `push` before passing the value on) and `invalid-type-invariant-cast` (a
 value typed by a cast). Forged controls in `pipeline/test.mts`: the
@@ -3027,10 +3030,10 @@ assumes it; the loop's exit, the false branch of its test, starts from it.
      {\Sigma_{\mathit{head}}=\Sigma_{\mathit{claimed}},\ I}\ \textsf{loop-invariant}
 ```
 
-with $`I`$ the clause's facts at the bindings it names, each a value
-binding or initialized cell at the head. A cell is read through its `value`
-field, including the bound and body terms of a quantified clause; a clause
-naming any other binding is refused at the loop. A path's kind (an array's length, a typed-array length, a field) is
+with $`I`$ the clause's facts rooted at the bindings it names: a value
+binding's slot, or an initialized cell's `value` field
+([cell terms](#terms-for-bindings-held-in-cells)). A clause naming any other
+binding is refused at the loop. A path's kind (an array's length, a typed-array length, a field) is
 read through the type the binding's declaration has. The invariant states
 what the loop needs that no fact of its entry names, such as `j <= 2 * i` of
 two counters stepping by 2 and by 1.
@@ -3042,13 +3045,15 @@ binding's declaration (a static type request), and elaborates the clause
 (`elaborateRequires`) to index facts at positions naming the bindings, the
 `while` node's `invariant` (`LoopInvariant`, `tools/fragment.mts`;
 `Fragment.Stmt.loop`). Lean asserts the facts at the head's cut, its
-bindings resolved to the head's value slots or cell paths (`Lowering.Flow`), so the check
+bindings resolved to the head's value slots or cell paths (`Lowering.Flow.invariantFact`), so the check
 of each edge into the head (`checkAssertions`) decides it whatever the
 producer proposes. The producer adds them to the head's state
 (`Source.loop_invariants`, `Proposal_flow`), so the entries of the body claim
 what follows from them.
 
-**Cases.** Positive: `loop-invariant-reads`. Negative, each run under Node:
+**Cases.** Positive: `loop-invariant-reads` and `bounds-cell-invariant`
+(an expression-updated counter). Negative, each run under Node:
+`invalid-bounds-cell-invariant` (a false entry over a cell),
 `invalid-loop-invariant-back-edge` (a back edge stepping `j` by 3) and
 `invalid-loop-invariant-entry` (an entry with `j = 2`). Control in
 `pipeline/test.mts`: the back-edge negative's read claimed at `number` with

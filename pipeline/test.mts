@@ -73,6 +73,63 @@ const mutationControl = (body: () => Promise<void>): void => {
 const serving: boolean = process.argv[2] === "--controls";
 
 control(async (): Promise<void> => {
+  const artifacts = run("bounds-callback-footprint");
+  const claims = readClaims(artifacts);
+  const source = readFileSync(sourceKey(artifacts), "utf8");
+  const fn = must(claims.functions.find(f => f.name === "caller"), "caller's claims");
+  const closure = must(fn.expressions.find(e => e.pos[0] === source.indexOf("(i: number): void =>")), "the callback");
+  assert.ok(Array.isArray(closure.type));
+  const label = must(closure.type.find(t => typeof t === "number"), "the callback row");
+  const row = structuredClone(clauseRow(claims, label, "callback"));
+  for (const clause of row) if (typeof clause === "object" && "arrs" in clause)
+    for (const arrow of clause.arrs.arrows)
+      arrow.effect = { ...arrow.effect, footprint: { value: "keep", store: "keep" } };
+  closure.type = [claims.types.push(row) - 1];
+  const forged = writeClaims(artifacts, "callback-claims-keep", claims);
+  const searched = produceWith(artifacts, forged, "callback-claims-keep");
+  assert.equal(searched.status, 1, searched.stdout + searched.stderr);
+  const checked = tested(verifierCall(verifier, ["--check-units", join(artifacts, "fragment.json"),
+    forged, sourceKey(artifacts), join(artifacts, "evidence.json")]));
+  assert.equal(checked.status, 1, checked.stdout + checked.stderr);
+});
+
+control(async (): Promise<void> => {
+  const artifacts = run("bounds-quantified-invariant");
+  const fragment = readFragmentFile(join(artifacts, "fragment.json"));
+  const fn = must(fragment.functions.find(f => f.name === "read"), "read's contract");
+  assert.ok(fn.requires.some(f => "every" in f));
+  fn.requires = [];
+  const forged = join(artifacts, "without-quantified-precondition.json");
+  writeFileSync(forged, JSON.stringify(fragment));
+  const searched = produceWith(artifacts, join(artifacts, "claims.json"), "without-quantified-precondition", forged);
+  assert.equal(searched.status, 1, searched.stdout + searched.stderr);
+  const checked = tested(verifierCall(verifier, ["--check-units", forged,
+    join(artifacts, "claims.json"), sourceKey(artifacts), join(artifacts, "evidence.json")]));
+  assert.equal(checked.status, 1, checked.stdout + checked.stderr);
+});
+
+control(async (): Promise<void> => {
+  const artifacts = run("bounds-cell-invariant");
+  const fragment = readFragmentFile(join(artifacts, "fragment.json"));
+  const fn = must(fragment.functions.find(f => f.name === "walk"), "walk's body");
+  const visit = (value: unknown): void => {
+    if (Array.isArray(value)) { for (const child of value) visit(child); return; }
+    if (!isObject(value)) return;
+    if (value.k === "while" && isObject(value.invariant) && Array.isArray(value.invariant.facts))
+      value.invariant.facts.push({ linear: { fact: { le: { form: [], bound: -1 } } } });
+    for (const child of Object.values(value)) visit(child);
+  };
+  visit(fn.body);
+  const forged = join(artifacts, "false-cell-invariant.json");
+  writeFileSync(forged, JSON.stringify(fragment));
+  const searched = produceWith(artifacts, join(artifacts, "claims.json"), "false-cell-invariant", forged);
+  assert.equal(searched.status, 1, searched.stdout + searched.stderr);
+  const checked = tested(verifierCall(verifier, ["--check-units", forged,
+    join(artifacts, "claims.json"), sourceKey(artifacts), join(artifacts, "evidence.json")]));
+  assert.equal(checked.status, 1, checked.stdout + checked.stderr);
+});
+
+control(async (): Promise<void> => {
   // The closure claim's precondition must follow from its written one,
   // both while producing evidence and while consuming existing evidence.
   const artifacts = run("closure-precondition");
