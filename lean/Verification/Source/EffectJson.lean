@@ -72,6 +72,7 @@ private def predOf : Json → Except String (Option ElemPred)
 -- "path"}`, its kind's name, its root and its fields.
 deriving instance ToJson, FromJson for HeapKnowledge.Term.Kind
 deriving instance ToJson, FromJson for HeapKnowledge.Term
+deriving instance ToJson, FromJson for HeapKnowledge.Bound
 deriving instance ToJson, FromJson for Linear.Fact
 -- A guard's tag is `"null"` or `"undefined"`; a guarded fact is
 -- `{"guarded": {"slot", "path", "tag", "body"}}`.

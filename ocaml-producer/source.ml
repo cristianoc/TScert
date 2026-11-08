@@ -42,25 +42,44 @@ let rec index_fact_of j =
     let tag = str (field "tag" b) in
     if tag <> "null" && tag <> "undefined" then unsupported "invalid guard tag";
     Guarded (natural (field "slot" b), List.map str (list (field "path" b)), tag, index_fact_of (field "body" b))
+  else if only "element" then
+    let b = body "element" ["array";"index";"value"] in
+    Element (natural (field "value" b), natural (field "array" b), natural (field "index" b))
+  else if only "every" then
+    let b = body "every" ["body";"path";"slot";"stop"] in
+    let var v = match v with
+      | String "index" -> Body_index
+      | String "elem" -> Body_elem
+      | Object ["free",t] when keys t = ["t"] -> Body_term (linear_term (field "t" t))
+      | _ -> unsupported "invalid quantified fact's variable" in
+    let fact f = match keys f with
+      | ["le"] -> let form,d = linear_parts var f "le" in Body_le (form,d)
+      | ["ne"] -> let form,d = linear_parts var f "ne" in Body_ne (form,d)
+      | _ -> unsupported "invalid quantified fact's body" in
+    Every (natural (field "slot" b), List.map str (list (field "path" b)), linear_term (field "stop" b),
+      List.map fact (list (field "body" b)))
   else if only "linear" then
     let f = field "fact" (body "linear" ["fact"]) in
-    let parts k = let b = field k f in
-      if keys b <> ["bound";"form"] then unsupported "invalid linear fact";
-      let term t =
-        if keys t <> ["kind";"path";"slot"] then unsupported "invalid linear term";
-        let slot = natural (field "slot" t) and path = List.map str (list (field "path" t)) in
-        match text "kind" t with
-        | "value" -> Value_at (slot,path)
-        | "length" -> Length_at (slot,path)
-        | "view" -> View_at (slot,path)
-        | _ -> unsupported "invalid linear term" in
-      List.map (function Array [x;c] -> (term x, integer c) | _ -> fail "invalid linear term") (list (field "form" b)),
-      integer (field "bound" b) in
     (match keys f with
-     | ["le"] -> let form,d = parts "le" in Linear_le (form,d)
-     | ["ne"] -> let form,d = parts "ne" in Linear_ne (form,d)
+     | ["le"] -> let form,d = linear_parts linear_term f "le" in Linear_le (form,d)
+     | ["ne"] -> let form,d = linear_parts linear_term f "ne" in Linear_ne (form,d)
      | _ -> unsupported "invalid linear fact")
   else unsupported "unknown index fact"
+(* A linear term, `{"kind", "slot", "path"}` (Lean's `HeapKnowledge.Term`). *)
+and linear_term t =
+  if keys t <> ["kind";"path";"slot"] then unsupported "invalid linear term";
+  let slot = natural (field "slot" t) and path = List.map str (list (field "path" t)) in
+  match text "kind" t with
+  | "value" -> Value_at (slot,path)
+  | "length" -> Length_at (slot,path)
+  | "view" -> View_at (slot,path)
+  | _ -> unsupported "invalid linear term"
+(* The form and bound of a linear fact's `le` or `ne` part, its variables read by `var`. *)
+and linear_parts : 'v. (Json.t -> 'v) -> Json.t -> string -> ('v * int) list * int = fun var f k ->
+  let b = field k f in
+  if keys b <> ["bound";"form"] then unsupported "invalid linear fact";
+  List.map (function Array [x;c] -> (var x, integer c) | _ -> fail "invalid linear term") (list (field "form" b)),
+  integer (field "bound" b)
 let effect_of j = match j with
   | Object fields when List.sort String.compare (List.map fst fields) =
       ["elements";"ensures";"footprint";"fresh";"freshObject";"onThrow";"pre";"promise";"receiverGrows";
@@ -826,6 +845,9 @@ let stated_closures : (Json.t, footprint * bool) Hashtbl.t = Hashtbl.create 16
    member in one node where its actuals are plain
    (`Type_queries.dispatches_call`). *)
 let statement_calls : (Json.t, unit) Hashtbl.t = Hashtbl.create 16
+(* The invariant a loop states (PROGRAM-TYPING.md, "Loop invariants"), by
+   the loop's position: the bindings its positions name, and its index facts. *)
+let loop_invariants : (Json.t, string list * index_fact list) Hashtbl.t = Hashtbl.create 16
 (* A definition's statement as the Fragment writes it, or none. *)
 let stated_of j = match field "stated" j with
   | Null -> None
@@ -1321,7 +1343,12 @@ and stmt binders j =
     let e = expr binders (field "e" j) in
     (match e.node with Invoke _ -> Hashtbl.replace statement_calls e.pos () | _ -> ());
     Effect e
-  | "while" -> While (expr binders (field "cond" j),List.map (stmt binders) (items "body" j),
+  | "while" ->
+    (match field "invariant" j with
+     | Null -> ()
+     | i -> Hashtbl.replace loop_invariants (field "pos" j)
+         (List.map str (list (field "names" i)), List.map index_fact_of (list (field "facts" i))));
+    While (expr binders (field "cond" j),List.map (stmt binders) (items "body" j),
       List.map (stmt binders) (items "update" j))
   | "block" -> Block ((match field "label" j with Null -> None | l -> Some (Json.str l)),List.map (stmt binders) (items "body" j))
   | "forOf" -> ForOf (text "name" j,field "namePos" j,text "iterate" j,expr binders (field "iterable" j),

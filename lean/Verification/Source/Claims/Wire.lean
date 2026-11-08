@@ -143,12 +143,41 @@ structure Fact where
   terms : List FactTerm
   bound : Int
   deriving ToJson, FromJson
+/-- A term a proposed quantified fact names: what the binding `name` holds,
+its named data fields `path` read from it in turn, read as `term` says. -/
+structure TermRef where
+  name : String
+  path : List String
+  term : HeapKnowledge.Term.Kind
+  deriving ToJson, FromJson
+/-- A variable of a quantified fact's body: `"index"`, `"elem"`, or
+`{"term": TermRef}` (PROGRAM-TYPING.md, "Quantified clauses"). -/
+inductive BodyVariable where
+  | index
+  | elem
+  | term (ref : TermRef)
+  deriving ToJson, FromJson
+/-- A fact of a quantified fact's body: the sum of the terms is at most `bound`. -/
+structure BodyFact where
+  terms : List (BodyVariable × Int)
+  bound : Int
+  deriving ToJson, FromJson
+/-- A quantified fact the producer proposes at a statement entry: for every
+index below `stop` of the array the path `path` reads from what the binding
+`name` holds, each body fact holds. -/
+structure Quantified where
+  name : String
+  path : List String
+  stop : TermRef
+  body : List BodyFact
+  deriving ToJson, FromJson
 structure Entry (ι : Type) where
   point : String
   start : Nat
   bindings : List (Binding ι)
   bounds : List Bound
   facts : List Fact
+  quantified : List Quantified
   deriving ToJson, FromJson
 /-- The type arguments one call supplies for a scheme's binders. It is the
 producer's proposed elimination, re-checked here; it is never itself evidence. -/
@@ -271,6 +300,12 @@ private def pointData (entries : List (Entry ι)) (expressions : List (Expressio
     entryFacts := entries.map (fun e => (e.start,e.facts.map fun f =>
       (f.guards.map fun g => (g.name, g.path, g.tag),
         f.terms.map fun t => (t.name, t.path, t.term, t.coefficient), f.bound)))
+    entryEvery := entries.map (fun e => (e.start,e.quantified.map fun q =>
+      ((q.name, q.path), (q.stop.name, q.stop.path, q.stop.term), q.body.map fun b =>
+        (b.terms.map fun (v, c) => ((match v with
+          | .index => .index
+          | .elem => .elem
+          | .term r => .term r.name r.path r.term : SourceClaims.BodyRef), c), b.bound))))
     -- An expression's assertion is of one field each (`validCurrent`).
     exprCurrent := expressions.filterMap (fun e => e.current.map fun fs =>
       (e.pos, fs.filterMap fun (p, A) => match p with | [k] => some (k, A) | _ => none)) }
@@ -289,6 +324,7 @@ def Function.normalized (f : Function ι) : SourceClaims.Function ι :=
     ret := f.result.ground, envs := sites.envs, exprs := sites.exprs
     entryCurrent := sites.entryCurrent, exprCurrent := sites.exprCurrent, entryBounds := sites.entryBounds
     entryFacts := sites.entryFacts
+    entryEvery := sites.entryEvery
     points := pointTable f.entries f.expressions, contracts := storageContracts f.contracts
     footprint := f.footprint
     onThrow := f.onThrow

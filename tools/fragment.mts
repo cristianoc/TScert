@@ -249,6 +249,11 @@ export type Expr =
      lambda's body is one. */
   | { k: "blockBody"; pos: Span; body: Stmt[] };
 
+/** A loop invariant (`@invariant C` before a loop; PROGRAM-TYPING.md, "Loop
+ * invariants"): the clause's index facts at positions naming the bindings
+ * `names` holds, in scope at the loop's head, where every entry to the head
+ * establishes them. */
+export type LoopInvariant = { names: string[]; facts: IndexFact[] };
 export type Stmt =
   | { k: "effect"; pos: Span; e: Expr }
   | { k: "return"; pos: Span; e: Expr }
@@ -259,7 +264,7 @@ export type Stmt =
   /* `while (cond) body`, and the loop of `for (…; cond; update) body`: the
      head tests `cond`; the end of `body` and every `continue` targeting the
      loop run `update` and return to the head. A `while` has no update. */
-  | { k: "while"; pos: Span; cond: Expr; body: Stmt[]; update: Stmt[] }
+  | { k: "while"; pos: Span; cond: Expr; body: Stmt[]; update: Stmt[]; invariant: LoopInvariant | null }
   /* `{ body }`: its statements in a lexical scope of their own, and no entry
      of their own (the first statement's is the block's). A labeled block is
      where a `break` of its label goes; a lowered `switch` is made of them. */
@@ -398,11 +403,11 @@ export interface FunctionAst {
   stated: StatedEffect | null;
   /** The written precondition, its `@requires` clauses elaborated to index
    * facts at the call's positions: 0 the receiver, i + 1 the i-th actual
-   * (`bound-annotations.mts`; PROGRAM-TYPING.md, "Written preconditions"). */
+   * (`bound-annotations.mts`; PROGRAM-TYPING.md, "Preconditions"). */
   requires: IndexFact[];
   /** The facts it states of its result, index facts at position 0: the
    * invariants of the record types its result's type names
-   * (`bound-annotations.mts`; PROGRAM-TYPING.md, "Record invariants"). */
+   * (`bound-annotations.mts`; PROGRAM-TYPING.md, "Type invariants"). */
   ensures: IndexFact[];
   completion: Completion;
   body: Stmt[];

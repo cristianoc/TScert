@@ -74,7 +74,7 @@ Each function object has these fields:
 | `contracts` | Mutable declaration contracts: `{pos,name,type}` |
 | `footprint` | The [closed footprint](FOOTPRINTS.md#changes-and-footprints) proposed for the declaration's signature: `{"value":v,"store":s}` |
 | `onThrow` | Whether the footprint is proposed on a throw too, which the unit's graph must then establish as well: `true` or `false` |
-| `entries` | Entry claims: `{point,start,bindings,bounds,facts}` |
+| `entries` | Entry claims: `{point,start,bindings,bounds,facts,quantified}` |
 | `expressions` | Expression claims: `{point,pos,type,current}` |
 | `arrows` | Optional per-signature interior claims, described below |
 
@@ -84,6 +84,14 @@ is a list, possibly empty, of `{array,index}`, each naming two value bindings
 of the entry: the index binding's value is an array index at most the length
 of the array binding's store, which the entry's knowledge states and every
 edge into it checks ([writes at a checked index](PROGRAM-TYPING.md#writes-at-a-checked-index)).
+Entry `quantified` is a list, possibly empty, of `{name, path, stop, body}`:
+the array the fields `path` read from the value binding `name` give, the term
+`stop` (`{name, path, term}`) bounding its indices, and `body`, a list of
+`{terms, bound}`, each term a pair of a variable, `"index"`, `"elem"` or
+`{"term": {"ref": {name, path, term}}}`, and a safe-integer coefficient: for
+every index below the bound, each body fact holds of the index, the element
+at it and the terms, which the entry's knowledge states and every edge into
+it checks ([quantified clauses](PROGRAM-TYPING.md#quantified-clauses)).
 Entry `facts` is a list, possibly empty, of `{terms,bound}`, `terms` a list of
 `{name, path, term, coefficient}`, each naming a value binding of the entry,
 the named data fields `path` read from it in turn (empty for the binding's
@@ -152,7 +160,7 @@ executable input; its identity and point associations must match a Fragment:
     "params": [{"name":"flag","type":[1,2],"current":null}],
     "result": [1,2], "contracts": [], "footprint": {"value":"keep","store":"keep"},
     "entries": [{"point":"9:17:1","start":43,
-      "bindings":[{"name":"flag","type":[1,2],"current":null}], "bounds":[], "facts":[]}],
+      "bindings":[{"name":"flag","type":[1,2],"current":null}], "bounds":[], "facts":[], "quantified":[]}],
     "expressions": [{"point":"9:17:1","pos":[50,54],
       "type":[1,2],"current":null}]
   }]

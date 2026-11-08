@@ -201,7 +201,7 @@ private partial def sequence (owner : Span) (scope : Scope) (ss : List Stmt)
       let yes ← entered owner scope yes after r
       let no ← entered owner scope (no.getD []) after r
       emit pos scope r (.branch s yes no)
-    | .loop pos _ inner update =>
+    | .loop pos _ inner update _ =>
       let after ← sequence owner scope rest next r
       let head ← emit pos scope r (.jump 0)
       let again ← sequence owner scope update head r

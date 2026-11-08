@@ -1,4 +1,4 @@
-// A sealed handle's invariant (PROGRAM-TYPING.md, "Record invariants"),
+// A sealed handle's invariant (PROGRAM-TYPING.md, "Type invariants"),
 // pretext's `PreparedText`, across an import: `@fixture/handle` declares the
 // branded handle, its representation `PreparedLineBreakData` and its
 // invariant over the representation's fields (`@representation`), and `seal`

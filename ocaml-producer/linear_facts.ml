@@ -140,9 +140,50 @@ let gfact_parts n : gfact option =
 let is_gfact n = gfact_parts n <> None
 let gfacts env : gfact list = List.filter_map (fun (n,_) -> gfact_parts n) env
 
+(* A quantified fact (PROGRAM-TYPING.md, "Quantified clauses"; Lean's
+   `IndexFact.every`): for every index below the term `stop` of the array a
+   value binding's path reads, each body fact holds, its terms the index
+   (`%index`), the element at it (`%elem`) and terms over bindings. Held as
+   a pseudo-binding whose name, after `\003E`, encodes it; `fact_parts` and
+   `gfact_parts` read none of these. *)
+type efact = { arr : string * string list; stop : string; body : fact list }
+let index_var = "%index" and elem_var = "%elem"
+let efact_key (e : efact) =
+  "\003E" ^ fst e.arr ^ "\007" ^ String.concat "." (snd e.arr) ^ "\007" ^ e.stop ^ "\006" ^
+  String.concat "\008" (List.map (fun (t,b) -> fact_key t b) e.body)
+let efact_parts n : efact option =
+  if String.length n < 2 || String.sub n 0 2 <> "\003E" then None else
+  match String.index_opt n '\006' with
+  | None -> None
+  | Some i ->
+    let head = String.sub n 2 (i - 2) and rest = String.sub n (i + 1) (String.length n - i - 1) in
+    (match String.split_on_char '\007' head with
+     | [root; path; stop] ->
+       let body = if rest = "" then [] else List.map fact_parts (String.split_on_char '\008' rest) in
+       if List.exists Option.is_none body then None else
+       Some { arr = (root, if path = "" then [] else String.split_on_char '.' path); stop;
+              body = List.filter_map Fun.id body }
+     | _ -> None)
+let is_efact n = efact_parts n <> None
+let efacts env : efact list = List.filter_map (fun (n,_) -> efact_parts n) env
+(* The bindings a quantified fact names: its array's root, its bound's and
+   its body terms'. *)
+let ebindings (e : efact) =
+  fst e.arr :: term_binding e.stop ::
+    List.concat_map (fun ((t,_) : fact) -> List.filter_map (fun (n,_) ->
+      if n = index_var || n = elem_var then None else Some (term_binding n)) t) e.body
+(* The quantified facts holding where the statement being analysed starts,
+   and the element reads of it they instantiate, each by the expression's
+   position and the name of its value (`with_reads`). *)
+let current_efacts : efact list ref = ref []
+let element_reads : (Json.t * string) list ref = ref []
+let eadd env (es : efact list) =
+  List.filter (fun (n,_) -> not (is_efact n)) env @
+    List.map (fun e -> efact_key e, Value Semantic.top) (List.sort_uniq compare es)
+
 let add env (fs : fact list) =
   let fs = tighten fs in
-  List.filter (fun (n,_) -> not (is_fact n) || is_gfact n) env @ List.map (fun (t,b) -> fact_key t b, Value Semantic.top) fs
+  List.filter (fun (n,_) -> not (is_fact n) || is_gfact n || is_efact n) env @ List.map (fun (t,b) -> fact_key t b, Value Semantic.top) fs
 let gadd env (gs : gfact list) =
   List.filter (fun (n,_) -> not (is_gfact n)) env @
     List.map (fun g -> gfact_key g, Value Semantic.top) (List.sort_uniq compare gs)
@@ -295,6 +336,13 @@ let rec linear ?(array = fun _ _ -> false) env fs (e : expr) : ((string * int) l
     (match path_of env o with Some (b,path) -> Some ([length_term ~path b,1],0) | None -> None)
   | Read (_,Semantic.Name _) when (match path_of env e with Some (b,p) -> p <> [] && is_int fs (path_term b p) | None -> false) ->
     (match path_of env e with Some (b,p) -> Some ([path_term b p,1],0) | None -> None)
+  (* An element read a quantified fact instantiates (`with_reads`), its
+     value named, read through a non-null assertion. *)
+  | Call ({node=Id "%ElementAt%";_},None,[_;_],[],_) when List.mem_assoc e.pos !element_reads ->
+    Some ([List.assoc e.pos !element_reads,1],0)
+  | Cast ("nonNull",_,({node=Call ({node=Id "%ElementAt%";_},None,[_;_],[],_);_} as a))
+    when List.mem_assoc a.pos !element_reads ->
+    Some ([List.assoc a.pos !element_reads,1],0)
   (* `b.length` of a typed array, `%ByteLength%(b)`, whose result facts
      state it the view's element count. *)
   | Call ({node=Id "%ByteLength%";_},None,[o],[],_) when path_of env o <> None ->
@@ -1112,3 +1160,124 @@ let gstatement ?(bounds=[]) env (fs : fact list) (gs : gfact list) (s : stmt) : 
      | None -> gs)
   | _ -> gs
 
+
+(* Element reads of quantified facts (PROGRAM-TYPING.md, "Quantified
+   clauses"; Lean's `HeapKnowledge.instantiateEvery`): a read `xs[k]` of an
+   array a quantified fact holding where the statement starts names, at an
+   index the facts state `0 ≤ k < stop`, gives a value of which each body
+   fact holds, the index read as `k` and the element as the value. Each such
+   read's value is named (`element_reads`) while an expression is analysed,
+   its body facts added, and the name eliminated after, as Lean drops the
+   read's slot. *)
+let instantiate (e : efact) ((kt,kc) : (string * int) list * int) (name : string) : fact list =
+  let named = List.exists (fun ((t,_) : fact) -> List.mem_assoc elem_var t) e.body in
+  (if named then [int_fact name] else []) @
+  List.map (fun ((t,d) : fact) ->
+    let a = Option.value ~default:0 (List.assoc_opt index_var t) in
+    let t = List.concat_map (fun (n,c) ->
+      if n = index_var then scale c kt else if n = elem_var then [name,c] else [n,c]) t in
+    norm t, d - a * kc) e.body
+
+let element_facts ~array env fs (e : expr) : fact list * (Json.t * string) list =
+  let found = ref [] and extra = ref [] in
+  let rec go (e : expr) =
+    List.iter go (Source.children e);
+    match e.node with
+    | Call ({node=Id "%ElementAt%";_},None,[xs;k],[],_) when not (List.mem_assoc e.pos !found) ->
+      (match path_of env xs, linear ~array env fs k with
+       | Some (root,path), Some (kt,kc) ->
+         let ranged = fs @ term_ranges ((kt,0) :: fs) in
+         (match List.filter (fun (ef : efact) -> ef.arr = (root,path) &&
+             entails (ranged @ term_ranges [[ef.stop,1],0]) (scale (-1) kt, kc) &&
+             entails (ranged @ term_ranges [[ef.stop,1],0]) (norm (kt @ [ef.stop,-1]), -1 - kc)) !current_efacts with
+          | [] -> ()
+          | efs ->
+            let name = "%elem" ^ string_of_int (List.length !found) in
+            found := (e.pos,name) :: !found;
+            extra := !extra @ List.concat_map (fun ef -> instantiate ef (kt,kc) name) efs)
+       | _ -> ())
+    | _ -> () in
+  go e;
+  !extra, !found
+
+(* `f` with the element reads of `e` named and their facts added, its result
+   with the names eliminated by `clean`. *)
+let with_reads ~array env fs (e : expr) (f : fact list -> 'a) (clean : string list -> 'a -> 'a) : 'a =
+  let extra, found = element_facts ~array env fs e in
+  if found = [] then f fs else begin
+    let saved = !element_reads in
+    element_reads := found @ saved;
+    Fun.protect ~finally:(fun () -> element_reads := saved) (fun () ->
+      clean (List.map snd found) (f (fs @ extra)))
+  end
+let forget_all names fs = List.fold_left (fun fs x -> forget x fs) fs names
+
+let test ~array env fs (cond : expr) =
+  with_reads ~array env fs cond (fun fs' -> fs', test ~array env fs' cond)
+    (fun names (fs', ((t,bt),(f,bf))) ->
+      let answer a = List.filter (fun x -> not (List.mem x fs)) (forget_all names (fs' @ a)) in
+      fs', ((answer t, List.filter (fun (_,i,_) -> not (List.mem i names)) bt),
+            (answer f, List.filter (fun (_,i,_) -> not (List.mem i names)) bf)))
+  |> snd
+let declaration ~array env fs name (init : expr) =
+  with_reads ~array env fs init (fun fs -> declaration ~array env fs name init) forget_all
+let statement ~array ?(bounds=[]) env fs (s : stmt) =
+  match s.statement with
+  | Effect e -> with_reads ~array env fs e (fun fs -> statement ~array ~bounds env fs s) forget_all
+  | _ -> statement ~array ~bounds env fs s
+
+(* The quantified facts a step keeps: where it writes no heap, those naming
+   no binding it assigns (Lean keeps an atom across a step that keeps the
+   heap); none otherwise, as Lean's `IndexFact.keptBy` keeps none. *)
+(* A quantified fact restated where a binding `name` is declared at the read
+of the path `(root, path)` (Lean's `readEvery`): its array, its bound and its
+body terms through the path, of the binding. *)
+let erestate_read name (root,path) (e : efact) : efact option =
+  let rec prefix p q = match p,q with
+    | [],rest -> Some rest
+    | f :: p,g :: q when f = g -> prefix p q
+    | _ -> None in
+  let rename t = if t = index_var || t = elem_var then t else
+    let b,p,kind = term_parts t in
+    if b <> root then t else match prefix path p with Some rest -> make_term ~path:rest kind name | None -> t in
+  let arr = if fst e.arr = root then (match prefix path (snd e.arr) with Some rest -> (name,rest) | None -> e.arr) else e.arr in
+  let e' = { arr; stop = rename e.stop; body = List.map (fun ((t,d) : fact) -> List.map (fun (n,c) -> rename n,c) t, d) e.body } in
+  if e' = e then None else Some e'
+
+let estatement env (es : efact list) (s : stmt) : efact list =
+  if not (statement_heap_free env s) then [] else
+  let assigned = names_assigned s env in
+  let es = List.filter (fun e -> not (List.exists (fun b -> List.mem b assigned) (ebindings e))) es in
+  let reads = match destructure_reads env s with
+    | Some ((root,path),fields) -> List.map (fun (f,n) -> n,(root,path @ [f])) fields
+    | None -> (match s.statement with
+      | Declare (_,bindings) -> List.filter_map (fun (n,_,init) -> match path_of env init with
+          | Some (root,(_ :: _ as path)) when root <> n -> Some (n,(root,path))
+          | _ -> None) bindings
+      | _ -> []) in
+  es @ List.concat_map (fun (n,rp) -> List.filter_map (erestate_read n rp) es) reads
+
+(* A precondition's quantified facts over bindings, `name p` the binding the
+   position `p` holds; a fact naming a position no binding holds is left out. *)
+let of_every_fact (name : int -> string option) (fact : Semantic.index_fact) : efact option =
+  let term (t : Semantic.term) = match t with
+    | Semantic.Value_at (x,path) -> Option.map (fun n -> path_term n path) (name x)
+    | Semantic.Length_at (x,path) -> Option.map (fun n -> length_term ~path n) (name x)
+    | Semantic.View_at (x,path) -> Option.map (fun n -> view_term ~path n) (name x) in
+  match fact with
+  | Semantic.Every (x,path,stop,body) ->
+    let var = function
+      | Semantic.Body_index -> Some index_var
+      | Semantic.Body_elem -> Some elem_var
+      | Semantic.Body_term t -> term t in
+    let fact = function
+      | Semantic.Body_le (form,d) ->
+        let terms = List.map (fun (v,c) -> Option.map (fun n -> n,c) (var v)) form in
+        if List.for_all Option.is_some terms then Some (List.filter_map Fun.id terms, d) else None
+      | Semantic.Body_ne _ -> None in
+    let body = List.map fact body in
+    (match name x, term stop with
+     | Some root, Some stop when List.for_all Option.is_some body ->
+       Some { arr = (root,path); stop; body = List.filter_map Fun.id body }
+     | _ -> None)
+  | _ -> None

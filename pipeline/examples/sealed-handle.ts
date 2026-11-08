@@ -1,4 +1,4 @@
-// A sealed handle (PROGRAM-TYPING.md, "Record invariants"), pretext's
+// A sealed handle (PROGRAM-TYPING.md, "Type invariants"), pretext's
 // `PreparedText`: a branded type with no field of its own, which means its
 // representation (`@representation PreparedLineBreakData`), with an invariant
 // over the representation's fields. The builder casts a literal into the

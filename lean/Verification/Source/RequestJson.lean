@@ -276,8 +276,8 @@ structure Request (σ ι : Type) where
   know it, and the safety theorems assume it of the environment. -/
   entrySeparation : HeapSeparation.Separation := {}
   /-- The index facts the request assumes of its inputs: the written
-  precondition of the function it checks (PROGRAM-TYPING.md, "Written
-  preconditions"). The entry may know them, and the safety theorems assume
+  precondition of the function it checks (PROGRAM-TYPING.md, 
+  "Preconditions"). The entry may know them, and the safety theorems assume
   them of the environment. -/
   entryIndices : List HeapKnowledge.IndexAtom := []
   deriving ToJson, FromJson

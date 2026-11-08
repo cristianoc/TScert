@@ -7,7 +7,7 @@
  * states no effect (SOURCE-ELABORATION.md, calls through a location). */
 import * as ts from "typescript/unstable/ast";
 import type { Expression, FunctionDeclaration, Node, Statement } from "typescript/unstable/ast";
-import type { BindingAst, Expr, FunctionAst, FunctionParamAst, Guard, PatternAst, PatternElemAst, PatternPropAst, Stmt } from "./fragment.mts";
+import type { BindingAst, Expr, FunctionAst, FunctionParamAst, Guard, LoopInvariant, PatternAst, PatternElemAst, PatternPropAst, Stmt } from "./fragment.mts";
 import type { Span } from "./span.mts";
 import type { DeclarationIdentity, GuardTag, IndexFact, StatedEffect, TypeTerm } from "./declaration-types.mts";
 import { assertionFailureName, asyncCompleteName, asyncReturnName, forInName, iterateForInName, iterateName } from "./intrinsics.mts";
@@ -15,7 +15,8 @@ import { GENERATOR, UNCLOSABLE, booleanForm, booleanReturn, bindingScope, firstO
 import type { Gate } from "./fragment-parse.mts";
 import { guardResult } from "./fragment-guards.mts";
 import { literalDefaultName } from "./type-term.mts";
-import { elaborateRequires, indexFactPositions, parameterKept, plainParameter, requiresTags, type ClauseParameter } from "./bound-annotations.mts";
+import { clauseRoots, elaborateRequires, indexFactPositions, loopBindings, loopInvariantTags, parameterKept, plainParameter,
+  requiresTags, type ClauseParameter } from "./bound-annotations.mts";
 import { namesView } from "./library-types.mts";
 import { aliasMeaning, definitionKey, recordShape } from "./named-record.mts";
 import { isImport, isTypeAlias } from "./syntax.mts";
@@ -139,7 +140,7 @@ export function protocolPattern(this: Gate, pattern: ts.ArrayBindingPattern, ini
   });
   if (restName) {
     const eLoop = site.entry();
-    inner.push({ k: "while", pos: [eLoop, eLoop + 1], update: [],
+    inner.push({ k: "while", pos: [eLoop, eLoop + 1], update: [], invariant: null,
       cond: { k: "lit", pos: site.span(), lit: { a: "booleanlit", v: "true" } },
       body: gate.collectStep(start.next, `%resultRest@${tag}`, restCell, leave, site) });
   } else inner.push(...this.closeStatements(start.iteratorAt, tag, site, method));
@@ -231,7 +232,7 @@ export function collect(this: Gate, operand: Expression): Within<{ value: "any";
     { k: "const", pos: [e0, e0 + 1], bindings: [
       { early: false, name: items, namePos: itemsAt, annot: null, init: { k: "arrayLit", pos: itemsAt, elems: [] } },
       ...start.bindings] },
-    { k: "while", pos: [eLoop, eLoop + 1], update: [],
+    { k: "while", pos: [eLoop, eLoop + 1], update: [], invariant: null,
       cond: { k: "lit", pos: site.span(), lit: { a: "booleanlit", v: "true" } },
       body: gate.collectStep(start.next, `%result@${tag}`, items, leave, site) });
   return { k: "id", pos: site.span(), name: items };
@@ -1002,6 +1003,7 @@ export function forStmt(this: Gate, node: ts.ForStatement): Within<{ value: "any
     update: node.incrementor
       ? [{ k: "effect", pos: gate.span(node.incrementor), e: gate.expr(node.incrementor) }]
       : [],
+    invariant: loopInvariant(gate, node),
   };
   return initial ? { k: "block", pos: gate.span(node), label: null, body: [initial, loop] } : loop;
 }
@@ -1081,7 +1083,8 @@ export function perIterationFor(this: Gate, node: ts.ForStatement): Within<{ val
       else_: [{ k: "break", pos: entry(), label: null }] });
   iteration.push({ k: "block", pos: entry(), label: iterationLabel(node, gate.file), body: gate.block(node.statement) });
   for (const n of names) iteration.push(assign(carrier(n), id(n)));
-  const loop: Stmt = { k: "while", pos: loopPos, cond: lit("true"), body: iteration, update: [] };
+  const loop: Stmt = { k: "while", pos: loopPos, cond: lit("true"), body: iteration, update: [],
+    invariant: loopInvariant(gate, node) };
   return { k: "block", pos: gate.span(node), label: null, body: [head, carriers, loop] };
 }
 
@@ -1236,7 +1239,7 @@ export function protocolForOf(this: Gate, node: ts.ForOfStatement, list: ts.Vari
       { early: false, name: iterator, namePos: [s, s + "for".length], annot: null, init: getIterator },
       { early: false, name: next, namePos: [p, p + 1], annot: null, init: nextBound }] },
     { k: "while", pos: [p, end], cond: { k: "lit", pos: [s, p + 1], lit: { a: "booleanlit", v: "true" } },
-      body: step, update: [] },
+      body: step, update: [], invariant: null },
   ] };
 }
 
@@ -1877,6 +1880,7 @@ export function controlStmt(this: Gate, node: Statement): Within<{ value: "any";
       cond: gate.expr(node.expression),
       body: gate.loopBody(node),
       update: [],
+      invariant: loopInvariant(gate, node),
     };
 
   // `do s while (c)` is `while (true) { ℓ: { s } if (c) {} else break; }`:
@@ -1898,6 +1902,7 @@ export function controlStmt(this: Gate, node: Statement): Within<{ value: "any";
           else_: [{ k: "break", pos: [keyword + 1, keyword + 2], label: null }] },
       ],
       update: [],
+      invariant: loopInvariant(gate, node),
     };
   }
 
@@ -2168,7 +2173,7 @@ export function functionDecl(this: Gate, node: FunctionDeclaration, signature: F
       else requires = elaborated;
     }
     // The record invariants its parameters' and result's types name
-    // (`@invariant`; PROGRAM-TYPING.md, "Record invariants"), of a function
+    // (`@invariant`; PROGRAM-TYPING.md, "Type invariants"), of a function
     // declaration of the module read at its own signature: each parameter's,
     // `this` at its call position, a conjunct of the precondition, of each
     // parameter that is a plain required name, where it is not async: its
@@ -2233,6 +2238,27 @@ export function writtenPrecondition(gate: Gate, clauses: readonly string[],
   return elaborated.facts;
 }
 
+/** A loop's invariant (`@invariant` in the JSDoc before it; PROGRAM-TYPING.md,
+ * "Loop invariants"): its clauses elaborated to index facts at positions, the
+ * i-th the i-th name its clauses' paths start at, each a binding in scope at
+ * the loop's head, its paths read through the type TypeScript gives the
+ * binding's declaration (`loopBindings`). Null where the loop states none. */
+function loopInvariant(gate: Gate, loop: ts.Statement): LoopInvariant | null {
+  const clauses = loopInvariantTags(gate.file, loop);
+  if (clauses.length === 0) return null;
+  const names = [...new Set(clauses.flatMap(clauseRoots))];
+  const bindings = loopBindings(loop, names);
+  const params = names.map((name, i): ClauseParameter => {
+    const id = bindings.get(name);
+    if (id === undefined) gate.fail(loop, `a loop invariant (\`@invariant\`) names ${name}, which no binding in scope at the loop declares`);
+    const answered = gate.staticTypes.get(gate.span(id).join(":"));
+    return clauseParameter(gate, name, i, answered?.ok ? answered.value : undefined);
+  });
+  const elaborated = elaborateRequires(clauses, params);
+  if ("refused" in elaborated) gate.fail(loop, `a loop invariant (\`@invariant\`): ${elaborated.refused}`);
+  return { names, facts: elaborated.facts };
+}
+
 /** A name a clause may use for a call position, each path's kind read
  * through the declared type (`fieldType`), each prefix's type without the
  * tags a guard excludes of it (`withoutTags`), an optional field read where
@@ -2265,7 +2291,7 @@ function withoutTags(t: TypeTerm, tags: readonly GuardTag[]): TypeTerm {
 }
 
 /** A function declaration's record invariants (`@invariant`;
- * PROGRAM-TYPING.md, "Record invariants") elaborated to index facts: those
+ * PROGRAM-TYPING.md, "Type invariants") elaborated to index facts: those
  * the type of its parameter `i` names (`invariantsNamed`), `this` that
  * parameter's call position, conjuncts of its precondition, and, where the
  * parameter is `kept`, `this` the position after it (`Effect.ensures`: `0`
@@ -2312,7 +2338,7 @@ export function recordInvariants(gate: Gate, params: readonly { type: TypeTerm |
  * representation its `@representation` names. */
 type NamedInvariant = { declaration: DeclarationIdentity; clauses: readonly string[]; through: TypeTerm };
 
-/** The record invariants a type names (PROGRAM-TYPING.md, "Record
+/** The record invariants a type names (PROGRAM-TYPING.md, "Type
  * invariants"): a reference without type arguments to a declaration stating
  * one (`Gate.invariants`), with those its definition's equation names in
  * turn; every part's of an intersection; those every arm of a union names.

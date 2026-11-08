@@ -720,13 +720,18 @@ export function intrinsics(promise: (argument: TypeTerm) => TypeTerm, needed: Re
     // Two signatures: any read, an element or `undefined`; and a read at an
     // index below the length of the array's store, the element at that
     // index, which a readable store holds at its element type, a hole only
-    // where the element type admits `undefined` (`Types.StorePresence`).
+    // where the element type admits `undefined` (`Types.StorePresence`). The
+    // second states its result the value the store holds at the index, the
+    // present element's or `undefined` at a hole (`IndexFact.element`, at the
+    // return's positions: 0 the result, 2 the array, 3 the index): an
+    // ordinary array's element read runs no code (DESIGN.md, "Trust surface").
     [elementAtName]: () => {
       const params = [{ k: "array", presence: "readable", readonly: true, element: binder, span } as const, atom("number")];
       return { typeParams: [{ name: "T", bound: null, resolution: null }],
         type: { k: "intersection", span, parts: [
           { ...fn(params, either(binder, atom("undefined"))), effect: emptyEffect },
-          { ...fn(params, binder), effect: footprintEffect(emptyFootprint, { pre: [{ bound: { array: 1, index: 2, strict: true } }] }) },
+          { ...fn(params, binder), effect: footprintEffect(emptyFootprint, { pre: [{ bound: { array: 1, index: 2, strict: true } }],
+            ensures: [{ element: { value: 0, array: 2, index: 3 } }] }) },
         ] } };
     },
   };

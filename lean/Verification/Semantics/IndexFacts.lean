@@ -394,6 +394,89 @@ theorem termValue_extend {ρ : Env} {h : Heap} (vs : List Val) {t : Term} {n : I
   obtain ⟨v, hv, hk⟩ := ht
   exact ⟨v, readPath_extend vs hv, kindValue_extend vs hk⟩
 
+/-- A fact holds at a partial valuation: each of its variables denotes an
+integer, and the fact holds of those integers. -/
+def FactAt {V : Type} (val : V → Option Int) (F : Linear.Fact V) : Prop :=
+  (∀ x ∈ F.vars, (val x).isSome) ∧ F.Holds (fun x => (val x).getD 0)
+
+/-- A fact with its variables renamed, each to one denoting the same, holds
+where the fact does. -/
+theorem factAt_mapVars {V W : Type} {f : V → Option W} {val : V → Option Int} {val' : W → Option Int}
+    {F : Linear.Fact V} {F' : Linear.Fact W} (hm : F.mapVars f = some F')
+    (hf : ∀ x ∈ F.vars, ∀ y, f x = some y → val' y = val x) : FactAt val' F' ↔ FactAt val F := by
+  have hv : ∀ x ∈ F.vars, ∀ y, f x = some y → (val' y).getD 0 = (val x).getD 0 := by
+    intro x hx y hy; rw [hf x hx y hy]
+  unfold FactAt
+  rw [Linear.Fact.holds_mapVars hm hv]
+  constructor
+  · rintro ⟨hi, hh⟩
+    refine ⟨fun x hx => ?_, hh⟩
+    obtain ⟨y, hy, hfy⟩ := Linear.Fact.mapVars_vars_fwd hm x hx
+    rw [← hf x hx y hfy]; exact hi y hy
+  · rintro ⟨hi, hh⟩
+    refine ⟨fun y hy => ?_, hh⟩
+    obtain ⟨x, hx, hfx⟩ := Linear.Fact.mapVars_vars hm y hy
+    rw [hf x hx y hfx]; exact hi x hx
+
+/-- A fact holds at a valuation agreeing with another on its variables where
+it holds at that one. -/
+theorem factAt_congr {V : Type} {val val' : V → Option Int} {F : Linear.Fact V}
+    (he : ∀ x ∈ F.vars, val' x = val x) (hF : FactAt val F) : FactAt val' F := by
+  refine ⟨fun x hx => by rw [he x hx]; exact hF.1 x hx, ?_⟩
+  exact (Linear.Fact.holds_congr (v' := fun x => (val' x).getD 0) (fun x hx => by simp only [he x hx])).mp hF.2
+
+/-- A variable of the body of a quantified clause (PROGRAM-TYPING.md,
+"Quantified clauses"): the bound index, the element at it, or a term. -/
+inductive Bound where
+  | index
+  | elem
+  | free (t : Term)
+  deriving DecidableEq, Repr, Hashable
+
+namespace Bound
+
+/-- The variable with a term's slot renamed, where the map names one. -/
+def mapM (f : Nat → Option Nat) : Bound → Option Bound
+  | .index => some .index
+  | .elem => some .elem
+  | .free t => (t.mapM f).map .free
+
+/-- The variable with a term's slot renamed by a total map. -/
+def mapTotal (f : Nat → Nat) : Bound → Bound
+  | .index => .index
+  | .elem => .elem
+  | .free t => .free (t.mapM' f)
+
+theorem mapM_total (f : Nat → Nat) : Bound.mapM (some ∘ f) = some ∘ mapTotal f := by
+  funext b; cases b <;> rfl
+
+/-- The term a variable denotes at an index `i` read of the slot `k` whose
+element is the slot `r`'s value. -/
+def inst (k r : Nat) : Bound → Term
+  | .index => .value k
+  | .elem => .value r
+  | .free t => t
+
+/-- The slots of the terms a variable names. -/
+def slots : Bound → List Nat
+  | .free t => [t.slot]
+  | _ => []
+
+end Bound
+
+/-- The safe integer the element at index `i` of the store elements `ls` is,
+where it is present and one. -/
+def elementInt (h : Heap) (ls : List (Option Nat)) (i : Nat) : Option Int :=
+  match ls[i]? with
+  | some (some l) => h[l]?.bind intValue
+  | _ => none
+
+/-- What a body variable denotes at the index `i` of the store elements `ls`. -/
+def boundValue (ρ : Env) (h : Heap) (ls : List (Option Nat)) (i : Nat) : Bound → Option Int
+  | .index => some (i : Int)
+  | .elem => elementInt h ls i
+  | .free t => termValue ρ h t
+
 /-- An index fact (DESIGN of the guarded write, PROGRAM-TYPING.md, "Writes at
 a checked index"): the slot `k` holds a number that is an array index
 (`index`); the slot `n` holds the length of the store the array in slot `x`
@@ -404,7 +487,14 @@ facts"), its terms (`Term`) rooted at slots. `index`, `int` and a linear fact
 of slots' values read no heap; the others read the locations their terms or
 the array's store field read. A guarded fact (`guarded`, PROGRAM-TYPING.md,
 "Guarded clauses") holds where the path `path` from the slot `slot` reads a
-value (`readGuard`) that is the tag's, or its body holds. -/
+value (`readGuard`) that is the tag's, or its body holds. An element fact
+(`element`, PROGRAM-TYPING.md, "Quantified clauses") states that the slot
+`value` holds what the store of the array in slot `array` holds at the index
+the slot `index` holds, below its length: the present element's value, or
+`undefined` at a hole. A quantified fact (`every`) states, of the array the
+path `path` reads from the slot `slot`, that for every index `i` with
+`0 ≤ i < stop` each fact of its body holds, its variables the index, the
+element at it (a present safe integer) and terms, each denoting an integer. -/
 inductive IndexFact where
   | index (slot : Nat)
   | length (array length : Nat)
@@ -412,6 +502,8 @@ inductive IndexFact where
   | int (slot : Nat)
   | linear (fact : Linear.Fact Term)
   | guarded (slot : Nat) (path : List String) (tag : GuardTag) (body : IndexFact)
+  | element (value array index : Nat)
+  | every (slot : Nat) (path : List String) (stop : Term) (body : List (Linear.Fact Bound))
   deriving DecidableEq, Repr, Hashable
 
 namespace IndexFact
@@ -424,6 +516,40 @@ def slots : IndexFact → List Nat
   | .int k => [k]
   | .linear F => F.vars.map Term.slot
   | .guarded s _ _ B => s :: B.slots
+  | .element v x k => [v, x, k]
+  | .every s _ stop body => s :: stop.slot :: body.flatMap fun F => F.vars.flatMap Bound.slots
+
+/-- A quantified fact's body with each term's slot renamed, where the map
+names every one. -/
+def mapBody (f : Nat → Option Nat) : List (Linear.Fact Bound) → Option (List (Linear.Fact Bound))
+  | [] => some []
+  | F :: t => do pure ((← F.mapVars (Bound.mapM f)) :: (← mapBody f t))
+
+theorem mapBody_pairs {f : Nat → Option Nat} :
+    ∀ {body body' : List (Linear.Fact Bound)}, mapBody f body = some body' →
+      (∀ F' ∈ body', ∃ F ∈ body, F.mapVars (Bound.mapM f) = some F') ∧
+      (∀ F ∈ body, ∃ F' ∈ body', F.mapVars (Bound.mapM f) = some F')
+  | [], body', h => by simp only [mapBody, Option.some.injEq] at h; subst h; simp
+  | F :: t, body', h => by
+    simp only [mapBody, Option.bind_eq_bind, Option.bind_eq_some_iff, Option.pure_def, Option.some.injEq] at h
+    obtain ⟨G, hG, t', ht, rfl⟩ := h
+    obtain ⟨h1, h2⟩ := mapBody_pairs ht
+    refine ⟨fun F' hF' => ?_, fun F0 hF0 => ?_⟩
+    · rcases List.mem_cons.mp hF' with rfl | hF'
+      · exact ⟨F, List.mem_cons_self .., hG⟩
+      · obtain ⟨F1, hF1, hm⟩ := h1 F' hF'; exact ⟨F1, List.mem_cons_of_mem _ hF1, hm⟩
+    · rcases List.mem_cons.mp hF0 with rfl | hF0
+      · exact ⟨G, List.mem_cons_self .., hG⟩
+      · obtain ⟨F1, hF1, hm⟩ := h2 F0 hF0; exact ⟨F1, List.mem_cons_of_mem _ hF1, hm⟩
+
+theorem mapBody_some (f : Nat → Nat) : ∀ body : List (Linear.Fact Bound), ∃ body', mapBody (some ∘ f) body = some body'
+  | [] => ⟨[], rfl⟩
+  | F :: t => by
+    obtain ⟨G, hG⟩ := Linear.Fact.mapVars_some (Bound.mapTotal f) F
+    obtain ⟨t', ht⟩ := mapBody_some f t
+    refine ⟨G :: t', ?_⟩
+    simp only [mapBody, Bound.mapM_total, hG, ht]
+    rfl
 
 /-- The fact with each slot renamed by a partial map, where it maps every slot. -/
 def mapM (f : Nat → Option Nat) : IndexFact → Option IndexFact
@@ -433,6 +559,9 @@ def mapM (f : Nat → Option Nat) : IndexFact → Option IndexFact
   | .int k => (f k).map .int
   | .linear F => (F.mapVars (Term.mapM f)).map .linear
   | .guarded s p t B => do pure (.guarded (← f s) p t (← B.mapM f))
+  | .element v x k => do pure (.element (← f v) (← f x) (← f k))
+  | .every s p stop body => do
+    pure (.every (← f s) p (← stop.mapM f) (← mapBody f body))
 
 /-- The fact with each slot renamed. -/
 def map (f : Nat → Nat) (F : IndexFact) : IndexFact := (F.mapM (some ∘ f)).getD F
@@ -446,6 +575,12 @@ def HoldsAt : IndexFact → Env → Heap → Prop
   | .int k, ρ, _ => (intValue (ρ k)).isSome
   | .linear F, ρ, h => (∀ t ∈ F.vars, (termValue ρ h t).isSome) ∧ F.Holds (termValuation ρ h)
   | .guarded s p t B, ρ, h => ∃ v, readGuard h (ρ s) p = some v ∧ (v = t.val ∨ B.HoldsAt ρ h)
+  | .element v x k, ρ, h => ∃ s ls b, ∃ i : Nat, Footprints.storeOf (ρ x) = some s ∧ h[s]? = some (.arr ls) ∧
+      ρ k = .num b ∧ SafeIntegers.SafeInt b (i : Int) ∧ i < ls.length ∧
+      (∀ l, ls[i]? = some (some l) → h[l]? = some (ρ v)) ∧ (ls[i]? = some none → ρ v = .undef)
+  | .every s p stop body, ρ, h => ∃ w st ls n, readPath h (ρ s) p = some w ∧ Footprints.storeOf w = some st ∧
+      h[st]? = some (.arr ls) ∧ termValue ρ h stop = some n ∧
+      ∀ i : Nat, (i : Int) < n → ∀ F ∈ body, FactAt (boundValue ρ h ls i) F
 
 theorem holdsAt_mapM {F F' : IndexFact} {f : Nat → Option Nat} {ρ ρ' : Env} {h : Heap}
     (hm : F.mapM f = some F') (hf : ∀ s ∈ F.slots, ∀ t, f s = some t → ρ' t = ρ s) :
@@ -456,6 +591,44 @@ theorem holdsAt_mapM {F F' : IndexFact} {f : Nat → Option Nat} {ρ ρ' : Env} 
     obtain ⟨s', hs, B', hB, rfl⟩ := hm
     have hB' := ih hB (fun x hx y hy => hf x (by simp [slots, hx]) y hy)
     simp only [HoldsAt, hf s (by simp [slots]) s' hs, hB']
+  | element v x k =>
+    simp only [mapM, Option.bind_eq_bind, Option.bind_eq_some_iff, Option.pure_def, Option.some.injEq] at hm
+    obtain ⟨v', hv, x', hx, k', hk, rfl⟩ := hm
+    simp only [HoldsAt, hf v (by simp [slots]) v' hv, hf x (by simp [slots]) x' hx, hf k (by simp [slots]) k' hk]
+  | every s p stop body =>
+    simp only [mapM, Option.bind_eq_bind, Option.bind_eq_some_iff, Option.pure_def, Option.some.injEq] at hm
+    obtain ⟨s', hs, stop', hstop, body', hbody, rfl⟩ := hm
+    have hs' := hf s (by simp [slots]) s' hs
+    have hst : termValue ρ' h stop' = termValue ρ h stop := by
+      rw [Term.mapM_eq_some hstop]
+      exact termValue_slot (hf stop.slot (by simp [slots]) stop'.slot (Term.mapM_slot hstop))
+    obtain ⟨hb1, hb2⟩ := mapBody_pairs hbody
+    have hval : ∀ (ls : List (Option Nat)) (i : Nat), ∀ F ∈ body, ∀ F', F.mapVars (Bound.mapM f) = some F' →
+        (FactAt (boundValue ρ' h ls i) F' ↔ FactAt (boundValue ρ h ls i) F) := by
+      intro ls i F hF F' hm
+      refine factAt_mapVars hm fun x hx y hy => ?_
+      cases x with
+      | index => cases hy; rfl
+      | elem => cases hy; rfl
+      | free t =>
+        simp only [Bound.mapM, Option.map_eq_some_iff] at hy
+        obtain ⟨t', ht', rfl⟩ := hy
+        have hsl := hf t.slot (by
+          simp only [slots, List.mem_cons, List.mem_flatMap]
+          exact .inr (.inr ⟨F, hF, .free t, hx, by simp [Bound.slots]⟩)) t'.slot (Term.mapM_slot ht')
+        simp only [boundValue]
+        rw [Term.mapM_eq_some ht']
+        exact termValue_slot hsl
+    simp only [HoldsAt, hs', hst]
+    constructor
+    · rintro ⟨w, st, ls, n, hw, hsto, hls, hn, hall⟩
+      refine ⟨w, st, ls, n, hw, hsto, hls, hn, fun i hi F hF => ?_⟩
+      obtain ⟨F', hF', hm⟩ := hb2 F hF
+      exact (hval ls i F hF F' hm).mp (hall i hi F' hF')
+    · rintro ⟨w, st, ls, n, hw, hsto, hls, hn, hall⟩
+      refine ⟨w, st, ls, n, hw, hsto, hls, hn, fun i hi F' hF' => ?_⟩
+      obtain ⟨F, hF, hm⟩ := hb1 F' hF'
+      exact (hval ls i F hF F' hm).mpr (hall i hi F hF)
   | index k =>
     simp only [mapM, Option.map_eq_some_iff] at hm
     obtain ⟨t, ht, rfl⟩ := hm
@@ -526,6 +699,10 @@ theorem mapM_total (f : Nat → Nat) : ∀ F : IndexFact, ∃ G, F.mapM (some �
   | .guarded s p t B => by
     obtain ⟨B', hB⟩ := mapM_total f B
     exact ⟨.guarded (f s) p t B', by simp [mapM, hB]⟩
+  | .element v x k => ⟨_, rfl⟩
+  | .every s p stop body => by
+    obtain ⟨body', hb⟩ := mapBody_some f body
+    exact ⟨.every (f s) p (Term.mapM' f stop) body', by simp [mapM, hb, Term.mapM]; rfl⟩
 
 /-- A fact reads its slots' values alone. -/
 theorem holdsAt_map {F : IndexFact} {f : Nat → Nat} {ρ ρ' : Env} {h : Heap}
@@ -541,6 +718,33 @@ theorem holdsAt_extend {F : IndexFact} {ρ : Env} {h : Heap} (vs : List Val) (hF
   | guarded s p t B ih =>
     obtain ⟨v, hv, hor⟩ := hF
     exact ⟨v, readGuard_extend vs hv, hor.imp id ih⟩
+  | element v x k =>
+    obtain ⟨s, ls, b, i, hs, hl, hk, hi, hlt, hp, hh⟩ := hF
+    have hl' : (h ++ vs)[s]? = some (.arr ls) := by
+      rw [List.getElem?_append_left (List.getElem?_eq_some_iff.mp hl).1]; exact hl
+    refine ⟨s, ls, b, i, hs, hl', hk, hi, hlt, fun l hli => ?_, hh⟩
+    have := hp l hli
+    rw [List.getElem?_append_left (List.getElem?_eq_some_iff.mp this).1]; exact this
+  | every s p stop body =>
+    obtain ⟨w, st, ls, n, hw, hsto, hls, hn, hall⟩ := hF
+    refine ⟨w, st, ls, n, readPath_extend vs hw, hsto,
+      by rw [List.getElem?_append_left (List.getElem?_eq_some_iff.mp hls).1]; exact hls,
+      termValue_extend vs hn, fun i hi F hF => ?_⟩
+    have hA := hall i hi F hF
+    refine factAt_congr (fun x hx => ?_) hA
+    obtain ⟨m, hm⟩ := Option.isSome_iff_exists.mp (hA.1 x hx)
+    rw [hm]
+    cases x with
+    | index => exact hm
+    | elem =>
+      simp only [boundValue, elementInt] at hm ⊢
+      split at hm
+      · rename_i l _
+        simp only [Option.bind_eq_some_iff] at hm ⊢
+        obtain ⟨u, hu, hi'⟩ := hm
+        exact ⟨u, by rw [List.getElem?_append_left (List.getElem?_eq_some_iff.mp hu).1]; exact hu, hi'⟩
+      · cases hm
+    | free t => exact termValue_extend vs hm
   | index k => exact hF
   | length x n =>
     obtain ⟨s, ls, hs, hl, hn⟩ := hF
@@ -567,6 +771,30 @@ theorem holdsAt_congr {F : IndexFact} {ρ ρ' : Env} {h : Heap} (hs : ∀ s ∈ 
   | guarded s p t B ih =>
     simp only [slots, List.mem_cons, forall_eq_or_imp] at hs
     simp only [HoldsAt, hs.1, ih hs.2]
+  | element v x k =>
+    simp only [slots, List.mem_cons, List.not_mem_nil, or_false, forall_eq_or_imp, forall_eq] at hs
+    simp only [HoldsAt, hs.1, hs.2.1, hs.2.2]
+  | every s p stop body =>
+    have h0 : ρ s = ρ' s := hs s (by simp [slots])
+    have hst : termValue ρ h stop = termValue ρ' h stop := by
+      simp only [termValue, hs stop.slot (by simp [slots])]
+    have hb : ∀ (ls : List (Option Nat)) (i : Nat), ∀ F ∈ body,
+        ∀ x ∈ F.vars, boundValue ρ' h ls i x = boundValue ρ h ls i x := by
+      intro ls i F hF x hx
+      cases x with
+      | index => rfl
+      | elem => rfl
+      | free t =>
+        simp only [boundValue, termValue, hs t.slot (by
+          simp only [slots, List.mem_cons, List.mem_flatMap]
+          exact .inr (.inr ⟨F, hF, _, hx, by simp [Bound.slots]⟩))]
+    simp only [HoldsAt, h0, hst]
+    constructor
+    · rintro ⟨w, st, ls, n, hw, hsto, hls, hn, hall⟩
+      exact ⟨w, st, ls, n, hw, hsto, hls, hn, fun i hi F hF => factAt_congr (hb ls i F hF) (hall i hi F hF)⟩
+    · rintro ⟨w, st, ls, n, hw, hsto, hls, hn, hall⟩
+      exact ⟨w, st, ls, n, hw, hsto, hls, hn, fun i hi F hF =>
+        factAt_congr (fun x hx => (hb ls i F hF x hx).symm) (hall i hi F hF)⟩
   | index k => simp only [slots, List.mem_singleton, forall_eq] at hs; simp only [HoldsAt, hs]
   | length x n =>
     simp only [slots, List.mem_cons, List.not_mem_nil, or_false, forall_eq_or_imp, forall_eq] at hs
@@ -988,6 +1216,7 @@ def keptBy (c : Changes) (first : Nat → String → Bool) : IndexFact → Bool
     | .le G _ => Term.formKeptBy c first G
     | .ne _ _ => false
   | .guarded s p _ B => guardKept first s p && B.keptBy c first
+  | .element .. | .every .. => false
 
 theorem holdsAt_kept {c : Changes} {first : Nat → String → Bool} {F : IndexFact} {ρ : Env} {h h' : Heap}
     (hc : c.Holds h h') (hf : FirstKept first ρ h h') (hk : F.keptBy c first = true) (hF : F.HoldsAt ρ h) :
@@ -1020,6 +1249,8 @@ theorem holdsAt_kept {c : Changes} {first : Nat → String → Bool} {F : IndexF
     simp only [keptBy, Bool.and_eq_true] at hk
     obtain ⟨v, hv, hor⟩ := hF
     exact ⟨v, readGuard_kept hf hk.1 hv, hor.imp id (ih hk.2)⟩
+  | element _ _ _ => simp [keptBy] at hk
+  | every _ _ _ _ => simp [keptBy] at hk
   | index k => exact hF
   | int k => exact hF
   | length x m =>
@@ -1131,6 +1362,8 @@ theorem holdsAt_keptWith {c : Changes} {first views : Nat → String → Bool} {
   | length _ _ => exact holdsAt_kept hc hf (by simpa [keptWith] using hk) hF
   | bound _ _ _ => exact holdsAt_kept hc hf (by simpa [keptWith] using hk) hF
   | guarded _ _ _ _ => exact holdsAt_kept hc hf (by simpa [keptWith] using hk) hF
+  | element _ _ _ => exact holdsAt_kept hc hf (by simpa [keptWith] using hk) hF
+  | every _ _ _ _ => exact holdsAt_kept hc hf (by simpa [keptWith] using hk) hF
 
 end IndexFact
 

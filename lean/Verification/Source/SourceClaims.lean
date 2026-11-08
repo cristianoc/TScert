@@ -9,6 +9,20 @@ open ProgramTyping LabelStore
 
 abbrev Candidate (ι : Type) := Except String (Ty ι)
 
+/-- A variable of a proposed quantified fact's body (PROGRAM-TYPING.md,
+"Quantified clauses"): the index, the element at it, or a term rooted at a
+value binding's name, its path the named fields read from it in turn. -/
+inductive BodyRef where
+  | index
+  | elem
+  | term (name : String) (path : List String) (kind : HeapKnowledge.Term.Kind)
+  deriving Repr, Inhabited
+
+/-- A proposed quantified fact: an array a value binding's name and path
+read, the term bounding its indices, and its body's facts `Σ c·x ≤ d`. -/
+abbrev EveryClaim := (String × List String) × (String × List String × HeapKnowledge.Term.Kind) ×
+  List (List (BodyRef × Int) × Int)
+
 /-- Claims attached to one execution point. Source spans locate the syntax
 inside that point; separate copies of a finalizer have separate point IDs. -/
 structure PointData (ι : Type) where
@@ -25,6 +39,8 @@ structure PointData (ι : Type) where
   coefficients, and a bound. -/
   entryFacts : List (Nat × List (List (String × List String × HeapKnowledge.GuardTag) ×
     List (String × List String × HeapKnowledge.Term.Kind × Int) × Int)) := []
+  /-- At a statement entry, the quantified facts the producer proposes. -/
+  entryEvery : List (Nat × List EveryClaim) := []
 
 /-- Replacement claims for the sites a closure signature owns. Absence of a
 current-content assertion replaces that assertion too. -/
@@ -38,6 +54,8 @@ def PointData.overlay (base row : PointData ι) : PointData ι :=
     entryBounds := row.entryBounds ++ base.entryBounds.filter (fun p =>
       !(row.envs.map Prod.fst).contains p.1)
     entryFacts := row.entryFacts ++ base.entryFacts.filter (fun p =>
+      !(row.envs.map Prod.fst).contains p.1)
+    entryEvery := row.entryEvery ++ base.entryEvery.filter (fun p =>
       !(row.envs.map Prod.fst).contains p.1) }
 
 /-- A lifetime storage contract is keyed by its initializer and binding name.
@@ -61,6 +79,7 @@ structure Function (ι : Type) where
   entryBounds : List (Nat × List (String × String × Bool)) := []
   entryFacts : List (Nat × List (List (String × List String × HeapKnowledge.GuardTag) ×
     List (String × List String × HeapKnowledge.Term.Kind × Int) × Int)) := []
+  entryEvery : List (Nat × List EveryClaim) := []
   /-- The source closure's interior obligations, one per claimed signature. -/
   arrowClaims : List (Span × List (Overlay ι)) := []
   /-- The complete point table survives selection and nested closure checking. -/
@@ -85,14 +104,15 @@ def Function.atPoint (f : Function ι) (point : String) : Function ι :=
     entryCurrent := row.entryCurrent
     exprCurrent := row.exprCurrent
     entryBounds := row.entryBounds
-    entryFacts := row.entryFacts }
+    entryFacts := row.entryFacts
+    entryEvery := row.entryEvery }
 
 /-- A signature overlay retains other bodies' claims, while replacing its own
 sites in every execution point. -/
 def Function.withOverlay (f : Function ι) (row : Overlay ι) : Function ι :=
   let points := (f.points.map Prod.fst ++ row.points.map Prod.fst).eraseDups.map fun id =>
     (id, ((f.points.lookup id).getD {}).overlay ((row.points.lookup id).getD {}))
-  let active := (PointData.mk f.exprs f.envs f.entryCurrent f.exprCurrent f.entryBounds f.entryFacts).overlay
+  let active := (PointData.mk f.exprs f.envs f.entryCurrent f.exprCurrent f.entryBounds f.entryFacts f.entryEvery).overlay
     row.toPointData
   { f with
     exprs := active.exprs
@@ -101,6 +121,7 @@ def Function.withOverlay (f : Function ι) (row : Overlay ι) : Function ι :=
     exprCurrent := active.exprCurrent
     entryBounds := active.entryBounds
     entryFacts := active.entryFacts
+    entryEvery := active.entryEvery
     points := points
     contracts := row.contracts ++ f.contracts.filter (fun p => !(row.contracts.map Prod.fst).contains p.1) }
 

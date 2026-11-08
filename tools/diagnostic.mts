@@ -114,7 +114,11 @@ export interface HeapKnowledge {
 type IndexFact = { index: { slot: number } } | { length: { array: number; length: number } } |
   { bound: { array: number; index: number; strict: boolean } } | { int: { slot: number } } |
   { linear: { fact: { le: { form: [LinearTerm, number][]; bound: number } } | { ne: { form: [LinearTerm, number][]; bound: number } } } } |
-  { guarded: { slot: number; path: string[]; tag: "null" | "undefined"; body: IndexFact } };
+  { guarded: { slot: number; path: string[]; tag: "null" | "undefined"; body: IndexFact } } |
+  { element: { value: number; array: number; index: number } } |
+  { every: { slot: number; path: string[]; stop: LinearTerm; body: { form: [BodyVariable, number][]; bound: number; ne: boolean }[] } };
+/** A variable of a quantified fact's body: the index, the element, or a term. */
+type BodyVariable = "index" | "elem" | LinearTerm;
 /** A linear fact's term: a root slot, the named data fields read from it
  * (`path`), and what it reads of the value they end at: the value, the length
  * of its array store, or the element count of its typed array. */
@@ -416,6 +420,23 @@ function indexFact(f: Json | undefined): IndexFact {
     return { guarded: { slot: nat(g.slot), path: path.filter((x: Json): x is string => typeof x === "string"), tag: g.tag,
       body: indexFact(g.body) } };
   }
+  if ("element" in f) {
+    const e = record(record(f,["element"]).element,["value","array","index"]);
+    return { element: { value: nat(e.value), array: nat(e.array), index: nat(e.index) } };
+  }
+  if ("every" in f) {
+    const e = record(record(f,["every"]).every,["slot","path","stop","body"]);
+    const path = e.path;
+    if (!Array.isArray(path) || !path.every((x: Json) => typeof x === "string")) throw Error("a quantified fact's path");
+    if (!Array.isArray(e.body)) throw Error("a quantified fact's body");
+    const body = e.body.map((b: Json) => {
+      const { form, bound, ne } = linearForm(b, (x) => x === "index" || x === "elem" ? x
+        : linearTerm(record(record(x,["free"]).free,["t"]).t));
+      return { form, bound, ne };
+    });
+    return { every: { slot: nat(e.slot), path: path.filter((x: Json): x is string => typeof x === "string"),
+      stop: linearTerm(e.stop), body } };
+  }
   if ("index" in f) fact = { index: { slot: nat(record(record(f,["index"]).index,["slot"]).slot) } };
   else if ("length" in f) {
     const l = record(record(f,["length"]).length,["array","length"]);
@@ -444,6 +465,31 @@ function indexFact(f: Json | undefined): IndexFact {
     fact = { linear: { fact: le ? { le: { form, bound: body.bound } } : { ne: { form, bound: body.bound } } } };
   }
   return fact;
+}
+
+/** A linear term of a knowledge, decoded field by field. */
+function linearTerm(t: Json | undefined): LinearTerm {
+  const term = record(t, ["kind", "slot", "path"]);
+  const kind = term.kind;
+  if (kind !== "value" && kind !== "length" && kind !== "view") throw Error("a linear term's kind");
+  const path = term.path;
+  if (!Array.isArray(path) || !path.every((f: Json) => typeof f === "string")) throw Error("a linear term's path");
+  return { kind, slot: nat(term.slot), path: path.filter((f: Json): f is string => typeof f === "string") };
+}
+
+/** A linear fact over variables `variable` decodes: its form, its bound, and
+ * whether it is `≠`. */
+function linearForm<V>(stated: Json | undefined, variable: (x: Json | undefined) => V):
+    { form: [V, number][]; bound: number; ne: boolean } {
+  const le = isParsedObject(stated) && "le" in stated;
+  const F = record(stated, le ? ["le"] : ["ne"]);
+  const body = record(le ? F.le : F.ne, ["form","bound"]);
+  if (!Array.isArray(body.form) || typeof body.bound !== "number") throw Error("a linear fact's form and bound");
+  const form = body.form.map((t: Json): [V, number] => {
+    if (!Array.isArray(t) || t.length !== 2 || typeof t[1] !== "number") throw Error("a linear fact's term");
+    return [variable(t[0]), t[1]];
+  });
+  return { form, bound: body.bound, ne: !le };
 }
 
 /** A node record with its node decoded in place of its wire form, as the

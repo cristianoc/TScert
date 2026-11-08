@@ -120,6 +120,7 @@ let statements callbacks flow_graph register_following owner_span env0 ss =
         else Linear_facts.add env (List.fold_left (fun fs x -> Linear_facts.forget x fs) (Linear_facts.facts env) dead) in
       List.filter (fun (n,_) -> live n || (is_field n && live (owner n)) ||
         (match Linear_facts.gfact_parts n with Some g -> List.for_all live (Linear_facts.gbindings g) | None -> false) ||
+        (match Linear_facts.efact_parts n with Some e -> List.for_all live (Linear_facts.ebindings e) | None -> false) ||
         (match bound_parts n with Some (a,i,_) -> live a && live i | None -> false) ||
         (match fact_parts n with Some (t,_) -> List.for_all (fun (x,_) -> live (Linear_facts.term_binding x)) t | None -> false)) env in
     let capture env =
@@ -141,8 +142,10 @@ let statements callbacks flow_graph register_following owner_span env0 ss =
       let joined_facts=Linear_facts.join (Linear_facts.facts left) (Linear_facts.facts right) in
       let joined_bounds=Linear_facts.join_bounds (Linear_facts.bounds left) (Linear_facts.bounds right) in
       let joined_guarded=let r=Linear_facts.gfacts right in List.filter (fun g -> List.mem g r) (Linear_facts.gfacts left) in
+      let joined_every=let r=Linear_facts.efacts right in List.filter (fun e -> List.mem e r) (Linear_facts.efacts left) in
       let left=Linear_facts.strip_bounds (Linear_facts.strip left)
       and right=Linear_facts.strip_bounds (Linear_facts.strip right) in
+      Fun.flip Linear_facts.eadd joined_every @@
       Fun.flip Linear_facts.gadd joined_guarded @@
       Fun.flip Linear_facts.add_bounds joined_bounds @@
       Fun.flip Linear_facts.add joined_facts @@
@@ -191,6 +194,19 @@ let statements callbacks flow_graph register_following owner_span env0 ss =
       let env=if node.Flow.id=graph.Flow.entry then
         match graph.Flow.prologue with None -> env | Some plan -> callbacks.execute_bindings env plan
         else env in
+      (* A loop's invariant (PROGRAM-TYPING.md, "Loop invariants"): its facts
+         hold at the head, which every edge into it establishes (Lean's
+         head assertion), over the bindings its positions name. *)
+      let env = match node.action with
+        | Flow.Branch (span,_,_) ->
+          (match (source span).statement, Hashtbl.find_opt Source.loop_invariants (source span).span with
+           | While _, Some (names,facts) ->
+             let name p = List.nth_opt names p in
+             let linear = Linear_facts.of_index_facts name facts in
+             let every = List.filter_map (Linear_facts.of_every_fact name) facts in
+             Linear_facts.eadd (Linear_facts.add env (Linear_facts.facts env @ linear)) (Linear_facts.efacts env @ every)
+           | _ -> env)
+        | _ -> env in
       callbacks.entry env node.source;
       (* The linear facts and the bounds flow beside the environment
          (`Linear_facts`); the statement callbacks see none, and a call
@@ -198,6 +214,7 @@ let statements callbacks flow_graph register_following owner_span env0 ss =
       let facts0 = Linear_facts.facts env in
       let bounds0 = Linear_facts.bounds env in
       let guarded0 = Linear_facts.gfacts env in
+      let every0 = Linear_facts.efacts env in
       let env = Linear_facts.strip_bounds (Linear_facts.strip env) in
       (* A call stating a precondition is offered the bounds and facts of its
          statement's start: a proposal, which Lean refuses where an earlier
@@ -223,8 +240,19 @@ let statements callbacks flow_graph register_following owner_span env0 ss =
         | Some e -> Linear_facts.after_cell_updates env e facts0
         | None -> facts0 in
       Linear_facts.current_bounds := (if typed_with_bounds then bounds0 else []);
-      Linear_facts.current_facts := (if typed_with_bounds then facts_at_calls else []);
+      (* The element reads of the statement that its quantified facts
+         instantiate, their values named, as the calls typed in it read
+         them (`Linear_facts.with_reads`). *)
+      let read_facts, reads = match updating with
+        | Some e when typed_with_bounds && every0 <> [] ->
+          Linear_facts.with_cells true (fun () ->
+            Linear_facts.current_efacts := every0;
+            Linear_facts.element_facts ~array:(callbacks.array_binding env) env facts_at_calls e)
+        | _ -> [], [] in
+      Linear_facts.element_reads := reads;
+      Linear_facts.current_facts := (if typed_with_bounds then facts_at_calls @ read_facts else []);
       Linear_facts.current_gfacts := (if typed_with_bounds then guarded0 else []);
+      Linear_facts.current_efacts := every0;
       let next id env = id,capture (scope graph.nodes.(id).scope env) in
       let infer_return span = match (source span).statement with
         | Return e -> callbacks.return_expression env e
@@ -321,7 +349,9 @@ let statements callbacks flow_graph register_following owner_span env0 ss =
       Linear_facts.current_bounds := [];
       Linear_facts.current_facts := [];
       Linear_facts.current_gfacts := [];
-      (* Each normal edge's linear facts and bounds, by the node's action. *)
+      Linear_facts.element_reads := [];
+      (* Each normal edge's linear facts and bounds, by the node's action;
+         the element reads read the quantified facts of the node's start. *)
       let edges =
         (* A cell (a binding a closure assigns, or an early one) holds no
            value slot a fact could name. *)
@@ -329,15 +359,16 @@ let statements callbacks flow_graph register_following owner_span env0 ss =
         (* A cell a fact names is one of the body's own (`cell_terms`); an
            early one names none. *)
         let unnamed n = cell n && not (!Linear_facts.cell_terms n) in
-        let with_facts ?(gs=[]) (id,state) fs bs =
+        let with_facts ?(gs=[]) ?(es=[]) (id,state) fs bs =
           let fs = Linear_facts.close fs in
           let fs = List.filter (fun ((t,_) : Linear_facts.fact) -> not (List.exists (fun (n,_) -> unnamed (Linear_facts.term_binding n)) t)) fs in
           let gs = List.filter (fun g -> not (List.exists unnamed (Linear_facts.gbindings g))) gs in
+          let es = List.filter (fun e -> not (List.exists unnamed (Linear_facts.ebindings e))) es in
           let bs = List.filter (fun (a,i,_) -> not (cell a) && not (cell i)) (Linear_facts.bounds state.env @ bs) in
           id,{state with env=scope graph.nodes.(id).scope
-            (Linear_facts.gadd (Linear_facts.add_bounds (Linear_facts.add state.env fs) bs) gs)} in
+            (Linear_facts.eadd (Linear_facts.gadd (Linear_facts.add_bounds (Linear_facts.add state.env fs) bs) gs) es)} in
         match node.action, edges with
-        | Flow.Jump _, [e] -> [with_facts ~gs:guarded0 e facts0 bounds0]
+        | Flow.Jump _, [e] -> [with_facts ~gs:guarded0 ~es:every0 e facts0 bounds0]
         | Flow.Declaration (span,name,initial_source,_,_), [e] when not (List.mem (span,name) early_bindings) ->
           let fs = match (source span).statement with
             | Declare (_,bindings) ->
@@ -351,10 +382,12 @@ let statements callbacks flow_graph register_following owner_span env0 ss =
                | Some (_,_,init) -> Linear_facts.gdeclaration env guarded0 facts0 name init
                | None -> [])
             | _ -> [] in
-          [with_facts ~gs e fs (Linear_facts.statement_bounds env bounds0 (source span))]
+          [with_facts ~gs ~es:(Linear_facts.estatement env every0 (source span)) e fs
+             (Linear_facts.statement_bounds env bounds0 (source span))]
         | Flow.Statement (span,_), [e] ->
           let s = source span in
-          [with_facts ~gs:(Linear_facts.gstatement ~bounds:bounds0 env facts0 guarded0 s) e
+          [with_facts ~gs:(Linear_facts.gstatement ~bounds:bounds0 env facts0 guarded0 s)
+            ~es:(Linear_facts.estatement env every0 s) e
             (Linear_facts.statement ~array:(callbacks.array_binding env) ~bounds:bounds0 env facts0 s)
             (Linear_facts.statement_bounds ~facts:facts0 env bounds0 s)]
         | Flow.IteratorStart (span,b,_), [e] ->
@@ -369,7 +402,8 @@ let statements callbacks flow_graph register_following owner_span env0 ss =
             | _ -> None) env in
           if array_iterable then Hashtbl.replace iterator_arrays b.name arrays else Hashtbl.remove iterator_arrays b.name;
           let fs = if array_iterable then facts0 else Linear_facts.keep_stable env facts0 in
-          [with_facts e (Linear_facts.forget b.name fs) (if array_iterable then bounds0 else [])]
+          [with_facts ~es:(if array_iterable then every0 else []) e (Linear_facts.forget b.name fs)
+             (if array_iterable then bounds0 else [])]
         | Flow.IteratorStep (_,b,element,_,_), [y;n] ->
           (* The step of an array's iterator changes only the iterator's own
              locations: the lengths of the arrays older than it are kept,
@@ -415,8 +449,9 @@ let statements callbacks flow_graph register_following owner_span env0 ss =
                let introduced = if heap_free then Linear_facts.gtest ~array:(callbacks.array_binding env) env facts0 c answer else [] in
                Linear_facts.geliminate (Linear_facts.excluded env c answer) (gs @ introduced) in
              let ty,gy = guarded true and tn,gn = guarded false in
-             [with_facts ~gs:gy y (reading (facts0 @ t @ ty)) (kept @ bounds bt);
-              with_facts ~gs:gn n (reading (facts0 @ f @ tn)) (kept @ bounds bf)]
+             let es = if heap_free then every0 else [] in
+             [with_facts ~gs:gy ~es y (reading (facts0 @ t @ ty)) (kept @ bounds bt);
+              with_facts ~gs:gn ~es n (reading (facts0 @ f @ tn)) (kept @ bounds bf)]
            | _ -> edges)
         | _ -> edges in
       let edges=match node.handler with
@@ -453,7 +488,9 @@ let statements callbacks flow_graph register_following owner_span env0 ss =
         let kept_bounds=Linear_facts.join_bounds (Linear_facts.bounds previous.env) (Linear_facts.bounds state.env) in
         let kept_guarded=let p=Linear_facts.gfacts previous.env in
           List.filter (fun g -> List.mem g p) (Linear_facts.gfacts state.env) in
-        {state with env=Fun.flip Linear_facts.gadd kept_guarded @@ Fun.flip Linear_facts.add_bounds kept_bounds @@
+        let kept_every=let p=Linear_facts.efacts previous.env in
+          List.filter (fun e -> List.mem e p) (Linear_facts.efacts state.env) in
+        {state with env=Fun.flip Linear_facts.eadd kept_every @@ Fun.flip Linear_facts.gadd kept_guarded @@ Fun.flip Linear_facts.add_bounds kept_bounds @@
           Linear_facts.add (List.map (fun (n,b) -> match b with
           | Local (contract,_) when not (settled n b) -> n,Local (contract,callbacks.widen_slot contract)
           | _ -> n,b) (forget (Linear_facts.strip_bounds (Linear_facts.strip state.env)))) kept}) graph (capture env0) in

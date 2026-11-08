@@ -91,7 +91,7 @@ private partial def stmtSitesCore (includeBodies : Bool) : Fragment.Stmt → Sit
   | .destructure p target d init =>
     (d.toList ++ target.defaults).foldl (fun acc e => joinSites acc (exprSitesCore includeBodies e))
       (joinSites ([p.1],patternClaimSpans target,[]) (exprSitesCore includeBodies init))
-  | .loop p c body update => joinSites ([p.1],[],[]) (joinSites (exprSitesCore includeBodies c)
+  | .loop p c body update _ => joinSites ([p.1],[],[]) (joinSites (exprSitesCore includeBodies c)
       ((body ++ update).foldl (fun s st => joinSites s (stmtSitesCore includeBodies st)) ([],[],[])))
   -- A block has no entry of its own.
   | .block _ _ body => body.foldl (fun s st => joinSites s (stmtSitesCore includeBodies st)) ([],[],[])
@@ -122,7 +122,7 @@ separate claims even when they share source syntax. -/
 private def actionSites : SourceFlow.Action → List Span
   | .declaration _ _ binding _ => (exprSitesCore false binding.init).2.1
   | .statement st _ | .returnValue st | .saveReturn st _ _ => (stmtSitesCore false st).2.1
-  | .branch (.ite _ cond _ _) _ _ | .branch (.loop _ cond _ _) _ _ => (exprSitesCore false cond).2.1
+  | .branch (.ite _ cond _ _) _ _ | .branch (.loop _ cond _ _ _) _ _ => (exprSitesCore false cond).2.1
   | .iteratorStart (.forOf pos _ namePos _ iterable _) _ _ =>
       pos :: namePos :: (exprSitesCore false iterable).2.1
   | .iteratorStep (.forOf pos _ namePos _ _ _) _ _ _ _ => [pos,namePos]

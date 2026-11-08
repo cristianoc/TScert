@@ -124,6 +124,27 @@ interface LinearClaim {
   bound: number;
 }
 
+/** A term a quantified fact names: what the binding `name` holds, its named
+ * data fields `path` read from it in turn, read as `term` says. */
+interface TermRefClaim {
+  name: string;
+  path: string[];
+  term: "value" | "length" | "view";
+}
+
+/** A variable of a quantified fact's body: the index, the element at it, or a term. */
+type BodyVariableClaim = "index" | "elem" | { term: { ref: TermRefClaim } };
+
+/** A quantified fact proposed at a statement entry (PROGRAM-TYPING.md,
+ * "Quantified clauses"): for every index below `stop` of the array the path
+ * `path` reads from the binding `name`, each body fact `Σ c·x ≤ bound`. */
+interface QuantifiedClaim {
+  name: string;
+  path: string[];
+  stop: TermRefClaim;
+  body: { terms: [BodyVariableClaim, number][]; bound: number }[];
+}
+
 /** The environment at one shared control-flow point, with source provenance. */
 interface EntryClaim<L = Label> {
   point: string;
@@ -131,6 +152,7 @@ interface EntryClaim<L = Label> {
   bindings: NamedPoint<L>[];
   bounds: BoundClaim[];
   facts: LinearClaim[];
+  quantified: QuantifiedClaim[];
 }
 
 /** The type arguments one call supplies for a scheme's binders. It records the
@@ -335,7 +357,18 @@ function claimsDocument(v: JsonRead): SourceClaims {
     return { name: name(r.name, "a point's name"), type: claimType(r.type), current: current(r.current) };
   };
   const entry = (x: JsonRead): EntryClaim => {
-    const r = record(x, "an entry", ["point", "start", "bindings", "bounds", "facts"]);
+    const r = record(x, "an entry", ["point", "start", "bindings", "bounds", "facts", "quantified"]);
+    const integer = (v: JsonRead, what: string): number => {
+      if (typeof v !== "number" || !Number.isSafeInteger(v)) fail(`${what} is a safe integer`);
+      return v;
+    };
+    const termRef = (t: JsonRead): TermRefClaim => {
+      const q = record(t, "a term", ["name", "path", "term"]);
+      const kind = q.term;
+      if (kind !== "value" && kind !== "length" && kind !== "view") fail("a term's kind is value, length or view");
+      return { name: name(q.name, "a term's name"), path: each(q.path, "a term's path", (f) => name(f, "a path's field")),
+        term: kind };
+    };
     return { point: text(r.point, "an entry's point"), start: index(r.start, "an entry's start"),
       bindings: each(r.bindings, "an entry's bindings", namedPoint),
       bounds: each(r.bounds, "an entry's bounds", (b) => {
@@ -369,6 +402,21 @@ function claimsDocument(v: JsonRead): SourceClaims {
           }),
           bound: integer(q.bound, "a fact's bound"),
         };
+      }),
+      quantified: each(r.quantified, "an entry's quantified facts", (f) => {
+        const q = record(f, "a quantified fact", ["name", "path", "stop", "body"]);
+        return { name: name(q.name, "a quantified fact's array"),
+          path: each(q.path, "a quantified fact's path", (g) => name(g, "a path's field")), stop: termRef(q.stop),
+          body: each(q.body, "a quantified fact's body", (b) => {
+            const r = record(b, "a body fact", ["terms", "bound"]);
+            return { terms: each(r.terms, "a body fact's terms", (t): [BodyVariableClaim, number] => {
+              if (!isJsonList(t) || t.length !== 2) fail("a body term is a variable and a coefficient");
+              const v = t[0];
+              const variable: BodyVariableClaim = v === "index" || v === "elem" ? v
+                : { term: { ref: termRef(record(record(v, "a body variable", ["term"]).term, "a body term", ["ref"]).ref) } };
+              return [variable, integer(t[1], "a body term's coefficient")];
+            }), bound: integer(r.bound, "a body fact's bound") };
+          }) };
       }) };
   };
   const certificate = (x: JsonRead): ResolutionCertificate => {

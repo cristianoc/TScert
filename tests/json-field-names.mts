@@ -102,6 +102,10 @@ const equationReaders = [
     tag: "a guarded index fact's field, read by the instance EffectJson.lean states for HeapKnowledge.GuardTag's fact",
     path: "a linear term's field, read by the instance EffectJson.lean derives for HeapKnowledge.Term",
     ne: "an index fact's field, read by the instance EffectJson.lean derives for HeapKnowledge.IndexFact and Linear.Fact",
+    every: "a quantified index fact's field, read by the instance EffectJson.lean derives for HeapKnowledge.IndexFact",
+    stop: "a quantified index fact's field, read by the instance EffectJson.lean derives for HeapKnowledge.IndexFact",
+    free: "a quantified fact's body variable, read by the instance EffectJson.lean derives for HeapKnowledge.Bound",
+    t: "a quantified fact's body term, read by the instance EffectJson.lean derives for HeapKnowledge.Bound",
   });
 }
 
@@ -118,6 +122,7 @@ const equationReaders = [
   expectSubset("SourceClaims fields Lean ignores",
     declared(["tools/source-claims.mts"], "export function decodeSourceClaims"), leanNames, {
     labels: "a tuple element's label, not a field",
+    ref: "a body variable's term, read by the instance Wire.lean derives for the inductive BodyVariable",
   });
 }
 

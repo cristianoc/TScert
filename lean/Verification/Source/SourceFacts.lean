@@ -53,7 +53,7 @@ partial def assignsStmt (name : String) : Fragment.Stmt → Bool
     (d.toList ++ target.defaults).any (assignsExpr name)
   | .ite _ c t e => assignsExpr name c || t.any (assignsStmt name) ||
     (e.getD []).any (assignsStmt name)
-  | .loop _ c b u => assignsExpr name c || b.any (assignsStmt name) || u.any (assignsStmt name)
+  | .loop _ c b u _ => assignsExpr name c || b.any (assignsStmt name) || u.any (assignsStmt name)
   | .forOf _ _ _ _ i b => assignsExpr name i || b.any (assignsStmt name)
   | .block _ _ b => b.any (assignsStmt name)
   | .closing _ c b => c.any (assignsStmt name) || b.any (assignsStmt name)
@@ -145,7 +145,7 @@ private partial def captureStmt (x : String) (s : Fragment.Stmt) (w : Capture) :
   | .destructure _ t d init =>
     (d.toList ++ t.defaults).foldl (fun w e => captureExpr x true e w) (expr init w)
   | .ite _ c t e => captureStmts x (e.getD []) (captureStmts x t (expr c w))
-  | .loop _ c b u => twice (fun w => captureStmts x u (captureStmts x b (expr c w))) w
+  | .loop _ c b u _ => twice (fun w => captureStmts x u (captureStmts x b (expr c w))) w
   | .forOf _ _ _ _ i b => twice (captureStmts x b) (expr i w)
   | .block _ _ b => captureStmts x b w
   | .tryStmt _ b h f =>
@@ -174,7 +174,7 @@ private partial def letCells (all : Bool) : List Fragment.Stmt → List (String 
 
 private partial def nestedCells (all : Bool) : Fragment.Stmt → List (String × Option Span)
   | .ite _ _ t e => letCells all t ++ letCells all (e.getD [])
-  | .loop _ _ b u => letCells all b ++ letCells all u
+  | .loop _ _ b u _ => letCells all b ++ letCells all u
   | .forOf _ _ _ _ _ b | .block _ _ b => letCells all b
   | .tryStmt _ b h f => letCells all b ++ letCells all ((h.map (·.2)).getD []) ++ letCells all (f.getD [])
   | .closing _ c b => letCells all b ++ letCells all c
@@ -200,7 +200,7 @@ partial def stmtNames : Fragment.Stmt → List String
   | .destructure _ target d init => init.freeNames ++
     (d.toList ++ target.defaults).flatMap Fragment.Expr.freeNames ++ target.slices.map (Fragment.restFromName ·.2)
   | .ite _ c t e => c.freeNames ++ t.flatMap stmtNames ++ (e.getD []).flatMap stmtNames
-  | .loop _ c b u => c.freeNames ++ b.flatMap stmtNames ++ u.flatMap stmtNames
+  | .loop _ c b u _ => c.freeNames ++ b.flatMap stmtNames ++ u.flatMap stmtNames
   | .forOf _ _ _ it i b => it :: i.freeNames ++ b.flatMap stmtNames
   | .block _ _ b => b.flatMap stmtNames
   | .closing _ c b => c.flatMap stmtNames ++ b.flatMap stmtNames
@@ -401,7 +401,7 @@ private partial def ownedStmt (classes : List String) (collect : Bool) (d : Nat)
     let s := (init :: dflt.toList ++ t.defaults).foldl (fun s e => ownedExpr classes collect e s) s
     t.names.foldl (fun s n => forget n s) s
   | .ite _ c t e => ownedStmts classes collect d (e.getD []) (ownedStmts classes collect d t (ownedExpr classes collect c s))
-  | .loop _ c b u => ownedLoop collect d s fun collect d s => ownedStmts classes collect d u (ownedStmts classes collect d b (ownedExpr classes collect c s))
+  | .loop _ c b u _ => ownedLoop collect d s fun collect d s => ownedStmts classes collect d u (ownedStmts classes collect d b (ownedExpr classes collect c s))
   | .forOf _ n _ _ i b => ownedLoop collect d (forget n (ownedExpr classes collect i s)) fun collect d s => ownedStmts classes collect d b s
   -- The iterator's `close` runs where the body is left, after what of it ran.
   | .closing _ c b => ownedStmts classes collect d c (ownedStmts classes collect d b s)
@@ -514,7 +514,7 @@ partial def moduleStmtEscapes (n : String) : Fragment.Stmt → Bool
   | .constants _ bs | .mutables _ bs => bs.any fun b => moduleEscapes n b.init
   | .destructure _ t d init => (init :: d.toList ++ t.defaults).any (moduleEscapes n)
   | .ite _ c t e => moduleEscapes n c || (t ++ e.getD []).any (moduleStmtEscapes n)
-  | .loop _ c b u => moduleEscapes n c || (b ++ u).any (moduleStmtEscapes n)
+  | .loop _ c b u _ => moduleEscapes n c || (b ++ u).any (moduleStmtEscapes n)
   | .block _ _ b => b.any (moduleStmtEscapes n)
   | .forOf _ _ _ _ i b => moduleEscapes n i || b.any (moduleStmtEscapes n)
   | .tryStmt _ b h f => (b ++ ((h.map (·.2)).getD []) ++ f.getD []).any (moduleStmtEscapes n)

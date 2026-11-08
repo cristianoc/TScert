@@ -3,7 +3,7 @@
  * A row and a label list both denote unions. Contracts within one clause are
  * simultaneous requirements (including all arrows of an overload).
  */
-import type { CallEffect, CallPromise, ClosedFootprint, ElementKind, ElementKinds, IndexFact, LinearTerm, PropertyKey } from "./declaration-types.mts";
+import type { CallEffect, CallPromise, ClosedFootprint, ElementKind, ElementKinds, BodyFact, BodyVariable, IndexFact, LinearTerm, PropertyKey } from "./declaration-types.mts";
 import { requireWellFormed } from "./wire-strings.mts";
 import {
   hasExactly,
@@ -147,6 +147,27 @@ function decodeIndexFact(v: JsonRead): IndexFact | undefined {
     for (const f of path) { if (typeof f !== "string") return undefined; fields.push(f); }
     return { guarded: { slot, path: fields, tag, body } };
   }
+  const element = fieldsOf(v.element, ["value", "array", "index"]);
+  if (element) {
+    const value = decodeNat(element.value), array = decodeNat(element.array), index = decodeNat(element.index);
+    return value === undefined || array === undefined || index === undefined ? undefined
+      : { element: { value, array, index } };
+  }
+  const every = fieldsOf(v.every, ["slot", "path", "stop", "body"]);
+  if (every) {
+    const slot = decodeNat(every.slot);
+    const stop = decodeLinearTerm(every.stop);
+    if (slot === undefined || stop === undefined || !isJsonList(every.path) || !isJsonList(every.body)) return undefined;
+    const fields: string[] = [];
+    for (const f of every.path) { if (typeof f !== "string") return undefined; fields.push(f); }
+    const body: BodyFact[] = [];
+    for (const b of every.body) {
+      const fact = decodeLinearForm(b, decodeBodyVariable);
+      if (fact === undefined) return undefined;
+      body.push(fact.le ? { le: fact.le } : { ne: fact.ne });
+    }
+    return { every: { slot, path: fields, stop, body } };
+  }
   const index = fieldsOf(v.index, ["slot"]);
   if (index) { const slot = decodeNat(index.slot); return slot === undefined ? undefined : { index: { slot } }; }
   const int = fieldsOf(v.int, ["slot"]);
@@ -184,6 +205,36 @@ function decodeIndexFact(v: JsonRead): IndexFact | undefined {
   const d = decodeInt(body.bound);
   if (d === undefined) return undefined;
   return { linear: { fact: le ? { le: { form, bound: d } } : { ne: { form, bound: d } } } };
+}
+/** A linear fact over variables `decode` reads: `{le}` or `{ne}`, each a form
+ * and a bound. */
+function decodeLinearForm<V>(v: JsonRead, decode: (x: JsonRead) => V | undefined):
+    { le: { form: (readonly [V, number])[]; bound: number }; ne?: undefined } |
+    { ne: { form: (readonly [V, number])[]; bound: number }; le?: undefined } | undefined {
+  if (!isJsonObject(v) || Object.keys(v).length !== 1) return undefined;
+  const le = fieldsOf(v.le, ["form", "bound"]);
+  const ne = fieldsOf(v.ne, ["form", "bound"]);
+  const body = le ?? ne;
+  if (body === undefined || !isJsonList(body.form)) return undefined;
+  const form: (readonly [V, number])[] = [];
+  for (const t of body.form) {
+    if (!isJsonList(t) || t.length !== 2) return undefined;
+    const x = decode(t[0]);
+    const c = decodeInt(t[1]);
+    if (x === undefined || c === undefined) return undefined;
+    form.push([x, c]);
+  }
+  const d = decodeInt(body.bound);
+  if (d === undefined) return undefined;
+  return le ? { le: { form, bound: d } } : { ne: { form, bound: d } };
+}
+/** A variable of a quantified fact's body (`HeapKnowledge.Bound`). */
+function decodeBodyVariable(v: JsonRead): BodyVariable | undefined {
+  if (v === "index" || v === "elem") return v;
+  const free = fieldsOf(v, ["free"]);
+  const t = free === undefined ? undefined : fieldsOf(free.free, ["t"]);
+  const term = t === undefined ? undefined : decodeLinearTerm(t.t);
+  return term === undefined ? undefined : { free: { t: term } };
 }
 /** A linear term (`HeapKnowledge.Term`): its kind, its root position and
  * the named data fields read from it. */

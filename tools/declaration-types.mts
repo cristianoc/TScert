@@ -55,7 +55,11 @@ export type CallEffect = {
  * safe integer; a linear fact `Σ c·t ≤ d` or `≠ d`; a guarded fact, which
  * holds where the named data fields `path` read from the position `slot`
  * give the value `tag` names, or where its body holds (PROGRAM-TYPING.md,
- * "Guarded clauses"). */
+ * "Guarded clauses"); the value at position `value` is what the array at
+ * `array` holds at the index at `index`, below its length (`element`); for
+ * every index `i` with `0 ≤ i < stop` of the array the path `path` reads from
+ * the position `slot`, each body fact holds of `i`, the element at it and its
+ * terms (`every`, PROGRAM-TYPING.md, "Quantified clauses"). */
 export type IndexFact =
   | { readonly index: { readonly slot: number } }
   | { readonly length: { readonly array: number; readonly length: number } }
@@ -63,7 +67,17 @@ export type IndexFact =
   | { readonly int: { readonly slot: number } }
   | { readonly linear: { readonly fact: LinearFact } }
   | { readonly guarded: { readonly slot: number; readonly path: readonly string[]; readonly tag: GuardTag;
-      readonly body: IndexFact } };
+      readonly body: IndexFact } }
+  | { readonly element: { readonly value: number; readonly array: number; readonly index: number } }
+  | { readonly every: { readonly slot: number; readonly path: readonly string[]; readonly stop: LinearTerm;
+      readonly body: readonly BodyFact[] } };
+/** A variable of a quantified fact's body (`HeapKnowledge.Bound`): the bound
+ * index, the element at it, or a linear term. */
+export type BodyVariable = "index" | "elem" | { readonly free: { readonly t: LinearTerm } };
+/** A linear fact of a quantified fact's body, over its variables. */
+export type BodyFact =
+  | { readonly le: { readonly form: readonly (readonly [BodyVariable, number])[]; readonly bound: number } }
+  | { readonly ne: { readonly form: readonly (readonly [BodyVariable, number])[]; readonly bound: number } };
 /** The value a guard compares a path's read with (`HeapKnowledge.GuardTag`). */
 export type GuardTag = "null" | "undefined";
 /** A linear fact (`Linear.Fact`): `Σ c·t ≤ bound` or `≠ bound`, each term a

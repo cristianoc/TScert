@@ -29,7 +29,7 @@ import { computedAlias, computedForm, optionalTerm, resolutionSlots, restPositio
 import type { Ast, Expr, FunctionAst, ModuleAst, Stmt, TypeParamAst } from "./fragment.mts";
 import type { Span } from "./span.mts";
 import { requireWellFormedText, wellFormedTextRefusal } from "./wire-strings.mts";
-import type { ImportedInvariants } from "./bound-annotations.mts";
+import { clauseRoots, loopBindings, loopInvariantTags, type ImportedInvariants } from "./bound-annotations.mts";
 // thrown.mts reads what the TypeScript API throws into the message the gate reports, without asserting its type.
 import { messageOf, passToolFailure, toolFailureOf, toolFailureText, type ToolFailure } from "./thrown.mts";
 // syntax.mts reads the name, modifiers and other children a member or declaration of unasked kind carries, checking each is a node.
@@ -2152,6 +2152,17 @@ function lowerFile(file: string, carriesContext: boolean,
   // A static field written without an annotation: TypeScript gives it a
   // type, which the class value's type states.
   const staticTypeNodes: Node[] = [];
+  // A loop invariant's bindings (`@invariant` before a loop): TypeScript
+  // gives each the type its clause's paths are read through.
+  const findLoopInvariants = (node: Node): void => {
+    if (ts.isWhileStatement(node) || ts.isDoStatement(node) || ts.isForStatement(node)) {
+      const names = [...new Set(loopInvariantTags(gate.file, node).flatMap(clauseRoots))];
+      for (const id of loopBindings(node, names).values())
+        if (!staticTypeNodes.includes(id)) staticTypeNodes.push(id);
+    }
+    node.forEachChild(findLoopInvariants);
+  };
+  scan(findLoopInvariants);
   for (const c of classNodes)
     for (const m of c.members)
       if (ts.isPropertyDeclaration(m) && !m.type && ts.isIdentifier(m.name) &&
@@ -2459,7 +2470,7 @@ function lowerFile(file: string, carriesContext: boolean,
     gate.recordDefinitions = new Map(declarations.definitions.map(d => [definitionKey(d.declaration), d]));
     // An imported function's written precondition is its signature's, every
     // form's, as its own module reads it (`moduleArrow`): the importer's
-    // calls establish it (PROGRAM-TYPING.md, "Written preconditions").
+    // calls establish it (PROGRAM-TYPING.md, "Preconditions").
     if (written.length > 0)
       declarations = { ...declarations, values: declarations.values.map(v => {
         const w = written.find(w => definitionKey(w.declaration) === definitionKey(v.declaration));

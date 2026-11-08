@@ -1902,9 +1902,10 @@ theorem effectKept_holds {eff : Effect} {t : Tm} {k : HeapKnowledge.Knowledge} {
         (HeapKnowledge.Changes.ofClosed_holds (CallEffects.Effect.within_holds hw hs ho)) HeapKnowledge.firstKept_none)
 
 /-- Knowledge with a call's result-fact atoms added, and the atoms of its
-entry `k0` its footprint keeps (`effectKept`). -/
+entry `k0` its footprint keeps (`effectKept`), then the instances of
+quantified facts the element reads among them state (`withElements`). -/
 def withEnsures (eff : Effect) (t : Tm) (k0 k : HeapKnowledge.Knowledge) : HeapKnowledge.Knowledge :=
-  { k with indices := k.indices ++ ensuresAtoms eff t ++ effectKept eff t k0 }
+  HeapKnowledge.withElements { k with indices := k.indices ++ ensuresAtoms eff t ++ effectKept eff t k0 }
 
 theorem withEnsures_holds {eff : Effect} {t : Tm} {k0 k : HeapKnowledge.Knowledge} {ρ : Env} {h h' : Heap} {v : Tm}
     (hk : HeapKnowledge.Holds k (push v ρ) h') (hk0 : HeapKnowledge.Holds k0 ρ h)
@@ -1913,7 +1914,7 @@ theorem withEnsures_holds {eff : Effect} {t : Tm} {k0 k : HeapKnowledge.Knowledg
       (ExpressionEffects.actualsOf (instantiate 0 ρ t))) h')
     (hg : eff.receiverGrows = true →
       CallEffects.ReceiverGrows (ExpressionEffects.receiverOf (instantiate 0 ρ t)) h h') :
-    HeapKnowledge.Holds (withEnsures eff t k0 k) (push v ρ) h' :=
+    HeapKnowledge.Holds (withEnsures eff t k0 k) (push v ρ) h' := HeapKnowledge.withElements_holds
   ⟨hk.1, hk.2.1, hk.2.2.1, hk.2.2.2.1, hk.2.2.2.2.1, fun a ha hc => by
     rcases List.mem_append.mp ha with ha | ha
     · rcases List.mem_append.mp ha with ha | ha

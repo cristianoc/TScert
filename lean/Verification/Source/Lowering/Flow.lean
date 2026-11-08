@@ -222,7 +222,7 @@ private def reachablePoints (graph : SourceFlow.Graph) (id : Nat) : List String 
             "expression-discard" (scope := inner)
     | .branch statement yesId noId =>
       let cond ← match statement with
-        | .ite _ cond _ _ | .loop _ cond _ _ => pure cond
+        | .ite _ cond _ _ | .loop _ cond _ _ _ => pure cond
         | _ => throw "internal flow error: malformed branch"
       let guarded ← match statement, graph.nodes[yesId]? with
         | .ite _ _ thn _, some { action := .returnValue _, .. } =>
@@ -329,11 +329,41 @@ private def reachablePoints (graph : SourceFlow.Graph) (id : Nat) : List String 
         | .value, _ :: _ => .linear (.le [(t, 1)] (2 ^ 53 - 1))
         | _, _ => .linear (.le [(t, -1)] 0)) } : HeapKnowledge.IndexAtom))
     else pure [({ fact := wrap (.linear (.le form bound)) } : HeapKnowledge.IndexAtom)]
+  -- The quantified facts the producer proposes (PROGRAM-TYPING.md,
+  -- "Quantified clauses"): the array, its bound and each body term rooted
+  -- at a value binding or a cell, as a linear fact's.
+  let root := fun (name : String) (path : List String) => do
+    match termRoot scope name with
+    | some (x, pre) => pure (x, pre ++ path)
+    | none => throw (locatedRefusal (← table) node.source .entryClaim
+        s!"a quantified fact names '{name}', which is no value binding or cell")
+  let quantified ← ((fc.entryEvery.lookup node.source.1).getD []).mapM fun ((name, path), (sn, sp, sk), body) => do
+    let (x, p) ← root name path
+    let (y, q) ← root sn sp
+    let body ← body.mapM fun (terms, bound) => do
+      let form ← terms.mapM fun (v, c) => do
+        let b : HeapKnowledge.Bound ← match v with
+          | .index => pure .index
+          | .elem => pure .elem
+          | .term n path kind => do let (z, r) ← root n path; pure (.free ⟨kind, z, r⟩)
+        pure (b, c)
+      pure (Linear.Fact.le form bound)
+    pure ({ fact := .every x p ⟨sk, y, q⟩ body } : HeapKnowledge.IndexAtom)
+  -- A loop's invariant (PROGRAM-TYPING.md, "Loop invariants"): at its head,
+  -- each fact at the slots of the value bindings it names, which every edge
+  -- into the head establishes.
+  let invariant ← match node.action with
+    | .branch (.loop _ _ _ _ (names, facts)) _ _ => facts.mapM fun F => do
+      match F.mapM (fun p => names[p]? >>= valueSlot scope) with
+      | some G => pure ({ fact := G } : HeapKnowledge.IndexAtom)
+      | none => throw (locatedRefusal (← table) node.source .entryClaim
+          "a loop invariant names a binding that is no value binding at the loop's head")
+    | _ => pure []
   -- Each atom once, as the knowledge a search reaches holds it: a cut's
   -- knowledge is its assertion exactly (`checkAssertions`), and two claimed
   -- facts may lower to one atom (a cell's value term stated an integer and
   -- bounded by `2^53 - 1`).
-  let bounds := (bounds ++ linear).eraseDups
+  let bounds := (bounds ++ linear ++ quantified ++ invariant).eraseDups
   if !facts.isEmpty || !links.isEmpty || !separation.facts.isEmpty || !bounds.isEmpty then
     recordAssertion reserved ⟨facts, [], links, separation, [], bounds⟩
   recordCut reserved
@@ -341,7 +371,7 @@ private def reachablePoints (graph : SourceFlow.Graph) (id : Nat) : List String 
 
 private def actionPaths (a : SourceFlow.Action) : List (String × List PropKey) :=
   let expressions := match a with
-    | .branch (.ite _ e _ _) _ _ | .branch (.loop _ e _ _) _ _
+    | .branch (.ite _ e _ _) _ _ | .branch (.loop _ e _ _ _) _ _
     | .returnValue (.ret _ e) | .saveReturn (.ret _ e) _ _
     | .statement (.effect _ e) _ | .statement (.throw _ e) _
     | .iteratorStart (.forOf _ _ _ _ e _) _ _ => [e]

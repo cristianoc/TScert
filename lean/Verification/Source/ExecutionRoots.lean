@@ -38,7 +38,7 @@ def statementRoots : Stmt → List Expr
   | .ret _ e | .effect _ e | .throw _ e => [e]
   | .constants _ bindings | .mutables _ bindings => bindings.map (·.init)
   | .destructure _ target default_ init => init :: default_.toList ++ target.defaults
-  | .ite _ condition _ _ | .loop _ condition _ _ => [condition]
+  | .ite _ condition _ _ | .loop _ condition _ _ _ => [condition]
   | .forOf _ _ _ _ iterable _ => [iterable]
   | .brk .. | .cont .. | .block .. | .tryStmt .. | .closing .. => []
 

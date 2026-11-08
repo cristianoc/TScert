@@ -908,7 +908,7 @@ export interface DeclarationObservations {
   requires?: (declaration: DeclarationIdentity, clauses: readonly string[], parameters: readonly string[] | null,
     invariants: ImportedInvariants) => void;
   /** Told each definition the graph reads that states a record invariant
-   * (`@invariant`; PROGRAM-TYPING.md, "Record invariants"): a type alias or
+   * (`@invariant`; PROGRAM-TYPING.md, "Type invariants"): a type alias or
    * an interface of the program's sources, without type parameters or merged
    * declarations, its clauses, and the declaration its `@representation`
    * tag names, collected as a dependency, where it states one (null where it
@@ -6068,7 +6068,7 @@ function elaborateDeclaration(node: TypeDeclaration, identity: DeclarationIdenti
   // A handle stating `@representation R` means its representation: its
   // equation is a reference to `R`, so a value of it is a value of `R`, a
   // cast into it the obligation that the operand is one, and its own
-  // members (a brand) are no requirement (PROGRAM-TYPING.md, "Record
+  // members (a brand) are no requirement (PROGRAM-TYPING.md, "Type
   // invariants").
   if (!applied) {
     const represented = context.invariant(node, identity);

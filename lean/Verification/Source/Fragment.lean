@@ -402,8 +402,11 @@ inductive Stmt where
   | cont (pos : Span)
   /-- `while (cond) body`, and the loop of `for (…; cond; update) body`: the
   end of the body and every `continue` targeting the loop run `update`, then
-  return to the head. A `while` has none. -/
+  return to the head. A `while` has none. Its invariant (PROGRAM-TYPING.md,
+  "Loop invariants") is index facts at positions, the `i`-th position the
+  `i`-th name's binding at the head; none where the loop states none. -/
   | loop (pos : Span) (cond : Expr) (body : List Stmt) (update : List Stmt)
+      (invariant : List String × List HeapKnowledge.IndexFact)
   /-- `{ body }`: its statements in a lexical scope of their own, and no entry
   of their own: the first statement's is the block's. A labeled block is where
   a `break` of its label goes: a lowered `switch` is made of them. -/
@@ -568,7 +571,7 @@ partial def Stmt.freeNames : Stmt → List String
   | .destructure _ t d init => init.freeNames ++ (d.toList ++ t.defaults).flatMap Expr.freeNames ++
     t.slices.map (restFromName ·.2)
   | .ite _ c t e => c.freeNames ++ stmtsFreeNames t ++ stmtsFreeNames (e.getD [])
-  | .loop _ c b u => c.freeNames ++ stmtsFreeNames b ++ stmtsFreeNames u
+  | .loop _ c b u _ => c.freeNames ++ stmtsFreeNames b ++ stmtsFreeNames u
   | .block _ _ b => stmtsFreeNames b
   -- The loop reads its iteration intrinsic, which no expression names.
   | .forOf _ name _ it i b => it :: i.freeNames ++ (stmtsFreeNames b).filter (· != name)
@@ -595,7 +598,7 @@ partial def Stmt.callees : Stmt → List (Span × Span × String × List Json)
   | .destructure _ target d init => init.callees ++
     (d.toList ++ target.defaults).flatMap Expr.callees ++ sliceCallees target.slices
   | .ite _ c t e => c.callees ++ t.flatMap Stmt.callees ++ (e.getD []).flatMap Stmt.callees
-  | .loop _ c b u => c.callees ++ b.flatMap Stmt.callees ++ u.flatMap Stmt.callees
+  | .loop _ c b u _ => c.callees ++ b.flatMap Stmt.callees ++ u.flatMap Stmt.callees
   | .block _ _ b => b.flatMap Stmt.callees
   -- The loop calls its iteration intrinsic at its own span, reading it at
   -- the `for` keyword, which is no expression and has no claim.
@@ -673,7 +676,7 @@ def decodeArrayElem (decodeExpr : Json → Except String Expr) (q : Json) :
 /-- A statement's own span. -/
 def Stmt.pos : Stmt → Span
   | .ret p _ | .constants p _ | .mutables p _ | .destructure p _ _ _
-  | .ite p _ _ _ | .loop p _ _ _ | .forOf p _ _ _ _ _ | .brk p _ | .cont p | .effect p _
+  | .ite p _ _ _ | .loop p _ _ _ _ | .forOf p _ _ _ _ _ | .brk p _ | .cont p | .effect p _
   | .block p _ _ | .throw p _ | .tryStmt p _ _ _ | .closing p _ _ => p
 
 structure Param where
@@ -700,11 +703,11 @@ structure Fn where
   unit's claim must lie within (`RequestJson.statedWithin`). -/
   stated : Option CallEffects.Effect
   /-- Its written precondition, index facts at the call's positions: `0` the
-  receiver, `i + 1` the `i`-th actual (PROGRAM-TYPING.md, "Written
-  preconditions"). -/
+  receiver, `i + 1` the `i`-th actual (PROGRAM-TYPING.md, 
+  "Preconditions"). -/
   requires : List HeapKnowledge.IndexFact := []
   /-- The facts it states of its result, index facts at position `0`, the
-  result: its record type's invariant (PROGRAM-TYPING.md, "Record
+  result: its record type's invariant (PROGRAM-TYPING.md, "Type
   invariants"), which each of its returns establishes. -/
   ensures : List HeapKnowledge.IndexFact := []
 
@@ -1292,9 +1295,14 @@ partial def decodeStmt (j : Json) : Except String Stmt := do
     if handler.isNone && finalizer.isNone then throw "a try needs a catch or a finally"
     return .tryStmt p (← (← jArr j "body").mapM decodeStmt) handler finalizer
   | "while" =>
-    fieldsExactly j ["k","pos","cond","body","update"]
+    fieldsExactly j ["k","pos","cond","body","update","invariant"]
+    let invariant ← match ← jField j "invariant" with
+      | .null => pure ([], [])
+      | i => do
+        fieldsExactly i ["names","facts"]
+        pure ((← (← jArr i "names").mapM jStr), ← fromJson? (← jField i "facts"))
     return .loop p (← decodeExpr (← jField j "cond")) (← (← jArr j "body").mapM decodeStmt)
-      (← (← jArr j "update").mapM decodeStmt)
+      (← (← jArr j "update").mapM decodeStmt) invariant
   | "block" =>
     fieldsExactly j ["k","pos","label","body"]
     return .block p (← decodeLabel j) (← (← jArr j "body").mapM decodeStmt)

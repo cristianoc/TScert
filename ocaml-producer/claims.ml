@@ -56,6 +56,14 @@ let rec index_fact_json fact =
   | Int_at k -> Object ["int",Object ["slot",int k]]
   | Linear_le (form,d) -> linear "le" form d
   | Linear_ne (form,d) -> linear "ne" form d
+  | Element (v,x,k) -> Object ["element",Object ["value",int v;"array",int x;"index",int k]]
+  | Every (x,path,stop,body) ->
+    let var = function
+      | Body_index -> String "index" | Body_elem -> String "elem"
+      | Body_term t -> Object ["free",Object ["t",term t]] in
+    let fact k form d = Object [k,Object ["form",Array (List.map (fun (v,c) -> Array [var v;int c]) form);"bound",int d]] in
+    Object ["every",Object ["slot",int x;"path",Array (List.map (fun f -> String f) path);"stop",term stop;
+      "body",Array (List.map (function Body_le (f,d) -> fact "le" f d | Body_ne (f,d) -> fact "ne" f d) body)]]
 let effect_json e = Object ["footprint",footprint_json e.footprint;
   "promise",(match e.promise with
     | None -> Null
@@ -605,6 +613,22 @@ let encode (proposal : Proposal_types.t) =
                 "coefficient",Number (string_of_int c)]) terms);
       "bound",Number (string_of_int bound)])
     | _ -> None) bs) in
+  (* A quantified fact (`Linear_facts.efact_key`, PROGRAM-TYPING.md,
+     "Quantified clauses"): its array, its bound and its body, in order. *)
+  let term_ref t =
+    let name,path,kind = Linear_facts.term_parts t in
+    let kind = match kind with Linear_facts.Value_term -> "value" | Linear_facts.Length_term -> "length" | Linear_facts.View_term -> "view" in
+    Object ["name",String name;"path",Array (List.map (fun f -> String f) path);"term",String kind] in
+  let quantified bs = Array (List.filter_map (fun (n,_) -> match Linear_facts.efact_parts n with
+    | Some (e : Linear_facts.efact) when List.for_all (fun ((t,d) : Linear_facts.fact) -> safe d && List.for_all (fun (_,c) -> safe c) t) e.Linear_facts.body ->
+      Some (Object ["name",String (fst e.Linear_facts.arr);"path",Array (List.map (fun f -> String f) (snd e.Linear_facts.arr));
+        "stop",term_ref e.Linear_facts.stop;
+        "body",Array (List.map (fun ((t,d) : Linear_facts.fact) -> Object [
+          "terms",Array (List.map (fun (v,c) ->
+            Array [(if v = Linear_facts.index_var then String "index" else if v = Linear_facts.elem_var then String "elem"
+                    else Object ["term",Object ["ref",term_ref v]]); Number (string_of_int c)]) t);
+          "bound",Number (string_of_int d)]) e.Linear_facts.body)])
+    | _ -> None) bs) in
   let contracts row = Array (List.map (fun (c : Proposal_types.contract) ->
     Object ["pos",c.pos;"name",String c.name;"type",claim_type c.type_]) row) in
   let interior (f : Proposal_types.function_claim) =
@@ -613,7 +637,8 @@ let encode (proposal : Proposal_types.t) =
         @ instantiate e.instantiation)) row) in
     let entries es = Array (List.map (fun (e : Proposal_types.entry) ->
       Object ["point",String e.point; "start",e.start;"bindings",bindings e.bindings;
-              "bounds",bounds e.bindings; "facts",facts e.bindings]) es) in
+              "bounds",bounds e.bindings; "facts",facts e.bindings;
+              "quantified",quantified e.bindings]) es) in
     let arrows = if f.arrows = [] then [] else
       ["arrows",Array (List.map (fun (pos,rows) ->
         Object ["pos",pos;"rows",Array (List.map (fun (o : Proposal_types.overlay) ->
@@ -629,7 +654,8 @@ let encode (proposal : Proposal_types.t) =
        stated only by a closure that advertises more than one. *)
     let entries es = Array (List.map (fun (e : Proposal_types.entry) ->
       Object ["point",String e.point; "start",e.start;"bindings",bindings e.bindings;
-              "bounds",bounds e.bindings; "facts",facts e.bindings]) es) in
+              "bounds",bounds e.bindings; "facts",facts e.bindings;
+              "quantified",quantified e.bindings]) es) in
     let arrows = if f.arrows = [] then [] else
       ["arrows",Array (List.map (fun (pos,rows) ->
         Object ["pos",pos;"rows",Array (List.map (fun (o : Proposal_types.overlay) ->

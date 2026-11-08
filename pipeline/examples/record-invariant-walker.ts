@@ -1,4 +1,4 @@
-// A record invariant as a boundary contract (PROGRAM-TYPING.md, "Record
+// A record invariant as a boundary contract (PROGRAM-TYPING.md, "Type
 // invariants"), in the shape of pretext's `line-break.ts`:
 // `PreparedLineBreakData` holds per-segment data in parallel, `widths` and
 // the typed array `segmentFlags`, and its walkers (`countPreparedLines`,
