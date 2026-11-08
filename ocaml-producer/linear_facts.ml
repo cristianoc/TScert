@@ -540,6 +540,16 @@ let concat_facts env name (e : expr) = match e.node with
     [norm [r,1;x,-1;y,-1],0; norm [r,-1;x,1;y,1],0]
   | _ -> []
 
+(* The facts of `const x = e` over facts naming no `x`, set by the
+   declaration analysis below: an assignment `x = e` whose value reads no
+   `x` binds `x` as such a declaration does. *)
+let assign_declared : (array:(string -> string list -> bool) -> (string * Environment.binding) list -> fact list ->
+    string -> expr -> fact list) ref = ref (fun ~array:_ _ fs _ _ -> fs)
+
+let rec mentions_name x (e : expr) = match e.node with
+  | Id y -> y = x
+  | _ -> List.exists (mentions_name x) (Source.children e)
+
 let assign ~array env fs x (e : expr) =
   if not (value_binding env x) then forget x fs else
   match distribute e with
@@ -552,6 +562,7 @@ let assign ~array env fs x (e : expr) =
       | Some a when not (is_int_fact f) -> t, d + a*c
       | _ -> f) fs
   | Some (t,c) when not (List.mem_assoc x t) -> forget x fs @ equal x (t,c)
+  | _ when not (mentions_name x e) -> !assign_declared ~array env (forget x fs) x e
   | _ -> forget x fs @ bitwise_facts ~array env fs x e @ concat_facts env x e
 
 let names_assigned (s : stmt) env =
@@ -1354,7 +1365,7 @@ let () = assign_arms := (fun ~array env fs x c p q ->
   let fs' = forget x fs in
   Some (fs' @ List.filter (fun f -> not (List.mem f fs')) (join ~keep:false l r)))
 
-let declaration ~(array : string -> string list -> bool) env fs name (init : expr) : fact list =
+let rec declaration ~(array : string -> string list -> bool) env fs name (init : expr) : fact list =
   (* An initializer updating a cell (`xs[at++]!`): the update's facts, then
      the initializer as one writing no other location. *)
   let updated = after_cell_updates env init fs in
@@ -1410,7 +1421,10 @@ let declaration ~(array : string -> string list -> bool) env fs name (init : exp
     let t,f = comparison ~array env fs c in
     let arm answer (e : expr) = match linear ~array env (fs @ answer) e with
       | Some (te,ce) when not (List.mem_assoc name te) -> Some (fs @ answer @ equal name (te,ce))
-      | _ -> None in
+      (* An arm stating facts of its value as a declaration does, a call
+         stating a postcondition say: those facts. *)
+      | _ -> let d = declaration ~array env (fs @ answer) name e in
+        if List.exists (mentions name) d then Some d else None in
     (match arm t a, arm f b with
      | Some l, Some r -> List.filter (fun f -> mentions name f) (join l r) @ fs
      | _ -> fs)
@@ -1420,6 +1434,9 @@ let declaration ~(array : string -> string list -> bool) env fs name (init : exp
   | _ -> fs @ bitwise_facts ~array env fs name init
 
 (* Widening preserves the facts that did not change. *)
+
+let () = assign_declared := (fun ~array env fs x e -> declaration ~array env fs x e)
+
 let widen (previous : fact list) (current : fact list) =
   let previous = tighten previous in
   List.filter (fun (t,d) -> match List.assoc_opt t previous with
