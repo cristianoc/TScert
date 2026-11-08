@@ -941,6 +941,7 @@ let declaration ~(array : string -> string list -> bool) env fs name (init : exp
   (* `const x = f(…)` of a function stating a postcondition: each of
      its facts, of `x`. *)
   let fs = match init.node with
+    | ArrayLiteral ([],[]) -> fs @ [[length_term name,1],0; [length_term name,-1],0]
     | Call ({node=Id f;_},None,args,[],_) -> fs @ call_facts ~name env f args
     (* `const x = new c(…)` at a construct signature stating facts of its
        result: each of them, of `x`, over the actuals. *)

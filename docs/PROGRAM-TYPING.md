@@ -2688,6 +2688,23 @@ $`c`$ into slot $`v`$ restates of $`v`$ a quantified fact whose root, bound
 or body terms read through $`c.f`$ (proved), so `const { widths } = data`
 retains the fact of $`|\mathit{widths}|`$.
 
+**Empty arrays.** A quantified fact over an array of length zero holds for
+any body (proved). Its body terms need no interpretation, since no index
+is below the bound. The edge checker establishes that the length term is
+defined and at most zero; array lengths are nonnegative.
+
+```math
+\frac{K\vdash |x.p|=0}
+     {\Sigma,\ \mathrm{every}(x.p,|x.p|,\Phi)}\ \textsf{every-empty}
+```
+
+An empty array literal states its result's length is zero. Its lowering
+evaluates the empty store and the object holding it in one inspection,
+whose postcondition records zero length and the allocation's fresh
+locations. The producer proposes the zero-length facts at the declaration
+and the written quantified invariant at the loop head; each incoming edge
+checks the invariant, including the entry from the empty literal.
+
 **Across a push.** A normal return of `push` changes no old location but its
 receiver's store, which it extends: the old elements keep their indices, and
 the $`j`$-th actual, where the actuals are values, is the present element at
@@ -2775,12 +2792,22 @@ write `CallEffects.ExactWrite`. The producer's
 facts are `Linear_facts.efact`, its element reads `Linear_facts.with_reads`
 and `element_facts`, its facts across a push `Linear_facts.egrown`.
 
+`every-empty` is the `every` branch of `HeapKnowledge.linearFollows`
+(proved: `linearFollows_sound`). `IndexWrites.emptyArrayAtoms` states an
+empty literal's length (proved: `emptyArrayAtoms_holds`, by its finite
+execution); `Checker.emptyArrays` adds those facts and fresh locations.
+
 **Cases.** Positive: `quantified-element-reads` (a read at an element, a loop
 to an element, pretext's `narrowsLine` through a destructured path). Negative,
 each run under Node: `invalid-quantified-element-read-inclusive` (an element
 at most the length), `invalid-quantified-element-read-alias-write` (a write
 through an alias of the quantified array) and
 `invalid-quantified-element-read-shrunk` (a `pop` of the bounding array).
+Empty entry: positive `quantified-empty-builder` (an empty literal, push
+under a written invariant, and a bounded consumer); negative
+`invalid-quantified-empty` (`[7]` claimed bounded by a one-element array,
+returning `NaN` under Node). Its forged control claims that quantified fact
+at the entry immediately following `[7]`.
 Across a push: positive `quantified-push-builder` (pretext's builder pushing
 `widths.length`, then its `narrowsLine` consumer); negative, each run under
 Node, `invalid-quantified-push-value` (a push of a value the body excludes),

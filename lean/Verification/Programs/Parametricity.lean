@@ -593,7 +593,7 @@ theorem indexing_value_reassign (j : Sequent ι) (k : HeapKnowledge.Knowledge)
         j k e codes sums).value =
       ((Checker.steps G images).keepingCalls.keepingOwnCalls.allocatingCalls.requiringCalls.elementCalls.ensuringCalls.negatingSlots.indexing.run
         j k e codes sums).value := by
-  simp only [Checker.indexing, CheckResult.map]
+  simp only [Checker.indexing, Checker.emptyArrays, CheckResult.map]
   rw [negatingSlots_value_reassign]
   rfl
 

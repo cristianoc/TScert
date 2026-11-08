@@ -931,6 +931,15 @@ Mappings discard only the temporaries introduced by this expression. -/
     -- object holding it: two nodes, so the allocation's slots are variables.
     let G := SourceTypes.graph (← table)
     let some S := storeOf G A | throw "an array literal needs an array claim"
+    if elems.isEmpty && spreads.isEmpty then
+      let proto ← prototypeSlot (held ⟨"",some e.span⟩ :: scope)
+      let H := S :: Γ
+      let some P := H[proto]? | throw "internal prototype slot mismatch"
+      let O ← arrayObject S
+      let store := DirectProof.node Γ (.arrLit []) S .arrLit []
+      let object := DirectProof.node H (arrayTerm proto) O .alloc
+        [DirectProof.var H 0 S, DirectProof.var H proto P]
+      return ← emitPlanned e.span (DirectProof.letE Γ store object) (.bind next) Γ A (scope := scope)
     let As ← elems.mapM (exprType fc)
     let n := As.length
     let temporaries := (elems.map fun a => held ⟨"",some a.span⟩).reverse

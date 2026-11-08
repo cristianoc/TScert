@@ -383,6 +383,22 @@ control(async (): Promise<void> => {
 });
 
 control(async (): Promise<void> => {
+  // every-empty must establish zero length; a non-empty literal supplies no such proof.
+  const artifacts = run("invalid-quantified-empty");
+  const source = readFileSync(sourceKey(artifacts), "utf8");
+  const claims = readClaims(artifacts);
+  const fn = must(claims.functions.find(f => f.name === "invalidEmpty"), "invalidEmpty's claims");
+  const quantified = must(fn.entries.find(e => e.quantified.length > 0), "the invariant").quantified;
+  const at = source.indexOf("let total = 0");
+  must(fn.entries.find(e => e.start === at), "the entry after [7]").quantified = structuredClone(quantified);
+  const forged = writeClaims(artifacts, "every-empty-nonempty-forged", claims);
+  const searched = produceWith(artifacts, forged, "every-empty-nonempty-forged");
+  assert.equal(searched.status, 1, `${searched.stdout}${searched.stderr}`);
+  assert.match(searched.stdout + searched.stderr, new RegExp(`edge obligation at \\[${at},[^\\n]*does not establish the claims`));
+  process.stdout.write("every-empty: a quantified bound forged over [7] refused at its entry\n");
+});
+
+control(async (): Promise<void> => {
   // A quantified fact claimed extended across a push that does not extend it
   // (PROGRAM-TYPING.md, "Quantified clauses"): at each entry the producer
   // claims without it, from the one after the push to the loop's,

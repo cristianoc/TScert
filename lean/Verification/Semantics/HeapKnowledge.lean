@@ -1123,6 +1123,9 @@ def linearFollows (M : Nat → List Nat) (m : PointClaims.Mapping) (a : List Ind
     | none => linearEntailed M m a B (linearFacts a) F
     | some c' => (M (PointClaims.slot m c')).any fun c =>
         linearEntailed M m a B (linearFacts a ++ condFacts a c t.negated) F
+  | .every s p stop _ =>
+      stop == ⟨.length, s, p⟩ &&
+        linearEntailed M m a B (linearFacts a) (.le [(⟨.length, s, p⟩, 1)] 0)
   | .bound x k st =>
       t.cond.isNone && (lengthBound (M (PointClaims.slot m x)) a (pickSlot M m a k) st ||
         match B with
@@ -1226,7 +1229,20 @@ theorem linearFollows_sound {M : Nat → List Nat} {m : PointClaims.Mapping} {a 
           exact lengthBoundVia_sound (hB c hBv) (v := PointClaims.mapEnv m ρ x) (fun y hy => hM _ y hy) hb ha
     rw [pickSlot_eq hM] at hb
     exact ⟨s, ls, b, idx, hs, hl, hb, hidx, hle⟩
-  | index _ | length _ _ | guarded _ _ _ _ | element _ _ _ | every _ _ _ _ => rw [ht] at hf; cases hf
+  | every s p stop body =>
+    rw [ht] at hf
+    simp only [Bool.and_eq_true, beq_iff_eq] at hf
+    obtain ⟨rfl, hf⟩ := hf
+    have hlin := linearEntailed_sound hM hB hf ha (linearFacts_holds ha)
+    have hd := hlin.1 ⟨.length, s, p⟩ (by simp [Linear.Fact.vars])
+    obtain ⟨w, n, hw, hn, hterm⟩ := termValue_isSome hd
+    obtain ⟨sto, ls, hsto, hls, rfl, -⟩ := lengthOf_store hn
+    have hle := hlin.2
+    simp only [Linear.Fact.Holds, Linear.Form.eval, termValuation, hterm, Option.getD_some, Int.one_mul, Int.add_zero] at hle
+    refine ⟨w, sto, ls, ls.length, hw, hsto, hls, hterm, ?_⟩
+    intro i hi
+    omega
+  | index _ | length _ _ | guarded _ _ _ _ | element _ _ _ => rw [ht] at hf; cases hf
 
 /-! ## Guarded facts (PROGRAM-TYPING.md, "Guarded clauses")
 
