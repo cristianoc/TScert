@@ -2,8 +2,8 @@
 // cut, then an element read typed `number` that an empty array leaves
 // `undefined`: `walk([], undefined)` returns `undefined` under Node. The
 // guarded add needs the implication the loop heads carry, which the search's
-// later rounds seed; every round fails at the read, and the first round's
-// failure, at the add's edge, is the one reported. The function lowers to
+// later rounds seed; every round fails at the read, which is the one
+// reported, over the first round's failure at the add's edge. The function lowers to
 // about 1,800 nodes, and each failing round searches all of them.
 export function walk(xs: readonly number[], v: number | undefined): number {
   const has = v !== undefined;

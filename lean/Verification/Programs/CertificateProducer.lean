@@ -1268,6 +1268,11 @@ inductive Failure (ι : Type) where
   | promise (label : Nat) (actual promised : Ty ι)
   deriving DecidableEq, Repr
 
+/-- Whether a failure is an edge's (or there is none to report). -/
+def Failure.atEdge : Option (Failure ι) → Bool
+  | some (.edge ..) | some (.exhaustedEdge ..) => true
+  | _ => false
+
 /-- A node's production, threading the answered requests: a failure keeps
 the answers its attempts found. -/
 abbrev ProduceM {ι : Type} [BEq ι] [Hashable ι] (G : NormalGraph ι) := EStateM (Failure ι) (Answered G)
@@ -2000,7 +2005,8 @@ Every edge is still checked by the independent consumer. -/
   -- once they are produced. A
   -- round that fails at a node goes on with the others, so the cuts after
   -- it are met; a successful round keeps its evidence, and a failure is the
-  -- first round's.
+  -- first round's, or a later round's at a node's expression where the
+  -- first round's is an edge's.
   let mut seeds : List (Nat × List (PromiseCalls.Implication ι)) := []
   -- A cut's elements atoms: likewise, those every entering edge carries.
   let mut elemSeeds : List (Nat × List HeapKnowledge.ElemAtom) := []
@@ -2205,8 +2211,13 @@ Every edge is still checked by the independent consumer. -/
       break
     let grown := met.filter fun (l, xs) => (seeds.lookup l) != some xs
     let grownElems := metElems.filter fun (l, es) => (elemSeeds.lookup l) != some es
-    -- A failure is reported as the first round met it.
+    -- A failure is reported as the first round met it, unless that one is
+    -- an edge's and a later round, whose cuts held more implications,
+    -- failed at a node's own expression: that obligation fails whatever
+    -- the cuts hold, so the later report names what fails. Reporting only:
+    -- acceptance is the same either way.
     if round == 0 then failure := failed
+    else if Failure.atEdge failure && !Failure.atEdge failed && failed.isSome then failure := failed
     if waiting then
       -- A waiting round whose guesses failed is followed by one without them.
       waitingRounds := waitingRounds + 1

@@ -4886,8 +4886,11 @@ edges and takes what they meet in the round itself. A loop's head, entered by a 
 goes ahead first and takes, in the first waiting round, what the edges
 produced establish, a guess the back edge confirms or refutes; the second
 runs without the guess. A round succeeding keeps its evidence; where none
-does, the refusal is the first round's (`guard-answer-constant`,
-`blocker-aliased-guard`, `blocker-pretext-constant-implication-statements`). A `let` holding the
+does, the refusal is the first round's, or, where that one is an edge's, a
+later round's at a node's own expression, an obligation no implication
+discharges (`guard-answer-constant`, `blocker-aliased-guard`,
+`blocker-pretext-constant-implication-statements`,
+`invalid-guard-constant-across-loops`). A `let` holding the
 answer, or a guarded `let` reassigned between the test and the use, carries
 no implication: the edge's mapping binds the new value to the slot
 (`invalid-guard-answer-let-prettier-ignore`,
