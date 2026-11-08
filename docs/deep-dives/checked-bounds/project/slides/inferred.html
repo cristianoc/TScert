@@ -1,15 +1,16 @@
 <section id="inferred" style="background:#fbfcfd;color:#0b1a2e;font-family:'Inter','Helvetica Neue',Arial,sans-serif;padding:120px 128px;display:flex;flex-direction:column;gap:22px">
-<div style="display:flex;gap:24px;align-items:baseline;flex-wrap:wrap"><p style="font-size:24px;color:#56627a;font-weight:600;letter-spacing:2px;text-transform:uppercase">Inference and certificates</p><p style="font-size:24px;color:#56627a">producer <span style="color:#6b6f78">proposed</span> · checker <span style="color:#2f6b47">proved</span></p></div>
-<h2 style="font-family:'Bricolage Grotesque','Helvetica Neue',Arial,sans-serif;font-size:56px;font-weight:700;line-height:1.15">Infer loop invariants; check every incoming edge</h2>
+<div style="display:flex;gap:24px;align-items:baseline;flex-wrap:wrap"><p style="font-size:24px;color:#56627a;font-weight:600;letter-spacing:2px;text-transform:uppercase">Loop invariants and certificates</p><p style="font-size:24px;color:#56627a">inference and proof search <span style="color:#6b6f78">proposed</span> · checker <span style="color:#2f6b47">proved</span></p></div>
+<h2 style="font-family:'Bricolage Grotesque','Helvetica Neue',Arial,sans-serif;font-size:56px;font-weight:700;line-height:1.15">Check initialization and preservation of loop invariants</h2>
 <div style="display:grid;grid-template-columns:minmax(0, 46fr) minmax(0, 54fr);gap:36px;align-items:start"><div style="display:flex;flex-direction:column;gap:14px"><div style="background:#eef2f7;padding:16px 22px;border-radius:12px;display:flex;flex-direction:column"><p style="font-family:'Source Code Pro',Menlo,Consolas,monospace;font-size:24px;line-height:1.45;white-space:nowrap"><span style="color:#7a3b8c">let</span>&#160;s&#160;=&#160;<span style="color:#a35a12">0</span><br><span style="color:#7a3b8c">for</span>&#160;(<span style="color:#7a3b8c">let</span>&#160;j&#160;=&#160;<span style="color:#a35a12">0</span>;&#160;j&#160;&lt;&#160;xs.length;&#160;j++)<br>&#160;&#160;s&#160;=&#160;s&#160;+&#160;xs[j]!</p></div><table style="font-size:24px;color:#0b1a2e">
 <tr><th style="width:40%;text-align:left;font-weight:600">Obligation</th><th style="width:60%;text-align:left;font-weight:600">Fact</th></tr>
 <tr><td>Initialization</td><td>j = 0</td></tr>
-<tr><td>Loop invariant</td><td>j a safe integer, 0 ≤ j ≤ |xs|</td></tr>
-<tr><td>Body entry</td><td>0 ≤ j < |xs|</td></tr>
-<tr><td>Back edge</td><td>j + 1 ≤ |xs|; the increment is exact</td></tr>
+<tr><td>Loop invariant</td><td>j is a safe integer; 0 ≤ j ≤ xs.length</td></tr>
+<tr><td>Body entry</td><td>0 ≤ j < xs.length</td></tr>
+<tr><td>Back edge</td><td>j + 1 ≤ xs.length; the increment is exact</td></tr>
 </table></div><div style="display:flex;flex-direction:column;gap:14px"><ul style="font-size:26px;color:#0b1a2e;line-height:1.36">
-<li><b style="font-weight:600">Untrusted inference:</b> the producer proposes facts at each program point, loop invariants included; a search turns them into certificates.</li>
-<li><b style="font-weight:600">Proved checking:</b> the checker validates establishment and preservation on every incoming edge.</li>
-<li><b style="font-weight:600">Linear certificates:</b> each step is a nonnegative combination of known facts, rounded over the integers; ≠ with a bound gives a strict bound. Fourier–Motzkin elimination removes variables that go out of scope.</li>
+<li><b style="font-weight:600">Inference:</b> the producer proposes types and facts at program points, loop invariants included.</li>
+<li><b style="font-weight:600">Proof search:</b> untrusted search constructs certificates for the proposed claims.</li>
+<li><b style="font-weight:600">Checking:</b> the checker validates initialization and preservation on every incoming edge.</li>
+<li><b style="font-weight:600">Arithmetic:</b> certificates use nonnegative linear combinations, integer rounding and disequalities; search uses Fourier–Motzkin elimination.</li>
 </ul></div></div>
 </section>

@@ -16,8 +16,8 @@ const proposed = status("gap", "proposed"), observed = status("neutral", "observ
 const slides: Slide[] = [
   cover("cover", {
     label: "TScert · checked array bounds",
-    title: "From type safety to checked array bounds",
-    text: t("TScert checks safety claims about TypeScript programs. Linear arithmetic over integers extends those claims to relations between indices and array lengths. An untrusted producer proposes types and invariants, an untrusted search proposes certificates, and a checker proved sound in Lean validates them under explicit assumptions. The case study is pretext, a text-layout library: which run-time bound checks can proofs replace, and which obligations remain?"),
+    title: "Proving array bounds in TypeScript",
+    text: t("TScert checks safety claims about TypeScript programs. Integer linear arithmetic relates indices to array lengths. An untrusted producer proposes types and loop invariants; untrusted proof search constructs certificates; a checker proved sound in Lean validates them. Source translation and library contracts remain trusted. The case study is pretext, a text-layout library: which array-bound checks can verification discharge, and which proof obligations remain?"),
   }),
   slide("problem", {
     label: "The obligation", note: `Node 26.13.0 · ${observed}`,
@@ -44,20 +44,21 @@ const slides: Slide[] = [
       ], 26),
   }),
   slide("inferred", {
-    label: "Inference and certificates", note: t("producer ") + proposed + t(" · checker ") + proved,
-    title: "Infer loop invariants; check every incoming edge", gap: 22,
+    label: "Loop invariants and certificates", note: t("inference and proof search ") + proposed + t(" · checker ") + proved,
+    title: "Check initialization and preservation of loop invariants", gap: 22,
     body: columns([
       code(["let s = 0", "for (let j = 0; j < xs.length; j++)", "  s = s + xs[j]!"]) +
         table(["Obligation", "Fact"], [
           ["Initialization", "j = 0"],
-          ["Loop invariant", "j a safe integer, 0 ≤ j ≤ |xs|"],
-          ["Body entry", "0 ≤ j < |xs|"],
-          ["Back edge", "j + 1 ≤ |xs|; the increment is exact"],
+          ["Loop invariant", "j is a safe integer; 0 ≤ j ≤ xs.length"],
+          ["Body entry", "0 ≤ j < xs.length"],
+          ["Back edge", "j + 1 ≤ xs.length; the increment is exact"],
         ], [40, 60]),
       bullets([
-        point("Untrusted inference", "the producer proposes facts at each program point, loop invariants included; a search turns them into certificates."),
-        point("Proved checking", "the checker validates establishment and preservation on every incoming edge."),
-        point("Linear certificates", "each step is a nonnegative combination of known facts, rounded over the integers; ≠ with a bound gives a strict bound. Fourier–Motzkin elimination removes variables that go out of scope."),
+        point("Inference", "the producer proposes types and facts at program points, loop invariants included."),
+        point("Proof search", "untrusted search constructs certificates for the proposed claims."),
+        point("Checking", "the checker validates initialization and preservation on every incoming edge."),
+        point("Arithmetic", "certificates use nonnegative linear combinations, integer rounding and disequalities; search uses Fourier–Motzkin elimination."),
       ], 26),
     ], [46, 54]),
   }),
@@ -84,16 +85,17 @@ const slides: Slide[] = [
       para(t("The clause language expresses scalar linear relations. Quantified bounds over array elements and written loop invariants are " + "proposed" + " extensions."), 26),
   }),
   slide("invariants", {
-    label: "Type invariants", note: t("pretext’s handle type, annotated as in TScert’s regression case; the measured target does not use it · the boundary checks ") + proved,
-    title: "Re-establish the invariant at function boundaries", gap: 22,
+    label: "Type invariants", note: t("an opaque-type regression example, after pretext’s handle · the boundary rules ") + proved,
+    title: "Type invariants become preconditions and postconditions", gap: 22,
     body: columns([
       code(["/** @invariant this.segmentFlags.length", " *     === this.widths.length", " *  @representation PreparedLineBreakData */", "export type PreparedText = {", "  readonly [preparedTextBrand]: true", "}"]),
       bullets([
-        point("Meaning", t("the symbol property brands an opaque handle; `@representation` names the record behind it.")),
-        point("Entry and return", "callers establish parameter invariants; bodies establish result invariants, and restore those of parameters never reassigned."),
-        point("Casts", "a cast into the handle checks the representation type; the invariant is checked at the boundary that requires it."),
-        point("Between boundaries", "each fact needs a preservation argument (next slide)."),
-      ], 26),
+        point("Representation invariant", t("`PreparedText` is opaque; `@representation` names its underlying record. The invariant equates two array lengths.")),
+        point("Precondition", "for a parameter without a default argument, callers establish the invariant and the body assumes it."),
+        point("Postcondition", "every normal return establishes result invariants and restores those of parameters never reassigned."),
+        point("Casts", "a cast checks the representation type; the invariant needs proof at a call or return."),
+        point("Preservation", "across calls, keeping the equality needs a frame condition that protects the field references and the lengths."),
+      ], 25),
     ], [46, 54]),
   }),
   slide("preservation", {
@@ -110,31 +112,33 @@ const slides: Slide[] = [
       para("These rules concern normal returns; a throw carries a frame condition only where one is stated for it.", 24),
   }),
   slide("frame-cost", {
-    label: "Type invariants on pretext", note: t("the target with and without the invariants, at one TScert commit · ") + measured,
-    title: "A coarse frame condition costs the handle its invariant", gap: 22,
+    label: "pretext · invariant verification", note: t("the bounds target with and without the invariants, at one TScert commit · ") + measured,
+    title: "Coarse frame conditions prevent proving return obligations", gap: 22,
     body: columns([
-      code(["/** @invariant this.segmentFlags.length", " *     === this.widths.length */", "type PreparedLineBreakData = { … }", "", "function layout(prepared: PreparedText, …) {", "  const lineCount = countPreparedLines(…)", "  // inside: getEngineProfile() writes a", "  // module cache; frame condition value: any", "  return { lineCount, … }", "  // obligation: prepared meets its invariant", "}"]),
+      code(["// Schematic proof obligations", "// Entry:", "//   prepared.segmentFlags.length", "//     === prepared.widths.length", "callWithCoarseFrame()", "// The equality is no longer established;", "// it is required again at every normal return."]),
       bullets([
-        point("Measured", "with the length invariants on pretext’s handle, 137 functions verify, against 144 without them: 9 lost, 2 gained."),
-        point("Return obligation", "a parameter never reassigned must meet its invariant again at every return, so its callers keep it."),
-        point("Coarse frames", t("a call whose frame condition is `value: any` (a `Map.set` on a module cache, `getEngineProfile`, an `onLine` callback) may rewrite any field, so the facts are lost and the return obligation fails.")),
-        point("Defaults", t("a parameter with a default, `start = TEXT_START_CURSOR`, gets no precondition, so its invariant is never assumed.")),
-        point("What closes it", t("frame conditions that separate a module cache from the arguments, and preconditions on defaulted parameters (" + "proposed" + "). The invariant is the right specification; the frame is too coarse.")),
+        point("Measured", t("length invariants on `PreparedLineBreakData`: 137 functions verified against 144 without them; 9 lost, 2 gained.")),
+        point("Return obligation", "a parameter never reassigned must satisfy its invariant at every normal return."),
+        point("Frame condition", "the calls may change field references, so the checker drops the equality even where array lengths are preserved."),
+        point("Recorded calls", t("`Map.set` on module caches, `getEngineProfile`, `onLine` callbacks, measurement helpers.")),
+        point("Default argument", t("`start = TEXT_START_CURSOR` receives no invariant precondition.")),
+        point("Proposed", "more precise modifies clauses; proof obligations for supplied and default argument values."),
       ], 25),
     ], [46, 54]),
   }),
   slide("trust", {
-    label: "Soundness and trust", title: "What an accepted certificate guarantees", gap: 20,
+    label: "Soundness and trust", note: t("a conditional safety theorem ") + proved + t(" · explicit assumptions ") + trusted,
+    title: "What certificate acceptance guarantees", gap: 20,
     body: columns([
-      panel(`Proved in Lean: ${proved}`, para("Acceptance implies modeled safety for every function of the accepted unit, given its input types, entry facts, separation requirements and environment contracts; each normal return meets the checked result facts. Safety admits exceptions and divergence.", 26)) +
-        panel(`Untrusted: ${proposed}`, para("The producer’s types and invariants, and the certificates the search proposes from them.", 26)),
-      panel(`Trusted computing base: ${trusted}`, bullets([
-        "Source and annotation translation; the model’s correspondence with JavaScript.",
-        "Lean’s kernel and compiler, and the executed checker.",
-        "Native contracts and the standard-object assumptions.",
-        "External callers meeting exported contracts, a stand-in until applications are analyzed too.",
-        "Typed arrays over fixed-size, never-detached buffers.",
-      ], 26)),
+      para("The Lean theorem connects acceptance to modeled safety for every function in the checked unit, assuming input types, preconditions, separation requirements and environment contracts. Normal returns satisfy the checked postconditions. Exceptions and divergence are permitted.", 26) +
+        bullets([
+          point("Untrusted inference", "the producer proposes types and loop invariants."),
+          point("Untrusted proof search", "search constructs certificates from the proposed claims; the checker validates them."),
+        ], 26),
+      bullets([
+        point("Trusted computing base", "source and annotation translation; correspondence with JavaScript; Lean’s kernel, compiler and executed checker."),
+        point("Environment assumptions", "native contracts; standard-object behavior; external callers satisfying exported contracts; typed arrays backed by fixed-size buffers that are never detached."),
+      ], 26),
     ], [50, 50]),
   }),
   slide("pretext", {
@@ -168,7 +172,7 @@ const slides: Slide[] = [
 ];
 
 const deck: Deck = {
-  title: "From type safety to checked facts",
+  title: "Proving array bounds in TypeScript",
   slides,
   sections: [
     { description: "The obligation an asserted read leaves.", start: "cover" },
