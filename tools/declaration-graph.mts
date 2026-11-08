@@ -44,7 +44,7 @@ import { messageOf, passToolFailure, toolFailureOf } from "./thrown.mts";
 // named-record.mts reads a named type's record shape, at which a mapped type read before its definition is expanded.
 import { definitionKey, deferredInDocument, identityText, settleDocument, termsText, termText } from "./named-record.mts";
 import { documentHolds } from "./fragment-parts.mts";
-import { invariantTags, parameterKept, plainParameter, representationTags, requiresTags, type ImportedInvariants } from "./bound-annotations.mts";
+import { ensuresTags, invariantTags, parameterKept, plainParameter, representationTags, requiresTags, type ImportedInvariants } from "./bound-annotations.mts";
 // files.mts makes every file-system failure a tool failure.
 import { builtinModule, manifestMember, orAbsent, readText, realPath, remembered, type Remembered } from "./files.mts";
 import type { Json } from "./calculus.mts";
@@ -1928,6 +1928,8 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
           throw Error(`a statement (\`Within\`) on an overloaded declaration is outside the fragment: ${what}`);
         if (nodes.some(n => ts.isFunctionDeclaration(n) && writtenClauses(n).length > 0))
           throw Error(`a precondition (\`@requires\`) on an overloaded declaration is outside the fragment: ${what}`);
+        if (nodes.some(n => ensuresTags(n.getSourceFile().text.slice(n.pos, n.getStart(n.getSourceFile()))).length > 0))
+          throw Error(`a postcondition (\`@ensures\`) on an overloaded declaration is outside the fragment: ${what}`);
         if (overloads.length > 1) {
           // Generic overloads are read as one generic declaration when every
           // overload states the same type parameters, each with the same
@@ -1975,7 +1977,7 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
             node.parameters[0].name.text === "this",
           params: node.parameters.map(p => own && synchronous && plainParameter(p)),
           kept: node.parameters.map(p => own && synchronous && plainParameter(p) && parameterKept(p, node.body)),
-          result: own && synchronous };
+          result: own && synchronous, ensures: own ? ensuresTags(source.text.slice(node.pos, node.getStart(source))) : [] };
         if (clauses.length > 0 || own)
           observations.requires?.(declaration, clauses,
             plainNames ? node.parameters.map(p => ts.isIdentifier(p.name) ? p.name.text : "") : null, invariants);

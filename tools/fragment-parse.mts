@@ -2695,7 +2695,7 @@ function writtenImport(gate: Gate, value: ValueRoot, clauses: readonly string[],
     parameters: readonly string[] | null, invariants: ImportedInvariants,
     at: Node | undefined): Within<{ value: "any"; store: "grow" }, TypeTerm> {
   const what = `${value.declaration.module}#${value.declaration.name}`;
-  if (parameters === null && clauses.length > 0)
+  if (parameters === null && (clauses.length > 0 || invariants.ensures.length > 0))
     return gate.fail(at ?? null, `an imported precondition (\`@requires\`) on an async function or one whose parameters are not plain required names: ${what}`);
   const forms = value.type.k === "function" ? [value.type]
     : value.type.k === "intersection" ? value.type.parts.flatMap(p => p.k === "function" ? [p] : []) : [];
@@ -2710,7 +2710,7 @@ function writtenImport(gate: Gate, value: ValueRoot, clauses: readonly string[],
       ({ type: read ? types[i] : undefined, kept: read && (invariants.kept[i] ?? false) })), receiver,
       invariants.result ? plain.result : undefined);
   if (typeof contract === "string") return gate.fail(at ?? null, `${contract}: ${what}`);
-  if (clauses.length === 0 && contract.pre.length === 0 && contract.ensures.length === 0) return value.type;
+  if (clauses.length === 0 && invariants.ensures.length === 0 && contract.pre.length === 0 && contract.ensures.length === 0) return value.type;
   if (!one || plain === undefined)
     return gate.fail(at ?? null, `an imported precondition (\`@requires\`) on a function whose signature is not one function's: ${what}`);
   if (parameters !== null && types.length !== parameters.length)
@@ -2719,7 +2719,11 @@ function writtenImport(gate: Gate, value: ValueRoot, clauses: readonly string[],
     statements.precondition(gate, clauses, parameters.map((name, i) => ({ name, type: types[i] })), receiver);
   if (typeof written === "string") return gate.fail(at ?? null, `${written}: ${what}`);
   const pre = [...written, ...contract.pre];
-  const ensures = contract.ensures;
+  const post = parameters === null || invariants.ensures.length === 0 ? [] :
+    statements.postcondition(gate, invariants.ensures, clauses, parameters.map((name, i) =>
+      ({ name, type: types[i], kept: invariants.kept[i] ?? false })), receiver, plain.result);
+  if (typeof post === "string") return gate.fail(at ?? null, `${post}: ${what}`);
+  const ensures = [...contract.ensures, ...post];
   const stated = (f: Extract<TypeTerm, { k: "function" }>): Extract<TypeTerm, { k: "function" }> =>
     ({ ...f, effect: { ...f.effect, pre, ensures } });
   if (value.type.k === "function") return stated(value.type);

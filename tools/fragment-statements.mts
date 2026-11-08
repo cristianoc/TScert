@@ -15,7 +15,7 @@ import { GENERATOR, UNCLOSABLE, booleanForm, booleanReturn, bindingScope, firstO
 import type { Gate } from "./fragment-parse.mts";
 import { guardResult } from "./fragment-guards.mts";
 import { literalDefaultName } from "./type-term.mts";
-import { clauseRoots, elaborateRequires, indexFactPositions, loopBindings, loopInvariantTags, parameterKept, plainParameter,
+import { clauseRoots, elaborateRequires, ensuresTags, indexFactPositions, loopBindings, loopInvariantTags, parameterKept, plainParameter,
   requiresTags, type ClauseParameter } from "./bound-annotations.mts";
 import { namesView } from "./library-types.mts";
 import { aliasMeaning, definitionKey, recordShape } from "./named-record.mts";
@@ -709,6 +709,8 @@ export function functionDeclarations(this: Gate, scope: readonly Statement[], li
   for (const s of declared) {
     const at = placed.get(s) ?? gate.fail(s, "a function declaration with no place");
     if (at >= live) continue;
+    if (ensuresTags(gate.file.text.slice(s.pos, s.getStart(gate.file))).length > 0)
+      gate.fail(s, "a postcondition (`@ensures`) requires a module function declaration");
     const holder = s.parent;
     if (!s.name) return gate.fail(s, "anonymous function");
     if (!holder || ts.isCaseClause(holder) || ts.isDefaultClause(holder))
@@ -2025,6 +2027,8 @@ export function overloadedDecl(this: Gate, node: FunctionDeclaration, overloads:
   if (node.modifiers?.some(modifier => modifier.kind === ts.SyntaxKind.AsyncKeyword))
     gate.fail(node, "an async declaration with overloads is outside the fragment");
   for (const o of [...overloads, node]) {
+    if (ensuresTags(source.text.slice(o.pos, o.getStart(source))).length > 0)
+      gate.fail(o, "a postcondition (`@ensures`) requires one signature");
     if (parametersText(o) !== parametersText(node))
       gate.fail(o, "an overload stating type parameters other than its implementation's is outside the fragment");
     if (o.parameters.length !== node.parameters.length)
@@ -2195,6 +2199,16 @@ export function functionDecl(this: Gate, node: FunctionDeclaration, signature: F
         ensures = contract.ensures;
       }
     }
+    const post = ensuresTags(gate.file.text.slice(node.pos, node.getStart(gate.file)));
+    if (post.length > 0) {
+      if (isAsync || signature !== node || !ts.isSourceFile(node.parent) || node.parameters.some(p => !plainParameter(p)))
+        gate.fail(node, "a postcondition (`@ensures`) requires a synchronous module function declaration with plain required parameters and one signature");
+      const written = postcondition(gate, post, clauses, node.parameters.map((p, i) => ({
+        name: ts.isIdentifier(p.name) ? p.name.text : "", type: parameterTypes[i], kept: parameterKept(p, node.body)
+      })), !!receiverParam, retType);
+      if (typeof written === "string") gate.fail(node, written);
+      else ensures.push(...written);
+    }
     const body = [...bindings,
       ...this.statements(node.body.statements.filter((s) => !prologue.skip.has(s)))];
     return {
@@ -2236,6 +2250,23 @@ export function precondition(gate: Gate, clauses: readonly string[],
   if (!receiver && elaborated.facts.some(f => indexFactPositions(f).includes(0)))
     return "a precondition (`@requires`) names the receiver, which the function does not declare";
   return elaborated.facts;
+}
+
+/** Written normal-return facts, over the result and unchanged parameter
+ * bindings. Parameter paths read the return heap; entry-heap snapshots are
+ * outside this clause language. Preconditions supply integrality only. */
+export function postcondition(gate: Gate, clauses: readonly string[], requires: readonly string[],
+    parameters: readonly { name: string; type: TypeTerm | undefined; kept: boolean }[],
+    receiver: boolean, result: TypeTerm | undefined): IndexFact[] | string {
+  if (parameters.some(p => p.name === "result")) return "a postcondition (`@ensures`) reserves the name result";
+  const roots = clauses.flatMap(clauseRoots);
+  for (const p of parameters)
+    if (roots.includes(p.name) && !p.kept)
+      return `a postcondition (\`@ensures\`) names reassigned parameter ${p.name}; entry values require an unchanged parameter binding`;
+  const named = [clauseParameter(gate, "result", 0, result),
+    ...parameters.map(({ name, type }, i) => clauseParameter(gate, name, receiver ? i + 1 : i + 2, type))];
+  const elaborated = elaborateRequires(clauses, named, requires);
+  return "refused" in elaborated ? `a postcondition (\`@ensures\`): ${elaborated.refused}` : elaborated.facts;
 }
 
 /** A loop's invariant (`@invariant` in the JSDoc before it; PROGRAM-TYPING.md,

@@ -294,6 +294,25 @@ control(async (): Promise<void> => {
 });
 
 control(async (): Promise<void> => {
+  // The call of short states no result fact. Forge the missing length at
+  // the following read; the incoming edge must establish it.
+  const artifacts = run("invalid-written-ensures-unstated");
+  const source = readFileSync(sourceKey(artifacts), "utf8");
+  const claims = readClaims(artifacts);
+  const fn = must(claims.functions.find(f => f.name === "read"), "read's claims");
+  const entry = must(fn.entries.find(e => e.start === source.indexOf("return out[count")), "the read's entry");
+  entry.facts.push({ guards: [], terms: [
+    { name: "count", path: [], term: "value", coefficient: 1 },
+    { name: "out", path: [], term: "length", coefficient: -1 }
+  ], bound: 0 });
+  const forged = writeClaims(artifacts, "written-ensures-forged", claims);
+  const searched = produceWith(artifacts, forged, "written-ensures-forged");
+  assert.equal(searched.status, 1, `${searched.stdout}${searched.stderr}`);
+  assert.match(searched.stdout + searched.stderr, /does not establish the claims/);
+  process.stdout.write("written ensures: a result bound absent from the call's signature, forged after the call, refused\n");
+});
+
+control(async (): Promise<void> => {
   // A type invariant claimed of a value no boundary gives it: the cast
   // record's `segmentFlags.length === widths.length` forged at the entry of
   // the walker's call, which requires it, is refused at that entry where

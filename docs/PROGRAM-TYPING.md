@@ -2123,9 +2123,9 @@ A signature's postcondition `ensures` is a list of index facts at the
 return's positions: `0` the result, $`i+1`$ the call's position $`i`$. A
 normal return leaves a heap where each holds. A trusted signature, an
 intrinsic's or a declaration's, states one, and so does a module function's
-signature where its result's type or a parameter's names a type invariant
-([type invariants](#type-invariants)), which its unit proves at each return;
-other code states none. A binding carries none, a signature covers another
+signature where it writes `@ensures` or its result's type or a parameter's
+names a type invariant ([type invariants](#type-invariants)), which its unit
+proves at each return; other code states none. A binding carries none, a signature covers another
 only where its facts include each of the other's, the meet of two signatures
 states both lists, and a variadic call's selected signature states none, its
 actuals not being its positions' values. At a call whose selected signature
@@ -2143,6 +2143,53 @@ fact names is a slot:
 Its premise is the step any other rule checks, `call-requires` included; the
 renamed facts hold on its normal return (proved, joining the two
 postconditions of the one run).
+
+**Written clauses.** A synchronous module function declaration with one
+signature and plain required parameters writes `@ensures C` in its leading
+JSDoc comment. The clause uses the [precondition](#preconditions) language,
+including guards and quantified clauses, with `result` naming the return
+value and its paths. An unguarded `safeInteger` clause in `@requires` also
+permits that value term in `@ensures`; every postcondition fact remains a
+return obligation. Array, typed-array and string lengths use their respective
+terms. For example:
+
+```ts
+/** @requires safeInteger(count) && 0 <= count && count <= 4294967295
+ * @ensures result.length === count
+ */
+export function zeros(count: number): number[] {
+  const out: number[] = [];
+  for (let i = 0; i < count; i++) out.push(0);
+  if (out.length !== count) throw new Error("length mismatch");
+  return out;
+}
+```
+
+A named parameter denotes its entry value; the clause may name it only when
+its binding is unchanged throughout the body (`parameterKept`). Its paths
+read the heap at normal return. `old(...)` is refused: the written language
+has no entry-heap snapshots. `result` is reserved, so a function with a
+parameter of that name cannot state a postcondition. Async, nested and
+overloaded declarations and nonplain parameters are refused.
+
+The defining unit establishes each clause at every normal return through
+[return-ensures](#type-invariants). Module calls and analyzed importing calls
+receive the same facts through `call-ensures`; an exported declaration's
+postcondition adds no trust assumption. Acceptance's result-fact conclusion
+in `checkUnitJson_safe` covers these obligations with its existing statement.
+The front end's shared `postcondition` elaboration supplies both the
+function's `ensures` and every imported signature's `ensures`.
+
+**Cases.** `written-ensures` checks an array builder and its bounded caller,
+a string-length allocation and a result path; the builder's explicit length
+check establishes its return fact. `written-ensures-value-import` checks a
+caller across an analyzed import. `invalid-written-ensures-body` returns an
+array shorter than its contract, and `invalid-written-ensures-unstated`
+reads below a count absent from its callee's contract (under Node:
+`undefined` and `NaN`). `written-ensures-reassigned-refused` and
+`written-ensures-old-refused` exercise the entry-value restrictions. A control
+in `pipeline/test.mts` forges the unstated result bound after the call; its
+incoming edge must establish it.
 
 **Implementation.** The positions are `CallEffects.ensuresEnv`, the meaning
 the last conjunct of `CallEffects.Effect.post`, which takes the call's
