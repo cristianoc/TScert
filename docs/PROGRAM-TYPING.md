@@ -1656,6 +1656,27 @@ is a safe integer. The lowering reads `length` of a value whose type answers
 the string test with no test of its own, so the step is `lenOf` of the
 string's slot.
 
+**A constant factor.** Multiplication by an integer constant states a linear
+fact where the knowledge bounds its result within the safe integers. A slot
+is constant here where two checked inequalities establish its equality to
+the constant; this includes the slots holding literals during evaluation.
+
+```math
+\frac{\mathrm{int}(a)\qquad K\vdash b=c\qquad
+      K\vdash -(2^{53}-1)\le c\,a\le 2^{53}-1}
+     {K\vdash r\leftarrow a*b\dashv\mathrm{int}(r),\ r=c\,a}
+     \ \textsf{int-scale}
+```
+
+with $`c`$ an integer constant and $`b`$ a safe-integer operand; the
+symmetric form reads $`b*a`$. The clause language's constant coefficients
+therefore bound computed row offsets such as `row * 28 + 27`. Proved:
+`SafeIntegers.mul_safe` establishes exact multiplication against the float
+model, `IndexWrites.knownConstant_sound` establishes the operand's constant
+value, and `IndexWrites.linearAtoms_holds` establishes the result's facts.
+The source cases are `table-constant-stride` and
+`invalid-table-constant-stride` (a row starting at the length).
+
 **Dropping a slot.** Where a step's output drops a slot, or an edge's mapping
 retains no slot of a fact's class, the slot is first eliminated from the
 unconditional linear facts by Fourier–Motzkin elimination: each pair of

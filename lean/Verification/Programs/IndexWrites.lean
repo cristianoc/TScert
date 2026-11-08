@@ -484,9 +484,38 @@ integer, or a literal that is one; its value is a linear form plus a constant. -
 /-- The largest safe integer, `2^53 - 1`. -/
 def maxSafe : Int := 2 ^ 53 - 1
 
+/-- A constant suggested by a singleton upper bound and checked in both
+ directions. Lowering holds literal operands in slots before arithmetic. -/
+def knownConstant (k : Knowledge) (a : Nat) : Option Int :=
+  match k.indices.findSome? (fun atom => match atom.fact with
+    | .linear (.le [(t, 1)] c) => if t == .value a then some c else none
+    | _ => none) with
+  | none => none
+  | some c => if entailsKnown k.indices (valueFact (.le [(a, 1)] c)) &&
+      entailsKnown k.indices (valueFact (.le [(a, -1)] (-c))) then some c else none
+
+theorem knownConstant_sound {k : Knowledge} {a : Nat} {c : Int} {ρ h}
+    (hc : knownConstant k a = some c) (hk : Holds k ρ h) : valuation ρ a = c := by
+  simp only [knownConstant] at hc
+  split at hc
+  · cases hc
+  · split at hc
+    · rename_i hb
+      simp only [Bool.and_eq_true] at hb
+      cases hc
+      have h1 := holds_valueFact.mp (entailsKnown_sound hk.2.2.2.2.2 hb.1)
+      have h2 := holds_valueFact.mp (entailsKnown_sound hk.2.2.2.2.2 hb.2)
+      simp only [Linear.Fact.Holds, Linear.Form.eval] at h1 h2
+      omega
+    · cases hc
+
 /-- An operand's value as a linear form over the input slots plus a constant. -/
-def operandForm (k : Knowledge) : Tm → Option (Linear.Form Nat × Int)
-  | .var a => if intSlot k.indices a then some ([(a, 1)], 0) else none
+def operandForm (k : Knowledge) (constants : Bool) : Tm → Option (Linear.Form Nat × Int)
+  | .var a => if intSlot k.indices a then
+      match if constants then knownConstant k a else none with
+      | some c => some ([], c)
+      | none => some ([(a, 1)], 0)
+    else none
   | .num b => (SafeIntegers.safeIntOfBits b).map fun i => ([], i)
   | _ => none
 
@@ -570,7 +599,7 @@ def linearAtoms (G : NormalGraph ι) (Γ : List (Ty ι)) (k : Knowledge) : Tm �
     else []
   | .arith op a b =>
     if operandIn Γ a && operandIn Γ b then
-      match operandForm k a, operandForm k b with
+      match operandForm k (op == .mul) a, operandForm k (op == .mul) b with
       | some (fa, ca), some (fb, cb) =>
         let sum := fun (F : Linear.Form Nat) (c : Int) =>
           if entailsKnown k.indices (valueFact (.le F (maxSafe - c))) &&
@@ -578,6 +607,8 @@ def linearAtoms (G : NormalGraph ι) (Γ : List (Ty ι)) (k : Knowledge) : Tm �
         match op with
         | .add => sum (fa ++ fb) (ca + cb)
         | .sub => sum (fa ++ fb.scale (-1)) (ca - cb)
+        | .mul => if fa = [] then sum (fb.scale ca) (ca * cb)
+          else if fb = [] then sum (fa.scale cb) (ca * cb) else []
         | .lt | .le | .gt | .ge => compareAtoms op (fa ++ fb.scale (-1)) (ca - cb)
         | .eq => equalAtoms (fa ++ fb.scale (-1)) (ca - cb)
         | _ => []
@@ -598,8 +629,8 @@ theorem scale_vars (k : Int) (F : Linear.Form Nat) : (F.scale k).map (·.1) = F.
   simp [Linear.Form.scale, Function.comp_def]
 
 /-- What an operand denotes: a value whose safe integer is `F + c` at the input slots. -/
-theorem operandForm_sound {k : Knowledge} {t : Tm} {F : Linear.Form Nat} {c : Int} {ρ h}
-    (ho : operandForm k t = some (F, c)) (hk : Holds k ρ h) :
+theorem operandForm_sound {k : Knowledge} {constants : Bool} {t : Tm} {F : Linear.Form Nat} {c : Int} {ρ h}
+    (ho : operandForm k constants t = some (F, c)) (hk : Holds k ρ h) :
     (∀ x ∈ F.map (·.1), (intValue (ρ x)).isSome) ∧
       ∃ b, instantiate 0 ρ t = .num b ∧ SafeIntegers.SafeInt b (Linear.Form.eval (valuation ρ) F + c) := by
   cases t with
@@ -607,13 +638,21 @@ theorem operandForm_sound {k : Knowledge} {t : Tm} {F : Linear.Form Nat} {c : In
     simp only [operandForm] at ho
     split at ho
     · rename_i hi
-      cases ho
       have hs := intSlot_sound hk.2.2.2.2.2 hi
       obtain ⟨i, hi'⟩ := Option.isSome_iff_exists.mp hs
       obtain ⟨b, hb, hsafe⟩ := intValue_safe hi'
-      refine ⟨by simp [hs], b, by simp [instantiate, hb], ?_⟩
-      simp only [Linear.Form.eval, valuation, hi', Option.getD_some]
-      simpa using hsafe
+      split at ho
+      · rename_i c hc
+        cases ho
+        have hc' : knownConstant k a = some c := by
+          cases constants <;> simp_all
+        have he := knownConstant_sound hc' hk
+        simp only [valuation, hi', Option.getD_some] at he
+        exact ⟨by simp, b, by simp [instantiate, hb], by simpa only [Linear.Form.eval, Int.zero_add, ← he] using hsafe⟩
+      · cases ho
+        refine ⟨by simp [hs], b, by simp [instantiate, hb], ?_⟩
+        simp only [Linear.Form.eval, valuation, hi', Option.getD_some]
+        simpa using hsafe
     · cases ho
   | num b =>
     simp only [operandForm, Option.map_eq_some_iff, Prod.mk.injEq] at ho
@@ -668,9 +707,9 @@ theorem value_run {Ξ T : Fam} {Q : Post} {v : Tm} (hv : isVal v = true) :
     · exact absurd hr (val_not_thrown hv)
     · exact absurd step (value_no_step hv)
 
-theorem binop_num_arith {op : Arith} {x y : UInt64} {u : Tm} (hop : op = .add ∨ op = .sub)
+theorem binop_num_arith {op : Arith} {x y : UInt64} {u : Tm} (hop : op = .add ∨ op = .sub ∨ op = .mul)
     (h : binop op (.num x) (.num y) = some u) : u = .num (arithBits op x y) := by
-  rcases hop with rfl | rfl <;> simp [binop, Arith.relational] at h <;> exact h.symm
+  rcases hop with rfl | rfl | rfl <;> simp [binop, Arith.relational] at h <;> exact h.symm
 
 theorem storeSlot_bound {G : NormalGraph ι} {Γ : List (Ty ι)} {s : Nat} {ρ n W}
     (hc : storeSlot G Γ s = true) (he : EnvOk G Γ ρ n W) : ∃ ls, ρ s = .arr ls ∧ ls.length ≤ maxArrayLength :=
@@ -927,12 +966,32 @@ theorem linearAtoms_holds [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty �
             (by rw [Linear.Form.eval_append]; omega)
             (fun hr => SafeIntegers.add_safe hsa hsb hr)
         · -- sub
-          rw [binop_num_arith (.inr rfl) hu]
+          rw [binop_num_arith (.inr (.inl rfl)) hu]
           exact hsum (fa ++ fb.scale (-1)) (ca - cb)
             ((Linear.Form.eval (valuation ρ) fa + ca) - (Linear.Form.eval (valuation ρ) fb + cb)) _
             (hvars (fa ++ fb.scale (-1)) (by simp only [List.map_append, scale_vars]))
             (by rw [Linear.Form.eval_append, Linear.Form.eval_scale]; omega)
             (fun hr => SafeIntegers.sub_safe hsa hsb hr)
+        · -- multiplication with one constant operand
+          rw [binop_num_arith (.inr (.inr rfl)) hu]
+          split
+          · rename_i hc
+            subst fa
+            exact hsum (fb.scale ca) (ca * cb)
+              ((Linear.Form.eval (valuation ρ) [] + ca) * (Linear.Form.eval (valuation ρ) fb + cb)) _
+              (by simpa only [scale_vars] using hvb)
+              (by simp only [Linear.Form.eval_scale, Linear.Form.eval, Int.zero_add, Int.mul_add])
+              (fun hr => SafeIntegers.mul_safe hsa hsb hr)
+          · split
+            · rename_i hc
+              subst fb
+              exact hsum (fa.scale cb) (ca * cb)
+                ((Linear.Form.eval (valuation ρ) fa + ca) * (Linear.Form.eval (valuation ρ) [] + cb)) _
+                (by simpa only [scale_vars] using hva)
+                (by simp only [Linear.Form.eval_scale, Linear.Form.eval, Int.zero_add, Int.add_mul];
+                    rw [Int.mul_comm cb])
+                (fun hr => SafeIntegers.mul_safe hsa hsb hr)
+            · exact indexHolds_nil _ _
         all_goals first
           | (rw [binop_num_eq hu]
              exact equalAtoms_holds (hvars (fa ++ fb.scale (-1)) (by simp only [List.map_append, scale_vars]))

@@ -10,6 +10,9 @@ import { join } from "node:path";
 import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-example.mts";
 import { cases } from "../pipeline/cases.mts";
 
+assert.equal(runExample("invalid-table-constant-stride", "typeof lastCell(new Uint8Array(28), 1)"), "undefined",
+  "a row start at the length does not bound its last cell");
+
 // These source counterexamples exercise refused operations within the caller
 // contract: ordinary records, stable standard prototypes and native promises.
 assert.equal(runExample("invalid-array-covariance",

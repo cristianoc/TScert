@@ -421,6 +421,67 @@ theorem sub_safe {x y : UInt64} {i j : Int} (hx : SafeInt x i) (hy : SafeInt y j
     rw [shift_canonical i h hx.1 (by omega), shift_canonical j h' hy.1 (by omega)]
     exact normalize_safe (by rw [Int.sub_mul]) hr
 
+/-- Rounding an already normalized mantissa agrees with exact integer rounding. -/
+theorem roundWithAccuracy_large (s : Sign) {m N : Nat} {e : Int}
+    (hm : 2 ^ 52 ≤ m) (hN0 : 0 < N) (hN : N < 2 ^ 53)
+    (hv : m * 2 ^ e.toNat = N * 2 ^ (-e).toNat) :
+    roundWithAccuracy .binary64 s m e .exact =
+      .finite s (N * 2 ^ (52 - N.log2)) ((N.log2 : Int) - 52) (canon_pos hN0 hN) := by
+  have hl : 52 ≤ m.log2 := by
+    have hlt := Nat.lt_log2_self (n := m)
+    by_cases h : 52 ≤ m.log2
+    · exact h
+    have hp := Nat.pow_le_pow_right (by decide : 1 ≤ 2) (by omega : m.log2 + 1 ≤ 52)
+    omega
+  have ht : e ≤ Format.targetExponent .binary64 (totalExponent m e) := by
+    simp only [Format.targetExponent, totalExponent, Format.mantissaBits, Format.minExponent]
+    omega
+  have hd : (e - Format.targetExponent .binary64 (totalExponent m e)).toNat = 0 := by omega
+  have hr := round_exact s (by omega : 0 < m) hN0 hN hv
+  simpa only [round, decreaseExponent, hd, Nat.shiftLeft_zero, Int.natCast_zero, Int.sub_zero] using hr
+
+/-- Safe integer multiplication is exact when the product is a safe integer. -/
+theorem mul_safe {x y : UInt64} {i j : Int} (hx : SafeInt x i) (hy : SafeInt y j)
+    (hr : (i * j).natAbs < 2 ^ 53) : SafeInt (arithBits .mul x y) (i * j) := by
+  rw [arithBits_mul]
+  rcases model_safe_cases hx with ⟨rfl, s, hu⟩ | ⟨h, hu⟩ <;>
+    rcases model_safe_cases hy with ⟨rfl, t, hv⟩ | ⟨h', hv⟩ <;> rw [hu, hv]
+  · simp only [UnpackedFloat.mul, Int.zero_mul]; exact pack_zero_safe _
+  · simp only [canonical, UnpackedFloat.mul, Int.zero_mul]; exact pack_zero_safe _
+  · simp only [canonical, UnpackedFloat.mul, Int.mul_zero]; exact pack_zero_safe _
+  · simp only [canonical, UnpackedFloat.mul]
+    have hi := log2_lt53 (by omega) hx.1
+    have hj := log2_lt53 (by omega) hy.1
+    have hn : i * j ≠ 0 := Int.mul_ne_zero h h'
+    have hs : signOfBit (decide (i < 0)) * signOfBit (decide (j < 0)) =
+        signOfBit (decide (i * j < 0)) := by
+      by_cases hi : i < 0 <;> by_cases hj : j < 0
+      · have hp := Int.mul_pos_of_neg_of_neg hi hj
+        simp [hi, hj, show ¬ i * j < 0 by omega, signOfBit]; rfl
+      · have hp := Int.mul_neg_of_neg_of_pos hi (by omega : 0 < j)
+        simp [hi, hj, hp, signOfBit]; rfl
+      · have hp := Int.mul_neg_of_pos_of_neg (by omega : 0 < i) hj
+        simp [hi, hj, hp, signOfBit]; rfl
+      · have hp := Int.mul_pos (by omega : 0 < i) (by omega : 0 < j)
+        simp [hi, hj, show ¬ i * j < 0 by omega, signOfBit]; rfl
+    rw [hs]
+    have hm1 := (IndexNumbers.bitsOfNat_toNat (by omega : 0 < i.natAbs) hx.1).2.1
+    have hm2 := (IndexNumbers.bitsOfNat_toNat (by omega : 0 < j.natAbs) hy.1).2.1
+    have hm1' : 2 ^ 52 ≤ i.natAbs * 2 ^ (52 - i.natAbs.log2) := by
+      simpa only [show 53 - (i.natAbs.log2 + 1) = 52 - i.natAbs.log2 by omega] using hm1
+    have hm2' : 2 ^ 52 ≤ j.natAbs * 2 ^ (52 - j.natAbs.log2) := by
+      simpa only [show 53 - (j.natAbs.log2 + 1) = 52 - j.natAbs.log2 by omega] using hm2
+    have hm : 2 ^ 52 ≤ (i.natAbs * 2 ^ (52 - i.natAbs.log2)) * (j.natAbs * 2 ^ (52 - j.natAbs.log2)) :=
+      Nat.le_trans hm1' (Nat.le_mul_of_pos_right _ (by omega))
+    rw [roundWithAccuracy_large _ hm
+      (by omega : 0 < (i * j).natAbs) hr ?_]
+    · exact pack_canonical (i * j) hn hr
+    · have he : ((i.natAbs.log2 : Int) - 52 + ((j.natAbs.log2 : Int) - 52)).toNat = 0 := by omega
+      have he' : (-((i.natAbs.log2 : Int) - 52 + ((j.natAbs.log2 : Int) - 52))).toNat =
+          (52 - i.natAbs.log2) + (52 - j.natAbs.log2) := by omega
+      rw [he, he', Nat.pow_zero, Nat.mul_one, Int.natAbs_mul, Nat.pow_add]
+      ac_rfl
+
 /-! ## Decoding -/
 
 /-- **Decoding.** The safe integer `safeIntOfBits` decodes is the one the

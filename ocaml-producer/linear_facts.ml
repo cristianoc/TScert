@@ -400,6 +400,13 @@ let rec linear ?(array = fun _ _ -> false) env fs (e : expr) : ((string * int) l
        let r = if op = Add then norm (ta @ tb),ca+cb else norm (ta @ scale (-1) tb),ca-cb in
        if safe fs r then Some r else None
      | _ -> None)
+  | Arith (Mul,a,b) ->
+    (match linear ~array env fs a, linear ~array env fs b with
+     | Some ([],ca),Some (tb,cb) ->
+       let r = norm (scale ca tb),ca*cb in if safe fs r then Some r else None
+     | Some (ta,ca),Some ([],cb) ->
+       let r = norm (scale cb ta),ca*cb in if safe fs r then Some r else None
+     | _ -> None)
   | _ -> None
 
 (* `x = t + c`: x a safe integer equal to the sum. *)
