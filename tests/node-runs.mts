@@ -3007,6 +3007,8 @@ for (const [file, call] of [
   assert.equal(runExample(ofKind("typed-array-views", "positive"),
     "JSON.stringify([first(unpack(1)), [...unpack(1).values.subarray(0, 9)], [...mark(3, 1)], mark(3, 5)])"),
     "[1,[1,1,1,1,1,1,1,1,1],[0,1,0],null]", "typed-array-views: the elements are numbers");
+  assert.equal(runExample(negative("invalid-range-text-argument-write"),
+    'typeof first(["a"])'), "undefined", "a primitive method's argument pops the array before the read");
   assert.equal(runExample(negative("invalid-call-replaces-view-path"),
     "typeof first({ segmentFlags: new Uint8Array([1]) })"), "undefined",
     "a call replaces the field holding the bounded view");

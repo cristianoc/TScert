@@ -1980,6 +1980,13 @@ added by `Checker.ensuringCalls`; an element write's is `CallEffects.ElementWrit
 `growFirst` (proved: `receiverGrows_changes`, `growFirst_kept`, in
 `effectKept_holds`), and a definition's code is checked by
 `GraphCode.effectChecked`; the own-location call is `PromiseCalls.ownKept`.
+The producer reads a computed receiver's type from its expression claim and
+looks up a primitive method's footprint on its prototype. It composes that
+footprint with the receiver's and arguments' effects: a string's
+`charCodeAt` keeps the heap, while an argument that pops an array drops its
+bound (`range-text-branch-bound`, pretext's `buildRangeText`, and
+`invalid-range-text-argument-write`). Lean checks the selected call against
+the declaration (`PromiseCalls.keepsCall_sound`).
 `view-stable` is `HeapExpressionRules.stableIndices`, added by `withStable`
 and applied by `Checker.keepingStable` (proved: `withStable_sound`, from
 `HeapObservations.stable_frame`); `view-path-stable` is

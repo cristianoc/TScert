@@ -5579,6 +5579,21 @@ control(async (): Promise<void> => {
 });
 
 control(async (): Promise<void> => {
+  const artifacts = run("invalid-range-text-argument-write");
+  const source = readFileSync(sourceKey(artifacts), "utf8");
+  const claims = readClaims(artifacts);
+  const fn = must(claims.functions.find(f => f.name === "first"), "first's claims");
+  const at = source.lastIndexOf("segments[0]!");
+  const read = must(fn.expressions.find(e => e.pos[0] === at && e.pos[1] === at + "segments[0]".length),
+    "the read after the argument's call");
+  assert.ok(Array.isArray(read.type));
+  read.type = read.type.filter(label => label !== rowOf(claims, "undef"));
+  const input = writeClaims(artifacts, "forged-primitive-call-argument-bound", claims);
+  refusedAt(artifacts, input, "forged-primitive-call-argument-bound", `at [${at},`);
+  invoke(input, join(artifacts, "evidence.json"), artifacts, /^reject: source /m);
+});
+
+control(async (): Promise<void> => {
   const artifacts = run("call-keeps-view-path");
   const claims = readClaims(artifacts);
   must(claims.functions.find(f => f.name === "replace"), "replace's claims").footprint = { value: "scalar", store: "keep" };
