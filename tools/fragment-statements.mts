@@ -2463,9 +2463,9 @@ function fieldType(gate: Gate, t: TypeTerm, f: string, depth: number = 0, option
       return found.length === 1 ? found[0] ?? null : null;
     }
     if (t.k === "reference") {
-      if (records.record(t.reference.target)) return fieldType(gate, recordShape(t, records, refused), f, depth + 1, optional);
       const meaning = aliasMeaning(t, records, refused);
-      return meaning === "record" ? null : fieldType(gate, meaning, f, depth + 1, optional);
+      return fieldType(gate, meaning === "record" ? recordShape(t, records, refused) : meaning,
+        f, depth + 1, optional);
     }
   } catch (e) {
     if (e instanceof UnresolvedField) return null;

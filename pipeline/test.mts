@@ -665,6 +665,8 @@ control(async (): Promise<void> => {
 });
 
 control(async (): Promise<void> => {
+  assert.equal(runExample("invalid-bounds-imported-alias-path",
+    "other({ widths: [1], flags: new Uint8Array(0) }, 0)"), undefined);
   // A path's facts are about its root and its fields: the read of each
   // unsafe program claimed at `number`, the precondition's of
   // `%ElementAt%`'s bounded signature, with no fact added, is refused where
@@ -673,6 +675,7 @@ control(async (): Promise<void> => {
   // with `i < b.widths.length` or `i < row.heights.length` forged at the
   // read's statement entry, refused at that entry.
   for (const [name, fnName, read, statement, root, field] of [
+    ["invalid-bounds-imported-alias-path", "other", "prepared.flags[i]", "return prepared.flags[i]!", "prepared", "flags"],
     ["invalid-field-path-read-other-record", "other", "b.widths[i]", "return b.widths[i]!", "b", "widths"],
     ["invalid-field-path-read-other-field", "heightAt", "row.heights[i]", "return row.heights[i]!", "row", "heights"],
   ] as const) {
@@ -687,7 +690,7 @@ control(async (): Promise<void> => {
       if (forgeFact)
         must(fn.entries.find(e => e.start === source.indexOf(statement)), "the read's entry").facts.push(
           { guards: [], terms: [{ name: "i", path: [], term: "value", coefficient: 1 },
-            { name: root, path: [field], term: "length", coefficient: -1 }], bound: -1 });
+            { name: root, path: [field], term: name === "invalid-bounds-imported-alias-path" ? "view" : "length", coefficient: -1 }], bound: -1 });
       const tag = `field-path-forged-${name}-${forgeFact ? "fact" : "read"}`;
       const searched = produceWith(artifacts, writeClaims(artifacts, tag, claims), tag);
       assert.equal(searched.status, 1, `${tag}: ${searched.stdout}${searched.stderr}`);

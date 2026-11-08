@@ -9,6 +9,7 @@
     "verbatimModuleSyntax": true,
     "noEmit": true,
     "paths": {
+      "@fixture/bounds-path-types": ["./bounds-path-types.ts"],
       "@fixture/lib": ["./lib.ts"],
       "@fixture/literal-defaults": ["./literal-defaults.ts"],
       "@fixture/certified": ["./certified.ts"],
@@ -49,6 +50,8 @@
   },
   "include": [
     "../examples/*value-import*.ts",
+    "../examples/*bounds-imported-alias-path*.ts",
+    "./bounds-path-types.ts",
     "./lib.ts",
     "./literal-defaults.ts",
     "./certified.ts",
