@@ -1838,10 +1838,12 @@ theorem receiverGrows_changes {r : Tm} {h h' : Heap} (hg : CallEffects.ReceiverG
 
 /-- The locations a call growing the receiver slot `i`'s store keeps beside
 every object and number: each field of a slot a separation fact keeps apart
-from every own location of `i`. -/
+from every own location of `i`, or from `i`'s store field, in either
+orientation. -/
 def growFirst (k : HeapKnowledge.Knowledge) (t : Tm) : Nat → String → Bool :=
   match receiverSlot t with
   | some i => fun s g => HeapSeparation.apartAll k.separation i s (.str g) ||
+      HeapSeparation.apart k.separation i arrayStoreKey s (.str g) ||
       (g == "[]" && IndexWrites.apartFrom k i s)
   | none => fun _ _ => false
 
@@ -1858,7 +1860,15 @@ theorem growFirst_kept {k : HeapKnowledge.Knowledge} {t : Tm} {ρ : Env} {h h' :
     rcases hg l v hv with hk' | ⟨hst, -⟩
     · exact hk'
     · simp only [ExpressionEffects.receiverOf, instantiate, Nat.not_lt_zero, if_false, Nat.sub_zero] at hst
-      rcases hf with hf | ⟨rfl, hf⟩
+      rcases hf with (hf | hf) | ⟨rfl, hf⟩
+      case inl.inr =>
+        -- A separation fact keeps the receiver's store field apart from the
+        -- slot's field.
+        cases hr : ρ i with
+        | objAt flds' c' o' =>
+          rw [hr] at hst
+          exact absurd rfl (HeapSeparation.apart_sound hf hk.2.2.2.1 hr hst hs hl)
+        | _ => rw [hr] at hst; simp [Footprints.storeOf, Footprints.fieldsOf] at hst
       case inr =>
         -- A region fact keeps the receiver's store cell apart from the
         -- store cell of the slot's array.

@@ -95,6 +95,31 @@ let statements callbacks flow_graph register_following owner_span env0 ss =
       | Some g -> g
       | None -> Json.fail "Lean supplied no control-flow graph for a body" in
     if graph.body_spans <> spans then Json.fail "Lean control-flow body disagrees with source statements";
+    (* The constants holding an array literal's object: Lean states each
+       one's store field apart from the store fields of the arrays of the
+       older slots in its scope (`Observations.separationFacts`), whatever
+       the heap holds, so a push into one keeps the other's length. *)
+    let array_constants =
+      let rec collect ss = List.concat_map (fun (s:Source.stmt) -> match s.statement with
+        | Source.Declare (false,bindings) -> List.filter_map (fun (n,_,(init:Source.expr)) ->
+            match init.node with Source.ArrayLiteral (_,[]) -> Some n | _ -> None) bindings
+        | Source.If (_,a,b) -> collect a @ collect b
+        | Source.While (_,b,u) -> collect (b @ u)
+        | Source.Block (_,b) | Source.ForOf (_,_,_,_,b) -> collect b
+        | Source.Try (b,h,f) -> collect (b @ (match h with Some (_,hs) -> hs | None -> []) @ Option.value f ~default:[])
+        | Source.Closing (c,b) -> collect (b @ c)
+        | _ -> []) ss in
+      collect ss in
+    let separated env (scope:Flow.binding list) =
+      let names = List.map (fun (b:Flow.binding) -> b.name) scope in
+      let rec pairs = function
+        | [] -> []
+        | x :: older ->
+          (if List.mem x array_constants then
+             List.filter_map (fun m -> if m <> x && Linear_facts.slot_binding env m && callbacks.array_binding env m []
+               then Some (x,m) else None) older
+           else []) @ pairs older in
+      pairs names in
     let syntax = Hashtbl.create 64 in
     let rec register ss =
       let rec following_statements = function
@@ -411,7 +436,8 @@ let statements callbacks flow_graph register_following owner_span env0 ss =
           [with_facts ~ds:(Linear_facts.dstatement env disjunctions0 s) ~gs:(Linear_facts.gstatement ~bounds:bounds0 env facts0 guarded0 s)
             ~es:(Linear_facts.estatement ~array:(callbacks.array_binding env) ~facts:facts0 ~regions:regions0 env every0 s)
             ~rs:(Linear_facts.rstatement ~array:(callbacks.array_binding env) env regions0 s) e
-            (Linear_facts.statement ~array:(callbacks.array_binding env) ~bounds:bounds0 ~regions:regions0 env facts0 s)
+            (Linear_facts.statement ~array:(callbacks.array_binding env) ~bounds:bounds0
+               ~regions:(regions0 @ separated env node.scope) env facts0 s)
             (Linear_facts.statement_bounds ~facts:facts0 env bounds0 s)]
         | Flow.IteratorStart (span,b,_), [e] ->
           (* `%Iterate%` of an array binding allocates its iterator and keeps

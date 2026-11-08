@@ -126,16 +126,21 @@ listed slot's fields, addressed by level at the context's depth. -/
       -- An iterator's own locations differ from the fields older slots'
       -- records named when it was created. A constant holding an object it
       -- allocated is left out: the edge from a key-adding write to it does
-      -- not carry that separation (`blocker-loop-key-adding-write`).
-      if !b.iterator || Γ.length ≤ i then [] else
+      -- not carry that separation (`blocker-loop-key-adding-write`). A
+      -- constant holding an array literal's object keeps its store field
+      -- apart from the store fields of the older slots' arrays, a fresh
+      -- one's among them.
+      let array := b.fresh && !b.iterator
+      if !(b.iterator || array) || Γ.length ≤ i then [] else
       match b.apart with
       | none => []
       | some older =>
-        [⟨Γ.length - 1 - i, none, Γ.zipIdx.filterMap fun (A,j) =>
-          if j ≤ i || (scope[j]?.any (·.fresh)) then none else
+        [⟨Γ.length - 1 - i, if array then some [arrayStoreKey] else none, Γ.zipIdx.filterMap fun (A,j) =>
+          if j ≤ i || (!array && scope[j]?.any (·.fresh)) then none else
           let fields := match older[j - i - 1]? with
             | some B => (commonFields G A).filter (commonFields G B).contains
             | none => []
+          let fields := if array then fields.filter (· == arrayStoreKey) else fields
           if fields.isEmpty then none else some (Γ.length - 1 - j, fields)⟩]
 
 /-- A checkpoint is an actual no-op graph node. Every incoming edge must
