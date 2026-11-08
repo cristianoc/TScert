@@ -3118,6 +3118,23 @@ where the native is modelled, and audited otherwise:
 | `Set` and `Map` `add`, `set`, `delete`, `clear`; `Date` `setTime` | `{value: scalar, store: keep}` | they run no code and write only the receiver's internal slots, which no location of the model holds, and a collection's `size`, a location holding a number, which they set to the number of entries (ECMA-262, `Map.prototype.set`, `Set.prototype.add`, `get Map.prototype.size`): no location holding an object or a store changes (audited) |
 
 
+#### Map result length
+
+`Array.prototype.map` reads its receiver's length before invoking a callback
+and allocates its result at that captured length. It writes only indices
+below that length. Ordinary construction excludes a custom constructor or
+species, and the callback cannot reach the result while it is being built.
+A callback preserving every array store therefore gives
+$`|\mathrm{result}|=|\mathrm{receiver}|`$ at return. A callback growing
+stores gives $`|\mathrm{result}|\le|\mathrm{receiver}|`$ instead. These
+are the postconditions of the existing signatures with `keep` and `grow`
+store footprints, respectively; unrestricted callbacks state neither
+relation ([ECMA-262](REFERENCES.md#ecma-262), `Array.prototype.map`; audited).
+Each is consumed by the proved
+[call-ensures rule](PROGRAM-TYPING.md#postconditions). The density contract
+continues to depend on the receiver and callback as the
+[native footprints](#native-footprints) specify.
+
 #### Array search bounds
 
 `Array.prototype.indexOf` returns a safe integer $`r`$ with

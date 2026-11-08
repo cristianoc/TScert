@@ -2921,12 +2921,25 @@ defined and at most zero; array lengths are nonnegative.
      {\Sigma,\ \mathrm{every}(x.p,|x.p|,\Phi)}\ \textsf{every-empty}
 ```
 
-An empty array literal states its result's length is zero. Its lowering
-evaluates the empty store and the object holding it in one inspection,
-whose postcondition records zero length and the allocation's fresh
-locations. The producer proposes the zero-length facts at the declaration
+An array literal without spreads states its result's length equal to its
+number of elements (proved: `IndexWrites.literalArrayAtoms_holds`). Its
+lowering evaluates each element once, in source order, then the store and
+the object holding it in one inspection. The postcondition records the
+length and the allocation's fresh locations. An empty literal therefore
+states zero length. The producer proposes the zero-length facts at the declaration
 and the written quantified invariant at the loop head; each incoming edge
 checks the invariant, including the entry from the empty literal.
+
+**Linear facts across a push.** For value actuals, the append relation
+states exactly $`|x|_{\mathrm{after}}=|x|_{\mathrm{before}}+n`$, where
+$`n`$ is the number of actuals. For a plain linear fact, each occurrence of
+$`|x|`$ therefore contributes its coefficient times $`n`$ to the bound in
+the fact after the call. Every other term must be preserved by the
+receiver growth's frame. The rule accepts fixed slot actuals, whose context
+establishes they are values, and unconditional linear facts; spread actuals
+state no count (proved: `PromiseCalls.appended_length`,
+`append_fact_holds`, `linearAppendKept_holds`). This applies to equality as
+its two inequalities, including the builder invariant `out.length === i`.
 
 **Across a push.** A normal return of `push` changes no old location but its
 receiver's store, which it extends: the old elements keep their indices, and

@@ -824,19 +824,26 @@ theorem slots_snd_ge : ∀ {base : Nat} {ns : List PropKey} {l : Nat},
 
 /-- A fresh object's own locations lie past the old heap's end; a contract
 field of a slot holds a heap value, so it lies below it. -/
-theorem fresh_apart [DecidableEq ι] {G : NormalGraph ι} {Γ ρ n W h} {ns : List PropKey} {code : CallCode} {oid : Nat}
-    (he : EnvOk G Γ ρ n W) (hh : HeapOk n W h) :
+theorem fresh_apart_from [DecidableEq ι] {G : NormalGraph ι} {Γ ρ n W h} {ns : List PropKey} {code : CallCode} {oid base : Nat}
+    (he : EnvOk G Γ ρ n W) (hh : HeapOk n W h) (hb : h.length ≤ base) :
     ∀ s g, (s, g) ∈ contractFields G Γ →
-      HeapSeparation.Apart (push (.objAt (slots h.length ns) code oid) ρ) 0 none (s + 1) g := by
+      HeapSeparation.Apart (push (.objAt (slots base ns) code oid) ρ) 0 none (s + 1) g := by
   intro s g hm l l' hl hl'
   obtain ⟨Ref,hidx,hfo⟩ := contractFields_mem hm
   obtain ⟨_,flds1,code0,oid0,l1,c1,hl0,hfd1,hlookup,_⟩ := fieldOperand_sound hfo (he.2 s Ref hidx)
   obtain ⟨u,hu,_⟩ := hh.2 l1 c1 hlookup
   have hlt : l1 < h.length := List.getElem?_eq_some_iff.mp hu |>.1
-  have hge : h.length ≤ l := slots_snd_ge (by simpa [push, HeapSeparation.At] using hl)
+  have hge : base ≤ l := slots_snd_ge (by simpa [push, HeapSeparation.At] using hl)
   simp only [push, hl0, HeapSeparation.At, List.mem_singleton, exists_eq_left] at hl'
   have : l' = l1 := Option.some.inj (hl'.symm.trans hfd1)
   omega
+
+
+theorem fresh_apart [DecidableEq ι] {G : NormalGraph ι} {Γ ρ n W h} {ns : List PropKey} {code : CallCode} {oid : Nat}
+    (he : EnvOk G Γ ρ n W) (hh : HeapOk n W h) :
+    ∀ s g, (s, g) ∈ contractFields G Γ →
+      HeapSeparation.Apart (push (.objAt (slots h.length ns) code oid) ρ) 0 none (s + 1) g := by
+  exact fresh_apart_from he hh (Nat.le_refl _)
 
 /-- The slots a fresh allocation's initializers stand in, with the field each
 one fills. Nothing else can frame facts: every initializer must already be a

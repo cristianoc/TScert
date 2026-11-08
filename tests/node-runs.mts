@@ -10,6 +10,13 @@ import { join } from "node:path";
 import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-example.mts";
 import { cases } from "../pipeline/cases.mts";
 
+assert.equal(runExample("native-length-literal", 'order()'), "0,1,2");
+
+assert.throws(() => runExample("invalid-native-length-literal", 'past("a")'), /TypeError/);
+
+assert.throws(() => runExample("invalid-native-length-map", 'changed(["a"])'), /TypeError/);
+assert.throws(() => runExample("invalid-native-length-push", 'past([])'), /TypeError/);
+
 assert.throws(() => runExample("invalid-native-length-indexof", 'absent(["a"], "b")'), /TypeError/);
 assert.throws(() => runExample("invalid-native-length-filled", 'past(1)'), /TypeError/);
 

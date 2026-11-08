@@ -541,6 +541,7 @@ let statements (expr:Analysis_state.expression_infer) execute_bindings owner_spa
     | Read (r,f) -> (match Option.bind (receiver_type env r) (fun t -> field_of t f) with
       | Some g when not g.optional && not g.host -> Some g.read
       | _ -> None)
+    | ArrayLiteral _ -> latest_claim e.pos
     | _ -> None in
   (* The classes a type admits: an object, a number, a store (`unknown`). *)
   let classes t = match head t with
@@ -574,18 +575,6 @@ let statements (expr:Analysis_state.expression_infer) execute_bindings owner_spa
   let method_type env r key = match Option.bind (receiver_type env r) (fun t -> field_of t key) with
     | Some g when g.host && not g.optional -> Some g.read
     | _ -> None in
-  (* The member a method call reads: a host-relative member, or a
-     primitive's, its prototype's (`Type_queries.primitive_prototype`), the
-     primitive read off the receiver's declared type or, for a receiver no
-     binding's path is (`xs[i]!`), its claimed one. *)
-  let method_member env r key =
-    let receiver = match receiver_type env r with Some t -> Some t | None -> claimed_type r.Source.pos in
-    match Option.map head receiver with
-    | Some (Atoms [atom]) when Type_queries.primitive_prototype atom <> None ->
-      Option.map (fun (g:Semantic.field) -> g.read)
-        (field_of (Atoms [Named (Option.get (Type_queries.primitive_prototype atom),[])]) key)
-    | _ -> method_type env r key in
-  Linear_facts.method_footprint := (fun env r key -> Option.bind (method_member env r key) footprint_of);
   (* An array's method is the array prototype's member. *)
   Linear_facts.method_grows := (fun env r key ->
     let member = match Option.map head (receiver_type env r) with
@@ -598,7 +587,7 @@ let statements (expr:Analysis_state.expression_infer) execute_bindings owner_spa
     | _ -> false);
   (* The signatures of a receiver's method: a host-relative member, or a
      primitive's, its prototype's (`Type_queries.primitive_prototype`). *)
-  Linear_facts.method_signatures := (fun env r key ->
+  Linear_facts.method_signatures := (fun env r key args ->
     let member = match Option.map head (receiver_type env r) with
       | Some (Atoms [Shape {elements=Some _;fields;_}]) when not (List.exists (fun (g:Semantic.field) -> g.name = key) fields) ->
         Option.map (fun (g:Semantic.field) -> g.read) (field_of (Atoms [Named (Type_queries.array_prototype,[])]) key)
@@ -607,8 +596,24 @@ let statements (expr:Analysis_state.expression_infer) execute_bindings owner_spa
           (field_of (Atoms [Named (Option.get (Type_queries.primitive_prototype atom),[])]) key)
       | _ -> method_type env r key in
     match Option.map head member with
-    | Some (Atoms [Shape {calls;_}]) -> calls
+    | Some (Atoms [Shape {calls;_}]) ->
+      List.filter (fun (s : Semantic.signature) -> List.for_all (fun (p,(a : Source.expr)) ->
+        match head p with
+        | Atoms [Shape {calls=(_::_ as expected);_}] ->
+          let actual = match latest_claim a.pos with Some t -> Some t | None -> receiver_type env a in
+          (match Option.map head actual with
+          | Some (Atoms [Shape {calls=(_::_ as offered);_}]) ->
+            List.for_all (fun (q : Semantic.signature) -> List.exists (fun (p : Semantic.signature) ->
+              Semantic.effect_covers p.call_effect q.call_effect) offered) expected
+          | _ -> false)
+        | _ -> true) (List.combine (List.filteri (fun i _ -> i < List.length args) s.params)
+          (List.filteri (fun i _ -> i < List.length s.params) args))) calls
     | _ -> []);
+  Linear_facts.method_footprint := (fun env r key args ->
+    match !Linear_facts.method_signatures env r key args with
+    | s :: _ when s.call_effect.pre = [] && s.call_effect.requires = None &&
+        not s.call_effect.receiver_store && not s.call_effect.receiver_own -> Some s.call_effect.footprint
+    | _ -> None);
   Linear_facts.call_ensures := (fun env x ->
     let declared = match List.assoc_opt x env with
       | Some b -> Some (binding_type b)

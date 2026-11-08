@@ -119,71 +119,127 @@ theorem steps_run {Ξ T : Fam} {Q : Post} {h t h' v steps}
       · obtain ⟨rfl, rfl⟩ := Step_det step step'
         exact .inr ⟨U, _, _, hx, hu, step', hh, ih hv hs⟩
 
-/-- A fresh empty store and its array object, evaluated together. -/
-def emptyArrayAtoms (n : Nat) (t : Tm) : List IndexAtom :=
+/-- Slot actuals of a fixed call; the context bounds establish values. -/
+def appendSlots (n : Nat) : List Tm → Bool
+  | [] => true
+  | .var i :: ts => decide (i < n) && appendSlots n ts
+  | _ => false
+
+theorem appendSlots_values {n : Nat} {ρ : Env}
+    (hv : ∀ i, i < n → isVal (ρ i) = true) {args : List Tm}
+    (hs : appendSlots n args = true) :
+    ∀ a ∈ instantiateArgs 0 ρ args, isVal a = true := by
+  induction args with
+  | nil => simp [instantiateArgs]
+  | cons t args ih =>
+    cases t <;> simp only [appendSlots, Bool.false_eq_true] at hs
+    all_goals try contradiction
+    case var i =>
+      simp only [Bool.and_eq_true, decide_eq_true_eq] at hs
+      intro a ha
+      simp only [instantiateArgs, instantiate, Nat.not_lt_zero, if_false, Nat.sub_zero, List.mem_cons] at ha
+      rcases ha with rfl | ha
+      · exact hv i hs.1
+      · exact ih hs.2 a ha
+
+
+/-- Array literals with value slots have exactly their number of elements. -/
+def literalArrayAtoms (n : Nat) (t : Tm) : List IndexAtom :=
   match t with
-  | .letE (.arrLit []) (.makeAt .absent [s, p] [.var 0, .var proto]) =>
-    if s == arrayStoreKey && p == CallArguments.protoField && decide (proto < n + 1) then
-      [{ fact := .linear (.le [(.length 0, 1)] 0) },
-       { fact := .linear (.le [(.length 0, -1)] 0) }]
+  | .letE (.arrLit es) (.makeAt .absent [s, p] [.var 0, .var proto]) =>
+    if s == arrayStoreKey && p == CallArguments.protoField && decide (proto < n + 1) &&
+        appendSlots n es && decide (es.length ≤ maxArrayLength) then
+      [{ fact := .linear (.le [(.length 0, 1)] es.length) },
+       { fact := .linear (.le [(.length 0, -1)] (-(es.length : Int))) }]
     else []
   | _ => []
 
-theorem emptyArrayAtoms_holds [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)} {Ξ T : Fam} {Q : Post} {ρ n W h t k}
-    (he : EnvOk G Γ ρ n W) (hk : Holds k ρ h) (hh : HeapOk n W h)
-    (hs : SafePost Ξ T Q n W h (instantiate 0 ρ t)) :
-    SafePost Ξ T (fun h' u => Q h' u ∧ IndexHolds (emptyArrayAtoms Γ.length t) (push u ρ) h' ∧
-      (if (emptyArrayAtoms Γ.length t).isEmpty then True else
+theorem literalArrayAtoms_holds [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)} {Ξ T : Fam} {Q : Post} {ρ n W h t k}
+    (he : EnvOk G Γ ρ n W) (hk : Holds k ρ h) (hh : HeapOk n W h) (hs : SafePost Ξ T Q n W h (instantiate 0 ρ t)) :
+    SafePost Ξ T (fun h' u => Q h' u ∧ IndexHolds (literalArrayAtoms Γ.length t) (push u ρ) h' ∧
+      (if (literalArrayAtoms Γ.length t).isEmpty then True else
         HeapSeparation.Holds (HeapSeparation.allocate k.separation Γ.length
           (HeapExpressionRules.contractFields G Γ)) (push u ρ)))
       n W h (instantiate 0 ρ t) := by
-  unfold emptyArrayAtoms
+  unfold literalArrayAtoms
   split
-  · rename_i s p proto
+  · rename_i es s p proto
     split
     · rename_i hp
-      simp only [Bool.and_eq_true, beq_iff_eq] at hp
-      obtain ⟨⟨rfl, rfl⟩, hp⟩ := hp
-      have hproto : proto < Γ.length + 1 := of_decide_eq_true hp
-      have run : Steps 3 h (instantiate 0 ρ (.letE (.arrLit [])
+      simp only [Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq] at hp
+      obtain ⟨⟨⟨⟨rfl, rfl⟩, hproto⟩, hes⟩, hmax⟩ := hp
+      let vs := es.map (instantiate 0 ρ)
+      have hvs : ∀ v ∈ vs, isVal v = true := by
+        simpa only [vs, instantiateArgs_eq_map] using appendSlots_values
+          (fun i hi => (meaning_value (he.2 i _ (List.getElem?_eq_getElem hi))).1) hes
+      have hlen : vs.length = es.length := by simp [vs]
+      let store := Tm.arr (elemSlots h.length vs.length)
+      let heap := h ++ vs
+      have hstore : isVal store = true := rfl
+      have run : Steps 3 h (instantiate 0 ρ (.letE (.arrLit es)
           (.makeAt .absent [arrayStoreKey, CallArguments.protoField] [.var 0, .var proto])))
-          (h ++ [.arr [], (push (.arr []) ρ) proto] ++ [.nul])
-          (.objAt (slots h.length [arrayStoreKey, CallArguments.protoField]) .absent (h.length + 2)) := by
+          (heap ++ [store, (push store ρ) proto] ++ [.nul])
+          (.objAt (slots heap.length [arrayStoreKey, CallArguments.protoField]) .absent (heap.length + 2)) := by
         simp only [instantiate, instantiateArgs_eq_map, List.map_cons, List.map_nil]
-        apply Steps.next (Step.letC (Step.arrAlloc (by simp) (by simp [maxArrayLength])))
-        simp only [List.append_nil, elemSlots]
-        apply Steps.next (Step.letV rfl)
-        have hb := instantiate_beta ρ he.1 (.arr [])
+        apply Steps.next (Step.letC (Step.arrAlloc hvs (by omega)))
+        apply Steps.next (Step.letV hstore)
+        have hb := instantiate_beta ρ he.1 store
           (.makeAt .absent [arrayStoreKey, CallArguments.protoField] [.var 0, .var proto]) 0
         simp only [instantiate, instantiateArgs_eq_map, List.map_cons, List.map_nil] at hb
-        simp only [List.length_nil, List.range_zero, List.map_nil]
         rw [hb]
         simp only [Nat.not_lt_zero, if_false, Nat.sub_zero]
         apply Steps.next (Step.makeFields ?_ rfl) Steps.refl
         intro v hv
         simp only [List.mem_cons, List.not_mem_nil, or_false] at hv
         rcases hv with rfl | rfl
-        · rfl
+        · exact hstore
         · cases proto with
-          | zero => rfl
+          | zero => exact hstore
           | succ i => exact (meaning_value (he.2 i _ (List.getElem?_eq_getElem (by omega)))).1
-      refine weaken (fun heap u hq => ?_) (steps_run run rfl hs)
+      refine weaken (fun heap' u hq => ?_) (steps_run run rfl hs)
       obtain ⟨hq, rfl, rfl⟩ := hq
       refine ⟨hq, ?_, ?_⟩
-      · have hl : termValue (push (.objAt (slots h.length [arrayStoreKey, CallArguments.protoField]) .absent (h.length + 2)) ρ)
-            (h ++ [.arr [], (push (.arr []) ρ) proto] ++ [.nul]) (.length 0) = some 0 := by
+      · have hl : termValue (push (.objAt (slots heap.length [arrayStoreKey, CallArguments.protoField]) .absent (heap.length + 2)) ρ)
+            (heap ++ [store, (push store ρ) proto] ++ [.nul]) (.length 0) = some (es.length : Int) := by
           simp [termValue_length, push, lengthOf, Footprints.storeOf, Footprints.fieldsOf, slots,
-            maxArrayLength, arrayStoreKey, CallArguments.protoField]
-        simp only [termValue_length] at hl
-        simp only [List.append_assoc, List.cons_append, List.nil_append] at hl
+            store, elemSlots, hlen, hmax, arrayStoreKey, CallArguments.protoField]
+        simp only [termValue_length, List.append_assoc, List.cons_append, List.nil_append] at hl
         intro a ha _
         simp only [List.mem_cons, List.not_mem_nil, or_false] at ha
         rcases ha with rfl | rfl <;>
           simp [IndexFact.HoldsAt, Linear.Fact.vars, Linear.Fact.Holds, Linear.Form.eval, termValuation, hl]
-      · exact (HeapExpressionRules.fresh_holds he hk hh
-          [arrayStoreKey, CallArguments.protoField] [.arr [], push (.arr []) ρ proto] .absent).2.2.2.1
+      · exact HeapSeparation.allocate_holds hk.2.2.2.1
+          (HeapExpressionRules.fresh_apart_from he hh (by simp [heap]))
     · exact weaken (fun _ _ hq => ⟨hq, indexHolds_nil _ _, trivial⟩) hs
   · exact weaken (fun _ _ hq => ⟨hq, indexHolds_nil _ _, trivial⟩) hs
+
+/-- A string's length gives, where it returns, its count of UTF-16 code
+units, at most `maxStringLength`, in the heap it started in: a longer model
+string throws (`Step.lenStrThrow`). -/
+theorem len_str_run {Ξ T : Fam} {Q : Post} {str : String} :
+    ∀ {n W h}, SafePost Ξ T Q n W h (.lenOf (.str str)) →
+      SafePost Ξ T (fun h' u => Q h' u ∧ h' = h ∧ u = .num (bitsOfNat (utf16Units str).length) ∧
+        (utf16Units str).length ≤ maxStringLength) n W h (.lenOf (.str str)) := by
+  intro n W h hs
+  cases n with
+  | zero => trivial
+  | succ n =>
+    rcases hs with (⟨hval, -, -⟩ | ⟨u, hr, -⟩) | ⟨U, h', t', hx, hu, step, hh, hs⟩
+    · simp [isVal] at hval
+    · cases hr with
+      | lenC hr => exact absurd (raises_not_val hr) (by simp [isVal])
+    · refine .inr ⟨U, h', t', hx, hu, step, hh, ?_⟩
+      cases step with
+      | lenC s => exact absurd s (value_no_step rfl)
+      | lenStr hl =>
+        cases n with
+        | zero => trivial
+        | succ m =>
+          rcases hs with (⟨hval, ht, hq⟩ | ⟨u, hr, -⟩) | ⟨U', h'', t'', -, -, step', -, -⟩
+          · exact .inl (.inl ⟨hval, ht, hq, rfl, rfl, hl⟩)
+          · exact absurd (raises_not_val hr) (by simp [isVal])
+          · exact absurd step' (value_no_step rfl)
+      | lenStrThrow _ => exact throw_post rfl hs
 
 /-! ## What the knowledge states of a slot -/
 
@@ -2423,23 +2479,21 @@ theorem indexHolds_append {as bs : List HeapKnowledge.IndexAtom} {ρ h}
 @[nospecialize] def Checker.emptyArrays [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
     (base : Checker G images) : Checker G images where
   run := fun j k e codes sums => (base.run j k e codes sums).map fun out =>
-    { out with indices := out.indices ++ IndexWrites.emptyArrayAtoms j.context.length j.term ++
-                 IndexWrites.regionAtoms G j.context k j.term
-               separation := if (IndexWrites.emptyArrayAtoms j.context.length j.term).isEmpty then out.separation
+    { out with indices := out.indices ++ IndexWrites.literalArrayAtoms j.context.length j.term
+               separation := if (IndexWrites.literalArrayAtoms j.context.length j.term).isEmpty then out.separation
         else HeapSeparation.allocate k.separation j.context.length (contractFields G j.context) }
   select := fun j k e codes sums => (base.select j k e codes sums).map fun out =>
-    { out with indices := out.indices ++ IndexWrites.emptyArrayAtoms j.context.length j.term ++
-                 IndexWrites.regionAtoms G j.context k j.term
-               separation := if (IndexWrites.emptyArrayAtoms j.context.length j.term).isEmpty then out.separation
+    { out with indices := out.indices ++ IndexWrites.literalArrayAtoms j.context.length j.term
+               separation := if (IndexWrites.literalArrayAtoms j.context.length j.term).isEmpty then out.separation
         else HeapSeparation.allocate k.separation j.context.length (contractFields G j.context) }
   sound := by
     intro j k e out codes sums hc hcodes hsums ρ n W h he hk hw hh
     simp only [CheckResult.map, Option.map_eq_some_iff] at hc
     obtain ⟨out0, hrun, rfl⟩ := hc
     have hs := base.sound hrun hcodes hsums he hk hw hh
-    refine weaken (fun _ _ hq => ⟨hq.1.1.1, hq.1.1.2.1, hq.1.1.2.2.1, ?_,
-      hq.1.1.2.2.2.2.1, indexHolds_append (indexHolds_append hq.1.1.2.2.2.2.2 hq.1.2.1) hq.2⟩)
-      (IndexWrites.regionAtoms_holds he hk hh (IndexWrites.emptyArrayAtoms_holds he hk hh hs))
+    refine weaken (fun _ _ hq => ⟨hq.1.1, hq.1.2.1, hq.1.2.2.1, ?_,
+      hq.1.2.2.2.2.1, indexHolds_append hq.1.2.2.2.2.2 hq.2.1⟩)
+      (IndexWrites.literalArrayAtoms_holds he hk hh hs)
     split
     · exact hq.1.1.2.2.2.1
     · simpa only [*, Bool.false_eq_true, if_false] using hq.1.2.2

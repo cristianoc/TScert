@@ -2130,15 +2130,166 @@ theorem appendKept_holds {eff : Effect} {t : Tm} {k : Knowledge} {ρ : Env} {h h
     · cases hkept
   · exact indexHolds_nil _ _
 
+open HeapKnowledge in
+/-- Exact length on a normal append of value actuals. -/
+theorem appended_length {ρ : Env} {h h' : Heap} {i : Nat} {args : List Tm} {n : Int}
+    (hg : CallEffects.ReceiverGrows (ρ i) h h')
+    (ha : CallEffects.ReceiverAppends (ρ i) args h h')
+    (hv : ∀ a ∈ args, isVal a = true) (hn : termValue ρ h (.length i) = some n) :
+    termValue ρ h' (.length i) = some (n + args.length) := by
+  simp only [termValue_length] at hn ⊢
+  obtain ⟨s, ls, hs, hls, rfl, hm⟩ := lengthOf_store hn
+  obtain ⟨ls', hls', hlen, -⟩ := ha hv s ls hs hls
+  have hm' : ls'.length ≤ maxArrayLength := by
+    rcases hg s _ hls with hk | ⟨-, ls0, ls1, he, hls1, -, hmax⟩
+    · rw [hk] at hls'; cases hls'; exact hm
+    · cases he; rw [hls1] at hls'; cases hls'; exact hmax
+  have hl := lengthOf_of_store hs hls' hm'
+  simpa [hlen] using hl
+
+open HeapKnowledge in
+/-- The change of a term: the receiver's length grows by the actual count. -/
+def appendDelta (i count : Nat) (t : Term) : Int :=
+  if t == Term.length i then count else 0
+
+open HeapKnowledge in
+def appendFact (i count : Nat) : Linear.Fact Term → Linear.Fact Term
+  | .le F d => .le F (d + Linear.Form.eval (appendDelta i count) F)
+  | .ne F d => .ne F (d + Linear.Form.eval (appendDelta i count) F)
+
+open HeapKnowledge in
+/-- A linear fact translated by the exact change of its terms. -/
+theorem append_fact_holds {i count : Nat} {ρ : Env} {h h' : Heap} {F : Linear.Fact Term}
+    (terms : ∀ t ∈ F.vars, ∀ n, termValue ρ h t = some n →
+      termValue ρ h' t = some (n + appendDelta i count t))
+    (hF : (IndexFact.linear F).HoldsAt ρ h) :
+    (IndexFact.linear (appendFact i count F)).HoldsAt ρ h' := by
+  obtain ⟨hd, hF⟩ := hF
+  have hd' : ∀ t ∈ F.vars, (termValue ρ h' t).isSome := by
+    intro t ht
+    obtain ⟨n, hn⟩ := Option.isSome_iff_exists.mp (hd t ht)
+    simp [terms t ht n hn]
+  have eval : ∀ G : Linear.Form Term, (∀ t ∈ G.map (·.1), t ∈ F.vars) →
+      Linear.Form.eval (termValuation ρ h') G =
+        Linear.Form.eval (termValuation ρ h) G + Linear.Form.eval (appendDelta i count) G := by
+    intro G
+    induction G with
+    | nil => intro _; simp [Linear.Form.eval]
+    | cons tc G ih =>
+      obtain ⟨t,c⟩ := tc
+      intro hm
+      have ht := hm t (by simp)
+      obtain ⟨n, hn⟩ := Option.isSome_iff_exists.mp (hd t ht)
+      have hn' := terms t ht n hn
+      have hi := ih (fun t ht => hm t (by simp [ht]))
+      simp only [Linear.Form.eval, termValuation, hn, hn', Option.getD_some, Int.mul_add, hi]
+      omega
+  cases F with
+  | le G d =>
+    refine ⟨hd', ?_⟩
+    have he := eval G (fun _ ht => ht)
+    simp only [appendFact, Linear.Fact.Holds] at hF ⊢
+    omega
+  | ne G d =>
+    refine ⟨hd', ?_⟩
+    have he := eval G (fun _ ht => ht)
+    simp only [appendFact, Linear.Fact.Holds] at hF ⊢
+    omega
+
+
+open HeapKnowledge in
+def linearAppended (i count : Nat) (first : Nat → String → Bool) (a : IndexAtom) : Option IndexAtom :=
+  match a.cond, a.fact with
+  | none, .linear F =>
+    if F.vars.all (fun t => t == Term.length i || t.keptBy growChanges first) then
+      some { fact := .linear (appendFact i count F) }
+    else none
+  | _, _ => none
+
+open HeapKnowledge in
+def linearAppendKept (n : Nat) (eff : Effect) (t : Tm) (k : Knowledge) : List IndexAtom :=
+  match t with
+  | .invoke _ (.var i) args =>
+    if eff.receiverGrows && IndexWrites.appendSlots n args then
+      shiftIndices (k.indices.filterMap (linearAppended i args.length (growFirst k t)) ++
+        if termDefined k.indices (.length i) then
+          [{ fact := .linear (.le [(.length i, -1)] (-(args.length : Int))) }] else []) else []
+  | _ => []
+
+open HeapKnowledge in
+theorem linearAppendKept_holds {n : Nat} {eff : Effect} {t : Tm} {k : Knowledge} {ρ : Env} {h h' : Heap} {v : Tm}
+    (hv : ∀ i, i < n → isVal (ρ i) = true) (hk : Holds k ρ h)
+    (hg : eff.receiverGrows = true →
+      CallEffects.ReceiverGrows (ExpressionEffects.receiverOf (instantiate 0 ρ t)) h h' ∧
+      CallEffects.ReceiverAppends (ExpressionEffects.receiverOf (instantiate 0 ρ t))
+        (ExpressionEffects.actualsOf (instantiate 0 ρ t)) h h') :
+    IndexHolds (linearAppendKept n eff t k) (push v ρ) h' := by
+  unfold linearAppendKept
+  split
+  · rename_i f i args
+    split
+    · rename_i hc
+      simp only [Bool.and_eq_true] at hc
+      obtain ⟨he, hs⟩ := hc
+      obtain ⟨hgrow, happ⟩ := hg he
+      have hf := growFirst_kept hk hgrow
+      simp only [ExpressionEffects.receiverOf, ExpressionEffects.actualsOf, instantiate, Nat.not_lt_zero,
+        if_false, Nat.sub_zero] at hgrow happ
+      refine shiftIndices_holds fun a ha _ => ?_
+      rcases List.mem_append.mp ha with ha | ha
+      · obtain ⟨b, hb, hab⟩ := List.mem_filterMap.mp ha
+        unfold linearAppended at hab
+        split at hab
+        · rename_i F hcond hfact
+          split at hab
+          · rename_i hvars
+            cases hab
+            apply append_fact_holds (fun t ht m hm => ?_)
+              (by simpa [hfact] using hk.2.2.2.2.2 b hb (by simp [hcond]))
+            rcases Bool.or_eq_true_iff.mp (List.all_eq_true.mp hvars t ht) with heq | hkeep
+            · have heq : t = Term.length i := of_decide_eq_true heq
+              subst t
+              have hl := appended_length hgrow happ (IndexWrites.appendSlots_values hv hs) hm
+              simpa [appendDelta, instantiateArgs_eq_map] using hl
+            · by_cases heq : t = Term.length i
+              · subst t
+                have hl := appended_length hgrow happ (IndexWrites.appendSlots_values hv hs) hm
+                simpa [appendDelta, instantiateArgs_eq_map] using hl
+              · simpa [appendDelta, heq] using termValue_kept (receiverGrows_changes hgrow) hf hkeep hm
+          · cases hab
+        · cases hab
+      · split at ha
+        · rename_i hd
+          simp only [List.mem_singleton] at ha
+          subst ha
+          obtain ⟨m, hm⟩ := Option.isSome_iff_exists.mp (termDefined_sound hk.2.2.2.2.2 hd)
+          have hl := appended_length hgrow happ (IndexWrites.appendSlots_values hv hs) hm
+          have hm0 : 0 ≤ m := by
+            obtain ⟨_, ls, _, _, rfl, _⟩ := lengthOf_store hm
+            omega
+          simp only [instantiateArgs_eq_map, List.length_map] at hl
+          have hv' : termValuation ρ h' (.length i) = m + args.length := by simp [termValuation, hl]
+          refine ⟨?_, ?_⟩
+          · intro t ht
+            simp only [Linear.Fact.vars, List.map_cons, List.map_nil, List.mem_singleton] at ht
+            subst ht
+            simp [hl]
+          · simp only [Linear.Fact.Holds, Linear.Form.eval, hv']
+            omega
+        · cases ha
+    · exact indexHolds_nil _ _
+  · exact indexHolds_nil _ _
+
 /-- Knowledge with a call's result-fact atoms added, the atoms of its entry
 `k0` its footprint keeps (`effectKept`) and the quantified atoms its growth
 of its receiver's store keeps or extends (`appendKept`), then the instances
 of quantified facts the element reads among them state (`withElements`). -/
-def withEnsures (eff : Effect) (t : Tm) (k0 k : HeapKnowledge.Knowledge) : HeapKnowledge.Knowledge :=
+def withEnsures (n : Nat) (eff : Effect) (t : Tm) (k0 k : HeapKnowledge.Knowledge) : HeapKnowledge.Knowledge :=
   HeapKnowledge.withElements
-    { k with indices := k.indices ++ ensuresAtoms eff t ++ effectKept eff t k0 ++ appendKept eff t k0 }
+    { k with indices := k.indices ++ ensuresAtoms eff t ++ effectKept eff t k0 ++ appendKept eff t k0 ++ linearAppendKept n eff t k0 }
 
-theorem withEnsures_holds {eff : Effect} {t : Tm} {k0 k : HeapKnowledge.Knowledge} {ρ : Env} {h h' : Heap} {v : Tm}
+theorem withEnsures_holds {n : Nat} {eff : Effect} {t : Tm} {k0 k : HeapKnowledge.Knowledge} {ρ : Env} {h h' : Heap} {v : Tm}
+    (hv : ∀ i, i < n → isVal (ρ i) = true)
     (hk : HeapKnowledge.Holds k (push v ρ) h') (hk0 : HeapKnowledge.Holds k0 ρ h)
     (hw : eff.within (ExpressionEffects.receiverOf (instantiate 0 ρ t)) h h')
     (hp : ∀ F ∈ eff.ensures, F.HoldsAt (CallEffects.ensuresEnv v (ExpressionEffects.receiverOf (instantiate 0 ρ t))
@@ -2147,15 +2298,17 @@ theorem withEnsures_holds {eff : Effect} {t : Tm} {k0 k : HeapKnowledge.Knowledg
       CallEffects.ReceiverGrows (ExpressionEffects.receiverOf (instantiate 0 ρ t)) h h' ∧
       CallEffects.ReceiverAppends (ExpressionEffects.receiverOf (instantiate 0 ρ t))
         (ExpressionEffects.actualsOf (instantiate 0 ρ t)) h h') :
-    HeapKnowledge.Holds (withEnsures eff t k0 k) (push v ρ) h' := HeapKnowledge.withElements_holds
+    HeapKnowledge.Holds (withEnsures n eff t k0 k) (push v ρ) h' := HeapKnowledge.withElements_holds
   ⟨hk.1, hk.2.1, hk.2.2.1, hk.2.2.2.1, hk.2.2.2.2.1, fun a ha hc => by
     rcases List.mem_append.mp ha with ha | ha
     · rcases List.mem_append.mp ha with ha | ha
       · rcases List.mem_append.mp ha with ha | ha
-        · exact hk.2.2.2.2.2 a ha hc
-        · exact ensuresAtoms_holds hp a ha hc
-      · exact effectKept_holds hk0 hw (fun hgr => (hg hgr).1) a ha hc
-    · exact appendKept_holds hk0 hg a ha hc⟩
+        · rcases List.mem_append.mp ha with ha | ha
+          · exact hk.2.2.2.2.2 a ha hc
+          · exact ensuresAtoms_holds hp a ha hc
+        · exact effectKept_holds hk0 hw (fun hgr => (hg hgr).1) a ha hc
+      · exact appendKept_holds hk0 hg a ha hc
+    · exact linearAppendKept_holds hv hk0 hg a ha hc⟩
 
 /-- Knowledge with the region facts a call growing its receiver's store keeps
 (`IndexWrites.grownRegions`) added, renamed past the result; none of a call
@@ -2186,7 +2339,7 @@ applies to: at the sequent `j`, a call checked as `selected_sound` or as
     if decide (claim p = j) && (ExpressionEffects.selectedOperands p && checkTreeUsing G images p codes sums ||
         requiresTree G images k codes sums p) then
       match ExpressionEffects.selectedEffect p with
-      | some eff => if eff.ensures.isEmpty && (effectKept eff j.term k).isEmpty && (appendKept eff j.term k).isEmpty
+      | some eff => if eff.ensures.isEmpty && (effectKept eff j.term k).isEmpty && (appendKept eff j.term k).isEmpty && (linearAppendKept j.context.length eff j.term k).isEmpty
           then none else some eff
       | none => none
     else none
@@ -2553,13 +2706,11 @@ other step is `base`'s. -/
     (base : Checker G images) : Checker G images where
   run := fun j k e codes sums =>
     match PromiseCalls.ensuresCall G images j k e codes sums with
-    | some eff => (base.run j k e codes sums).map fun out => PromiseCalls.withGrown eff
-        (PromiseCalls.withEnsures eff j.term k out) (IndexWrites.grownRegions G j.context k j.term)
+    | some eff => (base.run j k e codes sums).map (PromiseCalls.withEnsures j.context.length eff j.term k)
     | none => base.run j k e codes sums
   select := fun j k e codes sums =>
     match PromiseCalls.ensuresCall G images j k e codes sums with
-    | some eff => (base.select j k e codes sums).map fun out => PromiseCalls.withGrown eff
-        (PromiseCalls.withEnsures eff j.term k out) (IndexWrites.grownRegions G j.context k j.term)
+    | some eff => (base.select j k e codes sums).map (PromiseCalls.withEnsures j.context.length eff j.term k)
     | none => base.select j k e codes sums
   sound := by
     intro j k e out codes sums hc hcodes hsums ρ n W h he hk hw hh
@@ -2572,10 +2723,9 @@ other step is `base`'s. -/
       | succ n =>
       have hs := base.sound hrun hcodes hsums he hk hw hh
       have hp := PromiseCalls.ensuresCall_sound hens hcodes hsums he hk hw hh
-      exact HeapObservations.weaken (fun h' v hq => PromiseCalls.withGrown_holds
-        (PromiseCalls.withEnsures_holds hq.1 hk hq.2.1 hq.2.2.2.2.2.1 hq.2.2.2.2.2.2)
-        (fun hgr => IndexWrites.grownRegions_holds he hh hk (hq.2.2.2.2.2.2 hgr).1 (hq.2.2.2.2.2.2 hgr).2))
-        (HeapObservations.cross_upto (n + 1) (fun _ _ _ _ _ _ _ _ hb _ => hb) W W h _ hh hh hs hp)
+      exact HeapObservations.weaken (fun h' v hq =>
+        PromiseCalls.withEnsures_holds (fun i hi => (ProgramTyping.meaning_value (he.2 i _ (List.getElem?_eq_getElem hi))).1) hq.1 hk hq.2.1 hq.2.2.2.2.2.1 hq.2.2.2.2.2.2)
+        (HeapObservations.cross_upto n (fun _ _ _ _ _ _ _ _ hb _ => hb) W W h _ hh hh hs hp)
     · exact base.sound hc hcodes hsums he hk hw hh
 
 /-- The steps' rules, a call keeping the heap keeping every heap fact, a call

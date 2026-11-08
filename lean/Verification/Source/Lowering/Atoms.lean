@@ -933,8 +933,8 @@ Mappings discard only the temporaries introduced by this expression. -/
       nullishGuard e.span Γ i N scope call
     | none => compileCall (compileAtom recursive fc) fc scope Γ e callee args A next
   | .arrayLit _ elems spreads =>
-    -- The elements, in order, then the store they fill, then the array
-    -- object holding it: two nodes, so the allocation's slots are variables.
+    -- Evaluate elements in order. Without spreads, inspect the store and
+    -- its array object together, with the evaluated elements in slots.
     let G := SourceTypes.graph (← table)
     let some S := storeOf G A | throw "an array literal needs an array claim"
     if elems.isEmpty && spreads.isEmpty then
@@ -958,8 +958,8 @@ Mappings discard only the temporaries introduced by this expression. -/
     -- the prototype, and the store of the elements at their positions.
     let H := S :: As.reverse ++ Γ
     let some P := H[proto]? | throw "internal prototype slot mismatch"
-    let make ← emitPlanned e.span (DirectProof.node H (arrayTerm proto) O .alloc
-        [DirectProof.var H 0 S, DirectProof.var H proto P]) (.bind drop) H A (scope := makeScope)
+    let objectPlan := DirectProof.node H (arrayTerm proto) O .alloc
+        [DirectProof.var H 0 S, DirectProof.var H proto P]
     let K := As.reverse ++ Γ
     let storePlan ← if spreads.isEmpty then do
         let [.list T []] := PositiveRules.expand G S | throw "an array literal needs one tuple contract"
@@ -986,7 +986,13 @@ Mappings discard only the temporaries introduced by this expression. -/
           else pure (false, DirectProof.cast K E v)
         pure (DirectProof.node K (.arrLit (parts.map fun (s, p) => if s then .spread p.term else p.term)) S
           (.arrParts E (parts.map (·.1))) (parts.map (·.2)))
-    let store ← emitPlanned e.span storePlan (.bind make) K S (scope := temporaries ++ scope)
+    let store ← if spreads.isEmpty then do
+        let drop := ⟨next.label, some ((next.mapping.getD (List.range (Γ.length+1))).map
+          (fun i => if i == 0 then 0 else i+n))⟩
+        emitPlanned e.span (DirectProof.letE K storePlan objectPlan) (.bind drop) K A (scope := temporaries ++ scope)
+      else do
+        let make ← emitPlanned e.span objectPlan (.bind drop) H A (scope := makeScope)
+        emitPlanned e.span storePlan (.bind make) K S (scope := temporaries ++ scope)
     elems.attach.zipIdx.reverse.foldlM (fun next (⟨arg,_⟩,i) =>
       compileAtom recursive fc
         ((elems.take i |>.map fun a => held ⟨"",some a.span⟩).reverse ++ scope)

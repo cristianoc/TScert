@@ -153,6 +153,17 @@ const atEachFootprint = (signature: (effect: CallEffect, footprint: ClosedFootpr
     return { ...signature(effect, footprint), effect: footprintEffect(footprint, { fresh }) };
   });
 
+/** Map allocates at the captured length. A callback preserving stores
+ * keeps that length equal to the receiver's final length; growth gives an
+ * upper bound on the result instead. Ordinary construction fixes species. */
+const mapEnsures = (store: ClosedFootprint["store"]): CallEffect["ensures"] => store === "any" ? [] : [
+  { linear: { fact: { le: { form: [[{ kind: "length", slot: 0, path: [] }, 1],
+    [{ kind: "length", slot: 1, path: [] }, -1]], bound: 0 } } } },
+  ...(store === "keep" ? [{ linear: { fact: { le: { form: [
+    [{ kind: "length", slot: 0, path: [] }, -1],
+    [{ kind: "length", slot: 1, path: [] }, 1]], bound: 0 } } } }] satisfies CallEffect["ensures"] : []),
+];
+
 export const overlay: readonly OverlayEntry[] = [
   // `forEach` reads the length once and the present elements, data
   // properties, and writes nothing beside its callback's calls, as `every`
@@ -176,7 +187,7 @@ export const overlay: readonly OverlayEntry[] = [
       ...stableForDensity.map((footprint) => ({
         receiver: arrayOf(element, true, "dense"),
         params: [callback(element, mappedElement, footprintEffect(footprint))],
-        result: arrayOf(mappedElement, false), effect: footprintEffect(footprint, { fresh: true }) })),
+        result: arrayOf(mappedElement, false), effect: footprintEffect(footprint, { fresh: true, ensures: mapEnsures(footprint.store) }) })),
       { params: [callback(element, mappedElement, ordinaryEffect)],
         result: arrayOf(mappedElement, false, "sparse"), effect: footprintEffect(topFootprint, { fresh: true }) },
       // At a receiver whose present elements all have the predicate's kind
@@ -189,9 +200,9 @@ export const overlay: readonly OverlayEntry[] = [
       // is the receiver's.
       ...elementPredicates.flatMap(({ kind, type }) => [
         { receiver: arrayOf(element, true, "dense"), params: [callback(type, mappedElement, emptyEffect)],
-          result: arrayOf(mappedElement, false), effect: footprintEffect(emptyFootprint, { fresh: true, requires: [kind] }) },
+          result: arrayOf(mappedElement, false), effect: footprintEffect(emptyFootprint, { fresh: true, requires: [kind], ensures: mapEnsures("keep") }) },
         { params: [callback(type, mappedElement, emptyEffect)],
-          result: arrayOf(mappedElement, false, "sparse"), effect: footprintEffect(emptyFootprint, { fresh: true, requires: [kind] }) },
+          result: arrayOf(mappedElement, false, "sparse"), effect: footprintEffect(emptyFootprint, { fresh: true, requires: [kind], ensures: mapEnsures("keep") }) },
       ]),
     ] },
   // `flatMap` calls the callback at each position still present when

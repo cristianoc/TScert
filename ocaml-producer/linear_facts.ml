@@ -512,7 +512,7 @@ let with_cells admitted f =
   cells_written := admitted;
   Fun.protect ~finally:(fun () -> cells_written := saved) f
 let rec heap_free env (e : expr) = match e.node with
-  | Id _ | Literal _ -> true
+  | Id _ | Literal _ | Lambda _ -> true
   | Not a | Unary (_,a) | Cast (_,_,a) | Read (a,_) -> heap_free env a
   | Arith (_,a,b) | Equality (_,a,b) | Logical (_,a,b) | Coalesce (a,b) | Comma (a,b) -> heap_free env a && heap_free env b
   | Conditional (c,a,b) -> heap_free env c && heap_free env a && heap_free env b
@@ -594,15 +594,9 @@ let field_classes : ((string * Environment.binding) list -> expr -> Semantic.key
    excepts its receiver's store or own locations (Lean's `effectKept`). *)
 let call_footprint : ((string * Environment.binding) list -> string -> Semantic.footprint option) ref =
   ref (fun _ _ -> None)
-(* The footprint every signature of a receiver's method states, alike. *)
-let method_footprint : ((string * Environment.binding) list -> expr -> Semantic.key -> Semantic.footprint option) ref =
-  ref (fun _ _ _ -> None)
-(* Whether every signature of the binding `f`, or of a receiver's method,
-   states a typed array's element write, which alters no object or number and
-   keeps every store's length (Lean's `Effect.elementWrite`). *)
-let call_element_write : ((string * Environment.binding) list -> string -> bool) ref = ref (fun _ _ -> false)
-let method_element_write : ((string * Environment.binding) list -> expr -> Semantic.key -> bool) ref =
-  ref (fun _ _ _ -> false)
+(* The footprint of a receiver method signature compatible with its actuals. *)
+let method_footprint : ((string * Environment.binding) list -> expr -> Semantic.key -> expr list -> Semantic.footprint option) ref =
+  ref (fun _ _ _ _ -> None)
 (* Whether every signature of a receiver's method grows only its receiver's
    store (Lean's `Effect.receiverGrows`, `PromiseCalls.growChanges`). *)
 let method_grows : ((string * Environment.binding) list -> expr -> Semantic.key -> bool) ref =
@@ -673,7 +667,7 @@ let rec object_calls env (e : expr) : Semantic.footprint option =
   | Call ({node=Id f;_},None,args,[],_) -> join (all args) (Option.bind (!call_footprint env f) within)
   | Invoke ({node=Read (r,key);_},args,[],_) when not (!method_grows env r key) ->
     join (all (r :: args)) (if !method_keeps_heap env r key then Some Semantic.empty_footprint
-      else Option.bind (!method_footprint env r key) within)
+      else Option.bind (!method_footprint env r key args) within)
   | Alloc fields -> all (List.map snd fields)
   | Assign (x,_,rhs) when slot_binding env x -> object_calls env rhs
   | Update (_,{node=Id x;_},Some rhs,_) when slot_binding env x -> object_calls env rhs
@@ -697,8 +691,7 @@ let write_changes ~facts ~bounds env (e : expr) : changes option =
     else Option.map of_footprint (!call_footprint env f)
   | Invoke ({node=Read (r,key);_},args,[],_) when heap_free env r && List.for_all (heap_free env) args ->
     if !method_grows env r key then Some { obj = false; num = false; store = `Grow; framed = no_frame; apart = false; cell_write = false }
-    else if !method_element_write env r key then Some element_changes
-    else Option.map of_footprint (!method_footprint env r key)
+    else Option.map of_footprint (!method_footprint env r key args)
   | _ -> object_changes env e
 
 let statement_changes ~facts ~bounds env (s : stmt) = match s.statement with
@@ -799,8 +792,8 @@ let rec mentions_id x (e : expr) = match e.node with
   | _ -> List.exists (mentions_id x) (Source.children e)
 
 (* The signatures of a receiver's method, set by the statement analysis. *)
-let method_signatures : ((string * Environment.binding) list -> expr -> Semantic.key -> Semantic.signature list) ref =
-  ref (fun _ _ _ -> [])
+let method_signatures : ((string * Environment.binding) list -> expr -> Semantic.key -> expr list -> Semantic.signature list) ref =
+  ref (fun _ _ _ _ -> [])
 
 (* A term at a call's position over bindings: the actual there as a linear
    expression, for a value term with no path, else as a path, with the
@@ -810,6 +803,8 @@ let position_form ~array env fs (actual : expr option) (t : Semantic.term) =
   match t with
   | Semantic.Value_at (_,[]) -> Option.bind actual (linear ~array env fs)
   | Semantic.Value_at (_,q) -> at q Value_term
+  | Semantic.Length_at (_,[]) when Option.fold ~none:false ~some:(fun (e : expr) -> match e.node with ArrayLiteral (_,[]) -> true | _ -> false) actual ->
+    Option.bind actual (fun (e : expr) -> match e.node with ArrayLiteral (es,[]) -> Some ([],List.length es) | _ -> None)
   | Semantic.Length_at (_,q) -> at q Length_term
   | Semantic.View_at (_,q) -> at q View_term
   | Semantic.Str_length_at (_,q) -> at q Str_length_term
@@ -821,11 +816,11 @@ let term_position (t : Semantic.term) = match t with
    that of the first of the method's signatures stating a precondition the
    facts establish of the receiver and the actuals (positions 0 the
    receiver, `i + 1` the `i`-th actual, as `call-requires` reads them), or,
-   where none does, of every signature stating none, where they state the
-   same; its positions 0 the result, 1 the receiver and `i + 2` the `i`-th
+   where none does, of the first compatible signature stating none.
+   Its positions are 0 the result, 1 the receiver and `i + 2` the `i`-th
    actual. A fact naming a position no term reads is left out. *)
 let method_ensures ~array env fs name (recv : expr) key (args : expr list) : fact list =
-  let sigs = !method_signatures env recv key in
+  let sigs = !method_signatures env recv key args in
   let combine form parts = List.map (fun (t,c) -> Option.map (fun (t',k) -> scale c t', c * k) (form t)) parts in
   let sum parts = let parts = List.filter_map Fun.id parts in
     norm (List.concat_map fst parts), List.fold_left (fun acc (_,k) -> acc + k) 0 parts in
@@ -842,11 +837,8 @@ let method_ensures ~array env fs name (recv : expr) key (args : expr list) : fac
   let chosen = match List.find_opt (fun (s : Semantic.signature) -> not (plain s) &&
       s.Semantic.call_effect.Semantic.promise = None && List.for_all holds s.Semantic.call_effect.Semantic.pre) sigs with
     | Some s -> Some s.Semantic.call_effect.Semantic.ensures
-    | None -> (match List.filter plain sigs with
-      | s :: rest when List.for_all (fun (r : Semantic.signature) ->
-          r.Semantic.call_effect.Semantic.ensures = s.Semantic.call_effect.Semantic.ensures) rest ->
-        Some s.Semantic.call_effect.Semantic.ensures
-      | _ -> None) in
+    | None -> Option.map (fun (s : Semantic.signature) -> s.Semantic.call_effect.Semantic.ensures)
+        (List.find_opt plain sigs) in
   let post_actual p = if p = 1 then Some recv else List.nth_opt args (p - 2) in
   match chosen with
   | None -> []
@@ -996,9 +988,21 @@ and statement_slots ~(array : string -> string list -> bool) ?(bounds=[]) env fs
     | None -> fs in
   (* A fact naming a length or a typed-array length reads the heap: kept where
      the statement writes none, as Lean keeps it (`IndexFact.envOnly`). *)
+  let appended = match s.statement with
+    | Effect {node=Invoke ({node=Read (({node=Id x;_} as r),key);_},args,[],_);_}
+        when !method_grows env r key && List.for_all (heap_free env) args ->
+      let length = length_term x in
+      let ch = { obj=false; num=false; store=`Grow; framed=no_frame; apart=false; cell_write=false } in
+      List.filter_map (fun ((form,d) : fact) ->
+        if List.for_all (fun (t,_) -> t = length || term_kept ch t) form then
+          Some (form, d + List.fold_left (fun acc (t,c) ->
+            if t = length then acc + c * List.length args else acc) 0 form)
+        else None) (fs @ term_ranges fs)
+    | _ -> [] in
   let fs = if statement_heap_free env s then fs else match statement_changes ~facts:fs ~bounds env s with
     | Some ch -> List.filter (fun f -> fact_kept ch f || stable_fact env f) fs
     | None -> keep_stable env fs in
+  let fs = fs @ appended in
   let fs = match written with
     | Some (p,(t,c)) ->
       let t = List.map (fun (n,k) -> (if n = p then old else n),k) t in
@@ -1229,7 +1233,7 @@ let declaration ~(array : string -> string list -> bool) env fs name (init : exp
      its facts, of `x`. *)
   let fs = fs @ concat_facts env name init in
   let fs = match init.node with
-    | ArrayLiteral ([],[]) -> fs @ [[length_term name,1],0; [length_term name,-1],0]
+    | ArrayLiteral (es,[]) -> fs @ [[length_term name,1],List.length es; [length_term name,-1],-(List.length es)]
     | Call ({node=Id f;_},None,args,[],_) -> fs @ call_expression_facts ~array env fs name f args
     (* `const x = new c(…)` at a construct signature stating facts of its
        result: each of them, of `x`, over the actuals. *)

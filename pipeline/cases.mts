@@ -51,6 +51,12 @@ const gap = (
   diagnostic: RegExp,
 ): Case => ({ file, area, kind: "gap", status, phase, diagnostic });
 export const cases: Case[] = [
+  positive("native-length-literal", "Pretext glyph arrays: literal length equals its element count, including as map's receiver."),
+  negative("invalid-native-length-literal", "A literal's index at its element count is absent (Node TypeError)."),
+  positive("native-length-map", "Pretext parallel arrays: map at a store-preserving callback retains the receiver length."),
+  positive("native-length-push", "Pretext builders: push translates plain linear facts by the fixed actual count."),
+  negative("invalid-native-length-map", "map captures length before a callback grows its receiver (Node TypeError)."),
+  negative("invalid-native-length-push", "push does not add a position beyond its actual count (Node TypeError)."),
   positive("native-length-indexof", "Pretext searched positions: indexOf returns a safe integer between -1 and the receiver length minus one."),
   positive("native-length-filled", "Pretext lazy arrays: a filled allocation retains its checked input length."),
   negative("invalid-native-length-indexof", "An unsuccessful search returns -1, outside the array (Node TypeError)."),

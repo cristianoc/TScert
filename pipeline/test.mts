@@ -73,17 +73,28 @@ const mutationControl = (body: () => Promise<void>): void => {
 const serving: boolean = process.argv[2] === "--controls";
 
 control(async (): Promise<void> => {
-  for (const name of ["native-length-indexof", "native-length-filled"]) {
-    const artifacts = run(name);
+  const scenarios: { file: string; fnName: string; terms: { name: string; path: string[]; term: "length" | "value"; coefficient: number }[]; bound: number }[] = [
+    { file: "indexof", fnName: "found", terms: [{ name: "at", path: [], term: "value", coefficient: -1 }], bound: 0 },
+    { file: "filled", fnName: "filled", terms: [{ name: "n", path: [], term: "value", coefficient: 1 },
+      { name: "xs", path: [], term: "length", coefficient: -1 }], bound: -1 },
+    { file: "map", fnName: "mapped", terms: [{ name: "xs", path: [], term: "length", coefficient: 1 },
+      { name: "ys", path: [], term: "length", coefficient: -1 }], bound: -1 },
+    { file: "push", fnName: "twice", terms: [{ name: "n", path: [], term: "value", coefficient: 1 },
+      { name: "xs", path: [], term: "length", coefficient: -1 }], bound: -3 },
+    { file: "literal", fnName: "literal", terms: [{ name: "xs", path: [], term: "length", coefficient: -1 }], bound: -3 },
+  ];
+  for (const { file, fnName, terms, bound } of scenarios) {
+    const artifacts = run(`native-length-${file}`);
     const claims = readClaims(artifacts);
-    const fn = must(claims.functions[0], "native length function");
-    const entry = must(fn.entries.find(e => e.bindings.some(b => b.name === "xs") &&
-      (name.endsWith("filled") || e.bindings.some(b => b.name === "at"))), "return entry");
-    entry.facts.push({ guards: [], terms: [{ name: "xs", path: [], term: "length", coefficient: 1 }], bound: -1 });
-    const forged = writeClaims(artifacts, `${name}-forged-length`, claims);
-    const searched = produceWith(artifacts, forged, `${name}-forged-length`);
+    const source = readFileSync(sourceKey(artifacts), "utf8");
+    const fn = must(claims.functions.find(f => f.name === fnName), "native length function");
+    const entry = must(fn.entries.find(e => source.startsWith("return", e.start)), "return entry");
+    entry.facts.push({ guards: [], terms, bound });
+    const forged = writeClaims(artifacts, `${file}-forged-length`, claims);
+    const searched = produceWith(artifacts, forged, `${file}-forged-length`);
     assert.equal(searched.status, 1, searched.stdout + searched.stderr);
-    assert.match(searched.stdout + searched.stderr, /does not establish the claims/);
+    assert.match(searched.stdout + searched.stderr, /does not establish the claims/, file);
+    invoke(forged, join(artifacts, "evidence.json"), artifacts, /^reject: source evidence /m);
   }
 });
 
