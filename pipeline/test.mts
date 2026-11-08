@@ -9840,7 +9840,7 @@ process.stdout.write(JSON.stringify(await checkApart(${JSON.stringify(source)}, 
     "proposal.log", "search.log", "check.log", "typescript-diagnostics.json"];
   const contents = (artifacts: string): Map<string, string> => new Map(documents.flatMap((name): [string, string][] =>
     present(join(artifacts, name)) ? [[name, readFileSync(join(artifacts, name), "utf8")]] : []));
-  const replayed = new Set(["parse", "lower", "propose", "assemble", "plan", "search", "check", "module-search",
+  const replayed = new Set(["parse", "lower", "facts", "propose", "assemble", "plan", "search", "check", "module-search",
     "module-check", "explain", "diagnostics"]);
   const runs: [string, string | null][] = [["certified-nested-value-import", "pipeline/imports-project"],
     ["invalid-closure-contextual-result", null]];
@@ -9893,10 +9893,15 @@ process.stdout.write(JSON.stringify(await checkApart(${JSON.stringify(source)}, 
   const before = runAt(join(here, "examples", "values.ts"), null);
   const after = runAt(changed, null);
   assert.equal(after.outcome.status, before.outcome.status);
-  for (const r of after.records) assert.ok(ranStage(r), `a changed source: ${r.stage} executed`);
+  // A comment after the code changes no unit's slice: the units' lower and
+  // propose stages may replay; every stage over the whole document executes.
+  for (const r of after.records)
+    assert.ok(ranStage(r) || (r.execution === "replayed" && (r.stage === "lower" || r.stage === "propose")),
+      `a changed source: ${r.stage} executed`);
+  assert.ok(after.records.some((r) => r.stage === "parse" && ranStage(r)), "a changed source: its parse executes");
   process.stdout.write("replay: cold and warm workers with different request histories agree on outcomes, documents and logs; the warm run " +
     "replays every stage, the parse by its observations, and executes stages with unidentified dependencies; after an eviction " +
-    "every stage executes to the same outcome; a changed source executes\n");
+    "every stage executes to the same outcome; a changed source executes its whole-document stages\n");
 });
 
 control(async (): Promise<void> => {

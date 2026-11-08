@@ -211,7 +211,9 @@ inputs it changes.
   among the declarations of that name. Another module's definition and
   an imported value's type hold that module's spans and spans of the
   document's reads of its members alike; a slice holds them with every
-  span zero, each declaration's identity kept. An edit of a function's body leaves
+  span zero, each declaration's identity kept, a reference's type
+  arguments at their mapped spans, and no written application, which the
+  check alone reads. An edit of a function's body leaves
   every other unit's slice unchanged.
 - *Reads.* A unit's reads document holds its members, whether the
   initialization is one, the footprint and on-throw flag each function the
