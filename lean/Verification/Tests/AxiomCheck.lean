@@ -10,7 +10,7 @@ depends on an axiom other than `propext`, `Classical.choice` and `Quot.sound`
 (`sorryAx`, or one the project declares):
 
 - `SourceClaimJson.checkUnitJson_safe`, the acceptance theorem, of which every
-  accepted function's safety is a consequence;
+  accepted function's and module run's safety is a consequence;
 - each `@[csimp]` lemma of the project's modules the verifier imports
   (`Verification.Source.RequestCli`, what `Main` imports): the compiled
   verifier runs a lemma's right-hand side in place of the definition the

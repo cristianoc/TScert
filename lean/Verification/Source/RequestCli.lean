@@ -256,8 +256,7 @@ def unitsFile (astPath claimsPath fileKey : String) (names : Option String)
 
 /-- Search evidence for a file's selected units over its one front
 (`SourceClaimJson.filePlans`), written to `evidencePath` a line per unit as
-each is searched (`SourceClaimJson.unitLine`), each group's then each module
-run's; each unit the search refuses on a line `refused: {"unit","refusal"}`;
+each is searched (`SourceClaimJson.unitLine`); each unit the search refuses on a line `refused: {"unit","refusal"}`;
 any refused, the first refusal is the command's. A unit's search state is
 released once its line is written. -/
 def produceUnitsFile (astPath claimsPath fileKey evidencePath : String) (fuel : Nat) (names : Option String)
@@ -275,11 +274,6 @@ def produceUnitsFile (astPath claimsPath fileKey evidencePath : String) (fuel : 
       for i in f.fr.selected (selection names) do
         let unit := f.fr.unitId i
         let (evidence, refusal) := f.produceGroup fuel (f.fr.group i)
-        h.putStrLn (SourceClaimJson.unitLine unit evidence).compress
-        if let some reason := refusal then refusals := refusals.push (unit, reason)
-      for m in f.p.modules do
-        let unit := "module:" ++ m.location
-        let (evidence, refusal) := SourceClaimJson.produceModule m fuel budget
         h.putStrLn (SourceClaimJson.unitLine unit evidence).compress
         if let some reason := refusal then refusals := refusals.push (unit, reason)
       return refusals
@@ -332,8 +326,7 @@ def checkUnitsFile (astPath claimsPath fileKey evidencePath : String) (names : O
   match do SourceClaimJson.filePlans (← ast) (← claims) fileKey budget with
   | .error e => refuse e
   | .ok f =>
-    let wanted := (f.fr.selected (selection names)).map (fun i => (f.fr.unitId i, (f.fr.group i).map f.fr.unitId)) ++
-      f.p.modules.map fun m => ("module:" ++ m.location, [])
+    let wanted := (f.fr.selected (selection names)).map (fun i => (f.fr.unitId i, (f.fr.group i).map f.fr.unitId))
     let print (unit : String) (members : List String) (verdict : Except String (List String)) : IO Unit :=
       IO.println (match verdict with
         | .ok deps => Json.mkObj [("unit", toJson unit), ("members", toJson members), ("accepted", toJson true),
@@ -366,5 +359,53 @@ def checkUnitsFile (astPath claimsPath fileKey evidencePath : String) (names : O
       | none =>
         IO.println s!"accept: stateful source {fileKey}"
         return 0
+
+/-- The module runs a document's claims plan (`SourceClaimJson.planImports`),
+one per line (`ModuleRun.wire`): each imported module's document restricted
+to the read closure of the functions read qualified of it, with its claims
+and its own qualified reads. A plan refused is a refusal. -/
+def moduleRunsFile (astPath claimsPath : String) : IO UInt32 := do
+  let ast ← readJson astPath
+  let claims ← readJson claimsPath
+  match do SourceClaimJson.planImports (← ast) (← claims) with
+  | .ok p => p.modules.forM (IO.println ·.wire.compress); return 0
+  | .error e => refuse e
+
+/-- Search evidence for one module run (`SourceClaimJson.produceModule`),
+written to `evidencePath`; a search refused is a refusal. -/
+def produceModuleFile (runPath evidencePath : String) (fuel : Nat)
+    (budget : PositiveCertificates.SearchBudget := {}) : IO UInt32 := do
+  if evidencePath == runPath then return ← refuse "evidence output must differ from the input file"
+  let run ← readJson runPath
+  match run >>= SourceClaimJson.ModuleRun.decode with
+  | .error e => refuse e
+  | .ok m =>
+    let (evidence, refusal) := SourceClaimJson.produceModule m fuel budget
+    IO.FS.writeFile evidencePath evidence.compress
+    IO.println s!"checked source evidence written: {evidencePath}"
+    match refusal with
+    | none => return 0
+    | some reason => refuse reason
+
+/-- Check one module run at its evidence (`SourceClaimJson.moduleVerdict`),
+whose acceptance `checkUnitJson_safe` states: its verdict on a line,
+`{"unit","members","accepted","depends"}` or `{"unit","members","refusal"}`. -/
+def checkModuleFile (runPath evidencePath : String)
+    (budget : PositiveCertificates.SearchBudget := {}) : IO UInt32 := do
+  let run ← readJson runPath
+  match run >>= SourceClaimJson.ModuleRun.decode with
+  | .error e => refuse e
+  | .ok m =>
+    let unit := toJson ("module:" ++ m.location)
+    let members := toJson ([] : List String)
+    match (← readJson evidencePath) >>= fun e => SourceClaimJson.moduleVerdict m budget e with
+    | .ok () =>
+      IO.println (Json.mkObj [("unit", unit), ("members", members), ("accepted", toJson true),
+        ("depends", toJson ([] : List String))]).compress
+      IO.println s!"accept: stateful source {m.location}"
+      return 0
+    | .error reason =>
+      IO.println (Json.mkObj [("unit", unit), ("members", members), ("refusal", toJson reason)]).compress
+      refuse reason
 
 end Verification.RequestCli
