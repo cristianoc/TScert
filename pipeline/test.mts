@@ -9880,6 +9880,57 @@ process.stdout.write(JSON.stringify(await checkApart(${JSON.stringify(source)}, 
     "every stage executes to the same outcome; a changed source executes\n");
 });
 
+control(async (): Promise<void> => {
+  // Replay across an edit of an importer (STAGE-STORE.md, "Observed
+  // stages"): an importer of a certified module, edited in a function the
+  // module's closure does not depend on, executes its own stages again and
+  // replays the module run's search and check; the edited run's outcome is a
+  // cold run's of the same edited source in a fresh store.
+  const tree = runDirectory("tscert-edit-replay-");
+  const project = join(tree, "pipeline", "imports-project");
+  cpSync(join(here, "imports-project"), project, { recursive: true });
+  mkdirSync(join(tree, "pipeline", "examples"));
+  mkdirSync(join(tree, "tools"));
+  // The repository's root states its modules ECMAScript modules; the copy's does too.
+  writeFileSync(join(tree, "package.json"), JSON.stringify({ type: "module" }));
+  cpSync(resolve(here, "..", "tools", "resolvable.d.ts"), join(tree, "tools", "resolvable.d.ts"));
+  const importer = join(tree, "pipeline", "examples", "edited-value-import.ts");
+  const original = readFileSync(join(here, "examples", "certified-value-import.ts"), "utf8");
+  const runIn = (store: string): { outcome: Outcome; records: AttemptRecord[] } => {
+    const root = runDirectory("tscert-edit-replay-root-");
+    const driver = `import { checkApart } from ${JSON.stringify(pathToFileURL(join(here, "verify-source.mts")).href)};
+process.stdout.write(JSON.stringify(await checkApart(${JSON.stringify(importer)}, ${JSON.stringify(project)}, false, undefined, true)));`;
+    const driverPath = join(root, "driver.mts");
+    writeFileSync(driverPath, driver);
+    const ran = spawnSync(process.execPath, [driverPath],
+      { encoding: "utf8", timeout: 240_000, env: { ...process.env, TSCERT_STAGE_STORE: store, TSCERT_RUN_ROOT: root } });
+    assert.equal(ran.status, 0, ran.stderr);
+    const outcome = readOutcome(JSON.parse(ran.stdout.slice(ran.stdout.indexOf("{"))));
+    return { outcome, records: readInvocationLog(join(outcome.artifacts, invocationLog)) };
+  };
+  const store = runDirectory("tscert-edit-replay-store-");
+  writeFileSync(importer, original);
+  const cold = runIn(store);
+  const moduleStages = (records: readonly AttemptRecord[]): AttemptRecord[] =>
+    records.filter((r) => r.stage === "module-search" || r.stage === "module-check");
+  assert.ok(moduleStages(cold.records).length >= 2, "the module run is searched and checked");
+  for (const r of moduleStages(cold.records)) assert.ok(ranStage(r), `cold ${r.stage} executed`);
+  // The edit: a statement of the importer's own code, its last line.
+  writeFileSync(importer, original + "\nexport const edited: number = 1;\n");
+  const warm = runIn(store);
+  assert.ok(moduleStages(warm.records).length >= 2, "the edited run plans the module run");
+  for (const r of moduleStages(warm.records)) {
+    assert.ok(r.key !== null, `${r.stage} has a key`);
+    assert.equal(r.execution, "replayed", `after the edit, ${r.stage} replays`);
+  }
+  assert.ok(warm.records.some((r) => r.stage === "search" && r.execution === "executed"), "the importer's search executes");
+  const fresh = runIn(runDirectory("tscert-edit-replay-fresh-"));
+  const { artifacts: _warmArtifacts, ...warmOutcome } = warm.outcome;
+  const { artifacts: _freshArtifacts, ...freshOutcome } = fresh.outcome;
+  assert.deepEqual(warmOutcome, freshOutcome, "the edited run's outcome is a cold run's");
+  process.stdout.write("edit replay: an edit of an importer replays its module run's search and check, its outcome a cold run's\n");
+});
+
 // A callable type's methods cross the type graph's TypeScript decoder: a
 // graph holding them decodes to itself.
 control(async (): Promise<void> => {
