@@ -6,9 +6,9 @@ Part of [checked bound annotations](checked-bound-annotations.md) (#115). Drafte
 
 **Existing at `907a40f0`.** [Linear facts](../PROGRAM-TYPING.md#linear-facts)
 range over `value`, `length` and `view` terms rooted at slots.
-[Written preconditions](../PROGRAM-TYPING.md#written-preconditions) supply
+[Preconditions](../PROGRAM-TYPING.md#preconditions) supply
 `Effect.pre`; callers prove them and bodies assume them.
-[Result facts](../PROGRAM-TYPING.md#reads-below-the-length) use `Effect.ensures`,
+[Postconditions](../PROGRAM-TYPING.md#postconditions) use `Effect.ensures`,
 currently available only on trusted signatures.
 `HeapLinks.Holds` relates a field-read slot to its current heap cell.
 [Footprints](../FOOTPRINTS.md) own the preservation obligations for heap facts.
@@ -19,7 +19,6 @@ elaborated into these facts at checked boundaries.
 The broader [bound-annotation draft](checked-bound-annotations.md) proposes
 invariants, guarded clauses and checked postconditions; those are design,
 whereas the ten branch records establish the mechanisms listed above.
-[View lengths and ensures](view-lengths-and-ensures.md) supplies their design context.
 
 **Owner-supplied measurement.** On `bound-annotations-opus` at `907a40f0`,
 109/209 functions of original pretext `0d102a5` verify.
@@ -90,14 +89,14 @@ and `@requires p.segmentFlags.length === p.widths.length` bound a flags read.
 Every arithmetic intermediate retains the existing safe-integer obligations.
 `@ensures result.widths.length === n` names the returned heap and the entry
 value of argument `n`; checked code needs preserved entry-value bindings.
-Written ensures remain refused until every normal return proves them;
+Written postconditions (`@ensures`) remain refused until every normal return proves them;
 `old` heap observations require a separate snapshot design.
 
 ## 2. Record invariants
 
 **Proposed.** `@invariant` on an alias/interface names a predicate `I(this,h)`.
 For `PreparedLineBreakData`, candidate clauses equate `widths.length`,
-`breakableFitAdvances.length` and the actual typed view's element count.
+`breakableFitAdvances.length` and the actual typed array's length.
 Nullable arrays need guarded equalities, such as
 `this.lineEndTrims === null || this.lineEndTrims.length === this.widths.length`.
 Guarded clauses are an additional checker obligation, not existing syntax.
@@ -108,7 +107,7 @@ in a callable precondition unless both values share an invariant root.
 
 **Proposed establishment.** Construction establishes the predicate before
 publishing the value at the invariant-bearing boundary.
-Every write affecting its support must prove the predicate in the resulting
+Every write affecting a location it reads must prove the predicate in the resulting
 heap while the record is closed. This includes writes through aliases,
 nested-array mutation, field replacement and native calls.
 A field's ordinary storage contract remains unchanged.
@@ -125,7 +124,7 @@ flows must preserve these obligations or refuse the conversion.
 until the other append completes. Such builders use raw construction state,
 then prove the invariant before publication.
 For published records, temporarily opening an invariant requires an exclusive
-capability covering its support and all observer aliases.
+capability covering the locations it reads and all observer aliases.
 Callbacks, escaping references and exception handlers must be unable to
 observe an open record as closed; restoration is required before such exposure.
 That capability discipline is further design work; the first step refuses
@@ -142,12 +141,12 @@ calls must account for callbacks, mutation and exceptional exits.
 **Observed in source.** `segmentFlags` documents JSON copies with indexed
 properties but no length. Such copies do not satisfy the typed-view predicate.
 Supporting them requires a distinct indexed-record contract or validation;
-a view-length equality covers only actual admitted typed arrays.
+a typed-array length equality covers only actual admitted typed arrays.
 
 **Trust proposal.** Lean checks establishment, transport and consumption.
 The front end remains responsible for annotation attachment, path resolution,
 faithful declaration translation and signature/request agreement.
-Native result facts and external invariants require separate contract audits.
+Native postconditions and external invariants require separate contract audits.
 The owner reviews these trust changes and any alias-exclusion assumption;
 the existing fixed-buffer view assumption does not imply record immutability.
 

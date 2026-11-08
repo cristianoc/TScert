@@ -486,14 +486,17 @@ either part, and the atom forged unconditional in the evidence.
 
 ## Index facts
 
-A third instance: an index fact (a length, an element count, a field path's
-value) reads the locations its terms read, each holding an object, a store
-or a number. A closed footprint keeps the locations of the classes it keeps,
-`grow` on a value being `keep` (`HeapKnowledge.Changes.ofClosed`, proved:
-`ofClosed_holds`), so a call at a signature within `{value: any, store: keep}`
-keeps every length; a field write, an element write below the length and a
-call changing only its receiver's own locations state their own change. The
-rule and its proofs are [facts across a heap change](PROGRAM-TYPING.md#linear-facts).
+A third instance: footprints are how the frame conditions of index facts
+are stated and checked. An index fact (a length, a typed-array length, a
+field path's value) reads the locations its terms read, each holding an
+object, a store or a number. A closed footprint preserves the locations of
+the classes it keeps, `grow` on a value being `keep`
+(`HeapKnowledge.Changes.ofClosed`, proved: `ofClosed_holds`), so a call at a
+signature within `{value: any, store: keep}` preserves every length, and
+`grow` preserves the lower bounds of a length; a field write, an element
+write below the length and a call changing only its receiver's own locations
+state their own change. The preservation rules and their proofs are
+[frame conditions](PROGRAM-TYPING.md#frame-conditions).
 
 ## The rule users see
 

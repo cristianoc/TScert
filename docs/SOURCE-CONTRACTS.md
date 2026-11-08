@@ -1806,14 +1806,14 @@ assignment is. A read after a write is still `%ByteAt%`'s, a number or
 (`invalid-typed-array-write-past-end`, run under Node: `undefined` past the
 end). A compound assignment or an update of an element is refused.
 
-**Reads below the element count.** Every view, the program's or external
+**Reads below the typed-array length.** Every view, the program's or external
 code's, views a fixed-size `ArrayBuffer` that is never detached (a host
-assumption, [trust surface](DESIGN.md#trust-surface)), so its element count
-never changes: the model's view owns the key $`[[\mathrm{viewLength}]]`$
+assumption, [trust surface](DESIGN.md#trust-surface)), so its typed-array
+length never changes: the model's view owns the key $`[[\mathrm{viewLength}]]`$
 (`Calculus.viewLengthKey`), whose location, which no other object's field or
-store shares, holds that count, the linear term $`\mathrm{view}(b)`$
-([linear facts](PROGRAM-TYPING.md#linear-facts)). `%ByteLength%` states its
-result that count, and `%ByteAt%` has a second signature, a read at a safe
+store shares, holds that length, the linear term $`\mathrm{view}(b)`$
+([linear facts](PROGRAM-TYPING.md#linear-facts)). `%ByteLength%`'s
+postcondition states its result that length, and `%ByteAt%` has a second signature, a read at a safe
 integer below it, whose result is the element, a number:
 
 ```math
@@ -1822,7 +1822,7 @@ integer below it, whose result is the element, a number:
 \%\mathrm{ByteAt}\%\colon(\mathit{Uint8Array},\ \mathtt{number})\Rightarrow_\emptyset^{\ \mathrm{int}(2),\ 0\le 2,\ 2\le\mathrm{view}(1)-1}\mathtt{number}
 ```
 
-at the positions of [result facts](PROGRAM-TYPING.md#reads-below-the-length)
+at the positions of a [postcondition](PROGRAM-TYPING.md#postconditions)
 and of a precondition: the view is `%ByteLength%`'s first actual, position
 `2` of its return, and `%ByteAt%`'s position `1`. A safe integer $`k`$ with
 $`0\le k<\mathrm{view}(b)`$ is a valid integer index (IsValidIntegerIndex:
@@ -1833,12 +1833,12 @@ included). The getter reads the view's slots and the read runs no code;
 neither writes. The key is never copied (`copiedKey`) and no source property
 names it (`RequestJson.reservedKey`);
 the term is defined only of a host object, which no allocation of the
-program makes, so no program value states a view's count. The view's type
+program makes, so no program value states a view's length. The view's type
 states the key a readonly `number` member and a stable key
 ([stable keys](HOST-FAMILIES.md#stable-keys)), the overlay's statement of
 the same host assumption: its location holds one value for the view's life.
-So a fact naming the count is kept through every step, a write of a number
-field among them ([through every step](PROGRAM-TYPING.md#linear-facts),
+So every step preserves a fact naming the length, a write of a number field
+among them ([frame conditions](PROGRAM-TYPING.md#frame-conditions),
 `view-count-across-field-write`). A read at the length is `undefined` (`invalid-typed-array-read-at-length`,
 run under Node), and so is a read of one view below another's length
 (`invalid-typed-array-read-other-length`, run under Node); both are refused.
@@ -3871,16 +3871,16 @@ forms, in this order, their result the
 ```
 
 The first form's precondition is at a construction's positions (1 the
-length) and its result fact at a return's (0 the view, 2 the length;
-[result facts](PROGRAM-TYPING.md#reads-below-the-length)): at a safe integer
+length) and its postcondition at a return's (0 the view, 2 the length;
+[postconditions](PROGRAM-TYPING.md#postconditions)): at a safe integer
 $`n\ge 0`$, ToIndex returns $`n`$ itself (ToIntegerOrInfinity of an integer
 is the integer, and $`n\le 2^{53}-1`$ is its own ToLength), and
 AllocateTypedArray with that length makes a fresh fixed-length buffer of
-$`n`$ elements, so a normal return's view has element count $`n`$; a
+$`n`$ elements, so a normal return's view has typed-array length $`n`$; a
 length the buffer cannot hold throws a `RangeError`, no normal return. At a
 fraction ToIndex truncates (`new Uint8Array(1.5)` has one element under
 Node), which the precondition excludes. The fact lies within the
-owner-approved typed-array trust (the view's element count is the stable
+owner-approved typed-array trust (the view's typed-array length is the stable
 `[[viewLength]]` the stated type reads). Audited against ECMA-262's
 TypedArray constructor with a number argument (ToIndex, AllocateTypedArray)
 and a probe under Node 26.13.0 (2026-11-07).

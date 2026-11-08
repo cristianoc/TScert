@@ -8,7 +8,8 @@ Part of [checked bound annotations](checked-bound-annotations.md) (#115). Drafte
 
 This extends [Linear facts](../PROGRAM-TYPING.md#linear-facts):
 partial integer terms, checked linear entailment, exact safe-integer arithmetic,
-footprint preservation, and call preconditions and result facts.
+preservation under [frame conditions](../PROGRAM-TYPING.md#frame-conditions),
+[preconditions](../PROGRAM-TYPING.md#preconditions) and [postconditions](../PROGRAM-TYPING.md#postconditions).
 String lengths use those mechanisms; the additional semantic obligation is string admissibility.
 
 **Admissible strings.**
@@ -72,7 +73,7 @@ Its interpretation is partial:
 ```
 
 Its range is $`0\le\mathrm{strLength}(x)\le M`$.
-For an empty path it reads only the environment and survives every heap change.
+For an empty path it reads only the environment, so every heap change preserves it.
 Reassigning the binding requires the existing slot substitution/elimination rules.
 If paths are supported, `strLength(p.text)` reads the path’s heap locations:
 immutability of the resulting string does not make the field path immutable.
@@ -108,8 +109,8 @@ In `Semantics/Calculus.lean`, account for string construction and abrupt outcome
 repair the affected `Rules.lean` and `Programs/OperatorTyping.lean` proofs.
 In `Semantics/IndexFacts.lean`, extend interpretation, ordering, mapping and preservation;
 increase the kind-code stride so the fourth kind cannot collide with another slot.
-In `Semantics/HeapKnowledge.lean`, extend ranges, definedness and entailment support.
-In `Programs/IndexWrites.lean`, add and prove the string-length result facts.
+In `Semantics/HeapKnowledge.lean`, extend ranges, definedness and entailment.
+In `Programs/IndexWrites.lean`, add and prove the string-length postconditions.
 Extend annotation lowering, every wire decoder and OCaml’s term/range/preservation logic.
 
 Cases should cover a pretext-shaped loop and allocation, empty and astral strings,

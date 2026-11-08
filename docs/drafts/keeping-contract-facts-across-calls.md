@@ -4,9 +4,10 @@ Part of [checked bound annotations](checked-bound-annotations.md) (#115). Drafte
 
 ## The existing mechanism this extends
 
-[Record invariants](../PROGRAM-TYPING.md#record-invariants) are boundary contracts:
+[Type invariants](../PROGRAM-TYPING.md#type-invariants) are boundary contracts:
 callers establish parameter facts; bodies establish result and retained-parameter facts.
-[Footprints](../FOOTPRINTS.md) determine which facts survive between boundaries.
+[Frame conditions](../PROGRAM-TYPING.md#frame-conditions), stated and checked by
+[footprints](../FOOTPRINTS.md), determine which facts are preserved between boundaries.
 [Field paths §4.1 and sealed handles §5](field-paths-and-record-invariants.md)
 supply the same interpretation for records and their opaque handles.
 The proposal extends regional footprints, separation facts and checked default binding.
@@ -17,7 +18,7 @@ the regional composition and framing lemmas exist, but their general integration
 
 The target is pretext `2b11a4c` minus its bound rewrites, with arithmetic annotations,
 at `/private/tmp/claude-501/astra-115/target/final/pretext/src`.
-The owner reports 137 accepted functions with record invariants versus 148 without.
+The owner reports 137 accepted functions with type invariants versus 148 without.
 That comparison identifies a regression; it does not establish how many this proposal closes.
 Complete verification requires every target function and its initialization dependencies.
 Any actual unsafe source requires an explicit repair or contract decision; annotation alone cannot establish safety.
@@ -29,10 +30,10 @@ Regions name module binding cells, receiver or argument own locations, and check
 allocation during the invocation may additionally supply fresh locations.
 “Module-owned” abbreviates a certified region with stated separation, never allocation provenance alone.
 A caller may pass back an object obtained from a cache, and two arguments may alias.
-The preservation judgment therefore checks the fact's complete support against every write region.
-Support includes intermediate field cells, terminal stores or number cells, and guard reads.
-A kept root field alone does not protect the array or record reached through it.
-Where supports overlap, the existing change relation may still prove stability;
+The preservation judgment therefore checks every location the fact reads against every write region.
+Those locations include intermediate field cells, terminal stores or number cells, and guard reads.
+A preserved root field alone does not protect the array or record reached through it.
+Where a region overlaps those locations, the existing change relation may still prove stability;
 otherwise the fact expires and must be re-established at its next boundary.
 
 Use `receiverOwn` directly when all modeled writes belong to that receiver.
@@ -79,11 +80,11 @@ Missing arguments take the undefined branch; supplied arguments establish the in
 Lower the default in JavaScript order, proving `I_R` of its value after its evaluation.
 At the branch join, both alternatives establish the invariant of the effective parameter.
 Later defaults may mutate earlier arguments: preserve or reprove those facts before body entry.
-Retained-input ensures remain about original actuals, guarded when those actuals are undefined;
+Retained-input postconditions remain about original actuals, guarded when those actuals are undefined;
 the default value needs separate local tracking and must not be substituted for the caller's actual.
 
 The initialization unit proves `TEXT_START_CURSOR`'s invariant from its two zero fields.
-Transporting that fact into later invocations additionally requires preservation of its support.
+Transporting that fact into later invocations additionally requires preservation of the locations it reads.
 A `const` binding proves stable identity, while its object remains potentially mutable.
 For this constant, certify all uses, aliases and callees as preserving the two cursor fields;
 escaped aliases require checked contracts, and initialization order must justify every fact read.
@@ -95,7 +96,7 @@ within the documented module-composition boundary rather than an implicit new en
 
 All Lean paths below are relative to `lean/Verification/`; the extensions are proposed obligations.
 `Semantics/{Footprints,FootprintProvenance,HeapSeparation,IndexFacts,CallEffects}.lean`
-must prove region interpretation, separation, composition, substitution and support preservation.
+must prove region interpretation, separation, composition, substitution and the preservation of the locations a fact reads.
 `Programs/{ExpressionEffects,GraphCode,PromiseCalls}.lean` must certify summaries and frame facts;
 `Source/Lowering/Bindings.lean` must establish default-branch facts with faithful evaluation order.
 `Source/{SourceExtraction,SourceRequests}.lean` and `Source/Claims/Imports.lean`

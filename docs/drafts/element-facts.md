@@ -6,10 +6,10 @@ Part of [checked bound annotations](checked-bound-annotations.md) (#115). Drafte
 
 **Existing at `5701f1e9`.** [The elements fact](../FOOTPRINTS.md#the-elements-fact)
 states `ElemsAt R`: every present element has a kind admitted by `ElemPred`.
-Its support includes the array store and element locations; holes remain separate.
+The locations it reads include the array store and element locations; holes remain separate.
 [Linear facts](../PROGRAM-TYPING.md#linear-facts) supply checked integer arithmetic,
 heap-dependent terms, read bridges, and preservation through known changes.
-[Record invariants](../PROGRAM-TYPING.md#record-invariants) carry boundary obligations;
+[Type invariants](../PROGRAM-TYPING.md#type-invariants) carry boundary obligations;
 [guarded clauses](../PROGRAM-TYPING.md#guarded-clauses) handle nullable fields.
 **Proposed:** extend this elements mechanism with predicates relating numeric
 elements to existing terms, carried through the same knowledge and contracts.
@@ -48,11 +48,11 @@ while `segmentItems[i]` needs a strict bound for indexing `hyphenWidths`.
 
 ## Proposed preservation and establishment
 
-Support comprises receiver paths, the store, relevant element locations, and every
-location read by the endpoint and predicate’s external terms.
-An operation preserves the fact when it preserves that support, or proves a transfer.
+The locations the fact reads are its receiver paths, the store, the relevant element
+locations, and every location the endpoint and the predicate’s external terms read.
+An operation preserves the fact when it preserves those locations, or proves a transfer.
 A checked write inside the prefix preserves `E` when its stored value satisfies `P`;
-a write outside the prefix preserves it when its effects leave that support intact.
+a write outside the prefix preserves it when its frame condition leaves those locations unchanged.
 The proof uses actual locations and alias information, including aliases of bounds.
 Changing a bound requires proving the resulting predicate of all retained elements.
 For example, growth of an upper-bound length weakens the obligation; shrinkage does not.
@@ -88,7 +88,7 @@ Bounds alone should handle consumers whose loops already establish their needed 
 
 ## Proposed JavaScript and host obligations
 
-Existing length terms cover ordinary arrays and typed-array counts.
+Existing length terms cover ordinary arrays and typed-array lengths.
 A string-length term requires its own UTF-16 length interpretation, admissibility bound,
 read bridge, and safe-integer theorem before clauses can name `text.length`.
 Ordinary numeric bounds require safe integers; comparison truth alone excludes neither
@@ -112,8 +112,8 @@ Admit it inside `@requires`, `@invariant`, and their existing nullable guards.
 The quantifier ranges over present elements; density supplies universal presence.
 Prefer this explicit syntax initially: JavaScript `every` skips holes and permits effects.
 A runtime `every` rule needs a certified predicate and preservation through all callbacks.
-Builder result-prefix clauses need a checked result binder in the written contract language.
-Record invariants remain boundary obligations, with each construction and return checked.
+Builder result-prefix clauses need a checked result binder in the contract language.
+Type invariants remain boundary obligations, with each construction and return checked.
 
 Extend `IndexFact` with an element clause containing receiver path, prefix term,
 and linear predicates with scoped index/value binders; reuse existing guarded facts.
@@ -141,6 +141,6 @@ Generated tables additionally need checked decoding, row/stride predicates, and 
 Keep target-associated positive cases for dependent reads, prefix loops, fill, push, and aliases.
 Run Node negatives for holes, inclusive indexing, skipped prefix writes, alias mutation,
 shrinking bound arrays, typed conversion wraparound, and overlapping-view invalidation.
-Forge element facts, prefixes, receiver paths, and result contracts at verifier boundaries.
+Forge element facts, prefixes, receiver paths, and postconditions at verifier boundaries.
 Validate targeted builders and consumers, then `make test`; report exact target refusals.
 Complete verification requires every remaining obligation and unsafe site to be resolved.

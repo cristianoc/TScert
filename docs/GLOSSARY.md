@@ -162,10 +162,19 @@ it. Areas follow the pipeline's order; terms are alphabetical within each.
 ## Program typing
 
 - **edge** / **true edge** / **false edge**: a transfer of a statement graph, a test's two outcomes among them, each checked against its target's claim ([point claims](PROGRAM-TYPING.md#supplied-point-claims-and-incoming-edges)).
+- **frame condition**: what a step may change, stated and checked by its footprint; a fact is preserved where the step leaves the locations it reads unchanged or changes them in the direction that preserves its inequality, as a `push` preserves a length's lower bounds ([frame conditions](PROGRAM-TYPING.md#frame-conditions)).
 - **guard**: a test that narrows a value's type on each edge; every guard is a tag test ([guards](SOURCE-ELABORATION.md#guards)).
+- **linear fact** / **linear certificate**: an integer inequality $`c\cdot x\le d`$ or disequality over terms (values, field paths, array and typed-array lengths), and the checked list of combination steps deriving one from known facts ([linear facts](PROGRAM-TYPING.md#linear-facts)).
+- **locations a fact reads**: the field, store and typed-array-length locations a fact's terms read, which a step must preserve for the fact to hold after it ([linear facts](PROGRAM-TYPING.md#linear-facts)).
+- **loop invariant**: the facts at a loop's head, inferred by the producer and checked by Lean on every incoming edge ([reads below the length](PROGRAM-TYPING.md#reads-below-the-length)).
 - **narrowing** / **refinement**: the type a tested binding has on an edge, within its type and consistent with the observed outcome ([refinement](PROGRAM-TYPING.md#refinement-under-an-observed-outcome)).
 - **path**: a root binding followed by member reads, `x.f.g`, whose narrowing stable members keep ([stable members](HOST-FAMILIES.md#stable-members)).
 - **point claim**: the environment claimed at an execution point, which every incoming edge must justify ([point claims](PROGRAM-TYPING.md#supplied-point-claims-and-incoming-edges)).
+- **postcondition** (`ensures`): the index facts a signature states of a normal return's heap, at the result's and the call's positions ([postconditions](PROGRAM-TYPING.md#postconditions)).
+- **precondition** (`@requires`): the index facts a signature states of the call's values, assumed by the body and checked at every analyzed call ([preconditions](PROGRAM-TYPING.md#preconditions)).
+- **sealed handle**: an opaque (branded) type whose `@representation` names its underlying record, which the handle means ([type invariants](PROGRAM-TYPING.md#type-invariants)).
+- **type invariant** (`@invariant`): a clause on a type declaration, a precondition of each parameter whose type names it, and a postcondition of each such result and of each such parameter the body never reassigns ([type invariants](PROGRAM-TYPING.md#type-invariants)).
+- **typed-array length**: the length of a typed array, fixed for its life under the host's trust, the term $`\mathrm{view}(x)`$ ([typed arrays](PROGRAM-TYPING.md#typed-arrays)).
 - **user-defined guard**: a function whose result is a type predicate `x is T`, read as its promise about its argument ([user-defined guards](SOURCE-ELABORATION.md#user-defined-guards)).
 - **witness edge**: a read link from a slot to the slot holding a path's member, by which a path's narrowing is checked ([witness edges](PROGRAM-TYPING.md#witness-edges)).
 

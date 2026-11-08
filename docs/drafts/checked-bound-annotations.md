@@ -48,7 +48,7 @@ The other concerns the design meets, by the state of their mechanism:
 | Concern | Mechanism | State | What this design adds |
 | --- | --- | --- | --- |
 | What holds at a program point | [Heap state assertions](../PROGRAM-TYPING.md#heap-state-and-assertions), checked on every incoming edge; [supplied point claims](../PROGRAM-TYPING.md#supplied-point-claims-and-incoming-edges) at cuts; conditional atoms made unconditional by an observed answer ([a membership test](../PROGRAM-TYPING.md#a-membership-test)) | implemented | Linear integer atoms, guarded by nullness, with checked steps (§4) |
-| A fact kept while other code runs | [Footprints](../FOOTPRINTS.md#the-fact): a fact kind, its support, the footprints keeping it | implemented | Length and read links move by their supports, as every heap fact does |
+| A fact kept while other code runs | [Footprints](../FOOTPRINTS.md#the-fact): a fact kind, the locations it reads, the footprints preserving it | implemented | Length and read links move by their supports, as every heap fact does |
 | What a call may change | [Effect-qualified signatures](../SOURCE-ELABORATION.md#inferred-call-effects-elaboration-and-certification), [stated effects](../SOURCE-ELABORATION.md#stated-effects), [exceptional footprints](../SOURCE-ELABORATION.md#exceptional-footprints) | implemented | The clauses ride on the effect (§2.5) |
 | Code of another module | [Certified imports](../SOURCE-CONTRACTS.md#certified-imports) | implemented | A contracted declaration is read only at a certified import (§2.5) |
 | A test that establishes a fact | [Guards](../SOURCE-ELABORATION.md#guards) and [user-defined guards](../SOURCE-ELABORATION.md#user-defined-guards) | implemented | Validation at public entry points (§2.7) |
@@ -76,10 +76,10 @@ bound are inferred (§3); a clause written inside a unit is a hint.
 **Conjectured.** What the design adds to these mechanisms, each with its
 obligation in §2:
 
-1. a written precondition on graph code, conditioning the unit's safety;
+1. a precondition on graph code, conditioning the unit's safety;
 2. old values of number-valued paths, a restricted extension of
    correctness specifications' stated limit 11, which refuses old values;
-3. record invariants as clauses attached by a declared type;
+3. type invariants as clauses attached by a declared type;
 4. contracts over the captures of a local closure that does not escape;
 5. the linear inequality under a nullness guard, one atom form for the
    integer facts.
@@ -1251,7 +1251,7 @@ re-exports. For each signature of the checked program:
 - a callback written as an argument is a local closure: its contract is
   the one its contextual type states, met by the flow rule of §2.5.
 
-A record invariant is a pair of boundary clauses: a `T` value has the
+A type invariant is a pair of boundary clauses: a `T` value has the
 invariant's atom exactly where a clause of the current signature names
 it, or the code since established it.
 
@@ -1311,7 +1311,7 @@ into
 \bigl[\,r.\mathtt{widthTrims}\ne\mathsf{null}\,\bigr]\ \Rightarrow\ \bigl(\mathrm{len}(r.\mathtt{widthTrims})-n\le 0\ \land\ n-\mathrm{len}(r.\mathtt{widthTrims})\le 0\bigr)
 ```
 
-whose support is the field location of `widthTrims` in `r` and the store
+which reads the field location of `widthTrims` in `r` and the store
 location of the array it holds. $`\mathrm{Holds}`$ of a guarded atom is
 true where the guarded term reads `null`; where it reads an array, the two
 inequalities hold of its store's length. $`\mathrm{Holds}`$ of an atom whose path term reads through
@@ -1558,14 +1558,14 @@ third routes.
 Examples: [E8](#e8-between-two-appends), [E9](#e9-a-throw-between-two-appends).
 
 **Conjectured.** A write creates no obligation of its own. It drops every
-heap atom whose support **may** hold a location the write changes, by
-the support of the atom's fact kind and the stability check of
+heap atom one of whose read locations **may** be a location the write changes, by
+the locations the atom's fact kind reads and the stability check of
 [footprints](../FOOTPRINTS.md#changes-and-footprints): the field's location
 for a field write; the store location for `push`, a length cut, an
 append and a write that fills a hole; the element's location for a write
 over a present element, which keeps the store. A write that fills a hole
 below the length changes the store and keeps its length, a fact its rule
-states again (§3.4). A path's support is every location its
+states again (§3.4). A path reads every location its
 read links read, field locations and store locations along the path.
 Linear and integer atoms name only slots and are kept. Between two
 appends of a builder the invariant's atom is absent from the knowledge.
@@ -1596,7 +1596,7 @@ conjunction of:
   possibly under a guard on a path term (§2.1);
 - #104's heap facts: length links $`\mathrm{len}(a)=n`$, extent, density
   and presence, and the field read links of stored knowledge, each with
-  its support.
+  the locations it reads.
 
 The domain covers intervals (`0 <= i < n`), differences (`i + 1 < count`,
 equal lengths) and affine equalities in any number of variables (the
@@ -1701,7 +1701,7 @@ one declaration as every wire format is:
 
 - **the Fragment** ([its format](../FRAGMENT-FORMAT.md)): each
   signature's clauses, `requires`, `ensures` and `opens`, after the front
-  end has expanded `@predicate`s and attached the record invariants of
+  end has expanded `@predicate`s and attached the type invariants of
   §1.7 (front-end work, a trust row of §4.3), as terms of §1.3 with paths
   named by binding and field; every signature has the fields, empty lists
   included; and the public modules and the public inventory of §2.4;
@@ -1725,9 +1725,9 @@ Examples: [E30](#e30-arithmetic-limits).
 **Conjectured.** The atoms join stored knowledge
 ([stored knowledge](../PROGRAM-TYPING.md#stored-knowledge-and-how-it-is-read)):
 $`\mathsf{int}`$ and linear atoms whose terms are all slots name only the
-environment and survive every write and call, as
+environment and are preserved by every write and call, as
 [separation facts](../PROGRAM-TYPING.md#separation-facts) do; an atom with
-a path term reads the heap, and moves by the support of its paths, the
+a path term reads the heap, and moves by the locations its paths read, the
 locations their reads read; a guarded atom is conditional on an answer
 about its guarded term, and an observation of that answer on a branch's
 edge makes it unconditional, as `HeapKnowledge.observe` does for the
@@ -2222,7 +2222,7 @@ rows 3 and 4 of §9.3 for the first, row 2 for the second and third, and,
 for the fourth, the call `zeros(to - from)`, whose `safeInteger(count)` is
 not established.
 
-A record invariant on the prepared handle has the form
+A type invariant on the prepared handle has the form
 
 ```ts
 /** @invariant this.lineEndTrims === null || this.lineEndTrims.length === this.widths.length
@@ -2264,7 +2264,7 @@ $`K_p`$ at a call; a ghost slot bound to another path, or to the path
 after a mutation; an ensures checked at another result slot; a linear
 step with a wrong multiplier, and one rounding a non-integer slot; an
 exactness claim at `2 ** 53 - 1 + 2`; a length or read link kept across
-a write of its support through an alias, across a receiver replacement,
+a write of a location it reads through an alias, across a receiver replacement,
 and across a callback changing a nested array; a heap atom carried onto a
 handler edge; a request claiming entry knowledge other than an exported
 unit's written requires, and claiming a requires where none is written;
@@ -2304,7 +2304,7 @@ a requires passed at `unknown` and called after a `typeof` test; a clause attach
 4. Ghost slots for `old`, capture contracts of local closures, the exact
    `push` row and the bounded write rule.
 5. The JSDoc reader, elaboration and `elab_sound`, `@predicate`
-   expansion, record invariants and `@opens`.
+   expansion, type invariants and `@opens`.
 6. Pretext: annotate the 12 write-holding functions and the line walkers,
    turn the corresponding rewrites back, and measure the census and the
    benchmark on the result.
@@ -2364,7 +2364,7 @@ TScert outcomes are conjectured.
    export function lineEndTrimAt(p: Lines, i: number): number { return lineEndTrim(p, i) }
    ```
 
-4. **Record invariants by type**, with `@opens` keeping the ensures
+4. **Type invariants by type**, with `@opens` keeping the ensures
    (recommended), or named predicates written on each signature only.
 
    ```ts
