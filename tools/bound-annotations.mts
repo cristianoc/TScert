@@ -141,8 +141,10 @@ export function parameterKept(p: ts.ParameterDeclaration, body: ts.Node | undefi
  * declaration's parameters in order, `this` included (`receiver`), those of
  * each plain required name's type, where it is not async, at its returns too
  * where its body writes no binding of its name (`kept`, `parameterKept`);
- * and its result type's, where it is not async. */
-export type ImportedInvariants = { receiver: boolean; params: readonly boolean[]; kept: readonly boolean[]; result: boolean; ensures: readonly string[]; ensuresParameters: readonly string[] | null };
+ * and its result type's, where it is not async. Written postconditions carry
+ * their clauses and parameter names, or null for an unsupported signature. */
+export type ImportedInvariants = { receiver: boolean; params: readonly boolean[]; kept: readonly boolean[];
+  result: boolean; ensures: readonly string[]; ensuresParameters: readonly string[] | null };
 
 function tagsOf(trivia: string, name: string): string[] {
   const open = trivia.lastIndexOf("/**");
@@ -420,8 +422,9 @@ export function loopBindings(loop: ts.Node, names: readonly string[]): Map<strin
   return found;
 }
 
-/** The index facts a declaration's `@requires` clauses elaborate to, or the
- * reason one is refused. */
+/** The facts a clause elaborates to, or its refusal. The optional entry
+ * assumptions permit safe-integer value terms in postconditions; their facts
+ * are not part of the result, whose facts the return obligation proves. */
 export function elaborateRequires(clauses: readonly string[], params: readonly ClauseParameter[], assumptions: readonly string[] = []):
     { facts: IndexFact[] } | { refused: string } {
   try {

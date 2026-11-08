@@ -2191,7 +2191,7 @@ export function functionDecl(this: Gate, node: FunctionDeclaration, signature: F
     if (signature === node && ts.isSourceFile(node.parent)) {
       const contract = typeInvariants(gate,
         isAsync ? [] : node.parameters.map((p, i) => plainParameter(p)
-          ? { type: parameterTypes[i], kept: plainParameter(p) && parameterKept(p, node.body) } : { type: undefined, kept: false }),
+          ? { type: parameterTypes[i], kept: parameterKept(p, node.body) } : { type: undefined, kept: false }),
         !!receiverParam, isAsync ? undefined : retType);
       if (typeof contract === "string") gate.fail(node, contract);
       else {

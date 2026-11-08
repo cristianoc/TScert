@@ -2186,7 +2186,8 @@ function's `ensures` and every imported signature's `ensures`.
 
 **Cases.** `written-ensures` checks an array builder and its bounded caller,
 a string-length allocation and a result path; the builder's explicit length
-check establishes its return fact. `written-ensures-value-import` checks a
+check establishes its return fact. `written-ensures-push-refused` records
+the unchecked loop's unproved exact length. `written-ensures-value-import` checks a
 caller across an analyzed import. `invalid-written-ensures-body` returns an
 array shorter than its contract, and `invalid-written-ensures-unstated`
 reads below a count absent from its callee's contract.
