@@ -37,3 +37,12 @@ export function nonemptyLast(s: string, needle: string): number {
   const r = s.lastIndexOf(needle);
   return strictlyFound(s, r);
 }
+
+/** @requires safeInteger(i) && 1 <= i && i < s.length && 36481 <= table.length */
+export function kanaTable(s: string, i: number, table: Float64Array): number {
+  const first = s.charCodeAt(i - 1);
+  const second = s.charCodeAt(i);
+  if (first < 0x3041 || first > 0x30ff || second < 0x3041 || second > 0x30ff) return 0;
+  const index = (first - 0x3041) * 191 + second - 0x3041;
+  return table[index]!;
+}
