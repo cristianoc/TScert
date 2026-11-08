@@ -90,11 +90,10 @@ structure Target where
 
 def Target.of (heads : Array Draft) : Target := ⟨heads, signatures heads⟩
 
-/-- Each head of `slice` matched with a head of the document of the same
-signature at the rounds both stores need, one of the same name (`spelling`)
-where the document has several; a head with none maps to itself and leaves
-the evidence to fail its check. -/
-def headMap (slice : Array Draft) (target : Target) : (Nat → Nat) × Target :=
+/-- The heads of the document each head of `slice` may be matched with:
+those of the same signature at the rounds both stores need, in the
+document's order. -/
+def candidates (slice : Array Draft) (target : Target) : (Nat → Array Nat) × Target :=
   let own := signatures slice
   let k := max own.size target.rounds.size - 1
   let own := extend slice own k
@@ -102,11 +101,21 @@ def headMap (slice : Array Draft) (target : Target) : (Nat → Nat) × Target :=
   let byHash := (rounds[k]!).foldl (init := (({} : Std.HashMap UInt64 (Array Nat)), 0))
     (fun (m, j) x => (m.insert x ((m.getD x #[]).push j), j + 1)) |>.1
   let mine := own[k]!
-  let pick (h : Nat) : Option Nat := do
-    let candidates ← byHash.get? (← mine[h]?)
-    let name := (slice[h]?.map (spelling ·.name)).getD ""
-    (candidates.find? fun j => (target.heads[j]?.map (spelling ·.name)) == some name) <|> candidates[0]?
-  (fun h => (pick h).getD h, ⟨target.heads, rounds⟩)
+  (fun h => ((mine[h]?).bind byHash.get?).getD #[], ⟨target.heads, rounds⟩)
+
+/-- How a head is chosen among several of the same signature, which the
+document's checks may tell apart (a declaration's head and a literal's): one
+of the same name (`spelling`), the latest made, or the earliest. -/
+inductive Choice where
+  | named | latest | earliest
+  deriving BEq
+
+/-- The head `choice` picks among `among` for a slice head named `name`. -/
+def Choice.pick (choice : Choice) (heads : Array Draft) (name : String) (among : Array Nat) : Option Nat :=
+  match choice with
+  | .named => (among.find? fun j => (heads[j]?.map (spelling ·.name)) == some name) <|> among[0]?
+  | .latest => among.back?
+  | .earliest => among[0]?
 
 /-- A label read from a slice's evidence and written as the document's. -/
 structure Moved where
@@ -117,9 +126,12 @@ structure Moved where
 instance : ToJson Moved := ⟨fun m => m.tree.toJson⟩
 
 /-- Evidence over a slice's store, its heads `slice`, written over the
-document's store `target`: every label renamed by `headMap`. -/
-def translate (slice : Array Draft) (target : Target) (evidence : Json) : Except String (Json × Target) := do
-  let (f, target') := headMap slice target
+document's store, each label renamed by the head `choice` picks among its
+candidates (`candidates`). A head with no candidate keeps its number, and
+the evidence fails its check. -/
+def translate (slice : Array Draft) (heads : Array Draft) (among : Nat → Array Nat) (choice : Choice)
+    (evidence : Json) : Except String Json := do
+  let f (h : Nat) : Nat := (choice.pick heads ((slice[h]?.map (spelling ·.name)).getD "") (among h)).getD h
   let _ : FromJson Moved := ⟨fun j => do let t ← Tree.fromJson j; return ⟨mapTree f t, t⟩⟩
   let d : EvidenceWire.Document Moved ← fromJson? evidence
   -- A union the slice wrote in its canonical order is written in the
@@ -127,7 +139,7 @@ def translate (slice : Array Draft) (target : Target) (evidence : Json) : Except
   let types := d.types.map fun ty =>
     let original := ty.map (·.original)
     if canonUnion original == original then (canonUnion (ty.map (·.tree))).map fun t => ⟨t, t⟩ else ty
-  return (toJson { d with types }, target')
+  return toJson { d with types }
 
 end Verification.SourceClaimJson.Translate
 
