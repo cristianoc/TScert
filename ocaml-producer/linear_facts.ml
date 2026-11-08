@@ -723,9 +723,9 @@ let atom_comparison ~array env fs (cond : expr) : fact list * fact list =
      `IndexWrites.equalAtoms`). The facts here are inequalities: `a ≠ b`
      with `a ≤ b` held is `a ≤ b - 1`, as Lean's strict step derives it, and
      with `b ≤ a` held `b ≤ a - 1`. A comparison with a number literal is a
-     tag test in Lean's lowering (`numEq`), which states no linear fact. *)
-  | Equality ((StrictEqual | StrictUnequal) as op,a,b)
-    when (match a.node, b.node with Literal (LNumber _),_ | _,Literal (LNumber _) -> false | _ -> true) ->
+     tag test in Lean's lowering (`numEq`), whose answers state the same
+     (`HeapKnowledge.numEqIndices`). *)
+  | Equality ((StrictEqual | StrictUnequal) as op,a,b) ->
     (match linear ~array env fs a, linear ~array env fs b with
      | Some (ta,ca),Some (tb,cb) ->
        let d = norm (ta @ scale (-1) tb) and c = ca - cb in

@@ -2139,6 +2139,68 @@ theorem unguardIndices_holds {ls : HeapLinks.Links} {as : List IndexAtom} {slot 
     · cases hab
   · cases hab
 
+/-- **A literal equality's facts** (`num-equal`): a tag test of a value
+against a number that is the safe integer `i` states, of each slot of the
+tested slot's class known to hold a safe integer, `x = i` on its passing
+answer and `x ≠ i` on its failing one. -/
+def numEqIndices (ls : HeapLinks.Links) (as : List IndexAtom) (slot : Nat) :
+    BranchRefinement.Observation → List IndexAtom
+  | .tag (.numEq b) q =>
+    match SafeIntegers.safeIntOfBits b with
+    | some i =>
+      ((HeapLinks.aliases ls slot).filter (intSlot as)).flatMap fun x =>
+        if q then [⟨.linear (valueFact (.le [(x, 1)] i)), none, false⟩,
+            ⟨.linear (valueFact (.le [(x, -1)] (-i))), none, false⟩]
+        else [⟨.linear (valueFact (.ne [(x, 1)] i)), none, false⟩]
+    | none => []
+  | _ => []
+
+theorem numEqIndices_holds {ls : HeapLinks.Links} {as : List IndexAtom} {slot : Nat}
+    {o : BranchRefinement.Observation} {ρ h} (hl : HeapLinks.Holds ls ρ h)
+    (he : IndexHolds as ρ h) (ho : o.holds (ρ slot)) : IndexHolds (numEqIndices ls as slot o) ρ h := by
+  intro a ha _
+  unfold numEqIndices at ha
+  split at ha
+  · rename_i b q
+    split at ha
+    · rename_i i hi
+      obtain ⟨x, hxm, ha⟩ := List.mem_flatMap.mp ha
+      obtain ⟨hxa, hs⟩ := List.mem_filter.mp hxm
+      have hρ : ρ x = ρ slot := HeapLinks.aliases_eq hl hxa
+      obtain ⟨j, hj⟩ := Option.isSome_iff_exists.mp (intSlot_sound he hs)
+      obtain ⟨y, hy, hsafe⟩ := intValue_safe hj
+      have hb := SafeIntegers.safeIntOfBits_sound hi
+      have htag : numberEqual y b = q := by
+        rw [← hρ, hy] at ho
+        rcases ho with ho | ho
+        · simpa [tagHolds] using ho
+        · simp [protoFree] at ho
+      have hv : valuation ρ x = j := by simp [valuation, hj]
+      have hvars : ∀ (c : Int) (d : Int) (ne : Bool), ∀ z ∈ (if ne then Linear.Fact.ne [(x, c)] d
+          else Linear.Fact.le [(x, c)] d).vars, (intValue (ρ z)).isSome := by
+        intro c d ne z hz
+        cases ne <;> simp [Linear.Fact.vars] at hz <;> subst hz <;> simp [hj]
+      cases q with
+      | true =>
+        have hij := SafeIntegers.numberEqual_safe hsafe hb htag
+        simp only [if_true, List.mem_cons, List.not_mem_nil, or_false] at ha
+        rcases ha with rfl | rfl
+        · exact IndexFact.holdsAt_valueFact.mpr ⟨hvars 1 i false, by
+            show Linear.Form.eval _ _ ≤ _; simp [Linear.Form.eval, hv]; omega⟩
+        · exact IndexFact.holdsAt_valueFact.mpr ⟨hvars (-1) (-i) false, by
+            show Linear.Form.eval _ _ ≤ _; simp [Linear.Form.eval, hv]; omega⟩
+      | false =>
+        simp only [Bool.false_eq_true, if_false, List.mem_cons, List.not_mem_nil, or_false] at ha
+        subst ha
+        have hne : j ≠ i := fun he' => by
+          subst he'
+          rw [SafeIntegers.numberEqual_of_safe hsafe hb] at htag
+          cases htag
+        exact IndexFact.holdsAt_valueFact.mpr ⟨hvars 1 i true, by
+          show Linear.Form.eval _ _ ≠ _; simp [Linear.Form.eval, hv]; omega⟩
+    · cases ha
+  · cases ha
+
 def observeCore (k : Knowledge) (slot : Nat) : BranchRefinement.Observation → Knowledge
   | .boolean q => observeBoolean k slot q
   | .tag t q => if t == .truthy then promoteTruthy (observeTag k slot t q) slot q else observeTag k slot t q
@@ -2147,7 +2209,7 @@ def observeCore (k : Knowledge) (slot : Nat) : BranchRefinement.Observation → 
 (`unguardIndices`). -/
 def observe (k : Knowledge) (slot : Nat) (o : BranchRefinement.Observation) : Knowledge :=
   let k' := observeCore k slot o
-  { k' with indices := k'.indices ++ unguardIndices k'.links k'.indices slot o }
+  { k' with indices := k'.indices ++ unguardIndices k'.links k'.indices slot o ++ numEqIndices k'.links k'.indices slot o }
 
 theorem observeCore_holds {k slot o ρ h} (hk : Holds k ρ h)
     (ho : o.holds (ρ slot)) : Holds (observeCore k slot o) ρ h := by
@@ -2171,8 +2233,10 @@ theorem observe_holds {k slot o ρ h} (hk : Holds k ρ h)
   have hk' := observeCore_holds hk ho
   refine ⟨hk'.1, hk'.2.1, hk'.2.2.1, hk'.2.2.2.1, hk'.2.2.2.2.1, fun a ha => ?_⟩
   rcases List.mem_append.mp ha with ha | ha
-  · exact hk'.2.2.2.2.2 a ha
-  · exact unguardIndices_holds hk'.2.2.1 hk'.2.2.2.2.2 ho a ha
+  · rcases List.mem_append.mp ha with ha | ha
+    · exact hk'.2.2.2.2.2 a ha
+    · exact unguardIndices_holds hk'.2.2.1 hk'.2.2.2.2.2 ho a ha
+  · exact numEqIndices_holds hk'.2.2.1 hk'.2.2.2.2.2 ho a ha
 
 /-- A finite predicate vocabulary exactly interprets supported primitive clauses. -/
 def primitive : List (Clause (Ty ι)) → Option (List Atom)

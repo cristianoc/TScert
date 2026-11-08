@@ -1621,8 +1621,22 @@ with $`K\vdash`$ the entailment from the step's knowledge
 the integers ($`\neg(a<b)`$ is $`b\le a`$: two safe integers are never NaN).
 `int-equal` reads `Number::equal`, which on two safe integers is their
 equality, the zeros included (proved: `SafeIntegers.numberEqual_safe`, and
-its converse `numberEqual_of_safe`: no safe integer's bits are a NaN's); a
-comparison with a number literal lowers to a tag test and states none.
+its converse `numberEqual_of_safe`: no safe integer's bits are a NaN's).
+A comparison with a number literal lowers to a tag test $`\mathsf{numEq}\,b`$
+of the compared value; where $`b`$ is the safe integer $`k`$, each answer
+states, of every slot $`x`$ of the tested slot's alias class with
+$`\mathrm{int}(x)`$, the same facts (`HeapKnowledge.numEqIndices`, read by
+every tag observation; proved: `numEqIndices_holds`, from the same two
+theorems):
+
+```math
+\frac{\mathrm{SafeInt}(b,k)\qquad x\in\mathrm{class}(s)\qquad \mathrm{int}(x)}
+     {s\ \textsf{passes}\ \mathsf{numEq}\,b\dashv x=k
+      \qquad s\ \textsf{fails}\ \mathsf{numEq}\,b\dashv x\ne k}\ \textsf{num-equal}
+```
+
+so `i === 0 || xs[i - 1]!` under $`0\le i\le|\mathit{xs}|`$ reads below the
+length: `strengthen` turns $`i\ne 0`$ into $`1\le i`$.
 `length-range` reads the store contract's bound
 ([arrays](POSITIVE-TYPES.md#arrays)). Proved: `IndexWrites.linearAtoms_holds`,
 from `SafeIntegers.add_safe`, `sub_safe` and `doubleOrder_safe`. A length atom
