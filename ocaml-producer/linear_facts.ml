@@ -1572,7 +1572,7 @@ let instantiate fs reads (e : efact) ((kt,kc) : (string * int) list * int) (name
       if n = index_var then scale c kt else if offset n <> None then [Option.get (shifted (Option.get (offset n))),c] else if term_binding n = elem_var then (let _,p,k = term_parts n in [make_term ~path:p k name,c]) else [n,c]) t in
     norm t, d - a * kc in
   let facts = (if named then [int_fact name] else []) @ List.map rename body in
-  deliminate (fs @ facts) (List.map (dmap rename) choices)
+  facts @ List.concat_map (dfreed (fs @ facts)) (List.map (dmap rename) choices)
 
 (* The same local names carry bounded shifts and masks inside a larger
    expression. Their facts are the arithmetic postconditions checked by
@@ -1605,8 +1605,8 @@ let element_facts ~array env fs (e : expr) : fact list * (Json.t * string) list 
             let name = "%elem" ^ string_of_int (List.length !found) in
             found := (e.pos,name) :: !found;
             reads := ((root,path),(kt,kc),name) :: !reads;
-            extra := !extra @ List.concat_map (fun (arr,idx,r) ->
-              List.concat_map (fun ef -> if ef.arr = arr then instantiate (fs @ !extra) !reads ef idx r else []) efs) !reads)
+            extra := List.sort_uniq compare (!extra @ List.concat_map (fun (arr,idx,r) ->
+              List.concat_map (fun ef -> if ef.arr = arr then instantiate (fs @ !extra) !reads ef idx r else []) efs) !reads))
        | _ -> ())
     | _ -> ()) in
   go e;
