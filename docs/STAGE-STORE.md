@@ -58,6 +58,10 @@ Excluded from every key (`unkeyed`), by role:
   cleanup;
 - `pipeline/verify-source.mts`: the orchestration of one check, passing
   values to the stages' calls, and its outcome;
+- `pipeline/unit-slices.mts` and `pipeline/unit-documents.mts`: a
+  document's units of proposal and each unit's slice, inputs of the stages
+  that read them ([units of a proposal](#units-of-a-proposal)), and the
+  documents' types;
 - `pipeline/run-cases.mts`, `pipeline/cases.mts`: the case runner and the
   case inventory;
 - `pipeline/test.mts`, `pipeline/default-parameters.mts`,
@@ -168,16 +172,59 @@ execution of a replay-eligible invocation retains its complete stage key.
 | --- | --- |
 | parse | source bytes and logical identity; project and resolution context; active host-family descriptions; the functions read at their declared signatures (`omitted`); the complete filesystem observations of parsing, declaration collection and host activation, its imported modules' stages' included |
 | module | an imported module's path and identity in the importer's documents; the project; active host-family descriptions; whether the run gives a tag selection; its observations, its reads of the selection by family among them ([shared work](#shared-work)) |
-| lower | the exact Fragment document |
-| propose | the exact Fragment, flow and qualified-read documents, including whether the optional argument is present |
-| assemble claims | the raw proposal and ordered transitive module-claim documents selected by the reads |
+| lower | the exact Fragment document, or a unit's slice |
+| facts | the exact Fragment ([units of a proposal](#units-of-a-proposal)) |
+| propose | a unit's slice, its flow and its reads document ([units of a proposal](#units-of-a-proposal)) |
+| assemble | the units' proposals, each with the intervals its slice leaves out; the Fragment with its own declarations named canonically; the qualified-read document |
+| assemble claims | the assembled proposal and ordered transitive module-claim documents selected by the reads |
 | plan | the exact Fragment and assembled claims; for a listing of units, its file identity |
 | module search | the exact module run the plan printed: an imported module's document restricted to the read closure of the functions read qualified of it, its claims and its own qualified reads; search depth and subtype rounds |
 | module check | the same module run and its evidence; subtype rounds |
 | search | the exact Fragment and assembled claims; explicit file identity; source snapshot binding; search depth and subtype rounds; the selected units |
 | check | the exact Fragment, assembled claims and evidence; explicit file identity; source snapshot binding; subtype rounds; the selected units |
-| explain | the Fragment and flow passed to the producer's `--explain` mode |
+| explain | a unit's slice, its flow and its reads document, the imports read at their ordinary signatures |
 | TypeScript diagnostics | source identity, project context and the complete compiler dependency observations |
+
+## Units of a proposal
+
+A document, the checked file's or an imported module's, is proposed a unit
+at a time, so an edit of one function proposes again only the units whose
+inputs it changes.
+
+- *Units.* `producer --units` reads the whole document and prints, for each
+  function name, the module functions its code mentions and whether it
+  mentions a name the initialization declares; the initialization's
+  mentions; and the constants of the initialization the document reads as
+  values anywhere, which decide the signatures the initialization offers its
+  closures. A unit of proposal is a strongly connected component of the
+  graph of these mentions, the initialization one of its nodes
+  (`pipeline/unit-slices.mts`); units are proposed after the units they
+  read.
+- *Slices.* A unit's slice is the document with the unit's members whole,
+  each function its members (and the initialization, where the slice holds
+  it) mention with its body left out, the initialization where a member
+  mentions a name it declares, and every other function and top-level
+  statement left out. The positions after each interval left out move back
+  by its length, an interval holding kept code is kept, a name the parser
+  makes at a position (`%…@N`) names the moved position, and the document's
+  own declarations are named by module `local`, their name and their index
+  among the declarations of that name. An edit of a function's body leaves
+  every other unit's slice unchanged.
+- *Reads.* A unit's reads document holds its members, whether the
+  initialization is one, the footprint and on-throw flag each function the
+  slice holds by its signature settled on in its own unit's proposal
+  (`producer --unit` prints them), the constants read as values, and the
+  qualified reads. The producer solves footprints and on-throw flags for the
+  unit's members alone, its neighbours fixed at those values.
+- *Assembly.* `producer --assemble` reads the units' proposals, maps each
+  position, binding name and refusal span of a slice back to the document,
+  and writes the document's claims as one proposal of the whole document
+  would. A unit the producer refuses refuses the document's proposal, the
+  initialization's refusal first, then in source order.
+
+The slices, the reads documents and the assembly's inputs are stage inputs,
+keyed by their content; `pipeline/unit-slices.mts`, which computes them, is
+outside every key.
 
 ## Observed stages
 
@@ -318,7 +365,7 @@ before and after its read. A replayed entry is the stage's result for the
 file system its observations describe, which agrees with the present one on
 everything the stage reads.
 
-Each imported module uses the same lower and propose stages. Each
+Each imported module is proposed by the same units, slices and stages. Each
 withdrawal recomputes the eligible reads and transitive claims assembly.
 The plan of a document with qualified reads (`--module-runs`) prints each
 module run: an imported module's document restricted to the read closure

@@ -6,6 +6,7 @@
 import assert from "node:assert/strict";
 import { chmodSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { present } from "../tools/files.mts";
+import { fieldOf } from "../tools/thrown.mts";
 import { join, resolve } from "node:path";
 import type { Ast, Expr } from "../tools/fragment.mts";
 import type { PropertyKey, TypeDefinition, TypeTerm } from "../tools/declaration-types.mts";
@@ -18,7 +19,7 @@ import { controlOperations, tested, ran as ranStage, readInvocationLog, startEvi
   from "./stages.mts";
 import { Store } from "./stage-store.mts";
 import { producerCall, verifierCall } from "./stage-execution.mts";
-import { check as checkSource, invocationLog, producerExecutable, readClaimsFile, readFragmentFile, readOutcome, sourceKey, verifier,
+import { UnitProposal, check as checkSource, invocationLog, producerExecutable, readClaimsFile, readFragmentFile, readOutcome, sourceKey, verifier,
   type Outcome } from "./verify-source.mts";
 import { runDirectory, runRoot } from "./run-directory.mts";
 import { tsconfigOf } from "../tools/declaration-graph.mts";
@@ -61,6 +62,24 @@ const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "obj
  * (`--controls`), each running one control at a time; a control running the
  * mutation verifier registers with `mutationControl` and is given once its
  * build, beside the others, is done. */
+/** A document's proposal through the stages a check proposes it by, a unit
+ * at a time (STAGE-STORE.md, "Units of a proposal"), read as one producer
+ * process's run: exit 0 with the claims, or 2 with the refusal record. */
+function proposedDocument(fragment: string): { status: number; stdout: string; stderr: string } {
+  const document: unknown = JSON.parse(readFileSync(fragment, "utf8"));
+  const roots = fieldOf(fieldOf(document, "declarations"), "roots");
+  const own = Array.isArray(roots) ? roots.find((r) => fieldOf(fieldOf(r, "binding"), "kind") === "local") : undefined;
+  const module = fieldOf(fieldOf(own, "declaration"), "module");
+  const file = fieldOf(document, "file");
+  const local = typeof module === "string" ? module : typeof file === "string" ? file : "";
+  const proposal = new UnitProposal((call) => {
+    const r = tested(call);
+    return { code: r.status ?? -1, out: r.stdout, detail: r.stderr.trim() || r.stdout.trim() };
+  }, `${runDirectory("tscert-units-")}/`, fragment, local).propose([]);
+  return "claims" in proposal ? { status: 0, stdout: `${proposal.claims}\n`, stderr: "" }
+    : { status: 2, stdout: "", stderr: `${proposal.refusal}\nend of refusal\n` };
+}
+
 const controls: (() => Promise<void>)[] = [];
 const mutationControls = new Set<number>();
 const control = (body: () => Promise<void>): void => {
@@ -1978,7 +1997,7 @@ control(async (): Promise<void> => {
   assert.equal(lowered.status, 0, lowered.stderr);
   const flow = join(erased, "weakened-flow.json");
   writeFileSync(flow, lowered.stdout);
-  const proposal = tested(producerCall(producerExecutable, [weakened, flow]));
+  const proposal = proposedDocument(weakened);
   assert.equal(proposal.status, 0, proposal.stderr);
   const claims = join(erased, "forged-claims.json");
   const evidence = join(erased, "forged-evidence.json");
@@ -2012,7 +2031,7 @@ control(async (): Promise<void> => {
     assert.equal(lowered.status, 0, lowered.stderr);
     const flow = join(artifacts, "forged-signed-flow.json");
     writeFileSync(flow, lowered.stdout);
-    const proposal = tested(producerCall(producerExecutable, [signed, flow]));
+    const proposal = proposedDocument(signed);
     assert.equal(proposal.status, 0, proposal.stdout + proposal.stderr);
     const claims = join(artifacts, "forged-signed-claims.json");
     const evidence = join(artifacts, "forged-signed-evidence.json");
@@ -2061,7 +2080,7 @@ control(async (): Promise<void> => {
   assert.equal(lowered.status, 0, lowered.stderr);
   const flow = join(certified, "forged-absent-callee-flow.json");
   writeFileSync(flow, lowered.stdout);
-  const proposal = tested(producerCall(producerExecutable, [forged, flow]));
+  const proposal = proposedDocument(forged);
   assert.equal(proposal.status, 2, proposal.stdout + proposal.stderr);
   const source = readFileSync(join(here, "imports-project", "certified.ts"), "utf8");
   const read = source.indexOf("describe(n)");
@@ -2093,7 +2112,7 @@ control(async (): Promise<void> => {
     assert.equal(readLowered.status, 0, readLowered.stderr);
     const readFlow = join(artifacts, `forged-unbound-${k}-flow.json`);
     writeFileSync(readFlow, readLowered.stdout);
-    const refused = tested(producerCall(producerExecutable, [forgedRead, readFlow]));
+    const refused = proposedDocument(forgedRead);
     assert.equal(refused.status, 2, refused.stdout + refused.stderr);
     assert.equal(refused.stderr, `unsupported: unbound name missing at [${at},${at + span.length})\nend of refusal\n`);
   };
@@ -3902,7 +3921,7 @@ control(async (): Promise<void> => {
   assert.equal(lowered.status, 0, lowered.stdout + lowered.stderr);
   const flow = join(artifacts, "unequal-bound-member-effects-flow.json");
   writeFileSync(flow, lowered.stdout);
-  const proposal = tested(producerCall(producerExecutable, [fragment, flow]));
+  const proposal = proposedDocument(fragment);
   assert.equal(proposal.status, 2, proposal.stdout + proposal.stderr);
   assert.match(proposal.stdout + proposal.stderr,
     /a method bound to a union of hosts needs each host's member at one signature: the same parameters and effect/);
@@ -4364,7 +4383,7 @@ for (const name of ["countdown", "total"]) control(async (): Promise<void> => {
   assert.equal(lowered.status, 0, lowered.stdout + lowered.stderr);
   const flow = join(artifacts, `receiver-store-${name}-flow.json`);
   writeFileSync(flow, lowered.stdout);
-  const proposal = tested(producerCall(producerExecutable, [fragment, flow]));
+  const proposal = proposedDocument(fragment);
   assert.equal(proposal.status, 0, proposal.stdout + proposal.stderr);
   const proposed = join(artifacts, `receiver-store-${name}-claims.json`);
   writeFileSync(proposed, proposal.stdout);
@@ -5113,7 +5132,7 @@ control(async (): Promise<void> => {
     assert.equal(lowered.status, 0, lowered.stderr);
     const flow = join(artifacts, "weakened-array-tojson-flow.json");
     writeFileSync(flow, lowered.stdout);
-    const proposed = tested(producerCall(producerExecutable, [weak, flow]));
+    const proposed = proposedDocument(weak);
     assert.equal(proposed.status, 0, proposed.stderr);
     const claims = join(artifacts, "weakened-array-tojson-claims.json");
     writeFileSync(claims, proposed.stdout);
@@ -5183,7 +5202,7 @@ control(async (): Promise<void> => {
     assert.equal(lowered.status, 0, lowered.stdout + lowered.stderr);
     const flow = join(artifacts, "weakened-host-flow.json");
     writeFileSync(flow, lowered.stdout);
-    const proposed = tested(producerCall(producerExecutable, [weak, flow]));
+    const proposed = proposedDocument(weak);
     assert.equal(proposed.status, 0, proposed.stdout + proposed.stderr);
     const claims = join(artifacts, "weakened-host-claims.json");
     writeFileSync(claims, proposed.stdout);
@@ -5220,7 +5239,7 @@ control(async (): Promise<void> => {
   assert.equal(lowered.status, 0, lowered.stderr);
   const flow = join(artifacts, "weakened-process-on-flow.json");
   writeFileSync(flow, lowered.stdout);
-  const proposed = tested(producerCall(producerExecutable, [weak, flow]));
+  const proposed = proposedDocument(weak);
   assert.equal(proposed.status, 0, proposed.stderr);
   const claims = join(artifacts, "weakened-process-on-claims.json");
   writeFileSync(claims, proposed.stdout);
@@ -5285,7 +5304,7 @@ control(async (): Promise<void> => {
   assert.equal(lowered.status, 0, lowered.stderr);
   const flow = join(write, "weakened-native-flow.json");
   writeFileSync(flow, lowered.stdout);
-  const proposed = tested(producerCall(producerExecutable, [weak, flow]));
+  const proposed = proposedDocument(weak);
   assert.equal(proposed.status, 0, proposed.stderr);
   const borrowedClaims = join(write, "weakened-native-claims.json");
   writeFileSync(borrowedClaims, proposed.stdout);
@@ -7071,7 +7090,7 @@ const bypassed = (artifacts: string, name: string, at: [number, number], change:
   assert.equal(lowered.status, 0, lowered.stderr);
   const flow = join(artifacts, `${name}-flow.json`);
   writeFileSync(flow, lowered.stdout);
-  const proposal = tested(producerCall(producerExecutable, [weak, flow]));
+  const proposal = proposedDocument(weak);
   assert.equal(proposal.status, 0, proposal.stderr);
   const claims = join(artifacts, `${name}-claims.json`);
   writeFileSync(claims, proposal.stdout);
@@ -8397,7 +8416,7 @@ control(async (): Promise<void> => {
   const flow = join(artifacts, "flow.json");
   const loneFragment = join(artifacts, "forged-lone-surrogate-fragment.json");
   writeFileSync(loneFragment, fragment.replace("", "\\ud800"));
-  const proposed = tested(producerCall(producerExecutable, [loneFragment, flow]));
+  const proposed = proposedDocument(loneFragment);
   assert.notEqual(proposed.status, 0, proposed.stdout + proposed.stderr);
   assert.match(proposed.stdout + proposed.stderr, /low surrogate/);
   assert.throws(() => readFragmentFile(loneFragment), /not well-formed Unicode/);
@@ -8406,7 +8425,7 @@ control(async (): Promise<void> => {
   assert.match(leanFragment.stdout + leanFragment.stderr, /not well-formed Unicode/);
   const rawFragment = join(artifacts, "forged-invalid-utf8-fragment.json");
   writeFileSync(rawFragment, withByte(fragment));
-  const rawProposed = tested(producerCall(producerExecutable, [rawFragment, flow]));
+  const rawProposed = proposedDocument(rawFragment);
   assert.notEqual(rawProposed.status, 0, rawProposed.stdout + rawProposed.stderr);
   assert.match(rawProposed.stdout + rawProposed.stderr, /not valid UTF-8/);
   process.stdout.write("wire strings: lone surrogates and invalid UTF-8 refused by the producer, Lean and TypeScript\n");
@@ -9622,7 +9641,7 @@ mutationControl(async (): Promise<void> => {
     assert.equal(lowered.status, 0, lowered.stdout + lowered.stderr);
     const flow = join(artifacts, "stable-neighbour-flow.json");
     writeFileSync(flow, lowered.stdout);
-    const proposed = tested(producerCall(producerExecutable, [neighbour, flow]));
+    const proposed = proposedDocument(neighbour);
     assert.equal(proposed.status, 0, proposed.stdout + proposed.stderr);
     const honestPath = join(artifacts, "stable-neighbour-claims.json");
     writeFileSync(honestPath, proposed.stdout);
@@ -9928,7 +9947,24 @@ process.stdout.write(JSON.stringify(await checkApart(${JSON.stringify(importer)}
   const { artifacts: _warmArtifacts, ...warmOutcome } = warm.outcome;
   const { artifacts: _freshArtifacts, ...freshOutcome } = fresh.outcome;
   assert.deepEqual(warmOutcome, freshOutcome, "the edited run's outcome is a cold run's");
-  process.stdout.write("edit replay: an edit of an importer replays its module run's search and check, its outcome a cold run's\n");
+  // An edit of one function's body, keeping its signature and footprint:
+  // only that function's unit is proposed again; every other unit's
+  // proposal replays from the cold run.
+  const bodyEdit = original.replace("export function doubled(xs: number[]): number[] {\n",
+    "export function doubled(xs: number[]): number[] {\n  // an edit of this body alone\n");
+  assert.notEqual(bodyEdit, original, "the edit applies");
+  writeFileSync(importer, bodyEdit);
+  const edited = runIn(store);
+  const proposals = edited.records.filter((r) => r.stage === "propose");
+  assert.equal(proposals.filter((r) => r.execution === "executed").length, 1,
+    "after an edit of one function, its unit alone is proposed again");
+  assert.ok(proposals.filter((r) => r.execution === "replayed").length >= 4, "every other unit's proposal replays");
+  const editedFresh = runIn(runDirectory("tscert-edit-replay-fresh-"));
+  const { artifacts: _editedArtifacts, ...editedOutcome } = edited.outcome;
+  const { artifacts: _editedFreshArtifacts, ...editedFreshOutcome } = editedFresh.outcome;
+  assert.deepEqual(editedOutcome, editedFreshOutcome, "the run after a function's edit has a cold run's outcome");
+  process.stdout.write("edit replay: an edit of an importer replays its module run's search and check, and an " +
+    "edit of one function replays the other functions' proposals, each outcome a cold run's\n");
 });
 
 // A callable type's methods cross the type graph's TypeScript decoder: a

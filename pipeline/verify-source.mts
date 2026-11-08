@@ -1,5 +1,5 @@
 import { fork, type ChildProcess } from "node:child_process";
-import { readFileSync, writeFileSync, rmSync } from "node:fs";
+import { appendFileSync, copyFileSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import { Socket } from "node:net";
 import { availableParallelism } from "node:os";
 import { basename, resolve, join } from "node:path";
@@ -23,6 +23,8 @@ import { initOmission } from "../tools/fragment-parse.mts";
 import { requireWellFormed, wireText } from "../tools/wire-strings.mts";
 import { resolvableDeclaration } from "../tools/intrinsics.mts";
 import { assemblyCall } from "./claims-assembly.mts";
+import type { AssemblyEntry, Interface, UnitReads } from "./unit-documents.mts";
+import { canonicalDocument, decodeUnitFacts, proposalUnits, replaceNumbers, sliceOf, toDocument, type ProposalUnit, type UnitFacts } from "./unit-slices.mts";
 import { currentStore, invokeInProcess, invokeProcess, Recorder, readInvocationLog, type AttemptRecord } from "./stages.mts";
 import { producerBuild, producerCall, producerProtocol, refusalEnd, verifierBuild, verifierCall, verifierProtocol, type ProcessCall, type Protocol } from "./stage-execution.mts";
 
@@ -329,12 +331,159 @@ function eligibleReads(declarations: unknown, units: Map<string, unknown[]>, cla
     return [{ local, declaration, module, name, footprint: field(claimed, "footprint"), onThrow }];
   });
 }
-/** Propose a document's claims, its eligible reads qualified. */
-function propose(recorder: Recorder, ast: string, flow: string, reads: QualifiedRead[], qualifiedPath: string): StepRun {
+/** A document's proposal, a unit at a time: its claims, or the refusal of
+ * the first unit the producer refuses, the initialization's first, then in
+ * source order. */
+export type Proposed = { claims: string } | { refusal: string };
+/** A document proposed unit by unit (`unit-slices.mts`): the producer's
+ * units of the document (`producer --units`), each unit's slice lowered and
+ * proposed (`producer --unit`) after the units it reads, at their settled
+ * footprints and flags, and the units' proposals assembled into the
+ * document's claims (`producer --assemble`). */
+export class UnitProposal {
+  private readonly run: (call: ProcessCall) => StepRun;
+  private readonly prefix: string;
+  private readonly document: JsonObject;
+  private readonly local: string;
+  private readonly units: ProposalUnit[];
+  private readonly facts: UnitFacts;
+  private readonly slices = new Map<number, { slice: string; flow: string; deletions: [number, number][] }>();
+  private settled = new Map<string, Interface>();
+  private readonly refusal: string | null;
+  constructor(run: (call: ProcessCall) => StepRun, prefix: string, ast: string, local: string) {
+    this.run = run;
+    this.prefix = prefix;
+    this.local = local;
+    const parsed: unknown = JSON.parse(readFileSync(ast, "utf8"));
+    if (!isObject(parsed)) throw Error("tool failure: a document is no object");
+    this.document = parsed;
+    const listed = run(producerCall(producerExecutable, ["--units", ast]));
+    // A document the producer refuses to read is refused by each proposal.
+    this.refusal = producerRefusal(listed);
+    this.facts = this.refusal !== null ? { functions: [], init: null, readAsValues: [] } : decodeUnitFacts(JSON.parse(listed.out));
+    this.units = proposalUnits(this.facts);
+  }
+  /** The slice of unit `i`, lowered: its files, or the lowering's refusal. */
+  private slice(i: number): { slice: string; flow: string; deletions: [number, number][] } | string {
+    const held = this.slices.get(i);
+    if (held) return held;
+    const unit = this.units[i];
+    if (!unit) throw Error(`tool failure: no unit ${i}`);
+    const { text, deletions } = sliceOf(this.document, this.local, unit);
+    const slice = `${this.prefix}unit-${i}.slice.json`, flow = `${this.prefix}unit-${i}.flow.json`;
+    writeFileSync(slice, text);
+    const lowered = this.run(verifierCall(verifier, ["--lower-control-flow", slice]));
+    const refusal = verifierRefusal(lowered, "--lower-control-flow");
+    if (refusal !== null) return refusal;
+    writeFileSync(flow, JSON.stringify(decodeFlowDocument(JSON.parse(lowered.out))));
+    const files = { slice, flow, deletions };
+    this.slices.set(i, files);
+    return files;
+  }
+  private reads(unit: ProposalUnit, interfaces: Map<string, Interface>, qualified: QualifiedRead[]): string {
+    const pinned = unit.reads.map((name): Interface => {
+      const settled = interfaces.get(name);
+      if (!settled) throw Error(`tool failure: unit read ${name} before its proposal`);
+      return settled;
+    });
+    const document: UnitReads = { members: unit.members, init: unit.init, pinned, readAsValues: this.facts.readAsValues,
+      qualified: qualified.map(({ local, declaration, footprint, onThrow }) => ({ local, declaration, footprint, onThrow })) };
+    return JSON.stringify(document);
+  }
+  /** The document's claims at the qualified reads `qualified`. */
+  propose(qualified: QualifiedRead[]): Proposed {
+    if (this.refusal !== null) return { refusal: this.refusal };
+    const interfaces = new Map<string, Interface>();
+    const refused: { order: number; refusal: string }[] = [];
+    const proposals: { bin: string; deletions: [number, number][] }[] = [];
+    const order = (unit: ProposalUnit): number => unit.init ? -1
+      : Math.min(...unit.members.map((m) => this.facts.functions.findIndex((f) => f.name === m)));
+    for (const [i, unit] of this.units.entries()) {
+      if (!unit.reads.every((n) => interfaces.has(n))) continue;
+      const files = this.slice(i);
+      if (typeof files === "string") {
+        refused.push({ order: order(unit), refusal: files });
+        continue;
+      }
+      const reads = `${this.prefix}unit-${i}.reads.json`, bin = `${this.prefix}unit-${i}.proposal.bin`;
+      writeFileSync(reads, this.reads(unit, interfaces, qualified));
+      const proposed = this.run(producerCall(producerExecutable, ["--unit", files.slice, files.flow, reads, bin]));
+      const refusal = producerRefusal(proposed);
+      if (refusal !== null) {
+        // A refusal's spans, at the document's positions.
+        refused.push({ order: order(unit), refusal: replaceNumbers(refusal, /\[(\d+),(\d+)\)/g, (y) => toDocument(files.deletions, y)) });
+        continue;
+      }
+      for (const entry of decodeInterfaces(JSON.parse(proposed.out))) interfaces.set(entry.name, entry);
+      proposals.push({ bin, deletions: files.deletions });
+    }
+    this.settled = interfaces;
+    const first = refused.sort((a, b) => a.order - b.order)[0];
+    if (first) return { refusal: first.refusal };
+    const canonical = `${this.prefix}canonical.json`, assembly = `${this.prefix}assembly.json`,
+      qualifiedPath = `${this.prefix}qualified.json`;
+    writeFileSync(canonical, canonicalDocument(this.document, this.local));
+    writeFileSync(assembly, JSON.stringify(proposals.map((p): AssemblyEntry => ({ deletions: p.deletions }))));
+    writeFileSync(qualifiedPath, JSON.stringify(qualified.map(({ local, declaration, footprint, onThrow }) =>
+      ({ local, declaration, footprint, onThrow }))));
+    const assembled = this.run(producerCall(producerExecutable,
+      ["--assemble", canonical, qualifiedPath, assembly, ...proposals.map((p) => p.bin)]));
+    const refusal = producerRefusal(assembled);
+    if (refusal !== null) throw Error(`tool failure: the producer's assembly refused: ${refusal}`);
+    return { claims: assembled.out.trim() };
+  }
+  /** The explanations of the unit holding the member `member` (a function's
+   * name, or `init`), at the document's positions. */
+  explain(member: string): Explanation[] {
+    const i = this.units.findIndex((u) => member === "init" ? u.init : u.members.includes(memberName(member)));
+    const unit = this.units[i];
+    if (!unit) return [];
+    const files = this.slice(i);
+    if (typeof files === "string") return [];
+    const reads = `${this.prefix}unit-${i}.explain.json`;
+    // An explanation reads its neighbours at their settled footprints and
+    // flags, and every import at its ordinary signature.
+    writeFileSync(reads, this.reads(unit, this.settled, []));
+    return readExplanations(this.run(producerCall(producerExecutable, ["--explain", files.slice, files.flow, reads]))).map((e) => ({ ...e, pos: [toDocument(files.deletions, e.pos[0]), toDocument(files.deletions, e.pos[1])] }));
+  }
+}
+/** The proposal of a document unit by unit; with `TSCERT_COMPARE_PROPOSAL`
+ * set, also the whole document's in one process, a difference appended to
+ * that file. */
+function compared(recorder: Recorder, proposal: UnitProposal, ast: string, flow: string, reads: QualifiedRead[],
+    qualifiedPath: string): Proposed {
+  const units = proposal.propose(reads);
+  const log = process.env.TSCERT_COMPARE_PROPOSAL;
+  if (!log) return units;
   writeFileSync(qualifiedPath, JSON.stringify(reads.map(({ local, declaration, footprint, onThrow }) =>
     ({ local, declaration, footprint, onThrow }))));
-  return runStep(producerCall(producerExecutable, reads.length ? [ast, flow, qualifiedPath] : [ast, flow]), recorder);
+  const whole = runStep(producerCall(producerExecutable, reads.length ? [ast, flow, qualifiedPath] : [ast, flow]), recorder);
+  const refusal = producerRefusal(whole);
+  const same = refusal !== null ? "refusal" in units && units.refusal === refusal
+    : "claims" in units && units.claims === whole.out.trim();
+  appendFileSync(log, `${same ? "same" : "DIFFERENT"}\t${ast}\t${createHash("sha256").update(ast).digest("hex").slice(0, 12)}\t${refusal !== null ? "refused" : "proposed"}\t${
+    "refusal" in units ? "refused" : "proposed"}\n`);
+  if (!same) {
+    const at = `${log}.${createHash("sha256").update(ast).digest("hex").slice(0, 12)}`;
+    copyFileSync(ast, `${at}.fragment.json`);
+    copyFileSync(join(ast, "..", "request.json"), `${at}.request.json`);
+    writeFileSync(`${at}.whole.out`, refusal ?? whole.out.trim());
+    writeFileSync(`${at}.units.out`, "refusal" in units ? units.refusal : units.claims);
+  }
+  return units;
 }
+function decodeInterfaces(value: unknown): Interface[] {
+  if (!Array.isArray(value)) throw Error("tool failure: producer --unit printed no interfaces");
+  return value.map((v): Interface => {
+    const name = field(v, "name"), thrown = field(v, "thrown"), footprint = field(v, "footprint");
+    if (typeof name !== "string" || typeof thrown !== "boolean" || footprint === undefined)
+      throw Error("tool failure: producer --unit printed a malformed interface");
+    return { name, footprint, thrown };
+  });
+}
+type JsonObject = { [key: string]: import("../tools/calculus.mts").Json };
+const isObject = (value: unknown): value is JsonObject =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
 /**
  * The modules of the fragment, each a run of its own: its document,
  * standalone, lowered once and proposed as a file is, at its own eligible
@@ -345,7 +494,7 @@ function propose(recorder: Recorder, ast: string, flow: string, reads: Qualified
  */
 class ModuleRuns {
   private readonly docs = new Map<string, { index: number; ast: string; flow: string; declarations: unknown;
-    imports: string[] }>();
+    imports: string[]; proposal: UnitProposal }>();
   private readonly units = new Map<string, unknown[]>();
   private readonly proposed = new Map<string, ModuleClaims | null>();
   private readonly artifacts: string;
@@ -368,7 +517,8 @@ class ModuleRuns {
       writeFileSync(flow, JSON.stringify(decodeFlowDocument(JSON.parse(lowered.out))));
       const imports = [...new Set(list(field(doc.declarations, "values")).map((v) => field(field(v, "declaration"), "module"))
         .filter((l): l is string => typeof l === "string" && l !== location && locations.includes(l)))];
-      this.docs.set(location, { index, ast, flow, declarations: doc.declarations, imports });
+      this.docs.set(location, { index, ast, flow, declarations: doc.declarations, imports,
+        proposal: new UnitProposal((call) => runStep(call, recorder), join(artifacts, `module-${index}.`), ast, location) });
       this.units.set(location, list(field(m, "functions")));
     }
   }
@@ -403,11 +553,11 @@ class ModuleRuns {
       readsOf.set(location, reads);
       const key = `${location}\n${JSON.stringify(reads)}`;
       if (!this.proposed.has(key)) {
-        const proposed = propose(this.recorder, doc.ast, doc.flow, reads,
-          join(this.artifacts, `module-${doc.index}.qualified.json`));
-        writeFileSync(join(this.artifacts, `module-${doc.index}.proposal.log`), proposed.detail);
+        const proposed = compared(this.recorder, doc.proposal, doc.ast, doc.flow, reads,
+          join(this.artifacts, `module-${doc.index}.whole-qualified.json`));
+        writeFileSync(join(this.artifacts, `module-${doc.index}.proposal.log`), "refusal" in proposed ? proposed.refusal : "");
         // A module the producer refuses is read at its declared types.
-        this.proposed.set(key, producerRefusal(proposed) !== null ? null : { text: proposed.out, parsed: JSON.parse(proposed.out) });
+        this.proposed.set(key, "refusal" in proposed ? null : { text: proposed.claims, parsed: JSON.parse(proposed.claims) });
       }
       const proposed = this.proposed.get(key);
       if (proposed) claims.set(location, proposed);
@@ -734,6 +884,7 @@ function checkUnowned(artifacts: string, source: string, tsconfigPath?: string, 
     // its restricted document (`unitRound`), so a later round, and a later
     // edit of the importer, replays the runs it leaves unchanged.
     const modules = new ModuleRuns(recorder, artifacts, parsedData);
+    const fileProposal = new UnitProposal((call) => runStep(call, recorder), `${artifacts}/`, ast, resolution);
     const withdrawn = new Set<string>();
     const claims = join(artifacts, "claims.json");
     const budget = subtypeRounds === undefined ? [] : ["--subtype-rounds", String(subtypeRounds)];
@@ -755,13 +906,12 @@ function checkUnowned(artifacts: string, source: string, tsconfigPath?: string, 
         for (const r of fresh) withdrawn.add(r);
         continue;
       }
-      const proposed = propose(recorder, ast, flow, reads, join(artifacts, "qualified.json"));
-      writeFileSync(join(artifacts, "proposal.log"), proposed.detail);
-      const proposalRefusal = producerRefusal(proposed);
-      if (proposalRefusal !== null)
-        return { status: "unsupported", artifacts, phase, detail: refusedByTypeScript(proposalRefusal, refusedErrors) };
+      const proposed = compared(recorder, fileProposal, ast, flow, reads, join(artifacts, "whole-qualified.json"));
+      writeFileSync(join(artifacts, "proposal.log"), "refusal" in proposed ? proposed.refusal : "");
+      if ("refusal" in proposed)
+        return { status: "unsupported", artifacts, phase, detail: refusedByTypeScript(proposed.refusal, refusedErrors) };
       // The importer's claims, its `modules` the claims `used`.
-      const assembled = invokeInProcess(assemblyCall(proposed.out, used), { force: false, recorder }).value;
+      const assembled = invokeInProcess(assemblyCall(proposed.claims, used), { force: false, recorder }).value;
       writeFileSync(claims, assembled);
       // The document has the shape its TypeScript description states, its
       // modules' included; a field the producer writes otherwise fails the run.
@@ -792,7 +942,7 @@ function checkUnowned(artifacts: string, source: string, tsconfigPath?: string, 
       // The file's refusal is its first unit's, a search's named as a whole-file search names it.
       const detail = first.phase === "search" && first.status !== "error"
         ? refusedByName(namingTheObligation(first.detail, bytes.toString("utf8")),
-          () => readExplanations(runStep(producerCall(producerExecutable, ["--explain", ast, flow]), recorder)),
+          () => fileProposal.explain(first.members[0] ?? ""),
           refusedErrors)
         : first.detail;
       return { status: first.status === "verified" ? "error" : first.status, artifacts, phase: first.phase,
