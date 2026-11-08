@@ -2181,7 +2181,8 @@ method's signature and states its postcondition as at a function's.
 
 **Cases.** Positive: `string-length-code-points` (a loop of code points
 stepping two code units past a pair, a `@requires 0 <= i && i < text.length`
-helper and its caller, the lengths of the empty and an astral string) and
+helper and its caller, the lengths of the empty and an astral string, and a
+`do` loop's position under a written `@invariant 0 <= pos && pos < text.length`) and
 `blocker-pretext-code-point-at-assertion`. Negative, each run under Node:
 `invalid-string-code-point-at-length` (a loop to `i <= text.length`),
 `invalid-string-code-point-negative` (a read at `i - 1` from `0`),

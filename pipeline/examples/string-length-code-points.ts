@@ -3,7 +3,8 @@
 // the loop's test stating `i` below the string's length, which the read of
 // `text.length` states equal to it (`string-length`). A code point past
 // 0xFFFF is a surrogate pair's, so `i += c > 0xFFFF ? 2 : 1` stays within
-// the length; a `@requires` over `text.length` bounds a helper's index.
+// the length; a `@requires` over `text.length` bounds a helper's index, and
+// a written `@invariant` a `do` loop's position.
 // Stands for pretext's `needsComplexTextPath`, `mayHoldCursive`,
 // `getScriptFactsAt` and `isEastAsianSegmentBreak`.
 
@@ -39,4 +40,24 @@ export function second(text: string): number {
 // A read of the empty string's length, and of an astral one's.
 export function lengths(): number {
   return "".length + "\u{1F600}".length;
+}
+
+function isSpace(c: number): boolean {
+  return c === 0x20;
+}
+
+// A code point assigned in a `do` loop from a position bounded by a
+// precondition and a test, under a written invariant over the string's
+// length.
+/** @requires safeInteger(end) && 0 <= end */
+export function lastCodePoint(text: string, end: number): number {
+  if (end >= text.length) return -1;
+  let pos = end;
+  let cp: number;
+  /** @invariant safeInteger(pos) && 0 <= pos && pos < text.length */
+  do {
+    cp = text.codePointAt(pos)!;
+    pos += cp > 0xffff ? 2 : 1;
+  } while (isSpace(cp) && pos < text.length);
+  return cp;
 }

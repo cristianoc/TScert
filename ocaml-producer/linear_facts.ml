@@ -104,7 +104,15 @@ let forget x fs =
    counts survives a heap change that a path does not, so `n = p.xs.length`
    and `b.length = p.xs.length` keep `n = b.length` past a call writing `p`'s
    fields. Lean checks each at the edge into the statement claiming it. *)
+(* A fact over integers at its coefficients divided by their greatest
+   common divisor, its bound rounded down (Lean's tightening step). *)
+let tighten_fact ((t,d) as f : fact) : fact =
+  let rec gcd a b = if b = 0 then a else gcd b (a mod b) in
+  let g = List.fold_left (fun g (_,c) -> gcd g (abs c)) 0 t in
+  if g > 1 then List.map (fun (n,c) -> n, c / g) t, (if d >= 0 then d / g else - ((- d + g - 1) / g)) else f
+
 let close (fs : fact list) : fact list =
+  let fs = List.sort_uniq compare (List.map tighten_fact fs) in
   let path_term n = let _,path,_ = term_parts n in path <> [] in
   let terms = List.sort_uniq compare (List.concat_map (fun ((t,_) : fact) ->
     List.filter_map (fun (n,_) -> if path_term n then Some n else None) t) fs) in
@@ -707,6 +715,11 @@ let construct_ensures ~array env fs name c (args : expr list) : fact list =
       else None
     | _ -> None) s.Semantic.call_effect.Semantic.ensures
 
+(* Whether an expression reads the binding `x`. *)
+let rec mentions_id x (e : expr) = match e.node with
+  | Id y -> y = x
+  | _ -> List.exists (mentions_id x) (Source.children e)
+
 (* The signatures of a receiver's method, set by the statement analysis. *)
 let method_signatures : ((string * Environment.binding) list -> expr -> Semantic.key -> Semantic.signature list) ref =
   ref (fun _ _ _ -> [])
@@ -863,6 +876,12 @@ and statement_slots ~(array : string -> string list -> bool) ?(bounds=[]) env fs
       forget old (fs @ [norm ((p,1) :: scale (-1) t), c; norm ((p,-1) :: t), -c])
     | None -> fs in
   match s.statement with
+  (* `x = r.m(…)`, or its non-null assertion, of a method stating a
+     postcondition, `x` read by neither: each of its facts, of `x`. *)
+  | Effect {node=Assign (x,_,({node=(Invoke ({node=Read (r,key);_},args,[],_)
+      | Cast ("nonNull",_,{node=Invoke ({node=Read (r,key);_},args,[],_);_}));_} as e));_}
+    when value_binding env x && not (mentions_id x e) ->
+    forget x fs @ method_ensures ~array env fs x r key args
   | Effect {node=Assign (x,_,e);_} -> assign ~array env fs x e
   | Effect {node=Update ((Add | Sub) as op,({node=Id x;_} as target),rhs,_);pos} ->
     let one = {node=Literal (LNumber "1"); pos} in

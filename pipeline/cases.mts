@@ -2935,7 +2935,7 @@ export const cases: Case[] = [
     /no derivation of its cast claim/),
   negative("invalid-precondition-body", "a body relying on more than its precondition states, an index bounded by no length: `undefined` at `number` (run under Node)",
     /no derivation of its cast claim/),
-  positive("string-length-code-points", "code points read below a string's length: `text.codePointAt(i)!` at `0 <= i < text.length`, a number by `codePointAt`'s bounded signature, the test's bound by the length read's facts over the string's length (`string-length`), a step of two code units after a code point past 0xFFFF, and a `@requires 0 <= i && i < text.length` helper with its caller (PROGRAM-TYPING.md, \"Linear facts\")"),
+  positive("string-length-code-points", "code points read below a string's length: `text.codePointAt(i)!` at `0 <= i < text.length`, a number by `codePointAt`'s bounded signature, the test's bound by the length read's facts over the string's length (`string-length`), a step of two code units after a code point past 0xFFFF, a `@requires 0 <= i && i < text.length` helper with its caller, and a `do` loop under a written invariant over the string's length (PROGRAM-TYPING.md, \"Code points\")"),
   negative("invalid-string-code-point-at-length", "a loop reading code points to `i <= text.length`: its last read is `undefined` at `number` (run under Node)",
     /no derivation of its cast claim\nobligation: The available claim for text\.codePointAt\(i\) is undefined \| number/),
   negative("invalid-string-code-point-negative", "a code point read at `i - 1` from `i === 0`: `undefined` at `number` (run under Node)",
