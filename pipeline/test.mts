@@ -431,13 +431,17 @@ control(async (): Promise<void> => {
 
 control(async (): Promise<void> => {
   // every-empty must establish zero length; a non-empty literal supplies no such proof.
+  // The invariant is forged at the entry after `[7]` and at every later entry
+  // the producer claims without it, up to the loop's head, so the one edge
+  // left to establish it is the one from `[7]`.
   const artifacts = run("invalid-quantified-empty");
   const source = readFileSync(sourceKey(artifacts), "utf8");
   const claims = readClaims(artifacts);
   const fn = must(claims.functions.find(f => f.name === "invalidEmpty"), "invalidEmpty's claims");
   const quantified = must(fn.entries.find(e => e.quantified.length > 0), "the invariant").quantified;
   const at = source.indexOf("let total = 0");
-  must(fn.entries.find(e => e.start === at), "the entry after [7]").quantified = structuredClone(quantified);
+  must(fn.entries.find(e => e.start === at), "the entry after [7]");
+  for (const e of fn.entries) if (e.quantified.length === 0 && e.start >= at) e.quantified = structuredClone(quantified);
   const forged = writeClaims(artifacts, "every-empty-nonempty-forged", claims);
   const searched = produceWith(artifacts, forged, "every-empty-nonempty-forged");
   assert.equal(searched.status, 1, `${searched.stdout}${searched.stderr}`);
