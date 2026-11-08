@@ -159,7 +159,8 @@ theorem literalArrayAtoms_holds [DecidableEq ι] {G : NormalGraph ι} {Γ : List
     SafePost Ξ T (fun h' u => Q h' u ∧ IndexHolds (literalArrayAtoms Γ.length t) (push u ρ) h' ∧
       (if (literalArrayAtoms Γ.length t).isEmpty then True else
         HeapSeparation.Holds (HeapSeparation.allocate k.separation Γ.length
-          (HeapExpressionRules.contractFields G Γ)) (push u ρ)))
+          (HeapExpressionRules.contractFields G Γ)) (push u ρ) ∧
+        IndexHolds (shiftIndices k.indices) (push u ρ) h'))
       n W h (instantiate 0 ρ t) := by
   unfold literalArrayAtoms
   split
@@ -208,8 +209,10 @@ theorem literalArrayAtoms_holds [DecidableEq ι] {G : NormalGraph ι} {Γ : List
         simp only [List.mem_cons, List.not_mem_nil, or_false] at ha
         rcases ha with rfl | rfl <;>
           simp [IndexFact.HoldsAt, Linear.Fact.vars, Linear.Fact.Holds, Linear.Form.eval, termValuation, hl]
-      · exact HeapSeparation.allocate_holds hk.2.2.2.1
-          (HeapExpressionRules.fresh_apart_from he hh (by simp [heap]))
+      · refine ⟨HeapSeparation.allocate_holds hk.2.2.2.1
+          (HeapExpressionRules.fresh_apart_from he hh (by simp [heap])), ?_⟩
+        exact indexHolds_extend [.nul] (indexHolds_extend [store, (push store ρ) proto]
+          (indexHolds_extend vs (shift_holds hk).2.2.2.2.2))
     · exact weaken (fun _ _ hq => ⟨hq, indexHolds_nil _ _, trivial⟩) hs
   · exact weaken (fun _ _ hq => ⟨hq, indexHolds_nil _ _, trivial⟩) hs
 
@@ -2475,15 +2478,17 @@ theorem indexHolds_append {as bs : List HeapKnowledge.IndexAtom} {ρ h}
     HeapKnowledge.IndexHolds (as ++ bs) ρ h := fun a hm hc =>
   (List.mem_append.mp hm).elim (fun hm => ha a hm hc) (fun hm => hb a hm hc)
 
-/-- Empty-array allocation states its zero length and fresh locations. -/
+/-- Literal allocation states its length and fresh locations and frames old index facts. -/
 @[nospecialize] def Checker.emptyArrays [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
     (base : Checker G images) : Checker G images where
   run := fun j k e codes sums => (base.run j k e codes sums).map fun out =>
-    { out with indices := out.indices ++ IndexWrites.literalArrayAtoms j.context.length j.term
+    { out with indices := out.indices ++ IndexWrites.literalArrayAtoms j.context.length j.term ++
+        (if (IndexWrites.literalArrayAtoms j.context.length j.term).isEmpty then [] else HeapKnowledge.shiftIndices k.indices)
                separation := if (IndexWrites.literalArrayAtoms j.context.length j.term).isEmpty then out.separation
         else HeapSeparation.allocate k.separation j.context.length (contractFields G j.context) }
   select := fun j k e codes sums => (base.select j k e codes sums).map fun out =>
-    { out with indices := out.indices ++ IndexWrites.literalArrayAtoms j.context.length j.term
+    { out with indices := out.indices ++ IndexWrites.literalArrayAtoms j.context.length j.term ++
+        (if (IndexWrites.literalArrayAtoms j.context.length j.term).isEmpty then [] else HeapKnowledge.shiftIndices k.indices)
                separation := if (IndexWrites.literalArrayAtoms j.context.length j.term).isEmpty then out.separation
         else HeapSeparation.allocate k.separation j.context.length (contractFields G j.context) }
   sound := by
@@ -2492,11 +2497,18 @@ theorem indexHolds_append {as bs : List HeapKnowledge.IndexAtom} {ρ h}
     obtain ⟨out0, hrun, rfl⟩ := hc
     have hs := base.sound hrun hcodes hsums he hk hw hh
     refine weaken (fun _ _ hq => ⟨hq.1.1, hq.1.2.1, hq.1.2.2.1, ?_,
-      hq.1.2.2.2.2.1, indexHolds_append hq.1.2.2.2.2.2 hq.2.1⟩)
+      hq.1.2.2.2.2.1, indexHolds_append (indexHolds_append hq.1.2.2.2.2.2 hq.2.1) ?_⟩)
       (IndexWrites.literalArrayAtoms_holds he hk hh hs)
-    split
-    · exact hq.1.1.2.2.2.1
-    · simpa only [*, Bool.false_eq_true, if_false] using hq.1.2.2
+    · split
+      · exact hq.1.2.2.2.1
+      · have hp := hq.2.2
+        simp only [*, Bool.false_eq_true, if_false] at hp
+        exact hp.1
+    · split
+      · exact HeapKnowledge.indexHolds_nil _ _
+      · have hp := hq.2.2
+        simp only [*, Bool.false_eq_true, if_false] at hp
+        exact hp.2
 
 /-- A checker whose steps on slots state the index atoms of their result
 (`IndexWrites.stepAtoms`: `length-observed`, `index-mask`, `index-equal`,

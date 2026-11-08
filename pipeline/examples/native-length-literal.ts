@@ -14,3 +14,10 @@ export function order(): string {
   const xs: number[] = [n++, n++];
   return `${xs[0]},${xs[1]},${n}`;
 }
+
+/** @requires safeInteger(k) && 0 <= k && k < 2 */
+export function twoLiterals(a: string, b: string, k: number): string {
+  const xs: string[] = [a, b];
+  const ys: string[] = [b];
+  return xs[k]!.toUpperCase() + ys[0]!.toUpperCase();
+}

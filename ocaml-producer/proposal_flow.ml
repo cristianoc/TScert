@@ -36,6 +36,8 @@ type 'output callbacks = {
   (* Whether a binding's declared type is an array, whose length Lean reads
      from its store (`Linear_facts.comparison_bounds`). *)
   array_binding: environment -> string -> string list -> bool;
+  (* Whether the iterator loop claim retains separation from this binding. *)
+  iterator_separated: string -> bool;
   execute_bindings: environment -> Execution.binding_plan -> environment;
   expression: environment -> Source.expr -> ty;
   expression_effects: Source.expr -> environment -> environment;
@@ -414,8 +416,7 @@ let statements callbacks flow_graph register_following owner_span env0 ss =
             | ForOf (_,_,_,{node=Id x;_},_) -> Linear_facts.value_binding env x && callbacks.array_binding env x []
             | _ -> false in
           let arrays = List.filter_map (fun (n,b) -> match b with
-            | Value _ | Local _ when not (is_fact n) && not (is_bound n) && not (List.mem n !Environment.allocated)
-                && callbacks.array_binding env n [] -> Some n
+            | Value _ | Local _ when not (is_fact n) && not (is_bound n) && callbacks.array_binding env n [] && callbacks.iterator_separated n -> Some n
             | _ -> None) env in
           if array_iterable then Hashtbl.replace iterator_arrays b.name arrays else Hashtbl.remove iterator_arrays b.name;
           let fs = if array_iterable then facts0 else Linear_facts.keep_stable env facts0 in
@@ -423,8 +424,9 @@ let statements callbacks flow_graph register_following owner_span env0 ss =
              (if array_iterable then bounds0 else [])]
         | Flow.IteratorStep (_,b,element,_,_), [y;n] ->
           (* The step of an array's iterator changes only the iterator's own
-             locations: the lengths of the arrays older than it are kept,
-             every other heap-reading fact is not. *)
+             locations: lengths are kept for older arrays whose separation
+             the loop claim retains. Fresh literal bindings are excluded
+             by the same rule as the statement analysis's field frame. *)
           let arrays = Option.value ~default:[] (Hashtbl.find_opt iterator_arrays b.name) in
           let kept_term t = let r,path,kind = Linear_facts.term_parts t in
             Linear_facts.stable_term env t || (kind = Linear_facts.Length_term && path = [] && List.mem r arrays) in

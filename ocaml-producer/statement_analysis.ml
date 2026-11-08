@@ -663,6 +663,7 @@ let statements (expr:Analysis_state.expression_infer) execute_bindings owner_spa
     publish_output;
     statement=transfer_statement;
     array_binding;
+    iterator_separated=(fun n -> not (List.mem n !allocated));
     cannot_return_normally=(fun (s:Source.stmt) -> match s.statement with
       | Effect e -> claimed_type e.pos = Some (Atoms [])
       | _ -> false);
