@@ -413,20 +413,21 @@ let rec linear ?(array = fun _ _ -> false) env fs (e : expr) : ((string * int) l
 let equal x (t,c) : fact list =
   [int_fact x; norm ((x,1) :: scale (-1) t), c; norm ((x,-1) :: t), -c]
 
-(* `a ± (c ? p : q)` read as `c ? a ± p : a ± q`, as Lean's lowering runs
-   the rest of the expression in each arm, where `a` is a binding or a
-   literal `c` does not assign. *)
-let distribute (e : expr) = match e.node with
-  | Arith ((Add | Sub) as op,({node=(Id _ | Literal _);_} as a),{node=Conditional (c,p,q);_})
-    when (match a.node with Id x -> not (Source.assigns_expr x c) | _ -> true) ->
-    Some (c,{e with node=Arith (op,a,p)},{e with node=Arith (op,a,q)})
-  | _ -> None
-
-(* The facts after `x = c ? p : q`, each arm assigned under what its answer
-   of `c` states and the two joined (set below, where the comparison and the
-   join are defined). *)
-let assign_arms : (array:(string -> string list -> bool) -> (string * Environment.binding) list -> fact list ->
-    string -> expr -> expr -> expr -> fact list option) ref = ref (fun ~array:_ _ _ _ _ _ _ -> None)
+(* Signed shifts retain their quotient inequalities; a nonnegative mask
+   bounds its result by the mask and the left operand. *)
+let bitwise_facts ~array env fs x (e : expr) = match e.node with
+  | Arith ((Shr | BitAnd as op),a,b) ->
+    (match linear ~array env fs a, linear ~array env fs b with
+     | Some (t,c),Some ([],d) when not (List.mem_assoc x t) && 0 <= d &&
+         d < (if op = Shr then 32 else 2147483648) &&
+         entails fs (scale (-1) t,c) && entails fs (t,2147483647-c) ->
+       let base = [int_fact x; [x,-1],0] in
+       if op = Shr then
+         let q = 1 lsl d in
+         base @ [norm ((x,q) :: scale (-1) t),c; norm ((x,-q) :: t),q-1-c]
+       else base @ [[x,1],d; norm ((x,1) :: scale (-1) t),c]
+     | _ -> [])
+  | _ -> []
 
 let assign ~array env fs x (e : expr) =
   if not (value_binding env x) then forget x fs else
@@ -440,7 +441,7 @@ let assign ~array env fs x (e : expr) =
       | Some a when not (is_int_fact f) -> t, d + a*c
       | _ -> f) fs
   | Some (t,c) when not (List.mem_assoc x t) -> forget x fs @ equal x (t,c)
-  | _ -> forget x fs
+  | _ -> forget x fs @ bitwise_facts ~array env fs x e
 
 let names_assigned (s : stmt) env =
   List.filter (fun (n,_) -> not (is_fact n) && Source.assigns n s) env |> List.map fst
@@ -1178,7 +1179,7 @@ let declaration ~(array : string -> string list -> bool) env fs name (init : exp
   | _ ->
   match linear ~array env fs init with
   | Some (t,c) when not (List.mem_assoc name t) -> fs @ equal name (t,c)
-  | _ -> fs
+  | _ -> fs @ bitwise_facts ~array env fs name init
 
 (* Widening preserves the facts that did not change. *)
 let widen (previous : fact list) (current : fact list) =

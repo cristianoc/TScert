@@ -1677,6 +1677,32 @@ value, and `IndexWrites.linearAtoms_holds` establishes the result's facts.
 The source cases are `table-constant-stride` and
 `invalid-table-constant-stride` (a row starting at the length).
 
+**Bounded bitwise operands.** The linear postcondition extends
+[index-mask](#writes-at-a-checked-index) when the left operand is a safe integer
+between zero and $`2^{31}-1`$ and the right operand is a checked constant.
+For a shift count $`0\le k<32`$, writing $`q=2^k`$:
+
+```math
+\frac{\mathrm{int}(a)\quad K\vdash 0\le a<2^{31}\quad K\vdash b=k}
+     {K\vdash r\leftarrow a\mathbin{\texttt{>>}}b
+       \dashv\mathrm{int}(r),\ 0\le r,\ qr\le a\le qr+q-1}
+```
+
+For an integer mask $`0\le m<2^{31}`$:
+
+```math
+\frac{\mathrm{int}(a)\quad K\vdash 0\le a<2^{31}\quad K\vdash b=m}
+     {K\vdash r\leftarrow a\,\&\,b
+       \dashv\mathrm{int}(r),\ 0\le r\le m,\ r\le a}
+```
+
+Both right operands are safe integers. Proved:
+`SafeIntegers.toInt32_safe_nonneg` establishes the conversion boundary;
+`SafeIntegers.shr_safe` and `SafeIntegers.bitAnd_safe` establish the numeric
+results; `IndexWrites.bitAtoms_holds` connects them to the linear facts.
+The quotient inequalities retain the relation to the input, so an input
+bound of 222 entails a result at most 27 for a shift by three.
+
 **Dropping a slot.** Where a step's output drops a slot, or an edge's mapping
 retains no slot of a fact's class, the slot is first eliminated from the
 unconditional linear facts by Fourier–Motzkin elimination: each pair of
