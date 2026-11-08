@@ -1307,6 +1307,93 @@ theorem boundedWrite_safe [DecidableEq ι] {Ξ : Fam} {G : NormalGraph ι} {R S 
     cases heq
     exact write_rule (meaning_adm G S) j U heap l' av hav hu hok hf' hl' hag' ha'
 
+/-- The complete element-write execution consumes a postcondition for
+both possible updates: an existing element cell followed by the store
+write, or a fresh cell followed by the store write. -/
+theorem elementWrite_post {Ξ T : Fam} {P : Heap → Prop}
+    {h : Heap} {flds : List (PropKey × Nat)} {cd : CallCode} {oid target : Nat}
+    {xs : List (Option Nat)} {b : UInt64} {value : Val} {n W}
+    (hfield : flds.lookup arrayStoreKey = some target)
+    (hxs : h[target]? = some (.arr xs)) (hv : isVal value = true)
+    (hpresent : ∀ cell, elemLoc xs b = some cell →
+      P ((h.set cell value).set target (.arr xs)))
+    (hfresh : ∀ i, indexOfBits b = some i → elemLoc xs b = none →
+      P ((h ++ [value]).set target (.arr (placeAt xs i h.length))))
+    (hs : Safe Ξ T n W h (.writeAt arrayStoreKey (.objAt flds cd oid)
+      (.setElem (.readAt arrayStoreKey (.objAt flds cd oid)) (.num b) value))) :
+    SafePost Ξ T (fun h' _ => P h') n W h
+      (.writeAt arrayStoreKey (.objAt flds cd oid)
+        (.setElem (.readAt arrayStoreKey (.objAt flds cd oid)) (.num b) value)) := by
+  cases n with
+  | zero => trivial
+  | succ n1 =>
+    rcases hs with (⟨hbad, _⟩ | hr) | ⟨U1, h1, t1, hx1, hu1, step1, hh1, hs1⟩
+    · simp [isVal] at hbad
+    · exact .inl (.inr hr)
+    obtain ⟨u, hu, rfl, rfl⟩ := ExpressionEffects.elem_read_inv hfield step1
+    rw [hxs] at hu; cases hu
+    refine .inr ⟨U1, h, _, hx1, hu1, step1, hh1, ?_⟩
+    cases n1 with
+    | zero => trivial
+    | succ n2 =>
+      rcases hs1 with (⟨hbad, _⟩ | hr) | ⟨U2, h2, t2, hx2, hu2, step2, hh2, hs2⟩
+      · simp [isVal] at hbad
+      · exact .inl (.inr hr)
+      obtain ⟨b', xs', hb, hls, hcase⟩ := ExpressionEffects.elem_set_inv rfl rfl rfl hv step2
+      cases hb; cases hls
+      rcases hcase with ⟨cell, hc, rfl, rfl⟩ | ⟨i, hi, hn, rfl, rfl⟩
+      · exact .inr ⟨U2, _, _, hx2, hu2, step2, hh2,
+          (ExpressionEffects.write_back_post hfield (hpresent cell hc) hs2).post⟩
+      · exact .inr ⟨U2, _, _, hx2, hu2, step2, hh2,
+          (ExpressionEffects.write_back_post hfield (hfresh i hi hn) hs2).post⟩
+
+/-- A quantified clause survives the complete write execution when the
+written element region is apart and its path, bound and free terms are
+framed for each possible final heap. The evidence concerns actual store
+views and both updates of the execution. -/
+theorem elementWrite_every {Ξ T : Fam}
+    {h : Heap} {flds : List (PropKey × Nat)} {cd : CallCode} {oid target : Nat}
+    {xs ys : List (Option Nat)} {b : UInt64} {value : Val} {n W}
+    {s p stop body ρ w st}
+    (hfield : flds.lookup arrayStoreKey = some target)
+    (hxs : h[target]? = some (.arr xs)) (hv : isVal value = true)
+    (hevery : (IndexFact.every s p stop body).HoldsAt ρ h)
+    (hpath : readPath h (ρ s) p = some w) (hstore : Footprints.storeOf w = some st)
+    (hys : h[st]? = some (.arr ys)) (hstores : st ≠ target)
+    (hcells : ∀ cell, some cell ∈ xs → st ≠ cell) (hapart : ElementsApart ys xs)
+    (hframe : ∀ h',
+      ((∃ cell, elemLoc xs b = some cell ∧ h' = (h.set cell value).set target (.arr xs)) ∨
+       (∃ i, indexOfBits b = some i ∧ elemLoc xs b = none ∧
+         h' = (h ++ [value]).set target (.arr (placeAt xs i h.length)))) →
+      (∀ u, readPath h (ρ s) p = some u → readPath h' (ρ s) p = some u) ∧
+      (∀ z, termValue ρ h stop = some z → termValue ρ h' stop = some z) ∧
+      (∀ F ∈ body, ∀ t, Bound.free t ∈ F.vars → ∀ z,
+        termValue ρ h t = some z → termValue ρ h' t = some z))
+    (hs : Safe Ξ T n W h (.writeAt arrayStoreKey (.objAt flds cd oid)
+      (.setElem (.readAt arrayStoreKey (.objAt flds cd oid)) (.num b) value))) :
+    SafePost Ξ T (fun h' _ => (IndexFact.every s p stop body).HoldsAt ρ h') n W h
+      (.writeAt arrayStoreKey (.objAt flds cd oid)
+        (.setElem (.readAt arrayStoreKey (.objAt flds cd oid)) (.num b) value)) := by
+  apply elementWrite_post hfield hxs hv _ _ hs
+  · intro cell hc
+    have hm : some cell ∈ xs := by
+      unfold elemLoc at hc
+      cases hi : indexOfBits b with
+      | none => simp [hi] at hc
+      | some i =>
+        simp only [hi, Option.bind_some] at hc
+        cases hl : xs[i]? with
+        | none => simp [hl] at hc
+        | some o =>
+          simp only [hl, Option.bind_some] at hc
+          cases hc
+          exact List.mem_of_getElem? hl
+    obtain ⟨hp, hn, hf⟩ := hframe _ (.inl ⟨cell, hc, rfl⟩)
+    exact IndexFact.every_apart_write hevery hpath hstore hys hxs hstores hm (hcells cell hm) hapart hp hn hf
+  · intro i hi hn
+    obtain ⟨hp, hstop, hf⟩ := hframe _ (.inr ⟨i, hi, hn, rfl⟩)
+    exact IndexFact.every_apart_fill hevery hpath hstore hys ⟨xs, hxs⟩ hstores hp hstop hf
+
 /-- Whether an unconditional atom bounds a slot of `i`'s class by the store of
 an array of `a`'s class, strictly where `strict`. -/
 def boundAtom (k : Knowledge) (a i : Nat) (strict : Bool) : Bool :=
