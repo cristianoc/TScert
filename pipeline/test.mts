@@ -5579,6 +5579,19 @@ control(async (): Promise<void> => {
 });
 
 control(async (): Promise<void> => {
+  const artifacts = run("call-keeps-view-path");
+  const claims = readClaims(artifacts);
+  must(claims.functions.find(f => f.name === "replace"), "replace's claims").footprint = { value: "scalar", store: "keep" };
+  const name = "forged-call-view-path-object-replacement";
+  const input = writeClaims(artifacts, name, claims);
+  const produce = produceWith(artifacts, input, name);
+  assert.ifError(produce.error);
+  assert.equal(produce.status, 1, produce.stdout + produce.stderr);
+  assert.match(produce.stdout + produce.stderr, /source effect refusal/);
+  invoke(input, join(artifacts, "evidence.json"), artifacts, /source effect refusal/);
+});
+
+control(async (): Promise<void> => {
   // An initializing write is within `{value: init, store: keep}` only where
   // the knowledge at it states its location holds `null` or `undefined`.
   // `reset` writes the cache's cell whatever it holds: claimed at `init`,

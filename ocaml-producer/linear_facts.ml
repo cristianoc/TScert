@@ -613,9 +613,9 @@ let no_frame _ _ = false
 let element_changes = { obj = false; num = false; store = `Length; framed = no_frame; apart = false; cell_write = false }
 let of_classes env (o,n,a) = { obj = o; num = n; store = (if a then `Any else `Keep);
   framed = (fun b g -> slot_binding env b && !view_field env b g); apart = false; cell_write = false }
-let of_footprint (fp : Semantic.footprint) =
+let of_footprint env (fp : Semantic.footprint) =
   { obj = fp.Semantic.on_value = Semantic.Any; num = not (Semantic.change_le fp.Semantic.on_value Semantic.Init);
-    store = (match fp.Semantic.on_store with Semantic.Keep | Semantic.Init | Semantic.Scalar -> `Keep | _ -> `Any); framed = no_frame; apart = false; cell_write = false }
+    store = (match fp.Semantic.on_store with Semantic.Keep | Semantic.Init | Semantic.Scalar -> `Keep | _ -> `Any); framed = (fun b g -> slot_binding env b && !view_field env b g); apart = false; cell_write = false }
 
 let term_kept ch t =
   let b,path,kind = term_parts t in
@@ -673,7 +673,7 @@ let rec object_calls env (e : expr) : Semantic.footprint option =
   | Assign (x,_,rhs) when slot_binding env x -> object_calls env rhs
   | Update (_,{node=Id x;_},Some rhs,_) when slot_binding env x -> object_calls env rhs
   | _ -> None
-let object_changes env e = Option.map of_footprint (object_calls env e)
+let object_changes env e = Option.map (of_footprint env) (object_calls env e)
 
 (* The change of an expression whose one heap write is a field's, a checked
    element's or a call's, its operands writing none. *)
@@ -688,11 +688,12 @@ let write_changes ~facts ~bounds env (e : expr) : changes option =
     when heap_free env rhs && slot_binding env xs && slot_binding env k && !source_elements env xs && strictly_bounded ~facts ~bounds xs k ->
     Some { obj = true; num = true; store = `Length; framed = no_frame; apart = false; cell_write = false }
   | Call ({node=Id f;_},None,args,[],_) when List.for_all (heap_free env) args ->
-    if !call_element_write env f then Some element_changes
-    else Option.map of_footprint (!call_footprint env f)
+    if !call_element_write env f then Some { element_changes with framed = (fun b g -> slot_binding env b && !view_field env b g) }
+    else Option.map (of_footprint env) (!call_footprint env f)
   | Invoke ({node=Read (r,key);_},args,[],_) when heap_free env r && List.for_all (heap_free env) args ->
     if !method_grows env r key then Some { obj = false; num = false; store = `Grow; framed = no_frame; apart = false; cell_write = false }
-    else Option.map of_footprint (!method_footprint env r key args)
+    else if !method_element_write env r key then Some { element_changes with framed = (fun b g -> slot_binding env b && !view_field env b g) }
+    else Option.map (of_footprint env) (!method_footprint env r key)
   | _ -> object_changes env e
 
 let statement_changes ~facts ~bounds env (s : stmt) = match s.statement with
@@ -702,7 +703,7 @@ let statement_changes ~facts ~bounds env (s : stmt) = match s.statement with
   | Declare (_,bs) -> List.fold_left (fun acc (_,_,e) -> match acc, object_calls env e with
       | Some a, Some b -> Some {Semantic.on_value=Semantic.join_change a.Semantic.on_value b.Semantic.on_value;
           on_store=Semantic.join_change a.Semantic.on_store b.Semantic.on_store}
-      | _ -> None) (Some Semantic.empty_footprint) bs |> Option.map of_footprint
+      | _ -> None) (Some Semantic.empty_footprint) bs |> Option.map (of_footprint env)
   | Return e -> object_changes env e
   | _ -> None
 

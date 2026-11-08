@@ -1933,7 +1933,7 @@ the step's own output (proved):
 on the step's normal return. A write of a number field, a call and an element
 write preserve `i < b.length` alike.
 
-A field write also preserves the typed-array length of a view read through
+A field write or a call also preserves the typed-array length of a view read through
 one field $`g`$ of a slot $`z`$, where the write preserves the field's
 location (it alters no object, or $`\mathrm{first}(z,g)`$) and every clause
 of $`\Gamma(z)`$ states $`g`$ a field each of whose types $`B`$ states
@@ -1947,7 +1947,13 @@ world the field's contract types its value in):
      {\Gamma;\Sigma\vdash x.f:=y\dashv\Sigma',\ F}\ \textsf{view-path-stable}
 ```
 
-with every other term of $`F`$ preserved by $`\chi`$. So
+with every other term of $`F`$ preserved by $`\chi`$. At a call, the same
+rule uses its footprint or element-write change; the field is kept where
+that change preserves objects. The view length is stable on normal return
+(proved: `viewFields_frame`, consumed by `effectKept_holds`).
+`call-keeps-view-path` exercises a scalar cache insertion and a view fill;
+`invalid-call-replaces-view-path` replaces the containing field and reads
+`undefined` under Node. So
 `cursor.segmentIndex = i + 1` preserves
 $`i<\mathrm{view}(\mathit{prepared}.\mathit{segmentFlags})`$, and a write of
 `prepared.segmentFlags` itself preserves no fact naming its length. The rule

@@ -1192,6 +1192,73 @@ def writeViews (G : NormalGraph ι) (Γ : List (Ty ι)) (s : Nat) (g : String) :
   | some A => viewField G A (.str g)
   | none => false
 
+/-- Every stable location selected in the entry world keeps its value on
+normal return. -/
+theorem stableLocations_frame {R : Nat → Val → Prop} {T : Fam} {Q : Post} :
+    ∀ {n W h t}, (∀ l v, R l v → ∃ c, lookup W l = some c ∧ CtrStable c v) →
+    HeapOk n W h → SafePost (excOf G) T Q n W h t →
+    SafePost (excOf G) T (fun h' u => Q h' u ∧ ∀ l v, R l v → h'[l]? = some v) n W h t := by
+  intro n
+  induction n with
+  | zero => intros; trivial
+  | succ n ih =>
+    intro W h t hr hh hs
+    rcases hs with (⟨hv, ht, hq⟩ | hthrow) | ⟨U, h', t', hx, hu, step, hh', hs⟩
+    · refine .inl (.inl ⟨hv, ht, hq, ?_⟩)
+      intro l v hR
+      obtain ⟨c, hl, hc⟩ := hr l v hR
+      exact hh.stable_value (Nat.zero_lt_succ n) hl hc
+    · exact .inl (.inr hthrow)
+    · refine .inr ⟨U, h', t', hx, hu, step, hh', ih ?_ hh' hs⟩
+      intro l v hR
+      obtain ⟨c, hl, hc⟩ := hr l v hR
+      exact ⟨_, WExt_lookup hx (lookup_trunc (Nat.le_succ n) W l c hl), hc.restrict (Nat.le_succ n)⟩
+
+/-- A view held in a typed field has the same stable length in every heap a
+normal execution reaches. The containing field's preservation is checked
+separately by `Term.viewFramed`. -/
+theorem viewFields_frame [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)} {ρ n W h t}
+    {T : Fam} {Q : Post} (he : EnvOk G Γ ρ n W) (hh : HeapOk n W h)
+    (hs : SafePost (excOf G) T Q n W h t) :
+    SafePost (excOf G) T (fun h' v => Q h' v ∧ HeapKnowledge.ViewsKept (writeViews G Γ) ρ h h') n W h t := by
+  cases n with
+  | zero => trivial
+  | succ n =>
+    rcases hs with (⟨hv, ht, hq⟩ | hthrow) | ⟨U, h', t', hx, hu, step, hh', hs⟩
+    · exact .inl (.inl ⟨hv, ht, hq, fun _ _ _ _ _ _ _ _ _ _ _ => rfl⟩)
+    · exact .inl (.inr hthrow)
+    · refine .inr ⟨U, h', t', hx, hu, step, hh', ?_⟩
+      cases n with
+      | zero => trivial
+      | succ m =>
+      let R := fun l v => ∃ c, lookup (trunc (m + 1) (Nat.le_succ (m + 1)) W) l = some c ∧ CtrStable c v
+      have hr : ∀ l v, R l v → ∃ c, lookup U l = some c ∧ CtrStable c v := by
+        intro l v ⟨c, hl, hc⟩
+        exact ⟨c, WExt_lookup hx hl, hc⟩
+      refine HeapObservations.weaken (fun h'' v hq => ⟨hq.1, ?_⟩)
+        (stableLocations_frame hr hh' hs)
+      intro s g fs cd o l w hvw hs0 hl0 hw0
+      unfold writeViews at hvw
+      split at hvw
+      · rename_i A hA
+        simp only [viewField, Bool.and_eq_true, List.all_eq_true] at hvw
+        obtain ⟨El, fs0, cd0, o0, l0, c0, hv0, hl1, hW, himp, hEl⟩ :=
+          fieldOperand_typed hvw.1 (he.2 s A hA)
+        rw [hs0] at hv0; cases hv0
+        rw [hl0] at hl1; cases hl1
+        obtain ⟨u, hu0, hm⟩ := hh.2 l c0 hW
+        rw [hw0] at hu0; cases hu0
+        have hEw := himp (m + 1) (by omega) _ w (hm (m + 1) (by omega))
+        obtain ⟨fields, oid, rfl, hst⟩ := stableField_at (hvw.2 El hEl) hEw
+        cases hlv : fields.lookup viewLengthKey with
+        | none => simp only [viewLengthOf, hlv]
+        | some lv =>
+          obtain ⟨c, v0, hlk, hcs⟩ := hst.present hlv
+          have h0 := (HeapOk_trunc (m + 1) W h hh).stable_value (Nat.zero_lt_succ m) hlk hcs
+          have h1 := hq.2 lv v0 ⟨c, hlk, hcs⟩
+          simp only [viewLengthOf, hlv, h0, h1]
+      · cases hvw
+
 /-- Whether a write of field `fld` of slot `i` keeps a cell fact about
 field `g` of slot `s`: a separation fact states the two apart, or, where the
 written field's location belongs to its key alone (`owned`), `s` holds the
