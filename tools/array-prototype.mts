@@ -450,14 +450,14 @@ const primitiveOverlay: Readonly<Record<string, readonly OverlayEntry[]>> &
     // `charCodeAt` of a string primitive at a number: RequireObjectCoercible
     // and ToString of the receiver, and ToIntegerOrInfinity of the position,
     // run no code; `NaN` where the integer is outside [0, length), the code
-    // unit there otherwise. Two signatures: a safe integer `i`,
-    // `0 ≤ i < strLength(s)`, a safe integer in [0, 0xFFFF]: such an `i` is
-    // its own ToIntegerOrInfinity and inside the string (the receiver at
-    // position 0, the position at 1; the result at 0 of the postcondition);
-    // and any position, a number. The bounded one is listed first, so a
-    // search reaches it where its precondition holds.
+    // unit there otherwise. Two signatures: any position, a number; and a
+    // safe integer `i`, `0 ≤ i < strLength(s)`, a safe integer in
+    // [0, 0xFFFF]: such an `i` is its own ToIntegerOrInfinity and inside the
+    // string (the receiver at position 0, the position at 1; the result at 0
+    // of the postcondition).
     { name: "charCodeAt", from: "String", signature: "charCodeAt(index: number): number;",
       stated: [
+        { params: [atomOf("number")], result: atomOf("number") },
         { params: [atomOf("number")], result: atomOf("number"), effect: footprintEffect(emptyFootprint, {
           pre: [
             { int: { slot: 1 } },
@@ -470,7 +470,6 @@ const primitiveOverlay: Readonly<Record<string, readonly OverlayEntry[]>> &
             { linear: { fact: { le: { form: [[{ kind: "value", slot: 0, path: [] }, -1]], bound: 0 } } } },
             { linear: { fact: { le: { form: [[{ kind: "value", slot: 0, path: [] }, 1]], bound: 0xffff } } } },
           ] }) },
-        { params: [atomOf("number")], result: atomOf("number") },
       ] },
     { name: "concat", from: "String", signature: "concat(...strings: string[]): string;" },
     { name: "indexOf", from: "String", signature: "indexOf(searchString: string, position?: number): number;" },
