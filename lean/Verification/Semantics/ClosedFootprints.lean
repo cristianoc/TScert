@@ -26,19 +26,47 @@ structure Closed where
 
 def Closed.fp (c : Closed) : Footprint := [(.cls .value, c.value), (.cls .store, c.store)]
 
-/-- On contents of class `value`, `grow` is `keep`. -/
+/-- On contents of class `value`, `grow` is `init`. -/
 def Change.onValue : Change → Change
-  | .grow => .keep
+  | .grow => .init
   | d => d
 
-def Closed.le (a b : Closed) : Bool := a.value.onValue.le b.value.onValue && a.store.le b.store
+/-- On a store, `init` is `keep`. -/
+def Change.onStore : Change → Change
+  | .init => .keep
+  | d => d
+
+def Closed.le (a b : Closed) : Bool := a.value.onValue.le b.value.onValue && a.store.onStore.le b.store.onStore
 
 private theorem value_change {δ δ' : Change} {b v v'} (hv : isArr v = false)
     (hle : δ.onValue.le δ'.onValue = true) (h : δ.Holds b v v') : δ'.Holds b v v' := by
-  cases δ with
-  | grow => rw [h.grow_value hv]; exact Change.Holds.refl _ _ _
-  | keep => simp only [Change.Holds] at h; rw [h]; exact Change.Holds.refl _ _ _
-  | any => cases δ' <;> simp_all [Change.onValue, Change.le, Change.Holds]
+  have h' : δ.onValue.Holds b v v' := by
+    cases δ with
+    | grow => exact h.grow_value hv
+    | _ => exact h
+  have h'' := h'.mono hle
+  cases δ' with
+  | grow => exact Change.init_le_grow h''
+  | _ => exact h''
+
+private theorem store_change {δ δ' : Change} {b ls v'}
+    (hle : δ.onStore.le δ'.onStore = true) (h : δ.Holds b (.arr ls) v') : δ'.Holds b (.arr ls) v' := by
+  have h' : δ.onStore.Holds b (.arr ls) v' := by
+    cases δ with
+    | init => exact h.init_store
+    | _ => exact h
+  have h'' := h'.mono hle
+  cases δ' with
+  | init => exact .inl h''
+  | _ => exact h''
+
+private theorem class_change {δ δ' : Change} {b v v'}
+    (hv : isArr v = false → δ.onValue.le δ'.onValue = true)
+    (hs : isArr v = true → δ.onStore.le δ'.onStore = true) (h : δ.Holds b v v') : δ'.Holds b v v' := by
+  cases ha : isArr v
+  · exact value_change ha (hv ha) h
+  · cases v <;> simp [isArr] at ha
+    exact store_change (hs rfl) h
 
 theorem Closed.post_mono {a b : Closed} (hle : a.le b = true) {ρ h h'} (hp : Post a.fp ρ h h') :
     Post b.fp ρ h h' := by
@@ -52,7 +80,9 @@ theorem Closed.post_mono {a b : Closed} (hle : a.le b = true) {ρ h h'} (hp : Po
     rcases he with rfl | rfl
     · have hc : isArr v = false := by simpa [Region.mem, hv, Cls.has] using hm
       exact .inr ⟨_, List.mem_cons_self .., hm, value_change hc hle.1 hh⟩
-    · exact .inr ⟨(.cls .store, b.store), by simp [Closed.fp], hm, hh.mono hle.2⟩
+    · have hc : isArr v = true := by simpa [Region.mem, hv, Cls.has] using hm
+      exact .inr ⟨(.cls .store, b.store), by simp [Closed.fp], hm,
+        class_change (fun h => by rw [hc] at h; cases h) (fun _ => hle.2) hh⟩
 
 private def ρ₀ : Env := fun _ => .undef
 
@@ -62,67 +92,6 @@ private theorem single_post {Φ : Footprint} {v v' : Val} (hp : Post Φ ρ₀ [v
   simp only [List.getElem?_cons_zero, Option.some.injEq] at hv₁
   subst hv₁
   exact ha
-
-/-- **The closed footprints are ordered exactly by their entries.** -/
-theorem closed_order_exact (a b : Closed) :
-    a.le b = true ↔ ∀ ρ h h', Post a.fp ρ h h' → Post b.fp ρ h h' := by
-  refine ⟨fun hle _ _ _ => Closed.post_mono hle, fun H => ?_⟩
-  simp only [Closed.le, Bool.and_eq_true]
-  refine ⟨?_, ?_⟩
-  · -- a value location changes arbitrarily
-    cases ha : a.value <;> cases hb : b.value <;> simp [Change.onValue, Change.le] <;>
-    · have hp : Post a.fp ρ₀ [.nul] [.tru] :=
-        ⟨by simp, fun l v hv => by
-          cases l with
-          | zero =>
-            simp only [List.getElem?_cons_zero, Option.some.injEq] at hv; subst hv
-            exact ⟨.tru, rfl, .inr ⟨(.cls .value, a.value), List.mem_cons_self .., by simp [Region.mem, Cls.has, isArr], by
-              show a.value.Holds _ _ _
-              rw [ha]; trivial⟩⟩
-          | succ l => simp at hv⟩
-      rcases single_post (H _ _ _ hp) with h | ⟨e, he, hm, hh⟩
-      · cases h
-      · simp only [Closed.fp, List.mem_cons, List.not_mem_nil, or_false] at he
-        rcases he with rfl | rfl
-        · simp only [hb] at hh
-          simp [Change.Holds] at hh
-        · simp [Region.mem, Cls.has, isArr] at hm
-  · cases ha : a.store <;> cases hb : b.store <;> simp [Change.le]
-    · -- grow against keep: a store gains a fresh element location
-      have hp : Post a.fp ρ₀ [.arr []] [.arr [some 1]] :=
-        ⟨by simp, fun l v hv => by
-          cases l with
-          | zero =>
-            simp only [List.getElem?_cons_zero, Option.some.injEq] at hv; subst hv
-            exact ⟨_, rfl, .inr ⟨(.cls .store, a.store), by simp [Closed.fp], by simp [Region.mem, Cls.has, isArr], by
-              show a.store.Holds _ _ _
-              rw [ha]; exact (Change.holdsB_iff _ _ _ _).mp (by decide)⟩⟩
-          | succ l => simp at hv⟩
-      rcases single_post (H _ _ _ hp) with h | ⟨e, he, hm, hh⟩
-      · cases h
-      · simp only [Closed.fp, List.mem_cons, List.not_mem_nil, or_false] at he
-        rcases he with rfl | rfl
-        · simp [Region.mem, Cls.has, isArr] at hm
-        · simp only [hb] at hh
-          simp [Change.Holds] at hh
-    all_goals
-      -- any against keep or grow: a dense store loses its index
-      have hp : Post a.fp ρ₀ [.arr [some 0]] [.arr []] :=
-        ⟨by simp, fun l v hv => by
-          cases l with
-          | zero =>
-            simp only [List.getElem?_cons_zero, Option.some.injEq] at hv; subst hv
-            exact ⟨_, rfl, .inr ⟨(.cls .store, a.store), by simp [Closed.fp], by simp [Region.mem, Cls.has, isArr], by
-              show a.store.Holds _ _ _
-              rw [ha]; trivial⟩⟩
-          | succ l => simp at hv⟩
-      rcases single_post (H _ _ _ hp) with h | ⟨e, he, hm, hh⟩
-      · cases h
-      · simp only [Closed.fp, List.mem_cons, List.not_mem_nil, or_false] at he
-        rcases he with rfl | rfl
-        · simp [Region.mem, Cls.has, isArr] at hm
-        · simp only [hb] at hh
-          exact absurd ((Change.holdsB_iff _ _ _ _).mpr hh) (by decide)
 
 /-! ## Closed footprints as call effects -/
 
@@ -166,6 +135,50 @@ theorem Closed.holds_iff {c : Closed} {h h' : Heap} :
     c.Holds h h' ↔ h.length ≤ h'.length ∧
       ∀ (l : Nat) (v : Val), h[l]? = some v → ∃ v', h'[l]? = some v' ∧ (c.at v).Holds h.length v v' :=
   Closed.post_iff
+
+/-- **The closed footprints are ordered exactly by their entries.** -/
+theorem closed_order_exact (a b : Closed) :
+    a.le b = true ↔ ∀ ρ h h', Post a.fp ρ h h' → Post b.fp ρ h h' := by
+  refine ⟨fun hle _ _ _ => Closed.post_mono hle, fun H => ?_⟩
+  -- a one-location heap whose change `a` allows and `b` does not
+  have refute : ∀ v v', (a.at v).holdsB 1 v v' = true → (b.at v).holdsB 1 v v' = false → False := by
+    intro v v' ha hb
+    have hp : Post a.fp ρ₀ [v] [v'] := Closed.post_iff.mpr ⟨by simp, fun l u hu => by
+      cases l with
+      | zero =>
+        simp only [List.getElem?_cons_zero, Option.some.injEq] at hu; subst hu
+        exact ⟨v', rfl, (Change.holdsB_iff _ _ _ _).mp ha⟩
+      | succ l => simp at hu⟩
+    obtain ⟨-, hq⟩ := Closed.post_iff.mp (H _ _ _ hp)
+    obtain ⟨u, hu, hh⟩ := hq 0 v rfl
+    simp only [List.getElem?_cons_zero, Option.some.injEq] at hu; subst hu
+    have h2 := (Change.holdsB_iff _ _ _ _).mpr hh
+    simp only [List.length_singleton] at h2
+    rw [h2] at hb
+    cases hb
+  have atv : ∀ c : Closed, c.at .nul = c.value ∧ c.at .tru = c.value := fun c => by simp [Closed.at, isArr]
+  have ats : ∀ (c : Closed) ls, c.at (.arr ls) = c.store := fun c ls => by simp [Closed.at, isArr]
+  simp only [Closed.le, Bool.and_eq_true]
+  refine ⟨?_, ?_⟩
+  · -- a value location initialized, or changed from a defined value
+    have v1 := refute .nul .tru
+    have v2 := refute .tru .nul
+    rw [(atv a).1, (atv b).1] at v1
+    rw [(atv a).2, (atv b).2] at v2
+    cases ha : a.value <;> cases hb : b.value <;> rw [ha, hb] at v1 v2 <;>
+      simp only [Change.onValue, Change.le, Change.rank] <;> first
+        | decide
+        | exact (v1 (by decide) (by decide)).elim
+        | exact (v2 (by decide) (by decide)).elim
+  · -- a store gaining a fresh element location, or losing a present one
+    have s1 := refute (.arr []) (.arr [some 1])
+    have s2 := refute (.arr [some 0]) (.arr [])
+    rw [ats a, ats b] at s1 s2
+    cases ha : a.store <;> cases hb : b.store <;> rw [ha, hb] at s1 s2 <;>
+      simp only [Change.onStore, Change.le, Change.rank] <;> first
+        | decide
+        | exact (s1 (by decide) (by decide)).elim
+        | exact (s2 (by decide) (by decide)).elim
 
 theorem Closed.Holds.mono {a b : Closed} (hle : a.le b = true) {h h' : Heap} (hp : a.Holds h h') :
     b.Holds h h' :=
@@ -225,7 +238,7 @@ theorem Change.min_holds {a b : Change} {n v v'} :
   · rename_i hle
     exact ⟨fun h => ⟨h, h.mono hle⟩, And.left⟩
   · rename_i hle
-    have hle' : b.le a = true := by cases a <;> cases b <;> simp_all [Change.le]
+    have hle' : b.le a = true := by simp only [Change.le, decide_eq_true_eq, Nat.not_le] at hle ⊢; omega
     exact ⟨fun h => ⟨h.mono hle', h⟩, And.right⟩
 
 /-- Both of two closed footprints: what two signatures of one call guarantee
@@ -303,7 +316,7 @@ private theorem Closed.at_mono {a b : Closed} (hle : a.le b = true) {n v v'}
   · simp only [hv] at h ⊢
     exact value_change (by simpa using hv) hle.1 h
   · simp only [hv, if_true] at h ⊢
-    exact h.mono hle.2
+    exact class_change (fun h => by rw [hv] at h; cases h) (fun _ => hle.2) h
 
 theorem Closed.HoldsOn.mono {a b : Closed} (hle : a.le b = true) {P : Nat → Prop} {h h' : Heap}
     (hp : a.HoldsOn P h h') : b.HoldsOn P h h' :=

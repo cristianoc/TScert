@@ -576,7 +576,7 @@ let of_classes env (o,n,a) = { obj = o; num = n; store = (if a then `Any else `K
   framed = (fun b g -> slot_binding env b && !view_field env b g); apart = false; cell_write = false }
 let of_footprint (fp : Semantic.footprint) =
   { obj = fp.Semantic.on_value = Semantic.Any; num = fp.Semantic.on_value = Semantic.Any;
-    store = (if fp.Semantic.on_store = Semantic.Keep then `Keep else `Any); framed = no_frame; apart = false; cell_write = false }
+    store = (match fp.Semantic.on_store with Semantic.Keep | Semantic.Init -> `Keep | _ -> `Any); framed = no_frame; apart = false; cell_write = false }
 
 let term_kept ch t =
   let b,path,kind = term_parts t in
@@ -609,6 +609,22 @@ let strictly_bounded ~facts ~bounds xs k =
   (let fs = facts @ term_ranges facts in
    entails fs ([k,-1],0) && entails fs (norm [k,1; length_term xs,-1],-1))
 
+(* Whether an expression's heap writes are calls each within `{value: init,
+   store: keep}`, its other parts writing none: a call initializing cells
+   holding `null` or `undefined` alone, which alters no location holding an
+   object, a number or a store (Lean's `Changes.ofClosed`). *)
+let rec init_free env (e : expr) = heap_free env e || match e.node with
+  | Not a | Unary (_,a) | Cast (_,_,a) | Read (a,_) -> init_free env a
+  | Arith (_,a,b) | Equality (_,a,b) | Logical (_,a,b) | Coalesce (a,b) -> init_free env a && init_free env b
+  | Conditional (c,a,b) -> init_free env c && init_free env a && init_free env b
+  | Call ({node=Id f;_},None,args,[],_) -> List.for_all (init_free env) args &&
+    (match !call_footprint env f with
+     | Some fp -> Semantic.footprint_le fp {Semantic.on_value=Semantic.Init;on_store=Semantic.Keep}
+     | None -> false)
+  | Alloc fields -> List.for_all (fun (_,v) -> init_free env v) fields
+  | _ -> false
+let init_changes = { obj = false; num = false; store = `Keep; framed = no_frame; apart = false; cell_write = false }
+
 (* The change of an expression whose one heap write is a field's, a checked
    element's or a call's, its operands writing none. *)
 let write_changes ~facts ~bounds env (e : expr) : changes option =
@@ -628,10 +644,14 @@ let write_changes ~facts ~bounds env (e : expr) : changes option =
     if !method_grows env r key then Some { obj = false; num = false; store = `Grow; framed = no_frame; apart = false; cell_write = false }
     else if !method_element_write env r key then Some element_changes
     else Option.map of_footprint (!method_footprint env r key)
-  | _ -> None
+  | _ -> if init_free env e then Some init_changes else None
 
 let statement_changes ~facts ~bounds env (s : stmt) = match s.statement with
-  | Effect e -> write_changes ~facts ~bounds env e
+  | Effect e -> (match write_changes ~facts ~bounds env e with
+    | Some ch -> Some ch
+    | None -> if init_free env e then Some init_changes else None)
+  | Declare (_,bs) when List.for_all (fun (_,_,e) -> init_free env e) bs -> Some init_changes
+  | Return e when init_free env e -> Some init_changes
   | _ -> None
 
 (* The facts restated where a binding is declared at a path's read
@@ -1082,7 +1102,9 @@ let declaration ~(array : string -> string list -> bool) env fs name (init : exp
   let updated = after_cell_updates env init fs in
   with_cells (updated != fs) @@ fun () ->
   let fs = updated in
-  let fs = if heap_free env init then fs else keep_stable env fs in
+  let fs = if heap_free env init then fs
+    else if init_free env init then List.filter (fun f -> fact_kept init_changes f || stable_fact env f) fs
+    else keep_stable env fs in
   let fs = forget name fs in
   (* `const x = f(…)` of a function stating a postcondition: each of
      its facts, of `x`. *)
@@ -1269,7 +1291,8 @@ let call_gfacts ?name env f (args : expr list) : gfact list =
    `undefined`) states of `x` what the read's arm states, under the guard
    `x === null`: on the literal's arm the guard reads its tag's value. *)
 let gdeclaration env (gs : gfact list) (fs : fact list) name (init : expr) : gfact list =
-  let gs = if heap_free env init then gs else gkept env gs in
+  let gs = if heap_free env init then gs
+    else gkept ?ch:(if init_free env init then Some init_changes else None) env gs in
   let gs = gforget name gs in
   (* `const x = f(…)` of a function stating a guarded postcondition. *)
   let gs = match init.node with

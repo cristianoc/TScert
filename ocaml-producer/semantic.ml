@@ -1,19 +1,24 @@
 (* Semantic types contain no solver state. More precise proposals do not mutate them.
    A rigid parameter remains distinct from any future inference/existential IDs. *)
 (* How a footprint may change a location's contents (Lean's
-   `Footprints.Change`): not at all, as a store keeping every dense prefix, or
-   arbitrarily. *)
-type change = Keep | Grow | Any
+   `Footprints.Change`): not at all, by an initialization of `null` or
+   `undefined`, as a store keeping every dense prefix, or arbitrarily; the
+   chain `Keep < Init < Grow < Any`. *)
+type change = Keep | Init | Grow | Any
 (* A closed footprint (Lean's `Footprints.Closed`): the change a call may make,
    on normal return, to its entry heap's locations holding a value and to those
-   holding an array store. On a value `Grow` is `Keep`. *)
+   holding an array store. On a value `Grow` is `Init`; on a store `Init` is
+   `Keep`. *)
 type footprint = { on_value: change; on_store: change }
 let top_footprint = {on_value=Any;on_store=Any}
 let empty_footprint = {on_value=Keep;on_store=Keep}
-let change_le a b = match a,b with Keep,_ | Grow,(Grow|Any) | Any,Any -> true | _ -> false
+let change_rank = function Keep -> 0 | Init -> 1 | Grow -> 2 | Any -> 3
+let change_le a b = change_rank a <= change_rank b
+let join_change a b = if change_le a b then b else a
 let footprint_le a b =
-  let on_value = function Grow -> Keep | d -> d in
-  change_le (on_value a.on_value) (on_value b.on_value) && change_le a.on_store b.on_store
+  let on_value = function Grow -> Init | d -> d in
+  let on_store = function Init -> Keep | d -> d in
+  change_le (on_value a.on_value) (on_value b.on_value) && change_le (on_store a.on_store) (on_store b.on_store)
 (* A promise about the actual at a parameter. A promise signature's result is
    the promise's type, not the call's: a type guard's call is `true` or
    `false`, `true` leaving the actual at the result; an assertion function's

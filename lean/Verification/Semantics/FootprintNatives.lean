@@ -165,7 +165,7 @@ theorem Arr.Within.setLength {b orig} {a : Arr} (h : a.Within b orig) (n : Nat) 
 dense prefix is `grow`. -/
 theorem grow_of_steps {b : Nat} {orig : List (Option Nat)} {a : Arr} (hw : a.Within b orig)
     (hd : ∀ n, DensePrefix n orig → DensePrefix n a.ls) : Change.grow.Holds b (.arr orig) (.arr a.ls) :=
-  .inr ⟨orig, a.ls, rfl, rfl, hd, hw.2⟩
+  .inr (.inl ⟨orig, a.ls, rfl, rfl, hd, hw.2⟩)
 
 /-! ## The mutators -/
 

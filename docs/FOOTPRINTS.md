@@ -53,28 +53,36 @@ location holds a store (proved: `dense_class`).
 ## Changes and footprints
 
 A **change** is a reflexive, transitive relation on a location's contents,
-parameterised by the length `b` of the heap it starts from:
+parameterised by the length `b` of the heap it starts from. With
+$`\mathrm{init}(v,v')`$ an initialization, $`v`$ `null` or `undefined` and
+$`v'`$ no store:
 
 ```math
 \begin{aligned}
 \mathsf{keep}_b(v, v') &\iff v' = v\\
-\mathsf{grow}_b(v, v') &\iff v' = v \lor \bigl(v = \mathsf{arr}\,ls \land v' = \mathsf{arr}\,ls' \land (\forall n.\ D_n\,ls \to D_n\,ls') \land \forall l.\ \mathsf{some}\,l \in ls' \to \mathsf{some}\,l \in ls \lor b \le l\bigr)\\
+\mathsf{init}_b(v, v') &\iff v' = v \lor \mathrm{init}(v, v')\\
+\mathsf{grow}_b(v, v') &\iff v' = v \lor \bigl(v = \mathsf{arr}\,ls \land v' = \mathsf{arr}\,ls' \land (\forall n.\ D_n\,ls \to D_n\,ls') \land \forall l.\ \mathsf{some}\,l \in ls' \to \mathsf{some}\,l \in ls \lor b \le l\bigr) \lor \mathrm{init}(v, v')\\
 \mathsf{any}_b(v, v') &\iff \top
 \end{aligned}
 ```
 
-`grow` keeps every dense prefix and lists no old element location the store
-did not list. The changes form the chain
-$`\mathsf{keep} \sqsubseteq \mathsf{grow} \sqsubseteq \mathsf{any}`$
-(proved: `Change.Holds.refl`, `.mono`, `.trans`).
+`init` lets a location holding `null` or `undefined` take a value, the change
+of a lazy initialization `x ??= e`; `grow` keeps every dense prefix and lists
+no old element location the store did not list, or initializes. The changes
+form the chain
+$`\mathsf{keep} \sqsubseteq \mathsf{init} \sqsubseteq \mathsf{grow} \sqsubseteq \mathsf{any}`$
+(proved: `Change.Holds.refl`, `.mono`, `.trans`). A change other than `any`
+keeps contents that are no store and neither `null` nor `undefined`, and on a
+store `init` is `keep` (proved: `Change.Holds.defined_kept`,
+`Change.Holds.init_store`).
 
 The locations below a heap's length fall into two classes by their contents:
 `class(store)`, those holding a store, and `class(value)`, the others. A
 **closed footprint** $`\Phi = \{\mathsf{value}{:}\,\delta_v,\ \mathsf{store}{:}\,\delta_s\}`$
-(`Footprints.Closed`) states a change for each class, `keep` or `any` for
-values (on a non-store, `grow` is `keep`) and `keep`, `grow` or `any` for
-stores: six footprints. Its meaning relates the heap `h` a run starts in to a
-later heap `h'`:
+(`Footprints.Closed`) states a change for each class, `keep`, `init` or `any`
+for values (on a non-store, `grow` is `init`) and `keep`, `grow` or `any` for
+stores (on a store, `init` is `keep`): nine footprints. Its meaning relates the
+heap `h` a run starts in to a later heap `h'`:
 
 ```math
 \Phi.\mathrm{Holds}(h, h') \iff |h| \le |h'| \land \forall l < |h|.\ \delta_{\mathrm{class}(h[l])\,|h|}(h[l], h'[l])
@@ -103,7 +111,7 @@ footprints (proved: `Closed.holds_meet`). The wire spells a closed footprint
 ## The stable set for density
 
 Density reads only a store, and only a store change beyond `grow` can remove
-a present index below `n`. The closed footprints that keep it are the four
+a present index below `n`. The closed footprints that keep it are the six
 whose store change is at most `grow` (`stableDenseClosed`; proved:
 `stableDenseClosed_sound`; outside them a closed footprint lets a non-empty
 dense store become empty, controls in `FootprintControls.lean`):
@@ -111,10 +119,13 @@ dense store become empty, controls in `FootprintControls.lean`):
 | Footprint | Keeps density |
 | --- | --- |
 | `{value: keep, store: keep}` | yes |
+| `{value: init, store: keep}` | yes |
 | `{value: any, store: keep}` | yes |
 | `{value: keep, store: grow}` | yes |
+| `{value: init, store: grow}` | yes |
 | `{value: any, store: grow}` | yes |
 | `{value: keep, store: any}` | no |
+| `{value: init, store: any}` | no |
 | `{value: any, store: any}` | no |
 
 `map` relies on density between callbacks. For callbacks each of whose
@@ -272,13 +283,14 @@ collections' and dates' mutators (each at most `{value: any, store: keep}`);
 outside it are `pop`, `shift`, `reverse`, `splice` and every native stated
 unrestricted. `forEach`, `every`, `some`, `filter`, `find`, `findIndex`,
 `flatMap`, `reduce` and `reduceRight` have one signature per closed
-footprint, each within its callback's.
+footprint stating `keep` or `any` for values, each within its callback's; a
+callback within `{value: init, …}` takes the one stating `any`.
 `pop`, `shift`, `reverse` and `splice` state `{value: any, store: keep}` with their
 receiver's store excepted, so outside a fresh receiver they bound a call by
 the footprint letting everything change; `filter`, `map`, `flatMap`, `flat`,
 `slice`, `splice` and a string's `split` state a fresh result.
 `map` has five signatures: one per footprint `ε` of the stable
-set, which takes a dense receiver and a callback within `ε`, gives a dense
+set stating `keep` or `any` for values, which takes a dense receiver and a callback within `ε`, gives a dense
 result and states `ε` as its own; and an unrestricted one, which takes any
 receiver and any callback, gives a result that may hold holes and states no
 footprint. So a callback changing stores beyond `grow`, such as one within

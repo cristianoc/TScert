@@ -1810,9 +1810,29 @@ bounds of lengths (proved). These are the preservation rules:
   held no store, and a hole's write gives a store of the same length).
 - **A call** at a selected signature $`\mathcal F_\epsilon`$ stating none of
   `receiverStore`, `receiverOwn` and `receiverGrows` and not leaving the heap
-  unchanged: $`\chi`$ is its footprint's, `grow` on a value being `keep`
-  (proved). `{value: any, store: keep}`, a `Map`'s `set`, preserves every
-  length.
+  unchanged: $`\chi`$ is its footprint's: $`o`$ and $`n`$ where it states
+  `any` for values, $`s`$ $`\mathsf{keep}`$ where it states `keep` for
+  stores (proved). `{value: any, store: keep}`, a `Map`'s `set`, preserves
+  every length; `{value: init, store: keep}` alters no location holding an
+  object, a number or a store, so it preserves every fact over values, paths
+  and lengths.
+- **An initializing write** $`x.f=y`$ of a source value, where the knowledge
+  at the write states that the field's location holds `null` or `undefined`
+  (a cell fact, or a read link from it to a slot a value fact bounds so):
+  within `{value: init, store: keep}` (proved). It is the write of
+  `cached ??= build()` past its test, `build` keeping the heap, so a
+  definition caching its result in a module binding states
+  `{value: init, store: keep}`, pretext's `getEngineProfile` among them, and
+  a caller keeps its facts across the call (positive `lazy-cache-keeps-facts`;
+  negative, run under Node, `invalid-lazy-cache-initializer-pops`, an
+  initializer popping the flags; a forged control, a cell written whatever it
+  holds claimed at `init`, refused at the write):
+
+```math
+\frac{\Gamma;\Sigma\vdash x.f:=y\qquad \Sigma\vdash x.f\in\{\mathtt{null},\mathtt{undefined}\}\qquad \Gamma(y)\ \text{source}}
+     {x.f:=y\ \text{within}\ \{\mathsf{value}{:}\,\mathsf{init},\ \mathsf{store}{:}\,\mathsf{keep}\}}\ \textsf{write-init}
+```
+
 - **A call growing its receiver's store**, at a selected signature stating
   `receiverGrows` (`Array.prototype.push`,
   [native footprints](SOURCE-CONTRACTS.md#native-footprints)):
@@ -1888,7 +1908,10 @@ where the stability of its length is not known at every level a run observes.
 `Term.formKeptBy` (proved: `formKept_eval`). The field write's change is
 `fieldChanges` and `typeChanges`, from `fieldOperand_typed`, with
 `writeKeeps` and `writeKeeps_ne`, in `writeOutput` (proved: `write_sound`,
-which also proves `write-link`). The element write's is
+which also proves `write-link`). `write-init` is
+`ExpressionEffects.initWriteWithin` with `nullishAt` (proved:
+`init_write_within`, `nullishAt_sound`), a node's bound check reading it
+through `GraphCode.writeWithinAt`. The element write's is
 `IndexWrites.keepsLengths` and `lengthOutput` (proved:
 `ExpressionEffects.elem_var_write_length`, `placeAt_length`). A call's is
 `Changes.ofClosed` (proved: `ofClosed_holds`) in `PromiseCalls.effectKept`,

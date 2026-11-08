@@ -263,7 +263,7 @@ export function decodeClosedFootprint(v: JsonRead): Within<{ value: "any"; store
   return { value, store };
 }
 function isFootprintValue(v: unknown): v is ClosedFootprint["value"] {
-  return v === "keep" || v === "any";
+  return v === "keep" || v === "init" || v === "any";
 }
 function isFootprintStore(v: unknown): v is ClosedFootprint["store"] {
   return v === "keep" || v === "grow" || v === "any";

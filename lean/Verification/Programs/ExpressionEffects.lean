@@ -164,6 +164,151 @@ theorem field_write_within [DecidableEq ι] {G : NormalGraph ι} {Γ Φ t T ρ n
         · refine ⟨v, by rw [List.getElem?_set_ne (Ne.symm hll)]; exact hv, Footprints.Change.Holds.refl _ _ _⟩
   · contradiction
 
+/-! ### Initializing writes
+
+`x ??= e` writes its location only where it holds `null` or `undefined`
+(PROGRAM-TYPING.md, "Frame conditions"): where the knowledge at a field write
+states its location so, the write is within `{value: init, store: keep}`. -/
+
+/-- `null` and `undefined`. -/
+def nullishSet : ValueSets.ValueSet := { nul := true, undef := true }
+
+theorem nullishSet_mem {v : Tm} (h : nullishSet.mem v = true) : Footprints.nullish v = true := by
+  cases v <;> simp_all [nullishSet, ValueSets.ValueSet.mem, ValueSets.Obj.mem, Footprints.nullish]
+
+/-- Whether the knowledge states that field `f` of slot `i`'s object holds
+`null` or `undefined`: a cell fact of it, or a read link from it to a slot a
+value fact bounds so. -/
+def nullishAt (k : HeapKnowledge.Knowledge) (i : Nat) (f : PropKey) : Bool :=
+  k.cells.any (fun c => c.slot == i && c.field == f && c.contents.le nullishSet) ||
+  k.links.any (fun g => !g.alias && !g.optional && g.cell == i && g.field == f &&
+    k.values.any fun c => c.slot == g.value && c.contents.le nullishSet)
+
+theorem nullishAt_sound {k : HeapKnowledge.Knowledge} {i : Nat} {f : PropKey} {ρ : Env} {h : Heap}
+    {flds : List (PropKey × Nat)} {c : CallCode} {oid l : Nat}
+    (hn : nullishAt k i f = true) (hk : HeapKnowledge.Holds k ρ h)
+    (hi : ρ i = .objAt flds c oid) (hl : flds.lookup f = some l) :
+    ∃ v, h[l]? = some v ∧ Footprints.nullish v = true := by
+  simp only [nullishAt, Bool.or_eq_true, List.any_eq_true, Bool.and_eq_true, beq_iff_eq,
+    Bool.not_eq_true'] at hn
+  rcases hn with ⟨a, ha, ⟨hs, hf⟩, hle⟩ | ⟨g, hg, ⟨⟨⟨⟨hal, hop⟩, hc⟩, hf⟩, ⟨a, ha, hs, hle⟩⟩⟩
+  · obtain ⟨flds', c', oid', v, hρ, hr, hm⟩ := hk.1 a ha
+    rw [hs, hi] at hρ
+    cases hρ
+    rw [hf] at hr
+    simp only [HeapFacts.ReadGave, hl] at hr
+    exact ⟨v, hr, nullishSet_mem (ValueSets.ValueSet.le_sound hle hm)⟩
+  · have hlink := hk.2.2.1 g hg
+    simp only [hal, hop] at hlink
+    obtain ⟨flds', c', oid', l', hρ, hl', hv⟩ := hlink
+    rw [hc, hi] at hρ
+    cases hρ
+    rw [hf, hl] at hl'
+    cases hl'
+    have hm := hk.2.1 a ha
+    rw [hs] at hm
+    exact ⟨_, hv, nullishSet_mem (ValueSets.ValueSet.le_sound hle hm)⟩
+
+/-- A write of a source value to a field whose location the knowledge states
+holds `null` or `undefined`. -/
+def initWriteWithin (G : NormalGraph ι) (Γ : List (Ty ι)) (k : HeapKnowledge.Knowledge)
+    (Φ : Footprints.Closed) (t : Tm) : Bool :=
+  match HeapExpressionRules.writeSlots t with
+  | some (f, i, j) => Footprints.Closed.le ⟨.init, .keep⟩ Φ && nullishAt k i f &&
+      (match Γ[j]? with
+      | some B => sourceTy G B
+      | none => false) &&
+      match Γ[i]? with
+      | some Ref => sourceField G (expand G Ref) f
+      | none => false
+  | none => false
+
+/-- **An initializing write is within `{value: init, store: keep}`.** -/
+theorem init_write_within [DecidableEq ι] {G : NormalGraph ι} {Γ k Φ t T ρ n W h}
+    (hc : initWriteWithin G Γ k Φ t = true) (he : EnvOk G Γ ρ n W) (hh : HeapOk n W h)
+    (hk : HeapKnowledge.Holds k ρ h) (hs : Safe Ξ T n W h (instantiate 0 ρ t)) :
+    SafePost Ξ T (fun h' _ => Φ.Holds h h') n W h (instantiate 0 ρ t) := by
+  unfold initWriteWithin at hc
+  split at hc
+  case h_2 => contradiction
+  rename_i f i j hw
+  rw [HeapExpressionRules.writeSlots_eq hw] at hs ⊢
+  simp only [Bool.and_eq_true] at hc
+  obtain ⟨⟨⟨hle, hnul⟩, hsrcj⟩, hsel⟩ := hc
+  split at hsrcj
+  case h_2 => contradiction
+  rename_i B hjB
+  split at hsel
+  · rename_i Ref hi
+    cases n with
+    | zero => trivial
+    | succ n =>
+      have hiv := (meaning_value (he.2 i Ref hi)).1
+      have hjm := he.2 j B hjB
+      have hjv := (meaning_value hjm).1
+      simp only [instantiate, Nat.not_lt_zero, ite_false, Nat.sub_zero] at hs ⊢
+      rcases hs with (⟨hbad, _⟩ | hr) | ⟨U, h', t', hx, hu, step, hh', hs'⟩
+      · simp [isVal] at hbad
+      · exact .inl (.inr hr)
+      · obtain ⟨flds, c, oid, l, hl, hfd, hlt, rfl, rfl⟩ := HeapExpressionRules.write_inv hiv hjv step
+        obtain ⟨u, hu0, hun⟩ := nullishAt_sound hnul hk hl hfd
+        refine .inr ⟨U, _, _, hx, hu, step, hh', HeapObservations.refine_value rfl ?_ hs'⟩
+        apply Footprints.Closed.Holds.mono hle
+        rw [Footprints.Closed.holds_iff]
+        refine ⟨by simp, fun l' v hv => ?_⟩
+        by_cases hll : l' = l
+        · subst hll
+          rw [hu0] at hv
+          cases hv
+          refine ⟨ρ j, by simp [hlt], ?_⟩
+          have harr : Footprints.isArr (ρ j) = false := by
+            have := sourceTy_sound hsrcj hjm
+            cases hjj : ρ j <;> simp_all [isSourceVal, Footprints.isArr]
+          have hold : Footprints.isArr u = false := by
+            cases u <;> simp_all [Footprints.nullish, Footprints.isArr]
+          simp only [Footprints.Closed.at, hold]
+          exact .inr ⟨hun, harr⟩
+        · exact ⟨v, by rw [List.getElem?_set_ne (Ne.symm hll)]; exact hv, Footprints.Change.Holds.refl _ _ _⟩
+  · contradiction
+
+/-- An initializing write raises, where it does, before it writes. -/
+theorem init_write_within_exc [DecidableEq ι] {G : NormalGraph ι} {Γ k Φ t T ρ n W h}
+    (hc : initWriteWithin G Γ k Φ t = true) (he : EnvOk G Γ ρ n W) (hh : HeapOk n W h)
+    (hk : HeapKnowledge.Holds k ρ h) (hs : Safe Ξ T n W h (instantiate 0 ρ t)) :
+    SafePostExc Ξ T (fun h' _ => Φ.Holds h h') (fun h' => Φ.Holds h h') n W h (instantiate 0 ρ t) := by
+  have hpost := init_write_within hc he hh hk hs
+  unfold initWriteWithin at hc
+  split at hc
+  case h_2 => contradiction
+  rename_i f i j hw
+  rw [HeapExpressionRules.writeSlots_eq hw] at hpost ⊢
+  simp only [Bool.and_eq_true] at hc
+  obtain ⟨⟨_, hsrcj⟩, hsel⟩ := hc
+  split at hsrcj
+  case h_2 => contradiction
+  rename_i B hjB
+  split at hsel
+  · rename_i Ref hi
+    cases n with
+    | zero => trivial
+    | succ n =>
+      have hiv := (meaning_value (he.2 i Ref hi)).1
+      have hjv := (meaning_value (he.2 j B hjB)).1
+      simp only [instantiate, Nat.not_lt_zero, ite_false, Nat.sub_zero] at hpost ⊢
+      rcases hpost with (hv | hr) | ⟨U, h', t', hx, hu, step, hh', hs'⟩
+      · exact .inl (.inl hv)
+      · exact .inl (.inr ⟨hr, Footprints.Closed.Holds.refl Φ h⟩)
+      · obtain ⟨_, _, _, _, _, _, _, rfl, rfl⟩ := HeapExpressionRules.write_inv hiv hjv step
+        refine .inr ⟨U, _, _, hx, hu, step, hh', ?_⟩
+        cases n with
+        | zero => trivial
+        | succ m =>
+          rcases hs' with (hv | hr) | ⟨_, _, _, _, _, step', _, _⟩
+          · exact .inl (.inl hv)
+          · exact absurd hr (val_not_thrown rfl)
+          · exact False.elim (value_no_step rfl step')
+  · contradiction
+
 /-- A spread's operand: a value, or a field read of one, the store a spread
 reads where it is written. -/
 def readOperand : Tm → Bool
@@ -1257,8 +1402,8 @@ theorem elem_grow_holds {h : Heap} {fl k : Nat} {v : Val} {ls : List (Option Nat
     refine ⟨.arr (placeAt ls k h.length), ?_, ?_⟩
     · rw [List.getElem?_set_self (by simp; omega)]
     · simp only [Footprints.Closed.at, Footprints.isArr, if_true]
-      exact .inr ⟨ls, _, rfl, rfl, fun n hd => placeAt_dense hd,
-        fun x hx => (placeAt_mem hx).imp id (fun e => by omega)⟩
+      exact .inr (.inl ⟨ls, _, rfl, rfl, fun n hd => placeAt_dense hd,
+        fun x hx => (placeAt_mem hx).imp id (fun e => by omega)⟩)
   · refine ⟨w, ?_, Footprints.Change.Holds.refl _ _ _⟩
     rw [List.getElem?_set_ne (Ne.symm hf), List.getElem?_append_left hlt, hw]
 

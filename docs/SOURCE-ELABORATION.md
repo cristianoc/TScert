@@ -3952,7 +3952,7 @@ as `T`. A reference is a statement where TypeScript binds its name to that
 declaration, never by its spelling: an alias of the repository's file, or of
 a file of exactly its bytes, which declares the same aliases (the census's
 copy of `tools/` holds one). $`F`$ is a type literal written in place,
-`{ value: "keep" | "any"; store: "keep" | "grow" | "any" }`, with
+`{ value: "keep" | "init" | "any"; store: "keep" | "grow" | "any" }`, with
 `onThrow: true` where the footprint holds on a throw too. With
 $`\epsilon(F)`$ the effect of that closed footprint and flag, no promise, no
 fresh result and no receiver-store exception,

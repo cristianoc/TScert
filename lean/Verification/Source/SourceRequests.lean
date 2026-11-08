@@ -515,7 +515,7 @@ theorem checkRequests_stated_at {rs : List (SourceRequest σ ι)} {b : Bundle ι
     cases hsf : s.footprint with
     | mk v st =>
       rw [hsf] at hle
-      cases v <;> cases st <;> simp_all [Footprints.Closed.top, Footprints.Closed.le, Footprints.Change.le, Footprints.Change.onValue]
+      cases v <;> cases st <;> simp_all [Footprints.Closed.top, Footprints.Closed.le, Footprints.Change.le, Footprints.Change.rank, Footprints.Change.onValue, Footprints.Change.onStore]
   exact HeapObservations.SafePostExc.weaken
     (fun h' _ hq => Footprints.Closed.Holds.mono hle hq)
     (fun h' hq ho => Footprints.Closed.Holds.mono hle (hq (hthrow ho)))

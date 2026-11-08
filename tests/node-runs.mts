@@ -2994,6 +2994,9 @@ for (const [file, call] of [
   assert.equal(runExample(ofKind("typed-array-views", "positive"),
     "JSON.stringify([first(unpack(1)), [...unpack(1).values.subarray(0, 9)], [...mark(3, 1)], mark(3, 5)])"),
     "[1,[1,1,1,1,1,1,1,1,1],[0,1,0],null]", "typed-array-views: the elements are numbers");
+  assert.equal(runExample(negative("invalid-lazy-cache-initializer-pops"),
+    "typeof last({ widths: [1, 2], segmentFlags: [3, 4] })"), "undefined",
+    "the cache's initializer pops the flags before the read at the last index");
   // The DOM's contracts, which Node has no implementation of: each run uses
   // a stand-in of the host object, a platform object's attribute an
   // accessor on its class's prototype as Web IDL defines it, or no binding

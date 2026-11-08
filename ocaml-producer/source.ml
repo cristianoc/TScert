@@ -8,12 +8,12 @@ let natural j = match j with
   | _ -> fail "expected a natural number"
 (* A closed footprint and a signature's effect, as the wire spells them. *)
 let change_of allowed j =
-  match List.assoc_opt (str j) ["keep",Keep;"grow",Grow;"any",Any] with
+  match List.assoc_opt (str j) ["keep",Keep;"init",Init;"grow",Grow;"any",Any] with
   | Some d when List.mem d allowed -> d
   | _ -> unsupported "unknown footprint change"
 let footprint_of j = match j with
   | Object fields when List.sort String.compare (List.map fst fields) = ["store";"value"] ->
-    {on_value=change_of [Keep;Any] (field "value" j);on_store=change_of [Keep;Grow;Any] (field "store" j)}
+    {on_value=change_of [Keep;Init;Any] (field "value" j);on_store=change_of [Keep;Grow;Any] (field "store" j)}
   | _ -> unsupported "invalid footprint"
 let promise_of = function
   | Object [("guards",Object [("param",p)])] -> Guards (natural p)
@@ -875,8 +875,6 @@ let async_completion j = match text "completion" j with
    round of inference assumes it of every such closure it meets, and raises it
    to what the closure's claim then proposes (`Proposal.infer`). *)
 let self_effects : (Json.t, footprint * bool) Hashtbl.t = Hashtbl.create 16
-let join_change a b = match a,b with
-  | Any,_ | _,Any -> Any | Grow,_ | _,Grow -> Grow | Keep,Keep -> Keep
 let join_footprint a b =
   {on_value=join_change a.on_value b.on_value;on_store=join_change a.on_store b.on_store}
 let join_bound a b = match a,b with Some a,Some b -> Some (join_footprint a b) | _ -> None
@@ -1006,7 +1004,13 @@ let rec footprint_expr ?(fresh=[]) ?(dispatched=fun _ _ -> false) ?(field_write=
      holding a value (Lean's typed write rule). *)
   | Assign (n,_,v) -> join_bound (variable_write n) (go v)
   | Update (_,{node=Id n;_},r,_) -> join_bound (variable_write n) (all (Option.to_list r))
-  | NullishAssign (n,_,v) -> join_bound (variable_write n) (go v)
+  (* `x ??= v` writes its cell only where it holds `null` or `undefined`
+     (Lean's initializing write), which a `v` that keeps the heap leaves known
+     at the write. *)
+  | NullishAssign (n,_,v) ->
+    (match variable_write n, go v with
+     | Some w, Some fp when w <> empty_footprint && fp = empty_footprint -> Some {on_value=Init;on_store=Keep}
+     | w, r -> join_bound w r)
   | LogicalAssign (_,({node=Id n;_} as t),v) -> join_bound (variable_write n) (all [t;v])
   (* An element write at a literal index, or at a key every claim types as
      a number into an array every claim types as writable, which Lean admits

@@ -997,6 +997,22 @@ theorem goto_ensures [DecidableEq ι] {G : NormalGraph ι} {images : InstanceIma
       · cases hstartT
   · contradiction
 
+/-- A node's typed write within the bound: of a field holding a value or of
+an element, or an initializing write of a field the node's knowledge states
+holds `null` or `undefined`. -/
+def writeWithinAt (G : NormalGraph ι) (Φ : Footprints.Closed) (c : NodeEvidence ι) (t : Tm) : Bool :=
+  ExpressionEffects.writeWithin G (entry c) Φ t || ExpressionEffects.initWriteWithin G (entry c) (entryFacts G c) Φ t
+
+theorem writeWithinAt_sound [DecidableEq ι] {G : NormalGraph ι} {Φ : Footprints.Closed} {c : NodeEvidence ι}
+    {t : Tm} {T ρ n W h} (hc : writeWithinAt G Φ c t = true) (he : EnvOk G (entry c) ρ n W) (hh : HeapOk n W h)
+    (hk : HeapKnowledge.Holds (entryFacts G c) ρ h) (hs : Safe (excOf G) T n W h (instantiate 0 ρ t)) :
+    HeapObservations.SafePostExc (excOf G) T (fun h' _ => Φ.Holds h h') (fun h' => Φ.Holds h h') n W h
+      (instantiate 0 ρ t) := by
+  simp only [writeWithinAt, Bool.or_eq_true] at hc
+  rcases hc with hc | hc
+  · exact ExpressionEffects.write_within_exc hc he hh hs
+  · exact ExpressionEffects.init_write_within_exc hc he hh hk hs
+
 /-- **A node the bound check accepts is within the bound** on the locations
 below where the invocation started: an inspection, which preserves the heap,
 a typed write of a field holding a value, or a call at a selected signature
@@ -1006,7 +1022,7 @@ fresh slot or a call's signature states a fresh result. -/
 theorem nodePost_of_checked [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G} {sums : List (ProgramCertificates.ReadSummary ι)}
     {Φ : Footprints.Closed} {c : NodeEvidence ι} {t : Tm} {F : List Nat}
     (hscope : ProgramCertificates.checkScope (entry c).length t = true)
-    (hcases : ((ExpressionEffects.check G (entry c) t || ExpressionEffects.writeWithin G (entry c) Φ t) ||
+    (hcases : ((ExpressionEffects.check G (entry c) t || writeWithinAt G Φ c t) ||
       (decide ((ProgramCertificates.claim c.expression).term = t) &&
         (ProgramCertificates.checkTreeUsing G images c.expression (sums := sums) ||
           PromiseCalls.requiresTree G images (entryFacts G c) (fun _ => false) sums c.expression) &&
@@ -1045,7 +1061,7 @@ theorem nodePost_of_checked [DecidableEq ι] {G : NormalGraph ι} {images : Inst
         (Footprints.Closed.Holds.mono (Footprints.Closed.empty_le _) hq).on _)
         (ExpressionEffects.sound hexpr hscope henv hworld hheap hsafe)
     · exact HeapObservations.weaken (fun _ _ hq => hq.on _)
-        (ExpressionEffects.write_within hwrite henv hheap hsafe)
+        (HeapObservations.SafePostExc.post (writeWithinAt_sound hwrite henv hheap hknowledge hsafe))
     · simp only [Bool.and_eq_true, decide_eq_true_eq] at hcall
       obtain ⟨⟨hterm', htree⟩, hsel⟩ := hcall
       simp only [selectedWithinAt, Bool.and_eq_true] at hsel
@@ -1104,7 +1120,7 @@ signature states its footprint on a throw. -/
 def throwsWithin [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
     (sums : List (ProgramCertificates.ReadSummary ι))
     (Φ : Footprints.Closed) (F : List Nat) (c : NodeEvidence ι) (t : Tm) : Bool :=
-  (ExpressionEffects.check G (entry c) t || ExpressionEffects.writeWithin G (entry c) Φ t) ||
+  (ExpressionEffects.check G (entry c) t || writeWithinAt G Φ c t) ||
     (decide ((ProgramCertificates.claim c.expression).term = t) &&
       (ProgramCertificates.checkTreeUsing G images c.expression (sums := sums) ||
         PromiseCalls.requiresTree G images (entryFacts G c) (fun _ => false) sums c.expression) &&
@@ -1138,7 +1154,7 @@ theorem throwsWithin_sound [DecidableEq ι] {G : NormalGraph ι} {images : Insta
       (fun h'' hq => (Footprints.Closed.Holds.mono (Footprints.Closed.empty_le _) hq).on _)
       (ExpressionEffects.sound_exc hexpr hscope henv hworld hheap hsafe)
   · exact HeapObservations.SafePostExc.weaken (fun _ _ _ => trivial) (fun _ hq => hq.on _)
-      (ExpressionEffects.write_within_exc hwrite henv hheap hsafe)
+      (writeWithinAt_sound hwrite henv hheap hknowledge hsafe)
   · simp only [Bool.and_eq_true, decide_eq_true_eq] at hcall
     obtain ⟨⟨⟨⟨hterm', htree⟩, hsel⟩, hthr⟩, hon⟩ := hcall
     simp only [selectedWithinAt, Bool.and_eq_true] at hsel
@@ -1183,7 +1199,7 @@ throw is checked. -/
 theorem nodeWithin_of_checked [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G} {sums : List (ProgramCertificates.ReadSummary ι)}
     {Φ : Footprints.Closed} {c : NodeEvidence ι} {t : Tm} {F : List Nat} {thr : Bool}
     (hscope : ProgramCertificates.checkScope (entry c).length t = true)
-    (hcases : ((ExpressionEffects.check G (entry c) t || ExpressionEffects.writeWithin G (entry c) Φ t) ||
+    (hcases : ((ExpressionEffects.check G (entry c) t || writeWithinAt G Φ c t) ||
       (decide ((ProgramCertificates.claim c.expression).term = t) &&
         (ProgramCertificates.checkTreeUsing G images c.expression (sums := sums) ||
           PromiseCalls.requiresTree G images (entryFacts G c) (fun _ => false) sums c.expression) &&
@@ -1266,7 +1282,7 @@ the independent operational rule, which also covers their handlers. -/
     ProgramCertificates.checkScope (entry c).length node.expression &&
     edgesFresh facts F (varFresh F node.expression || callFresh G images sums c node.expression) ret node.continuation &&
     ((ExpressionEffects.check G (entry c) node.expression ||
-      ExpressionEffects.writeWithin G (entry c) Φ node.expression) ||
+      writeWithinAt G Φ c node.expression) ||
       (decide ((ProgramCertificates.claim c.expression).term = node.expression) &&
         (ProgramCertificates.checkTreeUsing G images c.expression (sums := sums) ||
           PromiseCalls.requiresTree G images (entryFacts G c) (fun _ => false) sums c.expression) &&
@@ -1285,7 +1301,7 @@ the independent operational rule, which also covers their handlers. -/
       ProgramCertificates.checkScope (entry c).length node.expression &&
       edgesFresh facts F (varFresh F node.expression || callFresh G images sums c node.expression) ret node.continuation)).bind fun _ =>
     ((ProgramCertificates.CheckResult.ofBool (ExpressionEffects.check G (entry c) node.expression ||
-      ExpressionEffects.writeWithin G (entry c) Φ node.expression)).orElse fun _ =>
+      writeWithinAt G Φ c node.expression)).orElse fun _ =>
     (ProgramCertificates.CheckResult.ofBool (decide ((ProgramCertificates.claim c.expression).term = node.expression))).bind fun _ =>
     ((ProgramCertificates.checkTreeResult G images c.expression (sums := sums)).orElse fun _ =>
       ProgramCertificates.CheckResult.ofBool

@@ -1186,7 +1186,7 @@ export const statedEffect = (stated: StatedEffect): Within<{ value: "any"; store
  * `Within<F, T>` with `Within` the verifier's (SOURCE-ELABORATION.md,
  * "Stated effects"), and the result `T` it is stated of; no statement, and
  * the annotation itself, where the result is no such reference. `F` is a
- * type literal written in place, `{ value: "keep" | "any"; store: "keep" |
+ * type literal written in place, `{ value: "keep" | "init" | "any"; store: "keep" |
  * "grow" | "any" }`, with `onThrow: true` (or `onThrow?: true`) where the
  * footprint holds on a throw too. Refused: a statement of nothing, the
  * footprint letting everything change; one on an
@@ -1225,7 +1225,7 @@ function promisedType(scope: TermScope, node: ts.TypePredicateNode): Within<{ va
 /** A statement's footprint, written in place as a type literal. */
 function statementOf(scope: TermScope, written: TypeNode): Within<{ value: "any"; store: "grow" }, StatedEffect> {
   const node = unwrap(written);
-  const shape = "a footprint is written in place as `{ value: \"keep\" | \"any\"; store: \"keep\" | \"grow\" | \"any\" }`, with `onThrow: true` where it holds on a throw too";
+  const shape = "a footprint is written in place as `{ value: \"keep\" | \"init\" | \"any\"; store: \"keep\" | \"grow\" | \"any\" }`, with `onThrow: true` where it holds on a throw too";
   if (!ts.isTypeLiteralNode(node)) return scope.fail(written, shape);
   let value: ClosedFootprint["value"] | null = null;
   let store: ClosedFootprint["store"] | null = null;
@@ -1240,7 +1240,7 @@ function statementOf(scope: TermScope, written: TypeNode): Within<{ value: "any"
     const type = unwrap(member.type);
     const literal = ts.isLiteralTypeNode(type) ? type.literal : null;
     const text = literal && ts.isStringLiteral(literal) ? literal.text : null;
-    if (member.name.text === "value" && !optional && (text === "keep" || text === "any")) value = text;
+    if (member.name.text === "value" && !optional && (text === "keep" || text === "init" || text === "any")) value = text;
     else if (member.name.text === "store" && !optional && (text === "keep" || text === "grow" || text === "any"))
       store = text;
     else if (member.name.text === "onThrow" && literal?.kind === ts.SyntaxKind.TrueKeyword) onThrow = true;

@@ -559,7 +559,7 @@ let statements (expr:Analysis_state.expression_infer) execute_bindings owner_spa
   let footprint_of t = match head t with
     | Atoms [Shape {calls;_}] when calls <> [] && List.for_all (fun (s : Semantic.signature) ->
         let e = s.Semantic.call_effect in not e.Semantic.receiver_store && not e.Semantic.receiver_own) calls ->
-      let join a b = match a,b with Semantic.Any,_ | _,Semantic.Any -> Semantic.Any | Semantic.Grow,_ | _,Semantic.Grow -> Semantic.Grow | _ -> Semantic.Keep in
+      let join = Semantic.join_change in
       Some (List.fold_left (fun (fp : Semantic.footprint) (s : Semantic.signature) ->
         let f = s.Semantic.call_effect.Semantic.footprint in
         { Semantic.on_value = join fp.Semantic.on_value f.Semantic.on_value; on_store = join fp.Semantic.on_store f.Semantic.on_store })

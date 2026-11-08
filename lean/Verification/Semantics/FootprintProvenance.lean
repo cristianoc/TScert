@@ -216,9 +216,10 @@ theorem dense_support {x n ρ h h'} (hd : Dense x n ρ h)
     (hs : Supported [(.field x arrayStoreKey, .grow)] ρ h h') : Dense x n ρ h' := by
   obtain ⟨s, ls, hsl, hv, hn⟩ := hd
   obtain ⟨v', hv', hh⟩ := hs _ (List.mem_singleton_self _) s _ (by simp [Region.mem, hsl]) hv
-  rcases hh with rfl | ⟨ls₁, ls', h₁, rfl, hd, -⟩
+  rcases hh with rfl | ⟨ls₁, ls', h₁, rfl, hd, -⟩ | hi
   · exact ⟨s, ls, hsl, hv', hn⟩
   · cases h₁; exact ⟨s, ls', hsl, hv', hd n hn⟩
+  · exact absurd hi.1 (by simp [nullish])
 
 /-- A footprint whose entries covering the store change it at most by `grow`
 supports `Dense`. -/

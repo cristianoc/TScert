@@ -1342,7 +1342,7 @@ const rowOf = (claims: SourceClaims, clause: Row[number]): number => {
   return i >= 0 ? i : claims.types.push([clause]) - 1;
 };
 /** The closed footprints other than the one letting everything change. */
-const narrowerFootprints: ClosedFootprint[] = (["keep", "any"] as const).flatMap((value) =>
+const narrowerFootprints: ClosedFootprint[] = (["keep", "init", "any"] as const).flatMap((value) =>
   (["keep", "grow", "any"] as const).map((store) => ({ value, store })))
   .filter((f) => f.value !== "any" || f.store !== "any");
 const readClaims = (artifacts: string): SourceClaims => readClaimsFile(join(artifacts, "claims.json"));
@@ -5519,6 +5519,34 @@ control(async (): Promise<void> => {
     }
   }
   process.stdout.write("forged declaration footprints: each not covering the body's refused in its loop, in search and in checking\n");
+});
+
+control(async (): Promise<void> => {
+  // An initializing write is within `{value: init, store: keep}` only where
+  // the knowledge at it states its location holds `null` or `undefined`.
+  // `reset` writes the cache's cell whatever it holds: claimed at `init`,
+  // evidence production refuses at its write, and the evidence for the
+  // honest claims does not justify the forged one.
+  const artifacts = run("lazy-cache-keeps-facts");
+  const source = readFileSync(sourceKey(artifacts), "utf8");
+  const claims = readClaims(artifacts);
+  assert.deepEqual(must(claims.functions.find(f => f.name === "getProfile"), "getProfile's claims").footprint,
+    { value: "init", store: "keep" }, "the cache's `??=` is claimed at `init`");
+  must(claims.functions.find(f => f.name === "reset"), "reset's claims").footprint = { value: "init", store: "keep" };
+  const name = "forged-initializing-write-reset";
+  const input = writeClaims(artifacts, name, claims);
+  const produce = produceWith(artifacts, input, name);
+  assert.ifError(produce.error);
+  assert.equal(produce.status, 1, produce.stdout + produce.stderr);
+  for (const detail of [produce.stdout + produce.stderr, invoke(input, join(artifacts, "evidence.json"), artifacts,
+      /^reject: source effect refusal at \[\d+,\d+\): the footprint claimed for 'reset' is not established by its body/m)]) {
+    const refused = /source effect refusal at \[(\d+),\d+\): the footprint claimed for 'reset'/.exec(detail);
+    assert.ok(refused, detail);
+    const at = Number(refused[1]);
+    assert.ok(source.indexOf("cached = null") <= at && at < source.indexOf("cached = null") + "cached = null".length,
+      `refused at the write, not at ${at}`);
+  }
+  process.stdout.write("forged initializing write: a cell written whatever it holds, claimed at init, refused at the write in search and in checking\n");
 });
 
 control(async (): Promise<void> => {

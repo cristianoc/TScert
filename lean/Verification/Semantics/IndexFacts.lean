@@ -961,9 +961,10 @@ theorem top_holds (h h' : Heap) : top.Holds h h' :=
   ⟨fun _ v _ ha => (by rw [top_alters] at ha; cases ha), fun hs => (by simp [top] at hs),
     fun hs => (by simp [top] at hs)⟩
 
-/-- The change a closed footprint allows: `grow` on a value is `keep`. -/
+/-- The change a closed footprint allows: below `any`, a value changes only
+from `null` or `undefined`, and `init` on a store is `keep`. -/
 def ofClosed (Φ : Footprints.Closed) : Changes :=
-  ⟨Φ.value == .any, Φ.value == .any, if Φ.store == .keep then .keep else .any⟩
+  ⟨Φ.value == .any, Φ.value == .any, if Φ.store.onStore == .keep then .keep else .any⟩
 
 theorem ofClosed_holds {Φ : Footprints.Closed} {h h' : Heap} (hp : Φ.Holds h h') : (ofClosed Φ).Holds h h' := by
   rw [Footprints.Closed.holds_iff] at hp
@@ -973,18 +974,19 @@ theorem ofClosed_holds {Φ : Footprints.Closed} {h h' : Heap} (hp : Φ.Holds h h
       cases v
       case arr ls =>
         simp only [alters, ofClosed] at ha
-        have hst : Φ.store = .keep := by
-          cases hΦ : Φ.store <;> simp_all
-        simp only [Footprints.Closed.at, Footprints.isArr, hst, ite_true] at hc
-        exact hc
+        have hst : Φ.store = .keep ∨ Φ.store = .init := by
+          cases hΦ : Φ.store <;> simp_all [Footprints.Change.onStore]
+        simp only [Footprints.Closed.at, Footprints.isArr, ite_true] at hc
+        rcases hst with hst | hst
+        · rw [hst] at hc; exact hc
+        · rw [hst] at hc; exact hc.init_store
       all_goals
         have hva : Φ.value ≠ .any := by
           intro he; simp [alters, ofClosed, he] at ha
         simp only [Footprints.Closed.at, Footprints.isArr] at hc
-        cases hΦ : Φ.value
-        · rw [hΦ] at hc; exact hc
-        · rw [hΦ] at hc; exact hc.grow_value rfl
-        · exact absurd hΦ hva
+        first
+          | exact hc.defined_kept hva rfl rfl
+          | simp [alters] at ha
     exact hkeep ▸ hv'
   · revert hs; simp only [ofClosed]; split <;> simp
   · revert hs; simp only [ofClosed]; split <;> simp
