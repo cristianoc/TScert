@@ -160,12 +160,16 @@ theorem readPath_extend {h : Heap} (vs : List Val) :
 inductive GuardTag where
   | null
   | undef
+  | tru
+  | fls
   deriving DecidableEq, Repr, Hashable
 
 /-- The value a guard tag names. -/
 def GuardTag.val : GuardTag → Val
   | .null => .nul
   | .undef => .undef
+  | .tru => .tru
+  | .fls => .fls
 
 /-- The value a guard's path reads from a value: each step the read of a
 string key, the location's value where the object owns the key, `undefined`

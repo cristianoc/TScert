@@ -948,6 +948,18 @@ let rec test_call_facts ?(held = []) env (c : expr) : fact list = match c.node w
     List.filter (fun f -> entails held f) (test_call_facts ~held env b)
   | _ -> []
 
+(* The postcondition past the guard excluded by the call's Boolean answer. *)
+let rec test_conditional_facts env (c : expr) answer : fact list = match c.node with
+  | Not c -> test_conditional_facts env c (not answer)
+  | Call ({node=Id f;_},None,args,[],_) ->
+    let facts = List.filter_map (function
+      | Semantic.Guarded (0,[],tag,body) when tag = (if answer then "false" else "true") -> Some body
+      | _ -> None) (!call_ensures env f) in
+    of_index_facts (fun p -> if p >= 2 then match List.nth_opt args (p - 2) with
+      | Some {node=Id a;_} when value_binding env a -> Some a
+      | _ -> None else None) facts
+  | _ -> []
+
 (* The facts after the updates an expression makes of bindings held in
    cells (PROGRAM-TYPING.md, "Terms for bindings held in cells"): Lean reads
    the cell's `value` into a slot, the old value, computes the new one, and
@@ -1358,6 +1370,8 @@ let grestate_read name (root,path) (gs : gfact list) : gfact list =
    b` answering `false` what both operands' answers exclude, in order. *)
 let rec excluded env (c : expr) (answer : bool) : (string * string list * string list) list =
   let nullish (e : expr) = match e.node with
+    | Literal (LBool true) -> Some ["true"]
+    | Literal (LBool false) -> Some ["false"]
     | Literal LNull -> Some ["null"]
     | Literal LUndefined | Id "undefined" -> Some ["undefined"]
     | _ -> None in
@@ -1365,14 +1379,15 @@ let rec excluded env (c : expr) (answer : bool) : (string * string list * string
   | Equality (op,a,b) ->
     let operand,tags = match nullish b, nullish a with
       | Some t,_ -> a,t | None,Some t -> b,t | None,None -> a,[] in
-    let tags = match op with LooseEqual | LooseUnequal when tags <> [] -> ["null"; "undefined"] | _ -> tags in
+    let tags = match op with LooseEqual | LooseUnequal when List.mem "null" tags || List.mem "undefined" tags -> ["null"; "undefined"] | _ -> tags in
     let unequal = match op with StrictUnequal | LooseUnequal -> true | _ -> false in
     (match path_of env operand with
      | Some (x,p) when tags <> [] && unequal = answer -> [x,p,tags]
      | _ -> [])
   | Logical (conjunction,a,b) when conjunction = answer -> excluded env a answer @ excluded env b answer
   | Not a -> excluded env a (not answer)
-  | Id _ | Read _ when answer -> (match path_of env c with Some (x,p) -> [x,p,["null"; "undefined"]] | None -> [])
+  | Id _ | Read _ -> (match path_of env c with
+    | Some (x,p) -> [x,p,(if answer then ["null"; "undefined"; "false"] else ["true"])] | None -> [])
   | _ -> []
 
 (* Guard elimination (Lean's `unguardIndices`, which keeps the atoms it
@@ -1398,7 +1413,7 @@ let with_test env (c : expr) yes f =
     let array = !array_path env in
     let t,fl = comparison ~array env saved c in
     let freed,gs = geliminate (excluded env c yes) gsaved in
-    current_facts := deliminate (saved @ (if yes then t else fl) @ freed) !current_dfacts;
+    current_facts := deliminate (saved @ (if yes then t else fl) @ freed @ test_conditional_facts env c yes) !current_dfacts;
     current_gfacts := gs;
     Fun.protect ~finally:(fun () -> current_facts := saved; current_gfacts := gsaved) f
   end

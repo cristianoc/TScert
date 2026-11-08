@@ -112,7 +112,7 @@ interface LinearTermClaim {
 interface GuardClaim {
   name: string;
   path: string[];
-  tag: "null" | "undefined";
+  tag: "null" | "undefined" | "true" | "false";
 }
 
 /** A linear fact proposed at a statement entry: where none of its guards,
@@ -378,7 +378,7 @@ function claimsDocument(v: JsonRead): SourceClaims {
         return {
           guards: each(q.guards, "a fact's guards", (g) => {
             const r = record(g, "a fact's guard", ["name", "path", "tag"]);
-            if (r.tag !== "null" && r.tag !== "undefined") fail("a guard's tag is null or undefined");
+            if (r.tag !== "null" && r.tag !== "undefined" && r.tag !== "true" && r.tag !== "false") fail("a guard's tag is a nullish or Boolean literal");
             const guard: GuardClaim = { name: name(r.name, "a guard's name"),
               path: each(r.path, "a guard's path", (f) => name(f, "a path's field")), tag: r.tag };
             return guard;

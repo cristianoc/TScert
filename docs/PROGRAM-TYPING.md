@@ -2145,9 +2145,14 @@ A signature's postcondition `ensures` is a list of index facts at the
 return's positions: `0` the result, $`i+1`$ the call's position $`i`$. A
 normal return leaves a heap where each holds. A trusted signature, an
 intrinsic's or a declaration's, states one, and so does a module function's
-signature where it writes `@ensures` or its result's type or a parameter's
-names a type invariant ([type invariants](#type-invariants)), which its unit
-proves at each return; other code states none. A binding carries none, a signature covers another
+signature where its result's type or a parameter's names a type invariant
+([type invariants](#type-invariants)), or its leading JSDoc states
+`@ensures C`. The unit proves these clauses at each return. The clause
+language is shared with [preconditions](#preconditions); `result` names the
+returned value, and parameter paths name the actual values in the return
+heap. A leading guard `result === false || C` states `C` on a true return.
+Written postconditions require a synchronous module function with plain
+required parameters and a single signature. A binding carries none, a signature covers another
 only where its facts include each of the other's, the meet of two signatures
 states both lists, and a variadic call's selected signature states none, its
 actuals not being its positions' values. At a call whose selected signature

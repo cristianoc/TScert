@@ -88,15 +88,19 @@ deriving instance ToJson, FromJson for HeapKnowledge.Term.Kind
 deriving instance ToJson, FromJson for HeapKnowledge.Term
 deriving instance ToJson, FromJson for HeapKnowledge.Bound
 deriving instance ToJson, FromJson for Linear.Fact
--- A guard's tag is `"null"` or `"undefined"`; a guarded fact is
+-- A guard's tag is a nullish or Boolean literal; a guarded fact is
 -- `{"guarded": {"slot", "path", "tag", "body"}}`.
 instance : ToJson HeapKnowledge.GuardTag := ⟨fun
   | .null => "null"
-  | .undef => "undefined"⟩
+  | .undef => "undefined"
+  | .tru => "true"
+  | .fls => "false"⟩
 instance : FromJson HeapKnowledge.GuardTag := ⟨fun
   | .str "null" => pure .null
   | .str "undefined" => pure .undef
-  | _ => throw "a guard's tag is \"null\" or \"undefined\""⟩
+  | .str "true" => pure .tru
+  | .str "false" => pure .fls
+  | _ => throw "a guard's tag is a nullish or Boolean literal"⟩
 deriving instance ToJson, FromJson for HeapKnowledge.IndexFact
 
 /-- An effect is its footprint, its promise, `null` when there is none,

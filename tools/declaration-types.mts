@@ -90,7 +90,7 @@ export type BodyFact =
   | { readonly le: { readonly form: readonly (readonly [BodyVariable, number])[]; readonly bound: number } }
   | { readonly ne: { readonly form: readonly (readonly [BodyVariable, number])[]; readonly bound: number } };
 /** The value a guard compares a path's read with (`HeapKnowledge.GuardTag`). */
-export type GuardTag = "null" | "undefined";
+export type GuardTag = "null" | "undefined" | "true" | "false";
 /** A linear fact (`Linear.Fact`): `Σ c·t ≤ bound` or `≠ bound`, each term a
  * linear term and its coefficient. */
 export type LinearFact =

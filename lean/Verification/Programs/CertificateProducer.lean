@@ -1508,21 +1508,22 @@ def successors : Continuation → List Target
   | .bind t | .effect t => [t]
   | .branch y n | .branchBind y n | .tagBind _ y n => [y,n]
 
-/-- The value of each slot whose type admits `null` alone or `undefined`
-alone, a fact the slot's type states (`typeValues`), kept where an edge
+/-- The value of each slot whose type admits a single nullish or Boolean
+literal, a fact the slot's type states (`typeValues`), kept where an edge
 widens the slot's type: a guard's tag reads it (PROGRAM-TYPING.md, "Guarded
 clauses"). Untrusted: each edge is checked. -/
 @[nospecialize] def withTagValues (G : NormalGraph ι) (Γ : List (Ty ι)) (k : HeapKnowledge.Knowledge) :
     HeapKnowledge.Knowledge :=
-  -- Only a slot of one label of one clause, `null` or `undefined`, is read.
+  -- A slot of one label of one literal clause is read.
   let candidate := fun (i : Nat) => match Γ[i]? with
     | some [l] => match G l with
-      | [.nul] | [.undef] => true
+      | [.nul] | [.undef] | [.boolLit _] => true
       | _ => false
     | _ => false
   let tagged := (List.range Γ.length).filterMap fun i => if !candidate i then none else
     (HeapExpressionRules.typeValues G Γ i).bind fun V =>
-      if HeapKnowledge.onlyTag V .null || HeapKnowledge.onlyTag V .undef then some (⟨i, V, valueField⟩ : HeapFacts.Fact)
+      if HeapKnowledge.onlyTag V .null || HeapKnowledge.onlyTag V .undef ||
+          HeapKnowledge.onlyTag V .tru || HeapKnowledge.onlyTag V .fls then some (⟨i, V, valueField⟩ : HeapFacts.Fact)
       else none
   if tagged.isEmpty then k else { k with values := tagged ++ k.values }
 
@@ -1749,7 +1750,11 @@ promise's evidence. -/
   let sets := HeapKnowledge.typeSets G c.context
   let outCtx : KnowledgeNormal.Ctx := HeapKnowledge.setsCtx sets 1
   let normal := KnowledgeNormal.normFast outCtx out
-  let storedOut := normal
+  -- Return guards consume singleton tags even when the input context also
+  -- entails them. The output checker validates every retained value fact.
+  let storedOut := { normal with values := (normal.values ++ out.values.filter fun f =>
+    HeapKnowledge.onlyTag f.contents .null || HeapKnowledge.onlyTag f.contents .undef ||
+    HeapKnowledge.onlyTag f.contents .tru || HeapKnowledge.onlyTag f.contents .fls).eraseDups }
   let out := KnowledgeExpand.expandLinks outCtx storedOut
   let unconditional := PromiseCalls.yieldFacts ys false
   let conditional := PromiseCalls.yieldFacts ys true

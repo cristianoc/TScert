@@ -1625,6 +1625,8 @@ def indicesCheckWith (tags : Nat → List String → GuardTag → Bool) (M : Nat
 def onlyTag (V : ValueSets.ValueSet) : GuardTag → Bool
   | .null => V == { nul := true }
   | .undef => V == { undef := true }
+  | .tru => V == { tru := true }
+  | .fls => V == { fls := true }
 
 theorem onlyTag_mem {V : ValueSets.ValueSet} {t : GuardTag} {v : Val} (ho : onlyTag V t = true)
     (hv : V.mem v = true) : v = t.val := by
@@ -2448,10 +2450,14 @@ theorem promoteTruthy_holds {k slot q ρ h} (hk : Holds k ρ h) (ht : tagHolds .
 /-- Whether an observation excludes a guard's tag of the observed value: a
 failed `null`, `undefined` or nullish test, or a truthy answer. -/
 def excludesTag : BranchRefinement.Observation → GuardTag → Bool
+  | .boolean true, .fls | .boolean false, .tru => true
   | .tag .isNul false, .null => true
   | .tag .isUndef false, .undef => true
-  | .tag .isNullish false, _ => true
-  | .tag .truthy true, _ => true
+  | .tag .isNullish false, .null | .tag .isNullish false, .undef => true
+  | .tag .truthy true, .null | .tag .truthy true, .undef | .tag .truthy true, .fls => true
+  | .tag .truthy false, .tru => true
+  | .tag (.boolEq true) false, .tru | .tag (.boolEq false) false, .fls => true
+  | .tag (.boolEq true) true, .fls | .tag (.boolEq false) true, .tru => true
   | _, _ => false
 
 theorem excludesTag_ne {o : BranchRefinement.Observation} {v : Val} {t : GuardTag}
@@ -2459,7 +2465,7 @@ theorem excludesTag_ne {o : BranchRefinement.Observation} {v : Val} {t : GuardTa
   intro hv
   subst hv
   rcases o with q | ⟨tag, q⟩
-  · simp [excludesTag] at he
+  · cases q <;> cases t <;> simp_all [excludesTag, BranchRefinement.Observation.holds, GuardTag.val]
   · cases tag <;> cases q <;> cases t <;>
       simp_all [excludesTag, BranchRefinement.Observation.holds, tagHolds, protoFree, GuardTag.val]
 

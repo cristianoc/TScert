@@ -148,7 +148,7 @@ function decodeIndexFact(v: JsonRead): IndexFact | undefined {
     const path = guarded.path;
     const tag = guarded.tag;
     const body = decodeIndexFact(guarded.body);
-    if (slot === undefined || body === undefined || (tag !== "null" && tag !== "undefined") || !isJsonList(path)) return undefined;
+    if (slot === undefined || body === undefined || (tag !== "null" && tag !== "undefined" && tag !== "true" && tag !== "false") || !isJsonList(path)) return undefined;
     const fields: string[] = [];
     for (const f of path) { if (typeof f !== "string") return undefined; fields.push(f); }
     return { guarded: { slot, path: fields, tag, body } };

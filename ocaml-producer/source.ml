@@ -43,7 +43,7 @@ let rec index_fact_of j =
   else if only "guarded" then
     let b = body "guarded" ["body";"path";"slot";"tag"] in
     let tag = str (field "tag" b) in
-    if tag <> "null" && tag <> "undefined" then unsupported "invalid guard tag";
+    if tag <> "null" && tag <> "undefined" && tag <> "true" && tag <> "false" then unsupported "invalid guard tag";
     Guarded (natural (field "slot" b), List.map str (list (field "path" b)), tag, index_fact_of (field "body" b))
   else if only "element" then
     let b = body "element" ["array";"index";"value"] in

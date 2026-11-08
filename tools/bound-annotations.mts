@@ -8,7 +8,7 @@
 // The clause language read here combines linear atoms over the
 // declaration's parameters, with linear disjunction and negation after guards:
 //
-//   K ::= G || K | C        G ::= p === null | p === undefined
+//   K ::= G || K | C        G ::= p === null | p === undefined | p === true | p === false
 //   C ::= C && C | C || C | !C | (C) | A | forall i in p: B
 //   A ::= safeInteger(p) | E rel E      rel ∈ { <, <=, >, >=, === }
 //   E ::= n | p | p.length | n * p | n * p.length | E + E | E - E | -E | (E)
@@ -37,8 +37,8 @@
 // `forall i in p: B`, the clause's last, states its body of every index `i`
 // below `p.length`, of its element `p[i]` and of the clause's other terms
 // (PROGRAM-TYPING.md, "Quantified clauses"; `IndexFact.every`). Every other
-// form of the draft's grammar (`old`, `result`, computed keys) is refused with the clause's location, as is a path whose field no type
-// resolves.
+// form of the draft's grammar (`old`, computed keys) is refused with the clause's location, as is a path whose field no type
+// resolves. In a function postcondition, `result` names the returned value.
 //
 // A type invariant (PROGRAM-TYPING.md, "Type invariants") is an
 // `@invariant C` tag of a type alias's or an interface's leading JSDoc, its
@@ -75,22 +75,12 @@ export function requiresTags(trivia: string): string[] {
   return tagsOf(trivia, "requires");
 }
 
-/** The leading JSDoc of a function literal or its binding statement.
- * A statement's clauses apply to each function literal it binds. */
-export function closureRequiresTags(node: ts.Node): string[] {
-  const file = node.getSourceFile();
-  const own = requiresTags(file.text.slice(node.pos, node.getStart(file)));
-  let owner = node;
-  while (ts.isParenthesizedExpression(owner.parent)) owner = owner.parent;
-  if (ts.isVariableDeclaration(owner.parent) && owner.parent.initializer === owner) {
-    owner = owner.parent;
-    if (ts.isVariableDeclarationList(owner.parent) && ts.isVariableStatement(owner.parent.parent)) owner = owner.parent.parent;
-  }
-  return [...new Set([...own, ...requiresTags(file.text.slice(owner.pos, owner.getStart(file)))])];
+/** The text of each `@ensures` tag of a function declaration. */
+export function ensuresTags(trivia: string): string[] {
+  return tagsOf(trivia, "ensures");
 }
 
-/** The text of each `@invariant` tag of the last JSDoc comment in a type
- * declaration's leading trivia, alike. */
+/** The text of each `@invariant` tag in the last leading JSDoc comment. */
 export function invariantTags(trivia: string): string[] {
   return tagsOf(trivia, "invariant");
 }
@@ -147,10 +137,8 @@ export function parameterKept(p: ts.ParameterDeclaration, body: ts.Node | undefi
  * declaration's parameters in order, `this` included (`receiver`), those of
  * each plain required name's type, where it is not async, at its returns too
  * where its body writes no binding of its name (`kept`, `parameterKept`);
- * and its result type's, where it is not async. Written postconditions carry
- * their clauses and parameter names, or null for an unsupported signature. */
-export type ImportedInvariants = { receiver: boolean; params: readonly boolean[]; kept: readonly boolean[];
-  result: boolean; ensures: readonly string[]; ensuresParameters: readonly string[] | null };
+ * and its result type's, where it is not async. */
+export type ImportedInvariants = { ensures: readonly string[]; receiver: boolean; params: readonly boolean[]; kept: readonly boolean[]; result: boolean };
 
 function tagsOf(trivia: string, name: string): string[] {
   const open = trivia.lastIndexOf("/**");
@@ -285,7 +273,7 @@ class Parser {
     if (!this.isOp("===")) return null;
     this.at++;
     const v = this.take();
-    if (!v || v.k !== "name" || (v.v !== "null" && v.v !== "undefined")) return null;
+    if (!v || v.k !== "name" || (v.v !== "null" && v.v !== "undefined" && v.v !== "true" && v.v !== "false")) return null;
     if (!this.isOp("||")) return null;
     this.at++;
     return { path, tag: v.v };
@@ -410,7 +398,7 @@ invariant's clause names the bindings in scope at the loop's head. */
 export function clauseRoots(text: string): string[] {
   const ts = tokens(text);
   if (typeof ts === "string") return [];
-  const words = new Set(["forall", "in", "safeInteger", "null", "undefined"]);
+  const words = new Set(["forall", "in", "safeInteger", "null", "undefined", "true", "false"]);
   const binders = new Set<string>();
   const roots: string[] = [];
   ts.forEach((t, i) => {

@@ -51,6 +51,9 @@ const gap = (
   diagnostic: RegExp,
 ): Case => ({ file, area, kind: "gap", status, phase, diagnostic });
 export const cases: Case[] = [
+  { ...positive("pretext-clause-postcondition-import", "Pretext countSteppedLines: a checked imported Boolean postcondition"), project: "pipeline/imports-project" },
+  positive("pretext-clause-postcondition", "Pretext normalizePreparedLineStart/countSteppedLines: Boolean postconditions through direct and saved calls"),
+  negative("invalid-pretext-clause-postcondition", "A true result with an index at the array length violates its conditional postcondition (NaN under Node)", /no derivation|does not establish|postcondition/),
   positive("pretext-clause-disjunction", "Pretext getTerminalLetterSpacing: linear disjunction and implication, established at calls and eliminated by a branch"),
   negative("invalid-pretext-clause-disjunction", "An inclusive disjunct permits an out-of-bounds read (NaN under Node)", /no derivation|No rule|does not establish/),
   positive("pretext-host-locale", "Pretext getBlinkDefaultLocale: no-argument formatter construction and resolved locale."),

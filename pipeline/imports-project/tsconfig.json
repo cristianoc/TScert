@@ -49,6 +49,7 @@
     }
   },
   "include": [
+    "../examples/pretext-clause-postcondition-import.ts",
     "../examples/*value-import*.ts",
     "../examples/*bounds-imported-alias-path*.ts",
     "./bounds-path-types.ts",

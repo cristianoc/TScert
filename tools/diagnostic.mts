@@ -115,7 +115,7 @@ type IndexFact = { index: { slot: number } } | { length: { array: number; length
   { bound: { array: number; index: number; strict: boolean } } | { int: { slot: number } } |
   { linear: { fact: { le: { form: [LinearTerm, number][]; bound: number } } | { ne: { form: [LinearTerm, number][]; bound: number } } } } |
   { either: { left: IndexFact; right: IndexFact } } |
-  { guarded: { slot: number; path: string[]; tag: "null" | "undefined"; body: IndexFact } } |
+  { guarded: { slot: number; path: string[]; tag: "null" | "undefined" | "true" | "false"; body: IndexFact } } |
   { element: { value: number; array: number; index: number } } |
   { every: { slot: number; path: string[]; stop: LinearTerm; body: { form: [BodyVariable, number][]; bound: number; ne: boolean }[] } } |
   { apart: { slot: number; other: number } };
@@ -422,7 +422,7 @@ function indexFact(f: Json | undefined): IndexFact {
     const g = record(record(f,["guarded"]).guarded,["slot","path","tag","body"]);
     const path = g.path;
     if (!Array.isArray(path) || !path.every((x: Json) => typeof x === "string")) throw Error("a guard's path");
-    if (g.tag !== "null" && g.tag !== "undefined") throw Error("a guard's tag");
+    if (g.tag !== "null" && g.tag !== "undefined" && g.tag !== "true" && g.tag !== "false") throw Error("a guard's tag");
     return { guarded: { slot: nat(g.slot), path: path.filter((x: Json): x is string => typeof x === "string"), tag: g.tag,
       body: indexFact(g.body) } };
   }

@@ -466,8 +466,8 @@ let statements callbacks flow_graph register_following owner_span env0 ss =
                Linear_facts.geliminate (Linear_facts.excluded env c answer) (gs @ introduced) in
              let ty,gy = guarded true and tn,gn = guarded false in
              let es = if heap_free then every0 else [] in
-             [with_facts ~ds:(if heap_free then disjunctions0 else []) ~gs:gy ~es y (reading (facts0 @ t @ ty)) (kept @ bounds bt);
-              with_facts ~ds:(if heap_free then disjunctions0 else []) ~gs:gn ~es n (reading (facts0 @ f @ tn)) (kept @ bounds bf)]
+             [with_facts ~ds:(if heap_free then disjunctions0 else []) ~gs:gy ~es y (reading (facts0 @ t @ ty) @ Linear_facts.test_conditional_facts env c true) (kept @ bounds bt);
+              with_facts ~ds:(if heap_free then disjunctions0 else []) ~gs:gn ~es n (reading (facts0 @ f @ tn) @ Linear_facts.test_conditional_facts env c false) (kept @ bounds bf)]
            | _ -> edges)
         | _ -> edges in
       let edges=match node.handler with

@@ -73,6 +73,20 @@ const mutationControl = (body: () => Promise<void>): void => {
 const serving: boolean = process.argv[2] === "--controls";
 
 control(async (): Promise<void> => {
+  const artifacts = run("pretext-clause-postcondition");
+  const ast = readFragmentFile(join(artifacts, "fragment.json"));
+  const fn = must(ast.functions.find(f => f.name === "advance"), "advance");
+  fn.ensures.push({ guarded: { slot: 0, path: [], tag: "false",
+    body: { linear: { fact: { le: { form: [[{ kind: "value", slot: 3, path: ["index"] }, 1]], bound: -1 } } } } } });
+  const document = join(artifacts, "forged-boolean-postcondition.json");
+  writeFileSync(document, JSON.stringify(ast));
+  const searched = produceWith(artifacts, join(artifacts, "claims.json"), "forged-boolean-postcondition", document);
+  assert.equal(searched.status, 1, `${searched.stdout}${searched.stderr}`);
+  assert.match(searched.stdout + searched.stderr, /source ensures refusal.*does not establish/);
+  process.stdout.write("Boolean postconditions: a false bound under a true return is refused\n");
+});
+
+control(async (): Promise<void> => {
   const artifacts = run("invalid-pretext-clause-disjunction");
   const source = readFileSync(sourceKey(artifacts), "utf8");
   const claims = readClaims(artifacts);
