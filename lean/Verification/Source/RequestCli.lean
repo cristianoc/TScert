@@ -269,7 +269,7 @@ def produceUnitFile (slicePath claimsPath qualifiedPath evidencePath : String) (
       for i in f.fr.selected (selection names) do
         let unit := f.fr.unitId i
         let (evidence, refusal) := f.produceGroup fuel (f.fr.group i)
-        h.putStrLn (SourceClaimJson.sliceLine unit evidence f.F.store.heads).compress
+        h.putStrLn (SourceClaimJson.sliceLine unit evidence f.F.store.heads (f.anchors (f.fr.group i))).compress
         if let some reason := refusal then refusals := refusals.push (unit, reason)
       return refusals
     IO.println s!"checked source evidence written: {evidencePath}"
@@ -331,31 +331,17 @@ def checkUnitsFile (astPath claimsPath fileKey evidencePath : String) (names : O
     let seen ← IO.mkRef ({} : Std.HashSet String)
     let refused ← IO.mkRef (none : Option String)
     let note (reason : String) : IO Unit := refused.modify (·.orElse fun _ => some reason)
-    -- The document's heads, matched with each slice's (`Translate.headMap`),
-    -- their signatures computed once.
+    -- The document's heads with their signatures, computed once
+    -- (`Translate.Target`).
     let target ← IO.mkRef (none : Option SourceClaimJson.Translate.Target)
-    -- A slice's line is written over the document's store each way a head
-    -- may be chosen among equals (`Translate.Choice`), in turn until the
-    -- check accepts one: the verdict of that writing, or of the first.
-    let verdictOf (unit : String) (evidence : Json) : Option (Array EquationLowering.Draft) →
-        IO (Except String (List String))
-      | none => pure (SourceClaimJson.unitVerdict f budget unit evidence)
-      | some slice => do
-        let t := (← target.get).getD (SourceClaimJson.Translate.Target.of f.F.store.heads.heads)
-        let (among, t) := SourceClaimJson.Translate.candidates slice t
-        target.set (some t)
-        let mut first : Option (Except String (List String)) := none
-        let mut seenWritings : List Json := []
-        for choice in [SourceClaimJson.Translate.Choice.named, .latest, .earliest] do
-          match SourceClaimJson.Translate.translate slice t.heads among choice evidence with
-          | .error reason => first := first.orElse fun _ => some (.error reason)
-          | .ok e =>
-            if seenWritings.contains e then continue
-            seenWritings := e :: seenWritings
-            let v := SourceClaimJson.unitVerdict f budget unit e
-            if v.isOk then return v
-            first := first.orElse fun _ => some v
-        return first.getD (.error s!"no evidence for unit {unit}")
+    -- Each line's verdict (`SourceClaimJson.lineVerdict`), whose acceptance
+    -- `checkUnitJson_safe` states.
+    let verdictOf (unit : String) (evidence : Json) (slice : Option (Array EquationLowering.Draft × Json)) :
+        IO (Except String (List String)) := do
+      let t := (← target.get).getD (SourceClaimJson.Translate.Target.of f.F.store.heads.heads)
+      let (verdict, t) := SourceClaimJson.lineVerdict f budget t unit evidence slice
+      target.set (some t)
+      return verdict
     forEachLine evidencePath fun bytes => do
       match lineJson bytes >>= SourceClaimJson.readLine with
       | .error reason => note reason

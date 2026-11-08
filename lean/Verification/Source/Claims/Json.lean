@@ -645,50 +645,6 @@ def moduleVerdict (m : ModuleRun) (budget : PositiveCertificates.SearchBudget) (
     Except String Unit :=
   (checkDocument m.ast m.claims m.location evidence budget m.qualified).mapError (s!"module {m.location}: " ++ ·)
 
-/-- What the CLI checks of a unit: a group of a file, by the file's document,
-claims and key and the unit's identity (`--check-units`), or a module run, by
-its wire form (`--check-module`). -/
-inductive UnitInput where
-  | file (ast claims : Json) (fileKey unit : String)
-  | module (run : Json)
-
-/-- The exact CLI condition for a unit's accepted verdict at its evidence: a
-group's, the file's one front (`filePlans`) and the unit's verdict there
-(`unitVerdict`); a module run's, its decoding (`ModuleRun.decode`) and its
-document's check (`moduleVerdict`). -/
-def UnitInput.Accepted (budget : PositiveCertificates.SearchBudget) (evidence : Json) : UnitInput → Prop
-  | .file ast claims fileKey unit =>
-    ∃ f deps, filePlans ast claims fileKey budget = .ok f ∧ unitVerdict f budget unit evidence = .ok deps
-  | .module run => ∃ m, ModuleRun.decode run = .ok m ∧ moduleVerdict m budget evidence = .ok ()
-
-/-- What an accepted unit gives: a group's `UnitSafe` over its file's front;
-a module run's `DocumentSafe` of its restricted document. -/
-def UnitInput.Safe (budget : PositiveCertificates.SearchBudget) (evidence : Json) : UnitInput → Prop
-  | .file ast claims fileKey unit =>
-    ∃ f, filePlans ast claims fileKey budget = .ok f ∧ UnitSafe f budget unit evidence
-  | .module run => ∃ m, ModuleRun.decode run = .ok m ∧
-    DocumentSafe m.ast m.claims m.location evidence budget m.qualified
-
-/-- **The acceptance theorem.** A unit the CLI accepts (`UnitInput.Accepted`)
-is safe (`UnitInput.Safe`): a group of a file, its certified requests safe
-under `EnvOk` of their inputs (the file's module values at their claimed
-signatures and effects, its qualified reads and every imported, ambient and
-host value among them), and within their footprints where they claim one; a
-module run, its restricted document's plans checked at its evidence. -/
-theorem checkUnitJson_safe {budget : PositiveCertificates.SearchBudget} {evidence : Json} {i : UnitInput}
-    (h : i.Accepted budget evidence) : i.Safe budget evidence := by
-  cases i with
-  | file ast claims fileKey unit =>
-    obtain ⟨f, _, hf, hv⟩ := h
-    exact ⟨f, hf, unitVerdict_safe hv⟩
-  | module run =>
-    obtain ⟨m, hm, hv⟩ := h
-    refine ⟨m, hm, ?_⟩
-    unfold moduleVerdict at hv
-    cases hd : checkDocument m.ast m.claims m.location evidence budget m.qualified with
-    | error err => simp [hd, Except.mapError] at hv
-    | ok u => exact checkDocument_safe hd
-
 /-- A unit's line of an evidence document: the unit, and its evidence. -/
 def unitLine (unit : String) (evidence : Json) : Json :=
   Json.mkObj [("unit", toJson unit), ("evidence", evidence)]
