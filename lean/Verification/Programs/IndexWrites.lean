@@ -687,6 +687,26 @@ def valueAtoms (F : Linear.Form Nat) (c : Int) : List IndexAtom :=
   [⟨.int 0, none, false⟩, ⟨.linear (valueFact (.le ((0, 1) :: shiftForm (F.scale (-1))) c)), none, false⟩,
     ⟨.linear (valueFact (.le ((0, -1) :: shiftForm F) (-c))), none, false⟩]
 
+/-- Whether a sum is a string's length plus one: one operand a slot the
+knowledge states equal to a string's length, the other the constant `1`. -/
+def stringLengthPlusOne (k : Knowledge) (fa : Linear.Form Nat) (ca : Int) (fb : Linear.Form Nat) (cb : Int) : Bool :=
+  let lengths := k.indices.filterMap fun a => if a.cond.isNone then match a.fact with
+    | .linear (.le [(.value y, 1), (.strLength s, -1)] 0) => some (y, s, true)
+    | .linear (.le [(.strLength s, -1), (.value y, 1)] 0) => some (y, s, true)
+    | .linear (.le [(.value y, -1), (.strLength s, 1)] 0) => some (y, s, false)
+    | .linear (.le [(.strLength s, 1), (.value y, -1)] 0) => some (y, s, false)
+    | _ => none else none
+  let isLength := fun (x : Nat) => lengths.any fun (y, s, up) =>
+    up && y == x && lengths.contains (y, s, false)
+  let isOne := fun (f : Linear.Form Nat) (c : Int) => match f with
+    | [] => c == 1
+    | [(y, 1)] => c == 0 && knownConstant k y == some 1
+    | _ => false
+  match fa with
+  | [(x, 1)] => ca == 0 && isLength x && isOne fb cb ||
+      (match fb with | [(x', 1)] => cb == 0 && isLength x' && isOne fa ca | _ => false)
+  | _ => match fb with | [(x, 1)] => cb == 0 && isLength x && isOne fa ca | _ => false
+
 /-- The atoms of a sum of two nonnegative safe integers bounded by `2^53`:
 each atom of the exact sum's (`valueAtoms`), or the result is the double
 `2^53` (`IndexFact.pastSafe`, `SafeIntegers.add_two53`). -/
@@ -841,7 +861,8 @@ def linearAtoms (G : NormalGraph ι) (Γ : List (Ty ι)) (k : Knowledge) : Tm �
                 entailsKnown k.indices (valueFact (.le ((fa ++ fb).scale (-1)) (maxSafe + (ca + cb)))) &&
                 entailsKnown k.indices (valueFact (.le (fa ++ fb) (maxSafe + 1 - (ca + cb)))) &&
                 entailsKnown k.indices (valueFact (.le (fa.scale (-1)) ca)) &&
-                entailsKnown k.indices (valueFact (.le (fb.scale (-1)) cb)) then
+                entailsKnown k.indices (valueFact (.le (fb.scale (-1)) cb)) &&
+                stringLengthPlusOne k fa ca fb cb then
                 pastSafeAtoms (fa ++ fb) (ca + cb)
               else sum (fa ++ fb) (ca + cb)
           | .sub => sum (fa ++ fb.scale (-1)) (ca - cb)
@@ -1312,6 +1333,7 @@ theorem linearAtoms_holds [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty �
             rw [binop_num_arith (.inl rfl) hu]
             split
             · rename_i hc
+              obtain ⟨hc, -⟩ := Bool.and_eq_true_iff.mp hc
               obtain ⟨hc, -⟩ := Bool.and_eq_true_iff.mp hc
               obtain ⟨hc, -⟩ := Bool.and_eq_true_iff.mp hc
               obtain ⟨hc, hc3⟩ := Bool.and_eq_true_iff.mp hc
