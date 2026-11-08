@@ -325,7 +325,15 @@ export const overlay: readonly OverlayEntry[] = [
   { name: "toString", from: "ReadonlyArray", signature: "toString(): string;",
     bounds: new Map([["T", stringConvertible]]), effect: emptyEffect },
   { name: "indexOf", from: "ReadonlyArray",
-    signature: "indexOf(searchElement: T, fromIndex?: number): number;", effect: emptyEffect },
+    signature: "indexOf(searchElement: T, fromIndex?: number): number;",
+    // Strict equality invokes no conversion; the numeric start invokes no
+    // client code. The receiver keeps its captured length throughout.
+    effect: footprintEffect(emptyFootprint, { ensures: [
+      { int: { slot: 0 } },
+      { linear: { fact: { le: { form: [[{ kind: "value", slot: 0, path: [] }, -1]], bound: 1 } } } },
+      { linear: { fact: { le: { form: [[{ kind: "value", slot: 0, path: [] }, 1],
+        [{ kind: "length", slot: 1, path: [] }, -1]], bound: -1 } } } },
+    ] }) },
   { name: "lastIndexOf", from: "ReadonlyArray",
     signature: "lastIndexOf(searchElement: T, fromIndex?: number): number;", effect: emptyEffect },
   { name: "includes", from: "ReadonlyArray",

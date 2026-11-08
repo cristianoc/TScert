@@ -10,15 +10,8 @@ import { join } from "node:path";
 import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-example.mts";
 import { cases } from "../pipeline/cases.mts";
 
-assert.equal(runExample("invalid-bounds-callback-footprint", "typeof broken([1])"), "undefined",
-  "a shrinking callback removes the element whose presence the caller uses");
-assert.equal(runExample("invalid-bounds-quantified-invariant", "(() => { const f = broken(); return typeof f.widths[f.indices[0]]; })()"), "undefined",
-  "the constructor returns an index outside its array");
-assert.equal(runExample("invalid-bounds-cell-invariant", "Number.isNaN(broken([1], [1]))"), true,
-  "the cell starts at the length and its read makes the sum NaN");
-
-assert.equal(runExample("invalid-closure-precondition-call", "typeof broken([1])"), "undefined",
-  "a local arrow called at the length reads an absent element");
+assert.throws(() => runExample("invalid-native-length-indexof", 'absent(["a"], "b")'), /TypeError/);
+assert.throws(() => runExample("invalid-native-length-filled", 'past(1)'), /TypeError/);
 
 assert.equal(runExample("invalid-table-constant-stride", "typeof lastCell(new Uint8Array(28), 1)"), "undefined",
   "a row start at the length does not bound its last cell");

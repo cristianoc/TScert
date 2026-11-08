@@ -599,7 +599,14 @@ let statements (expr:Analysis_state.expression_infer) execute_bindings owner_spa
   (* The signatures of a receiver's method: a host-relative member, or a
      primitive's, its prototype's (`Type_queries.primitive_prototype`). *)
   Linear_facts.method_signatures := (fun env r key ->
-    match Option.map head (method_member env r key) with
+    let member = match Option.map head (receiver_type env r) with
+      | Some (Atoms [Shape {elements=Some _;fields;_}]) when not (List.exists (fun (g:Semantic.field) -> g.name = key) fields) ->
+        Option.map (fun (g:Semantic.field) -> g.read) (field_of (Atoms [Named (Type_queries.array_prototype,[])]) key)
+      | Some (Atoms [atom]) when Type_queries.primitive_prototype atom <> None ->
+        Option.map (fun (g:Semantic.field) -> g.read)
+          (field_of (Atoms [Named (Option.get (Type_queries.primitive_prototype atom),[])]) key)
+      | _ -> method_type env r key in
+    match Option.map head member with
     | Some (Atoms [Shape {calls;_}]) -> calls
     | _ -> []);
   Linear_facts.call_ensures := (fun env x ->

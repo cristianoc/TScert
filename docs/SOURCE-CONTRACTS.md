@@ -3118,6 +3118,19 @@ where the native is modelled, and audited otherwise:
 | `Set` and `Map` `add`, `set`, `delete`, `clear`; `Date` `setTime` | `{value: scalar, store: keep}` | they run no code and write only the receiver's internal slots, which no location of the model holds, and a collection's `size`, a location holding a number, which they set to the number of entries (ECMA-262, `Map.prototype.set`, `Set.prototype.add`, `get Map.prototype.size`): no location holding an object or a store changes (audited) |
 
 
+#### Array search bounds
+
+`Array.prototype.indexOf` returns a safe integer $`r`$ with
+$`-1 \le r < |x|`$, where $`x`$ is its receiver. Its postcondition states
+both bounds. ECMA-262's search captures the length, converts the numeric
+`fromIndex` without client code, and compares elements by strict equality,
+which invokes no conversion. Ordinary array reads invoke no getters under
+the array contract, so the receiver retains that length throughout the
+search. An unsuccessful search, including one of an empty array, returns
+$`-1`$ ([ECMA-262](REFERENCES.md#ecma-262), `Array.prototype.indexOf`; audited).
+The postcondition is consumed by the proved
+[call-ensures rule](PROGRAM-TYPING.md#postconditions).
+
 #### `codePointAt` of a string
 
 `String.prototype.codePointAt(pos)` of a string primitive at a number runs no
@@ -3766,6 +3779,16 @@ $`e_1`$, the check and $`e_2`$ in that order, and allocates the array after
 $`e_2`$: no code holds `A` before `fill` returns it, so no program step
 observes when it was allocated. An invalid length throws before $`e_2`$ is
 evaluated (`array-fill`, run under Node).
+
+On a normal return, `%ArrayLength%` states its result equal to its argument,
+a safe integer between zero and $`2^{32}-1`$. `%ArrayFilled%` states its
+result's length equal to its first argument. The check runs before the fill
+value's evaluation, so a reassignment during that evaluation cannot alter
+the saved length. The fill has no bounds to coerce and the fresh receiver
+cannot be reached by client code; it defines exactly those indices and
+returns that receiver (audited). The
+[call-ensures rule](PROGRAM-TYPING.md#postconditions) proves that the stated
+facts hold in the knowledge after each call.
 
 The form is a restriction ([source fragment](SOURCE-FRAGMENT.md)): the
 construct bound before its `fill` has holes another statement can read

@@ -610,13 +610,27 @@ export function intrinsics(promise: (argument: TypeTerm) => TypeTerm, needed: Re
     [importMetaResolveName]: () => ({ typeParams: [], type: fn([atom("string")], atom("unknown")) }),
     // ArrayCreate's check runs no code: a number either is an array length
     // (ToUint32(n) = n) or a RangeError is thrown. It writes nothing.
-    [arrayLengthName]: () => ({ typeParams: [], type: { ...fn([atom("number")], atom("number")), effect: emptyEffect } }),
+    [arrayLengthName]: () => ({ typeParams: [], type: { ...fn([atom("number")], atom("number")),
+      effect: footprintEffect(emptyFootprint, { ensures: [
+        { int: { slot: 0 } },
+        { linear: { fact: { le: { form: [[{ kind: "value", slot: 0, path: [] }, -1]], bound: 0 } } } },
+        { linear: { fact: { le: { form: [[{ kind: "value", slot: 0, path: [] }, 1]], bound: 0xffffffff } } } },
+        { linear: { fact: { le: { form: [[{ kind: "value", slot: 0, path: [] }, 1],
+          [{ kind: "value", slot: 2, path: [] }, -1]], bound: 0 } } } },
+        { linear: { fact: { le: { form: [[{ kind: "value", slot: 0, path: [] }, -1],
+          [{ kind: "value", slot: 2, path: [] }, 1]], bound: 0 } } } },
+      ] }) } }),
     // A fresh array whose every index below the length holds the value: it
     // stores the value without reading it, and writes nothing it did not
     // allocate; its store is the call's.
     [arrayFilledName]: () => ({ typeParams: [{ name: "T", bound: null, resolution: null }],
       type: { ...fn([atom("number"), binder], { k: "array", presence: "dense", readonly: false, element: binder, span }),
-        effect: footprintEffect(emptyFootprint, { fresh: true }) } }),
+        effect: footprintEffect(emptyFootprint, { fresh: true, ensures: [
+          { linear: { fact: { le: { form: [[{ kind: "length", slot: 0, path: [] }, 1],
+            [{ kind: "value", slot: 2, path: [] }, -1]], bound: 0 } } } },
+          { linear: { fact: { le: { form: [[{ kind: "length", slot: 0, path: [] }, -1],
+            [{ kind: "value", slot: 2, path: [] }, 1]], bound: 0 } } } },
+        ] }) } }),
     [urlHrefName]: () => ({ typeParams: [],
       type: { ...fn([atom("string"), either(atom("string"), atom("undefined"))], atom("string")), effect: emptyEffect } }),
     [pathToFileHrefName]: () => ({ typeParams: [], type: fn([atom("string")], atom("string")) }),

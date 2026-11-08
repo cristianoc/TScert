@@ -876,6 +876,40 @@ let call_facts ?name env f (args : expr list) : fact list =
       | _ -> None)
     else None) (!call_ensures env f)
 
+(* A numeric result identified with an actual by both postcondition bounds.
+   This is proposal only; the call's postcondition is checked at every edge. *)
+let rec result_form ~array env fs (e : expr) =
+  match linear ~array env fs e with
+  | Some f -> Some f
+  | None -> (match e.node with
+    | Call ({node=Id f;_},None,args,[],_) ->
+      let ensures = !call_ensures env f in
+      List.find_map (fun (p,a) ->
+        let r = Semantic.Value_at (0,[]) and x = Semantic.Value_at (p + 2,[]) in
+        if List.mem (Semantic.Linear_le ([r,1;x,-1],0)) ensures &&
+           List.mem (Semantic.Linear_le ([r,-1;x,1],0)) ensures then
+          result_form ~array env fs a else None) (List.mapi (fun p a -> p,a) args)
+    | _ -> None)
+
+let call_expression_facts ~array env fs name f args =
+  List.filter_map (function
+    | Semantic.Int_at 0 -> Some (int_fact name)
+    | Semantic.Linear_le (form,d) ->
+      let parts = List.map (fun (t,c) ->
+        let value = match t with
+          | Semantic.Value_at (0,p) -> Some ([path_term name p,1],0)
+          | Semantic.Length_at (0,p) -> Some ([length_term ~path:p name,1],0)
+          | Semantic.Value_at (p,[]) when p >= 2 ->
+            Option.bind (List.nth_opt args (p - 2)) (result_form ~array env fs)
+          | _ when term_position t >= 2 -> position_form ~array env fs (List.nth_opt args (term_position t - 2)) t
+          | _ -> None in
+        Option.map (fun (f,k) -> scale c f,c*k) value) form in
+      if List.for_all Option.is_some parts then
+        let parts = List.filter_map Fun.id parts in
+        Some (norm (List.concat_map fst parts),d - List.fold_left (fun k (_,n) -> k+n) 0 parts)
+      else None
+    | _ -> None) (!call_ensures env f)
+
 (* The facts a test's call states at its normal return, `f(…)` or `!f(…)`. *)
 let rec test_call_facts ?(held = []) env (c : expr) : fact list = match c.node with
   | Call ({node=Id f;_},None,args,[],_) | Not {node=Call ({node=Id f;_},None,args,[],_);_} -> call_facts env f args
@@ -1196,7 +1230,7 @@ let declaration ~(array : string -> string list -> bool) env fs name (init : exp
   let fs = fs @ concat_facts env name init in
   let fs = match init.node with
     | ArrayLiteral ([],[]) -> fs @ [[length_term name,1],0; [length_term name,-1],0]
-    | Call ({node=Id f;_},None,args,[],_) -> fs @ call_facts ~name env f args
+    | Call ({node=Id f;_},None,args,[],_) -> fs @ call_expression_facts ~array env fs name f args
     (* `const x = new c(…)` at a construct signature stating facts of its
        result: each of them, of `x`, over the actuals. *)
     | New ({node=Id c;_},_,args,[]) -> fs @ construct_ensures ~array env fs name c args

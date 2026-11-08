@@ -51,6 +51,10 @@ const gap = (
   diagnostic: RegExp,
 ): Case => ({ file, area, kind: "gap", status, phase, diagnostic });
 export const cases: Case[] = [
+  positive("native-length-indexof", "Pretext searched positions: indexOf returns a safe integer between -1 and the receiver length minus one."),
+  positive("native-length-filled", "Pretext lazy arrays: a filled allocation retains its checked input length."),
+  negative("invalid-native-length-indexof", "An unsuccessful search returns -1, outside the array (Node TypeError)."),
+  negative("invalid-native-length-filled", "The index equal to a filled allocation's length is absent (Node TypeError)."),
   positive("pretext-host-locale", "Pretext getBlinkDefaultLocale: no-argument formatter construction and resolved locale."),
   positive("pretext-host-span", "Pretext readEmojiWidth/readWidthIn: checked parent, inline setters, tree mutation and rectangle width."),
   positive("pretext-checked-schedules", "Pretext spacing loops retain continue behavior with checked preceding endpoints; line geometry selects one nullable extra array."),
