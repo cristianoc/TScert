@@ -452,7 +452,7 @@ let rec allocated_constants ss = List.concat_map (fun (s:Source.stmt) -> match s
 (* The allocated constants of the function analysed and of every body
    enclosing a closure of it: a closure captures a binding with its
    allocation (Lean's `ScopeBinding.fresh` survives the capture). *)
-let allocated = ref []
+let allocated = Environment.allocated
 
 (* The `let` names a statement list declares, nested blocks included. *)
 let rec declared_cells ss = List.concat_map (fun (s:Source.stmt) -> match s.statement with

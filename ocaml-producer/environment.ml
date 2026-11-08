@@ -15,6 +15,10 @@ let cell contract = Storage (contract,contract)
    declares: each allocated by that body, at a location no older object
    has (Lean's separation of a fresh allocation). *)
 let unit_cells : string list ref = ref []
+(* The constants the function analysed, or a body enclosing a closure of
+   it, binds to an object or array literal, which Lean's lowering leaves
+   out of an iterator's separation (`ScopeBinding.fresh`). *)
+let allocated : string list ref = ref []
 (* The module's cells (SOURCE-ELABORATION.md, "Module cells"), each at the contract
    the initialization unit claims: a module function reads and writes one as
    the cell it captures. *)

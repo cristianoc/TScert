@@ -2054,7 +2054,8 @@ claiming it.
   field's classes read off the receiver's record type, its first location
   never assumed. An array iterator's start preserves every fact, and its step
   those naming only values and the lengths of the arrays in scope where it
-  started. Every other statement forgets them.
+  started but the constants bound to an array or object literal, which the
+  iterator's separation leaves out. Every other statement forgets them.
 - *Elimination.* A binding of a linear fact that an assignment rebinds or
   that leaves scope is eliminated as Lean eliminates a dropped slot, so
   `let j = i + 1; … i = j` retains $`1\le j`$, then $`0\le i`$, from

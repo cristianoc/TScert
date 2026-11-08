@@ -182,8 +182,10 @@ let statements callbacks flow_graph register_following owner_span env0 ss =
       | Flow.Early (bs,_) -> List.map (fun (span,name,_,_) -> span,name) bs @ acc
       | _ -> acc) [] graph.nodes in
     (* The array bindings in scope where each iterator starts, by the
-       iterator's binding: Lean's array iterator is allocated apart from
-       their stores, and its step changes only its own locations
+       iterator's binding, but the constants bound to a literal: Lean's
+       array iterator is allocated apart from their stores, which its
+       separation states of every older slot but an allocated constant
+       (`ScopeBinding.fresh`), and its step changes only its own locations
        (`call-own`), so the step preserves their lengths' facts. *)
     let iterator_arrays : (string, string list) Hashtbl.t = Hashtbl.create 4 in
     let transfer (node:Flow.node) state =
@@ -397,7 +399,8 @@ let statements callbacks flow_graph register_following owner_span env0 ss =
             | ForOf (_,_,_,{node=Id x;_},_) -> Linear_facts.value_binding env x && callbacks.array_binding env x []
             | _ -> false in
           let arrays = List.filter_map (fun (n,b) -> match b with
-            | Value _ | Local _ when not (is_fact n) && not (is_bound n) && callbacks.array_binding env n [] -> Some n
+            | Value _ | Local _ when not (is_fact n) && not (is_bound n) && not (List.mem n !Environment.allocated)
+                && callbacks.array_binding env n [] -> Some n
             | _ -> None) env in
           if array_iterable then Hashtbl.replace iterator_arrays b.name arrays else Hashtbl.remove iterator_arrays b.name;
           let fs = if array_iterable then facts0 else Linear_facts.keep_stable env facts0 in
