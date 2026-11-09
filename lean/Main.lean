@@ -31,10 +31,6 @@ def command (args : List String) : IO UInt32 := do
       else Verification.RequestCli.checkUnitsFile astPath claimsPath fileKey evidencePath names.head? budget
   | ["--module-runs", astPath, claimsPath] =>
       Verification.RequestCli.moduleRunsFile astPath claimsPath
-  | ["--produce-module", runPath, evidencePath, depth] =>
-      match depth.toNat? with
-      | some fuel => Verification.RequestCli.produceModuleFile runPath evidencePath fuel budget
-      | none => do IO.eprintln "usage: search depth must be a natural number"; return 2
   | ["--check-module", runPath, evidencePath] =>
       Verification.RequestCli.checkModuleFile runPath evidencePath budget
   | _ => usage
@@ -46,7 +42,6 @@ where
     IO.eprintln "       verifier --produce-unit <slice.json> <slice-claims.json> <qualified.json> <evidence.json> <depth> [<names>]"
     IO.eprintln "       verifier --check-units <ast.json> <source-claims.json> <file-key> <evidence.json> [<names>]"
     IO.eprintln "       verifier --module-runs <ast.json> <source-claims.json>"
-    IO.eprintln "       verifier --produce-module <module-run.json> <evidence.json> <depth>"
     IO.eprintln "       verifier --check-module <module-run.json> <evidence.json>"
     IO.eprintln "       (any mode may be preceded by --subtype-rounds <rounds>; <names> selects units by a member's name, comma-separated)"
     return 2

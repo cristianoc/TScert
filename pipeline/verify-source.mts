@@ -363,7 +363,7 @@ export class UnitProposal {
     const listed = run(producerCall(producerExecutable, ["--units", ast]));
     // A document the producer refuses to read is refused by each proposal.
     this.refusal = producerRefusal(listed);
-    this.facts = this.refusal !== null ? { functions: [], init: null, readAsValues: [] } : decodeUnitFacts(JSON.parse(listed.out));
+    this.facts = this.refusal !== null ? { functions: [], init: null, escaped: [], readAsValues: [] } : decodeUnitFacts(JSON.parse(listed.out));
     this.units = proposalUnits(this.facts);
   }
   /** The slice of unit `i`, lowered: its files, or the lowering's refusal. */
@@ -372,7 +372,7 @@ export class UnitProposal {
     if (held) return held;
     const unit = this.units[i];
     if (!unit) throw Error(`tool failure: no unit ${i}`);
-    const { text, deletions } = sliceOf(this.document, this.local, unit);
+    const { text, deletions } = sliceOf(this.document, this.local, unit, this.facts.escaped);
     const slice = `${this.prefix}unit-${i}.slice.json`, flow = `${this.prefix}unit-${i}.flow.json`;
     writeFileSync(slice, text);
     const lowered = this.run(verifierCall(verifier, ["--lower-control-flow", slice]));
@@ -566,9 +566,15 @@ class ModuleRuns {
       const imports = [...new Set(list(field(doc.declarations, "values")).map((v) => field(field(v, "declaration"), "module"))
         .filter((l): l is string => typeof l === "string" && l !== location && locations.includes(l)))];
       this.docs.set(location, { index, ast, flow, declarations: doc.declarations, imports,
-        proposal: new UnitProposal((call) => runStep(call, recorder), join(artifacts, `module-${index}.`), ast, location) });
+        proposal: new UnitProposal((call) => runStep(call.stage === "search" ? { ...call, stage: "module-search" } : call, recorder), join(artifacts, `module-${index}.`), ast, location) });
       this.units.set(location, list(field(m, "functions")));
     }
+  }
+  /** Search the selected module units through their proposals' slices. */
+  search(location: string, names: string[], budget: string[]): ReturnType<UnitProposal["search"]> {
+    const doc = this.docs.get(location);
+    if (!doc) throw Error(`tool failure: no proposal for module ${location}`);
+    return doc.proposal.search(budget, names);
   }
   /** The name of the function of `module` whose source holds the first span
    * `detail` names (`at [a,b)`), from its name to its body's last statement;
@@ -706,7 +712,7 @@ function failedRun(artifacts: string, reason: string): RunFailure {
 
 /** One round of a check of each unit: each module run the file's claims plan
 (`--module-runs`), searched and checked on its own over its restricted
-document (`--produce-module`, `--check-module`), then the search of each of
+document (`--check-module`), its search through the same unit slices, then the search of each of
 the file's selected units over its own slice (`UnitProposal.search`), and
 their check over the file's one front (`--check-units`), which writes each
 slice's evidence over the document's store. A unit's search over its limit
@@ -714,7 +720,7 @@ is that unit's outcome. A refusal naming a certified import asks for that
 import's withdrawal, every such import of the round at once, before the
 check; a refused front refuses every unit. */
 function unitRound(recorder: Recorder, artifacts: string, ast: string, claims: string, snapshot: string,
-    budget: string[], select: string[] | null, proposal: UnitProposal,
+    budget: string[], select: string[] | null, proposal: UnitProposal, modules: ModuleRuns,
     refusedRead: (module: string, detail: string) => string | null):
     { withdraw: string[] } | { front: string } | { results: UnitResult[] } {
   const named = select === null ? [] : [select.join(",")];
@@ -768,13 +774,21 @@ function unitRound(recorder: Recorder, artifacts: string, ast: string, claims: s
   for (const [index, line] of planned.out.split("\n").filter((l) => l.startsWith("{")).entries()) {
     const run = join(artifacts, `module-run-${index}.json`), own = join(artifacts, `module-run-${index}.evidence.json`);
     writeFileSync(run, line);
-    const produced = runStep(verifierCall(verifier, [...budget, "--produce-module", run, own, String(searchDepth)]),
-      recorder);
-    const refused = verifierRefusal(produced, "--produce-module");
-    if (refused !== null) {
-      moduleSearchRefusals.push(refused);
+    const plannedRun: unknown = JSON.parse(line);
+    const location = field(plannedRun, "location");
+    if (typeof location !== "string") throw Error("tool failure: a module run has no location");
+    const names = list(field(field(plannedRun, "ast"), "functions")).map((f) => {
+      const name = field(f, "name");
+      if (typeof name !== "string") throw Error("tool failure: a module function has no name");
+      return name;
+    });
+    const searched = modules.search(location, [...names, initOmission], budget);
+    const refused = [...searched.refused.values(), ...searched.failed.values()];
+    if (refused.length) {
+      moduleSearchRefusals.push(...refused.map((reason) => `module ${location}: ${reason}`));
       continue;
     }
+    writeFileSync(own, `[${searched.lines.join(",")}]`);
     const checked = runStep(verifierCall(verifier, [...budget, "--check-module", run, own]), recorder);
     const verdict = checked.out.split("\n").find((l) => l.startsWith("{"));
     const refusal = verifierRefusal(checked, "--check-module");
@@ -937,7 +951,7 @@ function checkUnowned(artifacts: string, source: string, tsconfigPath?: string, 
         const name = modules.functionAt(module, detail);
         return name !== null && readNames.has(`${module}#${name}`) ? name : null;
       };
-      const round = unitRound(recorder, artifacts, ast, claims, snapshot, budget, units.select, fileProposal, refusedRead);
+      const round = unitRound(recorder, artifacts, ast, claims, snapshot, budget, units.select, fileProposal, modules, refusedRead);
       if ("withdraw" in round) {
         const again = round.withdraw.find((w) => withdrawn.has(w));
         if (again !== undefined) return { status: "error", artifacts, phase,

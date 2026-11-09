@@ -308,7 +308,7 @@ def lineJson (bytes : ByteArray) : Except String Json := do
 
 /-- Check a file's selected units over its one front
 (`SourceClaimJson.filePlans`), each at the evidence its line gives
-(`SourceClaimJson.unitVerdict`), a line of the evidence held only while it is
+(`SourceClaimJson.checkedUnit`), a line of the evidence held only while it is
 checked: each unit's verdict on a line, `{"unit","members","accepted","depends"}`
 or `{"unit","members","refusal"}`, whose acceptance `checkUnitJson_safe`
 states; a selected unit no line gives is refused. Any refused, the command's
@@ -331,23 +331,12 @@ def checkUnitsFile (astPath claimsPath fileKey evidencePath : String) (names : O
     let seen ← IO.mkRef ({} : Std.HashSet String)
     let refused ← IO.mkRef (none : Option String)
     let note (reason : String) : IO Unit := refused.modify (·.orElse fun _ => some reason)
-    -- The document's heads with their signatures, computed once
-    -- (`Translate.Target`).
-    let target ← IO.mkRef (none : Option SourceClaimJson.Translate.Target)
-    -- Each line's verdict (`SourceClaimJson.lineVerdict`), whose acceptance
-    -- `checkUnitJson_safe` states.
-    let verdictOf (unit : String) (evidence : Json) (slice : Option (Array EquationLowering.Draft × Json)) :
-        IO (Except String (List String)) := do
-      let t := (← target.get).getD (SourceClaimJson.Translate.Target.of f.F.store.heads.heads)
-      let (verdict, t) := SourceClaimJson.lineVerdict f budget t unit evidence slice
-      target.set (some t)
-      return verdict
     forEachLine evidencePath fun bytes => do
       match lineJson bytes >>= SourceClaimJson.readLine with
       | .error reason => note reason
       | .ok (unit, evidence, heads) =>
         if let some (_, members) := wanted.find? (·.1 == unit) then
-          let verdict ← verdictOf unit evidence heads
+          let verdict := SourceClaimJson.checkedUnit f budget unit evidence heads
           print unit members verdict
           seen.modify (·.insert unit)
           if let .error reason := verdict then note reason
@@ -377,23 +366,7 @@ def moduleRunsFile (astPath claimsPath : String) : IO UInt32 := do
   | .ok p => p.modules.forM (IO.println ·.wire.compress); return 0
   | .error e => refuse e
 
-/-- Search evidence for one module run (`SourceClaimJson.produceModule`),
-written to `evidencePath`; a search refused is a refusal. -/
-def produceModuleFile (runPath evidencePath : String) (fuel : Nat)
-    (budget : PositiveCertificates.SearchBudget := {}) : IO UInt32 := do
-  if evidencePath == runPath then return ← refuse "evidence output must differ from the input file"
-  let run ← readJson runPath
-  match run >>= SourceClaimJson.ModuleRun.decode with
-  | .error e => refuse e
-  | .ok m =>
-    let (evidence, refusal) := SourceClaimJson.produceModule m fuel budget
-    IO.FS.writeFile evidencePath evidence.compress
-    IO.println s!"checked source evidence written: {evidencePath}"
-    match refusal with
-    | none => return 0
-    | some reason => refuse reason
-
-/-- Check one module run at its evidence (`SourceClaimJson.moduleVerdict`),
+/-- Check one module run at its slice lines (`SourceClaimJson.moduleLineVerdict`),
 whose acceptance `checkUnitJson_safe` states: its verdict on a line,
 `{"unit","members","accepted","depends"}` or `{"unit","members","refusal"}`. -/
 def checkModuleFile (runPath evidencePath : String)
@@ -404,7 +377,7 @@ def checkModuleFile (runPath evidencePath : String)
   | .ok m =>
     let unit := toJson ("module:" ++ m.location)
     let members := toJson ([] : List String)
-    match (← readJson evidencePath) >>= fun e => SourceClaimJson.moduleVerdict m budget e with
+    match (← readJson evidencePath) >>= fun e => SourceClaimJson.moduleLineVerdict m budget e with
     | .ok () =>
       IO.println (Json.mkObj [("unit", unit), ("members", members), ("accepted", toJson true),
         ("depends", toJson ([] : List String))]).compress
