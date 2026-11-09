@@ -140,6 +140,29 @@ before a step's commit when its TScert rule could reach other files. At
 most 3 checks at once. No census, no `make test`, `make suite` or full
 `run-cases.mts`: those run in CI on the PR.
 
+## Stacked pull requests
+
+The branches form a stack: `main` ⊂ `bound-annotations-opus` (#128) ⊂
+`chainN-tscert` (#129, …); any other branch built on #128 stacks the same
+way. A stack is set up correctly when each branch contains its parent's
+head and each pull request's base is its parent branch.
+
+- Open a stacked pull request with `gh pr create --base <parent>`.
+- Before every push, check each pair:
+  `git merge-base --is-ancestor <parent> <child>`, from `origin/main`
+  upward. A pair that fails shows the parent's commits in the child's pull
+  request.
+- When a parent moves (main gains commits, or a commit lands on #128),
+  merge the parent into each child, from the bottom of the stack up, and
+  push the parents before the children. Merge, not rebase: the branches
+  are pushed and shared, and a merge needs no force-push. A merge commit
+  carries a commit record like any other (Why, Outcome, Parts, Trust).
+- When a parent's pull request is rebase-merged into `main`, the child
+  holds commits main no longer has:
+  `git rebase --onto origin/main <parent's old head> <child>`, then
+  `gh pr edit <child PR> --base main` and a push with
+  `--force-with-lease`, on the owner's instruction for that push.
+
 ## Merging
 
 The green steps of `chainN-tscert` merge once the owner reviewed their
