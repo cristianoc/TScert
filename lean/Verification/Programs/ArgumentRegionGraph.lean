@@ -1,4 +1,4 @@
-import Verification.Programs.ArgumentPathTracking
+import Verification.Programs.ArgumentRegionFresh
 
 /-! Whole-graph composition of entry-relative store bounds. Ordinary graph
 checking supplies progress and typing; regional node obligations supply effects
@@ -7,12 +7,15 @@ namespace Verification.GraphCode.ArgumentRegionGraph
 open ControlFlow PointClaims ProgramTyping PositiveGraphs PositiveRules Footprints
 open PositiveCertificates (InstanceImageCheck)
 open CertificateProducer (successors)
+open ArgumentRegionFresh (FreshValue FreshHold FreshTables FreshWithin)
 
 def NodeWithin [DecidableEq ι] (G : NormalGraph ι) (Φ : Footprints.Closed)
     (regions : List ArgumentStoreRegion) (c : NodeEvidence ι) (t : Tm)
-    (facts : List ArgumentPathTracking.Fact) (origins : List ArgumentStoreRegion) (thr : Bool) : Prop :=
+    (facts : List ArgumentPathTracking.Fact) (F : List Nat) (origins : List ArgumentStoreRegion) (thr : Bool) :
+    Prop :=
   ∀ n W h ρ initial entry,
     ArgumentStoreRegionsWithin Φ regions entry initial h → ArgumentPathTracking.Holds facts ρ entry initial →
+    (∀ i ∈ F, FreshValue initial.length (ρ i)) →
     EnvOk G (ControlFlow.entry c) ρ n W → PromiseCalls.ImpliesOk G c.implies ρ n W →
     HeapKnowledge.Holds (entryFacts G c) ρ h → WorldAdm W → HeapOk n W h →
     (0 < n → ArgumentPathTracking.StableNow (ArgumentPathTracking.stableFields regions) entry initial W) →
@@ -72,9 +75,15 @@ def nodeAgree (regions : List ArgumentStoreRegion) (facts : List ArgumentPathTra
   | some (x, []), [f] => (ArgumentPathTracking.stableFields regions).contains (x, f)
   | _, _ => false
 
-def nodeRebase (regions : List ArgumentStoreRegion) (facts : List ArgumentPathTracking.Fact) (se : StepEffect) :
-    RebaseEvidence :=
-  ⟨nodeLink facts se, nodeAgree regions facts se⟩
+/-- A step position holding a node slot whose value is fresh. -/
+def nodeFresh (F : List Nat) (se : StepEffect) (p : Nat) : Bool :=
+  match se.slot p with
+  | some s => F.contains s
+  | none => false
+
+def nodeRebase (regions : List ArgumentStoreRegion) (facts : List ArgumentPathTracking.Fact) (F : List Nat)
+    (se : StepEffect) : RebaseEvidence :=
+  ⟨nodeLink facts se, nodeAgree regions facts se, nodeFresh F se⟩
 
 /-- No class evidence: inclusions read regions alone. -/
 def noClasses : ClassEvidence := fun _ _ => none
@@ -84,19 +93,20 @@ theorem noClasses_ok (ρ : Env) (h : Heap) : ClassOk noClasses ρ h := fun _ _ _
 /-- **The common check**: the step's frames, rebased to the entry, are
 included in the stated frame. -/
 def stepWithin (Φ : Footprints.Closed) (regions : List ArgumentStoreRegion)
-    (facts : List ArgumentPathTracking.Fact) (se : StepEffect) (thr : Bool) : Bool :=
-  Footprint.le noClasses (statedFrame Φ regions ++ rebaseAll (nodeRebase regions facts se) se.normal)
+    (facts : List ArgumentPathTracking.Fact) (F : List Nat) (se : StepEffect) (thr : Bool) : Bool :=
+  Footprint.le noClasses (statedFrame Φ regions ++ rebaseAll (nodeRebase regions facts F se) se.normal)
       (statedFrame Φ regions) &&
-    (!thr || Footprint.le noClasses (statedFrame Φ regions ++ rebaseAll (nodeRebase regions facts se) se.raised)
+    (!thr || Footprint.le noClasses (statedFrame Φ regions ++ rebaseAll (nodeRebase regions facts F se) se.raised)
       (statedFrame Φ regions))
 
 /-- The tracked facts and the entry world's witnesses are rebasing evidence. -/
 theorem nodeRebase_ok {regions : List ArgumentStoreRegion} {facts : List ArgumentPathTracking.Fact}
-    {se : StepEffect} {σ ρ entry : Env} {initial h : Heap} {n : Nat} {W : WorldT n}
+    {F : List Nat} {se : StepEffect} {σ ρ entry : Env} {initial h : Heap} {n : Nat} {W : WorldT n}
     (hσ : ∀ p s, se.slot p = some s → σ p = ρ s) (hf : ArgumentPathTracking.Holds facts ρ entry initial)
+    (hF : ∀ i ∈ F, FreshValue initial.length (ρ i))
     (hst : ArgumentPathTracking.StableNow (ArgumentPathTracking.stableFields regions) entry initial W)
     (hn : 0 < n) (hh : HeapOk n W h) :
-    RebaseOk (nodeRebase regions facts se) σ entry initial h := by
+    RebaseOk (nodeRebase regions facts F se) σ entry initial h := by
   have hlink : ∀ p x q, nodeLink facts se p = some (x, q) →
       HeapKnowledge.readPath initial (entry x) q = some (σ p) := by
     intro p x q hl
@@ -107,99 +117,136 @@ theorem nodeRebase_ok {regions : List ArgumentStoreRegion} {facts : List Argumen
     have hslot : f.slot = s := by simpa using List.find?_some hfind
     rw [hσ p s hs, ← hslot]
     exact hf f (List.mem_of_find?_eq_some hfind)
-  refine ⟨hlink, fun p q hq v hv => ?_⟩
-  simp only [nodeRebase] at hq
-  unfold nodeAgree at hq
-  split at hq
-  · rename_i x f hl
-    have he : entry x = σ p := by simpa [HeapKnowledge.readPath] using hlink p x [] hl
-    rw [← he] at hv ⊢
-    exact hst.agree (List.contains_iff_mem.mp hq) hn hh hv
-  · cases hq
+  refine ⟨hlink, fun p q hq v hv => ?_, fun p hp => ?_⟩
+  · simp only [nodeRebase] at hq
+    unfold nodeAgree at hq
+    split at hq
+    · rename_i x f hl
+      have he : entry x = σ p := by simpa [HeapKnowledge.readPath] using hlink p x [] hl
+      rw [← he] at hv ⊢
+      exact hst.agree (List.contains_iff_mem.mp hq) hn hh hv
+    · cases hq
+  · simp only [nodeRebase, nodeFresh] at hp
+    split at hp
+    · rename_i s hs
+      rw [hσ p s hs]
+      exact (hF s (List.contains_iff_mem.mp hp)).2
+    · cases hp
 
 /-- **The step-frame rule.** A step meeting its local effect, whose frames
 the common check includes in the stated frame, keeps the invocation within
 it. -/
 theorem nodeWithin_of_step [DecidableEq ι] {G : NormalGraph ι} {Φ : Footprints.Closed}
     {regions : List ArgumentStoreRegion} {c : NodeEvidence ι} {t : Tm}
-    {facts : List ArgumentPathTracking.Fact} {se : StepEffect} {thr : Bool}
-    (hs : StepOk G c t se thr) (hc : stepWithin Φ regions facts se thr = true) :
-    NodeWithin G Φ regions c t facts [] thr := by
-  intro n W h ρ initial entry hb hf he hi hk hw hh hst
+    {facts : List ArgumentPathTracking.Fact} {F : List Nat} {se : StepEffect} {thr : Bool}
+    (hs : StepOk G c t se thr) (hc : stepWithin Φ regions facts F se thr = true) :
+    NodeWithin G Φ regions c t facts F [] thr := by
+  intro n W h ρ initial entry hb hf hF he hi hk hw hh hst
   cases n with
   | zero => trivial
   | succ n =>
     simp only [stepWithin, Bool.and_eq_true, Bool.or_eq_true, Bool.not_eq_true'] at hc
     obtain ⟨σ, hσ, hrun⟩ := hs (n + 1) W h ρ he hi hk hw hh
     have hp := ArgumentStoreRegionsWithin.iff_post.mp hb
-    have hok := nodeRebase_ok (regions := regions) hσ hf (hst (Nat.succ_pos n)) (Nat.succ_pos n) hh
+    have hok := nodeRebase_ok (regions := regions) hσ hf hF (hst (Nat.succ_pos n)) (Nat.succ_pos n) hh
     apply HeapObservations.SafePostExc.weaken _ _ hrun
     · intro h' _ hq
       exact ⟨ArgumentStoreRegionsWithin.iff_post.mpr
         (Post.compose_at hp hq hok hc.1 (noClasses_ok _ _)), fun r hr => nomatch hr⟩
     · intro h' hq hthr
       have hle : Footprint.le noClasses (statedFrame Φ regions ++
-          rebaseAll (nodeRebase regions facts se) se.raised) (statedFrame Φ regions) = true := by
+          rebaseAll (nodeRebase regions facts F se) se.raised) (statedFrame Φ regions) = true := by
         rcases hc.2 with hf | hle
         · rw [hthr] at hf; cases hf
         · exact hle
       exact ArgumentStoreRegionsWithin.iff_post.mpr (Post.compose_at hp (hq hthr) hok hle (noClasses_ok _ _))
 
+/-- What the bounded run reads of each node: its regional obligation, its
+freshness obligation, and the transfer of its provenance and fresh facts
+along its normal edges and its handler. -/
 def NodesWithin [DecidableEq ι] (G : NormalGraph ι) (Φ : Footprints.Closed)
     (regions : List ArgumentStoreRegion) (P : Program) (C : Certificate ι)
-    (table : List (List ArgumentPathTracking.Fact)) (exc : Bool) : Prop :=
+    (table : List (List ArgumentPathTracking.Fact)) (ft : FreshTables) (exc : Bool) : Prop :=
   ∀ l node c, P[l]? = some node → C[l]? = some c →
-    ∃ origins, NodeWithin G Φ regions c node.expression (ArgumentPathTracking.atLabel table l) origins
+    ∃ origins outF outC,
+      NodeWithin G Φ regions c node.expression (ArgumentPathTracking.atLabel table l) (factsAt ft.values l) origins
         (node.handler.isSome || exc) ∧
       ArgumentPathTracking.checkEdges table (ArgumentPathTracking.atLabel table l) origins node.continuation = true ∧
-      ArgumentPathTracking.checkHandler table (ArgumentPathTracking.atLabel table l) node.handler = true
+      ArgumentPathTracking.checkHandler table (ArgumentPathTracking.atLabel table l) node.handler = true ∧
+      FreshWithin G c node.expression (factsAt ft.values l) (factsAt ft.cells l) outF outC node.handler.isSome ∧
+      edgesFresh ft.values (factsAt ft.values l) outF false node.continuation = true ∧
+      edgesFresh ft.cells (factsAt ft.cells l) outC false node.continuation = true ∧
+      ∀ target, node.handler = some target →
+        handlerFresh ft.values (factsAt ft.values l) target = true ∧
+        handlerFresh ft.cells (factsAt ft.cells l) target = true
+
+/-- A label's facts: provenance, and fresh values and cells against the
+invocation's entry heap. -/
+def LabelHolds (table : List (List ArgumentPathTracking.Fact)) (ft : FreshTables) (l : Nat)
+    (ρ entry : Env) (initial h : Heap) : Prop :=
+  ArgumentPathTracking.Holds (ArgumentPathTracking.atLabel table l) ρ entry initial ∧
+    FreshHold (factsAt ft.values l) (factsAt ft.cells l) initial.length ρ h
 
 def BoundState (Φ : Footprints.Closed) (regions : List ArgumentStoreRegion)
-    (table : List (List ArgumentPathTracking.Fact)) (exc : Bool) (initial : Heap) (entry : Env)
+    (table : List (List ArgumentPathTracking.Fact)) (ft : FreshTables) (exc : Bool) (initial : Heap) (entry : Env)
     (n : Nat) (h : Heap) : State → Prop
-  | .at l ρ => ArgumentStoreRegionsWithin Φ regions entry initial h ∧
-      ArgumentPathTracking.Holds (ArgumentPathTracking.atLabel table l) ρ entry initial
+  | .at l ρ => ArgumentStoreRegionsWithin Φ regions entry initial h ∧ LabelHolds table ft l ρ entry initial h
   | .done _ => ArgumentStoreRegionsWithin Φ regions entry initial h
   | .eval t ρ k handler =>
       ReturnsPost (fun h' v => ArgumentStoreRegionsWithin Φ regions entry initial h' ∧
-        ∀ target ∈ successors k, ArgumentPathTracking.Holds (ArgumentPathTracking.atLabel table target.label)
-          (mapEnv target.mapping (if pushes k then push v ρ else ρ)) entry initial) n h t ∧
+        ∀ target ∈ successors k, LabelHolds table ft target.label
+          (mapEnv target.mapping (if pushes k then push v ρ else ρ)) entry initial h') n h t ∧
       match handler with
       | none => exc = true → RaisesPost (ArgumentStoreRegionsWithin Φ regions entry initial) n h t
-      | some target => RaisesPost (ArgumentStoreRegionsWithin Φ regions entry initial) n h t ∧
+      | some target => RaisesPost (fun h' => ArgumentStoreRegionsWithin Φ regions entry initial h' ∧
+            ∀ v, FreshHold (factsAt ft.values target.label) (factsAt ft.cells target.label) initial.length
+              (mapEnv target.mapping (push v ρ)) h') n h t ∧
           ∀ v, ArgumentPathTracking.Holds (ArgumentPathTracking.atLabel table target.label)
             (mapEnv target.mapping (push v ρ)) entry initial
   | .raised _ => exc = true → ArgumentStoreRegionsWithin Φ regions entry initial h
 
 theorem bounded_step [DecidableEq ι] {G : NormalGraph ι} {Φ : Footprints.Closed}
     {regions : List ArgumentStoreRegion} {Rty : Goal ι} {v0 : Tm} {P : Program}
-    {C : Certificate ι} {table : List (List ArgumentPathTracking.Fact)} {exc : Bool}
-    (hnodes : NodesWithin G Φ regions P C table exc)
+    {C : Certificate ι} {table : List (List ArgumentPathTracking.Fact)} {ft : FreshTables} {exc : Bool}
+    (hnodes : NodesWithin G Φ regions P C table ft exc)
     {initial entry n W h s h' s'} (hw : WorldAdm W) (hh : HeapOk (n+1) W h)
     (hst : 0 < n + 1 → ArgumentPathTracking.StableNow (ArgumentPathTracking.stableFields regions) entry initial W)
     (hs : StateOk G Rty C v0 (n+1) W h s)
-    (hp : BoundState Φ regions table exc initial entry (n+1) h s)
+    (hp : BoundState Φ regions table ft exc initial entry (n+1) h s)
     (st : Transition P h s h' s') :
-    BoundState Φ regions table exc initial entry n h' s' := by
+    BoundState Φ regions table ft exc initial entry n h' s' := by
   cases st with
   | @enter l node _ ρ hn =>
     obtain ⟨c, hc, he, hi, -, hf⟩ := hs
-    obtain ⟨origins, ht, hedge, hhandler⟩ := hnodes l node c hn hc
-    have hrun := ht n _ h ρ initial entry hp.1 hp.2
-      (he.transfer n (Nat.le_succ n) _ (WExt_refl _))
-      (hi.transfer n (Nat.le_succ n) _ (WExt_refl _)) (entryFacts_holds he hf)
-      (WorldAdm_trunc _ hw) (HeapOk_trunc n W h hh)
+    obtain ⟨origins, outF, outC, ht, hedge, hhandler, hfr, hef, hec, hhf⟩ := hnodes l node c hn hc
+    have he' := he.transfer n (Nat.le_succ n) _ (WExt_refl _)
+    have hi' := hi.transfer n (Nat.le_succ n) _ (WExt_refl _)
+    have hk := entryFacts_holds he hf
+    have hh' := HeapOk_trunc n W h hh
+    have hrun := ht n _ h ρ initial entry hp.1 hp.2.1 hp.2.2.values he' hi' hk
+      (WorldAdm_trunc _ hw) hh'
       (fun _ => (hst (Nat.succ_pos n)).transfer (Nat.le_succ n) (WExt_refl _))
+    have hfresh := hfr n _ h ρ initial.length (ArgumentStoreRegionsWithin.iff_post.mp hp.1).1 hp.2.2 he' hi' hk
+      (WorldAdm_trunc _ hw) hh'
+    have hboth := HeapObservations.SafePostExc.cross_upto n (fun _ _ _ _ _ _ _ _ hu _ => hu) _ _ h _ hh' hh'
+      hrun hfresh
     refine ⟨returnsPost_of_safePost (HeapObservations.weaken
-      (fun _ _ post => ⟨post.1, ArgumentPathTracking.checkEdges_sound hedge hp.2 post.2⟩) hrun.post), ?_⟩
+      (fun _ _ post => ⟨post.1.1, fun target htarget =>
+        ⟨ArgumentPathTracking.checkEdges_sound hedge hp.2.1 post.1.2 target htarget,
+          ⟨edgesFresh_holds hef hp.2.2.values post.2.1 target htarget,
+            edgesFresh_holds hec post.2.2.2 post.2.2.1 target htarget⟩⟩⟩) hboth.post), ?_⟩
     cases hk : node.handler with
     | none =>
       intro hexc k h'' t'' v hb run hr
-      exact raisesPost_of_safePostExc hrun k h'' t'' v hb run hr (by simp [hk, hexc])
+      exact (raisesPost_of_safePostExc hboth k h'' t'' v hb run hr).1 (by simp [hk, hexc])
     | some target =>
-      refine ⟨?_, ArgumentPathTracking.checkHandler_sound hhandler hp.2 target hk⟩
+      refine ⟨?_, ArgumentPathTracking.checkHandler_sound hhandler hp.2.1 target hk⟩
       intro k h'' t'' v hb run hr
-      exact raisesPost_of_safePostExc hrun k h'' t'' v hb run hr (by simp [hk])
+      have hr' := raisesPost_of_safePostExc hboth k h'' t'' v hb run hr
+      have hcells := hr'.2 (by simp [hk])
+      obtain ⟨hhv, hhc⟩ := hhf target hk
+      exact ⟨hr'.1 (by simp [hk]), fun u => ⟨handlerFresh_holds hhv hp.2.2.values u,
+        handlerFresh_holds hhc hcells u⟩⟩
   | @expr _ t _ t' ρ k handler st =>
     refine ⟨hp.1.step st, ?_⟩
     cases handler with
@@ -230,17 +277,19 @@ theorem bounded_step [DecidableEq ι] {G : NormalGraph ι} {Φ : Footprints.Clos
     split
     · exact by simpa [pushes] using post.2 _ (by simp [successors])
     · exact by simpa [pushes] using post.2 _ (by simp [successors])
-  | handle hr => exact ⟨hp.2.1.raised hr, hp.2.2 _⟩
+  | handle hr =>
+    have hq := hp.2.1.raised hr
+    exact ⟨hq.1, hp.2.2 _, hq.2 _⟩
   | raise hr => exact fun he => (hp.2 he).raised hr
 
 theorem bounded_safe_of_sim [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G} {sums : List (ProgramCertificates.ReadSummary ι)} {Φ : Footprints.Closed} {regions : List ArgumentStoreRegion} {Rty : Goal ι} {v0 : Tm} {E : List Tm} {K : List (Continuation × Option Target)}
-    {C : Certificate ι} {table : List (List ArgumentPathTracking.Fact)} {exc : Bool}
+    {C : Certificate ι} {table : List (List ArgumentPathTracking.Fact)} {ft : FreshTables} {exc : Bool}
     {codes : CodeEntry ι → Bool} (hg : checkGraphUsing (sums := sums) G images Rty (program E K) C codes = true)
     (hcodes : ProgramCertificates.CodesSound G codes) (hsums : ProgramCertificates.SummariesSound G images sums)
-    (hnodes : NodesWithin G Φ regions (program E K) C table exc) (hv0 : isVal v0 = true) :
+    (hnodes : NodesWithin G Φ regions (program E K) C table ft exc) (hv0 : isVal v0 = true) :
     ∀ n W h ts s initial entry, Sim E K ts s → WorldAdm W → HeapOk n W h →
       (0 < n → ArgumentPathTracking.StableNow (ArgumentPathTracking.stableFields regions) entry initial W) →
-      StateOk G Rty C v0 n W h s → BoundState Φ regions table exc initial entry n h s →
+      StateOk G Rty C v0 n W h s → BoundState Φ regions table ft exc initial entry n h s →
       HeapObservations.SafePostExc (excOf G) (GoalHolds G Rty v0)
         (fun h' _ => ArgumentStoreRegionsWithin Φ regions entry initial h')
         (fun h' => exc = true → ArgumentStoreRegionsWithin Φ regions entry initial h') n W h ts := by
@@ -267,8 +316,9 @@ theorem goto_bounded [DecidableEq ι] {G : NormalGraph ι} {images : InstanceIma
     (hc : checkEntryUsing (sums := sums) (entrySeparation := entrySeparation) (entryIndices := entryIndices)
       G images Rty (program E K) C start inputs codes = true)
     (hcodes : ProgramCertificates.CodesSound G codes) (hsums : ProgramCertificates.SummariesSound G images sums)
-    (hnodes : NodesWithin G Φ regions (program E K) C table exc)
+    (hnodes : NodesWithin G Φ regions (program E K) C table ft exc)
     (hstart : ArgumentPathTracking.checkEntry (ArgumentPathTracking.atLabel table start) = true)
+    (hfresh : ((factsAt ft.values start).isEmpty && (factsAt ft.cells start).isEmpty) = true)
     (hfields : ArgumentPathTracking.checkEntryFields G inputs regions = true)
     (n W h L d) (he : EnvOk G inputs (envOf L d) n W) (hw : WorldAdm W)
     (hh : HeapOk n W h)
@@ -307,8 +357,11 @@ theorem goto_bounded [DecidableEq ι] {G : NormalGraph ι} {images : InstanceIma
           cases List.mem_singleton.mp hp
           rfl
       · exact entryKnows_sound hk (by simpa only [hin] using he) hsep hidx
-    · exact ⟨(Footprints.Closed.Holds.refl Φ h).on _,
-        ArgumentPathTracking.checkEntry_sound hstart _ _⟩
+    · simp only [Bool.and_eq_true, List.isEmpty_iff] at hfresh
+      refine ⟨(Footprints.Closed.Holds.refl Φ h).on _,
+        ArgumentPathTracking.checkEntry_sound hstart _ _, ?_, ?_⟩
+      · intro i hi; rw [hfresh.1] at hi; cases hi
+      · intro i hi; rw [hfresh.2] at hi; cases hi
   · contradiction
 
 end Verification.GraphCode.ArgumentRegionGraph

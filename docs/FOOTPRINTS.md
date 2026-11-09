@@ -336,6 +336,92 @@ object's fields are fixed at its allocation.
   postcondition then states it (`effectChecked`, `codeChecked_sound`). A
   declaration states no fresh result.
 
+**In a regional body.** A body certified at stated store regions
+([argument-path store regions](#argument-path-store-regions)) tracks, at
+each node, two lists of slots against $`b=|h_0|`$, the invocation's entry
+heap's length, fixed through the whole run, loops included: the slots $`F`$
+holding a fresh value and the slots $`C`$ holding a fresh cell
+([ArgumentRegionFresh.lean](../lean/Verification/Programs/ArgumentRegionFresh.lean)):
+
+```math
+\begin{aligned}
+\mathrm{FreshValue}_b(v) &\iff \neg\,\mathrm{isArr}(v)\ \land\ \forall s.\ \mathrm{store}(v)=s \Rightarrow b\le s\\
+\mathrm{CellFresh}_b(h,c) &\iff \exists\, l\,v.\ c.\mathtt{value}=l\ \land\ h[l]=v\ \land\ \mathrm{FreshValue}_b(v)
+\end{aligned}
+```
+
+A fresh value is conditional: `null`, a number and an object with no store
+field meet it, and an array meets it where its store was allocated during
+the run. It reads no heap. A fresh cell is an invariant of its contents,
+read at each heap: a cell is the object a `let` written inside its own
+statement lowers to ([slot or cell](SOURCE-ELABORATION.md#slot-or-cell)),
+its contents at its field `value`. A node's value is fresh, and a node
+keeps its cells, by these rules, with $`\Gamma`$ the node's slot types,
+$`i \in F`$ and $`j \in C`$:
+
+```math
+\frac{}{x_i\ \text{fresh}}
+\quad
+\frac{k\ \text{a constant}}{k\ \text{fresh}}
+\quad
+\frac{\mathtt{[]} \in \mathit{ns}}{\mathsf{new}\{\mathit{ns}\}\ \text{fresh}}
+\quad
+\frac{}{x_j.\mathtt{value}\ \text{fresh}}
+\quad
+\frac{\text{the selected signature states}\ \mathtt{Fresh}}{f(\bar x)\ \text{fresh}}
+```
+
+```math
+\frac{}{x_j\ \text{a fresh cell}}
+\qquad
+\frac{\mathit{ns}\ \text{distinct}\qquad \mathit{ns}_m=\mathtt{value}\qquad \bar x_m = x_i}
+     {\mathsf{new}\{\mathit{ns}:\bar x\}\ \text{a fresh cell}}
+```
+
+```math
+\frac{t\ \text{an inspection}}{t\ \text{keeps}\ C}
+\qquad
+\frac{}{x.f := x_i\ \text{keeps}\ C}
+\qquad
+\frac{\mathrm{Post}\,\Psi\,\sigma\,h\,h' \qquad
+      \forall (r,\delta)\in\Psi.\ \delta=\mathsf{keep} \lor r \subseteq \mathsf{cls}\ \mathsf{store}}
+     {t\ \text{keeps}\ C}
+```
+
+An inspection changes no old location; a write of a fresh value leaves a
+fresh value wherever it writes; and a frame whose every entry keeps its
+locations or holds only stores ($`\mathsf{cls}\ \mathsf{store}`$, a region's
+part of class store) changes no cell's contents, a value of no store
+(`keepsValues`, proved: `CellFresh.post`). `push`'s frame names its
+receiver's store at its part of class store, which `ReceiverGrows` states.
+The allocation rule holds of a run of the allocation with any initializers
+or binding before it (`alloc_fresh`, from `alloc_step`: the store field's
+location is past the heap the allocation starts in); the others are
+`cellAlloc_fresh`, `cellRead_fresh` and `freshWrite_cells`. The facts along
+edges and handlers are GraphCode's (`edgesFresh`, `handlerFresh`, proved
+for any slot property: `edgesFresh_holds`, `handlerFresh_holds`): a
+destination's facts follow from the source's through the edge's slot map,
+slot 0 from the node's value; a handler's from the facts of every node it
+catches, the thrown value never fresh, its cells kept on the node's throw.
+The entry has none. Lean infers the facts (`freshTables`, untrusted) and
+checks every node (`checkFresh_sound`) and every edge.
+
+A fresh value's store region rebases to no region of the entry
+([the step-frame rule](#argument-path-store-regions)), so a step growing or
+popping an array the body allocated, directly or through a cell, needs no
+region of the stated frame (`stated-region-fresh`, `stated-region-lazy`).
+A fresh record holding the caller's array gives that array no fact; a cell
+written with a value not fresh loses its fact, so a join of a fresh array
+and an old one has none; a call's result is fresh only at a signature
+stating `Fresh`, which the callee's own check establishes
+(`invalid-stated-region-fresh-wrapper`, `invalid-stated-region-fresh-join`,
+`invalid-stated-region-fresh-call`, each run under Node; a control forges
+`Fresh` onto the callee of the last, refused at the callee). The rule
+keeps a cell only across steps whose frames keep every location of class
+value: a call whose frame changes values (`values: any`), or the step of a
+`for...of` iterator, whose frame changes its receiver's own locations,
+leaves its cells no fact.
+
 `pop`, `shift`, `reverse` and `splice` change only their receiver's store and element
 contents, and `filter`, `map`, `flatMap`, `flat`, `slice`, `splice` and `split` allocate their
 result's store (audited: [native footprints](SOURCE-CONTRACTS.md#native-footprints)).
@@ -713,7 +799,13 @@ where $`\sqsubseteq`$ is `Footprint.le`. The evidence $`\mathit{ev}`$ links a
 step position $`s`$ to an entry position and path $`(x,q)`$ with
 $`\mathrm{readPath}\,h_0\,(\rho_0\,x)\,q=\sigma\,s`$, and says which
 path $`p`$ read from $`\sigma\,s`$ at $`h`$ reads the same value at $`h_0`$
-(`RebaseOk`). Rebasing maps $`\mathsf{field}\ s\ k`$ and
+(`RebaseOk`), and which positions hold a fresh value, whose store, where it
+has one, lies at or above $`|h_0|`$ ([fresh array
+storage](#fresh-array-storage)). Rebasing maps the store region of a fresh
+position, $`\mathsf{field}\ s\ \mathtt{[]}`$ or
+$`\mathsf{path}\ s\ []\ \mathtt{[]}`$, to no region: a location it
+selects is no location of $`h_0`$, so `rebase_sound`'s case of a location
+below $`|h_0|`$ contradicts the evidence. It maps $`\mathsf{field}\ s\ k`$ and
 $`\mathsf{path}\ s\ p\ k`$ to $`\mathsf{path}\ x\ (q\,p)\ k`$,
 $`\mathsf{own}`$ and $`\mathsf{pathOwn}`$ alike, a class or a cell to
 itself, the part of a region of class $`c`$ to its image's part of class
@@ -736,10 +828,11 @@ check where every alternative a field read succeeds on states $`f`$ present
 and stable, and there is one (`entryField`).
 
 Push's step frame is the one `ReceiverGrows` gives on normal return, every
-old location kept but the receiver's store, which `grownFrame` names at
-`any`; its signature's closed bound `{value: any, store: grow}` is its frame
+old location kept but the receiver's store, which holds a store and which
+`grownFrame` names at `any`, as its part of class store; its signature's closed bound `{value: any, store: grow}` is its frame
 on a throw. A destructuring read, `const { f } = x`, is a stable read: an
-empty frame and the result's provenance.
+empty frame and the result's provenance. A node's fresh positions are the
+slots its fresh facts name (`nodeFresh`).
 
 The semantic framing theorem requires separation from every selected store.
 Distinct slots or distinct field names do not establish that premise. With
@@ -787,7 +880,9 @@ or a step whose local effect the common check `stepWithin` includes:
 `closedStep_ok`, `callStep_ok` (its frame, or `grownFrame` where the
 signature states `receiverGrows`) and `writeStep_ok` (from
 `writeStep_sound`, `ExpressionEffects.lean`, whose element-write cores
-state the written store, `StoreWrite`). `checkNodes_sound` discharges every
+state the written store, `StoreWrite`). Each node also passes its
+freshness check (`checkFresh_sound`, [fresh array
+storage](#fresh-array-storage)). `checkNodes_sound` discharges every
 node's obligation; `checkEntry_sound` proves the regional bound from the
 executable check and ordinary code and summary soundness. Its premises
 contain no unchecked regional node obligations. `checkEntry_reassign`

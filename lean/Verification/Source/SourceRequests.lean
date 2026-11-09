@@ -294,23 +294,75 @@ decides whether the result holds on every edge. -/
     else (List.range (ControlFlow.entry c).length).flatMap fun j => candidates.map fun r => ⟨j, r⟩).toArray
   ((regionIterate regions nodes (P.length + 2) init).map Array.toList).getD []
 
+/-- Candidate fresh facts of a regional body, read by no proof: every slot,
+as a fresh value and as a fresh cell, at each label but the entry, which has
+none; each pass removes, at a node that does not keep its cells, its cell
+facts, and at each destination what its edge does not establish, until none
+does; without a fixpoint, none at all. `ArgumentRegionGraph.checkNodes`
+decides whether the result holds at every node and on every edge. -/
+@[nospecialize] def freshTablesPass [DecidableEq ι] (G : PositiveGraphs.NormalGraph ι)
+    (images : PositiveCertificates.InstanceImageCheck G) (sums : List (ProgramCertificates.ReadSummary ι))
+    (Φ : Footprints.Closed) (nodes : List ((ControlFlow.Node × ControlFlow.NodeEvidence ι) × Nat))
+    (tables : Array (List Nat) × Array (List Nat)) : Array (List Nat) × Array (List Nat) :=
+  nodes.foldr (fun ((node, c), l) (values, cells) =>
+    let F := values.getD l []
+    let C := cells.getD l []
+    let C := if GraphCode.ArgumentRegionGraph.cellsKept G images sums Φ F C c node.expression node.handler.isSome
+      then C else []
+    let cells := cells.set! l C
+    let outF := GraphCode.ArgumentRegionGraph.freshOut G images sums F C c node.expression
+    let outC := GraphCode.ArgumentRegionGraph.cellOut F C node.expression
+    let edge := fun (D : List Nat) (S : List Nat) (out : Bool) (t : ControlFlow.Target) =>
+      D.filter fun i => GraphCode.freshSlot S (GraphCode.pushes node.continuation) out (PointClaims.slot t.mapping i)
+    let (values, cells) := (CertificateProducer.successors node.continuation).foldl (fun (values, cells) t =>
+      (values.modify t.label fun D => edge D F outF t, cells.modify t.label fun D => edge D C outC t)) (values, cells)
+    match node.handler with
+    | some t =>
+      let handle := fun (D : List Nat) (S : List Nat) =>
+        D.filter fun i => GraphCode.freshSlot S true false (PointClaims.slot t.mapping i)
+      (values.modify t.label fun D => handle D F, cells.modify t.label fun D => handle D C)
+    | none => (values, cells)) tables
+
+@[nospecialize] def freshTablesIterate [DecidableEq ι] (G : PositiveGraphs.NormalGraph ι)
+    (images : PositiveCertificates.InstanceImageCheck G) (sums : List (ProgramCertificates.ReadSummary ι))
+    (Φ : Footprints.Closed) (nodes : List ((ControlFlow.Node × ControlFlow.NodeEvidence ι) × Nat)) :
+    Nat → Array (List Nat) × Array (List Nat) → Option (Array (List Nat) × Array (List Nat))
+  | 0, _ => none
+  | fuel + 1, tables =>
+    let next := freshTablesPass G images sums Φ nodes tables
+    if next = tables then some tables else freshTablesIterate G images sums Φ nodes fuel next
+
+@[nospecialize] def freshTables [DecidableEq ι] (G : PositiveGraphs.NormalGraph ι)
+    (images : PositiveCertificates.InstanceImageCheck G) (sums : List (ProgramCertificates.ReadSummary ι))
+    (Φ : Footprints.Closed) (P : ControlFlow.Program) (C : ControlFlow.Certificate ι) (start : Nat) :
+    GraphCode.ArgumentRegionFresh.FreshTables :=
+  let nodes := (P.zip C).zipIdx
+  let init := (nodes.map fun ((_, c), l) =>
+    if l = start then [] else List.range (ControlFlow.entry c).length).toArray
+  match freshTablesIterate G images sums Φ nodes (2 * P.length + 2) (init, init) with
+  | some (values, cells) => ⟨values.toList, cells.toList⟩
+  | none => ⟨[], []⟩
+
 /-- The store regions a unit's statement excepts (`"x[*]": "any"`), each an
 input slot's own store: none, or a graph of a unit that is neither generic,
 async, nor promising a fresh result, all of whose runs stay within the
 statement's bound off the stores those slots hold at entry, on a throw too
 where the statement says so (`ArgumentRegionGraph.checkNodes`), its
-provenance table inferred (`regionTable`). -/
+provenance table and fresh facts inferred (`regionTable`, `freshTables`). -/
 @[nospecialize] def regionalResult (r : SourceRequest σ ι) (c : Response ι) : ProgramCertificates.CheckResult ι Unit :=
   match r.regional with
   | none => pure ()
   | some (Φ, regions) =>
     let P := GraphCode.program (r.program.map (·.expression)) (r.program.map fun n => (n.continuation, n.handler))
     let table := regionTable P c.certificate r.start regions
+    let ft := freshTables (RequestJson.graph r.toRequest) (StoreView.images r.types) c.readSummaries Φ P
+      c.certificate r.start
     ProgramCertificates.CheckResult.ofBool (r.qualification.isNone && !r.async && !r.fresh &&
       GraphCode.ArgumentPathTracking.checkEntry (GraphCode.ArgumentPathTracking.atLabel table r.start) &&
+      ((GraphCode.factsAt ft.values r.start).isEmpty && (GraphCode.factsAt ft.cells r.start).isEmpty) &&
       GraphCode.ArgumentPathTracking.checkEntryFields (RequestJson.graph r.toRequest) r.inputs regions &&
       GraphCode.ArgumentRegionGraph.checkNodes (RequestJson.graph r.toRequest) (StoreView.images r.types)
-        c.readSummaries Φ regions table (r.stated.any (·.onThrow)) P c.certificate)
+        c.readSummaries Φ regions table ft (r.stated.any (·.onThrow)) P c.certificate)
 
 /-- A unit's postcondition, established by its own graph: none, or facts of
 its result and of its inputs' entry values, which each return its graph may
@@ -612,21 +664,22 @@ theorem checkRequests_stated_at {rs : List (SourceRequest σ ι)} {b : Bundle ι
 theorem regionalResult_checked {r : SourceRequest σ ι} {c : Response ι}
     (h : (regionalResult r c).accepted = true) {Φ : Footprints.Closed} {regions : List Footprints.ArgumentStoreRegion}
     (hr : r.regional = some (Φ, regions)) :
-    r.qualification = none ∧
+    r.qualification = none ∧ ∃ ft : GraphCode.ArgumentRegionFresh.FreshTables,
       GraphCode.ArgumentPathTracking.checkEntry (GraphCode.ArgumentPathTracking.atLabel
         (regionTable (GraphCode.program (r.program.map (·.expression)) (r.program.map fun n => (n.continuation, n.handler)))
           c.certificate r.start regions) r.start) = true ∧
+      ((GraphCode.factsAt ft.values r.start).isEmpty && (GraphCode.factsAt ft.cells r.start).isEmpty) = true ∧
       GraphCode.ArgumentPathTracking.checkEntryFields (RequestJson.graph r.toRequest) r.inputs regions = true ∧
       GraphCode.ArgumentRegionGraph.checkNodes (RequestJson.graph r.toRequest) (StoreView.images r.types)
         c.readSummaries Φ regions
         (regionTable (GraphCode.program (r.program.map (·.expression)) (r.program.map fun n => (n.continuation, n.handler)))
-          c.certificate r.start regions)
+          c.certificate r.start regions) ft
         (r.stated.any (·.onThrow))
         (GraphCode.program (r.program.map (·.expression)) (r.program.map fun n => (n.continuation, n.handler)))
         c.certificate = true := by
   simp only [regionalResult, hr, ProgramCertificates.CheckResult.accepted_ofBool, Bool.and_eq_true,
     Option.isNone_iff_eq_none] at h
-  exact ⟨h.1.1.1.1.1, h.1.1.2, h.1.2, h.2⟩
+  exact ⟨h.1.1.1.1.1.1, _, h.1.1.1.2, by simpa only [Bool.and_eq_true] using h.1.1.2, h.1.2, h.2⟩
 
 /-- **A unit stating store regions meets them** (`"x[*]": "any"`;
 SOURCE-ELABORATION.md, "Stated effects"): run as the code its graph describes
@@ -651,7 +704,7 @@ theorem checkRequests_regional_at {rs : List (SourceRequest σ ι)} {b : Bundle 
         r.start L d) := by
   obtain ⟨es, _, hunit⟩ := checkRequests_pair h hm
   obtain ⟨checked, -, -, -, hreg, -⟩ := (checkRequestResult_accepted_iff _ _ _).mp hunit
-  obtain ⟨hq, hstart, hfields, hnodes⟩ := regionalResult_checked hreg hr
+  obtain ⟨hq, ft, hstart, hfresh, hfields, hnodes⟩ := regionalResult_checked hreg hr
   simp only [SourceRequest.checker, hq] at checked
   rw [verify_eq] at checked
   simp only [Bool.and_eq_true] at checked
@@ -677,7 +730,7 @@ theorem checkRequests_regional_at {rs : List (SourceRequest σ ι)} {b : Bundle 
       exact hchecked.1
     rw [← GraphCode.ArgumentRegionGraph.checkNodes_reassign G images c.readSummaries η] at hnodes
     exact GraphCode.ArgumentRegionGraph.goto_bounded hc hcodes hsums
-      (GraphCode.ArgumentRegionGraph.checkNodes_sound hgraph hcodes hsums hnodes) hstart
+      (GraphCode.ArgumentRegionGraph.checkNodes_sound hgraph hcodes hsums hnodes) hstart hfresh
       (by rw [GraphCode.ArgumentRegionGraph.checkEntryFields_reassign]; exact hfields)
       n W heap L d he hw hh hsep hidx
   · contradiction

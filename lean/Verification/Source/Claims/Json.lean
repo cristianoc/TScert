@@ -92,7 +92,8 @@ def footprintRefusal {σ ι : Type} [Labels ι] [StoreView σ ι] (name : String
     let place := r.regional.bind fun (Φ, regions) =>
       let P := GraphCode.program (r.program.map (·.expression)) (r.program.map fun n => (n.continuation, n.handler))
       let table := regionTable P c.certificate r.start regions
-      (GraphCode.ArgumentRegionGraph.firstRefusedNode G images c.readSummaries Φ regions table
+      let ft := freshTables G images c.readSummaries Φ P c.certificate r.start
+      (GraphCode.ArgumentRegionGraph.firstRefusedNode G images c.readSummaries Φ regions table ft
         (r.stated.any (·.onThrow)) P c.certificate).bind fun (_, l) => (r.sourceMap[l]?).bind id
     let pos := (place.map (·.pos)).getD namePos
     if !fieldsOk then
