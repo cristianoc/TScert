@@ -1,0 +1,116 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Commit Records</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Code+Pro:wght@400;600&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=STIX+Two+Text:ital,wght@0,400;0,600;1,400&display=swap">
+<style>
+:root { --bg:#fbfcfd; --surface:#ffffff; --ink:#0b1a2e; --muted:#56627a; --rule:#d5dce6; --accent:#8a6410; --code-bg:#eef2f7; --math-bg:#f2f4f8; --ok:#2f6b47; --ok-bg:#e2efe4; --principled:#a0521a; --principled-bg:#f7e6d6; --gap:#6b6f78; --gap-bg:#ecebe6; --neutral:#2c4f7c; --neutral-bg:#e6ebf2; --trust:#7c2f4a; --trust-bg:#f2e1e7; --neg:#9b3524; --neg-bg:#f5e1da; --run:#7a5414; --run-bg:#f3e7cc; --brand-ink:#0b1a2e; --brand-gold:#b8840f;
+  --display:"Bricolage Grotesque","Helvetica Neue",Arial,sans-serif; --body:"Inter","Helvetica Neue",Arial,sans-serif; --mono:"Source Code Pro",Menlo,Consolas,monospace; --math:"STIX Two Text","STIX Two Math","STIXGeneral","Cambria Math","Apple Symbols",Georgia,serif; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#0e1626; --surface:#16213a; --ink:#efe7d4; --muted:#9aa3b5; --rule:#2a3756; --accent:#e0ac4a; --code-bg:#131d33; --math-bg:#1a2540; --ok:#7fd0a2; --ok-bg:#17322a; --principled:#f0a868; --principled-bg:#3a2a1c; --gap:#9aa3b5; --gap-bg:#1c2639; --neutral:#8fb4e8; --neutral-bg:#1b2b49; --trust:#e79bb6; --trust-bg:#3a2131; --neg:#f0907d; --neg-bg:#3a1f22; --run:#e0ac4a; --run-bg:#2e2a24; --brand-ink:#efe7d4; --brand-gold:#e0ac4a; color-scheme:dark } }
+:root[data-theme="dark"] { --bg:#0e1626; --surface:#16213a; --ink:#efe7d4; --muted:#9aa3b5; --rule:#2a3756; --accent:#e0ac4a; --code-bg:#131d33; --math-bg:#1a2540; --ok:#7fd0a2; --ok-bg:#17322a; --principled:#f0a868; --principled-bg:#3a2a1c; --gap:#9aa3b5; --gap-bg:#1c2639; --neutral:#8fb4e8; --neutral-bg:#1b2b49; --trust:#e79bb6; --trust-bg:#3a2131; --neg:#f0907d; --neg-bg:#3a1f22; --run:#e0ac4a; --run-bg:#2e2a24; --brand-ink:#efe7d4; --brand-gold:#e0ac4a; color-scheme:dark }
+* { box-sizing:border-box } body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.6 var(--body) }
+main { max-width:900px; margin:0 auto; padding-inline:20px; padding-block:32px 64px; display:flex; flex-direction:column; gap:22px }
+h1 { font:600 32px/1.15 var(--display); margin:0 } h2 { font:600 22px/1.2 var(--display); margin:12px 0 8px; padding-top:12px; border-top:2px solid var(--ink) }
+h3 { font:600 19px/1.3 var(--display); margin:2px 0 0; text-wrap:balance }
+h4 { font:600 11px/1 var(--body); letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin:12px 0 4px }
+p { margin:2px 0; max-width:72ch } .lede { color:var(--muted) }
+code { font:13px/1.5 var(--mono); background:var(--code-bg); padding:1px 4px; border-radius:3px }
+pre { margin:4px 0; padding:12px 14px; border-radius:6px; overflow-x:auto }
+pre.code { font:13px/1.55 var(--mono); background:var(--code-bg) }
+.rules { display:flex; flex-direction:column; gap:14px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:14px 18px; overflow-x:auto; font:16px/1.6 var(--math) }
+.rules sub, .rules sup { font-size:.72em; line-height:0 }
+.formulas { display:flex; flex-direction:column; gap:4px }
+.formulas .row { display:flex; flex-wrap:wrap; gap:4px 28px } .formulas .row.cont { padding-left:2em }
+.infer { display:flex; align-items:center; gap:12px }
+.frac { display:inline-flex; flex-direction:column; align-items:center; min-width:0 }
+.premises { display:flex; flex-wrap:wrap; justify-content:center; gap:4px 26px; padding:0 6px 3px }
+.bar { align-self:stretch; border-top:1.5px solid var(--ink) }
+.conclusion { padding:3px 6px 0; text-align:center }
+.rule-name { font:15px/1 var(--math); font-variant:small-caps; letter-spacing:.02em; color:var(--accent); white-space:nowrap }
+.card { background:var(--surface); border:1px solid var(--rule); border-radius:8px; padding:20px 22px; display:flex; flex-direction:column; gap:6px; min-width:0 }
+.card > header { display:flex; justify-content:space-between; gap:12px; align-items:flex-start }
+.sha { font:12px/1.4 var(--mono); color:var(--muted) }
+.pill { font:600 11px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; padding:6px 9px; border-radius:99px; white-space:nowrap }
+.pill.ok { color:var(--ok); background:var(--ok-bg) } .pill.principled { color:var(--principled); background:var(--principled-bg) }
+.pill.gap { color:var(--gap); background:var(--gap-bg) } .pill.neutral { color:var(--neutral); background:var(--neutral-bg) }
+.units { display:flex; flex-wrap:wrap; gap:6px } .units span { font:12px/1 var(--mono); border:1px solid var(--rule); border-radius:4px; padding:5px 7px }
+dl.facts { display:grid; grid-template-columns:max-content minmax(0,1fr); gap:6px 16px; margin:12px 0 0; padding-top:12px; border-top:1px solid var(--rule); font-size:13.5px }
+dt { font:600 11px/1.9 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted) }
+dd { margin:0; min-width:0; display:flex; flex-wrap:wrap; gap:5px; align-items:baseline }
+.chip { font:500 12px/1 var(--body); border:1px solid var(--rule); border-radius:4px; padding:4px 7px } .chip.strong { color:var(--accent); border-color:var(--accent) }
+.trust { color:var(--trust); background:var(--trust-bg); padding:2px 6px; border-radius:4px } .none { color:var(--muted) }
+.test { font:12px/1 var(--mono); padding:4px 7px; border-radius:4px }
+.test.pos { color:var(--ok); background:var(--ok-bg) } .test.pos::before { content:"✓ " }
+.test.neg { color:var(--neg); background:var(--neg-bg) } .test.neg::before { content:"✗ " }
+.test.forged { color:var(--principled); background:var(--principled-bg) } .test.forged::before { content:"forged " }
+details { margin-top:8px; font-size:13px; color:var(--muted) } summary { cursor:pointer }
+.table-wrap { overflow-x:auto; border:1px solid var(--rule); border-radius:8px; background:var(--surface) }
+table { border-collapse:collapse; width:100%; font-size:13px } th, td { text-align:left; vertical-align:top; padding:8px 10px; border-bottom:1px solid var(--rule) }
+th { font:600 11px/1.2 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); white-space:nowrap } td.num { font-variant-numeric:tabular-nums }
+h4.change { display:flex; align-items:center; gap:8px; text-transform:none; letter-spacing:0; font:600 14px/1.3 var(--body); color:var(--ink); margin:16px 0 6px }
+h4.change .target { font-weight:400; color:var(--muted) }
+.act { font:600 10.5px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; padding:4px 7px; border-radius:4px }
+.act.added { color:var(--ok); background:var(--ok-bg) } .act.removed { color:var(--neg); background:var(--neg-bg) }
+.act.modified, .act.replaced { color:var(--principled); background:var(--principled-bg) }
+.versions { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:10px }
+.versions figure { margin:0; min-width:0 } .versions figcaption { font:600 11px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); margin:0 0 4px }
+.versions .rules { height:calc(100% - 18px); box-sizing:border-box }
+pre.code .ln { display:block; white-space:pre } pre.code .ln.add { background:var(--ok-bg) } pre.code .ln.del { background:var(--neg-bg) }
+.tk-k { color:#7a3b8c } .tk-s { color:#2f6b47 } .tk-n { color:#a35a12 } .tk-c { color:var(--muted); font-style:italic } .tk-t { color:#2c4f7c }
+.prose p { margin:4px 0 }
+ul.effect, ul.summary { margin:4px 0; padding-left:20px } ul.effect li, ul.summary li { margin:3px 0 } ul.summary ul { padding-left:18px; color:var(--muted) }
+ul.effect .arrow { color:var(--accent); font-weight:600 }
+ul.effect details { margin:0; color:inherit; font-size:inherit } ul.effect summary { list-style-position:outside }
+ul.effect .kind { font-size:11px; text-transform:uppercase; letter-spacing:.04em; padding:1px 6px; border-radius:4px; background:var(--chip, #eee) }
+ul.effect .kind.negative { color:#8a3b12 } ul.effect .kind.positive { color:#22663a } ul.effect .kind.gap { color:#7a5b00 }
+ul.effect .was.unsound { color:#b3261e; font-weight:600 } ul.effect .now { font-weight:500 } ul.effect .why { color:var(--muted) }
+ul.effect mark { background:#ffe08a; color:inherit; border-radius:2px }
+@media (max-width:720px) { .versions { grid-template-columns:minmax(0,1fr) } }
+.lowering { display:flex; flex-direction:column; gap:6px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:12px 16px; overflow-x:auto }
+.lowering .map, .lowering .cond, .lowering .result { display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 10px }
+.lowering .map:not(:has(.sem)) { flex-direction:column; align-items:stretch; gap:4px }
+.lowering .result { display:grid; grid-template-columns:auto minmax(0,1fr); align-items:baseline; gap:2px 10px; padding-left:1em } .lowering .result .note { grid-column:2 }
+.m-intr { font:14px/1.5 var(--mono); color:#2c4f7c } .m-lit { font:13px/1.5 var(--mono); color:#7a3b8c }
+.lowering code.src { font:13px/1.5 var(--mono); background:var(--surface); border:1px solid var(--rule); padding:2px 6px; border-radius:4px }
+.lowering .to { color:var(--accent); font-weight:600; font-size:17px }
+.lowering .tgt { font:16px/1.5 var(--math) } .rules .lowering { background:none; border:0; padding:0 } .lowering .sem code.src { margin:0 2px }
+var { font-style:italic } .m-op { color:#2c4f7c; font-style:normal } .m-con { color:#8f6416; font-style:normal; font-variant:small-caps }
+.m-kw { color:#7a3b8c; font-weight:600; font-style:normal } .m-bind { color:#7a3b8c } .m-rel { color:var(--accent); padding:0 .12em }
+.m-text { font:14px/1.5 var(--body); color:var(--muted) } code.m-code { font:13px/1.5 var(--mono); background:var(--surface); border:1px solid var(--rule); padding:1px 5px; border-radius:4px }
+.refused { color:var(--neg); font-weight:600 }
+.lowering .refused { color:var(--neg); font-weight:600 }
+.lowering .label { font:600 11px/1 var(--body); letter-spacing:.05em; text-transform:uppercase; color:var(--muted); min-width:7em }
+.lowering .cond { padding-left:1.5em } .lowering .note { color:var(--muted); font:italic 13px/1.4 var(--body) }
+a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outline-offset:2px }
+@media (max-width:520px) { dl.facts { grid-template-columns:minmax(0,1fr) } .card > header { flex-direction:column } }</style></head><body><main><header><h1>Commit Records</h1><p class="lede">4 commits, rendered from their records.</p></header>
+<section><h2>Branches</h2><ul class="summary"><li><a href="#g-pr-133"><code>56e79063f583781377119182705d4cf30edc4199..pr-133</code></a><ul><li>4 commits</li><li>parts: <span class="chip">docs</span></li></ul></li></ul></section>
+<h2 id="g-pr-133"><code>56e79063f583781377119182705d4cf30edc4199..pr-133</code></h2><article class="card" id="c-05ef05488"><header><div><div class="sha">05ef05488 · Cristiano Calcagno · Nov 09, 08:14</div><h3>Draft one frame for what a call may change, for review with Astra</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>Pretext's measureAnalysis loses every length fact of its loop at the calls of spaceSharesScriptRun and getUnspacedGraphemes, since readScriptRuns splices <code>runs.openBrackets</code>, one field below its argument, and the only effects a call can state are a closed footprint over every old location and three receiver flags (its store excepted, its own locations, its store grown). The branch chain1-argument-regions proves a fourth special case in Lean, stores reached from an argument path. The owner asked for one annotation, <code>@modifies &lt;location set&gt;</code>, with a principled meaning, and whether it should generalise.</p></div>
+<h4 class="change"><span class="act added">added</span>Docs <span class="target">docs/drafts/modifies.md</span></h4><div class="prose"><p>An effect's frame as a list of location sets, each with a closed footprint, read at the call's entry: every old location changes at most as the join of the sets containing it and is kept where no set names it; allocation unconstrained; a throw bound as a return. Sets: a module binding's cell, a field, an array's store and cells, an object's own locations, every value and every store location. The existing footprints, flags and chain1's regions as instances; the <code>@modifies</code> clause and a <code>modifies</code> member of <code>Within</code>; &quot;stable for a fact&quot; as the caller's judgment over the frame, with no annotation; the dual, read sets, callback polymorphism and two-state facts weighed and deferred; a separation precondition <code>apart(P, Q)</code> in <code>@requires</code>. Each example (the central one, pretext's script runs, method effects, module caches, native footprints, FOOTPRINTS's instances), the Lean obligations with what of chain1 they reuse, cases with Node negatives, and nine open questions.</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">docs</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd></dl>
+<details><summary>1 file changed, 421 insertions(+)</summary><pre class="code"> docs/drafts/modifies.md | 421 ++++++++++++++++++++++++++++++++++++++++++++++++</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-987735cf7"><header><div><div class="sha">987735cf7 · Cristiano Calcagno · Nov 09, 08:22</div><h3>Ground the frame of what a call may change in the regional footprint</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>The frame draft gave its own frame semantics beside the regional footprint (<code>Post</code>, <code>Supported</code>, <code>Post.compose</code>) that already means a list of region and change bounds, and its rules kept a caller's fact by the freshness of the written array (wrong for <code>const xs = [1]; shrink(xs)</code>), composed element regions with no proof that their cells transport to the entry heap, and gave <code>unshift</code> a <code>grow</code> row on cells it overwrites, beyond what <code>array_native_post</code> proves. Its translations widened the receiver-store flag and chain1's regions from a store to its cells and dropped the relational promises of <code>receiverGrows</code> and <code>elementWrite</code>.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">docs/drafts/modifies.md</span></h4><div class="prose"><p>An effect's frame is one <code>Footprint</code> over the call's positions, read by <code>Post</code>; <code>Region</code> gains paths, a path's own locations and element cells, module cells and a class intersection. Exact translations of the closed footprint, the three flags and chain1's store regions, the relational promises kept beside the frame. Two judgments: the enclosing function's obligation, which freshness discharges, and keeping a current fact, which only separation from its support does, through the existing <code>stable</code> check. Transport premises for paths (<code>@stable</code> fields or provenance), element cells (cell provenance: <code>keep</code>, <code>grow</code>, <code>Arr.Within</code>), module cells, nested calls, callbacks and throws (a normal-only summary refuses a <code>@modifies</code> body with an exceptional edge; a handler checked from the heap the throw leaves). Native rows join their callbacks' and conversions' frames on both exits; a regional row needs a confinement theorem, <code>unshift</code> at <code>{value: any, store: grow}</code>. Root binding (parameters, defaults, rest, patterns, <code>this</code>, module symbols), full-domain checks, coverage on both exits, forged controls for each. Nine decisions recorded; open: cell provenance across a store change at <code>any</code>, and the captured-output accumulation of callbacks.</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">docs</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd></dl>
+<details><summary>1 file changed, 354 insertions(+), 337 deletions(-)</summary><pre class="code"> docs/drafts/modifies.md | 691 +++++++++++++++++++++++++-----------------------</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-0ca807de1"><header><div><div class="sha">0ca807de1 · Cristiano Calcagno · Nov 09, 08:32</div><h3>State every effect in one written form, Within's footprint with regions</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>TScert states effects in one written form, Within&lt;F, T&gt;, whose F is only the closed footprint, refused outside the program's sources; the receiver flags, the append and element-write promises, module cells and argument path regions have no written form and work only where a body is analysed. The frame draft also substituted a caller's capture for a callee's module cell with no agreement between them, gave pretext's helpers frames stronger than today's rows (push and element writes grow every store; no row holds on a throw), illustrated a grow-tolerant fact by an exact length, and left the receiver flags' precedence and pathElems' element-class premise unstated.</p></div>
+<h4 class="change"><span class="act removed">removed</span>Docs <span class="target">docs/drafts/modifies.md</span></h4><div class="prose"><p>The @modifies clause draft, superseded by the stated-effects draft.</p></div>
+<h4 class="change"><span class="act added">added</span>Docs <span class="target">docs/drafts/stated-effects.md</span></h4><div class="prose"><p>One footprint language, the regional Footprint read by Post, with path, path-own, path-element, module-cell and class-intersection regions, and one written form: Within's F gains an <code>at</code> map of locations to changes and the promise members fresh, freshObject, appends and writes. A table of the effects with no written form today and their sources. A statement is optional on a program definition and certified from its body, met by every value at a program function type, read under the import assumption from another module, and admitted from a declaration file or package only as an owner-reviewed contract pinned by origin, version and heading. Exact translations of today's effects, receiverOwn taking precedence over receiverStore. Module cells exact under module-cell agreement, widened to the value class otherwise, never empty. Cell provenance a local obligation per step with the element-class fallback; transport keeps transport_sound's earlier-any disjunct. Pretext's frames with today's rows, normal return only, with the helpers' transitive calls. The saving of module runs by stated imports stated as a conjecture with the measurement that settles it. Lean obligations O1 to O9, trust, cases, decisions and three open questions.</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">docs</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd></dl>
+<details><summary>2 files changed, 504 insertions(+), 438 deletions(-)</summary><pre class="code"> docs/drafts/modifies.md       | 438 ------------------------------------
+ docs/drafts/stated-effects.md | 504 ++++++++++++++++++++++++++++++++++++++++++</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-12904809b"><header><div><div class="sha">12904809b · Cristiano Calcagno · Nov 09, 08:37</div><h3>Certify a stated effect whole, its fresh result included</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>The stated-effects draft promised that a program definition's statement is certified from its body but checked only its frame: statedWithin and checkRequests_stated_at cover the footprint and onThrow alone, and effectCheckedResult refuses freshObject, appends and writes, so a function returning its input could state a fresh result within an empty frame. It also refused every statement with both class bounds any, though a promise beside such a frame is a guarantee, and named pretext's helpers without stating the condition their summaries must meet.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">docs/drafts/stated-effects.md</span></h4><div class="prose"><p>A program definition's statement is certified whole: the frame, and fresh by the freshness facts the compositional check infers (FreshAt of the entry heap's length on normal return). freshObject, appends and writes have no rule from a body and are admitted in audited contracts only. A statement is refused only where it adds no guarantee: both class bounds any and no promise. Pretext's loop facts need the joined helper summaries to change the protected stores at grow or less; each helper's frame read from the code, and what stays unverified (the producer's summaries, the Map, RegExp and typed-array rows). Obligation O10 for the promises, a forged control of a fresh claim on an identity function, a positive case of fresh at a top frame.</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">docs</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd></dl>
+<details><summary>1 file changed, 70 insertions(+), 19 deletions(-)</summary><pre class="code"> docs/drafts/stated-effects.md | 89 ++++++++++++++++++++++++++++++++++---------</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+</main></body></html>
