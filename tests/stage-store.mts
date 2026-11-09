@@ -588,11 +588,12 @@ if (eligible) sections.push((async (): Promise<void> => {
   const runs = both.map((out) => JSON.stringify(parsed(out))).sort();
   assert.deepEqual(runs, [executed, replayed], runs.join(" "));
   assert.equal(readdirSync(join(store.root, "entries", "lower")).length, 1);
-  assert.deepEqual(readdirSync(join(store.root, "running", "lower")), [], "the claim is released");
+  for (const key of readdirSync(join(store.root, "running", "lower")))
+    assert.ok(existsSync(join(store.root, "running", "lower", key, "0", "done")), "the claim is released");
   use(store);
   assert.equal(invoke(lower(steady, input)).record.execution, "replayed");
   // A claim never released (its owner running) is waited for until the
-  // deadline, then the waiter executes the key itself.
+  // deadline, then the waiter reports a failure without executing.
   const quick = script("quick.sh", `/bin/cat "$2"`, ["/bin/cat"]);
   const pending = file("deadline.json", "deadline");
   const first = invoke(lower(quick, pending), 500);
@@ -600,12 +601,15 @@ if (eligible) sections.push((async (): Promise<void> => {
   assert.ok(pendingKey !== null);
   rmSync(join(store.root, "entries", "lower", pendingKey), { recursive: true });
   const claimed = join(store.root, "running", "lower", pendingKey);
-  mkdirSync(claimed, { recursive: true });
-  writeFileSync(join(claimed, "owner"), `${hostname()} ${process.pid} ${randomUUID().slice(0, 8)}`);
+  const holding = store.claim("lower", pendingKey);
+  assert.ok(holding !== "held");
   const waitStarted = performance.now();
   const late = invoke(lower(quick, pending), 500);
-  assert.equal(late.record.execution, "executed", "the waiter executes after the deadline");
+  assert.equal(late.record.execution, "failed", "the waiter fails after the deadline");
+  assert.match(late.error?.message ?? "", /claim deadline/);
+  assert.equal(store.finished("lower", pendingKey, null), null, "the waiter publishes no result");
   assert.ok(performance.now() - waitStarted >= claimWaitMs(500), "the waiter waits until the deadline");
+  holding();
   rmSync(claimed, { recursive: true });
   // Two results for one key are a store error.
   const result = (text: string): StoredResult => ({ input: "{}", exitStatus: 0, stdout: Buffer.from(text),
@@ -1153,52 +1157,45 @@ sections.push((async (): Promise<void> => {
   rmSync(lock, { recursive: true });
 }
 {
-  // Execution claims are locks as the eviction lock is: a running owner's
-  // claim is held, a stopped owner's and one interrupted before its owner
-  // file was written are taken over; of two processes taking a stale claim
-  // over, the one whose claim is in place keeps it; a release removes only
-  // its own claim; a wait for a claim that is never released ends at its
-  // deadline, and the waiter executes the key itself.
+  // Publication is complete; a delayed contender cannot move another
+  // generation, including during release or competing takeover.
   const store = new Store(join(dir, "claims"));
   const key = "f".repeat(64);
-  const claimLock = join(store.root, "running", "lower", key);
-  const placeClaim = (owner: string | null): void => {
-    rmSync(claimLock, { recursive: true, force: true });
-    mkdirSync(claimLock, { recursive: true });
-    writeFileSync(join(claimLock, owner === null ? "partial" : "owner"), owner ?? "");
-  };
-  const named = (pid: number): string => `${hostname()} ${pid} ${randomUUID().slice(0, 8)}`;
-  placeClaim(named(process.pid));
-  assert.equal(store.claim("lower", key), "held", "a running owner's claim is held");
-  placeClaim(named(stoppedPid()));
-  const taken = store.claim("lower", key);
-  assert.ok(taken !== "held", "a stopped owner's claim is taken over");
-  taken();
-  assert.ok(!existsSync(claimLock), "a release removes the claim");
-  placeClaim(null);
-  const interrupted = store.claim("lower", key);
-  assert.ok(interrupted !== "held", "a claim interrupted before its owner file is taken over");
-  interrupted();
-  const other = named(process.pid);
-  placeClaim(named(stoppedPid()));
+  const root = join(store.root, "running", "lower", key);
+  mkdirSync(root, { recursive: true });
+  // Interrupt the actual claim path between creating its directory and
+  // writing its owner: no incomplete generation is visible to contenders.
+  pauseLockForTests((point) => {
+    if (point !== "claim-building") return;
+    pauseLockForTests(null);
+    throw Error("interrupted claim publication");
+  });
+  assert.throws(() => store.claim("lower", key), /interrupted claim publication/);
+  assert.deepEqual(readdirSync(root), []);
+  const first = store.claim("lower", key);
+  assert.ok(first !== "held");
+  assert.equal(store.claim("lower", key), "held");
+  first();
+  assert.ok(existsSync(join(root, "0", "done")));
+  let competing: (() => void) | "held" = "held";
   pauseLockForTests((point) => {
     if (point !== "takeover") return;
     pauseLockForTests(null);
-    placeClaim(other);
+    competing = store.claim("lower", key);
+    assert.ok(competing !== "held");
   });
-  assert.equal(store.claim("lower", key), "held", "a competing takeover's claim is kept");
-  assert.equal(readFileSync(join(claimLock, "owner"), "utf8"), other);
-  rmSync(claimLock, { recursive: true });
-  const own = store.claim("lower", key);
-  assert.ok(own !== "held");
-  pauseLockForTests((point) => {
-    if (point !== "release") return;
-    pauseLockForTests(null);
-    placeClaim(other);
-  });
-  own();
-  assert.equal(readFileSync(join(claimLock, "owner"), "utf8"), other, "a release removes only its own claim");
-  rmSync(claimLock, { recursive: true });
+  assert.equal(store.claim("lower", key), "held", "a delayed takeover cannot displace the winner");
+  assert.equal(store.claim("lower", key), "held", "the winner remains sole owner");
+  // A late, repeated release marks only its original generation.
+  first();
+  assert.equal(store.claim("lower", key), "held");
+  assert.ok(existsSync(join(root, "1", "owner")));
+  const stopped = join(store.root, "running", "lower", "e".repeat(64), "0");
+  mkdirSync(stopped, { recursive: true });
+  writeFileSync(join(stopped, "owner"), `${hostname()} ${stoppedPid()} dead`);
+  const recovered = store.claim("lower", "e".repeat(64));
+  assert.ok(recovered !== "held", "a stopped owner admits the next generation");
+  recovered();
 }
 
 {
