@@ -5087,7 +5087,7 @@ control(async (): Promise<void> => {
   checkOverloads(verifier, run("overloads"));
   checkDefaults(verifier, run("default-parameter-scope"));
   checkPatternDefaults(verifier, run("destructuring-known-default"));
-  checkEarlyDefault(verifier, run("invalid-default-invocation"));
+  checkEarlyDefault(verifier, run("invalid-default-invocation"), proposedDocument);
   checkSchemeDefaults(verifier, run("invalid-generic-default-write"));
   process.stdout.write("forged claims at each kind of point: read and checked there\n");
 });
