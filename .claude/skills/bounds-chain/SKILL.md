@@ -110,6 +110,27 @@ An assumption about a library or host function is trust: state it in the
 commit record's `Trust`, add its row to the PR's trust list, and leave the
 sites it would unblock until the owner approves it.
 
+## The checked-bounds deep dive
+
+[`docs/deep-dives/checked-bounds`](../../../docs/deep-dives/checked-bounds)
+presents TScert's arithmetic and bound support conceptually: the kinds of
+facts, how they are established and carried, what acceptance guarantees,
+and what remains. It states the current conceptual state, in its own
+style ([STYLE.md](../../../docs/STYLE.md)).
+
+- A step that changes a concept updates the deck in the same pull
+  request. Such a step adds a kind of fact or of rule, a contract form, a
+  way facts survive calls or writes, a kind of trust, or a class of
+  obligation that remains. The update rewrites the slides that concept
+  touches, so the deck reads as if written today.
+- A small fix, a new instance of an existing rule, or a count moving adds
+  nothing to the deck. Its outcome numbers are measurements with their
+  commit, refreshed when a chain finishes.
+- The deck keeps its structure and voice; it never gains a history or a
+  list of changes. A revised deck reaches the owner marked since its
+  approved version
+  ([a revised deck](../../../docs/STYLE.md#a-revised-deck)).
+
 ## Testing
 
 Narrow while working: `run-cases.mts <pattern>` for the cases a rule
