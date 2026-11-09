@@ -1,124 +1,34 @@
 # Field paths and record invariants
 
-Part of [checked bound annotations](checked-bound-annotations.md) (#115). Drafted by Astra from the census of the original pretext on `907a40f0`.
+Part of [checked bound annotations](checked-bound-annotations.md) (#115).
+The design of record invariants that hold beyond the boundaries
+[type invariants](../ARITHMETIC.md#type-invariants) check: across a
+published record's own mutation, and of records stored in other structures.
 
 ## The existing mechanism this extends
 
-**Existing at `907a40f0`.** [Linear facts](../PROGRAM-TYPING.md#linear-facts)
-range over `value`, `length` and `view` terms rooted at slots.
-[Preconditions](../PROGRAM-TYPING.md#preconditions) supply
-`Effect.pre`; callers prove them and bodies assume them.
-[Postconditions](../PROGRAM-TYPING.md#postconditions) use `Effect.ensures`,
-currently available only on trusted signatures.
-`HeapLinks.Holds` relates a field-read slot to its current heap cell.
-[Footprints](../FOOTPRINTS.md) own the preservation obligations for heap facts.
-
-**Proposed.** Extend those terms with field paths and reuse their entailment,
-call contracts and read links. Record invariants are named heap predicates,
-elaborated into these facts at checked boundaries.
-The broader [bound-annotation draft](checked-bound-annotations.md) proposes
-invariants, guarded clauses and checked postconditions; those are design,
-whereas the ten branch records establish the mechanisms listed above.
-
-**Owner-supplied measurement.** On `bound-annotations-opus` at `907a40f0`,
-109/209 functions of original pretext `0d102a5` verify.
-Of the 100 refused functions, 49 first fail at an index read.
-This counts functions by first refusal, not reads closed by this proposal.
-The goal is to retain the original `x[k]!` expressions, with bounds proved
-from annotations and code under JavaScript arithmetic and heap semantics.
-
-## 1. Field-path terms
-
-**Proposed.** A path is a root value followed by finitely many fixed field keys.
-The initial source syntax admits named data fields; computed keys, getters
-and proxy-mediated access require separate checked semantics.
-A clause is a specification and executes no property access.
-
-```math
-\begin{aligned}
-\mathrm{read}(\rho,h,x)&=\rho(x),\\
-\mathrm{read}(\rho,h,p.f)&=h(\ell)
- \quad\text{if }\mathrm{read}(\rho,h,p)=o\text{ and }o(f)=\ell,\\
-⟦\mathrm{value}(p)⟧_{\rho,h}&=\mathrm{intValue}(\mathrm{read}(\rho,h,p)),\\
-⟦\mathrm{length}(p)⟧_{\rho,h}&=\mathrm{lengthOf}(h,\mathrm{read}(\rho,h,p)),\\
-⟦\mathrm{view}(p)⟧_{\rho,h}&=\mathrm{viewLengthOf}(h,\mathrm{read}(\rho,h,p)).
-\end{aligned}
-```
-
-**Proposed.** These are partial evaluations: every intermediate must be an object
-with the required data field and an allocated cell.
-The endpoint must meet the existing term's definedness condition:
-a safe-integer number, an admissible array store, or an admitted host view.
-A linear fact requires every term defined, even when normalization cancels it.
-Nullable paths need a checked guard; absent fields cannot denote zero.
-
-**Proposed preservation.** A path's support contains every traversed field cell.
-A length additionally depends on the terminal array store; a view count
-depends on its model length cell. Root slots must retain their values.
-Heap extension preserves evaluation; a mutation preserves it when the
-support is unchanged, or a dedicated theorem establishes the same value.
-Store `grow` alone preserves neither exact length nor equal parallel lengths.
-The first implementation retains heap-dependent facts across heap-preserving
-calls and forgets them across other calls and writes.
-Finer preservation uses proved support separation, including aliases.
-Normal-return footprints supply no preservation on exceptional edges.
-
-**Proposed read bridge.** If current read links establish `s = read(p)`,
-then `value(s)`, `length(s)` and `view(s)` equal the corresponding path terms
-where defined. Compose this lemma along nested reads and destructuring.
-An old slot remains a snapshot after a field replacement; its link to the
-current path expires. Slot equality alone cannot renew that link.
-
-**Proposed representation.** Generalize a term to `{kind, root, path}`,
-with an empty path representing the existing slot term.
-Entry claims name `{name, path, term, coefficient}` using resolved binding
-identities and canonical keys; lowering resolves roots to actual slots.
-The producer proposes facts; Lean checks every incoming edge.
-**Implemented differently.** Lean applies the read bridge itself, from the
-read links its own rules state, at three places (entailment, the read, a
-dropped slot: [the read bridge](../PROGRAM-TYPING.md#linear-facts)), so no
-bridge is proposed: a link is already checked knowledge, and a proposed one
-would add a claim with nothing to decide.
-Neither a property spelling nor a producer assertion supplies entry assumptions.
-Audit renaming, projection, elimination, alias classes and all three wire readers.
-
-**Proposed annotations.** `safeInteger(cursor.itemIndex)` names a path value;
-`p.widths.length` names an array length and `p.segmentFlags.length` a view count.
-For example, `@requires safeInteger(i) && 0 <= i && i < p.widths.length`
-and `@requires p.segmentFlags.length === p.widths.length` bound a flags read.
-Every arithmetic intermediate retains the existing safe-integer obligations.
-`@ensures result.widths.length === n` names the returned heap and the entry
-value of argument `n`; checked code needs preserved entry-value bindings.
-Written postconditions (`@ensures`) remain refused until every normal return proves them;
-`old` heap observations require a separate snapshot design.
+[Type invariants](../ARITHMETIC.md#type-invariants): an `@invariant` is a
+precondition of each parameter whose type names its record and a
+postcondition of each result, and of each parameter its function does not
+reassign, kept between boundaries by
+[frame conditions](../PROGRAM-TYPING.md#frame-conditions) and
+[footprints](../FOOTPRINTS.md); a sealed handle states it over its
+representation's fields. A value given the record's type by a cast, a
+spread, a native or a read of another structure's field carries no fact.
+[Field-path terms](../ARITHMETIC.md#linear-facts) read the paths a clause
+names.
 
 ## 2. Record invariants
 
-**Proposed.** `@invariant` on an alias/interface names a predicate `I(this,h)`.
-For `PreparedLineBreakData`, candidate clauses equate `widths.length`,
+**Proposed.** For `PreparedLineBreakData`, candidate clauses equate `widths.length`,
 `breakableFitAdvances.length` and the actual typed array's length.
 Nullable arrays need guarded equalities, such as
-`this.lineEndTrims === null || this.lineEndTrims.length === this.widths.length`.
-Guarded clauses are an additional checker obligation, not existing syntax.
+`this.lineEndTrims === null || this.lineEndTrims.length === this.widths.length`
+([guarded clauses](../ARITHMETIC.md#guarded-clauses)).
 An index stored beside its array may state safe integrality and strict bounds.
 A cursor with an end sentinel instead permits equality at rest; a read needs
 a strict branch bound. A cursor's relation to a separate record belongs
 in a callable precondition unless both values share an invariant root.
-
-**Proposed establishment.** Construction establishes the predicate before
-publishing the value at the invariant-bearing boundary.
-Every write affecting a location it reads must prove the predicate in the resulting
-heap while the record is closed. This includes writes through aliases,
-nested-array mutation, field replacement and native calls.
-A field's ordinary storage contract remains unchanged.
-
-**Proposed assumption rule.** Reading a value at the annotated type exposes
-the predicate only with a current closed-invariant witness.
-A signature may supply that witness through its checked precondition;
-a construction, validation or postcondition may establish it.
-A TypeScript type name alone supplies no persistent heap fact.
-Inheritance, intersections, structural conversions, imports and function-value
-flows must preserve these obligations or refuse the conversion.
 
 **Proposed mutation discipline.** Pushing to one parallel array breaks equality
 until the other append completes. Such builders use raw construction state,
@@ -150,159 +60,14 @@ Native postconditions and external invariants require separate contract audits.
 The owner reviews these trust changes and any alias-exclusion assumption;
 the existing fixed-buffer view assumption does not imply record immutability.
 
-## 3. Minimal first step and acceptance evidence
+**Records in other structures.** A record read from another record's
+field, an array or a `WeakMap` carries no invariant fact: a nested
+invariant of the containing structure would state it. A rich-inline item's
+representation shares the paragraph's lists, which later iterations grow,
+so its introduction is refused until a predicate for shared data is stated.
 
-**Proposed first delivery.** Implement field paths, checked read bridges and
-path-valued `@requires`, using conservative heap invalidation.
-This targets both parameter indices into record arrays and record-held indices
-without requiring invariant capabilities or checked user-code ensures.
-The hypothesis is that this reaches the largest shared class among the 49;
-the aggregate measurement does not establish that ranking or a closure count.
-Classify those functions by missing bounds, path transport, mutations,
-postconditions and captures before reporting expected gains.
-Exported requires are currently refused: original exported helpers additionally
-need checked export/import contracts or validated entry boundaries.
-
-**Proposed cases.** Preserve census-linked sources for `segmentFlags[segmentIndex]!`,
-destructured parallel arrays, nested paths, and `itemSegments[cursor.itemIndex]!`.
-Check callers establish the annotations; include loop merges and pure helper calls.
-For `out.widthTrims[i - from]!`, prove safe integral `from <= i < to`,
-the allocation's length `to - from`, non-nullness and capture stability.
-That example additionally needs checked `zeros` ensures and a closure contract;
-field paths alone do not close it.
-
-**Proposed controls.** Forge an entry path fact, substitute another root/key,
-retain a link after alias replacement, and carry a length across truncation.
-Bypass the producer and annotation parser where their interpretations matter.
-Run concrete unsafe sources under Node: fractional or end indices, unequal
-parallel arrays, callback mutation, and observing an interrupted two-array append.
-Keep safe unsupported cases as gaps, including guarded clauses and captures.
-
-**Proposed proof obligations.** In `Semantics/IndexFacts.lean`, extend `Term`,
-`termValue`, `IndexFact.HoldsAt`, renaming and extension lemmas.
-In `Semantics/HeapLinks.lean`, prove path-to-slot agreement from `Holds`;
-in `Semantics/HeapKnowledge.lean`, extend `termDefined_sound`,
-`pickTerm_eq`, `linearFollows_sound` and elimination soundness.
-All paths are relative to `lean/Verification/`.
-`Programs/IndexWrites.lean` must justify read equalities and arithmetic;
-`Programs/PromiseCalls.lean` must preserve `preconditionHolds_sound`
-and `ensuresCall_sound` for path substitutions.
-`Semantics/CallEffects.lean` must retain the exact pre/post heap interpretation.
-Audit `Source/SourceClaims.lean`, extraction and `Source/Claims/Plans.lean`;
-any new certified constructor needs its checker and safety theorem.
-`SourceClaimJson.checkUnitJson_safe` must cover every accepted function,
-with precisely its declared entry assumptions. Require `make test`,
-the axiom check and documentation checks; report targeted before/after
-function outcomes without treating a later first refusal as verification.
-## 4. Record invariants as footprint facts (owner direction, 2026-11-07)
-
-**The existing mechanism this extends.** [Footprints](../FOOTPRINTS.md): a
-fact, the operations stable for it, the checked contract, the construct's
-rule. A record invariant is one more fact of that mechanism, not a separate
-discipline.
-
-**The fact.** `@invariant C` on a type alias or interface `R` names
-`I_R(o, h)`: the clause `C` (the `@requires` language over `this`'s field
-paths: values, array lengths, view counts) holds of `o` in `h`. Where the
-record's construction is in stages, the stage is one of the record's own
-fields and the clause is guarded by it, so `I_R` is still one predicate on
-record values.
-
-**Established** where a value is first given type `R` by the program: an
-object literal (or `satisfies R` / annotation) allocating it, from the facts
-known of its fields' values at that point (pretext's `measureAnalysis`
-builds the arrays as locals and allocates the record once).
-
-**Stable operations** (first subset): reads; element writes at a present
-index (they change no length); writes of fields `C` does not name; calls
-whose certified footprint touches no location `C` reads. Each stability is
-a lemma of the fact kind.
-
-**Excluded operations**, refused with a location, on a value that may be an
-`R` or an array a published `R` names: `push`, `pop`, `shift`, `unshift`,
-`splice`, `length =`, `fill`/`copyWithin` where they resize (none do), and
-replacing a field `C` names. A program needing one of them on a published
-record (appending to both parallel arrays) is outside this subset: opening
-and closing an invariant is later design.
-
-**Assumed** wherever a value of type `R` is read: `I_R` holds of it, a fact
-over its paths the linear facts use. Values reach type `R` only through
-establishment inside the analyzed sources, or across the boundary of an
-exported function, where a caller outside the analyzed sources is trusted
-(the trust row of exported preconditions; owner direction: the application
-is analyzed too, so the trust is a stand-in).
-
-**Aliasing.** The exclusion is by the excluded operation's receiver: any
-array that may be a field of a published `R` (by type: an array whose type
-is a field type of some invariant-bearing `R` reachable from it, or by the
-knowledge's links) is refused the resizing operations. That over-refuses
-arrays of the same type not stored in a record; the first version accepts
-that cost and measures it on pretext.
-
-### 4.1 Revision after review: invariants as boundary contracts
-
-Astra's review (2026-11-07) found the exclusion-by-receiver-type of §4
-neither a complete alias analysis nor a preservation theorem, and a read at
-type `R` unable to manufacture the fact. The revision states the invariant
-through the contracts that exist instead of a global discipline:
-
-- **Parameters.** Every analyzed function with a parameter `p : R` has `I_R(p)`
-  conjoined to its written precondition (`Effect.pre`): its body assumes it,
-  every call checks it (call-requires). A caller outside the analyzed sources
-  is trusted for it at each call (the exported-precondition trust row, extended
-  in words to invariants at the call; no lifetime preservation is assumed).
-- **Results.** Every analyzed function whose result type is `R` has `I_R(result)`
-  as a result fact (`Effect.ensures`), proved at each normal return. It names
-  only the result, so it needs no entry values of the parameters, the
-  obstacle to `ensures` on code in general.
-- **Preservation** is local: between two boundaries, the facts are kept only
-  by operations whose certified footprints preserve their support (the index
-  fact preservation through footprints). A mutation that breaks `I_R` fails
-  at the next boundary that requires it; no operation needs a global exclusion.
-- **Establishment** is the return's proof: an object literal built from
-  local arrays, its clause proved in the heap after every initializer ran.
-- **Values stored in the heap** (an `R` read from another record's field or a
-  `WeakMap`) carry no fact: a call needing `I_R` of such a value is refused
-  until the containing structure states it (a nested invariant, later).
-- **Excluded for now**: guarded clauses, temporary opening, conversions that
-  give a value type `R` without a return of an analyzed function (casts,
-  `satisfies` on a value not built there, natives, spreads): refused, located.
-
-## 5. Sealed handles (owner choice, 2026-11-07)
-
-**The existing mechanism this extends.** §4.1: an invariant is a
-precondition of the parameters of its type and a result fact of the
-functions returning it, preserved between boundaries through footprints.
-
-**The problem.** pretext's public handle `PreparedText` is
-`{ readonly [preparedTextBrand]: true }`, `preparedTextBrand` a non-exported
-`declare const … unique symbol` with no runtime value: no value of the type
-is built but by a cast, and pretext's casts in (`measureAnalysis`'s literal
-`satisfies PreparedLineBreakData as unknown as PreparedText & …`) and out
-(`getInternalPrepared`: `prepared as InternalPreparedText`) cross it. An
-invariant of the representation `R = PreparedLineBreakData` does not reach a
-value cast out of the handle.
-
-**Rule.** An `@invariant C` on the handle type `H` states `C` over the
-fields of a representation type named beside it (`@representation R`):
-field-path terms read the object's fields at run time whatever its static
-type, so `C` is a predicate on the handle's object. It is then a §4.1
-invariant of `H`: a parameter of type `H` has `I_H` in its precondition, a
-function returning `H` proves `I_H` of its result at each return, and the
-facts reach a cast out as any facts reach a later point.
-
-**Why no lifetime registry.** Astra's design (review of 2026-11-07) proposed
-a ghost registry of sealed objects preserved by every step, a whole-program
-heap invariant. The boundary form needs none: every analyzed call checks
-`I_H` of its handle argument and every analyzed return proves it, so a
-mutation breaking it fails at the next boundary that requires it. A handle
-the program stores in its own heap and reads back carries no fact until that
-structure states one (a nested invariant, later); a caller outside the
-analyzed sources is trusted at each call (the exported-precondition trust).
-
-**Pretext.** The standalone path proves `I_H` at `measureAnalysis`'s return
-from its local arrays; the later write `prepared.segments = …` names a field
-`C` does not read, kept through footprints. A rich-inline item's
-representation shares the paragraph's lists, which later iterations grow:
-its introduction is refused (located) until a predicate for shared data is
-stated.
+**An exported cursor.** A path precondition no caller's fact establishes,
+an exported parameter's cursor passed to `getSegmentIndex`
+(`field-path-precondition-unestablished`, pretext's
+`layoutNextRichInlineLineRange`), needs an invariant of the cursor's type
+or a validated entry.
