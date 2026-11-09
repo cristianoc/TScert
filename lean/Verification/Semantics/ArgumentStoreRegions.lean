@@ -1,6 +1,7 @@
 import Verification.Semantics.ClosedFootprints
 import Verification.Semantics.IndexFacts
 import Verification.Semantics.ExceptionalPosts
+import Verification.Semantics.FootprintStability
 
 /-! Store regions read from entry values through data-field paths. A region
 excepts the store location alone. Element locations remain subject to the
@@ -279,5 +280,20 @@ theorem ArgumentStoreRegion.post_trans {c : Closed} {regions : List ArgumentStor
     Post (c.fp ++ regions.map ArgumentStoreRegion.entry) ρ entry after :=
   ArgumentStoreRegionsWithin.iff_post.mp
     ((ArgumentStoreRegionsWithin.iff_post.mpr h₁).trans (ArgumentStoreRegionsWithin.iff_post.mpr h₂) hs)
+
+/-- Store separation of a path from a slot is the separation knowledge
+`storeApart` states: the path's store location is not the slot's. -/
+theorem StoreApart.sep {h : Heap} {ρ : Env} {x y : Nat} {p : List String}
+    (ha : StoreApart h (ρ x) p (ρ y)) :
+    ∀ l, (Region.path x p arrayStoreKey).mem ρ h l = true →
+      (Region.field y arrayStoreKey).mem ρ h l = false := by
+  intro l hm
+  obtain ⟨v, s, t, hv, hs, ht, hne⟩ := ha
+  simp only [Region.mem, hv, beq_iff_eq] at hm
+  simp only [storeOf] at hs ht
+  rw [hs] at hm
+  cases hm
+  simp only [Region.mem, ht]
+  simpa [beq_iff_eq] using fun h => hne h.symm
 
 end Verification.Footprints

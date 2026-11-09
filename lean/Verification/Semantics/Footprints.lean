@@ -496,6 +496,14 @@ theorem Allowed.mono {cl Φ Ψ ρ h l v v'} (hle : Footprint.le cl Φ Ψ = true)
     simp only [Bool.and_eq_true] at hfe
     exact .inr ⟨f, hf, Region.sub_mem hfe.2 hc hl hm, hh.mono hfe.1⟩
 
+/-- **Coverage.** A footprint within another, by inclusions justified by
+class evidence valid at the heap they are read at, bounds less. -/
+theorem Post.mono {cl : ClassEvidence} {Φ Ψ : Footprint} {ρ : Env} {h h' : Heap}
+    (hle : Footprint.le cl Φ Ψ = true) (hc : ClassOk cl ρ h) (hp : Post Φ ρ h h') : Post Ψ ρ h h' :=
+  ⟨hp.1, fun l v hv => by
+    obtain ⟨v', hv', ha⟩ := hp.2 l v hv
+    exact ⟨v', hv', Allowed.mono hle hc (List.getElem?_eq_some_iff.mp hv).1 ha⟩⟩
+
 /-- Every element location the store of `v` lists at `h`, below the entry
 heap `h₀`'s length, the store of `v` listed at `h₀`: **cell provenance**. -/
 def CellsFrom (h₀ h : Heap) (v : Val) : Prop :=

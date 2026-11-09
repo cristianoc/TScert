@@ -427,11 +427,13 @@ theorem array_native_post_any {ρ x s h h'} (hs : (fieldsOf (ρ x)).lookup array
 /-! ## Relies -/
 
 /-- The separation knowledge a density fact supplies about its own store. -/
-def denseK (x : Nat) : SepKnowledge := ⟨denseClass x, ⟨fun _ => none, fun _ => none⟩, fun _ => [], []⟩
+def denseK (x : Nat) : SepKnowledge :=
+  { cl := denseClass x, stamps := ⟨fun _ => none, fun _ => none⟩, typed := fun _ => [], distinct := [] }
 
 theorem denseK_holds {x n ρ h} (hd : Dense x n ρ h) : (denseK x).Holds id ρ h :=
   ⟨dense_classOk hd, ⟨fun _ _ h => by simp [denseK] at h, fun _ _ h => by simp [denseK] at h⟩,
-    fun _ _ h => h, fun _ h => by simp [denseK] at h⟩
+    fun _ _ h => h, fun _ h => by simp [denseK] at h, fun _ h => by simp [denseK] at h,
+    fun _ h => by simp [denseK] at h⟩
 
 /-- **The closed check of `map`'s bound is the stability check**, with the
 knowledge density gives about its own store. -/
@@ -445,7 +447,7 @@ theorem denseCheck_stable {x n : Nat} {Φ : Footprint} (hc : stableDenseClosed �
   · rcases e with ⟨r, δ⟩
     simp only at hcls
     subst hcls
-    simp [SepKnowledge.apart, SepKnowledge.apart₁, denseK, denseClass]
+    simp [SepKnowledge.apart, SepKnowledge.apart₁, SepKnowledge.otherClass, denseK, denseClass]
   · simp [hle]
 
 /-- **A rely holds across a sequence of steps** each of whose footprints the
@@ -477,11 +479,13 @@ theorem map_rely {x n : Nat} {ρ : Env} (H : Nat → Heap) (Φ : Nat → Footpri
 
 /-- No separation knowledge: what the elements fact's check needs, its
 support kept by every footprint it is checked under. -/
-def noSep : SepKnowledge := ⟨fun _ _ => none, ⟨fun _ => none, fun _ => none⟩, fun _ => [], []⟩
+def noSep : SepKnowledge :=
+  { cl := fun _ _ => none, stamps := ⟨fun _ => none, fun _ => none⟩, typed := fun _ => [], distinct := [] }
 
 theorem noSep_holds (ρ : Env) (h : Heap) : noSep.Holds id ρ h :=
   ⟨fun _ _ _ _ h => by simp [noSep] at h, ⟨fun _ _ h => by simp [noSep] at h, fun _ _ h => by simp [noSep] at h⟩,
-    fun _ _ h => h, fun _ h => by simp [noSep] at h⟩
+    fun _ _ h => h, fun _ h => by simp [noSep] at h, fun _ h => by simp [noSep] at h,
+    fun _ h => by simp [noSep] at h⟩
 
 /-- **The stable set for the elements fact**: a footprint keeping every
 location it names, the empty footprint among them, passes the stability
