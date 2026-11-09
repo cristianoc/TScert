@@ -172,6 +172,31 @@ set_option maxHeartbeats 1000000
       return ← save value.source result R (.var i) next
     let present := BranchRefinement.tagSlice G R .isUndef false
     let absent := BranchRefinement.tagSlice G R .isUndef true
+    -- A default that rebinds a slot continues on each arm with the frame
+    -- that arm leaves: the slot holds what the default wrote only where it
+    -- ran.
+    if !(LoweringExecution.executionRebound scope fallback).isEmpty then
+      let continueAt := fun (A : Ty Tree) (Δ : List (Ty Tree)) =>
+        let bound : ScopeBinding Tree := { source := ⟨result.name,some result.source⟩, fixed := some A }
+        withExecutionType result.name A
+          (executeBindingPlan recursive fc original wanted (bound::scope) (A::Δ) next k)
+      let kept ← continueAt present Γ
+      let presentBinding : ScopeBinding Tree := { source := ⟨value.name,some value.source⟩, fixed := some present }
+      let yes ← emitAt value.source (.var 0) (.bind ⟨kept.label, some ((kept.mapping.getD
+          (List.range (Γ.length+1))).map fun j => if j == 0 then 0 else j+1)⟩)
+        (present::Γ) present "pattern-default-join" (scope := presentBinding::scope)
+      let absentBinding : ScopeBinding Tree := { source := ⟨value.name,some value.source⟩, fixed := some absent }
+      let no ← withExecutionType value.name absent do
+        LoweringExecution.executePlanTail recursive fc (absentBinding::scope) (absent::Γ) fallback fun inner Δ _ => do
+          let extra := Δ.length - Γ.length
+          let some A := Δ.head? | throw "internal binding plan: no default value"
+          let written ← continueAt A (Δ.drop extra)
+          let mapping := (written.mapping.getD (List.range (Γ.length+1))).map
+            (fun j => if j == 0 then 0 else j+extra)
+          emitAt result.source (.var 0) (.bind ⟨written.label,some mapping⟩)
+            Δ A "pattern-default-join" (scope := inner)
+      return ← emitAt value.source (.var i) (.tagBind .isUndef no yes) Γ R
+        "pattern-default-dispatch" (scope := scope)
     let D ← LoweringExecution.executionPlanType fc scope Γ fallback
     let T := (present ++ D).eraseDups
     let resultBinding : ScopeBinding Tree := { source := ⟨result.name,some result.source⟩, fixed := some T }

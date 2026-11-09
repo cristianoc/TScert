@@ -353,9 +353,11 @@ holding a fresh value and the slots $`C`$ holding a fresh cell
 A fresh value is conditional: `null`, a number and an object with no store
 field meet it, and an array meets it where its store was allocated during
 the run. It reads no heap. A fresh cell is an invariant of its contents,
-read at each heap: a cell is the object a `let` written inside its own
-statement lowers to ([slot or cell](SOURCE-ELABORATION.md#slot-or-cell)),
-its contents at its field `value`. A node's value is fresh, and a node
+read at each heap: a cell is the object a `let` a closure writes lowers to
+([slot or cell](SOURCE-ELABORATION.md#slot-or-cell)), its contents at its
+field `value`. A `let` held in a slot is rebound by each write, one nested
+in an expression included, and a slot's fresh value is a fact of the value,
+which no step changes. A node's value is fresh, and a node
 keeps its cells, by these rules, with $`\Gamma`$ the node's slot types,
 $`i \in F`$ and $`j \in C`$:
 
@@ -410,9 +412,9 @@ A fresh value's store region rebases to no region of the entry
 ([the step-frame rule](#argument-path-store-regions)), so a step growing or
 popping an array the body allocated, directly or through a cell, needs no
 region of the stated frame (`stated-region-fresh`, `stated-region-lazy`).
-A fresh record holding the caller's array gives that array no fact; a cell
-written with a value not fresh loses its fact, so a join of a fresh array
-and an old one has none; a call's result is fresh only at a signature
+A fresh record holding the caller's array gives that array no fact; a slot
+or a cell written with a value not fresh loses its fact, so a join of a
+fresh array and an old one has none; a call's result is fresh only at a signature
 stating `Fresh`, which the callee's own check establishes
 (`invalid-stated-region-fresh-wrapper`, `invalid-stated-region-fresh-join`,
 `invalid-stated-region-fresh-call`, each run under Node; a control forges
@@ -420,7 +422,13 @@ stating `Fresh`, which the callee's own check establishes
 keeps a cell only across steps whose frames keep every location of class
 value: a call whose frame changes values (`values: any`), or the step of a
 `for...of` iterator, whose frame changes its receiver's own locations,
-leaves its cells no fact.
+leaves its cells no fact. A slot keeps its fact across every step: a
+slot holding `null` or an array the body allocates stays fresh
+across calls whose frames state `values: "any"`, and a handler receives it
+as the throwing node holds it (`stated-slot-collect`,
+`stated-slot-conditional`, `stated-slot-handler`;
+`invalid-stated-slot-handler`, where the throw precedes the write, run
+under Node).
 
 `pop`, `shift`, `reverse` and `splice` change only their receiver's store and element
 contents, and `filter`, `map`, `flatMap`, `flat`, `slice`, `splice` and `split` allocate their

@@ -1,5 +1,6 @@
-// Pretext: a strict element bound excludes the final updated counter.
-// Preserving this body across n++ needs separation from the element locations.
+// Pretext: a strict element bound excludes the final updated counter. The
+// counter is a slot `n++` rebinds, apart from the element locations, so the
+// body holds across each write.
 /** @requires widths.length <= 2147483647 */
 export function buildPostfix(widths: number[]): number {
   const items = new Int32Array(widths.length);

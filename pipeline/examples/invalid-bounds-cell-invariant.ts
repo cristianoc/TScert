@@ -1,4 +1,4 @@
-// An invariant with a false entry cannot justify the cell's out-of-bounds read.
+// An invariant with a false entry cannot justify the counter's out-of-bounds read.
 /** @requires xs.length <= ys.length */
 export function broken(xs: number[], ys: number[]): number {
   let j = 1;

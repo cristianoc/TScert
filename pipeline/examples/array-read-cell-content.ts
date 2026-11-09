@@ -1,8 +1,8 @@
 // An element read and a field read change no location: what is known of a
-// cell's contents before the read is known after it, in a pattern's default
-// and in an expression's arm.
+// local's value, a slot's or a cell's contents, before the read is known
+// after it, in a pattern's default and in an expression's arm.
 
-// The key writes the cell; the default, after the position's read, reads it.
+// The key writes the slot; the default, after the position's read, reads it.
 export function keyBeforeDefault(): number {
   let value: number | null = null;
   const box: { slot: number } = { slot: 0 };
@@ -20,7 +20,7 @@ export function sharedCellDefault(): number {
   return a + (peek() ?? 0);
 }
 
-// The right side writes the cell before the pattern reads its position.
+// The right side writes the slot before the pattern reads its position.
 export function rightSideWrite(): number {
   let value: number | null = null;
   let a: number = 0;

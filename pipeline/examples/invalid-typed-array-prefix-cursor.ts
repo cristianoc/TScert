@@ -1,4 +1,4 @@
-// A prefix cursor advances twice: the cell-valued loop invariant fails.
+// A prefix cursor advances twice: the counter's loop invariant fails.
 export function invalidCursor(items: Int32Array): number {
   const size = items.length;
   let n = 0;

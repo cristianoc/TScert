@@ -1,4 +1,4 @@
-// The write back is at the cell's contract: `1 | 2` holds no number an
+// The write back is at the slot's contract: `1 | 2` holds no number an
 // increment gives.
 export function step(): boolean {
   let x: 1 | 2 = 1;
