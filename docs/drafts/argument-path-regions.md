@@ -114,3 +114,36 @@ is the deferred mechanism in general.
   literals, singleton allocation, and one-field paths through stable links.
   `store: grow` keeps lower bounds across the intervening calls, not
   equalities of lengths.
+
+## What the implementation must change
+
+Stable fields of program records are the first half
+([records](../POSITIVE-TYPES.md#records): a `@stable` field is allocated at
+its initial value alone). The argument-path store effect needs three more
+parts, each an extension of an existing mechanism.
+
+1. **Code meets its effect at the call's own values.** A graph code's
+   guarantee (`GraphCodeSpec`) is its effect's postcondition at every
+   receiver and actuals, $`\forall r\,\vec a.\ \mathrm{post}(r,\vec a)`$,
+   which holds because code effects state no region. A region names the
+   call's values, so the guarantee becomes the postcondition at the values
+   the frame holds, and every rule that consumes a code's guarantee (a
+   call, a method call, a variadic call, a construction, a bound function)
+   instantiates it at the frame it built.
+2. **The callee's check.** As fresh slots are tracked (`FreshOk`), a code
+   checked at region $`(i,[f])`$ tracks the slots holding parameter $`i`$'s
+   entry value $`a_0`$ and the slots holding a value whose store is
+   $`e=\mathrm{store}(a_0.f)`$; a read of $`f`$ from the first kind gives
+   the second, since $`f`$'s location's contract is stable in every world
+   the run reaches. A node's run is then within the footprint on every
+   location below the entry heap's length but $`e`$, a call excepting the
+   store of a slot of the second kind, or the region of a slot of the first
+   kind at $`[f]`$, included.
+3. **The caller's frame.** A fact $`\mathrm{storeApart}(x,[f],y)`$: the store
+   of what $`x.f`$ holds is not $`y`$'s store. It reads only $`x.f`$'s
+   location, so every step keeps it where $`f`$ is stable in $`x`$'s type (as
+   `withStable` keeps stable links), and an object literal's allocation
+   establishes it from the region fact $`\mathrm{apart}(t,y)`$ of the slot
+   $`t`$ initializing $`f`$. A call at region $`(i,[f])`$ on actual $`x`$
+   keeps a fact over $`|y|`$ where $`\mathrm{storeApart}(x,[f],y)`$ holds,
+   as its footprint keeps it elsewhere.
