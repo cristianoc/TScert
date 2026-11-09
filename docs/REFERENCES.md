@@ -821,8 +821,8 @@ source rewrites under which pretext (chenglou/pretext at `0d102a5c`)
 verifies, with its census and benchmark measurements.
 [github.com/cristianoc/TScert/issues/94](https://github.com/cristianoc/TScert/issues/94).
 
-**Used as** the measured motivation for written bound contracts.
-**Discussed in** [checked bound annotations](drafts/checked-bound-annotations.md#8-motivation-and-estimates).
+**Used as** the rewrites whose bounds written contracts restore.
+**Discussed in** [WORK](../WORK.md#status), its pretext census rows.
 
 ### TScert 104
 
