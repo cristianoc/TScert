@@ -996,6 +996,45 @@ control(async (): Promise<void> => {
 });
 
 control(async (): Promise<void> => {
+  // Store separations (`!==`, ARITHMETIC.md, "Store separation") the
+  // producer does not propose, forged past it into the claims and the
+  // parser's document of the central example's aliased caller: a
+  // separation of `xs` from itself claimed at `aliased`'s statement entry,
+  // which no knowledge at its entry establishes; and `measure`'s
+  // precondition removed from the document with every separation its
+  // claims state removed, so `i < flags.length`, still claimed after
+  // `readRuns(runs)`, is kept across a frame that may change `flags`'s
+  // store, refused at that statement's entry; each refused where evidence is
+  // searched.
+  const artifacts = run("invalid-stated-alias");
+  const source = readFileSync(sourceKey(artifacts), "utf8");
+  const claims = readClaims(artifacts);
+  const aliased = must(claims.functions.find(f => f.name === "aliased"), "aliased's claims");
+  must(aliased.entries.find(e => e.start === source.indexOf("return measure(xs")), "the call's entry").storesApart.push(
+    { name: "xs", path: [], other: "xs", otherPath: [] });
+  const separated = produceWith(artifacts, writeClaims(artifacts, "forged-store-separation", claims), "forged-store-separation");
+  assert.equal(separated.status, 1, `${separated.stdout}${separated.stderr}`);
+  assert.match(separated.stdout + separated.stderr, /does not establish the claims/);
+  const ast: Ast = readFragmentFile(join(artifacts, "fragment.json"));
+  const measure = must(ast.functions.find(f => f.name === "measure"), "measure");
+  assert.ok(measure.requires.some(f => "storeApart" in f), "measure states its separation");
+  measure.requires = [];
+  const document = join(artifacts, "forged-unseparated-fragment.json");
+  writeFileSync(document, JSON.stringify(ast));
+  const kept = readClaims(artifacts);
+  const measured = must(kept.functions.find(f => f.name === "measure"), "measure's claims");
+  for (const e of measured.entries) e.storesApart = [];
+  const read = source.indexOf("sum += flags[i]!");
+  assert.ok(must(measured.entries.find(e => e.start === read), "the read's entry").facts.some(f =>
+    "terms" in f && f.terms.some(t => t.name === "flags" && t.term === "length")), "the read's entry claims flags's length");
+  const unseparated = produceWith(artifacts, writeClaims(artifacts, "forged-kept-across-frame", kept), "forged-kept-across-frame", document);
+  assert.equal(unseparated.status, 1, `${unseparated.stdout}${unseparated.stderr}`);
+  assert.match(unseparated.stdout + unseparated.stderr,
+    new RegExp(`incoming edge obligation at \\[${read},\\d+\\): evidence search failed: the edge from node \\d+ does not establish the claims`));
+  process.stdout.write("forged store separations: a separation forged at the caller's entry, and a fact forged across a frame that may change its array's store, each refused\n");
+});
+
+control(async (): Promise<void> => {
   // A postcondition the front end does not state, forged into the parser's
   // document: `countBreaks`, returning a count of at least 0, stated to
   // return one below 0, is refused at its return, the checker reading the
