@@ -35,7 +35,7 @@ export function optionalReuse(node: { expression?: Expression }): number {
 
 export function kept(
   node: { expression: Expression },
-  keep: () => Within<{ value: "keep"; store: "keep" }, void>,
+  keep: () => Modifies<{}, void>,
 ): number {
   if (
     node.expression.kind === "property" &&

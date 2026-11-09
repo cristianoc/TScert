@@ -189,7 +189,7 @@ it. Areas follow the pipeline's order; terms are alphabetical within each.
 - **native footprint**: the audited footprint of a library native such as `Array.prototype.map` ([native footprints](SOURCE-CONTRACTS.md#native-footprints)).
 - **onThrow**: a footprint's flag stating it holds on a throw as well as on normal return ([exceptional footprints](SOURCE-ELABORATION.md#exceptional-footprints)).
 - **signature with holes** (`map`'s): the unrestricted signature of `map`, used with a callback that states no footprint, whose result may hold holes ([prototype contracts](SOURCE-CONTRACTS.md#prototype-contracts)).
-- **stated effect** / **statement** / **`Within<F, T>`**: a signature's result annotation stating footprint `F` for a result of type `T`, certified from the definition's code ([stated effects](SOURCE-ELABORATION.md#stated-effects)).
+- **stated effect** / **statement** / **`Modifies<P, T>`**: a signature's result annotation stating the frame `P`, what a call may change and how much, for a result of type `T`, certified from the definition's code ([stated effects](SOURCE-ELABORATION.md#stated-effects)).
 
 ## Source reading and the fragment
 

@@ -8,7 +8,7 @@ import type { Node } from "typescript/unstable/ast";
 
 export function childOf(
   node: Node,
-): Within<{ value: "any"; store: "grow" }, Node | undefined> {
+): Modifies<{ values: "any"; stores: "grow" }, Node | undefined> {
   if (ts.isBreakStatement(node)) return node.label;
   if (ts.isContinueStatement(node)) return node.label;
   if (ts.isLabeledStatement(node)) return node.label;
@@ -17,7 +17,7 @@ export function childOf(
 
 export function childrenOf(
   node: Node,
-): Within<{ value: "any"; store: "grow" }, readonly Node[]> {
+): Modifies<{ values: "any"; stores: "grow" }, readonly Node[]> {
   if (ts.isFunctionDeclaration(node)) return node.parameters.filter(() => true);
   return [];
 }

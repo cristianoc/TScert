@@ -323,7 +323,7 @@ inductive Expr where
   annotation given here, by its code's kind: `sloppy` for sloppy code that
   reads `this`, whose call converts a receiver that is not an object, and
   `call` for any other (`Invoke`). `stated` is the effect its result
-  annotation states (`Within<F, T>`), which some signature its code is
+  annotation states (`Modifies<P, T>`), which some signature its code is
   checked at must cover over the annotation's whole domain (`lambdaSetup`).
   `async` is the definition's completion kind, its own `async` modifier: an
   async call returns a promise its body's throw rejects, so its effects are
@@ -699,7 +699,7 @@ structure Fn where
   guard : Option Guard := none
   /-- Its completion kind, its own `async` modifier (`asyncEffects`). -/
   async : Bool
-  /-- The effect its result annotation states (`Within<F, T>`), which its
+  /-- The effect its result annotation states (`Modifies<P, T>`), which its
   unit's claim must lie within (`RequestJson.statedWithin`). -/
   stated : Option CallEffects.Effect
   /-- Its precondition, index facts at the call's positions: `0` the

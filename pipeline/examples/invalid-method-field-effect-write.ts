@@ -1,9 +1,7 @@
 // A write of a popping function into a field whose contract states the
 // empty footprint: the write is checked at the field's contract, the
 // statement included (run under Node: a hole).
-export function keep(
-  n: number,
-): Within<{ value: "keep"; store: "keep" }, number> {
+export function keep(n: number): Modifies<{}, number> {
   return n;
 }
 

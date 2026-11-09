@@ -18,7 +18,7 @@ import { auditedOpenReadKeys, receiverOpenReadKeys } from "./host-operations.mts
 import type { Span } from "./span.mts";
 import { childrenOf, nameOf, isImport, isTypeAlias, namedAccess } from "./syntax.mts";
 import { wildcardReadings, classInstance, computedAlias, literalDefaultName, computedForm, expandMapped, mapped, mapTypeParts, typeParts, members, numericKey, oneTerm, overloadTerm, optionalTerm, restPositions, restTerm, signature, signatures, statedResult, substitute,
-  typeTerm, validateAnnotation, visitType, WITHIN_PLACE, type AwaitedHook, type ComputedHook, type EnumeratedHook, type KeysHook, type Mapped, type MappedMember,
+  typeTerm, validateAnnotation, visitType, WITHIN_PLACE, FRESH_PLACE, type AwaitedHook, type ComputedHook, type EnumeratedHook, type KeysHook, type Mapped, type MappedMember,
   type AliasHook, type ModifiersHook, type RecordHook, type TermScope } from "./type-term.mts";
 import { arrayPrototype, functionPrototype, functionPrototypeName, interfaceOverlay, mergeMessage, mergeRefusal, overlay, primitiveKinds, primitivePrototype,
   primitivePrototypeName, collectionIteratorMark, nativeCollectionIterator, nativeCollectionIteratorDefinition, nativeCollectionView, nativeCollectionViewDefinition, type CollectionKind, type OverlayEntry, splitSeparators, type OverlayLibrary, type PrimitiveKind } from "./array-prototype.mts";
@@ -130,7 +130,7 @@ export type LibraryType =
 
 /** A reference to `library` at `args`, located at `span`. */
 export function libraryTerm(library: LibraryType, args: readonly TypeTerm[], span: Span,
-    fail: (message: string) => never, record?: RecordHook, alias?: AliasHook): Within<{ value: "any"; store: "grow" }, TypeTerm> {
+    fail: (message: string) => never, record?: RecordHook, alias?: AliasHook): Modifies<{ values: "any"; stores: "grow" }, TypeTerm> {
   if (library.k === "stated") {
     if (args.length) return fail(`${library.identity.name} is read at the type the overlay of library types states, which takes no type arguments`);
     return { k: "reference", args: [], span,
@@ -154,8 +154,8 @@ type FunctionTerm = Extract<TypeTerm, { k: "function" }>;
 /** The arguments of a reference to `library`: at a mapped type's key
  * parameter, the keys `keys` computes where it can (an alias of literals is
  * its literals), otherwise each argument as `read` reads it. */
-export function libraryArguments(library: LibraryType, nodes: readonly TypeNode[], read: (node: TypeNode) => Within<{ value: "any"; store: "grow" }, TypeTerm>,
-    keys?: (node: TypeNode) => Within<{ value: "any"; store: "grow" }, TypeTerm | null>): Within<{ value: "any"; store: "grow" }, TypeTerm[]> {
+export function libraryArguments(library: LibraryType, nodes: readonly TypeNode[], read: (node: TypeNode) => Modifies<{ values: "any"; stores: "grow" }, TypeTerm>,
+    keys?: (node: TypeNode) => Modifies<{ values: "any"; stores: "grow" }, TypeTerm | null>): Modifies<{ values: "any"; stores: "grow" }, TypeTerm[]> {
   const named: number[] = [];
   const mentions = (t: TypeTerm): void => {
     if (t.k === "parameter") named.push(t.index);
@@ -275,14 +275,14 @@ function withOwnProject<T>(file: string,
 }
 
 /** Whether a type term contains a named binder. */
-function hasBinderTerm(term: TypeTerm): Within<{ value: "any"; store: "grow" }, boolean> {
+function hasBinderTerm(term: TypeTerm): Modifies<{ values: "any"; stores: "grow" }, boolean> {
   if (term.k === "binder") return true;
   for (const part of typeParts(term)) if (hasBinderTerm(part)) return true;
   return false;
 }
 
 /** The module, name and source span identifying an alias. */
-function aliasKey(identity: DeclarationIdentity): Within<{ value: "any"; store: "grow" }, string> {
+function aliasKey(identity: DeclarationIdentity): Modifies<{ values: "any"; stores: "grow" }, string> {
   return `${identity.module}#${identity.name}@${identity.span[0]}:${identity.span[1]}`;
 }
 
@@ -870,9 +870,11 @@ export interface TypeAnswers {
   /** The verifier's observation-qualification bound (`resolvable.d.ts`),
    * resolved at a source name. */
   awaitable?: (span: Span) => void;
-  /** The verifier's statement of a signature's effect, `Within`
+  /** The verifier's statement of a signature's effect, `Modifies`
    * (`resolvable.d.ts`), resolved at a source name. */
   within?: (span: Span) => void;
+  /** The verifier's `Fresh` (`resolvable.d.ts`), at a source name. */
+  fresh?: (span: Span) => void;
   /** A local alias whose complete body is expanded in the qualified scope. */
   associatedAlias?: (name: string, declaration: DeclarationIdentity) => void;
   staticType?: (span: Span, result: Answered<TypeTerm>) => void;
@@ -1021,8 +1023,8 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
       verifierText ??= readText(resolvableDeclaration);
       return file.text === verifierText;
     };
-    // Statements (`Within<F, T>`, SOURCE-ELABORATION.md, "Stated effects"):
-    // a reference to the verifier's `Within`, by the declaration TypeScript
+    // Statements (`Modifies<P, T>`, SOURCE-ELABORATION.md, "Stated effects"):
+    // a reference to the verifier's `Modifies`, by the declaration TypeScript
     // binds it to. A statement is the program's own: one written outside the
     // program's sources, or in an ambient declaration, states an effect of
     // code no run checks, and so does one reached while an external value's
@@ -1044,11 +1046,11 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
     // A statement belongs to its explicit owner, including one reached
     // through a computed type in that owner's equation.
     const statement = (reading: DeclarationReading, reference: ts.TypeReferenceNode, owner: string | null): boolean => {
-      if (!ts.isIdentifier(reference.typeName) || verifierAlias(reference.typeName) !== "Within") return false;
+      if (!ts.isIdentifier(reference.typeName) || verifierAlias(reference.typeName) !== "Modifies") return false;
       if (!programFile(reference.getSourceFile()) || ambient(reference))
-        throw Error("`Within` outside the program's sources, or in an ambient declaration, states an effect of code no run checks");
+        throw Error("`Modifies` outside the program's sources, or in an ambient declaration, states an effect of code no run checks");
       if (reading.externalReads > 0)
-        throw Error("a value declared outside the program's sources is typed by a statement (`Within`), an effect of code no run checks");
+        throw Error("a value declared outside the program's sources is typed by a statement (`Modifies`), an effect of code no run checks");
       const at = owner ?? reading.owner;
       if (at !== null) statedDefinitions.add(at);
       return true;
@@ -1093,9 +1095,9 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
     const clean = (node: Node, what: string): void => resolutionClean(program, client, errors, observations, node, what);
     // The host's branded strings met (reading rule 5), by identity.
     const brands = new Set<string>();
-    const brandKey = (id: DeclarationIdentity): Within<{ value: "any"; store: "grow" }, string> => `${id.module}#${id.name}#${id.span.join(":")}`;
+    const brandKey = (id: DeclarationIdentity): Modifies<{ values: "any"; stores: "grow" }, string> => `${id.module}#${id.name}#${id.span.join(":")}`;
     const identityOf = (node: TypeDeclaration): DeclarationIdentity => resolutionIdentityOf(idOf, brands, brandKey, node);
-    const isBrand = (id: DeclarationIdentity): Within<{ value: "any"; store: "grow" }, boolean> => brands.has(brandKey(id));
+    const isBrand = (id: DeclarationIdentity): Modifies<{ values: "any"; stores: "grow" }, boolean> => brands.has(brandKey(id));
     // The one declaration TypeScript binds a name to, with no error on it or
     // on the path to it.
     const resolveDeclarations = (identifier: Identifier, what: string): Node[] => resolutionResolveDeclarations(checker, verifierFile, clean, idOf, identifier, what);
@@ -1315,7 +1317,7 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
         bases: baseDeclarations,
         literals,
         values,
-        constantName: (value): Within<{ value: "keep"; store: "keep" }, string> =>
+        constantName: (value): Modifies<{}, string> =>
           constants.find(c => c.value === value)?.name ?? String(value),
         tagParameter: d => {
           const own = d.members.find(m => nameOf(m)?.getText(d.getSourceFile()) === familyDescription.tag.field);
@@ -1939,7 +1941,7 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
         // an overload, or on the implementation, has no check, one overload
         // beside its implementation included.
         if (nodes.some(n => ts.isFunctionDeclaration(n) && statedResult(valueScope(reading, n, what), n.type, n).stated))
-          throw Error(`a statement (\`Within\`) on an overloaded declaration is outside the fragment: ${what}`);
+          throw Error(`a statement (\`Modifies\`) on an overloaded declaration is outside the fragment: ${what}`);
         if (nodes.some(n => ts.isFunctionDeclaration(n) && writtenClauses(n).length > 0))
           throw Error(`a precondition (\`@requires\`) on an overloaded declaration is outside the fragment: ${what}`);
         if (nodes.some(n => ensuresTags(n.getSourceFile().text.slice(n.pos, n.getStart(n.getSourceFile()))).length > 0))
@@ -2832,8 +2834,13 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
           continue;
         }
         if (isTypeAlias(declaration) && verifierFile(declaration.getSourceFile()) &&
-            declaration.name.text === "Within") {
+            declaration.name.text === "Modifies") {
           typeAnswers.within?.(span);
+          continue;
+        }
+        if (isTypeAlias(declaration) && verifierFile(declaration.getSourceFile()) &&
+            declaration.name.text === "Fresh") {
+          typeAnswers.fresh?.(span);
           continue;
         }
         if (isTypeAlias(declaration) && verifierFile(declaration.getSourceFile()) &&
@@ -4483,10 +4490,10 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
         declaration: name => {
           const nodes = typeDeclarationsOf(name);
           if (!nodes.some(isTypeDeclaration)) return null;
-          // A statement, `Within<F, T>`, is no application: the reader of
+          // A statement, `Modifies<P, T>`, is no application: the reader of
           // signatures reads its footprint, whose shape it checks
           // (`statedResult`), and its result.
-          if (verifierAlias(name) === "Within") return null;
+          if (verifierAlias(name) === "Modifies") return null;
           // A target matters only where it has a bounded parameter.
           if (!nodes.some(n => isTypeDeclaration(n) && n.typeParameters?.some(p => p.constraint))) return null;
           // A stated type takes no arguments and has no declaration read.
@@ -4801,7 +4808,7 @@ function externalStatements(externals: readonly { what: string; type: TypeTerm }
         if (seen.has(key) || classes.has(key)) return;
         seen.add(key);
         if (stated.has(key))
-          throw Error(`the value ${what}, declared outside the program's sources, is typed through ${part.reference.name}, whose statement (\`Within\`) states an effect of code no run checks`);
+          throw Error(`the value ${what}, declared outside the program's sources, is typed through ${part.reference.name}, whose statement (\`Modifies\`) states an effect of code no run checks`);
         const definition = byKey.get(key);
         if (definition?.expression) work.push(definition.expression);
         work.push(...definition?.bases ?? []);
@@ -6034,7 +6041,7 @@ interface DeclarationElaborationContext {
   /** The type alias a reference names, if any. */
   alias: (reference: ts.TypeReferenceNode) => TypeAliasDeclaration | null;
   awaited: AwaitedHook;
-  /** Whether a reference is a statement (`Within`), recording that the
+  /** Whether a reference is a statement (`Modifies`), recording that the
    * definition `owner` reads one. */
   stated: (reference: ts.TypeReferenceNode, owner: string) => boolean;
   /** A mapped type's keys as TypeScript computes them. */
@@ -6709,11 +6716,14 @@ function resolutionResolveDeclarations(checker: Checker, verifierFile: (file: So
     if (!node) throw Error(`unresolved type reference ${what}`);
     return node;
   });
-  // The verifier's `Within` and `Footprint` are no types: a statement
-  // is read at a signature's result (`statedResult`), and nowhere else.
-  if (nodes.some(n => isTypeAlias(n) && verifierFile(n.getSourceFile()) &&
-      (n.name.text === "Within" || n.name.text === "Footprint")))
+  // The verifier's `Modifies` is no type: a statement is read at a
+  // signature's result (`statedResult`), and nowhere else. `Fresh` is read
+  // nowhere: a fresh result is stated where its certification reaches the
+  // source (docs/drafts/stated-effects.md, §3.1).
+  if (nodes.some(n => isTypeAlias(n) && verifierFile(n.getSourceFile()) && n.name.text === "Modifies"))
     throw Error(`${WITHIN_PLACE}: ${what}`);
+  if (nodes.some(n => isTypeAlias(n) && verifierFile(n.getSourceFile()) && n.name.text === "Fresh"))
+    throw Error(`${FRESH_PLACE}: ${what}`);
   for (const statement of statementsOnPath(checker, identifier))
     clean(statement, `${idOf(statement.getSourceFile())} on the path to ${what}`);
   return nodes;

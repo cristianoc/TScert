@@ -5,4 +5,4 @@ export const bad = (
   xs: number[],
   x: number = xs.pop() ?? 0,
   ...more: number[]
-): Within<{ value: "keep"; store: "keep" }, number> => x + more.length;
+): Modifies<{}, number> => x + more.length;

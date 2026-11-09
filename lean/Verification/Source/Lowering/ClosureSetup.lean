@@ -293,7 +293,7 @@ by subtyping; or a scheme row's variadic signatures. -/
     for (D, B) in row.arguments.zip sourceDs do
       requireWithin T pos .bindingAnnotation B D reason
     requireWithin T pos .bindingAnnotation row.result promised reason
-  -- A written statement (`Within<F, T>`) is proved as a written promise is,
+  -- A written statement (`Modifies<P, T>`) is proved as a written promise is,
   -- whatever the claim offers: some signature the code is checked at states
   -- an effect covering it over the annotation's whole domain, every receiver
   -- and every argument the annotation admits, at a result within the written

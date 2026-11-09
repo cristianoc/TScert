@@ -90,11 +90,11 @@ export function spec<F>(f: F, contract: {
   requires?: (...args: never[]) => boolean;
   ensures?: (result: never, ...args: never[]) => boolean;
   modifies?: (...args: never[]) => readonly Region[];
-}): Within<{ value: "keep"; store: "keep" }, void> {}
-export function invariant(holds: () => boolean): Within<{ value: "keep"; store: "keep" }, void> {}
-export function lemma(name: string, holds: (...args: never[]) => boolean): Within<{ value: "keep"; store: "keep" }, void> {}
+}): Modifies<{}, void> {}
+export function invariant(holds: () => boolean): Modifies<{}, void> {}
+export function lemma(name: string, holds: (...args: never[]) => boolean): Modifies<{}, void> {}
 export function forAll(from: number, to: number,
-    p: (i: number) => Within<{ value: "keep"; store: "keep" }, boolean>): Within<{ value: "keep"; store: "keep" }, boolean> {
+    p: (i: number) => Modifies<{}, boolean>): Modifies<{}, boolean> {
   for (let i = from; i < to; i++) if (!p(i)) return false;
   return true;
 }

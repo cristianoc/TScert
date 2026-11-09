@@ -192,9 +192,11 @@ export class Gate {
   standardResolvable: boolean = false;
   /** The file names the verifier's `Awaitable` (`resolvable.d.ts`). */
   standardAwaitable: boolean = false;
-  /** The file names the verifier's `Within` (`resolvable.d.ts`), a
-   * signature's statement of its effect. */
+  /** The file names the verifier's `Modifies` (`resolvable.d.ts`), a
+   * signature's statement of its frame. */
   standardWithin: boolean = false;
+  /** The file names the verifier's `Fresh` (`resolvable.d.ts`). */
+  standardFresh: boolean = false;
   qualificationHeader: boolean = false;
   /** Local spelling to the arity and identity of its declaration root. A
    * reference names the declaration TypeScript resolved the spelling to. */
@@ -319,7 +321,7 @@ export class Gate {
    * protocol before its own code (`hoistTarget`): the spread collected, and
    * the claim sites the lowering takes from the statement. */
   hoist: { stmt: Statement; spread: ts.SpreadElement | null;
-    site: { entry(): Within<{ value: "any"; store: "grow" }, number>; span(): Within<{ value: "any"; store: "grow" }, Span> } } | null = null;
+    site: { entry(): Modifies<{ values: "any"; stores: "grow" }, number>; span(): Modifies<{ values: "any"; stores: "grow" }, Span> } } | null = null;
   /** The statements a lowering runs before the statement being lowered. */
   hoisted: Stmt[] = [];
   /** The array pattern rest targets TypeScript types as a slice, by span. */
@@ -349,7 +351,7 @@ export class Gate {
   readonly renames: Map<string, string> = new Map();
   /** The fragment's name of a value binding or reference spelled by `id`:
    * its own text, unless it is or names a shadowing local (`renames`). */
-  local(id: Identifier): Within<{ value: "keep"; store: "keep" }, string> {
+  local(id: Identifier): Modifies<{}, string> {
     return this.renames.get(`${id.getStart(this.file)}:${id.end}`) ?? id.text;
   }
   /** The class whose instance members are being lowered: its own name reads
@@ -434,7 +436,7 @@ export class Gate {
 
   /** The binding a namespace member read or qualified type name reads, or
    * undefined for another node. */
-  namespaceMember(node: Node): Within<{ value: "any"; store: "grow" }, string | undefined> {
+  namespaceMember(node: Node): Modifies<{ values: "any"; stores: "grow" }, string | undefined> {
     return this.namespaceUses.get(this.span(node).join(":"))?.member.local;
   }
 
@@ -442,7 +444,7 @@ export class Gate {
    * declarations alone: `Object` of `Object.assign`, or the member `call`,
    * `apply` or `bind` of a function. A local, an import or a namespace
    * member of that spelling is not. */
-  libraryName(node: Node): Within<{ value: "any"; store: "grow" }, boolean> {
+  libraryName(node: Node): Modifies<{ values: "any"; stores: "grow" }, boolean> {
     return this.libraryNames.has(this.span(node).join(":"));
   }
 
@@ -450,7 +452,7 @@ export class Gate {
    * there is one, and how many statements the prologue's "use strict" members
    * occupy, which are dropped since they do nothing else. Another directive
    * stays an ordinary statement. */
-  useStrict(statements: readonly Statement[]): Within<{ value: "any"; store: "grow" }, {
+  useStrict(statements: readonly Statement[]): Modifies<{ values: "any"; stores: "grow" }, {
     strict: boolean;
     skip: Set<Statement>;
   }> {
@@ -468,13 +470,13 @@ export class Gate {
     return { strict: skip.size > 0, skip };
   }
 
-  hasTypeParam(name: string): Within<{ value: "keep"; store: "keep" }, boolean> {
+  hasTypeParam(name: string): Modifies<{}, boolean> {
     return this.typeParamScopes.some((scope) => scope.has(name));
   }
 
   /** The name a type parameter in scope is emitted under: its spelling, or,
    * for a class's generic method, its member's binder name (`lambda`). */
-  typeParamName(name: string): Within<{ value: "any"; store: "keep" }, string> {
+  typeParamName(name: string): Modifies<{ values: "any" }, string> {
     for (const scope of this.typeParamScopes) {
       const emitted = scope.get(name);
       if (emitted !== undefined) return emitted;
@@ -485,7 +487,7 @@ export class Gate {
   /** The qualification a bound declares: the verifier's `Resolvable` or
    * `Awaitable`, by the declaration the file's name binds to, not shadowed by
    * a type parameter. */
-  qualificationBound(bound: TypeNode | undefined): Within<{ value: "any"; store: "grow" }, "resolvable" | "awaitable" | null> {
+  qualificationBound(bound: TypeNode | undefined): Modifies<{ values: "any"; stores: "grow" }, "resolvable" | "awaitable" | null> {
     if (!bound || !ts.isTypeReferenceNode(bound) || !ts.isIdentifier(bound.typeName) ||
         bound.typeArguments?.length) return null;
     const name = bound.typeName.text;
@@ -500,9 +502,9 @@ export class Gate {
    * observation; neither is a subtype bound. */
   enterTypeParams(
     parameters: readonly TypeParameterDeclaration[] | undefined,
-    rename?: (parameter: TypeParameterDeclaration, index: number) => Within<{ value: "any"; store: "grow" }, string>,
+    rename?: (parameter: TypeParameterDeclaration, index: number) => Modifies<{ values: "any"; stores: "grow" }, string>,
     qualifiable: boolean = false,
-  ): Within<{ value: "any"; store: "grow" }, TypeParamAst[]> {
+  ): Modifies<{ values: "any"; stores: "grow" }, TypeParamAst[]> {
     const local = new Map<string, string>();
     const result: TypeParamAst[] = [];
     this.typeParamScopes.unshift(local);
@@ -542,7 +544,7 @@ export class Gate {
    * parameters' contextual types name (`contextualBinders`). They are the
    * closure's own, as if written, each unbounded, under the fresh names
    * the declaration graph gives them, which no written type spells. */
-  enterContextualTypeParams(node: Node): Within<{ value: "any"; store: "grow" }, TypeParamAst[]> {
+  enterContextualTypeParams(node: Node): Modifies<{ values: "any"; stores: "grow" }, TypeParamAst[]> {
     const answered = this.contextualBinders.get(this.span(node).join(":"));
     if (!answered) return this.enterTypeParams(undefined);
     if (!answered.ok) return this.fail(node, answered.refused);
@@ -557,7 +559,7 @@ export class Gate {
     return scope;
   }
 
-  leaveTypeParams(): Within<{ value: "any"; store: "grow" }, void> {
+  leaveTypeParams(): Modifies<{ values: "any"; stores: "grow" }, void> {
     this.resolutionScopes = this.resolutionScopes.slice(1);
     const left = this.typeParamScopes[0];
     this.typeParamScopes = this.typeParamScopes.slice(1);
@@ -611,13 +613,13 @@ export class Gate {
   }
 
   /** The gate's refusal `message`, located at `node`. */
-  refusal(node: Node | null, message: string): Within<{ value: "any"; store: "grow" }, string> {
+  refusal(node: Node | null, message: string): Modifies<{ values: "any"; stores: "grow" }, string> {
     const start = node ? node.getStart(this.file) : 0;
     const at = this.file.getLineAndCharacterOfPosition(start);
     return `gate: ${message} (line ${at.line + 1}, col ${at.character + 1})`;
   }
 
-  span(node: Node): Within<{ value: "keep"; store: "keep" }, Span> {
+  span(node: Node): Modifies<{}, Span> {
     return [node.getStart(this.file), node.end];
   }
 
@@ -637,7 +639,7 @@ export class Gate {
   // `async` and `await` are trusted steps, written as calls of intrinsics
   // (`intrinsics.mts`): the call is at `pos`, the intrinsic read at `at`.
 
-  intrinsic(name: string, pos: Span, at: Span, args: Expr[]): Within<{ value: "any"; store: "grow" }, Expr> {
+  intrinsic(name: string, pos: Span, at: Span, args: Expr[]): Modifies<{ values: "any"; stores: "grow" }, Expr> {
     return { k: "apply", pos, callee: { k: "id", pos: at, name }, args };
   }
 
@@ -648,7 +650,7 @@ export class Gate {
    * An array is spread as it is. A program's iterable is collected into a
    * fresh array before the statement (`collect`), where that runs its code in
    * its place (`hoistTarget`). */
-  spreadOperand(arg: ts.SpreadElement): Within<{ value: "any"; store: "grow" }, Expr> {
+  spreadOperand(arg: ts.SpreadElement): Modifies<{ values: "any"; stores: "grow" }, Expr> {
     const intrinsic = this.iterations.get(this.span(arg.expression).join(":"));
     if (intrinsic?.startsWith("client")) {
       if (this.hoist?.spread !== arg) this.fail(arg, SPREAD_POSITION);
@@ -669,7 +671,7 @@ export class Gate {
    * `for await`), which the model does not state, and `Symbol.toStringTag`
    * would let the object pass for a host `Set` or `Map`, whose iteration is
    * trusted to be the host's. */
-  writtenSymbol(name: ts.ComputedPropertyName, at: Node): Within<{ value: "any"; store: "grow" }, number | null> {
+  writtenSymbol(name: ts.ComputedPropertyName, at: Node): Modifies<{ values: "any"; stores: "grow" }, number | null> {
     const found = this.symbolNames.get(this.span(name.expression).join(":"));
     const symbol = found?.ok ? found.value : null;
     if (typeof symbol !== "number") return null;
@@ -680,7 +682,7 @@ export class Gate {
 
   /** `await e`: `%Await%(e)`, the intrinsic read at the keyword. Every span
    * an intrinsic call or read is given is a node or a token of the source. */
-  awaitExpr(node: ts.AwaitExpression): Within<{ value: "any"; store: "grow" }, Expr> {
+  awaitExpr(node: ts.AwaitExpression): Modifies<{ values: "any"; stores: "grow" }, Expr> {
     const start = node.getStart(this.file);
     return this.intrinsic(awaitName, this.span(node), [start, start + "await".length],
       [this.expr(node.expression)]);
@@ -689,7 +691,7 @@ export class Gate {
   /** An async body completes with `return %AsyncComplete%()`: the call spans
    * the block, the intrinsic and the statement its closing brace. Nothing is
    * added to a body that returns on every path. */
-  asyncCompletion(block: ts.Block, statements: Stmt[]): Within<{ value: "any"; store: "grow" }, Stmt[]> {
+  asyncCompletion(block: ts.Block, statements: Stmt[]): Modifies<{ values: "any"; stores: "grow" }, Stmt[]> {
     const returns = (xs: Stmt[]): boolean => {
       const last = xs.at(-1);
       return last?.k === "return" || last?.k === "throw" ||
@@ -703,7 +705,7 @@ export class Gate {
       e: this.intrinsic(asyncCompleteName, this.span(block), brace, []) }];
   }
 
-  text(node: Node): Within<{ value: "any"; store: "grow" }, string> {
+  text(node: Node): Modifies<{ values: "any"; stores: "grow" }, string> {
     return this.file.text.slice(node.getStart(this.file), node.end);
   }
 
@@ -711,23 +713,26 @@ export class Gate {
 
   /** The type declared in a block TypeScript binds a reference to, if any:
    * it shadows every other meaning of its spelling. */
-  blockTypeAt(node: Node): Within<{ value: "any"; store: "grow" }, Answered<BlockType> | undefined> {
+  blockTypeAt(node: Node): Modifies<{ values: "any"; stores: "grow" }, Answered<BlockType> | undefined> {
     return this.blockTypes.get(this.span(node).join(":"));
   }
   /** Type syntax reads through the one source-term reader, at this record
    * of the gate's hooks. A name is a binder of an enclosing function or a
    * declaration root; every declaration root was resolved by TypeScript's
    * checker. */
-  termScope(): Within<{ value: "any"; store: "grow" }, TermScope> {
+  termScope(): Modifies<{ values: "any"; stores: "grow" }, TermScope> {
     return {
       source: this.file,
       annotation: true,
       awaited: node => this.standardAwaited && ts.isIdentifier(node.typeName) &&
         node.typeName.text === "Awaited" && !this.hasTypeParam("Awaited") && !this.blockTypeAt(node),
-      // `Within`, where the file names the verifier's and no type parameter,
+      // `Modifies`, where the file names the verifier's and no type parameter,
       // block type or declaration of the file's shadows it.
-      stated: node => this.standardWithin && ts.isIdentifier(node.typeName) && node.typeName.text === "Within" &&
-        !this.hasTypeParam("Within") && !this.blockTypeAt(node) && !this.declaredTypes.has("Within"),
+      stated: node => this.standardWithin && ts.isIdentifier(node.typeName) && node.typeName.text === "Modifies" &&
+        !this.hasTypeParam("Modifies") && !this.blockTypeAt(node) && !this.declaredTypes.has("Modifies"),
+      // `Fresh`, likewise.
+      fresh: node => this.standardFresh && ts.isIdentifier(node.typeName) && node.typeName.text === "Fresh" &&
+        !this.hasTypeParam("Fresh") && !this.blockTypeAt(node) && !this.declaredTypes.has("Fresh"),
       associatedAlias: node => ts.isIdentifier(node.typeName) && !this.hasTypeParam(node.typeName.text) &&
           !this.blockTypeAt(node)
         ? this.resolutionAliases.get(node.typeName.text) ?? null : null,
@@ -881,7 +886,7 @@ export class Gate {
    * omitted ones completed at them. */
   declaredReference(node: ts.TypeReferenceNode, name: string, span: Span,
       declared: { required: number; total: number; declaration: DeclarationIdentity }, closed: TypeTerm[],
-      read: (part: TypeNode) => Within<{ value: "any"; store: "grow" }, TypeTerm>): Within<{ value: "any"; store: "grow" }, TypeTerm> {
+      read: (part: TypeNode) => Modifies<{ values: "any"; stores: "grow" }, TypeTerm>): Modifies<{ values: "any"; stores: "grow" }, TypeTerm> {
     const args = node.typeArguments ?? [];
     if (args.length < declared.required || args.length > declared.total) {
       const count = declared.required === declared.total
@@ -901,7 +906,7 @@ export class Gate {
   /** The complete declaration document's definitions, as a named type's
    * record shape is read from them (`NamedRecords`); null before it is
    * complete. */
-  namedRecords(): Within<{ value: "any"; store: "grow" }, NamedRecords | null> {
+  namedRecords(): Modifies<{ values: "any"; stores: "grow" }, NamedRecords | null> {
     const definitions = this.recordDefinitions;
     if (!definitions) return null;
     return { definition: id => definitions.get(definitionKey(id)), record: id => this.recordKeys.has(definitionKey(id)) };
@@ -910,7 +915,7 @@ export class Gate {
   /** A term the declaration graph read while it was collected, with each
    * mapped type it deferred at a named type expanded at the complete
    * document (`settleTerm`); a refusal located at `node`. */
-  settled(term: TypeTerm, node: Node): Within<{ value: "any"; store: "grow" }, TypeTerm> {
+  settled(term: TypeTerm, node: Node): Modifies<{ values: "any"; stores: "grow" }, TypeTerm> {
     const records = this.namedRecords();
     if (!records) return term;
     return settleTerm(term, records, "the source", (_where, error) => {
@@ -919,19 +924,19 @@ export class Gate {
     });
   }
 
-  keyType(node: Node): Within<{ value: "any"; store: "grow" }, TypeTerm | null> {
+  keyType(node: Node): Modifies<{ values: "any"; stores: "grow" }, TypeTerm | null> {
     const term = this.keyTypes.get(this.span(node).join(":"));
     return term ? this.settled(term, node) : null;
   }
 
-  typeOf(node: TypeNode | undefined, at: Node | null = null): Within<{ value: "any"; store: "grow" }, TypeTerm> {
+  typeOf(node: TypeNode | undefined, at: Node | null = null): Modifies<{ values: "any"; stores: "grow" }, TypeTerm> {
     return typeTerm(this.termScope(), node, at);
   }
 
   /** A definition's written result: its statement of the definition's
-   * effect, `Within<F, T>`, and the result annotation it states it of
+   * effect, `Modifies<P, T>`, and the result annotation it states it of
    * (`statedResult`); no statement where it writes none. */
-  statedResult(node: TypeNode | undefined, at: Node): Within<{ value: "any"; store: "grow" }, { stated: StatedEffect | null; result: TypeNode | undefined }> {
+  statedResult(node: TypeNode | undefined, at: Node): Modifies<{ values: "any"; stores: "grow" }, { stated: StatedEffect | null; result: TypeNode | undefined }> {
     return statedResult(this.termScope(), node, at);
   }
 
@@ -940,7 +945,7 @@ export class Gate {
    * union, so nothing downstream needs a second representation of optionality.
    * A call may omit a trailing position exactly when its contract admits
    * `undefined`; declared arity is not observable in this fragment. */
-  optionalTypeOf(node: TypeNode | undefined, at: Node): Within<{ value: "any"; store: "grow" }, TypeTerm> {
+  optionalTypeOf(node: TypeNode | undefined, at: Node): Modifies<{ values: "any"; stores: "grow" }, TypeTerm> {
     return optionalTerm(this.typeOf(node, at), this.span(at));
   }
 
@@ -950,7 +955,7 @@ export class Gate {
    * is checked at it, and the closure's signature wherever the closure
    * goes, the call offering it included. Its declarations belong to the shared
    * declaration graph, and its type parameters are in scope. */
-  closureParamType(p: ts.ParameterDeclaration): Within<{ value: "any"; store: "grow" }, TypeTerm> {
+  closureParamType(p: ts.ParameterDeclaration): Modifies<{ values: "any"; stores: "grow" }, TypeTerm> {
     if (p.type || p.dotDotDotToken) return p.questionToken ? this.optionalTypeOf(p.type, p) : this.typeOf(p.type, p);
     const answered = this.contextualParams.get(this.span(p.name).join(":"));
     if (!answered) return this.typeOf(undefined, p);
@@ -972,7 +977,7 @@ export class Gate {
    * array, the collected array viewed at it. A declared alias is read
    * through its equation, as TypeScript reads one: the parameter's type is
    * that equation. */
-  restType(p: ParameterDeclaration): Within<{ value: "any"; store: "grow" }, TypeTerm> {
+  restType(p: ParameterDeclaration): Modifies<{ values: "any"; stores: "grow" }, TypeTerm> {
     const type = restTerm(this.termScope(), this.typeOf(p.type, p));
     if (!restPositions(type)) this.fail(p, restRefusal(type));
     return type;
@@ -985,7 +990,7 @@ export class Gate {
    * required positions written as one. The body sees the fresh array at
    * that bound, the elements every instance's list has; the parameter types
    * nothing else, since the collected array is no value of it. */
-  moduleRestType(p: ParameterDeclaration, node: FunctionDeclaration): Within<{ value: "any"; store: "grow" }, TypeTerm> {
+  moduleRestType(p: ParameterDeclaration, node: FunctionDeclaration): Modifies<{ values: "any"; stores: "grow" }, TypeTerm> {
     const name = p.type && ts.isTypeReferenceNode(p.type) && ts.isIdentifier(p.type.typeName) &&
       !p.type.typeArguments ? p.type.typeName.text : null;
     const own = node.typeParameters?.find(tp => tp.name.text === name);
@@ -2448,6 +2453,7 @@ function lowerFile(file: string, carriesContext: boolean,
         resolvable: () => { gate.standardResolvable = true; },
         awaitable: () => { gate.standardAwaitable = true; },
         within: () => { gate.standardWithin = true; },
+        fresh: () => { gate.standardFresh = true; },
         associatedAlias: (name, identity) => {
           const alias = aliasNodes.find(node => node.name.text === name &&
             node.getStart(source) === identity.span[0] && node.end === identity.span[1]);
@@ -2708,7 +2714,7 @@ if (process.argv[1] && import.meta.filename === resolve(process.argv[1])) {
  * signature as read where it states neither. */
 function writtenImport(gate: Gate, value: ValueRoot, clauses: readonly string[],
     parameters: readonly string[] | null, invariants: ImportedInvariants,
-    at: Node | undefined): Within<{ value: "any"; store: "grow" }, TypeTerm> {
+    at: Node | undefined): Modifies<{ values: "any"; stores: "grow" }, TypeTerm> {
   const what = `${value.declaration.module}#${value.declaration.name}`;
   if (parameters === null && clauses.length > 0)
     return gate.fail(at ?? null, `an imported precondition (\`@requires\`) on an async function or one whose parameters are not plain required names: ${what}`);

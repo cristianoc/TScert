@@ -1,4 +1,4 @@
-/* The method-effects deep dive: what a stated method effect (`Within<F, T>`)
+/* The method-effects deep dive: what a stated method effect (`Modifies<P, T>`)
  * is, where it can be written and how far it reaches, with examples that
  * verify and examples refused, and its use on TScert's own parser with the
  * outcomes measured. Built with the deck kit
@@ -53,11 +53,11 @@ const slides: Slide[] = [
   }),
   slide("write", {
     label: "What you write", note: `from test case ${c("method-effect-map.ts")} · ${verified}`,
-    title: t("The effect goes in the result type, as `Within<F, T>`"),
-    body: code([`note(n: number): Within<{ value: "any"; store: "grow" }, number> {`, "  this.entries.push(n);", "  return n + 1;", "}"]) + bullets([
-      t("`Within` needs no import, only its declaration file listed in the project’s tsconfig.json: it is a global type alias in tools/resolvable.d.ts (tools/, the directory of TScert’s TypeScript front end). To TypeScript, `Within<F, T>` is just `T`, so the code compiles and runs unchanged. TScert recognises `Within` by that declaration, or an identical copy of its file: another type called `Within` is an ordinary type."),
-      t("To TScert it is a statement about the call: on a normal return, the call changes memory that existed before it at most as F, the footprint, allows. With `onThrow: true` in F, this holds also when the call throws; without it, the statement says nothing about a throw."),
-      t("F has the fields value and store, whose settings the next slide lists, and optionally `onThrow: true`; in prose this deck writes the settings without quotes. `note` states store: grow (it keeps arrays’ hole-free prefixes hole-free, next slide, as its `push` onto `entries`, a `number[]` field of its class `Log`, three slides on, does) and value: any, because `push`’s contract states value: any (two slides on)."),
+    title: t("The effect goes in the result type, as `Modifies<P, T>`"),
+    body: code([`note(n: number): Modifies<{ values: "any"; stores: "grow" }, number> {`, "  this.entries.push(n);", "  return n + 1;", "}"]) + bullets([
+      t("`Modifies` needs no import, only its declaration file listed in the project’s tsconfig.json: it is a global type alias in tools/resolvable.d.ts (tools/, the directory of TScert’s TypeScript front end). To TypeScript, `Modifies<P, T>` is just `T`, so the code compiles and runs unchanged. TScert recognises `Modifies` by that declaration, or an identical copy of its file: another type called `Modifies` is an ordinary type."),
+      t("To TScert it is a statement about the call: on a normal return, the call changes memory that existed before it at most as P, the frame, allows. With `onThrow: true` in P, this holds also when the call throws; without it, the statement says nothing about a throw."),
+      t("P has the class keys `values` (written value below) and `stores` (store), whose settings the next slide lists, an omitted key keep, and optionally `onThrow: true`; in prose this deck writes the settings without quotes. `note` states store: grow (it keeps arrays’ hole-free prefixes hole-free, next slide, as its `push` onto `entries`, a `number[]` field of its class `Log`, three slides on, does) and value: any, because `push`’s contract states value: any (two slides on)."),
       t("TScert checks the function’s own body against the statement in a run that includes its definition, whether or not any code calls it; the statement is certified when that run verifies. Callers rely on the statement."),
     ]),
   }),
@@ -85,7 +85,7 @@ const slides: Slide[] = [
     label: "Example that verifies", note: `abridged from test case ${c("method-effect-map.ts")} · ${verified}`, gap: 32,
     title: t("A method that only appends keeps map’s result hole-free"),
     body: columns([
-      code(["export class Log {", "  entries: number[] = [];", "  note(n: number): Within<", `    { value: "any"; store: "grow" }, number> {`,
+      code(["export class Log {", "  entries: number[] = [];", "  note(n: number): Modifies<", `    { values: "any"; stores: "grow" }, number> {`,
         "    this.entries.push(n);", "    return n + 1;", "  }", "}", "export function notes(log: Log,", "    xs: number[]): number[] {",
         "  const r: number[] = xs.map((x) => log.note(x));", "  return r;", "}"]),
       para(point("Checked at the method", "its body only pushes onto a field, which is within value: any, store: grow.")) +
@@ -97,12 +97,12 @@ const slides: Slide[] = [
     label: "Examples refused", note: `abridged from the test cases named · ${refused}`, gap: 16,
     title: "Three statements that fail their check",
     body: panel("", para(`<b>A body that breaks its statement.</b> ${t("`bump` states that nothing changes, but pops the array it is given")} (${c("invalid-method-effect-method.ts")}).`, 24) +
-        code([`class Bump { bump(xs: number[], x: number): Within<{ value: "keep"; store: "keep" }, number> {`, "  xs.pop(); return x; } }"])) +
+        code([`class Bump { bump(xs: number[], x: number): Modifies<{}, number> {`, "  xs.pop(); return x; } }"])) +
       panel("", para(`<b>An unstated call inside.</b> ${t("`run` states that nothing changes and calls `this.helper`. Though `helper` changes nothing, a `Runner` may hold there any function of the field’s type, which states no effect")} (“Contract closure”, later; ${c("invalid-method-effect-unstated-dependency.ts")}).`, 24) +
         code(["function helper(xs: number[], x: number): number { return x; }", "class Runner { helper: typeof helper = helper;",
-          `  run(xs: number[], x: number): Within<{ value: "keep"; store: "keep" }, number> {`, "    return this.helper(xs, x); } }"])) +
-      panel("", para(`<b>An override.</b> ${t("`Drain.take` overrides `Base.take` and pops; the override need not repeat `Within`: its body is checked against `Base.take`’s statement")} (${c("invalid-method-effect-override.ts")}).`, 24) +
-        code([`class Base { take(xs: number[], x: number): Within<{ value: "keep"; store: "keep" }, number> { return x; } }`,
+          `  run(xs: number[], x: number): Modifies<{}, number> {`, "    return this.helper(xs, x); } }"])) +
+      panel("", para(`<b>An override.</b> ${t("`Drain.take` overrides `Base.take` and pops; the override need not repeat `Modifies`: its body is checked against `Base.take`’s statement")} (${c("invalid-method-effect-override.ts")}).`, 24) +
+        code([`class Base { take(xs: number[], x: number): Modifies<{}, number> { return x; } }`,
           "class Drain extends Base { take(xs: number[], x: number): number { xs.pop(); return x; } }"])),
   }),
   slide("limits", {
@@ -115,19 +115,19 @@ const slides: Slide[] = [
       ["constructors and construct signatures", "the effect of constructing an object belongs to its class’s whole construction (field initialisers and constructor body), so no constructor carries a statement"],
       ["declaration files and packages", "their code lies outside the checked program, and no run of TScert checks it"],
       ["getters and setters", "TScert refuses every accessor definition, with or without a statement"],
-      [t("`Within` as the type of a parameter, a field or an array element itself (`x: Within<…>`)"), "a statement is the effect of the signature whose result it is"],
-      ["F given as a named type alias", t("TScert reads F only from the literal written inside `Within`")],
+      [t("`Modifies` as the type of a parameter, a field or an array element itself (`x: Modifies<…>`)"), "a statement is the effect of the signature whose result it is"],
+      ["F given as a named type alias", t("TScert reads F only from the literal written inside `Modifies`")],
     ], [30, 70]) + para(`A generic function declaration may carry a statement: its annotated parameters are its inputs, so it is certified over its whole written signature. Its callers ignore the statement, so a ${t("`map`")} callback calling one gets ${t("`map`")}’s signature with holes: the generic declaration’s instances carry no footprint at that call.`, 24),
   }),
   slide("forms", {
     label: "Where you can write it", note: "abridged; exclusions on “Forms that cannot carry a statement”", gap: 26,
     title: "At the result of a signature: methods, interfaces, function types",
     body: panel(`An interface member · ${c("method-effect-interface.ts")} ${verified}`,
-      code([`interface Limit { over(n: number): Within<{ value: "keep"; store: "keep" }, boolean>; }`,
+      code([`interface Limit { over(n: number): Modifies<{}, boolean>; }`,
         "function firstOver(limit: Limit, xs: number[]): number { return xs.findIndex((x) => limit.over(x)); }"]) +
       para(t("Each object passed where a `Limit` is expected is checked against the statement there. `findIndex` visits every index, reading a hole as `undefined`; with a callback that changes nothing, as here, the hole-free `xs` stays hole-free and each `x` is a number; without the statement `x` could be `undefined`, which `over` does not accept."), 24)) +
       panel(`A function type, here a parameter’s · ${c("method-effect-callback-parameter.ts")} ${verified}`,
-        code([`function mapped(xs: number[], f: (x: number) => Within<{ value: "keep"; store: "keep" }, number>): number[] {`,
+        code([`function mapped(xs: number[], f: (x: number) => Modifies<{}, number>): number[] {`,
           "  const r: number[] = xs.map((x) => f(x)); return r; }"]) +
         para(`${t("`map`’s result is hole-free; an arrow passed as `f` is checked against `f`’s statement where it is passed: one that pops `xs` is")} ${refused} (${c("invalid-method-effect-callback-argument.ts")}).`, 24)),
   }),
@@ -135,11 +135,11 @@ const slides: Slide[] = [
     label: "Where you can write it, continued", note: `adapted from ${c("method-effect-field.ts")}, ${c("method-effect-onthrow.ts")} · ${verified}`, gap: 20,
     title: "A field holding a module function, and a throw as an exit",
     body: panel("A field holding a module function",
-      code([`function scaled(this: Scale, n: number): Within<{ value: "keep"; store: "keep" }, number> {`, "  return n * this.factor; }",
+      code([`function scaled(this: Scale, n: number): Modifies<{}, number> {`, "  return n * this.factor; }",
         "class Scale { factor: number = 2; scaled: typeof scaled = scaled; }"]) +
       para(t("A module function is a top-level function of a module; `this: Scale` is TypeScript’s this-parameter. The field’s type is the function’s own, statement included, so a call `s.scaled(x)`, for `s: Scale`, relies on it; a function written into the field is checked against that type. (`Runner`’s `helper` field, on “Examples refused”, has the type of a function stating nothing.) TScert’s own parser holds many functions this way (later slides)."), 24)) +
       panel("A throw as a possible exit",
-        code([`positive(n: number): Within<{ value: "keep"; store: "keep"; onThrow: true }, number> {`, `  if (n < 0) throw new Error("negative"); return n; }`,
+        code([`positive(n: number): Modifies<{ onThrow: true }, number> {`, `  if (n < 0) throw new Error("negative"); return n; }`,
           "// c: Check, the class of positive; xs: number[]",
           "const r: number[] = xs.map((x) => { try { return c.positive(x); } catch { return 0; } });"]) +
         para(`${t("The callback returns normally from its catch block, so what `positive` changes when it throws counts toward the callback’s return: with `onThrow`, nothing, and `map`’s result is hole-free. Without `onThrow` the throw is unbounded")} (${refused} variant: ${c("invalid-method-effect-stated-throw-caught.ts")}).`, 24)),

@@ -5,7 +5,7 @@ export class Box<T> {
   constructor(value: T) {
     this.value = value;
   }
-  get(): Within<{ value: "keep"; store: "keep" }, T> {
+  get(): Modifies<{}, T> {
     return this.value;
   }
 }

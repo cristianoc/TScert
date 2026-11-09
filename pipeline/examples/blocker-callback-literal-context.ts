@@ -5,7 +5,7 @@
 import type { TypeTerm } from "../../tools/declaration-types.mts";
 export function use(
   span: [number, number],
-): Within<{ value: "any"; store: "grow" }, TypeTerm> {
+): Modifies<{ values: "any"; stores: "grow" }, TypeTerm> {
   return {
     k: "union",
     span,

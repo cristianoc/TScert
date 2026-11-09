@@ -292,14 +292,14 @@ export const ledgerAnswers = (ledger: Ledger): Noted[] => [...ledger.recording.a
 /** Begin noting answers in `ledger`; the record activated, or null when
  * its record is already active. The activation keeps its identity even if
  * another alias replaces the ledger's recording while a callback runs. */
-export function enterLedger(ledger: Ledger): Within<{ value: "any"; store: "keep" }, Recording | null> {
+export function enterLedger(ledger: Ledger): Modifies<{ values: "any" }, Recording | null> {
   const recording = ledger.recording;
   if (recordings.has(recording)) return null;
   recordings.add(recording);
   return recording;
 }
 /** End the activation returned by `enterLedger`. */
-export function leaveLedger(recording: Recording | null): Within<{ value: "any"; store: "keep" }, void> {
+export function leaveLedger(recording: Recording | null): Modifies<{ values: "any" }, void> {
   if (recording !== null) recordings.delete(recording);
 }
 /** `run`, every answer it is given also noted in `ledger`. */
@@ -591,16 +591,16 @@ export function installed(path: string): boolean {
 
 /** The overlay reads the compiler performs, with their preservation contract. */
 export type CompilerOverlay = {
-  readonly get: (path: string) => Within<{ value: "keep"; store: "keep" }, string | undefined>;
-  readonly has: (path: string) => Within<{ value: "keep"; store: "keep" }, boolean>;
+  readonly get: (path: string) => Modifies<{}, string | undefined>;
+  readonly has: (path: string) => Modifies<{}, boolean>;
 };
 
 /** A live read view of the native map, retaining its methods' effects, and
  * beneath it the texts of `fixed`, which no probe replaces. */
 export function compilerOverlay(overlay: Map<string, string>, fixed: Map<string, string> = new Map()): CompilerOverlay {
   return {
-    get: (path: string): Within<{ value: "keep"; store: "keep" }, string | undefined> => overlay.get(path) ?? fixed.get(path),
-    has: (path: string): Within<{ value: "keep"; store: "keep" }, boolean> => overlay.has(path) || fixed.has(path),
+    get: (path: string): Modifies<{}, string | undefined> => overlay.get(path) ?? fixed.get(path),
+    has: (path: string): Modifies<{}, boolean> => overlay.has(path) || fixed.has(path),
   };
 }
 
@@ -788,7 +788,7 @@ function observePackageLinks(directory: string): void {
  * that its target is to be found. */
 /** Whether Node resolves `specifier` to one of its built-in modules
  * (`node:fs`, `fs`), as `isBuiltin` of the running Node answers. */
-export const builtinModule = (specifier: string): Within<{ value: "keep"; store: "keep" }, boolean> => isBuiltin(specifier);
+export const builtinModule = (specifier: string): Modifies<{}, boolean> => isBuiltin(specifier);
 
 function observeResolution(specifier: string, parent: string): boolean {
   if (isBuiltin(specifier) || /^(node|data):/.test(specifier)) return false;

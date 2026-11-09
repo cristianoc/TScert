@@ -3,10 +3,7 @@
 // the base's members, so the override is checked at the base's statement
 // (run under Node: a `Drain` passed as a `Base` leaves a hole).
 export class Base {
-  take(
-    xs: number[],
-    x: number,
-  ): Within<{ value: "keep"; store: "keep" }, number> {
+  take(xs: number[], x: number): Modifies<{}, number> {
     return x;
   }
 }

@@ -2,10 +2,7 @@
 // binder bounds its claim states, which need not cover its own, so no
 // certification covers its whole domain.
 export class Pick {
-  first<T>(
-    xs: readonly T[],
-    fallback: T,
-  ): Within<{ value: "keep"; store: "keep" }, T> {
+  first<T>(xs: readonly T[], fallback: T): Modifies<{}, T> {
     const [x] = xs;
     return x === undefined ? fallback : x;
   }

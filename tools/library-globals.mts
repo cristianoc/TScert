@@ -183,7 +183,7 @@ export const reviewedErrorMembers: readonly string[] =
  * `Object.prototype` owns no `cause` (DESIGN.md, the trust surface). A
  * type not stating `cause` is open at it: the object may own an accessor
  * there, whose getter `Get` would run. */
-export function errorOptions(span: Span): Within<{ value: "any"; store: "grow" }, TypeTerm> {
+export function errorOptions(span: Span): Modifies<{ values: "any"; stores: "grow" }, TypeTerm> {
   return { k: "union", span, parts: [{ k: "object", stringIndex: null, calls: [], span, fields: [{ name: "cause",
     optional: true, readonly: true, type: { k: "atom", name: "unknown", span }, span }] }, { k: "atom", name: "undefined", span }] };
 }
@@ -1148,11 +1148,11 @@ export const globalsOverlay: readonly GlobalEntry[] = [
 
 /** A declaration-text matcher preserves array stores on normal return. */
 export type GlobalSignatureMatcher = (signature: string) =>
-  Within<{ value: "any"; store: "keep" }, boolean>;
+  Modifies<{ values: "any" }, boolean>;
 
 /** Search entries by global, member (absent: its call), signature and origin. */
 export function globalEntry(entries: readonly GlobalEntry[], global: string, member: string | undefined,
-    matches: GlobalSignatureMatcher, origin: string): Within<{ value: "any"; store: "keep" }, GlobalEntry | undefined> {
+    matches: GlobalSignatureMatcher, origin: string): Modifies<{ values: "any" }, GlobalEntry | undefined> {
   return entries.find(e => e.global === global && e.member === member && matches(e.signature) &&
     (e.origin ?? "library") === origin);
 }

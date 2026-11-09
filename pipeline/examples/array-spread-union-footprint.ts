@@ -6,7 +6,7 @@
 export function scope(
   list: readonly string[],
   end: number,
-): Within<{ value: "any"; store: "grow" }, string[]> {
+): Modifies<{ values: "any"; stores: "grow" }, string[]> {
   const live = end < 0 ? list : list.slice(0, end + 1);
   const tail = list.slice(live.length).filter((s) => s.startsWith("function"));
   return [...live, ...tail];

@@ -3,10 +3,7 @@
 // (a control claims it at a flag of `false` alone, where its code is within
 // the empty footprint, and is refused for offering no row over the whole
 // domain).
-export const flagged = (
-  xs: number[],
-  flag: boolean,
-): Within<{ value: "keep"; store: "keep" }, number> => {
+export const flagged = (xs: number[], flag: boolean): Modifies<{}, number> => {
   if (flag) xs.pop();
   return 0;
 };

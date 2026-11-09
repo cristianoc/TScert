@@ -14,7 +14,9 @@ export function boundRecord(
   input: { name: string; bound: number | null },
   kept: number[],
 ): { name: string; bound: number | null } {
-  const term = (n: number): Within<{ value: "any"; store: "grow" }, number> => {
+  const term = (
+    n: number,
+  ): Modifies<{ values: "any"; stores: "grow" }, number> => {
     kept.push(n);
     return n;
   };
@@ -29,6 +31,6 @@ export function boundRecord(
   const offered: (
     n: number,
     ...more: unknown[]
-  ) => Within<{ value: "any"; store: "grow" }, number> = term;
+  ) => Modifies<{ values: "any"; stores: "grow" }, number> = term;
   return param(input);
 }

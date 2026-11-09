@@ -8,7 +8,7 @@ type Scope = { pending: string[] };
 export function collect(
   scope: Scope,
   names: readonly string[],
-): Within<{ value: "any"; store: "grow" }, string[]> {
+): Modifies<{ values: "any"; stores: "grow" }, string[]> {
   const parts: string[] = [];
   names.forEach((n) => {
     scope.pending = [];

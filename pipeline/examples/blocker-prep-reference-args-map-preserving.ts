@@ -5,7 +5,7 @@
 import type { TypeTerm } from "../../tools/declaration-types.mts";
 export function mapped(
   t: Extract<TypeTerm, { k: "reference" }>,
-  go: (t: TypeTerm) => Within<{ value: "any"; store: "grow" }, TypeTerm>,
+  go: (t: TypeTerm) => Modifies<{ values: "any"; stores: "grow" }, TypeTerm>,
 ): TypeTerm {
   return { ...t, args: t.args.map((a) => go(a)) };
 }

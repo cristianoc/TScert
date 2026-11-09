@@ -11,11 +11,11 @@ type Arm = { count: number; lift: (limit?: number) => string[] };
 export function lift(
   labels: readonly string[],
   limit: number,
-  split: (s: string) => Within<{ value: "any"; store: "grow" }, string[]>,
+  split: (s: string) => Modifies<{ values: "any"; stores: "grow" }, string[]>,
 ): string[] {
   const armOf = (
     label: string,
-  ): Within<{ value: "any"; store: "grow" }, Arm> => {
+  ): Modifies<{ values: "any"; stores: "grow" }, Arm> => {
     const clauses = split(label);
     return {
       count: clauses.length,

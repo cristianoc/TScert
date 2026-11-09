@@ -30,10 +30,10 @@ export function codePointLess(a: string, b: string): boolean {
   }
   return xs.length < ys.length;
 }
-export function isArrayPresence(value: unknown): value is Within<{ value: "keep"; store: "keep" }, ArrayPresence> {
+export function isArrayPresence(value: unknown): value is Modifies<{}, ArrayPresence> {
   return value === "dense" || value === "readable" || value === "sparse";
 }
-export function presencePrefix(value: ArrayPresence): Within<{ value: "keep"; store: "keep" }, string> {
+export function presencePrefix(value: ArrayPresence): Modifies<{}, string> {
   return value === "readable" ? "" : `${value} `;
 }
 /** A union of labels. A table's labels are its row indices; the source
@@ -55,7 +55,7 @@ export const closedFootprints: readonly ClosedFootprint[] = [
 /** The optional guarantees a footprint's signature states. */
 type EffectOptions = Partial<Omit<CallEffect, "footprint">>;
 /** A fresh signature effect, with false and null for omitted guarantees. */
-export const footprintEffect = (footprint: ClosedFootprint, options?: EffectOptions): Within<{ value: "keep"; store: "keep" }, CallEffect> =>
+export const footprintEffect = (footprint: ClosedFootprint, options?: EffectOptions): Modifies<{}, CallEffect> =>
   ({ footprint, promise: options?.promise ?? null, fresh: options?.fresh ?? false,
     receiverStore: options?.receiverStore ?? false, onThrow: options?.onThrow ?? false,
     receiverOwn: options?.receiverOwn ?? false, freshObject: options?.freshObject ?? false,
@@ -63,7 +63,7 @@ export const footprintEffect = (footprint: ClosedFootprint, options?: EffectOpti
     ensures: options?.ensures ?? [], receiverGrows: options?.receiverGrows ?? false,
     elementWrite: options?.elementWrite ?? null });
 /** A fresh effect with a replacement promise and every other guarantee retained. */
-export const withPromise = (effect: CallEffect, promise: CallPromise | null): Within<{ value: "keep"; store: "keep" }, CallEffect> =>
+export const withPromise = (effect: CallEffect, promise: CallPromise | null): Modifies<{}, CallEffect> =>
   ({ footprint: effect.footprint, promise, fresh: effect.fresh, receiverStore: effect.receiverStore,
     onThrow: effect.onThrow, receiverOwn: effect.receiverOwn, freshObject: effect.freshObject,
     requires: effect.requires, elements: effect.elements, pre: effect.pre, ensures: effect.ensures,
@@ -74,7 +74,7 @@ export const emptyEffect: CallEffect = footprintEffect(emptyFootprint);
 export const ordinaryEffect: CallEffect = footprintEffect(topFootprint);
 /** A promise signature: a guard's or an assertion function's, about `param`,
  * whose code may change every location. */
-export const promiseEffect = (asserts: boolean, param: number): Within<{ value: "keep"; store: "keep" }, CallEffect> =>
+export const promiseEffect = (asserts: boolean, param: number): Modifies<{}, CallEffect> =>
   footprintEffect(topFootprint, { promise: asserts ? { asserts: { param } } : { guards: { param } } });
 export const sameFootprint = (a: ClosedFootprint, b: ClosedFootprint): boolean =>
   a.value === b.value && a.store === b.store;
@@ -95,7 +95,7 @@ const sameKinds = (a: ElementKinds | null, b: ElementKinds | null): boolean =>
   a === null || b === null ? a === b : a.length === b.length && a.every((k, i) => k === b[i]);
 /** An elements predicate a value states: `null`, or kinds in their order,
  * each once; `undefined` where the value states neither. */
-function decodeKinds(v: JsonRead): Within<{ value: "any"; store: "grow" }, ElementKinds | null | undefined> {
+function decodeKinds(v: JsonRead): Modifies<{ values: "any"; stores: "grow" }, ElementKinds | null | undefined> {
   if (v === null) return null;
   if (!Array.isArray(v)) return undefined;
   const kinds: ElementKind[] = [];
@@ -121,7 +121,7 @@ function decodeInt(v: JsonRead): number | undefined {
 /** The index facts a precondition or a result states (`CallEffect.pre`,
  * `CallEffect.ensures`), as fresh
  * objects, or `undefined` where the value is no list of them. */
-export function decodeIndexFacts(v: JsonRead): Within<{ value: "any"; store: "grow" }, IndexFact[] | undefined> {
+export function decodeIndexFacts(v: JsonRead): Modifies<{ values: "any"; stores: "grow" }, IndexFact[] | undefined> {
   if (!isJsonList(v)) return undefined;
   const facts: IndexFact[] = [];
   for (const f of v) {
@@ -285,7 +285,7 @@ function decodeLinearTerm(v: JsonRead): LinearTerm | undefined {
 }
 /** The closed footprint a value states, as a fresh object of its fields, or
  * `undefined` where the value states none. */
-export function decodeClosedFootprint(v: JsonRead): Within<{ value: "any"; store: "grow" }, ClosedFootprint | undefined> {
+export function decodeClosedFootprint(v: JsonRead): Modifies<{ values: "any"; stores: "grow" }, ClosedFootprint | undefined> {
   if (!isJsonObject(v) || Object.keys(v).length !== 2) return undefined;
   const value = v.value;
   const store = v.store;
@@ -300,7 +300,7 @@ function isFootprintStore(v: unknown): v is ClosedFootprint["store"] {
 }
 /** The call effect a value states, as fresh objects of its fields, or
  * `undefined` where the value states none. */
-export function decodeCallEffect(v: JsonRead): Within<{ value: "any"; store: "grow" }, CallEffect | undefined> {
+export function decodeCallEffect(v: JsonRead): Modifies<{ values: "any"; stores: "grow" }, CallEffect | undefined> {
   if (!isJsonObject(v) || Object.keys(v).length !== 13) return undefined;
   const requires = decodeKinds(v.requires);
   const elements = decodeKinds(v.elements);
@@ -501,7 +501,7 @@ type OnlyStringClauses = Covers<Exclude<(typeof STRING_CLAUSE_KEYS)[number], Str
 
 /** The number a literal's bit pattern denotes. Readers show the number; the
  * bits are its identity, not its display. */
-export const numberOfBits = (bits: string): Within<{ value: "keep"; store: "keep" }, number> => {
+export const numberOfBits = (bits: string): Modifies<{}, number> => {
   const view = new DataView(new ArrayBuffer(8));
   view.setBigUint64(0, BigInt(bits));
   return view.getFloat64(0);

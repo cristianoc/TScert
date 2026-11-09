@@ -9,7 +9,7 @@ type Term =
   | { k: "union"; parts: Term[]; span: Span }
   | { k: "array"; readonly: boolean; element: Term; span: Span };
 
-function text(t: Term): Within<{ value: "keep"; store: "keep" }, string> {
+function text(t: Term): Modifies<{}, string> {
   const k = `{"k":${JSON.stringify(t.k)}`;
   switch (t.k) {
     case "atom":

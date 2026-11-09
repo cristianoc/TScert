@@ -5,7 +5,7 @@ type Fn = Extract<TypeTerm, { k: "function" }>;
 export function oneTerm(
   terms: Fn[],
   span: [number, number],
-): Within<{ value: "any"; store: "grow" }, TypeTerm> {
+): Modifies<{ values: "any"; stores: "grow" }, TypeTerm> {
   return terms.length === 1 && terms[0]
     ? terms[0]
     : { k: "intersection", parts: terms, span };

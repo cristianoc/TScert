@@ -2767,7 +2767,7 @@ for (const call of [`members(new Gate(), ["a", ""])`, "instances([1, -1])", `res
   assert.throws(() => runExample("no-return-callee-map", call), /empty|negative/, `no-return-callee-map: ${call}`);
 // A promise, a Boolean and a caught throw are returns: the callee popped the
 // mapped array, and `map` skipped the index it removed.
-// A statement (`Within<F, T>`) a body does not meet: each popping method,
+// A statement (`Modifies<P, T>`) a body does not meet: each popping method,
 // declaration, override, look-alike, written field, static method or
 // substituted dependency leaves a hole in the mapped array; a popping default
 // shortens the array it reads.

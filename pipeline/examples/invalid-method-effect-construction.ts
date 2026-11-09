@@ -4,10 +4,7 @@
 // against the instance type's member, which states it too (a control drops
 // the first check and shows the second).
 export class Bump {
-  bump(
-    xs: number[],
-    x: number,
-  ): Within<{ value: "keep"; store: "keep" }, number> {
+  bump(xs: number[], x: number): Modifies<{}, number> {
     xs.pop();
     return x;
   }

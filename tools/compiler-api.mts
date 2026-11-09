@@ -200,7 +200,7 @@ export const brandedTypes: readonly { name: string; text: string }[] = [
 ];
 
 /** A brand lookup preserves existing array prefixes on normal return. */
-export type BrandPredicate = (id: DeclarationIdentity) => Within<{ value: "any"; store: "grow" }, boolean>;
+export type BrandPredicate = (id: DeclarationIdentity) => Modifies<{ values: "any"; stores: "grow" }, boolean>;
 
 /** A host-produced type with each branded string where the host produces it
  * (`out`) read as `string` (reading rule 5): a primitive result, a readonly
@@ -213,8 +213,8 @@ export type BrandPredicate = (id: DeclarationIdentity) => Within<{ value: "any";
  * definition, `string & { … }`, which no value meets and which is refused
  * where it is used. */
 export function hostBrands(t: TypeTerm, out: boolean | null, brand: BrandPredicate,
-    fail: (message: string) => never): Within<{ value: "any"; store: "grow" }, TypeTerm> {
-  const go = (u: TypeTerm, o: boolean | null): Within<{ value: "any"; store: "grow" }, TypeTerm> => hostBrands(u, o, brand, fail);
+    fail: (message: string) => never): Modifies<{ values: "any"; stores: "grow" }, TypeTerm> {
+  const go = (u: TypeTerm, o: boolean | null): Modifies<{ values: "any"; stores: "grow" }, TypeTerm> => hostBrands(u, o, brand, fail);
   switch (t.k) {
     case "reference":
       if (brand(t.reference.target)) {
@@ -247,16 +247,16 @@ export function hostBrands(t: TypeTerm, out: boolean | null, brand: BrandPredica
   }
 }
 function hostBrandsConstructor(t: Extract<TypeTerm, { k: "constructor" }>, out: boolean | null,
-    brand: BrandPredicate, fail: (message: string) => never): Within<{ value: "any"; store: "grow" }, Extract<TypeTerm, { k: "constructor" }>> {
+    brand: BrandPredicate, fail: (message: string) => never): Modifies<{ values: "any"; stores: "grow" }, Extract<TypeTerm, { k: "constructor" }>> {
   const flip = out === null ? null : !out;
-  const go = (u: TypeTerm, o: boolean | null): Within<{ value: "any"; store: "grow" }, TypeTerm> => hostBrands(u, o, brand, fail);
+  const go = (u: TypeTerm, o: boolean | null): Modifies<{ values: "any"; stores: "grow" }, TypeTerm> => hostBrands(u, o, brand, fail);
   return { ...t, params: t.params.map(p => go(p, flip)), rest: t.rest && go(t.rest, flip), result: go(t.result, out),
     ...(t.statics ? { statics: t.statics.map(s => ({ ...s, type: go(s.type, s.readonly ? out : null) })) } : {}) };
 }
 function hostBrandsFunction(t: Extract<TypeTerm, { k: "function" }>, out: boolean | null,
-    brand: BrandPredicate, fail: (message: string) => never): Within<{ value: "any"; store: "grow" }, Extract<TypeTerm, { k: "function" }>> {
+    brand: BrandPredicate, fail: (message: string) => never): Modifies<{ values: "any"; stores: "grow" }, Extract<TypeTerm, { k: "function" }>> {
   const flip = out === null ? null : !out;
-  const go = (u: TypeTerm, o: boolean | null): Within<{ value: "any"; store: "grow" }, TypeTerm> => hostBrands(u, o, brand, fail);
+  const go = (u: TypeTerm, o: boolean | null): Modifies<{ values: "any"; stores: "grow" }, TypeTerm> => hostBrands(u, o, brand, fail);
   return { ...t, receiver: t.receiver && go(t.receiver, flip), params: t.params.map(p => go(p, flip)),
     rest: t.rest && go(t.rest, flip), result: go(t.result, out) };
 }
@@ -436,7 +436,7 @@ export function requestReading(type: TypeTerm, fresh: boolean): TypeTerm {
  * a string (reading rule 5), and `get` and `has`, the standard `Map`
  * methods, take any key: a string the client produces reads the entry the
  * map stores or nothing. Any other signature is refused. */
-export function tableReading(type: TypeTerm, isLibraryMap: (id: DeclarationIdentity) => Within<{ value: "keep"; store: "keep" }, boolean>,
+export function tableReading(type: TypeTerm, isLibraryMap: (id: DeclarationIdentity) => Modifies<{}, boolean>,
     brand: (id: DeclarationIdentity) => boolean, fail: (message: string) => never): TypeTerm {
   if (type.k !== "function" || type.params.length || type.rest || type.result.k !== "reference" ||
       !isLibraryMap(type.result.reference.target) || type.result.args.length !== 2)
@@ -489,7 +489,7 @@ export const hostNodeListMembers: readonly { name: string; owner: string; text: 
 /** The record of a node list's own members, each a required readonly field
  * at its contract, located at `span`: the model's node list is the dense
  * readonly array of its elements met with this record. */
-export function nodeListMembers(span: TypeTerm["span"]): Within<{ value: "any"; store: "grow" }, TypeTerm> {
+export function nodeListMembers(span: TypeTerm["span"]): Modifies<{ values: "any"; stores: "grow" }, TypeTerm> {
   const atom = (name: "number" | "boolean" | "undefined"): TypeTerm => ({ k: "atom", name, span });
   return { k: "object", stringIndex: null, calls: [], span, fields: hostNodeListMembers.map(m => ({
     name: m.name, optional: false, readonly: true, span,

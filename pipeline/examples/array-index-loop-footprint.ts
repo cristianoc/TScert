@@ -10,7 +10,7 @@ export function bind(
   names: readonly string[],
   binders: Binder[],
   fail: (message: string) => never,
-): Within<{ value: "any"; store: "grow" }, number> {
+): Modifies<{ values: "any"; stores: "grow" }, number> {
   for (let index = 0; index < names.length; index++) {
     const name = names[index];
     const binder = binders[index];

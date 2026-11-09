@@ -10,7 +10,10 @@ export function tested(vs: (A | B)[], key: string): boolean[] {
   const isA = (e: A | B): e is A => e.k === "a" && e.v === key;
   return vs.map((v) => isA(v));
 }
-export function collected(vs: readonly (A | B)[], key: string): Within<{ value: "any"; store: "grow" }, A[]> {
+export function collected(
+  vs: readonly (A | B)[],
+  key: string,
+): Modifies<{ values: "any"; stores: "grow" }, A[]> {
   const isA = (e: A | B): e is A => e.k === "a" && e.v === key;
   const out: A[] = [];
   const collect = (e: A | B): void => {

@@ -9,9 +9,7 @@
 // fragment-expressions.mts#update.
 export function use(
   values: number[],
-  read: (
-    n: number,
-  ) => Within<{ value: "keep"; store: "keep" }, boolean | "absent">,
+  read: (n: number) => Modifies<{}, boolean | "absent">,
 ): boolean {
   const parts = values.map((n) => read(n));
   return parts.every((x) => x === "absent");

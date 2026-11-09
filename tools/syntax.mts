@@ -17,7 +17,7 @@ type Child = "name" | "propertyName" | "label" | "type" | "questionToken" | "pos
 type Children = "modifiers" | "typeParameters" | "parameters";
 
 /** One child of `node`, where its kind carries it and it is present. */
-export function childOf(node: Node, key: Child): Within<{ value: "keep"; store: "keep" }, Node | undefined> {
+export function childOf(node: Node, key: Child): Modifies<{}, Node | undefined> {
   switch (key) {
     case "name":
       if (ts.isVariableDeclaration(node)) return node.name;
@@ -133,7 +133,7 @@ export function childOf(node: Node, key: Child): Within<{ value: "keep"; store: 
 
 /** A list of children of `node`: empty where its kind carries none or none
  * is written. */
-export function childrenOf(node: Node, key: Children): Within<{ value: "any"; store: "grow" }, readonly Node[]> {
+export function childrenOf(node: Node, key: Children): Modifies<{ values: "any"; stores: "grow" }, readonly Node[]> {
   switch (key) {
     case "modifiers":
       if (ts.isVariableStatement(node)) return node.modifiers?.filter(() => true) ?? [];
@@ -212,7 +212,7 @@ export function childrenOf(node: Node, key: Children): Within<{ value: "any"; st
  * (`childProperties` of the package's `dist/api/node/protocol.generated.js`),
  * none for another kind (SOURCE-REWRITES.md, "A node's child read through
  * `Reflect.get`"). */
-export function typeArgumentsOf(node: Node): Within<{ value: "keep"; store: "keep" }, readonly TypeNode[]> {
+export function typeArgumentsOf(node: Node): Modifies<{}, readonly TypeNode[]> {
   const written = ts.isTypeReferenceNode(node) || ts.isExpressionWithTypeArguments(node) || ts.isTypeQueryNode(node) ||
       ts.isImportTypeNode(node) || ts.isCallExpression(node) || ts.isNewExpression(node) ||
       ts.isTaggedTemplateExpression(node) || ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)
@@ -221,7 +221,7 @@ export function typeArgumentsOf(node: Node): Within<{ value: "keep"; store: "kee
 }
 
 /** The name a declaration or member declares, where its kind has one. */
-export const nameOf = (node: Node): Within<{ value: "keep"; store: "keep" }, Node | undefined> => childOf(node, "name");
+export const nameOf = (node: Node): Modifies<{}, Node | undefined> => childOf(node, "name");
 
 /** Whether `node` is a type alias declaration of a TypeScript file, by its
  * kind. The compiler's `isTypeAliasDeclaration` also accepts a JavaScript
@@ -229,7 +229,7 @@ export const nameOf = (node: Node): Within<{ value: "keep"; store: "keep" }, Nod
  * COMPILER-API.md, "Audited shapes"), so its true edge gives no
  * `TypeAliasDeclaration`; this test's does. It changes nothing, which its
  * promise's type states (SOURCE-ELABORATION.md, "Stated effects"). */
-export function isTypeAlias(node: Node): node is Within<{ value: "keep"; store: "keep" }, TypeAliasDeclaration> {
+export function isTypeAlias(node: Node): node is Modifies<{}, TypeAliasDeclaration> {
   return node.kind === ts.SyntaxKind.TypeAliasDeclaration;
 }
 
@@ -238,12 +238,12 @@ export function isTypeAlias(node: Node): node is Within<{ value: "keep"; store: 
  * file's `JSImportDeclaration` (a kind of its own, COMPILER-API.md, "Audited
  * shapes"), so its true edge gives no `ImportDeclaration`; this test's does.
  * It changes nothing, which its promise's type states. */
-export function isImport(node: Node): node is Within<{ value: "keep"; store: "keep" }, ImportDeclaration> {
+export function isImport(node: Node): node is Modifies<{}, ImportDeclaration> {
   return node.kind === ts.SyntaxKind.ImportDeclaration;
 }
 
 /** Whether a member is written `static`. */
-export const isStatic = (node: Node): Within<{ value: "any"; store: "grow" }, boolean> =>
+export const isStatic = (node: Node): Modifies<{ values: "any"; stores: "grow" }, boolean> =>
   childrenOf(node, "modifiers").some((m) => m.kind === ts.SyntaxKind.StaticKeyword);
 
 /** A named property access in either spelling — `e.k`, or `e["k"]` at a

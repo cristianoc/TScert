@@ -2,7 +2,7 @@
 // its annotation, statement included, and a `map` callback calling it is
 // within the empty footprint.
 export class Units {
-  static cents(n: number): Within<{ value: "keep"; store: "keep" }, number> {
+  static cents(n: number): Modifies<{}, number> {
     return n * 100;
   }
 }

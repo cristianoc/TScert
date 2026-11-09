@@ -3,8 +3,6 @@
 // their code is the environment's, which no run checks.
 declare module "@fixture/stated-ambient" {
   import type { Keeps } from "@fixture/stated";
-  export function ext(
-    n: number,
-  ): Within<{ value: "keep"; store: "keep" }, number>;
+  export function ext(n: number): Modifies<{}, number>;
   export const copied: Keeps;
 }

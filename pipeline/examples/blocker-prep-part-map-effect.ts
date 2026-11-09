@@ -5,11 +5,11 @@ type Mapper = {
   expr: (
     e: number,
     ...further: unknown[]
-  ) => Within<{ value: "any"; store: "grow" }, number>;
+  ) => Modifies<{ values: "any"; stores: "grow" }, number>;
 };
 export function partsOf(
-  map: (m: Mapper) => Within<{ value: "any"; store: "grow" }, unknown>,
-): Within<{ value: "any"; store: "grow" }, number[]> {
+  map: (m: Mapper) => Modifies<{ values: "any"; stores: "grow" }, unknown>,
+): Modifies<{ values: "any"; stores: "grow" }, number[]> {
   const parts: number[] = [];
   map({
     expr: (e) => {

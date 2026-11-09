@@ -7,7 +7,7 @@ export function branded(t: TypeTerm): TypeTerm {
   const context: Context = { brand: (id) => id.name === "Host" };
   const go = (
     u: TypeTerm,
-  ): Within<{ value: "any"; store: "grow" }, TypeTerm> => {
+  ): Modifies<{ values: "any"; stores: "grow" }, TypeTerm> => {
     if (u.k !== "reference") return u;
     if (context.brand(u.reference.target))
       return { k: "atom", name: "string", span: u.span };

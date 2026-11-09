@@ -9,7 +9,7 @@
 <tr><td>constructors and construct signatures</td><td>the effect of constructing an object belongs to its class’s whole construction (field initialisers and constructor body), so no constructor carries a statement</td></tr>
 <tr><td>declaration files and packages</td><td>their code lies outside the checked program, and no run of TScert checks it</td></tr>
 <tr><td>getters and setters</td><td>TScert refuses every accessor definition, with or without a statement</td></tr>
-<tr><td><span style="color:#2c4f7c">Within</span> as the type of a parameter, a field or an array element itself (<span style="color:#2c4f7c">x: Within&lt;…&gt;</span>)</td><td>a statement is the effect of the signature whose result it is</td></tr>
-<tr><td>F given as a named type alias</td><td>TScert reads F only from the literal written inside <span style="color:#2c4f7c">Within</span></td></tr>
+<tr><td><span style="color:#2c4f7c">Modifies</span> as the type of a parameter, a field or an array element itself (<span style="color:#2c4f7c">x: Modifies&lt;…&gt;</span>)</td><td>a statement is the effect of the signature whose result it is</td></tr>
+<tr><td>F given as a named type alias</td><td>TScert reads F only from the literal written inside <span style="color:#2c4f7c">Modifies</span></td></tr>
 </table><p style="font-size:24px;color:#0b1a2e;line-height:1.4">A generic function declaration may carry a statement: its annotated parameters are its inputs, so it is certified over its whole written signature. Its callers ignore the statement, so a <span style="color:#2c4f7c">map</span> callback calling one gets <span style="color:#2c4f7c">map</span>’s signature with holes: the generic declaration’s instances carry no footprint at that call.</p>
 </section>

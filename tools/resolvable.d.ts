@@ -9,16 +9,35 @@
 // the values of `T`.
 type Resolvable = unknown;
 type Awaitable = unknown;
-// A signature's result `Within<F, T>` states the signature's effect: on a
-// normal return, and on a throw where `onThrow` is written, the call changes
-// the previously allocated locations holding a value (`value`: `init` only
-// those holding `null` or `undefined`, `scalar` only those holding neither an
-// object nor a store) and those holding an array store (`store`) at most as
-// `F` says (SOURCE-ELABORATION.md, "Stated effects"). As a type it is `T`; the verifier certifies the
-// statement from the definition's code.
-type Footprint = {
-  value: "keep" | "init" | "scalar" | "any";
-  store: "keep" | "grow" | "any";
-  onThrow?: true;
-};
-type Within<F extends Footprint, T> = T;
+// A signature's result `Modifies<P, T>` states the signature's frame: on a
+// normal return, and on a throw where `onThrow: true` is written, every
+// previously allocated location keeps its contents but those `P` names,
+// each changed at most as `P` says: `values` the locations holding a value
+// (`init` only those holding `null` or `undefined`, `scalar` only those
+// holding neither an object nor a store), `stores` those holding an array
+// store, and a quoted location key (`"x.f"`, `"x[*]"`, `"x.*"`, `"cell(b)"`)
+// the locations it names (SOURCE-ELABORATION.md, "Stated effects"). As a
+// type it is `T`; the verifier certifies the statement from the definition's
+// code. `Fresh<T>` states that a normal return's value holds an array store
+// the call allocated; as a type it is `T`.
+type Modifies<
+  P extends {
+    values?: "keep" | "init" | "scalar" | "grow" | "any";
+    stores?: "keep" | "init" | "scalar" | "grow" | "any";
+    onThrow?: true;
+    [location: string]:
+      | "keep"
+      | "init"
+      | "scalar"
+      | "grow"
+      | "any"
+      | {
+          values?: "keep" | "init" | "scalar" | "grow" | "any";
+          stores?: "keep" | "init" | "scalar" | "grow" | "any";
+        }
+      | true
+      | undefined;
+  },
+  T,
+> = T;
+type Fresh<T> = T;

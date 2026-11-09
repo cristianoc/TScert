@@ -39,9 +39,7 @@ export function result(binder: { readonly resolution: Slots }): string {
 // a named field's write changes a value's location, within the statement's
 // footprint, as `quantified`'s `associated` does.
 type Scope = {
-  associated: (
-    name: string,
-  ) => Within<{ value: "any"; store: "keep" }, string | null>;
+  associated: (name: string) => Modifies<{ values: "any" }, string | null>;
 };
 
 export function scope(binders: (Binder & { span: number })[]): Scope {

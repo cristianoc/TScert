@@ -2,9 +2,7 @@
 // its body throws, so no footprint of its body's normal return is the
 // call's.
 export class Runner {
-  async run(
-    xs: number[],
-  ): Within<{ value: "keep"; store: "keep" }, Promise<number>> {
+  async run(xs: number[]): Modifies<{}, Promise<number>> {
     return xs.length;
   }
 }

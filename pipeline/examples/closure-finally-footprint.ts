@@ -17,7 +17,10 @@ export function measured(vs: string[], scope: Scope): number[] {
   };
   return vs.map((v) => measure(v));
 }
-export function stated(v: string, scope: Scope): Within<{ value: "any"; store: "grow" }, number> {
+export function stated(
+  v: string,
+  scope: Scope,
+): Modifies<{ values: "any"; stores: "grow" }, number> {
   const measure = (s: string): number => {
     scope.depth.push(1);
     try {

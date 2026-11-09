@@ -9,7 +9,7 @@ export function die(xs: number[]): never {
 }
 
 export class Bump {
-  bump(xs: number[]): Within<{ value: "keep"; store: "keep" }, number> {
+  bump(xs: number[]): Modifies<{}, number> {
     if (xs.length > 0) die(xs);
     return 0;
   }
