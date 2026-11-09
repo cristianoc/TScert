@@ -270,7 +270,7 @@ export function pausePublicationForTests(hook: ((directory: string) => void) | n
  * (`restore`), before the holder releases its lock (`release`), and after
  * a removal's marker is created, before (`marked`) and after (`reread`) the
  * use logs are read again. */
-export type LockPoint = "takeover" | "restore" | "release" | "marked" | "reread";
+export type LockPoint = "claim-building" | "takeover" | "restore" | "release" | "marked" | "reread";
 let lockBarrierForTests: ((point: LockPoint) => void) | null = null;
 export function pauseLockForTests(hook: ((point: LockPoint) => void) | null): void {
   lockBarrierForTests = hook;
@@ -335,19 +335,36 @@ export class Store {
     log.recorded.set(item, now);
   }
 
-  /** Claim the execution of `key` for this process: the lock
-   * `running/<stage>/<key>`, acquired as the eviction lock is (`acquire`),
-   * so a claim present names its owner, a stopped owner's claim is taken
-   * over, and of two processes taking one over, one keeps it. Another
-   * running process's claim leaves it held (`"held"`). The returned release
-   * removes the claim where it is still this process's. */
+  /** Claim a key through immutable, numbered owner directories. A completed
+   * or stopped generation admits the next; competing publishers rename to
+   * the same next directory, so only one wins. Generations are never moved
+   * or removed: a delayed contender cannot displace a later owner. */
   claim(stage: string, key: string): (() => void) | "held" {
     const lock = join(this.root, "running", stage, key);
-    const owner = this.acquire(lock, false);
-    if (owner === null) return "held";
+    mkdirSync(lock, { recursive: true });
+    const generations = readdirSync(lock).filter((n) => /^(0|[1-9][0-9]*)$/.test(n)).map(Number);
+    const last = generations.reduce((largest, n) => Math.max(largest, n), -1);
+    if (last >= 0) {
+      const previous = join(lock, String(last));
+      const held = this.ownerAt(previous);
+      if (typeof held !== "string" || (!existsSync(join(previous, "done")) && this.running(held))) return "held";
+      lockBarrierForTests?.("takeover");
+    }
+    const owner = `${hostname()} ${process.pid} ${randomUUID().slice(0, 8)}`;
+    const building = this.temporary(`claim-${randomUUID()}`);
+    lockBarrierForTests?.("claim-building");
+    writeFileSync(join(building, "owner"), owner);
+    const next = join(lock, String(last + 1));
+    try {
+      renameSync(building, next);
+    } catch (error) {
+      rmSync(building, { recursive: true, force: true });
+      if (failedWith(error, "EEXIST", "ENOTEMPTY")) return "held";
+      throw error;
+    }
     return () => {
       lockBarrierForTests?.("release");
-      this.moveLock(lock, owner);
+      writeFileSync(join(next, "done"), "");
     };
   }
 

@@ -161,8 +161,7 @@ export type InvokeOptions = {
 /** How often a process waiting for another's execution of a key looks
  * again, and what it waits on. */
 const claimPollMs = 50;
-/** How long a process waits for another's claim of a key before executing
- * the key itself: the stage's limit, after which the holder's execution is
+/** How long a process waits for another's claim of a key before reporting a tool failure: the stage's limit, after which the holder's execution is
  * killed, and as long again for its publication. */
 export const claimWaitMs = (limitMs: number): number => 2 * limitMs;
 const pause = new Int32Array(new SharedArrayBuffer(4));
@@ -181,7 +180,7 @@ export function invokeProcess(call: ProcessCall, options: InvokeOptions): Invoke
   const startedAt = Date.now();
   const store = currentStore();
   const forced = options.force || store === null;
-  const directory = executionDirectory(call.stage);
+  let directory: string | null = null;
   let release: (() => void) | null = null;
   try {
     const bound = bindProcess(call);
@@ -189,7 +188,7 @@ export function invokeProcess(call: ProcessCall, options: InvokeOptions): Invoke
     let ineligible = bound.ineligible;
     let key = ineligible === null ? sha256(input) : null;
     const record = (execution: Execution, exitStatus: number | null, replay: Replay | null, cpu: Cpu): AttemptRecord => ({
-      attempt, stage: call.stage, key, ineligible, manifest: bound.manifest, context: { program: bound.program, directory },
+      attempt, stage: call.stage, key, ineligible, manifest: bound.manifest, context: directory === null ? null : { program: bound.program, directory },
       forced, limitMs: options.limitMs, execution, exitStatus, elapsedMs: performance.now() - started,
       cpu: replay ? replay.stored.cpu : cpu, replay,
     });
@@ -198,12 +197,17 @@ export function invokeProcess(call: ProcessCall, options: InvokeOptions): Invoke
     // Within the store, one process executes a key at a time: another
     // process's execution of the same key is waited for, and its result
     // replayed (`Store.claim`). A wait outlasting the holder's own limit and
-    // its grace (`claimWaitMs`) ends, and this process executes the key
-    // itself.
+    // its grace (`claimWaitMs`) reports a failure without starting a second executor.
     const deadline = performance.now() + claimWaitMs(options.limitMs);
     for (let waited = 0; replaying && !forced; waited++) {
-      if (waited > 0) {
-        if (performance.now() > deadline) break;
+      if (waited > 0 && release === null) {
+        if (performance.now() > deadline) {
+          const error = new Error(`stage claim deadline exceeded for ${call.stage}`);
+          const done = record("failed", null, null, { unavailable: "waiting for an execution claim" });
+          options.recorder?.finish(done);
+          return { status: null, signal: null, error, stdoutBytes: Buffer.alloc(0), stderrBytes: Buffer.alloc(0),
+            stdout: "", stderr: "", record: done };
+        }
         Atomics.wait(pause, 0, 0, claimPollMs);
       }
       const found = replaying.store.finished(call.stage, replaying.key, input);
@@ -229,11 +233,14 @@ export function invokeProcess(call: ProcessCall, options: InvokeOptions): Invoke
         return { status: null, signal: null, error: undefined, stdoutBytes: Buffer.alloc(0), stderrBytes: Buffer.alloc(0),
           stdout: "", stderr: "", record: done };
       }
+      if (release !== null) break;
       const claimed = replaying.store.claim(call.stage, replaying.key);
       if (claimed === "held") continue;
       release = claimed;
-      break;
+      // Recheck publication after acquiring: the preceding owner may have
+      // published between our lookup and acquisition.
     }
+    directory = executionDirectory(call.stage);
     const run = executeProcess(bound, directory, options.limitMs);
     const elapsedMs = performance.now() - started;
     ineligible ??= codeFailure(processCode);
@@ -255,7 +262,7 @@ export function invokeProcess(call: ProcessCall, options: InvokeOptions): Invoke
       stderrBytes: run.stderrBytes, stdout: run.stdout, stderr: run.stderr, record: done };
   } finally {
     release?.();
-    rmSync(directory, { recursive: true, force: true });
+    if (directory !== null) rmSync(directory, { recursive: true, force: true });
   }
 }
 
