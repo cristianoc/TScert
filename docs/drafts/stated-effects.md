@@ -1,8 +1,8 @@
 # Draft: stated effects
 
-A design for one footprint language and one written form of it, `Within`'s
-footprint extended with regions, so that every effect a call can have in
-TScert can be stated where its function's body is not checked with the call.
+A design for one footprint language and one written form of it, the frame
+condition `Modifies<P, T>`, so that every change a call can make in TScert
+can be stated where its function's body is not checked with the call.
 Base: TScert main at 56e79063, and the Lean of local branch
 `chain1-argument-regions` (05d9d1eb). Claims are labelled **proved** (with
 the Lean name and where it lives), **cited** (with the document and its
@@ -34,16 +34,22 @@ regions (`ClosedFootprints.lean`). One function reads it for every reader
 certified from its code (`stated-declaration`, `stated-closure`); an
 importer reads it under the import assumption; a statement outside the
 program's sources (a declaration file, a package) is refused
-([fragment boundary](../SOURCE-FRAGMENT.md)).
+([fragment boundary](../SOURCE-FRAGMENT.md)). `Modifies` replaces it (§3).
+
+**Written postconditions.** A module function declaration's `@ensures`
+([postconditions](../PROGRAM-TYPING.md#postconditions); cited) states index
+facts at its return, proved by its unit and assumed by its callers
+(`call-ensures`).
 
 **Effects with no written form.** An `Effect` (`CallEffects.lean`) holds
-more than $`F`$. Each item below works only where its source is: a trusted
-native row, or a body TScert analyses, in the file or in an imported
-module's run ([certified imports](../SOURCE-CONTRACTS.md#certified-imports);
-cited). Across a boundary without a body (a declaration file, a package) it
-has no carrier.
+more than its closed footprint. Each item below works only where its source
+is: a trusted native row, or a body TScert analyses, in the file or in an
+imported module's run
+([certified imports](../SOURCE-CONTRACTS.md#certified-imports); cited).
+Across a boundary without a body (a declaration file, a package) it has no
+carrier.
 
-| Effect | Lean | Its source today |
+| Effect | Lean | Its source |
 | --- | --- | --- |
 | the receiver's store excepted, the receiver's own locations | `receiverStore`, `receiverOwn` | native rows (`array-prototype.mts`, `intrinsics.mts`) |
 | an append to the receiver's store | `receiverGrows`: `ReceiverGrows`, `ReceiverAppends` | `push`'s row |
@@ -52,10 +58,10 @@ has no carrier.
 | a module cell's write | a class bound, `value: init` or wider | the producer, inside the closed footprint |
 | stores read through an argument's fields | `ArgumentStoreRegionsWithin` (chain1) | the producer, on chain1 |
 
-A returned closure's footprint (`resultFootprint` of `FunctionClaims`) has
-a written form already: the returned function type's own `Within`.
-`ensures`, `requires` and `elements` are facts and element kinds rather
-than changes; they stay rows of the trusted contracts, outside this design.
+A returned closure's footprint (`resultFootprint` of `FunctionClaims`) is
+written as the returned function type's own `Modifies`. `ensures`,
+`requires` and `elements` are facts and element kinds rather than changes;
+they stay outside the frame.
 
 ## 1. The language
 
@@ -67,12 +73,16 @@ location.
 
 | Region | Locations at $`(\rho,h_0)`$ | |
 | --- | --- | --- |
-| `field x k`, `own x`, `elems x`, `cls c`, `all` | as today | existing |
+| `field x k`, `own x`, `elems x`, `cls c`, `all` | as in `Footprints.lean` | existing |
 | `path x p k` | the own field $`k`$ of the object $`p`$ reads from $`x`$ | `field x k` at $`p=[]`$ |
 | `pathOwn x p` | that object's own locations | `own x` at $`p=[]`$ |
 | `pathElems x p` | the element cells its store lists | `elems x` at $`p=[]`$ |
 | `cell b` | the cell of module binding $`b`$ the function captures | |
 | `inCls r c` | the locations of $`r`$ whose contents in $`h_0`$ are of class $`c`$ | |
+
+The two classes partition the allocated locations: a location holding an
+array store is of class `store`, any other of class `value` (`Cls.has`,
+`Closed.at`).
 
 **The frame.** An effect states a footprint $`\Phi_E`$. A normal return
 from $`h_0`$ to $`h'`$ meets $`\mathrm{Post}\,\Phi_E\,\rho\,h_0\,h'`$; a throw
@@ -85,45 +95,115 @@ the entry one. A location at or above $`|h_0|`$ is unconstrained.
 **Promises.** The relational promises stand beside the frame: `fresh`,
 `freshObject`, `receiverGrows` (`ReceiverGrows`, `ReceiverAppends`) and
 `elementWrite` (`ElementWrite.Holds`), each on normal return only
-(`Effect.post`); `Effect.excPost` carries none of them onto a throw.
+(`Effect.post`); `Effect.excPost` carries none of them onto a throw. They
+are postconditions, not frames: each relates the result or the changed
+locations to the entry heap, and none bounds which locations change. §2
+states where each is written.
 
 ## 2. The written form
 
-$`F`$ gains two kinds of optional member:
+A signature's result `Modifies<P, T>` states its frame; TypeScript reads it
+as `T`. $`P`$ is a type literal written in place, one map from what may
+change to how much:
 
 ```math
 \begin{aligned}
-F &::= \texttt{\{ value:}\ v\texttt{; store:}\ s\ [\texttt{; onThrow: true}]\ [\texttt{; at: \{}\ (\texttt{"}L\texttt{":}\ C\texttt{;})^{+}\ \texttt{\}}]\ [\texttt{; }\mathit{promise}]^{*}\ \texttt{\}}\\
-C &::= c \mid \texttt{\{ value:}\ c\texttt{; store:}\ c\ \texttt{\}}\\
-L &::= b \mid P\texttt{.}f \mid P\texttt{[*]} \mid P\texttt{.*}\qquad P ::= x \mid \texttt{this} \mid P\texttt{.}f\\
-\mathit{promise} &::= \texttt{fresh: true} \mid \texttt{freshObject: true} \mid \texttt{appends: true} \mid \texttt{writes: "stores"} \mid \texttt{writes: "exact"}\\
+P &::= \texttt{\{}\ (e\texttt{;})^{*}\ \texttt{\}}\\
+e &::= \texttt{values:}\ c \mid \texttt{stores:}\ c \mid \texttt{"}L\texttt{":}\ m \mid \texttt{onThrow: true}\\
+m &::= c \mid \texttt{\{}\ [\texttt{values:}\ c\texttt{;}]\ [\texttt{stores:}\ c\texttt{;}]\ \texttt{\}}\\
+L &::= b \mid R\texttt{.}f \mid R\texttt{[*]} \mid R\texttt{.*}\qquad R ::= x \mid \texttt{this} \mid R\texttt{.}f\\
 c &::= \texttt{"keep"} \mid \texttt{"init"} \mid \texttt{"scalar"} \mid \texttt{"grow"} \mid \texttt{"any"}
 \end{aligned}
 ```
 
-$`\{v,s\}`$ is `cls value: v`, `cls store: s`, as today; each `at` entry adds
-its regions: $`b`$ is `cell b`, $`P.f`$ is `path`, $`P[*]`$ is `path store`
-with `pathElems`, $`P.*`$ is `pathOwn`; $`L`$ at a pair
-$`\{\mathsf{value}{:}\,c_v,\ \mathsf{store}{:}\,c_s\}`$ is `inCls L value`
-at $`c_v`$ and `inCls L store` at $`c_s`$. `appends` is `receiverGrows`,
-`writes` is `elementWrite`. A statement adds a guarantee where its frame is
-below $`\{\mathsf{any},\mathsf{any}\}`$ or it states a promise; one that
-adds none (both class bounds `any`, no promise, whatever its `at` items and
-`onThrow`, which add nothing to that frame) is refused as today. A top frame
-with a promise is admitted where its promise is (below).
+Each entry adds its regions at its change; a location no entry covers is
+unchanged, so `Modifies<{}, T>` changes nothing. A key that is an
+identifier may be written unquoted. `values: c` is
+`cls value` at $`c`$ and `stores: c` is `cls store` at $`c`$. A location
+key adds its regions: $`b`$ is `cell b`, $`R.f`$ is `path`, $`R[*]`$ is
+`path store` with `pathElems`, $`R.*`$ is `pathOwn`. A location key at a
+class map, `"L": { values: c_v; stores: c_s }`, is `inCls L value` at
+$`c_v`$ and `inCls L store` at $`c_s`$, an omitted class unchanged; since
+the classes partition the locations, `"L": c` is
+`"L": { values: c; stores: c }`. On a value `grow` is `scalar`
+(`Change.onValue`), and on a store `init` and `scalar` are `keep`
+(`Change.onStore`). `onThrow: true` makes the frame hold on a throw too.
+A statement whose class keys are both `"any"` lets every location change
+whatever its other entries, adds no guarantee, and is refused, as `Within`'s
+top footprint is.
+
+The declaration, in `tools/resolvable.d.ts`, is the one global alias the
+reader recognizes:
 
 ```ts
-function readRuns(runs: Runs): Within<{ value: "any"; store: "keep"; at: { "runs.openBrackets[*]": "any" } }, void>
+type Modifies<
+  P extends {
+    values?: "keep" | "init" | "scalar" | "grow" | "any";
+    stores?: "keep" | "init" | "scalar" | "grow" | "any";
+    onThrow?: true;
+    [location: string]:
+      | "keep" | "init" | "scalar" | "grow" | "any"
+      | { values?: "keep" | "init" | "scalar" | "grow" | "any"; stores?: "keep" | "init" | "scalar" | "grow" | "any" }
+      | true
+      | undefined;
+  },
+  T,
+> = T;
 ```
 
-**Why `Within` and not a JSDoc tag.** `Within` is a type, so it rides on
-every signature TScert reads, a function type's included: a callback
+TypeScript checks a class key's change; a location key passes its index
+signature whatever its spelling, so the reader refuses a key that is no
+$`L`$ or that resolves to nothing (Binding, below).
+
+```ts
+function size(xs: number[]): Modifies<{}, number>
+function lower(term: TypeTerm): Modifies<{ values: "any"; stores: "grow" }, TypeTerm>
+function readRuns(runs: Runs): Modifies<{ values: "any"; "runs.openBrackets[*]": "any" }, void>
+note(n: number): Modifies<{ "this.*": { values: "scalar" }; onThrow: true }, number>
+```
+
+**Beyond a modifies clause.** A classic frame condition, Dafny's
+`modifies` ([Leino 2010](../REFERENCES.md#leino-2010)), JML's `assignable`
+([Leavens, Baker and Ruby 2006](../REFERENCES.md#leavens-baker-and-ruby-2006)),
+ACSL's `assigns` ([ACSL](../REFERENCES.md#acsl)), Boogie's `modifies`
+([Barnett et al. 2006](../REFERENCES.md#barnett-et-al-2006)) and Low*'s
+`modifies` ([Protzenko et al. 2017](../REFERENCES.md#protzenko-et-al-2017)),
+is a set of locations: those outside it keep their contents, those inside
+may take any. The change $`c`$ of each entry is the part beyond it: a
+two-state relation each covered location meets, monotone below `any`
+(`init` writes only a `null` or `undefined`, `scalar` writes no object or
+store, `grow` keeps a store's dense prefix and lists only its old cells or
+fresh ones; `Change.Holds`). It is the preorder of F*'s monotonic
+references ([Ahman et al. 2018](../REFERENCES.md#ahman-et-al-2018)) and
+the relation a Dafny `twostate` predicate states
+([Dafny](../REFERENCES.md#dafny)), attached to each entry of the frame. It
+belongs in the frame because `stable` reads it: a fact whose support
+tolerates `grow` (a length's lower bound) is kept across a call that grows
+the store it reads, where a plain modifies set, listing that store, would
+drop it.
+
+**Postconditions beside the frame.** The promises of §1 are not part of
+$`P`$:
+
+- `fresh` is a postcondition on the result, written as the `@ensures` atom
+  `fresh(result)` (§2.1).
+- `freshObject`, `appends` (`receiverGrows`) and `writes` (`elementWrite`)
+  relate a native's result or changed cells to its arguments; each is a
+  field of the audited contract that states the native (a row of
+  `tools/*.mts` or a pinned overlay entry, below), stated and reviewed with
+  it, and has no written form in a program's source: no rule certifies one
+  from a body (`effectCheckedResult` refuses each).
+
+**Why a type, and no `@modifies` tag.** `Modifies` is a type, so it rides
+on every signature TScert reads, a function type's included: a callback
 parameter, a field's function, a returned closure, an interface member, a
-declaration file's export. A JSDoc tag has no attachment point on a
-function type written in a parameter. TypeScript binds `Within` by its
-declaration, so recognition is by binding, never by spelling, and
-`statedResult` already reads it for every reader, with the fragment's
-refusals fencing its positions. Preconditions stay `@requires`
+declaration file's export; a JSDoc tag has no attachment point on a
+function type written in a parameter. A tag beside it on declarations
+would be a second spelling of one statement, read by a second reader and
+recognized by its spelling, where `Modifies` is recognized by the
+declaration TypeScript binds it to and read by `statedResult` alone. The
+JSDoc clauses `@requires` and `@ensures` state facts, which no type
+carries. Preconditions stay `@requires`
 ([preconditions](../PROGRAM-TYPING.md#preconditions); cited), which gains
 the separation atoms of §5.
 
@@ -132,40 +212,60 @@ parameter with a default, a rest parameter and a pattern are refused as
 roots, since their value in the body is not the call's. `this` is position
 $`0`$, refused in an arrow. $`b`$ is a [module cell](../SOURCE-ELABORATION.md#module-cells)
 of the declaring module, resolved through its declaration's symbol; a name
-that resolves to none is refused where read. A traversed field of $`P`$
-must be `@stable` ([records](../POSITIVE-TYPES.md#records); cited), the
-final field of $`P.f`$ excepted; a path through a field no type resolves
-is refused.
+that resolves to none is refused where read. The keys `values`, `stores`
+and `onThrow` are always the class keys and the flag: a module binding of
+one of those names is not nameable as a cell, and its writes are stated
+through `values`. A traversed field of $`R`$ must be `@stable`
+([records](../POSITIVE-TYPES.md#records); cited), the final field of
+$`R.f`$ excepted; a path through a field no type resolves is refused.
 
 **Where a statement is admitted.**
 
 - *A program definition* (its body visible): optional. Written, the whole
   statement is certified from the code over every environment its inputs
   admit (`stated-declaration`, `stated-closure`): the frame, the producer
-  proposing it and Lean checking it; `fresh`, by the freshness facts the
-  compositional check infers, every return a fresh value (`FreshAt` of the
-  entry heap's length on normal return; `compositionalChecked` with `ret`,
-  `GraphCode.lean`; proved for code entries). Unwritten, the producer
-  infers the effect as today. `freshObject`, `appends` and `writes` have
-  no rule certifying them from a body (`effectCheckedResult` refuses each)
-  and are refused here and on a function type of the program; they are
-  admitted in audited contracts only.
+  proposing it and Lean checking it. Unwritten, the producer infers the
+  effect from the body.
 - *A function type of the program* (a parameter, a field, a returned
   closure): every value introduced at it meets it, by the existing
-  introductions (closure certification, subtyping, field writes), `fresh`
-  included.
+  introductions (closure certification, subtyping, field writes).
 - *An import from another module of the program*: read under the import
   assumption ([trust surface](../DESIGN.md#trust-surface)) as the exporting
-  module's own run certified it, its promises included.
+  module's own run certified it, its `fresh` promise included.
 - *A declaration file or a package*: an **audited contract**. A statement
   there is read only where a reviewed overlay entry pins its declaration
   by origin, package version and heading text, the statement included, as
   [stated library types](../SOURCE-CONTRACTS.md#stated-library-types)
   pin theirs, and the owner has reviewed it against the package's code by
   [modeling a library](../SOURCE-CONTRACTS.md#modeling-a-library): its
-  callbacks, conversions and both exits. An unpinned statement is refused
-  as today. Each pinned statement is an item of the trust surface; the
-  native rows of `tools/*.mts` become such entries written in this form.
+  callbacks, conversions and both exits. The entry states its promises
+  (`fresh` among them) beside it. An unpinned statement is refused. Each
+  pinned statement is an item of the trust surface; the native rows of
+  `tools/*.mts` are such entries written in this form.
+
+### 2.1 `fresh(result)`
+
+`@ensures` gains one atom, `fresh(result)`: the result's array store was
+allocated during the call (`FreshAt` of the entry heap's length, on normal
+return). It is the clause language's one two-state atom, read against the
+call's entry heap, and it elaborates to the signature's `fresh` promise,
+not to an index fact of `ensures`. It is admitted where `@ensures` is (a
+synchronous module function declaration with one signature and named
+non-rest parameters), as a conjunct of the clause's top level, and only on
+a result whose type is an array type; inside an alternative, a guarded
+clause (`result === false || C`) or a quantified clause it is refused.
+
+```ts
+/** @ensures fresh(result) && result.length === count */
+export function zeros(count: number): number[]
+```
+
+Its unit proves it as O10 states: the compositional check with `ret`
+infers every return fresh (`compositionalChecked`, `GraphCode.lean`;
+proved for code entries), and `checkRequests_stated_at` gains `FreshAt` of
+the entry heap's length on normal return over the unit's full domain. A
+caller gains the promise at `call-ensures`'s step; an importer reads it from
+the export's certified signature.
 
 ## 3. Existing effects, translated
 
@@ -173,9 +273,9 @@ Each translation is the same relation on heaps.
 
 | Existing effect | Frame | Evidence |
 | --- | --- | --- |
-| `Closed` $`\{v,s\}`$ | `cls value: v`, `cls store: s` | `Closed.Holds` is this `Post` (definition) |
+| `Within<{value: v; store: s}, T>`, `Closed` $`\{v,s\}`$ | `Modifies<{values: v; stores: s}, T>`: `cls value: v`, `cls store: s` | `Closed.Holds` is this `Post` (definition) |
 | `receiverStore` with $`\{v,s\}`$ | the two, `path 0 [] store: any` | `HoldsOn` off the store, unconstrained there |
-| `receiverOwn` with $`\{v,s\}`$, whether or not `receiverStore` is set | the two, `inCls (own 0) value: any` | on an own location the join is `ownChange` $`=\{\mathsf{any},s\}`$, since $`\{v,s\}\le`$ `ownChange` (`Effect.le_ownChange`; proved) |
+| `receiverOwn` with $`\{v,s\}`$, whether or not `receiverStore` is set | the two, `"this.*": { values: "any" }` (`inCls (own 0) value: any`) | on an own location the join is `ownChange` $`=\{\mathsf{any},s\}`$, since $`\{v,s\}\le`$ `ownChange` (`Effect.le_ownChange`; proved) |
 | chain1 region $`(i,p)`$ with $`\{v,s\}`$ | the two, `path i p store: any` | `ArgumentStoreRegionsWithin` off the store |
 
 `Effect.within` tests `receiverOwn` first, so with both flags set the
@@ -184,6 +284,46 @@ is bounded at $`s`$; translating `receiverStore` too would add
 `path 0 [] store: any` and weaken it. `Effect.within` becomes `Post` of
 the frame at `callEnv r args`, one field replacing `footprint`,
 `receiverStore` and `receiverOwn`; `excPost` takes the actuals.
+`path x p store` alone is a region of these translations and has no
+written key: `R[*]` adds its cells.
+
+### 3.1 The migration
+
+`Modifies` replaces `Within` in one change, with no second accepted
+spelling: `Within` and `Footprint` leave `tools/resolvable.d.ts`, and a
+reference to either is an ordinary type. The class keys map one to one
+(`value` to `values`, `store` to `stores`), with `"keep"` entries
+dropped, so `{ value: "keep"; store: "keep" }` becomes `{}`. The sites, on
+main at 0c4518e4:
+
+- the reader: `statedResult` (`tools/type-term.mts`), the declaration
+  reader's `verifierAlias` (`tools/declaration-graph.mts`) and the
+  refusals of `Within` and `Footprint` outside a result
+  (`invalid-method-effect-misplaced`, `-misplaced-element`), which name
+  `Modifies` alone; the refusal codes keep their names;
+- 587 occurrences in 137 files: the front end's own sources in `tools/`
+  (411 in 24 files) and the cases of `pipeline/examples/` and
+  `pipeline/imports-project/` (176 in 113 files), with the lookalike case
+  (`invalid-method-effect-lookalike`) declaring its own `Modifies`;
+- the texts naming the form: `pipeline/cases.mts`, `pipeline/test.mts`,
+  `tests/node-runs.mts`, comments of the producer (`source.ml`) and of Lean
+  (`Fragment.lean`, `ClosureSetup.lean`, `RequestJson.lean`,
+  `SourceRequests.lean`), and the documents (SOURCE-ELABORATION,
+  SOURCE-FRAGMENT, FRAGMENT-FORMAT, DESIGN, GLOSSARY, SOURCE-REWRITES,
+  SOURCE-CONTRACTS, WORK.md); the method-effects deck changes through its
+  review ([a revised deck](../STYLE.md#a-revised-deck)).
+
+The census's copy of `tools/` is recognized by holding
+`resolvable.d.ts`'s exact bytes, so it follows at the same commit. A
+location key is refused until the regions of §1 are certified, so the
+migration changes no accepted program. TypeScript accepts the old
+spelling `{ value: "any"; store: "grow" }` at `Modifies`, its keys passing
+the index signature; the reader refuses each as a name resolving to no
+module binding, and where a module binds `value` or `store` the frame then
+names that cell alone, which certification refuses for any body changing
+more. Every keyed file the change edits misses its stage entries once.
+The wire (`stated` of the Fragment, `CallEffect`) and the Lean names
+(`statedWithin`) are unchanged by it.
 
 ## 4. Composition and preservation
 
@@ -199,7 +339,7 @@ call's values and heap, $`K`$ the caller's separation knowledge
 (`stable_sound`). In
 
 ```ts
-function shrink(xs: number[]): Within<{ value: "any"; store: "keep"; at: { "xs[*]": "any" } }, void> { xs.pop(); }
+function shrink(xs: number[]): Modifies<{ values: "any"; "xs[*]": "any" }, void> { xs.pop(); }
 function f(): number { const xs = [1]; shrink(xs); return xs[0]!; }
 ```
 
@@ -226,7 +366,7 @@ entry at `any` (the second disjunct of `transport_sound`):
   proved); the native mutators' store steps give it (`Arr.Within`,
   `FootprintNatives.lean`; proved in the step model); it composes by
   transitivity, on both exits. A step with no such proof transports the
-  region as `elems` does today: to `cls value` where the array's contract
+  region as `elems` does: to `cls value` where the array's contract
   makes every element a source value, so each cell is of class `value`
   (`ElemsValueOk`), else to `all`.
 - `cell b`: a cell's identity is fixed; it transports to itself.
@@ -246,7 +386,7 @@ entry at `any` (the second disjunct of `transport_sound`):
   never becomes an empty region.
 - *A callback call*: the frame its type states, at its actuals. A closure
   is checked at a type whose frame covers its body's, each captured root
-  named only through a class region, since the type names its parameters
+  named only through a class key, since the type names its parameters
   alone.
 - *A throw*: a call's exceptional edge (to a handler or to the exit) uses
   the callee's frame only where it states `onThrow`; otherwise the edge has
@@ -256,18 +396,18 @@ entry at `any` (the second disjunct of `transport_sound`):
   cited).
 
 **Natives.** A native's frame is its own steps' footprint joined with the
-frame of every callback and conversion it may invoke. Today's rows hold
+frame of every callback and conversion it may invoke. The native rows hold
 on normal return only. `array_native_post` gives `[store x: grow, cls value: any]`
 and `array_native_post_any` the same at `any` (proved): an element write
 may change any value-class location. On normal return `push`'s
 `ReceiverGrows` with `ReceiverAppends` gives the narrower
 `path 0 [] store: grow` (conjectured; a lemma of O6), where its footprint
 row is the global $`\{\mathsf{any},\mathsf{grow}\}`$. A row stating
-`this[*]` needs a theorem from a narrower audited premise (the native
+`"this[*]"` needs a theorem from a narrower audited premise (the native
 changes only its store and the cells its store lists in $`h_0`$, and
-allocates the rest) with `Arr.Within`: `{value: any, store: grow}` for
-`push`, `unshift` and `sort`'s writeback (`unshift` overwrites present
-cells), `any` for `pop`, `shift`, `reverse` and `splice`.
+allocates the rest) with `Arr.Within`: `{ values: "any"; stores: "grow" }`
+for `push`, `unshift` and `sort`'s writeback (`unshift` overwrites present
+cells), `"any"` for `pop`, `shift`, `reverse` and `splice`.
 
 ## 5. Generality
 
@@ -284,10 +424,13 @@ at its type's frame.
   `StoreApart`); the first gives the second. Each enters the unit's entry
   separation and `Effect.pre`; a call establishes it from its knowledge
   (`call-requires`).
-- **Frame variables**, for a wrapper passing its callback's frame through,
-  are deferred. They need closure packaging (a callback's frame including
-  its captured roots), substitution at the wrapper's call, and both-exit
-  guarantees. Until then the separated captured-output accumulation of
+- **Frame variables**, effect polymorphism over callbacks ("modifies what
+  `f` modifies"), are not expressible: a frame is closed, and a wrapper
+  passing its callback's frame through states a bound covering every
+  callback it admits. They are deferred; they need closure packaging (a
+  callback's frame including its captured roots), substitution at the
+  wrapper's call, and both-exit guarantees. The separated captured-output
+  accumulation of
   [keeping contract facts across calls](keeping-contract-facts-across-calls.md#certifying-helpers-natives-and-callbacks)
   (`onLine` appending to a captured array) is not met: no closed callback
   frame states it.
@@ -298,7 +441,7 @@ at its type's frame.
 
 ```ts
 type Runs = { /** @stable */ readonly openBrackets: number[] };
-function readRuns(runs: Runs): Within<{ value: "any"; store: "keep"; at: { "runs.openBrackets[*]": "any" } }, void> {
+function readRuns(runs: Runs): Modifies<{ values: "any"; "runs.openBrackets[*]": "any" }, void> {
   runs.openBrackets.splice(0, 1);
 }
 /** @requires storeApart(flags, runs.openBrackets) */
@@ -316,10 +459,10 @@ keeps $`i<|\mathit{flags}|`$, support `field flags store: grow`: the path's
 store region is refuted by `storeApart`, kept along the loop since
 `openBrackets` is stable (`StoreApart.stable_path_frame`, chain1; proved);
 its cells are of class `value`, since `number[]` holds source values, so
-they miss `flags`'s store location; `value: any` changes no store. Without
-the precondition, `measure(xs, { openBrackets: xs })` with `xs = [1, 2, 3]`
-reads `xs[1]` as `undefined` and returns `NaN` under Node (run
-2026-11-09). Delivery needs stable-path evidence, the element-class
+they miss `flags`'s store location; `values: "any"` changes no store.
+Without the precondition, `measure(xs, { openBrackets: xs })` with
+`xs = [1, 2, 3]` reads `xs[1]` as `undefined` and returns `NaN` under Node
+(run 2026-11-09). Delivery needs stable-path evidence, the element-class
 premise, the checked `storeApart`, actual-argument substitution and the
 certified summary.
 
@@ -330,24 +473,24 @@ proposes it): `readScriptRuns(runs, …)` reads `runs.openBrackets` once at
 entry, then splices it, pushes onto it and writes its elements at computed
 indices; writes `runs.read` and `runs.scripts`; and calls
 `getScriptFactsAt`, whose `getScriptFacts` evaluates
-`scriptClasses ??= unpackClasses(…)` and calls `getClass`. With today's
-rows its frame on normal return is
+`scriptClasses ??= unpackClasses(…)` and calls `getClass`. With the
+native rows its frame on normal return is
 
-```text
-value: any, store: grow, at { runs.openBrackets[*]: any }
+```ts
+Modifies<{ values: "any"; stores: "grow"; "runs.openBrackets[*]": "any" }, void>
 ```
 
-joined with `unpackClasses`'s and `getClass`'s frames: `store: grow` from
-the element writes (`elem-write-slot`, a closed footprint) and `push`'s
-row; `value: any` from the element writes and `splice`, and it covers
-`scriptClasses: init` and the two field writes, which then add no
-precision. None of the native rows states `onThrow`, so the frame holds on
-normal return only; `measureAnalysis` catches nothing, so its facts need
-only normal edges. `spaceSharesScriptRun` adds `hasProperty`'s frame, and
-`getUnspacedGraphemes` `findGraphemeEnds`'s and its fresh `Int32Array`'s
-and fresh `unspaced` array's; each is its body's transitive frame, the
-imports' at their certified or stated signatures. At `runs = null` the
-paths read nothing.
+joined with `unpackClasses`'s and `getClass`'s frames: `stores: "grow"`
+from the element writes (`elem-write-slot`, a closed footprint) and
+`push`'s row; `values: "any"` from the element writes and `splice`, and it
+covers `"scriptClasses": "init"` and the two field writes, which then add
+no precision. None of the native rows states `onThrow`, so the frame holds
+on normal return only; `measureAnalysis` catches nothing, so its facts
+need only normal edges. `spaceSharesScriptRun` adds `hasProperty`'s frame,
+and `getUnspacedGraphemes` `findGraphemeEnds`'s and its fresh
+`Int32Array`'s and fresh `unspaced` array's; each is its body's transitive
+frame, the imports' at their certified or stated signatures. At
+`runs = null` the paths read nothing.
 
 `measureAnalysis` allocates the runs:
 `const scriptRuns: ScriptRuns = { read: 0, scripts: ANY_SCRIPT, openBrackets: [] }`.
@@ -355,11 +498,11 @@ The literal `[]` is apart from every older array slot (`region-alloc`;
 cited), so the record's allocation gives `storeApart` of
 `scriptRuns.openBrackets` from `flags`, `starts` and `texts`
 (`ArgumentStoreSeparation.of_separation`, chain1; proved). A loop fact on
-those arrays' lengths, support at `grow`, is then kept: `store: grow`
-tolerates it, `value: any` misses stores, the path region is apart, the
+those arrays' lengths, support at `grow`, is then kept: `stores: "grow"`
+tolerates it, `values: "any"` misses stores, the path region is apart, the
 cells are value-class. The stable link from `scriptRuns` to its array is
 `/** @stable */` on `openBrackets`, since the loop's other calls state
-`value: any`, which covers the field
+`values: "any"`, which covers the field
 ([the soundness question](argument-path-regions.md#the-soundness-question);
 cited). It is the one source change this separation needs.
 
@@ -369,7 +512,7 @@ and `texts`) at `grow` or less. Read from the code at `tscert-bounds`
 (conjectured), each helper's frame meets it:
 
 - `readScriptRuns`: `push` (`grow`), `splice` at the apart
-  `runs.openBrackets[*]`, element writes (closed $`\{\mathsf{any},\mathsf{grow}\}`$),
+  `"runs.openBrackets[*]"`, element writes (`{ values: "any"; stores: "grow" }`),
   the fields `read` and `scripts` (value class).
 - `getScriptFacts`, `unpackClasses`, `unpackClassRuns`, `getClass`: the
   cells `scriptClasses`, `classRuns`, `classRemaps` at `init`; writes and
@@ -392,31 +535,33 @@ beyond `grow`.
 
 ### 6.3 Class methods' effects ([method-effects.md](method-effects.md))
 
-A method's `Within` is its frame; D1 (a) holds as decided, `at` one more
-part of the statement, certified by the same rules and compared by the
-coverage of O8. D5's code is admitted as written with
-`at: { "this.typeParamScopes[*]": "any" }` on a stable field. D6 compares
-an override's frame with its base's by that coverage.
+A method's `Modifies` is its frame; D1 (a) holds as decided, location keys
+one more part of the statement, certified by the same rules and compared
+by the coverage of O8. D5's code is admitted as written with
+`Modifies<{ "this.typeParamScopes[*]": "any" }, T>` on a stable field. D6
+compares an override's frame with its base's by that coverage.
 
 ### 6.4 Module caches ([keeping-contract-facts-across-calls.md](keeping-contract-facts-across-calls.md))
 
 `getEngineProfile`'s `cachedEngineProfile ??= build()` is
-`at: { "cachedEngineProfile": "init" }` joined with `build`'s frame. A
-caller collects these transitively, or widens them (`value: init` covers
-every cell at once). From another module a cell is the widened class
-region (§4). A write to an object reached through a cache needs its own
-region. `Map.set` is `this.*: scalar` where the model places the map's
-table among the receiver's own locations.
+`Modifies<{ cachedEngineProfile: "init" }, EngineProfile>` joined with
+`build`'s frame. A caller collects these transitively, or widens them
+(`values: "init"` covers every cell at once). From another module a cell
+is the widened class region (§4). A write to an object reached through a
+cache needs its own key. `Map.set` is `"this.*": "scalar"` where the model
+places the map's table among the receiver's own locations.
 
 ### 6.5 Footprints ([FOOTPRINTS.md](../FOOTPRINTS.md))
 
-- **Value and store classes**: $`\{v,s\}`$.
+- **Value and store classes**: `values` and `stores`.
 - **Fresh array storage**: freshness discharges the enclosing obligation
-  (§4; `FreshOk`, `Closed.HoldsOn.below_fresh`; cited).
+  (§4; `FreshOk`, `Closed.HoldsOn.below_fresh`; cited); a result's
+  freshness is `@ensures fresh(result)` (§2.1).
 - **Element writes**: `o[k] = v` is within
-  `o[*]: {value: any, store: grow}` (`store: keep` at a required position)
-  once its write is proved confined to the store's cells; today it is the
-  closed $`\{\mathsf{any},\mathsf{grow}\}`$
+  `"o[*]": { values: "any"; stores: "grow" }` (`stores: "keep"` at a
+  required position) once its write is proved confined to the store's
+  cells; without that proof it is the closed
+  `{ values: "any"; stores: "grow" }`
   ([element writes](../FOOTPRINTS.md#element-writes); cited).
 
 ## 7. Stating effects to save module runs
@@ -424,7 +569,7 @@ table among the receiver's own locations.
 Conjectured (the owner's expectation, unmeasured): a caller in another file
 that reads an import at its written effect needs no analysis of the
 import's module, so a stated export makes checking its importers cheaper.
-Today the parser lowers every module the checked file imports a function
+The parser lowers every module the checked file imports a function
 from, transitively ([certified imports](../SOURCE-CONTRACTS.md#certified-imports)),
 so a stated import saves the module's run only where the parser also
 leaves out a module none of whose imports is read qualified. The
@@ -446,7 +591,7 @@ Paths relative to `lean/Verification/`; "chain1" names a file of branch
   `.receiver`, `frame_length` become lemmas of `Post` at `path _ _ store`.
 - **O2 Effect.** One field `frame : Footprint` replacing `footprint`,
   `receiverStore` and `receiverOwn`; `within` as `Post` at `callEnv`; §3's
-  translations proved equal to today's `within`, `receiverOwn` first.
+  translations proved equal to `within` as defined, `receiverOwn` first.
 - **O3 Cell provenance.** A relation `CellsFrom h₀ h x p` and its proof for
   primitive writes, native steps and composition, on both exits; the
   `elems` fallback where it is missing.
@@ -472,29 +617,28 @@ Paths relative to `lean/Verification/`; "chain1" names a file of branch
   a unit stating a frame, that its runs meet it, beside
   `checkRequests_footprint_at`. The `FunctionPlan` to `CertifiedPlan`
   conversion is unchanged.
-- **O10 Promises.** The whole statement checked and proved: `statedWithin`
-  compares `fresh` and its "adds a guarantee" test replaces
-  `s.footprint != .top`; a declaration stating `fresh` runs the
-  compositional check with `ret`, and `checkRequests_stated_at` gains
-  `FreshAt` of the entry heap's length on normal return over its full
-  domain; closures as `effectCheckedResult` checks them; the export's
-  certified signature carries `fresh` to importers; acceptance (O9)
-  includes it. `freshObject`, `appends` and `writes` refused outside
-  audited contracts.
-- **Wire.** `CallEffect` and the Fragment's `stated` carry the entries and
-  promises; decoders require them field by field.
+- **O10 Freshness.** A declaration whose `@ensures` holds `fresh(result)`
+  runs the compositional check with `ret`, and `checkRequests_stated_at`
+  gains `FreshAt` of the entry heap's length on normal return over its
+  full domain; the export's certified signature carries `fresh` to
+  importers; acceptance (O9) includes it. `freshObject`, `appends` and
+  `writes` stay fields of audited contracts.
+- **Wire.** `CallEffect` and the Fragment's `stated` carry the frame's
+  entries; the written postcondition carries `fresh`; decoders require
+  them field by field.
 
 ## 9. Trust
 
-A statement on a program definition is certified from its code; an
-imported one is read under the import assumption. A statement in a
-declaration file or a package is an audited contract, pinned and reviewed
-by the owner (§2), and a trust-surface item; `freshObject`, `appends` and
-`writes` are stated there only. A regional native row rests on
-a narrower audited premise than today's (its changes confined to its store
-and the cells its store lists at entry), reviewed with O6. A `@stable` field
-of a value external code builds needs the checked boundary or explicit
-contract [records](../POSITIVE-TYPES.md#records) states.
+A statement on a program definition is certified from its code, and so is
+a written `fresh(result)`; an imported one is read under the import
+assumption. A statement in a declaration file or a package is an audited
+contract, pinned and reviewed by the owner (§2), and a trust-surface item;
+`freshObject`, `appends` and `writes` are fields of such contracts only. A
+regional native row rests on a narrower audited premise than the closed
+rows (its changes confined to its store and the cells its store lists at
+entry), reviewed with O6. A `@stable` field of a value external code
+builds needs the checked boundary or explicit contract
+[records](../POSITIVE-TYPES.md#records) states.
 
 ## 10. Cases
 
@@ -502,16 +646,21 @@ Positive: `stated-argument-path` (§6.1), `stated-local-runs` (runs
 allocated in the looping function), `stated-module-cache` (a `??=` cache
 keeping a fact elsewhere), `stated-callback-frame` (a callback type stating
 a frame, called in a loop), `stated-package-contract` (a pinned statement
-in a package's declaration file), `stated-top-fresh` (a builder stating
-`fresh: true` at `{value: "any", store: "any"}`).
+in a package's declaration file), `ensures-fresh` (a builder writing
+`@ensures fresh(result)` and no `Modifies`, its result's length kept by a
+caller across a call growing another array).
 
 Negative, each run under Node: `invalid-stated-alias` (§6.1 without
 `@requires`, `NaN`), `invalid-stated-fresh-shrink` (§4's `f`),
 `invalid-stated-unstated-write`, `invalid-stated-path-reassigned` (a
 traversed field without `@stable`, reassigned to the counted array between
 calls), `invalid-stated-throw` (a splice before a throw a caller catches,
-at a frame claiming `onThrow`), `invalid-stated-default-root`, and an
-unpinned statement in a declaration file.
+at a frame claiming `onThrow`), `invalid-stated-default-root`,
+`invalid-ensures-fresh-input` (a function returning its input under
+`@ensures fresh(result)`), and an unpinned statement in a declaration
+file. Refused at the reader: `Modifies<{ values: "any"; stores: "any" }, T>`;
+the spelling `{ value: …; store: … }`; `fresh(result)` inside an
+alternative, and on a result of no array type.
 
 Forged controls (`pipeline/test.mts`): a frame narrower than the body's
 writes; `apart` or `storeApart` forged at a call that cannot establish it;
@@ -519,14 +668,12 @@ an entry rooted at another position; a `cell` naming a same-named binding
 of another module, and one substituted exactly without agreement; a
 `pathElems` transported to `cls value` without the element-class premise;
 both receiver flags translated independently; a captured root's write
-claimed within a callback type's parameter items; a normal-only nested
+claimed within a callback type's parameter keys; a normal-only nested
 summary on a path that throws to the exit, and one caught by a handler; a
-function returning its input stated `fresh: true` within
-`{value: "keep", store: "keep"}`, its claims forged to carry the promise; an
-`unshift` row claiming `this[*]: grow`; a `sort` row omitting its
-comparator's frame; `appends` and `freshObject` on a program definition; a
-`{value: "any", store: "any"}` statement with no promise; a coverage claim
-dropping `onThrow`.
+function returning its input, its claims forged to carry `fresh`; an
+`unshift` row claiming `"this[*]": "grow"`; a `sort` row omitting its
+comparator's frame; `appends` and `freshObject` claimed of a program
+definition; a coverage claim dropping `onThrow`.
 
 ## 11. Decisions and open questions
 
@@ -534,18 +681,35 @@ Decisions:
 
 - **One language.** The regional `Footprint` read by `Post`; the frame
   replaces the three flags; the relational promises stay separate fields.
-- **One written form.** `Within`'s $`F`$ with `at` and promise members,
-  read by `statedResult`; preconditions in `@requires`.
-- **Optional where a body is visible**, certified from it whole, `fresh`
-  included; an audited, pinned contract where none is, and for
-  `freshObject`, `appends` and `writes`.
-- **Refused only without a guarantee**: a top frame with no promise.
-- **`onThrow` as written**, normal return otherwise, as `Within` today.
+- **One written form.** `Modifies<P, T>`, $`P`$ one map from class keys
+  and location keys to changes, read by `statedResult`; no JSDoc
+  spelling; preconditions in `@requires`.
+- **The change is part of each entry**, beyond a classic modifies set, so
+  that `stable` keeps facts across monotone changes.
+- **Postconditions outside the frame**: `fresh(result)` in `@ensures`;
+  `freshObject`, `appends` and `writes` in audited contracts.
+- **Optional where a body is visible**, certified from it whole; an
+  audited, pinned contract where none is.
+- **Refused only without a guarantee**: both class keys at `"any"`.
+- **`onThrow` as written**, normal return otherwise.
 - **`[*]` is store and cells**; the store-only region serves translations.
 - **`@stable` on traversed fields**; the final field need not be.
 - **Module cells**: exact under agreement, the class region otherwise.
 - **Cell provenance**: a checked local obligation, the class fallback
   without it.
+- **One migration**: `Within` and `Footprint` removed in the change that
+  adds `Modifies` (§3.1).
+
+Gaps, each a stated limit:
+
+- **Effect polymorphism** over callbacks ("modifies what `f` modifies")
+  has no form (§5).
+- **`fresh` beyond declarations**: a method, a closure and a function type
+  admit no `@ensures`, so a fresh result there has no written form.
+- **Relational promises in program code**: `freshObject`, `appends` and
+  `writes` have no certifying rule, so a program function states none.
+- **Cells named `values`, `stores` or `onThrow`** are stated through
+  `values` only.
 
 Open:
 

@@ -648,6 +648,80 @@ Yogu. *Strict await.* microsoft/TypeScript issue #35419, opened 2019-11-29.
 **Context** for refusing `await` of a non-promise object. **Cited in**
 [TRUST-REDUCTION: illustration](TRUST-REDUCTION.md#illustration-nested-promises).
 
+## Frame conditions
+
+### Leino 2010
+
+K. Rustan M. Leino. *Dafny: an automatic program verifier for functional
+correctness.* LPAR-16, LNCS 6355, pp. 348–370, Springer, 2010.
+[doi:10.1007/978-3-642-17511-4_20](https://doi.org/10.1007/978-3-642-17511-4_20).
+
+**Used for** the name and meaning of a frame condition: a method's
+`modifies` clause lists the locations it may change, every other one
+keeping its contents.
+**Discussed in** [stated effects](drafts/stated-effects.md#2-the-written-form).
+
+### Dafny
+
+*The Dafny Reference Manual*, two-state predicates, functions and lemmas.
+[dafny.org/latest/DafnyRef/DafnyRef](https://dafny.org/latest/DafnyRef/DafnyRef).
+
+**Used for** a relation between a call's entry heap and a later one, the
+reading of each entry's change of `Modifies`.
+**Discussed in** [stated effects](drafts/stated-effects.md#2-the-written-form).
+
+### Leavens, Baker and Ruby 2006
+
+Gary T. Leavens, Albert L. Baker and Clyde Ruby. *Preliminary design of
+JML: a behavioral interface specification language for Java.* ACM SIGSOFT
+Software Engineering Notes 31(3):1–38, 2006.
+[doi:10.1145/1127878.1127884](https://doi.org/10.1145/1127878.1127884).
+
+**Used for** JML's `assignable` clause, a frame condition of the same form.
+**Discussed in** [stated effects](drafts/stated-effects.md#2-the-written-form).
+
+### ACSL
+
+Patrick Baudin et al. *ACSL: ANSI/ISO C Specification Language.* The
+Frama-C reference.
+[frama-c.com/html/acsl.html](https://frama-c.com/html/acsl.html).
+
+**Used for** ACSL's `assigns` clause, a frame condition of the same form.
+**Discussed in** [stated effects](drafts/stated-effects.md#2-the-written-form).
+
+### Barnett et al. 2006
+
+Mike Barnett, Bor-Yuh Evan Chang, Robert DeLine, Bart Jacobs and K. Rustan
+M. Leino. *Boogie: a modular reusable verifier for object-oriented
+programs.* FMCO 2005, LNCS 4111, pp. 364–387, Springer, 2006.
+[doi:10.1007/11804192_17](https://doi.org/10.1007/11804192_17).
+
+**Used for** Boogie's `modifies` clause, a frame condition over global
+variables.
+**Discussed in** [stated effects](drafts/stated-effects.md#2-the-written-form).
+
+### Protzenko et al. 2017
+
+Jonathan Protzenko et al. *Verified low-level programming embedded in F\*.*
+Proceedings of the ACM on Programming Languages 1(ICFP):17, 2017.
+[doi:10.1145/3110261](https://doi.org/10.1145/3110261).
+
+**Used for** Low\*'s `modifies` predicate over a set of locations between
+two heaps.
+**Discussed in** [stated effects](drafts/stated-effects.md#2-the-written-form).
+
+### Ahman et al. 2018
+
+Danel Ahman, Cédric Fournet, Cătălin Hriţcu, Kenji Maillard, Aseem Rastogi
+and Nikhil Swamy. *Recalling a witness: foundations and applications of
+monotonic state.* Proceedings of the ACM on Programming Languages
+2(POPL):65, 2018.
+[doi:10.1145/3158153](https://doi.org/10.1145/3158153).
+
+**Used for** references whose contents change only along a preorder, the
+pattern of each entry's change (`init`, `scalar`, `grow`) below `any`.
+**Discussed in** [stated effects](drafts/stated-effects.md#2-the-written-form).
+
 ## Compilation
 
 ### Aho, Lam, Sethi and Ullman 2006
