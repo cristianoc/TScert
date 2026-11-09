@@ -2,7 +2,8 @@
  * arithmetic, inferred loop invariants, contracts at function and type
  * boundaries and frame conditions between them, all rechecked by a proved
  * checker; with its outcome on pretext and what remains. Measured at
- * TScert f868f344 and pretext tscert-bounds 86a93c0. Built with the deck kit
+ * TScert f868f344 and pretext tscert-bounds 86a93c0; chain 1's remaining
+ * sites observed at TScert d36212f9 and pretext aaa11c50. Built with the deck kit
  * (`make deck NAME=checked-bounds`).
  * Build: make deck NAME=checked-bounds SINCE=e0979e83. */
 import { bullets, card, cards, code, columns, cover, inline, panel, para, point, rules, slide, stat, statement, status, table, type Deck, type Slide } from "../../../dev/deck.mts";
@@ -70,7 +71,7 @@ const slides: Slide[] = [
       bullets([
         point("Body", "verification assumes the precondition and proves the read in bounds."),
         point("Analyzed callers", "each call must establish the precondition of its evaluated arguments; a call that cannot is unverified."),
-        point("Clause language", t("conjunctions of `safeInteger` and linear comparisons over parameters, field paths and lengths, optionally under null guards `p.f === null || …`. A clause runs no code.")),
+        point("Clause language", t("conjunctions of `safeInteger` and linear comparisons over parameters, field paths and lengths, optionally under null guards `p.f === null || …`, and `a !== b` of two plain arrays (slide 9). A clause runs no code.")),
         point("Trusted boundary", t("callers outside the analyzed sources are " + "trusted" + " to meet exported preconditions.")),
       ], 26),
   }),
@@ -83,7 +84,7 @@ const slides: Slide[] = [
       ["Type invariant", status("ok", "written") + t(" as `@invariant C` on a type; obligations at function boundaries")],
       ["Loop invariant", status("ok", "written") + t(" as `@invariant C` before a loop, or inferred; checked on every edge into the head")],
     ], [24, 76]) +
-      para(t("Clauses are linear relations over values, field paths and lengths, under null guards, and quantified clauses `forall i in xs: B` over an array’s elements. A heap change preserves no quantified fact: a stated limit."), 26),
+      para(t("Clauses are linear relations over values, field paths and lengths, under null guards; quantified clauses `forall i in xs: B` over an array’s elements; and `a !== b`, two plain arrays held in separate storage. A heap change preserves no quantified fact: a stated limit."), 26),
   }),
   slide("invariants", {
     label: "Type invariants", note: t("an opaque-type regression example, after pretext’s handle · the boundary rules ") + proved,
@@ -108,22 +109,22 @@ const slides: Slide[] = [
         [t("Write `xs[k]` below the length"), "the length preserved"],
         [t("`out.push(v)`"), t("lower bounds on `out.length` preserved; upper bounds dropped; the lengths of arrays older than a literal `out` preserved")],
         ["Call with a checked frame condition", "facts whose locations its frame protects, a returned closure’s stated by its maker"],
-        [t("Call whose frame names `x.f[*]`, `f` a `@stable` field"), t("the lengths of arrays the caller knows `!==` that array")],
-        [t("Any step, a `@stable` field"), "what the field holds: its object literal allocates it at one value"],
+        [t("Call whose frame changes only the array at `r.f`"), t("the lengths of arrays known to be other arrays (slide 9)")],
+        [t("Any step, a `@stable` field"), t("the object it holds: a `readonly` field marked `@stable` is set when its record is created and never reassigned")],
         ["Any step", t("a typed array’s length: fixed for its life (" + "trusted" + ")")],
       ], [38, 62]) +
       para("These rules concern normal returns; a throw carries a frame condition only where one is stated for it.", 24),
   }),
   slide("argument-store", {
-    label: "Argument paths · frame and separation", note: t("the frame and the kept facts ") + proved,
-    title: "A frame names one array; a caller keeps what is apart from it", gap: 22,
+    label: "Frames naming one array", note: t("the rule ") + proved + t(" · its use in pretext ") + proposed,
+    title: "A call that changes one array keeps facts about the others", gap: 22,
     body: columns([
-      code(["type Runs = { /** @stable */", "  readonly openBrackets: number[] };", "function readRuns(runs: Runs): Modifies<", '    { values: "any";', '      "runs.openBrackets[*]": "any" }, void> {', "  runs.openBrackets.splice(0, 1); }", "/** @requires flags !== runs.openBrackets */", "function measure(flags: number[], runs: Runs) {", "  for (let i = 0; i < flags.length; i++) {", "    readRuns(runs); sum += flags[i]!; } }"]),
+      code(["type ScriptRuns = { read: number,", "  scripts: number, /** @stable */", "  readonly openBrackets: number[] }", "", "// splices and pushes runs.openBrackets", "function readScriptRuns(runs: ScriptRuns,", "  text: string, to: number): number", "", "// measureAnalysis, schematic", "const scriptRuns: ScriptRuns =", "  { read: 0, scripts: ANY_SCRIPT, openBrackets: [] }", "for (let mi = from; mi < to; mi++) {", "  /* a call reaching readScriptRuns(scriptRuns, …) */", "  starts[mi] /* needs mi < starts.length */ }"]),
       bullets([
-        point("The frame", t("`readRuns` changes the array at `runs.openBrackets` and value locations; every other store is unchanged. Its body is checked against that.")),
-        point("Separation", t("`flags !== runs.openBrackets` of two plain arrays states that their stores differ. A caller establishes it, here from a fresh `[]`; an aliased call cannot.")),
-        point("Kept facts", t("across the call, `i < flags.length` holds, since the changed store is apart from `flags`’s; the `@stable` field keeps the separation through the loop.")),
-        point("Scope", t("paths of one `@stable` field; a frame with paths called inside another such function is not composed; `!==` of typed arrays, which may share a buffer, is refused.")),
+        point("Frame", t("a function states what it may change in its result type, `Modifies<P, T>`, which TypeScript reads as `T`. `P` maps each kind of location to how it may change: `values` (fields and variables), `stores` (arrays’ elements and lengths), or one array named by a path such as `\"runs.openBrackets[*]\"`. A location `P` leaves out is unchanged. The body is checked against `P`.")),
+        point("Separation", t("`a !== b` of two plain arrays in a clause states that their storage differs. A caller proves it, for instance from a fresh literal `[]`; `@stable` keeps the path naming the same array across calls.")),
+        point("Rule", t("a length fact survives a call whose frame changes only arrays separate from it.")),
+        point("Scope", t("paths through one `@stable` field. Typed arrays may share a buffer, so `!==` of them is refused.")),
       ], 24),
     ], [46, 54]),
   }),
@@ -138,7 +139,7 @@ const slides: Slide[] = [
         point("Frame condition", "the calls may change field references, so the checker drops the equality even where array lengths are preserved."),
         point("Recorded calls", t("`Map.set` on module caches, `getEngineProfile`, `onLine` callbacks, measurement helpers.")),
         point("Default argument", t("`start = TEXT_START_CURSOR` receives no invariant precondition.")),
-        point("Proposed", "more precise modifies clauses; proof obligations for supplied and default argument values."),
+        point("Proposed", t("proof obligations for supplied and default argument values. Frames naming one array: slide 9.")),
       ], 25),
     ], [46, 54]),
   }),
@@ -169,17 +170,17 @@ const slides: Slide[] = [
       para(t("One class stays checked (" + "observed" + " under Node): a line range kept from a longer text, materialized on a shorter one, reads past a segment’s graphemes; original pretext returns wrong text, or `NaN` offsets in rich inline text. No annotation makes it safe; the code needs an index check."), 25),
   }),
   slide("remains", {
-    label: "Remaining obligations", note: t("chain 1’s remaining sites, observed with `measureAnalysis`’s annotations · the capabilities ") + proposed,
+    label: "Remaining obligations", note: t("chain 1’s remaining sites at TScert `d36212f9`, pretext `aaa11c50`, 2026-11-09 · ") + observed + t(" · the capabilities ") + proposed,
     title: "What the remaining reads of chain 1 need", gap: 22,
     body: table(["Capability needed", "Where chain 1 needs it"], [
-      [t("facts kept across `??=` before a call whose precondition needs them"), t("`measureAnalysis`’s calls after a cache `??=`")],
-      [t("element separation, `apart(a, b)`: guarded element writes into arrays that may alias drop length facts"), t("`measureAnalysis`’s guarded writes; `addKanaKerning`, `addIdeographicSpaceHangs`")],
-      [t("a relation between `starts`’ values and a typed array’s length, and implications in clauses"), t("`getFollowingSpaceTail`, `getJoinedNarrowing`")],
+      [t("facts kept across a `??=` before a call that requires them"), t("`measureAnalysis`’s calls after a cache `??=`")],
+      [t("separation of two arrays’ elements, for writes into arrays that may share elements"), t("`measureAnalysis`’s guarded writes; `addKanaKerning`, `addIdeographicSpaceHangs`")],
+      [t("clauses relating `starts`’ values to a typed array’s length, and implications"), t("`getFollowingSpaceTail`, `getJoinedNarrowing`")],
       [t("string lengths of `replace` and `slice` results: library contracts, an assumption about the standard library for the owner to decide (") + trusted + ")", t("`mapSourceLineBreaks` (11 sites) and `segmentAtLineBreaks`’ break reads, which need `breaks.length >= normalized.length + 1`")],
       [t("a string’s element read below its length, typed as a string"), t("`normalized[i]!` (2 sites)")],
       ["correlations the producer does not track: a nullable result tied to another value", "reads whose presence follows from another value’s test"],
     ], [52, 48]) +
-      para(t("The frame for `readScriptRuns`’ splice of `runs.openBrackets` exists (the frame slide); these are what the sites need beyond it."), 25),
+      para(t("`readScriptRuns`’ change to `runs.openBrackets` is a frame of slide 9; the rows are what the sites need beyond it."), 25),
   }),
   statement("moral", {
     label: "The takeaway",
