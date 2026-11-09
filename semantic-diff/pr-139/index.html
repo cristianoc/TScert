@@ -1,0 +1,252 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Commit Records</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Code+Pro:wght@400;600&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=STIX+Two+Text:ital,wght@0,400;0,600;1,400&display=swap">
+<style>
+:root { --bg:#fbfcfd; --surface:#ffffff; --ink:#0b1a2e; --muted:#56627a; --rule:#d5dce6; --accent:#8a6410; --code-bg:#eef2f7; --math-bg:#f2f4f8; --ok:#2f6b47; --ok-bg:#e2efe4; --principled:#a0521a; --principled-bg:#f7e6d6; --gap:#6b6f78; --gap-bg:#ecebe6; --neutral:#2c4f7c; --neutral-bg:#e6ebf2; --trust:#7c2f4a; --trust-bg:#f2e1e7; --neg:#9b3524; --neg-bg:#f5e1da; --run:#7a5414; --run-bg:#f3e7cc; --brand-ink:#0b1a2e; --brand-gold:#b8840f;
+  --display:"Bricolage Grotesque","Helvetica Neue",Arial,sans-serif; --body:"Inter","Helvetica Neue",Arial,sans-serif; --mono:"Source Code Pro",Menlo,Consolas,monospace; --math:"STIX Two Text","STIX Two Math","STIXGeneral","Cambria Math","Apple Symbols",Georgia,serif; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#0e1626; --surface:#16213a; --ink:#efe7d4; --muted:#9aa3b5; --rule:#2a3756; --accent:#e0ac4a; --code-bg:#131d33; --math-bg:#1a2540; --ok:#7fd0a2; --ok-bg:#17322a; --principled:#f0a868; --principled-bg:#3a2a1c; --gap:#9aa3b5; --gap-bg:#1c2639; --neutral:#8fb4e8; --neutral-bg:#1b2b49; --trust:#e79bb6; --trust-bg:#3a2131; --neg:#f0907d; --neg-bg:#3a1f22; --run:#e0ac4a; --run-bg:#2e2a24; --brand-ink:#efe7d4; --brand-gold:#e0ac4a; color-scheme:dark } }
+:root[data-theme="dark"] { --bg:#0e1626; --surface:#16213a; --ink:#efe7d4; --muted:#9aa3b5; --rule:#2a3756; --accent:#e0ac4a; --code-bg:#131d33; --math-bg:#1a2540; --ok:#7fd0a2; --ok-bg:#17322a; --principled:#f0a868; --principled-bg:#3a2a1c; --gap:#9aa3b5; --gap-bg:#1c2639; --neutral:#8fb4e8; --neutral-bg:#1b2b49; --trust:#e79bb6; --trust-bg:#3a2131; --neg:#f0907d; --neg-bg:#3a1f22; --run:#e0ac4a; --run-bg:#2e2a24; --brand-ink:#efe7d4; --brand-gold:#e0ac4a; color-scheme:dark }
+* { box-sizing:border-box } body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.6 var(--body) }
+main { max-width:900px; margin:0 auto; padding-inline:20px; padding-block:32px 64px; display:flex; flex-direction:column; gap:22px }
+h1 { font:600 32px/1.15 var(--display); margin:0 } h2 { font:600 22px/1.2 var(--display); margin:12px 0 8px; padding-top:12px; border-top:2px solid var(--ink) }
+h3 { font:600 19px/1.3 var(--display); margin:2px 0 0; text-wrap:balance }
+h4 { font:600 11px/1 var(--body); letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin:12px 0 4px }
+p { margin:2px 0; max-width:72ch } .lede { color:var(--muted) }
+code { font:13px/1.5 var(--mono); background:var(--code-bg); padding:1px 4px; border-radius:3px }
+pre { margin:4px 0; padding:12px 14px; border-radius:6px; overflow-x:auto }
+pre.code { font:13px/1.55 var(--mono); background:var(--code-bg) }
+.rules { display:flex; flex-direction:column; gap:14px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:14px 18px; overflow-x:auto; font:16px/1.6 var(--math) }
+.rules sub, .rules sup { font-size:.72em; line-height:0 }
+.formulas { display:flex; flex-direction:column; gap:4px }
+.formulas .row { display:flex; flex-wrap:wrap; gap:4px 28px } .formulas .row.cont { padding-left:2em }
+.infer { display:flex; align-items:center; gap:12px }
+.frac { display:inline-flex; flex-direction:column; align-items:center; min-width:0 }
+.premises { display:flex; flex-wrap:wrap; justify-content:center; gap:4px 26px; padding:0 6px 3px }
+.bar { align-self:stretch; border-top:1.5px solid var(--ink) }
+.conclusion { padding:3px 6px 0; text-align:center }
+.rule-name { font:15px/1 var(--math); font-variant:small-caps; letter-spacing:.02em; color:var(--accent); white-space:nowrap }
+.card { background:var(--surface); border:1px solid var(--rule); border-radius:8px; padding:20px 22px; display:flex; flex-direction:column; gap:6px; min-width:0 }
+.card > header { display:flex; justify-content:space-between; gap:12px; align-items:flex-start }
+.sha { font:12px/1.4 var(--mono); color:var(--muted) }
+.pill { font:600 11px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; padding:6px 9px; border-radius:99px; white-space:nowrap }
+.pill.ok { color:var(--ok); background:var(--ok-bg) } .pill.principled { color:var(--principled); background:var(--principled-bg) }
+.pill.gap { color:var(--gap); background:var(--gap-bg) } .pill.neutral { color:var(--neutral); background:var(--neutral-bg) }
+.units { display:flex; flex-wrap:wrap; gap:6px } .units span { font:12px/1 var(--mono); border:1px solid var(--rule); border-radius:4px; padding:5px 7px }
+dl.facts { display:grid; grid-template-columns:max-content minmax(0,1fr); gap:6px 16px; margin:12px 0 0; padding-top:12px; border-top:1px solid var(--rule); font-size:13.5px }
+dt { font:600 11px/1.9 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted) }
+dd { margin:0; min-width:0; display:flex; flex-wrap:wrap; gap:5px; align-items:baseline }
+.chip { font:500 12px/1 var(--body); border:1px solid var(--rule); border-radius:4px; padding:4px 7px } .chip.strong { color:var(--accent); border-color:var(--accent) }
+.trust { color:var(--trust); background:var(--trust-bg); padding:2px 6px; border-radius:4px } .none { color:var(--muted) }
+.test { font:12px/1 var(--mono); padding:4px 7px; border-radius:4px }
+.test.pos { color:var(--ok); background:var(--ok-bg) } .test.pos::before { content:"✓ " }
+.test.neg { color:var(--neg); background:var(--neg-bg) } .test.neg::before { content:"✗ " }
+.test.forged { color:var(--principled); background:var(--principled-bg) } .test.forged::before { content:"forged " }
+details { margin-top:8px; font-size:13px; color:var(--muted) } summary { cursor:pointer }
+.table-wrap { overflow-x:auto; border:1px solid var(--rule); border-radius:8px; background:var(--surface) }
+table { border-collapse:collapse; width:100%; font-size:13px } th, td { text-align:left; vertical-align:top; padding:8px 10px; border-bottom:1px solid var(--rule) }
+th { font:600 11px/1.2 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); white-space:nowrap } td.num { font-variant-numeric:tabular-nums }
+h4.change { display:flex; align-items:center; gap:8px; text-transform:none; letter-spacing:0; font:600 14px/1.3 var(--body); color:var(--ink); margin:16px 0 6px }
+h4.change .target { font-weight:400; color:var(--muted) }
+.act { font:600 10.5px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; padding:4px 7px; border-radius:4px }
+.act.added { color:var(--ok); background:var(--ok-bg) } .act.removed { color:var(--neg); background:var(--neg-bg) }
+.act.modified, .act.replaced { color:var(--principled); background:var(--principled-bg) }
+.versions { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:10px }
+.versions figure { margin:0; min-width:0 } .versions figcaption { font:600 11px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); margin:0 0 4px }
+.versions .rules { height:calc(100% - 18px); box-sizing:border-box }
+pre.code .ln { display:block; white-space:pre } pre.code .ln.add { background:var(--ok-bg) } pre.code .ln.del { background:var(--neg-bg) }
+.tk-k { color:#7a3b8c } .tk-s { color:#2f6b47 } .tk-n { color:#a35a12 } .tk-c { color:var(--muted); font-style:italic } .tk-t { color:#2c4f7c }
+.prose p { margin:4px 0 }
+ul.effect, ul.summary { margin:4px 0; padding-left:20px } ul.effect li, ul.summary li { margin:3px 0 } ul.summary ul { padding-left:18px; color:var(--muted) }
+ul.effect .arrow { color:var(--accent); font-weight:600 }
+ul.effect details { margin:0; color:inherit; font-size:inherit } ul.effect summary { list-style-position:outside }
+ul.effect .kind { font-size:11px; text-transform:uppercase; letter-spacing:.04em; padding:1px 6px; border-radius:4px; background:var(--chip, #eee) }
+ul.effect .kind.negative { color:#8a3b12 } ul.effect .kind.positive { color:#22663a } ul.effect .kind.gap { color:#7a5b00 }
+ul.effect .was.unsound { color:#b3261e; font-weight:600 } ul.effect .now { font-weight:500 } ul.effect .why { color:var(--muted) }
+ul.effect mark { background:#ffe08a; color:inherit; border-radius:2px }
+@media (max-width:720px) { .versions { grid-template-columns:minmax(0,1fr) } }
+.lowering { display:flex; flex-direction:column; gap:6px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:12px 16px; overflow-x:auto }
+.lowering .map, .lowering .cond, .lowering .result { display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 10px }
+.lowering .map:not(:has(.sem)) { flex-direction:column; align-items:stretch; gap:4px }
+.lowering .result { display:grid; grid-template-columns:auto minmax(0,1fr); align-items:baseline; gap:2px 10px; padding-left:1em } .lowering .result .note { grid-column:2 }
+.m-intr { font:14px/1.5 var(--mono); color:#2c4f7c } .m-lit { font:13px/1.5 var(--mono); color:#7a3b8c }
+.lowering code.src { font:13px/1.5 var(--mono); background:var(--surface); border:1px solid var(--rule); padding:2px 6px; border-radius:4px }
+.lowering .to { color:var(--accent); font-weight:600; font-size:17px }
+.lowering .tgt { font:16px/1.5 var(--math) } .rules .lowering { background:none; border:0; padding:0 } .lowering .sem code.src { margin:0 2px }
+var { font-style:italic } .m-op { color:#2c4f7c; font-style:normal } .m-con { color:#8f6416; font-style:normal; font-variant:small-caps }
+.m-kw { color:#7a3b8c; font-weight:600; font-style:normal } .m-bind { color:#7a3b8c } .m-rel { color:var(--accent); padding:0 .12em }
+.m-text { font:14px/1.5 var(--body); color:var(--muted) } code.m-code { font:13px/1.5 var(--mono); background:var(--surface); border:1px solid var(--rule); padding:1px 5px; border-radius:4px }
+.refused { color:var(--neg); font-weight:600 }
+.lowering .refused { color:var(--neg); font-weight:600 }
+.lowering .label { font:600 11px/1 var(--body); letter-spacing:.05em; text-transform:uppercase; color:var(--muted); min-width:7em }
+.lowering .cond { padding-left:1.5em } .lowering .note { color:var(--muted); font:italic 13px/1.4 var(--body) }
+a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outline-offset:2px }
+@media (max-width:520px) { dl.facts { grid-template-columns:minmax(0,1fr) } .card > header { flex-direction:column } }</style></head><body><main><header><h1>Commit Records</h1><p class="lede">4 commits, rendered from their records.</p></header>
+<section><h2>Branches</h2><ul class="summary"><li><a href="#g-pr-139"><code>d02b4d8e589a65da3a7b16a012f0b7d586c9c8e7..pr-139</code></a><ul><li>4 commits, units 3 verified</li><li>parts: <span class="chip">lean-rules</span> <span class="chip">lean-proofs</span> <span class="chip">lean-lowering</span> <span class="chip">producer</span> <span class="chip">parser</span> <span class="chip strong">wire</span> <span class="chip">docs</span> <span class="chip">tests</span></li><li>wire: IndexFact storeApart; EntryClaim storesApart; CallEffect regions</li></ul></li></ul></section>
+<h2 id="g-pr-139"><code>d02b4d8e589a65da3a7b16a012f0b7d586c9c8e7..pr-139</code></h2><article class="card" id="c-f60672b20"><header><div><div class="sha">f60672b20 · Cristiano Calcagno · Nov 09, 13:37</div><h3>Keep a caller's facts across a store region through <code>!==</code> of two arrays</h3></div><span class="pill ok">verified</span></header>
+<div class="units"><span>pipeline/examples/stated-argument-path.ts#measure</span><span>pipeline/examples/stated-argument-path.ts#caller</span><span>pipeline/examples/stated-local-runs.ts#measure</span></div>
+<h4 class="change">Why</h4><div class="prose"><p>The central example of docs/drafts/stated-effects.md (§6.1) was refused: <code>measure</code> loses <code>i &lt; flags.length</code> across <code>readRuns(runs)</code>, whose frame changes the store <code>runs.openBrackets</code> holds, and fails at <code>flags[i]!</code> (&quot;no derivation of its cast claim&quot;). The checker kept such a fact only where a region fact separated the slot from a read link's slot, which no knowledge in <code>measure</code> holds; the clause language had no way to state the separation as a precondition; and the producer neither knew the callee's regions (no <code>regions</code> on the claims' CallEffect) nor proposed any fact after such a call, while each statement entry's knowledge is exactly what the producer proposes there.</p></div>
+<h4 class="change"><span class="act added">added</span>Definition <span class="target">store separation, IndexFact.storeApart</span></h4><div class="rules"><div class="formulas"><div class="row"><span><var>h</var>, <var>ρ</var> <span class="m-rel">⊨</span> <var>x</var>.<var>p</var> # <var>y</var>.<var>q</var>  ⟺  <span class="m-bind">∃</span> <var>u</var> <var>w</var>. <span class="m-op">read</span><sub><var>h</var></sub>(<var>ρ</var> <var>x</var>, <var>p</var>) <span class="m-rel">=</span> <var>u</var> ∧ <span class="m-op">read</span><sub><var>h</var></sub>(<var>ρ</var> <var>y</var>, <var>q</var>) <span class="m-rel">=</span> <var>w</var> ∧</span></div><div class="row cont"><span><span class="m-bind">∀</span> <var>s</var> <var>t</var>. <span class="m-op">store</span>(<var>u</var>) <span class="m-rel">=</span> <var>s</var> ∧ <span class="m-op">store</span>(<var>w</var>) <span class="m-rel">=</span> <var>t</var> ⇒ <var>s</var> <span class="m-rel">≠</span> <var>t</var></span></div><div class="row"><span><span class="m-op">store</span>(<var>v</var>) <span class="m-text">the location of v's array store, a field of the array object</span></span></div><div class="row"><span><span class="m-text">fixed at its allocation; for two arrays it is StoreApart</span></span></div></div></div>
+<h4 class="change"><span class="act added">added</span>Rule <span class="target">the clause atom <code>P !== Q</code></span></h4><div class="rules"><div class="infer"><div class="frac"><div class="premises"><span><var>Γ</var> <span class="m-rel">⊢</span> <var>P</var> <span class="m-rel">:</span> <span class="m-con">array</span></span><span><var>Γ</var> <span class="m-rel">⊢</span> <var>Q</var> <span class="m-rel">:</span> <span class="m-con">array</span></span></div><div class="bar"></div><div class="conclusion"><div>⟦<var>P</var> !<span class="m-rel">=</span><span class="m-rel">=</span> <var>Q</var>⟧ <span class="m-rel">=</span> <var>P</var> # <var>Q</var></div><div><span class="refused">refused</span><span class="m-text"> where either side may be a typed array (two views may share one</span></div><div><span class="m-text">buffer) or is no array</span></div></div></div><span class="rule-name">(store-apart-atom)</span></div></div>
+<h4 class="change"><span class="act added">added</span>Rule <span class="target">store-apart-links</span></h4><div class="rules"><div class="infer"><div class="frac"><div class="premises"><span><var>Σ</var> <span class="m-rel">⊢</span> <var>x</var>.<var>p</var> <span class="m-rel">⇝</span> <var>u</var></span><span><var>Σ</var> <span class="m-rel">⊢</span> <var>y</var>.<var>q</var> <span class="m-rel">⇝</span> <var>w</var></span><span><var>Σ</var> <span class="m-rel">⊢</span> <span class="m-con">apart</span>(<var>u</var>, <var>w</var>) <span class="m-text">or</span> <var>u</var> # <var>w</var></span></div><div class="bar"></div><div class="conclusion"><div><var>Σ</var> <span class="m-rel">⊢</span> <var>x</var>.<var>p</var> # <var>y</var>.<var>q</var></div><div><var>x</var>.<var>p</var> <span class="m-rel">⇝</span> <var>u</var> <span class="m-text">a chain of plain read links from x's class through the fields</span> <var>p</var></div><div><span class="m-text">to u's class; a call establishes its precondition by it, and a slot</span></div><div><span class="m-text">leaving the knowledge has its separations restated through such links</span></div></div></div><span class="rule-name">(store-apart-links)</span></div></div>
+<h4 class="change"><span class="act added">added</span>Rule <span class="target">stable-first</span></h4><div class="rules"><div class="infer"><div class="frac"><div class="premises"><span><var>Σ</var> <span class="m-rel">⊢</span> <var>x</var>.<var>p</var> # <var>y</var>.<var>q</var></span><span>|<var>p</var>|, |<var>q</var>| <span class="m-rel">≤</span> 1</span><span><var>Γ</var> <span class="m-rel">⊢</span> <span class="m-text">the fields of</span> <var>p</var> <span class="m-text">and</span> <var>q</var> <span class="m-text">stable</span></span></div><div class="bar"></div><div class="conclusion"><div><var>Σ</var> <span class="m-rel">⊢</span> <var>f</var>(<var>a⃗</var>) ⊣ <var>Σ'</var>, <var>x</var>.<var>p</var> # <var>y</var>.<var>q</var></div><div><span class="m-text">a call keeps the location of a field every clause of its slot's type</span></div><div><span class="m-text">states</span> @<span class="m-text">stable, so a term read through it is kept too</span></div></div></div><span class="rule-name">(stable-first)</span></div></div>
+<h4 class="change"><span class="act modified">modified</span>Rule <span class="target">region-call-keep</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="rules"><div class="infer"><div class="frac"><div class="premises"><span><var>ε</var>.<span class="m-text">stores</span> <span class="m-rel">=</span> <span class="m-con">keep</span></span><span><span class="m-bind">∀</span><var>i</var>. <var>Σ</var> <span class="m-rel">⊢</span> <span class="m-con">apart</span>(<span class="m-op">sel</span>(<var>R</var>ᵢ), <var>y</var>)</span><span><var>Σ</var> <span class="m-rel">⊢</span> <var>F</var>(|<var>y</var>|)</span></div><div class="bar"></div><div class="conclusion"><div><var>Σ</var> <span class="m-rel">⊢</span> <var>f</var>(<var>a⃗</var>) ⊣ <var>Σ'</var>, <var>F</var>(|<var>y</var>|)</div></div></div><span class="rule-name">(region-call-keep)</span></div></div></figure><figure><figcaption>After</figcaption><div class="rules"><div class="infer"><div class="frac"><div class="premises"><span><var>ε</var>.<span class="m-text">stores</span> <span class="m-rel">=</span> <span class="m-con">keep</span></span><span><span class="m-bind">∀</span><var>i</var>. <var>Σ</var> <span class="m-rel">⊢</span> <span class="m-con">apart</span>(<span class="m-op">sel</span>(<var>R</var>ᵢ), <var>y</var>) <span class="m-text">or</span> <var>Σ</var> <span class="m-rel">⊢</span> <var>a</var><sub><var>k</var></sub>ᵢ.<var>p</var>ᵢ # <var>y</var></span><span><var>Σ</var> <span class="m-rel">⊢</span> |<var>y</var>| <span class="m-text">defined</span></span><span><var>Σ</var> <span class="m-rel">⊢</span> <var>F</var>(|<var>y</var>|)</span></div><div class="bar"></div><div class="conclusion"><div><var>Σ</var> <span class="m-rel">⊢</span> <var>f</var>(<var>a⃗</var>) ⊣ <var>Σ'</var>, <var>F</var>(|<var>y</var>|)</div><div><var>R</var>ᵢ <span class="m-rel">=</span> <var>k</var>ᵢ.<var>p</var>ᵢ[*] <span class="m-text">the frame's regions</span>; |<var>y</var>| <span class="m-text">defined by an unconditional atom</span></div><div><span class="m-text">reading y's length, which gives y's store location an array store</span></div></div></div><span class="rule-name">(region-call-keep)</span></div></div></figure></div>
+<h4 class="change"><span class="act added">added</span>Theorem <span class="target">storeFollows_sound</span></h4><div class="rules"><div class="formulas"><div class="row"><span><var>ρ</var>, <var>h</var> <span class="m-rel">⊨</span> <var>Σ</var> ∧ <span class="m-text">the links hold</span> ∧ <span class="m-text">storeFollows accepts</span> <var>x</var>.<var>p</var> # <var>y</var>.<var>q</var></span></div><div class="row cont"><span>⇒ <var>ρ</var>, <var>h</var> <span class="m-rel">⊨</span> <var>x</var>.<var>p</var> # <var>y</var>.<var>q</var></span></div></div></div>
+<h4 class="change"><span class="act added">added</span>Theorem <span class="target">restateStores_holds</span></h4><div class="rules"><div class="formulas"><div class="row"><span><var>ρ</var>, <var>h</var> <span class="m-rel">⊨</span> <var>Σ</var> ⇒ <var>ρ</var>, <var>h</var> <span class="m-rel">⊨</span> <span class="m-text">each separation restated through plain read links</span></span></div></div></div>
+<h4 class="change"><span class="act added">added</span>Theorem <span class="target">stableFirst_frame</span></h4><div class="rules"><div class="formulas"><div class="row"><span><span class="m-con">EnvOk</span> <var>Γ</var> <var>ρ</var>, <span class="m-con">HeapOk</span> <var>h</var> ⇒ <span class="m-text">every normal return</span> <var>h'</var> <span class="m-text">keeps each location of a</span></span></div><div class="row"><span><span class="m-text">field</span> <var>Γ</var> <span class="m-text">states stable</span><span class="m-rel">:</span> <span class="m-text">FirstKept (stableFirst</span> <var>Γ</var>) <var>ρ</var> <var>h</var> <var>h'</var></span></div></div></div>
+<h4 class="change"><span class="act modified">modified</span>Theorem <span class="target">effectKept_holds</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">knowledge at</span> <var>h</var>, <span class="m-text">the frame at the call's actuals, the views kept</span></span></div><div class="row cont"><span>⇒ <span class="m-text">effectKept's atoms hold at</span> <var>h'</var></span></div></div></div></figure><figure><figcaption>After</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">the same premises and FirstKept stable</span> <var>ρ</var> <var>h</var> <var>h'</var></span></div><div class="row cont"><span>⇒ <span class="m-text">effectKept's atoms hold at</span> <var>h'</var>, <span class="m-text">each branch keeping besides the</span></span></div><div class="row cont"><span><span class="m-text">locations stable keeps</span></span></div></div></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Theorem <span class="target">regionFirst_kept</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">each region separated from the slot by a region fact</span></span></div></div></div></figure><figure><figcaption>After</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">each region separated by a region fact or a store separation, and the</span></span></div><div class="row"><span><span class="m-text">slot's length read by an unconditional atom</span> (<span class="m-op">storeHeld</span><sub><span class="m-text">sound</span></sub>)</span></div></div></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Wire <span class="target">IndexFact, entry claims, CallEffect</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>no store separation; an entry claim {…, quantified, apart}; a claims CallEffect of 13 fields</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>{&quot;storeApart&quot;: {slot, path, other, otherPath}}; an entry claim's &quot;storesApart&quot;: [{name, path, other, otherPath}]; a CallEffect's &quot;regions&quot;: [{position, path}], present where the frame states regions</p></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Definition <span class="target">producer: a call of a frame with store regions</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">a module function's statement with regions was read as no statement</span>;</span></div><div class="row"><span><span class="m-text">the call kept the facts its inferred footprint keeps</span></span></div></div></div></figure><figure><figcaption>After</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">its type carries the frame's closed bound and regions; every reading of</span></span></div><div class="row"><span><span class="m-text">the call's change but region-call-keep is the coarse bound top; the</span></span></div><div class="row"><span><span class="m-text">producer proposes the store separations of a precondition and of an</span></span></div><div class="row"><span><span class="m-text">object literal's fresh array field, keeps them as Lean does, and keeps</span></span></div><div class="row"><span><span class="m-text">the length facts and bounds region-call-keep keeps</span></span></div></div></div></figure></div>
+<h4 class="change"><span class="act removed">removed</span>Definition <span class="target">ArgumentStoreSeparation</span></h4><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">the caller-side separation table beside the knowledge, used by no</span></span></div><div class="row"><span><span class="m-text">check</span><span class="m-rel">:</span> <span class="m-text">the knowledge's store separations replace it</span></span></div></div></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>stated-argument-path</code> <span class="kind positive">positive</span> <span class="was">verified</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why"><code>measure</code> keeps i &lt; flags.length under <code>flags !== runs.openBrackets</code>; <code>caller</code> establishes it from a fresh literal</span></summary><pre class="code"><span class="tk-c">// A frame stating a store region read through a `@stable` field</span>
+<span class="tk-c">// (docs/drafts/stated-effects.md, §6.1): `readRuns` splices the array its</span>
+<span class="tk-c">// record's `openBrackets` holds, changing value locations and that store</span>
+<span class="tk-c">// alone, so it states `values: &quot;any&quot;` and the region</span>
+<span class="tk-c">// `&quot;runs.openBrackets[*]&quot;: &quot;any&quot;`, every other store kept. The field is</span>
+<span class="tk-c">// stable, so the array the body reads is the one the region names at entry.</span>
+<span class="tk-k">type</span> <span class="tk-t">Runs</span> = { <span class="tk-c">/** @stable */</span> <span class="tk-k">readonly</span> openBrackets: number[] };
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> readRuns(runs: <span class="tk-t">Runs</span>): <span class="tk-t">Modifies</span>&lt;{ values: <span class="tk-s">&quot;any&quot;</span>; <span class="tk-s">&quot;runs.openBrackets[*]&quot;</span>: <span class="tk-s">&quot;any&quot;</span> }, <span class="tk-k">void</span>&gt; {
+  runs.openBrackets.splice(<span class="tk-n">0</span>, <span class="tk-n">1</span>);
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> closeAll(runs: <span class="tk-t">Runs</span>): <span class="tk-t">Modifies</span>&lt;{ values: <span class="tk-s">&quot;any&quot;</span>; <span class="tk-s">&quot;runs.openBrackets[*]&quot;</span>: <span class="tk-s">&quot;any&quot;</span> }, number&gt; {
+  <span class="tk-k">const</span> open = runs.openBrackets;
+  open.pop();
+  <span class="tk-k">return</span> open.length;
+}
+
+<span class="tk-c">// A caller keeping a fact across the frame (§6.1): `i &lt; flags.length` holds</span>
+<span class="tk-c">// after `readRuns(runs)`, whose region is `runs.openBrackets`'s store, since</span>
+<span class="tk-c">// the precondition states that array's store apart from `flags`'s</span>
+<span class="tk-c">// (`flags !== runs.openBrackets`, ARITHMETIC.md, &quot;Store separation&quot;); the</span>
+<span class="tk-c">// field is stable, so the separation holds at every call of the loop.</span>
+<span class="tk-c">/** @requires flags !== runs.openBrackets */</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> measure(flags: number[], runs: <span class="tk-t">Runs</span>): number {
+  <span class="tk-k">let</span> sum = <span class="tk-n">0</span>;
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; flags.length; i++) { readRuns(runs); sum += flags[i]!; }
+  <span class="tk-k">return</span> sum;
+}
+
+<span class="tk-c">// A caller establishing the precondition: the literal's fresh array is apart</span>
+<span class="tk-c">// from every older array (`region-alloc`), read through the literal's field.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> caller(flags: number[]): number {
+  <span class="tk-k">const</span> runs: <span class="tk-t">Runs</span> = { openBrackets: [] };
+  <span class="tk-k">return</span> measure(flags, runs);
+}</pre></details></li><li><details><summary><code>stated-local-runs</code> <span class="kind positive">positive</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">the record allocated in the looping function</span></summary><pre class="code"><span class="tk-c">// A frame's store region allocated in the looping function</span>
+<span class="tk-c">// (docs/drafts/stated-effects.md, §10): `runs.openBrackets` holds a fresh</span>
+<span class="tk-c">// array, apart from `flags`'s store (`region-alloc`, read through the</span>
+<span class="tk-c">// literal's field), and the field is stable, so `i &lt; flags.length` is kept</span>
+<span class="tk-c">// across every call of `readRuns`, whose frame changes that store alone.</span>
+<span class="tk-k">type</span> <span class="tk-t">Runs</span> = { <span class="tk-c">/** @stable */</span> <span class="tk-k">readonly</span> openBrackets: number[] };
+
+<span class="tk-k">function</span> readRuns(runs: <span class="tk-t">Runs</span>): <span class="tk-t">Modifies</span>&lt;{ values: <span class="tk-s">&quot;any&quot;</span>; <span class="tk-s">&quot;runs.openBrackets[*]&quot;</span>: <span class="tk-s">&quot;any&quot;</span> }, <span class="tk-k">void</span>&gt; {
+  runs.openBrackets.splice(<span class="tk-n">0</span>, <span class="tk-n">1</span>);
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> measure(flags: number[]): number {
+  <span class="tk-k">const</span> runs: <span class="tk-t">Runs</span> = { openBrackets: [] };
+  <span class="tk-k">let</span> sum = <span class="tk-n">0</span>;
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; flags.length; i++) { readRuns(runs); sum += flags[i]!; }
+  <span class="tk-k">return</span> sum;
+}</pre></details></li></ul>
+<h4 class="change">Soundness</h4><div class="prose"><p>every new derivation is proved against the knowledge's meaning (storeFollows_sound, restateStores_holds, stableFirst_frame, storeHeld_sound, regionFirst_kept, effectKept_holds); AxiomCheck lists them; the producer's proposals are rechecked at every entry</p></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">ARITHMETIC.md, ANNOTATIONS.md, SOURCE-ELABORATION.md, SOURCE-CLAIMS.md</span></h4><div class="prose"><p>the store separation, its clause atom and rules; region-call-keep with a store separation; the wire; the draft's §4, §5, §6.1, §8, §10 and §11 to what is built; FOOTPRINTS.md without the removed table; WORK.md's stated-effects row</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">lean-rules</span> <span class="chip">lean-proofs</span> <span class="chip">lean-lowering</span> <span class="chip">producer</span> <span class="chip">parser</span> <span class="chip strong">wire</span> <span class="chip">docs</span> <span class="chip">tests</span></dd><dt>Lean</dt><dd>IndexFacts.PathStoresApart · IndexFact.storeApart · readPath_guardKept · HeapKnowledge.pathReaches · pathReaches_sound · regionsApart_stores · storeFollows · storeFollows_sound · plainReads · liftPath · liftPath_eq · restateStores · restateStores_holds · HeapExpressionRules.stableFirst · stableFirst_frame · PromiseCalls.storeHeld · storeHeld_sound · regionSep · regionFirst_kept · firstKept_or · effectKept · effectKept_holds · Parametricity.stableFirst_reassign · ArgumentStoreSeparation removed</dd><dt>Wire</dt><dd>IndexFact storeApart · EntryClaim storesApart · CallEffect regions</dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd><span class="test pos">stated-local-runs</span></dd></dl>
+<details><summary>39 files changed, 1154 insertions(+), 349 deletions(-)</summary><pre class="code"> WORK.md                                            |   2 +-
+ docs/ANNOTATIONS.md                                |  13 +-
+ docs/ARITHMETIC.md                                 |  86 ++++++-
+ docs/FOOTPRINTS.md                                 |  11 +-
+ docs/SOURCE-CLAIMS.md                              |  18 +-
+ docs/SOURCE-ELABORATION.md                         |  17 +-
+ docs/drafts/stated-effects.md                      | 130 +++++++----
+ .../Programs/ArgumentStoreSeparation.lean          | 110 ---------
+ .../Verification/Programs/HeapExpressionRules.lean |  41 ++++
+ lean/Verification/Programs/IndexWrites.lean        |   6 +-
+ lean/Verification/Programs/Parametricity.lean      |   8 +-
+ lean/Verification/Programs/PromiseCalls.lean       | 232 ++++++++++++------
+ lean/Verification/Semantics/HeapKnowledge.lean     | 260 +++++++++++++++++++--
+ lean/Verification/Semantics/IndexFacts.lean        |  65 +++++-
+ lean/Verification/Source/Claims/Wire.lean          |  13 ++
+ lean/Verification/Source/Lowering/Flow.lean        |  11 +-
+ lean/Verification/Source/SourceClaims.lean         |  13 +-
+ lean/Verification/Tests/AxiomCheck.lean            |  12 +-
+ ocaml-producer/analysis_state.ml                   |   7 +-
+ ocaml-producer/claims.ml                           |  23 +-
+ ocaml-producer/execution_analysis.ml               |   2 +-
+ ocaml-producer/linear_facts.ml                     | 121 ++++++++--
+ ocaml-producer/proposal.ml                         |   8 +-
+ ocaml-producer/proposal_flow.ml                    |  30 ++-
+ ocaml-producer/semantic.ml                         |  34 ++-
+ ocaml-producer/source.ml                           |  42 +++-
+ ocaml-producer/statement_analysis.ml               |  23 +-
+ pipeline/cases.mts                                 |   3 +-
+ pipeline/examples/stated-argument-path.ts          |  19 ++
+ pipeline/examples/stated-local-runs.ts             |  17 ++
+ tests/json-field-names.mts                         |   3 +
+ tools/bound-annotations.mts                        |  39 +++-
+ tools/claim-text.mts                               |   3 +-
+ tools/declaration-types.mts                        |   9 +-
+ tools/diagnostic.mts                               |  11 +-
+ tools/named-record.mts                             |   3 +-
+ tools/source-claims.mts                            |  20 +-
+ tools/type-graph.mts                               |  37 ++-
+ tools/type-term.mts                                |   1 +</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-72935dfc5"><header><div><div class="sha">72935dfc5 · Cristiano Calcagno · Nov 09, 13:37</div><h3>Refuse the central example's aliased call, and <code>!==</code> of typed arrays</h3></div><span class="pill principled">refused</span></header>
+<h4 class="change">Why</h4><div class="prose"><p><code>measure</code>'s precondition <code>flags !== runs.openBrackets</code> is what lets it keep <code>i &lt; flags.length</code> across <code>readRuns(runs)</code>; a caller passing one array as both sides breaks it: under Node, <code>aliased([1, 2, 3])</code> splices the array it sums and returns <code>NaN</code>. Two typed arrays are distinct objects that may view one buffer, so <code>!==</code> of views states no separation of their storage.</p></div>
+<h4 class="change"><span class="act added">added</span>Refusal <span class="target">call-requires at an aliased actual</span></h4><div class="prose"><p>the call <code>measure(xs, { openBrackets: xs })</code> has no store separation of <code>xs</code> from the literal's field: the field's read link reaches <code>xs</code> itself, which no region fact or separation sets apart</p></div>
+<h4 class="change"><span class="act added">added</span>Refusal <span class="target">the clause atom <code>!==</code> of typed arrays</span></h4><div class="prose"><p><code>/** @requires a !== b */</code> over two <code>Uint8Array</code> parameters is refused at the clause, with its location</p></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>invalid-stated-alias</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">the call's precondition <code>flags !== runs.openBrackets</code></span></summary><pre class="code"><span class="tk-c">// The central example's precondition refused where a caller cannot establish</span>
+<span class="tk-c">// it (docs/drafts/stated-effects.md, §6.1): `measure` keeps</span>
+<span class="tk-c">// `i &lt; flags.length` across `readRuns`, whose frame changes the store</span>
+<span class="tk-c">// `runs.openBrackets` holds, only where `flags !== runs.openBrackets`. Here</span>
+<span class="tk-c">// the caller passes the same array as both, so the call is refused at its</span>
+<span class="tk-c">// precondition. Run under Node, `aliased([1, 2, 3])` returns `NaN`: each</span>
+<span class="tk-c">// splice shortens `flags`, and `flags[1]` reads `undefined`.</span>
+<span class="tk-k">type</span> <span class="tk-t">Runs</span> = { <span class="tk-c">/** @stable */</span> <span class="tk-k">readonly</span> openBrackets: number[] };
+
+<span class="tk-k">function</span> readRuns(runs: <span class="tk-t">Runs</span>): <span class="tk-t">Modifies</span>&lt;{ values: <span class="tk-s">&quot;any&quot;</span>; <span class="tk-s">&quot;runs.openBrackets[*]&quot;</span>: <span class="tk-s">&quot;any&quot;</span> }, <span class="tk-k">void</span>&gt; {
+  runs.openBrackets.splice(<span class="tk-n">0</span>, <span class="tk-n">1</span>);
+}
+
+<span class="tk-c">/** @requires flags !== runs.openBrackets */</span>
+<span class="tk-k">function</span> measure(flags: number[], runs: <span class="tk-t">Runs</span>): number {
+  <span class="tk-k">let</span> sum = <span class="tk-n">0</span>;
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; flags.length; i++) { readRuns(runs); sum += flags[i]!; }
+  <span class="tk-k">return</span> sum;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> aliased(xs: number[]): number {
+  <span class="tk-k">return</span> measure(xs, { openBrackets: xs });
+}</pre></details></li><li><details><summary><code>stated-distinct-view-refused</code> <span class="kind gap">gap</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">gap</span> <span class="why"><code>!==</code> of a path that may be a typed array</span></summary><pre class="code"><span class="tk-c">// `!==` of two typed arrays, refused at the clause (ARITHMETIC.md, &quot;Store</span>
+<span class="tk-c">// separation&quot;): two views are distinct objects that may share one buffer, so</span>
+<span class="tk-c">// distinct views are no evidence of distinct storage.</span>
+<span class="tk-c">/** @requires a !== b */</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> first(a: <span class="tk-t">Uint8Array</span>, b: <span class="tk-t">Uint8Array</span>): number {
+  <span class="tk-k">return</span> a.length + b.length;
+}</pre></details></li></ul>
+<h4 class="change">Counterexample</h4><pre class="code"><span class="ln">aliased([<span class="tk-n">1</span>, <span class="tk-n">2</span>, <span class="tk-n">3</span>]) under <span class="tk-t">Node</span> prints <span class="tk-t">NaN</span></span></pre>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">tests</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd><span class="test neg">invalid-stated-alias</span> <span class="test pos">stated-distinct-view-refused</span></dd></dl>
+<details><summary>3 files changed, 34 insertions(+)</summary><pre class="code"> pipeline/cases.mts                                |  4 ++++
+ pipeline/examples/invalid-stated-alias.ts         | 23 +++++++++++++++++++++++
+ pipeline/examples/stated-distinct-view-refused.ts |  7 +++++++</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-1cda885af"><header><div><div class="sha">1cda885af · Cristiano Calcagno · Nov 09, 13:43</div><h3>Control store separations forged past the producer</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>The producer proposes a store separation (<code>x.p !== y.q</code>) only where a precondition or a fresh literal gives one, and keeps a length fact across a frame with store regions only where a separation places the counted array outside the regions. Which claims it attaches is unproved, so the checker must refuse forged ones by itself.</p></div>
+<h4 class="change"><span class="act added">added</span>Tests <span class="target">pipeline/test.mts, forged store separations</span></h4><div class="prose"><p>on invalid-stated-alias, a separation of <code>xs</code> from itself forged at <code>aliased</code>'s statement entry, refused there (&quot;does not establish the claims&quot;); and <code>measure</code>'s precondition removed from the document, every separation its claims state removed, <code>i &lt; flags.length</code> still claimed after <code>readRuns(runs)</code>: refused at that statement's entry, the frame being free to change <code>flags</code>'s store; each refused where evidence is searched</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">tests</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd><span class="test forged">store-separation-at-a-caller</span> <span class="test forged">fact-kept-across-an-unseparated-frame</span></dd></dl>
+<details><summary>1 file changed, 39 insertions(+)</summary><pre class="code"> pipeline/test.mts | 39 +++++++++++++++++++++++++++++++++++++++</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-b24393666"><header><div><div class="sha">b24393666 · Cristiano Calcagno · Nov 09, 13:44</div><h3>List in ANNOTATIONS.md the claims TScert infers that no annotation states</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>The annotations sheet lists what a programmer can write; a reader also needs what TScert infers inside a body and no annotation can state, to know where an inferred claim has no written counterpart. Each entry has a proposed spelling, which no reader reads.</p></div>
+<h4 class="change">Added <span class="target">ANNOTATIONS.md, &quot;What is inferred and has no written form&quot;</span></h4><div class="prose"><p>ten claims: a narrowed binding's type, a field's current contents and an integer fact at a statement; region separation at a loop head; the frame of an overload and of a generic closure; dense presence; exact own keys; facts over a binding captured before its initialization; a frame depending on a callback</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">docs</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd></dl>
+<details><summary>1 file changed, 28 insertions(+)</summary><pre class="code"> docs/ANNOTATIONS.md | 28 ++++++++++++++++++++++++++++</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+</main></body></html>
