@@ -565,7 +565,7 @@ let statements (expr:Analysis_state.expression_infer) execute_bindings owner_spa
         let e = s.Semantic.call_effect in not e.Semantic.receiver_store && not e.Semantic.receiver_own) calls ->
       let join = Semantic.join_change in
       Some (List.fold_left (fun (fp : Semantic.footprint) (s : Semantic.signature) ->
-        let f = s.Semantic.call_effect.Semantic.footprint in
+        let f = Semantic.coarse_footprint s.Semantic.call_effect in
         { Semantic.on_value = join fp.Semantic.on_value f.Semantic.on_value; on_store = join fp.Semantic.on_store f.Semantic.on_store })
         { Semantic.on_value = Semantic.Keep; on_store = Semantic.Keep } calls)
     | _ -> None in
@@ -639,7 +639,7 @@ let statements (expr:Analysis_state.expression_infer) execute_bindings owner_spa
   Linear_facts.method_footprint := (fun env r key args ->
     match !Linear_facts.method_signatures env r key args with
     | s :: _ when s.call_effect.pre = [] && s.call_effect.requires = None &&
-        not s.call_effect.receiver_store && not s.call_effect.receiver_own -> Some s.call_effect.footprint
+        not s.call_effect.receiver_store && not s.call_effect.receiver_own -> Some (Semantic.coarse_footprint s.call_effect)
     | _ -> None);
   Linear_facts.module_constant_type := (fun x -> try module_type x with Json.Error _ -> None);
   Linear_facts.call_ensures := (fun env x ->
@@ -656,6 +656,23 @@ let statements (expr:Analysis_state.expression_infer) execute_bindings owner_spa
     | Some fg when not fg.optional && not fg.host ->
       (match field_of fg.read (Name "[[viewLength]]") with Some v -> v.stable | None -> false)
     | _ -> false);
+  Linear_facts.call_regions := (fun env x ->
+    let declared = match List.assoc_opt x env with
+      | Some b -> Some (binding_type b)
+      | None -> (try module_type x with Json.Error _ -> None) in
+    match Option.map head declared with
+    | Some (Atoms [Shape {calls=(s :: rest);_}]) when s.call_effect.regions <> [] &&
+        List.for_all (fun (r : Semantic.signature) -> r.call_effect.regions = s.call_effect.regions &&
+          r.call_effect.footprint = s.call_effect.footprint) rest &&
+        List.for_all (fun (r : Semantic.signature) -> r.call_effect.pre = [] && r.call_effect.promise = None &&
+          not r.call_effect.receiver_store && not r.call_effect.receiver_own && r.call_effect.element_write = None &&
+          not r.call_effect.receiver_grows) (s :: rest) ->
+      Some (s.call_effect.regions, s.call_effect.footprint)
+    | _ -> None);
+  Linear_facts.stable_field := (fun env b g ->
+    match Option.bind (receiver_type env {Source.node = Id b; pos = Json.Null}) (fun t -> field_of t (Name g)) with
+    | Some fg -> fg.stable && not fg.host
+    | None -> false);
   Linear_facts.stable_view := (fun env b ->
     match Option.bind (receiver_type env {Source.node = Id b; pos = Json.Null}) (fun t -> field_of t (Name "[[viewLength]]")) with
     | Some g -> g.stable
@@ -752,7 +769,7 @@ let statements (expr:Analysis_state.expression_infer) execute_bindings owner_spa
           let own=match declared_head declarations [] (binding_type (lookup ~at:b.Flow.source env b.Flow.name)) with
             | Atoms [Shape {calls=[{call_effect;_}];_}] ->
               call_effect.receiver_own && not call_effect.receiver_store &&
-              footprint_le call_effect.footprint empty_footprint
+              footprint_le (Semantic.coarse_footprint call_effect) empty_footprint
             | _ -> false in
           let kept=match own,Hashtbl.find_opt at_start s.span with
             | true,Some start ->

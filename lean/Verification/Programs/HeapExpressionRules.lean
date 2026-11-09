@@ -1259,6 +1259,47 @@ theorem viewFields_frame [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι
           simp only [viewLengthOf, hlv, h0, h1]
       · cases hvw
 
+/-- The slots and fields of a context whose field's location a step keeps:
+each clause of the slot's type states the field stable (`stableField`). -/
+def stableFirst (G : NormalGraph ι) (Γ : List (Ty ι)) (s : Nat) (g : String) : Bool :=
+  match Γ[s]? with
+  | some A => stableField G A (.str g)
+  | none => false
+
+/-- A stable field's location holds its value in every heap a normal
+execution reaches (`stable-first`). -/
+theorem stableFirst_frame [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)} {ρ n W h t}
+    {T : Fam} {Q : Post} (he : EnvOk G Γ ρ n W) (hh : HeapOk n W h)
+    (hs : SafePost (excOf G) T Q n W h t) :
+    SafePost (excOf G) T (fun h' v => Q h' v ∧ HeapKnowledge.FirstKept (stableFirst G Γ) ρ h h') n W h t := by
+  cases n with
+  | zero => trivial
+  | succ n =>
+    rcases hs with (⟨hv, ht, hq⟩ | hthrow) | ⟨U, h', t', hx, hu, step, hh', hs⟩
+    · exact .inl (.inl ⟨hv, ht, hq, fun _ _ _ _ _ _ _ _ _ _ hw => hw⟩)
+    · exact .inl (.inr hthrow)
+    · refine .inr ⟨U, h', t', hx, hu, step, hh', ?_⟩
+      cases n with
+      | zero => trivial
+      | succ m =>
+      let R := fun l v => ∃ c, lookup (trunc (m + 1) (Nat.le_succ (m + 1)) W) l = some c ∧ CtrStable c v
+      have hr : ∀ l v, R l v → ∃ c, lookup U l = some c ∧ CtrStable c v := by
+        intro l v ⟨c, hl, hc⟩
+        exact ⟨c, WExt_lookup hx hl, hc⟩
+      refine HeapObservations.weaken (fun h'' v hq => ⟨hq.1, ?_⟩)
+        (stableLocations_frame hr hh' hs)
+      intro s g fs cd o l w hsf hs0 hl0 hw0
+      unfold stableFirst at hsf
+      split at hsf
+      · rename_i A hA
+        obtain ⟨flds, oid, hv0, hst⟩ := stableField_at hsf (he.2 s A hA)
+        rw [hs0] at hv0; cases hv0
+        obtain ⟨c, u, hlk, hcs⟩ := hst.present hl0
+        have h0 := hh.stable_value (Nat.zero_lt_succ (m + 1)) hlk hcs
+        rw [hw0] at h0; cases h0
+        exact hq.2 l w ⟨_, lookup_trunc (Nat.le_succ (m + 1)) W l c hlk, hcs.restrict (Nat.le_succ (m + 1))⟩
+      · cases hsf
+
 /-- Whether a write of field `fld` of slot `i` keeps a cell fact about
 field `g` of slot `s`: a separation fact states the two apart, or, where the
 written field's location belongs to its key alone (`owned`), `s` holds the

@@ -1713,6 +1713,7 @@ function sameEffect(a: CallEffect, b: CallEffect): Modifies<{}, boolean> {
     JSON.stringify(a.elements) === JSON.stringify(b.elements) &&
     JSON.stringify(a.pre) === JSON.stringify(b.pre) && JSON.stringify(a.ensures) === JSON.stringify(b.ensures) &&
     a.receiverGrows === b.receiverGrows && a.elementWrite === b.elementWrite &&
+    JSON.stringify(a.regions ?? []) === JSON.stringify(b.regions ?? []) &&
     (a.promise === null || b.promise === null ? a.promise === b.promise : samePromise(a.promise, b.promise));
 }
 

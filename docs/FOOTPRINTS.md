@@ -727,13 +727,10 @@ invocation against a tracked origin and its existing checked call effect,
 including calls with checked preconditions. An escaping throw needs an
 effect bound only when the enclosing invocation promises one.
 
-[`ArgumentStoreSeparation.lean`](../lean/Verification/Programs/ArgumentStoreSeparation.lean)
-proves slot-map checking (`checkMap_sound`), stable-path framing (`frame`),
-and creation from checked own-location separation plus a proven path read
-(`of_separation`, `prepend`). `checkFrame_sound` checks separation against
-every mapped call region; `frame_length` retains the other array's exact
-length, and `checkFrame_not_alias` excludes an aliased store. These theorems
-require the fact table's semantic validity.
+A caller's separation of a region's store from another array is a fact of
+its knowledge, a [store separation](ARITHMETIC.md#store-separation) or a
+region fact, which `region-call-keep` consumes
+([stated effects](SOURCE-ELABORATION.md#stated-effects)).
 
 [`ArgumentRegionCertificates.lean`](../lean/Verification/Programs/ArgumentRegionCertificates.lean)
 checks a provenance table at entry, every normal edge and every handler.

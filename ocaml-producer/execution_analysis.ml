@@ -179,7 +179,7 @@ open S
      construction. *)
   and keeps_heap source =
     let keeps calls = List.for_all (fun (s:Semantic.signature) ->
-      footprint_le s.call_effect.footprint empty_footprint && not s.call_effect.receiver_store &&
+      footprint_le (Semantic.coarse_footprint s.call_effect) empty_footprint && not s.call_effect.receiver_store &&
       not s.call_effect.receiver_own) calls in
     let callee_head (callee:expr) =
       match (match latest_instance callee.pos with Some t -> Some t | None -> claimed_type callee.pos) with

@@ -119,7 +119,8 @@ type IndexFact = { index: { slot: number } } | { length: { array: number; length
   { guarded: { slot: number; path: string[]; tag: "null" | "undefined" | "true" | "false"; body: IndexFact } } |
   { element: { value: number; array: number; index: number } } |
   { every: { slot: number; path: string[]; stop: LinearTerm; body: BodyFormula[] } } |
-  { apart: { slot: number; other: number } };
+  { apart: { slot: number; other: number } } |
+  { storeApart: { slot: number; path: string[]; other: number; otherPath: string[] } };
 /** A variable of a quantified fact's body: the index, the element, or a term. */
 type BodyFormula = { form: [BodyVariable, number][]; bound: number; ne: boolean } |
   { either: { left: BodyFormula; right: BodyFormula } };
@@ -432,6 +433,14 @@ function indexFact(f: Json | undefined): IndexFact {
   if ("apart" in f) {
     const r = record(record(f,["apart"]).apart,["slot","other"]);
     return { apart: { slot: nat(r.slot), other: nat(r.other) } };
+  }
+  if ("storeApart" in f) {
+    const r = record(record(f,["storeApart"]).storeApart,["slot","path","other","otherPath"]);
+    const fields = (p: Json): string[] => {
+      if (!Array.isArray(p) || !p.every((x: Json) => typeof x === "string")) throw Error("a store separation's path");
+      return p.filter((x: Json): x is string => typeof x === "string");
+    };
+    return { storeApart: { slot: nat(r.slot), path: fields(r.path), other: nat(r.other), otherPath: fields(r.otherPath) } };
   }
   if ("element" in f) {
     const e = record(record(f,["element"]).element,["value","array","index"]);

@@ -7,7 +7,6 @@ import Verification.Semantics.ArgumentStoreRegions
 import Verification.Semantics.FootprintNatives
 import Verification.Programs.ArgumentPathTracking
 import Verification.Programs.ArgumentRegionCertificates
-import Verification.Programs.ArgumentStoreSeparation
 
 /-!
 Acceptance rests on Lean's standard axioms alone. The build fails when any of
@@ -69,6 +68,11 @@ run_cmd do
   check ``Verification.GraphCode.ArgumentRegionGraph.checkCopy_sound
   check ``Verification.PromiseCalls.regionFirst_kept
   check ``Verification.PromiseCalls.effectKept_holds
+  check ``Verification.PromiseCalls.storeHeld_sound
+  check ``Verification.HeapKnowledge.storeFollows_sound
+  check ``Verification.HeapKnowledge.restateStores_holds
+  check ``Verification.HeapKnowledge.indicesCheckWith_sound
+  check ``Verification.HeapExpressionRules.stableFirst_frame
   check ``Verification.GraphCode.ArgumentPathTracking.receiver_call
   check ``Verification.GraphCode.ArgumentPathTracking.checkReceiver_sound
   check ``Verification.GraphCode.ArgumentRegionGraph.nodeWithin_of_closed
@@ -78,12 +82,6 @@ run_cmd do
   check ``Verification.GraphCode.ArgumentRegionGraph.checkNodes_sound
   check ``Verification.GraphCode.ArgumentRegionGraph.checkEntry_sound
   check ``Verification.GraphCode.ArgumentRegionGraph.goto_bounded
-  check ``Verification.ArgumentStoreSeparation.checkMap_sound
-  check ``Verification.ArgumentStoreSeparation.frame
-  check ``Verification.ArgumentStoreSeparation.of_separation
-  check ``Verification.ArgumentStoreSeparation.prepend
-  check ``Verification.ArgumentStoreSeparation.frame_length
-  check ``Verification.ArgumentStoreSeparation.checkFrame_not_alias
   let env ← getEnv
   let project (decl : Name) : Bool := match env.getModuleIdxFor? decl with
     | some i => (`Verification).isPrefixOf env.header.moduleNames[i.toNat]!

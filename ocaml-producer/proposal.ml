@@ -170,7 +170,7 @@ let returned_footprint (claim:function_claim) =
     | [] -> top_footprint
     | types -> List.fold_left (fun acc t -> match t with
       | Atoms [Shape {calls=(_ :: _ as calls);_}] ->
-        List.fold_left (fun acc (s:signature) -> join_footprint acc s.call_effect.footprint) acc calls
+        List.fold_left (fun acc (s:signature) -> join_footprint acc (coarse_footprint s.call_effect)) acc calls
       | _ -> top_footprint) acc types) empty_footprint returns
 
 let rec infer ?(state = Proposal_diagnostics.create ()) ?unit ?on_settled flows program =
@@ -229,7 +229,7 @@ let rec infer ?(state = Proposal_diagnostics.create ()) ?unit ?on_settled flows 
       | [] -> top_footprint,false
       | types -> List.fold_left (fun (f,t) ty -> match ty with
         | Atoms [Shape {calls=(_ :: _ as calls);_}] ->
-          List.fold_left (fun f (s:signature) -> join_footprint f s.call_effect.footprint) f calls,
+          List.fold_left (fun f (s:signature) -> join_footprint f (coarse_footprint s.call_effect)) f calls,
           t && List.for_all (fun (s:signature) -> s.call_effect.on_throw) calls
         | _ -> top_footprint,false) (empty_footprint,true) types in
     List.fold_left (fun changed (pos,(f,t)) ->
@@ -288,7 +288,7 @@ and infer_assuming ?unit ?(thrown=[]) ?(results=[]) ~state flows program assumed
       let returning (g:Source.fn) = match List.assoc_opt g.name results with
         | Some footprint -> {g with result=with_result_footprint footprint g.result}
         | None -> g in
-      let typed = List.map (fun (g:Source.fn) -> with_ensures g.ensures @@ with_pre g.requires (with_footprint
+      let typed = List.map (fun (g:Source.fn) -> with_regions g.stated_regions @@ with_ensures g.ensures @@ with_pre g.requires (with_footprint
         ~on_throw:(List.mem g.name thrown)
         (Option.value (List.assoc_opt g.name assumed) ~default:top_footprint) (module_type (returning g)))) units in
       match typed with
@@ -344,7 +344,7 @@ and infer_assuming ?unit ?(thrown=[]) ?(results=[]) ~state flows program assumed
     | body -> Some (infer_function ~offers:discarding state flows program.Source.declarations arities
         (module_functions @ class_selves)
         {quantified=program.Source.init_quantified;name="";name_pos=Json.Null;params=[];rest=false;rest_pack=None;
-         result=Atoms [Undef];guard=None;async=false;stated=None;requires=[];ensures=[];body}) in
+         result=Atoms [Undef];guard=None;async=false;stated=None;stated_regions=None;requires=[];ensures=[];body}) in
   (* The initialization unit checks both initializer and annotation. Use the
      annotation's offered signatures, retaining effects established by a matching
      initializer signature. Lean makes both checked contracts available. *)

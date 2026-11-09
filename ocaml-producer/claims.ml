@@ -72,7 +72,13 @@ let rec index_fact_json fact =
       | Body_either (a,b) -> Object ["either",Object ["left",clause a;"right",clause b]] in
     Object ["every",Object ["slot",int x;"path",Array (List.map (fun f -> String f) path);"stop",term stop;
       "body",Array (List.map clause body)]]
-let effect_json e = Object ["footprint",footprint_json e.footprint;
+  | Store_apart (x,p,y,q) ->
+    Object ["storeApart",Object ["slot",int x;"path",Array (List.map (fun f -> String f) p);
+      "other",int y;"otherPath",Array (List.map (fun f -> String f) q)]]
+let regions_json e = if e.regions = [] then [] else
+  ["regions",Array (List.map (fun (p,path) ->
+    Object ["position",int p;"path",Array (List.map (fun f -> String f) path)]) e.regions)]
+let effect_json e = Object (["footprint",footprint_json e.footprint;
   "promise",(match e.promise with
     | None -> Null
     | Some (Guards param) -> Object ["guards",Object ["param",int param]]
@@ -82,7 +88,7 @@ let effect_json e = Object ["footprint",footprint_json e.footprint;
   "requires",kinds_json e.requires;"elements",kinds_json e.elements;
   "pre",Array (List.map index_fact_json e.pre);"ensures",Array (List.map index_fact_json e.ensures);
   "receiverGrows",Bool e.receiver_grows;
-  "elementWrite",(match e.element_write with Some w -> String w | None -> Null)]
+  "elementWrite",(match e.element_write with Some w -> String w | None -> Null)] @ regions_json e)
 let rec resolution_json = function
   | StableResolution -> Object ["k",String "stable"]
   | NativeResolution child -> Object ["k",String "native";"child",resolution_json child]
@@ -661,6 +667,13 @@ let encode (proposal : Proposal_types.t) =
   let apart bs = Array (List.filter_map (fun (n,_) -> match Linear_facts.rfact_parts n with
     | Some (x,y) -> Some (Object ["name",String x;"other",String y])
     | None -> None) bs) in
+  (* A store separation (`Linear_facts.sfact_key`, ARITHMETIC.md, "Store
+     separation"): two bindings' paths whose arrays hold different stores. *)
+  let stores_apart bs = Array (List.filter_map (fun (n,_) -> match Linear_facts.sfact_parts n with
+    | Some ((x,p),(y,q)) ->
+      let fields p = Array (List.map (fun f -> String f) p) in
+      Some (Object ["name",String x;"path",fields p;"other",String y;"otherPath",fields q])
+    | None -> None) bs) in
   let contracts row = Array (List.map (fun (c : Proposal_types.contract) ->
     Object ["pos",c.pos;"name",String c.name;"type",claim_type c.type_]) row) in
   let interior (f : Proposal_types.function_claim) =
@@ -670,7 +683,8 @@ let encode (proposal : Proposal_types.t) =
     let entries es = Array (List.map (fun (e : Proposal_types.entry) ->
       Object ["point",String e.point; "start",e.start;"bindings",bindings e.bindings;
               "bounds",bounds e.bindings; "facts",facts e.bindings;
-              "quantified",quantified e.bindings; "apart",apart e.bindings]) es) in
+              "quantified",quantified e.bindings; "apart",apart e.bindings;
+              "storesApart",stores_apart e.bindings]) es) in
     let arrows = if f.arrows = [] then [] else
       ["arrows",Array (List.map (fun (pos,rows) ->
         Object ["pos",pos;"rows",Array (List.map (fun (o : Proposal_types.overlay) ->
@@ -687,7 +701,8 @@ let encode (proposal : Proposal_types.t) =
     let entries es = Array (List.map (fun (e : Proposal_types.entry) ->
       Object ["point",String e.point; "start",e.start;"bindings",bindings e.bindings;
               "bounds",bounds e.bindings; "facts",facts e.bindings;
-              "quantified",quantified e.bindings; "apart",apart e.bindings]) es) in
+              "quantified",quantified e.bindings; "apart",apart e.bindings;
+              "storesApart",stores_apart e.bindings]) es) in
     let arrows = if f.arrows = [] then [] else
       ["arrows",Array (List.map (fun (pos,rows) ->
         Object ["pos",pos;"rows",Array (List.map (fun (o : Proposal_types.overlay) ->

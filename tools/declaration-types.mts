@@ -53,6 +53,11 @@ export type CallEffect = {
    * (`"stores"`, `CallEffects.ElementWrite`). Only a trusted signature
    * states it. */
   readonly elementWrite: ElementWrite | null;
+  /** The frame's store regions, present where it states some: the store
+   * each selects at the call's entry, the path of data fields read from the
+   * call position, may change arbitrarily, `footprint` bounding every other
+   * location (`CallEffects.Effect.regions`). */
+  readonly regions?: readonly StoreRegion[];
 };
 /** What a typed array's element write keeps (`CallEffects.ElementWrite`):
  * every location holding no store and every store's length (`"stores"`);
@@ -82,7 +87,9 @@ export type IndexFact =
       readonly body: IndexFact } }
   | { readonly element: { readonly value: number; readonly array: number; readonly index: number } }
   | { readonly every: { readonly slot: number; readonly path: readonly string[]; readonly stop: LinearTerm;
-      readonly body: readonly BodyFact[] } };
+      readonly body: readonly BodyFact[] } }
+  | { readonly storeApart: { readonly slot: number; readonly path: readonly string[]; readonly other: number;
+      readonly otherPath: readonly string[] } };
 /** A variable of a quantified fact's body (`HeapKnowledge.Bound`): the bound
  * index, the element at it, or a linear term. */
 export type BodyVariable = "index" | "elem" | { offset: { delta: number } } | { readonly project: { readonly kind: LinearTerm["kind"]; readonly path: readonly string[] } } | { readonly free: { readonly t: LinearTerm } };

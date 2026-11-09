@@ -10,7 +10,7 @@
 //
 //   K ::= G || K | C        G ::= p === null | p === undefined | p === true | p === false
 //   C ::= C && C | C || C | !C | (C) | A | forall i in p: B | forall i < n of p: B
-//   A ::= safeInteger(p) | E rel E      rel ∈ { <, <=, >, >=, === }
+//   A ::= safeInteger(p) | E rel E | p !== p      rel ∈ { <, <=, >, >=, === }
 //   E ::= n | p | p.length | n * p | n * p.length | E + E | E - E | -E | (E)
 //   p ::= x | p.f
 //   B ::= A' && B | A'      A' an atom over E, i, p[i], its paths and lengths
@@ -36,7 +36,10 @@
 // the reads denote in the heap a call starts in. A quantified atom
 // `forall i in p: B`, the clause's last, states its body of every index `i`
 // below `p.length`, of its element `p[i]` and of the clause's other terms
-// (ARITHMETIC.md, "Quantified clauses"; `IndexFact.every`). Every other
+// (ARITHMETIC.md, "Quantified clauses"; `IndexFact.every`). `p !== q` of two
+// paths whose types are arrays states that their arrays hold different
+// stores (ARITHMETIC.md, "Store separation"; `IndexFact.storeApart`); a path
+// that may be a typed array, or is no array, is refused. Every other
 // form of the draft's grammar (`old`, computed keys) is refused with the clause's location, as is a path whose field no type
 // resolves. A postcondition uses the same language with `result` at position
 // zero and parameters one position after their call positions. Its facts
@@ -220,7 +223,8 @@ function tokens(text: string): Token[] | string {
  * on the way (`steps`), each a sum, difference or product. */
 type Linear = { terms: Map<string, number>; constant: number; steps: Linear[] };
 type Atom = { k: "safeInteger"; of: string } | { k: "compare"; op: string; left: Linear; right: Linear } |
-  { k: "forall"; binder: string; array: string; stop: string | null; body: Atom[][] };
+  { k: "forall"; binder: string; array: string; stop: string | null; body: Atom[][] } |
+  { k: "distinct"; left: string; right: string };
 /** A guard `p === tag ||`, and a clause: its guards in order, then its
  * conjunction. */
 type Guard = { path: string; tag: GuardTag };
@@ -336,6 +340,18 @@ class Parser {
       this.expect(")");
       return { k: "safeInteger", of };
     }
+    // `p !== q` of two array paths (ARITHMETIC.md, "Store separation").
+    if (t && t.k === "name") {
+      const saved = this.at;
+      const left = this.variable();
+      if (this.isOp("!==")) {
+        this.at++;
+        const r = this.peek();
+        if (!r || r.k !== "name") throw new ClauseError("`!==` compares two paths");
+        return { k: "distinct", left, right: this.variable() };
+      }
+      this.at = saved;
+    }
     const left = this.sum();
     const op = this.take();
     if (!op || op.k !== "op" || !["<", "<=", ">", ">=", "==="].includes(op.v))
@@ -435,6 +451,7 @@ export function indexFactPositions(f: IndexFact): number[] {
   if ("bound" in f) return [f.bound.array, f.bound.index];
   if ("element" in f) return [f.element.value, f.element.array, f.element.index];
   if ("every" in f) return [f.every.slot, f.every.stop.slot, ...f.every.body.flatMap(bodyPositions)];
+  if ("storeApart" in f) return [f.storeApart.slot, f.storeApart.other];
   const F = f.linear.fact;
   return ("le" in F ? F.le.form : F.ne.form).map(([t]) => t.slot);
 }
@@ -593,6 +610,21 @@ export function elaborateRequires(clauses: readonly string[], params: readonly C
         compared.push(wrap({ linear: { fact } }));
       };
       compareAtoms(atoms, lessEq);
+      // `p !== q` (ARITHMETIC.md, "Store separation"): the arrays the two
+      // paths read hold different stores. Each side's type is an array: a
+      // typed array's view may share its buffer with another view.
+      for (const a of atoms) {
+        if (a.k !== "distinct") continue;
+        const side = (key: string): { slot: number; path: string[] } => {
+          const { p, path: fields } = path(key);
+          const at = p.at(fields, excludedBy(guards.length, key.split(".")[0] ?? ""));
+          if (at === "view") throw new ClauseError(`\`!==\` compares two arrays, and ${key} may be a typed array, whose buffer another view may share`);
+          if (at !== "array") throw new ClauseError(`\`!==\` compares two arrays, and ${key} is not an array`);
+          return { slot: p.position, path: fields };
+        };
+        const l = side(a.left), r = side(a.right);
+        compared.push(wrap({ storeApart: { slot: l.slot, path: l.path, other: r.slot, otherPath: r.path } }));
+      }
       // `forall i in p: C` (ARITHMETIC.md, "Quantified clauses"): for
       // every index of the array or typed array `p` reads, below its length
       // or its typed-array length, `C` holds of the index `i`, the element
@@ -609,6 +641,7 @@ export function elaborateRequires(clauses: readonly string[], params: readonly C
         if (params.some(q => q.name === a.binder)) throw new ClauseError(`the index ${a.binder} is a parameter's name`);
         const elem = `${a.array}[${a.binder}]`;
         const branchBody = (atoms: Atom[]): BodyFact[] => {
+        if (atoms.some(b => b.k === "distinct")) throw new ClauseError("a `forall` body states no `!==`");
         const body: BodyFact[] = [];
         const variable = (key: string): BodyVariable => {
           if (key === a.binder) return "index";

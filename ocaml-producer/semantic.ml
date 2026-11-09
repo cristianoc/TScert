@@ -56,6 +56,10 @@ type index_fact = Index_at of int | Length_of of int * int | Bound_by of int * i
      from the position give, each body fact holds of the index, the element
      at it and its terms (ARITHMETIC.md, "Quantified clauses"). *)
   | Every of int * string list * term * body_fact list
+  (* The arrays the named data fields read from the two positions give hold
+     different stores (ARITHMETIC.md, "Store separation"; Lean's
+     `IndexFact.storeApart`). *)
+  | Store_apart of int * string list * int * string list
 (* A variable of a quantified fact's body: the index, the element at it, or a term. *)
 and body_var = Body_index | Body_elem | Body_offset of int | Body_project of string * string list | Body_term of term
 and body_fact = Body_either of body_fact * body_fact | Body_le of (body_var * int) list * int | Body_ne of (body_var * int) list * int
@@ -79,10 +83,15 @@ type call_effect = { footprint: footprint; promise: promise option; fresh: bool;
      no location holding no store, and no store's length; and, where
      "exact", the view's element at the index alone, to the value (Lean's
      `Effect.elementWrite`). Only a trusted signature states it. *)
-  element_write: string option }
+  element_write: string option;
+  (* The frame's store regions, each a call position and a path of data
+     fields read from it: the store each selects at the call's entry may
+     change arbitrarily, `footprint` the closed bound of every other
+     location (Lean's `Effect.regions`). *)
+  regions: (int * string list) list }
 let footprint_effect footprint =
   {footprint;promise=None;fresh=false;receiver_store=false;on_throw=false;receiver_own=false;fresh_object=false;
-   requires=None;elements=None;pre=[];ensures=[];receiver_grows=false;element_write=None}
+   requires=None;elements=None;pre=[];ensures=[];receiver_grows=false;element_write=None;regions=[]}
 (* An ordinary arrow's: every location may change. *)
 let ordinary_effect = footprint_effect top_footprint
 (* Heap preservation: no location may change. *)
@@ -93,7 +102,9 @@ let promise_effect promise = {(footprint_effect top_footprint) with promise=Some
    not the receiver of a call of it, so an exception of the receiver's store
    is an exception of every location; its positions are not the target's, so
    it states no postcondition. *)
-let bound_effect e = if e.receiver_store || e.receiver_own then
+let bound_effect e = if e.regions <> [] then
+    {e with footprint=top_footprint; regions=[]; elements=None; ensures=[]; receiver_grows=false}
+  else if e.receiver_store || e.receiver_own then
     {e with footprint=top_footprint; receiver_store=false; receiver_own=false; elements=None; ensures=[];
       receiver_grows=false}
   else {e with elements=None; ensures=[]; receiver_grows=false}
@@ -103,7 +114,14 @@ let plain_effect e = e.promise = None
    states one, and the receiver's store excepted only where the other excepts
    it or lets everything change, and a footprint on a throw where the other
    states one (Lean's `Effect.covers`). *)
-let effect_covers a b = footprint_le a.footprint b.footprint && a.promise = b.promise &&
+(* The closed bound a frame implies (Lean's `Effect.footprint`): every
+   location may change where it states store regions. *)
+let coarse_footprint e = if e.regions = [] then e.footprint else top_footprint
+let effect_covers a b =
+  (if b.regions = [] then footprint_le (coarse_footprint a) b.footprint
+   else b.footprint = top_footprint ||
+     (List.for_all (fun r -> List.mem r b.regions) a.regions && footprint_le a.footprint b.footprint &&
+      not a.receiver_store && not a.receiver_own)) && a.promise = b.promise &&
   (not b.fresh || a.fresh) &&
   (not a.receiver_store || (b.receiver_store && not b.receiver_own) || b.footprint = top_footprint) &&
   (not b.on_throw || a.on_throw) &&
@@ -231,6 +249,14 @@ let with_footprint ?(on_throw=false) footprint t = match t with
 
 (* A function's precondition on every signature of its type: its code
    is checked assuming it, so each call establishes it (Lean's `moduleArrow`). *)
+(* A function's stated frame with store regions on every signature of its
+   type: the frame's closed bound and its regions (Lean's `Effect.regions`),
+   which its unit's regional check certifies. *)
+let with_regions stated t = match stated, t with
+  | Some (regions,footprint), Atoms [Shape ({calls;_} as shape)] ->
+    Atoms [Shape {shape with calls=List.map (fun (s:signature) ->
+      {s with call_effect={s.call_effect with footprint; regions}}) calls}]
+  | _ -> t
 let with_pre pre t = match t with
   | Atoms [Shape ({calls;_} as shape)] when pre <> [] ->
     Atoms [Shape {shape with calls=List.map (fun (s:signature) ->

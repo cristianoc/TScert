@@ -134,7 +134,8 @@ function effectText(e: CallEffect): Modifies<{}, string> {
     `"receiverOwn":${JSON.stringify(e.receiverOwn)},"freshObject":${JSON.stringify(e.freshObject)},` +
     `"requires":${kindsText(e.requires)},"elements":${kindsText(e.elements)},"pre":${JSON.stringify(e.pre)},` +
     `"ensures":${JSON.stringify(e.ensures)},"receiverGrows":${JSON.stringify(e.receiverGrows)},` +
-    `"elementWrite":${JSON.stringify(e.elementWrite)}}`;
+    `"elementWrite":${JSON.stringify(e.elementWrite)}` +
+    `${e.regions === undefined ? "" : `,"regions":${JSON.stringify(e.regions)}`}}`;
 }
 
 /** An elements predicate as text: `null` or its kinds' list. */

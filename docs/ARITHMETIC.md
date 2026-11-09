@@ -472,7 +472,7 @@ Several tags of one kind state their conjunction.
 K &::= G\ \texttt{||}\ K \mid C\\
 G &::= P\ \texttt{===}\ \mathtt{null} \mid P\ \texttt{===}\ \mathtt{undefined} \mid P\ \texttt{===}\ \mathtt{true} \mid P\ \texttt{===}\ \mathtt{false}\\
 C &::= A \mid C\ \texttt{\&\&}\ C \mid C\ \texttt{||}\ C \mid \texttt{!}C \mid (C) \mid \mathtt{forall}\ x\ \mathtt{in}\ P\texttt{:}\ B \mid \mathtt{forall}\ x\ \texttt{<}\ P\ \mathtt{of}\ P\texttt{:}\ B\\
-A &::= \mathtt{safeInteger}(P) \mid E\ \mathit{rel}\ E\\
+A &::= \mathtt{safeInteger}(P) \mid E\ \mathit{rel}\ E \mid P\ \texttt{!==}\ P\\
 E &::= n \mid P \mid P.\mathtt{length} \mid n\cdot P \mid n\cdot P.\mathtt{length} \mid E + E \mid E - E \mid -E \mid (E)\\
 P &::= x \mid P.f\\
 B &::= A' \mid B\ \texttt{\&\&}\ B \mid B\ \texttt{||}\ B\\
@@ -516,7 +516,10 @@ $`-(2^{53}-1)\le e\le 2^{53}-1`$, each bound of which is clamped at
 $`2^{53}-1`$ (a stronger fact). Where those facts hold, JavaScript computes
 each side exactly, so the comparison of the two safe integers answers as the
 fact states: the facts imply the clause's value under the
-[operational semantics](SEMANTICS.md#operational-language).
+[operational semantics](SEMANTICS.md#operational-language). An atom
+$`P\ \texttt{!==}\ Q`$ of two paths whose types are arrays elaborates to a
+[store separation](#store-separation); one of a path whose type may be a
+typed array, or is no array, is refused.
 
 **Integrality.** A value term is an integer only where a clause states it:
 a comparison names a path's value, or an element, only where its
@@ -1453,6 +1456,85 @@ what follows from them.
 `invalid-loop-invariant-entry` (an entry with `j = 2`). Control in
 `pipeline/test.mts`: the back-edge negative's read claimed at `number` with
 every fact the producer proposes removed, refused at the loop's head.
+
+## Store separation
+
+A **store separation** $`P\mathrel{\#}Q`$ states that the arrays the paths
+$`P = x.p`$ and $`Q = y.q`$ read hold different stores (`IndexFact.storeApart`,
+`PathStoresApart`):
+
+```math
+h,\rho\models P\mathrel{\#}Q \iff \exists u\,w.\ \mathrm{read}_h(\rho\,x,p)=u \wedge \mathrm{read}_h(\rho\,y,q)=w \wedge
+  \forall s\,t.\ \mathrm{store}(u)=s \wedge \mathrm{store}(w)=t \Rightarrow s\ne t
+```
+
+For two arrays it is `Footprints.StoreApart`. It is the clause atom
+`P !== Q` of two paths whose types are arrays: an array's identity is its
+store location ($`\mathrm{store}`$ reads the array object's own store field,
+fixed at its allocation), so two distinct arrays never share a store. A
+typed array is refused: two views are distinct objects that may share one
+buffer. A precondition stating it lets a body keep facts across a call whose
+frame changes one of the two stores
+([store regions](SOURCE-ELABORATION.md#stated-effects); the central
+example of [stated effects](drafts/stated-effects.md#61-the-central-example)):
+
+```ts
+/** @requires flags !== runs.openBrackets */
+function measure(flags: number[], runs: Runs): number { … }
+```
+
+**Establishing it.** A call establishes a precondition's separation from
+its knowledge (`call-requires`, `HeapKnowledge.storeFollows`): the paths,
+read through the knowledge's read links, reach slots a region fact
+([element regions](FOOTPRINTS.md#element-regions)) or a separation of the
+slots themselves states apart:
+
+```math
+\frac{\Sigma\vdash x.p\leadsto u\qquad \Sigma\vdash y.q\leadsto w\qquad \Sigma\vdash \mathrm{apart}(u,w)\ \text{or}\ u\mathrel{\#}w}
+     {\Sigma\vdash x.p\mathrel{\#}y.q}\ \textsf{store-apart-links}
+```
+
+with $`x.p\leadsto u`$ a chain of read links from $`x`$'s class through the
+fields $`p`$ to $`u`$'s class (`pathReaches`). A fresh array literal is apart
+from every older array (`region-alloc`), so `{ openBrackets: [] }` gives
+its field's array a separation from every array parameter. Where a slot
+leaves the knowledge, a region fact or a separation naming it is restated
+through the read links from a kept slot (`restateStores`, beside the linear
+facts' `restateReads`).
+
+**Keeping it.** A separation reads no heap where both paths are empty
+(`envOnly`). Otherwise it is kept across a step where each path is at most
+one field whose location the step keeps (`IndexFact.keptBy` with
+`guardKept`): across a call, a field every clause of its slot's type states
+`@stable` (`HeapExpressionRules.stableFirst`, `stableFirst_frame`: a stable
+location holds its value in every heap a normal return reaches):
+
+```math
+\frac{\Sigma\vdash x.p\mathrel{\#}y.q\qquad |p|,|q|\le 1\qquad \Gamma\vdash p,q\ \text{stable fields}}
+     {\Sigma\vdash f(\vec a)\dashv\Sigma',\ x.p\mathrel{\#}y.q}\ \textsf{stable-first}
+```
+
+**Consuming it.** A call of a frame with store regions keeps the store of
+a slot a separation places outside every region, and with it the facts
+reading the slot's length (`region-call-keep`,
+[store regions](SOURCE-ELABORATION.md#stated-effects)).
+
+**Implementation.** The front end elaborates `P !== Q`
+(`elaborateRequires`, `tools/bound-annotations.mts`) to
+`{"storeApart": {slot, path, other, otherPath}}`; an entry claim's
+`storesApart` proposes one at a statement entry. The producer proposes
+those of a precondition, of a declaration of an object literal whose field
+holds an empty array literal, and keeps them as Lean does
+(`Linear_facts.sstatement`). Proved: `storeFollows_sound`,
+`restateStores_holds`, `stableFirst_frame`, `regionFirst_kept`,
+`effectKept_holds`.
+
+**Cases.** Positive: `stated-argument-path` (`measure` and its caller) and
+`stated-local-runs` (the array allocated in the looping function). Negative,
+run under Node: `invalid-stated-alias` (one array as both sides, `NaN`).
+Gap: `stated-distinct-view-refused`. Controls in `pipeline/test.mts`: a
+separation forged at a caller's entry, and a fact forged across a frame that
+may change its array's store, each refused.
 
 ## Designs that extend this document
 
