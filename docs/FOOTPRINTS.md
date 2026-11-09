@@ -663,6 +663,98 @@ along a graph and framing the caller's knowledge; the regional lemmas are
 proved (`Post.compose`, `transport_sound`,
 `stable_sound`, `frame_sound`, namespace `Footprints`).
 
+### Argument-path store regions
+
+This extends the receiver-store exception, stable field links and store
+separation. A region $`(i,p)`$ names a call position ($`0`$ is the receiver)
+and a path of own data fields. In the entry heap $`h_0`$, it selects the
+array store reached from that position's value. The footprint bounds every
+other old location, including element cells. A failed path read selects no
+store. An empty receiver path has the receiver-store effect's scope.
+
+Writing $`R_{i,p}(h_0,\rho_0)`$ for that optional store location, the relation is:
+
+```math
+\begin{aligned}
+\mathrm{within}(h_0,h') \iff{}& |h_0|\le |h'|\ \land{}\\
+ &\forall l<|h_0|.\quad
+   (\forall(i,p)\in S.\ R_{i,p}(h_0,\rho_0)\ne l)
+   \Rightarrow \Phi_{\mathrm{class}(h_0[l])}(h_0[l],h'[l]).
+\end{aligned}
+```
+
+The location is fixed at entry. A mutable path could later select a different
+array through an alias or a call. A path through required stable fields
+keeps its entry value by each field's singleton contract
+([records](POSITIVE-TYPES.md#records)). This restricts the field references;
+the final array's store can change. External values need a checked boundary
+or an explicit contract establishing those same stable fields.
+
+The semantic framing theorem requires separation from every selected store.
+Distinct slots or distinct field names do not establish that premise. With
+that separation, `store: keep` retains another array's exact length and
+`store: grow` retains its dense prefixes. An alias of the selected array
+cannot meet the separation premise. Framing on a throw additionally requires
+a footprint guarantee on that throw.
+
+**Proof scope.**
+[`ArgumentStoreRegions.lean`](../lean/Verification/Semantics/ArgumentStoreRegions.lean)
+defines `ArgumentStoreRegionsWithin`, `StoreApart` and `StablePath`.
+Proved: `ArgumentStoreRegionsWithin.trans` composes at unchanged selected
+stores; `.nested` composes with a nested call's selected entry or fresh
+stores; `.receiver` embeds the receiver-store exception; `.frame_length`
+and `.frame_densePrefix` give caller framing. `StablePath.transfer`, `.read`
+and `.frame` retain the path through world extension and safe execution,
+including a throw. `StoreApart.stable_path_frame` retains separation and
+`.not_alias` excludes the alias case.
+
+[`ArgumentPathTracking.lean`](../lean/Verification/Programs/ArgumentPathTracking.lean)
+proves entry, slot-map, normal-edge and handler checks sound
+(`checkEntry_sound`, `checkMap_sound`, `checkEdges_sound`,
+`checkHandler_sound`). `stableField_path` obtains a path witness from a
+checked stable-field type and a successful own-field read; `copy`,
+`read_stable` and `receiver_call` establish provenance and its store effect.
+`checkReceiver_sound` connects a checked receiver origin to the existing
+receiver-store call effect.
+[`ArgumentRegionGraph.lean`](../lean/Verification/Programs/ArgumentRegionGraph.lean)
+proves `bounded_step`, `bounded_safe_of_sim` and `goto_bounded`: ordinary graph
+safety, regional node obligations, and checked provenance transfers imply the
+regional bound on every finite return. The invariant covers cycles and caught
+throws; a caught throw requires a bound even without an exceptional guarantee
+on the enclosing invocation. `nodeWithin_of_closed` embeds existing closed
+node bounds. `checkReceiverCall_sound` validates a selected receiver-store
+invocation against a tracked origin and its existing checked call effect,
+including calls with checked preconditions. An escaping throw needs an
+effect bound only when the enclosing invocation promises one.
+
+[`ArgumentStoreSeparation.lean`](../lean/Verification/Programs/ArgumentStoreSeparation.lean)
+proves slot-map checking (`checkMap_sound`), stable-path framing (`frame`),
+and creation from checked own-location separation plus a proven path read
+(`of_separation`, `prepend`). `checkFrame_sound` checks separation against
+every mapped call region; `frame_length` retains the other array's exact
+length, and `checkFrame_not_alias` excludes an aliased store. These theorems
+require the fact table's semantic validity.
+
+[`ArgumentRegionCertificates.lean`](../lean/Verification/Programs/ArgumentRegionCertificates.lean)
+checks a provenance table at entry, every normal edge and every handler.
+`checkNodes_sound` discharges the regional node obligations for closed-bound
+nodes, slot copies and receiver-store calls on tracked entry values.
+`checkEntry_sound` proves the regional bound from the executable check and
+ordinary code and summary soundness. Its premises contain no unchecked
+regional node obligations. `checkEntry_reassign` preserves the check under
+type-parameter assignments; `firstRefusedNode_sound` identifies a failing
+node at its program label for source diagnostics. Field-read provenance, fresh stores and nested
+argument-path calls are outside this checker's supported nodes.
+
+The regional graph and caller-separation checks do not participate in CLI
+acceptance. The call-effect wire has no argument-path field. The source-level
+argument-path effect therefore lies outside these theorems' proof scope.
+
+`GraphCodeSpec` states a code's effect at the receiver and actuals matching
+its entry frame (`FrameValues`), including the optional rest-store slot.
+The invocation proofs supply that match (`graph_invoke`, `graph_invoke_at`,
+`graphRest_invoke`).
+
 **Provenance stamps** (`FootprintProvenance.lean`: marks, `after` and
 `before` stamps, proved: `stamps_separate`) state a slot's separation against
 heap marks rather than against each older slot, as

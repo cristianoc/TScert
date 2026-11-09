@@ -453,11 +453,21 @@ assumes none. -/
 def PreAt (e : CallEffects.Effect) (store : Option (Ty ι)) (L : List Tm) (h : Heap) : Prop :=
   store = none → ∀ F ∈ e.pre, F.HoldsAt (envOf L .nul) h
 
+/-- The receiver and bound parameters of a call occur in its entry frame,
+following the optional rest store and preceding the captures. Actuals past
+`arity` have no parameter slot. -/
+@[nospecialize] def FrameValues (arity : Nat) (store : Option (Ty ι)) (L : List Tm)
+    (r : Tm) (args : List Tm) : Prop :=
+  ∃ pre captures, pre.length = frameOffset store - 1 ∧
+    L = pre ++ r :: CallArguments.parameters arity args ++ captures
+
 /-- **Graph code at a signature.** Code of `arity` whose body is the graph of
 the node lists `E`, `K`, entered at `start`, with captures at `Cs`, meets the
 signature `row` when every run of it started from an environment meeting the
 frame the row describes (`codeFrame`: with a rest, its store at `store`) is
-safe at the row's result, a promise's about the parameter it names. The graph
+safe at the row's result, a promise's about the parameter it names. Its effect
+is guaranteed at the receiver and actuals matching that frame (`FrameValues`).
+The graph
 checker establishes this (`GraphCode.goto_safe`); a code-creating rule takes
 it as a premise. -/
 def GraphCodeSpec (G : NormalGraph ι) (arity : Nat) (E : List Tm)
@@ -466,9 +476,10 @@ def GraphCodeSpec (G : NormalGraph ι) (arity : Nat) (E : List Tm)
   arity ≤ row.arguments.length ∧ row.effect.below arity = true ∧
   ∀ n W h L, EnvOk G (codeFrame arity row Cs store) (envOf L .nul) n W → WorldAdm W →
     HeapOk n W h → CallArguments.Values L → PreAt row.effect store L h →
+    ∀ r args, FrameValues arity store L r args →
       HeapObservations.SafePostExc (excOf G)
         (row.effect.result (meaning G row.result) (framePromised row.effect (frameOffset store) L))
-        (fun after v => ∀ r args, row.effect.post r args h after v) (fun after => ∀ r, row.effect.excPost r h after)
+        (row.effect.post r args h) (row.effect.excPost r h)
         n W h (.goto E K start L .nul)
 
 /-- A graph code the certificate of a unit has checked at one signature: the
@@ -627,10 +638,11 @@ theorem graph_invoke {G : NormalGraph ι} {arity E K start Cs row vs n W}
           (ArgsT_values (fun A hA => by obtain ⟨a, _, rfl⟩ := List.mem_map.mp (List.mem_of_mem_take hA); exact meaning_valOnly G a) ha.2.1) v hv
       · exact hvalues v hv)
     (fun _ F hF => (CallEffects.Effect.pre_frame hs.2.1 hF r args vs .nul heap).mp (hq F hF))
+    r args ⟨[], vs, rfl, rfl⟩
   have hp := framePromised_params hs.2.1 [r] args vs
   simp only [List.length_singleton, List.singleton_append] at hp
   rw [show frameOffset (none : Option (Ty ι)) = 1 from rfl, hp] at hsafe
-  exact HeapObservations.SafePostExc.weaken (fun _ _ h => h r args) (fun _ h => h r) hsafe
+  exact hsafe
 
 /-- **Invoking graph code from a frame at the call's own level.** As
 `graph_invoke`, with the captures' frame met where the call runs: what a
@@ -655,10 +667,11 @@ theorem graph_invoke_at {G : NormalGraph ι} {arity E K start Cs row vs}
           (ArgsT_values (fun A hA => by obtain ⟨a, _, rfl⟩ := List.mem_map.mp (List.mem_of_mem_take hA); exact meaning_valOnly G a) ha.2.1) v hv
       · exact hvalues v hv)
     (fun _ F hF => (CallEffects.Effect.pre_frame hs.2.1 hF r args vs .nul heap).mp (hq F hF))
+    r args ⟨[], vs, rfl, rfl⟩
   have hp := framePromised_params hs.2.1 [r] args vs
   simp only [List.length_singleton, List.singleton_append] at hp
   rw [show frameOffset (none : Option (Ty ι)) = 1 from rfl, hp] at hsafe
-  exact HeapObservations.SafePostExc.weaken (fun _ _ h => h r args) (fun _ h => h r) hsafe
+  exact hsafe
 
 /-- Graph code with captured values meets its fixed signatures, where its
 kind binds each signature's receivers. -/

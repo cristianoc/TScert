@@ -519,7 +519,7 @@ tolerates it, `values: "any"` misses stores, the path region is apart, the
 cells are value-class. The stable link from `scriptRuns` to its array is
 `/** @stable */` on `openBrackets`, since the loop's other calls state
 `values: "any"`, which covers the field
-([the soundness question](argument-path-regions.md#the-soundness-question);
+([argument-path store regions](../FOOTPRINTS.md#argument-path-store-regions);
 cited). It is the one source change this separation needs.
 
 The loop's facts are kept only if the complete joined summaries of the

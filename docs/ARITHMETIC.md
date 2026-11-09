@@ -1472,9 +1472,9 @@ row in [WORK](../WORK.md#status).
 - [Record invariants](drafts/field-paths-and-record-invariants.md#2-record-invariants):
   a record invariant kept across the record's own mutation and through
   values stored in other structures.
-- [Argument-path regions](drafts/argument-path-regions.md): a callee's store
-  effect at the arrays its arguments' paths reach, so a caller keeps the
-  lengths of arrays apart from them.
+- [Stated effects](drafts/stated-effects.md): a callee's frame at the
+  locations its arguments' paths reach, so a caller keeps the lengths of
+  arrays apart from them.
 - [Keeping contract facts across calls](drafts/keeping-contract-facts-across-calls.md):
   frames for the calls a walker makes between two boundaries of a record
   invariant.
