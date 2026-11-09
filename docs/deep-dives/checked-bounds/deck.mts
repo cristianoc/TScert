@@ -3,7 +3,8 @@
  * boundaries and frame conditions between them, all rechecked by a proved
  * checker; with its outcome on pretext and what remains. Measured at
  * TScert f868f344 and pretext tscert-bounds 86a93c0. Built with the deck kit
- * (`make deck NAME=checked-bounds`). */
+ * (`make deck NAME=checked-bounds`).
+ * Build: make deck NAME=checked-bounds SINCE=e0979e83. */
 import { bullets, card, cards, code, columns, cover, inline, panel, para, point, rules, slide, stat, statement, status, table, type Deck, type Slide } from "../../../dev/deck.mts";
 
 /** Prose with `code` in backticks, as the kit's `inline` reads it. */
