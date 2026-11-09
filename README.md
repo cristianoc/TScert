@@ -233,6 +233,8 @@ make help     # every target
 - [SEMANTICS](docs/SEMANTICS.md), [POSITIVE-TYPES](docs/POSITIVE-TYPES.md),
   [PROGRAM-TYPING](docs/PROGRAM-TYPING.md): the calculus, its types and its
   typing rules.
+- [ARITHMETIC](docs/ARITHMETIC.md): the integer facts over values, lengths
+  and bounds, and the clauses that state them.
 - [SOURCE-MODEL](docs/SOURCE-MODEL.md),
   [SOURCE-ELABORATION](docs/SOURCE-ELABORATION.md),
   [SOURCE-CONTRACTS](docs/SOURCE-CONTRACTS.md),
