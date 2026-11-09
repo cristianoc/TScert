@@ -1022,12 +1022,14 @@ its index views (`namedMembers`):
 \frac{\Gamma\vdash_G a:R\quad R\equiv_G c\quad\mathsf{named}(c)=(\varphi;\psi)\quad(f{:}A)\in\varphi}
      {\Gamma\vdash_G a.f:A}
 \qquad
-\frac{\Gamma\vdash_G a:R\quad R\equiv_G\mathsf{Ref}(\varphi)
+\frac{\Gamma\vdash_G a:R\quad R\equiv_G\mathsf{Ref}(\varphi;\ldots)
       \quad(f{:}A)\in\varphi\quad\Gamma\vdash_G a':A}
      {\Gamma\vdash_G a.f\leftarrow a':\mathsf{Null}}
 ```
 
-Both rules read $`\varphi`$ off a single reference clause. Eliminating a
+Both rules read $`\varphi`$ off a single reference clause, whatever views,
+optional fields, methods, key bounds and stable keys it also states: a
+stable key is a view, so no write reaches it. Eliminating a
 conjunction of record contracts to such a view can be justified by subsumption;
 no direct multi-contract program rule is assumed, so a field supplied only by a
 second operand of an intersection needs such a view before these rules apply.

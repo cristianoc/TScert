@@ -1052,7 +1052,7 @@ came from a different context. No execution budget is inspected. -/
     | .writeAt f a b =>
       let direct := (synthesizedFirst G Γ a pool).findSearch? fun R => do
         let (fs,r) ← match expand G R with
-          | [.refs fs [] _ _ _ _] => some (fs,Rule.write)
+          | [.refs fs [] _ _ _ _ _] => some (fs,Rule.write)
           | [.callable fs _ _ _ _] | [.ctors _ _ fs _ _] => some (fs,Rule.writeCallable)
           | _ => none
         let B ← fs.lookup f

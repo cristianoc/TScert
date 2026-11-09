@@ -280,7 +280,7 @@ inductive HasTyWith (G : NormalGraph ι) (images : PositiveCertificates.Instance
       HasTyWith G images subtyping Γ key Kt → Represents G Kt (keyClause KK) → KK.within K = true →
       (K, A) ∈ ix → Represents G U .undef → KK ≠ .strings →
       HasTyWith G images subtyping Γ (.indexAt a key) (A ++ U)
-  | write : HasTyWith G images subtyping Γ a Ref → Represents G Ref (.refs fs [] vs os ms ks) → (f, A) ∈ fs →
+  | write : HasTyWith G images subtyping Γ a Ref → Represents G Ref (.refs fs [] vs os ms ks st) → (f, A) ∈ fs →
       HasTyWith G images subtyping Γ b A → Represents G N .nul → HasTyWith G images subtyping Γ (.writeAt f a b) N
   /-- A binary operator needs operand types it answers for, pair by pair
   (`Operands`), and yields the family of its result kind: no singleton, since
@@ -1643,7 +1643,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
       rcases hr with rfl | rfl
       · exact expand_sem_mpr ⟨_, expand_sub hn.1, rfl, builtinInvariant_of_withoutInvariant rfl _ _ _⟩
       · exact expand_sem_mpr ⟨_, expand_sub hn.2, rfl, builtinInvariant_of_withoutInvariant rfl _ _ _⟩
-  | @write Γ a Ref fs vs os ms ks f A b N ha hr hm hb hn iha ihb =>
+  | @write Γ a Ref fs vs os ms ks st f A b N ha hr hm hb hn iha ihb =>
     intro n W h ρ he hw hh
     apply Safe_bind (fun a => .writeAt f a (instantiate 0 ρ b)) Step.writeC1 Raises.writeC1 n W h _ hw hh
       (iha n W h ρ he hw hh)
