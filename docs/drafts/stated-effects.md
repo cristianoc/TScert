@@ -106,8 +106,11 @@ its regions: $`b`$ is `cell b`, $`P.f`$ is `path`, $`P[*]`$ is `path store`
 with `pathElems`, $`P.*`$ is `pathOwn`; $`L`$ at a pair
 $`\{\mathsf{value}{:}\,c_v,\ \mathsf{store}{:}\,c_s\}`$ is `inCls L value`
 at $`c_v`$ and `inCls L store` at $`c_s`$. `appends` is `receiverGrows`,
-`writes` is `elementWrite`. A statement whose class bounds are both `any`
-is refused as today: its `at` items add nothing.
+`writes` is `elementWrite`. A statement adds a guarantee where its frame is
+below $`\{\mathsf{any},\mathsf{any}\}`$ or it states a promise; one that
+adds none (both class bounds `any`, no promise, whatever its `at` items and
+`onThrow`, which add nothing to that frame) is refused as today. A top frame
+with a promise is admitted where its promise is (below).
 
 ```ts
 function readRuns(runs: Runs): Within<{ value: "any"; store: "keep"; at: { "runs.openBrackets[*]": "any" } }, void>
@@ -136,18 +139,24 @@ is refused.
 
 **Where a statement is admitted.**
 
-- *A program definition* (its body visible): optional. Written, it is
-  certified from the code over the declared domain (`stated-declaration`,
-  `stated-closure`), the producer proposing the frame and Lean checking it;
-  unwritten, the producer infers the effect as today. `appends` and
-  `writes` on a program definition are refused: no rule certifies them
-  from a body.
+- *A program definition* (its body visible): optional. Written, the whole
+  statement is certified from the code over every environment its inputs
+  admit (`stated-declaration`, `stated-closure`): the frame, the producer
+  proposing it and Lean checking it; `fresh`, by the freshness facts the
+  compositional check infers, every return a fresh value (`FreshAt` of the
+  entry heap's length on normal return; `compositionalChecked` with `ret`,
+  `GraphCode.lean`; proved for code entries). Unwritten, the producer
+  infers the effect as today. `freshObject`, `appends` and `writes` have
+  no rule certifying them from a body (`effectCheckedResult` refuses each)
+  and are refused here and on a function type of the program; they are
+  admitted in audited contracts only.
 - *A function type of the program* (a parameter, a field, a returned
   closure): every value introduced at it meets it, by the existing
-  introductions (closure certification, subtyping, field writes).
+  introductions (closure certification, subtyping, field writes), `fresh`
+  included.
 - *An import from another module of the program*: read under the import
-  assumption ([trust surface](../DESIGN.md#trust-surface)), certified by
-  the exporting module's own run, as a `Within` statement is.
+  assumption ([trust surface](../DESIGN.md#trust-surface)) as the exporting
+  module's own run certified it, its promises included.
 - *A declaration file or a package*: an **audited contract**. A statement
   there is read only where a reviewed overlay entry pins its declaration
   by origin, package version and heading text, the statement included, as
@@ -352,8 +361,34 @@ cells are value-class. The stable link from `scriptRuns` to its array is
 `/** @stable */` on `openBrackets`, since the loop's other calls state
 `value: any`, which covers the field
 ([the soundness question](argument-path-regions.md#the-soundness-question);
-cited). It is the one source change this separation needs; delivery also
-needs the helpers' full transitive frames and the audited native rows.
+cited). It is the one source change this separation needs.
+
+The loop's facts are kept only if the complete joined summaries of the
+helpers it calls change the protected stores (those of `flags`, `starts`
+and `texts`) at `grow` or less. Read from the code at `tscert-bounds`
+(conjectured), each helper's frame meets it:
+
+- `readScriptRuns`: `push` (`grow`), `splice` at the apart
+  `runs.openBrackets[*]`, element writes (closed $`\{\mathsf{any},\mathsf{grow}\}`$),
+  the fields `read` and `scripts` (value class).
+- `getScriptFacts`, `unpackClasses`, `unpackClassRuns`, `getClass`: the
+  cells `scriptClasses`, `classRuns`, `classRemaps` at `init`; writes and
+  `fill` on typed arrays they allocate, discharged by freshness.
+- `hasProperty`: the cell `bmpProperties` at `init`, element writes on that
+  `Uint16Array`, `astralProperties.set`, and `lazyRegExp`'s closure, its
+  cell `built` at `init` and `RegExp.prototype.test`.
+- `findGraphemeEnds`: the field of the record `graphemeRules` and
+  `getBreakRules`'s `breakRules` (value class), the typed arrays
+  `parseGraphemeRules` allocates, element writes on `ends`, an `Int32Array`
+  its caller allocates.
+- `getUnspacedGraphemes`: the frames of `findGraphemeEnds` and
+  `readScriptRuns`, and `push` onto its fresh `unspaced`.
+
+Unverified: the producer's summaries of these bodies, Lean-checked, and
+the native rows these frames rest on (`Map.prototype.set` with its table
+among the map's own locations, §6.4; `RegExp.prototype.test`; typed
+arrays' element writes, `fill` and `subarray`), each changing no store
+beyond `grow`.
 
 ### 6.3 Class methods' effects ([method-effects.md](method-effects.md))
 
@@ -437,6 +472,15 @@ Paths relative to `lean/Verification/`; "chain1" names a file of branch
   a unit stating a frame, that its runs meet it, beside
   `checkRequests_footprint_at`. The `FunctionPlan` to `CertifiedPlan`
   conversion is unchanged.
+- **O10 Promises.** The whole statement checked and proved: `statedWithin`
+  compares `fresh` and its "adds a guarantee" test replaces
+  `s.footprint != .top`; a declaration stating `fresh` runs the
+  compositional check with `ret`, and `checkRequests_stated_at` gains
+  `FreshAt` of the entry heap's length on normal return over its full
+  domain; closures as `effectCheckedResult` checks them; the export's
+  certified signature carries `fresh` to importers; acceptance (O9)
+  includes it. `freshObject`, `appends` and `writes` refused outside
+  audited contracts.
 - **Wire.** `CallEffect` and the Fragment's `stated` carry the entries and
   promises; decoders require them field by field.
 
@@ -445,7 +489,8 @@ Paths relative to `lean/Verification/`; "chain1" names a file of branch
 A statement on a program definition is certified from its code; an
 imported one is read under the import assumption. A statement in a
 declaration file or a package is an audited contract, pinned and reviewed
-by the owner (§2), and a trust-surface item. A regional native row rests on
+by the owner (§2), and a trust-surface item; `freshObject`, `appends` and
+`writes` are stated there only. A regional native row rests on
 a narrower audited premise than today's (its changes confined to its store
 and the cells its store lists at entry), reviewed with O6. A `@stable` field
 of a value external code builds needs the checked boundary or explicit
@@ -457,7 +502,8 @@ Positive: `stated-argument-path` (§6.1), `stated-local-runs` (runs
 allocated in the looping function), `stated-module-cache` (a `??=` cache
 keeping a fact elsewhere), `stated-callback-frame` (a callback type stating
 a frame, called in a loop), `stated-package-contract` (a pinned statement
-in a package's declaration file).
+in a package's declaration file), `stated-top-fresh` (a builder stating
+`fresh: true` at `{value: "any", store: "any"}`).
 
 Negative, each run under Node: `invalid-stated-alias` (§6.1 without
 `@requires`, `NaN`), `invalid-stated-fresh-shrink` (§4's `f`),
@@ -474,9 +520,12 @@ of another module, and one substituted exactly without agreement; a
 `pathElems` transported to `cls value` without the element-class premise;
 both receiver flags translated independently; a captured root's write
 claimed within a callback type's parameter items; a normal-only nested
-summary on a path that throws to the exit, and one caught by a handler; an
+summary on a path that throws to the exit, and one caught by a handler; a
+function returning its input stated `fresh: true` within
+`{value: "keep", store: "keep"}`, its claims forged to carry the promise; an
 `unshift` row claiming `this[*]: grow`; a `sort` row omitting its
-comparator's frame; `appends` on a program definition; a coverage claim
+comparator's frame; `appends` and `freshObject` on a program definition; a
+`{value: "any", store: "any"}` statement with no promise; a coverage claim
 dropping `onThrow`.
 
 ## 11. Decisions and open questions
@@ -487,8 +536,10 @@ Decisions:
   replaces the three flags; the relational promises stay separate fields.
 - **One written form.** `Within`'s $`F`$ with `at` and promise members,
   read by `statedResult`; preconditions in `@requires`.
-- **Optional where a body is visible**, certified from it; an audited,
-  pinned contract where none is.
+- **Optional where a body is visible**, certified from it whole, `fresh`
+  included; an audited, pinned contract where none is, and for
+  `freshObject`, `appends` and `writes`.
+- **Refused only without a guarantee**: a top frame with no promise.
 - **`onThrow` as written**, normal return otherwise, as `Within` today.
 - **`[*]` is store and cells**; the store-only region serves translations.
 - **`@stable` on traversed fields**; the final field need not be.
