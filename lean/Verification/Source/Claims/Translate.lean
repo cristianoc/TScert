@@ -1,23 +1,14 @@
 import Verification.Source.Claims.Json
 
-/-! Evidence searched over a unit's slice, written over its document's
-store (STAGE-STORE.md, "Units of a check"). A slice's search writes its
-evidence over the slice's store, whose heads are numbered as the slice's
-extraction made them; the document's store numbers the same equations
-otherwise. The unit's own requests, extracted from the same code in both,
-are the anchors: each label a request of the slice names stands where the
-document's request of the same unit names its label (`pairJson`), and each
-pair of heads so found pairs their templates' labels in turn (`propagate`).
-A union is paired member by member: a member whose image is known with that
-image, and the others by their shape, each head read as the class of heads
-whose rows unfold alike (`signatures`), in order among members of one
-shape. Every label of the evidence is renamed by that correspondence
-(`translate`), and a union the slice wrote in its canonical order is written
-in the document's.
+/-! Evidence relocation from a unit slice to its document (STAGE-STORE.md,
+"Units of a check"). Joint partition refinement compares complete row keys.
+Corresponding request positions choose representatives of exact equation
+classes. The document anchors and rows determine canonical union orders.
+Heads without a candidate refuse translation.
+The document's graph determines union-elimination premises and summary arms.
 
-Nothing here is trusted: the translated evidence is checked as any
-evidence is (`unitVerdict`), so a wrong correspondence, or a head without
-one, gives evidence the check refuses. -/
+Relocation is untrusted. Every result crosses the whole-document checker;
+no property of this algorithm is assumed by the acceptance theorem. -/
 namespace Verification.SourceClaimJson.Translate
 open Lean EquationGraphs EquationLowering PositiveGraphs
 
@@ -41,70 +32,69 @@ store keeps it: renaming heads changes the order. -/
 def canonUnion (U : List Tree) : List Tree :=
   (U.mergeSort fun a b => compare a b != .gt).eraseDups
 
-/-- One round of the heads' signatures: each head's parameter kinds,
-binders, its previous signature and its row, with each head the row names
-replaced by that head's previous signature. Equal signatures after `k`
-rounds mean equal unfoldings `k` rows deep; the numbering of the store is
-nowhere in them, nor are the heads' names. -/
-def round (heads : Array Draft) (previous : Array UInt64) : Array UInt64 :=
-  heads.mapIdx fun i d =>
-    let at_ (h : Nat) : Nat := (previous[h]?.getD 0).toNat
-    let body := match d.body with
-      | some b => (toJson (b.map (mapTree at_) (canonUnion ∘ List.map (mapTree at_)))).compress
-      | none => "none"
-    hash ((toJson d.kinds).compress,
-      (toJson (d.binders.map fun b => (b.name, toJson b.kind))).compress, previous[i]?.getD 0, body)
+/-- One refinement round, comparing complete JSON rows. The document's
+class dictionary is shared with the slice; hash collisions compare full keys. -/
+def refine (heads : Array Draft) (previous : Array Nat)
+    (keys : Std.HashMap Json Nat := {}) : Array Nat × Std.HashMap Json Nat := Id.run do
+  let mut keys := keys
+  let mut next := #[]
+  for i in [0:heads.size] do
+    let d := heads[i]!
+    let at_ (h : Nat) : Nat := previous[h]?.getD heads.size
+    let body := d.body.map fun b => b.map (mapTree at_) (canonUnion ∘ List.map (mapTree at_))
+    let key := toJson (d.kinds, d.binders.map (·.kind), previous[i]!, body)
+    let cls := (keys.get? key).getD keys.size
+    keys := keys.insert key cls
+    next := next.push cls
+  return (next, keys)
 
-/-- The number of distinct signatures. -/
-def classes (sigs : Array UInt64) : Nat :=
-  (sigs.foldl (fun (s : Std.HashSet UInt64) x => s.insert x) {}).size
-
-/-- The signatures of a store's heads round by round, until a round
-distinguishes no more heads than the one before: the rounds, the last one
-stable. -/
-def signatures (heads : Array Draft) : Array (Array UInt64) := Id.run do
-  let mut rounds : Array (Array UInt64) := #[heads.map fun _ => 0]
-  let mut count := 1
-  for _ in [0:heads.size + 1] do
-    let next := round heads rounds.back!
-    rounds := rounds.push next
-    let c := classes next
-    if c == count then break
-    count := c
-  return rounds
-
-/-- The signatures of `heads` after exactly `k` rounds, extending `rounds`. -/
-def extend (heads : Array Draft) (rounds : Array (Array UInt64)) (k : Nat) : Array (Array UInt64) := Id.run do
-  let mut rounds := rounds
-  for _ in [0:k + 1 - rounds.size] do
-    rounds := rounds.push (round heads rounds.back!)
-  return rounds
-
-/-- The document's heads with their signatures, computed once per check and
-extended as a slice asks for more rounds. -/
+/-- The document's refinement rounds, shared by its unit translations. -/
 structure Target where
-  heads : Array Draft
-  rounds : Array (Array UInt64)
+  store : EquationStore.State
+  rounds : Array (Array Nat)
+  keys : Array (Std.HashMap Json Nat) := #[]
 
-def Target.of (heads : Array Draft) : Target := ⟨heads, signatures heads⟩
+def Target.heads (t : Target) : Array Draft := t.store.heads
+def Target.of (store : EquationStore.State) : Target := ⟨store, #[store.heads.map fun _ => 0], #[]⟩
+
+/-- Joint refinement to a fixed point; each document round is computed once.
+The previous class in each key makes the partition monotonically finer. -/
+def jointClasses (slice : Array Draft) (target : Target) : Array Nat × Array Nat × Target := Id.run do
+  let mut target := target
+  let mut own := slice.map fun _ => 0
+  let mut count := 1
+  let mut document := target.rounds[0]!
+  for k in [0:slice.size + target.heads.size + 1] do
+    if target.keys.size <= k then
+      let (next, keys) := refine target.heads target.rounds[k]!
+      target := { target with rounds := target.rounds.push next, keys := target.keys.push keys }
+    document := target.rounds[k+1]!
+    let (next, keys) := refine slice own target.keys[k]!
+    own := next
+    if keys.size == count then break
+    count := keys.size
+  return (own, document, target)
 
 /-- The correspondence as it grows: each slice head's document head, and the
 pairs whose templates are still to pair. -/
 structure Pairing where
   map : Std.HashMap Nat Nat := {}
   pending : List (Nat × Nat) := []
+  unions : Std.HashMap (List Tree) (List Tree) := {}
+  approximate : Bool := false
+  needsFallback : Bool := false
 
-/-- The two stores' heads and each head's class (`signatures`). -/
+/-- The two stores' heads and each head's exact class (`jointClasses`). -/
 structure Sides where
   slice : Array Draft
   document : Array Draft
-  sliceClass : Nat → UInt64
-  documentClass : Nat → UInt64
+  sliceClass : Nat → Nat
+  documentClass : Nat → Nat
 
 abbrev PairM := ReaderT Sides (StateM Pairing)
 
 /-- A tree's shape: each head read as its class. -/
-def shape (cls : Nat → UInt64) (t : Tree) : UInt64 := hash (mapTree (fun h => (cls h).toNat) t)
+def shape (cls : Nat → Nat) (t : Tree) : Tree := mapTree cls t
 
 /-- A slice tree's image, where every head it names has one. -/
 partial def image (m : Std.HashMap Nat Nat) : Tree → Option Tree
@@ -119,12 +109,17 @@ where
       return .cons (← ts.toList.foldr (fun t acc => do return .cons (← image m t) (← acc)) (some .nil))
         (← imageArgs m rest)
 
-/-- Pair a slice head with a document head of as many parameters and
-binders; a head already paired keeps its first partner. -/
+/-- Pair heads with the same parameter and binder kinds. Exact classes are
+paired first; the fallback pairs changed contracts at their anchor positions.
+The whole-document checker validates every candidate. -/
 def pairHead (h h' : Nat) : PairM Unit := do
   let p ← get
-  if p.map.contains h then return
   let sides ← read
+  if !p.approximate && sides.sliceClass h != sides.documentClass h' then return
+  -- Several document heads can have the same exact equation class. Their
+  -- first anchored occurrence chooses the representative; every occurrence
+  -- must agree on the class, and the whole-document checker judges its uses.
+  if p.map.contains h then return
   let shape (d : Option Draft) := d.map fun d => (d.kinds, d.binders.map (·.kind))
   if shape sides.slice[h]? != shape sides.document[h']? then return
   set { p with map := p.map.insert h h', pending := (h, h') :: p.pending }
@@ -141,10 +136,16 @@ partial def pairArgs : Args → Args → PairM Unit
   | .cons U rest, .cons V rest' => do pairUnion U.toList V.toList; pairArgs rest rest'
   | _, _ => pure ()
 /-- Pair two unions of as many members: a member whose image is known with
-that image, then each other member with the first left of the same shape. -/
+that image, then a remaining member with the first remaining exact shape. -/
 partial def pairUnion (U V : List Tree) : PairM Unit := do
   if U.length != V.length then return
   let sides ← read
+  let p ← get
+  let same := canonUnion (U.map (shape sides.sliceClass)) == canonUnion (V.map (shape sides.documentClass))
+  if !p.unions.contains U && same then
+    set { p with unions := p.unions.insert U V }
+  else if !same then
+    set { p with needsFallback := true }
   let m := (← get).map
   let mut left : List Tree := []
   let mut right := V
@@ -154,7 +155,10 @@ partial def pairUnion (U V : List Tree) : PairM Unit := do
     | none => left := left ++ [u]
   for u in left do
     let su := shape sides.sliceClass u
-    match right.find? (shape sides.documentClass · == su) with
+    let approximate := (← get).approximate
+    let candidate := (right.find? (shape sides.documentClass · == su)).orElse fun _ =>
+      if approximate then right.head? else none
+    match candidate with
     | some v =>
       right := right.erase v
       pairTree u v
@@ -211,8 +215,8 @@ the head a search over the document reads a literal at. Repeated while a
 pairing lets another row be renamed, its templates paired in turn. -/
 partial def grounds : PairM Unit := do
   let sides ← read
-  let key (b : GraphRow Tree (List Tree)) : String := (toJson b).compress
-  let found : Std.HashMap String Nat := sides.document.zipIdx.foldl (fun m (d, j) =>
+  let key (b : GraphRow Tree (List Tree)) : Json := toJson b
+  let found : Std.HashMap Json Nat := sides.document.zipIdx.foldl (fun m (d, j) =>
     match d.kinds, d.body with
     | [], some b@(.clauses _) => if m.contains (key b) then m else m.insert (key b) j
     | _, _ => m) {}
@@ -269,48 +273,217 @@ structure Moved where
 
 instance : ToJson Moved := ⟨fun m => m.tree.toJson⟩
 
+/-- Union images anchored at request and template positions, with the
+canonical orders of other document unions. -/
+structure UnionImages where
+  anchored : Std.HashMap (List Tree) (List Tree)
+  orders : Std.HashMap (List Tree) (List Tree)
+
+/-- Relocate only typed labels, marked by the wire encoder. -/
+partial def relocate (unions : UnionImages) (j : Json) : Json :=
+  let marked (j : Json) : Option (Json × Json) := do
+    let .arr pair ← (j.getObjVal? "§moved").toOption | none
+    if pair.size != 2 then none else some (pair[0]!, pair[1]!)
+  match marked j with
+  | some (_, t) => t
+  | none => match j with
+    | .arr xs =>
+      match xs.toList.mapM marked with
+      | some pairs =>
+        -- A singleton needs no sorting, coalescing or tree decoding.
+        if pairs.length <= 1 then Json.arr (pairs.map (·.2)).toArray else Id.run do
+        let some trees := pairs.mapM (fun (a, b) => do
+          return (← (Tree.fromJson a).toOption, ← (Tree.fromJson b).toOption))
+          | return j
+        let merged := (trees.foldl (fun kept p =>
+          if kept.any (fun q => q.2 == p.2 && q.1 != p.1) then kept else kept ++ [p]) []).map (·.2)
+        let original := trees.map (·.1)
+        let written := (unions.anchored.get? original).getD (
+          if merged.eraseDups.length != merged.length || canonUnion original != original then merged
+          else (unions.orders.get? (canonUnion merged)).getD (canonUnion merged))
+        return toJson written
+      | none => Json.arr (xs.map (relocate unions))
+    | .obj kvs => Json.mkObj (kvs.toList.map fun (k, v) => (k, relocate unions v))
+    | _ => j
+
+/-- Arguments inside an application are unions too. Their anchored images
+preserve the document's argument spelling; meets are canonical trees. -/
+partial def movedImage (m : Std.HashMap Nat Nat) (unions : UnionImages) : Tree → Option Tree
+  | .app h args => do return .app (← m.get? h) (← argsImage args)
+  | .bound h args j => do return .bound (← m.get? h) (← argsImage args) j
+  | .meet ps => do return canonMeet (← ps.toList.mapM (movedImage m unions))
+  | t => some t
+where
+  argsImage : Args → Option Args
+    | .nil => some .nil
+    | .cons ts rest => do
+      let original := ts.toList
+      let mapped ← original.mapM (movedImage m unions)
+      let U := (unions.anchored.get? original).getD (
+        if canonUnion original != original then mapped
+        else (unions.orders.get? (canonUnion mapped)).getD (canonUnion mapped))
+      return .cons (Types.ofList U) (← argsImage rest)
+
+/-- Decode and relocate one label-bearing field. The final document decoder
+checks the complete wire, including the fields passed through unchanged. -/
+@[nospecialize] def moveJson {α : Type} [FromJson α] [ToJson α]
+    (unions : UnionImages) (j : Json) : Except String Json := do
+  let a : α ← fromJson? j
+  return relocate unions (toJson a)
+
+/-- Only the label-bearing columns need translation. In particular, contexts,
+terms, heap knowledge, links, separations and references retain their JSON values.
+Each field follows `EvidenceWire.Document`, `NodeRef`, `StepRef` and `Rule`.
+The complete relocated document is decoded by the trusted checker. -/
+def moveWire [FromJson Moved] [ToJson Moved]
+    (unions : UnionImages) (j : Json) : Except String Json := do
+  let array (f : Json → Except String Json) (j : Json) : Except String Json := do
+    return .arr (← (← j.getArr?).mapM f)
+  let field (k : String) (f : Json → Except String Json) (j : Json) : Except String Json := do
+    return j.setObjVal! k (← f (← j.getObjVal? k))
+  let choice (j : Json) : Except String Json :=
+    if j == toJson ({} : PositiveCertificates.SubtypeChoices Tree) then pure j
+    else moveJson (α := PositiveCertificates.SubtypeChoices Moved) unions j
+  let edge := array choice
+  let node (j : Json) : Except String Json := do
+    let j ← field "edges" (array edge) j
+    let j ← field "handler" (fun v => if v == .null then pure v else do
+      let xs ← v.getArr?
+      if xs.size != 2 then throw "expected handler type and edge"
+      return .arr #[← moveJson (α := List Moved) unions xs[0]!, ← edge xs[1]!]) j
+    let j ← field "implies" (moveJson (α := List (PromiseCalls.Implication Moved)) unions) j
+    let j ← field "yields" (moveJson (α := List (PromiseCalls.Yield Moved)) unions) j
+    let j ← field "effect" (moveJson (α := Option (EvidenceWire.StepRef Moved)) unions) j
+    field "promise" (fun v => if v == .null then pure v else do
+      let xs ← v.getArr?
+      if xs.size != 2 then throw "expected promise slot and choices"
+      return .arr #[xs[0]!, ← choice xs[1]!]) j
+  let response (j : Json) : Except String Json := do
+    let j ← field "certificate" (array node) j
+    let j ← if (j.getObjVal? "codes").isOk then field "codes" (array (array node)) j else pure j
+    if (j.getObjVal? "readSummaries").isOk then
+      field "readSummaries" (moveJson (α := List (ProgramCertificates.ReadSummary Moved)) unions) j
+    else pure j
+  let j ← field "types" (moveJson (α := List (List Moved)) unions) j
+  let j ← field "proofs" (array (field "rule" (moveJson (α := ProgramCertificates.Rule Moved) unions))) j
+  field "functions" (array response) j
+
 /-- Evidence over a slice's store, its heads `slice` and its unit's anchors
 `anchors`, written over the document's store `target`, whose unit's anchors
 are `documentAnchors`: each label renamed by the correspondence the anchors
-give. A head with none keeps its number, and the evidence fails its check.
-Also the document's signatures, extended. -/
+give. Missing images refuse. The target caches its refinement rounds. -/
 def translate (slice : Array Draft) (anchors : Json) (target : Target) (documentAnchors : Json)
-    (evidence : Json) : Except String Json × Target :=
-  let own := signatures slice
-  let k := max own.size target.rounds.size - 1
-  let own := extend slice own k
-  let rounds := extend target.heads target.rounds k
-  let target : Target := ⟨target.heads, rounds⟩
+    (evidence : Json) : Except String Json × Target := Id.run do
+  -- A slice whose store is the document's, head for head and name for name,
+  -- and whose anchors are the document's, is written over it already.
+  let row (d : Draft) := toJson (d.name, d.kinds, d.binders.map (fun b => (b.name, b.kind)), d.body)
+  if slice.size == target.heads.size && anchors == documentAnchors &&
+      (slice.zipIdx.all fun (d, i) => row d == row target.heads[i]!) then
+    return (.ok evidence, target)
+  let (own, document, target) := jointClasses slice target
   let sides : Sides := {
-    slice, document := target.heads
-    sliceClass := fun h => (own[k]!)[h]?.getD 0
-    documentClass := fun h => (rounds[k]!)[h]?.getD 0 }
-  let ((), p) := ((do pairJson anchors documentAnchors; propagate; grounds : PairM Unit).run sides).run {}
-  let f (h : Nat) : Nat := p.map.getD h h
+    slice := slice
+    document := target.heads
+    sliceClass := fun h => own[h]?.getD (slice.size + target.heads.size)
+    documentClass := fun h => document[h]?.getD (slice.size + target.heads.size) }
+  let mut byClass : Std.HashMap Nat Nat := {}
+  for j in [:target.heads.size] do
+    let c := sides.documentClass j
+    if !byClass.contains c then byClass := byClass.insert c j
+  let pair : PairM Unit := do
+    pairJson anchors documentAnchors
+    propagate
+    grounds
+    -- Unmentioned heads can occur in intermediate evidence. Their exact
+    -- equation class supplies a candidate, checked with the entire evidence.
+    for h in [:slice.size] do
+      if !(← get).map.contains h then
+        if let some j := byClass.get? (sides.sliceClass h) then pairHead h j
+    propagate
+    grounds
+    -- A changed contract may have no exact image. Anchored candidates remain
+    -- untrusted and must discharge the document's unchanged obligations.
+    if (← get).needsFallback || (← get).map.size < slice.size then
+      modify fun p => { p with approximate := true }
+      pairJson anchors documentAnchors
+      propagate
+  let ((), p) := (pair.run sides).run {}
   let written : Except String Json := do
-    let _ : FromJson Moved := ⟨fun j => do let t ← Tree.fromJson j; return ⟨mapTree f t, t⟩⟩
-    let d : EvidenceWire.Document Moved ← fromJson? evidence
-    -- A union the slice wrote in an order of its own keeps it. One it wrote in its canonical order is written as the document
-    -- writes its members where its anchors or its heads' rows write them
-    -- (`orders`), else in the document's canonical order.
-    let known := orders target.heads documentAnchors
-    let types := d.types.map fun ty =>
-      let original := ty.map (·.original)
-      let moved := ty.map (·.tree)
-      -- Two members the slice holds apart and the document holds as one
-      -- are one member; a member the slice wrote twice stays twice.
-      let merged := (ty.foldl (fun (kept : List Moved) m =>
-        if kept.any (fun k => k.tree == m.tree && k.original != m.original) then kept else kept ++ [m]) []).map (·.tree)
-      let written := if canonUnion original != original then merged
-        else (known.get? (canonUnion moved)).getD (canonUnion moved)
-      written.map fun t => ⟨t, t⟩
-    return toJson { d with types }
-  (written, target)
+    let unions : UnionImages := ⟨p.unions, orders target.heads documentAnchors⟩
+    let _ : FromJson Moved := ⟨fun j => do
+      let t ← Tree.fromJson j
+      let some moved := movedImage p.map unions t | throw "evidence names a head without exact correspondence"
+      return ⟨moved, t⟩⟩
+    -- Mark typed labels before walking the wire: ordinary JSON arrays and
+    -- terms cannot be mistaken for label unions. This covers unions inside
+    -- rules, instantiations, handlers and summaries as well as type tables.
+    let _ : ToJson Moved := ⟨fun m => Json.mkObj [("§moved", toJson (m.original, m.tree))]⟩
+    let oldTypes : List (List Moved) ← evidence.getObjValAs? _ "types"
+    let oldSets : List ValueSets.ValueSet ← evidence.getObjValAs? _ "valueSets"
+    let relocated ← moveWire unions evidence
+    -- Only these tables are needed to order elimination premises. The
+    -- final whole-document decoder checks every field.
+    let types : Array (List Tree) ← relocated.getObjValAs? _ "types"
+    let contexts : Array (List Nat) ← relocated.getObjValAs? _ "contexts"
+    let proofs : Array (EvidenceWire.ProofEntry Tree) ← relocated.getObjValAs? _ "proofs"
+    let movedProofs ← proofs.mapM fun proof => do
+      match proof.rule with
+      | .unionVar slot =>
+        let context ← EvidenceWire.entry "context" contexts proof.claim.context
+        let C ← EvidenceWire.entries "type" types context
+        let U ← EvidenceWire.entry "slot" C.toArray slot
+        let expected := ProgramTyping.members (EquationStore.graph target.store) U
+        let premises ← expected.mapM fun member => do
+          let candidates ← proof.premises.filterM fun index => do
+            let premise ← EvidenceWire.entry "proof" proofs index
+            let pc ← EvidenceWire.entry "context" contexts premise.claim.context
+            let pc ← EvidenceWire.entries "type" types pc
+            let result ← EvidenceWire.entry "type" types proof.claim.type
+            let premiseResult ← EvidenceWire.entry "type" types premise.claim.type
+            return pc == C.set slot [member] && premise.claim.term == proof.claim.term &&
+              premiseResult == result
+          let some index := candidates.head? | throw "no relocated union elimination premise"
+          return index
+        return { proof with premises }
+      | _ => pure proof
+    let sourceGraph := EquationStore.graph { doc := #[], heads := slice }
+    let targetGraph := EquationStore.graph target.store
+    let functions ← relocated.getObjValAs? (Array Json) "functions"
+    let originals ← evidence.getObjValAs? (Array Json) "functions"
+    let functions ← (functions.zip originals).mapM fun (f, original) => do
+      if !(f.getObjVal? "readSummaries").isOk then return f
+      let old : List (ProgramCertificates.ReadSummary Tree) ← original.getObjValAs? _ "readSummaries"
+      let moved : List (ProgramCertificates.ReadSummary Tree) ← f.getObjValAs? _ "readSummaries"
+      let summaries ← (moved.zip old).mapM fun (s, old) => do
+        let oldMembers := ProgramTyping.members sourceGraph old.receiver
+        let movedMembers ← oldMembers.mapM fun t => match movedImage p.map unions t with
+          | some t => pure t
+          | none => throw "read summary member has no image"
+        let expected := ProgramTyping.members targetGraph s.receiver
+        let arms ← expected.mapM fun t => do
+          let some i := movedMembers.idxOf? t | throw "read summary member has no arm"
+          let some arm := s.arms[i]? | throw "read summary member has no arm"
+          return arm
+        if oldMembers.length != s.arms.length then throw "read summary has an extra arm"
+        return { s with arms }
+      return f.setObjVal! "readSummaries" (toJson summaries)
+    -- Value sets carry literal order inherited from a type's expansion.
+    -- Relocate that order through the same type correspondence.
+    let mut sets : Std.HashMap ValueSets.ValueSet ValueSets.ValueSet := {}
+    for (old, moved) in oldTypes.zip types.toList do
+      if let (some a, some b) :=
+          (HeapExpressionRules.typeValues sourceGraph [old.map (·.original)] 0,
+           HeapExpressionRules.typeValues targetGraph [moved] 0) then
+        sets := sets.insert a b
+    let valueSets := oldSets.map fun v => (sets.get? v).getD v
+    return ((relocated.setObjVal! "proofs" (toJson movedProofs)).setObjVal! "functions"
+      (toJson functions)).setObjVal! "valueSets" (toJson valueSets)
+  return (written, target)
 
 end Verification.SourceClaimJson.Translate
 
 namespace Verification.SourceClaimJson
-open Lean
+open Lean EquationGraphs
 
 /-- A slice's plans, for its search: its front at the qualified reads its
 unit's reads document gives (`--produce-unit`), its imported modules left
@@ -331,17 +504,51 @@ def slicePlans (ast claims qualified : Json) (fileKey : String) (budget : Positi
   let F ← EquationStore.freeze T
   return ⟨⟨ast, claims, qualified, []⟩, fr, F, plans.map fun e => e.bind (FunctionPlan.over F)⟩
 
-/-- The anchors of a group's units (`Translate.pairJson`): each member's
-request, with its labels marked and its store left out, its search hints and
-its obligations' sequents. -/
+/-- A union at its request position. Positions name graph nodes and slots,
+independently of head numbering, so the slice's and the document's anchors
+pair position by position. -/
+structure AnchorState where
+  fields : List (String × Json) := []
+
+private def anchorUnion (key : Unit → String) (U : List Tree) : StateM AnchorState Unit := do
+  if U.isEmpty then return
+  let value := toJson (U.map fun t => Json.mkObj [("§label", t.toJson)])
+  modify fun s => { fields := (key (), value) :: s.fields }
+
+/-- A group's anchors: each type union of its requests at its position, and
+its hints. -/
 def FilePlans.anchors (f : FilePlans) (group : List Nat) : Json :=
   let _ : ToJson (EquationStore.CheckedLabel f.F.equations f.F.primitive) :=
     ⟨fun l => Json.mkObj [("§label", l.tree.toJson)]⟩
   Json.arr (group.map fun i => match f.plans[i]? with
-    | some (.ok (.graph _ _ r)) => Json.mkObj [
-        ("request", toJson ({ r.toRequest with types := Json.null } : RequestJson.Request Json _)),
-        ("hints", toJson r.hints),
-        ("obligations", toJson (r.obligations.map fun o => (o.sequent.context, o.sequent.type)))]
+    | some (.ok (.graph _ _ r)) => Id.run do
+      let note (key : Unit → String) (U : List (EquationStore.CheckedLabel f.F.equations f.F.primitive)) :=
+        anchorUnion key (U.map (·.tree))
+      let context (key : String) (C : List (List (EquationStore.CheckedLabel f.F.equations f.F.primitive))) :
+          StateM AnchorState Unit := do
+        for (U, j) in C.zipIdx do note (fun _ => s!"{key}/{j}") U
+      let points (key : String) (cs : List (CertificateProducer.PointClaim
+          (EquationStore.CheckedLabel f.F.equations f.F.primitive))) : StateM AnchorState Unit := do
+        for (c, j) in cs.zipIdx do
+          context s!"{key}/{j}/context" c.context
+          note (fun _ => s!"{key}/{j}/type") c.type
+      let action : StateM AnchorState Unit := do
+        context "inputs" r.inputs
+        note (fun _ => "result") r.result
+        if let some (_, _, U) := r.promise then note (fun _ => "promise") U
+        points "claims" r.claims
+        for (q, j) in r.codes.zipIdx do
+          context s!"codes/{j}/captures" q.entry.captures
+          note (fun _ => s!"codes/{j}/receiver") q.entry.row.receiver
+          context s!"codes/{j}/arguments" q.entry.row.arguments
+          note (fun _ => s!"codes/{j}/result") q.entry.row.result
+          if let some U := q.entry.store then note (fun _ => s!"codes/{j}/store") U
+          points s!"codes/{j}/claims" q.claims
+        for (o, j) in r.obligations.zipIdx do
+          context s!"obligations/{j}/context" o.sequent.context
+          note (fun _ => s!"obligations/{j}/type") o.sequent.type
+      let (_, state) := action.run {}
+      return Json.mkObj [("unions", Json.mkObj state.fields), ("hints", toJson r.hints)]
     | _ => Json.null).toArray
 
 /-- A line of a slice's evidence: its unit, its evidence, the heads of the
@@ -365,8 +572,7 @@ def readLine (line : Json) : Except String (String × Json × Option (Array Equa
 the document's own evidence checked as written (`unitVerdict`); a slice's
 line written over the document's store first (`Translate.translate`), its
 unit's anchors paired with the group's in the document (`FilePlans.anchors`),
-and checked at the evidence so written. Also the document's signatures, as
-the translation extended them. -/
+and checked at the evidence so written. Also the unchanged target store. -/
 def lineVerdict (f : FilePlans) (budget : PositiveCertificates.SearchBudget) (target : Translate.Target)
     (unit : String) (evidence : Json) :
     Option (Array EquationLowering.Draft × Json) → Except String (List String) × Translate.Target
@@ -375,6 +581,13 @@ def lineVerdict (f : FilePlans) (budget : PositiveCertificates.SearchBudget) (ta
     let group := ((List.range f.fr.units.length).find? (f.fr.unitId · == unit)).map f.fr.group
     let r := Translate.translate slice anchors target (f.anchors (group.getD [])) evidence
     (r.1 >>= unitVerdict f budget unit, r.2)
+
+/-- The operation used for a decoded CLI unit line, including relocation
+against this file's own store. -/
+def checkedUnit (f : FilePlans) (budget : PositiveCertificates.SearchBudget)
+    (unit : String) (evidence : Json) (slice : Option (Array EquationLowering.Draft × Json)) :
+    Except String (List String) :=
+  (lineVerdict f budget (Translate.Target.of f.F.store.heads) unit evidence slice).1
 
 /-- An accepted line's unit is safe at the evidence its verdict checked:
 the line's own, or its translation. -/
@@ -393,6 +606,43 @@ theorem lineVerdict_safe {f : FilePlans} {budget : PositiveCertificates.SearchBu
     | error e => simp [Bind.bind, Except.bind] at h
     | ok e => exact ⟨e, unitVerdict_safe h⟩
 
+/-- A module's slice lines assembled over the restricted module's store.
+Every member has one response and one obligation list; the complete bundle
+is subsequently judged by `moduleVerdict`. -/
+def moduleLines (m : ModuleRun) (budget : PositiveCertificates.SearchBudget) (lines : Json) : Except String Json := do
+  let qualified := toJson (m.qualified.map fun (name, footprint, onThrow) =>
+    Json.mkObj [("name", toJson name), ("footprint", toJson footprint), ("onThrow", toJson onThrow)])
+  let f ← slicePlans m.ast m.claims qualified m.location budget
+  let lines ← (← lines.getArr?).toList.mapM readLine
+  let mut target := Translate.Target.of f.F.store.heads
+  let mut responses : Std.HashMap Nat (RequestJson.Response Tree × List (ProgramCertificates.Evidence Tree)) := {}
+  for i in f.fr.selected none do
+    let group := f.fr.group i
+    let unit := f.fr.unitId i
+    let matching := lines.filter (·.1 == unit)
+    let [(_, evidence, slice)] := matching | throw s!"expected one evidence line for module unit {unit}"
+    let written ← match slice with
+      | none => pure evidence
+      | some (heads, anchors) => do
+        let (written, next) := Translate.translate heads anchors target (f.anchors group) evidence
+        target := next
+        written
+    let bundle : SourceExtraction.Bundle Tree ← EvidenceWire.decode written
+    if bundle.functions.length != group.length || bundle.obligations.length != group.length then
+      throw "evidence for another set of module units"
+    for (j, response) in group.zip (bundle.functions.zip bundle.obligations) do
+      if responses.contains j then throw "duplicate module unit"
+      responses := responses.insert j response
+  let ordered ← (List.range f.plans.length).mapM fun i => do
+    let some response := responses.get? i | throw s!"no evidence for module member {i}"
+    pure response
+  return EvidenceWire.encode ⟨ordered.map (·.1), ordered.map (·.2)⟩
+
+/-- The module CLI's acceptance operation, translation and whole-document
+checking included. -/
+def moduleLineVerdict (m : ModuleRun) (budget : PositiveCertificates.SearchBudget) (lines : Json) : Except String Unit :=
+  ((moduleLines m budget lines).mapError (s!"module {m.location}: " ++ ·)) >>= moduleVerdict m budget
+
 /-- What the CLI checks of a unit: a group of a file, by the file's document,
 claims and key, the unit's identity, the evidence its line gives and, for a
 slice's line, the slice's heads and anchors (`--check-units`); or a module
@@ -404,13 +654,13 @@ inductive UnitInput where
 
 /-- The exact CLI condition for a unit's accepted verdict: a group's, the
 file's one front (`filePlans`) and its line's verdict there (`lineVerdict`),
-at the document's signatures as the check holds them; a module run's, its
-decoding (`ModuleRun.decode`) and its document's check (`moduleVerdict`). -/
+through `checkedUnit`; a module run's decoding (`ModuleRun.decode`) and
+relocation followed by its document's check (`moduleLineVerdict`). -/
 def UnitInput.Accepted (budget : PositiveCertificates.SearchBudget) : UnitInput → Prop
   | .file ast claims fileKey unit evidence slice =>
-    ∃ f target deps, filePlans ast claims fileKey budget = .ok f ∧
-      (lineVerdict f budget target unit evidence slice).1 = .ok deps
-  | .module run evidence => ∃ m, ModuleRun.decode run = .ok m ∧ moduleVerdict m budget evidence = .ok ()
+    ∃ f deps, filePlans ast claims fileKey budget = .ok f ∧
+      checkedUnit f budget unit evidence slice = .ok deps
+  | .module run evidence => ∃ m, ModuleRun.decode run = .ok m ∧ moduleLineVerdict m budget evidence = .ok ()
 
 /-- What an accepted unit gives: a group's `UnitSafe` over its file's front,
 at the evidence its verdict checked; a module run's `DocumentSafe` of its
@@ -418,8 +668,8 @@ restricted document. -/
 def UnitInput.Safe (budget : PositiveCertificates.SearchBudget) : UnitInput → Prop
   | .file ast claims fileKey unit _ _ =>
     ∃ f e, filePlans ast claims fileKey budget = .ok f ∧ UnitSafe f budget unit e
-  | .module run evidence => ∃ m, ModuleRun.decode run = .ok m ∧
-    DocumentSafe m.ast m.claims m.location evidence budget m.qualified
+  | .module run _ => ∃ m e, ModuleRun.decode run = .ok m ∧
+    DocumentSafe m.ast m.claims m.location e budget m.qualified
 
 /-- **The acceptance theorem.** A unit the CLI accepts (`UnitInput.Accepted`)
 is safe (`UnitInput.Safe`): a group of a file, its certified requests safe
@@ -431,15 +681,20 @@ theorem checkUnitJson_safe {budget : PositiveCertificates.SearchBudget} {i : Uni
     (h : i.Accepted budget) : i.Safe budget := by
   cases i with
   | file ast claims fileKey unit evidence slice =>
-    obtain ⟨f, _, _, hf, hv⟩ := h
+    obtain ⟨f, _, hf, hv⟩ := h
     obtain ⟨e, he⟩ := lineVerdict_safe hv
     exact ⟨f, e, hf, he⟩
   | module run evidence =>
     obtain ⟨m, hm, hv⟩ := h
-    refine ⟨m, hm, ?_⟩
-    unfold moduleVerdict at hv
-    cases hd : checkDocument m.ast m.claims m.location evidence budget m.qualified with
-    | error err => simp [hd, Except.mapError] at hv
-    | ok u => exact checkDocument_safe hd
+    unfold moduleLineVerdict at hv
+    cases he : (moduleLines m budget evidence).mapError (s!"module {m.location}: " ++ ·) with
+    | error err => simp [he, Bind.bind, Except.bind] at hv
+    | ok e =>
+      simp only [he, Bind.bind, Except.bind] at hv
+      refine ⟨m, e, hm, ?_⟩
+      unfold moduleVerdict at hv
+      cases hd : checkDocument m.ast m.claims m.location e budget m.qualified with
+      | error err => simp [hd, Except.mapError] at hv
+      | ok u => exact checkDocument_safe hd
 
 end Verification.SourceClaimJson

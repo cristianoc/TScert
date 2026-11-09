@@ -237,74 +237,6 @@ def checkDocument (ast claims : Json) (fileKey : String) (evidence : Json)
   let (T, plans) ← extractPlans ast claims fileKey budget qualified
   checkPlans T plans evidence
 
-/-- Search and check supplied frozen plans. This returns evidence only; the
-ordinary acceptance path independently extracts and certifies its source. -/
-def produceFrozenPlans (F : EquationStore.Frozen)
-    (frozen : List (FunctionPlan (EquationStore.Checked F.equations F.primitive)
-      (EquationStore.CheckedLabel F.equations F.primitive))) (fuel : Nat) : Except String Json := do
-  let rs := FunctionPlan.requests frozen
-  -- One graph and one image check for the document's search: every request
-  -- holds the frozen store (`SourceRequest.over`), whose graph is the
-  -- equations' (`Checked.graph_eq`) and whose image check reads only the
-  -- equations, its variances and its budget (`Checked.images_eq`).
-  let G : NormalGraph (EquationStore.CheckedLabel F.equations F.primitive) := StoreView.graph F.store
-  let I : PositiveCertificates.InstanceImageCheck G := StoreView.images F.store
-  -- The answered requests of the document's graph and image check, threaded
-  -- through every search in them; a qualified body's search, in its own
-  -- image check, starts its own.
-  let mut answers : CertificateProducer.Answered G := {}
-  let mut proofLists := #[]
-  -- Each request's read summaries, a table of its own scope: its
-  -- obligations', then its nodes' and codes'.
-  let mut scopes := #[]
-  -- Each request's search vocabulary, read by its three searches.
-  let vocabularies := rs.map (·.searchLabels)
-  for (r, labels) in rs.zip vocabularies do
-    let (e, next) ← ExpressionClaims.produceUsing G I labels (StoreView.valid r.types)
-      (StoreView.projection r.types) fuel r.obligations { answers with summaries := #[], summaryAnswers := {} }
-    answers := next
-    proofLists := proofLists.push e
-    scopes := scopes.push (next.summaries, next.summaryAnswers)
-  let mut responses := #[]
-  for (((r, labels), proofs), (summaries, summaryAnswers)) in
-      ((rs.zip vocabularies).zip proofLists.toList).zip scopes.toList do
-    let (rendered, next) := ExpressionClaims.renderKnownUsing G I labels (StoreView.valid r.types)
-      r.nodePlans { answers with summaries, summaryAnswers }
-    answers := next
-    let known := proofs ++ rendered
-    -- A qualified body's checker is stated over the request's own image
-    -- check: its search keeps that check, and the request's summaries.
-    if r.qualification.isNone then
-      let (c, next) ← RequestJson.produceResponseUsing G I (HeapExpressionRules.Checker.ordinary G I) r.toRequest
-        fuel [] known r.sourceMap (some labels) r.assertions r.cuts r.codeHints r.checker r.aliases answers
-        (searched := true) (recheck := some (HeapExpressionRules.Checker.ordinary G))
-      answers := next
-      responses := responses.push c
-    else
-      let (c, _) ← RequestJson.produceResponseUsing (RequestJson.graph r.toRequest) (StoreView.images r.types)
-        r.checker r.toRequest fuel [] known r.sourceMap (some labels) r.assertions r.cuts
-        r.codeHints r.checker r.aliases { summaries := next.summaries, summaryAnswers := next.summaryAnswers }
-        (searched := true)
-      responses := responses.push c
-  let es := proofLists.toList
-  let cs := responses.toList
-  for (plan, c) in frozen.zip cs do
-    let .graph name namePos r := plan
-    if let some refusal := footprintRefusal name namePos r c then throw refusal
-  let evidence := EvidenceWire.encode (Bundle.mk cs es)
-  let b : Bundle (EquationStore.CheckedLabel F.equations F.primitive) ← EvidenceWire.decode evidence
-  let checked := checkRequestsResult rs b
-  if !checked.accepted then
-    throw (validationFailure rs checked "source evidence does not justify the extracted graph requests")
-  return evidence
-
-def produceDocument (ast claims : Json) (fileKey : String) (fuel : Nat)
-    (budget : PositiveCertificates.SearchBudget := {})
-    (qualified : List (String × Footprints.Closed × Bool) := []) : Except String Json := do
-  let (T, plans) ← extractPlans ast claims fileKey budget qualified
-  let ⟨F, frozen⟩ ← freezePlans T plans
-  produceFrozenPlans F frozen fuel
-
 private def codeJson {ι : Type} [ToJson ι] (c : CodeEntry ι) : Json :=
   Json.mkObj [("arity", toJson c.arity), ("start", toJson c.start),
     ("program", toJson ((c.exprs.zip c.conts).map fun (e, k, h) => (⟨e, k, h⟩ : Node)))]
@@ -612,14 +544,6 @@ def FilePlans.produceGroup (f : FilePlans) (fuel : Nat) (group : List Nat) : Jso
     let checked := checkRequestsResult (CertifiedPlan.requests certified) b
     if !checked.accepted then throw (requestsRefusal certified b checked)
   return (evidence, match refusal with | .ok () => none | .error reason => some reason)
-
-/-- Search evidence for a module run: its document's evidence, or none with
-the refusal. -/
-def produceModule (m : ModuleRun) (fuel : Nat) (budget : PositiveCertificates.SearchBudget) :
-    Json × Option String :=
-  match produceDocument m.ast m.claims m.location fuel budget m.qualified with
-  | .ok e => (e, none)
-  | .error reason => (Json.null, some (s!"module {m.location}: " ++ reason))
 
 /-- A module run on the wire: its location, its restricted document and
 claims, and its own qualified reads with their footprints and on-throw

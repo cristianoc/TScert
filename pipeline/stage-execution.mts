@@ -647,7 +647,6 @@ export const producerProtocol: Protocol = { refusal: { status: 2, prefix: "unsup
  * `… --produce-unit <slice> <slice-claims> <qualified> <evidence-out> <depth> [<names>]`,
  * `… --check-units <fragment> <claims> <file-key> <evidence> [<names>]`,
  * `… --module-runs <fragment> <claims>`,
- * `… --produce-module <module-run> <evidence-out> <depth>`,
  * `… --check-module <module-run> <evidence>`. */
 export function verifierCall(program: string, args: readonly string[],
     environment: Readonly<Record<string, string>> = {}): ProcessCall {
@@ -668,9 +667,6 @@ export function verifierCall(program: string, args: readonly string[],
       { text: rest[2] }, { input: "evidence.json", path: rest[3] }, ...rest.slice(4).map((text) => ({ text }))]);
   if (mode === "--module-runs" && rest.length === 2)
     return call("plan", [{ input: "fragment.json", path: rest[0] }, { input: "claims.json", path: rest[1] }]);
-  if (mode === "--produce-module" && rest.length === 3)
-    return call("module-search", [{ input: "module-run.json", path: rest[0] }, { output: "evidence.json", path: rest[1] },
-      { text: rest[2] }]);
   if (mode === "--check-module" && rest.length === 2)
     return call("module-check", [{ input: "module-run.json", path: rest[0] }, { input: "evidence.json", path: rest[1] }]);
   throw Error(`not a verifier stage: ${args.join(" ")}`);
