@@ -309,6 +309,39 @@ theorem Closed.HoldsOn.weaken {c : Closed} {P Q : Nat → Prop} {h h' : Heap} (h
     (hp : c.HoldsOn P h h') : c.HoldsOn Q h h' :=
   ⟨hp.1, fun l v hq hv => hp.2 l v (hpq l hq) hv⟩
 
+/-- A closed footprint beside one region at `any` is the closed footprint on
+every location outside that region. -/
+theorem Closed.post_extra_any {c : Closed} {R : Region} {ρ : Env} {h h' : Heap} :
+    Post (c.fp ++ [(R, .any)]) ρ h h' ↔ c.HoldsOn (fun l => R.mem ρ h l = false) h h' := by
+  constructor
+  · intro hp
+    refine ⟨hp.1, fun l v hR hv => ?_⟩
+    obtain ⟨v', hv', ha⟩ := hp.2 l v hv
+    refine ⟨v', hv', (Closed.allowed_iff (ρ := ρ) hv).mp ?_⟩
+    rcases ha with h | ⟨e, he, hm, hh⟩
+    · exact .inl h
+    · rcases List.mem_append.mp he with he | he
+      · exact .inr ⟨e, he, hm, hh⟩
+      · simp only [List.mem_singleton] at he
+        subst he
+        rw [hR] at hm; cases hm
+  · intro hw
+    refine ⟨hw.1, fun l v hv => ?_⟩
+    have hl := (List.getElem?_eq_some_iff.mp hv).1
+    cases hR : R.mem ρ h l
+    · obtain ⟨v', hv', hc⟩ := hw.2 l v hR hv
+      refine ⟨v', hv', ?_⟩
+      rcases (Closed.allowed_iff (ρ := ρ) (v' := v') hv).mpr hc with h | ⟨e, he, hm, hh⟩
+      · exact .inl h
+      · exact .inr ⟨e, List.mem_append_left _ he, hm, hh⟩
+    · have hla : l < h'.length := Nat.lt_of_lt_of_le hl hw.1
+      exact ⟨h'[l], List.getElem?_eq_getElem hla,
+        .inr ⟨(R, .any), List.mem_append_right _ (List.mem_singleton_self _), hR, trivial⟩⟩
+
+theorem Closed.HoldsOn.congr {c : Closed} {P Q : Nat → Prop} {h h' : Heap} (hpq : ∀ l, P l ↔ Q l) :
+    c.HoldsOn P h h' ↔ c.HoldsOn Q h h' :=
+  ⟨fun hp => hp.weaken fun l hq => (hpq l).mpr hq, fun hq => hq.weaken fun l hp => (hpq l).mp hp⟩
+
 theorem Closed.holds_of_on {c : Closed} {h h' : Heap} (hp : c.HoldsOn (fun _ => True) h h') : c.Holds h h' := by
   rw [Closed.holds_iff]
   exact ⟨hp.1, fun l v hv => hp.2 l v trivial hv⟩

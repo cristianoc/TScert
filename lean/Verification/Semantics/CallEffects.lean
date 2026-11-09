@@ -445,6 +445,68 @@ theorem Effect.within_top {e : Effect} {r : Tm} {before after : Heap}
     · exact h.top
     · exact Footprints.Closed.holds_top.mpr (Footprints.Closed.holds_iff.mp h).1
 
+/-- The receiver's entries of a signature's regional frame: with
+`receiverOwn`, its own locations holding a value at `any` (one holding a
+store stays at the footprint's stores, which `ownChange` gives it); else,
+with `receiverStore`, its store's location at `any`. -/
+def Effect.receiverEntries (e : Effect) : Footprints.Footprint :=
+  if e.receiverOwn then [(.inCls (.own 0) .value, .any)]
+  else if e.receiverStore then [(.field 0 arrayStoreKey, .any)] else []
+
+/-- A signature's frame: its closed footprint's two classes and its
+receiver's entries, read at the call's positions (`callEnv`). -/
+def Effect.frame (e : Effect) : Footprints.Footprint := e.footprint.fp ++ e.receiverEntries
+
+/-- **The translation.** What a signature's footprint states of a call is the
+regional footprint of its frame at the call's positions. -/
+theorem Effect.within_iff_post (e : Effect) (r : Tm) (args : List Tm) (before after : Heap) :
+    e.within r before after ↔ Footprints.Post e.frame (callEnv r args) before after := by
+  have h0 : callEnv r args 0 = r := rfl
+  unfold Effect.within Effect.frame Effect.receiverEntries
+  by_cases ho : e.receiverOwn = true
+  · simp only [ho, if_true]
+    rw [Footprints.Closed.post_extra_any]
+    have hmem : ∀ l, (Footprints.Region.inCls (.own 0) .value).mem (callEnv r args) before l =
+        (((Footprints.ownOf r).contains l) && match before[l]? with
+          | some v => Footprints.Cls.value.has v
+          | none => false) := fun l => rfl
+    constructor
+    · rintro ⟨hout, hin⟩
+      refine ⟨hout.1, fun l v hl hv => ?_⟩
+      replace hl : (Footprints.Region.inCls (.own 0) .value).mem (callEnv r args) before l = false := hl
+      rw [hmem l, hv] at hl
+      by_cases hown : l ∈ Footprints.ownOf r
+      · obtain ⟨v', hv', hc⟩ := hin.2 l v hown hv
+        have ha : Footprints.isArr v = true := by
+          simpa [List.contains_iff_mem, hown, Footprints.Cls.has] using hl
+        refine ⟨v', hv', ?_⟩
+        simpa [Footprints.Closed.at, ha, Effect.ownChange] using hc
+      · exact hout.2 l v hown hv
+    · intro hw
+      refine ⟨hw.weaken fun l hl => ?_, hw.1, fun l v hown hv => ?_⟩
+      · show (Footprints.Region.inCls (.own 0) .value).mem (callEnv r args) before l = false
+        rw [hmem l]
+        simp [hl]
+      by_cases ha : Footprints.isArr v = true
+      · have hl : (Footprints.Region.inCls (.own 0) .value).mem (callEnv r args) before l = false := by
+          rw [hmem l, hv]; simp [Footprints.Cls.has, ha]
+        obtain ⟨v', hv', hc⟩ := hw.2 l v hl hv
+        refine ⟨v', hv', ?_⟩
+        simpa [Footprints.Closed.at, ha, Effect.ownChange] using hc
+      · have hl := (List.getElem?_eq_some_iff.mp hv).1
+        have hla : l < after.length := Nat.lt_of_lt_of_le hl hw.1
+        refine ⟨after[l], List.getElem?_eq_getElem hla, ?_⟩
+        simp [Footprints.Closed.at, ha, Effect.ownChange, Footprints.Change.Holds]
+  · simp only [ho, Bool.false_eq_true, if_false]
+    by_cases hs : e.receiverStore = true
+    · simp only [hs, if_true]
+      rw [Footprints.Closed.post_extra_any]
+      apply Footprints.Closed.HoldsOn.congr
+      intro l
+      simp [Footprints.Region.mem, h0, Footprints.storeOf]
+    · simp only [hs, Bool.false_eq_true, if_false, List.append_nil]
+      exact Footprints.Closed.holds_iff.trans Footprints.Closed.post_iff.symm
+
 @[simp] theorem Effect.post_ofFootprint (c : Footprints.Closed) (r : Tm) (args : List Tm) (before after : Heap) (v : Val) :
     (Effect.ofFootprint c).post r args before after v ↔ c.Holds before after := by
   simp [Effect.post, Effect.within, Effect.ofFootprint]
