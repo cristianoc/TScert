@@ -4005,9 +4005,12 @@ one map from what may change to how much: `values: c` for the locations
 holding a value and `stores: c` for those holding an array store, `c` one
 of `"keep"`, `"init"`, `"scalar"`, `"grow"`, `"any"`, an omitted class key
 `"keep"`; on a value `grow` is `scalar`, and on a store `init` and `scalar`
-are `keep`. `onThrow: true` makes the frame hold on a throw too. A quoted
-location key (`"x.f"`, `"x[*]"`, `"x.*"`, `"cell(b)"`) is refused: the
-regions it names are proved in the model
+are `keep`. `onThrow: true` makes the frame hold on a throw too. A store
+region `"x[*]": "any"`, `x` a parameter of a function declaration (`this`
+its `this` parameter), excepts from the frame the store `x` holds at the
+call, which may change arbitrarily (see **Store regions** below). Any other
+quoted location key (`"x.f"`, `"x.*"`, `"cell(b)"`, `"x.f[*]"`) is
+refused: the regions it names are proved in the model
 ([footprints](FOOTPRINTS.md#changes-and-footprints)) and are not read from
 the source. A result `Fresh<T>`, `T` an array type, states that a normal
 return's value holds an array store the call allocated, at or above the
@@ -4108,6 +4111,44 @@ checked at the field's contract (`invalid-method-field-effect-write`), a
 value passed where a stated member is expected by subtyping
 (`invalid-method-effect-lookalike`), an input by `EnvOk`.
 
+**Store regions.** A function declaration's statement
+`Modifies<{ values: v; stores: s; "x₁[*]": "any"; …; "xₖ[*]": "any" }, T>`
+states that a normal return, and a throw where it writes `onThrow`, leaves
+every location of the entry heap but the stores of the values at the
+parameters' call positions $`p_1,\ldots,p_k`$ within $`\{v,s\}`$ of its
+entry contents:
+
+```math
+\mathrm{Post}_{\epsilon}(\rho,h_0,h')\iff
+\forall\ell<|h_0|.\ (\forall i.\ \mathrm{store}(\rho\,p_i)\neq\ell)\Rightarrow\{v,s\}\text{ allows }h_0[\ell]\rightsquigarrow h'[\ell]
+```
+
+with $`\rho`$ the call's values by position (`CallEffects.StoresApartWithin`,
+the effect's `regional` promise). Its callers read the footprint
+$`\{v,\mathsf{any}\}`$ beside that promise. A root is a parameter without a
+default and no rest parameter, whose value in the body is the call's;
+refused: a region at another change (`invalid-modifies-region-change`), a
+root with a default (`invalid-modifies-region-root`), a region on any
+signature but a function declaration's (`invalid-modifies-region-callback`),
+and a region beside a fresh result. The unit is certified by the regional
+graph check, whatever its claim: each node's step stays within $`\{v,s\}`$
+off the regions' stores (a closed node, a copy of a slot holding a region's
+value, or a call at a signature excepting its receiver's store whose
+receiver holds one), each slot's provenance checked on every edge
+(`ArgumentRegionGraph.checkNodes`, its table inferred by `regionTable`):
+
+```math
+\frac{\forall\ell.\ \vdash\mathrm{node}_\ell\ \mathrm{within}_{\{v,s\}}\ \mathrm{off}\ \mathrm{store}(x_1),\ldots,\mathrm{store}(x_k)\qquad \mathrm{completion}(d)=\mathsf{sync}\qquad \neg\,\epsilon.\mathsf{fresh}}
+     {\vdash d:\Gamma\to B\;!\;\epsilon}\ \textsf{stated-region}
+```
+
+(`SourceExtraction.regionalResult`; proved: `checkRequests_regional_at`, a
+conjunct of `RequestsSafe`; `stated-argument-store`;
+`invalid-stated-store-region`, run under Node; the forged control of
+`pipeline/test.mts` moving a region to another position). A caller keeps no
+fact across the call that the class footprint $`\{v,\mathsf{any}\}`$ does
+not keep: the promise beside it is read by no rule of a caller's knowledge.
+
 **Over the whole domain.** A statement on `m(this: C, …)` holds for every
 receiver of type `C`, so every call in `m`'s body is at a contract stating
 an effect within it; a call of an unstated member of `C`, which a value of
@@ -4128,7 +4169,8 @@ its definitions' statements relative to the statements of what it imports.
 body shows where that is within the statement, and the statement otherwise,
 which Lean then checks node by node; a stated declaration is assumed at most
 at its statement while the module's footprints are inferred
-(`within_statement` in `ocaml-producer/source.ml`). Callees' statements
+(`within_statement` in `ocaml-producer/source.ml`). A statement with store
+regions bounds no claim: OCaml proposes what the body shows (`stated_of`). Callees' statements
 reach it through their types, as natives' footprints do.
 
 ### Exceptional footprints

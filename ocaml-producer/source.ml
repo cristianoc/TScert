@@ -867,9 +867,12 @@ let statement_calls : (Json.t, unit) Hashtbl.t = Hashtbl.create 16
 (* The invariant a loop states (ARITHMETIC.md, "Loop invariants"), by
    the loop's position: the bindings its positions name, and its index facts. *)
 let loop_invariants : (Json.t, string list * index_fact list) Hashtbl.t = Hashtbl.create 16
-(* A definition's statement as the Fragment writes it, or none. *)
+(* A definition's statement as the Fragment writes it, or none. A statement
+   with store regions bounds no claim: Lean checks it by the unit's regional
+   check, whatever footprint the claim proposes. *)
 let stated_of j = match field "stated" j with
   | Null -> None
+  | s when Json.list (field "regions" s) <> [] -> None
   | s -> Some (footprint_of (field "footprint" s),Json.boolean (field "onThrow" s))
 (* The claim a stated definition proposes: what its body shows where that is
    within the statement, else the statement, which Lean then checks node by

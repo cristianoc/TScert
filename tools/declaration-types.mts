@@ -116,7 +116,10 @@ export type ElementKinds = readonly ElementKind[];
  * SOURCE-ELABORATION.md, "Stated effects"): a closed footprint, whether
  * it also bounds the heap a throw leaves, and whether a normal return's value
  * holds an array store the call allocated (`Fresh<T>`). */
-export type StatedEffect = { footprint: ClosedFootprint; onThrow: boolean; fresh: boolean };
+/** A written statement's frame: its closed footprint, off the stores of the
+ * values at `regions` (call positions, `0` the receiver), which may change
+ * arbitrarily; whether it holds on a throw; whether the result is fresh. */
+export type StatedEffect = { footprint: ClosedFootprint; onThrow: boolean; fresh: boolean; regions: number[] };
 /** One type alias or interface: its module, its name and its span there. The
  * module identities are disjoint by construction: the client's absolute
  * path; `typescript/lib/<file>` for a file the compiler's library resolution

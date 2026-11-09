@@ -3019,7 +3019,7 @@ other step is `base`'s. -/
       have hs := base.sound hrun hcodes hsums he hk hw hh
       have hp := PromiseCalls.ensuresCall_sound hens hcodes hsums he hk hw hh
       exact HeapObservations.weaken (fun h' v hq => PromiseCalls.withGrown_holds
-        (PromiseCalls.withEnsures_holds (fun i hi => (ProgramTyping.meaning_value (he.2 i _ (List.getElem?_eq_getElem hi))).1) hq.1.1 hk hq.1.2.1 hq.1.2.2.2.2.2.1 hq.1.2.2.2.2.2.2.1 hq.1.2.2.2.2.2.2.2 hq.2)
+        (PromiseCalls.withEnsures_holds (fun i hi => (ProgramTyping.meaning_value (he.2 i _ (List.getElem?_eq_getElem hi))).1) hq.1.1 hk hq.1.2.1 hq.1.2.2.2.2.2.1 hq.1.2.2.2.2.2.2.1 hq.1.2.2.2.2.2.2.2.1 hq.2)
         (fun hgr => IndexWrites.grownRegions_holds he hh hk (hq.1.2.2.2.2.2.2.1 hgr).1 (hq.1.2.2.2.2.2.2.1 hgr).2))
         (HeapExpressionRules.viewFields_frame he hh
           (HeapObservations.cross_upto (n + 1) (fun _ _ _ _ _ _ _ _ hb _ => hb) W W h _ hh hh hs hp))

@@ -124,14 +124,18 @@ receiver's store, whether the footprint also holds on a throw, whether it
 excepts its receiver's own locations, and whether its result is an object
 every own location of which is fresh, its precondition on the receiver's
 elements and its elements promise, its precondition on the call's values
-(`pre`) and the facts a normal return states (`ensures`). -/
+(`pre`) and the facts a normal return states (`ensures`), and, where it
+states one, the closed bound off its positions' stores (`regional`). -/
 instance : ToJson Effect := ⟨fun e => Json.mkObj [("footprint", toJson e.footprint),
   ("promise", match e.promise with | some p => toJson p | none => Json.null),
   ("fresh", toJson e.fresh), ("receiverStore", toJson e.receiverStore), ("onThrow", toJson e.onThrow),
   ("receiverOwn", toJson e.receiverOwn), ("freshObject", toJson e.freshObject),
   ("requires", predJson e.requires), ("elements", predJson e.elements), ("pre", toJson e.pre),
   ("ensures", toJson e.ensures), ("receiverGrows", toJson e.receiverGrows),
-  ("elementWrite", match e.elementWrite with | some w => toJson (elementWriteName w) | none => Json.null)]⟩
+  ("elementWrite", match e.elementWrite with | some w => toJson (elementWriteName w) | none => Json.null)] |>.mergeObj
+  (match e.regional with
+    | some (c, ps) => Json.mkObj [("regional", Json.mkObj [("footprint", toJson c), ("positions", toJson ps)])]
+    | none => Json.mkObj [])⟩
 
 instance : FromJson Effect := ⟨fun j => do
   let footprint ← j.getObjValAs? Footprints.Closed "footprint"
@@ -144,10 +148,13 @@ instance : FromJson Effect := ⟨fun j => do
     ← fromJson? (← j.getObjVal? "pre"), ← fromJson? (← j.getObjVal? "ensures"),
     ← j.getObjValAs? Bool "receiverGrows", ← match ← j.getObjVal? "elementWrite" with
       | .null => pure none
-      | w => do some <$> elementWriteOf (← w.getStr?)⟩
+      | w => do some <$> elementWriteOf (← w.getStr?), ← match j.getObjVal? "regional" with
+      | .ok r => do pure (some (← r.getObjValAs? Footprints.Closed "footprint", ← r.getObjValAs? (List Nat) "positions"))
+      | .error _ => pure none⟩
   if toJson e != j then
     throw ("an effect has exactly the fields footprint, promise, fresh, receiverStore, onThrow, receiverOwn, " ++
-      "freshObject, requires, elements, a predicate its kinds in order, pre, ensures, receiverGrows and elementWrite")
+      "freshObject, requires, elements, a predicate its kinds in order, pre, ensures, receiverGrows and elementWrite, " ++
+      "and regional where it excepts its positions' stores")
   pure e⟩
 
 end Verification.EffectJson

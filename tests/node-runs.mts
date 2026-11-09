@@ -2786,6 +2786,7 @@ for (const [file, call] of [
   ["invalid-method-effect-rest-default", "(() => { const xs = [1]; bad(xs); return xs.length ? \"kept\" : undefined; })()"],
   ["invalid-method-effect-callback-argument", "1 in wrong([1, 2]) ? \"dense\" : undefined"],
   ["invalid-stated-fresh-input", "alias([1])"],
+  ["invalid-stated-store-region", "(() => { const ys = [2]; drop([1], ys); return ys[0]; })()"],
   ["invalid-compiler-api-visitor-effect",
     "1 in wrong([{ forEachChild: (v) => v() }, { forEachChild: (v) => v() }]) ? \"dense\" : undefined"],
 ]) assert.equal(runExample(file, call), undefined, `${file}: the statement is not met`);
