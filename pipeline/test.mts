@@ -920,7 +920,7 @@ control(async (): Promise<void> => {
   const ast: Ast = readFragmentFile(join(artifacts, "fragment.json"));
   const fn = must(ast.functions.find(f => f.name === "same"), "same");
   assert.equal(fn.stated, null, "same states nothing");
-  fn.stated = { footprint: { value: "any", store: "any" }, onThrow: false, fresh: true };
+  fn.stated = { footprint: { value: "any", store: "any" }, onThrow: false, fresh: true, regions: [] };
   const document = join(artifacts, "forged-fresh-fragment.json");
   writeFileSync(document, JSON.stringify(ast));
   const refusal = /source effect refusal at \[\d+,\d+\): the footprint claimed for 'same' is not established by its body/;
@@ -929,6 +929,37 @@ control(async (): Promise<void> => {
   assert.match(searched.stdout + searched.stderr, refusal);
   invoke(join(artifacts, "claims.json"), documentEvidence(artifacts), artifacts, refusal, document);
   process.stdout.write("forged fresh result: an identity function's statement forged to promise a fresh result, refused at its unit in search and in checking\n");
+});
+
+control(async (): Promise<void> => {
+  // A store region rooted at another position, forged into the parser's
+  // document (`"xs[*]": "any"`, `SourceRequest.regional`): `trim`'s region
+  // moved from `xs` to `n`, so its pop changes a store the statement keeps,
+  // refused at its unit's regional check in search and in checking; and
+  // `shrink`'s moved to the receiver, which it declares none of, refused at
+  // its request.
+  const artifacts = run("stated-argument-store");
+  const ast: Ast = readFragmentFile(join(artifacts, "fragment.json"));
+  const trim = must(ast.functions.find(f => f.name === "trim"), "trim");
+  assert.deepEqual(trim.stated?.regions, [2], "trim states xs's region");
+  trim.stated = { footprint: { value: "any", store: "keep" }, onThrow: false, fresh: false, regions: [1] };
+  const document = join(artifacts, "forged-region-fragment.json");
+  writeFileSync(document, JSON.stringify(ast));
+  const refusal = /source effect refusal at \[\d+,\d+\): the frame stated for 'trim' is not established by its body/;
+  const searched = produceWith(artifacts, join(artifacts, "claims.json"), "forged-region", document);
+  assert.equal(searched.status, 1, `${searched.stdout}${searched.stderr}`);
+  assert.match(searched.stdout + searched.stderr, refusal);
+  invoke(join(artifacts, "claims.json"), documentEvidence(artifacts), artifacts, refusal, document);
+  const receiver: Ast = readFragmentFile(join(artifacts, "fragment.json"));
+  const shrink = must(receiver.functions.find(f => f.name === "shrink"), "shrink");
+  shrink.stated = { footprint: { value: "any", store: "keep" }, onThrow: false, fresh: false, regions: [0] };
+  const receiverDocument = join(artifacts, "forged-receiver-region-fragment.json");
+  writeFileSync(receiverDocument, JSON.stringify(receiver));
+  const absent = /a stated store region names the receiver, which the function does not declare/;
+  const unsearched = produceWith(artifacts, join(artifacts, "claims.json"), "forged-receiver-region", receiverDocument);
+  assert.equal(unsearched.status, 1, `${unsearched.stdout}${unsearched.stderr}`);
+  assert.match(unsearched.stdout + unsearched.stderr, absent);
+  process.stdout.write("forged store regions: a region moved to another parameter, refused at the unit's regional check in search and in checking, and one at an undeclared receiver, refused at the request\n");
 });
 
 control(async (): Promise<void> => {
@@ -6345,7 +6376,7 @@ control(async (): Promise<void> => {
   assert.ok(unstated > lambda, "its statement");
   const fragmentPath = join(artifacts, "forged-generic-stated-fragment.json");
   writeFileSync(fragmentPath, fragment.slice(0, unstated) +
-    '"stated":{"footprint":{"value":"keep","store":"keep"},"onThrow":false,"fresh":false}' + fragment.slice(unstated + '"stated":null'.length));
+    '"stated":{"footprint":{"value":"keep","store":"keep"},"onThrow":false,"fresh":false,"regions":[]}' + fragment.slice(unstated + '"stated":null'.length));
   const produce = produceWith(artifacts, join(artifacts, "claims.json"), "forged-generic-stated", fragmentPath);
   assert.equal(produce.status, 1, produce.stdout + produce.stderr);
   assert.match(produce.stdout + produce.stderr, /a generic closure states no effect/);
@@ -6361,7 +6392,7 @@ control(async (): Promise<void> => {
   // construction.
   const artifacts = run("invalid-method-effect-construction");
   const fragment = readFileSync(join(artifacts, "fragment.json"), "utf8");
-  const statement = '"stated":{"footprint":{"value":"keep","store":"keep"},"onThrow":false,"fresh":false}';
+  const statement = '"stated":{"footprint":{"value":"keep","store":"keep"},"onThrow":false,"fresh":false,"regions":[]}';
   assert.equal(fragment.split(statement).length, 2, "bump's statement");
   const fragmentPath = join(artifacts, "forged-unstated-fragment.json");
   writeFileSync(fragmentPath, fragment.replace(statement, '"stated":null'));

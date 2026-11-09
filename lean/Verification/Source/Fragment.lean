@@ -821,19 +821,31 @@ def decodeCompletion (j : Json) : Except String Bool := do
   | k => throw s!"a definition completes `sync` or `async`, not {k}"
 
 /-- The effect a definition's result annotation states, `{footprint,
-onThrow}`, or none: a closed footprint below `top` and whether it holds on a
-throw too, with no promise, no fresh result and no receiver-store exception.
-A statement of `top` states nothing, and is refused. -/
+onThrow, fresh, regions}`, or none: a closed footprint and whether it holds
+on a throw too, whether the result is fresh, and the call positions whose
+values' stores the frame excepts (`"x[*]": "any"`). Without regions the
+effect is the footprint with no promise and no receiver-store exception; a
+statement of `top` without a fresh result states nothing, and is refused.
+With regions the footprint is the bound off those stores (`regional`), its
+callers' footprint letting stores change arbitrarily; a fresh result beside
+them, and a bound of `top`, are refused. -/
 def decodeStated : Json → Except String (Option CallEffects.Effect)
   | .null => pure none
   | j => do
-    fieldsExactly j ["footprint", "onThrow", "fresh"]
+    fieldsExactly j ["footprint", "onThrow", "fresh", "regions"]
     let footprint : Footprints.Closed ← fromJson? (← jField j "footprint")
     let onThrow ← (← jField j "onThrow").getBool?
     let fresh ← (← jField j "fresh").getBool?
-    if footprint == .top && !fresh then
-      throw "a stated effect states a footprint below `top` or a fresh result"
-    pure (some { CallEffects.Effect.ofFootprint footprint with onThrow, fresh })
+    let regions : List Nat ← fromJson? (← jField j "regions")
+    if regions.isEmpty then
+      if footprint == .top && !fresh then
+        throw "a stated effect states a footprint below `top` or a fresh result"
+      pure (some { CallEffects.Effect.ofFootprint footprint with onThrow, fresh })
+    else
+      if footprint == .top || fresh || !regions.Nodup then
+        throw "a stated effect with store regions states a bound below `top` off them, distinct positions and no fresh result"
+      let base : CallEffects.Effect := CallEffects.Effect.ofFootprint ⟨footprint.value, .any⟩
+      pure (some { base with onThrow := onThrow, regional := some (footprint, regions) })
 
 /-- A guard's promise as the Fragment states it, or none. -/
 def decodeGuard : Json → Except String (Option Guard)

@@ -305,6 +305,11 @@ did not mention grow it, and the request carries the result. -/
     else if receiverInput then some i else if i = 1 then none else some (i - 1)
   let some ensures := f.ensures.mapM (·.mapM ensuresSlot)
     | throw "a result fact names the receiver, which the function does not declare"
+  -- The stores a stated frame excepts, each call position at the input slot
+  -- that holds it on entry.
+  let regionSlot : Nat → Option Nat := fun p => if receiverInput then some p else if p = 0 then none else some (p - 1)
+  let some regional := (f.stated.bind (·.regional)).mapM fun (c, ps) => (ps.mapM regionSlot).map (c, ·)
+    | throw "a stated store region names the receiver, which the function does not declare"
   return {
     toRequest := ⟨built.types, built.program, built.claims, R, entry.label, inputs, built.codes, promise,
       entrySeparation, entryIndices⟩
@@ -318,6 +323,7 @@ did not mention grow it, and the request carries the result. -/
     footprint := fc.footprint
     onThrow := fc.onThrow
     fresh := f.stated.any (·.fresh)
+    regional := regional
     ensures := ensures
     async := f.async
     stated := f.stated }

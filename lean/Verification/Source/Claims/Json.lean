@@ -84,6 +84,18 @@ def footprintRefusal {σ ι : Type} [Labels ι] [StoreView σ ι] (name : String
     if unit.exhaustion.isSome then none else
     some (refuse s!"'{name}'" (((firstBad r.footprint r.fresh r.onThrow r.start r.program c.certificate r.sourceMap).map (·.pos)).getD namePos))
   else
+  -- A statement with store regions: at the first node the regional check
+  -- refuses (`regionalResult`), else at the declaration.
+  if !(regionalResult r c).accepted then
+    let place := r.regional.bind fun (Φ, ps) =>
+      let regions := ps.map fun p => (⟨p, []⟩ : Footprints.ArgumentStoreRegion)
+      let P := GraphCode.program (r.program.map (·.expression)) (r.program.map fun n => (n.continuation, n.handler))
+      let table := regionTable P c.certificate r.start regions
+      (GraphCode.ArgumentRegionGraph.firstRefusedNode G images c.readSummaries Φ regions table
+        (r.stated.any (·.onThrow)) P c.certificate).bind fun (_, l) => (r.sourceMap[l]?).bind id
+    let pos := (place.map (·.pos)).getD namePos
+    some s!"source effect refusal at [{pos.1},{pos.2}): the frame stated for '{name}' is not established by its body: a step changes a location outside its store regions beyond the statement's bound"
+  else
     (r.toRequest.codes.zip c.codes).zipIdx.findSome? fun ((q, C), i) =>
       let code := GraphCode.effectCheckedResult G images c.readSummaries q.entry C
       if code.accepted || code.exhaustion.isSome then none else
@@ -256,9 +268,11 @@ def lowerJson (ast claims : Json) (fileKey : String) : Except String Json := do
 /-- What requests a bundle justifies give: the check accepts them, each is
 safe, within its footprint where it claims one, returning a fresh array
 where it promises one, returning values meeting
-its postcondition where it states one, and its stated assertions are entailed by
-its certificate, as `checkRequests_safe_at`, `checkRequests_footprint_at`,
-`checkRequests_ensures_at` and `checkRequests_assertions_at` state; each for
+its postcondition where it states one, within its statement's bound off the
+stores its stated regions hold at entry where it states them, and its stated
+assertions are entailed by its certificate, as `checkRequests_safe_at`,
+`checkRequests_footprint_at`, `checkRequests_ensures_at`,
+`checkRequests_regional_at` and `checkRequests_assertions_at` state; each for
 an environment meeting what the request assumes of its inputs, their types,
 their separation and the index facts of its precondition
 (`entryIndices`). -/
@@ -299,6 +313,20 @@ def RequestsSafe (F : EquationStore.Frozen)
             (fun h' v => GraphCode.EnsuresAt r.ensures h' (push v (envOf L d))) n W heap
             (.goto (r.program.map (·.expression)) (r.program.map fun n => (n.continuation, n.handler))
               r.start L d)) ∧
+      (∀ r c, (r,c) ∈ rs.zip b.functions → ∀ Φ ps, r.regional = some (Φ, ps) →
+        ∀ η n W heap (L : List Tm) (d : Tm),
+          EnvOk (reassign F.equations.graph η) r.inputs (envOf L d) n W →
+          HeapSeparation.Holds r.entrySeparation (envOf L d) →
+          HeapKnowledge.IndexHolds r.entryIndices (envOf L d) heap →
+          WorldAdm W → HeapOk n W heap →
+          HeapObservations.SafePostExc (excOf (reassign F.equations.graph η))
+            (ControlFlow.GoalHolds (reassign F.equations.graph η) r.goal (r.goal.argument (envOf L d)))
+            (fun h' _ => Footprints.ArgumentStoreRegionsWithin Φ (ps.map fun p => ⟨p, []⟩) (envOf L d) heap h')
+            (fun h' => r.stated.any (·.onThrow) = true →
+              Footprints.ArgumentStoreRegionsWithin Φ (ps.map fun p => ⟨p, []⟩) (envOf L d) heap h')
+            n W heap
+            (.goto (r.program.map (·.expression)) (r.program.map fun n => (n.continuation, n.handler))
+              r.start L d)) ∧
       (∀ r c, (r,c) ∈ rs.zip b.functions → RequestAssertionsEntailed r c)
 
 theorem requestsSafe_of_check {F : EquationStore.Frozen}
@@ -307,13 +335,15 @@ theorem requestsSafe_of_check {F : EquationStore.Frozen}
     {b : Bundle (EquationStore.CheckedLabel F.equations F.primitive)}
     (hx : (checkRequestsResult rs b).accepted = true) : RequestsSafe F rs b := by
   have hc : checkRequests rs b = true := hx
-  refine ⟨hc, ?_, ?_, ?_, fun r c hm => checkRequests_assertions_at hc hm⟩
+  refine ⟨hc, ?_, ?_, ?_, ?_, fun r c hm => checkRequests_assertions_at hc hm⟩
   · intro r c hm η admitted n W heap ρ he hsep hidx hw hh
     exact checkRequests_safe_at hc hm η admitted n W heap ρ he hw hh hsep hidx
   · intro r c hm heffect η n W heap L d he hsep hidx hw hh hvalues hd
     exact checkRequests_footprint_at hc hm heffect η n W heap L d he hw hh hvalues hd hsep hidx
   · intro r c hm hens η n W heap L d he hsep hidx hw hh
     exact checkRequests_ensures_at hc hm hens η n W heap L d he hw hh hsep hidx
+  · intro r c hm Φ ps hr η n W heap L d he hsep hidx hw hh
+    exact checkRequests_regional_at hc hm hr η n W heap L d he hw hh hsep hidx
 
 /-- What a successful check of extracted plans gives: they cross the
 exhaustive certification boundary, and their requests are safe at the

@@ -115,8 +115,10 @@ keeps its contents but those `P` names, each changed at most as `P` says.
 `P` is a type literal: `values` (`"keep"`, `"init"`, `"scalar"`, `"grow"`
 or `"any"`) bounds changes to locations holding a value, `stores` the same
 for array stores, and `onThrow: true` makes the bound hold on a throw too;
-`{}` states that nothing previously allocated changes. TypeScript reads it
-as `T`; the verifier certifies it from the function's code.
+`{}` states that nothing previously allocated changes. On a function
+declaration, `"x[*]": "any"` excepts the store parameter `x` holds at the
+call, which may change arbitrarily. TypeScript reads it as `T`; the
+verifier certifies it from the function's code.
 [Stated effects](SOURCE-ELABORATION.md#stated-effects).
 
 ```ts
@@ -128,6 +130,10 @@ function evens(n: number): Modifies<{ values: "any"; stores: "grow" }, number[]>
   const out: number[] = [];
   for (let i = 0; i < n; i += 2) out.push(i);
   return out;
+}
+
+function shrink(xs: number[]): Modifies<{ values: "any"; "xs[*]": "any" }, void> {
+  xs.pop();
 }
 ```
 

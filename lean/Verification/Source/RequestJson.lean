@@ -446,15 +446,18 @@ def asyncEffects (async : Bool) (footprint : Footprints.Closed) : Bool :=
 
 /-- A declaration's claim within the effect its result annotation states
 (`Modifies<P, T>`; SOURCE-ELABORATION.md, "Stated effects"): a statement adds a
-guarantee (a footprint below `top`, or a fresh result); the claim's footprint
-is within the statement's, on a throw too where the statement says so, and
-promises a fresh result where the statement does; an async declaration
-states none. Unstated, any claim. -/
+guarantee (a footprint below `top`, a fresh result, or store regions); the
+claim's footprint is within the statement's, on a throw too where the
+statement says so, and promises a fresh result where the statement does; an
+async declaration states none. A statement with store regions is established
+by the unit's regional check (`SourceRequests.regionalResult`), whatever its
+claim. Unstated, any claim. -/
 def statedWithin (async : Bool) (footprint : Footprints.Closed) (onThrow fresh : Bool) :
     Option CallEffects.Effect → Bool
   | none => true
-  | some s => !async && (s.footprint != .top || s.fresh) && footprint.le s.footprint &&
-      (!s.onThrow || onThrow) && (!s.fresh || fresh)
+  | some s => !async && (s.footprint != .top || s.fresh || s.regional.isSome) &&
+      (s.regional.isSome || footprint.le s.footprint) && (s.regional.isSome || !s.onThrow || onThrow) &&
+      (!s.fresh || fresh)
 
 /-- The request's async code at `top`, then its read summaries, each checked
 once, then its graph code, checked in order against its claims, as a table

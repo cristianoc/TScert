@@ -1538,6 +1538,7 @@ theorem codeChecked_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instan
   simp only [Bool.and_eq_true, Bool.not_eq_true'] at heff
   obtain ⟨⟨hfo, hel⟩, heff⟩ := heff
   have hens := CallEffects.Effect.below_ensures hbelow
+  have hnrg := CallEffects.Effect.below_regional hbelow
   have hnen : ∀ F, F ∈ c.row.effect.ensures → False := fun F hF => by rw [hens] at hF; cases hF
   have hnel : ∀ R, c.row.effect.elements = some R → False := by
     intro R hR
@@ -1553,7 +1554,8 @@ theorem codeChecked_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instan
     refine HeapObservations.weaken (fun h' v hp => ?_) (Footprints.Closed.top_safe hsafe)
     refine ⟨CallEffects.Effect.within_of_holds ?_, fun hf => (by rw [htop.2.1] at hf; cases hf),
       fun hf => (by rw [hfo] at hf; cases hf), fun R hR => (hnel R hR).elim, fun F hF => (hnen F hF).elim,
-      fun hg => (hngr hg).elim, fun w hw => (hnew w hw).elim⟩
+      fun hg => (hngr hg).elim, fun w hw => (hnew w hw).elim,
+      fun _ _ hrc => (by rw [hnrg] at hrc; cases hrc)⟩
     rw [htop.1]
     exact hp
   · simp only [htop, decide_false, Bool.false_or, Bool.and_eq_true, Bool.or_eq_true] at heff
@@ -1566,7 +1568,8 @@ theorem codeChecked_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instan
           (Footprints.Closed.Holds.mono (Footprints.Closed.empty_le _)
             ((CallEffects.Effect.post_ofFootprint _ .undef [] _ _ _).mp hq)), fun hf => (by rw [hfresh] at hf; cases hf),
           fun hf => (by rw [hfo] at hf; cases hf), fun R hR => (hnel R hR).elim, fun F hF => (hnen F hF).elim,
-      fun hg => (hngr hg).elim, fun w hw => (hnew w hw).elim⟩)
+      fun hg => (hngr hg).elim, fun w hw => (hnew w hw).elim,
+      fun _ _ hrc => (by rw [hnrg] at hrc; cases hrc)⟩)
         (fun h' hq _ => CallEffects.Effect.within_of_holds
           (Footprints.Closed.Holds.mono (Footprints.Closed.empty_le _) hq))
         (CallEffects.pure_safe_exc (r := .undef) (args := []) (.goto hp hvalues rfl) hsafe)
@@ -1583,7 +1586,8 @@ theorem codeChecked_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instan
       exact HeapObservations.SafePostExc.weaken
         (fun h' v hq => ⟨CallEffects.Effect.within_of_holds hq.1, hq.2, fun hf => (by rw [hfo] at hf; cases hf),
           fun R hR => (hnel R hR).elim, fun F hF => (hnen F hF).elim,
-      fun hg => (hngr hg).elim, fun w hw => (hnew w hw).elim⟩)
+      fun hg => (hngr hg).elim, fun w hw => (hnew w hw).elim,
+      fun _ _ hrc => (by rw [hnrg] at hrc; cases hrc)⟩)
         (fun h' hq ho => CallEffects.Effect.within_of_holds (hq ho)) hb
 
 /-- Check codes in order, each against the table of those before it. -/
