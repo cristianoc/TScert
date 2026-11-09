@@ -1,0 +1,636 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Commit Records</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Code+Pro:wght@400;600&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=STIX+Two+Text:ital,wght@0,400;0,600;1,400&display=swap">
+<style>
+:root { --bg:#fbfcfd; --surface:#ffffff; --ink:#0b1a2e; --muted:#56627a; --rule:#d5dce6; --accent:#8a6410; --code-bg:#eef2f7; --math-bg:#f2f4f8; --ok:#2f6b47; --ok-bg:#e2efe4; --principled:#a0521a; --principled-bg:#f7e6d6; --gap:#6b6f78; --gap-bg:#ecebe6; --neutral:#2c4f7c; --neutral-bg:#e6ebf2; --trust:#7c2f4a; --trust-bg:#f2e1e7; --neg:#9b3524; --neg-bg:#f5e1da; --run:#7a5414; --run-bg:#f3e7cc; --brand-ink:#0b1a2e; --brand-gold:#b8840f;
+  --display:"Bricolage Grotesque","Helvetica Neue",Arial,sans-serif; --body:"Inter","Helvetica Neue",Arial,sans-serif; --mono:"Source Code Pro",Menlo,Consolas,monospace; --math:"STIX Two Text","STIX Two Math","STIXGeneral","Cambria Math","Apple Symbols",Georgia,serif; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#0e1626; --surface:#16213a; --ink:#efe7d4; --muted:#9aa3b5; --rule:#2a3756; --accent:#e0ac4a; --code-bg:#131d33; --math-bg:#1a2540; --ok:#7fd0a2; --ok-bg:#17322a; --principled:#f0a868; --principled-bg:#3a2a1c; --gap:#9aa3b5; --gap-bg:#1c2639; --neutral:#8fb4e8; --neutral-bg:#1b2b49; --trust:#e79bb6; --trust-bg:#3a2131; --neg:#f0907d; --neg-bg:#3a1f22; --run:#e0ac4a; --run-bg:#2e2a24; --brand-ink:#efe7d4; --brand-gold:#e0ac4a; color-scheme:dark } }
+:root[data-theme="dark"] { --bg:#0e1626; --surface:#16213a; --ink:#efe7d4; --muted:#9aa3b5; --rule:#2a3756; --accent:#e0ac4a; --code-bg:#131d33; --math-bg:#1a2540; --ok:#7fd0a2; --ok-bg:#17322a; --principled:#f0a868; --principled-bg:#3a2a1c; --gap:#9aa3b5; --gap-bg:#1c2639; --neutral:#8fb4e8; --neutral-bg:#1b2b49; --trust:#e79bb6; --trust-bg:#3a2131; --neg:#f0907d; --neg-bg:#3a1f22; --run:#e0ac4a; --run-bg:#2e2a24; --brand-ink:#efe7d4; --brand-gold:#e0ac4a; color-scheme:dark }
+* { box-sizing:border-box } body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.6 var(--body) }
+main { max-width:900px; margin:0 auto; padding-inline:20px; padding-block:32px 64px; display:flex; flex-direction:column; gap:22px }
+h1 { font:600 32px/1.15 var(--display); margin:0 } h2 { font:600 22px/1.2 var(--display); margin:12px 0 8px; padding-top:12px; border-top:2px solid var(--ink) }
+h3 { font:600 19px/1.3 var(--display); margin:2px 0 0; text-wrap:balance }
+h4 { font:600 11px/1 var(--body); letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin:12px 0 4px }
+p { margin:2px 0; max-width:72ch } .lede { color:var(--muted) }
+code { font:13px/1.5 var(--mono); background:var(--code-bg); padding:1px 4px; border-radius:3px }
+pre { margin:4px 0; padding:12px 14px; border-radius:6px; overflow-x:auto }
+pre.code { font:13px/1.55 var(--mono); background:var(--code-bg) }
+.rules { display:flex; flex-direction:column; gap:14px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:14px 18px; overflow-x:auto; font:16px/1.6 var(--math) }
+.rules sub, .rules sup { font-size:.72em; line-height:0 }
+.formulas { display:flex; flex-direction:column; gap:4px }
+.formulas .row { display:flex; flex-wrap:wrap; gap:4px 28px } .formulas .row.cont { padding-left:2em }
+.infer { display:flex; align-items:center; gap:12px }
+.frac { display:inline-flex; flex-direction:column; align-items:center; min-width:0 }
+.premises { display:flex; flex-wrap:wrap; justify-content:center; gap:4px 26px; padding:0 6px 3px }
+.bar { align-self:stretch; border-top:1.5px solid var(--ink) }
+.conclusion { padding:3px 6px 0; text-align:center }
+.rule-name { font:15px/1 var(--math); font-variant:small-caps; letter-spacing:.02em; color:var(--accent); white-space:nowrap }
+.card { background:var(--surface); border:1px solid var(--rule); border-radius:8px; padding:20px 22px; display:flex; flex-direction:column; gap:6px; min-width:0 }
+.card > header { display:flex; justify-content:space-between; gap:12px; align-items:flex-start }
+.sha { font:12px/1.4 var(--mono); color:var(--muted) }
+.pill { font:600 11px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; padding:6px 9px; border-radius:99px; white-space:nowrap }
+.pill.ok { color:var(--ok); background:var(--ok-bg) } .pill.principled { color:var(--principled); background:var(--principled-bg) }
+.pill.gap { color:var(--gap); background:var(--gap-bg) } .pill.neutral { color:var(--neutral); background:var(--neutral-bg) }
+.units { display:flex; flex-wrap:wrap; gap:6px } .units span { font:12px/1 var(--mono); border:1px solid var(--rule); border-radius:4px; padding:5px 7px }
+dl.facts { display:grid; grid-template-columns:max-content minmax(0,1fr); gap:6px 16px; margin:12px 0 0; padding-top:12px; border-top:1px solid var(--rule); font-size:13.5px }
+dt { font:600 11px/1.9 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted) }
+dd { margin:0; min-width:0; display:flex; flex-wrap:wrap; gap:5px; align-items:baseline }
+.chip { font:500 12px/1 var(--body); border:1px solid var(--rule); border-radius:4px; padding:4px 7px } .chip.strong { color:var(--accent); border-color:var(--accent) }
+.trust { color:var(--trust); background:var(--trust-bg); padding:2px 6px; border-radius:4px } .none { color:var(--muted) }
+.test { font:12px/1 var(--mono); padding:4px 7px; border-radius:4px }
+.test.pos { color:var(--ok); background:var(--ok-bg) } .test.pos::before { content:"✓ " }
+.test.neg { color:var(--neg); background:var(--neg-bg) } .test.neg::before { content:"✗ " }
+.test.forged { color:var(--principled); background:var(--principled-bg) } .test.forged::before { content:"forged " }
+details { margin-top:8px; font-size:13px; color:var(--muted) } summary { cursor:pointer }
+.table-wrap { overflow-x:auto; border:1px solid var(--rule); border-radius:8px; background:var(--surface) }
+table { border-collapse:collapse; width:100%; font-size:13px } th, td { text-align:left; vertical-align:top; padding:8px 10px; border-bottom:1px solid var(--rule) }
+th { font:600 11px/1.2 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); white-space:nowrap } td.num { font-variant-numeric:tabular-nums }
+h4.change { display:flex; align-items:center; gap:8px; text-transform:none; letter-spacing:0; font:600 14px/1.3 var(--body); color:var(--ink); margin:16px 0 6px }
+h4.change .target { font-weight:400; color:var(--muted) }
+.act { font:600 10.5px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; padding:4px 7px; border-radius:4px }
+.act.added { color:var(--ok); background:var(--ok-bg) } .act.removed { color:var(--neg); background:var(--neg-bg) }
+.act.modified, .act.replaced { color:var(--principled); background:var(--principled-bg) }
+.versions { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:10px }
+.versions figure { margin:0; min-width:0 } .versions figcaption { font:600 11px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); margin:0 0 4px }
+.versions .rules { height:calc(100% - 18px); box-sizing:border-box }
+pre.code .ln { display:block; white-space:pre } pre.code .ln.add { background:var(--ok-bg) } pre.code .ln.del { background:var(--neg-bg) }
+.tk-k { color:#7a3b8c } .tk-s { color:#2f6b47 } .tk-n { color:#a35a12 } .tk-c { color:var(--muted); font-style:italic } .tk-t { color:#2c4f7c }
+.prose p { margin:4px 0 }
+ul.effect, ul.summary { margin:4px 0; padding-left:20px } ul.effect li, ul.summary li { margin:3px 0 } ul.summary ul { padding-left:18px; color:var(--muted) }
+ul.effect .arrow { color:var(--accent); font-weight:600 }
+ul.effect details { margin:0; color:inherit; font-size:inherit } ul.effect summary { list-style-position:outside }
+ul.effect .kind { font-size:11px; text-transform:uppercase; letter-spacing:.04em; padding:1px 6px; border-radius:4px; background:var(--chip, #eee) }
+ul.effect .kind.negative { color:#8a3b12 } ul.effect .kind.positive { color:#22663a } ul.effect .kind.gap { color:#7a5b00 }
+ul.effect .was.unsound { color:#b3261e; font-weight:600 } ul.effect .now { font-weight:500 } ul.effect .why { color:var(--muted) }
+ul.effect mark { background:#ffe08a; color:inherit; border-radius:2px }
+@media (max-width:720px) { .versions { grid-template-columns:minmax(0,1fr) } }
+.lowering { display:flex; flex-direction:column; gap:6px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:12px 16px; overflow-x:auto }
+.lowering .map, .lowering .cond, .lowering .result { display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 10px }
+.lowering .map:not(:has(.sem)) { flex-direction:column; align-items:stretch; gap:4px }
+.lowering .result { display:grid; grid-template-columns:auto minmax(0,1fr); align-items:baseline; gap:2px 10px; padding-left:1em } .lowering .result .note { grid-column:2 }
+.m-intr { font:14px/1.5 var(--mono); color:#2c4f7c } .m-lit { font:13px/1.5 var(--mono); color:#7a3b8c }
+.lowering code.src { font:13px/1.5 var(--mono); background:var(--surface); border:1px solid var(--rule); padding:2px 6px; border-radius:4px }
+.lowering .to { color:var(--accent); font-weight:600; font-size:17px }
+.lowering .tgt { font:16px/1.5 var(--math) } .rules .lowering { background:none; border:0; padding:0 } .lowering .sem code.src { margin:0 2px }
+var { font-style:italic } .m-op { color:#2c4f7c; font-style:normal } .m-con { color:#8f6416; font-style:normal; font-variant:small-caps }
+.m-kw { color:#7a3b8c; font-weight:600; font-style:normal } .m-bind { color:#7a3b8c } .m-rel { color:var(--accent); padding:0 .12em }
+.m-text { font:14px/1.5 var(--body); color:var(--muted) } code.m-code { font:13px/1.5 var(--mono); background:var(--surface); border:1px solid var(--rule); padding:1px 5px; border-radius:4px }
+.refused { color:var(--neg); font-weight:600 }
+.lowering .refused { color:var(--neg); font-weight:600 }
+.lowering .label { font:600 11px/1 var(--body); letter-spacing:.05em; text-transform:uppercase; color:var(--muted); min-width:7em }
+.lowering .cond { padding-left:1.5em } .lowering .note { color:var(--muted); font:italic 13px/1.4 var(--body) }
+a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outline-offset:2px }
+@media (max-width:520px) { dl.facts { grid-template-columns:minmax(0,1fr) } .card > header { flex-direction:column } }</style></head><body><main><header><h1>Commit Records</h1><p class="lede">10 commits, rendered from their records.</p></header>
+<section><h2>Branches</h2><ul class="summary"><li><a href="#g-pr-137"><code>13651ddbf3597e544105866cab908e5845387129..pr-137</code></a><ul><li>10 commits</li><li>parts: <span class="chip">lean-proofs</span> <span class="chip">docs</span> <span class="chip strong">lean-semantics</span> <span class="chip">tests</span> <span class="chip">lean-rules</span> <span class="chip">parser</span> <span class="chip">tools</span> <span class="chip strong">wire</span> <span class="chip">lean-lowering</span> <span class="chip">producer</span></li><li>wire: Fragment <code>stated</code> gains <code>fresh</code></li></ul></li></ul></section>
+<h2 id="g-pr-137"><code>13651ddbf3597e544105866cab908e5845387129..pr-137</code></h2><article class="card" id="c-fb2374c70"><header><div><div class="sha">fb2374c70 · Cristiano Calcagno · Nov 09, 08:46</div><h3>Bring the Lean of argument-path store regions onto the stated-effects line</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>The stated-effects design (docs/drafts/stated-effects.md) builds on the regional effect proved on local branch chain1-argument-regions (05d9d1eb): stores selected through argument paths, stable paths, store separation and a regional graph check. Its obligations move these lemmas onto the regional footprint, so the line starts from them.</p></div>
+<h4 class="change"><span class="act added">added</span>Lean <span class="target">argument-path store regions</span></h4><div class="prose"><p>ArgumentStoreRegions (a regional effect keeps other stores' lengths, dense prefixes and separation); ArgumentRegionGraph, ArgumentRegionCertificates, ArgumentPathTracking and ArgumentStoreSeparation (an executable regional check of a function's graph); GraphCodeSpec states a code's effect at its entry frame's values; each theorem in AxiomCheck</p></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">FOOTPRINTS.md, WORK.md, checked-bounds deck</span></h4><div class="prose"><p>the argument-path draft is folded into FOOTPRINTS.md, &quot;Argument-path store regions&quot;; the stated-effects draft links there</p></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><code>none: no source request invokes the regional checker</code></li></ul>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">lean-proofs</span> <span class="chip">docs</span></dd><dt>Lean</dt><dd>ArgumentStoreRegionsWithin.trans · ArgumentStoreRegionsWithin.nested · StoreApart.stable_path_frame · ArgumentRegionGraph.goto_bounded · ArgumentRegionCertificates.checkEntry_sound · ArgumentStoreSeparation.of_separation</dd><dt>Trust</dt><dd><span class="none">none</span></dd></dl>
+<details><summary>17 files changed, 1195 insertions(+), 173 deletions(-)</summary><pre class="code"> WORK.md                                            |   2 +-
+ docs/ARITHMETIC.md                                 |   6 +-
+ docs/FOOTPRINTS.md                                 |  92 +++++++
+ docs/deep-dives/checked-bounds/deck.mts            |  13 +
+ docs/deep-dives/checked-bounds/project/deck.json   |   2 +-
+ .../project/slides/argument-store.html             |  10 +
+ docs/drafts/argument-path-regions.md               | 149 ------------
+ docs/drafts/stated-effects.md                      |   2 +-
+ .../Programs/ArgumentPathTracking.lean             | 205 ++++++++++++++++
+ .../Programs/ArgumentRegionCertificates.lean       | 208 ++++++++++++++++
+ .../Verification/Programs/ArgumentRegionGraph.lean | 269 +++++++++++++++++++++
+ .../Programs/ArgumentStoreSeparation.lean          | 110 +++++++++
+ lean/Verification/Programs/GraphCode.lean          |  14 +-
+ lean/Verification/Programs/TypingBasics.lean       |  21 +-
+ lean/Verification/Programs/VariadicTyping.lean     |  10 +-
+ .../Semantics/ArgumentStoreRegions.lean            | 218 +++++++++++++++++
+ lean/Verification/Tests/AxiomCheck.lean            |  37 ++-</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-d1746c597"><header><div><div class="sha">d1746c597 · Cristiano Calcagno · Nov 09, 08:57</div><h3>Read regions through argument paths, module cells and classes in the regional footprint</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>A stated effect names what a call may change through its arguments' fields (&quot;runs.openBrackets[*]&quot;) and module caches. The regional footprint named only a slot's fields, own locations and store cells, a class, and everything, so such a frame had no meaning to state, and a store's cells transported to the entry heap only as a class or as everything.</p></div>
+<h4 class="change"><span class="act added">added</span>Semantics <span class="target">regional footprint: regions</span></h4><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">path</span> <var>x</var> <var>p</var> <var>k</var></span><span><span class="m-text">the own field</span> <var>k</var> <span class="m-text">of the object the path</span> <var>p</var> <span class="m-text">reads from slot</span> <var>x</var></span></div><div class="row"><span><span class="m-op">pathOwn</span> <var>x</var> <var>p</var></span><span><span class="m-text">that object's own locations</span></span></div><div class="row"><span><span class="m-op">pathElems</span> <var>x</var> <var>p</var></span><span><span class="m-text">the element cells its store lists</span></span></div><div class="row"><span><span class="m-text">cell</span> <var>b</var></span><span><span class="m-text">a module cell, read at its contents' class</span><span class="m-rel">:</span> <span class="m-text">the locations of class value</span></span></div><div class="row"><span><span class="m-op">inCls</span> <var>r</var> <var>c</var></span><span><span class="m-text">the locations of</span> <var>r</var> <span class="m-text">whose contents are of class</span> <var>c</var></span></div><div class="row"><span><span class="m-text">A path read that fails denotes no location; at the empty path the first</span></span></div><div class="row"><span><span class="m-text">three are field, own and elems</span>.</span></div></div></div>
+<h4 class="change"><span class="act added">added</span>Definition <span class="target">cell provenance</span></h4><div class="rules"><div class="formulas"><div class="row"><span><span class="m-op">CellsFrom</span>(<var>h</var>₀, <var>h</var>, <var>v</var>) ⟺ <span class="m-bind">∀</span> <var>l</var>. <span class="m-text">some</span> <var>l</var> <span class="m-rel">∈</span> <span class="m-con">cells</span><sub><var>h</var></sub>(<var>v</var>) ∧ <var>l</var> &lt; |<var>h</var>₀| ⟹ <span class="m-text">some</span> <var>l</var> <span class="m-rel">∈</span> <span class="m-con">cells</span><sub><var>h</var></sub>₀(<var>v</var>)</span></div></div></div>
+<h4 class="change"><span class="act modified">modified</span>Rule <span class="target">transport of a step's region to the entry heap</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">elems</span> <var>x</var> <span class="m-rel">↦</span> <span class="m-text">cls value where its cells hold no store, else all</span></span></div></div></div></figure><figure><figcaption>After</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">elems</span> <var>x</var>, <span class="m-op">pathElems</span> <var>x</var> <var>p</var> <span class="m-rel">↦</span> <span class="m-text">themselves where the path reads its entry value</span></span></div><div class="row cont"><span><span class="m-text">and the store meets cell provenance; else cls value, else all</span></span></div><div class="row"><span><span class="m-text">path, pathOwn</span> <span class="m-rel">↦</span> <span class="m-text">themselves where the path reads its entry value, else all</span></span></div><div class="row"><span><span class="m-text">cell</span> <var>b</var> <span class="m-rel">↦</span> <span class="m-con">cell</span> <var>b</var>;</span><span><span class="m-op">inCls</span> <var>r</var> <var>c</var> <span class="m-rel">↦</span> <span class="m-op">inCls</span> <var>s</var> <var>c</var> <span class="m-text">for each</span> <var>s</var> <var>r</var> <span class="m-text">transports to</span></span></div><div class="row"><span><span class="m-text">each keeping the disjunct</span> <code class="m-code"><span class="tk-s">&quot;inside an earlier entry at any&quot;</span></code></span></div></div></div></figure></div>
+<h4 class="change"><span class="act added">added</span>Theorem <span class="target">cell provenance of steps</span></h4><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">a store location changed within grow</span> ⟹ <span class="m-text">CellsFrom; an element write</span>,</span></div><div class="row"><span><span class="m-text">which places a fresh location</span> ⟹ <span class="m-text">CellsFrom; a native's store steps</span></span></div><div class="row"><span>(<span class="m-con">Arr</span>.<span class="m-con">Within</span>) ⟹ <span class="m-text">CellsFrom; CellsFrom composes along a growing heap</span></span></div></div></div>
+<h4 class="change"><span class="act added">added</span>Theorem <span class="target">chain1's regions as regional footprints</span></h4><div class="rules"><div class="formulas"><div class="row"><span><span class="m-op">ArgumentStoreRegionsWithin</span>(<var>c</var>, <var>R</var>) ⟺ <span class="m-op">Post</span><span class="m-text">(c's two classes</span> ++ [<span class="m-text">path</span> <var>i</var> <var>p</var> <span class="m-text">store</span><span class="m-rel">:</span> <span class="m-con">any</span> | (<var>i</var>,<var>p</var>) <span class="m-rel">∈</span> <var>R</var>])</span></div></div></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><code>none: the regional footprint is the model's; no source request reads it</code></li></ul>
+<h4 class="change">Gap</h4><div class="prose"><p>cell b is the widened class region of the design's module-cell agreement (O4); its exact reading under agreement is not built.</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip strong">lean-semantics</span> <span class="chip">lean-proofs</span> <span class="chip">tests</span></dd><dt>Lean</dt><dd>Region.path · Region.pathOwn · Region.pathElems · Region.cell · Region.inCls · Region.subBase · Region.sub_mem · CellsFrom · CellsFrom.trans · CellsFrom.of_change · CellsFrom.of_post · placeAt_cells · Arr.Within.cells · PathEvidenceOk · transport_sound · Post.compose · ArgumentStoreRegionsWithin.iff_post · ArgumentStoreRegion.post_trans · ArgumentStoreRegion.post_frame_length · Controls.forged_cells_from_false</dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd><span class="test forged">cell-provenance-transport</span></dd></dl>
+<details><summary>6 files changed, 429 insertions(+), 49 deletions(-)</summary><pre class="code"> .../Semantics/ArgumentStoreRegions.lean            |  65 ++++
+ lean/Verification/Semantics/FootprintNatives.lean  |   6 +
+ lean/Verification/Semantics/Footprints.lean        | 360 +++++++++++++++++++--
+ lean/Verification/Semantics/IndexFacts.lean        |  12 -
+ lean/Verification/Tests/AxiomCheck.lean            |  12 +-
+ lean/Verification/Tests/FootprintControls.lean     |  23 +-</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-8389ef820"><header><div><div class="sha">8389ef820 · Cristiano Calcagno · Nov 09, 09:03</div><h3>State a call signature's effect as one regional frame at the call's positions</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>A signature's effect bounds the heap by three fields: a closed footprint, and two flags excepting the receiver's store or its own locations. The stated-effects design reads every effect as one regional frame at the call's positions (0 the receiver, i the i-th actual), so stated regions, native rows and the receiver flags are one language. The three fields had no such reading.</p></div>
+<h4 class="change"><span class="act added">added</span>Definition <span class="target">a signature's frame</span></h4><div class="rules"><div class="formulas"><div class="row"><span><span class="m-op">frame</span>(<var>e</var>) <span class="m-rel">=</span> [<span class="m-text">cls value</span><span class="m-rel">:</span> <var>v</var>, <span class="m-text">cls store</span><span class="m-rel">:</span> <var>s</var>] ++ <span class="m-op">receiver</span>(<var>e</var>)</span></div><div class="row"><span><span class="m-op">receiver</span>(<var>e</var>) <span class="m-rel">=</span> [<span class="m-text">inCls (own</span> 0) <span class="m-text">value</span><span class="m-rel">:</span> <span class="m-con">any</span>]</span><span><span class="m-text">where</span> <var>e</var> <span class="m-text">excepts the receiver's own locations</span></span></div><div class="row cont"><span><span class="m-rel">=</span> [<span class="m-text">path</span> 0 [] <span class="m-text">store</span><span class="m-rel">:</span> <span class="m-con">any</span>]</span><span><span class="m-kw">else</span> <span class="m-text">where</span> <var>e</var> <span class="m-text">excepts its store</span></span></div><div class="row cont"><span><span class="m-rel">=</span> []</span><span><span class="m-kw">else</span></span></div><div class="row"><span><span class="m-text">with</span> {<var>v</var>, <var>s</var>} <span class="m-text">the closed footprint; the own-locations case is tested</span></span></div><div class="row"><span><span class="m-text">first, so the receiver's store, one of its own locations, stays at</span> <var>s</var>.</span></div></div></div>
+<h4 class="change"><span class="act added">added</span>Theorem <span class="target">the translation</span></h4><div class="rules"><div class="formulas"><div class="row"><span><span class="m-op">within</span>(<var>e</var>, <var>r</var>, <var>h</var>, <var>h'</var>) ⟺ <span class="m-op">Post</span>(<span class="m-op">frame</span>(<var>e</var>), <span class="m-op">callEnv</span>(<var>r</var>, <span class="m-text">args</span>), <var>h</var>, <var>h'</var>)</span></div><div class="row"><span><span class="m-text">for every receiver</span> <var>r</var>, <span class="m-text">actuals args and heaps</span> <var>h</var>, <var>h'</var></span></div></div></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><code>none: the frame is derived from the three fields, which stay</code></li></ul>
+<h4 class="change">Gap</h4><div class="prose"><p>The design's single <code>frame</code> field replacing the three needs the checker's coverage and composition over regional frames (O5, O8); the fields stay until then.</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip strong">lean-semantics</span> <span class="chip">lean-proofs</span></dd><dt>Lean</dt><dd>Effect.receiverEntries · Effect.frame · Effect.within_iff_post · Closed.post_extra_any · Closed.HoldsOn.congr</dd><dt>Trust</dt><dd><span class="none">none</span></dd></dl>
+<details><summary>3 files changed, 97 insertions(+)</summary><pre class="code"> lean/Verification/Semantics/CallEffects.lean      | 62 +++++++++++++++++++++++
+ lean/Verification/Semantics/ClosedFootprints.lean | 33 ++++++++++++
+ lean/Verification/Tests/AxiomCheck.lean           |  2 +</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-a8942204a"><header><div><div class="sha">a8942204a · Cristiano Calcagno · Nov 09, 09:03</div><h3>Certify a unit's promised fresh result node by node, also at the top footprint</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>A statement may promise that a function returns a fresh array (<code>fresh</code>), also at the footprint letting everything change. A unit's effect check took two shortcuts that hold of footprints alone: a <code>top</code> footprint without onThrow was accepted with no check, and a graph of pure nodes was accepted as within any footprint. An identity function returning its input meets both, and returns no fresh array. Nothing certified a unit's fresh result, and the statement check did not compare it.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Rule <span class="target">a unit's effect check</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">footprint top, no onThrow</span></span><span>⟹ <span class="m-text">accepted</span></span></div><div class="row"><span><span class="m-kw">else</span><span class="m-rel">:</span> <span class="m-text">no qualification, footprint</span> <span class="m-rel">≠</span> <span class="m-text">top, and a pure graph or the node-by-node check</span></span></div></div></div></figure><figure><figcaption>After</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">footprint top, no onThrow, no fresh</span></span><span>⟹ <span class="m-text">accepted</span></span></div><div class="row"><span><span class="m-kw">else</span><span class="m-rel">:</span> <span class="m-text">not async where fresh; no qualification; footprint</span> <span class="m-rel">≠</span> <span class="m-text">top or fresh</span>;</span></div><div class="row cont"><span><span class="m-text">a pure graph without fresh, or the node-by-node check with fresh</span></span></div></div></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Rule <span class="target">a claim within its statement</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="rules"><div class="formulas"><div class="row"><span><var>s</var>.<span class="m-text">footprint</span> <span class="m-rel">≠</span> <span class="m-con">top</span>,</span><span><span class="m-text">claim</span> <span class="m-rel">⊑</span> <var>s</var>.<span class="m-text">footprint</span>,</span><span><var>s</var>.<span class="m-op">onThrow</span> ⟹ <span class="m-text">claim</span>.<span class="m-op">onThrow</span></span></div></div></div></figure><figure><figcaption>After</figcaption><div class="rules"><div class="formulas"><div class="row"><span><var>s</var>.<span class="m-text">footprint</span> <span class="m-rel">≠</span> <span class="m-text">top or</span> <var>s</var>.<span class="m-text">fresh</span>,</span><span><span class="m-text">claim</span> <span class="m-rel">⊑</span> <var>s</var>.<span class="m-text">footprint</span>,</span></div><div class="row"><span><var>s</var>.<span class="m-op">onThrow</span> ⟹ <span class="m-text">claim</span>.<span class="m-op">onThrow</span>,</span><span><var>s</var>.<span class="m-text">fresh</span> ⟹ <span class="m-text">claim</span>.<span class="m-text">fresh</span></span></div></div></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Theorem <span class="target">checkUnitJson_safe, through its unit footprint conjunct</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">footprint</span> <span class="m-rel">≠</span> <span class="m-con">top</span> ∨ <span class="m-op">onThrow</span> ⟹ <span class="m-text">normal return</span><span class="m-rel">:</span> <var>Φ</var>(<var>h</var>₀, <var>h'</var>)</span></div></div></div></figure><figure><figcaption>After</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">footprint</span> <span class="m-rel">≠</span> <span class="m-con">top</span> ∨ <span class="m-op">onThrow</span> ∨ <span class="m-text">fresh</span> ⟹ <span class="m-text">normal return</span><span class="m-rel">:</span> <var>Φ</var>(<var>h</var>₀, <var>h'</var>) ∧ <span class="m-text">(fresh</span> ⟹ <span class="m-text">the result's store at or above</span> |<var>h</var>₀|)</span></div></div></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Theorem <span class="target">checkRequests_stated_at</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">normal return</span><span class="m-rel">:</span> <var>s</var>.<span class="m-op">footprint</span>(<var>h</var>₀, <var>h'</var>)</span></div></div></div></figure><figure><figcaption>After</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">normal return</span><span class="m-rel">:</span> <var>s</var>.<span class="m-op">footprint</span>(<var>h</var>₀, <var>h'</var>) ∧ (<var>s</var>.<span class="m-text">fresh</span> ⟹ <span class="m-text">the result's store at or above</span> |<var>h</var>₀|)</span></div></div></div></figure></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><code>none: no source request states or claims a fresh result yet; the</code></li><li><code>reading of the written form waits for its revised design</code></li></ul>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">lean-rules</span> <span class="chip">lean-proofs</span></dd><dt>Lean</dt><dd>SourceRequest.fresh · effectResult · effectResult_preserving · effectResult_stated · RequestJson.statedWithin · checkRequests_footprint_at · checkRequests_stated_at · RequestsSafe</dd><dt>Trust</dt><dd><span class="none">none</span></dd></dl>
+<details><summary>4 files changed, 92 insertions(+), 64 deletions(-)</summary><pre class="code"> lean/Verification/Source/Claims/Imports.lean |   2 +-
+ lean/Verification/Source/Claims/Json.lean    |  12 +--
+ lean/Verification/Source/RequestJson.lean    |  13 +--
+ lean/Verification/Source/SourceRequests.lean | 129 ++++++++++++++++-----------</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-d02a91270"><header><div><div class="sha">d02a91270 · Cristiano Calcagno · Nov 09, 09:08</div><h3>Keep a caller's facts across a callee's regional frame by separation</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>A caller keeps a fact across a call where the callee's frame leaves the fact's support alone or is apart from it. With frames naming an argument's array through a path (&quot;runs.openBrackets[*]&quot;), the separation knowledge could refute only fields, own locations and classes, and a callee's frame was read at its own positions with no renaming to the caller's slots, so §6.1's loop fact on <code>flags</code> could not survive <code>readRuns(runs)</code>.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Definition <span class="target">separation knowledge</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">class evidence, provenance stamps, distinct field pairs</span></span></div></div></div></figure><figure><figcaption>After</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">also</span> <span class="m-op">storeApart</span>(<var>x</var>, <var>p</var>, <var>y</var>)<span class="m-rel">:</span> <span class="m-text">the store location the path</span> <var>p</var> <span class="m-text">reads from</span> <var>x</var> <span class="m-op">is</span></span></div><div class="row"><span><span class="m-text">not y's store location</span>; <span class="m-op">elemsValue</span>(<var>x</var>, <var>p</var>)<span class="m-rel">:</span> <span class="m-text">the cells that path's store</span></span></div><div class="row"><span><span class="m-text">lists hold no store</span></span></div></div></div></figure></div>
+<h4 class="change"><span class="act added">added</span>Rule <span class="target">apartness of the new regions</span></h4><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">path</span> <var>x</var> <var>p</var> <span class="m-text">store  apart  field</span> <var>y</var> <span class="m-text">store</span></span><span><span class="m-text">where</span> <span class="m-op">storeApart</span>(<var>x</var>, <var>p</var>, <var>y</var>)</span></div><div class="row"><span><span class="m-op">pathElems</span> <var>x</var> <var>p</var></span><span><span class="m-text">apart  field</span> <var>y</var> <var>k</var></span><span><span class="m-text">where</span> <span class="m-op">elemsValue</span>(<var>x</var>, <var>p</var>) <span class="m-text">and</span> <var>y</var>.<var>k</var> <span class="m-text">holds a store</span></span></div><div class="row"><span><span class="m-op">pathElems</span> <var>x</var> <var>p</var></span><span><span class="m-text">apart  cls store</span></span><span><span class="m-text">where</span> <span class="m-op">elemsValue</span>(<var>x</var>, <var>p</var>)</span></div><div class="row"><span><span class="m-text">field</span> <var>x</var> <var>k</var></span><span><span class="m-text">apart  cell</span> <var>b</var>, <span class="m-op">inCls</span> <var>r</var> <var>c</var></span><span><span class="m-op">by</span> <var>x</var>.<span class="m-text">k's class</span></span></div><div class="row"><span><span class="m-op">inCls</span> <var>r</var> <var>c</var></span><span><span class="m-text">apart</span>  <var>s</var></span><span><span class="m-text">where</span> <var>r</var> <span class="m-text">is apart from</span> <var>s</var>, <span class="m-text">or</span> <var>s</var> <span class="m-text">is the other class</span></span></div></div></div>
+<h4 class="change"><span class="act added">added</span>Theorem <span class="target">keeping a fact across a call</span></h4><div class="rules"><div class="infer"><div class="frac"><div class="premises"><span><span class="m-op">Post</span>(<var>Φ</var>, <span class="m-text">env</span>, <var>h</var>, <var>h'</var>)</span><span><span class="m-bind">∀</span><var>i</var>. <var>ρ</var>(<var>σ</var> <var>i</var>) <span class="m-rel">=</span> <span class="m-con">env</span>(<var>i</var>)</span><span><var>K</var> <span class="m-text">holds at</span> (<var>ρ</var>, <var>h</var>)</span><span><span class="m-op">stable</span>(<var>K</var>, <span class="m-op">support</span>(<var>F</var>), <var>σ</var>(<var>Φ</var>))</span><span><var>F</var> <span class="m-op">at</span> (<var>ρ</var>, <var>h</var>)</span></div><div class="bar"></div><div class="conclusion"><div><var>F</var> <span class="m-op">at</span> (<var>ρ</var>, <var>h'</var>)</div></div></div><span class="rule-name">(keep_across_call)</span></div></div>
+<h4 class="change"><span class="act added">added</span>Theorem <span class="target">coverage</span></h4><p>Φ ⊑ Ψ by class evidence valid at h ⟹ Post(Φ) ⟹ Post(Ψ)</p>
+<h4 class="change"><span class="act added">added</span>Theorem <span class="target">chain1 separation enters the knowledge</span></h4><p>StoreApart(h, ρx, p, ρy) ⟹ storeApart(x, p, y) holds</p>
+<h4 class="change">Example</h4><pre class="code"><span class="ln"><span class="tk-k">function</span> readRuns(runs: <span class="tk-t">Runs</span>): <span class="tk-t">Within</span>&lt;{ value: <span class="tk-s">&quot;any&quot;</span>; store: <span class="tk-s">&quot;keep&quot;</span>; at: { <span class="tk-s">&quot;runs.openBrackets[*]&quot;</span>: <span class="tk-s">&quot;any&quot;</span> } }, <span class="tk-k">void</span>&gt;</span><span class="ln"><span class="tk-c">// flags's density, support &quot;flags's store at grow&quot;, stays across readRuns(runs)</span></span><span class="ln"><span class="tk-c">// given storeApart(runs.openBrackets, flags) and value-class cells; either missing, it does not</span></span></pre>
+<h4 class="change">Effect</h4><ul class="effect"><li><code>none: the model's; no source request reads regional frames yet</code></li></ul>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip strong">lean-semantics</span> <span class="chip">lean-proofs</span> <span class="chip">tests</span></dd><dt>Lean</dt><dd>SepKnowledge.storeApart · SepKnowledge.elemsValue · SepKnowledge.apart₁ · Sep.sound · Region.rename · Region.mem_rename · Post.rename · keep_across_call · Post.mono · StoreApart.sep</dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd><span class="test forged">frame-kept-without-storeApart</span> <span class="test forged">pathElems-without-element-class</span></dd></dl>
+<details><summary>6 files changed, 225 insertions(+), 42 deletions(-)</summary><pre class="code"> .../Semantics/ArgumentStoreRegions.lean            |  16 ++
+ lean/Verification/Semantics/FootprintNatives.lean  |  14 +-
+ .../Verification/Semantics/FootprintStability.lean | 199 +++++++++++++++++----
+ lean/Verification/Semantics/Footprints.lean        |   8 +
+ lean/Verification/Tests/AxiomCheck.lean            |   4 +
+ lean/Verification/Tests/FootprintControls.lean     |  26 ++-</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-2718ad48c"><header><div><div class="sha">2718ad48c · Cristiano Calcagno · Nov 09, 09:21</div><h3>State a signature's frame as Modifies&lt;P, T&gt;, replacing Within&lt;F, T&gt; in one change</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>A statement's frame is to name what a call may change through its arguments and module cells (§2 of docs/drafts/stated-effects.md, as converged at 13ea2db2). <code>Within&lt;F, T&gt;</code>'s F had exactly the two class fields, so it had no place for a location, and its <code>value</code>/<code>store</code> spelling collides with module bindings of those names. The design settles one map <code>P</code> from what may change to how much, and one spelling.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Tooling <span class="target">tools/resolvable.d.ts</span></h4><div class="versions"><figure><figcaption>Before</figcaption><pre class="code"><span class="ln">type Footprint = { value: …; store: …; onThrow?: true };</span><span class="ln">type Within&lt;F extends Footprint, T&gt; = T;</span></pre></figure><figure><figcaption>After</figcaption><pre class="code"><span class="ln">type Modifies&lt;P extends { values?: c; stores?: c; onThrow?: true; [location: string]: c | { values?: c; stores?: c } | true | undefined }, T&gt; = T;</span><span class="ln">type Fresh&lt;T&gt; = T;</span></pre></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Rule <span class="target">the statement reader, statedResult</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-con">Within</span>&lt;{ <span class="m-text">value</span><span class="m-rel">:</span> <var>v</var>; <span class="m-text">store</span><span class="m-rel">:</span> <var>s</var> [; <span class="m-op">onThrow</span><span class="m-rel">:</span> <span class="m-lit">true</span>] }, <var>T</var>&gt;, <span class="m-text">both keys required</span></span></div></div></div></figure><figure><figcaption>After</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-con">Modifies</span>&lt;{ [<span class="m-text">values</span><span class="m-rel">:</span> <var>c</var>;] [<span class="m-text">stores</span><span class="m-rel">:</span> <var>c</var>;] [<span class="m-op">onThrow</span><span class="m-rel">:</span> <span class="m-lit">true</span>;] (<code class="m-code"><span class="tk-s">&quot;L&quot;</span></code><span class="m-rel">:</span> <var>m</var>;)* }, <var>T</var>&gt;</span></div><div class="row"><span><span class="m-text">an omitted class key is keep; values at grow is scalar, stores at init or scalar is keep</span>;</span></div><div class="row"><span><span class="m-text">both class keys at any is </span><span class="refused">refused</span><span class="m-text">, as Within's top footprint was</span></span></div></div></div></figure></div>
+<h4 class="change"><span class="act added">added</span>Refusal <span class="target">the statement reader</span></h4><div class="prose"><p>a quoted location key (&quot;x.f&quot;, &quot;x[*]&quot;, &quot;x.*&quot;, &quot;cell(b)&quot;): its regions are certified in the model, not read from the source a location key's value other than a change or a class map { values?: c; stores?: c } a bare key other than values, stores, onThrow: <code>value</code> and <code>store</code> among them (a cell is &quot;cell(b)&quot;) Fresh&lt;T&gt; anywhere: its certification does not reach the source</p></div>
+<h4 class="change"><span class="act modified">modified</span>Tooling <span class="target">627 statements and the texts naming the form</span></h4><pre class="code"><span class="ln">Within&lt;{ value: v; store: s }, T&gt; ⇝ Modifies&lt;{ values: v; stores: s }, T&gt;, keep entries dropped</span><span class="ln">in tools/, pipeline/examples/, pipeline/imports-project/, the controls, the</span><span class="ln">producer's and Lean's comments and the documents; the method-effects deck's</span><span class="ln">project rebuilt from its source</span></pre>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>invalid-modifies-old-spelling</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why"><code>value</code> is no key of a frame</span></summary><pre class="code"><span class="tk-c">// A frame in `Within`'s spelling, `{ value: …; store: … }`: the class keys</span>
+<span class="tk-c">// are `values` and `stores`, and a bare key is never a module cell, so the</span>
+<span class="tk-c">// reader refuses `value` as a key of no location.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> size(
+  xs: number[],
+): <span class="tk-t">Modifies</span>&lt;{ value: <span class="tk-s">&quot;keep&quot;</span>; store: <span class="tk-s">&quot;keep&quot;</span> }, number&gt; {
+  <span class="tk-k">return</span> xs.length;
+}</pre></details></li><li><details><summary><code>invalid-modifies-old-spelling-bound</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">a bare key is never a cell, whatever the module binds</span></summary><pre class="code"><span class="tk-c">// `Within`'s spelling where the module binds `value` and `store`: a bare key</span>
+<span class="tk-c">// is never a cell (a cell is `&quot;cell(value)&quot;`), so the reader refuses it</span>
+<span class="tk-c">// whatever the module binds.</span>
+<span class="tk-k">let</span> value: number | <span class="tk-k">null</span> = <span class="tk-k">null</span>;
+<span class="tk-k">let</span> store: number | <span class="tk-k">null</span> = <span class="tk-k">null</span>;
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> size(
+  xs: number[],
+): <span class="tk-t">Modifies</span>&lt;{ value: <span class="tk-s">&quot;init&quot;</span>; store: <span class="tk-s">&quot;init&quot;</span> }, number&gt; {
+  value ??= xs.length;
+  store ??= <span class="tk-n">0</span>;
+  <span class="tk-k">return</span> value + store;
+}</pre></details></li><li><details><summary><code>invalid-modifies-bare-cell</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">a module cell is written &quot;cell(b)&quot;</span></summary><pre class="code"><span class="tk-c">// A bare key naming a module binding: a module cell is written</span>
+<span class="tk-c">// `&quot;cell(scriptClasses)&quot;`, so the reader refuses the bare key.</span>
+<span class="tk-k">let</span> scriptClasses: number[] | <span class="tk-k">null</span> = <span class="tk-k">null</span>;
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> classes(): <span class="tk-t">Modifies</span>&lt;
+  { values: <span class="tk-s">&quot;any&quot;</span>; scriptClasses: <span class="tk-s">&quot;init&quot;</span> },
+  number[]
+&gt; {
+  scriptClasses ??= [];
+  <span class="tk-k">return</span> scriptClasses;
+}</pre></details></li><li><details><summary><code>invalid-modifies-location-true</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">a location's change is a change or a class map</span></summary><pre class="code"><span class="tk-c">// A location key at `true`, which the index signature admits for</span>
+<span class="tk-c">// `onThrow`: a location's change is a change or a class map.</span>
+<span class="tk-k">let</span> cache: number | <span class="tk-k">null</span> = <span class="tk-k">null</span>;
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> cached(): <span class="tk-t">Modifies</span>&lt;{ <span class="tk-s">&quot;cell(cache)&quot;</span>: <span class="tk-k">true</span> }, number&gt; {
+  cache ??= <span class="tk-n">1</span>;
+  <span class="tk-k">return</span> cache;
+}</pre></details></li><li><details><summary><code>invalid-modifies-class-map-member</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">a class map's members are values and stores</span></summary><pre class="code"><span class="tk-c">// A class map with a member other than `values` and `stores`.</span>
+<span class="tk-k">let</span> cache: number | <span class="tk-k">null</span> = <span class="tk-k">null</span>;
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> cached(): <span class="tk-t">Modifies</span>&lt;
+  { <span class="tk-s">&quot;cell(cache)&quot;</span>: { values: <span class="tk-s">&quot;init&quot;</span>; other: <span class="tk-s">&quot;any&quot;</span> } },
+  number
+&gt; {
+  cache ??= <span class="tk-n">1</span>;
+  <span class="tk-k">return</span> cache;
+}</pre></details></li><li><details><summary><code>invalid-modifies-cell-reserved</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">a location key no source statement reaches yet</span></summary><pre class="code"><span class="tk-c">// A cache in a binding named `values`, stated as the cell `&quot;cell(values)&quot;`:</span>
+<span class="tk-c">// a location key, which the reader refuses while no source statement reaches</span>
+<span class="tk-c">// the regions it names.</span>
+<span class="tk-k">let</span> values: number[] | <span class="tk-k">null</span> = <span class="tk-k">null</span>;
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> cached(): <span class="tk-t">Modifies</span>&lt;{ <span class="tk-s">&quot;cell(values)&quot;</span>: <span class="tk-s">&quot;init&quot;</span> }, number[]&gt; {
+  values ??= [];
+  <span class="tk-k">return</span> values;
+}</pre></details></li><li><details><summary><code>invalid-fresh-unread</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">Fresh no source statement reaches yet</span></summary><pre class="code"><span class="tk-c">// A fresh result, `Fresh&lt;T&gt;`: refused while no source statement reaches its</span>
+<span class="tk-c">// certification.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> zeros(count: number): <span class="tk-t">Fresh</span>&lt;number[]&gt; {
+  <span class="tk-k">const</span> out: number[] = [];
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; count; i++) out.push(<span class="tk-n">0</span>);
+  <span class="tk-k">return</span> out;
+}</pre></details></li><li><details><summary><code>modifies-lookalike-declared</code> <span class="kind positive">positive</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">a file's own Modifies is an ordinary alias</span></summary><pre class="code"><span class="tk-c">// A file declaring its own `Modifies`: a reference to it is an ordinary</span>
+<span class="tk-c">// type, read as its alias, and states nothing.</span>
+<span class="tk-k">type</span> <span class="tk-t">Modifies</span>&lt;<span class="tk-t">P</span>, <span class="tk-t">T</span>&gt; = <span class="tk-t">T</span>;
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> size(xs: number[]): <span class="tk-t">Modifies</span>&lt;{ values: <span class="tk-s">&quot;any&quot;</span> }, number&gt; {
+  <span class="tk-k">return</span> xs.length;
+}</pre></details></li><li><code>every other case: unchanged outcome; spans of the edited examples moved</code></li></ul>
+<h4 class="change">Gap</h4><div class="prose"><p>Location keys and Fresh&lt;T&gt; are refused at the reader: location keys need the regional callee check (O5) and a frame field in the effect (O2); Fresh needs the stated wire's <code>fresh</code> and its reading.</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">parser</span> <span class="chip">docs</span> <span class="chip">tests</span> <span class="chip">tools</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd><span class="test pos">modifies-lookalike-declared</span> <span class="test neg">invalid-modifies-old-spelling</span> <span class="test neg">invalid-modifies-old-spelling-bound</span> <span class="test neg">invalid-modifies-bare-cell</span> <span class="test neg">invalid-modifies-location-true</span> <span class="test neg">invalid-modifies-class-map-member</span> <span class="test neg">invalid-modifies-cell-reserved</span> <span class="test neg">invalid-fresh-unread</span></dd></dl>
+<details><summary>171 files changed, 1085 insertions(+), 912 deletions(-)</summary><pre class="code"> WORK.md                                            |   6 +-
+ docs/ANNOTATIONS.md                                |  41 ++--
+ docs/DESIGN.md                                     |   6 +-
+ docs/FRAGMENT-FORMAT.md                            |   2 +-
+ docs/GLOSSARY.md                                   |   2 +-
+ docs/SOURCE-CONTRACTS.md                           |   2 +-
+ docs/SOURCE-ELABORATION.md                         |  44 ++--
+ docs/SOURCE-FRAGMENT.md                            |   2 +-
+ docs/SOURCE-REWRITES.md                            |  35 ++-
+ docs/deep-dives/method-effects/deck.mts            |  34 +--
+ .../method-effects/project/slides/forms.html       |   2 +-
+ .../method-effects/project/slides/forms2.html      |   2 +-
+ .../method-effects/project/slides/limits.html      |   4 +-
+ .../method-effects/project/slides/map.html         |   2 +-
+ .../method-effects/project/slides/refused.html     |   2 +-
+ .../method-effects/project/slides/write.html       |  10 +-
+ docs/drafts/correctness-specs.md                   |   8 +-
+ lean/Verification/Semantics/Footprints.lean        |   2 +-
+ lean/Verification/Source/Fragment.lean             |   4 +-
+ .../Verification/Source/Lowering/ClosureSetup.lean |   2 +-
+ lean/Verification/Source/RequestJson.lean          |   2 +-
+ lean/Verification/Source/SourceRequests.lean       |   2 +-
+ ocaml-producer/source.ml                           |   4 +-
+ pipeline/cases.mts                                 |  91 +++++---
+ pipeline/examples/active-ledger-footprint.ts       |  12 +-
+ pipeline/examples/array-index-loop-footprint.ts    |   2 +-
+ pipeline/examples/array-rest-footprints.ts         |  16 +-
+ pipeline/examples/array-spread-union-footprint.ts  |   2 +-
+ .../examples/blocker-callable-field-callback.ts    |  26 ++-
+ .../examples/blocker-callback-literal-context.ts   |   2 +-
+ pipeline/examples/blocker-claim-lift-forms.ts      |  11 +-
+ pipeline/examples/blocker-closure-loop-result.ts   |   2 +-
+ ...locker-compiler-api-declaration-bindings-map.ts |   4 +-
+ .../blocker-compiler-api-template-reduce.ts        |  25 +-
+ .../examples/blocker-compiler-api-token-subtype.ts |   6 +-
+ pipeline/examples/blocker-fresh-sort-effect.ts     |   6 +-
+ ...gap-round-captured-arms-reduction-preserving.ts |   4 +-
+ pipeline/examples/blocker-gap-round-graph-find.ts  |   6 +-
+ ...locker-gap-round-optional-parameter-writable.ts |   2 +-
+ .../blocker-gap-round-optional-parameter.ts        |   2 +-
+ .../blocker-gap-round-visitor-effect-unstated.ts   |   4 +-
+ .../examples/blocker-gap-round-visitor-effect.ts   |   4 +-
+ pipeline/examples/blocker-map-literal-result.ts    |   4 +-
+ .../examples/blocker-next-array-rest-footprint.ts  |   2 +-
+ .../examples/blocker-next-footprint-factory.ts     |   2 +-
+ .../blocker-next-table-predicate-preservation.ts   |   2 +-
+ .../blocker-next-throwing-binder-callback.ts       |   4 +-
+ .../blocker-prep-alias-expression-after-call.ts    |   2 +-
+ ...blocker-prep-captured-map-records-preserving.ts |   2 +-
+ .../examples/blocker-prep-host-first-argument.ts   |   8 +-
+ .../blocker-prep-intersection-function-array.ts    |   2 +-
+ .../examples/blocker-prep-optional-part-spread.ts  |   2 +-
+ .../blocker-prep-parameters-qualified-hook.ts      |   4 +-
+ pipeline/examples/blocker-prep-part-map-effect.ts  |   6 +-
+ .../blocker-prep-reference-args-map-preserving.ts  |   2 +-
+ .../blocker-round-alias-expression-preserving.ts   |   2 +-
+ .../blocker-round-conditional-path-reuse.ts        |   2 +-
+ .../blocker-round-conditional-record-join.ts       |   4 +-
+ .../examples/blocker-round-host-brand-footprint.ts |   2 +-
+ .../examples/blocker-round-receiver-path-reuse.ts  |  28 ++-
+ pipeline/examples/bounds-callback-footprint.ts     |   9 +-
+ pipeline/examples/branch-context-facts.ts          |   6 +-
+ .../examples/callback-field-write-footprint.ts     |   2 +-
+ .../examples/closure-declared-before-reader.ts     |   2 +-
+ pipeline/examples/closure-finally-footprint.ts     |   5 +-
+ .../compiler-api-visitor-generic-member.ts         |   2 +-
+ pipeline/examples/declaration-list-forward-read.ts |   7 +-
+ pipeline/examples/declaration-list-order.ts        |   9 +-
+ pipeline/examples/declaration-list-patterns.ts     |  17 +-
+ pipeline/examples/field-write-refinement.ts        |   4 +-
+ pipeline/examples/guard-closure-footprint.ts       |   5 +-
+ pipeline/examples/guard-filter-footprints.ts       |   8 +-
+ .../examples/invalid-array-rest-default-effect.ts  |   2 +-
+ .../examples/invalid-array-rest-own-iterator.ts    |   2 +-
+ .../examples/invalid-bounds-callback-footprint.ts  |   9 +-
+ .../invalid-callable-field-callback-rest.ts        |   5 +-
+ .../examples/invalid-callable-field-callback.ts    |   2 +-
+ ...nvalid-compiler-api-declaration-bindings-map.ts |   2 +-
+ .../examples/invalid-construct-signature-effect.ts |   4 +-
+ .../examples/invalid-declaration-list-patterns.ts  |   7 +-
+ .../examples/invalid-footprint-factory-provider.ts |   2 +-
+ pipeline/examples/invalid-fresh-unread.ts          |   7 +
+ pipeline/examples/invalid-method-effect-alias.ts   |   4 +-
+ pipeline/examples/invalid-method-effect-async.ts   |   4 +-
+ .../invalid-method-effect-callback-argument.ts     |   2 +-
+ .../examples/invalid-method-effect-construction.ts |   5 +-
+ .../examples/invalid-method-effect-declaration.ts  |   5 +-
+ pipeline/examples/invalid-method-effect-default.ts |   2 +-
+ .../invalid-method-effect-generic-class.ts         |   2 +-
+ pipeline/examples/invalid-method-effect-generic.ts |   5 +-
+ .../examples/invalid-method-effect-lookalike.ts    |   5 +-
+ pipeline/examples/invalid-method-effect-method.ts  |   5 +-
+ .../invalid-method-effect-misplaced-element.ts     |   6 +-
+ .../invalid-method-effect-misplaced-getter.ts      |   4 +-
+ .../examples/invalid-method-effect-misplaced.ts    |   4 +-
+ .../examples/invalid-method-effect-narrowed.ts     |   5 +-
+ pipeline/examples/invalid-method-effect-onthrow.ts |   4 +-
+ .../examples/invalid-method-effect-overload.ts     |   5 +-
+ .../examples/invalid-method-effect-override.ts     |   5 +-
+ .../examples/invalid-method-effect-rest-default.ts |   2 +-
+ .../invalid-method-effect-stated-throw-caught.ts   |   2 +-
+ pipeline/examples/invalid-method-effect-static.ts  |   5 +-
+ pipeline/examples/invalid-method-effect-top.ts     |   2 +-
+ .../invalid-method-effect-unstated-dependency.ts   |   5 +-
+ pipeline/examples/invalid-method-effect-unused.ts  |   4 +-
+ .../examples/invalid-method-field-effect-write.ts  |   4 +-
+ pipeline/examples/invalid-modifies-bare-cell.ts    |  11 +
+ .../examples/invalid-modifies-cell-reserved.ts     |   9 +
+ .../examples/invalid-modifies-class-map-member.ts  |  10 +
+ .../examples/invalid-modifies-location-true.ts     |   8 +
+ .../invalid-modifies-old-spelling-bound.ts         |  13 ++
+ pipeline/examples/invalid-modifies-old-spelling.ts |   8 +
+ pipeline/examples/invalid-normal-return-catch.ts   |   2 +-
+ pipeline/examples/invalid-normal-return-finally.ts |   2 +-
+ pipeline/examples/invalid-normal-return-nested.ts  |   4 +-
+ pipeline/examples/invalid-normal-return-onthrow.ts |   4 +-
+ .../examples/invalid-parameters-qualified-hook.ts  |   4 +-
+ .../invalid-prep-intersection-function-array.ts    |   2 +-
+ .../invalid-round-conditional-path-call.ts         |   2 +-
+ .../examples/invalid-round-host-brand-footprint.ts |   2 +-
+ .../examples/invalid-sort-comparator-shrink.ts     |   2 +-
+ .../examples/invalid-stated-effect-stringify.ts    |   2 +-
+ pipeline/examples/invalid-stated-guard.ts          |   2 +-
+ pipeline/examples/map-named-element-effect.ts      |   4 +-
+ pipeline/examples/map-parameter-get-footprint.ts   |   2 +-
+ pipeline/examples/method-effect-arrow.ts           |   5 +-
+ .../examples/method-effect-callback-parameter.ts   |   7 +-
+ pipeline/examples/method-effect-declaration.ts     |   6 +-
+ pipeline/examples/method-effect-field.ts           |   5 +-
+ pipeline/examples/method-effect-interface.ts       |   4 +-
+ pipeline/examples/method-effect-map.ts             |   2 +-
+ pipeline/examples/method-effect-onthrow.ts         |   4 +-
+ pipeline/examples/method-effect-recursive.ts       |   4 +-
+ pipeline/examples/method-effect-rest.ts            |   4 +-
+ pipeline/examples/method-effect-static.ts          |   2 +-
+ pipeline/examples/method-effect-subclass.ts        |   4 +-
+ pipeline/examples/modifies-lookalike-declared.ts   |   7 +
+ pipeline/examples/normal-return-rethrow.ts         |  20 +-
+ pipeline/examples/reflect-get-getter.ts            |   4 +-
+ pipeline/examples/set-spread-stated-footprint.ts   |   4 +-
+ pipeline/examples/stated-guard-value-import.ts     |  22 +-
+ pipeline/examples/typed-tree-text.ts               |   2 +-
+ pipeline/imports-project/stated-ambient.d.ts       |   4 +-
+ pipeline/imports-project/stated-overload.ts        |   9 +-
+ pipeline/imports-project/stated.ts                 |  15 +-
+ pipeline/test.mts                                  |   2 +-
+ tests/node-runs.mts                                |   2 +-
+ tools/array-prototype.mts                          |   2 +-
+ tools/calculus.mts                                 |  14 +-
+ tools/claim-text.mts                               |  38 +--
+ tools/compiler-api.mts                             |  18 +-
+ tools/computed-types.mts                           |   2 +-
+ tools/declaration-graph.mts                        |  60 +++--
+ tools/declaration-types.mts                        |   2 +-
+ tools/files.mts                                    |  14 +-
+ tools/fragment-classes.mts                         |  34 +--
+ tools/fragment-expressions.mts                     |  72 +++---
+ tools/fragment-guards.mts                          |   4 +-
+ tools/fragment-parse.mts                           |  84 +++----
+ tools/fragment-parts.mts                           |  56 ++---
+ tools/fragment-statements.mts                      | 120 +++++-----
+ tools/fragment-support.mts                         |  94 ++++----
+ tools/fragment.mts                                 |   4 +-
+ tools/host-families.mts                            |   2 +-
+ tools/intrinsics.mts                               |  10 +-
+ tools/library-globals.mts                          |   6 +-
+ tools/named-record.mts                             |  52 ++---
+ tools/resolvable.d.ts                              |  45 ++--
+ tools/syntax.mts                                   |  14 +-
+ tools/type-graph.mts                               |  20 +-
+ tools/type-term.mts                                | 258 ++++++++++++---------</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-b524296cd"><header><div><div class="sha">b524296cd · Cristiano Calcagno · Nov 09, 09:28</div><h3>Read Fresh&lt;T&gt; as a certified fresh result, at a declaration and at a function type</h3></div><span class="pill ok">verified</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>A builder's caller wants to know that the array it gets back is new, so that changing it changes no array the caller already holds. The written form states it as <code>Fresh&lt;T&gt;</code> (§2.1 of docs/drafts/stated-effects.md); the reader refused it, the stated wire had no field for it, and a unit's fresh result was certified nowhere.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Wire <span class="target">the Fragment's <code>stated</code></span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>{ footprint, onThrow }, footprint below top</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>{ footprint, onThrow, fresh }, footprint below top or fresh set</p></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Rule <span class="target">the statement reader, statedResult</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-con">Fresh</span>&lt;<var>T</var>&gt; <span class="refused">refused</span><span class="m-text"> anywhere</span></span></div></div></div></figure><figure><figcaption>After</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-con">Fresh</span>&lt;<var>T</var>&gt; <span class="m-text">and Modifies</span>&lt;<var>P</var>, <span class="m-con">Fresh</span>&lt;<var>T</var>&gt;&gt; <span class="m-text">at a signature's result</span>, <var>T</var> <span class="m-text">an array type</span>;</span></div><div class="row"><span><span class="m-text">the statement's frame top where no Modifies is written</span>;</span></div><div class="row"><span><span class="refused">refused</span><span class="m-rel">:</span> <var>T</var> <span class="m-text">of no array type, Fresh elsewhere, Fresh</span>&lt;<span class="m-con">Modifies</span>&lt;<var>P</var>, <var>T</var>&gt;&gt;, <span class="m-text">Fresh on a guard's promise</span></span></div></div></div></figure></div>
+<h4 class="change"><span class="act added">added</span>Rule <span class="target">a unit's fresh result, stated-declaration</span></h4><div class="rules"><div class="infer"><div class="frac"><div class="premises"><span><span class="m-rel">⊢</span> <var>P</var> <span class="m-rel">:</span> <var>Γ</var> → <var>B</var> ! <var>Φ</var></span><span><var>Φ</var> <span class="m-rel">≤</span> <var>ε</var>.<span class="m-text">footprint</span></span><span><var>ε</var>.<span class="m-op">onThrow</span> ⇒ <span class="m-op">onThrow</span>(<var>Φ</var>)</span><span><var>ε</var>.<span class="m-text">fresh</span> ⇒ <span class="m-op">fresh</span>(<var>Φ</var>)</span></div><div class="bar"></div><div class="conclusion"><div><span class="m-rel">⊢</span> <var>d</var> <span class="m-rel">:</span> <var>Γ</var> → <var>B</var> ! <var>ε</var></div><div><span class="m-text">the unit's request promises a fresh result where its statement does, checked</span></div><div><span class="m-text">node by node with its returns fresh; its module slot and an importer's</span></div><div><span class="m-text">statement check carry it</span></div></div></div><span class="rule-name">(stated-declaration)</span></div></div>
+<h4 class="change"><span class="act modified">modified</span>Lowering <span class="target">the producer's stated closure</span></h4><p>a stated closure keeps the</p><div class="lowering"><div class="cond"><span class="tgt"><span class="m-text">fresh result its body shows where its footprint is the statement's</span></span></div></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>stated-fresh</code> <span class="kind positive">positive</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">slice and map results returned under Fresh&lt;number[]&gt;</span></summary><pre class="code"><span class="tk-c">// Builders stating a fresh result and no frame: each returns the array a</span>
+<span class="tk-c">// native call allocates, so each unit certifies `Fresh&lt;number[]&gt;`. `same`</span>
+<span class="tk-c">// states none: it returns the array it is handed (a control forges a fresh</span>
+<span class="tk-c">// statement onto it).</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> copy(xs: <span class="tk-k">readonly</span> number[]): <span class="tk-t">Fresh</span>&lt;number[]&gt; {
+  <span class="tk-k">return</span> xs.slice();
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> doubled(xs: <span class="tk-k">readonly</span> number[]): <span class="tk-t">Fresh</span>&lt;number[]&gt; {
+  <span class="tk-k">const</span> out = xs.map((x) =&gt; x * <span class="tk-n">2</span>);
+  <span class="tk-k">return</span> out;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> same(xs: number[]): number[] {
+  <span class="tk-k">return</span> xs;
+}</pre></details></li><li><details><summary><code>stated-fresh-frame</code> <span class="kind positive">positive</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">Modifies&lt;{}, Fresh&lt;number[]&gt;&gt;</span></summary><pre class="code"><span class="tk-c">// A frame and a fresh result, `Modifies&lt;P, Fresh&lt;T&gt;&gt;`: `copy` changes no</span>
+<span class="tk-c">// location and returns the array `slice` allocates.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> copy(xs: <span class="tk-k">readonly</span> number[]): <span class="tk-t">Modifies</span>&lt;{}, <span class="tk-t">Fresh</span>&lt;number[]&gt;&gt; {
+  <span class="tk-k">return</span> xs.slice();
+}</pre></details></li><li><details><summary><code>stated-fresh-callback</code> <span class="kind positive">positive</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">an arrow returning slice()'s array at () =&gt; Fresh&lt;number[]&gt;</span></summary><pre class="code"><span class="tk-c">// A builder passed at a parameter whose function type states a fresh</span>
+<span class="tk-c">// result: the arrow returns the array `slice` allocates, so it meets the</span>
+<span class="tk-c">// type, and `build` may call it.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> build(make: () =&gt; <span class="tk-t">Fresh</span>&lt;number[]&gt;): number {
+  <span class="tk-k">return</span> make().length;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> use(xs: <span class="tk-k">readonly</span> number[]): number {
+  <span class="tk-k">return</span> build(() =&gt; xs.slice());
+}</pre></details></li><li><details><summary><code>invalid-stated-fresh-input</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">an identity function under Fresh (run under Node: undefined)</span></summary><pre class="code"><span class="tk-c">// A function returning its input under `Fresh&lt;T&gt;`, and a caller relying on</span>
+<span class="tk-c">// the promise: were the statement read as written, `alias` would read `xs`</span>
+<span class="tk-c">// and `ys` as two arrays, but they are one (run under Node: `xs[0]` is</span>
+<span class="tk-c">// `undefined` after `ys.pop()`).</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> same(xs: number[]): <span class="tk-t">Fresh</span>&lt;number[]&gt; {
+  <span class="tk-k">return</span> xs;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> alias(xs: number[]): number {
+  <span class="tk-k">if</span> (xs.length === <span class="tk-n">0</span>) <span class="tk-k">return</span> <span class="tk-n">0</span>;
+  <span class="tk-k">const</span> ys = same(xs);
+  ys.pop();
+  <span class="tk-k">return</span> xs[<span class="tk-n">0</span>]!;
+}</pre></details></li><li><code>invalid-stated-fresh-closure  negative</code> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">a closure returning a captured array at a Fresh type</span></li><li><details><summary><code>invalid-fresh-no-array</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">Fresh on a number</span></summary><pre class="code"><span class="tk-c">// `Fresh` on a result of no array type: a fresh result is an array the call</span>
+<span class="tk-c">// allocated.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> count(xs: <span class="tk-k">readonly</span> number[]): <span class="tk-t">Fresh</span>&lt;number&gt; {
+  <span class="tk-k">return</span> xs.length;
+}</pre></details></li><li><details><summary><code>invalid-fresh-parameter</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">Fresh at a parameter</span></summary><pre class="code"><span class="tk-c">// `Fresh` at a parameter's type: it states a signature's result.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> size(xs: <span class="tk-t">Fresh</span>&lt;number[]&gt;): number {
+  <span class="tk-k">return</span> xs.length;
+}</pre></details></li><li><details><summary><code>invalid-fresh-order</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">Fresh&lt;Modifies&lt;P, T&gt;&gt;</span></summary><pre class="code"><span class="tk-c">// A frame inside `Fresh`: the one order is `Modifies&lt;P, Fresh&lt;T&gt;&gt;`.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> copy(xs: <span class="tk-k">readonly</span> number[]): <span class="tk-t">Fresh</span>&lt;<span class="tk-t">Modifies</span>&lt;{}, number[]&gt;&gt; {
+  <span class="tk-k">return</span> xs.slice();
+}</pre></details></li><li><details><summary><code>invalid-fresh-unread</code> <span class="kind negative">negative</span> <span class="was">refused</span> <span class="arrow">→</span> <span class="now">removed</span> <span class="why">Fresh is read</span></summary><pre class="code"><span class="tk-c">// A fresh result, `Fresh&lt;T&gt;`: refused while no source statement reaches its</span>
+<span class="tk-c">// certification.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> zeros(count: number): <span class="tk-t">Fresh</span>&lt;number[]&gt; {
+  <span class="tk-k">const</span> out: number[] = [];
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; count; i++) out.push(<span class="tk-n">0</span>);
+  <span class="tk-k">return</span> out;
+}</pre></details></li></ul>
+<h4 class="change">Gap</h4><div class="prose"><p>An array the body's own literal allocates is no fresh source of the node-by-node check (<code>inferFresh</code> starts from calls stating <code>fresh</code>), so <code>const out: number[] = []; …; return out</code> is refused under Fresh. A caller does not yet keep a fact of another array across a change of the fresh array it received (§10's stated-fresh caller), refused at the caller's read. A qualified import's arrow carries no fresh result.</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">parser</span> <span class="chip strong">wire</span> <span class="chip">lean-lowering</span> <span class="chip">producer</span> <span class="chip">docs</span> <span class="chip">tests</span></dd><dt>Lean</dt><dd>Fragment.decodeStated · SourceRequest.fresh · moduleArrow · RequestJson.statedWithin</dd><dt>Wire</dt><dd>Fragment <code>stated</code> gains <code>fresh</code></dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd><span class="test pos">stated-fresh</span> <span class="test pos">stated-fresh-frame</span> <span class="test pos">stated-fresh-callback</span> <span class="test neg">invalid-stated-fresh-input</span> <span class="test neg">invalid-stated-fresh-closure</span> <span class="test neg">invalid-fresh-no-array</span> <span class="test neg">invalid-fresh-parameter</span> <span class="test neg">invalid-fresh-order</span> <span class="test forged">identity-function-stated-fresh</span></dd></dl>
+<details><summary>24 files changed, 211 insertions(+), 52 deletions(-)</summary><pre class="code"> docs/FRAGMENT-FORMAT.md                           |  2 +-
+ docs/SOURCE-ELABORATION.md                        | 33 +++++++++----
+ lean/Verification/Source/Claims/Extraction.lean   |  3 +-
+ lean/Verification/Source/Claims/Imports.lean      |  4 +-
+ lean/Verification/Source/Fragment.lean            |  8 +--
+ lean/Verification/Source/Lowering/Types.lean      |  8 +--
+ lean/Verification/Source/SourceExtraction.lean    |  1 +
+ lean/Verification/Source/SourceRequests.lean      |  3 +-
+ ocaml-producer/expression_closures.ml             |  2 +-
+ pipeline/cases.mts                                | 15 +++++-
+ pipeline/examples/invalid-fresh-no-array.ts       |  5 ++
+ pipeline/examples/invalid-fresh-order.ts          |  4 ++
+ pipeline/examples/invalid-fresh-parameter.ts      |  4 ++
+ pipeline/examples/invalid-fresh-unread.ts         |  7 ---
+ pipeline/examples/invalid-stated-fresh-closure.ts | 12 +++++
+ pipeline/examples/invalid-stated-fresh-input.ts   | 14 ++++++
+ pipeline/examples/stated-fresh-callback.ts        | 10 ++++
+ pipeline/examples/stated-fresh-frame.ts           |  5 ++
+ pipeline/examples/stated-fresh.ts                 | 16 ++++++
+ pipeline/test.mts                                 | 22 +++++++++
+ tests/node-runs.mts                               |  3 +-
+ tools/declaration-graph.mts                       | 15 ++++--
+ tools/declaration-types.mts                       |  7 +--
+ tools/type-term.mts                               | 60 ++++++++++++++++++-----</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-11450ad4f"><header><div><div class="sha">11450ad4f · Cristiano Calcagno · Nov 09, 09:39</div><h3>State the stated-effects status, and write the forged statements in the wire's shape</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>Two controls write a statement into the parser's document as text, in the shape the Fragment's <code>stated</code> had before it carried <code>fresh</code>; the decoder, requiring every field, refused them for their shape instead of for what they test. The status table had no row for the stated-effects work this line builds.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Tooling <span class="target">pipeline/test.mts, two controls</span></h4><div class="versions"><figure><figcaption>Before</figcaption><pre class="code"><span class="ln">&quot;stated&quot;:{&quot;footprint&quot;:{…},&quot;onThrow&quot;:false}</span></pre></figure><figure><figcaption>After</figcaption><pre class="code"><span class="ln">&quot;stated&quot;:{&quot;footprint&quot;:{…},&quot;onThrow&quot;:false,&quot;fresh&quot;:false}</span></pre></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">WORK.md row</span></h4><div class="prose"><p>Stated effects: what reads and certifies (class keys, onThrow, Fresh from native results), what is refused (location keys), and what is proved in the model and reached from no source request</p></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><code>none: the controls test what they tested before</code></li></ul>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">tests</span> <span class="chip">docs</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd></dl>
+<details><summary>2 files changed, 3 insertions(+), 2 deletions(-)</summary><pre class="code"> WORK.md           | 1 +
+ pipeline/test.mts | 4 ++--</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-bec3bb4f8"><header><div><div class="sha">bec3bb4f8 · Cristiano Calcagno · Nov 09, 09:52</div><h3>Write a writable field of a record that also states a stable key</h3></div><span class="pill ok">verified</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>A record type stating one field <code>@stable</code> lost every other field's write: the field-write rule took its receiver's record clause with no stable keys, so <code>runs.read += …</code> on pretext's <code>ScriptRuns</code>, once its <code>openBrackets</code> was stated <code>@stable</code>, was refused with &quot;an assignment needs one cell contract&quot;. A stable key is a view, which no write reaches, so the clause's stable keys need not be empty for a write of one of its invariant fields.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Rule <span class="target">write</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="rules"><div class="infer"><div class="frac"><div class="premises"><span><var>Γ</var> <span class="m-rel">⊢</span> <var>a</var> <span class="m-rel">:</span> <var>R</var></span><span><var>R</var> <span class="m-rel">≡</span> <span class="m-op">Ref</span>(<var>φ</var>; <var>ψ</var>; <var>ω</var>; <var>μ</var>; <var>β</var>; ∅)</span><span>(<var>f</var><span class="m-rel">:</span><var>A</var>) <span class="m-rel">∈</span> <var>φ</var></span><span><var>Γ</var> <span class="m-rel">⊢</span> <var>a'</var> <span class="m-rel">:</span> <var>A</var></span></div><div class="bar"></div><div class="conclusion"><div><var>Γ</var> <span class="m-rel">⊢</span> <var>a</var>.<var>f</var> ← <var>a'</var> <span class="m-rel">:</span> <span class="m-con">Null</span></div></div></div><span class="rule-name">(write)</span></div></div></figure><figure><figcaption>After</figcaption><div class="rules"><div class="infer"><div class="frac"><div class="premises"><span><var>Γ</var> <span class="m-rel">⊢</span> <var>a</var> <span class="m-rel">:</span> <var>R</var></span><span><var>R</var> <span class="m-rel">≡</span> <span class="m-op">Ref</span>(<var>φ</var>; <var>ψ</var>; <var>ω</var>; <var>μ</var>; <var>β</var>; <var>σ</var>)</span><span>(<var>f</var><span class="m-rel">:</span><var>A</var>) <span class="m-rel">∈</span> <var>φ</var></span><span><var>Γ</var> <span class="m-rel">⊢</span> <var>a'</var> <span class="m-rel">:</span> <var>A</var></span></div><div class="bar"></div><div class="conclusion"><div><var>Γ</var> <span class="m-rel">⊢</span> <var>a</var>.<var>f</var> ← <var>a'</var> <span class="m-rel">:</span> <span class="m-con">Null</span></div></div></div><span class="rule-name">(write)</span></div></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Lowering <span class="target">field write</span></h4><div class="lowering"><div class="cond"><span class="tgt"><span class="m-text">a field reference's receiver and a direct write's receiver are taken at</span></span></div><div class="cond"><span class="tgt"><span class="m-text">their record clause whatever stable keys it states</span></span></div></div>
+<h4 class="change">Lean</h4><div class="prose"><p>HasTyWith.write (ProgramTyping.lean) quantifies the clause's stable keys; HasTyUsing.sound proves it unchanged. The certificate checker (ProgramCertificates.lean), the search (CertificateProducer.lean), the execution reference (Lowering/Execution.lean) and writeCell (Lowering/Plans.lean) match the clause at any stable keys.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">PROGRAM-TYPING.md, writing</span></h4><div class="prose"><p>the write rule's receiver is Ref(φ; …), whatever views and stable keys it states</p></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>stable-field-record-writes</code> <span class="kind positive">positive</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">compound assignment, assignment and update beside a stable field</span></summary><pre class="code"><span class="tk-c">// A record stating one field `@stable` keeps its other fields writable: a</span>
+<span class="tk-c">// compound assignment, an assignment and an update of a writable field of</span>
+<span class="tk-c">// such a record write the field's location at its contract, while the stable</span>
+<span class="tk-c">// field holds its object literal's value (POSITIVE-TYPES.md, &quot;Records&quot;).</span>
+
+<span class="tk-k">type</span> <span class="tk-t">Runs</span> = { read: number; scripts: number; <span class="tk-c">/** @stable */</span> <span class="tk-k">readonly</span> open: number[] };
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> make(): <span class="tk-t">Runs</span> {
+  <span class="tk-k">return</span> { read: <span class="tk-n">0</span>, scripts: <span class="tk-n">0</span>, open: [] };
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> advance(runs: <span class="tk-t">Runs</span>, step: number): number {
+  <span class="tk-k">const</span> { open } = runs;
+  runs.read += step;
+  runs.scripts &amp;= <span class="tk-n">3</span>;
+  runs.read = runs.read + open.length;
+  runs.read++;
+  <span class="tk-k">return</span> runs.read;
+}</pre></details></li></ul>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">lean-rules</span> <span class="chip">lean-proofs</span> <span class="chip">lean-lowering</span> <span class="chip">docs</span> <span class="chip">tests</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd></dl>
+<details><summary>9 files changed, 33 insertions(+), 11 deletions(-)</summary><pre class="code"> docs/PROGRAM-TYPING.md                              |  6 ++++--
+ lean/Verification/Programs/CertificateProducer.lean |  2 +-
+ lean/Verification/Programs/ProgramCertificates.lean |  4 ++--
+ lean/Verification/Programs/ProgramTyping.lean       |  4 ++--
+ lean/Verification/Source/Lowering/Execution.lean    |  2 +-
+ lean/Verification/Source/Lowering/Plans.lean        |  4 ++--
+ pipeline/cases.mts                                  |  1 +
+ pipeline/examples/stable-field-record-writes.ts     | 19 +++++++++++++++++++
+ tests/rule-inventory.snap                           |  2 +-</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-8c09f605f"><header><div><div class="sha">8c09f605f · Cristiano Calcagno · Nov 09, 10:17</div><h3>Certify a function declaration's parameter store regions, &quot;x[*]&quot;: &quot;any&quot;, by the regional graph check</h3></div><span class="pill ok">verified</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>A function that pops or splices the array it is handed could state no frame narrower than letting every store change: the closed footprint has no exception for one store, so <code>Modifies&lt;{ values: &quot;any&quot; }, T&gt;</code> was refused over <code>xs.pop()</code>, and the location key <code>&quot;xs[*]&quot;</code> was refused at the reader. The regional graph check of the argument-path work (O5 of docs/drafts/stated-effects.md) decides exactly this bound, off the stores tracked slots hold, and was reached from no source request.</p></div>
+<h4 class="change"><span class="act added">added</span>Rule <span class="target">stated-region</span></h4><div class="rules"><div class="infer"><div class="frac"><div class="premises"><span><span class="m-bind">∀</span><var>ℓ</var>. <span class="m-rel">⊢</span> <span class="m-con">node</span><sub><var>ℓ</var></sub> <span class="m-op">within</span><sub><var>v</var>,<var>s</var></sub> <span class="m-text">off</span> <span class="m-op">store</span>(<var>x</var>₁),…,<span class="m-op">store</span>(<var>x</var>ₖ)</span><span><span class="m-op">completion</span>(<var>d</var>) <span class="m-rel">=</span> <span class="m-con">sync</span></span><span>¬<var>ε</var>.<span class="m-text">fresh</span></span></div><div class="bar"></div><div class="conclusion"><div><span class="m-rel">⊢</span> <var>d</var> <span class="m-rel">:</span> <var>Γ</var> → <var>B</var> ! <var>ε</var></div><div><var>ε</var> <span class="m-rel">=</span> <span class="m-con">Modifies</span>&lt;{ <span class="m-text">values</span><span class="m-rel">:</span> <var>v</var>; <span class="m-text">stores</span><span class="m-rel">:</span> <var>s</var>; <code class="m-code"><span class="tk-s">&quot;x₁[*]&quot;</span></code><span class="m-rel">:</span> <code class="m-code"><span class="tk-s">&quot;any&quot;</span></code>; …; <code class="m-code"><span class="tk-s">&quot;xₖ[*]&quot;</span></code><span class="m-rel">:</span> <code class="m-code"><span class="tk-s">&quot;any&quot;</span></code> }, <var>T</var>&gt; <span class="m-text">on a</span></div><div><span class="m-text">function declaration; callers read the footprint</span> {<var>v</var>, <span class="m-text">any</span>} <span class="m-text">with the</span></div><div><span class="m-text">promise StoresApartWithin</span> {<var>v</var>,<var>s</var>} <span class="m-text">at the call's positions beside it</span></div></div></div><span class="rule-name">(stated-region)</span></div></div>
+<h4 class="change"><span class="act modified">modified</span>Rule <span class="target">the statement reader, statementOf</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">every quoted location key </span><span class="refused">refused</span></span></div></div></div></figure><figure><figcaption>After</figcaption><div class="rules"><div class="formulas"><div class="row"><span><code class="m-code"><span class="tk-s">&quot;x[*]&quot;</span></code><span class="m-rel">:</span> <code class="m-code"><span class="tk-s">&quot;any&quot;</span></code> <span class="m-text">with</span> <var>x</var> <span class="m-text">a parameter of the function declaration (this its this</span></span></div><div class="row"><span><span class="m-text">parameter) read as x's call position; </span><span class="refused">refused</span><span class="m-rel">:</span> <span class="m-text">a region at another change</span>,</span></div><div class="row"><span><span class="m-text">a root with a default or a rest root, a region on any other signature, a</span></span></div><div class="row"><span><span class="m-text">region beside Fresh; every other location key </span><span class="refused">refused</span><span class="m-text"> as before</span></span></div></div></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Wire <span class="target">the Fragment's <code>stated</code></span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>{ footprint, onThrow, fresh }</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>{ footprint, onThrow, fresh, regions }, regions the excepted call positions</p></div></figure></div>
+<h4 class="change"><span class="act added">added</span>Theorem <span class="target">checkRequests_regional_at</span></h4><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">an accepted unit stating regions, run from any environment its inputs</span></span></div><div class="row"><span><span class="m-text">admit, is safe, and on normal return (on a throw where it states onThrow)</span></span></div><div class="row"><span><span class="m-text">every entry location but the region slots' stores is within the</span></span></div><div class="row"><span><span class="m-text">statement's bound</span><span class="m-rel">:</span> <span class="m-text">ArgumentStoreRegionsWithin; a conjunct of RequestsSafe</span>,</span></div><div class="row"><span><span class="m-text">so of</span> <span class="m-op">checkUnitJson</span><sub><span class="m-text">safe</span></sub>'<var>s</var> <span class="m-text">conclusion</span></span></div></div></div>
+<h4 class="change">Lean</h4><div class="prose"><p>CallEffects.Effect.regional and StoresApartWithin (a conjunct of Effect.post; covers, meet, drop, forgetEnsures and below handle it; code entries state none, by Effect.below); Fragment.decodeStated reads regions; SourceRequest.regional at input slots; regionalResult runs ArgumentRegionGraph.checkNodes with the table regionTable infers; statedWithin leaves a regional statement to it; moduleArrow states the regional effect in the declaration's slot; EffectJson writes and reads <code>regional</code>; footprintRefusal locates a refused region check</p></div>
+<h4 class="change"><span class="act modified">modified</span>Producer <span class="target">stated_of</span></h4><p>a statement with regions bounds no claim; the</p><div class="prose"><p>claim is what the body shows</p></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">SOURCE-ELABORATION.md stated effects, FRAGMENT-FORMAT.md, ANNOTATIONS.md, WORK.md row</span></h4><div class="prose"><p>store regions, their rule and their limits; the wire's regions; the Modifies entry's region example</p></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>stated-argument-store</code> <span class="kind positive">positive</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">pop and splice on a parameter's and a this parameter's region</span></summary><pre class="code"><span class="tk-c">// Frames stating a parameter's store region (docs/drafts/stated-effects.md,</span>
+<span class="tk-c">// §4): `shrink` pops and splices the array it is handed and `trim` pops its</span>
+<span class="tk-c">// second parameter's, each changing value locations and that store alone, so</span>
+<span class="tk-c">// each states `values: &quot;any&quot;` and the parameter's region `&quot;xs[*]&quot;: &quot;any&quot;`,</span>
+<span class="tk-c">// every other store kept. A `this` parameter names the receiver's store.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> shrink(xs: number[]): <span class="tk-t">Modifies</span>&lt;{ values: <span class="tk-s">&quot;any&quot;</span>; <span class="tk-s">&quot;xs[*]&quot;</span>: <span class="tk-s">&quot;any&quot;</span> }, <span class="tk-k">void</span>&gt; {
+  xs.pop();
+  xs.splice(<span class="tk-n">0</span>, <span class="tk-n">1</span>);
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> trim(n: number, xs: number[]): <span class="tk-t">Modifies</span>&lt;{ values: <span class="tk-s">&quot;any&quot;</span>; <span class="tk-s">&quot;xs[*]&quot;</span>: <span class="tk-s">&quot;any&quot;</span> }, number&gt; {
+  xs.pop();
+  <span class="tk-k">return</span> n;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> clear(<span class="tk-k">this</span>: number[]): <span class="tk-t">Modifies</span>&lt;{ values: <span class="tk-s">&quot;any&quot;</span>; <span class="tk-s">&quot;this[*]&quot;</span>: <span class="tk-s">&quot;any&quot;</span> }, <span class="tk-k">void</span>&gt; {
+  <span class="tk-k">this</span>.splice(<span class="tk-n">0</span>);
+}</pre></details></li><li><details><summary><code>invalid-stated-store-region</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">region on xs, body pops ys (run under Node)</span></summary><pre class="code"><span class="tk-c">// A frame excepting one parameter's store while the body changes another's:</span>
+<span class="tk-c">// `drop` states `xs`'s store region and pops `ys`, whose store the statement</span>
+<span class="tk-c">// keeps, so the region check refuses the pop. Under Node, `drop([1], [2])`</span>
+<span class="tk-c">// leaves `ys` empty, where the statement says its store is unchanged.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> drop(xs: number[], ys: number[]): <span class="tk-t">Modifies</span>&lt;{ values: <span class="tk-s">&quot;any&quot;</span>; <span class="tk-s">&quot;xs[*]&quot;</span>: <span class="tk-s">&quot;any&quot;</span> }, <span class="tk-k">void</span>&gt; {
+  ys.pop();
+}</pre></details></li><li><details><summary><code>invalid-modifies-region-change</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">&quot;xs[*]&quot;: &quot;grow&quot;</span></summary><pre class="code"><span class="tk-c">// A store region stated at a change other than `&quot;any&quot;`: a region's store and</span>
+<span class="tk-c">// cells may change arbitrarily, so a narrower change is refused at the reader.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> grow(xs: number[]): <span class="tk-t">Modifies</span>&lt;{ values: <span class="tk-s">&quot;any&quot;</span>; <span class="tk-s">&quot;xs[*]&quot;</span>: <span class="tk-s">&quot;grow&quot;</span> }, <span class="tk-k">void</span>&gt; {
+  xs.push(<span class="tk-n">1</span>);
+}</pre></details></li><li><details><summary><code>invalid-modifies-region-root</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">a root with a default</span></summary><pre class="code"><span class="tk-c">// A store region rooted at a parameter with a default: its value in the body</span>
+<span class="tk-c">// is not the call's where the call passes none, so the root is refused.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> fill(xs: number[] = []): <span class="tk-t">Modifies</span>&lt;{ values: <span class="tk-s">&quot;any&quot;</span>; <span class="tk-s">&quot;xs[*]&quot;</span>: <span class="tk-s">&quot;any&quot;</span> }, <span class="tk-k">void</span>&gt; {
+  xs.pop();
+}</pre></details></li><li><details><summary><code>invalid-modifies-region-callback</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">a region at a function type</span></summary><pre class="code"><span class="tk-c">// A store region stated at a function type: a callback's statement has no</span>
+<span class="tk-c">// unit whose check establishes it, so it is refused at the reader.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> apply(xs: number[], f: (ys: number[]) =&gt; <span class="tk-t">Modifies</span>&lt;{ values: <span class="tk-s">&quot;any&quot;</span>; <span class="tk-s">&quot;ys[*]&quot;</span>: <span class="tk-s">&quot;any&quot;</span> }, <span class="tk-k">void</span>&gt;): <span class="tk-k">void</span> {
+  f(xs);
+}</pre></details></li></ul>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">parser</span> <span class="chip strong">wire</span> <span class="chip">lean-proofs</span> <span class="chip">lean-lowering</span> <span class="chip">producer</span> <span class="chip">docs</span> <span class="chip">tests</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd></dl>
+<details><summary>29 files changed, 491 insertions(+), 103 deletions(-)</summary><pre class="code"> WORK.md                                            |   2 +-
+ docs/ANNOTATIONS.md                                |  10 +-
+ docs/FRAGMENT-FORMAT.md                            |   2 +-
+ docs/SOURCE-ELABORATION.md                         |  50 ++++++-
+ lean/Verification/Programs/GraphCode.lean          |  10 +-
+ lean/Verification/Programs/PromiseCalls.lean       |   2 +-
+ lean/Verification/Programs/TypingBasics.lean       |   2 +-
+ lean/Verification/Programs/VariadicTyping.lean     |   4 +-
+ lean/Verification/Semantics/CallEffects.lean       |  97 ++++++++-----
+ lean/Verification/Source/Claims/Extraction.lean    |   8 +-
+ lean/Verification/Source/Claims/Json.lean          |  38 +++++-
+ lean/Verification/Source/EffectJson.lean           |  15 ++-
+ lean/Verification/Source/Fragment.lean             |  26 +++-
+ lean/Verification/Source/Lowering/Types.lean       |   9 +-
+ lean/Verification/Source/RequestJson.lean          |  15 ++-
+ lean/Verification/Source/SourceExtraction.lean     |   6 +
+ lean/Verification/Source/SourceRequests.lean       | 150 +++++++++++++++++++--
+ ocaml-producer/source.ml                           |   5 +-
+ pipeline/cases.mts                                 |   9 ++
+ .../examples/invalid-modifies-region-callback.ts   |   5 +
+ .../examples/invalid-modifies-region-change.ts     |   5 +
+ pipeline/examples/invalid-modifies-region-root.ts  |   5 +
+ pipeline/examples/invalid-stated-store-region.ts   |   7 +
+ pipeline/examples/stated-argument-store.ts         |  18 +++
+ pipeline/test.mts                                  |  37 ++++-
+ tests/json-field-names.mts                         |   1 +
+ tests/node-runs.mts                                |   1 +
+ tools/declaration-types.mts                        |   5 +-
+ tools/type-term.mts                                |  50 +++++--</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+</main></body></html>
