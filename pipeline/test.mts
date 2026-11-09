@@ -10137,6 +10137,114 @@ control(async (): Promise<void> => {
   process.stdout.write("type graph: a callable type's methods decode to themselves\n");
 });
 
+/** Actual slice lines, retaining the store and anchors used by translation. */
+const sliceEvidenceLines = (artifacts: string): JsonObject[] =>
+  readFileSync(join(artifacts, "unit-evidence.json"), "utf8").trim().split("\n")
+    .map((line) => jsonObject(jsonValue(JSON.parse(line))));
+const differingSlice = (artifacts: string, name: string): JsonObject => {
+  const line = must(sliceEvidenceLines(artifacts).find((l) => typeof l.unit === "string" && l.unit.startsWith(name + "@")), name);
+  const document = readFileSync(join(artifacts, "evidence.json"), "utf8").trim().split("\n")
+    .map((l) => jsonObject(jsonValue(JSON.parse(l))));
+  const whole = must(document.find((l) => l.unit === line.unit), "the document's unit");
+  assert.notDeepEqual(line.heads, whole.heads, "relocation cannot take the equal-store shortcut");
+  assert.notDeepEqual(line.anchors, whole.anchors, "the unit's request labels need relocation");
+  return line;
+};
+control(async (): Promise<void> => {
+  const artifacts = run("aliases");
+  const line = differingSlice(artifacts, "allocatedAlias");
+  const check = (value: JsonObject, claims: string, name: string): Invoked => {
+    const path = join(artifacts, `slice-${name}.json`);
+    writeFileSync(path, JSON.stringify(value) + "\n");
+    return tested(verifierCall(verifier, ["--check-units", join(artifacts, "fragment.json"), claims,
+      sourceKey(artifacts), path, "allocatedAlias"]));
+  };
+  const claimsPath = join(artifacts, "claims.json");
+  const honest = check(line, claimsPath, "honest");
+  assert.equal(honest.status, 0, honest.stdout + honest.stderr);
+  const claims = readClaims(artifacts);
+  const fn = must(claims.functions.find((f) => f.name === "allocatedAlias"), "allocatedAlias");
+  const source = readFileSync(sourceKey(artifacts), "utf8");
+  const start = source.indexOf("box.value");
+  must(fn.expressions.find((e) => e.pos[0] === start && e.pos[1] === start + 9), "the field read").type = [rowOf(claims, "str")];
+  const forgedClaims = writeClaims(artifacts, "slice-forged-claims", claims);
+  const badClaims = check(line, forgedClaims, "claims");
+  assert.equal(badClaims.status, 1, badClaims.stdout + badClaims.stderr);
+  assert.match(badClaims.stdout + badClaims.stderr, /source evidence refusal/);
+  const evidence = structuredClone(line);
+  const bundle = jsonObject(evidence.evidence);
+  const proofs = jsonArray(bundle.proofs);
+  for (const proof of proofs) {
+    const p = jsonObject(proof);
+    const claim = jsonObject(p.claim);
+    claim.type = 0;
+  }
+  const badEvidence = check(evidence, claimsPath, "evidence");
+  assert.equal(badEvidence.status, 1, badEvidence.stdout + badEvidence.stderr);
+  assert.match(badEvidence.stdout + badEvidence.stderr, /source evidence refusal/);
+  const anchors = structuredClone(line);
+  const forge = (v: JsonValue): void => {
+    if (Array.isArray(v)) { v.forEach(forge); return; }
+    if (v === null || typeof v !== "object") return;
+    if ("§label" in v) v["§label"] = 0;
+    else Object.values(v).forEach(forge);
+  };
+  forge(anchors.anchors ?? null);
+  // Fabricated correspondence must not rescue the false field-read claim.
+  const badAnchors = check(anchors, forgedClaims, "anchors");
+  assert.equal(badAnchors.status, 1, badAnchors.stdout + badAnchors.stderr);
+  assert.match(badAnchors.stdout + badAnchors.stderr, /source evidence refusal/);
+  process.stdout.write("slice translation: honest evidence accepted across differing stores; forged claims, evidence and anchors refused by checking\n");
+});
+
+mutationControl(async (): Promise<void> => {
+  // Search with only link checking disabled supplies a valid callee proof.
+  // The production checker must reach the incoming edge after the call.
+  const artifacts = run("guard-field-keeping-call");
+  const original = differingSlice(artifacts, "size");
+  const source = readFileSync(sourceKey(artifacts), "utf8");
+  const claims = readClaims(artifacts);
+  const change = (arrows: Extract<ClaimRow[number], { arrs: unknown }>["arrs"]["arrows"]): void => {
+    assert.equal(arrows.length, 1);
+    for (const arrow of arrows) arrow.effect = ordinaryEffect;
+  };
+  const at = source.indexOf("count(x.args)");
+  const fn = must(claims.functions.find((f) => f.name === "size"), "size");
+  const expression = fn.expressions.findIndex((e) => e.pos[0] === at && e.pos[1] === at + 5);
+  assert.ok(expression >= 0);
+  fn.footprint = ordinaryEffect.footprint;
+  fn.onThrow = false;
+  forgeCallee(claims, "size", at, "count", change);
+  const forged = writeClaims(artifacts, "slice-call-claims", claims);
+  const sliceFile = must(readdirSync(artifacts).filter((n) => /^unit-\d+\.slice\.json$/.test(n)).find((name) => {
+    const ast = readFragmentFile(join(artifacts, name));
+    return ast.functions.some((f) => f.name === "size" && f.body.length > 0);
+  }), "size's actual slice");
+  const prefix = sliceFile.replace(".slice.json", "");
+  const sliceClaims = readClaimsFile(join(artifacts, `${prefix}.claims.json`));
+  const sliceFn = must(sliceClaims.functions.find((f) => f.name === "size"), "size's slice claims");
+  sliceFn.footprint = ordinaryEffect.footprint;
+  sliceFn.onThrow = false;
+  forgeCallee(sliceClaims, "size", must(sliceFn.expressions[expression], "the slice's callee").pos[0], "count", change);
+  const sliceClaimsPath = writeClaims(artifacts, "slice-call-proposal", sliceClaims);
+  const path = join(artifacts, "slice-call-forged-evidence.json");
+  const produced = tested(verifierCall(mutationVerifier(), ["--produce-unit", join(artifacts, sliceFile),
+    sliceClaimsPath, join(artifacts, `${prefix}.search-qualified.json`), path, "12", "size"],
+    { TSCERT_TEST_MUTATIONS: "links" }));
+  assert.equal(produced.status, 0, produced.stdout + produced.stderr);
+  const line = jsonObject(jsonValue(JSON.parse(readFileSync(path, "utf8").trim())));
+  line.unit = original.unit ?? null;
+  writeFileSync(path, JSON.stringify(line) + "\n");
+  const args = ["--check-units", join(artifacts, "fragment.json"), forged, sourceKey(artifacts), path, "size"];
+  const isolated = tested(verifierCall(mutationVerifier(), args, { TSCERT_TEST_MUTATIONS: "links" }));
+  assert.equal(isolated.status, 0, isolated.stdout + isolated.stderr);
+  const checked = tested(verifierCall(verifier, args));
+  assert.equal(checked.status, 1, checked.stdout + checked.stderr);
+  assert.match(checked.stdout + checked.stderr,
+    new RegExp(`source incoming edge obligation at \\[${source.indexOf("return n + x.args.length")},.*evidence fails heap knowledge`));
+  process.stdout.write("slice call preservation: the callee obligation passes; the trusted checker refuses the post-call heap link, with only link checking disabled accepting the same evidence\n");
+});
+
 /** A control's result, as a control process reports it: its operations'
  * counts (`controlOperations`), and whether the process retires after it. */
 type Operations = { executed: number; replayed: number; elapsedMs: number };
