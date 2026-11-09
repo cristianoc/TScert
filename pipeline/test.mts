@@ -9480,7 +9480,8 @@ for (const variant of ["covered", "kept", "taken"] as const) mutationControl(asy
 control(async (): Promise<void> => {
   // Stable keys in the declaration document (HOST-FAMILIES.md, "Stable
   // keys"): the decoder accepts them as readonly members, required or
-  // optional, of a marked family shape alone. Each forged document is
+  // optional, of a marked family shape, and as required readonly fields of
+  // an unmarked shape, a program record's. Each forged document is
   // refused by the decoder; its neighbour, differing in the one thing the
   // check reads, is decoded.
   const artifacts = run("compiler-api-path-witness");
@@ -9531,18 +9532,27 @@ control(async (): Promise<void> => {
     o.stable = [...(o.stable ?? []), "noSuchMember"];
   });
   assert.doesNotMatch(absentNeighbour, decoder, absentNeighbour);
-  // An unmarked shape stating stable keys, at a required member and at an
-  // optional one, as a program record would; its neighbour states none.
-  const unmarked = searchWith("forged-stable-unmarked", o => { delete o.host; });
-  assert.match(unmarked, /a stable key is stated of a host family's marked shape alone/, unmarked);
+  // An unmarked shape, a program record's, stating an optional readonly
+  // member stable and a writable one; its neighbours state a required
+  // readonly field stable, and none.
+  const programRecord = /a program record's stable key is a required readonly field/;
   const unmarkedOptional = searchWith("forged-stable-unmarked-optional", o => {
     delete o.host;
+    o.stable = ["text"];
     must(o.fields.find(f => f.name === "text"), "text").optional = true;
   });
-  assert.match(unmarkedOptional, /a stable key is stated of a host family's marked shape alone/, unmarkedOptional);
+  assert.match(unmarkedOptional, programRecord, unmarkedOptional);
+  const unmarkedWritable = searchWith("forged-stable-unmarked-writable", o => {
+    delete o.host;
+    o.stable = ["text"];
+    must(o.fields.find(f => f.name === "text"), "text").readonly = false;
+  });
+  assert.match(unmarkedWritable, programRecord, unmarkedWritable);
+  const unmarkedRequired = searchWith("stable-unmarked-required", o => { delete o.host; o.stable = ["text"]; });
+  assert.doesNotMatch(unmarkedRequired, decoder, unmarkedRequired);
   const unmarkedNeighbour = searchWith("stable-unmarked-neighbour", o => { delete o.host; delete o.stable; });
   assert.doesNotMatch(unmarkedNeighbour, decoder, unmarkedNeighbour);
-  process.stdout.write("stable keys: a writable (optional and required), an absent and an unmarked (required and optional) stable key refused by the decoder, each beside its decoded neighbour, an optional readonly one decoded\n");
+  process.stdout.write("stable keys: a writable (optional and required), an absent and an unmarked optional or writable stable key refused by the decoder, each beside its decoded neighbour, an optional readonly one of a marked shape and a required readonly one of an unmarked shape decoded\n");
 });
 
 control(async (): Promise<void> => {
