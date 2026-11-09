@@ -87,13 +87,17 @@ def footprintRefusal {σ ι : Type} [Labels ι] [StoreView σ ι] (name : String
   -- A statement with store regions: at the first node the regional check
   -- refuses (`regionalResult`), else at the declaration.
   if !(regionalResult r c).accepted then
-    let place := r.regional.bind fun (Φ, ps) =>
-      let regions := ps.map fun p => (⟨p, []⟩ : Footprints.ArgumentStoreRegion)
+    let fieldsOk := (r.regional.map fun (_, regions) =>
+      GraphCode.ArgumentPathTracking.checkEntryFields G r.inputs regions).getD true
+    let place := r.regional.bind fun (Φ, regions) =>
       let P := GraphCode.program (r.program.map (·.expression)) (r.program.map fun n => (n.continuation, n.handler))
       let table := regionTable P c.certificate r.start regions
       (GraphCode.ArgumentRegionGraph.firstRefusedNode G images c.readSummaries Φ regions table
         (r.stated.any (·.onThrow)) P c.certificate).bind fun (_, l) => (r.sourceMap[l]?).bind id
     let pos := (place.map (·.pos)).getD namePos
+    if !fieldsOk then
+      some s!"source effect refusal at [{namePos.1},{namePos.2}): the frame stated for '{name}' reads a store region through a field that is no present stable field of its parameter's type, or through more than one field"
+    else
     some s!"source effect refusal at [{pos.1},{pos.2}): the frame stated for '{name}' is not established by its body: a step changes a location outside its store regions beyond the statement's bound"
   else
     (r.toRequest.codes.zip c.codes).zipIdx.findSome? fun ((q, C), i) =>
@@ -313,7 +317,7 @@ def RequestsSafe (F : EquationStore.Frozen)
             (fun h' v => GraphCode.EnsuresAt r.ensures h' (push v (envOf L d))) n W heap
             (.goto (r.program.map (·.expression)) (r.program.map fun n => (n.continuation, n.handler))
               r.start L d)) ∧
-      (∀ r c, (r,c) ∈ rs.zip b.functions → ∀ Φ ps, r.regional = some (Φ, ps) →
+      (∀ r c, (r,c) ∈ rs.zip b.functions → ∀ Φ regions, r.regional = some (Φ, regions) →
         ∀ η n W heap (L : List Tm) (d : Tm),
           EnvOk (reassign F.equations.graph η) r.inputs (envOf L d) n W →
           HeapSeparation.Holds r.entrySeparation (envOf L d) →
@@ -321,9 +325,9 @@ def RequestsSafe (F : EquationStore.Frozen)
           WorldAdm W → HeapOk n W heap →
           HeapObservations.SafePostExc (excOf (reassign F.equations.graph η))
             (ControlFlow.GoalHolds (reassign F.equations.graph η) r.goal (r.goal.argument (envOf L d)))
-            (fun h' _ => Footprints.ArgumentStoreRegionsWithin Φ (ps.map fun p => ⟨p, []⟩) (envOf L d) heap h')
+            (fun h' _ => Footprints.ArgumentStoreRegionsWithin Φ regions (envOf L d) heap h')
             (fun h' => r.stated.any (·.onThrow) = true →
-              Footprints.ArgumentStoreRegionsWithin Φ (ps.map fun p => ⟨p, []⟩) (envOf L d) heap h')
+              Footprints.ArgumentStoreRegionsWithin Φ regions (envOf L d) heap h')
             n W heap
             (.goto (r.program.map (·.expression)) (r.program.map fun n => (n.continuation, n.handler))
               r.start L d)) ∧
@@ -342,7 +346,7 @@ theorem requestsSafe_of_check {F : EquationStore.Frozen}
     exact checkRequests_footprint_at hc hm heffect η n W heap L d he hw hh hvalues hd hsep hidx
   · intro r c hm hens η n W heap L d he hsep hidx hw hh
     exact checkRequests_ensures_at hc hm hens η n W heap L d he hw hh hsep hidx
-  · intro r c hm Φ ps hr η n W heap L d he hsep hidx hw hh
+  · intro r c hm Φ regions hr η n W heap L d he hsep hidx hw hh
     exact checkRequests_regional_at hc hm hr η n W heap L d he hw hh hsep hidx
 
 /-- What a successful check of extracted plans gives: they cross the

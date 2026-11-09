@@ -823,7 +823,9 @@ def decodeCompletion (j : Json) : Except String Bool := do
 /-- The effect a definition's result annotation states, `{footprint,
 onThrow, fresh, regions}`, or none: a closed footprint and whether it holds
 on a throw too, whether the result is fresh, and the call positions whose
-values' stores the frame lets change arbitrarily (`"x[*]": "any"`). The
+values, read through a path of fields, select the stores the frame lets
+change arbitrarily (`"x[*]": "any"`, `"x.f[*]": "any"`), each
+`{position, path}`. The
 effect's frame is the closed footprint with those store regions and no
 receiver mode; a statement of `top` without a fresh result states nothing,
 and is refused. With regions, a fresh result beside them and a bound of
@@ -835,7 +837,11 @@ def decodeStated : Json → Except String (Option CallEffects.Effect)
     let footprint : Footprints.Closed ← fromJson? (← jField j "footprint")
     let onThrow ← (← jField j "onThrow").getBool?
     let fresh ← (← jField j "fresh").getBool?
-    let regions : List Nat ← fromJson? (← jField j "regions")
+    let regions ← (← (← jField j "regions").getArr?).toList.mapM fun (r : Json) => do
+      fieldsExactly r ["position", "path"]
+      let position : Nat ← fromJson? (← jField r "position")
+      let path : List String ← fromJson? (← jField r "path")
+      pure (⟨position, path⟩ : Footprints.ArgumentStoreRegion)
     if regions.isEmpty then
       if footprint == .top && !fresh then
         throw "a stated effect states a footprint below `top` or a fresh result"
@@ -843,8 +849,7 @@ def decodeStated : Json → Except String (Option CallEffects.Effect)
     else
       if footprint == .top || fresh || !regions.Nodup then
         throw "a stated effect with store regions states a bound below `top` off them, distinct positions and no fresh result"
-      pure (some { CallEffects.Effect.ofFootprint footprint with
-        onThrow := onThrow, regions := regions.map fun p => ⟨p, []⟩ })
+      pure (some { CallEffects.Effect.ofFootprint footprint with onThrow := onThrow, regions := regions })
 
 /-- A guard's promise as the Fragment states it, or none. -/
 def decodeGuard : Json → Except String (Option Guard)

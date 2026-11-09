@@ -7,7 +7,7 @@ import type { Identifier, Node, SourceFile, TypeAliasDeclaration, TypeElement, T
 import type { Span } from "./span.mts";
 import { statesTag } from "./bound-annotations.mts";
 import { childrenOf, isTypeAlias, unparenthesized } from "./syntax.mts";
-import type { ClosedFootprint, PropertyKey, ResolutionSlots, StatedEffect, TypeTerm } from "./declaration-types.mts";
+import type { ClosedFootprint, PropertyKey, ResolutionSlots, StatedEffect, StoreRegion, TypeTerm } from "./declaration-types.mts";
 import { withPromise, footprintEffect, ordinaryEffect, promiseEffect } from "./type-graph.mts";
 import type { CallEffect, CallPromise } from "./type-graph.mts";
 
@@ -1187,10 +1187,11 @@ export const FRESH_PLACE = "`Fresh` states a written signature's fresh result, a
 
 /** The call effect a statement gives its signature: its footprint, on-throw
  * flag and fresh result, no promise, no receiver-store exception. A
- * statement with store regions gives its footprint letting every store
- * change: the regions' bound is read only from a unit's own statement. */
+ * statement with store regions gives its frame's closed approximation,
+ * letting every location change (`CallEffects.Effect.footprint`): the
+ * regions are read only from a unit's own statement. */
 export const statedEffect = (stated: StatedEffect): Modifies<{ values: "any"; stores: "grow" }, CallEffect> =>
-  (footprintEffect(stated.regions.length ? { value: stated.footprint.value, store: "any" } : stated.footprint,
+  (footprintEffect(stated.regions.length ? { value: "any", store: "any" } : stated.footprint,
     { onThrow: stated.onThrow, fresh: stated.fresh }));
 
 /** A result annotation's statement of its signature's frame,
@@ -1287,11 +1288,13 @@ const locationKey = (key: string): boolean => {
 
 /** A statement's frame `P`, written in place as a type literal: `values`
  * and `stores` at a change, unquoted, `onThrow: true`, and quoted location
- * keys. An omitted class key is `keep`. A store region `"x[*]": "any"` of a
- * function declaration's parameter `x` (`this` its receiver parameter) is
- * read as `x`'s call position (`regionPosition`); any other location key is
- * refused: the regions it names are read where their certification reaches
- * the source (docs/drafts/stated-effects.md, §3.1). */
+ * keys. An omitted class key is `keep`. A store region `"x[*]": "any"` or
+ * `"x.f[*]": "any"` of a function declaration's parameter `x` (`this` its
+ * receiver parameter) is read as `x`'s call position (`regionPosition`) and
+ * the path `[f]`, the field's stability decided by the unit's regional check;
+ * any other location key is refused: the regions it names are read where
+ * their certification reaches the source (docs/drafts/stated-effects.md,
+ * §3.1). */
 function statementOf(scope: TermScope, written: TypeNode, at: Node | null): Modifies<{ values: "any"; stores: "grow" }, StatedEffect> {
   const node = unwrap(written);
   const shape = "a frame is written in place as a type literal `{ values?: c; stores?: c; onThrow?: true; \"L\"?: c }`, each `c` one of \"keep\", \"init\", \"scalar\", \"grow\", \"any\"";
@@ -1299,7 +1302,7 @@ function statementOf(scope: TermScope, written: TypeNode, at: Node | null): Modi
   let value: ClosedFootprint["value"] = "keep";
   let store: ClosedFootprint["store"] = "keep";
   let onThrow = false;
-  const regions: number[] = [];
+  const regions: StoreRegion[] = [];
   const seen = new Set<string>();
   for (const member of node.members) {
     if (!ts.isPropertySignatureDeclaration(member) || member.modifiers?.length || !member.type ||
@@ -1321,10 +1324,11 @@ function statementOf(scope: TermScope, written: TypeNode, at: Node | null): Modi
         isChange(literalText(unwrap(m.type))));
       if (!isChange(text) && !classMap)
         return scope.fail(member, `a location key's change is one of "keep", "init", "scalar", "grow", "any", or a class map \`{ values?: c; stores?: c }\``);
-      const store = /^([A-Za-z_$][\w$]*)\[\*\]$/.exec(key);
-      if (store?.[1] !== undefined && text === "any") regions.push(regionPosition(scope, member, store[1], at));
+      const store = /^([A-Za-z_$][\w$]*)(?:\.([A-Za-z_$][\w$]*))?\[\*\]$/.exec(key);
+      if (store?.[1] !== undefined && text === "any")
+        regions.push({ position: regionPosition(scope, member, store[1], at), path: store[2] === undefined ? [] : [store[2]] });
       else if (store) return scope.fail(member, `a store region "${key}" is stated at "any": its store and cells may change arbitrarily`);
-      else return scope.fail(member, `the location key "${key}" names regions no source statement reaches yet: a frame states \`values\`, \`stores\`, \`onThrow\` and a parameter's store region \`"x[*]"\``);
+      else return scope.fail(member, `the location key "${key}" names regions no source statement reaches yet: a frame states \`values\`, \`stores\`, \`onThrow\` and a parameter's store region \`"x[*]"\` or \`"x.f[*]"\``);
     } else if (ts.isIdentifier(member.name) && (key === "value" || key === "store"))
       return scope.fail(member, `\`${key}\` is no key of a frame: the class keys are \`values\` and \`stores\`, and a module cell is written \`"cell(${key})"\``);
     else if (!ts.isIdentifier(member.name) || key === "values" || key === "stores" || key === "onThrow") return scope.fail(member, shape);

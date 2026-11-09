@@ -117,7 +117,8 @@ or `"any"`) bounds changes to locations holding a value, `stores` the same
 for array stores, and `onThrow: true` makes the bound hold on a throw too;
 `{}` states that nothing previously allocated changes. On a function
 declaration, `"x[*]": "any"` excepts the store parameter `x` holds at the
-call, which may change arbitrarily. TypeScript reads it as `T`; the
+call, and `"x.f[*]": "any"` the store its `@stable` field `f` holds, which
+may change arbitrarily. TypeScript reads it as `T`; the
 verifier certifies it from the function's code.
 [Stated effects](SOURCE-ELABORATION.md#stated-effects).
 

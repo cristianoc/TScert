@@ -941,8 +941,8 @@ control(async (): Promise<void> => {
   const artifacts = run("stated-argument-store");
   const ast: Ast = readFragmentFile(join(artifacts, "fragment.json"));
   const trim = must(ast.functions.find(f => f.name === "trim"), "trim");
-  assert.deepEqual(trim.stated?.regions, [2], "trim states xs's region");
-  trim.stated = { footprint: { value: "any", store: "keep" }, onThrow: false, fresh: false, regions: [1] };
+  assert.deepEqual(trim.stated?.regions, [{ position: 2, path: [] }], "trim states xs's region");
+  trim.stated = { footprint: { value: "any", store: "keep" }, onThrow: false, fresh: false, regions: [{ position: 1, path: [] }] };
   const document = join(artifacts, "forged-region-fragment.json");
   writeFileSync(document, JSON.stringify(ast));
   const refusal = /source effect refusal at \[\d+,\d+\): the frame stated for 'trim' is not established by its body/;
@@ -952,7 +952,7 @@ control(async (): Promise<void> => {
   invoke(join(artifacts, "claims.json"), documentEvidence(artifacts), artifacts, refusal, document);
   const receiver: Ast = readFragmentFile(join(artifacts, "fragment.json"));
   const shrink = must(receiver.functions.find(f => f.name === "shrink"), "shrink");
-  shrink.stated = { footprint: { value: "any", store: "keep" }, onThrow: false, fresh: false, regions: [0] };
+  shrink.stated = { footprint: { value: "any", store: "keep" }, onThrow: false, fresh: false, regions: [{ position: 0, path: [] }] };
   const receiverDocument = join(artifacts, "forged-receiver-region-fragment.json");
   writeFileSync(receiverDocument, JSON.stringify(receiver));
   const absent = /a stated store region names the receiver, which the function does not declare/;
@@ -960,6 +960,39 @@ control(async (): Promise<void> => {
   assert.equal(unsearched.status, 1, `${unsearched.stdout}${unsearched.stderr}`);
   assert.match(unsearched.stdout + unsearched.stderr, absent);
   process.stdout.write("forged store regions: a region moved to another parameter, refused at the unit's regional check in search and in checking, and one at an undeclared receiver, refused at the request\n");
+});
+
+control(async (): Promise<void> => {
+  // A store region read through a path, forged into the parser's document
+  // (`"runs.openBrackets[*]": "any"`, `SourceRequest.regional`): `readRuns`'s
+  // region moved from the field's array to the record's own store, so its
+  // splice changes a store the statement keeps, refused at its unit's
+  // regional check in search and in checking; and moved through a field its
+  // parameter's type does not state, refused at the entry check of the
+  // traversed fields.
+  const artifacts = run("stated-argument-path");
+  const ast: Ast = readFragmentFile(join(artifacts, "fragment.json"));
+  const readRuns = must(ast.functions.find(f => f.name === "readRuns"), "readRuns");
+  assert.deepEqual(readRuns.stated?.regions, [{ position: 1, path: ["openBrackets"] }], "readRuns states the field's region");
+  readRuns.stated = { footprint: { value: "any", store: "keep" }, onThrow: false, fresh: false, regions: [{ position: 1, path: [] }] };
+  const document = join(artifacts, "forged-path-region-fragment.json");
+  writeFileSync(document, JSON.stringify(ast));
+  const refusal = /source effect refusal at \[\d+,\d+\): the frame stated for 'readRuns' is not established by its body/;
+  const searched = produceWith(artifacts, join(artifacts, "claims.json"), "forged-path-region", document);
+  assert.equal(searched.status, 1, `${searched.stdout}${searched.stderr}`);
+  assert.match(searched.stdout + searched.stderr, refusal);
+  invoke(join(artifacts, "claims.json"), documentEvidence(artifacts), artifacts, refusal, document);
+  const other: Ast = readFragmentFile(join(artifacts, "fragment.json"));
+  const through = must(other.functions.find(f => f.name === "readRuns"), "readRuns");
+  through.stated = { footprint: { value: "any", store: "keep" }, onThrow: false, fresh: false, regions: [{ position: 1, path: ["closed"] }] };
+  const otherDocument = join(artifacts, "forged-path-field-fragment.json");
+  writeFileSync(otherDocument, JSON.stringify(other));
+  const unstable = /source effect refusal at \[\d+,\d+\): the frame stated for 'readRuns' reads a store region through a field that is no present stable field/;
+  const unsearched = produceWith(artifacts, join(artifacts, "claims.json"), "forged-path-field", otherDocument);
+  assert.equal(unsearched.status, 1, `${unsearched.stdout}${unsearched.stderr}`);
+  assert.match(unsearched.stdout + unsearched.stderr, unstable);
+  invoke(join(artifacts, "claims.json"), documentEvidence(artifacts), artifacts, unstable, otherDocument);
+  process.stdout.write("forged path regions: a path region moved to its record's own store, refused at the unit's regional check, and one through a field the type does not state, refused at the entry check of traversed fields, in search and in checking\n");
 });
 
 control(async (): Promise<void> => {

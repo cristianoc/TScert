@@ -85,7 +85,6 @@ const equationReaders = [
     decl: "a source-claims label, read by equation lowering",
     meet: "a source-claims label, read by equation lowering",
     types: "the source-claims document's rows, read by equation lowering",
-    position: "a store region of a module slot's effect, which Lean writes for a unit stating store regions (`moduleArrow`) and reads back",
   });
   expectSubset("OCaml reads of the Fragment", ocamlReads("ocaml-producer/source.ml"), ts, {});
   expectSubset("Fragment fields Lean ignores", ts, leanNames, {
@@ -102,7 +101,6 @@ const equationReaders = [
     linear: "an index fact's field, read by the instance EffectJson.lean derives for HeapKnowledge.IndexFact and Linear.Fact",
     guarded: "an index fact's field, read by the instance EffectJson.lean derives for HeapKnowledge.IndexFact and Linear.Fact",
     tag: "a guarded index fact's field, read by the instance EffectJson.lean states for HeapKnowledge.GuardTag's fact",
-    path: "a linear term's field, read by the instance EffectJson.lean derives for HeapKnowledge.Term",
     ne: "an index fact's field, read by the instance EffectJson.lean derives for HeapKnowledge.IndexFact and Linear.Fact",
     every: "a quantified index fact's field, read by the instance EffectJson.lean derives for HeapKnowledge.IndexFact",
     stop: "a quantified index fact's field, read by the instance EffectJson.lean derives for HeapKnowledge.IndexFact",
