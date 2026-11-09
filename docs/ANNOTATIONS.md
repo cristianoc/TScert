@@ -199,3 +199,31 @@ result's types ([modules and code units](SOURCE-CONTRACTS.md#modules-and-code-un
 as a clause: `@requires` and `@invariant` for what a body assumes, `@ensures`
 and `@invariant` for what a caller learns, `Modifies` for what a callback or
 function value may change, `Fresh` for a result the call allocated.
+
+## What is inferred and has no written form
+
+Each of these is a claim TScert infers inside a body that no annotation
+states. The spelling beside each is a proposal, read by no reader.
+
+- **A narrowed binding's type at a statement**: after
+  `if (node.kind === K.Element)`, `node`'s type there
+  (`/** @assert node: Element */`).
+- **A field's current contents at a statement**: after
+  `if (o.next !== null)`, `o.next`'s type there
+  (`/** @assert o.next: Node */`).
+- **An integer fact at a statement other than function entry or a loop
+  head**: `i < xs.length` after an `if` or `switch` join
+  (`/** @assert i < xs.length */`).
+- **Region separation at a loop head or statement**: two locally
+  allocated arrays sharing no element cell (`/** @invariant apart(out, src) */`).
+- **The frame of an overloaded declaration**, one `Modifies` per overload.
+- **The frame of a generic closure or method**:
+  `<T,>(x: T): Modifies<{ values: "keep"; stores: "keep" }, T> => x`.
+- **Dense presence of an array that is no tuple**: a result with no hole
+  (`Dense<number[]>`).
+- **A record's exact own keys**: a spread or an absent key's read
+  continuing at the prototype (`Exact<{ a: number }>`).
+- **Facts over a binding a closure captures before its initialization**:
+  `0 <= count` for a `count` declared after the closure.
+- **A frame depending on a callback**: a wrapper that changes what its
+  callback `f` changes, and nothing else.
