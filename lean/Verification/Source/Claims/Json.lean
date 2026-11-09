@@ -72,7 +72,7 @@ def footprintRefusal {σ ι : Type} [Labels ι] [StoreView σ ι] (name : String
   if !RequestJson.asyncEffects r.async r.footprint then some (refuseAsync s!"'{name}'" namePos) else
   -- A stated declaration's claim lies within its statement
   -- (`RequestJson.statedWithin`): refused at the definition.
-  if !RequestJson.statedWithin r.async r.footprint r.onThrow r.stated then
+  if !RequestJson.statedWithin r.async r.footprint r.onThrow r.fresh r.stated then
     some s!"source effect refusal at [{namePos.1},{namePos.2}): the footprint claimed for '{name}' is not within the effect its result annotation states" else
   let asyncCode := (r.toRequest.codes.zipIdx.find? fun (q, _) =>
     !RequestJson.asyncEffects q.async q.entry.row.effect.footprint).map fun (_, i) =>
@@ -82,7 +82,7 @@ def footprintRefusal {σ ι : Type} [Labels ι] [StoreView σ ι] (name : String
   let unit := effectResult r c
   if !unit.accepted then
     if unit.exhaustion.isSome then none else
-    some (refuse s!"'{name}'" (((firstBad r.footprint false r.onThrow r.start r.program c.certificate r.sourceMap).map (·.pos)).getD namePos))
+    some (refuse s!"'{name}'" (((firstBad r.footprint r.fresh r.onThrow r.start r.program c.certificate r.sourceMap).map (·.pos)).getD namePos))
   else
     (r.toRequest.codes.zip c.codes).zipIdx.findSome? fun ((q, C), i) =>
       let code := GraphCode.effectCheckedResult G images c.readSummaries q.entry C
@@ -254,7 +254,8 @@ def lowerJson (ast claims : Json) (fileKey : String) : Except String Json := do
         ("codes", toJson (r.toRequest.codes.map fun (c : CodeRequest _) => codeJson c.entry))])
 
 /-- What requests a bundle justifies give: the check accepts them, each is
-safe, within its footprint where it claims one, returning values meeting its
+safe, within its footprint where it claims one, returning a fresh array
+where it promises one, returning values meeting
 its postcondition where it states one, and its stated assertions are entailed by
 its certificate, as `checkRequests_safe_at`, `checkRequests_footprint_at`,
 `checkRequests_ensures_at` and `checkRequests_assertions_at` state; each for
@@ -274,7 +275,7 @@ def RequestsSafe (F : EquationStore.Frozen)
             (ControlFlow.GoalHolds (reassign F.equations.graph η) r.goal (r.goal.argument ρ))
             n W heap (.at r.start ρ)) ∧
       (∀ r c, (r,c) ∈ rs.zip b.functions →
-        r.footprint ≠ .top ∨ r.onThrow = true →
+        r.footprint ≠ .top ∨ r.onThrow = true ∨ r.fresh = true →
         ∀ η n W heap (L : List Tm) (d : Tm),
           EnvOk (reassign F.equations.graph η) r.inputs (envOf L d) n W →
           HeapSeparation.Holds r.entrySeparation (envOf L d) →
@@ -282,7 +283,8 @@ def RequestsSafe (F : EquationStore.Frozen)
           WorldAdm W → HeapOk n W heap → (∀ v ∈ L, isVal v = true) → isVal d = true →
           HeapObservations.SafePostExc (excOf (reassign F.equations.graph η))
             (ControlFlow.GoalHolds (reassign F.equations.graph η) r.goal (r.goal.argument (envOf L d)))
-            (fun h' _ => r.footprint.Holds heap h') (fun h' => r.onThrow = true → r.footprint.Holds heap h')
+            (fun h' v => r.footprint.Holds heap h' ∧ (r.fresh = true → Footprints.FreshAt heap.length v))
+            (fun h' => r.onThrow = true → r.footprint.Holds heap h')
             n W heap
             (.goto (r.program.map (·.expression)) (r.program.map fun n => (n.continuation, n.handler))
               r.start L d)) ∧

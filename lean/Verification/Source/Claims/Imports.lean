@@ -265,7 +265,7 @@ private def qualifiedRead (importer : Reading) (values : List Json) (fragmentMod
     throw s!"a qualified read names an async unit claimed below `top`: {location}#{name}"
   -- A stated unit's claim lies within its statement, as its own module's
   -- run requires (`RequestJson.statedWithin`).
-  if !RequestJson.statedWithin async footprint onThrow (← Fragment.decodeStated (← jField unit "stated")) then
+  if !RequestJson.statedWithin async footprint onThrow false (← Fragment.decodeStated (← jField unit "stated")) then
     throw s!"a qualified read names a unit claimed outside the effect its annotation states: {location}#{name}"
   -- The footprint the unit proposes for the function it returns, which its
   -- returns establish (`resultWithFootprint`).

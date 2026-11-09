@@ -445,13 +445,16 @@ def asyncEffects (async : Bool) (footprint : Footprints.Closed) : Bool :=
   !async || footprint == .top
 
 /-- A declaration's claim within the effect its result annotation states
-(`Within<F, T>`; SOURCE-ELABORATION.md, "Stated effects"): its footprint
-within the statement's, and on a throw too where the statement says so; an
-async declaration states none. Unstated, any claim. -/
-def statedWithin (async : Bool) (footprint : Footprints.Closed) (onThrow : Bool) :
+(`Within<F, T>`; SOURCE-ELABORATION.md, "Stated effects"): a statement adds a
+guarantee (a footprint below `top`, or a fresh result); the claim's footprint
+is within the statement's, on a throw too where the statement says so, and
+promises a fresh result where the statement does; an async declaration
+states none. Unstated, any claim. -/
+def statedWithin (async : Bool) (footprint : Footprints.Closed) (onThrow fresh : Bool) :
     Option CallEffects.Effect → Bool
   | none => true
-  | some s => !async && s.footprint != .top && footprint.le s.footprint && (!s.onThrow || onThrow)
+  | some s => !async && (s.footprint != .top || s.fresh) && footprint.le s.footprint &&
+      (!s.onThrow || onThrow) && (!s.fresh || fresh)
 
 /-- The request's async code at `top`, then its read summaries, each checked
 once, then its graph code, checked in order against its claims, as a table
