@@ -2944,6 +2944,7 @@ export const cases: Case[] = [
   negative("invalid-regexp-replace-callback-pops", "a `replace` callback popping the array the caller's loop reads: the call states no footprint, and the read below the loop's bound after it is refused; it reads `undefined` at `string` (run under Node)",
     /The available claim for texts\[i\] is undefined \| string/),
   positive("stable-record-field", "a field a record type states `@stable` is allocated by its object literal at its initial value alone, so a narrowing of it survives a call that may change any location (POSITIVE-TYPES.md, \"Records\")"),
+  positive("stable-field-record-writes", "a compound assignment, an assignment and an update of a writable field of a record that states another field `@stable`: each writes the field's location at its contract (POSITIVE-TYPES.md, \"Records\")"),
   negative("invalid-stable-record-field-alias", "an object with a writable `size` is no record stating it `@stable`, which TypeScript's readonly field admits: the call passing it is refused (run under Node: `sizeAfter` returns `null` at `number`)",
     /^reject: source expression obligation at \[732,776\): evidence search failed: no derivation of its node-typing claim/),
   positive("push-keeps-fresh-lengths", "pretext's `segmentAtLineBreaks`: an array literal's store field is apart from the older arrays' store fields whatever the heap holds, so pushes into two literals around a typed array's write keep each other's length, and a loop invariant equates them (FOOTPRINTS.md, \"Element regions\")"),

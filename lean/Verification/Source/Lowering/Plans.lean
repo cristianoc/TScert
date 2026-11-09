@@ -719,7 +719,7 @@ receiver, claimed at `B`, in slot `ri`. -/
   reservedWriteCheck pos B (errorOwnedKey fld)
   let term := Tm.writeAt fld (.var ri) (.var 0)
   match PositiveRules.expand G B with
-  | [.refs fs [] vs [] _ _] =>
+  | [.refs fs [] vs [] _ _ _] =>
     let some D := fs.lookup fld
       | throw (if (vs.lookup fld).isSome then s!"write to a readonly field '{fld}'"
           else s!"write to a field '{fld}' the contract does not name")
@@ -728,7 +728,7 @@ receiver, claimed at `B`, in slot `ri`. -/
   | _ =>
     if B.length ≤ 1 then throw "write receiver must name a cell contract"
     let alternatives ← B.mapM fun label => do
-      let [.refs fs [] [] [] _ _] := PositiveRules.expand G [label]
+      let [.refs fs [] [] [] _ _ _] := PositiveRules.expand G [label]
         | throw "every write alternative must name a cell contract"
       let some D := fs.lookup fld
         | throw s!"write to a field '{fld}' an alternative does not name"

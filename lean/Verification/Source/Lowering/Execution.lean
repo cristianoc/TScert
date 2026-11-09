@@ -116,7 +116,7 @@ before the member is read. -/
           "a write at a key known only at run time may add the key to an object another reference holds, which would see the object's keys change: a key-adding write is typed only on a local's own fresh object that nothing else has reached, or on a module's own object, which no code but its accesses reaches")
       | _ => throw "only field and local assignments are supported"
     match PositiveRules.expand (SourceTypes.graph (← table)) B with
-    | [.refs fs [] _ _ _ _] =>
+    | [.refs fs [] _ _ _ _ _] =>
       let some T := fs.lookup fld
         | throw (locatedRefusal (← table) original.span .storageWrite
           s!"update of a field '{fld}' the contract does not name as a writable location")

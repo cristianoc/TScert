@@ -1042,7 +1042,7 @@ declared bounds. -/
       ja.context = j.context ∧ ja.term = a ∧ jb.context = j.context ∧ jb.term = b ∧
       Represents G j.type .nul ∧
       (match expand G ja.type with
-       | [.refs fs [] _ _ _ _] => (f, jb.type) ∈ fs
+       | [.refs fs [] _ _ _ _ _] => (f, jb.type) ∈ fs
        | _ => False)
     | _, _ => False
   | .arith =>
@@ -2069,7 +2069,7 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι}
     rw [hΓa, hta] at ha
     rw [hΓb, htb] at hb
     split at hr
-    · rename_i fs vs os he
+    · rename_i fs vs os ms ks st he
       exact .write ha he hr hb hn
     · contradiction
   · rename_i op a b ja jb
