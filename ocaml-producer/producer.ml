@@ -18,6 +18,27 @@ let init_names (program:Source.program) = List.concat_map (fun (s:Source.stmt) -
   | Destructure (target,_,_) -> Source.pattern_names target
   | _ -> []) program.init
 
+(* Potentially owned empty-object module bindings whose objects can escape,
+   as SourceExtraction.moduleEscapes treats them. Slices carry these names through omittedMentions, so deleting
+   another function cannot make a shared object appear exclusively owned. *)
+let module_escapes name stmts =
+  let rec mentions e = (match e.node with
+    | Id n | Assign (n,_,_) | NullishAssign (n,_,_) -> n = name
+    | _ -> false) || List.exists mentions (Source.children e) in
+  let quiet e = match e.node with Id _ | Literal _ -> true | _ -> false in
+  let rec escapes e = match e.node with
+    | Id n -> n = name
+    | Read ({node=Id _;_},_) -> false
+    | Index ({node=Id n;_},k) -> (n = name && not (quiet k)) || escapes k
+    | Write ({node=Id _;_},_,rhs) -> escapes rhs
+    | IndexWrite ({node=Id n;_},k,rhs) ->
+      (n = name && not (quiet k)) || escapes k || escapes rhs
+    | Optional _ | WithObject _ | WithFields _ | ArrayAssign _
+    | Update _ | LogicalAssign _ | ObjectAssign _ -> mentions e
+    | Assign (n,_,rhs) | NullishAssign (n,_,rhs) -> n = name || escapes rhs
+    | _ -> List.exists escapes (Source.children e) in
+  List.exists escapes (List.concat_map Source.statement_children stmts)
+
 (* `--units`: what a unit's proposal reads beyond its own code. For each
    function name, the module functions and whether a name of the
    initialization its code mentions, and every name it mentions; the
@@ -43,6 +64,11 @@ let units_facts (program:Source.program) =
     "init",(match program.init with
       | [] -> Json.Null
       | stmts -> Json.Object ["mentions",strings (fst (of_body stmts));"names",strings (mentioned stmts)]);
+    "escaped",strings (List.filter (fun n -> module_escapes n
+      (program.init @ List.concat_map (fun (g:Source.fn) -> g.body) program.functions)) (List.concat_map (fun (s:Source.stmt) -> match s.statement with
+      | Declare (true, bindings) -> List.filter_map (fun (n,_,e) -> match e.node with
+        | Alloc [] -> Some n | _ -> None) bindings
+      | _ -> []) program.init));
     "readAsValues",Json.Array (List.filter_map (fun n ->
       if List.mem n read then Some (Json.String n) else None) constants)]
 

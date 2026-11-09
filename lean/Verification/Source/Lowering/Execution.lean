@@ -112,6 +112,8 @@ before the member is read. -/
     let fld ← match prepared with
       | .read _ fld _ => pure fld
       | .index _ (some fld) _ _ => pure (.str fld)
+      | .index pos none _ _ => throw (locatedRefusal (← table) pos .storageWrite
+          "a write at a key known only at run time may add the key to an object another reference holds, which would see the object's keys change: a key-adding write is typed only on a local's own fresh object that nothing else has reached, or on a module's own object, which no code but its accesses reaches")
       | _ => throw "only field and local assignments are supported"
     match PositiveRules.expand (SourceTypes.graph (← table)) B with
     | [.refs fs [] _ _ _ _] =>

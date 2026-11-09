@@ -8,6 +8,8 @@
  * initialization declares; the initialization's mentions; the constants the
  * document reads as values. */
 export type UnitFacts = {
+  /** Module bindings whose objects escape in the complete document. */
+  escaped: string[];
   functions: { name: string; mentions: string[]; init: boolean; names: string[] }[];
   init: { mentions: string[]; names: string[] } | null;
   readAsValues: string[];
