@@ -2803,7 +2803,8 @@ the module's functions at
 
 the initialization unit's claim for its initializer. A constant whose
 initializer shows the native object it makes, a regular expression literal
-or a construction of `Map`, is read at that claim too, annotated or not
+or a construction of `Map` stating its type arguments or passing an argument
+they are inferred from, is read at that claim too, annotated or not
 (`showsNativeObject`): the annotation, which TypeScript checks the
 initializer against, states less than the initialization establishes. A
 module importing a constant initialized by a regular expression literal
