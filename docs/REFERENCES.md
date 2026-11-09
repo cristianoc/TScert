@@ -656,18 +656,20 @@ K. Rustan M. Leino. *Dafny: an automatic program verifier for functional
 correctness.* LPAR-16, LNCS 6355, pp. 348–370, Springer, 2010.
 [doi:10.1007/978-3-642-17511-4_20](https://doi.org/10.1007/978-3-642-17511-4_20).
 
-**Used for** the name and meaning of a frame condition: a method's
-`modifies` clause lists the locations it may change, every other one
-keeping its contents.
+**Used for** the name of a frame condition: a method's `modifies` clause
+lists the locations it may write.
 **Discussed in** [stated effects](drafts/stated-effects.md#2-the-written-form).
 
 ### Dafny
 
-*The Dafny Reference Manual*, two-state predicates, functions and lemmas.
+*The Dafny Reference Manual*, §6.3.4, two-state lemmas and functions, and
+§7.1.6, the modifies clause.
 [dafny.org/latest/DafnyRef/DafnyRef](https://dafny.org/latest/DafnyRef/DafnyRef).
 
 **Used for** a relation between a call's entry heap and a later one, the
-reading of each entry's change of `Modifies`.
+kind of relation each entry's change of `Modifies` is (§6.3.4); and the
+two readings of a frame condition, Dafny's and JML's as a write permission,
+ACSL's as a relation between the pre-state and the post-state (§7.1.6).
 **Discussed in** [stated effects](drafts/stated-effects.md#2-the-written-form).
 
 ### Leavens, Baker and Ruby 2006
@@ -677,16 +679,20 @@ JML: a behavioral interface specification language for Java.* ACM SIGSOFT
 Software Engineering Notes 31(3):1–38, 2006.
 [doi:10.1145/1127878.1127884](https://doi.org/10.1145/1127878.1127884).
 
-**Used for** JML's `assignable` clause, a frame condition of the same form.
+**Used for** JML's `assignable` clause, a frame condition read as a write
+permission.
 **Discussed in** [stated effects](drafts/stated-effects.md#2-the-written-form).
 
 ### ACSL
 
-Patrick Baudin et al. *ACSL: ANSI/ISO C Specification Language.* The
-Frama-C reference.
-[frama-c.com/html/acsl.html](https://frama-c.com/html/acsl.html).
+Patrick Baudin, Pascal Cuoq, Jean-Christophe Filliâtre, Claude Marché,
+Benjamin Monate, Yannick Moy and Virgile Prevosto. *ACSL: ANSI/ISO C
+Specification Language*, version 1.22. CEA-List and Inria, 2025. §2.3.2,
+simple function contracts, its part on the semantics of frame conditions.
+[frama-c.com/download/acsl-1.22.pdf](https://www.frama-c.com/download/acsl-1.22.pdf).
 
-**Used for** ACSL's `assigns` clause, a frame condition of the same form.
+**Used for** ACSL's `assigns` clause, a frame condition read as a relation
+between the pre-state and the post-state, the reading of `Modifies`.
 **Discussed in** [stated effects](drafts/stated-effects.md#2-the-written-form).
 
 ### Barnett et al. 2006
@@ -718,8 +724,10 @@ monotonic state.* Proceedings of the ACM on Programming Languages
 2(POPL):65, 2018.
 [doi:10.1145/3158153](https://doi.org/10.1145/3158153).
 
-**Used for** references whose contents change only along a preorder, the
-pattern of each entry's change (`init`, `scalar`, `grow`) below `any`.
+**Used for** references whose contents change only along a preorder, a
+preservation pattern each entry's change (`init`, `scalar`, `grow`) below
+`any` follows; the paper's results concern its own references, not these
+changes.
 **Discussed in** [stated effects](drafts/stated-effects.md#2-the-written-form).
 
 ## Compilation
