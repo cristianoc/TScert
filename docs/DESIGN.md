@@ -774,6 +774,7 @@ owner; other documents link to them and give only the context their readers need
 | [UNION-SHAPES](UNION-SHAPES.md) | Structure-directed comparison: shapes and cells, the catalogue of selection rules with their lemmas, and the structural engine that implements them. |
 | [PROGRAM-TYPING](PROGRAM-TYPING.md) | Core expression, graph and state typing rules, their side conditions and soundness scope. |
 | [ARITHMETIC](ARITHMETIC.md) | Integer facts: linear facts over values, lengths and paths and their certificates, the clause language, preconditions, postconditions, type invariants, guarded and quantified clauses and loop invariants. |
+| [ANNOTATIONS](ANNOTATIONS.md) | The cheat sheet of every annotation TScert reads: where each is written, an example, and its owning section. |
 | [SOURCE-ELABORATION](SOURCE-ELABORATION.md) | The lowering of every source form (statements, guards, iteration, mutable bindings, closures, inferred effects) and the checklist for adding one. |
 | [SOURCE-CONTRACTS](SOURCE-CONTRACTS.md) | Reading types, declarations and annotations; library contracts and their audits; certified imports. |
 | [CALLABLES](CALLABLES.md) | What a function is in the calculus: callable values, their call and code rules and their proof scope. |

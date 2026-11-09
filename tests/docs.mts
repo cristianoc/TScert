@@ -3,10 +3,12 @@
 // its anchor points at, that math renders with KaTeX and avoids the forms
 // GitHub cannot render, that cited authors are named only inside links to
 // REFERENCES.md, and that a code comment's `(<document>.md, "Section")` or
-// `<DOCUMENT> §n` citation names a section the document holds.
+// `<DOCUMENT> §n` citation names a section the document holds, and that
+// ANNOTATIONS.md has an entry for exactly the annotations TScert reads.
 //   node tests/docs.mts
 import { readdirSync, readFileSync, realpathSync } from "node:fs";
 import { present } from "../tools/files.mts";
+import { annotationTags } from "../tools/bound-annotations.mts";
 import { createRequire } from "node:module";
 import { dirname, join, relative, resolve } from "node:path";
 
@@ -265,6 +267,19 @@ for (const file of codeRoots.flatMap((dir) => codeFiles(join(root, dir)))) {
     }
   }
 }
+
+// Annotations: the cheat sheet's entries, the first code span of each `###`
+// heading of ANNOTATIONS.md (a tag `@name`, or an alias's name), are exactly
+// the JSDoc tags the clause reader reads (`annotationTags`) and the type
+// aliases the verifier's declaration file declares.
+const cheatSheet = join(root, "docs", "ANNOTATIONS.md");
+const declared = [...readFileSync(join(root, "tools", "resolvable.d.ts"), "utf8").matchAll(/^type (\w+)/gm)]
+  .map((m) => m[1] ?? "");
+const read = new Set([...annotationTags.map((t) => `@${t}`), ...declared]);
+const entries = new Set([...withoutCode(readFileSync(cheatSheet, "utf8")).matchAll(/^### `(@?\w+)/gm)]
+  .map((m) => m[1] ?? ""));
+for (const a of read) if (!entries.has(a)) fail(cheatSheet, `has no entry for \`${a}\`, an annotation TScert reads`);
+for (const e of entries) if (!read.has(e)) fail(cheatSheet, `has an entry for \`${e}\`, which no reader reads`);
 
 for (const p of problems) process.stdout.write(`${p}\n`);
 process.stdout.write(`docs: ${files.length} documents, ${codeCitations} citations in code, ${problems.length} problems\n`);

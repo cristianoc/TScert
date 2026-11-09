@@ -159,7 +159,21 @@ export function parameterKept(p: ts.ParameterDeclaration, body: ts.Node | undefi
 export type ImportedInvariants = { receiver: boolean; params: readonly boolean[]; kept: readonly boolean[];
   result: boolean; ensures: readonly string[]; ensuresParameters: readonly string[] | null };
 
-function tagsOf(trivia: string, name: string): string[] {
+/** The JSDoc tags a program's annotations are written in (ANNOTATIONS.md):
+ * every reader of a tag names it from this list, through `tagsOf` and
+ * `statesTag`. */
+export const annotationTags = ["requires", "ensures", "invariant", "representation", "stable"] as const;
+export type AnnotationTag = (typeof annotationTags)[number];
+
+/** Whether the last JSDoc comment in a leading trivia states the tag `name`,
+ * a tag carrying no clause. */
+export function statesTag(trivia: string, name: AnnotationTag): boolean {
+  const open = trivia.lastIndexOf("/**");
+  const close = open < 0 ? -1 : trivia.indexOf("*/", open + 3);
+  return close >= 0 && new RegExp(`(^|[\\s*])@${name}\\b`).test(trivia.slice(open + 3, close));
+}
+
+function tagsOf(trivia: string, name: AnnotationTag): string[] {
   const open = trivia.lastIndexOf("/**");
   if (open < 0) return [];
   const close = trivia.indexOf("*/", open + 3);
