@@ -944,8 +944,11 @@ the one the graph checker computes for the dispatch. -/
       | _ => operation
     let A ← executionOperationType fc scope Γ operation
     -- A checked empty result leaves no normal continuation. The operation
-    -- itself retains its handler.
-    if A.isEmpty then
+    -- itself retains its handler. Where a slot of its context is already
+    -- empty, the operation is unreachable and its continuation with it, so
+    -- the program keeps its shape: a closure's body then lowers alike under
+    -- each signature that narrows a parameter to nothing on some path.
+    if A.isEmpty && Γ.all (!·.isEmpty) then
       let stop ← emitAt source (.var 0) .ret (A::Γ) A "unreachable"
         (scope := held ⟨"",some source⟩ :: scope)
       return ← compileExecutionOperation recursive fc scope Γ source operation stop

@@ -4779,9 +4779,12 @@ clause row without clauses) once the target exists, and
 `target_state`, `branch_target_state` and `witness_edge_sound` have no case
 to establish. A dispatch edge also establishes every target claim when the
 tested type rules out its answer (`BranchRefinement.impossible_sound`).
-An operation checked at the empty type has no normal result. The expression
-plan terminates that path with a read of the empty result slot and preserves
-the operation's handler. After `if (!ok(x)) fail(…)` the next statement is
+An operation checked at the empty type has no normal result. Where every
+slot of its context is inhabited, the expression plan terminates that path
+with a read of the empty result slot and preserves the operation's handler;
+where a slot is empty, the operation is unreachable, and the plan keeps its
+continuation, so a closure's body lowers to one program under each signature
+it advertises (`overloads`). After `if (!ok(x)) fail(…)` the next statement is
 reached by the condition's `false` edge alone and sees its refinement
 (`never-call-narrowing`, `compiler-api-never-guard`). The claim is the
 call's, checked at the callee's signature: a call of a function returning a
