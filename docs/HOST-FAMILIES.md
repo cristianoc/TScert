@@ -1324,8 +1324,11 @@ admissibility, forgetting keys and conjunction.
 read of a stated key gives on normal return. A record or
 dictionary clause states its stable keys (`Clause.refs`'s last part), whose
 meaning is `stableKeysT` (`semWithArgs_stable`). In the declaration document
-a marked object term states them as `"stable": [key, …]`, nonempty, which
-`objectClause` decodes.
+an object term states them as `"stable": [key, …]`, nonempty, which
+`objectClause` decodes: a marked term's keys are its readonly members,
+required or optional, and an unmarked term's, a program record's
+[`@stable` fields](POSITIVE-TYPES.md#records), are its required readonly
+fields.
 
 The program never introduces a stable key: an allocation's locations have
 the contracts of their types, which state no single value. A family's
