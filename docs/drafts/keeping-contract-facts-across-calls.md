@@ -4,11 +4,11 @@ Part of [checked bound annotations](checked-bound-annotations.md) (#115). Drafte
 
 ## The existing mechanism this extends
 
-[Type invariants](../PROGRAM-TYPING.md#type-invariants) are boundary contracts:
+[Type invariants](../ARITHMETIC.md#type-invariants) are boundary contracts:
 callers establish parameter facts; bodies establish result and retained-parameter facts.
 [Frame conditions](../PROGRAM-TYPING.md#frame-conditions), stated and checked by
 [footprints](../FOOTPRINTS.md), determine which facts are preserved between boundaries.
-[Field paths §4.1 and sealed handles §5](field-paths-and-record-invariants.md)
+[Type invariants and sealed handles](../ARITHMETIC.md#type-invariants)
 supply the same interpretation for records and their opaque handles.
 The proposal extends regional footprints, separation facts and checked default binding.
 `receiverOwn`, `freshObject` and fresh-store tracking provide existing special cases;

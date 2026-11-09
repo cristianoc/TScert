@@ -2485,7 +2485,7 @@ function lowerFile(file: string, carriesContext: boolean,
     gate.recordDefinitions = new Map(declarations.definitions.map(d => [definitionKey(d.declaration), d]));
     // An imported function's precondition is its signature's, every
     // form's, as its own module reads it (`moduleArrow`): the importer's
-    // calls establish it (PROGRAM-TYPING.md, "Preconditions").
+    // calls establish it (ARITHMETIC.md, "Preconditions").
     if (written.length > 0)
       declarations = { ...declarations, values: declarations.values.map(v => {
         const w = written.find(w => definitionKey(w.declaration) === definitionKey(v.declaration));

@@ -37,7 +37,7 @@ program's sources (a declaration file, a package) is refused
 ([fragment boundary](../SOURCE-FRAGMENT.md)). `Modifies` replaces it (§3).
 
 **Written postconditions.** A module function declaration's `@ensures`
-([postconditions](../PROGRAM-TYPING.md#postconditions); cited) states index
+([postconditions](../ARITHMETIC.md#postconditions); cited) states index
 facts at its return, proved by its unit and assumed by its callers
 (`call-ensures`).
 
@@ -218,7 +218,7 @@ declaration TypeScript binds it to and read by `statedResult` alone.
 `Fresh` is a type for the same reason, and the one spelling of a fresh
 result. The JSDoc clauses `@requires` and `@ensures` state facts of one
 heap, which no type carries. Preconditions stay `@requires`
-([preconditions](../PROGRAM-TYPING.md#preconditions); cited), which gains
+([preconditions](../ARITHMETIC.md#preconditions); cited), which gains
 the separation atoms of §5.
 
 **Binding.** A root $`x`$ is a parameter's name, bound to its position; a

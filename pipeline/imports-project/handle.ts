@@ -1,4 +1,4 @@
-// A sealed handle (PROGRAM-TYPING.md, "Type invariants"), in the shape of
+// A sealed handle (ARITHMETIC.md, "Type invariants"), in the shape of
 // pretext's `layout.ts`: the public `PreparedText` is a branded type with no
 // field of its own, its representation `PreparedLineBreakData`, the arrays
 // the walkers read. Its invariant is stated over the representation's fields

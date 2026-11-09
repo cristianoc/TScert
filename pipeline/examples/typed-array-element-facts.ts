@@ -1,5 +1,5 @@
 // Reads bounded by a quantified precondition over a typed array's elements
-// (PROGRAM-TYPING.md, "Quantified clauses"; SOURCE-CONTRACTS.md, "Stated
+// (ARITHMETIC.md, "Quantified clauses"; SOURCE-CONTRACTS.md, "Stated
 // library types"): `forall i in segmentItems: …` states of every index below
 // the view's typed-array length that its element is a safe integer below
 // `hyphenWidths.length`, and `%ByteAt%`'s bounded read states its result the

@@ -752,7 +752,7 @@ slot's object gave in the current heap (`HeapLinks.Holds`). A term rooted at
 the read value is then the term rooted at the object, the field put before
 its path: both denote the same integer, or neither denotes one. A check
 restates terms by these links so that a fact over a path is entailed by
-facts over the slots holding its reads, and conversely (PROGRAM-TYPING.md,
+facts over the slots holding its reads, and conversely (ARITHMETIC.md,
 "Linear facts"). -/
 
 /-- **The read bridge.** Where a current read link (not an alias) gives `v`
@@ -1374,7 +1374,7 @@ theorem linearFollows_sound {M : Nat → List Nat} {m : PointClaims.Mapping} {a 
       exact ⟨w, sto, ls, n, hp, hs, hl, hn, fun i hi => by omega⟩
   | index _ | length _ _ | pastSafe _ | either _ _ | guarded _ _ _ _ | element _ _ _ | apart _ _ => rw [ht] at hf; cases hf
 
-/-! ## Guarded facts (PROGRAM-TYPING.md, "Guarded clauses")
+/-! ## Guarded facts (ARITHMETIC.md, "Guarded clauses")
 
 A guarded fact holds where its guard's path reads its tag's value or its
 body holds. A read link restates a guard's path toward its root, as the read
@@ -3046,7 +3046,7 @@ theorem atoms_noTag {G : NormalGraph ι} {A R} (h : atoms G A = some R) : R.all 
   · cases h
 
 
-/-! ## Reading a quantified fact at an element (PROGRAM-TYPING.md, "Quantified clauses") -/
+/-! ## Reading a quantified fact at an element (ARITHMETIC.md, "Quantified clauses") -/
 
 theorem holdsAt_linear_iff {F : Linear.Fact Term} {ρ : Env} {h : Heap} :
     (IndexFact.linear F).HoldsAt ρ h ↔ FactAt (termValue ρ h) F := Iff.rfl

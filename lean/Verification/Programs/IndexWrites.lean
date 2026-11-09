@@ -627,7 +627,7 @@ theorem stepAtoms_holds [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)
 
 /-! ## The linear atoms a step states
 
-A step on safe integers states the integer facts of its result (PROGRAM-TYPING.md,
+A step on safe integers states the integer facts of its result (ARITHMETIC.md,
 "Linear facts"): a literal its value, a copy its equality with the copied
 slot, a store's length its range `0 ≤ n ≤ 2^32 - 1`, a sum or a difference its
 value where the knowledge bounds it within the safe integers, and a comparison

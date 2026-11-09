@@ -1515,7 +1515,7 @@ def successors : Continuation → List Target
 
 /-- The value of each slot whose type admits a single nullish or Boolean
 literal, a fact the slot's type states (`typeValues`), kept where an edge
-widens the slot's type: a guard's tag reads it (PROGRAM-TYPING.md, "Guarded
+widens the slot's type: a guard's tag reads it (ARITHMETIC.md, "Guarded
 clauses"). Untrusted: each edge is checked. -/
 @[nospecialize] def withTagValues (G : NormalGraph ι) (Γ : List (Ty ι)) (k : HeapKnowledge.Knowledge) :
     HeapKnowledge.Knowledge :=
@@ -2144,7 +2144,7 @@ Every edge is still checked by the independent consumer. -/
                     c.context.length]
                 | _, _ => pure ()
               k := HeapKnowledge.meet projections
-              -- A guarded candidate each predecessor entails (PROGRAM-TYPING.md,
+              -- A guarded candidate each predecessor entails (ARITHMETIC.md,
               -- "Guarded clauses", the join): each one's guarded atoms, also
               -- restated through its read links, kept where every edge's
               -- knowledge entails it; each edge is checked again.

@@ -1,5 +1,5 @@
 // Element writes of a typed array that keep a quantified fact over its
-// elements (PROGRAM-TYPING.md, "Quantified clauses"): an Int32Array write at a
+// elements (ARITHMETIC.md, "Quantified clauses"): an Int32Array write at a
 // valid index of a safe integer an Int32Array holds unchanged (at most
 // 2^31 - 1, which an array's length does not bound) sets that
 // element alone, so the fact holds after it of every other index, and of the

@@ -1,5 +1,5 @@
 // Index facts kept across a step whose writes cannot touch what they read
-// (PROGRAM-TYPING.md, "Linear facts"): a field write's location held a member
+// (ARITHMETIC.md, "Linear facts"): a field write's location held a member
 // of the field's type, so it is no store a length reads (`cursorLoop`), no
 // object a path reads and no number a path's last field holds where the type
 // admits none (`labelled`, `counted`); and an element write below the length

@@ -1,5 +1,5 @@
 // The preconditions of a function declaration (RFC #115, the draft
-// docs/drafts/checked-bound-annotations.md; PROGRAM-TYPING.md, 
+// docs/drafts/checked-bound-annotations.md; ARITHMETIC.md, 
 // "Preconditions"): a `@requires C` tag of the declaration's leading JSDoc
 // comment, read from the source text, its clause parsed here and elaborated
 // to index facts at the call's positions (`HeapKnowledge.IndexFact`: 0 the
@@ -28,7 +28,7 @@
 // stated a safe integer. Where those facts hold, each side of the comparison
 // evaluates under JavaScript's arithmetic to that safe integer exactly, so the
 // comparison's answer is the fact's. A guarded clause `G || K`
-// (PROGRAM-TYPING.md, "Guarded clauses") wraps each fact `K` elaborates to in
+// (ARITHMETIC.md, "Guarded clauses") wraps each fact `K` elaborates to in
 // a guarded fact: it holds where `G`'s path reads the tag's value, or the
 // fact holds; each path after a guard is resolved where the guard's test
 // fails, its type without the tag (an optional field read as present where
@@ -36,14 +36,14 @@
 // the reads denote in the heap a call starts in. A quantified atom
 // `forall i in p: B`, the clause's last, states its body of every index `i`
 // below `p.length`, of its element `p[i]` and of the clause's other terms
-// (PROGRAM-TYPING.md, "Quantified clauses"; `IndexFact.every`). Every other
+// (ARITHMETIC.md, "Quantified clauses"; `IndexFact.every`). Every other
 // form of the draft's grammar (`old`, computed keys) is refused with the clause's location, as is a path whose field no type
 // resolves. A postcondition uses the same language with `result` at position
 // zero and parameters one position after their call positions. Its facts
 // hold in the return heap. Unconditional precondition integrality clauses
 // permit value terms; the return check proves every resulting fact.
 //
-// A type invariant (PROGRAM-TYPING.md, "Type invariants") is an
+// A type invariant (ARITHMETIC.md, "Type invariants") is an
 // `@invariant C` tag of a type alias's or an interface's leading JSDoc, its
 // clause in the same language over `this`'s field paths, each resolved
 // through the declaration's own type or, for a sealed handle, the
@@ -118,7 +118,7 @@ export function plainParameter(p: ts.ParameterDeclaration): boolean {
  * name: no assignment, compound or logical assignment, update,
  * destructuring assignment or `for` head anywhere in it targets that name,
  * a same-named binding of a nested scope's included. The parameter's input
- * slot then holds the call's actual at every return (PROGRAM-TYPING.md,
+ * slot then holds the call's actual at every return (ARITHMETIC.md,
  * "Type invariants"). */
 export function parameterKept(p: ts.ParameterDeclaration, body: ts.Node | undefined): boolean {
   if (!ts.isIdentifier(p.name)) return false;
@@ -579,7 +579,7 @@ export function elaborateRequires(clauses: readonly string[], params: readonly C
         compared.push(wrap({ linear: { fact } }));
       };
       compareAtoms(atoms, lessEq);
-      // `forall i in p: C` (PROGRAM-TYPING.md, "Quantified clauses"): for
+      // `forall i in p: C` (ARITHMETIC.md, "Quantified clauses"): for
       // every index of the array or typed array `p` reads, below its length
       // or its typed-array length, `C` holds of the index `i`, the element
       // `p[i]` and the clause's other terms; an element named in a

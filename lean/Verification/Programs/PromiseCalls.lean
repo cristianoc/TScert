@@ -1888,7 +1888,7 @@ theorem growFirst_kept {k : HeapKnowledge.Knowledge} {t : Tm} {ρ : Env} {h h' :
       exact absurd rfl (HeapSeparation.apartAll_sound hf hk.2.2.2.1 hat hs hl)
 
 /-- The heap-reading atoms of a call's entry its footprint keeps, renamed past
-the result (`Changes.ofClosed`, PROGRAM-TYPING.md, "Linear facts"): with
+the result (`Changes.ofClosed`, ARITHMETIC.md, "Linear facts"): with
 `receiverGrows`, those `growChanges` keeps, a field apart from the receiver's
 own locations kept besides (`growFirst`); none where its signature keeps the
 heap, whose output keeps every atom (`call-keep`), or excepts its receiver's
@@ -1932,7 +1932,7 @@ theorem effectKept_holds {views : Nat → String → Bool} {eff : Effect} {t : T
           (fun a ha hcd => hk.2.2.2.2.2 a (List.mem_filter.mp ha).1 hcd)
           (HeapKnowledge.Changes.ofClosed_holds (CallEffects.Effect.within_holds hw hs ho)) HeapKnowledge.firstKept_none hv)
 
-/-! ### Quantified facts across a growth (PROGRAM-TYPING.md, "Quantified clauses") -/
+/-! ### Quantified facts across a growth (ARITHMETIC.md, "Quantified clauses") -/
 
 open HeapKnowledge in
 /-- What a body variable denotes at an index a growth keeps: the index and
@@ -2300,7 +2300,7 @@ theorem linearAppendKept_holds {n : Nat} {eff : Effect} {t : Tm} {k : Knowledge}
     · exact indexHolds_nil _ _
   · exact indexHolds_nil _ _
 
-/-! ### Quantified facts across a typed array's element write (PROGRAM-TYPING.md, "Quantified clauses") -/
+/-! ### Quantified facts across a typed array's element write (ARITHMETIC.md, "Quantified clauses") -/
 
 /-- The change of a typed array's element write: stores keep their lengths,
 nothing else changes. -/

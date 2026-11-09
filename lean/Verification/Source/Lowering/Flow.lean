@@ -360,17 +360,17 @@ private def reachablePoints (graph : SourceFlow.Graph) (id : Nat) : List String 
         s!"a bound names '{array}' as its array, which is no value binding")
     | _, none => do throw (locatedRefusal (← table) node.source .entryClaim
         s!"a bound names '{index}' as its index, which is no value binding")
-  -- The linear facts the producer proposes (PROGRAM-TYPING.md, "Linear
+  -- The linear facts the producer proposes (ARITHMETIC.md, "Linear
   -- facts"): each term rooted at a value binding, its path the fields read
   -- from it, or at a binding held in a cell, its path read from the cell's
   -- `value` (`termRoot`); a fact whose coefficients are all zero states only that its
   -- terms denote integers: a binding's value a safe integer, a path's value
   -- one at most `2^53 - 1`, a length or typed-array length one at least `0`.
-  -- A guarded fact (PROGRAM-TYPING.md, "Guarded clauses") is each such fact
+  -- A guarded fact (ARITHMETIC.md, "Guarded clauses") is each such fact
   -- in a guarded fact of each guard, the first outermost, its path read
   -- from a value binding.
   let linear ← ((fc.entryFacts.lookup node.source.1).getD []).flatMapM (clauseAtoms scope node.source)
-  -- The quantified facts the producer proposes (PROGRAM-TYPING.md,
+  -- The quantified facts the producer proposes (ARITHMETIC.md,
   -- "Quantified clauses"): the array, its bound and each body term rooted
   -- at a value binding or a cell, as a linear fact's.
   let root := fun (name : String) (path : List String) => do
@@ -405,7 +405,7 @@ private def reachablePoints (graph : SourceFlow.Graph) (id : Nat) : List String 
         s!"a region fact names '{name}', which is no value binding")
     | _, none => do throw (locatedRefusal (← table) node.source .entryClaim
         s!"a region fact names '{other}', which is no value binding")
-  -- A loop's invariant (PROGRAM-TYPING.md, "Loop invariants"): at its head,
+  -- A loop's invariant (ARITHMETIC.md, "Loop invariants"): at its head,
   -- each fact rooted at the value bindings or initialized cells it names, which every edge
   -- into the head establishes.
   let invariant ← match node.action with

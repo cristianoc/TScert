@@ -108,11 +108,11 @@ let create diagnostics flows offered declarations module_functions arities bound
       | Bound_by (x,k,strict) -> (match name x, name k with Some a, Some i -> Some (a,i,strict) | _ -> None)
       | _ -> None) f.requires in
     let env0 = if facts = [] && bounds = [] then env0 else Linear_facts.add_bounds (Linear_facts.add env0 facts) bounds in
-    (* Its guarded facts (PROGRAM-TYPING.md, "Guarded clauses"), alike. *)
+    (* Its guarded facts (ARITHMETIC.md, "Guarded clauses"), alike. *)
     let env0 = Linear_facts.dadd env0 (Linear_facts.disjunctions name f.requires) in
     let guarded = List.filter_map (Linear_facts.of_guarded_fact name) f.requires in
     let env0 = if guarded = [] then env0 else Linear_facts.gadd env0 guarded in
-    (* Its quantified facts (PROGRAM-TYPING.md, "Quantified clauses"), alike. *)
+    (* Its quantified facts (ARITHMETIC.md, "Quantified clauses"), alike. *)
     let every = List.filter_map (Linear_facts.of_every_fact name) f.requires in
     if every = [] then env0 else Linear_facts.eadd env0 every in
   (* A module function holds each module cell its body mentions. *)

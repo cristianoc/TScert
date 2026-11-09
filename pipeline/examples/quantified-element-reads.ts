@@ -1,5 +1,5 @@
 // Reads bounded by a quantified precondition over an array's elements
-// (PROGRAM-TYPING.md, "Quantified clauses"): `forall i in ends: …` states of
+// (ARITHMETIC.md, "Quantified clauses"): `forall i in ends: …` states of
 // every index of `ends` below its length that its element is a safe integer
 // at most `widths.length`, so an element read at a checked index bounds a
 // read and a loop over `widths` (pretext's narrowsLine, rich-inline.ts), the

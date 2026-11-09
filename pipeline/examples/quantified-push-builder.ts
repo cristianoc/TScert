@@ -1,4 +1,4 @@
-// A quantified fact extended across `push` (PROGRAM-TYPING.md, "Quantified
+// A quantified fact extended across `push` (ARITHMETIC.md, "Quantified
 // clauses"): a normal return of `push` keeps the receiver's elements at their
 // indices and appends its actual at the old length, so `forall i in xs: B`
 // over the whole receiver holds after `xs.push(a)` where `B` holds of `a` at

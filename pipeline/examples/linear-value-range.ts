@@ -1,5 +1,5 @@
 // The safe-integer range of each value term the linear facts name
-// (PROGRAM-TYPING.md, "Linear facts", `valueRange`): a safe integer lies
+// (ARITHMETIC.md, "Linear facts", `valueRange`): a safe integer lies
 // between -(2^53 - 1) and 2^53 - 1, so `i - 1` with `1 <= i` and `i + 1`
 // with `i < n` are safe integers, and a loop from `i - 1` reads below the
 // length.

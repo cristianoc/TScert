@@ -1,7 +1,7 @@
 // A guarded clause freed by a conditional's test, pretext's
 // `getItemTabAdvance` in `line-break.ts`: each nullable parallel array is
 // read at `index` in the arm where its own null test failed. The test frees
-// the guard (PROGRAM-TYPING.md, "Guarded clauses"), and the arm's read of
+// the guard (ARITHMETIC.md, "Guarded clauses"), and the arm's read of
 // the same path again, which a read link of the test's read answers, states
 // the freed length of the read's value; the producer claims the read below
 // the length from the same freed fact.
