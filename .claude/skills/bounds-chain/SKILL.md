@@ -147,7 +147,12 @@ The branches form a stack: `main` ⊂ `bound-annotations-opus` (#128) ⊂
 way. A stack is set up correctly when each branch contains its parent's
 head and each pull request's base is its parent branch.
 
-- Open a stacked pull request with `gh pr create --base <parent>`.
+- Make it a native GitHub stack: `gh stack link <bottom> <next> …`,
+  listing the branches (or pull request numbers) bottom to top. It pushes
+  each branch, reuses each existing pull request, opens one where there is
+  none, and sets each base to the branch below; GitHub then shows the pull
+  requests as one stack. Open a pull request yourself first to write its
+  title and description.
 - Before every push, check each pair:
   `git merge-base --is-ancestor <parent> <child>`, from `origin/main`
   upward. A pair that fails shows the parent's commits in the child's pull
