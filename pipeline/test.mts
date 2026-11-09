@@ -6345,7 +6345,7 @@ control(async (): Promise<void> => {
   assert.ok(unstated > lambda, "its statement");
   const fragmentPath = join(artifacts, "forged-generic-stated-fragment.json");
   writeFileSync(fragmentPath, fragment.slice(0, unstated) +
-    '"stated":{"footprint":{"value":"keep","store":"keep"},"onThrow":false}' + fragment.slice(unstated + '"stated":null'.length));
+    '"stated":{"footprint":{"value":"keep","store":"keep"},"onThrow":false,"fresh":false}' + fragment.slice(unstated + '"stated":null'.length));
   const produce = produceWith(artifacts, join(artifacts, "claims.json"), "forged-generic-stated", fragmentPath);
   assert.equal(produce.status, 1, produce.stdout + produce.stderr);
   assert.match(produce.stdout + produce.stderr, /a generic closure states no effect/);
@@ -6361,7 +6361,7 @@ control(async (): Promise<void> => {
   // construction.
   const artifacts = run("invalid-method-effect-construction");
   const fragment = readFileSync(join(artifacts, "fragment.json"), "utf8");
-  const statement = '"stated":{"footprint":{"value":"keep","store":"keep"},"onThrow":false}';
+  const statement = '"stated":{"footprint":{"value":"keep","store":"keep"},"onThrow":false,"fresh":false}';
   assert.equal(fragment.split(statement).length, 2, "bump's statement");
   const fragmentPath = join(artifacts, "forged-unstated-fragment.json");
   writeFileSync(fragmentPath, fragment.replace(statement, '"stated":null'));
