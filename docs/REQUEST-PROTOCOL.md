@@ -487,7 +487,9 @@ inductive's constructors and a rule added there extends the protocol;
   `sub` with its subtype proof; `throw`, whose one premise types the thrown
   operand.
 - **Objects.** `alloc` at a record type, whose fields, where one is the
-  array store key, are an array of the graph's built-ins (`allocBuiltins`);
+  array store key, are an array of the graph's built-ins (`allocBuiltins`),
+  and whose stable keys are among its fields, held as views, with no array
+  store beside them ([stable keys](POSITIVE-TYPES.md#records));
   at a dictionary type the typing rule `allocDict`, a literal allocated at a
   dictionary with no own-key bound, naming neither the prototype key nor
   the store key; `merge`, an allocation from parts, whose two premises type
