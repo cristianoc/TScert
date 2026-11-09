@@ -3300,8 +3300,11 @@ control(async (): Promise<void> => {
     for (const b of first.bindings) if (b.name === "count") b.type = [rowOf(entry, { numLit: { bits: "0" } })];
     const epath = writeClaims(cells, "module-cell-entry-fact", entry);
     refusedAt(cells, epath, "module-cell-entry-fact", "count");
+    // `afterCall` claims the footprint {value: any, store: keep}, which the
+    // check establishes node by node: a node the forged entry breaks is
+    // refused there first.
     invoke(epath, documentEvidence(cells), cells,
-        /^reject: source evidence refusal at \[\d+,\d+\): the evidence does not establish this obligation's claim/m);
+        /^reject: source (?:evidence refusal at \[\d+,\d+\): the evidence does not establish this obligation's claim|effect refusal at \[\d+,\d+\): the footprint claimed for 'afterCall' is not established by its body)/m);
     const stale = readClaims(cells);
     const sfn = must(stale.functions.find(f => f.name === "afterCall"), "afterCall");
     const src = readFileSync(sourceKey(cells), "utf8");
@@ -3329,8 +3332,10 @@ control(async (): Promise<void> => {
       claim.type = [rowOf(claims, clause)];
       const path = writeClaims(updates, name, claims);
       refusedAt(updates, path, name, `at [${at},${at + length})`);
+      // The forged function's footprint is checked node by node: the forged
+      // node is refused there first.
       invoke(path, join(updates, "evidence.json"), updates,
-          /^reject: (?:source effect refusal at \[\d+,\d+\): the footprint claimed for 'use' is not established by its body|source evidence refusal at \[\d+,\d+\): the evidence does not establish this node's claim)/m);
+          new RegExp(`^reject: source (?:effect refusal at \\[\\d+,\\d+\\): the footprint claimed for '${fn}' is not established by its body|evidence refusal at \\[\\d+,\\d+\\): the evidence does not establish this node's claim)`, "m"));
     };
     forged("retire", "reason ??= why", 0, "reason".length, "module-cell-nullish-read", "str");
     forged("name", "label ||= why", 0, "label".length, "module-cell-or-read", "num");
@@ -5915,16 +5920,17 @@ control(async (): Promise<void> => {
     return must(row.flatMap(clause => typeof clause === "object" && "arrs" in clause ? clause.arrs.arrows : [])
       .find(s => s.arguments.length === arity), `the contract at ${start}`);
   };
-  const forgeries: [string, (claims: Claims) => void][] = [
-    ["forged-replacer-effect", (claims) => {
+  // Each forgery, the function whose certificate it breaks, and the forging.
+  const forgeries: [string, string, (claims: Claims) => void][] = [
+    ["forged-replacer-effect", "doubled", (claims) => {
       must(claims.functions.find(f => f.name === "doubled"), "doubled's claims").footprint = { value: "keep", store: "keep" };
     }],
-    ["forged-replacer-capture", (claims) => {
+    ["forged-replacer-capture", "decode", (claims) => {
       const offered = arrowAt(claims, callback, 5);
       offered.arguments[1] = must(offered.arguments[0], "the match parameter");
     }],
   ];
-  for (const [name, forge] of forgeries) {
+  for (const [name, owner, forge] of forgeries) {
     const claims = readClaims(artifacts);
     forge(claims);
     const input = writeClaims(artifacts, name, claims);
@@ -5933,7 +5939,7 @@ control(async (): Promise<void> => {
     assert.equal(produce.status, 1, `${name}: ${produce.stdout}${produce.stderr}`);
     assert.ok(present(join(artifacts, "evidence.json")), "the fixture's honest evidence");
     invoke(input, join(artifacts, "evidence.json"), artifacts,
-        /^reject: (?:source effect refusal at \[\d+,\d+\): the footprint claimed for 'doubled' is not established by its body|source evidence refusal at \[\d+,\d+\): the evidence does not establish this obligation's claim)/m);
+        new RegExp(`^reject: (?:source effect refusal at \\[\\d+,\\d+\\): the footprint claimed for '${owner}' is not established by its body|source evidence refusal at \\[\\d+,\\d+\\): the evidence does not establish this obligation's claim)`, "m"));
   }
   process.stdout.write("forged replacement callback: a preserving dispatch and a string capture refused in search and in checking\n");
 });
