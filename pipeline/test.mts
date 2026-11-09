@@ -1289,7 +1289,7 @@ control(async (): Promise<void> => {
   assert.match(searched.stdout + searched.stderr, /source effect refusal.*footprint claimed for 'rest'/s);
   // Evidence carries this declaration's translated table. The original
   // evidence is incompatible with the weakened declaration's table.
-  invoke(join(artifacts, "claims.json"), join(artifacts, "evidence.json"), artifacts,
+  invoke(join(artifacts, "claims.json"), documentEvidence(artifacts), artifacts,
       /^reject: Verification\.EvidenceWire\.Document\.types: head \d+ argument 0 part 0: head \d+ takes 0 arguments, given 1/m, weakened);
 
   // An admitted undefined first element requires its default. Withholding
@@ -1687,8 +1687,10 @@ const invoke = (claims: string, evidence: string, artifacts: string, refusal: Re
 const withoutHeads = (path: string): void => {
   if (!existsSync(path)) return;
   writeFileSync(path, readFileSync(path, "utf8").split("\n").filter((l) => l !== "").map((line) => {
-    const heads = line.lastIndexOf(',"heads":'), unit = line.lastIndexOf(',"unit":');
-    return (heads < 0 || unit < heads ? line : line.slice(0, heads) + line.slice(unit)) + "\n";
+    const value: unknown = JSON.parse(line);
+    assert.ok(isObject(value) && typeof value.unit === "string" && "evidence" in value,
+      "a searched line carries its unit and evidence");
+    return JSON.stringify({ unit: value.unit, evidence: value.evidence }) + "\n";
   }).join(""));
 };
 /** Search for evidence of forged claims, or of a forged parser document,
@@ -1701,20 +1703,18 @@ const produceWith = (artifacts: string, claims: string, name: string,
   recordsDecode(searched.stdout + searched.stderr, `search ${name}`);
   return searched;
 };
-type EntryFact = SourceClaims["functions"][number]["entries"][number]["facts"][number];
-/** Remove every fact a function's entries claim but, at the entries
- * starting at `kept`, those naming its parameters alone. */
-const keepParameterFacts = (fn: SourceClaims["functions"][number], kept: number[]): void => {
-  const names = new Set(fn.params.map(p => p.name));
-  for (const entry of fn.entries) entry.facts = !kept.includes(entry.start) ? [] : entry.facts.filter(fact =>
-    "terms" in fact && fact.terms.every(t => names.has(t.name)) && fact.guards.every(g => names.has(g.name)));
+/** The evidence a search over the document of `artifacts` writes, its lines
+ * without heads: the original evidence as the check reads it written over
+ * the document, with no translation from a slice's store before the checker
+ * judges it against a forged document or forged claims. */
+const documentEvidence = (artifacts: string): string => {
+  const path = join(artifacts, "document-evidence.json");
+  if (!existsSync(path)) {
+    const searched = produceWith(artifacts, join(artifacts, "claims.json"), "document");
+    assert.equal(searched.status, 0, searched.stdout + searched.stderr);
+  }
+  return path;
 };
-/** `safeInteger(i) && 0 <= i && i < xs.length`, a read's precondition. */
-const readBound = (index: string, array: string): EntryFact[] => [
-  { guards: [], terms: [{ name: index, path: [], term: "value", coefficient: 0 }], bound: 0 },
-  { guards: [], terms: [{ name: index, path: [], term: "value", coefficient: -1 }], bound: 0 },
-  { guards: [], terms: [{ name: index, path: [], term: "value", coefficient: 1 },
-    { name: array, path: [], term: "length", coefficient: -1 }], bound: -1 }];
 /** Require search over forged claims to fail at the obligation named `at`. */
 const refusedAt = (artifacts: string, claims: string, name: string, at: string): void => {
   const searched = produceWith(artifacts, claims, name);
@@ -1771,7 +1771,8 @@ const run = (file: string): string => {
   const { artifacts } = expectOutcome(test, outcome);
   // The controls forge claims and evidence over the document's store: the
   // run's `evidence.json` is the search of every unit over the document,
-  // each line without heads, the run's own searches over slices kept beside.
+  // each line retaining its heads for relocation after a forgery changes
+  // the document's row numbering; the searches over slices stay beside it.
   const qualified = join(artifacts, "search-qualified.json"), evidence = join(artifacts, "evidence.json");
   // A run refused before its search states no qualified read.
   if (!existsSync(qualified)) writeFileSync(qualified, "[]");
@@ -1780,7 +1781,6 @@ const run = (file: string): string => {
     const document = join(artifacts, "document-search.json");
     tested(verifierCall(verifier, ["--produce-unit", join(artifacts, "fragment.json"), join(artifacts, "claims.json"),
       qualified, document, "12"]));
-    withoutHeads(document);
     if (existsSync(document)) renameSync(document, evidence);
   }
   caseRuns.set(file, artifacts);
@@ -3101,7 +3101,7 @@ control(async (): Promise<void> => {
     writeFileSync(path, JSON.stringify(claims).replace(rows[arrow] ?? "", (rows[arrow] ?? "")
       .replace(`"arguments":[[${index}],`, `"arguments":[[${target}],`)));
     refusedAt(good, path, name, at);
-    const checked = invoke(path, join(good, "evidence.json"), good,
+    const checked = invoke(path, documentEvidence(good), good,
         /^reject: (?:source direct obligation at \[\d+,\d+\): closure signature claim is outside the source annotation|source evidence refusal at \[\d+,\d+\): the evidence does not establish this obligation's claim)/m);
     assert.ok(checked.includes(checkedAt), checked);
   };
@@ -3286,7 +3286,7 @@ control(async (): Promise<void> => {
     for (const b of first.bindings) if (b.name === "count") b.type = [rowOf(entry, { numLit: { bits: "0" } })];
     const epath = writeClaims(cells, "module-cell-entry-fact", entry);
     refusedAt(cells, epath, "module-cell-entry-fact", "count");
-    invoke(epath, join(cells, "evidence.json"), cells,
+    invoke(epath, documentEvidence(cells), cells,
         /^reject: source evidence refusal at \[\d+,\d+\): the evidence does not establish this obligation's claim/m);
     const stale = readClaims(cells);
     const sfn = must(stale.functions.find(f => f.name === "afterCall"), "afterCall");
@@ -3332,7 +3332,7 @@ control(async (): Promise<void> => {
       claim.type = [claims.types.push(["num", "str"]) - 1];
       const path = writeClaims(updates, "module-cell-wider-write", claims);
       refusedAt(updates, path, "module-cell-wider-write", "storage-contract");
-      invoke(path, join(updates, "evidence.json"), updates,
+      invoke(path, documentEvidence(updates), updates,
           /^reject: source effect refusal at \[\d+,\d+\): the footprint claimed for 'use' is not established by its body/m);
     }
   }
@@ -3976,7 +3976,8 @@ for (const signature of ["plain", "promise"] as const) control(async (): Promise
   // A guard's call keeps the heap only where both the signature its call is
   // checked at and its promise signature keep the receiver's store as well:
   // either one claimed at a signature that may change it keeps no read
-  // link, and the field reread after the call is refused
+  // link. Search refuses the field reread; checking the original evidence
+  // refuses its callee obligation against the forged signature.
   // (PROGRAM-TYPING.md, "A call that keeps the heap").
   const artifacts = run("guard-field-primitive");
   const claims = readClaims(artifacts);
@@ -3993,8 +3994,8 @@ for (const signature of ["plain", "promise"] as const) control(async (): Promise
   const reread = source.indexOf("return x.f.length");
   refusedAt(artifacts, forged, `guard-receiver-store-${signature}`, `source incoming edge obligation at [${reread},`);
   invoke(forged, join(artifacts, "evidence.json"), artifacts,
-      /^reject: (?:source effect refusal at \[\d+,\d+\): the footprint claimed for 'size' is not established by its body|source evidence refusal at \[\d+,\d+\): the evidence does not establish this node's typing)/m);
-  process.stdout.write(`a guard whose ${signature} signature may change its receiver's store: the field reread refused in search and in checking\n`);
+      new RegExp(`^reject: source evidence refusal at \\[${source.indexOf("isText(x.f)")},${source.indexOf("isText(x.f)") + "isText".length}\\): the evidence does not establish this obligation's claim`, "m"));
+  process.stdout.write(`a guard whose ${signature} signature may change its receiver's store: the field reread refused in search, the forged callee obligation in checking\n`);
 });
 
 control(async (): Promise<void> => {
@@ -4152,7 +4153,7 @@ control(async (): Promise<void> => {
   const at = `source expression obligation at [${read},${read + "chain.at".length})`;
   const forged = writeClaims(real, "forged-intersection-discriminant-overlap", claims);
   refusedAt(real, forged, "forged-intersection-discriminant-overlap", at);
-  assert.ok(invoke(forged, join(twin, "evidence.json"), real,
+  assert.ok(invoke(forged, documentEvidence(twin), real,
       /^reject: source evidence refusal at \[\d+,\d+\): the evidence does not establish this node's typing/m).includes(
     `source evidence refusal at [${read},${read + "chain.at".length}): the evidence does not establish this node's typing`));
   process.stdout.write("an intersection's discriminant another arm's tag set meets: that arm's missing field refused in search and check\n");
@@ -4206,7 +4207,8 @@ control(async (): Promise<void> => {
   // only where a separation fact keeps the fact's location apart from every
   // own location of a receiver slot: `count` claimed at the empty footprint
   // with `receiverOwn`, called with no receiver, keeps no read link, and the
-  // field reread after the call is refused, in search and in checking.
+  // field reread after the call is refused in search; checking the original
+  // evidence refuses its callee obligation against the forged signature.
   const artifacts = run("guard-field-keeping-call");
   const claims = readClaims(artifacts);
   const source = readFileSync(sourceKey(artifacts), "utf8");
@@ -4217,9 +4219,10 @@ control(async (): Promise<void> => {
   const forged = writeClaims(artifacts, "keeping-call-receiver-own", claims);
   const reread = source.indexOf("return n + x.args.length");
   refusedAt(artifacts, forged, "keeping-call-receiver-own", `source incoming edge obligation at [${reread},`);
+  const callee = source.indexOf("count(x.args)");
   invoke(forged, join(artifacts, "evidence.json"), artifacts,
-      /^reject: source effect refusal at \[\d+,\d+\): the footprint claimed for 'size' is not established by its body/m);
-  process.stdout.write("a call excepting its receiver's own locations, with no receiver slot: the field reread refused\n");
+      new RegExp(`^reject: source evidence refusal at \\[${callee},${callee + "count".length}\\): the evidence does not establish this obligation's claim`, "m"));
+  process.stdout.write("a call excepting its receiver's own locations, with no receiver slot: the field reread refused in search, the forged callee obligation in checking\n");
 });
 
 control(async (): Promise<void> => {
@@ -4302,8 +4305,9 @@ control(async (): Promise<void> => {
   // A call between a guard and the field's reread keeps the guard's
   // finding only at a signature keeping the heap: `count` claimed at the
   // ordinary effect, which lets it change every location, is refused at the
-  // reread, bypassing the producer, which keeps the field only across a call
-  // its claims say keeps the heap.
+  // reread in search, bypassing the producer, which keeps the field only
+  // across a call its claims say keeps the heap; checking the original
+  // evidence refuses its callee obligation against the forged signature.
   const artifacts = run("guard-field-keeping-call");
   const claims = readClaims(artifacts);
   const source = readFileSync(sourceKey(artifacts), "utf8");
@@ -4314,9 +4318,10 @@ control(async (): Promise<void> => {
   const forged = writeClaims(artifacts, "guard-unrestricted-call", claims);
   const reread = source.indexOf("return n + x.args.length");
   refusedAt(artifacts, forged, "guard-unrestricted-call", `[${reread},`);
+  const callee = source.indexOf("count(x.args)");
   invoke(forged, join(artifacts, "evidence.json"), artifacts,
-      /^reject: source effect refusal at \[\d+,\d+\): the footprint claimed for 'size' is not established by its body/m);
-  process.stdout.write("an unrestricted call between a guard and the field's reread: refused in search and in checking\n");
+      new RegExp(`^reject: source evidence refusal at \\[${callee},${callee + "count".length}\\): the evidence does not establish this obligation's claim`, "m"));
+  process.stdout.write("an unrestricted call between a guard and the field's reread: the reread refused in search, the forged callee obligation in checking\n");
 });
 
 control(async (): Promise<void> => {
@@ -4801,7 +4806,7 @@ control(async (): Promise<void> => {
     const source = readFileSync(sourceKey(twoCalls), "utf8");
     const countCall = must(sites.find((e) => source.slice(e.pos[0], e.pos[1]) === "id(count)"), "the numeric call");
     mutate(must(countCall.instantiate, "the numeric substitution"));
-    invoke(writeClaims(twoCalls, `forged-${name}`, claims), join(twoCalls, "evidence.json"), twoCalls,
+    invoke(writeClaims(twoCalls, `forged-${name}`, claims), documentEvidence(twoCalls), twoCalls,
         /^reject: (?:Verification\.EvidenceWire\.Document\.types: application of unknown head 10|source refusal at \[\d+,\d+\): type arguments do not instantiate exactly the scheme's binders)/m);
   }
   const genericModule = run("generic-module-calls");
@@ -4817,7 +4822,7 @@ control(async (): Promise<void> => {
   const site = must(through.expressions.find((e) => e.instantiate?.some((i) => Array.isArray(i.type) && i.type.length === 2))
     ?.instantiate, "the call instantiated at boolean");
   must(site[0], "the callback substitution").type = [4];
-  invoke(writeClaims(callback, "forged-callback-instance", callbackClaims), join(callback, "evidence.json"), callback,
+  invoke(writeClaims(callback, "forged-callback-instance", callbackClaims), documentEvidence(callback), callback,
       /^reject: Verification\.EvidenceWire\.Document\.types: head 16 takes 1 arguments, given 0/m);
 });
 control(async (): Promise<void> => {
@@ -4829,7 +4834,7 @@ control(async (): Promise<void> => {
     (e) => !Array.isArray(e.type) && "scheme" in e.type);
   assert.ok(schemePoint && !Array.isArray(schemePoint.type) && "scheme" in schemePoint.type);
   schemePoint.type.scheme.result = [1, 2];
-  invoke(writeClaims(genericClosure, "forged-scheme", claims), join(genericClosure, "evidence.json"), genericClosure,
+  invoke(writeClaims(genericClosure, "forged-scheme", claims), documentEvidence(genericClosure), genericClosure,
       /^reject: source evidence refusal at \[\d+,\d+\): the evidence does not establish this obligation's claim/m);
 });
 control(async (): Promise<void> => {
@@ -5069,13 +5074,14 @@ control(async (): Promise<void> => {
     const forged = writeClaims(artifacts, `parent-walk-${name}`, claims);
     const searched = produceWith(artifacts, forged, `parent-walk-${name}`);
     assert.equal(searched.status, 1, searched.stdout + searched.stderr);
-    invoke(forged, join(artifacts, "evidence.json"), artifacts,
+    invoke(forged, documentEvidence(artifacts), artifacts,
         /^reject: (?:source direct obligation at \[\d+,\d+\): closure signature claim is outside the source annotation|source effect refusal at \[\d+,\d+\): the footprint claimed for 'walk' is not established by its body)/m);
   }
   process.stdout.write("recursive callback: forged leading parameter and result refused in search and checking\n");
 });
 control(async (): Promise<void> => {
-  checkGenericRest(verifier, run("generic-rest"));
+  const genericRest = run("generic-rest");
+  checkGenericRest(verifier, genericRest, documentEvidence(genericRest));
   checkRestPackInstance(verifier, run("rest-pack-declared"), "emptyInfer()");
   checkRestPackInstance(verifier, run("class-rest-binder"), "new RestRunner(\n");
   checkOverloads(verifier, run("overloads"));
@@ -5314,8 +5320,9 @@ control(async (): Promise<void> => {
   const allocated = writeClaims(artifacts, "forged-native-introduction", allocatedClaims);
   refusedAt(artifacts, allocated, "forged-native-introduction",
     `source expression obligation at [${allocatedAt},${allocatedAt + 2})`);
+  // Relocated evidence reaches the allocation claim in the document's graph.
   invoke(allocated, join(artifacts, "evidence.json"), artifacts,
-      /^reject: Verification\.EvidenceWire\.Document\.types: application of unknown head \d+/m);
+      new RegExp(`^reject: source evidence refusal at \\[${allocatedAt},${allocatedAt + 2}\\): the evidence does not establish this node's claim`, "m"));
   // A forged proposal for a direct write starts with a valid native input.
   // Borrow evidence from a weakened constructor contract, then require the
   // native contract to refuse it at its ordinary write obligation.
@@ -6029,7 +6036,7 @@ control(async (): Promise<void> => {
     const produce = produceWith(artifacts, input, name);
     assert.ifError(produce.error);
     assert.equal(produce.status, 1, produce.stdout + produce.stderr);
-    for (const detail of [produce.stdout + produce.stderr, invoke(input, join(artifacts, "evidence.json"), artifacts,
+    for (const detail of [produce.stdout + produce.stderr, invoke(input, documentEvidence(artifacts), artifacts,
         /^reject: (?:source effect refusal at \[\d+,\d+\): the footprint claimed for 'largest' is not established by its body|source evidence refusal at \[\d+,\d+\): the evidence does not establish this node's typing)/m)])
       assert.match(detail, at);
   }
@@ -6417,7 +6424,7 @@ control(async (): Promise<void> => {
   const produce = produceWith(artifacts, input, "forged-typed-cell");
   assert.ifError(produce.error);
   assert.equal(produce.status, 1, produce.stdout + produce.stderr);
-  for (const detail of [produce.stdout + produce.stderr, invoke(input, join(artifacts, "evidence.json"), artifacts,
+  for (const detail of [produce.stdout + produce.stderr, invoke(input, documentEvidence(artifacts), artifacts,
       /^reject: source evidence refusal at \[\d+,\d+\): the evidence does not establish this node's claim/m)])
     assert.match(detail, /reject: source (incoming edge obligation|evidence does not justify|evidence refusal at)/);
   process.stdout.write("forged typed cells: a fact of a field narrower than an entering arm's field type, refused in search and in checking\n");
@@ -6480,7 +6487,7 @@ control(async (): Promise<void> => {
   const refuse = (artifacts: string, name: string, claims: SourceClaims, refusal: RegExp,
       ast = join(artifacts, "fragment.json"), checked = refusal): void => {
     const input = writeClaims(artifacts, name, claims);
-    invoke(input, join(artifacts, "evidence.json"), artifacts, checked, ast);
+    invoke(input, documentEvidence(artifacts), artifacts, checked, ast);
   };
   // A unit claimed within the empty footprint whose body pushes onto its
   // array: its module's run refuses it.
@@ -6490,18 +6497,13 @@ control(async (): Promise<void> => {
   tally.footprint = emptyFootprint;
   {
     // The module's run, planned from the forged claims, is refused where its
-    // evidence is produced and where the honest run's evidence is checked.
+    // honest run's evidence is checked.
     const forged = writeClaims(imported, "forged-certified-footprint", narrowed);
     const planned = tested(verifierCall(verifier, ["--module-runs", join(imported, "fragment.json"), forged]));
     assert.equal(planned.status, 0, planned.stdout + planned.stderr);
     const runLine = must(planned.stdout.split("\n").find((l) => l.includes('"location":"./certified.ts"')), "the module's run");
     const runPath = join(imported, "forged-certified-footprint.module-run.json");
     writeFileSync(runPath, runLine);
-    const footprintRefusal = /module \.\/certified\.ts: .*the footprint claimed for 'tally' is not established by its body/s;
-    const searched = tested(verifierCall(verifier, ["--produce-module", runPath,
-      join(imported, "forged-certified-footprint.module-evidence.json"), "12"]));
-    assert.equal(searched.status, 1, searched.stdout + searched.stderr);
-    assert.match(searched.stdout + searched.stderr, footprintRefusal);
     const honest = must(readdirSync(imported).filter((f) => /^module-run-\d+\.json$/.test(f))
       .find((f) => readFileSync(join(imported, f), "utf8").includes('"location":"./certified.ts"')), "the honest run");
     const checked = tested(verifierCall(verifier, ["--check-module", runPath,
@@ -8276,7 +8278,7 @@ control(async (): Promise<void> => {
     writeFileSync(path, text);
     const searched = produceWith(artifacts, join(artifacts, "claims.json"), name, path);
     assert.equal(searched.status, 1, searched.stdout + searched.stderr);
-    const checked = invoke(join(artifacts, "claims.json"), join(artifacts, "evidence.json"), artifacts,
+    const checked = invoke(join(artifacts, "claims.json"), documentEvidence(artifacts), artifacts,
         /^reject: (?:source evidence refusal at \[\d+,\d+\): the evidence does not establish this obligation's claim|unexpected fields: expected \[k, pos, domain, field, tags, onUndefined, e\], got \[domain, e, field, k, pos, tags\])/m, path);
     return { searched: searched.stdout + searched.stderr, checked };
   };
@@ -8443,7 +8445,7 @@ control(async (): Promise<void> => {
   const flow = join(artifacts, "flow.json");
   const loneFragment = join(artifacts, "forged-lone-surrogate-fragment.json");
   writeFileSync(loneFragment, fragment.replace("", "\\ud800"));
-  const proposed = proposedDocument(loneFragment);
+  const proposed = tested(producerCall(producerExecutable, ["--units", loneFragment]));
   assert.notEqual(proposed.status, 0, proposed.stdout + proposed.stderr);
   assert.match(proposed.stdout + proposed.stderr, /low surrogate/);
   assert.throws(() => readFragmentFile(loneFragment), /not well-formed Unicode/);
@@ -8452,7 +8454,7 @@ control(async (): Promise<void> => {
   assert.match(leanFragment.stdout + leanFragment.stderr, /not well-formed Unicode/);
   const rawFragment = join(artifacts, "forged-invalid-utf8-fragment.json");
   writeFileSync(rawFragment, withByte(fragment));
-  const rawProposed = proposedDocument(rawFragment);
+  const rawProposed = tested(producerCall(producerExecutable, ["--units", rawFragment]));
   assert.notEqual(rawProposed.status, 0, rawProposed.stdout + rawProposed.stderr);
   assert.match(rawProposed.stdout + rawProposed.stderr, /not valid UTF-8/);
   process.stdout.write("wire strings: lone surrogates and invalid UTF-8 refused by the producer, Lean and TypeScript\n");
@@ -8846,9 +8848,12 @@ control(async (): Promise<void> => {
   // literal, its exponent form included, and a fraction is refused.
   const artifacts = run("aliases");
   const text = readFileSync(join(artifacts, "evidence.json"), "utf8");
+  // The spellings changed are the evidence's, past a line's untrusted
+  // anchors, which name slots too.
   const slot = '"slot":0', field = '"field":"value"';
-  const at = text.indexOf(slot), named = text.indexOf(field);
-  assert.ok(at >= 0 && named >= 0, "a slot 0 and a field named value in the honest document");
+  const evidence = text.indexOf('"evidence":');
+  const at = text.indexOf(slot, evidence), named = text.indexOf(field, evidence);
+  assert.ok(evidence >= 0 && at >= 0 && named >= 0, "a slot 0 and a field named value in the honest evidence");
   const replaced = (i: number, old: string, by: string): string => text.slice(0, i) + by + text.slice(i + old.length);
   const reversed = (value: unknown): unknown => Array.isArray(value) ? value.map(reversed)
     : typeof value === "object" && value !== null
@@ -9932,6 +9937,21 @@ process.stdout.write(JSON.stringify(await checkApart(${JSON.stringify(source)}, 
     "every stage executes to the same outcome; a changed source executes its whole-document stages\n");
 });
 
+/** Every search consumes bytes of an actual unit slice in these artifacts.
+ * The adapter's role name alone cannot distinguish a fallback's document. */
+function assertSliceSearches(records: readonly AttemptRecord[], artifacts: string): void {
+  const slices = new Set(readdirSync(artifacts).filter((name) => name.endsWith(".slice.json"))
+    .map((name) => createHash("sha256").update(readFileSync(join(artifacts, name))).digest("hex")));
+  for (const record of records.filter((r) => r.stage === "search" || r.stage === "module-search")) {
+    const argv = fieldOf(record.manifest, "argv");
+    assert.ok(Array.isArray(argv) && argv.includes("--produce-unit"), "one search mode");
+    const inputs = fieldOf(record.manifest, "inputs");
+    const slice: unknown = Array.isArray(inputs) ? inputs.find((i) => Array.isArray(i) && i[0] === "slice.json") : undefined;
+    assert.ok(Array.isArray(slice) && typeof slice[1] === "string" && slices.has(slice[1]),
+      "a search consumes a unit slice, never the whole document as fallback");
+  }
+}
+
 control(async (): Promise<void> => {
   // Replay across an edit of an importer (STAGE-STORE.md, "Observed
   // stages"): an importer of a certified module, edited in a function the
@@ -9958,7 +9978,9 @@ process.stdout.write(JSON.stringify(await checkApart(${JSON.stringify(importer)}
       { encoding: "utf8", timeout: 240_000, env: { ...process.env, TSCERT_STAGE_STORE: store, TSCERT_RUN_ROOT: root } });
     assert.equal(ran.status, 0, ran.stderr);
     const outcome = readOutcome(JSON.parse(ran.stdout.slice(ran.stdout.indexOf("{"))));
-    return { outcome, records: readInvocationLog(join(outcome.artifacts, invocationLog)) };
+    const records = readInvocationLog(join(outcome.artifacts, invocationLog));
+    assertSliceSearches(records, outcome.artifacts);
+    return { outcome, records };
   };
   const store = runDirectory("tscert-edit-replay-store-");
   writeFileSync(importer, original);
@@ -10033,31 +10055,22 @@ process.stdout.write(JSON.stringify(await checkApart(${JSON.stringify(file)}, un
       { encoding: "utf8", timeout: 240_000, env: { ...process.env, TSCERT_STAGE_STORE: store, TSCERT_RUN_ROOT: root } });
     assert.equal(ran.status, 0, ran.stderr);
     const outcome = readOutcome(JSON.parse(ran.stdout.slice(ran.stdout.indexOf("{"))));
-    return { outcome, records: readInvocationLog(join(outcome.artifacts, invocationLog)) };
+    const records = readInvocationLog(join(outcome.artifacts, invocationLog));
+    assertSliceSearches(records, outcome.artifacts);
+    return { outcome, records };
   };
   const executed = (records: readonly AttemptRecord[], stage: string): number =>
     records.filter((r) => r.stage === stage && ranStage(r)).length;
-  // Every search is a unit's over its slice: none reads the document.
-  const overSlices = (name: string, records: readonly AttemptRecord[]): void => {
-    for (const r of records.filter((x) => x.stage === "search")) {
-      const argv = fieldOf(r.manifest, "argv");
-      const at = Array.isArray(argv) ? argv.indexOf("--produce-unit") : -1;
-      const slice: unknown = Array.isArray(argv) ? argv[at + 1] : undefined;
-      assert.ok(typeof slice === "string" && slice.endsWith(".slice.json"), `${name}: a search reads a unit's slice`);
-    }
-  };
   const replayed = (records: readonly AttemptRecord[], stage: string): number =>
     records.filter((r) => r.stage === stage && r.execution === "replayed").length;
   const store = runDirectory("tscert-unit-replay-store-");
   writeFileSync(file, original);
   const cold = runIn(store);
   assert.equal(cold.outcome.status, "verified", JSON.stringify(cold.outcome));
-  overSlices("cold", cold.records);
   const edit = (name: string, text: string, proposals: number, searches: number): void => {
     assert.notEqual(text, original, `${name}: the edit applies`);
     writeFileSync(file, text);
     const warm = runIn(store);
-    overSlices(name, warm.records);
     assert.equal(executed(warm.records, "propose"), proposals, `${name}: units proposed again`);
     assert.equal(executed(warm.records, "search"), searches, `${name}: units searched again`);
     assert.equal(replayed(warm.records, "search"), 6 - searches, `${name}: every other unit's search replays`);
@@ -10086,7 +10099,6 @@ process.stdout.write(JSON.stringify(await checkApart(${JSON.stringify(file)}, un
     "function bad(xs: (number | undefined)[]): number {", "  const x = xs[0];", "  return x as number;", "}", ""].join("\n");
   writeFileSync(file, refused);
   const explained = runIn(store);
-  overSlices("explained", explained.records);
   assert.equal(explained.outcome.status, "unverified", JSON.stringify(explained.outcome));
   assert.equal(executed(explained.records, "explain"), 1, "the refused unit is explained");
   writeFileSync(file, refused.replace("  return n + 1;", "  return 1 + n;"));

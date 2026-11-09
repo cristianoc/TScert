@@ -10,8 +10,10 @@ import { stripTypes } from "../tools/strip-types.mts";
 import { readFragmentFile, readClaimsFile, sourceKey } from "./verify-source.mts";
 
 /** Universal collection, substitution and source binding are independent
- * obligations; neither fresh search nor reused evidence may bypass them. */
-export function checkGenericRest(verifier: string, artifacts: string): void {
+ * obligations; neither fresh search nor reused evidence may bypass them.
+ * The reused evidence is `evidence`, written over the document of
+ * `artifacts`. */
+export function checkGenericRest(verifier: string, artifacts: string, evidence: string): void {
   const claims: SourceClaims = readClaimsFile(join(artifacts, "claims.json"));
   const ast: Ast = readFragmentFile(join(artifacts, "fragment.json"));
   const reject = (
@@ -31,7 +33,7 @@ export function checkGenericRest(verifier: string, artifacts: string): void {
           parsed,
           claimed,
           mode === "--produce-unit" ? join(artifacts, "search-qualified.json") : sourceKey(artifacts),
-          join(artifacts, mode === "--produce-unit" ? "produced-evidence.json" : "evidence.json"),
+          mode === "--produce-unit" ? join(artifacts, "produced-evidence.json") : evidence,
           ...(mode === "--produce-unit" ? ["12"] : []),
         ]));
       assert.ifError(p.error);
