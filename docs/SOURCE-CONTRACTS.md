@@ -2185,7 +2185,7 @@ reader of a class value states one constructor without a rest
 (`blocker-returntype-typeof`, `returntype-overloads`, `parameters-typeof`).
 A written function type supplies its parameter list directly, including
 optional and rest positions. Each position retains its complete annotation,
-including a callback's `Within` effect. The enclosing function's result
+including a callback's `Modifies` effect. The enclosing function's result
 and effect do not qualify the extracted parameters.
 
 A guard's result is its Boolean, which TypeScript computes as a union of

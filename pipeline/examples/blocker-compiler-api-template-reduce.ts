@@ -9,17 +9,34 @@ type Span = [start: number, end: number];
 type E =
   | { k: "lit"; pos: Span; v: string }
   | { k: "arith"; pos: Span; op: "add" | "sub"; l: E; r: E };
-export function template(node: ts.TemplateExpression, f: (e: Expression) => Within<{ value: "any"; store: "grow" }, E>): Within<{ value: "any"; store: "grow" }, E> {
+export function template(
+  node: ts.TemplateExpression,
+  f: (e: Expression) => Modifies<{ values: "any"; stores: "grow" }, E>,
+): Modifies<{ values: "any"; stores: "grow" }, E> {
   const start = node.pos;
-  const head: E = { k: "lit", pos: [node.head.pos, node.head.end], v: node.head.text };
+  const head: E = {
+    k: "lit",
+    pos: [node.head.pos, node.head.end],
+    v: node.head.text,
+  };
   return node.templateSpans.reduce((acc: E, part): E => {
-    const value: E = { k: "arith", pos: [start, part.expression.end], op: "add", l: acc, r: f(part.expression) };
+    const value: E = {
+      k: "arith",
+      pos: [start, part.expression.end],
+      op: "add",
+      l: acc,
+      r: f(part.expression),
+    };
     return {
       k: "arith",
       pos: [start, part.literal.end],
       op: "add",
       l: value,
-      r: { k: "lit", pos: [part.literal.pos, part.literal.end], v: part.literal.text },
+      r: {
+        k: "lit",
+        pos: [part.literal.pos, part.literal.end],
+        v: part.literal.text,
+      },
     };
   }, head);
 }

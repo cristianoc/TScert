@@ -8,7 +8,7 @@ function firstOptional(
     readonly questionToken?: unknown;
     readonly initializer?: unknown;
   }[],
-): Within<{ value: "any"; store: "grow" }, number> {
+): Modifies<{ values: "any"; stores: "grow" }, number> {
   return params.findIndex((p) => !!p.questionToken || !!p.initializer);
 }
 export function lower(params: readonly ParameterDeclaration[]): boolean[] {

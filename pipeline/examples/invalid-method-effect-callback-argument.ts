@@ -3,7 +3,7 @@
 // and the arrow's states none (run under Node: a hole).
 export function mapped(
   xs: number[],
-  f: (x: number) => Within<{ value: "keep"; store: "keep" }, number>,
+  f: (x: number) => Modifies<{}, number>,
 ): number[] {
   const r: number[] = xs.map((x) => f(x));
   return r;

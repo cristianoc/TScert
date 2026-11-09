@@ -9,7 +9,7 @@ import * as ts from "typescript/unstable/ast";
 import type { Node, Expression } from "typescript/unstable/ast";
 export function letWrites(
   block: Node,
-): Within<{ value: "any"; store: "grow" }, Expression[]> {
+): Modifies<{ values: "any"; stores: "grow" }, Expression[]> {
   const values: Expression[] = [];
   const visit = (n: Node): void => {
     if (ts.isBinaryExpression(n) && outermostIs(n.left, n))
@@ -19,7 +19,7 @@ export function letWrites(
   const outermostIs: (
     top: Node,
     n: Node,
-  ) => Within<{ value: "any"; store: "keep" }, boolean> = (top, n) => {
+  ) => Modifies<{ values: "any" }, boolean> = (top, n) => {
     let at: Node = top;
     while (ts.isParenthesizedExpression(at)) at = at.expression;
     return at === n;

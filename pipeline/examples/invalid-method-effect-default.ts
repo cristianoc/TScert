@@ -4,6 +4,6 @@
 export function bad(
   xs: number[],
   x: number = xs.pop() ?? 0,
-): Within<{ value: "keep"; store: "keep" }, number> {
+): Modifies<{}, number> {
   return x;
 }

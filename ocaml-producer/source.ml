@@ -727,7 +727,7 @@ and fn = { quantified: quantifier list; name: string; name_pos: Json.t; params: 
            guard: (call_effect * ty) option;
            (* Whether it is async: its effects are certified at `top`. *)
            async: bool;
-           (* The effect its result annotation states (`Within<F, T>`): a
+           (* The effect its result annotation states (`Modifies<P, T>`): a
               footprint and whether it holds on a throw too. Its claim must
               lie within it. *)
            stated: (footprint * bool) option;
@@ -855,7 +855,7 @@ let early_bindings : (string * Json.t, unit) Hashtbl.t = Hashtbl.create 16
    definition's effects at `top` (`asyncEffects`) and no footprint below it is
    proposed. *)
 let async_closures : (Json.t, unit) Hashtbl.t = Hashtbl.create 16
-(* The effects closures' result annotations state (`Within<F, T>`), by the
+(* The effects closures' result annotations state (`Modifies<P, T>`), by the
    literal's position: a footprint and whether it holds on a throw too. Lean
    requires a signature its code is checked at to cover it. *)
 let closure_preconditions : (Json.t, index_fact list) Hashtbl.t = Hashtbl.create 16

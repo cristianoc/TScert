@@ -77,7 +77,7 @@ The [native map contract](SOURCE-CONTRACTS.md#prototype-contracts) permits
 holes with unrestricted callbacks. This is a negative case under the
 [route criteria](#deciding-what-a-refusal-of-tscerts-code-calls-for).
 `blocker-prep-reference-args-map-preserving` requires
-`Within<{ value: "any"; store: "grow" }, TypeTerm>` from `go`; the existing
+`Modifies<{ values: "any"; stores: "grow" }, TypeTerm>` from `go`; the existing
 [effect checks](FOOTPRINTS.md) and native map contract establish the readable
 result, and the reference construction verifies. This adds no external
 assumption. The compiler's own branding traversal retains a checked
@@ -98,7 +98,7 @@ The [native map contract](SOURCE-CONTRACTS.md#prototype-contracts) permits
 holes with unrestricted callbacks. This original example is a negative
 case under the [route criteria](#deciding-what-a-refusal-of-tscerts-code-calls-for).
 `blocker-prep-captured-map-records-preserving` states a callback with
-`Within<{ value: "any"; store: "grow" }, string>` as its result.
+`Modifies<{ values: "any"; stores: "grow" }, string>` as its result.
 The existing [effect checks](FOOTPRINTS.md) establish readable presence
 from that requirement, and the complete iteration verifies with the
 inferred `found` binding. This is a checked function contract and adds
@@ -241,7 +241,7 @@ shape independently before returning the text and its `printable` flag.
 
 `tools/fragment-parts.mts#partsOf` collects direct parts by passing identity
 callbacks that append to a fresh array into a traversal. Its `map`
-parameter states `(m: PartMap) => Within<{ value: "any"; store: "grow" }, unknown>`.
+parameter states `(m: PartMap) => Modifies<{ values: "any"; stores: "grow" }, unknown>`.
 The callers in `directParts` and `codeParts` supply `mapExprParts`,
 `mapStmtParts`, `mapPatternParts` and `mapFunctionParts` through closures.
 Each traversal carries the same store-preserving contract.
@@ -602,7 +602,7 @@ selecting `filter`'s guard signature, so `found` was claimed with `null`
 
 `liftLabels` in `tools/claim-text.mts` binds its `map` callback as `armOf`,
 with a `JsonValue` parameter and the result contract
-`Within<{ value: "any"; store: "grow" }, Arm>`, where `Arm` is the record
+`Modifies<{ values: "any"; stores: "grow" }, Arm>`, where `Arm` is the record
 holding a count and a deferred lifting function. The existing
 [footprint checks](FOOTPRINTS.md) require preservation evidence for that definition;
 the existing [native map contract](SOURCE-CONTRACTS.md#prototype-contracts)
@@ -629,7 +629,7 @@ uses it to retain readable array presence for reduction and iteration.
 
 The private `atEachFootprint` helper in `tools/array-prototype.mts` applies
 this pattern at its `signature` parameter. Its result is
-`Within<{ value: "keep"; store: "keep" }, { params: TypeTerm[]; result: TypeTerm }>`.
+`Modifies<{}, { params: TypeTerm[]; result: TypeTerm }>`.
 The complete data contract stays explicit; each provider must establish the
 preserving footprint at the call. The providers construct records, arrays
 and effect descriptions without writing existing locations. The helper's
@@ -667,7 +667,7 @@ the existing [allocation and closure checks](SOURCE-CLAIMS.md).
 
 `letWrites` in `tools/fragment-expressions.mts` captures `outermostIs`
 before that helper is initialized. Its callable binding states
-`(top: Node, n: Node) => Within<{ value: "any"; store: "keep" }, boolean>`.
+`(top: Node, n: Node) => Modifies<{ values: "any" }, boolean>`.
 The existing [early-binding checks](SOURCE-ELABORATION.md#lexical-bindings-before-initialization)
 check initialization and reads at that storage contract, and the existing
 [closure checks](SOURCE-ELABORATION.md#stated-effects) certify its footprint.
@@ -780,7 +780,7 @@ fields twice: it amends callable contracts, then gives prototype slots an
 ### A graph field holding a lookup function
 
 `FamilyGraph.constantName` in `tools/host-families.mts` states its result
-as `Within<{ value: "keep"; store: "keep" }, string>`. The declaration
+as `Modifies<{}, string>`. The declaration
 reader supplies a lookup over saved constants, followed by `String` on a
 number or string when no constant matches. The lookup reads its inputs
 and preserves values and array stores.
@@ -1575,8 +1575,7 @@ true edge holds both kinds: it reads the members both shapes state
 front end reads TypeScript files only, where the guard and the kind test
 accept the same nodes ([restrictions](COMPILER-API.md#restrictions)).
 
-- **Rewrite:** `isTypeAlias(node): node is Within<{ value: "keep"; store:
-  "keep" }, TypeAliasDeclaration>` of `tools/syntax.mts` tests
+- **Rewrite:** `isTypeAlias(node): node is Modifies<{}, TypeAliasDeclaration>` of `tools/syntax.mts` tests
   `node.kind === SyntaxKind.TypeAliasDeclaration`, and every recognition of
   a type alias in `tools/`, `dev/` and `tests/` calls it. Its promise is what
   its test establishes, so its true edge reads the declaration's members; on
@@ -1614,8 +1613,7 @@ TypeScript files, where neither other kind occurs at those points
 
 - **Rewrite:** `typeNodeAt` and `computedAt` test
   `ts.isTypeNode(node) && !ts.isExpressionWithTypeArguments(node)`, as
-  `tools/written-applications.mts` does; `isImport(node): node is Within<{
-  value: "keep"; store: "keep" }, ImportDeclaration>` of `tools/syntax.mts`
+  `tools/written-applications.mts` does; `isImport(node): node is Modifies<{}, ImportDeclaration>` of `tools/syntax.mts`
   tests `node.kind === SyntaxKind.ImportDeclaration`, and the three import
   sites call it.
 - **Call boundary:** `readScope` of `tools/fragment-statements.mts` calls
@@ -2253,7 +2251,7 @@ union's record was refused at its `parts`. Every reader the evaluator
 receives is the type reader's, which grows stores and changes nothing else.
 
 - **Repair:** the readers are of the type `TypeReader`, `(node: TypeNode)
-  => Within<{ value: "any"; store: "grow" }, TypeTerm>`, in
+  => Modifies<{ values: "any"; stores: "grow" }, TypeTerm>`, in
   `ComputedContext.applied`, the alias members and every function of the
   evaluator taking one, so `map` keeps a dense result
   ([`map`'s stable callback](SOURCE-CONTRACTS.md#prototype-contracts)). The
@@ -2438,7 +2436,7 @@ are passed at `JsonValue`.
 
 - **Repair:** each of these functions, each callback the lifter maps with,
   and `textOf`, the text of a lifted part, state
-  `Within<{ value: "any"; store: "grow" }, T>`, with the
+  `Modifies<{ values: "any"; stores: "grow" }, T>`, with the
   [stated-effect](SOURCE-ELABORATION.md#stated-effects) rule checking every
   body. The imported helpers they call state their footprints, each checked
   at its own definition: `isArrayPresence` and `presencePrefix` the empty
@@ -2498,7 +2496,7 @@ second read, which then reads a field of the declared union
 returns `undefined` as its `number[]`).
 
 - **Repair:** the parameter states
-  `Within<{ value: "keep"; store: "keep" }, boolean>`, which its one caller's
+  `Modifies<{}, boolean>`, which its one caller's
   predicate, a module-name and name comparison, meets. The annotation is
   erased.
 - **Scope:** `blocker-next-table-predicate-preservation`. No external
@@ -2520,7 +2518,7 @@ was read at an unrestricted contract, so the caller's statement `{value: any, st
 was refused ("the footprint claimed for … is not established by its body").
 
 - **Repair:** each function type states the footprint the functions passed
-  there meet, `Within<{ value: "any"; store: "grow" }, R>`
+  there meet, `Modifies<{ values: "any"; stores: "grow" }, R>`
   ([stated effects](SOURCE-ELABORATION.md#inferred-call-effects-elaboration-and-certification)).
   A caller's unit relies on the statement as written, reading the function
   at its claimed signature and effect; the statement is established where
@@ -2686,8 +2684,7 @@ footprint, and its annotation stated no effect. `nodeOrigin`
 (`tools/declaration-graph.mts`) calls it in a `map` callback, whose result
 then admitted holes ([the stable set](FOOTPRINTS.md#the-stable-set-for-density)).
 
-- **Repair:** the arrow's result states `Within<{ value: "keep"; store:
-  "keep" }, boolean>`, which its body establishes. Its value is unchanged.
+- **Repair:** the arrow's result states `Modifies<{}, boolean>`, which its body establishes. Its value is unchanged.
 - **Functions:** `nodeOrigin`.
 - **Commit:** the introducing commit.
 
@@ -2836,7 +2833,7 @@ claims there ("the edge … does not establish the claims at this point").
 
 The `reads` visitor in `tools/fragment-statements.mts#declarationsOf`
 checks an initializer for a reference to the declaration being bound.
-Its result states a normal-return `Within` footprint allowing array growth
+Its result states a normal-return `Modifies` footprint allowing array growth
 and preserving existing array positions. The recursive self call and the
 compiler API's `forEachChild` use that signature; the existing closure and
 call checks establish its body and each call against the footprint.
@@ -4018,7 +4015,7 @@ a recursive visitor capturing that binding cannot establish store preservation.
   captured before initialization by a recursive visitor whose caller requires
   a store-preserving effect.
 - **Equivalent form:** the binding states
-  `(top: Node, n: Node) => Within<{ value: "any"; store: "keep" }, boolean>`.
+  `(top: Node, n: Node) => Modifies<{ values: "any" }, boolean>`.
   The existing initialization and closure checks certify the definition.
   Type annotations erase, so both forms have identical runtime code,
   including allocation order, receivers, aliases, exceptions and mutations.

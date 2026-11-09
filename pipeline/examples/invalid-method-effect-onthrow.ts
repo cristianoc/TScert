@@ -3,9 +3,7 @@
 // lost an element, so its code does not meet the statement (run under
 // Node: the callback catching the throw leaves a hole).
 export class Bump {
-  bump(
-    xs: number[],
-  ): Within<{ value: "keep"; store: "keep"; onThrow: true }, number> {
+  bump(xs: number[]): Modifies<{ onThrow: true }, number> {
     xs.pop();
     throw new Error("bumped");
   }

@@ -2,10 +2,7 @@
 // is handed: its binding's annotation states the statement, which its code
 // is checked at (run under Node: a hole).
 export class Units {
-  static take(
-    xs: number[],
-    x: number,
-  ): Within<{ value: "keep"; store: "keep" }, number> {
+  static take(xs: number[], x: number): Modifies<{}, number> {
     xs.pop();
     return x;
   }

@@ -6249,7 +6249,7 @@ mutationControl(async (): Promise<void> => {
 });
 
 mutationControl(async (): Promise<void> => {
-  // A guard's statement at its predicate's type (`s is Within<F, T>`) is its
+  // A guard's statement at its predicate's type (`s is Modifies<P, T>`) is its
   // unit's statement: `isUnit`, stating the empty footprint, which no code
   // calls, claimed at `{value: any, store: grow}`, which its pure body
   // meets, is refused in search and in checking at the definition, checked

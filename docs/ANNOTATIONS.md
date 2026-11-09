@@ -107,32 +107,41 @@ type Runs = {
 Aliases of [`tools/resolvable.d.ts`](../tools/resolvable.d.ts), recognized
 by the declaration TypeScript binds the name to.
 
-### `Within<F, T>`
+### `Modifies<P, T>`
 
 As a written signature's result type, or a type guard's promised type. The
-call returns a `T` and changes previously allocated locations at most as `F`
-allows; TypeScript reads it as `T`. The verifier certifies it from the
-function's code. [Stated effects](SOURCE-ELABORATION.md#stated-effects).
-
-```ts
-function count(xs: readonly number[]): Within<{ value: "keep"; store: "keep" }, number> {
-  return xs.length;
-}
-```
-
-### `Footprint`
-
-The bound of `Within`'s `F`, written in place as a type literal:
-`value` (`"keep"`, `"init"`, `"scalar"` or `"any"`) bounds changes to
-locations holding a value, `store` (`"keep"`, `"grow"` or `"any"`) changes
-to array stores, and `onThrow: true` makes the bound hold on a throw too.
+call returns a `T`; on a normal return every previously allocated location
+keeps its contents but those `P` names, each changed at most as `P` says.
+`P` is a type literal: `values` (`"keep"`, `"init"`, `"scalar"`, `"grow"`
+or `"any"`) bounds changes to locations holding a value, `stores` the same
+for array stores, and `onThrow: true` makes the bound hold on a throw too;
+`{}` states that nothing previously allocated changes. TypeScript reads it
+as `T`; the verifier certifies it from the function's code.
 [Stated effects](SOURCE-ELABORATION.md#stated-effects).
 
 ```ts
-function evens(n: number): Within<{ value: "any"; store: "grow" }, number[]> {
+function count(xs: readonly number[]): Modifies<{}, number> {
+  return xs.length;
+}
+
+function evens(n: number): Modifies<{ values: "any"; stores: "grow" }, number[]> {
   const out: number[] = [];
   for (let i = 0; i < n; i += 2) out.push(i);
   return out;
+}
+```
+
+### `Fresh<T>`
+
+As a written signature's result type, alone or as the `T` of `Modifies`: a
+normal return's value holds an array store the call allocated, so the
+caller's facts about every other store survive changes to it. TypeScript
+reads it as `T`; the verifier certifies it from the function's code.
+[Stated effects](SOURCE-ELABORATION.md#stated-effects).
+
+```ts
+function copy(xs: readonly number[]): Fresh<number[]> {
+  return xs.slice();
 }
 ```
 
@@ -172,5 +181,5 @@ class member and function a module binding holds states its parameters' and
 result's types ([modules and code units](SOURCE-CONTRACTS.md#modules-and-code-units),
 [refusals](SOURCE-FRAGMENT.md)). A fact crosses a function boundary only
 as a clause: `@requires` and `@invariant` for what a body assumes, `@ensures`
-and `@invariant` for what a caller learns, `Within` for what a callback or
-function value may change.
+and `@invariant` for what a caller learns, `Modifies` for what a callback or
+function value may change, `Fresh` for a result the call allocated.

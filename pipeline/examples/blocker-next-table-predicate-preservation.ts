@@ -10,7 +10,7 @@ type Term =
   | { k: "other" };
 export function table(
   type: Term,
-  isMap: (name: string) => Within<{ value: "keep"; store: "keep" }, boolean>,
+  isMap: (name: string) => Modifies<{}, boolean>,
 ): number[] {
   if (
     type.k !== "function" ||

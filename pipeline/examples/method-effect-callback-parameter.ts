@@ -3,15 +3,12 @@
 // that statement.
 export function mapped(
   xs: number[],
-  f: (x: number) => Within<{ value: "keep"; store: "keep" }, number>,
+  f: (x: number) => Modifies<{}, number>,
 ): number[] {
   const r: number[] = xs.map((x) => f(x));
   return r;
 }
 
 export function doubled(xs: number[]): number[] {
-  return mapped(
-    xs,
-    (x: number): Within<{ value: "keep"; store: "keep" }, number> => x * 2,
-  );
+  return mapped(xs, (x: number): Modifies<{}, number> => x * 2);
 }

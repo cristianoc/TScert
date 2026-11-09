@@ -1,7 +1,7 @@
 // A catch returning normally observes arbitrary changes made before a throw.
 export function wrong(
   xs: number[],
-): Within<{ value: "any"; store: "grow" }, number> {
+): Modifies<{ values: "any"; stores: "grow" }, number> {
   try {
     xs.pop();
     throw 0;

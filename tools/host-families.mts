@@ -199,7 +199,7 @@ export type FamilyGraph = {
   /** The tag's constants: the enum's values, each once, ascending. */
   values: readonly TagValue[];
   /** A tag value's constant name, the first the enum states for it. */
-  constantName: (value: TagValue) => Within<{ value: "keep"; store: "keep" }, string>;
+  constantName: (value: TagValue) => Modifies<{}, string>;
   /** The name of a declaration's tag parameter, or null. */
   tagParameter: (declaration: InterfaceDeclaration) => string | null;
   /** Whether a member is declared optional, `name?: T`. */

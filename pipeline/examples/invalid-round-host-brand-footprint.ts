@@ -13,7 +13,7 @@ export function branded(
   const context: Context = { brand };
   const go = (
     u: TypeTerm,
-  ): Within<{ value: "any"; store: "grow" }, TypeTerm> => {
+  ): Modifies<{ values: "any"; stores: "grow" }, TypeTerm> => {
     if (u.k !== "reference") return u;
     if (context.brand(u.reference.target))
       return { k: "atom", name: "string", span: u.span };

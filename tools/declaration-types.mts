@@ -112,7 +112,7 @@ export type LinearTerm = {
  * each at most once, in this order. */
 export type ElementKind = "null" | "undefined" | "boolean" | "number" | "string" | "bigint" | "symbol" | "object";
 export type ElementKinds = readonly ElementKind[];
-/** The effect a written signature states at its result (`Within<F, T>`,
+/** The effect a written signature states at its result (`Modifies<P, T>`,
  * SOURCE-ELABORATION.md, "Stated effects"): a closed footprint and whether
  * it also bounds the heap a throw leaves. */
 export type StatedEffect = { footprint: ClosedFootprint; onThrow: boolean };

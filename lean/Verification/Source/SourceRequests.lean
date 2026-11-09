@@ -506,7 +506,7 @@ theorem checkRequests_ensures_at {rs : List (SourceRequest σ ι)} {b : Bundle �
     exact GraphCode.goto_ensures hc hcodes hsums hret' n W heap L d he hw hh hsep hidx
   · contradiction
 
-/-- **A unit stating an effect meets it** (`Within<F, T>`; SOURCE-ELABORATION.md,
+/-- **A unit stating an effect meets it** (`Modifies<P, T>`; SOURCE-ELABORATION.md,
 "Stated effects"): run as the code its graph describes from any environment
 of values its inputs, its annotated parameters, admit, it is safe; on normal
 return the heap it leaves is within its statement's footprint of its entry

@@ -3,13 +3,13 @@
 // statement, and a `map` callback calling the base's method on either is
 // within the empty footprint.
 export class Base {
-  size(n: number): Within<{ value: "keep"; store: "keep" }, number> {
+  size(n: number): Modifies<{}, number> {
     return n;
   }
 }
 
 export class Twice extends Base {
-  size(n: number): Within<{ value: "keep"; store: "keep" }, number> {
+  size(n: number): Modifies<{}, number> {
     return n * 2;
   }
 }

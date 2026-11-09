@@ -19,7 +19,7 @@ import { passToolFailure } from "./thrown.mts";
 
 /** A reader of type syntax: it may read the checker and grow the stores it
  * reaches, as the type reader does, and changes no other value. */
-export type TypeReader = (node: TypeNode) => Within<{ value: "any"; store: "grow" }, TypeTerm>;
+export type TypeReader = (node: TypeNode) => Modifies<{ values: "any"; stores: "grow" }, TypeTerm>;
 
 /** What the evaluator reads with: the project's checker, and the reader of a
  * declaration's own annotation, in that declaration's scope, with the binders

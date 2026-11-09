@@ -1,10 +1,8 @@
-// A module whose functions state their effects (`Within<F, T>`), which the
+// A module whose functions state their effects (`Modifies<P, T>`), which the
 // stated-import examples import: `keep` meets its statement; `drain` pops
 // the array it is handed, so its own run refuses it, and an importer reads
 // it at its declaration, the import assumption (`stated-assumed-value-import`).
-export function keep(
-  n: number,
-): Within<{ value: "keep"; store: "keep" }, number> {
+export function keep(n: number): Modifies<{}, number> {
   return n;
 }
 
@@ -22,16 +20,11 @@ export interface Square {
   kind: "square";
   side: number;
 }
-export function isCircle(
-  s: Circle | Square,
-): s is Within<{ value: "keep"; store: "keep" }, Circle> {
+export function isCircle(s: Circle | Square): s is Modifies<{}, Circle> {
   return s.kind === "circle";
 }
 
-export function drain(
-  xs: number[],
-  x: number,
-): Within<{ value: "keep"; store: "keep" }, number> {
+export function drain(xs: number[], x: number): Modifies<{}, number> {
   xs.pop();
   return x;
 }

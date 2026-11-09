@@ -7,9 +7,7 @@ type Expr = { k: "id"; pos: number; name: string };
 export function base(
   base: { proto: string | null } | null,
   present: { expression: string } | undefined,
-  span: (
-    expression: string,
-  ) => Within<{ value: "keep"; store: "keep" }, number>,
+  span: (expression: string) => Modifies<{}, number>,
 ): Expr | null {
   const value: Expr | null =
     base && base.proto && present

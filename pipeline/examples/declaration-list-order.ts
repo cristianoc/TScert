@@ -20,13 +20,18 @@ class Steps {
   }
 }
 
-function note(log: string[], text: string): Within<{ value: "any"; store: "grow" }, number> {
+function note(
+  log: string[],
+  text: string,
+): Modifies<{ values: "any"; stores: "grow" }, number> {
   log.push(text);
   return log.length;
 }
 
 export function order(steps: Steps): string {
   const log = steps.log;
-  const [first] = steps, count = note(log, `second:${first ?? ""}`), [both = `${first ?? ""}${count}`] = [undefined];
+  const [first] = steps,
+    count = note(log, `second:${first ?? ""}`),
+    [both = `${first ?? ""}${count}`] = [undefined];
   return `${log.join(",")},${both}`;
 }

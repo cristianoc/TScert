@@ -4,10 +4,7 @@
 // `map` callback calling the method would take `map`'s dense signature
 // (run under Node: the pop leaves a hole in the result).
 export class Bump {
-  bump(
-    xs: number[],
-    x: number,
-  ): Within<{ value: "keep"; store: "keep" }, number> {
+  bump(xs: number[], x: number): Modifies<{}, number> {
     xs.pop();
     return x;
   }

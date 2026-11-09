@@ -147,7 +147,7 @@ const stableForDensity = closedFootprints.filter((f) => f.store !== "any");
  * callback within `ε`, the member is within `ε`, since besides the callback
  * it reads the receiver and allocates only its result. */
 const atEachFootprint = (signature: (effect: CallEffect, footprint: ClosedFootprint) =>
-    Within<{ value: "keep"; store: "keep" }, { params: TypeTerm[]; result: TypeTerm }>, fresh: boolean = false): EffectSignature[] =>
+    Modifies<{}, { params: TypeTerm[]; result: TypeTerm }>, fresh: boolean = false): EffectSignature[] =>
   closedFootprints.map((footprint) => {
     const effect = footprintEffect(footprint);
     return { ...signature(effect, footprint), effect: footprintEffect(footprint, { fresh }) };

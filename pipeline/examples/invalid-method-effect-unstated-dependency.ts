@@ -9,10 +9,7 @@ export function helper(xs: number[], x: number): number {
 
 export class Runner {
   helper: typeof helper = helper;
-  run(
-    xs: number[],
-    x: number,
-  ): Within<{ value: "keep"; store: "keep" }, number> {
+  run(xs: number[], x: number): Modifies<{}, number> {
     return this.helper(xs, x);
   }
 }

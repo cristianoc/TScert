@@ -25,7 +25,7 @@
 // fragment-statements.mts#controlStmt
 export function rest(
   xs: readonly number[],
-): Within<{ value: "any"; store: "grow" }, number> {
+): Modifies<{ values: "any"; stores: "grow" }, number> {
   const [only, ...others] = xs;
   return others.length;
 }

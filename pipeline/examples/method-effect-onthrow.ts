@@ -3,9 +3,7 @@
 // `map` callback catching its throw starts its handler within the empty
 // footprint of its entry, so the result is dense.
 export class Check {
-  positive(
-    n: number,
-  ): Within<{ value: "keep"; store: "keep"; onThrow: true }, number> {
+  positive(n: number): Modifies<{ onThrow: true }, number> {
     if (n < 0) throw new Error("negative");
     return n;
   }

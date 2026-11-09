@@ -9,7 +9,7 @@
 type Part = { spread: number } | { name: string; e: number; spread?: never };
 export function parts(
   ps: Part[],
-  map: (x: number) => Within<{ value: "any"; store: "grow" }, number>,
+  map: (x: number) => Modifies<{ values: "any"; stores: "grow" }, number>,
 ): Part[] {
   return ps.map((p): Part => {
     if (p.spread !== undefined) return { ...p, spread: map(p.spread) };

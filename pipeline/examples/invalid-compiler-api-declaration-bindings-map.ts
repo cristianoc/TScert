@@ -6,7 +6,7 @@ export function bindings(nodes: ts.Node[]): number[] {
   const found: number[] = nodes.map((node) => {
     const reads = (
       n: ts.Node,
-    ): Within<{ value: "any"; store: "grow" }, ts.Node | undefined> => {
+    ): Modifies<{ values: "any"; stores: "grow" }, ts.Node | undefined> => {
       nodes.pop();
       if (ts.isIdentifier(n)) return n;
       return n.forEachChild(reads);

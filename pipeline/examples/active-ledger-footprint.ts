@@ -1,16 +1,12 @@
 // tools/files.mts: insertion-ordered unique active records, composed through
 // the existing native Set footprints. Generic callbacks retain their effects.
 const active = new Set<number>();
-function enter(
-  ledger: number,
-): Within<{ value: "any"; store: "keep" }, number | null> {
+function enter(ledger: number): Modifies<{ values: "any" }, number | null> {
   if (active.has(ledger)) return null;
   active.add(ledger);
   return ledger;
 }
-function leave(
-  ledger: number | null,
-): Within<{ value: "any"; store: "keep" }, void> {
+function leave(ledger: number | null): Modifies<{ values: "any" }, void> {
   if (ledger !== null) active.delete(ledger);
 }
 export function withLedger<T>(ledger: number, run: () => T): T {
@@ -23,8 +19,8 @@ export function withLedger<T>(ledger: number, run: () => T): T {
 }
 export function kept<T>(
   ledger: number,
-  run: () => Within<{ value: "any"; store: "grow"; onThrow: true }, T>,
-): Within<{ value: "any"; store: "grow" }, T> {
+  run: () => Modifies<{ values: "any"; stores: "grow"; onThrow: true }, T>,
+): Modifies<{ values: "any"; stores: "grow" }, T> {
   const entered = enter(ledger);
   try {
     return run();

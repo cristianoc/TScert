@@ -2,9 +2,7 @@
 // Census functions:
 // host-families.mts#familyTable
 type Graph = {
-  constantName: (
-    t: number,
-  ) => Within<{ value: "keep"; store: "keep" }, string | null>;
+  constantName: (t: number) => Modifies<{}, string | null>;
 };
 export function find(
   graph: Graph,
@@ -19,7 +17,7 @@ export function lookupGraph(
   constants: readonly { value: number; name: string }[],
 ): Graph {
   return {
-    constantName: (value): Within<{ value: "keep"; store: "keep" }, string> =>
+    constantName: (value): Modifies<{}, string> =>
       constants.find((c) => c.value === value)?.name ?? String(value),
   };
 }

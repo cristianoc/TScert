@@ -13,10 +13,19 @@
 // fragment-parts.mts#mapStmtParts, fragment-parts.mts#moduleHolds.
 type Tree = { k: "leaf"; n: number } | { k: "node"; kids: Tree[] };
 type Mapper = {
-  tree: (t: Tree, ...further: unknown[]) => Within<{ value: "any"; store: "grow" }, Tree>;
-  num: (n: number, ...further: unknown[]) => Within<{ value: "any"; store: "grow" }, number>;
+  tree: (
+    t: Tree,
+    ...further: unknown[]
+  ) => Modifies<{ values: "any"; stores: "grow" }, Tree>;
+  num: (
+    n: number,
+    ...further: unknown[]
+  ) => Modifies<{ values: "any"; stores: "grow" }, number>;
 };
-export function mapParts(t: Tree, m: Mapper): Within<{ value: "any"; store: "grow" }, Tree> {
+export function mapParts(
+  t: Tree,
+  m: Mapper,
+): Modifies<{ values: "any"; stores: "grow" }, Tree> {
   switch (t.k) {
     case "leaf":
       return { ...t, n: m.num(t.n) };
@@ -25,15 +34,20 @@ export function mapParts(t: Tree, m: Mapper): Within<{ value: "any"; store: "gro
   }
 }
 export function deep(
-  num: (n: number, ...further: unknown[]) => Within<{ value: "any"; store: "grow" }, number>,
-): Within<{ value: "any"; store: "grow" }, Mapper> {
+  num: (
+    n: number,
+    ...further: unknown[]
+  ) => Modifies<{ values: "any"; stores: "grow" }, number>,
+): Modifies<{ values: "any"; stores: "grow" }, Mapper> {
   function tree(t: Tree): Tree {
     return mapParts(t, d);
   }
   const d: Mapper = { tree, num };
   return d;
 }
-export function numbers(t: Tree): Within<{ value: "any"; store: "grow" }, number[]> {
+export function numbers(
+  t: Tree,
+): Modifies<{ values: "any"; stores: "grow" }, number[]> {
   const seen: number[] = [];
   mapParts(t, {
     tree: (u) => u,

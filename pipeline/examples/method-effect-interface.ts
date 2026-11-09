@@ -3,7 +3,7 @@
 // so each visit reads an element of the array's contract (`T`, not
 // `T | undefined`).
 export interface Limit {
-  over(n: number): Within<{ value: "keep"; store: "keep" }, boolean>;
+  over(n: number): Modifies<{}, boolean>;
 }
 
 export function firstOver(limit: Limit, xs: number[]): number {
@@ -13,7 +13,7 @@ export function firstOver(limit: Limit, xs: number[]): number {
 export function overTen(xs: number[]): number {
   return firstOver(
     {
-      over(n: number): Within<{ value: "keep"; store: "keep" }, boolean> {
+      over(n: number): Modifies<{}, boolean> {
         return n > 10;
       },
     },

@@ -2,11 +2,10 @@
 // closure's code is certified at its statement over its annotated
 // parameters, and `map` callbacks calling them are within the empty
 // footprint.
-const inc = (n: number): Within<{ value: "keep"; store: "keep" }, number> =>
-  n + 1;
+const inc = (n: number): Modifies<{}, number> => n + 1;
 
 const ops = {
-  dec: (n: number): Within<{ value: "keep"; store: "keep" }, number> => n - 1,
+  dec: (n: number): Modifies<{}, number> => n - 1,
 };
 
 export function incs(xs: number[]): number[] {

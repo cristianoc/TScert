@@ -5,7 +5,7 @@
 function sorted(
   values: number[],
   other: number[],
-): Within<{ value: "any"; store: "grow" }, number[]> {
+): Modifies<{ values: "any"; stores: "grow" }, number[]> {
   return values.sort((a, b) => {
     other.pop();
     return a - b;

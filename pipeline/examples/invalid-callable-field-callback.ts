@@ -3,7 +3,7 @@
 // parameter, which map's index fills, returning `undefined` where a number
 // is promised.
 type Mapper = {
-  num: (n: number) => Within<{ value: "any"; store: "grow" }, number>;
+  num: (n: number) => Modifies<{ values: "any"; stores: "grow" }, number>;
 };
 export function wrong(list: number[], m: Mapper): number[] {
   return list.map(m.num);

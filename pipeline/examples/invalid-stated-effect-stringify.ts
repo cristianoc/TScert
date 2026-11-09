@@ -8,7 +8,7 @@ type Term = { k: string; span: number };
 function sameTerm(
   a: Term,
   b: Term,
-): Within<{ value: "any"; store: "grow" }, boolean> {
+): Modifies<{ values: "any"; stores: "grow" }, boolean> {
   const text = (t: Term): string =>
     JSON.stringify(t, (key, value: unknown) =>
       key === "span" ? undefined : value,

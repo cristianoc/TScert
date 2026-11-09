@@ -12,11 +12,13 @@
 import * as ts from "typescript/unstable/ast";
 export function receiver(
   node: ts.CallExpression,
-  expr: (e: ts.Expression) => Within<{ value: "any"; store: "grow" }, number>,
-  span: (n: ts.Node) => Within<{ value: "keep"; store: "keep" }, number>,
+  expr: (
+    e: ts.Expression,
+  ) => Modifies<{ values: "any"; stores: "grow" }, number>,
+  span: (n: ts.Node) => Modifies<{}, number>,
   knownLocal: (
     e: ts.Expression,
-  ) => Within<{ value: "any"; store: "grow" }, boolean>,
+  ) => Modifies<{ values: "any"; stores: "grow" }, boolean>,
 ): number {
   if (!ts.isPropertyAccessExpression(node.expression))
     throw Error("expected a method call");

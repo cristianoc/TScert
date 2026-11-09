@@ -2,10 +2,7 @@
 // convention TScert's own `Gate` follows: the field's contract reads the
 // declaration's statement, the initializer meets it, and a `map` callback
 // calling the field is within the empty footprint, so the result is dense.
-export function scaled(
-  this: Scale,
-  n: number,
-): Within<{ value: "keep"; store: "keep" }, number> {
+export function scaled(this: Scale, n: number): Modifies<{}, number> {
   return n * this.factor;
 }
 

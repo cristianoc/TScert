@@ -24,14 +24,14 @@ import type { Gate } from "../../tools/fragment-parse.mts";
 
 function chainReceiver(
   at: Node,
-): Within<{ value: "any"; store: "grow" }, Node | null> {
+): Modifies<{ values: "any"; stores: "grow" }, Node | null> {
   return null;
 }
 
 function inertRead(
   gate: Gate,
   receiver: Node,
-): Within<{ value: "any"; store: "grow" }, boolean> {
+): Modifies<{ values: "any"; stores: "grow" }, boolean> {
   if (!ts.isIdentifier(receiver)) return false;
   const declaration = gate.resolve(receiver);
   return (
@@ -45,7 +45,7 @@ export function chainComparison(
   op: "===" | "!==" | "==" | "!=",
   l: Expr,
   r: Expr,
-): Within<{ value: "any"; store: "grow" }, Expr | null> {
+): Modifies<{ values: "any"; stores: "grow" }, Expr | null> {
   const chainLeft = l.k === "optional";
   const chain = chainLeft ? l : r;
   const other = chainLeft ? r : l;

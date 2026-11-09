@@ -16,7 +16,7 @@ type Index = { readonly: boolean; value: TypeTerm; span: Span };
 type Fail = (message: string) => never;
 
 /** A definition's key: its full declaration identity. */
-export const definitionKey = (id: DeclarationIdentity): Within<{ value: "keep"; store: "keep" }, string> =>
+export const definitionKey = (id: DeclarationIdentity): Modifies<{}, string> =>
   JSON.stringify([id.module, id.span, id.name]);
 
 /** The complete definitions a shape is read from: each by its identity,
@@ -28,8 +28,8 @@ export const definitionKey = (id: DeclarationIdentity): Within<{ value: "keep"; 
 // Classification preserves the definition being inspected; definition lookup
 // can settle and cache definitions under its separate growth contract.
 export type NamedRecords = {
-  definition(id: DeclarationIdentity, fail: Fail): Within<{ value: "any"; store: "grow" }, TypeDefinition | undefined>;
-  record(id: DeclarationIdentity): Within<{ value: "keep"; store: "keep" }, boolean>;
+  definition(id: DeclarationIdentity, fail: Fail): Modifies<{ values: "any"; stores: "grow" }, TypeDefinition | undefined>;
+  record(id: DeclarationIdentity): Modifies<{}, boolean>;
 };
 
 const PREFIX = "a mapped type's value names its key, over a named type";
@@ -41,7 +41,7 @@ const PREFIX = "a mapped type's value names its key, over a named type";
  * absent optional field left out: a kind added to `TypeTerm` fails the
  * compilation of the `switch`, and a field added to a kind is written only
  * once `termText` names it. */
-export function termText(t: TypeTerm): Within<{ value: "keep"; store: "keep" }, string> {
+export function termText(t: TypeTerm): Modifies<{}, string> {
   const k = `{"k":${JSON.stringify(t.k)}`;
   switch (t.k) {
     case "atom": return `${k},"name":${JSON.stringify(t.name)}}`;
@@ -83,51 +83,51 @@ export function termText(t: TypeTerm): Within<{ value: "keep"; store: "keep" }, 
 }
 
 /** A list of terms as text, each by `termText`. */
-export function termsText(ts: readonly TypeTerm[]): Within<{ value: "keep"; store: "keep" }, string> {
+export function termsText(ts: readonly TypeTerm[]): Modifies<{}, string> {
   return `[${ts.map(termText).join(",")}]`;
 }
 
 /** A declaration identity as text, its span included. */
-export function identityText(id: DeclarationIdentity): Within<{ value: "keep"; store: "keep" }, string> {
+export function identityText(id: DeclarationIdentity): Modifies<{}, string> {
   return `{"module":${JSON.stringify(id.module)},"name":${JSON.stringify(id.name)},"span":[${JSON.stringify(id.span[0])},${JSON.stringify(id.span[1])}]}`;
 }
 
-function optionalTermText(t: TypeTerm | null): Within<{ value: "keep"; store: "keep" }, string> {
+function optionalTermText(t: TypeTerm | null): Modifies<{}, string> {
   return t === null ? "null" : termText(t);
 }
 
-function propertyKeyText(name: PropertyKey): Within<{ value: "keep"; store: "keep" }, string> {
+function propertyKeyText(name: PropertyKey): Modifies<{}, string> {
   return typeof name === "string" ? JSON.stringify(name) : `{"symbol":${JSON.stringify(name.symbol)}}`;
 }
 
 /** An object type's field as text, its span aside. */
-function fieldText(f: ObjectTerm["fields"][number]): Within<{ value: "keep"; store: "keep" }, string> {
+function fieldText(f: ObjectTerm["fields"][number]): Modifies<{}, string> {
   return `{"name":${propertyKeyText(f.name)},"optional":${JSON.stringify(f.optional)},"readonly":${JSON.stringify(f.readonly)},"type":${termText(f.type)}}`;
 }
 
 /** An index signature as text, its span aside. */
-function indexText(i: Index): Within<{ value: "keep"; store: "keep" }, string> {
+function indexText(i: Index): Modifies<{}, string> {
   return `{"readonly":${JSON.stringify(i.readonly)},"value":${termText(i.value)}}`;
 }
 
-function staticText(s: { name: PropertyKey; type: TypeTerm; readonly?: true }): Within<{ value: "keep"; store: "keep" }, string> {
+function staticText(s: { name: PropertyKey; type: TypeTerm; readonly?: true }): Modifies<{}, string> {
   return `{"name":${propertyKeyText(s.name)},"type":${termText(s.type)}${s.readonly ? `,"readonly":true` : ""}}`;
 }
 
-function binderText(b: Extract<TypeTerm, { k: "scheme" }>["binders"][number]): Within<{ value: "keep"; store: "keep" }, string> {
+function binderText(b: Extract<TypeTerm, { k: "scheme" }>["binders"][number]): Modifies<{}, string> {
   const resolution = b.resolution === null ? "null"
     : `{"observation":${JSON.stringify(b.resolution.observation)},"result":${b.resolution.result === null ? "null" : JSON.stringify(b.resolution.result)}}`;
   return `{"name":${JSON.stringify(b.name)},"bound":${optionalTermText(b.bound)},"resolution":${resolution},"default":${optionalTermText(b.default)}}`;
 }
 
 /** A call promise's JSON text, built from its one key and its parameter. */
-function promiseText(p: CallPromise): Within<{ value: "keep"; store: "keep" }, string> {
+function promiseText(p: CallPromise): Modifies<{}, string> {
   return p.guards !== undefined ? `{"guards":{"param":${JSON.stringify(p.guards.param)}}}`
     : `{"asserts":{"param":${JSON.stringify(p.asserts.param)}}}`;
 }
 
 /** A call effect as text; its promise by its JSON text. */
-function effectText(e: CallEffect): Within<{ value: "keep"; store: "keep" }, string> {
+function effectText(e: CallEffect): Modifies<{}, string> {
   return `{"footprint":{"value":${JSON.stringify(e.footprint.value)},"store":${JSON.stringify(e.footprint.store)}},` +
     `"promise":${e.promise === null ? "null" : promiseText(e.promise)},"fresh":${JSON.stringify(e.fresh)},` +
     `"receiverStore":${JSON.stringify(e.receiverStore)},"onThrow":${JSON.stringify(e.onThrow)},` +
@@ -138,11 +138,11 @@ function effectText(e: CallEffect): Within<{ value: "keep"; store: "keep" }, str
 }
 
 /** An elements predicate as text: `null` or its kinds' list. */
-function kindsText(kinds: ElementKinds | null): Within<{ value: "keep"; store: "keep" }, string> {
+function kindsText(kinds: ElementKinds | null): Modifies<{}, string> {
   return kinds === null ? "null" : `[${kinds.map(k => JSON.stringify(k)).join(",")}]`;
 }
 
-const keyText = (name: PropertyKey): Within<{ value: "any"; store: "grow" }, string> =>
+const keyText = (name: PropertyKey): Modifies<{ values: "any"; stores: "grow" }, string> =>
   typeof name === "string" ? name : `[symbol ${name.symbol}]`;
 
 /** What `reference` denotes (`AliasHook`, type-term.mts): `"record"` for a
@@ -150,7 +150,7 @@ const keyText = (name: PropertyKey): Within<{ value: "any"; store: "grow" }, str
  * of a record literal), its definition's equation at the reference's
  * arguments for any other definition that has one, an alias of a named
  * type included, which the caller follows in turn; refused otherwise. */
-export function aliasMeaning(reference: Reference, records: NamedRecords, fail: Fail): Within<{ value: "any"; store: "grow" }, TypeTerm | "record"> {
+export function aliasMeaning(reference: Reference, records: NamedRecords, fail: Fail): Modifies<{ values: "any"; stores: "grow" }, TypeTerm | "record"> {
   const target = reference.reference.target;
   const name = `${target.module}#${target.name}`;
   const definition = records.definition(target, fail) ?? fail(`a type with no definition the reader holds: ${name}`);
@@ -168,7 +168,7 @@ export function aliasMeaning(reference: Reference, records: NamedRecords, fail: 
  * included. A shape reaching itself, a definition that is no record, call
  * or construct signatures, a prototype or a host's members, and an inherited
  * member or index redeclared at another type are refused. */
-export function recordShape(reference: Reference, records: NamedRecords, fail: Fail): Within<{ value: "any"; store: "grow" }, ObjectTerm> {
+export function recordShape(reference: Reference, records: NamedRecords, fail: Fail): Modifies<{ values: "any"; stores: "grow" }, ObjectTerm> {
   const named = (ref: Reference, path: readonly string[]): ObjectTerm => {
     const target = ref.reference.target;
     const key = definitionKey(target);
@@ -224,8 +224,8 @@ export function recordShape(reference: Reference, records: NamedRecords, fail: F
  * shape is read from it, so a definition whose settling needs its own shape
  * is refused. The refusal callback throws with the source location. */
 export function settleDocument(document: { definitions: TypeDefinition[]; values: ValueRoot[]; applications: WrittenApplication[] },
-    record: (id: DeclarationIdentity) => Within<{ value: "keep"; store: "keep" }, boolean>,
-    refused: (where: string, error: unknown) => never): Within<{ value: "any"; store: "grow" }, { definitions: TypeDefinition[]; values: ValueRoot[]; applications: WrittenApplication[] }> {
+    record: (id: DeclarationIdentity) => Modifies<{}, boolean>,
+    refused: (where: string, error: unknown) => never): Modifies<{ values: "any"; stores: "grow" }, { definitions: TypeDefinition[]; values: ValueRoot[]; applications: WrittenApplication[] }> {
   const byKey = new Map(document.definitions.map(d => [definitionKey(d.declaration), d] as const));
   const settled = new Map<string, TypeDefinition>();
   const settling = new Set<string>();
@@ -265,7 +265,7 @@ export function settleDocument(document: { definitions: TypeDefinition[]; values
  * named type's outer record shape (`recordShape`) at the mapping's
  * modifiers. */
 export function settleTerm(term: TypeTerm, records: NamedRecords, where: string,
-    refused: (where: string, error: unknown) => never): Within<{ value: "any"; store: "grow" }, TypeTerm> {
+    refused: (where: string, error: unknown) => never): Modifies<{ values: "any"; stores: "grow" }, TypeTerm> {
   const go = (t: TypeTerm): TypeTerm => {
     const deferred = deferredOf(t);
     if (!deferred) return mapTypeParts(t, go);
@@ -287,24 +287,24 @@ export function settleTerm(term: TypeTerm, records: NamedRecords, where: string,
 /* Whether a document holds a deferred mapped type (`deferredIdentity`):
  * none may reach a serialized document, where it would name no
  * declaration. A declaration of its module is one, wherever it is named. */
-const deferredTerm = (t: TypeTerm): Within<{ value: "any"; store: "grow" }, boolean> =>
+const deferredTerm = (t: TypeTerm): Modifies<{ values: "any"; stores: "grow" }, boolean> =>
   t.k === "reference" && t.reference.target.module === DEFERRED_MODULE;
-const deferredDeclaration = (id: DeclarationIdentity): Within<{ value: "any"; store: "grow" }, boolean> =>
+const deferredDeclaration = (id: DeclarationIdentity): Modifies<{ values: "any"; stores: "grow" }, boolean> =>
   id.module === DEFERRED_MODULE;
 
 /** Whether a declaration document holds a deferred mapped type. */
-export function deferredInDocument(doc: DeclarationDocument): Within<{ value: "any"; store: "grow" }, boolean> {
+export function deferredInDocument(doc: DeclarationDocument): Modifies<{ values: "any"; stores: "grow" }, boolean> {
   return documentHolds(doc, deferredTerm, deferredDeclaration);
 }
 
 /** Whether a lowered file, its documents and code, holds a deferred mapped
  * type. */
-export function deferredInAst(ast: Ast): Within<{ value: "any"; store: "grow" }, boolean> {
+export function deferredInAst(ast: Ast): Modifies<{ values: "any"; stores: "grow" }, boolean> {
   return astHolds(ast, deferredTerm, deferredDeclaration);
 }
 
 /** Whether an imported module's entry, its documents and code, holds a
  * deferred mapped type. */
-export function deferredInModule(module: ModuleAst): Within<{ value: "any"; store: "grow" }, boolean> {
+export function deferredInModule(module: ModuleAst): Modifies<{ values: "any"; stores: "grow" }, boolean> {
   return moduleHolds(module, deferredTerm, deferredDeclaration);
 }

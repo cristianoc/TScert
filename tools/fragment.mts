@@ -233,7 +233,7 @@ export type Expr =
       /* A guard's promise, where the result annotation is `x is T` or
          `asserts x is T`; `result` is then its plain result. */
       guard: Guard | null;
-      /* The effect its result annotation states, `Within<F, T>`, of which
+      /* The effect its result annotation states, `Modifies<P, T>`, of which
          `result` is `T`; null where it states none. */
       stated: StatedEffect | null;
       requires: IndexFact[];
@@ -399,7 +399,7 @@ export interface FunctionAst {
   /** The result annotation: a guard's plain result, `boolean` or `void`. */
   retType: TypeTerm;
   guard: Guard | null;
-  /** The effect the result annotation states, `Within<F, T>`, of which
+  /** The effect the result annotation states, `Modifies<P, T>`, of which
    * `retType` is `T`; null where it states none. */
   stated: StatedEffect | null;
   /** The precondition, its `@requires` clauses elaborated to index

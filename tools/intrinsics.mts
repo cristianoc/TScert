@@ -207,11 +207,11 @@ export const pathToFileHrefName = "%PathToFileURL:href%";
 type Signature = Extract<TypeTerm, { k: "function" }>;
 type AtomName = Extract<TypeTerm, { k: "atom" }>["name"];
 const span: [number, number] = [0, 0];
-const atom = (name: AtomName): Within<{ value: "any"; store: "grow" }, TypeTerm> => ({ k: "atom", name, span });
+const atom = (name: AtomName): Modifies<{ values: "any"; stores: "grow" }, TypeTerm> => ({ k: "atom", name, span });
 const binder: TypeTerm = { k: "binder", name: "T", span };
 const either = (...parts: TypeTerm[]): TypeTerm => ({ k: "union", span, parts });
 const literalOf = (text: string): TypeTerm => ({ k: "literal", name: "string", text, span });
-const fn = (params: TypeTerm[], result: TypeTerm): Within<{ value: "any"; store: "grow" }, Signature> =>
+const fn = (params: TypeTerm[], result: TypeTerm): Modifies<{ values: "any"; stores: "grow" }, Signature> =>
   ({ k: "function", effect: ordinaryEffect, receiver: null, params, rest: null, result, span });
 /** The values no object is: a promise resolved with one settles to it. */
 const primitives: AtomName[] = ["null", "undefined", "boolean", "number", "string", "bigint", "symbol"];
@@ -420,12 +420,12 @@ export function freezeIntrinsic(name: string):
 
 /** A number's spelling as a literal: its `Number::toString`, which reads back
  * as the same double, and `-0` for negative zero, which that spells `0`. */
-export function numberText(value: number): Within<{ value: "any"; store: "grow" }, string> {
+export function numberText(value: number): Modifies<{ values: "any"; stores: "grow" }, string> {
   return Object.is(value, -0) ? "-0" : String(value);
 }
 
 /** The literal type of an enum member's value. */
-export function literalTerm(value: string | number, at: [number, number]): Within<{ value: "any"; store: "grow" }, TypeTerm> {
+export function literalTerm(value: string | number, at: [number, number]): Modifies<{ values: "any"; stores: "grow" }, TypeTerm> {
   return typeof value === "string"
     ? { k: "literal", name: "string", text: value, span: at }
     : { k: "literal", name: "number", text: numberText(value), span: at };
@@ -452,7 +452,7 @@ export type EnumReverse = "stated" | "none";
  * in JavaScript's order where they are known: array index keys ascending,
  * then the others as the emit creates them. A reverse key of a value known
  * only at run time is no field. */
-export function enumMembersTerm(members: readonly EnumMemberValue[], at: [number, number], reverse: EnumReverse): Within<{ value: "any"; store: "grow" }, TypeTerm> {
+export function enumMembersTerm(members: readonly EnumMemberValue[], at: [number, number], reverse: EnumReverse): Modifies<{ values: "any"; stores: "grow" }, TypeTerm> {
   const fields = new Map<string, Extract<TypeTerm, { k: "object" }>["fields"][number]>();
   const names = new Set(members.map(m => m.name));
   for (const m of members) {

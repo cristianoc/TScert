@@ -3242,7 +3242,7 @@ the forged control of `pipeline/test.mts`). `overloaded-function` holds a
 generic and a plain declaration; `invalid-overloaded-function` refuses an
 overload the code does not meet, which TypeScript checks at the
 implementation's signature alone (a `TypeError` under Node). A statement
-(`Within`) on an overload, a type predicate, an async implementation, and
+(`Modifies`) on an overload, a type predicate, an async implementation, and
 an overload stating other type parameters (`overloaded-function-renamed`)
 are refused.
 
@@ -3701,7 +3701,7 @@ write: the lowering of its declaration, with the effect that declaration
 states, or, for a fresh literal's field no contextual type fixes, the
 storage contract inferred from its initialiser, which keeps a certified
 signature's effect and widens a literal's type. An annotation states the
-effect its [statement](#stated-effects) states, `Within<F, T>`, and none
+effect its [statement](#stated-effects) states, `Modifies<P, T>`, and none
 without one, `typeof f` of a function declaration included, which names
 `f`'s declared signature. With
 $`\epsilon`$ the contract's effect,
@@ -3742,7 +3742,7 @@ The body-effect checker recognizes a subset of programs satisfying the
 semantic contract. An unrecognized body therefore represents an inference or
 checking limit, not a restriction on the meaning of heap preservation.
 
-A callback parameter may state its result as `Within<F, T>` too:
+A callback parameter may state its result as `Modifies<P, T>` too:
 `bounds-callback-footprint` states a visitor within
 `{value: any, store: keep}`, so its caller retains array-length bounds, and
 an analyzed callback writing a captured counter meets the contract.
@@ -3995,28 +3995,35 @@ changing the store, in search and in checking.
 ### Stated effects
 
 A written signature's result annotation may state the signature's effect:
-`Within<F, T>`, with `Within` the verifier's declaration in
+`Modifies<P, T>`, with `Modifies` the verifier's declaration in
 [`tools/resolvable.d.ts`](../tools/resolvable.d.ts), which TypeScript reads
 as `T`. A reference is a statement where TypeScript binds its name to that
 declaration, never by its spelling: an alias of the repository's file, or of
 a file of exactly its bytes, which declares the same aliases (the census's
-copy of `tools/` holds one). $`F`$ is a type literal written in place,
-`{ value: "keep" | "init" | "scalar" | "any"; store: "keep" | "grow" | "any" }`, with
-`onThrow: true` where the footprint holds on a throw too. With
-$`\epsilon(F)`$ the effect of that closed footprint and flag, no promise, no
+copy of `tools/` holds one). $`P`$ is a type literal written in place,
+one map from what may change to how much: `values: c` for the locations
+holding a value and `stores: c` for those holding an array store, `c` one
+of `"keep"`, `"init"`, `"scalar"`, `"grow"`, `"any"`, an omitted class key
+`"keep"`; on a value `grow` is `scalar`, and on a store `init` and `scalar`
+are `keep`. `onThrow: true` makes the frame hold on a throw too. A quoted
+location key (`"x.f"`, `"x[*]"`, `"x.*"`, `"cell(b)"`) is refused, as is
+`Fresh<T>` anywhere: the regions and the fresh result they state are
+proved in the model ([footprints](FOOTPRINTS.md#changes-and-footprints))
+and are not read from the source. With $`\epsilon(P)`$ the effect of the
+closed footprint $`\{v,s\}`$ of the class keys and the flag, no promise, no
 fresh result and no receiver-store exception,
 
 ```math
-\frac{⟦\vec A⟧=\vec P\qquad ⟦T⟧=B\qquad F=\{\mathsf{value}{:}\,v,\ \mathsf{store}{:}\,s[,\ \mathsf{onThrow}]\}\qquad \{v,s\}\neq\{\mathsf{any},\mathsf{any}\}}
-     {⟦(\vec x:\vec A)\Rightarrow\mathtt{Within}\langle F,T\rangle⟧=\mathcal F_{\epsilon(F)}(R,\vec P,B)}\ \textsf{stated-effect}
+\frac{⟦\vec A⟧=\vec Q\qquad ⟦T⟧=B\qquad P=\{\mathsf{values}{:}\,v,\ \mathsf{stores}{:}\,s[,\ \mathsf{onThrow}]\}\qquad \{v,s\}\neq\{\mathsf{any},\mathsf{any}\}}
+     {⟦(\vec x:\vec A)\Rightarrow\mathtt{Modifies}\langle P,T\rangle⟧=\mathcal F_{\epsilon(P)}(R,\vec Q,B)}\ \textsf{stated-effect}
 ```
 
 A type guard or an assertion function states it at its promise's type,
-`x is Within<F, T>` (`asserts x is Within<F, T>`), which TypeScript reads as
-`x is T`: $`\epsilon(F)`$ is the effect of both signatures of a declared
+`x is Modifies<P, T>` (`asserts x is Modifies<P, T>`), which TypeScript reads as
+`x is T`: $`\epsilon(P)`$ is the effect of both signatures of a declared
 guard, the plain one and the promise signature, which run the same code
 (`stated-guard-value-import`; `invalid-stated-guard` is refused at its own
-unit). A guard written as a closure or a class method has $`\epsilon(F)`$ at
+unit). A guard written as a closure or a class method has $`\epsilon(P)`$ at
 its plain signature only; its promise signature may change every location, a
 weaker reading of the same code.
 
@@ -4027,11 +4034,12 @@ method or call signature. Every reader of a signature, the declaration
 reader for a declaration a type reaches and the gate for a definition it
 lowers, reads it through one function (`statedResult` in
 `tools/type-term.mts`), so `typeof f` reads `f`'s statement too. Refused,
-each where it is read ([fragment boundary](SOURCE-FRAGMENT.md)): `Within`
-anywhere else, a reference the declaration reader resolves to `Within` or
-`Footprint` outside a signature's result included; a footprint written
-other than in place; the footprint letting everything change, with or
-without `onThrow`, which states nothing; a statement on an async
+each where it is read ([fragment boundary](SOURCE-FRAGMENT.md)): `Modifies`
+anywhere else, a reference the declaration reader resolves to `Modifies`
+outside a signature's result included; a frame written other than in
+place; a key other than `values`, `stores` and `onThrow`, `value` and
+`store` among them (a module cell's key is `"cell(b)"`); both class keys at
+`"any"`, with or without `onThrow`, which states nothing; a statement on an async
 definition, whose call returns where its body throws
 (`statedResult`, `tools/type-term.mts`); on a constructor or a
 construct signature; on any signature of an overloaded declaration, whose

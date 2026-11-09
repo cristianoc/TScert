@@ -3,8 +3,6 @@
 export class Box {
   v: number = 0;
 }
-export function make(
-  ctor: new () => Within<{ value: "keep"; store: "keep" }, Box>,
-): Box {
+export function make(ctor: new () => Modifies<{}, Box>): Box {
   return new ctor();
 }

@@ -13,7 +13,7 @@ export interface Square {
 export function isLogged(
   s: Circle | Square,
   log: string[],
-): s is Within<{ value: "keep"; store: "keep" }, Circle> {
+): s is Modifies<{}, Circle> {
   log.push(s.kind);
   return s.kind === "circle";
 }

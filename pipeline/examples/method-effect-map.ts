@@ -4,7 +4,7 @@
 // member states it, and the method's code is certified at it.
 export class Log {
   entries: number[] = [];
-  note(n: number): Within<{ value: "any"; store: "grow" }, number> {
+  note(n: number): Modifies<{ values: "any"; stores: "grow" }, number> {
     this.entries.push(n);
     return n + 1;
   }

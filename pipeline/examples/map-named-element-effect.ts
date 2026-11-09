@@ -4,9 +4,7 @@
 type Kind = "string" | "number";
 type Kinds = readonly Kind[];
 
-export function kindsText(
-  kinds: Kinds | null,
-): Within<{ value: "keep"; store: "keep" }, string> {
+export function kindsText(kinds: Kinds | null): Modifies<{}, string> {
   return kinds === null
     ? "null"
     : `[${kinds.map((k) => JSON.stringify(k)).join(",")}]`;

@@ -93,7 +93,7 @@ interface PrintState {
 /** The keys of an atom's metadata, literals naming no member of
  * `Object.prototype`. */
 type MetadataKey = "call" | "construct" | "array";
-function atomText(atom: JsonRead, state: PrintState): Within<{ value: "any"; store: "grow" }, string> {
+function atomText(atom: JsonRead, state: PrintState): Modifies<{ values: "any"; stores: "grow" }, string> {
   const text = bareAtomText(atom, state);
   if (!isJsonObject(atom)) return text;
   // The metadata's entries are collected, each key once, and the object is
@@ -119,7 +119,7 @@ function atomText(atom: JsonRead, state: PrintState): Within<{ value: "any"; sto
 function bareAtomText(
   atom: JsonRead,
   state: PrintState,
-): Within<{ value: "any"; store: "grow" }, string> {
+): Modifies<{ values: "any"; stores: "grow" }, string> {
   // An array where an atom belongs is no atom of any kind.
   if (isJsonList(atom)) {
     state.printable = false;
@@ -268,7 +268,7 @@ function bareAtomText(
   return atom.a ? "«" + stringOfJson(atom.a) + "»" : "«type»";
 }
 
-function typeText(type: JsonRead, state: PrintState): Within<{ value: "any"; store: "grow" }, string> {
+function typeText(type: JsonRead, state: PrintState): Modifies<{ values: "any"; stores: "grow" }, string> {
   if (type === undefined || type === null) {
     state.printable = false;
     return "«missing»";
@@ -312,7 +312,7 @@ interface Printed {
  * report's `printType` states. */
 const textOf = (
   type: JsonValue,
-): Within<{ value: "any"; store: "grow" }, string> =>
+): Modifies<{ values: "any"; stores: "grow" }, string> =>
   typeText(type, { printable: true });
 
 function printType(type: JsonValue): Printed {
@@ -377,13 +377,13 @@ const cell = (
   contract: JsonRead,
   depth: number,
   views: JsonRead = [],
-): Within<{ value: "any"; store: "grow" }, ShownRecord> => {
+): Modifies<{ values: "any"; stores: "grow" }, ShownRecord> => {
   const entries: readonly JsonValue[] = isJsonList(contract) ? contract : [];
   // A view field reads at its bound and accepts no write.
   const viewed: readonly JsonValue[] = isJsonList(views) ? views : [];
   const viewField = (
     entry: JsonValue,
-  ): Within<{ value: "any"; store: "grow" }, ShownField> => {
+  ): Modifies<{ values: "any"; stores: "grow" }, ShownField> => {
     const pair: readonly JsonValue[] = isJsonList(entry) ? entry : [];
     const key = pair[0];
     return {
@@ -395,7 +395,7 @@ const cell = (
   };
   const contractField = (
     entry: JsonValue,
-  ): Within<{ value: "any"; store: "grow" }, ShownField> => {
+  ): Modifies<{ values: "any"; stores: "grow" }, ShownField> => {
     const pair: readonly JsonValue[] = isJsonList(entry) ? entry : [];
     const key = pair[0];
     const invariant = pair[1];
@@ -423,7 +423,7 @@ const cell = (
 
 // An intersection of contracts has no surface form; it is shown as text and
 // stays on the JSON path, like anything else the surface cannot name.
-const shown = (atoms: readonly JsonValue[]): Within<{ value: "any"; store: "grow" }, string> =>
+const shown = (atoms: readonly JsonValue[]): Modifies<{ values: "any"; stores: "grow" }, string> =>
   atoms
     .map((atom) => textOf({ top: false, atoms: [atom] }))
     .join(" & ");
@@ -506,7 +506,7 @@ function liftClause(
   types: Table,
   clause: JsonValue,
   depth: number,
-): Within<{ value: "any"; store: "grow" }, JsonValue> {
+): Modifies<{ values: "any"; stores: "grow" }, JsonValue> {
   if (clause === "nul") return { a: "null" };
   if (clause === "bool") return { a: "boolean" };
   if (clause === "undef") return { a: "undefined" };
@@ -589,7 +589,7 @@ function liftClause(
     // values, are mapped.
     const later = (
       c: JsonValue,
-    ): Within<{ value: "any"; store: "grow" }, ShownRecord> =>
+    ): Modifies<{ values: "any"; stores: "grow" }, ShownRecord> =>
       cell(types, c, depth - 1, []);
     const cells = [cell(types, first, depth - 1, views), ...rest.map(later)];
     const [only] = cells;
@@ -685,13 +685,13 @@ function liftSignatures(
   fixed: JsonRead,
   variadic: JsonRead,
   depth: number,
-): Within<{ value: "any"; store: "grow" }, JsonObject[]> {
+): Modifies<{ values: "any"; stores: "grow" }, JsonObject[]> {
   const atom = (
     receiver: JsonRead,
     domain: JsonRead,
     result: JsonRead,
     element?: JsonRead,
-  ): Within<{ value: "any"; store: "grow" }, JsonObject> => {
+  ): Modifies<{ values: "any"; stores: "grow" }, JsonObject> => {
     const domains: readonly JsonValue[] = isJsonList(domain) ? domain : [];
     return {
       a: "function",
@@ -709,14 +709,14 @@ function liftSignatures(
   const sigs: readonly JsonValue[] = isJsonList(variadic) ? variadic : [];
   const fixedAtom = (
     arrow: JsonValue,
-  ): Within<{ value: "any"; store: "grow" }, JsonObject> => {
+  ): Modifies<{ values: "any"; stores: "grow" }, JsonObject> => {
     if (!isJsonObject(arrow) || !isOrdinary(arrow.effect))
       throw new TypeSyntaxError("a qualified signature has no structural form");
     return atom(arrow.receiver, arrow.arguments, arrow.result);
   };
   const variadicAtom = (
     sig: JsonValue,
-  ): Within<{ value: "any"; store: "grow" }, JsonObject> => {
+  ): Modifies<{ values: "any"; stores: "grow" }, JsonObject> => {
     if (!isJsonObject(sig) || !isOrdinary(sig.effect))
       throw new TypeSyntaxError("a qualified signature has no structural form");
     const [domain, rest]: readonly JsonRead[] = isJsonList(sig.arguments)
@@ -756,7 +756,7 @@ function liftType(
   types: Table,
   labels: JsonRead,
   depth: number,
-): Within<{ value: "any"; store: "grow" }, Shown> {
+): Modifies<{ values: "any"; stores: "grow" }, Shown> {
   // An absent list is keyed as the text an interpolation of the absent
   // serialization gives.
   const at = `${depth}:${labels === undefined ? "undefined" : JSON.stringify(labels)}`;
@@ -771,7 +771,7 @@ function liftLabels(
   types: Table,
   labels: JsonRead,
   depth: number,
-): Within<{ value: "any"; store: "grow" }, Shown> {
+): Modifies<{ values: "any"; stores: "grow" }, Shown> {
   if (!isJsonList(labels)) return { top: false, atoms: ["(no type recorded)"] };
   if (
     labels.some((label) => {
@@ -799,7 +799,7 @@ function liftLabels(
   const pairFalse = both ? falseLabel : undefined;
   // Each label's arms, lifted on demand: below the top, a union shows its
   // first `nestedArms` arms, and the arms past them are counted, not lifted.
-  const armOf = (label: JsonValue): Within<{ value: "any"; store: "grow" }, { count: number; lift: (limit?: number) => Within<{ value: "any"; store: "grow" }, JsonValue[]> }> => {
+  const armOf = (label: JsonValue): Modifies<{ values: "any"; stores: "grow" }, { count: number; lift: (limit?: number) => Modifies<{ values: "any"; stores: "grow" }, JsonValue[]> }> => {
     if (label === pairFalse) return { count: 0, lift: () => [] };
     if (label === pairTrue)
       return { count: 1, lift: () => [{ a: "boolean" }] };
@@ -843,8 +843,8 @@ function treeAtom(
   types: Table,
   label: JsonObject,
   depth: number,
-): Within<{ value: "any"; store: "grow" }, JsonValue> {
-  const text = (labels: JsonValue): Within<{ value: "any"; store: "grow" }, string> =>
+): Modifies<{ values: "any"; stores: "grow" }, JsonValue> {
+  const text = (labels: JsonValue): Modifies<{ values: "any"; stores: "grow" }, string> =>
     textOf(liftType(types, labels, depth - 1));
   if (typeof label.binder === "string")
     return { a: "param", name: label.binder };

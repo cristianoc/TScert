@@ -445,7 +445,7 @@ def asyncEffects (async : Bool) (footprint : Footprints.Closed) : Bool :=
   !async || footprint == .top
 
 /-- A declaration's claim within the effect its result annotation states
-(`Within<F, T>`; SOURCE-ELABORATION.md, "Stated effects"): a statement adds a
+(`Modifies<P, T>`; SOURCE-ELABORATION.md, "Stated effects"): a statement adds a
 guarantee (a footprint below `top`, or a fresh result); the claim's footprint
 is within the statement's, on a throw too where the statement says so, and
 promises a fresh result where the statement does; an async declaration

@@ -9,19 +9,19 @@
 // fragment-classes.mts#enumObjectTerm.
 export function use(
   values: number[],
-): Within<{ value: "any"; store: "grow" }, number[]> {
+): Modifies<{ values: "any"; stores: "grow" }, number[]> {
   return values.filter((x) => x > 0).sort((a, b) => a - b);
 }
 
 export function inPlace(
   values: number[],
-): Within<{ value: "any"; store: "grow" }, number> {
+): Modifies<{ values: "any"; stores: "grow" }, number> {
   return values.sort((a, b) => b - a).length;
 }
 
 export function indexKeys(
   keys: string[],
-): Within<{ value: "any"; store: "grow" }, string[]> {
+): Modifies<{ values: "any"; stores: "grow" }, string[]> {
   const index = (k: string) => Number.isFinite(Number(k));
   return keys.filter((k) => index(k)).sort((a, b) => Number(a) - Number(b));
 }

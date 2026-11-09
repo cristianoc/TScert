@@ -2,10 +2,10 @@
 // `this`: each body is checked at its statement with the other read at its
 // own, and a `map` callback calling one is within the empty footprint.
 export class Parity {
-  even(n: number): Within<{ value: "keep"; store: "keep" }, boolean> {
+  even(n: number): Modifies<{}, boolean> {
     return n === 0 ? true : this.odd(n - 1);
   }
-  odd(n: number): Within<{ value: "keep"; store: "keep" }, boolean> {
+  odd(n: number): Modifies<{}, boolean> {
     return n === 0 ? false : this.even(n - 1);
   }
 }

@@ -294,7 +294,7 @@ lists; a read that fails denotes no location, and at the empty path they are
 `field`, `own` and `elems`. `cell b` is a module cell's location, read at the
 class its contents have: a cell holds a source value, never a store, so it
 denotes the locations of class `value` (the exact cell needs module-cell
-agreement; FOOTPRINTS.md, "Stated effects"). `inCls r c` is the locations
+agreement, a step of the stated-effects design). `inCls r c` is the locations
 of `r` whose contents are of class `c`. -/
 inductive Region where
   | field (x : Nat) (k : PropKey)

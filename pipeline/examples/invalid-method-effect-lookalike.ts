@@ -2,10 +2,7 @@
 // an interface whose member states the empty footprint is expected: the
 // subsumption compares the effects (run under Node: a hole).
 export interface Take {
-  take(
-    xs: number[],
-    x: number,
-  ): Within<{ value: "keep"; store: "keep" }, number>;
+  take(xs: number[], x: number): Modifies<{}, number>;
 }
 
 export function taken(t: Take, xs: number[]): number[] {

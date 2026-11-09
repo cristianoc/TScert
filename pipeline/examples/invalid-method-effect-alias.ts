@@ -1,7 +1,7 @@
 // A footprint written through an alias: a statement's footprint is a type
 // literal written in place.
-type Keeps = { value: "keep"; store: "keep" };
+type Keeps = {};
 
-export function f(n: number): Within<Keeps, number> {
+export function f(n: number): Modifies<Keeps, number> {
   return n;
 }

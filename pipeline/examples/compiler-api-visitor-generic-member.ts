@@ -9,7 +9,7 @@ import type { Node, Statement } from "typescript/unstable/ast";
 
 export function hoistedAt(
   list: readonly Statement[],
-): Within<{ value: "any"; store: "grow" }, Node | undefined> {
+): Modifies<{ values: "any"; stores: "grow" }, Node | undefined> {
   const hoisted = (n: Node): Node | undefined => {
     if (
       ts.isFunctionDeclaration(n) ||
