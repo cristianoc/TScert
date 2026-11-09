@@ -47,10 +47,11 @@ structure SourceRequest (σ ι : Type) [Labels ι] [StoreView σ ι] extends Req
   value has an array store the run allocated, which its graph must establish
   (`effectResult`). -/
   fresh : Bool := false
-  /-- The bound and the input slots whose values' stores the declaration's
-  stated frame excepts (`"x[*]": "any"`), which its graph must establish off
+  /-- The bound and the store regions the declaration's stated frame lets
+  change, each an input slot and a path of fields read from it
+  (`"x[*]": "any"`, `"x.f[*]": "any"`), which its graph must establish off
   those stores (`regionalResult`). -/
-  regional : Option (Footprints.Closed × List Nat) := none
+  regional : Option (Footprints.Closed × List Footprints.ArgumentStoreRegion) := none
   /-- The facts the declaration states at its returns (`Fragment.Fn.ensures`),
   position `0` the result and `q + 1` input slot `q`'s entry value, which
   each return of its graph must establish (`ensuresResult`). -/
@@ -260,12 +261,13 @@ by no proof: at its entry each region's input slot holds it; elsewhere every
 slot may hold any region; each pass removes a fact no incoming edge or
 handler establishes, until none does. `ArgumentRegionGraph.checkNodes`
 decides whether the result holds on every edge. -/
-@[nospecialize] def regionPass (nodes : List ((ControlFlow.Node × ControlFlow.NodeEvidence ι) × Nat))
+@[nospecialize] def regionPass (regions : List Footprints.ArgumentStoreRegion)
+    (nodes : List ((ControlFlow.Node × ControlFlow.NodeEvidence ι) × Nat))
     (table : Array (List GraphCode.ArgumentPathTracking.Fact)) : Array (List GraphCode.ArgumentPathTracking.Fact) :=
   nodes.foldr (fun ((node, _), l) table =>
     let F := table.getD l []
-    let origin := GraphCode.ArgumentRegionGraph.copyOrigin F node.expression
-    let out := if GraphCode.pushes node.continuation then GraphCode.ArgumentPathTracking.afterPush F origin else F
+    let origins := GraphCode.ArgumentRegionGraph.nodeOrigins regions F node.expression
+    let out := if GraphCode.pushes node.continuation then GraphCode.ArgumentPathTracking.afterPush F origins else F
     let table := (CertificateProducer.successors node.continuation).foldl (fun table t =>
       table.modify t.label fun D => D.filter fun f => out.contains { f with slot := PointClaims.slot t.mapping f.slot }) table
     match node.handler with
@@ -273,20 +275,24 @@ decides whether the result holds on every edge. -/
         (GraphCode.ArgumentPathTracking.shift F).contains { f with slot := PointClaims.slot t.mapping f.slot }
     | none => table) table
 
-@[nospecialize] def regionIterate (nodes : List ((ControlFlow.Node × ControlFlow.NodeEvidence ι) × Nat)) :
+@[nospecialize] def regionIterate (regions : List Footprints.ArgumentStoreRegion)
+    (nodes : List ((ControlFlow.Node × ControlFlow.NodeEvidence ι) × Nat)) :
     Nat → Array (List GraphCode.ArgumentPathTracking.Fact) → Option (Array (List GraphCode.ArgumentPathTracking.Fact))
   | 0, _ => none
   | fuel + 1, table =>
-    let next := regionPass nodes table
-    if next = table then some table else regionIterate nodes fuel next
+    let next := regionPass regions nodes table
+    if next = table then some table else regionIterate regions nodes fuel next
 
 @[nospecialize] def regionTable (P : ControlFlow.Program) (C : ControlFlow.Certificate ι) (start : Nat)
     (regions : List Footprints.ArgumentStoreRegion) : List (List GraphCode.ArgumentPathTracking.Fact) :=
   let nodes := (P.zip C).zipIdx
+  -- Each region's root, its position's own value, and the region itself.
+  let roots := (regions.map fun r => (⟨r.position, []⟩ : Footprints.ArgumentStoreRegion)).eraseDups
+  let candidates := (roots ++ regions).eraseDups
   let init := (nodes.map fun ((_, c), l) =>
-    if l = start then regions.map fun r => ⟨r.position, r⟩
-    else (List.range (ControlFlow.entry c).length).flatMap fun j => regions.map fun r => ⟨j, r⟩).toArray
-  ((regionIterate nodes (P.length + 2) init).map Array.toList).getD []
+    if l = start then roots.map fun r => ⟨r.position, r⟩
+    else (List.range (ControlFlow.entry c).length).flatMap fun j => candidates.map fun r => ⟨j, r⟩).toArray
+  ((regionIterate regions nodes (P.length + 2) init).map Array.toList).getD []
 
 /-- The store regions a unit's statement excepts (`"x[*]": "any"`), each an
 input slot's own store: none, or a graph of a unit that is neither generic,
@@ -297,12 +303,12 @@ provenance table inferred (`regionTable`). -/
 @[nospecialize] def regionalResult (r : SourceRequest σ ι) (c : Response ι) : ProgramCertificates.CheckResult ι Unit :=
   match r.regional with
   | none => pure ()
-  | some (Φ, ps) =>
-    let regions := ps.map fun p => (⟨p, []⟩ : Footprints.ArgumentStoreRegion)
+  | some (Φ, regions) =>
     let P := GraphCode.program (r.program.map (·.expression)) (r.program.map fun n => (n.continuation, n.handler))
     let table := regionTable P c.certificate r.start regions
     ProgramCertificates.CheckResult.ofBool (r.qualification.isNone && !r.async && !r.fresh &&
       GraphCode.ArgumentPathTracking.checkEntry (GraphCode.ArgumentPathTracking.atLabel table r.start) &&
+      GraphCode.ArgumentPathTracking.checkEntryFields (RequestJson.graph r.toRequest) r.inputs regions &&
       GraphCode.ArgumentRegionGraph.checkNodes (RequestJson.graph r.toRequest) (StoreView.images r.types)
         c.readSummaries Φ regions table (r.stated.any (·.onThrow)) P c.certificate)
 
@@ -604,22 +610,23 @@ theorem checkRequests_stated_at {rs : List (SourceRequest σ ι)} {b : Bundle ι
     (checkRequests_footprint_at h hm heffect η n W heap L d he hw hh hvalues hd hsep hidx)
 
 theorem regionalResult_checked {r : SourceRequest σ ι} {c : Response ι}
-    (h : (regionalResult r c).accepted = true) {Φ : Footprints.Closed} {ps : List Nat}
-    (hr : r.regional = some (Φ, ps)) :
+    (h : (regionalResult r c).accepted = true) {Φ : Footprints.Closed} {regions : List Footprints.ArgumentStoreRegion}
+    (hr : r.regional = some (Φ, regions)) :
     r.qualification = none ∧
       GraphCode.ArgumentPathTracking.checkEntry (GraphCode.ArgumentPathTracking.atLabel
         (regionTable (GraphCode.program (r.program.map (·.expression)) (r.program.map fun n => (n.continuation, n.handler)))
-          c.certificate r.start (ps.map fun p => ⟨p, []⟩)) r.start) = true ∧
+          c.certificate r.start regions) r.start) = true ∧
+      GraphCode.ArgumentPathTracking.checkEntryFields (RequestJson.graph r.toRequest) r.inputs regions = true ∧
       GraphCode.ArgumentRegionGraph.checkNodes (RequestJson.graph r.toRequest) (StoreView.images r.types)
-        c.readSummaries Φ (ps.map fun p => ⟨p, []⟩)
+        c.readSummaries Φ regions
         (regionTable (GraphCode.program (r.program.map (·.expression)) (r.program.map fun n => (n.continuation, n.handler)))
-          c.certificate r.start (ps.map fun p => ⟨p, []⟩))
+          c.certificate r.start regions)
         (r.stated.any (·.onThrow))
         (GraphCode.program (r.program.map (·.expression)) (r.program.map fun n => (n.continuation, n.handler)))
         c.certificate = true := by
   simp only [regionalResult, hr, ProgramCertificates.CheckResult.accepted_ofBool, Bool.and_eq_true,
     Option.isNone_iff_eq_none] at h
-  exact ⟨h.1.1.1.1, h.1.2, h.2⟩
+  exact ⟨h.1.1.1.1.1, h.1.1.2, h.1.2, h.2⟩
 
 /-- **A unit stating store regions meets them** (`"x[*]": "any"`;
 SOURCE-ELABORATION.md, "Stated effects"): run as the code its graph describes
@@ -629,7 +636,7 @@ entry heap but the stores its region slots hold at entry is within the
 statement's bound of its entry contents. -/
 theorem checkRequests_regional_at {rs : List (SourceRequest σ ι)} {b : Bundle ι}
     (h : checkRequests rs b = true) {r c} (hm : (r,c) ∈ rs.zip b.functions)
-    {Φ : Footprints.Closed} {ps : List Nat} (hr : r.regional = some (Φ, ps))
+    {Φ : Footprints.Closed} {regions : List Footprints.ArgumentStoreRegion} (hr : r.regional = some (Φ, regions))
     (η : PositiveGraphs.MixedAssignment ι) (n W heap) (L : List Tm) (d : Tm)
     (he : EnvOk (reassign (RequestJson.graph r.toRequest) η) r.inputs (envOf L d) n W) (hw : WorldAdm W)
     (hh : HeapOk n W heap)
@@ -637,14 +644,14 @@ theorem checkRequests_regional_at {rs : List (SourceRequest σ ι)} {b : Bundle 
     (hidx : HeapKnowledge.IndexHolds r.entryIndices (envOf L d) heap) :
     HeapObservations.SafePostExc (excOf (reassign (RequestJson.graph r.toRequest) η))
       (ControlFlow.GoalHolds (reassign (RequestJson.graph r.toRequest) η) r.goal (r.goal.argument (envOf L d)))
-      (fun h' _ => Footprints.ArgumentStoreRegionsWithin Φ (ps.map fun p => ⟨p, []⟩) (envOf L d) heap h')
+      (fun h' _ => Footprints.ArgumentStoreRegionsWithin Φ regions (envOf L d) heap h')
       (fun h' => r.stated.any (·.onThrow) = true →
-        Footprints.ArgumentStoreRegionsWithin Φ (ps.map fun p => ⟨p, []⟩) (envOf L d) heap h') n W heap
+        Footprints.ArgumentStoreRegionsWithin Φ regions (envOf L d) heap h') n W heap
       (.goto (r.program.map (·.expression)) (r.program.map fun n => (n.continuation, n.handler))
         r.start L d) := by
   obtain ⟨es, _, hunit⟩ := checkRequests_pair h hm
   obtain ⟨checked, -, -, -, hreg, -⟩ := (checkRequestResult_accepted_iff _ _ _).mp hunit
-  obtain ⟨hq, hstart, hnodes⟩ := regionalResult_checked hreg hr
+  obtain ⟨hq, hstart, hfields, hnodes⟩ := regionalResult_checked hreg hr
   simp only [SourceRequest.checker, hq] at checked
   rw [verify_eq] at checked
   simp only [Bool.and_eq_true] at checked
@@ -671,6 +678,7 @@ theorem checkRequests_regional_at {rs : List (SourceRequest σ ι)} {b : Bundle 
     rw [← GraphCode.ArgumentRegionGraph.checkNodes_reassign G images c.readSummaries η] at hnodes
     exact GraphCode.ArgumentRegionGraph.goto_bounded hc hcodes hsums
       (GraphCode.ArgumentRegionGraph.checkNodes_sound hgraph hcodes hsums hnodes) hstart
+      (by rw [GraphCode.ArgumentRegionGraph.checkEntryFields_reassign]; exact hfields)
       n W heap L d he hw hh hsep hidx
   · contradiction
 

@@ -4008,8 +4008,9 @@ of `"keep"`, `"init"`, `"scalar"`, `"grow"`, `"any"`, an omitted class key
 are `keep`. `onThrow: true` makes the frame hold on a throw too. A store
 region `"x[*]": "any"`, `x` a parameter of a function declaration (`this`
 its `this` parameter), excepts from the frame the store `x` holds at the
-call, which may change arbitrarily (see **Store regions** below). Any other
-quoted location key (`"x.f"`, `"x.*"`, `"cell(b)"`, `"x.f[*]"`) is
+call, and `"x.f[*]": "any"` the store its field `f` holds there, which may
+change arbitrarily (see **Store regions** below). Any other quoted location
+key (`"x.f"`, `"x.*"`, `"cell(b)"`, a path of more than one field) is
 refused: the regions it names are proved in the model
 ([footprints](FOOTPRINTS.md#changes-and-footprints)) and are not read from
 the source. A result `Fresh<T>`, `T` an array type, states that a normal
@@ -4112,15 +4113,16 @@ value passed where a stated member is expected by subtyping
 (`invalid-method-effect-lookalike`), an input by `EnvOk`.
 
 **Store regions.** A function declaration's statement
-`Modifies<{ values: v; stores: s; "x₁[*]": "any"; …; "xₖ[*]": "any" }, T>`
+`Modifies<{ values: v; stores: s; "R₁[*]": "any"; …; "Rₖ[*]": "any" }, T>`,
+each $`R_i`$ a parameter $`x_i`$ or a field read from it, $`x_i.f_i`$,
 states that a normal return, and a throw where it writes `onThrow`, leaves
-every location of the entry heap but the stores of the values at the
-parameters' call positions $`p_1,\ldots,p_k`$ within $`\{v,s\}`$ of its
-entry contents:
+every location of the entry heap but the stores the regions select at
+entry within $`\{v,s\}`$ of its entry contents, with $`p_i`$ the
+parameters' call positions and $`q_i`$ the paths, `[]` or $`[f_i]`$:
 
 ```math
 \mathrm{Post}_{\epsilon}(\rho,h_0,h')\iff
-\forall\ell<|h_0|.\ (\forall i.\ \mathrm{store}(\rho\,p_i)\neq\ell)\Rightarrow\{v,s\}\text{ allows }h_0[\ell]\rightsquigarrow h'[\ell]
+\forall\ell<|h_0|.\ (\forall i.\ \mathrm{store}(\mathrm{read}_{h_0}(\rho\,p_i,q_i))\neq\ell)\Rightarrow\{v,s\}\text{ allows }h_0[\ell]\rightsquigarrow h'[\ell]
 ```
 
 with $`\rho`$ the call's values by position: the effect's frame, its closed
@@ -4135,19 +4137,29 @@ signature but a function declaration's (`invalid-modifies-region-callback`),
 and a region beside a fresh result. The unit is certified by the regional
 graph check, whatever its claim: each node's step stays within $`\{v,s\}`$
 off the regions' stores (a closed node, a copy of a slot holding a region's
+value, a read of a traversed field of a slot holding its parameter's entry
 value, or a call at a signature excepting its receiver's store whose
 receiver holds one), each slot's provenance checked on every edge
-(`ArgumentRegionGraph.checkNodes`, its table inferred by `regionTable`):
+(`ArgumentRegionGraph.checkNodes`, its table inferred by `regionTable`).
+A traversed field $`f_i`$ is a present `@stable` field of the parameter's
+type, checked at entry (`ArgumentPathTracking.checkEntryFields`): its read
+at the entry heap is fixed in the entry world, and the graph proof carries
+that witness to each node's world (`StableNow`), so the read in the body
+gives the field's entry value (the stable-read node rule,
+`checkRead_sound`); a field no type states stable is refused
+(`invalid-stated-path-unstable`, run under Node):
 
 ```math
-\frac{\forall\ell.\ \vdash\mathrm{node}_\ell\ \mathrm{within}_{\{v,s\}}\ \mathrm{off}\ \mathrm{store}(x_1),\ldots,\mathrm{store}(x_k)\qquad \mathrm{completion}(d)=\mathsf{sync}\qquad \neg\,\epsilon.\mathsf{fresh}}
+\frac{\forall i.\ q_i=[f_i]\Rightarrow f_i\ \text{stable and present in}\ \Gamma(x_i)\qquad \forall\ell.\ \vdash\mathrm{node}_\ell\ \mathrm{within}_{\{v,s\}}\ \mathrm{off}\ R_1,\ldots,R_k\qquad \mathrm{completion}(d)=\mathsf{sync}\qquad \neg\,\epsilon.\mathsf{fresh}}
      {\vdash d:\Gamma\to B\;!\;\epsilon}\ \textsf{stated-region}
 ```
 
 (`SourceExtraction.regionalResult`; proved: `checkRequests_regional_at`, a
-conjunct of `RequestsSafe`; `stated-argument-store`;
-`invalid-stated-store-region`, run under Node; the forged control of
-`pipeline/test.mts` moving a region to another position). A caller keeps no
+conjunct of `RequestsSafe`; `stated-argument-store`,
+`stated-argument-path`; `invalid-stated-store-region`, run under Node; the
+forged controls of `pipeline/test.mts` moving a region to another position,
+a path region to its record's own store, and a path through a field the
+type does not state). A caller keeps no
 fact across the call that the closed approximation `top` does not keep.
 
 **Over the whole domain.** A statement on `m(this: C, …)` holds for every

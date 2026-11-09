@@ -63,6 +63,10 @@ run_cmd do
   check ``Verification.GraphCode.ArgumentPathTracking.checkHandler_sound
   check ``Verification.GraphCode.ArgumentPathTracking.stableField_path
   check ``Verification.GraphCode.ArgumentPathTracking.read_stable
+  check ``Verification.GraphCode.ArgumentPathTracking.checkEntryFields_sound
+  check ``Verification.GraphCode.ArgumentPathTracking.read_now
+  check ``Verification.GraphCode.ArgumentRegionGraph.checkRead_sound
+  check ``Verification.GraphCode.ArgumentRegionGraph.checkCopy_sound
   check ``Verification.GraphCode.ArgumentPathTracking.receiver_call
   check ``Verification.GraphCode.ArgumentPathTracking.checkReceiver_sound
   check ``Verification.GraphCode.ArgumentRegionGraph.nodeWithin_of_closed

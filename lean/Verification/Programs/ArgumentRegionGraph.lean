@@ -10,14 +10,15 @@ open CertificateProducer (successors)
 
 def NodeWithin [DecidableEq ι] (G : NormalGraph ι) (Φ : Footprints.Closed)
     (regions : List ArgumentStoreRegion) (c : NodeEvidence ι) (t : Tm)
-    (facts : List ArgumentPathTracking.Fact) (origin : Option ArgumentStoreRegion) (thr : Bool) : Prop :=
+    (facts : List ArgumentPathTracking.Fact) (origins : List ArgumentStoreRegion) (thr : Bool) : Prop :=
   ∀ n W h ρ initial entry,
     ArgumentStoreRegionsWithin Φ regions entry initial h → ArgumentPathTracking.Holds facts ρ entry initial →
     EnvOk G (ControlFlow.entry c) ρ n W → PromiseCalls.ImpliesOk G c.implies ρ n W →
     HeapKnowledge.Holds (entryFacts G c) ρ h → WorldAdm W → HeapOk n W h →
+    (0 < n → ArgumentPathTracking.StableNow (ArgumentPathTracking.stableFields regions) entry initial W) →
     HeapObservations.SafePostExc (excOf G) (meaning G (result c))
       (fun h' v => ArgumentStoreRegionsWithin Φ regions entry initial h' ∧
-        ∀ r, origin = some r → HeapKnowledge.readPath initial (entry r.position) r.path = some v)
+        ∀ r ∈ origins, HeapKnowledge.readPath initial (entry r.position) r.path = some v)
       (fun h' => thr = true → ArgumentStoreRegionsWithin Φ regions entry initial h')
       n W h (instantiate 0 ρ t)
 
@@ -27,12 +28,12 @@ theorem nodeWithin_of_closed [DecidableEq ι] {G : NormalGraph ι} {Φ : Footpri
     {regions : List ArgumentStoreRegion} {c : NodeEvidence ι} {t : Tm}
     {facts : List ArgumentPathTracking.Fact} {out thr : Bool}
     (hc : GraphCode.NodeWithin G Φ c t [] out thr) :
-    NodeWithin G Φ regions c t facts none thr := by
-  intro n W h ρ initial entry hb _ he hi hk hw hh
+    NodeWithin G Φ regions c t facts [] thr := by
+  intro n W h ρ initial entry hb _ he hi hk hw hh _
   have hn := hc n W h ρ initial.length hb.1 (by intro i hi; cases hi) he hi hk hw hh
   apply HeapObservations.SafePostExc.weaken _ _ hn
   · intro h' v hp
-    exact ⟨hb.trans_on (hp.1.weaken (fun _ hl => hl.1)), by intros r hr; cases hr⟩
+    exact ⟨hb.trans_on (hp.1.weaken (fun _ hl => hl.1)), fun r hr => by cases hr⟩
   · intro h' hp ht
     exact hb.trans_on ((hp ht).weaken (fun _ hl => hl.1))
 
@@ -57,8 +58,8 @@ theorem checkReceiverCall_sound [DecidableEq ι] {G : NormalGraph ι}
     {facts : List ArgumentPathTracking.Fact} {c : NodeEvidence ι} {thr : Bool}
     (hc : checkReceiverCall G images sums Φ regions facts c thr = true)
     (hsums : ProgramCertificates.SummariesSound G images sums) :
-    NodeWithin G Φ regions c (ProgramCertificates.claim c.expression).term facts none thr := by
-  intro n W h ρ initial entry hb hf he _ hk hw hh
+    NodeWithin G Φ regions c (ProgramCertificates.claim c.expression).term facts [] thr := by
+  intro n W h ρ initial entry hb hf he _ hk hw hh _
   simp only [checkReceiverCall, Bool.and_eq_true] at hc
   obtain ⟨⟨⟨htree, hops⟩, hthrows⟩, hc⟩ := hc
   split at hc
@@ -93,7 +94,7 @@ theorem checkReceiverCall_sound [DecidableEq ι] {G : NormalGraph ι}
       rw [hterm]; simp [ExpressionEffects.receiverOf, instantiate]
     apply HeapObservations.SafePostExc.weaken _ _ hs
     · intro h' v hp
-      refine ⟨?_, by intros r hr; cases hr⟩
+      refine ⟨?_, fun r hr => by cases hr⟩
       have hi := hp.1
       rw [hr] at hi
       exact ArgumentPathTracking.checkReceiver_sound hreceiver hf hb hi hstore hown hle
@@ -111,9 +112,9 @@ def NodesWithin [DecidableEq ι] (G : NormalGraph ι) (Φ : Footprints.Closed)
     (regions : List ArgumentStoreRegion) (P : Program) (C : Certificate ι)
     (table : List (List ArgumentPathTracking.Fact)) (exc : Bool) : Prop :=
   ∀ l node c, P[l]? = some node → C[l]? = some c →
-    ∃ origin, NodeWithin G Φ regions c node.expression (ArgumentPathTracking.atLabel table l) origin
+    ∃ origins, NodeWithin G Φ regions c node.expression (ArgumentPathTracking.atLabel table l) origins
         (node.handler.isSome || exc) ∧
-      ArgumentPathTracking.checkEdges table (ArgumentPathTracking.atLabel table l) origin node.continuation = true ∧
+      ArgumentPathTracking.checkEdges table (ArgumentPathTracking.atLabel table l) origins node.continuation = true ∧
       ArgumentPathTracking.checkHandler table (ArgumentPathTracking.atLabel table l) node.handler = true
 
 def BoundState (Φ : Footprints.Closed) (regions : List ArgumentStoreRegion)
@@ -138,6 +139,7 @@ theorem bounded_step [DecidableEq ι] {G : NormalGraph ι} {Φ : Footprints.Clos
     {C : Certificate ι} {table : List (List ArgumentPathTracking.Fact)} {exc : Bool}
     (hnodes : NodesWithin G Φ regions P C table exc)
     {initial entry n W h s h' s'} (hw : WorldAdm W) (hh : HeapOk (n+1) W h)
+    (hst : 0 < n + 1 → ArgumentPathTracking.StableNow (ArgumentPathTracking.stableFields regions) entry initial W)
     (hs : StateOk G Rty C v0 (n+1) W h s)
     (hp : BoundState Φ regions table exc initial entry (n+1) h s)
     (st : Transition P h s h' s') :
@@ -145,11 +147,12 @@ theorem bounded_step [DecidableEq ι] {G : NormalGraph ι} {Φ : Footprints.Clos
   cases st with
   | @enter l node _ ρ hn =>
     obtain ⟨c, hc, he, hi, -, hf⟩ := hs
-    obtain ⟨origin, ht, hedge, hhandler⟩ := hnodes l node c hn hc
+    obtain ⟨origins, ht, hedge, hhandler⟩ := hnodes l node c hn hc
     have hrun := ht n _ h ρ initial entry hp.1 hp.2
       (he.transfer n (Nat.le_succ n) _ (WExt_refl _))
       (hi.transfer n (Nat.le_succ n) _ (WExt_refl _)) (entryFacts_holds he hf)
       (WorldAdm_trunc _ hw) (HeapOk_trunc n W h hh)
+      (fun _ => (hst (Nat.succ_pos n)).transfer (Nat.le_succ n) (WExt_refl _))
     refine ⟨returnsPost_of_safePost (HeapObservations.weaken
       (fun _ _ post => ⟨post.1, ArgumentPathTracking.checkEdges_sound hedge hp.2 post.2⟩) hrun.post), ?_⟩
     cases hk : node.handler with
@@ -199,6 +202,7 @@ theorem bounded_safe_of_sim [DecidableEq ι] {G : NormalGraph ι} {images : Inst
     (hcodes : ProgramCertificates.CodesSound G codes) (hsums : ProgramCertificates.SummariesSound G images sums)
     (hnodes : NodesWithin G Φ regions (program E K) C table exc) (hv0 : isVal v0 = true) :
     ∀ n W h ts s initial entry, Sim E K ts s → WorldAdm W → HeapOk n W h →
+      (0 < n → ArgumentPathTracking.StableNow (ArgumentPathTracking.stableFields regions) entry initial W) →
       StateOk G Rty C v0 n W h s → BoundState Φ regions table exc initial entry n h s →
       HeapObservations.SafePostExc (excOf G) (GoalHolds G Rty v0)
         (fun h' _ => ArgumentStoreRegionsWithin Φ regions entry initial h')
@@ -207,7 +211,7 @@ theorem bounded_safe_of_sim [DecidableEq ι] {G : NormalGraph ι} {images : Inst
   induction n with
   | zero => intros; trivial
   | succ n ih =>
-    intro W h ts s initial entry sim hw hh hs hp
+    intro W h ts s initial entry sim hw hh hst hs hp
     rcases state_progress hg hcodes hsums hv0 hw hh hs with
       (⟨v, rfl, hv, ht⟩ | ⟨v, rfl, hsc⟩) | ⟨U, h', s', hx, hu, st, hok, hs'⟩
     · cases sim; exact .inl (.inl ⟨hv, ht, hp⟩)
@@ -215,8 +219,9 @@ theorem bounded_safe_of_sim [DecidableEq ι] {G : NormalGraph ι} {images : Inst
       | raised hv hj => exact .inl (.inr ⟨⟨v, .throwV hv hj, hsc⟩, hp⟩)
     · obtain ⟨ts', step, sim'⟩ := sim_step sim st
       exact .inr ⟨U, h', ts', hx, hu, step, hok,
-        ih U h' ts' s' initial entry sim' hu hok hs'
-          (bounded_step hnodes hw hh hs hp st)⟩
+        ih U h' ts' s' initial entry sim' hu hok
+          (fun _ => (hst (Nat.succ_pos n)).transfer (Nat.le_succ n) hx) hs'
+          (bounded_step hnodes hw hh hst hs hp st)⟩
 
 theorem goto_bounded [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G} {sums : List (ProgramCertificates.ReadSummary ι)} {Φ : Footprints.Closed} {regions : List ArgumentStoreRegion} {Rty : Goal ι} {E : List Tm} {K : List (Continuation × Option Target)}
     {C : Certificate ι} {start inputs} {table : List (List ArgumentPathTracking.Fact)} {exc : Bool}
@@ -227,6 +232,7 @@ theorem goto_bounded [DecidableEq ι] {G : NormalGraph ι} {images : InstanceIma
     (hcodes : ProgramCertificates.CodesSound G codes) (hsums : ProgramCertificates.SummariesSound G images sums)
     (hnodes : NodesWithin G Φ regions (program E K) C table exc)
     (hstart : ArgumentPathTracking.checkEntry (ArgumentPathTracking.atLabel table start) = true)
+    (hfields : ArgumentPathTracking.checkEntryFields G inputs regions = true)
     (n W h L d) (he : EnvOk G inputs (envOf L d) n W) (hw : WorldAdm W)
     (hh : HeapOk n W h)
     (hsep : HeapSeparation.Holds entrySeparation (envOf L d) := by exact HeapSeparation.empty_holds _)
@@ -250,6 +256,7 @@ theorem goto_bounded [DecidableEq ι] {G : NormalGraph ι} {images : InstanceIma
         have hlt : s < inputs.length := by simpa using hslot
         exact (meaning_value (he.2 s inputs[s] (List.getElem?_eq_getElem hlt))).1
     apply bounded_safe_of_sim hc.1 hcodes hsums hnodes hv0 n W h _ _ h (envOf L d) .goto hw hh
+      (fun hn => ArgumentPathTracking.checkEntryFields_sound hfields (by simpa only [hin] using he) hn hh)
     · refine ⟨c, hstart', ?_, ?_, ?_, ?_⟩
       · simpa only [hin] using he
       · rw [himp]; exact PromiseCalls.ImpliesOk.nil G _ n W

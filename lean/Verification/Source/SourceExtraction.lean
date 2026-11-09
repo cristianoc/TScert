@@ -309,8 +309,10 @@ did not mention grow it, and the request carries the result. -/
   -- that holds it on entry.
   let regionSlot : Nat → Option Nat := fun p => if receiverInput then some p else if p = 0 then none else some (p - 1)
   let some regional := (f.stated.bind fun (s : CallEffects.Effect) =>
-      if s.regions.isEmpty then none else some (s.closed, s.regions.map (·.position))).mapM
-        fun (c, ps) => (ps.mapM regionSlot).map (c, ·)
+      if s.regions.isEmpty then none else some (s.closed, s.regions)).mapM
+        fun ((c, rs) : Footprints.Closed × List Footprints.ArgumentStoreRegion) =>
+          (rs.mapM fun (r : Footprints.ArgumentStoreRegion) => (regionSlot r.position).map fun q =>
+            (⟨q, r.path⟩ : Footprints.ArgumentStoreRegion)).map (c, ·)
     | throw "a stated store region names the receiver, which the function does not declare"
   return {
     toRequest := ⟨built.types, built.program, built.claims, R, entry.label, inputs, built.codes, promise,
