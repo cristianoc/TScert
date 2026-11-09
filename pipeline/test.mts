@@ -1034,6 +1034,28 @@ control(async (): Promise<void> => {
 });
 
 control(async (): Promise<void> => {
+  // Fresh array storage (FOOTPRINTS.md, "Fresh array storage"), forged past
+  // the producer: `same` returns the array it is handed, and `clear`'s pop
+  // of its result is refused at `clear`'s regional check. A fresh result
+  // forged onto `same`'s statement in the parser's document would make that
+  // store fresh at `clear`'s call; it is refused at `same`'s own unit, in
+  // search and in checking, so no old store is fresh.
+  const artifacts = run("invalid-stated-region-fresh-call");
+  const ast: Ast = readFragmentFile(join(artifacts, "fragment.json"));
+  const fn = must(ast.functions.find(f => f.name === "same"), "same");
+  assert.equal(fn.stated, null, "same states nothing");
+  fn.stated = { footprint: { value: "any", store: "any" }, onThrow: false, fresh: true, regions: [] };
+  const document = join(artifacts, "forged-fresh-call-fragment.json");
+  writeFileSync(document, JSON.stringify(ast));
+  const refusal = /source effect refusal at \[\d+,\d+\): the footprint claimed for 'same' is not established by its body/;
+  const searched = produceWith(artifacts, join(artifacts, "claims.json"), "forged-fresh-call", document);
+  assert.equal(searched.status, 1, `${searched.stdout}${searched.stderr}`);
+  assert.match(searched.stdout + searched.stderr, refusal);
+  invoke(join(artifacts, "claims.json"), documentEvidence(artifacts), artifacts, refusal, document);
+  process.stdout.write("forged fresh store: a fresh result forged onto a function returning its parameter, whose result a regional body pops, refused at the function's unit in search and in checking\n");
+});
+
+control(async (): Promise<void> => {
   // Store separations (`!==`, ARITHMETIC.md, "Store separation") the
   // producer does not propose, forged past it into the claims and the
   // parser's document of the central example's aliased caller: a

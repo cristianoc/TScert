@@ -262,26 +262,37 @@ def TargetsFresh (facts : List (List Nat)) (b : Nat) (ret : Bool) (ρ : Env) (v 
     (mapEnv t.mapping (if pushes k then push v ρ else ρ))) ∧
     (k = .ret → ret = true → FreshAt b v)
 
+/-- **The edge transfer of slot facts**, for any property `P` of a slot's
+value that reads no heap: the destinations' facts hold where the source's
+do and the node's value has `P` where `out`. -/
+theorem edgesFresh_holds {P : Tm → Prop} {facts : List (List Nat)} {F : List Nat} {out ret : Bool}
+    {k : Continuation} {ρ : Env} {v : Tm} (he : edgesFresh facts F out ret k = true)
+    (hF : ∀ i ∈ F, P (ρ i)) (hout : out = true → P v) :
+    ∀ t ∈ successors k, ∀ i ∈ factsAt facts t.label,
+      P (mapEnv t.mapping (if pushes k then push v ρ else ρ) i) := by
+  simp only [edgesFresh, Bool.and_eq_true, List.all_eq_true] at he
+  intro t ht i hi
+  have hs := he.1 t ht i hi
+  simp only [mapEnv]
+  generalize slot t.mapping i = j at hs ⊢
+  cases hp : pushes k
+  · simp only [hp, Bool.false_eq_true, if_false] at hs ⊢
+    cases j with
+    | zero => exact hF 0 (by simpa [freshSlot] using hs)
+    | succ j => exact hF (j + 1) (by simpa [freshSlot] using hs)
+  · simp only [hp, if_true] at hs ⊢
+    cases j with
+    | zero => exact hout (by simpa [freshSlot] using hs)
+    | succ j => exact hF j (by simpa [freshSlot] using hs)
+
 theorem edgesFresh_sound {facts : List (List Nat)} {F : List Nat} {out ret : Bool} {k : Continuation}
     {b : Nat} {ρ : Env} {v : Tm} (he : edgesFresh facts F out ret k = true)
     (hF : FreshOk F b ρ) (hout : out = true → FreshAt b v) : TargetsFresh facts b ret ρ v k := by
-  simp only [edgesFresh, Bool.and_eq_true, List.all_eq_true] at he
-  refine ⟨fun t ht i hi => ?_, fun hk hr => ?_⟩
-  · have hs := he.1 t ht i hi
-    simp only [mapEnv]
-    generalize slot t.mapping i = j at hs ⊢
-    cases hp : pushes k
-    · simp only [hp, Bool.false_eq_true, if_false] at hs ⊢
-      cases j with
-      | zero => exact hF 0 (by simpa [freshSlot] using hs)
-      | succ j => exact hF (j + 1) (by simpa [freshSlot] using hs)
-    · simp only [hp, if_true] at hs ⊢
-      cases j with
-      | zero => exact hout (by simpa [freshSlot] using hs)
-      | succ j => exact hF j (by simpa [freshSlot] using hs)
-  · subst hk
-    simp [hr] at he
-    exact hout he.2
+  refine ⟨fun t ht => edgesFresh_holds (P := FreshAt b) he hF hout t ht, fun hk hr => ?_⟩
+  simp only [edgesFresh, Bool.and_eq_true] at he
+  subst hk
+  simp [hr] at he
+  exact hout he.2
 
 /-- A slot copy of a fresh slot. -/
 def varFresh (F : List Nat) : Tm → Bool
@@ -344,9 +355,11 @@ def handlerFresh (facts : List (List Nat)) (F : List Nat) (l : Target) : Bool :=
     | 0 => false
     | j + 1 => F.contains j
 
-theorem handlerFresh_sound {facts : List (List Nat)} {F : List Nat} {l : Target} {b : Nat} {ρ : Env}
-    (hf : handlerFresh facts F l = true) (hF : FreshOk F b ρ) (u : Tm) :
-    FreshOk (factsAt facts l.label) b (mapEnv l.mapping (push u ρ)) := by
+/-- The handler transfer of slot facts, for any property `P` of a slot's
+value: the thrown value has none. -/
+theorem handlerFresh_holds {P : Tm → Prop} {facts : List (List Nat)} {F : List Nat} {l : Target} {ρ : Env}
+    (hf : handlerFresh facts F l = true) (hF : ∀ i ∈ F, P (ρ i)) (u : Tm) :
+    ∀ i ∈ factsAt facts l.label, P (mapEnv l.mapping (push u ρ) i) := by
   intro i hi
   have hs := List.all_eq_true.mp hf i hi
   simp only [mapEnv]
@@ -354,6 +367,11 @@ theorem handlerFresh_sound {facts : List (List Nat)} {F : List Nat} {l : Target}
   cases j with
   | zero => cases hs
   | succ j => exact hF j (by simpa using hs)
+
+theorem handlerFresh_sound {facts : List (List Nat)} {F : List Nat} {l : Target} {b : Nat} {ρ : Env}
+    (hf : handlerFresh facts F l = true) (hF : FreshOk F b ρ) (u : Tm) :
+    FreshOk (factsAt facts l.label) b (mapEnv l.mapping (push u ρ)) :=
+  handlerFresh_holds (P := FreshAt b) hf hF u
 
 /-- While a node runs, the invocation need not be within its bound yet. Only
 the node's normal return, within the bound on the locations below where the

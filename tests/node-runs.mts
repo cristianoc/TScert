@@ -2800,6 +2800,12 @@ assert.ok(Number.isNaN(Number(runExample("invalid-stated-region-alias", "aliased
   "clearing the aliased region empties the counted array");
 assert.ok(Number.isNaN(Number(runExample("invalid-stated-region-other", "count([1, 2, 3])"))),
   "the call pops the array the caller counts");
+// Fresh array storage's boundaries: a fresh record around the caller's array,
+// a cell joining it with a fresh one, and a call returning it.
+for (const file of ["invalid-stated-region-fresh-wrapper", "invalid-stated-region-fresh-join",
+  "invalid-stated-region-fresh-call"]) {
+  assert.ok(Number.isNaN(Number(runExample(file, "total([1, 2, 3])"))), `${file}: the call empties the counted array`);
+}
 // An async call returns its promise where its body throws: each rejection is
 // handled by the process, and the pop before it leaves a hole.
 for (const [file, call] of [

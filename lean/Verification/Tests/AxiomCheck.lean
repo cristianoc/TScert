@@ -87,6 +87,14 @@ run_cmd do
   check ``Verification.GraphCode.ArgumentRegionGraph.checkNodes_sound
   check ``Verification.GraphCode.ArgumentRegionGraph.checkEntry_sound
   check ``Verification.GraphCode.ArgumentRegionGraph.goto_bounded
+  check ``Verification.GraphCode.ArgumentRegionFresh.alloc_fresh
+  check ``Verification.GraphCode.ArgumentRegionFresh.cellAlloc_fresh
+  check ``Verification.GraphCode.ArgumentRegionFresh.cellRead_fresh
+  check ``Verification.GraphCode.ArgumentRegionFresh.freshWrite_cells
+  check ``Verification.GraphCode.ArgumentRegionFresh.CellFresh.post
+  check ``Verification.GraphCode.ArgumentRegionGraph.checkFresh_sound
+  check ``Verification.GraphCode.edgesFresh_holds
+  check ``Verification.GraphCode.handlerFresh_holds
   let env ← getEnv
   let project (decl : Name) : Bool := match env.getModuleIdxFor? decl with
     | some i => (`Verification).isPrefixOf env.header.moduleNames[i.toNat]!

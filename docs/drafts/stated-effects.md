@@ -410,11 +410,18 @@ the closed bound. Slot copies and stable reads are provenance steps.
    `cls value`, which a frame stating `values: "any"` covers. Otherwise the
    cells transport to `all`.
 4. *Freshness.* A region of a location allocated at or above $`|h_0|`$
-   transports to nothing (`FreshOk`), and freshness is discharged at the
-   location the region actually selects: a fresh wrapper can hold an old
-   array, and the wrapper's freshness says nothing of that array's store.
-   `fresh x` covers the slot's own locations (`field`, `own`, the empty
-   path); a path's store is fresh only by its own evidence.
+   transports to nothing, and freshness is discharged at the location the
+   region actually selects: a fresh wrapper can hold an old array, and the
+   wrapper's freshness says nothing of that array's store. Two facts
+   differ in what they cover. Transport's `FreshOk` (`Footprints.lean`)
+   holds of every own location of a slot (`field`, `own`, the empty path).
+   Store freshness, `FreshIfStore` (`FootprintRebase.lean`), holds of the
+   store location alone, where the value has one, and makes only the
+   value's store region rebase to nothing (`RebaseEvidence.fresh`), never
+   its own, element-cell or path regions. A regional body tracks store
+   freshness of slots and of a cell's contents
+   ([fresh array storage](../FOOTPRINTS.md#fresh-array-storage)); a path's
+   store is fresh only by its own evidence.
 
 The remaining regions:
 
@@ -708,7 +715,14 @@ which writes the cached `Uint16Array` `bmpProperties` holds.
 `getUnspacedGraphemes` at `(unspaced ??= []).push(g)`, a push onto an
 array allocated in the body, whose store the step-frame rule rebases to
 `all`: a selected location's freshness is not tracked by the regional
-check. `measureAnalysis`, with the frames read at their signatures and
+check. With store freshness of slots and cells
+([fresh array storage](../FOOTPRINTS.md#fresh-array-storage)), observed
+on the same sources (2026-11-09): `getUnspacedGraphemes` is refused at the
+same push, the cell `unspaced` keeping no freshness fact across the loop's
+call of `readScriptRuns`, whose frame changes locations of class value and
+a store region, since no fact separates the cell's location from what such
+a frame changes; `readScriptRuns` and `spaceSharesScriptRun` are refused
+at `getScriptFactsAt` as above. `measureAnalysis`, with the frames read at their signatures and
 `0 <= from && from <= to` added to its main loop's invariant, keeps
 `to <= analysis.flags.length` through that loop, and loses it across its
 call of `addKanaKerning`, which states no frame.
