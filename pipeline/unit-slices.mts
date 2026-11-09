@@ -116,8 +116,16 @@ function extent(value: Json): [number, number] | null {
 /** Each declaration of the document's own module by its canonical identity:
  * its name and its index among the declarations of that name, in source
  * order. A declaration inserted in one place renumbers only those of its
- * name. */
+ * name. Computed once per document: every slice of it reads the same. */
+const identitiesByDocument = new WeakMap<JsonRecord, { local: string; ordinals: Map<string, number> }>();
 function localIdentities(document: JsonRecord, local: string): Map<string, number> {
+  const held = identitiesByDocument.get(document);
+  if (held?.local === local) return held.ordinals;
+  const ordinals = ownIdentities(document, local);
+  identitiesByDocument.set(document, { local, ordinals });
+  return ordinals;
+}
+function ownIdentities(document: JsonRecord, local: string): Map<string, number> {
   const spans = new Map<string, [number, number][]>();
   const walk = (v: Json): void => {
     if (isRecord(v)) {
@@ -214,6 +222,135 @@ function mapped(local: string, at: (x: number) => number, ordinals: Map<string, 
   };
   return walk;
 }
+/** A declaration's identity, or null where `v` is none. */
+const identityOf = (v: Json | undefined): string | null =>
+  isRecord(v) && typeof v.module === "string" && typeof v.name === "string" && isSpan(v.span)
+    ? JSON.stringify([v.module, v.name, v.span]) : null;
+/** What every slice of a document reads of its declarations' definitions:
+ * each definition's identity, the definitions of each identity, and the
+ * identities of the definitions named `name` in a module starting with
+ * `module`. */
+type DefinitionIndex = { identities: (string | null)[]; byIdentity: Map<string, number[]>;
+  named: (name: string, module: string) => readonly string[] };
+const definitionIndices = new WeakMap<Json[], DefinitionIndex>();
+function definitionIndex(definitions: Json[]): DefinitionIndex {
+  const held = definitionIndices.get(definitions);
+  if (held) return held;
+  const identities = definitions.map((d) => (isRecord(d) ? identityOf(d.declaration) : null));
+  const byIdentity = new Map<string, number[]>();
+  identities.forEach((id, i) => {
+    if (id !== null) byIdentity.set(id, [...(byIdentity.get(id) ?? []), i]);
+  });
+  const named = new Map<string, string[]>();
+  const index: DefinitionIndex = { identities, byIdentity, named: (name, module) => {
+    const key = JSON.stringify([name, module]);
+    const found = named.get(key);
+    if (found) return found;
+    const ids = definitions.flatMap((d, i) => {
+      const id = identities[i];
+      return id !== null && id !== undefined && isRecord(d) && isRecord(d.declaration) && d.declaration.name === name &&
+        typeof d.declaration.module === "string" && d.declaration.module.startsWith(module) ? [id] : [];
+    });
+    named.set(key, ids);
+    return ids;
+  } };
+  definitionIndices.set(definitions, index);
+  return index;
+}
+/** Whether `v` holds a symbol index, computed once per value: a slice
+ * renumbers only the values that hold one. */
+const symbolHolders = new WeakMap<object, boolean>();
+function holdsSymbol(v: Json): boolean {
+  if (!isList(v) && !isRecord(v)) return false;
+  const held = symbolHolders.get(v);
+  if (held !== undefined) return held;
+  const holds = isList(v) ? v.some(holdsSymbol)
+    : Object.entries(v).some(([k, x]) => (k === "symbol" && typeof x === "number") || holdsSymbol(x));
+  symbolHolders.set(v, holds);
+  return holds;
+}
+/** Project whole contracts reachable from retained syntax and value reads.
+ * Symbol indices are compacted together with every retained use. */
+function projectDeclarations(document: JsonRecord, names: readonly string[]): { document: JsonRecord; symbols: number[] } {
+  const declarations = asRecord(document.declarations ?? null);
+  const definitions = listOf(declarations.definitions), roots = listOf(declarations.roots);
+  const values = listOf(declarations.values), symbols = listOf(declarations.symbols);
+  const index = definitionIndex(definitions);
+  const identities = new Set<string>(), usedSymbols = new Set<number>(), reads = new Set(names);
+  // The identities not yet followed to their definitions.
+  const pending: string[] = [];
+  const reach = (id: string): void => {
+    if (identities.has(id)) return;
+    identities.add(id);
+    pending.push(id);
+  };
+  const implicits = new Set<string>();
+  const implicit = (name: string, module: string): void => {
+    const key = JSON.stringify([name, module]);
+    if (implicits.has(key)) return;
+    implicits.add(key);
+    index.named(name, module).forEach(reach);
+  };
+  const visit = (v: Json): void => {
+    if (isList(v)) { v.forEach(visit); return; }
+    if (!isRecord(v)) return;
+    const id = identityOf(v);
+    if (id !== null) { reach(id); return; }
+    if (v.k === "array" || v.k === "tuple" || v.k === "pack") implicit("ArrayProto", "tscert/array-prototype");
+    if (v.resolution !== undefined && v.resolution !== null) {
+      implicit("%Stable%", "tscert/intrinsics");
+      implicit("Promise", "typescript/lib/");
+    }
+    if (v.k === "id" && typeof v.name === "string") reads.add(v.name);
+    if (typeof v.symbol === "number" && !usedSymbols.has(v.symbol)) {
+      const symbol = symbols[v.symbol];
+      if (symbol === undefined) throw Error("tool failure: a slice references an absent symbol");
+      usedSymbols.add(v.symbol);
+      visit(symbol);
+    }
+    for (const x of Object.values(v)) visit(x);
+  };
+  // The store's source-value universe includes its array prototype, including
+  // in primitive-only requests; resolution uses the document's stable family.
+  implicit("ArrayProto", "tscert/array-prototype");
+  implicit("%Stable%", "tscert/intrinsics");
+  implicit("Promise", "typescript/lib/");
+  for (const [k, v] of Object.entries(document)) if (k !== "declarations") visit(v);
+  const retainedValues = values.filter((v) => isRecord(v) && isRecord(v.binding) &&
+    typeof v.binding.local === "string" && reads.has(v.binding.local));
+  retainedValues.forEach(visit);
+  // Every definition of a reached identity, and what it reaches in turn.
+  const retained = new Set<number>();
+  for (let id = pending.pop(); id !== undefined; id = pending.pop())
+    for (const i of index.byIdentity.get(id) ?? []) {
+      if (retained.has(i)) continue;
+      retained.add(i);
+      visit(definitions[i] ?? null);
+    }
+  const retainedRoots = roots.filter((r) => isRecord(r) && isRecord(r.binding) &&
+    typeof r.binding.local === "string" && reads.has(r.binding.local) &&
+    identities.has(identityOf(r.declaration) ?? ""));
+  const indices = [...usedSymbols].sort((a, b) => a - b);
+  const compacted = new Map(indices.map((x, i) => [x, i]));
+  const remap = (v: Json): Json => {
+    if (!holdsSymbol(v)) return v;
+    if (isList(v)) return v.map(remap);
+    if (!isRecord(v)) return v;
+    const out: JsonRecord = {};
+    for (const [k, x] of Object.entries(v)) {
+      if (k === "symbol" && typeof x === "number") {
+        const at = compacted.get(x);
+        if (at === undefined) throw Error("tool failure: a retained contract has an uncollected symbol");
+        out[k] = at;
+      } else out[k] = remap(x);
+    }
+    return out;
+  };
+  return { symbols: indices, document: asRecord(remap({ ...document, declarations: { ...declarations,
+    definitions: definitions.filter((_, i) => retained.has(i)), values: retainedValues,
+    roots: retainedRoots, symbols: indices.map((i) => symbols[i] ?? null), applications: [] } })) };
+}
+
 /** The declarations of a slice. The document's own are mapped by `walk`.
  * Another module's definition, and an imported value's type, hold spans of
  * that module and spans of the document's reads of its members alike: both
@@ -239,7 +376,7 @@ const asRecord = (v: Json): JsonRecord => (isRecord(v) ? v : {});
  * holds it, every other function and top-level statement left out, and its
  * own declarations named canonically; and the intervals left out. */
 export function sliceOf(document: JsonRecord, local: string, unit: ProposalUnit, escaped: readonly string[]):
-    { text: string; deletions: [number, number][] } {
+    { text: string; deletions: [number, number][]; symbols: number[] } {
   const deletions: [number, number][] = [];
   const functions: JsonRecord[] = [];
   for (const f of listOf(document.functions)) {
@@ -277,24 +414,25 @@ export function sliceOf(document: JsonRecord, local: string, unit: ProposalUnit,
     if (last && d[0] <= last[1]) last[1] = Math.max(last[1], d[1]);
     else merged.push([d[0], d[1]]);
   }
+  const projected = projectDeclarations({ ...document, functions, init, modules: [] }, unit.names);
   const ordinals = localIdentities(document, local);
   const walk = mapped(local, (x) => toSlice(merged, x), ordinals), erase = mapped(local, () => 0, ordinals);
   const slice: JsonRecord = {};
-  for (const [k, v] of Object.entries(document)) {
+  for (const [k, v] of Object.entries(projected.document)) {
     if (k === "file") slice[k] = "unit.ts";
     else if (k === "sourceSha256") slice[k] = "";
     else if (k === "declarations") slice[k] = declarationsOf(v, walk, erase, local);
     // Ownership is queried only for bindings this unit reads or writes.
     else if (k === "omittedMentions") slice[k] = [...new Set([
       ...strings(v, "omitted mentions"), ...escaped.filter((n) => unit.names.includes(n))])].sort();
-    else if (k === "functions") slice[k] = functions.map(walk);
-    else if (k === "init") slice[k] = init.map(walk);
+    else if (k === "functions") slice[k] = listOf(v).map(walk);
+    else if (k === "init") slice[k] = listOf(v).map(walk);
     // A slice's proposal reads no imported module's document.
     else if (k === "modules") slice[k] = [];
     else slice[k] = walk(v);
   }
   slice.sourceSha256 = createHash("sha256").update(JSON.stringify(slice)).digest("hex");
-  return { text: JSON.stringify(slice), deletions: merged };
+  return { text: JSON.stringify(slice), deletions: merged, symbols: projected.symbols };
 }
 
 /** The document with its own declarations named as every slice names them:

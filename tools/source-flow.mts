@@ -240,6 +240,7 @@ interface FlowNode {
 interface FlowGraph {
   owner: Span;
   bodySpans: Span[];
+  moduleReads: string[];
   entry: number;
   cells: FlowBinding[];
   prologue: BindingPlan | null;
@@ -731,7 +732,7 @@ export function decodeFlowDocument(value: Json): FlowDocument {
   const document: FlowDocument = [];
   for (const raw of array(value)) {
     const graph = object(raw);
-    exact(graph, ["owner", "bodySpans", "entry", "cells", "prologue", "nodes"]);
+    exact(graph, ["owner", "bodySpans", "entry", "cells", "prologue", "nodes", "moduleReads"]);
     const ownerSpan = span(graph.owner);
     const prologue =
       graph.prologue === null ? null : bindingPlan(graph.prologue);
@@ -800,6 +801,7 @@ export function decodeFlowDocument(value: Json): FlowDocument {
       owner: ownerSpan,
       prologue,
       bodySpans,
+      moduleReads: array(graph.moduleReads).map(text),
       cells,
       entry,
       nodes: decodedNodes,

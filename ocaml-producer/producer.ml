@@ -101,7 +101,49 @@ let to_document deletions y =
     | (s,e) :: rest -> if y <= s - removed then y + removed else go (removed + (e - s)) rest in
   go 0 deletions
 
-let remap_claim m (c:Proposal_types.function_claim) : Proposal_types.function_claim =
+(* Symbols in a proposal are indices of its slice's symbol table. Assembly
+   restores their document indices throughout complete semantic contracts. *)
+let symbol_mapper symbols =
+  let open Semantic in
+  let symbol i = match List.nth_opt symbols i with
+    | Some n -> n | None -> Json.fail "a proposal names an absent slice symbol" in
+  let key = function Name n -> Name n | Key i -> Key (symbol i) in
+  let rec ty = function
+    | Rigid r -> Rigid r
+    | Atoms xs -> Atoms (List.map atom xs)
+    | Union xs -> Union (List.map ty xs)
+    | Meet (x,xs) -> Meet (ty x,List.map ty xs)
+  and atom = function
+    | SymbolLit i -> SymbolLit (symbol i)
+    | Shape s -> Shape {fields=List.map field s.fields;
+        indexes=List.map (fun (i:index_signature) -> {i with value=ty i.value;writable=Option.map ty i.writable}) s.indexes;
+        calls=List.map signature s.calls;elements=Option.map sequence s.elements}
+    | Exact fs -> Exact (List.map field fs)
+    | Ctors (ss,fs) -> Ctors (List.map signature ss,List.map field fs)
+    | Named (id,args) -> Named (id,List.map ty args)
+    | (Nul | Undef | True | False | Num | Str | NumLit _ | StrLit _ | Top
+      | Bigint | Symbol | BigintLit _ | Callable) as a -> a
+  and field (f:field) = {f with name=key f.name;read=ty f.read;write=Option.map ty f.write;
+    receivers=List.map ty f.receivers}
+  and sequence s = {s with required=List.map ty s.required;optional_elements=List.map ty s.optional_elements;
+    rest=Option.map ty s.rest}
+  and pack = function PackParameter r -> PackParameter r | Pack s -> Pack (sequence s)
+  and argument = function
+    | ValueArgument t -> ValueArgument (ty t)
+    | PackArgument p -> PackArgument (pack p)
+    | ResolutionArgument (t,(r,o),result,c) ->
+      ResolutionArgument (ty t,(r,ty o),Option.map (fun (r,t) -> r,ty t) result,c)
+  and signature s = {s with receiver=ty s.receiver;params=List.map ty s.params;
+    variadic=Option.map ty s.variadic;rest_pack=Option.map pack s.rest_pack;result=ty s.result;
+    quantified=List.map (fun q -> {q with bound=Option.map argument q.bound;default=Option.map ty q.default}) s.quantified} in
+  ty,argument
+
+let remap_claim m symbols (c:Proposal_types.function_claim) : Proposal_types.function_claim =
+  let ty,argument = symbol_mapper symbols in
+  let binding = function
+    | Environment.Value t -> Environment.Value (ty t)
+    | Environment.Storage (a,b) -> Environment.Storage (ty a,ty b)
+    | Environment.Local (a,b) -> Environment.Local (ty a,ty b) in
   let num = function
     | Json.Number n as j -> (match int_of_string_opt n with Some i -> Json.Number (string_of_int (m i)) | None -> j)
     | j -> j in
@@ -137,16 +179,18 @@ let remap_claim m (c:Proposal_types.function_claim) : Proposal_types.function_cl
         Buffer.add_char b n.[i]; go (i + 1)
       end in
     go 0; Buffer.contents b in
-  let expression (e:Proposal_types.expression) = {e with pos=pos e.pos;point=point e.point} in
+  let expression (e:Proposal_types.expression) = {pos=pos e.pos;point=point e.point;type_=ty e.type_;
+    instantiation=Option.map (List.map (fun (n,a) -> n,argument a)) e.instantiation} in
   let entry (e:Proposal_types.entry) = {Proposal_types.start=num e.start;point=point e.point;
-    bindings=List.map (fun (n,b) -> name n,b) e.bindings} in
-  let contract (k:Proposal_types.contract) = {k with pos=pos k.pos;name=name k.name} in
+    bindings=List.map (fun (n,b) -> name n,binding b) e.bindings} in
+  let contract (k:Proposal_types.contract) = {pos=pos k.pos;name=name k.name;type_=ty k.type_} in
   let overlay (o:Proposal_types.overlay) = {Proposal_types.row_contracts=List.map contract o.row_contracts;
     row_entries=List.map entry o.row_entries;row_expressions=List.map expression o.row_expressions} in
   {c with contracts=List.map contract c.contracts;entries=List.map entry c.entries;
     expressions=List.map expression c.expressions;
     arrows=List.map (fun (p,os) -> pos p,List.map overlay os) c.arrows;
-    source={c.source with name_pos=pos c.source.name_pos}}
+    source={c.source with name_pos=pos c.source.name_pos;
+      params=List.map (fun (n,t) -> n,ty t) c.source.params;result=ty c.source.result}}
 
 let main () =
   match Array.to_list Sys.argv with
@@ -190,7 +234,7 @@ let main () =
       Source.qualified=qualified_of (Json.read qualified_file)} in
     let assembly = Json.list (Json.read assembly_file) in
     if List.length assembly <> List.length proposals then Json.fail "an assembly lists another number of proposals";
-    let read path deletions =
+    let read path deletions symbols =
       let ch = open_in_bin path in
       let (init,functions) : Proposal_types.function_claim option * Proposal_types.function_claim list =
         Marshal.from_channel ch in
@@ -198,9 +242,11 @@ let main () =
       let deletions = List.map (fun d -> match Json.list d with
         | [Json.Number s;Json.Number e] -> int_of_string s,int_of_string e
         | _ -> Json.fail "a deletion is two positions") (Json.list deletions) in
+      let symbols = List.map (function Json.Number n -> int_of_string n
+        | _ -> Json.fail "an assembly symbol is an index") (Json.list symbols) in
       let m = to_document deletions in
-      Option.map (remap_claim m) init,List.map (remap_claim m) functions in
-    let units = List.map2 (fun path a -> read path (Json.field "deletions" a)) proposals assembly in
+      Option.map (remap_claim m symbols) init,List.map (remap_claim m symbols) functions in
+    let units = List.map2 (fun path a -> read path (Json.field "deletions" a) (Json.field "symbols" a)) proposals assembly in
     let claims = List.concat_map snd units in
     let functions = List.map (fun (g:Source.fn) ->
       match List.find_opt (fun (c:Proposal_types.function_claim) ->
