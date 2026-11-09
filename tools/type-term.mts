@@ -1345,6 +1345,7 @@ export function members(scope: TermScope, list: readonly TypeElement[], at: Node
   // The fields property signatures state, which a class value's type states
   // as its static fields.
   const properties = new Set<Extract<TypeTerm, { k: "object" }>["fields"][number]>();
+  const stable: string[] = [];
   const readonlyOnly = (modifiers: readonly Node[] | undefined) =>
     !modifiers?.some(m => m.kind !== ts.SyntaxKind.ReadonlyKeyword);
   const isReadonly = (modifiers: readonly Node[] | undefined) =>
@@ -1380,6 +1381,15 @@ export function members(scope: TermScope, list: readonly TypeElement[], at: Node
         type: typeTerm(scope, member.type, member), span: memberSpan };
       fields.push(field);
       properties.add(field);
+      // A `@stable` member holds one value for its object's life
+      // (POSITIVE-TYPES.md, "Records"): a required readonly field of a
+      // string name, which an object literal allocated at the type owns at
+      // a location of that one value.
+      if (stableTag(member)) {
+        if (optional || !field.readonly || typeof name !== "string")
+          scope.fail(member, "a `@stable` member is a required readonly field of a string name");
+        stable.push(name);
+      }
     } else if (ts.isIndexSignatureDeclaration(member)) {
       const parameter = member.parameters[0];
       // A mutable index is a writable one at its read contract; Lean keeps
@@ -1458,6 +1468,7 @@ export function members(scope: TermScope, list: readonly TypeElement[], at: Node
   // signature, it is a class value holding them as its static fields, own
   // data properties under invariant contracts.
   if (constructs.length) {
+    if (stable.length) scope.fail(at, "a class value's static fields state no `@stable` member");
     const [only] = constructs;
     if (!fields.length && !stringIndex && !numberIndex && !symbolIndex && !calls.length)
       return constructs.length === 1 && only ? only : { k: "intersection", parts: constructs, span };
@@ -1472,7 +1483,16 @@ export function members(scope: TermScope, list: readonly TypeElement[], at: Node
     return { ...only, statics };
   }
   return { k: "object", fields, stringIndex, ...(numberIndex ? { numberIndex } : {}),
-    ...(symbolIndex ? { symbolIndex } : {}), calls, span };
+    ...(symbolIndex ? { symbolIndex } : {}), calls, ...(stable.length ? { stable } : {}), span };
+}
+
+/** Whether a member's leading JSDoc comment states `@stable`. */
+function stableTag(member: Node): boolean {
+  const file = member.getSourceFile();
+  const trivia = file.text.slice(member.pos, member.getStart(file));
+  const open = trivia.lastIndexOf("/**");
+  const close = open < 0 ? -1 : trivia.indexOf("*/", open + 3);
+  return close >= 0 && /(^|[\s*])@stable\b/.test(trivia.slice(open + 3, close));
 }
 
 /** Whether two index signatures state the same contract. */

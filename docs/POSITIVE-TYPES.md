@@ -171,6 +171,12 @@ $`c_j\equiv T_j`$ when $`r=\mathsf{w}`$ and $`c_j\subseteq T_j`$ when $`r=\maths
   [stable members](HOST-FAMILIES.md#stable-keys)). A meet states the stable
   keys of both operands; a record is below another only where it states
   every stable key the other states; dictionaries carry them as records do.
+  A program's record type states a required readonly field stable with a
+  `@stable` JSDoc tag. An object literal allocated at that type allocates
+  the field's location with the contract $`C(j,U,v)\iff A(j,U,v)\land v=v_0`$,
+  its type $`A`$ restricted to its initial value $`v_0`$, and the record
+  holds the field as a view (`HasTyWith.alloc`, proved in `HasTyUsing.sound`).
+  An object holding an array store states no stable key.
 - **`length`.** A view of `length` is also met by an object owning the array
   store key $`\sigma`$, when every number is of its type: an array's
   `length` is its store's length, which the store keeps, and `push` changes

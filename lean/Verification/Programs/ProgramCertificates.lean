@@ -959,10 +959,14 @@ declared bounds. -/
     match j.term, ps with
     | .makeAt .absent ns inits, ps =>
       match expand G j.type with
-      | [.refs fs [] [] [] [] ks] =>
+      -- A field among the stable keys is a view, allocated at its initial
+      -- value alone (`HasTyUsing.alloc`).
+      | [.refs fs [] vs [] [] ks st] =>
         ns.Nodup ∧ hostKey ∉ ns ∧ ns.length = ps.length ∧ ps.map Sequent.term = inits ∧
-        (∀ p ∈ ps, p.context = j.context) ∧ fs = ns.zip (ps.map Sequent.type) ∧
-        (∀ K ∈ ks, ∀ n ∈ ns, K.admits n = true) ∧ allocBuiltinsUsing images fs = true
+        (∀ p ∈ ps, p.context = j.context) ∧ fs = stablePart st false (ns.zip (ps.map Sequent.type)) ∧
+        vs = stablePart st true (ns.zip (ps.map Sequent.type)) ∧
+        (∀ K ∈ ks, ∀ n ∈ ns, K.admits n = true) ∧ allocBuiltinsUsing images (ns.zip (ps.map Sequent.type)) = true ∧
+        (st = [] ∨ CallArguments.arrayStoreField ∉ ns) ∧ (∀ k ∈ st, k ∈ ns)
       -- A literal allocated directly at a dictionary: each field an index's
       -- class may admit at exactly that index's type, each optional field
       -- absent (`HasTyUsing.allocDict`).
@@ -1911,8 +1915,8 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι}
     exact .letE ha (hp ⟨ja.type :: Γ, b, A⟩ (by simp))
   · rename_i _ ps _ _ ns inits
     split at hl
-    · rename_i fs ks he
-      obtain ⟨hnd, hnh, hlen, hterms, hctx, rfl, hk, hreal⟩ := hl
+    · rename_i fs vs ks st he
+      obtain ⟨hnd, hnh, hlen, hterms, hctx, rfl, rfl, hk, hreal, hstore, hst⟩ := hl
       have hzl : (ns.zip ps).length = ns.length := by simp [hlen]
       have hfst : ((ns.zip ps).map fun r => (r.1, r.2.type, r.2.term)).map Prod.fst = ns := by
         simp only [List.map_map, Function.comp_def]
@@ -1950,6 +1954,7 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι}
           rw [hfst] at this
           exact hk K hK q.1 this)
         (by rw [htyp]; exact allocBuiltins_of_using hreal)
+        (by rw [hfst]; exact hstore) (by rw [hfst]; exact hst)
       rw [hfst, hsnd] at this
       exact this
     · rename_i fs ix os cs he

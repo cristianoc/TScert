@@ -197,13 +197,19 @@ inductive HasTyWith (G : NormalGraph ι) (images : PositiveCertificates.Instance
   | letE : HasTyWith G images subtyping Γ a A → HasTyWith G images subtyping (A :: Γ) b B → HasTyWith G images subtyping Γ (.letE a b) B
   /-- **Allocation.** One object, one fresh location per named field. The field
   names are distinct, which is what makes the object a map from them. Its own
-  keys are exactly those names, so any bound admitting them holds of it. -/
-  | alloc {parts : List (PropKey × Ty ι × Tm)} {ks : List KeyBound} :
+  keys are exactly those names, so any bound admitting them holds of it. A
+  field among the stable keys `st` is allocated with a contract admitting
+  only its initial value: the clause states it a view and a stable key
+  (POSITIVE-TYPES.md, "Records"). Such an object holds no array store. -/
+  | alloc {parts : List (PropKey × Ty ι × Tm)} {ks : List KeyBound} {st : List PropKey} :
       (parts.map Prod.fst).Nodup → hostKey ∉ parts.map Prod.fst →
       (∀ p ∈ parts, HasTyWith G images subtyping Γ p.2.2 p.2.1) →
-      Represents G Ref (.refs (parts.map fun p => (p.1, p.2.1)) [] [] [] [] ks) →
+      Represents G Ref (.refs (stablePart st false (parts.map fun p => (p.1, p.2.1))) []
+        (stablePart st true (parts.map fun p => (p.1, p.2.1))) [] [] ks st) →
       (∀ K ∈ ks, ∀ p ∈ parts, K.admits p.1 = true) →
       allocBuiltins G (parts.map fun p => (p.1, p.2.1)) = true →
+      (st = [] ∨ CallArguments.arrayStoreField ∉ parts.map Prod.fst) →
+      (∀ k ∈ st, k ∈ parts.map Prod.fst) →
       HasTyWith G images subtyping Γ (.makeAt .absent (parts.map Prod.fst) (parts.map fun p => p.2.2)) Ref
   /-- **Allocation at a dictionary.** A literal allocated directly at a
   dictionary type: its fields are the clause's first operand, with no key the
@@ -1043,7 +1049,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
       have he' := ((he.transfer (k+1) hj U hx).push ha').transfer k (Nat.le_succ k)
         (trunc k (Nat.le_succ k) U) (WExt_refl _)
       exact ihb k _ heap (push av ρ) he' (WorldAdm_trunc _ hu) (HeapOk_trunc k U heap hok)
-  | @alloc Γ Ref parts ks hnd hhostp hp hr hbound hreal ih =>
+  | @alloc Γ Ref parts ks st hnd hhostp hp hr hbound hreal hstore hst ih =>
     intro n W h ρ he hw hh
     simp only [instantiate, instantiateArgs_eq_map, List.map_map, Function.comp_def]
     have hmap : (parts.map fun p => (meaning G p.2.1, instantiate 0 ρ p.2.2)).map Prod.snd
@@ -1064,31 +1070,115 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
         = parts.map fun p => meaning G p.2.1 := by simp [List.map_map, Function.comp_def]
     rw [hAs] at hargs
     have hlen := ArgsT_length hargs
-    apply make_fields_rule
-      (As := parts.map fun p => meaning G p.2.1)
-      (by intro A hA'; obtain ⟨r, hr', rfl⟩ := List.mem_map.mp hA'; exact meaning_adm G r.2.1)
-      (by intro A hA'; obtain ⟨r, hr', rfl⟩ := List.mem_map.mp hA'; exact meaning_valOnly G r.2.1)
-      j U heap .absent _ args hnd (by simpa using hlen.symm) (by simpa using hlen.symm)
+    have hpl : parts.length = args.length := by simpa using hlen.symm
+    -- Each field's location is allocated at its part's type, a stable one's
+    -- at the values of that type that are its initial value.
+    let fam : (PropKey × Ty ι × Tm) × Tm → Fam := fun q =>
+      if st.contains q.1.1 then singleT (meaning G q.1.2.1) q.2 else meaning G q.1.2.1
+    have hfamA : ∀ q, Adm (fam q) := fun q => by
+      simp only [fam]; split
+      · exact singleT_adm (meaning_adm G _) _
+      · exact meaning_adm G _
+    have hfamV : ∀ q, ValOnly (fam q) := fun q => by
+      simp only [fam]; split
+      · exact singleT_valOnly (meaning_valOnly G _) _
+      · exact meaning_valOnly G _
+    have hpart : ∀ q ∈ parts.zip args, meaning G q.1.2.1 j U q.2 := by
+      have hz := ArgsT_zip hargs
+      rw [List.zip_map_left] at hz
+      intro q hq
+      exact hz _ (List.mem_map_of_mem hq)
+    apply make_fields_rule (As := (parts.zip args).map fam)
+      (by intro A hA'; obtain ⟨q, -, rfl⟩ := List.mem_map.mp hA'; exact hfamA q)
+      (by intro A hA'; obtain ⟨q, -, rfl⟩ := List.mem_map.mp hA'; exact hfamV q)
+      j U heap .absent _ args hnd (by simpa using hpl) (by simp [hpl])
       (ArgsT_values
         (by intro A hA'; obtain ⟨r, hr', rfl⟩ := List.mem_map.mp hA'; exact meaning_valOnly G r.2.1)
         hargs)
-      hu hok (ArgsT_zip hargs)
+      hu hok (by
+        rw [zip_map_zip_snd fam hpl]
+        intro p hp'
+        obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hp'
+        simp only [fam]; split
+        · exact ⟨hpart q hq, rfl⟩
+        · exact hpart q hq)
     intro k hk V hy hrec
-    have hfam : ReferenceConjunctions.famsOf (meaning G) (parts.map fun p => (p.1, p.2.1))
-        = (parts.map Prod.fst).zip (parts.map fun p => meaning G p.2.1) := by
-      simp [ReferenceConjunctions.famsOf, List.map_map, Function.comp_def, List.zip_map']
-    have hrec' := hrec
-    rw [← hfam] at hrec'
-    refine (represents_sem hr k V _).mpr ⟨⟨⟨hrec', by simp, fun _ _ _ he => by
-        cases he; exact slots_lookup_none hhostp⟩, fun f T hm => by simp [ReferenceConjunctions.famsOf] at hm,
+    -- A part's field holds its location at the part's family.
+    have hat : ∀ q ∈ parts.zip args, ∃ (flds : List (PropKey × Nat)) (l : Nat) (c : Ctr k) (oid : Nat),
+        Tm.objAt (slots heap.length (parts.map Prod.fst)) .absent (heap.length + args.length)
+          = .objAt flds .absent oid ∧ flds.lookup q.1.1 = some l ∧ lookup V l = some c ∧
+        ∀ (i : Nat) (hi : i < k) (W' : WorldT i) (u : Val), c i hi W' u ↔ fam q i W' u :=
+      fun q hq => recT_at (mem_zip_map_zip Prod.fst fam hq) hrec
+    have hrecA : recT (ReferenceConjunctions.famsOf (meaning G)
+        (stablePart st false (parts.map fun p => (p.1, p.2.1))))
+        k V (.objAt (slots heap.length (parts.map Prod.fst)) .absent (heap.length + args.length)) := by
+      obtain ⟨flds, oid, hobj, hown, -⟩ := hrec
+      have hfs : ∀ f T, (f, T) ∈ ReferenceConjunctions.famsOf (meaning G)
+          (stablePart st false (parts.map fun p => (p.1, p.2.1))) →
+          ∃ q ∈ parts.zip args, f = q.1.1 ∧ T = fam q := by
+        intro f T hm
+        simp only [ReferenceConjunctions.famsOf, stablePart, List.mem_map, List.mem_filter,
+          beq_iff_eq] at hm
+        obtain ⟨⟨f', B⟩, ⟨⟨p, hp', hpe⟩, hns⟩, he'⟩ := hm
+        cases hpe; cases he'
+        obtain ⟨v, hv⟩ := exists_mem_zip_left hpl hp'
+        refine ⟨(p, v), hv, rfl, ?_⟩
+        have hns' : st.contains p.1 = false := hns
+        simp only [fam, hns', Bool.false_eq_true, if_false]
+      refine ⟨flds, oid, hobj, fun f T hm l hl => ?_, fun f T hm => ?_⟩
+      · obtain ⟨q, hq, rfl, rfl⟩ := hfs f T hm
+        exact hown _ _ (mem_zip_map_zip Prod.fst fam hq) l hl
+      · obtain ⟨q, hq, rfl, rfl⟩ := hfs f T hm
+        obtain ⟨flds', l, c, oid', he', hl, hw', hag⟩ := hat q hq
+        rw [hobj] at he'; cases he'
+        exact ⟨l, c, hl, hw', hag⟩
+    -- A stable part's location admits values of its type, its initial value
+    -- alone.
+    have hstable : ∀ p ∈ parts, st.contains p.1 = true → ∃ v, ∃ (flds : List (PropKey × Nat)) (l : Nat) (c : Ctr k) (oid : Nat),
+        Tm.objAt (slots heap.length (parts.map Prod.fst)) .absent (heap.length + args.length)
+          = .objAt flds .absent oid ∧ flds.lookup p.1 = some l ∧ lookup V l = some c ∧
+        ∀ (i : Nat) (hi : i < k) (W' : WorldT i) (u : Val), c i hi W' u ↔ singleT (meaning G p.2.1) v i W' u := by
+      intro p hp' hc
+      obtain ⟨v, hv⟩ := exists_mem_zip_left hpl hp'
+      obtain ⟨flds, l, c, oid, he', hl, hw', hag⟩ := hat (p, v) hv
+      refine ⟨v, flds, l, c, oid, he', hl, hw', fun i hi W' u => ?_⟩
+      have := hag i hi W' u
+      simp only [fam, hc, if_true] at this
+      exact this
+    refine (represents_sem hr k V _).mpr ⟨⟨⟨hrecA, by simp, fun _ _ _ he => by
+        cases he; exact slots_lookup_none hhostp⟩, fun f T hm => ?_,
       ⟨by simpa [ReferenceConjunctions.famsOf] using optT_nil, MethodMembers.methodT_nil _ _ _,
         fun K hK => ownKeysT_slots fun n hn => by
           obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hn
-          exact hbound K hK p hp, stableKeysT_nil _ _ _⟩⟩, ?_⟩
-    have hinv := allocBuiltins_sound hreal (by simpa [List.map_map, Function.comp_def] using hnd)
-      (.refs (parts.map fun p => (p.1, p.2.1)) [] [] [] [] ks) (base := heap.length) (k := k) (V := V)
-      (by simpa [List.map_map, Function.comp_def] using hrec)
-    simpa [List.map_map, Function.comp_def] using hinv
+          exact hbound K hK p hp, fun key hkey => ?_⟩⟩, ?_⟩
+    · -- A stable field is a view of its type.
+      simp only [ReferenceConjunctions.famsOf, stablePart, List.mem_map, List.mem_filter,
+        beq_iff_eq] at hm
+      obtain ⟨⟨f', B⟩, ⟨⟨p, hp', hpe⟩, hsc⟩, he'⟩ := hm
+      cases hpe; cases he'
+      obtain ⟨v, flds, l, c, oid, he', hl, hw', hag⟩ := hstable p hp' hsc
+      exact .inl (viewT_single ⟨flds, l, c, oid, he', hl, hw', fun i hi W' u hc => ((hag i hi W' u).mp hc).1⟩)
+    · -- A stable key is owned at a location of one value.
+      obtain ⟨p, hp', rfl⟩ := List.mem_map.mp (hst key hkey)
+      obtain ⟨v, flds, l, c, oid, he', hl, hw', hag⟩ := hstable p hp' (List.contains_iff_mem.mpr hkey)
+      refine ⟨flds, oid, he', ?_⟩
+      simp only [StableAt, hl]
+      exact ⟨c, v, hw', fun i hi W' u hc => ((hag i hi W' u).mp hc).2⟩
+    · rcases hstore with rfl | hstore
+      · have hfam : (parts.zip args).map fam = parts.map fun p => meaning G p.2.1 := by
+          have : (parts.zip args).map fam = (parts.zip args).map fun q => meaning G q.1.2.1 :=
+            List.map_congr_left fun q _ => by simp [fam]
+          rw [this, show (fun q : (PropKey × Ty ι × Tm) × Tm => meaning G q.1.2.1)
+              = (fun p : PropKey × Ty ι × Tm => meaning G p.2.1) ∘ Prod.fst from rfl,
+            ← List.map_map, List.map_fst_zip (by omega)]
+        rw [hfam] at hrec
+        have hinv := allocBuiltins_sound hreal (by simpa [List.map_map, Function.comp_def] using hnd)
+          (.refs (stablePart [] false (parts.map fun p => (p.1, p.2.1))) []
+            (stablePart [] true (parts.map fun p => (p.1, p.2.1))) [] [] ks [])
+          (base := heap.length) (k := k) (V := V)
+          (by simpa [List.map_map, Function.comp_def] using hrec)
+        simpa [List.map_map, Function.comp_def] using hinv
+      · exact builtinInvariant_of_lookup (slots_lookup_none hstore)
   | @allocDict Γ Ref parts ix cs os hnd hproto hstore hhostp hp hr hix habs _ ih =>
     intro n W h ρ he hw hh
     simp only [instantiate, instantiateArgs_eq_map, List.map_map, Function.comp_def]

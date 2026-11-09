@@ -217,6 +217,65 @@ theorem listsOnly_sound [DecidableEq ι] {G : NormalGraph ι} {S : Ty ι} (h : l
   obtain ⟨ls, rfl, -⟩ := hv.1
   exact ⟨ls, rfl⟩
 
+/-- The parts of an allocation whose keys a list of stable keys names
+(`b = true`), which the clause it meets states as views, or leaves
+(`b = false`), its contract fields (POSITIVE-TYPES.md, "Records"). -/
+def stablePart {α : Type} (st : List PropKey) (b : Bool) (ps : List (PropKey × α)) : List (PropKey × α) :=
+  ps.filter fun p => st.contains p.1 == b
+
+@[simp] theorem stablePart_nil_false {α : Type} (ps : List (PropKey × α)) : stablePart [] false ps = ps := by
+  simp [stablePart]
+
+@[simp] theorem stablePart_nil_true {α : Type} (ps : List (PropKey × α)) : stablePart [] true ps = [] := by
+  simp [stablePart]
+
+theorem stablePart_map {α β : Type} (st : List PropKey) (b : Bool) (ps : List (PropKey × α)) (f : α → β) :
+    stablePart st b (ps.map fun p => (p.1, f p.2)) = (stablePart st b ps).map fun p => (p.1, f p.2) := by
+  simp [stablePart, List.filter_map, Function.comp_def]
+
+/-- The family a stable field's location is allocated with: its contract's
+values that are the value it is initialized with. -/
+def singleT (A : Fam) (v : Val) : Fam := fun j W u => A j W u ∧ u = v
+
+theorem singleT_adm {A : Fam} (hA : Adm A) (v : Val) : Adm (singleT A v) :=
+  ⟨fun n W u h => ⟨hA.down n W u h.1, h.2⟩, fun n W W' hx u h => ⟨hA.mono n W W' hx u h.1, h.2⟩⟩
+
+theorem singleT_valOnly {A : Fam} (hA : ValOnly A) (v : Val) : ValOnly (singleT A v) :=
+  fun j W a h => hA j W a h.1
+
+/-- A part of a list is at some position of a list of its length. -/
+theorem exists_mem_zip_left {α β : Type} : ∀ {l : List α} {m : List β} {a : α},
+    l.length = m.length → a ∈ l → ∃ b, (a, b) ∈ l.zip m
+  | [], _, _, _, h => by cases h
+  | _ :: _, [], _, hl, _ => by simp at hl
+  | x :: l, y :: m, a, hl, h => by
+    rcases List.mem_cons.mp h with rfl | h
+    · exact ⟨y, by simp⟩
+    · obtain ⟨b, hb⟩ := exists_mem_zip_left (by simpa using hl) h
+      exact ⟨b, List.mem_cons_of_mem _ hb⟩
+
+/-- A pair of a zip, its first component mapped, beside a function of the
+pair, is a pair of the zip of the mapped list with the mapped zip. -/
+theorem mem_zip_map_zip {α β γ δ : Type} (f : α → γ) (g : α × β → δ) : ∀ {l : List α} {m : List β} {q : α × β},
+    q ∈ l.zip m → (f q.1, g q) ∈ (l.map f).zip ((l.zip m).map g)
+  | [], _, _, h => by cases h
+  | _ :: _, [], _, h => by cases h
+  | x :: l, y :: m, q, h => by
+    rcases List.mem_cons.mp h with rfl | h
+    · simp
+    · exact List.mem_cons_of_mem _ (mem_zip_map_zip f g h)
+
+/-- Zipping a mapped zip with its second list pairs each image with its
+second component. -/
+theorem zip_map_zip_snd {α β δ : Type} (g : α × β → δ) : ∀ {l : List α} {m : List β},
+    l.length = m.length → ((l.zip m).map g).zip m = (l.zip m).map fun q => (g q, q.2)
+  | [], [], _ => rfl
+  | [], _ :: _, h => by simp at h
+  | _ :: _, [], h => by simp at h
+  | x :: l, y :: m, h => by
+    simp only [List.zip_cons_cons, List.map_cons, List.cons.injEq, true_and]
+    exact zip_map_zip_snd g (by simpa using h)
+
 /-- **An allocation meets the built-ins' invariant**: it owns no store, or it is
 a built-in array, holding a store and the built-in prototype and owning
 no key that prototype provides; without a builtins, an array whose store is a

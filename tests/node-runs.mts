@@ -3028,6 +3028,8 @@ for (const [file, call] of [
   assert.equal(runExample(negative("invalid-push-keeps-fresh-lengths-alias"),
     'typeof fill([1], [5], false)'), "undefined",
     "the constant holds the bounding array, and the push grows it before the read");
+  assert.equal(runExample(negative("invalid-stable-record-field-alias"), "String(run())"), "null",
+    "the writable alias's write through the callback replaces the narrowed `size`");
   assert.equal(runExample(negative("invalid-regexp-replace-callback-pops"),
     'typeof lastRead(["a"])'), "undefined",
     "the replacement callback pops the array before the read below the loop's bound");
