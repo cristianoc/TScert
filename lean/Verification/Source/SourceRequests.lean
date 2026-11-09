@@ -237,14 +237,14 @@ where the statement says so, it promises a fresh result where the statement
 does, and the unit is not async. -/
 theorem effectResult_stated {r : SourceRequest σ ι} {c : Response ι}
     (h : (effectResult r c).accepted = true) {s : CallEffects.Effect} (hs : r.stated = some s)
-    (hreg : s.regional = none) :
+    (hreg : s.regions = []) :
     r.async = false ∧ (s.footprint ≠ .top ∨ s.fresh = true) ∧ r.footprint.le s.footprint = true ∧
       (s.onThrow = true → r.onThrow = true) ∧ (s.fresh = true → r.fresh = true) := by
   simp only [effectResult, ProgramCertificates.CheckResult.accepted_bind,
     ProgramCertificates.CheckResult.accepted_ofBool, Bool.and_eq_true] at h
   have hw := h.1.2
   rw [hs] at hw
-  simp only [RequestJson.statedWithin, hreg, Option.isSome_none, Bool.false_or, Bool.or_false,
+  simp only [RequestJson.statedWithin, hreg, List.isEmpty_nil, Bool.not_true, Bool.false_or, Bool.or_false,
     Bool.and_eq_true, Bool.not_eq_true', bne_iff_ne, ne_eq, Bool.or_eq_true] at hw
   obtain ⟨⟨⟨⟨ha, htop⟩, hle⟩, ho⟩, hf⟩ := hw
   refine ⟨ha, htop, hle, fun hso => ?_, fun hsf => ?_⟩
@@ -574,7 +574,7 @@ heap's length where the statement promises a fresh result; the heap a throw
 leaves is within the statement's footprint where the statement says so. -/
 theorem checkRequests_stated_at {rs : List (SourceRequest σ ι)} {b : Bundle ι}
     (h : checkRequests rs b = true) {r c} (hm : (r,c) ∈ rs.zip b.functions)
-    {s : CallEffects.Effect} (hs : r.stated = some s) (hreg : s.regional = none)
+    {s : CallEffects.Effect} (hs : r.stated = some s) (hreg : s.regions = [])
     (η : PositiveGraphs.MixedAssignment ι) (n W heap) (L : List Tm) (d : Tm)
     (he : EnvOk (reassign (RequestJson.graph r.toRequest) η) r.inputs (envOf L d) n W) (hw : WorldAdm W)
     (hh : HeapOk n W heap) (hvalues : ∀ v ∈ L, isVal v = true) (hd : isVal d = true)

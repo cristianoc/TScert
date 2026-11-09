@@ -479,7 +479,7 @@ def GraphCodeSpec (G : NormalGraph ι) (arity : Nat) (E : List Tm)
     ∀ r args, FrameValues arity store L r args →
       HeapObservations.SafePostExc (excOf G)
         (row.effect.result (meaning G row.result) (framePromised row.effect (frameOffset store) L))
-        (row.effect.post r args h) (row.effect.excPost r h)
+        (row.effect.post r args h) (row.effect.excPost r args h)
         n W h (.goto E K start L .nul)
 
 /-- A graph code the certificate of a unit has checked at one signature: the
@@ -627,7 +627,7 @@ theorem graph_invoke {G : NormalGraph ι} {arity E K start Cs row vs n W}
     {args : List Tm} (ha : ArgsShort (row.arguments.map (meaning G)) j U args)
     (hq : ∀ F ∈ row.effect.pre, F.HoldsAt (CallEffects.callEnv r args) heap) :
     HeapObservations.SafePostExc (excOf G) (row.effect.result (meaning G row.result) (row.effect.promised args))
-      (row.effect.post r args heap) (row.effect.excPost r heap) j U heap
+      (row.effect.post r args heap) (row.effect.excPost r args heap) j U heap
       (.goto E K start (r :: CallArguments.parameters arity args ++ vs) .nul) := by
   have hsafe := hs.2.2 j U heap _ (frame_envOk hs.1 hvs (Nat.le_of_lt hj) hx hr ha) hu hh (by
     intro v hv
@@ -655,7 +655,7 @@ theorem graph_invoke_at {G : NormalGraph ι} {arity E K start Cs row vs}
     {args : List Tm} (ha : ArgsShort (row.arguments.map (meaning G)) j U args)
     (hq : ∀ F ∈ row.effect.pre, F.HoldsAt (CallEffects.callEnv r args) heap) :
     HeapObservations.SafePostExc (excOf G) (row.effect.result (meaning G row.result) (row.effect.promised args))
-      (row.effect.post r args heap) (row.effect.excPost r heap) j U heap
+      (row.effect.post r args heap) (row.effect.excPost r args heap) j U heap
       (.goto E K start (r :: CallArguments.parameters arity args ++ vs) .nul) := by
   have hx : WExt (trunc j (Nat.le_refl j) U) U := by rw [trunc_id]; exact WExt_refl U
   have hsafe := hs.2.2 j U heap _ (frame_envOk hs.1 hvs (Nat.le_refl j) hx hr ha) hu hh (by
@@ -719,7 +719,8 @@ theorem restsT_of_graph {G : NormalGraph ι} {arity E K start Cs vs n W} {kind :
   rw [hp, CallEffects.Effect.promised_take (e := s.fixed.effect) hbelow hle] at hsafe
   exact ⟨_, .graph hrv hvals (hb s hsm j U r hr), HeapObservations.SafePostExc.weaken
     (fun _ _ h => CallEffects.Effect.post_args (CallEffects.Effect.below_ensures hbelow)
-      (CallEffects.Effect.below_grows hbelow) (CallEffects.Effect.below_write hbelow) (CallEffects.Effect.below_regional hbelow) h) (fun _ h => h) hsafe⟩
+      (CallEffects.Effect.below_grows hbelow) (CallEffects.Effect.below_write hbelow) (CallEffects.Effect.below_regions hbelow) h)
+      (fun _ h => CallEffects.Effect.excPost_args (CallEffects.Effect.below_regions hbelow) h) hsafe⟩
 
 /-- An equality established by a branch can refine one immutable slot. -/
 theorem EnvOk.refine {G : NormalGraph ι} {Γ ρ n W i A B}

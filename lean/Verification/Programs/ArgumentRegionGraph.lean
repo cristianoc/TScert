@@ -70,7 +70,8 @@ theorem checkReceiverCall_sound [DecidableEq ι] {G : NormalGraph ι}
         (eff.post (ExpressionEffects.receiverOf (instantiate 0 ρ (ProgramCertificates.claim c.expression).term))
           (ExpressionEffects.actualsOf (instantiate 0 ρ (ProgramCertificates.claim c.expression).term)) h)
         (fun h' => thr = true → eff.excPost
-          (ExpressionEffects.receiverOf (instantiate 0 ρ (ProgramCertificates.claim c.expression).term)) h h')
+          (ExpressionEffects.receiverOf (instantiate 0 ρ (ProgramCertificates.claim c.expression).term))
+          (ExpressionEffects.actualsOf (instantiate 0 ρ (ProgramCertificates.claim c.expression).term)) h h')
         n W h (instantiate 0 ρ (ProgramCertificates.claim c.expression).term) := by
       rcases Bool.or_eq_true_iff.mp htree with htree | hreq
       · cases ht : thr

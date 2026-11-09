@@ -4123,9 +4123,11 @@ entry contents:
 \forall\ell<|h_0|.\ (\forall i.\ \mathrm{store}(\rho\,p_i)\neq\ell)\Rightarrow\{v,s\}\text{ allows }h_0[\ell]\rightsquigarrow h'[\ell]
 ```
 
-with $`\rho`$ the call's values by position (`CallEffects.StoresApartWithin`,
-the effect's `regional` promise). Its callers read the footprint
-$`\{v,\mathsf{any}\}`$ beside that promise. A root is a parameter without a
+with $`\rho`$ the call's values by position: the effect's frame, its closed
+bound $`\{v,s\}`$ with each region's store at `any`
+(`CallEffects.Effect.within`, `Effect.within_iff_regions`; proved). A
+conservative check reads the frame's closed approximation `top`, every
+location a selected store may be (`Effect.within_closed`). A root is a parameter without a
 default and no rest parameter, whose value in the body is the call's;
 refused: a region at another change (`invalid-modifies-region-change`), a
 root with a default (`invalid-modifies-region-root`), a region on any
@@ -4146,8 +4148,7 @@ receiver holds one), each slot's provenance checked on every edge
 conjunct of `RequestsSafe`; `stated-argument-store`;
 `invalid-stated-store-region`, run under Node; the forged control of
 `pipeline/test.mts` moving a region to another position). A caller keeps no
-fact across the call that the class footprint $`\{v,\mathsf{any}\}`$ does
-not keep: the promise beside it is read by no rule of a caller's knowledge.
+fact across the call that the closed approximation `top` does not keep.
 
 **Over the whole domain.** A statement on `m(this: C, …)` holds for every
 receiver of type `C`, so every call in `m`'s body is at a contract stating

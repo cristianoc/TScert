@@ -455,8 +455,8 @@ claim. Unstated, any claim. -/
 def statedWithin (async : Bool) (footprint : Footprints.Closed) (onThrow fresh : Bool) :
     Option CallEffects.Effect → Bool
   | none => true
-  | some s => !async && (s.footprint != .top || s.fresh || s.regional.isSome) &&
-      (s.regional.isSome || footprint.le s.footprint) && (s.regional.isSome || !s.onThrow || onThrow) &&
+  | some s => !async && (s.footprint != .top || s.fresh || !s.regions.isEmpty) &&
+      (!s.regions.isEmpty || footprint.le s.footprint) && (!s.regions.isEmpty || !s.onThrow || onThrow) &&
       (!s.fresh || fresh)
 
 /-- The request's async code at `top`, then its read summaries, each checked

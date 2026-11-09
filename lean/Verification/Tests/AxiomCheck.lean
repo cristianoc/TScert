@@ -37,7 +37,11 @@ run_cmd do
   check ``Verification.Footprints.Post.mono
   check ``Verification.Footprints.keep_across_call
   check ``Verification.Footprints.StoreApart.sep
-  check ``Verification.CallEffects.Effect.within_iff_post
+  check ``Verification.CallEffects.Effect.within_iff_closed
+  check ``Verification.CallEffects.Effect.within_closed
+  check ``Verification.CallEffects.Effect.within_iff_regions
+  check ``Verification.CallEffects.Effect.within_prefix
+  check ``Verification.CallEffects.Effect.frameCovers_sound
   check ``Verification.Footprints.Closed.post_extra_any
   check ``Verification.Footprints.Post.compose
   check ``Verification.Footprints.Region.sub_mem

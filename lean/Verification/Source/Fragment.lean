@@ -823,12 +823,11 @@ def decodeCompletion (j : Json) : Except String Bool := do
 /-- The effect a definition's result annotation states, `{footprint,
 onThrow, fresh, regions}`, or none: a closed footprint and whether it holds
 on a throw too, whether the result is fresh, and the call positions whose
-values' stores the frame excepts (`"x[*]": "any"`). Without regions the
-effect is the footprint with no promise and no receiver-store exception; a
-statement of `top` without a fresh result states nothing, and is refused.
-With regions the footprint is the bound off those stores (`regional`), its
-callers' footprint letting stores change arbitrarily; a fresh result beside
-them, and a bound of `top`, are refused. -/
+values' stores the frame lets change arbitrarily (`"x[*]": "any"`). The
+effect's frame is the closed footprint with those store regions and no
+receiver mode; a statement of `top` without a fresh result states nothing,
+and is refused. With regions, a fresh result beside them and a bound of
+`top` are refused. -/
 def decodeStated : Json → Except String (Option CallEffects.Effect)
   | .null => pure none
   | j => do
@@ -844,8 +843,8 @@ def decodeStated : Json → Except String (Option CallEffects.Effect)
     else
       if footprint == .top || fresh || !regions.Nodup then
         throw "a stated effect with store regions states a bound below `top` off them, distinct positions and no fresh result"
-      let base : CallEffects.Effect := CallEffects.Effect.ofFootprint ⟨footprint.value, .any⟩
-      pure (some { base with onThrow := onThrow, regional := some (footprint, regions) })
+      pure (some { CallEffects.Effect.ofFootprint footprint with
+        onThrow := onThrow, regions := regions.map fun p => ⟨p, []⟩ })
 
 /-- A guard's promise as the Fragment states it, or none. -/
 def decodeGuard : Json → Except String (Option Guard)

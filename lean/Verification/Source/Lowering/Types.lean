@@ -783,7 +783,7 @@ def resultWithFootprint (T : EquationStore.State) (ret : Json) (footprint : Foot
       if a.effect.footprint != .top || a.effect.onThrow || a.effect.promise.isSome then throw refusal
       return Json.mkObj [("a", toJson "function"), ("this", claim a.receiver),
         ("params", toJson (a.arguments.map claim)), ("result", claim a.result), ("construct", toJson "unknown"),
-        ("array", toJson "unknown"), ("effect", toJson { a.effect with footprint })]
+        ("array", toJson "unknown"), ("effect", toJson { a.effect with closed := footprint })]
     let plain ← signature s
     let others ← ss.mapM signature
     let atom := if others.isEmpty then plain else plain.setObjVal! "and" (toJson others)
@@ -799,7 +799,7 @@ a rest parameter is code that discards the actuals past its parameters, so it
 also meets its signature extended by a rest of `unknown` elements: the
 further actuals a caller writes may be any values. -/
 def moduleArrow (g : Fragment.Fn) (footprint : Footprints.Closed := .top) (onThrow : Bool := false)
-    (fresh : Bool := false) (regional : Option (Footprints.Closed × List Nat) := none) : Except String Json := do
+    (fresh : Bool := false) (regions : List Footprints.ArgumentStoreRegion := []) : Except String Json := do
   let top := Json.mkObj [("top", toJson true), ("atoms", toJson ([] : List Json))]
   let (receiver, params) := match g.params with
     | p :: ps => if p.name == "this" then (p.ty, ps) else (top, g.params)
@@ -820,7 +820,7 @@ def moduleArrow (g : Fragment.Fn) (footprint : Footprints.Closed := .top) (onThr
   let promised : List (Json × List (String × Json)) := match g.guard with
     | some guard => [(guard.type, [("effect", toJson (CallEffects.Effect.mk footprint
         (some (if guard.asserts then .asserts guard.param else .guards guard.param)) false false onThrow false false none none
-        g.requires [] false none none))])]
+        g.requires [] false none regions))])]
     | none => []
   -- The plain signature states the footprint the declaration's claim
   -- proposes, which the declaration's own unit certifies; its extension
@@ -830,10 +830,10 @@ def moduleArrow (g : Fragment.Fn) (footprint : Footprints.Closed := .top) (onThr
   -- Its postcondition too (`Fn.ensures`), which its unit certifies at each
   -- return (`SourceRequests.ensuresResult`).
   let plain : List (String × Json) :=
-    if footprint = .top ∧ onThrow = false ∧ fresh = false ∧ g.requires.isEmpty ∧ g.ensures.isEmpty ∧ regional = none then [] else
+    if footprint = .top ∧ onThrow = false ∧ fresh = false ∧ g.requires.isEmpty ∧ g.ensures.isEmpty ∧ regions = [] then [] else
       [("effect", toJson ({ CallEffects.Effect.ofFootprint footprint with
         onThrow := onThrow, fresh := fresh, pre := g.requires, ensures := g.ensures,
-        regional := regional } : CallEffects.Effect))]
+        regions := regions } : CallEffects.Effect))]
   let extra := promised.map (fun (result, effect) => Json.mkObj (signature rest result effect)) ++
     if params.any (·.rest) then []
     else ((g.ret, plain) :: promised).map fun (result, effect) => Json.mkObj (signature [("rest", top)] result effect)

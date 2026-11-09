@@ -152,8 +152,8 @@ def fileFront (ast claims : Json) (fileKey : String)
         overloadSlot (← units.mapM fun (u : Fragment.Fn) => do
           -- A statement with store regions is certified by its unit's
           -- regional check (`regionalResult`): the slot states it.
-          match u.stated.bind fun (s : CallEffects.Effect) => s.regional.map (s, ·) with
-          | some (s, regional) => moduleArrow (← returning u) s.footprint s.onThrow false (some regional)
+          match u.stated.bind fun (s : CallEffects.Effect) => if s.regions.isEmpty then none else some s with
+          | some s => moduleArrow (← returning u) s.closed s.onThrow false s.regions
           | none => moduleArrow (← returning u) (footprintOf u) (onThrowOf u) (u.stated.any (·.fresh : CallEffects.Effect → Bool)))).map .written)) ++
     (imported.map fun (name, span, U) => (name, span, match qualified.lookup name with
       | some (footprint, onThrow, result) => (importedArrow d.types U footprint onThrow result).map .written

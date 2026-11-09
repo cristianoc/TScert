@@ -1251,8 +1251,8 @@ theorem ownCall_sound {G : NormalGraph ι} {images : InstanceImageCheck G} {j : 
         obtain ⟨⟨hle, hown⟩, -⟩ := hsel
         refine consequence (fun _ _ _ hv => hv) (fun h' v hq => ?_)
           (ExpressionEffects.selected_sound p ht hops heff hcodes hsums he hw hh)
-        have hw' := hq.1
-        unfold CallEffects.Effect.within at hw'
+        have hw' := CallEffects.Effect.within_closed hq.1
+        unfold CallEffects.Effect.withinClosed at hw'
         simp only [hown, if_true] at hw'
         rw [hterm] at hw'
         simp only [ExpressionEffects.receiverOf, instantiate] at hw'
@@ -1616,7 +1616,7 @@ theorem requiresApp_sound_exc {G : NormalGraph ι} {images : InstanceImageCheck 
     SafePostExc (excOf G) (meaning G (claim p).type)
       (eff.post (ExpressionEffects.receiverOf (instantiate 0 ρ (claim p).term))
         (ExpressionEffects.actualsOf (instantiate 0 ρ (claim p).term)) h)
-      (eff.excPost (ExpressionEffects.receiverOf (instantiate 0 ρ (claim p).term)) h) n W h
+      (eff.excPost (ExpressionEffects.receiverOf (instantiate 0 ρ (claim p).term)) (ExpressionEffects.actualsOf (instantiate 0 ρ (claim p).term)) h) n W h
       (instantiate 0 ρ (claim p).term) := by
   obtain ⟨j, r, ps⟩ := p
   cases r with
@@ -1706,7 +1706,7 @@ theorem requiresTree_sound_exc {G : NormalGraph ι} {images : InstanceImageCheck
     SafePostExc (excOf G) (meaning G (claim p).type)
       (eff.post (ExpressionEffects.receiverOf (instantiate 0 ρ (claim p).term))
         (ExpressionEffects.actualsOf (instantiate 0 ρ (claim p).term)) h)
-      (eff.excPost (ExpressionEffects.receiverOf (instantiate 0 ρ (claim p).term)) h) n W h
+      (eff.excPost (ExpressionEffects.receiverOf (instantiate 0 ρ (claim p).term)) (ExpressionEffects.actualsOf (instantiate 0 ρ (claim p).term)) h) n W h
       (instantiate 0 ρ (claim p).term) := by
   by_cases hs : ∃ j c q, p = .node j (.sub c) [q]
   · obtain ⟨j, c, q, rfl⟩ := hs
@@ -1906,7 +1906,7 @@ def effectKept (views : Nat → String → Bool) (eff : Effect) (t : Tm) (k : He
       (fun _ _ => false) views (k.indices.filter fun a => !a.fact.envOnly))
 
 theorem effectKept_holds {views : Nat → String → Bool} {eff : Effect} {t : Tm} {k : HeapKnowledge.Knowledge} {ρ : Env} {h h' : Heap} {v : Tm}
-    (hk : HeapKnowledge.Holds k ρ h) (hw : eff.within (ExpressionEffects.receiverOf (instantiate 0 ρ t)) h h')
+    (hk : HeapKnowledge.Holds k ρ h) (hw : eff.within (ExpressionEffects.receiverOf (instantiate 0 ρ t)) (ExpressionEffects.actualsOf (instantiate 0 ρ t)) h h')
     (hg : eff.receiverGrows = true →
       CallEffects.ReceiverGrows (ExpressionEffects.receiverOf (instantiate 0 ρ t)) h h')
     (hew : ∀ w, eff.elementWrite = some w → w.Holds (ExpressionEffects.actualsOf (instantiate 0 ρ t)) h h')
@@ -2579,7 +2579,7 @@ def withEnsures (views : Nat → String → Bool) (n : Nat) (eff : Effect) (t : 
 theorem withEnsures_holds {views : Nat → String → Bool} {n : Nat} {eff : Effect} {t : Tm} {k0 k : HeapKnowledge.Knowledge} {ρ : Env} {h h' : Heap} {v : Tm}
     (hv : ∀ i, i < n → isVal (ρ i) = true)
     (hk : HeapKnowledge.Holds k (push v ρ) h') (hk0 : HeapKnowledge.Holds k0 ρ h)
-    (hw : eff.within (ExpressionEffects.receiverOf (instantiate 0 ρ t)) h h')
+    (hw : eff.within (ExpressionEffects.receiverOf (instantiate 0 ρ t)) (ExpressionEffects.actualsOf (instantiate 0 ρ t)) h h')
     (hp : ∀ F ∈ eff.ensures, F.HoldsAt (CallEffects.ensuresEnv v (ExpressionEffects.receiverOf (instantiate 0 ρ t))
       (ExpressionEffects.actualsOf (instantiate 0 ρ t))) h')
     (hg : eff.receiverGrows = true →
@@ -3019,7 +3019,7 @@ other step is `base`'s. -/
       have hs := base.sound hrun hcodes hsums he hk hw hh
       have hp := PromiseCalls.ensuresCall_sound hens hcodes hsums he hk hw hh
       exact HeapObservations.weaken (fun h' v hq => PromiseCalls.withGrown_holds
-        (PromiseCalls.withEnsures_holds (fun i hi => (ProgramTyping.meaning_value (he.2 i _ (List.getElem?_eq_getElem hi))).1) hq.1.1 hk hq.1.2.1 hq.1.2.2.2.2.2.1 hq.1.2.2.2.2.2.2.1 hq.1.2.2.2.2.2.2.2.1 hq.2)
+        (PromiseCalls.withEnsures_holds (fun i hi => (ProgramTyping.meaning_value (he.2 i _ (List.getElem?_eq_getElem hi))).1) hq.1.1 hk hq.1.2.1 hq.1.2.2.2.2.2.1 hq.1.2.2.2.2.2.2.1 hq.1.2.2.2.2.2.2.2 hq.2)
         (fun hgr => IndexWrites.grownRegions_holds he hh hk (hq.1.2.2.2.2.2.2.1 hgr).1 (hq.1.2.2.2.2.2.2.1 hgr).2))
         (HeapExpressionRules.viewFields_frame he hh
           (HeapObservations.cross_upto (n + 1) (fun _ _ _ _ _ _ _ _ hb _ => hb) W W h _ hh hh hs hp))

@@ -308,7 +308,9 @@ did not mention grow it, and the request carries the result. -/
   -- The stores a stated frame excepts, each call position at the input slot
   -- that holds it on entry.
   let regionSlot : Nat → Option Nat := fun p => if receiverInput then some p else if p = 0 then none else some (p - 1)
-  let some regional := (f.stated.bind (·.regional)).mapM fun (c, ps) => (ps.mapM regionSlot).map (c, ·)
+  let some regional := (f.stated.bind fun (s : CallEffects.Effect) =>
+      if s.regions.isEmpty then none else some (s.closed, s.regions.map (·.position))).mapM
+        fun (c, ps) => (ps.mapM regionSlot).map (c, ·)
     | throw "a stated store region names the receiver, which the function does not declare"
   return {
     toRequest := ⟨built.types, built.program, built.claims, R, entry.label, inputs, built.codes, promise,

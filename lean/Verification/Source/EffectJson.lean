@@ -125,17 +125,18 @@ excepts its receiver's own locations, and whether its result is an object
 every own location of which is fresh, its precondition on the receiver's
 elements and its elements promise, its precondition on the call's values
 (`pre`) and the facts a normal return states (`ensures`), and, where it
-states one, the closed bound off its positions' stores (`regional`). -/
-instance : ToJson Effect := ⟨fun e => Json.mkObj [("footprint", toJson e.footprint),
+states any, its frame's store regions, each a position and a path
+(`regions`). Its footprint is the frame's closed bound. -/
+instance : ToJson Effect := ⟨fun e => Json.mkObj [("footprint", toJson e.closed),
   ("promise", match e.promise with | some p => toJson p | none => Json.null),
   ("fresh", toJson e.fresh), ("receiverStore", toJson e.receiverStore), ("onThrow", toJson e.onThrow),
   ("receiverOwn", toJson e.receiverOwn), ("freshObject", toJson e.freshObject),
   ("requires", predJson e.requires), ("elements", predJson e.elements), ("pre", toJson e.pre),
   ("ensures", toJson e.ensures), ("receiverGrows", toJson e.receiverGrows),
   ("elementWrite", match e.elementWrite with | some w => toJson (elementWriteName w) | none => Json.null)] |>.mergeObj
-  (match e.regional with
-    | some (c, ps) => Json.mkObj [("regional", Json.mkObj [("footprint", toJson c), ("positions", toJson ps)])]
-    | none => Json.mkObj [])⟩
+  (if e.regions.isEmpty then Json.mkObj [] else
+    Json.mkObj [("regions", Json.arr (e.regions.map fun r =>
+      Json.mkObj [("position", toJson r.position), ("path", toJson r.path)]).toArray)])⟩
 
 instance : FromJson Effect := ⟨fun j => do
   let footprint ← j.getObjValAs? Footprints.Closed "footprint"
@@ -148,13 +149,17 @@ instance : FromJson Effect := ⟨fun j => do
     ← fromJson? (← j.getObjVal? "pre"), ← fromJson? (← j.getObjVal? "ensures"),
     ← j.getObjValAs? Bool "receiverGrows", ← match ← j.getObjVal? "elementWrite" with
       | .null => pure none
-      | w => do some <$> elementWriteOf (← w.getStr?), ← match j.getObjVal? "regional" with
-      | .ok r => do pure (some (← r.getObjValAs? Footprints.Closed "footprint", ← r.getObjValAs? (List Nat) "positions"))
-      | .error _ => pure none⟩
+      | w => do some <$> elementWriteOf (← w.getStr?), ← match j.getObjVal? "regions" with
+      | .ok rs => do
+          let rs ← rs.getArr?
+          rs.toList.mapM fun r => do
+            pure (⟨← r.getObjValAs? Nat "position", ← r.getObjValAs? (List String) "path"⟩ :
+              Footprints.ArgumentStoreRegion)
+      | .error _ => pure []⟩
   if toJson e != j then
     throw ("an effect has exactly the fields footprint, promise, fresh, receiverStore, onThrow, receiverOwn, " ++
       "freshObject, requires, elements, a predicate its kinds in order, pre, ensures, receiverGrows and elementWrite, " ++
-      "and regional where it excepts its positions' stores")
+      "and regions where its frame states store regions")
   pure e⟩
 
 end Verification.EffectJson
