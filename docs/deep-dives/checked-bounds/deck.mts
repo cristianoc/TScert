@@ -107,22 +107,23 @@ const slides: Slide[] = [
         [t("Write `xs[k]` below the length"), "the length preserved"],
         [t("`out.push(v)`"), t("lower bounds on `out.length` preserved; upper bounds dropped; the lengths of arrays older than a literal `out` preserved")],
         ["Call with a checked frame condition", "facts whose locations its frame protects, a returned closure’s stated by its maker"],
+        [t("Call whose frame names `x.f[*]`, `f` a `@stable` field"), t("the lengths of arrays the caller knows `!==` that array")],
         [t("Any step, a `@stable` field"), "what the field holds: its object literal allocates it at one value"],
         ["Any step", t("a typed array’s length: fixed for its life (" + "trusted" + ")")],
       ], [38, 62]) +
       para("These rules concern normal returns; a throw carries a frame condition only where one is stated for it.", 24),
   }),
   slide("argument-store", {
-    label: "Argument paths · semantic model", note: t("composition and graph checks ") + proved,
-    title: "Separate stores admit a semantic frame", gap: 22,
+    label: "Argument paths · frame and separation", note: t("the frame and the kept facts ") + proved,
+    title: "A frame names one array; a caller keeps what is apart from it", gap: 22,
     body: columns([
-      code(["Entry heap h₀, entry values ρ₀", "", "A region selects a store through a field path.", "The bound constrains every other old location.", "", "Premises for keeping another array’s length:", "  its store differs from every selected store;", "  the bound keeps that store unchanged."]),
+      code(["type Runs = { /** @stable */", "  readonly openBrackets: number[] };", "function readRuns(runs: Runs): Modifies<", '    { values: "any";', '      "runs.openBrackets[*]": "any" }, void> {', "  runs.openBrackets.splice(0, 1); }", "/** @requires flags !== runs.openBrackets */", "function measure(flags: number[], runs: Runs) {", "  for (let i = 0; i < flags.length; i++) {", "    readRuns(runs); sum += flags[i]!; } }"]),
       bullets([
-        point("Stable paths", "singleton field contracts retain the selected value through world extension and safe execution, including throws."),
-        point("Graph check", "closed effects, copies and receiver-store calls compose through checked branches, loops and handlers."),
-        point("Caller check", "given valid separation facts, a checked frame preserves length. An aliased store cannot meet its premise."),
-        point("Proof scope", "stable-field provenance and fresh-store composition remain proof obligations. CLI acceptance has no argument-path effect."),
-      ], 25),
+        point("The frame", t("`readRuns` changes the array at `runs.openBrackets` and value locations; every other store is unchanged. Its body is checked against that.")),
+        point("Separation", t("`flags !== runs.openBrackets` of two plain arrays states that their stores differ. A caller establishes it, here from a fresh `[]`; an aliased call cannot.")),
+        point("Kept facts", t("across the call, `i < flags.length` holds, since the changed store is apart from `flags`’s; the `@stable` field keeps the separation through the loop.")),
+        point("Scope", t("paths of one `@stable` field; a frame with paths called inside another such function is not composed; `!==` of typed arrays, which may share a buffer, is refused.")),
+      ], 24),
     ], [46, 54]),
   }),
   slide("frame-cost", {
@@ -167,15 +168,17 @@ const slides: Slide[] = [
       para(t("One class stays checked (" + "observed" + " under Node): a line range kept from a longer text, materialized on a shorter one, reads past a segment’s graphemes; original pretext returns wrong text, or `NaN` offsets in rich inline text. No annotation makes it safe; the code needs an index check."), 25),
   }),
   slide("remains", {
-    label: "Remaining obligations", note: t("chain 1’s remaining sites · the capabilities ") + proposed,
+    label: "Remaining obligations", note: t("chain 1’s remaining sites, observed with `measureAnalysis`’s annotations · the capabilities ") + proposed,
     title: "What the remaining reads of chain 1 need", gap: 22,
     body: table(["Capability needed", "Where chain 1 needs it"], [
-      [t("an effect bounded by what an argument reaches along `@stable` fields, framed at the caller by separation"), t("`readScriptRuns` splices `runs.openBrackets`, so its callers change any store and keep no length: `measureAnalysis` (33 sites) and its helpers")],
+      [t("facts kept across `??=` before a call whose precondition needs them"), t("`measureAnalysis`’s calls after a cache `??=`")],
+      [t("element separation, `apart(a, b)`: guarded element writes into arrays that may alias drop length facts"), t("`measureAnalysis`’s guarded writes; `addKanaKerning`, `addIdeographicSpaceHangs`")],
+      [t("a relation between `starts`’ values and a typed array’s length, and implications in clauses"), t("`getFollowingSpaceTail`, `getJoinedNarrowing`")],
       [t("string lengths of `replace` and `slice` results: library contracts, an assumption about the standard library for the owner to decide (") + trusted + ")", t("`mapSourceLineBreaks` (11 sites) and `segmentAtLineBreaks`’ break reads, which need `breaks.length >= normalized.length + 1`")],
       [t("a string’s element read below its length, typed as a string"), t("`normalized[i]!` (2 sites)")],
       ["correlations the producer does not track: a nullable result tied to another value", "reads whose presence follows from another value’s test"],
     ], [52, 48]) +
-      para(t("The first is a frame condition: a call that changes an array reached through fixed fields of its argument leaves unchanged every location the caller knows to be apart from that path, so the caller keeps those lengths across the call."), 25),
+      para(t("The frame for `readScriptRuns`’ splice of `runs.openBrackets` exists (the frame slide); these are what the sites need beyond it."), 25),
   }),
   statement("moral", {
     label: "The takeaway",
