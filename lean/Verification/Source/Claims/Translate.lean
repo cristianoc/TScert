@@ -41,7 +41,13 @@ def refine (heads : Array Draft) (previous : Array Nat)
   for i in [0:heads.size] do
     let d := heads[i]!
     let at_ (h : Nat) : Nat := previous[h]?.getD heads.size
-    let body := d.body.map fun b => b.map (mapTree at_) (canonUnion ∘ List.map (mapTree at_))
+    let body := d.body.map fun b =>
+      let mapped := b.map (mapTree at_) (canonUnion ∘ List.map (mapTree at_))
+      -- A row's clauses form a union. Head allocation can change their
+      -- order without changing the equation they describe.
+      match mapped with
+      | .clauses cs => GraphRow.clauses (cs.mergeSort fun a b => compare (toJson a).compress (toJson b).compress != Ordering.gt)
+      | other => other
     let key := toJson (d.kinds, d.binders.map (·.kind), previous[i]!, body)
     let cls := (keys.get? key).getD keys.size
     keys := keys.insert key cls
@@ -279,6 +285,18 @@ structure UnionImages where
   anchored : Std.HashMap (List Tree) (List Tree)
   orders : Std.HashMap (List Tree) (List Tree)
 
+/-- Preserve concatenation of anchored unions, such as a dictionary read's
+value contract followed by its undefined alternative. Each longest anchored
+prefix is written in the document's order. -/
+partial def UnionImages.parts (unions : UnionImages) (pairs : List (Tree × Tree)) : List Tree := Id.run do
+  for n in (List.range (pairs.length + 1)).reverse do
+    if n < 2 then continue
+    if let some written := unions.anchored.get? ((pairs.take n).map Prod.fst) then
+      return written ++ unions.parts (pairs.drop n)
+  match pairs with
+  | [] => return []
+  | (_, moved) :: rest => return moved :: unions.parts rest
+
 /-- Relocate only typed labels, marked by the wire encoder. -/
 partial def relocate (unions : UnionImages) (j : Json) : Json :=
   let marked (j : Json) : Option (Json × Json) := do
@@ -299,7 +317,9 @@ partial def relocate (unions : UnionImages) (j : Json) : Json :=
           if kept.any (fun q => q.2 == p.2 && q.1 != p.1) then kept else kept ++ [p]) []).map (·.2)
         let original := trees.map (·.1)
         let written := (unions.anchored.get? original).getD (
-          if merged.eraseDups.length != merged.length || canonUnion original != original then merged
+          if merged.eraseDups.length != merged.length then merged
+          else if canonUnion original != original then
+            if merged.length == trees.length then unions.parts trees else merged
           else (unions.orders.get? (canonUnion merged)).getD (canonUnion merged))
         return toJson written
       | none => Json.arr (xs.map (relocate unions))
@@ -572,7 +592,7 @@ def readLine (line : Json) : Except String (String × Json × Option (Array Equa
 the document's own evidence checked as written (`unitVerdict`); a slice's
 line written over the document's store first (`Translate.translate`), its
 unit's anchors paired with the group's in the document (`FilePlans.anchors`),
-and checked at the evidence so written. Also the unchanged target store. -/
+and checked at the evidence so written, returning the refinement cache. -/
 def lineVerdict (f : FilePlans) (budget : PositiveCertificates.SearchBudget) (target : Translate.Target)
     (unit : String) (evidence : Json) :
     Option (Array EquationLowering.Draft × Json) → Except String (List String) × Translate.Target
@@ -583,11 +603,12 @@ def lineVerdict (f : FilePlans) (budget : PositiveCertificates.SearchBudget) (ta
     (r.1 >>= unitVerdict f budget unit, r.2)
 
 /-- The operation used for a decoded CLI unit line, including relocation
-against this file's own store. -/
+with the shared translation target. -/
 def checkedUnit (f : FilePlans) (budget : PositiveCertificates.SearchBudget)
-    (unit : String) (evidence : Json) (slice : Option (Array EquationLowering.Draft × Json)) :
-    Except String (List String) :=
-  (lineVerdict f budget (Translate.Target.of f.F.store.heads) unit evidence slice).1
+    (target : Translate.Target) (unit : String) (evidence : Json)
+    (slice : Option (Array EquationLowering.Draft × Json)) :
+    Except String (List String) × Translate.Target :=
+  lineVerdict f budget target unit evidence slice
 
 /-- An accepted line's unit is safe at the evidence its verdict checked:
 the line's own, or its translation. -/
@@ -645,11 +666,11 @@ def moduleLineVerdict (m : ModuleRun) (budget : PositiveCertificates.SearchBudge
 
 /-- What the CLI checks of a unit: a group of a file, by the file's document,
 claims and key, the unit's identity, the evidence its line gives and, for a
-slice's line, the slice's heads and anchors (`--check-units`); or a module
+slice's line, the slice's heads and anchors and the current translation target (`--check-units`); or a module
 run, by its wire form, and its evidence (`--check-module`). -/
 inductive UnitInput where
   | file (ast claims : Json) (fileKey unit : String) (evidence : Json)
-      (slice : Option (Array EquationLowering.Draft × Json))
+      (slice : Option (Array EquationLowering.Draft × Json)) (target : Translate.Target)
   | module (run evidence : Json)
 
 /-- The exact CLI condition for a unit's accepted verdict: a group's, the
@@ -657,16 +678,16 @@ file's one front (`filePlans`) and its line's verdict there (`lineVerdict`),
 through `checkedUnit`; a module run's decoding (`ModuleRun.decode`) and
 relocation followed by its document's check (`moduleLineVerdict`). -/
 def UnitInput.Accepted (budget : PositiveCertificates.SearchBudget) : UnitInput → Prop
-  | .file ast claims fileKey unit evidence slice =>
+  | .file ast claims fileKey unit evidence slice target =>
     ∃ f deps, filePlans ast claims fileKey budget = .ok f ∧
-      checkedUnit f budget unit evidence slice = .ok deps
+      (checkedUnit f budget target unit evidence slice).1 = .ok deps
   | .module run evidence => ∃ m, ModuleRun.decode run = .ok m ∧ moduleLineVerdict m budget evidence = .ok ()
 
 /-- What an accepted unit gives: a group's `UnitSafe` over its file's front,
 at the evidence its verdict checked; a module run's `DocumentSafe` of its
 restricted document. -/
 def UnitInput.Safe (budget : PositiveCertificates.SearchBudget) : UnitInput → Prop
-  | .file ast claims fileKey unit _ _ =>
+  | .file ast claims fileKey unit _ _ _ =>
     ∃ f e, filePlans ast claims fileKey budget = .ok f ∧ UnitSafe f budget unit e
   | .module run _ => ∃ m e, ModuleRun.decode run = .ok m ∧
     DocumentSafe m.ast m.claims m.location e budget m.qualified
@@ -680,7 +701,7 @@ module run, its restricted document's plans checked at its evidence. -/
 theorem checkUnitJson_safe {budget : PositiveCertificates.SearchBudget} {i : UnitInput}
     (h : i.Accepted budget) : i.Safe budget := by
   cases i with
-  | file ast claims fileKey unit evidence slice =>
+  | file ast claims fileKey unit evidence slice target =>
     obtain ⟨f, _, hf, hv⟩ := h
     obtain ⟨e, he⟩ := lineVerdict_safe hv
     exact ⟨f, e, hf, he⟩
