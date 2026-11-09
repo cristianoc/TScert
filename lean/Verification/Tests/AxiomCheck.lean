@@ -4,6 +4,7 @@ import Lean.Compiler.CSimpAttr
 import Verification.Source.Claims.Json
 import Verification.Source.RequestCli
 import Verification.Semantics.ArgumentStoreRegions
+import Verification.Semantics.FootprintNatives
 import Verification.Programs.ArgumentPathTracking
 import Verification.Programs.ArgumentRegionCertificates
 import Verification.Programs.ArgumentStoreSeparation
@@ -15,7 +16,8 @@ the following depends on an axiom other than `propext`, `Classical.choice` and `
 
 - `SourceClaimJson.checkUnitJson_safe`, the acceptance theorem, of which every
   accepted function's and module run's safety is a consequence;
-- the argument-store region composition, framing and stable separation theorems;
+- the regional footprint's transport and composition, cell provenance, and the
+  argument-store region composition, framing and stable separation theorems;
 - each `@[csimp]` lemma of the project's modules the verifier imports
   (`Verification.Source.RequestCli`, what `Main` imports): the compiled
   verifier runs a lemma's right-hand side in place of the definition the
@@ -30,6 +32,14 @@ run_cmd do
       unless standard.contains axiom_ do
         throwError "{decl} depends on the axiom {axiom_}"
   check ``Verification.SourceClaimJson.checkUnitJson_safe
+  check ``Verification.Footprints.transport_sound
+  check ``Verification.Footprints.Post.compose
+  check ``Verification.Footprints.Region.sub_mem
+  check ``Verification.Footprints.CellsFrom.of_post
+  check ``Verification.Footprints.CellsFrom.trans
+  check ``Verification.Footprints.placeAt_cells
+  check ``Verification.Footprints.Arr.Within.cells
+  check ``Verification.Footprints.ArgumentStoreRegionsWithin.iff_post
   check ``Verification.Footprints.ArgumentStoreRegionsWithin.trans
   check ``Verification.Footprints.ArgumentStoreRegionsWithin.frame_length
   check ``Verification.Footprints.ArgumentStoreRegionsWithin.frame_densePrefix

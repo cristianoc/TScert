@@ -215,4 +215,69 @@ theorem StoreApart.stable_frame {Ξ T Q} {fs : List (PropKey × Nat)} {code : Ca
   intro h' u hp
   exact ⟨hp.1, v, s, t, by simp [HeapKnowledge.readPath, hf, hp.2], hs, ht, hne⟩
 
+/-! ## The regions as entries of the regional footprint -/
+
+/-- The region's entry: its selected store's location, at `any`. -/
+def ArgumentStoreRegion.entry (r : ArgumentStoreRegion) : Region × Change :=
+  (.path r.position r.path arrayStoreKey, .any)
+
+theorem ArgumentStoreRegion.mem_entry (r : ArgumentStoreRegion) (ρ : Env) (h : Heap) (l : Nat) :
+    r.entry.1.mem ρ h l = true ↔ r.resolve ρ h = some l := by
+  simp only [ArgumentStoreRegion.entry, Region.mem, ArgumentStoreRegion.resolve]
+  cases HeapKnowledge.readPath h (ρ r.position) r.path <;> simp [storeOf]
+
+/-- **The bridge.** A closed footprint excepting the selected stores is the
+regional footprint of its two classes and each selected store at `any`. -/
+theorem ArgumentStoreRegionsWithin.iff_post {c : Closed} {regions : List ArgumentStoreRegion}
+    {ρ : Env} {entry after : Heap} :
+    ArgumentStoreRegionsWithin c regions ρ entry after ↔
+      Post (c.fp ++ regions.map ArgumentStoreRegion.entry) ρ entry after := by
+  constructor
+  · intro hw
+    refine ⟨hw.1, fun l v hv => ?_⟩
+    have hl := (List.getElem?_eq_some_iff.mp hv).1
+    by_cases hsel : ∀ r ∈ regions, r.resolve ρ entry ≠ some l
+    · obtain ⟨v', hv', hc⟩ := hw.2 l v hsel hv
+      refine ⟨v', hv', ?_⟩
+      rcases (Closed.allowed_iff (ρ := ρ) (v' := v') hv).mpr hc with h | ⟨e, he, hm, hh⟩
+      · exact .inl h
+      · exact .inr ⟨e, List.mem_append_left _ he, hm, hh⟩
+    · obtain ⟨r, hr, hres⟩ : ∃ r ∈ regions, r.resolve ρ entry = some l :=
+        Classical.byContradiction fun hn => hsel fun r hr hres => hn ⟨r, hr, hres⟩
+      have hla : l < after.length := Nat.lt_of_lt_of_le hl hw.1
+      refine ⟨after[l], List.getElem?_eq_getElem hla, .inr
+        ⟨r.entry, List.mem_append_right _ (List.mem_map.mpr ⟨r, hr, rfl⟩),
+          (r.mem_entry ρ entry l).mpr hres, trivial⟩⟩
+  · intro hp
+    refine ⟨hp.1, fun l v hsel hv => ?_⟩
+    obtain ⟨v', hv', ha⟩ := hp.2 l v hv
+    refine ⟨v', hv', (Closed.allowed_iff (ρ := ρ) hv).mp ?_⟩
+    rcases ha with h | ⟨e, he, hm, hh⟩
+    · exact .inl h
+    · rcases List.mem_append.mp he with he | he
+      · exact .inr ⟨e, he, hm, hh⟩
+      · obtain ⟨r, hr, rfl⟩ := List.mem_map.mp he
+        exact absurd ((r.mem_entry ρ entry l).mp hm) (hsel r hr)
+
+/-- A kept store retains its exact length across a regional footprint whose
+selected stores are apart from it (`frame_length` on `Post`). -/
+theorem ArgumentStoreRegion.post_frame_length {c : Closed} {regions : List ArgumentStoreRegion}
+    {ρ : Env} {entry after : Heap} {y : Val} {n : Int}
+    (hp : Post (c.fp ++ regions.map ArgumentStoreRegion.entry) ρ entry after)
+    (ha : ∀ r ∈ regions, StoreApart entry (ρ r.position) r.path y)
+    (hc : c.store = .keep) (hn : HeapKnowledge.lengthOf entry y = some n) :
+    HeapKnowledge.lengthOf after y = some n :=
+  (ArgumentStoreRegionsWithin.iff_post.mpr hp).frame_length ha hc hn
+
+/-- Regional footprints at unchanged selected stores compose (`trans` on
+`Post`). -/
+theorem ArgumentStoreRegion.post_trans {c : Closed} {regions : List ArgumentStoreRegion}
+    {ρ : Env} {entry middle after : Heap}
+    (h₁ : Post (c.fp ++ regions.map ArgumentStoreRegion.entry) ρ entry middle)
+    (h₂ : Post (c.fp ++ regions.map ArgumentStoreRegion.entry) ρ middle after)
+    (hs : ∀ r ∈ regions, r.resolve ρ middle = r.resolve ρ entry) :
+    Post (c.fp ++ regions.map ArgumentStoreRegion.entry) ρ entry after :=
+  ArgumentStoreRegionsWithin.iff_post.mp
+    ((ArgumentStoreRegionsWithin.iff_post.mpr h₁).trans (ArgumentStoreRegionsWithin.iff_post.mpr h₂) hs)
+
 end Verification.Footprints
