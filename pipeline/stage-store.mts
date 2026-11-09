@@ -16,7 +16,8 @@
 //   <root>/uses/<host>.<pid>.<id>            a process's uses: `<ms> <bytes> <item>` lines
 //   <root>/uses/base                         the last eviction pass's items, one line each
 //   <root>/evicting/<host>.<pid>.<id>          present while that process removes snapshots
-//   <root>/eviction/owner                      the running pass or clean: host, process, id
+//   <root>/eviction/<generation>/owner      the running pass or clean: host, process, id
+//   <root>/ownership/{reading,cleaning}/<owner>  ownership lifecycle intents
 import { appendFileSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, renameSync, rmdirSync, rmSync, statSync,
   writeFileSync } from "node:fs";
 import { createHash, randomUUID } from "node:crypto";
@@ -264,13 +265,10 @@ export function pausePublicationForTests(hook: ((directory: string) => void) | n
   beforePublishForTests = hook;
 }
 
-/** In-process test barriers of the eviction lock and of a removal of
- * snapshots: after a stale lock is judged and before it is moved
- * (`takeover`), before a moved lock naming another owner is renamed back
- * (`restore`), before the holder releases its lock (`release`), and after
- * a removal's marker is created, before (`marked`) and after (`reread`) the
- * use logs are read again. */
-export type LockPoint = "claim-building" | "takeover" | "restore" | "release" | "marked" | "reread";
+/** Test barriers before publishing a complete owner (`claim-building`),
+ * after judging a previous generation (`takeover`), before release, after
+ * publishing a collection marker (`ownership-marked`), and before (`marked`) and after (`reread`) a snapshot removal reads use logs. */
+export type LockPoint = "claim-building" | "takeover" | "release" | "ownership-marked" | "marked" | "reread";
 let lockBarrierForTests: ((point: LockPoint) => void) | null = null;
 export function pauseLockForTests(hook: ((point: LockPoint) => void) | null): void {
   lockBarrierForTests = hook;
@@ -335,37 +333,54 @@ export class Store {
     log.recorded.set(item, now);
   }
 
-  /** Claim a key through immutable, numbered owner directories. A completed
-   * or stopped generation admits the next; competing publishers rename to
-   * the same next directory, so only one wins. Generations are never moved
-   * or removed: a delayed contender cannot displace a later owner. */
+  /** Execution and eviction use the same immutable owner generations. */
   claim(stage: string, key: string): (() => void) | "held" {
-    const lock = join(this.root, "running", stage, key);
-    mkdirSync(lock, { recursive: true });
-    const generations = readdirSync(lock).filter((n) => /^(0|[1-9][0-9]*)$/.test(n)).map(Number);
-    const last = generations.reduce((largest, n) => Math.max(largest, n), -1);
-    if (last >= 0) {
-      const previous = join(lock, String(last));
-      const held = this.ownerAt(previous);
-      if (typeof held !== "string" || (!existsSync(join(previous, "done")) && this.running(held))) return "held";
-      lockBarrierForTests?.("takeover");
+    return this.acquire(join(this.root, "running", stage, key), false) ?? "held";
+  }
+
+  /** Publish intent before reading a generation. A collector publishes its
+   * marker before reading these intents: either reader or collector yields. */
+  private ownershipIntent(): (() => void) | null {
+    const path = join(this.root, "ownership", "reading", `${hostname()}.${process.pid}.${randomUUID().slice(0, 8)}`);
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, "");
+    if (this.names("ownership/cleaning").some((name) => this.running(name))) {
+      rmSync(path, { force: true });
+      return null;
     }
-    const owner = `${hostname()} ${process.pid} ${randomUUID().slice(0, 8)}`;
-    const building = this.temporary(`claim-${randomUUID()}`);
-    lockBarrierForTests?.("claim-building");
-    writeFileSync(join(building, "owner"), owner);
-    const next = join(lock, String(last + 1));
+    return () => rmSync(path, { force: true });
+  }
+
+  /** Reclaim complete generation directories only across a quiescent
+   * ownership interval. Active owners and contenders retain their paths. */
+  private collectOwnership(): void {
+    const marker = join(this.root, "ownership", "cleaning", `${hostname()}.${process.pid}.${randomUUID().slice(0, 8)}`);
+    mkdirSync(dirname(marker), { recursive: true });
+    writeFileSync(marker, "");
     try {
-      renameSync(building, next);
-    } catch (error) {
-      rmSync(building, { recursive: true, force: true });
-      if (failedWith(error, "EEXIST", "ENOTEMPTY")) return "held";
-      throw error;
+      lockBarrierForTests?.("ownership-marked");
+      if (this.names("ownership/reading").some((name) => this.running(name))) return;
+      const locks = [join(this.root, "eviction"), ...this.names("running").flatMap((stage) =>
+        this.names(`running/${stage}`).map((key) => join(this.root, "running", stage, key)))];
+      for (const lock of locks) {
+        const generations = this.generations(lock);
+        if (generations.some((n) => {
+          const path = join(lock, String(n)), owner = this.ownerAt(path);
+          return !existsSync(join(path, "done")) && (typeof owner !== "string" || this.running(owner));
+        })) continue;
+        rmSync(lock, { recursive: true, force: true });
+      }
+      for (const part of ["reading", "cleaning"])
+        for (const name of this.names(`ownership/${part}`))
+          if (!this.running(name)) rmSync(join(this.root, "ownership", part, name), { force: true });
+    } finally {
+      rmSync(marker, { force: true });
     }
-    return () => {
-      lockBarrierForTests?.("release");
-      writeFileSync(join(next, "done"), "");
-    };
+  }
+
+  private generations(lock: string): number[] {
+    try { return readdirSync(lock).filter((n) => /^(0|[1-9][0-9]*)$/.test(n)).map(Number); }
+    catch (error) { if (failedWith(error, "ENOENT")) return []; throw error; }
   }
 
   /** The finished result stored for `key` at exactly `input`: the entry is
@@ -600,8 +615,10 @@ export class Store {
   /** Whether a pass is due: no running process holds the lock, and the last
    * pass finished more than `evictionIntervalMs` ago or none has. */
   evictionDue(): boolean {
-    const owner = this.ownerAt(join(this.root, "eviction"));
-    if (typeof owner === "string" && this.running(owner)) return false;
+    const lock = join(this.root, "eviction");
+    const last = this.generations(lock).reduce((a, b) => Math.max(a, b), -1);
+    const owner = this.ownerAt(join(lock, String(last)));
+    if (typeof owner === "string" && !existsSync(join(lock, String(last), "done")) && this.running(owner)) return false;
     try {
       return Date.now() - statSync(join(this.root, "uses", "base")).mtimeMs > evictionIntervalMs;
     } catch (error) {
@@ -609,77 +626,51 @@ export class Store {
       throw error;
     }
   }
-  /** Move the lock at `lock` into this process's temporary directory and
-   * delete it there where it names `expected` (null: no owner file); where
-   * it names another, rename it back, and where a new lock took its place
-   * meanwhile, leave it in the temporary directory, which goes when this
-   * process has stopped. */
-  private moveLock(lock: string, expected: string | null): void {
-    const moved = join(this.root, "tmp", hostname(), `${process.pid}.lock-moved-${randomUUID().slice(0, 8)}`);
-    mkdirSync(dirname(moved), { recursive: true });
-    try {
-      renameSync(lock, moved);
-    } catch (error) {
-      if (failedWith(error, "ENOENT")) return;
-      throw error;
-    }
-    if (this.ownerAt(moved) === expected) {
-      rmSync(moved, { recursive: true, force: true });
-      return;
-    }
-    lockBarrierForTests?.("restore");
-    try {
-      renameSync(moved, lock);
-    } catch (error) {
-      if (!failedWith(error, "EEXIST", "ENOTEMPTY")) throw error;
-    }
-  }
-  /** Acquire the lock directory `lock` for this process and return its
-   * owner (host, process, a random id); null where a running process holds
-   * it and `wait` is false. The lock is built whole with its owner file in
-   * a temporary directory and renamed into place, so a lock present names
-   * its owner. A lock whose owner has stopped, or one without an owner file,
-   * is taken over by `moveLock`, as the holder releases its own. */
-  private acquire(lock: string, wait: boolean): string | null {
-    const owner = `${hostname()} ${process.pid} ${randomUUID().slice(0, 8)}`;
-    mkdirSync(dirname(lock), { recursive: true });
+  /** Publish the next immutable generation; takeover and release never
+   * move another owner's directory. The intent fences lifecycle cleanup. */
+  private acquire(lock: string, wait: boolean): (() => void) | null {
     for (;;) {
-      const building = this.temporary(`lock-${randomUUID().slice(0, 8)}`);
-      writeFileSync(join(building, "owner"), owner);
-      try {
-        renameSync(building, lock);
-        return owner;
-      } catch (error) {
-        rmSync(building, { recursive: true, force: true });
-        if (!failedWith(error, "EEXIST", "ENOTEMPTY")) throw error;
-      }
-      const held = this.ownerAt(lock);
-      if (held === undefined) continue;
-      if (held === null || !this.running(held)) {
-        lockBarrierForTests?.("takeover");
-        this.moveLock(lock, held);
-        continue;
+      const intent = this.ownershipIntent();
+      if (intent !== null) {
+        try {
+          mkdirSync(lock, { recursive: true });
+          const last = this.generations(lock).reduce((a, b) => Math.max(a, b), -1);
+          const previous = join(lock, String(last));
+          const held = this.ownerAt(previous);
+          if (last < 0 || (typeof held === "string" &&
+              (existsSync(join(previous, "done")) || !this.running(held)))) {
+            if (last >= 0) lockBarrierForTests?.("takeover");
+            const owner = `${hostname()} ${process.pid} ${randomUUID().slice(0, 8)}`;
+            const building = this.temporary(`claim-${randomUUID()}`);
+            lockBarrierForTests?.("claim-building");
+            writeFileSync(join(building, "owner"), owner);
+            const next = join(lock, String(last + 1));
+            let published = false;
+            try { renameSync(building, next); published = true; }
+            catch (error) { if (!failedWith(error, "EEXIST", "ENOTEMPTY")) throw error; }
+            finally { if (!published) rmSync(building, { recursive: true, force: true }); }
+            if (published) return () => {
+              let release = this.ownershipIntent();
+              while (release === null) { pause(10); release = this.ownershipIntent(); }
+              try {
+                lockBarrierForTests?.("release");
+                if (this.ownerAt(next) === owner) writeFileSync(join(next, "done"), "");
+              } finally { release(); }
+            };
+          }
+        } finally { intent(); }
       }
       if (!wait) return null;
       pause(200);
     }
   }
-  /** Run `body` holding the store's eviction lock, `eviction/`
-   * (`acquire`); null where a running process holds it and `wait` is
-   * false. The lock keeps passes from repeating each other's work; two
-   * passes at once remove nothing a running process holds either (each
-   * snapshot removal has a marker of its own). */
+
+  /** Execute a pass with the same owner protocol as a stage invocation. */
   private locked<T>(wait: boolean, body: () => T): T | null {
-    const lock = join(this.root, "eviction");
-    mkdirSync(this.root, { recursive: true });
-    const owner = this.acquire(lock, wait);
-    if (owner === null) return null;
-    try {
-      return body();
-    } finally {
-      lockBarrierForTests?.("release");
-      this.moveLock(lock, owner);
-    }
+    const release = this.acquire(join(this.root, "eviction"), wait);
+    if (release === null) return null;
+    try { return body(); }
+    finally { release(); this.collectOwnership(); }
   }
 
   /** Every item the use logs name, with when it was last used and its
@@ -891,6 +882,7 @@ export class Store {
           }
         }
       }
+      this.collectOwnership();
       this.removeStoppedTemporaries();
       this.writeBase(items, stopped);
       return {
@@ -919,6 +911,7 @@ export class Store {
     this.locked(true, () => {
       for (const part of ["entries", "timeouts", "observed"]) rmSync(join(this.root, part), { recursive: true, force: true });
       this.evictSources(this.present("sources"), join(this.root, "tmp", hostname(), `${process.pid}.clean`));
+      this.collectOwnership();
       this.removeStoppedTemporaries();
       const { stopped } = this.readUses();
       rmSync(join(this.root, "uses", "base"), { force: true });
