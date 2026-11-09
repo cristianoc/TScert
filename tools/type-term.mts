@@ -1182,13 +1182,13 @@ export function signatures(scope: TermScope, parameters: readonly ts.ParameterDe
 /** Where `Modifies` may stand: the refusal of any other place. */
 export const WITHIN_PLACE = "`Modifies` states a written signature's effect, at its result annotation only";
 
-/** `Fresh`'s refusal: its certification does not reach the source yet. */
-export const FRESH_PLACE = "`Fresh` states a fresh result, which no source statement reaches yet";
+/** Where `Fresh` may stand: the refusal of any other place. */
+export const FRESH_PLACE = "`Fresh` states a written signature's fresh result, at its result annotation only, or as `Modifies<P, Fresh<T>>`";
 
-/** The call effect a statement gives its signature: its footprint and
- * on-throw flag, no promise, no fresh result, no receiver-store exception. */
+/** The call effect a statement gives its signature: its footprint, on-throw
+ * flag and fresh result, no promise, no receiver-store exception. */
 export const statedEffect = (stated: StatedEffect): Modifies<{ values: "any"; stores: "grow" }, CallEffect> =>
-  (footprintEffect(stated.footprint, { onThrow: stated.onThrow }));
+  (footprintEffect(stated.footprint, { onThrow: stated.onThrow, fresh: stated.fresh }));
 
 /** A result annotation's statement of its signature's frame,
  * `Modifies<P, T>` with `Modifies` the verifier's (SOURCE-ELABORATION.md,
@@ -1205,19 +1205,53 @@ export function statedResult(scope: TermScope, result: TypeNode | undefined, at:
   // which TypeScript reads as `x is T`: the predicate stays the result.
   const predicate = unwrapped && ts.isTypePredicateNode(unwrapped) ? unwrapped : null;
   const node = predicate ? predicate.type && unwrap(predicate.type) : unwrapped;
-  if (!node || !ts.isTypeReferenceNode(node) || !scope.stated?.(node)) return { stated: null, result };
+  if (!node || !ts.isTypeReferenceNode(node)) return { stated: null, result };
+  const modifies = scope.stated?.(node) ?? false;
+  const fresh = !modifies && (scope.fresh?.(node) ?? false);
+  if (!modifies && !fresh) return { stated: null, result };
+  placed(scope, node, at, modifies ? "Modifies" : "Fresh");
+  if (fresh) {
+    if (predicate) return scope.fail(node, "`Fresh` on a guard's promise states nothing: its result is a Boolean");
+    return { stated: { footprint: { value: "any", store: "any" }, onThrow: false, fresh: true }, result: freshResult(scope, node) };
+  }
   const [footprint, type, ...others] = node.typeArguments ?? [];
   if (!footprint || !type || others.length)
     return scope.fail(node, "`Modifies` takes a frame and a result: `Modifies<P, T>`");
+  const frame = statementOf(scope, footprint);
+  // `Modifies<P, Fresh<T>>` is the one order of a frame and a fresh result.
+  const inner = unwrap(type);
+  const withFresh = ts.isTypeReferenceNode(inner) && (scope.fresh?.(inner) ?? false);
+  if (withFresh && predicate)
+    return scope.fail(inner, "`Fresh` on a guard's promise states nothing: its result is a Boolean");
+  const stated = { ...frame, fresh: withFresh };
+  if (stated.footprint.value === "any" && stated.footprint.store === "any" && !stated.fresh)
+    return scope.fail(footprint, "`Modifies` letting every value and every store change states nothing: a throw's heap is as unconstrained by it as a normal return's");
+  return { stated, result: predicate ? result : withFresh && ts.isTypeReferenceNode(inner) ? freshResult(scope, inner) : type };
+}
+
+/** The refusals of a statement's place: on a constructor or a construct
+ * signature, and on an async definition. */
+function placed(scope: TermScope, node: TypeReferenceNode, at: Node | null, what: string): void {
   if (at && (ts.isConstructorDeclaration(at) || ts.isConstructSignatureDeclaration(at) || ts.isConstructorTypeNode(at)))
-    return scope.fail(node, "`Modifies` on a constructor is outside the fragment: its effect is its class's construction");
+    scope.fail(node, `\`${what}\` on a constructor is outside the fragment: its effect is its class's construction`);
   if (at && (ts.isFunctionDeclaration(at) || ts.isMethodDeclaration(at) || ts.isArrowFunction(at) ||
       ts.isFunctionExpression(at)) && at.modifiers?.some(m => m.kind === ts.SyntaxKind.AsyncKeyword))
-    return scope.fail(node, "`Modifies` on an async definition is outside the fragment: its call returns a promise where its body throws, so no frame of its body's normal return is the call's");
-  const stated = statementOf(scope, footprint);
-  if (stated.footprint.value === "any" && stated.footprint.store === "any")
-    return scope.fail(footprint, "`Modifies` letting every value and every store change states nothing: a throw's heap is as unconstrained by it as a normal return's");
-  return { stated, result: predicate ? result : type };
+    scope.fail(node, `\`${what}\` on an async definition is outside the fragment: its call returns a promise where its body throws, so no frame of its body's normal return is the call's`);
+}
+
+/** `T` of `Fresh<T>`, an array type: `E[]`, `readonly E[]`, `Array<E>` or
+ * `ReadonlyArray<E>`. */
+function freshResult(scope: TermScope, node: TypeReferenceNode): Modifies<{ values: "any"; stores: "grow" }, TypeNode> {
+  const [type, ...others] = node.typeArguments ?? [];
+  if (!type || others.length) return scope.fail(node, "`Fresh` takes an array type: `Fresh<T>`");
+  const written = unwrap(type);
+  const operand = ts.isTypeOperatorNode(written) && written.operator === ts.SyntaxKind.ReadonlyKeyword ? unwrap(written.type) : written;
+  const array = ts.isArrayTypeNode(operand) || (ts.isTypeReferenceNode(operand) && ts.isIdentifier(operand.typeName) &&
+    (operand.typeName.text === "Array" || operand.typeName.text === "ReadonlyArray") && operand.typeArguments?.length === 1);
+  if (ts.isTypeReferenceNode(written) && (scope.stated?.(written) || scope.fresh?.(written)))
+    return scope.fail(written, "a frame and a fresh result are written `Modifies<P, Fresh<T>>`");
+  if (!array) return scope.fail(type, "`Fresh` states an array allocated by the call: its type is an array type");
+  return type;
 }
 
 /** A guard's promised type as written, `T` of `x is T`, or of `x is
@@ -1285,7 +1319,7 @@ function statementOf(scope: TermScope, written: TypeNode): Modifies<{ values: "a
     else if (!ts.isIdentifier(member.name) || key === "values" || key === "stores" || key === "onThrow") return scope.fail(member, shape);
     else return scope.fail(member, `\`${key}\` is no key of a frame: a location is a quoted key (\`"x.f"\`, \`"x[*]"\`, \`"x.*"\`), and a module cell is written \`"cell(${key})"\``);
   }
-  return { footprint: { value, store }, onThrow };
+  return { footprint: { value, store }, onThrow, fresh: false };
 }
 
 const literalText = (node: TypeNode): string | null =>

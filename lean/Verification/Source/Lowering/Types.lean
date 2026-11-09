@@ -798,8 +798,8 @@ contributes its tuple's positions or its array's element. A function without
 a rest parameter is code that discards the actuals past its parameters, so it
 also meets its signature extended by a rest of `unknown` elements: the
 further actuals a caller writes may be any values. -/
-def moduleArrow (g : Fragment.Fn) (footprint : Footprints.Closed := .top) (onThrow : Bool := false) :
-    Except String Json := do
+def moduleArrow (g : Fragment.Fn) (footprint : Footprints.Closed := .top) (onThrow : Bool := false)
+    (fresh : Bool := false) : Except String Json := do
   let top := Json.mkObj [("top", toJson true), ("atoms", toJson ([] : List Json))]
   let (receiver, params) := match g.params with
     | p :: ps => if p.name == "this" then (p.ty, ps) else (top, g.params)
@@ -830,9 +830,9 @@ def moduleArrow (g : Fragment.Fn) (footprint : Footprints.Closed := .top) (onThr
   -- Its postcondition too (`Fn.ensures`), which its unit certifies at each
   -- return (`SourceRequests.ensuresResult`).
   let plain : List (String × Json) :=
-    if footprint = .top ∧ onThrow = false ∧ g.requires.isEmpty ∧ g.ensures.isEmpty then [] else
+    if footprint = .top ∧ onThrow = false ∧ fresh = false ∧ g.requires.isEmpty ∧ g.ensures.isEmpty then [] else
       [("effect", toJson ({ CallEffects.Effect.ofFootprint footprint with
-        onThrow := onThrow, pre := g.requires, ensures := g.ensures } : CallEffects.Effect))]
+        onThrow := onThrow, fresh := fresh, pre := g.requires, ensures := g.ensures } : CallEffects.Effect))]
   let extra := promised.map (fun (result, effect) => Json.mkObj (signature rest result effect)) ++
     if params.any (·.rest) then []
     else ((g.ret, plain) :: promised).map fun (result, effect) => Json.mkObj (signature [("rest", top)] result effect)

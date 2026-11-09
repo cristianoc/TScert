@@ -645,7 +645,8 @@ def SourceRequest.over (F : Frozen) (r : SourceRequest EquationStore.State Tree)
     return body
   return { toRequest := request, sourceScheme, qualification, obligations := obligations, sourceMap := r.sourceMap,
            assertions := r.assertions, cuts := r.cuts, hints := hints, codeSources := r.codeSources,
-           nodePlans := nodePlans, footprint := r.footprint, onThrow := r.onThrow, ensures := r.ensures,
+           nodePlans := nodePlans, footprint := r.footprint, onThrow := r.onThrow, fresh := r.fresh,
+           ensures := r.ensures,
            async := r.async, stated := r.stated }
 
 end

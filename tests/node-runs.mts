@@ -2770,7 +2770,7 @@ for (const call of [`members(new Gate(), ["a", ""])`, "instances([1, -1])", `res
 // A statement (`Modifies<P, T>`) a body does not meet: each popping method,
 // declaration, override, look-alike, written field, static method or
 // substituted dependency leaves a hole in the mapped array; a popping default
-// shortens the array it reads.
+// shortens the array it reads; a fresh result that is the input aliases it.
 for (const [file, call] of [
   ["invalid-method-effect-method", "1 in wrong(new Bump(), [1, 2]) ? \"dense\" : undefined"],
   ["invalid-method-effect-declaration", "1 in wrong([1, 2]) ? \"dense\" : undefined"],
@@ -2785,6 +2785,7 @@ for (const [file, call] of [
   ["invalid-method-effect-default", "(() => { const xs = [1]; bad(xs); return xs.length ? \"kept\" : undefined; })()"],
   ["invalid-method-effect-rest-default", "(() => { const xs = [1]; bad(xs); return xs.length ? \"kept\" : undefined; })()"],
   ["invalid-method-effect-callback-argument", "1 in wrong([1, 2]) ? \"dense\" : undefined"],
+  ["invalid-stated-fresh-input", "alias([1])"],
   ["invalid-compiler-api-visitor-effect",
     "1 in wrong([{ forEachChild: (v) => v() }, { forEachChild: (v) => v() }]) ? \"dense\" : undefined"],
 ]) assert.equal(runExample(file, call), undefined, `${file}: the statement is not met`);
