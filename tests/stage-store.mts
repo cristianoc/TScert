@@ -12,7 +12,7 @@ import { chmodSync, closeSync, copyFileSync, existsSync, lstatSync, mkdirSync, o
   symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { hostname, platform } from "node:os";
-import { basename, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { runDirectory } from "../pipeline/run-directory.mts";
 import { Store, StoreError, pausePublicationForTests, pauseLockForTests, type StoredResult } from "../pipeline/stage-store.mts";
 import { claimWaitMs, invokeProcess, readInvocationLog, Recorder, startEviction, type Invoked } from "../pipeline/stages.mts";
@@ -1092,69 +1092,31 @@ sections.push((async (): Promise<void> => {
   assert.notEqual(storeOp(store, "snapshot", "a use during a removal").trim(), "null");
 }
 {
-  // The eviction lock: a lock is built whole and renamed into place, so one
-  // present names its owner; a running owner's lock stops a pass, a stopped
-  // owner's lock and a lock without an owner are taken over, and an
-  // interrupted acquisition leaves a temporary the pass removes.
+  // Eviction and execution share immutable generations and their lifecycle.
   const store = new Store(join(dir, "evict-lock"));
   storeOp(store, "publish", "locked entry");
   const lock = join(store.root, "eviction");
-  const placeLock = (owner: string | null): void => {
-    rmSync(lock, { recursive: true, force: true });
-    mkdirSync(lock);
-    writeFileSync(join(lock, owner === null ? "partial" : "owner"), owner ?? "");
+  const placeLock = (owner: string): void => {
+    mkdirSync(join(lock, "0"), { recursive: true });
+    writeFileSync(join(lock, "0", "owner"), owner);
   };
   placeLock(`${hostname()} ${process.pid} ${randomUUID().slice(0, 8)}`);
-  assert.equal(store.evictionPass(0), null, "a running owner's lock stops a pass");
+  assert.equal(store.evictionPass(0), null, "a running owner stops a pass");
   assert.equal(store.evictionDue(), false);
-  const interrupted = join(store.root, "tmp", hostname(), `${stoppedPid()}.lock-0000`);
-  mkdirSync(interrupted, { recursive: true });
   placeLock(`${hostname()} ${stoppedPid()} ${randomUUID().slice(0, 8)}`);
-  assert.equal(store.evictionPass(0)?.evicted.entries, 1, "a stopped owner's lock is taken over");
-  assert.ok(!existsSync(lock) && !existsSync(interrupted), "the pass leaves no lock and no stopped temporary");
-  placeLock(null);
-  assert.ok(store.evictionPass(0), "a lock without an owner is taken over");
-  // Another process takes the stale lock over between this pass's judgment
-  // and its move: the pass finds the new owner, puts its lock back and
-  // stops.
-  const named = (): string => `${hostname()} ${process.pid} ${randomUUID().slice(0, 8)}`;
-  const other = named();
+  assert.equal(store.evictionPass(0)?.evicted.entries, 1);
+  assert.ok(!existsSync(lock), "completed eviction generations are reclaimed");
   placeLock(`${hostname()} ${stoppedPid()} ${randomUUID().slice(0, 8)}`);
   pauseLockForTests((point) => {
     if (point !== "takeover") return;
     pauseLockForTests(null);
-    placeLock(other);
+    assert.ok(store.evictionPass(0));
+    assert.ok(existsSync(lock), "the delayed contender fences reclamation");
   });
-  assert.equal(store.evictionPass(0), null);
-  assert.equal(readFileSync(join(lock, "owner"), "utf8"), other, "the other process keeps its lock");
-  // A third process acquires the lock while the pass is putting the second's
-  // back: the third keeps it, and the second's stays in the pass's
-  // temporary directory, deleted by no one while the pass runs.
-  const third = named();
-  placeLock(`${hostname()} ${stoppedPid()} ${randomUUID().slice(0, 8)}`);
-  pauseLockForTests((point) => {
-    if (point === "takeover") placeLock(other);
-    if (point === "restore") {
-      pauseLockForTests(null);
-      placeLock(third);
-    }
-  });
-  assert.equal(store.evictionPass(0), null);
-  assert.equal(readFileSync(join(lock, "owner"), "utf8"), third, "the third process keeps its lock");
-  const temporaries = join(store.root, "tmp", hostname());
-  assert.ok(readdirSync(temporaries).some((name) => name.includes(".lock-moved-") &&
-    readFileSync(join(temporaries, name, "owner"), "utf8") === other), "the second's lock is moved aside, not deleted");
-  // The holder's lock replaced before its release (its owner judged
-  // stopped): the release leaves the replacement in place.
-  rmSync(lock, { recursive: true });
-  pauseLockForTests((point) => {
-    if (point !== "release") return;
-    pauseLockForTests(null);
-    placeLock(other);
-  });
+  assert.equal(store.evictionPass(0), null, "the delayed contender cannot publish the winner's generation");
   assert.ok(store.evictionPass(0));
-  assert.equal(readFileSync(join(lock, "owner"), "utf8"), other, "a release removes only its own lock");
-  rmSync(lock, { recursive: true });
+  assert.ok(!existsSync(lock));
+
 }
 {
   // Publication is complete; a delayed contender cannot move another
@@ -1196,6 +1158,41 @@ sections.push((async (): Promise<void> => {
   const recovered = store.claim("lower", "e".repeat(64));
   assert.ok(recovered !== "held", "a stopped owner admits the next generation");
   recovered();
+  assert.ok(store.evictionPass(0));
+  assert.ok(!existsSync(stopped), "eviction reclaims stopped and completed claim generations");
+  assert.ok(existsSync(root), "an active owner survives eviction");
+  store.clean();
+  assert.ok(existsSync(root), "an active owner survives clean");
+  assert.ok(competing !== "held");
+  const finish = (release: (() => void) | "held"): void => { assert.ok(release !== "held"); release(); };
+  finish(competing);
+  store.clean();
+  assert.ok(!existsSync(root), "clean reclaims completed claim generations");
+  const reused = store.claim("lower", key);
+  assert.ok(reused !== "held");
+  first();
+  assert.equal(store.claim("lower", key), "held", "an old release cannot release a reused generation number");
+  reused();
+  pauseLockForTests((point) => {
+    if (point !== "takeover") return;
+    pauseLockForTests(null);
+    store.clean();
+    assert.ok(existsSync(root), "a contender's intent protects its generation across clean");
+  });
+  const afterClean = store.claim("lower", key);
+  assert.ok(afterClean !== "held");
+  afterClean();
+  pauseLockForTests((point) => {
+    if (point !== "ownership-marked") return;
+    pauseLockForTests(null);
+    assert.equal(store.claim("lower", key), "held", "a collector's marker fences a new contender");
+  });
+  const abandoned = join(store.root, "ownership", "reading", `${hostname()}.${stoppedPid()}.abcdef09`);
+  mkdirSync(dirname(abandoned), { recursive: true });
+  writeFileSync(abandoned, "");
+  store.clean();
+  assert.ok(!existsSync(root));
+  assert.ok(!existsSync(abandoned), "a stopped contender's intent is reclaimed");
 }
 
 {
@@ -1257,13 +1254,13 @@ sections.push((async (): Promise<void> => {
   utimesSync(marker, old, old);
   assert.equal(storeOp(store, "snapshot", "a use beside another host's marker").trim(), "null");
   const lock = join(store.root, "eviction");
-  mkdirSync(lock);
-  writeFileSync(join(lock, "owner"), `${remote} 4242 abcdef03`);
+  mkdirSync(join(lock, "0"), { recursive: true });
+  writeFileSync(join(lock, "0", "owner"), `${remote} 4242 abcdef03`);
   utimesSync(lock, old, old);
   assert.equal(store.evictionPass(0), null, "another host's lock stops a pass");
   store.clean([remote]);
   assert.ok(![snapshot, log, marker, lock].some(existsSync), "a clean forgetting the host removes them");
-  process.stdout.write("eviction: the lock is taken over, restored and released by its owner's id, through " +
+  process.stdout.write("eviction: immutable generations protect takeover and release, and cleanup protects active contenders, through " +
     "concurrent takeovers; a use before a removal's second read keeps its snapshot; another host's owners " +
     "run until a clean forgets the host\n");
 }

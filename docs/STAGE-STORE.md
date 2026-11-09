@@ -804,10 +804,12 @@ Before executing a replay-eligible key, a process claims it through
 directory is built with its owner file before atomic publication. A
 completed generation has a `done` marker; a completed or stopped owner
 admits the next generation. Competing contenders publish to the same next
-number, so only one wins. Generations remain in place: neither takeover nor
-release can remove a later owner's claim. Interrupted preparation leaves
-only an unpublished temporary directory. Claim metadata is retained under
-`running/` and is outside the entry eviction budget.
+number, so only one wins. Takeover and release leave later owners' claims
+in place. Interrupted preparation leaves an unpublished temporary directory.
+Execution claims and eviction use the same acquisition mechanism (`Store.acquire`).
+Eviction and clean reclaim a key's generations once every owner is completed
+or stopped and no contender holds an ownership intent. Claim metadata is
+reclaimed on every pass, independently of the entry budget.
 
 A waiter checks every 50 ms for a finished entry or timeout observation,
 or an available claim. After twice its stage limit (`claimWaitMs`) it
@@ -910,9 +912,9 @@ no use line names measured, references going with their entry, a held
 snapshot kept, a snapshot's use during a removal doing without the store's
 snapshot, markers per process, a use before a removal's second read of the
 use logs keeping its snapshot and one after it doing without, the lock
-taken over from a stopped or missing owner and never from a running one
-(also when another process takes it over first, or acquires it while it
-is being put back), a release removing only its own lock, another host's
+taken over from a stopped or completed owner and never from a running one,
+a delayed contender retaining its generations across collection, a repeated
+release leaving a reused generation's owner intact, another host's
 owners running until a clean forgets the host, each timeout observation an
 item, a replay racing
 passes a miss or the entry's own result, and a pass an orchestrator starts
@@ -1044,19 +1046,17 @@ another host counts as running until a clean names that host as forgotten
 (`make clean-store FORGET_HOST=<host>`); until then its holds stay, its
 marker keeps uses off the store's snapshots and its lock stops passes.
 
-*The lock.* A pass holds the store's eviction lock, the directory
-`eviction/` holding its owner's name. The directory is built whole in a
-temporary directory and renamed into place, so a lock present names its
-owner. A lock whose owner has stopped, or one without an owner, is taken
-over: renamed into the taker's temporary directory and deleted there where
-it still names the owner judged stopped (or still has none); otherwise it is
-renamed back, and where another lock took its place meanwhile, it stays in
-that temporary directory, which goes once the taker has stopped. The holder
-releases its lock the same way, deleting it only where it names its own
-id. The lock keeps passes from repeating each other's work; two passes at once remove
-nothing a running process holds either, since each removal of snapshots has
-a marker of its own and every other removal is a rename a reader sees
-whole.
+*The lock.* A pass acquires `eviction/<generation>/owner` through the same
+immutable generations as execution claims. An acquisition publishes an intent
+under `ownership/reading/` before reading generations and checks for collection
+markers under `ownership/cleaning/`. A collector publishes its marker before
+checking the intents. Either the contender yields or collection leaves all
+generations in place. Active owners also retain their key's generations.
+Release checks its owner identity under an intent, so a delayed release cannot
+finish a later owner after reclamation reuses a generation number. The pass
+collects completed ownership records after releasing its own generation.
+Markers and intents name host, process and random id, with the same stopped-host
+policy as other store owners.
 
 *A pass.* It reads the
 pass summary (`uses/base`, one line per item, written by the previous
