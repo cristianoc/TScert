@@ -4,7 +4,7 @@ import Verification.Semantics.Linear
 
 /-! Index facts: what a slot holds as an array index, a length, a bound by a
 store's length, a safe integer or a linear fact (PROGRAM-TYPING.md, "Writes at
-a checked index" and "Linear facts"). Heap knowledge carries them as atoms
+a checked index"; ARITHMETIC.md, "Linear facts"). Heap knowledge carries them as atoms
 (`HeapKnowledge.IndexAtom`); a signature states its precondition with them
 (`CallEffects.Effect.pre`). -/
 namespace Verification.HeapKnowledge
@@ -36,7 +36,7 @@ inductive Term.Kind where
   | strLength
   deriving DecidableEq, Repr, Hashable
 
-/-- A term of a linear fact (PROGRAM-TYPING.md, "Linear facts"): a root slot,
+/-- A term of a linear fact (ARITHMETIC.md, "Linear facts"): a root slot,
 a path of named data fields read in turn from the value it holds, and what
 the term reads of the value the path ends at (`Term.Kind`): the safe integer
 it is; the length of its array store, as the calculus's `lenOf` gives it
@@ -155,7 +155,7 @@ theorem readPath_extend {h : Heap} (vs : List Val) :
       · cases hw
     | _ => simp [readPath] at hw
 
-/-- What a guard compares the value a path reads with (PROGRAM-TYPING.md,
+/-- What a guard compares the value a path reads with (ARITHMETIC.md,
 "Guarded clauses"): `null` or `undefined`. -/
 inductive GuardTag where
   | null
@@ -527,7 +527,7 @@ theorem holdsAt_extend {val val' : V → Option Int} {F : LinearClause V}
 
 end LinearClause
 
-/-- A variable of the body of a quantified clause (PROGRAM-TYPING.md,
+/-- A variable of the body of a quantified clause (ARITHMETIC.md,
 "Quantified clauses"): the bound index, the element at it, or a term. -/
 inductive Bound where
   | index
@@ -690,13 +690,13 @@ holds (`length`); the slot `k` holds an array index at most that length
 (`bound`), below it where `strict`; the slot `k` holds a safe integer (`int`);
 the slot `k` holds the double `2^53`, past the safe integers (`pastSafe`);
 the slots of a linear
-fact denote integers meeting it (`linear`, PROGRAM-TYPING.md, "Linear
+fact denote integers meeting it (`linear`, ARITHMETIC.md, "Linear
 facts"), its terms (`Term`) rooted at slots. `index`, `int` and a linear fact
 of slots' values read no heap; the others read the locations their terms or
-the array's store field read. A guarded fact (`guarded`, PROGRAM-TYPING.md,
+the array's store field read. A guarded fact (`guarded`, ARITHMETIC.md,
 "Guarded clauses") holds where the path `path` from the slot `slot` reads a
 value (`readGuard`) that is the tag's, or its body holds. An element fact
-(`element`, PROGRAM-TYPING.md, "Quantified clauses") states that the slot
+(`element`, ARITHMETIC.md, "Quantified clauses") states that the slot
 `value` holds what the store of the array in slot `array` holds at the index
 the slot `index` holds, below its length: the present element's value, or
 `undefined` at a hole. A quantified fact (`every`) states, of the array the
@@ -1135,7 +1135,7 @@ theorem toIndexFact_holds {F : LinearClause Term} {ρ : Env} {h : Heap} :
 end LinearClause
 
 
-/-! ## Facts a heap change keeps (PROGRAM-TYPING.md, "Linear facts")
+/-! ## Facts a heap change keeps (ARITHMETIC.md, "Linear facts")
 
 A change is described by what a location held before it: an object, a
 number, an array store. A term reads locations of known contents, its path's

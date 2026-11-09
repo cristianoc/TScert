@@ -104,7 +104,7 @@ value was saved (a write clears the saved aliases, `executePlanTail`). -/
   | (i, .value) | (i, .slot _) => return i
   | (_, .cell ..) | (_, .early ..) => none
 
-/-- Where a linear fact's term rooted at a binding reads (PROGRAM-TYPING.md,
+/-- Where a linear fact's term rooted at a binding reads (ARITHMETIC.md,
 "Terms for bindings held in cells"): a value or a slot at its own slot; a
 cell at its slot, its contents' field `value` first. An early binding, whose
 cell may hold the uninitialized marker, roots none. -/

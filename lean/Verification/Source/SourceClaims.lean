@@ -9,7 +9,7 @@ open ProgramTyping LabelStore
 
 abbrev Candidate (ι : Type) := Except String (Ty ι)
 
-/-- A variable of a proposed quantified fact's body (PROGRAM-TYPING.md,
+/-- A variable of a proposed quantified fact's body (ARITHMETIC.md,
 "Quantified clauses"): the index, the element at it, or a term rooted at a
 value binding's name, its path the named fields read from it in turn. -/
 inductive BodyRef where
@@ -46,7 +46,7 @@ structure PointData (ι : Type) where
   and an index binding's. -/
   entryBounds : List (Nat × List (String × String × Bool)) := []
   /-- At a statement entry, the linear facts the producer proposes: its
-  guards, each a value binding's name, a path and a tag (PROGRAM-TYPING.md,
+  guards, each a value binding's name, a path and a tag (ARITHMETIC.md,
   "Guarded clauses"), then terms of value bindings' names with integer
   coefficients, and a bound. -/
   entryFacts : List (Nat × List ClauseClaim) := []

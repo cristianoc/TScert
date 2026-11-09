@@ -233,7 +233,7 @@ let statements callbacks flow_graph register_following owner_span env0 ss =
       let env=if node.Flow.id=graph.Flow.entry then
         match graph.Flow.prologue with None -> env | Some plan -> callbacks.execute_bindings env plan
         else env in
-      (* A loop's invariant (PROGRAM-TYPING.md, "Loop invariants"): its facts
+      (* A loop's invariant (ARITHMETIC.md, "Loop invariants"): its facts
          hold at the head, which every edge into it establishes (Lean's
          head assertion), over the bindings its positions name. *)
       let env = match node.action with

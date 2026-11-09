@@ -92,7 +92,7 @@ the array the fields `path` read from the value binding `name` give, the term
 `{"term": {"ref": {name, path, term}}}`, and a safe-integer coefficient: for
 every index below the bound, each body fact holds of the index, the element
 at it and the terms, which the entry's knowledge states and every edge into
-it checks ([quantified clauses](PROGRAM-TYPING.md#quantified-clauses)).
+it checks ([quantified clauses](ARITHMETIC.md#quantified-clauses)).
 Entry `facts` is a list, possibly empty, of `{terms,bound}`, `terms` a list of
 `{name, path, term, coefficient}`, each naming a value binding of the entry,
 the named data fields `path` read from it in turn (empty for the binding's
@@ -101,7 +101,7 @@ own value), what `term` reads of the value they end at (`value`, `length` or
 term denotes an integer and the sum of the terms is at most the bound, which
 the entry's knowledge states and every edge into it checks; a fact whose
 coefficients are all zero states only that its terms denote integers
-([linear facts](PROGRAM-TYPING.md#linear-facts)). The producer proposes them
+([linear facts](ARITHMETIC.md#linear-facts)). The producer proposes them
 by a must-analysis of the statement graph: an integer literal or a sum
 of known ranges assigned states an equality, an increment restates the facts
 of the old value, a comparison states each answer's fact on its branch, and

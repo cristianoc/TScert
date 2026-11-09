@@ -515,7 +515,7 @@ let statements (expr:Analysis_state.expression_infer) execute_bindings owner_spa
     | Some (Atoms (_ :: _ as atoms)) -> List.for_all (function Str | StrLit _ -> true | _ -> false) atoms
     | _ -> false);
   (* Whether the path holds an array where it is not `null` or `undefined`:
-     its type's arms but those an array's (PROGRAM-TYPING.md, "Guarded
+     its type's arms but those an array's (ARITHMETIC.md, "Guarded
      clauses"). *)
   Linear_facts.array_unless_nullish := (fun env x path -> match List.assoc_opt x env with
     | Some b when path = [] ->

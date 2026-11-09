@@ -64,12 +64,12 @@ export type ElementWrite = "stores" | "exact";
  * array's store; an index at most that length, below it where `strict`; a
  * safe integer; the double `2^53`, past the safe integers (`pastSafe`); a linear fact `Σ c·t ≤ d` or `≠ d`; a guarded fact, which
  * holds where the named data fields `path` read from the position `slot`
- * give the value `tag` names, or where its body holds (PROGRAM-TYPING.md,
+ * give the value `tag` names, or where its body holds (ARITHMETIC.md,
  * "Guarded clauses"); the value at position `value` is what the array at
  * `array` holds at the index at `index`, below its length (`element`); for
  * every index `i` with `0 ≤ i < stop` of the array the path `path` reads from
  * the position `slot`, each body fact holds of `i`, the element at it and its
- * terms (`every`, PROGRAM-TYPING.md, "Quantified clauses"). */
+ * terms (`every`, ARITHMETIC.md, "Quantified clauses"). */
 export type IndexFact =
   | { readonly index: { readonly slot: number } }
   | { readonly length: { readonly array: number; readonly length: number } }

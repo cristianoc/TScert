@@ -1859,7 +1859,7 @@ assumption, [trust surface](DESIGN.md#trust-surface)), so its typed-array
 length never changes: the model's view owns the key $`[[\mathrm{viewLength}]]`$
 (`Calculus.viewLengthKey`), whose location, which no other object's field or
 store shares, holds that length, the linear term $`\mathrm{view}(b)`$
-([linear facts](PROGRAM-TYPING.md#linear-facts)). `%ByteLength%`'s
+([linear facts](ARITHMETIC.md#linear-facts)). `%ByteLength%`'s
 postcondition states its result that length, and `%ByteAt%` has a second signature, a read at a safe
 integer below it, whose result is the element, a number, and the element
 the view's element store holds at that index (`IndexFact.element`):
@@ -1870,7 +1870,7 @@ the view's element store holds at that index (`IndexFact.element`):
 \%\mathrm{ByteAt}\%\colon(\mathit{Uint8Array},\ \mathtt{number})\Rightarrow_\emptyset^{\ \mathrm{int}(2),\ 0\le 2,\ 2\le\mathrm{view}(1)-1;\ \mathsf{ensures}\ \mathrm{element}(0,2,3)}\mathtt{number}
 ```
 
-at the positions of a [postcondition](PROGRAM-TYPING.md#postconditions)
+at the positions of a [postcondition](ARITHMETIC.md#postconditions)
 and of a precondition: the view is `%ByteLength%`'s first actual, position
 `2` of its return, and `%ByteAt%`'s position `1`. A safe integer $`k`$ with
 $`0\le k<\mathrm{view}(b)`$ is a valid integer index (IsValidIntegerIndex:
@@ -3130,7 +3130,7 @@ are the postconditions of the existing signatures with `keep` and `grow`
 store footprints, respectively; unrestricted callbacks state neither
 relation ([ECMA-262](REFERENCES.md#ecma-262), `Array.prototype.map`; audited).
 Each is consumed by the proved
-[call-ensures rule](PROGRAM-TYPING.md#postconditions). The density contract
+[call-ensures rule](ARITHMETIC.md#postconditions). The density contract
 continues to depend on the receiver and callback as the
 [native footprints](#native-footprints) specify.
 
@@ -3145,7 +3145,7 @@ the array contract, so the receiver retains that length throughout the
 search. An unsuccessful search, including one of an empty array, returns
 $`-1`$ ([ECMA-262](REFERENCES.md#ecma-262), `Array.prototype.indexOf`; audited).
 The postcondition is consumed by the proved
-[call-ensures rule](PROGRAM-TYPING.md#postconditions).
+[call-ensures rule](ARITHMETIC.md#postconditions).
 
 #### `codePointAt` of a string
 
@@ -3803,7 +3803,7 @@ value's evaluation, so a reassignment during that evaluation cannot alter
 the saved length. The fill has no bounds to coerce and the fresh receiver
 cannot be reached by client code; it defines exactly those indices and
 returns that receiver (audited). The
-[call-ensures rule](PROGRAM-TYPING.md#postconditions) proves that the stated
+[call-ensures rule](ARITHMETIC.md#postconditions) proves that the stated
 facts hold in the knowledge after each call.
 
 The form is a restriction ([source fragment](SOURCE-FRAGMENT.md)): the
@@ -4026,7 +4026,7 @@ for `Uint8Array`):
 
 The first form's precondition is at a construction's positions (1 the
 length) and its postcondition at a return's (0 the view, 2 the length;
-[postconditions](PROGRAM-TYPING.md#postconditions)): at a safe integer
+[postconditions](ARITHMETIC.md#postconditions)): at a safe integer
 $`n\ge 0`$, ToIndex returns $`n`$ itself (ToIntegerOrInfinity of an integer
 is the integer, and $`n\le 2^{53}-1`$ is its own ToLength), and
 AllocateTypedArray with that length makes a fresh fixed-length buffer of
@@ -4035,7 +4035,7 @@ length the buffer cannot hold throws a `RangeError`, no normal return. At
 the double $`2^{53}`$, $`\mathrm{past}(1)`$, ToIndex throws a `RangeError`
 ($`2^{53}>2^{53}-1`$), no normal return, so the postcondition holds of every
 normal return; a sum `length + 1` of a string's length is such a value or a
-safe integer ([a sum reaching $`2^{53}`$](PROGRAM-TYPING.md#linear-facts),
+safe integer ([a sum reaching $`2^{53}`$](ARITHMETIC.md#linear-facts),
 `typed-array-length-at-sum`; negative `invalid-typed-array-length-at-sum`,
 run under Node: a read past the last element is `undefined`). At a
 fraction ToIndex truncates (`new Uint8Array(1.5)` has one element under

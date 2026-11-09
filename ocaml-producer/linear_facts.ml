@@ -1,5 +1,5 @@
 (* The linear facts the producer proposes at statement entries
-   (PROGRAM-TYPING.md, "Linear facts"): a must-analysis over safe-integer
+   (ARITHMETIC.md, "Linear facts"): a must-analysis over safe-integer
    bindings, carried in the environment as pseudo-bindings
    (`Environment.fact_key`). Lean checks every proposed fact on every edge
    into an entry, so a fact proposed here is a claim, never an assumption.
@@ -47,7 +47,7 @@ let term_parts t : string * string list * kind =
   | [] -> base,[],kind
 let term_binding t = let b,_,_ = term_parts t in b
 (* The bindings of the body being analysed held in cells, early ones
-   aside (PROGRAM-TYPING.md, "Terms for bindings held in cells"): a term
+   aside (ARITHMETIC.md, "Terms for bindings held in cells"): a term
    rooted at one reads the cell's field `value`, as Lean's lowering roots it
    (`termRoot`). Set by the flow around each body. *)
 let cell_terms : (string -> bool) ref = ref (fun _ -> false)
@@ -153,7 +153,7 @@ let tighten (fs : fact list) : fact list =
   let forms = List.sort_uniq compare (List.map fst fs) in
   List.map (fun t -> t, List.fold_left (fun acc (t',d) -> if t' = t then min acc d else acc) max_int fs) forms
 
-(* A guarded fact (PROGRAM-TYPING.md, "Guarded clauses"; Lean's
+(* A guarded fact (ARITHMETIC.md, "Guarded clauses"; Lean's
    `IndexFact.guarded`): where none of its guards, in order, reads its tag's
    value, its fact holds; a guard a value binding's name, the named data
    fields read from it in turn, and `null` or `undefined`. Held as a fact's
@@ -200,7 +200,7 @@ let dadd env ds = List.filter (fun (n,_) -> not (is_dfact n)) env @
   List.map (fun d -> dfact_key d,Value Semantic.top) (List.sort_uniq compare ds)
 let current_dfacts : dfact list ref = ref []
 
-(* A quantified fact (PROGRAM-TYPING.md, "Quantified clauses"; Lean's
+(* A quantified fact (ARITHMETIC.md, "Quantified clauses"; Lean's
    `IndexFact.every`): for every index below the term `stop` of the array a
    value binding's path reads, each body fact holds, its terms the index
    (`%index`), the element at it (`%elem`) and terms over bindings. Held as
@@ -1074,7 +1074,7 @@ let rec test_conditional_facts env (c : expr) answer : fact list = match c.node 
   | _ -> []
 
 (* The facts after the updates an expression makes of bindings held in
-   cells (PROGRAM-TYPING.md, "Terms for bindings held in cells"): Lean reads
+   cells (ARITHMETIC.md, "Terms for bindings held in cells"): Lean reads
    the cell's `value` into a slot, the old value, computes the new one, and
    writes it back, a number field's write that its read link restates. So
    each updated binding's facts are restated of its old value, the write's
@@ -1466,7 +1466,7 @@ let widen (previous : fact list) (current : fact list) =
     | Some d' -> d <= d'
     | None -> false) (tighten current)
 
-(* Guarded facts across a step (PROGRAM-TYPING.md, "Guarded clauses"), as
+(* Guarded facts across a step (ARITHMETIC.md, "Guarded clauses"), as
    Lean keeps them: a step writing no heap keeps each; one writing it keeps
    those whose guards read slots alone and whose fact the step keeps
    (`IndexFact.keptBy`), here the stable ones or those `ch` keeps. *)
@@ -1662,7 +1662,7 @@ let gstatement ?(bounds=[]) env (fs : fact list) (gs : gfact list) (s : stmt) : 
   | _ -> gs
 
 
-(* Element reads of quantified facts (PROGRAM-TYPING.md, "Quantified
+(* Element reads of quantified facts (ARITHMETIC.md, "Quantified
    clauses"; Lean's `HeapKnowledge.instantiateEvery`): a read `xs[k]` of an
    array or a typed array (`%ElementAt%`, `%ByteAt%`) a quantified fact
    holding where the statement starts names, at an

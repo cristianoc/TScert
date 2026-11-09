@@ -611,7 +611,7 @@ let encode (proposal : Proposal_types.t) =
      derived past them is left out, a weaker claim. *)
   let safe k = abs k <= 9007199254740991 in
   (* A guarded fact (`Linear_facts.gfact_key`) is its fact with its guards
-     (PROGRAM-TYPING.md, "Guarded clauses"). *)
+     (ARITHMETIC.md, "Guarded clauses"). *)
   let rec disjunction = function
     | Linear_facts.DAtom (terms,bound) -> Object ["guards",Array [];"terms",Array (List.map (fun (t,c) ->
         let name,path,kind = Linear_facts.term_parts t in
@@ -633,7 +633,7 @@ let encode (proposal : Proposal_types.t) =
                 "coefficient",Number (string_of_int c)]) terms);
       "bound",Number (string_of_int bound)])
     | _ -> None) bs) in
-  (* A quantified fact (`Linear_facts.efact_key`, PROGRAM-TYPING.md,
+  (* A quantified fact (`Linear_facts.efact_key`, ARITHMETIC.md,
      "Quantified clauses"): its array, its bound and its body, in order. *)
   let term_ref t =
     let name,path,kind = Linear_facts.term_parts t in

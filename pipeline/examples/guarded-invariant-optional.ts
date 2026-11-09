@@ -5,7 +5,7 @@
 // invariant `this.items === undefined || this.items.hyphenWidths === null ||
 // this.items.hyphenWidths.length === this.widths.length` resolves each path
 // past the guards before it: `items` read where it is not `undefined`, its
-// `hyphenWidths` where it is not `null` (PROGRAM-TYPING.md, "Guarded
+// `hyphenWidths` where it is not `null` (ARITHMETIC.md, "Guarded
 // clauses"). The walker's `const hyphenWidths = items === undefined ? null :
 // items.hyphenWidths` states `hyphenWidths === null || hyphenWidths.length
 // === widths.length` on each arm, which the read `hyphenWidths[i]!` under

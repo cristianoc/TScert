@@ -1,4 +1,4 @@
-// A loop invariant (PROGRAM-TYPING.md, "Loop invariants"): `@invariant C`
+// A loop invariant (ARITHMETIC.md, "Loop invariants"): `@invariant C`
 // before a loop states `C` at its head, which every entry to the head
 // establishes and the body may assume. `j <= 2 * i` relates two counters
 // stepping by 2 and by 1, a form no fact of the loop's entry names, so the

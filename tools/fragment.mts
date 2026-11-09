@@ -250,7 +250,7 @@ export type Expr =
      lambda's body is one. */
   | { k: "blockBody"; pos: Span; body: Stmt[] };
 
-/** A loop invariant (`@invariant C` before a loop; PROGRAM-TYPING.md, "Loop
+/** A loop invariant (`@invariant C` before a loop; ARITHMETIC.md, "Loop
  * invariants"): the clause's index facts at positions naming the bindings
  * `names` holds, in scope at the loop's head, where every entry to the head
  * establishes them. */
@@ -404,11 +404,11 @@ export interface FunctionAst {
   stated: StatedEffect | null;
   /** The precondition, its `@requires` clauses elaborated to index
    * facts at the call's positions: 0 the receiver, i + 1 the i-th actual
-   * (`bound-annotations.mts`; PROGRAM-TYPING.md, "Preconditions"). */
+   * (`bound-annotations.mts`; ARITHMETIC.md, "Preconditions"). */
   requires: IndexFact[];
   /** The facts it states of its result, index facts at position 0: the
    * invariants of the record types its result's type names
-   * (`bound-annotations.mts`; PROGRAM-TYPING.md, "Type invariants"). */
+   * (`bound-annotations.mts`; ARITHMETIC.md, "Type invariants"). */
   ensures: IndexFact[];
   completion: Completion;
   body: Stmt[];

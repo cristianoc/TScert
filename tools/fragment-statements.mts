@@ -2192,7 +2192,7 @@ export function functionDecl(this: Gate, node: FunctionDeclaration, signature: F
       else requires = elaborated;
     }
     // The type invariants its parameters' and result's types name
-    // (`@invariant`; PROGRAM-TYPING.md, "Type invariants"), of a function
+    // (`@invariant`; ARITHMETIC.md, "Type invariants"), of a function
     // declaration of the module read at its own signature: each parameter's,
     // `this` at its call position, a conjunct of the precondition, of each
     // parameter that is a plain required name, where it is not async: its
@@ -2284,7 +2284,7 @@ export function postcondition(gate: Gate, clauses: readonly string[], requires: 
   return "refused" in elaborated ? `a postcondition (\`@ensures\`): ${elaborated.refused}` : elaborated.facts;
 }
 
-/** A loop's invariant (`@invariant` in the JSDoc before it; PROGRAM-TYPING.md,
+/** A loop's invariant (`@invariant` in the JSDoc before it; ARITHMETIC.md,
  * "Loop invariants"): its clauses elaborated to index facts at positions, the
  * i-th the i-th name its clauses' paths start at, each a binding in scope at
  * the loop's head named as the fragment names it, its paths read through the type TypeScript gives the
@@ -2314,7 +2314,7 @@ function loopInvariant(gate: Gate, loop: ts.Statement): LoopInvariant | null {
  * through the declared type (`fieldType`), each prefix's type without the
  * tags a guard excludes of it (`withoutTags`), an optional field read where
  * `undefined` is excluded of it or, at the path's end, where `optionalLast`
- * (PROGRAM-TYPING.md, "Guarded clauses"). */
+ * (ARITHMETIC.md, "Guarded clauses"). */
 function clauseParameter(gate: Gate, name: string, position: number, type: TypeTerm | undefined): ClauseParameter {
   return {
     name,
@@ -2343,7 +2343,7 @@ function withoutTags(t: TypeTerm, tags: readonly GuardTag[]): TypeTerm {
 }
 
 /** A function declaration's type invariants (`@invariant`;
- * PROGRAM-TYPING.md, "Type invariants") elaborated to index facts: those
+ * ARITHMETIC.md, "Type invariants") elaborated to index facts: those
  * the type of its parameter `i` names (`invariantsNamed`), `this` that
  * parameter's call position, conjuncts of its precondition, and, where the
  * parameter is `kept`, `this` the position after it (`Effect.ensures`: `0`
@@ -2390,7 +2390,7 @@ export function typeInvariants(gate: Gate, params: readonly { type: TypeTerm | u
  * representation its `@representation` names. */
 type NamedInvariant = { declaration: DeclarationIdentity; clauses: readonly string[]; through: TypeTerm };
 
-/** The type invariants a type names (PROGRAM-TYPING.md, "Type
+/** The type invariants a type names (ARITHMETIC.md, "Type
  * invariants"): a reference without type arguments to a declaration stating
  * one (`Gate.invariants`), with those its definition's equation names in
  * turn; every part's of an intersection; those every arm of a union names.

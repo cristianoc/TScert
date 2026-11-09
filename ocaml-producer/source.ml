@@ -864,7 +864,7 @@ let stated_closures : (Json.t, footprint * bool) Hashtbl.t = Hashtbl.create 16
    member in one node where its actuals are plain
    (`Type_queries.dispatches_call`). *)
 let statement_calls : (Json.t, unit) Hashtbl.t = Hashtbl.create 16
-(* The invariant a loop states (PROGRAM-TYPING.md, "Loop invariants"), by
+(* The invariant a loop states (ARITHMETIC.md, "Loop invariants"), by
    the loop's position: the bindings its positions name, and its index facts. *)
 let loop_invariants : (Json.t, string list * index_fact list) Hashtbl.t = Hashtbl.create 16
 (* A definition's statement as the Fragment writes it, or none. *)

@@ -106,7 +106,7 @@ interface LinearTermClaim {
   coefficient: number;
 }
 
-/** A guard of a proposed fact (PROGRAM-TYPING.md, "Guarded clauses"): the
+/** A guard of a proposed fact (ARITHMETIC.md, "Guarded clauses"): the
  * named data fields `path` read from what the binding `name` holds give the
  * value `tag` names, or the fact holds. */
 interface GuardClaim {
@@ -117,7 +117,7 @@ interface GuardClaim {
 
 /** A linear fact proposed at a statement entry: where none of its guards,
  * in order, reads its tag's value, the sum of the terms is at most `bound`
- * (PROGRAM-TYPING.md, "Linear facts"). */
+ * (ARITHMETIC.md, "Linear facts"). */
 type LinearClaim = { either: { left: LinearClaim; right: LinearClaim } } | {
   guards: GuardClaim[];
   terms: LinearTermClaim[];
@@ -137,7 +137,7 @@ type BodyVariableClaim = "index" | "elem" | { offset: { delta: number } } | { pr
 
 type BodyClaim = { terms: [BodyVariableClaim, number][]; bound: number } | { either: { left: BodyClaim; right: BodyClaim } };
 
-/** A quantified fact proposed at a statement entry (PROGRAM-TYPING.md,
+/** A quantified fact proposed at a statement entry (ARITHMETIC.md,
  * "Quantified clauses"): for every index below `stop` of the array the path
  * `path` reads from the binding `name`, each body fact `Σ c·x ≤ bound`. */
 interface QuantifiedClaim {

@@ -1762,7 +1762,7 @@ theorem Changes.length_refl (h : Heap) : (⟨true, true, .length⟩ : HeapKnowle
   ⟨fun _ _ hv _ => hv, fun _ _ ls hls => ⟨ls, hls, rfl⟩, fun hg => by simp at hg⟩
 
 /-- **An element write below its store's length keeps every store's
-length** (PROGRAM-TYPING.md, "Linear facts"): it writes a listed element's
+length** (ARITHMETIC.md, "Linear facts"): it writes a listed element's
 location, which held a source value and no store, and the store back
 unchanged, or, at a hole, a store of the same length (`placeAt_length`). -/
 theorem elem_var_write_length [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)} {f : PropKey} {i j k : Nat}

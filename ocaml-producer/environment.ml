@@ -40,7 +40,7 @@ let is_bound n = String.length n > 0 && n.[0] = '\002'
 let bound_parts n = match String.split_on_char '\002' n with
   | [""; array; index; s] -> Some (array, index, s = "<")
   | _ -> None
-(* A linear fact the producer proposes at statement entries (PROGRAM-TYPING.md,
+(* A linear fact the producer proposes at statement entries (ARITHMETIC.md,
    "Linear facts"): the sum of [terms], each a value binding's name and an
    integer coefficient, is at most [bound]. Held as a pseudo-binding whose
    name encodes it, so it flows and joins with the environment. The terms are

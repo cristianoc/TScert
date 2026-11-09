@@ -1047,7 +1047,7 @@ theorem makeKey_alloc_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k A ρ n W
         exact one_step rfl rfl (.makeFields (by simpa using hvb) (by simp))
           (fresh_holds he hk hh _ _ _) hs1
 
-/-! ### What a write may change (PROGRAM-TYPING.md, "Linear facts")
+/-! ### What a write may change (ARITHMETIC.md, "Linear facts")
 
 A write's location held, before it, a member of the field's type, so it
 holds no value of a class the type excludes: a location holding such a value
@@ -2276,7 +2276,7 @@ def stableCells (G : NormalGraph ι) (Γ : List (Ty ι)) (k : Knowledge) : Facts
 
 /-- A term a step keeps through its every effect: a slot's own value, or the
 length of the typed array a slot holds, where every clause of the
-slot's type states `viewLengthKey` stable (PROGRAM-TYPING.md, "Linear
+slot's type states `viewLengthKey` stable (ARITHMETIC.md, "Linear
 facts"): the count is read from a location whose contract admits one
 value. -/
 def stableTerm (G : NormalGraph ι) (Γ : List (Ty ι)) (t : Term) : Bool :=

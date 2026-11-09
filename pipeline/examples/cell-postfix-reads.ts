@@ -1,4 +1,4 @@
-// Postfix updates inside an index, a binding held in a cell (PROGRAM-TYPING.md,
+// Postfix updates inside an index, a binding held in a cell (ARITHMETIC.md,
 // "Terms for bindings held in cells"): `xs[at++]!` reads at the old value
 // while the cell holds the new one, pretext's `cache[cacheAt++]!` and
 // `start = ends[i++]!` shapes.

@@ -127,7 +127,7 @@ structure FactTerm where
   term : HeapKnowledge.Term.Kind
   coefficient : Int
   deriving ToJson, FromJson
-/-- A guard of a fact the producer proposes (PROGRAM-TYPING.md, "Guarded
+/-- A guard of a fact the producer proposes (ARITHMETIC.md, "Guarded
 clauses"): the named data fields `path` read from what the binding `name`
 holds give the value `tag` names, or the guarded fact holds. -/
 structure FactGuard where
@@ -175,7 +175,7 @@ structure TermRef where
   term : HeapKnowledge.Term.Kind
   deriving ToJson, FromJson
 /-- A variable of a quantified fact's body: `"index"`, `"elem"`, or
-`{"term": TermRef}` (PROGRAM-TYPING.md, "Quantified clauses"). -/
+`{"term": TermRef}` (ARITHMETIC.md, "Quantified clauses"). -/
 inductive BodyVariable where
   | index
   | elem

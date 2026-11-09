@@ -597,7 +597,7 @@ control(async (): Promise<void> => {
 });
 
 control(async (): Promise<void> => {
-  // Guarded facts claimed where no guard is eliminated (PROGRAM-TYPING.md,
+  // Guarded facts claimed where no guard is eliminated (ARITHMETIC.md,
   // "Guarded clauses"): in the walker testing another field, its read
   // claimed at `number`, the invariant's body forged at the read's entry
   // with its guard removed, and forged guarded by the tested field instead,
@@ -647,7 +647,7 @@ control(async (): Promise<void> => {
 
 control(async (): Promise<void> => {
   // A loop invariant is the verifier's own assertion at the loop's head
-  // (PROGRAM-TYPING.md, "Loop invariants"): in the negative whose back edge
+  // (ARITHMETIC.md, "Loop invariants"): in the negative whose back edge
   // breaks it, the read it would bound claimed at `number`, every fact the
   // producer proposes removed but, at the head and the reads' entry, those
   // of the parameters alone (the precondition's), and the reads' bounds
@@ -674,7 +674,7 @@ control(async (): Promise<void> => {
 
 control(async (): Promise<void> => {
   // Quantified facts claimed where nothing establishes them
-  // (PROGRAM-TYPING.md, "Quantified clauses"): each negative's outer read
+  // (ARITHMETIC.md, "Quantified clauses"): each negative's outer read
   // claimed at `number`, and at its return's entry the quantified fact that
   // would bound it, `ends[i] < widths.length` of every index of `ends`: over
   // the inclusive precondition, after a direct alias write, and after a
@@ -805,7 +805,7 @@ control(async (): Promise<void> => {
 
 control(async (): Promise<void> => {
   // A quantified fact claimed extended across a push that does not extend it
-  // (PROGRAM-TYPING.md, "Quantified clauses"): at each entry the producer
+  // (ARITHMETIC.md, "Quantified clauses"): at each entry the producer
   // claims without it, from the one after the push to the loop's,
   // `ends[i] < widths.length` of every index of `ends`, after a push of
   // `widths.length` into `ends` and after a push into an array no separation
@@ -834,7 +834,7 @@ control(async (): Promise<void> => {
 
 control(async (): Promise<void> => {
   // A quantified fact over a typed array's elements claimed where nothing
-  // establishes it (PROGRAM-TYPING.md, "Quantified clauses"): each
+  // establishes it (ARITHMETIC.md, "Quantified clauses"): each
   // negative's outer read claimed at `number`, and at its return's entry
   // `items[i] < widths.length` of every index below the view's typed-array
   // length: over the inclusive precondition, and after a write through a

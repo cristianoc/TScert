@@ -46,7 +46,7 @@ type index_fact = Index_at of int | Length_of of int * int | Bound_by of int * i
   | Linear_le of (term * int) list * int | Linear_ne of (term * int) list * int
   (* Where the named data fields read from the position do not give the
      value the tag names, `null` or `undefined`, the body holds
-     (PROGRAM-TYPING.md, "Guarded clauses"). *)
+     (ARITHMETIC.md, "Guarded clauses"). *)
   | Either of index_fact * index_fact
   | Guarded of int * string list * string * index_fact
   (* The value at the first position is what the array at the second holds
@@ -54,7 +54,7 @@ type index_fact = Index_at of int | Length_of of int * int | Bound_by of int * i
   | Element of int * int * int
   (* For every index below the bound of the array the named data fields read
      from the position give, each body fact holds of the index, the element
-     at it and its terms (PROGRAM-TYPING.md, "Quantified clauses"). *)
+     at it and its terms (ARITHMETIC.md, "Quantified clauses"). *)
   | Every of int * string list * term * body_fact list
 (* A variable of a quantified fact's body: the index, the element at it, or a term. *)
 and body_var = Body_index | Body_elem | Body_offset of int | Body_project of string * string list | Body_term of term

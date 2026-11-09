@@ -402,7 +402,7 @@ inductive Stmt where
   | cont (pos : Span)
   /-- `while (cond) body`, and the loop of `for (…; cond; update) body`: the
   end of the body and every `continue` targeting the loop run `update`, then
-  return to the head. A `while` has none. Its invariant (PROGRAM-TYPING.md,
+  return to the head. A `while` has none. Its invariant (ARITHMETIC.md,
   "Loop invariants") is index facts at positions, the `i`-th position the
   `i`-th name's binding at the head; none where the loop states none. -/
   | loop (pos : Span) (cond : Expr) (body : List Stmt) (update : List Stmt)
@@ -703,11 +703,11 @@ structure Fn where
   unit's claim must lie within (`RequestJson.statedWithin`). -/
   stated : Option CallEffects.Effect
   /-- Its precondition, index facts at the call's positions: `0` the
-  receiver, `i + 1` the `i`-th actual (PROGRAM-TYPING.md, 
+  receiver, `i + 1` the `i`-th actual (ARITHMETIC.md, 
   "Preconditions"). -/
   requires : List HeapKnowledge.IndexFact := []
   /-- The facts it states of its result, index facts at position `0`, the
-  result: its record type's invariant (PROGRAM-TYPING.md, "Type
+  result: its record type's invariant (ARITHMETIC.md, "Type
   invariants"), which each of its returns establishes. -/
   ensures : List HeapKnowledge.IndexFact := []
 

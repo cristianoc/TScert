@@ -1,7 +1,7 @@
 // pretext's `countSteppedLines` steps a cursor (`LayoutCursor`) through a
 // call that writes its fields, then reads the flags at the cursor's index.
 // `step` writes no binding of its parameters, so each parameter's invariant
-// is also a fact at its returns (PROGRAM-TYPING.md, "Type invariants"):
+// is also a fact at its returns (ARITHMETIC.md, "Type invariants"):
 // each call states `0 ≤ cursor.segmentIndex`, a safe integer, and the
 // record's invariant again, and the read `segmentFlags[cursor.segmentIndex]!`
 // below `segmentCount` is bounded by them and by `segmentCount =

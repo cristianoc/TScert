@@ -131,7 +131,7 @@ const viewMethods = (self: TypeTerm): Field[] => [
  * readonly `number` the host owns at a location no other object's field or
  * store shares, one value for the view's life (DESIGN.md, "Trust surface"):
  * a stable key (HOST-FAMILIES.md, "Stable keys"), so every step keeps a
- * fact naming the count (PROGRAM-TYPING.md, "Linear facts"). */
+ * fact naming the count (ARITHMETIC.md, "Linear facts"). */
 const viewLength: Field = field("[[viewLength]]", atom("number"));
 const viewDefinition = (id: DeclarationIdentity, self: TypeTerm, marker: string): TypeDefinition => definitionOf(id,
   { k: "object", fields: [viewLength, ...viewMethods(self)], stringIndex: null, calls: [], host: marker,
