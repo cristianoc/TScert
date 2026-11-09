@@ -1,14 +1,12 @@
 <section id="preservation" style="background:#fbfcfd;color:#0b1a2e;font-family:'Inter','Helvetica Neue',Arial,sans-serif;padding:120px 128px;display:flex;flex-direction:column;gap:22px">
 <div style="display:flex;gap:24px;align-items:baseline;flex-wrap:wrap"><p style="font-size:24px;color:#56627a;font-weight:600;letter-spacing:2px;text-transform:uppercase">Frame conditions</p><p style="font-size:24px;color:#56627a">the preservation rules <span style="color:#2f6b47">proved</span></p></div>
-<h2 style="font-family:'Bricolage Grotesque','Helvetica Neue',Arial,sans-serif;font-size:56px;font-weight:700;line-height:1.15">Mutations preserve facts through checked effects</h2>
-<p style="font-size:26px;color:#0b1a2e;line-height:1.4">A fact over the heap reads particular locations. TScert’s footprint mechanism, its frame conditions, checks whether an operation leaves those locations unchanged, or changes them in a way that preserves the inequality.</p><table style="font-size:24px;color:#0b1a2e">
-<tr><th style="width:38%;text-align:left;font-weight:600">Operation</th><th style="width:62%;text-align:left;font-weight:600">Preservation</th></tr>
-<tr><td>Write a numeric field</td><td>array lengths preserved; facts about that field restated from the written value</td></tr>
-<tr><td>Write <span style="color:#2c4f7c">xs[k]</span> below the length</td><td>the length preserved</td></tr>
-<tr><td><span style="color:#2c4f7c">out.push(v)</span></td><td>lower bounds on <span style="color:#2c4f7c">out.length</span> preserved; upper bounds dropped; the lengths of arrays older than a literal <span style="color:#2c4f7c">out</span> preserved</td></tr>
-<tr><td>Call with a checked frame condition</td><td>facts whose locations its frame protects, a returned closure’s stated by its maker</td></tr>
-<tr><td>Call whose frame changes only the array at <span style="color:#2c4f7c">r.f</span></td><td>the lengths of arrays known to be other arrays (slide 9)</td></tr>
-<tr><td>Any step, a <span style="color:#2c4f7c">@stable</span> field</td><td>the object it holds: a <span style="color:#2c4f7c">readonly</span> field marked <span style="color:#2c4f7c">@stable</span> is set when its record is created and never reassigned</td></tr>
+<h2 style="font-family:'Bricolage Grotesque','Helvetica Neue',Arial,sans-serif;font-size:56px;font-weight:700;line-height:1.15">A fact survives a step that leaves its locations unchanged</h2>
+<p style="font-size:26px;color:#0b1a2e;line-height:1.4">A fact over the heap reads particular locations: fields, variables, array elements and lengths. An operation’s frame condition, its frame, bounds what it may change in each class of location: <span style="color:#2c4f7c">values</span> (fields and variables) and <span style="color:#2c4f7c">stores</span> (an array’s elements and length), each kept (<span style="color:#2c4f7c">keep</span>), changed keeping every element present (<span style="color:#2c4f7c">grow</span>), or changed freely (<span style="color:#2c4f7c">any</span>). The producer proposes a function’s frame from its body and the checker certifies it; a signature may also state it (slide 10).</p><table style="font-size:24px;color:#0b1a2e">
+<tr><th style="width:38%;text-align:left;font-weight:600">Operation</th><th style="width:62%;text-align:left;font-weight:600">Facts kept</th></tr>
+<tr><td>Write a numeric field</td><td>array lengths; facts about that field restated from the written value</td></tr>
+<tr><td>Write <span style="color:#2c4f7c">xs[k]</span> below the length</td><td>the length</td></tr>
+<tr><td><span style="color:#2c4f7c">out.push(v)</span></td><td>lower bounds on <span style="color:#2c4f7c">out.length</span>; the lengths of arrays older than a literal <span style="color:#2c4f7c">out</span></td></tr>
+<tr><td>Call</td><td>the facts whose locations the callee’s frame keeps</td></tr>
 <tr><td>Any step</td><td>a typed array’s length: fixed for its life (trusted)</td></tr>
-</table><p style="font-size:24px;color:#0b1a2e;line-height:1.4">These rules concern normal returns; a throw carries a frame condition only where one is stated for it.</p>
+</table><p style="font-size:24px;color:#0b1a2e;line-height:1.4">These rules concern normal returns; a throw carries a frame only where one is stated for it.</p>
 </section>
