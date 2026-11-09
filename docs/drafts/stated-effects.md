@@ -695,6 +695,24 @@ among the map's own locations, §6.4; `RegExp.prototype.test`; typed
 arrays' element writes, `fill` and `subarray`), each changing no store
 beyond `grow`.
 
+Observed (TScert a22e0866, pretext `tscert-bounds` aaa11c50 with the three
+frames stated, 2026-11-09): each frame is refused at its body's regional
+check, at a call of a helper whose effect is wider than the frame.
+`readScriptRuns` and `spaceSharesScriptRun` at `getScriptFactsAt`: stated
+`{ values: "any" }`, `getScriptFactsAt` verifies over `getScriptFacts`,
+which is refused at `unpackClasses` (stated alike, refused at
+`unpackTable`, and `unpackClassRuns` at `index.fill` of a `Uint16Array` it
+allocates). With `getScriptFactsAt` read at that frame, `readScriptRuns`
+verifies, and `spaceSharesScriptRun` is refused next at `hasProperty`,
+which writes the cached `Uint16Array` `bmpProperties` holds.
+`getUnspacedGraphemes` at `(unspaced ??= []).push(g)`, a push onto an
+array allocated in the body, whose store the step-frame rule rebases to
+`all`: a selected location's freshness is not tracked by the regional
+check. `measureAnalysis`, with the frames read at their signatures and
+`0 <= from && from <= to` added to its main loop's invariant, keeps
+`to <= analysis.flags.length` through that loop, and loses it across its
+call of `addKanaKerning`, which states no frame.
+
 ### 6.3 Class methods' effects ([method-effects.md](method-effects.md))
 
 A method's `Modifies` is its frame; D1 (a) holds as decided, location keys
