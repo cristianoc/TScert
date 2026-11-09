@@ -2949,8 +2949,11 @@ control(async (): Promise<void> => {
   claim.type = [];
   const forged = writeClaims(good, "never-call", claims);
   refusedAt(good, forged, "never-call", `at [${start},${start + call.length})`);
-  invoke(forged, join(good, "evidence.json"), good,
-      /^reject: source evidence refusal at \[\d+,\d+\): the evidence does not establish this node's claim/m);
+  // Checking the honest evidence against it refuses the call too: the node
+  // check of `warned`'s footprint, whose refusal is reported before a node's
+  // typing refusal, fails at the call.
+  invoke(forged, join(good, "evidence.json"), good, new RegExp(`^reject: source effect refusal at \\[${start},${start + call.length}\\): ` +
+      "the footprint claimed for 'warned' is not established by its body", "m"));
   process.stdout.write("forged never call: a call of a function that returns claimed at the empty type refused\n");
 });
 control(async (): Promise<void> => {
