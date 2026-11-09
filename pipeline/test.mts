@@ -1058,6 +1058,97 @@ control(async (): Promise<void> => {
 });
 
 control(async (): Promise<void> => {
+  // Slot or cell (SOURCE-ELABORATION.md, "Slot or cell"), forged past the
+  // producer. Lean decides the representation from the source; claims can
+  // only state what a binding holds, and each is checked against the graph
+  // Lean lowers:
+  // - `count`'s `acc`, which the closure `reset` writes, claimed as a slot
+  //   would be, `number[]` at its return past `reset()`: the cell may hold
+  //   `null` there, refused;
+  // - `order`'s later read `acc.length` claimed at `null`, what the slot
+  //   held before `acc ??= [7]`, as if the write's continuation omitted the
+  //   rebound slot: refused;
+  // - `caught`'s handler entered with `acc` claimed `null`, the slot before
+  //   `acc = fresh`, though the only node that throws, `fail()`, follows the
+  //   write: refused;
+  // each in search and in checking that search's evidence.
+  // The check reads the original's evidence where the case verifies, the
+  // forged search's otherwise.
+  const forge = (file: string, name: string, edit: (claims: SourceClaims, source: string) => void,
+      refusal: RegExp, checked: RegExp, original: boolean): void => {
+    const artifacts = run(file);
+    const source = readFileSync(sourceKey(artifacts), "utf8");
+    const claims = readClaims(artifacts);
+    edit(claims, source);
+    const forged = writeClaims(artifacts, `forged-slot-${name}`, claims);
+    const searched = produceWith(artifacts, forged, `forged-slot-${name}`);
+    assert.equal(searched.status, 1, `${searched.stdout}${searched.stderr}`);
+    assert.match(searched.stdout + searched.stderr, refusal);
+    invoke(forged, original ? documentEvidence(artifacts) : join(artifacts, `forged-slot-${name}-evidence.json`),
+      artifacts, checked);
+  };
+  const fn = (claims: SourceClaims, name: string): SourceClaims["functions"][number] =>
+    must(claims.functions.find(f => f.name === name), `${name}'s claims`);
+  forge("invalid-stated-slot-closure", "captured", (claims, source) => {
+    const count = fn(claims, "count");
+    const at = source.indexOf("(acc ??= [])");
+    const array = must(count.expressions.find(e => e.pos[0] === at && e.pos[1] === at + "(acc ??= [])".length),
+      "the nullish assignment's claim").type;
+    const ret = source.indexOf("return acc;");
+    for (const binding of must(count.entries.find(e => e.start === ret), "the return's entry").bindings)
+      if (binding.name === "acc") binding.type = array;
+    const read = ret + "return ".length;
+    must(count.expressions.find(e => e.pos[0] === read && e.pos[1] === read + "acc".length), "the returned read").type = array;
+  }, /source incoming edge obligation at \[\d+,\d+\): evidence search failed: the edge from node \d+ does not establish the claims/,
+    /"refusal":"[^"]+","unit":"count@\d+"/, false);
+  forge("stated-slot-order", "omitted", (claims, source) => {
+    const read = source.indexOf("acc.length");
+    must(fn(claims, "order").expressions.find(e => e.pos[0] === read && e.pos[1] === read + "acc".length),
+      "the later read").type = [rowOf(claims, "nul")];
+  }, /source expression obligation at \[\d+,\d+\): evidence search failed: no derivation of its node-typing claim/,
+    /source evidence refusal at \[\d+,\d+\): the evidence does not establish this obligation's claim/, true);
+  forge("stated-slot-handler", "handler", (claims, source) => {
+    const entry = source.indexOf("return acc === null");
+    for (const binding of must(fn(claims, "caught").entries.find(e => e.start === entry), "the handler's entry").bindings)
+      if (binding.name === "acc") binding.type = [rowOf(claims, "nul")];
+  }, /source incoming edge obligation at \[\d+,\d+\): evidence search failed: the edge from node \d+ does not establish the claims/,
+    /source evidence refusal at \[\d+,\d+\): the evidence does not establish this node's claim/, true);
+  process.stdout.write("forged slots: a captured binding claimed as a slot, a read after a nested write claimed at the slot's old value, and a handler entered at the slot before the write, each refused in search and in checking\n");
+});
+
+control(async (): Promise<void> => {
+  // Fresh array storage at a slot's join (FOOTPRINTS.md, "Fresh array
+  // storage"), forged into the parser's document: `collect`'s `acc ??= []`
+  // forged to `acc ??= xs`, the caller's array on the nullish path. The
+  // join after the assignment has a predecessor holding an old array, so the
+  // slot is no fresh value at `push`, refused at the unit's regional check
+  // in search and in checking that search's evidence.
+  const artifacts = run("stated-slot-collect");
+  const document: unknown = JSON.parse(readFileSync(join(artifacts, "fragment.json"), "utf8"));
+  let replaced = 0;
+  const swap = (v: unknown): unknown => {
+    if (Array.isArray(v)) return v.map(swap);
+    if (!isObject(v)) return v;
+    const node = Object.fromEntries(Object.entries(v).map(([key, x]): [string, unknown] => [key, swap(x)]));
+    const rhs = node.rhs;
+    if (node.k === "nullishAssign" && node.name === "acc" && isObject(rhs) && rhs.k === "arrayLit") {
+      replaced++;
+      return { ...node, rhs: { k: "id", pos: rhs.pos, name: "xs" } };
+    }
+    return node;
+  };
+  const forged = join(artifacts, "forged-slot-join-fragment.json");
+  writeFileSync(forged, must(JSON.stringify(swap(document)), "the forged document"));
+  assert.equal(replaced, 1, "one `acc ??= []`");
+  const refusal = /source effect refusal at \[\d+,\d+\): the frame stated for 'collect' is not established by its body/;
+  const searched = produceWith(artifacts, join(artifacts, "claims.json"), "forged-slot-join", forged);
+  assert.equal(searched.status, 1, `${searched.stdout}${searched.stderr}`);
+  assert.match(searched.stdout + searched.stderr, refusal);
+  invoke(join(artifacts, "claims.json"), join(artifacts, "forged-slot-join-evidence.json"), artifacts, refusal, forged);
+  process.stdout.write("forged slot join: an old array on the nullish path of `acc ??= …`, refused in search and in checking\n");
+});
+
+control(async (): Promise<void> => {
   // Store separations (`!==`, ARITHMETIC.md, "Store separation") the
   // producer does not propose, forged past it into the claims and the
   // parser's document of the central example's aliased caller: a
