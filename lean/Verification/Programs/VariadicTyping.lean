@@ -440,10 +440,10 @@ theorem graphRest_invoke {G : NormalGraph ι} {arity E K start Cs A vs n W}
           envOf (a :: r :: CallArguments.parameters arity args ++ vs) .nul := by
         funext i; cases i <;> rfl
       rw [← he]; exact henv
-    apply HeapObservations.SafePostExc.weaken (Q := fun heap'' v => ∀ r' args', s.fixed.effect.post r' args' heap' heap'' v)
-      (R := fun heap'' => ∀ r', s.fixed.effect.excPost r' heap' heap'')
-      (fun heap'' v hp => s.effect.post_prefix hprefix (hp r args))
-      (fun heap'' hp => s.effect.excPost_prefix hprefix (hp r))
+    apply HeapObservations.SafePostExc.weaken (Q := s.fixed.effect.post r args heap')
+      (R := s.fixed.effect.excPost r heap')
+      (fun heap'' v hp => s.effect.post_prefix hprefix hp)
+      (fun heap'' hp => s.effect.excPost_prefix hprefix hp)
     have hpromised := framePromised_params (e := s.fixed.effect) hs.2.1 [a, r] args vs
     simp only [List.length_cons, List.length_nil, List.cons_append, List.nil_append] at hpromised
     rw [← show framePromised s.effect (frameOffset (some A)) (a :: r :: CallArguments.parameters arity args ++ vs) =
@@ -458,7 +458,7 @@ theorem graphRest_invoke {G : NormalGraph ι} {arity E K start Cs A vs n W}
           · rcases List.mem_append.mp hm with hm | hm
             · exact CallArguments.parameters_property (P := fun v => isVal v = true) rfl hvals v hm
             · exact hvalues v hm)
-      (fun hn => by cases hn)
+      (fun hn => by cases hn) r args ⟨[a], vs, rfl, rfl⟩
 
 /-- **Graph code with a rest meets its variadic signatures**: the actuals past
 its fixed parameters are collected, not discarded (`restsT_of_graph` is the

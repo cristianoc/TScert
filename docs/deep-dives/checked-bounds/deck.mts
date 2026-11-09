@@ -112,6 +112,19 @@ const slides: Slide[] = [
       ], [38, 62]) +
       para("These rules concern normal returns; a throw carries a frame condition only where one is stated for it.", 24),
   }),
+  slide("argument-store", {
+    label: "Argument paths · semantic model", note: t("composition and graph checks ") + proved,
+    title: "Separate stores admit a semantic frame", gap: 22,
+    body: columns([
+      code(["Entry heap h₀, entry values ρ₀", "", "A region selects a store through a field path.", "The bound constrains every other old location.", "", "Premises for keeping another array’s length:", "  its store differs from every selected store;", "  the bound keeps that store unchanged."]),
+      bullets([
+        point("Stable paths", "singleton field contracts retain the selected value through world extension and safe execution, including throws."),
+        point("Graph check", "closed effects, copies and receiver-store calls compose through checked branches, loops and handlers."),
+        point("Caller check", "given valid separation facts, a checked frame preserves length. An aliased store cannot meet its premise."),
+        point("Proof scope", "stable-field provenance and fresh-store composition remain proof obligations. CLI acceptance has no argument-path effect."),
+      ], 25),
+    ], [46, 54]),
+  }),
   slide("frame-cost", {
     label: "pretext · invariant verification", note: t("the bounds target with and without the invariants, at one TScert commit · ") + measured,
     title: "Coarse frame conditions prevent proving return obligations", gap: 22,

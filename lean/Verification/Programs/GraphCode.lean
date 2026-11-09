@@ -1507,7 +1507,7 @@ theorem codeChecked_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instan
   have ht : ProgramCertificates.CodesSound (reassign G η) (admits table) :=
     fun e he η' => htable e he η'
   refine ⟨harity, hbelow, ?_⟩
-  intro n W heap L he hw hh hvalues hpre
+  intro n W heap L he hw hh hvalues hpre r args _hframe
   have hidx := codeEntryIndices_holds hpre
   have hs := goto_safe hc ht hs' n W heap L .nul he hw hh (hidx := hidx)
   -- The goal the graph is checked at is the signature's result, its
@@ -1549,8 +1549,8 @@ theorem codeChecked_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instan
     have := hel.2.2.2; rw [hw] at this; cases this
   by_cases htop : c.row.effect.footprint = .top ∧ c.row.effect.fresh = false ∧ c.row.effect.onThrow = false
   · -- No footprint on a throw: the throw's postcondition is vacuous.
-    apply HeapObservations.SafePostExc.of_post (fun _ r h => absurd h (by simp [htop.2.2]))
-    refine HeapObservations.weaken (fun h' v hp r args => ?_) (Footprints.Closed.top_safe hsafe)
+    apply HeapObservations.SafePostExc.of_post (fun _ h => absurd h (by simp [htop.2.2]))
+    refine HeapObservations.weaken (fun h' v hp => ?_) (Footprints.Closed.top_safe hsafe)
     refine ⟨CallEffects.Effect.within_of_holds ?_, fun hf => (by rw [htop.2.1] at hf; cases hf),
       fun hf => (by rw [hfo] at hf; cases hf), fun R hR => (hnel R hR).elim, fun F hF => (hnen F hF).elim,
       fun hg => (hngr hg).elim, fun w hw => (hnew w hw).elim⟩
@@ -1562,12 +1562,12 @@ theorem codeChecked_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instan
       have hfresh := hp.1
       have hp : ∀ e ∈ c.exprs, Purity.pureTerm e = true := List.all_eq_true.mp hp.2
       exact HeapObservations.SafePostExc.weaken
-        (fun h' v hq r _ => ⟨CallEffects.Effect.within_of_holds
+        (fun h' v hq => ⟨CallEffects.Effect.within_of_holds
           (Footprints.Closed.Holds.mono (Footprints.Closed.empty_le _)
             ((CallEffects.Effect.post_ofFootprint _ .undef [] _ _ _).mp hq)), fun hf => (by rw [hfresh] at hf; cases hf),
           fun hf => (by rw [hfo] at hf; cases hf), fun R hR => (hnel R hR).elim, fun F hF => (hnen F hF).elim,
       fun hg => (hngr hg).elim, fun w hw => (hnew w hw).elim⟩)
-        (fun h' hq r _ => CallEffects.Effect.within_of_holds
+        (fun h' hq _ => CallEffects.Effect.within_of_holds
           (Footprints.Closed.Holds.mono (Footprints.Closed.empty_le _) hq))
         (CallEffects.pure_safe_exc (r := .undef) (args := []) (.goto hp hvalues rfl) hsafe)
     · rw [← compositionalChecked_reassign G images sums η, compositionalChecked_eq] at hp
@@ -1581,10 +1581,10 @@ theorem codeChecked_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instan
         (hidx := hidx)
       rw [hres] at hb
       exact HeapObservations.SafePostExc.weaken
-        (fun h' v hq r _ => ⟨CallEffects.Effect.within_of_holds hq.1, hq.2, fun hf => (by rw [hfo] at hf; cases hf),
+        (fun h' v hq => ⟨CallEffects.Effect.within_of_holds hq.1, hq.2, fun hf => (by rw [hfo] at hf; cases hf),
           fun R hR => (hnel R hR).elim, fun F hF => (hnen F hF).elim,
       fun hg => (hngr hg).elim, fun w hw => (hnew w hw).elim⟩)
-        (fun h' hq r ho => CallEffects.Effect.within_of_holds (hq ho)) hb
+        (fun h' hq ho => CallEffects.Effect.within_of_holds (hq ho)) hb
 
 /-- Check codes in order, each against the table of those before it. -/
 @[nospecialize] def extendTableResult [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
