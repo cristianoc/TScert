@@ -2,16 +2,11 @@
 // with the rewrites of issue #94): measurement.ts#getExtraSpacings,
 // gecko-line-breaks.ts#markWordBreaks (`cache[cacheAt++]` in a loop's body,
 // then `cache = segmentComplex(units)`).
-// Refusal: reject: source incoming edge obligation: the edge does not
-// establish the claims at this point.
 // A `for` loop whose update writes its bindings inside an expression
-// (`start = ends[i++]`, here `start = i, i++`) holds them in cells the
-// function allocates, and each statement entry restates their separation
-// from the slots' locations. A binding given a call's result after the
-// cells were allocated, `extras = zeros(count)`, holds an object no fact
-// states apart from them: a callee cannot reach a cell the function never
-// passes it, but the model states no reachability, and a source function's
-// signature states no fresh result.
+// (`start = ends[i++]`, here `start = i, i++`): no closure mentions them,
+// so they are slots the update rebinds (SOURCE-ELABORATION.md, "Slot or
+// cell"), and a binding given a call's result, `extras = zeros(count)`,
+// needs no fact stating it apart from them.
 function zeros(count: number): number[] {
   return new Array<number>(count).fill(0);
 }

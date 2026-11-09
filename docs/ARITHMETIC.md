@@ -401,8 +401,9 @@ loop test's second evaluation `compileConditionAtom`, the copy's restatement
 
 ## Terms for bindings held in cells
 
-A binding an update inside an expression writes, or a closure captures, is
-held in a cell (`SourceFacts`, "Bindings held in cells"): an object whose
+A binding a closure writes, or that is written after a closure mentioning
+it is created, is held in a cell
+([slot or cell](SOURCE-ELABORATION.md#slot-or-cell)): an object whose
 field `value` holds the binding's value. A linear fact or guard over such a
 binding $`x`$, held in the cell at slot $`c`$, names the path term rooted at
 the cell, its path starting with `value`; a binding whose cell may hold the
@@ -431,17 +432,21 @@ the written field apart from the cell's `value` (`first`; the producer
 proposes this for a field of a parameter's object, allocated before the
 cell), and across a call as its frame condition preserves a path's.
 
-The producer reads an expression updating a cell against the facts after the
-update: each fact of the binding restated of its old value, the write's
+An update of a slot inside an expression is a copy of the slot into $`r`$
+(`int-copy`), the sum $`r'=r\pm d`$ and the slot rebound to $`r'`$, the
+facts of the old value eliminated through $`r=x`$. The producer reads an
+expression updating a cell or a slot against the facts after the update: each fact of the binding restated of its old value, the write's
 change applied, the new value stated the old one plus the step, the old one
-eliminated; a binding the expression updates twice, reads elsewhere, or steps
-by a non-literal is forgotten. An entry claim's facts lower to atoms each
+eliminated; a binding the expression updates twice, reads elsewhere, steps
+by a non-literal, or updates on only some of its paths is forgotten; a slot
+an expression assigns otherwise is forgotten with the bindings its statement
+assigns. An entry claim's facts lower to atoms each
 stated once: a cut's knowledge is its assertion exactly, and two claimed
 facts over a cell's value can lower to one atom.
 
 **Implementation.** The cell's root is `Lowering.termRoot`, the read's
 restatement `readAtoms`; the producer's reading is
-`Linear_facts.after_cell_updates`, the lowering of entry claims
+`Linear_facts.after_cell_updates` and `Linear_facts.nested_slot_writes`, the lowering of entry claims
 `Lowering.Flow`, a cut's check `checkAssertions`.
 
 ## The clause language

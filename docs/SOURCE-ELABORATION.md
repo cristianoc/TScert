@@ -2636,28 +2636,46 @@ for the order of the activation's evaluation. Then
 \mathrm{slot}(x)\iff
 \neg\,\mathrm{closureWrites}(x)\;\land\;
 \bigl(\forall c\in\mathrm{creates}(x),\ w\in\mathrm{writes}(x).\ w\prec c\bigr)
-\;\land\;\neg\,\mathrm{nestedWrite}(x)
 ```
 
-where $`\mathrm{nestedWrite}(x)`$ holds when a write of $`x`$ is not its
-statement's own: a statement's own write is a declaration's initialization,
-or the assignment or update an expression statement is. Under the first two conjuncts every
-closure that mentions $`x`$ finds, whenever it runs, the value $`x`$ held when
-the closure was created, since no write follows that creation: the closure
-may capture that value, and the activation alone reads and writes the
-binding. Such a binding is a variable of the activation's environment. Its
-slot is rebound at each write, the edge out of the write's node mapping the
-written value into it, and a read of $`x`$ is the slot:
+Under these conjuncts every closure that mentions $`x`$ finds, whenever it
+runs, the value $`x`$ held when the closure was created, since no write
+follows that creation: the closure may capture that value, and the
+activation alone reads and writes the binding. Such a binding is a variable
+of the activation's environment. Its slot is rebound at each write, nested
+in an expression or not, the edge out of the write's node mapping the
+written value into it, and a read of $`x`$ is the slot. The lowering
+evaluates an expression in an environment and leaves one, $`\rho\vdash
+e\leadsto v;\rho'`$, each part of the expression evaluated, in source order,
+in the environment the part before it left:
 
 ```math
-\rho \vdash x \mathrel{=} e\ \leadsto\ v\leftarrow e;\ \mathrm{check}_C(v);\ \rho[x\mapsto v]
+\frac{\rho\vdash e\leadsto v;\rho'}
+     {\rho \vdash x \mathrel{=} e\ \leadsto\ v;\ \rho'[x\mapsto v]}\ \mathrm{check}_C(v)
 \qquad
-\rho \vdash x\ \leadsto\ \rho(x).
+\frac{}{\rho \vdash x\ \leadsto\ \rho(x);\ \rho}
+\qquad
+\frac{\rho\vdash e_1\leadsto v_1;\rho_1\qquad \rho_1\vdash e_2\leadsto v_2;\rho_2}
+     {\rho\vdash e_1\oplus e_2\leadsto v_1\oplus v_2;\ \rho_2}
 ```
 
-The third conjunct is a limit of the lowering, which types the rest of a
-statement, and joins the arms of an expression, at the frame the statement
-entered with: such a binding stays a cell.
+```math
+\frac{\rho(x)\ \text{nullish}\qquad \rho\vdash e\leadsto v;\rho'}
+     {\rho\vdash x\mathrel{??=}e\ \leadsto\ v;\ \rho'[x\mapsto v]}\ \mathrm{check}_C(v)
+\qquad
+\frac{\rho(x)\ \text{not nullish}}
+     {\rho\vdash x\mathrel{??=}e\ \leadsto\ \rho(x);\ \rho}
+```
+
+with $`\oplus`$ any operator, call or member access and $`\mathrm{check}_C`$
+the slot's contract checked on the edge out of the write. A choice (a test
+of a short circuit, `??`, `?:`, an optional chain, a logical assignment, a
+pattern's default) leaves an environment on each of its paths: where an arm
+rebinds a slot, the rest of the expression, and the statement's own
+continuation (the statement after it, a return or a throw), is lowered once
+per path, at the environment that path leaves; arms that rebind none join
+at one node. A handler is entered from each node that may throw with the
+environment at that node, a write completed before it included.
 `cellLocals` decides the conjuncts by one walk in evaluation order: the parts
 of an expression left to right, statements in order, every part of a choice
 (a superset of either arm), and a loop's parts twice, so that a write in one

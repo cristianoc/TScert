@@ -157,7 +157,7 @@ held in a slot. -/
   | _ => none
 
 /-- Locals a plan may rebind on any of its paths. -/
-@[nospecialize] private partial def executionRebound (scope : List (ScopeBinding Tree)) :
+@[nospecialize] partial def executionRebound (scope : List (ScopeBinding Tree)) :
     SourceExecution.Plan → List String
   | .atom _ operation => ((rebound scope operation).bind (scope[·]?)).toList.map (·.source.name)
   | .observe _ evaluate => executionRebound scope evaluate
@@ -965,6 +965,11 @@ the one the graph checker computes for the dispatch. -/
         | .evaluate original@(.read ..) prepared .none =>
           if (pathWitness scope original).isSome then pure original else comparisonsExpr fc prepared
         | .evaluate _ prepared _ => comparisonsExpr fc prepared
+        -- A reference's read of a slot is the slot's value: a test of it
+        -- narrows the slot, as a test of a read of the local does.
+        | .referenceRead _ reference@(.local name _) =>
+          pure (if (localSlot scope reference).isSome then Fragment.Expr.var source name
+            else Fragment.Expr.var source "")
         | _ => pure (Fragment.Expr.var source "")
       let after ← executionAfterContext fc scope Γ operation
       -- An assertion function's call leaves its actual, the name its saved
@@ -985,9 +990,16 @@ the one the graph checker computes for the dispatch. -/
         | .evaluate original _ .none => pathWitness scope original
         | _ => none
       let after := match witness with | some i => after.set i A | none => after
-      -- A rebound slot no longer holds what an alias saved of it.
-      withExecutionOrigins (if changed || (rebound scope operation).isSome then [] else retained)
+      -- A rebound slot no longer holds what an alias saved of it, and a
+      -- saved value read from it is no longer the slot's.
+      let continued := withExecutionOrigins (if changed || (rebound scope operation).isSome then [] else retained)
         (k (held ⟨"",some source⟩ :: scope) (A::after) origin)
+      match (rebound scope operation).bind (scope[·]?) with
+      | some written =>
+        let bindings ← executionBindings
+        let kept := bindings.origins.filter fun (_, o) => !o.freeNames.contains written.source.name
+        withExecutionBindings { bindings with origins := kept } continued
+      | none => continued
     let witness := match operation with
       | .evaluate original _ .none => pathWitness scope original
       | _ => none
@@ -997,19 +1009,17 @@ the one the graph checker computes for the dispatch. -/
       | none => next
     compileExecutionOperation recursive fc scope Γ source operation next
   | .sequence _ binding evaluate next =>
-    if executionBranches evaluate && executionBranches next then
+    -- A sequence whose evaluation rebinds a slot continues on each of its
+    -- paths with the frame that path leaves: the slot holds what that path
+    -- wrote, or what it held, there.
+    if executionBranches evaluate && executionBranches next && (executionRebound scope evaluate).isEmpty then
       -- A sequence joins its evaluated value before compiling its continuation.
       -- Retaining branch-local frames across another choice would duplicate
       -- later conditional arguments and grow the graph exponentially.
       let A ← executionPlanType fc scope Γ evaluate
       let previous ← executionBindings
       let bound : ScopeBinding Tree := { source := ⟨binding.name,some binding.source⟩, fixed := some A }
-      -- The shared continuation must not recover a saved value through a
-      -- local that either evaluated arm may have rebound.
-      let rebound := executionRebound scope evaluate
-      let origins := previous.origins.filter fun (_, origin) =>
-        !origin.freeNames.any rebound.contains
-      let after ← withExecutionBindings { types := (binding.name,A)::previous.types, origins }
+      let after ← withExecutionBindings { types := (binding.name,A)::previous.types, origins := previous.origins }
         (executePlanTail recursive fc (bound::scope) (A::Γ) next k exit)
       return ← executePlanTail recursive fc scope Γ evaluate fun _ Δ _ => do
         let offset := Δ.length - Γ.length

@@ -511,10 +511,10 @@ let rec linear ?(array = fun _ _ -> false) env fs (e : expr) : ((string * int) l
      states it the typed-array length. *)
   | Call ({node=Id "%ByteLength%";_},None,[o],[],_) when path_of env o <> None ->
     (match path_of env o with Some (b,path) -> Some ([view_term ~path b,1],0) | None -> None)
-  (* `++x` or `x++` of a binding held in a cell, read against the facts
-     after the update (`after_cell_updates`): the new value is `x`, the old
-     one `x` less the step. *)
-  | Update ((Add | Sub) as op,{node=Id x;_},rhs,post) when !cell_terms x && is_int fs x ->
+  (* `++x` or `x++` of a binding held in a cell or a slot, read against
+     the facts after the update (`after_cell_updates`): the new value is
+     `x`, the old one `x` less the step. *)
+  | Update ((Add | Sub) as op,{node=Id x;_},rhs,post) when (!cell_terms x || slot_binding env x) && is_int fs x ->
     (match cell_step op rhs with
      | Some d -> Some ([x,1], if post then -d else 0)
      | None -> None)
@@ -609,6 +609,37 @@ let assign ~array env fs x (e : expr) =
 
 let names_assigned (s : stmt) env =
   List.filter (fun (n,_) -> not (is_fact n) && Source.assigns n s) env |> List.map fst
+
+(* The slot bindings a statement writes inside an expression, a write other
+   than the statement's own (the assignment or update an expression
+   statement is): Lean rebinds the slot where the write runs
+   (SOURCE-ELABORATION.md, "Slot or cell"), and the facts here read each
+   operand at the statement's entry. Where there is one, the statement's
+   facts of these bindings and of the bindings it assigns are forgotten. *)
+let nested_slot_writes env (s : stmt) : string list =
+  let rec writes (e : expr) acc = match e.node with
+    | Lambda _ -> acc
+    | _ ->
+      let acc = match e.node with
+        | Assign (n,_,_) | NullishAssign (n,_,_) | LogicalAssign (_,{node=Id n;_},_) -> n :: acc
+        (* An update by a literal step is restated (`after_cell_updates`). *)
+        | Update ((Add | Sub),{node=Id _;_},(None | Some {node=Literal _;_}),_) -> acc
+        | Update (_,{node=Id n;_},_,_) -> n :: acc
+        | ArrayAssign (targets,rest,_) ->
+          List.filter_map (fun (_,(t:expr),_) -> match t.node with Id n -> Some n | _ -> None) targets
+          @ (match rest with Some (_,_,{node=Id n;_},_) -> [n] | _ -> []) @ acc
+        | _ -> acc in
+      List.fold_left (fun acc c -> writes c acc) acc (Source.children e) in
+  let rec statement_writes (e : expr) = match e.node with
+    | Comma (a,b) -> statement_writes a @ statement_writes b
+    | _ -> List.fold_left (fun acc c -> writes c acc) [] (Source.children e) in
+  let names = match s.statement with
+    | Effect e -> statement_writes e
+    | Declare _ | Destructure _ | Return _ | Throw _ ->
+      List.fold_left (fun acc e -> writes e acc) [] (Source.statement_children s)
+    | If (c,_,_) | While (c,_,_) | ForOf (_,_,_,c,_) -> writes c []
+    | Block _ | Try _ | Closing _ | Break _ | Continue -> [] in
+  List.sort_uniq compare (List.filter (slot_binding env) names)
 
 (* Whether evaluating an expression writes no heap location: slots and
    constants, operators on them, reads, element reads (`%ElementAt%`, which
@@ -1104,20 +1135,36 @@ let rec test_conditional_facts env (c : expr) answer : fact list = match c.node 
    stated the old one plus the step, the old one then eliminated. A binding
    updated twice, read elsewhere in the expression, or by a step no literal
    gives is forgotten. *)
-let after_cell_updates env (e : expr) (fs : fact list) : fact list =
-  let rec updates (e : expr) acc =
+let after_cell_updates ?(root=true) env (e : expr) (fs : fact list) : fact list =
+  (* Each child, and whether it runs wherever its parent does: the right
+     operand of a short circuit, an arm and a default run only on a path. *)
+  let sure_children (e : expr) = match e.node with
+    | Logical (_,a,b) | Coalesce (a,b) | Optional (a,b) | LogicalAssign (_,a,b) -> [a,true; b,false]
+    | Conditional (a,b,c) -> [a,true; b,false; c,false]
+    | NullishAssign (_,_,b) -> [b,false]
+    | ArrayAssign (targets,rest,rhs) ->
+      (rhs,true) :: List.concat_map (fun (_,t,d) -> (t,true) :: List.map (fun d -> d,false) (Option.to_list d)) targets
+      @ (match rest with Some (_,_,t,_) -> [t,true] | None -> [])
+    | _ -> List.map (fun c -> c,true) (Source.children e) in
+  (* An update on only some paths leaves the binding unknown. *)
+  let rec updates ~nested ~sure (e : expr) acc =
     if (match e.node with Lambda _ -> true | _ -> false) then acc else
+    let held x = !cell_terms x || (nested && slot_binding env x) in
     let acc = match e.node with
-      | Update ((Add | Sub) as op,{node=Id x;_},rhs,_) when !cell_terms x -> (x,cell_step op rhs) :: acc
-      | Assign (x,_,_) when !cell_terms x -> (x,None) :: acc
+      | Update ((Add | Sub) as op,{node=Id x;_},rhs,_) when held x -> (x,if sure then cell_step op rhs else None) :: acc
+      | Assign (x,_,_) when held x -> (x,None) :: acc
       | _ -> acc in
-    List.fold_left (fun acc c -> updates c acc) acc (Source.children e) in
+    List.fold_left (fun acc (c,s) -> updates ~nested:true ~sure:(sure && s) c acc) acc (sure_children e) in
+  let updates e acc = updates ~nested:root ~sure:true e acc in
   let rec mentions_id x (e : expr) =
     (match e.node with Id y | Assign (y,_,_) -> if y = x then 1 else 0 | _ -> 0) +
     List.fold_left (fun n c -> n + mentions_id x c) 0 (Source.children e) in
   match updates e [] with
   | [] -> fs
   | ups ->
+    (* A slot's update writes no heap location; a cell's is a number
+       field's write. *)
+    let cells = List.exists (fun (x,_) -> !cell_terms x) ups in
     let change = { obj = false; num = true; store = `Keep; framed = no_frame; apart = false; cell_write = true } in
     let renamed x old t = let b,path,kind = term_parts t in if b = x then make_term ~path kind old else t in
     let steps = List.map (fun (x,d) -> x, (if mentions_id x e = 1 then d else None), "%old" ^ x) ups in
@@ -1130,7 +1177,7 @@ let after_cell_updates env (e : expr) (fs : fact list) : fact list =
       | None -> false in
     let saved = !older_than_written in
     older_than_written := older;
-    let fs = Fun.protect ~finally:(fun () -> older_than_written := saved) (fun () ->
+    let fs = if not cells then fs else Fun.protect ~finally:(fun () -> older_than_written := saved) (fun () ->
       List.filter (fun f -> fact_kept change f || stable_fact env f) fs) in
     List.fold_left (fun fs (x,d,old) -> match d with
       | Some d when is_int fs old && safe fs ([old,1],d) -> forget old (fs @ equal x ([old,1],d))
@@ -1176,7 +1223,7 @@ let rec statement ~(array : string -> string list -> bool) ?(bounds=[]) ?(region
   (* A statement updating a cell inside it (`s += xs[at++]!`): the update's
      facts, then the statement as one writing no other location. *)
   | Effect e ->
-    let updated = after_cell_updates env e fs in
+    let updated = after_cell_updates ~root:false env e fs in
     if updated == fs then statement_slots ~array ~bounds ~regions ~stores env fs s
     else with_cells true (fun () -> statement_slots ~array ~bounds env updated s)
   | _ -> statement_slots ~array ~bounds ~regions ~stores env fs s

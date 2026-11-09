@@ -404,9 +404,17 @@ let statements callbacks flow_graph register_following owner_span env0 ss =
         (* A cell a fact names is one of the body's own (`cell_terms`); an
            early one names none. *)
         let unnamed n = cell n && not (!Linear_facts.cell_terms n) in
-        let with_facts ?(ds=[]) ?(gs=[]) ?(es=[]) ?(rs=[]) ?(ss=[]) (id,state) fs bs =
+        (* A statement writing a slot inside an expression forgets its
+           facts of the bindings it writes (`nested_slot_writes`). *)
+        let rewritten (s:Source.stmt) = match Linear_facts.nested_slot_writes env s with
+          | [] -> []
+          | ns -> ns @ Linear_facts.names_assigned s env in
+        let with_facts ?(ds=[]) ?(gs=[]) ?(es=[]) ?(rs=[]) ?(ss=[]) ?(dropped=[]) (id,state) fs bs =
+          let unnamed n = unnamed n || List.mem n dropped in
+          let cell n = cell n || List.mem n dropped in
           let fs = Linear_facts.close fs in
           let fs = List.filter (fun ((t,_) : Linear_facts.fact) -> not (List.exists (fun (n,_) -> unnamed (Linear_facts.term_binding n)) t)) fs in
+          let ds = List.filter (fun d -> not (List.exists unnamed (Linear_facts.dbindings d))) ds in
           let gs = List.filter (fun g -> not (List.exists unnamed (Linear_facts.gbindings g))) gs in
           let es = List.filter (fun e -> not (List.exists unnamed (Linear_facts.ebindings e))) es in
           let rs = List.filter (fun (x,y) -> not (cell x) && not (cell y)) rs in
@@ -435,12 +443,12 @@ let statements callbacks flow_graph register_following owner_span env0 ss =
             | _ -> s in
           let visible m = List.exists (fun (b:Flow.binding) -> b.name=m) node.scope || (outermost && List.mem_assoc m env0) in
           let rs = Linear_facts.rstatement ~array:(callbacks.array_binding env) ~visible env regions0 declared in
-          [with_facts ~ds:(Linear_facts.dstatement env disjunctions0 declared) ~gs ~es:(Linear_facts.estatement ~array:(callbacks.array_binding env) ~facts:facts0 ~regions:regions0 env every0 declared) ~rs
+          [with_facts ~dropped:(rewritten (source span)) ~ds:(Linear_facts.dstatement env disjunctions0 declared) ~gs ~es:(Linear_facts.estatement ~array:(callbacks.array_binding env) ~facts:facts0 ~regions:regions0 env every0 declared) ~rs
              ~ss:(Linear_facts.sstatement ~array:(callbacks.array_binding env) ~visible env stores0 declared) e fs
              (Linear_facts.statement_bounds env bounds0 (source span))]
         | Flow.Statement (span,_), [e] ->
           let s = source span in
-          [with_facts ~ds:(Linear_facts.dstatement env disjunctions0 s) ~gs:(Linear_facts.gstatement ~bounds:bounds0 env facts0 guarded0 s)
+          [with_facts ~dropped:(rewritten s) ~ds:(Linear_facts.dstatement env disjunctions0 s) ~gs:(Linear_facts.gstatement ~bounds:bounds0 env facts0 guarded0 s)
             ~es:(Linear_facts.estatement ~array:(callbacks.array_binding env) ~facts:facts0 ~regions:regions0 env every0 s)
             ~rs:(Linear_facts.rstatement ~array:(callbacks.array_binding env) env regions0 s)
             ~ss:(Linear_facts.sstatement env stores0 s) e
@@ -510,8 +518,9 @@ let statements callbacks flow_graph register_following owner_span env0 ss =
              let es = if heap_free then every0 else [] in
              let rs = if heap_free then regions0 else [] in
              let ss = List.filter (fun (((_,p),(_,q)) : Linear_facts.sfact) -> heap_free || (p = [] && q = [])) stores0 in
-             [with_facts ~ds:(if heap_free then disjunctions0 else []) ~gs:gy ~es ~rs ~ss y (reading (facts0 @ t @ ty) @ Linear_facts.test_conditional_facts env c true) (kept @ bounds bt);
-              with_facts ~ds:(if heap_free then disjunctions0 else []) ~gs:gn ~es ~rs ~ss n (reading (facts0 @ f @ tn) @ Linear_facts.test_conditional_facts env c false) (kept @ bounds bf)]
+             let dropped = rewritten s in
+             [with_facts ~dropped ~ds:(if heap_free then disjunctions0 else []) ~gs:gy ~es ~rs ~ss y (reading (facts0 @ t @ ty) @ Linear_facts.test_conditional_facts env c true) (kept @ bounds bt);
+              with_facts ~dropped ~ds:(if heap_free then disjunctions0 else []) ~gs:gn ~es ~rs ~ss n (reading (facts0 @ f @ tn) @ Linear_facts.test_conditional_facts env c false) (kept @ bounds bf)]
            | _ -> edges)
         | _ -> edges in
       let edges=match node.handler with
@@ -521,7 +530,15 @@ let statements callbacks flow_graph register_following owner_span env0 ss =
              of the empty type, which a join with any other edge drops, and
              which marks a handler no edge reaches as unreachable. *)
           let caught=if silent then Atoms [] else top in
-          let exceptional=scope h.scope (forget env) in
+          (* A throw may follow a write the statement makes inside an
+             expression: a slot it writes holds a value of its contract. *)
+          let written=match node.action with
+            | Flow.Statement (span,_) | Flow.Declaration (span,_,_,_,_) | Flow.Branch (span,_,_)
+            | Flow.Return span | Flow.ReturnSave (span,_,_) -> Some (source span)
+            | _ -> None in
+          let exceptional=List.map (fun (n,b) -> match b,written with
+            | Local (contract,_),Some s when Source.assigns n s -> n,Local (contract,contract)
+            | _ -> n,b) (scope h.scope (forget env)) in
           let exceptional=if List.mem_assoc h.binding.name exceptional then
               List.map (fun (n,b) -> if n=h.binding.name then n,Value caught else n,b) exceptional
             else extend exceptional h.binding.name (Value caught) in

@@ -1,4 +1,4 @@
-// Pretext normalizePreparedLineStart: a counter updated inside an expression is a cell.
+// Pretext normalizePreparedLineStart: a counter updated inside an expression, a slot.
 /** @requires xs.length <= ys.length */
 export function walk(xs: number[], ys: number[]): number {
   let j = 0;

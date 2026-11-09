@@ -1,6 +1,7 @@
-// `x++`, `x--` and `x op= r` of a local cell inside a closed expression (an
-// operand of `&&`, an arrow's expression body) read the cell at its contract,
-// write the result back at it, and give the old or the new value.
+// `x++`, `x--` and `x op= r` of a local inside a closed expression (an
+// operand of `&&`, an arrow's expression body), a cell since the arrow
+// writes it: each reads the cell at its contract, writes the result back at
+// it, and gives the old or the new value.
 export function counts(): number {
   let x: number = 5;
   const ok = x++ > 0 && x-- > 0;

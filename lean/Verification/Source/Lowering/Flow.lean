@@ -147,9 +147,12 @@ private def reachablePoints (graph : SourceFlow.Graph) (id : Nat) : List String 
       else emitAt node.source .nul (.effect next) Γ [Labels.nul] (scope := scope)
     | .returnValue (.ret pos e) =>
       let A ← exprType fc e
-      let done ← emitAt e.span (.var 0) .ret (A::Γ) (← returnClaim A R) "return-contract" (some pos.1)
-        (scope := held ⟨"",some e.span⟩ :: scope)
-      LoweringExecution.compileExpr recursive fc scope Γ e done
+      let claim ← returnClaim A R
+      -- The return is typed at the frame the expression leaves: a slot its
+      -- evaluation rebound holds the written value there.
+      LoweringExecution.compileExprThen recursive fc scope Γ e fun Δ =>
+        emitAt e.span (.var 0) .ret (A::Δ) claim "return-contract" (some pos.1)
+          (scope := held ⟨"",some e.span⟩ :: scope)
     | .saveReturn (.ret _ e) descriptor next =>
       let A ← exprType fc e
       let binding : ScopeBinding Tree := { source := descriptor, fixed := some A }
@@ -167,9 +170,9 @@ private def reachablePoints (graph : SourceFlow.Graph) (id : Nat) : List String 
     | .statement (.throw pos e) _ =>
       let A ← exprType fc e
       -- A throw returns no value: its claim is the empty type.
-      let raise ← emitAt e.span (.throw (.var 0)) .ret (A::Γ) [] "throw" (some pos.1)
-        (scope := held ⟨"",some e.span⟩ :: scope)
-      LoweringExecution.compileExpr recursive fc scope Γ e raise
+      LoweringExecution.compileExprThen recursive fc scope Γ e fun Δ =>
+        emitAt e.span (.throw (.var 0)) .ret (A::Δ) [] "throw" (some pos.1)
+          (scope := held ⟨"",some e.span⟩ :: scope)
     | .early bindings next =>
       -- The list's early bindings (SOURCE-ELABORATION.md, "Lexical bindings before
       -- initialization"): the activation's marker, then each binding's cell

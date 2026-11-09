@@ -2806,6 +2806,16 @@ for (const file of ["invalid-stated-region-fresh-wrapper", "invalid-stated-regio
   "invalid-stated-region-fresh-call"]) {
   assert.ok(Number.isNaN(Number(runExample(file, "total([1, 2, 3])"))), `${file}: the call empties the counted array`);
 }
+// A local's nested write held in a slot: no iteration and several, the
+// later read in one expression, the handler of a throw after and before
+// the write, and a closure's write of a cell.
+assert.equal(runExample("stated-slot-collect", "collect({ open: [] }, [])"), null);
+assert.equal(runExample("stated-slot-collect", "JSON.stringify(collect({ open: [] }, [\"a\", \"b\"]))"), '["a","b"]');
+assert.equal(runExample("stated-slot-order", "order()"), 11);
+assert.equal(runExample("stated-slot-handler", "reset({ open: [] }, [\"a\"])"), 1);
+assert.equal(runExample("invalid-stated-slot-handler", "reset({ open: [] }, [\"a\"])"), 0,
+  "the handler pops the caller's array");
+assert.equal(runExample("invalid-stated-slot-closure", "count()"), null, "the closure leaves `null` in the cell");
 // An async call returns its promise where its body throws: each rejection is
 // handled by the process, and the pop before it leaves a hole.
 for (const [file, call] of [

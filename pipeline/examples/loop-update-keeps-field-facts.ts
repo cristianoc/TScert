@@ -1,6 +1,6 @@
-// A loop whose update assigns bindings in a comma expression, which makes
-// them cells, and whose body tests `flag && keeps(r)`: a type invariant over
-// a local object's number fields holds at each call needing it. Each cell's
+// A loop whose update assigns bindings in a comma expression, slots it
+// rebinds, and whose body tests `flag && keeps(r)`: a type invariant over
+// a local object's number fields holds at each call needing it. Each slot's
 // write leaves the fields of the older object `r` alone, the string method
 // in the update keeps the heap, and `keeps(r)`, which writes no binding
 // named `r`, states the invariant again where it runs (pretext's

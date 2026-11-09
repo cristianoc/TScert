@@ -1,7 +1,7 @@
-// Postfix updates inside an index, a binding held in a cell (ARITHMETIC.md,
-// "Terms for bindings held in cells"): `xs[at++]!` reads at the old value
-// while the cell holds the new one, pretext's `cache[cacheAt++]!` and
-// `start = ends[i++]!` shapes.
+// Postfix updates inside an index, a binding held in a slot the update
+// rebinds (SOURCE-ELABORATION.md, "Slot or cell"): `xs[at++]!` reads at the
+// old value while the slot holds the new one, pretext's `cache[cacheAt++]!`
+// and `start = ends[i++]!` shapes.
 
 /** @requires safeInteger(at) && 0 <= at && at + 1 < xs.length */
 export function twoFrom(xs: number[], at: number): number {
