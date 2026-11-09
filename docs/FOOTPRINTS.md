@@ -740,12 +740,16 @@ nodes, slot copies and receiver-store calls on tracked entry values.
 ordinary code and summary soundness. Its premises contain no unchecked
 regional node obligations. `checkEntry_reassign` preserves the check under
 type-parameter assignments; `firstRefusedNode_sound` identifies a failing
-node at its program label for source diagnostics. Field-read provenance, fresh stores and nested
+node at its program label for source diagnostics. A read through a
+`@stable` field is a supported node (`checkRead_sound`, the stable-read
+node rule); reads through other fields, fresh stores and nested
 argument-path calls are outside this checker's supported nodes.
 
-The regional graph and caller-separation checks do not participate in CLI
-acceptance. The call-effect wire has no argument-path field. The source-level
-argument-path effect therefore lies outside these theorems' proof scope.
+The regional graph check is part of CLI acceptance: a function
+declaration's stated regions, `"x[*]"` and `"x.f[*]"` through a `@stable`
+field, are certified by it (`checkRequests_regional_at`, reached from
+`checkUnitJson_safe`), and the call effect on the claims wire carries them
+(`regions`).
 
 `GraphCodeSpec` states a code's effect at the receiver and actuals matching
 its entry frame (`FrameValues`), including the optional rest-store slot.
