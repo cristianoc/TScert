@@ -95,32 +95,36 @@ the entry one. A location at or above $`|h_0|`$ is unconstrained.
 **Promises.** The relational promises stand beside the frame: `fresh`,
 `freshObject`, `receiverGrows` (`ReceiverGrows`, `ReceiverAppends`) and
 `elementWrite` (`ElementWrite.Holds`), each on normal return only
-(`Effect.post`); `Effect.excPost` carries none of them onto a throw. They
-are postconditions, not frames: each relates the result or the changed
-locations to the entry heap, and none bounds which locations change. §2
-states where each is written.
+(`Effect.post`); `Effect.excPost` carries none of them onto a throw. Each
+relates the result or the changed locations to the entry heap and the
+actuals. `fresh` and `freshObject` constrain the result alone;
+`ReceiverGrows` keeps every old location but the receiver's store and
+relates that store to its old contents, and `ElementWrite.Holds` bounds the
+heap by `ElementWrite.changes` and, where exact, fixes the written cell:
+these two combine a frame with relational information no entry's change
+states. §2 states where each is written.
 
 ## 2. The written form
 
-A signature's result `Modifies<P, T>` states its frame; TypeScript reads it
-as `T`. $`P`$ is a type literal written in place, one map from what may
-change to how much:
+A signature's result `Modifies<P, T>` states its frame, and `Fresh<T>`
+its fresh result (§2.1); TypeScript reads each as `T`. $`P`$ is a type
+literal written in place, one map from what may change to how much:
 
 ```math
 \begin{aligned}
 P &::= \texttt{\{}\ (e\texttt{;})^{*}\ \texttt{\}}\\
 e &::= \texttt{values:}\ c \mid \texttt{stores:}\ c \mid \texttt{"}L\texttt{":}\ m \mid \texttt{onThrow: true}\\
 m &::= c \mid \texttt{\{}\ [\texttt{values:}\ c\texttt{;}]\ [\texttt{stores:}\ c\texttt{;}]\ \texttt{\}}\\
-L &::= b \mid R\texttt{.}f \mid R\texttt{[*]} \mid R\texttt{.*}\qquad R ::= x \mid \texttt{this} \mid R\texttt{.}f\\
+L &::= \texttt{cell(}b\texttt{)} \mid R\texttt{.}f \mid R\texttt{[*]} \mid R\texttt{.*}\qquad R ::= x \mid \texttt{this} \mid R\texttt{.}f\\
 c &::= \texttt{"keep"} \mid \texttt{"init"} \mid \texttt{"scalar"} \mid \texttt{"grow"} \mid \texttt{"any"}
 \end{aligned}
 ```
 
 Each entry adds its regions at its change; a location no entry covers is
-unchanged, so `Modifies<{}, T>` changes nothing. A key that is an
-identifier may be written unquoted. `values: c` is
+unchanged, so `Modifies<{}, T>` changes nothing. The class keys and the
+flag are written unquoted, a location key quoted. `values: c` is
 `cls value` at $`c`$ and `stores: c` is `cls store` at $`c`$. A location
-key adds its regions: $`b`$ is `cell b`, $`R.f`$ is `path`, $`R[*]`$ is
+key adds its regions: `cell(b)` is `cell b`, $`R.f`$ is `path`, $`R[*]`$ is
 `path store` with `pathElems`, $`R.*`$ is `pathOwn`. A location key at a
 class map, `"L": { values: c_v; stores: c_s }`, is `inCls L value` at
 $`c_v`$ and `inCls L store` at $`c_s`$, an omitted class unchanged; since
@@ -149,17 +153,22 @@ type Modifies<
   },
   T,
 > = T;
+type Fresh<T> = T;
 ```
 
 TypeScript checks a class key's change; a location key passes its index
-signature whatever its spelling, so the reader refuses a key that is no
-$`L`$ or that resolves to nothing (Binding, below).
+signature whatever its spelling and value, so the reader refuses a key
+that is no $`L`$ or that resolves to nothing (Binding, below), and a value
+that is no $`m`$: `true` or `undefined` at a location key, and a class map
+with a member other than `values` and `stores`.
 
 ```ts
 function size(xs: number[]): Modifies<{}, number>
 function lower(term: TypeTerm): Modifies<{ values: "any"; stores: "grow" }, TypeTerm>
 function readRuns(runs: Runs): Modifies<{ values: "any"; "runs.openBrackets[*]": "any" }, void>
 note(n: number): Modifies<{ "this.*": { values: "scalar" }; onThrow: true }, number>
+function cached(): Modifies<{ "cell(values)": "init" }, Profile>
+function zeros(count: number): Modifies<{}, Fresh<number[]>>
 ```
 
 **Beyond a modifies clause.** A classic frame condition, Dafny's
@@ -168,31 +177,44 @@ note(n: number): Modifies<{ "this.*": { values: "scalar" }; onThrow: true }, num
 ACSL's `assigns` ([ACSL](../REFERENCES.md#acsl)), Boogie's `modifies`
 ([Barnett et al. 2006](../REFERENCES.md#barnett-et-al-2006)) and Low*'s
 `modifies` ([Protzenko et al. 2017](../REFERENCES.md#protzenko-et-al-2017)),
-is a set of locations: those outside it keep their contents, those inside
-may take any. The change $`c`$ of each entry is the part beyond it: a
-two-state relation each covered location meets, monotone below `any`
-(`init` writes only a `null` or `undefined`, `scalar` writes no object or
-store, `grow` keeps a store's dense prefix and lists only its old cells or
-fresh ones; `Change.Holds`). It is the preorder of F*'s monotonic
-references ([Ahman et al. 2018](../REFERENCES.md#ahman-et-al-2018)) and
-the relation a Dafny `twostate` predicate states
-([Dafny](../REFERENCES.md#dafny)), attached to each entry of the frame. It
-belongs in the frame because `stable` reads it: a fact whose support
-tolerates `grow` (a length's lower bound) is kept across a call that grows
-the store it reads, where a plain modifies set, listing that store, would
-drop it.
+is a set of locations. These languages read it in one of two ways
+([Dafny](../REFERENCES.md#dafny), the modifies clause;
+[ACSL](../REFERENCES.md#acsl), semantics of frame conditions): as a write
+permission, a location outside the set never written even with the value
+it holds (Dafny, JML), or as a two-state relation, a location outside the
+set holding at the post-state its pre-state contents (ACSL). `Post` is the
+two-state reading: the shared name stands for that reading, and a body may
+write a location outside its frame if the location holds its entry
+contents at the return. Beyond the set, `Modifies` states four parts:
 
-**Postconditions beside the frame.** The promises of §1 are not part of
-$`P`$:
+- **A change per entry.** Inside the set a location may take any contents;
+  the change $`c`$ of each entry is a two-state relation each covered
+  location meets, monotone below `any` (`Change.Holds`): `init` replaces
+  an initially nullish value by a value that is no store, `scalar` an
+  initially non-object, non-store value by a value that is no store (each
+  may introduce an object reference), `grow` keeps a store's dense prefix
+  and lists only its old cells or fresh ones. It follows the same
+  preorder-based preservation pattern as F*'s monotonic references
+  ([Ahman et al. 2018](../REFERENCES.md#ahman-et-al-2018)), and is a
+  relation of the kind a Dafny `twostate` predicate can state. It belongs in
+  the frame because `stable` reads it: a fact whose support tolerates
+  `grow` (a length's lower bound) is kept across a call that grows the
+  store it reads, where a plain modifies set, listing that store, would
+  drop it.
+- **Classes.** `values` and `stores` name every location of a class, so a
+  frame bounds locations no path reaches.
+- **Normal return by default.** The frame bounds a normal return; a throw
+  is unbounded unless the statement writes `onThrow: true`.
+- **Fresh results.** `Fresh<T>` states the result's store allocated during
+  the call (§2.1).
 
-- `fresh` is a postcondition on the result, written as the `@ensures` atom
-  `fresh(result)` (§2.1).
-- `freshObject`, `appends` (`receiverGrows`) and `writes` (`elementWrite`)
-  relate a native's result or changed cells to its arguments; each is a
-  field of the audited contract that states the native (a row of
-  `tools/*.mts` or a pinned overlay entry, below), stated and reviewed with
-  it, and has no written form in a program's source: no rule certifies one
-  from a body (`effectCheckedResult` refuses each).
+**Promises beside the frame.** `Fresh<T>` is the written form of `fresh`.
+`freshObject`, `appends` (`receiverGrows`) and `writes` (`elementWrite`)
+relate a native's result or changed cells to its arguments; each is a
+field of the audited contract that states the native (a row of
+`tools/*.mts` or a pinned overlay entry, below), stated and reviewed with
+it, and has no written form in a program's source: no rule certifies one
+from a body (`effectCheckedResult` refuses each).
 
 **Why a type, and no `@modifies` tag.** `Modifies` is a type, so it rides
 on every signature TScert reads, a function type's included: a callback
@@ -201,21 +223,21 @@ declaration file's export; a JSDoc tag has no attachment point on a
 function type written in a parameter. A tag beside it on declarations
 would be a second spelling of one statement, read by a second reader and
 recognized by its spelling, where `Modifies` is recognized by the
-declaration TypeScript binds it to and read by `statedResult` alone. The
-JSDoc clauses `@requires` and `@ensures` state facts, which no type
-carries. Preconditions stay `@requires`
+declaration TypeScript binds it to and read by `statedResult` alone.
+`Fresh` is a type for the same reason, and the one spelling of a fresh
+result. The JSDoc clauses `@requires` and `@ensures` state facts of one
+heap, which no type carries. Preconditions stay `@requires`
 ([preconditions](../PROGRAM-TYPING.md#preconditions); cited), which gains
 the separation atoms of §5.
 
 **Binding.** A root $`x`$ is a parameter's name, bound to its position; a
 parameter with a default, a rest parameter and a pattern are refused as
 roots, since their value in the body is not the call's. `this` is position
-$`0`$, refused in an arrow. $`b`$ is a [module cell](../SOURCE-ELABORATION.md#module-cells)
-of the declaring module, resolved through its declaration's symbol; a name
-that resolves to none is refused where read. The keys `values`, `stores`
-and `onThrow` are always the class keys and the flag: a module binding of
-one of those names is not nameable as a cell, and its writes are stated
-through `values`. A traversed field of $`R`$ must be `@stable`
+$`0`$, refused in an arrow. In `cell(b)`, $`b`$ is a
+[module cell](../SOURCE-ELABORATION.md#module-cells) of the declaring
+module, resolved through its declaration's symbol, whatever its name
+(`"cell(values)"` is the binding `values`); a name that resolves to none is
+refused where read. A traversed field of $`R`$ must be `@stable`
 ([records](../POSITIVE-TYPES.md#records); cited), the final field of
 $`R.f`$ excepted; a path through a field no type resolves is refused.
 
@@ -223,49 +245,53 @@ $`R.f`$ excepted; a path through a field no type resolves is refused.
 
 - *A program definition* (its body visible): optional. Written, the whole
   statement is certified from the code over every environment its inputs
-  admit (`stated-declaration`, `stated-closure`): the frame, the producer
-  proposing it and Lean checking it. Unwritten, the producer infers the
+  admit (`stated-declaration`, `stated-closure`): the frame and `Fresh`,
+  the producer proposing it and Lean checking it. Unwritten, the producer infers the
   effect from the body.
 - *A function type of the program* (a parameter, a field, a returned
   closure): every value introduced at it meets it, by the existing
   introductions (closure certification, subtyping, field writes).
 - *An import from another module of the program*: read under the import
   assumption ([trust surface](../DESIGN.md#trust-surface)) as the exporting
-  module's own run certified it, its `fresh` promise included.
+  module's own run certified it, `Fresh` included.
 - *A declaration file or a package*: an **audited contract**. A statement
   there is read only where a reviewed overlay entry pins its declaration
   by origin, package version and heading text, the statement included, as
   [stated library types](../SOURCE-CONTRACTS.md#stated-library-types)
   pin theirs, and the owner has reviewed it against the package's code by
   [modeling a library](../SOURCE-CONTRACTS.md#modeling-a-library): its
-  callbacks, conversions and both exits. The entry states its promises
-  (`fresh` among them) beside it. An unpinned statement is refused. Each
+  callbacks, conversions and both exits. The entry states the promises
+  with no written form (`freshObject`, `appends`, `writes`) beside it. An unpinned statement is refused. Each
   pinned statement is an item of the trust surface; the native rows of
   `tools/*.mts` are such entries written in this form.
 
-### 2.1 `fresh(result)`
+### 2.1 `Fresh<T>`
 
-`@ensures` gains one atom, `fresh(result)`: the result's array store was
-allocated during the call (`FreshAt` of the entry heap's length, on normal
-return). It is the clause language's one two-state atom, read against the
-call's entry heap, and it elaborates to the signature's `fresh` promise,
-not to an index fact of `ensures`. It is admitted where `@ensures` is (a
-synchronous module function declaration with one signature and named
-non-rest parameters), as a conjunct of the clause's top level, and only on
-a result whose type is an array type; inside an alternative, a guarded
-clause (`result === false || C`) or a quantified clause it is refused.
+A signature's result `Fresh<T>` states that a normal return's value holds
+an array store allocated during this invocation: `FreshAt` of the
+invocation's entry heap length (`ClosedFootprints.lean`), the effect's
+`fresh`. It is a promise of the call, read against its entry heap, rather
+than a property the value keeps. $`T`$ is an array type; it composes with a
+frame as `Modifies<P, Fresh<T>>`, the one order the reader accepts, and
+elsewhere in a type (a parameter, a field's value, an element) it is
+refused. It is admitted everywhere `Modifies` is: a function declaration, a
+method, a closure, a function a module binding holds, a function type in a
+parameter, a field or a returned closure, an import, an audited contract.
 
 ```ts
-/** @ensures fresh(result) && result.length === count */
-export function zeros(count: number): number[]
+function zeros(count: number): Fresh<number[]>
+function build(make: () => Modifies<{ stores: "grow" }, Fresh<number[]>>): number[]
 ```
 
-Its unit proves it as O10 states: the compositional check with `ret`
-infers every return fresh (`compositionalChecked`, `GraphCode.lean`;
-proved for code entries), and `checkRequests_stated_at` gains `FreshAt` of
-the entry heap's length on normal return over the unit's full domain. A
-caller gains the promise at `call-ensures`'s step; an importer reads it from
-the export's certified signature.
+It is certified where the function is introduced, as O10 states: a body
+stating it runs the compositional check with `ret`, which infers every
+return fresh (`compositionalChecked`, `GraphCode.lean`; proved for code
+entries), and `checkRequests_stated_at` gains `FreshAt` of the entry heap's
+length on normal return over the unit's full domain; a value meets a
+function type stating it only where its own effect states `fresh`
+(`Effect.covers`'s `!b.fresh || a.fresh`). A caller gains the promise at
+the call's step; an importer reads it from the export's certified
+signature.
 
 ## 3. Existing effects, translated
 
@@ -315,13 +341,12 @@ main at 0c4518e4:
 
 The census's copy of `tools/` is recognized by holding
 `resolvable.d.ts`'s exact bytes, so it follows at the same commit. A
-location key is refused until the regions of §1 are certified, so the
-migration changes no accepted program. TypeScript accepts the old
-spelling `{ value: "any"; store: "grow" }` at `Modifies`, its keys passing
-the index signature; the reader refuses each as a name resolving to no
-module binding, and where a module binds `value` or `store` the frame then
-names that cell alone, which certification refuses for any body changing
-more. Every keyed file the change edits misses its stage entries once.
+location key is refused until the regions of §1 are certified, and
+`Fresh` until O10 is, so the migration changes no accepted program.
+TypeScript accepts the old spelling `{ value: "any"; store: "grow" }` at
+`Modifies`, its keys passing the index signature; the reader refuses
+`value` and `store` as keys that are no $`L`$, whatever the module binds,
+since a cell is written `cell(b)`. Every keyed file the change edits misses its stage entries once.
 The wire (`stated` of the Fragment, `CallEffect`) and the Lean names
 (`statedWithin`) are unchanged by it.
 
@@ -483,7 +508,7 @@ Modifies<{ values: "any"; stores: "grow"; "runs.openBrackets[*]": "any" }, void>
 joined with `unpackClasses`'s and `getClass`'s frames: `stores: "grow"`
 from the element writes (`elem-write-slot`, a closed footprint) and
 `push`'s row; `values: "any"` from the element writes and `splice`, and it
-covers `"scriptClasses": "init"` and the two field writes, which then add
+covers `"cell(scriptClasses)": "init"` and the two field writes, which then add
 no precision. None of the native rows states `onThrow`, so the frame holds
 on normal return only; `measureAnalysis` catches nothing, so its facts
 need only normal edges. `spaceSharesScriptRun` adds `hasProperty`'s frame,
@@ -544,7 +569,7 @@ compares an override's frame with its base's by that coverage.
 ### 6.4 Module caches ([keeping-contract-facts-across-calls.md](keeping-contract-facts-across-calls.md))
 
 `getEngineProfile`'s `cachedEngineProfile ??= build()` is
-`Modifies<{ cachedEngineProfile: "init" }, EngineProfile>` joined with
+`Modifies<{ "cell(cachedEngineProfile)": "init" }, EngineProfile>` joined with
 `build`'s frame. A caller collects these transitively, or widens them
 (`values: "init"` covers every cell at once). From another module a cell
 is the widened class region (§4). A write to an object reached through a
@@ -556,7 +581,7 @@ places the map's table among the receiver's own locations.
 - **Value and store classes**: `values` and `stores`.
 - **Fresh array storage**: freshness discharges the enclosing obligation
   (§4; `FreshOk`, `Closed.HoldsOn.below_fresh`; cited); a result's
-  freshness is `@ensures fresh(result)` (§2.1).
+  freshness is `Fresh<T>` (§2.1).
 - **Element writes**: `o[k] = v` is within
   `"o[*]": { values: "any"; stores: "grow" }` (`stores: "keep"` at a
   required position) once its write is proved confined to the store's
@@ -617,20 +642,22 @@ Paths relative to `lean/Verification/`; "chain1" names a file of branch
   a unit stating a frame, that its runs meet it, beside
   `checkRequests_footprint_at`. The `FunctionPlan` to `CertifiedPlan`
   conversion is unchanged.
-- **O10 Freshness.** A declaration whose `@ensures` holds `fresh(result)`
-  runs the compositional check with `ret`, and `checkRequests_stated_at`
-  gains `FreshAt` of the entry heap's length on normal return over its
-  full domain; the export's certified signature carries `fresh` to
-  importers; acceptance (O9) includes it. `freshObject`, `appends` and
-  `writes` stay fields of audited contracts.
+- **O10 Freshness.** A body stating `Fresh<T>` runs the compositional
+  check with `ret`, and `checkRequests_stated_at` gains `FreshAt` of the
+  entry heap's length on normal return over its full domain, at every
+  position of §2.1: a declaration, a method, a closure, a function a
+  module binding holds, and a value introduced at a function type in a
+  parameter, a field or a returned closure. Subtyping keeps `fresh` only
+  from a fresh source (`Effect.covers`); the export's certified signature
+  carries it to importers; acceptance (O9) includes it. `freshObject`,
+  `appends` and `writes` stay fields of audited contracts.
 - **Wire.** `CallEffect` and the Fragment's `stated` carry the frame's
-  entries; the written postcondition carries `fresh`; decoders require
-  them field by field.
+  entries and `fresh`; decoders require them field by field.
 
 ## 9. Trust
 
-A statement on a program definition is certified from its code, and so is
-a written `fresh(result)`; an imported one is read under the import
+A statement on a program definition, `Fresh<T>` included, is certified
+from its code; an imported one is read under the import
 assumption. A statement in a declaration file or a package is an audited
 contract, pinned and reviewed by the owner (§2), and a trust-surface item;
 `freshObject`, `appends` and `writes` are fields of such contracts only. A
@@ -646,9 +673,12 @@ Positive: `stated-argument-path` (§6.1), `stated-local-runs` (runs
 allocated in the looping function), `stated-module-cache` (a `??=` cache
 keeping a fact elsewhere), `stated-callback-frame` (a callback type stating
 a frame, called in a loop), `stated-package-contract` (a pinned statement
-in a package's declaration file), `ensures-fresh` (a builder writing
-`@ensures fresh(result)` and no `Modifies`, its result's length kept by a
-caller across a call growing another array).
+in a package's declaration file), `stated-fresh` (a builder stating
+`Fresh<number[]>` and no frame, its result's length kept by a caller
+across a call growing another array), `stated-fresh-callback` (a builder
+passed at a parameter typed `() => Modifies<P, Fresh<number[]>>`, and one
+a method states), `stated-cell-reserved` (a cache in a binding named
+`values`, stated `"cell(values)": "init"`).
 
 Negative, each run under Node: `invalid-stated-alias` (§6.1 without
 `@requires`, `NaN`), `invalid-stated-fresh-shrink` (§4's `f`),
@@ -656,11 +686,24 @@ Negative, each run under Node: `invalid-stated-alias` (§6.1 without
 traversed field without `@stable`, reassigned to the counted array between
 calls), `invalid-stated-throw` (a splice before a throw a caller catches,
 at a frame claiming `onThrow`), `invalid-stated-default-root`,
-`invalid-ensures-fresh-input` (a function returning its input under
-`@ensures fresh(result)`), and an unpinned statement in a declaration
-file. Refused at the reader: `Modifies<{ values: "any"; stores: "any" }, T>`;
-the spelling `{ value: …; store: … }`; `fresh(result)` inside an
-alternative, and on a result of no array type.
+`invalid-stated-fresh-input` (a function returning its input under
+`Fresh<T>`), `invalid-stated-fresh-closure` (a closure returning a
+captured array, passed at a parameter type stating `Fresh`), and an
+unpinned statement in a declaration file. Refused at the reader:
+`Modifies<{ values: "any"; stores: "any" }, T>`; `Fresh` on a type of no
+array, outside a result, and as `Fresh<Modifies<P, T>>`.
+
+Migration controls, each refused at the reader: the old spelling
+`{ value: …; store: … }` in a module binding neither name, and in one
+binding `value` and `store`; a bare key naming a module binding
+(`{ values: "any"; scriptClasses: "init" }`); the reserved names written
+as cells (`"cell(values)"`, `"cell(stores)"`, `"cell(onThrow)"`) read as
+those bindings, and refused where none exists; the index signature's
+malformed values, `"cell(b)": true`, `"cell(b)": undefined` and a class
+map with an unknown member (`{ values: "any"; other: "any" }`); a
+lookalike `Modifies` or `Fresh` declared outside `tools/resolvable.d.ts`
+(`invalid-method-effect-lookalike`), read as an ordinary type; and an
+audited overlay entry pinning a statement in the old spelling.
 
 Forged controls (`pipeline/test.mts`): a frame narrower than the body's
 writes; `apart` or `storeApart` forged at a call that cannot establish it;
@@ -670,7 +713,11 @@ of another module, and one substituted exactly without agreement; a
 both receiver flags translated independently; a captured root's write
 claimed within a callback type's parameter keys; a normal-only nested
 summary on a path that throws to the exit, and one caught by a handler; a
-function returning its input, its claims forged to carry `fresh`; an
+function returning its input, its claims forged to carry `fresh`, as a
+declaration, a method, a closure and a value at a function type; an
+import's signature forged to carry `fresh` its module's run did not
+certify; a non-fresh function's value accepted at a `Fresh` function type
+by a forged subtyping step; an
 `unshift` row claiming `"this[*]": "grow"`; a `sort` row omitting its
 comparator's frame; `appends` and `freshObject` claimed of a program
 definition; a coverage claim dropping `onThrow`.
@@ -682,12 +729,15 @@ Decisions:
 - **One language.** The regional `Footprint` read by `Post`; the frame
   replaces the three flags; the relational promises stay separate fields.
 - **One written form.** `Modifies<P, T>`, $`P`$ one map from class keys
-  and location keys to changes, read by `statedResult`; no JSDoc
-  spelling; preconditions in `@requires`.
+  and location keys to changes, and `Fresh<T>`, both read by
+  `statedResult`; no JSDoc spelling; preconditions in `@requires`.
+- **Cells keyed `cell(b)`**, so every binding is nameable and a bare key
+  is never a cell.
 - **The change is part of each entry**, beyond a classic modifies set, so
   that `stable` keeps facts across monotone changes.
-- **Postconditions outside the frame**: `fresh(result)` in `@ensures`;
-  `freshObject`, `appends` and `writes` in audited contracts.
+- **Promises outside the frame**: `fresh` as `Fresh<T>` at every
+  signature position; `freshObject`, `appends` and `writes` in audited
+  contracts.
 - **Optional where a body is visible**, certified from it whole; an
   audited, pinned contract where none is.
 - **Refused only without a guarantee**: both class keys at `"any"`.
@@ -700,16 +750,14 @@ Decisions:
 - **One migration**: `Within` and `Footprint` removed in the change that
   adds `Modifies` (§3.1).
 
-Gaps, each a stated limit:
+Expressiveness limits of this language:
 
 - **Effect polymorphism** over callbacks ("modifies what `f` modifies")
   has no form (§5).
-- **`fresh` beyond declarations**: a method, a closure and a function type
-  admit no `@ensures`, so a fresh result there has no written form.
 - **Relational promises in program code**: `freshObject`, `appends` and
   `writes` have no certifying rule, so a program function states none.
-- **Cells named `values`, `stores` or `onThrow`** are stated through
-  `values` only.
+- **The store-only region** `path x p store` has no written key: `R[*]`
+  adds the store's cells too (§3).
 
 Open:
 
