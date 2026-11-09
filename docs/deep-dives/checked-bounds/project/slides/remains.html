@@ -1,14 +1,11 @@
 <section id="remains" style="background:#fbfcfd;color:#0b1a2e;font-family:'Inter','Helvetica Neue',Arial,sans-serif;padding:120px 128px;display:flex;flex-direction:column;gap:22px">
-<div style="display:flex;gap:24px;align-items:baseline;flex-wrap:wrap"><p style="font-size:24px;color:#56627a;font-weight:600;letter-spacing:2px;text-transform:uppercase">Remaining obligations</p><p style="font-size:24px;color:#56627a">the 62 unverified functions, classed by their first refusal · estimates</p></div>
-<h2 style="font-family:'Bricolage Grotesque','Helvetica Neue',Arial,sans-serif;font-size:56px;font-weight:700;line-height:1.15">Element bounds need more than a quantified clause</h2>
+<div style="display:flex;gap:24px;align-items:baseline;flex-wrap:wrap"><p style="font-size:24px;color:#56627a;font-weight:600;letter-spacing:2px;text-transform:uppercase">Remaining obligations</p><p style="font-size:24px;color:#56627a">chain 1’s remaining sites · the capabilities <span style="color:#6b6f78">proposed</span></p></div>
+<h2 style="font-family:'Bricolage Grotesque','Helvetica Neue',Arial,sans-serif;font-size:56px;font-weight:700;line-height:1.15">What the remaining reads of chain 1 need</h2>
 <table style="font-size:24px;color:#0b1a2e">
-<tr><th style="width:80%;text-align:left;font-weight:600">Capability needed</th><th style="width:20%;text-align:left;font-weight:600">Functions</th></tr>
-<tr><td>type invariants across calls with coarse frame conditions</td><td>11</td></tr>
-<tr><td>element facts of typed arrays, whose writes the model does not track</td><td>11</td></tr>
-<tr><td>generated tables: checked decoding, strides, bit arithmetic</td><td>10</td></tr>
-<tr><td>string lengths as terms (<span style="color:#2c4f7c">text.codePointAt(i)!</span>)</td><td>6</td></tr>
-<tr><td>lengths of the elements of arrays of arrays</td><td>3</td></tr>
-<tr><td>element writes; key-adding writes; facts at edges, cause unknown</td><td>3; 2; 3</td></tr>
-<tr><td>other element and index reads, not yet classified</td><td>13</td></tr>
-</table><p style="font-size:25px;color:#0b1a2e;line-height:1.4">Quantified clauses gained one function: the other element-bound functions also write their arrays, and a heap change preserves no quantified fact. Keeping one across an element write is a design choice; extending it across <span style="color:#2c4f7c">push</span> needs an append relation in that native contract, new trust.</p>
+<tr><th style="width:52%;text-align:left;font-weight:600">Capability needed</th><th style="width:48%;text-align:left;font-weight:600">Where chain 1 needs it</th></tr>
+<tr><td>an effect bounded by what an argument reaches along <span style="color:#2c4f7c">@stable</span> fields, framed at the caller by separation</td><td><span style="color:#2c4f7c">readScriptRuns</span> splices <span style="color:#2c4f7c">runs.openBrackets</span>, so its callers change any store and keep no length: <span style="color:#2c4f7c">measureAnalysis</span> (33 sites) and its helpers</td></tr>
+<tr><td>string lengths of <span style="color:#2c4f7c">replace</span> and <span style="color:#2c4f7c">slice</span> results: library contracts, an assumption about the standard library for the owner to decide (<span style="color:#7c2f4a">trusted</span>)</td><td><span style="color:#2c4f7c">mapSourceLineBreaks</span> (11 sites) and <span style="color:#2c4f7c">segmentAtLineBreaks</span>’ break reads, which need <span style="color:#2c4f7c">breaks.length &gt;= normalized.length + 1</span></td></tr>
+<tr><td>a string’s element read below its length, typed as a string</td><td><span style="color:#2c4f7c">normalized[i]!</span> (2 sites)</td></tr>
+<tr><td>correlations the producer does not track: a nullable result tied to another value</td><td>reads whose presence follows from another value’s test</td></tr>
+</table><p style="font-size:25px;color:#0b1a2e;line-height:1.4">The first is a frame condition: a call that changes an array reached through fixed fields of its argument leaves unchanged every location the caller knows to be apart from that path, so the caller keeps those lengths across the call.</p>
 </section>

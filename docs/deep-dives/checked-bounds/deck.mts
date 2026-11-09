@@ -1,8 +1,8 @@
 /* The checked-bounds deep dive: how TScert checks array bounds with linear
  * arithmetic, inferred loop invariants, contracts at function and type
  * boundaries and frame conditions between them, all rechecked by a proved
- * checker; with its outcome on pretext and what remains. Branch
- * bound-annotations-opus, measured at 5701f1e9. Built with the deck kit
+ * checker; with its outcome on pretext and what remains. Measured at
+ * TScert f868f344 and pretext tscert-bounds 86a93c0. Built with the deck kit
  * (`make deck NAME=checked-bounds`). */
 import { bullets, card, cards, code, columns, cover, inline, panel, para, point, rules, slide, stat, statement, status, table, type Deck, type Slide } from "../../../dev/deck.mts";
 
@@ -143,28 +143,26 @@ const slides: Slide[] = [
     ], [50, 50]),
   }),
   slide("pretext", {
-    label: "pretext", note: t("measured at TScert `4775efde`, each stage limited to 300 s · ") + measured,
-    title: "149 of 211 functions verified without bound checks", gap: 22,
+    label: "pretext", note: t("measured at TScert `f868f344`, pretext `tscert-bounds` `86a93c0` · ") + measured,
+    title: "Bound checks leave pretext one chain at a time", gap: 22,
     body: cards([
-      stat("149 / 211", "shallow: each function’s own unit accepted, its callees read at their contracts.", "ok"),
-      stat("130 / 211", "deep: every unit it depends on accepted too, module initialization included.", "ok"),
-      stat("3 sites", "unsafe within pretext’s own contract, marked in the code as described exceptions.", "neg"),
+      stat("210 / 210", "pretext functions verify on the rewrite as it stands.", "ok"),
+      stat("54 / 501", "bound rewrites restored to pretext’s own reads; 447 remain.", "ok"),
+      stat("7 / 67", t("restored in chain 1: `analyzeText` through `prepare.ts`."), "gap"),
     ], 3) +
-      para(t("The target: pretext’s checked rewrite with its 501 bound checks reverted and arithmetic annotations added. The unsafe class (" + "observed" + " under Node): a line range kept from a longer text, materialized on a shorter one, reads past a segment’s graphemes; original pretext returns wrong text, or `NaN` offsets in rich inline text. No annotation makes it safe; the code needs an index check."), 25),
+      para(t("A chain is a caller and the functions its bounds reach. Its rewrites are restored together, each read replaced by an assertion and the contracts that prove it in bounds, and every pretext function keeps verifying. In chain 1, `analyzeText` and `segmentAtLineBreaks` state that `texts`, `starts` and `flags` have one length."), 25) +
+      para(t("One class stays checked (" + "observed" + " under Node): a line range kept from a longer text, materialized on a shorter one, reads past a segment’s graphemes; original pretext returns wrong text, or `NaN` offsets in rich inline text. No annotation makes it safe; the code needs an index check."), 25),
   }),
   slide("remains", {
-    label: "Remaining obligations", note: `the 62 unverified functions, classed by their first refusal · estimates`,
-    title: "Element bounds need more than a quantified clause", gap: 22,
-    body: table(["Capability needed", "Functions"], [
-      ["type invariants across calls with coarse frame conditions", "11"],
-      ["element facts of typed arrays, whose writes the model does not track", "11"],
-      ["generated tables: checked decoding, strides, bit arithmetic", "10"],
-      [t("string lengths as terms (`text.codePointAt(i)!`)"), "6"],
-      ["lengths of the elements of arrays of arrays", "3"],
-      ["element writes; key-adding writes; facts at edges, cause unknown", "3; 2; 3"],
-      ["other element and index reads, not yet classified", "13"],
-    ], [80, 20]) +
-      para(t("Quantified clauses gained one function: the other element-bound functions also write their arrays, and a heap change preserves no quantified fact. Keeping one across an element write is a design choice; extending it across `push` needs an append relation in that native contract, new trust."), 25),
+    label: "Remaining obligations", note: t("chain 1’s remaining sites · the capabilities ") + proposed,
+    title: "What the remaining reads of chain 1 need", gap: 22,
+    body: table(["Capability needed", "Where chain 1 needs it"], [
+      [t("an effect bounded by what an argument reaches along `@stable` fields, framed at the caller by separation"), t("`readScriptRuns` splices `runs.openBrackets`, so its callers change any store and keep no length: `measureAnalysis` (33 sites) and its helpers")],
+      [t("string lengths of `replace` and `slice` results: library contracts, an assumption about the standard library for the owner to decide (") + trusted + ")", t("`mapSourceLineBreaks` (11 sites) and `segmentAtLineBreaks`’ break reads, which need `breaks.length >= normalized.length + 1`")],
+      [t("a string’s element read below its length, typed as a string"), t("`normalized[i]!` (2 sites)")],
+      ["correlations the producer does not track: a nullable result tied to another value", "reads whose presence follows from another value’s test"],
+    ], [52, 48]) +
+      para(t("The first is a frame condition: a call that changes an array reached through fixed fields of its argument leaves unchanged every location the caller knows to be apart from that path, so the caller keeps those lengths across the call."), 25),
   }),
   statement("moral", {
     label: "The takeaway",
