@@ -5,6 +5,7 @@
 import * as ts from "typescript/unstable/ast";
 import type { Identifier, Node, SourceFile, TypeAliasDeclaration, TypeElement, TypeNode, TypeReferenceNode } from "typescript/unstable/ast";
 import type { Span } from "./span.mts";
+import { statesTag } from "./bound-annotations.mts";
 import { childrenOf, isTypeAlias, unparenthesized } from "./syntax.mts";
 import type { ClosedFootprint, PropertyKey, ResolutionSlots, StatedEffect, TypeTerm } from "./declaration-types.mts";
 import { withPromise, footprintEffect, ordinaryEffect, promiseEffect } from "./type-graph.mts";
@@ -1489,10 +1490,7 @@ export function members(scope: TermScope, list: readonly TypeElement[], at: Node
 /** Whether a member's leading JSDoc comment states `@stable`. */
 function stableTag(member: Node): boolean {
   const file = member.getSourceFile();
-  const trivia = file.text.slice(member.pos, member.getStart(file));
-  const open = trivia.lastIndexOf("/**");
-  const close = open < 0 ? -1 : trivia.indexOf("*/", open + 3);
-  return close >= 0 && /(^|[\s*])@stable\b/.test(trivia.slice(open + 3, close));
+  return statesTag(file.text.slice(member.pos, member.getStart(file)), "stable");
 }
 
 /** Whether two index signatures state the same contract. */

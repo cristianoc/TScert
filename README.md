@@ -235,6 +235,8 @@ make help     # every target
   typing rules.
 - [ARITHMETIC](docs/ARITHMETIC.md): the integer facts over values, lengths
   and bounds, and the clauses that state them.
+- [ANNOTATIONS](docs/ANNOTATIONS.md): every annotation TScert reads, with an
+  example each.
 - [SOURCE-MODEL](docs/SOURCE-MODEL.md),
   [SOURCE-ELABORATION](docs/SOURCE-ELABORATION.md),
   [SOURCE-CONTRACTS](docs/SOURCE-CONTRACTS.md),

@@ -526,6 +526,9 @@ increasing trust silently.
   must exercise source evaluation order and binding scope, including forged
   producer claims against both evidence production and consumption; calculus
   safety alone does not prove correspondence with JavaScript execution.
+- Annotations: a change adding, removing or changing an annotation TScert
+  reads updates [ANNOTATIONS.md](docs/ANNOTATIONS.md) in the same commit;
+  `node tests/docs.mts` checks that its entries are exactly the readers' list.
 - Docs: `node tests/docs.mts` checks every link and anchor, section
   numbers in link texts, KaTeX rendering, the math forms GitHub cannot
   render, and the sections code comments cite by quoted title or by `§n`
