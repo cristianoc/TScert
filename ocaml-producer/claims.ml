@@ -447,7 +447,12 @@ let encode (proposal : Proposal_types.t) =
             "indexes",Array (List.map entry indexes)] @ optional_list @ methods
             @ (if cells = [] then [] else ["cells",Array cells]))]
         | _,_::_,_ -> unsupported "callable with an index signature needs a combined clause"
-        | _,[],[] -> Object ["refs",Object (["first",fields;"rest",Array [];"views",views] @ optional_list @ methods @ hidden_bound)]
+        | _,[],[] ->
+          (* A record's stable keys, each a view (POSITIVE-TYPES.md,
+             "Records"). *)
+          let stable = match List.filter (fun (f:Semantic.field) -> f.stable && not f.host) present with
+            | [] -> [] | fs -> ["stable",Array (List.map (fun (f:Semantic.field) -> key_json f.name) fs)] in
+          Object ["refs",Object (["first",fields;"rest",Array [];"views",views] @ optional_list @ methods @ hidden_bound @ stable)]
         | [],[],_ when methods = [] -> Object ["arrs",Object calls]
         | _,_,_ ->
           if optional <> [] then unsupported "callable with optional fields";

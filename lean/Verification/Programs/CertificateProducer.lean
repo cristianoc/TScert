@@ -971,9 +971,14 @@ came from a different context. No execution budget is inspected. -/
         if !(decide ns.Nodup) then none else do
         if inits.length != ns.length then none else do
         match expand G R with
-        | [.refs B [] [] [] [] ks] =>
-          if B.map Prod.fst != ns || !ks.all (fun K => ns.all K.admits) then none else do
-          let ps ← (inits.zip (B.map Prod.snd)).mapM fun (a,D) => recur Γ a D
+        -- A stable key is a view the literal allocates at its initial value
+        -- alone (`HasTyUsing.alloc`).
+        | [.refs B [] V [] [] ks st] =>
+          let all := ns.filterMap fun n => ((B ++ V).lookup n).map (n, ·)
+          if all.length != ns.length || stablePart st false all != B || stablePart st true all != V ||
+            !ks.all (fun K => ns.all K.admits) || !st.all ns.contains ||
+            (!st.isEmpty && ns.contains CallArguments.arrayStoreField) then none else do
+          let ps ← (inits.zip (all.map Prod.snd)).mapM fun (a,D) => recur Γ a D
           coerce G images aliases (.node ⟨Γ,t,R⟩ .alloc ps) A
         -- A literal allocated directly at a dictionary, each field an index
         -- may admit at that index's type.

@@ -244,14 +244,21 @@ slots are introduced only after the operand supplying their type is checked. -/
     -- index may admit at exactly that index's type (`HasTyUsing.allocDict`): a
     -- writable index is never met through an own-key bound.
     let clause ← match PositiveRules.expand G A with
-      | [.refs B [] [] [] [] ks] => do
-        if B.length != ns.length then throw "allocation claim names different fields"
+      -- A record's stable keys are views of it, which the literal
+      -- allocates at their initial values alone (POSITIVE-TYPES.md,
+      -- "Records").
+      | [.refs B [] V [] [] ks st] => do
+        if B.length + V.length != ns.length then throw "allocation claim names different fields"
         if !ks.all (fun K => ns.all (fun n => K.admits n)) then
           throw "an allocation's key bound must admit every key it allocates"
-        let B ← ns.mapM fun name => do
-          let some D := B.lookup name | throw "allocation claim names different fields"
+        if !V.all (fun v => st.contains v.1) || !st.all (fun k => V.any (·.1 == k)) then
+          throw "an allocation's claim states a view other than a stable key"
+        if !st.isEmpty && ns.contains CallArguments.arrayStoreField then
+          throw "an array literal states no stable key"
+        let all ← ns.mapM fun name => do
+          let some D := (B ++ V).lookup name | throw "allocation claim names different fields"
           pure (name,D)
-        pure (PositiveNormalization.Clause.refs B [] [] [] [] ks)
+        pure (PositiveNormalization.Clause.refs (stablePart st false all) [] (stablePart st true all) [] [] ks st)
       | [.dict B [] [] ix os [] [] cs] => do
         if B.length != ns.length then throw "allocation claim names different fields"
         if ns.contains SourceTypes.protoField then
@@ -267,7 +274,8 @@ slots are introduced only after the operand supplying their type is checked. -/
         pure (PositiveNormalization.Clause.dict B [] [] ix os [] [] cs)
       | _ => throw "allocation claim must name a record or dictionary contract"
     let B := match clause with
-      | .refs B .. | .dict B .. => B
+      | .refs B _ V .. => ns.filterMap fun n => (B ++ V).lookup n |>.map (n, ·)
+      | .dict B .. => B
       | _ => []
     let Ref ← lower (SourceTypes.use clause)
     -- The calculus evaluates these initializers from left to right.

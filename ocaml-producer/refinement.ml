@@ -240,8 +240,15 @@ let owned_field declarations t field =
     | _ -> false in
   has [] t
 (* Whether a path entry survives a step that may write cells: each member
-   of the path stable (Lean's stable links, `HeapExpressionRules.withStable`). *)
-let stable_path declarations env n = path_through stable_member declarations env n
+   of the path stable (Lean's stable links, `HeapExpressionRules.withStable`);
+   so does a field entry of a binding whose every arm states the field stable
+   (Lean's stable cell facts, `stableCells`). *)
+let stable_path declarations env n =
+  path_through stable_member declarations env n ||
+  (is_field n && not (is_path n) &&
+   match List.assoc_opt (owner n) env with
+   | Some (Value t | Local (_,t)) -> stable_member declarations t (field_of n)
+   | _ -> false)
 (* Whether a path entry survives a step changing only its receiver's own
    locations: each member of the path a required field every record arm of
    its receiver names, the locations the iterator's separation facts state

@@ -203,9 +203,10 @@ export type TypeTerm =
        * readonly view of the model's `[[host]]` at this string, which no
        * allocation of the program owns. */
       host?: string;
-      /** The required readonly members a family's reading states stable
-       * (HOST-FAMILIES.md, "Stable keys"), stated with `host` only, never
-       * empty: each is owned at a location of one value. */
+      /** The required readonly members stated stable, never empty: a host
+       * family's reading's (HOST-FAMILIES.md, "Stable keys"), or a program
+       * record's members tagged `@stable` (POSITIVE-TYPES.md, "Records").
+       * Each is owned at a location of one value. */
       stable?: string[] }
   | { k: "function"; effect: CallEffect; receiver: TypeTerm | null; params: TypeTerm[];
       rest: TypeTerm | null; result: TypeTerm; span: Span }
