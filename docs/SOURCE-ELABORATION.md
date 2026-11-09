@@ -4159,8 +4159,22 @@ conjunct of `RequestsSafe`; `stated-argument-store`,
 `stated-argument-path`; `invalid-stated-store-region`, run under Node; the
 forged controls of `pipeline/test.mts` moving a region to another position,
 a path region to its record's own store, and a path through a field the
-type does not state). A caller keeps no
-fact across the call that the closed approximation `top` does not keep.
+type does not state). Across the call, a caller's length and bound facts
+of a slot are kept where the frame's closed bound keeps stores and its
+knowledge separates the slot's store from each region's: for a region at a
+position's own store, a region fact `apart` between the actual's slot and
+the slot; for a region through a field `f`, a read link from the actual's
+slot through `f` to a slot apart from it (`PromiseCalls.regionFirst`, the
+local observation bound `first s "[]"` of `keptIndicesWith`; proved:
+`regionFirst_kept`, `effectKept_holds`):
+
+```math
+\frac{\epsilon.\mathsf{stores}=\mathsf{keep}\qquad \forall i.\ \Sigma\vdash\mathrm{apart}(\mathrm{sel}(R_i),y)\qquad \Sigma\vdash F(|y|)}
+     {\Sigma\vdash f(\vec a)\dashv\Sigma',\ F(|y|)}\ \textsf{region-call-keep}
+```
+
+Every other heap fact is kept only as the closed approximation `top` keeps
+it.
 
 **Over the whole domain.** A statement on `m(this: C, …)` holds for every
 receiver of type `C`, so every call in `m`'s body is at a contract stating
