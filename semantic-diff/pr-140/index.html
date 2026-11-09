@@ -1,0 +1,214 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Commit Records</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Code+Pro:wght@400;600&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=STIX+Two+Text:ital,wght@0,400;0,600;1,400&display=swap">
+<style>
+:root { --bg:#fbfcfd; --surface:#ffffff; --ink:#0b1a2e; --muted:#56627a; --rule:#d5dce6; --accent:#8a6410; --code-bg:#eef2f7; --math-bg:#f2f4f8; --ok:#2f6b47; --ok-bg:#e2efe4; --principled:#a0521a; --principled-bg:#f7e6d6; --gap:#6b6f78; --gap-bg:#ecebe6; --neutral:#2c4f7c; --neutral-bg:#e6ebf2; --trust:#7c2f4a; --trust-bg:#f2e1e7; --neg:#9b3524; --neg-bg:#f5e1da; --run:#7a5414; --run-bg:#f3e7cc; --brand-ink:#0b1a2e; --brand-gold:#b8840f;
+  --display:"Bricolage Grotesque","Helvetica Neue",Arial,sans-serif; --body:"Inter","Helvetica Neue",Arial,sans-serif; --mono:"Source Code Pro",Menlo,Consolas,monospace; --math:"STIX Two Text","STIX Two Math","STIXGeneral","Cambria Math","Apple Symbols",Georgia,serif; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#0e1626; --surface:#16213a; --ink:#efe7d4; --muted:#9aa3b5; --rule:#2a3756; --accent:#e0ac4a; --code-bg:#131d33; --math-bg:#1a2540; --ok:#7fd0a2; --ok-bg:#17322a; --principled:#f0a868; --principled-bg:#3a2a1c; --gap:#9aa3b5; --gap-bg:#1c2639; --neutral:#8fb4e8; --neutral-bg:#1b2b49; --trust:#e79bb6; --trust-bg:#3a2131; --neg:#f0907d; --neg-bg:#3a1f22; --run:#e0ac4a; --run-bg:#2e2a24; --brand-ink:#efe7d4; --brand-gold:#e0ac4a; color-scheme:dark } }
+:root[data-theme="dark"] { --bg:#0e1626; --surface:#16213a; --ink:#efe7d4; --muted:#9aa3b5; --rule:#2a3756; --accent:#e0ac4a; --code-bg:#131d33; --math-bg:#1a2540; --ok:#7fd0a2; --ok-bg:#17322a; --principled:#f0a868; --principled-bg:#3a2a1c; --gap:#9aa3b5; --gap-bg:#1c2639; --neutral:#8fb4e8; --neutral-bg:#1b2b49; --trust:#e79bb6; --trust-bg:#3a2131; --neg:#f0907d; --neg-bg:#3a1f22; --run:#e0ac4a; --run-bg:#2e2a24; --brand-ink:#efe7d4; --brand-gold:#e0ac4a; color-scheme:dark }
+* { box-sizing:border-box } body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.6 var(--body) }
+main { max-width:900px; margin:0 auto; padding-inline:20px; padding-block:32px 64px; display:flex; flex-direction:column; gap:22px }
+h1 { font:600 32px/1.15 var(--display); margin:0 } h2 { font:600 22px/1.2 var(--display); margin:12px 0 8px; padding-top:12px; border-top:2px solid var(--ink) }
+h3 { font:600 19px/1.3 var(--display); margin:2px 0 0; text-wrap:balance }
+h4 { font:600 11px/1 var(--body); letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin:12px 0 4px }
+p { margin:2px 0; max-width:72ch } .lede { color:var(--muted) }
+code { font:13px/1.5 var(--mono); background:var(--code-bg); padding:1px 4px; border-radius:3px }
+pre { margin:4px 0; padding:12px 14px; border-radius:6px; overflow-x:auto }
+pre.code { font:13px/1.55 var(--mono); background:var(--code-bg) }
+.rules { display:flex; flex-direction:column; gap:14px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:14px 18px; overflow-x:auto; font:16px/1.6 var(--math) }
+.rules sub, .rules sup { font-size:.72em; line-height:0 }
+.formulas { display:flex; flex-direction:column; gap:4px }
+.formulas .row { display:flex; flex-wrap:wrap; gap:4px 28px } .formulas .row.cont { padding-left:2em }
+.infer { display:flex; align-items:center; gap:12px }
+.frac { display:inline-flex; flex-direction:column; align-items:center; min-width:0 }
+.premises { display:flex; flex-wrap:wrap; justify-content:center; gap:4px 26px; padding:0 6px 3px }
+.bar { align-self:stretch; border-top:1.5px solid var(--ink) }
+.conclusion { padding:3px 6px 0; text-align:center }
+.rule-name { font:15px/1 var(--math); font-variant:small-caps; letter-spacing:.02em; color:var(--accent); white-space:nowrap }
+.card { background:var(--surface); border:1px solid var(--rule); border-radius:8px; padding:20px 22px; display:flex; flex-direction:column; gap:6px; min-width:0 }
+.card > header { display:flex; justify-content:space-between; gap:12px; align-items:flex-start }
+.sha { font:12px/1.4 var(--mono); color:var(--muted) }
+.pill { font:600 11px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; padding:6px 9px; border-radius:99px; white-space:nowrap }
+.pill.ok { color:var(--ok); background:var(--ok-bg) } .pill.principled { color:var(--principled); background:var(--principled-bg) }
+.pill.gap { color:var(--gap); background:var(--gap-bg) } .pill.neutral { color:var(--neutral); background:var(--neutral-bg) }
+.units { display:flex; flex-wrap:wrap; gap:6px } .units span { font:12px/1 var(--mono); border:1px solid var(--rule); border-radius:4px; padding:5px 7px }
+dl.facts { display:grid; grid-template-columns:max-content minmax(0,1fr); gap:6px 16px; margin:12px 0 0; padding-top:12px; border-top:1px solid var(--rule); font-size:13.5px }
+dt { font:600 11px/1.9 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted) }
+dd { margin:0; min-width:0; display:flex; flex-wrap:wrap; gap:5px; align-items:baseline }
+.chip { font:500 12px/1 var(--body); border:1px solid var(--rule); border-radius:4px; padding:4px 7px } .chip.strong { color:var(--accent); border-color:var(--accent) }
+.trust { color:var(--trust); background:var(--trust-bg); padding:2px 6px; border-radius:4px } .none { color:var(--muted) }
+.test { font:12px/1 var(--mono); padding:4px 7px; border-radius:4px }
+.test.pos { color:var(--ok); background:var(--ok-bg) } .test.pos::before { content:"✓ " }
+.test.neg { color:var(--neg); background:var(--neg-bg) } .test.neg::before { content:"✗ " }
+.test.forged { color:var(--principled); background:var(--principled-bg) } .test.forged::before { content:"forged " }
+details { margin-top:8px; font-size:13px; color:var(--muted) } summary { cursor:pointer }
+.table-wrap { overflow-x:auto; border:1px solid var(--rule); border-radius:8px; background:var(--surface) }
+table { border-collapse:collapse; width:100%; font-size:13px } th, td { text-align:left; vertical-align:top; padding:8px 10px; border-bottom:1px solid var(--rule) }
+th { font:600 11px/1.2 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); white-space:nowrap } td.num { font-variant-numeric:tabular-nums }
+h4.change { display:flex; align-items:center; gap:8px; text-transform:none; letter-spacing:0; font:600 14px/1.3 var(--body); color:var(--ink); margin:16px 0 6px }
+h4.change .target { font-weight:400; color:var(--muted) }
+.act { font:600 10.5px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; padding:4px 7px; border-radius:4px }
+.act.added { color:var(--ok); background:var(--ok-bg) } .act.removed { color:var(--neg); background:var(--neg-bg) }
+.act.modified, .act.replaced { color:var(--principled); background:var(--principled-bg) }
+.versions { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:10px }
+.versions figure { margin:0; min-width:0 } .versions figcaption { font:600 11px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); margin:0 0 4px }
+.versions .rules { height:calc(100% - 18px); box-sizing:border-box }
+pre.code .ln { display:block; white-space:pre } pre.code .ln.add { background:var(--ok-bg) } pre.code .ln.del { background:var(--neg-bg) }
+.tk-k { color:#7a3b8c } .tk-s { color:#2f6b47 } .tk-n { color:#a35a12 } .tk-c { color:var(--muted); font-style:italic } .tk-t { color:#2c4f7c }
+.prose p { margin:4px 0 }
+ul.effect, ul.summary { margin:4px 0; padding-left:20px } ul.effect li, ul.summary li { margin:3px 0 } ul.summary ul { padding-left:18px; color:var(--muted) }
+ul.effect .arrow { color:var(--accent); font-weight:600 }
+ul.effect details { margin:0; color:inherit; font-size:inherit } ul.effect summary { list-style-position:outside }
+ul.effect .kind { font-size:11px; text-transform:uppercase; letter-spacing:.04em; padding:1px 6px; border-radius:4px; background:var(--chip, #eee) }
+ul.effect .kind.negative { color:#8a3b12 } ul.effect .kind.positive { color:#22663a } ul.effect .kind.gap { color:#7a5b00 }
+ul.effect .was.unsound { color:#b3261e; font-weight:600 } ul.effect .now { font-weight:500 } ul.effect .why { color:var(--muted) }
+ul.effect mark { background:#ffe08a; color:inherit; border-radius:2px }
+@media (max-width:720px) { .versions { grid-template-columns:minmax(0,1fr) } }
+.lowering { display:flex; flex-direction:column; gap:6px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:12px 16px; overflow-x:auto }
+.lowering .map, .lowering .cond, .lowering .result { display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 10px }
+.lowering .map:not(:has(.sem)) { flex-direction:column; align-items:stretch; gap:4px }
+.lowering .result { display:grid; grid-template-columns:auto minmax(0,1fr); align-items:baseline; gap:2px 10px; padding-left:1em } .lowering .result .note { grid-column:2 }
+.m-intr { font:14px/1.5 var(--mono); color:#2c4f7c } .m-lit { font:13px/1.5 var(--mono); color:#7a3b8c }
+.lowering code.src { font:13px/1.5 var(--mono); background:var(--surface); border:1px solid var(--rule); padding:2px 6px; border-radius:4px }
+.lowering .to { color:var(--accent); font-weight:600; font-size:17px }
+.lowering .tgt { font:16px/1.5 var(--math) } .rules .lowering { background:none; border:0; padding:0 } .lowering .sem code.src { margin:0 2px }
+var { font-style:italic } .m-op { color:#2c4f7c; font-style:normal } .m-con { color:#8f6416; font-style:normal; font-variant:small-caps }
+.m-kw { color:#7a3b8c; font-weight:600; font-style:normal } .m-bind { color:#7a3b8c } .m-rel { color:var(--accent); padding:0 .12em }
+.m-text { font:14px/1.5 var(--body); color:var(--muted) } code.m-code { font:13px/1.5 var(--mono); background:var(--surface); border:1px solid var(--rule); padding:1px 5px; border-radius:4px }
+.refused { color:var(--neg); font-weight:600 }
+.lowering .refused { color:var(--neg); font-weight:600 }
+.lowering .label { font:600 11px/1 var(--body); letter-spacing:.05em; text-transform:uppercase; color:var(--muted); min-width:7em }
+.lowering .cond { padding-left:1.5em } .lowering .note { color:var(--muted); font:italic 13px/1.4 var(--body) }
+a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outline-offset:2px }
+@media (max-width:520px) { dl.facts { grid-template-columns:minmax(0,1fr) } .card > header { flex-direction:column } }</style></head><body><main><header><h1>Commit Records</h1><p class="lede">2 commits, rendered from their records.</p></header>
+<section><h2>Branches</h2><ul class="summary"><li><a href="#g-pr-140"><code>b3dd7d60cebb53b234c04ff7056cce6bfe8fd76a..pr-140</code></a><ul><li>2 commits, units 4 verified</li><li>parts: <span class="chip strong">lean-semantics</span> <span class="chip">lean-rules</span> <span class="chip">lean-proofs</span> <span class="chip">docs</span> <span class="chip">tests</span></li></ul></li></ul></section>
+<h2 id="g-pr-140"><code>b3dd7d60cebb53b234c04ff7056cce6bfe8fd76a..pr-140</code></h2><article class="card" id="c-a22e0866a"><header><div><div class="sha">a22e0866a · Cristiano Calcagno · Nov 09, 15:15</div><h3>Accept each step of a regional body by one rule: its frame rebased to the entry and included</h3></div><span class="pill ok">verified</span></header>
+<div class="units"><span>stated-region-steps.ts#note</span><span>stated-region-steps.ts#scan</span><span>stated-region-steps.ts#measure</span><span>stated-region-nullable-write.ts#mark</span></div>
+<h4 class="change">Why</h4><div class="prose"><p>The regional graph check accepted a fixed list of node kinds: steps within the closed bound, receiver-store calls on a slot holding a stated region, slot copies and stable reads. Pretext's script runs need more: <code>runs.openBrackets.push(c, 0)</code> under <code>{ values: &quot;any&quot;; &quot;runs.openBrackets[*]&quot;: &quot;any&quot; }</code> was refused (&quot;a step changes a location outside its store regions beyond the statement's bound&quot;), since push's closed bound changes every store at <code>grow</code>; an element write of the array was refused the same way; a frame on <code>runs: ScriptRuns | null</code> was refused at the entry check (&quot;no present stable field of its parameter's type&quot;); and a body passing <code>runs</code> on to a function stating the same region was refused at that call, a call whose signature states store regions being no node kind the checker knew.</p></div>
+<h4 class="change"><span class="act added">added</span>Rule <span class="target">regional check: the step-frame rule</span></h4><div class="rules"><div class="formulas"><div class="row"><span><var>Φ</var> <span class="m-text">the stated frame (the closed bound's class entries and one entry</span></span></div><div class="row"><span><code class="m-code">path x p store</code> <span class="m-text">at <code class="m-code">any</code> per region), read at the entry values</span> <var>ρ</var>₀ <span class="m-kw">in</span></span></div><div class="row"><span><span class="m-text">the entry heap</span> <var>h</var>₀; <var>Ψ</var> <span class="m-text">a step's frame, read at the step's own positions</span> <var>σ</var></span></div><div class="row"><span><span class="m-kw">in</span> <span class="m-text">the heap</span> <var>h</var> <span class="m-text">it starts in; ev the evidence linking each position to an</span></span></div><div class="row"><span><span class="m-text">entry value and path, and the paths read from it that read at</span> <var>h</var> <span class="m-text">what</span></span></div><div class="row"><span><span class="m-text">they read at</span> <var>h</var>₀.</span></div></div><div class="infer"><div class="frac"><div class="premises"><span><span class="m-con">Post</span> <var>Φ</var> <var>ρ</var>₀ <var>h</var>₀ <var>h</var></span><span><span class="m-con">Post</span> <var>Ψ</var> <var>σ</var> <var>h</var> <var>h'</var></span><span><span class="m-text">RebaseOk ev</span> <var>σ</var> <var>ρ</var>₀ <var>h</var>₀ <var>h</var></span><span><var>Φ</var> ++ <span class="m-op">rebase</span><sub><span class="m-op">ev</span></sub>(<var>Ψ</var>) <span class="m-rel">⊑</span> <var>Φ</var></span></div><div class="bar"></div><div class="conclusion"><div><span class="m-con">Post</span> <var>Φ</var> <var>ρ</var>₀ <var>h</var>₀ <var>h'</var></div></div></div><span class="rule-name">(step-frame)</span></div><div class="formulas"><div class="row"><span><span class="m-op">rebase</span><sub><span class="m-op">ev</span></sub> <span class="m-text">maps a field or path of a linked position to the path from its</span></span></div><div class="row"><span><span class="m-text">entry position, a class or cell to itself, anything else to</span> <code class="m-code">all</code>.</span></div></div></div>
+<h4 class="change"><span class="act added">added</span>Definition <span class="target">regional check: a step's frame</span></h4><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">a call</span><span class="m-rel">:</span> <span class="m-text">its signature's frame at the call's actuals; where the signature</span></span></div><div class="row cont"><span><span class="m-text">states <code class="m-code">receiverGrows</code> (<code class="m-code">push</code>), on normal return its receiver's store</span></span></div><div class="row cont"><span><span class="m-text">at <code class="m-code">any</code> and nothing else, which <code class="m-code"><span class="tk-t">ReceiverGrows</span></code> states</span></span></div><div class="row"><span><span class="m-text">an element write</span> <code class="m-code">o[k] = v</code><span class="m-rel">:</span> <span class="m-text">value-class locations at <code class="m-code">any</code>, and</span> <code class="m-code">o</code>'<var>s</var></span></div><div class="row cont"><span><span class="m-text">store at</span> <code class="m-code">any</code></span></div><div class="row"><span><span class="m-text">a step within the closed bound</span><span class="m-rel">:</span> <span class="m-text">the bound's two class entries</span></span></div><div class="row"><span><span class="m-text">a slot copy, a read through a <code class="m-code">@stable</code> field (a destructuring read</span></span></div><div class="row cont"><span><span class="m-text">included</span>)<span class="m-rel">:</span> <span class="m-text">no change, and the result's entry path</span></span></div></div></div>
+<h4 class="change"><span class="act modified">modified</span>Definition <span class="target">regional check: the entry witness of a traversed field</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">the parameter's every alternative states the field, present and stable</span>,</span></div><div class="row"><span><span class="m-text">and the entry value reads it</span></span></div></div></div></figure><figure><figcaption>After</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">every alternative a field read succeeds on states it present and</span></span></div><div class="row"><span><span class="m-text">stable (<code class="m-code"><span class="tk-k">null</span></code> and <code class="m-code"><span class="tk-k">undefined</span></code> read none); where the entry value has the</span></span></div><div class="row"><span><span class="m-text">field its read is fixed, and where it has none no heap reads it, so the</span></span></div><div class="row"><span><span class="m-text">path selects no store</span></span></div></div></div></figure></div>
+<h4 class="change"><span class="act added">added</span>Theorem <span class="target">element writes state their store</span></h4><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">an element write of</span> <code class="m-code">o</code>'<var>s</var> <span class="m-text">store, typed as before</span> ⟹ <span class="m-text">every location but</span></span></div><div class="row"><span><span class="m-text">that store changes within <code class="m-code">{value: any, store: keep}</code>, besides the</span></span></div><div class="row"><span><span class="m-text">closed bound it was proved within</span></span></div></div></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>stated-region-steps</code> <span class="kind positive">positive</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">push and a nested call rebased to the region</span></summary><pre class="code"><span class="tk-c">// The step-frame rule (FOOTPRINTS.md, &quot;Argument-path store regions&quot;): each</span>
+<span class="tk-c">// step's frame, read at its own positions, is rebased to the enclosing</span>
+<span class="tk-c">// entry through the slot it reads and included in the stated frame.</span>
+<span class="tk-c">// `note`'s `push` changes the store of the array `runs.open` reads (the</span>
+<span class="tk-c">// narrower frame `ReceiverGrows` states, every other old location kept);</span>
+<span class="tk-c">// `scan` changes it only by calling `note` with its own `runs`, whose</span>
+<span class="tk-c">// frame rebases to `scan`'s region through the stable field. `measure`</span>
+<span class="tk-c">// allocates the record, so its literal's array is apart from `flags`, and</span>
+<span class="tk-c">// keeps `i &lt; flags.length` across each call of `scan`.</span>
+<span class="tk-k">type</span> <span class="tk-t">Runs</span> = { <span class="tk-c">/** @stable */</span> <span class="tk-k">readonly</span> open: number[] };
+
+<span class="tk-k">function</span> note(runs: <span class="tk-t">Runs</span>, c: number): <span class="tk-t">Modifies</span>&lt;{ values: <span class="tk-s">&quot;any&quot;</span>; <span class="tk-s">&quot;runs.open[*]&quot;</span>: <span class="tk-s">&quot;any&quot;</span> }, <span class="tk-k">void</span>&gt; {
+  runs.open.push(c, <span class="tk-n">0</span>);
+}
+
+<span class="tk-k">function</span> scan(runs: <span class="tk-t">Runs</span>, text: string): <span class="tk-t">Modifies</span>&lt;{ values: <span class="tk-s">&quot;any&quot;</span>; <span class="tk-s">&quot;runs.open[*]&quot;</span>: <span class="tk-s">&quot;any&quot;</span> }, <span class="tk-k">void</span>&gt; {
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; text.length; i++) note(runs, text.charCodeAt(i));
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> measure(flags: number[]): number {
+  <span class="tk-k">const</span> runs: <span class="tk-t">Runs</span> = { open: [] };
+  <span class="tk-k">let</span> sum = <span class="tk-n">0</span>;
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; flags.length; i++) {
+    scan(runs, <span class="tk-s">&quot;x&quot;</span>);
+    sum += flags[i]!;
+  }
+  <span class="tk-k">return</span> sum;
+}</pre></details></li><li><details><summary><code>stated-region-nullable-write</code> <span class="kind positive">positive</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why"><code>Runs | null</code> and an element write</span></summary><pre class="code"><span class="tk-c">// The step-frame rule (FOOTPRINTS.md, &quot;Argument-path store regions&quot;) on a</span>
+<span class="tk-c">// nullable record and an element write: at `runs = null` the path</span>
+<span class="tk-c">// `runs.open` reads nothing and selects no store; otherwise the body reads</span>
+<span class="tk-c">// the stable field into `open` and writes an element of it, whose step</span>
+<span class="tk-c">// frame (value-class locations and the written array's store) rebases to</span>
+<span class="tk-c">// the stated region.</span>
+<span class="tk-k">type</span> <span class="tk-t">Runs</span> = { <span class="tk-c">/** @stable */</span> <span class="tk-k">readonly</span> open: number[] };
+
+<span class="tk-c">/** @requires safeInteger(k) */</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> mark(runs: <span class="tk-t">Runs</span> | <span class="tk-k">null</span>, k: number): <span class="tk-t">Modifies</span>&lt;{ values: <span class="tk-s">&quot;any&quot;</span>; <span class="tk-s">&quot;runs.open[*]&quot;</span>: <span class="tk-s">&quot;any&quot;</span> }, <span class="tk-k">void</span>&gt; {
+  <span class="tk-k">if</span> (runs !== <span class="tk-k">null</span>) {
+    <span class="tk-k">const</span> open = runs.open;
+    <span class="tk-k">if</span> (<span class="tk-n">0</span> &lt;= k &amp;&amp; k &lt; open.length) open[k] = <span class="tk-n">1</span>;
+  }
+}</pre></details></li><li><details><summary><code>invalid-stated-region-alias</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">the region aliases the counted array</span></summary><pre class="code"><span class="tk-c">// The step-frame rule's alias boundary (FOOTPRINTS.md, &quot;Argument-path</span>
+<span class="tk-c">// store regions&quot;): `scan` clears the array `runs.open` reads by calling</span>
+<span class="tk-c">// `clear`, whose frame rebases to `scan`'s region. `aliased` builds the</span>
+<span class="tk-c">// record around `flags` itself, so the region is `flags`'s store: no</span>
+<span class="tk-c">// separation keeps `i &lt; flags.length` across `scan`, and the read after it</span>
+<span class="tk-c">// is refused. Run under Node, `aliased([1, 2, 3])` returns `NaN`.</span>
+<span class="tk-k">type</span> <span class="tk-t">Runs</span> = { <span class="tk-c">/** @stable */</span> <span class="tk-k">readonly</span> open: number[] };
+
+<span class="tk-k">function</span> clear(runs: <span class="tk-t">Runs</span>): <span class="tk-t">Modifies</span>&lt;{ values: <span class="tk-s">&quot;any&quot;</span>; <span class="tk-s">&quot;runs.open[*]&quot;</span>: <span class="tk-s">&quot;any&quot;</span> }, <span class="tk-k">void</span>&gt; {
+  runs.open.splice(<span class="tk-n">0</span>);
+}
+
+<span class="tk-k">function</span> scan(runs: <span class="tk-t">Runs</span>): <span class="tk-t">Modifies</span>&lt;{ values: <span class="tk-s">&quot;any&quot;</span>; <span class="tk-s">&quot;runs.open[*]&quot;</span>: <span class="tk-s">&quot;any&quot;</span> }, <span class="tk-k">void</span>&gt; {
+  clear(runs);
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> aliased(flags: number[]): number {
+  <span class="tk-k">const</span> runs: <span class="tk-t">Runs</span> = { open: flags };
+  <span class="tk-k">let</span> sum = <span class="tk-n">0</span>;
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; flags.length; i++) {
+    scan(runs);
+    sum += flags[i]!;
+  }
+  <span class="tk-k">return</span> sum;
+}</pre></details></li><li><details><summary><code>invalid-stated-region-other</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">a call changing an array the frame names not</span></summary><pre class="code"><span class="tk-c">// The step-frame rule's rebasing boundary (FOOTPRINTS.md, &quot;Argument-path</span>
+<span class="tk-c">// store regions&quot;): `scan` states the region of the array `runs.open` reads,</span>
+<span class="tk-c">// but calls `take` with a record built around `other`, an array its frame</span>
+<span class="tk-c">// does not name. The call's region reads a slot no entry path reaches, so</span>
+<span class="tk-c">// it is rebased to every location, and `scan`'s regional check refuses it.</span>
+<span class="tk-c">// Run under Node, `count([1, 2, 3])` relies on `scan` keeping `xs` and</span>
+<span class="tk-c">// returns `NaN`.</span>
+<span class="tk-k">type</span> <span class="tk-t">Runs</span> = { <span class="tk-c">/** @stable */</span> <span class="tk-k">readonly</span> open: number[] };
+
+<span class="tk-k">function</span> take(runs: <span class="tk-t">Runs</span>): <span class="tk-t">Modifies</span>&lt;{ values: <span class="tk-s">&quot;any&quot;</span>; <span class="tk-s">&quot;runs.open[*]&quot;</span>: <span class="tk-s">&quot;any&quot;</span> }, <span class="tk-k">void</span>&gt; {
+  runs.open.pop();
+}
+
+<span class="tk-k">function</span> scan(runs: <span class="tk-t">Runs</span>, other: number[]): <span class="tk-t">Modifies</span>&lt;{ values: <span class="tk-s">&quot;any&quot;</span>; <span class="tk-s">&quot;runs.open[*]&quot;</span>: <span class="tk-s">&quot;any&quot;</span> }, <span class="tk-k">void</span>&gt; {
+  take({ open: other });
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> count(xs: number[]): number {
+  <span class="tk-k">const</span> runs: <span class="tk-t">Runs</span> = { open: [] };
+  <span class="tk-k">let</span> sum = <span class="tk-n">0</span>;
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; xs.length; i++) {
+    scan(runs, xs);
+    sum += xs[i]!;
+  }
+  <span class="tk-k">return</span> sum;
+}</pre></details></li></ul>
+<h4 class="change">Gap</h4><div class="prose"><p><code>runs.openBrackets[k] = v</code> written in place, the field read inside the write, is refused at node typing with no frame stated; the destructured or copied array verifies. A path of more than one field, a callee frame reading a path of more than one field from an actual, a fresh selected location and cell provenance (<code>CellsFrom</code>) are rebased to <code>all</code>.</p></div>
+<h4 class="change">Soundness</h4><div class="prose"><p><code>Post.compose_at</code> composes the step's frame through the rebasing; its second case keeps a location an entry of Φ covers at <code>any</code>. Push's frame is a consequence of <code>ReceiverGrows</code>, the write's of the write's semantics: no new trust.</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip strong">lean-semantics</span> <span class="chip">lean-rules</span> <span class="chip">lean-proofs</span> <span class="chip">docs</span> <span class="chip">tests</span></dd><dt>Lean</dt><dd>Footprints.RebaseEvidence · Footprints.RebaseOk · Footprints.rebase · Footprints.rebase_sound · Footprints.Post.compose_at · ArgumentPathTracking.StableNow · ArgumentPathTracking.StableNow.agree · ArgumentPathTracking.entryField · ArgumentPathTracking.checkEntryFields_sound · ArgumentRegionGraph.StepEffect · ArgumentRegionGraph.StepOk · ArgumentRegionGraph.stepWithin · ArgumentRegionGraph.nodeRebase_ok · ArgumentRegionGraph.nodeWithin_of_step · ArgumentRegionGraph.closedStep_ok · ArgumentRegionGraph.callStep_ok · ArgumentRegionGraph.writeStep_ok · ExpressionEffects.StoreWrite · ExpressionEffects.writeStep_sound · HeapExpressionRules.clauseField_typed · removed: ArgumentRegionGraph.checkReceiverCall_sound, ArgumentRegionGraph.nodeWithin_of_closed, ArgumentPathTracking.receiver_call, ArgumentPathTracking.checkReceiver_sound</dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd><span class="test pos">stated-region-steps</span> <span class="test pos">stated-region-nullable-write</span> <span class="test neg">invalid-stated-region-alias</span> <span class="test neg">invalid-stated-region-other</span> <span class="test forged">a caller's region moved from the field's array to its record;</span> <span class="test forged">a region through a number parameter</span></dd></dl>
+<details><summary>18 files changed, 1063 insertions(+), 264 deletions(-)</summary><pre class="code"> WORK.md                                            |   2 +-
+ docs/FOOTPRINTS.md                                 |  88 ++++++--
+ docs/drafts/stated-effects.md                      |  47 +++--
+ .../Programs/ArgumentPathTracking.lean             | 170 +++++++--------
+ .../Programs/ArgumentRegionCertificates.lean       | 228 ++++++++++++++++++---
+ .../Verification/Programs/ArgumentRegionGraph.lean | 201 ++++++++++--------
+ lean/Verification/Programs/ExpressionEffects.lean  | 174 ++++++++++++++--
+ .../Verification/Programs/HeapExpressionRules.lean |  44 ++--
+ lean/Verification/Semantics/FootprintRebase.lean   | 214 +++++++++++++++++++
+ lean/Verification/Semantics/Footprints.lean        |   2 +-
+ lean/Verification/Tests/AxiomCheck.lean            |  13 +-
+ pipeline/cases.mts                                 |   6 +
+ pipeline/examples/invalid-stated-region-alias.ts   |  25 +++
+ pipeline/examples/invalid-stated-region-other.ts   |  26 +++
+ pipeline/examples/stated-region-nullable-write.ts  |  15 ++
+ pipeline/examples/stated-region-steps.ts           |  28 +++
+ pipeline/test.mts                                  |  38 ++++
+ tests/node-runs.mts                                |   6 +</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-b5ed1beaf"><header><div><div class="sha">b5ed1beaf · Cristiano Calcagno · Nov 09, 15:43</div><h3>Record in the stated-effects draft where pretext's three script-run frames are refused</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>With the step-frame rule, pretext's <code>readScriptRuns</code>, <code>spaceSharesScriptRun</code> and <code>getUnspacedGraphemes</code>, stated <code>Modifies&lt;{ values: &quot;any&quot;; &quot;runs.openBrackets[*]&quot;: &quot;any&quot; }, …&gt;</code>, are still refused at their regional check; the draft's §6.2 stated their frames as conjectured and named no refusal.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">drafts/stated-effects.md, §6.2</span></h4><div class="prose"><p>the observation of 2026-11-09: each frame refused at a helper whose effect is wider (<code>getScriptFactsAt</code> through <code>unpackClasses</code>'s typed arrays, <code>hasProperty</code>'s cached <code>Uint16Array</code>, a push onto an array the body allocates); <code>readScriptRuns</code> verifies once <code>getScriptFactsAt</code> is read at <code>{ values: &quot;any&quot; }</code>; <code>measureAnalysis</code> keeps its length facts through its loop and loses them across <code>addKanaKerning</code></p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">docs</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Measured</dt><dd>pretext frames 0 -&gt; 0 of 3 verified, measureAnalysis sites 0 -&gt; 0 of 33, helper sites 6 -&gt; 6 of 26 (dev/check-functions.mts, TSCERT_STEP_LIMIT=300, pretext aaa11c50 with frames.patch)</dd></dl>
+<details><summary>1 file changed, 18 insertions(+)</summary><pre class="code"> docs/drafts/stated-effects.md | 18 ++++++++++++++++++</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+</main></body></html>
