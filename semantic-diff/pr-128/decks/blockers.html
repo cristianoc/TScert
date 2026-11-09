@@ -1,0 +1,354 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>What stops TScert's own code</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Code+Pro:wght@400;600&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=STIX+Two+Text:ital,wght@0,400;0,600;1,400&display=swap">
+<style>
+*{margin:0;box-sizing:border-box}html,body{height:100%;background:#2a2f2d}
+#stage{position:fixed;inset:0;display:flex;align-items:center;justify-content:center}
+section{width:1920px;height:1080px;flex:none;position:relative;transform-origin:center;overflow:hidden}
+section:not(.on){display:none !important}ul,ol{padding-left:1.2em}li{margin:4px 0}td,th{padding:.35em .6em;border:1px solid #d5dce6;vertical-align:top}
+table{border-collapse:collapse}#count{position:fixed;right:16px;bottom:12px;color:#cfd6d3;font:14px "Inter","Helvetica Neue",Arial,sans-serif}
+</style></head><body><div id="stage">
+<section id="cover" style="background:#fbfcfd;color:#0b1a2e;font-family:'Inter','Helvetica Neue',Arial,sans-serif;padding:128px;display:flex;flex-direction:column;gap:40px">
+<svg style="position:absolute;right:128px;bottom:128px;width:280px;height:400px" xmlns="http://www.w3.org/2000/svg" width="420" height="600" viewBox="0 0 420 600"><g transform="translate(0.000000,600.000000) scale(0.100000,-0.100000)"
+fill="#b8840f" stroke="none">
+<path d="M465 5974 c-33 -2 -120 -8 -193 -14 -95 -8 -144 -7 -173 0 -23 6 -43
+9 -46 6 -21 -20 -35 -202 -33 -436 1 -232 7 -395 41 -1065 6 -121 12 -479 14
+-795 5 -821 22 -1321 55 -1600 5 -47 15 -143 20 -215 6 -71 20 -227 31 -345
+21 -218 22 -306 3 -702 -9 -183 13 -266 78 -299 32 -16 39 -25 35 -42 -3 -12
+-9 -85 -13 -162 -8 -163 -4 -172 81 -204 28 -10 90 -35 140 -55 49 -20 97 -36
+107 -36 25 0 60 49 52 74 -12 43 -144 130 -229 152 l-25 6 0 128 0 127 93 7
+c50 4 164 13 252 20 88 7 162 12 164 10 3 -3 3 -76 2 -163 -2 -101 1 -167 8
+-180 16 -30 87 -68 161 -87 36 -9 82 -25 102 -35 48 -25 93 -24 118 1 61 61
+-23 148 -175 180 -102 22 -96 12 -93 163 l3 132 40 18 c57 27 84 55 91 96 3
+20 12 68 19 106 27 132 38 876 18 1085 -18 176 -21 886 -5 901 4 4 180 12 392
+18 212 6 438 14 503 18 84 4 117 3 117 -5 0 -7 -20 -48 -45 -93 -25 -45 -45
+-89 -45 -98 0 -41 110 -97 163 -83 22 6 54 47 99 127 37 65 36 65 125 50 51
+-9 160 10 200 35 53 32 112 156 125 261 14 121 5 171 -39 220 l-35 39 31 54
+c70 125 102 168 119 161 44 -18 205 -80 267 -104 142 -53 368 -21 530 73 87
+51 226 202 301 326 95 155 100 173 150 443 27 148 27 149 10 235 -48 243 -184
+431 -382 527 -357 174 -670 146 -980 -88 -123 -93 -168 -141 -204 -221 -142
+-312 -145 -323 -145 -491 1 -227 67 -409 197 -542 l71 -71 -88 -129 c-122
+-179 -115 -175 -115 -62 0 107 -16 253 -31 281 -6 10 -22 24 -37 30 -36 15
+-729 10 -1032 -6 -131 -8 -229 -9 -235 -4 -6 5 -13 119 -17 276 -3 147 -15
+393 -26 547 -12 154 -24 363 -27 465 -3 102 -10 223 -15 270 -6 47 -15 146
+-20 220 -18 233 -45 484 -53 498 -28 44 -270 63 -572 46z m193 -111 c-10 -2
+-26 -2 -35 0 -10 3 -2 5 17 5 19 0 27 -2 18 -5z m190 0 c-10 -2 -28 -2 -40 0
+-13 2 -5 4 17 4 22 1 32 -1 23 -4z m-320 -10 c-10 -2 -28 -2 -40 0 -13 2 -5 4
+17 4 22 1 32 -1 23 -4z m-165 -10 c-7 -2 -21 -2 -30 0 -10 3 -4 5 12 5 17 0
+24 -2 18 -5z m-195 -48 c-26 -30 -38 -32 -38 -7 0 25 9 32 37 32 l23 0 -22
+-25z m-31 -427 c-1 -40 -3 -8 -3 72 0 80 2 112 3 73 2 -40 2 -106 0 -145z m10
+-265 c-3 -10 -5 -4 -5 12 0 17 2 24 5 18 2 -7 2 -21 0 -30z m860 -60 c-2 -16
+-4 -5 -4 22 0 28 2 40 4 28 2 -13 2 -35 0 -50z m-850 -125 c-2 -13 -4 -3 -4
+22 0 25 2 35 4 23 2 -13 2 -33 0 -45z m860 -50 c-2 -18 -4 -6 -4 27 0 33 2 48
+4 33 2 -15 2 -42 0 -60z m2478 37 c153 -36 328 -123 387 -193 34 -40 110 -191
+142 -280 36 -102 34 -158 -10 -284 -19 -57 -44 -131 -55 -165 -43 -137 -246
+-376 -371 -437 -164 -80 -340 -86 -472 -18 -44 23 -109 51 -145 63 -178 59
+-272 152 -332 331 -52 155 -34 369 44 525 13 26 30 66 37 88 23 74 73 127 214
+229 117 84 192 115 361 150 45 9 144 5 200 -9z m-3328 -267 c-2 -13 -4 -5 -4
+17 -1 22 1 32 4 23 2 -10 2 -28 0 -40z m860 -10 c-2 -13 -4 -3 -4 22 0 25 2
+35 4 23 2 -13 2 -33 0 -45z m10 -175 c-3 -10 -5 -4 -5 12 0 17 2 24 5 18 2 -7
+2 -21 0 -30z m10 -160 c-3 -10 -5 -4 -5 12 0 17 2 24 5 18 2 -7 2 -21 0 -30z
+m-860 -175 c-2 -35 -3 -9 -3 57 0 66 1 94 3 63 2 -32 2 -86 0 -120z m870 -20
+c-2 -13 -4 -5 -4 17 -1 22 1 32 4 23 2 -10 2 -28 0 -40z m10 -240 c-2 -24 -4
+-5 -4 42 0 47 2 66 4 43 2 -24 2 -62 0 -85z m-594 55 c-7 -2 -21 -2 -30 0 -10
+3 -4 5 12 5 17 0 24 -2 18 -5z m-286 -320 c-2 -38 -3 -7 -3 67 0 74 1 105 3
+68 2 -38 2 -98 0 -135z m1871 -20 c-26 -2 -71 -2 -100 0 -29 2 -8 3 47 3 55 0
+79 -1 53 -3z m165 0 c-18 -2 -48 -2 -65 0 -18 2 -4 4 32 4 36 0 50 -2 33 -4z
+m-795 -30 c-15 -2 -42 -2 -60 0 -18 2 -6 4 27 4 33 0 48 -2 33 -4z m999 -90
+c-3 -10 -5 -4 -5 12 0 17 2 24 5 18 2 -7 2 -21 0 -30z m-2240 -146 c-2 -23 -3
+-1 -3 48 0 50 1 68 3 42 2 -26 2 -67 0 -90z m2253 28 c0 -14 -4 -25 -9 -25 -4
+0 -6 11 -3 25 2 14 6 25 8 25 2 0 4 -11 4 -25z m-263 -212 c-3 -10 -5 -4 -5
+12 0 17 2 24 5 18 2 -7 2 -21 0 -30z m-1980 -205 c-2 -29 -3 -8 -3 47 0 55 1
+79 3 53 2 -26 2 -71 0 -100z m2117 103 c-3 -3 -15 6 -27 18 l-22 24 27 -19
+c14 -10 24 -21 22 -23z m-166 -118 c-10 -2 -28 -2 -40 0 -13 2 -5 4 17 4 22 1
+32 -1 23 -4z m-280 -10 c-15 -2 -42 -2 -60 0 -18 2 -6 4 27 4 33 0 48 -2 33
+-4z m-370 -10 c-10 -2 -28 -2 -40 0 -13 2 -5 4 17 4 22 1 32 -1 23 -4z m-265
+-10 c-13 -2 -33 -2 -45 0 -13 2 -3 4 22 4 25 0 35 -2 23 -4z m-1026 -300 c-3
+-10 -5 -4 -5 12 0 17 2 24 5 18 2 -7 2 -21 0 -30z m890 -210 c-3 -10 -5 -2 -5
+17 0 19 2 27 5 18 2 -10 2 -26 0 -35z m20 -550 c-3 -10 -5 -4 -5 12 0 17 2 24
+5 18 2 -7 2 -21 0 -30z m10 -180 c-2 -16 -4 -3 -4 27 0 30 2 43 4 28 2 -16 2
+-40 0 -55z m-10 -310 c-2 -21 -4 -6 -4 32 0 39 2 55 4 38 2 -18 2 -50 0 -70z
+m-790 -245 c-2 -24 -4 -7 -4 37 0 44 2 63 4 43 2 -21 2 -57 0 -80z m780 -60
+c-2 -13 -4 -5 -4 17 -1 22 1 32 4 23 2 -10 2 -28 0 -40z m-790 -260 c-2 -24
+-4 -5 -4 42 0 47 2 66 4 43 2 -24 2 -62 0 -85z m636 -105 c-7 -2 -21 -2 -30 0
+-10 3 -4 5 12 5 17 0 24 -2 18 -5z m-165 -10 c-10 -2 -26 -2 -35 0 -10 3 -2 5
+17 5 19 0 27 -2 18 -5z m-355 -30 c-13 -2 -35 -2 -50 0 -16 2 -5 4 22 4 28 0
+40 -2 28 -4z"/>
+<path d="M3800 4495 c-9 -11 -8 -30 6 -91 23 -98 5 -205 -56 -331 -70 -142
+-239 -292 -347 -307 -87 -13 -104 -27 -82 -68 17 -31 104 -20 204 26 244 113
+418 445 366 698 -17 80 -58 113 -91 73z"/>
+</g><g transform="translate(0.000000,600.000000) scale(0.100000,-0.100000)"
+fill="#0b1a2e" stroke="none">
+<path d="M440 5975 c-251 -18 -319 -20 -360 -11 l-36 8 -13 -89 c-21 -136 -24
+-448 -7 -748 35 -601 48 -1002 44 -1390 -5 -626 23 -1331 72 -1820 55 -548 64
+-718 50 -920 -26 -375 -10 -469 84 -504 21 -9 26 -16 21 -29 -4 -9 -9 -83 -12
+-165 -7 -170 -6 -173 81 -206 28 -11 85 -34 126 -52 122 -51 128 -52 156 -24
+13 13 24 33 24 44 0 47 -99 119 -233 170 l-28 11 3 122 3 123 80 6 c154 13
+380 29 405 29 l25 0 -3 -161 c-2 -135 0 -165 13 -186 17 -25 126 -83 158 -83
+10 0 44 -11 77 -25 116 -49 189 -11 154 79 -11 29 -100 75 -189 99 l-90 24 -3
+128 c-3 133 3 155 39 155 47 0 89 60 109 155 32 154 48 890 25 1151 -20 225
+-21 288 -15 639 l5 250 260 7 c143 4 370 12 505 17 134 6 246 8 248 6 2 -2
+-17 -44 -43 -93 -59 -109 -57 -133 11 -163 107 -48 123 -41 201 94 39 68 49
+78 67 72 84 -26 227 -10 277 32 52 44 109 176 116 269 9 120 -1 166 -44 208
+l-36 34 48 79 c26 43 55 91 64 106 20 34 30 33 161 -18 52 -20 120 -46 150
+-57 174 -65 431 -7 606 137 175 142 322 388 348 580 4 28 16 95 28 149 25 122
+21 187 -21 316 -66 205 -179 340 -356 425 -359 174 -669 151 -965 -71 -152
+-115 -182 -151 -261 -323 -86 -188 -109 -272 -109 -396 0 -223 72 -423 202
+-557 l68 -71 -44 -61 c-23 -34 -62 -89 -85 -122 -69 -103 -67 -105 -74 75 -9
+268 21 253 -492 248 -214 -2 -490 -10 -613 -17 -122 -7 -225 -11 -228 -8 -3 3
+-7 101 -10 217 -2 116 -11 306 -19 423 -8 117 -19 310 -25 428 -30 623 -82
+1184 -114 1219 -41 46 -263 59 -586 36z m419 -114 c60 -6 65 -8 72 -35 23 -84
+68 -634 89 -1086 6 -118 15 -287 20 -375 6 -88 15 -268 20 -401 5 -132 13
+-261 16 -286 4 -29 2 -48 -5 -52 -17 -11 -13 -51 7 -75 12 -16 29 -22 62 -23
+64 -2 402 21 420 28 28 11 834 23 845 13 6 -5 15 -64 20 -130 l10 -120 -30 8
+c-192 46 -304 -188 -168 -354 24 -30 43 -56 41 -58 -3 -3 -491 -21 -863 -31
+-221 -6 -298 -14 -310 -34 -16 -25 -15 -787 1 -949 21 -221 0 -1184 -28 -1218
+-12 -16 -54 -21 -248 -33 -91 -5 -205 -14 -255 -20 -135 -14 -240 -19 -253
+-11 -8 4 -8 80 -1 270 7 212 6 303 -6 460 -18 228 -53 605 -60 641 -3 14 -16
+174 -30 355 -23 300 -27 413 -35 1230 -5 495 -14 968 -19 1050 -16 239 -30
+648 -33 930 l-3 260 39 2 c21 1 53 7 70 12 17 6 117 15 221 22 105 6 192 13
+194 15 6 6 124 3 200 -5z m2754 -996 c213 -77 278 -136 365 -331 88 -195 89
+-224 11 -457 -53 -158 -78 -206 -178 -329 -153 -190 -289 -261 -506 -262 -97
+-1 -102 0 -173 37 -40 21 -106 49 -145 64 -207 74 -312 187 -362 388 -32 129
+-8 328 55 460 15 33 36 83 46 110 44 127 324 321 509 354 33 6 71 13 85 15 68
+12 175 -6 293 -49z m-1230 -1626 c28 -12 63 -67 51 -78 -5 -4 -26 -20 -48 -35
+-21 -16 -46 -46 -55 -67 l-18 -39 -28 30 c-74 77 6 231 98 189z m331 -83 c46
+-1 50 -3 57 -31 13 -45 -17 -212 -47 -262 -79 -136 -299 -137 -320 -2 -10 62
+34 127 58 86 12 -23 25 -21 33 3 4 13 -2 34 -16 57 l-22 36 27 24 c33 28 46
+29 97 3 22 -12 45 -18 50 -14 16 9 4 72 -18 97 -18 20 -18 20 17 12 19 -5 57
+-9 84 -9z"/>
+<path d="M374 4126 c-65 -65 -42 -179 41 -206 92 -30 185 63 155 156 -29 87
+-133 113 -196 50z"/>
+<path d="M721 4121 c-30 -28 -36 -49 -31 -111 9 -123 211 -127 234 -6 22 114
+-120 195 -203 117z"/>
+<path d="M3800 4495 c-11 -13 -11 -26 -2 -66 41 -175 -16 -354 -160 -504 -93
+-98 -169 -146 -246 -156 -78 -11 -107 -52 -58 -84 73 -48 306 76 420 224 125
+163 185 428 126 559 -21 46 -55 57 -80 27z"/>
+</g></svg>
+<p style="font-size:24px;color:#56627a;font-weight:600;letter-spacing:2px;text-transform:uppercase">TScert · its own front end</p>
+<h1 style="font-family:'Bricolage Grotesque','Helvetica Neue',Arial,sans-serif;font-size:88px;font-weight:700;line-height:1.1;width:1340px">What stops TScert's own code, and what lies behind it</h1>
+<p style="font-size:28px;color:#0b1a2e;line-height:1.4;width:1340px">TScert checks type claims about TypeScript programs and is run on its own front end, function by function. In the run of 2026-10-24, 178 of its 490 functions are verified. This deck ranks what stops the other 312, finds blockers hidden behind the first one with crude rewrites of the source, and lists a small reproducing file for each of the 121 blockers found. Seven large blockers are investigated: their cause, the repair, and what the repair would trust. Each blocker's cause is a pipeline case of TScert's suite, and patterns TScert rightly refuses are removed from its own code (slides “45 cases stand for the 121 repros” and “Changes to tools/”).</p>
+</section>
+
+<section id="terms" style="background:#fbfcfd;color:#0b1a2e;font-family:'Inter','Helvetica Neue',Arial,sans-serif;padding:120px 128px;display:flex;flex-direction:column;gap:28px">
+<p style="font-size:24px;color:#56627a;font-weight:600;letter-spacing:2px;text-transform:uppercase">Words used in this deck</p>
+<h2 style="font-family:'Bricolage Grotesque','Helvetica Neue',Arial,sans-serif;font-size:56px;font-weight:700;line-height:1.15">How TScert works, in three cards</h2>
+<div style="display:grid;grid-template-columns:repeat(3, 1fr);gap:20px"><div style="background:#ffffff;border:1px solid #d5dce6;border-radius:16px;padding:24px;display:flex;flex-direction:column;gap:6px"><h3 style="font-size:28px;font-weight:600">Verified, refused</h3><p style="font-size:24px;color:#0b1a2e;line-height:1.36">TScert <span style="color:#2f6b47">verifies</span> a function when it proves it safe: every value the function reads, writes or returns has its declared type. Otherwise it <span style="color:#9b3524">refuses</span> the function, naming the first place it could not prove. A refusal is the location and its reason.</p></div><div style="background:#ffffff;border:1px solid #d5dce6;border-radius:16px;padding:24px;display:flex;flex-direction:column;gap:6px"><h3 style="font-size:28px;font-weight:600">The four stages</h3><p style="font-size:24px;color:#0b1a2e;line-height:1.36">A source passes through, in order: the <b>gate</b>, which reads the TypeScript and refuses what lies outside the language TScert admits; the <b>producer</b>, which proposes types for every expression; the <b>search</b>, which looks for a proof of them; and the <b>checker</b>, proved correct in the Lean proof assistant, which checks that proof. Only the gate and the checker are trusted.</p></div><div style="background:#ffffff;border:1px solid #d5dce6;border-radius:16px;padding:24px;display:flex;flex-direction:column;gap:6px"><h3 style="font-size:28px;font-weight:600">Contract</h3><p style="font-size:24px;color:#0b1a2e;line-height:1.36">TScert's reviewed description of code it does not check itself, such as a Node or TypeScript library function: written and audited by hand. A contract is an assumption the result rests on; adding one widens what TScert trusts.</p></div></div>
+</section>
+
+<section id="terms2" style="background:#fbfcfd;color:#0b1a2e;font-family:'Inter','Helvetica Neue',Arial,sans-serif;padding:120px 128px;display:flex;flex-direction:column;gap:28px">
+<p style="font-size:24px;color:#56627a;font-weight:600;letter-spacing:2px;text-transform:uppercase">Words used in this deck, continued</p>
+<h2 style="font-family:'Bricolage Grotesque','Helvetica Neue',Arial,sans-serif;font-size:56px;font-weight:700;line-height:1.15">Slices, the census, and coverage</h2>
+<div style="display:grid;grid-template-columns:repeat(3, 1fr);gap:20px"><div style="background:#ffffff;border:1px solid #d5dce6;border-radius:16px;padding:24px;display:flex;flex-direction:column;gap:6px"><h3 style="font-size:28px;font-weight:600">Slice</h3><p style="font-size:24px;color:#0b1a2e;line-height:1.36">One top-level function of TScert's front end (the folder tools/), copied into a file of its own with the definitions of its file it uses, and run alone through TScert. A slice stops at its first refusal: whatever else it would meet stays unseen.</p></div><div style="background:#ffffff;border:1px solid #d5dce6;border-radius:16px;padding:24px;display:flex;flex-direction:column;gap:6px"><h3 style="font-size:28px;font-weight:600">Census</h3><p style="font-size:24px;color:#0b1a2e;line-height:1.36">The run of every slice: 490 slices, one per function, in the census of commit 963ffa4 (2026-10-24, each stage allowed 300 s).</p></div><div style="background:#ffffff;border:1px solid #d5dce6;border-radius:16px;padding:24px;display:flex;flex-direction:column;gap:6px"><h3 style="font-size:28px;font-weight:600">Statement coverage</h3><p style="font-size:24px;color:#0b1a2e;line-height:1.36">The share of the front end's TypeScript statements (an if, a return, an assignment …) that lie inside verified functions: 1,347 of 12,698 in that census, 10.6%.</p></div></div>
+</section>
+
+<section id="census" style="background:#fbfcfd;color:#0b1a2e;font-family:'Inter','Helvetica Neue',Arial,sans-serif;padding:120px 128px;display:flex;flex-direction:column;gap:26px">
+<p style="font-size:24px;color:#56627a;font-weight:600;letter-spacing:2px;text-transform:uppercase">Where things stand</p>
+<h2 style="font-family:'Bricolage Grotesque','Helvetica Neue',Arial,sans-serif;font-size:56px;font-weight:700;line-height:1.15">178 of 490 functions verify; 312 stop at 104 different first refusals</h2>
+<div style="display:grid;grid-template-columns:repeat(3, 1fr);gap:20px"><div style="background:#ffffff;border:1px solid #d5dce6;border-radius:16px;padding:24px;display:flex;flex-direction:column;gap:6px"><p style="font-family:'Bricolage Grotesque','Helvetica Neue',Arial,sans-serif;font-size:56px;font-weight:500;color:#2f6b47">178 of 490</p><p style="font-size:24px;color:#0b1a2e;line-height:1.34">functions of tools/ <span style="color:#2f6b47">verified</span> in the census of 963ffa4 (measured)</p></div><div style="background:#ffffff;border:1px solid #d5dce6;border-radius:16px;padding:24px;display:flex;flex-direction:column;gap:6px"><p style="font-family:'Bricolage Grotesque','Helvetica Neue',Arial,sans-serif;font-size:56px;font-weight:500;color:#8a6410">104</p><p style="font-size:24px;color:#0b1a2e;line-height:1.34">distinct first refusals among the other 312, grouped by their reason (measured by the rewrite loop of the next slides)</p></div><div style="background:#ffffff;border:1px solid #d5dce6;border-radius:16px;padding:24px;display:flex;flex-direction:column;gap:6px"><p style="font-family:'Bricolage Grotesque','Helvetica Neue',Arial,sans-serif;font-size:56px;font-weight:500;color:#8a6410">10.6%</p><p style="font-size:24px;color:#0b1a2e;line-height:1.34">statement coverage: 1,347 of 12,698 TypeScript statements inside verified functions (measured)</p></div></div><ul style="font-size:24px;color:#0b1a2e;line-height:1.36">
+<li>Where the 312 stop (measured): 212 at the gate or the producer, 100 in the search; none in the checker.</li>
+<li>Many functions share one blocker: the ten largest each meet between 13 and 56 functions (slide “The ten largest blocker families”).</li>
+<li>A slice stops at its first refusal, so fixing a blocker only shows the next one, one census at a time. The next two slides describe how to look further ahead.</li>
+</ul>
+</section>
+
+<section id="loop" style="background:#fbfcfd;color:#0b1a2e;font-family:'Inter','Helvetica Neue',Arial,sans-serif;padding:120px 128px;display:flex;flex-direction:column;gap:18px">
+<div style="display:flex;gap:24px;align-items:baseline;flex-wrap:wrap"><p style="font-size:24px;color:#56627a;font-weight:600;letter-spacing:2px;text-transform:uppercase">Looking past the first refusal</p><p style="font-size:24px;color:#56627a">crude, may change behaviour, never counted as verified</p></div>
+<h2 style="font-family:'Bricolage Grotesque','Helvetica Neue',Arial,sans-serif;font-size:56px;font-weight:700;line-height:1.15">Rewrite the slice's source until it reaches the end</h2>
+<ul style="font-size:24px;color:#0b1a2e;line-height:1.36">
+<li><b style="font-weight:600">The loop:</b> run the slice; at a refusal, apply a crude local rewrite of the slice's copy that gets past it; record the refusal as a blocker; run again; stop when the slice reaches the end, when no rule rewrites the refusal, after 12 rewrites, or after 1,200 s.</li>
+<li><b style="font-weight:600">A diagnostic only:</b> it is a separate tool (dev/blocker-rewrites.mts, branch blocker-rewrites, commit 90feee4) that edits copies and changes nothing TScert trusts. A rewritten slice that gets through is reported as “reaches the end after rewrites R1…Rn”, never as <span style="color:#2f6b47">verified</span>.</li>
+<li><b style="font-weight:600">What it may change:</b> a rewrite can alter what the code does, so a blocker found after it is one the original code may or may not meet. The order says what was exposed, not what caused it.</li>
+</ul><table style="font-size:24px;color:#0b1a2e">
+<tr><th style="width:10%;text-align:left;font-weight:600">Rule</th><th style="width:42%;text-align:left;font-weight:600">Refusal</th><th style="width:48%;text-align:left;font-weight:600">Rewrite (in the slice's copy)</th></tr>
+<tr><td>R1</td><td>Readonly over a record (slide “Readonly”)</td><td>the same record with readonly fields written out</td></tr>
+<tr><td>R2</td><td>node:path's constant <span style="color:#2c4f7c">sep</span></td><td>a local declared constant of type <span style="color:#2c4f7c">string</span></td></tr>
+<tr><td>R3</td><td><span style="color:#2c4f7c">Object.entries</span> at two kinds of overload</td><td>a local declared function <span style="color:#2c4f7c">(o: object) =&gt; [string, unknown][]</span></td></tr>
+<tr><td>R4</td><td>an expression the search cannot type</td><td>a hole: a call of a declared function returning the expected written type</td></tr>
+<tr><td>R5</td><td>an unsupported statement with no result</td><td>an empty statement</td></tr>
+</table>
+</section>
+
+<section id="holes" style="background:#fbfcfd;color:#0b1a2e;font-family:'Inter','Helvetica Neue',Arial,sans-serif;padding:120px 128px;display:flex;flex-direction:column;gap:24px">
+<p style="font-size:24px;color:#56627a;font-weight:600;letter-spacing:2px;text-transform:uppercase">A second measure</p>
+<h2 style="font-family:'Bricolage Grotesque','Helvetica Neue',Arial,sans-serif;font-size:56px;font-weight:700;line-height:1.15">Coverage with holes: 11.3% against 10.6% verified</h2>
+<div style="display:grid;grid-template-columns:repeat(3, 1fr);gap:20px"><div style="background:#ffffff;border:1px solid #d5dce6;border-radius:16px;padding:24px;display:flex;flex-direction:column;gap:6px"><p style="font-family:'Bricolage Grotesque','Helvetica Neue',Arial,sans-serif;font-size:56px;font-weight:500;color:#8a6410">17</p><p style="font-size:24px;color:#0b1a2e;line-height:1.34">of the 312 functions reach the end after rewrites: 13 after holes (R4), 3 after Readonly (R1), 1 after sep (R2) (measured)</p></div><div style="background:#ffffff;border:1px solid #d5dce6;border-radius:16px;padding:24px;display:flex;flex-direction:column;gap:6px"><p style="font-family:'Bricolage Grotesque','Helvetica Neue',Arial,sans-serif;font-size:56px;font-weight:500;color:#8a6410">295</p><p style="font-size:24px;color:#0b1a2e;line-height:1.34">stop at a refusal none of the five rules rewrites (measured): the catalogue is the loop's limit</p></div><div style="background:#ffffff;border:1px solid #d5dce6;border-radius:16px;padding:24px;display:flex;flex-direction:column;gap:6px"><p style="font-family:'Bricolage Grotesque','Helvetica Neue',Arial,sans-serif;font-size:56px;font-weight:500;color:#8a6410">11.3%</p><p style="font-size:24px;color:#0b1a2e;line-height:1.34">coverage with holes: 1,435 of 12,698 statements; 88 more than verified (measured)</p></div></div><ul style="font-size:24px;color:#0b1a2e;line-height:1.36">
+<li><b style="font-weight:600">Coverage with holes:</b> the statements of verified functions plus those of functions that reach the end after rewrites, a statement touched by a rewrite counted as not covered.</li>
+<li><b style="font-weight:600">The gap:</b> 88 statements, in functions the found blockers stop and whose slices reach the end once those blockers are rewritten. It grows as more slices reach the end.</li>
+<li>The 88 are the statements of those 17 functions that no rewrite touched; with a larger catalogue more slices reach the end and the gap grows (estimated).</li>
+</ul>
+</section>
+
+<section id="ranking" style="background:#fbfcfd;color:#0b1a2e;font-family:'Inter','Helvetica Neue',Arial,sans-serif;padding:120px 128px;display:flex;flex-direction:column;gap:14px">
+<p style="font-size:24px;color:#56627a;font-weight:600;letter-spacing:2px;text-transform:uppercase">Ranking, measured by the loop's run</p>
+<h2 style="font-family:'Bricolage Grotesque','Helvetica Neue',Arial,sans-serif;font-size:56px;font-weight:700;line-height:1.15">The ten largest blocker families</h2>
+<table style="font-size:24px;color:#0b1a2e">
+<tr><th style="width:55%;text-align:left;font-weight:600;padding:4px 12px">Family (groups refusals of one reason)</th><th style="width:13%;text-align:left;font-weight:600;padding:4px 12px">Functions</th><th style="width:14%;text-align:left;font-weight:600;padding:4px 12px">Statements</th><th style="width:18%;text-align:left;font-weight:600;padding:4px 12px">Met first / after rewrites</th></tr>
+<tr><td style="padding:4px 12px">search: an expression with no proof of its type</td><td style="padding:4px 12px">56</td><td style="padding:4px 12px">1,187</td><td style="padding:4px 12px">55 / 5</td></tr>
+<tr><td style="padding:4px 12px">Readonly over a record</td><td style="padding:4px 12px">29</td><td style="padding:4px 12px">1,087</td><td style="padding:4px 12px">15 / 14</td></tr>
+<tr><td style="padding:4px 12px">node:path's constant <span style="color:#2c4f7c">sep</span></td><td style="padding:4px 12px">27</td><td style="padding:4px 12px">701</td><td style="padding:4px 12px">27 / 0</td></tr>
+<tr><td style="padding:4px 12px">Node's <span style="color:#2c4f7c">Buffer</span></td><td style="padding:4px 12px">27</td><td style="padding:4px 12px">309</td><td style="padding:4px 12px">25 / 2</td></tr>
+<tr><td style="padding:4px 12px">a library global no contract covers</td><td style="padding:4px 12px">21</td><td style="padding:4px 12px">765</td><td style="padding:4px 12px">8 / 14</td></tr>
+<tr><td style="padding:4px 12px">a callback parameter TypeScript types as <span style="color:#2c4f7c">any</span></td><td style="padding:4px 12px">21</td><td style="padding:4px 12px">654</td><td style="padding:4px 12px">0 / 21</td></tr>
+<tr><td style="padding:4px 12px"><span style="color:#2c4f7c">Object.entries</span> at two kinds of overload</td><td style="padding:4px 12px">21</td><td style="padding:4px 12px">654</td><td style="padding:4px 12px">21 / 0</td></tr>
+<tr><td style="padding:4px 12px">compiler-API members outside TScert's reviewed lists</td><td style="padding:4px 12px">20</td><td style="padding:4px 12px">3,091</td><td style="padding:4px 12px">20 / 0</td></tr>
+<tr><td style="padding:4px 12px">the sync API's conditional member type</td><td style="padding:4px 12px">17</td><td style="padding:4px 12px">119</td><td style="padding:4px 12px">14 / 3</td></tr>
+<tr><td style="padding:4px 12px">crypto's hash options</td><td style="padding:4px 12px">13</td><td style="padding:4px 12px">404</td><td style="padding:4px 12px">5 / 8</td></tr>
+</table><ul style="font-size:24px;color:#0b1a2e;line-height:1.36">
+<li>Functions: distinct functions whose slice meets the family; statements: those functions' statements. Families overlap, so the columns do not add up.</li>
+<li>The last column counts functions meeting the family as their first refusal and after a rewrite; a function can meet it both ways, so the two may add to more than the total. No slice meets the callback parameter typed any first.</li>
+<li>The 20 functions of a later slide, “An empty array written into a field”, are among the 56 of the first row.</li>
+</ul>
+</section>
+
+<section id="sep" style="background:#fbfcfd;color:#0b1a2e;font-family:'Inter','Helvetica Neue',Arial,sans-serif;padding:120px 128px;display:flex;flex-direction:column;gap:18px">
+<div style="display:flex;gap:24px;align-items:baseline;flex-wrap:wrap"><p style="font-size:24px;color:#56627a;font-weight:600;letter-spacing:2px;text-transform:uppercase">Blocker · 27 functions, 701 statements</p><p style="font-size:24px;color:#56627a">investigated by hand</p></div>
+<h2 style="font-family:'Bricolage Grotesque','Helvetica Neue',Arial,sans-serif;font-size:56px;font-weight:700;line-height:1.15">node:path's constant <span style="color:#2c4f7c">sep</span></h2>
+<ul style="font-size:24px;color:#0b1a2e;line-height:1.36">
+<li><b style="font-weight:600">Where:</b> the slices of tools/family-activation.mts (21), declaration-graph.mts (5) and files.mts (1) read <span style="color:#2c4f7c">sep</span>, a property of the object node:path exports.</li>
+<li><b style="font-weight:600">Who refuses, and why:</b> the gate. TScert reads a library module's value only through a reviewed entry, and the entries cover functions, not constants: a missing contract, not a restriction any document states (cited: SOURCE-CONTRACTS.md, “Library modules”).</li>
+<li><b style="font-weight:600">Repair, and what it trusts:</b> a constant entry in the reviewed list of library modules, stating <span style="color:#2c4f7c">sep</span> as <span style="color:#2c4f7c">&quot;/&quot; | &quot;\\&quot;</span>. It adds one host assumption: nothing replaces <span style="color:#2c4f7c">path.sep</span> while the program runs; Node lets code write it (observed with a Node script). Size: about 30–50 lines (estimated).</li>
+<li><b style="font-weight:600">Behind it:</b> rewriting <span style="color:#2c4f7c">sep</span> by hand in 7 of the 27 slices (a test apart from the loop), 1 reaches the end; the others stop at Node's <span style="color:#2c4f7c">Buffer</span>, crypto's hash options, and an in test (<span style="color:#2c4f7c">&quot;name&quot; in f</span>) on a function value (observed).</li>
+</ul>
+</section>
+
+<section id="buffer" style="background:#fbfcfd;color:#0b1a2e;font-family:'Inter','Helvetica Neue',Arial,sans-serif;padding:120px 128px;display:flex;flex-direction:column;gap:18px">
+<div style="display:flex;gap:24px;align-items:baseline;flex-wrap:wrap"><p style="font-size:24px;color:#56627a;font-weight:600;letter-spacing:2px;text-transform:uppercase">Blocker · 27 + 13 functions</p><p style="font-size:24px;color:#56627a">investigated by hand</p></div>
+<h2 style="font-family:'Bricolage Grotesque','Helvetica Neue',Arial,sans-serif;font-size:56px;font-weight:700;line-height:1.15">Node's <span style="color:#2c4f7c">Buffer</span>, and crypto's hash</h2>
+<ul style="font-size:24px;color:#0b1a2e;line-height:1.36">
+<li><b style="font-weight:600">Where:</b> most of tools/files.mts: <span style="color:#2c4f7c">Buffer.compare</span> in one sorting helper, the fs functions <span style="color:#2c4f7c">statSync</span>, <span style="color:#2c4f7c">mkdirSync</span> and <span style="color:#2c4f7c">chmodSync</span>, whose path parameter admits a <span style="color:#2c4f7c">Buffer</span>, written <span style="color:#2c4f7c">Buffer</span> and <span style="color:#2c4f7c">Dirent</span> types, and <span style="color:#2c4f7c">createHash</span>.</li>
+<li><b style="font-weight:600">Who refuses, and why:</b> the gate, rightly: an unlisted Node function is read as its declaration states, and <span style="color:#2c4f7c">Buffer</span>'s declaration is outside what TScert reads (its parent type <span style="color:#2c4f7c">Uint8Array</span> is refused by itself; <span style="color:#2c4f7c">Buffer</span> has about 100 members, some running caller code) (observed and cited).</li>
+<li><b style="font-weight:600">Repair, and what it trusts:</b> new reviewed entries: the fs functions at string paths, <span style="color:#2c4f7c">createHash</span> with <span style="color:#2c4f7c">update</span> and <span style="color:#2c4f7c">digest</span>, and a <span style="color:#2c4f7c">Buffer</span> type with a closed list of the members the code uses. They add host assumptions, statements about Node that TScert does not check: Buffers keep their standard methods, hashing runs no caller code, each to audit against Node's source. Reading files as text instead would change what the hashing computes.</li>
+<li><b style="font-weight:600">Behind it:</b> <span style="color:#2c4f7c">Dirent</span>, the <span style="color:#2c4f7c">TextDecoder</span> global, a read of <span style="color:#2c4f7c">splice</span> on a value that may be an array or a record, and Readonly (observed).</li>
+</ul>
+</section>
+
+<section id="entries" style="background:#fbfcfd;color:#0b1a2e;font-family:'Inter','Helvetica Neue',Arial,sans-serif;padding:120px 128px;display:flex;flex-direction:column;gap:18px">
+<div style="display:flex;gap:24px;align-items:baseline;flex-wrap:wrap"><p style="font-size:24px;color:#56627a;font-weight:600;letter-spacing:2px;text-transform:uppercase">Blocker · 21 functions, 654 statements</p><p style="font-size:24px;color:#56627a">investigated by hand</p></div>
+<h2 style="font-family:'Bricolage Grotesque','Helvetica Neue',Arial,sans-serif;font-size:56px;font-weight:700;line-height:1.15"><span style="color:#2c4f7c">Object.entries</span> at two kinds of overload</h2>
+<ul style="font-size:24px;color:#0b1a2e;line-height:1.36">
+<li><b style="font-weight:600">Where:</b> every one waits on one helper of tools/type-term.mts, <span style="color:#2c4f7c">sameData</span>, which calls <span style="color:#2c4f7c">Object.entries</span> twice: once on a value narrowed to an array, where TypeScript picks the generic overload, once on an object, where it picks the plain one.</li>
+<li><b style="font-weight:600">Who refuses, and why:</b> the gate, refusing one member used at a generic and a plain overload. SOURCE-CONTRACTS.md states the refusal (“a generic, optional or modified method … [is] refused”) without saying what behaviour it excludes; its cause is how TScert translates a library member for the checker, from plain signatures or from one generic signature, never both (cited).</li>
+<li><b style="font-weight:600">Repair, and what it trusts:</b> let a member carry both kinds: small, no new trust (estimated).</li>
+<li><b style="font-weight:600">Behind it:</b> <span style="color:#2c4f7c">sameData</span> stays refused: its parameters are typed <span style="color:#2c4f7c">unknown</span>, an array fails the generic overload's parameter, the plain overload excludes values made by the compiler, which TScert keeps opaque (a stated restriction), and a callback is typed <span style="color:#2c4f7c">any</span> (observed). Passing it would need stated parameter types, a change to TScert's source under its rules for such changes (estimated).</li>
+</ul>
+</section>
+
+<section id="syncapi" style="background:#fbfcfd;color:#0b1a2e;font-family:'Inter','Helvetica Neue',Arial,sans-serif;padding:120px 128px;display:flex;flex-direction:column;gap:18px">
+<div style="display:flex;gap:24px;align-items:baseline;flex-wrap:wrap"><p style="font-size:24px;color:#56627a;font-weight:600;letter-spacing:2px;text-transform:uppercase">Blocker · 17 + 7 functions</p><p style="font-size:24px;color:#56627a">investigated by hand</p></div>
+<h2 style="font-family:'Bricolage Grotesque','Helvetica Neue',Arial,sans-serif;font-size:56px;font-weight:700;line-height:1.15">The sync API's <span style="color:#2c4f7c">API</span> class</h2>
+<ul style="font-size:24px;color:#0b1a2e;line-height:1.36">
+<li><b style="font-weight:600">Where:</b> functions using the class <span style="color:#2c4f7c">API</span> of TypeScript's synchronous compiler interface (the sync API), through which TScert's front end asks TypeScript about a program. It is declared <span style="color:#2c4f7c">class API&lt;FromLSP extends boolean = false&gt;</span>: 17 functions use it as a type (14 of them meet this first), 7 in compiler-channel.mts import it as a value.</li>
+<li><b style="font-weight:600">Who refuses, and why:</b> the gate, twice. (a) TScert reads a conditional type (<span style="color:#2c4f7c">X extends Y ? A : B</span>) only once its type parameters are known, and its reviewed list of the class's members states <span style="color:#2c4f7c">updateSnapshot</span> with the parameter type <span style="color:#2c4f7c">FromLSP extends true ? … : …</span>, read for the class in general, never at <span style="color:#2c4f7c">API&lt;false&gt;</span>: no program can use <span style="color:#2c4f7c">API</span> as a type, a defect of the reviewed list (observed: even a function only calling <span style="color:#2c4f7c">api.close()</span> is <span style="color:#9b3524">refused</span>). (b) TScert does not admit constructing <span style="color:#2c4f7c">API</span> (<span style="color:#2c4f7c">new API(…)</span>), a stated restriction, and refuses a value import of it even where the code only uses it as a type (cited).</li>
+<li><b style="font-weight:600">Repair, and what it trusts:</b> (a) read such a class at each use, with its type parameters known, as TScert already reads a type alias holding a conditional type: no new trust (estimated). (b) read a value import as a value only where the code constructs it: 5 of the 7 then meet (a) (estimated).</li>
+<li><b style="font-weight:600">Behind it:</b> <span style="color:#2c4f7c">Object.getPrototypeOf</span> outside the reviewed globals, members outside the reviewed views, and <span style="color:#2c4f7c">Parameters&lt;API[&quot;updateSnapshot&quot;]&gt;</span> (observed in part).</li>
+</ul>
+</section>
+
+<section id="hoisting" style="background:#fbfcfd;color:#0b1a2e;font-family:'Inter','Helvetica Neue',Arial,sans-serif;padding:120px 128px;display:flex;flex-direction:column;gap:18px">
+<div style="display:flex;gap:24px;align-items:baseline;flex-wrap:wrap"><p style="font-size:24px;color:#56627a;font-weight:600;letter-spacing:2px;text-transform:uppercase">Blocker · 20 functions of fragment-statements.mts</p><p style="font-size:24px;color:#56627a">investigated by hand</p></div>
+<h2 style="font-family:'Bricolage Grotesque','Helvetica Neue',Arial,sans-serif;font-size:56px;font-weight:700;line-height:1.15">An empty array written into a field</h2>
+<ul style="font-size:24px;color:#0b1a2e;line-height:1.36">
+<li><b style="font-weight:600">Where:</b> the write <span style="color:#2c4f7c">gate.hoisted = []</span> in the function <span style="color:#2c4f7c">hoisting</span>, which every one of these slices includes (<span style="color:#2c4f7c">gate</span> here names the parser's state object, not the stage).</li>
+<li><b style="font-weight:600">Who refuses, and why:</b> the search refuses, rightly; the cause is a defect of the producer. The producer proposes the new array <span style="color:#2c4f7c">[]</span> by itself, as an array of nothing, instead of at the field's type <span style="color:#2c4f7c">Stmt[]</span> (a write to a local variable already gets the expected type, a write to a field does not), and the search finds no proof: an array's elements are a cell other references may share, so an array of nothing is no <span style="color:#2c4f7c">Stmt[]</span> (cited: the write rule in Lean).</li>
+<li><b style="font-weight:600">Repair, and what it trusts:</b> pass the field's type to the written value, for field and index writes: about 5–10 lines of the producer, no Lean change, no new trust, since every write is still checked (estimated).</li>
+<li><b style="font-weight:600">Behind it:</b> the same cause at <span style="color:#2c4f7c">gate.hoist = {…}</span> one line up; then, in <span style="color:#2c4f7c">forInStmt</span>, a call <span style="color:#2c4f7c">gate.local(d.name)</span> after a narrowing, cause not established (observed).</li>
+</ul>
+</section>
+
+<section id="views" style="background:#fbfcfd;color:#0b1a2e;font-family:'Inter','Helvetica Neue',Arial,sans-serif;padding:120px 128px;display:flex;flex-direction:column;gap:18px">
+<div style="display:flex;gap:24px;align-items:baseline;flex-wrap:wrap"><p style="font-size:24px;color:#56627a;font-weight:600;letter-spacing:2px;text-transform:uppercase">Blocker · 20 functions, 3,091 statements</p><p style="font-size:24px;color:#56627a">investigated by hand</p></div>
+<h2 style="font-family:'Bricolage Grotesque','Helvetica Neue',Arial,sans-serif;font-size:56px;font-weight:700;line-height:1.15">Compiler-API members outside the reviewed views</h2>
+<ul style="font-size:24px;color:#0b1a2e;line-height:1.36">
+<li><b style="font-weight:600">Where:</b> reads of 7 members of TypeScript's compiler API that TScert's reviewed list for each class (a view) leaves out: <span style="color:#2c4f7c">Type.isUnionType</span> (10 functions), <span style="color:#2c4f7c">Checker.getContextualType</span> (4), <span style="color:#2c4f7c">API.parseConfigFile</span> (2) and four others.</li>
+<li><b style="font-weight:600">Who refuses, and why:</b> the gate, rightly: a member outside its view is a located refusal until it is reviewed (cited: COMPILER-API.md, reading rule 4). Five are omissions, four of them members the front end began to read after the views were written; the two this-is-X guards, such as <span style="color:#2c4f7c">isUnionType(): this is UnionType</span>, are left out on purpose.</li>
+<li><b style="font-weight:600">Repair, and what it trusts:</b> the five: one reviewed entry each, its implementation audited. The guards used only as a test: read without their promise, no new trust. Using what the guard promises, as computed-types.mts does with <span style="color:#2c4f7c">getTypes()</span> after <span style="color:#2c4f7c">isUnionType</span>, needs stated type guards, a large design already listed in TScert's status file.</li>
+<li><b style="font-weight:600">Behind it:</b> the next members outside the views (<span style="color:#2c4f7c">isTypeParameter</span>, <span style="color:#2c4f7c">Snapshot.dispose</span>, <span style="color:#2c4f7c">isStringLiteralType</span>) (observed).</li>
+</ul>
+</section>
+
+<section id="readonly" style="background:#fbfcfd;color:#0b1a2e;font-family:'Inter','Helvetica Neue',Arial,sans-serif;padding:120px 128px;display:flex;flex-direction:column;gap:18px">
+<div style="display:flex;gap:24px;align-items:baseline;flex-wrap:wrap"><p style="font-size:24px;color:#56627a;font-weight:600;letter-spacing:2px;text-transform:uppercase">Blocker · 29 functions, 1,087 statements</p><p style="font-size:24px;color:#56627a">investigated by hand</p></div>
+<h2 style="font-family:'Bricolage Grotesque','Helvetica Neue',Arial,sans-serif;font-size:56px;font-weight:700;line-height:1.15">Readonly over a record</h2>
+<ul style="font-size:24px;color:#0b1a2e;line-height:1.36">
+<li><b style="font-weight:600">Where:</b> <span style="color:#2c4f7c">Readonly&lt;Record&lt;K, V&gt;&gt;</span> in tools/array-prototype.mts and guard-closure.mts, reached by their importers. <span style="color:#2c4f7c">Readonly&lt;T&gt;</span> is the mapped type <span style="color:#2c4f7c">{ readonly [P in keyof T]: T[P] }</span>.</li>
+<li><b style="font-weight:600">Who refuses, and why:</b> the gate's reader of types, which reads a mapped type's value once and so refuses a value naming its key, as <span style="color:#2c4f7c">T[P]</span> names <span style="color:#2c4f7c">P</span>. SOURCE-CONTRACTS.md states the refusal but no behaviour it excludes (cited); that it is a limit of the reader only is estimated.</li>
+<li><b style="font-weight:600">Repair, and what it trusts:</b> read such a mapped type key by key, each field taking <span style="color:#2c4f7c">T</span>'s member type: in the trusted gate, no new contract, about 50–120 lines with a formal rule (estimated). The same rule reads <span style="color:#2c4f7c">Pick</span> over known keys.</li>
+<li><b style="font-weight:600">Behind it:</b> rewriting Readonly by hand in 13 of the slices (a test apart from the loop), 3 reach the end; the others stop at <span style="color:#2c4f7c">import.meta</span>, a local class extending <span style="color:#2c4f7c">Error</span>, the sync API's conditional type, <span style="color:#2c4f7c">Object.hasOwn</span> and one search refusal (observed).</li>
+</ul>
+</section>
+
+<section id="kinds" style="background:#fbfcfd;color:#0b1a2e;font-family:'Inter','Helvetica Neue',Arial,sans-serif;padding:120px 128px;display:flex;flex-direction:column;gap:18px">
+<p style="font-size:24px;color:#56627a;font-weight:600;letter-spacing:2px;text-transform:uppercase">The seven, side by side</p>
+<h2 style="font-family:'Bricolage Grotesque','Helvetica Neue',Arial,sans-serif;font-size:56px;font-weight:700;line-height:1.15">Three are defects or omissions; the rest need contracts or a rule</h2>
+<table style="font-size:24px;color:#0b1a2e">
+<tr><th style="width:27%;text-align:left;font-weight:600">Blocker</th><th style="width:22%;text-align:left;font-weight:600">Kind</th><th style="width:30%;text-align:left;font-weight:600">Repair</th><th style="width:21%;text-align:left;font-weight:600">Trust it adds</th></tr>
+<tr><td>empty array into a field</td><td><span style="color:#9b3524">defect</span> of the producer</td><td>the field's type passed to the value</td><td><span style="color:#2f6b47">none</span></td></tr>
+<tr><td><span style="color:#2c4f7c">API</span> class as a type</td><td><span style="color:#9b3524">defect</span> of a reviewed list</td><td>read per use, at its arguments</td><td><span style="color:#2f6b47">none</span></td></tr>
+<tr><td>5 compiler-API members</td><td>omission</td><td>a reviewed entry each</td><td><span style="color:#7c2f4a">5 audited members</span></td></tr>
+<tr><td>Readonly over a record</td><td>limit of the reader (estimated)</td><td>a mapped type read key by key</td><td><span style="color:#2f6b47">none</span> (trusted gate)</td></tr>
+<tr><td><span style="color:#2c4f7c">Object.entries</span></td><td>limit of the translation</td><td>a member of both kinds</td><td><span style="color:#2f6b47">none</span>; the helper stays refused</td></tr>
+<tr><td><span style="color:#2c4f7c">sep</span></td><td>missing contract</td><td>a constant entry</td><td><span style="color:#7c2f4a">path.sep is not replaced</span></td></tr>
+<tr><td><span style="color:#2c4f7c">Buffer</span>, <span style="color:#2c4f7c">createHash</span></td><td>missing contracts</td><td>reviewed entries</td><td><span style="color:#7c2f4a">host assumptions to audit</span></td></tr>
+</table><ul style="font-size:24px;color:#0b1a2e;line-height:1.36">
+<li>Every repair is estimated, not built. Behind each, the hand rewrites found more blockers: lifting one rarely lets a slice reach the end by itself (observed: sep 1 of 7, Readonly 3 of 13).</li>
+</ul>
+</section>
+
+<section id="repros" style="background:#fbfcfd;color:#0b1a2e;font-family:'Inter','Helvetica Neue',Arial,sans-serif;padding:120px 128px;display:flex;flex-direction:column;gap:20px;box-shadow:inset 0 0 0 10px #ffe08a"><p style="position:absolute;top:40px;right:128px;font-size:24px;font-weight:600;background:#ffe08a;color:#1d2422;padding:4px 14px;border-radius:8px">changed</p>
+<div style="display:flex;gap:24px;align-items:baseline;flex-wrap:wrap"><p style="font-size:24px;color:#56627a;font-weight:600;letter-spacing:2px;text-transform:uppercase">Repros</p><p style="font-size:24px;color:#56627a">repros/annotated-pattern-007.ts</p></div>
+<h2 style="font-family:'Bricolage Grotesque','Helvetica Neue',Arial,sans-serif;font-size:56px;font-weight:700;line-height:1.15">121 small files, one per blocker found</h2>
+<div style="display:grid;grid-template-columns:repeat(3, 1fr);gap:20px"><div style="background:#ffffff;border:1px solid #d5dce6;border-radius:16px;padding:24px;display:flex;flex-direction:column;gap:6px"><p style="font-family:'Bricolage Grotesque','Helvetica Neue',Arial,sans-serif;font-size:56px;font-weight:500;color:#8a6410">121</p><p style="font-size:24px;color:#0b1a2e;line-height:1.34">repro files, each showing its refusal through TScert (measured: all 121 reproduce)</p></div><div style="background:#ffffff;border:1px solid #d5dce6;border-radius:16px;padding:24px;display:flex;flex-direction:column;gap:6px"><p style="font-family:'Bricolage Grotesque','Helvetica Neue',Arial,sans-serif;font-size:56px;font-weight:500;color:#8a6410">94 / 17 / 10</p><p style="font-size:24px;color:#0b1a2e;line-height:1.34">found only as a first refusal / only after rewrites / both (measured)</p></div><div style="background:#ffffff;border:1px solid #d5dce6;border-radius:16px;padding:24px;display:flex;flex-direction:column;gap:6px"><p style="font-family:'Bricolage Grotesque','Helvetica Neue',Arial,sans-serif;font-size:56px;font-weight:500;color:#8a6410">21 lines</p><p style="font-size:24px;color:#0b1a2e;line-height:1.34">median length after the header; the longest is 188 (measured)</p></div></div><ul style="font-size:24px;color:#0b1a2e;line-height:1.36">
+<li>Each file states the refusal, the original locations it stands for, the functions it blocks and the command reproducing it; by stage: 58 in the search, 46 at the gate, 17 in the producer.</li>
+<li>They are listed, not made to pass: each is a test of the language TScert admits (its “fragment”, the word gate refusals use), small enough to work on alone.</li>
+</ul><div style="background:#eef2f7;padding:16px 22px;border-radius:12px;display:flex;flex-direction:column"><p style="font-family:'Source Code Pro',Menlo,Consolas,monospace;font-size:24px;line-height:1.45;white-space:nowrap;background:#ffe08a;box-shadow:-10px 0 0 #ffe08a"><i><span style="color:#56627a">/*&#160;Refusal:&#160;gate:&#160;an&#160;annotated&#160;pattern&#160;is&#160;outside&#160;the&#160;fragment&#160;(line&#160;549,&#160;col&#160;13)</span></i><br><i><span style="color:#56627a">&#160;&#160;&#160;Functions&#160;blocked:&#160;8&#160;·&#160;Seen:&#160;first&#160;(header&#160;abridged)&#160;*/</span></i><br><span style="color:#7a3b8c">export</span>&#160;<span style="color:#7a3b8c">function</span>&#160;use(p:&#160;[number]):&#160;number&#160;{<br>&#160;&#160;<span style="color:#7a3b8c">const</span>&#160;[x]:&#160;[number]&#160;=&#160;p;<br>&#160;&#160;<span style="color:#7a3b8c">return</span>&#160;x;<br>}</p></div>
+</section>
+
+<section id="cases" style="background:#fbfcfd;color:#0b1a2e;font-family:'Inter','Helvetica Neue',Arial,sans-serif;padding:120px 128px;display:flex;flex-direction:column;gap:22px">
+<p style="font-size:24px;color:#56627a;font-weight:600;letter-spacing:2px;text-transform:uppercase">The repros as pipeline cases</p>
+<h2 style="font-family:'Bricolage Grotesque','Helvetica Neue',Arial,sans-serif;font-size:56px;font-weight:700;line-height:1.15">45 cases stand for the 121 repros</h2>
+<div style="display:grid;grid-template-columns:repeat(3, 1fr);gap:20px"><div style="background:#ffffff;border:1px solid #d5dce6;border-radius:16px;padding:24px;display:flex;flex-direction:column;gap:6px"><p style="font-family:'Bricolage Grotesque','Helvetica Neue',Arial,sans-serif;font-size:56px;font-weight:500;color:#8a6410">45</p><p style="font-size:24px;color:#0b1a2e;line-height:1.34">cases <span style="color:#2c4f7c">blocker-*.ts</span> in pipeline/examples, one per cause; 67 repros merge into them and existing cases already cover the other 54 (measured)</p></div><div style="background:#ffffff;border:1px solid #d5dce6;border-radius:16px;padding:24px;display:flex;flex-direction:column;gap:6px"><p style="font-family:'Bricolage Grotesque','Helvetica Neue',Arial,sans-serif;font-size:56px;font-weight:500;color:#8a6410">42 / 3</p><p style="font-size:24px;color:#0b1a2e;line-height:1.34"><span style="color:#6b6f78">gaps</span>: safe programs TScert should verify / <span style="color:#9b3524">negatives</span>: refusals that are themselves the point (measured)</p></div><div style="background:#ffffff;border:1px solid #d5dce6;border-radius:16px;padding:24px;display:flex;flex-direction:column;gap:6px"><p style="font-family:'Bricolage Grotesque','Helvetica Neue',Arial,sans-serif;font-size:56px;font-weight:500;color:#8a6410">212</p><p style="font-size:24px;color:#0b1a2e;line-height:1.34">named gaps in the whole suite, 170 before these; 2,188 of 2,188 cases as expected (measured, commit c6d1b65)</p></div></div><ul style="font-size:24px;color:#0b1a2e;line-height:1.36">
+<li><b>A case</b> is a source with its expected outcome: the suite checks each blocker is still refused exactly so, and reports it when a fix makes it verify or moves its refusal. Run them alone with <span style="color:#2c4f7c">make cases P=blocker-</span>.</li>
+<li><b style="font-weight:600">Gap or negative:</b> a refusal blocked by a missing rule or contract is a gap; a negative only where the refused behaviour is a principled restriction or an unsafe program.</li>
+<li><b>A negative in TScert's own code</b> cannot stay: a pattern rightly refused in a small file is rightly refused in tools/ too. So each negative's pattern was removed from tools/ wherever it occurs (next slide).</li>
+</ul>
+</section>
+
+<section id="tools" style="background:#fbfcfd;color:#0b1a2e;font-family:'Inter','Helvetica Neue',Arial,sans-serif;padding:120px 128px;display:flex;flex-direction:column;gap:10px">
+<p style="font-size:24px;color:#56627a;font-weight:600;letter-spacing:2px;text-transform:uppercase">Changes to tools/</p>
+<h2 style="font-family:'Bricolage Grotesque','Helvetica Neue',Arial,sans-serif;font-size:56px;font-weight:700;line-height:1.15">Three patterns refused on principle, removed from TScert's own code</h2>
+<table style="font-size:24px;color:#0b1a2e">
+<tr><th style="width:30%;text-align:left;font-weight:600">Pattern refused</th><th style="width:33%;text-align:left;font-weight:600">Why refusing it is right</th><th style="width:37%;text-align:left;font-weight:600">The change in tools/ (commit c6d1b65)</th></tr>
+<tr><td><span style="color:#2c4f7c">&quot;guards&quot; in promise</span> selects an arm of a union whose other arm may carry extra properties</td><td>the other arm may own the field at another type: <span style="color:#2c4f7c">blocker-in-field-narrowing</span> returns <span style="color:#2c4f7c">undefined</span> from a function typed <span style="color:#2c4f7c">number</span></td><td>each arm states the other's field absent (<span style="color:#2c4f7c">guards?: never</span>) and readers test the value: <span style="color:#2c4f7c">guardOf</span> and 15 other functions</td></tr>
+<tr><td>a check of readonly JSON data promising writable fields</td><td>a check shows what the fields hold now, not what may be written: promised writable fields, a caller could write any value of the field's type into an object another reference expects to hold a narrower one</td><td>the footprint, effect and guard-promise fields are readonly: <span style="color:#2c4f7c">isClosedFootprint</span>, <span style="color:#2c4f7c">isCallEffect</span></td></tr>
+<tr><td>a callback whose parameter TypeScript types as <span style="color:#2c4f7c">any</span> (<span style="color:#2c4f7c">Object.entries</span> on an object)</td><td><span style="color:#2c4f7c">any</span> gives TScert no type to check the parameter's uses against</td><td>the entry is annotated <span style="color:#2c4f7c">[string, unknown]</span>: <span style="color:#2c4f7c">sameData</span>, <span style="color:#2c4f7c">mergeRefusal</span></td></tr>
+</table><ul style="font-size:24px;color:#0b1a2e;line-height:1.36">
+<li>Also: four readers of an import clause read <span style="color:#2c4f7c">phaseModifier</span> instead of <span style="color:#2c4f7c">isTypeOnly</span>, a field the compiler API's declarations leave out (cited: SOURCE-REWRITES.md); for ordinary and type imports the two give the same answer.</li>
+<li>Each change keeps what the code computes, and docs/SOURCE-REWRITES.md states the property the code lacked, the rewrite and the functions; make suite and make test pass (measured).</li>
+<li>Census effect, on the 48 slices of the changed functions and their users (measured, 2026-10-25): 0 verified before and after; some move to a later refusal (<span style="color:#2c4f7c">guardOf</span>), others stop before the repaired code (the type-term.mts slices, at <span style="color:#2c4f7c">Object.entries</span>).</li>
+</ul>
+</section>
+
+<section id="next" style="background:#fbfcfd;color:#0b1a2e;font-family:'Inter','Helvetica Neue',Arial,sans-serif;padding:120px 128px;display:flex;flex-direction:column;gap:24px">
+<p style="font-size:24px;color:#56627a;font-weight:600;letter-spacing:2px;text-transform:uppercase">Limits, and the next round</p>
+<h2 style="font-family:'Bricolage Grotesque','Helvetica Neue',Arial,sans-serif;font-size:56px;font-weight:700;line-height:1.15">The catalogue of rewrites decides how far the loop sees</h2>
+<ul style="font-size:24px;color:#0b1a2e;line-height:1.36">
+<li><b style="font-weight:600">What the loop cannot see:</b> the obligations inside what a rewrite removed (64 original statements in this run, measured), and refusals with no rule: a refusal where branches meet, or about what memory holds, has no local rewrite.</li>
+<li><b style="font-weight:600">Where it stops:</b> 295 of 312 functions at a refusal no rule rewrites (measured). Each new rule lets the loop look past one more kind, and adds the repros it then finds.</li>
+<li><b style="font-weight:600">The next phase:</b> grow the catalogue and rerun, turning every new blocker into a case; the gap cases are worked on one at a time with <span style="color:#2c4f7c">make cases P=blocker-</span>, and the census measures the effect from time to time.</li>
+<li><b style="font-weight:600">Conjecture:</b> coverage with holes grows faster than verified coverage as rules are added, and the families that most often appear after rewrites gain weight in the ranking: library globals, Readonly and crypto; the most frequent, the callback parameter typed any (21 functions), is a pattern removed from tools/ (slide “Changes to tools/”).</li>
+</ul>
+</section>
+
+</div><div id="count"></div>
+<script>
+const slides=[...document.querySelectorAll("section")];let i=Math.max(0,slides.findIndex(s=>"#"+s.id===location.hash));
+function show(){slides.forEach((s,k)=>s.classList.toggle("on",k===i));const z=Math.min(innerWidth/1920,innerHeight/1080);
+slides[i].style.transform="scale("+z+")";document.getElementById("count").textContent=(i+1)+" / "+slides.length;history.replaceState(null,"","#"+slides[i].id)}
+addEventListener("keydown",e=>{if(["ArrowRight","PageDown"," "].includes(e.key))i=Math.min(slides.length-1,i+1);
+else if(["ArrowLeft","PageUp"].includes(e.key))i=Math.max(0,i-1);else if(e.key==="Home")i=0;else if(e.key==="End")i=slides.length-1;else return;e.preventDefault();show()});
+addEventListener("resize",show);show();
+</script></body></html>
