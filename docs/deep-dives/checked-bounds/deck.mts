@@ -38,8 +38,8 @@ const slides: Slide[] = [
     body: rules(["Σᵢ cᵢ·tᵢ ≤ d        Σᵢ cᵢ·tᵢ ≠ d        (cᵢ, d integers)"]) +
       bullets([
         point("Safe integers", t("a numeric term denotes an integer only within ±(2⁵³ − 1). Fractions, infinities and NaN denote nothing, so no fact about them holds.")),
-        point("Exact addition", t("`r = a + b` holds when the operands are safe integers and the known facts bound the sum within that range; there the double sum is exact.")),
-        point("Terms", t("values, field paths `p.f.g`, array lengths (at most 2³² − 1) and typed-array lengths. A term is partial: where its path meets no object, it denotes nothing.")),
+        point("Exact addition", t("`r = a + b` holds when the operands are safe integers and the known facts bound the sum within that range; there the double sum is exact. A string’s length plus one may reach 2⁵³; a typed array built at that length throws, so one that is built has the exact sum.")),
+        point("Terms", t("values, field paths `p.f.g`, array lengths (at most 2³² − 1) and typed-array lengths; a constant whose type is one integer literal denotes it. A term is partial: where its path meets no object, it denotes nothing.")),
         point("Branch facts", t("on safe integers `<` and `===` are integer order and equality: the true branch of `i < n` gives i ≤ n − 1, the false branch n ≤ i.")),
       ], 26),
   }),
@@ -78,7 +78,7 @@ const slides: Slide[] = [
     title: "Preconditions, postconditions and invariants", gap: 22,
     body: table(["Contract", "Support"], [
       ["Precondition", status("ok", "written") + t(" as `@requires C`; checked at analyzed calls, assumed by the body")],
-      ["Postcondition", status("gap", "partial") + ": result facts from native specifications and type invariants; no written postcondition syntax"],
+      ["Postcondition", status("ok", "written") + t(" as `@ensures C`; checked at every normal return, held by the variable a call’s result is assigned to")],
       ["Type invariant", status("ok", "written") + t(" as `@invariant C` on a type; obligations at function boundaries")],
       ["Loop invariant", status("ok", "written") + t(" as `@invariant C` before a loop, or inferred; checked on every edge into the head")],
     ], [24, 76]) +
@@ -105,8 +105,9 @@ const slides: Slide[] = [
       table(["Operation", "Preservation"], [
         ["Write a numeric field", "array lengths preserved; facts about that field restated from the written value"],
         [t("Write `xs[k]` below the length"), "the length preserved"],
-        [t("`out.push(v)`"), t("lower bounds on `out.length` preserved; upper bounds dropped")],
-        ["Call with a checked frame condition", "facts whose locations its frame protects"],
+        [t("`out.push(v)`"), t("lower bounds on `out.length` preserved; upper bounds dropped; the lengths of arrays older than a literal `out` preserved")],
+        ["Call with a checked frame condition", "facts whose locations its frame protects, a returned closure’s stated by its maker"],
+        [t("Any step, a `@stable` field"), "what the field holds: its object literal allocates it at one value"],
         ["Any step", t("a typed array’s length: fixed for its life (" + "trusted" + ")")],
       ], [38, 62]) +
       para("These rules concern normal returns; a throw carries a frame condition only where one is stated for it.", 24),
