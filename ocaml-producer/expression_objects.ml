@@ -52,9 +52,16 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
         let fresh = match e.node with Id _ | Read _ | Cast ("const",None,_) -> false | _ -> true in
         let t=if widened || name = Name proto_key || (expected = None && not fresh) then inferred
           else Option.value expected ~default:(widen inferred) in
-        (* A field the contract states stable is allocated at its initial
-           value alone, a view of the literal (POSITIVE-TYPES.md, "Records"). *)
-        let stable = match hint with Some (f:Semantic.field) -> f.stable && f.write = None | None -> false in
+        (* A field a program record's contract states stable is allocated at
+           its initial value alone, a view of the literal (POSITIVE-TYPES.md,
+           "Records"). A host family's marked shape states its stable keys of
+           objects no allocation of the program makes. *)
+        let program_record = match contract with
+          | Some s -> not (List.exists (fun (f:Semantic.field) -> f.name = Semantic.host_key) s.fields)
+          | None -> false in
+        let stable = match hint with
+          | Some (f:Semantic.field) -> program_record && f.stable && f.write = None
+          | None -> false in
         {name;optional=false;read=t;write=(if stable then None else Some t);host=false;receivers=[];stable;generic=false}) fs in
       (* Where the contract is a dictionary, or has optional fields, the
          literal is claimed with its exact keys: that own-key bound is what
