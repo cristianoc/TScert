@@ -219,16 +219,26 @@ inputs it changes. The check reads the whole document.
   span zero, each declaration's identity kept, a reference's type
   arguments at their mapped spans, and no written application, which the
   check alone reads. An edit of a function's body that keeps the
-  functions and initialization names it mentions, and the declaration
-  document, leaves unchanged the slice of every unit that neither holds it whole nor holds the
+  functions and initialization names it mentions, and its transitive declaration
+  dependencies, leaves unchanged the slice of every unit that neither holds it whole nor holds the
   initialization: a changed mention changes the units and the slices that
   hold the function by its signature, and an edit of the initialization, or
   of what it mentions, changes the slice of every unit that holds it.
-  Slices retain the declaration document's roots, definitions, values and
-  symbol table (`declarationsOf`). A body edit that changes this shared
-  document can therefore invalidate an otherwise independent unit's
-  proposal. The reads-document projection alone does not isolate those
-  declaration dependencies.
+  A slice's declaration document holds the roots and values its retained
+  syntax reads, the transitive closure of their definitions, and their
+  symbols with indices compacted throughout the slice (`projectDeclarations`).
+  Lowering supplies each body's module reads in its execution graph, through
+  `moduleReadNames`, the same function extraction uses to select module
+  values. These reads include iteration and rest intrinsics, prototype
+  bindings and the early-binding throw intrinsic. The store's implicit
+  declaration inputs (the array prototype and resolution families) also
+  seed the closure.
+  Assembly restores symbol indices throughout the proposed contracts;
+  evidence relocation restores symbol literals and property keys to the
+  document's indices before label translation.
+  Each retained definition and value contract is complete, including every
+  member and nested reference. Written applications remain obligations of
+  the whole-document check.
   The producer's unit facts identify mutable module bindings initialized to
   an empty object whose objects escape. A slice carries those names its own
   code mentions in `omittedMentions`: the ownership facts its reads and writes

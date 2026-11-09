@@ -3493,7 +3493,7 @@ control(async (): Promise<void> => {
     action: { kind: "end" }, executions: [], bindingPlan: null,
   };
   const graph = {
-    owner: [0, 1], bodySpans: [[0, 1]], entry: 0, cells: [],
+    owner: [0, 1], bodySpans: [[0, 1]], moduleReads: [], entry: 0, cells: [],
     prologue: null, nodes: [node],
   };
   const decoded = decodeFlowDocument([graph]);
@@ -9988,7 +9988,13 @@ process.stdout.write(JSON.stringify(await checkApart(${JSON.stringify(importer)}
   const moduleStages = (records: readonly AttemptRecord[]): AttemptRecord[] =>
     records.filter((r) => r.stage === "module-search" || r.stage === "module-check");
   assert.ok(moduleStages(cold.records).length >= 2, "the module run is searched and checked");
-  for (const r of moduleStages(cold.records)) assert.ok(ranStage(r), `cold ${r.stage} executed`);
+  const coldKeys = new Set<string>();
+  for (const r of moduleStages(cold.records)) {
+    const identity = `${r.stage}:${r.key}`;
+    assert.ok(ranStage(r) || (r.key !== null && r.execution === "replayed" && coldKeys.has(identity)),
+      `cold ${r.stage}: each distinct input executes before any duplicate replays`);
+    coldKeys.add(identity);
+  }
   // The edit: a statement of the importer's own code, its last line.
   writeFileSync(importer, original + "\nexport const edited: number = 1;\n");
   const warm = runIn(store);
@@ -10071,6 +10077,10 @@ process.stdout.write(JSON.stringify(await checkApart(${JSON.stringify(file)}, un
     assert.notEqual(text, original, `${name}: the edit applies`);
     writeFileSync(file, text);
     const warm = runIn(store);
+    if (name === "declaration dependency")
+      assert.notDeepEqual(readFragmentFile(join(warm.outcome.artifacts, "fragment.json")).declarations,
+        readFragmentFile(join(cold.outcome.artifacts, "fragment.json")).declarations,
+        "the body edit changes the document's declaration dependencies");
     assert.equal(executed(warm.records, "propose"), proposals, `${name}: units proposed again`);
     assert.equal(executed(warm.records, "search"), searches, `${name}: units searched again`);
     assert.equal(replayed(warm.records, "search"), 6 - searches, `${name}: every other unit's search replays`);
@@ -10084,6 +10094,9 @@ process.stdout.write(JSON.stringify(await checkApart(${JSON.stringify(file)}, un
   // An edit of `f`'s body keeping its interface: `f` alone, and `g` reads
   // the same interface.
   edit("body", original.replace("  return n + 1;", "  return 1 + n;"), 1, 1);
+  // A body alone starts using a declaration absent from the earlier document.
+  edit("declaration dependency", original.replace("  return n + 1;",
+    "  type Payload = { value: number };\n  type Extra = { data: Payload };\n  const extra: Extra = { data: { value: n } };\n  return extra.data.value + 1;"), 1, 1);
   // `r` lengthened by several lines, between the members of `p` and `q`'s unit.
   edit("length", original.replace("  return n - 1;", "  // one\n  // two\n  // three\n  return n - 1;"), 1, 1);
   // `f` writes a module cell: its footprint, so `g`'s reads, change.

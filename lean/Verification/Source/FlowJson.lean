@@ -149,7 +149,7 @@ private partial def bindingPlanJson : SourceExecution.BindingPlan → Json
 
 def Graph.json (g : Graph) (defaults : List (String × Span × Nat × Option Expr) := []) : Json :=
   Json.mkObj [("owner",toJson g.owner),("bodySpans",toJson g.bodySpans),("entry",toJson g.entry),
-    ("cells",scopeJson g.cells),
+    ("cells",scopeJson g.cells),("moduleReads",toJson g.moduleReads),
     ("prologue",(SourceExecution.bindingPrologue g.owner defaults).map bindingPlanJson |>.getD .null),
     ("nodes",toJson (g.nodes.toList.zipIdx.map fun (node,id) =>
       let expressions := SourceExecution.actionExpressions node.action
@@ -193,7 +193,7 @@ private def bodyGraph (owner : Span) (params : List String) (body : List Stmt)
   let graph ← build owner [] body
   let cells := (SourceExtraction.cellLocals params body module).map
     fun (name, source) => (⟨name, some (source.getD owner)⟩ : Descriptor)
-  return { graph with cells := cells }
+  return { graph with cells := cells, moduleReads := SourceExtraction.moduleReadNames body }
 
 /-- Nested executable bodies have their own owner, independent of the point
 where their closure is created or of the signatures proposed for that closure. -/

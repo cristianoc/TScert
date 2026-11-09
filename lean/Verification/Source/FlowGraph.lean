@@ -48,6 +48,7 @@ structure Node where
 structure Graph where
   owner : Span
   bodySpans : List Span
+  moduleReads : List String := []
   entry : Nat
   nodes : Array Node
   /-- The body's mutable bindings held in cells (`SourceExtraction.cellLocals`):
@@ -273,6 +274,6 @@ def build (owner : Span) (scope : Scope) (body : List Stmt) : Except String Grap
   let (entry, nodes) ← (do
     let finish ← emit owner scope {} .finish
     entered owner scope body finish {}).run #[]
-  return ⟨owner, body.map Stmt.pos, entry, nodes, []⟩
+  return ⟨owner, body.map Stmt.pos, [], entry, nodes, []⟩
 
 end Verification.SourceFlow

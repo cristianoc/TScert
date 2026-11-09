@@ -331,6 +331,11 @@ function eligibleReads(declarations: unknown, units: Map<string, unknown[]>, cla
     return [{ local, declaration, module, name, footprint: field(claimed, "footprint"), onThrow }];
   });
 }
+type FlowDocument = ReturnType<typeof decodeFlowDocument>;
+/** A lowering's graphs, or its refusal. */
+function lowering(lowered: StepRun): FlowDocument | string {
+  return verifierRefusal(lowered, "--lower-control-flow") ?? decodeFlowDocument(JSON.parse(lowered.out));
+}
 /** A document's proposal, a unit at a time: its claims, or the refusal of
  * the first unit the producer refuses, the initialization's first, then in
  * source order. */
@@ -347,13 +352,14 @@ export class UnitProposal {
   private readonly local: string;
   private readonly units: ProposalUnit[];
   private readonly facts: UnitFacts;
-  private readonly slices = new Map<number, { slice: string; flow: string; deletions: [number, number][] }>();
+  private readonly slices = new Map<number, { slice: string; flow: string; deletions: [number, number][]; symbols: number[] }>();
   private settled = new Map<string, Interface>();
   /** Each proposed unit's slice and claims, what its search reads. */
-  private searchable = new Map<number, { slice: string; claims: string; qualified: string; deletions: [number, number][] }>();
+  private searchable = new Map<number, { slice: string; claims: string; qualified: string; deletions: [number, number][]; symbols: number[] }>();
   private qualified = "";
   private readonly refusal: string | null;
-  constructor(run: (call: ProcessCall) => StepRun, prefix: string, ast: string, local: string) {
+  /** `flow` is the document's lowering where the caller holds it. */
+  constructor(run: (call: ProcessCall) => StepRun, prefix: string, ast: string, local: string, flow?: FlowDocument) {
     this.run = run;
     this.prefix = prefix;
     this.local = local;
@@ -364,22 +370,42 @@ export class UnitProposal {
     // A document the producer refuses to read is refused by each proposal.
     this.refusal = producerRefusal(listed);
     this.facts = this.refusal !== null ? { functions: [], init: null, escaped: [], readAsValues: [] } : decodeUnitFacts(JSON.parse(listed.out));
+    if (this.refusal === null) {
+      const graphs = flow ?? lowering(run(verifierCall(verifier, ["--lower-control-flow", ast])));
+      if (typeof graphs === "string") this.refusal = graphs;
+      else {
+        for (const f of this.facts.functions) {
+          for (const member of list(this.document.functions)) {
+            if (field(member, "name") !== f.name) continue;
+            const pos = spanOf(field(member, "namePos"));
+            const graph = graphs.find((g) => pos && g.owner[0] === pos[0] && g.owner[1] === pos[1]);
+            if (!graph) throw Error(`tool failure: no lowering reads for ${f.name}`);
+            f.names = [...new Set([...f.names, ...graph.moduleReads])].sort();
+          }
+        }
+        if (this.facts.init) {
+          const graph = graphs.find((g) => g.owner[0] === 0 && g.owner[1] === 0);
+          if (!graph) throw Error("tool failure: no initialization lowering reads");
+          this.facts.init.names = [...new Set([...this.facts.init.names, ...graph.moduleReads])].sort();
+        }
+      }
+    }
     this.units = proposalUnits(this.facts);
   }
   /** The slice of unit `i`, lowered: its files, or the lowering's refusal. */
-  private slice(i: number): { slice: string; flow: string; deletions: [number, number][] } | string {
+  private slice(i: number): { slice: string; flow: string; deletions: [number, number][]; symbols: number[] } | string {
     const held = this.slices.get(i);
     if (held) return held;
     const unit = this.units[i];
     if (!unit) throw Error(`tool failure: no unit ${i}`);
-    const { text, deletions } = sliceOf(this.document, this.local, unit, this.facts.escaped);
+    const { text, deletions, symbols } = sliceOf(this.document, this.local, unit, this.facts.escaped);
     const slice = `${this.prefix}unit-${i}.slice.json`, flow = `${this.prefix}unit-${i}.flow.json`;
     writeFileSync(slice, text);
     const lowered = this.run(verifierCall(verifier, ["--lower-control-flow", slice]));
     const refusal = verifierRefusal(lowered, "--lower-control-flow");
     if (refusal !== null) return refusal;
     writeFileSync(flow, JSON.stringify(decodeFlowDocument(JSON.parse(lowered.out))));
-    const files = { slice, flow, deletions };
+    const files = { slice, flow, deletions, symbols };
     this.slices.set(i, files);
     return files;
   }
@@ -403,7 +429,7 @@ export class UnitProposal {
     if (this.refusal !== null) return { refusal: this.refusal };
     const interfaces = new Map<string, Interface>();
     const refused: { order: number; refusal: string }[] = [];
-    const proposals: { bin: string; deletions: [number, number][] }[] = [];
+    const proposals: { bin: string; deletions: [number, number][]; symbols: number[] }[] = [];
     const order = (unit: ProposalUnit): number => unit.init ? -1
       : Math.min(...unit.members.map((m) => this.facts.functions.findIndex((f) => f.name === m)));
     for (const [i, unit] of this.units.entries()) {
@@ -424,11 +450,11 @@ export class UnitProposal {
         continue;
       }
       for (const entry of decodeInterfaces(JSON.parse(proposed.out))) interfaces.set(entry.name, entry);
-      proposals.push({ bin, deletions: files.deletions });
+      proposals.push({ bin, deletions: files.deletions, symbols: files.symbols });
       const searchQualified = `${this.prefix}unit-${i}.search-qualified.json`;
       writeFileSync(searchQualified, JSON.stringify(qualified.filter((q) => unit.names.includes(q.local))
         .map(({ local, footprint, onThrow }) => ({ name: local, footprint, onThrow }))));
-      this.searchable.set(i, { slice: files.slice, claims, qualified: searchQualified, deletions: files.deletions });
+      this.searchable.set(i, { slice: files.slice, claims, qualified: searchQualified, deletions: files.deletions, symbols: files.symbols });
     }
     this.settled = interfaces;
     this.qualified = `${this.prefix}search-qualified.json`;
@@ -439,7 +465,7 @@ export class UnitProposal {
     const canonical = `${this.prefix}canonical.json`, assembly = `${this.prefix}assembly.json`,
       qualifiedPath = `${this.prefix}qualified.json`;
     writeFileSync(canonical, canonicalDocument(this.document, this.local));
-    writeFileSync(assembly, JSON.stringify(proposals.map((p): AssemblyEntry => ({ deletions: p.deletions }))));
+    writeFileSync(assembly, JSON.stringify(proposals.map((p): AssemblyEntry => ({ deletions: p.deletions, symbols: p.symbols }))));
     writeFileSync(qualifiedPath, JSON.stringify(qualified.map(({ local, declaration, footprint, onThrow }) =>
       ({ local, declaration, footprint, onThrow }))));
     const assembled = this.run(producerCall(producerExecutable,
@@ -500,7 +526,12 @@ export class UnitProposal {
         const id: unknown = unitAt?.[1] === undefined ? undefined : JSON.parse(unitAt[1]);
         if (unitAt === null || typeof id !== "string")
           throw Error("tool failure: verifier --produce-unit wrote a line without its unit");
-        lines.push(`${line.slice(0, unitAt.index)}"unit":${JSON.stringify(named(id))}}`);
+        const relocated = replaceNumbers(line.slice(0, unitAt.index), /"symbolLit":\{"id":(\d+)\}|"symbol":(\d+)/g, (i) => {
+          const symbol = files.symbols[i];
+          if (symbol === undefined) throw Error("tool failure: evidence names an absent slice symbol");
+          return symbol;
+        });
+        lines.push(`${relocated}"unit":${JSON.stringify(named(id))}}`);
       }
     }
     return { lines, refused, failed };
@@ -561,12 +592,12 @@ class ModuleRuns {
       const lowered = runStep(verifierCall(verifier, ["--lower-control-flow", ast]), recorder);
       // A module the verifier refuses to lower is read at its declared types.
       if (verifierRefusal(lowered, "--lower-control-flow") !== null) continue;
-      const flow = join(artifacts, `module-${index}.flow.json`);
-      writeFileSync(flow, JSON.stringify(decodeFlowDocument(JSON.parse(lowered.out))));
+      const flow = join(artifacts, `module-${index}.flow.json`), graphs = decodeFlowDocument(JSON.parse(lowered.out));
+      writeFileSync(flow, JSON.stringify(graphs));
       const imports = [...new Set(list(field(doc.declarations, "values")).map((v) => field(field(v, "declaration"), "module"))
         .filter((l): l is string => typeof l === "string" && l !== location && locations.includes(l)))];
       this.docs.set(location, { index, ast, flow, declarations: doc.declarations, imports,
-        proposal: new UnitProposal((call) => runStep(call.stage === "search" ? { ...call, stage: "module-search" } : call, recorder), join(artifacts, `module-${index}.`), ast, location) });
+        proposal: new UnitProposal((call) => runStep(call.stage === "search" ? { ...call, stage: "module-search" } : call, recorder), join(artifacts, `module-${index}.`), ast, location, graphs) });
       this.units.set(location, list(field(m, "functions")));
     }
   }
@@ -900,7 +931,8 @@ function checkUnowned(artifacts: string, source: string, tsconfigPath?: string, 
     const loweringRefusal = verifierRefusal(lowered, "--lower-control-flow");
     if (loweringRefusal !== null)
       return { status: "unsupported", artifacts, phase, detail: loweringRefusal };
-    writeFileSync(flow, JSON.stringify(decodeFlowDocument(JSON.parse(lowered.out))));
+    const graphs = decodeFlowDocument(JSON.parse(lowered.out));
+    writeFileSync(flow, JSON.stringify(graphs));
     phase = "proposal";
     // Certified imports: each module's claims, and the reads they may
     // qualify. A read the search or the check refuses, or a module run it
@@ -909,7 +941,7 @@ function checkUnowned(artifacts: string, source: string, tsconfigPath?: string, 
     // its restricted document (`unitRound`), so a later round, and a later
     // edit of the importer, replays the runs it leaves unchanged.
     const modules = new ModuleRuns(recorder, artifacts, parsedData);
-    const fileProposal = new UnitProposal((call) => runStep(call, recorder), `${artifacts}/`, ast, resolution);
+    const fileProposal = new UnitProposal((call) => runStep(call, recorder), `${artifacts}/`, ast, resolution, graphs);
     const withdrawn = new Set<string>();
     const claims = join(artifacts, "claims.json");
     const budget = subtypeRounds === undefined ? [] : ["--subtype-rounds", String(subtypeRounds)];

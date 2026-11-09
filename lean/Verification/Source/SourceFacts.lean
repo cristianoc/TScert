@@ -1,4 +1,5 @@
 import Verification.Source.Fragment
+import Verification.Source.SourceTypes
 
 namespace Verification.SourceExtraction
 open Fragment
@@ -205,6 +206,10 @@ partial def stmtNames : Fragment.Stmt → List String
   | .block _ _ b => b.flatMap stmtNames
   | .closing _ c b => c.flatMap stmtNames ++ b.flatMap stmtNames
   | .brk .. | .cont .. => []
+
+/-- Module values available to lowering a body, including its implicit reads. -/
+def moduleReadNames (body : List Fragment.Stmt) : List String :=
+  (body.flatMap stmtNames ++ SourceTypes.prototypeNames ++ [Fragment.throwUninitializedName]).eraseDups
 
 /-! ### Owned objects
 
