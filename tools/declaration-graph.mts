@@ -1045,12 +1045,13 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
     const programClasses = new Set<string>();
     // A statement belongs to its explicit owner, including one reached
     // through a computed type in that owner's equation.
-    const statement = (reading: DeclarationReading, reference: ts.TypeReferenceNode, owner: string | null): boolean => {
-      if (!ts.isIdentifier(reference.typeName) || verifierAlias(reference.typeName) !== "Modifies") return false;
+    const statement = (reading: DeclarationReading, reference: ts.TypeReferenceNode, owner: string | null,
+        alias: "Modifies" | "Fresh" = "Modifies"): boolean => {
+      if (!ts.isIdentifier(reference.typeName) || verifierAlias(reference.typeName) !== alias) return false;
       if (!programFile(reference.getSourceFile()) || ambient(reference))
-        throw Error("`Modifies` outside the program's sources, or in an ambient declaration, states an effect of code no run checks");
+        throw Error(`\`${alias}\` outside the program's sources, or in an ambient declaration, states an effect of code no run checks`);
       if (reading.externalReads > 0)
-        throw Error("a value declared outside the program's sources is typed by a statement (`Modifies`), an effect of code no run checks");
+        throw Error(`a value declared outside the program's sources is typed by a statement (\`${alias}\`), an effect of code no run checks`);
       const at = owner ?? reading.owner;
       if (at !== null) statedDefinitions.add(at);
       return true;
@@ -1752,6 +1753,7 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
         annotation: false,
         awaited,
         stated: part => statement(reading, part, null),
+        fresh: part => statement(reading, part, null, "Fresh"),
         associatedAlias: part => {
           const target = ts.isIdentifier(part.typeName) ? targetOf(checker, part.typeName)?.declarations[0]?.resolve() : undefined;
           return target && isTypeAlias(target) && associatedAlias(target) ? target : null;
@@ -4493,7 +4495,7 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
           // A statement, `Modifies<P, T>`, is no application: the reader of
           // signatures reads its footprint, whose shape it checks
           // (`statedResult`), and its result.
-          if (verifierAlias(name) === "Modifies") return null;
+          if (verifierAlias(name) === "Modifies" || verifierAlias(name) === "Fresh") return null;
           // A target matters only where it has a bounded parameter.
           if (!nodes.some(n => isTypeDeclaration(n) && n.typeParameters?.some(p => p.constraint))) return null;
           // A stated type takes no arguments and has no declaration read.
@@ -4582,6 +4584,7 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
       libraryInterface, collectionIterator: (owner, element) => collectionIterator({ owner, externalReads: 0 }, element), computed: (owner, node, span, read) => computedType(computedContext({ owner, externalReads: 0 }), node, span, read), family: familyOf,
       guardPromises,
       keys: keyTypeOf, modifiers: mappedModifiersOf, alias: aliasOf, awaited, stated: (part, owner) => statement({ owner, externalReads: 0 }, part, owner),
+      fresh: (part, owner) => statement({ owner, externalReads: 0 }, part, owner, "Fresh"),
       record: identity => {
         records.add(definitionKey(identity));
         observations.record?.(identity);
@@ -6044,6 +6047,7 @@ interface DeclarationElaborationContext {
   /** Whether a reference is a statement (`Modifies`), recording that the
    * definition `owner` reads one. */
   stated: (reference: ts.TypeReferenceNode, owner: string) => boolean;
+  fresh: (reference: ts.TypeReferenceNode, owner: string) => boolean;
   /** A mapped type's keys as TypeScript computes them. */
   keys: KeysHook;
   /** Told each definition that is a record written as one (`NamedRecords`). */
@@ -6218,6 +6222,7 @@ function elaborateDeclaration(node: TypeDeclaration, identity: DeclarationIdenti
     annotation: false,
     awaited: context.awaited,
     stated: part => context.stated(part, key),
+    fresh: part => context.fresh(part, key),
     ...(body ? { body } : {}),
     symbol,
     literalKey: context.literalKey,

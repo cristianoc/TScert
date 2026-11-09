@@ -355,7 +355,7 @@ let infer (expr:Analysis_state.expression_infer) execute_bindings (infer_body:An
         | Some stated ->
           let footprint,on_throw = Source.within_statement (call_effect.footprint,call_effect.on_throw) (Some stated) in
           if footprint = call_effect.footprint && on_throw = call_effect.on_throw then call_effect
-          else {Semantic.ordinary_effect with footprint; on_throw} in
+          else {Semantic.ordinary_effect with footprint; on_throw; fresh=call_effect.fresh} in
       let call_effect = {call_effect with pre=requires} in
       let own = match element with
         | Some element -> variadic_arrow ~call_effect ~quantified ~receiver params element result

@@ -910,6 +910,28 @@ control(async (): Promise<void> => {
 });
 
 control(async (): Promise<void> => {
+  // A fresh result the front end does not state, forged into the parser's
+  // document (`Fresh<T>`, `SourceRequest.fresh`): `same`, returning the array
+  // it is handed, stated to return a fresh one, is refused at its unit in
+  // search and in checking, the checker reading the statement from the
+  // document whatever the claims say. Its honest evidence certifies it
+  // without the forged statement.
+  const artifacts = run("stated-fresh");
+  const ast: Ast = readFragmentFile(join(artifacts, "fragment.json"));
+  const fn = must(ast.functions.find(f => f.name === "same"), "same");
+  assert.equal(fn.stated, null, "same states nothing");
+  fn.stated = { footprint: { value: "any", store: "any" }, onThrow: false, fresh: true };
+  const document = join(artifacts, "forged-fresh-fragment.json");
+  writeFileSync(document, JSON.stringify(ast));
+  const refusal = /source effect refusal at \[\d+,\d+\): the footprint claimed for 'same' is not established by its body/;
+  const searched = produceWith(artifacts, join(artifacts, "claims.json"), "forged-fresh", document);
+  assert.equal(searched.status, 1, `${searched.stdout}${searched.stderr}`);
+  assert.match(searched.stdout + searched.stderr, refusal);
+  invoke(join(artifacts, "claims.json"), documentEvidence(artifacts), artifacts, refusal, document);
+  process.stdout.write("forged fresh result: an identity function's statement forged to promise a fresh result, refused at its unit in search and in checking\n");
+});
+
+control(async (): Promise<void> => {
   // A postcondition the front end does not state, forged into the parser's
   // document: `countBreaks`, returning a count of at least 0, stated to
   // return one below 0, is refused at its return, the checker reading the

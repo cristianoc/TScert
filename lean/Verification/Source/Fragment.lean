@@ -827,11 +827,13 @@ A statement of `top` states nothing, and is refused. -/
 def decodeStated : Json → Except String (Option CallEffects.Effect)
   | .null => pure none
   | j => do
-    fieldsExactly j ["footprint", "onThrow"]
+    fieldsExactly j ["footprint", "onThrow", "fresh"]
     let footprint : Footprints.Closed ← fromJson? (← jField j "footprint")
-    if footprint == .top then throw "a stated effect states a footprint below `top`"
     let onThrow ← (← jField j "onThrow").getBool?
-    pure (some { CallEffects.Effect.ofFootprint footprint with onThrow })
+    let fresh ← (← jField j "fresh").getBool?
+    if footprint == .top && !fresh then
+      throw "a stated effect states a footprint below `top` or a fresh result"
+    pure (some { CallEffects.Effect.ofFootprint footprint with onThrow, fresh })
 
 /-- A guard's promise as the Fragment states it, or none. -/
 def decodeGuard : Json → Except String (Option Guard)

@@ -113,9 +113,10 @@ export type LinearTerm = {
 export type ElementKind = "null" | "undefined" | "boolean" | "number" | "string" | "bigint" | "symbol" | "object";
 export type ElementKinds = readonly ElementKind[];
 /** The effect a written signature states at its result (`Modifies<P, T>`,
- * SOURCE-ELABORATION.md, "Stated effects"): a closed footprint and whether
- * it also bounds the heap a throw leaves. */
-export type StatedEffect = { footprint: ClosedFootprint; onThrow: boolean };
+ * SOURCE-ELABORATION.md, "Stated effects"): a closed footprint, whether
+ * it also bounds the heap a throw leaves, and whether a normal return's value
+ * holds an array store the call allocated (`Fresh<T>`). */
+export type StatedEffect = { footprint: ClosedFootprint; onThrow: boolean; fresh: boolean };
 /** One type alias or interface: its module, its name and its span there. The
  * module identities are disjoint by construction: the client's absolute
  * path; `typescript/lib/<file>` for a file the compiler's library resolution

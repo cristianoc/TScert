@@ -4006,15 +4006,19 @@ holding a value and `stores: c` for those holding an array store, `c` one
 of `"keep"`, `"init"`, `"scalar"`, `"grow"`, `"any"`, an omitted class key
 `"keep"`; on a value `grow` is `scalar`, and on a store `init` and `scalar`
 are `keep`. `onThrow: true` makes the frame hold on a throw too. A quoted
-location key (`"x.f"`, `"x[*]"`, `"x.*"`, `"cell(b)"`) is refused, as is
-`Fresh<T>` anywhere: the regions and the fresh result they state are
-proved in the model ([footprints](FOOTPRINTS.md#changes-and-footprints))
-and are not read from the source. With $`\epsilon(P)`$ the effect of the
-closed footprint $`\{v,s\}`$ of the class keys and the flag, no promise, no
-fresh result and no receiver-store exception,
+location key (`"x.f"`, `"x[*]"`, `"x.*"`, `"cell(b)"`) is refused: the
+regions it names are proved in the model
+([footprints](FOOTPRINTS.md#changes-and-footprints)) and are not read from
+the source. A result `Fresh<T>`, `T` an array type, states that a normal
+return's value holds an array store the call allocated, at or above the
+length of the heap the call starts in; it stands alone or as
+`Modifies<P, Fresh<T>>`, and is refused anywhere else, a guard's promise
+included. With $`\epsilon(P)`$ the effect of the closed footprint
+$`\{v,s\}`$ of the class keys (`top` without `Modifies`), the flag and the
+fresh result, no promise and no receiver-store exception,
 
 ```math
-\frac{⟦\vec A⟧=\vec Q\qquad ⟦T⟧=B\qquad P=\{\mathsf{values}{:}\,v,\ \mathsf{stores}{:}\,s[,\ \mathsf{onThrow}]\}\qquad \{v,s\}\neq\{\mathsf{any},\mathsf{any}\}}
+\frac{⟦\vec A⟧=\vec Q\qquad ⟦T⟧=B\qquad P=\{\mathsf{values}{:}\,v,\ \mathsf{stores}{:}\,s[,\ \mathsf{onThrow}]\}\qquad \{v,s\}\neq\{\mathsf{any},\mathsf{any}\}\ \text{or a fresh result}}
      {⟦(\vec x:\vec A)\Rightarrow\mathtt{Modifies}\langle P,T\rangle⟧=\mathcal F_{\epsilon(P)}(R,\vec Q,B)}\ \textsf{stated-effect}
 ```
 
@@ -4060,13 +4064,24 @@ parameters, so the certification covers the written signature's whole
 domain:
 
 ```math
-\frac{\vdash P:\Gamma\to B\;!\;\Phi\qquad \Phi\le\epsilon.\mathsf{footprint}\qquad \epsilon.\mathsf{onThrow}\Rightarrow\mathsf{onThrow}(\Phi)\qquad \mathrm{completion}(d)=\mathsf{sync}}
+\frac{\vdash P:\Gamma\to B\;!\;\Phi\qquad \Phi\le\epsilon.\mathsf{footprint}\qquad \epsilon.\mathsf{onThrow}\Rightarrow\mathsf{onThrow}(\Phi)\qquad \epsilon.\mathsf{fresh}\Rightarrow\mathsf{fresh}(\Phi)\qquad \mathrm{completion}(d)=\mathsf{sync}}
      {\vdash d:\Gamma\to B\;!\;\epsilon}\ \textsf{stated-declaration}
 ```
 
 (`RequestJson.statedWithin`; proved: `SourceExtraction.effectResult_stated`,
 `SourceExtraction.checkRequests_stated_at`, from `checkRequests_footprint_at`
-by `Closed.Holds.mono`). A claim may offer a closure at signatures narrower
+by `Closed.Holds.mono`). A unit stating a fresh result is checked node by
+node with its returns fresh, whatever its footprint, the shortcuts of the
+top footprint and of a pure graph excluded (`effectResult`), and on normal
+return its value's store lies at or above the entry heap's length
+(`checkRequests_stated_at`; `stated-fresh`, `stated-fresh-frame`;
+`invalid-stated-fresh-input`, run under Node; the forged control of
+`pipeline/test.mts`: an identity function's statement forged to promise a
+fresh result). A value meets a function type stating `Fresh` only where its
+own effect states a fresh result (`Effect.covers`; `stated-fresh-callback`,
+`invalid-stated-fresh-closure`). A fresh result is an array a native call
+the body makes allocates; an array the body's own literal allocates is no
+fresh source of the node-by-node check. A claim may offer a closure at signatures narrower
 than its annotation, so a closure's statement is proved as a written
 promise is, whatever the claim offers: some row $`\rho`$ its code is
 checked at admits the annotation's whole domain, receiver $`R`$, arguments
