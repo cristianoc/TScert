@@ -1,8 +1,10 @@
 import Verification.Programs.ArgumentRegionGraph
 
 /-! Executable regional graph checks. Candidate provenance is checked at the
-entry and on every edge. The supported effects are closed footprints and
-receiver-store calls on tracked entry values. -/
+entry and on every edge. A node is a provenance step (a slot copy, a stable
+read) or a step whose local effect the common check includes in the stated
+frame (`stepWithin`): a step within the closed bound, a call at its
+signature's frame, an element write. -/
 namespace Verification.GraphCode.ArgumentRegionGraph
 open ControlFlow PointClaims ProgramTyping PositiveGraphs PositiveRules Footprints
 open PositiveCertificates (InstanceImageCheck)
@@ -19,17 +21,186 @@ open PositiveCertificates (InstanceImageCheck)
           PromiseCalls.requiresTree G images (entryFacts G c) (fun _ => false) sums c.expression) &&
         selectedWithinAt Φ [] c.expression)) || ExpressionEffects.emptyType G (result c))
 
-theorem checkClosedNode_sound [DecidableEq ι] {G : NormalGraph ι}
+/-- A heap within a closed bound on its own locations is within it. -/
+theorem holdsOn_length {c : Footprints.Closed} {h h' : Heap}
+    (hp : c.HoldsOn (· < h.length) h h') : c.Holds h h' := by
+  rw [Footprints.Closed.holds_iff]
+  exact ⟨hp.1, fun l v hv => hp.2 l v (List.getElem?_eq_some_iff.mp hv).1 hv⟩
+
+/-- A step within the closed bound: its frame is the bound's. -/
+def closedStep (Φ : Footprints.Closed) : StepEffect := ⟨fun _ => none, Φ.fp, Φ.fp⟩
+
+theorem closedStep_ok [DecidableEq ι] {G : NormalGraph ι}
     {images : InstanceImageCheck G} {sums : List (ProgramCertificates.ReadSummary ι)}
-    {Φ : Footprints.Closed} {regions : List ArgumentStoreRegion} {facts : List ArgumentPathTracking.Fact}
-    {c : NodeEvidence ι} {t : Tm} {thr : Bool}
+    {Φ : Footprints.Closed} {c : NodeEvidence ι} {t : Tm} {thr : Bool}
     (hc : checkClosedNode G images sums Φ c t thr = true)
     (ht : ExpressionOk G c t) (hsums : ProgramCertificates.SummariesSound G images sums) :
-    NodeWithin G Φ regions c t facts [] thr := by
+    StepOk G c t (closedStep Φ) thr := by
   simp only [checkClosedNode, Bool.and_eq_true] at hc
-  apply nodeWithin_of_closed (nodeWithin_of_checked hc.1.1 hc.2 ?_ ht hsums)
-  intro hthr
-  simpa [hthr] using hc.1.2
+  have hn := nodeWithin_of_checked (F := []) (thr := thr) hc.1.1 hc.2 (fun hthr => by
+    have hx := hc.1.2; rw [hthr] at hx; simpa using hx) ht hsums
+  intro n W h ρ he hi hk hw hh
+  refine ⟨ρ, ?_, ?_⟩
+  · intro p s hs; simp [closedStep] at hs
+  apply HeapObservations.SafePostExc.weaken _ _
+    (hn n W h ρ h.length (Nat.le_refl _) (fun _ hi => nomatch hi) he hi hk hw hh)
+  · intro h' _ hq
+    exact Footprints.Closed.post_iff.mpr (Footprints.Closed.holds_iff.mp (holdsOn_length hq.1))
+  · intro h' hq hthr
+    exact Footprints.Closed.post_iff.mpr (Footprints.Closed.holds_iff.mp (holdsOn_length (hq hthr)))
+
+/-- A call's positions' slots: the receiver's, and each actual's that is a
+slot. -/
+def callSlots (r : Tm) (args : List Tm) (p : Nat) : Option Nat :=
+  if p = 0 then (match r with
+    | .var j => some j
+    | _ => none) else match args[p - 1]? with
+    | some (.var j) => some j
+    | _ => none
+
+/-- The frame `ReceiverGrows` states: every old location but the receiver's
+store kept. -/
+def grownFrame : Footprint := [(.field 0 arrayStoreKey, .any)]
+
+theorem grown_post {e : CallEffects.Effect} {r : Tm} {args : List Tm} {h h' : Heap}
+    (hw : e.within r args h h') (hg : CallEffects.ReceiverGrows r h h') :
+    Post grownFrame (CallEffects.callEnv r args) h h' := by
+  refine ⟨hw.1, fun l v hv => ?_⟩
+  rcases hg l v hv with hs | ⟨hs, ls, ls', -, hl', -⟩
+  · exact ⟨v, hs, .inl rfl⟩
+  · refine ⟨.arr ls', hl', .inr ⟨(.field 0 arrayStoreKey, .any), by simp [grownFrame], ?_, trivial⟩⟩
+    simpa [Region.mem, CallEffects.callEnv, Footprints.storeOf] using hs
+
+/-- A call at its selected signature: its frame at the call's positions, on
+normal return the narrower `grownFrame` where the signature states
+`receiverGrows`; on a throw its frame, which it must state then. -/
+@[nospecialize] def callStep [DecidableEq ι] (G : NormalGraph ι)
+    (images : InstanceImageCheck G) (sums : List (ProgramCertificates.ReadSummary ι))
+    (c : NodeEvidence ι) (t : Tm) (thr : Bool) : Option StepEffect :=
+  if decide ((ProgramCertificates.claim c.expression).term = t) &&
+      (ProgramCertificates.checkTreeUsing G images c.expression (sums := sums) ||
+        PromiseCalls.requiresTree G images (entryFacts G c) (fun _ => false) sums c.expression) &&
+      ExpressionEffects.selectedOperands c.expression && (!thr || ExpressionEffects.selectedThrows c.expression) then
+    match t, ExpressionEffects.selectedEffect c.expression with
+    | .invoke _ r args, some eff =>
+      if !thr || eff.onThrow then
+        some ⟨callSlots r args, if eff.receiverGrows then grownFrame else eff.frame, eff.frame⟩
+      else none
+    | _, _ => none
+  else none
+
+theorem callStep_ok [DecidableEq ι] {G : NormalGraph ι}
+    {images : InstanceImageCheck G} {sums : List (ProgramCertificates.ReadSummary ι)}
+    {c : NodeEvidence ι} {t : Tm} {thr : Bool} {se : StepEffect}
+    (hc : callStep G images sums c t thr = some se)
+    (hsums : ProgramCertificates.SummariesSound G images sums) :
+    StepOk G c t se thr := by
+  intro n W h ρ he _ hk hw hh
+  unfold callStep at hc
+  split at hc
+  · rename_i hcond
+    simp only [Bool.and_eq_true, decide_eq_true_eq] at hcond
+    obtain ⟨⟨⟨hterm0, htree⟩, hops⟩, hthrows⟩ := hcond
+    subst hterm0
+    split at hc
+    · rename_i fn receiver args eff hterm heff
+      split at hc
+      · rename_i hthrow
+        cases hc
+        have hs : HeapObservations.SafePostExc (excOf G)
+            (meaning G (ProgramCertificates.claim c.expression).type)
+            (eff.post (ExpressionEffects.receiverOf (instantiate 0 ρ (ProgramCertificates.claim c.expression).term))
+              (ExpressionEffects.actualsOf (instantiate 0 ρ (ProgramCertificates.claim c.expression).term)) h)
+            (fun h' => thr = true → eff.excPost
+              (ExpressionEffects.receiverOf (instantiate 0 ρ (ProgramCertificates.claim c.expression).term))
+              (ExpressionEffects.actualsOf (instantiate 0 ρ (ProgramCertificates.claim c.expression).term)) h h')
+            n W h (instantiate 0 ρ (ProgramCertificates.claim c.expression).term) := by
+          rcases Bool.or_eq_true_iff.mp htree with htree | hreq
+          · cases ht : thr
+            · apply HeapObservations.SafePostExc.of_post (fun _ hf => by cases hf)
+              exact ExpressionEffects.selected_sound c.expression htree hops heff
+                (ProgramCertificates.codesSound_none _) hsums he hw hh
+            · have hx : ExpressionEffects.selectedThrows c.expression = true := by
+                simpa [ht] using hthrows
+              exact HeapObservations.SafePostExc.weaken (fun _ _ h => h) (fun _ h _ => h)
+                (ExpressionEffects.selected_sound_exc c.expression htree hops hx heff
+                  (ProgramCertificates.codesSound_none _) hsums he hw hh)
+          · obtain ⟨eff', heff', hs⟩ := PromiseCalls.requiresTree_sound_exc
+              (ProgramCertificates.codesSound_none _) hsums c.expression hreq
+            rw [heff] at heff'; cases heff'
+            exact HeapObservations.SafePostExc.weaken (fun _ _ h => h) (fun _ h _ => h)
+              (hs he hk hw hh)
+        rw [hterm] at hs ⊢
+        refine ⟨CallEffects.callEnv (instantiate 0 ρ receiver) (args.map (instantiate 0 ρ)), ?_, ?_⟩
+        · intro p s hp
+          simp only [callSlots] at hp
+          split at hp
+          · rename_i hp0
+            split at hp
+            · cases hp; simp [CallEffects.callEnv, hp0, instantiate]
+            · cases hp
+          · rename_i hp0
+            split at hp
+            · rename_i j hj
+              cases hp
+              simp [CallEffects.callEnv, hp0, List.getD, List.getElem?_map, hj, instantiate]
+            · cases hp
+        · simp only [ExpressionEffects.receiverOf, ExpressionEffects.actualsOf, instantiate,
+            instantiateArgs_eq_map] at hs ⊢
+          apply HeapObservations.SafePostExc.weaken _ _ hs
+          · intro h' v hp
+            cases hg : eff.receiverGrows
+            · simp only [Bool.false_eq_true, ↓reduceIte]; exact hp.1
+            · simp only [↓reduceIte]; exact grown_post hp.1 (hp.2.2.2.2.2.1 hg).1
+          · intro h' hp hthr
+            have hon : eff.onThrow = true := by
+              simp only [Bool.or_eq_true, Bool.not_eq_true'] at hthrow
+              rcases hthrow with ht | ht
+              · rw [hthr] at ht; cases ht
+              · exact ht
+            exact hp hthr hon
+      · cases hc
+    · cases hc
+  · cases hc
+
+/-- An element write: its frame at the node's slots (`writeFrame`). -/
+def writeStepEffect (i : Nat) : StepEffect := ⟨some, ExpressionEffects.writeFrame i, ExpressionEffects.writeFrame i⟩
+
+theorem writeStep_ok [DecidableEq ι] {G : NormalGraph ι} {c : NodeEvidence ι} {t : Tm} {thr : Bool} {i : Nat}
+    (hc : ExpressionEffects.writeStep G (entry c) t = some i) (ht : ExpressionOk G c t) :
+    StepOk G c t (writeStepEffect i) thr := by
+  intro n W h ρ he hi hk hw hh
+  refine ⟨ρ, fun p s hp => by cases hp; rfl, ?_⟩
+  have hs := HeapObservations.erase (HeapObservations.consequence
+    (fun _ _ _ hu => hu.1) (fun _ _ h => h) (ht n W h ρ he hi hk hw hh))
+  exact HeapObservations.SafePostExc.weaken (fun _ _ h => h) (fun _ h _ => h)
+    (ExpressionEffects.writeStep_sound hc he hh hs)
+
+/-- A node's local effects: within the closed bound, a call's, an element
+write's. -/
+@[nospecialize] def stepEffects [DecidableEq ι] (G : NormalGraph ι)
+    (images : InstanceImageCheck G) (sums : List (ProgramCertificates.ReadSummary ι))
+    (Φ : Footprints.Closed) (c : NodeEvidence ι) (t : Tm) (thr : Bool) : List StepEffect :=
+  (if checkClosedNode G images sums Φ c t thr then [closedStep Φ] else []) ++
+    (callStep G images sums c t thr).toList ++
+    ((ExpressionEffects.writeStep G (entry c) t).map writeStepEffect).toList
+
+theorem stepEffects_ok [DecidableEq ι] {G : NormalGraph ι}
+    {images : InstanceImageCheck G} {sums : List (ProgramCertificates.ReadSummary ι)}
+    {Φ : Footprints.Closed} {c : NodeEvidence ι} {t : Tm} {thr : Bool} {se : StepEffect}
+    (hm : se ∈ stepEffects G images sums Φ c t thr)
+    (ht : ExpressionOk G c t) (hsums : ProgramCertificates.SummariesSound G images sums) :
+    StepOk G c t se thr := by
+  simp only [stepEffects, List.mem_append] at hm
+  rcases hm with (hm | hm) | hm
+  · split at hm
+    · rename_i hc
+      cases List.mem_singleton.mp hm
+      exact closedStep_ok hc ht hsums
+    · cases hm
+  · exact callStep_ok (Option.mem_toList.mp hm) hsums
+  · obtain ⟨i, hi, rfl⟩ := Option.map_eq_some_iff.mp (Option.mem_toList.mp hm)
+    exact writeStep_ok hi ht
 
 /-- A copy's origins: every region its slot holds. The node check verifies
 the slot and scope. -/
@@ -81,12 +252,16 @@ def nodeOrigins (regions : List ArgumentStoreRegion) (facts : List ArgumentPathT
     List ArgumentStoreRegion :=
   copyOrigins facts t ++ readOrigins regions facts t
 
-@[nospecialize] def checkRead [DecidableEq ι] (c : NodeEvidence ι) (regions : List ArgumentStoreRegion)
+@[nospecialize] def checkRead [DecidableEq ι] (G : NormalGraph ι) (c : NodeEvidence ι) (regions : List ArgumentStoreRegion)
     (facts : List ArgumentPathTracking.Fact) (t : Tm) (rs : List ArgumentStoreRegion) : Bool :=
   match t with
-  | .readAt (.str f) (.var i) => decide (i < (entry c).length) && !rs.isEmpty && rs.all fun r =>
-      r.path == [f] && facts.contains ⟨i, ⟨r.position, []⟩⟩ &&
-        (ArgumentPathTracking.stableFields regions).contains (r.position, f)
+  | .readAt (.str f) (.var i) => decide (i < (entry c).length) && !rs.isEmpty &&
+      (match (entry c)[i]? with
+        | some A => HeapExpressionRules.fieldOperand (expand G A) (.str f)
+        | none => false) &&
+      rs.all fun r =>
+        r.path == [f] && facts.contains ⟨i, ⟨r.position, []⟩⟩ &&
+          (ArgumentPathTracking.stableFields regions).contains (r.position, f)
   | _ => false
 
 /-- What a field read of an object whose field location holds `u` steps to. -/
@@ -110,7 +285,7 @@ region `(x, [f])`'s entry value. -/
 theorem checkRead_sound [DecidableEq ι] {G : NormalGraph ι} {Φ : Footprints.Closed}
     {regions : List ArgumentStoreRegion} {facts : List ArgumentPathTracking.Fact}
     {c : NodeEvidence ι} {t : Tm} {rs : List ArgumentStoreRegion} {thr : Bool}
-    (hc : checkRead c regions facts t rs = true) (ht : ExpressionOk G c t) :
+    (hc : checkRead G c regions facts t rs = true) (ht : ExpressionOk G c t) :
     NodeWithin G Φ regions c t facts rs thr := by
   intro n W h ρ initial input hb hf he hi hk hw hh hst
   unfold checkRead at hc
@@ -118,7 +293,13 @@ theorem checkRead_sound [DecidableEq ι] {G : NormalGraph ι} {Φ : Footprints.C
   · rename_i f i
     simp only [Bool.and_eq_true, decide_eq_true_eq, List.all_eq_true, beq_iff_eq, List.contains_iff_mem,
       Bool.not_eq_true', List.isEmpty_eq_false_iff] at hc
-    obtain ⟨⟨hlt, hne⟩, hall⟩ := hc
+    obtain ⟨⟨⟨hlt, hne⟩, hfo⟩, hall⟩ := hc
+    have hpresent : (Footprints.fieldsOf (ρ i)).lookup (.str f) ≠ none := by
+      split at hfo
+      · rename_i A hA
+        obtain ⟨_, flds, code, oid, l, _, hobj, hl, -⟩ := HeapExpressionRules.fieldOperand_sound hfo (he.2 i A hA)
+        simp [hobj, Footprints.fieldsOf, hl]
+      · cases hfo
     have hs := HeapObservations.erase (HeapObservations.consequence
       (fun _ _ _ hu => hu.1) (fun _ _ h => h) (ht n W h ρ he hi hk hw hh))
     have hinst : instantiate 0 ρ (.readAt (.str f) (.var i)) = .readAt (.str f) (ρ i) := by
@@ -134,7 +315,7 @@ theorem checkRead_sound [DecidableEq ι] {G : NormalGraph ι} {Φ : Footprints.C
         intro r hr
         obtain ⟨⟨hpath, hfact⟩, hfld⟩ := hall r hr
         rw [hpath]
-        exact ArgumentPathTracking.read_now hf hfact hfld (hst (Nat.succ_pos n)) (Nat.succ_pos n) hh
+        exact ArgumentPathTracking.read_now hf hfact hfld (hst (Nat.succ_pos n)) (Nat.succ_pos n) hh hpresent
       obtain ⟨r0, hr0⟩ := List.exists_mem_of_ne_nil rs hne
       obtain ⟨u, hval, -, hu⟩ := hread r0 hr0
       have step := read_step hu
@@ -165,10 +346,8 @@ theorem checkRead_sound [DecidableEq ι] {G : NormalGraph ι} {Φ : Footprints.C
   ArgumentPathTracking.checkEdges table facts origins node.continuation &&
     ArgumentPathTracking.checkHandler table facts node.handler &&
     match origins with
-    | _ :: _ => checkCopy c facts node.expression origins || checkRead c regions facts node.expression origins
-    | [] => checkClosedNode G images sums Φ c node.expression thr ||
-        (decide ((ProgramCertificates.claim c.expression).term = node.expression) &&
-          checkReceiverCall G images sums Φ regions facts c thr)
+    | _ :: _ => checkCopy c facts node.expression origins || checkRead G c regions facts node.expression origins
+    | [] => (stepEffects G images sums Φ c node.expression thr).any fun se => stepWithin Φ regions facts se thr
 
 /-- The first node failing the same check used for certification. Its label
 can be mapped through a source map by the declaration diagnostic. Shape and
@@ -209,7 +388,7 @@ theorem checkNodes_reassign [DecidableEq ι] (G : NormalGraph ι)
     (table : List (List ArgumentPathTracking.Fact)) (exc : Bool) (P : Program) (C : Certificate ι) :
     checkNodes (reassign G η) (images.reassign η) sums Φ regions table exc P C =
       checkNodes G images sums Φ regions table exc P C := by
-  simp only [checkNodes, checkNode, checkClosedNode, checkReceiverCall, throwsWithin,
+  simp only [checkNodes, checkNode, stepEffects, callStep, checkClosedNode, checkRead, throwsWithin,
     Parametricity.checkTree_reassign, entryFacts_reassign, Parametricity.requiresTree_reassign,
     ExpressionEffects.emptyType]
   rfl
@@ -240,11 +419,8 @@ theorem checkNodes_sound [DecidableEq ι] {G : NormalGraph ι}
     · exact checkRead_sound hread ht
   | nil =>
     simp only [ho] at hp ⊢
-    rcases Bool.or_eq_true_iff.mp hp.2 with hclosed | hcall
-    · exact checkClosedNode_sound hclosed ht hsums
-    · simp only [Bool.and_eq_true, decide_eq_true_eq] at hcall
-      rw [← hcall.1]
-      exact checkReceiverCall_sound hcall.2 hsums
+    obtain ⟨se, hse, hwithin⟩ := List.any_eq_true.mp hp.2
+    exact nodeWithin_of_step (stepEffects_ok hse ht hsums) hwithin
 
 /-- Ordinary entry safety and regional obligations form one executable check. -/
 @[nospecialize] def checkEntry [DecidableEq ι] (G : NormalGraph ι)

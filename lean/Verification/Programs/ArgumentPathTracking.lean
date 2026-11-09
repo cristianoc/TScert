@@ -1,5 +1,6 @@
 import Verification.Programs.GraphCode
 import Verification.Semantics.ArgumentStoreRegions
+import Verification.Semantics.FootprintRebase
 
 /-! Callee provenance names values read from the invocation's entry heap.
 Slot maps carry these values through joins and handlers. A field read extends
@@ -94,21 +95,6 @@ theorem checkHandler_sound {table : List (List Fact)} {facts : List Fact}
   have he := List.all_eq_true.mp hc target (by simp [ht])
   exact checkMap_sound he (shift_sound hs v)
 
-/-- Resolving a concatenated path is resolving its suffix from the prefix's value. -/
-theorem readPath_append (h : Heap) (x : Val) (p q : List String) :
-    HeapKnowledge.readPath h x (p ++ q) =
-      (HeapKnowledge.readPath h x p).bind (fun v => HeapKnowledge.readPath h v q) := by
-  induction p generalizing x with
-  | nil => rfl
-  | cons f p ih =>
-    cases x <;> simp only [List.cons_append, HeapKnowledge.readPath, Option.bind_none]
-    rename_i fs code oid
-    split
-    · split
-      · exact ih _
-      · rfl
-    · rfl
-
 /-- A typed stable field and a successful own-field read supply the stable
 path witness used by callee tracking. Optional absent fields supply none. -/
 theorem stableField_path {G : PositiveGraphs.NormalGraph ι} {A : ProgramTyping.Ty ι}
@@ -144,27 +130,62 @@ def stableFields (regions : List ArgumentStoreRegion) : List (Nat × String) :=
     | [f] => some (r.position, f)
     | _ => none
 
-/-- Each traversed field read a value at the entry heap, and its read is
-fixed in the world `W` (`StablePath`): the entry world's witness, transferred
-to `W`. -/
+/-- Each traversed field, where the entry value has it, read a value at the
+entry heap, and its read is fixed in the world `W` (`StablePath`): the entry
+world's witness, transferred to `W`. Where the entry value has no such field
+(`null`, `undefined`), no heap reads it. -/
 def StableNow (fields : List (Nat × String)) (entry : Env) (h₀ : Heap) {n : Nat} (W : WorldT n) : Prop :=
-  ∀ p ∈ fields, ∃ v, isVal v = true ∧ HeapKnowledge.readPath h₀ (entry p.1) [p.2] = some v ∧
-    StablePath W (entry p.1) [p.2] v
+  ∀ p ∈ fields, (Footprints.fieldsOf (entry p.1)).lookup (.str p.2) = none ∨
+    ∃ v, isVal v = true ∧ HeapKnowledge.readPath h₀ (entry p.1) [p.2] = some v ∧
+      StablePath W (entry p.1) [p.2] v
 
 theorem StableNow.transfer {fields : List (Nat × String)} {entry : Env} {h₀ : Heap} {n m : Nat}
     {W : WorldT n} {U : WorldT m} (hs : StableNow fields entry h₀ W) (hm : m ≤ n)
     (hx : WExt (trunc m hm W) U) : StableNow fields entry h₀ U :=
-  fun p hp => let ⟨v, hv, hr, hsp⟩ := hs p hp; ⟨v, hv, hr, hsp.transfer hm hx⟩
+  fun p hp => (hs p hp).imp id fun ⟨v, hv, hr, hsp⟩ => ⟨v, hv, hr, hsp.transfer hm hx⟩
 
-/-- **The entry check of traversed fields.** Each is a present stable field
-of its position's entry contract (`stableField`, `fieldOperand`), an input
-slot of the unit, and every region's path has at most one field. -/
+/-- **Conditional agreement.** Where the current heap reads a traversed
+field of its entry value, the entry heap read the same value. -/
+theorem StableNow.agree {fields : List (Nat × String)} {entry : Env} {h₀ h : Heap} {n : Nat}
+    {W : WorldT n} {x : Nat} {f : String} {v : Val} (hs : StableNow fields entry h₀ W) (hfld : (x, f) ∈ fields)
+    (hn : 0 < n) (hh : HeapOk n W h) (hv : HeapKnowledge.readPath h (entry x) [f] = some v) :
+    HeapKnowledge.readPath h₀ (entry x) [f] = some v := by
+  rcases hs _ hfld with hnone | ⟨u, -, hu, hsp⟩
+  · have hnil : HeapKnowledge.readPath h (entry x) [f] = none := by
+      cases hx : entry x <;> simp only [hx, Footprints.fieldsOf] at hnone <;>
+        simp [HeapKnowledge.readPath, hnone]
+    rw [hnil] at hv
+    cases hv
+  · rw [hsp.read hn hh] at hv
+    cases hv
+    exact hu
+
+/-- The alternatives of a type a field read fails on: `null` and `undefined`. -/
+def absentClause : PositiveNormalization.Clause α → Bool
+  | .nul | .undef => true
+  | _ => false
+
+/-- The alternatives of `A` a field read succeeds on. -/
+def presentClauses (G : PositiveGraphs.NormalGraph ι) (A : ProgramTyping.Ty ι) :
+    List (PositiveNormalization.Clause (ProgramTyping.Ty ι)) :=
+  (PositiveRules.expand G A).filter fun c => !absentClause c
+
+/-- A traversed field's entry contract: on every alternative of `A` a read
+succeeds on, a field the read finds (`fieldOperand`) and a stable key, and
+there is such an alternative. `null` and `undefined` alternatives read no
+field. -/
+def entryField [DecidableEq ι] (G : PositiveGraphs.NormalGraph ι) (A : ProgramTyping.Ty ι) (f : String) : Bool :=
+  G.plainTy A && HeapExpressionRules.fieldOperand (presentClauses G A) (.str f) &&
+    (presentClauses G A).all fun c => c.stableKeys.contains (.str f)
+
+/-- **The entry check of traversed fields.** Each is a field of its
+position's entry contract `entryField` accepts, an input slot of the unit,
+and every region's path has at most one field. -/
 def checkEntryFields [DecidableEq ι] (G : PositiveGraphs.NormalGraph ι) (inputs : List (ProgramTyping.Ty ι))
     (regions : List ArgumentStoreRegion) : Bool :=
   regions.all (·.path.length ≤ 1) &&
   (stableFields regions).all fun (x, f) => match inputs[x]? with
-    | some A => HeapExpressionRules.stableField G A (.str f) &&
-        HeapExpressionRules.fieldOperand (PositiveRules.expand G A) (.str f)
+    | some A => entryField G A f
     | none => false
 
 theorem checkEntryFields_paths [DecidableEq ι] {G : PositiveGraphs.NormalGraph ι} {inputs : List (ProgramTyping.Ty ι)}
@@ -186,38 +207,53 @@ theorem checkEntryFields_sound [DecidableEq ι] {G : PositiveGraphs.NormalGraph 
   | none => rw [hA] at hx; cases hx
   | some A =>
     rw [hA] at hx
-    simp only [Bool.and_eq_true] at hx
+    simp only [entryField, Bool.and_eq_true, List.all_eq_true] at hx
+    obtain ⟨⟨hplain, hop⟩, hstable⟩ := hx
     have hv := he.2 p.1 A hA
-    obtain ⟨_, flds, code, oid, l, c', hobj, hl, hlw', htyped⟩ := HeapExpressionRules.fieldOperand_sound hx.2 hv
-    obtain ⟨flds', oid', hobj', hs⟩ := HeapExpressionRules.stableField_at hx.1 hv
-    rw [hobj] at hobj'
-    cases hobj'
-    obtain ⟨c, u, hlw, hstable⟩ := hs.present hl
-    have hu := hh.stable_value hn hlw hstable
-    rw [hlw] at hlw'
-    cases hlw'
-    obtain ⟨u', hu', hcu⟩ := hh.2 l _ hlw
-    rw [hu] at hu'
-    cases hu'
-    have hval : isVal u = true :=
-      (ProgramTyping.meaning_value (htyped 0 hn _ u (hcu 0 hn))).1
-    refine ⟨u, hval, ?_, ?_⟩
-    · rw [hobj]; simp [HeapKnowledge.readPath, hl, hu]
-    · rw [hobj]; exact .cons hl hlw hstable .nil
+    obtain ⟨c, hm, hcs, -⟩ := (PositiveRules.expand_sem G A hplain n W (entry p.1)).mp hv
+    cases habs : absentClause c
+    · have hmp : c ∈ presentClauses G A := List.mem_filter.mpr ⟨hm, by simp [habs]⟩
+      have hfield : HeapExpressionRules.clauseField c (.str p.2) = true := by
+        simp only [HeapExpressionRules.fieldOperand, Bool.and_eq_true, List.all_eq_true] at hop
+        exact hop.2 c hmp
+      obtain ⟨_, flds, code, oid, l, c', hobj, hl, hlw', htyped, -⟩ :=
+        HeapExpressionRules.clauseField_typed hmp hfield hcs
+      obtain ⟨flds', oid', hobj', hs⟩ :=
+        PositiveNormalization.semWithArgs_stable hcs (List.contains_iff_mem.mp (hstable c hmp))
+      rw [hobj] at hobj'
+      cases hobj'
+      obtain ⟨c, u, hlw, hstab⟩ := hs.present hl
+      have hu := hh.stable_value hn hlw hstab
+      rw [hlw] at hlw'
+      cases hlw'
+      obtain ⟨u', hu', hcu⟩ := hh.2 l _ hlw
+      rw [hu] at hu'
+      cases hu'
+      have hval : isVal u = true :=
+        (ProgramTyping.meaning_value (htyped 0 hn _ u (hcu 0 hn))).1
+      refine .inr ⟨u, hval, ?_, ?_⟩
+      · rw [hobj]; simp [HeapKnowledge.readPath, hl, hu]
+      · rw [hobj]; exact .cons hl hlw hstab .nil
+    · refine .inl ?_
+      cases c <;> simp only [absentClause, Bool.false_eq_true] at habs
+      · rw [show entry p.1 = .nul from hcs]; rfl
+      · rw [show entry p.1 = .undef from hcs]; rfl
 
 /-- A read of a tracked slot holding a position's entry value, through a
-traversed field, reads the field's entry value. -/
+traversed field the value has, reads the field's entry value. -/
 theorem read_now {facts : List Fact} {ρ entry : Env} {h₀ h : Heap} {fields : List (Nat × String)}
     {n : Nat} {W : WorldT n} {i x : Nat} {f : String}
     (hs : Holds facts ρ entry h₀) (hf : (⟨i, ⟨x, []⟩⟩ : Fact) ∈ facts) (hfld : (x, f) ∈ fields)
-    (hst : StableNow fields entry h₀ W) (hn : 0 < n) (hh : HeapOk n W h) :
+    (hst : StableNow fields entry h₀ W) (hn : 0 < n) (hh : HeapOk n W h)
+    (hpresent : (Footprints.fieldsOf (ρ i)).lookup (.str f) ≠ none) :
     ∃ v, isVal v = true ∧ HeapKnowledge.readPath h₀ (entry x) [f] = some v ∧
       HeapKnowledge.readPath h (ρ i) [f] = some v := by
   have hx : entry x = ρ i := by
     have := hs _ hf
     simpa [HeapKnowledge.readPath] using this
-  obtain ⟨v, hv, hr, hsp⟩ := hst _ hfld
-  exact ⟨v, hv, hr, hx ▸ hsp.read hn hh⟩
+  rcases hst _ hfld with hnone | ⟨v, hv, hr, hsp⟩
+  · exact absurd (hx ▸ hnone) hpresent
+  · exact ⟨v, hv, hr, hx ▸ hsp.read hn hh⟩
 
 /-- Copying a tracked slot establishes the same path at the result slot. -/
 theorem copy {facts : List Fact} {ρ entry : Env} {h₀ : Heap} {f : Fact}
@@ -239,7 +275,7 @@ theorem read {facts : List Fact} {ρ entry : Env} {h₀ h : Heap} {f : Fact} {fi
       (push v ρ) entry h₀ := by
   intro g hg
   rcases List.mem_cons.mp hg with rfl | hg
-  · simp only [readPath_append, hs f hf, Option.bind_some, push]
+  · simp only [Footprints.readPath_append, hs f hf, Option.bind_some, push]
     exact hp.trans hr
   · exact shift_sound hs _ g hg
 
@@ -260,41 +296,5 @@ theorem resolve {facts : List Fact} {ρ entry : Env} {h₀ : Heap} {f : Fact}
     (hs : Holds facts ρ entry h₀) (hf : f ∈ facts) :
     f.region.resolve entry h₀ = storeOf (ρ f.slot) := by
   simp [ArgumentStoreRegion.resolve, hs f hf]
-
-/-- A receiver-store call on a tracked slot fits the invocation's regional
-bound. All other locations retain the closed footprint. -/
-theorem receiver_call {c : Footprints.Closed} {regions : List ArgumentStoreRegion} {facts : List Fact}
-    {ρ entry : Env} {h₀ h h' : Heap} {f : Fact}
-    (hs : Holds facts ρ entry h₀) (hf : f ∈ facts) (hm : f.region ∈ regions)
-    (hbefore : ArgumentStoreRegionsWithin c regions entry h₀ h)
-    (hcall : c.HoldsOn (fun l => storeOf (ρ f.slot) ≠ some l) h h') :
-    ArgumentStoreRegionsWithin c regions entry h₀ h' := by
-  apply hbefore.trans_on
-  apply hcall.weaken
-  intro l hl heq
-  exact hl.2 f.region hm ((resolve hs hf).trans heq)
-
-/-- The receiver slot has a tracked origin among the declared regions. -/
-def checkReceiver (facts : List Fact) (regions : List ArgumentStoreRegion) (receiver : Nat) : Bool :=
-  facts.any fun f => f.slot == receiver && regions.contains f.region
-
-/-- A checked receiver origin permits the existing receiver-store effect
-inside the callee's regional bound. The footprint and own-field mode are
-checked independently of the origin. -/
-theorem checkReceiver_sound {c : Footprints.Closed} {regions : List ArgumentStoreRegion}
-    {facts : List Fact} {receiver : Nat} {ρ entry : Env} {h₀ h h' : Heap} {effect : CallEffects.Effect}
-    {args : List Tm}
-    (hc : checkReceiver facts regions receiver = true)
-    (hs : Holds facts ρ entry h₀) (hbefore : ArgumentStoreRegionsWithin c regions entry h₀ h)
-    (hcall : effect.within (ρ receiver) args h h') (hstore : effect.receiverStore = true)
-    (hown : effect.receiverOwn = false) (hle : effect.footprint.le c = true) :
-    ArgumentStoreRegionsWithin c regions entry h₀ h' := by
-  obtain ⟨f, hf, hx⟩ := List.any_eq_true.mp hc
-  simp only [Bool.and_eq_true, beq_iff_eq, List.contains_iff_mem] at hx
-  apply receiver_call hs hf hx.2 hbefore
-  rw [hx.1]
-  replace hcall := CallEffects.Effect.within_closed hcall
-  simp only [CallEffects.Effect.withinClosed, hstore, hown, Bool.false_eq_true, if_false, if_true] at hcall
-  exact hcall.mono hle
 
 end Verification.GraphCode.ArgumentPathTracking

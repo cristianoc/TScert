@@ -1364,6 +1364,27 @@ theorem placeAt_mem {ls : List (Option Nat)} {k l x : Nat} (hm : some x ∈ plac
     · simp [List.mem_replicate] at hm
   · exact .inr (Option.some.inj hm)
 
+/-- **An element write's change**: within the closed bound `c`, and every
+location but the written object's field `f`, where its store is, within
+`{value: any, store: keep}`. The second part is the write's step frame
+(FOOTPRINTS.md, "Argument-path store regions"); the first, its closed
+weakening. -/
+def StoreWrite (f : PropKey) (o : Tm) (c : Footprints.Closed) (h h' : Heap) : Prop :=
+  c.Holds h h' ∧ ∀ fl, (Footprints.fieldsOf o).lookup f = some fl →
+    Footprints.Closed.HoldsOn ⟨.any, .keep⟩ (fun l => l ≠ fl) h h'
+
+theorem StoreWrite.refl (f : PropKey) (o : Tm) (c : Footprints.Closed) (h : Heap) : StoreWrite f o c h h :=
+  ⟨Footprints.Closed.Holds.refl c h, fun _ _ => (Footprints.Closed.Holds.refl _ h).on _⟩
+
+/-- The heap after a write taking a fresh location keeps every location but
+the store's. -/
+theorem elem_grow_kept {h : Heap} {fl : Nat} {v : Val} {ls' : List (Option Nat)} :
+    Footprints.Closed.HoldsOn ⟨.any, .keep⟩ (fun l => l ≠ fl) h ((h ++ [v]).set fl (.arr ls')) := by
+  refine ⟨by simp, fun l' w hf hw => ?_⟩
+  have hlt := (List.getElem?_eq_some_iff.mp hw).1
+  refine ⟨w, ?_, Footprints.Change.Holds.refl _ _ _⟩
+  rw [List.getElem?_set_ne (Ne.symm hf), List.getElem?_append_left hlt, hw]
+
 /-- The heap after a write at a listed location of the store at `fl`, that
 store put back. -/
 theorem elem_present_holds {h : Heap} {l fl : Nat} {v u : Val} {ls : List (Option Nat)}
@@ -1485,8 +1506,8 @@ theorem elem_write_core [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)
     (hst : storeField G (expand G Ref) f idx present = true)
     (he : EnvOk G Γ ρ n W) (hh : HeapOk n W h)
     (hs : Safe Ξ T n W h (instantiate 0 ρ (.writeAt f (.var i) (.setElem (.readAt f (.var i)) (.num b) (.var k))))) :
-    SafePostExc Ξ T (fun h' _ => Footprints.Closed.Holds ⟨.any, if present then .keep else .grow⟩ h h')
-      (fun h' => Footprints.Closed.Holds ⟨.any, if present then .keep else .grow⟩ h h') n W h
+    SafePostExc Ξ T (fun h' _ => StoreWrite f (ρ i) ⟨.any, if present then .keep else .grow⟩ h h')
+      (fun h' => StoreWrite f (ρ i) ⟨.any, if present then .keep else .grow⟩ h h') n W h
       (instantiate 0 ρ (.writeAt f (.var i) (.setElem (.readAt f (.var i)) (.num b) (.var k)))) := by
   have hvv := (meaning_value (he.2 k Γ[k] (List.getElem?_eq_getElem hk))).1
   obtain ⟨B, L, hmem, hstore, hbag⟩ := storeField_sound hst (he.2 i Ref hi)
@@ -1502,7 +1523,7 @@ theorem elem_write_core [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)
   | succ n1 =>
   rcases hs with (⟨hbad, _⟩ | hr) | ⟨U1, h1, t1, hx1, hu1, step1, hh1, hs1⟩
   · simp [isVal] at hbad
-  · exact .inl (.inr ⟨hr, Footprints.Closed.Holds.refl _ _⟩)
+  · exact .inl (.inr ⟨hr, StoreWrite.refl _ _ _ _⟩)
   obtain ⟨u, hfu, rfl, rfl⟩ := elem_read_inv hfd step1
   refine .inr ⟨U1, h, _, hx1, hu1, step1, hh1, ?_⟩
   cases n1 with
@@ -1515,7 +1536,7 @@ theorem elem_write_core [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)
   have huv := (meaning_value hmL).1
   rcases hs1 with (⟨hbad, _⟩ | hr) | ⟨U2, h2, t2, hx2, hu2, step2, hh2, hs2⟩
   · simp [isVal] at hbad
-  · exact .inl (.inr ⟨hr, Footprints.Closed.Holds.refl _ _⟩)
+  · exact .inl (.inr ⟨hr, StoreWrite.refl _ _ _ _⟩)
   obtain ⟨b', ls, hb', rfl, hcase⟩ := elem_set_inv rfl huv rfl hvv step2
   cases hb'
   unfold storeTy at hstore
@@ -1546,7 +1567,8 @@ theorem elem_write_core [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)
       have := sourceTy_sound hpos hmA
       cases w <;> simp_all [isSourceVal, Footprints.isArr]
     refine .inr ⟨U2, _, _, hx2, hu2, step2, hh2, write_back_post hfd ?_ hs2⟩
-    exact Footprints.Closed.Holds.mono (by cases present <;> rfl) (elem_present_holds hfu hw hnarr)
+    refine ⟨Footprints.Closed.Holds.mono (by cases present <;> rfl) (elem_present_holds hfu hw hnarr),
+      fun fl' hfl' => (elem_present_holds hfu hw hnarr).on _⟩
   · -- A fresh location: a required position is listed, so the index is not one.
     cases present with
     | true =>
@@ -1559,7 +1581,10 @@ theorem elem_write_core [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)
       simp [elemLoc, hidx, hl] at hn
     | false =>
       refine .inr ⟨U2, _, _, hx2, hu2, step2, hh2, write_back_post hfd ?_ hs2⟩
-      exact elem_grow_holds hfu
+      refine ⟨elem_grow_holds hfu, fun fl' hfl' => ?_⟩
+      simp only [Footprints.fieldsOf, hfd, Option.some.injEq] at hfl'
+      subst hfl'
+      exact elem_grow_kept
 
 
 /-- An element write within `Φ`: at a store type whose position holds source
@@ -1589,10 +1614,10 @@ theorem elem_write_within_exc [DecidableEq ι] {G : NormalGraph ι} {Γ Φ t T �
   · rename_i Ref idx hi hidx
     simp only [Bool.or_eq_true, Bool.and_eq_true] at hsel
     rcases hsel with ⟨hst, hle⟩ | ⟨hst, hle⟩
-    · exact SafePostExc.weaken (fun _ _ hq => Footprints.Closed.Holds.mono hle hq)
-        (fun _ hq => Footprints.Closed.Holds.mono hle hq) (elem_write_core hk hi hidx hst he hh hs)
-    · exact SafePostExc.weaken (fun _ _ hq => Footprints.Closed.Holds.mono hle hq)
-        (fun _ hq => Footprints.Closed.Holds.mono hle hq) (elem_write_core hk hi hidx hst he hh hs)
+    · exact SafePostExc.weaken (fun _ _ hq => Footprints.Closed.Holds.mono hle hq.1)
+        (fun _ hq => Footprints.Closed.Holds.mono hle hq.1) (elem_write_core hk hi hidx hst he hh hs)
+    · exact SafePostExc.weaken (fun _ _ hq => Footprints.Closed.Holds.mono hle hq.1)
+        (fun _ hq => Footprints.Closed.Holds.mono hle hq.1) (elem_write_core hk hi hidx hst he hh hs)
   · contradiction
 
 /-! ### Element writes at a run-time index
@@ -1687,8 +1712,8 @@ theorem elem_var_write_core [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty
     (hst : storeFieldEvery G (expand G Ref) f = true)
     (he : EnvOk G Γ ρ n W) (hh : HeapOk n W h)
     (hs : Safe Ξ T n W h (instantiate 0 ρ (.writeAt f (.var i) (.setElem (.readAt f (.var i)) (.var j) (.var k))))) :
-    SafePostExc Ξ T (fun h' _ => Footprints.Closed.Holds ⟨.any, .grow⟩ h h')
-      (fun h' => Footprints.Closed.Holds ⟨.any, .grow⟩ h h') n W h
+    SafePostExc Ξ T (fun h' _ => StoreWrite f (ρ i) ⟨.any, .grow⟩ h h')
+      (fun h' => StoreWrite f (ρ i) ⟨.any, .grow⟩ h h') n W h
       (instantiate 0 ρ (.writeAt f (.var i) (.setElem (.readAt f (.var i)) (.var j) (.var k)))) := by
   have hvv := (meaning_value (he.2 k Γ[k] (List.getElem?_eq_getElem hk))).1
   have hjv := (meaning_value (he.2 j Γ[j] (List.getElem?_eq_getElem hj))).1
@@ -1706,7 +1731,7 @@ theorem elem_var_write_core [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty
   | succ n1 =>
   rcases hs with (⟨hbad, _⟩ | hr) | ⟨U1, h1, t1, hx1, hu1, step1, hh1, hs1⟩
   · simp [isVal] at hbad
-  · exact .inl (.inr ⟨hr, Footprints.Closed.Holds.refl _ _⟩)
+  · exact .inl (.inr ⟨hr, StoreWrite.refl _ _ _ _⟩)
   obtain ⟨u, hfu, rfl, rfl⟩ := elem_read_inv hfd step1
   refine .inr ⟨U1, h, _, hx1, hu1, step1, hh1, ?_⟩
   cases n1 with
@@ -1718,7 +1743,7 @@ theorem elem_var_write_core [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty
   have huv := (meaning_value hmL).1
   rcases hs1 with (⟨hbad, _⟩ | hr) | ⟨U2, h2, t2, hx2, hu2, step2, hh2, hs2⟩
   · simp [isVal] at hbad
-  · exact .inl (.inr ⟨hr, Footprints.Closed.Holds.refl _ _⟩)
+  · exact .inl (.inr ⟨hr, StoreWrite.refl _ _ _ _⟩)
   obtain ⟨b, ls, rfl, rfl, hcase⟩ := elem_set_inv rfl huv hjv hvv step2
   rcases hcase with ⟨l, hl, rfl, rfl⟩ | ⟨k', hk', hn, rfl, rfl⟩
   · -- A listed position: its location held a source value, which is no store.
@@ -1754,9 +1779,13 @@ theorem elem_var_write_core [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty
       have := sourceTy_sound hpos hmA
       cases w <;> simp_all [isSourceVal, Footprints.isArr]
     refine .inr ⟨U2, _, _, hx2, hu2, step2, hh2, write_back_post hfd ?_ hs2⟩
-    exact Footprints.Closed.Holds.mono rfl (elem_present_holds hfu hw hnarr)
+    exact ⟨Footprints.Closed.Holds.mono rfl (elem_present_holds hfu hw hnarr),
+      fun fl' hfl' => (elem_present_holds hfu hw hnarr).on _⟩
   · refine .inr ⟨U2, _, _, hx2, hu2, step2, hh2, write_back_post hfd ?_ hs2⟩
-    exact elem_grow_holds hfu
+    refine ⟨elem_grow_holds hfu, fun fl' hfl' => ?_⟩
+    simp only [Footprints.fieldsOf, hfd, Option.some.injEq] at hfl'
+    subst hfl'
+    exact elem_grow_kept
 
 theorem Changes.length_refl (h : Heap) : (⟨true, true, .length⟩ : HeapKnowledge.Changes).Holds h h :=
   ⟨fun _ _ hv _ => hv, fun _ _ ls hls => ⟨ls, hls, rfl⟩, fun hg => by simp at hg⟩
@@ -1885,8 +1914,8 @@ theorem elem_var_write_within_exc [DecidableEq ι] {G : NormalGraph ι} {Γ Φ t
   split at hsel
   · rename_i Ref hi
     simp only [Bool.and_eq_true] at hsel
-    exact SafePostExc.weaken (fun _ _ hq => Footprints.Closed.Holds.mono hsel.2 hq)
-      (fun _ hq => Footprints.Closed.Holds.mono hsel.2 hq) (elem_var_write_core hk hj hi hsel.1 he hh hs)
+    exact SafePostExc.weaken (fun _ _ hq => Footprints.Closed.Holds.mono hsel.2 hq.1)
+      (fun _ hq => Footprints.Closed.Holds.mono hsel.2 hq.1) (elem_var_write_core hk hj hi hsel.1 he hh hs)
   · contradiction
 
 /-- A typed write within `Φ`: of a field holding a value, or of an element. -/
@@ -1909,6 +1938,115 @@ theorem write_within [DecidableEq ι] {G : NormalGraph ι} {Γ Φ t T ρ n W h}
     (hs : Safe Ξ T n W h (instantiate 0 ρ t)) :
     SafePost Ξ T (fun h' _ => Φ.Holds h h') n W h (instantiate 0 ρ t) :=
   SafePostExc.post (write_within_exc hc he hh hs)
+
+/-! ### An element write's step frame
+
+The write of an array's element changes value-class locations and the
+array's store alone (`StoreWrite`): its step frame, read at the node's slots,
+is `{value: any}` with the written slot's store at `any`
+(FOOTPRINTS.md, "Argument-path store regions"). -/
+
+/-- An element write's step frame: every value-class location, and the store
+of the array slot `i` holds. -/
+def writeFrame (i : Nat) : Footprints.Footprint :=
+  Footprints.Closed.fp ⟨.any, .keep⟩ ++ [(.field i arrayStoreKey, .any)]
+
+/-- A write of the store an array value holds is within its step frame. -/
+theorem storeWrite_post {ρ : Env} {i fl : Nat} {c : Footprints.Closed} {h h' : Heap}
+    (hfl : (Footprints.fieldsOf (ρ i)).lookup arrayStoreKey = some fl)
+    (hw : StoreWrite arrayStoreKey (ρ i) c h h') : Footprints.Post (writeFrame i) ρ h h' := by
+  obtain ⟨hlen, hon⟩ := hw.2 fl hfl
+  refine ⟨hlen, fun l v hv => ?_⟩
+  by_cases hl : l = fl
+  · subst hl
+    obtain ⟨v', hv'⟩ : ∃ v', h'[l]? = some v' := by
+      have := (List.getElem?_eq_some_iff.mp hv).1
+      exact ⟨h'[l], List.getElem?_eq_getElem (by omega)⟩
+    exact ⟨v', hv', .inr ⟨(.field i arrayStoreKey, .any), by simp [writeFrame],
+      by simp [Footprints.Region.mem, hfl], trivial⟩⟩
+  · obtain ⟨v', hv', hch⟩ := hon l v hl hv
+    refine ⟨v', hv', ?_⟩
+    rcases (Footprints.Closed.allowed_iff (ρ := ρ) hv).mpr hch with heq | ⟨e, he, hm, hh⟩
+    · exact .inl heq
+    · exact .inr ⟨e, List.mem_append_left _ he, hm, hh⟩
+
+/-- An object a record operand states a field of has the field. -/
+theorem bag_lookup {G : NormalGraph ι} {B : List (PropKey × Ty ι)} {L : Ty ι} {fld : PropKey} {n W v}
+    (hmem : (fld, L) ∈ B) (hbag : bagT (ReferenceConjunctions.famsOf (meaning G) B) n W v) :
+    ∃ fl, (Footprints.fieldsOf v).lookup fld = some fl := by
+  obtain ⟨flds, code, oid, hl0, _, hrec⟩ := hbag
+  obtain ⟨flds1, fl, cfl, oid', hproj, hfd, -, -⟩ :=
+    recT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨L, hmem, rfl⟩) hrec
+  cases hproj
+  exact ⟨fl, by rw [hl0]; simpa [Footprints.fieldsOf] using hfd⟩
+
+/-- The typing an element write at a run-time index needs for its change. -/
+def varWriteOk (G : NormalGraph ι) (Γ : List (Ty ι)) (f : PropKey) (i j k : Nat) : Bool :=
+  decide (f = arrayStoreKey) && decide (k < Γ.length) && decide (j < Γ.length) &&
+    (match Γ[i]? with
+      | some Ref => storeFieldEvery G (expand G Ref) f
+      | none => false)
+
+/-- The typing an element write at a literal index needs for its change. -/
+def litWriteOk (G : NormalGraph ι) (Γ : List (Ty ι)) (f : PropKey) (i : Nat) (b : UInt64) (k : Nat) : Bool :=
+  decide (f = arrayStoreKey) && decide (k < Γ.length) &&
+    (match Γ[i]?, indexOfBits b with
+      | some Ref, some idx => storeField G (expand G Ref) f idx true || storeField G (expand G Ref) f idx false
+      | _, _ => false)
+
+/-- The array slot an element write of its store writes, where the write's
+typing gives its change (`elem_write_core`, `elem_var_write_core`). -/
+def writeStep (G : NormalGraph ι) (Γ : List (Ty ι)) (t : Tm) : Option Nat :=
+  match elemVarWriteSlots t with
+  | some (f, i, j, k) => if varWriteOk G Γ f i j k then some i else none
+  | none => match elemWriteSlots t with
+    | some (f, i, b, k) => if litWriteOk G Γ f i b k then some i else none
+    | none => none
+
+/-- **An element write is within its step frame**, on its normal return and
+where it raises. -/
+theorem writeStep_sound [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)} {t : Tm} {i : Nat}
+    {T : Fam} {ρ n W h} (hc : writeStep G Γ t = some i) (he : EnvOk G Γ ρ n W) (hh : HeapOk n W h)
+    (hs : Safe Ξ T n W h (instantiate 0 ρ t)) :
+    SafePostExc Ξ T (fun h' _ => Footprints.Post (writeFrame i) ρ h h')
+      (fun h' => Footprints.Post (writeFrame i) ρ h h') n W h (instantiate 0 ρ t) := by
+  unfold writeStep at hc
+  split at hc
+  · rename_i f i' j k hw
+    split at hc
+    · rename_i hcond
+      cases hc
+      simp only [varWriteOk, Bool.and_eq_true, decide_eq_true_eq] at hcond
+      obtain ⟨⟨⟨rfl, hk⟩, hj⟩, hsel⟩ := hcond
+      split at hsel
+      · rename_i Ref hi
+        obtain ⟨B, L, hmem, -, hbag⟩ := storeFieldEvery_sound hsel (he.2 _ Ref hi)
+        obtain ⟨fl, hfl⟩ := bag_lookup hmem hbag
+        rw [elemVarWriteSlots_eq hw] at hs ⊢
+        exact SafePostExc.weaken (fun _ _ hq => storeWrite_post hfl hq) (fun _ hq => storeWrite_post hfl hq)
+          (elem_var_write_core hk hj hi hsel he hh hs)
+      · cases hsel
+    · cases hc
+  · split at hc
+    · rename_i f i' b k hw
+      split at hc
+      · rename_i hcond
+        cases hc
+        simp only [litWriteOk, Bool.and_eq_true, decide_eq_true_eq] at hcond
+        obtain ⟨⟨rfl, hk⟩, hsel⟩ := hcond
+        split at hsel
+        · rename_i Ref idx hi hidx
+          rw [elemWriteSlots_eq hw] at hs ⊢
+          rcases Bool.or_eq_true_iff.mp hsel with hst | hst
+          all_goals
+            obtain ⟨B, L, hmem, -, hbag⟩ := storeField_sound hst (he.2 _ Ref hi)
+            obtain ⟨fl, hfl⟩ := bag_lookup hmem hbag
+            exact SafePostExc.weaken (fun _ _ hq => storeWrite_post hfl hq) (fun _ hq => storeWrite_post hfl hq)
+              (elem_write_core hk hi hidx hst he hh hs)
+        · cases hsel
+      · cases hc
+    · cases hc
+
 
 /-- The selected forms a throw postcondition is concluded for: an invocation
 or a construction at a fixed signature, through subsumption. -/

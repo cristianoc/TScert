@@ -996,6 +996,44 @@ control(async (): Promise<void> => {
 });
 
 control(async (): Promise<void> => {
+  // The step-frame rule's rebasing (FOOTPRINTS.md, "Argument-path store
+  // regions"), forged past the producer. `scan`'s region forged in the
+  // parser's document from the array `runs.open` reads to the record `runs`
+  // itself (`"runs[*]"`): its call of `note`, whose frame names `runs.open`,
+  // rebases through its actual's entry path to that array's store, which the
+  // forged statement keeps, refused at the regional check in search and in
+  // checking. And `mark`'s region forged
+  // in the parser's document onto its number parameter `k`: a number is no
+  // alternative a field read succeeds on, so the entry check gives no
+  // conditional stable witness, refused there.
+  const artifacts = run("stated-region-steps");
+  const steps: Ast = readFragmentFile(join(artifacts, "fragment.json"));
+  const scan = must(steps.functions.find(f => f.name === "scan"), "scan");
+  assert.deepEqual(scan.stated?.regions, [{ position: 1, path: ["open"] }], "scan states the field's region");
+  scan.stated = { footprint: { value: "any", store: "keep" }, onThrow: false, fresh: false, regions: [{ position: 1, path: [] }] };
+  const forged = join(artifacts, "forged-rebased-fragment.json");
+  writeFileSync(forged, JSON.stringify(steps));
+  const refusal = /source effect refusal at \[\d+,\d+\): the frame stated for 'scan' is not established by its body/;
+  const searched = produceWith(artifacts, join(artifacts, "claims.json"), "forged-rebased", forged);
+  assert.equal(searched.status, 1, `${searched.stdout}${searched.stderr}`);
+  assert.match(searched.stdout + searched.stderr, refusal);
+  invoke(join(artifacts, "claims.json"), documentEvidence(artifacts), artifacts, refusal, forged);
+  const nullable = run("stated-region-nullable-write");
+  const ast: Ast = readFragmentFile(join(nullable, "fragment.json"));
+  const mark = must(ast.functions.find(f => f.name === "mark"), "mark");
+  assert.deepEqual(mark.stated?.regions, [{ position: 1, path: ["open"] }], "mark states the field's region");
+  mark.stated = { footprint: { value: "any", store: "keep" }, onThrow: false, fresh: false, regions: [{ position: 2, path: ["open"] }] };
+  const document = join(nullable, "forged-witness-fragment.json");
+  writeFileSync(document, JSON.stringify(ast));
+  const absent = /source effect refusal at \[\d+,\d+\): the frame stated for 'mark' reads a store region through a field that is no present stable field/;
+  const unsearched = produceWith(nullable, join(nullable, "claims.json"), "forged-witness", document);
+  assert.equal(unsearched.status, 1, `${unsearched.stdout}${unsearched.stderr}`);
+  assert.match(unsearched.stdout + unsearched.stderr, absent);
+  invoke(join(nullable, "claims.json"), documentEvidence(nullable), nullable, absent, document);
+  process.stdout.write("forged rebasing: a caller's region moved from the field's array to its record, its call's rebased frame refused at the regional check, and a region through a number parameter, refused at the entry check, in search and in checking\n");
+});
+
+control(async (): Promise<void> => {
   // Store separations (`!==`, ARITHMETIC.md, "Store separation") the
   // producer does not propose, forged past it into the claims and the
   // parser's document of the central example's aliased caller: a
