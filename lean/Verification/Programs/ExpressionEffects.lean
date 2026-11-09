@@ -401,7 +401,7 @@ theorem call_local_sound [DecidableEq ι] {G : NormalGraph ι}
     {ρ n W h} (he : EnvOk G j.context ρ n W) (hw : WorldAdm W) (hh : HeapOk n W h)
     (hq : e.Requires (receiverOf (instantiate 0 ρ j.term)) (actualsOf (instantiate 0 ρ j.term)) h) :
     SafePostExc (excOf G) (meaning G j.type) (e.post (receiverOf (instantiate 0 ρ j.term)) (actualsOf (instantiate 0 ρ j.term)) h)
-      (e.excPost (receiverOf (instantiate 0 ρ j.term)) h) n W h (instantiate 0 ρ j.term) := by
+      (e.excPost (receiverOf (instantiate 0 ρ j.term)) (actualsOf (instantiate 0 ρ j.term)) h) n W h (instantiate 0 ρ j.term) := by
   rcases j with ⟨Γ,t,A⟩
   -- The rule admits only a call with a callee and a receiver premise.
   cases t <;> try exact (hl : False).elim
@@ -483,7 +483,7 @@ theorem construct_local_requires_sound [DecidableEq ι] {G : NormalGraph ι}
     {ρ n W h} (he : EnvOk G j.context ρ n W) (hw : WorldAdm W) (hh : HeapOk n W h)
     (hq : e.Requires (receiverOf (instantiate 0 ρ j.term)) (actualsOf (instantiate 0 ρ j.term)) h) :
     SafePostExc (excOf G) (meaning G j.type) (e.post (receiverOf (instantiate 0 ρ j.term)) (actualsOf (instantiate 0 ρ j.term)) h)
-      (e.excPost (receiverOf (instantiate 0 ρ j.term)) h) n W h (instantiate 0 ρ j.term) := by
+      (e.excPost (receiverOf (instantiate 0 ρ j.term)) (actualsOf (instantiate 0 ρ j.term)) h) n W h (instantiate 0 ρ j.term) := by
   rcases j with ⟨Γ,t,A⟩
   -- The rule admits only a construction with a constructor premise.
   cases t <;> try exact (hl : False).elim
@@ -559,7 +559,7 @@ private theorem construct_local_sound [DecidableEq ι] {G : NormalGraph ι}
     (hv : ∀ p ∈ ps, valueTerm p.term = true ∧ checkScope p.context.length p.term = true)
     {ρ n W h} (he : EnvOk G j.context ρ n W) (hw : WorldAdm W) (hh : HeapOk n W h) :
     SafePostExc (excOf G) (meaning G j.type) (e.post (receiverOf (instantiate 0 ρ j.term)) (actualsOf (instantiate 0 ρ j.term)) h)
-      (e.excPost (receiverOf (instantiate 0 ρ j.term)) h) n W h (instantiate 0 ρ j.term) := by
+      (e.excPost (receiverOf (instantiate 0 ρ j.term)) (actualsOf (instantiate 0 ρ j.term)) h) n W h (instantiate 0 ρ j.term) := by
   have hpl : e.plain = true := by
     rcases j with ⟨Γ,t,A⟩
     cases t <;> try exact (hl : False).elim
@@ -1929,7 +1929,7 @@ theorem selected_sound_exc [DecidableEq ι] {G : NormalGraph ι}
     {ρ n W h} (he : EnvOk G (claim e).context ρ n W)
     (hw : WorldAdm W) (hh : HeapOk n W h) :
     SafePostExc (excOf G) (meaning G (claim e).type) (eff.post (receiverOf (instantiate 0 ρ (claim e).term)) (actualsOf (instantiate 0 ρ (claim e).term)) h)
-      (eff.excPost (receiverOf (instantiate 0 ρ (claim e).term)) h) n W h (instantiate 0 ρ (claim e).term) := by
+      (eff.excPost (receiverOf (instantiate 0 ρ (claim e).term)) (actualsOf (instantiate 0 ρ (claim e).term)) h) n W h (instantiate 0 ρ (claim e).term) := by
   cases e with
   | node j r ps =>
     simp only [claim] at he ⊢

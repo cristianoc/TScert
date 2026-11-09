@@ -190,16 +190,18 @@ inside the callee's regional bound. The footprint and own-field mode are
 checked independently of the origin. -/
 theorem checkReceiver_sound {c : Footprints.Closed} {regions : List ArgumentStoreRegion}
     {facts : List Fact} {receiver : Nat} {ρ entry : Env} {h₀ h h' : Heap} {effect : CallEffects.Effect}
+    {args : List Tm}
     (hc : checkReceiver facts regions receiver = true)
     (hs : Holds facts ρ entry h₀) (hbefore : ArgumentStoreRegionsWithin c regions entry h₀ h)
-    (hcall : effect.within (ρ receiver) h h') (hstore : effect.receiverStore = true)
+    (hcall : effect.within (ρ receiver) args h h') (hstore : effect.receiverStore = true)
     (hown : effect.receiverOwn = false) (hle : effect.footprint.le c = true) :
     ArgumentStoreRegionsWithin c regions entry h₀ h' := by
   obtain ⟨f, hf, hx⟩ := List.any_eq_true.mp hc
   simp only [Bool.and_eq_true, beq_iff_eq, List.contains_iff_mem] at hx
   apply receiver_call hs hf hx.2 hbefore
   rw [hx.1]
-  simp only [CallEffects.Effect.within, hstore, hown, Bool.false_eq_true, if_false, if_true] at hcall
+  replace hcall := CallEffects.Effect.within_closed hcall
+  simp only [CallEffects.Effect.withinClosed, hstore, hown, Bool.false_eq_true, if_false, if_true] at hcall
   exact hcall.mono hle
 
 end Verification.GraphCode.ArgumentPathTracking

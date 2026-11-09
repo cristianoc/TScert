@@ -85,7 +85,7 @@ const equationReaders = [
     decl: "a source-claims label, read by equation lowering",
     meet: "a source-claims label, read by equation lowering",
     types: "the source-claims document's rows, read by equation lowering",
-    regional: "a module slot's effect, which Lean writes for a unit stating store regions (`moduleArrow`) and reads back",
+    position: "a store region of a module slot's effect, which Lean writes for a unit stating store regions (`moduleArrow`) and reads back",
   });
   expectSubset("OCaml reads of the Fragment", ocamlReads("ocaml-producer/source.ml"), ts, {});
   expectSubset("Fragment fields Lean ignores", ts, leanNames, {
