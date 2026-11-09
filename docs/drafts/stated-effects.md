@@ -171,21 +171,13 @@ function cached(): Modifies<{ "cell(values)": "init" }, Profile>
 function zeros(count: number): Modifies<{}, Fresh<number[]>>
 ```
 
-**Beyond a modifies clause.** A classic frame condition, Dafny's
-`modifies` ([Leino 2010](../REFERENCES.md#leino-2010)), JML's `assignable`
-([Leavens, Baker and Ruby 2006](../REFERENCES.md#leavens-baker-and-ruby-2006)),
-ACSL's `assigns` ([ACSL](../REFERENCES.md#acsl)), Boogie's `modifies`
-([Barnett et al. 2006](../REFERENCES.md#barnett-et-al-2006)) and Low*'s
-`modifies` ([Protzenko et al. 2017](../REFERENCES.md#protzenko-et-al-2017)),
-is a set of locations. These languages read it in one of two ways
-([Dafny](../REFERENCES.md#dafny), the modifies clause;
-[ACSL](../REFERENCES.md#acsl), semantics of frame conditions): as a write
-permission, a location outside the set never written even with the value
-it holds (Dafny, JML), or as a two-state relation, a location outside the
-set holding at the post-state its pre-state contents (ACSL). `Post` is the
-two-state reading: the shared name stands for that reading, and a body may
-write a location outside its frame if the location holds its entry
-contents at the return. Beyond the set, `Modifies` states four parts:
+**Beyond a modifies clause.** A classic frame condition is a set of
+locations ([Frame conditions](../REFERENCES.md#frame-conditions)).
+`Modifies` reads it as a two-state relation: a location outside the set
+holds at the return the contents it held at entry (`Post`), as ACSL's
+semantics of frame conditions states ([ACSL](../REFERENCES.md#acsl)), so
+a body may write a location outside its frame if the location holds its
+entry contents at the return. Beyond the set, `Modifies` states four parts:
 
 - **A change per entry.** Inside the set a location may take any contents;
   the change $`c`$ of each entry is a two-state relation each covered
@@ -195,8 +187,7 @@ contents at the return. Beyond the set, `Modifies` states four parts:
   may introduce an object reference), `grow` keeps a store's dense prefix
   and lists only its old cells or fresh ones. It follows the same
   preorder-based preservation pattern as F*'s monotonic references
-  ([Ahman et al. 2018](../REFERENCES.md#ahman-et-al-2018)), and is a
-  relation of the kind a Dafny `twostate` predicate can state. It belongs in
+  ([Ahman et al. 2018](../REFERENCES.md#ahman-et-al-2018)). It belongs in
   the frame because `stable` reads it: a fact whose support tolerates
   `grow` (a length's lower bound) is kept across a call that grows the
   store it reads, where a plain modifies set, listing that store, would
@@ -693,17 +684,17 @@ unpinned statement in a declaration file. Refused at the reader:
 `Modifies<{ values: "any"; stores: "any" }, T>`; `Fresh` on a type of no
 array, outside a result, and as `Fresh<Modifies<P, T>>`.
 
-Migration controls, each refused at the reader: the old spelling
-`{ value: …; store: … }` in a module binding neither name, and in one
-binding `value` and `store`; a bare key naming a module binding
-(`{ values: "any"; scriptClasses: "init" }`); the reserved names written
-as cells (`"cell(values)"`, `"cell(stores)"`, `"cell(onThrow)"`) read as
-those bindings, and refused where none exists; the index signature's
-malformed values, `"cell(b)": true`, `"cell(b)": undefined` and a class
-map with an unknown member (`{ values: "any"; other: "any" }`); a
-lookalike `Modifies` or `Fresh` declared outside `tools/resolvable.d.ts`
-(`invalid-method-effect-lookalike`), read as an ordinary type; and an
-audited overlay entry pinning a statement in the old spelling.
+Migration controls, each with its outcome: refused at the reader, the old
+spelling `{ value: …; store: … }` in a module binding neither name and in
+one binding `value` and `store`, a bare key naming a module binding
+(`{ values: "any"; scriptClasses: "init" }`), the index signature's
+malformed values (`"cell(b)": true`, `"cell(b)": undefined`, a class map
+with an unknown member, `{ values: "any"; other: "any" }`), and an
+audited overlay entry pinning a statement in the old spelling; read as
+those bindings, the reserved names written as cells (`"cell(values)"`,
+`"cell(stores)"`, `"cell(onThrow)"`), each refused where no such binding
+exists; read as an ordinary type, a lookalike `Modifies` or `Fresh`
+declared outside `tools/resolvable.d.ts` (`invalid-method-effect-lookalike`).
 
 Forged controls (`pipeline/test.mts`): a frame narrower than the body's
 writes; `apart` or `storeApart` forged at a call that cannot establish it;
