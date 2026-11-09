@@ -28,17 +28,18 @@ refusal.
 GitHub holds the whole state; a local checkout is only a copy of it.
 
 - **TScert**, `cristianoc/TScert`:
-  - `bound-annotations-opus`, PR #128 into `main`: checked bound
-    annotations, the base of the chains.
-  - `chainN-tscert`, one PR per chain into `bound-annotations-opus`
-    (chain 1: `chain1-tscert`, PR #129): the TScert rules of chain N.
+  - `main` holds the checked bound annotations, the base of the chains.
+  - `chainN-tscert`, one PR per chain into `main` (chain 1:
+    `chain1-tscert`, PR #129): the TScert rules of chain N.
     Its description holds the table pairing each pretext commit with
     the TScert commit it needs, and the trust under review.
   - The chain's state, its sites left and their blockers, is its row of
     the [status table](../../../WORK.md#status) on `chainN-tscert`.
 - **Pretext**, the fork `cristianoc/pretext`:
-  - `tscert-rewrites`: the rewritten baseline, one commit.
-  - `tscert-bounds`, PR cristianoc/pretext#2 into `tscert-rewrites`:
+  - `tscert-rewrites`, PR cristianoc/pretext#1 into the fork's `main`:
+    the rewritten baseline, one commit.
+  - `tscert-bounds`, PR cristianoc/pretext#2 into `tscert-rewrites`,
+    stacked on pretext#1:
     every restored site, one commit per step, its message naming the sites
     and the functions checked.
   - Nothing goes to `chenglou/pretext`.
@@ -142,39 +143,41 @@ most 3 checks at once. No census, no `make test`, `make suite` or full
 
 ## Stacked pull requests
 
-The branches form a stack: `main` ⊂ `bound-annotations-opus` (#128) ⊂
-`chainN-tscert` (#129, …); any other branch built on #128 stacks the same
-way. A stack is set up correctly when each branch contains its parent's
-head and each pull request's base is its parent branch.
+`main` keeps linear history: a pull request lands with "Rebase and merge",
+never a merge commit, and never a squash that drops commit records. So
+every branch stays linear on top of its parent.
 
-- Make it a native GitHub stack: `gh stack link <bottom> <next> …`,
-  listing the branches (or pull request numbers) bottom to top. It pushes
-  each branch, reuses each existing pull request, opens one where there is
-  none, and sets each base to the branch below; GitHub then shows the pull
-  requests as one stack. Open a pull request yourself first to write its
-  title and description.
+- A branch that depends on another unmerged branch is based on it, and its
+  pull request's base is that branch. A native GitHub stack
+  (`gh stack link <bottom> <next> …`, bottom to top) shows them as one; a
+  stack merges only by squash here, so unstack it (`gh stack unstack <n>`)
+  before landing its bottom pull request. Branches that share a parent
+  but not each other (two children of one branch) are separate pull
+  requests on that parent, never one stack.
 - Before every push, check each pair:
   `git merge-base --is-ancestor <parent> <child>`, from `origin/main`
   upward. A pair that fails shows the parent's commits in the child's pull
   request.
-- When a parent moves (main gains commits, or a commit lands on #128),
-  merge the parent into each child, from the bottom of the stack up, and
-  push the parents before the children. Merge, not rebase: the branches
-  are pushed and shared, and a merge needs no force-push. A merge commit
-  carries a commit record like any other (Why, Outcome, Parts, Trust).
-- When a parent's pull request is rebase-merged into `main`, the child
-  holds commits main no longer has:
-  `git rebase --onto origin/main <parent's old head> <child>`, then
-  `gh pr edit <child PR> --base main` and a push with
-  `--force-with-lease`, on the owner's instruction for that push.
+- When a parent moves, rebase each child onto it, from the bottom up:
+  `git rebase --onto <parent> <parent's old head> <child>`, then push with
+  `--force-with-lease`. When the parent lands on `main`, rebase the child
+  onto `origin/main` the same way and `gh pr edit <child PR> --base main`.
+- A branch that already contains merge commits is replayed onto its base
+  (`git rebase -X theirs <base>`), then one commit restores the tested
+  tree (`git checkout <tested head> -- .`, removing files that tree lacks),
+  so the landed tree is byte-identical to the one CI tested.
+- GitHub refuses to rebase-merge a pull request of more than about 100
+  commits ("This branch can't be rebased"). Such a branch, already linear
+  on `main`, lands by fast-forwarding `main` while the owner lifts its push
+  rule.
 
 ## Merging
 
-The green steps of `chainN-tscert` merge once the owner reviewed their
-trust and #128 has merged; later steps continue on the branch. When TScert
-steps merge, the pretext steps they justify fold into the single commit
-of `tscert-rewrites`, and `tscert-bounds` is rebased on it. Each push
-needs the owner's instruction.
+The green steps of `chainN-tscert` land once the owner reviewed their
+trust; later steps continue on the branch. When TScert steps land, the
+pretext steps they justify fold into the single commit of
+`tscert-rewrites`, and `tscert-bounds` is rebased on it. Each push needs
+the owner's instruction.
 
 ## Report
 
