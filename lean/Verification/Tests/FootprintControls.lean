@@ -280,7 +280,8 @@ A cell fact about `x.k` survives a write to `class(value)` only where the
 field's class is known to be another one, and never a write to the field
 itself. -/
 
-private def noKnowledge : SepKnowledge := ⟨fun _ _ => none, ⟨fun _ => none, fun _ => none⟩, fun _ => [], []⟩
+private def noKnowledge : SepKnowledge :=
+  { cl := fun _ _ => none, stamps := ⟨fun _ => none, fun _ => none⟩, typed := fun _ => [], distinct := [] }
 private def storeK : SepKnowledge := { noKnowledge with cl := fun x k => if x = 0 ∧ k = "k" then some .store else none }
 private def cellK : FactKind := .cell ⟨0, { nul := true }, "k"⟩
 
@@ -338,5 +339,28 @@ run_cmd do
     for axiom_ in used do
       unless standard.contains axiom_ do
         throwError "{name} depends on the axiom {axiom_}"
+
+/-! ## Keeping a length across an argument-path frame
+
+The central example: `readRuns(runs)` states `value: any, store: keep` and
+`runs.openBrackets[*]: any`; the caller keeps a density fact of `flags`
+(slot 0) where `runs` (slot 1) reaches its array apart from `flags`'s store
+and that array's cells hold no store. -/
+
+private def runsFrame : Footprint :=
+  [(.cls .value, .any), (.cls .store, .keep),
+   (.path 1 ["openBrackets"] arrayStoreKey, .any), (.pathElems 1 ["openBrackets"], .any)]
+private def flagsStore : ClassEvidence := fun x k => if x = 0 ∧ k = arrayStoreKey then some .store else none
+private def runsK : SepKnowledge :=
+  { noKnowledge with
+    cl := flagsStore
+    storeApart := [(1, ["openBrackets"], 0)]
+    elemsValue := [(1, ["openBrackets"])] }
+
+#guard stable runsK (FactKind.dense 0 1).support runsFrame
+-- Without store separation the path's store may be `flags`'s.
+#guard !stable { runsK with storeApart := [] } (FactKind.dense 0 1).support runsFrame
+-- Without the element-class premise the cells may include `flags`'s store.
+#guard !stable { runsK with elemsValue := [] } (FactKind.dense 0 1).support runsFrame
 
 end Verification.Footprints.Controls

@@ -33,6 +33,10 @@ run_cmd do
         throwError "{decl} depends on the axiom {axiom_}"
   check ``Verification.SourceClaimJson.checkUnitJson_safe
   check ``Verification.Footprints.transport_sound
+  check ``Verification.Footprints.Sep.sound
+  check ``Verification.Footprints.Post.mono
+  check ``Verification.Footprints.keep_across_call
+  check ``Verification.Footprints.StoreApart.sep
   check ``Verification.CallEffects.Effect.within_iff_post
   check ``Verification.Footprints.Closed.post_extra_any
   check ``Verification.Footprints.Post.compose

@@ -124,17 +124,25 @@ theorem FactKind.support_sound {F : FactKind} {ρ h h'} (hF : F.Holds ρ h)
 /-! ## Separation -/
 
 /-- What separation may use: the class of fields' contents, provenance
-stamps, and distinct field pairs. -/
+stamps, and distinct field pairs; the paths whose store location differs from
+a slot's store location (`storeApart`, the chain1 `StoreApart`), and the
+paths whose store lists only cells holding no store (`elemsValue`). -/
 structure SepKnowledge where
   cl : ClassEvidence
   stamps : Stamps
   typed : Nat → List PropKey
   distinct : List (Nat × PropKey × Nat × PropKey)
+  storeApart : List (Nat × List String × Nat) := []
+  elemsValue : List (Nat × List String) := []
 
 def SepKnowledge.Holds (K : SepKnowledge) (μ : Nat → Nat) (ρ : Env) (h : Heap) : Prop :=
   ClassOk K.cl ρ h ∧ StampsHold K.stamps K.typed μ ρ ∧ (∀ i j, i ≤ j → μ i ≤ μ j) ∧
-    ∀ d ∈ K.distinct, ∀ l l', (fieldsOf (ρ d.1)).lookup d.2.1 = some l →
-      (fieldsOf (ρ d.2.2.1)).lookup d.2.2.2 = some l' → l ≠ l'
+    (∀ d ∈ K.distinct, ∀ l l', (fieldsOf (ρ d.1)).lookup d.2.1 = some l →
+      (fieldsOf (ρ d.2.2.1)).lookup d.2.2.2 = some l' → l ≠ l') ∧
+    (∀ a ∈ K.storeApart, ∀ l, (Region.path a.1 a.2.1 arrayStoreKey).mem ρ h l = true →
+      (Region.field a.2.2 arrayStoreKey).mem ρ h l = false) ∧
+    (∀ a ∈ K.elemsValue, ∀ l, (Region.pathElems a.1 a.2).mem ρ h l = true →
+      (Region.cls .value).mem ρ h l = true)
 
 /-- Own locations of `x` against typed field `k` of `y`, by stamps. -/
 def SepKnowledge.provenance (K : SepKnowledge) (x y : Nat) (k : PropKey) : Bool :=
@@ -145,13 +153,25 @@ def SepKnowledge.provenance (K : SepKnowledge) (x y : Nat) (k : PropKey) : Bool 
 def SepKnowledge.linked (K : SepKnowledge) (x : Nat) (k : PropKey) (y : Nat) (k' : PropKey) : Bool :=
   K.distinct.contains (x, k, y, k') || K.distinct.contains (y, k', x, k)
 
+/-- Whether a field's contents have, by class evidence, a class other than `c`. -/
+def SepKnowledge.otherClass (K : SepKnowledge) (x : Nat) (k : PropKey) (c : Cls) : Bool :=
+  match K.cl x k with
+  | some c' => c' != c
+  | none => false
+
 /-- One orientation of separation. -/
 def SepKnowledge.apart₁ (K : SepKnowledge) : Region → Region → Bool
-  | .field x k, .cls c => match K.cl x k with
-    | some c' => c' != c
-    | none => false
+  | .field x k, .cls c => K.otherClass x k c
   | .field x k, .field y k' => K.provenance x y k' || K.provenance y x k || K.linked x k y k'
   | .own x, .field y k' => K.provenance x y k'
+  | .field x k, .cell _ => K.otherClass x k .value
+  | .field x k, .inCls _ c => K.otherClass x k c
+  | .path x p k, .field y k' => k == arrayStoreKey && k' == arrayStoreKey &&
+      K.storeApart.contains (x, p, y)
+  | .pathElems x p, .field y k => K.elemsValue.contains (x, p) && K.cl y k == some .store
+  | .pathElems x p, .cls .store => K.elemsValue.contains (x, p)
+  | .inCls _ c, .cls c' => c != c'
+  | .inCls r _, s => K.apart₁ r s
   | _, _ => false
 
 def SepKnowledge.apart (K : SepKnowledge) (r s : Region) : Bool := K.apart₁ r s || K.apart₁ s r
@@ -175,36 +195,95 @@ private theorem provenance_sound {K : SepKnowledge} {μ ρ h x y k l l'} (hK : K
       exact stamps_separate (r := .own x) (h := h) hK.2.1 hK.2.2.1 ha hb hm (.inr rfl)
         (by simpa [Region.mem] using hl) hk hl'
 
-private theorem apart₁_sound {K : SepKnowledge} {μ ρ h r s l} (hK : K.Holds μ ρ h)
-    (ha : K.apart₁ r s = true) (hr : r.mem ρ h l = true) (hs : s.mem ρ h l = true) : False := by
-  cases r <;> cases s <;> simp only [SepKnowledge.apart₁] at ha <;> try contradiction
-  case field.cls x k c =>
-    cases hc : K.cl x k with
-    | none => simp [hc] at ha
-    | some c' =>
-      simp only [hc, bne_iff_ne, ne_eq] at ha
-      simp only [Region.mem, beq_iff_eq] at hr
-      simp only [Region.mem] at hs
-      split at hs
-      · rename_i v hv
-        have hlt := (List.getElem?_eq_some_iff.mp hv).1
-        have hc' := hK.1 x k c' l hc hr hlt
-        simp only [Region.mem, hv] at hc'
-        exact cls_disjoint ha hc' hs
-      · cases hs
-  case field.field x k y k' =>
-    simp only [Bool.or_eq_true] at ha
-    simp only [Region.mem, beq_iff_eq] at hr hs
-    rcases ha with (ha | ha) | ha
-    · exact provenance_sound hK ha (lookup_mem_snd hr) hs rfl
-    · exact provenance_sound hK ha (lookup_mem_snd hs) hr rfl
-    · simp only [SepKnowledge.linked, Bool.or_eq_true, List.contains_iff_mem] at ha
-      rcases ha with ha | ha
-      · exact hK.2.2.2 _ ha l l hr hs rfl
-      · exact hK.2.2.2 _ ha l l hs hr rfl
-  case own.field x y k' =>
-    simp only [Region.mem, beq_iff_eq] at hs
-    exact provenance_sound hK ha (by simpa [Region.mem] using hr) hs rfl
+/-- A field whose contents have, by class evidence, a class other than `c`
+holds no contents of class `c`. -/
+private theorem otherClass_sound {K : SepKnowledge} {μ ρ h x k c l} (hK : K.Holds μ ρ h)
+    (ho : K.otherClass x k c = true) (hr : (Region.field x k).mem ρ h l = true)
+    (hs : (Region.cls c).mem ρ h l = true) : False := by
+  unfold SepKnowledge.otherClass at ho
+  cases hc : K.cl x k with
+  | none => simp [hc] at ho
+  | some c' =>
+    simp only [hc, bne_iff_ne, ne_eq] at ho
+    simp only [Region.mem, beq_iff_eq] at hr
+    simp only [Region.mem] at hs
+    split at hs
+    · rename_i v hv
+      have hlt := (List.getElem?_eq_some_iff.mp hv).1
+      have hc' := hK.1 x k c' l hc hr hlt
+      simp only [Region.mem, hv] at hc'
+      exact cls_disjoint ho hc' hs
+    · cases hs
+
+private theorem inCls_cls {ρ h r c l} (hm : (Region.inCls r c).mem ρ h l = true) :
+    r.mem ρ h l = true ∧ (Region.cls c).mem ρ h l = true := by
+  simp only [Region.mem, Bool.and_eq_true] at hm
+  exact ⟨hm.1, by simpa [Region.mem] using hm.2⟩
+
+private theorem apart₁_sound {K : SepKnowledge} {μ ρ h l} (hK : K.Holds μ ρ h) :
+    ∀ {r s : Region}, K.apart₁ r s = true → r.mem ρ h l = true → s.mem ρ h l = true → False := by
+  intro r
+  induction r with
+  | inCls r c ih =>
+    intro s ha hr hs
+    obtain ⟨hr, hc⟩ := inCls_cls hr
+    cases s
+    case cls c' =>
+      simp only [SepKnowledge.apart₁, bne_iff_ne, ne_eq] at ha
+      simp only [Region.mem] at hc hs
+      split at hc
+      · rename_i v hv; rw [hv] at hs; exact cls_disjoint ha hc hs
+      · cases hc
+    all_goals exact ih (by simpa [SepKnowledge.apart₁] using ha) hr hs
+  | field x k =>
+    intro s ha hr hs
+    cases s <;> (try simp only [SepKnowledge.apart₁] at ha) <;> try contradiction
+    case cls c => exact otherClass_sound hK ha hr hs
+    case cell b => exact otherClass_sound hK ha hr (by simpa [Region.mem] using hs)
+    case inCls r c => exact otherClass_sound hK ha hr (inCls_cls hs).2
+    case field y k' =>
+      simp only [Bool.or_eq_true] at ha
+      simp only [Region.mem, beq_iff_eq] at hr hs
+      rcases ha with (ha | ha) | ha
+      · exact provenance_sound hK ha (lookup_mem_snd hr) hs rfl
+      · exact provenance_sound hK ha (lookup_mem_snd hs) hr rfl
+      · simp only [SepKnowledge.linked, Bool.or_eq_true, List.contains_iff_mem] at ha
+        rcases ha with ha | ha
+        · exact hK.2.2.2.1 _ ha l l hr hs rfl
+        · exact hK.2.2.2.1 _ ha l l hs hr rfl
+  | own x =>
+    intro s ha hr hs
+    cases s <;> (try simp only [SepKnowledge.apart₁] at ha) <;> try contradiction
+    case field y k' =>
+      simp only [Region.mem, beq_iff_eq] at hs
+      exact provenance_sound hK ha (by simpa [Region.mem] using hr) hs rfl
+  | path x p k =>
+    intro s ha hr hs
+    cases s <;> (try simp only [SepKnowledge.apart₁] at ha) <;> try contradiction
+    case field y k' =>
+      simp only [Bool.and_eq_true, beq_iff_eq, List.contains_iff_mem] at ha
+      obtain ⟨⟨rfl, rfl⟩, ha⟩ := ha
+      have := hK.2.2.2.2.1 _ ha l hr
+      rw [hs] at this; cases this
+  | pathElems x p =>
+    intro s ha hr hs
+    have hv := fun hm => hK.2.2.2.2.2 (x, p) hm l hr
+    cases s <;> (try simp only [SepKnowledge.apart₁] at ha) <;> try contradiction
+    case field y k =>
+      simp only [Bool.and_eq_true, List.contains_iff_mem, beq_iff_eq] at ha
+      exact otherClass_sound (c := .value) hK (by simp [SepKnowledge.otherClass, ha.2]) hs (hv ha.1)
+    case cls c =>
+      cases c
+      · simp only [SepKnowledge.apart₁, List.contains_iff_mem] at ha
+        have h₁ := hv ha
+        simp only [Region.mem] at h₁ hs
+        split at h₁
+        · rename_i v hv'; rw [hv'] at hs; exact cls_disjoint (c := .value) (c' := .store) (by decide) h₁ hs
+        · cases h₁
+      · simp [SepKnowledge.apart₁] at ha
+  | elems | cls | all | pathOwn | cell =>
+    intro s ha
+    simp [SepKnowledge.apart₁] at ha
 
 /-- **Separation is sound**: apart regions share no location. -/
 theorem Sep.sound {K : SepKnowledge} {μ ρ h r s l} (hK : K.Holds μ ρ h)
@@ -243,6 +322,54 @@ theorem frame_sound {K : SepKnowledge} {fs Φ μ ρ h h'} (hK : K.Holds μ ρ h)
   intro F hF
   obtain ⟨hm, hs⟩ := List.mem_filter.mp hF
   exact FactKind.support_sound (hf F hm) (stable_sound hs hK hp)
+
+/-! ## A callee's frame at the caller's slots -/
+
+/-- A region with its slots renamed by `σ`: a callee's position `i` read as
+the caller's slot `σ i`. -/
+def Region.rename (σ : Nat → Nat) : Region → Region
+  | .field x k => .field (σ x) k
+  | .own x => .own (σ x)
+  | .elems x => .elems (σ x)
+  | .cls c => .cls c
+  | .all => .all
+  | .path x p k => .path (σ x) p k
+  | .pathOwn x p => .pathOwn (σ x) p
+  | .pathElems x p => .pathElems (σ x) p
+  | .cell b => .cell b
+  | .inCls r c => .inCls (r.rename σ) c
+
+theorem Region.mem_rename (σ : Nat → Nat) (ρ : Env) (h : Heap) (l : Nat) :
+    ∀ r : Region, (r.rename σ).mem ρ h l = r.mem (fun i => ρ (σ i)) h l := by
+  intro r
+  induction r with
+  | inCls r c ih => simp only [Region.rename, Region.mem, ih]
+  | _ => rfl
+
+def Footprint.rename (σ : Nat → Nat) (Φ : Footprint) : Footprint := Φ.map fun e => (e.1.rename σ, e.2)
+
+/-- A footprint at the values the caller's slots hold is the renamed
+footprint at the caller's environment. -/
+theorem Post.rename {Φ : Footprint} {σ : Nat → Nat} {ρ env : Env} {h h' : Heap}
+    (hσ : ∀ i, ρ (σ i) = env i) (hp : Post Φ env h h') : Post (Φ.rename σ) ρ h h' := by
+  have henv : (fun i => ρ (σ i)) = env := funext hσ
+  refine ⟨hp.1, fun l v hv => ?_⟩
+  obtain ⟨v', hv', ha⟩ := hp.2 l v hv
+  refine ⟨v', hv', ?_⟩
+  rcases ha with h | ⟨e, he, hm, hh⟩
+  · exact .inl h
+  · refine .inr ⟨(e.1.rename σ, e.2), List.mem_map.mpr ⟨e, he, rfl⟩, ?_, hh⟩
+    rw [Region.mem_rename, henv]; exact hm
+
+/-- **Keeping a fact across a call.** A call meeting its frame at its
+positions' values, each the value of a caller slot, keeps every fact whose
+support passes the stability check against the renamed frame under the
+caller's separation knowledge. -/
+theorem keep_across_call {K : SepKnowledge} {F : FactKind} {Φ : Footprint} {σ : Nat → Nat}
+    {μ : Nat → Nat} {ρ env : Env} {h h' : Heap}
+    (hσ : ∀ i, ρ (σ i) = env i) (hp : Post Φ env h h') (hK : K.Holds μ ρ h)
+    (hs : stable K F.support (Φ.rename σ) = true) (hF : F.Holds ρ h) : F.Holds ρ h' :=
+  FactKind.support_sound hF (stable_sound hs hK (Post.rename hσ hp))
 
 /-- The class evidence a density fact supplies: its store holds a store. -/
 def denseClass (x : Nat) : ClassEvidence := fun y k => if y = x ∧ k = arrayStoreKey then some .store else none
