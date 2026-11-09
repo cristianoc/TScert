@@ -171,6 +171,21 @@ model, merges it when confident the change is correct and sound, a new
 rule's or a change of trust's soundness included, and asks for a review only
 when it is not.
 
+### How a pull request lands
+
+`main` keeps linear history: a pull request lands by rebase and merge.
+GitHub requires one check before a merge, `render`, the Semantic Diff job
+([semantic-diff.yml](.github/workflows/semantic-diff.yml)): it renders the
+commit records, checks each with the `commit-msg` hook, and builds every
+changed deck. The suites gate nothing on GitHub. The CI workflow's `test`
+job ([ci.yml](.github/workflows/ci.yml)) runs `make test` on each pull
+request and on each push to `main`, and the census runs on each push to
+`main`; a pull request, auto-merged once `render` passes, can land before
+`test` finishes or after it fails. So a merged pull request is not
+evidence that its suites passed: whoever reports a change as tested names
+the `test` run or the local `make test` it read, and a `test` failure on
+`main` is fixed on `main` at once.
+
 ### Working in a separate git worktree
 
 A new worktree has an empty `lean/.lake`, and its first

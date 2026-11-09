@@ -138,14 +138,17 @@ Narrow while working: `run-cases.mts <pattern>` for the cases a rule
 touches, the Lean module changed, `dev/check-functions.mts` for the pretext
 functions touched and their callers. All of pretext, every file with `*`,
 before a step's commit when its TScert rule could reach other files. At
-most 3 checks at once. No census, no `make test`, `make suite` or full
-`run-cases.mts`: those run in CI on the PR.
+most 3 checks at once. No census, no `make test` or full `run-cases.mts`:
+CI's `test` job runs `make test` on the PR and again on `main`. It gates no
+merge ([how a pull request lands](../../../CLAUDE.md#how-a-pull-request-lands)),
+so a step is reported as tested only with the `test` run it names.
 
 ## Stacked pull requests
 
-`main` keeps linear history: a pull request lands with "Rebase and merge",
-never a merge commit, and never a squash that drops commit records. So
-every branch stays linear on top of its parent.
+A pull request lands by rebase and merge
+([how a pull request lands](../../../CLAUDE.md#how-a-pull-request-lands)),
+never by a merge commit or a squash that drops commit records, so every
+branch stays linear on top of its parent.
 
 - A branch that depends on another unmerged branch is based on it, and its
   pull request's base is that branch. A native GitHub stack
@@ -168,8 +171,8 @@ every branch stays linear on top of its parent.
   so the landed tree is byte-identical to the one CI tested.
 - GitHub refuses to rebase-merge a pull request of more than about 100
   commits ("This branch can't be rebased"). Such a branch, already linear
-  on `main`, lands by fast-forwarding `main` while the owner lifts its push
-  rule.
+  on `main`, lands by fast-forwarding `main`, which only the owner, on the
+  ruleset's bypass list, can push.
 
 ## Merging
 
