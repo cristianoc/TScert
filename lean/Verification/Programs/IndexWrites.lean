@@ -268,7 +268,7 @@ theorem indexed_sound {k : Knowledge} {a : Nat} {ρ h} (hc : indexed k a = true)
   | bound _ _ _ => rw [hfact] at hf; cases hf
   | int _ => rw [hfact] at hf; cases hf
   | linear _ => rw [hfact] at hf; cases hf
-  | either _ _ | guarded _ _ _ _ | element _ _ _ | every _ _ _ _ => rw [hfact] at hf; cases hf
+  | either _ _ | guarded _ _ _ _ | element _ _ _ | every _ _ _ _ | apart _ _ => rw [hfact] at hf; cases hf
 
 /-- The arrays whose store's length a slot of `n`'s class holds, by unconditional ats. -/
 def lengthsOf (k : Knowledge) (n : Nat) : List Nat :=
@@ -301,7 +301,7 @@ theorem lengthsOf_sound {k : Knowledge} {n x : Nat} {ρ h} (hx : x ∈ lengthsOf
     | bound _ _ _ => rw [hfact] at hm; cases hm
     | int _ => rw [hfact] at hm; cases hm
     | linear _ => rw [hfact] at hm; cases hm
-    | either _ _ | guarded _ _ _ _ | element _ _ _ | every _ _ _ _ => rw [hfact] at hm; cases hm
+    | either _ _ | guarded _ _ _ _ | element _ _ _ | every _ _ _ _ | apart _ _ => rw [hfact] at hm; cases hm
   · cases hm
 
 /-- The arrays a slot of `s`'s class was read from as their store: read links
@@ -776,8 +776,9 @@ def linearAtoms (G : NormalGraph ι) (Γ : List (Ty ι)) (k : Knowledge) : Tm �
           match op with
           | .add => sum (fa ++ fb) (ca + cb)
           | .sub => sum (fa ++ fb.scale (-1)) (ca - cb)
-          | .mul => if fa = [] then sum (fb.scale ca) (ca * cb)
-            else if fb = [] then sum (fa.scale cb) (ca * cb) else []
+          -- A zero factor gives the constant `0`, a form naming no slot.
+          | .mul => if fa = [] then sum (if ca = 0 then [] else fb.scale ca) (ca * cb)
+            else if fb = [] then sum (if cb = 0 then [] else fa.scale cb) (ca * cb) else []
           | .shr => if fb = [] ∧ 0 ≤ cb ∧ cb < 32 ∧ smallOperand k fa ca then bitAtoms op fa ca cb else []
           | .bitAnd => if fb = [] ∧ 0 ≤ cb ∧ cb < 2 ^ 31 ∧ smallOperand k fa ca then bitAtoms op fa ca cb else []
           | .lt | .le | .gt | .ge => compareAtoms op (fa ++ fb.scale (-1)) (ca - cb)
@@ -1248,19 +1249,27 @@ theorem linearAtoms_holds [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty �
             split
             · rename_i hc
               subst fa
-              exact hsum (fb.scale ca) (ca * cb)
+              exact hsum (if ca = 0 then [] else fb.scale ca) (ca * cb)
                 ((Linear.Form.eval (valuation ρ) [] + ca) * (Linear.Form.eval (valuation ρ) fb + cb)) _
-                (by simpa only [scale_vars] using hvb)
-                (by simp only [Linear.Form.eval_scale, Linear.Form.eval, Int.zero_add, Int.mul_add])
+                (by split
+                    · simp
+                    · simpa only [scale_vars] using hvb)
+                (by split
+                    · rename_i h0; subst h0; simp [Linear.Form.eval]
+                    · simp only [Linear.Form.eval_scale, Linear.Form.eval, Int.zero_add, Int.mul_add])
                 (fun hr => SafeIntegers.mul_safe hsa hsb hr)
             · split
               · rename_i hc
                 subst fb
-                exact hsum (fa.scale cb) (ca * cb)
+                exact hsum (if cb = 0 then [] else fa.scale cb) (ca * cb)
                   ((Linear.Form.eval (valuation ρ) fa + ca) * (Linear.Form.eval (valuation ρ) [] + cb)) _
-                  (by simpa only [scale_vars] using hva)
-                  (by simp only [Linear.Form.eval_scale, Linear.Form.eval, Int.zero_add, Int.add_mul];
-                      rw [Int.mul_comm cb])
+                  (by split
+                      · simp
+                      · simpa only [scale_vars] using hva)
+                  (by split
+                      · rename_i h0; subst h0; simp [Linear.Form.eval]
+                      · simp only [Linear.Form.eval_scale, Linear.Form.eval, Int.zero_add, Int.add_mul]
+                        rw [Int.mul_comm cb])
                   (fun hr => SafeIntegers.mul_safe hsa hsb hr)
               · exact indexHolds_nil _ _
           · -- signed right shift
@@ -1557,7 +1566,7 @@ theorem boundAtom_sound {k : Knowledge} {a i : Nat} {strict : Bool} {ρ h} (hc :
   | length _ _ => rw [hfact] at hf; cases hf
   | int _ => rw [hfact] at hf; cases hf
   | linear _ => rw [hfact] at hf; cases hf
-  | either _ _ | guarded _ _ _ _ | element _ _ _ | every _ _ _ _ => rw [hfact] at hf; cases hf
+  | either _ _ | guarded _ _ _ _ | element _ _ _ | every _ _ _ _ | apart _ _ => rw [hfact] at hf; cases hf
 
 /-- Whether the linear facts bound a slot `i` by the length of the store of an
 array of `a`'s class (`HeapKnowledge.lengthBound`). -/
@@ -1886,7 +1895,7 @@ theorem rawPartners_sound {G : NormalGraph ι} {Γ : List (Ty ι)} {k : Knowledg
     · cases hm
 
 /-- The region facts an allocation states (`region-alloc`): a literal's
-store, of slots, apart from every array slot; the empty literal's object
+store, of slots, apart from every array slot; its combined object allocation
 likewise; and an array object holding the raw store in slot 0, apart from
 every array slot the raw store is known apart from. -/
 def regionAtoms (G : NormalGraph ι) (Γ : List (Ty ι)) (k : Knowledge) : Tm → List IndexAtom
@@ -1897,8 +1906,9 @@ def regionAtoms (G : NormalGraph ι) (Γ : List (Ty ι)) (k : Knowledge) : Tm �
     if s == arrayStoreKey && p == CallArguments.protoField && decide (proto < Γ.length) && storeSlot G Γ 0 then
       (rawPartners G Γ k).map fun y => { fact := .apart 0 (y + 1) }
     else []
-  | .letE (.arrLit []) (.makeAt .absent [s, p] [.var 0, .var proto]) =>
-    if s == arrayStoreKey && p == CallArguments.protoField && decide (proto < Γ.length + 1) then
+  | .letE (.arrLit es) (.makeAt .absent [s, p] [.var 0, .var proto]) =>
+    if s == arrayStoreKey && p == CallArguments.protoField && decide (proto < Γ.length + 1) &&
+        appendSlots Γ.length es && decide (es.length ≤ maxArrayLength) then
       freshApart G Γ
     else []
   | _ => []
@@ -2017,45 +2027,55 @@ theorem regionAtoms_holds [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty �
         · have := hbelow m hm; omega
       · exact hsep l (.inr hl) m hm
     · exact none_holds
-  · rename_i s p proto
+  · rename_i es s p proto
     split
     · rename_i hp
-      simp only [Bool.and_eq_true, beq_iff_eq] at hp
-      obtain ⟨⟨rfl, rfl⟩, hp⟩ := hp
-      have hproto : proto < Γ.length + 1 := of_decide_eq_true hp
-      have run : Steps 3 h (instantiate 0 ρ (.letE (.arrLit [])
+      simp only [Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq] at hp
+      obtain ⟨⟨⟨⟨rfl, rfl⟩, hproto⟩, hes⟩, hmax⟩ := hp
+      let vs := es.map (instantiate 0 ρ)
+      have hvs : ∀ v ∈ vs, isVal v = true := by
+        simpa only [vs, instantiateArgs_eq_map] using appendSlots_values
+          (fun i hi => (meaning_value (he.2 i _ (List.getElem?_eq_getElem hi))).1) hes
+      have hlen : vs.length = es.length := by simp [vs]
+      let store := Tm.arr (elemSlots h.length vs.length)
+      let heap := h ++ vs
+      have hstore : isVal store = true := rfl
+      have run : Steps 3 h (instantiate 0 ρ (.letE (.arrLit es)
           (.makeAt .absent [arrayStoreKey, CallArguments.protoField] [.var 0, .var proto])))
-          (h ++ [.arr [], (push (.arr []) ρ) proto] ++ [.nul])
-          (.objAt (slots h.length [arrayStoreKey, CallArguments.protoField]) .absent (h.length + 2)) := by
+          (heap ++ [store, (push store ρ) proto] ++ [.nul])
+          (.objAt (slots heap.length [arrayStoreKey, CallArguments.protoField]) .absent (heap.length + 2)) := by
         simp only [instantiate, instantiateArgs_eq_map, List.map_cons, List.map_nil]
-        apply Steps.next (Step.letC (Step.arrAlloc (by simp) (by simp [maxArrayLength])))
-        simp only [List.append_nil, elemSlots]
-        apply Steps.next (Step.letV rfl)
-        have hb := instantiate_beta ρ he.1 (.arr [])
+        apply Steps.next (Step.letC (Step.arrAlloc hvs (by omega)))
+        apply Steps.next (Step.letV hstore)
+        have hb := instantiate_beta ρ he.1 store
           (.makeAt .absent [arrayStoreKey, CallArguments.protoField] [.var 0, .var proto]) 0
         simp only [instantiate, instantiateArgs_eq_map, List.map_cons, List.map_nil] at hb
-        simp only [List.length_nil, List.range_zero, List.map_nil]
         rw [hb]
         simp only [Nat.not_lt_zero, if_false, Nat.sub_zero]
         apply Steps.next (Step.makeFields ?_ rfl) Steps.refl
         intro v hv
         simp only [List.mem_cons, List.not_mem_nil, or_false] at hv
         rcases hv with rfl | rfl
-        · rfl
+        · exact hstore
         · cases proto with
-          | zero => rfl
-          | succ i => exact hval i (by omega)
-      refine weaken (fun heap u hq => ?_) (steps_run run rfl hs)
+          | zero => exact hstore
+          | succ i => exact (meaning_value (he.2 i _ (List.getElem?_eq_getElem (by omega)))).1
+      refine weaken (fun heap' u hq => ?_) (steps_run run rfl hs)
       obtain ⟨hq, rfl, rfl⟩ := hq
       refine ⟨hq, ?_⟩
-      have heq : h ++ [Tm.arr [], (push (.arr []) ρ) proto] ++ [Tm.nul] =
-          h ++ ([Tm.arr [], (push (.arr []) ρ) proto] ++ [Tm.nul]) := List.append_assoc _ _ _
-      rw [heq]
-      refine freshApart_holds (s := some h.length) (xs := []) he hh (.inr ⟨h.length, rfl,
-        by simp [Footprints.storeOf, Footprints.fieldsOf, slots], by simp⟩) fun l hl => ?_
-      rcases hl with hl | hl
-      · cases hl; omega
-      · simp at hl
+      have hr : RegionOf (h ++ (vs ++ [store, (push store ρ) proto] ++ [.nul]))
+          (.objAt (slots heap.length [arrayStoreKey, CallArguments.protoField]) .absent (heap.length + 2))
+          (some heap.length) (elemSlots h.length vs.length) := by
+        refine .inr ⟨heap.length, rfl, ?_, ?_⟩
+        · simp [Footprints.storeOf, Footprints.fieldsOf, slots]
+        · rw [show h ++ (vs ++ [store, (push store ρ) proto] ++ [.nul]) =
+              heap ++ [store, (push store ρ) proto] ++ [.nul] by simp [heap, List.append_assoc]]
+          simp [store]
+      have hf := freshApart_holds he hh hr (fun l hl => by
+        rcases hl with hl | hl
+        · cases hl; simp [heap]
+        · exact elemSlots_above _ _ l hl)
+      simpa only [heap, List.append_assoc] using hf
     · exact none_holds
   · exact none_holds
 
@@ -2092,7 +2112,7 @@ def termApart (k : Knowledge) (a : Nat) (t : Term) : Bool :=
     | .view => false
 
 /-- The facts a write at the store of `a`'s array keeps (`region-write`,
-`every-write`): a region fact one of whose sides is the written array and
+`every-apart-write`): a region fact one of whose sides is the written array and
 the other an array slot apart from it, or both of whose sides are apart from
 it; and a quantified fact over an array apart from it whose bound and free
 terms read nothing of its region. -/
@@ -2105,6 +2125,7 @@ def writeAtoms (G : NormalGraph ι) (Γ : List (Ty ι)) (k : Knowledge) (a : Nat
     | .every s [] stop body => apartFrom k a s && termApart k a stop &&
         body.all fun F => F.vars.all fun b => match b with
           | .free t => termApart k a t
+          | .project _ _ => false
           | _ => true
     | _ => false
 
@@ -2219,7 +2240,12 @@ theorem writeAtoms_after [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι
     simp only [readPath, Option.some.injEq] at hwp
     subst hwp
     obtain ⟨se, ys, hre, -, hsep⟩ := untouched hw hu (apartFrom_sound hs hk)
-    obtain ⟨e1, e2⟩ := regionOf_unique hre (.inr ⟨st, rfl, hst, hls⟩)
+    -- A region is an array's: its elements are its store's.
+    have hst0 : Footprints.storeOf (ρ s) = some st := by
+      rcases hre with ⟨-, hv⟩ | ⟨st0, -, hs0, -⟩
+      · rw [hv] at hst; simp [elementsOf, Footprints.storeOf, Footprints.fieldsOf] at hst
+      · rw [elementsOf_store hs0] at hst; cases hst; exact hs0
+    obtain ⟨e1, e2⟩ := regionOf_unique hre (.inr ⟨st, rfl, hst0, hls⟩)
     rw [e1, e2] at hsep
     have hkeep : ∀ l, InRegion (some st) ls l → ∀ v, h[l]? = some v → h'[l]? = some v := by
       intro l hl v hv
@@ -2235,18 +2261,21 @@ theorem writeAtoms_after [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι
       rw [hst] at hst'; cases hst'
       exact hkeep st (.inl rfl) _ hls'
     · intro z' hz'; exact termApart_kept hw hk hu hstop hz'
-    · intro w st' ls' i z' hw' hst' hls' hel
+    · intro w st' ls' hw' hst' hls' F hF i b hb z' hz'
       simp only [readPath, Option.some.injEq] at hw'
       subst hw'
       rw [hst] at hst'; cases hst'
       rw [hls] at hls'; cases hls'
-      exact elementInt_frame hel fun l v hl hv => hkeep l (.inr (List.mem_of_getElem? hl)) v hv
-    · intro F hF t ht z' hz'
-      exact termApart_kept hw hk hu (hbody F hF _ ht) hz'
+      cases b with
+      | index => exact hz'
+      | free t => exact termApart_kept hw hk hu (hbody F hF _ hb) hz'
+      | elem => exact elementInt_frame hz' fun l v hl hv => hkeep l (.inr (List.mem_of_getElem? hl)) v hv
+      | offset d => exact elementInt_frame hz' fun l v hl hv => hkeep l (.inr (List.mem_of_getElem? hl)) v hv
+      | project k p => have := hbody F hF (.project k p) hb; contradiction
   all_goals (rw [hfact] at hsel; cases hsel)
 
 /-- A write at the store of `a`'s array keeps `writeAtoms` (`region-write`,
-`every-write`) in each heap it returns in. -/
+`every-apart-write`) in each heap it returns in. -/
 theorem writeAtoms_holds [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)} {Ξ T : Fam} {k : Knowledge}
     {a : Nat} {ρ n W h} {flds : List (PropKey × Nat)} {cd : CallCode} {oid target : Nat}
     {xs : List (Option Nat)} {b : UInt64} {value : Val}
@@ -2483,12 +2512,14 @@ theorem indexHolds_append {as bs : List HeapKnowledge.IndexAtom} {ρ h}
     (base : Checker G images) : Checker G images where
   run := fun j k e codes sums => (base.run j k e codes sums).map fun out =>
     { out with indices := out.indices ++ IndexWrites.literalArrayAtoms j.context.length j.term ++
-        (if (IndexWrites.literalArrayAtoms j.context.length j.term).isEmpty then [] else HeapKnowledge.shiftIndices k.indices)
+        (if (IndexWrites.literalArrayAtoms j.context.length j.term).isEmpty then [] else HeapKnowledge.shiftIndices k.indices) ++
+        IndexWrites.regionAtoms G j.context k j.term
                separation := if (IndexWrites.literalArrayAtoms j.context.length j.term).isEmpty then out.separation
         else HeapSeparation.allocate k.separation j.context.length (contractFields G j.context) }
   select := fun j k e codes sums => (base.select j k e codes sums).map fun out =>
     { out with indices := out.indices ++ IndexWrites.literalArrayAtoms j.context.length j.term ++
-        (if (IndexWrites.literalArrayAtoms j.context.length j.term).isEmpty then [] else HeapKnowledge.shiftIndices k.indices)
+        (if (IndexWrites.literalArrayAtoms j.context.length j.term).isEmpty then [] else HeapKnowledge.shiftIndices k.indices) ++
+        IndexWrites.regionAtoms G j.context k j.term
                separation := if (IndexWrites.literalArrayAtoms j.context.length j.term).isEmpty then out.separation
         else HeapSeparation.allocate k.separation j.context.length (contractFields G j.context) }
   sound := by
@@ -2496,17 +2527,18 @@ theorem indexHolds_append {as bs : List HeapKnowledge.IndexAtom} {ρ h}
     simp only [CheckResult.map, Option.map_eq_some_iff] at hc
     obtain ⟨out0, hrun, rfl⟩ := hc
     have hs := base.sound hrun hcodes hsums he hk hw hh
-    refine weaken (fun _ _ hq => ⟨hq.1.1, hq.1.2.1, hq.1.2.2.1, ?_,
-      hq.1.2.2.2.2.1, indexHolds_append (indexHolds_append hq.1.2.2.2.2.2 hq.2.1) ?_⟩)
-      (IndexWrites.literalArrayAtoms_holds he hk hh hs)
+    refine weaken (fun _ _ hr =>
+      let hq := hr.1; ⟨hq.1.1, hq.1.2.1, hq.1.2.2.1, ?_,
+      hq.1.2.2.2.2.1, indexHolds_append (indexHolds_append (indexHolds_append hq.1.2.2.2.2.2 hq.2.1) ?_) hr.2⟩)
+      (IndexWrites.regionAtoms_holds he hk hh (IndexWrites.literalArrayAtoms_holds he hk hh hs))
     · split
-      · exact hq.1.2.2.2.1
-      · have hp := hq.2.2
+      · exact hr.1.1.2.2.2.1
+      · have hp := hr.1.2.2
         simp only [*, Bool.false_eq_true, if_false] at hp
         exact hp.1
     · split
       · exact HeapKnowledge.indexHolds_nil _ _
-      · have hp := hq.2.2
+      · have hp := hr.1.2.2
         simp only [*, Bool.false_eq_true, if_false] at hp
         exact hp.2
 

@@ -28,6 +28,7 @@ def invariantFact (root : Nat → Option (Nat × List String)) :
     let (slot, path) ← root p
     pure (if path.isEmpty then .int slot else .linear (.le [(⟨.value, slot, path⟩, 1)] (2 ^ 53 - 1)))
   | .linear f => (f.mapVars (invariantTerm root)).map .linear
+  | .either A B => do pure (.either (← invariantFact root A) (← invariantFact root B))
   | .guarded p path tag body => do
     let (slot, pre) ← root p
     pure (.guarded slot (pre ++ path) tag (← invariantFact root body))
@@ -38,6 +39,8 @@ def invariantFact (root : Nat → Option (Nat × List String)) :
       | .free t => (invariantTerm root t).map HeapKnowledge.Bound.free
       | .index => some .index
       | .elem => some .elem
+      | .offset d => some (.offset d)
+      | .project k p => some (.project k p)
     pure (.every slot (pre ++ path) stop body)
   | f => f.mapM fun p => do
     let (slot, path) ← root p
@@ -81,33 +84,6 @@ private def reachablePoints (graph : SourceFlow.Graph) (id : Nat) : List String 
       work := later
   return found.reverse.map (SourceFlow.pointId graph.owner)
 
-/-- Clause terms use a binding's value, including the `value` field of a
-cell. Integer claims over a cell are defined linear terms, as entry facts
-are; all array paths, bounds, guards and free body terms use the same map. -/
-private def invariantFact (root : Nat → Option (Nat × List String))
-    (F : HeapKnowledge.IndexFact) : Option HeapKnowledge.IndexFact :=
-  let term := fun (t : HeapKnowledge.Term) => do
-    let (s, p) ← root t.slot
-    pure { t with slot := s, path := p ++ t.path }
-  match F with
-  | .int x => do
-    let (s, p) ← root x
-    pure (if p.isEmpty then .int s else .linear (.le [(⟨.value, s, p⟩, 1)] (2 ^ 53 - 1)))
-  | .linear G => (G.mapVars term).map .linear
-  | .guarded x p tag G => do
-    let (s, pre) ← root x
-    pure (.guarded s (pre ++ p) tag (← invariantFact root G))
-  | .every x p stop body => do
-    let (s, pre) ← root x
-    let body ← body.mapM fun G => G.mapVars fun
-      | .index => some .index
-      | .elem => some .elem
-      | .free t => (term t).map .free
-    pure (.every s (pre ++ p) (← term stop) body)
-  | F => F.mapM fun x => do
-    let (s, p) ← root x
-    if p.isEmpty then some s else none
-
 /-- Elaborate one immutable control-flow action. Reserved entries permit
     cyclic edges; every entry retains the context required of its predecessors. -/
 @[nospecialize] private partial def clauseAtoms (scope : List (ScopeBinding Tree)) (source : Span) :
@@ -133,33 +109,6 @@ private def invariantFact (root : Nat → Option (Nat × List String))
         | .value, _ :: _ => .linear (.le [(t, 1)] (2 ^ 53 - 1))
         | _, _ => .linear (.le [(t, -1)] 0)) } : HeapKnowledge.IndexAtom))
     else pure [({ fact := wrap (.linear (.le form bound)) } : HeapKnowledge.IndexAtom)]
-
-/-- Interpret a written loop clause through each binding's value or cell path. -/
-private def invariantFact (scope : List (ScopeBinding Tree)) (names : List String)
-    (F : HeapKnowledge.IndexFact) : Option HeapKnowledge.IndexFact := do
-  let root := fun s p => do
-    let name ← names[s]?
-    let (x, pre) ← termRoot scope name
-    pure (x, pre ++ p)
-  let term := fun (t : HeapKnowledge.Term) => do
-    let (x, p) ← root t.slot t.path
-    pure ({ t with slot := x, path := p } : HeapKnowledge.Term)
-  match F with
-  | .int x =>
-    let (x, p) ← root x []
-    pure (if p.isEmpty then .int x else .linear (.le [(⟨.value, x, p⟩, 1)] (2^53-1)))
-  | .linear L => pure (.linear (← L.mapVars term))
-  | .either A B => pure (.either (← invariantFact scope names A) (← invariantFact scope names B))
-  | .guarded x p tag B =>
-    let (x,p) ← root x p
-    pure (.guarded x p tag (← invariantFact scope names B))
-  | .every x p stop body =>
-    let (x,p) ← root x p
-    let body ← body.mapM fun C => C.mapVars fun v => match v with
-      | .free t => HeapKnowledge.Bound.free <$> term t
-      | v => some v
-    pure (.every x p (← term stop) body)
-  | F => F.mapM (fun p => names[p]? >>= valueSlot scope)
 
 @[nospecialize] private partial def flowNode (recursive : RecursiveLowering) (graph : SourceFlow.Graph)
     (ambient : List (ScopeBinding Tree)) (base : SourceClaims.Function Tree)
@@ -461,10 +410,10 @@ private def invariantFact (scope : List (ScopeBinding Tree)) (names : List Strin
   -- into the head establishes.
   let invariant ← match node.action with
     | .branch (.loop _ _ _ _ (names, facts)) _ _ => facts.mapM fun F => do
-      match invariantFact scope names F with
+      match invariantFact (fun p => names[p]? >>= termRoot scope) F with
       | some G => pure ({ fact := G } : HeapKnowledge.IndexAtom)
       | none => throw (locatedRefusal (← table) node.source .entryClaim
-          "a loop invariant names a binding with no initialized value at the loop's head")
+          "a loop invariant names a binding that is no value binding or initialized cell at the loop's head")
     | _ => pure []
   -- Each atom once, as the knowledge a search reaches holds it: a cut's
   -- knowledge is its assertion exactly (`checkAssertions`), and two claimed

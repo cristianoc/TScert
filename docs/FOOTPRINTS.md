@@ -453,14 +453,14 @@ the append relation of `push`). Both proved (`writeAtoms_holds`,
 store keeps $`\mathrm{every}(z,t,\Phi)`$ where $`\mathrm{apart}(a,z)`$ and
 the bound and every free body term read nothing of $`a`$'s region: a slot's
 value, a string's length, or the length of a slot $`w`$ with
-$`\mathrm{apart}(a,w)`$ (`every-write`, proved: `writeAtoms_holds`, through
+$`\mathrm{apart}(a,w)`$ (`every-apart-write`, proved: `writeAtoms_holds`, through
 `IndexFact.every_frame`). Across a growth of $`a`$'s store, the length of a
 slot apart from $`a`$ is kept (`growFirst`), so `every-grow` keeps such a
 fact too.
 
 ```math
 \frac{\mathrm{every}(z,t,\Phi)\in\Sigma\quad \mathrm{apart}(a,z)\in\Sigma\quad \mathrm{apart}_a(t)\quad \forall F\in\Phi.\ \mathrm{apart}_a(F)}
-     {\Sigma\vdash a[k]:=v\dashv\Sigma',\ \mathrm{every}(z,t,\Phi)}\ \textsf{every-write}
+     {\Sigma\vdash a[k]:=v\dashv\Sigma',\ \mathrm{every}(z,t,\Phi)}\ \textsf{every-apart-write}
 ```
 
 The producer states $`\mathrm{apart}(x,y)`$ at a declaration of an array

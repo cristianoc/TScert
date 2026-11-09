@@ -814,6 +814,42 @@ control(async (): Promise<void> => {
 });
 
 control(async (): Promise<void> => {
+  // A quantified fact over a typed array's elements claimed where nothing
+  // establishes it (PROGRAM-TYPING.md, "Quantified clauses"): each
+  // negative's outer read claimed at `number`, and at its return's entry
+  // `items[i] < widths.length` of every index below the view's typed-array
+  // length: over the inclusive precondition, and after a write through a
+  // `subarray` view of the same bytes. Each is refused at that entry.
+  type Entry = SourceClaims["functions"][number]["entries"][number];
+  type Quantified = Entry["quantified"][number];
+  const strict: Quantified = { name: "items", path: [], stop: { name: "items", path: [], term: "view" },
+    body: [{ terms: [["elem", 1]], bound: 9007199254740991 }, { terms: [["elem", -1]], bound: 0 },
+      { terms: [["elem", 1], [{ term: { ref: { name: "widths", path: [], term: "length" } } }, -1]], bound: -1 }] };
+  const variants: [string, string][] = [
+    ["invalid-typed-array-element-read-inclusive", "widthAt"],
+    ["invalid-typed-array-element-read-after-write", "widthAfterWrite"],
+  ];
+  for (const [file, name] of variants) {
+    const artifacts = run(file);
+    const source = readFileSync(sourceKey(artifacts), "utf8");
+    const fnStart = source.indexOf(`export function ${name}`);
+    const read = "widths[items[k]!]";
+    const at = source.indexOf(read, fnStart);
+    const claims = readClaims(artifacts);
+    const fn = must(claims.functions.find(f => f.name === name), `${name}'s claims`);
+    const claim = must(fn.expressions.find(e => e.pos[0] === at && e.pos[1] === at + read.length), "the read");
+    claim.type = [rowOf(claims, "num")];
+    must(fn.entries.find(e => e.start === source.indexOf("return widths", fnStart)), "the return's entry").quantified
+      .push(strict);
+    const forged = writeClaims(artifacts, `typed-quantified-forged-${name}`, claims);
+    const searched = produceWith(artifacts, forged, `typed-quantified-forged-${name}`);
+    assert.equal(searched.status, 1, `${name}: ${searched.stdout}${searched.stderr}`);
+    assert.match(searched.stdout + searched.stderr, /does not establish the claims/, name);
+  }
+  process.stdout.write("typed-array quantified facts: a strict element bound claimed over an inclusive precondition and after a subarray view's write, each refused at its entry\n");
+});
+
+control(async (): Promise<void> => {
   // A sealed handle's invariant claimed where a resize broke it: the
   // handle's `segmentFlags.length === widths.length`, over its
   // representation's fields, forged at the entry of the walker's call after

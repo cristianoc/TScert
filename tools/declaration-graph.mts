@@ -44,7 +44,7 @@ import { messageOf, passToolFailure, toolFailureOf } from "./thrown.mts";
 // named-record.mts reads a named type's record shape, at which a mapped type read before its definition is expanded.
 import { definitionKey, deferredInDocument, identityText, settleDocument, termsText, termText } from "./named-record.mts";
 import { documentHolds } from "./fragment-parts.mts";
-import { invariantTags, parameterKept, plainParameter, representationTags, requiresTags, ensuresTags, type ImportedInvariants } from "./bound-annotations.mts";
+import { closureRequiresTags, ensuresTags, invariantTags, parameterKept, plainParameter, representationTags, requiresTags, type ImportedInvariants } from "./bound-annotations.mts";
 // files.mts makes every file-system failure a tool failure.
 import { builtinModule, manifestMember, orAbsent, readText, realPath, remembered, type Remembered } from "./files.mts";
 import type { Json } from "./calculus.mts";
@@ -996,10 +996,6 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
       const file = node.getSourceFile();
       return programFile(file) && !ambient(node) && node.body ? requiresTags(file.text.slice(node.pos, node.getStart(file))) : [];
     };
-    const writtenEnsures = (node: ts.FunctionDeclaration): string[] => {
-      const file = node.getSourceFile();
-      return programFile(file) && !ambient(node) ? ensuresTags(file.text.slice(node.pos, node.getStart(file))) : [];
-    };
     const programFile = (file: SourceFile): boolean => !file.isDeclarationFile && !libraryFile(file) &&
       !isHostFile(file.fileName) && !file.fileName.split(sep).includes("node_modules");
     // The verifier's declaration file (`resolvable.d.ts`): the repository's,
@@ -1930,7 +1926,7 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
         // beside its implementation included.
         if (nodes.some(n => ts.isFunctionDeclaration(n) && statedResult(valueScope(reading, n, what), n.type, n).stated))
           throw Error(`a statement (\`Within\`) on an overloaded declaration is outside the fragment: ${what}`);
-        if (nodes.some(n => ts.isFunctionDeclaration(n) && (writtenClauses(n).length > 0 || writtenEnsures(n).length > 0)))
+        if (nodes.some(n => ts.isFunctionDeclaration(n) && writtenClauses(n).length > 0))
           throw Error(`a precondition (\`@requires\`) on an overloaded declaration is outside the fragment: ${what}`);
         if (nodes.some(n => ensuresTags(n.getSourceFile().text.slice(n.pos, n.getStart(n.getSourceFile()))).length > 0))
           throw Error(`a postcondition (\`@ensures\`) on an overloaded declaration is outside the fragment: ${what}`);
@@ -1977,7 +1973,6 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
         // reads them (`typeInvariants`).
         const own = programFile(node.getSourceFile()) && !ambient(node) && !!node.body;
         const invariants: ImportedInvariants = {
-          ensures: writtenEnsures(node),
           receiver: node.parameters[0] !== undefined && ts.isIdentifier(node.parameters[0].name) &&
             node.parameters[0].name.text === "this",
           params: node.parameters.map(p => own && synchronous && plainParameter(p)),
@@ -2026,7 +2021,7 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
             observations.requires?.(declaration, clauses,
               plain ? fn.parameters.map(p => ts.isIdentifier(p.name) ? p.name.text : "") : null,
               { receiver: fn.parameters[0] !== undefined && ts.isIdentifier(fn.parameters[0].name) && fn.parameters[0].name.text === "this",
-                params: [], kept: [], result: false });
+                params: [], kept: [], result: false, ensures: [], ensuresParameters: null });
           }
           return { declaration, construct: false, typeParams,
             type: oneTerm(signature(valueScope(reading, fn, what, names), fn.parameters, fn.type, fn, span, true), span) };

@@ -538,7 +538,7 @@ theorem factLinear_holds {f : IndexFact} {ρ h} (hf : f.HoldsAt ρ h) :
     · simp only [Linear.Fact.Holds, Linear.Form.eval, v1, v2]; omega
     · simp only [Linear.Fact.Holds, Linear.Form.eval, v1, v2]; omega
     · exact lengthRange_holds rfl (by rw [hlen]; rfl) F hF
-  | index _ | bound _ _ _ | int _ | either _ _ | guarded _ _ _ _ | element _ _ _ | every _ _ _ _ => simp [factLinear] at hF
+  | index _ | bound _ _ _ | int _ | either _ _ | guarded _ _ _ _ | element _ _ _ | every _ _ _ _ | apart _ _ => simp [factLinear] at hF
 
 theorem linearFacts_holds {as : List IndexAtom} {ρ h} (he : IndexHolds as ρ h) :
     ∀ F ∈ linearFacts as, F.Holds (termValuation ρ h) := by
@@ -562,7 +562,7 @@ theorem intSlot_sound {as : List IndexAtom} {ρ h s} (he : IndexHolds as ρ h) (
     obtain ⟨_, ls, -, -, hnv, hm⟩ := hat
     rw [hnv, intValue_length hm]; rfl
   | linear G => rw [hfa] at hf hat; exact hat.1 (.value s) (List.contains_iff_mem.mp hf)
-  | index _ | bound _ _ _ | either _ _ | guarded _ _ _ _ | element _ _ _ | every _ _ _ _ => rw [hfa] at hf; cases hf
+  | index _ | bound _ _ _ | either _ _ | guarded _ _ _ _ | element _ _ _ | every _ _ _ _ | apart _ _ => rw [hfa] at hf; cases hf
 
 theorem termDefined_sound {as : List IndexAtom} {ρ h} (he : IndexHolds as ρ h) {t : Term}
     (ht : termDefined as t = true) : (termValue ρ h t).isSome := by
@@ -586,7 +586,7 @@ theorem termDefined_sound {as : List IndexAtom} {ρ h} (he : IndexHolds as ρ h)
         rw [hfa] at hf hat; simp only [beq_iff_eq] at hf; subst hf
         obtain ⟨s, ls, hs, hl, -, hm⟩ := hat
         simp only [termValue_nil, kindValue, lengthOf_of_store hs hl hm, Option.isSome_some]
-      | linear _ | index _ | bound _ _ _ | int _ | either _ _ | guarded _ _ _ _ | element _ _ _ | every _ _ _ _ => rw [hfa] at hf; cases hf
+      | linear _ | index _ | bound _ _ _ | int _ | either _ _ | guarded _ _ _ _ | element _ _ _ | every _ _ _ _ | apart _ _ => rw [hfa] at hf; cases hf
     | view | strLength => cases ht
   · obtain ⟨a, ha, hm⟩ := List.any_eq_true.mp ht
     simp only [Bool.and_eq_true, Option.isNone_iff_eq_none] at hm
@@ -594,7 +594,7 @@ theorem termDefined_sound {as : List IndexAtom} {ρ h} (he : IndexHolds as ρ h)
     have hat := he a ha fun b hb => by rw [hn] at hb; cases hb
     cases hfa : a.fact with
     | linear G => rw [hfa] at hf hat; exact hat.1 t (List.contains_iff_mem.mp hf)
-    | index _ | length _ _ | bound _ _ _ | int _ | either _ _ | guarded _ _ _ _ | element _ _ _ | every _ _ _ _ => rw [hfa] at hf; cases hf
+    | index _ | length _ _ | bound _ _ _ | int _ | either _ _ | guarded _ _ _ _ | element _ _ _ | every _ _ _ _ | apart _ _ => rw [hfa] at hf; cases hf
 
 /-- The terms the unconditional atoms state defined: each term of a linear
 fact, a safe integer's slot's value, a length atom's length and value. -/
@@ -621,7 +621,7 @@ theorem definedTerms_sound {as : List IndexAtom} {ρ h} (he : IndexHolds as ρ h
       rcases hm with rfl | rfl
       · simp only [termValue_length, lengthOf_of_store hs hl hmx, Option.isSome_some]
       · simp only [termValue_value, hnv, intValue_length hmx, Option.isSome_some]
-    | index _ | bound _ _ _ | either _ _ | guarded _ _ _ _ | element _ _ _ | every _ _ _ _ => rw [hfa] at hm; cases hm
+    | index _ | bound _ _ _ | either _ _ | guarded _ _ _ _ | element _ _ _ | every _ _ _ _ | apart _ _ => rw [hfa] at hm; cases hm
   · cases hm
 
 /-- The safe-integer range of each value term the unconditional atoms state
@@ -739,7 +739,7 @@ theorem condFacts_holds {as : List IndexAtom} {c : Nat} {neg : Bool} {ρ h} (he 
     have hat := he a ha fun c' hc' => by rw [hk.1] at hc'; cases hc'; rw [hk.2]; exact hc
     cases hfa : a.fact with
     | linear G => rw [hfa] at hm hat; cases hm; exact hat.2
-    | index _ | length _ _ | bound _ _ _ | int _ | either _ _ | guarded _ _ _ _ | element _ _ _ | every _ _ _ _ => rw [hfa] at hm; cases hm
+    | index _ | length _ _ | bound _ _ _ | int _ | either _ _ | guarded _ _ _ _ | element _ _ _ | every _ _ _ _ | apart _ _ => rw [hfa] at hm; cases hm
   · cases hm
 
 /-! ## Read bridges
@@ -1240,8 +1240,9 @@ def linearFollows (M : Nat → List Nat) (m : PointClaims.Mapping) (a : List Ind
     | some c' => (M (PointClaims.slot m c')).any fun c =>
         linearEntailed M m a B (linearFacts a ++ condFacts a c t.negated) F
   | .every s p stop _ =>
-      stop == ⟨.length, s, p⟩ &&
-        linearEntailed M m a B (linearFacts a) (.le [(⟨.length, s, p⟩, 1)] 0)
+      (stop == ⟨.length, s, p⟩ &&
+        linearEntailed M m a B (linearFacts a) (.le [(⟨.length, s, p⟩, 1)] 0)) ||
+      (elementsKnown M m a s p && linearEntailed M m a B (linearFacts a) (.le [(stop, 1)] 0))
   | .bound x k st =>
       t.cond.isNone && (lengthBound (M (PointClaims.slot m x)) a (pickSlot M m a k) st ||
         match B with
@@ -1347,18 +1348,28 @@ theorem linearFollows_sound {M : Nat → List Nat} {m : PointClaims.Mapping} {a 
     exact ⟨s, ls, b, idx, hs, hl, hb, hidx, hle⟩
   | every s p stop body =>
     rw [ht] at hf
-    simp only [Bool.and_eq_true, beq_iff_eq] at hf
-    obtain ⟨rfl, hf⟩ := hf
-    have hlin := linearEntailed_sound hM hB hf ha (linearFacts_holds ha)
-    have hd := hlin.1 ⟨.length, s, p⟩ (by simp [Linear.Fact.vars])
-    obtain ⟨w, n, hw, hn, hterm⟩ := termValue_isSome hd
-    obtain ⟨sto, ls, hsto, hls, rfl, -⟩ := lengthOf_store hn
-    have hle := hlin.2
-    simp only [Linear.Fact.Holds, Linear.Form.eval, termValuation, hterm, Option.getD_some, Int.one_mul, Int.add_zero] at hle
-    refine ⟨w, sto, ls, ls.length, hw, hsto, hls, hterm, ?_⟩
-    intro i hi
-    omega
-  | index _ | length _ _ | either _ _ | guarded _ _ _ _ | element _ _ _ => rw [ht] at hf; cases hf
+    simp only [Bool.or_eq_true] at hf
+    rcases hf with hf | hf
+    · simp only [Bool.and_eq_true, beq_iff_eq] at hf
+      obtain ⟨rfl, hf⟩ := hf
+      have hlin := linearEntailed_sound hM hB hf ha (linearFacts_holds ha)
+      have hd := hlin.1 ⟨.length, s, p⟩ (by simp [Linear.Fact.vars])
+      obtain ⟨w, n, hw, hn, hterm⟩ := termValue_isSome hd
+      obtain ⟨sto, ls, hsto, hls, rfl, -⟩ := lengthOf_store hn
+      have hle := hlin.2
+      simp only [Linear.Fact.Holds, Linear.Form.eval, termValuation, hterm, Option.getD_some, Int.one_mul, Int.add_zero] at hle
+      refine ⟨w, sto, ls, ls.length, hw, elementsOf_store hsto, hls, hterm, ?_⟩
+      intro i hi
+      omega
+    · simp only [Bool.and_eq_true] at hf
+      obtain ⟨he, hz⟩ := hf
+      obtain ⟨w, sto, ls, hp, hs, hl⟩ := elementsKnown_sound hM ha he
+      have hlin := linearEntailed_sound hM hB hz ha (linearFacts_holds ha)
+      obtain ⟨n, hn⟩ := Option.isSome_iff_exists.mp (hlin.1 stop (by simp [Linear.Fact.vars]))
+      have hle := hlin.2
+      simp only [Linear.Fact.Holds, Linear.Form.eval, termValuation, hn, Option.getD_some] at hle
+      exact ⟨w, sto, ls, n, hp, hs, hl, hn, fun i hi => by omega⟩
+  | index _ | length _ _ | either _ _ | guarded _ _ _ _ | element _ _ _ | apart _ _ => rw [ht] at hf; cases hf
 
 /-! ## Guarded facts (PROGRAM-TYPING.md, "Guarded clauses")
 
@@ -1757,7 +1768,7 @@ fact of values. -/
 def IndexFact.envOnly : IndexFact → Bool
   | .index _ | .int _ => true
   | .linear F => F.vars.all Term.envOnly
-  | .length _ _ | .bound _ _ _ | .element _ _ _ | .every _ _ _ _ => false
+  | .length _ _ | .bound _ _ _ | .element _ _ _ | .every _ _ _ _ | .apart _ _ => false
   | .either A B => A.envOnly && B.envOnly
   | .guarded _ p _ B => p.isEmpty && B.envOnly
 
@@ -1901,7 +1912,7 @@ theorem atomLinear_holds {f : IndexFact} {ρ h} (hf : f.HoldsAt ρ h) :
         by simp only [Linear.Fact.Holds, Linear.Form.eval, v1, v2]; omega⟩
     · exact ⟨fun t ht => hdef t (by simpa [Linear.Fact.vars, or_comm] using ht),
         by simp only [Linear.Fact.Holds, Linear.Form.eval, v1, v2]; omega⟩
-  | index _ | bound _ _ _ | int _ | either _ _ | guarded _ _ _ _ | element _ _ _ | every _ _ _ _ => simp [atomLinear] at hF
+  | index _ | bound _ _ _ | int _ | either _ _ | guarded _ _ _ _ | element _ _ _ | every _ _ _ _ | apart _ _ => simp [atomLinear] at hF
 
 /-- A term rooted at a dropped slot restated by reads toward a kept root:
 while its root is dropped, where a read gives the root's value as field `f`
@@ -3110,7 +3121,7 @@ theorem releaseEither_holds {as : List IndexAtom} {a : IndexAtom} {ρ : Env} {h 
   | ⟨.either _ _, some _, _⟩ => simp [releaseEither, IndexHolds]
   | ⟨.index _, _, _⟩ | ⟨.length _ _, _, _⟩ | ⟨.bound _ _ _, _, _⟩
   | ⟨.int _, _, _⟩ | ⟨.linear _, _, _⟩ | ⟨.guarded _ _ _ _, _, _⟩
-  | ⟨.element _ _ _, _, _⟩ | ⟨.every _ _ _ _, _, _⟩ => simp [releaseEither, IndexHolds]
+  | ⟨.element _ _ _, _, _⟩ | ⟨.every _ _ _ _, _, _⟩ | ⟨.apart _ _, _, _⟩ => simp [releaseEither, IndexHolds]
 
 def withElements (k : Knowledge) : Knowledge :=
   let k := elementInstances k

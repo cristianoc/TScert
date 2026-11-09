@@ -714,6 +714,7 @@ inductive IndexFact where
   | guarded (slot : Nat) (path : List String) (tag : GuardTag) (body : IndexFact)
   | element (value array index : Nat)
   | every (slot : Nat) (path : List String) (stop : Term) (body : List (LinearClause Bound))
+  | apart (slot other : Nat)
   deriving DecidableEq, Repr, Hashable
 
 namespace IndexFact
@@ -796,6 +797,25 @@ def HoldsAt : IndexFact → Env → Heap → Prop
   | .every s p stop body, ρ, h => ∃ w st ls n, readPath h (ρ s) p = some w ∧ elementsOf w = some st ∧
       h[st]? = some (.arr ls) ∧ termValue ρ h stop = some n ∧
       ∀ i : Nat, (i : Int) < n → ∀ F ∈ body, F.HoldsAt (boundValue ρ h ls i)
+  | .apart a b, ρ, h => RegionsApart h (ρ a) (ρ b)
+
+
+
+/-- A quantified clause is framed by its array path, store, bound and body values. -/
+theorem every_frame {s p stop body ρ h h'}
+    (he : (IndexFact.every s p stop body).HoldsAt ρ h)
+    (hp : ∀ w, readPath h (ρ s) p = some w → readPath h' (ρ s) p = some w)
+    (hs : ∀ w st ls, readPath h (ρ s) p = some w → elementsOf w = some st →
+      h[st]? = some (.arr ls) → h'[st]? = some (.arr ls))
+    (hn : ∀ z, termValue ρ h stop = some z → termValue ρ h' stop = some z)
+    (hb : ∀ w st ls, readPath h (ρ s) p = some w → elementsOf w = some st →
+      h[st]? = some (.arr ls) → ∀ F ∈ body, ∀ i b, b ∈ F.vars → ∀ z,
+      boundValue ρ h ls i b = some z → boundValue ρ h' ls i b = some z) :
+    (IndexFact.every s p stop body).HoldsAt ρ h' := by
+  obtain ⟨w, st, ls, z, hw, hst, hls, hz, hall⟩ := he
+  exact ⟨w, st, ls, z, hp w hw, hst, hs w st ls hw hst hls, hn z hz,
+    fun i hi F hF => LinearClause.holdsAt_extend (hb w st ls hw hst hls F hF i) (hall i hi F hF)⟩
+
 
 theorem holdsAt_mapM {F F' : IndexFact} {f : Nat → Option Nat} {ρ ρ' : Env} {h : Heap}
     (hm : F.mapM f = some F') (hf : ∀ s ∈ F.slots, ∀ t, f s = some t → ρ' t = ρ s) :
@@ -806,6 +826,10 @@ theorem holdsAt_mapM {F F' : IndexFact} {f : Nat → Option Nat} {ρ ρ' : Env} 
     obtain ⟨A', hA, B', hB, rfl⟩ := hm
     exact or_congr (ihA hA (fun x hx y hy => hf x (by simp [slots, hx]) y hy))
       (ihB hB (fun x hx y hy => hf x (by simp [slots, hx]) y hy))
+  | apart a b =>
+    simp only [mapM, Option.bind_eq_bind, Option.bind_eq_some_iff, Option.pure_def, Option.some.injEq] at hm
+    obtain ⟨a', ha, b', hb, rfl⟩ := hm
+    simp only [HoldsAt, hf a (by simp [slots]) a' ha, hf b (by simp [slots]) b' hb]
   | guarded s p t B ih =>
     simp only [mapM, Option.bind_eq_bind, Option.bind_eq_some_iff, Option.pure_def, Option.some.injEq] at hm
     obtain ⟨s', hs, B', hB, rfl⟩ := hm
@@ -943,6 +967,7 @@ theorem holdsAt_extend {F : IndexFact} {ρ : Env} {h : Heap} (vs : List Val) (hF
     F.HoldsAt ρ (h ++ vs) := by
   induction F with
   | either A B ihA ihB => exact hF.imp ihA ihB
+  | apart a b => exact regionsApart_extend vs hF
   | guarded s p t B ih =>
     obtain ⟨v, hv, hor⟩ := hF
     exact ⟨v, readGuard_extend vs hv, hor.imp id ih⟩
@@ -1006,6 +1031,9 @@ theorem holdsAt_congr {F : IndexFact} {ρ ρ' : Env} {h : Heap} (hs : ∀ s ∈ 
   | either A B ihA ihB =>
     exact or_congr (ihA (fun x hx => hs x (by simp [slots, hx])))
       (ihB (fun x hx => hs x (by simp [slots, hx])))
+  | apart a b =>
+    simp only [slots, List.mem_cons, List.not_mem_nil, or_false, forall_eq_or_imp, forall_eq] at hs
+    simp only [HoldsAt, hs.1, hs.2]
   | guarded s p t B ih =>
     simp only [slots, List.mem_cons, forall_eq_or_imp] at hs
     simp only [HoldsAt, hs.1, ih hs.2]
@@ -1590,6 +1618,7 @@ def everyKept (c : Changes) (first : Nat → String → Bool) : IndexFact → Bo
       (Term.mk .length s p).pathKeptBy c first && stop.keptBy c first &&
       body.all (fun F => F.vars.all fun b => match b with
         | .free t => t.keptBy c first
+        | .project _ _ => false
         | _ => true)
   | _ => false
 
@@ -1603,24 +1632,26 @@ theorem everyKept_sound {c : Changes} {first : Nat → String → Bool} {F : Ind
   obtain ⟨⟨⟨⟨hstore, hnum⟩, hpath⟩, hstop⟩, hbody⟩ := hk
   obtain ⟨w, st, ls, z, hw, hst, hls, hz, hall⟩ := hF
   have hobj : c.alters w = c.obj := by
-    cases w <;> simp_all [Footprints.storeOf, Footprints.fieldsOf, Changes.alters]
+    cases w <;> simp_all [elementsOf, Footprints.storeOf, Footprints.fieldsOf, Changes.alters]
   have hpath' := pathRead_kept (kind := .length) hc hf hpath hobj hw
   refine ⟨w, st, ls, z, hpath', hst, hc.1 st _ hls (by simp [Changes.alters, hstore]),
     termValue_kept hc hf hstop hz, fun i hi F hm => ?_⟩
   have hA := hall i hi F hm
-  refine factAt_congr (fun x hx => ?_) hA
-  obtain ⟨a, ha⟩ := Option.isSome_iff_exists.mp (hA.1 x hx)
-  rw [ha]
+  apply LinearClause.holdsAt_extend (fun x hx a ha => ?_) hA
+  have elem : ∀ j, elementInt h ls j = some a → elementInt h' ls j = some a := by
+    intro j hj
+    apply elementInt_frame hj
+    intro l v hl hv
+    have hz' : intValue v = some a := by
+      simpa only [elementInt, hl, hv, Option.bind_some] using hj
+    obtain ⟨b, rfl, _⟩ := intValue_safe hz'
+    exact hc.1 l _ hv (by simp [Changes.alters, hnum])
   cases x with
   | index => exact ha
   | free t => exact termValue_kept hc hf (hbody F hm (.free t) hx) ha
-  | elem =>
-    apply elementInt_frame ha
-    intro l v hl hv
-    have hz' : intValue v = some a := by
-      simpa only [boundValue, elementInt, hl, hv, Option.bind_some] using ha
-    obtain ⟨b, rfl, _⟩ := intValue_safe hz'
-    exact hc.1 l _ hv (by simp [Changes.alters, hnum])
+  | elem => exact elem i ha
+  | offset d => exact elem (i + d) ha
+  | project k p => have := hbody F hm (.project k p) hx; contradiction
 
 /-- A change keeping every store keeps every region: its store cell holds
 the same store, and a raw store reads no heap. -/
@@ -1679,6 +1710,9 @@ theorem holdsAt_kept {c : Changes} {first : Nat → String → Bool} {F : IndexF
   | either A B ihA ihB =>
     simp only [keptBy, Bool.and_eq_true] at hk
     exact hF.imp (ihA hk.1) (ihB hk.2)
+  | apart a b =>
+    simp only [keptBy, beq_iff_eq] at hk
+    exact regionsApart_kept hc hk hF
   | guarded s p t B ih =>
     simp only [keptBy, Bool.and_eq_true] at hk
     obtain ⟨v, hv, hor⟩ := hF

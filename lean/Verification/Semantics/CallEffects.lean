@@ -147,7 +147,8 @@ actual's store; `elements` a promise: a normal return of `true` leaves the
 receiver's elements meeting it; `receiverGrows` that a normal return changed
 no old location but the receiver's store, which it extended
 (`ReceiverGrows`), the actuals, where each is a value, appended in order
-(`ReceiverAppends`). -/
+(`ReceiverAppends`); `elementWrite` that a normal return changed the heap as
+a typed array's element write may (`ElementWrite.changes`). -/
 structure Effect where
   footprint : Footprints.Closed
   promise : Option TypePromise
@@ -379,13 +380,14 @@ theorem ReceiverGrows.prefix_left {r : Tm} {before middle after : Heap} (hg : Re
 /-- A signature's normal-return postcondition for a call with receiver `r`,
 from the heap the call starts in: its footprint, and, where it states one, a
 fresh store for the result; with `receiverGrows`, `ReceiverGrows` and
-`ReceiverAppends` at the actuals. -/
+`ReceiverAppends` at the actuals; with `elementWrite`, its change. -/
 def Effect.post (e : Effect) (r : Tm) (args : List Tm) : Heap → Post := fun before after v =>
   e.within r before after ∧ (e.fresh = true → Footprints.FreshAt before.length v) ∧
     (e.freshObject = true → Footprints.FreshObjectAt before.length v) ∧
     (∀ R, e.elements = some R → v = .tru → ElemsAt R r after) ∧
     (∀ F ∈ e.ensures, F.HoldsAt (ensuresEnv v r args) after) ∧
-    (e.receiverGrows = true → ReceiverGrows r before after ∧ ReceiverAppends r args before after)
+    (e.receiverGrows = true → ReceiverGrows r before after ∧ ReceiverAppends r args before after) ∧
+    (∀ w, e.elementWrite = some w → w.Holds args before after)
 
 /-- A signature's postcondition on a throw, from the heap the call starts in:
 its footprint where it states `onThrow`, and nothing otherwise. -/
@@ -559,27 +561,33 @@ postcondition: a fact over a parameter needs its entry value, which a
 reassigned parameter no longer holds; and no append, which a native's
 audited signature alone states. -/
 def Effect.below (n : Nat) (e : Effect) : Bool :=
-  e.promiseBelow n && e.pre.all (fun F => F.slots.all (· ≤ n)) && e.ensures.isEmpty && !e.receiverGrows
+  e.promiseBelow n && e.pre.all (fun F => F.slots.all (· ≤ n)) && e.ensures.isEmpty && !e.receiverGrows &&
+    e.elementWrite.isNone
 
 theorem Effect.below_promise {e : Effect} {n : Nat} (h : e.below n = true) : e.promiseBelow n = true := by
-  simp only [Effect.below, Bool.and_eq_true] at h; exact h.1.1.1
+  simp only [Effect.below, Bool.and_eq_true] at h; exact h.1.1.1.1
 
 theorem Effect.below_pre {e : Effect} {n : Nat} (h : e.below n = true) :
     ∀ F ∈ e.pre, ∀ s ∈ F.slots, s ≤ n := by
-  simp only [Effect.below, Bool.and_eq_true, List.all_eq_true, decide_eq_true_eq] at h; exact h.1.1.2
+  simp only [Effect.below, Bool.and_eq_true, List.all_eq_true, decide_eq_true_eq] at h; exact h.1.1.1.2
 
 theorem Effect.below_ensures {e : Effect} {n : Nat} (h : e.below n = true) : e.ensures = [] := by
-  simp only [Effect.below, Bool.and_eq_true, List.isEmpty_iff] at h; exact h.1.2
+  simp only [Effect.below, Bool.and_eq_true, List.isEmpty_iff] at h; exact h.1.1.2
 
 theorem Effect.below_grows {e : Effect} {n : Nat} (h : e.below n = true) : e.receiverGrows = false := by
-  simp only [Effect.below, Bool.and_eq_true, Bool.not_eq_true'] at h; exact h.2
+  simp only [Effect.below, Bool.and_eq_true, Bool.not_eq_true'] at h; exact h.1.2
+
+theorem Effect.below_write {e : Effect} {n : Nat} (h : e.below n = true) : e.elementWrite = none := by
+  simp only [Effect.below, Bool.and_eq_true, Option.isNone_iff_eq_none] at h; exact h.2
 
 /-- A signature stating no postcondition (`ensures`) and no append has a
 `post` independent of the actuals. -/
-theorem Effect.post_args {e : Effect} (he : e.ensures = []) (hg : e.receiverGrows = false) {r : Tm}
+theorem Effect.post_args {e : Effect} (he : e.ensures = []) (hg : e.receiverGrows = false)
+    (hx : e.elementWrite = none) {r : Tm}
     {args args' : List Tm} {before after : Heap}
     {v : Val} (h : e.post r args before after v) : e.post r args' before after v :=
-  ⟨h.1, h.2.1, h.2.2.1, h.2.2.2.1, fun F hF => (by rw [he] at hF; cases hF), fun h => by rw [hg] at h; cases h⟩
+  ⟨h.1, h.2.1, h.2.2.1, h.2.2.2.1, fun F hF => (by rw [he] at hF; cases hF), (fun h' => by rw [hg] at h'; cases h'),
+    fun w hw => by rw [hx] at hw; cases hw⟩
 
 private theorem parameters_getD : ∀ (n : Nat) (args : List Tm) (p : Nat), p < n →
     (CallArguments.parameters n args).getD p .undef = args.getD p .undef
@@ -690,9 +698,19 @@ its positions' values (a variadic call) concludes. -/
 def Effect.forgetEnsures (e : Effect) : Effect :=
   { e with ensures := [], elementWrite := e.elementWrite.map fun _ => .stores }
 
+
+theorem Effect.forgetEnsures_write {e : Effect} {args args' : List Tm} {before after : Heap}
+    (h : ∀ w, e.elementWrite = some w → w.Holds args before after) :
+    ∀ w, e.forgetEnsures.elementWrite = some w → w.Holds args' before after := by
+  intro w hw
+  simp only [Effect.forgetEnsures, Option.map_eq_some_iff] at hw
+  obtain ⟨w0, h0, rfl⟩ := hw
+  exact ElementWrite.Holds.stores (h w0 h0)
+
 theorem Effect.post_forgetEnsures {e : Effect} {r : Tm} {args : List Tm} {before after : Heap} {v : Val}
     (h : e.post r args before after v) : e.forgetEnsures.post r args before after v :=
-  ⟨h.1, h.2.1, h.2.2.1, h.2.2.2.1, fun F hF => (by simp [Effect.forgetEnsures] at hF), h.2.2.2.2.2⟩
+  ⟨h.1, h.2.1, h.2.2.1, h.2.2.2.1, fun F hF => (by simp [Effect.forgetEnsures] at hF), h.2.2.2.2.2.1,
+    Effect.forgetEnsures_write h.2.2.2.2.2.2⟩
 
 /-- A variadic call with a spread among its actuals concludes the signature's
 postcondition without its postcondition facts at those actuals: an append
@@ -701,15 +719,24 @@ theorem Effect.post_forgetEnsures_spread {e : Effect} {r : Tm} {args args' : Lis
     {v : Val} (hs : ∃ a ∈ args', isVal a = false)
     (h : e.post r args before after v) : e.forgetEnsures.post r args' before after v :=
   ⟨h.1, h.2.1, h.2.2.1, h.2.2.2.1, fun F hF => (by simp [Effect.forgetEnsures] at hF),
-    fun hg => ⟨(h.2.2.2.2.2 hg).1, ReceiverAppends.of_not_values hs⟩⟩
+    fun hg => ⟨(h.2.2.2.2.2.1 hg).1, ReceiverAppends.of_not_values hs⟩, Effect.forgetEnsures_write h.2.2.2.2.2.2⟩
 
 /-- A postcondition at actuals padded with `undefined` is the one at the
 actuals, of a receiver holding no store. -/
 theorem Effect.post_pad {e : Effect} {r : Tm} (hr : Footprints.storeOf r = none) {args pad : List Tm}
     (hpad : ∀ a ∈ pad, a = .undef)
     {before after : Heap} {v : Val} (h : e.post r (args ++ pad) before after v) : e.post r args before after v := by
+  have hwr : ∀ w, e.elementWrite = some w → w.Holds args before after := by
+    intro w hw
+    obtain ⟨hc, hx⟩ := h.2.2.2.2.2.2 w hw
+    refine ⟨hc, fun he => ?_⟩
+    have hg : ∀ i, (args ++ pad).getD i .undef = args.getD i .undef := fun i => by
+      simpa [callEnv] using congrFun (callEnv_pad r args hpad) (i + 1)
+    have := hx he
+    simp only [ExactWrite, hg] at this ⊢
+    exact this
   refine ⟨h.1, h.2.1, h.2.2.1, h.2.2.2.1, fun F hF => ?_,
-    fun hg => ⟨(h.2.2.2.2.2 hg).1, ReceiverAppends.of_no_store hr⟩⟩
+    fun hg => ⟨(h.2.2.2.2.2.1 hg).1, ReceiverAppends.of_no_store hr⟩, hwr⟩
   have := h.2.2.2.2.1 F hF
   have he : ensuresEnv v r (args ++ pad) = ensuresEnv v r args := by
     funext i; simp only [ensuresEnv, callEnv_pad r args hpad]
@@ -720,7 +747,7 @@ theorem Effect.post_prefix (effect : Effect) {r : Tm} {args : List Tm} {before m
     (hprefix : before.IsPrefix middle) : effect.post r args middle after v → effect.post r args before after v := by
   rintro ⟨hw, hf, ho, hel, hen, hg, hew⟩
   refine ⟨?_, fun h => (hf h).lower hprefix.length_le, fun h => (ho h).lower hprefix.length_le, hel, hen,
-    fun h => ⟨(hg h).1.prefix_left hprefix, (hg h).2.prefix_left hprefix⟩⟩
+    fun h => ⟨(hg h).1.prefix_left hprefix, (hg h).2.prefix_left hprefix⟩, fun w h => (hew w h).prefix_left hprefix⟩
   unfold Effect.within at hw ⊢
   split
   · rename_i hs; simp only [hs, if_true] at hw; exact ⟨hw.1.prefix_left hprefix, hw.2.prefix_left hprefix⟩

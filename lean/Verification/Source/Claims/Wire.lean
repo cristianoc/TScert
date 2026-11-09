@@ -362,6 +362,7 @@ private def pointData (entries : List (Entry ι)) (expressions : List (Expressio
     entryFacts := entries.map (fun e => (e.start,e.facts.map Fact.claim))
     entryEvery := entries.map (fun e => (e.start,e.quantified.map fun q =>
       ((q.name, q.path), (q.stop.name, q.stop.path, q.stop.term), q.body.map BodyFact.claim)))
+    entryApart := entries.map (fun e => (e.start, e.apart.map fun r => (r.name, r.other)))
     -- An expression's assertion is of one field each (`validCurrent`).
     exprCurrent := expressions.filterMap (fun e => e.current.map fun fs =>
       (e.pos, fs.filterMap fun (p, A) => match p with | [k] => some (k, A) | _ => none)) }

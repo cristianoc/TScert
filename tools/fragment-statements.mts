@@ -15,8 +15,8 @@ import { GENERATOR, UNCLOSABLE, booleanForm, booleanReturn, bindingScope, firstO
 import type { Gate } from "./fragment-parse.mts";
 import { guardResult } from "./fragment-guards.mts";
 import { literalDefaultName } from "./type-term.mts";
-import { clauseRoots, elaborateRequires, indexFactPositions, loopBindings, loopInvariantTags, parameterKept, plainParameter,
-  requiresTags, ensuresTags, type ClauseParameter } from "./bound-annotations.mts";
+import { clauseRoots, elaborateRequires, ensuresTags, indexFactPositions, loopBindings, loopInvariantTags, parameterKept, plainParameter,
+  requiresTags, type ClauseParameter } from "./bound-annotations.mts";
 import { namesView } from "./library-types.mts";
 import { aliasMeaning, definitionKey, recordShape } from "./named-record.mts";
 import { isImport, isTypeAlias } from "./syntax.mts";
@@ -2188,15 +2188,6 @@ export function functionDecl(this: Gate, node: FunctionDeclaration, signature: F
     // establishes, where it is not async. An importing module reads them
     // alike (`writtenImport`).
     let ensures: IndexFact[] = [];
-    const postclauses = ensuresTags(gate.file.text.slice(node.pos, node.getStart(gate.file)));
-    if (postclauses.length > 0) {
-      if (isAsync || signature !== node || !ts.isSourceFile(node.parent) || node.parameters.some(p => !plainParameter(p)))
-        gate.fail(node, "a postcondition (`@ensures`) requires a synchronous top-level function with one signature and plain required parameters");
-      const post = postcondition(gate, postclauses, node.parameters.map((p, i) => ({
-        name: ts.isIdentifier(p.name) ? p.name.text : "", type: parameterTypes[i] })), !!receiverParam, retType);
-      if (typeof post === "string") gate.fail(node, post);
-      else ensures = post;
-    }
     if (signature === node && ts.isSourceFile(node.parent)) {
       const contract = typeInvariants(gate,
         isAsync ? [] : node.parameters.map((p, i) => plainParameter(p)
@@ -2205,7 +2196,7 @@ export function functionDecl(this: Gate, node: FunctionDeclaration, signature: F
       if (typeof contract === "string") gate.fail(node, contract);
       else {
         requires = [...requires, ...contract.pre];
-        ensures = [...ensures, ...contract.ensures];
+        ensures = contract.ensures;
       }
     }
     const post = ensuresTags(gate.file.text.slice(node.pos, node.getStart(gate.file)));
@@ -2261,15 +2252,20 @@ export function precondition(gate: Gate, clauses: readonly string[],
   return elaborated.facts;
 }
 
-/** Postcondition clauses over the result and the call's entry values,
- * read in the heap at normal return. */
-export function postcondition(gate: Gate, clauses: readonly string[],
-    parameters: readonly { name: string; type: TypeTerm | undefined }[], receiver: boolean,
-    result: TypeTerm | undefined): IndexFact[] | string {
+/** Written normal-return facts, over the result and unchanged parameter
+ * bindings. Parameter paths read the return heap; entry-heap snapshots are
+ * outside this clause language. Preconditions supply integrality only. */
+export function postcondition(gate: Gate, clauses: readonly string[], requires: readonly string[],
+    parameters: readonly { name: string; type: TypeTerm | undefined; kept: boolean }[],
+    receiver: boolean, result: TypeTerm | undefined): IndexFact[] | string {
   if (parameters.some(p => p.name === "result")) return "a postcondition (`@ensures`) reserves the name result";
-  const named = [clauseParameter(gate, "result", 0, result), ...parameters.map(({ name, type }, i) =>
-    clauseParameter(gate, name, receiver ? i + 1 : i + 2, type))];
-  const elaborated = elaborateRequires(clauses, named);
+  const roots = clauses.flatMap(clauseRoots);
+  for (const p of parameters)
+    if (roots.includes(p.name) && !p.kept)
+      return `a postcondition (\`@ensures\`) names reassigned parameter or nonplain parameter ${p.name}; entry values require an unchanged plain parameter binding`;
+  const named = [clauseParameter(gate, "result", 0, result),
+    ...parameters.map(({ name, type }, i) => clauseParameter(gate, name, receiver ? i + 1 : i + 2, type))];
+  const elaborated = elaborateRequires(clauses, named, requires);
   return "refused" in elaborated ? `a postcondition (\`@ensures\`): ${elaborated.refused}` : elaborated.facts;
 }
 

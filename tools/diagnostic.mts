@@ -117,7 +117,8 @@ type IndexFact = { index: { slot: number } } | { length: { array: number; length
   { either: { left: IndexFact; right: IndexFact } } |
   { guarded: { slot: number; path: string[]; tag: "null" | "undefined" | "true" | "false"; body: IndexFact } } |
   { element: { value: number; array: number; index: number } } |
-  { every: { slot: number; path: string[]; stop: LinearTerm; body: BodyFormula[] } };
+  { every: { slot: number; path: string[]; stop: LinearTerm; body: BodyFormula[] } } |
+  { apart: { slot: number; other: number } };
 /** A variable of a quantified fact's body: the index, the element, or a term. */
 type BodyFormula = { form: [BodyVariable, number][]; bound: number; ne: boolean } |
   { either: { left: BodyFormula; right: BodyFormula } };

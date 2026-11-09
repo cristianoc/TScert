@@ -9,7 +9,7 @@
 // declaration's parameters, with linear disjunction and negation after guards:
 //
 //   K ::= G || K | C        G ::= p === null | p === undefined | p === true | p === false
-//   C ::= C && C | C || C | !C | (C) | A | forall i in p: B
+//   C ::= C && C | C || C | !C | (C) | A | forall i in p: B | forall i < n of p: B
 //   A ::= safeInteger(p) | E rel E      rel ∈ { <, <=, >, >=, === }
 //   E ::= n | p | p.length | n * p | n * p.length | E + E | E - E | -E | (E)
 //   p ::= x | p.f
@@ -38,7 +38,10 @@
 // below `p.length`, of its element `p[i]` and of the clause's other terms
 // (PROGRAM-TYPING.md, "Quantified clauses"; `IndexFact.every`). Every other
 // form of the draft's grammar (`old`, computed keys) is refused with the clause's location, as is a path whose field no type
-// resolves. In a function postcondition, `result` names the returned value.
+// resolves. A postcondition uses the same language with `result` at position
+// zero and parameters one position after their call positions. Its facts
+// hold in the return heap. Unconditional precondition integrality clauses
+// permit value terms; the return check proves every resulting fact.
 //
 // A type invariant (PROGRAM-TYPING.md, "Type invariants") is an
 // `@invariant C` tag of a type alias's or an interface's leading JSDoc, its
@@ -75,9 +78,23 @@ export function requiresTags(trivia: string): string[] {
   return tagsOf(trivia, "requires");
 }
 
-/** The text of each `@ensures` tag of a function declaration. */
+/** The normal-return clauses of a function declaration. */
 export function ensuresTags(trivia: string): string[] {
   return tagsOf(trivia, "ensures");
+}
+
+/** The leading JSDoc of a function literal or its binding statement.
+ * A statement's clauses apply to each function literal it binds. */
+export function closureRequiresTags(node: ts.Node): string[] {
+  const file = node.getSourceFile();
+  const own = requiresTags(file.text.slice(node.pos, node.getStart(file)));
+  let owner = node;
+  while (ts.isParenthesizedExpression(owner.parent)) owner = owner.parent;
+  if (ts.isVariableDeclaration(owner.parent) && owner.parent.initializer === owner) {
+    owner = owner.parent;
+    if (ts.isVariableDeclarationList(owner.parent) && ts.isVariableStatement(owner.parent.parent)) owner = owner.parent.parent;
+  }
+  return [...new Set([...own, ...requiresTags(file.text.slice(owner.pos, owner.getStart(file)))])];
 }
 
 /** The text of each `@invariant` tag in the last leading JSDoc comment. */
@@ -137,8 +154,10 @@ export function parameterKept(p: ts.ParameterDeclaration, body: ts.Node | undefi
  * declaration's parameters in order, `this` included (`receiver`), those of
  * each plain required name's type, where it is not async, at its returns too
  * where its body writes no binding of its name (`kept`, `parameterKept`);
- * and its result type's, where it is not async. */
-export type ImportedInvariants = { ensures: readonly string[]; receiver: boolean; params: readonly boolean[]; kept: readonly boolean[]; result: boolean };
+ * and its result type's, where it is not async. Written postconditions carry
+ * their clauses and parameter names, or null for an unsupported signature. */
+export type ImportedInvariants = { receiver: boolean; params: readonly boolean[]; kept: readonly boolean[];
+  result: boolean; ensures: readonly string[]; ensuresParameters: readonly string[] | null };
 
 function tagsOf(trivia: string, name: string): string[] {
   const open = trivia.lastIndexOf("/**");
@@ -187,7 +206,7 @@ function tokens(text: string): Token[] | string {
  * on the way (`steps`), each a sum, difference or product. */
 type Linear = { terms: Map<string, number>; constant: number; steps: Linear[] };
 type Atom = { k: "safeInteger"; of: string } | { k: "compare"; op: string; left: Linear; right: Linear } |
-  { k: "forall"; binder: string; array: string; body: Atom[][] };
+  { k: "forall"; binder: string; array: string; stop: string | null; body: Atom[][] };
 /** A guard `p === tag ||`, and a clause: its guards in order, then its
  * conjunction. */
 type Guard = { path: string; tag: GuardTag };
@@ -292,7 +311,7 @@ class Parser {
       this.expect(":");
       const body = this.disjunction();
       if (body.some(bs => bs.some(a => a.k === "forall"))) throw new ClauseError("a `forall` body states no `forall`");
-      return { k: "forall", binder: binder.v, array, body };
+      return { k: "forall", binder: binder.v, array, stop, body };
     }
     if (t && t.k === "name" && t.v === "safeInteger") {
       this.at++;
@@ -628,7 +647,12 @@ export function elaborateRequires(clauses: readonly string[], params: readonly C
       }
     };
     /** The values the unguarded clauses state safe integers. */
-    const unguarded = new Set(parsed.filter(cs => cs.length === 1).flat().filter(c => c.guards.length === 0).flatMap(c => c.atoms.flatMap(a => {
+    const assumed = assumptions.map(text => {
+      const ts = tokens(text);
+      if (typeof ts === "string") throw new ClauseError(ts);
+      return new Parser(ts).clause();
+    });
+    const unguarded = new Set([...parsed, ...assumed].filter(cs => cs.length === 1).flat().filter(c => c.guards.length === 0).flatMap(c => c.atoms.flatMap(a => {
       if (a.k !== "safeInteger") return [];
       const [x = "", ...fields] = a.of.split(".");
       return [JSON.stringify({ kind: "value", slot: param(x).position, path: fields })];

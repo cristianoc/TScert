@@ -398,7 +398,7 @@ function claimsDocument(v: JsonRead): SourceClaims {
         };
   };
   const entry = (x: JsonRead): EntryClaim => {
-    const r = record(x, "an entry", ["point", "start", "bindings", "bounds", "facts", "quantified"]);
+    const r = record(x, "an entry", ["point", "start", "bindings", "bounds", "facts", "quantified", "apart"]);
     const integer = (v: JsonRead, what: string): number => {
       if (typeof v !== "number" || !Number.isSafeInteger(v)) fail(`${what} is a safe integer`);
       return v;
@@ -442,6 +442,10 @@ function claimsDocument(v: JsonRead): SourceClaims {
         return { name: name(q.name, "a quantified fact's array"),
           path: each(q.path, "a quantified fact's path", (g) => name(g, "a path's field")), stop: termRef(q.stop),
           body: each(q.body, "a quantified fact's body", bodyClaim) };
+      }),
+      apart: each(r.apart, "an entry's region facts", (f) => {
+        const q = record(f, "a region fact", ["name", "other"]);
+        return { name: name(q.name, "a region fact's binding"), other: name(q.other, "a region fact's other binding") };
       }) };
   };
   const certificate = (x: JsonRead): ResolutionCertificate => {

@@ -544,6 +544,7 @@ let statements (expr:Analysis_state.expression_infer) execute_bindings owner_spa
     (* A computed receiver has already been typed while the statement's
        expressions were proposed. Its claim supplies the method contract;
        Lean checks both the receiver and the selected call signature. *)
+    | ArrayLiteral _ -> latest_claim e.pos
     | _ -> claimed_type e.pos in
   (* The classes a type admits: an object, a number, a store (`unknown`). *)
   let classes t = match head t with
@@ -574,16 +575,21 @@ let statements (expr:Analysis_state.expression_infer) execute_bindings owner_spa
       | None -> (try module_type x with Json.Error _ -> None) in
     Option.bind declared footprint_of);
   (* A host-relative member, or a primitive's prototype member, using the
-     same declaration that types its call. *)
-  let method_type env r key = match Option.map head (receiver_type env r) with
-    | Some (Atoms [atom]) when Type_queries.primitive_prototype atom <> None ->
+     same declaration that types its call; the primitive read off the
+     receiver's declared type or, for a receiver no binding's path is
+     (`xs[i]!`), its claimed one. *)
+  let method_type env r key =
+    let declared = receiver_type env r in
+    let receiver = match declared with Some t -> Some t | None -> claimed_type r.Source.pos in
+    match Option.map head receiver, declared with
+    | Some (Atoms [atom]), _ when Type_queries.primitive_prototype atom <> None ->
       Option.map (fun (g:Semantic.field) -> g.read)
         (field_of (Atoms [Named (Option.get (Type_queries.primitive_prototype atom),[])]) key)
-    | Some t -> (match field_of t key with
+    | _, Some t -> (match field_of t key with
       | Some g when g.host && not g.optional -> Some g.read
       | _ -> None)
-    | None -> None in
-  Linear_facts.method_footprint := (fun env r key -> Option.bind (method_type env r key) footprint_of);
+    | _, None -> None in
+  let method_member = method_type in
   (* Whether every signature states a typed array's element write. *)
   let element_write t = match head t with
     | Atoms [Shape {calls;_}] -> calls <> [] && List.for_all (fun (s : Semantic.signature) ->
@@ -607,8 +613,15 @@ let statements (expr:Analysis_state.expression_infer) execute_bindings owner_spa
     | _ -> false);
   (* The signatures of a receiver's method: a host-relative member, or a
      primitive's, its prototype's (`Type_queries.primitive_prototype`). *)
-  Linear_facts.method_signatures := (fun env r key ->
-    let member = method_type env r key in
+  Linear_facts.method_signatures := (fun env r key args ->
+    let receiver = match receiver_type env r with Some t -> Some t | None -> claimed_type r.Source.pos in
+    let member = match Option.map head receiver with
+      | Some (Atoms [Shape {elements=Some _;fields;_}]) when not (List.exists (fun (g:Semantic.field) -> g.name = key) fields) ->
+        Option.map (fun (g:Semantic.field) -> g.read) (field_of (Atoms [Named (Type_queries.array_prototype,[])]) key)
+      | Some (Atoms [atom]) when Type_queries.primitive_prototype atom <> None ->
+        Option.map (fun (g:Semantic.field) -> g.read)
+          (field_of (Atoms [Named (Option.get (Type_queries.primitive_prototype atom),[])]) key)
+      | _ -> method_type env r key in
     match Option.map head member with
     | Some (Atoms [Shape {calls;_}]) ->
       List.filter (fun (s : Semantic.signature) -> List.for_all (fun (p,(a : Source.expr)) ->

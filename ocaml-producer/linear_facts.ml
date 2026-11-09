@@ -54,6 +54,11 @@ let cell_terms : (string -> bool) ref = ref (fun _ -> false)
 (* The body's parameters held in slots, whose objects are older than its
    cells. Set by the flow around each body. *)
 let parameter_binding : (string -> bool) ref = ref (fun _ -> false)
+(* Whether a binding was declared before every cell the write at hand
+   writes, set by `after_cell_updates`: its object is older than those
+   cells, which Lean's separation at each cut keeps apart from the fields
+   its record names (`Observations.separationFacts`). *)
+let older_than_written : (string -> bool) ref = ref (fun _ -> false)
 (* How many bodies' flows are being solved, a closure's inside its owner's. *)
 let body_depth = ref 0
 (* A path, a length or a typed-array length reads the heap (Lean's
@@ -260,7 +265,7 @@ let rapart (rs : rfact list) x y = List.mem (x,y) rs || List.mem (y,x) rs
 
 let add env (fs : fact list) =
   let fs = tighten fs in
-  List.filter (fun (n,_) -> not (is_fact n) || is_gfact n || is_efact n || is_dfact n) env @ List.map (fun (t,b) -> fact_key t b, Value Semantic.top) fs
+  List.filter (fun (n,_) -> not (is_fact n) || is_gfact n || is_efact n || is_dfact n || is_rfact n) env @ List.map (fun (t,b) -> fact_key t b, Value Semantic.top) fs
 let gadd env (gs : gfact list) =
   List.filter (fun (n,_) -> not (is_gfact n)) env @
     List.map (fun g -> gfact_key g, Value Semantic.top) (List.sort_uniq compare gs)
@@ -488,6 +493,21 @@ let rec linear ?(array = fun _ _ -> false) env fs (e : expr) : ((string * int) l
 let equal x (t,c) : fact list =
   [int_fact x; norm ((x,1) :: scale (-1) t), c; norm ((x,-1) :: t), -c]
 
+(* `a ± (c ? p : q)` read as `c ? a ± p : a ± q`, as Lean's lowering runs
+   the rest of the expression in each arm, where `a` is a binding or a
+   literal `c` does not assign. *)
+let distribute (e : expr) = match e.node with
+  | Arith ((Add | Sub) as op,({node=(Id _ | Literal _);_} as a),{node=Conditional (c,p,q);_})
+    when (match a.node with Id x -> not (Source.assigns_expr x c) | _ -> true) ->
+    Some (c,{e with node=Arith (op,a,p)},{e with node=Arith (op,a,q)})
+  | _ -> None
+
+(* The facts after `x = c ? p : q`, each arm assigned under what its answer
+   of `c` states and the two joined (set below, where the comparison and the
+   join are defined). *)
+let assign_arms : (array:(string -> string list -> bool) -> (string * Environment.binding) list -> fact list ->
+    string -> expr -> expr -> expr -> fact list option) ref = ref (fun ~array:_ _ _ _ _ _ _ -> None)
+
 (* Signed shifts retain their quotient inequalities; a nonnegative mask
    bounds its result by the mask and the left operand. *)
 let bitwise_facts ~array env fs x (e : expr) = match e.node with
@@ -643,6 +663,12 @@ let call_footprint : ((string * Environment.binding) list -> string -> Semantic.
 (* The footprint of a receiver method signature compatible with its actuals. *)
 let method_footprint : ((string * Environment.binding) list -> expr -> Semantic.key -> expr list -> Semantic.footprint option) ref =
   ref (fun _ _ _ _ -> None)
+(* Whether every signature of the binding `f`, or of a receiver's method,
+   states a typed array's element write, which alters no object or number and
+   keeps every store's length (Lean's `Effect.elementWrite`). *)
+let call_element_write : ((string * Environment.binding) list -> string -> bool) ref = ref (fun _ _ -> false)
+let method_element_write : ((string * Environment.binding) list -> expr -> Semantic.key -> bool) ref =
+  ref (fun _ _ _ -> false)
 (* Whether every signature of a receiver's method grows only its receiver's
    store (Lean's `Effect.receiverGrows`, `PromiseCalls.growChanges`). *)
 let method_grows : ((string * Environment.binding) list -> expr -> Semantic.key -> bool) ref =
@@ -739,7 +765,7 @@ let write_changes ~facts ~bounds env (e : expr) : changes option =
   | Invoke ({node=Read (r,key);_},args,[],_) when heap_free env r && List.for_all (heap_free env) args ->
     if !method_grows env r key then Some { obj = false; num = false; store = `Grow; framed = no_frame; apart = false; cell_write = false }
     else if !method_element_write env r key then Some { element_changes with framed = (fun b g -> slot_binding env b && !view_field env b g) }
-    else Option.map (of_footprint env) (!method_footprint env r key)
+    else Option.map (of_footprint env) (!method_footprint env r key args)
   | _ -> object_changes env e
 
 let statement_changes ~facts ~bounds env (s : stmt) = match s.statement with
@@ -1593,7 +1619,7 @@ let element_facts ~array env fs (e : expr) : fact list * (Json.t * string) list 
         found := (e.pos,name) :: !found;
         extra := !extra @ facts
       end
-    | Call ({node=Id "%ElementAt%";_},None,[xs;k],[],_) when not (List.mem_assoc e.pos !found) ->
+    | Call ({node=Id ("%ElementAt%" | "%ByteAt%");_},None,[xs;k],[],_) when not (List.mem_assoc e.pos !found) ->
       (match path_of env xs, linear ~array env fs k with
        | Some (root,path), Some (kt,kc) ->
          let ranged = fs @ term_ranges ((kt,0) :: fs) in
@@ -1669,7 +1695,7 @@ let erestate_read name (root,path) (e : efact) : efact option =
    actual, a safe integer the facts give as a linear form, each over `xs`'s
    whole array whose body facts the facts state of `a` at the index
    `xs.length` (`every-push`). *)
-let egrown ~array env fs (es : efact list) (e : expr) : efact list option =
+let egrown ?(regions = []) ~array env fs (es : efact list) (e : expr) : efact list option =
   let es = List.filter (fun e -> e.choices = []) es in
   match e.node with
   | Invoke ({node=Read (r,key);_},args,[],_) when heap_free env r && List.for_all (heap_free env) args &&
@@ -1700,10 +1726,23 @@ let egrown ~array env fs (es : efact list) (e : expr) : efact list option =
       (term_kept ch ef.stop || appended ef)) es)
   | _ -> None
 
+(* Whether a term reads, through the heap, nothing of the region of the array
+   `xs` holds: a binding's value, a string's length, or the length of an array
+   a region fact keeps apart from it (Lean's `termApart`). *)
+let term_apart (rs : rfact list) xs t =
+  t = index_var || t = elem_var || String.starts_with ~prefix:"%offset" t ||
+  (let b,path,kind = term_parts t in
+   path = [] && (match kind with
+     | Value_term | Str_length_term -> true
+     | Length_term -> rapart rs xs b
+     | View_term -> false))
+
 (* The quantified facts a step keeps: across a growing call, those `egrown`
    keeps; where it writes no heap, those naming no binding it assigns (Lean
-   keeps an atom across a step that keeps the heap); none otherwise, as Lean's
-   `IndexFact.keptBy` keeps none. *)
+   keeps an atom across a step that keeps the heap); across a write at a
+   checked index, those over arrays apart from the written one; across a
+   change keeping stores and numbers, those whose array, bound and terms it
+   keeps (Lean's `everyKept`); none otherwise. *)
 (* The quantified facts a typed array's element write `b[k] = v` keeps (Lean's
    `PromiseCalls.everyWritten`, `every-write`): each over `b`'s array whose
    bound the facts state at most `k`, or each of whose body facts they state
@@ -1723,27 +1762,38 @@ let ewritten ~array env fs (es : efact list) (e : expr) : efact list option =
          let t = List.concat_map (fun (n,x) ->
            if n = index_var then scale x kt else if n = elem_var then scale x vt else [n,x]) t in
          entails (ranged [ef.stop,1]) (norm t, d - a * kc - c * vc)) ef.body in
-       Some (List.filter (fun (ef : efact) -> ef.arr = (b,[]) && (past ef || meets ef)) es)
+       let terms = List.sort_uniq String.compare (List.concat_map (fun (t,_) -> List.map fst t) fs) in
+       Some (List.concat_map (fun (ef : efact) ->
+         if ef.arr <> (b,[]) || ef.body = [] then [] else
+         (if past ef || meets ef then [ef] else []) @
+         (if not (meets ef) || not (entails (ranged [ef.stop,1]) (norm (kt @ [ef.stop,-1]), -kc)) then [] else
+          List.filter_map (fun stop ->
+            if entails (ranged [stop,1]) (norm ((stop,1) :: scale (-1) kt), kc + 1) &&
+               entails (ranged [stop,1]) (norm (kt @ [stop,-1]), -kc - 1)
+            then Some { ef with stop } else None) terms)) es)
      | _ -> Some [])
   | _ -> None
 
 let estatement ?(array = fun _ _ -> false) ?(facts = []) ?(regions = []) env (es : efact list) (s : stmt) : efact list =
-  let es = match (match s.statement with Effect e -> egrown ~regions ~array env facts es e | _ -> None) with
+  let es = match (match s.statement with
+    | Effect e -> (match egrown ~regions ~array env facts es e with Some es -> Some es | None -> ewritten ~array env facts es e)
+    | _ -> None) with
   | Some es -> es
   | None -> if statement_heap_free env s then es else
     match s.statement with
     (* A write at an index of `xs` keeps each quantified fact over an array
        apart from it whose bound and free terms read nothing of its region
-       (Lean's `writeAtoms`, `every-write`). *)
+       (Lean's `writeAtoms`, `every-apart-write`). *)
     | Effect {node=IndexWrite ({node=Id xs;_},{node=Id _;_},rhs);_} when heap_free env rhs && slot_binding env xs ->
       List.filter (fun e -> snd e.arr = [] && rapart regions xs (fst e.arr) && term_apart regions xs e.stop &&
-        List.for_all (fun ((t,_) : fact) -> List.for_all (fun (n,_) -> term_apart regions xs n) t) e.body) es
+        List.for_all (fun ((t,_) : fact) -> List.for_all (fun (n,_) -> term_apart regions xs n) t) (e.body @ List.concat_map datoms e.choices)) es
     | _ ->
     match statement_changes ~facts:[] ~bounds:[] env s with
     | Some ch when ch.store = `Keep && not ch.num ->
       List.filter (fun e -> term_kept ch (length_term ~path:(snd e.arr) (fst e.arr)) &&
         term_kept ch e.stop && List.for_all (fun (ts,_) -> List.for_all (fun (t,_) ->
-          t = index_var || t = elem_var || term_kept ch t) ts) e.body) es
+          t = index_var || t = elem_var || String.starts_with ~prefix:"%offset" t ||
+          (term_binding t <> elem_var && term_kept ch t)) ts) (e.body @ List.concat_map datoms e.choices)) es
     | _ -> [] in
   let assigned = names_assigned s env in
   let es = List.filter (fun e -> not (List.exists (fun b -> List.mem b assigned) (ebindings e))) es in
@@ -1764,7 +1814,7 @@ let estatement ?(array = fun _ _ -> false) ?(facts = []) ?(regions = []) env (es
           List.mem c ["Uint8Array"; "Uint16Array"; "Int32Array"; "Float64Array"] &&
           List.exists (fun (terms,_) -> List.mem_assoc (view_term name) terms)
             (construct_ensures ~array env facts name c args) ->
-          Some { arr = (name,[]); stop = view_term name; body = [] }
+          Some { arr = (name,[]); stop = view_term name; body = []; choices = [] }
       | _ -> None) bindings
   | _ -> es
 

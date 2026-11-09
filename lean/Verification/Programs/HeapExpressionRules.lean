@@ -1272,8 +1272,11 @@ def writeKeeps (k : Knowledge) (i : Nat) (fld : PropKey) (owned : Bool) (s : Nat
 its new value satisfies that body too. This also covers an element location
 that aliases the written cell; no separation is assumed. -/
 def fieldEveryBody (as : List IndexAtom) (chg : Changes) (first : Nat → String → Bool)
-    (v : Nat) (F : Linear.Fact Bound) : Bool :=
-  !F.vars.contains .index && bodyKeptBy chg first F &&
+    (v : Nat) : LinearClause Bound → Bool
+  | .either _ _ => false
+  | .atom F => (F.vars.all fun b => match b with
+      | .index | .offset _ | .project _ _ => false
+      | _ => true) && bodyKeptBy chg first (.atom F) &&
     match F.mapVars (some ∘ Bound.inst 0 v) with
     | some G => G.vars.all (fun t => termDefined as t && t.keptBy chg first) && entailsKnown as G
     | none => false
@@ -1300,41 +1303,44 @@ theorem fieldEvery_holds {as : List IndexAtom} {chg : Changes} {first : Nat → 
     have hl' := hc.1 sto _ hl (by simp [Changes.alters, hstore])
     refine ⟨w, sto, ls, n, hw, hs, hl', termValue_kept hc hf hst hn, fun j hj F hF => ?_⟩
     have hB := List.all_eq_true.mp hb F hF
-    simp only [fieldEveryBody, Bool.and_eq_true, Bool.not_eq_true'] at hB
-    obtain ⟨⟨hno, hkept⟩, hnew⟩ := hB
-    by_cases hloc : ls[j]? = some (some l)
-    · split at hnew
-      · rename_i G hG
-        simp only [Bool.and_eq_true, List.all_eq_true] at hnew
-        have hG0 : (IndexFact.linear G).HoldsAt ρ h :=
-          ⟨fun t ht => termDefined_sound he (hnew.1 t ht).1, entailsKnown_sound he hnew.2⟩
-        have hG1 := IndexFact.holdsAt_kept hc hf
-          (by simp only [IndexFact.keptBy, Bool.or_eq_true]; exact .inl (List.all_eq_true.mpr fun t ht => (hnew.1 t ht).2)) hG0
-        refine (factAt_mapVars hG fun y hy t ht => ?_).mp hG1
-        simp only [Function.comp_apply, Option.some.injEq] at ht
-        subst ht
-        cases y with
-        | index =>
-          have := List.contains_iff_mem.mpr hy
-          rw [hno] at this
-          contradiction
-        | elem => simp [Bound.inst, termValue_value, boundValue, elementInt, hloc, hlt]
-        | free t => rfl
-      · cases hnew
-    · refine factAt_monotone (fun y m hky hy => ?_) (fun y m hgy hy => ?_) hkept (hall j hj F hF)
-      · cases y with
-        | index => exact hy
-        | elem =>
-          simp only [boundValue, elementInt] at hy ⊢
-          split at hy
-          · rename_i l' hl0
-            have hne : l ≠ l' := by intro hh; subst hh; exact hloc hl0
-            simpa only [List.getElem?_set_ne hne] using hy
-          · exact hy
-        | free t => exact termValue_kept hc hf hky hy
-      · cases y with
-        | index | elem => simp [Bound.grownBy] at hgy
-        | free t => simp [Bound.grownBy, Term.grownBy, hstore] at hgy
+    cases F with
+    | either A B => cases hB
+    | atom F =>
+      simp only [fieldEveryBody, Bool.and_eq_true] at hB
+      obtain ⟨⟨hno, hkept⟩, hnew⟩ := hB
+      by_cases hloc : ls[j]? = some (some l)
+      · split at hnew
+        · rename_i G hG
+          simp only [Bool.and_eq_true, List.all_eq_true] at hnew
+          have hG0 : (IndexFact.linear G).HoldsAt ρ h :=
+            ⟨fun t ht => termDefined_sound he (hnew.1 t ht).1, entailsKnown_sound he hnew.2⟩
+          have hG1 := IndexFact.holdsAt_kept hc hf
+            (by simp only [IndexFact.keptBy, Bool.or_eq_true]; exact .inl (List.all_eq_true.mpr fun t ht => (hnew.1 t ht).2)) hG0
+          refine (factAt_mapVars hG fun y hy t ht => ?_).mp hG1
+          simp only [Function.comp_apply, Option.some.injEq] at ht
+          subst ht
+          cases y with
+          | index => have := List.all_eq_true.mp hno .index hy; contradiction
+          | offset d => have := List.all_eq_true.mp hno (.offset d) hy; contradiction
+          | project k p => have := List.all_eq_true.mp hno (.project k p) hy; contradiction
+          | elem => simp [Bound.inst, termValue_value, boundValue, elementInt, hloc, hlt]
+          | free t => rfl
+        · cases hnew
+      · refine factAt_monotone (fun y m hky hy => ?_) (fun y m hgy hy => ?_) hkept (hall j hj (.atom F) hF)
+        · cases y with
+          | index => exact hy
+          | elem =>
+            simp only [boundValue, elementInt] at hy ⊢
+            split at hy
+            · rename_i l' hl0
+              have hne : l ≠ l' := by intro hh; subst hh; exact hloc hl0
+              simpa only [List.getElem?_set_ne hne] using hy
+            · exact hy
+          | project _ _ | offset _ => simp [Bound.keptBy] at hky
+          | free t => exact termValue_kept hc hf hky hy
+        · cases y with
+          | index | elem | project _ _ | offset _ => simp [Bound.grownBy] at hgy
+          | free t => simp [Bound.grownBy, Term.grownBy, hstore] at hgy
   · cases hk
 
 /-- A write forgets old cell observations, except those about locations known
