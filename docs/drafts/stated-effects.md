@@ -716,13 +716,15 @@ which writes the cached `Uint16Array` `bmpProperties` holds.
 array allocated in the body, whose store the step-frame rule rebases to
 `all`: a selected location's freshness is not tracked by the regional
 check. With store freshness of slots and cells
-([fresh array storage](../FOOTPRINTS.md#fresh-array-storage)), observed
-on the same sources (2026-11-09): `getUnspacedGraphemes` is refused at the
-same push, the cell `unspaced` keeping no freshness fact across the loop's
-call of `readScriptRuns`, whose frame changes locations of class value and
-a store region, since no fact separates the cell's location from what such
-a frame changes; `readScriptRuns` and `spaceSharesScriptRun` are refused
-at `getScriptFactsAt` as above. `measureAnalysis`, with the frames read at their signatures and
+([fresh array storage](../FOOTPRINTS.md#fresh-array-storage)) and a local
+written inside an expression held in a slot
+([slot or cell](../SOURCE-ELABORATION.md#slot-or-cell)), observed on the
+same sources (TScert fb3e1fd5, 2026-11-09): `unspaced` is a slot, fresh
+across the loop's call of `readScriptRuns`, and `getUnspacedGraphemes` is
+refused first at its call of `getScriptFacts` (refused as above) and next
+at `findGraphemeEnds`, which writes the `Int32Array` `ends`; with those two
+calls replaced in a copy, it verifies. `readScriptRuns` and
+`spaceSharesScriptRun` are refused at `getScriptFactsAt` as above. `measureAnalysis`, with the frames read at their signatures and
 `0 <= from && from <= to` added to its main loop's invariant, keeps
 `to <= analysis.flags.length` through that loop, and loses it across its
 call of `addKanaKerning`, which states no frame.
