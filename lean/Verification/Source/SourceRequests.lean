@@ -42,6 +42,10 @@ structure SourceRequest (σ ι : Type) [Labels ι] [StoreView σ ι] extends Req
   /-- Whether the declaration claims its footprint on a throw too, which its
   graph must establish as well. -/
   onThrow : Bool := false
+  /-- Whether the declaration promises a fresh result: each normal return's
+  value has an array store the run allocated, which its graph must establish
+  (`effectResult`). -/
+  fresh : Bool := false
   /-- The facts the declaration states at its returns (`Fragment.Fn.ensures`),
   position `0` the result and `q + 1` input slot `q`'s entry value, which
   each return of its graph must establish (`ensuresResult`). -/
@@ -174,65 +178,76 @@ theorem checkAssertions_entailed {r : SourceRequest σ ι} {c : Response ι}
   simp only [checkAssertions, Bool.and_eq_true, List.all_eq_true] at h
   exact ⟨checkGraphAssertions_entailed h.1.1, fun q C hm => checkGraphAssertions_entailed (h.2 (q, C) hm)⟩
 
-/-- A unit's claimed footprint, established by its own graph and certificate.
-An async unit's is `top`, required before anything else. The footprint
-letting everything change holds of every run; any other bound
-node by node (`GraphCode.compositionalChecked`), or by a graph of pure nodes,
-which preserves the heap, for a unit returning a plain result under the
-ordinary checker. -/
+/-- A unit's claimed footprint and fresh result, established by its own graph
+and certificate. An async unit's footprint is `top` and it promises no fresh
+result, required before anything else. The footprint letting everything
+change, without a fresh result or a footprint on a throw, holds of every run;
+any other claim is established node by node
+(`GraphCode.compositionalChecked`), or, without a fresh result, by a graph of
+pure nodes, which preserves the heap, for a unit returning a plain result
+under the ordinary checker. A fresh result is established node by node
+whatever the footprint, as `GraphCode.effectCheckedResult` does for code. -/
 @[nospecialize] def effectResult (r : SourceRequest σ ι) (c : Response ι) : ProgramCertificates.CheckResult ι Unit :=
   (ProgramCertificates.CheckResult.ofBool (RequestJson.asyncEffects r.async r.footprint &&
-    RequestJson.statedWithin r.async r.footprint r.onThrow r.stated)).bind fun _ =>
-  if r.footprint = .top ∧ r.onThrow = false then pure () else
-    (ProgramCertificates.CheckResult.ofBool (r.qualification.isNone && r.footprint != .top)).bind fun _ =>
-    (ProgramCertificates.CheckResult.ofBool (r.program.all fun n => Purity.pureTerm n.expression)).orElse fun _ =>
+    (!r.async || !r.fresh) &&
+    RequestJson.statedWithin r.async r.footprint r.onThrow r.fresh r.stated)).bind fun _ =>
+  if r.footprint = .top ∧ r.onThrow = false ∧ r.fresh = false then pure () else
+    (ProgramCertificates.CheckResult.ofBool (r.qualification.isNone && (r.footprint != .top || r.fresh))).bind fun _ =>
+    (ProgramCertificates.CheckResult.ofBool (!r.fresh && r.program.all fun n => Purity.pureTerm n.expression)).orElse fun _ =>
     GraphCode.compositionalCheckedResult (RequestJson.graph r.toRequest) (StoreView.images r.types) c.readSummaries
-      r.footprint false r.onThrow r.start r.program c.certificate
+      r.footprint r.fresh r.onThrow r.start r.program c.certificate
 
 theorem effectResult_preserving {r : SourceRequest σ ι} {c : Response ι}
-    (h : (effectResult r c).accepted = true) (he : r.footprint ≠ .top ∨ r.onThrow = true) :
-    r.qualification = none ∧ r.footprint ≠ .top ∧
-      (r.program.all (fun n => Purity.pureTerm n.expression) = true ∨
+    (h : (effectResult r c).accepted = true)
+    (he : r.footprint ≠ .top ∨ r.onThrow = true ∨ r.fresh = true) :
+    r.qualification = none ∧
+      ((r.fresh = false ∧ r.program.all (fun n => Purity.pureTerm n.expression) = true) ∨
         GraphCode.compositionalChecked (RequestJson.graph r.toRequest) (StoreView.images r.types) c.readSummaries
-          r.footprint false r.onThrow r.start r.program c.certificate = true) := by
-  have hn : ¬(r.footprint = .top ∧ r.onThrow = false) := by
-    rintro ⟨h1, h2⟩
-    rcases he with he | he
+          r.footprint r.fresh r.onThrow r.start r.program c.certificate = true) := by
+  have hn : ¬(r.footprint = .top ∧ r.onThrow = false ∧ r.fresh = false) := by
+    rintro ⟨h1, h2, h3⟩
+    rcases he with he | he | he
     · exact he h1
     · rw [h2] at he; cases he
+    · rw [h3] at he; cases he
   simp only [effectResult, ProgramCertificates.CheckResult.accepted_bind,
     ProgramCertificates.CheckResult.accepted_ofBool, Bool.and_eq_true] at h
   replace h := h.2
   simp only [hn, if_false, ProgramCertificates.CheckResult.accepted_bind,
     ProgramCertificates.CheckResult.accepted_ofBool, ProgramCertificates.CheckResult.accepted_orElse,
-    Bool.and_eq_true, Option.isNone_iff_eq_none, Bool.or_eq_true, bne_iff_ne, ne_eq] at h
-  exact ⟨h.1.1, h.1.2, h.2⟩
+    Bool.and_eq_true, Option.isNone_iff_eq_none, Bool.or_eq_true, Bool.not_eq_true'] at h
+  exact ⟨h.1.1, h.2⟩
 
 /-- **An async unit's footprint is `top`** where its effect is checked. -/
 theorem effectResult_async {r : SourceRequest σ ι} {c : Response ι}
     (h : (effectResult r c).accepted = true) (ha : r.async = true) : r.footprint = .top := by
   simp only [effectResult, ProgramCertificates.CheckResult.accepted_bind,
     ProgramCertificates.CheckResult.accepted_ofBool, Bool.and_eq_true] at h
-  simpa [RequestJson.asyncEffects, ha] using h.1.1
+  simpa [RequestJson.asyncEffects, ha] using h.1.1.1
 
 /-- **A stated unit's claim is within its statement** where its effect is
-checked: its footprint within the statement's, below `top`, on a throw too
-where the statement says so, and the unit is not async. -/
+checked: the statement adds a guarantee (a footprint below `top`, or a fresh
+result), the claim's footprint is within the statement's, on a throw too
+where the statement says so, it promises a fresh result where the statement
+does, and the unit is not async. -/
 theorem effectResult_stated {r : SourceRequest σ ι} {c : Response ι}
     (h : (effectResult r c).accepted = true) {s : CallEffects.Effect} (hs : r.stated = some s) :
-    r.async = false ∧ s.footprint ≠ .top ∧ r.footprint.le s.footprint = true ∧
-      (s.onThrow = true → r.onThrow = true) := by
+    r.async = false ∧ (s.footprint ≠ .top ∨ s.fresh = true) ∧ r.footprint.le s.footprint = true ∧
+      (s.onThrow = true → r.onThrow = true) ∧ (s.fresh = true → r.fresh = true) := by
   simp only [effectResult, ProgramCertificates.CheckResult.accepted_bind,
     ProgramCertificates.CheckResult.accepted_ofBool, Bool.and_eq_true] at h
   have hw := h.1.2
   rw [hs] at hw
   simp only [RequestJson.statedWithin, Bool.and_eq_true, Bool.not_eq_true', bne_iff_ne, ne_eq,
     Bool.or_eq_true] at hw
-  obtain ⟨⟨⟨ha, htop⟩, hle⟩, ho⟩ := hw
-  refine ⟨ha, htop, hle, fun hso => ?_⟩
-  rcases ho with ho | ho
-  · rw [hso] at ho; cases ho
-  · exact ho
+  obtain ⟨⟨⟨⟨ha, htop⟩, hle⟩, ho⟩, hf⟩ := hw
+  refine ⟨ha, htop, hle, fun hso => ?_, fun hsf => ?_⟩
+  · rcases ho with ho | ho
+    · rw [hso] at ho; cases ho
+    · exact ho
+  · rcases hf with hf | hf
+    · rw [hsf] at hf; cases hf
+    · exact hf
 
 /-- A unit's postcondition, established by its own graph: none, or facts of
 its result and of its inputs' entry values, which each return its graph may
@@ -381,14 +396,16 @@ theorem program_nodes (P : Program) :
     rw [ih]
 
 /-- **A unit claiming a footprint meets it.** A unit claiming a footprint
-other than the one letting everything change, or claiming it on a throw, run
-as the code its graph describes from any environment of values its inputs
-admit, is safe; on normal return the heap it leaves is within its footprint
-of its entry heap, and so is the heap a throw leaves where it claims
-`onThrow`. -/
+other than the one letting everything change, or claiming it on a throw, or
+promising a fresh result, run as the code its graph describes from any
+environment of values its inputs admit, is safe; on normal return the heap
+it leaves is within its footprint of its entry heap, and the value it
+returns has an array store at or above the entry heap's length where it
+promises a fresh result; the heap a throw leaves is within its footprint
+where it claims `onThrow`. -/
 theorem checkRequests_footprint_at {rs : List (SourceRequest σ ι)} {b : Bundle ι}
     (h : checkRequests rs b = true) {r c} (hm : (r,c) ∈ rs.zip b.functions)
-    (heffect : r.footprint ≠ .top ∨ r.onThrow = true)
+    (heffect : r.footprint ≠ .top ∨ r.onThrow = true ∨ r.fresh = true)
     (η : PositiveGraphs.MixedAssignment ι) (n W heap) (L : List Tm) (d : Tm)
     (he : EnvOk (reassign (RequestJson.graph r.toRequest) η) r.inputs (envOf L d) n W) (hw : WorldAdm W)
     (hh : HeapOk n W heap) (hvalues : ∀ v ∈ L, isVal v = true) (hd : isVal d = true)
@@ -396,12 +413,13 @@ theorem checkRequests_footprint_at {rs : List (SourceRequest σ ι)} {b : Bundle
     (hidx : HeapKnowledge.IndexHolds r.entryIndices (envOf L d) heap) :
     HeapObservations.SafePostExc (excOf (reassign (RequestJson.graph r.toRequest) η))
       (ControlFlow.GoalHolds (reassign (RequestJson.graph r.toRequest) η) r.goal (r.goal.argument (envOf L d)))
-      (fun h' _ => r.footprint.Holds heap h') (fun h' => r.onThrow = true → r.footprint.Holds heap h') n W heap
+      (fun h' v => r.footprint.Holds heap h' ∧ (r.fresh = true → Footprints.FreshAt heap.length v))
+      (fun h' => r.onThrow = true → r.footprint.Holds heap h') n W heap
       (.goto (r.program.map (·.expression)) (r.program.map fun n => (n.continuation, n.handler))
         r.start L d) := by
   obtain ⟨es, _, hunit⟩ := checkRequests_pair h hm
   obtain ⟨checked, -, heff, -⟩ := (checkRequestResult_accepted_iff _ _ _).mp hunit
-  obtain ⟨hq, -, hp⟩ := effectResult_preserving heff heffect
+  obtain ⟨hq, hp⟩ := effectResult_preserving heff heffect
   simp only [SourceRequest.checker, hq] at checked
   rw [verify_eq] at checked
   simp only [Bool.and_eq_true] at checked
@@ -420,15 +438,15 @@ theorem checkRequests_footprint_at {rs : List (SourceRequest σ ι)} {b : Bundle
     have hc := hacc.2
     rw [← hP] at hc
     have hs := GraphCode.goto_safe hc hcodes hsums n W heap L d he hw hh hsep hidx
-    rcases hp with hp | hp
+    rcases hp with ⟨hfresh, hp⟩ | hp
     · -- A pure graph keeps the heap a prefix at every step, a raise included.
       have hp : ∀ e ∈ r.program.map (·.expression), Purity.pureTerm e = true := by
         intro e he
         obtain ⟨node, hn, rfl⟩ := List.mem_map.mp he
         exact List.all_eq_true.mp hp node hn
       exact HeapObservations.SafePostExc.weaken
-        (fun _ _ h => Footprints.Closed.Holds.mono (Footprints.Closed.empty_le _)
-          ((CallEffects.Effect.post_ofFootprint _ .undef [] _ _ _).mp h))
+        (fun _ _ h => ⟨Footprints.Closed.Holds.mono (Footprints.Closed.empty_le _)
+          ((CallEffects.Effect.post_ofFootprint _ .undef [] _ _ _).mp h), fun hf => by rw [hfresh] at hf; cases hf⟩)
         (fun _ h _ => Footprints.Closed.Holds.mono (Footprints.Closed.empty_le _) h)
         (CallEffects.pure_safe_exc (r := .undef) (args := []) (.goto hp hvalues hd) hs)
     · rw [← hP] at hp
@@ -441,7 +459,7 @@ theorem checkRequests_footprint_at {rs : List (SourceRequest σ ι)} {b : Bundle
         exact hchecked.1
       have hb := GraphCode.goto_bounded hc hcodes hsums (GraphCode.nodes_of_checked hgraph hcodes hsums hp.2) hp.1
         n W heap L d he hw hh hsep hidx
-      exact HeapObservations.SafePostExc.weaken (fun _ _ hq => hq.1) (fun _ hq => hq) hb
+      exact HeapObservations.SafePostExc.weaken (fun _ _ hq => hq) (fun _ hq => hq) hb
   · contradiction
 
 /-- **A unit stating a postcondition meets it.** A unit whose declaration
@@ -492,7 +510,9 @@ theorem checkRequests_ensures_at {rs : List (SourceRequest σ ι)} {b : Bundle �
 "Stated effects"): run as the code its graph describes from any environment
 of values its inputs, its annotated parameters, admit, it is safe; on normal
 return the heap it leaves is within its statement's footprint of its entry
-heap, and so is the heap a throw leaves where the statement says so. -/
+heap, and the value it returns has an array store at or above the entry
+heap's length where the statement promises a fresh result; the heap a throw
+leaves is within the statement's footprint where the statement says so. -/
 theorem checkRequests_stated_at {rs : List (SourceRequest σ ι)} {b : Bundle ι}
     (h : checkRequests rs b = true) {r c} (hm : (r,c) ∈ rs.zip b.functions)
     {s : CallEffects.Effect} (hs : r.stated = some s)
@@ -503,21 +523,24 @@ theorem checkRequests_stated_at {rs : List (SourceRequest σ ι)} {b : Bundle ι
     (hidx : HeapKnowledge.IndexHolds r.entryIndices (envOf L d) heap) :
     HeapObservations.SafePostExc (excOf (reassign (RequestJson.graph r.toRequest) η))
       (ControlFlow.GoalHolds (reassign (RequestJson.graph r.toRequest) η) r.goal (r.goal.argument (envOf L d)))
-      (fun h' _ => s.footprint.Holds heap h') (fun h' => s.onThrow = true → s.footprint.Holds heap h') n W heap
+      (fun h' v => s.footprint.Holds heap h' ∧ (s.fresh = true → Footprints.FreshAt heap.length v))
+      (fun h' => s.onThrow = true → s.footprint.Holds heap h') n W heap
       (.goto (r.program.map (·.expression)) (r.program.map fun n => (n.continuation, n.handler))
         r.start L d) := by
   obtain ⟨es, _, hunit⟩ := checkRequests_pair h hm
   obtain ⟨-, -, heff, -⟩ := (checkRequestResult_accepted_iff _ _ _).mp hunit
-  obtain ⟨-, htop, hle, hthrow⟩ := effectResult_stated heff hs
-  have heffect : r.footprint ≠ .top ∨ r.onThrow = true := by
-    refine .inl fun hr => htop ?_
-    rw [hr] at hle
-    cases hsf : s.footprint with
-    | mk v st =>
-      rw [hsf] at hle
-      cases v <;> cases st <;> simp_all [Footprints.Closed.top, Footprints.Closed.le, Footprints.Change.le, Footprints.Change.rank, Footprints.Change.onValue, Footprints.Change.onStore]
+  obtain ⟨-, htop, hle, hthrow, hfresh⟩ := effectResult_stated heff hs
+  have heffect : r.footprint ≠ .top ∨ r.onThrow = true ∨ r.fresh = true := by
+    rcases htop with htop | htop
+    · refine .inl fun hr => htop ?_
+      rw [hr] at hle
+      cases hsf : s.footprint with
+      | mk v st =>
+        rw [hsf] at hle
+        cases v <;> cases st <;> simp_all [Footprints.Closed.top, Footprints.Closed.le, Footprints.Change.le, Footprints.Change.rank, Footprints.Change.onValue, Footprints.Change.onStore]
+    · exact .inr (.inr (hfresh htop))
   exact HeapObservations.SafePostExc.weaken
-    (fun h' _ hq => Footprints.Closed.Holds.mono hle hq)
+    (fun h' _ hq => ⟨Footprints.Closed.Holds.mono hle hq.1, fun hsf => hq.2 (hfresh hsf)⟩)
     (fun h' hq ho => Footprints.Closed.Holds.mono hle (hq (hthrow ho)))
     (checkRequests_footprint_at h hm heffect η n W heap L d he hw hh hvalues hd hsep hidx)
 
