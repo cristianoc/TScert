@@ -191,7 +191,7 @@ export function recordShape(reference: Reference, records: NamedRecords, fail: F
     }
     if (term.k !== "object") return fail(`${PREFIX} that is no record (${term.k === "atom" ? term.name : `a ${term.k}`}): ${name}`);
     if (term.calls.length) return fail(`${PREFIX} with call signatures: ${name}`);
-    if (term.prototype || term.host || term.stable) return fail(`${PREFIX} with a prototype or a host's members: ${name}`);
+    if (term.prototype || term.host) return fail(`${PREFIX} with a prototype or a host's members: ${name}`);
     return term;
   };
   // An interface's own members first, then each base's: one declared by both
