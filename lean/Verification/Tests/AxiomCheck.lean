@@ -67,6 +67,8 @@ run_cmd do
   check ``Verification.GraphCode.ArgumentPathTracking.read_now
   check ``Verification.GraphCode.ArgumentRegionGraph.checkRead_sound
   check ``Verification.GraphCode.ArgumentRegionGraph.checkCopy_sound
+  check ``Verification.PromiseCalls.regionFirst_kept
+  check ``Verification.PromiseCalls.effectKept_holds
   check ``Verification.GraphCode.ArgumentPathTracking.receiver_call
   check ``Verification.GraphCode.ArgumentPathTracking.checkReceiver_sound
   check ``Verification.GraphCode.ArgumentRegionGraph.nodeWithin_of_closed

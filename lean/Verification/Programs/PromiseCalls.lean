@@ -1887,6 +1887,137 @@ theorem growFirst_kept {k : HeapKnowledge.Knowledge} {t : Tm} {ρ : Env} {h h' :
         | _ => rw [hr] at hst; simp [Footprints.storeOf, Footprints.fieldsOf] at hst
       exact absurd rfl (HeapSeparation.apartAll_sound hf hk.2.2.2.1 hat hs hl)
 
+/-! ### Facts kept across a frame with store regions
+
+The callee's frame at the call's actuals (`Effect.within_iff_regions`) keeps
+every location its regions do not select within its closed bound. A slot's
+store is kept where the bound keeps stores and checked separation places the
+slot's store outside every region: for a region at a position's own store,
+a region fact `apart` between the actual's slot and the slot
+(`IndexWrites.apartFrom`); for a region through a field `f`, a read link
+from the actual's slot through `f` to a slot apart from it. The separation
+is the knowledge's own, checked where it was established; the kept store is
+the local observation bound `IndexFacts` reads as `first s "[]"`. -/
+
+/-- The caller's slot holding a call position's value: `0` the receiver, `p`
+the `p`-th actual, each a slot of the caller. -/
+def actualSlot (t : Tm) (p : Nat) : Option Nat :=
+  match t with
+  | .invoke _ r args =>
+    if p = 0 then (match r with | .var j => some j | _ => none)
+    else match args[p - 1]? with
+      | some (.var j) => some j
+      | _ => none
+  | _ => none
+
+theorem actualSlot_sound {t : Tm} {p j : Nat} (h : actualSlot t p = some j) (ρ : Env) :
+    CallEffects.callEnv (ExpressionEffects.receiverOf (instantiate 0 ρ t))
+      (ExpressionEffects.actualsOf (instantiate 0 ρ t)) p = ρ j := by
+  cases t <;> simp only [actualSlot, reduceCtorEq] at h
+  rename_i f r args
+  simp only [CallEffects.callEnv, ExpressionEffects.receiverOf, ExpressionEffects.actualsOf, instantiate]
+  by_cases hp : p = 0
+  · subst hp
+    simp only [if_true] at h ⊢
+    cases r <;> simp only [reduceCtorEq, Option.some.injEq] at h
+    subst h
+    simp [instantiate]
+  · simp only [hp, if_false] at h ⊢
+    cases ha : args[p - 1]? with
+    | none => rw [ha] at h; cases h
+    | some a =>
+      rw [ha] at h
+      cases a <;> simp only [reduceCtorEq, Option.some.injEq] at h
+      subst h
+      rw [List.getD_eq_getElem?_getD, instantiateArgs_eq_map, List.getElem?_map, ha]
+      simp [instantiate]
+
+/-- A slot's store lies outside a region of the call: checked separation from
+the store the region selects at the call's entry. -/
+def regionSep (k : HeapKnowledge.Knowledge) (t : Tm) (s : Nat) (r : Footprints.ArgumentStoreRegion) : Bool :=
+  match actualSlot t r.position, r.path with
+  | some a, [] => IndexWrites.apartFrom k a s
+  | some a, [f] => k.links.any fun g => !g.alias && !g.optional && g.cell == a && g.field == .str f &&
+      IndexWrites.apartFrom k g.value s
+  | _, _ => false
+
+/-- The slots whose store a frame with store regions keeps (`regionFirst_kept`). -/
+def regionFirst (k : HeapKnowledge.Knowledge) (eff : Effect) (t : Tm) : Nat → String → Bool :=
+  fun s g => g == "[]" && eff.closed.store.onStore == .keep && !eff.regions.isEmpty &&
+    eff.regions.all (regionSep k t s)
+
+/-- What a region selects at the call's entry, where it is separated from a
+slot, is no location of the slot's region. -/
+private theorem regionSep_resolve {k : HeapKnowledge.Knowledge} {t : Tm} {s : Nat}
+    {r : Footprints.ArgumentStoreRegion} {ρ : Env} {h : Heap}
+    (hk : HeapKnowledge.Holds k ρ h) (hr : regionSep k t s r = true) :
+    ∃ b, HeapKnowledge.RegionsApart h (ρ b) (ρ s) ∧
+      r.resolve (CallEffects.callEnv (ExpressionEffects.receiverOf (instantiate 0 ρ t))
+        (ExpressionEffects.actualsOf (instantiate 0 ρ t))) h = Footprints.storeOf (ρ b) := by
+  unfold regionSep at hr
+  split at hr
+  · rename_i a ha hp
+    refine ⟨a, IndexWrites.apartFrom_sound hr hk, ?_⟩
+    simp [Footprints.ArgumentStoreRegion.resolve, hp, actualSlot_sound ha ρ, HeapKnowledge.readPath]
+  · rename_i a f ha hp
+    obtain ⟨g, hg, hm⟩ := List.any_eq_true.mp hr
+    simp only [Bool.and_eq_true, Bool.not_eq_true', beq_iff_eq] at hm
+    obtain ⟨⟨⟨⟨hal, hop⟩, hcell⟩, hfield⟩, hsep⟩ := hm
+    refine ⟨g.value, IndexWrites.apartFrom_sound hsep hk, ?_⟩
+    have hl := hk.2.2.1 g hg
+    simp only [hal, hop, Bool.false_eq_true, if_false] at hl
+    obtain ⟨flds, c, oid, l, hobj, hlook, hv⟩ := hl
+    simp only [Footprints.ArgumentStoreRegion.resolve, hp, actualSlot_sound ha ρ, ← hcell, hobj]
+    rw [hfield] at hlook
+    simp [HeapKnowledge.readPath, hlook, hv]
+  · cases hr
+
+theorem regionFirst_kept {k : HeapKnowledge.Knowledge} {eff : Effect} {t : Tm} {ρ : Env} {h h' : Heap}
+    (hk : HeapKnowledge.Holds k ρ h) (hs : eff.receiverStore = false) (ho : eff.receiverOwn = false)
+    (hw : eff.within (ExpressionEffects.receiverOf (instantiate 0 ρ t)) (ExpressionEffects.actualsOf (instantiate 0 ρ t)) h h') :
+    HeapKnowledge.FirstKept (regionFirst k eff t) ρ h h' := by
+  intro s g fs cd o l v hf hρ hl hv
+  simp only [regionFirst, Bool.and_eq_true, beq_iff_eq, Bool.not_eq_true', List.isEmpty_eq_false_iff,
+    List.all_eq_true] at hf
+  obtain ⟨⟨⟨rfl, hkeep⟩, hne⟩, hall⟩ := hf
+  have hw' := (CallEffects.Effect.within_iff_regions hs ho _ _ h h').mp hw
+  -- the slot's store location holds a store: its region exists
+  obtain ⟨r0, hr0⟩ := List.exists_mem_of_ne_nil _ hne
+  obtain ⟨b0, hap0, -⟩ := regionSep_resolve hk (hall r0 hr0)
+  obtain ⟨_, _, sb, ys, -, hrs, -⟩ := hap0
+  have hstore : Footprints.storeOf (ρ s) = some l := by
+    rw [hρ]; simpa [Footprints.storeOf, Footprints.fieldsOf, arrayStoreKey] using hl
+  have hvarr : v = .arr ys := by
+    rcases hrs with ⟨-, hraw⟩ | ⟨st, -, hst, hls⟩
+    · rw [hρ] at hraw; cases hraw
+    · rw [hstore] at hst; cases hst
+      rw [hv] at hls; cases hls; rfl
+  -- no region selects it
+  have hout : ∀ r ∈ eff.regions, r.resolve (CallEffects.callEnv (ExpressionEffects.receiverOf (instantiate 0 ρ t))
+      (ExpressionEffects.actualsOf (instantiate 0 ρ t))) h ≠ some l := by
+    intro r hr heq
+    obtain ⟨b, ⟨sa, xs, sb', ys', hra, hrb, hdis⟩, hres⟩ := regionSep_resolve hk (hall r hr)
+    rw [hres] at heq
+    have hsa : sa = some l := by
+      rcases hra with ⟨-, hraw⟩ | ⟨st, hsa, hst, -⟩
+      · rw [hraw] at heq; simp [Footprints.storeOf, Footprints.fieldsOf] at heq
+      · rw [heq] at hst; cases hst; exact hsa
+    have hsb : sb' = some l := by
+      rcases hrb with ⟨-, hraw⟩ | ⟨st, hsb, hst, -⟩
+      · rw [hρ] at hraw; cases hraw
+      · rw [hstore] at hst; cases hst; exact hsb
+    exact hdis l (.inl hsa) l (.inl hsb) rfl
+  obtain ⟨v', hv', hc⟩ := hw'.2 l v hout hv
+  rw [hvarr] at hc
+  simp only [Footprints.Closed.at, Footprints.isArr, if_true] at hc
+  have hst : eff.closed.store = .keep ∨ eff.closed.store = .init ∨ eff.closed.store = .scalar := by
+    cases hc' : eff.closed.store <;> simp_all [Footprints.Change.onStore]
+  rw [hvarr]
+  rcases hst with hst | hst | hst <;> rw [hst] at hc
+  · rw [← hc]; exact hv'
+  · rw [← hc.init_store]; exact hv'
+  · rw [← hc.scalar_store]; exact hv'
+
 /-- The heap-reading atoms of a call's entry its footprint keeps, renamed past
 the result (`Changes.ofClosed`, ARITHMETIC.md, "Linear facts"): with
 `receiverGrows`, those `growChanges` keeps, a field apart from the receiver's
@@ -1898,6 +2029,11 @@ def effectKept (views : Nat → String → Bool) (eff : Effect) (t : Tm) (k : He
     HeapKnowledge.shiftIndices (HeapKnowledge.keptIndices growChanges (growFirst k t)
       (k.indices.filter fun a => !a.fact.envOnly))
   else if keepsHeap eff || eff.receiverStore || eff.receiverOwn then [] else
+  if !eff.regions.isEmpty then
+    if eff.elementWrite.isSome then [] else
+    HeapKnowledge.shiftIndices (HeapKnowledge.keptIndicesWith HeapKnowledge.Changes.top
+      (regionFirst k eff t) views (k.indices.filter fun a => !a.fact.envOnly))
+  else
   match eff.elementWrite with
   | some w => HeapKnowledge.shiftIndices (HeapKnowledge.keptIndicesWith w.changes (fun _ _ => false) views
       (k.indices.filter fun a => !a.fact.envOnly))
@@ -1924,6 +2060,12 @@ theorem effectKept_holds {views : Nat → String → Bool} {eff : Effect} {t : T
     · rename_i hc
       simp only [Bool.or_eq_true, not_or, Bool.not_eq_true] at hc
       obtain ⟨⟨-, hs⟩, ho⟩ := hc
+      split
+      · split
+        · exact HeapKnowledge.indexHolds_nil _ _
+        · exact HeapKnowledge.shiftIndices_holds (HeapKnowledge.keptIndicesWith_holds
+            (fun a ha hcd => hk.2.2.2.2.2 a (List.mem_filter.mp ha).1 hcd)
+            (HeapKnowledge.Changes.top_holds h h') (regionFirst_kept hk hs ho hw) hv)
       split
       · rename_i w hwr
         exact HeapKnowledge.shiftIndices_holds (HeapKnowledge.keptIndicesWith_holds
