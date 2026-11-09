@@ -1715,6 +1715,20 @@ const documentEvidence = (artifacts: string): string => {
   }
   return path;
 };
+type EntryFact = SourceClaims["functions"][number]["entries"][number]["facts"][number];
+/** Remove every fact a function's entries claim but, at the entries
+ * starting at `kept`, those naming its parameters alone. */
+const keepParameterFacts = (fn: SourceClaims["functions"][number], kept: number[]): void => {
+  const names = new Set(fn.params.map(p => p.name));
+  for (const entry of fn.entries) entry.facts = !kept.includes(entry.start) ? [] : entry.facts.filter(fact =>
+    "terms" in fact && fact.terms.every(t => names.has(t.name)) && fact.guards.every(g => names.has(g.name)));
+};
+/** `safeInteger(i) && 0 <= i && i < xs.length`, a read's precondition. */
+const readBound = (index: string, array: string): EntryFact[] => [
+  { guards: [], terms: [{ name: index, path: [], term: "value", coefficient: 0 }], bound: 0 },
+  { guards: [], terms: [{ name: index, path: [], term: "value", coefficient: -1 }], bound: 0 },
+  { guards: [], terms: [{ name: index, path: [], term: "value", coefficient: 1 },
+    { name: array, path: [], term: "length", coefficient: -1 }], bound: -1 }];
 /** Require search over forged claims to fail at the obligation named `at`. */
 const refusedAt = (artifacts: string, claims: string, name: string, at: string): void => {
   const searched = produceWith(artifacts, claims, name);
