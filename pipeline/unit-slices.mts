@@ -34,7 +34,7 @@ export function decodeUnitFacts(value: Json): UnitFacts {
       names: strings(value.init.names, "the initialization's names") }
     : null;
   if (value.init !== null && init === null) throw Error("tool failure: producer --units printed a malformed initialization");
-  return { functions, init, readAsValues: strings(value.readAsValues, "the constants read as values") };
+  return { functions, init, escaped: strings(value.escaped, "the escaped module bindings"), readAsValues: strings(value.readAsValues, "the constants read as values") };
 }
 
 /** A unit of proposal: a strongly connected component of the graph of
@@ -238,7 +238,7 @@ const asRecord = (v: Json): JsonRecord => (isRecord(v) ? v : {});
  * it reads by its signature (its body left out), the initialization where it
  * holds it, every other function and top-level statement left out, and its
  * own declarations named canonically; and the intervals left out. */
-export function sliceOf(document: JsonRecord, local: string, unit: ProposalUnit):
+export function sliceOf(document: JsonRecord, local: string, unit: ProposalUnit, escaped: readonly string[]):
     { text: string; deletions: [number, number][] } {
   const deletions: [number, number][] = [];
   const functions: JsonRecord[] = [];
@@ -283,7 +283,10 @@ export function sliceOf(document: JsonRecord, local: string, unit: ProposalUnit)
   for (const [k, v] of Object.entries(document)) {
     if (k === "file") slice[k] = "unit.ts";
     else if (k === "sourceSha256") slice[k] = "";
-        else if (k === "declarations") slice[k] = declarationsOf(v, walk, erase, local);
+    else if (k === "declarations") slice[k] = declarationsOf(v, walk, erase, local);
+    // Ownership is queried only for bindings this unit reads or writes.
+    else if (k === "omittedMentions") slice[k] = [...new Set([
+      ...strings(v, "omitted mentions"), ...escaped.filter((n) => unit.names.includes(n))])].sort();
     else if (k === "functions") slice[k] = functions.map(walk);
     else if (k === "init") slice[k] = init.map(walk);
     // A slice's proposal reads no imported module's document.
