@@ -2,13 +2,13 @@ import assert from "node:assert/strict";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tested } from "./stages.mts";
-import { producerCall, verifierCall } from "./stage-execution.mts";
+import { verifierCall } from "./stage-execution.mts";
 import { runInNewContext } from "node:vm";
 import type { Ast } from "../tools/fragment.mts";
 import type { SourceClaims } from "../tools/source-claims.mts";
 import { stripTypes } from "../tools/strip-types.mts";
 import { readDiagnostic } from "../tools/diagnostic.mts";
-import { producerExecutable, readFragmentFile, readClaimsFile, sourceKey } from "./verify-source.mts";
+import { readFragmentFile, readClaimsFile, sourceKey } from "./verify-source.mts";
 
 /** Reachable pattern defaults require claims even when a producer omits them. */
 export function checkPatternDefaults(verifier: string, artifacts: string): void {
@@ -189,8 +189,11 @@ export function checkSchemeDefaults(verifier: string, artifacts: string): void {
 }
 
 /** A proposed well-typed closure still cannot read its capture during TDZ.
- * This must be a located refusal from both independent entry points. */
-export function checkEarlyDefault(verifier: string, artifacts: string): void {
+ * This must be a located refusal from both independent entry points.
+ * `propose` is a document's proposal through the stages a check proposes it
+ * by. */
+export function checkEarlyDefault(verifier: string, artifacts: string,
+    propose: (fragment: string) => { status: number; stdout: string; stderr: string }): void {
   const sanitized: Ast = readFragmentFile(join(artifacts, "fragment.json"));
   const statement = sanitized.functions[0]?.body[0];
   assert(statement?.k === "const");
@@ -202,14 +205,8 @@ export function checkEarlyDefault(verifier: string, artifacts: string): void {
   // A safe initializer supplies a complete proposal with the original source
   // identities; both entry points check the original initializer's scope.
   const donor = join(artifacts, "safe-default-ast.json");
-  const flow = join(artifacts, "safe-default-flow.json");
   writeFileSync(donor, JSON.stringify(sanitized));
-  const lowered = tested(verifierCall(verifier, ["--lower-control-flow", donor]));
-  assert.ifError(lowered.error);
-  assert.equal(lowered.status, 0, lowered.stdout + lowered.stderr);
-  writeFileSync(flow, lowered.stdout);
-  const proposed = tested(producerCall(producerExecutable, [donor, flow]));
-  assert.ifError(proposed.error);
+  const proposed = propose(donor);
   assert.equal(proposed.status, 0, proposed.stdout + proposed.stderr);
   writeFileSync(join(artifacts, "claims.json"), proposed.stdout);
   writeFileSync(join(artifacts, "evidence.json"), "{}");
