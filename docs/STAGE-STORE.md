@@ -261,14 +261,21 @@ inputs it changes. The check reads the whole document.
   results, code signatures, point claims and obligation sequents supply
   those positions. Its spans and its unit's
   name are mapped back to the document's positions outside every key.
-- *Check.* One check (`verifier --check-units`) builds the document's front.
+- *Check.* One check (`verifier --check-units`) builds the document's front,
+  extracts every member into one accumulated store and freezes its plans
+  (`filePlans`). Certification and checking consume the selected groups.
+  One translation target and its document refinement rounds are shared across
+  the selected evidence lines. The acceptance theorem quantifies over that
+  target; every relocated candidate passes the document's checker.
   `Translate.translate` compares the two stores by joint partition
-  refinement on complete JSON row keys. Corresponding request positions
+  refinement on complete JSON row keys, with union clauses sorted for
+  comparison. Corresponding request positions
   choose head representatives; paired templates propagate them. Remaining
   heads use a representative of their exact equation class. Every label in
   the typed evidence wire is relocated, including labels inside rules,
   handlers, summaries and instantiations. Unions use their corresponding
-  request or template position's order; other canonical unions use the
+  request or template position's order; concatenations preserve their
+  longest anchored parts in that order. Other canonical unions use the
   document's anchor and row order. Distinct slice heads mapped to one
   document head coalesce. A changed contract with no exact class uses a
   candidate at its anchor position; missing candidates refuse. The document

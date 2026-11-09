@@ -328,6 +328,7 @@ def checkUnitsFile (astPath claimsPath fileKey evidencePath : String) (names : O
             ("depends", toJson deps)]
         | .error reason => Json.mkObj [("unit", toJson unit), ("members", toJson members),
             ("refusal", toJson reason)]).compress
+    let target ← IO.mkRef (SourceClaimJson.Translate.Target.of f.F.store.heads)
     let seen ← IO.mkRef ({} : Std.HashSet String)
     let refused ← IO.mkRef (none : Option String)
     let note (reason : String) : IO Unit := refused.modify (·.orElse fun _ => some reason)
@@ -336,7 +337,8 @@ def checkUnitsFile (astPath claimsPath fileKey evidencePath : String) (names : O
       | .error reason => note reason
       | .ok (unit, evidence, heads) =>
         if let some (_, members) := wanted.find? (·.1 == unit) then
-          let verdict := SourceClaimJson.checkedUnit f budget unit evidence heads
+          let (verdict, next) := SourceClaimJson.checkedUnit f budget (← target.get) unit evidence heads
+          target.set next
           print unit members verdict
           seen.modify (·.insert unit)
           if let .error reason := verdict then note reason
