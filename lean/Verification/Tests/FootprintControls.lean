@@ -29,7 +29,7 @@ private def Φelems : Footprint := [(.field 0 arrayStoreKey, .any), (.elems 0, .
 private def h₀ : Heap := [.arr [some 1], .nul, .nul]
 private def h₁ : Heap := [.arr [some 2], .nul, .nul]
 private def h₂ : Heap := [.arr [some 2], .nul, .tru]
-private def elemsValue : TransportEvidence := ⟨fun _ => false, fun x => x == 0⟩
+private def elemsValue : TransportEvidence := { fresh := fun _ => false, elemsValue := fun x => x == 0 }
 
 #guard postB (Φelems ++ transportAll elemsValue Φelems) arr0 h₀ h₂
 
@@ -38,6 +38,21 @@ theorem union_composition_false :
     ¬ ∀ (Φ : Footprint) (ρ : Env) (a b c : Heap), Post Φ ρ a b → Post Φ ρ b c → Post Φ ρ a c := by
   intro H
   have h := H Φelems arr0 h₀ h₁ h₂ (postB_iff.mp (by decide)) (postB_iff.mp (by decide))
+  exact absurd (postB_iff.mpr h) (by decide)
+
+/-- Cell provenance claimed of a store whose list changed to a new cell: the
+cells transported to themselves miss the cell the second step wrote. -/
+private def forgedCells : TransportEvidence :=
+  { fresh := fun _ => false, elemsValue := fun _ => false, cellsFrom := fun _ _ => true }
+
+#guard !postB (Φelems ++ transportAll forgedCells Φelems) arr0 h₀ h₂
+
+/-- Transport by cell provenance the step does not meet is false. -/
+theorem forged_cells_from_false :
+    ¬ ∀ (Φp Φn : Footprint) (ρ : Env) (a b c : Heap),
+      Post Φp ρ a b → Post Φn ρ b c → Post (Φp ++ transportAll forgedCells Φn) ρ a c := by
+  intro H
+  have h := H Φelems Φelems arr0 h₀ h₁ h₂ (postB_iff.mp (by decide)) (postB_iff.mp (by decide))
   exact absurd (postB_iff.mpr h) (by decide)
 
 /-! ## Inclusion needs evidence valid at the entry heap
@@ -76,7 +91,7 @@ theorem current_heap_compose_false :
       Post Φp ρ a b → Post Φn ρ b c → FreshOk ev.fresh ρ a.length → ElemsValueOk ev.elemsValue ρ b →
       Footprint.le cl (Φp ++ transportAll ev Φn) Φq = true → ClassOk cl ρ b → Post Φq ρ a c := by
   intro H
-  have h := H Φp [] Φq valueK fieldK g₀ g g ⟨fun _ => false, fun _ => false⟩
+  have h := H Φp [] Φq valueK fieldK g₀ g g { fresh := fun _ => false, elemsValue := fun _ => false }
     (postB_iff.mp (by decide)) (Post.refl _ _ _) (fun _ h => by cases h)
     (fun _ h => by cases h) (by decide) valueK_ok_current
   exact absurd (postB_iff.mpr h) (by decide)
@@ -86,11 +101,11 @@ class evidence that justifies the inclusion and holds at the entry heap, it
 would give the false postcondition. So no such evidence exists, while
 evidence holding at the current heap does (`valueK_ok_current`). -/
 theorem compose_needs_entry_evidence :
-    ¬ ∃ cl, Footprint.le cl (Φp ++ transportAll ⟨fun _ => false, fun _ => false⟩ []) Φq = true ∧
+    ¬ ∃ cl, Footprint.le cl (Φp ++ transportAll { fresh := fun _ => false, elemsValue := fun _ => false } []) Φq = true ∧
       ClassOk cl fieldK g₀ := by
   rintro ⟨cl, hle, hc⟩
   have h := Post.compose (Φn := []) (h := g) (h' := g) (postB_iff.mp (by decide)) (Post.refl _ _ _)
-    (fun _ h => by cases h) (fun _ h => by cases h) hle hc
+    (fun _ h => by cases h) (fun _ h => by cases h) PathEvidenceOk.none hle hc
   exact absurd (postB_iff.mpr h) (by decide)
 
 /-! ## Freshness of a store says nothing of its elements

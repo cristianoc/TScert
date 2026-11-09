@@ -134,6 +134,12 @@ def Arr.Within (b : Nat) (orig : List (Option Nat)) (a : Arr) : Prop :=
 theorem Arr.Within.refl {b : Nat} {a : Arr} (h : b ≤ a.next) : a.Within b a.ls :=
   ⟨h, fun _ hl => .inl hl⟩
 
+/-- A native's store steps list below `b` only cells of the original store:
+cell provenance of the native step (`CellsFrom`). -/
+theorem Arr.Within.cells {b orig} {a : Arr} (h : a.Within b orig) :
+    ∀ m, some m ∈ a.ls → m < b → some m ∈ orig := fun m hm hmb =>
+  (h.2 m hm).resolve_right fun hle => by omega
+
 theorem Arr.Within.set {b orig} {a : Arr} (h : a.Within b orig) (k : Nat) : (a.set k).Within b orig := by
   unfold Arr.set
   split

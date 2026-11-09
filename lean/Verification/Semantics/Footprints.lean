@@ -13,6 +13,22 @@ heap it starts in, and transports them to the invocation's entry heap
 (`transport`, `Post.compose`). Region containments that depend on the class of
 a location's contents are justified by evidence valid at the heap the
 including footprint is read at (`ClassOk`). -/
+namespace Verification.HeapKnowledge
+
+/-- The value a path of named data fields reads from a value: each step an
+object owning the field as a string key, whose location the heap
+allocates. -/
+def readPath (h : Heap) : Val → List String → Option Val
+  | v, [] => some v
+  | .objAt fs _ _, f :: p => match fs.lookup (.str f) with
+    | some l => match h[l]? with
+      | some v => readPath h v p
+      | none => none
+    | none => none
+  | _, _ :: _ => none
+
+end Verification.HeapKnowledge
+
 namespace Verification.Footprints
 
 /-! ## Changes -/
@@ -270,13 +286,27 @@ def storeElems (h : Heap) (v : Tm) : List (Option Nat) :=
   | none => []
 
 /-- A region names locations relative to the values of slots and to a heap.
-`field`, `own` are timeless; `elems` and `cls` are read at a heap. -/
+`field`, `own` are timeless; `elems` and `cls` are read at a heap. A path
+`p` reads own data fields from a slot's value (`HeapKnowledge.readPath`):
+`path x p k` is the own field `k` of the object it reads, `pathOwn x p` that
+object's own locations and `pathElems x p` the element cells its store
+lists; a read that fails denotes no location, and at the empty path they are
+`field`, `own` and `elems`. `cell b` is a module cell's location, read at the
+class its contents have: a cell holds a source value, never a store, so it
+denotes the locations of class `value` (the exact cell needs module-cell
+agreement; FOOTPRINTS.md, "Stated effects"). `inCls r c` is the locations
+of `r` whose contents are of class `c`. -/
 inductive Region where
   | field (x : Nat) (k : PropKey)
   | own (x : Nat)
   | elems (x : Nat)
   | cls (c : Cls)
   | all
+  | path (x : Nat) (p : List String) (k : PropKey)
+  | pathOwn (x : Nat) (p : List String)
+  | pathElems (x : Nat) (p : List String)
+  | cell (b : String)
+  | inCls (r : Region) (c : Cls)
   deriving DecidableEq, Repr
 
 def Region.mem (ρ : Env) (h : Heap) : Region → Nat → Bool
@@ -287,6 +317,33 @@ def Region.mem (ρ : Env) (h : Heap) : Region → Nat → Bool
     | some v => c.has v
     | none => false
   | .all, _ => true
+  | .path x p k, l => match HeapKnowledge.readPath h (ρ x) p with
+    | some v => (fieldsOf v).lookup k == some l
+    | none => false
+  | .pathOwn x p, l => match HeapKnowledge.readPath h (ρ x) p with
+    | some v => ((fieldsOf v).map Prod.snd).contains l
+    | none => false
+  | .pathElems x p, l => match HeapKnowledge.readPath h (ρ x) p with
+    | some v => (storeElems h v).contains (some l)
+    | none => false
+  | .cell _, l => match h[l]? with
+    | some v => Cls.value.has v
+    | none => false
+  | .inCls r c, l => r.mem ρ h l && match h[l]? with
+    | some v => c.has v
+    | none => false
+
+@[simp] theorem Region.mem_path_nil (ρ : Env) (h : Heap) (x : Nat) (k : PropKey) (l : Nat) :
+    (Region.path x [] k).mem ρ h l = (Region.field x k).mem ρ h l := by
+  simp [Region.mem, HeapKnowledge.readPath]
+
+@[simp] theorem Region.mem_pathOwn_nil (ρ : Env) (h : Heap) (x : Nat) (l : Nat) :
+    (Region.pathOwn x []).mem ρ h l = (Region.own x).mem ρ h l := by
+  simp [Region.mem, HeapKnowledge.readPath]
+
+@[simp] theorem Region.mem_pathElems_nil (ρ : Env) (h : Heap) (x : Nat) (l : Nat) :
+    (Region.pathElems x []).mem ρ h l = (Region.elems x).mem ρ h l := by
+  simp [Region.mem, HeapKnowledge.readPath]
 
 theorem lookup_mem_snd {fs : List (PropKey × Nat)} {k : PropKey} {l : Nat}
     (h : fs.lookup k = some l) : l ∈ fs.map Prod.snd := by
@@ -352,30 +409,79 @@ def ClassOk (cl : ClassEvidence) (ρ : Env) (h : Heap) : Prop :=
   ∀ x k c l, cl x k = some c → (fieldsOf (ρ x)).lookup k = some l → l < h.length →
     (Region.cls c).mem ρ h l = true
 
+/-- The inclusions read without recursion: equal regions, every region in
+`all`, a field among its object's own locations and in the class its
+contents have by class evidence, a path's field among the path object's own
+locations, and a cell among the locations of class `value`. -/
+def Region.subBase (cl : ClassEvidence) (r s : Region) : Bool :=
+  r == s || s == .all || match r, s with
+    | .field x _, .own y => x == y
+    | .field x k, .cls c => cl x k == some c
+    | .path x p _, .pathOwn y q => x == y && p == q
+    | .cell _, .cls .value => true
+    | _, _ => false
+
+/-- Region inclusion: `subBase`, and the part of `r` of class `c` in `s`
+where `r` is, in `cls c`, and in `s`'s part of class `c` where `r` is in
+`s`. -/
 def Region.sub (cl : ClassEvidence) : Region → Region → Bool
-  | _, .all => true
-  | .field x _, .own y => x == y
-  | .field x k, .cls c => cl x k == some c
-  | r, s => r == s
+  | .inCls r c, s => Region.sub cl r s || (match s with
+      | .cls c' => c == c'
+      | .inCls s' c' => c == c' && Region.sub cl r s'
+      | _ => false) || Region.subBase cl (.inCls r c) s
+  | r, s => Region.subBase cl r s
+
+theorem Region.subBase_mem {cl : ClassEvidence} {r s : Region} {ρ h l}
+    (hs : Region.subBase cl r s = true) (hc : ClassOk cl ρ h) (hl : l < h.length)
+    (hm : r.mem ρ h l = true) : s.mem ρ h l = true := by
+  unfold Region.subBase at hs
+  simp only [Bool.or_eq_true, beq_iff_eq] at hs
+  rcases hs with (rfl | rfl) | hs
+  · exact hm
+  · rfl
+  · cases r <;> cases s <;> (try simp only [Bool.false_eq_true] at hs)
+    case field.own x k y =>
+      simp only [beq_iff_eq] at hs; subst hs; exact field_mem_own hm
+    case field.cls x k c =>
+      simp only [beq_iff_eq] at hs
+      simp only [Region.mem, beq_iff_eq] at hm
+      exact hc x k c l hs hm hl
+    case path.pathOwn x p k y q =>
+      simp only [Bool.and_eq_true, beq_iff_eq] at hs
+      obtain ⟨rfl, rfl⟩ := hs
+      simp only [Region.mem] at hm ⊢
+      split at hm
+      · rename_i v hv
+        simp only [beq_iff_eq] at hm
+        simpa using lookup_mem_snd hm
+      · cases hm
+    case cell.cls b c =>
+      cases c
+      · simp at hs
+      · simpa [Region.mem] using hm
 
 theorem Region.sub_mem {cl : ClassEvidence} {r s : Region} {ρ h l}
     (hs : Region.sub cl r s = true) (hc : ClassOk cl ρ h) (hl : l < h.length)
     (hm : r.mem ρ h l = true) : s.mem ρ h l = true := by
-  cases s with
-  | all => rfl
-  | own y =>
-    cases r with
-    | field x k =>
-      simp only [Region.sub, beq_iff_eq] at hs; subst hs; exact field_mem_own hm
-    | _ => simp_all [Region.sub]
-  | cls c =>
-    cases r with
-    | field x k =>
-      simp only [Region.sub, beq_iff_eq] at hs
-      simp only [Region.mem, beq_iff_eq] at hm
-      exact hc x k c l hs hm hl
-    | _ => simp_all [Region.sub]
-  | _ => cases r <;> simp_all [Region.sub]
+  induction r generalizing s with
+  | inCls r c ih =>
+    simp only [Region.sub, Bool.or_eq_true] at hs
+    have hm' := hm
+    simp only [Region.mem, Bool.and_eq_true] at hm'
+    rcases hs with (hs | hs) | hs
+    · exact ih hs hm'.1
+    · cases s <;> (try simp only [Bool.false_eq_true] at hs)
+      case cls c' =>
+        simp only [beq_iff_eq] at hs; subst hs
+        simpa [Region.mem] using hm'.2
+      case inCls s' c' =>
+        simp only [Bool.and_eq_true, beq_iff_eq] at hs
+        obtain ⟨rfl, hs⟩ := hs
+        simp only [Region.mem, Bool.and_eq_true]
+        exact ⟨ih hs hm'.1, hm'.2⟩
+    · exact Region.subBase_mem hs hc hl hm
+  | field | own | elems | cls | all | path | pathOwn | pathElems | cell =>
+    exact Region.subBase_mem (by simpa [Region.sub] using hs) hc hl hm
 
 /-- Every entry of `Φ` lies in an entry of `Ψ` with at least its change. -/
 def Footprint.le (cl : ClassEvidence) (Φ Ψ : Footprint) : Bool :=
@@ -390,12 +496,88 @@ theorem Allowed.mono {cl Φ Ψ ρ h l v v'} (hle : Footprint.le cl Φ Ψ = true)
     simp only [Bool.and_eq_true] at hfe
     exact .inr ⟨f, hf, Region.sub_mem hfe.2 hc hl hm, hh.mono hfe.1⟩
 
+/-- Every element location the store of `v` lists at `h`, below the entry
+heap `h₀`'s length, the store of `v` listed at `h₀`: **cell provenance**. -/
+def CellsFrom (h₀ h : Heap) (v : Val) : Prop :=
+  ∀ l, some l ∈ storeElems h v → l < h₀.length → some l ∈ storeElems h₀ v
+
+theorem CellsFrom.refl (h : Heap) (v : Val) : CellsFrom h h v := fun _ hm _ => hm
+
+/-- Cell provenance composes along a growing heap. -/
+theorem CellsFrom.trans {h₀ h₁ h₂ : Heap} {v : Val} (hb : h₀.length ≤ h₁.length)
+    (h₁₀ : CellsFrom h₀ h₁ v) (h₂₁ : CellsFrom h₁ h₂ v) : CellsFrom h₀ h₂ v :=
+  fun l hm hl => h₁₀ l (h₂₁ l hm (Nat.lt_of_lt_of_le hl hb)) hl
+
+/-- A store location whose list at `h` keeps only cells of its list at `h₀`
+and cells at or above `h₀`'s length gives cell provenance. -/
+theorem CellsFrom.of_lists {h₀ h : Heap} {v : Val} {s : Nat}
+    (hs : (fieldsOf v).lookup arrayStoreKey = some s)
+    (hl : ∀ ls', h[s]? = some (.arr ls') → ∀ m, some m ∈ ls' → m < h₀.length →
+      ∃ ls, h₀[s]? = some (.arr ls) ∧ some m ∈ ls) : CellsFrom h₀ h v := by
+  intro m hm hm₀
+  simp only [storeElems, hs] at hm ⊢
+  split at hm
+  · rename_i ls' hls'
+    obtain ⟨ls, hls, hm'⟩ := hl ls' hls' m hm hm₀
+    simpa [hls] using hm'
+  · simp at hm
+
+/-- A change of the store location within `grow` gives cell provenance. -/
+theorem CellsFrom.of_change {δ : Change} {h₀ h : Heap} {v : Val} {s : Nat} {w w' : Val}
+    (hδ : δ.le .grow = true) (hs : (fieldsOf v).lookup arrayStoreKey = some s)
+    (hw : h₀[s]? = some w) (hw' : h[s]? = some w') (hc : δ.Holds h₀.length w w') :
+    CellsFrom h₀ h v := by
+  have hg : Change.grow.Holds h₀.length w w' := hc.mono hδ
+  refine CellsFrom.of_lists hs fun ls' hls' m hm hm₀ => ?_
+  rw [hw'] at hls'
+  cases hls'
+  rcases hg with rfl | ⟨ls, ls'', rfl, hls'', -, hl⟩ | hsc
+  · exact ⟨ls', hw, hm⟩
+  · cases hls''
+    rcases hl m hm with hm' | hle
+    · exact ⟨ls, hw, hm'⟩
+    · omega
+  · exact absurd hsc.2.2 (by simp [isArr])
+
+/-- A footprint letting the store location of `v`, read at `h₀`, change at
+most within `grow` gives cell provenance. -/
+theorem CellsFrom.of_post {Φ : Footprint} {ρ : Env} {h₀ h : Heap} {v : Val} {s : Nat}
+    (hp : Post Φ ρ h₀ h) (hs : (fieldsOf v).lookup arrayStoreKey = some s) (hs₀ : s < h₀.length)
+    (hΦ : ∀ e ∈ Φ, e.1.mem ρ h₀ s = true → e.2.le .grow = true) : CellsFrom h₀ h v := by
+  obtain ⟨w, hw⟩ : ∃ w, h₀[s]? = some w := ⟨h₀[s], List.getElem?_eq_getElem hs₀⟩
+  obtain ⟨w', hw', ha⟩ := hp.2 s w hw
+  rcases ha with rfl | ⟨e, he, hm, hh⟩
+  · exact CellsFrom.of_change (δ := .keep) rfl hs hw hw' rfl
+  · exact CellsFrom.of_change (hΦ e he hm) hs hw hw' hh
+
+/-- Placing a location in a store lists only that location beyond the
+store's own. -/
+theorem mem_placeAt {ls : List (Option Nat)} {k l m : Nat} (h : some m ∈ placeAt ls k l) :
+    some m ∈ ls ∨ m = l := by
+  unfold placeAt at h
+  rcases List.mem_or_eq_of_mem_set h with h | h
+  · rcases List.mem_append.mp h with h | h
+    · exact .inl h
+    · simp [List.mem_replicate] at h
+  · cases h; exact .inr rfl
+
+/-- An element write, which places a location allocated at or above `b`,
+lists below `b` only cells its store listed: the step's cell provenance. -/
+theorem placeAt_cells {ls : List (Option Nat)} {k l b : Nat} (hb : b ≤ l) :
+    ∀ m, some m ∈ placeAt ls k l → m < b → some m ∈ ls := fun m hm hmb =>
+  (mem_placeAt hm).resolve_right fun h => by omega
+
 /-- What transport may use, at the heap the step starts in: the slots whose
 own locations are at least the entry heap's length, and the slots whose
-listed element locations hold no store. -/
+listed element locations hold no store; the paths that read the value they
+read at the entry heap, those whose store meets cell provenance, and those
+whose listed element locations hold no store. -/
 structure TransportEvidence where
   fresh : Nat → Bool
   elemsValue : Nat → Bool
+  kept : Nat → List String → Bool := fun _ _ => false
+  cellsFrom : Nat → List String → Bool := fun _ _ => false
+  pathElemsValue : Nat → List String → Bool := fun _ _ => false
 
 def FreshOk (fresh : Nat → Bool) (ρ : Env) (b : Nat) : Prop :=
   ∀ x, fresh x = true → ∀ l, l ∈ (fieldsOf (ρ x)).map Prod.snd → b ≤ l
@@ -403,12 +585,46 @@ def FreshOk (fresh : Nat → Bool) (ρ : Env) (b : Nat) : Prop :=
 def ElemsValueOk (ev : Nat → Bool) (ρ : Env) (h : Heap) : Prop :=
   ∀ x, ev x = true → ∀ l, (Region.elems x).mem ρ h l = true → (Region.cls .value).mem ρ h l = true
 
+/-- The path evidence of a step from `h`, against the entry heap `h₀`. -/
+structure PathEvidenceOk (ev : TransportEvidence) (ρ : Env) (h₀ h : Heap) : Prop where
+  kept : ∀ x p, ev.kept x p = true → ∀ v, HeapKnowledge.readPath h (ρ x) p = some v →
+    HeapKnowledge.readPath h₀ (ρ x) p = some v
+  cellsFrom : ∀ x p, ev.cellsFrom x p = true → ∀ v, HeapKnowledge.readPath h (ρ x) p = some v →
+    CellsFrom h₀ h v
+  pathElemsValue : ∀ x p, ev.pathElemsValue x p = true → ∀ l,
+    (Region.pathElems x p).mem ρ h l = true → (Region.cls .value).mem ρ h l = true
+
+/-- The evidence of no path, valid of every step. -/
+theorem PathEvidenceOk.none {fresh elemsValue : Nat → Bool} {ρ : Env} {h₀ h : Heap} :
+    PathEvidenceOk ⟨fresh, elemsValue, fun _ _ => false, fun _ _ => false, fun _ _ => false⟩ ρ h₀ h :=
+  ⟨(fun _ _ h => nomatch h), (fun _ _ h => nomatch h), (fun _ _ h => nomatch h)⟩
+
+/-- Whether a path is read at the entry heap where it is read at the step's:
+the empty path always, any other where the evidence says so. -/
+def TransportEvidence.reads (ev : TransportEvidence) (x : Nat) (p : List String) : Bool :=
+  p.isEmpty || ev.kept x p
+
+/-- A region read at the step's heap, in regions read at the entry heap: a
+fresh slot's fields and own locations in none, a path's where the path
+reads its entry value, else in `all`; a store's cells, where they meet cell
+provenance, in themselves, else in `cls value` where they hold no store,
+else in `all`; a class and a cell in themselves (`cls_back`); the part of a
+region of class `c`, in its transport's parts of class `c`. -/
 def transport (ev : TransportEvidence) : Region → List Region
   | .field x k => if ev.fresh x then [] else [.field x k]
   | .own x => if ev.fresh x then [] else [.own x]
-  | .elems x => if ev.elemsValue x then [.cls .value] else [.all]
+  | .elems x => if ev.cellsFrom x [] then [.elems x]
+      else if ev.elemsValue x then [.cls .value] else [.all]
   | .cls c => [.cls c]
   | .all => [.all]
+  | .path x p k => if p.isEmpty && ev.fresh x then []
+      else if ev.reads x p then [.path x p k] else [.all]
+  | .pathOwn x p => if p.isEmpty && ev.fresh x then []
+      else if ev.reads x p then [.pathOwn x p] else [.all]
+  | .pathElems x p => if ev.reads x p && ev.cellsFrom x p then [.pathElems x p]
+      else if ev.pathElemsValue x p then [.cls .value] else [.all]
+  | .cell b => [.cell b]
+  | .inCls r c => (transport ev r).map (·.inCls c)
 
 def transportAll (ev : TransportEvidence) (Φ : Footprint) : Footprint :=
   Φ.flatMap fun e => (transport ev e.1).map (·, e.2)
@@ -426,29 +642,108 @@ private theorem cls_back {Φp ρ h₀ h l c} (hp : Post Φp ρ h₀ h) (hl : l <
     · exact .inr ⟨e, he, hem, Classical.byContradiction fun hne =>
         hc₀ (by rw [← hh.same_class hne c]; exact hcv)⟩
 
-theorem transport_sound {Φp ρ h₀ h ev r l} (hp : Post Φp ρ h₀ h) (hf : FreshOk ev.fresh ρ h₀.length)
-    (he : ElemsValueOk ev.elemsValue ρ h) (hl : l < h₀.length) (hm : r.mem ρ h l = true) :
+/-- A path read at the step's heap that the evidence keeps reads the same
+value at the entry heap. -/
+private theorem reads_back {ev ρ h₀ h x p v} (hk : PathEvidenceOk ev ρ h₀ h)
+    (hr : ev.reads x p = true) (hv : HeapKnowledge.readPath h (ρ x) p = some v) :
+    HeapKnowledge.readPath h₀ (ρ x) p = some v := by
+  simp only [TransportEvidence.reads, Bool.or_eq_true, List.isEmpty_iff] at hr
+  rcases hr with rfl | hr
+  · simpa [HeapKnowledge.readPath] using hv
+  · exact hk.kept x p hr v hv
+
+theorem transport_sound {Φp ρ h₀ h ev l} (hp : Post Φp ρ h₀ h) (hf : FreshOk ev.fresh ρ h₀.length)
+    (he : ElemsValueOk ev.elemsValue ρ h) (hk : PathEvidenceOk ev ρ h₀ h) (hl : l < h₀.length) :
+    ∀ {r : Region}, r.mem ρ h l = true →
     (∃ s ∈ transport ev r, s.mem ρ h₀ l = true) ∨ ∃ e ∈ Φp, e.1.mem ρ h₀ l = true ∧ e.2 = .any := by
-  cases r with
+  intro r
+  induction r with
   | field x k =>
+    intro hm
     by_cases hx : ev.fresh x = true
     · exact absurd (hf x hx l (lookup_mem_snd (by simpa [Region.mem] using hm))) (by omega)
     · exact .inl ⟨.field x k, by simp [transport, hx], by simpa [Region.mem] using hm⟩
   | own x =>
+    intro hm
     by_cases hx : ev.fresh x = true
     · exact absurd (hf x hx l (by simpa [Region.mem] using hm)) (by omega)
     · exact .inl ⟨.own x, by simp [transport, hx], by simpa [Region.mem] using hm⟩
   | elems x =>
-    by_cases hx : ev.elemsValue x = true
-    · rcases cls_back hp hl (he x hx l hm) with h | h
-      · exact .inl ⟨.cls .value, by simp [transport, hx], h⟩
-      · exact .inr h
-    · exact .inl ⟨.all, by simp [transport, hx], rfl⟩
+    intro hm
+    by_cases hc : ev.cellsFrom x [] = true
+    · have hcf := hk.cellsFrom x [] hc (ρ x) rfl l (by simpa [Region.mem] using hm) hl
+      exact .inl ⟨.elems x, by simp [transport, hc], by simpa [Region.mem] using hcf⟩
+    · by_cases hx : ev.elemsValue x = true
+      · rcases cls_back hp hl (he x hx l hm) with h | h
+        · exact .inl ⟨.cls .value, by simp [transport, hc, hx], h⟩
+        · exact .inr h
+      · exact .inl ⟨.all, by simp [transport, hc, hx], rfl⟩
   | cls c =>
+    intro hm
     rcases cls_back hp hl hm with h | h
     · exact .inl ⟨.cls c, by simp [transport], h⟩
     · exact .inr h
-  | all => exact .inl ⟨.all, by simp [transport], rfl⟩
+  | all => intro _; exact .inl ⟨.all, by simp [transport], rfl⟩
+  | path x p k =>
+    intro hm
+    by_cases hx : (p.isEmpty && ev.fresh x) = true
+    · simp only [Bool.and_eq_true, List.isEmpty_iff] at hx
+      obtain ⟨rfl, hx⟩ := hx
+      exact absurd (hf x hx l (lookup_mem_snd (by simpa [Region.mem, HeapKnowledge.readPath] using hm)))
+        (by omega)
+    · by_cases hr : ev.reads x p = true
+      · refine .inl ⟨.path x p k, by simp [transport, hx, hr], ?_⟩
+        simp only [Region.mem] at hm ⊢
+        split at hm
+        · rename_i v hv; rw [reads_back hk hr hv]; exact hm
+        · cases hm
+      · exact .inl ⟨.all, by simp [transport, hx, hr], rfl⟩
+  | pathOwn x p =>
+    intro hm
+    by_cases hx : (p.isEmpty && ev.fresh x) = true
+    · simp only [Bool.and_eq_true, List.isEmpty_iff] at hx
+      obtain ⟨rfl, hx⟩ := hx
+      exact absurd (hf x hx l (by simpa [Region.mem, HeapKnowledge.readPath] using hm)) (by omega)
+    · by_cases hr : ev.reads x p = true
+      · refine .inl ⟨.pathOwn x p, by simp [transport, hx, hr], ?_⟩
+        simp only [Region.mem] at hm ⊢
+        split at hm
+        · rename_i v hv; rw [reads_back hk hr hv]; exact hm
+        · cases hm
+      · exact .inl ⟨.all, by simp [transport, hx, hr], rfl⟩
+  | pathElems x p =>
+    intro hm
+    by_cases hrc : (ev.reads x p && ev.cellsFrom x p) = true
+    · simp only [Bool.and_eq_true] at hrc
+      refine .inl ⟨.pathElems x p, by simp [transport, hrc.1, hrc.2], ?_⟩
+      simp only [Region.mem] at hm ⊢
+      split at hm
+      · rename_i v hv
+        rw [reads_back hk hrc.1 hv]
+        simpa using hk.cellsFrom x p hrc.2 v hv l (by simpa using hm) hl
+      · cases hm
+    · by_cases hx : ev.pathElemsValue x p = true
+      · rcases cls_back hp hl (hk.pathElemsValue x p hx l hm) with h | h
+        · exact .inl ⟨.cls .value, by simp [transport, hrc, hx], h⟩
+        · exact .inr h
+      · exact .inl ⟨.all, by simp [transport, hrc, hx], rfl⟩
+  | cell b =>
+    intro hm
+    have hv : (Region.cls .value).mem ρ h l = true := by simpa [Region.mem] using hm
+    rcases cls_back hp hl hv with h | h
+    · exact .inl ⟨.cell b, by simp [transport], by simpa [Region.mem] using h⟩
+    · exact .inr h
+  | inCls r c ih =>
+    intro hm
+    simp only [Region.mem, Bool.and_eq_true] at hm
+    have hc : (Region.cls c).mem ρ h l = true := by simpa [Region.mem] using hm.2
+    rcases ih hm.1 with ⟨s, hs, hsm⟩ | h
+    · rcases cls_back hp hl hc with hc₀ | h
+      · refine .inl ⟨s.inCls c, by simp only [transport]; exact List.mem_map.mpr ⟨s, hs, rfl⟩, ?_⟩
+        simp only [Region.mem, Bool.and_eq_true]
+        exact ⟨hsm, by simpa [Region.mem] using hc₀⟩
+      · exact .inr h
+    · exact .inr h
 
 /-- **Composition.** An entry footprint so far, a step from the current heap,
 and an inclusion justified by class evidence valid at the entry heap give the
@@ -456,6 +751,7 @@ next entry footprint. -/
 theorem Post.compose {Φp Φn Φq : Footprint} {cl ρ h₀ h h' ev}
     (hp : Post Φp ρ h₀ h) (hn : Post Φn ρ h h')
     (hf : FreshOk ev.fresh ρ h₀.length) (he : ElemsValueOk ev.elemsValue ρ h)
+    (hk : PathEvidenceOk ev ρ h₀ h)
     (hle : Footprint.le cl (Φp ++ transportAll ev Φn) Φq = true) (hc : ClassOk cl ρ h₀) :
     Post Φq ρ h₀ h' := by
   refine ⟨Nat.le_trans hp.1 hn.1, fun l v₀ hv₀ => ?_⟩
@@ -473,7 +769,7 @@ theorem Post.compose {Φp Φn Φq : Footprint} {cl ρ h₀ h h' ev}
       (∃ s, (s, e.2) ∈ transportAll ev Φn ∧ s.mem ρ h₀ l = true) ∨
         ∃ e' ∈ Φp, e'.1.mem ρ h₀ l = true ∧ e'.2 = .any := by
     intro e hem hm
-    rcases transport_sound hp hf he hl hm with ⟨s, hs, hsm⟩ | h
+    rcases transport_sound hp hf he hk hl hm with ⟨s, hs, hsm⟩ | h
     · exact .inl ⟨s, List.mem_flatMap.mpr ⟨e, hem, List.mem_map.mpr ⟨s, hs, rfl⟩⟩, hsm⟩
     · exact .inr h
   rcases ha₁ with rfl | ⟨e₁, he₁, hm₁, hh₁⟩

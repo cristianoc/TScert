@@ -114,18 +114,6 @@ theorem mapM_eq (f : Nat → Nat) : Term.mapM (some ∘ f) = some ∘ mapM' f :=
 
 end Term
 
-/-- The value a path of named data fields reads from a value: each step an
-object owning the field as a string key, whose location the heap
-allocates. -/
-def readPath (h : Heap) : Val → List String → Option Val
-  | v, [] => some v
-  | .objAt fs _ _, f :: p => match fs.lookup (.str f) with
-    | some l => match h[l]? with
-      | some v => readPath h v p
-      | none => none
-    | none => none
-  | _, _ :: _ => none
-
 /-- **The read bridge, one field.** Where the object `o` owns `f` at a location
 holding `v`, the path `f :: p` read from `o` reads what `p` reads from `v`. -/
 theorem readPath_cons {h : Heap} {fs : List (PropKey × Nat)} {c : CallCode} {oid l : Nat} {v : Val} {f : String}
