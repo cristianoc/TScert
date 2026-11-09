@@ -109,6 +109,9 @@ const equationReaders = [
     delta: "an element offset, read by derived quantified-body variable instances",
     project: "an element projection, read by the derived HeapKnowledge.Bound and Wire.BodyVariable instances",
     t: "a quantified fact's body term, read by the instance EffectJson.lean derives for HeapKnowledge.Bound",
+    storeApart: "a store separation's field, read by the instance EffectJson.lean derives for HeapKnowledge.IndexFact",
+    other: "a store separation's field, read by the instance EffectJson.lean derives for HeapKnowledge.IndexFact",
+    otherPath: "a store separation's field, read by the instance EffectJson.lean derives for HeapKnowledge.IndexFact",
   });
 }
 

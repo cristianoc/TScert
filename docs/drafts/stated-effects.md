@@ -487,18 +487,24 @@ instantiated frame + checked separation
 ```
 
 The callee's frame at the call's actuals, with the caller's separation
-knowledge $`K`$, decides through `stable_sound` which observations
-survive: each index term reads a store at a root and path, and the
-pipeline obtains a store bound **per root and path** (a `StoreChange` for
-the store that term resolves to, with a soundness premise on that resolved
-store); the global `Changes.store` of a closed footprint is the constant
-instance. For a regional frame the bound of each term's store is derived
-by `stable_sound` on that store's support. Separation enters $`K`$ from
-checked sources only: for empty paths, `HeapSeparation.apart` on both
-objects' `arrayStoreKey` gives the stores' inequality; for nonempty paths,
-the path-to-slot equality or a checked `StoreApart` witness comes first.
-These are bridged into `SepKnowledge`; no separation table is trusted
-beside them. A length observation is kept where its path is preserved and
+knowledge $`K`$, decides which observations survive: each index term reads
+a store at a root and path, and the pipeline obtains a store bound **per
+slot**, the local observation bound `first s "[]"` of `keptIndicesWith`
+(`FirstKept`); the global `Changes.store` of a closed footprint is the
+constant instance. For a regional frame a slot's store location is kept
+where $`K`$ separates it from the store every region selects at the call
+(`regionFirst`, proved from `Effect.within_iff_regions`:
+`regionFirst_kept`). $`K`$ is the caller's knowledge, and separation
+enters it from checked sources only, as its index facts: a region fact
+`apart` (`RegionsApart`; `region-alloc`, `region-write`), and a store
+separation `x.p !== y.q` (`IndexFact.storeApart`, read as `StoreApart`;
+[store separation](../ARITHMETIC.md#store-separation)), stated by a
+precondition, derived through read links from a region fact or a
+separation of slots (`store-apart-links`, `storeFollows_sound`), restated
+through read links where a slot leaves the knowledge (`restateStores`), and
+kept across a call where each path is at most one `@stable` field
+(`stableFirst`, `stableFirst_frame`). No separation table is kept beside
+the knowledge. A length observation is kept where its path is preserved and
 its store's change is `keep` (or an independently proved
 length-preserving promise) for an equality, or `grow` for the lower-bound
 uses the coefficient-sensitive monotonicity rules admit. Length growth is
@@ -521,8 +527,8 @@ function f(): number { const xs = [1]; shrink(xs); return xs[0]!; }
 frame of `f`, but the fact $`0<|xs|`$, support `field xs store: grow`
 (`grow` keeps a dense prefix and so a lower bound, never an exact length),
 is not kept: it meets `path 0 [] store: any` and no separation refutes it.
-Separation is the only refutation: `StoreApart` (chain1), `RegionsApart`,
-`HeapSeparation.apart`, each entering $`K`$.
+Separation is the only refutation: a store separation or a region fact of
+$`K`$.
 
 **Natives.** A native's frame is its own steps' footprint joined with the
 frame of every callback and conversion it may invoke. The native rows hold
@@ -548,11 +554,16 @@ operation whose frame passes `stable K S Φ` keeps it. A callback using only
 operations stable for a structure is effect-free for its facts by `stable`
 at its type's frame.
 
-- **Separation preconditions**: atoms of `@requires`, `apart(P, Q)`
-  (stores and cells, `RegionsApart`) and `storeApart(P, Q)` (stores, chain1
-  `StoreApart`); the first gives the second. Each enters the unit's entry
-  separation and `Effect.pre`; a call establishes it from its knowledge
-  (`call-requires`).
+- **Separation preconditions**: atoms of the clause language, `apart(P, Q)`
+  (stores and cells, `RegionsApart`; conjectured) and `P !== Q` of two
+  arrays (stores, `StoreApart`, the standard disequality: an array's
+  identity is its store location; proved:
+  [store separation](../ARITHMETIC.md#store-separation)); the first gives
+  the second. Each enters `Effect.pre` and the unit's entry knowledge; a
+  call establishes it from its knowledge (`call-requires`,
+  `store-apart-links`). `P !== Q` is refused where either side may be a
+  typed array, whose views may share one buffer, or is no array; `===` of
+  references has no form.
 - **Frame variables**, effect polymorphism over callbacks ("modifies what
   `f` modifies"), are not expressible: a frame is closed, and a wrapper
   passing its callback's frame through states a bound covering every
@@ -573,27 +584,33 @@ type Runs = { /** @stable */ readonly openBrackets: number[] };
 function readRuns(runs: Runs): Modifies<{ values: "any"; "runs.openBrackets[*]": "any" }, void> {
   runs.openBrackets.splice(0, 1);
 }
-/** @requires storeApart(flags, runs.openBrackets) */
+/** @requires flags !== runs.openBrackets */
 function measure(flags: number[], runs: Runs): number {
   let sum = 0;
   for (let i = 0; i < flags.length; i++) { readRuns(runs); sum += flags[i]!; }
   return sum;
+}
+export function caller(flags: number[]): number {
+  const runs: Runs = { openBrackets: [] };
+  return measure(flags, runs);
 }
 ```
 
 `splice` changes its receiver's store, inside `path 0 [openBrackets] store`,
 and value-class locations (`array_native_post_any`;
 `checkReceiverCall_sound`, chain1; proved), on normal return. `measure`
-keeps $`i<|\mathit{flags}|`$, support `field flags store: grow`: the path's
-store region is refuted by `storeApart`, kept along the loop since
-`openBrackets` is stable (`StoreApart.stable_path_frame`, chain1; proved);
-its cells are of class `value`, since `number[]` holds source values, so
-they miss `flags`'s store location; `values: "any"` changes no store.
-Without the precondition, `measure(xs, { openBrackets: xs })` with
-`xs = [1, 2, 3]` reads `xs[1]` as `undefined` and returns `NaN` under Node
-(run 2026-11-09). Delivery needs stable-path evidence, the element-class
-premise, the checked `storeApart`, actual-argument substitution and the
-certified summary.
+keeps $`i<|\mathit{flags}|`$ across the call (`region-call-keep`): the
+frame's closed bound keeps stores, and the precondition's store separation
+places `flags`'s store outside the path's region, kept along the loop
+since `openBrackets` is stable (`stable-first`); `values: "any"` changes no
+store. `caller` establishes the separation: the literal's `[]` is apart from
+`flags` (`region-alloc`), read through the field's link
+(`store-apart-links`, `restateStores`). Proved: the case
+`stated-argument-path` verifies all four units, and `stated-local-runs`
+the loop with the record allocated in the looping function.
+`measure(xs, { openBrackets: xs })` with `xs = [1, 2, 3]` reads `xs[1]` as
+`undefined` and returns `NaN` under Node (run 2026-11-09); that call is
+refused at its precondition (`invalid-stated-alias`).
 
 ### 6.2 Pretext's script runs (`tscert-bounds`, `src/prepare.ts`)
 
@@ -624,9 +641,11 @@ frame, the imports' at their certified or stated signatures. At
 `measureAnalysis` allocates the runs:
 `const scriptRuns: ScriptRuns = { read: 0, scripts: ANY_SCRIPT, openBrackets: [] }`.
 The literal `[]` is apart from every older array slot (`region-alloc`;
-cited), so the record's allocation gives `storeApart` of
-`scriptRuns.openBrackets` from `flags`, `starts` and `texts`
-(`ArgumentStoreSeparation.of_separation`, chain1; proved). A loop fact on
+cited), so the record's allocation gives the store separation
+`scriptRuns.openBrackets !== flags`, and alike of `starts` and `texts`
+(`store-apart-links`, `restateStores`;
+[store separation](../ARITHMETIC.md#store-separation); proved, as
+`stated-local-runs` shows). A loop fact on
 those arrays' lengths, support at `grow`, is then kept: `stores: "grow"`
 tolerates it, `values: "any"` misses stores, the path region is apart, the
 cells are value-class. The stable link from `scriptRuns` to its array is
@@ -753,16 +772,18 @@ Paths relative to `lean/Verification/`; "chain1" names a file of branch
 - **O6 Natives.** `push`'s narrower normal-return frame from
   `ReceiverGrows` and `ReceiverAppends`; the confinement theorem of §4
   from the narrower premise and `Arr.Within`.
-- **O7 Separation and preservation.** `SepKnowledge.apart` for the new
-  regions from `StoreApart`, `RegionsApart` and `HeapSeparation.apart`
-  (on both objects' `arrayStoreKey` for empty paths), with the
-  element-class premise for `pathElems`; `apart` and `storeApart` in
-  `Effect.pre`, the unit's entry separation and `call-requires`. The
-  preservation pipeline of §4: local store bounds per root and path in
-  `IndexFacts` with their soundness, the global `Changes.store` as the
-  constant instance, term preservation and growth, the linear and
-  quantified lifting, and `effectKept_holds` consuming the instantiated
-  frame.
+- **O7 Separation and preservation.** The knowledge's separation facts
+  for the new regions: the region fact `apart` and the store separation
+  `IndexFact.storeApart` (`PathStoresApart`, `StoreApart` for two arrays),
+  with the element-class premise for `pathElems`; `apart` and `P !== Q` in
+  `Effect.pre`, the unit's entry knowledge and `call-requires`. Proved for
+  store regions: `storeFollows_sound` (`store-apart-links`),
+  `restateStores_holds`, `stableFirst_frame` (`stable-first`),
+  `storeHeld_sound`, `regionFirst_kept` (`region-call-keep`, a region's
+  store separated by a region fact or a store separation) and
+  `effectKept_holds` consuming the instantiated frame. The preservation
+  pipeline of §4 beyond store regions: local store bounds per root and path
+  for `pathElems` and cells, term growth, and the quantified lifting.
 - **O8 Coverage.** `Footprint.le` with the extended `Region.sub`, sound
   against `Post` under `ClassOk`, on both exits; used by `Effect.covers`,
   subtyping and D6.
@@ -797,8 +818,8 @@ builds needs the checked boundary or explicit contract
 
 ## 10. Cases
 
-Positive: `stated-argument-path` (§6.1), `stated-local-runs` (runs
-allocated in the looping function), `stated-module-cache` (a `??=` cache
+Positive: `stated-argument-path` (§6.1, with `measure` and its caller),
+`stated-local-runs` (runs allocated in the looping function), `stated-module-cache` (a `??=` cache
 keeping a fact elsewhere), `stated-callback-frame` (a callback type stating
 a frame, called in a loop), `stated-package-contract` (a pinned statement
 in a package's declaration file), `stated-fresh` (a builder stating
@@ -808,8 +829,8 @@ passed at a parameter typed `() => Modifies<P, Fresh<number[]>>`, and one
 a method states), `stated-cell-reserved` (a cache in a binding named
 `values`, stated `"cell(values)": "init"`).
 
-Negative, each run under Node: `invalid-stated-alias` (§6.1 without
-`@requires`, `NaN`), `invalid-stated-fresh-shrink` (§4's `f`),
+Negative, each run under Node: `invalid-stated-alias` (§6.1's caller
+passing one array as both sides, refused at the precondition, `NaN`), `invalid-stated-fresh-shrink` (§4's `f`),
 `invalid-stated-unstated-write`, `invalid-stated-path-reassigned` (a
 traversed field without `@stable`, reassigned to the counted array between
 calls), `invalid-stated-throw` (a splice before a throw a caller catches,
@@ -834,7 +855,9 @@ exists; read as an ordinary type, a lookalike `Modifies` or `Fresh`
 declared outside `tools/resolvable.d.ts` (`invalid-method-effect-lookalike`).
 
 Forged controls (`pipeline/test.mts`): a frame narrower than the body's
-writes; `apart` or `storeApart` forged at a call that cannot establish it;
+writes; `apart` or `!==` forged at a call that cannot establish it
+(`!==`: a separation forged at a caller's entry, and a fact forged across a
+frame that may change its array's store, `pipeline/test.mts`);
 an entry rooted at another position; a `cell` naming a same-named binding
 of another module, and one substituted exactly without agreement; a
 `pathElems` transported to `cls value` without the element-class premise;
@@ -875,6 +898,17 @@ Decisions:
 - **Module cells**: exact under agreement, the class region otherwise.
 - **Cell provenance**: a checked local obligation, the class fallback
   without it.
+- **Store separation is `P !== Q`** of two arrays, read as `StoreApart`;
+  a typed array is refused, and `apart(P, Q)` keeps its name.
+- **One separation source**: the knowledge's index facts (region facts and
+  store separations), each established or restated by a checked rule;
+  `region-call-keep` reads them per slot through `regionFirst`, the
+  frame's guarantee given by `Effect.within_iff_regions`, and a separation
+  through a field is kept across a call by the field's stability
+  (`stable-first`), the one keep rule of a field's location across a call.
+- **A frame with regions on the claims' `CallEffect`**: `regions` beside
+  the closed bound, present where nonempty; every other reading of the
+  call's change is the coarse bound `top`.
 - **One migration**: `Within` and `Footprint` removed in the change that
   adds `Modifies` (§3.1).
 

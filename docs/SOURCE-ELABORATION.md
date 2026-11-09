@@ -4164,14 +4164,23 @@ of a slot are kept where the frame's closed bound keeps stores and its
 knowledge separates the slot's store from each region's: for a region at a
 position's own store, a region fact `apart` between the actual's slot and
 the slot; for a region through a field `f`, a read link from the actual's
-slot through `f` to a slot apart from it (`PromiseCalls.regionFirst`, the
-local observation bound `first s "[]"` of `keptIndicesWith`; proved:
-`regionFirst_kept`, `effectKept_holds`):
+slot through `f` to a slot apart from it; for either, a
+[store separation](ARITHMETIC.md#store-separation) between the region's path
+at the actual's slot and the slot (`!==`); and an unconditional atom reads
+the slot's length, so its store location holds an array store (`storeHeld`)
+(`PromiseCalls.regionFirst`, the local observation bound `first s "[]"` of
+`keptIndicesWith`; proved: `regionFirst_kept`, `effectKept_holds`):
 
 ```math
-\frac{\epsilon.\mathsf{stores}=\mathsf{keep}\qquad \forall i.\ \Sigma\vdash\mathrm{apart}(\mathrm{sel}(R_i),y)\qquad \Sigma\vdash F(|y|)}
+\frac{\epsilon.\mathsf{stores}=\mathsf{keep}\qquad \forall i.\ \Sigma\vdash\mathrm{apart}(\mathrm{sel}(R_i),y)\ \text{or}\ \Sigma\vdash a_{k_i}.p_i\mathrel{\#}y\qquad \Sigma\vdash |y|\ \text{defined}\qquad \Sigma\vdash F(|y|)}
      {\Sigma\vdash f(\vec a)\dashv\Sigma',\ F(|y|)}\ \textsf{region-call-keep}
 ```
+
+with $`R_i = k_i.p_i[*]`$ the frame's regions. The producer proposes the
+facts and bounds it keeps (`Linear_facts.region_separated`), reading the
+frame from the callee's type (`Semantic.call_effect.regions`, the claims'
+`CallEffect.regions`); a call's coarse bound for every other purpose is
+`top` (`Semantic.coarse_footprint`, `Effect.footprint`).
 
 Every other heap fact is kept only as the closed approximation `top` keeps
 it.

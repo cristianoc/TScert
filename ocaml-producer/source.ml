@@ -70,6 +70,10 @@ let rec index_fact_of j =
       | _ -> unsupported "invalid quantified fact's body" in
     Every (natural (field "slot" b), List.map str (list (field "path" b)), linear_term (field "stop" b),
       List.map fact (list (field "body" b)))
+  else if only "storeApart" then
+    let b = body "storeApart" ["other";"otherPath";"path";"slot"] in
+    Store_apart (natural (field "slot" b), List.map str (list (field "path" b)),
+      natural (field "other" b), List.map str (list (field "otherPath" b)))
   else if only "linear" then
     let f = field "fact" (body "linear" ["fact"]) in
     (match keys f with
@@ -93,10 +97,12 @@ and linear_parts : 'v. (Json.t -> 'v) -> Json.t -> string -> ('v * int) list * i
   if keys b <> ["bound";"form"] then unsupported "invalid linear fact";
   List.map (function Array [x;c] -> (var x, integer c) | _ -> fail "invalid linear term") (list (field "form" b)),
   integer (field "bound" b)
+(* An effect, with `regions` where its frame states store regions (Lean's
+   `EffectJson`). *)
 let effect_of j = match j with
-  | Object fields when List.sort String.compare (List.map fst fields) =
-      ["elementWrite";"elements";"ensures";"footprint";"fresh";"freshObject";"onThrow";"pre";"promise";"receiverGrows";
-       "receiverOwn";"receiverStore";"requires"] ->
+  | Object fields when (let ks = List.filter (fun k -> k <> "regions") (List.sort String.compare (List.map fst fields)) in
+      ks = ["elementWrite";"elements";"ensures";"footprint";"fresh";"freshObject";"onThrow";"pre";"promise";"receiverGrows";
+       "receiverOwn";"receiverStore";"requires"] && List.length ks + 1 >= List.length fields) ->
     let kinds k = match field k j with
       | Null -> None
       | Array ks -> Some (List.map str ks)
@@ -112,7 +118,14 @@ let effect_of j = match j with
      element_write=(match field "elementWrite" j with
        | Null -> None
        | String ("stores" | "exact" as w) -> Some w
-       | _ -> unsupported "invalid element write")}
+       | _ -> unsupported "invalid element write");
+     regions=(match List.assoc_opt "regions" fields with
+       | None -> []
+       | Some rs -> (match list rs with
+         | [] -> unsupported "an effect states its regions only where it has some"
+         | rs -> List.map (fun r ->
+           if keys r <> ["path";"position"] then unsupported "invalid store region";
+           natural (field "position" r), List.map str (list (field "path" r))) rs))}
   | _ -> unsupported "unknown callable effect"
 let resolution_slots scope index j = match field "resolution" j with
   | Null -> None
@@ -731,6 +744,11 @@ and fn = { quantified: quantifier list; name: string; name_pos: Json.t; params: 
               footprint and whether it holds on a throw too. Its claim must
               lie within it. *)
            stated: (footprint * bool) option;
+           (* The store regions its statement names, each a call position
+              and a path, and the frame's closed bound: Lean checks the
+              body by the unit's regional check, and a call reads the frame
+              (Lean's `Effect.regions`). *)
+           stated_regions: ((int * string list) list * footprint) option;
            (* Its precondition, index facts at the call's positions
               (Lean's `Fn.requires`: 0 the receiver, i + 1 the i-th actual). *)
            requires: index_fact list; ensures: index_fact list; body: stmt list }
@@ -870,6 +888,14 @@ let loop_invariants : (Json.t, string list * index_fact list) Hashtbl.t = Hashtb
 (* A definition's statement as the Fragment writes it, or none. A statement
    with store regions bounds no claim: Lean checks it by the unit's regional
    check, whatever footprint the claim proposes. *)
+(* A definition's statement's store regions and closed bound, where it states
+   regions. *)
+let stated_regions_of j = match field "stated" j with
+  | Null -> None
+  | s -> (match Json.list (field "regions" s) with
+    | [] -> None
+    | rs -> Some (List.map (fun r -> natural (field "position" r), List.map str (list (field "path" r))) rs,
+        footprint_of (field "footprint" s)))
 let stated_of j = match field "stated" j with
   | Null -> None
   | s when Json.list (field "regions" s) <> [] -> None
@@ -912,13 +938,13 @@ let element_write = Some {on_value=Any;on_store=Grow}
    each call of the step the iterator is. *)
 let iteration_footprint (t:ty) : footprint option =
   (* A step changing its receiver's own locations changes their values. *)
-  let step_footprint (e:call_effect) = if e.receiver_own then {e.footprint with on_value=Any} else e.footprint in
+  let step_footprint (e:call_effect) = if e.receiver_own then {e.footprint with on_value=Any} else coarse_footprint e in
   let join_calls calls = List.fold_left (fun acc (s:signature) -> join_footprint acc (step_footprint s.call_effect))
     empty_footprint calls in
   match t with
   | Atoms [Shape {calls=(_ :: _ as calls);_}] ->
     List.fold_left (fun acc (s:signature) -> join_bound acc (match s.result with
-      | Atoms [Shape {calls=(_ :: _ as steps);_}] -> Some (join_footprint s.call_effect.footprint (join_calls steps))
+      | Atoms [Shape {calls=(_ :: _ as steps);_}] -> Some (join_footprint (coarse_footprint s.call_effect) (join_calls steps))
       | _ -> None)) (Some empty_footprint) calls
   | _ -> None
 (* The footprint of a call at every signature its callee may take: each
@@ -927,7 +953,7 @@ let iteration_footprint (t:ty) : footprint option =
 let effects_footprint ~receiver_fresh (effects:call_effect list) =
   List.fold_left (fun acc (e:call_effect) -> join_footprint acc
     (if e.receiver_own then {e.footprint with on_value=Any}
-     else if e.receiver_store && not receiver_fresh then top_footprint else e.footprint)) empty_footprint effects
+     else if e.receiver_store && not receiver_fresh then top_footprint else coarse_footprint e)) empty_footprint effects
 (* A value whose array store the run allocated: a constant holding one, or a
    call every signature of whose callee states a fresh result. Lean's facts
    follow slots of the graph, which a constant's binding is. *)
@@ -1598,7 +1624,7 @@ and decode_program ast =
       rest=List.exists (fun p -> List.mem_assoc "rest" (obj p)) (items "params" f);
       rest_pack=Option.map fst pack_rest;
       result=source_type binders (field "retType" f);guard=guard_of binders (field "guard" f);
-      async=async_completion f;stated=stated_of f;
+      async=async_completion f;stated=stated_of f;stated_regions=stated_regions_of f;
       requires=List.map index_fact_of (items "requires" f);
       ensures=List.map index_fact_of (items "ensures" f);
       body=List.map (stmt binders) (items "body" f)}) (items "functions" ast) }

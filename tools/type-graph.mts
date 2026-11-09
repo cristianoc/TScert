@@ -3,7 +3,7 @@
  * A row and a label list both denote unions. Contracts within one clause are
  * simultaneous requirements (including all arrows of an overload).
  */
-import type { CallEffect, CallPromise, ClosedFootprint, ElementKind, ElementKinds, BodyFact, BodyVariable, IndexFact, LinearTerm, PropertyKey } from "./declaration-types.mts";
+import type { CallEffect, CallPromise, ClosedFootprint, ElementKind, ElementKinds, BodyFact, BodyVariable, IndexFact, LinearTerm, PropertyKey, StoreRegion } from "./declaration-types.mts";
 import { requireWellFormed } from "./wire-strings.mts";
 import {
   hasExactly,
@@ -67,7 +67,8 @@ export const withPromise = (effect: CallEffect, promise: CallPromise | null): Mo
   ({ footprint: effect.footprint, promise, fresh: effect.fresh, receiverStore: effect.receiverStore,
     onThrow: effect.onThrow, receiverOwn: effect.receiverOwn, freshObject: effect.freshObject,
     requires: effect.requires, elements: effect.elements, pre: effect.pre, ensures: effect.ensures,
-    receiverGrows: effect.receiverGrows, elementWrite: effect.elementWrite });
+    receiverGrows: effect.receiverGrows, elementWrite: effect.elementWrite,
+    ...(effect.regions === undefined ? {} : { regions: effect.regions }) });
 /** Heap preservation: no location may change, no promise. */
 export const emptyEffect: CallEffect = footprintEffect(emptyFootprint);
 /** An ordinary arrow's effect: every location may change, no promise. */
@@ -87,7 +88,8 @@ export const sameEffect = (a: CallEffect, b: CallEffect): boolean =>
     a.receiverStore === b.receiverStore && a.onThrow === b.onThrow && a.receiverOwn === b.receiverOwn &&
     a.freshObject === b.freshObject && sameKinds(a.requires, b.requires) && sameKinds(a.elements, b.elements) &&
     JSON.stringify(a.pre) === JSON.stringify(b.pre) && JSON.stringify(a.ensures) === JSON.stringify(b.ensures) &&
-    a.receiverGrows === b.receiverGrows && a.elementWrite === b.elementWrite;
+    a.receiverGrows === b.receiverGrows && a.elementWrite === b.elementWrite &&
+    JSON.stringify(a.regions ?? []) === JSON.stringify(b.regions ?? []);
 /** The kinds an elements predicate lists, each at most once, in this order. */
 const elementKindOrder: readonly ElementKind[] =
   ["null", "undefined", "boolean", "number", "string", "bigint", "symbol", "object"];
@@ -173,6 +175,15 @@ function decodeIndexFact(v: JsonRead): IndexFact | undefined {
       body.push(fact);
     }
     return { every: { slot, path: fields, stop, body } };
+  }
+  const storeApart = fieldsOf(v.storeApart, ["slot", "path", "other", "otherPath"]);
+  if (storeApart) {
+    const slot = decodeNat(storeApart.slot), other = decodeNat(storeApart.other);
+    if (slot === undefined || other === undefined || !isJsonList(storeApart.path) || !isJsonList(storeApart.otherPath)) return undefined;
+    const path: string[] = [], otherPath: string[] = [];
+    for (const f of storeApart.path) { if (typeof f !== "string") return undefined; path.push(f); }
+    for (const f of storeApart.otherPath) { if (typeof f !== "string") return undefined; otherPath.push(f); }
+    return { storeApart: { slot, path, other, otherPath } };
   }
   const index = fieldsOf(v.index, ["slot"]);
   if (index) { const slot = decodeNat(index.slot); return slot === undefined ? undefined : { index: { slot } }; }
@@ -301,7 +312,20 @@ function isFootprintStore(v: unknown): v is ClosedFootprint["store"] {
 /** The call effect a value states, as fresh objects of its fields, or
  * `undefined` where the value states none. */
 export function decodeCallEffect(v: JsonRead): Modifies<{ values: "any"; stores: "grow" }, CallEffect | undefined> {
-  if (!isJsonObject(v) || Object.keys(v).length !== 13) return undefined;
+  if (!isJsonObject(v) || Object.keys(v).length !== ("regions" in v ? 14 : 13)) return undefined;
+  let regions: StoreRegion[] | undefined;
+  if ("regions" in v) {
+    if (!isJsonList(v.regions) || v.regions.length === 0) return undefined;
+    regions = [];
+    for (const r of v.regions) {
+      const q = fieldsOf(r, ["position", "path"]);
+      const position = q === undefined ? undefined : decodeNat(q.position);
+      if (q === undefined || position === undefined || !isJsonList(q.path)) return undefined;
+      const path: string[] = [];
+      for (const f of q.path) { if (typeof f !== "string") return undefined; path.push(f); }
+      regions.push({ position, path });
+    }
+  }
   const requires = decodeKinds(v.requires);
   const elements = decodeKinds(v.elements);
   const pre = decodeIndexFacts(v.pre);
@@ -330,8 +354,9 @@ export function decodeCallEffect(v: JsonRead): Modifies<{ values: "any"; stores:
     if (typeof param !== "number" || !Number.isInteger(param) || param < 0) return undefined;
     promise = guards ? { guards: { param } } : { asserts: { param } };
   }
-  return { footprint, promise, fresh, receiverStore, onThrow, receiverOwn, freshObject, requires, elements, pre,
-    ensures, receiverGrows, elementWrite };
+  const effect: CallEffect = { footprint, promise, fresh, receiverStore, onThrow, receiverOwn, freshObject, requires,
+    elements, pre, ensures, receiverGrows, elementWrite };
+  return regions === undefined ? effect : { ...effect, regions };
 }
 /** One contract representation; every operand mapping must retain its effect. */
 type CallContract<Receiver, Arguments, L = number> = {

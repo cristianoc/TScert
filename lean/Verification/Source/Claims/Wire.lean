@@ -232,6 +232,16 @@ structure Apart where
   name : String
   other : String
   deriving ToJson, FromJson
+/-- A store separation the producer proposes at a statement entry: the
+arrays the paths `path` and `otherPath` read from what the value bindings
+`name` and `other` hold have different stores (ARITHMETIC.md, "Store
+separation"). -/
+structure StoresApart where
+  name : String
+  path : List String
+  other : String
+  otherPath : List String
+  deriving ToJson, FromJson
 structure Entry (ι : Type) where
   point : String
   start : Nat
@@ -240,6 +250,7 @@ structure Entry (ι : Type) where
   facts : List Fact
   quantified : List Quantified
   apart : List Apart
+  storesApart : List StoresApart
   deriving ToJson, FromJson
 /-- The type arguments one call supplies for a scheme's binders. It is the
 producer's proposed elimination, re-checked here; it is never itself evidence. -/
@@ -367,6 +378,7 @@ private def pointData (entries : List (Entry ι)) (expressions : List (Expressio
     entryEvery := entries.map (fun e => (e.start,e.quantified.map fun q =>
       ((q.name, q.path), (q.stop.name, q.stop.path, q.stop.term), q.body.map BodyFact.claim)))
     entryApart := entries.map (fun e => (e.start, e.apart.map fun r => (r.name, r.other)))
+    entryStoresApart := entries.map (fun e => (e.start, e.storesApart.map fun r => ((r.name, r.path), (r.other, r.otherPath))))
     -- An expression's assertion is of one field each (`validCurrent`).
     exprCurrent := expressions.filterMap (fun e => e.current.map fun fs =>
       (e.pos, fs.filterMap fun (p, A) => match p with | [k] => some (k, A) | _ => none)) }
@@ -387,6 +399,7 @@ def Function.normalized (f : Function ι) : SourceClaims.Function ι :=
     entryFacts := sites.entryFacts
     entryEvery := sites.entryEvery
     entryApart := sites.entryApart
+    entryStoresApart := sites.entryStoresApart
     points := pointTable f.entries f.expressions, contracts := storageContracts f.contracts
     footprint := f.footprint
     onThrow := f.onThrow

@@ -9,8 +9,8 @@ the JavaScript is the same with and without it.
 JSDoc tags whose text is a clause of
 [the clause language](ARITHMETIC.md#the-clause-language): `safeInteger(p)`,
 linear comparisons over integers, paths `x.f` and lengths `p.length`, `&&`,
-`||` and `!`, guards such as `p === null || …`, and a closing quantified atom
-`forall i in xs: …`. [Where clauses are written](ARITHMETIC.md#the-clause-language)
+`||` and `!`, guards such as `p === null || …`, a closing quantified atom
+`forall i in xs: …`, and `p !== q` of two arrays, whose stores differ. [Where clauses are written](ARITHMETIC.md#the-clause-language)
 lists what each tag may name.
 
 ### `@requires C`
@@ -34,6 +34,15 @@ A quantified atom states its body of every element:
 function widthAt(widths: number[], ends: number[], k: number): number {
   return widths[ends[k]!]!;
 }
+```
+
+`p !== q` of two arrays states that their stores differ, so the body keeps
+`flags`'s facts across a call whose frame changes the other's store
+([store separation](ARITHMETIC.md#store-separation)):
+
+```ts
+/** @requires flags !== runs.openBrackets */
+function measure(flags: number[], runs: Runs): number { … }
 ```
 
 ### `@ensures C`

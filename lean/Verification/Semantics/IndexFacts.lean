@@ -227,6 +227,30 @@ theorem readGuard_kept {first : Nat → String → Bool} {ρ : Env} {h h' : Heap
       · exact hv
     | _ => rw [hs] at hv; simp [readGuard] at hv
 
+/-- A path of at most one field whose first location `first` keeps reads
+what it read. -/
+theorem readPath_guardKept {first : Nat → String → Bool} {ρ : Env} {h h' : Heap} {s : Nat} {p : List String} {v : Val}
+    (hf : ∀ s g fs cd o l v, first s g = true → ρ s = .objAt fs cd o → fs.lookup (.str g) = some l →
+      h[l]? = some v → h'[l]? = some v)
+    (hk : guardKept first s p = true) (hv : readPath h (ρ s) p = some v) : readPath h' (ρ s) p = some v := by
+  match p, hk with
+  | [], _ => exact hv
+  | [g], hk =>
+    simp only [guardKept] at hk
+    cases hs : ρ s with
+    | objAt fs cd o =>
+      rw [hs] at hv
+      simp only [readPath] at hv ⊢
+      split at hv
+      · rename_i l hl
+        split at hv
+        · rename_i u hu
+          simp only [hf s g fs cd o l u hk hs hl hu]
+          exact hv
+        · cases hv
+      · cases hv
+    | _ => rw [hs] at hv; simp [readPath] at hv
+
 /-- The length of the array store a value holds, read in the heap, where it
 is at most `maxArrayLength`. -/
 def lengthOf (h : Heap) (v : Val) : Option Int :=
@@ -635,6 +659,23 @@ def RegionOf (h : Heap) (v : Val) (store : Option Nat) (cells : List (Option Nat
 def InRegion (store : Option Nat) (cells : List (Option Nat)) (l : Nat) : Prop :=
   store = some l ∨ some l ∈ cells
 
+/-- The values two paths read hold different array stores, where both hold
+one (`!==` of two arrays, ARITHMETIC.md, "Store separation"): for two
+arrays, `Footprints.StoreApart` (`PathStoresApart.storeApart`). -/
+def PathStoresApart (h : Heap) (x : Val) (p : List String) (y : Val) (q : List String) : Prop :=
+  ∃ u w, readPath h x p = some u ∧ readPath h y q = some w ∧
+    ∀ s t, Footprints.storeOf u = some s → Footprints.storeOf w = some t → s ≠ t
+
+theorem PathStoresApart.symm {h : Heap} {x y : Val} {p q : List String}
+    (ha : PathStoresApart h x p y q) : PathStoresApart h y q x p := by
+  obtain ⟨u, w, hu, hw, hne⟩ := ha
+  exact ⟨w, u, hw, hu, fun s t hs ht he => hne t s ht hs he.symm⟩
+
+theorem PathStoresApart.extend {h : Heap} {x y : Val} {p q : List String} (vs : List Val)
+    (ha : PathStoresApart h x p y q) : PathStoresApart (h ++ vs) x p y q := by
+  obtain ⟨u, w, hu, hw, hne⟩ := ha
+  exact ⟨u, w, readPath_extend vs hu, readPath_extend vs hw, hne⟩
+
 /-- Two values' regions share no location. -/
 def RegionsApart (h : Heap) (u v : Val) : Prop :=
   ∃ sa xs sb ys, RegionOf h u sa xs ∧ RegionOf h v sb ys ∧
@@ -693,7 +734,10 @@ path `path` reads from the slot `slot`, that for every index `i` with
 element at it (a present safe integer) and terms, each denoting an integer.
 A region fact (`apart`, FOOTPRINTS.md, "Element regions") states that the
 regions of the values in slots `slot` and `other` share no location
-(`RegionsApart`). -/
+(`RegionsApart`). A store separation (`storeApart`, ARITHMETIC.md, "Store
+separation") states that the values the paths `path` and `otherPath` read
+from the slots `slot` and `other` hold different array stores
+(`PathStoresApart`). -/
 inductive IndexFact where
   | index (slot : Nat)
   | length (array length : Nat)
@@ -706,6 +750,7 @@ inductive IndexFact where
   | element (value array index : Nat)
   | every (slot : Nat) (path : List String) (stop : Term) (body : List (LinearClause Bound))
   | apart (slot other : Nat)
+  | storeApart (slot : Nat) (path : List String) (other : Nat) (otherPath : List String)
   deriving DecidableEq, Repr, Hashable
 
 namespace IndexFact
@@ -723,6 +768,7 @@ def slots : IndexFact → List Nat
   | .element v x k => [v, x, k]
   | .every s _ stop body => s :: stop.slot :: body.flatMap fun F => F.vars.flatMap Bound.slots
   | .apart a b => [a, b]
+  | .storeApart a _ b _ => [a, b]
 
 /-- A quantified fact's body with each term's slot renamed, where the map
 names every one. -/
@@ -770,6 +816,7 @@ def mapM (f : Nat → Option Nat) : IndexFact → Option IndexFact
   | .every s p stop body => do
     pure (.every (← f s) p (← stop.mapM f) (← mapBody f body))
   | .apart a b => do pure (.apart (← f a) (← f b))
+  | .storeApart a p b q => do pure (.storeApart (← f a) p (← f b) q)
 
 /-- The fact with each slot renamed. -/
 def map (f : Nat → Nat) (F : IndexFact) : IndexFact := (F.mapM (some ∘ f)).getD F
@@ -792,6 +839,7 @@ def HoldsAt : IndexFact → Env → Heap → Prop
       h[st]? = some (.arr ls) ∧ termValue ρ h stop = some n ∧
       ∀ i : Nat, (i : Int) < n → ∀ F ∈ body, F.HoldsAt (boundValue ρ h ls i)
   | .apart a b, ρ, h => RegionsApart h (ρ a) (ρ b)
+  | .storeApart a p b q, ρ, h => PathStoresApart h (ρ a) p (ρ b) q
 
 
 
@@ -821,6 +869,10 @@ theorem holdsAt_mapM {F F' : IndexFact} {f : Nat → Option Nat} {ρ ρ' : Env} 
     exact or_congr (ihA hA (fun x hx y hy => hf x (by simp [slots, hx]) y hy))
       (ihB hB (fun x hx y hy => hf x (by simp [slots, hx]) y hy))
   | apart a b =>
+    simp only [mapM, Option.bind_eq_bind, Option.bind_eq_some_iff, Option.pure_def, Option.some.injEq] at hm
+    obtain ⟨a', ha, b', hb, rfl⟩ := hm
+    simp only [HoldsAt, hf a (by simp [slots]) a' ha, hf b (by simp [slots]) b' hb]
+  | storeApart a p b q =>
     simp only [mapM, Option.bind_eq_bind, Option.bind_eq_some_iff, Option.pure_def, Option.some.injEq] at hm
     obtain ⟨a', ha, b', hb, rfl⟩ := hm
     simp only [HoldsAt, hf a (by simp [slots]) a' ha, hf b (by simp [slots]) b' hb]
@@ -953,6 +1005,7 @@ theorem mapM_total (f : Nat → Nat) : ∀ F : IndexFact, ∃ G, F.mapM (some �
     obtain ⟨body', hb⟩ := mapBody_some f body
     exact ⟨.every (f s) p (Term.mapM' f stop) body', by simp [mapM, hb, Term.mapM]; rfl⟩
   | .apart a b => ⟨_, rfl⟩
+  | .storeApart a p b q => ⟨_, rfl⟩
 
 /-- A fact reads its slots' values alone. -/
 theorem holdsAt_map {F : IndexFact} {f : Nat → Nat} {ρ ρ' : Env} {h : Heap}
@@ -967,6 +1020,7 @@ theorem holdsAt_extend {F : IndexFact} {ρ : Env} {h : Heap} (vs : List Val) (hF
   induction F with
   | either A B ihA ihB => exact hF.imp ihA ihB
   | apart a b => exact regionsApart_extend vs hF
+  | storeApart a p b q => exact PathStoresApart.extend vs hF
   | guarded s p t B ih =>
     obtain ⟨v, hv, hor⟩ := hF
     exact ⟨v, readGuard_extend vs hv, hor.imp id ih⟩
@@ -1032,6 +1086,9 @@ theorem holdsAt_congr {F : IndexFact} {ρ ρ' : Env} {h : Heap} (hs : ∀ s ∈ 
     exact or_congr (ihA (fun x hx => hs x (by simp [slots, hx])))
       (ihB (fun x hx => hs x (by simp [slots, hx])))
   | apart a b =>
+    simp only [slots, List.mem_cons, List.not_mem_nil, or_false, forall_eq_or_imp, forall_eq] at hs
+    simp only [HoldsAt, hs.1, hs.2]
+  | storeApart a p b q =>
     simp only [slots, List.mem_cons, List.not_mem_nil, or_false, forall_eq_or_imp, forall_eq] at hs
     simp only [HoldsAt, hs.1, hs.2]
   | guarded s p t B ih =>
@@ -1680,6 +1737,7 @@ def keptBy (c : Changes) (first : Nat → String → Bool) : IndexFact → Bool
   | .guarded s p _ B => guardKept first s p && B.keptBy c first
   | .element .. | .every .. => false
   | .apart .. => c.store == .keep
+  | .storeApart a p b q => guardKept first a p && guardKept first b q
 
 theorem holdsAt_kept {c : Changes} {first : Nat → String → Bool} {F : IndexFact} {ρ : Env} {h h' : Heap}
     (hc : c.Holds h h') (hf : FirstKept first ρ h h') (hk : F.keptBy c first = true) (hF : F.HoldsAt ρ h) :
@@ -1714,6 +1772,10 @@ theorem holdsAt_kept {c : Changes} {first : Nat → String → Bool} {F : IndexF
   | apart a b =>
     simp only [keptBy, beq_iff_eq] at hk
     exact regionsApart_kept hc hk hF
+  | storeApart a p b q =>
+    simp only [keptBy, Bool.and_eq_true] at hk
+    obtain ⟨u, w, hu, hw, hne⟩ := hF
+    exact ⟨u, w, readPath_guardKept hf hk.1 hu, readPath_guardKept hf hk.2 hw, hne⟩
   | guarded s p t B ih =>
     simp only [keptBy, Bool.and_eq_true] at hk
     obtain ⟨v, hv, hor⟩ := hF
@@ -1837,6 +1899,7 @@ theorem holdsAt_keptWith {c : Changes} {first views : Nat → String → Bool} {
   | element _ _ _ => exact holdsAt_kept hc hf (by simpa [keptWith] using hk) hF
   | every _ _ _ _ => exact holdsAt_kept hc hf (by simpa [keptWith] using hk) hF
   | apart _ _ => exact holdsAt_kept hc hf (by simpa [keptWith] using hk) hF
+  | storeApart _ _ _ _ => exact holdsAt_kept hc hf (by simpa [keptWith] using hk) hF
 
 end IndexFact
 

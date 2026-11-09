@@ -405,6 +405,15 @@ private def reachablePoints (graph : SourceFlow.Graph) (id : Nat) : List String 
         s!"a region fact names '{name}', which is no value binding")
     | _, none => do throw (locatedRefusal (← table) node.source .entryClaim
         s!"a region fact names '{other}', which is no value binding")
+  -- The store separations the producer proposes (ARITHMETIC.md, "Store
+  -- separation"): both sides paths from value bindings.
+  let storesApart ← ((fc.entryStoresApart.lookup node.source.1).getD []).mapM fun ((name, p), (other, q)) =>
+    match valueSlot scope name, valueSlot scope other with
+    | some x, some y => pure ({ fact := .storeApart x p y q } : HeapKnowledge.IndexAtom)
+    | none, _ => do throw (locatedRefusal (← table) node.source .entryClaim
+        s!"a store separation names '{name}', which is no value binding")
+    | _, none => do throw (locatedRefusal (← table) node.source .entryClaim
+        s!"a store separation names '{other}', which is no value binding")
   -- A loop's invariant (ARITHMETIC.md, "Loop invariants"): at its head,
   -- each fact rooted at the value bindings or initialized cells it names, which every edge
   -- into the head establishes.
@@ -419,7 +428,7 @@ private def reachablePoints (graph : SourceFlow.Graph) (id : Nat) : List String 
   -- knowledge is its assertion exactly (`checkAssertions`), and two claimed
   -- facts may lower to one atom (a cell's value term stated an integer and
   -- bounded by `2^53 - 1`).
-  let bounds := (bounds ++ linear ++ quantified ++ apart ++ invariant).eraseDups
+  let bounds := (bounds ++ linear ++ quantified ++ apart ++ storesApart ++ invariant).eraseDups
   if !facts.isEmpty || !links.isEmpty || !separation.facts.isEmpty || !bounds.isEmpty then
     recordAssertion reserved ⟨facts, [], links, separation, [], bounds⟩
   recordCut reserved

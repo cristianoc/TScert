@@ -114,7 +114,12 @@ let create diagnostics flows offered declarations module_functions arities bound
     let env0 = if guarded = [] then env0 else Linear_facts.gadd env0 guarded in
     (* Its quantified facts (ARITHMETIC.md, "Quantified clauses"), alike. *)
     let every = List.filter_map (Linear_facts.of_every_fact name) f.requires in
-    if every = [] then env0 else Linear_facts.eadd env0 every in
+    let env0 = if every = [] then env0 else Linear_facts.eadd env0 every in
+    (* Its store separations (ARITHMETIC.md, "Store separation"), alike. *)
+    let stores = List.filter_map (fun (fact : Semantic.index_fact) -> match fact with
+      | Store_apart (x,p,y,q) -> (match name x, name y with Some a, Some b -> Some ((a,p),(b,q)) | _ -> None)
+      | _ -> None) f.requires in
+    if stores = [] then env0 else Linear_facts.sadd env0 stores in
   (* A module function holds each module cell its body mentions. *)
   let rec mentions n (e:Source.expr) = (match e.node with
     | Id m | Assign (m,_,_) | NullishAssign (m,_,_) -> m = n

@@ -263,9 +263,31 @@ let radd env (rs : rfact list) =
     List.map (fun r -> rfact_key r, Value Semantic.top) (List.sort_uniq compare rs)
 let rapart (rs : rfact list) x y = List.mem (x,y) rs || List.mem (y,x) rs
 
+(* A store separation (Lean's `IndexFact.storeApart`; ARITHMETIC.md, "Store
+   separation"): the arrays two paths read from value bindings hold
+   different stores. Held as a pseudo-binding whose name, after `\003S`,
+   names both sides, each a binding and its fields; the sides in order. *)
+type sfact = (string * string list) * (string * string list)
+let sfact_norm ((a,b) : sfact) : sfact = if compare a b <= 0 then (a,b) else (b,a)
+let sfact_key ((a,b) : sfact) =
+  let side (x,p) = String.concat "\005" (x :: p) in
+  "\003S" ^ side a ^ "\007" ^ side b
+let sfact_parts n : sfact option =
+  if String.length n < 2 || String.sub n 0 2 <> "\003S" then None else
+  let side s = match String.split_on_char '\005' s with x :: p -> Some (x,p) | [] -> None in
+  match String.split_on_char '\007' (String.sub n 2 (String.length n - 2)) with
+  | [a; b] -> (match side a, side b with Some a, Some b -> Some (a,b) | _ -> None)
+  | _ -> None
+let is_sfact n = sfact_parts n <> None
+let sfacts env : sfact list = List.filter_map (fun (n,_) -> sfact_parts n) env
+let sadd env (ss : sfact list) =
+  List.filter (fun (n,_) -> not (is_sfact n)) env @
+    List.map (fun r -> sfact_key r, Value Semantic.top) (List.sort_uniq compare (List.map sfact_norm ss))
+let sbindings (((x,_),(y,_)) : sfact) = [x; y]
+
 let add env (fs : fact list) =
   let fs = tighten fs in
-  List.filter (fun (n,_) -> not (is_fact n) || is_gfact n || is_efact n || is_dfact n || is_rfact n) env @ List.map (fun (t,b) -> fact_key t b, Value Semantic.top) fs
+  List.filter (fun (n,_) -> not (is_fact n) || is_gfact n || is_efact n || is_dfact n || is_rfact n || is_sfact n) env @ List.map (fun (t,b) -> fact_key t b, Value Semantic.top) fs
 let gadd env (gs : gfact list) =
   List.filter (fun (n,_) -> not (is_gfact n)) env @
     List.map (fun g -> gfact_key g, Value Semantic.top) (List.sort_uniq compare gs)
@@ -606,7 +628,7 @@ let method_keeps_heap : ((string * Environment.binding) list -> expr -> Semantic
   ref (fun _ _ _ -> false)
 let signatures_keep (calls : Semantic.signature list) =
   calls <> [] && List.for_all (fun (s : Semantic.signature) -> let e = s.Semantic.call_effect in
-    e.Semantic.footprint.Semantic.on_value = Semantic.Keep && e.Semantic.footprint.Semantic.on_store = Semantic.Keep &&
+    e.Semantic.regions = [] && e.Semantic.footprint.Semantic.on_value = Semantic.Keep && e.Semantic.footprint.Semantic.on_store = Semantic.Keep &&
     not e.Semantic.receiver_store && not e.Semantic.receiver_own) calls
 
 (* Whether `heap_free` admits updates of cells (`cell_terms`), whose
@@ -1114,10 +1136,36 @@ let after_cell_updates env (e : expr) (fs : fact list) : fact list =
       | Some d when is_int fs old && safe fs ([old,1],d) -> forget old (fs @ equal x ([old,1],d))
       | _ -> forget old fs) fs steps
 
+(* The store regions every signature of the module function `f` states,
+   each a call position and a path, and its frame's closed bound; none for a
+   binding of the body. Set by the statement analysis. *)
+let call_regions : ((string * Environment.binding) list -> string -> ((int * string list) list * Semantic.footprint) option) ref =
+  ref (fun _ _ -> None)
+
+(* Where a statement is a call of a function stating store regions whose
+   closed bound keeps every store, the arrays whose store the call keeps
+   (Lean's `regionFirst`): a value binding separated from the store each
+   region selects at the call, by a region fact with the actual of a
+   region's own store, or by a store separation with the region's path at
+   the actual. *)
+let region_separated ?(regions=[]) ?(stores=[]) env (s : stmt) : (string -> bool) option =
+  match s.statement with
+  | Effect {node=Call ({node=Id f;_},None,args,[],_);_} when List.for_all (heap_free env) args ->
+    (match !call_regions env f with
+     | Some (rs,closed) when rs <> [] &&
+         (match closed.Semantic.on_store with Semantic.Keep | Semantic.Init | Semantic.Scalar -> true | _ -> false) ->
+       let stores = List.map sfact_norm stores in
+       Some (fun y -> slot_binding env y && List.for_all (fun (p,q) -> p >= 1 &&
+         match List.nth_opt args (p - 1) with
+         | Some {node=Id a;_} -> (q = [] && rapart regions a y) || List.mem (sfact_norm ((a,q),(y,[]))) stores
+         | _ -> false) rs)
+     | _ -> None)
+  | _ -> None
+
 (* A statement's effect on the facts: an assignment or update of a slot
    binding by a linear expression, and every other assigned binding
    forgotten. *)
-let rec statement ~(array : string -> string list -> bool) ?(bounds=[]) ?(regions=[]) env fs (s : stmt) : fact list =
+let rec statement ~(array : string -> string list -> bool) ?(bounds=[]) ?(regions=[]) ?(stores=[]) env fs (s : stmt) : fact list =
   match s.statement with
   (* `i++;` of a binding held in a cell: its read, step and write. *)
   | Effect ({node=Update (_,{node=Id x;_},None,_);_} as e) when !cell_terms x -> after_cell_updates env e fs
@@ -1129,10 +1177,10 @@ let rec statement ~(array : string -> string list -> bool) ?(bounds=[]) ?(region
      facts, then the statement as one writing no other location. *)
   | Effect e ->
     let updated = after_cell_updates env e fs in
-    if updated == fs then statement_slots ~array ~bounds ~regions env fs s
+    if updated == fs then statement_slots ~array ~bounds ~regions ~stores env fs s
     else with_cells true (fun () -> statement_slots ~array ~bounds env updated s)
-  | _ -> statement_slots ~array ~bounds ~regions env fs s
-and statement_slots ~(array : string -> string list -> bool) ?(bounds=[]) ?(regions=[]) env fs (s : stmt) : fact list =
+  | _ -> statement_slots ~array ~bounds ~regions ~stores env fs s
+and statement_slots ~(array : string -> string list -> bool) ?(bounds=[]) ?(regions=[]) ?(stores=[]) env fs (s : stmt) : fact list =
   (* A write `x.f = e` of a field the receiver's type states, of a value
      binding, by a linear expression: the field's new value is `e`'s, read through the old value where `e`
      reads it (Lean's `write-link`, a read link from `x.f` to the written
@@ -1169,10 +1217,16 @@ and statement_slots ~(array : string -> string list -> bool) ?(bounds=[]) ?(regi
             if t = length then acc + c * List.length args else acc) 0 form)
         else None) (fs @ term_ranges fs)
     | _ -> [] in
+  (* Across a call of a function stating store regions, each fact whose
+     lengths are of arrays the call keeps (`region-call-keep`). *)
+  let separated = match region_separated ~regions ~stores env s with
+    | Some sep -> List.filter (fun ((t,_) : fact) -> List.for_all (fun (n,_) -> stable_term env n ||
+        (let b,path,kind = term_parts n in kind = Length_term && path = [] && sep b)) t) fs
+    | None -> [] in
   let fs = if statement_heap_free env s then fs else match statement_changes ~facts:fs ~bounds env s with
     | Some ch -> List.filter (fun f -> fact_kept ch f || stable_fact env f) fs
     | None -> keep_stable env fs in
-  let fs = fs @ appended in
+  let fs = List.sort_uniq compare (fs @ separated) @ appended in
   let fs = match written with
     | Some (p,(t,c)) ->
       let t = List.map (fun (n,k) -> (if n = p then old else n),k) t in
@@ -1267,12 +1321,17 @@ let join_bounds (l : bound list) (r : bound list) : bound list =
 
 (* The bounds a statement keeps: those whose bindings it does not assign, where
    it writes no heap. *)
-let statement_bounds ?(facts=[]) env (bs : bound list) (s : stmt) =
+let statement_bounds ?(facts=[]) ?(regions=[]) ?(stores=[]) env (bs : bound list) (s : stmt) =
   let kept = statement_heap_free env s ||
     (match statement_changes ~facts ~bounds:bs env s with Some ch -> ch.store <> `Any | None -> false) in
-  if not kept then [] else
   let assigned = names_assigned s env in
-  List.filter (fun (a,i,_) -> not (List.mem a assigned) && not (List.mem i assigned)) bs
+  let unassigned (a,i,_) = not (List.mem a assigned) && not (List.mem i assigned) in
+  if kept then List.filter unassigned bs else
+  (* Across a call of a function stating store regions, the bounds of the
+     arrays it keeps (`region-call-keep`). *)
+  match region_separated ~regions ~stores env s with
+  | Some sep -> List.filter (fun ((a,_,_) as b) -> unassigned b && sep a) bs
+  | None -> []
 
 (* What each answer of a comparison of an index with an array's length states:
    on the answer giving `j < xs.length`, with `0 ≤ j` known, `j` an index
@@ -1754,10 +1813,10 @@ let declaration ~array env fs name (init : expr) =
       let projected = List.filter (fun (t,_) -> List.exists (fun (n,_) -> term_binding n = read) t) fs in
       stated @ List.map (fun (t,d) -> List.map (fun (n,c) ->
         let b,p,k = term_parts n in (if b = read then make_term ~path:p k name else n),c) t,d) projected) forget_all
-let statement ~array ?(bounds=[]) ?(regions=[]) env fs (s : stmt) =
+let statement ~array ?(bounds=[]) ?(regions=[]) ?(stores=[]) env fs (s : stmt) =
   match s.statement with
-  | Effect e -> with_reads ~array env fs e (fun fs -> statement ~array ~bounds ~regions env fs s) forget_all
-  | _ -> statement ~array ~bounds ~regions env fs s
+  | Effect e -> with_reads ~array env fs e (fun fs -> statement ~array ~bounds ~regions ~stores env fs s) forget_all
+  | _ -> statement ~array ~bounds ~regions ~stores env fs s
 
 (* A quantified fact restated where a binding `name` is declared at the read
 of the path `(root, path)` (Lean's `readEvery`): its array, its bound and its
@@ -1945,6 +2004,42 @@ let of_every_fact (name : int -> string option) (fact : Semantic.index_fact) : e
    statement assigns. A declaration of an array literal states its binding
    apart from every older array binding `visible` names, one Lean's scope
    holds (`region-alloc`). *)
+(* Whether every type the binding's type states for a field states it
+   `@stable` (Lean's `HeapExpressionRules.stableFirst`): every step keeps the
+   field's location. Set by the statement analysis, which reads the type. *)
+let stable_field : ((string * Environment.binding) list -> string -> string -> bool) ref = ref (fun _ _ _ -> false)
+
+(* The store separations a statement keeps (Lean's `IndexFact.keptBy`):
+   each across a statement writing no heap; one between two bindings' own
+   stores across any statement, which reads no heap (`envOnly`); one whose
+   paths are at most one `@stable` field across a call of a function, whose
+   step keeps every stable field's location (`stableFirst`); none naming a
+   binding the statement assigns. A declaration of an object literal whose
+   field holds an empty array literal states the field's array apart from
+   every older array binding `visible` names (`region-alloc`, read through
+   the literal's field link, `store-apart-links`). *)
+let sstatement ?(array = fun _ _ -> false) ?(visible = fun _ -> true) env (ss : sfact list) (s : stmt) : sfact list =
+  let assigned = names_assigned s env in
+  let ss = List.filter (fun f -> not (List.exists (fun x -> List.mem x assigned) (sbindings f))) ss in
+  let fresh = match s.statement with
+    | Declare (_,bindings) -> List.concat_map (fun (n,_,(init:expr)) -> match init.node with
+        | Alloc fields -> List.concat_map (fun (key,(v:expr)) -> match key, v.node with
+            | Semantic.Name f, ArrayLiteral (_,[]) -> List.filter_map (fun (m,_) ->
+                if m <> n && visible m && not (is_fact m) && not (is_bound m) && not (is_field m) && slot_binding env m && array m []
+                then Some ((n,[f]),(m,[])) else None) env
+            | _ -> []) fields
+        | _ -> []) bindings
+    | _ -> [] in
+  fresh @ if statement_heap_free env s then ss else
+  let call = match s.statement with
+    | Effect {node=Call ({node=Id _;_},None,args,[],_);_} -> List.for_all (heap_free env) args
+    | _ -> false in
+  let side (x,p) = match p with
+    | [] -> true
+    | [f] -> slot_binding env x && !stable_field env x f
+    | _ -> false in
+  List.filter (fun (((_,p),(_,q)) as f) -> (p = [] && q = []) || (call && side (fst f) && side (snd f))) ss
+
 let rstatement ?(array = fun _ _ -> false) ?(visible = fun _ -> true) env (rs : rfact list) (s : stmt) : rfact list =
   let rs = if statement_heap_free env s then rs else match s.statement with
     | Effect {node=IndexWrite ({node=Id xs;_},{node=Id _;_},rhs);_} when heap_free env rhs && slot_binding env xs ->

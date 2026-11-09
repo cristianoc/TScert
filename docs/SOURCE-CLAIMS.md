@@ -75,7 +75,7 @@ Each function object has these fields:
 | `footprint` | The [closed footprint](FOOTPRINTS.md#changes-and-footprints) proposed for the declaration's signature: `{"value":v,"store":s}` |
 | `onThrow` | Whether the footprint is proposed on a throw too, which the unit's graph must then establish as well: `true` or `false` |
 | `resultFootprint` | The closed footprint proposed for the signatures of the function the declaration returns, which its returns must establish ([returned closures](SOURCE-ELABORATION.md#returned-closures)): `{"value":v,"store":s}`, the one letting everything change where it proposes none |
-| `entries` | Entry claims: `{point,start,bindings,bounds,facts,quantified}` |
+| `entries` | Entry claims: `{point,start,bindings,bounds,facts,quantified,apart,storesApart}` |
 | `expressions` | Expression claims: `{point,pos,type,current}` |
 | `arrows` | Optional per-signature interior claims, described below |
 
@@ -93,6 +93,14 @@ the array the fields `path` read from the value binding `name` give, the term
 every index below the bound, each body fact holds of the index, the element
 at it and the terms, which the entry's knowledge states and every edge into
 it checks ([quantified clauses](ARITHMETIC.md#quantified-clauses)).
+Entry `apart` is a list, possibly empty, of `{name, other}`, two value
+bindings whose arrays' regions share no location
+([element regions](FOOTPRINTS.md#element-regions)); entry `storesApart` is a
+list, possibly empty, of `{name, path, other, otherPath}`: the arrays the
+fields `path` and `otherPath` read from the value bindings `name` and
+`other` hold different stores
+([store separation](ARITHMETIC.md#store-separation)). The entry's knowledge
+states each, and every edge into it checks it.
 Entry `facts` is a list, possibly empty, of `{terms,bound}`, `terms` a list of
 `{name, path, term, coefficient}`, each naming a value binding of the entry,
 the named data fields `path` read from it in turn (empty for the binding's
@@ -161,7 +169,8 @@ executable input; its identity and point associations must match a Fragment:
     "params": [{"name":"flag","type":[1,2],"current":null}],
     "result": [1,2], "contracts": [], "footprint": {"value":"keep","store":"keep"},
     "entries": [{"point":"9:17:1","start":43,
-      "bindings":[{"name":"flag","type":[1,2],"current":null}], "bounds":[], "facts":[], "quantified":[]}],
+      "bindings":[{"name":"flag","type":[1,2],"current":null}], "bounds":[], "facts":[], "quantified":[],
+      "apart":[], "storesApart":[]}],
     "expressions": [{"point":"9:17:1","pos":[50,54],
       "type":[1,2],"current":null}]
   }]
@@ -284,6 +293,11 @@ element write does, and, where `"exact"`, the store of elements of the first
 actual lists the same entries but at the second actual, where it lists a
 location holding the third; only a native's audited signature states it
 ([stated library types](SOURCE-CONTRACTS.md#stated-library-types)).
+Where the frame states store regions, the effect has, besides,
+`"regions": [{"position": i, "path": p}, …]`, nonempty: the store the
+fields `p` read from the call position `i` select at the call's entry may
+change arbitrarily, the footprint `f` bounding every other location
+([stated effects](SOURCE-ELABORATION.md#stated-effects)).
 Each requires corresponding evidence.
 
 A call expression can propose an instance with:

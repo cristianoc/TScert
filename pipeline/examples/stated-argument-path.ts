@@ -15,3 +15,22 @@ export function closeAll(runs: Runs): Modifies<{ values: "any"; "runs.openBracke
   open.pop();
   return open.length;
 }
+
+// A caller keeping a fact across the frame (§6.1): `i < flags.length` holds
+// after `readRuns(runs)`, whose region is `runs.openBrackets`'s store, since
+// the precondition states that array's store apart from `flags`'s
+// (`flags !== runs.openBrackets`, ARITHMETIC.md, "Store separation"); the
+// field is stable, so the separation holds at every call of the loop.
+/** @requires flags !== runs.openBrackets */
+export function measure(flags: number[], runs: Runs): number {
+  let sum = 0;
+  for (let i = 0; i < flags.length; i++) { readRuns(runs); sum += flags[i]!; }
+  return sum;
+}
+
+// A caller establishing the precondition: the literal's fresh array is apart
+// from every older array (`region-alloc`), read through the literal's field.
+export function caller(flags: number[]): number {
+  const runs: Runs = { openBrackets: [] };
+  return measure(flags, runs);
+}

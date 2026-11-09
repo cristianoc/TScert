@@ -155,6 +155,16 @@ interface ApartClaim {
   other: string;
 }
 
+/** A store separation proposed at a statement entry (ARITHMETIC.md, "Store
+ * separation"): the arrays the paths `path` and `otherPath` read from what
+ * the value bindings `name` and `other` hold have different stores. */
+interface StoresApartClaim {
+  name: string;
+  path: string[];
+  other: string;
+  otherPath: string[];
+}
+
 /** The environment at one shared control-flow point, with source provenance. */
 interface EntryClaim<L = Label> {
   point: string;
@@ -164,6 +174,7 @@ interface EntryClaim<L = Label> {
   facts: LinearClaim[];
   quantified: QuantifiedClaim[];
   apart: ApartClaim[];
+  storesApart: StoresApartClaim[];
 }
 
 /** The type arguments one call supplies for a scheme's binders. It records the
@@ -401,7 +412,7 @@ function claimsDocument(v: JsonRead): SourceClaims {
         };
   };
   const entry = (x: JsonRead): EntryClaim => {
-    const r = record(x, "an entry", ["point", "start", "bindings", "bounds", "facts", "quantified", "apart"]);
+    const r = record(x, "an entry", ["point", "start", "bindings", "bounds", "facts", "quantified", "apart", "storesApart"]);
     const integer = (v: JsonRead, what: string): number => {
       if (typeof v !== "number" || !Number.isSafeInteger(v)) fail(`${what} is a safe integer`);
       return v;
@@ -449,6 +460,13 @@ function claimsDocument(v: JsonRead): SourceClaims {
       apart: each(r.apart, "an entry's region facts", (f) => {
         const q = record(f, "a region fact", ["name", "other"]);
         return { name: name(q.name, "a region fact's binding"), other: name(q.other, "a region fact's other binding") };
+      }),
+      storesApart: each(r.storesApart, "an entry's store separations", (f) => {
+        const q = record(f, "a store separation", ["name", "path", "other", "otherPath"]);
+        return { name: name(q.name, "a store separation's binding"),
+          path: each(q.path, "a store separation's path", (g) => name(g, "a path's field")),
+          other: name(q.other, "a store separation's other binding"),
+          otherPath: each(q.otherPath, "a store separation's other path", (g) => name(g, "a path's field")) };
       }) };
   };
   const certificate = (x: JsonRead): ResolutionCertificate => {
