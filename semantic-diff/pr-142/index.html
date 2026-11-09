@@ -1,0 +1,348 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Commit Records</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Code+Pro:wght@400;600&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=STIX+Two+Text:ital,wght@0,400;0,600;1,400&display=swap">
+<style>
+:root { --bg:#fbfcfd; --surface:#ffffff; --ink:#0b1a2e; --muted:#56627a; --rule:#d5dce6; --accent:#8a6410; --code-bg:#eef2f7; --math-bg:#f2f4f8; --ok:#2f6b47; --ok-bg:#e2efe4; --principled:#a0521a; --principled-bg:#f7e6d6; --gap:#6b6f78; --gap-bg:#ecebe6; --neutral:#2c4f7c; --neutral-bg:#e6ebf2; --trust:#7c2f4a; --trust-bg:#f2e1e7; --neg:#9b3524; --neg-bg:#f5e1da; --run:#7a5414; --run-bg:#f3e7cc; --brand-ink:#0b1a2e; --brand-gold:#b8840f;
+  --display:"Bricolage Grotesque","Helvetica Neue",Arial,sans-serif; --body:"Inter","Helvetica Neue",Arial,sans-serif; --mono:"Source Code Pro",Menlo,Consolas,monospace; --math:"STIX Two Text","STIX Two Math","STIXGeneral","Cambria Math","Apple Symbols",Georgia,serif; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#0e1626; --surface:#16213a; --ink:#efe7d4; --muted:#9aa3b5; --rule:#2a3756; --accent:#e0ac4a; --code-bg:#131d33; --math-bg:#1a2540; --ok:#7fd0a2; --ok-bg:#17322a; --principled:#f0a868; --principled-bg:#3a2a1c; --gap:#9aa3b5; --gap-bg:#1c2639; --neutral:#8fb4e8; --neutral-bg:#1b2b49; --trust:#e79bb6; --trust-bg:#3a2131; --neg:#f0907d; --neg-bg:#3a1f22; --run:#e0ac4a; --run-bg:#2e2a24; --brand-ink:#efe7d4; --brand-gold:#e0ac4a; color-scheme:dark } }
+:root[data-theme="dark"] { --bg:#0e1626; --surface:#16213a; --ink:#efe7d4; --muted:#9aa3b5; --rule:#2a3756; --accent:#e0ac4a; --code-bg:#131d33; --math-bg:#1a2540; --ok:#7fd0a2; --ok-bg:#17322a; --principled:#f0a868; --principled-bg:#3a2a1c; --gap:#9aa3b5; --gap-bg:#1c2639; --neutral:#8fb4e8; --neutral-bg:#1b2b49; --trust:#e79bb6; --trust-bg:#3a2131; --neg:#f0907d; --neg-bg:#3a1f22; --run:#e0ac4a; --run-bg:#2e2a24; --brand-ink:#efe7d4; --brand-gold:#e0ac4a; color-scheme:dark }
+* { box-sizing:border-box } body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.6 var(--body) }
+main { max-width:900px; margin:0 auto; padding-inline:20px; padding-block:32px 64px; display:flex; flex-direction:column; gap:22px }
+h1 { font:600 32px/1.15 var(--display); margin:0 } h2 { font:600 22px/1.2 var(--display); margin:12px 0 8px; padding-top:12px; border-top:2px solid var(--ink) }
+h3 { font:600 19px/1.3 var(--display); margin:2px 0 0; text-wrap:balance }
+h4 { font:600 11px/1 var(--body); letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin:12px 0 4px }
+p { margin:2px 0; max-width:72ch } .lede { color:var(--muted) }
+code { font:13px/1.5 var(--mono); background:var(--code-bg); padding:1px 4px; border-radius:3px }
+pre { margin:4px 0; padding:12px 14px; border-radius:6px; overflow-x:auto }
+pre.code { font:13px/1.55 var(--mono); background:var(--code-bg) }
+.rules { display:flex; flex-direction:column; gap:14px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:14px 18px; overflow-x:auto; font:16px/1.6 var(--math) }
+.rules sub, .rules sup { font-size:.72em; line-height:0 }
+.formulas { display:flex; flex-direction:column; gap:4px }
+.formulas .row { display:flex; flex-wrap:wrap; gap:4px 28px } .formulas .row.cont { padding-left:2em }
+.infer { display:flex; align-items:center; gap:12px }
+.frac { display:inline-flex; flex-direction:column; align-items:center; min-width:0 }
+.premises { display:flex; flex-wrap:wrap; justify-content:center; gap:4px 26px; padding:0 6px 3px }
+.bar { align-self:stretch; border-top:1.5px solid var(--ink) }
+.conclusion { padding:3px 6px 0; text-align:center }
+.rule-name { font:15px/1 var(--math); font-variant:small-caps; letter-spacing:.02em; color:var(--accent); white-space:nowrap }
+.card { background:var(--surface); border:1px solid var(--rule); border-radius:8px; padding:20px 22px; display:flex; flex-direction:column; gap:6px; min-width:0 }
+.card > header { display:flex; justify-content:space-between; gap:12px; align-items:flex-start }
+.sha { font:12px/1.4 var(--mono); color:var(--muted) }
+.pill { font:600 11px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; padding:6px 9px; border-radius:99px; white-space:nowrap }
+.pill.ok { color:var(--ok); background:var(--ok-bg) } .pill.principled { color:var(--principled); background:var(--principled-bg) }
+.pill.gap { color:var(--gap); background:var(--gap-bg) } .pill.neutral { color:var(--neutral); background:var(--neutral-bg) }
+.units { display:flex; flex-wrap:wrap; gap:6px } .units span { font:12px/1 var(--mono); border:1px solid var(--rule); border-radius:4px; padding:5px 7px }
+dl.facts { display:grid; grid-template-columns:max-content minmax(0,1fr); gap:6px 16px; margin:12px 0 0; padding-top:12px; border-top:1px solid var(--rule); font-size:13.5px }
+dt { font:600 11px/1.9 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted) }
+dd { margin:0; min-width:0; display:flex; flex-wrap:wrap; gap:5px; align-items:baseline }
+.chip { font:500 12px/1 var(--body); border:1px solid var(--rule); border-radius:4px; padding:4px 7px } .chip.strong { color:var(--accent); border-color:var(--accent) }
+.trust { color:var(--trust); background:var(--trust-bg); padding:2px 6px; border-radius:4px } .none { color:var(--muted) }
+.test { font:12px/1 var(--mono); padding:4px 7px; border-radius:4px }
+.test.pos { color:var(--ok); background:var(--ok-bg) } .test.pos::before { content:"✓ " }
+.test.neg { color:var(--neg); background:var(--neg-bg) } .test.neg::before { content:"✗ " }
+.test.forged { color:var(--principled); background:var(--principled-bg) } .test.forged::before { content:"forged " }
+details { margin-top:8px; font-size:13px; color:var(--muted) } summary { cursor:pointer }
+.table-wrap { overflow-x:auto; border:1px solid var(--rule); border-radius:8px; background:var(--surface) }
+table { border-collapse:collapse; width:100%; font-size:13px } th, td { text-align:left; vertical-align:top; padding:8px 10px; border-bottom:1px solid var(--rule) }
+th { font:600 11px/1.2 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); white-space:nowrap } td.num { font-variant-numeric:tabular-nums }
+h4.change { display:flex; align-items:center; gap:8px; text-transform:none; letter-spacing:0; font:600 14px/1.3 var(--body); color:var(--ink); margin:16px 0 6px }
+h4.change .target { font-weight:400; color:var(--muted) }
+.act { font:600 10.5px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; padding:4px 7px; border-radius:4px }
+.act.added { color:var(--ok); background:var(--ok-bg) } .act.removed { color:var(--neg); background:var(--neg-bg) }
+.act.modified, .act.replaced { color:var(--principled); background:var(--principled-bg) }
+.versions { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:10px }
+.versions figure { margin:0; min-width:0 } .versions figcaption { font:600 11px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); margin:0 0 4px }
+.versions .rules { height:calc(100% - 18px); box-sizing:border-box }
+pre.code .ln { display:block; white-space:pre } pre.code .ln.add { background:var(--ok-bg) } pre.code .ln.del { background:var(--neg-bg) }
+.tk-k { color:#7a3b8c } .tk-s { color:#2f6b47 } .tk-n { color:#a35a12 } .tk-c { color:var(--muted); font-style:italic } .tk-t { color:#2c4f7c }
+.prose p { margin:4px 0 }
+ul.effect, ul.summary { margin:4px 0; padding-left:20px } ul.effect li, ul.summary li { margin:3px 0 } ul.summary ul { padding-left:18px; color:var(--muted) }
+ul.effect .arrow { color:var(--accent); font-weight:600 }
+ul.effect details { margin:0; color:inherit; font-size:inherit } ul.effect summary { list-style-position:outside }
+ul.effect .kind { font-size:11px; text-transform:uppercase; letter-spacing:.04em; padding:1px 6px; border-radius:4px; background:var(--chip, #eee) }
+ul.effect .kind.negative { color:#8a3b12 } ul.effect .kind.positive { color:#22663a } ul.effect .kind.gap { color:#7a5b00 }
+ul.effect .was.unsound { color:#b3261e; font-weight:600 } ul.effect .now { font-weight:500 } ul.effect .why { color:var(--muted) }
+ul.effect mark { background:#ffe08a; color:inherit; border-radius:2px }
+@media (max-width:720px) { .versions { grid-template-columns:minmax(0,1fr) } }
+.lowering { display:flex; flex-direction:column; gap:6px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:12px 16px; overflow-x:auto }
+.lowering .map, .lowering .cond, .lowering .result { display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 10px }
+.lowering .map:not(:has(.sem)) { flex-direction:column; align-items:stretch; gap:4px }
+.lowering .result { display:grid; grid-template-columns:auto minmax(0,1fr); align-items:baseline; gap:2px 10px; padding-left:1em } .lowering .result .note { grid-column:2 }
+.m-intr { font:14px/1.5 var(--mono); color:#2c4f7c } .m-lit { font:13px/1.5 var(--mono); color:#7a3b8c }
+.lowering code.src { font:13px/1.5 var(--mono); background:var(--surface); border:1px solid var(--rule); padding:2px 6px; border-radius:4px }
+.lowering .to { color:var(--accent); font-weight:600; font-size:17px }
+.lowering .tgt { font:16px/1.5 var(--math) } .rules .lowering { background:none; border:0; padding:0 } .lowering .sem code.src { margin:0 2px }
+var { font-style:italic } .m-op { color:#2c4f7c; font-style:normal } .m-con { color:#8f6416; font-style:normal; font-variant:small-caps }
+.m-kw { color:#7a3b8c; font-weight:600; font-style:normal } .m-bind { color:#7a3b8c } .m-rel { color:var(--accent); padding:0 .12em }
+.m-text { font:14px/1.5 var(--body); color:var(--muted) } code.m-code { font:13px/1.5 var(--mono); background:var(--surface); border:1px solid var(--rule); padding:1px 5px; border-radius:4px }
+.refused { color:var(--neg); font-weight:600 }
+.lowering .refused { color:var(--neg); font-weight:600 }
+.lowering .label { font:600 11px/1 var(--body); letter-spacing:.05em; text-transform:uppercase; color:var(--muted); min-width:7em }
+.lowering .cond { padding-left:1.5em } .lowering .note { color:var(--muted); font:italic 13px/1.4 var(--body) }
+a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outline-offset:2px }
+@media (max-width:520px) { dl.facts { grid-template-columns:minmax(0,1fr) } .card > header { flex-direction:column } }</style></head><body><main><header><h1>Commit Records</h1><p class="lede">3 commits, rendered from their records.</p></header>
+<section><h2>Branches</h2><ul class="summary"><li><a href="#g-pr-142"><code>e1c54b1df078bf8364595cc1f1b25de9df4042b5..pr-142</code></a><ul><li>3 commits, units 2 verified</li><li>parts: <span class="chip">lean-lowering</span> <span class="chip">producer</span> <span class="chip">docs</span> <span class="chip">tests</span></li></ul></li></ul></section>
+<h2 id="g-pr-142"><code>e1c54b1df078bf8364595cc1f1b25de9df4042b5..pr-142</code></h2><article class="card" id="c-fb3e1fd5f"><header><div><div class="sha">fb3e1fd5f · Cristiano Calcagno · Nov 09, 20:00</div><h3>Hold a local written inside an expression in a slot, rebound where the write runs</h3></div><span class="pill ok">verified</span></header>
+<div class="units"><span>pipeline/examples/stated-slot-collect.ts#collect</span><span>pipeline/examples/stated-slot-conditional.ts#merged</span></div>
+<h4 class="change">Why</h4><div class="prose"><p>A body stating a frame refused growing an array it allocates lazily across a call. <code>collect</code> (<code>step(runs, s); (acc ??= []).push(s);</code> in a loop, <code>step</code> and <code>collect</code> stating <code>Modifies&lt;{ values: &quot;any&quot;; &quot;runs.open[*]&quot;: &quot;any&quot; }, …&gt;</code>) was refused at the push: &quot;the frame stated for 'collect' is not established by its body&quot;. <code>acc</code>, written inside its statement, was a cell, and a cell's &quot;contents are fresh&quot; fact is a fact of the heap, which <code>step</code>'s frame (<code>values: &quot;any&quot;</code>) may change: the frame admits replacing the cell's contents with an old array. The binding had to be a cell only because the lowering typed the rest of a statement, and joined an expression's arms, at the frame the statement entered with, so a slot rebound inside the statement did not fit (the <code>nestedWrite</code> conjunct of &quot;Slot or cell&quot;, stated there as a lowering limit). A slot's value is part of the environment, and &quot;null or an array this run allocated&quot; is a fact of the value alone, which no heap step changes.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Definition <span class="target">lowering: slot or cell</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-op">slot</span>(<var>x</var>) ⟺ ¬<span class="m-op">closureWrites</span>(<var>x</var>) ∧ (<span class="m-bind">∀</span> <var>c</var> <span class="m-rel">∈</span> <span class="m-con">creates</span>(<var>x</var>), <var>w</var> <span class="m-rel">∈</span> <span class="m-con">writes</span>(<var>x</var>). <var>w</var> ≺ <var>c</var>)</span></div><div class="row cont"><span>∧ ¬<span class="m-op">nestedWrite</span>(<var>x</var>)</span></div></div></div></figure><figure><figcaption>After</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-op">slot</span>(<var>x</var>) ⟺ ¬<span class="m-op">closureWrites</span>(<var>x</var>) ∧ (<span class="m-bind">∀</span> <var>c</var> <span class="m-rel">∈</span> <span class="m-con">creates</span>(<var>x</var>), <var>w</var> <span class="m-rel">∈</span> <span class="m-con">writes</span>(<var>x</var>). <var>w</var> ≺ <var>c</var>)</span></div></div></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Lowering <span class="target">expressions: the environment each part leaves</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="lowering"><div class="cond"><span class="tgt"><span class="m-text">a nested write's slot rebound on the edge out of the write; the rest of</span></span></div><div class="cond"><span class="tgt"><span class="m-text">a statement, a sequence's join, a pattern default's join, a return and</span></span></div><div class="cond"><span class="tgt"><span class="m-text">a throw typed at the statement's entry frame</span></span></div></div></figure><figure><figcaption>After</figcaption><div class="lowering"><div class="map"><code class="src">ρ ⊢ e</code><div class="result"><span class="to">⇝</span><span class="tgt"><var>v</var>; <var>ρ′</var>, <span class="m-text">each part evaluated in source order in the environment</span></span></div></div><div class="cond"><span class="tgt"><span class="m-text">the part before it left</span><span class="m-rel">:</span></span></div><div class="map"><code class="src">ρ ⊢ e</code><div class="result"><span class="to">⇝</span><span class="tgt"><var>v</var>; <var>ρ′</var></span></div></div><div class="cond"><span class="tgt">───────────────────────────── <span class="m-text">(assign</span>, <span class="m-op">check</span><sub><var>C</var></sub>(<var>v</var>) <span class="m-text">on the edge</span>)</span></div><div class="map"><code class="src">ρ ⊢ x = e</code><div class="result"><span class="to">⇝</span><span class="tgt"><var>v</var>; <var>ρ′</var>[<var>x</var> <span class="m-rel">↦</span> <var>v</var>]</span></div></div><div class="map"><code class="src">ρ(x) nullish   ρ ⊢ e</code><div class="result"><span class="to">⇝</span><span class="tgt"><var>v</var>; <var>ρ′</var></span></div></div><div class="cond"><span class="tgt">─────────────────────────────</span><span class="note">(nullish assign)</span></div><div class="map"><code class="src">ρ ⊢ x ??= e</code><div class="result"><span class="to">⇝</span><span class="tgt"><var>v</var>; <var>ρ′</var>[<var>x</var> <span class="m-rel">↦</span> <var>v</var>]</span></div></div><div class="cond"><span class="tgt"><span class="m-text">a choice whose arm rebinds a slot continues on each path, the rest of</span></span></div><div class="cond"><span class="tgt"><span class="m-text">the expression and the statement's continuation lowered at the</span></span></div><div class="cond"><span class="tgt"><span class="m-text">environment that path leaves; arms rebinding none join at one node; a</span></span></div><div class="cond"><span class="tgt"><span class="m-text">test of a slot's read through a reference narrows the slot; a write</span></span></div><div class="cond"><span class="tgt"><span class="m-text">clears the saved values read from the slot it rebinds; a handler is</span></span></div><div class="cond"><span class="tgt"><span class="m-text">entered from each throwing node with that node's environment</span></span></div></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Definition <span class="target">producer: facts and handler states after a nested write</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">an update inside an expression restated of its old value for a cell</span>;</span></div><div class="row"><span><span class="m-text">a slot's facts kept as at the statement's entry; a handler's slots at</span></span></div><div class="row"><span><span class="m-text">the statement's entry</span></span></div></div></div></figure><figure><figcaption>After</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">the restatement applies to a slot's update too, and to an update on</span></span></div><div class="row"><span><span class="m-text">every path only (one under <code class="m-code">?.</code>, <code class="m-code">?:</code>, <code class="m-code">&amp;&amp;</code>, <code class="m-code">||</code>, <code class="m-code">??</code> or a default is</span></span></div><div class="row"><span><span class="m-text">forgotten); a slot assigned inside an expression is forgotten with the</span></span></div><div class="row"><span><span class="m-text">bindings its statement assigns; a handler's slot the statement assigns</span></span></div><div class="row"><span><span class="m-text">is at its contract</span></span></div></div></div></figure></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>stated-slot-collect</code> <span class="kind positive">positive</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">a slot's freshness kept across <code>values: &quot;any&quot;</code> calls</span></summary><pre class="code"><span class="tk-c">// A local written inside its statement, held in a slot (SOURCE-ELABORATION.md,</span>
+<span class="tk-c">// &quot;Slot or cell&quot;): no closure mentions `acc`, so `acc ??= []` rebinds the</span>
+<span class="tk-c">// slot within the expression, and the value `push` receives is the joined</span>
+<span class="tk-c">// result of its arms. The slot holds `null` or an array the body allocates</span>
+<span class="tk-c">// at every point, a fact of the value itself, so it survives `step`, whose</span>
+<span class="tk-c">// frame states `values: &quot;any&quot;`, and the store `push` grows is none of the</span>
+<span class="tk-c">// entry heap's, rebased to no region.</span>
+<span class="tk-k">type</span> <span class="tk-t">Runs</span> = { <span class="tk-c">/** @stable */</span> <span class="tk-k">readonly</span> open: number[] };
+<span class="tk-k">function</span> step(runs: <span class="tk-t">Runs</span>, s: string): <span class="tk-t">Modifies</span>&lt;{ values: <span class="tk-s">&quot;any&quot;</span>; <span class="tk-s">&quot;runs.open[*]&quot;</span>: <span class="tk-s">&quot;any&quot;</span> }, <span class="tk-k">void</span>&gt; {
+  runs.open.push(s.length);
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> collect(runs: <span class="tk-t">Runs</span>, xs: string[]): <span class="tk-t">Modifies</span>&lt;{ values: <span class="tk-s">&quot;any&quot;</span>; <span class="tk-s">&quot;runs.open[*]&quot;</span>: <span class="tk-s">&quot;any&quot;</span> }, string[] | <span class="tk-k">null</span>&gt; {
+  <span class="tk-k">let</span> acc: string[] | <span class="tk-k">null</span> = <span class="tk-k">null</span>;
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; xs.length; i++) {
+    <span class="tk-k">const</span> s = xs[i]!;
+    step(runs, s);
+    (acc ??= []).push(s);
+  }
+  <span class="tk-k">return</span> acc;
+}</pre></details></li><li><details><summary><code>stated-slot-conditional</code> <span class="kind positive">positive</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">pretext's conditional <code>(acc ??= []).push(g)</code> between calls</span></summary><pre class="code"><span class="tk-c">// pretext's shape (measureAnalysis's merged graphemes): an accumulator held</span>
+<span class="tk-c">// in a slot, `null` until a long string allocates it, grown by</span>
+<span class="tk-c">// `(acc ??= []).push(g)` under a test, beside calls whose frames state</span>
+<span class="tk-c">// `values: &quot;any&quot;`. The slot holds `null` or an array the body allocates at</span>
+<span class="tk-c">// every point, a fact of the value that no call changes, so each `push`</span>
+<span class="tk-c">// grows a store none of the entry heap's, rebased to no region.</span>
+<span class="tk-k">type</span> <span class="tk-t">Runs</span> = { <span class="tk-c">/** @stable */</span> <span class="tk-k">readonly</span> open: number[] };
+
+<span class="tk-k">function</span> note(runs: <span class="tk-t">Runs</span>, n: number): <span class="tk-t">Modifies</span>&lt;{ values: <span class="tk-s">&quot;any&quot;</span>; <span class="tk-s">&quot;runs.open[*]&quot;</span>: <span class="tk-s">&quot;any&quot;</span> }, <span class="tk-k">void</span>&gt; {
+  runs.open.push(n);
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> merged(runs: <span class="tk-t">Runs</span>, xs: string[]): <span class="tk-t">Modifies</span>&lt;{ values: <span class="tk-s">&quot;any&quot;</span>; <span class="tk-s">&quot;runs.open[*]&quot;</span>: <span class="tk-s">&quot;any&quot;</span> }, string[] | <span class="tk-k">null</span>&gt; {
+  <span class="tk-k">let</span> acc: string[] | <span class="tk-k">null</span> = <span class="tk-k">null</span>;
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; xs.length; i++) {
+    <span class="tk-k">const</span> g = xs[i]!;
+    note(runs, g.length);
+    <span class="tk-k">if</span> (g.length &gt; <span class="tk-n">1</span>) (acc ??= []).push(g);
+    note(runs, i);
+  }
+  <span class="tk-k">return</span> acc;
+}</pre></details></li><li><details><summary><code>stated-slot-order</code> <span class="kind positive">positive</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">a later read in one expression sees the write</span></summary><pre class="code"><span class="tk-c">// A local's nested write in source order (SOURCE-ELABORATION.md, &quot;Slot or</span>
+<span class="tk-c">// cell&quot;): `acc ??= [7]` rebinds the slot, and the later read of `acc` in the</span>
+<span class="tk-c">// same call's arguments reads the value it wrote (run under Node: `order()`</span>
+<span class="tk-c">// is 11).</span>
+<span class="tk-k">function</span> pair(a: number[], n: number): number {
+  <span class="tk-k">return</span> a.length * <span class="tk-n">10</span> + n;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> order(): number {
+  <span class="tk-k">let</span> acc: number[] | <span class="tk-k">null</span> = <span class="tk-k">null</span>;
+  <span class="tk-k">return</span> pair((acc ??= [<span class="tk-n">7</span>]), acc.length);
+}</pre></details></li><li><details><summary><code>stated-slot-handler</code> <span class="kind positive">positive</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">a handler sees the write before the throw</span></summary><pre class="code"><span class="tk-c">// A handler receives the slot at the throwing node (SOURCE-ELABORATION.md,</span>
+<span class="tk-c">// &quot;Slot or cell&quot;): `acc = fresh` rebinds the slot before `fail()` throws,</span>
+<span class="tk-c">// and no node before the write may throw, so the handler's `acc` holds the</span>
+<span class="tk-c">// array the body allocated, a fresh value, and its `pop` changes no store</span>
+<span class="tk-c">// the frame names; `xs`, which `acc` held before, keeps its elements (run</span>
+<span class="tk-c">// under Node: `reset({ open: [] }, [&quot;a&quot;])` is 1).</span>
+<span class="tk-k">type</span> <span class="tk-t">Runs</span> = { <span class="tk-c">/** @stable */</span> <span class="tk-k">readonly</span> open: number[] };
+
+<span class="tk-k">function</span> fail(): number {
+  <span class="tk-k">throw</span> <span class="tk-k">new</span> <span class="tk-t">Error</span>(<span class="tk-s">&quot;fail&quot;</span>);
+}
+
+<span class="tk-k">function</span> use(a: string[], n: number): number {
+  <span class="tk-k">return</span> a.length + n;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> reset(runs: <span class="tk-t">Runs</span>, xs: string[]): <span class="tk-t">Modifies</span>&lt;{ values: <span class="tk-s">&quot;any&quot;</span>; <span class="tk-s">&quot;runs.open[*]&quot;</span>: <span class="tk-s">&quot;any&quot;</span> }, number&gt; {
+  <span class="tk-k">let</span> acc: string[] = xs;
+  <span class="tk-k">const</span> fresh: string[] = [];
+  <span class="tk-k">try</span> {
+    use((acc = fresh), fail());
+  } <span class="tk-k">catch</span> {
+    acc.pop();
+    runs.open.push(<span class="tk-n">0</span>);
+    <span class="tk-k">return</span> xs.length;
+  }
+  <span class="tk-k">return</span> <span class="tk-n">0</span>;
+}
+
+<span class="tk-c">// The handler reads the slot the write rebound before the throw (run under</span>
+<span class="tk-c">// Node: `caught()` is 0).</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> caught(): number {
+  <span class="tk-k">let</span> acc: string[] | <span class="tk-k">null</span> = <span class="tk-k">null</span>;
+  <span class="tk-k">const</span> fresh: string[] = [];
+  <span class="tk-k">try</span> {
+    use((acc = fresh), fail());
+  } <span class="tk-k">catch</span> {
+    <span class="tk-k">return</span> acc === <span class="tk-k">null</span> ? -<span class="tk-n">1</span> : acc.length;
+  }
+  <span class="tk-k">return</span> -<span class="tk-n">2</span>;
+}</pre></details></li><li><details><summary><code>invalid-stated-slot-handler</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">the throw precedes the write: the handler pops <code>xs</code></span></summary><pre class="code"><span class="tk-c">// A handler receives the slot at the throwing node (SOURCE-ELABORATION.md,</span>
+<span class="tk-c">// &quot;Slot or cell&quot;), here before the write: `fail()` runs before `acc =</span>
+<span class="tk-c">// fresh`, so the handler's `acc` holds the caller's `xs`, and its `pop` is</span>
+<span class="tk-c">// refused at the regional check (run under Node: `reset({ open: [] },</span>
+<span class="tk-c">// [&quot;a&quot;])` is 0).</span>
+<span class="tk-k">type</span> <span class="tk-t">Runs</span> = { <span class="tk-c">/** @stable */</span> <span class="tk-k">readonly</span> open: number[] };
+
+<span class="tk-k">function</span> fail(): number {
+  <span class="tk-k">throw</span> <span class="tk-k">new</span> <span class="tk-t">Error</span>(<span class="tk-s">&quot;fail&quot;</span>);
+}
+
+<span class="tk-k">function</span> use(n: number, a: string[]): number {
+  <span class="tk-k">return</span> a.length + n;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> reset(runs: <span class="tk-t">Runs</span>, xs: string[]): <span class="tk-t">Modifies</span>&lt;{ values: <span class="tk-s">&quot;any&quot;</span>; <span class="tk-s">&quot;runs.open[*]&quot;</span>: <span class="tk-s">&quot;any&quot;</span> }, number&gt; {
+  <span class="tk-k">let</span> acc: string[] = xs;
+  <span class="tk-k">const</span> fresh: string[] = [];
+  <span class="tk-k">try</span> {
+    use(fail(), (acc = fresh));
+  } <span class="tk-k">catch</span> {
+    acc.pop();
+    runs.open.push(<span class="tk-n">0</span>);
+    <span class="tk-k">return</span> xs.length;
+  }
+  <span class="tk-k">return</span> <span class="tk-n">0</span>;
+}</pre></details></li><li><details><summary><code>invalid-stated-slot-closure</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">a closure writes <code>acc</code>: a cell, <code>null</code> after the call</span></summary><pre class="code"><span class="tk-c">// A binding a closure writes is held in a cell (SOURCE-ELABORATION.md, &quot;Slot</span>
+<span class="tk-c">// or cell&quot;): `reset` writes `acc`, so the nested write `acc ??= []` rebinds</span>
+<span class="tk-c">// no slot, and the call of `reset` may leave `null` in the cell. TypeScript</span>
+<span class="tk-c">// keeps `acc` narrowed past the call; the return of `acc` at `number[]` is</span>
+<span class="tk-c">// refused (run under Node: `count()` returns `null`).</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> count(): number[] {
+  <span class="tk-k">let</span> acc: number[] | <span class="tk-k">null</span> = <span class="tk-k">null</span>;
+  <span class="tk-k">const</span> reset = (): <span class="tk-k">void</span> =&gt; {
+    acc = <span class="tk-k">null</span>;
+  };
+  (acc ??= []).push(<span class="tk-n">1</span>);
+  reset();
+  <span class="tk-k">return</span> acc;
+}</pre></details></li><li><details><summary><code>stated-region-cell-call</code> <span class="kind gap">gap</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">gap</span> <span class="why">a cell keeps no freshness across <code>values: &quot;any&quot;</code></span></summary><pre class="code"><span class="tk-c">// Fresh array storage in a cell across a call (FOOTPRINTS.md, &quot;Fresh array</span>
+<span class="tk-c">// storage&quot;): `take` writes `acc`, so `acc` is a cell, and `note`'s frame</span>
+<span class="tk-c">// states `values: &quot;any&quot;`, which may replace the cell's contents with an</span>
+<span class="tk-c">// old array. The cell keeps its freshness only across steps whose frames</span>
+<span class="tk-c">// keep every location of class value, so the store `push` grows after the</span>
+<span class="tk-c">// call is any of the entry heap's, refused at the regional check. `note`</span>
+<span class="tk-c">// cannot reach the cell, but the frame states no reachability; the slot</span>
+<span class="tk-c">// form, `stated-slot-collect`, verifies.</span>
+<span class="tk-k">type</span> <span class="tk-t">Runs</span> = { <span class="tk-c">/** @stable */</span> <span class="tk-k">readonly</span> open: number[] };
+
+<span class="tk-k">function</span> note(runs: <span class="tk-t">Runs</span>, n: number): <span class="tk-t">Modifies</span>&lt;{ values: <span class="tk-s">&quot;any&quot;</span>; <span class="tk-s">&quot;runs.open[*]&quot;</span>: <span class="tk-s">&quot;any&quot;</span> }, <span class="tk-k">void</span>&gt; {
+  runs.open.push(n);
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> longer(runs: <span class="tk-t">Runs</span>, xs: string[]): <span class="tk-t">Modifies</span>&lt;{ values: <span class="tk-s">&quot;any&quot;</span>; <span class="tk-s">&quot;runs.open[*]&quot;</span>: <span class="tk-s">&quot;any&quot;</span> }, string[] | <span class="tk-k">null</span>&gt; {
+  <span class="tk-k">let</span> acc: string[] | <span class="tk-k">null</span> = <span class="tk-k">null</span>;
+  <span class="tk-k">const</span> take = (): string[] | <span class="tk-k">null</span> =&gt; {
+    <span class="tk-k">const</span> out = acc;
+    acc = <span class="tk-k">null</span>;
+    <span class="tk-k">return</span> out;
+  };
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; xs.length; i++) {
+    <span class="tk-k">const</span> s = xs[i]!;
+    note(runs, s.length);
+    (acc ??= []).push(s);
+  }
+  <span class="tk-k">return</span> take();
+}</pre></details></li><li><code>blocker-pretext-loop-cell-call-result  gap</code> <span class="was">gap</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">the loop's bindings are slots: no separation from the call's result needed</span></li><li><details><summary><code>typed-array-prefix-postfix-gap</code> <span class="kind gap">gap</span> <span class="was">gap</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why"><code>n</code> is a slot, apart from the element locations</span></summary><pre class="code"><span class="tk-c">// Pretext: a strict element bound excludes the final updated counter. The</span>
+<span class="tk-c">// counter is a slot `n++` rebinds, apart from the element locations, so the</span>
+<span class="tk-c">// body holds across each write.</span>
+<span class="tk-c">/** @requires widths.length &lt;= 2147483647 */</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> buildPostfix(widths: number[]): number {
+  <span class="tk-k">const</span> items = <span class="tk-k">new</span> <span class="tk-t">Int32Array</span>(widths.length);
+  <span class="tk-k">let</span> n = <span class="tk-n">0</span>;
+  <span class="tk-c">/** @invariant safeInteger(n) &amp;&amp; 0 &lt;= n &amp;&amp; n &lt;= items.length &amp;&amp; items.length === widths.length &amp;&amp; forall i &lt; n of items: safeInteger(items[i]) &amp;&amp; 0 &lt;= items[i] &amp;&amp; items[i] &lt; widths.length */</span>
+  <span class="tk-k">while</span> (n &lt; items.length) items[n++] = <span class="tk-n">0</span>;
+  <span class="tk-k">let</span> total = <span class="tk-n">0</span>;
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> j = <span class="tk-n">0</span>; j &lt; n; j++) total += widths[items[j]!]!;
+  <span class="tk-k">return</span> total;
+}</pre></details></li><li><details><summary><code>stated-region-lazy</code> <span class="kind positive">positive</span> <span class="was">verified</span> <span class="arrow">→</span> <span class="now">verified  <code>acc</code> made a cell by a closure, to keep the cell form covered</span></summary><pre class="code"><span class="tk-c">// Fresh array storage in a regional body (FOOTPRINTS.md, &quot;Fresh array</span>
+<span class="tk-c">// storage&quot;): `take` writes `acc`, so `acc` is a cell, `null` until the first</span>
+<span class="tk-c">// long string allocates its array. The cell's contents are a fresh value at</span>
+<span class="tk-c">// every point: `null` meets it, the array literal allocates a store past the</span>
+<span class="tk-c">// entry heap, and no step of the loop changes a location of class value. So</span>
+<span class="tk-c">// the store `push` grows at `(acc ??= [])` is none of the entry heap's,</span>
+<span class="tk-c">// rebased to no region; `runs.open` is the region the frame names.</span>
+<span class="tk-k">type</span> <span class="tk-t">Runs</span> = { <span class="tk-c">/** @stable */</span> <span class="tk-k">readonly</span> open: number[] };
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> longer(runs: <span class="tk-t">Runs</span>, xs: string[]): <span class="tk-t">Modifies</span>&lt;{ values: <span class="tk-s">&quot;any&quot;</span>; <span class="tk-s">&quot;runs.open[*]&quot;</span>: <span class="tk-s">&quot;any&quot;</span> }, string[] | <span class="tk-k">null</span>&gt; {
+  <span class="tk-k">let</span> acc: string[] | <span class="tk-k">null</span> = <span class="tk-k">null</span>;
+  <span class="tk-k">const</span> take = (): string[] | <span class="tk-k">null</span> =&gt; {
+    <span class="tk-k">const</span> out = acc;
+    acc = <span class="tk-k">null</span>;
+    <span class="tk-k">return</span> out;
+  };
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; xs.length; i++) {
+    <span class="tk-k">const</span> s = xs[i]!;
+    <span class="tk-k">if</span> (s.length &gt; <span class="tk-n">1</span>) (acc ??= []).push(s);
+  }
+  runs.open.push(xs.length);
+  <span class="tk-k">return</span> take();
+}</pre></details></li><li><code>invalid-read-narrows-expression-write  negative</code> <span class="was">refused</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">the binding is a slot: the cell's hint is gone, the return-contract refusal stays</span></li><li><details><summary><code>invalid-read-narrows-join</code> <span class="kind negative">negative</span> <span class="was">refused</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">likewise</span></summary><pre class="code"><span class="tk-c">// The second element may rebind d, and the third branches to a member read:</span>
+<span class="tk-c">// past the expression d may be the undefined the second element wrote.</span>
+<span class="tk-c">// wrong([{}], true, true) returns undefined.</span>
+
+<span class="tk-k">type</span> <span class="tk-t">Declaration</span> = { kind?: string; initializer?: string };
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> wrong(list: <span class="tk-k">readonly</span> <span class="tk-t">Declaration</span>[], write: boolean, read: boolean): <span class="tk-t">Declaration</span> {
+  <span class="tk-k">let</span> d = list[<span class="tk-n">0</span>];
+  <span class="tk-k">const</span> k = [d, write ? (d = list[<span class="tk-n">1</span>]) : d, read ? list[<span class="tk-n">0</span>].kind : <span class="tk-n">0</span>];
+  <span class="tk-k">return</span> d;
+}</pre></details></li></ul>
+<h4 class="change">Gap</h4><div class="prose"><p>A cell keeps no freshness across a call whose frame states <code>values: &quot;any&quot;</code> (<code>stated-region-cell-call</code>): it needs a reachability fact, which the frame does not state. A cell's in-expression update (<code>ARITHMETIC.md</code>, &quot;Terms for bindings held in cells&quot;) is now reached only by bindings a closure writes; <code>cell-postfix-reads</code>, <code>cursor-nested-update</code>, <code>bounds-cell-invariant</code> and <code>loop-update-keeps-field-facts</code> now verify with slots.</p></div>
+<h4 class="change">Soundness</h4><div class="prose"><p>The lowering decides slot or cell from the source alone (<code>cellLocals</code>), the producer reads that decision, and every claim it makes is checked against the graph Lean lowers. A slot's value flows positionally through each edge's slot map, so a node typed at an older frame only refuses; the change makes every continuation after a rebinding start from the rebound slot. Freshness is GraphCode's slot fact (<code>FreshValue</code>, no heap parameter) carried by <code>edgesFresh_holds</code> and <code>handlerFresh_holds</code>; Post, Effect.within, rebase_sound and Post.compose_at are unchanged.</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">lean-lowering</span> <span class="chip">producer</span> <span class="chip">docs</span> <span class="chip">tests</span></dd><dt>Lean</dt><dd>SourceExtraction.heldInCell · SourceExtraction.cellLocals · LoweringExecution.executePlanTail · LoweringExecution.executionRebound · LoweringBindings.executeBindingPlan</dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd><span class="test pos">stated-slot-collect</span> <span class="test pos">stated-slot-conditional</span> <span class="test pos">stated-slot-order</span> <span class="test pos">stated-slot-handler</span> <span class="test neg">invalid-stated-slot-handler</span> <span class="test neg">invalid-stated-slot-closure</span> <span class="test pos">stated-region-cell-call</span></dd></dl>
+<details><summary>33 files changed, 471 insertions(+), 154 deletions(-)</summary><pre class="code"> WORK.md                                            |  4 +-
+ docs/ARITHMETIC.md                                 | 19 +++---
+ docs/FOOTPRINTS.md                                 | 22 ++++---
+ docs/SOURCE-ELABORATION.md                         | 48 ++++++++++-----
+ lean/Verification/Source/Lowering/Bindings.lean    | 25 ++++++++
+ lean/Verification/Source/Lowering/Execution.lean   | 30 ++++++----
+ lean/Verification/Source/Lowering/Flow.lean        | 15 +++--
+ lean/Verification/Source/SourceFacts.lean          | 47 ++++++++-------
+ ocaml-producer/linear_facts.ml                     | 69 ++++++++++++++++++----
+ ocaml-producer/proposal_flow.ml                    | 29 +++++++--
+ pipeline/cases.mts                                 | 42 ++++++++-----
+ pipeline/examples/array-read-cell-content.ts       |  8 +--
+ .../blocker-pretext-loop-cell-call-result.ts       | 13 ++--
+ pipeline/examples/bounds-cell-invariant.ts         |  2 +-
+ pipeline/examples/cell-postfix-reads.ts            |  8 +--
+ pipeline/examples/cursor-nested-update.ts          | 11 ++--
+ pipeline/examples/invalid-bounds-cell-invariant.ts |  2 +-
+ .../examples/invalid-stated-region-fresh-join.ts   |  7 ++-
+ pipeline/examples/invalid-stated-slot-closure.ts   | 14 +++++
+ pipeline/examples/invalid-stated-slot-handler.ts   | 27 +++++++++
+ .../examples/invalid-typed-array-prefix-cursor.ts  |  2 +-
+ .../examples/invalid-update-closed-expression.ts   |  2 +-
+ pipeline/examples/loop-update-keeps-field-facts.ts |  6 +-
+ pipeline/examples/slot-nested-write.ts             |  7 +--
+ pipeline/examples/stated-region-cell-call.ts       | 28 +++++++++
+ pipeline/examples/stated-region-lazy.ts            | 20 ++++---
+ pipeline/examples/stated-slot-collect.ts           | 21 +++++++
+ pipeline/examples/stated-slot-conditional.ts       | 22 +++++++
+ pipeline/examples/stated-slot-handler.ts           | 41 +++++++++++++
+ pipeline/examples/stated-slot-order.ts             | 12 ++++
+ .../examples/typed-array-prefix-postfix-gap.ts     |  5 +-
+ pipeline/examples/update-closed-expression.ts      |  7 ++-
+ tests/node-runs.mts                                | 10 ++++</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-64af18386"><header><div><div class="sha">64af18386 · Cristiano Calcagno · Nov 09, 20:00</div><h3>Forge slot claims and a slot's join past the producer</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>Lean decides slot or cell from the source and lowers each nested write into the graph; the producer only proposes claims. These controls hand the verifier what a producer choosing an unsound representation, or ignoring a rebound slot, would write, and check that both the search and the check of that search's evidence refuse it.</p></div>
+<h4 class="change"><span class="act added">added</span>Control <span class="target">forged slot claims</span></h4><div class="prose"><p>- <code>count</code>'s <code>acc</code>, which the closure <code>reset</code> writes, claimed as a slot would be, <code>number[]</code> at its return past <code>reset()</code>: refused at the return's incoming edge - <code>order</code>'s later read <code>acc.length</code> claimed at <code>null</code>, the slot's value before <code>acc ??= [7]</code>, as if the write's continuation omitted the rebound slot: refused at the read - <code>caught</code>'s handler entered with <code>acc</code> claimed <code>null</code>, the slot before <code>acc = fresh</code>, though the one throwing node follows the write: refused at the handler's incoming edge</p></div>
+<h4 class="change"><span class="act added">added</span>Control <span class="target">forged slot join</span></h4><div class="prose"><p><code>collect</code>'s <code>acc ??= []</code> forged in the parser's document to <code>acc ??= xs</code>: the join after the assignment has a predecessor holding the caller's array, so <code>push</code> grows a store the frame does not name, refused at the regional check in search and in checking</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">tests</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd><span class="test forged">a captured binding claimed as a slot</span> <span class="test forged">a read after a nested write at the slot's old value</span> <span class="test forged">a handler entered at the slot before the write</span> <span class="test forged">an old array at a slot's join</span></dd></dl>
+<details><summary>1 file changed, 91 insertions(+)</summary><pre class="code"> pipeline/test.mts | 91 +++++++++++++++++++++++++++++++++++++++++++++++++++++++</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-46608ffdf"><header><div><div class="sha">46608ffdf · Cristiano Calcagno · Nov 09, 20:05</div><h3>Record in the stated-effects draft where getUnspacedGraphemes is refused with slots</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>The draft recorded <code>getUnspacedGraphemes</code> refused at <code>(unspaced ??= []).push(g)</code>, the cell <code>unspaced</code> keeping no freshness across <code>readScriptRuns</code>, whose frame states <code>values: &quot;any&quot;</code>. With a local written inside an expression held in a slot, the probe of the same pretext sources (frames applied) moves the refusal.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">stated-effects draft, §6.2 observations</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>refused at the push, the cell keeping no freshness across the call</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p><code>unspaced</code> a slot, fresh across the call; refused first at <code>getScriptFacts</code>, next at <code>findGraphemeEnds</code>, which writes the <code>Int32Array</code> <code>ends</code>; with those two calls replaced in a copy, verifies</p></div></figure></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">docs</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd></dl>
+<details><summary>1 file changed, 9 insertions(+), 7 deletions(-)</summary><pre class="code"> docs/drafts/stated-effects.md | 16 +++++++++-------</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+</main></body></html>
