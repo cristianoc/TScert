@@ -298,11 +298,34 @@ Each translation is the same relation on heaps.
 `Effect.within` tests `receiverOwn` first, so with both flags set the
 receiver's store, one of its own locations (`storeOf` $`r\in`$ `ownOf` $`r`$),
 is bounded at $`s`$; translating `receiverStore` too would add
-`path 0 [] store: any` and weaken it. `Effect.within` becomes `Post` of
-the frame at `callEnv r args`, one field replacing `footprint`,
-`receiverStore` and `receiverOwn`; `excPost` takes the actuals.
-`path x p store` alone is a region of these translations and has no
-written key: `R[*]` adds its cells.
+`path 0 [] store: any` and weaken it. `path x p store` alone is a region of
+these translations and has no written key: `R[*]` adds its cells.
+
+**One authoritative frame.** An effect holds one frame, read at the call's
+actuals:
+
+```text
+within e r args h h'  :=  Post e.frame (callEnv r args) h h'
+excPost e r args h h' :=  e.onThrow → within e r args h h'
+```
+
+`Effect.post` is `within` followed by the relational promises. A closed
+bound, a receiver mode and an argument's store region are constructors of
+the frame, each a translation into it (the table above); no other field
+bounds a call. Where a conservative check (a closed coverage test, a
+native row's comparison) needs a closed bound, it computes one from the
+frame, $`\{v,\mathsf{any}\}`$ for a frame with store regions and
+$`\{v,s\}`$ otherwise, with the proved weakening from `within` to that
+bound's `Closed.HoldsOn` on every location the receiver's entries leave
+uncovered; the approximation is never read as the effect. A store region of the
+positions $`P`$, an exception to the closed bound $`\{v,s\}`$, is the frame
+`cls value: v`, `cls store: s`, `path i [] store: any` for $`i\in P`$, and
+`StoresApartWithin` $`\{v,s\}\,P`$ is equivalent to its `Post`. Since adding
+an entry adds permitted locations, a frame with more regions is weaker:
+coverage (O8) checks the target's regions cover the source's, never the
+reverse. Normal and exceptional application, padding with `undefined`
+(`callEnv_pad`), variadic invocation, coverage, subtyping and `meet` read
+the frame at the same actuals; every signature mapping carries it whole.
 
 ### 3.1 The migration
 
@@ -344,15 +367,150 @@ The wire (`stated` of the Fragment, `CallEffect`) and the Lean names
 ## 4. Composition and preservation
 
 **The enclosing function's obligation.** A body certified at a frame
-$`\Phi`$ composes its steps into $`\mathrm{Post}\,\Phi`$ at its entry
-(`Post.compose`). A step's region of an object allocated after that entry
-transports to nothing (`FreshOk`): freshness discharges this obligation,
-and only this one.
+$`\Phi`$ meets $`\mathrm{Post}\,\Phi`$ at its entry heap $`h_0`$ and entry
+environment. A call inside it meets its callee's frame at the call's own
+entry heap $`h`$ and actuals: `R.f[*]` names the store and cells $`R.f`$
+reads at that call's entry. The body composes the two with `Post.compose`,
+which transports the call's regions to $`h_0`$ (`transport`,
+`transport_sound`); a region it cannot transport becomes `all`, or is
+covered by an earlier entry at `any` (the second disjunct of
+`transport_sound`). `transport_sound` and `Post.compose` are the only
+composition: every rule below supplies their evidence
+(`TransportEvidence`, `PathEvidenceOk`).
 
-**Keeping a current fact.** A fact held before a call is kept where
-`stable K F.support Φ_call` holds, $`\Phi_{call}`$ the callee's frame at the
-call's values and heap, $`K`$ the caller's separation knowledge
-(`stable_sound`). In
+**Transport at a call.**
+
+1. *Instantiation.* The callee's positions are its actuals (`callEnv`);
+   each actual is a slot of the caller, renamed (`Post.rename`), and the
+   slot's checked provenance relates it to an entry path of the enclosing
+   function (`ArgumentPathTracking.Holds`): the slot holds what
+   $`(x,p)`$ reads at $`h_0`$.
+2. *Paths.* A callee path $`R.f`$ at that slot is the enclosing path
+   $`p\,f`$. Transport needs it to read the same value at $`h`$ and
+   $`h_0`$: `PathEvidenceOk.kept`, a successful read at $`h`$ reads the same
+   at $`h_0`$. For a path through `@stable` fields this agreement is proved
+   from the entry world (below); otherwise the path transports to `all`.
+3. *`[*]`.* The store and its cells transport separately. The store's
+   location follows from the path's agreement. The cells need cell
+   provenance, `CellsFrom h₀ h v` (every cell the store lists at $`h`$ was
+   listed at $`h_0`$ or lies at or above $`|h_0|`$), or the value-class
+   fallback: where the array's contract makes every element a source value,
+   each cell is of class `value` (`pathElemsValue`) and transports to
+   `cls value`, which a frame stating `values: "any"` covers. Otherwise the
+   cells transport to `all`.
+4. *Freshness.* A region of a location allocated at or above $`|h_0|`$
+   transports to nothing (`FreshOk`), and freshness is discharged at the
+   location the region actually selects: a fresh wrapper can hold an old
+   array, and the wrapper's freshness says nothing of that array's store.
+   `fresh x` covers the slot's own locations (`field`, `own`, the empty
+   path); a path's store is fresh only by its own evidence.
+
+The remaining regions:
+
+- `cell b`: a cell's identity is fixed; it transports to itself.
+- `inCls r c`: $`r`$'s transport intersected with `cls c`, keeping
+  `cls_back`'s disjunct: a location of class $`c`$ in $`h`$ had it in $`h_0`$
+  or lies in an earlier entry at `any`.
+- *A nested call*: its frame at its actuals, as above. A callee's `cell b`
+  is the caller's own capture of $`b`$ only under **module-cell
+  agreement**: the module's initialization allocates one cell for $`b`$,
+  and every closure of the module captures that cell, an invariant
+  preserved by every invocation (captures are fixed at creation) and stated
+  by [module composition](../../WORK.md#module-composition). Without that
+  agreement, from another module, or where $`b`$ has no resolution,
+  `cell b` at change $`c`$ widens to `cls value: c`: a cell holds a source
+  value of its contract, never a store, so its location is of class
+  `value`. It never becomes an empty region.
+- *A callback call*: the frame its type states, at its actuals. A closure
+  is checked at a type whose frame covers its body's, each captured root
+  named only through a class key, since the type names its parameters
+  alone.
+- *A throw*: a call's exceptional edge (to a handler or to the exit) uses
+  the callee's frame only where it states `onThrow` (`excPost`); otherwise
+  the edge has no bound, and a body stating `onThrow` with such an edge is
+  refused. A handler is checked from the heap the throw leaves
+  ([exceptional footprints](../SOURCE-ELABORATION.md#exceptional-footprints);
+  cited).
+
+**Allocation before a call.** Lifting a call's post from the heap after an
+allocation to the heap before it (`Effect.post_prefix`) holds for a frame
+whose regions are read from values that exist before the allocation: own
+locations and an empty path's store are heap-independent, and a class of
+an old location is unchanged by allocation. For a frame reading a nonempty
+path, prefix allocation alone does not suffice: an actual may be a fresh
+object whose field holds an old array. The lifting lemma for general frames
+takes checked transport as a premise: each path region's read at the later
+heap agrees with its read at the earlier one, or is transported as above.
+Its use is `graphRest_invoke`, which allocates the rest pack between the
+call's entry and the code's: the frame's paths are read from the receiver
+and the fixed actuals, which exist before the pack, and their entry
+contracts give the agreement; the pack is the call's own allocation. The
+same transport is required on the exceptional exit.
+
+**The entry world.** A stable path's agreement comes from the world of the
+invocation's entry. The regional graph proof fixes the entry data
+$`N, W_0, h_0`$ and the entry environment with `HeapOk N W₀ h₀`, and at a
+node with budget $`n`$ and world $`W`$ carries
+
+```text
+n ≤ N        WExt (trunc n … W₀) W
+```
+
+as semantic proof parameters (no wire field): the simulation theorem
+carries them beside `BoundState`, `bounded_step` receives the next world
+and the extension `state_progress` supplies, and extensions compose through
+truncation. A zero budget is the step-indexed structure's trivial case.
+Passing the world is not enough: `read_stable` needs `StablePath W₀ …`,
+while a stable-field check at a node (`stableField_path`) gives a witness in
+the current world. The witness comes from the entry contract instead:
+
+- each declared path's traversed fields are checked against the entry
+  parameter's contract, and for each successful entry prefix that check
+  gives the next field's stable contract in $`W_0`$;
+- a read of a tracked slot (**the stable-read node rule**) uses the slot's
+  equality with the entry prefix's value, transfers that stable witness to
+  the node's world by the extension, and applies `read_stable`, extending
+  the slot's path by the field;
+- copies, joins and handlers keep the checked provenance mappings; an
+  absent optional field gives no successful extension.
+
+A stable-field check of the current context alone never extends a path.
+
+**Keeping a current fact.** A fact held before a call is kept by one
+pipeline:
+
+```text
+instantiated frame + checked separation
+    → local observation bounds
+    → IndexFacts monotonicity
+    → keptIndicesWith / effectKept
+```
+
+The callee's frame at the call's actuals, with the caller's separation
+knowledge $`K`$, decides through `stable_sound` which observations
+survive: each index term reads a store at a root and path, and the
+pipeline obtains a store bound **per root and path** (a `StoreChange` for
+the store that term resolves to, with a soundness premise on that resolved
+store); the global `Changes.store` of a closed footprint is the constant
+instance. For a regional frame the bound of each term's store is derived
+by `stable_sound` on that store's support. Separation enters $`K`$ from
+checked sources only: for empty paths, `HeapSeparation.apart` on both
+objects' `arrayStoreKey` gives the stores' inequality; for nonempty paths,
+the path-to-slot equality or a checked `StoreApart` witness comes first.
+These are bridged into `SepKnowledge`; no separation table is trusted
+beside them. A length observation is kept where its path is preserved and
+its store's change is `keep` (or an independently proved
+length-preserving promise) for an equality, or `grow` for the lower-bound
+uses the coefficient-sensitive monotonicity rules admit. Length growth is
+not density: the arithmetic `StoreChange.grow` alone keeps no dense prefix
+(the footprint's `Change.grow` does), and quantified
+element facts keep their store and cell obligations. `effectKept` consumes
+the instantiated frame's guarantee, and `FirstKept`, views and the native
+relational promises (`receiverGrows`, `elementWrite`) supply observation
+evidence to the same pipeline; there is no second caller-preservation
+decision.
+
+In
 
 ```ts
 function shrink(xs: number[]): Modifies<{ values: "any"; "xs[*]": "any" }, void> { xs.pop(); }
@@ -365,51 +523,6 @@ frame of `f`, but the fact $`0<|xs|`$, support `field xs store: grow`
 is not kept: it meets `path 0 [] store: any` and no separation refutes it.
 Separation is the only refutation: `StoreApart` (chain1), `RegionsApart`,
 `HeapSeparation.apart`, each entering $`K`$.
-
-**Transport.** `Post.compose` needs each step's region, read at the step's
-heap $`h`$, inside regions read at the entry $`h_0`$, or inside an earlier
-entry at `any` (the second disjunct of `transport_sound`):
-
-- `path x p k`, `pathOwn x p`: the path reads the same object in $`h`$ and
-  $`h_0`$, by `@stable` fields (`StablePath.read`, chain1; proved) or the
-  slot's provenance table (chain1 `ArgumentPathTracking.lean`); otherwise
-  `all`.
-- `pathElems x p`, `elems x`: the path's premise, and **cell provenance**:
-  every cell the store lists in $`h`$ was listed in $`h_0`$ or lies at or
-  above $`|h_0|`$. It is a relational obligation each step proves locally:
-  `keep` and `grow` on the store give it (the last conjunct of
-  `Change.Holds .grow`; proved); an element write gives it (`placeAt_mem`;
-  proved); the native mutators' store steps give it (`Arr.Within`,
-  `FootprintNatives.lean`; proved in the step model); it composes by
-  transitivity, on both exits. A step with no such proof transports the
-  region as `elems` does: to `cls value` where the array's contract
-  makes every element a source value, so each cell is of class `value`
-  (`ElemsValueOk`), else to `all`.
-- `cell b`: a cell's identity is fixed; it transports to itself.
-- `inCls r c`: $`r`$'s transport intersected with `cls c`, keeping
-  `cls_back`'s disjunct: a location of class $`c`$ in $`h`$ had it in $`h_0`$
-  or lies in an earlier entry at `any`.
-- *A nested call*: its frame at its actuals, each position renamed to the
-  caller's slot holding that value. A callee's `cell b` is the caller's own
-  capture of $`b`$ only under **module-cell agreement**: the module's
-  initialization allocates one cell for $`b`$, and every closure of the
-  module captures that cell, an invariant preserved by every invocation
-  (captures are fixed at creation) and stated by
-  [module composition](../../WORK.md#module-composition). Without that
-  agreement, from another module, or where $`b`$ has no resolution, `cell b`
-  at change $`c`$ widens to `cls value: c`: a cell holds a source value of
-  its contract, never a store, so its location is of class `value`. It
-  never becomes an empty region.
-- *A callback call*: the frame its type states, at its actuals. A closure
-  is checked at a type whose frame covers its body's, each captured root
-  named only through a class key, since the type names its parameters
-  alone.
-- *A throw*: a call's exceptional edge (to a handler or to the exit) uses
-  the callee's frame only where it states `onThrow`; otherwise the edge has
-  no bound, and a body stating `onThrow` with such an edge is refused. A
-  handler is checked from the heap the throw leaves
-  ([exceptional footprints](../SOURCE-ELABORATION.md#exceptional-footprints);
-  cited).
 
 **Natives.** A native's frame is its own steps' footprint joined with the
 frame of every callback and conversion it may invoke. The native rows hold
@@ -600,14 +713,27 @@ replayed and executed after a body-only edit of an imported module
 Paths relative to `lean/Verification/`; "chain1" names a file of branch
 `chain1-argument-regions`.
 
-- **O1 Regions.** `Region.path`, `pathOwn`, `pathElems`, `cell`, `inCls`:
-  `mem`, `Region.sub`, and `transport` with §4's premises and the
-  earlier-`any` disjunct of `transport_sound`; `Post.compose` over them.
-  Chain1's `ArgumentStoreRegionsWithin` and its `.trans`, `.nested`,
-  `.receiver`, `frame_length` become lemmas of `Post` at `path _ _ store`.
-- **O2 Effect.** One field `frame : Footprint` replacing `footprint`,
-  `receiverStore` and `receiverOwn`; `within` as `Post` at `callEnv`; §3's
-  translations proved equal to `within` as defined, `receiverOwn` first.
+- **O1 Regions and composition.** `Region.path`, `pathOwn`, `pathElems`,
+  `cell`, `inCls`: `mem`, `Region.sub`, and `transport` with §4's premises
+  and the earlier-`any` disjunct of `transport_sound`; `Post.compose` over
+  them, the only composition. A call's frame instantiated at its actuals
+  and renamed to the caller's slots; stable-path agreement as
+  `PathEvidenceOk.kept`; `[*]`'s store and cells transported separately
+  (`CellsFrom` or `pathElemsValue`); freshness at the selected location.
+  Prefix lifting for general frames requires checked transport, proved for
+  `graphRest_invoke`'s rest pack and on the exceptional exit; the current
+  `Effect.post_prefix` stays for frames read from values existing before
+  the allocation. Chain1's `ArgumentStoreRegionsWithin` and its `.trans`,
+  `.nested`, `.receiver`, `frame_length` become lemmas of `Post` at
+  `path _ _ store`.
+- **O2 Effect.** One authoritative frame; `within e r args` as `Post` of
+  it at `callEnv r args`, `excPost` with the same actuals; closed bounds,
+  receiver modes and argument store regions as its constructors. §3's
+  translations proved equal to `within` as defined, `receiverOwn` first, and
+  `StoresApartWithin` equal to its class entries plus argument-store
+  entries. Normal and exceptional application, padding, variadics,
+  coverage, subtyping, `meet` and certification read it; the closed
+  approximation for conservative checks has a proved weakening.
 - **O3 Cell provenance.** A relation `CellsFrom h₀ h x p` and its proof for
   primitive writes, native steps and composition, on both exits; the
   `elems` fallback where it is missing.
@@ -618,14 +744,25 @@ Paths relative to `lean/Verification/`; "chain1" names a file of branch
   (`ArgumentPathTracking.lean`, `ArgumentRegionGraph.lean`,
   `ArgumentRegionCertificates.lean`) with node cases for a field write at
   a `path`/`pathOwn` entry, an element write at `pathElems`, a cell write,
-  a nested call and a callback call, on both exits.
+  a nested call and a callback call, on both exits. The entry world
+  ($`n\le N`$, `WExt (trunc n … W₀) W`) threaded through the simulation
+  beside `BoundState`; entry-path contract checking of each declared
+  path's traversed fields and its soundness; the stable-read node rule;
+  preservation through every edge and handler. The copy and receiver-call
+  rules are instances with the extra premises unused.
 - **O6 Natives.** `push`'s narrower normal-return frame from
   `ReceiverGrows` and `ReceiverAppends`; the confinement theorem of §4
   from the narrower premise and `Arr.Within`.
-- **O7 Separation.** `SepKnowledge.apart` for the new regions from
-  `StoreApart`, `RegionsApart` and `HeapSeparation.apart`, with the
+- **O7 Separation and preservation.** `SepKnowledge.apart` for the new
+  regions from `StoreApart`, `RegionsApart` and `HeapSeparation.apart`
+  (on both objects' `arrayStoreKey` for empty paths), with the
   element-class premise for `pathElems`; `apart` and `storeApart` in
-  `Effect.pre`, the unit's entry separation and `call-requires`.
+  `Effect.pre`, the unit's entry separation and `call-requires`. The
+  preservation pipeline of §4: local store bounds per root and path in
+  `IndexFacts` with their soundness, the global `Changes.store` as the
+  constant instance, term preservation and growth, the linear and
+  quantified lifting, and `effectKept_holds` consuming the instantiated
+  frame.
 - **O8 Coverage.** `Footprint.le` with the extended `Region.sub`, sound
   against `Post` under `ClassOk`, on both exits; used by `Effect.covers`,
   subtyping and D6.
