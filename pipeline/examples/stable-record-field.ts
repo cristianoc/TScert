@@ -20,3 +20,9 @@ export function sizeAfter(box: Box, touch: (b: Box) => void): number {
   touch(box);
   return box.size;
 }
+
+// A clause reads a path through a record stating a stable field.
+/** @requires safeInteger(box.count) && 0 <= box.count && box.count < xs.length */
+export function at(box: Box, xs: number[]): number {
+  return xs[box.count]!;
+}
