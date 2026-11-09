@@ -182,7 +182,7 @@ execution of a replay-eligible invocation retains its complete stage key.
 | assemble | the units' proposals, each with the intervals its slice leaves out; the Fragment with its own declarations named canonically; the qualified-read document |
 | assemble claims | the assembled proposal and ordered transitive module-claim documents selected by the reads |
 | plan | the exact Fragment and assembled claims |
-| module search | the exact module run the plan printed: an imported module's document restricted to the read closure of the functions read qualified of it, its claims and its own qualified reads; search depth and subtype rounds |
+| module search | the same inputs and executable mode as search, for a unit of an imported module |
 | module check | the same module run and its evidence; subtype rounds |
 | search | a unit's slice, its claims and the qualified reads it is searched at; search depth and subtype rounds; the unit's members |
 | check | the exact Fragment, assembled claims and the units' evidence, each slice's line with its store's heads; explicit file identity; source snapshot binding; subtype rounds; the selected units |
@@ -192,7 +192,7 @@ execution of a replay-eligible invocation retains its complete stage key.
 ## Units of a check
 
 A document, the checked file's or an imported module's, is proposed a unit
-at a time, and the checked file's units are searched a unit at a time, so an
+at a time, and its units are searched through the same slices, so an
 edit of one function proposes and searches again only the units whose
 inputs it changes. The check reads the whole document.
 
@@ -219,11 +219,23 @@ inputs it changes. The check reads the whole document.
   span zero, each declaration's identity kept, a reference's type
   arguments at their mapped spans, and no written application, which the
   check alone reads. An edit of a function's body that keeps the
-  functions and initialization names it mentions leaves unchanged the
-  slice of every unit that neither holds it whole nor holds the
+  functions and initialization names it mentions, and the declaration
+  document, leaves unchanged the slice of every unit that neither holds it whole nor holds the
   initialization: a changed mention changes the units and the slices that
   hold the function by its signature, and an edit of the initialization, or
   of what it mentions, changes the slice of every unit that holds it.
+  Slices retain the declaration document's roots, definitions, values and
+  symbol table (`declarationsOf`). A body edit that changes this shared
+  document can therefore invalidate an otherwise independent unit's
+  proposal. The reads-document projection alone does not isolate those
+  declaration dependencies.
+  The producer's unit facts identify mutable module bindings initialized to
+  an empty object whose objects escape. A slice carries those names its own
+  code mentions in `omittedMentions`: the ownership facts its reads and writes
+  can use. Removing a function therefore preserves the escape facts each
+  unit needs. The whole-document check computes ownership from the complete
+  source.
+
 - *Reads.* A unit's reads document holds its members, whether the
   initialization is one, the footprint and on-throw flag each function the
   slice holds by its signature settled on in its own unit's proposal
@@ -244,22 +256,42 @@ inputs it changes. The check reads the whole document.
   (`verifier --produce-unit`) at the slice's claims and the qualified reads
   of its code the importer's plan admits, its evidence written over the
   slice's store, with that store's heads and the unit's anchors beside it:
-  each member's request with its labels marked, its search hints and its
-  obligations' sequents (`FilePlans.anchors`). Its spans and its unit's
+  each type union of the member's requests at its position (node and
+  slot), and the member's search hints (`FilePlans.anchors`). Inputs,
+  results, code signatures, point claims and obligation sequents supply
+  those positions. Its spans and its unit's
   name are mapped back to the document's positions outside every key.
-- *Check.* One check (`verifier --check-units`) builds the document's front
-  and writes each line's evidence over the document's store
-  (`Translate.translate`, untrusted): the unit's requests in the slice and
-  in the document are extracted from the same code, so each label of the
-  slice's anchors is paired with the label at the same place of the
-  document's, each pair of heads pairs their templates' labels, and a
-  union pairs its members, a member whose image is known with that image
-  and the others by their shape at the heads' signature classes. Every label
-  of the evidence is renamed by that correspondence, and a union written in
-  the slice's canonical order is written in the document's. Each unit is
-  checked at the evidence so written (`lineVerdict`), as
-  `checkUnitJson_safe` states. The check reads the whole document and
-  executes after every edit of it.
+- *Check.* One check (`verifier --check-units`) builds the document's front.
+  `Translate.translate` compares the two stores by joint partition
+  refinement on complete JSON row keys. Corresponding request positions
+  choose head representatives; paired templates propagate them. Remaining
+  heads use a representative of their exact equation class. Every label in
+  the typed evidence wire is relocated, including labels inside rules,
+  handlers, summaries and instantiations. Unions use their corresponding
+  request or template position's order; other canonical unions use the
+  document's anchor and row order. Distinct slice heads mapped to one
+  document head coalesce. A changed contract with no exact class uses a
+  candidate at its anchor position; missing candidates refuse. The document
+  graph's `members` operation determines both union-elimination premise
+  order and read-summary arm order. Value sets inherit their literal order
+  from corresponding type expansions.
+  Relocation touches the wire's label-bearing fields: types, proof rules,
+  node edges, handlers, implications, yields, effects, promises and read
+  summaries. Table references and label-free tables pass through to the
+  complete document decoder. A slice whose store equals the document's,
+  head for head with its names, and whose anchors equal the document's, is
+  checked as written.
+  `checkedUnit` checks the relocated evidence against the whole document.
+  Relocation is untrusted and acceptance assumes no correctness property
+  of it. The check executes after an edit of the document.
+- *Imported checks.* The imported module's existing proposals search its
+  selected units through `--produce-unit`. Their evidence lines form an
+  array for `--check-module`. `moduleLines` relocates those lines against
+  the restricted module, requires a response and obligation list for every
+  member, and assembles them in extraction order. `moduleLineVerdict`
+  passes that complete bundle to the whole-module checker. The single
+  headline theorem `checkUnitJson_safe` covers both acceptance operations,
+  including relocation.
 - *One store per equation.* The pairing renames heads, one document head
   for each slice head: the document's store holds one head for equal
   templates where the slice's does. Every producer row has its head before
@@ -750,19 +782,21 @@ payloads for one key are a store error. If the existing entry is invalid,
 the caller may use its freshly computed result without publishing it;
 replacement requires coordinated removal of the invalid entry.
 
-One process executes a replay-eligible key at a time. Before executing, it
-claims the key: the lock `running/<stage>/<key>`, acquired as the eviction
-lock is ([the lock](#location-and-size)), so a claim present names its
-owner, a claim of a stopped owner or without an owner file is taken over,
-of two processes taking one over the one whose claim is in place keeps it,
-and a release removes only its own claim (`Store.claim`). A process finding
-a key claimed by another running process waits, looking every 50 ms for a
-finished entry or a timeout observation at the key, which it replays, or
-for the claim's removal, after which it claims the key itself; after twice
-the stage's limit (`claimWaitMs`), past which the holder's execution has
-been killed, it executes the key itself. So within a run, and across the
-runs sharing a store, each key executes once while its result is
-published.
+Before executing a replay-eligible key, a process claims it through
+`running/<stage>/<key>/<generation>/owner` (`Store.claim`). Each numbered
+directory is built with its owner file before atomic publication. A
+completed generation has a `done` marker; a completed or stopped owner
+admits the next generation. Competing contenders publish to the same next
+number, so only one wins. Generations remain in place: neither takeover nor
+release can remove a later owner's claim. Interrupted preparation leaves
+only an unpublished temporary directory. Claim metadata is retained under
+`running/` and is outside the entry eviction budget.
+
+A waiter checks every 50 ms for a finished entry or timeout observation,
+or an available claim. After twice its stage limit (`claimWaitMs`) it
+reports a tool failure without executing or publishing a timeout. A live
+owner may have a longer limit or be paused; expiration does not authorize a
+second executor. Forced invocations bypass claims and replay.
 
 Finished entries and timeout observations have separate destinations.
 Publication never deletes a timeout entry to replace it with a finished

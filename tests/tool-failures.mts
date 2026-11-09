@@ -3,6 +3,7 @@
 // throws, a forced failure (`force-tool-failure.mts`) surfaces as a tool
 // failure, and the forcing is checked to have happened there.
 import "./force-tool-failure.mts";
+import { moduleProject } from "../tools/declaration-session.mts";
 import assert from "node:assert/strict";
 import { spawnSync, type SpawnSyncReturns } from "node:child_process";
 import fs, { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -94,7 +95,7 @@ const sites: { name: string; site: string; text: string; force: Record<string, s
     force: { TSCERT_FORCE_FRAME: "at project \\([^)]*computed-types\\.mts" } },
   { name: "importer.ts", site: "an imported module left out (its lowering)",
     text: "import { one } from \"./lib.js\";\nexport function f(): number {\n  return one();\n}\n",
-    force: { TSCERT_FORCE_PAYLOAD: join(dir, "lib.ts") } },
+    force: { TSCERT_FORCE_PAYLOAD: moduleProject(config, join(dir, "lib.ts")) } },
 ];
 writeFileSync(join(dir, "lib.ts"), "export function one(): number {\n  return 1;\n}\n");
 for (const { name, site, text, force, at } of sites) {

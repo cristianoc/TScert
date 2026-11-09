@@ -442,8 +442,7 @@ class, an enum, a class's self binding), and the module runs of the
 certified imports it reads. Mentions over-approximate reads, as the
 initialization order check relies on. Each module run of a certified import
 is a unit of its own: its document restricted to the read closure of the
-functions read qualified of it, searched and checked on its own
-(`--produce-module`, `--check-module`), whose acceptance
+functions read qualified of it, checked on its own (`--check-module`), whose acceptance
 `checkUnitJson_safe` states. Each unit's evidence is searched over its own
 slice (`--produce-unit`, [units of a check](STAGE-STORE.md#units-of-a-check)),
 untrusted; one check (`--check-units`) builds the file's front and gives

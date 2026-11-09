@@ -24,7 +24,6 @@ verifier --produce-unit       <slice.json> <slice-claims.json> <qualified.json> 
 verifier --check-units        <ast.json> <source-claims.json> <file-key> <evidence.json> [<names>]
 verifier --plan-imports       <ast.json> <plan.json>
 verifier --module-runs        <ast.json> <source-claims.json>
-verifier --produce-module     <module-run.json> <evidence.json> <depth>
 verifier --check-module       <module-run.json> <evidence.json>
 verifier --lower-program      <ast.json> <source-claims.json> <file-key>
 verifier --lower-control-flow <ast.json>
@@ -40,14 +39,16 @@ verifier --lower-control-flow <ast.json>
   comma-separated names (a function's name, `:init` for the
   initialization); every unit without it. Each module run of the file's
   certified imports is a unit of its own, `module:<location>`, searched and
-  checked by the module modes.
+  checked by `--check-module`; its selected units use `--produce-unit`.
 - `--produce-unit` searches the evidence of a unit over its slice
   ([units of a check](STAGE-STORE.md#units-of-a-check)): the selected groups
   of the slice's front, built at the slice's claims and at the qualified
   reads `<qualified.json>` lists, each `{"footprint","name","onThrow"}`. It
   writes the evidence document to `<evidence.json>`, which must differ from
-  every input, a line per unit, `{"evidence","heads","unit"}`, `heads` the
-  slice's store as `EquationStore.State` spells it. It prints each unit its
+  every input, a line per unit, `{"anchors","evidence","heads","unit"}`, `heads` the
+  slice's store as `EquationStore.State` spells it, and `anchors` each
+  type union of the unit's requests at its position, with labels
+  marked ([unit anchors](STAGE-STORE.md#units-of-a-check)). It prints each unit its
   search refuses on a line `refused: {"refusal","unit"}`; with any, the
   first is the command's refusal, the document written still. Claims that
   are the producer's refusal, `{"refusal"}`, are its refusal. `<depth>`
@@ -73,10 +74,9 @@ verifier --lower-control-flow <ast.json>
   claims restricted to the read closure of the functions read qualified of
   it, its initialization kept, and its own qualified reads, each
   `{"footprint","name","onThrow"}`. A plan refused is its refusal.
-- `--produce-module` searches one module run's evidence and writes it to
-  `<evidence.json>`; a search refused is its refusal, prefixed
-  `module <location>: `.
-- `--check-module` checks one module run's document at its evidence and
+- `--check-module` reads an array of slice evidence lines, relocates and
+  assembles their responses in module extraction order, checks the complete
+  bundle against the restricted module document, and
   prints its verdict, `{"accepted","depends","members","unit"}` or
   `{"members","refusal","unit"}`, whose acceptance `checkUnitJson_safe`
   states (`DocumentSafe` of the restricted document).

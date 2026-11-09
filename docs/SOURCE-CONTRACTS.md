@@ -614,15 +614,13 @@ parameters is expected.
 file's own (the greatest fixpoint over that module), then the importer's
 claims at them. No effect
 follows from a comment, a name or a module's role. The pipeline lists
-qualified each eligible read whose unit has claims. Where the search over the
-whole document refuses a read or a module run, its footprint refuted or its
-initialisation unchecked, the pipeline withdraws the first read or module
-run it refuses, proposes the importer again, and the import is read at its
+qualified each eligible read whose unit has claims. Where a unit's search or a module's check refuses a read or a module run, its footprint refuted or its
+initialisation unchecked, the pipeline withdraws the refused reads or module runs, proposes the importer again, and the import is read at its
 ordinary signature. A module run's refusal at a span within a function of
 the module that the round reads withdraws that read alone, the module's
 other reads kept (`functionAt` in `pipeline/verify-source.mts`); a refusal
-at no such function withdraws the module's every read. Each of the importer's units and each module run is searched on its own
-(`--produce-unit`, `--produce-module`), a refusal of each unit its own.
+at no such function withdraws the module's every read. Each unit of the importer and its modules is searched over its own slice
+(`--produce-unit`), a refusal of each unit its own.
 Before proposing the importer at its
 reads, the pipeline plans them (`--plan-imports` over the reads and the
 modules' claims) and withdraws every read the plan refuses in one round:
