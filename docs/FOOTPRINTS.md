@@ -690,6 +690,57 @@ keeps its entry value by each field's singleton contract
 the final array's store can change. External values need a checked boundary
 or an explicit contract establishing those same stable fields.
 
+**The step-frame rule.** A body certified at a stated frame $`\Phi`$ keeps
+the invariant $`\mathrm{Post}\,\Phi\,\rho_0\,h_0\,h`$ at every node, where
+$`\rho_0`$ and $`h_0`$ are the invocation's entry values and heap: $`\Phi`$
+is the closed bound's two class entries and an entry
+$`(\mathsf{path}\ x\ p\ \mathsf{store},\ \mathsf{any})`$ per region. Each
+step has a local effect, a frame $`\Psi`$ read at the step's own positions
+$`\sigma`$ in the heap $`h`$ it starts in: a call's is its signature's frame
+at the call's actuals (`Effect.within`), a step within the closed bound has
+the bound's two class entries, an element write has
+$`\{(\mathsf{cls}\ \mathsf{value},\mathsf{any}),\ (\mathsf{field}\ i\ \mathsf{store},\mathsf{any})\}`$
+at the array's slot $`i`$. The rule is
+
+```math
+\frac{\mathrm{Post}\,\Phi\,\rho_0\,h_0\,h \qquad \mathrm{Post}\,\Psi\,\sigma\,h\,h' \qquad
+  \mathrm{RebaseOk}\ \mathit{ev}\ \sigma\ \rho_0\ h_0\ h \qquad
+  \Phi \mathbin{+\!\!+} \mathrm{rebase}_{\mathit{ev}}(\Psi) \sqsubseteq \Phi}
+  {\mathrm{Post}\,\Phi\,\rho_0\,h_0\,h'}
+```
+
+where $`\sqsubseteq`$ is `Footprint.le`. The evidence $`\mathit{ev}`$ links a
+step position $`s`$ to an entry position and path $`(x,q)`$ with
+$`\mathrm{readPath}\,h_0\,(\rho_0\,x)\,q=\sigma\,s`$, and says which
+path $`p`$ read from $`\sigma\,s`$ at $`h`$ reads the same value at $`h_0`$
+(`RebaseOk`). Rebasing maps $`\mathsf{field}\ s\ k`$ and
+$`\mathsf{path}\ s\ p\ k`$ to $`\mathsf{path}\ x\ (q\,p)\ k`$,
+$`\mathsf{own}`$ and $`\mathsf{pathOwn}`$ alike, a class or a cell to
+itself, the part of a region of class $`c`$ to its image's part of class
+$`c`$, and any other region, or one without evidence, to $`\mathsf{all}`$.
+A location an entry of $`\Phi`$ at `any` covers needs no rebasing
+(`rebase_sound`'s second disjunct). The rule is `Post.compose_at`
+([FootprintRebase.lean](../lean/Verification/Semantics/FootprintRebase.lean));
+since $`\Phi`$ is the accumulated bound, it is an invariant through loops.
+On a throw the step's raised frame takes $`\Psi`$'s place where the node may
+throw: to a handler, or out of an invocation stating `onThrow`.
+
+The evidence of a node comes from its tracked facts: a slot holding the
+value an entry path reads links its position, and a one-field path
+$`[f]`$ from a slot holding an entry value $`\rho_0\,x`$ agrees where
+$`(x,[f])`$ is a stated region, by the entry world's witness. The witness
+is conditional: where $`\rho_0\,x`$ has the field $`f`$, the field is
+stable and its read fixed; where it has none (`null`, `undefined`), no heap
+reads it, so the path selects no store. A parameter's type passes the entry
+check where every alternative a field read succeeds on states $`f`$ present
+and stable, and there is one (`entryField`).
+
+Push's step frame is the one `ReceiverGrows` gives on normal return, every
+old location kept but the receiver's store, which `grownFrame` names at
+`any`; its signature's closed bound `{value: any, store: grow}` is its frame
+on a throw. A destructuring read, `const { f } = x`, is a stable read: an
+empty frame and the result's provenance.
+
 The semantic framing theorem requires separation from every selected store.
 Distinct slots or distinct field names do not establish that premise. With
 that separation, `store: keep` retains another array's exact length and
@@ -712,20 +763,16 @@ including a throw. `StoreApart.stable_path_frame` retains separation and
 proves entry, slot-map, normal-edge and handler checks sound
 (`checkEntry_sound`, `checkMap_sound`, `checkEdges_sound`,
 `checkHandler_sound`). `stableField_path` obtains a path witness from a
-checked stable-field type and a successful own-field read; `copy`,
-`read_stable` and `receiver_call` establish provenance and its store effect.
-`checkReceiver_sound` connects a checked receiver origin to the existing
-receiver-store call effect.
+checked stable-field type and a successful own-field read; `copy` and
+`read_stable` establish provenance. `checkEntryFields_sound` gives the
+conditional entry witnesses and `StableNow.agree` their agreement.
 [`ArgumentRegionGraph.lean`](../lean/Verification/Programs/ArgumentRegionGraph.lean)
 proves `bounded_step`, `bounded_safe_of_sim` and `goto_bounded`: ordinary graph
 safety, regional node obligations, and checked provenance transfers imply the
 regional bound on every finite return. The invariant covers cycles and caught
 throws; a caught throw requires a bound even without an exceptional guarantee
-on the enclosing invocation. `nodeWithin_of_closed` embeds existing closed
-node bounds. `checkReceiverCall_sound` validates a selected receiver-store
-invocation against a tracked origin and its existing checked call effect,
-including calls with checked preconditions. An escaping throw needs an
-effect bound only when the enclosing invocation promises one.
+on the enclosing invocation. `nodeWithin_of_step` is the step-frame rule at a
+node, its evidence from the node's facts (`nodeRebase_ok`).
 
 A caller's separation of a region's store from another array is a fact of
 its knowledge, a [store separation](ARITHMETIC.md#store-separation) or a
@@ -734,16 +781,19 @@ region fact, which `region-call-keep` consumes
 
 [`ArgumentRegionCertificates.lean`](../lean/Verification/Programs/ArgumentRegionCertificates.lean)
 checks a provenance table at entry, every normal edge and every handler.
-`checkNodes_sound` discharges the regional node obligations for closed-bound
-nodes, slot copies and receiver-store calls on tracked entry values.
-`checkEntry_sound` proves the regional bound from the executable check and
-ordinary code and summary soundness. Its premises contain no unchecked
-regional node obligations. `checkEntry_reassign` preserves the check under
-type-parameter assignments; `firstRefusedNode_sound` identifies a failing
-node at its program label for source diagnostics. A read through a
-`@stable` field is a supported node (`checkRead_sound`, the stable-read
-node rule); reads through other fields, fresh stores and nested
-argument-path calls are outside this checker's supported nodes.
+A node is a provenance step, a slot copy (`checkCopy_sound`) or a read
+through a `@stable` field the slot's type states present (`checkRead_sound`),
+or a step whose local effect the common check `stepWithin` includes:
+`closedStep_ok`, `callStep_ok` (its frame, or `grownFrame` where the
+signature states `receiverGrows`) and `writeStep_ok` (from
+`writeStep_sound`, `ExpressionEffects.lean`, whose element-write cores
+state the written store, `StoreWrite`). `checkNodes_sound` discharges every
+node's obligation; `checkEntry_sound` proves the regional bound from the
+executable check and ordinary code and summary soundness. Its premises
+contain no unchecked regional node obligations. `checkEntry_reassign`
+preserves the check under type-parameter assignments;
+`firstRefusedNode_sound` identifies a failing node at its program label for
+source diagnostics.
 
 The regional graph check is part of CLI acceptance: a function
 declaration's stated regions, `"x[*]"` and `"x.f[*]"` through a `@stable`

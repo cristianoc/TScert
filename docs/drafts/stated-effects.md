@@ -378,6 +378,17 @@ covered by an earlier entry at `any` (the second disjunct of
 composition: every rule below supplies their evidence
 (`TransportEvidence`, `PathEvidenceOk`).
 
+**The step-frame rule.** The regional check reads every step of a body by
+this one rule: a step's frame at its evaluated actuals, rebased to the
+enclosing entry through checked provenance (`Footprints.rebase`, an
+actual's entry path and a path suffix's agreement), is included in the
+stated frame, which is the accumulated bound and so an invariant through
+loops (`Post.compose_at`; stated in
+[argument-path store regions](../FOOTPRINTS.md#argument-path-store-regions)).
+The checker extracts each step's frame only: a call's signature frame, push's
+`ReceiverGrows` frame, an element write's `StoreWrite` frame, a step within
+the closed bound. Slot copies and stable reads are provenance steps.
+
 **Transport at a call.**
 
 1. *Instantiation.* The callee's positions are its actuals (`callEnv`);
@@ -597,8 +608,8 @@ export function caller(flags: number[]): number {
 ```
 
 `splice` changes its receiver's store, inside `path 0 [openBrackets] store`,
-and value-class locations (`array_native_post_any`;
-`checkReceiverCall_sound`, chain1; proved), on normal return. `measure`
+and value-class locations (`array_native_post_any`; its frame rebased by the
+step-frame rule, `callStep_ok`; proved), on normal return. `measure`
 keeps $`i<|\mathit{flags}|`$ across the call (`region-call-keep`): the
 frame's closed bound keeps stores, and the precondition's store separation
 places `flags`'s store outside the path's region, kept along the loop
@@ -620,17 +631,20 @@ entry, then splices it, pushes onto it and writes its elements at computed
 indices; writes `runs.read` and `runs.scripts`; and calls
 `getScriptFactsAt`, whose `getScriptFacts` evaluates
 `scriptClasses ??= unpackClasses(…)` and calls `getClass`. With the
-native rows its frame on normal return is
+step frames of [the step-frame rule](../FOOTPRINTS.md#argument-path-store-regions)
+its frame on normal return is
 
 ```ts
-Modifies<{ values: "any"; stores: "grow"; "runs.openBrackets[*]": "any" }, void>
+Modifies<{ values: "any"; "runs.openBrackets[*]": "any" }, void>
 ```
 
-joined with `unpackClasses`'s and `getClass`'s frames: `stores: "grow"`
-from the element writes (`elem-write-slot`, a closed footprint) and
-`push`'s row; `values: "any"` from the element writes and `splice`, and it
-covers `"cell(scriptClasses)": "init"` and the two field writes, which then add
-no precision. None of the native rows states `onThrow`, so the frame holds
+joined with `unpackClasses`'s and `getClass`'s frames. `push` and the
+element writes need no global `stores: "grow"`: `push`'s step frame is the
+one `ReceiverGrows` gives (its receiver's store alone), an element write's
+is value-class locations and the written array's store (`StoreWrite`), and
+both rebase into `"runs.openBrackets[*]"` through the destructured slot's
+provenance. `values: "any"` covers `"cell(scriptClasses)": "init"` and the
+two field writes, which then add no precision. None of the native rows states `onThrow`, so the frame holds
 on normal return only; `measureAnalysis` catches nothing, so its facts
 need only normal edges. `spaceSharesScriptRun` adds `hasProperty`'s frame,
 and `getUnspacedGraphemes` `findGraphemeEnds`'s and its fresh
@@ -659,9 +673,9 @@ helpers it calls change the protected stores (those of `flags`, `starts`
 and `texts`) at `grow` or less. Read from the code at `tscert-bounds`
 (conjectured), each helper's frame meets it:
 
-- `readScriptRuns`: `push` (`grow`), `splice` at the apart
-  `"runs.openBrackets[*]"`, element writes (`{ values: "any"; stores: "grow" }`),
-  the fields `read` and `scripts` (value class).
+- `readScriptRuns`: `push`, `splice` and element writes, each at the apart
+  `"runs.openBrackets[*]"` (the writes' cells value class), the fields
+  `read` and `scripts` (value class).
 - `getScriptFacts`, `unpackClasses`, `unpackClassRuns`, `getClass`: the
   cells `scriptClasses`, `classRuns`, `classRemaps` at `init`; writes and
   `fill` on typed arrays they allocate, discharged by freshness.
@@ -911,6 +925,15 @@ Decisions:
   call's change is the coarse bound `top`.
 - **One migration**: `Within` and `Footprint` removed in the change that
   adds `Modifies` (§3.1).
+- **One step rule**: the regional check accepts a node by the step-frame
+  rule alone (§4); push's and an element write's frames are proved from
+  `ReceiverGrows` and the strengthened write cores, adding no trust. The
+  store of a receiver that `ReceiverGrows` names is at `any` in its step
+  frame, which is all a region needs; its `grow` change, which would need
+  `ReceiverAppends`'s freshness of the appended cells, is not read.
+- **Conditional entry witnesses**: a traversed field is checked on the
+  alternatives a read succeeds on (`null` and `undefined` read none), and a
+  path whose entry value has no such field selects no store.
 
 Expressiveness limits of this language:
 

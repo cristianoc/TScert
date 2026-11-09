@@ -637,7 +637,7 @@ def transport (ev : TransportEvidence) : Region → List Region
 def transportAll (ev : TransportEvidence) (Φ : Footprint) : Footprint :=
   Φ.flatMap fun e => (transport ev e.1).map (·, e.2)
 
-private theorem cls_back {Φp ρ h₀ h l c} (hp : Post Φp ρ h₀ h) (hl : l < h₀.length)
+theorem cls_back {Φp ρ h₀ h l c} (hp : Post Φp ρ h₀ h) (hl : l < h₀.length)
     (hm : (Region.cls c).mem ρ h l = true) :
     (Region.cls c).mem ρ h₀ l = true ∨ ∃ e ∈ Φp, e.1.mem ρ h₀ l = true ∧ e.2 = .any := by
   obtain ⟨v₀, hv₀⟩ : ∃ v, h₀[l]? = some v := ⟨h₀[l], List.getElem?_eq_getElem hl⟩

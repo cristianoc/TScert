@@ -2794,6 +2794,12 @@ for (const [file, call] of [
   ["invalid-method-effect-throw-caught", "1 in wrong(new Bump(), [1, 2]) ? \"dense\" : undefined"],
   ["invalid-no-return-guard", "1 in wrong([1, 2]) ? \"dense\" : undefined"],
 ]) assert.equal(runExample(file, call), undefined, `${file}: a hole in the result`);
+// The step-frame rule's boundaries: a region aliasing the counted array, and
+// a call changing an array the caller's frame does not name.
+assert.ok(Number.isNaN(Number(runExample("invalid-stated-region-alias", "aliased([1, 2, 3])"))),
+  "clearing the aliased region empties the counted array");
+assert.ok(Number.isNaN(Number(runExample("invalid-stated-region-other", "count([1, 2, 3])"))),
+  "the call pops the array the caller counts");
 // An async call returns its promise where its body throws: each rejection is
 // handled by the process, and the pop before it leaves a hole.
 for (const [file, call] of [

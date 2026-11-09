@@ -73,10 +73,15 @@ run_cmd do
   check ``Verification.HeapKnowledge.restateStores_holds
   check ``Verification.HeapKnowledge.indicesCheckWith_sound
   check ``Verification.HeapExpressionRules.stableFirst_frame
-  check ``Verification.GraphCode.ArgumentPathTracking.receiver_call
-  check ``Verification.GraphCode.ArgumentPathTracking.checkReceiver_sound
-  check ``Verification.GraphCode.ArgumentRegionGraph.nodeWithin_of_closed
-  check ``Verification.GraphCode.ArgumentRegionGraph.checkReceiverCall_sound
+  check ``Verification.Footprints.rebase_sound
+  check ``Verification.Footprints.Post.compose_at
+  check ``Verification.GraphCode.ArgumentPathTracking.StableNow.agree
+  check ``Verification.GraphCode.ArgumentRegionGraph.nodeRebase_ok
+  check ``Verification.GraphCode.ArgumentRegionGraph.nodeWithin_of_step
+  check ``Verification.GraphCode.ArgumentRegionGraph.closedStep_ok
+  check ``Verification.GraphCode.ArgumentRegionGraph.callStep_ok
+  check ``Verification.GraphCode.ArgumentRegionGraph.writeStep_ok
+  check ``Verification.ExpressionEffects.writeStep_sound
   check ``Verification.GraphCode.ArgumentRegionGraph.firstRefusedNode_sound
   check ``Verification.GraphCode.ArgumentRegionGraph.checkEntry_reassign
   check ``Verification.GraphCode.ArgumentRegionGraph.checkNodes_sound

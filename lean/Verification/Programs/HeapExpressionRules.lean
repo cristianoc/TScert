@@ -326,28 +326,24 @@ views other than `length` (`clauseField`). -/
       | .refs _ _ vs _ _ _ _ => if fld != lengthKey then vs.filterMap (fun p => if p.1 = fld then some p.2 else none) else []
       | _ => [])
 
-/-- What such a read finds: the object, its location at `fld`, and that
-location's stored contract, which admits only members of one of the types the
-clauses state for the field. -/
-theorem fieldOperand_typed [DecidableEq ι] {G : NormalGraph ι} {Ref fld n W v}
-    (hr : fieldOperand (expand G Ref) fld = true) (hv : meaning G Ref n W v) :
+/-- What a read of a field finds in a member of one alternative stating it
+(`clauseField`): the object, its location at `fld`, and that location's
+stored contract, which admits only members of a type the alternatives `cs`
+state for the field. -/
+theorem clauseField_typed [DecidableEq ι] {G : NormalGraph ι} {cs : List (PositiveNormalization.Clause (Ty ι))}
+    {c : PositiveNormalization.Clause (Ty ι)} {fld n W v}
+    (hm : c ∈ cs) (hb : clauseField c fld = true)
+    (hc : semWithArgs (builtinExc G (builtinValues G)) (meaning G) (argMeaning G) c n W v) :
     ∃ (El : Ty ι) (flds : List (PropKey × Nat)) (code : CallCode) (oid l : Nat) (c : Ctr n), v = .objAt flds code oid ∧ flds.lookup fld = some l ∧
       lookup W l = some c ∧ (∀ (j : Nat) (hj : j < n) (W' : WorldT j) (u : Val), c j hj W' u → meaning G El j W' u) ∧
-      El ∈ fieldTys (expand G Ref) fld := by
-  simp only [fieldOperand, Bool.and_eq_true, Bool.not_eq_true', List.isEmpty_eq_false_iff,
-    List.all_eq_true] at hr
-  have hp : G.plainTy Ref = true := by
-    obtain ⟨c, hc⟩ := List.exists_mem_of_ne_nil _ hr.1
-    exact plain_of_mem_expand (c := c) hc
-  obtain ⟨c,hm,hc,-⟩ := (expand_sem G Ref hp n W v).mp hv
-  have hb := hr.2 c hm
-  have inBag : ∀ {El : Ty ι}, (fld, El) ∈ (clauseBagOperand c).getD [] → El ∈ fieldTys (expand G Ref) fld :=
+      El ∈ fieldTys cs fld := by
+  have inBag : ∀ {El : Ty ι}, (fld, El) ∈ (clauseBagOperand c).getD [] → El ∈ fieldTys cs fld :=
     fun hmem => List.mem_flatMap.mpr ⟨c, hm, List.mem_append_left _ (List.mem_filterMap.mpr ⟨_, hmem, by simp⟩)⟩
-  have ofBag : ∀ {B : List (PropKey × Ty ι)} {El : Ty ι}, (fld, El) ∈ B → El ∈ fieldTys (expand G Ref) fld →
+  have ofBag : ∀ {B : List (PropKey × Ty ι)} {El : Ty ι}, (fld, El) ∈ B → El ∈ fieldTys cs fld →
       bagT (ReferenceConjunctions.famsOf (meaning G) B) n W v →
       ∃ (El : Ty ι) (flds : List (PropKey × Nat)) (code : CallCode) (oid l : Nat) (c : Ctr n), v = .objAt flds code oid ∧ flds.lookup fld = some l ∧
         lookup W l = some c ∧ (∀ (j : Nat) (hj : j < n) (W' : WorldT j) (u : Val), c j hj W' u → meaning G El j W' u) ∧
-        El ∈ fieldTys (expand G Ref) fld := by
+        El ∈ fieldTys cs fld := by
     intro B El hmem hin hbag
     obtain ⟨flds,code,oid,hl,_,hrec⟩ := hbag
     obtain ⟨flds',l,c',oid',hproj,hfd,hlookup,hagree⟩ :=
@@ -370,6 +366,22 @@ theorem fieldOperand_typed [DecidableEq ι] {G : NormalGraph ι} {Ref fld n W v}
     obtain ⟨⟨g, El⟩, hmem, rfl⟩ := hb
     exact ofBag hmem (inBag (by simpa [clauseBagOperand] using hmem)) hc.1.1.1.1
   | _ => simp [clauseField, clauseBagOperand] at hb
+
+/-- What such a read finds: the object, its location at `fld`, and that
+location's stored contract, which admits only members of one of the types the
+clauses state for the field. -/
+theorem fieldOperand_typed [DecidableEq ι] {G : NormalGraph ι} {Ref fld n W v}
+    (hr : fieldOperand (expand G Ref) fld = true) (hv : meaning G Ref n W v) :
+    ∃ (El : Ty ι) (flds : List (PropKey × Nat)) (code : CallCode) (oid l : Nat) (c : Ctr n), v = .objAt flds code oid ∧ flds.lookup fld = some l ∧
+      lookup W l = some c ∧ (∀ (j : Nat) (hj : j < n) (W' : WorldT j) (u : Val), c j hj W' u → meaning G El j W' u) ∧
+      El ∈ fieldTys (expand G Ref) fld := by
+  simp only [fieldOperand, Bool.and_eq_true, Bool.not_eq_true', List.isEmpty_eq_false_iff,
+    List.all_eq_true] at hr
+  have hp : G.plainTy Ref = true := by
+    obtain ⟨c, hc⟩ := List.exists_mem_of_ne_nil _ hr.1
+    exact plain_of_mem_expand (c := c) hc
+  obtain ⟨c,hm,hc,-⟩ := (expand_sem G Ref hp n W v).mp hv
+  exact clauseField_typed hm (hr.2 c hm) hc
 
 /-- Whether every alternative of `Ref` states `fld` in its first invariant
 operand: the location the field finds then belongs to that key alone

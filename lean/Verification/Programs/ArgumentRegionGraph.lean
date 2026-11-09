@@ -22,91 +22,128 @@ def NodeWithin [DecidableEq ι] (G : NormalGraph ι) (Φ : Footprints.Closed)
       (fun h' => thr = true → ArgumentStoreRegionsWithin Φ regions entry initial h')
       n W h (instantiate 0 ρ t)
 
-/-- Existing checked closed-bound nodes also meet an entry-relative bound.
-The empty fresh-slot set introduces no assumptions about caller values. -/
-theorem nodeWithin_of_closed [DecidableEq ι] {G : NormalGraph ι} {Φ : Footprints.Closed}
-    {regions : List ArgumentStoreRegion} {c : NodeEvidence ι} {t : Tm}
-    {facts : List ArgumentPathTracking.Fact} {out thr : Bool}
-    (hc : GraphCode.NodeWithin G Φ c t [] out thr) :
-    NodeWithin G Φ regions c t facts [] thr := by
-  intro n W h ρ initial entry hb _ he hi hk hw hh _
-  have hn := hc n W h ρ initial.length hb.1 (by intro i hi; cases hi) he hi hk hw hh
-  apply HeapObservations.SafePostExc.weaken _ _ hn
-  · intro h' v hp
-    exact ⟨hb.trans_on (hp.1.weaken (fun _ hl => hl.1)), fun r hr => by cases hr⟩
-  · intro h' hp ht
-    exact hb.trans_on ((hp ht).weaken (fun _ hl => hl.1))
+/-! ## The step-frame rule
 
-/-- A selected receiver-store invocation names a tracked entry region.
-The existing expression checker supplies the call's safety and effect. -/
-@[nospecialize] def checkReceiverCall [DecidableEq ι] (G : NormalGraph ι)
-    (images : InstanceImageCheck G) (sums : List (ProgramCertificates.ReadSummary ι))
-    (Φ : Footprints.Closed) (regions : List ArgumentStoreRegion)
-    (facts : List ArgumentPathTracking.Fact) (c : NodeEvidence ι) (thr : Bool) : Bool :=
-  (ProgramCertificates.checkTreeUsing G images c.expression (sums := sums) ||
-    PromiseCalls.requiresTree G images (entryFacts G c) (fun _ => false) sums c.expression) &&
-  ExpressionEffects.selectedOperands c.expression && (!thr || ExpressionEffects.selectedThrows c.expression) &&
-  match (ProgramCertificates.claim c.expression).term, ExpressionEffects.selectedEffect c.expression with
-  | .invoke _ (.var receiver) _, some eff =>
-      eff.footprint.le Φ && eff.receiverStore && !eff.receiverOwn && (!thr || eff.onThrow) &&
-        ArgumentPathTracking.checkReceiver facts regions receiver
+Every step of a body has a local effect: a frame read at the step's own
+positions in the heap it starts in, on normal return and on a throw. A node
+is within the stated frame when its frame, rebased to the invocation's entry
+through the tracked slots (`Footprints.rebase`), is included in the stated
+frame (`Footprint.le`); `Post.compose_at` composes the two. It is one rule
+for every step: a call at its signature's frame (`callStep`), an element
+write (`writeStep`), a step within the closed bound (`closedStep`), each
+only extracting the step's frame (FOOTPRINTS.md, "Argument-path store
+regions"). -/
+
+/-- A step's local effect: its frame on normal return and on a throw, read
+at the step's positions, and the node slot each position holds. -/
+structure StepEffect where
+  slot : Nat → Option Nat
+  normal : Footprint
+  raised : Footprint
+
+/-- A node's step meets its local effect: from a context ordinary graph
+checking established, at positions agreeing with the slots `slot` names, its
+normal return, and where `thr` its throw, meets the frame from the heap the
+step starts in. -/
+def StepOk [DecidableEq ι] (G : NormalGraph ι) (c : NodeEvidence ι) (t : Tm) (se : StepEffect) (thr : Bool) :
+    Prop :=
+  ∀ n W h ρ, EnvOk G (ControlFlow.entry c) ρ n W → PromiseCalls.ImpliesOk G c.implies ρ n W →
+    HeapKnowledge.Holds (entryFacts G c) ρ h → WorldAdm W → HeapOk n W h →
+    ∃ σ : Env, (∀ p s, se.slot p = some s → σ p = ρ s) ∧
+      HeapObservations.SafePostExc (excOf G) (meaning G (result c))
+        (fun h' _ => Post se.normal σ h h') (fun h' => thr = true → Post se.raised σ h h')
+        n W h (instantiate 0 ρ t)
+
+/-- The stated frame: the closed bound and the store regions' entries. -/
+def statedFrame (Φ : Footprints.Closed) (regions : List ArgumentStoreRegion) : Footprint :=
+  Φ.fp ++ regions.map ArgumentStoreRegion.entry
+
+/-- Where a step position's value comes from: the entry path a tracked fact
+states of the slot it holds. -/
+def nodeLink (facts : List ArgumentPathTracking.Fact) (se : StepEffect) (p : Nat) : Option (Nat × List String) :=
+  (se.slot p).bind fun s => (facts.find? (·.slot == s)).map fun f => (f.region.position, f.region.path)
+
+/-- A step position's one-field path read at the entry heap as at the
+step's: its value an entry value, and the field one the stated frame
+traverses, whose entry witness `StableNow` keeps. -/
+def nodeAgree (regions : List ArgumentStoreRegion) (facts : List ArgumentPathTracking.Fact) (se : StepEffect)
+    (p : Nat) (q : List String) : Bool :=
+  match nodeLink facts se p, q with
+  | some (x, []), [f] => (ArgumentPathTracking.stableFields regions).contains (x, f)
   | _, _ => false
 
-theorem checkReceiverCall_sound [DecidableEq ι] {G : NormalGraph ι}
-    {images : InstanceImageCheck G} {sums : List (ProgramCertificates.ReadSummary ι)}
-    {Φ : Footprints.Closed} {regions : List ArgumentStoreRegion}
-    {facts : List ArgumentPathTracking.Fact} {c : NodeEvidence ι} {thr : Bool}
-    (hc : checkReceiverCall G images sums Φ regions facts c thr = true)
-    (hsums : ProgramCertificates.SummariesSound G images sums) :
-    NodeWithin G Φ regions c (ProgramCertificates.claim c.expression).term facts [] thr := by
-  intro n W h ρ initial entry hb hf he _ hk hw hh _
-  simp only [checkReceiverCall, Bool.and_eq_true] at hc
-  obtain ⟨⟨⟨htree, hops⟩, hthrows⟩, hc⟩ := hc
-  split at hc
-  · rename_i fn receiver args eff hterm heff
-    simp only [Bool.and_eq_true, Bool.not_eq_true', Bool.or_eq_true] at hc
-    obtain ⟨⟨⟨⟨hle, hstore⟩, hown⟩, hthrow⟩, hreceiver⟩ := hc
-    have hs : HeapObservations.SafePostExc (excOf G)
-        (meaning G (ProgramCertificates.claim c.expression).type)
-        (eff.post (ExpressionEffects.receiverOf (instantiate 0 ρ (ProgramCertificates.claim c.expression).term))
-          (ExpressionEffects.actualsOf (instantiate 0 ρ (ProgramCertificates.claim c.expression).term)) h)
-        (fun h' => thr = true → eff.excPost
-          (ExpressionEffects.receiverOf (instantiate 0 ρ (ProgramCertificates.claim c.expression).term))
-          (ExpressionEffects.actualsOf (instantiate 0 ρ (ProgramCertificates.claim c.expression).term)) h h')
-        n W h (instantiate 0 ρ (ProgramCertificates.claim c.expression).term) := by
-      rcases Bool.or_eq_true_iff.mp htree with htree | hreq
-      · cases ht : thr
-        · apply HeapObservations.SafePostExc.of_post (fun _ hf => by cases hf)
-          exact ExpressionEffects.selected_sound c.expression htree hops heff
-            (ProgramCertificates.codesSound_none _) hsums he hw hh
-        · have hx : ExpressionEffects.selectedThrows c.expression = true := by
-            simpa [ht] using hthrows
-          exact HeapObservations.SafePostExc.weaken (fun _ _ h => h) (fun _ h _ => h)
-            (ExpressionEffects.selected_sound_exc c.expression htree hops hx heff
-              (ProgramCertificates.codesSound_none _) hsums he hw hh)
-      · obtain ⟨eff', heff', hs⟩ := PromiseCalls.requiresTree_sound_exc
-          (ProgramCertificates.codesSound_none _) hsums c.expression hreq
-        rw [heff] at heff'; cases heff'
-        exact HeapObservations.SafePostExc.weaken (fun _ _ h => h) (fun _ h _ => h)
-          (hs he hk hw hh)
-    have hr : ExpressionEffects.receiverOf
-        (instantiate 0 ρ (ProgramCertificates.claim c.expression).term) = ρ receiver := by
-      rw [hterm]; simp [ExpressionEffects.receiverOf, instantiate]
-    apply HeapObservations.SafePostExc.weaken _ _ hs
-    · intro h' v hp
-      refine ⟨?_, fun r hr => by cases hr⟩
-      have hi := hp.1
-      rw [hr] at hi
-      exact ArgumentPathTracking.checkReceiver_sound hreceiver hf hb hi hstore hown hle
-    · intro h' hp hthr
-      have hon : eff.onThrow = true := by
-        rcases hthrow with ht | ht
-        · rw [hthr] at ht; cases ht
-        · exact ht
-      have hi := hp hthr hon
-      rw [hr] at hi
-      exact ArgumentPathTracking.checkReceiver_sound hreceiver hf hb hi hstore hown hle
-  · cases hc
+def nodeRebase (regions : List ArgumentStoreRegion) (facts : List ArgumentPathTracking.Fact) (se : StepEffect) :
+    RebaseEvidence :=
+  ⟨nodeLink facts se, nodeAgree regions facts se⟩
+
+/-- No class evidence: inclusions read regions alone. -/
+def noClasses : ClassEvidence := fun _ _ => none
+
+theorem noClasses_ok (ρ : Env) (h : Heap) : ClassOk noClasses ρ h := fun _ _ _ _ hc => nomatch hc
+
+/-- **The common check**: the step's frames, rebased to the entry, are
+included in the stated frame. -/
+def stepWithin (Φ : Footprints.Closed) (regions : List ArgumentStoreRegion)
+    (facts : List ArgumentPathTracking.Fact) (se : StepEffect) (thr : Bool) : Bool :=
+  Footprint.le noClasses (statedFrame Φ regions ++ rebaseAll (nodeRebase regions facts se) se.normal)
+      (statedFrame Φ regions) &&
+    (!thr || Footprint.le noClasses (statedFrame Φ regions ++ rebaseAll (nodeRebase regions facts se) se.raised)
+      (statedFrame Φ regions))
+
+/-- The tracked facts and the entry world's witnesses are rebasing evidence. -/
+theorem nodeRebase_ok {regions : List ArgumentStoreRegion} {facts : List ArgumentPathTracking.Fact}
+    {se : StepEffect} {σ ρ entry : Env} {initial h : Heap} {n : Nat} {W : WorldT n}
+    (hσ : ∀ p s, se.slot p = some s → σ p = ρ s) (hf : ArgumentPathTracking.Holds facts ρ entry initial)
+    (hst : ArgumentPathTracking.StableNow (ArgumentPathTracking.stableFields regions) entry initial W)
+    (hn : 0 < n) (hh : HeapOk n W h) :
+    RebaseOk (nodeRebase regions facts se) σ entry initial h := by
+  have hlink : ∀ p x q, nodeLink facts se p = some (x, q) →
+      HeapKnowledge.readPath initial (entry x) q = some (σ p) := by
+    intro p x q hl
+    simp only [nodeLink, Option.bind_eq_some_iff, Option.map_eq_some_iff] at hl
+    obtain ⟨s, hs, f, hfind, hfq⟩ := hl
+    simp only [Prod.mk.injEq] at hfq
+    obtain ⟨rfl, rfl⟩ := hfq
+    have hslot : f.slot = s := by simpa using List.find?_some hfind
+    rw [hσ p s hs, ← hslot]
+    exact hf f (List.mem_of_find?_eq_some hfind)
+  refine ⟨hlink, fun p q hq v hv => ?_⟩
+  simp only [nodeRebase] at hq
+  unfold nodeAgree at hq
+  split at hq
+  · rename_i x f hl
+    have he : entry x = σ p := by simpa [HeapKnowledge.readPath] using hlink p x [] hl
+    rw [← he] at hv ⊢
+    exact hst.agree (List.contains_iff_mem.mp hq) hn hh hv
+  · cases hq
+
+/-- **The step-frame rule.** A step meeting its local effect, whose frames
+the common check includes in the stated frame, keeps the invocation within
+it. -/
+theorem nodeWithin_of_step [DecidableEq ι] {G : NormalGraph ι} {Φ : Footprints.Closed}
+    {regions : List ArgumentStoreRegion} {c : NodeEvidence ι} {t : Tm}
+    {facts : List ArgumentPathTracking.Fact} {se : StepEffect} {thr : Bool}
+    (hs : StepOk G c t se thr) (hc : stepWithin Φ regions facts se thr = true) :
+    NodeWithin G Φ regions c t facts [] thr := by
+  intro n W h ρ initial entry hb hf he hi hk hw hh hst
+  cases n with
+  | zero => trivial
+  | succ n =>
+    simp only [stepWithin, Bool.and_eq_true, Bool.or_eq_true, Bool.not_eq_true'] at hc
+    obtain ⟨σ, hσ, hrun⟩ := hs (n + 1) W h ρ he hi hk hw hh
+    have hp := ArgumentStoreRegionsWithin.iff_post.mp hb
+    have hok := nodeRebase_ok (regions := regions) hσ hf (hst (Nat.succ_pos n)) (Nat.succ_pos n) hh
+    apply HeapObservations.SafePostExc.weaken _ _ hrun
+    · intro h' _ hq
+      exact ⟨ArgumentStoreRegionsWithin.iff_post.mpr
+        (Post.compose_at hp hq hok hc.1 (noClasses_ok _ _)), fun r hr => nomatch hr⟩
+    · intro h' hq hthr
+      have hle : Footprint.le noClasses (statedFrame Φ regions ++
+          rebaseAll (nodeRebase regions facts se) se.raised) (statedFrame Φ regions) = true := by
+        rcases hc.2 with hf | hle
+        · rw [hthr] at hf; cases hf
+        · exact hle
+      exact ArgumentStoreRegionsWithin.iff_post.mpr (Post.compose_at hp (hq hthr) hok hle (noClasses_ok _ _))
 
 def NodesWithin [DecidableEq ι] (G : NormalGraph ι) (Φ : Footprints.Closed)
     (regions : List ArgumentStoreRegion) (P : Program) (C : Certificate ι)
