@@ -1,0 +1,1038 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Commit Records</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Code+Pro:wght@400;600&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=STIX+Two+Text:ital,wght@0,400;0,600;1,400&display=swap">
+<style>
+:root { --bg:#fbfcfd; --surface:#ffffff; --ink:#0b1a2e; --muted:#56627a; --rule:#d5dce6; --accent:#8a6410; --code-bg:#eef2f7; --math-bg:#f2f4f8; --ok:#2f6b47; --ok-bg:#e2efe4; --principled:#a0521a; --principled-bg:#f7e6d6; --gap:#6b6f78; --gap-bg:#ecebe6; --neutral:#2c4f7c; --neutral-bg:#e6ebf2; --trust:#7c2f4a; --trust-bg:#f2e1e7; --neg:#9b3524; --neg-bg:#f5e1da; --run:#7a5414; --run-bg:#f3e7cc; --brand-ink:#0b1a2e; --brand-gold:#b8840f;
+  --display:"Bricolage Grotesque","Helvetica Neue",Arial,sans-serif; --body:"Inter","Helvetica Neue",Arial,sans-serif; --mono:"Source Code Pro",Menlo,Consolas,monospace; --math:"STIX Two Text","STIX Two Math","STIXGeneral","Cambria Math","Apple Symbols",Georgia,serif; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#0e1626; --surface:#16213a; --ink:#efe7d4; --muted:#9aa3b5; --rule:#2a3756; --accent:#e0ac4a; --code-bg:#131d33; --math-bg:#1a2540; --ok:#7fd0a2; --ok-bg:#17322a; --principled:#f0a868; --principled-bg:#3a2a1c; --gap:#9aa3b5; --gap-bg:#1c2639; --neutral:#8fb4e8; --neutral-bg:#1b2b49; --trust:#e79bb6; --trust-bg:#3a2131; --neg:#f0907d; --neg-bg:#3a1f22; --run:#e0ac4a; --run-bg:#2e2a24; --brand-ink:#efe7d4; --brand-gold:#e0ac4a; color-scheme:dark } }
+:root[data-theme="dark"] { --bg:#0e1626; --surface:#16213a; --ink:#efe7d4; --muted:#9aa3b5; --rule:#2a3756; --accent:#e0ac4a; --code-bg:#131d33; --math-bg:#1a2540; --ok:#7fd0a2; --ok-bg:#17322a; --principled:#f0a868; --principled-bg:#3a2a1c; --gap:#9aa3b5; --gap-bg:#1c2639; --neutral:#8fb4e8; --neutral-bg:#1b2b49; --trust:#e79bb6; --trust-bg:#3a2131; --neg:#f0907d; --neg-bg:#3a1f22; --run:#e0ac4a; --run-bg:#2e2a24; --brand-ink:#efe7d4; --brand-gold:#e0ac4a; color-scheme:dark }
+* { box-sizing:border-box } body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.6 var(--body) }
+main { max-width:900px; margin:0 auto; padding-inline:20px; padding-block:32px 64px; display:flex; flex-direction:column; gap:22px }
+h1 { font:600 32px/1.15 var(--display); margin:0 } h2 { font:600 22px/1.2 var(--display); margin:12px 0 8px; padding-top:12px; border-top:2px solid var(--ink) }
+h3 { font:600 19px/1.3 var(--display); margin:2px 0 0; text-wrap:balance }
+h4 { font:600 11px/1 var(--body); letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin:12px 0 4px }
+p { margin:2px 0; max-width:72ch } .lede { color:var(--muted) }
+code { font:13px/1.5 var(--mono); background:var(--code-bg); padding:1px 4px; border-radius:3px }
+pre { margin:4px 0; padding:12px 14px; border-radius:6px; overflow-x:auto }
+pre.code { font:13px/1.55 var(--mono); background:var(--code-bg) }
+.rules { display:flex; flex-direction:column; gap:14px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:14px 18px; overflow-x:auto; font:16px/1.6 var(--math) }
+.rules sub, .rules sup { font-size:.72em; line-height:0 }
+.formulas { display:flex; flex-direction:column; gap:4px }
+.formulas .row { display:flex; flex-wrap:wrap; gap:4px 28px } .formulas .row.cont { padding-left:2em }
+.infer { display:flex; align-items:center; gap:12px }
+.frac { display:inline-flex; flex-direction:column; align-items:center; min-width:0 }
+.premises { display:flex; flex-wrap:wrap; justify-content:center; gap:4px 26px; padding:0 6px 3px }
+.bar { align-self:stretch; border-top:1.5px solid var(--ink) }
+.conclusion { padding:3px 6px 0; text-align:center }
+.rule-name { font:15px/1 var(--math); font-variant:small-caps; letter-spacing:.02em; color:var(--accent); white-space:nowrap }
+.card { background:var(--surface); border:1px solid var(--rule); border-radius:8px; padding:20px 22px; display:flex; flex-direction:column; gap:6px; min-width:0 }
+.card > header { display:flex; justify-content:space-between; gap:12px; align-items:flex-start }
+.sha { font:12px/1.4 var(--mono); color:var(--muted) }
+.pill { font:600 11px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; padding:6px 9px; border-radius:99px; white-space:nowrap }
+.pill.ok { color:var(--ok); background:var(--ok-bg) } .pill.principled { color:var(--principled); background:var(--principled-bg) }
+.pill.gap { color:var(--gap); background:var(--gap-bg) } .pill.neutral { color:var(--neutral); background:var(--neutral-bg) }
+.units { display:flex; flex-wrap:wrap; gap:6px } .units span { font:12px/1 var(--mono); border:1px solid var(--rule); border-radius:4px; padding:5px 7px }
+dl.facts { display:grid; grid-template-columns:max-content minmax(0,1fr); gap:6px 16px; margin:12px 0 0; padding-top:12px; border-top:1px solid var(--rule); font-size:13.5px }
+dt { font:600 11px/1.9 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted) }
+dd { margin:0; min-width:0; display:flex; flex-wrap:wrap; gap:5px; align-items:baseline }
+.chip { font:500 12px/1 var(--body); border:1px solid var(--rule); border-radius:4px; padding:4px 7px } .chip.strong { color:var(--accent); border-color:var(--accent) }
+.trust { color:var(--trust); background:var(--trust-bg); padding:2px 6px; border-radius:4px } .none { color:var(--muted) }
+.test { font:12px/1 var(--mono); padding:4px 7px; border-radius:4px }
+.test.pos { color:var(--ok); background:var(--ok-bg) } .test.pos::before { content:"✓ " }
+.test.neg { color:var(--neg); background:var(--neg-bg) } .test.neg::before { content:"✗ " }
+.test.forged { color:var(--principled); background:var(--principled-bg) } .test.forged::before { content:"forged " }
+details { margin-top:8px; font-size:13px; color:var(--muted) } summary { cursor:pointer }
+.table-wrap { overflow-x:auto; border:1px solid var(--rule); border-radius:8px; background:var(--surface) }
+table { border-collapse:collapse; width:100%; font-size:13px } th, td { text-align:left; vertical-align:top; padding:8px 10px; border-bottom:1px solid var(--rule) }
+th { font:600 11px/1.2 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); white-space:nowrap } td.num { font-variant-numeric:tabular-nums }
+h4.change { display:flex; align-items:center; gap:8px; text-transform:none; letter-spacing:0; font:600 14px/1.3 var(--body); color:var(--ink); margin:16px 0 6px }
+h4.change .target { font-weight:400; color:var(--muted) }
+.act { font:600 10.5px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; padding:4px 7px; border-radius:4px }
+.act.added { color:var(--ok); background:var(--ok-bg) } .act.removed { color:var(--neg); background:var(--neg-bg) }
+.act.modified, .act.replaced { color:var(--principled); background:var(--principled-bg) }
+.versions { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:10px }
+.versions figure { margin:0; min-width:0 } .versions figcaption { font:600 11px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); margin:0 0 4px }
+.versions .rules { height:calc(100% - 18px); box-sizing:border-box }
+pre.code .ln { display:block; white-space:pre } pre.code .ln.add { background:var(--ok-bg) } pre.code .ln.del { background:var(--neg-bg) }
+.tk-k { color:#7a3b8c } .tk-s { color:#2f6b47 } .tk-n { color:#a35a12 } .tk-c { color:var(--muted); font-style:italic } .tk-t { color:#2c4f7c }
+.prose p { margin:4px 0 }
+ul.effect, ul.summary { margin:4px 0; padding-left:20px } ul.effect li, ul.summary li { margin:3px 0 } ul.summary ul { padding-left:18px; color:var(--muted) }
+ul.effect .arrow { color:var(--accent); font-weight:600 }
+ul.effect details { margin:0; color:inherit; font-size:inherit } ul.effect summary { list-style-position:outside }
+ul.effect .kind { font-size:11px; text-transform:uppercase; letter-spacing:.04em; padding:1px 6px; border-radius:4px; background:var(--chip, #eee) }
+ul.effect .kind.negative { color:#8a3b12 } ul.effect .kind.positive { color:#22663a } ul.effect .kind.gap { color:#7a5b00 }
+ul.effect .was.unsound { color:#b3261e; font-weight:600 } ul.effect .now { font-weight:500 } ul.effect .why { color:var(--muted) }
+ul.effect mark { background:#ffe08a; color:inherit; border-radius:2px }
+@media (max-width:720px) { .versions { grid-template-columns:minmax(0,1fr) } }
+.lowering { display:flex; flex-direction:column; gap:6px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:12px 16px; overflow-x:auto }
+.lowering .map, .lowering .cond, .lowering .result { display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 10px }
+.lowering .map:not(:has(.sem)) { flex-direction:column; align-items:stretch; gap:4px }
+.lowering .result { display:grid; grid-template-columns:auto minmax(0,1fr); align-items:baseline; gap:2px 10px; padding-left:1em } .lowering .result .note { grid-column:2 }
+.m-intr { font:14px/1.5 var(--mono); color:#2c4f7c } .m-lit { font:13px/1.5 var(--mono); color:#7a3b8c }
+.lowering code.src { font:13px/1.5 var(--mono); background:var(--surface); border:1px solid var(--rule); padding:2px 6px; border-radius:4px }
+.lowering .to { color:var(--accent); font-weight:600; font-size:17px }
+.lowering .tgt { font:16px/1.5 var(--math) } .rules .lowering { background:none; border:0; padding:0 } .lowering .sem code.src { margin:0 2px }
+var { font-style:italic } .m-op { color:#2c4f7c; font-style:normal } .m-con { color:#8f6416; font-style:normal; font-variant:small-caps }
+.m-kw { color:#7a3b8c; font-weight:600; font-style:normal } .m-bind { color:#7a3b8c } .m-rel { color:var(--accent); padding:0 .12em }
+.m-text { font:14px/1.5 var(--body); color:var(--muted) } code.m-code { font:13px/1.5 var(--mono); background:var(--surface); border:1px solid var(--rule); padding:1px 5px; border-radius:4px }
+.refused { color:var(--neg); font-weight:600 }
+.lowering .refused { color:var(--neg); font-weight:600 }
+.lowering .label { font:600 11px/1 var(--body); letter-spacing:.05em; text-transform:uppercase; color:var(--muted); min-width:7em }
+.lowering .cond { padding-left:1.5em } .lowering .note { color:var(--muted); font:italic 13px/1.4 var(--body) }
+a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outline-offset:2px }
+@media (max-width:520px) { dl.facts { grid-template-columns:minmax(0,1fr) } .card > header { flex-direction:column } }</style></head><body><main><header><h1>Commit Records</h1><p class="lede">15 commits, rendered from their records.</p></header>
+<section><h2>Branches</h2><ul class="summary"><li><a href="#g-pr-129"><code>b132a48bac27d15803a621a4ed678da31c2b0996..pr-129</code></a><ul><li>15 commits</li><li>parts: <span class="chip">producer</span> <span class="chip">docs</span> <span class="chip">tests</span> <span class="chip">lean-rules</span> <span class="chip">lean-proofs</span> <span class="chip">parser</span> <span class="chip strong">trust</span> <span class="chip strong">wire</span> <span class="chip">pipeline</span> <span class="chip">contracts</span> <span class="chip strong">lean-semantics</span></li><li>new trust: <span class="trust">A span's creation, inline style writes, text, insertion, removal and rectangle, and `new Intl.DateTimeFormat()` with its `resolvedOptions()`, write no location the program holds on normal return; the page's custom elements and legacy mutation-event listeners reach none.</span></li><li>new trust: <span class="trust">A native regex literal's `[Symbol.replace]` called with a callback within {value: any, store: keep} changes, beside what the callback changes, only the literal's `lastIndex`, a number.</span></li><li>new trust: <span class="trust">new C(n) at the double 2^53 throws a RangeError (ToIndex), within the typed-array construction contract</span></li><li>wire: index fact {&quot;pastSafe&quot;: {&quot;slot&quot;}}</li></ul></li></ul></section>
+<h2 id="g-pr-129"><code>b132a48bac27d15803a621a4ed678da31c2b0996..pr-129</code></h2><article class="card" id="c-32664e6ce"><header><div><div class="sha">32664e6ce · Cristiano Calcagno · Nov 08, 17:51</div><h3>Keep lengths across an element write at a linear index below the length</h3></div><span class="pill ok">verified</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>Pretext's segmentAtLineBreaks writes flags[j + 1] in a loop whose invariant states count === flags.length. The producer kept lengths across an element write only where the index was a binding, so the loop's back edge lost the equality and the loop invariant was refused, though Lean's setElem-bounded admits the write at the index's slot.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Typing <span class="target">producer, an element write's change</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-op">xs</span>[<var>k</var>] <span class="m-rel">=</span> <var>v</var> <span class="m-text">kept every length only where</span> <var>k</var> <span class="m-text">is a binding the facts</span></span></div><div class="row"><span><span class="m-text">bound below xs</span>.<span class="m-text">length</span>.</span></div></div></div></figure><figure><figcaption>After</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-op">xs</span>[<var>e</var>] <span class="m-rel">=</span> <var>v</var> <span class="m-text">also keeps every length where</span> <var>e</var> <span class="m-text">writes no heap and the</span></span></div><div class="row"><span><span class="m-text">facts give it as a linear form at least</span> 0 <span class="m-text">and below xs</span>.<span class="m-text">length</span>.</span></div></div></div></figure></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>facts-across-writes</code> <span class="kind positive">positive</span> <span class="was">verified</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">adds marked, a write at j + 1 below the length</span></summary><pre class="code"><span class="tk-c">// Index facts kept across a step whose writes cannot touch what they read</span>
+<span class="tk-c">// (PROGRAM-TYPING.md, &quot;Linear facts&quot;): a field write's location held a member</span>
+<span class="tk-c">// of the field's type, so it is no store a length reads (`cursorLoop`), no</span>
+<span class="tk-c">// object a path reads and no number a path's last field holds where the type</span>
+<span class="tk-c">// admits none (`labelled`, `counted`); and an element write below the length</span>
+<span class="tk-c">// keeps every store's length (`filled`).</span>
+
+<span class="tk-k">type</span> <span class="tk-t">Cursor</span> = { i: number; label: string };
+<span class="tk-k">type</span> <span class="tk-t">Holder</span> = { data: number[]; count: number };
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> cursorLoop(cur: <span class="tk-t">Cursor</span>, ys: number[]): number {
+  <span class="tk-k">let</span> s = <span class="tk-n">0</span>;
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> j = <span class="tk-n">0</span>; j &lt; ys.length; j++) {
+    cur.i = j;
+    s = s + ys[j]!;
+  }
+  <span class="tk-k">return</span> s;
+}
+
+<span class="tk-c">/** @requires safeInteger(cur.i) &amp;&amp; 0 &lt;= cur.i &amp;&amp; cur.i &lt; xs.length */</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> labelled(cur: <span class="tk-t">Cursor</span>, xs: number[]): number {
+  cur.label = <span class="tk-s">&quot;read&quot;</span>;
+  <span class="tk-k">return</span> xs[cur.i]!;
+}
+
+<span class="tk-c">/** @requires safeInteger(i) &amp;&amp; 0 &lt;= i &amp;&amp; i &lt; o.data.length */</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> counted(o: <span class="tk-t">Holder</span>, i: number): number {
+  o.count = i;
+  <span class="tk-k">return</span> o.data[i]!;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> filled(xs: number[]): number {
+  <span class="tk-k">let</span> s = <span class="tk-n">0</span>;
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; xs.length; i++) {
+    xs[i] = <span class="tk-n">1</span>;
+    s = s + xs[i]!;
+  }
+  <span class="tk-k">return</span> s;
+}
+
+<span class="tk-c">// pretext's `segmentAtLineBreaks`: a write at `j + 1`, an index the facts</span>
+<span class="tk-c">// bound below the length, keeps every length as a write at a binding does,</span>
+<span class="tk-c">// so the loop keeps `count === flags.length`, which bounds its reads.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> marked(flags: number[]): number {
+  <span class="tk-k">const</span> count = flags.length;
+  <span class="tk-c">/** @invariant safeInteger(j) &amp;&amp; safeInteger(count) &amp;&amp; j + 2 &lt;= count &amp;&amp; count === flags.length */</span>
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> j = count - <span class="tk-n">2</span>; j &gt;= <span class="tk-n">0</span>; j--) {
+    <span class="tk-k">if</span> ((flags[j]! &amp; <span class="tk-n">15</span>) === <span class="tk-n">8</span>) <span class="tk-k">continue</span>;
+    flags[j + <span class="tk-n">1</span>] = flags[j + <span class="tk-n">1</span>]! | <span class="tk-n">32</span>;
+  }
+  <span class="tk-k">return</span> count;
+}</pre></details></li><li><details><summary><code>invalid-facts-across-write-at-length</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">unverified</span> <span class="why">a write at the length grows the array; the read past the other array is refused</span></summary><pre class="code"><span class="tk-c">// A write at `j + 1` where `j` is the last index lands at the length and</span>
+<span class="tk-c">// grows the array, so `other.length === flags.length` does not survive it.</span>
+<span class="tk-c">// Under Node, `grown([1], [2])` reads `other[1]`, `undefined` at `number`,</span>
+<span class="tk-c">// and answers `undefined`.</span>
+
+<span class="tk-c">/** @requires other.length === flags.length &amp;&amp; 1 &lt;= flags.length &amp;&amp; flags.length &lt;= 4294967294 */</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> grown(flags: number[], other: number[]): number {
+  <span class="tk-k">const</span> j = flags.length - <span class="tk-n">1</span>;
+  flags[j + <span class="tk-n">1</span>] = <span class="tk-n">0</span>;
+  <span class="tk-k">return</span> other[flags.length - <span class="tk-n">1</span>]!;
+}</pre></details></li></ul>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">producer</span> <span class="chip">docs</span> <span class="chip">tests</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Measured</dt><dd>pretext segmentAtLineBreaks (fixpoint 454a84a plus its j-loop invariant and plain flags reads and writes), unverified → verified</dd><dt>Tests</dt><dd>run-cases facts-across 6 of 6, write 128 of 128, element 49 of 49, bound 88 of 88, index 88 of 88, guard 160 of 160, pretext 70 of 70, loop 58 of 58, array 217 of 217 · docs</dd></dl>
+<details><summary>5 files changed, 39 insertions(+), 3 deletions(-)</summary><pre class="code"> docs/PROGRAM-TYPING.md                                    |  5 +++--
+ ocaml-producer/linear_facts.ml                            |  9 +++++++++
+ pipeline/cases.mts                                        |  4 +++-
+ pipeline/examples/facts-across-writes.ts                  | 13 +++++++++++++
+ pipeline/examples/invalid-facts-across-write-at-length.ts | 11 +++++++++++</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-031b1deb9"><header><div><div class="sha">031b1deb9 · Cristiano Calcagno · Nov 08, 18:08</div><h3>Keep lengths and region facts across pushes and string index reads</h3></div><span class="pill ok">verified</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>Pretext's segmentAtLineBreaks builds starts, flags and texts by pushes in loops stating their lengths equal. The producer kept no length of another array across a push, dropped region facts across a push whose actual was not a binding, and took a string's index read for a heap read, so each loop invariant was refused, though Lean's growFirst, grownRegions and the read's empty effect admit them.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Typing <span class="target">producer, a push's facts</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-op">xs</span>.<span class="m-op">push</span><span class="m-text">(a) translated a linear fact by the append relation only where</span></span></div><div class="row"><span><span class="m-text">every other term was kept by any growth</span>.</span></div></div></div></figure><figure><figcaption>After</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">A length of an array a region fact keeps apart from xs is kept too</span>.</span></div></div></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Typing <span class="target">producer, region facts across a push</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">Kept only across a push whose actuals are bindings</span>.</span></div></div></div></figure><figure><figcaption>After</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">Kept across a push whose actuals write no heap</span>.</span></div></div></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Typing <span class="target">producer, heap-free expressions</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="rules"><div class="formulas"><div class="row"><span><var>s</var>[<var>k</var>] <span class="m-text">of a string wrote the heap as far as the producer knew</span>.</span></div></div></div></figure><figure><figcaption>After</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">It writes none where</span> <var>s</var> <span class="m-text">and</span> <var>k</var> <span class="m-text">write none</span>.</span></div></div></div></figure></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>push-keeps-apart-lengths</code> <span class="kind positive">positive</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">count === flags.length across texts.push</span></summary><pre class="code"><span class="tk-c">// pretext analysis.ts: segmentAtLineBreaks slices each segment's text once,</span>
+<span class="tk-c">// after its loop has pushed the segments' flags. A push grows only its</span>
+<span class="tk-c">// receiver's store, so `texts.push(…)` keeps the length of `flags`, an array</span>
+<span class="tk-c">// allocated apart from `texts` (PROGRAM-TYPING.md, &quot;Linear facts&quot;, the</span>
+<span class="tk-c">// append relation), and the two stay apart across a push of an actual that</span>
+<span class="tk-c">// writes no heap: the loop keeps `count === flags.length` and gains</span>
+<span class="tk-c">// `texts.length === j`.</span>
+
+<span class="tk-k">export</span> <span class="tk-k">type</span> <span class="tk-t">Analysis</span> = { texts: string[]; flags: number[] };
+
+<span class="tk-c">/** @ensures result.texts.length === result.flags.length */</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> segment(normalized: string): <span class="tk-t">Analysis</span> {
+  <span class="tk-k">const</span> flags: number[] = [];
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; normalized.length; i++)
+    flags.push(normalized.charCodeAt(i) &amp; <span class="tk-n">15</span>);
+  <span class="tk-k">const</span> count = flags.length;
+  <span class="tk-k">const</span> texts: string[] = [];
+  <span class="tk-c">/** @invariant safeInteger(j) &amp;&amp; safeInteger(count) &amp;&amp; 0 &lt;= j &amp;&amp; j &lt;= count &amp;&amp; texts.length === j &amp;&amp; count === flags.length */</span>
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> j = <span class="tk-n">0</span>; j &lt; count; j++) texts.push(normalized.slice(j, j + <span class="tk-n">1</span>));
+  <span class="tk-k">return</span> { texts, flags };
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> lastText(normalized: string): string {
+  <span class="tk-k">const</span> analysis = segment(normalized);
+  <span class="tk-k">const</span> n = analysis.flags.length;
+  <span class="tk-k">return</span> n === <span class="tk-n">0</span> ? <span class="tk-s">&quot;&quot;</span> : analysis.texts[n - <span class="tk-n">1</span>]!;
+}</pre></details></li><li><details><summary><code>invalid-push-keeps-apart-lengths-alias</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">unverified</span> <span class="why">a parameter may be the counted array</span></summary><pre class="code"><span class="tk-c">// A push into an array that may be the one whose length bounded the read:</span>
+<span class="tk-c">// a parameter no region fact keeps apart. `texts.push(…)` grows `flags` too</span>
+<span class="tk-c">// when the two are one array, so `count === flags.length` does not survive</span>
+<span class="tk-c">// and the read of `other` at `flags.length - 1` is refused. Under Node,</span>
+<span class="tk-c">// `fill(xs, xs, [5])` with `xs = [1]` reads `other[1]`, `undefined` at</span>
+<span class="tk-c">// `number`, and answers `undefined`.</span>
+
+<span class="tk-c">/** @requires other.length === flags.length &amp;&amp; 1 &lt;= flags.length */</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> fill(
+  texts: number[],
+  flags: number[],
+  other: number[],
+): number {
+  texts.push(flags.length);
+  <span class="tk-k">return</span> other[flags.length - <span class="tk-n">1</span>]!;
+}</pre></details></li><li><details><summary><code>string-index-keeps-facts</code> <span class="kind positive">positive</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">a loop testing text[i] ?? missing() keeps two lengths equal</span></summary><pre class="code"><span class="tk-c">// pretext analysis.ts: segmentAtLineBreaks tests `normalized[i] ?? missing()`</span>
+<span class="tk-c">// inside the loop that pushes its segments' starts and flags. An index read</span>
+<span class="tk-c">// of a string reads no location, so the statement keeps every fact over</span>
+<span class="tk-c">// lengths, and the loop keeps `starts.length === flags.length`.</span>
+
+<span class="tk-k">function</span> missing(): never {
+  <span class="tk-k">throw</span> <span class="tk-k">new</span> <span class="tk-t">RangeError</span>(<span class="tk-s">&quot;missing value&quot;</span>);
+}
+
+<span class="tk-c">/** @ensures result.starts.length === result.flags.length */</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> marks(text: string): { starts: number[]; flags: number[] } {
+  <span class="tk-k">const</span> starts: number[] = [];
+  <span class="tk-k">const</span> flags: number[] = [];
+  <span class="tk-c">/** @invariant starts.length === flags.length */</span>
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; text.length; i++) {
+    <span class="tk-k">if</span> ((text[i] ?? missing()) === <span class="tk-s">&quot; &quot;</span>) <span class="tk-k">continue</span>;
+    starts.push(i);
+    flags.push(text.charCodeAt(i) &amp; <span class="tk-n">15</span>);
+  }
+  <span class="tk-k">return</span> { starts, flags };
+}</pre></details></li><li><details><summary><code>invalid-string-index-keeps-facts-pop</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">unverified</span> <span class="why">the coalescing operand pops</span></summary><pre class="code"><span class="tk-c">// A coalescing read whose right operand pops an array: the string's index</span>
+<span class="tk-c">// read writes nothing, but the `pop` does, and `xs.length === ys.length`</span>
+<span class="tk-c">// does not survive the statement. Under Node, `lastAfter(&quot;&quot;, [1], [2])`</span>
+<span class="tk-c">// pops `ys` and reads `ys[0]`, `undefined` at `number`.</span>
+
+<span class="tk-c">/** @requires xs.length === ys.length &amp;&amp; 1 &lt;= xs.length */</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> lastAfter(text: string, xs: number[], ys: number[]): number {
+  <span class="tk-k">const</span> c = text[<span class="tk-n">0</span>] ?? <span class="tk-t">String</span>(ys.pop());
+  <span class="tk-k">return</span> c === <span class="tk-s">&quot;&quot;</span> ? <span class="tk-n">0</span> : ys[xs.length - <span class="tk-n">1</span>]!;
+}</pre></details></li></ul>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">producer</span> <span class="chip">docs</span> <span class="chip">tests</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd>run-cases push 28 of 28, string-index 4 of 4, facts-across 6 of 6, quantified-freshness 5 of 5, element 49 of 49, index 90 of 90, write 128 of 128, loop 58 of 58, pretext 70 of 70, array 217 of 217, string 80 of 80 · docs</dd></dl>
+<details><summary>9 files changed, 116 insertions(+), 20 deletions(-)</summary><pre class="code"> docs/FOOTPRINTS.md                                 | 19 ++++++++++-----
+ docs/PROGRAM-TYPING.md                             |  7 ++++--
+ ocaml-producer/linear_facts.ml                     | 28 +++++++++++++---------
+ ocaml-producer/proposal_flow.ml                    |  2 +-
+ pipeline/cases.mts                                 |  6 +++++
+ .../invalid-push-keeps-apart-lengths-alias.ts      | 16 +++++++++++++
+ .../invalid-string-index-keeps-facts-pop.ts        | 10 ++++++++
+ pipeline/examples/push-keeps-apart-lengths.ts      | 27 +++++++++++++++++++++
+ pipeline/examples/string-index-keeps-facts.ts      | 21 ++++++++++++++++</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-e7d796113"><header><div><div class="sha">e7d796113 · Cristiano Calcagno · Nov 08, 18:19</div><h3>Propose footprints that read module bindings and update fields as keeping stores</h3></div><span class="pill ok">verified</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>Pretext's measurement functions read module caches held in <code>let</code> bindings and count measurements in a cache's field (<code>measurement.state.segments++</code>). The producer took a module <code>let</code> binding's read and a field update for writes of anything, so each such function and every caller proposed the footprint changing any store, and no length survived a call of one.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Typing <span class="target">producer, a definition's proposed footprint</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">A read of a module <code class="m-code"><span class="tk-k">let</span></code> binding and an update <code class="m-code">x.f++</code> of a field</span></span></div><div class="row"><span><span class="m-text">proposed the top footprint</span>.</span></div></div></div></figure><figure><figcaption>After</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">The read changes no location; the update writes the field, as a field</span></span></div><div class="row"><span><span class="m-text">write does, within</span> {<span class="m-text">value</span><span class="m-rel">:</span> <span class="m-text">any, store</span><span class="m-rel">:</span> <span class="m-con">keep</span>}.</span></div></div></div></figure></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>module-cache-keeps-lengths</code> <span class="kind positive">positive</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">a caller's loop bound survives a cache counter's call</span></summary><pre class="code"><span class="tk-c">// pretext measurement.ts: addMetrics counts each measurement in a module</span>
+<span class="tk-c">// cache's field (`measurement.state.segments++`) and reads a module `let`</span>
+<span class="tk-c">// binding. Reading a module binding changes no location, and a field</span>
+<span class="tk-c">// update writes one location holding a number, so the function keeps every</span>
+<span class="tk-c">// store (`{value: any, store: keep}`) and a caller's loop keeps the length</span>
+<span class="tk-c">// its reads are bounded by.</span>
+
+<span class="tk-k">type</span> <span class="tk-t">State</span> = { segments: number };
+<span class="tk-k">let</span> state: <span class="tk-t">State</span> | <span class="tk-k">null</span> = <span class="tk-k">null</span>;
+
+<span class="tk-k">function</span> count(): number {
+  <span class="tk-k">if</span> (state === <span class="tk-k">null</span>) state = { segments: <span class="tk-n">0</span> };
+  <span class="tk-k">const</span> s: <span class="tk-t">State</span> = state;
+  s.segments++;
+  <span class="tk-k">return</span> s.segments;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> total(xs: number[]): number {
+  <span class="tk-k">let</span> t = <span class="tk-n">0</span>;
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; xs.length; i++) t += count() + xs[i]!;
+  <span class="tk-k">return</span> t;
+}</pre></details></li><li><details><summary><code>invalid-module-cache-keeps-lengths-pop</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">unverified</span> <span class="why">a callee pops the counted module array</span></summary><pre class="code"><span class="tk-c">// A module cache that is an array the caller counts: `count` pops it, so</span>
+<span class="tk-c">// the caller's bound does not survive the call. Under Node, `total()` with</span>
+<span class="tk-c">// `cache = [1, 2, 3]` reads `cache[1]` of `[1]` after two pops, `undefined`</span>
+<span class="tk-c">// at `number`, and answers `NaN`.</span>
+
+<span class="tk-k">const</span> cache: number[] = [<span class="tk-n">1</span>, <span class="tk-n">2</span>, <span class="tk-n">3</span>];
+
+<span class="tk-k">function</span> count(): number {
+  cache.pop();
+  <span class="tk-k">return</span> cache.length;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> total(): number {
+  <span class="tk-k">let</span> t = <span class="tk-n">0</span>;
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; cache.length; i++) t += count() + cache[i]!;
+  <span class="tk-k">return</span> t;
+}</pre></details></li></ul>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">producer</span> <span class="chip">docs</span> <span class="chip">tests</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd>run-cases module 54 of 54, cache 17 of 17, effect 72 of 72, footprint 29 of 29, closure 110 of 110, keeps 20 of 20, pretext 70 of 70 · docs</dd></dl>
+<details><summary>6 files changed, 52 insertions(+), 2 deletions(-)</summary><pre class="code"> docs/PROGRAM-TYPING.md                             |  8 +++++++-
+ ocaml-producer/proposal.ml                         |  2 +-
+ ocaml-producer/source.ml                           |  2 ++
+ pipeline/cases.mts                                 |  3 +++
+ .../invalid-module-cache-keeps-lengths-pop.ts      | 17 +++++++++++++++++
+ pipeline/examples/module-cache-keeps-lengths.ts    | 22 ++++++++++++++++++++++</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-6fc4ebbc0"><header><div><div class="sha">6fc4ebbc0 · Cristiano Calcagno · Nov 08, 19:20</div><h3>State footprints of span measurement, formatter locale, native regexes and module dictionaries</h3></div><span class="pill ok">verified</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>Pretext's measurement functions call a span measurement (readEmojiWidth), Blink's default locale (<code>new Intl.DateTimeFormat().resolvedOptions()</code>), regexes held in constants annotated <code>RegExp</code>, maps held in constants annotated <code>ReadonlyMap</code>, a locale tag cut by <code>lastIndexOf</code> and <code>slice</code>, and rule tables filled at a key of a module dictionary. Each proposed the footprint changing any store, so no array length survived a call of any measurement function from <code>measureAnalysis</code>'s loop.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Contract <span class="target">DOM span measurement</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p><code>createElement(&quot;span&quot;)</code>, an inline style's <code>cssText</code> and <code>setProperty</code>, <code>textContent</code>, <code>appendChild</code>, <code>removeChild</code> and <code>getBoundingClientRect</code> stated no effect.</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>Each is within the empty footprint on normal return. A program defines no custom element (<code>customElements</code> is no global the fragment reads), and the custom elements and legacy mutation-event listeners of the page, the code such an operation may run synchronously, are assumed to reach no location of the program.</p></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Contract <span class="target"><code>new Intl.DateTimeFormat()</code> and <code>resolvedOptions()</code></span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>No effect stated.</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>Within the empty footprint: construction at no arguments reads its options from an object with a <code>null</code> prototype, and <code>resolvedOptions</code> creates a fresh object by <code>CreateDataPropertyOrThrow</code>.</p></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Typing <span class="target">a <code>RegExp</code> annotation, <code>tools/regexp.mts</code></span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">The conservative structural regex, which any object of its members'</span></span></div><div class="row"><span><span class="m-text">types meets, its members stating no effect; <code class="m-code"><span class="tk-k">new</span> <span class="tk-t">RegExp</span></code> gave it too</span>.</span></div></div></div></figure><figure><figcaption>After</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">The native regex of the conservative shape, without</span></span></div><div class="row"><span><code class="m-code">[<span class="tk-t">Symbol</span>.matchAll]</code><span class="m-rel">:</span> <span class="m-text">it states the native mark, so no object of the</span></span></div><div class="row"><span><span class="m-text">program's meets it, and <code class="m-code">exec</code>, <code class="m-code">test</code>, <code class="m-code">[<span class="tk-t">Symbol</span>.match]</code> and</span></span></div><div class="row"><span><code class="m-code">[<span class="tk-t">Symbol</span>.replace]</code> <span class="m-text">at a string state</span> {<span class="m-text">value</span><span class="m-rel">:</span> <span class="m-text">any, store</span><span class="m-rel">:</span> <span class="m-con">keep</span>}.</span></div></div></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Typing <span class="target">constants</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">A constant annotated <code class="m-code"><span class="tk-t">RegExp</span></code> or <code class="m-code"><span class="tk-t">ReadonlyMap</span></code> was read at its</span></span></div><div class="row"><span><span class="m-text">annotation, and an imported constant holding a regex literal with no</span></span></div><div class="row"><span><span class="m-text">annotation was </span><span class="refused">refused</span>.</span></div></div></div></figure><figure><figcaption>After</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">A constant initialized by a regex literal or a construction of <code class="m-code"><span class="tk-t">Map</span></code> is</span></span></div><div class="row"><span><span class="m-text">read at its initializer's claim, as an unannotated constant is; a</span></span></div><div class="row"><span><span class="m-text">module importing a constant initialized by a regex literal reads it at</span></span></div><div class="row"><span><span class="m-text">the literal's native type</span>.</span></div></div></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Typing <span class="target">producer, a method call on a union of strings</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">A call on a receiver claimed at several string atoms</span> (<code class="m-code"><span class="tk-s">''</span> | string</code>)</span></div><div class="row"><span><span class="m-text">was dispatched on the union, at the unbounded footprint</span>.</span></div></div></div></figure><figure><figcaption>After</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">Each arm reads the member off</span> <code class="m-code"><span class="tk-t">String</span>.prototype</code><span class="m-rel">:</span> <span class="m-text">the call is not</span></span></div><div class="row"><span><span class="m-text">dispatched, and keeps its member's footprint</span>.</span></div></div></div></figure></div>
+<h4 class="change"><span class="act added">added</span>Rule <span class="target">Lean, <code>Purity.inspectTerm</code></span></h4><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">A key's record (<code class="m-code">makeKey</code>), which converts a primitive key and steps</span></span></div><div class="row"><span><span class="m-text">to the allocation of the key's record, is an inspection</span></span></div><div class="row"><span>(<code class="m-code">inspect_step</code>). <span class="m-text">The producer proposes a write at a string key of a</span></span></div><div class="row"><span><span class="m-text">module binding holding a record, which lowers to a key's record, a</span></span></div><div class="row"><span><span class="m-text">merge and the binding's cell write, within</span> {<span class="m-text">value</span><span class="m-rel">:</span> <span class="m-text">any, store</span><span class="m-rel">:</span> <span class="m-con">keep</span>}.</span></div></div></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>dom-span-keeps-lengths</code> <span class="kind positive">positive</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">a loop's bound survives a span measurement</span></summary><pre class="code"><span class="tk-c">// A span measured in the page as pretext's readEmojiWidth and readWidthIn</span>
+<span class="tk-c">// measure one: its creation, its inline style's writes, its text, its</span>
+<span class="tk-c">// insertion and removal and its rectangle run no code of the program's and</span>
+<span class="tk-c">// write nothing the model holds, so a loop's bound on an array holds across</span>
+<span class="tk-c">// each measurement.</span>
+<span class="tk-k">function</span> readWidthIn(parent: <span class="tk-t">Element</span>, span: <span class="tk-t">Element</span>): number {
+  parent.appendChild(span)
+  <span class="tk-k">const</span> drawn = span.getBoundingClientRect().width
+  <span class="tk-k">const</span> width = parseFloat(getComputedStyle(span).width)
+  parent.removeChild(span)
+  <span class="tk-k">return</span> <span class="tk-t">Math</span>.abs(drawn - width) &lt;= width * 1e-<span class="tk-n">5</span> ? drawn : width
+}
+
+<span class="tk-k">function</span> measure(font: string): number {
+  <span class="tk-k">const</span> body = document.body
+  <span class="tk-k">if</span> (body === <span class="tk-k">null</span>) <span class="tk-k">return</span> <span class="tk-t">NaN</span>
+  <span class="tk-k">const</span> span = document.createElement(<span class="tk-s">'span'</span>)
+  <span class="tk-k">const</span> style = span.style
+  <span class="tk-k">if</span> (style === <span class="tk-k">undefined</span>) <span class="tk-k">throw</span> <span class="tk-k">new</span> <span class="tk-t">RangeError</span>(<span class="tk-s">'missing inline style'</span>)
+  style.cssText = <span class="tk-s">'display:inline-block!important'</span>
+  style.setProperty(<span class="tk-s">'font'</span>, font, <span class="tk-s">'important'</span>)
+  span.textContent = <span class="tk-s">'\u{1F600}'</span>
+  <span class="tk-k">return</span> readWidthIn(body, span)
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> total(fonts: string[]): number {
+  <span class="tk-k">let</span> sum = <span class="tk-n">0</span>
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; fonts.length; i++) sum += measure(fonts[i]!) + fonts[i]!.length
+  <span class="tk-k">return</span> sum
+}</pre></details></li><li><details><summary><code>invalid-dom-custom-element</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">unsupported</span> <span class="why">a custom element definition is refused</span></summary><pre class="code"><span class="tk-c">// The DOM operations a span is measured with run no code of the program's: a</span>
+<span class="tk-c">// program defines no custom element, whose reactions an insertion would run.</span>
+<span class="tk-c">// A definition is refused. Under Node with stand-ins, the element's</span>
+<span class="tk-c">// `connectedCallback` empties the array its caller then reads.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> first(parent: <span class="tk-t">Element</span>): number {
+  <span class="tk-k">const</span> seen: number[] = [<span class="tk-n">1</span>]
+  customElements.define(<span class="tk-s">'x-pop'</span>, <span class="tk-k">class</span> <span class="tk-k">extends</span> <span class="tk-t">HTMLElement</span> {
+    connectedCallback(): <span class="tk-k">void</span> { seen.pop() }
+  })
+  parent.appendChild(document.createElement(<span class="tk-s">'span'</span>))
+  <span class="tk-k">return</span> seen[<span class="tk-n">0</span>]!
+}</pre></details></li><li><details><summary><code>pretext-native-constants</code> <span class="kind positive">positive</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">annotated regex and map constants keep stores</span></summary><pre class="code"><span class="tk-c">// Pretext's measurement.ts and line-breaks.ts: constants annotated</span>
+<span class="tk-c">// `RegExp` and `ReadonlyMap` whose initializers make a regex literal and a</span>
+<span class="tk-c">// `Map`, read at the native objects they hold, and a locale tag cut down by</span>
+<span class="tk-c">// `lastIndexOf` and `slice` while a lookup misses. Each call is within a</span>
+<span class="tk-c">// footprint keeping stores, so a loop's `tags[i]!` keeps its bound across</span>
+<span class="tk-c">// them.</span>
+<span class="tk-k">const</span> kanaPairRe: <span class="tk-t">RegExp</span> = /[ぁ-ヿ]{<span class="tk-n">2</span>}/
+<span class="tk-k">const</span> families: { [tag: string]: <span class="tk-k">readonly</span> number[] } = { <span class="tk-s">'zh'</span>: [<span class="tk-n">1</span>, <span class="tk-n">2</span>], <span class="tk-s">'ja'</span>: [<span class="tk-n">3</span>] }
+<span class="tk-k">const</span> familyTable: <span class="tk-t">ReadonlyMap</span>&lt;string, <span class="tk-k">readonly</span> number[]&gt; = <span class="tk-k">new</span> <span class="tk-t">Map</span>(<span class="tk-t">Object</span>.entries(families))
+
+<span class="tk-k">function</span> familiesOf(tag: string): number {
+  <span class="tk-k">let</span> row = familyTable.<span class="tk-k">get</span>(tag)
+  <span class="tk-k">while</span> (row === <span class="tk-k">undefined</span>) {
+    tag = tag.slice(<span class="tk-n">0</span>, <span class="tk-t">Math</span>.max(<span class="tk-n">0</span>, tag.lastIndexOf(<span class="tk-s">'-'</span>)))
+    <span class="tk-k">if</span> (tag === <span class="tk-s">''</span>) <span class="tk-k">return</span> <span class="tk-n">0</span>
+    row = familyTable.<span class="tk-k">get</span>(tag)
+  }
+  <span class="tk-k">return</span> row.length
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> count(tags: string[]): number {
+  <span class="tk-k">let</span> sum = <span class="tk-n">0</span>
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; tags.length; i++) {
+    sum += familiesOf(tags[i]!) + (kanaPairRe.test(tags[i]!) ? <span class="tk-n">1</span> : <span class="tk-n">0</span>)
+    sum += tags[i]!.length
+  }
+  <span class="tk-k">return</span> sum
+}</pre></details></li><li><details><summary><code>invalid-native-constant-let</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">unverified</span> <span class="why">a reassignable <code>let</code> keeps its annotation</span></summary><pre class="code"><span class="tk-c">// A `let` annotated `ReadonlyMap` and initialized by a `Map` is read at its</span>
+<span class="tk-c">// annotation, which a later assignment may meet with another object: its</span>
+<span class="tk-c">// `get` may change any store, so the bound on `xs` is lost past the call.</span>
+<span class="tk-c">// Under Node the other map's `get` empties the array, and `xs[0]!` reads</span>
+<span class="tk-c">// `undefined`.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> first(xs: number[], other: <span class="tk-t">ReadonlyMap</span>&lt;string, number&gt;): number {
+  <span class="tk-k">let</span> table: <span class="tk-t">ReadonlyMap</span>&lt;string, number&gt; = <span class="tk-k">new</span> <span class="tk-t">Map</span>()
+  <span class="tk-k">if</span> (xs.length &gt; <span class="tk-n">5</span>) table = other
+  <span class="tk-k">if</span> (xs.length === <span class="tk-n">0</span>) <span class="tk-k">return</span> <span class="tk-n">0</span>
+  table.<span class="tk-k">get</span>(<span class="tk-s">'a'</span>)
+  <span class="tk-k">return</span> xs[<span class="tk-n">0</span>]!
+}</pre></details></li><li><details><summary><code>invalid-regexp-annotation-object</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">unverified</span> <span class="why">an object asserted to <code>RegExp</code> is refused</span></summary><pre class="code"><span class="tk-c">// A `RegExp` annotation is a native regex: an object of the program's that</span>
+<span class="tk-c">// states the members is none, so passing one where a `RegExp` is expected is</span>
+<span class="tk-c">// refused. Its `exec` answers what it likes, here a number where a match's</span>
+<span class="tk-c">// string is read.</span>
+<span class="tk-k">type</span> <span class="tk-t">Matcher</span> = { exec(s: string): unknown; test(s: string): boolean };
+
+<span class="tk-k">function</span> first(re: <span class="tk-t">RegExp</span>, s: string): string {
+  <span class="tk-k">const</span> m = re.exec(s);
+  <span class="tk-k">return</span> m === <span class="tk-k">null</span> ? <span class="tk-s">&quot;&quot;</span> : m[<span class="tk-n">0</span>];
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> run(m: <span class="tk-t">Matcher</span>, s: string): string {
+  <span class="tk-k">return</span> first(m <span class="tk-k">as</span> <span class="tk-t">RegExp</span>, s);
+}</pre></details></li><li><details><summary><code>invalid-regexp-forged-mark</code> <span class="kind negative">negative</span> <span class="why">removed the annotation itself states the mark</span></summary><pre class="code"><span class="tk-c">// A source symbol spelled as the native mark is a key of its own: the mark's</span>
+<span class="tk-c">// symbol is synthetic, declared by no source, so this value, which states</span>
+<span class="tk-c">// every member `matchAll` dispatches to, is no native regex, and `matchAll`</span>
+<span class="tk-c">// of it is refused.</span>
+<span class="tk-k">declare</span> <span class="tk-k">const</span> <span class="tk-t">RegExpMatcher</span>: <span class="tk-k">unique</span> symbol;
+<span class="tk-k">type</span> <span class="tk-t">Forged</span> = <span class="tk-t">RegExp</span> &amp; {
+  <span class="tk-k">readonly</span> [<span class="tk-t">RegExpMatcher</span>]: <span class="tk-k">undefined</span>;
+  [<span class="tk-t">Symbol</span>.matchAll](s: string): <span class="tk-t">Iterator</span>&lt;<span class="tk-t">RegExpExecArray</span>&gt;;
+};
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> matches(re: <span class="tk-t">Forged</span>, s: string): boolean {
+  <span class="tk-k">const</span> all = <mark>s.matchAll(re)</mark>;
+  <span class="tk-k">return</span> s.length &gt; <span class="tk-n">0</span>;
+}</pre></details></li><li><details><summary><code>invalid-map-structural-replace</code> <span class="kind negative">negative</span> <span class="was"></span> <span class="arrow">→</span> <span class="now">map-annotated-regexp-replace</span> <span class="why">positive a <code>RegExp</code> parameter is native</span></summary><pre class="code"><span class="tk-c">// A `RegExp` parameter may be any object of its members' types, whose</span>
+<span class="tk-c">// `[Symbol.replace]` may run any code, here a `pop` of the array being</span>
+<span class="tk-c">// mapped: the member states no footprint, so neither does the dispatch at</span>
+<span class="tk-c">// it, and `map`'s result may hold holes.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> rewrite(xs: string[], re: <span class="tk-t">RegExp</span>): string[] {
+  <span class="tk-k">return</span> xs.map((s) =&gt; s.replace(re, <span class="tk-s">&quot;x&quot;</span>));
+}</pre></details></li><li><details><summary><code>blocker-pretext-import-regex-constant</code> <span class="kind positive">positive</span> <span class="was">gap</span> <span class="arrow">→</span> <span class="now">positive</span> <span class="why">the importer reads the literal's native type</span></summary><pre class="code"><span class="tk-c">// Pretext (github.com/chenglou/pretext at 0d102a5c, src/, census by unit):</span>
+<span class="tk-c">// prepare.ts#addIdeographicSpaceHangs, prepare.ts#addKanaKerning,</span>
+<span class="tk-c">// prepare.ts#getJoinedNarrowing, prepare.ts#getTailKerning,</span>
+<span class="tk-c">// prepare.ts#getTextSegmentWidth, prepare.ts#measureAnalysis.</span>
+<span class="tk-c">// An imported constant holding a regular expression literal, with no</span>
+<span class="tk-c">// annotation: the importer reads it at the literal's native type, as its</span>
+<span class="tk-c">// module reads it.</span>
+<span class="tk-k">import</span> { kanaPairRe } <span class="tk-k">from</span> <span class="tk-s">&quot;../pretext-project/measurement.ts&quot;</span>;
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> hasKanaPair(segment: string): boolean {
+  <span class="tk-k">return</span> kanaPairRe.test(segment);
+}</pre></details></li><li><details><summary><code>module-dictionary-keeps-lengths</code> <span class="kind positive">positive</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">a module dictionary filled at a key keeps stores</span></summary><pre class="code"><span class="tk-c">// Pretext's graphemes.ts and line-breaks.ts: a module dictionary of rules,</span>
+<span class="tk-c">// filled at a table's first use (`graphemeRules[table] ??= …`,</span>
+<span class="tk-c">// `breakRules[table] = …`). The write at a string key copies the dictionary</span>
+<span class="tk-c">// with the key and rebinds the module's binding, a cell holding a value, so</span>
+<span class="tk-c">// each lookup is within {value: any, store: keep} and a caller's loop keeps</span>
+<span class="tk-c">// its bound across it.</span>
+<span class="tk-k">type</span> <span class="tk-t">Table</span> = <span class="tk-s">'a'</span> | <span class="tk-s">'b'</span>
+<span class="tk-k">type</span> <span class="tk-t">Rules</span> = { n: number }
+<span class="tk-k">const</span> cache: <span class="tk-t">Partial</span>&lt;<span class="tk-t">Record</span>&lt;<span class="tk-t">Table</span>, <span class="tk-t">Rules</span>&gt;&gt; = {}
+
+<span class="tk-k">function</span> parse(t: <span class="tk-t">Table</span>): <span class="tk-t">Rules</span> {
+  <span class="tk-k">return</span> { n: t.length }
+}
+
+<span class="tk-k">function</span> <span class="tk-k">get</span>(t: <span class="tk-t">Table</span>): <span class="tk-t">Rules</span> {
+  <span class="tk-k">return</span> cache[t] ?? (cache[t] = parse(t))
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> total(ts: <span class="tk-t">Table</span>[]): number {
+  <span class="tk-k">let</span> sum = <span class="tk-n">0</span>
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; ts.length; i++) sum += <span class="tk-k">get</span>(ts[i]!).n + ts[i]!.length
+  <span class="tk-k">return</span> sum
+}</pre></details></li><li><details><summary><code>invalid-module-dictionary-keeps-lengths</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">unverified</span> <span class="why">a lookup beside a pop</span></summary><pre class="code"><span class="tk-c">// A module dictionary filled at a key, beside a pop of a module array the</span>
+<span class="tk-c">// caller reads: the lookup changes a store, so past its call the caller's</span>
+<span class="tk-c">// bound is lost. Under Node the second call empties `seen`, and `seen[0]!`</span>
+<span class="tk-c">// reads `undefined`.</span>
+<span class="tk-k">type</span> <span class="tk-t">Table</span> = <span class="tk-s">'a'</span> | <span class="tk-s">'b'</span>
+<span class="tk-k">const</span> cache: <span class="tk-t">Partial</span>&lt;<span class="tk-t">Record</span>&lt;<span class="tk-t">Table</span>, number&gt;&gt; = {}
+<span class="tk-k">const</span> seen: number[] = [<span class="tk-n">1</span>, <span class="tk-n">2</span>]
+
+<span class="tk-k">function</span> <span class="tk-k">get</span>(t: <span class="tk-t">Table</span>): number {
+  seen.pop()
+  <span class="tk-k">return</span> cache[t] ?? (cache[t] = t.length)
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> first(t: <span class="tk-t">Table</span>): number {
+  <span class="tk-k">if</span> (seen.length === <span class="tk-n">0</span>) <span class="tk-k">return</span> <span class="tk-n">0</span>
+  <span class="tk-k">get</span>(t)
+  <span class="tk-k">return</span> seen[<span class="tk-n">0</span>]!
+}</pre></details></li></ul>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">lean-rules</span> <span class="chip">lean-proofs</span> <span class="chip">producer</span> <span class="chip">parser</span> <span class="chip strong">trust</span> <span class="chip">docs</span> <span class="chip">tests</span></dd><dt>Trust</dt><dd><span class="trust">A span's creation, inline style writes, text, insertion, removal and rectangle, and `new Intl.DateTimeFormat()` with its `resolvedOptions()`, write no location the program holds on normal return; the page's custom elements and legacy mutation-event listeners reach none.</span></dd><dt>Tests</dt><dd><span class="test pos">dom-span-keeps-lengths</span> <span class="test neg">invalid-dom-custom-element</span> <span class="test pos">pretext-native-constants</span> <span class="test neg">invalid-native-constant-let</span> <span class="test neg">invalid-regexp-annotation-object</span> <span class="test pos">map-annotated-regexp-replace</span> <span class="test pos">blocker-pretext-import-regex-constant</span> <span class="test pos">module-dictionary-keeps-lengths</span> <span class="test neg">invalid-module-dictionary-keeps-lengths</span></dd></dl>
+<details><summary>30 files changed, 483 insertions(+), 231 deletions(-)</summary><pre class="code"> docs/DESIGN.md                                     |   2 +-
+ docs/FOOTPRINTS.md                                 |  14 +-
+ docs/SOURCE-CONTRACTS.md                           |  91 +++++++----
+ docs/SOURCE-ELABORATION.md                         |   8 +-
+ docs/SOURCE-FRAGMENT.md                            |   1 +
+ lean/Verification/Semantics/Purity.lean            |  14 +-
+ ocaml-producer/proposal.ml                         |  15 +-
+ ocaml-producer/source.ml                           |  25 +--
+ ocaml-producer/type_queries.ml                     |   5 +-
+ pipeline/cases.mts                                 |  24 ++-
+ .../blocker-pretext-import-regex-constant.ts       |   8 +-
+ pipeline/examples/dom-span-keeps-lengths.ts        |  30 ++++
+ pipeline/examples/invalid-dom-custom-element.ts    |  12 ++
+ .../examples/invalid-map-structural-replace.ts     |   7 -
+ .../invalid-module-dictionary-keeps-lengths.ts     |  18 +++
+ pipeline/examples/invalid-native-constant-let.ts   |  12 ++
+ .../examples/invalid-regexp-annotation-object.ts   |  14 ++
+ pipeline/examples/invalid-regexp-forged-mark.ts    |  14 --
+ .../examples/invalid-regexp-structural-matchall.ts |   5 +-
+ pipeline/examples/map-annotated-regexp-replace.ts  |   6 +
+ .../examples/module-dictionary-keeps-lengths.ts    |  23 +++
+ pipeline/examples/pretext-native-constants.ts      |  28 ++++
+ pipeline/examples/regexp-structural.ts             |   2 +-
+ tests/node-runs.mts                                |  18 ++-
+ tools/declaration-graph.mts                        | 179 +++++++++++----------
+ tools/fragment-statements.mts                      |  14 +-
+ tools/intrinsics.mts                               |  11 +-
+ tools/library-globals.mts                          |   7 +-
+ tools/library-types.mts                            |  41 +++--
+ tools/regexp.mts                                   |  66 ++++----</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-64dce37bd"><header><div><div class="sha">64dce37bd · Cristiano Calcagno · Nov 08, 19:47</div><h3>Propose and certify the footprint of a returned closure</h3></div><span class="pill ok">verified</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>Pretext's <code>lazyRegExp(source, flags): () =&gt; RegExp</code> returns a closure caching its regex in a captured binding. Its callers read the result at the annotation's arrow, which states no effect, so <code>PROPERTY_TESTS[p]()</code> in <code>hasProperty</code> and <code>leadingCombiningMarkRe()</code> in <code>measureAnalysis</code> changed any store, and no array length survived a call of <code>hasProperty</code> from the measurement functions.</p></div>
+<h4 class="change"><span class="act added">added</span>Rule <span class="target">returned-effect, SOURCE-ELABORATION.md &quot;Returned closures&quot;</span></h4><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">A declaration whose result annotation is one function type, its</span></span></div><div class="row"><span><span class="m-text">signatures stating no effect and taking fixed actuals, may claim a</span></span></div><div class="row"><span><span class="m-text">footprint for the function it returns</span>. <span class="m-text">Its unit is checked at the</span></span></div><div class="row"><span><span class="m-text">annotation's result with each signature stating that footprint</span></span></div><div class="row"><span>(<code class="m-code">resultWithFootprint</code>), <span class="m-text">so its returns establish it; the module's</span></span></div><div class="row"><span><span class="m-text">other units read the declaration at that result (<code class="m-code">moduleArrow</code>), and an</span></span></div><div class="row"><span><span class="m-text">importer reads a certified import at its unit's claim</span> (<code class="m-code">importedArrow</code>).</span></div></div></div>
+<h4 class="change"><span class="act modified">modified</span>Wire <span class="target">claims, function</span></h4><div class="prose"><p><code>resultFootprint</code>: the closed footprint proposed for the returned function's signatures, <code>{value: any, store: any}</code> where none is proposed. Qualified reads carry it to the importer's producer.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Typing <span class="target">producer</span></h4><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">The returned footprint is proposed at the least fixpoint over the</span></span></div><div class="row"><span><span class="m-text">module, beside the declarations' own</span><span class="m-rel">:</span> <span class="m-text">assumed empty, raised each round</span></span></div><div class="row"><span><span class="m-text">to the join of the footprints its returns' claims state</span>. <span class="m-text">The claimed</span></span></div><div class="row"><span><span class="m-text">result states it</span>.</span></div></div></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>returned-closure-footprint</code> <span class="kind positive">positive</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">a closure returned by a factory, held by a constant or an array element, keeps a loop's bound</span></summary><pre class="code"><span class="tk-c">// pretext's `lazyRegExp`: a factory returns a closure building its regular</span>
+<span class="tk-c">// expression once, cached in a captured binding. The factory's claim states</span>
+<span class="tk-c">// the returned closure's footprint, which its unit's return establishes, so</span>
+<span class="tk-c">// a call of a closure it returned, held by a module constant or by an</span>
+<span class="tk-c">// element of a module array, keeps the facts a call at that footprint</span>
+<span class="tk-c">// keeps: the loop's reads below its bound after the calls are bounded.</span>
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> lazyRegExp(source: string, flags: string): () =&gt; <span class="tk-t">RegExp</span> {
+  <span class="tk-k">let</span> built: <span class="tk-t">RegExp</span> | <span class="tk-k">null</span> = <span class="tk-k">null</span>;
+  <span class="tk-k">return</span> () =&gt; built ??= <span class="tk-k">new</span> <span class="tk-t">RegExp</span>(source, flags);
+}
+
+<span class="tk-k">const</span> letter = lazyRegExp(<span class="tk-s">&quot;^\\p{L}$&quot;</span>, <span class="tk-s">&quot;u&quot;</span>);
+<span class="tk-k">const</span> <span class="tk-t">TESTS</span> = [lazyRegExp(<span class="tk-s">&quot;^\\p{M}$&quot;</span>, <span class="tk-s">&quot;u&quot;</span>), lazyRegExp(<span class="tk-s">&quot;^\\p{N}$&quot;</span>, <span class="tk-s">&quot;u&quot;</span>)];
+
+<span class="tk-k">let</span> marked: number = <span class="tk-n">0</span>;
+
+<span class="tk-c">/** Counts a text having the property: within `{value: any, store: keep}`. */</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> mark(text: string, property: number): <span class="tk-k">void</span> {
+  <span class="tk-k">if</span> ((<span class="tk-t">TESTS</span>[property] ?? letter)().test(text)) marked += <span class="tk-n">1</span>;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> countLetters(texts: string[]): number {
+  <span class="tk-k">let</span> count = <span class="tk-n">0</span>;
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; texts.length; i++) {
+    <span class="tk-k">const</span> re = letter();
+    <span class="tk-k">if</span> (re.test(texts[i]!)) count += <span class="tk-n">1</span>;
+    mark(texts[i]!, <span class="tk-n">1</span>);
+    count += texts[i]!.length;
+  }
+  <span class="tk-k">return</span> count + marked;
+}</pre></details></li><li><details><summary><code>invalid-returned-closure-footprint</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">unverified</span> <span class="why">a returned closure popping its array drops the bound; Node reads <code>undefined</code></span></summary><pre class="code"><span class="tk-c">// A factory returning a closure that pops the array it captured: the</span>
+<span class="tk-c">// closure's footprint changes a store, so the factory's claim states none</span>
+<span class="tk-c">// for it, and a call of the closure drops the loop's bound. The read at `i`</span>
+<span class="tk-c">// after the call is refused. Run under Node, it reads `undefined`.</span>
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> popper(xs: string[]): () =&gt; number {
+  <span class="tk-k">return</span> () =&gt; {
+    xs.pop();
+    <span class="tk-k">return</span> xs.length;
+  };
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> lastRead(texts: string[]): string {
+  <span class="tk-k">const</span> pop = popper(texts);
+  <span class="tk-k">let</span> read = <span class="tk-s">&quot;&quot;</span>;
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; texts.length; i++) {
+    pop();
+    read = texts[i]!;
+  }
+  <span class="tk-k">return</span> read;
+}</pre></details></li></ul>
+<h4 class="change">Soundness</h4><div class="prose"><p>The unit's ordinary check at the stronger result establishes the footprint at every return; <code>checkUnitJson_safe</code>'s statement is unchanged. That each declaration meets the signature the others read it at is module composition, as for its own footprint. A forged returned footprint is refused where the claimed return type is compared with the annotation, and, forged on the result's row too, at the closure's pop, in search and in checking.</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">lean-rules</span> <span class="chip">producer</span> <span class="chip strong">wire</span> <span class="chip">pipeline</span> <span class="chip">docs</span> <span class="chip">tests</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd><span class="test pos">returned-closure-footprint</span> <span class="test neg">invalid-returned-closure-footprint</span> <span class="test forged">returned footprint at the return type and at the closure</span></dd></dl>
+<details><summary>23 files changed, 318 insertions(+), 62 deletions(-)</summary><pre class="code"> docs/SOURCE-CLAIMS.md                              |  1 +
+ docs/SOURCE-ELABORATION.md                         | 33 ++++++++++++++
+ lean/Verification/Source/Claims/Extraction.lean    | 28 ++++++++----
+ lean/Verification/Source/Claims/Imports.lean       | 17 ++++---
+ lean/Verification/Source/Claims/Json.lean          |  8 ++--
+ lean/Verification/Source/Claims/Wire.lean          |  7 ++-
+ lean/Verification/Source/Lowering/Types.lean       | 31 +++++++++++++
+ lean/Verification/Source/SourceClaims.lean         |  4 ++
+ lean/Verification/Source/SourceExtraction.lean     |  7 ++-
+ ocaml-producer/analysis_pass.ml                    |  2 +-
+ ocaml-producer/claims.ml                           |  5 +-
+ ocaml-producer/producer.ml                         |  8 ++--
+ ocaml-producer/proposal.ml                         | 53 +++++++++++++++++-----
+ ocaml-producer/proposal_types.ml                   |  6 ++-
+ ocaml-producer/semantic.ml                         | 20 ++++++++
+ ocaml-producer/source.ml                           | 29 ++++++------
+ pipeline/cases.mts                                 |  3 ++
+ .../examples/invalid-returned-closure-footprint.ts | 21 +++++++++
+ pipeline/examples/returned-closure-footprint.ts    | 32 +++++++++++++
+ pipeline/test.mts                                  | 40 ++++++++++++++++
+ pipeline/verify-source.mts                         | 12 +++--
+ tests/node-runs.mts                                |  3 ++
+ tools/source-claims.mts                            | 10 +++-</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-8a6bbd845"><header><div><div class="sha">8a6bbd845 · Cristiano Calcagno · Nov 08, 19:59</div><h3>Bound a regex replacement by its callback's footprint; keep facts across calls changing values</h3></div><span class="pill ok">verified</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>Pretext's <code>getCanvasFont</code> calls a string's <code>replace</code> at a regex literal and a callback reading an array. The regex's <code>[Symbol.replace]</code> at a callback stated no footprint, so <code>getCanvasFont</code> changed any store, and with it every measurement function calling it; no array length survived a measurement call in <code>measureAnalysis</code>'s loop. Besides, a statement whose heap writes are calls within <code>{value: any, store: keep}</code> (a regex test, a cache write) dropped every fact, though Lean's call rule keeps the lengths such a call keeps.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Contract <span class="target">a native regex's <code>[Symbol.replace]</code> at a callback</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>(string, replacer) ⇒ string, stating no footprint.</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>(string, replacer within {value: any, store: keep}) ⇒_{value: any, store: keep} string ∧ (string, replacer) ⇒ string. The regex is a literal written at the call; the call writes its <code>lastIndex</code>, a location holding a number, and the callback is called within its type's footprint.</p></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Typing <span class="target">producer</span></h4><div class="rules"><div class="formulas"><div class="row"><span>- <span class="m-text">The binder a <code class="m-code">%<span class="tk-t">Dispatch</span>:replace%</code> call infers from the regex's member</span></span></div><div class="row cont"><span><span class="m-text">is, of the callback overloads of the call's arity, the last within the</span></span></div><div class="row cont"><span><span class="m-text">dispatch signature's effect, or the first where none is</span>.</span></div><div class="row"><span>- <span class="m-text">A closure literal is offered a longer signature stating a footprint</span></span></div><div class="row cont"><span><span class="m-text">its own covers, beside one stating its own effect</span>.</span></div><div class="row"><span>- <span class="m-text">A statement whose heap writes are calls within</span> `{<span class="m-text">value</span><span class="m-rel">:</span> <span class="m-text">any, store</span><span class="m-rel">:</span></span></div><div class="row cont"><span><span class="m-text">keep</span>}<code class="m-code"> keeps the facts such a call keeps (</code><span class="m-con">Changes</span>.<span class="m-op">ofClosed</span>`); <span class="m-text">it kept</span></span></div><div class="row cont"><span><span class="m-text">them only within</span> <code class="m-code">{value: scalar, store: keep}</code>.</span></div><div class="row"><span>- <span class="m-text">A push whose actual reads the receiver no longer appends to the</span></span></div><div class="row cont"><span><span class="m-text">receiver's length fact (Lean's append relation does not give it)</span>.</span></div></div></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>regexp-replace-callback-keeps-lengths</code> <span class="kind positive">positive</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">a loop calling a font rewrite with a pure callback keeps its bound</span></summary><pre class="code"><span class="tk-c">// pretext's `getCanvasFont`: a string's `replace` at a regex literal and a</span>
+<span class="tk-c">// callback reading an array. The callback keeps every store, so the call is</span>
+<span class="tk-c">// within `{value: any, store: keep}`, the regex's `lastIndex` its one write,</span>
+<span class="tk-c">// and a loop calling the function keeps its bound.</span>
+
+<span class="tk-k">const</span> keywords: <span class="tk-k">readonly</span> string[] = [<span class="tk-s">&quot;serif&quot;</span>, <span class="tk-s">&quot;monospace&quot;</span>];
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> canvasFont(font: string, families: <span class="tk-k">readonly</span> string[]): string {
+  <span class="tk-k">return</span> font.replace(/(serif|monospace)/g, (item: string, keyword: string) =&gt; {
+    <span class="tk-k">const</span> named = families[keywords.indexOf(keyword)] ?? <span class="tk-s">&quot;&quot;</span>;
+    <span class="tk-k">return</span> named === <span class="tk-s">&quot;&quot;</span> ? item : named;
+  });
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> fonts(texts: string[], families: <span class="tk-k">readonly</span> string[]): number {
+  <span class="tk-k">let</span> total = <span class="tk-n">0</span>;
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; texts.length; i++) {
+    total += canvasFont(texts[i]!, families).length;
+    total += texts[i]!.length;
+  }
+  <span class="tk-k">return</span> total;
+}</pre></details></li><li><details><summary><code>invalid-regexp-replace-callback-pops</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">unverified</span> <span class="why">a callback popping the loop's array drops the bound; Node reads <code>undefined</code></span></summary><pre class="code"><span class="tk-c">// A `replace` callback popping the array the caller's loop reads: the</span>
+<span class="tk-c">// callback changes a store, so the call states no footprint, and the read</span>
+<span class="tk-c">// below the loop's bound after it is refused. Run under Node, it reads</span>
+<span class="tk-c">// `undefined`.</span>
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> popping(font: string, texts: string[]): string {
+  <span class="tk-k">return</span> font.replace(/x/g, (item: string) =&gt; {
+    texts.pop();
+    <span class="tk-k">return</span> item;
+  });
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> lastRead(texts: string[]): string {
+  <span class="tk-k">let</span> read = <span class="tk-s">&quot;&quot;</span>;
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; texts.length; i++) {
+    popping(<span class="tk-s">&quot;x&quot;</span>, texts);
+    read = texts[i]!;
+  }
+  <span class="tk-k">return</span> read;
+}</pre></details></li></ul>
+<h4 class="change">Soundness</h4><div class="prose"><p>The overload's footprint is an audited native contract (trust below). The producer changes propose claims that Lean checks unchanged: each call node at its selected signature, the closure's code at the offered row.</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">producer</span> <span class="chip">contracts</span> <span class="chip">docs</span> <span class="chip">tests</span></dd><dt>Trust</dt><dd><span class="trust">A native regex literal's `[Symbol.replace]` called with a callback within {value: any, store: keep} changes, beside what the callback changes, only the literal's `lastIndex`, a number.</span></dd><dt>Tests</dt><dd><span class="test pos">regexp-replace-callback-keeps-lengths</span> <span class="test neg">invalid-regexp-replace-callback-pops</span></dd></dl>
+<details><summary>8 files changed, 84 insertions(+), 18 deletions(-)</summary><pre class="code"> docs/SOURCE-CONTRACTS.md                           |  3 ++-
+ ocaml-producer/expression_calls.ml                 | 30 ++++++++++++++--------
+ ocaml-producer/linear_facts.ml                     | 13 +++++++---
+ pipeline/cases.mts                                 |  3 +++
+ .../invalid-regexp-replace-callback-pops.ts        | 20 +++++++++++++++
+ .../regexp-replace-callback-keeps-lengths.ts       | 22 ++++++++++++++++
+ tests/node-runs.mts                                |  3 +++
+ tools/regexp.mts                                   |  8 ++++--</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-46acdf634"><header><div><div class="sha">46acdf634 · Cristiano Calcagno · Nov 08, 21:30</div><h3>Keep an array literal's store field apart from older arrays' across every heap change</h3></div><span class="pill ok">verified</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>Pretext's <code>segmentAtLineBreaks</code> builds <code>starts</code> and <code>flags</code> from array literals and pushes into each once per segment, writing the <code>breaks</code> typed array between. The region fact keeping their stores apart does not survive a typed array's write, so a push into one dropped the other's length, and the loop invariant <code>starts.length === flags.length</code>, which the analysis's lengths start from, was refused.</p></div>
+<h4 class="change"><span class="act added">added</span>Rule <span class="target">push-apart, FOOTPRINTS.md &quot;Element regions&quot;</span></h4><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">A constant holding an array literal's object has its store field apart</span></span></div><div class="row"><span><span class="m-text">from the store field of each older slot's array</span><span class="m-rel">:</span> <span class="m-text">a separation fact the</span></span></div><div class="row"><span><span class="m-text">allocation establishes and each cut restates (<code class="m-code">separationFacts</code>), which</span></span></div><div class="row"><span><span class="m-text">survives every heap change</span>. <span class="m-text">A push into either keeps the other's</span></span></div><div class="row"><span><span class="m-text">length</span><span class="m-rel">:</span> <code class="m-code">growFirst</code> <span class="m-text">accepts a separation between the receiver's store</span></span></div><div class="row"><span><span class="m-text">field and the slot's field in either orientation</span>.</span></div></div></div>
+<h4 class="change"><span class="act modified">modified</span>Typing <span class="target">producer</span></h4><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">At each statement, the pairs of an array-literal constant and an older</span></span></div><div class="row"><span><span class="m-text">array slot of the node's scope keep a length across a push, as Lean's</span></span></div><div class="row"><span><span class="m-text">separation does</span>.</span></div></div></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>push-keeps-fresh-lengths</code> <span class="kind positive">positive</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">two literals pushed around a typed array's write stay equally long</span></summary><pre class="code"><span class="tk-c">// pretext's `segmentAtLineBreaks`: two arrays built by literals grow</span>
+<span class="tk-c">// together, one element each per step, while the loop writes a typed array</span>
+<span class="tk-c">// between the pushes. An array literal's store field is apart from the store</span>
+<span class="tk-c">// fields of the older arrays in its scope whatever the heap holds, so a push</span>
+<span class="tk-c">// into either keeps the other's length, and the two stay equally long.</span>
+
+<span class="tk-c">/** @invariant this.starts.length === this.flags.length */</span>
+<span class="tk-k">export</span> <span class="tk-k">type</span> <span class="tk-t">Segments</span> = { starts: number[]; flags: number[] };
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> segments(text: string, breaks: <span class="tk-t">Uint8Array</span>): <span class="tk-t">Segments</span> {
+  <span class="tk-k">const</span> starts: number[] = [];
+  <span class="tk-k">const</span> flags: number[] = [];
+  <span class="tk-c">/** @invariant starts.length === flags.length */</span>
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; text.length; i++) {
+    <span class="tk-k">if</span> (i &lt; breaks.length) breaks[i] = <span class="tk-n">1</span>;
+    <span class="tk-k">if</span> (text.charCodeAt(i) === <span class="tk-n">32</span>) <span class="tk-k">continue</span>;
+    starts.push(i);
+    flags.push(breaks[i] ?? <span class="tk-n">0</span>);
+  }
+  <span class="tk-k">return</span> { starts, flags };
+}</pre></details></li><li><details><summary><code>invalid-push-keeps-fresh-lengths-alias</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">unverified</span> <span class="why">a conditionally initialized constant may be the older array; Node reads <code>undefined</code></span></summary><pre class="code"><span class="tk-c">// A push into a constant that may hold an older array: only a constant</span>
+<span class="tk-c">// holding an array literal's object has its store field apart from the older</span>
+<span class="tk-c">// arrays', and `texts`, initialized by a conditional, may be `flags` itself.</span>
+<span class="tk-c">// `texts.push(…)` then grows `flags`, so `other.length === flags.length` does</span>
+<span class="tk-c">// not survive and the read of `other` at `flags.length - 1` is refused. Under</span>
+<span class="tk-c">// Node, `fill([1], [5], false)` reads `other[1]`, `undefined` at `number`.</span>
+
+<span class="tk-c">/** @requires other.length === flags.length &amp;&amp; 1 &lt;= flags.length */</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> fill(flags: number[], other: number[], fresh: boolean): number {
+  <span class="tk-k">const</span> texts: number[] = fresh ? [] : flags;
+  texts.push(<span class="tk-n">0</span>);
+  <span class="tk-k">return</span> other[flags.length - <span class="tk-n">1</span>]!;
+}</pre></details></li></ul>
+<h4 class="change">Soundness</h4><div class="prose"><p><code>growFirst_kept</code> is extended by the new disjunct, from <code>HeapSeparation.apart_sound</code> at the receiver's store location; the cut fact is checked on every incoming edge, from the allocation's fresh fact (<code>justified</code>, a subject's single field covered by its own locations).</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">lean-rules</span> <span class="chip">lean-proofs</span> <span class="chip">producer</span> <span class="chip">docs</span> <span class="chip">tests</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd><span class="test pos">push-keeps-fresh-lengths</span> <span class="test neg">invalid-push-keeps-fresh-lengths-alias</span></dd></dl>
+<details><summary>9 files changed, 113 insertions(+), 8 deletions(-)</summary><pre class="code"> docs/FOOTPRINTS.md                                 | 21 ++++++++++++++++
+ lean/Verification/Programs/PromiseCalls.lean       | 14 +++++++++--
+ lean/Verification/Source/Lowering/Bindings.lean    |  5 +++-
+ .../Verification/Source/Lowering/Observations.lean | 13 ++++++----
+ ocaml-producer/proposal_flow.ml                    | 28 +++++++++++++++++++++-
+ pipeline/cases.mts                                 |  3 +++
+ .../invalid-push-keeps-fresh-lengths-alias.ts      | 13 ++++++++++
+ pipeline/examples/push-keeps-fresh-lengths.ts      | 21 ++++++++++++++++
+ tests/node-runs.mts                                |  3 +++</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-1a912e5b1"><header><div><div class="sha">1a912e5b1 · Cristiano Calcagno · Nov 08, 21:49</div><h3>Separate an array literal only from older arrays no write replaces</h3></div><span class="pill ok">verified</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>Pretext's <code>markWordBreaks</code> declares <code>const units = [...]</code> inside its loop while <code>let cache</code> is reassigned to <code>segmentComplex(units)</code>, which may return <code>units</code> itself. The store-field separation the cut stated between <code>units</code> and <code>cache</code> did not hold after that write, and the edge into the loop was refused.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Rule <span class="target">push-apart, FOOTPRINTS.md &quot;Element regions&quot;</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">An array literal constant's store field is apart from every older</span></span></div><div class="row"><span><span class="m-text">array slot's</span>.</span></div></div></div></figure><figure><figcaption>After</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">From every older array slot no write replaces</span><span class="m-rel">:</span> <span class="m-text">a constant or a binding</span></span></div><div class="row"><span><span class="m-text">no statement assigns (Lean</span><span class="m-rel">:</span> <span class="m-text">a slot of storage <code class="m-code">.value</code>; producer</span><span class="m-rel">:</span> <span class="m-text">a name</span></span></div><div class="row"><span><span class="m-text">no statement of the body assigns</span>).</span></div></div></div></figure></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>push-keeps-fresh-lengths</code> <span class="kind positive">positive</span> <span class="was">verified</span> <span class="arrow">→</span> <span class="now">verified</span></summary><pre class="code"><span class="tk-c">// pretext's `segmentAtLineBreaks`: two arrays built by literals grow</span>
+<span class="tk-c">// together, one element each per step, while the loop writes a typed array</span>
+<span class="tk-c">// between the pushes. An array literal's store field is apart from the store</span>
+<span class="tk-c">// fields of the older arrays in its scope whatever the heap holds, so a push</span>
+<span class="tk-c">// into either keeps the other's length, and the two stay equally long.</span>
+
+<span class="tk-c">/** @invariant this.starts.length === this.flags.length */</span>
+<span class="tk-k">export</span> <span class="tk-k">type</span> <span class="tk-t">Segments</span> = { starts: number[]; flags: number[] };
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> segments(text: string, breaks: <span class="tk-t">Uint8Array</span>): <span class="tk-t">Segments</span> {
+  <span class="tk-k">const</span> starts: number[] = [];
+  <span class="tk-k">const</span> flags: number[] = [];
+  <span class="tk-c">/** @invariant starts.length === flags.length */</span>
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; text.length; i++) {
+    <span class="tk-k">if</span> (i &lt; breaks.length) breaks[i] = <span class="tk-n">1</span>;
+    <span class="tk-k">if</span> (text.charCodeAt(i) === <span class="tk-n">32</span>) <span class="tk-k">continue</span>;
+    starts.push(i);
+    flags.push(breaks[i] ?? <span class="tk-n">0</span>);
+  }
+  <span class="tk-k">return</span> { starts, flags };
+}</pre></details></li><li><details><summary><code>invalid-push-keeps-fresh-lengths-alias</code> <span class="kind negative">negative</span> <span class="was">unverified</span> <span class="arrow">→</span> <span class="now">unverified</span></summary><pre class="code"><span class="tk-c">// A push into a constant that may hold an older array: only a constant</span>
+<span class="tk-c">// holding an array literal's object has its store field apart from the older</span>
+<span class="tk-c">// arrays', and `texts`, initialized by a conditional, may be `flags` itself.</span>
+<span class="tk-c">// `texts.push(…)` then grows `flags`, so `other.length === flags.length` does</span>
+<span class="tk-c">// not survive and the read of `other` at `flags.length - 1` is refused. Under</span>
+<span class="tk-c">// Node, `fill([1], [5], false)` reads `other[1]`, `undefined` at `number`.</span>
+
+<span class="tk-c">/** @requires other.length === flags.length &amp;&amp; 1 &lt;= flags.length */</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> fill(flags: number[], other: number[], fresh: boolean): number {
+  <span class="tk-k">const</span> texts: number[] = fresh ? [] : flags;
+  texts.push(<span class="tk-n">0</span>);
+  <span class="tk-k">return</span> other[flags.length - <span class="tk-n">1</span>]!;
+}</pre></details></li><li><code>pretext markWordBreaks</code> <span class="was">unverified</span> <span class="arrow">→</span> <span class="now">verified</span></li></ul>
+<h4 class="change">Soundness</h4><div class="prose"><p>The fact is narrowed; every cut still checks it on each incoming edge.</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">lean-rules</span> <span class="chip">producer</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd><span class="test plain">push-keeps-fresh-lengths</span> <span class="test neg">invalid-push-keeps-fresh-lengths-alias</span></dd></dl>
+<details><summary>2 files changed, 6 insertions(+), 3 deletions(-)</summary><pre class="code"> lean/Verification/Source/Lowering/Observations.lean | 6 ++++--
+ ocaml-producer/proposal_flow.ml                     | 3 ++-</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-ac8f46482"><header><div><div class="sha">ac8f46482 · Cristiano Calcagno · Nov 08, 22:39</div><h3>Build a typed array at a sum reaching 2^53: its length is the exact sum</h3></div><span class="pill ok">verified</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>Pretext's break builders construct <code>new Uint8Array(length + 1)</code> with <code>length</code> a string's length, at most 2^53 - 1. The sum may be 2^53, no safe integer, so the construction's precondition <code>int(1)</code> was not established and no fact stated the view's length; every read of the breaks below <code>length + 1</code> stayed a checked read.</p></div>
+<h4 class="change"><span class="act added">added</span>Rule <span class="target">Lean linear facts: int-sum-past</span></h4><div class="rules"><div class="infer"><div class="frac"><div class="premises"><span>0 <span class="m-rel">≤</span> <var>a</var></span><span>0 <span class="m-rel">≤</span> <var>b</var></span><span><var>a</var> + <var>b</var> <span class="m-rel">≤</span> 2^53</span><span><var>a</var> + <var>b</var> ≰ 2^53 − 1</span></div><div class="bar"></div><div class="conclusion"><div><var>r</var> ← <var>a</var> + <var>b</var> ⊣ <span class="m-op">int</span>(<var>r</var>) ∨ <span class="m-op">past</span>(<var>r</var>),  (<var>r</var> <span class="m-rel">≤</span> <var>a</var> + <var>b</var>) ∨ <span class="m-op">past</span>(<var>r</var>),  (<var>r</var> <span class="m-rel">≥</span> <var>a</var> + <var>b</var>) ∨ <span class="m-op">past</span>(<var>r</var>)</div><div><span class="m-op">past</span>(<var>r</var>)<span class="m-rel">:</span> <var>r</var> <span class="m-text">holds the double</span> 2^53 (<span class="m-con">IndexFact</span>.<span class="m-op">pastSafe</span>).</div></div></div></div></div>
+<h4 class="change"><span class="act added">added</span>Definition <span class="target">Lean: IndexFact.pastSafe</span></h4><div class="rules"><div class="formulas"><div class="row"><span><span class="m-op">past</span>(<var>k</var>) <span class="m-text">holds at</span> <var>ρ</var>  ⟺  <var>ρ</var>(<var>k</var>) <span class="m-rel">=</span> <span class="m-text">the double</span> 2^53 <span class="m-text">(bits</span> 0<var>x4340000000000000</var>)</span></div></div></div>
+<h4 class="change"><span class="act added">added</span>Rule <span class="target">Lean knowledge: deciding past</span></h4><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">A disjunction</span> <var>F</var> ∨ <span class="m-op">past</span>(<var>r</var>) <span class="m-text">whose</span> <var>r</var> <span class="m-text">the knowledge states a safe integer</span></span></div><div class="row"><span><span class="m-text">gives</span> <var>F</var> <span class="m-text">(releasePast, at a checked edge and before a dropped slot is</span></span></div><div class="row"><span><span class="m-text">eliminated); a target</span> <var>F</var> ∨ <span class="m-op">past</span>(<var>r</var>) <span class="m-text">follows from the left sides of the</span></span></div><div class="row"><span><span class="m-text">knowledge's disjunctions on</span> <var>r</var> <span class="m-text">(guardEntails); a copy of</span> <var>r</var> <span class="m-text">restates them</span></span></div><div class="row"><span>(<span class="m-op">pastCopies</span>). <span class="m-text">Case splitting skips these disjunctions</span>.</span></div></div></div>
+<h4 class="change"><span class="act modified">modified</span>Trust <span class="target">typed-array construction, SOURCE-CONTRACTS.md &quot;The standard library's typed arrays&quot;</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>new C : (number) ⇒ view, pre int(1) ∧ 0 ≤ 1, ensures view(0) = 2</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>pre (int(1) ∨ past(1)) ∧ (0 ≤ 1 ∨ past(1)), ensures view(0) = 2; at the double 2^53 ToIndex throws a RangeError, no normal return.</p></div></figure></div>
+<h4 class="change"><span class="act added">added</span>Theorem <span class="target">SafeIntegers.add_two53</span></h4><div class="rules"><div class="formulas"><div class="row"><span><span class="m-con">SafeInt</span> <var>x</var> <var>i</var> ∧ <span class="m-con">SafeInt</span> <var>y</var> <var>j</var> ∧ <var>i</var> + <var>j</var> <span class="m-rel">=</span> 2^53  ⟹  <var>x</var> + <var>y</var> <span class="m-text">(double addition)</span> <span class="m-rel">=</span> <span class="m-text">the double</span> 2^53</span></div></div></div>
+<h4 class="change"><span class="act added">added</span>Theorem <span class="target">SafeIntegers.pastSafe_not_safe</span></h4><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">the double</span> 2^53 <span class="m-text">denotes no safe integer</span></span></div></div></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>typed-array-length-at-sum</code> <span class="kind positive">positive</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">verified</span></summary><pre class="code"><span class="tk-c">// pretext's break builders: a typed array built at `source.length + 1` has</span>
+<span class="tk-c">// exactly that length. The sum of the string's length and 1 is a safe integer</span>
+<span class="tk-c">// or the double 2^53, at which the construction throws a RangeError</span>
+<span class="tk-c">// (ToIndex), so a normal return's view has length `length + 1`, and the</span>
+<span class="tk-c">// reads below it are its elements.</span>
+<span class="tk-c">/** @ensures result.length === source.length + 1 */</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> breaksOf(source: string): <span class="tk-t">Uint8Array</span> {
+  <span class="tk-k">const</span> length = source.length;
+  <span class="tk-k">const</span> breaks = <span class="tk-k">new</span> <span class="tk-t">Uint8Array</span>(length + <span class="tk-n">1</span>);
+  <span class="tk-k">return</span> breaks;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> lastBreak(source: string): number {
+  <span class="tk-k">const</span> breaks = breaksOf(source);
+  <span class="tk-k">return</span> breaks[source.length]!;
+}</pre></details></li><li><details><summary><code>invalid-typed-array-length-at-sum</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">unverified</span> <span class="why">a read past the last element</span></summary><pre class="code"><span class="tk-c">// A typed array built at `source.length + 1` read one past its last element:</span>
+<span class="tk-c">// `breaks[source.length + 1]!` is `undefined` at `number` (run under Node:</span>
+<span class="tk-c">// `pastBreak(&quot;ab&quot;)` is `undefined`).</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> pastBreak(source: string): number {
+  <span class="tk-k">const</span> length = source.length;
+  <span class="tk-k">const</span> breaks = <span class="tk-k">new</span> <span class="tk-t">Uint8Array</span>(length + <span class="tk-n">1</span>);
+  <span class="tk-k">return</span> breaks[length + <span class="tk-n">1</span>]!;
+}</pre></details></li><li><details><summary><code>symbol-index-uninherited-key</code> <span class="kind positive">positive</span> <span class="was">verified</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">the rule asks nonnegative operands</span></summary><pre class="code"><span class="tk-c">// A symbol index signature constrains every symbol key, and no string key:</span>
+<span class="tk-c">// the two key spaces are disjoint.</span>
+<span class="tk-k">const</span> tag: <span class="tk-k">unique</span> symbol = <span class="tk-t">Symbol</span>(<span class="tk-s">&quot;tag&quot;</span>);
+<span class="tk-k">type</span> <span class="tk-t">Tags</span> = { <span class="tk-k">readonly</span> [k: symbol]: boolean };
+<span class="tk-k">type</span> <span class="tk-t">Both</span> = { <span class="tk-k">readonly</span> [k: string]: number; <span class="tk-k">readonly</span> [k: symbol]: boolean };
+
+<span class="tk-k">function</span> dynamic(t: <span class="tk-t">Tags</span>, s: symbol): boolean | <span class="tk-k">undefined</span> {
+  <span class="tk-k">return</span> t[s];
+}
+<span class="tk-c">// A `unique symbol` key is one symbol key.</span>
+<span class="tk-k">function</span> tagged(t: <span class="tk-t">Tags</span>): boolean | <span class="tk-k">undefined</span> {
+  <span class="tk-k">return</span> t[tag];
+}
+<span class="tk-k">function</span> both(b: <span class="tk-t">Both</span>, s: symbol, k: <span class="tk-s">&quot;a&quot;</span> | <span class="tk-s">&quot;b&quot;</span>): boolean | number | <span class="tk-k">undefined</span> {
+  <span class="tk-k">return</span> b[s] ?? b[k];
+}
+<span class="tk-c">// A named symbol-keyed member reads at its own contract.</span>
+<span class="tk-k">function</span> marked(t: {
+  <span class="tk-k">readonly</span> [tag]: number;
+  <span class="tk-k">readonly</span> [k: symbol]: boolean;
+}): number {
+  <span class="tk-k">return</span> t[tag];
+}
+<span class="tk-k">function</span> forget(b: <span class="tk-t">Both</span>): <span class="tk-t">Tags</span> {
+  <span class="tk-k">return</span> b;
+}
+<span class="tk-k">export</span> <span class="tk-k">function</span> use(
+  s: symbol,
+  m: { <span class="tk-k">readonly</span> [tag]: number; <span class="tk-k">readonly</span> [k: symbol]: boolean },
+): number {
+  <span class="tk-k">const</span> t: <span class="tk-t">Tags</span> = {};
+  <span class="tk-k">const</span> b: <span class="tk-t">Both</span> = { a: <span class="tk-n">1</span> };
+  <span class="tk-k">const</span> seen = dynamic(t, s) ?? tagged(t) ?? forget(b)[s] ?? <span class="tk-k">false</span>;
+  <span class="tk-k">const</span> read = both(b, s, <span class="tk-s">&quot;a&quot;</span>) ?? <span class="tk-n">0</span>;
+  <span class="tk-k">return</span> (seen ? <span class="tk-n">1</span> : <span class="tk-n">0</span>) + (read === <span class="tk-k">true</span> ? <span class="tk-n">1</span> : <span class="tk-n">0</span>) + marked(m);
+}</pre></details></li></ul>
+<h4 class="change">Soundness</h4><div class="prose"><p>add_two53 and add_safe give each disjunction; pastSafe_not_safe decides it against a safe-integer fact. The construction's added case is ToIndex at an integer above 2^53 − 1, within the audited typed-array contract.</p></div>
+<h4 class="change">Gap</h4><div class="prose"><p>With operands of either sign the rule broke the typing of an edge in symbol-index-uninherited-key (cause not established); it asks nonnegative operands.</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip strong">lean-semantics</span> <span class="chip">lean-rules</span> <span class="chip">lean-proofs</span> <span class="chip">producer</span> <span class="chip strong">wire</span> <span class="chip strong">trust</span> <span class="chip">docs</span> <span class="chip">tests</span></dd><dt>Lean</dt><dd>IndexFact.pastSafe · SafeIntegers.pastSafeBits · SafeIntegers.add_two53 · SafeIntegers.pastSafe_not_safe · IndexWrites.pastSafeAtoms · IndexWrites.pastCopies · HeapKnowledge.releasePast · HeapKnowledge.pastLefts · HeapKnowledge.pastClash</dd><dt>Wire</dt><dd>index fact {&quot;pastSafe&quot;: {&quot;slot&quot;}}</dd><dt>Trust</dt><dd><span class="trust">new C(n) at the double 2^53 throws a RangeError (ToIndex), within the typed-array construction contract</span></dd><dt>Tests</dt><dd><span class="test pos">typed-array-length-at-sum</span> <span class="test neg">invalid-typed-array-length-at-sum</span></dd></dl>
+<details><summary>19 files changed, 399 insertions(+), 51 deletions(-)</summary><pre class="code"> docs/PROGRAM-TYPING.md                             |  22 +++
+ docs/SOURCE-CONTRACTS.md                           |  10 +-
+ lean/Verification/Programs/IndexWrites.lean        |  79 +++++++--
+ lean/Verification/Semantics/HeapKnowledge.lean     | 181 +++++++++++++++++----
+ lean/Verification/Semantics/IndexFacts.lean        |  19 ++-
+ lean/Verification/Semantics/SafeIntegers.lean      |  65 ++++++++
+ ocaml-producer/claims.ml                           |   1 +
+ ocaml-producer/linear_facts.ml                     |  22 ++-
+ ocaml-producer/semantic.ml                         |   3 +
+ ocaml-producer/source.ml                           |   1 +
+ pipeline/cases.mts                                 |   3 +
+ .../examples/invalid-typed-array-length-at-sum.ts  |   8 +
+ pipeline/examples/typed-array-length-at-sum.ts     |  16 ++
+ tests/json-field-names.mts                         |   1 +
+ tools/bound-annotations.mts                        |   1 +
+ tools/declaration-types.mts                        |   3 +-
+ tools/diagnostic.mts                               |   3 +
+ tools/library-globals.mts                          |  10 +-
+ tools/type-graph.mts                               |   2 +</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-dd3b44035"><header><div><div class="sha">dd3b44035 · Cristiano Calcagno · Nov 08, 22:56</div><h3>Restate a call's postcondition of a binding an assignment binds it to</h3></div><span class="pill ok">verified</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>Pretext's analyzeText declares <code>let sourceBreaks: Uint8Array</code> and assigns it <code>paragraph === null ? getWebKitLineBreaks(source, …) : getWebKitParagraphBreaks(source, …)</code> or <code>gecko.breaks</code>. The producer forgot every fact of an assigned binding whose value was no linear expression, so the builders' <code>result.length === source.length + 1</code> never reached <code>sourceBreaks</code>, and its reads stayed checked reads.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Rule <span class="target">producer: facts after an assignment</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="rules"><div class="formulas"><div class="row"><span><code class="m-code">x = e</code> <span class="m-text">with <code class="m-code">e</code> no linear expression of</span> <code class="m-code">x</code><span class="m-rel">:</span> <span class="m-text">every fact naming <code class="m-code">x</code> forgotten</span>.</span></div></div></div></figure><figure><figcaption>After</figcaption><div class="rules"><div class="formulas"><div class="row"><span><code class="m-code">x = e</code> <span class="m-text">with <code class="m-code">e</code> reading no</span> <code class="m-code">x</code><span class="m-rel">:</span> <span class="m-text">the facts of <code class="m-code"><span class="tk-k">const</span> x = e</code>, a call's</span></span></div><div class="row"><span><span class="m-text">postcondition, a path read restated, a conditional's arms joined, each</span></span></div><div class="row"><span><span class="m-text">arm stating what its call or linear value states</span>.</span></div></div></div></figure></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>assignment-call-postcondition</code> <span class="kind positive">positive</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">verified</span></summary><pre class="code"><span class="tk-c">// pretext's analyzeText: a `let` assigned the result of a call stating a</span>
+<span class="tk-c">// postcondition, in each arm of a conditional, takes the postcondition's</span>
+<span class="tk-c">// facts as a declaration does, so the reads below the view's length verify.</span>
+<span class="tk-c">/** @ensures result.length === s.length + 1 */</span>
+<span class="tk-k">function</span> lineBreaks(s: string): <span class="tk-t">Uint8Array</span> {
+  <span class="tk-k">return</span> <span class="tk-k">new</span> <span class="tk-t">Uint8Array</span>(s.length + <span class="tk-n">1</span>);
+}
+<span class="tk-c">/** @ensures result.length === s.length + 1 */</span>
+<span class="tk-k">function</span> paragraphBreaks(s: string, items: number): <span class="tk-t">Uint8Array</span> {
+  <span class="tk-k">return</span> items &lt; <span class="tk-n">0</span>
+    ? <span class="tk-k">new</span> <span class="tk-t">Uint8Array</span>(s.length + <span class="tk-n">1</span>)
+    : <span class="tk-k">new</span> <span class="tk-t">Uint8Array</span>(s.length + <span class="tk-n">1</span>);
+}
+<span class="tk-k">export</span> <span class="tk-k">function</span> sumBreaks(s: string, items: number | <span class="tk-k">null</span>): number {
+  <span class="tk-k">let</span> breaks: <span class="tk-t">Uint8Array</span>;
+  breaks = items === <span class="tk-k">null</span> ? lineBreaks(s) : paragraphBreaks(s, items);
+  <span class="tk-k">let</span> total = <span class="tk-n">0</span>;
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt;= s.length; i++) total += breaks[i]!;
+  <span class="tk-k">return</span> total;
+}</pre></details></li><li><details><summary><code>invalid-assignment-call-postcondition</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">unverified</span> <span class="why">a read past the view's last element</span></summary><pre class="code"><span class="tk-c">// A `let` assigned a view of `s.length + 1` elements, read one past its last</span>
+<span class="tk-c">// element: `breaks[s.length + 1]!` is `undefined` at `number` (run under Node:</span>
+<span class="tk-c">// `pastBreak(&quot;ab&quot;)` is `undefined`).</span>
+<span class="tk-c">/** @ensures result.length === s.length + 1 */</span>
+<span class="tk-k">function</span> lineBreaks(s: string): <span class="tk-t">Uint8Array</span> {
+  <span class="tk-k">return</span> <span class="tk-k">new</span> <span class="tk-t">Uint8Array</span>(s.length + <span class="tk-n">1</span>);
+}
+<span class="tk-k">export</span> <span class="tk-k">function</span> pastBreak(s: string): number {
+  <span class="tk-k">let</span> breaks: <span class="tk-t">Uint8Array</span>;
+  breaks = lineBreaks(s);
+  <span class="tk-k">return</span> breaks[s.length + <span class="tk-n">1</span>]!;
+}</pre></details></li><li><code>pretext analyzeText</code> <span class="why">reads of sourceBreaks below source.length + 1 verify</span></li></ul>
+<h4 class="change">Soundness</h4><div class="prose"><p>A proposal: Lean checks every fact at every edge.</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">producer</span> <span class="chip">docs</span> <span class="chip">tests</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd><span class="test pos">assignment-call-postcondition</span> <span class="test neg">invalid-assignment-call-postcondition</span></dd></dl>
+<details><summary>5 files changed, 58 insertions(+), 3 deletions(-)</summary><pre class="code"> docs/PROGRAM-TYPING.md                              |  5 ++++-
+ ocaml-producer/linear_facts.ml                      | 21 +++++++++++++++++++--
+ pipeline/cases.mts                                  |  3 +++
+ pipeline/examples/assignment-call-postcondition.ts  | 20 ++++++++++++++++++++
+ .../invalid-assignment-call-postcondition.ts        | 12 ++++++++++++</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-2561a939a"><header><div><div class="sha">2561a939a · Cristiano Calcagno · Nov 08, 23:23</div><h3>Read a constant typed one safe integer's literal at its value</h3></div><span class="pill ok">verified</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>Pretext's segmentAtLineBreaks assigns <code>lastKind = TEXT</code>, with <code>export const TEXT = 0</code>. Neither Lean nor the producer stated the value of a slot whose type is one number's literal, so the loop invariant bounding <code>lastKind</code> by the segments' count failed on that path, and <code>flags[flags.length - 1]</code> stayed a guarded write.</p></div>
+<h4 class="change"><span class="act added">added</span>Rule <span class="target">Lean linear facts: literal value</span></h4><div class="rules"><div class="infer"><div class="frac"><div class="premises"><span><var>Γ</var><span class="m-text">(a) plain, expand</span> <var>Γ</var>(<var>a</var>) <span class="m-rel">=</span> [<span class="m-op">numLit</span> <var>b</var>], <var>b</var> <span class="m-text">the double of the safe integer</span> <var>k</var></span></div><div class="bar"></div><div class="conclusion"><div><var>r</var> ← <var>a</var> ⊣ <span class="m-op">int</span>(<var>r</var>), <var>r</var> <span class="m-rel">=</span> <var>k</var></div></div></div></div></div>
+<h4 class="change"><span class="act added">added</span>Rule <span class="target">producer: linear operands</span></h4><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">A name bound to a value of one safe integer's literal type, a binding</span></span></div><div class="row"><span><span class="m-text">of the body or a module constant (through the module's types), is that</span></span></div><div class="row"><span><span class="m-text">integer</span>.</span></div></div></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>literal-constant-value</code> <span class="kind positive">positive</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">verified</span></summary><pre class="code"><span class="tk-c">// pretext's segmentAtLineBreaks: a module constant whose type is one safe</span>
+<span class="tk-c">// integer's literal (`const TEXT = 0`) holds that integer, so a binding</span>
+<span class="tk-c">// assigned it is known to be that integer, and a loop invariant bounding the</span>
+<span class="tk-c">// last kind by the segments' count keeps the last segment present.</span>
+<span class="tk-k">export</span> <span class="tk-k">const</span> <span class="tk-t">TEXT</span> = <span class="tk-n">0</span>;
+
+<span class="tk-c">/** @ensures safeInteger(result) &amp;&amp; result &gt;= 0 &amp;&amp; result &lt;= 15 */</span>
+<span class="tk-k">function</span> kindOf(code: number): number {
+  <span class="tk-k">if</span> (code === 0x20) <span class="tk-k">return</span> <span class="tk-n">1</span>;
+  <span class="tk-k">return</span> <span class="tk-t">TEXT</span>;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> marks(codes: number[]): number[] {
+  <span class="tk-k">const</span> flags: number[] = [];
+  <span class="tk-k">let</span> lastKind = -<span class="tk-n">1</span>;
+  <span class="tk-c">/** @invariant safeInteger(lastKind) &amp;&amp; lastKind &lt; 16 * flags.length */</span>
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; codes.length; i++) {
+    <span class="tk-k">const</span> kind = kindOf(codes[i]!);
+    <span class="tk-k">if</span> (kind === lastKind) {
+      flags[flags.length - <span class="tk-n">1</span>] = flags[flags.length - <span class="tk-n">1</span>]! | 0x80;
+      <span class="tk-k">continue</span>;
+    }
+    <span class="tk-k">if</span> (kind === <span class="tk-n">1</span>) {
+      flags.push(<span class="tk-t">TEXT</span>);
+      lastKind = <span class="tk-t">TEXT</span>;
+      <span class="tk-k">continue</span>;
+    }
+    flags.push(kind);
+    lastKind = kind;
+  }
+  <span class="tk-k">return</span> flags;
+}</pre></details></li><li><details><summary><code>invalid-literal-constant-value</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">unverified</span> <span class="why">a write at flags.length − 1 of an empty list</span></summary><pre class="code"><span class="tk-c">// A module constant whose literal is 1, not 0: the binding assigned it is 1,</span>
+<span class="tk-c">// the invariant `lastKind &lt; 16 * flags.length` fails on the path that pushes</span>
+<span class="tk-c">// nothing, and the write `flags[flags.length - 1]` below an empty list would</span>
+<span class="tk-c">// read `undefined` at `number` (run under Node: `marks([0x20])` throws no</span>
+<span class="tk-c">// error but `flags[-1]!` is `undefined`).</span>
+<span class="tk-k">export</span> <span class="tk-k">const</span> <span class="tk-t">ONE</span> = <span class="tk-n">1</span>;
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> marks(codes: number[]): number[] {
+  <span class="tk-k">const</span> flags: number[] = [];
+  <span class="tk-k">let</span> lastKind = -<span class="tk-n">1</span>;
+  <span class="tk-c">/** @invariant safeInteger(lastKind) &amp;&amp; lastKind &lt; 16 * flags.length */</span>
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; codes.length; i++) {
+    lastKind = <span class="tk-t">ONE</span>;
+    flags[flags.length - <span class="tk-n">1</span>] = flags[flags.length - <span class="tk-n">1</span>]! | 0x80;
+  }
+  <span class="tk-k">return</span> flags;
+}</pre></details></li><li><code>pretext segmentAtLineBreaks</code> <span class="why">flags[flags.length - 1] read and written plainly</span></li></ul>
+<h4 class="change">Gap</h4><div class="prose"><p>object-freeze-literal fails on chain1-tscert from 1a912e5b on (the session-3 head), not from this commit; its cause is not established.</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">lean-rules</span> <span class="chip">lean-proofs</span> <span class="chip">producer</span> <span class="chip">docs</span> <span class="chip">tests</span></dd><dt>Lean</dt><dd>IndexWrites.litSlot · IndexWrites.litSlot_sound</dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd><span class="test pos">literal-constant-value</span> <span class="test neg">invalid-literal-constant-value</span></dd></dl>
+<details><summary>7 files changed, 118 insertions(+), 2 deletions(-)</summary><pre class="code"> docs/PROGRAM-TYPING.md                             |  7 ++++
+ lean/Verification/Programs/IndexWrites.lean        | 42 ++++++++++++++++++++--
+ ocaml-producer/linear_facts.ml                     | 18 ++++++++++
+ ocaml-producer/statement_analysis.ml               |  1 +
+ pipeline/cases.mts                                 |  3 ++
+ .../examples/invalid-literal-constant-value.ts     | 17 +++++++++
+ pipeline/examples/literal-constant-value.ts        | 32 +++++++++++++++++</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-e0e5eaaaa"><header><div><div class="sha">e0e5eaaaa · Cristiano Calcagno · Nov 08, 23:24</div><h3>Draft footprint regions rooted at argument paths, with their review</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>Pretext's readScriptRuns splices <code>runs.openBrackets</code>, one field below its argument, so its footprint is {value: any, store: any} and every length fact of measureAnalysis's loop is lost at the script-run calls. The deferred mechanism of FOOTPRINTS.md (&quot;Deferred: extra precision&quot;) names regions rooted at a call's operands.</p></div>
+<h4 class="change"><span class="act added">added</span>Docs <span class="target">docs/drafts/argument-path-regions.md</span></h4><div class="prose"><p>The effect form (argument regions evaluated in the entry heap, the callee check, the caller's frame), why a caller cannot frame such a region across calls changing values (a closed footprint names no reachability), the two sound general forms (stable keys of program records allocated with singleton contracts; reachability footprints), and Astra's review: store-only argument effects first, then stable keys of program records through stable links.</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">docs</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd></dl>
+<details><summary>1 file changed, 116 insertions(+)</summary><pre class="code"> docs/drafts/argument-path-regions.md | 116 +++++++++++++++++++++++++++++++++++</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-fc74d80d2"><header><div><div class="sha">fc74d80d2 · Cristiano Calcagno · Nov 09, 00:14</div><h3>Ask a string's length plus one of the sum rule; read literal constants only where bound</h3></div><span class="pill ok">verified</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>A pretext run over every file with ac8f4648 and 2561a939 refused three units that verified before: markItemStarts and getWebKitGenericFamilies (an edge's result typing, after the sum rule's disjunctions appeared on a sum of nonnegative operands), and getFontData (a record literal whose fields the producer stated at a module constant's value).</p></div>
+<h4 class="change"><span class="act modified">modified</span>Rule <span class="target">Lean linear facts: int-sum-past</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="rules"><div class="formulas"><div class="row"><span>0 <span class="m-rel">≤</span> <var>a</var>, 0 <span class="m-rel">≤</span> <var>b</var>, <var>a</var> + <var>b</var> <span class="m-rel">≤</span> 2^53, <var>a</var> + <var>b</var> ≰ 2^53 − 1</span></div></div></div></figure><figure><figcaption>After</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">as before, and the sum is a string's length plus one</span><span class="m-rel">:</span> <span class="m-text">a slot the</span></span></div><div class="row"><span><span class="m-text">knowledge states equal to</span> <span class="m-op">strLength</span>(<var>s</var>), <span class="m-text">and the constant</span> 1.</span></div></div></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Rule <span class="target">producer: literal constants</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">every linear operand naming a constant of one literal's type is that integer</span></span></div></div></div></figure><figure><figcaption>After</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">a binding assigned or declared such a constant is that integer</span>.</span></div></div></div></figure></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><code>pretext markItemStarts, getWebKitGenericFamilies, getFontData</code> <span class="was">unverified</span> <span class="arrow">→</span> <span class="now">verified</span></li><li><code>typed-array-length-at-sum, literal-constant-value</code> <span class="was">verified</span> <span class="arrow">→</span> <span class="now">verified</span></li></ul>
+<h4 class="change">Gap</h4><div class="prose"><p>Why the disjunctions on other sums break an edge's result typing is not established; the narrowed premise avoids it.</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">lean-rules</span> <span class="chip">producer</span> <span class="chip">docs</span></dd><dt>Lean</dt><dd>IndexWrites.stringLengthPlusOne</dd><dt>Trust</dt><dd><span class="none">none</span></dd></dl>
+<details><summary>4 files changed, 41 insertions(+), 9 deletions(-)</summary><pre class="code"> docs/PROGRAM-TYPING.md                         |  5 ++++-
+ lean/Verification/Programs/IndexWrites.lean    | 24 +++++++++++++++++++++++-
+ lean/Verification/Semantics/HeapKnowledge.lean | 11 ++++++++---
+ ocaml-producer/linear_facts.ml                 | 10 ++++++----</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-3370a8d30"><header><div><div class="sha">3370a8d30 · Cristiano Calcagno · Nov 09, 00:30</div><h3>Propose a construction's length at a sum only where Lean's sum rule reaches</h3></div><span class="pill ok">verified</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>The producer read any sum the facts bound by 2^53 as a typed array's construction length, so pretext's <code>following</code> claimed <code>next.length === text.length + 2</code> for <code>new Int32Array(text.length + 2)</code>, which Lean's sum rule (a string's length plus one) does not state, and its edge was refused.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Rule <span class="target">producer: a construction's actual</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">a sum of two linear operands bounded by</span> 2^53</span></div></div></div></figure><figure><figcaption>After</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">a string's length, or a binding the facts state equal to one, plus the literal</span> 1</span></div></div></div></figure></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><code>pretext following</code> <span class="was">unverified</span> <span class="arrow">→</span> <span class="now">verified</span></li><li><details><summary><code>typed-array-length-at-sum</code> <span class="kind positive">positive</span> <span class="was">verified</span> <span class="arrow">→</span> <span class="now">verified</span></summary><pre class="code"><span class="tk-c">// pretext's break builders: a typed array built at `source.length + 1` has</span>
+<span class="tk-c">// exactly that length. The sum of the string's length and 1 is a safe integer</span>
+<span class="tk-c">// or the double 2^53, at which the construction throws a RangeError</span>
+<span class="tk-c">// (ToIndex), so a normal return's view has length `length + 1`, and the</span>
+<span class="tk-c">// reads below it are its elements.</span>
+<span class="tk-c">/** @ensures result.length === source.length + 1 */</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> breaksOf(source: string): <span class="tk-t">Uint8Array</span> {
+  <span class="tk-k">const</span> length = source.length;
+  <span class="tk-k">const</span> breaks = <span class="tk-k">new</span> <span class="tk-t">Uint8Array</span>(length + <span class="tk-n">1</span>);
+  <span class="tk-k">return</span> breaks;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> lastBreak(source: string): number {
+  <span class="tk-k">const</span> breaks = breaksOf(source);
+  <span class="tk-k">return</span> breaks[source.length]!;
+}</pre></details></li></ul>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">producer</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd></dl>
+<details><summary>1 file changed, 10 insertions(+), 7 deletions(-)</summary><pre class="code"> ocaml-producer/linear_facts.ml | 17 ++++++++++-------</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-6617a9a5a"><header><div><div class="sha">6617a9a5a · Cristiano Calcagno · Nov 09, 01:08</div><h3>Read a <code>Map</code> constant at its construction only where the construction states its entries</h3></div><span class="pill ok">verified</span></header>
+<h4 class="change">Why</h4><div class="prose"><p><code>object-freeze-literal</code> verifies at b132a48b and fails since 6fc4ebbc: <code>const markers: Map&lt;number, Marker&gt; = new Map()</code> was read at the construction's claim, <code>Map&lt;void, void&gt;</code>, since the construction neither states type arguments nor passes an argument, so TypeScript takes them from the annotation. <code>markers.get(depth)</code> then gave no claim for <code>m</code>.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Typing <span class="target">constants, <code>showsNativeObject</code></span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">A constant initialized by any construction of <code class="m-code"><span class="tk-t">Map</span></code> was read at the</span></span></div><div class="row"><span><span class="m-text">construction's claim</span>.</span></div></div></div></figure><figure><figcaption>After</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">Only a construction stating its type arguments or passing an argument</span></span></div><div class="row"><span><span class="m-text">they are inferred from; <code class="m-code"><span class="tk-k">new</span> <span class="tk-t">Map</span>()</code> with neither is read at the</span></span></div><div class="row"><span><span class="m-text">constant's annotation</span>.</span></div></div></div></figure></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>object-freeze-literal</code> <span class="kind positive">positive</span> <span class="was">unverified</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">a <code>Map</code> constant built empty reads its entries at its annotation</span></summary><pre class="code"><span class="tk-c">// `Object.freeze` of a fresh object literal of named fields is</span>
+<span class="tk-c">// `%Freeze:K%`: the result, the only reference to the frozen object, holds</span>
+<span class="tk-c">// the fields as readonly views, so no write reaches it. An object a field</span>
+<span class="tk-c">// holds is not frozen, and stays writable. The ReScript runtime's</span>
+<span class="tk-c">// nested-option markers, cached in a `Map`.</span>
+<span class="tk-k">type</span> <span class="tk-t">Marker</span> = { <span class="tk-k">readonly</span> <span class="tk-t">BS_PRIVATE_NESTED_SOME_NONE</span>: number };
+
+<span class="tk-k">const</span> markers: <span class="tk-t">Map</span>&lt;number, <span class="tk-t">Marker</span>&gt; = <span class="tk-k">new</span> <span class="tk-t">Map</span>();
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> marker(depth: number): <span class="tk-t">Marker</span> {
+  <span class="tk-k">const</span> m = markers.<span class="tk-k">get</span>(depth);
+  <span class="tk-k">if</span> (m !== <span class="tk-k">undefined</span>) {
+    <span class="tk-k">return</span> m;
+  }
+  <span class="tk-k">const</span> fresh = <span class="tk-t">Object</span>.freeze({ <span class="tk-t">BS_PRIVATE_NESTED_SOME_NONE</span>: depth });
+  markers.<span class="tk-k">set</span>(depth, fresh);
+  <span class="tk-k">return</span> fresh;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> depthOf(depth: number): number {
+  <span class="tk-k">const</span> m = <span class="tk-t">Object</span>.freeze({
+    <span class="tk-t">BS_PRIVATE_NESTED_SOME_NONE</span>: depth,
+    kind: <span class="tk-s">&quot;marker&quot;</span>,
+  });
+  <span class="tk-k">return</span> m.<span class="tk-t">BS_PRIVATE_NESTED_SOME_NONE</span>;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> nested(a: number): number {
+  <span class="tk-k">const</span> f = <span class="tk-t">Object</span>.freeze({ inner: { a } });
+  f.inner.a = a + <span class="tk-n">1</span>;
+  <span class="tk-k">return</span> f.inner.a;
+}</pre></details></li><li><details><summary><code>pretext-native-constants</code> <span class="kind positive">positive</span> <span class="was">verified</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">a <code>Map</code> built from entries still reads at its construction</span></summary><pre class="code"><span class="tk-c">// Pretext's measurement.ts and line-breaks.ts: constants annotated</span>
+<span class="tk-c">// `RegExp` and `ReadonlyMap` whose initializers make a regex literal and a</span>
+<span class="tk-c">// `Map`, read at the native objects they hold, and a locale tag cut down by</span>
+<span class="tk-c">// `lastIndexOf` and `slice` while a lookup misses. Each call is within a</span>
+<span class="tk-c">// footprint keeping stores, so a loop's `tags[i]!` keeps its bound across</span>
+<span class="tk-c">// them.</span>
+<span class="tk-k">const</span> kanaPairRe: <span class="tk-t">RegExp</span> = /[ぁ-ヿ]{<span class="tk-n">2</span>}/
+<span class="tk-k">const</span> families: { [tag: string]: <span class="tk-k">readonly</span> number[] } = { <span class="tk-s">'zh'</span>: [<span class="tk-n">1</span>, <span class="tk-n">2</span>], <span class="tk-s">'ja'</span>: [<span class="tk-n">3</span>] }
+<span class="tk-k">const</span> familyTable: <span class="tk-t">ReadonlyMap</span>&lt;string, <span class="tk-k">readonly</span> number[]&gt; = <span class="tk-k">new</span> <span class="tk-t">Map</span>(<span class="tk-t">Object</span>.entries(families))
+
+<span class="tk-k">function</span> familiesOf(tag: string): number {
+  <span class="tk-k">let</span> row = familyTable.<span class="tk-k">get</span>(tag)
+  <span class="tk-k">while</span> (row === <span class="tk-k">undefined</span>) {
+    tag = tag.slice(<span class="tk-n">0</span>, <span class="tk-t">Math</span>.max(<span class="tk-n">0</span>, tag.lastIndexOf(<span class="tk-s">'-'</span>)))
+    <span class="tk-k">if</span> (tag === <span class="tk-s">''</span>) <span class="tk-k">return</span> <span class="tk-n">0</span>
+    row = familyTable.<span class="tk-k">get</span>(tag)
+  }
+  <span class="tk-k">return</span> row.length
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> count(tags: string[]): number {
+  <span class="tk-k">let</span> sum = <span class="tk-n">0</span>
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; tags.length; i++) {
+    sum += familiesOf(tags[i]!) + (kanaPairRe.test(tags[i]!) ? <span class="tk-n">1</span> : <span class="tk-n">0</span>)
+    sum += tags[i]!.length
+  }
+  <span class="tk-k">return</span> sum
+}</pre></details></li></ul>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">parser</span> <span class="chip">docs</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd><span class="test pos">object-freeze-literal</span> <span class="test pos">pretext-native-constants</span></dd></dl>
+<details><summary>2 files changed, 8 insertions(+), 4 deletions(-)</summary><pre class="code"> docs/SOURCE-ELABORATION.md    | 3 ++-
+ tools/fragment-statements.mts | 9 ++++++---</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+</main></body></html>
