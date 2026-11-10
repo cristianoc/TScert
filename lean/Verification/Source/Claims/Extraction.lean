@@ -88,6 +88,81 @@ structure Front where
   /-- The module cells whose objects the module owns
   (`SourceExtraction.ownedModuleCells`), over every unit's code. -/
   moduleOwned : List String
+  /-- Each unit's units reached by name (`Front.edgesOf`), by its index. -/
+  edgeTable : Array (List Nat)
+  /-- Each unit's group (`Front.groupOf`), by its index. -/
+  groupTable : Array (List Nat)
+
+/-- A unit's identity on the wire: a function's name and its name's start,
+or `init` for the module's initialization. -/
+def Front.unitId (fr : Front) (i : Nat) : String :=
+  match fr.units[i]? with
+  | some (_, _, some _) => "init"
+  | some (f, _, none) => s!"{f.name}@{f.namePos.1}"
+  | none => ""
+
+/-- Every name a unit's code mentions, bound or not: its body's, its
+parameter defaults' and its closures' (`stmtNames`). -/
+def Front.mentions (fr : Front) (i : Nat) : List String :=
+  match fr.units[i]? with
+  | some (_, _, some _) => fr.init.flatMap stmtNames
+  | some (f, _, none) => f.body.flatMap stmtNames
+  | none => []
+
+/-- The names the initialization owns: the bindings its statements declare,
+the module constants and cells, the generic classes and the classes' self
+bindings. -/
+def Front.initNames (fr : Front) : List String :=
+  fr.init.flatMap Fragment.Stmt.bound ++ fr.moduleConstants.map (·.1) ++ fr.classSelves.map (·.1) ++
+    fr.classNames
+
+/-- The units a unit's code reaches by name: a module function's unit for
+its name, and the initialization for a name the initialization owns. -/
+def Front.edgesOf (fr : Front) (i : Nat) : List Nat :=
+  let names := fr.mentions i
+  let owned := fr.initNames
+  (List.range fr.units.length).filter fun j => j != i && match fr.units[j]? with
+    | some (_, _, some _) => names.any owned.contains
+    | some (g, _, none) => names.contains g.name
+    | none => false
+
+/-- The units a unit's code reaches by name, as `edgesOf` gives them,
+computed once (`Front.indexed`). -/
+def Front.edges (fr : Front) (i : Nat) : List Nat := fr.edgeTable.getD i []
+
+/-- The units a unit reaches, transitively: its edges, grown by their
+units' edges until none is added. -/
+def Front.reach (fr : Front) (i : Nat) : List Nat := Id.run do
+  let mut seen := fr.edges i
+  for _ in List.range (fr.units.length + 1) do
+    let grown := (seen ++ seen.flatMap fr.edges).eraseDups
+    if grown.length == seen.length then break
+    seen := grown
+  return seen
+
+/-- A unit's group: itself and every unit that reaches it and that it
+reaches, in order. Its members are certified together. -/
+def Front.groupOf (fr : Front) (reaches : Array (List Nat)) (i : Nat) : List Nat :=
+  (List.range fr.units.length).filter fun j =>
+    j == i || ((reaches.getD i []).contains j && (reaches.getD j []).contains i)
+
+/-- The front with each unit's edges and group computed once. -/
+def Front.indexed (fr : Front) : Front :=
+  let fr := { fr with edgeTable := (List.range fr.units.length).toArray.map fr.edgesOf }
+  let reaches := (List.range fr.units.length).toArray.map fr.reach
+  { fr with groupTable := (List.range fr.units.length).toArray.map (fr.groupOf reaches) }
+
+/-- A unit's group (`groupOf`), as `indexed` computed it. -/
+def Front.group (fr : Front) (i : Nat) : List Nat := fr.groupTable.getD i []
+
+/-- The groups' first members, in order: each group's identity. -/
+def Front.leaders (fr : Front) : List Nat :=
+  (List.range fr.units.length).filter fun i => (fr.group i).head? == some i
+
+/-- A group's dependencies: the groups its members reach directly outside
+it, each by its first member. -/
+def Front.dependencies (fr : Front) (group : List Nat) : List Nat :=
+  ((group.flatMap fr.edges).filter (!group.contains ·) |>.map fun j => ((fr.group j).head?).getD j).eraseDups
 
 /-- The front of a source's units. A qualified import, by its name, is read
 at its certified unit's footprint and on-throw flag (`importedArrow`); every
@@ -221,16 +296,17 @@ def fileFront (ast claims : Json) (fileKey : String)
   if all.length != d.functions.length then throw "function claim count mismatch"
   let units := all.map (fun (f, tps) => (f, tps, none)) ++
     initUnit.map (fun (f, tps, c) => (f, tps, some c))
-  return ⟨ast, d, functionJsons, init, generics, unitBinders, initBinders, classNames, freshConstructors,
+  return Front.indexed ⟨ast, d, functionJsons, init, generics, unitBinders, initBinders, classNames, freshConstructors,
     moduleFunctions, moduleConstants, classSelves, units, qualified.map (·.1), initOrder,
-    SourceExtraction.ownedModuleCells init (all.map (·.1.body)) (← Fragment.decodeOmittedMentions ast)⟩
+    SourceExtraction.ownedModuleCells init (all.map (·.1.body)) (← Fragment.decodeOmittedMentions ast),
+    #[], #[]⟩
 
 /-- One unit's plan, extracted from the front over the store `T`. -/
 def extractMember (fr : Front) (T : EquationStore.State)
     (u : Fragment.Fn × List Fragment.TypeParam × Option (Function Tree)) :
     Except String (EquationStore.State × FunctionPlan EquationStore.State Tree) := do
   let ⟨ast, d, functionJsons, init, generics, unitBinders, initBinders, classNames, freshConstructors,
-    moduleFunctions, moduleConstants, classSelves, _, _, initOrder, moduleOwned⟩ := fr
+    moduleFunctions, moduleConstants, classSelves, _, _, initOrder, moduleOwned, _, _⟩ := fr
   let (f, tps, initClaims) := u
   if let (some _, some reason) := (initClaims, initOrder) then throw reason
   let d := { d with types := T }
@@ -401,60 +477,6 @@ def extractMember (fr : Front) (T : EquationStore.State)
         else sourceRefusal d.types f.namePos .genericValidation e)
   let .graph _ _ r := plan
   return (r.types, plan)
-
-/-- A unit's identity on the wire: a function's name and its name's start,
-or `init` for the module's initialization. -/
-def Front.unitId (fr : Front) (i : Nat) : String :=
-  match fr.units[i]? with
-  | some (_, _, some _) => "init"
-  | some (f, _, none) => s!"{f.name}@{f.namePos.1}"
-  | none => ""
-
-/-- Every name a unit's code mentions, bound or not: its body's, its
-parameter defaults' and its closures' (`stmtNames`). -/
-def Front.mentions (fr : Front) (i : Nat) : List String :=
-  match fr.units[i]? with
-  | some (_, _, some _) => fr.init.flatMap stmtNames
-  | some (f, _, none) => f.body.flatMap stmtNames
-  | none => []
-
-/-- The names the initialization owns: the bindings its statements declare,
-the module constants and cells, the generic classes and the classes' self
-bindings. -/
-def Front.initNames (fr : Front) : List String :=
-  fr.init.flatMap Fragment.Stmt.bound ++ fr.moduleConstants.map (·.1) ++ fr.classSelves.map (·.1) ++
-    fr.classNames
-
-/-- The units a unit's code reaches by name: a module function's unit for
-its name, and the initialization for a name the initialization owns. -/
-def Front.edges (fr : Front) (i : Nat) : List Nat :=
-  let names := fr.mentions i
-  let owned := fr.initNames
-  (List.range fr.units.length).filter fun j => j != i && match fr.units[j]? with
-    | some (_, _, some _) => names.any owned.contains
-    | some (g, _, none) => names.contains g.name
-    | none => false
-
-/-- The units a unit reaches, transitively. -/
-def Front.reach (fr : Front) (i : Nat) : List Nat := Id.run do
-  let mut seen := fr.edges i
-  for _ in List.range (fr.units.length + 1) do
-    seen := (seen ++ seen.flatMap fr.edges).eraseDups
-  return seen
-
-/-- A unit's group: itself and every unit that reaches it and that it
-reaches, in order. Its members are certified together. -/
-def Front.group (fr : Front) (i : Nat) : List Nat :=
-  (List.range fr.units.length).filter fun j => j == i || ((fr.reach i).contains j && (fr.reach j).contains i)
-
-/-- The groups' first members, in order: each group's identity. -/
-def Front.leaders (fr : Front) : List Nat :=
-  (List.range fr.units.length).filter fun i => (fr.group i).head? == some i
-
-/-- A group's dependencies: the groups its members reach directly outside
-it, each by its first member. -/
-def Front.dependencies (fr : Front) (group : List Nat) : List Nat :=
-  ((group.flatMap fr.edges).filter (!group.contains ·) |>.map fun j => ((fr.group j).head?).getD j).eraseDups
 
 /-- Whether a group's code mentions a qualified read. -/
 def Front.readsQualified (fr : Front) (group : List Nat) : Bool :=
