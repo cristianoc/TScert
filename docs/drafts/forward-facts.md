@@ -111,6 +111,57 @@ checked steps, checked incoming edges.
 So a fact a rule keeps reaches the next entry whether or not the producer
 claims it, and a claimed fact no rule keeps is left out of $`K_c`$.
 
+### 2a. When a cut takes the forward facts
+
+A unit is searched first with $`K_c = R_c \cup \{\, a \in C_c \mid \ldots \,\}`$,
+its cuts taking no forward fact. Where that search refuses an obligation
+$`o`$, the unit is searched once more with, at each cut on a path to $`o`$,
+the forward facts that support $`o`$:
+
+```math
+K_c \;=\; R_c \,\cup\, \{\, a \in C_c \mid \ldots \,\} \,\cup\, \{\, a \in F_c \mid a \text{ supports } o \,\}
+```
+
+**Support** is the least set of atoms of $`F_c`$ closed under:
+
+- an atom naming a term of $`o`$, renamed backward through the edges' slot
+  mappings from $`o`$'s node to $`c`$;
+- an atom sharing a term with an atom of the set, to a stated depth;
+- what the checker's own operations read for an atom of the set: its
+  condition and the atoms establishing that condition's guard, the read
+  links and aliases its terms are restated through (`bridgeOf`,
+  `restateReads`, `termDefined`), and the separations a call between $`c`$
+  and $`o`$ reads to preserve its terms (`regionSep`, `growFirst`).
+
+Atoms are selected and none is derived at the cut: with `i < n`,
+`n ≤ xs.length` and an obligation `i < xs.length`, both atoms are kept and
+the obligation's entailment eliminates `n`.
+
+The second search is bounded by the stage's limit and by one retry per
+unit; a unit it refuses reports the first search's refusal.
+
+**Why the forward facts are taken on refusal only** (observed, 2026-11-10,
+branch `forward-facts-2`, search CPU seconds, cold): with
+$`K_c \supseteq F_c`$ at every cut, `measureAnalysis` searches in 61.9 s
+against 35.0 s, and `prepareRichInline` does not finish in 850 s against
+27.3 s. The knowledge of `measureAnalysis` holds 71.3 index atoms per entry
+against 39.6, its two-term linear facts 31 against 14, and its evidence
+84 MB against 45 MB. An entry whose knowledge is the producer's candidates
+forgets every other fact; $`F_c`$ forgets none, and the facts each edge's
+elimination derives (`eliminateLinear`: up to 64 combinations per
+eliminated slot, kept between slots) accumulate along a long function.
+
+**Soundness** is that of §2: each selected atom is in $`F_c`$, so every
+incoming edge establishes it by the edge test. Support is the search's
+choice and no checked definition reads it.
+
+**What it gives** (reviewed): a unit the first search verifies costs what
+it costs today, and a fact a rule keeps that the producer has no case for
+is recovered where an obligation needs it. A unit verified by the first
+search may depend on the producer's facts; how far the search does without
+them is measured apart, by searching with a producer family suppressed
+(§5), where the second search is the one that runs.
+
 ### 3. Solving
 
 The candidates of a function are finite, $`M`$ in all. The search solves
@@ -148,7 +199,11 @@ fixed while a component is solved. The entailment is not known to be
 monotone: it picks representatives by which terms are known defined, and
 its row and fuel limits are reached sooner with more hypotheses. Where it
 is not, a cut's knowledge is searched at the smaller of two sets before the
-unit is refused.
+unit is refused. One case is observed (2026-11-10): with $`F_c`$ added,
+`type-invariant-walker`'s `isBreak` is refused at an edge, the larger
+knowledge normalizing to a representation from which the check does not
+re-derive `length ≤ 2^53 - 1` on a path term; searched again without
+$`F_c`$ it verifies.
 
 ### 5. The producer's part
 
@@ -210,7 +265,7 @@ stated by the search about the rules.
 | # | Step | Shows | Measured by |
 | --- | --- | --- | --- |
 | 1 | §1–§3 for the candidates at the present cuts, without $`F_c`$; the list of candidates left out, in the diagnostic | over-proposal no longer refuses; the theorem under the split | the corpus (pipeline cases, pretext's 210 functions) unchanged; the `getSegmentFit` experiment verifies; passes and search time per unit |
-| 2 | $`F_c`$ at cuts | a fact a rule keeps is not lost at an entry | `measureAnalysis`'s baseline with the producer of 3807e8c0, which lacks 18 cases; corpus unchanged or larger |
+| 2 | §2a: the second search on refusal, its support by selection | a fact a rule keeps is not lost where an obligation needs it, at the present time for a unit the first search verifies | search time of `measureAnalysis`, `prepareRichInline` and `buildEngineProfile` unchanged; `isBreak` and the producer-gap reproductions verified; retries, their time, peak atoms per entry and evidence bytes per unit; the pipeline cases verifying with the producer's facts dropped outside loop heads, counted |
 | 3 | Loop-head candidates from the entry edge | fewer facts needed from the producer at loops | corpus; passes per unit |
 | 4 | The producer's families retired where the corpus verifies without them | the mirror shrinks | corpus per family; claims bytes |
 | 5 | §6 | evidence size | bytes per lowered node; check time |
