@@ -263,3 +263,50 @@ it: a step, an edge, a merge (with the predecessors lacking it, followed in
 turn), or a loop head's given invariant. `dev/single-pass-state.mts` runs
 it over a kept pipeline run and prints these over source names, with the
 bindings' types.
+
+## 8. What the pass reads from the claims document
+
+Measured 2026-11-10 on the lowered graphs with no-op nodes left out
+(measureAnalysis 1473 nodes, prepareRichInline 3189). Bytes are of each
+class in the unit's own claims, the document's other parts listed apart.
+
+| Class | measureAnalysis | prepareRichInline | Source |
+| --- | --- | --- | --- |
+| (a) entry binding types | 10198, 338 KB | 23609, 861 KB | declared or derivable, flow types inferred |
+| (a) expression types | 1341, 73 KB | 2617, 141 KB | derivable by the step rules, but literals and generic calls |
+| (b) `current` fields | 17, 0.7 KB | 53, 1.5 KB | inferred |
+| (b) `instantiate` | 26, 1.2 KB | 63, 3.0 KB | inferred (type arguments) |
+| (c) signature, footprints, storage contracts | 26, 2.2 KB | 52, 3.2 KB | given by the source, relayed |
+| (d) entry facts, bounds, quantified, apart, stores apart | 6091, 736 KB | 9032, 1029 KB | written invariants given; the rest inferred |
+| (e) type rows | 241, 47 KB | 194, 48 KB | the producer's encoding of declared types |
+| (e) other functions' claims | 16, 223 KB | 20, 767 KB | their signatures given; bodies unread |
+| (e) imported module runs | 5, 2.0 MB | 10, 8.3 MB | signatures given; bodies unread |
+
+The whole document is 3.77 MB for measureAnalysis (fragment 2.11 MB) and
+11.9 MB for prepareRichInline (fragment 4.26 MB). Read and lowered:
+measureAnalysis 469 ms (JSON 89 ms, `planImports` 58, `fileFront` 103,
+`extractAll` 136, groups 52, the rest 31), prepareRichInline 991 ms (JSON
+248 ms, `extractAll` 382, `fileFront` 198). The claims' share of the JSON
+read in bytes is 64% and 74%; their share inside `fileFront` and
+`extractAll` (decoding labels into the store, relabelling contexts) is not
+separated by these timers.
+
+(a) Of measureAnalysis's 78 bindings, 56 hold one type at every entry; 22
+(2998 occurrences) change type between entries: a test's narrowing, an
+assignment's, a loop's widening. A forward walk computes a narrowing from
+the test's rule and an assignment's type from its value's; at a merge and
+at a loop head it needs the binding's declared type (TypeScript's type of
+the `let` or the parameter), since the join of a literal `0` and an
+increment is the declared `number`, not a type a rule synthesizes. Of 31
+parameters and storage contracts, 15 keep their declared type throughout.
+
+(b) `current` fields change one verdict in 56 units of loop-heavy cases
+(`blocker-compiler-api-grandparent-loop`) and none in 162 sampled units
+or the three units. `instantiate` names a generic call's type arguments,
+which the pass would infer at the call.
+
+(d) The pass reads entry facts at loop heads only (measureAnalysis: 132
+claims facts and 27 written ones at 6 heads, of 6091 entries' facts).
+Withheld, measureAnalysis and prepareRichInline are refused at a call's
+precondition, buildEngineProfile is accepted, and 10 of 43 accepted units
+of loop-heavy cases are refused; none of 162 sampled units changes.
