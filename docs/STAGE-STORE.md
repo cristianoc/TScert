@@ -1006,6 +1006,24 @@ of a certified module in its own code: the module run's search and check
 replay, the importer's search executes, and the edited run's outcome is a
 cold run's in a fresh store.
 
+The controls of evidence reuse ([evidence proposals](#evidence-proposals))
+name fresh stores too, and set `TSCERT_EVIDENCE_REUSE=1` on the runs they
+start. Another identity of the verifier is its build with bytes appended
+past its end, audited as the mutation verifier is, or a stand-in script
+audited with the programs it runs; a proposal of another implementation is
+a search's entry republished with its manifest's implementation replaced
+and referenced as its proposal key's only candidate. Evidence one identity
+found is reused by another, whose check accepts it with no search, and
+with reuse off nothing is read from or written to the index and the reused
+searches execute; a reused result the check refuses, one that is no JSON,
+one naming an absent symbol and one naming no unit of the slice are each
+searched again, the others reused, in one round; units reused and searched
+are checked together; a module run whose reused evidence its check
+refuses is searched again and checked once more, with no withdrawal; a
+check over reused evidence that fails as a whole searches every reused
+unit again; and a stand-in whose search refuses accepts with reuse on and
+reports the search's refusal with reuse off.
+
 ## Timing
 
 Every invocation records monotonic elapsed wall time, its

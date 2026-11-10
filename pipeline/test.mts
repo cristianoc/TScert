@@ -4,21 +4,22 @@
 // Every operation a control runs replays from the stage store like any stage
 // (STAGE-STORE.md, "Controls"). The pipeline cases are run-cases.mts's.
 import assert from "node:assert/strict";
-import { chmodSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, symlinkSync, writeFileSync } from "node:fs";
+import { appendFileSync, chmodSync, copyFileSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, symlinkSync,
+  writeFileSync } from "node:fs";
 import { present } from "../tools/files.mts";
 import { fieldOf } from "../tools/thrown.mts";
 import { join, resolve } from "node:path";
 import type { Ast, Expr } from "../tools/fragment.mts";
 import type { PropertyKey, TypeDefinition, TypeTerm } from "../tools/declaration-types.mts";
 import type { Span } from "../tools/span.mts";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { availableParallelism } from "node:os";
 import { pathToFileURL } from "node:url";
 import { fork, spawn, spawnSync } from "node:child_process";
-import { controlOperations, tested, ran as ranStage, readInvocationLog, startEviction, withoutEvidenceReuse, type AttemptRecord,
-  type Invoked } from "./stages.mts";
+import { controlOperations, tested, ran as ranStage, proposalKey, readInvocationLog, startEviction, withoutEvidenceReuse,
+  type AttemptRecord, type Invoked } from "./stages.mts";
 import { Store } from "./stage-store.mts";
-import { producerCall, verifierCall } from "./stage-execution.mts";
+import { canonical, producerCall, sha256, verifierCall, type Canonical } from "./stage-execution.mts";
 import { UnitProposal, check as checkSource, invocationLog, producerExecutable, readClaimsFile, readFragmentFile, readOutcome, sourceKey, verifier,
   type Outcome } from "./verify-source.mts";
 import { runDirectory, runRoot } from "./run-directory.mts";
@@ -10336,6 +10337,266 @@ function assertSliceSearches(records: readonly AttemptRecord[], artifacts: strin
       "a search consumes a unit slice, never the whole document as fallback");
   }
 }
+
+// ---------------------------------------------------------------------------
+// Evidence proposals (STAGE-STORE.md, "Evidence proposals"): each control
+// names stores of its own and turns evidence reuse on for the runs it
+// starts; its subject is the reuse mechanism, so its runs execute.
+
+/** A run of `source` by the pipeline in a process of its own, over `store`
+ * and a run root of its own, with evidence reuse on where `reuse`: its
+ * outcome and its attempts. `program` replaces the verifier: a build of it
+ * with another identity, audited there as the mutation verifier is, or a
+ * stand-in script audited with the programs it runs (`script`). */
+type ReuseRun = { outcome: Outcome; records: AttemptRecord[] };
+function reuseRun(store: string, source: string, options: { reuse: boolean; project?: string;
+    program?: { path: string; script: readonly string[] | null } }): ReuseRun {
+  const root = runDirectory("tscert-reuse-root-");
+  const module = (path: string): string => JSON.stringify(pathToFileURL(path).href);
+  const program = options.program;
+  const driver = `import { auditForTests, auditMutationVerifier } from ${module(join(here, "stage-execution.mts"))};
+import { check } from ${module(join(here, "verify-source.mts"))};
+import { tsconfigOf } from ${module(resolve(here, "..", "tools", "declaration-graph.mts"))};
+${program === undefined ? "" : program.script !== null
+    ? `auditForTests(${JSON.stringify(program.path)}, ${JSON.stringify(program.script)});`
+    : `auditMutationVerifier(${JSON.stringify(program.path)});`}
+const project = ${JSON.stringify(options.project ?? null)};
+process.stdout.write(JSON.stringify(check(${JSON.stringify(source)}, project === null ? undefined : tsconfigOf(project), false,
+  undefined, true)));`;
+  const driverPath = join(root, "driver.mts");
+  writeFileSync(driverPath, driver);
+  const ran = spawnSync(process.execPath, [driverPath], { encoding: "utf8", timeout: 240_000, env: { ...process.env,
+    TSCERT_STAGE_STORE: store, TSCERT_RUN_ROOT: root, ...(options.reuse ? { TSCERT_EVIDENCE_REUSE: "1" } : {}),
+    ...(program === undefined ? {} : { VERIFIER: program.path }) } });
+  assert.equal(ran.status, 0, ran.stderr);
+  const outcome = readOutcome(JSON.parse(ran.stdout.slice(ran.stdout.indexOf("{"))));
+  return { outcome, records: readInvocationLog(join(outcome.artifacts, invocationLog)) };
+}
+/** A run's search attempts, the file's and its module runs'. */
+const searchAttempts = (run: ReuseRun): AttemptRecord[] =>
+  run.records.filter((r) => r.stage === "search" || r.stage === "module-search");
+/** A run's outcome without its run directory and its reuse count. */
+function outcomeShape(outcome: Outcome): unknown {
+  const { artifacts: _artifacts, reused: _reused, ...shape } = outcome;
+  return shape;
+}
+/** A copy of the verifier build with bytes appended past its end: the same
+ * program to the loader, the same verifier, of another identity (its
+ * executable's digest). */
+function verifierCopy(): string {
+  const path = join(runDirectory("tscert-verifier-copy-"), "verifier");
+  copyFileSync(verifier, path);
+  appendFileSync(path, "\nanother identity of the verifier build, for the evidence reuse controls\n");
+  chmodSync(path, 0o755);
+  return path;
+}
+/** The listing of a store's proposed index, each reference by its path. */
+function proposedIndex(store: string): string[] {
+  const at = join(store, "proposed");
+  if (!present(at)) return [];
+  return readdirSync(at, { recursive: true, encoding: "utf8" }).filter((p) => p.split("/").length === 3).sort();
+}
+/** The manifest of an attempt as a record, for a control that changes a
+ * field of it. */
+function manifestRecord(attempt: AttemptRecord): { readonly [key: string]: Canonical } {
+  const m = attempt.manifest;
+  if (typeof m !== "object" || m === null || isCanonicalList(m)) throw Error("control: a manifest is no object");
+  return m;
+}
+const isCanonicalList = (value: Canonical): value is readonly Canonical[] => Array.isArray(value);
+/** Make the evidence of the search `attempt` stored a proposal of another
+ * implementation's: its entry republished with the manifest's
+ * implementation replaced and its evidence rewritten by `rewrite`, and
+ * referenced as the only candidate of its proposal key; the attempt's own
+ * entry, at the key the run computes, removed. With no `rewrite`, the
+ * search's proposals are removed and none replaces them. */
+function proposeAsAnother(store: string, attempt: AttemptRecord, rewrite: ((evidence: string) => string) | null): void {
+  const s = new Store(store);
+  const key = attempt.key, proposal = proposalKey(attempt.stage, attempt.manifest);
+  if (key === null || proposal === null) throw Error("control: a search without a key");
+  const found = s.finished(attempt.stage, key, null) ?? s.candidates("proposed", attempt.stage, proposal)
+    .map((k) => s.finished(attempt.stage, k, null)).find((f) => f !== null);
+  if (!found) throw Error("control: the search's evidence is not stored");
+  rmSync(join(store, "proposed", attempt.stage, proposal), { recursive: true, force: true });
+  rmSync(join(store, "entries", attempt.stage, key), { recursive: true, force: true });
+  if (rewrite === null) return;
+  // Each forgery is another build: its own identity, its own key.
+  const input = canonical({ ...manifestRecord(attempt), implementation: { forged: randomUUID() } });
+  const outputs = found.result.outputs.map(([role, bytes]): [string, Buffer] =>
+    [role, role === "evidence.json" ? Buffer.from(rewrite(bytes.toString("utf8"))) : bytes]);
+  const forged = sha256(input);
+  s.publishFinished(attempt.stage, forged, { ...found.result, input, outputs,
+    measurement: { ...found.result.measurement, attempt: randomUUID() } });
+  s.reference("proposed", attempt.stage, proposal, forged);
+}
+/** Each evidence line of a search's output rewritten by `line` from the
+ * unit it names (its JSON text). */
+const eachLine = (line: (unit: string) => string): ((evidence: string) => string) => (evidence: string): string =>
+  evidence.split("\n").filter((l) => l !== "").map((l) => {
+    const unit = /"unit":("(?:[^"\\]|\\.)*")\}$/.exec(l)?.[1];
+    if (unit === undefined) throw Error("control: an evidence line without its unit");
+    return line(unit);
+  }).join("\n") + "\n";
+/** The executions of a run's searches of one key, in order. */
+const executionsOf = (run: ReuseRun, key: string | null): string[] =>
+  searchAttempts(run).filter((r) => r.key === key).map((r) => r.execution);
+
+control(async (): Promise<void> => {
+  // Evidence a verifier build found is reused by a build of another
+  // identity, whose check accepts it; with reuse off nothing is read from
+  // or written to the proposed index, and what was reused was published
+  // under no key: a run with reuse off searches.
+  const store = runDirectory("tscert-reuse-identities-");
+  const source = join(here, "examples", "arrays.ts");
+  const off = reuseRun(store, source, { reuse: false });
+  assert.equal(off.outcome.status, "verified", JSON.stringify(off.outcome));
+  assert.equal(off.outcome.reused, undefined, "an outcome with reuse off states no count");
+  assert.deepEqual(proposedIndex(store), [], "with reuse off nothing is written to the index");
+  const first = reuseRun(store, source, { reuse: true });
+  const units = (first.outcome.units ?? []).length;
+  assert.ok(units >= 3 && first.outcome.reused === 0, JSON.stringify(first.outcome));
+  assert.equal(proposedIndex(store).length, units, "each accepted unit's search is referenced");
+  const copy = verifierCopy();
+  const other = reuseRun(store, source, { reuse: true, program: { path: copy, script: null } });
+  assert.deepEqual(outcomeShape(other.outcome), outcomeShape(first.outcome), "the same outcome");
+  assert.equal(other.outcome.reused, units, "every unit checked over reused evidence");
+  const identity = (r: AttemptRecord): string => canonical(manifestRecord(r)["implementation"] ?? null);
+  const earlier = new Set(searchAttempts(first).map(identity));
+  for (const r of searchAttempts(other)) {
+    assert.equal(r.execution, "reused", "no search executes");
+    assert.ok(r.reusedFrom !== null && earlier.has(canonical(r.reusedFrom.implementation)) && !earlier.has(identity(r)),
+      "reused from the earlier build, by another");
+  }
+  assert.ok(other.records.some((r) => r.stage === "check" && ranStage(r)), "the other build's check executes");
+  const index = proposedIndex(store);
+  const again = reuseRun(store, source, { reuse: false, program: { path: copy, script: null } });
+  for (const r of searchAttempts(again)) assert.equal(r.execution, "executed", "a reused result is published under no key");
+  assert.deepEqual(proposedIndex(store), index, "with reuse off the index is unchanged");
+  assert.deepEqual(outcomeShape(again.outcome), outcomeShape(first.outcome));
+  process.stdout.write(`evidence reuse: ${units} units' evidence found by one verifier identity accepted by another's ` +
+    "check, no search executed; with reuse off nothing written to the index and the reused results searched again\n");
+});
+
+control(async (): Promise<void> => {
+  // A reused result the pipeline cannot use, or whose evidence the check
+  // refuses, is a miss: the unit is searched with reuse off, with no tool
+  // failure, and the outcome is the searched one; units reused and units
+  // searched are checked together.
+  const store = runDirectory("tscert-reuse-fallback-");
+  const source = join(here, "examples", "arrays.ts");
+  const cold = reuseRun(store, source, { reuse: true });
+  const searches = searchAttempts(cold);
+  assert.ok(cold.outcome.status === "verified" && searches.length >= 3, JSON.stringify(cold.outcome));
+  const [target, ...rest] = searches;
+  if (target === undefined) throw Error("control: no search");
+  const variants: [string, (evidence: string) => string, number][] = [
+    // The check reads a line it cannot decode and refuses the unit.
+    ["refused by the check", eachLine((unit) => `{"unit":${unit}}`), 2],
+    ["no JSON", () => "not evidence\n", 1],
+    ["a line naming an absent symbol", eachLine((unit) => `{"symbol":1000000,"unit":${unit}}`), 1],
+    ["a line naming no unit of the slice", eachLine(() => `{"unit":"absent@1"}`), 2],
+  ];
+  for (const [name, rewrite, checks] of variants) {
+    for (const r of rest) proposeAsAnother(store, r, (e) => e);
+    proposeAsAnother(store, target, rewrite);
+    const run = reuseRun(store, source, { reuse: true });
+    assert.deepEqual(outcomeShape(run.outcome), outcomeShape(cold.outcome), `${name}: the searched outcome`);
+    assert.deepEqual(executionsOf(run, target.key), ["reused", "executed"], `${name}: reused, then searched`);
+    for (const r of rest) assert.deepEqual(executionsOf(run, r.key), ["reused"], `${name}: the other units reused`);
+    assert.equal(run.records.filter((r) => r.stage === "check").length, checks, `${name}: ${checks} checks`);
+    assert.equal(run.outcome.reused, rest.length, `${name}: the other units counted reused`);
+  }
+  // Mixed: one unit with no proposal, the others reused, in one check.
+  for (const r of rest) proposeAsAnother(store, r, (e) => e);
+  proposeAsAnother(store, target, null);
+  const mixed = reuseRun(store, source, { reuse: true });
+  assert.deepEqual(outcomeShape(mixed.outcome), outcomeShape(cold.outcome), "mixed: the same outcome");
+  assert.deepEqual(executionsOf(mixed, target.key), ["executed"]);
+  assert.equal(mixed.records.filter((r) => r.stage === "check").length, 1, "mixed: one check");
+  assert.equal(mixed.outcome.reused, rest.length);
+  process.stdout.write(`evidence reuse fallback: ${variants.map(([n]) => n).join(", ")}: a miss, then the search; ` +
+    "reused and searched units in one check\n");
+});
+
+control(async (): Promise<void> => {
+  // A module run whose reused evidence the module check refuses is searched
+  // with reuse off and checked again before the round's withdrawal
+  // decision: the import is not withdrawn, and the outcome is the searched
+  // run's.
+  const store = runDirectory("tscert-reuse-module-");
+  const source = join(here, "examples", "certified-value-import.ts"), project = resolve(here, "imports-project");
+  const cold = reuseRun(store, source, { reuse: true, project });
+  const moduleSearches = cold.records.filter((r, i, all) => r.stage === "module-search" &&
+    all.findIndex((a) => a.stage === r.stage && a.key === r.key) === i);
+  assert.ok(cold.outcome.status === "verified" && moduleSearches.length > 0, JSON.stringify(cold.outcome));
+  for (const r of moduleSearches) proposeAsAnother(store, r, eachLine((unit) => `{"unit":${unit}}`));
+  const run = reuseRun(store, source, { reuse: true, project });
+  assert.deepEqual(outcomeShape(run.outcome), outcomeShape(cold.outcome), "the searched outcome");
+  for (const r of moduleSearches) assert.deepEqual(run.records.filter((a) => a.stage === "module-search" && a.key === r.key)
+    .map((a) => a.execution), ["reused", "executed"], "reused, then searched");
+  const plans = (r: ReuseRun): number => r.records.filter((a) => {
+    const argv = manifestRecord(a)["argv"];
+    return a.stage === "plan" && Array.isArray(argv) && argv.includes("--module-runs");
+  }).length;
+  assert.equal(plans(run), plans(cold), "no withdrawal: the same rounds");
+  assert.equal(run.records.filter((a) => a.stage === "module-check").length,
+    2 * cold.records.filter((a) => a.stage === "module-check").length, "each module run checked twice");
+  assert.equal(run.outcome.reused, 0, "no unit accepted over reused evidence");
+  process.stdout.write("evidence reuse in module runs: refused reused evidence searched again before any withdrawal\n");
+});
+
+control(async (): Promise<void> => {
+  // A check over reused evidence that fails as a whole, here a tool failure,
+  // is followed by a search of every reused unit with reuse off and a check
+  // with no reused evidence. The failure is a stand-in's: a script that
+  // fails a check whose evidence holds a marker, which only the reused
+  // evidence holds, and runs the verifier otherwise.
+  const store = runDirectory("tscert-reuse-whole-");
+  const source = join(here, "examples", "arrays.ts");
+  const earlier = reuseRun(store, source, { reuse: true });
+  const [target, ...rest] = searchAttempts(earlier);
+  if (target === undefined || earlier.outcome.status !== "verified") throw Error("control: no verified search");
+  proposeAsAnother(store, target, eachLine((unit) => `{"stale":"a marker of reused evidence","unit":${unit}}`));
+  const script = join(runDirectory("tscert-reuse-failing-check-"), "verifier.sh");
+  writeFileSync(script, `#!/bin/sh
+if [ "$1" = "--check-units" ] && grep -q 'a marker of reused evidence' "$5"; then\n` +
+    `  echo 'error: a stand-in for a check that fails as a whole' >&2\n  exit 3\nfi\nexec ${JSON.stringify(verifier)} "$@"\n`);
+  chmodSync(script, 0o755);
+  const run = reuseRun(store, source, { reuse: true, program: { path: script, script: [verifier, "/usr/bin/grep"] } });
+  assert.deepEqual(outcomeShape(run.outcome), outcomeShape(earlier.outcome), "the searched outcome");
+  assert.equal(run.outcome.reused, 0, "no unit accepted over reused evidence");
+  for (const r of [target, ...rest]) assert.deepEqual(run.records.filter((a) => a.stage === "search" &&
+    proposalKey(a.stage, a.manifest) === proposalKey(r.stage, r.manifest)).map((a) => a.execution), ["reused", "executed"],
+    "every reused unit searched again");
+  assert.equal(run.records.filter((a) => a.stage === "check").length, 2, "the failed check, then one with no reused evidence");
+  process.stdout.write("evidence reuse after a whole-check failure: every reused unit searched again, then one check\n");
+});
+
+control(async (): Promise<void> => {
+  // The intended divergence: evidence an earlier build found is accepted by
+  // the current check where the current search finds none, and a run with
+  // reuse off reports the search's refusal. The current search's failure is
+  // a stand-in, a script refusing every search and running the verifier
+  // for every other mode: another identity whose check is the verifier's.
+  const store = runDirectory("tscert-reuse-divergence-");
+  const source = join(here, "examples", "arrays.ts");
+  const earlier = reuseRun(store, source, { reuse: true });
+  assert.equal(earlier.outcome.status, "verified");
+  const script = join(runDirectory("tscert-reuse-stand-in-"), "verifier.sh");
+  writeFileSync(script, `#!/bin/sh\nif [ "$1" = "--produce-unit" ]; then\n` +
+    `  printf 'reject: evidence search failed: a stand-in for a search that no longer finds this evidence\\nend of refusal\\n' >&2\n` +
+    `  exit 1\nfi\nexec ${JSON.stringify(verifier)} "$@"\n`);
+  chmodSync(script, 0o755);
+  const program = { path: script, script: [verifier] };
+  const reused = reuseRun(store, source, { reuse: true, program });
+  assert.deepEqual(outcomeShape(reused.outcome), outcomeShape(earlier.outcome), "accepted over the earlier evidence");
+  assert.equal(reused.outcome.reused, (earlier.outcome.units ?? []).length);
+  const searched = reuseRun(store, source, { reuse: false, program });
+  assert.ok(searched.outcome.status === "unverified" && searched.outcome.phase === "search" &&
+    searched.outcome.detail.includes("no longer finds this evidence"), JSON.stringify(searched.outcome));
+  process.stdout.write("evidence reuse divergence: earlier evidence accepted where the current search refuses; " +
+    "with reuse off the refusal is reported\n");
+});
 
 control(async (): Promise<void> => {
   // Replay across an edit of an importer (STAGE-STORE.md, "Observed
