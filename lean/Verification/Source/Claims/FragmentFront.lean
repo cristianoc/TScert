@@ -96,11 +96,17 @@ def retypeFromFragment : Retype := fun fr T f fc module => do
   let envMap : Std.HashMap Nat (List (String × SourceClaims.Candidate Tree)) :=
     fc.envs.foldl (fun m (pos, bs) => m.insert pos bs) {}
   let points := graphs.flatMap fun g => g.nodes.toList.zipIdx.map fun (node, id) =>
-    let sites := actionSites node.action ++ (if id == g.entry then (prologues.lookup g.owner).getD [] else [])
+    let sites := (actionSites node.action ++ (if id == g.entry then (prologues.lookup g.owner).getD [] else [])).eraseDups
     let row : SourceClaims.PointData Tree := {
       exprs := sites.filterMap fun sp => (exprMap.get? sp).map (sp, ·)
       envs := ((envMap.get? node.source.1).map fun bs => [(node.source.1, bs)]).getD [] }
     (SourceFlow.pointId g.owner id, row)
+  -- Two graphs of one owner name a point once: its rows joined.
+  let joined : Std.HashMap String (SourceClaims.PointData Tree) := points.foldl (fun m (id, row) =>
+    match m.get? id with
+    | some r => m.insert id { r with exprs := r.exprs ++ row.exprs.filter (fun (sp, _) => !r.exprs.any (·.1 == sp)), envs := r.envs ++ row.envs.filter fun (pos, _) => !r.envs.any (·.1 == pos) }
+    | none => m.insert id row) {}
+  let points := (points.map (·.1)).eraseDups.filterMap fun id => (joined.get? id).map (id, ·)
   let fc := { fc with points }
   if init then return (T, fc)
   let action : Compiler ((List (String × SourceClaims.Candidate Tree) × SourceClaims.Candidate Tree) ×
