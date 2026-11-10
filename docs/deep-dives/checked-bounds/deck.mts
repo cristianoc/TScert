@@ -8,7 +8,8 @@
  * the coarse-frame measurement cited from its draft. Built with the deck kit
  * (`make deck NAME=checked-bounds`).
  * Build: make deck NAME=checked-bounds SINCE=e0979e83. */
-import { bullets, card, cards, code, columns, cover, inline, panel, para, point, rules, slide, stat, statement, status, table, type Deck, type Slide } from "../../../dev/deck.mts";
+import { bullets, card, cards, code, columns, cover, esc, inline, panel, para, point, rules, slide, stat, statement, status, table, type Deck, type Slide } from "../../../dev/deck.mts";
+import { LIGHT as K } from "../../../dev/style-tokens.mts";
 
 /** Prose with `code` in backticks, as the kit's `inline` reads it. */
 const t = inline;
@@ -17,6 +18,44 @@ const proved = status("ok", "proved"), measured = status("neutral", "measured"),
 const proposed = status("gap", "proposed"), observed = status("neutral", "observed"), cited = status("neutral", "cited");
 const open = status("gap", "open");
 
+
+/* Heap pictures: inline SVG in the shared colours. An array store is a row
+ * of cells (STYLE.md, "Roles": a value is `--neutral`); a store a step may
+ * change freely sits in a dashed `--neg` region; a cell a growing step may
+ * add is dashed `--ok`; a fact kept is `--ok`, a fact lost `--neg`. Labels
+ * are in the code typeface at 26 px, captions in the text typeface. */
+const MONO_F = "'Source Code Pro', Menlo, monospace", SANS_F = "Inter, 'Helvetica Neue', Arial, sans-serif";
+/** Text: runs of [text, colour], in the code typeface unless `sans`. */
+const label = (x: number, y: number, runs: [string, string][], o: { sans?: boolean; size?: number; anchor?: string; bold?: boolean } = {}): string =>
+  `<text x="${x}" y="${y}" font-family="${o.sans ? SANS_F : MONO_F}" font-size="${o.size ?? 26}" text-anchor="${o.anchor ?? "start"}"${o.bold ? ' font-weight="600"' : ""}>` +
+  runs.map(([t, c]) => `<tspan fill="${c}">${esc(t)}</tspan>`).join("") + `</text>`;
+const ink = (x: number, y: number, t: string, o: { sans?: boolean; size?: number; anchor?: string; bold?: boolean; fill?: string } = {}): string =>
+  label(x, y, [[t, o.fill ?? K.ink]], o);
+/** A store's cells from x: `n` cells, of which those from `added` on are a
+ * growth's dashed new cells, each `fill` coloured. */
+const cells = (x: number, y: number, n: number, o: { added?: number; fill?: string; w?: number; h?: number } = {}): string => {
+  const w = o.w ?? 52, h = o.h ?? 44;
+  return Array.from({ length: n }, (_, i) => {
+    const isNew = o.added !== undefined && i >= o.added;
+    return `<rect x="${x + i * w}" y="${y}" width="${w}" height="${h}" fill="${isNew ? K["ok-bg"] : o.fill ?? K["neutral-bg"]}" stroke="${isNew ? K.ok : K.neutral}" stroke-width="2"${isNew ? ' stroke-dasharray="6 4"' : ""}/>`;
+  }).join("");
+};
+const arrow = (x1: number, y1: number, x2: number, y2: number): string => {
+  const a = Math.atan2(y2 - y1, x2 - x1), l = 14, s = 0.45;
+  const p = (r: number, d: number): string => `${x2 - l * Math.cos(a + d * s) * r},${y2 - l * Math.sin(a + d * s) * r}`;
+  return `<line x1="${x1}" y1="${y1}" x2="${x2 - 10 * Math.cos(a)}" y2="${y2 - 10 * Math.sin(a)}" stroke="${K.ink}" stroke-width="3"/>` +
+    `<polygon points="${x2},${y2} ${p(1, 1)} ${p(1, -1)}" fill="${K.ink}"/>`;
+};
+const box = (x: number, y: number, w: number, h: number, o: { fill?: string; stroke?: string; dash?: boolean; r?: number } = {}): string =>
+  `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${o.r ?? 12}" fill="${o.fill ?? "none"}" stroke="${o.stroke ?? K.rule}" stroke-width="${o.dash ? 3 : 2}"${o.dash ? ' stroke-dasharray="10 6"' : ""}/>`;
+/** Two panels side by side, each with its heading. */
+const panels = (h: number, a: [string, string], b: [string, string]): string =>
+  `<svg width="1664" height="${h}" viewBox="0 0 1664 ${h}" xmlns="http://www.w3.org/2000/svg">` +
+  [a, b].map(([head, body], i) => box(i * 852, 0, 812, h, { fill: K.surface, r: 16 }) + ink(i * 852 + 32, 46, head, { sans: true, size: 28, bold: true }) + body).join("") + `</svg>`;
+/** A record holding a `@stable` field that points to a store. */
+const record = (ox: number, y: number, name: string, field: string): string =>
+  box(ox + 32, y, 340, 96, { fill: K["neutral-bg"], stroke: K.neutral }) + ink(ox + 50, y + 38, name, { bold: true }) +
+  label(ox + 50, y + 78, [[field, K.ink], [" @stable", K.muted]]);
 
 const slides: Slide[] = [
   cover("cover", {
@@ -111,7 +150,7 @@ const slides: Slide[] = [
       table(["Operation", "Facts kept"], [
         ["Write a numeric field", "array lengths; facts about that field restated from the written value"],
         [t("Write `xs[k]` below the length"), "the length"],
-        [t("Write `xs[k]` at any index"), "lower bounds of every length (slide 11)"],
+        [t("Write `xs[k]` at any index"), "lower bounds of every length (slide 12)"],
         [t("`out.push(v)`"), t("lower bounds on `out.length`; the lengths of arrays older than a literal `out`")],
         ["Call", t("the facts whose locations the callee’s frame keeps; at `stores: \"grow\"`, lower bounds of lengths")],
         ["Any step", t("a typed array’s length: fixed for its life (" + "trusted" + ")")],
@@ -143,9 +182,27 @@ const slides: Slide[] = [
         point("@stable", t("a `readonly` field holding what its object literal put there for the record’s life: the region names one array across every call.")),
         point("Separation", t("the literal’s `[]` is a new array, so it is not `flags`: the loop keeps `i < flags.length` across each call, and `flags[i]!` is in bounds. A record from a caller needs the precondition `flags !== runs.openBrackets`: distinct arrays. Of typed arrays it is refused; two views may share a buffer.")),
         point("Alias", t("a caller passing one array as both is refused at that precondition; under Node that call returns `NaN` (`invalid-stated-alias`).")),
-        point("pretext", t("`readScriptRuns` splices pretext’s `runs.openBrackets`, and `measureAnalysis` builds its `ScriptRuns` literal before its loop: this shape. `readScriptRuns` and the two functions passing `runs` on to it state this frame with stores grown (slide 11).")),
+        point("pretext", t("`readScriptRuns` splices pretext’s `runs.openBrackets`, and `measureAnalysis` builds its `ScriptRuns` literal before its loop: this shape. `readScriptRuns` and the two functions passing `runs` on to it state this frame with stores grown (slide 12).")),
       ], 24),
     ], [46, 54]),
+  }),
+  slide("one-array-heap", {
+    label: "Frames naming one array · the heap", note: t("the frame of `readRuns` on slide 10 · the rules ") + proved,
+    title: "The region changes freely; every other store is kept", gap: 22,
+    body: panels(400, ["At the call readRuns(runs)", (() => {
+      const o = 0;
+      return ink(o + 32, 126, "flags") + cells(o + 140, 94, 5) + ink(o + 420, 126, "length 5", { fill: K.muted }) +
+        record(o, 196, "runs", "openBrackets") + arrow(o + 372, 270, o + 478, 270) + cells(o + 480, 248, 3) +
+        box(o + 464, 228, 188, 84, { stroke: K.neg, dash: true, r: 8 }) + ink(o + 464, 216, "region: any change", { fill: K.neg, size: 24 }) +
+        label(o + 32, 366, [["i < flags.length", K.neutral]]);
+    })()], ["After the call", (() => {
+      const o = 852;
+      return ink(o + 32, 126, "flags") + cells(o + 140, 94, 5) + ink(o + 420, 126, "length 5, kept", { fill: K.ok }) +
+        record(o, 196, "runs", "openBrackets") + arrow(o + 372, 270, o + 478, 270) + cells(o + 480, 248, 2, { fill: K["principled-bg"] }) +
+        box(o + 464, 228, 188, 84, { stroke: K.neg, dash: true, r: 8 }) + ink(o + 464, 216, "spliced: shorter", { fill: K.neg, size: 24 }) +
+        label(o + 32, 366, [["i < flags.length", K.ok], ["  kept", K.ok]]);
+    })()]) +
+      para(t("The frame names the store `runs.openBrackets` holds at the call; `@stable` fixes which store that is. `flags !== runs.openBrackets` places `flags` outside the region, and the frame keeps every store outside it, so `i < flags.length` holds after the call."), 26),
   }),
   slide("growth", {
     label: "Growth", note: t("the cases `stated-grow-keeps-lengths`, `invalid-stated-grow-upper-bound` · the rules ") + proved + t(" · native contracts ") + trusted,
@@ -161,6 +218,24 @@ const slides: Slide[] = [
       ], 24),
     ], [55, 45]),
   }),
+  slide("growth-heap", {
+    label: "Growth · the heap", note: t("`add(xs)` of slide 12, stated `stores: \"grow\"` · the rules ") + proved,
+    title: "A store that grows keeps lower bounds and loses upper ones", gap: 22,
+    body: panels(440, ["Lower bound: kept", (() => {
+      const o = 0, mark = (y: number): string => `<line x1="${o + 222}" y1="${y}" x2="${o + 222}" y2="${y + 14}" stroke="${K.ink}" stroke-width="3"/>` + ink(o + 222, y + 40, "i", { anchor: "middle" });
+      return ink(o + 32, 90, "before", { sans: true, fill: K.muted }) + ink(o + 32, 140, "xs") + cells(o + 92, 108, 4) + ink(o + 316, 140, "length 4", { fill: K.muted }) + mark(156) +
+        ink(o + 32, 260, "after add(xs)", { sans: true, fill: K.muted }) + ink(o + 32, 310, "xs") + cells(o + 92, 278, 5, { added: 4 }) + ink(o + 368, 310, "length 5", { fill: K.muted }) + mark(326) +
+        label(o + 32, 412, [["i < xs.length", K.ok], ["  holds before and after", K.ok]]);
+    })()], ["Upper bound: lost", (() => {
+      const o = 852, end = o + 92 + 4 * 52;
+      return ink(o + 32, 90, "before", { sans: true, fill: K.muted }) + ink(o + 32, 140, "xs") + cells(o + 92, 108, 4) + ink(o + 32, 192, "ys") + cells(o + 92, 160, 4) +
+        ink(o + 420, 166, "4 <= 4", { fill: K.muted }) +
+        ink(o + 32, 260, "after add(xs)", { sans: true, fill: K.muted }) + ink(o + 32, 310, "xs") + cells(o + 92, 278, 5, { added: 4 }) + ink(o + 32, 362, "ys") + cells(o + 92, 330, 4) +
+        `<line x1="${end}" y1="270" x2="${end}" y2="384" stroke="${K.neg}" stroke-width="3" stroke-dasharray="8 5"/>` + ink(o + 420, 336, "5 <= 4 fails", { fill: K.neg }) +
+        label(o + 32, 412, [["xs.length <= ys.length", K.neg], ["  lost", K.neg]]);
+    })()]) +
+      para(t("A growing step keeps every cell and may add cells at the end: `i` stays below the length, and the length may pass any bound above it."), 26),
+  }),
   slide("separation", {
     label: "Separation across calls", note: t("after the case `stated-region-nullable-apart` · the rules ") + proved + t(" · in pretext ") + observed,
     title: "A guarded separation keeps a length across a regional call", gap: 22,
@@ -173,6 +248,27 @@ const slides: Slide[] = [
         point("pretext", t("`measureAnalysis` passes `unspacedRuns`, its `scriptRuns` or `null`, to `getUnspacedGraphemes`, whose frame states the region `runs.openBrackets[*]`; its loop invariant states this guarded separation.")),
       ], 24),
     ], [60, 40]),
+  }),
+  slide("separation-heap", {
+    label: "Separation across calls · the heap", note: t("`step(chosen, out)` of slide 14 · the rules ") + proved,
+    title: "Either way, xs lies outside the region", gap: 22,
+    body: panels(470, ["chosen holds runs", (() => {
+      const o = 0;
+      return ink(o + 32, 122, "xs") + cells(o + 92, 90, 5) + cells(o + 352, 90, 1, { added: 0 }) + ink(o + 430, 122, "outside: at most grows", { fill: K.ok, size: 24 }) +
+        record(o, 186, "runs", "open") + arrow(o + 372, 258, o + 478, 258) + cells(o + 480, 236, 3) +
+        box(o + 464, 216, 188, 84, { stroke: K.neg, dash: true, r: 8 }) + ink(o + 464, 204, "region: any change", { fill: K.neg, size: 24 }) +
+        ink(o + 32, 340, "chosen") + arrow(o + 140, 330, o + 200, 284) +
+        label(o + 32, 404, [["chosen === null || ", K.muted], ["xs !== chosen.open", K.ok]]) +
+        label(o + 32, 446, [["to <= xs.length", K.ok], ["  kept", K.ok]]);
+    })()], ["chosen is null", (() => {
+      const o = 852;
+      return ink(o + 32, 122, "xs") + cells(o + 92, 90, 5) + cells(o + 352, 90, 1, { added: 0 }) + ink(o + 430, 122, "outside: at most grows", { fill: K.ok, size: 24 }) +
+        record(o, 186, "runs", "open") + arrow(o + 372, 258, o + 478, 258) + cells(o + 480, 236, 3) + cells(o + 636, 236, 1, { added: 0 }) +
+        ink(o + 32, 340, "chosen = null") + ink(o + 300, 340, "the region selects no store", { fill: K.muted, size: 24 }) +
+        label(o + 32, 404, [["chosen === null", K.ok], [" || xs !== chosen.open", K.muted]]) +
+        label(o + 32, 446, [["to <= xs.length", K.ok], ["  kept", K.ok]]);
+    })()]) +
+      para(t("The guarded separation holds in both cases by a different disjunct, and in both `xs` is a store the frame lets only grow."), 26),
   }),
   slide("trust", {
     label: "Soundness and trust", note: t("a conditional safety theorem ") + proved + t(" · explicit assumptions ") + trusted,
@@ -196,7 +292,7 @@ const slides: Slide[] = [
     body: cards([
       stat("268 / 268", "units of pretext’s twelve source files verify on the rewrite as it stands.", "ok"),
       stat("66 / 501", "bound rewrites restored to pretext’s own reads; 436 checks remain, one of them added.", "ok"),
-      stat("12", t("reads of chain 1 in `measureAnalysis` restored; 4 stay checked (slide 15)."), "gap"),
+      stat("12", t("reads of chain 1 in `measureAnalysis` restored; 4 stay checked (slide 18)."), "gap"),
     ], 3) +
       para(t("A chain is a function that builds a structure and every function reading it. Its rewrites are restored together, each read replaced by an assertion and the contracts that prove it in bounds, and every pretext unit keeps verifying. In chain 1, `analyzeText` and `segmentAtLineBreaks` state that `texts`, `starts` and `flags` have one length; `measureAnalysis` requires `to` at most each of their lengths, lower bounds that growth keeps."), 25) +
       para(t("One class stays checked (" + "observed" + " under Node): a line range kept from a longer text, materialized on a shorter one, reads past a segment’s graphemes; original pretext returns wrong text, or `NaN` offsets in rich inline text. No annotation makes it safe; the code needs an index check."), 25),
@@ -205,7 +301,7 @@ const slides: Slide[] = [
     label: "Remaining obligations", note: t("pretext `ba09794f`, TScert `787770a1` · ") + observed + t(" · the string rows at TScert `d36212f9`, pretext `aaa11c50` · each capability ") + open,
     title: "What the remaining reads of chain 1 need", gap: 22,
     body: table(["Capability needed", "Where chain 1 needs it"], [
-      [t("a call of a function with an optional callback, passing none, whose frame is `stores: \"any\"` for every call (slide 16)"), t("the runtime check in `prepareRichInline` before it calls `measureAnalysis`")],
+      [t("a call of a function with an optional callback, passing none, whose frame is `stores: \"any\"` for every call (slide 19)"), t("the runtime check in `prepareRichInline` before it calls `measureAnalysis`")],
       [t("an upper bound of a length kept across calls, `flags.length <= starts.length`; growth keeps lower bounds only"), t("`starts[to]`")],
       [t("a fact known only through a Boolean binding: `mi > from` through `spaceBefore`, `mi >= from + 2` through a negated `mi === from + 1`"), t("`flags[mi - 1]`, `flags[mi - 2]`")],
       [t("a disjunctive precondition: under `from === 0 || from < to` the read is refused at its typing claim, cause not established"), t("`starts[from]`")],
