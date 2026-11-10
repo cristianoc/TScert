@@ -1420,14 +1420,16 @@ read/value rule may succeed when ordinary derivation search cannot. -/
     (fuel : Nat) (j : Sequent ι) (k : HeapKnowledge.Knowledge)
     (suggestions : List (Sequent ι)) (known : KnownIndex ι)
     (codes : CodeEntry ι → Bool := fun _ => false) (aliases : List (ι × ι) := [])
-    (checker : HeapExpressionRules.Checker G images := HeapExpressionRules.Checker.ordinary G images) :
+    (checker : HeapExpressionRules.Checker G images := HeapExpressionRules.Checker.ordinary G images)
+    (own? : Option (List (Ty ι)) := none) :
     SearchM G (Option (Evidence ι) × HeapExpressionRules.StepEvidence ι × HeapKnowledge.Knowledge) := do
   -- A node's derivation is first sought among its own types: its claim and
-  -- its context's, which are its operands' claims. The pool is consulted
-  -- only where those leave a choice open. A construct signature stating a
-  -- precondition is admitted where the step's knowledge establishes it.
+  -- its context's, which are its operands' claims (or the types `own?`
+  -- gives). The pool is consulted only where those leave a choice open. A
+  -- construct signature stating a precondition is admitted where the step's
+  -- knowledge establishes it.
   let admits := fun (eff : CallEffects.Effect) (t : Tm) => PromiseCalls.preconditionHolds k eff t
-  let own := (j.type :: j.context).eraseDups
+  let own := own?.getD (j.type :: j.context).eraseDups
   let ordinary ← (SearchM.orElse (SearchM.lift (CheckResult.fromOption (known.find? j))) fun _ =>
     (expressionWithUsing G images own suggestions aliases admits fuel j.context j.term j.type).orElse fun _ =>
       expressionWithUsing G images pool suggestions aliases admits fuel j.context j.term j.type).result
@@ -1767,7 +1769,7 @@ def meetImplications [DecidableEq ι] (G : NormalGraph ι)
 /-- A node's evidence at its expression's derivation and the yields chosen
 for it: its edges, its handler and, at a return under a promise goal, the
 promise's evidence. -/
-@[nospecialize] private def produceNodeAt [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι)
+@[nospecialize] def produceNodeAt [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι)
     (images : InstanceImageCheck G) (pool : List (Ty ι)) (l : Nat) (node : Node) (claims : Array (PointClaim ι))
     (stored : HeapKnowledge.Knowledge) (c : PointClaim ι) (derivation : Option (Evidence ι)) (effect : HeapExpressionRules.StepEvidence ι)
     (out : HeapKnowledge.Knowledge) (implies : List (PromiseCalls.Implication ι)) (arguments : List Nat)
@@ -1859,7 +1861,7 @@ promise's evidence. -/
   return { evidence with implies := implies, yields := ys, arguments := arguments, promise := promise }
 
 
-@[nospecialize] private def produceNode [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι))
+@[nospecialize] def produceNode [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι))
     (fuel l : Nat) (node : Node) (claims : Array (PointClaim ι))
     (stored : HeapKnowledge.Knowledge) (suggestions : List (Sequent ι)) (known : KnownIndex ι)
     (codes : CodeEntry ι → Bool := fun _ => false) (aliases : List (ι × ι) := [])

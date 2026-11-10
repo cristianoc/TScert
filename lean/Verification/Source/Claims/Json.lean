@@ -16,6 +16,8 @@ import Verification.Source.Claims.Extraction
 import Verification.Source.Claims.Imports
 -- EvidenceWire.lean reads and writes the evidence document's tables and references.
 import Verification.Source.EvidenceWire
+import Verification.Programs.SinglePass
+import Verification.Programs.SinglePassStats
 
 /-! Source claim validation, evidence production and the theorem relating
 exact accepted plans to modeled graph safety. -/
@@ -677,6 +679,70 @@ def FilePlans.checkGroup (f : FilePlans) (group : List Nat)
   let checked := checkRequestsResult (CertifiedPlan.requests certified) b
   if checked.accepted then return f.dependencies group
   throw (requestsRefusal certified b checked)
+
+/-- The single forward pass over a group's members (`SinglePass`). -/
+def FilePlans.passStats (f : FilePlans) (group : List Nat) (node : Nat) : List String :=
+  group.filterMap fun i =>
+    let line : Except String String := do
+      let .graph name _ r ← (f.plans[i]?).getD (.error s!"no unit {i}")
+      return s!"{name}: {SinglePassStats.stats r.program r.claims r.cuts r.assertions}\n{SinglePassStats.trace r.program r.claims r.cuts node 40}"
+    line.toOption
+
+/-- The single forward pass over each member of a group (`SinglePass.run`),
+no certificate built: per member its outcome and counts; the group's
+verdict, the first member's refusal or construct not handled. -/
+def FilePlans.passGroup (f : FilePlans) (fuel : Nat) (group : List Nat) (compare : Bool := false) (debugNode : Nat := 1000000000) :
+    List String × Except String (List String) := Id.run do
+  let G : NormalGraph (EquationStore.CheckedLabel f.F.equations f.F.primitive) := StoreView.graph f.F.store
+  let I : PositiveCertificates.InstanceImageCheck G := StoreView.images f.F.store
+  let mut answers : CertificateProducer.Answered G := {}
+  let mut lines : List String := []
+  let mut failed : Option String := none
+  for i in group do
+    let outcome : Except String (String × String × SinglePass.Outcome) := do
+      let .graph name _ r ← (f.plans[i]?).getD (.error s!"no unit {i}")
+      if r.qualification.isSome then return (name, "", .notHandled "qualified body")
+      if !r.codes.isEmpty then return (name, "", .notHandled "graph code")
+      if !r.ensures.isEmpty then return (name, "", .notHandled "ensures")
+      if r.regional.isSome then return (name, "", .notHandled "store regions")
+      if r.promise.isSome then return (name, "", .notHandled "promise goal")
+      if !(r.footprint == .top && !r.onThrow && !r.fresh) &&
+          !(!r.fresh && r.program.all fun n => Purity.pureTerm n.expression) then
+        return (name, "", .notHandled "footprint")
+      let labels := r.searchLabels
+      let (e, next) ← ExpressionClaims.produceUsing G I labels (StoreView.valid r.types)
+        (StoreView.projection r.types) fuel r.obligations { answers with summaries := #[], summaryAnswers := {} }
+      let (rendered, next) := ExpressionClaims.renderKnownUsing G I labels (StoreView.valid r.types)
+        r.nodePlans next
+      let pool := CertificateProducer.vocabulary G labels r.claims r.inputs
+      let reference : Array HeapKnowledge.Knowledge := if !compare then #[] else
+        match f.searchGroup fuel [i] true with
+        | .ok b => match b.functions.head? with
+          | some resp => (resp.certificate.map (·.knowledge)).toArray
+          | none => #[]
+        | .error _ => #[]
+      let (o, counts, _) := CertificateProducer.timed SinglePass.passNanos fun _ =>
+        SinglePass.run G I pool fuel r.program r.claims r.start r.goal r.assertions r.cuts r.candidates
+          r.entryIndices [] (e ++ rendered) (fun _ => false) r.aliases (HeapExpressionRules.Checker.ordinary G I) next reference debugNode
+      -- The unit's own expression claims, as the check reads them.
+      let obligations := ExpressionClaims.checkAllResult (RequestJson.graph r.toRequest) (StoreView.images r.types)
+        (StoreView.valid r.types) r.obligations e (fun _ => false) []
+      let o := match o with
+        | .accepted => if obligations.accepted then .accepted else .refused "an expression claim"
+        | o => o
+      return (name, toString counts, o)
+    match outcome with
+    | .ok (name, counts, o) =>
+      lines := lines ++ [s!"{name}: {o}; {counts}"]
+      match o with
+      | .accepted => pure ()
+      | .refused w | .notHandled w => if failed.isNone then failed := some s!"single pass: {o} ({w.length})"
+    | .error reason =>
+      lines := lines ++ [s!"refused before the pass: {reason.take 200}"]
+      if failed.isNone then failed := some reason
+  return (lines, match failed with
+    | some reason => .error reason
+    | none => .ok (f.dependencies group))
 
 /-- `searchGroup`, then `checkGroup`. -/
 def FilePlans.verifyGroup (f : FilePlans) (fuel : Nat) (group : List Nat) (unchecked : Bool) :
