@@ -32,6 +32,7 @@ it. Areas follow the pipeline's order; terms are alphabetical within each.
 
 - **calculus**: the small formal language, defined in Lean, into which a function is translated and whose execution and safety are defined ([operational language](SEMANTICS.md#operational-language)).
 - **calculus graph**: the translated program, a graph of calculus code over which typing and safety are defined ([stages](DESIGN.md#stages)).
+- **candidate** (at a statement entry): a fact the producer supplies at a statement entry, which the search keeps there where every edge into the entry establishes it and no check requires ([source observation checkpoints](PROGRAM-TYPING.md#source-observation-checkpoints)).
 - **certificate**: a finite description of the typing and subtype derivations for a request, which search proposes and the checker validates ([stages](DESIGN.md#stages)).
 - **checker** / **verifier**: the Lean program that validates a certificate against the exact translated program; its success is what acceptance means ([stages](DESIGN.md#stages), [the CLI](REQUEST-PROTOCOL.md#run-the-verifier)).
 - **claim**: a type or state description the producer proposes at a program point; it becomes an obligation where extraction uses it ([claims](DESIGN.md#claims-and-the-claim-reader)).

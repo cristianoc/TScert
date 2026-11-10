@@ -320,6 +320,7 @@ did not mention grow it, and the request carries the result. -/
     obligations := built.obligations
     sourceMap := built.source.sourceMap
     assertions := built.source.assertions
+    candidates := built.source.candidates
     cuts := built.source.cuts
     hints := built.hints
     codeSources := built.codeSources

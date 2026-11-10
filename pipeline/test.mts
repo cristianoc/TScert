@@ -144,9 +144,8 @@ control(async (): Promise<void> => {
     { name: "bounds", path: [], term: "length", coefficient: -1 }], bound: -1 });
   const forged = writeClaims(artifacts, "projected-length-forged", claims);
   const searched = produceWith(artifacts, forged, "projected-length-forged");
-  assert.equal(searched.status, 1, `${searched.stdout}${searched.stderr}`);
-  assert.match(searched.stdout + searched.stderr, /does not establish the claims/);
-  process.stdout.write("element paths: a strict length bound forged from an inclusive clause is refused\n");
+  refusedLeavingOut(searched, entry.start, "projected length");
+  process.stdout.write("element paths: a strict length bound forged from an inclusive clause left out at its entry, the read needing it refused\n");
 });
 
 control(async (): Promise<void> => {
@@ -177,9 +176,8 @@ control(async (): Promise<void> => {
     { name: "widths", path: [], term: "length", coefficient: -1 }], bound: -1 });
   const forged = writeClaims(artifacts, "disjunction-strict-forged", claims);
   const searched = produceWith(artifacts, forged, "disjunction-strict-forged");
-  assert.equal(searched.status, 1, `${searched.stdout}${searched.stderr}`);
-  assert.match(searched.stdout + searched.stderr, /does not establish the claims/);
-  process.stdout.write("linear disjunction: a strict bound forged from an inclusive arm is refused at its entry\n");
+  refusedLeavingOut(searched, entry.start, "disjunction");
+  process.stdout.write("linear disjunction: a strict bound forged from an inclusive arm left out at its entry, the read needing it refused\n");
 });
 
 control(async (): Promise<void> => {
@@ -202,10 +200,14 @@ control(async (): Promise<void> => {
     entry.facts.push({ guards: [], terms, bound });
     const forged = writeClaims(artifacts, `${file}-forged-length`, claims);
     const searched = produceWith(artifacts, forged, `${file}-forged-length`);
-    assert.equal(searched.status, 1, searched.stdout + searched.stderr);
-    assert.match(searched.stdout + searched.stderr, /does not establish the claims/, file);
-    invoke(forged, join(artifacts, "evidence.json"), artifacts, /^reject: source evidence /m);
+    // No obligation of the return needs the forged fact: the search leaves
+    // it out and the unit verifies, and the honest evidence, which holds
+    // none of it, is accepted against the forged claims, acceptance reading
+    // no candidate.
+    acceptedLeavingOut(artifacts, searched, file);
+    accepted(forged, join(artifacts, "evidence.json"), artifacts, file);
   }
+  process.stdout.write("native lengths: a length fact each native contract withholds, forged at the return, left out and the unit verified, in search and in checking\n");
 });
 
 control(async (): Promise<void> => {
@@ -214,7 +216,8 @@ control(async (): Promise<void> => {
   assert.equal(runExample("invalid-string-method-search", 'emptyNeedle("a")'), 1);
   assert.equal(runExample("invalid-string-method-concat", 'numeric(123).length'), 3);
   // Each consumer's whole precondition forged at its call's entry, so the
-  // call itself holds there, is refused at that entry's incoming edge: the
+  // call itself would hold there, is left out of that entry, which no edge
+  // establishes it at, and the call is refused: the
   // integer code unit in range, the slice's length 2, the search position
   // strictly below the length, the concatenation's length 1, each holding
   // the fact its method's contract withholds.
@@ -240,9 +243,7 @@ control(async (): Promise<void> => {
     entry.facts.push(...facts);
     const forged = writeClaims(artifacts, `string-method-forged-${name}`, claims);
     const searched = produceWith(artifacts, forged, `string-method-forged-${name}`);
-    assert.equal(searched.status, 1, searched.stdout + searched.stderr);
-    assert.match(searched.stdout + searched.stderr,
-      new RegExp(`incoming edge obligation at \\[${entry.start},\\d+\\): evidence search failed: the edge from node \\d+ does not establish the claims`));
+    refusedLeavingOut(searched, entry.start, name);
   }
   const artifacts = run("bounds-callback-footprint");
   const claims = readClaims(artifacts);
@@ -367,10 +368,11 @@ control(async (): Promise<void> => {
   // a guarded write, a write naming another index slot, a bound whose
   // condition's answer is flipped and a conditional bound made unconditional
   // are each refused where it is checked.
-  // A bound claimed at an entry no incoming edge establishes it at: past the
-  // mask alone, past another array's comparison, with no guard, and at the
-  // guard's entry in a loop counting down from the length, reached from a
-  // test of the index against 0 alone.
+  // A bound claimed at an entry no incoming edge establishes it at, left
+  // out of it: past the mask alone, past another array's comparison and
+  // with no guard, each write needing it refused; and at the guard's entry
+  // in a loop counting down from the length, reached from a test of the
+  // index against 0 alone, which nothing there needs.
   for (const [name, fnName, at, array, index] of [
     ["invalid-index-write-no-compare", "wrong", "xs[k] = v", "xs", "k"],
     ["invalid-index-write-other-array", "wrong", "xs[k] = v", "xs", "k"],
@@ -385,11 +387,15 @@ control(async (): Promise<void> => {
     must(fn.entries.find(e => e.start === start), "the forged entry").bounds.push({ array, index, strict: false });
     const forged = writeClaims(artifacts, `index-write-forged-bound-${name}`, claims);
     const searched = produceWith(artifacts, forged, `index-write-forged-bound-${name}`);
-    assert.equal(searched.status, 1, `${name}: ${searched.stdout}${searched.stderr}`);
+    // The unsafe writes need the bound, refused where they are; the loop's
+    // guard needs none, and its unit verifies without it.
+    if (name === "index-write-guard-loop") acceptedLeavingOut(artifacts, searched, name);
+    else refusedLeavingOut(searched, start, name);
   }
   // The honest evidence of a guarded write, checked against claims whose
-  // write entry drops the bound or names another index: the entry's
-  // knowledge is exact, and each is refused where it is checked.
+  // write entry drops the bound or names another index: a supplied bound is
+  // a candidate, which acceptance does not read, and the evidence's
+  // knowledge at the entry, every edge into it checked, is accepted.
   {
     const artifacts = run("index-write-guard");
     const source = readFileSync(sourceKey(artifacts), "utf8");
@@ -401,7 +407,7 @@ control(async (): Promise<void> => {
       assert.deepEqual(entry.bounds, [{ array: "xs", index: "k", strict: false }]);
       entry.bounds = variant === "dropped" ? [] : [{ array: "xs", index: "v", strict: false }];
       const forged = writeClaims(artifacts, `index-write-claims-${variant}`, claims);
-      invoke(forged, join(artifacts, "evidence.json"), artifacts, /^reject: source evidence /m);
+      accepted(forged, join(artifacts, "evidence.json"), artifacts, variant);
     }
   }
   const artifacts = run("index-write-guard");
@@ -428,7 +434,7 @@ control(async (): Promise<void> => {
     writeFileSync(path, tabledEvidence(evidence));
     invoke(join(artifacts, "claims.json"), path, artifacts, /^reject: source evidence /m);
   }
-  process.stdout.write("checked index writes: a bound claimed past the mask alone, another array's comparison, no guard or at a loop's guard; claims dropping the bound or naming another index against honest evidence; a write at another slot, a flipped or dropped bound condition in evidence; each refused\n");
+  process.stdout.write("checked index writes: a bound claimed past the mask alone, another array's comparison or no guard left out and the write refused, at a loop's guard left out and verified; claims dropping the bound or naming another index accepted with honest evidence; a write at another slot, a flipped or dropped bound condition in evidence, each refused\n");
 });
 
 control(async (): Promise<void> => {
@@ -467,7 +473,8 @@ control(async (): Promise<void> => {
   // caller's facts forged to state `xs.length === ys.length` where only
   // `xs.length > 0` was tested, the call then typed at the precondition's
   // signature by the producer's own selection, is refused where evidence is
-  // searched, at the entry the forged facts are claimed.
+  // searched: the forged facts are left out of their entry, and the call
+  // needing them is refused.
   const artifacts = run("invalid-precondition-lengths");
   const source = readFileSync(sourceKey(artifacts), "utf8");
   const claims = readClaims(artifacts);
@@ -478,9 +485,8 @@ control(async (): Promise<void> => {
     { guards: [], terms: [length("xs", -1), length("ys", 1)], bound: 0 });
   const forged = writeClaims(artifacts, "length-equality-forged", claims);
   const searched = produceWith(artifacts, forged, "length-equality-forged");
-  assert.equal(searched.status, 1, `${searched.stdout}${searched.stderr}`);
-  assert.match(searched.stdout + searched.stderr, /does not establish the claims/);
-  process.stdout.write("length terms: an equality of two lengths claimed where no test stated it, refused at its entry\n");
+  refusedLeavingOut(searched, entry.start, "length equality");
+  process.stdout.write("length terms: an equality of two lengths claimed where no test stated it, left out at its entry, the call needing it refused\n");
 });
 
 control(async (): Promise<void> => {
@@ -488,8 +494,8 @@ control(async (): Promise<void> => {
   // it: the read of each unsafe program claimed at `number`, the result of
   // `%ByteAt%`'s bounded signature, with its whole precondition
   // `safeInteger(i) && 0 <= i && i < b.length` forged at the read's
-  // statement entry, so the read itself holds there, is refused at that
-  // entry's incoming edge where evidence is searched: the read at the
+  // statement entry, is left out of that entry, which no edge establishes
+  // it at, and the read is refused where evidence is searched: the read at the
   // length of a loop running to `i <= b.length`, and the read of `b` below
   // another view's length, with and without a number field's write before
   // it.
@@ -512,11 +518,9 @@ control(async (): Promise<void> => {
         bound: -1 });
     const forged = writeClaims(artifacts, `view-length-forged-${name}`, claims);
     const searched = produceWith(artifacts, forged, `view-length-forged-${name}`);
-    assert.equal(searched.status, 1, `${name}: ${searched.stdout}${searched.stderr}`);
-    assert.match(searched.stdout + searched.stderr,
-      new RegExp(`incoming edge obligation at \\[${source.indexOf(statement)},\\d+\\): evidence search failed: the edge from node \\d+ does not establish the claims`));
+    refusedLeavingOut(searched, source.indexOf(statement), name);
   }
-  process.stdout.write("typed-array lengths: a read below a typed array's length claimed where no test stated it, at the length and below another view's, refused at its entry\n");
+  process.stdout.write("typed-array lengths: a read below a typed array's length claimed where no test stated it, at the length and below another view's, left out at its entry, the read refused\n");
 });
 
 control(async (): Promise<void> => {
@@ -524,9 +528,9 @@ control(async (): Promise<void> => {
   // code point read of each unsafe program claimed at `number`, the result
   // of `codePointAt`'s bounded signature, with its whole precondition
   // `safeInteger(i) && 0 <= i && i < text.length` (`b`'s, for the read of
-  // another string) forged at the read's statement entry, so the read
-  // itself holds there, is refused at that entry's incoming edge where
-  // evidence is searched: the read at the length of a loop running to
+  // another string) forged at the read's statement entry, is left out of
+  // that entry, which no edge establishes it at, and the read is refused
+  // where evidence is searched: the read at the length of a loop running to
   // `i <= text.length`, and the read of `b` below `a`'s length.
   for (const [name, fnName, string, read, statement] of [
     ["invalid-string-code-point-at-length", "last", "text", "text.codePointAt(i)", "x = text.codePointAt(i)!"],
@@ -546,16 +550,15 @@ control(async (): Promise<void> => {
         { name: string, path: [], term: "strLength", coefficient: -1 }], bound: -1 });
     const forged = writeClaims(artifacts, `string-length-forged-${name}`, claims);
     const searched = produceWith(artifacts, forged, `string-length-forged-${name}`);
-    assert.equal(searched.status, 1, `${name}: ${searched.stdout}${searched.stderr}`);
-    assert.match(searched.stdout + searched.stderr,
-      new RegExp(`incoming edge obligation at \\[${source.indexOf(statement)},\\d+\\): evidence search failed: the edge from node \\d+ does not establish the claims`));
+    refusedLeavingOut(searched, source.indexOf(statement), name);
   }
-  process.stdout.write("string lengths: a code point read below a string's length claimed where no test stated it, at the length and below another string's, refused at its entry\n");
+  process.stdout.write("string lengths: a code point read below a string's length claimed where no test stated it, at the length and below another string's, left out at its entry, the read refused\n");
 });
 
 control(async (): Promise<void> => {
   // The call of short states no result fact. Forge the missing length at
-  // the following read; the incoming edge must establish it.
+  // the following read: no edge establishes it, so it is left out and the
+  // read is refused.
   const artifacts = run("invalid-written-ensures-unstated");
   const source = readFileSync(sourceKey(artifacts), "utf8");
   const claims = readClaims(artifacts);
@@ -570,16 +573,15 @@ control(async (): Promise<void> => {
   ], bound: 0 });
   const forged = writeClaims(artifacts, "written-ensures-forged", claims);
   const searched = produceWith(artifacts, forged, "written-ensures-forged");
-  assert.equal(searched.status, 1, `${searched.stdout}${searched.stderr}`);
-  assert.match(searched.stdout + searched.stderr, /does not establish the claims/);
-  process.stdout.write("written ensures: a result bound absent from the call's signature, forged after the call, refused\n");
+  refusedLeavingOut(searched, entry.start, "written ensures");
+  process.stdout.write("written ensures: a result bound absent from the call's signature, forged after the call, left out and the read refused\n");
 });
 
 control(async (): Promise<void> => {
   // A type invariant claimed of a value no boundary gives it: the cast
   // record's `segmentFlags.length === widths.length` forged at the entry of
-  // the walker's call, which requires it, is refused at that entry where
-  // evidence is searched.
+  // the walker's call, which requires it, is left out of that entry and the
+  // call is refused where evidence is searched.
   const artifacts = run("invalid-type-invariant-cast");
   const source = readFileSync(sourceKey(artifacts), "utf8");
   const claims = readClaims(artifacts);
@@ -591,9 +593,8 @@ control(async (): Promise<void> => {
     { guards: [], terms: [term(["segmentFlags"], "view", -1), term(["widths"], "length", 1)], bound: 0 });
   const forged = writeClaims(artifacts, "type-invariant-forged", claims);
   const searched = produceWith(artifacts, forged, "type-invariant-forged");
-  assert.equal(searched.status, 1, `${searched.stdout}${searched.stderr}`);
-  assert.match(searched.stdout + searched.stderr, /does not establish the claims/);
-  process.stdout.write("type invariants: an invariant claimed of a cast record at a call's entry, refused there\n");
+  refusedLeavingOut(searched, source.indexOf("return lastFlag(prepared)"), "cast record");
+  process.stdout.write("type invariants: an invariant claimed of a cast record at a call's entry, left out there, the call refused\n");
 });
 
 control(async (): Promise<void> => {
@@ -601,9 +602,8 @@ control(async (): Promise<void> => {
   // "Guarded clauses"): in the walker testing another field, its read
   // claimed at `number`, the invariant's body forged at the read's entry
   // with its guard removed, and forged guarded by the tested field instead,
-  // at the test's entry (with the body at the read's entry, so the read
-  // itself holds), are each refused at that entry where evidence is
-  // searched.
+  // at the test's entry (with the body at the read's entry), are each left
+  // out of that entry, and the read refused, where evidence is searched.
   const artifacts = run("invalid-guarded-invariant-other-field");
   const source = readFileSync(sourceKey(artifacts), "utf8");
   const fnStart = source.indexOf("export function lastHyphen");
@@ -638,21 +638,19 @@ control(async (): Promise<void> => {
         ...facts.map(fact => ({ ...fact, guards: [] })));
     const forged = writeClaims(artifacts, `guarded-forged-${variant}`, claims);
     const searched = produceWith(artifacts, forged, `guarded-forged-${variant}`);
-    assert.equal(searched.status, 1, `${variant}: ${searched.stdout}${searched.stderr}`);
-    assert.match(searched.stdout + searched.stderr, new RegExp(`incoming edge obligation at \\[${entry.start},\\d+\\): ` +
-      `evidence search failed: the edge from node \\d+ does not establish the claims`), variant);
+    refusedLeavingOut(searched, entry.start, variant);
   }
-  process.stdout.write("guarded facts: an invariant's body claimed with its guard removed, and guarded by another field's test, each refused at its entry\n");
+  process.stdout.write("guarded facts: an invariant's body claimed with its guard removed, and guarded by another field's test, each left out at its entry, the read refused\n");
 });
 
 control(async (): Promise<void> => {
-  // A loop invariant is the verifier's own assertion at the loop's head
-  // (ARITHMETIC.md, "Loop invariants"): in the negative whose back edge
-  // breaks it, the read it would bound claimed at `number`, every fact the
-  // producer proposes removed but, at the head and the reads' entry, those
-  // of the parameters alone (the precondition's), and the reads' bounds
-  // forged at their entry, so the reads themselves hold there where the
-  // head's invariant holds, the head still refuses the back edge.
+  // A loop invariant is the verifier's own assertion at the loop's head,
+  // required whatever the producer supplies (ARITHMETIC.md, "Loop
+  // invariants"): in the negative whose back edge breaks it, the read it
+  // would bound claimed at `number`, every fact the producer proposes
+  // removed but those of the parameters alone (the precondition's), and the
+  // reads' bounds supplied at their entry, which the head's invariant and
+  // the loop's test establish there, the head still refuses the back edge.
   const artifacts = run("invalid-loop-invariant-back-edge");
   const source = readFileSync(sourceKey(artifacts), "utf8");
   const read = "ys[j]";
@@ -662,13 +660,13 @@ control(async (): Promise<void> => {
   must(fn.expressions.find(e => e.pos[0] === at && e.pos[1] === at + read.length), "the read").type = [rowOf(claims, "num")];
   const head = source.indexOf(";", source.indexOf("for (let i = 0;"));
   const readsEntry = source.indexOf("s += xs[i]");
-  keepParameterFacts(fn, [head, readsEntry]);
+  keepParameterFacts(fn, fn.entries.map(e => e.start));
   must(fn.entries.find(e => e.start === readsEntry), "the reads' entry").facts.push(
     ...readBound("i", "xs"), ...readBound("j", "ys"));
   const forged = writeClaims(artifacts, "loop-invariant-forged", claims);
   const searched = produceWith(artifacts, forged, "loop-invariant-forged");
   assert.equal(searched.status, 1, `${searched.stdout}${searched.stderr}`);
-  assert.match(searched.stdout + searched.stderr, new RegExp(`edge obligation at \\[${head},`));
+  assert.match(searched.stdout + searched.stderr, new RegExp(`incoming edge obligation at \\[${head},`));
   process.stdout.write("loop invariants: a back edge breaking one refused at the loop's head with no fact the producer proposes\n");
 });
 
@@ -679,7 +677,8 @@ control(async (): Promise<void> => {
   // would bound it, `ends[i] < widths.length` of every index of `ends`: over
   // the inclusive precondition, after a direct alias write, and after a
   // write through another field holding the quantified array.
-  // Each is refused at that entry where evidence is searched.
+  // Each is left out of that entry, and the read refused, where evidence is
+  // searched.
   type Entry = SourceClaims["functions"][number]["entries"][number];
   type Quantified = Entry["quantified"][number];
   const strict: Quantified = { name: "ends", path: [], stop: { name: "ends", path: [], term: "length" },
@@ -715,17 +714,16 @@ control(async (): Promise<void> => {
     entry.quantified.push(fact);
     const forged = writeClaims(artifacts, `quantified-forged-${name}`, claims);
     const searched = produceWith(artifacts, forged, `quantified-forged-${name}`);
-    assert.equal(searched.status, 1, `${name}: ${searched.stdout}${searched.stderr}`);
-    assert.match(searched.stdout + searched.stderr, new RegExp(`incoming edge obligation at \\[${entry.start},\\d+\\): ` +
-      `evidence search failed: the edge from node \\d+ does not establish the claims`), `${name}: ${searched.stdout}${searched.stderr}`);
+    refusedLeavingOut(searched, entry.start, name);
   }
-  process.stdout.write("quantified facts: a strict element bound claimed over an inclusive precondition and after direct and field alias writes, each refused at its entry\n");
+  process.stdout.write("quantified facts: a strict element bound claimed over an inclusive precondition and after direct and field alias writes, each left out at its entry, the read refused\n");
 });
 
 control(async (): Promise<void> => {
   // Advancing the claimed prefix over an unwritten cell must fail independently
   // of the producer's choice to drop the fact: the advanced prefix forged at
-  // the entry after the write is refused at that entry.
+  // the entry after the write is left out of that entry, and the read it
+  // would bound refused.
   const artifacts = run("invalid-typed-array-prefix-past");
   const source = readFileSync(sourceKey(artifacts), "utf8");
   const claims = readClaims(artifacts);
@@ -746,9 +744,7 @@ control(async (): Promise<void> => {
   readEntry.quantified = [structuredClone(prefix)];
   const forged = writeClaims(artifacts, "typed-prefix-past-forged", claims);
   const searched = produceWith(artifacts, forged, "typed-prefix-past-forged");
-  assert.equal(searched.status, 1, `${searched.stdout}${searched.stderr}`);
-  assert.match(searched.stdout + searched.stderr, new RegExp(`incoming edge obligation at \\[${at},\\d+\\): ` +
-    `evidence search failed: the edge from node \\d+ does not establish the claims`));
+  refusedLeavingOut(searched, at, "advanced prefix");
 });
 
 control(async (): Promise<void> => {
@@ -757,7 +753,8 @@ control(async (): Promise<void> => {
   // array; at every entry from the one after `const alias = ends` to the
   // return, `alias` claimed apart from `ends` and `widths`, the quantified
   // fact over `ends` carried, and the outer read claimed at `number`. No
-  // allocation states the fact: it is refused at the first entry claiming it.
+  // allocation states the fact: it is left out from the first entry claiming
+  // it on, and the read refused.
   type Entry = SourceClaims["functions"][number]["entries"][number];
   type Quantified = Entry["quantified"][number];
   const strict: Quantified = { name: "ends", path: [], stop: { name: "ends", path: [], term: "length" },
@@ -780,14 +777,15 @@ control(async (): Promise<void> => {
   }
   const forged = writeClaims(artifacts, "region-forged-alias", claims);
   const searched = produceWith(artifacts, forged, "region-forged-alias");
-  assert.equal(searched.status, 1, `${searched.stdout}${searched.stderr}`);
-  assert.match(searched.stdout + searched.stderr, new RegExp(`edge obligation at \\[${at},[^\\n]*does not establish the claims`));
-  process.stdout.write("region facts: aliases claimed apart before a write through one refused at the entry claiming it\n");
+  refusedLeavingOut(searched, at, "region");
+  process.stdout.write("region facts: aliases claimed apart before a write through one left out at the entry claiming it, the read refused\n");
 });
 
 control(async (): Promise<void> => {
   // Literal length must not justify an arbitrary quantified body.
-  // The honest program verifies; its numeric literal contains 0 and 1.
+  // The honest program verifies; its numeric literal contains 0 and 1. The
+  // forged body at the return, which nothing there needs, is left out, and
+  // the unit verifies in search and in checking.
   const artifacts = run("native-length-literal");
   const source = readFileSync(sourceKey(artifacts), "utf8");
   const claims = readClaims(artifacts);
@@ -797,10 +795,9 @@ control(async (): Promise<void> => {
     body: [{ terms: [["elem", 1]], bound: -1 }] });
   const forged = writeClaims(artifacts, "every-empty-nonempty-forged", claims);
   const searched = produceWith(artifacts, forged, "every-empty-nonempty-forged");
-  assert.equal(searched.status, 1, `${searched.stdout}${searched.stderr}`);
-  assert.match(searched.stdout + searched.stderr, /does not establish the claims/);
-  invoke(forged, join(artifacts, "evidence.json"), artifacts, /^reject: source evidence /m);
-  process.stdout.write("every-empty: negative elements forged over [0,1] refused in search and checking\n");
+  acceptedLeavingOut(artifacts, searched, "every-empty");
+  accepted(forged, join(artifacts, "evidence.json"), artifacts, "every-empty");
+  process.stdout.write("every-empty: negative elements forged over [0,1] left out, verified in search and checking\n");
 });
 
 control(async (): Promise<void> => {
@@ -809,8 +806,10 @@ control(async (): Promise<void> => {
   // claims without it, from the one after the push to the loop's,
   // `ends[i] < widths.length` of every index of `ends`, after a push of
   // `widths.length` into `ends` and after a push into an array no separation
-  // keeps apart from `ends`. Each is refused at the entry after the push
-  // where evidence is searched.
+  // keeps apart from `ends`. Each is left out from the entry after the push
+  // on, and the loop's written invariant, which states the bound and which
+  // the head requires whatever the producer supplies, refuses the head's
+  // entering edge where evidence is searched.
   type Entry = SourceClaims["functions"][number]["entries"][number];
   type Quantified = Entry["quantified"][number];
   const strict: Quantified = { name: "ends", path: [], stop: { name: "ends", path: [], term: "length" },
@@ -826,10 +825,11 @@ control(async (): Promise<void> => {
     for (const e of fn.entries) if (e.quantified.length === 0 && e.start >= at) e.quantified.push(strict);
     const forged = writeClaims(artifacts, `push-forged-${file}`, claims);
     const searched = produceWith(artifacts, forged, `push-forged-${file}`);
-    assert.equal(searched.status, 1, `${file}: ${searched.stdout}${searched.stderr}`);
-    assert.match(searched.stdout + searched.stderr, new RegExp(`edge obligation at \\[${at},[^\\n]*does not establish the claims`), file);
+    assert.match(searched.stdout + searched.stderr,
+      new RegExp(`incoming edge obligation at \\[${source.indexOf("; i < ends.length")},`), file);
+    refusedLeavingOut(searched, at, file);
   }
-  process.stdout.write("quantified facts: the strict element bound claimed extended across a push of the length and a push into a possible alias, each refused at the entry after it\n");
+  process.stdout.write("quantified facts: the strict element bound claimed extended across a push of the length and a push into a possible alias, each left out after it, the loop's invariant refused at its head\n");
 });
 
 control(async (): Promise<void> => {
@@ -838,7 +838,8 @@ control(async (): Promise<void> => {
   // negative's outer read claimed at `number`, and at its return's entry
   // `items[i] < widths.length` of every index below the view's typed-array
   // length: over the inclusive precondition, and after a write through a
-  // `subarray` view of the same bytes. Each is refused at that entry.
+  // `subarray` view of the same bytes. Each is left out of that entry, and
+  // the read refused.
   type Entry = SourceClaims["functions"][number]["entries"][number];
   type Quantified = Entry["quantified"][number];
   const strict: Quantified = { name: "items", path: [], stop: { name: "items", path: [], term: "view" },
@@ -862,18 +863,17 @@ control(async (): Promise<void> => {
       .push(strict);
     const forged = writeClaims(artifacts, `typed-quantified-forged-${name}`, claims);
     const searched = produceWith(artifacts, forged, `typed-quantified-forged-${name}`);
-    assert.equal(searched.status, 1, `${name}: ${searched.stdout}${searched.stderr}`);
-    assert.match(searched.stdout + searched.stderr, /does not establish the claims/, name);
+    refusedLeavingOut(searched, source.indexOf("return widths", fnStart), name);
   }
-  process.stdout.write("typed-array quantified facts: a strict element bound claimed over an inclusive precondition and after a subarray view's write, each refused at its entry\n");
+  process.stdout.write("typed-array quantified facts: a strict element bound claimed over an inclusive precondition and after a subarray view's write, each left out at its entry, the read refused\n");
 });
 
 control(async (): Promise<void> => {
   // A sealed handle's invariant claimed where a resize broke it: the
   // handle's `segmentFlags.length === widths.length`, over its
   // representation's fields, forged at the entry of the walker's call after
-  // the `push`, which requires it, is refused at that entry where evidence is
-  // searched.
+  // the `push`, which requires it, is left out of that entry, and the call
+  // refused, where evidence is searched.
   const artifacts = run("invalid-sealed-handle-resize");
   const source = readFileSync(sourceKey(artifacts), "utf8");
   const claims = readClaims(artifacts);
@@ -885,16 +885,16 @@ control(async (): Promise<void> => {
     { guards: [], terms: [term(["segmentFlags"], "view", -1), term(["widths"], "length", 1)], bound: 0 });
   const forged = writeClaims(artifacts, "sealed-handle-forged", claims);
   const searched = produceWith(artifacts, forged, "sealed-handle-forged");
-  assert.equal(searched.status, 1, `${searched.stdout}${searched.stderr}`);
-  assert.match(searched.stdout + searched.stderr, /does not establish the claims/);
-  process.stdout.write("sealed handles: a handle's invariant claimed at a call's entry after a resize, refused there\n");
+  refusedLeavingOut(searched, source.indexOf("return lastFlag(prepared)"), "sealed handle");
+  process.stdout.write("sealed handles: a handle's invariant claimed at a call's entry after a resize, left out there, the call refused\n");
 });
 
 control(async (): Promise<void> => {
   // The precondition of the construct signature stating a typed array's
   // typed-array length, `n` a safe integer at least 0, claimed of a fraction at
-  // the construction's entry: refused there, so the construction is typed at
-  // the signature stating no result fact.
+  // the construction's entry: left out there, so the construction is typed at
+  // the signature stating no result fact, and the return's postcondition,
+  // which needs it, is refused.
   const artifacts = run("invalid-typed-array-length-fraction");
   const source = readFileSync(sourceKey(artifacts), "utf8");
   const claims = readClaims(artifacts);
@@ -905,8 +905,9 @@ control(async (): Promise<void> => {
   const forged = writeClaims(artifacts, "typed-array-length-forged", claims);
   const searched = produceWith(artifacts, forged, "typed-array-length-forged");
   assert.equal(searched.status, 1, `${searched.stdout}${searched.stderr}`);
-  assert.match(searched.stdout + searched.stderr, /does not establish the claims/);
-  process.stdout.write("typed arrays: a construction's precondition claimed of a fraction at its entry, refused there\n");
+  assert.match(searched.stdout + searched.stderr, /source ensures refusal at \[\d+,\d+\): a return of 'prepare' does not establish/);
+  assert.ok(leftOutCount(searched) > 0, searched.stdout);
+  process.stdout.write("typed arrays: a construction's precondition claimed of a fraction at its entry, left out there, the postcondition needing it refused\n");
 });
 
 control(async (): Promise<void> => {
@@ -1153,12 +1154,12 @@ control(async (): Promise<void> => {
   // producer does not propose, forged past it into the claims and the
   // parser's document of the central example's aliased caller: a
   // separation of `xs` from itself claimed at `aliased`'s statement entry,
-  // which no knowledge at its entry establishes; and `measure`'s
-  // precondition removed from the document with every separation its
-  // claims state removed, so `i < flags.length`, still claimed after
-  // `readRuns(runs)`, is kept across a frame that may change `flags`'s
-  // store, refused at that statement's entry; each refused where evidence is
-  // searched.
+  // which no knowledge at its entry establishes, left out and the call
+  // needing it refused; and `measure`'s precondition removed from the
+  // document with every separation its claims state removed, so
+  // `i < flags.length`, still claimed after `readRuns(runs)`, is not kept
+  // across a frame that may change `flags`'s store, left out of that
+  // statement's entry and the read refused; each where evidence is searched.
   const artifacts = run("invalid-stated-alias");
   const source = readFileSync(sourceKey(artifacts), "utf8");
   const claims = readClaims(artifacts);
@@ -1166,8 +1167,7 @@ control(async (): Promise<void> => {
   must(aliased.entries.find(e => e.start === source.indexOf("return measure(xs")), "the call's entry").storesApart.push(
     { name: "xs", path: [], other: "xs", otherPath: [] });
   const separated = produceWith(artifacts, writeClaims(artifacts, "forged-store-separation", claims), "forged-store-separation");
-  assert.equal(separated.status, 1, `${separated.stdout}${separated.stderr}`);
-  assert.match(separated.stdout + separated.stderr, /does not establish the claims/);
+  refusedLeavingOut(separated, source.indexOf("return measure(xs"), "store separation");
   const ast: Ast = readFragmentFile(join(artifacts, "fragment.json"));
   const measure = must(ast.functions.find(f => f.name === "measure"), "measure");
   assert.ok(measure.requires.some(f => "storeApart" in f), "measure states its separation");
@@ -1181,10 +1181,8 @@ control(async (): Promise<void> => {
   assert.ok(must(measured.entries.find(e => e.start === read), "the read's entry").facts.some(f =>
     "terms" in f && f.terms.some(t => t.name === "flags" && t.term === "length")), "the read's entry claims flags's length");
   const unseparated = produceWith(artifacts, writeClaims(artifacts, "forged-kept-across-frame", kept), "forged-kept-across-frame", document);
-  assert.equal(unseparated.status, 1, `${unseparated.stdout}${unseparated.stderr}`);
-  assert.match(unseparated.stdout + unseparated.stderr,
-    new RegExp(`incoming edge obligation at \\[${read},\\d+\\): evidence search failed: the edge from node \\d+ does not establish the claims`));
-  process.stdout.write("forged store separations: a separation forged at the caller's entry, and a fact forged across a frame that may change its array's store, each refused\n");
+  refusedLeavingOut(unseparated, read, "kept across a frame");
+  process.stdout.write("forged store separations: a separation forged at the caller's entry, and a fact forged across a frame that may change its array's store, each left out, the obligation needing it refused\n");
 });
 
 control(async (): Promise<void> => {
@@ -1231,7 +1229,8 @@ control(async (): Promise<void> => {
   // A heap-reading fact a step's write may change, forged at the entry of
   // the read after it: the read of each unsafe program claimed at `number`,
   // with the bound the write or call takes away claimed at the read's
-  // statement, is refused at that entry where evidence is searched: a write
+  // statement, is left out of that entry, and the read refused, where
+  // evidence is searched: a write
   // of the array field a path length names, a write through a parameter
   // that may hold the object a path value names, a `pop` of a parameter that
   // may be the counted array, and a `pop` in a `for...of` body.
@@ -1255,10 +1254,9 @@ control(async (): Promise<void> => {
       { guards: [], terms: [{ ...index, coefficient: 1 }, { ...array, coefficient: -1 }], bound: -1 });
     const tag = `facts-across-writes-forged-${name}`;
     const searched = produceWith(artifacts, writeClaims(artifacts, tag, claims), tag);
-    assert.equal(searched.status, 1, `${tag}: ${searched.stdout}${searched.stderr}`);
-    assert.match(searched.stdout + searched.stderr, /does not establish the claims/);
+    refusedLeavingOut(searched, source.indexOf(statement), tag);
   }
-  process.stdout.write("facts across writes: a bound a field write, an aliased write, a pop or a for...of body's pop takes away, forged at the read's entry, each refused\n");
+  process.stdout.write("facts across writes: a bound a field write, an aliased write, a pop or a for...of body's pop takes away, forged at the read's entry, each left out, the read refused\n");
 });
 
 control(async (): Promise<void> => {
@@ -1270,7 +1268,7 @@ control(async (): Promise<void> => {
   // evidence is searched (a bound over another root, `a.widths`, or another
   // field, `row.widths`, bounds no read of `b.widths` or `row.heights`); and
   // with `i < b.widths.length` or `i < row.heights.length` forged at the
-  // read's statement entry, refused at that entry.
+  // read's statement entry, left out of that entry and the read refused.
   for (const [name, fnName, read, statement, root, field] of [
     ["invalid-bounds-imported-alias-path", "other", "prepared.flags[i]", "return prepared.flags[i]!", "prepared", "flags"],
     ["invalid-field-path-read-other-record", "other", "b.widths[i]", "return b.widths[i]!", "b", "widths"],
@@ -1291,7 +1289,7 @@ control(async (): Promise<void> => {
       const tag = `field-path-forged-${name}-${forgeFact ? "fact" : "read"}`;
       const searched = produceWith(artifacts, writeClaims(artifacts, tag, claims), tag);
       assert.equal(searched.status, 1, `${tag}: ${searched.stdout}${searched.stderr}`);
-      if (forgeFact) assert.match(searched.stdout + searched.stderr, /does not establish the claims/);
+      if (forgeFact) refusedLeavingOut(searched, source.indexOf(statement), tag);
     }
   }
   process.stdout.write("field paths: a read claimed below another root's or another field's length, and a path fact forged at its entry, each refused\n");
@@ -1959,6 +1957,11 @@ const invoke = (claims: string, evidence: string, artifacts: string, refusal: Re
   recordsDecode(words, "a check's refusal");
   return words;
 };
+/** Check `evidence` against `claims`, accepted. */
+const accepted = (claims: string, evidence: string, artifacts: string, what: string): void => {
+  const p = tested(verifierCall(verifier, ["--check-units", join(artifacts, "fragment.json"), claims, sourceKey(artifacts), evidence]));
+  assert.equal(p.status, 0, `${what}: ${p.stdout}${p.stderr}`);
+};
 /** An evidence document's lines without the heads of the store they were
  * searched over: evidence the check reads as written over the document it
  * checks, as a search over that document writes it. */
@@ -2007,6 +2010,35 @@ const readBound = (index: string, array: string): EntryFact[] => [
   { guards: [], terms: [{ name: index, path: [], term: "value", coefficient: -1 }], bound: 0 },
   { guards: [], terms: [{ name: index, path: [], term: "value", coefficient: 1 },
     { name: array, path: [], term: "length", coefficient: -1 }], bound: -1 }];
+/** A search over claims forging facts at the statement entry starting at
+ * `start` that a later obligation needs: each forged fact is a candidate no
+ * edge into the entry establishes, so the search leaves it out there, lists
+ * it in the refusal's record, and refuses the obligation needing it rather
+ * than the entry (PROGRAM-TYPING.md, "Source observation checkpoints"). */
+const refusedLeavingOut = (searched: Invoked, start: number, what: string): void => {
+  const detail = searched.stdout + searched.stderr;
+  assert.equal(searched.status, 1, `${what}: ${detail}`);
+  assert.doesNotMatch(detail, new RegExp(`incoming edge obligation at \\[${start},`), what);
+  const record = must(readDiagnostic(searched.stderr), `${what}: the refusal's record`);
+  assert.ok((record.candidatesLeftOut ?? []).some(d => d.sourceMap?.pos[0] === start),
+    `${what}: no candidate left out at ${start}: ${detail}`);
+};
+/** The candidates a search left out over the units it searched to the end,
+ * from the account each unit's search prints. */
+const leftOutCount = (searched: Invoked): number =>
+  searched.stdout.split("\n").filter(l => l.startsWith("candidates: ")).reduce((n, l) => {
+    const account: unknown = JSON.parse(l.slice("candidates: ".length));
+    const left = isObject(account) ? account.leftOut : undefined;
+    return n + (typeof left === "number" ? left : 0);
+  }, 0);
+/** A search over claims forging facts at a statement entry that no
+ * obligation needs: each is a candidate the search leaves out, and the unit
+ * verifies, acceptance reading no candidate. */
+const acceptedLeavingOut = (artifacts: string, searched: Invoked, what: string): void => {
+  assert.equal(searched.status, 0, `${what}: ${searched.stdout}${searched.stderr}`);
+  const honest = produceWith(artifacts, join(artifacts, "claims.json"), "honest-candidates");
+  assert.ok(leftOutCount(searched) > leftOutCount(honest), `${what}: no forged fact left out: ${searched.stdout}`);
+};
 /** Require search over forged claims to fail at the obligation named `at`. */
 const refusedAt = (artifacts: string, claims: string, name: string, at: string): void => {
   const searched = produceWith(artifacts, claims, name);

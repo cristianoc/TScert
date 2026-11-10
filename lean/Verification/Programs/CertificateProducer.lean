@@ -449,6 +449,12 @@ structure Answered {ι : Type} [BEq ι] [Hashable ι] (G : NormalGraph ι) where
   by the object's type, the field, the tags, the answer and the candidates:
   a pure function of these, so an entry is its value. -/
   fieldSlices : Std.HashMap (Ty ι × PropKey × List Tag × Bool × Ty ι) (Ty ι) := {}
+  /-- The passes of the candidate search (`produceRawUsing`) over every graph
+  searched, the most over one graph, and the candidates it left out: an
+  account of the search, read by no check. -/
+  candidatePasses : Nat := 0
+  candidatePassesMax : Nat := 0
+  candidatesLeftOut : Nat := 0
   /-- The inclusions the answered requests established, each proved. -/
   proved : Std.HashSet (Ty ι × Ty ι) := {}
   proved_sound : ∀ S T, proved.contains (S, T) = true →
@@ -1976,24 +1982,61 @@ checker follows each edge again. -/
     if !changed then break
   return table.toList.map fun x => x.getD []
 
+/-- A candidate a search left out at a statement entry: the entry, the node
+whose edge into it does not establish the candidate (the entry itself at the
+graph's entry, whose assumed knowledge does not), and the candidate. -/
+structure LeftOut where
+  cut : Nat
+  source : Nat
+  fact : HeapKnowledge.IndexAtom
+  deriving Repr, BEq
+
+/-- The candidates `cs` at a statement entry, of knowledge `k`, that the edge
+numbered `index` out of `previous`, the evidence of node `source`, into it at
+`target` does not establish, as the checker reads that edge
+(`ControlFlow.checkTargetResult`): each candidate an atom of `k`'s index facts
+(`HeapKnowledge.indicesCheckWith`). An edge out of a context no environment
+meets establishes every candidate. -/
+@[nospecialize] def unestablished [DecidableEq ι] (G : NormalGraph ι) (previous : NodeEvidence ι) (source : Node)
+    (index : Nat) (target : Target) (k : HeapKnowledge.Knowledge) (cs : List HeapKnowledge.IndexAtom) :
+    List HeapKnowledge.IndexAtom :=
+  let Γ := edgeContextOf G previous source.continuation index
+  let unreachable := match source.continuation with
+    | .tagBind tag _ _ => ControlFlow.branchUnreachable G Γ (.tag tag (index == 0))
+    | .branchBind _ _ => ControlFlow.branchUnreachable G Γ (.boolean (index == 0))
+    | _ => ControlFlow.unsatisfiable G Γ
+  if unreachable then [] else
+  let facts := edgeKnowledge G ((claim previous.expression).type :: (claim previous.expression).context)
+    (ControlFlow.outFacts G previous) source.continuation index
+  let a := HeapKnowledge.withTypedLinks G Γ (ControlFlow.withTypedCells G Γ k target.mapping facts)
+  let M := Partitions.cls (LinkClasses.closure a.links)
+  let tags := HeapKnowledge.guardTags a
+  let B := HeapKnowledge.bridgeOf a.links a.indices k.indices
+  let m := target.mapping
+  cs.filter fun t => !(a.indices.any (fun s => HeapKnowledge.indexFollows M m s t) ||
+    HeapKnowledge.linearFollows M m a.indices B t || HeapKnowledge.guardFollows M m a.links tags a.indices t ||
+    HeapKnowledge.storeFollows M m a.links a.indices t)
+
 /-- A table by label of the first entry `xs` gives each label below `n`, as
 `List.lookup` finds it. -/
 def byLabel {α : Type} (n : Nat) (xs : List (Nat × α)) : Array (Option α) :=
   xs.reverse.foldl (fun acc (l, v) => if l < n then acc.set! l (some v) else acc) (Array.replicate n none)
 
-/-- Propagate established postconditions along single-predecessor paths. Entry
-starts empty; source cuts use exactly their supplied requirements, even when
-empty. Other merge points use supplied requirements. A node is checked once
-when its unique predecessor is available; this is dependency scheduling, not invariant iteration.
-Every edge is still checked by the independent consumer. -/
+/-- Propagate established postconditions along single-predecessor paths. The
+entry starts at its requirement; a statement entry (a cut) at its requirement
+and the candidates it keeps (`candidates`, the producer's supplied facts,
+each kept where every edge into the entry establishes it); other merge
+points at what every predecessor establishes. A node is checked once when its
+unique predecessor is available. Search only: every edge is checked by the
+independent consumer. The search's result, and the candidates it left out. -/
 @[nospecialize] def produceRawUsing [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι))
     (fuel : Nat) (P : Program) (claims : List (PointClaim ι))
     (suggestions : List (Sequent ι) := []) (known : List (Evidence ι) := []) (start : Nat := 0)
     (requirements : List (Nat × HeapKnowledge.Knowledge) := []) (cuts : List Nat := [])
     (codes : CodeEntry ι → Bool := fun _ => false) (aliases : List (ι × ι) := [])
     (checker : HeapExpressionRules.Checker G images := HeapExpressionRules.Checker.ordinary G images)
-    (goal : ControlFlow.Goal ι := .plain []) :
-    ProduceM G (ControlFlow.Certificate ι) := do
+    (goal : ControlFlow.Goal ι := .plain []) (candidates : List (Nat × List HeapKnowledge.IndexAtom) := []) :
+    ProduceM G (Except (Failure ι) (ControlFlow.Certificate ι) × List LeftOut) := do
   if P.length != claims.length then throw .claimCount
   -- The known derivations by key, read by every node's search.
   let index := KnownIndex.of known
@@ -2011,27 +2054,28 @@ Every edge is still checked by the independent consumer. -/
       (successors node.continuation).zipIdx.foldl (fun acc (t,index) =>
         if t.label < acc.size then acc.modify t.label (· ++ [(l,index,t)]) else acc) acc)
     (Array.replicate P.length [])
-  -- A cut's implications: none in the first round, which schedules every
-  -- node as before; then, while a round fails and leaves a cut whose
-  -- entering edges all establish an implication it was not seeded with (a
-  -- constant holding a guard's answer), another round with each such cut's
-  -- (`meetImplications`), at most four rounds. Where these fail and some
-  -- node carried an implication, at most two waiting rounds follow, the
-  -- first from no seed, in which each cut also meets its entering edges
-  -- once they are produced. A
-  -- round that fails at a node goes on with the others, so the cuts after
-  -- it are met; a successful round keeps its evidence, and a failure is the
-  -- first round's, or a later round's at a node's expression where the
-  -- first round's is an edge's. Within a round, a node's expression failing
-  -- is reported over an edge's.
-  let mut seeds : List (Nat × List (PromiseCalls.Implication ι)) := []
-  -- A cut's elements atoms: likewise, those every entering edge carries.
-  let mut elemSeeds : List (Nat × List HeapKnowledge.ElemAtom) := []
-  let mut result : Option (Array (Option (NodeEvidence ι))) := none
-  let mut failure : Option (Failure ι) := none
-  let seededRounds := min (cuts.length + 1) 4
-  let mut waiting := false
-  let mut waitingRounds := 0
+  -- The candidates still kept at each statement entry, by label: all the
+  -- producer supplies to start; at the graph's entry, those the entry's
+  -- assumed knowledge entails. A search over the rounds below assumes them
+  -- at their entries; then every candidate some edge into its entry does not
+  -- establish leaves the entry, and the rounds run again while one leaves
+  -- (PROGRAM-TYPING.md, "Heap state and assertions"). A predecessor not
+  -- produced is unknown and removes nothing. Candidates only leave, so at
+  -- most `M + 1` passes run for `M` candidates; nodes whose input is
+  -- unchanged take their earlier production (`latest`). A handler's entry
+  -- keeps all its candidates, which the edges of throws into it are checked
+  -- against.
+  let mut kept : Array (List HeapKnowledge.IndexAtom) := (byLabel P.length candidates).map (·.getD [])
+  let mut leftOut : List LeftOut := []
+  if let some c := claimed[start]? then
+    let here := kept.getD start []
+    let assumed := (stating.getD start none).getD {}
+    let out := here.filter fun a =>
+      !KnowledgeExpand.checkIn (KnowledgeExpand.ctxOf G c.context) assumed { indices := [a] } none
+    if !out.isEmpty then
+      kept := kept.set! start (here.filter (!out.contains ·))
+      leftOut := out.map fun a => ⟨start, start, a⟩
+  let count := kept.foldl (fun n cs => n + cs.length) 0
   -- Each node's latest production, with the knowledge, implications and
   -- argument slots it was produced from: a later round producing the node
   -- from the same three takes its result. Every other argument of
@@ -2039,227 +2083,286 @@ Every edge is still checked by the independent consumer. -/
   -- only grow. Search only: the checker checks the evidence either way.
   let mut latest : Array (Option (HeapKnowledge.Knowledge × List (PromiseCalls.Implication ι) × List Nat ×
     Except (Failure ι) (NodeEvidence ι))) := Array.replicate P.length none
-  let mut implicated := false
-  for round in List.range (seededRounds + 2) do
-    let mut table : Array (Option (NodeEvidence ι)) := Array.replicate P.length none
-    let mut failed : Option (Failure ι) := none
-    -- Whether a loop head took implications its back edge had not yet met.
-    let mut guessed := false
-    -- A node that failed in this round is not attempted again in it.
-    let mut failedAt : Array Bool := Array.replicate P.length false
-    -- A merge waits for its predecessors while some pass still makes
-    -- progress; once none does, the merges still waiting (a cycle through no
-    -- cut) take their stated requirements alone, as every merge did before.
-    let mut force := false
-    -- Per node, how many of its entering edges come from a node not produced
-    -- yet in this round.
-    let mut unproduced : Array Nat := incoming.map List.length
-    let seeded := byLabel P.length seeds
-    let elemSeeded := byLabel P.length elemSeeds
-    for _ in List.range (2 * P.length + 2) do
-      let mut progress := false
-      for l in List.range P.length do
-        if (table.getD l none).isSome || failedAt.getD l false then continue
-        let some node := nodes[l]? | throw .claimCount
-        let some c := claimed[l]? | throw .claimCount
-        let cut := (isCut.getD l none).isSome
-        let handled := (isHandler.getD l none).isSome
-        -- A node the cases below leave waiting for a predecessor is passed
-        -- over before anything is read for it: some edge entering it comes
-        -- from a node not produced yet (every predecessor is a node).
-        let blocked := unproduced.getD l 0 != 0
-        let waits : Bool :=
-          if waiting && l != start && cut && !handled then !force && blocked
-          else if l != start && !cut then
-            match incoming[l]? with
-            | some [_] => blocked
-            | some _ => !force && blocked
-            | none => false
-          else false
-        if waits then continue
-        let stated := (stating.getD l none).getD {}
-        let required := { stated with elems := stated.elems ++ (elemSeeded.getD l none).getD [] }
-        let mut k := required
-        let mut implies : List (PromiseCalls.Implication ι) := (seeded.getD l none).getD []
-        -- At the entry and at cuts, the argument slots every edge carries.
-        let mut held := arguments.getD l []
-        -- In a waiting round, a cut waits for its entering edges and also
-        -- takes the implications every one establishes, as a merge does. A
-        -- cut some of whose edges wait on it (a loop's head, its back edge)
-        -- goes ahead, forced, alone, and takes, in the first waiting round,
-        -- those the produced edges stating any establish: a guess, which the
-        -- round's own edges into the cut confirm or refute; the second takes
-        -- only the seeds the edges then meet. Other rounds produce each cut
-        -- from its seeds alone.
-        if waiting && l != start && cut && !handled then
-          let preds := incoming.getD l []
-          let ready := preds.all fun (pred,_,_) => (table.getD pred none).isSome
-          if !ready && !force then continue
-          if !ready then force := false
-          let carried := preds.filterMap fun (pred,index,target) => do
-            let previous ← table.getD pred none
-            let source ← nodes[pred]?
-            let o := ControlFlow.outFacts G previous
-            pure (edgeContextOf G previous source.continuation index o,
-              edgeImplicationsOf G previous source.continuation o, target.mapping)
-          let stating := carried.filter fun (_, xs, _) => !xs.isEmpty
-          let entering := if ready && !carried.isEmpty then meetImplications G carried c.context.length c.context
-            else if waitingRounds == 0 && !stating.isEmpty then meetImplications G stating c.context.length
-            else []
-          if !ready && !entering.isEmpty then guessed := true
-          implies := implies ++ entering.filter fun x => !implies.any fun y => y.test == x.test && y.target == x.target
-        if l != start && !cut then
-          match incoming[l]? with
-          | some [(pred,index,target)] =>
-            let some previous := table.getD pred none | continue
-            let some source := nodes[pred]? | throw .claimCount
-            let o := ControlFlow.outFacts G previous
-            k := HeapKnowledge.project (edgeKnowledge G ((claim previous.expression).type :: (claim previous.expression).context) o source.continuation index)
-              target.mapping c.context.length
-            implies := projectImplications (edgeImplicationsOf G previous source.continuation o) target.mapping
-              c.context.length
-            held := projectArguments (edgeArgumentsOf G previous source o) target.mapping c.context.length
-          | some preds =>
-            -- A merge that is not a cut states no requirement of its own; it
-            -- keeps what every predecessor establishes, once all are available.
-            -- Cycles pass through cuts, so waiting here cannot deadlock.
-            -- Whether every predecessor is produced is decided first: what a
-            -- predecessor's edge carries is read only once all are, and a
-            -- merge waiting for a later pass reads none of it.
-            let ready := preds.all fun (pred,_,_) => (table.getD pred none).isSome && (nodes[pred]?).isSome
+  let mut outcome : Option (Failure ι) × Option (Array (Option (NodeEvidence ι))) := (none, none)
+  let mut passes := 0
+  for _ in List.range (count + 1) do
+    passes := passes + 1
+    let mut lastTable : Array (Option (NodeEvidence ι)) := Array.replicate P.length none
+    -- A cut's implications: none in the first round, which schedules every
+    -- node as before; then, while a round fails and leaves a cut whose
+    -- entering edges all establish an implication it was not seeded with (a
+    -- constant holding a guard's answer), another round with each such cut's
+    -- (`meetImplications`), at most four rounds. Where these fail and some
+    -- node carried an implication, at most two waiting rounds follow, the
+    -- first from no seed, in which each cut also meets its entering edges
+    -- once they are produced. A
+    -- round that fails at a node goes on with the others, so the cuts after
+    -- it are met; a successful round keeps its evidence, and a failure is the
+    -- first round's, or a later round's at a node's expression where the
+    -- first round's is an edge's. Within a round, a node's expression failing
+    -- is reported over an edge's.
+    let mut seeds : List (Nat × List (PromiseCalls.Implication ι)) := []
+    -- A cut's elements atoms: likewise, those every entering edge carries.
+    let mut elemSeeds : List (Nat × List HeapKnowledge.ElemAtom) := []
+    let mut result : Option (Array (Option (NodeEvidence ι))) := none
+    let mut failure : Option (Failure ι) := none
+    let seededRounds := min (cuts.length + 1) 4
+    let mut waiting := false
+    let mut waitingRounds := 0
+    let mut implicated := false
+    for round in List.range (seededRounds + 2) do
+      let mut table : Array (Option (NodeEvidence ι)) := Array.replicate P.length none
+      let mut failed : Option (Failure ι) := none
+      -- Whether a loop head took implications its back edge had not yet met.
+      let mut guessed := false
+      -- A node that failed in this round is not attempted again in it.
+      let mut failedAt : Array Bool := Array.replicate P.length false
+      -- A merge waits for its predecessors while some pass still makes
+      -- progress; once none does, the merges still waiting (a cycle through no
+      -- cut) take their stated requirements alone, as every merge did before.
+      let mut force := false
+      -- Per node, how many of its entering edges come from a node not produced
+      -- yet in this round.
+      let mut unproduced : Array Nat := incoming.map List.length
+      let seeded := byLabel P.length seeds
+      let elemSeeded := byLabel P.length elemSeeds
+      for _ in List.range (2 * P.length + 2) do
+        let mut progress := false
+        for l in List.range P.length do
+          if (table.getD l none).isSome || failedAt.getD l false then continue
+          let some node := nodes[l]? | throw .claimCount
+          let some c := claimed[l]? | throw .claimCount
+          let cut := (isCut.getD l none).isSome
+          let handled := (isHandler.getD l none).isSome
+          -- A node the cases below leave waiting for a predecessor is passed
+          -- over before anything is read for it: some edge entering it comes
+          -- from a node not produced yet (every predecessor is a node).
+          let blocked := unproduced.getD l 0 != 0
+          let waits : Bool :=
+            if waiting && l != start && cut && !handled then !force && blocked
+            else if l != start && !cut then
+              match incoming[l]? with
+              | some [_] => blocked
+              | some _ => !force && blocked
+              | none => false
+            else false
+          if waits then continue
+          let stated := (stating.getD l none).getD {}
+          let stated := match kept.getD l [] with
+            | [] => stated
+            | here => { stated with indices := (here ++ stated.indices).eraseDups }
+          let required := { stated with elems := stated.elems ++ (elemSeeded.getD l none).getD [] }
+          let mut k := required
+          let mut implies : List (PromiseCalls.Implication ι) := (seeded.getD l none).getD []
+          -- At the entry and at cuts, the argument slots every edge carries.
+          let mut held := arguments.getD l []
+          -- In a waiting round, a cut waits for its entering edges and also
+          -- takes the implications every one establishes, as a merge does. A
+          -- cut some of whose edges wait on it (a loop's head, its back edge)
+          -- goes ahead, forced, alone, and takes, in the first waiting round,
+          -- those the produced edges stating any establish: a guess, which the
+          -- round's own edges into the cut confirm or refute; the second takes
+          -- only the seeds the edges then meet. Other rounds produce each cut
+          -- from its seeds alone.
+          if waiting && l != start && cut && !handled then
+            let preds := incoming.getD l []
+            let ready := preds.all fun (pred,_,_) => (table.getD pred none).isSome
             if !ready && !force then continue
-            if ready then
-              let mut projections : List HeapKnowledge.Knowledge := []
-              let mut carried : List (List (Ty ι) × List (PromiseCalls.Implication ι) × PointClaims.Mapping) := []
-              let mut holding : List (List Nat) := []
-              for (pred,index,target) in preds do
-                match table.getD pred none, nodes[pred]? with
-                | some previous, some source =>
-                  let o := ControlFlow.outFacts G previous
-                  projections := projections ++ [HeapKnowledge.project
-                    (edgeKnowledge G ((claim previous.expression).type :: (claim previous.expression).context) o source.continuation index) target.mapping c.context.length]
-                  carried := carried ++ [(edgeContextOf G previous source.continuation index o,
-                    edgeImplicationsOf G previous source.continuation o, target.mapping)]
-                  holding := holding ++ [projectArguments (edgeArgumentsOf G previous source o) target.mapping
-                    c.context.length]
-                | _, _ => pure ()
-              k := HeapKnowledge.meet projections
-              -- A guarded candidate each predecessor entails (ARITHMETIC.md,
-              -- "Guarded clauses", the join): each one's guarded atoms, also
-              -- restated through its read links, kept where every edge's
-              -- knowledge entails it; each edge is checked again.
-              let candidates := (projections.flatMap fun p => HeapKnowledge.lowerGuards p.links p.indices).eraseDups
-              let guarded := candidates.filter fun a => !k.indices.contains a && projections.all fun p =>
-                HeapKnowledge.indicesCheckWith (HeapKnowledge.guardTags p) (HeapLinks.aliases p.links) p.links
-                  p.indices [a] none
-              k := { k with indices := k.indices ++ guarded }
-              implies := meetImplications G carried c.context.length c.context
-              held := match holding with
-                | first :: rest => first.filter fun p => rest.all (·.contains p)
-                | [] => []
-          | none => pure ()
-        k := ⟨(k.cells ++ required.cells).eraseDups,(k.values ++ required.values).eraseDups,
-          HeapLinks.dedup (k.links ++ required.links),
-          HeapSeparation.union k.separation required.separation, (k.elems ++ required.elems).eraseDups,
-          (k.indices ++ required.indices).eraseDups⟩
-        -- A handler target is entered by throws too, which carry no
-        -- implication, and the argument slots the throwing nodes carry.
-        if handled then
-          implies := []
-          held := held.filter (arguments.getD l []).contains
-        -- A point other than a cut stores its knowledge's normal form at the
-        -- point's contexts; a cut stores exactly its requirement.
-        if l != start && !cut then
-          k := withTagValues G c.context (KnowledgeNormal.normFast (KnowledgeExpand.ctxOf G c.context) k)
-        let fresh := fun (_ : Unit) => tryCatch (Except.ok <$> produceNode G images pool fuel l node claimed k
-          suggestions index codes aliases checker implies held goal) (fun e => pure (Except.error e))
-        let produced ← match latest.getD l none with
-          | some (k', implies', held', earlier) =>
-            if k' == k && implies' == implies && held' == held then pure earlier else fresh ()
-          | none => fresh ()
-        latest := latest.set! l (some (k, implies, held, produced))
-        match produced with
-        | .ok evidence =>
-          table := table.set! l (some evidence)
-          for t in successors node.continuation do
-            unproduced := unproduced.modify t.label (· - 1)
-          progress := true
-        | .error e =>
-          -- The first round fails as before where no cut's implications
-          -- could follow; a later one rethrows the first round's failure.
-          if seeds.isEmpty && cuts.isEmpty then throw e
-          -- A node's own expression failing is reported over an edge's
-          -- failing before it: the edges after a failed node fail with it.
-          failed := if Failure.atEdge failed && !Failure.atEdge (some e) then some e else failed <|> some e
-          failedAt := failedAt.set! l true
-          progress := true
-      if !progress then
-        if force then break else force := true
-      else force := false
-    -- What every edge entering each cut establishes, where all are produced.
-    let met := cuts.filterMap fun l => do
-      if l == start || handlerTargets.contains l then none
-      let c ← claimed[l]?
-      let preds := incoming.getD l []
-      if preds.isEmpty then none
-      let carried ← preds.mapM fun (pred,index,target) => do
-        let previous ← table.getD pred none
-        let source ← nodes[pred]?
-        let o := ControlFlow.outFacts G previous
-        pure (edgeContextOf G previous source.continuation index o,
-          edgeImplicationsOf G previous source.continuation o, target.mapping)
-      let xs := meetImplications G carried c.context.length c.context
-      if xs.isEmpty then none else some (l, xs)
-    -- What every edge entering each cut establishes of arrays' elements.
-    let metElems := cuts.filterMap fun l => do
-      if l == start || handlerTargets.contains l then none
-      let c ← claimed[l]?
-      let preds := incoming.getD l []
-      if preds.isEmpty then none
-      let projections ← preds.mapM fun (pred,index,target) => do
-        let previous ← table.getD pred none
-        let source ← nodes[pred]?
-        let o := ControlFlow.outFacts G previous
-        pure (HeapKnowledge.project (edgeKnowledge G ((claim previous.expression).type ::
-          (claim previous.expression).context) o source.continuation index) target.mapping c.context.length)
-      let es := (HeapKnowledge.meet projections).elems
-      if es.isEmpty then none else some (l, es)
-    if failed.isNone then
-      result := some table
-      failure := none
-      break
-    let grown := met.filter fun (l, xs) => (seeds.lookup l) != some xs
-    let grownElems := metElems.filter fun (l, es) => (elemSeeds.lookup l) != some es
-    -- A failure is reported as the first round met it, unless that one is
-    -- an edge's and a later round, whose cuts held more implications,
-    -- failed at a node's own expression: that obligation fails whatever
-    -- the cuts hold, so the later report names what fails. Reporting only:
-    -- acceptance is the same either way.
-    if round == 0 then failure := failed
-    else if Failure.atEdge failure && !Failure.atEdge failed && failed.isSome then failure := failed
-    if waiting then
-      -- A waiting round whose guesses failed is followed by one without them.
-      waitingRounds := waitingRounds + 1
-      if !guessed || waitingRounds == 2 then break
-    else
-      implicated := implicated || table.any fun e => match e with
-        | some ev => !ev.implies.isEmpty
-        | none => false
-      if (grown.isEmpty && grownElems.isEmpty) || round + 1 == seededRounds then
-        if implicated then waiting := true else break
-    -- The first waiting round starts from no seed: its cuts meet their
-    -- edges in the round itself.
-    if waiting && waitingRounds == 0 then
-      seeds := []
-      elemSeeds := []
-    else
-      seeds := grown ++ seeds.filter fun (l, _) => !grown.any (·.1 == l)
-      elemSeeds := grownElems ++ elemSeeds.filter fun (l, _) => !grownElems.any (·.1 == l)
-  if let some e := failure then throw e
-  let some table := result | throw .rejected
-  table.toList.mapM fun c => match c with
-    | some e => pure e
-    | none => throw .rejected
+            if !ready then force := false
+            let carried := preds.filterMap fun (pred,index,target) => do
+              let previous ← table.getD pred none
+              let source ← nodes[pred]?
+              let o := ControlFlow.outFacts G previous
+              pure (edgeContextOf G previous source.continuation index o,
+                edgeImplicationsOf G previous source.continuation o, target.mapping)
+            let stating := carried.filter fun (_, xs, _) => !xs.isEmpty
+            let entering := if ready && !carried.isEmpty then meetImplications G carried c.context.length c.context
+              else if waitingRounds == 0 && !stating.isEmpty then meetImplications G stating c.context.length
+              else []
+            if !ready && !entering.isEmpty then guessed := true
+            implies := implies ++ entering.filter fun x => !implies.any fun y => y.test == x.test && y.target == x.target
+          if l != start && !cut then
+            match incoming[l]? with
+            | some [(pred,index,target)] =>
+              let some previous := table.getD pred none | continue
+              let some source := nodes[pred]? | throw .claimCount
+              let o := ControlFlow.outFacts G previous
+              k := HeapKnowledge.project (edgeKnowledge G ((claim previous.expression).type :: (claim previous.expression).context) o source.continuation index)
+                target.mapping c.context.length
+              implies := projectImplications (edgeImplicationsOf G previous source.continuation o) target.mapping
+                c.context.length
+              held := projectArguments (edgeArgumentsOf G previous source o) target.mapping c.context.length
+            | some preds =>
+              -- A merge that is not a cut states no requirement of its own; it
+              -- keeps what every predecessor establishes, once all are available.
+              -- Cycles pass through cuts, so waiting here cannot deadlock.
+              -- Whether every predecessor is produced is decided first: what a
+              -- predecessor's edge carries is read only once all are, and a
+              -- merge waiting for a later pass reads none of it.
+              let ready := preds.all fun (pred,_,_) => (table.getD pred none).isSome && (nodes[pred]?).isSome
+              if !ready && !force then continue
+              if ready then
+                let mut projections : List HeapKnowledge.Knowledge := []
+                let mut carried : List (List (Ty ι) × List (PromiseCalls.Implication ι) × PointClaims.Mapping) := []
+                let mut holding : List (List Nat) := []
+                for (pred,index,target) in preds do
+                  match table.getD pred none, nodes[pred]? with
+                  | some previous, some source =>
+                    let o := ControlFlow.outFacts G previous
+                    projections := projections ++ [HeapKnowledge.project
+                      (edgeKnowledge G ((claim previous.expression).type :: (claim previous.expression).context) o source.continuation index) target.mapping c.context.length]
+                    carried := carried ++ [(edgeContextOf G previous source.continuation index o,
+                      edgeImplicationsOf G previous source.continuation o, target.mapping)]
+                    holding := holding ++ [projectArguments (edgeArgumentsOf G previous source o) target.mapping
+                      c.context.length]
+                  | _, _ => pure ()
+                k := HeapKnowledge.meet projections
+                -- A guarded candidate each predecessor entails (ARITHMETIC.md,
+                -- "Guarded clauses", the join): each one's guarded atoms, also
+                -- restated through its read links, kept where every edge's
+                -- knowledge entails it; each edge is checked again.
+                let candidates := (projections.flatMap fun p => HeapKnowledge.lowerGuards p.links p.indices).eraseDups
+                let guarded := candidates.filter fun a => !k.indices.contains a && projections.all fun p =>
+                  HeapKnowledge.indicesCheckWith (HeapKnowledge.guardTags p) (HeapLinks.aliases p.links) p.links
+                    p.indices [a] none
+                k := { k with indices := k.indices ++ guarded }
+                implies := meetImplications G carried c.context.length c.context
+                held := match holding with
+                  | first :: rest => first.filter fun p => rest.all (·.contains p)
+                  | [] => []
+            | none => pure ()
+          k := ⟨(k.cells ++ required.cells).eraseDups,(k.values ++ required.values).eraseDups,
+            HeapLinks.dedup (k.links ++ required.links),
+            HeapSeparation.union k.separation required.separation, (k.elems ++ required.elems).eraseDups,
+            (k.indices ++ required.indices).eraseDups⟩
+          -- A handler target is entered by throws too, which carry no
+          -- implication, and the argument slots the throwing nodes carry.
+          if handled then
+            implies := []
+            held := held.filter (arguments.getD l []).contains
+          -- A point other than a cut stores its knowledge's normal form at the
+          -- point's contexts; a cut stores exactly its requirement.
+          if l != start && !cut then
+            k := withTagValues G c.context (KnowledgeNormal.normFast (KnowledgeExpand.ctxOf G c.context) k)
+          let fresh := fun (_ : Unit) => tryCatch (Except.ok <$> produceNode G images pool fuel l node claimed k
+            suggestions index codes aliases checker implies held goal) (fun e => pure (Except.error e))
+          let produced ← match latest.getD l none with
+            | some (k', implies', held', earlier) =>
+              if k' == k && implies' == implies && held' == held then pure earlier else fresh ()
+            | none => fresh ()
+          latest := latest.set! l (some (k, implies, held, produced))
+          match produced with
+          | .ok evidence =>
+            table := table.set! l (some evidence)
+            for t in successors node.continuation do
+              unproduced := unproduced.modify t.label (· - 1)
+            progress := true
+          | .error e =>
+            -- The first round fails as before where no cut's implications
+            -- could follow; a later one rethrows the first round's failure.
+            if seeds.isEmpty && cuts.isEmpty then throw e
+            -- A node's own expression failing is reported over an edge's
+            -- failing before it: the edges after a failed node fail with it.
+            failed := if Failure.atEdge failed && !Failure.atEdge (some e) then some e else failed <|> some e
+            failedAt := failedAt.set! l true
+            progress := true
+        if !progress then
+          if force then break else force := true
+        else force := false
+      lastTable := table
+      -- What every edge entering each cut establishes, where all are produced.
+      let met := cuts.filterMap fun l => do
+        if l == start || handlerTargets.contains l then none
+        let c ← claimed[l]?
+        let preds := incoming.getD l []
+        if preds.isEmpty then none
+        let carried ← preds.mapM fun (pred,index,target) => do
+          let previous ← table.getD pred none
+          let source ← nodes[pred]?
+          let o := ControlFlow.outFacts G previous
+          pure (edgeContextOf G previous source.continuation index o,
+            edgeImplicationsOf G previous source.continuation o, target.mapping)
+        let xs := meetImplications G carried c.context.length c.context
+        if xs.isEmpty then none else some (l, xs)
+      -- What every edge entering each cut establishes of arrays' elements.
+      let metElems := cuts.filterMap fun l => do
+        if l == start || handlerTargets.contains l then none
+        let c ← claimed[l]?
+        let preds := incoming.getD l []
+        if preds.isEmpty then none
+        let projections ← preds.mapM fun (pred,index,target) => do
+          let previous ← table.getD pred none
+          let source ← nodes[pred]?
+          let o := ControlFlow.outFacts G previous
+          pure (HeapKnowledge.project (edgeKnowledge G ((claim previous.expression).type ::
+            (claim previous.expression).context) o source.continuation index) target.mapping c.context.length)
+        let es := (HeapKnowledge.meet projections).elems
+        if es.isEmpty then none else some (l, es)
+      if failed.isNone then
+        result := some table
+        failure := none
+        break
+      let grown := met.filter fun (l, xs) => (seeds.lookup l) != some xs
+      let grownElems := metElems.filter fun (l, es) => (elemSeeds.lookup l) != some es
+      -- A failure is reported as the first round met it, unless that one is
+      -- an edge's and a later round, whose cuts held more implications,
+      -- failed at a node's own expression: that obligation fails whatever
+      -- the cuts hold, so the later report names what fails. Reporting only:
+      -- acceptance is the same either way.
+      if round == 0 then failure := failed
+      else if Failure.atEdge failure && !Failure.atEdge failed && failed.isSome then failure := failed
+      if waiting then
+        -- A waiting round whose guesses failed is followed by one without them.
+        waitingRounds := waitingRounds + 1
+        if !guessed || waitingRounds == 2 then break
+      else
+        implicated := implicated || table.any fun e => match e with
+          | some ev => !ev.implies.isEmpty
+          | none => false
+        if (grown.isEmpty && grownElems.isEmpty) || round + 1 == seededRounds then
+          if implicated then waiting := true else break
+      -- The first waiting round starts from no seed: its cuts meet their
+      -- edges in the round itself.
+      if waiting && waitingRounds == 0 then
+        seeds := []
+        elemSeeds := []
+      else
+        seeds := grown ++ seeds.filter fun (l, _) => !grown.any (·.1 == l)
+        elemSeeds := grownElems ++ elemSeeds.filter fun (l, _) => !grownElems.any (·.1 == l)
+    outcome := (failure, result)
+    -- The candidates some produced edge into their entry does not establish.
+    let final := result.getD lastTable
+    let mut removed : List LeftOut := []
+    for l in cuts do
+      if l == start || handlerTargets.contains l then continue
+      let here := kept.getD l []
+      if here.isEmpty then continue
+      let stated := (stating.getD l none).getD {}
+      let k := match final.getD l none with
+        | some e => e.knowledge
+        | none => { stated with indices := (here ++ stated.indices).eraseDups }
+      let mut out : List HeapKnowledge.IndexAtom := []
+      for (pred, index, target) in incoming.getD l [] do
+        let some previous := final.getD pred none | continue
+        let some source := nodes[pred]? | continue
+        for a in unestablished G previous source index target k (here.filter (!out.contains ·)) do
+          out := out ++ [a]
+          removed := removed ++ [⟨l, pred, a⟩]
+      if !out.isEmpty then kept := kept.set! l (here.filter (!out.contains ·))
+    if removed.isEmpty then break
+    leftOut := leftOut ++ removed
+  let leftCount := leftOut.length
+  modify fun (s : Answered G) => { s with
+    candidatePasses := s.candidatePasses + passes
+    candidatePassesMax := max s.candidatePassesMax passes
+    candidatesLeftOut := s.candidatesLeftOut + leftCount }
+  match outcome with
+  | (some e, _) => return (.error e, leftOut)
+  | (none, none) => return (.error .rejected, leftOut)
+  | (none, some table) =>
+    match table.toList.mapM id with
+    | some C => return (.ok C, leftOut)
+    | none => return (.error .rejected, leftOut)
 
 /-- Recover a located failed edge from the completed candidate. This includes
 heap entailment; it is not limited to ordinary subtype proof construction. -/
@@ -2292,15 +2395,17 @@ heap entailment; it is not limited to ordinary subtype proof construction. -/
     (checker : HeapExpressionRules.Checker G images := HeapExpressionRules.Checker.ordinary G images)
     (aliases : List (ι × ι) := []) (answers : Answered G := {})
     (recheck : Option ((i : InstanceImageCheck G) → HeapExpressionRules.Checker G i) := none)
-    (entrySeparation : HeapSeparation.Separation := {}) (entryIndices : List HeapKnowledge.IndexAtom := []) :
-    Except (Failure ι) (ControlFlow.Certificate ι) × Answered G :=
+    (entrySeparation : HeapSeparation.Separation := {}) (entryIndices : List HeapKnowledge.IndexAtom := [])
+    (candidates : List (Nat × List HeapKnowledge.IndexAtom) := []) :
+    Except (Failure ι) (ControlFlow.Certificate ι) × Answered G × List LeftOut :=
   let promised := match R with
     | .guards T _ | .asserts T _ => [T]
     | .plain _ => []
   match (produceRawUsing G images (vocabulary G labels claims (inputs ++ hints ++ promised)) fuel P claims suggestions known start
-      requirements cuts codes aliases checker R).run answers with
-  | .error e answers => (.error e, answers)
-  | .ok C answers => Prod.mk (
+      requirements cuts codes aliases checker R candidates).run answers with
+  | .error e answers => (.error e, answers, [])
+  | .ok (.error e, leftOut) answers => (.error e, answers, leftOut)
+  | .ok (.ok C, leftOut) answers => (fun r a => (r, a, leftOut)) (
     -- Where `recheck` builds the search's checker at any image check, the
     -- certificate is checked with the inclusions search established
     -- answered from their proofs (`Answered.images`).

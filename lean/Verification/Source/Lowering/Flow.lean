@@ -427,13 +427,20 @@ private def reachablePoints (graph : SourceFlow.Graph) (id : Nat) : List String 
       | none => throw (locatedRefusal (← table) node.source .entryClaim
           "a loop invariant names a binding that is no value binding or initialized cell at the loop's head")
     | _ => pure []
-  -- Each atom once, as the knowledge a search reaches holds it: a cut's
-  -- knowledge is its assertion exactly (`checkAssertions`), and two claimed
-  -- facts may lower to one atom (a cell's value term stated an integer and
-  -- bounded by `2^53 - 1`).
-  let bounds := (bounds ++ linear ++ quantified ++ apart ++ storesApart ++ invariant).eraseDups
-  if !facts.isEmpty || !links.isEmpty || !separation.facts.isEmpty || !bounds.isEmpty then
-    recordAssertion reserved ⟨facts, [], links, separation, [], bounds⟩
+  -- By provenance (PROGRAM-TYPING.md, "Heap state and assertions"): the
+  -- entry's assertion is what it requires, the bindings' contents, the
+  -- witnesses' links, the cells' separation and the written invariant; the
+  -- facts the producer supplies are candidates, which a search keeps where
+  -- every edge into the entry establishes them and which acceptance does not
+  -- require. Each atom once: two claimed facts may lower to one atom (a
+  -- cell's value term stated an integer and bounded by `2^53 - 1`), and an
+  -- atom the invariant states is required.
+  let invariant := invariant.eraseDups
+  let candidates := (bounds ++ linear ++ quantified ++ apart ++ storesApart).eraseDups.filter
+    (!invariant.contains ·)
+  if !facts.isEmpty || !links.isEmpty || !separation.facts.isEmpty || !invariant.isEmpty then
+    recordAssertion reserved ⟨facts, [], links, separation, [], invariant⟩
+  if !candidates.isEmpty then recordCandidates reserved candidates
   recordCut reserved
   return ← jumpTo incoming reserved scope
 

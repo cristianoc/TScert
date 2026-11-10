@@ -11,10 +11,12 @@ open LabelStore
 open EquationGraphs (Tree)
 
 /-- What the source says of one code request's graph, as of a unit's: its
-source map, its statement entries' knowledge and its cuts. -/
+source map, its required assertions, its statement entries' candidate facts
+and its cuts. -/
 structure CodeSource where
   sourceMap : SourceMap := []
   assertions : List (Nat × HeapKnowledge.Knowledge) := []
+  candidates : List (Nat × List HeapKnowledge.IndexAtom) := []
   cuts : List Nat := []
 
 section
@@ -28,8 +30,15 @@ structure SourceRequest (σ ι : Type) [Labels ι] [StoreView σ ι] extends Req
     (StoreView.images toRequest.types)) := none
   obligations : List (ExpressionClaims.Required ι)
   sourceMap : SourceMap := []
+  /-- What each point requires: a statement entry's written invariant, its
+  bindings' types and contents and its witnesses' links, an observation's
+  facts, the entry's precondition. Every one is entailed by the knowledge the
+  point's evidence carries (`checkAssertions`). -/
   assertions : List (Nat × HeapKnowledge.Knowledge) := []
-  /-- Full statement-entry interfaces; absent assertions mean empty knowledge. -/
+  /-- The index facts the producer supplies at each statement entry: search
+  only, kept at an entry where every edge into it establishes them. -/
+  candidates : List (Nat × List HeapKnowledge.IndexAtom) := []
+  /-- Statement entries; absent assertions mean empty knowledge. -/
   cuts : List Nat := []
   /-- Labels the program mentions but no claim does: search hints only. -/
   hints : List ι := []
@@ -65,7 +74,7 @@ structure SourceRequest (σ ι : Type) [Labels ι] [StoreView σ ι] extends Req
   stated : Option CallEffects.Effect
 
 @[nospecialize] def SourceRequest.codeHints (r : SourceRequest σ ι) : List RequestJson.CodeHints :=
-  r.codeSources.map fun c => ⟨c.sourceMap, c.assertions, c.cuts⟩
+  r.codeSources.map fun c => ⟨c.sourceMap, c.assertions, c.candidates, c.cuts⟩
 
 /-- Search hints only: the primitives and the labels the request mentions, so
 a coercion does not consider every unrelated signature in the table. The
@@ -135,22 +144,20 @@ structure Bundle (ι : Type) where
   functions : List (Response ι)
   obligations : List (List (ProgramCertificates.Evidence ι))
 
-/-- Statement entries are exact interfaces, in a unit's graph and in each of its
-codes'. Expression observation checkpoints inside a statement require
-entailment but do not reset its local context. -/
-def checkGraphAssertions (cuts : List Nat) (assertions : List (Nat × HeapKnowledge.Knowledge))
+/-- Each point's required assertion, in a unit's graph and in each of its
+codes', is entailed by the knowledge the point's evidence carries, which may
+state more: a statement entry's knowledge holds what every edge into it
+establishes, each edge checked by the graph's check. -/
+def checkGraphAssertions (assertions : List (Nat × HeapKnowledge.Knowledge))
     (C : ControlFlow.Certificate ι) : Bool :=
-  (cuts.all fun l => match C[l]? with
+  assertions.all fun (l,k) => match C[l]? with
     | none => false
-    | some n => n.knowledge == (assertions.lookup l).getD {}) &&
-  (assertions.all fun (l,k) => match C[l]? with
-    | none => false
-    | some n => HeapKnowledge.check (KnowledgeExpand.expand (fun _ => none) n.knowledge) k none)
+    | some n => HeapKnowledge.check (KnowledgeExpand.expand (fun _ => none) n.knowledge) k none
 
 @[nospecialize] def checkAssertions (r : SourceRequest σ ι) (c : Response ι) : Bool :=
-  checkGraphAssertions r.cuts r.assertions c.certificate &&
+  checkGraphAssertions r.assertions c.certificate &&
   r.codeSources.length == c.codes.length &&
-  (r.codeSources.zip c.codes).all fun (q, C) => checkGraphAssertions q.cuts q.assertions C
+  (r.codeSources.zip c.codes).all fun (q, C) => checkGraphAssertions q.assertions C
 
 /-- Each stated assertion is entailed by the knowledge its node carries: every
 environment and heap meeting the node's knowledge meet the assertion. -/
@@ -160,12 +167,12 @@ def AssertionsEntailed (assertions : List (Nat × HeapKnowledge.Knowledge))
     ∀ ρ h, HeapKnowledge.Holds n.knowledge ρ h → HeapKnowledge.Holds k ρ h
 
 omit [Labels ι] in
-theorem checkGraphAssertions_entailed {cuts : List Nat}
+theorem checkGraphAssertions_entailed
     {assertions : List (Nat × HeapKnowledge.Knowledge)} {C : ControlFlow.Certificate ι}
-    (h : checkGraphAssertions cuts assertions C = true) : AssertionsEntailed assertions C := by
+    (h : checkGraphAssertions assertions C = true) : AssertionsEntailed assertions C := by
   intro l k hlk
-  simp only [checkGraphAssertions, Bool.and_eq_true, List.all_eq_true] at h
-  have hk := h.2 (l, k) hlk
+  simp only [checkGraphAssertions, List.all_eq_true] at h
+  have hk := h (l, k) hlk
   cases hn : C[l]? with
   | none => simp [hn] at hk
   | some n =>
@@ -835,7 +842,7 @@ def SourceRequest.over (F : Frozen) (r : SourceRequest EquationStore.State Tree)
       | throw "invalid descriptor groups in the source signature"
     return body
   return { toRequest := request, sourceScheme, qualification, obligations := obligations, sourceMap := r.sourceMap,
-           assertions := r.assertions, cuts := r.cuts, hints := hints, codeSources := r.codeSources,
+           assertions := r.assertions, candidates := r.candidates, cuts := r.cuts, hints := hints, codeSources := r.codeSources,
            nodePlans := nodePlans, footprint := r.footprint, onThrow := r.onThrow, fresh := r.fresh, regional := r.regional,
            ensures := r.ensures,
            async := r.async, stated := r.stated }

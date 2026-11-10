@@ -114,6 +114,20 @@ every selected unit with `--explain`. They describe the proposal: Lean
 decides each proposed fact, and a place listed here is where a fact a later
 obligation needs stops being proposed.
 
+### Candidates left out
+
+A fact the producer supplies at a statement entry is a candidate, which the
+evidence search keeps where every edge into the entry establishes it
+([source observation checkpoints](PROGRAM-TYPING.md#source-observation-checkpoints)).
+A refused graph's record lists in `candidatesLeftOut` every candidate the
+search left out of it: `{ "label", "sourceMap", "edgeFrom", "edgeSourceMap",
+"fact" }`, the entry's node and source map, the node whose edge into the entry
+does not establish the fact and its source map (the entry's own, at the
+graph's entry, whose assumed knowledge does not), and the fact, an index atom
+over the entry's slots. `dev/check-functions.mts` prints each under the
+refused unit, with the edge. They are stated by the search about Lean's
+rules, where the explanations above describe the producer's proposal.
+
 ## Common fields
 
 | Field | Meaning |
@@ -125,6 +139,7 @@ obligation needs stops being proposed.
 | `types` | Finite table of rows, the store's projection onto the labels the record mentions (below); type lists in the record index this table. |
 | `names` | `[[row, spelling], …]`: a source-like spelling of each row that stands for an application, such as `Promise<number \| R>`, in row order, each row once. Absent when no row is named. |
 | `requiredResult` | Whole-function result type on graph diagnostics; absent on standalone expression obligations. |
+| `candidatesLeftOut` | On a graph search's diagnostics, each fact the producer supplied at a statement entry that the search left out ([below](#candidates-left-out)); absent on records no graph search makes. |
 | `id` | Local obligation identity, where available. |
 
 An exhausted subtype comparison is inconclusive. Generic module-call bound

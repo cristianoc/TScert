@@ -173,7 +173,11 @@ private structure GraphFrame where
   claims : List (PointClaim Tree) := []
   sourceMap : SourceMap := []
   assertions : List (Nat × HeapKnowledge.Knowledge) := []
-  /-- Full statement-entry interfaces; absent assertions mean empty knowledge. -/
+  /-- The index facts the producer supplies at each statement entry, apart
+  from its assertion: candidates a search keeps where every edge into the
+  entry establishes them. -/
+  candidates : List (Nat × List HeapKnowledge.IndexAtom) := []
+  /-- Statement entries; absent assertions mean empty knowledge. -/
   cuts : List Nat := []
   /-- While a `try` body or handler is compiled: where a throw out of a node
   goes, as a target over the handler's scope (the thrown value's slot, then
@@ -508,6 +512,9 @@ def completeFlowEntry (reserved target : Target) : Compiler Unit :=
 def recordAssertion (target : Target) (knowledge : HeapKnowledge.Knowledge) : Compiler Unit :=
   updateBuilt fun s => { s with assertions := s.assertions ++ [(target.label,knowledge)] }
 
+def recordCandidates (target : Target) (atoms : List HeapKnowledge.IndexAtom) : Compiler Unit :=
+  updateBuilt fun s => { s with candidates := s.candidates ++ [(target.label,atoms)] }
+
 def recordCut (target : Target) : Compiler Unit :=
   updateBuilt fun s => { s with cuts := target.label::s.cuts }
 
@@ -531,7 +538,7 @@ structure LoweredGraph where
   source : CodeSource
 
 private def graphOutput (s : Built) : LoweredGraph :=
-  ⟨s.program,s.claims,⟨s.sourceMap,s.assertions,s.cuts⟩⟩
+  ⟨s.program,s.claims,⟨s.sourceMap,s.assertions,s.candidates,s.cuts⟩⟩
 
 def graphResult : Compiler LoweredGraph := readBuilt graphOutput
 

@@ -699,7 +699,8 @@ variable {σ ι : Type} [Labels ι] [StoreView σ ι]
 @[nospecialize] def failureDiagnostic (r : Request σ ι) (fuel : Nat)
     (sourceMap : SourceMap) (e : Failure ι)
     (requirements : List (Nat × HeapKnowledge.Knowledge) := [])
-    (phaseOverride : Option String := none) : List (String × Json) := Id.run do
+    (phaseOverride : Option String := none) (leftOut : List CertificateProducer.LeftOut := []) :
+    List (String × Json) := Id.run do
   let claimAt := fun l => (r.claims[l]? : Option (PointClaim ι))
   let mentionedAt := fun l => ((claimAt l).map PointClaim.mentions).getD []
   let mentioned := match e with
@@ -722,8 +723,16 @@ variable {σ ι : Type} [Labels ι] [StoreView σ ι]
     | .exhaustedExpression _ stop | .exhaustedEdge _ _ _ stop =>
       DiagnosticOutcome.exhausted stop.limit stop.rounds stop.visited
     | .expression .. | .edge .. | .promise .. | .rejected | .claimCount => .notEstablished
+  -- Each candidate the search left out: its statement entry, the node whose
+  -- edge into it does not establish it (the entry itself at the graph's
+  -- entry), and the fact, over the entry's slots.
+  let dropped := leftOut.map fun d => Json.mkObj [
+    ("label",toJson d.cut), ("sourceMap",toJson ((sourceMap[d.cut]?).bind id)),
+    ("edgeFrom",toJson d.source), ("edgeSourceMap",toJson ((sourceMap[d.source]?).bind id)),
+    ("fact",toJson d.fact)]
   let common := [("phase",toJson phase),("outcome",toJson outcome),
-    ("fuel",toJson fuel),("requiredResult",toJson (p.shown r.result))] ++ p.fields
+    ("fuel",toJson fuel),("requiredResult",toJson (p.shown r.result)),
+    ("candidatesLeftOut",Json.arr dropped.toArray)] ++ p.fields
   match e with
   | .expression label =>
     let goal := do
@@ -783,6 +792,7 @@ producer's caller for every search it makes (`produceResponseUsing`). -/
     (r : Request σ ι) (fuel : Nat) (labels : List ι)
     (suggestions : List (ProgramCertificates.Sequent ι)) (known : List (ProgramCertificates.Evidence ι))
     (sourceMap : SourceMap) (requirements : List (Nat × HeapKnowledge.Knowledge)) (cuts : List Nat)
+    (candidates : List (Nat × List HeapKnowledge.IndexAtom))
     (table : List (CodeEntry ι))
     (checker : HeapExpressionRules.Checker G I := HeapExpressionRules.Checker.ordinary G I)
     (aliases : List (ι × ι) := []) (goal : Option (ControlFlow.Goal ι) := none)
@@ -794,9 +804,10 @@ producer's caller for every search it makes (`produceResponseUsing`). -/
     requirements.filter (fun p => p.1 != r.start)
   match CertificateProducer.produceUsing G I labels fuel (goal.getD r.goal)
       r.program r.claims r.start [] r.inputs suggestions known
-      requirements cuts (GraphCode.admits table) checker aliases answers recheck r.entrySeparation r.entryIndices with
-  | (.ok c, answers) => pure (c, answers)
-  | (.error e, _) =>
+      requirements cuts (GraphCode.admits table) checker aliases answers recheck r.entrySeparation r.entryIndices
+      candidates with
+  | (.ok c, answers, _) => pure (c, answers)
+  | (.error e, _, leftOut) =>
     let location := match e with
       | .expression label | .exhaustedExpression label _ | .promise label .. => match (sourceMap[label]?).bind id with
         | some o => s!"source expression obligation at [{o.pos.1},{o.pos.2}): "
@@ -815,13 +826,15 @@ producer's caller for every search it makes (`produceResponseUsing`). -/
       | .promise .. => "the promised argument is not within the promise at this return"
       | _ => reprStr e
     throw (withDiagnostic s!"{location}evidence search failed: {what}"
-      (failureDiagnostic r fuel sourceMap e requirements))
+      (failureDiagnostic r fuel sourceMap e requirements (leftOut := leftOut)))
 
 /-- What search knows of a code request beyond the request: its source map, its
-statement entries' required knowledge and its cuts, as for a unit. -/
+points' required knowledge, its statement entries' candidates and its cuts,
+as for a unit. -/
 structure CodeHints where
   sourceMap : SourceMap := []
   requirements : List (Nat × HeapKnowledge.Knowledge) := []
+  candidates : List (Nat × List HeapKnowledge.IndexAtom) := []
   cuts : List Nat := []
 
 /-- Render the retained validation outcome in the graph whose check exhausted. -/
@@ -851,6 +864,7 @@ checker `searchChecker`; the response is checked under the request's own
     (sourceMap : SourceMap := [])
     (searchLabels : Option (List ι) := none)
     (requirements : List (Nat × HeapKnowledge.Knowledge) := []) (cuts : List Nat := [])
+    (candidates : List (Nat × List HeapKnowledge.IndexAtom) := [])
     (codeHints : List CodeHints := [])
     (checker : HeapExpressionRules.Checker (graph r) (StoreView.images r.types) :=
       HeapExpressionRules.Checker.ordinary (graph r) (StoreView.images r.types))
@@ -866,7 +880,7 @@ checker `searchChecker`; the response is checked under the request's own
   for (q, i) in r.codes.zipIdx do
     let hints := (codeHints[i]?).getD {}
     let (C, next) ← produceGraphUsing G I (q.asRequest r) fuel labels suggestions known hints.sourceMap
-      hints.requirements hints.cuts table (goal := some q.entry.goal) (answers := answers)
+      hints.requirements hints.cuts hints.candidates table (goal := some q.entry.goal) (answers := answers)
       (recheck := recheck.map fun _ => HeapExpressionRules.Checker.ordinary G)
     answers := next
     certificates := certificates ++ [C]
@@ -886,7 +900,7 @@ checker `searchChecker`; the response is checked under the request's own
       let label := stop.nodeLabel.getD q.entry.start
       throw (withDiagnostic "subtype search exhausted during code admission; result is inconclusive"
         (failureDiagnostic (q.asRequest r) fuel hints.sourceMap (.exhaustedExpression label stop)))
-  let (C, final) ← produceGraphUsing G I r fuel labels suggestions known sourceMap requirements cuts table
+  let (C, final) ← produceGraphUsing G I r fuel labels suggestions known sourceMap requirements cuts candidates table
     searchChecker aliases (answers := answers) (recheck := recheck)
   let response := Response.mk C certificates final.summaries.toList
   -- Where the search checked under the request's own checker (`searched`)

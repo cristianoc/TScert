@@ -250,7 +250,8 @@ def selection : Option String → Option (List String)
 selected groups' evidence written to `evidencePath` a line per unit, each
 with the heads of the slice's store its labels name
 (`SourceClaimJson.sliceLine`); each unit the search refuses on a line
-`refused: {"unit","refusal"}`. Untrusted: the check translates the evidence
+`refused: {"unit","refusal"}`; each unit's candidate search on a line
+`candidates: {"unit","passes","mostPasses","leftOut"}`. Untrusted: the check translates the evidence
 to the document's store and checks it there. -/
 def produceUnitFile (slicePath claimsPath qualifiedPath evidencePath : String) (fuel : Nat) (names : Option String)
     (budget : PositiveCertificates.SearchBudget := {}) : IO UInt32 := do
@@ -268,8 +269,10 @@ def produceUnitFile (slicePath claimsPath qualifiedPath evidencePath : String) (
       let mut refusals : Array (String × String) := #[]
       for i in f.fr.selected (selection names) do
         let unit := f.fr.unitId i
-        let (evidence, refusal) := f.produceGroup fuel (f.fr.group i)
+        let (evidence, refusal, passes, most, leftOut) := f.produceGroup fuel (f.fr.group i)
         h.putStrLn (SourceClaimJson.sliceLine unit evidence f.F.store.heads (f.anchors (f.fr.group i))).compress
+        IO.println s!"candidates: {(Json.mkObj [("unit", toJson unit), ("passes", toJson passes),
+          ("mostPasses", toJson most), ("leftOut", toJson leftOut)]).compress}"
         if let some reason := refusal then refusals := refusals.push (unit, reason)
       return refusals
     IO.println s!"checked source evidence written: {evidencePath}"
