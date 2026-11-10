@@ -390,6 +390,31 @@ def verifyUnitsFile (astPath claimsPath fileKey : String) (fuel : Nat) (names : 
           | some reason => .error reason
           | none => SourceClaimJson.unitVerdict f budget unit evidence
         | 1 => IO.lazyPure fun _ => f.verifyGroup fuel (f.fr.group i) false
+        | 3 => do
+          let p0 ← SinglePass.passNanos.get
+          let compare := (← IO.getEnv "TSCERT_COMPARE").isSome
+          let debugNode := ((← IO.getEnv "TSCERT_NODE").bind String.toNat?).getD 1000000000
+          let (lines, v) ← IO.lazyPure fun _ => f.passGroup fuel (f.fr.group i) compare debugNode
+          let p1 ← SinglePass.passNanos.get
+          let s1 ← IO.monoNanosNow
+          for line in lines do IO.eprintln line
+          IO.eprintln s!"stamp: {unit} pass {ms p0 p1} ms, with obligations and vocabulary {ms s0 s1} ms"
+          pure v
+        | 5 => do
+          -- Debugging: the searched certificate's node of label TSCERT_NODE.
+          let label := ((← IO.getEnv "TSCERT_NODE").bind String.toNat?).getD 0
+          match f.searchGroup fuel (f.fr.group i) true with
+          | .ok b => match b.functions.head? with
+            | some r => match r.certificate[label]? with
+              | some c => IO.eprintln s!"node {label}: knowledge {reprStr c.knowledge}\noutput {reprStr c.output}"
+              | none => IO.eprintln "no node"
+            | none => IO.eprintln "no function"
+          | .error e => IO.eprintln e
+          pure (.error "debug")
+        | 4 => do
+          let label := ((← IO.getEnv "TSCERT_NODE").bind String.toNat?).getD 0
+          for line in f.passStats (f.fr.group i) label do IO.eprintln line
+          pure (.error "statistics only")
         | _ => do
           let b ← IO.lazyPure fun _ => f.searchGroup fuel (f.fr.group i) true
           let s1 ← IO.monoNanosNow
