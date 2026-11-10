@@ -529,8 +529,8 @@ def FilePlans.extractionRefusal (f : FilePlans) (names : Option (List String)) :
 
 /-- Search evidence for one group: each member's request searched in turn,
 the search's memo kept within the group only; the group's evidence, and its
-refusal: the first member's search refused, or the group's check of that
-evidence refused, as the checker checks it; and the account of the candidate
+refusal: the first member's search refused, or the checker's refusal of
+what the searches left unchecked; and the account of the candidate
 search over the members searched to the end (`CertificateProducer.Answered`):
 its passes, the most over one graph, and the candidates it left out. -/
 def FilePlans.produceGroup (f : FilePlans) (fuel : Nat) (group : List Nat) :
@@ -577,15 +577,16 @@ def FilePlans.produceGroup (f : FilePlans) (fuel : Nat) (group : List Nat) :
       if failed.isNone then failed := some reason
       cs := cs.push { certificate := [] }
       es := es.push []
-  let evidence := EvidenceWire.encode (Bundle.mk cs.toList es.toList)
+  let b := Bundle.mk cs.toList es.toList
+  let evidence := EvidenceWire.encode b
   let account := (answers.candidatePasses, answers.candidatePassesMax, answers.candidatesLeftOut)
   if failed.isSome then return (evidence, failed, account)
-  -- Not refused by its search, the group is checked as the checker checks it,
-  -- so a refusal is the search's.
+  -- Not refused by its search, the group's requests are checked for what
+  -- their searches left unchecked (`searchedRequestsResult`), so a refusal
+  -- the checker would give there is the search's.
   let refusal : Except String Unit := do
     let certified ← f.certified group
-    let b ← f.groupEvidence group evidence
-    let checked := checkRequestsResult (CertifiedPlan.requests certified) b
+    let checked := searchedRequestsResult (CertifiedPlan.requests certified) b
     if !checked.accepted then throw (requestsRefusal certified b checked)
   return (evidence, match refusal with | .ok () => none | .error reason => some reason, account)
 
