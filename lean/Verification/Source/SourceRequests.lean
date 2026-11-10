@@ -930,8 +930,7 @@ private partial def planOver (F : Frozen) :
   | .cast j p => do return .cast (← sequentOver F j) (← planOver F p)
 
 /-- The obligations, point claims and node plans of a request read as `F`'s,
-each type relabeled once: what `relabel` gives them where every label is
-`F`'s. -/
+each type relabeled once. -/
 private def partsOver (F : Frozen) (r : SourceRequest EquationStore.State Tree) :
     Except String (List (ExpressionClaims.Required (CheckedLabel F.equations F.primitive)) ×
       List (PointClaim (CheckedLabel F.equations F.primitive)) ×
@@ -958,34 +957,13 @@ def SourceRequest.over (F : Frozen) (r : SourceRequest EquationStore.State Tree)
       variadic := ← relabel s.variadic
       resolution := s.resolution } : PositiveGraphs.SchemeRow (CheckedLabel F.equations F.primitive))
   -- The obligations, point claims and node plans, every type relabeled
-  -- once (`partsOver`); where that fails, each read in turn as below, so
-  -- the first part refused names the refusal.
-  let parts := partsOver F r
-  let obligations ← match parts with
-    | .ok (obligations, _, _) => pure obligations
-    | .error _ => r.obligations.mapM fun o => do
-      return ({ pos := o.pos, sequent := ← relabel o.sequent, plan := ← relabel o.plan,
-                role := o.role, context := o.context } : ExpressionClaims.Required _)
-  -- One frozen request fixes label validity. Share each strictly decoded
-  -- type across its occurrences in point contexts and results.
-  let claimType := typeOver F
-  let claims ← match parts with
-    | .ok (_, claims, _) => pure claims
-    | .error _ => (r.claims.mapM fun (c : PointClaim Tree) => match c with
-      | ⟨context, type⟩ => do
-        let context ← try context.mapM claimType catch e =>
-          throw s!"{``PointClaim}.context: {e}"
-        let type ← try claimType type catch e =>
-          throw s!"{``PointClaim}.type: {e}"
-        return (⟨context, type⟩ : PointClaim (CheckedLabel F.equations F.primitive))).run' {}
+  -- once (`partsOver`).
+  let (obligations, claims, nodePlans) ← partsOver F r
   let result ← relabel r.result
   let promise ← r.promise.mapM fun (asserts, slot, T) => do return (asserts, slot, ← relabel T)
   let inputs ← relabel r.inputs
   let codes ← relabel r.codes
   let hints ← relabel r.hints
-  let nodePlans ← match parts with
-    | .ok (_, _, nodePlans) => pure nodePlans
-    | .error _ => r.nodePlans.mapM fun p => relabel p
   let request : RequestJson.Request (Checked F.equations F.primitive) (CheckedLabel F.equations F.primitive) :=
     { types := F.store, program := r.program, claims := claims, result := result, start := r.start,
       inputs := inputs, codes := codes, promise := promise, entrySeparation := r.entrySeparation,
