@@ -191,78 +191,6 @@ theorem checkAssertions_entailed {r : SourceRequest σ ι} {c : Response ι}
   simp only [checkAssertions, Bool.and_eq_true, List.all_eq_true] at h
   exact ⟨checkGraphAssertions_entailed h.1.1, fun q C hm => checkGraphAssertions_entailed (h.2 (q, C) hm)⟩
 
-/-- A unit's claimed footprint and fresh result, established by its own graph
-and certificate. An async unit's footprint is `top` and it promises no fresh
-result, required before anything else. The footprint letting everything
-change, without a fresh result or a footprint on a throw, holds of every run;
-any other claim is established node by node
-(`GraphCode.compositionalChecked`), or, without a fresh result, by a graph of
-pure nodes, which preserves the heap, for a unit returning a plain result
-under the ordinary checker. A fresh result is established node by node
-whatever the footprint, as `GraphCode.effectCheckedResult` does for code. -/
-@[nospecialize] def effectResult (r : SourceRequest σ ι) (c : Response ι) : ProgramCertificates.CheckResult ι Unit :=
-  (ProgramCertificates.CheckResult.ofBool (RequestJson.asyncEffects r.async r.footprint &&
-    (!r.async || !r.fresh) &&
-    RequestJson.statedWithin r.async r.footprint r.onThrow r.fresh r.stated)).bind fun _ =>
-  if r.footprint = .top ∧ r.onThrow = false ∧ r.fresh = false then pure () else
-    (ProgramCertificates.CheckResult.ofBool (r.qualification.isNone && (r.footprint != .top || r.fresh))).bind fun _ =>
-    (ProgramCertificates.CheckResult.ofBool (!r.fresh && r.program.all fun n => Purity.pureTerm n.expression)).orElse fun _ =>
-    GraphCode.compositionalCheckedResult (RequestJson.graph r.toRequest) (StoreView.images r.types) c.readSummaries
-      r.footprint r.fresh r.onThrow r.start r.program c.certificate
-
-theorem effectResult_preserving {r : SourceRequest σ ι} {c : Response ι}
-    (h : (effectResult r c).accepted = true)
-    (he : r.footprint ≠ .top ∨ r.onThrow = true ∨ r.fresh = true) :
-    r.qualification = none ∧
-      ((r.fresh = false ∧ r.program.all (fun n => Purity.pureTerm n.expression) = true) ∨
-        GraphCode.compositionalChecked (RequestJson.graph r.toRequest) (StoreView.images r.types) c.readSummaries
-          r.footprint r.fresh r.onThrow r.start r.program c.certificate = true) := by
-  have hn : ¬(r.footprint = .top ∧ r.onThrow = false ∧ r.fresh = false) := by
-    rintro ⟨h1, h2, h3⟩
-    rcases he with he | he | he
-    · exact he h1
-    · rw [h2] at he; cases he
-    · rw [h3] at he; cases he
-  simp only [effectResult, ProgramCertificates.CheckResult.accepted_bind,
-    ProgramCertificates.CheckResult.accepted_ofBool, Bool.and_eq_true] at h
-  replace h := h.2
-  simp only [hn, if_false, ProgramCertificates.CheckResult.accepted_bind,
-    ProgramCertificates.CheckResult.accepted_ofBool, ProgramCertificates.CheckResult.accepted_orElse,
-    Bool.and_eq_true, Option.isNone_iff_eq_none, Bool.or_eq_true, Bool.not_eq_true'] at h
-  exact ⟨h.1.1, h.2⟩
-
-/-- **An async unit's footprint is `top`** where its effect is checked. -/
-theorem effectResult_async {r : SourceRequest σ ι} {c : Response ι}
-    (h : (effectResult r c).accepted = true) (ha : r.async = true) : r.footprint = .top := by
-  simp only [effectResult, ProgramCertificates.CheckResult.accepted_bind,
-    ProgramCertificates.CheckResult.accepted_ofBool, Bool.and_eq_true] at h
-  simpa [RequestJson.asyncEffects, ha] using h.1.1.1
-
-/-- **A stated unit's claim is within its statement** where its effect is
-checked: the statement adds a guarantee (a footprint below `top`, or a fresh
-result), the claim's footprint is within the statement's, on a throw too
-where the statement says so, it promises a fresh result where the statement
-does, and the unit is not async. -/
-theorem effectResult_stated {r : SourceRequest σ ι} {c : Response ι}
-    (h : (effectResult r c).accepted = true) {s : CallEffects.Effect} (hs : r.stated = some s)
-    (hreg : s.regions = []) :
-    r.async = false ∧ (s.footprint ≠ .top ∨ s.fresh = true) ∧ r.footprint.le s.footprint = true ∧
-      (s.onThrow = true → r.onThrow = true) ∧ (s.fresh = true → r.fresh = true) := by
-  simp only [effectResult, ProgramCertificates.CheckResult.accepted_bind,
-    ProgramCertificates.CheckResult.accepted_ofBool, Bool.and_eq_true] at h
-  have hw := h.1.2
-  rw [hs] at hw
-  simp only [RequestJson.statedWithin, hreg, List.isEmpty_nil, Bool.not_true, Bool.false_or, Bool.or_false,
-    Bool.and_eq_true, Bool.not_eq_true', bne_iff_ne, ne_eq, Bool.or_eq_true] at hw
-  obtain ⟨⟨⟨⟨ha, htop⟩, hle⟩, ho⟩, hf⟩ := hw
-  refine ⟨ha, htop, hle, fun hso => ?_, fun hsf => ?_⟩
-  · rcases ho with ho | ho
-    · rw [hso] at ho; cases ho
-    · exact ho
-  · rcases hf with hf | hf
-    · rw [hsf] at hf; cases hf
-    · exact hf
-
 /-- Candidate provenance of the store regions a unit's statement excepts, read
 by no proof: at its entry each region's input slot holds it; elsewhere every
 slot may hold any region; each pass removes a fact no incoming edge or
@@ -350,26 +278,112 @@ decides whether the result holds at every node and on every edge. -/
   | some (values, cells) => ⟨values.toList, cells.toList⟩
   | none => ⟨[], []⟩
 
+/-- **The regional check** of a unit's graph, at a bound `Φ` and store
+regions, each an input slot and a path: its runs stay within `Φ` off the
+stores the regions select at entry, on a throw too where `exc`
+(`ArgumentRegionGraph.checkNodes`), its provenance table and fresh facts
+inferred (`regionTable`, `freshTables`), none of them at the entry. With no
+regions it is a second certificate of a claimed footprint (`effectResult`). -/
+@[nospecialize] def regionalChecked (r : SourceRequest σ ι) (c : Response ι) (Φ : Footprints.Closed)
+    (regions : List Footprints.ArgumentStoreRegion) (exc : Bool) : Bool :=
+  let P := GraphCode.program (r.program.map (·.expression)) (r.program.map fun n => (n.continuation, n.handler))
+  let table := regionTable P c.certificate r.start regions
+  let ft := freshTables (RequestJson.graph r.toRequest) (StoreView.images r.types) c.readSummaries Φ P
+    c.certificate r.start
+  GraphCode.ArgumentPathTracking.checkEntry (GraphCode.ArgumentPathTracking.atLabel table r.start) &&
+    ((GraphCode.factsAt ft.values r.start).isEmpty && (GraphCode.factsAt ft.cells r.start).isEmpty) &&
+    GraphCode.ArgumentPathTracking.checkEntryFields (RequestJson.graph r.toRequest) r.inputs regions &&
+    GraphCode.ArgumentRegionGraph.checkNodes (RequestJson.graph r.toRequest) (StoreView.images r.types)
+      c.readSummaries Φ regions table ft exc P c.certificate
+
+/-- A unit's claimed footprint and fresh result, established by its own graph
+and certificate. An async unit's footprint is `top` and it promises no fresh
+result, required before anything else. The footprint letting everything
+change, without a fresh result or a footprint on a throw, holds of every run;
+any other claim is established node by node
+(`GraphCode.compositionalChecked`), or, without a fresh result, by a graph of
+pure nodes, which preserves the heap, for a unit returning a plain result
+under the ordinary checker. A fresh result is established node by node
+whatever the footprint, as `GraphCode.effectCheckedResult` does for code.
+Where those refuse, a unit promising no fresh result is checked by the
+regional check with no regions (`regionalChecked`), whose stores the body
+allocated rebase to none. -/
+@[nospecialize] def effectResult (r : SourceRequest σ ι) (c : Response ι) : ProgramCertificates.CheckResult ι Unit :=
+  (ProgramCertificates.CheckResult.ofBool (RequestJson.asyncEffects r.async r.footprint &&
+    (!r.async || !r.fresh) &&
+    RequestJson.statedWithin r.async r.footprint r.onThrow r.fresh r.stated)).bind fun _ =>
+  if r.footprint = .top ∧ r.onThrow = false ∧ r.fresh = false then pure () else
+    (ProgramCertificates.CheckResult.ofBool (r.qualification.isNone && (r.footprint != .top || r.fresh))).bind fun _ =>
+    (ProgramCertificates.CheckResult.ofBool (!r.fresh && r.program.all fun n => Purity.pureTerm n.expression)).orElse fun _ =>
+    (GraphCode.compositionalCheckedResult (RequestJson.graph r.toRequest) (StoreView.images r.types) c.readSummaries
+      r.footprint r.fresh r.onThrow r.start r.program c.certificate).orElse fun _ =>
+    ProgramCertificates.CheckResult.ofBool (!r.fresh && regionalChecked r c r.footprint [] r.onThrow)
+
+theorem effectResult_preserving {r : SourceRequest σ ι} {c : Response ι}
+    (h : (effectResult r c).accepted = true)
+    (he : r.footprint ≠ .top ∨ r.onThrow = true ∨ r.fresh = true) :
+    r.qualification = none ∧
+      ((r.fresh = false ∧ r.program.all (fun n => Purity.pureTerm n.expression) = true) ∨
+        GraphCode.compositionalChecked (RequestJson.graph r.toRequest) (StoreView.images r.types) c.readSummaries
+          r.footprint r.fresh r.onThrow r.start r.program c.certificate = true ∨
+        (r.fresh = false ∧ regionalChecked r c r.footprint [] r.onThrow = true)) := by
+  have hn : ¬(r.footprint = .top ∧ r.onThrow = false ∧ r.fresh = false) := by
+    rintro ⟨h1, h2, h3⟩
+    rcases he with he | he | he
+    · exact he h1
+    · rw [h2] at he; cases he
+    · rw [h3] at he; cases he
+  simp only [effectResult, ProgramCertificates.CheckResult.accepted_bind,
+    ProgramCertificates.CheckResult.accepted_ofBool, Bool.and_eq_true] at h
+  replace h := h.2
+  simp only [hn, if_false, ProgramCertificates.CheckResult.accepted_bind,
+    ProgramCertificates.CheckResult.accepted_ofBool, ProgramCertificates.CheckResult.accepted_orElse,
+    Bool.and_eq_true, Option.isNone_iff_eq_none, Bool.or_eq_true, Bool.not_eq_true'] at h
+  exact ⟨h.1.1, by simpa only [or_assoc, GraphCode.compositionalChecked] using h.2⟩
+
+/-- **An async unit's footprint is `top`** where its effect is checked. -/
+theorem effectResult_async {r : SourceRequest σ ι} {c : Response ι}
+    (h : (effectResult r c).accepted = true) (ha : r.async = true) : r.footprint = .top := by
+  simp only [effectResult, ProgramCertificates.CheckResult.accepted_bind,
+    ProgramCertificates.CheckResult.accepted_ofBool, Bool.and_eq_true] at h
+  simpa [RequestJson.asyncEffects, ha] using h.1.1.1
+
+/-- **A stated unit's claim is within its statement** where its effect is
+checked: the statement adds a guarantee (a footprint below `top`, or a fresh
+result), the claim's footprint is within the statement's, on a throw too
+where the statement says so, it promises a fresh result where the statement
+does, and the unit is not async. -/
+theorem effectResult_stated {r : SourceRequest σ ι} {c : Response ι}
+    (h : (effectResult r c).accepted = true) {s : CallEffects.Effect} (hs : r.stated = some s)
+    (hreg : s.regions = []) :
+    r.async = false ∧ (s.footprint ≠ .top ∨ s.fresh = true) ∧ r.footprint.le s.footprint = true ∧
+      (s.onThrow = true → r.onThrow = true) ∧ (s.fresh = true → r.fresh = true) := by
+  simp only [effectResult, ProgramCertificates.CheckResult.accepted_bind,
+    ProgramCertificates.CheckResult.accepted_ofBool, Bool.and_eq_true] at h
+  have hw := h.1.2
+  rw [hs] at hw
+  simp only [RequestJson.statedWithin, hreg, List.isEmpty_nil, Bool.not_true, Bool.false_or, Bool.or_false,
+    Bool.and_eq_true, Bool.not_eq_true', bne_iff_ne, ne_eq, Bool.or_eq_true] at hw
+  obtain ⟨⟨⟨⟨ha, htop⟩, hle⟩, ho⟩, hf⟩ := hw
+  refine ⟨ha, htop, hle, fun hso => ?_, fun hsf => ?_⟩
+  · rcases ho with ho | ho
+    · rw [hso] at ho; cases ho
+    · exact ho
+  · rcases hf with hf | hf
+    · rw [hsf] at hf; cases hf
+    · exact hf
+
 /-- The store regions a unit's statement excepts (`"x[*]": "any"`), each an
 input slot's own store: none, or a graph of a unit that is neither generic,
 async, nor promising a fresh result, all of whose runs stay within the
 statement's bound off the stores those slots hold at entry, on a throw too
-where the statement says so (`ArgumentRegionGraph.checkNodes`), its
-provenance table and fresh facts inferred (`regionTable`, `freshTables`). -/
+where the statement says so (`regionalChecked`). -/
 @[nospecialize] def regionalResult (r : SourceRequest σ ι) (c : Response ι) : ProgramCertificates.CheckResult ι Unit :=
   match r.regional with
   | none => pure ()
   | some (Φ, regions) =>
-    let P := GraphCode.program (r.program.map (·.expression)) (r.program.map fun n => (n.continuation, n.handler))
-    let table := regionTable P c.certificate r.start regions
-    let ft := freshTables (RequestJson.graph r.toRequest) (StoreView.images r.types) c.readSummaries Φ P
-      c.certificate r.start
     ProgramCertificates.CheckResult.ofBool (r.qualification.isNone && !r.async && !r.fresh &&
-      GraphCode.ArgumentPathTracking.checkEntry (GraphCode.ArgumentPathTracking.atLabel table r.start) &&
-      ((GraphCode.factsAt ft.values r.start).isEmpty && (GraphCode.factsAt ft.cells r.start).isEmpty) &&
-      GraphCode.ArgumentPathTracking.checkEntryFields (RequestJson.graph r.toRequest) r.inputs regions &&
-      GraphCode.ArgumentRegionGraph.checkNodes (RequestJson.graph r.toRequest) (StoreView.images r.types)
-        c.readSummaries Φ regions table ft (r.stated.any (·.onThrow)) P c.certificate)
+      regionalChecked r c Φ regions (r.stated.any (·.onThrow)))
 
 /-- A unit's postcondition, established by its own graph: none, or facts of
 its result and of its inputs' entry values, which each return its graph may
@@ -519,6 +533,69 @@ theorem program_nodes (P : Program) :
     simp only [GraphCode.program, List.map_cons, List.zip_cons_cons] at ih ⊢
     rw [ih]
 
+theorem regionalResult_checked {r : SourceRequest σ ι} {c : Response ι}
+    (h : (regionalResult r c).accepted = true) {Φ : Footprints.Closed} {regions : List Footprints.ArgumentStoreRegion}
+    (hr : r.regional = some (Φ, regions)) :
+    r.qualification = none ∧ regionalChecked r c Φ regions (r.stated.any (·.onThrow)) = true := by
+  simp only [regionalResult, hr, ProgramCertificates.CheckResult.accepted_ofBool, Bool.and_eq_true,
+    Option.isNone_iff_eq_none] at h
+  exact ⟨h.1.1.1, h.2⟩
+
+/-- **A graph the regional check accepts meets its frame**: run as the code
+it describes from any environment of values its inputs admit, on normal
+return, and on a throw where `exc`, every location of its entry heap but
+the stores its regions select at entry is within `Φ` of its entry
+contents. -/
+theorem regionalChecked_at {rs : List (SourceRequest σ ι)} {b : Bundle ι}
+    (h : checkRequests rs b = true) {r c} (hm : (r,c) ∈ rs.zip b.functions) (hq : r.qualification = none)
+    {Φ : Footprints.Closed} {regions : List Footprints.ArgumentStoreRegion} {exc : Bool}
+    (hreg : regionalChecked r c Φ regions exc = true)
+    (η : PositiveGraphs.MixedAssignment ι) (n W heap) (L : List Tm) (d : Tm)
+    (he : EnvOk (reassign (RequestJson.graph r.toRequest) η) r.inputs (envOf L d) n W) (hw : WorldAdm W)
+    (hh : HeapOk n W heap)
+    (hsep : HeapSeparation.Holds r.entrySeparation (envOf L d))
+    (hidx : HeapKnowledge.IndexHolds r.entryIndices (envOf L d) heap) :
+    HeapObservations.SafePostExc (excOf (reassign (RequestJson.graph r.toRequest) η))
+      (ControlFlow.GoalHolds (reassign (RequestJson.graph r.toRequest) η) r.goal (r.goal.argument (envOf L d)))
+      (fun h' _ => Footprints.ArgumentStoreRegionsWithin Φ regions (envOf L d) heap h')
+      (fun h' => exc = true → Footprints.ArgumentStoreRegionsWithin Φ regions (envOf L d) heap h') n W heap
+      (.goto (r.program.map (·.expression)) (r.program.map fun n => (n.continuation, n.handler))
+        r.start L d) := by
+  obtain ⟨es, _, hunit⟩ := checkRequests_pair h hm
+  obtain ⟨checked, -⟩ := (checkRequestResult_accepted_iff _ _ _).mp hunit
+  simp only [regionalChecked, Bool.and_eq_true] at hreg
+  obtain ⟨⟨⟨hstart, hfresh⟩, hfields⟩, hnodes⟩ := hreg
+  simp only [SourceRequest.checker, hq] at checked
+  rw [verify_eq] at checked
+  simp only [Bool.and_eq_true] at checked
+  have hx := checked.2
+  split at hx
+  · rename_i table ht
+    let G := RequestJson.graph r.toRequest
+    let images := StoreView.images r.types
+    have hcodes : ProgramCertificates.CodesSound (reassign G η) (GraphCode.admits table) :=
+      fun e he η' => codeTable_sound ht e he η'
+    have hsums := Parametricity.summariesSound_reassign G η images (codeTable_summaries ht)
+    have hacc := (Parametricity.accept_reassign G η images r.goal r.program r.claims c.certificate
+      r.start r.inputs (GraphCode.admits table) c.readSummaries r.entrySeparation r.entryIndices).trans hx
+    simp only [CertificateProducer.acceptUsing_eq, Bool.and_eq_true] at hacc
+    have hP := program_nodes r.program
+    have hc := hacc.2
+    rw [← hP] at hc
+    have hgraph : checkGraphUsing (sums := c.readSummaries) (reassign G η) (images.reassign η) r.goal
+        (GraphCode.program (r.program.map (·.expression)) (r.program.map fun n => (n.continuation, n.handler)))
+        c.certificate (GraphCode.admits table) = true := by
+      have hchecked := hc
+      simp only [checkEntryUsing_eq, Bool.and_eq_true] at hchecked
+      exact hchecked.1
+    rw [← GraphCode.ArgumentRegionGraph.checkNodes_reassign G images c.readSummaries η] at hnodes
+    exact GraphCode.ArgumentRegionGraph.goto_bounded hc hcodes hsums
+      (GraphCode.ArgumentRegionGraph.checkNodes_sound hgraph hcodes hsums hnodes) hstart
+      (by simpa only [Bool.and_eq_true] using hfresh)
+      (by rw [GraphCode.ArgumentRegionGraph.checkEntryFields_reassign]; exact hfields)
+      n W heap L d he hw hh hsep hidx
+  · contradiction
+
 /-- **A unit claiming a footprint meets it.** A unit claiming a footprint
 other than the one letting everything change, or claiming it on a throw, or
 promising a fresh result, run as the code its graph describes from any
@@ -544,6 +621,14 @@ theorem checkRequests_footprint_at {rs : List (SourceRequest σ ι)} {b : Bundle
   obtain ⟨es, _, hunit⟩ := checkRequests_pair h hm
   obtain ⟨checked, -, heff, -⟩ := (checkRequestResult_accepted_iff _ _ _).mp hunit
   obtain ⟨hq, hp⟩ := effectResult_preserving heff heffect
+  rw [← or_assoc] at hp
+  rcases hp with hp | ⟨hfr, hreg⟩
+  rotate_left
+  · -- The regional check with no regions: within the footprint everywhere.
+    exact HeapObservations.SafePostExc.weaken
+      (fun _ _ hq => ⟨Footprints.ArgumentStoreRegionsWithin.nil_holds hq, fun hf => by rw [hfr] at hf; cases hf⟩)
+      (fun _ hq ho => Footprints.ArgumentStoreRegionsWithin.nil_holds (hq ho))
+      (regionalChecked_at h hm hq hreg η n W heap L d he hw hh hsep hidx)
   simp only [SourceRequest.checker, hq] at checked
   rw [verify_eq] at checked
   simp only [Bool.and_eq_true] at checked
@@ -668,26 +753,6 @@ theorem checkRequests_stated_at {rs : List (SourceRequest σ ι)} {b : Bundle ι
     (fun h' hq ho => Footprints.Closed.Holds.mono hle (hq (hthrow ho)))
     (checkRequests_footprint_at h hm heffect η n W heap L d he hw hh hvalues hd hsep hidx)
 
-theorem regionalResult_checked {r : SourceRequest σ ι} {c : Response ι}
-    (h : (regionalResult r c).accepted = true) {Φ : Footprints.Closed} {regions : List Footprints.ArgumentStoreRegion}
-    (hr : r.regional = some (Φ, regions)) :
-    r.qualification = none ∧ ∃ ft : GraphCode.ArgumentRegionFresh.FreshTables,
-      GraphCode.ArgumentPathTracking.checkEntry (GraphCode.ArgumentPathTracking.atLabel
-        (regionTable (GraphCode.program (r.program.map (·.expression)) (r.program.map fun n => (n.continuation, n.handler)))
-          c.certificate r.start regions) r.start) = true ∧
-      ((GraphCode.factsAt ft.values r.start).isEmpty && (GraphCode.factsAt ft.cells r.start).isEmpty) = true ∧
-      GraphCode.ArgumentPathTracking.checkEntryFields (RequestJson.graph r.toRequest) r.inputs regions = true ∧
-      GraphCode.ArgumentRegionGraph.checkNodes (RequestJson.graph r.toRequest) (StoreView.images r.types)
-        c.readSummaries Φ regions
-        (regionTable (GraphCode.program (r.program.map (·.expression)) (r.program.map fun n => (n.continuation, n.handler)))
-          c.certificate r.start regions) ft
-        (r.stated.any (·.onThrow))
-        (GraphCode.program (r.program.map (·.expression)) (r.program.map fun n => (n.continuation, n.handler)))
-        c.certificate = true := by
-  simp only [regionalResult, hr, ProgramCertificates.CheckResult.accepted_ofBool, Bool.and_eq_true,
-    Option.isNone_iff_eq_none] at h
-  exact ⟨h.1.1.1.1.1.1, _, h.1.1.1.2, by simpa only [Bool.and_eq_true] using h.1.1.2, h.1.2, h.2⟩
-
 /-- **A unit stating store regions meets them** (`"x[*]": "any"`;
 SOURCE-ELABORATION.md, "Stated effects"): run as the code its graph describes
 from any environment of values its inputs admit, it is safe; on normal
@@ -710,37 +775,9 @@ theorem checkRequests_regional_at {rs : List (SourceRequest σ ι)} {b : Bundle 
       (.goto (r.program.map (·.expression)) (r.program.map fun n => (n.continuation, n.handler))
         r.start L d) := by
   obtain ⟨es, _, hunit⟩ := checkRequests_pair h hm
-  obtain ⟨checked, -, -, -, hreg, -⟩ := (checkRequestResult_accepted_iff _ _ _).mp hunit
-  obtain ⟨hq, ft, hstart, hfresh, hfields, hnodes⟩ := regionalResult_checked hreg hr
-  simp only [SourceRequest.checker, hq] at checked
-  rw [verify_eq] at checked
-  simp only [Bool.and_eq_true] at checked
-  have hx := checked.2
-  split at hx
-  · rename_i table ht
-    let G := RequestJson.graph r.toRequest
-    let images := StoreView.images r.types
-    have hcodes : ProgramCertificates.CodesSound (reassign G η) (GraphCode.admits table) :=
-      fun e he η' => codeTable_sound ht e he η'
-    have hsums := Parametricity.summariesSound_reassign G η images (codeTable_summaries ht)
-    have hacc := (Parametricity.accept_reassign G η images r.goal r.program r.claims c.certificate
-      r.start r.inputs (GraphCode.admits table) c.readSummaries r.entrySeparation r.entryIndices).trans hx
-    simp only [CertificateProducer.acceptUsing_eq, Bool.and_eq_true] at hacc
-    have hP := program_nodes r.program
-    have hc := hacc.2
-    rw [← hP] at hc
-    have hgraph : checkGraphUsing (sums := c.readSummaries) (reassign G η) (images.reassign η) r.goal
-        (GraphCode.program (r.program.map (·.expression)) (r.program.map fun n => (n.continuation, n.handler)))
-        c.certificate (GraphCode.admits table) = true := by
-      have hchecked := hc
-      simp only [checkEntryUsing_eq, Bool.and_eq_true] at hchecked
-      exact hchecked.1
-    rw [← GraphCode.ArgumentRegionGraph.checkNodes_reassign G images c.readSummaries η] at hnodes
-    exact GraphCode.ArgumentRegionGraph.goto_bounded hc hcodes hsums
-      (GraphCode.ArgumentRegionGraph.checkNodes_sound hgraph hcodes hsums hnodes) hstart hfresh
-      (by rw [GraphCode.ArgumentRegionGraph.checkEntryFields_reassign]; exact hfields)
-      n W heap L d he hw hh hsep hidx
-  · contradiction
+  obtain ⟨-, -, -, -, hreg, -⟩ := (checkRequestResult_accepted_iff _ _ _).mp hunit
+  obtain ⟨hq, hchecked⟩ := regionalResult_checked hreg hr
+  exact regionalChecked_at h hm hq hchecked η n W heap L d he hw hh hsep hidx
 
 /-- The source region represented by a graph, for checks on synthetic nodes. -/
 def sourceMapRegion (sourceMap : SourceMap) : Option SourceMapEntry :=

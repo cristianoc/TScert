@@ -432,6 +432,29 @@ as the throwing node holds it (`stated-slot-collect`,
 `invalid-stated-slot-handler`, where the throw precedes the write, run
 under Node).
 
+**The regional check as a second certificate.** A unit's claimed footprint
+$`\Phi_c`$ has one entry point (`effectResult`), which tries its
+certificates in order: $`\Phi_c = \mathsf{top}`$ with no throw or fresh
+result promised; a pure graph; the node-by-node bound check
+(`compositionalChecked`); and, for a unit promising no fresh result, the
+regional check with no regions at $`\Phi_c`$ (`regionalChecked`), its
+throws bounded where the unit claims $`\Phi_c`$ on a throw. A frame stating
+a store region is `top` to the node-by-node check (`Effect.footprint`); the
+regional check rebases its region on a store the body allocated to none, so
+a body changing such a store through a callee stays within $`\Phi_c`$
+(`stated-fresh-direct`). With no regions the regional check's postcondition
+is the closed footprint itself:
+
+```math
+\frac{\mathrm{ArgumentStoreRegionsWithin}\ \Phi\ [\,]\ \rho\ h_0\ h}{\Phi.\mathrm{Holds}\ h_0\ h}\ (\text{no-regions})
+```
+
+(proved: `ArgumentStoreRegionsWithin.nil_holds`; acceptance:
+`regionalChecked_at`, `checkRequests_footprint_at`). A unit an earlier
+certificate accepts runs no regional traversal. A record the body receives
+holds no fresh fact, so a region on its field is no store the body
+allocated (`invalid-stated-fresh-parameter`, run under Node).
+
 `pop`, `shift`, `reverse` and `splice` change only their receiver's store and element
 contents, and `filter`, `map`, `flatMap`, `flat`, `slice`, `splice` and `split` allocate their
 result's store (audited: [native footprints](SOURCE-CONTRACTS.md#native-footprints)).

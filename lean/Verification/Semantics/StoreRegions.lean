@@ -20,6 +20,12 @@ def ArgumentStoreRegionsWithin (c : Closed) (regions : List ArgumentStoreRegion)
     (ρ : Env) (entry after : Heap) : Prop :=
   c.HoldsOn (fun l => ∀ r ∈ regions, r.resolve ρ entry ≠ some l) entry after
 
+/-- **No regions.** With no region the exclusion predicate holds of every
+location: the closed footprint itself. -/
+theorem ArgumentStoreRegionsWithin.nil_holds {c : Closed} {ρ : Env} {entry after : Heap}
+    (h : ArgumentStoreRegionsWithin c [] ρ entry after) : c.Holds entry after :=
+  Closed.holds_of_on (h.weaken fun _ _ _ hr => nomatch hr)
+
 /-! ## The regions as entries of the regional footprint -/
 
 /-- The region's entry: its selected store's location, at `any`. -/
