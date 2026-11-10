@@ -9,7 +9,9 @@
  *
  * The layout check renders the slides in headless Chrome (`CHROME`, by
  * default the macOS application's path) and reports a slide whose content
- * passes the canvas's bottom margin, y 952; without Chrome it says so. */
+ * passes the canvas's bottom margin, y 952, or its right margin, x 1792,
+ * an inline SVG's parts measured by their drawn boxes; without Chrome it
+ * says so. */
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -48,7 +50,7 @@ writeFileSync(measured, `<!doctype html><html><head><meta charset="utf-8">${Obje
 <style>*{margin:0;box-sizing:border-box}section{width:1920px;height:1080px;display:flex}ul,ol{padding-left:1.2em}li{margin:4px 0}td,th{padding:.35em .6em;vertical-align:top}table{border-collapse:collapse}</style></head><body>
 ${deck.slides.map(s => s.html).join("\n")}
 <script>document.fonts.ready.then(()=>{const out={};for(const s of document.querySelectorAll("section")){const box=s.getBoundingClientRect();let b=0,w=0;
-for(const e of s.querySelectorAll("*")){const r=e.getBoundingClientRect();if(r.height>0){b=Math.max(b,r.bottom-box.top);w=Math.max(w,r.left+e.scrollWidth-box.left)}}out[s.id]=[Math.round(b),Math.round(w)]}
+for(const e of s.querySelectorAll("*")){const r=e.getBoundingClientRect();if(r.height>0){b=Math.max(b,r.bottom-box.top);w=Math.max(w,(e instanceof SVGElement?r.right:r.left+e.scrollWidth)-box.left)}}out[s.id]=[Math.round(b),Math.round(w)]}
 document.body.setAttribute("data-bottoms",JSON.stringify(out))})</script></body></html>`);
 let layout: string = "not checked: no Chrome at " + chrome;
 if (existsSync(chrome)) {
