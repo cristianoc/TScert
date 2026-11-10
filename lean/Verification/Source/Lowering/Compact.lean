@@ -25,7 +25,7 @@ structure Compaction where
 
 /-- The slot of the source context target slot `k` reads, through a mapping
 (none: the same slot). -/
-private def through (m : Option (List Nat)) (k : Nat) : Nat :=
+private def through (m : Option (Array Nat)) (k : Nat) : Nat :=
   match m with
   | none => k
   | some slots => slots.getD k 0
@@ -41,23 +41,26 @@ private def passOn (P : Array Node) (claims : Array (PointClaim Tree)) (c : Comp
   match n.expression, n.continuation with
   | .var i, .effect t =>
     if c.checks && claim.context[i]? == some claim.type then
-      some (t, fun m1 => some ((List.range (match t.mapping with
+      some (t, fun m1 => let a1 := m1.map List.toArray; let a2 := t.mapping.map List.toArray
+        some ((List.range (match t.mapping with
         | some s => s.length
-        | none => claim.context.length)).map fun k => through m1 (through t.mapping k)))
+        | none => claim.context.length)).map fun k => through a1 (through a2 k)))
     else none
   | .nul, .effect t =>
     if c.discards then
-      some (t, fun m1 => some ((List.range (match t.mapping with
+      some (t, fun m1 => let a1 := m1.map List.toArray; let a2 := t.mapping.map List.toArray
+        some ((List.range (match t.mapping with
         | some s => s.length
-        | none => claim.context.length)).map fun k => through m1 (through t.mapping k)))
+        | none => claim.context.length)).map fun k => through a1 (through a2 k)))
     else none
   | .var i, .bind t =>
     if c.copies && claim.context[i]? == some claim.type then
-      some (t, fun m1 => some ((List.range (match t.mapping with
+      some (t, fun m1 => let a1 := m1.map List.toArray; let a2 := t.mapping.map List.toArray
+        some ((List.range (match t.mapping with
         | some s => s.length
         | none => claim.context.length + 1)).map fun k =>
-          let s := through t.mapping k
-          through m1 (if s == 0 then i else s - 1)))
+          let s := through a2 k
+          through a1 (if s == 0 then i else s - 1)))
     else none
   | _, _ => none
 
@@ -86,8 +89,9 @@ def compactGraph (c : Compaction) (program : List Node) (claims : List (PointCla
       | none => break
     return cur
   let gone : Array Bool := (Array.range P.size).map fun l => (passOn P C c pinned l).isSome
-  -- A left-out node on a cycle of left-out nodes stays: resolving would not end.
-  let gone := (Array.range P.size).map fun l => gone[l]! && (passOn P C c pinned (resolve ⟨l, none⟩).label).isNone
+  -- A left-out node on a cycle of left-out nodes stays (every cycle passes a
+  -- statement entry, which stays): resolving it would not end.
+  let gone := (Array.range P.size).map fun l => gone[l]! && !gone.getD (resolve ⟨l, none⟩).label false
   let mut newLabel : Array Nat := Array.mkEmpty P.size
   let mut count := 0
   for l in [0:P.size] do
@@ -108,7 +112,7 @@ def compactGraph (c : Compaction) (program : List Node) (claims : List (PointCla
     candidates.map fun (l, a) => (lab l, a), cuts.map lab, lab)
 
 /-- The nodes the lowering leaves out (each kind its own step of the work). -/
-def compaction : Compaction := ⟨true, false, false⟩
+def compaction : Compaction := ⟨true, true, false⟩
 
 /-- A lowered graph with its source account, without the nodes that do
 nothing, and its entry's new label. -/
