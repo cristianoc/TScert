@@ -168,10 +168,12 @@ theorem Arr.Within.setLength {b orig} {a : Arr} (h : a.Within b orig) (n : Nat) 
     · simp [List.mem_replicate] at hl
 
 /-- A store change within the original and fresh locations that keeps every
-dense prefix is `grow`. -/
+dense prefix, and leaves the store no shorter and within `maxArrayLength` where
+it was, is `grow`. -/
 theorem grow_of_steps {b : Nat} {orig : List (Option Nat)} {a : Arr} (hw : a.Within b orig)
-    (hd : ∀ n, DensePrefix n orig → DensePrefix n a.ls) : Change.grow.Holds b (.arr orig) (.arr a.ls) :=
-  .inr (.inl ⟨orig, a.ls, rfl, rfl, hd, hw.2⟩)
+    (hd : ∀ n, DensePrefix n orig → DensePrefix n a.ls) (hg : LengthGrows orig a.ls) :
+    Change.grow.Holds b (.arr orig) (.arr a.ls) :=
+  .inr (.inl ⟨orig, a.ls, rfl, rfl, hd, hw.2, hg⟩)
 
 /-! ## The mutators -/
 
@@ -364,27 +366,87 @@ theorem sort_dense {ls : List (Option Nat)} {n : Nat} (hd : DensePrefix n ls) (m
   rw [dense_iff_present] at hw ⊢
   exact fun i hi => hw i (by omega)
 
+/-! ## Lengths of the mutators -/
+
+/-- `Set(O, k, v)` leaves the store no shorter, and at most `k + 1` long
+where it was shorter. -/
+theorem Arr.set_length (a : Arr) (k : Nat) :
+    a.ls.length ≤ (a.set k).ls.length ∧ (a.set k).ls.length ≤ max a.ls.length (k + 1) := by
+  unfold Arr.set
+  split
+  · exact ⟨Nat.le_refl _, Nat.le_max_left _ _⟩
+  · simp only [placeAt_length]; omega
+
+theorem Arr.delete_length (a : Arr) (k : Nat) : (a.delete k).ls.length = a.ls.length := by
+  simp [Arr.delete]
+
+theorem Arr.setLength_length (a : Arr) (n : Nat) : (a.setLength n).ls.length = n := by
+  unfold Arr.setLength
+  split <;> simp <;> omega
+
+private theorem foldl_length {lo hi : Nat} {f : Arr → Nat → Arr} :
+    ∀ (xs : List Nat), (∀ a k, k ∈ xs → lo ≤ a.ls.length → a.ls.length ≤ hi →
+      lo ≤ (f a k).ls.length ∧ (f a k).ls.length ≤ hi) →
+    ∀ (a : Arr), lo ≤ a.ls.length → a.ls.length ≤ hi →
+      lo ≤ (xs.foldl f a).ls.length ∧ (xs.foldl f a).ls.length ≤ hi
+  | [], _, _, h₁, h₂ => ⟨h₁, h₂⟩
+  | x :: xs, hf, a, h₁, h₂ =>
+    let h := hf a x (List.mem_cons_self ..) h₁ h₂
+    foldl_length xs (fun a k hk => hf a k (List.mem_cons_of_mem _ hk)) (f a x) h.1 h.2
+
+/-- `sort`'s write-back sets the first `n` indices and deletes the rest: the
+store no shorter, and at most `n` long where it was shorter. -/
+theorem Arr.writeback_length (n len : Nat) (a : Arr) :
+    a.ls.length ≤ (a.writeback n len).ls.length ∧ (a.writeback n len).ls.length ≤ max a.ls.length n := by
+  unfold Arr.writeback
+  have hset := foldl_length (lo := a.ls.length) (hi := max a.ls.length n) (f := fun s j => s.set j)
+    (List.range n) (fun s k hk h₁ h₂ => by
+      have := Arr.set_length s k
+      have := List.mem_range.mp hk
+      omega) a (Nat.le_refl _) (Nat.le_max_left _ _)
+  exact foldl_length (f := fun s j => s.delete (n + j)) _
+    (fun s k _ h₁ h₂ => by rw [Arr.delete_length]; exact ⟨h₁, h₂⟩) _ hset.1 hset.2
+
+theorem itemCount_le (ls : List (Option Nat)) (len : Nat) : itemCount ls len ≤ len := by
+  unfold itemCount
+  exact Nat.le_trans (List.length_filter_le _ _) (by simp; omega)
+
 /-- `sort` grows its store over the whole call when the comparator's own
-store changes keep the store's locations among the entry's and fresh ones. -/
-theorem sort_grow {b} {ls : List (Option Nat)} {mid : Arr} (hmid : mid.Within b ls) :
-    Change.grow.Holds b (.arr ls) (.arr (mid.writeback (itemCount ls ls.length) ls.length).ls) :=
-  grow_of_steps (Arr.writeback_within _ _ hmid) fun _ hd => sort_dense hd mid
+store changes keep the store's locations among the entry's and fresh ones,
+and leave it no shorter and within `maxArrayLength` where it was. -/
+theorem sort_grow {b} {ls : List (Option Nat)} {mid : Arr} (hmid : mid.Within b ls)
+    (hlen : LengthGrows ls mid.ls) :
+    Change.grow.Holds b (.arr ls) (.arr (mid.writeback (itemCount ls ls.length) ls.length).ls) := by
+  refine grow_of_steps (Arr.writeback_within _ _ hmid) (fun _ hd => sort_dense hd mid) ?_
+  have hw := Arr.writeback_length (itemCount ls ls.length) ls.length mid
+  have hc := itemCount_le ls ls.length
+  exact ⟨Nat.le_trans hlen.1 hw.1, fun h => by have := hlen.2 h; omega⟩
 
-theorem Arr.push_grow {b} {a : Arr} (h : b ≤ a.next) : Change.grow.Holds b (.arr a.ls) (.arr a.push.ls) :=
-  grow_of_steps (Arr.push_within h) fun _ => Arr.push_dense
+/-- `push` on a store shorter than `maxArrayLength`: a longer length at
+`maxArrayLength` throws a `RangeError`. -/
+theorem Arr.push_grow {b} {a : Arr} (h : b ≤ a.next) (hmax : a.ls.length < maxArrayLength) :
+    Change.grow.Holds b (.arr a.ls) (.arr a.push.ls) := by
+  refine grow_of_steps (Arr.push_within h) (fun _ => Arr.push_dense) ?_
+  have := Arr.set_length a a.ls.length
+  exact ⟨by simp only [Arr.push]; omega, fun _ => by simp only [Arr.push]; omega⟩
 
-theorem Arr.unshift_grow {b} {a : Arr} (h : b ≤ a.next) : Change.grow.Holds b (.arr a.ls) (.arr a.unshift.ls) :=
-  grow_of_steps (Arr.unshift_within h) fun _ => Arr.unshift_dense
+theorem Arr.unshift_grow {b} {a : Arr} (h : b ≤ a.next) (hmax : a.ls.length < maxArrayLength) :
+    Change.grow.Holds b (.arr a.ls) (.arr a.unshift.ls) := by
+  refine grow_of_steps (Arr.unshift_within h) (fun _ => Arr.unshift_dense) ?_
+  refine ⟨?_, fun _ => ?_⟩ <;> unfold Arr.unshift <;> rw [Arr.setLength_length] <;> omega
 
-/-- A longer length keeps every dense prefix; a shorter one need not. -/
-theorem Arr.setLength_grow {b} {a : Arr} {m : Nat} (h : b ≤ a.next) (hm : a.ls.length ≤ m) :
+/-- A longer length keeps every dense prefix; a shorter one need not. A
+length above `maxArrayLength` throws a `RangeError`. -/
+theorem Arr.setLength_grow {b} {a : Arr} {m : Nat} (h : b ≤ a.next) (hm : a.ls.length ≤ m)
+    (hmax : m ≤ maxArrayLength) :
     Change.grow.Holds b (.arr a.ls) (.arr (a.setLength m).ls) := by
-  refine grow_of_steps ((Arr.Within.refl h).setLength m) fun n hd => ?_
-  rw [dense_iff_present] at hd ⊢
-  intro i hi
-  have := present_lt (hd i hi)
-  rw [present_setLength (by omega)]
-  exact hd i hi
+  refine grow_of_steps ((Arr.Within.refl h).setLength m) (fun n hd => ?_) ?_
+  · rw [dense_iff_present] at hd ⊢
+    intro i hi
+    have := present_lt (hd i hi)
+    rw [present_setLength (by omega)]
+    exact hd i hi
+  · refine ⟨?_, fun _ => ?_⟩ <;> rw [Arr.setLength_length] <;> assumption
 
 /-! ## From the store to the footprint -/
 

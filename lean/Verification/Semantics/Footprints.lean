@@ -88,15 +88,26 @@ def Change.max (a b : Change) : Change := if a.le b then b else a
 def DensePrefix (n : Nat) (ls : List (Option Nat)) : Prop :=
   n ≤ ls.length ∧ ∀ i, i < n → ls[i]? ≠ some none
 
+/-- A store at least as long, at most `maxArrayLength` long where it was. -/
+def LengthGrows (ls ls' : List (Option Nat)) : Prop :=
+  ls.length ≤ ls'.length ∧ (ls.length ≤ maxArrayLength → ls'.length ≤ maxArrayLength)
+
+theorem LengthGrows.refl (ls : List (Option Nat)) : LengthGrows ls ls := ⟨Nat.le_refl _, id⟩
+
+theorem LengthGrows.trans {ls ls' ls'' : List (Option Nat)} (h₁ : LengthGrows ls ls')
+    (h₂ : LengthGrows ls' ls'') : LengthGrows ls ls'' :=
+  ⟨Nat.le_trans h₁.1 h₂.1, fun h => h₂.2 (h₁.2 h)⟩
+
 /-- A change's relation on contents. `b` is the length of the heap the change
 starts from: a growing store gains no element location below it that it did
-not already list. -/
+not already list, and gets no shorter. -/
 def Change.Holds : Change → Nat → Val → Val → Prop
   | .keep, _, v, v' => v' = v
   | .init, _, v, v' => v' = v ∨ InitStep v v'
   | .scalar, _, v, v' => v' = v ∨ ScalarStep v v'
   | .grow, b, v, v' => v' = v ∨ (∃ ls ls', v = .arr ls ∧ v' = .arr ls' ∧
-      (∀ n, DensePrefix n ls → DensePrefix n ls') ∧ ∀ l, some l ∈ ls' → some l ∈ ls ∨ b ≤ l) ∨ ScalarStep v v'
+      (∀ n, DensePrefix n ls → DensePrefix n ls') ∧ (∀ l, some l ∈ ls' → some l ∈ ls ∨ b ≤ l) ∧
+      LengthGrows ls ls') ∨ ScalarStep v v'
   | .any, _, _, _ => True
 
 theorem Change.Holds.refl (δ : Change) (b : Nat) (v : Val) : δ.Holds b v v := by
@@ -132,9 +143,9 @@ theorem Change.Holds.lower {δ : Change} {b b' v v'} (hb : b ≤ b')
   cases δ with
   | keep | init | scalar | any => exact h
   | grow =>
-    rcases h with h | ⟨ls, ls', rfl, rfl, hd, hl⟩ | h
+    rcases h with h | ⟨ls, ls', rfl, rfl, hd, hl, hg⟩ | h
     · exact .inl h
-    · exact .inr (.inl ⟨ls, ls', rfl, rfl, hd, fun l hm => (hl l hm).imp id (Nat.le_trans hb)⟩)
+    · exact .inr (.inl ⟨ls, ls', rfl, rfl, hd, fun l hm => (hl l hm).imp id (Nat.le_trans hb), hg⟩)
     · exact .inr (.inr h)
 
 private theorem InitStep.trans {v v' v'' : Val} (h₁ : InitStep v v') (h₂ : v'' = v' ∨ InitStep v' v'') :
@@ -163,17 +174,17 @@ theorem Change.Holds.trans {δ : Change} {b b' v v' v''} (hb : b ≤ b')
     · exact h₂
     · exact .inr (h₁.trans h₂)
   | grow =>
-    rcases h₁ with rfl | ⟨ls, ls', rfl, rfl, hd₁, hl₁⟩ | h₁
+    rcases h₁ with rfl | ⟨ls, ls', rfl, rfl, hd₁, hl₁, hg₁⟩ | h₁
     · exact h₂.lower hb
-    · rcases h₂ with rfl | ⟨ms, ls'', hms, rfl, hd₂, hl₂⟩ | h₂
-      · exact .inr (.inl ⟨ls, ls', rfl, rfl, hd₁, hl₁⟩)
+    · rcases h₂ with rfl | ⟨ms, ls'', hms, rfl, hd₂, hl₂, hg₂⟩ | h₂
+      · exact .inr (.inl ⟨ls, ls', rfl, rfl, hd₁, hl₁, hg₁⟩)
       · cases hms
-        refine .inr (.inl ⟨ls, ls'', rfl, rfl, fun n h => hd₂ n (hd₁ n h), fun l hm => ?_⟩)
+        refine .inr (.inl ⟨ls, ls'', rfl, rfl, fun n h => hd₂ n (hd₁ n h), fun l hm => ?_, hg₁.trans hg₂⟩)
         rcases hl₂ l hm with hm' | hle
         · exact hl₁ l hm'
         · exact .inr (Nat.le_trans hb hle)
       · exact absurd h₂.2.1 (by simp [isArr])
-    · rcases h₂ with rfl | ⟨ms, ls'', hms, rfl, -, -⟩ | h₂
+    · rcases h₂ with rfl | ⟨ms, ls'', hms, rfl, -, -, -⟩ | h₂
       · exact .inr (.inr h₁)
       · subst hms; exact absurd h₁.2.2 (by simp [isArr])
       · exact .inr (.inr (h₁.trans (.inr h₂)))
@@ -539,7 +550,7 @@ theorem CellsFrom.of_change {δ : Change} {h₀ h : Heap} {v : Val} {s : Nat} {w
   refine CellsFrom.of_lists hs fun ls' hls' m hm hm₀ => ?_
   rw [hw'] at hls'
   cases hls'
-  rcases hg with rfl | ⟨ls, ls'', rfl, hls'', -, hl⟩ | hsc
+  rcases hg with rfl | ⟨ls, ls'', rfl, hls'', -, hl, -⟩ | hsc
   · exact ⟨ls', hw, hm⟩
   · cases hls''
     rcases hl m hm with hm' | hle
@@ -840,9 +851,10 @@ def Change.holdsB : Change → Nat → Val → Val → Bool
   | .scalar, _, v, v' => v' == v || (!isObj v && (!isArr v && !isArr v'))
   | .grow, b, v, v' => v' == v || ((match v, v' with
     | .arr ls, .arr ls' => decide (denseLen ls ≤ denseLen ls') &&
-        ls'.all fun o => match o with
+        ((ls'.all fun o => match o with
           | some l => ls.contains (some l) || decide (b ≤ l)
-          | none => true
+          | none => true) &&
+        (decide (ls.length ≤ ls'.length) && (!decide (ls.length ≤ maxArrayLength) || decide (ls'.length ≤ maxArrayLength))))
     | _, _ => false) || (!isObj v && (!isArr v && !isArr v')))
   | .any, _, _, _ => true
 
@@ -861,6 +873,8 @@ theorem Change.holdsB_iff (δ : Change) (b : Nat) (v v' : Val) : δ.holdsB b v v
     rename_i ls ls'
     rw [preserves_dense_iff]
     apply and_congr Iff.rfl
+    unfold LengthGrows
+    apply and_congr _ (by constructor <;> intro h <;> (try intro h') <;> omega)
     constructor
     · intro h l hl
       have := h (some l) hl
