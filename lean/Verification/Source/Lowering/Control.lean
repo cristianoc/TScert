@@ -364,13 +364,18 @@ read through its own mapping, found in `scope` by descriptor, else by name
 (an anonymous slot has no name of its own to be found by). -/
 @[nospecialize] def jumpTo (scope : List (ScopeBinding Tree)) (target : Target) (targetScope : List (ScopeBinding Tree)) :
     Compiler Target := do
-  -- Each descriptor's and each name's first slot, found in one pass.
-  let (bySource, byName) := scope.zipIdx.foldl (init := (({} : Std.HashMap Descriptor Nat), ({} : Std.HashMap String Nat)))
-    fun (ds, ns) (b, i) => (ds.insertIfNew b.source i, ns.insertIfNew b.source.name i)
+  -- Each descriptor's first slot, found in one pass, and each name's where
+  -- a descriptor is not found.
+  let bySource := scope.zipIdx.foldl (init := ({} : Std.HashMap Descriptor Nat))
+    fun ds (b, i) => ds.insertIfNew b.source i
+  let byName : Thunk (Std.HashMap String Nat) := Thunk.mk fun _ =>
+    scope.zipIdx.foldl (init := {}) fun ns (b, i) => ns.insertIfNew b.source.name i
   let slots ← targetScope.mapM fun b =>
-    match bySource[b.source]?, byName[b.source.name]? with
-    | some i, _ | none, some i => pure i
-    | none, none => throw s!"internal extraction error: lost binding '{b.source.name}'"
+    match bySource[b.source]? with
+    | some i => pure i
+    | none => match byName.get[b.source.name]? with
+      | some i => pure i
+      | none => throw s!"internal extraction error: lost binding '{b.source.name}'"
   let slots := slots.toArray
   return ⟨target.label, some ((target.mapping.getD (List.range targetScope.length)).map
     fun i => slots[i]?.getD 0)⟩

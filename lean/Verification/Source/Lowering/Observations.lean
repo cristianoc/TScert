@@ -102,6 +102,8 @@ listed slot's fields, addressed by level at the context's depth. -/
   -- state a fact.
   let commons : Array (List PropKey) := if separating scope then (Γ.map commonFields).toArray else #[]
   let common (j : Nat) : List PropKey := commons[j]?.getD []
+  -- The context's slot indices, from the innermost.
+  let indices := List.range depth
   -- The fields common to slot `j`'s type and to the type the record of the
   -- slot `k` older slots below named at an allocation (`apart`).
   let shared (olders : Array (List PropKey)) (j k : Nat) : List PropKey :=
@@ -116,7 +118,7 @@ listed slot's fields, addressed by level at the context's depth. -/
       -- knows nothing of that allocation.
       if b.captured || depth ≤ i then [] else
       let olders := b.apart.map fun older => (older.map commonFields).toArray
-      [⟨depth - 1 - i, some [valueField], Γ.zipIdx.filterMap fun (_,j) =>
+      [⟨depth - 1 - i, some [valueField], indices.filterMap fun j =>
         if i == j then none else
         let other := slots[j]?
         let isCell := other.any fun o => match o.storage with | .cell .. | .early .. => true | .value | .slot _ => false
@@ -144,7 +146,7 @@ listed slot's fields, addressed by level at the context's depth. -/
       | none => []
       | some older =>
         let olders := (older.map commonFields).toArray
-        [⟨depth - 1 - i, if array then some [arrayStoreKey] else none, Γ.zipIdx.filterMap fun (_,j) =>
+        [⟨depth - 1 - i, if array then some [arrayStoreKey] else none, indices.filterMap fun j =>
           if j ≤ i || (!array && slots[j]?.any (·.fresh)) then none else
           -- An array constant's partners are values no write replaces.
           if array && !(slots[j]?.any fun o => match o.storage with | .value => true | _ => false) then none else

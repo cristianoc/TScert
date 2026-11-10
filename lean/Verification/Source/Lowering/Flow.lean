@@ -117,7 +117,7 @@ private def reachablePoints (graph : SourceFlow.Graph) (id : Nat) : List String 
   let scope ← flowScope ambient incoming node
   if let some target := (← flowTarget id) then
     return ← jumpTo incoming target scope
-  let fc := { base.atPoint (SourceFlow.pointId graph.owner id) with reachable := some (reachablePoints graph id) }
+  let fc := { base.atPoint (SourceFlow.pointId graph.owner id) with reachable := some (Thunk.mk fun _ => reachablePoints graph id) }
   let Γ ← env fc node.source scope
   let reserved ← withHandler none (emitAt node.source .nul .ret Γ [Labels.nul]
     "flow-entry" (some node.source.1) scope)

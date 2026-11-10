@@ -356,6 +356,12 @@ instance [ToJson ι] : ToJson (InitClaims ι) where
     (match i.arrows with
      | none | some [] => []
      | some rows => [("arrows", toJson rows)]))
+/-- Whether no two of `xs` are equal (`xs.eraseDups.length == xs.length`),
+decided in one pass. -/
+private def allDistinct {α : Type} [BEq α] [Hashable α] (xs : List α) : Bool :=
+  (xs.foldlM (init := ({} : Std.HashSet α)) fun (seen : Std.HashSet α) x =>
+    if seen.contains x then none else some (seen.insert x)).isSome
+
 /-- A document with every label a row: the wire's once `FiniteLayout.finite`
 has given its label trees rows, or one whose producer names only rows. -/
 structure Document (σ ι : Type) where
@@ -386,10 +392,21 @@ private def pointData (entries : List (Entry ι)) (expressions : List (Expressio
     exprCurrent := expressions.filterMap (fun e => e.current.map fun fs =>
       (e.pos, fs.filterMap fun (p, A) => match p with | [k] => some (k, A) | _ => none)) }
 
+/-- `xs` grouped by `point`, each group in order. -/
+private def byPoint {α : Type} (xs : List α) (point : α → String) : Std.HashMap String (Array α) :=
+  xs.foldl (init := {}) fun m x => m.insert (point x) ((m.getD (point x) #[]).push x)
+
+/-- Each point's entries and expressions, in order, by the point's first
+occurrence: `pointData` of `entries.filter (·.point == id)` and
+`expressions.filter (·.point == id)` for each distinct `id`, grouped in one
+pass. -/
 private def pointTable (entries : List (Entry ι)) (expressions : List (Expression ι)) :
     List (String × SourceClaims.PointData ι) :=
-  (entries.map (·.point) ++ expressions.map (·.point)).eraseDups.map fun id =>
-    (id, pointData (entries.filter (·.point == id)) (expressions.filter (·.point == id)))
+  let ids := (entries.map (·.point) ++ expressions.map (·.point)).foldl (init := (({} : Std.HashSet String), #[]))
+    fun (seen, out) id => if seen.contains id then (seen, out) else (seen.insert id, out.push id)
+  let es := byPoint entries (·.point)
+  let xs := byPoint expressions (·.point)
+  ids.2.toList.map fun id => (id, pointData (es.getD id #[]).toList (xs.getD id #[]).toList)
 
 private def storageContracts (contracts : List (StorageContract ι)) : SourceClaims.Contracts ι :=
   contracts.map fun c => ((c.pos,c.name),c.type.ground)
@@ -436,7 +453,7 @@ private def validCurrent (T : EquationStore.State) (A : ClaimType Tree) (current
   match current with
   | none => true
   | some fs =>
-    !fs.isEmpty && (fs.map Prod.fst).eraseDups.length == fs.length &&
+    !fs.isEmpty && allDistinct (fs.map Prod.fst) &&
     fs.all (fun p => !p.1.isEmpty && (paths || p.1.length == 1)) &&
     -- Every record arm names the first field, required or optional, or is a
     -- dictionary whose string index reaches it.
@@ -450,26 +467,26 @@ private def validCurrent (T : EquationStore.State) (A : ClaimType Tree) (current
         | _ => false) &&
     fs.all (fun p => validType T (.labels p.2))
 private def validBindings (T : EquationStore.State) (bs : List (Binding Tree)) : Bool :=
-  (bs.map (·.name)).eraseDups.length == bs.length &&
+  allDistinct (bs.map (·.name)) &&
     bs.all (fun b => !b.name.isEmpty && validType T b.type && validCurrent T b.type b.current (paths := true))
 private def validSpan (p : Span) : Bool := p.1 < p.2
 private def validInterior (T : EquationStore.State) (entries : List (Entry Tree))
     (expressions : List (Expression Tree)) : Bool :=
-  (entries.map (fun e => (e.point,e.start))).eraseDups.length == entries.length &&
-  (expressions.map (fun e => (e.point,e.pos))).eraseDups.length == expressions.length &&
+  allDistinct (entries.map (fun e => (e.point,e.start))) &&
+  allDistinct (expressions.map (fun e => (e.point,e.pos))) &&
   entries.all (fun e => validBindings T e.bindings) &&
   expressions.all (fun e => validSpan e.pos && validType T e.type && validCurrent T e.type e.current &&
-    e.instantiate.all (fun is => (is.map (·.name)).eraseDups.length == is.length &&
+    e.instantiate.all (fun is => allDistinct (is.map (·.name)) &&
       is.all (fun i => !i.name.isEmpty && validType T i.type)))
 private def validContracts (T : EquationStore.State) (cs : List (StorageContract Tree)) : Bool :=
-  (cs.map (fun c => (c.pos,c.name))).eraseDups.length == cs.length &&
+  allDistinct (cs.map (fun c => (c.pos,c.name))) &&
   cs.all (fun c => validSpan c.pos && !c.name.isEmpty && validType T c.type)
 private def validFunction (T : EquationStore.State) (f : Function Tree) : Bool :=
   !f.name.isEmpty && validSpan f.namePos && validBindings T f.params &&
   f.params.all (fun b => b.current.isNone) && validType T f.result &&
   validInterior T f.entries f.expressions && validContracts T f.contracts &&
   let arrows := f.arrows.getD []
-  (arrows.map (·.pos)).eraseDups.length == arrows.length &&
+  allDistinct (arrows.map (·.pos)) &&
   arrows.all (fun a => validSpan a.pos && !a.rows.isEmpty && a.rows.all (fun row =>
     validInterior T row.entries row.expressions && validContracts T row.contracts &&
     -- These are ground overload rows. Quantified eliminations are checked by
@@ -503,7 +520,7 @@ def decodeDocument (T : EquationStore.State) (claims : Json) : Except String (Do
           throw s!"invalid source claims: invalid current-contents field of '{b.name}' at the entry at {e.start}: a field some arm of its type does not name, or an invalid path"
   if !d.functions.all (validFunction d.types) then
     throw "invalid source claims: duplicate identity, span, binding or type labels"
-  if (d.functions.map (fun f => (f.name,f.namePos))).eraseDups.length != d.functions.length then
+  if !allDistinct (d.functions.map (fun f => (f.name,f.namePos))) then
     throw "duplicate function claims"
   if let some i := d.init then
     if !validInterior d.types i.entries i.expressions || !validContracts d.types i.contracts then

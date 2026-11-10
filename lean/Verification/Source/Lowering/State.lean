@@ -15,7 +15,11 @@ open EquationGraphs (Tree)
 section
 variable {ι : Type} [Labels ι]
 
-def distinct [BEq α] (xs : List α) : Bool := xs.eraseDups.length == xs.length
+/-- Whether no two of `xs` are equal (`xs.eraseDups.length == xs.length`),
+decided in one pass. -/
+def distinct [BEq α] [Hashable α] (xs : List α) : Bool :=
+  (xs.foldlM (init := ({} : Std.HashSet α)) fun (seen : Std.HashSet α) x =>
+    if seen.contains x then none else some (seen.insert x)).isSome
 
 /-- What a scope slot holds. A value slot holds the value itself. A cell slot
 holds the identity of a private cell this lowering allocated: `contract` is the

@@ -139,7 +139,7 @@ whose footprint changes any value) need not carry the link. -/
   let some C := pathType T fc pos root path.dropLast >>= (declaredFieldRead T · field) | return none
   if !(← wi C A) then return none
   let some reachable := fc.reachable | return some A
-  let carried ← reachable.anyM fun point => do
+  let carried ← reachable.get.anyM fun point => do
     let g := fc.atPoint point
     g.entryCurrent.anyM fun (q, roots) =>
       ((roots.lookup root).getD []).anyM fun (longer, _) => do
@@ -178,6 +178,8 @@ declared contracts retain their own entry checks. -/
     | some vars => pure vars
     | none => throw s!"missing statement environment at {pos}"
   if !distinct (vars.map Prod.fst) then throw s!"duplicate environment binding at {pos}"
+  -- The names are distinct: each binding's claim by its name.
+  let claimed : Std.HashMap String (SourceClaims.Candidate Tree) := vars.foldl (init := {}) fun m (n, t) => m.insert n t
   scope.mapM fun b => do
     -- The slot holds the cell's identity. What the producer says `x` is now
     -- describes the contents, and is an observation, not this slot's type.
@@ -186,7 +188,7 @@ declared contracts retain their own entry checks. -/
       if let some A ← witnessClaimHere fc pos root path then
         return A
     if let some A := b.fixed then return A
-    let some t := vars.lookup name | throw s!"missing claimed binding '{name}' at {pos}"
+    let some t := claimed[name]? | throw s!"missing claimed binding '{name}' at {pos}"
     let A ← ((SourceClaims.resolve T t).mapError fun msg =>
       if msg == "type claim unavailable from producer" then
         s!"unavailable claimed binding '{name}' at {pos}"

@@ -123,8 +123,8 @@ structure Function (ι : Type) where
   certify. -/
   resultFootprint : Footprints.Closed := .top
   /-- At a flow node's entry, the execution points of the nodes reachable
-  from it; `none` where the lowering states none. -/
-  reachable : Option (List String) := none
+  from it, computed where first read; `none` where the lowering states none. -/
+  reachable : Option (Thunk (List String)) := none
 
 /-- Select one execution point for expression elaboration. A missing point has
 no claims, so an obligation there fails instead of borrowing another copy's. -/
