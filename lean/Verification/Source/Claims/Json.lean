@@ -802,6 +802,34 @@ def GivenHeads.fromJson (n : Nat) (j : Json) : Except String (GivenHeads ι) := 
 
 end
 
+/-- A regional check's given facts (`SinglePass.Regional`), read from the
+existing search's certificate: its tables (`SourceExtraction.regionTable`,
+`freshTables`) at the statement entries `cuts`, and the field names. -/
+def regionalGiven {σ ι : Type} [Labels ι] [StoreView σ ι] (r : SourceExtraction.SourceRequest σ ι)
+    (resp : RequestJson.Response ι) (Φ : Footprints.Closed) (regions : List Footprints.ArgumentStoreRegion) : Json :=
+  let P := GraphCode.program (r.program.map (·.expression)) (r.program.map fun n => (n.continuation, n.handler))
+  let table := SourceExtraction.regionTable P resp.certificate r.start regions
+  let ft := SourceExtraction.freshTables (RequestJson.graph r.toRequest) (StoreView.images r.types) resp.readSummaries Φ P
+    resp.certificate r.start
+  Json.mkObj [("names", Lean.toJson ft.names), ("heads", Json.arr (r.cuts.map fun l => Json.mkObj [
+    ("label", Lean.toJson l),
+    ("facts", Lean.toJson ((GraphCode.ArgumentPathTracking.atLabel table l).map fun f => (f.slot, f.region.position, f.region.path))),
+    ("values", Lean.toJson (GraphCode.factsAt ft.values l)), ("cells", Lean.toJson (GraphCode.factsAt ft.cells l)),
+    ("fields", Lean.toJson (GraphCode.ArgumentRegionGraph.fieldsAt ft.fields l))]).toArray)]
+
+/-- A regional check's given facts read back (`regionalGiven`). -/
+def regionalFromJson (n : Nat) (j : Json) : Except String (List String × Array (Option SinglePass.RegionState)) := do
+  let names ← j.getObjValAs? (List String) "names"
+  let mut heads : Array (Option SinglePass.RegionState) := Array.replicate n none
+  for e in (← (← j.getObjVal? "heads").getArr?) do
+    let l ← e.getObjValAs? Nat "label"
+    let facts ← e.getObjValAs? (List (Nat × Nat × List String)) "facts"
+    let st : SinglePass.RegionState := ⟨facts.map fun (sl, pos, path) => ⟨sl, ⟨pos, path⟩⟩,
+      ← e.getObjValAs? (List Nat) "values", ← e.getObjValAs? (List Nat) "cells",
+      ← e.getObjValAs? (List (Nat × String)) "fields"⟩
+    if l < n then heads := heads.set! l (some st)
+  return (names, heads)
+
 /-- Each selected unit's given statement-entry facts, read from the existing
 search's certificate (`GivenHeads.ofCertificate`), its own and each code
 request's, as a line (`dev/single-pass-given.mts` writes the file). -/
@@ -816,8 +844,14 @@ def FilePlans.givenLines (f : FilePlans) (fuel : Nat) (group : List Nat) : List 
       let rq := q.asRequest r.toRequest
       (GivenHeads.ofCertificate ((resp.codes[ci]?).getD []) hints.cuts rq.program rq.start [] :
         GivenHeads _).toJson).toArray
-    pure (Json.mkObj [("unit", Lean.toJson (f.fr.unitId i)), ("name", Lean.toJson name),
-      ("graph", main.toJson), ("codes", Json.arr codes)])
+    -- The regional checks' given facts: the unit's store regions, and its
+    -- footprint's regional fallback (`effectResult`).
+    let regional := match r.regional with
+      | some (Φ, regions) => [("regional", regionalGiven r resp Φ regions)]
+      | none => []
+    let fallback := if !r.fresh && r.footprint != .top then [("footprintRegional", regionalGiven r resp r.footprint [])] else []
+    pure (Json.mkObj ([("unit", Lean.toJson (f.fr.unitId i)), ("name", Lean.toJson name),
+      ("graph", main.toJson), ("codes", Json.arr codes)] ++ regional ++ fallback))
 
 /-- The single forward pass over each member of a group (`SinglePass.run`),
 no certificate built: per member its outcome and counts; the group's
@@ -833,7 +867,6 @@ def FilePlans.passGroup (f : FilePlans) (fuel : Nat) (group : List Nat) (compare
   for i in group do
     let outcome : Except String (String × String × SinglePass.Outcome _) := do
       let .graph name _ r ← (f.plans[i]?).getD (.error s!"no unit {i}")
-      if r.qualification.isSome then return (name, "", .notHandled "qualified body")
       -- The request's own checks over its whole certificate the pass does
       -- not make: the graph is passed, and its verdict is not handled.
       -- A footprint (`effectResult`): its request-level conditions here, its
@@ -848,7 +881,7 @@ def FilePlans.passGroup (f : FilePlans) (fuel : Nat) (group : List Nat) (compare
       let bound := if bounded then some (r.footprint, r.fresh, r.onThrow) else none
       -- A postcondition (`ensuresResult`): checked at each return in the pass.
       if !r.ensures.isEmpty && r.qualification.isSome then return (name, "", .refused "a postcondition")
-      let unchecked := (if r.regional.isSome then ["store regions"] else [])
+      let unchecked : List String := []
       let labels := SinglePass.timedKind "outside: search labels" fun _ => r.searchLabels
       let (e, next) ← SinglePass.timedKind "outside: expression claims searched" fun _ =>
         ExpressionClaims.produceUsing G I labels (StoreView.valid r.types)
@@ -876,6 +909,34 @@ def FilePlans.passGroup (f : FilePlans) (fuel : Nat) (group : List Nat) (compare
       let givenImplies := main.implies
       let givenArgs := main.args
       let givenInputs := main.inputs
+      -- A qualified body (`SourceRequest.checker`): the walk over the
+      -- request's own graph and image check, at its checker and aliases;
+      -- the request-level conditions a qualified body meets
+      -- (`effectResult`, `regionalResult`, `ensuresResult`).
+      if let some q := r.qualification then
+        if !(r.footprint == .top && !r.onThrow && !r.fresh) then return (name, "", .refused "the declared effect")
+        if r.regional.isSome then return (name, "", .refused "store regions of a qualified body")
+        if !r.codes.isEmpty then return (name, "", .notHandled "codes of a qualified body")
+        let G' := RequestJson.graph r.toRequest
+        let I' := StoreView.images r.types
+        let pool' := CertificateProducer.vocabulary G' labels r.claims r.inputs
+        let (o, counts, after, _) := CertificateProducer.timed SinglePass.passNanos fun _ =>
+          SinglePass.run G' I' pool' fuel r.program r.claims r.start r.goal r.assertions r.cuts r.candidates
+            r.entryIndices [] (e ++ rendered) (GraphCode.admits []) r.aliases q.checker
+            { summaries := next.summaries, summaryAnswers := next.summaryAnswers } #[] debugNode none
+            givenImplies givenArgs r.ensures givenInputs r.entrySeparation none false false true
+        let sums := after.summaries.toList
+        let sumsOk := sums.all (RequestJson.validSummary (StoreView.valid r.types)) &&
+          (ProgramCertificates.checkReadSummariesResult G' I' sums).accepted
+        let obligations := ExpressionClaims.checkAllResult G' I' (StoreView.valid r.types) r.obligations e
+          (GraphCode.admits []) sums
+        let o : SinglePass.Outcome _ := match o with
+          | .accepted => if !sumsOk then .refused "a read summary"
+            else if !obligations.accepted then .refused "an expression claim" else .accepted
+          | .refused w => .refused w
+          | .notHandled w => .notHandled w
+          | .observed _ => .notHandled "observing a qualified body"
+        return (name, toString counts, o)
       -- Each code request, in order, passed over its own graph with the codes
       -- admitted before it (`produceResponseUsing`'s loop, `codeCheckedResult`):
       -- its signature's conditions, its graph against its goal and frame, its
@@ -937,19 +998,43 @@ def FilePlans.passGroup (f : FilePlans) (fuel : Nat) (group : List Nat) (compare
           r.entryIndices [] (e ++ rendered) codes r.aliases (HeapExpressionRules.Checker.ordinary G I) sumsAnswers #[] (debugNode + k)
         if let .notHandled w := o then throw w
       let tracing := observe == some "refusal"
-      let (o, counts, after, trace) := CertificateProducer.timed SinglePass.passNanos fun _ =>
+      -- The regional checks (`regionalChecked`), made in the walk: the
+      -- unit's store regions, and its footprint's regional fallback
+      -- (`effectResult`); each loop head's given regional facts read from
+      -- the given line. Their entry conditions (`checkEntryFields`, the
+      -- regions' own conditions) are checked here.
+      let regionalOf := fun (key : String) (Φ : Footprints.Closed) (regions : List Footprints.ArgumentStoreRegion) (exc : Bool) =>
+        let (names, heads) := match line.bind fun l => (l.getObjVal? key).toOption with
+          | some j => (regionalFromJson r.program.length j).toOption.getD ([], #[])
+          | none => ([], #[])
+        ({ Φ, regions, exc, names, heads } : SinglePass.Regional)
+      let regional := r.regional.map fun (Φ, regions) => regionalOf "regional" Φ regions (r.stated.any (·.onThrow))
+      if let some (_, regions) := r.regional then
+        if r.async || r.fresh || !GraphCode.ArgumentPathTracking.checkEntryFields (RequestJson.graph r.toRequest) r.inputs regions then
+          return (name, "", .refused "store regions")
+      let walk := fun (bound : Option (Footprints.Closed × Bool × Bool)) (regional : Option SinglePass.Regional) =>
         SinglePass.run G I pool fuel r.program r.claims r.start r.goal r.assertions r.cuts r.candidates
           r.entryIndices [] (e ++ rendered) codes r.aliases (HeapExpressionRules.Checker.ordinary G I) sumsAnswers reference debugNode bound
-          givenImplies givenArgs r.ensures givenInputs r.entrySeparation observed tracing
+          givenImplies givenArgs r.ensures givenInputs r.entrySeparation observed tracing false false regional
+      let (o, counts, after, trace) := CertificateProducer.timed SinglePass.passNanos fun _ => walk bound regional
+      -- A footprint the walk refuses node by node, checked regionally with no
+      -- regions where the result is not fresh; then the unit's own regions.
+      let (o, counts, after, trace) := match o with
+        | .refused w => if w.startsWith "footprint at node" && !r.fresh then
+            let fallback := regionalOf "footprintRegional" r.footprint [] r.onThrow
+            match walk none (some fallback) with
+            | (.accepted, c, a, t) => match regional with
+              | some rg => walk none (some rg)
+              | none => (.accepted, c, a, t)
+            | (.refused w', c, a, t) => (.refused s!"footprint by store regions: {w'} (after {w})", c, a, t)
+            | x => x
+          else (o, counts, after, trace)
+        | _ => (o, counts, after, trace)
       -- The unit's own expression claims, as the check reads them.
       let obligations := SinglePass.timedKind "outside: expression claims checked" fun _ => ExpressionClaims.checkAllResult (RequestJson.graph r.toRequest) (StoreView.images r.types)
         (StoreView.valid r.types) r.obligations e codes after.summaries.toList
       -- A graph the bound refuses may still be within it by its store
       -- regions (`regionalChecked`), which the pass does not decide.
-      let o : SinglePass.Outcome _ := match o with
-        | .refused w => if w.startsWith "footprint at node" && !r.fresh then
-            .notHandled s!"footprint by store regions ({w})" else .refused w
-        | o => o
       -- The read summaries every step's check read, checked as a
       -- response's are (`validSummary`, `checkReadSummariesResult`).
       let sums := after.summaries.toList

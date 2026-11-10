@@ -209,18 +209,40 @@ reading no heap), from the node's entry state.
   the node's names.
 - A request's checks over its whole certificate (its footprint,
   `GraphCode.compositionalCheckedResult`; its postcondition, `ensuresResult`;
-  its store regions) read every node's evidence. Store regions
-  (`regionalChecked`) and qualified bodies are to be checked in the walk,
-  node by node as the footprint is, not through a certificate rebuilt from
-  it; until then a unit stating one is not handled.
+  its store regions, `regionalChecked`) are made in the walk, node by node.
+
+### Store regions
+
+A unit's store regions, and a footprint the walk refuses node by node for a
+result that is not fresh (`effectResult`'s regional fallback, with no
+regions), are checked in the walk as `ArgumentRegionGraph.checkNode` checks
+each node. A label's regional facts (the slots holding an entry argument
+path, the fresh values and cells, the fresh fields) are, at the start, the
+regions' input slots; at a loop head, given (from the existing search's
+tables, `SourceExtraction.regionTable` and `freshTables`, with the field
+names fresh fields range over); elsewhere what every edge into it
+establishes. At each node: the cells it keeps (`cellsKept`), the fields its
+types keep stable, its origins and fresh outputs (`nodeOrigins`,
+`freshOut`, `cellOut`, `fieldOut`), and on each edge what it establishes at
+the target; `checkNode` decides the node over those facts and the node's
+evidence (its derivation, its step, its facts on entry), each loop head's
+given facts the obligation on an edge into it. The entry's conditions
+(`checkEntryFields`, a unit neither async nor promising a fresh result)
+are checked before the walk.
+
+### Qualified bodies
+
+A qualified body (`SourceRequest.checker`) is walked over the request's own
+graph and image check at its checker and aliases. Its checker's `select` is
+its `run`, so a step's derivation is checked by the step's own check. Its
+request-level conditions are those `effectResult`, `regionalResult` and
+`ensuresResult` state of a qualified body.
 
 ## 7. Output and scope
 
 The output is the verdict, with the first refused obligation located; a
 construct the pass does not handle is an explicit `not handled` result,
-never an acceptance. Not handled: handlers, promise goals, graph code,
-qualified bodies, postconditions (`ensures`), store regions, footprints
-other than a pure program's.
+never an acceptance. Not handled: a qualified body with code requests.
 
 `verifier --verify-units 3 <fragment> <claims> <file-key> <depth> <name>`
 runs the pass; `TSCERT_COMPARE=1` checks, at every node, that the state

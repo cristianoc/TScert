@@ -2,6 +2,7 @@ import Verification.Programs.CertificateProducer
 import Verification.Programs.GraphCode
 import Lean.Data.PersistentHashMap
 import Verification.Programs.SinglePassStats
+import Verification.Programs.ArgumentRegionCertificates
 
 /-! One forward pass over a graph cut at its statement entries
 (docs/drafts/single-pass.md): each node visited once, in a topological order
@@ -757,6 +758,38 @@ def slotImplOf (names : List Nat) (xs : List (PromiseCalls.Implication ι)) : Li
   xs.flatMap fun x => (slotsOf.getD x.test []).flatMap fun i => (slotsOf.getD x.target []).map fun j =>
     (⟨i, j, x.type⟩ : PromiseCalls.Implication ι)
 
+/-- A label's regional facts (`GraphCode.ArgumentRegionGraph.checkNode`'s
+tables at it): the slots holding entry argument paths, the fresh values and
+cells, the fresh fields. -/
+structure RegionState where
+  facts : List GraphCode.ArgumentPathTracking.Fact := []
+  values : List Nat := []
+  cells : List Nat := []
+  fields : List (Nat × String) := []
+  deriving Inhabited
+
+/-- A regional check (`regionalChecked`) made in the walk: the bound, the
+store regions, whether it bounds a throw, the field names fresh fields
+range over, and each loop head's given regional facts. -/
+structure Regional where
+  Φ : Footprints.Closed
+  regions : List Footprints.ArgumentStoreRegion
+  exc : Bool
+  names : List String := []
+  heads : Array (Option RegionState) := #[]
+
+/-- The regional facts every predecessor's edge establishes. -/
+def RegionState.meet : List RegionState → RegionState
+  | [] => {}
+  | r :: rs => ⟨r.facts.filter fun x => rs.all (·.facts.contains x),
+      r.values.filter fun x => rs.all (·.values.contains x),
+      r.cells.filter fun x => rs.all (·.cells.contains x),
+      r.fields.filter fun x => rs.all (·.fields.contains x)⟩
+
+/-- A list of `n` labels' tables, empty but at the given labels. -/
+def sparse {α : Type} (n : Nat) (empty : α) (at_ : List (Nat × α)) : List α :=
+  at_.foldl (fun acc (l, x) => acc.set l x) (List.replicate n empty)
+
 /-- The pass over one graph. -/
 def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι)) (fuel : Nat)
     (P : Program) (claims : List (PointClaim ι)) (start : Nat) (goal : Goal ι)
@@ -769,7 +802,8 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
     (givenImplies : Array (List (PromiseCalls.Implication ι)) := #[])
     (givenArgs : Array (List Nat) := #[])
     (ensures : List HeapKnowledge.IndexFact := []) (givenInputs : Array (List (Nat × Nat)) := #[])
-    (entrySeparation : HeapSeparation.Separation := {}) (observe : Option Nat := none) (tracing : Bool := false) (observeEntry : Bool := false) : Outcome ι × Counts × Answered G × Trace := Id.run do
+    (entrySeparation : HeapSeparation.Separation := {}) (observe : Option Nat := none) (tracing : Bool := false) (observeEntry : Bool := false)
+    (selectChecks : Bool := false) (regional : Option Regional := none) : Outcome ι × Counts × Answered G × Trace := Id.run do
   let nodes := P.toArray
   let claimed := claims.toArray
   let n := nodes.size
@@ -836,6 +870,9 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
     | _ => #[]
   -- The states entering each node, one per predecessor.
   let mut incoming : Array (List State) := Array.replicate n []
+  -- Under a regional check, the regional facts each edge into a label
+  -- establishes.
+  let mut regionIn : Array (List RegionState) := Array.replicate n []
   -- Where each incoming state came from, kept only where observed.
   let mut incomingFrom : Array (List Nat) := Array.replicate n []
   -- Beside each entering state, the implications its edge carries, over
@@ -1147,6 +1184,7 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
     let mut stepK : Knowledge := {}
     let mut stepOut : Knowledge := {}
     let mut stepDeriv : Option (ProgramCertificates.Evidence ι) := none
+    let mut stepEffect : Option (HeapExpressionRules.StepEvidence ι) := none
     lastKind := if (given[l]!).isSome then "node: head" else if (incoming[l]!).length > 1 then "node: merge"
       else if copied.isSome then "node: copy" else "node: step"
     match copied with
@@ -1206,7 +1244,9 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
       let tree := match effect with
         | .slicedRead _ _ _ e _ => some e
         | _ => effect.proof?
-      if let some p := tree then
+      -- A checker whose `select` is its `run` (a qualified body's) has
+      -- checked the derivation already.
+      if let some p := (if selectChecks then none else tree) then
         -- A call at a precondition the step's facts establish is checked as
         -- `requiringCalls` checks it (`PromiseCalls.requiresTree`).
         -- The read summaries the step's search added included.
@@ -1244,6 +1284,7 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
       stepK := kE
       stepOut := out
       stepDeriv := deriv
+      stepEffect := some effect
       if preserving then
         let inverse : Std.HashMap Nat Nat := table.fold (fun acc nm s => acc.insert s nm) {}
         store := applyDelta store pairs out true fun i => if i == 0 then some result else (inverse.get? (i - 1)).orElse fun _ => entry.names[i - 1]?
@@ -1415,6 +1456,62 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
       | .tagBind tg .. => pushedRefine (if first then PromiseCalls.yieldFacts ysAll (ControlFlow.truthyBoolean G tg c.type)
           else unconditional)
       | .ret => c.context
+    -- A regional check at this node, as `ArgumentRegionGraph.checkNode`
+    -- makes it: its regional facts on entry (the regions' input slots at the
+    -- start, a loop head's given ones, else what every edge into it
+    -- establishes), the cells and fields it keeps, and on each edge what
+    -- the node establishes at the target (a loop head's given facts there).
+    if let some rg := regional then
+      let here : RegionState := if l == start then
+          { facts := ((rg.regions.map fun (x : Footprints.ArgumentStoreRegion) =>
+              (⟨x.position, []⟩ : Footprints.ArgumentStoreRegion)).eraseDups).map fun x => ⟨x.position, x⟩ }
+        else if isHead[l]! then ((rg.heads[l]?).join).getD {}
+        else RegionState.meet (regionIn[l]!)
+      let sums := answers.summaries.toList
+      let ordinaryEv : Option (OrdinaryEvidence ι) := match stepDeriv, stepEffect with
+        | some d, _ => some (.proof d)
+        | none, some _ => some .effect
+        | none, none => none
+      let kHere := (materialize entry width (List.range width) true).1
+      let cEv : NodeEvidence ι := ⟨ordinaryEv, some ⟨c.context, node.expression, c.type⟩, [], kHere, stepEffect, {}, none, [], [], [], none⟩
+      let t0 := node.expression
+      let F := here.values
+      let C := if GraphCode.ArgumentRegionGraph.cellsKept G images sums rg.Φ F here.cells cEv t0 node.handler.isSome
+        then here.cells else []
+      let Fs := here.fields.filter fun p =>
+        HeapExpressionRules.stableFirst G c.context p.1 p.2 || GraphCode.ArgumentRegionFresh.nullishSlot G c.context p.1
+      let origins := GraphCode.ArgumentRegionGraph.nodeOrigins rg.regions here.facts t0
+      let pushes := GraphCode.pushes node.continuation
+      let outR := if pushes then GraphCode.ArgumentPathTracking.afterPush here.facts origins else here.facts
+      let outF := GraphCode.ArgumentRegionGraph.freshOut G images sums F C cEv t0
+      let outC := GraphCode.ArgumentRegionGraph.cellOut F C t0
+      let outFs := GraphCode.ArgumentRegionGraph.fieldOut rg.names F Fs t0
+      let established := fun (t : Target) (handler : Bool) => Id.run do
+        let w := ((claimed[t.label]?).map (·.context.length)).getD 0
+        let src := fun (j : Nat) => PointClaims.slot t.mapping j
+        let rfacts := if handler then GraphCode.ArgumentPathTracking.shift here.facts else outR
+        let facts := (List.range w).flatMap fun j => (rfacts.filter (·.slot == src j)).map fun f => ⟨j, f.region⟩
+        let values := (List.range w).filter fun j =>
+          if handler then GraphCode.freshSlot F true false (src j) else GraphCode.freshSlot F pushes outF (src j)
+        let cells := (List.range w).filter fun j =>
+          if handler then GraphCode.freshSlot C true false (src j) else GraphCode.freshSlot C pushes outC (src j)
+        let fields := (List.range w).flatMap fun j => (rg.names.filter fun f =>
+          if handler then (match src j with | 0 => false | j' + 1 => Fs.contains (j', f))
+          else GraphCode.ArgumentRegionGraph.fieldSlot Fs outFs pushes (src j) f).map (j, ·)
+        return ({ facts, values, cells, fields } : RegionState)
+      let targets := (successors node.continuation).map (·, false) ++ node.handler.toList.map (·, true)
+      let mut at_ : List (Nat × RegionState) := [(l, { here with cells := C, fields := Fs })]
+      for (t, h) in targets do
+        let e := established t h
+        if isHead[t.label]! then at_ := at_ ++ [(t.label, ((rg.heads[t.label]?).join).getD {})]
+        else
+          at_ := at_ ++ [(t.label, e)]
+          regionIn := regionIn.modify t.label (e :: ·)
+      let table := sparse n [] (at_.map fun (x, r) => (x, r.facts))
+      let ft : GraphCode.ArgumentRegionFresh.FreshTables := ⟨sparse n [] (at_.map fun (x, r) => (x, r.values)),
+        sparse n [] (at_.map fun (x, r) => (x, r.cells)), sparse n [] (at_.map fun (x, r) => (x, r.fields)), rg.names⟩
+      if !(timedKind "regional node" fun _ => GraphCode.ArgumentRegionGraph.checkNode G images sums rg.Φ rg.regions table ft rg.exc l node cEv) then
+        return (.refused s!"store regions at node {l}", counts, answers, trace)
     let mut edgeIndex := 0
     for (t, pushed, observed, promote, isHandler) in edges do
       let first := edgeIndex == 0
