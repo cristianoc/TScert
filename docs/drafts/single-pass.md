@@ -141,6 +141,14 @@ call at a precondition the step's facts establish): the search's `select`
 takes a derivation as given, and a derivation it selects may be one the
 check refuses.
 
+### A handler
+
+A node's handler is an edge carrying the thrown value in a fresh name, at
+a type admitting every value (its target's landing slot's, or the pool's),
+under the facts a throw keeps (`ControlFlow.handlerFacts`, the base step's
+`ordinaryOutput`: values, alias links, separation and the index facts
+reading no heap), from the node's entry state.
+
 ## 6. Where the rules read more than a step's names
 
 - A step that may write (a call's `ordinary` step, `written`, `boundedWrite`)
