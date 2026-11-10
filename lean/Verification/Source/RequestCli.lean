@@ -3,6 +3,8 @@ import Verification.Source.FlowJson
 import Verification.Source.Claims.Json
 -- Claims/Translate.lean writes a slice's evidence over its document's store, untrusted.
 import Verification.Source.Claims.Translate
+-- Claims/TypeComparison.lean compares computed types with the claims (mode 7, a measurement).
+import Verification.Source.Claims.TypeComparison
 
 /-! File interface to the source adapter. Source parsing remains external;
 checking reconstructs each unit's request from the fragment and its claims. -/
@@ -375,7 +377,7 @@ def verifyUnitsFile (astPath claimsPath fileKey : String) (fuel : Nat) (names : 
   let tj ← IO.monoNanosNow
   -- The single pass (mode 3) reads what the selected units' groups read.
   let planned ← IO.lazyPure fun _ => do
-    if mode == 3 then SourceClaimJson.unitPlans (← ast) (← claims) fileKey budget (selection names)
+    if mode == 3 || mode == 7 then SourceClaimJson.unitPlans (← ast) (← claims) fileKey budget (selection names)
     else SourceClaimJson.filePlans (← ast) (← claims) fileKey budget
   let t1 ← IO.monoNanosNow
   let ms := fun (a b : Nat) => s!"{(b - a) / 1000000}"
@@ -441,6 +443,13 @@ def verifyUnitsFile (astPath claimsPath fileKey : String) (fuel : Nat) (names : 
           -- the existing search's certificate: one line per unit.
           for line in f.givenLines fuel (f.fr.group i) do IO.println line.compress
           pure (.error "given facts written")
+        | 7 => do
+          -- The computed types against the claims, a line per unit
+          -- (`Front.compareTypes`): a measurement only.
+          match f.fr.compareTypes i with
+          | .ok j => IO.println (Json.mkObj [("unit", toJson unit), ("comparison", j)]).compress
+          | .error e => IO.println (Json.mkObj [("unit", toJson unit), ("error", toJson e)]).compress
+          pure (.error "comparison only")
         | 4 => do
           let label := ((← IO.getEnv "TSCERT_NODE").bind String.toNat?).getD 0
           for line in f.passStats (f.fr.group i) label do IO.eprintln line
