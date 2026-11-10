@@ -805,6 +805,9 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
       if !isHead[l]! then
         let (k, _, _) := materialize entry width (List.range width) true
         let ctx := KnowledgeExpand.ctxOf G c.context
+        let missingCells := old.cells.filter fun f => !KnowledgeExpand.checkIn ctx k { cells := [f] } none
+        if !missingCells.isEmpty then
+          return (.refused s!"reference: node {l} lacks cells {reprStr missingCells}", counts, answers)
         let missing := old.indices.filter fun a => !KnowledgeExpand.checkIn ctx k { indices := [a] } none
         if !missing.isEmpty then
           return (.refused s!"reference: node {l} lacks {reprStr missing}", counts, answers)

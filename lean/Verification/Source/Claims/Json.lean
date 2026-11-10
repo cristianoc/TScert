@@ -781,12 +781,13 @@ def FilePlans.passGroup (f : FilePlans) (fuel : Nat) (group : List Nat) (compare
       -- A postcondition (`ensuresResult`): checked at each return in the pass.
       if !r.ensures.isEmpty && r.qualification.isSome then return (name, "", .refused "a postcondition")
       let unchecked := (if r.regional.isSome then ["store regions"] else [])
-      let labels := r.searchLabels
-      let (e, next) ← ExpressionClaims.produceUsing G I labels (StoreView.valid r.types)
+      let labels := SinglePass.timedKind "outside: search labels" fun _ => r.searchLabels
+      let (e, next) ← SinglePass.timedKind "outside: expression claims searched" fun _ =>
+        ExpressionClaims.produceUsing G I labels (StoreView.valid r.types)
         (StoreView.projection r.types) fuel r.obligations { answers with summaries := #[], summaryAnswers := {} }
-      let (rendered, next) := ExpressionClaims.renderKnownUsing G I labels (StoreView.valid r.types)
-        r.nodePlans next
-      let pool := CertificateProducer.vocabulary G labels r.claims r.inputs
+      let (rendered, next) := SinglePass.timedKind "outside: node plans rendered" fun _ =>
+        ExpressionClaims.renderKnownUsing G I labels (StoreView.valid r.types) r.nodePlans next
+      let pool := SinglePass.timedKind "outside: vocabulary" fun _ => CertificateProducer.vocabulary G labels r.claims r.inputs
       let reference : Array HeapKnowledge.Knowledge := if !compare then #[] else
         match f.searchGroup fuel [i] true with
         | .ok b => match b.functions.head? with
@@ -856,7 +857,7 @@ def FilePlans.passGroup (f : FilePlans) (fuel : Nat) (group : List Nat) (compare
           r.entryIndices [] (e ++ rendered) codes r.aliases (HeapExpressionRules.Checker.ordinary G I) next reference debugNode bound
           givenImplies givenArgs r.ensures givenInputs r.entrySeparation
       -- The unit's own expression claims, as the check reads them.
-      let obligations := ExpressionClaims.checkAllResult (RequestJson.graph r.toRequest) (StoreView.images r.types)
+      let obligations := SinglePass.timedKind "outside: expression claims checked" fun _ => ExpressionClaims.checkAllResult (RequestJson.graph r.toRequest) (StoreView.images r.types)
         (StoreView.valid r.types) r.obligations e codes []
       -- A graph the bound refuses may still be within it by its store
       -- regions (`regionalChecked`), which the pass does not decide.

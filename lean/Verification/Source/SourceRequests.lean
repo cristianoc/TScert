@@ -82,7 +82,9 @@ consumer still checks against the complete graph and the exact request. -/
 @[nospecialize] def SourceRequest.searchLabels (r : SourceRequest σ ι) : List ι :=
   let roots := [Labels.nul,Labels.tru,Labels.fls,Labels.undef] ++ r.result ++ r.inputs.flatten ++ r.hints ++
     r.promise.toList.flatMap (fun (p : Bool × Nat × Ty ι) => p.2.2) ++
-    r.claims.flatMap (fun (c : PointClaim ι) => c.type ++ c.context.flatten) ++
+    -- Each claimed type once (`keepFirst`, by its object where shared),
+    -- then its labels: the same labels in the same first order.
+    (keepFirst {} (r.claims.flatMap fun (c : PointClaim ι) => c.type :: c.context)).2.toList.flatten ++
     -- A closure's code is searched with the request's vocabulary: what its
     -- claims mention is part of it (a generic closure's binder rows).
     r.codes.flatMap (fun (q : RequestJson.CodeRequest ι) => q.claims.flatMap (fun (c : PointClaim ι) => c.type ++ c.context.flatten)) ++
