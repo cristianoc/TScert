@@ -726,6 +726,20 @@ with equality, as every label type's does. -/
   l.foldl (fun (seen, kept) a => if seen.contains a then (seen, kept) else (seen.insert a, kept.push a))
     (seen, #[])
 
+/-- `keepFirst`, an element that is one object with an element already met
+passed over before it is hashed: a list of shared values (a graph's claimed
+types, one object per type) is read at the cost of its addresses. -/
+unsafe def keepFirstShared {α : Type} [BEq α] [Hashable α] (seen : Std.HashSet α) (l : List α) :
+    Std.HashSet α × Array α :=
+  let r := l.foldl (fun (acc : Std.HashSet α × Std.HashSet USize × Array α) a =>
+      let p := ptrAddrUnsafe a
+      if acc.2.1.contains p then acc
+      else if acc.1.contains a then (acc.1, acc.2.1.insert p, acc.2.2)
+      else (acc.1.insert a, acc.2.1.insert p, acc.2.2.push a)) (seen, {}, #[])
+  (r.1, r.2.2)
+
+attribute [implemented_by keepFirstShared] keepFirst
+
 /-- The type a term's parts determine (typing by synthesis): a variable's
 slot type, and a field's or view's type read from a receiver whose
 synthesized type is one record clause. None for any other term. Search tries
