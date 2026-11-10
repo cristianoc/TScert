@@ -158,7 +158,7 @@ const slides: Slide[] = [
       para("These rules concern normal returns; a throw carries a frame only where one is stated for it.", 24),
   }),
   slide("frame-cost", {
-    label: "pretext · invariants across calls", note: t("the owner’s measurement, ") + cited + t(" from the draft on keeping contract facts across calls · the frames for `??=` and `Map.set` ") + proved,
+    label: "pretext · invariants across calls", note: t("a measurement ") + cited + t(" from the draft on keeping contract facts across calls · the frames for `??=` and `Map.set` ") + proved,
     title: "A coarse frame loses the facts a return must restore", gap: 22,
     body: columns([
       code(["// Schematic proof obligations", "// Entry:", "//   prepared.segmentFlags.length", "//     === prepared.widths.length", "callWithCoarseFrame()", "// The equality is no longer established;", "// it is required again at every normal return."]),
@@ -182,7 +182,7 @@ const slides: Slide[] = [
         point("@stable", t("a `readonly` field holding what its object literal put there for the record’s life: the region names one array across every call.")),
         point("Separation", t("the literal’s `[]` is a new array, so it is not `flags`: the loop keeps `i < flags.length` across each call, and `flags[i]!` is in bounds. A record from a caller needs the precondition `flags !== runs.openBrackets`: distinct arrays. Of typed arrays it is refused; two views may share a buffer.")),
         point("Alias", t("a caller passing one array as both is refused at that precondition; under Node that call returns `NaN` (`invalid-stated-alias`).")),
-        point("pretext", t("`readScriptRuns` splices pretext’s `runs.openBrackets`, and `measureAnalysis` builds its `ScriptRuns` literal before its loop: this shape. `readScriptRuns` and the two functions passing `runs` on to it state this frame with stores grown (slide 12).")),
+        point("In pretext", t("a helper splices a bracket stack held by a record that its caller builds before a loop over other arrays: this shape.")),
       ], 24),
     ], [46, 54]),
   }),
@@ -208,15 +208,15 @@ const slides: Slide[] = [
     label: "Growth", note: t("the cases `stated-grow-keeps-lengths`, `invalid-stated-grow-upper-bound` · the rules ") + proved + t(" · native contracts ") + trusted,
     title: "Growth keeps the lower bounds of lengths", gap: 22,
     body: columns([
-      code(["function add(xs: number[]): Modifies<", "    { values: \"any\"; stores: \"grow\" }, void> {", "  xs.push(1);", "}", "", "/** @requires safeInteger(i) && 0 <= i", " *    && i < xs.length */", "export function get(xs: number[], i: number): number {", "  add(xs);", "  return xs[i]!;      // verified", "}", "", "export function last(xs: number[], ys: number[]): number {", "  if (xs.length > ys.length) return 0;", "  add(xs);", "  const n = xs.length;", "  if (n === 0) return 0;", "  return ys[n - 1]!;  // refused", "}"]),
+      code(["function add(xs: number[]): Modifies<", "    { values: \"any\"; stores: \"grow\" }, void> {", "  xs.push(1);", "}", "", "/** @requires safeInteger(i) && 0 <= i", " *    && i < xs.length */", "export function get(xs: number[], i: number): number {", "  add(xs);", "  return xs[i]!;      // verified", "}"]),
       bullets([
         point("Growth", t("`stores: \"grow\"` states that every array keeps each element present and gets no shorter, within the maximum length 2³² − 1.")),
-        point("Lower bound", t("a fact whose length terms all have coefficients ≤ 0, such as `i < xs.length`, read i − xs.length ≤ −1. Growth keeps every such fact whose other terms it keeps.")),
-        point("Where it applies", t("a call stated `stores: \"grow\"`; `push`; an element write `out[j] = v` at any index, which may lengthen any array, `xs` among them.")),
-        point("Upper bound", t("dropped: `add(xs)` may lengthen `xs`, so `xs.length <= ys.length` is lost and `last` is refused; under Node `last([], [])` returns `undefined`.")),
-        point("Natives", t("each native contract stated at `store: grow` (`push`, `unshift`, `sort`, a typed array’s `fill`, `set`, `copyWithin`) also states that its arrays get no shorter: ") + trusted + t(", argued from ECMA-262.")),
-      ], 24),
-    ], [55, 45]),
+        point("Lower bound", t("`i < xs.length`, read i − xs.length ≤ −1: a fact whose length terms all have coefficients ≤ 0. Growth keeps it.")),
+        point("Upper bound", t("`xs.length <= ys.length` is dropped: `add(xs)` may lengthen `xs` (slide 13).")),
+        point("Where it applies", t("a call stated `stores: \"grow\"`; `push`; an element write `out[j] = v` at any index.")),
+        point("Natives", t("a native contract at `store: grow` (`push`, `sort`, a typed array’s `fill`) also states that its arrays get no shorter: ") + trusted + t(", argued from ECMA-262.")),
+      ], 26),
+    ], [52, 48]),
   }),
   slide("growth-heap", {
     label: "Growth · the heap", note: t("`add(xs)` of slide 12, stated `stores: \"grow\"` · the rules ") + proved,
@@ -245,7 +245,7 @@ const slides: Slide[] = [
         point("Regional growth", t("`step` may change the array `runs.open` holds, its region, and may grow every other array: a lower bound of the length of an array apart from the region survives the call.")),
         point("Guarded separation", t("`chosen === null || xs !== chosen.open`: where `chosen` is `null` the region selects no array, elsewhere `xs` is another array, so `to <= xs.length` survives `step(chosen, out)`. The producer proposes separations through copies, conditional declarations and joins of control flow; the checker checks each on every edge.")),
         point("Writes", t("a separation read through a `@stable` field also survives element and field writes: the field holds its array for the record’s life.")),
-        point("pretext", t("`measureAnalysis` passes `unspacedRuns`, its `scriptRuns` or `null`, to `getUnspacedGraphemes`, whose frame states the region `runs.openBrackets[*]`; its loop invariant states this guarded separation.")),
+        point("In pretext", t("a measuring loop passes its record or `null` to a helper stating such a region; its loop invariant states this guarded separation.")),
       ], 24),
     ], [60, 40]),
   }),
@@ -291,37 +291,36 @@ const slides: Slide[] = [
     title: "Bound checks leave pretext one chain at a time", gap: 22,
     body: cards([
       stat("12 / 12", t("source files outside `src/generated` have every function verified on the rewrite as it stands. The two generated data files do not: one is refused before proof search, one exceeds the time limit."), "ok"),
-      stat("66 / 501", "bound rewrites restored to pretext’s own reads; 436 checks remain, one of them added.", "ok"),
-      stat("12", t("reads of chain 1 in `measureAnalysis` restored; 4 stay checked (slide 18)."), "gap"),
+      stat("66 / 501", "run-time bound checks replaced by pretext’s own reads, each proved in bounds; 436 checks remain.", "ok"),
+      stat("1", "check added, where no rule yet carries a fact across a call (slide 19).", "gap"),
     ], 3) +
-      para(t("A chain is a function that builds a structure and every function reading it. Its rewrites are restored together, each read replaced by an assertion and the contracts that prove it in bounds, and every function that verified keeps verifying. In chain 1, `analyzeText` and `segmentAtLineBreaks` state that `texts`, `starts` and `flags` have one length; `measureAnalysis` requires `to` at most each of their lengths, lower bounds that growth keeps."), 25) +
+      para(t("A chain is a function that builds a structure and every function reading it. Its rewrites are restored together, each read replaced by an assertion and the contracts that prove it in bounds, and every function that verified keeps verifying. In the first chain, the functions that segment a text state that its three segment arrays have one length, and the function measuring a range of segments requires the range’s end at most each length: lower bounds, which growth keeps."), 25) +
       para(t("One class stays checked (" + "observed" + " under Node): a line range kept from a longer text, materialized on a shorter one, reads past a segment’s graphemes; original pretext returns wrong text, or `NaN` offsets in rich inline text. No annotation makes it safe; the code needs an index check."), 25),
   }),
   slide("remains", {
-    label: "Remaining obligations", note: t("pretext `ba09794f`, TScert `787770a1` · ") + observed + t(" · the string rows at TScert `d36212f9`, pretext `aaa11c50` · each capability ") + open,
-    title: "What the remaining reads of chain 1 need", gap: 22,
-    body: table(["Capability needed", "Where chain 1 needs it"], [
-      [t("a call of a function with an optional callback, passing none, whose frame is `stores: \"any\"` for every call (slide 19)"), t("the runtime check in `prepareRichInline` before it calls `measureAnalysis`")],
-      [t("an upper bound of a length kept across calls, `flags.length <= starts.length`; growth keeps lower bounds only"), t("`starts[to]`")],
-      [t("a fact known only through a Boolean binding: `mi > from` through `spaceBefore`, `mi >= from + 2` through a negated `mi === from + 1`"), t("`flags[mi - 1]`, `flags[mi - 2]`")],
-      [t("a disjunctive precondition: under `from === 0 || from < to` the read is refused at its typing claim, cause not established"), t("`starts[from]`")],
-      [t("string lengths of `replace` and `slice` results: library contracts, an assumption about the standard library for the owner to decide (") + trusted + ")", t("`mapSourceLineBreaks` and `segmentAtLineBreaks`’ break reads, which need `breaks.length >= normalized.length + 1`")],
-      [t("a string’s element read below its length, typed as a string"), t("`normalized[i]!`")],
-    ], [58, 42], { compact: true }),
+    label: "Remaining obligations", note: t("each seen in pretext at `ba09794f`, TScert `787770a1` · ") + observed + t(" · each capability ") + open,
+    title: "Facts no rule carries yet", gap: 22,
+    body: table(["A read needs", "Why no rule carries it"], [
+      [t("a fact kept across a call of a function with an optional callback that the call does not pass"), t("a function has one frame for every call, and an unknown callback may change any array (slide 19)")],
+      [t("an upper bound of a length kept across a call, such as `a.length <= b.length`"), t("growth keeps lower bounds only (slide 13); keeping an upper bound needs a frame stating that the array is unchanged")],
+      [t("a fact known only through a Boolean binding: `i > lo` through `const inside = i > lo && …`, tested later"), t("a test of a binding gives facts about that binding, not about the comparison it was computed from")],
+      [t("the length of a string a library function returns, such as `replace` or `slice`"), t("a library contract: an assumption about the standard library, ") + trusted + t(" once stated")],
+      [t("a string’s element read below its length, typed as a string"), t("no rule types a string’s element read by its bound yet")],
+    ], [50, 50], { compact: true }),
   }),
   slide("visitor", {
     label: "Optional callbacks", note: t("three variants ") + observed + t(" at TScert `7b6e476a`, 2026-11-10 · a frame that depends on the callback ") + open,
     title: "A callback left out still costs the call its frame", gap: 22,
     body: columns([
-      code(["type Visitor = (i: number) => void;", "", "function walk(n: number, onItem?: Visitor): number {", "  let s = 0;", "  for (let i = 0; i < n; i++) {", "    s += i;", "    onItem?.(i);", "  }", "  return s;", "}", "", "/** @requires safeInteger(i) && 0 <= i", " *    && i < xs.length */", "export function get(xs: number[], i: number): number {", "  const n = walk(3);      // no visitor passed", "  if (i >= xs.length)     // the runtime check", "    throw new RangeError(\"index\");", "  return xs[i]! + n;", "}"]),
+      code(["type Visitor = (i: number) => void;", "", "function walk(n: number, onItem?: Visitor): number {", "  let s = 0;", "  for (let i = 0; i < n; i++) {", "    s += i;", "    onItem?.(i);", "  }", "  return s;", "}", "", "/** @requires safeInteger(i) && 0 <= i", " *    && i < xs.length */", "export function get(xs: number[], i: number): number {", "  const n = walk(3);   // no visitor passed", "  return xs[i]! + n;   // refused", "}"]),
       bullets([
-        point("One frame per function", t("the producer infers `walk`’s frame once, for every call. An unknown callback may change any array, so it is `stores: \"any\"`.")),
-        point("Without the check", t("`get` is refused, though `walk(3)` runs no callback. The diagnostics name `onItem?.(i)`, whose frame is `stores: \"any\"`, and `walk(3)`, which drops `i < xs.length`.")),
-        point("A frame on Visitor", t("stated `stores: \"grow\"`, `get` verifies; a public function handing its caller’s own callback to `walk` is refused.")),
-        point("With the check", "verified. The check never fires; it stands in for the proof."),
-        point("pretext", t("`prepareRichInline` checks once before `measureAnalysis(analysis, from, to, …)`: its loop calls a walker whose optional line visitor it passes none, and the visitor’s type reaches the public `walkLineRanges`’ `onLine`. The check also stands for `measureAnalysis`’s own frame, `stores: \"grow\"`, which the checker does not certify (TScert `787770a1`).")),
-      ], 24),
-    ], [52, 48]),
+        point("One frame per function", t("`walk`’s frame is inferred once, for every call. An unknown callback may change any array, so the frame is `stores: \"any\"`.")),
+        point("The caller pays", t("`get` is refused although `walk(3)` runs no callback: the call drops `i < xs.length`.")),
+        point("A frame on the callback’s type", t("with `Visitor` stated `stores: \"grow\"`, `get` verifies; a public function handing its own caller’s callback to `walk` is then refused.")),
+        point("A run-time check", t("`if (i >= xs.length) throw …` after the call verifies. It never fires; it stands in for the proof.")),
+        point("In pretext", "one such check stands before a call in a loop that also calls a line walker without its optional visitor."),
+      ], 26),
+    ], [54, 46]),
   }),
   statement("moral", {
     label: "The takeaway",
