@@ -65,7 +65,12 @@ the start, handlers' edges included. A statement entry that is no loop head
 is an ordinary node: its state is its predecessor's, or the meet of its
 predecessors' at a merge; a written assertion there is an obligation on
 that state. At a merge, a linear bound every predecessor states of one form
-under one condition is kept at the weakest of their bounds.
+under one condition is kept at the weakest of their bounds; a name a slot
+keeps that another slot's fresh name renames in some predecessor is stated
+equal to it there; and the guarded facts the search's join keeps
+(`CertificateProducer.joinGuarded`) are kept. Everywhere, one linear bound
+is kept per normalized form and condition, the strongest, and a length atom
+is also stated as the linear facts it means (`HeapKnowledge.atomLinear`).
 
 
 A loop head's state is exactly its given invariant: its written assertion
@@ -113,31 +118,14 @@ the same way.
 ### A call of a slot
 
 A call whose callee is a slot is read off the callee's signatures, in the
-order `CertificateProducer.expressionWithUsing` tries them (those promising
-elements first; those stating a precondition `admits` holds of, then those
-stating none): the first whose receiver, actuals and result the slots'
-types meet, each by identity or a subtype proof; `undefined` at its own
-type. Each stated precondition is decided once per call, over the index
-facts connected to the call's slots. The step is `ordinary` at that
-derivation. Its output is the one `HeapExpressionRules.Checker.ordinary`
-gives, its layers' predicates read without their tree check (the
-derivation's premises are the pass's checked comparisons), mirrored by
-`SinglePass.callBase` and `SinglePass.callOutput`:
-
-- the base: `PromiseCalls.elementsOutput` (`elementsCall`),
-  `promiseOutput` (`requiresCall`), `freshOutput` (`freshCall`),
-  `ownOutput` (`ownCall`), the entry shifted (`keepsCall`), else
-  `HeapExpressionRules.ordinaryOutput`;
-- then `ensuringCalls` (`withEnsures`, `withGrown`, whose kept facts are
-  `effectKept`, `appendKept`, `writeKept`, `linearAppendKept`),
-  `negatingSlots`, `emptyArrays`, `indexing` (`stepAtoms`, `linearAtoms`,
-  `lengthAtoms`), `boundedWrites`' `IndexWrites.growOutput`, and
-  `keepingStable`'s `withStable`.
-
-Where the base keeps the heap (elements, a heap-keeping precondition,
-fresh, keeps), every fact the call does not name stays where it is, and
-the output over the named facts is the step's delta. `ownOutput` and
-`ordinaryOutput` decide per fact over the whole store.
+order `CertificateProducer.expressionWithUsing` tries them, each operand by
+identity or a subtype proof, each stated precondition decided once per call.
+The step is `ordinary` at that derivation, and its output is the proved
+layers' (`Checker.ordinary`'s `select`). Where those layers keep every heap
+fact the call does not name (`elementsCall`, `requiresCall` at a heap-keeping
+effect, `freshCall`, `keepsCall` without `ownCall`), the output over the
+named facts is the step's delta and every other fact stays where it is;
+otherwise the layers read every fact.
 
 ### A footprint
 

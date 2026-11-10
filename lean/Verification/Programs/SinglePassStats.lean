@@ -101,7 +101,7 @@ def trace (P : Program) (claims : List (PointClaim ι)) (cuts : List Nat) (l : N
   for (node, k) in P.zipIdx do
     for t in successors node.continuation ++ node.handler.toList do
       if t.label < preds.size then preds := preds.modify t.label ((k, t) :: ·)
-  let mut out : List String := []
+  let mut out : List String := [s!"preds of {l}: {(preds.getD l []).map (·.1)}"]
   let mut cur := l
   for _ in List.range depth do
     let ps := preds.getD cur []

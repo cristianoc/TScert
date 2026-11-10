@@ -2050,6 +2050,31 @@ meets establishes every candidate. -/
 def byLabel {α : Type} (n : Nat) (xs : List (Nat × α)) : Array (Option α) :=
   xs.reverse.foldl (fun acc (l, v) => if l < n then acc.set! l (some v) else acc) (Array.replicate n none)
 
+/-- The guarded facts a merge keeps (ARITHMETIC.md, "Guarded clauses", the
+join), of the knowledge `projections` its edges carry, beside `k`: each
+one's guarded atoms, also restated through its read links; and a store
+separation one states of an alias of a slot another holds a tag's value in,
+restated of that slot and guarded by its tag (`a === null || y !== a.q`);
+each kept where every edge's knowledge entails it. Search only: each edge is
+checked again. -/
+def joinGuarded (projections : List HeapKnowledge.Knowledge) (k : HeapKnowledge.Knowledge) :
+    List HeapKnowledge.IndexAtom :=
+  let restated := projections.flatMap fun p => p.indices.flatMap fun a =>
+    if a.cond.isSome then [] else match a.fact with
+    | .storeApart x q y r =>
+      let guardsOf := fun (w : Nat) (mk : Nat → HeapKnowledge.IndexFact) =>
+        (HeapLinks.aliases p.links w).flatMap fun z =>
+          ([HeapKnowledge.GuardTag.null, .undef].filter fun g =>
+            projections.any fun o => HeapKnowledge.guardTags o z [] g).map fun g =>
+              ({ fact := .guarded z [] g (mk z) } : HeapKnowledge.IndexAtom)
+      guardsOf x (fun z => .storeApart z q y r) ++ guardsOf y (fun z => .storeApart x q z r)
+    | _ => []
+  let candidates := (projections.flatMap fun p => HeapKnowledge.lowerGuards p.links p.indices).eraseDups ++
+    restated.eraseDups
+  candidates.filter fun a => !k.indices.contains a && projections.all fun p =>
+    HeapKnowledge.indicesCheckWith (HeapKnowledge.guardTags p) (HeapLinks.aliases p.links) p.links
+      p.indices [a] none
+
 /-- Propagate established postconditions along single-predecessor paths. The
 entry starts at its requirement; a statement entry (a cut) at its requirement
 and the candidates it keeps (`candidates`, the producer's supplied facts,
@@ -2252,21 +2277,7 @@ independent consumer. The search's result, and the candidates it left out. -/
                 -- A store separation one predecessor states of an alias of a
                 -- slot another holds a tag's value in, restated of that slot
                 -- and guarded by its tag (`a === null || y !== a.q`).
-                let restated := projections.flatMap fun p => p.indices.flatMap fun a =>
-                  if a.cond.isSome then [] else match a.fact with
-                  | .storeApart x q y r =>
-                    let guardsOf := fun (w : Nat) (mk : Nat → HeapKnowledge.IndexFact) =>
-                      (HeapLinks.aliases p.links w).flatMap fun z =>
-                        ([HeapKnowledge.GuardTag.null, .undef].filter fun g =>
-                          projections.any fun o => HeapKnowledge.guardTags o z [] g).map fun g =>
-                            ({ fact := .guarded z [] g (mk z) } : HeapKnowledge.IndexAtom)
-                    guardsOf x (fun z => .storeApart z q y r) ++ guardsOf y (fun z => .storeApart x q z r)
-                  | _ => []
-                let candidates := (projections.flatMap fun p => HeapKnowledge.lowerGuards p.links p.indices).eraseDups ++
-                  restated.eraseDups
-                let guarded := candidates.filter fun a => !k.indices.contains a && projections.all fun p =>
-                  HeapKnowledge.indicesCheckWith (HeapKnowledge.guardTags p) (HeapLinks.aliases p.links) p.links
-                    p.indices [a] none
+                let guarded := joinGuarded projections k
                 k := { k with indices := k.indices ++ guarded }
                 implies := meetImplications G carried c.context.length c.context
                 held := match holding with

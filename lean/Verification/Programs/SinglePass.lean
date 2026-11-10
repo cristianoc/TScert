@@ -81,7 +81,13 @@ structure Store where
   byName : Lean.PersistentHashMap Nat (List Atom) := {}
   count : Nat := 0
 
-def Store.add (s : Store) (a : Atom) : Store :=
+/-- The form and condition of an unconditional or conditional linear bound
+`F ≤ d`, and `d`: one fact is kept per form and condition. -/
+def Atom.linearKey : Atom → Option ((Linear.Form HeapKnowledge.Term × Option Nat × Bool) × Int)
+  | .index ⟨.linear (.le F d), c, neg⟩ => some ((Linear.normalize F, c, neg), d)
+  | _ => none
+
+def Store.addRaw (s : Store) (a : Atom) : Store :=
   if s.live.contains a then s else
   { live := s.live.insert a (), count := s.count + 1,
     byName := a.names.foldl (fun m n => m.insert n (a :: m.findD n [])) s.byName }
@@ -92,6 +98,30 @@ def Store.remove (s : Store) (a : Atom) : Store :=
       -- Off each name's list: the index holds live facts only.
       byName := a.names.foldl (fun m n => m.insert n ((m.findD n []).erase a)) s.byName }
   else s
+
+/-- A fact added; of a linear bound, one per form and condition, the
+strongest: a bound the store already states as strongly is not added, and a
+stronger one replaces the weaker. -/
+def Store.addBound (s : Store) (a : Atom) : Store :=
+  if s.live.contains a then s else
+  match a.linearKey with
+  | some (key, d) =>
+    let same := (s.byName.findD (a.names.headD 0) []).filter fun b => match b.linearKey with
+      | some (key', _) => key' == key
+      | none => false
+    if same.any (fun b => match b.linearKey with | some (_, d') => d' ≤ d | none => false) then s
+    else (same.foldl Store.remove s).addRaw a
+  | none => s.addRaw a
+
+/-- A fact added (`addBound`); a length atom also as the linear facts it
+means (`HeapKnowledge.atomLinear`), the form the call layers keep or drop. -/
+def Store.add (s : Store) (a : Atom) : Store :=
+  if s.live.contains a then s else
+  let s := match a with
+    | .index ⟨f@(.length _ _), c, neg⟩ => (HeapKnowledge.atomLinear f).foldl (fun (s : Store) F =>
+        s.addBound (.index ⟨.linear F, c, neg⟩)) s
+    | _ => s
+  s.addBound a
 
 def Store.about (s : Store) (n : Nat) : List Atom := s.byName.findD n []
 
@@ -361,6 +391,18 @@ def Store.drop (s : Store) (D : List Nat) : Store := timedKind "drop" fun _ => I
     HeapKnowledge.restateStores links isOut indices
   let derived := (HeapKnowledge.eliminateIndices D restated).drop indices.length
   let mut s := atoms.foldl Store.remove s
+  -- A name the edge drops that an alias link relates to a kept name: its
+  -- facts restated of that name (as `HeapKnowledge.dropIndices` restates a
+  -- dropped slot's facts on a neighbour).
+  let keptAlias : Std.HashMap Nat Nat := links.foldl (fun acc g =>
+    if !g.alias then acc
+    else if dset.contains g.cell && !dset.contains g.value && !acc.contains g.cell then acc.insert g.cell g.value
+    else if dset.contains g.value && !dset.contains g.cell && !acc.contains g.value then acc.insert g.value g.cell
+    else acc) {}
+  if !keptAlias.isEmpty then
+    for a in atoms do
+      if let some b := a.rename (fun x => some (keptAlias.getD x x)) then
+        if b.names.all (!dset.contains ·) then s := s.add b
   for x in derived do
     let a := Atom.index x
     if a.names.all (!dset.contains ·) then s := s.add a
@@ -515,92 +557,6 @@ def directCall (G : NormalGraph ι) (images : InstanceImageCheck G) (Γ : List (
       let some sub := res.value | continue
       return (some (coerceBy sub (.node ⟨Γ, t, p.result⟩ (r p.effect) (ef :: parts.toList)) A, phase), answers)
   return timedKind s!"direct: no signature of {L.length}" fun _ => (none, answers)
-
-/-- How a call step's output treats the facts its expression does not
-name, as the layers of `HeapExpressionRules.Checker.ordinary` decide it for
-a derivation the pass built (`directCall`): kept in place (`elementsCall`,
-`requiresCall` at a heap-keeping effect, `freshCall`, `keepsCall`), or read
-whole (`ownCall`, which keeps the facts apart from the receiver's own
-locations; the base step's `ordinaryOutput`, which keeps no heap fact). -/
-inductive CallBase where
-  | elements (x : Nat) (R : CallEffects.ElemPred)
-  | promise
-  | fresh
-  | own (i : Nat)
-  | keeps
-  | ordinary
-  deriving BEq
-
-/-- Which layer of `Checker.ordinary` gives a call's base output, its
-predicates read without their tree check: the derivation is the pass's own,
-each premise built by a checked comparison. `requires` is the precondition
-the pass decided (`admitsNear`). -/
-def callBase (G : NormalGraph ι) (j : Sequent ι) (p : ProgramCertificates.Evidence ι) (requires : Bool) : CallBase :=
-  match ExpressionEffects.selectedEffect p with
-  | none => .ordinary
-  | some eff =>
-    let operands := ExpressionEffects.selectedOperands p
-    -- `elementsCall`
-    match (if operands && PromiseCalls.onlyBool G j.type && PromiseCalls.keepsHeap eff then
-        (PromiseCalls.receiverSlot j.term).bind fun x => eff.elements.map fun R => (x, R) else none) with
-    | some (x, R) => .elements x R
-    | none =>
-    -- `requiresCall`: a stated precondition that holds
-    if requires && (eff.requires.isSome || !eff.pre.isEmpty) then
-      (if PromiseCalls.keepsHeap eff then .promise else .ordinary)
-    -- `freshCall`
-    else if operands && PromiseCalls.keepsHeap eff && eff.freshObject then .fresh
-    -- `ownCall`
-    else match (if operands && eff.footprint.le .empty && eff.receiverOwn && !eff.receiverStore then
-        PromiseCalls.receiverSlot j.term else none) with
-    | some i => .own i
-    | none =>
-    -- `keepsCall`
-    if ExpressionEffects.selectedCallWithin .empty p &&
-        (match PromiseCalls.promiseOf G p with | some (effect, _, _) => PromiseCalls.keepsHeap effect | none => true)
-    then .keeps else .ordinary
-
-/-- A call step's output over `k` at the base `b`, then the outer layers of
-`Checker.ordinary` in their order: `ensuringCalls`, `negatingSlots`,
-`emptyArrays`, `indexing`, `boundedWrites`' growth, `keepingStable`. -/
-def callOutput (G : NormalGraph ι) (j : Sequent ι) (p : ProgramCertificates.Evidence ι) (b : CallBase)
-    (requires : Bool) (k : Knowledge) : Knowledge :=
-  let Γ := j.context
-  let t := j.term
-  let base : Knowledge := match b with
-    | .elements x R => PromiseCalls.elementsOutput k x R
-    | .promise | .keeps => HeapKnowledge.shift k
-    | .fresh => PromiseCalls.freshOutput G Γ k
-    | .own i => PromiseCalls.ownOutput k i
-    | .ordinary => HeapExpressionRules.ordinaryOutput k
-  -- `ensuringCalls`
-  let out := match ExpressionEffects.selectedEffect p with
-    | some eff =>
-      if (ExpressionEffects.selectedOperands p || requires) && !(eff.ensures.isEmpty &&
-          (PromiseCalls.effectKept (HeapExpressionRules.writeViews G Γ) (HeapExpressionRules.stableFirst G Γ) eff t k).isEmpty &&
-          (PromiseCalls.appendKept eff t k).isEmpty && (PromiseCalls.writeKept eff t k).isEmpty &&
-          (PromiseCalls.linearAppendKept Γ.length eff t k).isEmpty) then
-        PromiseCalls.withGrown eff (PromiseCalls.withEnsures (HeapExpressionRules.writeViews G Γ)
-          (HeapExpressionRules.stableFirst G Γ) Γ.length eff t k base) (IndexWrites.grownRegions G Γ k t)
-      else base
-    | none => base
-  -- `negatingSlots`
-  let out := match PromiseCalls.negationOf j with
-    | some x => { out with elems := out.elems ++ PromiseCalls.negatedAtoms k x
-                           indices := out.indices ++ PromiseCalls.negatedIndices k x }
-    | none => out
-  -- `emptyArrays`
-  let lit := IndexWrites.literalArrayAtoms Γ.length t
-  let out := { out with
-    indices := out.indices ++ lit ++ (if lit.isEmpty then [] else HeapKnowledge.shiftIndices k.indices) ++
-      IndexWrites.regionAtoms G Γ k t
-    separation := if lit.isEmpty then out.separation
-      else HeapSeparation.allocate k.separation Γ.length (HeapExpressionRules.contractFields G Γ) }
-  -- `indexing`
-  let out := { out with indices := out.indices ++ (IndexWrites.stepAtoms G Γ k t ++
-    IndexWrites.linearAtoms G Γ k t ++ IndexWrites.lengthAtoms k Γ t) }
-  -- `boundedWrites`, `keepingStable`
-  HeapExpressionRules.withStable G Γ k (IndexWrites.growOutput G j k out)
 
 /-- The pass over one graph. -/
 def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι)) (fuel : Nat)
@@ -761,16 +717,38 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
             fresh := fresh + 1
         -- The facts every predecessor holds, renamed.
         let stores : List (Std.HashSet Atom) := (preds.zip renames).map fun ((st : State), (m : Std.HashMap Nat Nat)) =>
-          st.store.toList.foldl (fun (acc : Std.HashSet Atom) (a : Atom) =>
-            acc.insert ((a.rename fun x => some (m.getD x x)).getD a)) {}
+          -- Each fact as it is, and restated at the fresh names of the slots
+          -- whose names differ: a name a slot keeps keeps its facts too.
+          -- A name a slot keeps that another slot's fresh name renames is
+          -- that name's value: their equality stated (as a copy's alias link
+          -- and equal values state it).
+          let equal := m.fold (fun (acc : List Atom) x φ => if names.contains x then
+              [Atom.link { cell := φ, value := x, alias := true },
+               .index ⟨.linear (.le [(HeapKnowledge.Term.value φ, 1), (HeapKnowledge.Term.value x, -1)] 0), none, false⟩,
+               .index ⟨.linear (.le [(HeapKnowledge.Term.value φ, -1), (HeapKnowledge.Term.value x, 1)] 0), none, false⟩] ++ acc
+            else acc) []
+          (st.store.toList.foldl (fun (acc : Std.HashSet Atom) (a : Atom) =>
+            (acc.insert a).insert ((a.rename fun x => some (m.getD x x)).getD a)) {}).insertMany equal
         let first := stores.headD {}
         let met := timedKind "meet" fun _ => first.fold (fun (acc : Store) a =>
           if stores.tail.all (·.contains a) then acc.add a else acc) {}
+        let mergedNames := names.toList
+        let predStates : List State := (preds.zip renames).map fun ((st : State), (m : Std.HashMap Nat Nat)) =>
+          { names := mergedNames, store := st.store.toList.foldl (fun (acc : Store) (a : Atom) =>
+              (acc.add a).add ((a.rename fun x => some (m.getD x x)).getD a)) {} }
+        -- The guarded facts the join keeps (`CertificateProducer.joinGuarded`,
+        -- as the search's merge), over the names of the merge's slots.
+        let projections := predStates.map fun ps => (materialize ps width (List.range width) true).1
+        let guarded := timedKind "meet guarded" fun _ => CertificateProducer.joinGuarded projections {}
+        let met := guarded.foldl (fun (acc : Store) x => match (Atom.index x).rename (mergedNames[·]?) with
+          | some a => acc.add a
+          | none => acc) met
         -- A linear bound every predecessor states of one form (under one
         -- condition), at the weakest of their bounds, each its strongest.
         let bounds : List (Std.HashMap (Linear.Form HeapKnowledge.Term × Option Nat × Bool) Int) := stores.map fun st =>
           st.fold (fun acc a => match a with
             | .index ⟨.linear (.le F d), c, neg⟩ =>
+              let F := Linear.normalize F
               acc.insert (F, c, neg) (match acc.get? (F, c, neg) with | some d' => min d d' | none => d)
             | _ => acc) {}
         let met := match bounds with
@@ -876,26 +854,18 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
         | _ => (none, answers)
       answers := a0
       let sums := answers.summaries.toList
-      let base := direct.map fun (e, req) => callBase G j e req
-      let (r, a) := match direct, base with
-        | some (e, req), some b =>
+      let (r, a) := match direct with
+        | some (e, _) =>
+          -- The proved layers' output (`Checker.ordinary`) at the call's
+          -- `ordinary` step over the facts it names.
           let step : HeapExpressionRules.StepEvidence ι := .ordinary e
-          (timedKind "direct call output" fun _ => CheckResult.ofBool true |>.map fun _ =>
-            (some e, step, callOutput G j e b req kE), answers)
-        | _, _ => timedKind (if kindKey == "invoke" then s!"invoke facts {(atomsOf k).length / 10 * 10}" else kindKey) fun _ =>
+          (timedKind "direct call output" fun _ => (checker.select j kE step codes sums).map fun out =>
+            (some e, step, out), answers)
+        | none => timedKind (if kindKey == "invoke" then s!"invoke facts {(atomsOf k).length / 10 * 10}" else kindKey) fun _ =>
           expressionEffectUsing G images pool fuel j kE suggestions index codes aliases checker (some own)
             (some admits) answers
       answers := a
       counts := { counts with rules := counts.rules + 1, directCalls := counts.directCalls + (if direct.isSome then 1 else 0) }
-      -- Debugging: the direct output against `Checker.select`'s over the same facts.
-      if !reference.isEmpty then
-        if let some (e, _) := direct then
-          let expected := checker.select j kE (.ordinary e) codes sums
-          if let some (_, _, out) := r.value then
-            let same := match expected.value with
-              | some o => (atomsOf o).all (atomsOf out).contains && (atomsOf out).all (atomsOf o).contains
-              | none => false
-            if !same then return (.refused s!"direct call output differs at node {l}", counts, answers)
       let some (deriv, effect, out) := r.value | return (.refused s!"expression at node {l}: {(reprStr node.expression).take 300} with {(atomsOf k).length} facts {(reprStr k).take 1500}", counts, answers)
       -- The step's derivation checked as the checker's `run` checks it
       -- (`checkStepResult`'s tree check): the search's `select` takes it as
@@ -914,15 +884,20 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
       -- A call keeping the heap (`PromiseCalls.keepsCall`), where no layer
       -- before it in `Checker.ordinary` decides the step, keeps every fact
       -- it does not name: its output over the facts it names is its delta.
-      let keepsHeap := match base with
-        | some .ordinary | some (.own _) => false
-        | some _ => true
-        | none => match effect with
-        | .ordinary _ => PromiseCalls.keepsCall G images j effect codes sums &&
-            !PromiseCalls.freshCall G images j effect codes sums &&
-            (PromiseCalls.ownCall G images j effect codes sums).isNone &&
-            (PromiseCalls.elementsCall G images j effect codes sums).isNone &&
-            !PromiseCalls.requiresCall G images j kE effect codes sums
+      -- A call whose output keeps every heap fact it does not name, as the
+      -- layers of `Checker.ordinary` decide it, outermost first: one
+      -- promising its receiver's elements (`elementsCall`), one at a
+      -- precondition whose effect keeps the heap (`requiresCall`), one
+      -- allocating its result (`freshCall`), else one keeping the heap
+      -- (`keepsCall`) that changes no receiver's own locations (`ownCall`).
+      let keepsHeap := match effect with
+        | .ordinary p =>
+          (PromiseCalls.elementsCall G images j effect codes sums).isSome ||
+          (if PromiseCalls.requiresCall G images j kE effect codes sums then
+            (ExpressionEffects.selectedEffect p).any PromiseCalls.keepsHeap
+          else PromiseCalls.freshCall G images j effect codes sums ||
+            ((PromiseCalls.ownCall G images j effect codes sums).isNone &&
+              PromiseCalls.keepsCall G images j effect codes sums))
         | _ => false
       let preserving := keepsHeap || match effect with
         | .ordinary _ | .written .. | .boundedWrite .. => false
@@ -933,7 +908,7 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
       | _, _ =>
         result := fresh
         fresh := fresh + 1
-      if l == debugNode && debugNode != 0 then
+      if l == debugNode && debugNode != 0 && preserving then
         return (.refused s!"debug {l}: preserving {preserving} effect {match effect with | .ordinary _ => "ordinary" | .allocated _ => "allocated" | .created _ => "created" | .pure _ => "pure" | .reading _ => "reading" | _ => "other"} out {reprStr out.indices}", counts, answers)
       stepK := kE
       stepOut := out
@@ -956,9 +931,7 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
           else if (PromiseCalls.ensuresCall G images j kE effect codes sums).isSome then "ensures"
           else match effect with | .ordinary _ => "ordinary" | .written .. => "written" | _ => "boundedWrite"
         let r := timedKind ("whole " ++ SinglePassStats.termKind node.expression ++ " " ++ layer) fun _ =>
-          match direct, base with
-          | some (e, req), some b => CheckResult.ofBool true |>.map fun _ => callOutput G j e b req kE
-          | _, _ => checker.select j kE effect codes sums
+          checker.select j kE effect codes sums
         counts := { counts with rules := counts.rules + 1, fullRules := counts.fullRules + 1 }
         let some out := r.value | return (.refused s!"expression at node {l} over every fact", counts, answers)
         stepK := kE
@@ -1220,7 +1193,7 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
         let some req := given[t.label]! | return (.refused s!"head {t.label}", counts, answers)
         let slots := (atomsOf req).flatMap Atom.names
         let srcSlots := slots.map (PointClaims.slot t.mapping)
-        let (k, _, _) := materialize { names, store := edgeStore } (if pushed then width + 1 else width) srcSlots false
+        let (k, _, _) := materialize { names, store := edgeStore } (if pushed then width + 1 else width) srcSlots true
         counts := { counts with queries := counts.queries + 1, queryAtoms := counts.queryAtoms + (atomsOf k).length }
         if !vacuous && !(timedKind "head query" fun _ => KnowledgeExpand.checkIn (KnowledgeExpand.ctxOf G tc.context)
             (HeapKnowledge.withTypedLinks G Γ (ControlFlow.withTypedCells G Γ req t.mapping k)) req t.mapping) then
