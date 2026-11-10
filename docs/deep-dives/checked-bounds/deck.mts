@@ -7,7 +7,7 @@
  * needs observed at TScert d36212f9 and pretext aaa11c50 on 2026-11-09;
  * the coarse-frame measurement cited from its draft. Built with the deck kit
  * (`make deck NAME=checked-bounds`).
- * Build: make deck NAME=checked-bounds SINCE=e0979e83. */
+ * Build: make deck NAME=checked-bounds SINCE=922ef085. */
 import { bullets, card, cards, code, columns, cover, esc, inline, panel, para, point, rules, slide, stat, statement, status, table, type Deck, type Slide } from "../../../dev/deck.mts";
 import { LIGHT as K } from "../../../dev/style-tokens.mts";
 
