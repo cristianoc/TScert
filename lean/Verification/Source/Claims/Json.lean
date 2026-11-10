@@ -502,7 +502,11 @@ storage contracts left empty. -/
 def signatureClaims (f : Json) : Json :=
   let f := (f.setObjVal! "entries" (Json.arr #[])).setObjVal! "expressions" (Json.arr #[])
   let f := f.setObjVal! "contracts" (Json.arr #[])
-  if (f.getObjVal? "arrows").isOk then f.setObjVal! "arrows" (Json.arr #[]) else f
+  -- No arrows is spelled by leaving the field out (the decoder refuses a
+  -- default spelled out).
+  match f with
+  | .obj kvs => .obj (kvs.erase "arrows")
+  | f => f
 
 /-- A claims document whose functions outside `keep` (by name and name
 position) hold their signature claims alone (`signatureClaims`). -/

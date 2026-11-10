@@ -391,6 +391,13 @@ def Store.drop (s : Store) (D : List Nat) : Store := timedKind "drop" fun _ => I
     HeapKnowledge.restateStores links isOut indices
   let derived := (HeapKnowledge.eliminateIndices D restated).drop indices.length
   let mut s := atoms.foldl Store.remove s
+  -- A separation fact keeps its subject's separation from the partners the
+  -- edge keeps (as `HeapSeparation.project` keeps the mapped levels).
+  for a in atoms do
+    if let .sep f := a then
+      if !dset.contains f.slot then
+        let partners := f.partners.filter fun (p, _) => !dset.contains p
+        if !partners.isEmpty then s := s.add (.sep { f with partners })
   -- A name the edge drops that an alias link relates to a kept name: its
   -- facts restated of that name (as `HeapKnowledge.dropIndices` restates a
   -- dropped slot's facts on a neighbour).
@@ -801,17 +808,13 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
         let missing := old.indices.filter fun a => !KnowledgeExpand.checkIn ctx k { indices := [a] } none
         if !missing.isEmpty then
           return (.refused s!"reference: node {l} lacks {reprStr missing}", counts, answers)
-    -- A required assertion at a node other than a head is entailed by its
-    -- entry state.
+    -- A written assertion, established on every edge into a node other than
+    -- a head, holds there: its facts join the state.
     if !isHead[l]! then
       if let some req := stated[l]! then
-        let slots := (atomsOf req).flatMap Atom.names
-        let (k, _, _) := materialize entry width slots false
-        counts := { counts with queries := counts.queries + 1, queryAtoms := counts.queryAtoms + (atomsOf k).length }
-        if !KnowledgeExpand.checkIn (KnowledgeExpand.ctxOf G c.context) k req none then
-          let missing := (atomsOf req).filter fun a =>
-            !KnowledgeExpand.checkIn (KnowledgeExpand.ctxOf G c.context) k (ofAtoms [a] width) none
-          return (.refused s!"assertion at node {l}: lacks {(missing.map fun a => match a with | .index x => (reprStr x.fact).take 80 | .cell f => s!"cell {f.slot}.{f.field}" | .value f => s!"value {f.slot}" | .link g => s!"link {g.cell}.{g.field}={g.value}" | .elem e => s!"elems {e.slot}" | .sep f => s!"sep {f.slot}").take 4}", counts, answers)
+        let f := fun (i : Nat) => entry.names[i]?
+        entry := { entry with store := (atomsOf req).foldl (fun s a => match a.rename f with
+          | some b => s.add b | none => s) entry.store }
     -- The step.
     let some ms := mentioned 0 node.expression | return (.notHandled s!"term at node {l}: {(reprStr node.expression).take 200}", counts, answers)
     let ms := (keepFirst {} ms).2.toList
@@ -917,7 +920,7 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
       | _, _ =>
         result := fresh
         fresh := fresh + 1
-      if l == debugNode && debugNode != 0 && preserving then
+      if l == debugNode && debugNode == 999999999 && preserving then
         return (.refused s!"debug {l}: preserving {preserving} effect {match effect with | .ordinary _ => "ordinary" | .allocated _ => "allocated" | .created _ => "created" | .pure _ => "pure" | .reading _ => "reading" | _ => "other"} out {reprStr out.indices}", counts, answers)
       stepK := kE
       stepOut := out
@@ -1064,7 +1067,36 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
       | .branchBind y m => [(y, true, some (.boolean true), none, false), (m, true, some (.boolean false), none, false)]
       | .tagBind tg y m => [(y, true, some (.tag tg true), none, false), (m, true, some (.tag tg false), none, false)]) ++
       node.handler.toList.map fun t => (t, true, none, none, true)
+    -- The edges' contexts as the step's yields refine them (`produceNodeAt`),
+    -- read where a target's assertion is checked on the edge.
+    if yields.isNone && edges.any (fun (t, _) => !isHead[t.label]! && (stated[t.label]!).isSome) then
+      let e := stepDeriv.getD (.node ⟨c.context, node.expression, c.type⟩ .var [])
+      let (ys, a) := (nodeYields G images pool c.context [] e stepOut stepK) answers
+      answers := a
+      yields := some ys
+    let ysAll := (yields.getD []).flatMap fun y => match entry.names[y.target]? with
+      | some nm => (entry.names.zipIdx.filter (·.1 == nm)).map fun (_, j) => { y with target := j }
+      | none => [y]
+    let outAll := KnowledgeExpand.expandLinks (HeapKnowledge.setsCtx (HeapKnowledge.typeSets G c.context) 1) stepOut
+    let refinedΓ := fun (first : Bool) =>
+      let pushedRefine := fun facts => PromiseCalls.refineBy G (c.type :: c.context)
+        (PromiseCalls.aliasFacts outAll.links facts 1) 0
+      let keptRefine := fun facts => PromiseCalls.refineBy G c.context
+        (PromiseCalls.aliasFacts (HeapKnowledge.dropResult outAll).links facts 0) 0
+      let unconditional := PromiseCalls.yieldFacts ysAll false
+      let conditional := PromiseCalls.yieldFacts ysAll true
+      match node.continuation with
+      | .bind _ => pushedRefine unconditional
+      | .effect _ => keptRefine unconditional
+      | .branch .. => keptRefine (if first then conditional else unconditional)
+      | .branchBind .. => pushedRefine (if first then conditional else PromiseCalls.yieldFacts ysAll false true)
+      | .tagBind tg .. => pushedRefine (if first then PromiseCalls.yieldFacts ysAll (ControlFlow.truthyBoolean G tg c.type)
+          else unconditional)
+      | .ret => c.context
+    let mut edgeIndex := 0
     for (t, pushed, observed, promote, isHandler) in edges do
+      let first := edgeIndex == 0
+      edgeIndex := edgeIndex + 1
       let some tc := claimed[t.label]? | return (.refused s!"edge from {l}", counts, answers)
       let Γ := if isHandler then thrownTy.getD [] :: c.context else if pushed then c.type :: c.context else c.context
       let names := if isHandler then thrown :: entry.names else if pushed then pushedNames else entry.names
@@ -1212,6 +1244,24 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
           let missing := (atomsOf req).filter fun a => !KnowledgeExpand.checkIn ctx src (ofAtoms [a] tc.context.length) t.mapping
           return (.refused s!"edge from node {l} into statement entry {t.label}: lacks {(reprStr (missing.map fun a => match a with | .index x => reprStr x | .cell f => s!"cell {f.slot}" | .value f => s!"value {f.slot}" | .link g => s!"link {g.cell} {g.value}" | .elem e => s!"elems {e.slot}" | .sep f => s!"sep {f.slot}")).take 1500}", counts, answers)
       else
+        -- A target's assertion established on the edge, as the edge test
+        -- into a statement entry establishes it (`checkTargetResult`): over the
+        -- edge's facts, its context as the yields refine it, with the facts
+        -- that context's types state of the cells and links it reads.
+        if let some req := stated[t.label]! then
+          if !vacuous then
+            let Γe := if isHandler then Γ else refinedΓ first
+            let slots := (atomsOf req).flatMap Atom.names
+            let srcSlots := slots.map (PointClaims.slot t.mapping)
+            let (k, _, _) := materialize { names, store := edgeStore } (if pushed then width + 1 else width) srcSlots false
+            let k := match observed with
+              | some o => HeapKnowledge.observeTyped G Γe (ControlFlow.withTypedCells G Γe req t.mapping k) 0 o
+              | none => HeapKnowledge.withTypedLinks G Γe (ControlFlow.withTypedCells G Γe req t.mapping k)
+            counts := { counts with queries := counts.queries + 1, queryAtoms := counts.queryAtoms + (atomsOf k).length }
+            if !KnowledgeExpand.checkIn (KnowledgeExpand.ctxOf G tc.context) k req t.mapping then
+              let missing := (atomsOf req).filter fun a =>
+                !KnowledgeExpand.checkIn (KnowledgeExpand.ctxOf G tc.context) k (ofAtoms [a] tc.context.length) t.mapping
+              return (.refused s!"edge from node {l} into node {t.label}: its assertion lacks {(missing.map fun a => match a with | .index x => (reprStr x.fact).take 80 | .cell f => s!"cell {f.slot}.{f.field}" | .value f => s!"value {f.slot}" | .link g => s!"link {g.cell}.{g.field}={g.value}" | .elem e => s!"elems {e.slot}" | .sep f => s!"sep {f.slot}").take 4}", counts, answers)
         let targetNames := timedKind "edge names" fun _ => mapNames names t.mapping
         -- The names the edge drops leave the store.
         let gone := droppedBy names t.mapping targetNames ++
