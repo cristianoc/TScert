@@ -1558,7 +1558,11 @@ For each product, the producer gathers every record operand before choosing
 fields. For a key $`k`$, let $`I_k`$ index the operands stating it, with read
 type $`T_i`$ and optionality $`o_i`$ ($`1`$ means optional). If any operand
 states $`k`$ as a method, $`k`$ is a method of the arm, the copy does not
-state it, and no field is selected for it. Otherwise a candidate must itself
+state it, and no field is selected for it; Lean's reading of the
+intersection states no field at $`k`$ either
+([methods met with fields](SOURCE-CONTRACTS.md#methods-met-with-fields)), so a
+copy claimed with $`k`$ is refused (`invalid-spread-intersection-method` and
+its forged-claim control in `pipeline/test.mts`). Otherwise a candidate must itself
 supply the required presence. The proposal selects an existing field
 $`j\in I_k`$ satisfying
 

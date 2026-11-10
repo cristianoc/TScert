@@ -3868,6 +3868,38 @@ control(async (): Promise<void> => {
   process.stdout.write("spread of an intersection: a copy claimed at a field no operand's field gives refused at the merge, in search and in checking\n");
 });
 control(async (): Promise<void> => {
+  // A key one operand of an intersection states as a method and another as
+  // a field is a method of the meet, as Lean reads the annotation, so no
+  // field of the operand gives it. The copy of `c: Counter & { next: () =>
+  // number; tag: string }` claimed at the result `{ next: () => number;
+  // tag: string }`, bypassing the producer, which leaves `next` out, is
+  // refused at the copy, in search and in checking.
+  const good = run("invalid-spread-intersection-method");
+  const source = readFileSync(sourceKey(good), "utf8");
+  const claims = readClaims(good);
+  const fn = must(claims.functions.find(f => f.name === "copied"), "copied function");
+  const start = source.indexOf("{ ...c }");
+  const copy = must(fn.expressions.find(e => e.pos[0] === start && e.pos[1] === start + "{ ...c }".length),
+    "copy claim");
+  copy.type = fn.result;
+  const forged = writeClaims(good, "spread-method-forged", claims);
+  const evidence = join(good, "spread-method-forged-evidence.json");
+  const searched = tested(verifierCall(verifier, ["--produce-unit", join(good, "fragment.json"), forged,
+    join(good, "search-qualified.json"), evidence, "12"]));
+  assert.ifError(searched.error);
+  assert.equal(searched.status, 1, searched.stdout + searched.stderr);
+  assert.match(searched.stdout + searched.stderr, new RegExp(`\\[${start},${start + "{ ...c }".length}\\)`));
+  // The search's evidence, and the run's, checked against the forged claims.
+  for (const written of [evidence, join(good, "evidence.json")]) {
+    const checked = tested(verifierCall(verifier, ["--check-units", join(good, "fragment.json"), forged, sourceKey(good),
+      written]));
+    assert.ifError(checked.error);
+    assert.equal(checked.status, 1, checked.stdout + checked.stderr);
+    assert.match(checked.stdout, /"refusal":[^\n]*"unit":"copied@\d+"/);
+  }
+  process.stdout.write("spread of an intersection: a copy claimed with a key one operand states as a method refused, in search and in checking\n");
+});
+control(async (): Promise<void> => {
   // An open spread arm may carry a name. An optional never field in the
   // copy's claim needs evidence that neither operand can supply that key.
   const good = run("blocker-prep-optional-part-spread");

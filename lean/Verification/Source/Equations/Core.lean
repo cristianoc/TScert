@@ -170,7 +170,8 @@ partial def lowerArm (ctx : Ctx) (term : Json) : M (Union × Bool) := do
 /-- The intersection of unions (§3.3), as an arm of the union it is in: the
 meet labels over their product, unless the operands are ground (`ground`)
 and their rows clause rows: then, where TypeScript reads a record met with a
-function as one callable, that row is a head of its own. An arm with no value
+function as one callable, or a key one operand states as a method as a method
+of the meet (`sourceMeetLists`), that row is a head of its own. An arm with no value
 is empty here; its union decides whether the type has a value
 (`unionOfArms`). -/
 partial def meetOf (parts : List Union) (ground : Bool) : M Union := do
@@ -182,7 +183,16 @@ partial def meetOf (parts : List Union) (ground : Bool) : M Union := do
       let met ← (rows.dropLast.foldrM sourceMeetLists last : Except String _)
       if met.isEmpty then return []
       let model := rows.dropLast.foldr meetLists last
-      if met != model then return [← EquationLowering.ground "callable" met]
+      if met != model then
+        let callable := met.any fun c => match c with | .callable .. => true | _ => false
+        return [← EquationLowering.ground (if callable then "callable" else "intersection") met]
+  else if let some rows ← groundRows parts then
+    -- A meet mentioning a type parameter is the model's, read at each
+    -- instance; one whose operands state a key both as a method and as a
+    -- field would own that key there.
+    let some last := rows.getLast? | throw "empty intersection"
+    let model := rows.dropLast.foldr meetLists last
+    if model.any fun c => methodKeysOnly c != c then throw methodFieldMeet
   return meetUnions parts
 
 /-- The clauses of ground operands whose rows are clause rows, when every

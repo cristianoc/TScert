@@ -915,6 +915,41 @@ over schemes. A construct scheme has no instance rule: a value of a generic
 constructor type is stored and compared, not constructed
 ([model limits](SOURCE-FRAGMENT.md#model-limits)).
 
+### Methods met with fields
+
+A class's methods are its prototype's, and a method member of a record is a
+host-relative member ([method members](SOURCE-MODEL.md#method-members-are-host-relative)):
+the object may hold it on its prototype. A key one operand of an
+intersection states as a method and another as a field, a view or an
+optional field is therefore a method of the meet, as the class operand's
+methods are, and the meet states no field at that key (`methodKeysOnly`,
+applied by `sourceMeetLists` to each record, dictionary and callable clause
+the operands meet in):
+
+```math
+\frac{⟦A⟧\ni\mathsf{Ref}(\varphi;\mu)\quad ⟦B⟧\ni\mathsf{Ref}(\psi;\nu)\quad
+      K=\mathrm{keys}(\mu\nu)}
+     {⟦A\mathbin{\&}B⟧\ni\mathsf{Ref}((\varphi\psi)\setminus K;\mu\nu)}\ \textsf{method-meet}
+```
+
+with $`\varphi,\psi`$ the operands' fields, views and optional fields and
+$`\mu,\nu`$ their methods. Every reader of the meet's own keys then reads
+the method: a spread does not copy it, `in`, an own-key bound and a key
+listing do not count it as owned, and a call of it is checked at the method's
+signatures. The field's own signature is not added to the method: TypeScript
+admits a method where a function-typed field is expected with its parameters
+compared bivariantly, so the field's parameter types do not bound what the
+method accepts. The meet is a row of its own where it differs from the
+model's (`meetOf`), so a producer's `{"meet": ...}` label is read the same
+way. An intersection mentioning a type parameter is the model's meet at each
+instance, which owns such a field; one whose operands' rows show a key both
+as a method and as a field is refused (`invalid-spread-intersection-method-generic`,
+executed under Node). An operand that is a type parameter itself states no
+member until its instance: `T & { get: () => number }` reads `get` as an own
+field, the requirement on external code that a method is never supplied where
+a function-typed field is expected
+([method members](SOURCE-MODEL.md#method-members-are-host-relative)).
+
 ### Binders met with ground types
 
 An intersection of a value binder with ground types, `V & DepSafe`, is a
@@ -944,7 +979,9 @@ operands' unions, one meet label per choice; on ground operands:
 where $`\mathsf{meet}`$ is the operands' clauses met pairwise and folded from
 the right: `meetLists` ([conjunction](POSITIVE-TYPES.md#conjunction-and-normalization)),
 except that a record of invariant fields met with a function type is the
-callable carrying them (`sourceMeetLists`, [below](#intersections-of-functions-and-records)),
+callable carrying them (`sourceMeetLists`, [below](#intersections-of-functions-and-records))
+and that a key one operand states as a method is a method of the meet
+([methods met with fields](#methods-met-with-fields)),
 and any other intersection (a scheme, a union holding a binder) is refused
 rather than an operand being dropped. A function's own annotation lowers its
 intersections so, each binder read as the row the unit

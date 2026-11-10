@@ -734,6 +734,11 @@ assert.equal(runExample("invalid-named-implicit-index", 'typeof asDictionary({ a
   assert.equal(runExample("invalid-spread-intersection-method",
     `typeof copied(Object.assign(new Counter(), { tag: "t" })).next`), "undefined",
     "invalid-spread-intersection-method: the copy returned with a `next` function has none");
+  // A value of `Box<T> & { get: () => T; tag: string }` whose `get` is its
+  // prototype's: the copy has none.
+  assert.equal(runExample("invalid-spread-intersection-method-generic",
+    `typeof copied(Object.assign(new Box(1), { tag: "t" })).get`), "undefined",
+    "invalid-spread-intersection-method-generic: the copy returned with a `get` function has none");
   // The pattern steps a string by code point: the first is the whole emoji.
   assert.equal(runExample("invalid-for-of-pattern-string", `firsts(["\\u{1F600}b"])`), "\u{1F600}",
     "invalid-for-of-pattern-string: the pattern binds a code point, not the first code unit");
