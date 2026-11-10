@@ -369,9 +369,15 @@ claims document (`SourceClaimJson.fragmentPlans`, `Claims/FragmentFront.lean`).
   point holding its node's sites' expressions and its statement's bindings.
   A module constant is read at its initializer's type in the
   initialization's walk with its annotation, a module cell at that walk's
-  storage contract (`Front.withInitTypes`). A call of a generic module value
-  is instantiated at the binders' types the walk gives it
-  (`instancesFromWalk`); a binder a resolution qualifies is not handled.
+  storage contract (`Front.withInitTypes`). A call of a generic module value,
+  a generic class's construction and a `for...of`'s iteration intrinsic are
+  instantiated at the binders' types the walk gives them
+  (`instancesFromWalk`); a binder a resolution qualifies is not handled. A
+  function literal passed as an actual is stated at its parameter's
+  signature taking the most parameters, at the footprint keeping values and
+  stores where the walk sees it change nothing (a call's throw a handler in
+  it catches counted where the call's footprint does not bound its throws),
+  else at the ordinary effect.
 - **Loop heads.** A loop head's facts beyond its written assertion are the
   given file's `headFacts` (and `headFactsOfCodes` for each code request),
   each at the statement entries that start where the given one does; mode 6
@@ -381,7 +387,8 @@ claims document (`SourceClaimJson.fragmentPlans`, `Claims/FragmentFront.lean`).
   names a file of footprints the file's functions and imports would write
   (`{"functions": […], "imports": […]}`, each a name, footprint, on-throw
   flag and result footprint), read apart from the source; the bytes read
-  count it. `dev/single-pass-standins.mts` writes one from a claims
+  count it. A stand-in states what callers read of the function; its own
+  unit is checked at the footprint its declaration writes. `dev/single-pass-standins.mts` writes one from a claims
   document, the producer's proposals standing in for the annotations.
 
 Measured 2026-11-10 at the commit adding this section (perf gate, CPU of
