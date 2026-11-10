@@ -1,3 +1,6 @@
+import Std.Data.HashMap
+import Std.Data.HashSet
+
 /-! # Linear certificates over the integers
 
 The entailment steps of the linear atoms (RFC #115 §4.2): a linear atom
@@ -20,6 +23,40 @@ namespace Verification.Linear
 a decidable order, which `normalize` sorts by. -/
 variable {V W : Type}
 
+
+/-- `List.eraseDups` by a hash set of the elements kept: each element once, at
+its first occurrence, in time linear in the list (`dedupHash_eq`). -/
+def dedupHash {α : Type} [BEq α] [Hashable α] (l : List α) : List α := go l {} []
+where
+  go : List α → Std.HashSet α → List α → List α
+  | [], _, acc => acc.reverse
+  | a :: l, s, acc => if s.contains a then go l s acc else go l (s.insert a) (a :: acc)
+
+theorem dedupHash_go {α : Type} [BEq α] [Hashable α] [LawfulBEq α] :
+    ∀ (l : List α) (s : Std.HashSet α) (acc : List α), (∀ x, s.contains x = acc.any (x == ·)) →
+      dedupHash.go l s acc = List.eraseDupsBy.loop (· == ·) l acc := by
+  intro l
+  induction l with
+  | nil => intro s acc _; rfl
+  | cons a l ih =>
+    intro s acc hs
+    simp only [dedupHash.go, List.eraseDupsBy.loop, hs a]
+    cases acc.any (a == ·)
+    · simp only [Bool.false_eq_true, ite_false]
+      refine ih _ _ fun x => ?_
+      rw [Std.HashSet.contains_insert, hs x]
+      simp only [List.any_cons]
+      cases hx : x == a
+      · have hne : (a == x) = false := by
+          rw [beq_eq_false_iff_ne] at hx ⊢; exact fun h => hx h.symm
+        simp [hne]
+      · simp_all
+    · simp only [ite_true]
+      exact ih _ _ hs
+
+/-- **Hash deduplication is `eraseDups`.** -/
+theorem dedupHash_eq {α : Type} [BEq α] [Hashable α] [LawfulBEq α] (l : List α) : dedupHash l = l.eraseDups :=
+  dedupHash_go l {} [] fun x => by simp
 
 /-- A linear form: coefficients by variable. Two forms with the same value at
 every valuation may differ as lists; `normalize` gives one representative. -/
@@ -428,52 +465,66 @@ def eliminate [DecidableEq V] [LT V] [DecidableRel (α := V) (· < ·)] (x : V) 
 def gcdForm (F : Form V) : Nat := F.foldl (fun g (_, c) => Nat.gcd g c.natAbs) 0
 
 /-- The tightening and strict steps of the held facts, each concluding a fact
-appended after them. -/
-def preSteps [DecidableEq V] [LT V] [DecidableRel (α := V) (· < ·)] (known : List (Fact V)) : List (Step V) × List (Fact V) := Id.run do
-  let mut steps : List (Step V) := []
-  let mut facts := known
-  for j in List.range known.length do
-    match known[j]? with
-    | some (.le F d) =>
+appended after them: for each held `≤` fact in order, its tightening, then a
+strict step with each held `≠` fact of the same form and bound. -/
+def preSteps [DecidableEq V] [Hashable V] [LT V] [DecidableRel (α := V) (· < ·)] (known : List (Fact V)) :
+    List (Step V) × List (Fact V) := Id.run do
+  let arr := known.toArray
+  let mut nes : Std.HashMap (Form V × Int) (Array Nat) := {}
+  for h : i in [0:arr.size] do
+    match arr[i] with
+    | .ne F d => nes := nes.alter (F, d) fun | some a => some (a.push i) | none => some #[i]
+    | .le _ _ => pure ()
+  let mut steps : Array (Step V) := #[]
+  let mut extra : Array (Fact V) := #[]
+  for h : j in [0:arr.size] do
+    match arr[j] with
+    | .le F d =>
       let g := gcdForm (normalize F)
       if g > 1 then
         let c := (normalize F).map fun (x, a) => (x, a / (g : Int))
-        steps := steps ++ [.combine [(j, 1)] g c (d / (g : Int))]
-        facts := facts ++ [.le c (d / (g : Int))]
-      for i in List.range known.length do
-        match known[i]? with
-        | some (.ne F' d') =>
-          if F = F' ∧ d = d' then
-            steps := steps ++ [.strict j i]
-            facts := facts ++ [.le F (d - 1)]
-        | _ => pure ()
-    | _ => pure ()
-  return (steps, facts)
+        steps := steps.push (.combine [(j, 1)] g c (d / (g : Int)))
+        extra := extra.push (.le c (d / (g : Int)))
+      for i in nes.getD (F, d) #[] do
+        steps := steps.push (.strict j i)
+        extra := extra.push (.le F (d - 1))
+    | .ne _ _ => pure ()
+  return (steps.toList, known ++ extra.toList)
 
-/-- The variables of the rows, each once. -/
-def rowVars [DecidableEq V] (rows : List (Row V)) : List V :=
-  (rows.flatMap fun r => r.form.map (·.1)).eraseDups
+/-- The number of distinct variables of the rows. -/
+def rowVarCount [BEq V] [Hashable V] (rows : List (Row V)) : Nat :=
+  (rows.foldl (fun (s : Std.HashSet V) r => r.form.foldl (fun s (x, _) => s.insert x) s) {}).size
 
 /-- The variable of the rows whose elimination combines the fewest pairs,
-the first such: Fourier–Motzkin's usual order, keeping the rows few. -/
-def cheapestVar [DecidableEq V] (rows : List (Row V)) : Option V :=
-  let cost := fun x =>
-    (rows.filter fun r => 0 < r.form.coeff x).length * (rows.filter fun r => r.form.coeff x < 0).length
-  ((rowVars rows).foldl (fun best x => match best with
-    | some (y, c) => if cost x < c then some (x, cost x) else some (y, c)
-    | none => some (x, cost x)) none).map (·.1)
+the first such in order of first occurrence: Fourier–Motzkin's usual order,
+keeping the rows few. The rows' forms are normal, each variable once. -/
+def cheapestVar [BEq V] [Hashable V] (rows : List (Row V)) : Option V := Id.run do
+  let mut order : Array V := #[]
+  let mut signs : Std.HashMap V (Nat × Nat) := {}
+  for r in rows do
+    for (x, c) in r.form do
+      if !signs.contains x then order := order.push x
+      let (p, n) := signs.getD x (0, 0)
+      signs := signs.insert x (if 0 < c then (p + 1, n) else if c < 0 then (p, n + 1) else (p, n))
+  let mut best : Option (V × Nat) := none
+  for x in order do
+    let (p, n) := signs.getD x (0, 0)
+    let cost := p * n
+    match best with
+    | some (_, c) => if cost < c then best := some (x, cost)
+    | none => best := some (x, cost)
+  return best.map (·.1)
 
 /-- The steps establishing `c·x ≤ d` from the held facts, where the search
 finds them, within `limit` rows at every stage. -/
-def prove [DecidableEq V] [LT V] [DecidableRel (α := V) (· < ·)] (known : List (Fact V)) (c : Form V) (d : Int) (limit : Nat := 400) : Option (List (Step V)) := Id.run do
+def prove [DecidableEq V] [Hashable V] [LT V] [DecidableRel (α := V) (· < ·)] (known : List (Fact V)) (c : Form V) (d : Int) (limit : Nat := 400) : Option (List (Step V)) := Id.run do
   let (pre, facts) := preSteps known
-  let rows0 : List (Row V) := (List.range facts.length).filterMap fun j =>
-    match (facts[j]? : Option (Fact V)) with
-    | some (.le F b) => some { form := normalize F, bound := b, mult := [(j, 1)], goal := 0 }
-    | _ => none
+  let rows0 : List (Row V) := facts.zipIdx.filterMap fun
+    | (.le F b, j) => some { form := normalize F, bound := b, mult := [(j, 1)], goal := 0 }
+    | (.ne _ _, _) => none
   let negGoal : Row V := { form := normalize (c.scale (-1)), bound := -d - 1, mult := [], goal := 1 }
   let mut rows := negGoal :: rows0
-  for _ in List.range (rowVars rows).length do
+  for _ in [0:rowVarCount rows] do
     if rows.any fun r => r.form.isEmpty && r.bound < 0 then break
     match cheapestVar rows with
     | some x =>
@@ -512,13 +563,12 @@ theorem relevant_mem [DecidableEq V] {known : List (Fact V)} {goal F : Fact V}
   · exact h
   · exact (List.mem_filter.mp h).1
 
-/-- Whether the held facts entail `goal`, by a certificate `check` accepts,
-searched over the facts connected to the goal. -/
-def entailsDirect [DecidableEq V] [LT V] [DecidableRel (α := V) (· < ·)] (known : List (Fact V)) (goal : Fact V) : Bool :=
-  known.contains goal ||
+/-- Whether the facts `near` entail `goal`: it is one of them, or a
+certificate the search finds over them `check` accepts. -/
+def searchIn [DecidableEq V] [Hashable V] [LT V] [DecidableRel (α := V) (· < ·)] (near : List (Fact V)) (goal : Fact V) : Bool :=
+  near.contains goal ||
   match goal with
   | .le c d =>
-    let near := relevant known goal
     match prove near c d with
     | some steps => match check near steps with
       | some out => out.contains goal
@@ -526,37 +576,46 @@ def entailsDirect [DecidableEq V] [LT V] [DecidableRel (α := V) (· < ·)] (kno
     | none => false
   | .ne _ _ => false
 
-theorem entailsDirect_sound [DecidableEq V] [LT V] [DecidableRel (α := V) (· < ·)] {v : V → Int} {known : List (Fact V)} {goal : Fact V} (h : entailsDirect known goal = true)
-    (hk : ∀ F ∈ known, F.Holds v) : goal.Holds v := by
-  unfold entailsDirect at h
+theorem searchIn_sound [DecidableEq V] [Hashable V] [LT V] [DecidableRel (α := V) (· < ·)] {v : V → Int} {near : List (Fact V)}
+    {goal : Fact V} (h : searchIn near goal = true) (hk : ∀ F ∈ near, F.Holds v) : goal.Holds v := by
+  unfold searchIn at h
   rcases Bool.or_eq_true_iff.mp h with h | h
   · exact hk goal (List.contains_iff_mem.mp h)
   · cases goal with
     | ne _ _ => cases h
     | le c d =>
       simp only at h
-      have hn : ∀ F ∈ relevant known (.le c d), F.Holds v := by
-        intro F hF
-        exact hk F (relevant_mem hF)
       split at h
       · split at h
         · rename_i out hc
-          exact check_sound hn hc _ (List.contains_iff_mem.mp h)
+          exact check_sound hk hc _ (List.contains_iff_mem.mp h)
         · cases h
       · cases h
 
-/-- The held facts with the strict bounds their inequalities give: for each
-`c·x ≠ d`, the bound `c·x ≤ d - 1` where the facts entail `c·x ≤ d`, and
-`-c·x ≤ -d - 1` where they entail `-c·x ≤ -d` (`entailsDirect`). -/
-def strengthen [DecidableEq V] [LT V] [DecidableRel (α := V) (· < ·)] (known : List (Fact V)) : List (Fact V) :=
-  known ++ known.flatMap fun
+/-- Whether the held facts entail `goal`, by a certificate `check` accepts,
+searched over the facts connected to the goal. -/
+def entailsDirect [DecidableEq V] [Hashable V] [LT V] [DecidableRel (α := V) (· < ·)] (known : List (Fact V)) (goal : Fact V) : Bool :=
+  searchIn (relevant known goal) goal
+
+theorem entailsDirect_sound [DecidableEq V] [Hashable V] [LT V] [DecidableRel (α := V) (· < ·)] {v : V → Int} {known : List (Fact V)} {goal : Fact V} (h : entailsDirect known goal = true)
+    (hk : ∀ F ∈ known, F.Holds v) : goal.Holds v :=
+  searchIn_sound h fun _ hF => hk _ (relevant_mem hF)
+
+/-- The facts `near` with the strict bounds their inequalities give: for each
+`c·x ≠ d`, the bound `c·x ≤ d - 1` where the facts `nearOf` gives for it
+entail `c·x ≤ d`, and `-c·x ≤ -d - 1` where they entail `-c·x ≤ -d`
+(`searchIn`). -/
+def strengthenWith [DecidableEq V] [Hashable V] [LT V] [DecidableRel (α := V) (· < ·)] (nearOf : Fact V → List (Fact V))
+    (near : List (Fact V)) : List (Fact V) :=
+  near ++ near.flatMap fun
     | .ne F d =>
-      (if entailsDirect known (.le F d) then [.le F (d - 1)] else []) ++
-      (if entailsDirect known (.le (F.scale (-1)) (-d)) then [.le (F.scale (-1)) (-d - 1)] else [])
+      (if searchIn (nearOf (.le F d)) (.le F d) then [.le F (d - 1)] else []) ++
+      (if searchIn (nearOf (.le (F.scale (-1)) (-d))) (.le (F.scale (-1)) (-d)) then [.le (F.scale (-1)) (-d - 1)] else [])
     | .le _ _ => []
 
-theorem strengthen_holds [DecidableEq V] [LT V] [DecidableRel (α := V) (· < ·)] {v : V → Int} {known : List (Fact V)}
-    (hk : ∀ F ∈ known, F.Holds v) : ∀ F ∈ strengthen known, F.Holds v := by
+theorem strengthenWith_holds [DecidableEq V] [Hashable V] [LT V] [DecidableRel (α := V) (· < ·)] {v : V → Int}
+    {nearOf : Fact V → List (Fact V)} {near : List (Fact V)}
+    (hn : ∀ G, ∀ F ∈ nearOf G, F.Holds v) (hk : ∀ F ∈ near, F.Holds v) : ∀ F ∈ strengthenWith nearOf near, F.Holds v := by
   intro G hG
   rcases List.mem_append.mp hG with hG | hG
   · exact hk G hG
@@ -569,45 +628,256 @@ theorem strengthen_holds [DecidableEq V] [LT V] [DecidableRel (α := V) (· < ·
       · split at hG
         · rename_i he
           simp only [List.mem_singleton] at hG; subst hG
-          have := entailsDirect_sound he hk
+          have := searchIn_sound he (hn _)
           show Form.eval v F ≤ d - 1
           simp only [Fact.Holds] at this; omega
         · cases hG
       · split at hG
         · rename_i he
           simp only [List.mem_singleton] at hG; subst hG
-          have := entailsDirect_sound he hk
+          have := searchIn_sound he (hn _)
           show Form.eval v (F.scale (-1)) ≤ -d - 1
           simp only [Fact.Holds, Form.eval_scale] at this ⊢; omega
         · cases hG
 
-/-- Whether the held facts entail `goal`: directly (`entailsDirect`), or
-with the strict bounds their inequalities give (`strengthen`). -/
-def entails [DecidableEq V] [LT V] [DecidableRel (α := V) (· < ·)] (known : List (Fact V)) (goal : Fact V) : Bool :=
-  entailsDirect known goal ||
-    (known.any (fun | .ne _ _ => true | .le _ _ => false) && entailsDirect (strengthen known) goal)
+/-- The held facts with the strict bounds their inequalities give
+(`strengthenWith`), each searched over the facts connected to it. -/
+def strengthen [DecidableEq V] [Hashable V] [LT V] [DecidableRel (α := V) (· < ·)] (known : List (Fact V)) : List (Fact V) :=
+  strengthenWith (relevant known) known
 
-/-- **Entailment is sound.** -/
-theorem entails_sound [DecidableEq V] [LT V] [DecidableRel (α := V) (· < ·)] {v : V → Int} {known : List (Fact V)} {goal : Fact V} (h : entails known goal = true)
-    (hk : ∀ F ∈ known, F.Holds v) : goal.Holds v := by
+theorem strengthen_holds [DecidableEq V] [Hashable V] [LT V] [DecidableRel (α := V) (· < ·)] {v : V → Int} {known : List (Fact V)}
+    (hk : ∀ F ∈ known, F.Holds v) : ∀ F ∈ strengthen known, F.Holds v :=
+  strengthenWith_holds (fun _ _ hF => hk _ (relevant_mem hF)) hk
+
+/-! ## Prepared facts
+
+A knowledge's facts prepared once for every query against it: each fact once,
+in order of first occurrence, the held ones first and the extra ones after
+(`base` counts the held ones); for each normal form, the position of its `≤`
+fact of least bound; for each variable, the positions of the facts naming
+it. A query first tries the direct answer (`Known.direct`), then searches
+over the facts connected to the goal (`Known.near`). The tables only propose
+positions: each answer is decided on the facts at them, so soundness reads
+nothing of the tables but that every fact held holds. -/
+
+structure Known (V : Type) [DecidableEq V] [Hashable V] where
+  facts : Array (Fact V) := #[]
+  base : Nat := 0
+  pos : Std.HashMap (Fact V) Nat := {}
+  leForm : Std.HashMap (Form V) Nat := {}
+  byVar : Std.HashMap V (Array Nat) := {}
+
+namespace Known
+variable [DecidableEq V] [Hashable V] [LT V] [DecidableRel (α := V) (· < ·)]
+
+/-- Every prepared fact holds. -/
+def Holds (K : Known V) (v : V → Int) : Prop := ∀ F ∈ K.facts, F.Holds v
+
+/-- The facts with `F` added, where it is new. -/
+def add (K : Known V) (F : Fact V) : Known V :=
+  if K.pos.contains F then K else
+  let ⟨facts, base, pos, leForm, byVar⟩ := K
+  let i := facts.size
+  let leForm := match F with
+    | .le G b =>
+      let n := normalize G
+      match leForm[n]? with
+      | some j => match facts[j]? with
+        | some (.le _ b') => if b < b' then leForm.insert n i else leForm
+        | _ => leForm.insert n i
+      | none => leForm.insert n i
+    | .ne _ _ => leForm
+  let byVar := F.vars.foldl (fun m x => m.alter x fun | some a => some (a.push i) | none => some #[i]) byVar
+  { facts := facts.push F, base, pos := pos.insert F i, leForm, byVar }
+
+theorem mem_add {K : Known V} {F G : Fact V} (h : G ∈ (K.add F).facts) : G ∈ K.facts ∨ G = F := by
+  unfold add at h
+  split at h
+  · exact .inl h
+  · simpa using Array.mem_push.mp h
+
+theorem mem_foldl_add : ∀ {l : List (Fact V)} {K : Known V} {G : Fact V}, G ∈ (l.foldl add K).facts → G ∈ K.facts ∨ G ∈ l := by
+  intro l
+  induction l with
+  | nil => intro K G h; exact .inl h
+  | cons F l ih =>
+    intro K G h
+    rcases ih h with h | h
+    · rcases mem_add h with h | h
+      · exact .inl h
+      · exact .inr (h ▸ List.mem_cons_self)
+    · exact .inr (List.mem_cons_of_mem _ h)
+
+/-- The facts `known`, then the facts `extra`, prepared. -/
+def build (known extra : List (Fact V)) : Known V :=
+  let K := known.foldl add {}
+  extra.foldl add { K with base := K.facts.size }
+
+theorem build_holds {v : V → Int} {known extra : List (Fact V)} (hk : ∀ F ∈ known, F.Holds v)
+    (he : ∀ F ∈ extra, F.Holds v) : (build known extra).Holds v := by
+  intro F hF
+  rcases mem_foldl_add hF with h | h
+  · rcases mem_foldl_add (l := known) (K := {}) h with h | h
+    · simp at h
+    · exact hk F h
+  · exact he F h
+
+/-- The prepared facts below position `lim` connected to the goal's
+variables, in order: those sharing a variable with the goal or with a fact
+already selected, found through the facts by variable. A goal naming no
+variable is searched over every fact below `lim`. -/
+def nearChosen (K : Known V) (lim : Nat) (goal : Fact V) : Array Bool :=
+  if goal.vars.isEmpty then Array.replicate lim true else Id.run do
+    let mut chosen := Array.replicate lim false
+    let mut seen : Std.HashSet V := {}
+    let mut queue : Array Nat := #[]
+    let mut vars := goal.vars
+    let mut head := 0
+    for _ in [0:lim + 1] do
+      for x in vars do
+        if !seen.contains x then
+          seen := seen.insert x
+          for i in K.byVar.getD x #[] do
+            if i < lim && !chosen[i]! then
+              chosen := chosen.set! i true
+              queue := queue.push i
+      if head < queue.size then
+        vars := match K.facts[queue[head]!]? with
+          | some F => F.vars
+          | none => []
+        head := head + 1
+      else break
+    return chosen
+
+@[inherit_doc nearChosen]
+def near (K : Known V) (lim : Nat) (goal : Fact V) : List (Fact V) :=
+  let chosen := K.nearChosen lim goal
+  (List.range lim).filterMap fun i => if chosen[i]?.getD false then K.facts[i]? else none
+
+omit [LT V] [DecidableRel (α := V) (· < ·)] in
+theorem near_mem {K : Known V} {lim : Nat} {goal F : Fact V} (h : F ∈ K.near lim goal) : F ∈ K.facts := by
+  unfold near at h
+  obtain ⟨i, -, hi⟩ := List.mem_filterMap.mp h
+  revert hi
+  split
+  · exact Array.mem_of_getElem?
+  · intro hi; cases hi
+
+/-- The direct answer: the goal `c·x ≤ d` with `c` of normal form empty and
+`0 ≤ d`; or a held `≤` fact of the goal's normal form with a bound at most
+`d`; or a `≠` goal held itself. -/
+def direct (K : Known V) (goal : Fact V) : Bool :=
+  match goal with
+  | .le c d =>
+    let n := normalize c
+    (n.isEmpty && decide (0 ≤ d)) ||
+    match K.leForm[n]? with
+    | some i => match K.facts[i]? with
+      | some (.le F b) => normalize F == n && decide (b ≤ d)
+      | _ => false
+    | none => false
+  | .ne _ _ => match K.pos[goal]? with
+    | some i => K.facts[i]? == some goal
+    | none => false
+
+theorem direct_sound {K : Known V} {v : V → Int} {goal : Fact V} (hK : K.Holds v) (h : K.direct goal = true) :
+    goal.Holds v := by
+  unfold direct at h
+  split at h
+  · rename_i c d
+    rcases Bool.or_eq_true_iff.mp h with h | h
+    · simp only [Bool.and_eq_true, List.isEmpty_iff, decide_eq_true_eq] at h
+      show Form.eval v c ≤ d
+      rw [← eval_normalize v c, h.1]
+      simpa [Form.eval] using h.2
+    · split at h
+      · split at h
+        · rename_i i F b hi
+          simp only [Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq] at h
+          have hF : Form.eval v F ≤ b := hK _ (Array.mem_of_getElem? hi)
+          show Form.eval v c ≤ d
+          rw [← eval_normalize v c, ← h.1, eval_normalize]
+          omega
+        · cases h
+      · cases h
+  · split at h
+    · rename_i i _
+      simp only [beq_iff_eq] at h
+      exact hK _ (Array.mem_of_getElem? h)
+    · cases h
+
+/-- Whether the facts `near` entail `goal`, alone or with the strict bounds
+their inequalities give, each searched over the facts `nearOf` gives. -/
+def entailsNear (nearOf : Fact V → List (Fact V)) (near : List (Fact V)) (goal : Fact V) : Bool :=
+  searchIn near goal ||
+    (near.any (fun | .ne _ _ => true | .le _ _ => false) && searchIn (strengthenWith nearOf near) goal)
+
+theorem entailsNear_sound {v : V → Int} {nearOf : Fact V → List (Fact V)} {near : List (Fact V)} {goal : Fact V}
+    (hn : ∀ G, ∀ F ∈ nearOf G, F.Holds v) (hk : ∀ F ∈ near, F.Holds v) (h : entailsNear nearOf near goal = true) :
+    goal.Holds v := by
+  unfold entailsNear at h
+  rcases Bool.or_eq_true_iff.mp h with h | h
+  · exact searchIn_sound h hk
+  · exact searchIn_sound (Bool.and_eq_true_iff.mp h).2 (strengthenWith_holds hn hk)
+
+/-- The search below position `lim`: over the facts connected to the goal,
+alone or strengthened, each disequality's bounds searched over the same facts
+where the goal names a variable (they are connected to it), over the facts
+connected to the bound otherwise. -/
+def entailsBelow (K : Known V) (lim : Nat) (near : List (Fact V)) (goal : Fact V) : Bool :=
+  entailsNear (if goal.vars.isEmpty then K.near lim else fun _ => near) near goal
+
+theorem entailsBelow_sound {K : Known V} {v : V → Int} {lim : Nat} {near : List (Fact V)} {goal : Fact V}
+    (hK : K.Holds v) (hk : ∀ F ∈ near, F.Holds v) (h : K.entailsBelow lim near goal = true) : goal.Holds v := by
+  unfold entailsBelow at h
+  refine entailsNear_sound ?_ hk h
+  split
+  · exact fun _ _ hF => hK _ (near_mem hF)
+  · exact fun _ => hk
+
+/-- Whether the prepared facts entail `goal`: directly (`direct`); or by a
+search over the held facts connected to it; or, where the extra facts add
+facts connected to it, by a search over all of those. -/
+def entails (K : Known V) (goal : Fact V) : Bool :=
+  K.direct goal ||
+    let near := K.near K.base goal
+    K.entailsBelow K.base near goal ||
+      (decide (K.base < K.facts.size) &&
+        let near' := K.near K.facts.size goal
+        near'.length != near.length && K.entailsBelow K.facts.size near' goal)
+
+/-- **Prepared entailment is sound.** -/
+theorem entails_sound {K : Known V} {v : V → Int} {goal : Fact V} (hK : K.Holds v) (h : K.entails goal = true) :
+    goal.Holds v := by
   unfold entails at h
   rcases Bool.or_eq_true_iff.mp h with h | h
-  · exact entailsDirect_sound h hk
-  · exact entailsDirect_sound (Bool.and_eq_true_iff.mp h).2 (strengthen_holds hk)
+  · exact direct_sound hK h
+  · rcases Bool.or_eq_true_iff.mp h with h | h
+    · exact entailsBelow_sound hK (fun _ hF => hK _ (near_mem hF)) h
+    · simp only [Bool.and_eq_true] at h
+      exact entailsBelow_sound hK (fun _ hF => hK _ (near_mem hF)) h.2.2
+
+end Known
+
+/-- Whether the held facts entail `goal` (`Known.entails`). -/
+def entails [DecidableEq V] [Hashable V] [LT V] [DecidableRel (α := V) (· < ·)] (known : List (Fact V)) (goal : Fact V) : Bool :=
+  (Known.build known []).entails goal
+
+/-- **Entailment is sound.** -/
+theorem entails_sound [DecidableEq V] [Hashable V] [LT V] [DecidableRel (α := V) (· < ·)] {v : V → Int} {known : List (Fact V)} {goal : Fact V} (h : entails known goal = true)
+    (hk : ∀ F ∈ known, F.Holds v) : goal.Holds v :=
+  Known.entails_sound (Known.build_holds hk (by simp)) h
 
 /-- Whether the held facts entail `goal`, or, where they alone do not, the
 held facts with `extra`: facts read only where needed, so the search over
 the held facts alone stays as small as it was. -/
-def entailsWith [DecidableEq V] [LT V] [DecidableRel (α := V) (· < ·)] (known extra : List (Fact V)) (goal : Fact V) : Bool :=
-  entails known goal || entails (known ++ extra) goal
+def entailsWith [DecidableEq V] [Hashable V] [LT V] [DecidableRel (α := V) (· < ·)] (known extra : List (Fact V)) (goal : Fact V) : Bool :=
+  (Known.build known extra).entails goal
 
-theorem entailsWith_sound [DecidableEq V] [LT V] [DecidableRel (α := V) (· < ·)] {v : V → Int} {known extra : List (Fact V)}
+theorem entailsWith_sound [DecidableEq V] [Hashable V] [LT V] [DecidableRel (α := V) (· < ·)] {v : V → Int} {known extra : List (Fact V)}
     {goal : Fact V} (h : entailsWith known extra goal = true)
-    (hk : ∀ F ∈ known, F.Holds v) (he : ∀ F ∈ extra, F.Holds v) : goal.Holds v := by
-  unfold entailsWith at h
-  rcases Bool.or_eq_true_iff.mp h with h | h
-  · exact entails_sound h hk
-  · exact entails_sound h fun F hF => (List.mem_append.mp hF).elim (hk F) (he F)
+    (hk : ∀ F ∈ known, F.Holds v) (he : ∀ F ∈ extra, F.Holds v) : goal.Holds v :=
+  Known.entails_sound (Known.build_holds hk he) h
 
 /-! ## Eliminating a variable
 
