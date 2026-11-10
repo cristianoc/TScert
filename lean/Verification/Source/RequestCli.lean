@@ -360,6 +360,45 @@ def checkUnitsFile (astPath claimsPath fileKey evidencePath : String) (names : O
         IO.println s!"accept: stateful source {fileKey}"
         return 0
 
+/-- Search and check a file's selected units over its one front
+(`SourceClaimJson.filePlans`) in one process: each group's evidence searched
+over the file's own store (`FilePlans.produceGroup`) and checked there
+(`SourceClaimJson.unitVerdict`), no evidence written. Each unit's verdict on
+a line, as `--check-units` prints it. -/
+def verifyUnitsFile (astPath claimsPath fileKey : String) (fuel : Nat) (names : Option String) (mode : Nat)
+    (budget : PositiveCertificates.SearchBudget := {}) : IO UInt32 := do
+  let ast ← readJson astPath
+  let claims ← readJson claimsPath
+  match do SourceClaimJson.filePlans (← ast) (← claims) fileKey budget with
+  | .error e => refuse e
+  | .ok f =>
+    let mut refused : Option String := none
+    for i in f.fr.selected (selection names) do
+      let unit := f.fr.unitId i
+      let members := (f.fr.group i).map f.fr.unitId
+      let verdict : Except String (List String) := match mode with
+        | 0 =>
+          let (evidence, refusal, _, _, _) := f.produceGroup fuel (f.fr.group i)
+          match refusal with
+          | some reason => .error reason
+          | none => SourceClaimJson.unitVerdict f budget unit evidence
+        | 1 => f.verifyGroup fuel (f.fr.group i) false
+        | _ => f.verifyGroup fuel (f.fr.group i) true
+      IO.println (match verdict with
+        | .ok deps => Json.mkObj [("unit", toJson unit), ("members", toJson members), ("accepted", toJson true),
+            ("depends", toJson deps)]
+        | .error reason => Json.mkObj [("unit", toJson unit), ("members", toJson members),
+            ("refusal", toJson reason)]).compress
+      if let .error reason := verdict then refused := refused.orElse fun _ => some reason
+    match f.extractionRefusal (selection names) with
+    | some reason => refuse reason
+    | none =>
+      match refused with
+      | some reason => refuse reason
+      | none =>
+        IO.println s!"accept: stateful source {fileKey}"
+        return 0
+
 /-- The module runs a document's claims plan (`SourceClaimJson.planImports`),
 one per line (`ModuleRun.wire`): each imported module's document restricted
 to the read closure of the functions read qualified of it, with its claims
