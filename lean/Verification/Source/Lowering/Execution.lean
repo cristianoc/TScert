@@ -787,7 +787,7 @@ it recorded for an inner chain does not denote an outer chain's binding. -/
       | _ => none
     match expanded with
     | some (x, newer) =>
-      if x.freeNames.all fun n => !newer.contains n && ((names scope).filter (· == n)).length ≤ 1 then x else e
+      if x.freeNames.all fun n => !newer.contains n && scope.countP (·.source.name == n) ≤ 1 then x else e
     | none => e
   | .not p e => .not p (executionPredicate G Γ scope origins e)
   | .shapeTest p tag eq e => .shapeTest p tag eq (executionPredicate G Γ scope origins e)

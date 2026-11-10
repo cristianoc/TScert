@@ -53,7 +53,7 @@ slots are introduced only after the operand supplying their type is checked. -/
     match resolve scope name with
     | some (i, .value) | some (i, .slot _) => pure (DirectProof.var Γ i A)
     | some (i, .cell contract reference) =>
-      if let some saved := (names scope).idxOf? (localSnapshotName name) then
+      if let some saved := nameIndex scope (localSnapshotName name) then
         let some R := Γ[saved]? | throw "internal saved-local slot mismatch"
         pure (DirectProof.var Γ saved R)
       else
@@ -318,7 +318,7 @@ slots are introduced only after the operand supplying their type is checked. -/
     let receiver := a
     let a ← throughBound Γ (← closureExpr recursive fc scope Γ a)
     let snapshot := match receiver with
-      | .var _ name => (readSnapshot name fld).bind (names scope).idxOf?
+      | .var _ name => (readSnapshot name fld).bind (nameIndex scope)
       | _ => none
     if let some i := snapshot then
       let some R := Γ[i]? | throw "internal saved-read slot mismatch"
@@ -878,9 +878,9 @@ slots are introduced only after the operand supplying their type is checked. -/
   -- derivation needed for the enclosing return contract.
   match e with
   | .read _ fld (.var _ name) =>
-    if (readSnapshot name fld).any (names scope).contains then return p else return plan
+    if (readSnapshot name fld).any (hasName scope) then return p else return plan
   | .var _ name =>
-    if (names scope).contains (localSnapshotName name) then return p else return plan
+    if hasName scope (localSnapshotName name) then return p else return plan
   | _ => return plan
 
 end LoweringExpression

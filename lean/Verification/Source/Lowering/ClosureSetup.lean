@@ -131,7 +131,7 @@ by subtyping; or a scheme row's variadic signatures. -/
     | throw "internal extraction error: a closure's code is a lambda's"
   let G := SourceTypes.graph (← table)
   let paramNames := params.map Prod.fst
-  if !distinct paramNames || paramNames.any (fun name => name == "" || name == "undefined" || (names scope).contains name) then
+  if !distinct paramNames || paramNames.any (fun name => name == "" || name == "undefined" || hasName scope name) then
     throw "shadowing or duplicate closure parameter is outside the fragment"
   -- An ordinary function's receiver is `this` in its body; an arrow's is
   -- anonymous, so its `this` is the one it captures. A class value's code
