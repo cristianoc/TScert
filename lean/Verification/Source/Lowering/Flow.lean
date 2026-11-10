@@ -159,10 +159,10 @@ private def reachablePoints (graph : SourceFlow.Graph) (id : Nat) : List String 
       let next ← successor next (binding :: scope)
       LoweringExecution.compileExpr recursive fc scope Γ e next
     | .returnHeld descriptor =>
-      let some i := (sources scope).idxOf? descriptor | throw "internal flow error: lost return"
+      let some i := sourceIndex scope descriptor | throw "internal flow error: lost return"
       emitAt node.source (.var i) .ret Γ (← returnClaim (Γ[i]?.getD R) R) "return-contract" (scope := scope)
     | .rethrow descriptor =>
-      let some i := (sources scope).idxOf? descriptor | throw "internal flow error: lost thrown value"
+      let some i := sourceIndex scope descriptor | throw "internal flow error: lost thrown value"
       emitAt node.source (.throw (.var i)) .ret Γ [] "rethrow" (scope := scope)
     | .discardThrow _ next =>
       let next ← successor next scope
@@ -327,7 +327,7 @@ private def reachablePoints (graph : SourceFlow.Graph) (id : Nat) : List String 
         (scope := held ⟨"",some iterable.span⟩ :: scope)
       LoweringExecution.compileExpr recursive fc scope Γ iterable start
     | .iteratorStep (.forOf pos name namePos _ _ _) descriptor element yes no =>
-      let some i := (sources scope).idxOf? descriptor | throw "internal flow error: lost iterator"
+      let some i := sourceIndex scope descriptor | throw "internal flow error: lost iterator"
       let N := Γ[i]?.getD []
       let T ← exprType fc (.var namePos name)
       let G := SourceTypes.graph (← table)
@@ -350,7 +350,7 @@ private def reachablePoints (graph : SourceFlow.Graph) (id : Nat) : List String 
     | _ => throw "internal flow error: malformed action"
   completeFlowEntry reserved target
   let facts ← entryFacts fc node.source.1 scope
-  let separation := separationFacts (SourceTypes.graph (← table)) scope Γ
+  let separation ← separationAt scope Γ
   let links ← witnessLinks fc node.source.1 scope
   -- A bound: the index binding's value is an array index at most the length
   -- of the array binding's store, below it where strict (PROGRAM-TYPING.md,

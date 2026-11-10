@@ -113,7 +113,7 @@ did not mention grow it, and the request carries the result. -/
   -- of the same name shadows one, as in JavaScript.
   let mentioned := moduleReadNames f.body
   let siblings := module.filter fun g => mentioned.contains g.1
-  if f.name == "undefined" || (names scope).contains "undefined" then
+  if f.name == "undefined" || hasName scope "undefined" then
     throw "shadowing undefined is outside the fragment"
   if !distinct (names scope) then throw "duplicate source parameter name"
   if f.params.length != fc.params.length then throw "parameter claim count mismatch"

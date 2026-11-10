@@ -55,14 +55,6 @@ so it fails here rather than reaching a message. -/
   recordNodeSource target ⟨pos,role,environmentStart,sources scope⟩
   return target
 
-/-- The fields every record of a type names: where each of its clauses is a
-record naming them, the locations of an object of the type. -/
-@[nospecialize] private def commonFields (G : Verification.PositiveGraphs.NormalGraph ι) (A : Ty ι) : List PropKey :=
-  match PositiveRules.expand G A with
-  | (.refs fs _ vs _ _ _ _) :: _ =>
-    (fs.map Prod.fst ++ vs.map Prod.fst).eraseDups.filter (HeapExpressionRules.fieldOperand (PositiveRules.expand G A))
-  | _ => []
-
 /-- A node whose derivation the lowering knows: its plan, cast to the node's
 claim, joins the search's known evidence, so the node is not searched. -/
 @[nospecialize] def emitPlanned (pos : Span) (plan : DirectProof.Plan Tree) (k : Continuation)
@@ -86,6 +78,12 @@ entry (`Request.entrySeparation`), and every statement entry restates it. -/
 @[nospecialize] def moduleCellSeparation (d : Nat) (cells : List (Nat × String)) : HeapSeparation.Separation :=
   HeapSeparation.norm d (moduleCellFacts d cells)
 
+/-- Whether a slot of `scope` may state a separation fact (`separationFacts`). -/
+@[nospecialize] def separating (scope : List (ScopeBinding ι)) : Bool :=
+  scope.any fun b => match b.storage with
+    | .cell .. | .early .. => true
+    | .value | .slot _ => b.iterator || b.fresh
+
 /-- The cells this lowering allocated sit at locations no other object in
 scope has: a private cell's identity never becomes a source value, and every
 record-typed slot holds something else. Stated at each cut so the allocation's
@@ -96,32 +94,42 @@ later test narrowed them to, and about the objects allocated after it, other
 cells and fresh constants; an object a later call returned may be any
 object. One separation fact per cell, its field `value` apart from each
 listed slot's fields, addressed by level at the context's depth. -/
-@[nospecialize] def separationFacts (G : Verification.PositiveGraphs.NormalGraph ι) (scope : List (ScopeBinding ι))
+@[nospecialize] def separationFacts (commonFields : Ty ι → List PropKey) (scope : List (ScopeBinding ι))
     (Γ : List (Ty ι)) : HeapSeparation.Separation :=
-  HeapSeparation.norm Γ.length <| moduleCellFacts Γ.length (scope.zipIdx.filterMap fun (b,i) =>
+  let depth := Γ.length
+  let slots := scope.toArray
+  -- Each slot type's common fields, computed once, where some slot may
+  -- state a fact.
+  let commons : Array (List PropKey) := if separating scope then (Γ.map commonFields).toArray else #[]
+  let common (j : Nat) : List PropKey := commons[j]?.getD []
+  -- The fields common to slot `j`'s type and to the type the record of the
+  -- slot `k` older slots below named at an allocation (`apart`).
+  let shared (olders : Array (List PropKey)) (j k : Nat) : List PropKey :=
+    match olders[k]? with
+    | some fieldsB => (common j).filter fieldsB.contains
+    | none => []
+  HeapSeparation.norm depth <| moduleCellFacts depth (scope.zipIdx.filterMap fun (b,i) =>
     b.moduleCell.map (i, ·)) ++ scope.zipIdx.flatMap fun (b,i) =>
     match b.storage with
     | .cell .. | .early .. =>
       -- A captured cell was allocated before the closure's entry, which
       -- knows nothing of that allocation.
-      if b.captured || Γ.length ≤ i then [] else
-      [⟨Γ.length - 1 - i, some [valueField], Γ.zipIdx.filterMap fun (A,j) =>
+      if b.captured || depth ≤ i then [] else
+      let olders := b.apart.map fun older => (older.map commonFields).toArray
+      [⟨depth - 1 - i, some [valueField], Γ.zipIdx.filterMap fun (_,j) =>
         if i == j then none else
-        let other := scope[j]?
+        let other := slots[j]?
         let isCell := other.any fun o => match o.storage with | .cell .. | .early .. => true | .value | .slot _ => false
         let fields :=
           if j > i || (b.param && other.any (·.param)) then
             -- Older than the cell: the fields its record named when the cell
             -- was allocated, where that is known.
-            match b.apart with
-            | some older =>
-              match older[j - i - 1]? with
-              | some B => (commonFields G A).filter (commonFields G B).contains
-              | none => []
-            | none => commonFields G A
-          else if isCell || other.any (·.fresh) then commonFields G A
+            match olders with
+            | some olders => shared olders j (j - i - 1)
+            | none => common j
+          else if isCell || other.any (·.fresh) then common j
           else []
-        if fields.isEmpty then none else some (Γ.length - 1 - j, fields)⟩]
+        if fields.isEmpty then none else some (depth - 1 - j, fields)⟩]
     | .value | .slot _ =>
       -- An iterator's own locations differ from the fields older slots'
       -- records named when it was created. A constant holding an object it
@@ -131,27 +139,32 @@ listed slot's fields, addressed by level at the context's depth. -/
       -- apart from the store fields of the older slots' arrays no write
       -- replaces, a fresh one's among them.
       let array := b.fresh && !b.iterator
-      if !(b.iterator || array) || Γ.length ≤ i then [] else
+      if !(b.iterator || array) || depth ≤ i then [] else
       match b.apart with
       | none => []
       | some older =>
-        [⟨Γ.length - 1 - i, if array then some [arrayStoreKey] else none, Γ.zipIdx.filterMap fun (A,j) =>
-          if j ≤ i || (!array && scope[j]?.any (·.fresh)) then none else
+        let olders := (older.map commonFields).toArray
+        [⟨depth - 1 - i, if array then some [arrayStoreKey] else none, Γ.zipIdx.filterMap fun (_,j) =>
+          if j ≤ i || (!array && slots[j]?.any (·.fresh)) then none else
           -- An array constant's partners are values no write replaces.
-          if array && !(scope[j]?.any fun o => match o.storage with | .value => true | _ => false) then none else
-          let fields := match older[j - i - 1]? with
-            | some B => (commonFields G A).filter (commonFields G B).contains
-            | none => []
+          if array && !(slots[j]?.any fun o => match o.storage with | .value => true | _ => false) then none else
+          let fields := shared olders j (j - i - 1)
           let fields := if array then fields.filter (· == arrayStoreKey) else fields
-          if fields.isEmpty then none else some (Γ.length - 1 - j, fields)⟩]
+          if fields.isEmpty then none else some (depth - 1 - j, fields)⟩]
+
+/-- `separationFacts` at the store, each type's common fields computed once
+while the store is unchanged (`commonFieldsOf`). -/
+@[nospecialize] def separationAt (scope : List (ScopeBinding Tree)) (Γ : List (Ty Tree)) :
+    Compiler HeapSeparation.Separation := do
+  let types := if separating scope then Γ ++ scope.flatMap (·.apart.getD []) else []
+  return separationFacts (← commonFieldsOf types) scope Γ
 
 /-- A checkpoint is an actual no-op graph node. Every incoming edge must
 justify its supplied current-heap assertion, including backedges. -/
 @[nospecialize] def checkpoint (pos : Span) (Γ : List (Ty Tree)) (facts : HeapFacts.Facts)
     (next : Target) (entry : Option Nat := none) (scope : List (ScopeBinding Tree) := []) :
     Compiler Target := do
-  let G := SourceTypes.graph (← table)
-  let separation := if entry.isSome then separationFacts G scope Γ else {}
+  let separation ← if entry.isSome then separationAt scope Γ else pure {}
   if facts.isEmpty && separation.facts.isEmpty then return next
   let t ← emitAt pos .nul (.effect next) Γ [Labels.nul] "heap-observation" entry scope
   recordAssertion t ⟨facts,[],[],separation,[],[]⟩
@@ -398,7 +411,7 @@ def isSnapshot (name : String) : Bool := name.any (· == '.')
 @[nospecialize] def observed (scope : List (ScopeBinding Tree)) (Γ : List (Ty Tree))
     (snapshot : String) (d : Descriptor) (pos : Span) (A : Ty Tree)
     (fld : PropKey) (R : Ty Tree) : Compiler Unit := do
-  if let some i := (names scope).idxOf? snapshot then
+  if let some i := nameIndex scope snapshot then
     let plan := DirectProof.var Γ i R
     obligation pos plan.goal (some plan) "heap-observation" scope
   else

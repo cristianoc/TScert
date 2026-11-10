@@ -18,7 +18,7 @@ set_option maxHeartbeats 1000000
     (after : List (ScopeBinding Tree) → Compiler Target) (scope : List (ScopeBinding Tree))
     (Γ : List (Ty Tree)) (b : Fragment.Binding) : Compiler Target := do
   if b.name == "undefined" then throw "shadowing undefined is outside the fragment"
-  if (names scope).contains b.name then throw s!"duplicate or shadowing local declaration '{b.name}'"
+  if hasName scope b.name then throw s!"duplicate or shadowing local declaration '{b.name}'"
   let A ← exprType fc b.init
   let B ← match b.annot with | none => pure A | some ty => lower (Fragment.translate ty)
   let fresh := match b.init with | .alloc .. | .arrayLit .. => true | _ => false
@@ -53,7 +53,7 @@ set_option maxHeartbeats 1000000
     (after : List (ScopeBinding Tree) → Compiler Target) (scope : List (ScopeBinding Tree))
     (Γ : List (Ty Tree)) (b : Fragment.Binding) : Compiler Target := do
   if b.name == "undefined" then throw "shadowing undefined is outside the fragment"
-  if (names scope).contains b.name then throw "shadowing is outside the fragment"
+  if hasName scope b.name then throw "shadowing is outside the fragment"
   let A ← exprType fc b.init
   let some candidate := fc.contracts.lookup (b.init.span, b.name)
     | throw s!"no claimed storage contract for '{b.name}' at {b.init.span.1}"
@@ -115,7 +115,7 @@ set_option maxHeartbeats 1000000
         (executeBindingPlan recursive fc original wanted (bound::scope'.tail) Δ next k)
   | .bind name origin value next =>
     if name == "undefined" then throw "shadowing undefined is outside the fragment"
-    if (names wanted).contains name then
+    if hasName wanted name then
       throw s!"duplicate or shadowing local declaration '{name}'"
     let (i,T) ← LoweringExecution.executionSaved scope Γ value
     let bound := held ⟨name,some origin⟩

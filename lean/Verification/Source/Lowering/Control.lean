@@ -357,15 +357,21 @@ effect changes, is the other operand. -/
   attempt r l
 
 
+private instance : Hashable Descriptor := ⟨fun d => hash (d.name, d.span)⟩
+
 /-- A jump from `scope` to a target over `targetScope`: the target's slots,
 read through its own mapping, found in `scope` by descriptor, else by name
 (an anonymous slot has no name of its own to be found by). -/
 @[nospecialize] def jumpTo (scope : List (ScopeBinding Tree)) (target : Target) (targetScope : List (ScopeBinding Tree)) :
     Compiler Target := do
+  -- Each descriptor's and each name's first slot, found in one pass.
+  let (bySource, byName) := scope.zipIdx.foldl (init := (({} : Std.HashMap Descriptor Nat), ({} : Std.HashMap String Nat)))
+    fun (ds, ns) (b, i) => (ds.insertIfNew b.source i, ns.insertIfNew b.source.name i)
   let slots ← targetScope.mapM fun b =>
-    match (sources scope).idxOf? b.source, (names scope).idxOf? b.source.name with
+    match bySource[b.source]?, byName[b.source.name]? with
     | some i, _ | none, some i => pure i
     | none, none => throw s!"internal extraction error: lost binding '{b.source.name}'"
+  let slots := slots.toArray
   return ⟨target.label, some ((target.mapping.getD (List.range targetScope.length)).map
     fun i => slots[i]?.getD 0)⟩
 

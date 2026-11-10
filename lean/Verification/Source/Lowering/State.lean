@@ -89,12 +89,28 @@ structure ScopeBinding (ι : Type) where
 order, and an unnamed one can never match a source identifier. -/
 @[nospecialize] def names (scope : List (ScopeBinding ι)) : List String := scope.map (·.source.name)
 
+/-- The first slot named `name`: `(names scope).idxOf? name`, read in one
+pass over the scope. -/
+@[nospecialize] def nameIndex (scope : List (ScopeBinding ι)) (name : String) : Option Nat :=
+  scope.findIdx? (·.source.name == name)
+
+/-- Whether a slot is named `name`: `(names scope).contains name`. -/
+@[nospecialize] def hasName (scope : List (ScopeBinding ι)) (name : String) : Bool :=
+  scope.any (·.source.name == name)
+
+/-- The first slot described by `d`: `(sources scope).idxOf? d`. -/
+@[nospecialize] def sourceIndex (scope : List (ScopeBinding ι)) (d : Descriptor) : Option Nat :=
+  scope.findIdx? (·.source == d)
+
+@[nospecialize] private def resolveFrom (name : String) : List (ScopeBinding ι) → Nat → Option (Nat × Storage ι)
+  | [], _ => none
+  | b :: bs, i => if b.source.name == name then some (i, b.storage) else resolveFrom name bs (i + 1)
+
 /-- The one place a source name becomes a slot, so no site can decide for
-itself whether a name denotes a value or a location. -/
-@[nospecialize] def resolve (scope : List (ScopeBinding ι)) (name : String) : Option (Nat × (Storage ι)) := do
-  let i ← (names scope).idxOf? name
-  let b ← scope[i]?
-  return (i, b.storage)
+itself whether a name denotes a value or a location: the first slot named
+`name`, with its storage. -/
+@[nospecialize] def resolve (scope : List (ScopeBinding ι)) (name : String) : Option (Nat × (Storage ι)) :=
+  resolveFrom name scope 0
 
 /-- Only slots holding the value itself may be substituted by a guard's saved
 value: an immutable one, or a mutable one no write has rebound since the
@@ -152,7 +168,9 @@ partial def testedPaths : SourceExecution.Plan → List (String × List PropKey)
 /-- State local to one compiled graph. A closure begins with an empty frame
 and restores its enclosing frame as a whole. -/
 private structure GraphFrame where
-  program : Program := []
+  /-- The graph's nodes, claims and source-map slots, one per node and
+  extended at the end: lists once the graph is complete (`graphOutput`). -/
+  program : Array ControlFlow.Node := #[]
   /-- Computed types of saved execution-plan values, scoped to their bindings. -/
   executionTypes : List (String × Ty Tree) := []
   /-- Immutable aliases retained by evaluated operands for predicate refinement. -/
@@ -170,13 +188,13 @@ private structure GraphFrame where
   executionReceiver : Option String := none
   /-- One source statement whose ownership gate permits a fresh local copy. -/
   executionOwned : Option Span := none
-  claims : List (PointClaim Tree) := []
-  sourceMap : SourceMap := []
-  assertions : List (Nat × HeapKnowledge.Knowledge) := []
+  claims : Array (PointClaim Tree) := #[]
+  sourceMap : Array (Option SourceMapEntry) := #[]
+  assertions : Array (Nat × HeapKnowledge.Knowledge) := #[]
   /-- The index facts the producer supplies at each statement entry, apart
   from its assertion: candidates a search keeps where every edge into the
   entry establishes them. -/
-  candidates : List (Nat × List HeapKnowledge.IndexAtom) := []
+  candidates : Array (Nat × List HeapKnowledge.IndexAtom) := #[]
   /-- Statement entries; absent assertions mean empty knowledge. -/
   cuts : List Nat := []
   /-- While a `try` body or handler is compiled: where a throw out of a node
@@ -218,18 +236,20 @@ private structure Built extends GraphFrame where
   /-- `within`'s answers at `types`, each pair's computed once: `lower`
   empties them, and a restored state restores them with `types`. -/
   withinAnswers : Std.HashMap (List Tree × List Tree) Bool := {}
+  /-- `commonFields`' answers at `types`: `lower` empties them. -/
+  fieldAnswers : Std.HashMap (List Tree) (List PropKey) := {}
   flowTargets : List (Nat × Target) := []
-  obligations : List (ExpressionClaims.Required Tree) := []
+  obligations : Array (ExpressionClaims.Required Tree) := #[]
   /-- Labels the program mentions but no claim does, such as a pattern's
   literal index: search hints, never part of what is checked. -/
   hints : List Tree := []
   /-- The graph code the body creates, nested code first, each at each
   signature it offers, and what the source says of each code's graph. -/
-  codes : List (CodeRequest Tree) := []
-  codeSources : List CodeSource := []
+  codes : Array (CodeRequest Tree) := #[]
+  codeSources : Array CodeSource := #[]
   /-- Plans for nodes whose derivation the lowering already knows: search
   hints only, rendered where they can be and never obligations. -/
-  nodePlans : List (DirectProof.Plan Tree) := []
+  nodePlans : Array (DirectProof.Plan Tree) := #[]
   /-- The key-adding write sites of the body (`growSites`): the writes that
   may add a key, by copying their owned object, and the bindings holding it. -/
   grows : List GrowSite := []
@@ -280,23 +300,26 @@ private def readBuilt (f : Built → α) : Compiler α := ⟨fun s => .ok (f s,s
 
 private def updateBuilt (f : Built → Built) : Compiler Unit := ⟨fun s => .ok ((),f s)⟩
 
-/-- The scope owner restores precisely its temporary fields. Shared successful
-updates survive; a failure carries no state, and a catch resumes at its entry. -/
-private def scopeState (enter : Built → Built) (restore : Built → Built → Built)
+/-- The scope owner restores precisely its temporary fields, `save`d at its
+entry. Shared successful updates survive; a failure carries no state, and a
+catch resumes at its entry. Only the saved fields stay referenced while the
+action runs, so the graph's arrays are extended in place. -/
+private def scopeState (save : Built → σ) (enter : Built → Built) (restore : σ → Built → Built)
     (action : Compiler α) : Compiler α := ⟨fun before => do
+  let saved := save before
   let (value,after) ← action.run (enter before)
-  return (value,restore before after)⟩
+  return (value,restore saved after)⟩
 
 /-- Compile a graph in a fresh frame and resume the enclosing graph frame. -/
 def withFreshGraph (action : Compiler α) : Compiler α :=
-  scopeState (fun before => { before with toGraphFrame := {} })
-    (fun before after => { after with toGraphFrame := before.toGraphFrame }) action
+  scopeState (·.toGraphFrame) (fun before => { before with toGraphFrame := {} })
+    (fun frame after => { after with toGraphFrame := frame }) action
 
 @[nospecialize] def table : Compiler EquationStore.State := readBuilt (·.types)
 
 @[nospecialize] def lower (m : SourceTypes.Lowering α) : Compiler α := ⟨fun s => do
   let (a,T) ← m.run s.types
-  return (a,{ s with types := T, generation := s.generation + 1, withinAnswers := {} })⟩
+  return (a,{ s with types := T, generation := s.generation + 1, withinAnswers := {}, fieldAnswers := {} })⟩
 
 /-- The store with its generation: `withinAt` reads `within`'s answers at
 it while no step has changed it since. -/
@@ -311,6 +334,25 @@ the answers at the store while it is still that generation's. -/
   | none =>
     let b := within T C A
     .ok (b, { s with withinAnswers := s.withinAnswers.insert (C, A) b })⟩
+
+/-- The fields every record of a type names: where each of its clauses is a
+record naming them, the locations of an object of the type. -/
+@[nospecialize] def commonFields (G : Verification.PositiveGraphs.NormalGraph ι) (A : Ty ι) : List PropKey :=
+  match PositiveRules.expand G A with
+  | cs@((.refs fs _ vs _ _ _ _) :: _) =>
+    -- The fields in order, each at its first occurrence.
+    let (_, fields) := (fs.map Prod.fst ++ vs.map Prod.fst).foldl (init := (({} : Std.HashSet PropKey), #[]))
+      fun (seen, out) k => if seen.contains k then (seen, out) else (seen.insert k, out.push k)
+    fields.toList.filter (HeapExpressionRules.fieldOperand cs)
+  | _ => []
+
+/-- `commonFields` of each of `As` at the store, each type's computed once
+while no step changes the store: a function answering each of them. -/
+@[nospecialize] def commonFieldsOf (As : List (Ty Tree)) : Compiler (Ty Tree → List PropKey) := ⟨fun s =>
+  let G := SourceTypes.graph s.types
+  let answers := As.foldl (init := s.fieldAnswers) fun m A =>
+    if m.contains A then m else m.insert A (commonFields G A)
+  .ok ((fun A => answers[A]?.getD (commonFields G A)), { s with fieldAnswers := answers })⟩
 
 /-- The type of an early binding's uninitialized marker, `U` (SOURCE-ELABORATION.md,
 "Lexical bindings before initialization"): the object owning the marker's
@@ -374,24 +416,25 @@ def newestWitness (witnesses : List (String × String)) (name : String) : Option
 /-- A saved value read from a member path names the path's witness for its
 continuation (`executionWitnesses`). -/
 def withExecutionWitness (name witness : String) (action : Compiler α) : Compiler α :=
-  scopeState (fun s => { s with executionWitnesses := (name,witness)::s.executionWitnesses })
-    (fun before after => { after with executionWitnesses := before.executionWitnesses }) action
+  scopeState (·.executionWitnesses) (fun s => { s with executionWitnesses := (name,witness)::s.executionWitnesses })
+    (fun saved after => { after with executionWitnesses := saved }) action
 
 /-- A saved binding's computed type is visible for its continuation. -/
 def withExecutionType (name : String) (A : Ty Tree) (action : Compiler α) : Compiler α :=
-  scopeState (fun s => { s with executionTypes := (name,A)::s.executionTypes })
-    (fun before after => { after with executionTypes := before.executionTypes }) action
+  scopeState (·.executionTypes) (fun s => { s with executionTypes := (name,A)::s.executionTypes })
+    (fun saved after => { after with executionTypes := saved }) action
 
 /-- A branch's saved values and aliases are visible within that branch. -/
 def withExecutionBindings (bindings : ExecutionBindings) (action : Compiler α) : Compiler α :=
-  scopeState (fun s => { s with executionTypes := bindings.types, executionOrigins := bindings.origins })
-    (fun before after => { after with
-      executionTypes := before.executionTypes
-      executionOrigins := before.executionOrigins }) action
+  scopeState (fun s => (s.executionTypes, s.executionOrigins))
+    (fun s => { s with executionTypes := bindings.types, executionOrigins := bindings.origins })
+    (fun (types, origins) after => { after with
+      executionTypes := types
+      executionOrigins := origins }) action
 
 def withExecutionOrigins (origins : List (String × Fragment.Expr)) (action : Compiler α) : Compiler α :=
-  scopeState (fun s => { s with executionOrigins := origins })
-    (fun before after => { after with executionOrigins := before.executionOrigins }) action
+  scopeState (·.executionOrigins) (fun s => { s with executionOrigins := origins })
+    (fun saved after => { after with executionOrigins := saved }) action
 
 /-- An atom is prepared by its execution plan or names a saved plan value. -/
 def isPreparedAtom (e : Fragment.Expr) : Compiler Bool := readBuilt fun s =>
@@ -404,42 +447,44 @@ def savedReceiver : Compiler (Option String) := readBuilt (·.executionReceiver)
 def ownedWrite : Compiler (Option Span) := readBuilt (·.executionOwned)
 
 def withPreparedAtom (original : Fragment.Expr) (action : Compiler α) : Compiler α :=
-  scopeState (fun s => { s with atomicPrepared := true, executionOriginal := some original })
-    (fun before after => { after with
-      atomicPrepared := before.atomicPrepared
-      executionOriginal := before.executionOriginal }) action
+  scopeState (fun s => (s.atomicPrepared, s.executionOriginal))
+    (fun s => { s with atomicPrepared := true, executionOriginal := some original })
+    (fun (prepared, original) after => { after with
+      atomicPrepared := prepared
+      executionOriginal := original }) action
 
 def withSavedInvocation (original : Fragment.Expr) (receiver : String)
     (action : Compiler α) : Compiler α :=
-  scopeState (fun s => { s with
+  scopeState (fun s => (s.atomicPrepared, s.executionOriginal, s.executionReceiver))
+    (fun s => { s with
       atomicPrepared := true
       executionOriginal := some original
       executionReceiver := some receiver })
-    (fun before after => { after with
-      atomicPrepared := before.atomicPrepared
-      executionOriginal := before.executionOriginal
-      executionReceiver := before.executionReceiver }) action
+    (fun (prepared, original, receiver) after => { after with
+      atomicPrepared := prepared
+      executionOriginal := original
+      executionReceiver := receiver }) action
 
 /-- The ownership gate covers one source statement's elaboration. -/
 def withOwnedWrite (source : Span) (enabled : Bool) (action : Compiler α) : Compiler α :=
-  scopeState (fun s => if enabled then { s with executionOwned := some source } else s)
-    (fun before after => { after with executionOwned := before.executionOwned }) action
+  scopeState (·.executionOwned) (fun s => if enabled then { s with executionOwned := some source } else s)
+    (fun saved after => { after with executionOwned := saved }) action
 
 /-- Every throwing node emitted in the scope names this handler. -/
 def withHandler (handler : Option (Target × Nat)) (action : Compiler α) : Compiler α :=
-  scopeState (fun s => { s with handler := handler })
-    (fun before after => { after with handler := before.handler }) action
+  scopeState (·.handler) (fun s => { s with handler := handler })
+    (fun saved after => { after with handler := saved }) action
 
 /-- The body compiled in the scope is a type guard's when `answers` holds. -/
 def withAnswers (answers : Bool) (action : Compiler α) : Compiler α :=
-  scopeState (fun s => { s with answers := answers })
-    (fun before after => { after with answers := before.answers }) action
+  scopeState (·.answers) (fun s => { s with answers := answers })
+    (fun saved after => { after with answers := saved }) action
 
 /-- The initializer compiled in the scope is the function literal of the
 constant `name`, whose body may read it as its self entry. -/
 def withSelfConstant (name : Option String) (action : Compiler α) : Compiler α :=
-  scopeState (fun s => { s with selfConstant := name })
-    (fun before after => { after with selfConstant := before.selfConstant }) action
+  scopeState (·.selfConstant) (fun s => { s with selfConstant := name })
+    (fun saved after => { after with selfConstant := saved }) action
 
 def currentSelfConstant : Compiler (Option String) := readBuilt (·.selfConstant)
 
@@ -456,15 +501,15 @@ def currentHandler : Compiler (Option (Target × Nat)) := readBuilt (·.handler)
 
 /-- The body compiled in this frame holds these `let`s in cells. -/
 def withLocalCells (cells : List (String × Option Span)) (action : Compiler α) : Compiler α :=
-  scopeState (fun s => { s with cells := cells })
-    (fun before after => { after with cells := before.cells }) action
+  scopeState (·.cells) (fun s => { s with cells := cells })
+    (fun saved after => { after with cells := saved }) action
 
 def localCells : Compiler (List (String × Option Span)) := readBuilt (·.cells)
 
 /-- A recursive source body owns its memo of cyclic graph entries. -/
 def withFreshFlowTargets (action : Compiler α) : Compiler α :=
-  scopeState (fun s => { s with flowTargets := [] })
-    (fun before after => { after with flowTargets := before.flowTargets }) action
+  scopeState (·.flowTargets) (fun s => { s with flowTargets := [] })
+    (fun saved after => { after with flowTargets := saved }) action
 
 def flowTarget (id : Nat) : Compiler (Option Target) := readBuilt fun s => s.flowTargets.lookup id
 
@@ -497,39 +542,39 @@ def growthHolders (span : Span) : Compiler (Option (List Holder)) :=
 
 /-- Node allocation appends its claim and source-map slot at the same index. -/
 def appendNode (node : ControlFlow.Node) (claim : PointClaim Tree) : Compiler Target := ⟨fun s =>
-  .ok (⟨s.program.length,none⟩,{ s with
-    program := s.program ++ [node]
-    claims := s.claims ++ [claim]
-    sourceMap := s.sourceMap ++ [none] })⟩
+  .ok (⟨s.program.size,none⟩,{ s with
+    program := s.program.push node
+    claims := s.claims.push claim
+    sourceMap := s.sourceMap.push none })⟩
 
 def recordNodeSource (target : Target) (source : SourceMapEntry) : Compiler Unit :=
-  updateBuilt fun s => { s with sourceMap := s.sourceMap.set target.label (some source) }
+  updateBuilt fun s => { s with sourceMap := s.sourceMap.setIfInBounds target.label (some source) }
 
 /-- Complete a reserved cyclic entry with its already elaborated successor. -/
 def completeFlowEntry (reserved target : Target) : Compiler Unit :=
-  updateBuilt fun s => { s with program := s.program.set reserved.label ⟨.nul,.effect target,none⟩ }
+  updateBuilt fun s => { s with program := s.program.setIfInBounds reserved.label ⟨.nul,.effect target,none⟩ }
 
 def recordAssertion (target : Target) (knowledge : HeapKnowledge.Knowledge) : Compiler Unit :=
-  updateBuilt fun s => { s with assertions := s.assertions ++ [(target.label,knowledge)] }
+  updateBuilt fun s => { s with assertions := s.assertions.push (target.label,knowledge) }
 
 def recordCandidates (target : Target) (atoms : List HeapKnowledge.IndexAtom) : Compiler Unit :=
-  updateBuilt fun s => { s with candidates := s.candidates ++ [(target.label,atoms)] }
+  updateBuilt fun s => { s with candidates := s.candidates.push (target.label,atoms) }
 
 def recordCut (target : Target) : Compiler Unit :=
   updateBuilt fun s => { s with cuts := target.label::s.cuts }
 
 def recordObligation (required : ExpressionClaims.Required Tree) : Compiler Unit :=
-  updateBuilt fun s => { s with obligations := s.obligations ++ [required] }
+  updateBuilt fun s => { s with obligations := s.obligations.push required }
 
 def recordNodePlan (plan : DirectProof.Plan Tree) : Compiler Unit :=
-  updateBuilt fun s => { s with nodePlans := s.nodePlans ++ [plan] }
+  updateBuilt fun s => { s with nodePlans := s.nodePlans.push plan }
 
 def recordHints (labels : List Tree) : Compiler Unit :=
   updateBuilt fun s => { s with hints := labels ++ s.hints }
 
 /-- A nested code request and its source account occupy the same table index. -/
 def recordCode (request : CodeRequest Tree) (source : CodeSource) : Compiler Unit :=
-  updateBuilt fun s => { s with codes := s.codes ++ [request], codeSources := s.codeSources ++ [source] }
+  updateBuilt fun s => { s with codes := s.codes.push request, codeSources := s.codeSources.push source }
 
 /-- Read-only outputs of one compiled graph. -/
 structure LoweredGraph where
@@ -538,7 +583,7 @@ structure LoweredGraph where
   source : CodeSource
 
 private def graphOutput (s : Built) : LoweredGraph :=
-  ⟨s.program,s.claims,⟨s.sourceMap,s.assertions,s.candidates,s.cuts⟩⟩
+  ⟨s.program.toList,s.claims.toList,⟨s.sourceMap.toList,s.assertions.toList,s.candidates.toList,s.cuts⟩⟩
 
 def graphResult : Compiler LoweredGraph := readBuilt graphOutput
 
@@ -568,11 +613,11 @@ def runCompiler (types : EquationStore.State) (grows : List GrowSite) (action : 
   return (value,{
     toLoweredGraph := graphOutput s
     types := s.types
-    obligations := s.obligations
+    obligations := s.obligations.toList
     hints := s.hints
-    codes := s.codes
-    codeSources := s.codeSources
-    nodePlans := s.nodePlans })
+    codes := s.codes.toList
+    codeSources := s.codeSources.toList
+    nodePlans := s.nodePlans.toList })
 
 end
 end Verification.SourceExtraction
