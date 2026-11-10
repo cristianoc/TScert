@@ -1,0 +1,292 @@
+{
+  "tolerance": 0.3,
+  "slackMs": 20,
+  "units": {
+    "pretext measureAnalysis": {
+      "verdict": "verified",
+      "cpuMs": 1038,
+      "counters": {
+        "nodes": 1473,
+        "edges": 1604,
+        "reached": 1473,
+        "visited": 1473,
+        "rules": 1361,
+        "wholeStoreRules": 54,
+        "queries": 17,
+        "queryFacts": 617,
+        "merges": 71,
+        "mergeDiffs": 1132,
+        "stateFactsSum": 75739,
+        "stateFactsMax": 111,
+        "headsWritten": 27,
+        "headsFromClaims": 132,
+        "headsSupplied": 0,
+        "bytesRead": 5876233
+      }
+    },
+    "pretext prepareRichInline": {
+      "verdict": "verified",
+      "cpuMs": 2277,
+      "counters": {
+        "nodes": 3189,
+        "edges": 3432,
+        "reached": 3189,
+        "visited": 3189,
+        "rules": 2900,
+        "wholeStoreRules": 106,
+        "queries": 624,
+        "queryFacts": 14127,
+        "merges": 130,
+        "mergeDiffs": 1857,
+        "stateFactsSum": 142029,
+        "stateFactsMax": 128,
+        "headsWritten": 166,
+        "headsFromClaims": 371,
+        "headsSupplied": 0,
+        "bytesRead": 16130614
+      }
+    },
+    "pretext buildEngineProfile": {
+      "verdict": "verified",
+      "cpuMs": 254,
+      "counters": {
+        "nodes": 279,
+        "edges": 294,
+        "reached": 279,
+        "visited": 279,
+        "rules": 261,
+        "wholeStoreRules": 0,
+        "queries": 0,
+        "queryFacts": 0,
+        "merges": 11,
+        "mergeDiffs": 69,
+        "stateFactsSum": 1940,
+        "stateFactsMax": 42,
+        "headsWritten": 0,
+        "headsFromClaims": 0,
+        "headsSupplied": 0,
+        "bytesRead": 3117222
+      }
+    },
+    "loop with bounds": {
+      "verdict": "verified",
+      "cpuMs": 45,
+      "counters": {
+        "nodes": 23,
+        "edges": 23,
+        "reached": 23,
+        "visited": 23,
+        "rules": 20,
+        "wholeStoreRules": 0,
+        "queries": 2,
+        "queryFacts": 36,
+        "merges": 0,
+        "mergeDiffs": 0,
+        "stateFactsSum": 279,
+        "stateFactsMax": 24,
+        "headsWritten": 9,
+        "headsFromClaims": 6,
+        "headsSupplied": 0,
+        "bytesRead": 184745
+      }
+    },
+    "loop over a parent chain": {
+      "verdict": "verified",
+      "cpuMs": 160,
+      "counters": {
+        "nodes": 26,
+        "edges": 28,
+        "reached": 26,
+        "visited": 26,
+        "rules": 22,
+        "wholeStoreRules": 0,
+        "queries": 6,
+        "queryFacts": 65,
+        "merges": 2,
+        "mergeDiffs": 6,
+        "stateFactsSum": 123,
+        "stateFactsMax": 10,
+        "headsWritten": 0,
+        "headsFromClaims": 0,
+        "headsSupplied": 0,
+        "bytesRead": 436684
+      }
+    },
+    "call in a loop": {
+      "verdict": "verified",
+      "cpuMs": 65,
+      "counters": {
+        "nodes": 35,
+        "edges": 36,
+        "reached": 35,
+        "visited": 35,
+        "rules": 34,
+        "wholeStoreRules": 1,
+        "queries": 2,
+        "queryFacts": 26,
+        "merges": 1,
+        "mergeDiffs": 8,
+        "stateFactsSum": 181,
+        "stateFactsMax": 15,
+        "headsWritten": 0,
+        "headsFromClaims": 0,
+        "headsSupplied": 0,
+        "bytesRead": 151093
+      }
+    },
+    "union narrowing": {
+      "verdict": "verified",
+      "cpuMs": 34,
+      "counters": {
+        "nodes": 16,
+        "edges": 16,
+        "reached": 16,
+        "visited": 16,
+        "rules": 14,
+        "wholeStoreRules": 0,
+        "queries": 1,
+        "queryFacts": 10,
+        "merges": 1,
+        "mergeDiffs": 9,
+        "stateFactsSum": 34,
+        "stateFactsMax": 4,
+        "headsWritten": 0,
+        "headsFromClaims": 0,
+        "headsSupplied": 0,
+        "bytesRead": 145626
+      }
+    },
+    "logical narrowing": {
+      "verdict": "verified",
+      "cpuMs": 55,
+      "counters": {
+        "nodes": 14,
+        "edges": 13,
+        "reached": 14,
+        "visited": 14,
+        "rules": 11,
+        "wholeStoreRules": 0,
+        "queries": 0,
+        "queryFacts": 0,
+        "merges": 0,
+        "mergeDiffs": 0,
+        "stateFactsSum": 6,
+        "stateFactsMax": 1,
+        "headsWritten": 0,
+        "headsFromClaims": 0,
+        "headsSupplied": 0,
+        "bytesRead": 184554
+      }
+    },
+    "class": {
+      "verdict": "verified",
+      "cpuMs": 7,
+      "counters": {
+        "nodes": 12,
+        "edges": 11,
+        "reached": 12,
+        "visited": 12,
+        "rules": 14,
+        "wholeStoreRules": 3,
+        "queries": 0,
+        "queryFacts": 0,
+        "merges": 0,
+        "mergeDiffs": 0,
+        "stateFactsSum": 16,
+        "stateFactsMax": 4,
+        "headsWritten": 0,
+        "headsFromClaims": 0,
+        "headsSupplied": 0,
+        "bytesRead": 16142
+      }
+    },
+    "promise": {
+      "verdict": "verified",
+      "cpuMs": 50,
+      "counters": {
+        "nodes": 6,
+        "edges": 5,
+        "reached": 6,
+        "visited": 6,
+        "rules": 6,
+        "wholeStoreRules": 1,
+        "queries": 0,
+        "queryFacts": 0,
+        "merges": 0,
+        "mergeDiffs": 0,
+        "stateFactsSum": 0,
+        "stateFactsMax": 0,
+        "headsWritten": 0,
+        "headsFromClaims": 0,
+        "headsSupplied": 0,
+        "bytesRead": 164282
+      }
+    },
+    "async": {
+      "verdict": "verified",
+      "cpuMs": 62,
+      "counters": {
+        "nodes": 10,
+        "edges": 9,
+        "reached": 10,
+        "visited": 10,
+        "rules": 12,
+        "wholeStoreRules": 3,
+        "queries": 0,
+        "queryFacts": 0,
+        "merges": 0,
+        "mergeDiffs": 0,
+        "stateFactsSum": 5,
+        "stateFactsMax": 1,
+        "headsWritten": 0,
+        "headsFromClaims": 0,
+        "headsSupplied": 0,
+        "bytesRead": 192760
+      }
+    },
+    "handler": {
+      "verdict": "verified",
+      "cpuMs": 51,
+      "counters": {
+        "nodes": 13,
+        "edges": 14,
+        "reached": 13,
+        "visited": 13,
+        "rules": 11,
+        "wholeStoreRules": 0,
+        "queries": 0,
+        "queryFacts": 0,
+        "merges": 1,
+        "mergeDiffs": 1,
+        "stateFactsSum": 10,
+        "stateFactsMax": 3,
+        "headsWritten": 0,
+        "headsFromClaims": 0,
+        "headsSupplied": 0,
+        "bytesRead": 214724
+      }
+    },
+    "exceptional footprint": {
+      "verdict": "verified",
+      "cpuMs": 38,
+      "counters": {
+        "nodes": 5,
+        "edges": 4,
+        "reached": 5,
+        "visited": 5,
+        "rules": 4,
+        "wholeStoreRules": 0,
+        "queries": 0,
+        "queryFacts": 0,
+        "merges": 0,
+        "mergeDiffs": 0,
+        "stateFactsSum": 0,
+        "stateFactsMax": 0,
+        "headsWritten": 0,
+        "headsFromClaims": 0,
+        "headsSupplied": 0,
+        "bytesRead": 159454
+      }
+    }
+  }
+}

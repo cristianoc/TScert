@@ -8,7 +8,9 @@
 // from <dir>/<case file>.jsonl (written by dev/single-pass-given.mts).
 // Prints the disagreements, then the counts: units agreeing, disagreeing,
 // those the pass does not handle by construct, and those whose pipeline
-// check did not finish (a stage's timeout), which decide nothing.
+// check did not finish (a stage's timeout), which decide nothing. Exits 0
+// exactly when no unit disagrees, none is not handled and every case ran;
+// a unit whose pipeline check did not finish is counted apart.
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
@@ -101,3 +103,9 @@ process.stdout.write(`${all.length} units of ${chosen.length} cases: ${agree} ag
   `${handled.length - handled.filter((c) => c.agree).length} disagree, ${all.filter((c) => c.notHandled !== null).length} not handled, ` +
   `${unfinished} the pipeline did not finish\n`);
 for (const [what, n] of [...constructs].sort((a, b) => b[1] - a[1])) process.stdout.write(`  not handled: ${what} ${n}\n`);
+// The correctness half of the performance gate: every unit whose pipeline
+// check finished agrees, none is not handled, and every case ran.
+const failedCases = results.filter((r) => r.status === "rejected").length;
+const disagreeing = handled.length - handled.filter((c) => c.agree).length;
+const notHandled = all.filter((c) => c.notHandled !== null).length;
+process.exitCode = disagreeing === 0 && notHandled === 0 && failedCases === 0 ? 0 : 1;

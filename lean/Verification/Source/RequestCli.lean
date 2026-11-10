@@ -419,7 +419,17 @@ def verifyUnitsFile (astPath claimsPath fileKey : String) (fuel : Nat) (names : 
                 | .error _ => m) {}))
           -- Observing: the state at `TSCERT_OBSERVE` (`node:L` or `offset:K`).
           let observe ← IO.getEnv "TSCERT_OBSERVE"
-          let (lines, v) ← IO.lazyPure fun _ => f.passGroup fuel (f.fr.group i) compare debugNode repeats given observe
+          -- The pass's counts as JSON lines (`TSCERT_COUNTS`, `dev/perf-gate.mts`),
+          -- with the bytes of the files it read.
+          let counting := (← IO.getEnv "TSCERT_COUNTS").isSome
+          if counting then
+            let size := fun (p : String) => do
+              try pure (← System.FilePath.metadata p).byteSize.toNat catch _ => pure 0
+            let given ← match ← IO.getEnv "TSCERT_GIVEN" with
+              | some p => size p
+              | none => pure 0
+            IO.eprintln s!"counts-read: \{\"fragmentBytes\":{← size astPath},\"claimsBytes\":{← size claimsPath},\"givenBytes\":{given}}"
+          let (lines, v) ← IO.lazyPure fun _ => f.passGroup fuel (f.fr.group i) compare debugNode repeats given observe counting
           let p1 ← SinglePass.passNanos.get
           let s1 ← IO.monoNanosNow
           for line in lines do IO.eprintln line

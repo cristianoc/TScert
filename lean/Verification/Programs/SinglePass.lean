@@ -239,6 +239,25 @@ structure Counts where
   givenImplies : Nat := 0
   heads : Nat := 0
   stateSum : Nat := 0
+  /-- The graph's nodes and edges (continuations and handlers). -/
+  nodes : Nat := 0
+  edges : Nat := 0
+  /-- The nodes a path from the start reaches. -/
+  reached : Nat := 0
+  /-- The merges met, and the facts their predecessors state that the met
+  store lacks. -/
+  merges : Nat := 0
+  mergeDiffs : Nat := 0
+
+/-- The counts as one JSON object (`TSCERT_COUNTS`, `dev/perf-gate.mts`). -/
+def Counts.json (c : Counts) : String :=
+  "{" ++ ", ".intercalate ([("nodes", c.nodes), ("edges", c.edges), ("reached", c.reached),
+    ("visited", c.visited), ("rules", c.rules), ("wholeStoreRules", c.fullRules),
+    ("queries", c.queries), ("queryFacts", c.queryAtoms), ("merges", c.merges),
+    ("mergeDiffs", c.mergeDiffs), ("stateFactsSum", c.stateSum), ("stateFactsMax", c.storeMax),
+    ("headsWritten", c.givenWritten), ("headsFromClaims", c.givenClaims),
+    ("headsSupplied", c.givenImplies), ("heads", c.heads), ("copies", c.copies),
+    ("edgeSearches", c.edgeSearches), ("directCalls", c.directCalls)].map fun (k, v) => s!"\"{k}\":{v}") ++ "}"
 
 instance : ToString Counts where
   toString c := s!"visited {c.visited}, rule applications {c.rules} (whole store {c.fullRules}), copies {c.copies}, entailment queries {c.queries} (mean atoms {c.queryAtoms / max c.queries 1}), edge searches {c.edgeSearches}, head facts written {c.givenWritten} + from claims {c.givenClaims}, largest store {c.storeMax}, calls read off their signature {c.directCalls}, head implications supplied {c.givenImplies}, loop heads {c.heads}, mean facts per state {c.stateSum / max c.visited 1}"
@@ -808,7 +827,8 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
   let claimed := claims.toArray
   let n := nodes.size
   let mut answers := answers
-  let mut counts : Counts := {}
+  let edgeCount := nodes.foldl (fun acc node => acc + (successors node.continuation).length + node.handler.toList.length) 0
+  let mut counts : Counts := { nodes := n, edges := edgeCount }
   let mut trace : Trace := {}
   if claimed.size != n then return (.notHandled "claim count", counts, answers, trace)
   let index := KnownIndex.of known
@@ -1026,6 +1046,8 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
           fun (((st : State), (m : Std.HashMap Nat (List Nat))), (v : Std.HashSet Atom)) =>
             ((timedKind "merge diff" fun _ => Store.diff met0 st.store).2.filter fun a => !a.names.any m.contains) ++
               v.fold (fun acc a => if met0.live.contains a.canon then acc else a :: acc) []
+        let diffCount := diffs.foldl (fun acc d => acc + d.length) 0
+        counts := { counts with merges := counts.merges + 1, mergeDiffs := counts.mergeDiffs + diffCount }
         -- A linear bound every predecessor states of one form (under one
         -- condition), at the weakest of their bounds.
         let bounds : List (Std.HashMap (Linear.Form HeapKnowledge.Term × Option Nat × Bool) Int) := diffs.map fun d =>
@@ -1743,6 +1765,7 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
         if indeg[t.label]! == 0 then queue := t.label :: queue
   let _ := clock lastKind lastStamp visitedAll
   let reachable := (reached.toList.filter id).length
+  counts := { counts with reached := reachable }
   if visitedAll < reachable then return (.notHandled s!"{reachable - visitedAll} nodes not reached", counts, answers, trace)
   return (.accepted, counts, answers, trace)
 
