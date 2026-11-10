@@ -11,6 +11,23 @@ open CallEffects (Arrow RestArrow Contract Effect)
 open PositiveCertificates (InstanceImageCheck finiteInstanceImages)
 
 
+/-- Nanoseconds this process spent in the forward pass (`produceRawUsing`),
+read by `--verify-units` to print its phase times. A measurement only. -/
+initialize forwardNanos : IO.Ref Nat ← IO.mkRef 0
+
+private unsafe def timedImpl {α : Type} (r : IO.Ref Nat) (f : Unit → α) : α :=
+  match unsafeIO (do
+      let t0 ← IO.monoNanosNow
+      let a ← IO.lazyPure f
+      let t1 ← IO.monoNanosNow
+      r.modify (· + (t1 - t0))
+      pure a) with
+  | .ok a => a
+  | .error _ => f ()
+
+/-- `f ()`, its time added to `r`. -/
+@[implemented_by timedImpl] def timed {α : Type} (_r : IO.Ref Nat) (f : Unit → α) : α := f ()
+
 /-- How many types search gathers by following a graph's rows: an equation
 graph's rows reach infinitely many (a recursive family, each member naming
 larger ones), of which a proof relates only those near its pair. Search
@@ -2417,7 +2434,7 @@ heap entailment; it is not limited to ordinary subtype proof construction. -/
   let promised := match R with
     | .guards T _ | .asserts T _ => [T]
     | .plain _ => []
-  match (produceRawUsing G images (vocabulary G labels claims (inputs ++ hints ++ promised)) fuel P claims suggestions known start
+  match timed forwardNanos fun _ => (produceRawUsing G images (vocabulary G labels claims (inputs ++ hints ++ promised)) fuel P claims suggestions known start
       requirements cuts codes aliases checker R candidates).run answers with
   | .error e answers => (.error e, answers, [])
   | .ok (.error e, leftOut) answers => (.error e, answers, leftOut)

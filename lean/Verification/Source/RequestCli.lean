@@ -367,23 +367,40 @@ over the file's own store (`FilePlans.produceGroup`) and checked there
 a line, as `--check-units` prints it. -/
 def verifyUnitsFile (astPath claimsPath fileKey : String) (fuel : Nat) (names : Option String) (mode : Nat)
     (budget : PositiveCertificates.SearchBudget := {}) : IO UInt32 := do
+  let t0 ← IO.monoNanosNow
   let ast ← readJson astPath
   let claims ← readJson claimsPath
-  match do SourceClaimJson.filePlans (← ast) (← claims) fileKey budget with
+  let planned ← IO.lazyPure fun _ => do SourceClaimJson.filePlans (← ast) (← claims) fileKey budget
+  let t1 ← IO.monoNanosNow
+  let ms := fun (a b : Nat) => s!"{(b - a) / 1000000}"
+  IO.eprintln s!"stamp: read+lower {ms t0 t1} ms"
+  match planned with
   | .error e => refuse e
   | .ok f =>
     let mut refused : Option String := none
     for i in f.fr.selected (selection names) do
       let unit := f.fr.unitId i
       let members := (f.fr.group i).map f.fr.unitId
-      let verdict : Except String (List String) := match mode with
-        | 0 =>
+      let s0 ← IO.monoNanosNow
+      let f0 ← CertificateProducer.forwardNanos.get
+      let verdict : Except String (List String) ← match mode with
+        | 0 => IO.lazyPure fun _ =>
           let (evidence, refusal, _, _, _) := f.produceGroup fuel (f.fr.group i)
           match refusal with
           | some reason => .error reason
           | none => SourceClaimJson.unitVerdict f budget unit evidence
-        | 1 => f.verifyGroup fuel (f.fr.group i) false
-        | _ => f.verifyGroup fuel (f.fr.group i) true
+        | 1 => IO.lazyPure fun _ => f.verifyGroup fuel (f.fr.group i) false
+        | _ => do
+          let b ← IO.lazyPure fun _ => f.searchGroup fuel (f.fr.group i) true
+          let s1 ← IO.monoNanosNow
+          let f1 ← CertificateProducer.forwardNanos.get
+          IO.eprintln s!"stamp: {unit} search {ms s0 s1} ms (forward pass {ms f0 f1} ms)"
+          let v ← IO.lazyPure fun _ => do f.checkGroup (f.fr.group i) (← b)
+          let s2 ← IO.monoNanosNow
+          IO.eprintln s!"stamp: {unit} check {ms s1 s2} ms"
+          pure v
+      let s3 ← IO.monoNanosNow
+      IO.eprintln s!"stamp: {unit} verdict {ms s0 s3} ms, total {ms t0 s3} ms"
       IO.println (match verdict with
         | .ok deps => Json.mkObj [("unit", toJson unit), ("members", toJson members), ("accepted", toJson true),
             ("depends", toJson deps)]
