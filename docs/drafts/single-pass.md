@@ -42,13 +42,18 @@ output adds, and the facts of its input the output lost. A fact over a name
 no slot holds stays true (a binding never changes); where a step reads it,
 its linear facts are first restated through read links and eliminated
 (`HeapKnowledge.restateReads`, `eliminateIndices`, as an edge's projection
-does today).
+does today). A linear fact a delta adds over a name a read link gives is
+also stated over the read's path (`restateReads`): a later step that drops
+the read's name keeps the path's fact.
 
 Beside the store, a state carries the implications its edges establish
 (`PromiseCalls.Implication`: where the test holds `true`, the target has
 the type), over names: a step's conditional yields, at a pushed edge, state
 them of its result; a read of a tested name yields them again at every slot
-holding the target; a merge keeps those every predecessor carries.
+holding the target; a step's yields are searched with the implications at
+its slots (`nodeYields`); a merge keeps those the search's merge keeps
+(`CertificateProducer.meetImplications`, over each edge's context as the
+source's yields refine it).
 
 ## 3. Order
 
@@ -57,6 +62,11 @@ a cut, `produceRawUsing`'s invariant, cited). The pass visits its nodes once,
 in a topological order. A node with one predecessor takes that edge's state;
 a merge takes the facts every predecessor holds, a slot whose predecessors
 give it different names named afresh, each predecessor's facts renamed to it.
+Slots whose predecessors give them the same names in every predecessor take
+one fresh name; a name a predecessor holds at slots taking different fresh
+names has its facts restated under each, and those fresh names are equal
+there. A fact is stored in one form: an unconditional fact reads no
+condition's polarity.
 
 ## 4. Loop heads
 
@@ -67,8 +77,14 @@ predecessors' at a merge; a written assertion there is an obligation on
 that state. At a merge, a linear bound every predecessor states of one form
 under one condition is kept at the weakest of their bounds; a name a slot
 keeps that another slot's fresh name renames in some predecessor is stated
-equal to it there; and the guarded facts the search's join keeps
-(`CertificateProducer.joinGuarded`) are kept. Everywhere, one linear bound
+equal to it there; a linear bound over the merge's names one predecessor
+states and every other entails over its linear facts near the bound's names
+(`HeapKnowledge.entailsKnown`) is kept; the guarded facts the search's join
+keeps (`CertificateProducer.joinGuarded`) are kept, each predecessor's guards
+first also lowered once through its read links (`lowerGuards`); and a fact
+one predecessor states of a slot another holds `null` or `undefined` in is
+kept guarded by that tag where every predecessor's facts entail it
+(`indicesCheckWith`), as the join guards a store separation. Everywhere, one linear bound
 is kept per normalized form and condition, the strongest, and a length atom
 is also stated as the linear facts it means (`HeapKnowledge.atomLinear`).
 
@@ -115,13 +131,19 @@ table gives. A step whose effect may write (`ordinary`, `written`,
 `boundedWrite`) reads every fact, since its output states which heap facts
 survive. Obligations (a required assertion, an edge into a cut) are
 entailment queries against the facts over the names they mention, closed
-the same way.
+the same way. A step's facts relate every slot holding one of their names
+by an alias link. An edge observing a test releases the alternatives it
+contradicts (`HeapKnowledge.withElements`). An edge whose context, refined
+by the step's yields, its target does not admit is checked again with each
+slot the target does not admit at its refined type read at its unrefined
+type; both are types of its value.
 
 ### A call of a slot
 
 A call whose callee is a slot is read off the callee's signatures, in the
 order `CertificateProducer.expressionWithUsing` tries them, each operand by
-identity or a subtype proof, each stated precondition decided once per call.
+identity or a subtype proof, each stated precondition decided once per call over the index facts connected to the
+call's slots through shared slots, alias links and read links.
 The step is `ordinary` at that derivation, and its output is the proved
 layers' (`Checker.ordinary`'s `select`). Where those layers keep every heap
 fact the call does not name (`elementsCall`, `requiresCall` at a heap-keeping
@@ -152,7 +174,10 @@ Every step's derivation is checked as the checker's `run` checks it
 (`ProgramCertificates.checkTreeUsing`, or `PromiseCalls.requiresTree` for a
 call at a precondition the step's facts establish): the search's `select`
 takes a derivation as given, and a derivation it selects may be one the
-check refuses.
+check refuses. The read summaries the derivations read are checked once
+for the unit, as a response's are (`validSummary`,
+`checkReadSummariesResult`), and the unit's expression claims are checked
+over them.
 
 ### A handler
 
@@ -191,3 +216,19 @@ other than a pure program's.
 `verifier --verify-units 3 <fragment> <claims> <file-key> <depth> <name>`
 runs the pass; `TSCERT_COMPARE=1` checks, at every node, that the state
 entails the knowledge the existing search's certificate holds there.
+
+### Observing
+
+`TSCERT_OBSERVE` runs the pass again and stops at one point; the walk keeps
+nothing extra otherwise. `node:L` or `offset:K` (the innermost node whose
+source span holds `K`) gives that node's state on entry, after its step,
+and at a merge each predecessor's state at the merge's slots with the names
+each gives every slot. `refusal` keeps each node's states and a merge's
+renamings, and at the unit's refusal gives its obligation, the facts over
+the names it mentions and those connected, each fact it lacks, and each
+fact over those names an earlier state held that its state lacks; for each,
+going back from the refusal, where it was last present and what removed
+it: a step, an edge, a merge (with the predecessors lacking it, followed in
+turn), or a loop head's given invariant. `dev/single-pass-state.mts` runs
+it over a kept pipeline run and prints these over source names, with the
+bindings' types.

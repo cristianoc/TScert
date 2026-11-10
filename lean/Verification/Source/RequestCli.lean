@@ -413,7 +413,9 @@ def verifyUnitsFile (astPath claimsPath fileKey : String) (fuel : Nat) (names : 
                   | .ok u, .ok _ => m.insert u j
                   | _, _ => m
                 | .error _ => m) {}))
-          let (lines, v) ← IO.lazyPure fun _ => f.passGroup fuel (f.fr.group i) compare debugNode repeats given
+          -- Observing: the state at `TSCERT_OBSERVE` (`node:L` or `offset:K`).
+          let observe ← IO.getEnv "TSCERT_OBSERVE"
+          let (lines, v) ← IO.lazyPure fun _ => f.passGroup fuel (f.fr.group i) compare debugNode repeats given observe
           let p1 ← SinglePass.passNanos.get
           let s1 ← IO.monoNanosNow
           for line in lines do IO.eprintln line
