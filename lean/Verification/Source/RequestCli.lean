@@ -399,7 +399,8 @@ def verifyUnitsFile (astPath claimsPath fileKey : String) (fuel : Nat) (names : 
           let compare := (← IO.getEnv "TSCERT_COMPARE").isSome
           let debugNode := ((← IO.getEnv "TSCERT_NODE").bind String.toNat?).getD 1000000000
           let repeats := ((← IO.getEnv "TSCERT_REPEAT").bind String.toNat?).getD 1
-          let (lines, v) ← IO.lazyPure fun _ => f.passGroup fuel (f.fr.group i) compare debugNode repeats
+          let supply := (← IO.getEnv "TSCERT_SUPPLY_IMPLIES").isSome
+          let (lines, v) ← IO.lazyPure fun _ => f.passGroup fuel (f.fr.group i) compare debugNode repeats supply
           let p1 ← SinglePass.passNanos.get
           let s1 ← IO.monoNanosNow
           for line in lines do IO.eprintln line

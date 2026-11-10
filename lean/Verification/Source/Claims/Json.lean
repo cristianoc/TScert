@@ -706,7 +706,7 @@ def FilePlans.passStats (f : FilePlans) (group : List Nat) (node : Nat) : List S
 /-- The single forward pass over each member of a group (`SinglePass.run`),
 no certificate built: per member its outcome and counts; the group's
 verdict, the first member's refusal or construct not handled. -/
-def FilePlans.passGroup (f : FilePlans) (fuel : Nat) (group : List Nat) (compare : Bool := false) (debugNode : Nat := 1000000000) (repeats : Nat := 1) :
+def FilePlans.passGroup (f : FilePlans) (fuel : Nat) (group : List Nat) (compare : Bool := false) (debugNode : Nat := 1000000000) (repeats : Nat := 1) (supply : Bool := false) :
     List String × Except String (List String) := Id.run do
   let G : NormalGraph (EquationStore.CheckedLabel f.F.equations f.F.primitive) := StoreView.graph f.F.store
   let I : PositiveCertificates.InstanceImageCheck G := StoreView.images f.F.store
@@ -742,6 +742,16 @@ def FilePlans.passGroup (f : FilePlans) (fuel : Nat) (group : List Nat) (compare
         match f.searchGroup fuel [i] true with
         | .ok b => match b.functions.head? with
           | some resp => (resp.certificate.map (·.knowledge)).toArray
+          | none => #[]
+        | .error _ => #[]
+      -- Supplied, where asked: the implications the existing search's
+      -- certificate holds at the unit's statement entries, as their given
+      -- invariants' (`supply`); the pass computes none.
+      let givenImplies : Array (List (PromiseCalls.Implication _)) := if !supply then #[] else
+        match f.searchGroup fuel [i] true with
+        | .ok b => match b.functions.head? with
+          | some resp => (resp.certificate.zipIdx.map fun (c, l) =>
+              if r.cuts.contains l then c.implies else []).toArray
           | none => #[]
         | .error _ => #[]
       -- Each code request, in order, passed over its own graph with the codes
@@ -780,6 +790,7 @@ def FilePlans.passGroup (f : FilePlans) (fuel : Nat) (group : List Nat) (compare
       let (o, counts, _) := CertificateProducer.timed SinglePass.passNanos fun _ =>
         SinglePass.run G I pool fuel r.program r.claims r.start r.goal r.assertions r.cuts r.candidates
           r.entryIndices [] (e ++ rendered) codes r.aliases (HeapExpressionRules.Checker.ordinary G I) next reference debugNode bound
+          givenImplies
       -- The unit's own expression claims, as the check reads them.
       let obligations := ExpressionClaims.checkAllResult (RequestJson.graph r.toRequest) (StoreView.images r.types)
         (StoreView.valid r.types) r.obligations e codes []

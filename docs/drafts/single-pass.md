@@ -69,6 +69,13 @@ retries nothing. Where a unit that verifies today needs a fact at a cut
 that neither source gives, that fact is supplied as an input of the pass
 and listed.
 
+A cut's given invariant may also state implications (where a test holds
+`true`, a slot has a type): supplied as an input of the pass, for the
+experiment from the implications the existing search's certificate holds at
+the cut (`TSCERT_SUPPLY_IMPLIES=1`), never computed by the pass. Every edge
+into the cut carries the obligation that its own implications state each
+of them, at a type within the given one.
+
 ## 5. Steps and obligations
 
 A step's rule is applied to the facts over the names its expression reads,
@@ -125,6 +132,14 @@ too where the unit states the bound on a throw, and a return under a fresh
 result returns a fresh name; inside it, `deadNode`. A graph the bound
 refuses may still be within it by its store regions (`regionalChecked`),
 which the pass does not decide: that unit is not handled.
+
+### A step's derivation
+
+Every step's derivation is checked as the checker's `run` checks it
+(`ProgramCertificates.checkTreeUsing`, or `PromiseCalls.requiresTree` for a
+call at a precondition the step's facts establish): the search's `select`
+takes a derivation as given, and a derivation it selects may be one the
+check refuses.
 
 ## 6. Where the rules read more than a step's names
 
