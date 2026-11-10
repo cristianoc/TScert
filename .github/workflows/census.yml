@@ -79,15 +79,6 @@ jobs:
       - name: Build
         run: opam exec -- make build
 
-      # The stage store of the last census: its unchanged stages replay.
-      - name: Restore the stage store
-        id: store
-        uses: actions/cache/restore@v4
-        with:
-          path: ~/.cache/tscert/stages
-          key: census-store-${{ github.sha }}
-          restore-keys: census-store-
-
       - name: Census
         run: |
           CENSUS="$RUNNER_TEMP/census"
@@ -97,13 +88,6 @@ jobs:
           set -o pipefail
           opam exec -- node dev/census.mts --dir tools --out "$CENSUS/tools" --record "$CENSUS/record.json" 2>&1 \
             | tee "$CENSUS/run.log"
-
-      - name: Save the stage store
-        if: always() && steps.store.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: ~/.cache/tscert/stages
-          key: census-store-${{ github.sha }}
 
       - uses: actions/upload-artifact@v4
         with:
