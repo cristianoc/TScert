@@ -10418,7 +10418,7 @@ process.stdout.write(JSON.stringify(check(${JSON.stringify(source)}, project ===
   const ran = spawnSync(process.execPath, [driverPath], { encoding: "utf8", timeout: 240_000, env: { ...process.env,
     TSCERT_STAGE_STORE: store, TSCERT_RUN_ROOT: root,
     ...(options.limit === undefined ? {} : { TSCERT_STEP_LIMIT: options.limit }),
-    ...(options.memory === undefined ? {} : { TSCERT_STAGE_MEMORY: options.memory }), ...(options.reuse ? { TSCERT_EVIDENCE_REUSE: "1" } : {}),
+    ...(options.memory === undefined ? {} : { TSCERT_STAGE_MEMORY: options.memory }), TSCERT_EVIDENCE_REUSE: options.reuse ? "1" : "0",
     ...(program === undefined ? {} : { VERIFIER: program.path }) } });
   assert.equal(ran.status, 0, ran.stderr);
   const outcome = readOutcome(JSON.parse(ran.stdout.slice(ran.stdout.indexOf("{"))));

@@ -7,7 +7,7 @@ run) or **conjectured**.
 ## The existing mechanism this extends
 
 **Evidence proposals** ([STAGE-STORE.md](../STAGE-STORE.md#evidence-proposals)):
-under `TSCERT_EVIDENCE_REUSE=1`, a search whose key misses reuses an entry
+unless `TSCERT_EVIDENCE_REUSE=0`, a search whose key misses reuses an entry
 referenced under its proposal key, the digest of its manifest without the
 fields that identify the program that searched, and the current check
 decides it. The proposal key keeps the search's inputs by digest, the
