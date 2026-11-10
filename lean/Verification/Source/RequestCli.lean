@@ -382,7 +382,7 @@ def verifyUnitsFile (astPath claimsPath fileKey : String) (fuel : Nat) (names : 
     if mode == 3 || mode == 7 then SourceClaimJson.unitPlans (← ast) (← claims) fileKey budget (selection names)
     -- Mode 8: the single pass over the selected units' types computed by
     -- the walk in place of their claims (`SourceClaimJson.retypeByWalk`).
-    else if mode == 8 then
+    else if mode == 8 || mode == 9 then
       SourceClaimJson.unitPlans (← ast) (← claims) fileKey budget (selection names)
         (some (SourceClaimJson.retypeByWalk parts))
     else SourceClaimJson.filePlans (← ast) (← claims) fileKey budget
@@ -405,7 +405,8 @@ def verifyUnitsFile (astPath claimsPath fileKey : String) (fuel : Nat) (names : 
           match refusal with
           | some reason => .error reason
           | none => SourceClaimJson.unitVerdict f budget unit evidence
-        | 1 => IO.lazyPure fun _ => f.verifyGroup fuel (f.fr.group i) false
+        -- Mode 9: the search and the proved check over the retyped claims.
+        | 1 | 9 => IO.lazyPure fun _ => f.verifyGroup fuel (f.fr.group i) false
         | 3 | 8 => do
           let p0 ← SinglePass.passNanos.get
           let compare := (← IO.getEnv "TSCERT_COMPARE").isSome

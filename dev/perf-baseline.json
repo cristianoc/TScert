@@ -21,7 +21,7 @@
         "headsWritten": 27,
         "headsFromClaims": 132,
         "headsSupplied": 0,
-        "bytesRead": 5876233
+        "bytesRead": 5876473
       }
     },
     "pretext prepareRichInline": {
@@ -43,7 +43,7 @@
         "headsWritten": 166,
         "headsFromClaims": 371,
         "headsSupplied": 0,
-        "bytesRead": 16130614
+        "bytesRead": 16131334
       }
     },
     "pretext buildEngineProfile": {
@@ -131,7 +131,7 @@
         "headsWritten": 0,
         "headsFromClaims": 0,
         "headsSupplied": 0,
-        "bytesRead": 151093
+        "bytesRead": 151152
       }
     },
     "union narrowing": {
@@ -286,6 +286,72 @@
         "headsFromClaims": 0,
         "headsSupplied": 0,
         "bytesRead": 159454
+      }
+    },
+    "pretext measureAnalysis, computed types": {
+      "verdict": "verified",
+      "cpuMs": 1104,
+      "counters": {
+        "nodes": 1430,
+        "edges": 1561,
+        "reached": 1430,
+        "visited": 1430,
+        "rules": 1319,
+        "wholeStoreRules": 54,
+        "queries": 10,
+        "queryFacts": 517,
+        "merges": 71,
+        "mergeDiffs": 1100,
+        "stateFactsSum": 72648,
+        "stateFactsMax": 106,
+        "headsWritten": 27,
+        "headsFromClaims": 132,
+        "headsSupplied": 0,
+        "bytesRead": 5876473
+      }
+    },
+    "pretext prepareRichInline, computed types": {
+      "verdict": "verified",
+      "cpuMs": 2598,
+      "counters": {
+        "nodes": 3056,
+        "edges": 3299,
+        "reached": 3056,
+        "visited": 3056,
+        "rules": 2764,
+        "wholeStoreRules": 103,
+        "queries": 625,
+        "queryFacts": 13909,
+        "merges": 130,
+        "mergeDiffs": 1823,
+        "stateFactsSum": 133639,
+        "stateFactsMax": 117,
+        "headsWritten": 166,
+        "headsFromClaims": 371,
+        "headsSupplied": 0,
+        "bytesRead": 16131334
+      }
+    },
+    "pretext buildEngineProfile, computed types": {
+      "verdict": "verified",
+      "cpuMs": 261,
+      "counters": {
+        "nodes": 265,
+        "edges": 280,
+        "reached": 265,
+        "visited": 265,
+        "rules": 247,
+        "wholeStoreRules": 0,
+        "queries": 0,
+        "queryFacts": 0,
+        "merges": 11,
+        "mergeDiffs": 68,
+        "stateFactsSum": 1601,
+        "stateFactsMax": 41,
+        "headsWritten": 0,
+        "headsFromClaims": 0,
+        "headsSupplied": 0,
+        "bytesRead": 3117222
       }
     }
   }

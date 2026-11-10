@@ -549,10 +549,15 @@ export function expr(this: Gate, node: Expression): Modifies<{ values: "any"; st
     const filling = gate.globalIntrinsics.get(gate.span(node).join(":"));
     const filled = unparenthesized(node.expression);
     const made = ts.isPropertyAccessExpression(filled) ? unparenthesized(filled.expression) : filled;
+    // The construct's explicit type argument, `T`, is the filling's: the
+    // array's element contract.
     if (filling && ts.isPropertyAccessExpression(filled) && ts.isNewExpression(made) &&
-        gate.globalIntrinsics.has(gate.span(made).join(":")))
-      return gate.intrinsic(filling, gate.span(node), gate.span(filled.name),
+        gate.globalIntrinsics.has(gate.span(made).join(":"))) {
+      const call = gate.intrinsic(filling, gate.span(node), gate.span(filled.name),
         [gate.expr(made), ...node.arguments.map(a => gate.expr(a))]);
+      const typeArgs = made.typeArguments?.map((t) => gate.typeOf(t, made));
+      return call.k === "apply" && typeArgs?.length ? { ...call, typeArgs } : call;
+    }
     // `Promise.resolve(v)` and the like, which the overlay reads as a call
     // of the intrinsic stating the same step, read at the member's name.
     const intrinsic = gate.globalIntrinsics.get(gate.span(node).join(":"));

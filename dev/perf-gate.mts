@@ -3,7 +3,10 @@
 // (its fragment and claims kept), its given statement-entry facts written
 // (`verifier --verify-units 6`), then the pass (`--verify-units 3`) run over
 // them with its counts (`TSCERT_COUNTS`), compared with dev/perf-baseline.json.
-//   node dev/perf-gate.mts <pretext checkout at ba09794f> [--update]
+//   node dev/perf-gate.mts <pretext checkout at ba09794f> [--update | --add]
+// The pretext units are also gated in mode 8 (`--verify-units 8`, the pass
+// over the types the verifier computes). `--add` writes the baseline of the
+// units it lacks, keeping the others'.
 // A regression is a verdict other than the baseline's, a counter above its
 // baseline, a unit whose visited nodes differ from its reached nodes, or the
 // pass's CPU time (user and system of the verifier process, best of 3) above
@@ -25,7 +28,7 @@ const baselinePath = join(root, "dev/perf-baseline.json");
 withoutEvidenceReuse();
 
 /** A unit of the gate: a function of a pretext file or of a pipeline case. */
-type GateUnit = { name: string; unit: string } & ({ pretext: string } | { case: string });
+type GateUnit = { name: string; unit: string; mode?: string } & ({ pretext: string } | { case: string });
 const units: GateUnit[] = [
   { name: "pretext measureAnalysis", pretext: "prepare.ts", unit: "measureAnalysis" },
   { name: "pretext prepareRichInline", pretext: "rich-inline.ts", unit: "prepareRichInline" },
@@ -40,6 +43,9 @@ const units: GateUnit[] = [
   { name: "async", case: "async-await", unit: "chained" },
   { name: "handler", case: "try-catch", unit: "handled" },
   { name: "exceptional footprint", case: "exceptional-footprint-handler", unit: "largest" },
+  { name: "pretext measureAnalysis, computed types", pretext: "prepare.ts", unit: "measureAnalysis", mode: "8" },
+  { name: "pretext prepareRichInline, computed types", pretext: "rich-inline.ts", unit: "prepareRichInline", mode: "8" },
+  { name: "pretext buildEngineProfile, computed types", pretext: "measurement.ts", unit: "buildEngineProfile", mode: "8" },
 ];
 
 /** The counters the gate compares, by the name the pass prints them. */
@@ -127,7 +133,7 @@ function measure(u: GateUnit, dir: string, key: string): Measured {
   const lines = verify("6", dir, key, u.unit, process.env).stdout.split("\n").filter((l) => l.startsWith("{\"codes\""));
   writeFileSync(given, lines.join("\n") + "\n");
   const env = { ...process.env, TSCERT_GIVEN: given, TSCERT_COUNTS: "1" };
-  const runs = [0, 1, 2].map(() => verify("3", dir, key, u.unit, env));
+  const runs = [0, 1, 2].map(() => verify(u.mode ?? "3", dir, key, u.unit, env));
   const first = runs[0];
   let verdict = "missing", refusal = "";
   for (const line of first.stdout.split("\n").filter((l) => l.startsWith("{"))) {
@@ -157,10 +163,11 @@ function measure(u: GateUnit, dir: string, key: string): Measured {
 }
 
 const args = process.argv.slice(2);
-const update = args.includes("--update");
+const add = args.includes("--add");
+const update = args.includes("--update") || add;
 const pretextRoot = args.find((a) => !a.startsWith("--"));
 if (pretextRoot === undefined) {
-  process.stderr.write("usage: node dev/perf-gate.mts <pretext checkout at ba09794f> [--update]\n");
+  process.stderr.write("usage: node dev/perf-gate.mts <pretext checkout at ba09794f> [--update | --add]\n");
   process.exit(2);
 }
 const started = performance.now();
@@ -209,10 +216,11 @@ try {
   process.stdout.write(`measured value/baseline; CPU of the verifier process, best of 3; tolerance ${Math.round(tolerance * 100)}% or ${slackMs} ms; ` +
     `capture ${(captureMs / 1000).toFixed(1)} s, total ${((performance.now() - started) / 1000).toFixed(1)} s\n`);
   if (update) {
-    const out: Baseline = { tolerance, slackMs, units: {} };
+    const out: Baseline = { tolerance, slackMs, units: add ? { ...baseline?.units } : {} };
     for (const u of units) {
       const m = measured.get(u.name);
-      if (m !== undefined) out.units[u.name] = { verdict: m.verdict, cpuMs: m.cpuMs, counters: m.counters };
+      if (m !== undefined && !(add && out.units[u.name] !== undefined))
+        out.units[u.name] = { verdict: m.verdict, cpuMs: m.cpuMs, counters: m.counters };
     }
     writeFileSync(baselinePath, JSON.stringify(out, null, 2) + "\n");
     process.stdout.write(`baseline written: ${baselinePath}\n`);

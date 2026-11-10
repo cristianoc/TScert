@@ -1108,11 +1108,18 @@ partial def fit (P : Ty Tree) (x : Expr) (A : Option (Ty Tree)) : W (Option (Ty 
       let R? ← StateT.lift (tryCatch (do
           -- The literal's record as written, else stating its own keys
           -- exactly (`HasTyUsing.alloc`'s bound), which meets optional fields.
-          let R ← prim (.refs fields [] [] [] [] [])
-          if within (← table) R [l] then return some R
-          let R ← prim (.refs fields [] [] [] [] [⟨true, names⟩])
-          return if within (← table) R [l] then some R else none) fun _ => pure none)
-      if let some R := R? then return ← record x (.ok R)
+          -- Each key in the expected record's form: a field where it states
+          -- one, a view where it states one, its stable keys kept.
+          let (fs, vs, st) := match PositiveRules.expand G [l] with
+            | [.refs _ [] evs _ _ _ est] =>
+              (fields.filter (fun (k, _) => (evs.lookup k).isNone), fields.filter (fun (k, _) => (evs.lookup k).isSome),
+                est.filter names.contains)
+            | _ => (fields, [], [])
+          let R ← prim (.refs fs [] vs [] [] [] st)
+          if within (← table) R [l] then return some (R, false)
+          let R ← prim (.refs fs [] vs [] [] [⟨true, names⟩] st)
+          return if within (← table) R [l] then some (R, true) else none) fun _ => pure none)
+      if let some (R, _) := R? then return ← record x (.ok R)
     return some A
   | .arrayLit _ es [] | .build _ _ es =>
     let w ← get
