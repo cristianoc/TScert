@@ -691,6 +691,10 @@ let rec heap_free env (e : expr) = match e.node with
   | Assign (x,_,rhs) -> (slot_binding env x || (!cells_written && !cell_terms x)) && heap_free env rhs
   | Update (_,{node=Id x;_},rhs,_) -> (slot_binding env x || (!cells_written && !cell_terms x)) &&
     Option.fold ~none:true ~some:(heap_free env) rhs
+  (* `x ??= v`, `x ||= v` and `x &&= v` read the binding, then on one path
+     assign it, as `Assign` does. *)
+  | NullishAssign (x,_,rhs) | LogicalAssign (_,{node=Id x;_},rhs) ->
+    (slot_binding env x || (!cells_written && !cell_terms x)) && heap_free env rhs
   | _ -> false
 
 (* A destructuring that reads fields of a path alone, `const { f, g: h } = p`:
