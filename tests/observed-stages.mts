@@ -605,18 +605,18 @@ if (process.argv[2] !== "--node-only") {
   assert.notEqual(forgedInput, found.result.input, "the forged entry differs");
   const forgedKey = sha256(forgedInput);
   store.publishFinished("parse", forgedKey, { ...found.result, input: forgedInput });
-  store.reference("parse", preKey, forgedKey);
+  store.reference("observed", "parse", preKey, forgedKey);
   rmSync(join(references, replayedKey));
   assert.equal(run().execution, "executed", "an entry whose observations do not hold");
   // A reference to an entry of another pre-key: its manifest is not this one's.
   const other = readdirSync(join(root, "observed", "parse")).find((p) => p !== preKey) ?? "";
   const otherKey = readdirSync(join(root, "observed", "parse", other))[0] ?? "";
   for (const k of readdirSync(references)) rmSync(join(references, k));
-  store.reference("parse", preKey, otherKey);
+  store.reference("observed", "parse", preKey, otherKey);
   assert.equal(run().execution, "executed", "a reference to another pre-key's entry");
   // A stored result altered after publication.
   for (const k of readdirSync(references)) rmSync(join(references, k));
-  store.reference("parse", preKey, replayedKey);
+  store.reference("observed", "parse", preKey, replayedKey);
   assert.equal(run().execution, "replayed", "the valid entry again");
   const stdout = join(entry(replayedKey), "stdout");
   chmodSync(entry(replayedKey), 0o755);

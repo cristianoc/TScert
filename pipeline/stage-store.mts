@@ -11,6 +11,7 @@
 //       stdout, stderr, out/<role>
 //   <root>/timeouts/<stage>/<key>/<attempt>/observation.json
 //   <root>/observed/<stage>/<pre-key>/<key>    a reference to an observed stage's entry
+//   <root>/proposed/<stage>/<proposal-key>/<key>  a reference to a search's entry, proposed as evidence
 //   <root>/sources/<digest>/<name>             a stable snapshot location
 //   <root>/tmp/<host>/<pid>.<attempt>/         a writer's unpublished entry
 //   <root>/uses/<host>.<pid>.<id>            a process's uses: `<ms> <bytes> <item>` lines
@@ -25,6 +26,15 @@ import { hostname } from "node:os";
 import { dirname, join } from "node:path";
 
 const sha256 = (bytes: string | Buffer): string => createHash("sha256").update(bytes).digest("hex");
+
+/** The roots of the store's reference index (STAGE-STORE.md, "Location
+ * and size"): each holds `<stage>/<pre-key>/<key>`, a
+ * reference to the entry `<key>` of `<stage>`, a candidate its reader
+ * validates. `observed` indexes an observed stage's entries by pre-key,
+ * `proposed` a search's entries by proposal key. */
+export type ReferenceIndex = "observed" | "proposed";
+export const referenceIndexes: readonly ReferenceIndex[] = ["observed", "proposed"];
+const isReferenceIndex = (part: string | undefined): part is ReferenceIndex => referenceIndexes.some((r) => r === part);
 
 /** CPU time, with the processes it covers, and the largest peak memory in
  * bytes among the stage's processes the pipeline's own process aside, null
@@ -199,9 +209,11 @@ function validated(copy: EntryCopy, stage: string, key: string, input: string | 
 /** The bytes a file of `size` bytes takes on disk, in whole 4 KiB blocks. */
 const blocks = (size: number): number => Math.ceil(size / 4096) * 4096;
 /** An item of the store an eviction pass accounts: a finished entry, one
- * timeout observation, a source snapshot, or an observed stage's reference
+ * timeout observation, a source snapshot, or a reference of either index
  * (accounted with the entry it names). */
-const itemShape = /^(?:entries\/[A-Za-z0-9_-]+\/[0-9a-f]{64}|timeouts\/[A-Za-z0-9_-]+\/[0-9a-f]{64}\/[A-Za-z0-9_.-]+|sources\/[0-9a-f]{64}|observed\/[A-Za-z0-9_-]+\/[0-9a-f]{64}\/[0-9a-f]{64})$/;
+const itemShape = /^(?:entries\/[A-Za-z0-9_-]+\/[0-9a-f]{64}|timeouts\/[A-Za-z0-9_-]+\/[0-9a-f]{64}\/[A-Za-z0-9_.-]+|sources\/[0-9a-f]{64}|(?:observed|proposed)\/[A-Za-z0-9_-]+\/[0-9a-f]{64}\/[0-9a-f]{64})$/;
+/** Whether `item` is a reference of either index. */
+const isReference = (item: string): boolean => isReferenceIndex(item.split("/")[0]);
 /** A use of an item, as a use line states it: when (ms since the epoch)
  * and the bytes it takes, 0 where the line does not measure it. */
 type Use = { at: number; bytes: number };
@@ -497,10 +509,10 @@ export class Store {
     return null;
   }
 
-  /** The keys referenced under an observed stage's pre-key, newest first:
+  /** The keys referenced in `index` under a stage's pre-key, newest first:
    * candidates only, each entry validated by its reader. */
-  candidates(stage: string, preKey: string): string[] {
-    const directory = join(this.root, "observed", stage, preKey);
+  candidates(index: ReferenceIndex, stage: string, preKey: string): string[] {
+    const directory = join(this.root, index, stage, preKey);
     let names: string[];
     try {
       names = readdirSync(directory);
@@ -518,11 +530,11 @@ export class Store {
     return names.filter((n) => /^[0-9a-f]{64}$/.test(n)).map((n) => ({ n, t: time(n) }))
       .sort((a, b) => b.t - a.t || (a.n < b.n ? -1 : 1)).map((c) => c.n);
   }
-  /** Reference the published entry `key` under its pre-key: an empty file,
-   * written once. */
-  reference(stage: string, preKey: string, key: string): void {
-    const directory = join(this.root, "observed", stage, preKey);
-    this.record(`observed/${stage}/${preKey}/${key}`, 0, true);
+  /** Reference the published entry `key` in `index` under its pre-key: an
+   * empty file, written once. */
+  reference(index: ReferenceIndex, stage: string, preKey: string, key: string): void {
+    const directory = join(this.root, index, stage, preKey);
+    this.record(`${index}/${stage}/${preKey}/${key}`, 0, true);
     for (let tries = 0; ; tries++) {
       mkdirSync(directory, { recursive: true });
       try {
@@ -800,8 +812,8 @@ export class Store {
    * names is measured; one recorded and absent is dropped), and where they
    * take more than `budgetBytes`, the least recently used items no running
    * process holds removed until they take at most `lowWater` of it, an
-   * entry with its references. Without a base, the references present are
-   * listed too. */
+   * entry with its references of either index. Without a base, the
+   * references present are listed too. */
   evictionPass(budgetBytes: number): EvictionPass | null {
     return this.locked(false, () => {
       const started = performance.now();
@@ -818,12 +830,13 @@ export class Store {
         }
       }
       if (!based)
-        for (const stage of this.names("observed"))
-          for (const preKey of this.names(`observed/${stage}`))
-            for (const key of this.names(`observed/${stage}/${preKey}`)) {
-              const item = `observed/${stage}/${preKey}/${key}`;
-              if (itemShape.test(item) && !items.has(item)) items.set(item, { at: 0, bytes: 0 });
-            }
+        for (const index of referenceIndexes)
+          for (const stage of this.names(index))
+            for (const preKey of this.names(`${index}/${stage}`))
+              for (const key of this.names(`${index}/${stage}/${preKey}`)) {
+                const item = `${index}/${stage}/${preKey}/${key}`;
+                if (itemShape.test(item) && !items.has(item)) items.set(item, { at: 0, bytes: 0 });
+              }
       const evicted = { entries: 0, timeouts: 0, sources: 0, references: 0 };
       const unreference = (item: string): void => {
         items.delete(item);
@@ -838,20 +851,20 @@ export class Store {
       // is removed.
       const references = new Map<string, string[]>();
       for (const item of [...items.keys()]) {
-        const [part, stage, preKey, key] = item.split("/");
-        if (part !== "observed") {
+        const [, stage, , key] = item.split("/");
+        if (!isReference(item)) {
           if (!present.has(item)) items.delete(item);
           continue;
         }
         const entry = `entries/${stage}/${key}`;
         if (!present.has(entry)) unreference(item);
-        else references.set(entry, [...(references.get(entry) ?? []), `observed/${stage}/${preKey}/${key}`]);
+        else references.set(entry, [...(references.get(entry) ?? []), item]);
       }
       let total = 0;
       for (const [item, use] of items) total += use.bytes;
       const before = total;
       if (total > budgetBytes) {
-        const order = [...items].filter(([item]) => !item.startsWith("observed/") && !held.has(item))
+        const order = [...items].filter(([item]) => !isReference(item) && !held.has(item))
           .sort(([a, x], [b, y]) => x.at - y.at || (a < b ? -1 : 1));
         const chosen: string[] = [];
         let remaining = total;
@@ -887,7 +900,7 @@ export class Store {
       this.writeBase(items, stopped);
       return {
         elapsedMs: performance.now() - started, budgetBytes, beforeBytes: before, afterBytes: total,
-        items: [...items.keys()].filter((i) => !i.startsWith("observed/")).length, held: held.size,
+        items: [...items.keys()].filter((i) => !isReference(i)).length, held: held.size,
         measured: measuredCount, evicted,
       };
     });
@@ -909,7 +922,7 @@ export class Store {
   }
   private cleanLocked(): void {
     this.locked(true, () => {
-      for (const part of ["entries", "timeouts", "observed"]) rmSync(join(this.root, part), { recursive: true, force: true });
+      for (const part of ["entries", "timeouts", ...referenceIndexes]) rmSync(join(this.root, part), { recursive: true, force: true });
       this.evictSources(this.present("sources"), join(this.root, "tmp", hostname(), `${process.pid}.clean`));
       this.collectOwnership();
       this.removeStoppedTemporaries();

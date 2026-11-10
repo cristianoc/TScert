@@ -908,7 +908,8 @@ name fresh stores of their own and execute every time: their subject is the
 replay mechanism. Store tests cover dependency invalidation, concurrent
 publication, interrupted writers, timeout/success races, writable
 artifact isolation and eviction: least recent use within the budget, items
-no use line names measured, references going with their entry, a held
+no use line names measured, references of either index going with their
+entry and a dangling one removed, cleaning removing both indexes, a held
 snapshot kept, a snapshot's use during a removal doing without the store's
 snapshot, markers per process, a use before a removal's second read of the
 use logs keeping its snapshot and one after it doing without, the lock
@@ -1022,8 +1023,12 @@ number of bytes with an optional `K`, `M`, `G` or `T` suffix (powers of
 readers treat concurrent removal as a miss.
 
 *Items.* An eviction pass accounts four kinds of item: a finished entry, a
-timeout observation, a source snapshot, and an observed stage's
-reference, which belongs to the entry it names. An item's size is the bytes
+timeout observation, a source snapshot, and a reference, which belongs to
+the entry it names. The reference index has two roots, each
+`<root>/<stage>/<pre-key>/<key>` and written and listed by one
+implementation (`Store.reference`, `Store.candidates`): `observed`, an
+observed stage's entries by pre-key ([observed stages](#observed-stages)),
+and `proposed`, searches' entries by proposal key. An item's size is the bytes
 its files take in whole 4 KiB blocks, the allocation unit of the volume:
 most of the store's files are smaller than one block.
 
@@ -1106,7 +1111,7 @@ does without it. An entry needs no hold: a reader copies it whole and
 validates the copy, so an eviction during a replay is a miss.
 
 *Cleaning.* `make clean-store` waits for a running pass, then removes every
-finished entry, timeout observation and reference, every source snapshot
+finished entry, timeout observation and reference of either index, every source snapshot
 no running process holds (under a marker of its own), the abandoned
 publication directories on this host, the pass summary, and the use
 logs and markers of stopped processes. `FORGET_HOST=<host>` counts that

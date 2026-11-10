@@ -491,7 +491,7 @@ function attemptInProcess<T>(call: InProcessCall<T>, options: { force: boolean; 
   const replaying = key !== null && store !== null && call.codec && replayedStages.has(call.stage)
     ? { key, store, codec: call.codec } : null;
   if (replaying && !forced) {
-    const candidates = call.observed ? replaying.store.candidates(call.stage, replaying.key) : [replaying.key];
+    const candidates = call.observed ? replaying.store.candidates("observed", call.stage, replaying.key) : [replaying.key];
     for (const candidate of candidates) {
       const found = replaying.store.finished(call.stage, candidate, call.observed ? null : input);
       if (!found) continue;
@@ -546,7 +546,7 @@ function attemptInProcess<T>(call: InProcessCall<T>, options: { force: boolean; 
     const result: StoredResult = { input: fullInput, exitStatus: 0, stdout: replaying.codec.encode(value),
       stderr: Buffer.alloc(0), outputs: [], measurement: { attempt, elapsedMs: done.elapsedMs, limitMs: null, cpu: done.cpu } };
     replaying.store.publishFinished(call.stage, key, result);
-    if (call.observed) replaying.store.reference(call.stage, replaying.key, key);
+    if (call.observed) replaying.store.reference("observed", call.stage, replaying.key, key);
   }
   options.recorder?.finish(done);
   return { value, record: done };
