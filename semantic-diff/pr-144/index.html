@@ -1,0 +1,453 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Commit Records</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Code+Pro:wght@400;600&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=STIX+Two+Text:ital,wght@0,400;0,600;1,400&display=swap">
+<style>
+:root { --bg:#fbfcfd; --surface:#ffffff; --ink:#0b1a2e; --muted:#56627a; --rule:#d5dce6; --accent:#8a6410; --code-bg:#eef2f7; --math-bg:#f2f4f8; --ok:#2f6b47; --ok-bg:#e2efe4; --principled:#a0521a; --principled-bg:#f7e6d6; --gap:#6b6f78; --gap-bg:#ecebe6; --neutral:#2c4f7c; --neutral-bg:#e6ebf2; --trust:#7c2f4a; --trust-bg:#f2e1e7; --neg:#9b3524; --neg-bg:#f5e1da; --run:#7a5414; --run-bg:#f3e7cc; --brand-ink:#0b1a2e; --brand-gold:#b8840f;
+  --display:"Bricolage Grotesque","Helvetica Neue",Arial,sans-serif; --body:"Inter","Helvetica Neue",Arial,sans-serif; --mono:"Source Code Pro",Menlo,Consolas,monospace; --math:"STIX Two Text","STIX Two Math","STIXGeneral","Cambria Math","Apple Symbols",Georgia,serif; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#0e1626; --surface:#16213a; --ink:#efe7d4; --muted:#9aa3b5; --rule:#2a3756; --accent:#e0ac4a; --code-bg:#131d33; --math-bg:#1a2540; --ok:#7fd0a2; --ok-bg:#17322a; --principled:#f0a868; --principled-bg:#3a2a1c; --gap:#9aa3b5; --gap-bg:#1c2639; --neutral:#8fb4e8; --neutral-bg:#1b2b49; --trust:#e79bb6; --trust-bg:#3a2131; --neg:#f0907d; --neg-bg:#3a1f22; --run:#e0ac4a; --run-bg:#2e2a24; --brand-ink:#efe7d4; --brand-gold:#e0ac4a; color-scheme:dark } }
+:root[data-theme="dark"] { --bg:#0e1626; --surface:#16213a; --ink:#efe7d4; --muted:#9aa3b5; --rule:#2a3756; --accent:#e0ac4a; --code-bg:#131d33; --math-bg:#1a2540; --ok:#7fd0a2; --ok-bg:#17322a; --principled:#f0a868; --principled-bg:#3a2a1c; --gap:#9aa3b5; --gap-bg:#1c2639; --neutral:#8fb4e8; --neutral-bg:#1b2b49; --trust:#e79bb6; --trust-bg:#3a2131; --neg:#f0907d; --neg-bg:#3a1f22; --run:#e0ac4a; --run-bg:#2e2a24; --brand-ink:#efe7d4; --brand-gold:#e0ac4a; color-scheme:dark }
+* { box-sizing:border-box } body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.6 var(--body) }
+main { max-width:900px; margin:0 auto; padding-inline:20px; padding-block:32px 64px; display:flex; flex-direction:column; gap:22px }
+h1 { font:600 32px/1.15 var(--display); margin:0 } h2 { font:600 22px/1.2 var(--display); margin:12px 0 8px; padding-top:12px; border-top:2px solid var(--ink) }
+h3 { font:600 19px/1.3 var(--display); margin:2px 0 0; text-wrap:balance }
+h4 { font:600 11px/1 var(--body); letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin:12px 0 4px }
+p { margin:2px 0; max-width:72ch } .lede { color:var(--muted) }
+code { font:13px/1.5 var(--mono); background:var(--code-bg); padding:1px 4px; border-radius:3px }
+pre { margin:4px 0; padding:12px 14px; border-radius:6px; overflow-x:auto }
+pre.code { font:13px/1.55 var(--mono); background:var(--code-bg) }
+.rules { display:flex; flex-direction:column; gap:14px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:14px 18px; overflow-x:auto; font:16px/1.6 var(--math) }
+.rules sub, .rules sup { font-size:.72em; line-height:0 }
+.formulas { display:flex; flex-direction:column; gap:4px }
+.formulas .row { display:flex; flex-wrap:wrap; gap:4px 28px } .formulas .row.cont { padding-left:2em }
+.infer { display:flex; align-items:center; gap:12px }
+.frac { display:inline-flex; flex-direction:column; align-items:center; min-width:0 }
+.premises { display:flex; flex-wrap:wrap; justify-content:center; gap:4px 26px; padding:0 6px 3px }
+.bar { align-self:stretch; border-top:1.5px solid var(--ink) }
+.conclusion { padding:3px 6px 0; text-align:center }
+.rule-name { font:15px/1 var(--math); font-variant:small-caps; letter-spacing:.02em; color:var(--accent); white-space:nowrap }
+.card { background:var(--surface); border:1px solid var(--rule); border-radius:8px; padding:20px 22px; display:flex; flex-direction:column; gap:6px; min-width:0 }
+.card > header { display:flex; justify-content:space-between; gap:12px; align-items:flex-start }
+.sha { font:12px/1.4 var(--mono); color:var(--muted) }
+.pill { font:600 11px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; padding:6px 9px; border-radius:99px; white-space:nowrap }
+.pill.ok { color:var(--ok); background:var(--ok-bg) } .pill.principled { color:var(--principled); background:var(--principled-bg) }
+.pill.gap { color:var(--gap); background:var(--gap-bg) } .pill.neutral { color:var(--neutral); background:var(--neutral-bg) }
+.units { display:flex; flex-wrap:wrap; gap:6px } .units span { font:12px/1 var(--mono); border:1px solid var(--rule); border-radius:4px; padding:5px 7px }
+dl.facts { display:grid; grid-template-columns:max-content minmax(0,1fr); gap:6px 16px; margin:12px 0 0; padding-top:12px; border-top:1px solid var(--rule); font-size:13.5px }
+dt { font:600 11px/1.9 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted) }
+dd { margin:0; min-width:0; display:flex; flex-wrap:wrap; gap:5px; align-items:baseline }
+.chip { font:500 12px/1 var(--body); border:1px solid var(--rule); border-radius:4px; padding:4px 7px } .chip.strong { color:var(--accent); border-color:var(--accent) }
+.trust { color:var(--trust); background:var(--trust-bg); padding:2px 6px; border-radius:4px } .none { color:var(--muted) }
+.test { font:12px/1 var(--mono); padding:4px 7px; border-radius:4px }
+.test.pos { color:var(--ok); background:var(--ok-bg) } .test.pos::before { content:"✓ " }
+.test.neg { color:var(--neg); background:var(--neg-bg) } .test.neg::before { content:"✗ " }
+.test.forged { color:var(--principled); background:var(--principled-bg) } .test.forged::before { content:"forged " }
+details { margin-top:8px; font-size:13px; color:var(--muted) } summary { cursor:pointer }
+.table-wrap { overflow-x:auto; border:1px solid var(--rule); border-radius:8px; background:var(--surface) }
+table { border-collapse:collapse; width:100%; font-size:13px } th, td { text-align:left; vertical-align:top; padding:8px 10px; border-bottom:1px solid var(--rule) }
+th { font:600 11px/1.2 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); white-space:nowrap } td.num { font-variant-numeric:tabular-nums }
+h4.change { display:flex; align-items:center; gap:8px; text-transform:none; letter-spacing:0; font:600 14px/1.3 var(--body); color:var(--ink); margin:16px 0 6px }
+h4.change .target { font-weight:400; color:var(--muted) }
+.act { font:600 10.5px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; padding:4px 7px; border-radius:4px }
+.act.added { color:var(--ok); background:var(--ok-bg) } .act.removed { color:var(--neg); background:var(--neg-bg) }
+.act.modified, .act.replaced { color:var(--principled); background:var(--principled-bg) }
+.versions { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:10px }
+.versions figure { margin:0; min-width:0 } .versions figcaption { font:600 11px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); margin:0 0 4px }
+.versions .rules { height:calc(100% - 18px); box-sizing:border-box }
+pre.code .ln { display:block; white-space:pre } pre.code .ln.add { background:var(--ok-bg) } pre.code .ln.del { background:var(--neg-bg) }
+.tk-k { color:#7a3b8c } .tk-s { color:#2f6b47 } .tk-n { color:#a35a12 } .tk-c { color:var(--muted); font-style:italic } .tk-t { color:#2c4f7c }
+.prose p { margin:4px 0 }
+ul.effect, ul.summary { margin:4px 0; padding-left:20px } ul.effect li, ul.summary li { margin:3px 0 } ul.summary ul { padding-left:18px; color:var(--muted) }
+ul.effect .arrow { color:var(--accent); font-weight:600 }
+ul.effect details { margin:0; color:inherit; font-size:inherit } ul.effect summary { list-style-position:outside }
+ul.effect .kind { font-size:11px; text-transform:uppercase; letter-spacing:.04em; padding:1px 6px; border-radius:4px; background:var(--chip, #eee) }
+ul.effect .kind.negative { color:#8a3b12 } ul.effect .kind.positive { color:#22663a } ul.effect .kind.gap { color:#7a5b00 }
+ul.effect .was.unsound { color:#b3261e; font-weight:600 } ul.effect .now { font-weight:500 } ul.effect .why { color:var(--muted) }
+ul.effect mark { background:#ffe08a; color:inherit; border-radius:2px }
+@media (max-width:720px) { .versions { grid-template-columns:minmax(0,1fr) } }
+.lowering { display:flex; flex-direction:column; gap:6px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:12px 16px; overflow-x:auto }
+.lowering .map, .lowering .cond, .lowering .result { display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 10px }
+.lowering .map:not(:has(.sem)) { flex-direction:column; align-items:stretch; gap:4px }
+.lowering .result { display:grid; grid-template-columns:auto minmax(0,1fr); align-items:baseline; gap:2px 10px; padding-left:1em } .lowering .result .note { grid-column:2 }
+.m-intr { font:14px/1.5 var(--mono); color:#2c4f7c } .m-lit { font:13px/1.5 var(--mono); color:#7a3b8c }
+.lowering code.src { font:13px/1.5 var(--mono); background:var(--surface); border:1px solid var(--rule); padding:2px 6px; border-radius:4px }
+.lowering .to { color:var(--accent); font-weight:600; font-size:17px }
+.lowering .tgt { font:16px/1.5 var(--math) } .rules .lowering { background:none; border:0; padding:0 } .lowering .sem code.src { margin:0 2px }
+var { font-style:italic } .m-op { color:#2c4f7c; font-style:normal } .m-con { color:#8f6416; font-style:normal; font-variant:small-caps }
+.m-kw { color:#7a3b8c; font-weight:600; font-style:normal } .m-bind { color:#7a3b8c } .m-rel { color:var(--accent); padding:0 .12em }
+.m-text { font:14px/1.5 var(--body); color:var(--muted) } code.m-code { font:13px/1.5 var(--mono); background:var(--surface); border:1px solid var(--rule); padding:1px 5px; border-radius:4px }
+.refused { color:var(--neg); font-weight:600 }
+.lowering .refused { color:var(--neg); font-weight:600 }
+.lowering .label { font:600 11px/1 var(--body); letter-spacing:.05em; text-transform:uppercase; color:var(--muted); min-width:7em }
+.lowering .cond { padding-left:1.5em } .lowering .note { color:var(--muted); font:italic 13px/1.4 var(--body) }
+a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outline-offset:2px }
+@media (max-width:520px) { dl.facts { grid-template-columns:minmax(0,1fr) } .card > header { flex-direction:column } }</style></head><body><main><header><h1>Commit Records</h1><p class="lede">5 commits, rendered from their records.</p></header>
+<section><h2>Branches</h2><ul class="summary"><li><a href="#g-pr-144"><code>7b6e476a8bd712c184ac38f0d001af6b6f846699..pr-144</code></a><ul><li>5 commits, units 7 verified</li><li>parts: <span class="chip">docs</span> <span class="chip">lean-rules</span> <span class="chip">lean-proofs</span> <span class="chip">tests</span></li></ul></li></ul></section>
+<h2 id="g-pr-144"><code>7b6e476a8bd712c184ac38f0d001af6b6f846699..pr-144</code></h2><article class="card" id="c-3d3c11722"><header><div><div class="sha">3d3c11722 · Cristiano Calcagno · Nov 10, 06:24</div><h3>Draft the regional check as a lazy second certificate and fresh stable fields</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>A body stating <code>Modifies&lt;{ values: &quot;any&quot;; stores: &quot;grow&quot; }, number&gt;</code> that calls a function whose frame states <code>&quot;runs.open[*]&quot;: &quot;any&quot;</code> on a record it allocated itself is refused: &quot;the footprint claimed for 'f' is not established by its body&quot;. The plain bound check reads a signature with regions as changing everything, and the regional check, which can rebase a region to no region, runs only for statements with regions. Pretext's measureAnalysis is refused the same way. An Astra review asked for a lazy certificate order, exact freshness obligations (throws included) and more controls.</p></div>
+<h4 class="change"><span class="act added">added</span>Docs <span class="target">drafts/stated-bodies-regional.md</span></h4><div class="prose"><p>The regional check, with no regions, as a second certificate of a claimed footprint, tried after the existing successes; a third fresh table, a store held by a field read through <code>readPath</code>, established at an allocation from a fresh initializer and kept by <code>@stable</code>, consumed by rebasing a one-field path to no region; its composition with a nullable position; soundness, cases, cost and steps.</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">docs</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd></dl>
+<details><summary>1 file changed, 277 insertions(+)</summary><pre class="code"> docs/drafts/stated-bodies-regional.md | 277 ++++++++++++++++++++++++++++++++++</pre></details>
+<div class="sha">with Claude</div>
+</article>
+<article class="card" id="c-4094e096d"><header><div><div class="sha">4094e096d · Cristiano Calcagno · Nov 10, 06:47</div><h3>Certify a claimed footprint by the regional check when the bound check refuses it</h3></div><span class="pill ok">verified</span></header>
+<div class="units"><span>stated-fresh-direct.ts#f</span></div>
+<h4 class="change">Why</h4><div class="prose"><p><code>f</code> states <code>Modifies&lt;{ values: &quot;any&quot;; stores: &quot;grow&quot; }, number&gt;</code>, allocates <code>const open: number[] = [1]</code> and calls <code>step(open, xs)</code>, whose frame states <code>&quot;open[*]&quot;: &quot;any&quot;</code>. It was refused at the call: &quot;the footprint claimed for 'f' is not established by its body&quot;. The node-by-node bound check reads a frame stating a store region as changing every store (<code>top</code>), and the regional check, which rebases a region on a store the body allocated to none, ran only for statements with regions.</p></div>
+<h4 class="change"><span class="act added">added</span>Rule <span class="target">Lean: a second certificate of a claimed footprint</span></h4><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">the claimed footprint</span> <var>Φ</var><sub><var>c</var></sub> <span class="m-text">of a unit promising no fresh result holds where</span></span></div><div class="row"><span><span class="m-text">the regional check with no regions accepts its graph at</span> <var>Φ</var><sub><var>c</var></sub>, <span class="m-text">its throws</span></span></div><div class="row"><span><span class="m-text">bounded where the unit claims</span> <var>Φ</var><sub><var>c</var></sub> <span class="m-text">on a throw; it is tried after</span> <code class="m-code">top</code>,</span></div><div class="row"><span><span class="m-text">a pure graph and the node-by-node check refuse</span></span></div></div><div class="infer"><div class="frac"><div class="premises"><span><span class="m-op">regionalChecked</span>(<var>Φ</var><sub><var>c</var></sub>, [], <span class="m-op">onThrow</span>)</span><span>¬<span class="m-text">fresh</span></span></div><div class="bar"></div><div class="conclusion"><div><var>Φ</var><sub><var>c</var></sub>.<span class="m-con">Holds</span> <var>h</var>₀ <var>h'</var>   <span class="m-text">(normal return; a throw where onThrow)</span></div></div></div><span class="rule-name">(regional-certificate)</span></div></div>
+<h4 class="change"><span class="act added">added</span>Theorem <span class="target">no-regions</span></h4><div class="rules"><div class="formulas"><div class="row"><span><span class="m-con">ArgumentStoreRegionsWithin</span> <var>Φ</var> [] <var>ρ</var> <var>h</var>₀ <var>h</var>  ⟹  <var>Φ</var>.<span class="m-con">Holds</span> <var>h</var>₀ <var>h</var></span></div><div class="row"><span><span class="m-text">(with no region the exclusion predicate holds of every location)</span></span></div></div></div>
+<h4 class="change"><span class="act modified">modified</span>Definition <span class="target">Lean: the regional check</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">the graph check inline</span> <span class="m-text">in</span> <code class="m-code">regionalResult</code></span></div></div></div></figure><figure><figcaption>After</figcaption><div class="rules"><div class="formulas"><div class="row"><span><code class="m-code">regionalChecked r c Φ regions exc</code>, <span class="m-text">called by <code class="m-code">regionalResult</code> for a</span></span></div><div class="row"><span><span class="m-text">statement with regions and by <code class="m-code">effectResult</code> with no regions</span></span></div></div></div></figure></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>stated-fresh-direct</code> <span class="kind positive">positive</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">a region on an array the body allocates</span></summary><pre class="code"><span class="tk-c">// The regional check as a second certificate of a claimed footprint</span>
+<span class="tk-c">// (FOOTPRINTS.md, &quot;Fresh array storage&quot;): `f` states no store region, and</span>
+<span class="tk-c">// the call of `step` changes the store of `open`, an array `f` allocates.</span>
+<span class="tk-c">// The plain bound check reads a frame stating a region as changing every</span>
+<span class="tk-c">// store; the regional check with no regions rebases the region on `open`,</span>
+<span class="tk-c">// whose store lies at or above the entry heap's length, to no region, so</span>
+<span class="tk-c">// `f` changes the stores of its entry heap at most by `grow`.</span>
+<span class="tk-k">function</span> step(open: number[], out: number[]): <span class="tk-t">Modifies</span>&lt;{ values: <span class="tk-s">&quot;any&quot;</span>; stores: <span class="tk-s">&quot;grow&quot;</span>; <span class="tk-s">&quot;open[*]&quot;</span>: <span class="tk-s">&quot;any&quot;</span> }, number&gt; {
+  open.pop();
+  out.push(<span class="tk-n">1</span>);
+  <span class="tk-k">return</span> out.length;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> f(xs: number[]): <span class="tk-t">Modifies</span>&lt;{ values: <span class="tk-s">&quot;any&quot;</span>; stores: <span class="tk-s">&quot;grow&quot;</span> }, number&gt; {
+  <span class="tk-k">const</span> open: number[] = [<span class="tk-n">1</span>];
+  <span class="tk-k">return</span> step(open, xs);
+}</pre></details></li><li><details><summary><code>invalid-stated-fresh-parameter</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">a received record's field holds the caller's array</span></summary><pre class="code"><span class="tk-c">// The regional certificate's boundary (FOOTPRINTS.md, &quot;Fresh array</span>
+<span class="tk-c">// storage&quot;): `drain` receives its record, so the array its `@stable` field</span>
+<span class="tk-c">// holds may be the caller's, and the region `step` states on it is no</span>
+<span class="tk-c">// store `drain` allocated. `drain`'s statement, `stores: &quot;grow&quot;`, is</span>
+<span class="tk-c">// refused at the call. Run under Node, `total([1, 2, 3])` relies on that</span>
+<span class="tk-c">// statement to keep `i &lt; xs.length` across `drain(runs)`, reads past the end</span>
+<span class="tk-c">// of the array the calls empty and returns `NaN`.</span>
+<span class="tk-k">type</span> <span class="tk-t">Runs</span> = { <span class="tk-c">/** @stable */</span> <span class="tk-k">readonly</span> open: number[] };
+
+<span class="tk-k">function</span> step(runs: <span class="tk-t">Runs</span>): <span class="tk-t">Modifies</span>&lt;{ values: <span class="tk-s">&quot;any&quot;</span>; stores: <span class="tk-s">&quot;grow&quot;</span>; <span class="tk-s">&quot;runs.open[*]&quot;</span>: <span class="tk-s">&quot;any&quot;</span> }, <span class="tk-k">void</span>&gt; {
+  runs.open.pop();
+}
+
+<span class="tk-k">function</span> drain(runs: <span class="tk-t">Runs</span>): <span class="tk-t">Modifies</span>&lt;{ values: <span class="tk-s">&quot;any&quot;</span>; stores: <span class="tk-s">&quot;grow&quot;</span> }, <span class="tk-k">void</span>&gt; {
+  step(runs);
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> total(xs: number[]): number {
+  <span class="tk-k">const</span> runs: <span class="tk-t">Runs</span> = { open: xs };
+  <span class="tk-k">let</span> sum = <span class="tk-n">0</span>;
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; xs.length; i++) {
+    drain(runs);
+    sum += xs[i]!;
+  }
+  <span class="tk-k">return</span> sum;
+}</pre></details></li></ul>
+<h4 class="change">Soundness</h4><div class="prose"><p><code>regionalChecked_at</code> states the regional postcondition for any accepted graph; <code>checkRequests_footprint_at</code> takes the footprint from it through <code>ArgumentStoreRegionsWithin.nil_holds</code>, normal and exceptional. <code>checkUnitJson_safe</code>, <code>RequestsSafe</code> and the plan conversion keep their statements. No new trust.</p></div>
+<h4 class="change">Counterexample</h4><pre class="code"><span class="ln">invalid-stated-fresh-parameter.ts under <span class="tk-t">Node</span>: <span class="tk-s">`total([1, 2, 3])`</span> is <span class="tk-t">NaN</span></span></pre>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">lean-rules</span> <span class="chip">lean-proofs</span> <span class="chip">docs</span> <span class="chip">tests</span></dd><dt>Lean</dt><dd>SourceExtraction.regionalChecked · SourceExtraction.regionalChecked_at · SourceExtraction.effectResult · SourceExtraction.effectResult_preserving · SourceExtraction.checkRequests_footprint_at · SourceExtraction.regionalResult_checked · Footprints.ArgumentStoreRegionsWithin.nil_holds</dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd><span class="test pos">stated-fresh-direct</span> <span class="test neg">invalid-stated-fresh-parameter</span></dd></dl>
+<details><summary>6 files changed, 246 insertions(+), 134 deletions(-)</summary><pre class="code"> docs/FOOTPRINTS.md                                 |  23 ++
+ lean/Verification/Semantics/StoreRegions.lean      |   6 +
+ lean/Verification/Source/SourceRequests.lean       | 305 ++++++++++++---------
+ pipeline/cases.mts                                 |   3 +
+ .../examples/invalid-stated-fresh-parameter.ts     |  26 ++
+ pipeline/examples/stated-fresh-direct.ts           |  17 ++</pre></details>
+<div class="sha">with Claude</div>
+</article>
+<article class="card" id="c-d5ebf5d2c"><header><div><div class="sha">d5ebf5d2c · Cristiano Calcagno · Nov 10, 07:20</div><h3>Rebase a region on a fresh store held by a stable field of a record the body allocates</h3></div><span class="pill ok">verified</span></header>
+<div class="units"><span>stated-fresh-field.ts#f</span><span>stated-fresh-field-local.ts#f</span><span>stated-fresh-field-nullable.ts#f</span><span>stated-fresh-field-escape.ts#f</span><span>stated-fresh-field-alias.ts#f</span><span>stated-fresh-field-throw.ts#f</span></div>
+<h4 class="change">Why</h4><div class="prose"><p><code>f</code> states <code>Modifies&lt;{ values: &quot;any&quot;; stores: &quot;grow&quot; }, number&gt;</code>, allocates <code>const runs: Runs = { open: [] }</code> (<code>open</code> a <code>@stable</code> field) and calls <code>step(runs, xs)</code>, whose frame states <code>&quot;runs.open[*]&quot;: &quot;any&quot;</code>. It was refused at the call: &quot;the footprint claimed for 'f' is not established by its body&quot;. Store freshness covered a slot's own store and a cell's contents; the store a record's field holds had no fact, so the region rebased to every location. Pretext's measureAnalysis is refused the same way at <code>getUnspacedGraphemes(…, unspacedRuns)</code>, <code>unspacedRuns</code> being <code>scriptRuns</code> or <code>null</code>.</p></div>
+<h4 class="change"><span class="act added">added</span>Definition <span class="target">regional check: fresh fields</span></h4><div class="rules"><div class="formulas"><div class="row"><span><var>b</var> <span class="m-rel">=</span> |<var>h</var>₀|; <span class="m-text">Fs the pairs (slot, field name) at each node</span></span></div></div><div class="formulas"><div class="row cont"><span><span class="m-op">FieldFresh</span><sub><var>b</var></sub>(<var>h</var>, <var>v</var>, <var>f</var>)  ⟺  <span class="m-bind">∀</span> <var>u</var>. <span class="m-op">readPath</span>(<var>h</var>, <var>v</var>, [<var>f</var>]) <span class="m-rel">=</span> <var>u</var> ⟹ <span class="m-bind">∀</span> <var>s</var>. <span class="m-op">store</span>(<var>u</var>) <span class="m-rel">=</span> <var>s</var> ⟹ <var>b</var> <span class="m-rel">≤</span> <var>s</var></span></div></div><div class="formulas"><div class="row"><span><span class="m-text">a node's value is fresh at</span> <var>f</var><span class="m-rel">:</span> <span class="m-text">a copy of a slot fresh at</span> <var>f</var>, <span class="m-text">a constant</span>,</span></div><div class="row cont"><span><span class="m-text">an allocation new</span>{<span class="m-op">ns</span><span class="m-rel">:</span> <var>x</var>̄} <span class="m-text">of distinct keys with</span> <span class="m-op">ns</span><sub><var>m</var></sub> <span class="m-rel">=</span> <var>f</var> <span class="m-text">and</span> <var>x</var>̄<sub><var>m</var></sub> <span class="m-text">a slot</span></span></div><div class="row cont"><span><span class="m-text">holding a fresh value</span></span></div><div class="row"><span><span class="m-text">a node keeps</span> (<var>j</var>, <var>f</var>)<span class="m-rel">:</span> <var>Γ</var>(<var>j</var>) <span class="m-text">states</span> <var>f</var> @<span class="m-text">stable or is</span> <span class="m-lit">null</span> <span class="m-text">or</span> <span class="m-lit">undefined</span>, <span class="m-text">or</span></span></div><div class="row cont"><span><span class="m-text">admits</span> <span class="m-lit">null</span> <span class="m-text">and</span> <span class="m-lit">undefined</span> <span class="m-text">alone</span></span></div><div class="row"><span><span class="m-text">edges and handlers</span><span class="m-rel">:</span> <span class="m-text">the slot maps, the thrown value fresh at no field</span>;</span></div><div class="row cont"><span><span class="m-text">the entry has none; the names are those the regions of the body's</span></span></div><div class="row cont"><span><span class="m-text">calls read through one field; Lean infers the pairs after the values</span></span></div><div class="row cont"><span><span class="m-text">and cells, apart from them, none without a fixed point</span></span></div></div></div>
+<h4 class="change"><span class="act modified">modified</span>Rule <span class="target">regional check: rebasing a step's frame</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">path</span> <var>s</var> [] <span class="m-text">store</span> <span class="m-rel">↦</span> <span class="m-text">no region where</span> <var>s</var> <span class="m-text">holds a fresh value</span></span></div></div></div></figure><figure><figcaption>After</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">the same, and path</span> <var>s</var> [<var>f</var>] <span class="m-text">store</span> <span class="m-rel">↦</span> <span class="m-text">no region where</span> <var>s</var> <span class="m-text">is fresh at</span> <var>f</var></span></div></div><div class="infer"><div class="frac"><div class="premises"><span>(<var>s</var>, <var>f</var>) <span class="m-text">fresh at the step</span></span></div><div class="bar"></div><div class="conclusion"><div><span class="m-op">rebase</span><span class="m-text">(path</span> <var>s</var> [<var>f</var>] <span class="m-text">store</span>) <span class="m-rel">=</span> ∅</div></div></div><span class="rule-name">(fresh-field)</span></div></div></figure></div>
+<h4 class="change"><span class="act added">added</span>Theorem <span class="target">stable locations on a throw</span></h4><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">a location whose world contract is stable holds its value in the heap of</span></span></div><div class="row"><span><span class="m-text">every outcome of a run, normal or thrown</span></span></div></div></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>stated-fresh-field</code> <span class="kind positive">positive</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">a callee's region on a fresh stable field</span></summary><pre class="code"><span class="tk-c">// A fresh store through one `@stable` field (FOOTPRINTS.md, &quot;Fresh array</span>
+<span class="tk-c">// storage&quot;): `f` allocates the record `runs` and the array its `@stable`</span>
+<span class="tk-c">// field `open` holds, so the store `step`'s region `runs.open[*]` selects</span>
+<span class="tk-c">// lies at or above the entry heap's length, and the region rebases to none.</span>
+<span class="tk-c">// `f` changes the stores of its entry heap at most by `grow`.</span>
+<span class="tk-k">type</span> <span class="tk-t">Runs</span> = { <span class="tk-c">/** @stable */</span> <span class="tk-k">readonly</span> open: number[] };
+
+<span class="tk-k">function</span> step(runs: <span class="tk-t">Runs</span>, out: number[]): <span class="tk-t">Modifies</span>&lt;{ values: <span class="tk-s">&quot;any&quot;</span>; stores: <span class="tk-s">&quot;grow&quot;</span>; <span class="tk-s">&quot;runs.open[*]&quot;</span>: <span class="tk-s">&quot;any&quot;</span> }, number&gt; {
+  runs.open.pop();
+  out.push(<span class="tk-n">1</span>);
+  <span class="tk-k">return</span> out.length;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> f(xs: number[]): <span class="tk-t">Modifies</span>&lt;{ values: <span class="tk-s">&quot;any&quot;</span>; stores: <span class="tk-s">&quot;grow&quot;</span> }, number&gt; {
+  <span class="tk-k">const</span> runs: <span class="tk-t">Runs</span> = { open: [] };
+  <span class="tk-k">return</span> step(runs, xs);
+}</pre></details></li><li><details><summary><code>stated-fresh-field-local</code> <span class="kind positive">positive</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">the field initialized from a local</span></summary><pre class="code"><span class="tk-c">// A fresh store through one `@stable` field, the array bound to a local</span>
+<span class="tk-c">// first (FOOTPRINTS.md, &quot;Fresh array storage&quot;): the record's field is</span>
+<span class="tk-c">// initialized from a slot holding a fresh value.</span>
+<span class="tk-k">type</span> <span class="tk-t">Runs</span> = { <span class="tk-c">/** @stable */</span> <span class="tk-k">readonly</span> open: number[] };
+
+<span class="tk-k">function</span> step(runs: <span class="tk-t">Runs</span>, out: number[]): <span class="tk-t">Modifies</span>&lt;{ values: <span class="tk-s">&quot;any&quot;</span>; stores: <span class="tk-s">&quot;grow&quot;</span>; <span class="tk-s">&quot;runs.open[*]&quot;</span>: <span class="tk-s">&quot;any&quot;</span> }, number&gt; {
+  runs.open.pop();
+  out.push(<span class="tk-n">1</span>);
+  <span class="tk-k">return</span> out.length;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> f(xs: number[]): <span class="tk-t">Modifies</span>&lt;{ values: <span class="tk-s">&quot;any&quot;</span>; stores: <span class="tk-s">&quot;grow&quot;</span> }, number&gt; {
+  <span class="tk-k">const</span> open: number[] = [];
+  <span class="tk-k">const</span> runs: <span class="tk-t">Runs</span> = { open };
+  <span class="tk-k">return</span> step(runs, xs);
+}</pre></details></li><li><details><summary><code>stated-fresh-field-nullable</code> <span class="kind positive">positive</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why"><code>c ? runs : null</code> at the region position</span></summary><pre class="code"><span class="tk-c">// A fresh store through one `@stable` field at a nullable position</span>
+<span class="tk-c">// (FOOTPRINTS.md, &quot;Fresh array storage&quot;): `maybe` is `runs` or `null`. The</span>
+<span class="tk-c">// record's field is fresh, and `null` has no field, so the join keeps the</span>
+<span class="tk-c">// fact; where `maybe` is `null` the region selects no store.</span>
+<span class="tk-k">type</span> <span class="tk-t">Runs</span> = { <span class="tk-c">/** @stable */</span> <span class="tk-k">readonly</span> open: number[] };
+
+<span class="tk-k">function</span> step(runs: <span class="tk-t">Runs</span> | <span class="tk-k">null</span>, out: number[]): <span class="tk-t">Modifies</span>&lt;{ values: <span class="tk-s">&quot;any&quot;</span>; stores: <span class="tk-s">&quot;grow&quot;</span>; <span class="tk-s">&quot;runs.open[*]&quot;</span>: <span class="tk-s">&quot;any&quot;</span> }, number&gt; {
+  <span class="tk-k">if</span> (runs !== <span class="tk-k">null</span>) runs.open.pop();
+  out.push(<span class="tk-n">1</span>);
+  <span class="tk-k">return</span> out.length;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> f(xs: number[], c: boolean): <span class="tk-t">Modifies</span>&lt;{ values: <span class="tk-s">&quot;any&quot;</span>; stores: <span class="tk-s">&quot;grow&quot;</span> }, number&gt; {
+  <span class="tk-k">const</span> runs: <span class="tk-t">Runs</span> = { open: [] };
+  <span class="tk-k">const</span> maybe = c ? runs : <span class="tk-k">null</span>;
+  <span class="tk-k">return</span> step(maybe, xs);
+}</pre></details></li><li><details><summary><code>stated-fresh-field-escape</code> <span class="kind positive">positive</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">the record stored by a callee changing values</span></summary><pre class="code"><span class="tk-c">// A fresh field across an escape (FOOTPRINTS.md, &quot;Fresh array storage&quot;):</span>
+<span class="tk-c">// `keep` stores the record in the caller's array under a frame changing</span>
+<span class="tk-c">// every value, and the record's `@stable` field keeps the array the body</span>
+<span class="tk-c">// allocated, so the later region on it rebases to none.</span>
+<span class="tk-k">type</span> <span class="tk-t">Runs</span> = { <span class="tk-c">/** @stable */</span> <span class="tk-k">readonly</span> open: number[] };
+
+<span class="tk-k">function</span> keep(holder: <span class="tk-t">Runs</span>[], runs: <span class="tk-t">Runs</span>): <span class="tk-t">Modifies</span>&lt;{ values: <span class="tk-s">&quot;any&quot;</span>; stores: <span class="tk-s">&quot;grow&quot;</span> }, <span class="tk-k">void</span>&gt; {
+  holder.push(runs);
+}
+
+<span class="tk-k">function</span> step(runs: <span class="tk-t">Runs</span>, out: number[]): <span class="tk-t">Modifies</span>&lt;{ values: <span class="tk-s">&quot;any&quot;</span>; stores: <span class="tk-s">&quot;grow&quot;</span>; <span class="tk-s">&quot;runs.open[*]&quot;</span>: <span class="tk-s">&quot;any&quot;</span> }, number&gt; {
+  runs.open.pop();
+  out.push(<span class="tk-n">1</span>);
+  <span class="tk-k">return</span> out.length;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> f(holder: <span class="tk-t">Runs</span>[], xs: number[]): <span class="tk-t">Modifies</span>&lt;{ values: <span class="tk-s">&quot;any&quot;</span>; stores: <span class="tk-s">&quot;grow&quot;</span> }, number&gt; {
+  <span class="tk-k">const</span> runs: <span class="tk-t">Runs</span> = { open: [] };
+  keep(holder, runs);
+  <span class="tk-k">return</span> step(runs, xs);
+}</pre></details></li><li><details><summary><code>stated-fresh-field-alias</code> <span class="kind positive">positive</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">the array's contents changed through an alias</span></summary><pre class="code"><span class="tk-c">// A fresh field whose array's contents change through an alias</span>
+<span class="tk-c">// (FOOTPRINTS.md, &quot;Fresh array storage&quot;): `fill` grows and writes the array</span>
+<span class="tk-c">// through `open`, a read of the stable field; the field still holds the</span>
+<span class="tk-c">// same array, whose store the body allocated.</span>
+<span class="tk-k">type</span> <span class="tk-t">Runs</span> = { <span class="tk-c">/** @stable */</span> <span class="tk-k">readonly</span> open: number[] };
+
+<span class="tk-k">function</span> fill(runs: <span class="tk-t">Runs</span>): <span class="tk-t">Modifies</span>&lt;{ values: <span class="tk-s">&quot;any&quot;</span>; stores: <span class="tk-s">&quot;grow&quot;</span>; <span class="tk-s">&quot;runs.open[*]&quot;</span>: <span class="tk-s">&quot;any&quot;</span> }, <span class="tk-k">void</span>&gt; {
+  <span class="tk-k">const</span> open = runs.open;
+  open.push(<span class="tk-n">1</span>);
+  <span class="tk-k">if</span> (<span class="tk-n">0</span> &lt; open.length) open[<span class="tk-n">0</span>] = <span class="tk-n">2</span>;
+}
+
+<span class="tk-k">function</span> step(runs: <span class="tk-t">Runs</span>, out: number[]): <span class="tk-t">Modifies</span>&lt;{ values: <span class="tk-s">&quot;any&quot;</span>; stores: <span class="tk-s">&quot;grow&quot;</span>; <span class="tk-s">&quot;runs.open[*]&quot;</span>: <span class="tk-s">&quot;any&quot;</span> }, number&gt; {
+  runs.open.pop();
+  out.push(<span class="tk-n">1</span>);
+  <span class="tk-k">return</span> out.length;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> f(xs: number[]): <span class="tk-t">Modifies</span>&lt;{ values: <span class="tk-s">&quot;any&quot;</span>; stores: <span class="tk-s">&quot;grow&quot;</span> }, number&gt; {
+  <span class="tk-k">const</span> runs: <span class="tk-t">Runs</span> = { open: [] };
+  fill(runs);
+  <span class="tk-k">return</span> step(runs, xs);
+}</pre></details></li><li><details><summary><code>stated-fresh-field-throw</code> <span class="kind positive">positive</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">a caught throw, then the record reused</span></summary><pre class="code"><span class="tk-c">// A fresh field across a caught throw (FOOTPRINTS.md, &quot;Fresh array</span>
+<span class="tk-c">// storage&quot;): `fail` throws; the handler receives `runs` as the throwing</span>
+<span class="tk-c">// node holds it, and the field keeps its array on the throw, so the region</span>
+<span class="tk-c">// `step` states on it after the `try` rebases to none.</span>
+<span class="tk-k">type</span> <span class="tk-t">Runs</span> = { <span class="tk-c">/** @stable */</span> <span class="tk-k">readonly</span> open: number[] };
+
+<span class="tk-k">function</span> fail(): number {
+  <span class="tk-k">throw</span> <span class="tk-k">new</span> <span class="tk-t">Error</span>(<span class="tk-s">&quot;fail&quot;</span>);
+}
+
+<span class="tk-k">function</span> step(runs: <span class="tk-t">Runs</span>, out: number[]): <span class="tk-t">Modifies</span>&lt;{ values: <span class="tk-s">&quot;any&quot;</span>; stores: <span class="tk-s">&quot;grow&quot;</span>; <span class="tk-s">&quot;runs.open[*]&quot;</span>: <span class="tk-s">&quot;any&quot;</span> }, number&gt; {
+  runs.open.pop();
+  out.push(<span class="tk-n">1</span>);
+  <span class="tk-k">return</span> out.length;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> f(xs: number[]): <span class="tk-t">Modifies</span>&lt;{ values: <span class="tk-s">&quot;any&quot;</span>; stores: <span class="tk-s">&quot;grow&quot;</span> }, number&gt; {
+  <span class="tk-k">const</span> runs: <span class="tk-t">Runs</span> = { open: [] };
+  <span class="tk-k">try</span> {
+    fail();
+  } <span class="tk-k">catch</span> {
+    runs.open.push(<span class="tk-n">0</span>);
+  }
+  <span class="tk-k">return</span> step(runs, xs);
+}</pre></details></li><li><details><summary><code>invalid-stated-fresh-old-array</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">a fresh record holding the caller's array</span></summary><pre class="code"><span class="tk-c">// A fresh record holding an old array (FOOTPRINTS.md, &quot;Fresh array</span>
+<span class="tk-c">// storage&quot;): `drain` allocates `runs`, but its field holds the caller's</span>
+<span class="tk-c">// `xs`, so the region `step` states on it is a store of the entry heap and</span>
+<span class="tk-c">// `drain`'s `stores: &quot;grow&quot;` is refused at the call. Run under Node,</span>
+<span class="tk-c">// `total([1, 2, 3])` relies on that statement to keep `i &lt; xs.length`,</span>
+<span class="tk-c">// reads past the end of the array the calls empty and returns `NaN`.</span>
+<span class="tk-k">type</span> <span class="tk-t">Runs</span> = { <span class="tk-c">/** @stable */</span> <span class="tk-k">readonly</span> open: number[] };
+
+<span class="tk-k">function</span> step(runs: <span class="tk-t">Runs</span>): <span class="tk-t">Modifies</span>&lt;{ values: <span class="tk-s">&quot;any&quot;</span>; stores: <span class="tk-s">&quot;grow&quot;</span>; <span class="tk-s">&quot;runs.open[*]&quot;</span>: <span class="tk-s">&quot;any&quot;</span> }, <span class="tk-k">void</span>&gt; {
+  runs.open.pop();
+}
+
+<span class="tk-k">function</span> drain(xs: number[]): <span class="tk-t">Modifies</span>&lt;{ values: <span class="tk-s">&quot;any&quot;</span>; stores: <span class="tk-s">&quot;grow&quot;</span> }, <span class="tk-k">void</span>&gt; {
+  <span class="tk-k">const</span> runs: <span class="tk-t">Runs</span> = { open: xs };
+  step(runs);
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> total(xs: number[]): number {
+  <span class="tk-k">let</span> sum = <span class="tk-n">0</span>;
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; xs.length; i++) {
+    drain(xs);
+    sum += xs[i]!;
+  }
+  <span class="tk-k">return</span> sum;
+}</pre></details></li><li><details><summary><code>invalid-stated-fresh-join</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">a join with a record holding the caller's array</span></summary><pre class="code"><span class="tk-c">// A join with an old store (FOOTPRINTS.md, &quot;Fresh array storage&quot;): `runs`</span>
+<span class="tk-c">// holds a fresh array on one branch and the caller's `xs` on the other, so</span>
+<span class="tk-c">// after the join its field has no fresh fact and `drain`'s</span>
+<span class="tk-c">// `stores: &quot;grow&quot;` is refused at the call. Run under Node,</span>
+<span class="tk-c">// `total([1, 2, 3])` reads past the end of the array the calls empty and</span>
+<span class="tk-c">// returns `NaN`.</span>
+<span class="tk-k">type</span> <span class="tk-t">Runs</span> = { <span class="tk-c">/** @stable */</span> <span class="tk-k">readonly</span> open: number[] };
+
+<span class="tk-k">function</span> step(runs: <span class="tk-t">Runs</span>): <span class="tk-t">Modifies</span>&lt;{ values: <span class="tk-s">&quot;any&quot;</span>; stores: <span class="tk-s">&quot;grow&quot;</span>; <span class="tk-s">&quot;runs.open[*]&quot;</span>: <span class="tk-s">&quot;any&quot;</span> }, <span class="tk-k">void</span>&gt; {
+  runs.open.pop();
+}
+
+<span class="tk-k">function</span> drain(xs: number[], c: boolean): <span class="tk-t">Modifies</span>&lt;{ values: <span class="tk-s">&quot;any&quot;</span>; stores: <span class="tk-s">&quot;grow&quot;</span> }, <span class="tk-k">void</span>&gt; {
+  <span class="tk-k">const</span> runs: <span class="tk-t">Runs</span> = c ? { open: [] } : { open: xs };
+  step(runs);
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> total(xs: number[]): number {
+  <span class="tk-k">let</span> sum = <span class="tk-n">0</span>;
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; xs.length; i++) {
+    drain(xs, <span class="tk-k">false</span>);
+    sum += xs[i]!;
+  }
+  <span class="tk-k">return</span> sum;
+}</pre></details></li><li><details><summary><code>invalid-stated-fresh-reassigned</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">a field that is not stable, reassigned</span></summary><pre class="code"><span class="tk-c">// A field that is not `@stable`, reassigned before the call (FOOTPRINTS.md,</span>
+<span class="tk-c">// &quot;Fresh array storage&quot;): `box.open` is allocated fresh, then assigned the</span>
+<span class="tk-c">// caller's `xs`. A region read through a field that is not stable is refused</span>
+<span class="tk-c">// at `step`'s entry, and the fresh field's fact is not carried across a node</span>
+<span class="tk-c">// that may change the field, so `drain`'s `stores: &quot;grow&quot;` is refused at the</span>
+<span class="tk-c">// call too. Run under Node, `total([1, 2, 3])` reads past the end of the</span>
+<span class="tk-c">// array the calls empty and returns `NaN`.</span>
+<span class="tk-k">type</span> <span class="tk-t">Box</span> = { open: number[] };
+
+<span class="tk-k">function</span> step(box: <span class="tk-t">Box</span>): <span class="tk-t">Modifies</span>&lt;{ values: <span class="tk-s">&quot;any&quot;</span>; stores: <span class="tk-s">&quot;grow&quot;</span>; <span class="tk-s">&quot;box.open[*]&quot;</span>: <span class="tk-s">&quot;any&quot;</span> }, <span class="tk-k">void</span>&gt; {
+  box.open.pop();
+}
+
+<span class="tk-k">function</span> drain(xs: number[]): <span class="tk-t">Modifies</span>&lt;{ values: <span class="tk-s">&quot;any&quot;</span>; stores: <span class="tk-s">&quot;grow&quot;</span> }, <span class="tk-k">void</span>&gt; {
+  <span class="tk-k">const</span> box: <span class="tk-t">Box</span> = { open: [] };
+  box.open = xs;
+  step(box);
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> total(xs: number[]): number {
+  <span class="tk-k">let</span> sum = <span class="tk-n">0</span>;
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; xs.length; i++) {
+    drain(xs);
+    sum += xs[i]!;
+  }
+  <span class="tk-k">return</span> sum;
+}</pre></details></li></ul>
+<h4 class="change">Soundness</h4><div class="prose"><p>Establishment: <code>fieldAlloc_fresh</code> (the allocated field's location holds the particular initializer, keys distinct, its store at or above b). Keeping: <code>fieldsHold_frame</code>, from <code>stableLocations_exc</code>, which extends the stable-location frame to throws, and <code>nullishSlot_at</code>. Transport: <code>edgesFields_holds</code>, <code>handlerFields_holds</code>. Consumption: <code>RebaseOk.fresh_path</code> in <code>rebase_sound</code>. Node obligation: <code>fieldOut_sound</code>, <code>fieldsCheck_sound</code>, carried by <code>bounded_step</code> and <code>goto_bounded</code>. The values and cells are inferred as before; the field table cannot make an existing regional check fail. No new trust.</p></div>
+<h4 class="change">Counterexample</h4><pre class="code"><span class="ln">each negative under <span class="tk-t">Node</span>: <span class="tk-s">`total([1, 2, 3])`</span> is <span class="tk-t">NaN</span></span></pre>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">lean-rules</span> <span class="chip">lean-proofs</span> <span class="chip">docs</span> <span class="chip">tests</span></dd><dt>Lean</dt><dd>ArgumentRegionFresh.FieldFresh · ArgumentRegionFresh.FieldsHold · ArgumentRegionFresh.stableLocations_exc · ArgumentRegionFresh.nullishSlot · ArgumentRegionFresh.nullishSlot_at · ArgumentRegionFresh.fieldsKept · ArgumentRegionFresh.fieldsHold_frame · ArgumentRegionFresh.fieldAlloc_fresh · ArgumentRegionFresh.FreshTables · Footprints.RebaseEvidence.freshField · Footprints.RebaseEvidence.freshPath · Footprints.RebaseOk.fresh_path · Footprints.rebase · Footprints.rebase_sound · ArgumentRegionGraph.FieldsWithin · ArgumentRegionGraph.edgesFields_holds · ArgumentRegionGraph.handlerFields_holds · ArgumentRegionGraph.nodeRebase_ok · ArgumentRegionGraph.bounded_step · ArgumentRegionGraph.goto_bounded · ArgumentRegionGraph.fieldOut · ArgumentRegionGraph.fieldOut_sound · ArgumentRegionGraph.fieldsCheck_sound · ArgumentRegionGraph.checkNodes_sound · SourceExtraction.freshTables · SourceExtraction.regionNames · SourceExtraction.regionalChecked</dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Measured</dt><dd>pretext measureAnalysis stating Modifies&lt;{ values: &quot;any&quot; · stores: &quot;grow&quot; }, PreparedText&gt; (pretext-chain1 working tree): refused -&gt; verified · pretext probe copy, units verified per file unchanged: prepare 23, measurement 51, analysis 23, line-break 21, rich-inline 31</dd><dt>Tests</dt><dd><span class="test pos">stated-fresh-field</span> <span class="test pos">stated-fresh-field-local</span> <span class="test pos">stated-fresh-field-nullable</span> <span class="test pos">stated-fresh-field-escape</span> <span class="test pos">stated-fresh-field-alias</span> <span class="test pos">stated-fresh-field-throw</span> <span class="test neg">invalid-stated-fresh-old-array</span> <span class="test neg">invalid-stated-fresh-join</span> <span class="test neg">invalid-stated-fresh-reassigned</span></dd></dl>
+<details><summary>18 files changed, 796 insertions(+), 71 deletions(-)</summary><pre class="code"> WORK.md                                            |   2 +-
+ docs/FOOTPRINTS.md                                 |  54 +++++++
+ docs/SOURCE-ELABORATION.md                         |   7 +-
+ .../Programs/ArgumentRegionCertificates.lean       | 146 +++++++++++++++--
+ .../Verification/Programs/ArgumentRegionFresh.lean | 167 ++++++++++++++++++-
+ .../Verification/Programs/ArgumentRegionGraph.lean | 178 ++++++++++++++++-----
+ lean/Verification/Semantics/FootprintRebase.lean   |  46 ++++--
+ lean/Verification/Source/SourceRequests.lean       |  59 ++++++-
+ pipeline/cases.mts                                 |  12 ++
+ pipeline/examples/invalid-stated-fresh-join.ts     |  25 +++
+ .../examples/invalid-stated-fresh-old-array.ts     |  25 +++
+ .../examples/invalid-stated-fresh-reassigned.ts    |  27 ++++
+ pipeline/examples/stated-fresh-field-alias.ts      |  23 +++
+ pipeline/examples/stated-fresh-field-escape.ts     |  21 +++
+ pipeline/examples/stated-fresh-field-local.ts      |  16 ++
+ pipeline/examples/stated-fresh-field-nullable.ts   |  17 ++
+ pipeline/examples/stated-fresh-field-throw.ts      |  25 +++
+ pipeline/examples/stated-fresh-field.ts            |  17 ++</pre></details>
+<div class="sha">with Claude</div>
+</article>
+<article class="card" id="c-24d29c6bf"><header><div><div class="sha">24d29c6bf · Cristiano Calcagno · Nov 10, 07:22</div><h3>Control a footprint claimed narrower than a body whose fresh field the regional check excuses</h3></div><span class="pill principled">refused</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>The fresh-field facts are inferred by the verifier and travel on no wire, so no decoder control applies; what the forged-claims controls test is that a claim the body does not meet is refused by the independent evidence check. Nothing tested that the regional certificate, which now rebases a region on a fresh field to none, still refuses a claimed footprint narrower than the body's changes of its entry heap.</p></div>
+<h4 class="change"><span class="act added">added</span>Refusal <span class="target">control: a forged claimed footprint</span></h4><div class="prose"><p>stated-fresh-field's <code>f</code>, which grows its parameter <code>xs</code> through a call, claimed <code>{ value: any, store: keep }</code> in the claims document: refused at its unit by the search over the forged claims and by the check of the honest evidence against them</p></div>
+<h4 class="change"><span class="act removed">removed</span>Docs <span class="target">drafts/stated-bodies-regional.md</span></h4><div class="prose"><p>the design, now stated in FOOTPRINTS.md (&quot;Fresh array storage&quot;) and SOURCE-ELABORATION.md (&quot;Stated effects&quot;); its one open question kept</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">tests</span> <span class="chip">docs</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd><span class="test forged">stated-fresh-field's claimed footprint narrowed to keep every store</span></dd></dl>
+<details><summary>2 files changed, 30 insertions(+), 273 deletions(-)</summary><pre class="code"> docs/drafts/stated-bodies-regional.md | 282 ++--------------------------------
+ pipeline/test.mts                     |  21 +++</pre></details>
+<div class="sha">with Claude</div>
+</article>
+<article class="card" id="c-7c091aed4"><header><div><div class="sha">7c091aed4 · Cristiano Calcagno · Nov 10, 07:57</div><h3>Isolate mutable-field freshness transport controls</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>The mutable-field replacement case stops at the callee's entry check. Its refusal does not isolate retention of freshness after the field holds an array belonging to the caller's entry heap.</p></div>
+<h4 class="change"><span class="act added">added</span>Tooling <span class="target">controls: forged mutable-field freshness</span></h4><pre class="code"><span class="ln">Two controls select drain alone, whose callee's declared region is an</span><span class="ln">input to the unit. One replaces the fresh field before the regional</span><span class="ln">call; the other replaces it inside try, calls a throwing function,</span><span class="ln">catches the throw and then makes the regional call.</span><span class="ln">The test executable forges the inferred fresh-field table by retaining</span><span class="ln">mutable-field candidates. A separate mutation bypasses the transport</span><span class="ln">check, while reporting that check's actual Boolean result. The controls</span><span class="ln">require acceptance with both mutations and refusal with either removed,</span><span class="ln">in search and when checking the same evidence. With the forged table</span><span class="ln">retained, they require the transport check's own rejection marker.</span></pre>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">fresh-field case coverage</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>The mutable-field case describes entry refusal and freshness transport.</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>Its description and source header identify the callee's entry refusal. FOOTPRINTS describes the source cases and the isolated transport controls.</p></div></figure></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>invalid-stated-fresh-reassigned</code> <span class="kind negative">negative</span> <span class="was">refused</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">callee entry restriction</span></summary><pre class="code"><span class="tk-c">// A region through a mutable field is refused at the callee's entry</span>
+<span class="tk-c">// (FOOTPRINTS.md, &quot;Fresh array storage&quot;): `step` names `box.open[*]`,</span>
+<span class="tk-c">// but `open` is not `@stable`. This case exercises the entry restriction.</span>
+<span class="tk-c">// `drain` replaces its fresh array with the caller's `xs` before `step`.</span>
+<span class="tk-c">// Under Node, `console.log(total([1, 2, 3]))` prints `NaN`: the loop reads</span>
+<span class="tk-c">// past the end of the array the calls shorten.</span>
+<span class="tk-k">type</span> <span class="tk-t">Box</span> = { open: number[] };
+
+<span class="tk-k">function</span> step(box: <span class="tk-t">Box</span>): <span class="tk-t">Modifies</span>&lt;{ values: <span class="tk-s">&quot;any&quot;</span>; stores: <span class="tk-s">&quot;grow&quot;</span>; <span class="tk-s">&quot;box.open[*]&quot;</span>: <span class="tk-s">&quot;any&quot;</span> }, <span class="tk-k">void</span>&gt; {
+  box.open.pop();
+}
+
+<span class="tk-k">function</span> drain(xs: number[]): <span class="tk-t">Modifies</span>&lt;{ values: <span class="tk-s">&quot;any&quot;</span>; stores: <span class="tk-s">&quot;grow&quot;</span> }, <span class="tk-k">void</span>&gt; {
+  <span class="tk-k">const</span> box: <span class="tk-t">Box</span> = { open: [] };
+  box.open = xs;
+  step(box);
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> total(xs: number[]): number {
+  <span class="tk-k">let</span> sum = <span class="tk-n">0</span>;
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; xs.length; i++) {
+    drain(xs);
+    sum += xs[i]!;
+  }
+  <span class="tk-k">return</span> sum;
+}</pre></details></li><li><details><summary><code>invalid-stated-fresh-reassigned-throw</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">callee entry restriction; fixture for the caught-throw transport control</span></summary><pre class="code"><span class="tk-c">// A region through a mutable field is refused at `step`'s entry</span>
+<span class="tk-c">// (FOOTPRINTS.md, &quot;Fresh array storage&quot;). `drain` replaces its fresh</span>
+<span class="tk-c">// field with the caller's array inside `try`; `fail` throws, and `step`</span>
+<span class="tk-c">// runs after the catch. The forged-table control selects `drain` alone</span>
+<span class="tk-c">// to exercise freshness transport through this handler.</span>
+<span class="tk-c">// Under Node, `console.log(total([1, 2, 3]))` prints `NaN`: the loop reads</span>
+<span class="tk-c">// past the end of the array the calls shorten.</span>
+<span class="tk-k">type</span> <span class="tk-t">Box</span> = { open: number[] };
+
+<span class="tk-k">function</span> step(box: <span class="tk-t">Box</span>): <span class="tk-t">Modifies</span>&lt;{ values: <span class="tk-s">&quot;any&quot;</span>; stores: <span class="tk-s">&quot;grow&quot;</span>; <span class="tk-s">&quot;box.open[*]&quot;</span>: <span class="tk-s">&quot;any&quot;</span> }, <span class="tk-k">void</span>&gt; {
+  box.open.pop();
+}
+
+<span class="tk-k">function</span> fail(): number {
+  <span class="tk-k">throw</span> <span class="tk-k">new</span> <span class="tk-t">Error</span>(<span class="tk-s">&quot;fail&quot;</span>);
+}
+
+<span class="tk-k">function</span> drain(xs: number[]): <span class="tk-t">Modifies</span>&lt;{ values: <span class="tk-s">&quot;any&quot;</span>; stores: <span class="tk-s">&quot;grow&quot;</span> }, <span class="tk-k">void</span>&gt; {
+  <span class="tk-k">const</span> box: <span class="tk-t">Box</span> = { open: [] };
+  <span class="tk-k">try</span> {
+    box.open = xs;
+    fail();
+  } <span class="tk-k">catch</span> {
+    <span class="tk-c">// Continue to the regional call with the replaced field.</span>
+  }
+  step(box);
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> total(xs: number[]): number {
+  <span class="tk-k">let</span> sum = <span class="tk-n">0</span>;
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; xs.length; i++) {
+    drain(xs);
+    sum += xs[i]!;
+  }
+  <span class="tk-k">return</span> sum;
+}</pre></details></li></ul>
+<h4 class="change">Counterexample</h4><pre class="code"><span class="ln"><span class="tk-t">In</span> each fixture, console.log(total([<span class="tk-n">1</span>, <span class="tk-n">2</span>, <span class="tk-n">3</span>])) prints <span class="tk-t">NaN</span> under <span class="tk-t">Node</span>.</span><span class="ln"><span class="tk-t">The</span> regional call shortens the parameter<span class="tk-s">'s array while the caller'</span>s</span><span class="ln">stated frame promises store growth; the loop reads past its end.</span></pre>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">tests</span> <span class="chip">docs</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Measured</dt><dd>this tree, local, 2026-11-10, run after the change by the session that committed it: 3303 of 3303 pipeline cases as expected · the controls (node pipeline/test.mts) 294 pass, 292 on the tree below · two earlier runs of the controls failed at an evidence-reuse control whose stand-in timed out at 60 s, and passed when rerun</dd><dt>Tests</dt><dd><span class="test forged">mutable-field freshness table, normal and caught-throw paths; tsc passes; unchecked passes (0 errors, 50 expected reports, broken declaration refused for MissingType, list and contracts checks pass); docs passes (56 documents, 986 code citations, 0 problems); mutation executable builds; both Node counterexamples print NaN; git diff</span> <span class="test neg">-check passes; pipeline cases and controls blocked as described</span></dd></dl>
+<details><summary>6 files changed, 127 insertions(+), 14 deletions(-)</summary><pre class="code"> docs/FOOTPRINTS.md                                 | 21 ++++++++---
+ pipeline/cases.mts                                 |  4 +-
+ pipeline/evidence-mutations.mts                    | 23 ++++++++++-
+ .../invalid-stated-fresh-reassigned-throw.ts       | 36 ++++++++++++++++++
+ .../examples/invalid-stated-fresh-reassigned.ts    | 13 +++----
+ pipeline/test.mts                                  | 44 ++++++++++++++++++++++</pre></details>
+<div class="sha">with Astra</div>
+</article>
+</main></body></html>
