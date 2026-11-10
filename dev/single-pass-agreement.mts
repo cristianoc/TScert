@@ -7,7 +7,8 @@
 // With TSCERT_GIVEN_DIR set, each case's given statement-entry facts are read
 // from <dir>/<case file>.jsonl (written by dev/single-pass-given.mts).
 // Prints the disagreements, then the counts: units agreeing, disagreeing,
-// and those the pass does not handle by construct.
+// those the pass does not handle by construct, and those whose pipeline
+// check did not finish (a stage's timeout), which decide nothing.
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
@@ -68,7 +69,8 @@ async function compare(test: Case): Promise<Comparison[]> {
     const v = pass.get(u.unit);
     const notHandled = v ? construct(v.refusal) : null;
     const passSays = v === undefined ? "missing" : v.accepted ? "verified" : notHandled ? "not handled" : "refused";
-    const pipelineSays = u.status === "verified" ? "verified" : "refused";
+    // A pipeline run that did not finish (a stage's timeout) decides nothing.
+    const pipelineSays = u.status === "verified" ? "verified" : u.status === "error" ? "unfinished" : "refused";
     return { file: test.file, unit: u.unit, pipeline: pipelineSays, pass: passSays,
       agree: passSays === pipelineSays, notHandled, why: v ? v.refusal.replace(/\s+/g, " ").slice(0, 160) : "" };
   });
@@ -86,10 +88,12 @@ const constructs = new Map<string, number>();
 for (const c of all) {
   const what = c.notHandled?.replace(/ at node \d+$/, "") ?? null;
   if (what !== null) constructs.set(what, (constructs.get(what) ?? 0) + 1);
-  else if (!c.agree) process.stdout.write(`disagree: ${c.file} ${c.unit}: pipeline ${c.pipeline}, pass ${c.pass}: ${c.why}\n`);
+  else if (!c.agree && c.pipeline !== "unfinished") process.stdout.write(`disagree: ${c.file} ${c.unit}: pipeline ${c.pipeline}, pass ${c.pass}: ${c.why}\n`);
 }
+const unfinished = all.filter((c) => c.pipeline === "unfinished").length;
 const agree = all.filter((c) => c.agree).length;
-const handled = all.filter((c) => c.notHandled === null);
+const handled = all.filter((c) => c.notHandled === null && c.pipeline !== "unfinished");
 process.stdout.write(`${all.length} units of ${chosen.length} cases: ${agree} agree, ` +
-  `${handled.length - handled.filter((c) => c.agree).length} disagree, ${all.length - handled.length} not handled\n`);
+  `${handled.length - handled.filter((c) => c.agree).length} disagree, ${all.filter((c) => c.notHandled !== null).length} not handled, ` +
+  `${unfinished} the pipeline did not finish\n`);
 for (const [what, n] of [...constructs].sort((a, b) => b[1] - a[1])) process.stdout.write(`  not handled: ${what} ${n}\n`);

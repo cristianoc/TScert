@@ -23,8 +23,9 @@ import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { checkApart, memberName } from "../pipeline/verify-source.mts";
-import { readDiagnostic, type HeapKnowledge, type SourceMapEntry } from "../tools/diagnostic.mts";
+import { readDiagnostic, type SourceMapEntry } from "../tools/diagnostic.mts";
 import { presentObligation } from "../tools/diagnostic-view.mts";
+import { indexFact as fact } from "./fact-text.mts";
 
 const [checkout, file, names, option] = process.argv.slice(2);
 const explainAll = option === "--explain";
@@ -58,32 +59,10 @@ function located(start: number, end: number): string {
   const text = source.slice(start, end).replace(/\s+/g, " ").trim();
   return `${file}:${place(start)}-${place(end)} «${text.length > 120 ? text.slice(0, 120) + "…" : text}»`;
 }
-type Fact = HeapKnowledge["indices"][number]["fact"];
-type Linear = Extract<Fact, { linear: unknown }>["linear"]["fact"];
-type Term = Extract<Linear, { le: unknown }>["le"]["form"][number][0];
 /** The binding names of a point's context, slot by slot. */
 function bindings(map: SourceMapEntry | null): string[] {
   return (map?.context ?? []).map((d) =>
     d.name || (d.span === null ? "" : source.slice(d.span[0], d.span[1]).replace(/\s+/g, " ").trim()));
-}
-/** An index fact over the point's binding names. */
-function fact(f: Fact, name: (slot: number) => string): string {
-  const term = (t: Term): string => {
-    const at = [name(t.slot), ...t.path].join(".");
-    return t.kind === "value" ? at : t.kind === "length" ? `${at}.length` : `${t.kind}(${at})`;
-  };
-  const sum = (form: [Term, number][], bound: number, op: string): string =>
-    `${form.map(([t, c]) => `${c === 1 ? "" : c === -1 ? "-" : `${c}*`}${term(t)}`).join(" + ") || "0"} ${op} ${bound}`;
-  if ("linear" in f) {
-    const l = f.linear.fact;
-    return "le" in l ? sum(l.le.form, l.le.bound, "<=") : sum(l.ne.form, l.ne.bound, "!==");
-  }
-  if ("int" in f) return `safeInteger(${name(f.int.slot)})`;
-  if ("index" in f) return `index(${name(f.index.slot)})`;
-  if ("length" in f) return `${name(f.length.length)} === ${name(f.length.array)}.length`;
-  if ("bound" in f) return `${name(f.bound.index)} ${f.bound.strict ? "<" : "<="} ${name(f.bound.array)}.length`;
-  if ("either" in f) return `(${fact(f.either.left, name)}) || (${fact(f.either.right, name)})`;
-  return JSON.stringify(f);
 }
 /** Every line a refused unit's check emitted, each source place located. */
 function refusal(detail: string): string[] {

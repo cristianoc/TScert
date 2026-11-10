@@ -822,7 +822,8 @@ def FilePlans.givenLines (f : FilePlans) (fuel : Nat) (group : List Nat) : List 
 /-- The single forward pass over each member of a group (`SinglePass.run`),
 no certificate built: per member its outcome and counts; the group's
 verdict, the first member's refusal or construct not handled. -/
-def FilePlans.passGroup (f : FilePlans) (fuel : Nat) (group : List Nat) (compare : Bool := false) (debugNode : Nat := 1000000000) (repeats : Nat := 1) (given : Option (Std.HashMap String Json) := none) :
+def FilePlans.passGroup (f : FilePlans) (fuel : Nat) (group : List Nat) (compare : Bool := false) (debugNode : Nat := 1000000000) (repeats : Nat := 1) (given : Option (Std.HashMap String Json) := none)
+    (observe : Option String := none) :
     List String × Except String (List String) := Id.run do
   let G : NormalGraph (EquationStore.CheckedLabel f.F.equations f.F.primitive) := StoreView.graph f.F.store
   let I : PositiveCertificates.InstanceImageCheck G := StoreView.images f.F.store
@@ -830,7 +831,7 @@ def FilePlans.passGroup (f : FilePlans) (fuel : Nat) (group : List Nat) (compare
   let mut lines : List String := []
   let mut failed : Option String := none
   for i in group do
-    let outcome : Except String (String × String × SinglePass.Outcome) := do
+    let outcome : Except String (String × String × SinglePass.Outcome _) := do
       let .graph name _ r ← (f.plans[i]?).getD (.error s!"no unit {i}")
       if r.qualification.isSome then return (name, "", .notHandled "qualified body")
       -- The request's own checks over its whole certificate the pass does
@@ -880,7 +881,10 @@ def FilePlans.passGroup (f : FilePlans) (fuel : Nat) (group : List Nat) (compare
       -- its signature's conditions, its graph against its goal and frame, its
       -- effect's bound; then the unit's graph over the admitted table.
       let mut table : List (CodeEntry _) := []
-      let mut codeOutcome : Option SinglePass.Outcome := none
+      let mut codeOutcome : Option (SinglePass.Outcome _) := none
+      -- The read summaries the searches add, kept from run to run: the
+      -- unit's are checked once (`checkReadSummariesResult`).
+      let mut sumsAnswers := next
       for (q, ci) in r.codes.zipIdx do
         let hints := (r.codeHints[ci]?).getD {}
         let rq := q.asRequest r.toRequest
@@ -903,45 +907,115 @@ def FilePlans.passGroup (f : FilePlans) (fuel : Nat) (group : List Nat) (compare
           | none => {}
         let codeImplies := codeGiven.implies
         let codeArgs := codeGiven.args
-        let (o, _, _) := SinglePass.run G I codePool fuel rq.program rq.claims rq.start q.entry.goal hints.requirements
+        let (o, _, a, _) := SinglePass.run G I codePool fuel rq.program rq.claims rq.start q.entry.goal hints.requirements
           hints.cuts hints.candidates rq.entryIndices [] (e ++ rendered) (GraphCode.admits table) r.aliases
-          (HeapExpressionRules.Checker.ordinary G I) next #[] 1000000000 codeBound codeImplies codeArgs
+          (HeapExpressionRules.Checker.ordinary G I) sumsAnswers #[] 1000000000 codeBound codeImplies codeArgs
+        sumsAnswers := a
         match o with
         | .accepted => table := table ++ [q.entry]
         | .refused w => codeOutcome := codeOutcome.orElse fun _ => some (.refused s!"code {ci}: {w}"); break
         | .notHandled w => codeOutcome := codeOutcome.orElse fun _ => some (.notHandled s!"{w} (in code {ci})"); break
+        | .observed _ => break
       if let some o := codeOutcome then return (name, "", o)
       let codes := GraphCode.admits table
+      -- Observing (`observe`): the node of that label (`node:L`), or the
+      -- innermost node whose source span holds that offset (`offset:K`).
+      let observed : Option Nat := observe.bind fun w =>
+        if w == "refusal" then some 1000000000 else
+        if w.startsWith "node:" then (w.drop 5).toString.toNat? else
+        if w.startsWith "offset:" then (w.drop 7).toString.toNat?.bind fun k =>
+          let holding := r.sourceMap.zipIdx.filterMap fun (e, l) => e.bind fun e =>
+            if e.pos.1 ≤ k && k < e.pos.2 then some (e.pos.2 - e.pos.1, l) else none
+          (holding.foldl (fun (b : Option (Nat × Nat)) x => match b with
+            | some y => if x.1 < y.1 then some x else some y
+            | none => some x) none).map (·.2)
+        else none
+      if observe.isSome && observed.isNone then return (name, "", .notHandled "no node to observe")
       -- Profiling: the pass run `repeats` times, the last run's result kept.
       for k in List.range (repeats - 1) do
-        let (o, _, _) := SinglePass.run G I pool fuel r.program r.claims r.start r.goal r.assertions r.cuts r.candidates
-          r.entryIndices [] (e ++ rendered) codes r.aliases (HeapExpressionRules.Checker.ordinary G I) next #[] (debugNode + k)
+        let (o, _, _, _) := SinglePass.run G I pool fuel r.program r.claims r.start r.goal r.assertions r.cuts r.candidates
+          r.entryIndices [] (e ++ rendered) codes r.aliases (HeapExpressionRules.Checker.ordinary G I) sumsAnswers #[] (debugNode + k)
         if let .notHandled w := o then throw w
-      let (o, counts, _) := CertificateProducer.timed SinglePass.passNanos fun _ =>
+      let tracing := observe == some "refusal"
+      let (o, counts, after, trace) := CertificateProducer.timed SinglePass.passNanos fun _ =>
         SinglePass.run G I pool fuel r.program r.claims r.start r.goal r.assertions r.cuts r.candidates
-          r.entryIndices [] (e ++ rendered) codes r.aliases (HeapExpressionRules.Checker.ordinary G I) next reference debugNode bound
-          givenImplies givenArgs r.ensures givenInputs r.entrySeparation
+          r.entryIndices [] (e ++ rendered) codes r.aliases (HeapExpressionRules.Checker.ordinary G I) sumsAnswers reference debugNode bound
+          givenImplies givenArgs r.ensures givenInputs r.entrySeparation observed tracing
       -- The unit's own expression claims, as the check reads them.
       let obligations := SinglePass.timedKind "outside: expression claims checked" fun _ => ExpressionClaims.checkAllResult (RequestJson.graph r.toRequest) (StoreView.images r.types)
-        (StoreView.valid r.types) r.obligations e codes []
+        (StoreView.valid r.types) r.obligations e codes after.summaries.toList
       -- A graph the bound refuses may still be within it by its store
       -- regions (`regionalChecked`), which the pass does not decide.
-      let o : SinglePass.Outcome := match o with
+      let o : SinglePass.Outcome _ := match o with
         | .refused w => if w.startsWith "footprint at node" && !r.fresh then
             .notHandled s!"footprint by store regions ({w})" else .refused w
         | o => o
-      let o := match o with
-        | .accepted => if !obligations.accepted then .refused "an expression claim"
+      -- The read summaries every step's check read, checked as a
+      -- response's are (`validSummary`, `checkReadSummariesResult`).
+      let sums := after.summaries.toList
+      let sumsOk := sums.all (RequestJson.validSummary (StoreView.valid r.types)) &&
+        (ProgramCertificates.checkReadSummariesResult (RequestJson.graph r.toRequest) (StoreView.images r.types) sums).accepted
+      let o : SinglePass.Outcome _ := match o with
+        | .accepted => if !sumsOk then .refused "a read summary" else if !obligations.accepted then .refused "an expression claim"
           else match unchecked with
             | [] => .accepted
             | w :: _ => .notHandled s!"{w} (the graph passed)"
         | o => o
+      -- A node observed whose step is refused, or that is not reached past
+      -- the refusal: the walk again, stopping on its entry.
+      let o : SinglePass.Outcome _ := match o, observed with
+        | .refused _, some _ => if tracing then o else
+          (SinglePass.run G I pool fuel r.program r.claims r.start r.goal r.assertions r.cuts r.candidates
+            r.entryIndices [] (e ++ rendered) codes r.aliases (HeapExpressionRules.Checker.ordinary G I) sumsAnswers #[] debugNode bound
+            givenImplies givenArgs r.ensures givenInputs r.entrySeparation observed false true).1
+        | o, _ => o
+      -- A refusal observed: its obligation's facts, the facts it lacks, and
+      -- each fact over its names an earlier state held, where last present
+      -- and what removed it (`Trace.locate`, `Trace.lost`).
+      if let .refused w := o then
+        if tracing then
+          let l := trace.node
+          let mentioned := ((r.claims[l]?).map RequestJson.PointClaim.mentions).getD []
+          let p := StoreView.projection r.types mentioned.eraseDups
+          let width := trace.names.length
+          let slotOf := fun (x : Nat) => trace.names.idxOf? x
+          let shown := fun (as : List SinglePass.Atom) =>
+            toJson (SinglePass.ofAtoms (as.filterMap fun a => a.rename slotOf) width)
+          let here := (trace.afters[l]?).join.orElse fun _ => (trace.entries[l]?).join
+          let focus := (here.map fun st => st.store.connected trace.focus).getD []
+          let facts := (here.map fun st => st.store.toList.filter fun a => a.names.any focus.contains).getD []
+          let place := fun l => [("label", toJson l), ("sourceMap", toJson ((r.sourceMap[l]?).bind id))]
+          let lostJson := (trace.lost.map fun (a, ws) => Json.mkObj [("fact", shown [a]),
+            ("where", Json.arr (ws.map fun (q, why) => Json.mkObj (place q ++ [("why", toJson why)])).toArray)])
+          let missingJson := trace.missing.map fun a => Json.mkObj [("fact", shown [a]),
+            ("where", Json.arr ((trace.locate l a 3 false).map fun (q, why) => Json.mkObj (place q ++ [("why", toJson why)])).toArray)]
+          let record := Json.mkObj ([("refusal", toJson w), ("observed", Json.mkObj (place l)),
+            ("edge", toJson (trace.edge.map fun t => Json.mkObj (place t))),
+            ("node", toJson r.program[l]?),
+            ("claim", toJson ((r.claims[l]?).map (RequestJson.PointClaim.shown p))),
+            ("facts", shown facts), ("missing", Json.arr missingJson.toArray), ("lost", Json.arr lostJson.toArray)] ++ p.fields)
+          return (name, "refusal-observation: " ++ record.compress, o)
+      if let .observed ob := o then
+        let claimAt := fun l => (r.claims[l]? : Option (CertificateProducer.PointClaim _))
+        let mentioned := ((claimAt ob.label).map RequestJson.PointClaim.mentions).getD [] ++
+          ob.implies.flatMap (·.type)
+        let p := StoreView.projection r.types mentioned.eraseDups
+        let place := fun l => [("label", toJson l), ("sourceMap", toJson ((r.sourceMap[l]?).bind id))]
+        let record := Json.mkObj ([("observed", Json.mkObj (place ob.label)),
+          ("node", toJson r.program[ob.label]?),
+          ("claim", toJson ((claimAt ob.label).map (RequestJson.PointClaim.shown p))),
+          ("before", toJson ob.before), ("after", toJson ob.after), ("slotNames", toJson ob.names),
+          ("implies", Json.arr (ob.implies.map fun x => Json.mkObj [("test", toJson x.test),
+            ("target", toJson x.target), ("type", toJson (p.shown x.type))]).toArray),
+          ("preds", Json.arr (ob.preds.map fun (pl, k) => Json.mkObj (place pl ++ [("knowledge", toJson k)])).toArray)] ++ p.fields)
+        return (name, "observation: " ++ record.compress, .notHandled "observed")
       return (name, toString counts, o)
     match outcome with
     | .ok (name, counts, o) =>
       lines := lines ++ [s!"{name}: {o}; {counts}"]
       match o with
       | .accepted => pure ()
+      | .observed _ => pure ()
       | .refused w | .notHandled w => if failed.isNone then failed := some s!"single pass: {o} ({w.length})"
     | .error reason =>
       lines := lines ++ [s!"refused before the pass: {reason.take 200}"]
