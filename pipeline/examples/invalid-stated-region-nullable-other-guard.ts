@@ -1,12 +1,8 @@
-// A guarded separation of another binding than the region position's:
-// `xs !== kept.open` guarded by `kept === null` says nothing of `passed`,
-// which `step`'s region `runs.open[*]` reads. Where `kept` is `null` and
-// `passed` is `runs`, whose `open` is `xs`, the call pops `xs`; the regional
-// rule takes a guarded separation only where its guard reads the region
-// position's own binding, so `to <= xs.length` is not kept and `xs[i]!` is
-// refused.
-// Run under Node: `f([1, 2], [], 2, false)` returns `NaN`, `xs[1]` read past
-// the popped array's end.
+// The valid fact `kept === null || xs !== passed.open` has a separation
+// body naming the region actual `passed`, but its guard names `kept`.
+// Here `kept` is null and `passed.open` aliases `xs`: the call pops `xs`.
+// The guard cannot justify keeping `to <= xs.length` across that call.
+// Under Node, console.log(f([1, 2], [], 2)) prints NaN.
 type Runs = { /** @stable */ readonly open: number[] };
 
 function step(
@@ -19,14 +15,14 @@ function step(
 }
 
 /** @requires safeInteger(to) && 0 <= to && to <= xs.length */
-export function f(xs: number[], out: number[], to: number, use: boolean): number {
+export function f(xs: number[], out: number[], to: number): number {
   const runs: Runs = { open: xs };
-  const kept = use ? runs : null;
-  const passed = use ? null : runs;
+  const kept: Runs | null = null;
+  const passed = runs;
   let s = 0;
   /**
    * @invariant safeInteger(i) && safeInteger(to) && 0 <= i && to <= xs.length
-   * @invariant kept === null || xs !== kept.open
+   * @invariant kept === null || xs !== passed.open
    */
   for (let i = 0; i < to; i++) {
     step(passed, out);
