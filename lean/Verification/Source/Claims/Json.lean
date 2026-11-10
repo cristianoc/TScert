@@ -717,7 +717,6 @@ def FilePlans.passGroup (f : FilePlans) (fuel : Nat) (group : List Nat) (compare
     let outcome : Except String (String × String × SinglePass.Outcome) := do
       let .graph name _ r ← (f.plans[i]?).getD (.error s!"no unit {i}")
       if r.qualification.isSome then return (name, "", .notHandled "qualified body")
-      if r.promise.isSome then return (name, "", .notHandled "promise goal")
       -- The request's own checks over its whole certificate the pass does
       -- not make: the graph is passed, and its verdict is not handled.
       -- A footprint (`effectResult`): its request-level conditions here, its
@@ -747,13 +746,18 @@ def FilePlans.passGroup (f : FilePlans) (fuel : Nat) (group : List Nat) (compare
       -- Supplied, where asked: the implications the existing search's
       -- certificate holds at the unit's statement entries, as their given
       -- invariants' (`supply`); the pass computes none.
-      let givenImplies : Array (List (PromiseCalls.Implication _)) := if !supply then #[] else
+      let response := if !supply then none else
         match f.searchGroup fuel [i] true with
-        | .ok b => match b.functions.head? with
-          | some resp => (resp.certificate.zipIdx.map fun (c, l) =>
-              if r.cuts.contains l then c.implies else []).toArray
-          | none => #[]
-        | .error _ => #[]
+        | .ok b => b.functions.head?
+        | .error _ => none
+      let supplied := response.map (·.certificate)
+      let givenImplies : Array (List (PromiseCalls.Implication _)) := match supplied with
+        | some C => (C.zipIdx.map fun (c, l) => if r.cuts.contains l then c.implies else []).toArray
+        | none => #[]
+      -- The slots holding a promise goal's input at each statement entry.
+      let givenArgs : Array (List Nat) := match supplied with
+        | some C => (C.zipIdx.map fun (c, l) => if r.cuts.contains l then c.arguments else []).toArray
+        | none => #[]
       -- Each code request, in order, passed over its own graph with the codes
       -- admitted before it (`produceResponseUsing`'s loop, `codeCheckedResult`):
       -- its signature's conditions, its graph against its goal and frame, its
@@ -773,9 +777,12 @@ def FilePlans.passGroup (f : FilePlans) (fuel : Nat) (group : List Nat) (compare
           else if !eff.fresh && q.entry.exprs.all Purity.pureTerm then none
           else some (eff.footprint, eff.fresh, eff.onThrow)
         let codePool := CertificateProducer.vocabulary G labels rq.claims rq.inputs
+        let codeCert := (response.bind fun resp => resp.codes[ci]?).getD []
+        let codeImplies := (codeCert.zipIdx.map fun (c, l) => if hints.cuts.contains l then c.implies else []).toArray
+        let codeArgs := (codeCert.zipIdx.map fun (c, l) => if hints.cuts.contains l then c.arguments else []).toArray
         let (o, _, _) := SinglePass.run G I codePool fuel rq.program rq.claims rq.start q.entry.goal hints.requirements
           hints.cuts hints.candidates rq.entryIndices [] (e ++ rendered) (GraphCode.admits table) r.aliases
-          (HeapExpressionRules.Checker.ordinary G I) next #[] 1000000000 codeBound
+          (HeapExpressionRules.Checker.ordinary G I) next #[] 1000000000 codeBound codeImplies codeArgs
         match o with
         | .accepted => table := table ++ [q.entry]
         | .refused w => codeOutcome := codeOutcome.orElse fun _ => some (.refused s!"code {ci}: {w}"); break
@@ -790,7 +797,7 @@ def FilePlans.passGroup (f : FilePlans) (fuel : Nat) (group : List Nat) (compare
       let (o, counts, _) := CertificateProducer.timed SinglePass.passNanos fun _ =>
         SinglePass.run G I pool fuel r.program r.claims r.start r.goal r.assertions r.cuts r.candidates
           r.entryIndices [] (e ++ rendered) codes r.aliases (HeapExpressionRules.Checker.ordinary G I) next reference debugNode bound
-          givenImplies
+          givenImplies givenArgs
       -- The unit's own expression claims, as the check reads them.
       let obligations := ExpressionClaims.checkAllResult (RequestJson.graph r.toRequest) (StoreView.images r.types)
         (StoreView.valid r.types) r.obligations e codes []
