@@ -939,6 +939,27 @@ control(async (): Promise<void> => {
 });
 
 control(async (): Promise<void> => {
+  // A claimed footprint narrower than the body, forged into the claims, on a
+  // unit whose honest footprint the regional check certifies (FOOTPRINTS.md,
+  // "Fresh array storage"): `f` grows its parameter `xs` through `step`,
+  // whose region on the record's fresh field rebases to none. Claimed to
+  // keep every store, `f` is refused at its unit in search and in checking,
+  // its honest evidence included: the fresh field excuses no store of the
+  // entry heap.
+  const artifacts = run("stated-fresh-field");
+  const claims = readClaims(artifacts);
+  must(claims.functions.find(f => f.name === "f"), "f's claims");
+  const forged = writeClaims(artifacts, "forged-fresh-field", { ...claims, functions: claims.functions.map((f) =>
+    f.name === "f" ? { ...f, footprint: { value: "any", store: "keep" } } : f) });
+  const refusal = /source effect refusal at \[\d+,\d+\): the footprint claimed for 'f' is not established by its body/;
+  const searched = produceWith(artifacts, forged, "forged-fresh-field");
+  assert.equal(searched.status, 1, `${searched.stdout}${searched.stderr}`);
+  assert.match(searched.stdout + searched.stderr, refusal);
+  invoke(forged, documentEvidence(artifacts), artifacts, refusal);
+  process.stdout.write("forged fresh field: a unit whose region on a fresh field rebases to none, claimed to keep the store it grows, refused at its unit in search and in checking\n");
+});
+
+control(async (): Promise<void> => {
   // A store region rooted at another position, forged into the parser's
   // document (`"xs[*]": "any"`, `SourceRequest.regional`): `trim`'s region
   // moved from `xs` to `n`, so its pop changes a store the statement keeps,
