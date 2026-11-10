@@ -107,7 +107,11 @@ def retypeFromFragment : Retype := fun fr T f fc module => do
     | some r => m.insert id { r with exprs := r.exprs ++ row.exprs.filter (fun (sp, _) => !r.exprs.any (·.1 == sp)), envs := r.envs ++ row.envs.filter fun (pos, _) => !r.envs.any (·.1 == pos) }
     | none => m.insert id row) {}
   let points := (points.map (·.1)).eraseDups.filterMap fun id => (joined.get? id).map (id, ·)
-  let fc := { fc with points }
+  -- Its own footprint the one its declaration writes: a stand-in states
+  -- what its callers read of it.
+  let footprint := (f.stated.map (·.closed)).getD .top
+  let onThrow := f.stated.any (·.onThrow)
+  let fc := { fc with points, footprint, onThrow, resultFootprint := .top }
   if init then return (T, fc)
   let action : Compiler ((List (String × SourceClaims.Candidate Tree) × SourceClaims.Candidate Tree) ×
       EquationStore.State) := do
