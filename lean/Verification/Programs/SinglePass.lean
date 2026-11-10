@@ -610,7 +610,8 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
     (answers : Answered G) (reference : Array Knowledge := #[]) (debugNode : Nat := 1000000000)
     (bound : Option (Footprints.Closed × Bool × Bool) := none)
     (givenImplies : Array (List (PromiseCalls.Implication ι)) := #[])
-    (givenArgs : Array (List Nat) := #[]) : Outcome × Counts × Answered G := Id.run do
+    (givenArgs : Array (List Nat) := #[])
+    (ensures : List HeapKnowledge.IndexFact := []) (givenInputs : Array (List (Nat × Nat)) := #[]) : Outcome × Counts × Answered G := Id.run do
   let nodes := P.toArray
   let claimed := claims.toArray
   let n := nodes.size
@@ -694,10 +695,15 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
       -- The slots its given invariant states hold the promised input keep
       -- the input's name.
       let argSlots := (givenArgs[l]?).getD []
+      -- Likewise the slots it states hold an input's entry value
+      -- (`GraphCode.trackTable`'s pairs).
+      let inputSlots := (givenInputs[l]?).getD []
       let names := (List.range width).map fun i =>
-        match argName with
-        | some a => if argSlots.contains i then a else i + base
-        | none => i + base
+        match (inputSlots.find? (·.1 == i)).bind fun (_, q) => startNames[q]? with
+        | some x => x
+        | none => match argName with
+          | some a => if argSlots.contains i then a else i + base
+          | none => i + base
       let f := fun (i : Nat) => names[i]?
       entry := { names, store := timedKind "head state" fun _ => (atomsOf g).foldl (fun s a => match a.rename f with
         | some b => s.add b | none => s) {} }
@@ -793,7 +799,10 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
       counts := { counts with copies := counts.copies + 1 }
       result := x
     | none =>
-      let (k, pairs, table) := materialize entry width ms false
+      -- A construction reads every fact: its result's facts (a typed array's
+      -- view length) follow from facts its operands' names do not reach.
+      let wholeStep := match node.expression with | .construct .. => true | _ => false
+      let (k, pairs, table) := materialize entry width ms wholeStep
       let kE := KnowledgeExpand.expandLinks (KnowledgeExpand.ctxOf G c.context) k
       let own := (keepFirst {} (c.type :: ms.filterMap fun i => c.context[i]?)).2.toList
       let j : Sequent ι := ⟨c.context, node.expression, c.type⟩
@@ -877,6 +886,8 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
       | _, _ =>
         result := fresh
         fresh := fresh + 1
+      if l == debugNode && debugNode != 0 then
+        return (.refused s!"debug {l}: preserving {preserving} effect {match effect with | .ordinary _ => "ordinary" | .allocated _ => "allocated" | .created _ => "created" | .pure _ => "pure" | .reading _ => "reading" | _ => "other"} out {reprStr out.indices}", counts, answers)
       stepK := kE
       stepOut := out
       stepDeriv := deriv
@@ -972,7 +983,20 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
     if node.handler.isSome && thrownTy.isNone then return (.refused s!"handler of node {l}", counts, answers)
     let thrown := fresh
     if node.handler.isSome then fresh := fresh + 1
+    -- A postcondition at a return (`GraphCode.returnOk`): the output's facts
+    -- over the result and the inputs' entry values entail it.
     if let .ret := node.continuation then
+      if !ensures.isEmpty && !(ExpressionEffects.emptyType G c.type || c.context.any (ExpressionEffects.emptyType G ·)) then
+        let wanted := GraphCode.namedInputs ensures
+        let tracked : GraphCode.Tracked := wanted.filterMap fun (_, q) => do
+          let nm ← startNames[q]?
+          let j ← entry.names.idxOf? nm
+          pure (j, q)
+        let (k, _, _) := materialize { names := pushedNames, store } (width + 1) (0 :: tracked.map (·.1 + 1)) false
+        let kOut := KnowledgeExpand.expandLinks (HeapKnowledge.setsCtx (HeapKnowledge.typeSets G c.context) 1) k
+        counts := { counts with queries := counts.queries + 1, queryAtoms := counts.queryAtoms + (atomsOf k).length }
+        if !GraphCode.returnEntails kOut tracked ensures then
+          return (.refused s!"return at node {l}: the postcondition{if l == debugNode then s!" tracked {tracked} k {reprStr kOut.indices}" else ""}", counts, answers)
       match goal with
       | .plain R => if !(c.type == R || c.type.isEmpty) then return (.refused s!"return at node {l}", counts, answers)
       | .guards T _ | .asserts T _ =>
@@ -1136,8 +1160,12 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
                   answers := a'
                   if res.value.isSome then ok := true
             if !ok then return (.refused s!"edge from node {l} into statement entry {t.label}: an implication", counts, answers)
-        -- The slots it states hold the promised input hold it on every edge.
+        -- The slots it states hold the promised input, or an input's entry
+        -- value, hold it on every edge.
         if !vacuous then
+          for (j, q) in (givenInputs[t.label]?).getD [] do
+            if names[PointClaims.slot t.mapping j]? != startNames[q]? then
+              return (.refused s!"edge from node {l} into statement entry {t.label}: an input's value", counts, answers)
           for j in (givenArgs[t.label]?).getD [] do
             if names[PointClaims.slot t.mapping j]? != argName then
               return (.refused s!"edge from node {l} into statement entry {t.label}: the promised input", counts, answers)

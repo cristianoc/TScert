@@ -84,6 +84,13 @@ promise goal is checked as `ControlFlow.checkReturnResult` checks it: the
 answer's type, and the argument, as the step's yields refine it, within the
 promise at a slot holding the input's name.
 
+A return under a postcondition (`@ensures`) is checked as
+`GraphCode.returnOk` checks it: the output's facts over the result and the
+inputs' entry values, each the name the start gave its input, entail it
+(`returnEntails`). A cut's given invariant may state which of its slots hold
+an input's entry value (`GraphCode.trackTable`'s pairs), those slots
+keeping the input's name, each an obligation on every edge into it.
+
 ## 5. Steps and obligations
 
 A step's rule is applied to the facts over the names its expression reads,
@@ -158,6 +165,9 @@ under the facts a throw keeps (`ControlFlow.handlerFacts`, the base step's
 reading no heap), from the node's entry state.
 
 ## 6. Where the rules read more than a step's names
+
+- A construction reads every fact: its result's facts (a typed array's view
+  length) follow from facts the names of its operands do not reach.
 
 - A step that may write (a call's `ordinary` step, `written`, `boundedWrite`)
   states which heap facts survive it: its derivation is searched over the
