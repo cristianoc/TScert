@@ -240,6 +240,18 @@ implications and argument slots must follow from them. -/
   impliesCheck G Γ (PromiseCalls.aliasImplications facts.links xs) target.mapping c.implies &&
     argFollows (PromiseCalls.aliasSources facts.links sources) target.mapping c.arguments
 
+/-- `carries`, the source implications read by their slots. -/
+@[nospecialize] def carriesIndexed [DecidableEq ι] (G : NormalGraph ι) (Γ : List (Ty ι))
+    (facts : HeapKnowledge.Knowledge) (xs : List (Implication ι)) (sources : List Nat) (target : Target)
+    (c : NodeEvidence ι) : Bool :=
+  PromiseCalls.impliesCheckIndexed G Γ facts.links xs target.mapping c.implies &&
+    argFollows (PromiseCalls.aliasSources facts.links sources) target.mapping c.arguments
+
+/-- The compiled checker runs `carriesIndexed` for `carries`. -/
+@[csimp] theorem carries_eq_indexed : @carries = @carriesIndexed := by
+  funext ι _ G Γ facts xs sources target c
+  simp only [carries, carriesIndexed, PromiseCalls.impliesCheck_eq_indexed]
+
 /-- The slots the target's guarded atoms test alone (`guarded s [] …`). -/
 def guardedSlots (k : HeapKnowledge.Knowledge) : List Nat :=
   k.indices.filterMap fun a => match a.fact with
