@@ -2,7 +2,9 @@
 // "4. Loop heads"), written once from the existing search's certificates:
 // each case whose file name contains a pattern (every case with none) checked
 // through the pipeline, its run kept, then `verifier --verify-units 6` over
-// the same fragment and claims, its lines written to <dir>/<case file>.jsonl.
+// the same fragment and claims, its lines written to <dir>/<case file>.jsonl,
+// each with its loop heads' facts the claims state (read by the claims-free
+// pass, `--verify-units 8`).
 //   node dev/single-pass-given.mts <dir> [pattern…]
 import { spawnSync } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -29,8 +31,10 @@ async function write(dir: string, test: Case): Promise<number> {
     test.typescriptErrors, undefined, true);
   const key = fileKey(outcome.artifacts);
   if (key === null) return 0;
+  // The loop heads' facts too, the claims-free pass's (`TSCERT_GIVEN_FACTS`).
   const run = spawnSync(verifier, ["--verify-units", "6", join(outcome.artifacts, "fragment.json"),
-    join(outcome.artifacts, "claims.json"), key, "12"], { encoding: "utf8", maxBuffer: 1 << 28 });
+    join(outcome.artifacts, "claims.json"), key, "12"], { encoding: "utf8", maxBuffer: 1 << 28,
+    env: { ...process.env, TSCERT_GIVEN_FACTS: "1" } });
   const lines = run.stdout.split("\n").filter((l) => l.startsWith("{\"codes\""));
   const path = join(dir, `${test.file}.jsonl`);
   mkdirSync(dirname(path), { recursive: true });

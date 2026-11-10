@@ -307,9 +307,16 @@ a grown store. -/
 abbrev Retype := Front → EquationStore.State → Fragment.Fn → SourceClaims.Function Tree →
   List (SourceExtraction.ModuleValue Tree) → Except String (EquationStore.State × SourceClaims.Function Tree)
 
+/-- What states a unit's calls' type arguments before its generic module
+values are instantiated, where a computation gives them: its claims with
+each such call's, over a grown store. -/
+abbrev Instances := Front → EquationStore.State → Fragment.Fn → Function Tree →
+  List (SourceExtraction.ModuleValue Tree) → Except String (EquationStore.State × Function Tree)
+
 /-- One unit's plan, extracted from the front over the store `T`. -/
 def extractMember (fr : Front) (T : EquationStore.State)
-    (u : Fragment.Fn × List Fragment.TypeParam × Option (Function Tree)) (retype : Option Retype := none) :
+    (u : Fragment.Fn × List Fragment.TypeParam × Option (Function Tree)) (retype : Option Retype := none)
+    (instances : Option Instances := none) :
     Except String (EquationStore.State × FunctionPlan EquationStore.State Tree) := do
   let ⟨ast, d, functionJsons, init, generics, unitBinders, initBinders, classNames, freshConstructors,
     moduleFunctions, moduleConstants, classSelves, _, _, initOrder, moduleOwned, _, _⟩ := fr
@@ -425,6 +432,11 @@ def extractMember (fr : Front) (T : EquationStore.State)
       f := { f with body }
     else
       f := (← Fragment.decodeFn source).1
+  -- The calls' type arguments, where computed (`instances`).
+  if let some h := instances then
+    let (T, c') ← h fr d.types f c module
+    d := { d with types := T }
+    c := c'
   let finish (d : Document EquationStore.State Tree) (module : List (SourceExtraction.ModuleValue Tree)) (c : Function Tree)
       (f : Fragment.Fn) : Except String (FunctionPlan EquationStore.State Tree) := do
     let mut d := d

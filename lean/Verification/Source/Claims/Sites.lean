@@ -119,7 +119,7 @@ def functionSites (f : Fragment.Fn) : List Nat × List Span :=
 
 /-- Source sites owned by one elaboration action. Structural successors own
 separate claims even when they share source syntax. -/
-private def actionSites : SourceFlow.Action → List Span
+def actionSites : SourceFlow.Action → List Span
   | .declaration _ _ binding _ => (exprSitesCore false binding.init).2.1
   | .statement st _ | .returnValue st | .saveReturn st _ _ => (stmtSitesCore false st).2.1
   | .branch (.ite _ cond _ _) _ _ | .branch (.loop _ cond _ _ _) _ _ => (exprSitesCore false cond).2.1
