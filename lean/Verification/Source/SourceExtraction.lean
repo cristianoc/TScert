@@ -314,14 +314,15 @@ did not mention grow it, and the request carries the result. -/
           (rs.mapM fun (r : Footprints.ArgumentStoreRegion) => (regionSlot r.position).map fun q =>
             (⟨q, r.path⟩ : Footprints.ArgumentStoreRegion)).map (c, ·)
     | throw "a stated store region names the receiver, which the function does not declare"
+  let (program, claims, source, start) := compactLowered built.program built.claims built.source entry.label
   return {
-    toRequest := ⟨built.types, built.program, built.claims, R, entry.label, inputs, built.codes, promise,
+    toRequest := ⟨built.types, program, claims, R, start, inputs, built.codes, promise,
       entrySeparation, entryIndices⟩
     obligations := built.obligations
-    sourceMap := built.source.sourceMap
-    assertions := built.source.assertions
-    candidates := built.source.candidates
-    cuts := built.source.cuts
+    sourceMap := source.sourceMap
+    assertions := source.assertions
+    candidates := source.candidates
+    cuts := source.cuts
     hints := built.hints
     codeSources := built.codeSources
     nodePlans := built.nodePlans
