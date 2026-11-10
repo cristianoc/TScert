@@ -33,7 +33,7 @@ import { cases } from "./cases.mts";
 import { expectOutcome, recordsDecode } from "./run-cases.mts";
 import { processInconsistency, processRetirement } from "../tools/files.mts";
 import { linkFixtures } from "./fixture-links.mts";
-import type { Row, SourceClaims } from "../tools/source-claims.mts";
+import { decodeSourceClaims, type Row, type SourceClaims } from "../tools/source-claims.mts";
 import { readDiagnostic } from "../tools/diagnostic.mts";
 import { decodeGraph, emptyEffect, emptyFootprint, footprintEffect, ordinaryEffect, type ClosedFootprint } from "../tools/type-graph.mts";
 // Forged-claim controls on single cases, each in a file of its own:
@@ -1194,20 +1194,51 @@ control(async (): Promise<void> => {
 control(async (): Promise<void> => {
   // A guarded store separation whose guard reads another binding than the
   // region position's (ARITHMETIC.md, "Store separation"): `kept === null ||
-  // xs !== kept.open` holds where `passed`, whose region `runs.open[*]` the
-  // call selects, holds `runs`, whose `open` is `xs`. `to <= xs.length`,
+  // xs !== passed.open` holds where `kept` is null and `passed.open` is
+  // `xs`. The call selects `passed.open[*]`. `to <= xs.length`,
   // forged past the producer into the entry after the call, is left out and
   // the read refused where evidence is searched.
   const artifacts = run("invalid-stated-region-nullable-other-guard");
   const source = readFileSync(sourceKey(artifacts), "utf8");
   const claims = readClaims(artifacts);
   const f = must(claims.functions.find(g => g.name === "f"), "f's claims");
+  const call = source.indexOf("step(passed, out)");
+  // The body exactly matches the call's region actual; only its guard differs.
+  must(f.entries.find(e => e.start === call), "the call's entry").storesApart.push({
+    guards: [{ name: "kept", path: [], tag: "null" }],
+    name: "xs", path: [], other: "passed", otherPath: ["open"] });
   const read = source.indexOf("s += xs[i]!");
   must(f.entries.find(e => e.start === read), "the read's entry").facts.push({ guards: [], terms: [
     { name: "to", path: [], term: "value", coefficient: 1 }, { name: "xs", path: [], term: "length", coefficient: -1 }], bound: 0 });
   const searched = produceWith(artifacts, writeClaims(artifacts, "forged-other-guard", claims), "forged-other-guard");
   refusedLeavingOut(searched, read, "a guard on another binding");
+  const diagnostic = must(readDiagnostic(searched.stderr), "the wrong-guard refusal");
+  assert.ok(!(diagnostic.candidatesLeftOut ?? []).some(d => d.sourceMap?.pos[0] === call &&
+    "guarded" in d.fact.fact && "storeApart" in d.fact.fact.guarded.body),
+    "the valid guarded separation reaches the call; the post-call bound fails");
   process.stdout.write("forged guarded separation: a separation guarded by another binding than the region position's keeps no length across the call\n");
+});
+
+control(async (): Promise<void> => {
+  // An unknown guard tag crosses neither claims decoder. The wire is
+  // forged as JSON so TypeScript's GuardClaim union cannot hide this test.
+  const artifacts = run("stated-region-nullable-apart");
+  const claims = jsonObject(jsonValue(readClaims(artifacts)));
+  const functions = jsonArray(claims.functions);
+  const fn = jsonObject(must(functions.find(f => jsonObject(f).name === "f"), "f's claims"));
+  const entry = jsonObject(must(jsonArray(fn.entries).find(e =>
+    jsonArray(jsonObject(e).storesApart).length > 0), "an entry with a separation"));
+  const separation = jsonObject(must(jsonArray(entry.storesApart)[0], "a separation"));
+  separation.guards = [{ name: "chosen", path: [], tag: "object" }];
+  assert.throws(() => decodeSourceClaims(claims), /a guard's tag is a nullish or Boolean literal/);
+  const forged = join(artifacts, "unknown-store-guard-tag.json");
+  writeFileSync(forged, JSON.stringify(claims));
+  const searched = produceWith(artifacts, forged, "unknown-store-guard-tag");
+  assert.equal(searched.status, 1, `${searched.stdout}${searched.stderr}`);
+  assert.match(searched.stdout + searched.stderr, /a guard's tag is a nullish or Boolean literal/);
+  invoke(forged, join(artifacts, "evidence.json"), artifacts,
+    /a guard's tag is a nullish or Boolean literal/);
+  process.stdout.write("unknown store guard tag: refused by the TypeScript and Lean claims decoders\n");
 });
 
 control(async (): Promise<void> => {

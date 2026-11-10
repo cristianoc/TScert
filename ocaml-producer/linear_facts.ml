@@ -2235,6 +2235,55 @@ let skept env (s : stmt) : sfact -> bool =
   fun ((_,(((_,p),(_,q)) as sides)) as f) -> not (List.exists (fun x -> List.mem x assigned) (sbindings f)) &&
     ((p = [] && q = []) || (side (fst sides) && side (snd sides) && Lazy.force stable))
 
+(* Copy transport substitutes the new binding in the guard and both paths.
+   The old destination's facts are forgotten before a copy is proposed. *)
+let scopy name root ss =
+  let rename x = if x = root then name else x in
+  List.filter_map (fun ((g,(l,r)) as f) ->
+    if not (List.mem root (sbindings f)) then None else
+    Some (sfact_norm (Option.map (fun (x,t) -> rename x,t) g,
+      ((rename (fst l),snd l),(rename (fst r),snd r))))) ss
+
+let stag env name = match List.assoc_opt name env with
+  | Some b -> (match binding_type b with
+    | Semantic.Atoms [Semantic.Nul] -> Some "null"
+    | Semantic.Atoms [Semantic.Undef] -> Some "undefined"
+    | Semantic.Atoms [Semantic.True] -> Some "true"
+    | Semantic.Atoms [Semantic.False] -> Some "false"
+    | _ -> None)
+  | None -> None
+
+(* Join candidates: a common separation, or a separation on one edge
+   guarded by the value the other edge holds at one of its bindings.
+   Lean checks each candidate on every incoming edge. *)
+let sjoin left ltag right rtag =
+  let left = List.map sfact_norm left and right = List.map sfact_norm right in
+  let guarded ss tag = List.concat_map (fun (g,((l,r) as sides)) ->
+    match g with
+    | Some _ -> []
+    | None -> List.filter_map (fun x -> Option.map (fun t -> Some (x,t),sides) (tag x))
+        (List.sort_uniq String.compare [fst l;fst r])) ss in
+  let follows ss tag ((g,sides) as f) = List.mem f ss || match g with
+    | Some (x,t) -> tag x = Some t || List.mem (None,sides) ss
+    | None -> false in
+  List.sort_uniq compare (left @ right @ guarded left rtag @ guarded right ltag)
+  |> List.filter (fun f -> follows left ltag f && follows right rtag f)
+
+(* The separations and literal value produced by assigning an expression.
+   Conditional expressions join the same copy/literal transfers as control
+   flow; neither arm has a required syntactic shape. *)
+let rec svalue env ss name (e : expr) =
+  match e.node with
+  | Id root when slot_binding env root -> ss @ scopy name root ss, stag env root
+  | Id "undefined" | Literal LUndefined -> ss,Some "undefined"
+  | Literal LNull -> ss,Some "null"
+  | Literal (LBool b) -> ss,Some (if b then "true" else "false")
+  | Conditional (c,a,b) when heap_free env c ->
+    let left,lt = svalue env ss name a and right,rt = svalue env ss name b in
+    let tag t x = if x = name then t else stag env x in
+    sjoin left (tag lt) right (tag rt), (if lt = rt then lt else None)
+  | _ -> ss,None
+
 (* The store separations a statement keeps (Lean's `IndexFact.keptBy`):
    each across a statement writing no heap; the others where `skept` keeps
    them; none naming a binding the statement assigns. A declaration of an
@@ -2252,29 +2301,14 @@ let sstatement ?(array = fun _ _ -> false) ?(visible = fun _ -> true) env (ss : 
                 if m <> n && visible m && not (is_fact m) && not (is_bound m) && not (is_field m) && slot_binding env m && array m []
                 then Some (None,((n,[f]),(m,[]))) else None) env
             | _ -> []) fields
-        (* `c ? b : null` (either way round, `undefined` alike) of a
-           binding `b`, `c` writing no heap: `n` holds `b`'s value or the
-           literal's, so each unguarded separation of `b` holds of `n`
-           guarded by the literal's tag (`guard-introduce` at the merge of
-           the two arms). *)
-        | Conditional (c,a,b) when heap_free env c ->
-          let nullish (e : expr) = match e.node with
-            | Literal LNull -> Some "null" | Literal LUndefined | Id "undefined" -> Some "undefined" | _ -> None in
-          let arm = match a.node, b.node with
-            | Id x, _ when nullish b <> None -> Option.map (fun tag -> x,tag) (nullish b)
-            | _, Id x when nullish a <> None -> Option.map (fun tag -> x,tag) (nullish a)
-            | _ -> None in
-          (match arm with
-           | Some (x,tag) when x <> n && slot_binding env x ->
-             List.filter_map (fun ((g,(l,r)) : sfact) ->
-               if g <> None then None
-               else if fst l = x && fst r <> x then Some (Some (n,tag),((n,snd l),r))
-               else if fst r = x && fst l <> x then Some (Some (n,tag),(l,(n,snd r)))
-               else None) ss
-           | _ -> [])
         | _ -> []) bindings
     | _ -> [] in
-  fresh @ if statement_heap_free env s then ss else List.filter (skept env s) ss
+  let kept = if statement_heap_free env s then ss else List.filter (skept env s) ss in
+  let copies = match s.statement with
+    | Declare (_,bindings) -> List.fold_left (fun ss (n,_,init) -> fst (svalue env ss n init)) kept bindings
+    | Effect {node=Assign (n,_,rhs);_} when slot_binding env n -> fst (svalue env kept n rhs)
+    | _ -> kept in
+  List.sort_uniq compare (fresh @ copies)
 
 let rstatement ?(array = fun _ _ -> false) ?(visible = fun _ -> true) env (rs : rfact list) (s : stmt) : rfact list =
   let rs = if statement_heap_free env s then rs else match s.statement with

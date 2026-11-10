@@ -179,7 +179,8 @@ let statements callbacks flow_graph register_following owner_span env0 ss =
       let joined_disjunctions=let r=Linear_facts.dfacts right in List.filter (fun d -> List.mem d r) (Linear_facts.dfacts left) in
       let joined_every=let r=Linear_facts.efacts right in List.filter (fun e -> List.mem e r) (Linear_facts.efacts left) in
       let joined_regions=let r=Linear_facts.rfacts right in List.filter (fun e -> List.mem e r) (Linear_facts.rfacts left) in
-      let joined_stores=let r=Linear_facts.sfacts right in List.filter (fun e -> List.mem e r) (Linear_facts.sfacts left) in
+      let joined_stores=Linear_facts.sjoin (Linear_facts.sfacts left) (Linear_facts.stag left)
+        (Linear_facts.sfacts right) (Linear_facts.stag right) in
       let left=Linear_facts.strip_bounds (Linear_facts.strip left)
       and right=Linear_facts.strip_bounds (Linear_facts.strip right) in
       Fun.flip Linear_facts.dadd joined_disjunctions @@

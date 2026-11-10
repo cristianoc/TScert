@@ -1572,10 +1572,20 @@ proved: `regionSep_out`).
 `{"storeApart": {slot, path, other, otherPath}}`, inside a guarded fact
 under guards; an entry claim's `storesApart` proposes one at a statement
 entry, with its `guards`. The producer proposes those of a precondition and
-of a loop invariant, of a declaration of an object literal whose field
-holds an empty array literal, and, guarded by the literal's tag, of a
-declaration `c ? b : null` (either way round, `undefined` alike) from `b`'s,
-and keeps them as Lean does (`Linear_facts.sstatement`). Proved:
+of a loop invariant and of a declaration of an object literal whose field
+holds an empty array literal. A declaration or assignment copying a binding
+restates that binding's separations over the destination, including their
+guards. At a join, a separation on one incoming edge and a null, undefined,
+true or false value of one of its bindings on the other produce the
+separation guarded by that value. Literal assignments and narrowing tests
+supply those values. Conditional expressions use the same copy transfer and
+join as statement control flow: `const z = c ? b : null`,
+`let z: Runs | null = null; if (c) z = b;` and the undefined alternative
+therefore propose guarded separations (`Linear_facts.svalue`, `sjoin`,
+`Proposal_flow`). These statement-entry facts are candidates; Lean retains
+those every incoming edge establishes. Assignments forget facts naming
+the overwritten binding, and heap steps keep separations according to
+`Linear_facts.skept`. Proved:
 `storeFollows_sound`, `guardBodyFollows_sound`, `factFollows_sound`,
 `restateStores_holds`, `stableFirst_frame`, `regionFirst_kept`,
 `regionGrown_grows`, `effectKept_holds`.
@@ -1585,7 +1595,9 @@ and keeps them as Lean does (`Linear_facts.sstatement`). Proved:
 `stated-region-grow-keeps-lengths` (a frame growing stores) and
 `stated-region-stable-apart-writes` (a separation kept across an element
 write and a field write) and `stated-region-nullable-apart` (a guarded
-separation at a region position holding a record or `null`). Negative, run
+separation at a region position holding a record or `null`),
+`stated-region-nullable-apart-assigned` (a copy in a branch) and
+`stated-region-nullable-apart-undefined` (an undefined alternative). Negative, run
 under Node: `invalid-stated-alias` (one array as both sides, `NaN`),
 `invalid-stated-region-unstable-apart-write` (a field that is not `@stable`,
 written with the other array, `undefined`),
@@ -1593,8 +1605,11 @@ written with the other array, `undefined`),
 separation, `NaN`), `invalid-stated-region-nullable-wrong-guard` (a guarded
 separation the declaration establishes on its `null` arm alone, `NaN`) and
 `invalid-stated-region-nullable-other-guard` (a separation guarded by
-another binding than the region position's, `NaN`).
-Gap: `stated-distinct-view-refused`. Controls in `pipeline/test.mts`: a
+another binding than the region position's, `NaN`) and
+`invalid-stated-region-nullable-reassigned` (the region actual overwritten
+after its guarded separation holds, `undefined`).
+Gap: `stated-distinct-view-refused`. Controls in `pipeline/test.mts`: an unknown guard tag refused by both claims
+decoders, a
 separation forged at a caller's entry, a fact forged across a frame that
 may change its array's store, and a fact forged across a call whose region
 position another binding's guarded separation names, each refused.
