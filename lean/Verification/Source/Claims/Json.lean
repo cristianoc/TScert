@@ -717,7 +717,6 @@ def FilePlans.passGroup (f : FilePlans) (fuel : Nat) (group : List Nat) (compare
     let outcome : Except String (String × String × SinglePass.Outcome) := do
       let .graph name _ r ← (f.plans[i]?).getD (.error s!"no unit {i}")
       if r.qualification.isSome then return (name, "", .notHandled "qualified body")
-      if !r.codes.isEmpty then return (name, "", .notHandled "graph code")
       if r.promise.isSome then return (name, "", .notHandled "promise goal")
       -- The request's own checks over its whole certificate the pass does
       -- not make: the graph is passed, and its verdict is not handled.
@@ -745,17 +744,45 @@ def FilePlans.passGroup (f : FilePlans) (fuel : Nat) (group : List Nat) (compare
           | some resp => (resp.certificate.map (·.knowledge)).toArray
           | none => #[]
         | .error _ => #[]
+      -- Each code request, in order, passed over its own graph with the codes
+      -- admitted before it (`produceResponseUsing`'s loop, `codeCheckedResult`):
+      -- its signature's conditions, its graph against its goal and frame, its
+      -- effect's bound; then the unit's graph over the admitted table.
+      let mut table : List (CodeEntry _) := []
+      let mut codeOutcome : Option SinglePass.Outcome := none
+      for (q, ci) in r.codes.zipIdx do
+        let hints := (r.codeHints[ci]?).getD {}
+        let rq := q.asRequest r.toRequest
+        let eff := q.entry.row.effect
+        let conditions := decide (q.entry.arity ≤ q.entry.row.arguments.length) && eff.below q.entry.arity &&
+          !eff.freshObject && eff.requires.isNone && eff.elements.isNone && !eff.receiverGrows && eff.elementWrite.isNone
+        if !conditions then
+          codeOutcome := codeOutcome.orElse fun _ => some (.refused s!"code {ci}: its signature")
+          break
+        let codeBound := if eff.footprint == .top && !eff.fresh && !eff.onThrow then none
+          else if !eff.fresh && q.entry.exprs.all Purity.pureTerm then none
+          else some (eff.footprint, eff.fresh, eff.onThrow)
+        let codePool := CertificateProducer.vocabulary G labels rq.claims rq.inputs
+        let (o, _, _) := SinglePass.run G I codePool fuel rq.program rq.claims rq.start q.entry.goal hints.requirements
+          hints.cuts hints.candidates rq.entryIndices [] (e ++ rendered) (GraphCode.admits table) r.aliases
+          (HeapExpressionRules.Checker.ordinary G I) next #[] 1000000000 codeBound
+        match o with
+        | .accepted => table := table ++ [q.entry]
+        | .refused w => codeOutcome := codeOutcome.orElse fun _ => some (.refused s!"code {ci}: {w}"); break
+        | .notHandled w => codeOutcome := codeOutcome.orElse fun _ => some (.notHandled s!"{w} (in code {ci})"); break
+      if let some o := codeOutcome then return (name, "", o)
+      let codes := GraphCode.admits table
       -- Profiling: the pass run `repeats` times, the last run's result kept.
       for k in List.range (repeats - 1) do
         let (o, _, _) := SinglePass.run G I pool fuel r.program r.claims r.start r.goal r.assertions r.cuts r.candidates
-          r.entryIndices [] (e ++ rendered) (fun _ => false) r.aliases (HeapExpressionRules.Checker.ordinary G I) next #[] (debugNode + k)
+          r.entryIndices [] (e ++ rendered) codes r.aliases (HeapExpressionRules.Checker.ordinary G I) next #[] (debugNode + k)
         if let .notHandled w := o then throw w
       let (o, counts, _) := CertificateProducer.timed SinglePass.passNanos fun _ =>
         SinglePass.run G I pool fuel r.program r.claims r.start r.goal r.assertions r.cuts r.candidates
-          r.entryIndices [] (e ++ rendered) (fun _ => false) r.aliases (HeapExpressionRules.Checker.ordinary G I) next reference debugNode bound
+          r.entryIndices [] (e ++ rendered) codes r.aliases (HeapExpressionRules.Checker.ordinary G I) next reference debugNode bound
       -- The unit's own expression claims, as the check reads them.
       let obligations := ExpressionClaims.checkAllResult (RequestJson.graph r.toRequest) (StoreView.images r.types)
-        (StoreView.valid r.types) r.obligations e (fun _ => false) []
+        (StoreView.valid r.types) r.obligations e codes []
       -- A graph the bound refuses may still be within it by its store
       -- regions (`regionalChecked`), which the pass does not decide.
       let o : SinglePass.Outcome := match o with
