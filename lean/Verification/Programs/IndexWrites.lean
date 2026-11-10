@@ -2447,6 +2447,29 @@ theorem withWritten_sound {Ξ T : Fam} {out : Knowledge} {kept : List IndexAtom}
   weaken (fun _ u hq => ⟨hq.1.1, hq.1.2.1, hq.1.2.2.1, hq.1.2.2.2.1, hq.1.2.2.2.2.1,
     indexHolds_cat hq.1.2.2.2.2.2 (shiftIndices_holds (v := u) hq.2)⟩) (safePost_and ho hk)
 
+/-- The knowledge after a step that is an element write at any index: `out`,
+and every atom the change `{value: any, store: grow}` keeps, a linear fact
+whose length terms have non-positive coefficients and whose other terms read
+no location holding an object or a number
+(`ExpressionEffects.writeStep_grow`). -/
+def growOutput [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι) (k out : Knowledge) : Knowledge :=
+  if (ExpressionEffects.writeStep G j.context j.term).isSome then
+    withWritten out (keptIndices (Changes.ofClosed ⟨.any, .grow⟩) (fun _ _ => false) k.indices)
+  else out
+
+theorem growOutput_sound [DecidableEq ι] {G : NormalGraph ι} {j : Sequent ι} {k out : Knowledge} {Ξ T : Fam}
+    {ρ n W h} (he : EnvOk G j.context ρ n W) (hk : Holds k ρ h) (hh : HeapOk n W h)
+    (hs : SafePost Ξ T (fun h' u => Holds out (push u ρ) h') n W h (instantiate 0 ρ j.term)) :
+    SafePost Ξ T (fun h' u => Holds (growOutput G j k out) (push u ρ) h') n W h (instantiate 0 ρ j.term) := by
+  unfold growOutput
+  split
+  · rename_i hw
+    obtain ⟨i, hi⟩ := Option.isSome_iff_exists.mp hw
+    refine withWritten_sound ?_ hs
+    exact weaken (fun _ _ hq => keptIndices_holds hk.2.2.2.2.2 hq firstKept_none)
+      (ExpressionEffects.writeStep_grow hi he hh (HeapObservations.erase hs))
+  · exact hs
+
 theorem boundedRegions_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
     {j : Sequent ι} {k : Knowledge} {a i v : Nat} {sub : PositiveCertificates.SubtypeChoices ι}
     (hc : boundedWriteCheck G images j k a i v sub = true) {ρ n W h}
@@ -2680,24 +2703,25 @@ theorem indexHolds_append {as bs : List HeapKnowledge.IndexAtom} {ρ h}
       (IndexWrites.lengthAtoms_holds he hk (IndexWrites.linearAtoms_holds he hk (IndexWrites.stepAtoms_holds he hk hs)))
 
 /-- A checker whose `boundedWrite` steps are writes at a checked index
-(`IndexWrites.boundedWriteCheck`, `setElem-bounded`), keeping no observation
-of the heap; every other step is `base`'s. -/
+(`IndexWrites.boundedWriteCheck`, `setElem-bounded`), and whose element writes
+at any index keep the atoms a growing change keeps (`IndexWrites.growOutput`);
+every other step is `base`'s. -/
 @[nospecialize] def Checker.boundedWrites [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
     (base : Checker G images) : Checker G images where
   run := fun j k e codes sums => match e with
     | .boundedWrite a i v p =>
       if IndexWrites.boundedWriteCheck G images j k a i v p then
         pure (IndexWrites.withWritten (if IndexWrites.keepsLengths G j k a i then IndexWrites.lengthOutput k
-          else ordinaryOutput k) (IndexWrites.writeAtoms G j.context k a))
+          else IndexWrites.growOutput G j k (ordinaryOutput k)) (IndexWrites.writeAtoms G j.context k a))
       else failure
-    | _ => base.run j k e codes sums
+    | _ => (base.run j k e codes sums).map (IndexWrites.growOutput G j k)
   select := fun j k e codes sums => match e with
     | .boundedWrite a i v p =>
       if IndexWrites.boundedWriteCheck G images j k a i v p then
         pure (IndexWrites.withWritten (if IndexWrites.keepsLengths G j k a i then IndexWrites.lengthOutput k
-          else ordinaryOutput k) (IndexWrites.writeAtoms G j.context k a))
+          else IndexWrites.growOutput G j k (ordinaryOutput k)) (IndexWrites.writeAtoms G j.context k a))
       else failure
-    | _ => base.select j k e codes sums
+    | _ => (base.select j k e codes sums).map (IndexWrites.growOutput G j k)
   sound := by
     intro j k e out codes sums hc hcodes hsums ρ n W h he hk hw hh
     split at hc
@@ -2708,8 +2732,10 @@ of the heap; every other step is `base`'s. -/
         split
         · rename_i hkeep
           exact IndexWrites.boundedLength_sound hck hkeep he hk hw hh
-        · exact IndexWrites.boundedWrite_sound hck he hk hw hh
+        · exact IndexWrites.growOutput_sound he hk hh (IndexWrites.boundedWrite_sound hck he hk hw hh)
       · cases hc
-    · exact base.sound hc hcodes hsums he hk hw hh
+    · simp only [CheckResult.map, Option.map_eq_some_iff] at hc
+      obtain ⟨out0, hrun, rfl⟩ := hc
+      exact IndexWrites.growOutput_sound he hk hh (base.sound hrun hcodes hsums he hk hw hh)
 
 end Verification.HeapExpressionRules

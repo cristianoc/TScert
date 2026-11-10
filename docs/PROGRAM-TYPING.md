@@ -1508,7 +1508,7 @@ bounds of lengths (proved). These are the preservation rules:
      {\textstyle\sum_t c_t\,t\le d\ \text{holds in}\ h'}\ \textsf{fact-grown}
 ```
 
-**The steps' frame conditions.** Six steps state their change:
+**The steps' frame conditions.** Seven steps state their change:
 
 - **A field write** $`x.f=y`$: its location held a member of a type the
   receiver's type states for $`f`$, so $`\chi`$ is the classes those types
@@ -1526,6 +1526,20 @@ bounds of lengths (proved). These are the preservation rules:
   on a store every position of which holds source values:
   $`\chi=(\top,\top,\text{length})`$ (proved: the present element's location
   held no store, and a hole's write gives a store of the same length).
+- **An element write at any index**, at a literal index whose position of
+  the store's tuple contract holds source values or at a slot on a store
+  every position of which does ([element writes](FOOTPRINTS.md#element-writes)):
+  $`\chi=(\top,\top,\mathsf{grow})`$ (proved: at a listed index the
+  element's location takes the value, and at a hole or past the end, an
+  index below $`2^{32}-1`$, a fresh location is listed in a store no
+  shorter). So `out[j] = v` preserves `to <= xs.length` whatever `out` is,
+  and no upper bound of a length (positive `element-write-keeps-lengths`;
+  negative, run under Node, `invalid-element-write-upper-bound`):
+```math
+\frac{\Gamma;\Sigma\vdash x[k]=y\qquad x[k]=y\ \text{within}\ \{\mathsf{value}{:}\,\mathsf{any},\ \mathsf{store}{:}\,\mathsf{grow}\}}
+     {\Gamma;\Sigma\vdash x[k]=y\ \text{changes}\ (\top,\top,\mathsf{grow})}\ \textsf{setElem-grow}
+```
+
 - **A call** at a selected signature $`\mathcal F_\epsilon`$ stating none of
   `receiverStore`, `receiverOwn` and `receiverGrows` and not leaving the heap
   unchanged: $`\chi`$ is its footprint's: $`o`$ where it states `any` for
@@ -1645,7 +1659,9 @@ which also proves `write-link`). `write-init` is
 `init_write_within`, `nullishAt_sound`), a node's bound check reading it
 through `GraphCode.writeWithinAt`. The element write's is
 `IndexWrites.keepsLengths` and `lengthOutput` (proved:
-`ExpressionEffects.elem_var_write_length`, `placeAt_length`). A call's is
+`ExpressionEffects.elem_var_write_length`, `placeAt_length`), and at any
+index `IndexWrites.growOutput` in `Checker.boundedWrites` (proved:
+`ExpressionEffects.writeStep_grow`, `growOutput_sound`). A call's is
 `Changes.ofClosed` (proved: `ofClosed_holds`) in `PromiseCalls.effectKept`,
 added by `Checker.ensuringCalls`; an element write's is `CallEffects.ElementWrite.changes` in
 `PromiseCalls.effectKept` (proved in `effectKept_holds`); growth is `PromiseCalls.growChanges` and
@@ -1738,9 +1754,9 @@ claiming it.
   reads, element reads, assignments of value bindings, calls, method calls
   and constructions at signatures leaving the heap unchanged) preserves the
   facts whose bindings it does not assign. A statement whose one write, its
-  operands writing none, is a field's, an element's below the length of an
-  array of primitives, or a call's at a signature excepting no receiver
-  location, preserves those [fact-kept](#frame-conditions) preserves, the
+  operands writing none, is a field's, an element's of an array of
+  primitives, or a call's at a signature excepting no receiver
+  location, preserves those [fact-kept and fact-grown](#frame-conditions) preserve, the
   field's classes read off the receiver's record type, its first location
   never assumed. An array iterator's start preserves every fact, and its step
   those naming only values and the lengths of the arrays in scope where it
