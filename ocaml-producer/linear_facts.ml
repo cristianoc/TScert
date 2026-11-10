@@ -824,6 +824,10 @@ let strictly_bounded ~facts ~bounds xs k =
    other parts writing none: the join of the calls'
    footprints, which the facts a call at it keeps bound (Lean's
    `Changes.ofClosed`); none for any other expression. *)
+(* Whether the call `f(args)` is one of a function stating store regions
+   that the statement at hand sets apart (`with_regional`): its change is
+   then the regional rule's, and the expression's other parts' the rest. *)
+let regional_call : ((string * Environment.binding) list -> string -> expr list -> bool) ref = ref (fun _ _ _ -> false)
 let rec object_calls env (e : expr) : Semantic.footprint option =
   let within fp = if Semantic.footprint_le fp {Semantic.on_value=Semantic.Any;on_store=Semantic.Grow} then Some fp else None in
   let join a b = match a,b with
@@ -831,20 +835,23 @@ let rec object_calls env (e : expr) : Semantic.footprint option =
         on_store=Semantic.join_change a.Semantic.on_store b.Semantic.on_store}
     | _ -> None in
   let all es = List.fold_left (fun acc e -> join acc (object_calls env e)) (Some Semantic.empty_footprint) es in
+  (* A binding an assignment leaves the facts of, as `heap_free` reads it. *)
+  let held x = slot_binding env x || (not !cells_written && not (!cell_terms x)) in
   if heap_free env e then Some Semantic.empty_footprint else match e.node with
   | Lambda _ -> Some Semantic.empty_footprint
   | Not a | Unary (_,a) | Cast (_,_,a) | Read (a,_) -> object_calls env a
   | Arith (_,a,b) | Equality (_,a,b) | Logical (_,a,b) | Coalesce (a,b) | Comma (a,b) -> all [a;b]
   | Conditional (c,a,b) -> all [c;a;b]
+  | Call ({node=Id f;_},None,args,[],_) when !regional_call env f args -> all args
   | Call ({node=Id f;_},None,args,[],_) -> join (all args) (Option.bind (!call_footprint env f) within)
   | Invoke ({node=Read (r,key);_},args,[],_) when not (!method_grows env r key) ->
     join (all (r :: args)) (if !method_keeps_heap env r key then Some Semantic.empty_footprint
       else Option.bind (!method_footprint env r key args) within)
   | Alloc fields -> all (List.map snd fields)
-  | Assign (x,_,rhs) when slot_binding env x -> object_calls env rhs
-  | Update (_,{node=Id x;_},Some rhs,_) when slot_binding env x -> object_calls env rhs
+  | Assign (x,_,rhs) when held x -> object_calls env rhs
+  | Update (_,{node=Id x;_},Some rhs,_) when held x -> object_calls env rhs
   (* `x ??= v`, `x ||= v` and `x &&= v` of a slot: the right side's calls. *)
-  | NullishAssign (x,_,rhs) | LogicalAssign (_,{node=Id x;_},rhs) when slot_binding env x -> object_calls env rhs
+  | NullishAssign (x,_,rhs) | LogicalAssign (_,{node=Id x;_},rhs) when held x -> object_calls env rhs
   (* A field write, and `x.f ??= v`, `||=`, `&&=`: its operands' calls, then
      a change of the classes the field's type admits (`field_classes`), each
      a step of its own for Lean. *)
@@ -881,8 +888,10 @@ let write_changes ~facts ~bounds env (e : expr) : changes option =
   (* `xs[k] = v` at any index: it may append or leave holes, within
      `{value: any, store: grow}` (Lean's `IndexWrites.growOutput`). *)
   | IndexWrite ({node=Id xs;_},k,rhs)
-    when heap_free env k && heap_free env rhs && slot_binding env xs && !source_elements env xs ->
+    when heap_free env k && heap_free env rhs && slot_binding env xs ->
     Some { obj = true; num = true; store = `Grow; framed = no_frame; apart = false; cell_write = false }
+  | Call ({node=Id f;_},None,args,[],_) when List.for_all (heap_free env) args && !regional_call env f args ->
+    Some { obj = false; num = false; store = `Keep; framed = no_frame; apart = false; cell_write = false }
   | Call ({node=Id f;_},None,args,[],_) when List.for_all (heap_free env) args ->
     if !call_element_write env f then Some { element_changes with framed = (fun b g -> slot_binding env b && !view_field env b g) }
     else Option.map (of_footprint env) (!call_footprint env f)
@@ -1281,19 +1290,43 @@ let call_regions : ((string * Environment.binding) list -> string -> ((int * str
    store each region selects at the call, by a region fact with the actual
    of a region's own store, or by a store separation with the region's path
    at the actual. *)
-let region_separated ?(regions=[]) ?(stores=[]) env (s : stmt) : ((string -> bool) * bool) option =
-  match s.statement with
-  | Effect {node=Call ({node=Id f;_},None,args,[],_);_} when List.for_all (heap_free env) args ->
-    (match !call_regions env f with
-     | Some (rs,closed) when rs <> [] &&
-         (match closed.Semantic.on_store with Semantic.Keep | Semantic.Init | Semantic.Scalar | Semantic.Grow -> true | _ -> false) ->
-       let stores = List.map sfact_norm stores in
-       Some ((fun y -> slot_binding env y && List.for_all (fun (p,q) -> p >= 1 &&
-         match List.nth_opt args (p - 1) with
-         | Some {node=Id a;_} -> (q = [] && rapart regions a y) || List.mem (sfact_norm ((a,q),(y,[]))) stores
-         | _ -> false) rs), closed.Semantic.on_store = Semantic.Grow)
-     | _ -> None)
+let regional_sep ?(regions=[]) ?(stores=[]) env f (args : expr list) : ((string -> bool) * bool) option =
+  match !call_regions env f with
+  | Some (rs,closed) when rs <> [] &&
+      (match closed.Semantic.on_store with Semantic.Keep | Semantic.Init | Semantic.Scalar | Semantic.Grow -> true | _ -> false) &&
+      List.for_all (fun (p,_) -> p >= 1 && match List.nth_opt args (p - 1) with Some {node=Id _;_} -> true | _ -> false) rs ->
+    let stores = List.map sfact_norm stores in
+    Some ((fun y -> slot_binding env y && List.for_all (fun (p,q) ->
+      match List.nth_opt args (p - 1) with
+      | Some {node=Id a;_} -> (q = [] && rapart regions a y) || List.mem (sfact_norm ((a,q),(y,[]))) stores
+      | _ -> false) rs), closed.Semantic.on_store = Semantic.Grow)
   | _ -> None
+(* `f`'s result with each call of a function stating store regions, at
+   binding actuals for its regions, set apart wherever it stands in the
+   expressions `f` analyses: those calls' separations, each an array the
+   call keeps apart from its regions and whether the call grows stores. *)
+let with_regional ?(regions=[]) ?(stores=[]) (f : unit -> 'a) : 'a * ((string -> bool) * bool) list =
+  let found = ref [] and saved = !regional_call in
+  regional_call := (fun env g args -> match regional_sep ~regions ~stores env g args with
+    | Some sep -> found := sep :: !found; true
+    | None -> false);
+  let r = Fun.protect ~finally:(fun () -> regional_call := saved) f in
+  r, !found
+(* Whether each regional call keeps a fact: every term stable, or the
+   length of an array the call keeps apart from its regions
+   (`region-call-keep`), at a coefficient at most 0 where the call grows
+   stores (`region-call-grow`). *)
+(* The region and store separations of the statement being transferred,
+   which a declaration's or an assignment's own transfer reads
+   (`declaration`). Set by the statement's transfer. *)
+let statement_separations = ref ([],[])
+let with_separations ~regions ~stores f =
+  let saved = !statement_separations in
+  statement_separations := (regions,stores);
+  Fun.protect ~finally:(fun () -> statement_separations := saved) f
+let region_keeps env regional ((t,_) : fact) =
+  List.for_all (fun (sep,grows) -> List.for_all (fun (n,c) -> stable_term env n ||
+    (let b,path,kind = term_parts n in kind = Length_term && path = [] && sep b && (not grows || c <= 0))) t) regional
 
 (* A statement's effect on the facts: an assignment or update of a slot
    binding by a linear expression, and every other assigned binding
@@ -1305,15 +1338,16 @@ let rec statement ~(array : string -> string list -> bool) ?(bounds=[]) ?(region
   (* `a, b` (a loop's update `j = k, k = s.charCodeAt(i), i++`): `a`'s
      statement, then `b`'s, as Lean's steps run them in turn. *)
   | Effect {node=Comma (a,b);_} ->
-    statement ~array ~bounds env (statement ~array ~bounds env fs {s with statement=Effect a}) {s with statement=Effect b}
+    statement ~array ~bounds ~regions ~stores env (statement ~array ~bounds ~regions ~stores env fs {s with statement=Effect a}) {s with statement=Effect b}
   (* A statement updating a cell inside it (`s += xs[at++]!`): the update's
      facts, then the statement as one writing no other location. *)
   | Effect e ->
     let updated = after_cell_updates ~root:false env e fs in
     if updated == fs then statement_slots ~array ~bounds ~regions ~stores env fs s
-    else with_cells true (fun () -> statement_slots ~array ~bounds env updated s)
+    else with_cells true (fun () -> statement_slots ~array ~bounds ~regions ~stores env updated s)
   | _ -> statement_slots ~array ~bounds ~regions ~stores env fs s
 and statement_slots ~(array : string -> string list -> bool) ?(bounds=[]) ?(regions=[]) ?(stores=[]) env fs (s : stmt) : fact list =
+  with_separations ~regions ~stores @@ fun () ->
   (* A write `x.f = e` of a field the receiver's type states, of a value
      binding, by a linear expression: the field's new value is `e`'s, read through the old value where `e`
      reads it (Lean's `write-link`, a read link from `x.f` to the written
@@ -1350,22 +1384,14 @@ and statement_slots ~(array : string -> string list -> bool) ?(bounds=[]) ?(regi
             if t = length then acc + c * List.length args else acc) 0 form)
         else None) (fs @ term_ranges fs)
     | _ -> [] in
-  (* Across a call of a function stating store regions, each fact whose
-     lengths are of arrays the call keeps (`region-call-keep`), or, where
-     it grows them, of such arrays at a coefficient at most 0
-     (`region-call-grow`). *)
-  let separated = match region_separated ~regions ~stores env s with
-    | Some (sep,grows) -> List.filter (fun ((t,_) : fact) -> List.for_all (fun (n,c) -> stable_term env n ||
-        (let b,path,kind = term_parts n in kind = Length_term && path = [] && sep b && (not grows || c <= 0))) t) fs
-    | None -> [] in
   let fs = if statement_heap_free env s then fs else
-    let changes = statement_changes ~facts:fs ~bounds env s in
+    let changes,regional = with_regional ~regions ~stores (fun () -> statement_changes ~facts:fs ~bounds env s) in
     let kept = match changes with
-      | Some ch -> List.filter (fun f -> fact_kept ch f || stable_fact env f) fs
+      | Some ch -> List.filter (fun f -> (fact_kept ch f || stable_fact env f) && region_keeps env regional f) fs
       | None -> keep_stable env fs in
-    record_loss env s.span (Source.statement_children s) changes fs (kept @ separated);
+    record_loss env s.span (Source.statement_children s) changes fs kept;
     kept_or_all fs kept in
-  let fs = List.sort_uniq compare (fs @ separated) @ appended in
+  let fs = List.sort_uniq compare fs @ appended in
   let fs = match written with
     | Some (p,(t,c)) ->
       let t = List.map (fun (n,k) -> (if n = p then old else n),k) t in
@@ -1461,16 +1487,15 @@ let join_bounds (l : bound list) (r : bound list) : bound list =
 (* The bounds a statement keeps: those whose bindings it does not assign, where
    it writes no heap. *)
 let statement_bounds ?(facts=[]) ?(regions=[]) ?(stores=[]) env (bs : bound list) (s : stmt) =
-  let kept = statement_heap_free env s ||
-    (match statement_changes ~facts ~bounds:bs env s with Some ch -> ch.store <> `Any | None -> false) in
   let assigned = names_assigned s env in
   let unassigned (a,i,_) = not (List.mem a assigned) && not (List.mem i assigned) in
-  if kept then List.filter unassigned bs else
-  (* Across a call of a function stating store regions, the bounds of the
+  if statement_heap_free env s then List.filter unassigned bs else
+  (* Across each call of a function stating store regions, the bounds of the
      arrays it keeps or grows (`region-call-keep`, `region-call-grow`). *)
-  match region_separated ~regions ~stores env s with
-  | Some (sep,_) -> List.filter (fun ((a,_,_) as b) -> unassigned b && sep a) bs
-  | None -> []
+  match with_regional ~regions ~stores (fun () -> statement_changes ~facts ~bounds:bs env s) with
+  | Some ch,regional when ch.store <> `Any ->
+    List.filter (fun ((a,_,_) as b) -> unassigned b && List.for_all (fun (sep,_) -> sep a) regional) bs
+  | _ -> []
 
 (* What each answer of a comparison of an index with an array's length states:
    on the answer giving `j < xs.length`, with `0 ≤ j` known, `j` an index
@@ -1594,9 +1619,10 @@ let rec declaration ~(array : string -> string list -> bool) env fs name (init :
   let fs = updated in
   let fs = if heap_free env init then fs
     else
-      let changes = object_changes env init in
+      let regions,stores = !statement_separations in
+      let changes,regional = with_regional ~regions ~stores (fun () -> object_changes env init) in
       let kept = match changes with
-        | Some ch -> List.filter (fun f -> fact_kept ch f || stable_fact env f) fs
+        | Some ch -> List.filter (fun f -> (fact_kept ch f || stable_fact env f) && region_keeps env regional f) fs
         | None -> keep_stable env fs in
       record_loss env init.pos [init] changes fs kept;
       kept_or_all fs kept in

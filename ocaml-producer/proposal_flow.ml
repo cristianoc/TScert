@@ -428,7 +428,9 @@ let statements callbacks flow_graph register_following owner_span env0 ss =
           let fs = match (source span).statement with
             | Declare (_,bindings) ->
               (match List.find_opt (fun (b,_,(init:Source.expr)) -> b=name && init.pos=initial_source) bindings with
-               | Some (_,_,init) -> Linear_facts.declaration ~array:(callbacks.array_binding env) env facts0 name init
+               | Some (_,_,init) ->
+                 Linear_facts.with_separations ~regions:(regions0 @ separated env node.scope) ~stores:stores0 (fun () ->
+                   Linear_facts.declaration ~array:(callbacks.array_binding env) env facts0 name init)
                | None -> [])
             | _ -> [] in
           let gs = match (source span).statement with
@@ -503,11 +505,13 @@ let statements callbacks flow_graph register_following owner_span env0 ss =
                 call. *)
              let reading fs = if heap_free then fs
                else
-                 let changes = Linear_facts.write_changes ~facts:facts0 ~bounds:bounds0 env c in
+                 let changes,regional = Linear_facts.with_regional ~regions:(regions0 @ separated env node.scope) ~stores:stores0
+                   (fun () -> Linear_facts.write_changes ~facts:facts0 ~bounds:bounds0 env c) in
                  let kept = match changes with
                  (* A test whose one write is a call's: the facts its
                     footprint keeps (`fact-kept`), as at a statement. *)
-                 | Some ch -> List.filter (fun f -> Linear_facts.fact_kept ch f || Linear_facts.stable_fact env f) fs
+                 | Some ch -> List.filter (fun f -> (Linear_facts.fact_kept ch f || Linear_facts.stable_fact env f) &&
+                     Linear_facts.region_keeps env regional f) fs
                  | None -> Linear_facts.keep_stable env fs in
                  Linear_facts.record_loss env c.pos [c] changes fs kept;
                  Linear_facts.kept_or_all fs kept @ Linear_facts.test_call_facts ~held:facts0 env c in

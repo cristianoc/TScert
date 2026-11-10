@@ -3004,6 +3004,7 @@ export const cases: Case[] = [
   positive("element-write-keeps-lengths", "an element write at an index no fact bounds below the length, `out[j] = xs[i]!` with `out` possibly `xs`, leaves every store no shorter, so `to <= xs.length` holds after it and each `xs[i]` is in bounds"),
   negative("invalid-element-write-upper-bound", "an element write that may append keeps no upper bound of a length: `xs.length <= ys.length` is lost after `xs[k] = 1` and `ys[n - 1]` is refused (run under Node: `last([], [], 0)` returns `undefined`)",
     /^reject: source expression obligation at \[\d+,\d+\): evidence search failed: no derivation of its cast claim/),
+  positive("region-call-in-expression-keeps-lengths", "a call of a function stating a store region keeps `i < xs.length` as a test's conjunct and as an assignment's right side, and an element write of an array of arrays keeps it as one of numbers does"),
   positive("stable-field-record-writes", "a compound assignment, an assignment and an update of a writable field of a record that states another field `@stable`: each writes the field's location at its contract (POSITIVE-TYPES.md, \"Records\")"),
   negative("invalid-stable-record-field-alias", "an object with a writable `size` is no record stating it `@stable`, which TypeScript's readonly field admits: the call passing it is refused (run under Node: `sizeAfter` returns `null` at `number`)",
     /^reject: source expression obligation at \[732,776\): evidence search failed: no derivation of its node-typing claim/),
