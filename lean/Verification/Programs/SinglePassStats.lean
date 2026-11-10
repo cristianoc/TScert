@@ -12,6 +12,10 @@ def termKind : Tm → String
   | .lenOf _ => "lenOf" | .spread _ => "spread" | .throw _ => "throw" | .merge .. => "merge"
   | .makeKey .. => "makeKey" | .goto .. => "goto" | .frame .. => "frame"
 
+private unsafe def samePtrImpl {α : Type} (a b : α) : Bool := ptrAddrUnsafe a == ptrAddrUnsafe b
+/-- Whether two values are one object (a measurement; false when unknown). -/
+@[implemented_by samePtrImpl] def samePtr {α : Type} (_a _b : α) : Bool := false
+
 def bump (m : Std.HashMap String Nat) (k : String) (n : Nat := 1) : Std.HashMap String Nat :=
   m.insert k (m.getD k 0 + n)
 
@@ -68,11 +72,27 @@ def stats (P : Program) (claims : List (PointClaim ι)) (cuts : List Nat)
           samples := samples ++ [s!"[{l} {termKind node.expression} src {src} -> {t.label} w {w}: {runs slots}]"]
         if !ident then
           moved := moved + ((slots.zipIdx.filter fun (s, i) => s != i).length)
+  -- Sharing between claims: slot types and context tails that are one object.
+  let mut sameSlots := 0
+  let mut allSlots := 0
+  let mut sameTails := 0
+  let mut edgesNone := 0
+  for (node, l) in P.zipIdx do
+    let some c := claims[l]? | continue
+    for t in successors node.continuation do
+      let some d := claims[t.label]? | continue
+      if t.mapping.isNone then
+        edgesNone := edgesNone + 1
+        let src := match node.continuation with | .effect _ | .branch .. => c.context | _ => c.type :: c.context
+        if samePtr src d.context || (match src, d.context with | _ :: a, _ :: b => samePtr a b | _, _ => false) then sameTails := sameTails + 1
+        for (A, B) in src.zip d.context do
+          allSlots := allSlots + 1
+          if samePtr A B then sameSlots := sameSlots + 1
   let merges := preds.foldl (fun n p => if p > 1 then n + 1 else n) 0
   let atoms := assertions.foldl (fun n (_, k) => n + k.indices.length + k.cells.length + k.values.length
     + k.links.length + k.elems.length) 0
   let meanW := (widths.foldl (· + ·) 0) / (max widths.size 1)
-  return s!"nodes {P.length}; mean width {meanW}; cuts {cuts.length}; merges {merges}; handlers {handlers}; assertions {assertions.length} ({atoms} atoms)\n  kinds: {showCounts kinds}\n  continuations: {showCounts conts}\n  mappings: {showCounts maps}; slots moved by permuting maps {moved}\n  {"\n  ".intercalate samples}"
+  return s!"nodes {P.length}; mean width {meanW}; cuts {cuts.length}; merges {merges}; handlers {handlers}; assertions {assertions.length} ({atoms} atoms)\n  kinds: {showCounts kinds}\n  continuations: {showCounts conts}\n  mappings: {showCounts maps}; slots moved by permuting maps {moved}; identity edges {edgesNone}, sharing a tail {sameTails}; slot types one object {sameSlots} of {allSlots}\n  {"\n  ".intercalate samples}"
 
 /-- The chain of predecessors of a node, `depth` steps back (the first
 predecessor each time). -/
