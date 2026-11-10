@@ -112,7 +112,7 @@ def compactGraph (c : Compaction) (program : List Node) (claims : List (PointCla
     candidates.map fun (l, a) => (lab l, a), cuts.map lab, lab)
 
 /-- The nodes the lowering leaves out (each kind its own step of the work). -/
-def compaction : Compaction := ⟨true, true, false⟩
+def compaction : Compaction := ⟨true, true, true⟩
 
 /-- A lowered graph with its source account, without the nodes that do
 nothing, and its entry's new label. -/
