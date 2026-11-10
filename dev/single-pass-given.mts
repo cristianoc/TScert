@@ -6,7 +6,7 @@
 //   node dev/single-pass-given.mts <dir> [pattern…]
 import { spawnSync } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { cases, type Case } from "../pipeline/cases.mts";
 import { pooled } from "../pipeline/run-cases.mts";
 import { checkApart } from "../pipeline/verify-source.mts";
@@ -32,7 +32,9 @@ async function write(dir: string, test: Case): Promise<number> {
   const run = spawnSync(verifier, ["--verify-units", "6", join(outcome.artifacts, "fragment.json"),
     join(outcome.artifacts, "claims.json"), key, "12"], { encoding: "utf8", maxBuffer: 1 << 28 });
   const lines = run.stdout.split("\n").filter((l) => l.startsWith("{\"codes\""));
-  writeFileSync(join(dir, `${test.file}.jsonl`), lines.join("\n") + "\n");
+  const path = join(dir, `${test.file}.jsonl`);
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, lines.join("\n") + "\n");
   return lines.length;
 }
 
