@@ -496,6 +496,30 @@ theorem checkRequestResult_accepted_iff (r : SourceRequest σ ι) (c : Response 
   ProgramCertificates.CheckResult.allLocated ((rs.zip b.functions).zip b.obligations) .request
     fun ((r,c),es) => checkRequestResult r c es
 
+/-- The part of `checkRequestResult` a unit's search leaves to be checked: a
+response its search returned (`RequestJson.produceResponseUsing`) has passed
+`verifyResult` there, its code table being its codes' entries in order, so
+its assertions, effect, postcondition, store regions and obligations remain.
+Search only: acceptance is `checkRequestsResult`. -/
+@[nospecialize] def searchedRequestResult (r : SourceRequest σ ι) (c : Response ι)
+    (es : List (ProgramCertificates.Evidence ι)) : ProgramCertificates.CheckResult ι Unit :=
+  (ProgramCertificates.CheckResult.ofBool (checkAssertions r c)).bind fun _ =>
+  (effectResult r c).bind fun _ =>
+  (ensuresResult r c).bind fun _ =>
+  (regionalResult r c).bind fun _ =>
+  ExpressionClaims.checkAllResult (RequestJson.graph r.toRequest) (StoreView.images r.types)
+    (StoreView.valid r.types) r.obligations es (GraphCode.admits (r.toRequest.codes.map (·.entry)))
+    c.readSummaries
+
+/-- `checkRequestsResult` over responses their searches returned
+(`searchedRequestResult`). Search only. -/
+@[nospecialize] def searchedRequestsResult (rs : List (SourceRequest σ ι)) (b : Bundle ι) :
+    ProgramCertificates.CheckResult ι Unit :=
+  (ProgramCertificates.CheckResult.ofBool (rs.length == b.functions.length &&
+    rs.length == b.obligations.length)).bind fun _ =>
+  ProgramCertificates.CheckResult.allLocated ((rs.zip b.functions).zip b.obligations) .request
+    fun ((r,c),es) => searchedRequestResult r c es
+
 @[nospecialize] def checkRequests (rs : List (SourceRequest σ ι)) (b : Bundle ι) : Bool :=
   (checkRequestsResult rs b).accepted
 
