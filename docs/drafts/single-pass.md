@@ -85,7 +85,9 @@ and listed.
 A cut's given invariant may also state implications (where a test holds
 `true`, a slot has a type): supplied as an input of the pass, for the
 experiment from the implications the existing search's certificate holds at
-the cut (`TSCERT_SUPPLY_IMPLIES=1`), never computed by the pass. Every edge
+the cut, written once per unit to a file of given facts
+(`dev/single-pass-given.mts`, `verifier --verify-units 6`) the pass reads
+(`TSCERT_GIVEN`), never computed by the pass. Every edge
 into the cut carries the obligation that its own implications state each
 of them, at a type within the given one.
 

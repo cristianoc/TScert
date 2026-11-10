@@ -400,8 +400,19 @@ def verifyUnitsFile (astPath claimsPath fileKey : String) (fuel : Nat) (names : 
           let compare := (← IO.getEnv "TSCERT_COMPARE").isSome
           let debugNode := ((← IO.getEnv "TSCERT_NODE").bind String.toNat?).getD 1000000000
           let repeats := ((← IO.getEnv "TSCERT_REPEAT").bind String.toNat?).getD 1
-          let supply := (← IO.getEnv "TSCERT_SUPPLY_IMPLIES").isSome
-          let (lines, v) ← IO.lazyPure fun _ => f.passGroup fuel (f.fr.group i) compare debugNode repeats supply
+          -- The given statement-entry facts, a file of lines by unit
+          -- (`TSCERT_GIVEN`, written by `dev/single-pass-given.mts`).
+          let given ← match ← IO.getEnv "TSCERT_GIVEN" with
+            | none => pure none
+            | some path => do
+              let text ← IO.FS.readFile path
+              let lines := text.splitOn "\n" |>.filter (!·.isEmpty)
+              pure (some (lines.foldl (fun (m : Std.HashMap String Json) l => match Json.parse l with
+                | .ok j => match j.getObjValAs? String "unit", j.getObjVal? "graph" with
+                  | .ok u, .ok _ => m.insert u j
+                  | _, _ => m
+                | .error _ => m) {}))
+          let (lines, v) ← IO.lazyPure fun _ => f.passGroup fuel (f.fr.group i) compare debugNode repeats given
           let p1 ← SinglePass.passNanos.get
           let s1 ← IO.monoNanosNow
           for line in lines do IO.eprintln line
@@ -420,6 +431,11 @@ def verifyUnitsFile (astPath claimsPath fileKey : String) (fuel : Nat) (names : 
             | none => IO.eprintln "no function"
           | .error e => IO.eprintln e
           pure (.error "debug")
+        | 6 => do
+          -- The given statement-entry facts of the selected units, read from
+          -- the existing search's certificate: one line per unit.
+          for line in f.givenLines fuel (f.fr.group i) do IO.println line.compress
+          pure (.error "given facts written")
         | 4 => do
           let label := ((← IO.getEnv "TSCERT_NODE").bind String.toNat?).getD 0
           for line in f.passStats (f.fr.group i) label do IO.eprintln line
