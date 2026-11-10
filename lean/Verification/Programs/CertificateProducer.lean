@@ -1900,11 +1900,13 @@ promise's evidence. -/
 
 /-- The implications a source node carries on its edge of `cont` numbered
 `index`, and the context, refined by its yields, they are checked in. -/
-def edgeImplicationsOf [DecidableEq ι] (G : NormalGraph ι) (previous : NodeEvidence ι) (cont : Continuation)
-    (o : HeapKnowledge.Knowledge := ControlFlow.outFacts G previous) : List (PromiseCalls.Implication ι) :=
-  PromiseCalls.aliasImplications (edgeFactsOf o cont).links (match cont with
+def edgeImplicationsOf [DecidableEq ι] [Hashable ι] (G : NormalGraph ι) (previous : NodeEvidence ι)
+    (cont : Continuation) (o : HeapKnowledge.Knowledge := ControlFlow.outFacts G previous) :
+    List (PromiseCalls.Implication ι) :=
+  -- `PromiseCalls.aliasImplications`, its repeats dropped by hash.
+  (keepFirst {} (PromiseCalls.aliasImplicationsAll (edgeFactsOf o cont).links (match cont with
     | .effect _ | .branch _ _ => previous.implies
-    | _ => PromiseCalls.edgeImplications previous.implies previous.yields true)
+    | _ => PromiseCalls.edgeImplications previous.implies previous.yields true))).2.toList
 where
   /-- The knowledge an edge's implications and argument slots are carried by,
   as the checker reads it (`ControlFlow.carries`), from the source's output

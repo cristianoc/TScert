@@ -21,7 +21,7 @@ structure Implication (ι : Type) where
   test : Nat
   target : Nat
   type : Ty ι
-  deriving DecidableEq, Repr
+  deriving DecidableEq, Hashable, Repr
 
 /-- What a node's result promises of a slot of the node's entry: its type,
 where the result is `true` (`conditional`), where it is `false` (`onFalse`),
@@ -278,6 +278,71 @@ theorem aliasSources_holds {links : HeapLinks.Links} {sources : List Nat} {ρ h 
   intro p hp
   simp only [aliasSources] at hp
   exact aliasesOf_holds (aliasPairs_holds hl) _ _ (fun j hj => hs j (List.mem_eraseDups.mp hj)) p hp
+
+/-! ### Implications compared by their slots
+
+`impliesCheck` compares each target implication with every source one. The
+compiled checker reads the source implications by their tested and target
+slots instead (`impliesCheckIndexed`), each repeated one once or more: the
+same answer (`impliesCheck_eq_indexed`). -/
+
+/-- `aliasImplications` with each implication as often as the aliases give it. -/
+def aliasImplicationsAll (links : HeapLinks.Links) (xs : List (Implication ι)) : List (Implication ι) :=
+  let pairs := aliasPairs links
+  xs.flatMap fun x => (aliasesOf pairs pairs.length [x.test]).flatMap fun t =>
+    (aliasesOf pairs pairs.length [x.target]).map fun a => ⟨t, a, x.type⟩
+
+/-- The types the implications `xs` state at each tested and target slot. -/
+def implicationIndex (xs : List (Implication ι)) : Std.HashMap (Nat × Nat) (List (Ty ι)) :=
+  xs.foldl (fun m y => m.insert (y.test, y.target) (y.type :: m.getD (y.test, y.target) [])) {}
+
+omit [DecidableEq ι] in
+theorem implicationIndex_any_foldl (P : Ty ι → Bool) (k : Nat × Nat) :
+    ∀ (xs : List (Implication ι)) (m : Std.HashMap (Nat × Nat) (List (Ty ι))),
+      ((xs.foldl (fun m y => m.insert (y.test, y.target) (y.type :: m.getD (y.test, y.target) [])) m).getD
+          k []).any P =
+        ((m.getD k []).any P || xs.any fun y => (y.test, y.target) == k && P y.type)
+  | [], m => by simp
+  | y :: ys, m => by
+    rw [List.foldl_cons, implicationIndex_any_foldl P k ys, Std.HashMap.getD_insert]
+    by_cases h : (y.test, y.target) = k
+    · subst h
+      simp only [beq_self_eq_true, ↓reduceIte, List.any_cons, Bool.true_and]
+      cases P y.type <;> simp
+    · have h' : ((y.test, y.target) == k) = false := by simpa using h
+      simp only [h', Bool.false_eq_true, ↓reduceIte, List.any_cons, Bool.false_and, Bool.false_or]
+
+omit [DecidableEq ι] in
+theorem implicationIndex_any (P : Ty ι → Bool) (xs : List (Implication ι)) (a b : Nat) :
+    ((implicationIndex xs).getD (a, b) []).any P = xs.any fun y => y.test == a && y.target == b && P y.type := by
+  rw [implicationIndex, implicationIndex_any_foldl]
+  simp only [Std.HashMap.getD_empty, List.any_nil, Bool.false_or]
+  congr 1
+
+/-- `impliesFollows`, the source implications read by their slots. -/
+def impliesFollowsIndexed (G : NormalGraph ι) (Γ : List (Ty ι)) (index : Std.HashMap (Nat × Nat) (List (Ty ι)))
+    (m : PointClaims.Mapping) (x : Implication ι) : Bool :=
+  ((index.getD (PointClaims.slot m x.test, PointClaims.slot m x.target) []).any fun A => within A x.type) ||
+  (Γ[PointClaims.slot m x.target]?).any (fun A => within A x.type) ||
+  (Γ[PointClaims.slot m x.test]?).any (fun A => impossible G A (.boolean true))
+
+/-- `impliesCheck` at a link's aliases, the source implications read by
+their slots. -/
+def impliesCheckIndexed (G : NormalGraph ι) (Γ : List (Ty ι)) (links : HeapLinks.Links)
+    (xs : List (Implication ι)) (m : PointClaims.Mapping) (targets : List (Implication ι)) : Bool :=
+  let index := implicationIndex (aliasImplicationsAll links xs)
+  targets.all (impliesFollowsIndexed G Γ index m)
+
+theorem impliesCheck_eq_indexed (G : NormalGraph ι) (Γ : List (Ty ι)) (links : HeapLinks.Links)
+    (xs : List (Implication ι)) (m : PointClaims.Mapping) (targets : List (Implication ι)) :
+    impliesCheck G Γ (aliasImplications links xs) m targets = impliesCheckIndexed G Γ links xs m targets := by
+  simp only [impliesCheck, impliesCheckIndexed]
+  congr 1
+  funext x
+  simp only [impliesFollows, impliesFollowsIndexed, implicationIndex_any]
+  congr 2
+  apply Bool.eq_iff_iff.mpr
+  simp only [List.any_eq_true, aliasImplications, List.mem_eraseDups, aliasImplicationsAll]
 
 /-- Facts about slots past `shift`, at every slot the links say holds the
 same value: what refining a context by them may state. -/
