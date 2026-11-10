@@ -622,8 +622,8 @@ refusal: the first member's search refused, or the checker's refusal of
 what the searches left unchecked; and the account of the candidate
 search over the members searched to the end (`CertificateProducer.Answered`):
 its passes, the most over one graph, and the candidates it left out. -/
-def FilePlans.verifyGroup (f : FilePlans) (fuel : Nat) (group : List Nat) (unchecked : Bool) :
-    Except String (List String) := Id.run do
+def FilePlans.searchGroup (f : FilePlans) (fuel : Nat) (group : List Nat) (unchecked : Bool) :
+    Except String (Bundle (EquationStore.CheckedLabel f.F.equations f.F.primitive)) := Id.run do
   let G : NormalGraph (EquationStore.CheckedLabel f.F.equations f.F.primitive) := StoreView.graph f.F.store
   let I : PositiveCertificates.InstanceImageCheck G := StoreView.images f.F.store
   let mut answers : CertificateProducer.Answered G := {}
@@ -666,13 +666,22 @@ def FilePlans.verifyGroup (f : FilePlans) (fuel : Nat) (group : List Nat) (unche
       if failed.isNone then failed := some reason
       cs := cs.push { certificate := [] }
       es := es.push []
-  let b := Bundle.mk cs.toList es.toList
   if let some reason := failed then return .error reason
-  return do
-    let certified ← f.certified group
-    let checked := checkRequestsResult (CertifiedPlan.requests certified) b
-    if checked.accepted then return f.dependencies group
-    throw (requestsRefusal certified b checked)
+  return .ok (Bundle.mk cs.toList es.toList)
+
+/-- The check of a group's searched bundle: the group's dependencies where
+it is accepted (`checkRequestsResult`), else its refusal. -/
+def FilePlans.checkGroup (f : FilePlans) (group : List Nat)
+    (b : Bundle (EquationStore.CheckedLabel f.F.equations f.F.primitive)) : Except String (List String) := do
+  let certified ← f.certified group
+  let checked := checkRequestsResult (CertifiedPlan.requests certified) b
+  if checked.accepted then return f.dependencies group
+  throw (requestsRefusal certified b checked)
+
+/-- `searchGroup`, then `checkGroup`. -/
+def FilePlans.verifyGroup (f : FilePlans) (fuel : Nat) (group : List Nat) (unchecked : Bool) :
+    Except String (List String) := do
+  f.checkGroup group (← f.searchGroup fuel group unchecked)
 
 /-- A module run on the wire: its location, its restricted document and
 claims, and its own qualified reads with their footprints and on-throw
