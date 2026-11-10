@@ -270,7 +270,7 @@ def produceUnitFile (slicePath claimsPath qualifiedPath evidencePath : String) (
       for i in f.fr.selected (selection names) do
         let unit := f.fr.unitId i
         let (evidence, refusal, passes, most, leftOut) := f.produceGroup fuel (f.fr.group i)
-        h.putStrLn (SourceClaimJson.sliceLine unit evidence f.F.store.heads (f.anchors (f.fr.group i))).compress
+        h.putStrLn (SourceClaimJson.sliceLine unit evidence f.F.store.heads (f.anchors (f.fr.group i) (claims := false))).compress
         IO.println s!"candidates: {(Json.mkObj [("unit", toJson unit), ("passes", toJson passes),
           ("mostPasses", toJson most), ("leftOut", toJson leftOut)]).compress}"
         if let some reason := refusal then refusals := refusals.push (unit, reason)

@@ -1886,7 +1886,7 @@ const jsonIndex = (v: JsonValue | undefined): number => {
 };
 /** The kinds of an evidence bundle's tables, in the order each names only
  * the ones before it (REQUEST-PROTOCOL.md, "Evidence document"). */
-const evidenceTables = ["types", "contexts", "terms", "links", "separations", "valueSets", "knowledge", "proofs"] as const;
+const evidenceTables = ["types", "contexts", "terms", "links", "separations", "valueSets", "knowledge", "proofs", "edges"] as const;
 /** An evidence document's lines (REQUEST-PROTOCOL.md, "Evidence document"):
  * each unit and its evidence. */
 const evidenceLines = (text: string): { unit: string; evidence: JsonValue }[] =>
@@ -1953,11 +1953,14 @@ function unfoldBundle(b: JsonObject): void {
       const g = "contents" in f && f.contents !== null ? { ...f, contents: at(valueSets, f.contents) } : f;
       return { [name]: "proof" in g ? { ...g, proof: at(proofs, g.proof) } : g };
     };
+    const edges = jsonArray(b.edges);
+    const handler = (h: JsonValue): JsonValue => h === null ? null : [jsonArray(h)[0] ?? null, at(edges, jsonArray(h)[1])];
     const node = (n: JsonValue): JsonValue => {
       const e = jsonObject(n);
       const ordinary = e.ordinary ?? null;
       return { ...e, ordinary: typeof ordinary === "object" && ordinary !== null && !Array.isArray(ordinary)
           ? { proof: { tree: at(proofs, jsonObject(ordinary.proof).tree) } } : ordinary,
+        edges: jsonArray(e.edges).map((k) => at(edges, k)), handler: handler(e.handler ?? null),
         sequent: e.sequent === null ? null : sequent(e.sequent ?? null), knowledge: at(knowledge, e.knowledge),
         effect: step(e.effect ?? null), output: at(knowledge, e.output) };
     };
@@ -2049,8 +2052,11 @@ function tableBundle(b: JsonObject): void {
         const g = "contents" in f && f.contents !== null ? { ...f, contents: add("valueSets", f.contents ?? null) } : f;
         step = { [name]: "proof" in g ? { ...g, proof: proof(g.proof) } : g };
       }
+      const h = e.handler ?? null;
       return { ...e, ordinary: typeof ordinary === "object" && ordinary !== null && !Array.isArray(ordinary)
           ? { proof: { tree: proof(jsonObject(ordinary.proof).tree) } } : ordinary,
+        edges: jsonArray(e.edges).map((x) => add("edges", x)),
+        handler: h === null ? null : [jsonArray(h)[0] ?? null, add("edges", jsonArray(h)[1] ?? null)],
         sequent: e.sequent === null ? null : sequent(e.sequent), knowledge: knowledge(e.knowledge), effect: step,
         output: knowledge(e.output) };
     };
@@ -11012,7 +11018,8 @@ const differingSlice = (artifacts: string, name: string): JsonObject => {
     .map((l) => jsonObject(jsonValue(JSON.parse(l))));
   const whole = must(document.find((l) => l.unit === line.unit), "the document's unit");
   assert.notDeepEqual(line.heads, whole.heads, "relocation cannot take the equal-store shortcut");
-  assert.notDeepEqual(line.anchors, whole.anchors, "the unit's request labels need relocation");
+  assert.notDeepEqual(jsonObject(line.evidence).types, jsonObject(whole.evidence).types,
+    "the unit's labels need relocation");
   return line;
 };
 control(async (): Promise<void> => {

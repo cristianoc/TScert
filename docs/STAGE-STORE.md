@@ -268,8 +268,9 @@ inputs it changes. The check reads the whole document.
   slice's store, with that store's heads and the unit's anchors beside it:
   each type union of the member's requests at its position (node and
   slot), and the member's search hints (`FilePlans.anchors`). Inputs,
-  results, code signatures, point claims and obligation sequents supply
-  those positions. Its spans and its unit's
+  results, code signatures and obligation sequents supply those positions
+  on the line; point claims supply theirs from the evidence, each node's
+  sequent the claim at that node (`Translate.withClaimAnchors`). Its spans and its unit's
   name are mapped back to the document's positions outside every key.
 - *Check.* One check (`verifier --check-units`) builds the document's front,
   extracts every member into one accumulated store and freezes its plans
@@ -293,7 +294,7 @@ inputs it changes. The check reads the whole document.
   order and read-summary arm order. Value sets inherit their literal order
   from corresponding type expansions.
   Relocation touches the wire's label-bearing fields: types, proof rules,
-  node edges, handlers, implications, yields, effects, promises and read
+  edges' evidence, handlers, implications, yields, effects, promises and read
   summaries. Table references and label-free tables pass through to the
   complete document decoder. A slice whose store equals the document's,
   head for head with its names, and whose anchors equal the document's, is
