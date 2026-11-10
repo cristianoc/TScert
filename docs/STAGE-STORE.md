@@ -865,6 +865,86 @@ documents and diagnostics. These checks support the implementation audit;
 they are not a proof of executable determinism. Resource timeouts are
 observations rather than deterministic judgments.
 
+## Evidence proposals
+
+A search's key binds the verifier's executable, so after any change of the
+verifier every search misses. Under `TSCERT_EVIDENCE_REUSE=1`, a search
+whose key misses may reuse the evidence another build of the verifier found
+for the same inputs, and the current build's check decides it. Search is
+replaceable and untrusted ([search](DESIGN.md#search)); the check is not
+replaced.
+
+- *The proposal key.* For a stage `search` or `module-search`, the digest
+  of its manifest without the four fields that identify the program that
+  computed it: `implementation`, `code`, `runtime` and `runner`. It keeps
+  the stage, the argument vector (the role names, the depth, the unit's
+  members), the environment (which separates the mutation verifier's
+  searches), the exit protocol, the inputs by digest (the slice, its
+  claims, the qualified reads) and the output roles.
+- *Publication.* Under the mode, once a check accepts a unit, the
+  orchestration (`pipeline/verify-source.mts`) references the entry of that
+  unit's search, executed or replayed, in the `proposed` index under its
+  proposal key ([location and size](#location-and-size)); once a module
+  check accepts a module run, the entry of each of the run's searches. A
+  search that refused, ended at a limit, or whose unit a check refused
+  references nothing, and a reused result is published under no key.
+- *Lookup.* Under the mode, a search whose key holds neither a finished
+  entry nor a timeout observation reads the candidates of its proposal key,
+  newest first, and takes the first whose entry is valid and whose stored
+  manifest is the invocation's but for the four fields. Its outputs are
+  delivered as a replay's. Its attempt's execution is `reused`, its
+  `replay` the entry's measurement, and `reusedFrom` the entry's key and
+  the identity of the implementation that computed it. With no valid
+  candidate the search executes. A control's operation (`tested`) never
+  reuses.
+- *Fallback.* The pipeline uses a reused result only where it is a
+  complete success: exit 0, no `refused:` line, and every evidence line
+  naming its unit and relocating to the document's symbols. Any other is a
+  miss, and the unit is searched with reuse off; the candidate raises no
+  tool failure. Where the file's check refuses units whose evidence was
+  reused, those units are searched with reuse off and the check runs
+  again; a later refusal of a reused unit, or a check with a reused line
+  that fails as a whole (a refusal with no verdicts, a timeout, a memory
+  limit or another tool failure), searches every unit still reused for one
+  more check. A file's round thus runs at most three checks, the last with
+  no reused evidence where it runs. A module check that refuses or fails
+  while any line of its run is reused searches the run's reused units with
+  reuse off and checks the run once more: at most two module checks per
+  run. A search refused or ended at its limit on fallback is that unit's
+  outcome, phase `search`. Every fallback of a round completes before the
+  round's withdrawal decision, so a refusal that withdraws a certified
+  import comes from searched evidence.
+- *Visibility.* `invocations.jsonl` records each search's attempt as
+  `reused`, with `reusedFrom`, or as executed or replayed; a fallback is
+  an executed search of the same manifest after a reused one. The outcome
+  of a check under the mode states `reused`: how many of its units were
+  accepted over reused evidence, a module run counting as one unit.
+  `dev/check-functions.mts` prints `reused <n> of <m> units`.
+- *The mode.* `TSCERT_EVIDENCE_REUSE=1` turns it on; it is off otherwise,
+  and off nothing is read from or written to the `proposed` index. The
+  variable is outside every key. `test-all.sh` (and so `make test-checks`),
+  `pipeline/test.mts`, `pipeline/run-cases.mts` and `dev/census.mts` remove
+  it from their environment, so their checks search; the controls of reuse
+  set it on the runs they start, each over a store of its own. A
+  comparison across a verifier change decides acceptance with the mode off;
+  a run with it on, over a store an earlier build seeded, measures latency.
+
+*The guarantee.* An accepted verdict is the current checker's on the
+current claims and source: a unit is verified only from an accepting
+verdict of `--check-units` or `--check-module`, whose key binds the current
+executable and the evidence document's digest; the checker checks the
+current relocation of the supplied evidence, which `checkUnitJson_safe`
+covers. A refusal that reaches the user comes from searched evidence. A
+run with reused evidence may still differ from one with the mode off: it
+may accept a unit for which the current search finds no evidence, and it
+may keep a certified import that a run with the mode off withdraws, after
+which the claims proposed differ. Its `reused` count says where. One
+unit's verdict in `--check-units` does not depend on the lines before it,
+by a review of `lean/Verification/Source/Claims/Translate.lean` (not a
+proof): the translation target threaded through the lines holds what
+the document determines, a slice's own refinements are discarded after it,
+and earlier lines change only the cost.
+
 ## Controls
 
 A control tests the verifier, the producer or the pipeline on

@@ -37,12 +37,16 @@ import { basename, dirname, join, relative, resolve } from "node:path";
 import { close as closeParser, initOmission, openText } from "../tools/fragment-parse.mts";
 import { syntax as ts, childrenOf, isTypeAlias } from "../tools/syntax.mts";
 import { checkApart, RunFailure, invocationLog, memberName, stepTimeoutMs, type UnitResult } from "../pipeline/verify-source.mts";
-import { readInvocationLog, startEviction, storeSetting, type AttemptRecord, type Cpu } from "../pipeline/stages.mts";
+import { readInvocationLog, startEviction, storeSetting, withoutEvidenceReuse, type AttemptRecord, type Cpu }
+  from "../pipeline/stages.mts";
 import { stageNames, type StageName } from "../pipeline/stage-execution.mts";
 import { classify, coverageComparison, coverageReport, inventory, type Outcomes, type Unit,
   type UnitScope } from "./statement-coverage.mts";
 
 const repository = resolve(import.meta.dirname, "..");
+// The census measures what the search finds: every check searches
+// (STAGE-STORE.md, "Evidence proposals").
+withoutEvidenceReuse();
 const sha256 = (text: string): string => createHash("sha256").update(text).digest("hex");
 
 /** A stage invocation, as the census keeps it after its artifacts and the

@@ -56,6 +56,10 @@ replay as [observed stages](docs/STAGE-STORE.md#observed-stages) on macOS.
   `TSCERT_STEP_LIMIT=<seconds>` sets a stage's limit. A timeout is recorded with its limit and reported
   again at that limit or a smaller one; `TSCERT_RETRY_TIMEOUTS=1` executes
   it again at the same limit.
+- `TSCERT_EVIDENCE_REUSE=1` lets a search whose key misses reuse the
+  evidence an earlier verifier build found, the current check deciding
+  ([evidence proposals](docs/STAGE-STORE.md#evidence-proposals)); it is off
+  by default, and the suites and the census force it off.
 - Each process stage is also stopped once its program's memory exceeds
   8 GiB, a tool failure that is never published;
   `TSCERT_STAGE_MEMORY=<gibibytes>` sets that limit

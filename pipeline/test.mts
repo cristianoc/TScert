@@ -15,8 +15,8 @@ import { createHash } from "node:crypto";
 import { availableParallelism } from "node:os";
 import { pathToFileURL } from "node:url";
 import { fork, spawn, spawnSync } from "node:child_process";
-import { controlOperations, tested, ran as ranStage, readInvocationLog, startEviction, type AttemptRecord, type Invoked }
-  from "./stages.mts";
+import { controlOperations, tested, ran as ranStage, readInvocationLog, startEviction, withoutEvidenceReuse, type AttemptRecord,
+  type Invoked } from "./stages.mts";
 import { Store } from "./stage-store.mts";
 import { producerCall, verifierCall } from "./stage-execution.mts";
 import { UnitProposal, check as checkSource, invocationLog, producerExecutable, readClaimsFile, readFragmentFile, readOutcome, sourceKey, verifier,
@@ -57,6 +57,11 @@ const here = import.meta.dirname;
 /** A parsed object that is not an array. */
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 
+// The controls test the search: every check searches, but the runs the
+// controls of evidence reuse start with it on (STAGE-STORE.md, "Evidence
+// proposals").
+withoutEvidenceReuse();
+
 /** The controls, each a block of this file, registered in order. The
  * suite's process gives them to a pool of control processes, one per core
  * (`--controls`), each running one control at a time; a control running the
@@ -74,7 +79,7 @@ function proposedDocument(fragment: string): { status: number; stdout: string; s
   const local = typeof module === "string" ? module : typeof file === "string" ? file : "";
   const proposal = new UnitProposal((call) => {
     const r = tested(call);
-    return { code: r.status ?? -1, out: r.stdout, detail: r.stderr.trim() || r.stdout.trim() };
+    return { code: r.status ?? -1, out: r.stdout, detail: r.stderr.trim() || r.stdout.trim(), record: r.record };
   }, `${runDirectory("tscert-units-")}/`, fragment, local).propose([]);
   return "claims" in proposal ? { status: 0, stdout: `${proposal.claims}\n`, stderr: "" }
     : { status: 2, stdout: "", stderr: `${proposal.refusal}\nend of refusal\n` };

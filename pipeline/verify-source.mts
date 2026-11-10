@@ -25,7 +25,8 @@ import { resolvableDeclaration } from "../tools/intrinsics.mts";
 import { assemblyCall } from "./claims-assembly.mts";
 import type { AssemblyEntry, Interface, UnitReads } from "./unit-documents.mts";
 import { canonicalDocument, decodeUnitFacts, proposalUnits, replaceNumbers, sliceOf, toDocument, type ProposalUnit, type UnitFacts } from "./unit-slices.mts";
-import { currentStore, invokeInProcess, invokeProcess, Recorder, readInvocationLog, type AttemptRecord } from "./stages.mts";
+import { currentStore, invokeInProcess, invokeProcess, Recorder, readInvocationLog, referenceProposal, reusingEvidence,
+  type AttemptRecord } from "./stages.mts";
 import { producerBuild, producerCall, producerProtocol, refusalEnd, verifierBuild, verifierCall, verifierProtocol, type ProcessCall, type Protocol } from "./stage-execution.mts";
 
 /** The file of a run's directory holding its stage invocations' attempts. */
@@ -84,6 +85,9 @@ export type Outcome =
       initialization: [number, number][];
       phase: "check";
       units?: UnitResult[];
+      /** Under evidence reuse, how many of `units` were checked over reused
+       * evidence (STAGE-STORE.md, "Evidence proposals"). */
+      reused?: number;
     }
   | {
       status: "unsupported" | "unverified" | "exhausted" | "error";
@@ -93,6 +97,7 @@ export type Outcome =
       /** A check of each unit's own (`checkUnits`): each unit's result, or
        * null where the file's front refused every unit. */
       units?: UnitResult[] | null;
+      reused?: number;
     };
 /** A check of each unit: the functions of the file read at their declared
  * signatures (`initOmission` for its initialization), and the units to
@@ -135,12 +140,15 @@ function stepLimit(): number {
     throw Error(`TSCERT_STEP_LIMIT must convert to a positive integer number of milliseconds: ${given}`);
   return milliseconds;
 }
-/** A step run: its exit code, its output, and what it reports on failure. */
-export type StepRun = { code: number; out: string; detail: string };
+/** A step run: its exit code, its output, what it reports on failure, and
+ * its attempt's record. */
+export type StepRun = { code: number; out: string; detail: string; record: AttemptRecord };
 /** A process stage run through the common invocation mechanism, its attempt
- * recorded by `recorder`. */
-export function runStep(call: ProcessCall, recorder: Recorder | null = null, limitMs: number = stepTimeoutMs): StepRun {
-  const p = invokeProcess(call, { limitMs, force: false, recorder });
+ * recorded by `recorder`; a search with `reuse` may reuse a proposed entry
+ * (`InvokeOptions.reuse`). */
+export function runStep(call: ProcessCall, recorder: Recorder | null = null, limitMs: number = stepTimeoutMs,
+    reuse: boolean = false): StepRun {
+  const p = invokeProcess(call, { limitMs, force: false, recorder, reuse });
   const step = [
     basename(call.program),
     ...call.arguments.flatMap((a) => ("text" in a && a.text.startsWith("--") ? [a.text] : [])),
@@ -169,6 +177,7 @@ export function runStep(call: ProcessCall, recorder: Recorder | null = null, lim
     code: p.status,
     out,
     detail: err.trim() || out.trim(),
+    record: p.record,
   };
 }
 export { refusalEnd };
@@ -357,13 +366,33 @@ function lowering(lowered: StepRun): FlowDocument | string {
  * the first unit the producer refuses, the initialization's first, then in
  * source order. */
 export type Proposed = { claims: string } | { refusal: string };
+/** One unit's search: the unit's index and names, its evidence lines at the
+ * document's positions, whether they are a reused result, and its search's
+ * attempt (none where the search ended at a limit). */
+type SearchedUnit = { index: number; names: string[]; lines: string[]; reused: boolean; record: AttemptRecord | null };
+/** The searches of a document's units: each unit's, each refused unit's
+ * refusal, and each search that ended at a limit, by its members' names. */
+type Searched = { units: SearchedUnit[]; refused: Map<string, string>; failed: Map<string, string> };
+/** The evidence lines of every unit searched, in order. */
+const evidenceLines = (searched: Searched): string[] => searched.units.flatMap((u) => u.lines);
+/** `searched` with the units `again` searched again in their place. */
+function searchedAgain(searched: Searched, again: Searched): Searched {
+  const refused = new Map(searched.refused), failed = new Map(searched.failed);
+  for (const u of again.units) for (const n of u.names) {
+    refused.delete(n);
+    failed.delete(n);
+  }
+  for (const [n, r] of again.refused) refused.set(n, r);
+  for (const [n, r] of again.failed) failed.set(n, r);
+  return { units: searched.units.map((u) => again.units.find((a) => a.index === u.index) ?? u), refused, failed };
+}
 /** A document proposed unit by unit (`unit-slices.mts`): the producer's
  * units of the document (`producer --units`), each unit's slice lowered and
  * proposed (`producer --unit`) after the units it reads, at their settled
  * footprints and flags, and the units' proposals assembled into the
  * document's claims (`producer --assemble`). */
 export class UnitProposal {
-  private readonly run: (call: ProcessCall) => StepRun;
+  private readonly run: (call: ProcessCall, reuse?: boolean) => StepRun;
   private readonly prefix: string;
   private readonly document: JsonObject;
   private readonly local: string;
@@ -378,7 +407,8 @@ export class UnitProposal {
   private qualified = "";
   private readonly refusal: string | null;
   /** `flow` is the document's lowering where the caller holds it. */
-  constructor(run: (call: ProcessCall) => StepRun, prefix: string, ast: string, local: string, flow?: FlowDocument) {
+  constructor(run: (call: ProcessCall, reuse?: boolean) => StepRun, prefix: string, ast: string, local: string,
+      flow?: FlowDocument) {
     this.run = run;
     this.prefix = prefix;
     this.local = local;
@@ -499,10 +529,14 @@ export class UnitProposal {
    * units `select` names or all, after `propose`: the evidence lines, each
    * unit named and its spans placed at the document's positions, for the
    * check to write over the document's store; each refused unit's refusal,
-   * and each search that ended at a limit, by its members' names. */
-  search(budget: string[], select: string[] | null):
-      { lines: string[]; refused: Map<string, string>; failed: Map<string, string> } {
-    const lines: string[] = [], refused = new Map<string, string>(), failed = new Map<string, string>();
+   * and each search that ended at a limit, by its members' names. With
+   * `reuse`, a search may reuse evidence another implementation found
+   * (STAGE-STORE.md, "Evidence proposals"): a reused result is used only
+   * where it is a complete success whose every line names its unit and
+   * relocates to the document's symbols; any other is a miss, and the unit
+   * is searched with reuse off. */
+  search(budget: string[], select: string[] | null, reuse: boolean = false): Searched {
+    const units: SearchedUnit[] = [], refused = new Map<string, string>(), failed = new Map<string, string>();
     for (const [i, files] of this.searchable) {
       const unit = this.units[i];
       if (!unit) throw Error(`tool failure: no unit ${i}`);
@@ -518,29 +552,20 @@ export class UnitProposal {
         return at?.[1] === undefined ? id : `${id.slice(0, at.index)}@${toDocument(files.deletions, Number(at[1]))}`;
       };
       const evidence = `${this.prefix}unit-${i}.evidence.json`;
-      let produced: StepRun;
-      try {
-        produced = this.run(verifierCall(verifier, [...budget, "--produce-unit", files.slice, files.claims, files.qualified,
-          evidence, String(searchDepth), names.join(",")]));
-      } catch (error) {
-        if (!overLimit(messageOf(error))) throw error;
-        for (const n of names) failed.set(n, messageOf(error));
-        continue;
-      }
-      const refusal = verifierRefusal(produced, "--produce-unit");
-      const out = produced.out.split("\n");
-      if (refusal !== null && !out.some((l) => l.startsWith("checked source evidence written: "))) {
-        for (const n of names) refused.set(n, at(refusal));
-        continue;
-      }
-      for (const l of out.filter((l) => l.startsWith("refused: "))) {
-        const value: unknown = JSON.parse(l.slice("refused: ".length));
-        const id = field(value, "unit"), detail = field(value, "refusal");
-        if (typeof id !== "string" || typeof detail !== "string")
-          throw Error("tool failure: verifier --produce-unit printed a malformed refusal");
-        refused.set(memberName(named(id)), at(detail));
-      }
-      for (const line of readFileSync(evidence, "utf8").split("\n").filter((l) => l !== "")) {
+      const call = verifierCall(verifier, [...budget, "--produce-unit", files.slice, files.claims, files.qualified,
+        evidence, String(searchDepth), names.join(",")]);
+      // The search, its evidence file written afresh, or the limit it ended at.
+      const searchedWith = (reusing: boolean): StepRun | { limit: string } => {
+        rmSync(evidence, { force: true });
+        try {
+          return this.run(call, reusing);
+        } catch (error) {
+          if (!overLimit(messageOf(error))) throw error;
+          return { limit: messageOf(error) };
+        }
+      };
+      // The evidence lines the search wrote, each unit named and relocated.
+      const written = (): string[] => readFileSync(evidence, "utf8").split("\n").filter((l) => l !== "").map((line) => {
         // A line's fields are in key order, its unit last: spliced as text,
         // the evidence passes through unread.
         const unitAt = /"unit":("(?:[^"\\]|\\.)*")\}$/.exec(line);
@@ -552,10 +577,44 @@ export class UnitProposal {
           if (symbol === undefined) throw Error("tool failure: evidence names an absent slice symbol");
           return symbol;
         });
-        lines.push(`${relocated}"unit":${JSON.stringify(named(id))}}`);
+        return `${relocated}"unit":${JSON.stringify(named(id))}}`;
+      });
+      let produced = searchedWith(reuse);
+      if (!("limit" in produced) && produced.record.execution === "reused") {
+        let lines: string[] | null = null;
+        try {
+          if (produced.code === 0 && !produced.out.split("\n").some((l) => l.startsWith("refused: "))) lines = written();
+        } catch {
+          lines = null;
+        }
+        if (lines !== null) {
+          units.push({ index: i, names, lines, reused: true, record: produced.record });
+          continue;
+        }
+        produced = searchedWith(false);
       }
+      if ("limit" in produced) {
+        for (const n of names) failed.set(n, produced.limit);
+        units.push({ index: i, names, lines: [], reused: false, record: null });
+        continue;
+      }
+      const refusal = verifierRefusal(produced, "--produce-unit");
+      const out = produced.out.split("\n");
+      if (refusal !== null && !out.some((l) => l.startsWith("checked source evidence written: "))) {
+        for (const n of names) refused.set(n, at(refusal));
+        units.push({ index: i, names, lines: [], reused: false, record: produced.record });
+        continue;
+      }
+      for (const l of out.filter((l) => l.startsWith("refused: "))) {
+        const value: unknown = JSON.parse(l.slice("refused: ".length));
+        const id = field(value, "unit"), detail = field(value, "refusal");
+        if (typeof id !== "string" || typeof detail !== "string")
+          throw Error("tool failure: verifier --produce-unit printed a malformed refusal");
+        refused.set(memberName(named(id)), at(detail));
+      }
+      units.push({ index: i, names, lines: written(), reused: false, record: produced.record });
     }
-    return { lines, refused, failed };
+    return { units, refused, failed };
   }
   /** The explanations of the unit holding the member `member` (a function's
    * name, or `init`), at the document's positions. */
@@ -619,15 +678,16 @@ class ModuleRuns {
       const imports = [...new Set(list(field(doc.declarations, "values")).map((v) => field(field(v, "declaration"), "module"))
         .filter((l): l is string => typeof l === "string" && l !== location && locations.includes(l)))];
       this.docs.set(location, { index, ast, flow, declarations: doc.declarations, imports,
-        proposal: new UnitProposal((call) => runStep(call.stage === "search" ? { ...call, stage: "module-search" } : call, recorder), join(artifacts, `module-${index}.`), ast, location, graphs) });
+        proposal: new UnitProposal((call, reuse) => runStep(call.stage === "search" ? { ...call, stage: "module-search" } : call,
+          recorder, stepTimeoutMs, reuse), join(artifacts, `module-${index}.`), ast, location, graphs) });
       this.units.set(location, list(field(m, "functions")));
     }
   }
   /** Search the selected module units through their proposals' slices. */
-  search(location: string, names: string[], budget: string[]): ReturnType<UnitProposal["search"]> {
+  search(location: string, names: string[], budget: string[], reuse: boolean): Searched {
     const doc = this.docs.get(location);
     if (!doc) throw Error(`tool failure: no proposal for module ${location}`);
-    return doc.proposal.search(budget, names);
+    return doc.proposal.search(budget, names, reuse);
   }
   /** The name of the function of `module` whose source holds the first span
    * `detail` names (`at [a,b)`), from its name to its body's last statement;
@@ -771,11 +831,21 @@ their check over the file's one front (`--check-units`), which writes each
 slice's evidence over the document's store. A unit's search over its limit
 is that unit's outcome. A refusal naming a certified import asks for that
 import's withdrawal, every such import of the round at once, before the
-check; a refused front refuses every unit. */
+check; a refused front refuses every unit. Under evidence reuse
+(STAGE-STORE.md, "Evidence proposals"), each fallback to a search with
+reuse off completes before the round's withdrawal decision: a module run
+whose check refuses or fails while any of its lines is reused is searched
+again with reuse off and checked once more; the file's units whose lines
+are reused and refused are searched again and checked once more, and a
+later refusal of a reused unit, or a check with a reused line that fails
+as a whole, searches every unit still reused for a last check: at most two
+checks per module run and three for the file. `reused` counts the units
+checked over reused evidence, a module run as one. */
 function unitRound(recorder: Recorder, artifacts: string, ast: string, claims: string, snapshot: string,
     budget: string[], select: string[] | null, proposal: UnitProposal, modules: ModuleRuns,
     refusedRead: (module: string, detail: string) => string | null):
-    { withdraw: string[] } | { front: string } | { results: UnitResult[] } {
+    { withdraw: string[] } | { front: string } | { results: UnitResult[]; reused: number } {
+  const reuse = reusingEvidence();
   const named = select === null ? [] : [select.join(",")];
   const strings = (value: unknown): string[] => {
     if (!Array.isArray(value) || !value.every((x): x is string => typeof x === "string"))
@@ -817,6 +887,10 @@ function unitRound(recorder: Recorder, artifacts: string, ast: string, claims: s
     }
     return keys.size ? { withdraw: [...keys] } : null;
   };
+  // The searched units a verdict names.
+  const verdictOf = (u: SearchedUnit, results: readonly UnitResult[]): UnitResult | undefined =>
+    results.find((r) => u.names.includes(memberName(r.unit)));
+  let reused = 0;
   // The module runs, each keyed on its restricted document: an importer's
   // edit that keeps a closure replays its search and check.
   const planned = runStep(verifierCall(verifier, [...budget, "--module-runs", ast, claims]), recorder);
@@ -835,23 +909,43 @@ function unitRound(recorder: Recorder, artifacts: string, ast: string, claims: s
       if (typeof name !== "string") throw Error("tool failure: a module function has no name");
       return name;
     });
-    const searched = modules.search(location, [...names, initOmission], budget);
-    const refused = [...searched.refused.values(), ...searched.failed.values()];
-    if (refused.length) {
-      moduleSearchRefusals.push(...refused.map((reason) => `module ${location}: ${reason}`));
-      continue;
+    const checkModule = (lines: readonly string[]): unknown => {
+      writeFileSync(own, `[${lines.join(",")}]`);
+      const checked = runStep(verifierCall(verifier, [...budget, "--check-module", run, own]), recorder);
+      const verdict = checked.out.split("\n").find((l) => l.startsWith("{"));
+      const refusal = verifierRefusal(checked, "--check-module");
+      if (verdict === undefined) throw Error(`tool failure: verifier --check-module printed no verdict: ${refusal ?? ""}`);
+      return JSON.parse(verdict);
+    };
+    let searched = modules.search(location, [...names, initOmission], budget, reuse);
+    let value: unknown = null;
+    for (;;) {
+      const refused = [...searched.refused.values(), ...searched.failed.values()];
+      if (refused.length) {
+        moduleSearchRefusals.push(...refused.map((reason) => `module ${location}: ${reason}`));
+        break;
+      }
+      const again = searched.units.filter((u) => u.reused);
+      if (again.length === 0) {
+        value = checkModule(evidenceLines(searched));
+        break;
+      }
+      try {
+        value = checkModule(evidenceLines(searched));
+      } catch {
+        value = null;
+      }
+      if (field(value, "accepted") === true) break;
+      searched = searchedAgain(searched, modules.search(location, again.flatMap((u) => u.names), budget, false));
     }
-    writeFileSync(own, `[${searched.lines.join(",")}]`);
-    const checked = runStep(verifierCall(verifier, [...budget, "--check-module", run, own]), recorder);
-    const verdict = checked.out.split("\n").find((l) => l.startsWith("{"));
-    const refusal = verifierRefusal(checked, "--check-module");
-    if (verdict === undefined) throw Error(`tool failure: verifier --check-module printed no verdict: ${refusal ?? ""}`);
-    const value: unknown = JSON.parse(verdict);
+    if (searched.refused.size > 0 || searched.failed.size > 0) continue;
     const unit = field(value, "unit"), reason = field(value, "refusal");
     if (typeof unit !== "string") throw Error("tool failure: verifier --check-module printed a verdict without its unit");
-    if (field(value, "accepted") === true)
+    if (field(value, "accepted") === true) {
       moduleResults.push({ unit, members: [], status: "verified", phase: "check", detail: "", depends: [] });
-    else if (typeof reason === "string") {
+      if (searched.units.some((u) => u.reused)) reused++;
+      for (const u of searched.units) if (!u.reused && u.record !== null) referenceProposal(u.record);
+    } else if (typeof reason === "string") {
       const detail = `reject: ${reason}`;
       moduleResults.push({ unit, members: [], status: refusalStatus(detail), phase: "check", detail, depends: [] });
     } else throw Error("tool failure: verifier --check-module printed a verdict without its refusal");
@@ -859,20 +953,48 @@ function unitRound(recorder: Recorder, artifacts: string, ast: string, claims: s
   const moduleWithdrawn = withdrawal([...moduleSearchRefusals,
     ...moduleResults.filter((r) => r.status !== "verified").map((r) => r.detail)]);
   if (moduleWithdrawn) return moduleWithdrawn;
-  const searched = proposal.search(budget, select);
+  let searched = proposal.search(budget, select, reuse);
   const withdrawn = withdrawal(searched.refused.values());
   if (withdrawn) return withdrawn;
   const evidence = join(artifacts, "evidence.json");
-  writeFileSync(evidence, searched.lines.map((l) => l + "\n").join(""));
-  const checked = check(evidence, named, searched.refused, searched.failed);
+  let checked: UnitResult[] | string;
+  for (let attempt = 0; ; attempt++) {
+    writeFileSync(evidence, evidenceLines(searched).map((l) => l + "\n").join(""));
+    const reusedUnits = searched.units.filter((u) => u.reused);
+    if (reusedUnits.length === 0) {
+      checked = check(evidence, named, searched.refused, searched.failed);
+      break;
+    }
+    let outcome: UnitResult[] | null;
+    try {
+      const c = check(evidence, named, searched.refused, searched.failed);
+      outcome = typeof c === "string" ? null : c;
+    } catch {
+      outcome = null;
+    }
+    const results = outcome;
+    const refusedReused = results === null ? reusedUnits
+      : reusedUnits.filter((u) => verdictOf(u, results)?.status !== "verified");
+    if (results !== null && refusedReused.length === 0) {
+      checked = results;
+      break;
+    }
+    const again = results === null || attempt > 0 ? reusedUnits : refusedReused;
+    searched = searchedAgain(searched, proposal.search(budget, again.flatMap((u) => u.names), false));
+  }
   if (typeof checked === "string") return withdrawal([checked]) ?? { front: checked };
   let results = checked;
+  for (const u of searched.units) {
+    if (verdictOf(u, results)?.status !== "verified") continue;
+    if (u.reused) reused++;
+    else if (u.record !== null) referenceProposal(u.record);
+  }
   // In the front's order, the file's functions by position, then its
   // initialization: the order the units' searches end in is the slices'.
   const place = (unit: string): number => unit === "init" ? Infinity : Number(/@(\d+)$/.exec(unit)?.[1] ?? Infinity);
   results = [...results].sort((a, b) => place(a.unit) - place(b.unit));
   return withdrawal(results.filter((r) => r.status !== "verified").map((r) => r.detail)) ??
-    { results: [...results, ...moduleResults] };
+    { results: [...results, ...moduleResults], reused };
 }
 
 /** Whether a unit's search ended at a limit: its time limit, or its memory
@@ -963,7 +1085,8 @@ function checkUnowned(artifacts: string, source: string, tsconfigPath?: string, 
     // its restricted document (`unitRound`), so a later round, and a later
     // edit of the importer, replays the runs it leaves unchanged.
     const modules = new ModuleRuns(recorder, artifacts, parsedData);
-    const fileProposal = new UnitProposal((call) => runStep(call, recorder), `${artifacts}/`, ast, resolution, graphs);
+    const fileProposal = new UnitProposal((call, reuse) => runStep(call, recorder, stepTimeoutMs, reuse), `${artifacts}/`, ast,
+      resolution, graphs);
     const withdrawn = new Set<string>();
     const claims = join(artifacts, "claims.json");
     const budget = subtypeRounds === undefined ? [] : ["--subtype-rounds", String(subtypeRounds)];
@@ -1019,8 +1142,9 @@ function checkUnowned(artifacts: string, source: string, tsconfigPath?: string, 
         if (u.members[0] !== undefined && (units.select === null || u.members.some((m) => units.select?.includes(memberName(m)))))
           u.losses = fileProposal.explain(u.members[0]).filter((e) => e.kind !== "form");
       const first = round.results.find((u) => u.status !== "verified");
+      const reused = reusingEvidence() ? { reused: round.reused } : {};
       if (first === undefined)
-        return { status: "verified", artifacts, phase: "check", functions, initialization, units: round.results };
+        return { status: "verified", artifacts, phase: "check", functions, initialization, units: round.results, ...reused };
       // The file's refusal is its first unit's, a search's named as a whole-file search names it.
       const detail = first.phase === "search" && first.status !== "error"
         ? refusedByName(namingTheObligation(first.detail, bytes.toString("utf8")),
@@ -1028,7 +1152,7 @@ function checkUnowned(artifacts: string, source: string, tsconfigPath?: string, 
           refusedErrors)
         : first.detail;
       return { status: first.status === "verified" ? "error" : first.status, artifacts, phase: first.phase,
-        detail, units: round.results };
+        detail, units: round.results, ...reused };
     }
   } catch (e) {
     return {
@@ -1051,15 +1175,19 @@ export function readOutcome(value: unknown): Outcome {
     throw Error("not an outcome");
   const { status, artifacts, phase } = value;
   const units = "units" in value ? value.units : undefined;
+  const given = "reused" in value ? value.reused : undefined;
+  if (given !== undefined && (typeof given !== "number" || !Number.isSafeInteger(given) || given < 0))
+    throw Error("not an outcome: its reused count is no natural number");
+  const reused = given === undefined ? {} : { reused: given };
   if (status === "verified" && phase === "check" && "functions" in value && Array.isArray(value.functions) &&
       value.functions.every((f: unknown) => typeof f === "string") && "initialization" in value &&
       Array.isArray(value.initialization) && value.initialization.every(isSpan))
     return { status, artifacts, phase, functions: value.functions, initialization: value.initialization,
-      ...(units === undefined ? {} : { units: readUnitResults(units) }) };
+      ...(units === undefined ? {} : { units: readUnitResults(units) }), ...reused };
   if ((status === "unsupported" || status === "unverified" || status === "exhausted" || status === "error") &&
       "detail" in value && typeof value.detail === "string")
     return { status, artifacts, phase, detail: value.detail,
-      ...(units === undefined ? {} : { units: units === null ? null : readUnitResults(units) }) };
+      ...(units === undefined ? {} : { units: units === null ? null : readUnitResults(units) }), ...reused };
   throw Error("not an outcome");
 }
 const unitStatuses: readonly UnitResult["status"][] = ["verified", "unverified", "exhausted", "error"];
