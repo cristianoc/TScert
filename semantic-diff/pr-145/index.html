@@ -81,8 +81,8 @@ var { font-style:italic } .m-op { color:#2c4f7c; font-style:normal } .m-con { co
 .lowering .label { font:600 11px/1 var(--body); letter-spacing:.05em; text-transform:uppercase; color:var(--muted); min-width:7em }
 .lowering .cond { padding-left:1.5em } .lowering .note { color:var(--muted); font:italic 13px/1.4 var(--body) }
 a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outline-offset:2px }
-@media (max-width:520px) { dl.facts { grid-template-columns:minmax(0,1fr) } .card > header { flex-direction:column } }</style></head><body><main><header><h1>Commit Records</h1><p class="lede">1 commit, rendered from their records.</p></header>
-<section><h2>Branches</h2><ul class="summary"><li><a href="#g-pr-145"><code>7b6e476a8bd712c184ac38f0d001af6b6f846699..pr-145</code></a><ul><li>1 commit</li><li>parts: <span class="chip">docs</span></li></ul></li></ul></section>
+@media (max-width:520px) { dl.facts { grid-template-columns:minmax(0,1fr) } .card > header { flex-direction:column } }</style></head><body><main><header><h1>Commit Records</h1><p class="lede">4 commits, rendered from their records.</p></header>
+<section><h2>Branches</h2><ul class="summary"><li><a href="#g-pr-145"><code>7b6e476a8bd712c184ac38f0d001af6b6f846699..pr-145</code></a><ul><li>4 commits</li><li>parts: <span class="chip">docs</span> <span class="chip">tools</span></li></ul></li></ul></section>
 <h2 id="g-pr-145"><code>7b6e476a8bd712c184ac38f0d001af6b6f846699..pr-145</code></h2><article class="card" id="c-099d4ded2"><header><div><div class="sha">099d4ded2 · Cristiano Calcagno · Nov 10, 07:09</div><h3>Present growth, candidates and optional callbacks in the checked-bounds deck</h3></div><span class="pill neutral">no-behaviour-change</span></header>
 <h4 class="change">Why</h4><div class="prose"><p>The deck stated <code>grow</code> as keeping elements present, with no rule keeping a length across a call, an element write or a regional frame; it described every fact the producer supplies as checked and required; its pretext slide measured TScert f868f344 and pretext 86a93c0; and its remaining-obligations slide listed a frame pretext states and observed counts that pretext ba09794f supersedes. Facts survive growth when they bound a length below (FOOTPRINTS.md, &quot;Index facts&quot;; ARITHMETIC.md, &quot;Store separation&quot;), a supplied fact at a statement entry is a candidate (PROGRAM-TYPING.md, &quot;Source observation checkpoints&quot;), and OBLIGATION-DIAGNOSTICS.md lists where a proposal drops facts and the candidates left out.</p></div>
 <h4 class="change">Added <span class="target">deck checked-bounds, slide growth, slide 11</span></h4><div class="prose"><p><code>stores: &quot;grow&quot;</code> leaves every array no shorter; a fact whose length terms have coefficients &lt;= 0 survives a call stated to grow stores, <code>push</code> and an element write at any index; an upper bound is dropped (<code>invalid-stated-grow-upper-bound</code>, <code>undefined</code> under Node); each native contract at <code>store: grow</code> also states its arrays get no shorter, trusted</p></div>
@@ -104,6 +104,53 @@ a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outl
  .../checked-bounds/project/slides/separation.html  |  10 ++
  .../checked-bounds/project/slides/trust.html       |   9 +-
  .../checked-bounds/project/slides/visitor.html     |  11 +++</pre></details>
+<div class="sha">with Claude</div>
+</article>
+<article class="card" id="c-194f04335"><header><div><div class="sha">194f04335 · Cristiano Calcagno · Nov 10, 08:27</div><h3>Draw the heap for one-array frames, growth and guarded separation in the checked-bounds deck</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>The slides on a frame naming one array, on growth and on a guarded separation stated their rules in code and words only; a reader sees no heap, so which store a frame may change and why a fact survives stays abstract. The deck kit's layout check measured an inline SVG's text by <code>scrollWidth</code>, which for SVG parts is not their drawn width, so any drawn slide failed the right margin.</p></div>
+<h4 class="change">Added <span class="target">deck checked-bounds, slide one-array-heap, slide 11</span></h4><div class="prose"><p>the heap at and after <code>readRuns(runs)</code>: <code>flags</code>' store and the record <code>runs</code> whose <code>@stable</code> field <code>openBrackets</code> points to its store; the region around that store changes (spliced shorter), <code>flags</code> outside it is kept, so <code>i &lt; flags.length</code> is kept</p></div>
+<h4 class="change">Added <span class="target">deck checked-bounds, slide growth-heap, slide 13</span></h4><div class="prose"><p><code>xs</code> before and after <code>add(xs)</code>: a cell added at the end; <code>i</code> stays under the same cell, <code>i &lt; xs.length</code> holds before and after; beside it <code>xs.length &lt;= ys.length</code>, the new end past <code>ys</code>' end, lost</p></div>
+<h4 class="change">Added <span class="target">deck checked-bounds, slide separation-heap, slide 15</span></h4><div class="prose"><p>two cases of <code>step(chosen, out)</code>: <code>chosen</code> holds <code>runs</code>, the region is the store <code>runs.open</code> holds and <code>xs</code> lies outside it; <code>chosen</code> is <code>null</code>, the region selects no store and every store at most grows; the disjunct of <code>chosen === null || xs !== chosen.open</code> true in each, and <code>to &lt;= xs.length</code> kept in both</p></div>
+<h4 class="change">Modified <span class="target">deck checked-bounds, slides preservation, argument-store, pretext, remains</span></h4><div class="prose"><p>slide references renumbered for the three slides added</p></div>
+<h4 class="change">Modified <span class="target">deck kit: the layout check's right edge</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>each element's left edge plus its <code>scrollWidth</code></p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>for a part of an inline SVG, its drawn box's right edge; for any other element, as before</p></div></figure></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">docs</span> <span class="chip">tools</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd></dl>
+<details><summary>10 files changed, 125 insertions(+), 12 deletions(-)</summary><pre class="code"> dev/deck-cli.mts                                   |   6 +-
+ docs/deep-dives/checked-bounds/deck.mts            | 106 ++++++++++++++++++++-
+ docs/deep-dives/checked-bounds/project/deck.json   |   2 +-
+ .../project/slides/argument-store.html             |   2 +-
+ .../checked-bounds/project/slides/growth-heap.html |   5 +
+ .../project/slides/one-array-heap.html             |   5 +
+ .../project/slides/preservation.html               |   2 +-
+ .../checked-bounds/project/slides/pretext.html     |   2 +-
+ .../checked-bounds/project/slides/remains.html     |   2 +-
+ .../project/slides/separation-heap.html            |   5 +</pre></details>
+<div class="sha">with Claude</div>
+</article>
+<article class="card" id="c-b5a564c45"><header><div><div class="sha">b5a564c45 · Cristiano Calcagno · Nov 10, 08:29</div><h3>State the checked-bounds deck's pretext outcome by what was checked, and explain its terms where met</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>A read of the deck against STYLE.md's rules for a deck: a reader who knows TypeScript and nothing of TScert meets &quot;separation&quot;, &quot;edge&quot;, &quot;unit&quot; and &quot;store&quot; before any slide explains them; the outcome card counted 268 units, a count of result lines that holds each imported module's run beside the file's own functions; and the growth picture's caption said a growing step keeps every cell, which the rule does not state.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">docs/deep-dives/checked-bounds</span></h4><div class="prose"><p>inferred: a separation named as two arrays being distinct, an edge as a step of control flow, a refused function for a refused unit. trust: every function the checker accepts. one-array-heap: what a store is. growth-heap: a growing step leaves the store no shorter; the index shown as the cell <code>xs[i]</code>. pretext: twelve of twelve source files outside <code>src/generated</code> have every function verified, the two generated data files do not. visitor: observed at 7b6e476a.</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">docs</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd></dl>
+<details><summary>7 files changed, 18 insertions(+), 18 deletions(-)</summary><pre class="code"> docs/deep-dives/checked-bounds/deck.mts              | 20 ++++++++++----------
+ .../checked-bounds/project/slides/growth-heap.html   |  2 +-
+ .../checked-bounds/project/slides/inferred.html      |  6 +++---
+ .../project/slides/one-array-heap.html               |  2 +-
+ .../checked-bounds/project/slides/pretext.html       |  2 +-
+ .../checked-bounds/project/slides/trust.html         |  2 +-
+ .../checked-bounds/project/slides/visitor.html       |  2 +-</pre></details>
+<div class="sha">with Claude</div>
+</article>
+<article class="card" id="c-e76751622"><header><div><div class="sha">e76751622 · Cristiano Calcagno · Nov 10, 08:39</div><h3>State the checked-bounds deck's examples and remaining obligations in general terms</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>The deck named the functions and reads of the work in progress on its pretext, remaining-obligations and callback slides, where a deck states its subject as it is, with pretext as the case study. Two slides held more code and text than their space.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">docs/deep-dives/checked-bounds</span></h4><div class="prose"><p>remains: the classes of fact no rule carries, each with why. pretext: the outcome by files, checks replaced and the one check added; the first chain in general terms. argument-store, separation, visitor: where the shape occurs in pretext, in one sentence. growth, visitor: shorter code and points; the visitor's code is the refused variant.</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">docs</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd></dl>
+<details><summary>8 files changed, 53 insertions(+), 55 deletions(-)</summary><pre class="code"> docs/deep-dives/checked-bounds/deck.mts            | 61 +++++++++++-----------
+ .../project/slides/argument-store.html             |  2 +-
+ .../checked-bounds/project/slides/frame-cost.html  |  2 +-
+ .../checked-bounds/project/slides/growth.html      | 10 ++--
+ .../checked-bounds/project/slides/pretext.html     |  2 +-
+ .../checked-bounds/project/slides/remains.html     | 17 +++---
+ .../checked-bounds/project/slides/separation.html  |  2 +-
+ .../checked-bounds/project/slides/visitor.html     | 12 ++---</pre></details>
 <div class="sha">with Claude</div>
 </article>
 </main></body></html>
