@@ -194,7 +194,7 @@ def slotTable (names : List Nat) (want : Std.HashSet Nat) (whole : Bool) : Std.H
 eliminated from the linear facts. With `whole`, every fact. The store's
 facts with their images, for the step's delta, and the table of slots. -/
 def materialize (st : State) (d : Nat) (slots : List Nat) (whole : Bool) :
-    Knowledge × List (Atom × Atom) × Std.HashMap Nat Nat :=
+    Knowledge × List (Atom × Atom) × Std.HashMap Nat Nat := timedKind (if whole then "materialize whole" else "materialize") fun _ =>
   let given := slots.filterMap fun s => st.names[s]?
   let atoms : List Atom := if whole then st.store.toList else Id.run do
     -- The facts over the given names and over every name an alias link
@@ -241,7 +241,8 @@ def materialize (st : State) (d : Nat) (slots : List Nat) (whole : Bool) :
   let f := fun n => table.get? n
   let pairs := atoms.filterMap fun a => (a.rename f).map (a, ·)
   let extra := derived.filterMap fun x => (Atom.index x).rename f
-  -- Slots sharing a name are related by alias links.
+  -- Each of `slots` holding a name a slot before it holds is related to it
+  -- by an alias link.
   let aliasLinks := slots.filterMap fun s => do
     let n ← st.names[s]?
     let first ← table.get? n
@@ -252,7 +253,7 @@ def materialize (st : State) (d : Nat) (slots : List Nat) (whole : Bool) :
 image `out` lost removed, `out`'s facts not already images added, renamed
 by `back`. `shift`: `out` is over the pushed slots. -/
 def applyDelta (s : Store) (pairs : List (Atom × Atom)) (out : Knowledge) (shift : Bool)
-    (back : Nat → Option Nat) : Store := Id.run do
+    (back : Nat → Option Nat) : Store := timedKind "delta" fun _ => Id.run do
   let outs := atomsOf out
   let outSet : Std.HashSet Atom := outs.foldl (·.insert ·) {}
   let image := fun (a : Atom) => if shift then (a.rename fun i => some (i + 1)).getD a else a
@@ -262,7 +263,10 @@ def applyDelta (s : Store) (pairs : List (Atom × Atom)) (out : Knowledge) (shif
     if !outSet.contains (image b) then s := s.remove a
   for o in outs do
     if !inSet.contains o then
-      if let some a := o.rename back then s := s.add a
+      if let some a := o.rename back then
+        -- A link of a name to itself states nothing.
+        let trivial := match a with | .link g => g.alias && g.cell == g.value | _ => false
+        if !trivial then s := s.add a
   return s
 
 instance : Inhabited Node := ⟨⟨.nul, .ret, none⟩⟩
@@ -300,6 +304,55 @@ def mapNames (names : List Nat) (m : PointClaims.Mapping) : List Nat :=
       cur := c
       out := out.push (x.getD 0)
     return out.toList
+
+/-- The source names an edge's mapping leaves out of its target's slots:
+the names of the source slots it skips that no target slot holds. -/
+def droppedBy (names : List Nat) (m : PointClaims.Mapping) (target : List Nat) : List Nat := Id.run do
+  match m with
+  | none => return []
+  | some slots =>
+    -- Source slots read in increasing order skip the gaps; a slot read
+    -- before the previous one leaves the gaps as they are.
+    let mut skipped : List Nat := []
+    let mut next := 0
+    let mut rest := names
+    for s in slots do
+      if s ≥ next then
+        for x in rest.take (s - next) do skipped := x :: skipped
+        rest := rest.drop (s - next + 1)
+        next := s + 1
+    for x in rest do skipped := x :: skipped
+    if skipped.isEmpty then return []
+    let held : Std.HashSet Nat := target.foldl (·.insert ·) {}
+    return (keepFirst {} (skipped.filter (!held.contains ·))).2.toList
+
+/-- The store without the names `D`, which no slot holds any longer: their
+facts restated through read links and eliminated from the linear facts
+(as an edge's projection does, `HeapKnowledge.project`), the facts naming
+them removed. -/
+def Store.drop (s : Store) (D : List Nat) : Store := timedKind "drop" fun _ => Id.run do
+  if D.isEmpty then return s
+  let dset : Std.HashSet Nat := D.foldl (·.insert ·) {}
+  let atoms := (keepFirst {} (D.flatMap s.about)).2.toList
+  if atoms.isEmpty then return s
+  -- The facts an elimination of `D` may combine: those naming `D`, and the
+  -- linear facts over the names they name.
+  let others := (keepFirst {} ((atoms.flatMap Atom.names).filter (!dset.contains ·))).2.toList
+  let near := (keepFirst {} (others.flatMap s.about)).2.toList.filter fun a => match a with
+    | .index x => match x.fact with | .linear _ => true | _ => false
+    | .link _ => true
+    | _ => false
+  let indices := (atoms ++ near).filterMap fun a => match a with | .index x => some x | _ => none
+  let links := (atoms ++ near).filterMap fun a => match a with | .link g => some g | _ => none
+  let isOut := fun n => dset.contains n
+  let restated := indices ++ HeapKnowledge.restateReads links isOut indices ++
+    HeapKnowledge.restateStores links isOut indices
+  let derived := (HeapKnowledge.eliminateIndices D restated).drop indices.length
+  let mut s := atoms.foldl Store.remove s
+  for x in derived do
+    let a := Atom.index x
+    if a.names.all (!dset.contains ·) then s := s.add a
+  return s
 
 section
 variable {ι : Type} [DecidableEq ι] [Hashable ι] [Instantiates ι]
@@ -365,6 +418,10 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
   let mut fresh := 0
   -- The states entering each node, one per predecessor.
   let mut incoming : Array (List State) := Array.replicate n []
+  -- Beside each entering state, the implications its edge carries, over
+  -- names (`PromiseCalls.Implication`: where the test holds `true`, the
+  -- target has the type).
+  let mut incomingImpl : Array (List (List (PromiseCalls.Implication ι))) := Array.replicate n []
   let mut queue : List Nat := []
   -- The given invariant of each head, at its slots: its written assertion
   -- and the claims' facts there.
@@ -398,16 +455,19 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
     -- The node's entry state: given at a head, its one predecessor's, or
     -- the meet of its predecessors'.
     let mut entry : State := { names := [] }
+    let mut implies : List (PromiseCalls.Implication ι) := []
     match given[l]! with
     | some g =>
       -- A head's state is its given invariant, over fresh names.
       let names := (List.range width).map (· + fresh)
       fresh := fresh + width
       let f := fun (i : Nat) => if i < width then some (i + fresh - width) else none
-      entry := { names, store := (atomsOf g).foldl (fun s a => match a.rename f with
+      entry := { names, store := timedKind "head state" fun _ => (atomsOf g).foldl (fun s a => match a.rename f with
         | some b => s.add b | none => s) {} }
     | none => match incoming[l]! with
-      | [s] => entry := s
+      | [s] =>
+        entry := s
+        implies := (incomingImpl[l]!).headD []
       | [] => pure ()
       | s :: rest =>
         -- Names: a slot whose predecessors' names differ takes a fresh one.
@@ -429,9 +489,23 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
           st.store.toList.foldl (fun (acc : Std.HashSet Atom) (a : Atom) =>
             acc.insert ((a.rename fun x => some (m.getD x x)).getD a)) {}
         let first := stores.headD {}
-        let met := first.fold (fun (acc : Store) a =>
+        let met := timedKind "meet" fun _ => first.fold (fun (acc : Store) a =>
           if stores.tail.all (·.contains a) then acc.add a else acc) {}
         entry := { names := names.toList, store := met }
+        -- The implications every predecessor carries, renamed, at the
+        -- union of their types.
+        let renamedImpl : List (List (PromiseCalls.Implication ι)) :=
+          ((incomingImpl[l]!).zip renames).map fun ((xs : List (PromiseCalls.Implication ι)), (m : Std.HashMap Nat Nat)) =>
+            xs.map fun x => (⟨m.getD x.test x.test, m.getD x.target x.target, x.type⟩ : PromiseCalls.Implication ι)
+        match renamedImpl with
+        | firstXs :: others =>
+          implies := firstXs.filterMap fun (x : PromiseCalls.Implication ι) =>
+            if others.all (·.any fun (y : PromiseCalls.Implication ι) => y.test == x.test && y.target == x.target) then
+              some ⟨x.test, x.target, (x.type ++ (others.flatMap fun ys => (ys.filter fun (y : PromiseCalls.Implication ι) =>
+                y.test == x.test && y.target == x.target).flatMap (·.type))).eraseDups⟩
+            else none
+          implies := (keepFirst {} implies).2.toList
+        | [] => pure ()
     counts := { counts with visited := counts.visited + 1, storeMax := max counts.storeMax entry.store.size }
     -- Debugging: the facts a reference certificate holds here that this
     -- state does not entail.
@@ -462,6 +536,11 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
       | _ => none
     let mut store := entry.store
     let mut result : Nat := 0
+    -- The step's input and output at slots and its derivation, read where an
+    -- edge needs the step's yields.
+    let mut stepK : Knowledge := {}
+    let mut stepOut : Knowledge := {}
+    let mut stepDeriv : Option (ProgramCertificates.Evidence ι) := none
     match copied with
     | some x =>
       counts := { counts with copies := counts.copies + 1 }
@@ -476,7 +555,7 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
         expressionEffectUsing G images pool fuel j kE suggestions index codes aliases checker (some own) answers
       answers := a
       counts := { counts with rules := counts.rules + 1 }
-      let some (_, effect, out) := r.value | return (.refused s!"expression at node {l}: {(reprStr node.expression).take 300} with {(atomsOf k).length} facts {(reprStr k).take 1500}", counts, answers)
+      let some (deriv, effect, out) := r.value | return (.refused s!"expression at node {l}: {(reprStr node.expression).take 300} with {(atomsOf k).length} facts {(reprStr k).take 1500}", counts, answers)
       let preserving := match effect with
         | .ordinary _ | .written .. | .boundedWrite .. => false
         | _ => true
@@ -488,6 +567,9 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
         fresh := fresh + 1
       if l == debugNode then
         return (.refused s!"debug {l}: effect preserving {preserving}, in {reprStr k}\nout {reprStr out}", counts, answers)
+      stepK := kE
+      stepOut := out
+      stepDeriv := deriv
       if preserving then
         let inverse : Std.HashMap Nat Nat := table.fold (fun acc nm s => acc.insert s nm) {}
         store := applyDelta store pairs out true fun i => if i == 0 then some result else (inverse.get? (i - 1)).orElse fun _ => entry.names[i - 1]?
@@ -501,9 +583,31 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
           checker.select j kE effect codes answers.summaries.toList
         counts := { counts with rules := counts.rules + 1, fullRules := counts.fullRules + 1 }
         let some out := r.value | return (.refused s!"expression at node {l} over every fact", counts, answers)
+        stepK := kE
+        stepOut := out
         let inverse : Std.HashMap Nat Nat := table.fold (fun acc nm s => acc.insert s nm) {}
         store := applyDelta store pairs out true fun i => if i == 0 then some result else (inverse.get? (i - 1)).orElse fun _ => entry.names[i - 1]?
     let pushedNames := result :: entry.names
+    -- The step's yields, computed where an edge's types need them. A read
+    -- of a slot yields what the implications testing it state.
+    let mut yields : Option (List (PromiseCalls.Yield ι)) := none
+    if let .var i := node.expression then
+      if let some x := entry.names[i]? then
+        let tested := implies.filter (·.test == x)
+        if !tested.isEmpty then
+          -- At every slot holding a target's name.
+          let held := (entry.names.zipIdx).filter fun (nm, _) => tested.any (·.target == nm)
+          yields := some (tested.flatMap fun y => (held.filter (·.1 == y.target)).map fun (_, t) =>
+            ({ conditional := true, target := t, type := y.type } : PromiseCalls.Yield ι))
+    -- Another step's yields (a test's, a promise call's): computed for the
+    -- implications its pushed result carries.
+    let isRead := match node.expression with | .var _ => true | _ => false
+    if yields.isNone && !isRead && copied.isNone then
+      let e := stepDeriv.getD (.node ⟨c.context, node.expression, c.type⟩ .var [])
+      let slotImpl : List (PromiseCalls.Implication ι) := []
+      let (ys, a) := (nodeYields G images pool c.context slotImpl e stepOut stepK) answers
+      answers := a
+      yields := some ys
     if node.handler.isSome then return (.notHandled s!"handler at node {l}", counts, answers)
     if let .ret := node.continuation then
       match goal with
@@ -565,13 +669,49 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
         if !ok then
           -- The edge as the search reads it, its observation included.
           counts := { counts with edgeSearches := counts.edgeSearches + 1 }
-          let (ko, _, _) := materialize { names, store := edgeStore } (if pushed then width + 1 else width) [0] false
+          let (ko, _, _) := materialize { names, store := edgeStore } (if pushed then width + 1 else width)
+            (0 :: diff.map (·.2)) false
+          -- Its links restated on every slot of their classes, as an edge reads
+          -- a node's output (`ControlFlow.outFacts`).
+          let ko := KnowledgeExpand.expandLinks (KnowledgeExpand.ctxOf G Γ) ko
           let (r, a) := edgeUsing G images claimed Γ t (observed.map (0, ·)) (readFields ko 0) (optionalFields ko 0)
             (match observed with
               | some o => HeapKnowledge.aliasCells (HeapKnowledge.observeTyped G Γ ko 0 o)
               | none => []) answers
           answers := a
-          if r.value.isNone then return (.refused s!"edge from node {l} to node {t.label}", counts, answers)
+          if r.value.isNone then
+            -- The edge's context as the step's yields refine it
+            -- (`produceNodeAt`): what a test or a promise establishes.
+            let ys ← match yields with
+              | some ys => pure ys
+              | none =>
+                let e := stepDeriv.getD (.node ⟨c.context, node.expression, c.type⟩ .var [])
+                let (ys, a) := (nodeYields G images pool c.context [] e stepOut stepK) answers
+                answers := a
+                pure ys
+            yields := some ys
+            let outL := KnowledgeExpand.expandLinks (HeapKnowledge.setsCtx (HeapKnowledge.typeSets G c.context) 1) stepOut
+            let pushedRefine := fun facts => PromiseCalls.refineBy G (c.type :: c.context)
+              (PromiseCalls.aliasFacts outL.links facts 1) 0
+            let keptRefine := fun facts => PromiseCalls.refineBy G c.context
+              (PromiseCalls.aliasFacts (HeapKnowledge.dropResult outL).links facts 0) 0
+            let unconditional := PromiseCalls.yieldFacts ys false
+            let conditional := PromiseCalls.yieldFacts ys true
+            let first := t == (successors node.continuation).headD t
+            let Γ' := match node.continuation with
+              | .bind _ => pushedRefine unconditional
+              | .effect _ => keptRefine unconditional
+              | .branch .. => keptRefine (if first then conditional else unconditional)
+              | .branchBind .. => pushedRefine (if first then conditional else PromiseCalls.yieldFacts ys false true)
+              | .tagBind tg .. => pushedRefine (if first then PromiseCalls.yieldFacts ys (ControlFlow.truthyBoolean G tg c.type)
+                  else unconditional)
+              | .ret => Γ
+            let (r, a) := edgeUsing G images claimed Γ' t (observed.map (0, ·)) (readFields outL 0) (optionalFields outL 0)
+              (match observed with
+                | some o => HeapKnowledge.aliasCells (HeapKnowledge.observeTyped G Γ' outL 0 o)
+                | none => []) answers
+            answers := a
+            if r.value.isNone then return (.refused s!"edge from node {l} to node {t.label}{if l == debugNode then s!" fields {reprStr (readFields ko 0)} links {reprStr ko.links} diff {reprStr diff} implies {reprStr (implies.map fun x => (x.test, x.target))} names {reprStr (entry.names.take 6)} yields {reprStr ((yields.getD []).map fun y => (y.target, y.conditional))}" else ""}", counts, answers)
       if isHead[t.label]! then
         -- The head's given state is entailed on every edge into it.
         let some req := given[t.label]! | return (.refused s!"head {t.label}", counts, answers)
@@ -579,11 +719,25 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
         let srcSlots := slots.map (PointClaims.slot t.mapping)
         let (k, _, _) := materialize { names, store := edgeStore } (if pushed then width + 1 else width) srcSlots false
         counts := { counts with queries := counts.queries + 1, queryAtoms := counts.queryAtoms + (atomsOf k).length }
-        if !vacuous && !KnowledgeExpand.checkIn (KnowledgeExpand.ctxOf G tc.context)
-            (HeapKnowledge.withTypedLinks G Γ (ControlFlow.withTypedCells G Γ req t.mapping k)) req t.mapping then
+        if !vacuous && !(timedKind "head query" fun _ => KnowledgeExpand.checkIn (KnowledgeExpand.ctxOf G tc.context)
+            (HeapKnowledge.withTypedLinks G Γ (ControlFlow.withTypedCells G Γ req t.mapping k)) req t.mapping) then
           return (.refused s!"edge from node {l} into statement entry {t.label}", counts, answers)
       else
-        incoming := incoming.modify t.label ({ names := mapNames names t.mapping, store := edgeStore } :: ·)
+        let targetNames := mapNames names t.mapping
+        -- The names the edge drops leave the store.
+        let gone := droppedBy names t.mapping targetNames ++
+          (if !pushed && !entry.names.contains result then [result] else [])
+        let gone := if pushed || t.mapping.isSome then gone else gone
+        incoming := incoming.modify t.label ({ names := targetNames, store := edgeStore.drop gone } :: ·)
+        -- The edge's implications: the entry's, and on a pushed edge those
+        -- the result's conditional yields state of it; none naming a name
+        -- the edge drops.
+        let fresh' : List (PromiseCalls.Implication ι) := if !pushed then [] else
+          ((yields.getD []).filterMap fun y => if y.conditional && !y.onFalse then
+            (entry.names[y.target]?).map fun tgt => ⟨result, tgt, y.type⟩ else none)
+        let carried := (keepFirst {} ((implies ++ fresh').filter fun x =>
+          !gone.contains x.test && !gone.contains x.target)).2.toList
+        incomingImpl := incomingImpl.modify t.label (carried :: ·)
         indeg := indeg.modify t.label (· - 1)
         if indeg[t.label]! == 0 then queue := t.label :: queue
   if visitedAll < n then return (.notHandled s!"{n - visitedAll} nodes not reached", counts, answers)

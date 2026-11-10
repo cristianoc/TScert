@@ -44,6 +44,12 @@ its linear facts are first restated through read links and eliminated
 (`HeapKnowledge.restateReads`, `eliminateIndices`, as an edge's projection
 does today).
 
+Beside the store, a state carries the implications its edges establish
+(`PromiseCalls.Implication`: where the test holds `true`, the target has
+the type), over names: a step's conditional yields, at a pushed edge, state
+them of its result; a read of a tested name yields them again at every slot
+holding the target; a merge keeps those every predecessor carries.
+
 ## 3. Order
 
 The graph without the edges into cuts is acyclic (every cycle passes through
@@ -74,7 +80,22 @@ survive. Obligations (a required assertion, an edge into a cut) are
 entailment queries against the facts over the names they mention, closed
 the same way.
 
-## 6. Output and scope
+## 6. Where the rules read more than a step's names
+
+- A step that may write (a call's `ordinary` step, `written`, `boundedWrite`)
+  states which heap facts survive it: its derivation is searched over the
+  facts its expression names, and its output selected once over every fact
+  (`Checker.select`, HeapExpressionRules.lean `Checker` structure).
+- An allocation states its object apart from every object slot of the
+  context (`HeapExpressionRules.allocLinked`, the separation at the output's
+  depth): its output names slots no fact it read names, mapped back through
+  the node's names.
+- A request's checks over its whole certificate (its footprint,
+  `GraphCode.compositionalCheckedResult`; its postcondition, `ensuresResult`;
+  its store regions) read every node's evidence: the pass does not make
+  them, and a unit stating one is not handled.
+
+## 7. Output and scope
 
 The output is the verdict, with the first refused obligation located; a
 construct the pass does not handle is an explicit `not handled` result,

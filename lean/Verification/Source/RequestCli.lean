@@ -394,7 +394,8 @@ def verifyUnitsFile (astPath claimsPath fileKey : String) (fuel : Nat) (names : 
           let p0 ← SinglePass.passNanos.get
           let compare := (← IO.getEnv "TSCERT_COMPARE").isSome
           let debugNode := ((← IO.getEnv "TSCERT_NODE").bind String.toNat?).getD 1000000000
-          let (lines, v) ← IO.lazyPure fun _ => f.passGroup fuel (f.fr.group i) compare debugNode
+          let repeats := ((← IO.getEnv "TSCERT_REPEAT").bind String.toNat?).getD 1
+          let (lines, v) ← IO.lazyPure fun _ => f.passGroup fuel (f.fr.group i) compare debugNode repeats
           let p1 ← SinglePass.passNanos.get
           let s1 ← IO.monoNanosNow
           for line in lines do IO.eprintln line
@@ -408,7 +409,7 @@ def verifyUnitsFile (astPath claimsPath fileKey : String) (fuel : Nat) (names : 
           match f.searchGroup fuel (f.fr.group i) true with
           | .ok b => match b.functions.head? with
             | some r => match r.certificate[label]? with
-              | some c => IO.eprintln s!"node {label}: knowledge {reprStr c.knowledge}\noutput {reprStr c.output}"
+              | some c => IO.eprintln s!"node {label}: knowledge {reprStr c.knowledge}\noutput {reprStr c.output}\nimplies {reprStr c.implies}\nyields {reprStr (c.yields.map fun y => (y.conditional, y.onFalse, y.target, y.type))}\nedges {c.edges.length}"
               | none => IO.eprintln "no node"
             | none => IO.eprintln "no function"
           | .error e => IO.eprintln e
