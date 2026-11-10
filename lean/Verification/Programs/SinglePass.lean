@@ -569,7 +569,8 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
     (bound : Option (Footprints.Closed × Bool × Bool) := none)
     (givenImplies : Array (List (PromiseCalls.Implication ι)) := #[])
     (givenArgs : Array (List Nat) := #[])
-    (ensures : List HeapKnowledge.IndexFact := []) (givenInputs : Array (List (Nat × Nat)) := #[]) : Outcome × Counts × Answered G := Id.run do
+    (ensures : List HeapKnowledge.IndexFact := []) (givenInputs : Array (List (Nat × Nat)) := #[])
+    (entrySeparation : HeapSeparation.Separation := {}) : Outcome × Counts × Answered G := Id.run do
   let nodes := P.toArray
   let claimed := claims.toArray
   let n := nodes.size
@@ -638,7 +639,13 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
   for l in List.range n do
     if isHead[l]! then
       let written := (stated[l]!).getD {}
-      let written := if l == start then { written with indices := written.indices ++ entryIndices } else written
+      -- The start assumes the request's entry facts: its index facts and
+      -- the separation of its inputs (`Request.entryIndices`, `entrySeparation`).
+      let written : Knowledge := if l == start then
+          { written with
+            indices := written.indices ++ entryIndices
+            separation := HeapSeparation.union written.separation entrySeparation }
+        else written
       let claimsFacts := (supplied[l]!).getD []
       counts := { counts with
         givenWritten := counts.givenWritten + (atomsOf written).length
@@ -802,7 +809,9 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
         let (k, _, _) := materialize entry width slots false
         counts := { counts with queries := counts.queries + 1, queryAtoms := counts.queryAtoms + (atomsOf k).length }
         if !KnowledgeExpand.checkIn (KnowledgeExpand.ctxOf G c.context) k req none then
-          return (.refused s!"assertion at node {l}", counts, answers)
+          let missing := (atomsOf req).filter fun a =>
+            !KnowledgeExpand.checkIn (KnowledgeExpand.ctxOf G c.context) k (ofAtoms [a] width) none
+          return (.refused s!"assertion at node {l}: lacks {(missing.map fun a => match a with | .index x => (reprStr x.fact).take 80 | .cell f => s!"cell {f.slot}.{f.field}" | .value f => s!"value {f.slot}" | .link g => s!"link {g.cell}.{g.field}={g.value}" | .elem e => s!"elems {e.slot}" | .sep f => s!"sep {f.slot}").take 4}", counts, answers)
     -- The step.
     let some ms := mentioned 0 node.expression | return (.notHandled s!"term at node {l}: {(reprStr node.expression).take 200}", counts, answers)
     let ms := (keepFirst {} ms).2.toList
