@@ -2049,6 +2049,23 @@ theorem keptIndicesWith_holds {c : Changes} {first views : Nat → String → Bo
     (fun hk => IndexFact.holdsAt_keptWith hc hf hv hk (he a ha hcd))
     (fun hk => IndexFact.everyKept_sound hc hf hk (he a ha hcd))
 
+/-- The atoms a change keeps that also grows the stores `grown` names
+(`IndexFact.grownWith`). -/
+def keptIndicesGrown (c : Changes) (first views : Nat → String → Bool) (grown : Nat → Bool)
+    (as : List IndexAtom) : List IndexAtom :=
+  as.filter (fun a => a.fact.grownWith c first views grown || a.fact.everyKept c first)
+
+theorem keptIndicesGrown_holds {c : Changes} {first views : Nat → String → Bool} {grown : Nat → Bool}
+    {as : List IndexAtom} {ρ h h'}
+    (he : IndexHolds as ρ h) (hc : c.Holds h h') (hf : FirstKept first ρ h h') (hv : ViewsKept views ρ h h')
+    (hg : StoresGrown grown ρ h h') :
+    IndexHolds (keptIndicesGrown c first views grown as) ρ h' := by
+  intro a ha hcd
+  obtain ⟨ha, hk⟩ := List.mem_filter.mp ha
+  exact (Bool.or_eq_true_iff.mp hk).elim
+    (fun hk => IndexFact.holdsAt_grownWith hc hf hv hg hk (he a ha hcd))
+    (fun hk => IndexFact.everyKept_sound hc hf hk (he a ha hcd))
+
 /-- Nothing is kept by `first` where it names no location. -/
 theorem firstKept_none {ρ : Env} {h h' : Heap} : FirstKept (fun _ _ => false) ρ h h' := by
   intro _ _ _ _ _ _ _ hf; cases hf

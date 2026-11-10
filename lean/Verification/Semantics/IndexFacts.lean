@@ -1922,4 +1922,77 @@ theorem holdsAt_keptWith {c : Changes} {first views : Nat → String → Bool} {
 
 end IndexFact
 
+/-- Where `grown s` holds, the store of slot `s`'s value is no shorter in
+`h'`, and within `maxArrayLength` where it was. -/
+def StoresGrown (grown : Nat → Bool) (ρ : Env) (h h' : Heap) : Prop :=
+  ∀ s l ls, grown s = true → Footprints.storeOf (ρ s) = some l → h[l]? = some (.arr ls) →
+    ∃ ls', h'[l]? = some (.arr ls') ∧ Footprints.LengthGrows ls ls'
+
+/-- Whether a term is the length of the store of a slot's own value that
+`grown` names. -/
+def Term.storeGrown (grown : Nat → Bool) (t : Term) : Bool :=
+  t.kind == .length && t.path.isEmpty && grown t.slot
+
+/-- **A grown store's length is defined and at least as large**
+(`Term.storeGrown`). -/
+theorem termValue_storeGrown {grown : Nat → Bool} {ρ : Env} {h h' : Heap} {t : Term} {n : Int}
+    (hg : StoresGrown grown ρ h h') (ht : t.storeGrown grown = true) (hn : termValue ρ h t = some n) :
+    ∃ n', termValue ρ h' t = some n' ∧ n ≤ n' := by
+  obtain ⟨kind, s, p⟩ := t
+  simp only [Term.storeGrown, Bool.and_eq_true, beq_iff_eq, List.isEmpty_iff] at ht
+  obtain ⟨⟨rfl, rfl⟩, hs⟩ := ht
+  rw [termValue_nil] at hn ⊢
+  simp only [kindValue] at hn ⊢
+  obtain ⟨l, ls, hl, hls, rfl, hm⟩ := lengthOf_store hn
+  obtain ⟨ls', hls', hle, hmax⟩ := hg s l ls hs hl hls
+  exact ⟨ls'.length, lengthOf_of_store hl hls' (hmax hm), by exact_mod_cast hle⟩
+
+namespace IndexFact
+
+/-- Whether a fact holds after a change `c` that also grows the stores
+`grown` names (`StoresGrown`): a linear fact each of whose terms is kept or
+framed as `keptWith` keeps it, or, in `F ≤ d`, a length of such a store at a
+coefficient at most `0` (`factMonotone`); a bound below the length of such a
+store; or a fact `keptWith` keeps. -/
+def grownWith (c : Changes) (first views : Nat → String → Bool) (grown : Nat → Bool) : IndexFact → Bool
+  | .linear F => factMonotone (fun t => t.keptBy c first || t.viewFramed c first views)
+      (Term.storeGrown grown) F || (IndexFact.linear F).keptWith c first views
+  | .bound x k st => grown x || (IndexFact.bound x k st).keptWith c first views
+  | F => F.keptWith c first views
+
+theorem holdsAt_grownWith {c : Changes} {first views : Nat → String → Bool} {grown : Nat → Bool}
+    {F : IndexFact} {ρ : Env} {h h' : Heap}
+    (hc : c.Holds h h') (hf : FirstKept first ρ h h') (hv : ViewsKept views ρ h h')
+    (hg : StoresGrown grown ρ h h') (hk : F.grownWith c first views grown = true) (hF : F.HoldsAt ρ h) :
+    F.HoldsAt ρ h' := by
+  cases F with
+  | linear G =>
+    simp only [grownWith, Bool.or_eq_true] at hk
+    rcases hk with hk | hk
+    · refine factAt_monotone (val := termValue ρ h) (val' := termValue ρ h') (fun t n ht hn => ?_)
+        (fun t n ht hn => termValue_storeGrown hg ht hn) hk hF
+      rcases Bool.or_eq_true_iff.mp ht with ht | ht
+      · exact termValue_kept hc hf ht hn
+      · exact termValue_viewFramed hc hf hv ht hn
+    · exact holdsAt_keptWith hc hf hv hk hF
+  | bound x k st =>
+    simp only [grownWith, Bool.or_eq_true] at hk
+    rcases hk with hk | hk
+    · obtain ⟨s, ls, b, i, hs, hls, hb, hi, hle⟩ := hF
+      obtain ⟨ls', hls', hgr, -⟩ := hg x s ls hk hs hls
+      exact ⟨s, ls', b, i, hs, hls', hb, hi, by omega⟩
+    · exact holdsAt_keptWith hc hf hv hk hF
+  | index _ => exact holdsAt_keptWith hc hf hv (by simpa [grownWith] using hk) hF
+  | int _ => exact holdsAt_keptWith hc hf hv (by simpa [grownWith] using hk) hF
+  | pastSafe _ => exact holdsAt_keptWith hc hf hv (by simpa [grownWith] using hk) hF
+  | length _ _ => exact holdsAt_keptWith hc hf hv (by simpa [grownWith] using hk) hF
+  | either _ _ => exact holdsAt_keptWith hc hf hv (by simpa [grownWith] using hk) hF
+  | guarded _ _ _ _ => exact holdsAt_keptWith hc hf hv (by simpa [grownWith] using hk) hF
+  | element _ _ _ => exact holdsAt_keptWith hc hf hv (by simpa [grownWith] using hk) hF
+  | every _ _ _ _ => exact holdsAt_keptWith hc hf hv (by simpa [grownWith] using hk) hF
+  | apart _ _ => exact holdsAt_keptWith hc hf hv (by simpa [grownWith] using hk) hF
+  | storeApart _ _ _ _ => exact holdsAt_keptWith hc hf hv (by simpa [grownWith] using hk) hF
+
+end IndexFact
+
 end Verification.HeapKnowledge

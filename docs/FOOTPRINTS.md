@@ -889,7 +889,7 @@ node, its evidence from the node's facts (`nodeRebase_ok`).
 
 A caller's separation of a region's store from another array is a fact of
 its knowledge, a [store separation](ARITHMETIC.md#store-separation) or a
-region fact, which `region-call-keep` consumes
+region fact, which `region-call-keep` and `region-call-grow` consume
 ([stated effects](SOURCE-ELABORATION.md#stated-effects)).
 
 [`ArgumentRegionCertificates.lean`](../lean/Verification/Programs/ArgumentRegionCertificates.lean)
