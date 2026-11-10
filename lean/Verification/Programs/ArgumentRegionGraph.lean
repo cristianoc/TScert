@@ -7,15 +7,15 @@ namespace Verification.GraphCode.ArgumentRegionGraph
 open ControlFlow PointClaims ProgramTyping PositiveGraphs PositiveRules Footprints
 open PositiveCertificates (InstanceImageCheck)
 open CertificateProducer (successors)
-open ArgumentRegionFresh (FreshValue FreshHold FreshTables FreshWithin)
+open ArgumentRegionFresh (FreshValue FreshHold FreshTables FreshWithin FieldFresh FieldsHold)
 
 def NodeWithin [DecidableEq ι] (G : NormalGraph ι) (Φ : Footprints.Closed)
     (regions : List ArgumentStoreRegion) (c : NodeEvidence ι) (t : Tm)
-    (facts : List ArgumentPathTracking.Fact) (F : List Nat) (origins : List ArgumentStoreRegion) (thr : Bool) :
-    Prop :=
+    (facts : List ArgumentPathTracking.Fact) (F : List Nat) (Fs : List (Nat × String))
+    (origins : List ArgumentStoreRegion) (thr : Bool) : Prop :=
   ∀ n W h ρ initial entry,
     ArgumentStoreRegionsWithin Φ regions entry initial h → ArgumentPathTracking.Holds facts ρ entry initial →
-    (∀ i ∈ F, FreshValue initial.length (ρ i)) →
+    (∀ i ∈ F, FreshValue initial.length (ρ i)) → FieldsHold Fs initial.length ρ h →
     EnvOk G (ControlFlow.entry c) ρ n W → PromiseCalls.ImpliesOk G c.implies ρ n W →
     HeapKnowledge.Holds (entryFacts G c) ρ h → WorldAdm W → HeapOk n W h →
     (0 < n → ArgumentPathTracking.StableNow (ArgumentPathTracking.stableFields regions) entry initial W) →
@@ -81,9 +81,15 @@ def nodeFresh (F : List Nat) (se : StepEffect) (p : Nat) : Bool :=
   | some s => F.contains s
   | none => false
 
+/-- A step position holding a node slot whose field is fresh. -/
+def nodeFreshField (Fs : List (Nat × String)) (se : StepEffect) (p : Nat) (f : String) : Bool :=
+  match se.slot p with
+  | some s => Fs.contains (s, f)
+  | none => false
+
 def nodeRebase (regions : List ArgumentStoreRegion) (facts : List ArgumentPathTracking.Fact) (F : List Nat)
-    (se : StepEffect) : RebaseEvidence :=
-  ⟨nodeLink facts se, nodeAgree regions facts se, nodeFresh F se⟩
+    (Fs : List (Nat × String)) (se : StepEffect) : RebaseEvidence :=
+  ⟨nodeLink facts se, nodeAgree regions facts se, nodeFresh F se, nodeFreshField Fs se⟩
 
 /-- No class evidence: inclusions read regions alone. -/
 def noClasses : ClassEvidence := fun _ _ => none
@@ -93,20 +99,22 @@ theorem noClasses_ok (ρ : Env) (h : Heap) : ClassOk noClasses ρ h := fun _ _ _
 /-- **The common check**: the step's frames, rebased to the entry, are
 included in the stated frame. -/
 def stepWithin (Φ : Footprints.Closed) (regions : List ArgumentStoreRegion)
-    (facts : List ArgumentPathTracking.Fact) (F : List Nat) (se : StepEffect) (thr : Bool) : Bool :=
-  Footprint.le noClasses (statedFrame Φ regions ++ rebaseAll (nodeRebase regions facts F se) se.normal)
+    (facts : List ArgumentPathTracking.Fact) (F : List Nat) (Fs : List (Nat × String)) (se : StepEffect)
+    (thr : Bool) : Bool :=
+  Footprint.le noClasses (statedFrame Φ regions ++ rebaseAll (nodeRebase regions facts F Fs se) se.normal)
       (statedFrame Φ regions) &&
-    (!thr || Footprint.le noClasses (statedFrame Φ regions ++ rebaseAll (nodeRebase regions facts F se) se.raised)
+    (!thr || Footprint.le noClasses (statedFrame Φ regions ++ rebaseAll (nodeRebase regions facts F Fs se) se.raised)
       (statedFrame Φ regions))
 
 /-- The tracked facts and the entry world's witnesses are rebasing evidence. -/
 theorem nodeRebase_ok {regions : List ArgumentStoreRegion} {facts : List ArgumentPathTracking.Fact}
-    {F : List Nat} {se : StepEffect} {σ ρ entry : Env} {initial h : Heap} {n : Nat} {W : WorldT n}
+    {F : List Nat} {Fs : List (Nat × String)} {se : StepEffect} {σ ρ entry : Env} {initial h : Heap} {n : Nat}
+    {W : WorldT n}
     (hσ : ∀ p s, se.slot p = some s → σ p = ρ s) (hf : ArgumentPathTracking.Holds facts ρ entry initial)
-    (hF : ∀ i ∈ F, FreshValue initial.length (ρ i))
+    (hF : ∀ i ∈ F, FreshValue initial.length (ρ i)) (hFs : FieldsHold Fs initial.length ρ h)
     (hst : ArgumentPathTracking.StableNow (ArgumentPathTracking.stableFields regions) entry initial W)
     (hn : 0 < n) (hh : HeapOk n W h) :
-    RebaseOk (nodeRebase regions facts F se) σ entry initial h := by
+    RebaseOk (nodeRebase regions facts F Fs se) σ entry initial h := by
   have hlink : ∀ p x q, nodeLink facts se p = some (x, q) →
       HeapKnowledge.readPath initial (entry x) q = some (σ p) := by
     intro p x q hl
@@ -117,7 +125,7 @@ theorem nodeRebase_ok {regions : List ArgumentStoreRegion} {facts : List Argumen
     have hslot : f.slot = s := by simpa using List.find?_some hfind
     rw [hσ p s hs, ← hslot]
     exact hf f (List.mem_of_find?_eq_some hfind)
-  refine ⟨hlink, fun p q hq v hv => ?_, fun p hp => ?_⟩
+  refine ⟨hlink, fun p q hq v hv => ?_, fun p hp => ?_, fun p f hp v hv => ?_⟩
   · simp only [nodeRebase] at hq
     unfold nodeAgree at hq
     split at hq
@@ -132,34 +140,109 @@ theorem nodeRebase_ok {regions : List ArgumentStoreRegion} {facts : List Argumen
       rw [hσ p s hs]
       exact (hF s (List.contains_iff_mem.mp hp)).2
     · cases hp
+  · simp only [nodeRebase, nodeFreshField] at hp
+    split at hp
+    · rename_i s hs
+      rw [hσ p s hs] at hv
+      exact hFs (s, f) (List.contains_iff_mem.mp hp) v hv
+    · cases hp
 
 /-- **The step-frame rule.** A step meeting its local effect, whose frames
 the common check includes in the stated frame, keeps the invocation within
 it. -/
 theorem nodeWithin_of_step [DecidableEq ι] {G : NormalGraph ι} {Φ : Footprints.Closed}
     {regions : List ArgumentStoreRegion} {c : NodeEvidence ι} {t : Tm}
-    {facts : List ArgumentPathTracking.Fact} {F : List Nat} {se : StepEffect} {thr : Bool}
-    (hs : StepOk G c t se thr) (hc : stepWithin Φ regions facts F se thr = true) :
-    NodeWithin G Φ regions c t facts F [] thr := by
-  intro n W h ρ initial entry hb hf hF he hi hk hw hh hst
+    {facts : List ArgumentPathTracking.Fact} {F : List Nat} {Fs : List (Nat × String)} {se : StepEffect}
+    {thr : Bool}
+    (hs : StepOk G c t se thr) (hc : stepWithin Φ regions facts F Fs se thr = true) :
+    NodeWithin G Φ regions c t facts F Fs [] thr := by
+  intro n W h ρ initial entry hb hf hF hFs he hi hk hw hh hst
   cases n with
   | zero => trivial
   | succ n =>
     simp only [stepWithin, Bool.and_eq_true, Bool.or_eq_true, Bool.not_eq_true'] at hc
     obtain ⟨σ, hσ, hrun⟩ := hs (n + 1) W h ρ he hi hk hw hh
     have hp := ArgumentStoreRegionsWithin.iff_post.mp hb
-    have hok := nodeRebase_ok (regions := regions) hσ hf hF (hst (Nat.succ_pos n)) (Nat.succ_pos n) hh
+    have hok := nodeRebase_ok (regions := regions) hσ hf hF hFs (hst (Nat.succ_pos n)) (Nat.succ_pos n) hh
     apply HeapObservations.SafePostExc.weaken _ _ hrun
     · intro h' _ hq
       exact ⟨ArgumentStoreRegionsWithin.iff_post.mpr
         (Post.compose_at hp hq hok hc.1 (noClasses_ok _ _)), fun r hr => nomatch hr⟩
     · intro h' hq hthr
       have hle : Footprint.le noClasses (statedFrame Φ regions ++
-          rebaseAll (nodeRebase regions facts F se) se.raised) (statedFrame Φ regions) = true := by
+          rebaseAll (nodeRebase regions facts F Fs se) se.raised) (statedFrame Φ regions) = true := by
         rcases hc.2 with hf | hle
         · rw [hthr] at hf; cases hf
         · exact hle
       exact ArgumentStoreRegionsWithin.iff_post.mpr (Post.compose_at hp (hq hthr) hok hle (noClasses_ok _ _))
+
+/-! ## Fresh fields along edges -/
+
+/-- A label's fresh fields: none past the list. -/
+def fieldsAt (facts : List (List (Nat × String))) (l : Nat) : List (Nat × String) := facts.getD l []
+
+/-- Whether field `f` of slot `j` of a destination's environment, before its
+slot map, is fresh: of the bound value where the continuation binds it and
+its field is fresh (`out`), of a source slot otherwise. -/
+def fieldSlot (Fs : List (Nat × String)) (out : List String) (pushed : Bool) : Nat → String → Bool
+  | 0, f => if pushed then out.contains f else Fs.contains (0, f)
+  | j + 1, f => if pushed then Fs.contains (j, f) else Fs.contains (j + 1, f)
+
+/-- The destinations' fresh fields follow from the source's and the node's
+value's. -/
+def edgesFields (facts : List (List (Nat × String))) (Fs : List (Nat × String)) (out : List String)
+    (k : Continuation) : Bool :=
+  (successors k).all fun t => (fieldsAt facts t.label).all fun p =>
+    fieldSlot Fs out (pushes k) (slot t.mapping p.1) p.2
+
+/-- A handler's fresh fields follow from the node's: the thrown value has
+none. -/
+def handlerFields (facts : List (List (Nat × String))) (Fs : List (Nat × String)) (l : Target) : Bool :=
+  (fieldsAt facts l.label).all fun p => match slot l.mapping p.1 with
+    | 0 => false
+    | j + 1 => Fs.contains (j, p.2)
+
+theorem edgesFields_holds {facts : List (List (Nat × String))} {Fs : List (Nat × String)} {out : List String}
+    {k : Continuation} {b : Nat} {ρ : Env} {h : Heap} {v : Tm} (he : edgesFields facts Fs out k = true)
+    (hF : FieldsHold Fs b ρ h) (hout : ∀ f ∈ out, FieldFresh b h v f) :
+    ∀ t ∈ successors k, FieldsHold (fieldsAt facts t.label) b
+      (mapEnv t.mapping (if pushes k then push v ρ else ρ)) h := by
+  intro t ht p hp
+  have hs := List.all_eq_true.mp (List.all_eq_true.mp he t ht) p hp
+  simp only [mapEnv]
+  generalize slot t.mapping p.1 = j at hs ⊢
+  cases hpk : pushes k
+  · simp only [hpk, Bool.false_eq_true, if_false] at hs ⊢
+    cases j with
+    | zero => exact hF (0, p.2) (by simpa [fieldSlot] using hs)
+    | succ j => exact hF (j + 1, p.2) (by simpa [fieldSlot] using hs)
+  · simp only [hpk, if_true] at hs ⊢
+    cases j with
+    | zero => exact hout p.2 (by simpa [fieldSlot] using hs)
+    | succ j => exact hF (j, p.2) (by simpa [fieldSlot] using hs)
+
+theorem handlerFields_holds {facts : List (List (Nat × String))} {Fs : List (Nat × String)} {l : Target}
+    {b : Nat} {ρ : Env} {h : Heap} (hf : handlerFields facts Fs l = true) (hF : FieldsHold Fs b ρ h) (u : Tm) :
+    FieldsHold (fieldsAt facts l.label) b (mapEnv l.mapping (push u ρ)) h := by
+  intro p hp
+  have hs := List.all_eq_true.mp hf p hp
+  simp only [mapEnv]
+  generalize slot l.mapping p.1 = j at hs ⊢
+  cases j with
+  | zero => cases hs
+  | succ j => exact hF (j, p.2) (by simpa using hs)
+
+/-- A node's fresh-field obligation: from fresh values at `F` and fresh
+fields at `Fs`, its normal return and its throw keep every field of `Fs`,
+and its value has a fresh field `f` for each `f ∈ out`. -/
+def FieldsWithin [DecidableEq ι] (G : NormalGraph ι) (c : NodeEvidence ι) (t : Tm) (F : List Nat)
+    (Fs : List (Nat × String)) (out : List String) : Prop :=
+  ∀ n W h ρ (b : Nat), b ≤ h.length → (∀ i ∈ F, FreshValue b (ρ i)) → FieldsHold Fs b ρ h →
+    EnvOk G (ControlFlow.entry c) ρ n W → PromiseCalls.ImpliesOk G c.implies ρ n W →
+    HeapKnowledge.Holds (entryFacts G c) ρ h → WorldAdm W → HeapOk n W h →
+    HeapObservations.SafePostExc (excOf G) (meaning G (result c))
+      (fun h' v => FieldsHold Fs b ρ h' ∧ ∀ f ∈ out, FieldFresh b h' v f)
+      (fun h' => FieldsHold Fs b ρ h') n W h (instantiate 0 ρ t)
 
 /-- What the bounded run reads of each node: its regional obligation, its
 freshness obligation, and the transfer of its provenance and fresh facts
@@ -168,24 +251,28 @@ def NodesWithin [DecidableEq ι] (G : NormalGraph ι) (Φ : Footprints.Closed)
     (regions : List ArgumentStoreRegion) (P : Program) (C : Certificate ι)
     (table : List (List ArgumentPathTracking.Fact)) (ft : FreshTables) (exc : Bool) : Prop :=
   ∀ l node c, P[l]? = some node → C[l]? = some c →
-    ∃ origins outF outC,
-      NodeWithin G Φ regions c node.expression (ArgumentPathTracking.atLabel table l) (factsAt ft.values l) origins
-        (node.handler.isSome || exc) ∧
+    ∃ origins outF outC outFs,
+      NodeWithin G Φ regions c node.expression (ArgumentPathTracking.atLabel table l) (factsAt ft.values l)
+        (fieldsAt ft.fields l) origins (node.handler.isSome || exc) ∧
       ArgumentPathTracking.checkEdges table (ArgumentPathTracking.atLabel table l) origins node.continuation = true ∧
       ArgumentPathTracking.checkHandler table (ArgumentPathTracking.atLabel table l) node.handler = true ∧
       FreshWithin G c node.expression (factsAt ft.values l) (factsAt ft.cells l) outF outC node.handler.isSome ∧
       edgesFresh ft.values (factsAt ft.values l) outF false node.continuation = true ∧
       edgesFresh ft.cells (factsAt ft.cells l) outC false node.continuation = true ∧
+      FieldsWithin G c node.expression (factsAt ft.values l) (fieldsAt ft.fields l) outFs ∧
+      edgesFields ft.fields (fieldsAt ft.fields l) outFs node.continuation = true ∧
       ∀ target, node.handler = some target →
         handlerFresh ft.values (factsAt ft.values l) target = true ∧
-        handlerFresh ft.cells (factsAt ft.cells l) target = true
+        handlerFresh ft.cells (factsAt ft.cells l) target = true ∧
+        handlerFields ft.fields (fieldsAt ft.fields l) target = true
 
 /-- A label's facts: provenance, and fresh values and cells against the
 invocation's entry heap. -/
 def LabelHolds (table : List (List ArgumentPathTracking.Fact)) (ft : FreshTables) (l : Nat)
     (ρ entry : Env) (initial h : Heap) : Prop :=
   ArgumentPathTracking.Holds (ArgumentPathTracking.atLabel table l) ρ entry initial ∧
-    FreshHold (factsAt ft.values l) (factsAt ft.cells l) initial.length ρ h
+    FreshHold (factsAt ft.values l) (factsAt ft.cells l) initial.length ρ h ∧
+    FieldsHold (fieldsAt ft.fields l) initial.length ρ h
 
 def BoundState (Φ : Footprints.Closed) (regions : List ArgumentStoreRegion)
     (table : List (List ArgumentPathTracking.Fact)) (ft : FreshTables) (exc : Bool) (initial : Heap) (entry : Env)
@@ -200,7 +287,9 @@ def BoundState (Φ : Footprints.Closed) (regions : List ArgumentStoreRegion)
       | none => exc = true → RaisesPost (ArgumentStoreRegionsWithin Φ regions entry initial) n h t
       | some target => RaisesPost (fun h' => ArgumentStoreRegionsWithin Φ regions entry initial h' ∧
             ∀ v, FreshHold (factsAt ft.values target.label) (factsAt ft.cells target.label) initial.length
-              (mapEnv target.mapping (push v ρ)) h') n h t ∧
+              (mapEnv target.mapping (push v ρ)) h' ∧
+              FieldsHold (fieldsAt ft.fields target.label) initial.length (mapEnv target.mapping (push v ρ)) h')
+            n h t ∧
           ∀ v, ArgumentPathTracking.Holds (ArgumentPathTracking.atLabel table target.label)
             (mapEnv target.mapping (push v ρ)) entry initial
   | .raised _ => exc = true → ArgumentStoreRegionsWithin Φ regions entry initial h
@@ -218,35 +307,41 @@ theorem bounded_step [DecidableEq ι] {G : NormalGraph ι} {Φ : Footprints.Clos
   cases st with
   | @enter l node _ ρ hn =>
     obtain ⟨c, hc, he, hi, -, hf⟩ := hs
-    obtain ⟨origins, outF, outC, ht, hedge, hhandler, hfr, hef, hec, hhf⟩ := hnodes l node c hn hc
+    obtain ⟨origins, outF, outC, outFs, ht, hedge, hhandler, hfr, hef, hec, hfl, hefl, hhf⟩ :=
+      hnodes l node c hn hc
     have he' := he.transfer n (Nat.le_succ n) _ (WExt_refl _)
     have hi' := hi.transfer n (Nat.le_succ n) _ (WExt_refl _)
     have hk := entryFacts_holds he hf
     have hh' := HeapOk_trunc n W h hh
-    have hrun := ht n _ h ρ initial entry hp.1 hp.2.1 hp.2.2.values he' hi' hk
+    have hrun := ht n _ h ρ initial entry hp.1 hp.2.1 hp.2.2.1.values hp.2.2.2 he' hi' hk
       (WorldAdm_trunc _ hw) hh'
       (fun _ => (hst (Nat.succ_pos n)).transfer (Nat.le_succ n) (WExt_refl _))
-    have hfresh := hfr n _ h ρ initial.length (ArgumentStoreRegionsWithin.iff_post.mp hp.1).1 hp.2.2 he' hi' hk
+    have hfresh := hfr n _ h ρ initial.length (ArgumentStoreRegionsWithin.iff_post.mp hp.1).1 hp.2.2.1 he' hi' hk
       (WorldAdm_trunc _ hw) hh'
-    have hboth := HeapObservations.SafePostExc.cross_upto n (fun _ _ _ _ _ _ _ _ hu _ => hu) _ _ h _ hh' hh'
+    have hfld := hfl n _ h ρ initial.length (ArgumentStoreRegionsWithin.iff_post.mp hp.1).1 hp.2.2.1.values
+      hp.2.2.2 he' hi' hk (WorldAdm_trunc _ hw) hh'
+    have hboth0 := HeapObservations.SafePostExc.cross_upto n (fun _ _ _ _ _ _ _ _ hu _ => hu) _ _ h _ hh' hh'
       hrun hfresh
+    have hboth := HeapObservations.SafePostExc.cross_upto n (fun _ _ _ _ _ _ _ _ hu _ => hu) _ _ h _ hh' hh'
+      hboth0 hfld
     refine ⟨returnsPost_of_safePost (HeapObservations.weaken
-      (fun _ _ post => ⟨post.1.1, fun target htarget =>
-        ⟨ArgumentPathTracking.checkEdges_sound hedge hp.2.1 post.1.2 target htarget,
-          ⟨edgesFresh_holds hef hp.2.2.values post.2.1 target htarget,
-            edgesFresh_holds hec post.2.2.2 post.2.2.1 target htarget⟩⟩⟩) hboth.post), ?_⟩
+      (fun _ _ post => ⟨post.1.1.1, fun target htarget =>
+        ⟨ArgumentPathTracking.checkEdges_sound hedge hp.2.1 post.1.1.2 target htarget,
+          ⟨edgesFresh_holds hef hp.2.2.1.values post.1.2.1 target htarget,
+            edgesFresh_holds hec post.1.2.2.2 post.1.2.2.1 target htarget⟩,
+          edgesFields_holds hefl post.2.1 post.2.2 target htarget⟩⟩) hboth.post), ?_⟩
     cases hk : node.handler with
     | none =>
       intro hexc k h'' t'' v hb run hr
-      exact (raisesPost_of_safePostExc hboth k h'' t'' v hb run hr).1 (by simp [hk, hexc])
+      exact (raisesPost_of_safePostExc hboth k h'' t'' v hb run hr).1.1 (by simp [hk, hexc])
     | some target =>
       refine ⟨?_, ArgumentPathTracking.checkHandler_sound hhandler hp.2.1 target hk⟩
       intro k h'' t'' v hb run hr
       have hr' := raisesPost_of_safePostExc hboth k h'' t'' v hb run hr
-      have hcells := hr'.2 (by simp [hk])
-      obtain ⟨hhv, hhc⟩ := hhf target hk
-      exact ⟨hr'.1 (by simp [hk]), fun u => ⟨handlerFresh_holds hhv hp.2.2.values u,
-        handlerFresh_holds hhc hcells u⟩⟩
+      have hcells := hr'.1.2 (by simp [hk])
+      obtain ⟨hhv, hhc, hhfl⟩ := hhf target hk
+      exact ⟨hr'.1.1 (by simp [hk]), fun u => ⟨⟨handlerFresh_holds hhv hp.2.2.1.values u,
+        handlerFresh_holds hhc hcells u⟩, handlerFields_holds hhfl hr'.2 u⟩⟩
   | @expr _ t _ t' ρ k handler st =>
     refine ⟨hp.1.step st, ?_⟩
     cases handler with
@@ -279,7 +374,7 @@ theorem bounded_step [DecidableEq ι] {G : NormalGraph ι} {Φ : Footprints.Clos
     · exact by simpa [pushes] using post.2 _ (by simp [successors])
   | handle hr =>
     have hq := hp.2.1.raised hr
-    exact ⟨hq.1, hp.2.2 _, hq.2 _⟩
+    exact ⟨hq.1, hp.2.2 _, (hq.2 _).1, (hq.2 _).2⟩
   | raise hr => exact fun he => (hp.2 he).raised hr
 
 theorem bounded_safe_of_sim [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G} {sums : List (ProgramCertificates.ReadSummary ι)} {Φ : Footprints.Closed} {regions : List ArgumentStoreRegion} {Rty : Goal ι} {v0 : Tm} {E : List Tm} {K : List (Continuation × Option Target)}
@@ -319,6 +414,7 @@ theorem goto_bounded [DecidableEq ι] {G : NormalGraph ι} {images : InstanceIma
     (hnodes : NodesWithin G Φ regions (program E K) C table ft exc)
     (hstart : ArgumentPathTracking.checkEntry (ArgumentPathTracking.atLabel table start) = true)
     (hfresh : ((factsAt ft.values start).isEmpty && (factsAt ft.cells start).isEmpty) = true)
+    (hfieldStart : (fieldsAt ft.fields start).isEmpty = true)
     (hfields : ArgumentPathTracking.checkEntryFields G inputs regions = true)
     (n W h L d) (he : EnvOk G inputs (envOf L d) n W) (hw : WorldAdm W)
     (hh : HeapOk n W h)
@@ -358,10 +454,12 @@ theorem goto_bounded [DecidableEq ι] {G : NormalGraph ι} {images : InstanceIma
           rfl
       · exact entryKnows_sound hk (by simpa only [hin] using he) hsep hidx
     · simp only [Bool.and_eq_true, List.isEmpty_iff] at hfresh
+      simp only [List.isEmpty_iff] at hfieldStart
       refine ⟨(Footprints.Closed.Holds.refl Φ h).on _,
-        ArgumentPathTracking.checkEntry_sound hstart _ _, ?_, ?_⟩
+        ArgumentPathTracking.checkEntry_sound hstart _ _, ⟨?_, ?_⟩, ?_⟩
       · intro i hi; rw [hfresh.1] at hi; cases hi
       · intro i hi; rw [hfresh.2] at hi; cases hi
+      · intro p hp; rw [hfieldStart] at hp; cases hp
   · contradiction
 
 end Verification.GraphCode.ArgumentRegionGraph

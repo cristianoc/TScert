@@ -38,6 +38,9 @@ structure RebaseEvidence where
   link : Nat → Option (Nat × List String)
   agree : Nat → List String → Bool
   fresh : Nat → Bool := fun _ => false
+  /-- A position whose field, read at the step's heap, holds a value whose
+  store, where it has one, is fresh. -/
+  freshField : Nat → String → Bool := fun _ _ => false
 
 /-- **Selected-location freshness of a store**: where the value has an array
 store, its location is at least `b`. It reads no heap; a value with no store
@@ -61,6 +64,8 @@ structure RebaseOk (ev : RebaseEvidence) (σ ρ₀ : Env) (h₀ h : Heap) : Prop
   agree : ∀ s p, ev.agree s p = true → ∀ v, HeapKnowledge.readPath h (σ s) p = some v →
     HeapKnowledge.readPath h₀ (σ s) p = some v
   fresh : ∀ s, ev.fresh s = true → FreshIfStore h₀.length (σ s)
+  freshField : ∀ s f, ev.freshField s f = true → ∀ v, HeapKnowledge.readPath h (σ s) [f] = some v →
+    FreshIfStore h₀.length v
 
 /-- A region that selects the store of a position whose store is fresh. -/
 def RebaseEvidence.freshStore (ev : RebaseEvidence) (s : Nat) (k : PropKey) : Bool :=
@@ -72,6 +77,32 @@ theorem RebaseOk.fresh_store {ev σ ρ₀ h₀ h} (hk : RebaseOk ev σ ρ₀ h�
   simp only [RebaseEvidence.freshStore, Bool.and_eq_true, beq_iff_eq] at hf
   obtain ⟨rfl, hf⟩ := hf
   exact hk.fresh s hf l hm
+
+/-- A region selecting the store at a path of a position, where the
+evidence states that store fresh: the position's own store, or the store a
+fresh field holds. -/
+def RebaseEvidence.freshPath (ev : RebaseEvidence) (s : Nat) (p : List String) (k : PropKey) : Bool :=
+  k == arrayStoreKey && match p with
+    | [] => ev.fresh s
+    | [f] => ev.freshField s f
+    | _ => false
+
+/-- A fresh path's store selects no location of the entry heap. -/
+theorem RebaseOk.fresh_path {ev σ ρ₀ h₀ h} (hk : RebaseOk ev σ ρ₀ h₀ h) {s p k l}
+    (hf : ev.freshPath s p k = true) (hm : (Region.path s p k).mem σ h l = true) : h₀.length ≤ l := by
+  simp only [RebaseEvidence.freshPath, Bool.and_eq_true, beq_iff_eq] at hf
+  obtain ⟨rfl, hf⟩ := hf
+  simp only [Region.mem] at hm
+  split at hm
+  · rename_i v hv
+    have hl : (fieldsOf v).lookup arrayStoreKey = some l := by simpa using hm
+    match p, hf with
+    | [], hf =>
+      simp only [HeapKnowledge.readPath, Option.some.injEq] at hv
+      subst hv
+      exact hk.fresh s hf l hl
+    | [f], hf => exact hk.freshField s f hf v hv l hl
+  · cases hm
 
 /-- Whether a step position's path is read at the entry heap as at the
 step's: the empty path always. -/
@@ -92,7 +123,7 @@ def rebase (ev : RebaseEvidence) : Region → List Region
   | .own s => match ev.path s [] with
     | some (x, q) => [.pathOwn x q]
     | none => [.all]
-  | .path s p k => if p.isEmpty && ev.freshStore s k then [] else match ev.path s p with
+  | .path s p k => if ev.freshPath s p k then [] else match ev.path s p with
     | some (x, q) => [.path x q k]
     | none => [.all]
   | .pathOwn s p => match ev.path s p with
@@ -160,16 +191,11 @@ theorem rebase_sound {Φp ρ₀ σ h₀ h ev l} (hp : Post Φp ρ₀ h₀ h) (hk
       simpa [Region.mem] using hm
   | path s p k =>
     intro hm
-    have hf : (p.isEmpty && ev.freshStore s k) = false := by
-      cases hp : p.isEmpty
+    have hf : ev.freshPath s p k = false := by
+      cases hfs : ev.freshPath s p k
       · rfl
-      · cases p with
-        | cons _ _ => cases hp
-        | nil =>
-          cases hfs : ev.freshStore s k
-          · rfl
-          · have := hk.fresh_store hfs (by simpa [Region.mem, HeapKnowledge.readPath] using hm)
-            omega
+      · have := hk.fresh_path hfs hm
+        omega
     cases he : ev.path s p with
     | none => exact .inl ⟨.all, by simp [rebase, he, hf], rfl⟩
     | some xq =>

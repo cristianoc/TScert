@@ -465,6 +465,110 @@ theorem checkFresh_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instanc
   have h123 := HeapObservations.SafePostExc.cross_upto n (fun _ _ _ _ _ _ _ _ hu _ => hu) W W h _ hh hh h12 hkeep
   exact HeapObservations.SafePostExc.weaken (fun _ _ hq => ⟨hq.1.1, hq.1.2, hq.2⟩) (fun _ hq => hq.2) h123
 
+/-! ## Fresh fields of a node
+
+A node's value has a fresh field `f` (`fieldOut`): a slot copy, where the
+slot's field `f` is fresh; a constant, which has no field; an allocation
+of distinct keys whose field `f` is initialized from a slot holding a fresh
+value. A node keeps the fresh fields of its entry where each slot's type
+states the field stable (`fieldsKept`). -/
+
+/-- The fields an allocation of distinct keys initializes from a slot
+holding a fresh value, of the names `names`. -/
+def allocFieldOut (names : List String) (F : List Nat) (t : Tm) : List String :=
+  match HeapExpressionRules.allocationSlots t with
+  | some parts => if (parts.map Prod.fst).Nodup then names.filter fun f =>
+      match parts.lookup (.str f) with
+      | some j => F.contains j
+      | none => false
+    else []
+  | none => []
+
+/-- The fields of a node's value that are fresh, of the names `names`. -/
+def fieldOut (names : List String) (F : List Nat) (Fs : List (Nat × String)) (t : Tm) : List String :=
+  match t with
+  | .var j => names.filter fun f => Fs.contains (j, f)
+  | .makeAt .absent ns xs => allocFieldOut names F (.makeAt .absent ns xs)
+  | _ => if constTerm t then names else []
+
+/-- A run whose value is claimed no fresh field. -/
+theorem noFields_run {Ξ T : Fam} {n W h t} {b : Nat} {L : List String} (hnil : ∀ f, f ∈ L → False)
+    (hs : Safe Ξ T n W h t) :
+    HeapObservations.SafePostExc Ξ T (fun h' v => ∀ f ∈ L, FieldFresh b h' v f) (fun _ => True) n W h t :=
+  HeapObservations.SafePostExc.weaken (fun _ _ _ f hf => (hnil f hf).elim) (fun _ h => h) (trivial_run hs)
+
+theorem fieldOut_sound [DecidableEq ι] {G : NormalGraph ι} {names : List String} {F : List Nat}
+    {Fs : List (Nat × String)} {c : NodeEvidence ι} {t : Tm}
+    (hscope : ProgramCertificates.checkScope (entry c).length t = true)
+    {n W h ρ} {b : Nat} (hF : ∀ i ∈ F, FreshValue b (ρ i)) (hFs : FieldsHold Fs b ρ h)
+    (he : EnvOk G (entry c) ρ n W)
+    (hs : Safe (excOf G) (meaning G (result c)) n W h (instantiate 0 ρ t)) :
+    HeapObservations.SafePostExc (excOf G) (meaning G (result c))
+      (fun h' v => ∀ f ∈ fieldOut names F Fs t, FieldFresh b h' v f) (fun _ => True)
+      n W h (instantiate 0 ρ t) := by
+  cases t
+  case var j =>
+    simp only [ProgramCertificates.checkScope, decide_eq_true_eq] at hscope
+    simp only [instantiate, Nat.not_lt_zero, ite_false, Nat.sub_zero] at hs ⊢
+    refine value_run (slot_value he hscope) (fun f hf => ?_) hs
+    simp only [fieldOut, List.mem_filter] at hf
+    exact hFs (j, f) (List.contains_iff_mem.mp hf.2)
+  case makeAt code ns inits =>
+    cases code
+    case absent =>
+      simp only [fieldOut]
+      unfold allocFieldOut
+      split
+      · rename_i parts hparts
+        split
+        · rename_i hnd
+          obtain ⟨hns, hinits⟩ := HeapExpressionRules.allocationParts_eq
+            (by simpa [HeapExpressionRules.allocationSlots] using hparts)
+          subst hns; subst hinits
+          simp only [ProgramCertificates.checkScope, ProgramCertificates.checkScopes_iff, List.mem_map] at hscope
+          have hin : ∀ p ∈ parts, p.2 < (entry c).length := fun p hp => by
+            have := hscope _ ⟨p, hp, rfl⟩
+            simpa [ProgramCertificates.checkScope] using this
+          simp only [instantiate, instantiateArgs_eq_map, List.map_map] at hs ⊢
+          have hfun : (instantiate 0 ρ ∘ fun p : PropKey × Nat => Tm.var p.2) = fun p => ρ p.2 := by
+            funext p; simp [instantiate]
+          rw [hfun] at hs ⊢
+          refine fieldAlloc_fresh hnd (by simp) (fun v hv => ?_) (fun f hf => ?_) hs
+          · obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hv
+            exact slot_value he (hin p hp)
+          · simp only [List.mem_filter] at hf
+            split at hf
+            · rename_i j hl
+              obtain ⟨i, hi, hk, hjv⟩ := lookup_parts hl
+              refine ⟨i, by simpa using hi, by simpa using hk, fun v hv => ?_⟩
+              simp only [List.getElem?_map, List.getElem?_eq_getElem hi, Option.map_some,
+                Option.some.injEq] at hv
+              subst hv
+              rw [hjv]
+              exact (hF j (List.contains_iff_mem.mp hf.2)).2
+            · cases hf.2
+        · exact HeapObservations.SafePostExc.weaken (fun _ _ _ f hf => nomatch hf) (fun _ h => h) (trivial_run hs)
+      · exact HeapObservations.SafePostExc.weaken (fun _ _ _ f hf => nomatch hf) (fun _ h => h) (trivial_run hs)
+    all_goals exact noFields_run (fun f hf => by simp [fieldOut, constTerm] at hf) hs
+  all_goals first
+    | (simp only [instantiate] at hs ⊢; exact value_run rfl (fun f _ => fieldFresh_of_fields rfl) hs)
+    | exact noFields_run (fun f hf => by simp [fieldOut, constTerm] at hf) hs
+
+/-- **A node passing the field check meets its fresh-field obligation.** -/
+theorem fieldsCheck_sound [DecidableEq ι] {G : NormalGraph ι} {names : List String} {F : List Nat}
+    {Fs : List (Nat × String)} {c : NodeEvidence ι} {t : Tm}
+    (hk : fieldsKept G (entry c) Fs = true)
+    (hscope : ProgramCertificates.checkScope (entry c).length t = true) (ht : ExpressionOk G c t) :
+    FieldsWithin G c t F Fs (fieldOut names F Fs t) := by
+  intro n W h ρ b _ hF hFs he hi hkn hw hh
+  have hs := HeapObservations.erase (HeapObservations.consequence
+    (fun _ _ _ hu => hu.1) (fun _ _ h => h) (ht n W h ρ he hi hkn hw hh))
+  have hkeep := fieldsHold_frame hk he hh hFs (trivial_run hs)
+  have hout := fieldOut_sound (names := names) hscope hF hFs he hs
+  have hboth := HeapObservations.SafePostExc.cross_upto n (fun _ _ _ _ _ _ _ _ hu _ => hu) W W h _ hh hh
+    hkeep hout
+  exact HeapObservations.SafePostExc.weaken (fun _ _ hq => ⟨hq.1.2, hq.2⟩) (fun _ hq => hq.1.2) hboth
+
 /-- A copy's origins: every region its slot holds. The node check verifies
 the slot and scope. -/
 def copyOrigins (facts : List ArgumentPathTracking.Fact) (t : Tm) : List ArgumentStoreRegion :=
@@ -481,9 +585,10 @@ def copyOrigins (facts : List ArgumentPathTracking.Fact) (t : Tm) : List Argumen
 theorem checkCopy_sound [DecidableEq ι] {G : NormalGraph ι} {Φ : Footprints.Closed}
     {regions : List ArgumentStoreRegion} {facts : List ArgumentPathTracking.Fact}
     {c : NodeEvidence ι} {t : Tm} {rs : List ArgumentStoreRegion} {thr : Bool} {F : List Nat}
+    {Fs : List (Nat × String)}
     (hc : checkCopy c facts t rs = true) (ht : ExpressionOk G c t) :
-    NodeWithin G Φ regions c t facts F rs thr := by
-  intro n W h ρ initial input hb hf _ he hi hk hw hh _
+    NodeWithin G Φ regions c t facts F Fs rs thr := by
+  intro n W h ρ initial input hb hf _ _ he hi hk hw hh _
   cases t <;> simp only [checkCopy, Bool.false_eq_true] at hc
   rename_i i
   simp only [Bool.and_eq_true, decide_eq_true_eq, List.all_eq_true, List.contains_iff_mem] at hc
@@ -548,9 +653,10 @@ region `(x, [f])`'s entry value. -/
 theorem checkRead_sound [DecidableEq ι] {G : NormalGraph ι} {Φ : Footprints.Closed}
     {regions : List ArgumentStoreRegion} {facts : List ArgumentPathTracking.Fact}
     {c : NodeEvidence ι} {t : Tm} {rs : List ArgumentStoreRegion} {thr : Bool} {F : List Nat}
+    {Fs : List (Nat × String)}
     (hc : checkRead G c regions facts t rs = true) (ht : ExpressionOk G c t) :
-    NodeWithin G Φ regions c t facts F rs thr := by
-  intro n W h ρ initial input hb hf _ he hi hk hw hh hst
+    NodeWithin G Φ regions c t facts F Fs rs thr := by
+  intro n W h ρ initial input hb hf _ _ he hi hk hw hh hst
   unfold checkRead at hc
   split at hc
   · rename_i f i
@@ -606,8 +712,14 @@ theorem checkRead_sound [DecidableEq ι] {G : NormalGraph ι} {Φ : Footprints.C
   let facts := ArgumentPathTracking.atLabel table l
   let F := factsAt ft.values l
   let C := factsAt ft.cells l
+  let Fs := fieldsAt ft.fields l
   let origins := nodeOrigins regions facts node.expression
   let thr := node.handler.isSome || exc
+  fieldsKept G (entry c) Fs &&
+    edgesFields ft.fields Fs (fieldOut ft.names F Fs node.expression) node.continuation &&
+    (match node.handler with
+      | some target => handlerFields ft.fields Fs target
+      | none => true) &&
   ArgumentPathTracking.checkEdges table facts origins node.continuation &&
     ArgumentPathTracking.checkHandler table facts node.handler &&
     checkFresh G images sums Φ F C c node.expression node.handler.isSome &&
@@ -618,7 +730,7 @@ theorem checkRead_sound [DecidableEq ι] {G : NormalGraph ι} {Φ : Footprints.C
       | none => true) &&
     match origins with
     | _ :: _ => checkCopy c facts node.expression origins || checkRead G c regions facts node.expression origins
-    | [] => (stepEffects G images sums Φ c node.expression thr).any fun se => stepWithin Φ regions facts F se thr
+    | [] => (stepEffects G images sums Φ c node.expression thr).any fun se => stepWithin Φ regions facts F Fs se thr
 
 /-- The first node failing the same check used for certification. Its label
 can be mapped through a source map by the declaration diagnostic. Shape and
@@ -682,12 +794,17 @@ theorem checkNodes_sound [DecidableEq ι] {G : NormalGraph ι}
   obtain ⟨actual, ha, ht, -⟩ := graph_node hg hcodes hsums hcert
   cases hn.symm.trans ha
   simp only [checkNode, Bool.and_eq_true] at hp
-  obtain ⟨⟨⟨⟨⟨⟨hedge, hhandler⟩, hfresh⟩, hef⟩, hec⟩, hhf⟩, hp⟩ := hp
-  refine ⟨nodeOrigins regions (ArgumentPathTracking.atLabel table l) node.expression, _, _, ?_, hedge, hhandler,
-    checkFresh_sound hfresh ht hsums, hef, hec, fun target htarget => ?_⟩
+  obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨hkeep, hefl⟩, hhfl⟩, hedge⟩, hhandler⟩, hfresh⟩, hef⟩, hec⟩, hhf⟩, hp⟩ := hp
+  have hscope : ProgramCertificates.checkScope (entry c).length node.expression = true := by
+    have h0 := hfresh
+    simp only [checkFresh, Bool.and_eq_true] at h0
+    exact h0.1
+  refine ⟨nodeOrigins regions (ArgumentPathTracking.atLabel table l) node.expression, _, _, _, ?_, hedge, hhandler,
+    checkFresh_sound hfresh ht hsums, hef, hec, fieldsCheck_sound hkeep hscope ht, hefl, fun target htarget => ?_⟩
   rotate_right
-  · rw [htarget] at hhf
-    simpa only [Bool.and_eq_true] using hhf
+  · rw [htarget] at hhf hhfl
+    simp only [Bool.and_eq_true] at hhf
+    exact ⟨hhf.1, hhf.2, hhfl⟩
   cases ho : nodeOrigins regions (ArgumentPathTracking.atLabel table l) node.expression with
   | cons r rs =>
     simp only [ho, Bool.or_eq_true] at hp ⊢
@@ -710,6 +827,7 @@ theorem checkNodes_sound [DecidableEq ι] {G : NormalGraph ι}
     G images Rty P C start inputs codes &&
     ArgumentPathTracking.checkEntry (ArgumentPathTracking.atLabel table start) &&
     ((factsAt ft.values start).isEmpty && (factsAt ft.cells start).isEmpty) &&
+    (fieldsAt ft.fields start).isEmpty &&
     ArgumentPathTracking.checkEntryFields G inputs regions &&
     checkNodes G images sums Φ regions table ft exc P C
 
@@ -748,10 +866,10 @@ theorem checkEntry_sound [DecidableEq ι] {G : NormalGraph ι}
       (fun h' => exc = true → ArgumentStoreRegionsWithin Φ regions (envOf L d) h h')
       n W h (.goto E K start L d) := by
   simp only [checkEntry, Bool.and_eq_true] at hc
-  have hg := hc.1.1.1.1
+  have hg := hc.1.1.1.1.1
   simp only [checkEntryUsing_eq, Bool.and_eq_true] at hg
-  exact goto_bounded hc.1.1.1.1 hcodes hsums
-    (checkNodes_sound hg.1 hcodes hsums hc.2) hc.1.1.1.2 (by simpa only [Bool.and_eq_true] using hc.1.1.2) hc.1.2
-    n W h L d he hw hh hsep hidx
+  exact goto_bounded hc.1.1.1.1.1 hcodes hsums
+    (checkNodes_sound hg.1 hcodes hsums hc.2) hc.1.1.1.1.2 (by simpa only [Bool.and_eq_true] using hc.1.1.1.2)
+    hc.1.1.2 hc.1.2 n W h L d he hw hh hsep hidx
 
 end Verification.GraphCode.ArgumentRegionGraph

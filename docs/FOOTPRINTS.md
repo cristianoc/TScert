@@ -455,6 +455,60 @@ certificate accepts runs no regional traversal. A record the body receives
 holds no fresh fact, so a region on its field is no store the body
 allocated (`invalid-stated-fresh-parameter`, run under Node).
 
+**Fresh fields.** A regional body tracks a third list at each node, pairs
+$`(s, f)`$ of a slot and a field name, of the names the regions of the
+body's calls read through one field
+([ArgumentRegionFresh.lean](../lean/Verification/Programs/ArgumentRegionFresh.lean)):
+
+```math
+\mathrm{FieldFresh}_b(h,v,f) \iff \forall u.\ \mathrm{readPath}(h,v,[f]) = u \Rightarrow \forall s.\ \mathrm{store}(u)=s \Rightarrow b\le s
+```
+
+A value with no field $`f`$, `null` and `undefined` included, meets it. A
+node's value has a fresh field, and a node keeps a pair, by these rules,
+with $`i \in F`$, $`(j,f)`$ a pair of the node's entry and $`\Gamma`$ its
+slot types:
+
+```math
+\frac{}{x_j\ \text{fresh at}\ f}
+\quad
+\frac{k\ \text{a constant}}{k\ \text{fresh at}\ f}
+\quad
+\frac{\mathit{ns}\ \text{distinct}\qquad \mathit{ns}_m=f\qquad \bar x_m = x_i}
+     {\mathsf{new}\{\mathit{ns}:\bar x\}\ \text{fresh at}\ f}
+\quad
+\frac{\Gamma(j)\ \text{states}\ f\ \mathtt{@stable}\ \text{or is}\ \mathtt{null}\ \text{or}\ \mathtt{undefined}}
+     {t\ \text{keeps}\ (j,f)}
+```
+
+A stable field's location has a stable contract in the world, which every
+heap a run reaches keeps, its throws included, and a store's location is
+part of the value the field holds (proved: `fieldAlloc_fresh`,
+`fieldsHold_frame` from `stableLocations_exc`, `fieldOut_sound`,
+`fieldsCheck_sound`). The facts along edges and handlers follow the slot
+maps as the other two lists' do (`edgesFields_holds`,
+`handlerFields_holds`); the entry has none. The rebasing maps a step's
+region at a path of one field to no region where the step position's slot
+has that field fresh:
+
+```math
+\frac{(s,f)\ \text{fresh at the step}}{\mathrm{rebase}(\mathsf{path}\ s\ [f]\ \mathsf{store}) = \varnothing}
+```
+
+(proved: `RebaseOk.fresh_path`, `rebase_sound`). Lean infers the pairs after
+the values and cells, apart from them (`freshTables`, untrusted; without a
+fixed point, none), and checks every node and edge (`checkNodes`). A body
+that allocates a record holding an array it allocates and passes it to a
+callee stating a region on that field changes no store of its entry heap
+through the call (`stated-fresh-field`, `stated-fresh-field-local`,
+`stated-fresh-field-nullable`, where the slot is the record or `null`;
+`stated-fresh-field-escape`, `stated-fresh-field-alias`,
+`stated-fresh-field-throw`). A fresh record holding the caller's array, a
+join with such a record, and a field that is not `@stable` reassigned the
+caller's array give no fact (`invalid-stated-fresh-old-array`,
+`invalid-stated-fresh-join`, `invalid-stated-fresh-reassigned`, each run
+under Node).
+
 `pop`, `shift`, `reverse` and `splice` change only their receiver's store and element
 contents, and `filter`, `map`, `flatMap`, `flat`, `slice`, `splice` and `split` allocate their
 result's store (audited: [native footprints](SOURCE-CONTRACTS.md#native-footprints)).
