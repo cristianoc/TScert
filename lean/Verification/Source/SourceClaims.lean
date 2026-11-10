@@ -29,6 +29,12 @@ read, the term bounding its indices, and its body's facts `Σ c·x ≤ d`. -/
 abbrev EveryClaim := (String × List String) × (String × List String × HeapKnowledge.Term.Kind) ×
   List BodyClaim
 
+/-- A proposed store separation: its guards, each a value binding's name, a
+path and a tag (ARITHMETIC.md, "Guarded clauses"), then two pairs of a value
+binding's name and a path. -/
+abbrev StoresApartClaim := List (String × List String × HeapKnowledge.GuardTag) ×
+  (String × List String) × (String × List String)
+
 /-- A clause proposed at an entry: a guarded linear fact or a disjunction. -/
 inductive ClauseClaim where
   | linear (guards : List (String × List String × HeapKnowledge.GuardTag))
@@ -55,10 +61,9 @@ structure PointData (ι : Type) where
   /-- At a statement entry, the region facts the producer proposes: pairs of
   value bindings' names (FOOTPRINTS.md, "Element regions"). -/
   entryApart : List (Nat × List (String × String)) := []
-  /-- At a statement entry, the store separations the producer proposes:
-  pairs of a value binding's name and a path (ARITHMETIC.md, "Store
-  separation"). -/
-  entryStoresApart : List (Nat × List ((String × List String) × (String × List String))) := []
+  /-- At a statement entry, the store separations the producer proposes,
+  each guarded (ARITHMETIC.md, "Store separation"). -/
+  entryStoresApart : List (Nat × List StoresApartClaim) := []
 
 /-- Replacement claims for the sites a closure signature owns. Absence of a
 current-content assertion replaces that assertion too. -/
@@ -102,7 +107,7 @@ structure Function (ι : Type) where
   entryFacts : List (Nat × List ClauseClaim) := []
   entryEvery : List (Nat × List EveryClaim) := []
   entryApart : List (Nat × List (String × String)) := []
-  entryStoresApart : List (Nat × List ((String × List String) × (String × List String))) := []
+  entryStoresApart : List (Nat × List StoresApartClaim) := []
   /-- The source closure's interior obligations, one per claimed signature. -/
   arrowClaims : List (Span × List (Overlay ι)) := []
   /-- The complete point table survives selection and nested closure checking. -/

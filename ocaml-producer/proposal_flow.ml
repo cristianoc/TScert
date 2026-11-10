@@ -246,7 +246,13 @@ let statements callbacks flow_graph register_following owner_span env0 ss =
              let name p = List.nth_opt names p in
              let linear = Linear_facts.of_index_facts name facts in
              let every = List.filter_map (Linear_facts.of_every_fact name) facts in
-             Linear_facts.eadd (Linear_facts.add env (Linear_facts.facts env @ linear)) (Linear_facts.efacts env @ every)
+             let stores = List.filter_map (fun (fact : Semantic.index_fact) -> match fact with
+               | Store_apart (x,p,y,q) -> (match name x, name y with Some a, Some b -> Some (None,((a,p),(b,q))) | _ -> None)
+               | Guarded (z,[],tag,Store_apart (x,p,y,q)) -> (match name z, name x, name y with
+                 | Some g, Some a, Some b -> Some (Some (g,tag),((a,p),(b,q))) | _ -> None)
+               | _ -> None) facts in
+             Linear_facts.sadd (Linear_facts.eadd (Linear_facts.add env (Linear_facts.facts env @ linear)) (Linear_facts.efacts env @ every))
+               (Linear_facts.sfacts env @ stores)
            | _ -> env)
         | _ -> env in
       callbacks.entry env node.source;

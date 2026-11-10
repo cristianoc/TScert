@@ -265,25 +265,30 @@ let rapart (rs : rfact list) x y = List.mem (x,y) rs || List.mem (y,x) rs
 
 (* A store separation (Lean's `IndexFact.storeApart`; ARITHMETIC.md, "Store
    separation"): the arrays two paths read from value bindings hold
-   different stores. Held as a pseudo-binding whose name, after `\003S`,
-   names both sides, each a binding and its fields; the sides in order. *)
-type sfact = (string * string list) * (string * string list)
-let sfact_norm ((a,b) : sfact) : sfact = if compare a b <= 0 then (a,b) else (b,a)
-let sfact_key ((a,b) : sfact) =
+   different stores; with a guard `(g,tag)`, where the binding `g` holds no
+   value of the tag (Lean's `IndexFact.guarded g [] tag`, "Guarded
+   clauses"). Held as a pseudo-binding whose name, after `\003S`, names the
+   guard and both sides, each a binding and its fields; the sides in order. *)
+type sfact = (string * string) option * ((string * string list) * (string * string list))
+let sfact_norm ((g,(a,b)) : sfact) : sfact = if compare a b <= 0 then (g,(a,b)) else (g,(b,a))
+let sfact_key ((g,(a,b)) : sfact) =
   let side (x,p) = String.concat "\005" (x :: p) in
-  "\003S" ^ side a ^ "\007" ^ side b
+  let guard = match g with Some (x,tag) -> x ^ "\005" ^ tag | None -> "" in
+  "\003S" ^ guard ^ "\007" ^ side a ^ "\007" ^ side b
 let sfact_parts n : sfact option =
   if String.length n < 2 || String.sub n 0 2 <> "\003S" then None else
   let side s = match String.split_on_char '\005' s with x :: p -> Some (x,p) | [] -> None in
   match String.split_on_char '\007' (String.sub n 2 (String.length n - 2)) with
-  | [a; b] -> (match side a, side b with Some a, Some b -> Some (a,b) | _ -> None)
+  | [g; a; b] ->
+    let guard = match String.split_on_char '\005' g with [x; tag] -> Some (Some (x,tag)) | [""] -> Some None | _ -> None in
+    (match guard, side a, side b with Some g, Some a, Some b -> Some (g,(a,b)) | _ -> None)
   | _ -> None
 let is_sfact n = sfact_parts n <> None
 let sfacts env : sfact list = List.filter_map (fun (n,_) -> sfact_parts n) env
 let sadd env (ss : sfact list) =
   List.filter (fun (n,_) -> not (is_sfact n)) env @
     List.map (fun r -> sfact_key r, Value Semantic.top) (List.sort_uniq compare (List.map sfact_norm ss))
-let sbindings (((x,_),(y,_)) : sfact) = [x; y]
+let sbindings ((g,((x,_),(y,_))) : sfact) = (match g with Some (z,_) -> [z] | None -> []) @ [x; y]
 
 let add env (fs : fact list) =
   let fs = tighten fs in
@@ -1289,7 +1294,9 @@ let call_regions : ((string * Environment.binding) list -> string -> ((int * str
    (`regionGrown`, the second component): a value binding separated from the
    store each region selects at the call, by a region fact with the actual
    of a region's own store, or by a store separation with the region's path
-   at the actual. *)
+   at the actual, unguarded or guarded by the actual's own value (`a ===
+   null || y !== a.q`: where `a` holds the tag's value, no object, the
+   region selects no location). *)
 let regional_sep ?(regions=[]) ?(stores=[]) env f (args : expr list) : ((string -> bool) * bool) option =
   match !call_regions env f with
   | Some (rs,closed) when rs <> [] &&
@@ -1298,7 +1305,9 @@ let regional_sep ?(regions=[]) ?(stores=[]) env f (args : expr list) : ((string 
     let stores = List.map sfact_norm stores in
     Some ((fun y -> slot_binding env y && List.for_all (fun (p,q) ->
       match List.nth_opt args (p - 1) with
-      | Some {node=Id a;_} -> (q = [] && rapart regions a y) || List.mem (sfact_norm ((a,q),(y,[]))) stores
+      | Some {node=Id a;_} -> (q = [] && rapart regions a y) ||
+        List.exists (fun (g,sides) -> (g = None || Option.map fst g = Some a) &&
+          sfact_norm (None,sides) = sfact_norm (None,((a,q),(y,[])))) stores
       | _ -> false) rs), closed.Semantic.on_store = Semantic.Grow)
   | _ -> None
 (* `f`'s result with each call of a function stating store regions, at
@@ -2174,8 +2183,9 @@ let of_every_fact (name : int -> string option) (fact : Semantic.index_fact) : e
    apart from every older array binding `visible` names, one Lean's scope
    holds (`region-alloc`). *)
 (* Whether every type the binding's type states for a field states it
-   `@stable` (Lean's `HeapExpressionRules.stableFirst`): every step keeps the
-   field's location. Set by the statement analysis, which reads the type. *)
+   `@stable`, its other arms `null` or `undefined` (Lean's
+   `HeapExpressionRules.stableFirst`): every step keeps the field's
+   location. Set by the statement analysis, which reads the type. *)
 let stable_field : ((string * Environment.binding) list -> string -> string -> bool) ref = ref (fun _ _ _ -> false)
 
 (* Whether every step of an expression that writes the heap keeps the
@@ -2222,8 +2232,8 @@ let skept env (s : stmt) : sfact -> bool =
     | [] -> true
     | [f] -> slot_binding env x && !stable_field env x f
     | _ -> false in
-  fun (((_,p),(_,q)) as f) -> not (List.exists (fun x -> List.mem x assigned) (sbindings f)) &&
-    ((p = [] && q = []) || (side (fst f) && side (snd f) && Lazy.force stable))
+  fun ((_,(((_,p),(_,q)) as sides)) as f) -> not (List.exists (fun x -> List.mem x assigned) (sbindings f)) &&
+    ((p = [] && q = []) || (side (fst sides) && side (snd sides) && Lazy.force stable))
 
 (* The store separations a statement keeps (Lean's `IndexFact.keptBy`):
    each across a statement writing no heap; the others where `skept` keeps
@@ -2240,8 +2250,28 @@ let sstatement ?(array = fun _ _ -> false) ?(visible = fun _ -> true) env (ss : 
         | Alloc fields -> List.concat_map (fun (key,(v:expr)) -> match key, v.node with
             | Semantic.Name f, ArrayLiteral (_,[]) -> List.filter_map (fun (m,_) ->
                 if m <> n && visible m && not (is_fact m) && not (is_bound m) && not (is_field m) && slot_binding env m && array m []
-                then Some ((n,[f]),(m,[])) else None) env
+                then Some (None,((n,[f]),(m,[]))) else None) env
             | _ -> []) fields
+        (* `c ? b : null` (either way round, `undefined` alike) of a
+           binding `b`, `c` writing no heap: `n` holds `b`'s value or the
+           literal's, so each unguarded separation of `b` holds of `n`
+           guarded by the literal's tag (`guard-introduce` at the merge of
+           the two arms). *)
+        | Conditional (c,a,b) when heap_free env c ->
+          let nullish (e : expr) = match e.node with
+            | Literal LNull -> Some "null" | Literal LUndefined | Id "undefined" -> Some "undefined" | _ -> None in
+          let arm = match a.node, b.node with
+            | Id x, _ when nullish b <> None -> Option.map (fun tag -> x,tag) (nullish b)
+            | _, Id x when nullish a <> None -> Option.map (fun tag -> x,tag) (nullish a)
+            | _ -> None in
+          (match arm with
+           | Some (x,tag) when x <> n && slot_binding env x ->
+             List.filter_map (fun ((g,(l,r)) : sfact) ->
+               if g <> None then None
+               else if fst l = x && fst r <> x then Some (Some (n,tag),((n,snd l),r))
+               else if fst r = x && fst l <> x then Some (Some (n,tag),(l,(n,snd r)))
+               else None) ss
+           | _ -> [])
         | _ -> []) bindings
     | _ -> [] in
   fresh @ if statement_heap_free env s then ss else List.filter (skept env s) ss

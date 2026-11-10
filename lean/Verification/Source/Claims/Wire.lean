@@ -232,11 +232,13 @@ structure Apart where
   name : String
   other : String
   deriving ToJson, FromJson
-/-- A store separation the producer proposes at a statement entry: the
+/-- A store separation the producer proposes at a statement entry: where
+none of its guards, in order, reads its tag's value ("Guarded clauses"), the
 arrays the paths `path` and `otherPath` read from what the value bindings
 `name` and `other` hold have different stores (ARITHMETIC.md, "Store
 separation"). -/
 structure StoresApart where
+  guards : List FactGuard
   name : String
   path : List String
   other : String
@@ -378,7 +380,8 @@ private def pointData (entries : List (Entry ι)) (expressions : List (Expressio
     entryEvery := entries.map (fun e => (e.start,e.quantified.map fun q =>
       ((q.name, q.path), (q.stop.name, q.stop.path, q.stop.term), q.body.map BodyFact.claim)))
     entryApart := entries.map (fun e => (e.start, e.apart.map fun r => (r.name, r.other)))
-    entryStoresApart := entries.map (fun e => (e.start, e.storesApart.map fun r => ((r.name, r.path), (r.other, r.otherPath))))
+    entryStoresApart := entries.map (fun e => (e.start, e.storesApart.map fun r =>
+      (r.guards.map fun g => (g.name, g.path, g.tag), (r.name, r.path), (r.other, r.otherPath))))
     -- An expression's assertion is of one field each (`validCurrent`).
     exprCurrent := expressions.filterMap (fun e => e.current.map fun fs =>
       (e.pos, fs.filterMap fun (p, A) => match p with | [k] => some (k, A) | _ => none)) }

@@ -1271,11 +1271,34 @@ theorem viewFields_frame [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι
           simp only [viewLengthOf, hlv, h0, h1]
       · cases hvw
 
+/-- Whether some clause of `A` states `fld` stable and every other is `null`
+or `undefined`, which owns no field: a value of `A` that is an object owns
+`fld` stably. -/
+def stableFieldPresent (G : NormalGraph ι) (A : Ty ι) (fld : PropKey) : Bool :=
+  G.plainTy A && (expand G A).any (fun c => c.stableKeys.contains fld) &&
+    (expand G A).all fun c => c.stableKeys.contains fld || c matches .nul || c matches .undef
+
+theorem stableFieldPresent_at {G : NormalGraph ι} {A : Ty ι} {fld : PropKey} {n W v}
+    (hs : stableFieldPresent G A fld = true) (hv : meaning G A n W v) :
+    v = .nul ∨ v = .undef ∨ ∃ (flds : List (PropKey × Nat)) (oid : Nat),
+      v = .objAt flds .absent oid ∧ StableAt W flds fld := by
+  simp only [stableFieldPresent, Bool.and_eq_true, List.all_eq_true] at hs
+  obtain ⟨⟨hplain, -⟩, hall⟩ := hs
+  obtain ⟨c, hc, hsem, -⟩ := (expand_sem G A hplain n W v).mp hv
+  have hk := hall c hc
+  cases c <;> simp only [Bool.or_eq_true, Bool.or_false] at hk
+  all_goals first
+    | exact .inl hsem
+    | exact .inr (.inl hsem)
+    | exact .inr (.inr (semWithArgs_stable hsem (List.contains_iff_mem.mp hk)))
+    | simp [Clause.stableKeys] at hk
+
 /-- The slots and fields of a context whose field's location a step keeps:
-each clause of the slot's type states the field stable (`stableField`). -/
+each clause of the slot's type states the field stable, or is `null` or
+`undefined` (`stableFieldPresent`). -/
 def stableFirst (G : NormalGraph ι) (Γ : List (Ty ι)) (s : Nat) (g : String) : Bool :=
   match Γ[s]? with
-  | some A => stableField G A (.str g)
+  | some A => stableFieldPresent G A (.str g)
   | none => false
 
 /-- A stable field's location holds its value in every heap a normal
@@ -1304,7 +1327,9 @@ theorem stableFirst_frame [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty �
       unfold stableFirst at hsf
       split at hsf
       · rename_i A hA
-        obtain ⟨flds, oid, hv0, hst⟩ := stableField_at hsf (he.2 s A hA)
+        obtain hv0 | hv0 | ⟨flds, oid, hv0, hst⟩ := stableFieldPresent_at hsf (he.2 s A hA)
+        · rw [hs0] at hv0; cases hv0
+        · rw [hs0] at hv0; cases hv0
         rw [hs0] at hv0; cases hv0
         obtain ⟨c, u, hlk, hcs⟩ := hst.present hl0
         have h0 := hh.stable_value (Nat.zero_lt_succ (m + 1)) hlk hcs
@@ -1539,7 +1564,9 @@ theorem write_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImag
             unfold stableFirst at hsf
             split at hsf
             · rename_i A hA
-              obtain ⟨flds0, oid0, hv0, hst⟩ := stableField_at hsf (he.2 s A hA)
+              obtain hv0 | hv0 | ⟨flds0, oid0, hv0, hst⟩ := stableFieldPresent_at hsf (he.2 s A hA)
+              · rw [hs0] at hv0; cases hv0
+              · rw [hs0] at hv0; cases hv0
               rw [hs0] at hv0; cases hv0
               obtain ⟨c0, u0, hlk, hcs⟩ := hst.present hl0
               have h0 := hh.stable_value (Nat.zero_lt_succ (m + 1)) hlk hcs

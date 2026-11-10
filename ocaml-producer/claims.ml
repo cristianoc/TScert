@@ -668,11 +668,15 @@ let encode (proposal : Proposal_types.t) =
     | Some (x,y) -> Some (Object ["name",String x;"other",String y])
     | None -> None) bs) in
   (* A store separation (`Linear_facts.sfact_key`, ARITHMETIC.md, "Store
-     separation"): two bindings' paths whose arrays hold different stores. *)
+     separation"): two bindings' paths whose arrays hold different stores,
+     with its guard, a binding's value and a tag ("Guarded clauses"). *)
   let stores_apart bs = Array (List.filter_map (fun (n,_) -> match Linear_facts.sfact_parts n with
-    | Some ((x,p),(y,q)) ->
+    | Some (g,((x,p),(y,q))) ->
       let fields p = Array (List.map (fun f -> String f) p) in
-      Some (Object ["name",String x;"path",fields p;"other",String y;"otherPath",fields q])
+      let guards = match g with
+        | Some (z,tag) -> [Object ["name",String z;"path",Array [];"tag",String tag]]
+        | None -> [] in
+      Some (Object ["guards",Array guards;"name",String x;"path",fields p;"other",String y;"otherPath",fields q])
     | None -> None) bs) in
   let contracts row = Array (List.map (fun (c : Proposal_types.contract) ->
     Object ["pos",c.pos;"name",String c.name;"type",claim_type c.type_]) row) in

@@ -1932,11 +1932,22 @@ theorem actualSlot_sound {t : Tm} {p j : Nat} (h : actualSlot t p = some j) (ρ 
       rw [List.getD_eq_getElem?_getD, instantiateArgs_eq_map, List.getElem?_map, ha]
       simp [instantiate]
 
+/-- A store separation (`!==`) between the path `path` at the slot `a` and
+the slot `s`'s own store, either way round, each slot read through its
+aliases. -/
+def storeApartAt (k : HeapKnowledge.Knowledge) (a s : Nat) (path : List String) : HeapKnowledge.IndexFact → Bool
+  | .storeApart x p y q =>
+    (HeapLinks.aliases k.links a).contains x && p == path && (HeapLinks.aliases k.links s).contains y && q.isEmpty ||
+      (HeapLinks.aliases k.links a).contains y && q == path && (HeapLinks.aliases k.links s).contains x && p.isEmpty
+  | _ => false
+
 /-- A slot's store lies outside a region of the call, by checked separation
 from the store the region selects at the call's entry: a region fact between
 what the region reads and the slot (for a position's own store, or through a
 read link `f`), or a store separation (`!==`) between the region's path at
-the actual's slot and the slot. -/
+the actual's slot and the slot, or that separation guarded by the actual's
+own value (`a === null || …`): where the actual is the guard's tag, no object,
+the region selects no location. -/
 def regionSep (k : HeapKnowledge.Knowledge) (t : Tm) (s : Nat) (r : Footprints.ArgumentStoreRegion) : Bool :=
   (match actualSlot t r.position, r.path with
   | some a, [] => IndexWrites.apartFrom k a s
@@ -1945,10 +1956,8 @@ def regionSep (k : HeapKnowledge.Knowledge) (t : Tm) (s : Nat) (r : Footprints.A
   | _, _ => false) ||
   match actualSlot t r.position with
   | some a => k.indices.any fun atom => atom.cond.isNone && match atom.fact with
-    | .storeApart x p y q =>
-      (HeapLinks.aliases k.links a).contains x && p == r.path && (HeapLinks.aliases k.links s).contains y && q.isEmpty ||
-        (HeapLinks.aliases k.links a).contains y && q == r.path && (HeapLinks.aliases k.links s).contains x && p.isEmpty
-    | _ => false
+    | .guarded g [] _ B => (HeapLinks.aliases k.links a).contains g && storeApartAt k a s r.path B
+    | F => storeApartAt k a s r.path F
   | none => false
 
 /-- Whether an unconditional atom reads the length of a slot of `s`'s class:
@@ -1988,6 +1997,31 @@ def regionFirst (k : HeapKnowledge.Knowledge) (eff : Effect) (t : Tm) : Nat → 
   fun s g => g == "[]" && eff.closed.store.onStore == .keep && !eff.regions.isEmpty &&
     eff.regions.all (regionSep k t s) && storeHeld k s
 
+/-- A store separation `storeApartAt` names holds where the path's store is
+the slot's: never. -/
+private theorem storeApartAt_out {k : HeapKnowledge.Knowledge} {a s : Nat} {path : List String}
+    {F : HeapKnowledge.IndexFact} {ρ : Env} {h : Heap} {l : Nat}
+    (al : ∀ {i j}, (HeapLinks.aliases k.links i).contains j = true → ρ j = ρ i)
+    (hm : storeApartAt k a s path F = true) (hF : F.HoldsAt ρ h)
+    (heq : (HeapKnowledge.readPath h (ρ a) path).bind Footprints.storeOf = some l)
+    (hl : Footprints.storeOf (ρ s) = some l) : False := by
+  obtain ⟨u, hu, hus⟩ := Option.bind_eq_some_iff.mp heq
+  cases F <;> simp only [storeApartAt, Bool.false_eq_true] at hm
+  rename_i x p y q
+  obtain ⟨u', w', hu', hw', hne⟩ := hF
+  simp only [Bool.or_eq_true, Bool.and_eq_true, beq_iff_eq, List.isEmpty_iff] at hm
+  rcases hm with ⟨⟨⟨hx, rfl⟩, hy⟩, rfl⟩ | ⟨⟨⟨hy, rfl⟩, hx⟩, rfl⟩
+  · rw [al hx] at hu'
+    rw [hu] at hu'; cases hu'
+    simp only [HeapKnowledge.readPath, Option.some.injEq] at hw'
+    rw [al hy] at hw'; subst hw'
+    exact hne l l hus hl rfl
+  · rw [al hy] at hw'
+    rw [hu] at hw'; cases hw'
+    simp only [HeapKnowledge.readPath, Option.some.injEq] at hu'
+    rw [al hx] at hu'; subst hu'
+    exact hne l l hl hus rfl
+
 /-- What a region selects at the call's entry, where it is separated from a
 slot, is not the slot's store location. -/
 private theorem regionSep_out {k : HeapKnowledge.Knowledge} {t : Tm} {s : Nat}
@@ -2022,7 +2056,7 @@ private theorem regionSep_out {k : HeapKnowledge.Knowledge} {t : Tm} {s : Nat}
     obtain ⟨b, hap, hres⟩ := hres
     rw [hres] at heq
     exact HeapKnowledge.regionsApart_stores hap l l heq hl rfl
-  · -- a store separation
+  · -- a store separation, possibly guarded by the actual's value
     split at hr
     · rename_i a ha
       obtain ⟨atom, hat, hm⟩ := List.any_eq_true.mp hr
@@ -2034,26 +2068,25 @@ private theorem regionSep_out {k : HeapKnowledge.Knowledge} {t : Tm} {s : Nat}
           (HeapKnowledge.readPath h (ρ a) r.path).bind Footprints.storeOf := by
         simp [Footprints.ArgumentStoreRegion.resolve, actualSlot_sound ha ρ]
       rw [hres] at heq
-      obtain ⟨u, hu, hus⟩ := Option.bind_eq_some_iff.mp heq
+      have al : ∀ {i j}, (HeapLinks.aliases k.links i).contains j = true → ρ j = ρ i :=
+        fun hc => HeapLinks.aliases_eq hk.2.2.1 (List.contains_iff_mem.mp hc)
       split at hm
-      · rename_i x p y q hfa
+      · rename_i g tag B hfa
         rw [hfa] at hF
-        obtain ⟨u', w', hu', hw', hne⟩ := hF
-        have al : ∀ {i j}, (HeapLinks.aliases k.links i).contains j = true → ρ j = ρ i :=
-          fun hc => HeapLinks.aliases_eq hk.2.2.1 (List.contains_iff_mem.mp hc)
-        simp only [Bool.or_eq_true, Bool.and_eq_true, beq_iff_eq, List.isEmpty_iff] at hm
-        rcases hm with ⟨⟨⟨hx, rfl⟩, hy⟩, rfl⟩ | ⟨⟨⟨hy, rfl⟩, hx⟩, rfl⟩
-        · rw [al hx] at hu'
-          rw [hu] at hu'; cases hu'
-          simp only [HeapKnowledge.readPath, Option.some.injEq] at hw'
-          rw [al hy] at hw'; subst hw'
-          exact hne l l hus hl rfl
-        · rw [al hy] at hw'
-          rw [hu] at hw'; cases hw'
-          simp only [HeapKnowledge.readPath, Option.some.injEq] at hu'
-          rw [al hx] at hu'; subst hu'
-          exact hne l l hl hus rfl
-      · cases hm
+        simp only [Bool.and_eq_true] at hm
+        obtain ⟨hg, hm⟩ := hm
+        obtain ⟨v, hv, hB⟩ := hF
+        simp only [HeapKnowledge.readGuard, Option.some.injEq] at hv
+        rcases hB with hB | hB
+        · -- the actual is the tag's value, no object: the region selects nothing
+          have hρ : ρ a = tag.val := by rw [← al hg, hv, hB]
+          rw [hρ] at heq
+          cases tag <;> cases hp : r.path <;> rw [hp] at heq <;>
+            simp [HeapKnowledge.GuardTag.val, HeapKnowledge.readPath, Footprints.storeOf,
+              Footprints.fieldsOf] at heq
+        · exact storeApartAt_out al hm hB heq hl
+      · rename_i F _
+        exact storeApartAt_out al hm hF heq hl
     · cases hr
 
 theorem regionFirst_kept {k : HeapKnowledge.Knowledge} {eff : Effect} {t : Tm} {ρ : Env} {h h' : Heap}
