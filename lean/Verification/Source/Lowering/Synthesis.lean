@@ -51,6 +51,12 @@ structure Walk where
   /-- The type expected of a value, by the value's span: a declaration's,
   an assignment's or a return's. -/
   hints : List (Span × Ty Tree) := []
+  /-- Whether the function literal being walked may change the heap: a write,
+  an assignment of a binding it does not declare, or a call whose instance
+  states another footprint than keeping both values and stores; and the
+  bindings it declares. -/
+  writes : Bool := false
+  locals : List String := []
   exprs : Std.HashMap Span (String × Except String (Ty Tree)) := {}
   entries : Std.HashMap Nat (List (String × Ty Tree)) := {}
   breaks : List (Option String × Env) := []
@@ -459,6 +465,29 @@ def callback : Expr → Bool
   | _ => false
 
 mutual
+/-- The bindings statements declare, nested ones included. -/
+partial def declaredIn (ss : List Stmt) : List String :=
+  ss.flatMap fun s => s.bound ++ match s with
+    | .ite _ _ t e => declaredIn t ++ declaredIn (e.getD [])
+    | .loop _ _ b u _ => declaredIn b ++ declaredIn u
+    | .block _ _ b => declaredIn b
+    | .forOf _ n _ _ _ b => n :: declaredIn b
+    | .tryStmt _ b h f => declaredIn b ++ (match h with
+        | some (p, hs) => (p.map (·.1)).toList ++ declaredIn hs
+        | none => []) ++ declaredIn (f.getD [])
+    | .closing _ c b => declaredIn c ++ declaredIn b
+    | _ => []
+end
+
+/-- The walk records a change of the heap. -/
+def wrote : W Unit := modify fun w => { w with writes := true }
+
+/-- An assignment of `n`: a change of the heap where the function literal
+being walked does not declare `n`. -/
+def assigns (n : String) : W Unit := do
+  if !(← get).locals.contains n then wrote
+
+mutual
 /-- Record an expression's computed type or the reason it has none. -/
 partial def record (e : Expr) (r : Except String (Ty Tree)) : W (Option (Ty Tree)) := do
   modify fun w => { w with exprs := w.exprs.insert e.span (kindOf e, r) }
@@ -629,6 +658,7 @@ partial def expr (env : Env) (e : Expr) : W (Option (Ty Tree) × Env) := do
       readField e1.vars (← need O "the receiver") fld
     return (r, e1)
   | .write _ fld recv rhs =>
+    wrote
     let (O, e1) ← expr env recv
     -- The reference `recv.fld`, as the read gives it.
     if let .str f := fld then
@@ -653,6 +683,7 @@ partial def expr (env : Env) (e : Expr) : W (Option (Ty Tree) × Env) := do
     return (r, e2)
   | .elemWrite p recv key rhs => expr env (.indexWrite p none recv key rhs)
   | .indexWrite _ field recv key rhs =>
+    wrote
     let (O, e1) ← expr env recv
     let (K, e2) ← expr e1 key
     -- The reference `recv[key]`, read where the write's target is read: the
@@ -689,6 +720,7 @@ partial def expr (env : Env) (e : Expr) : W (Option (Ty Tree) × Env) := do
         return [← SourceTypes.use (SourceTypes.arrayOf T s false)]
     return (r, e1)
   | .arrayAssign _ targets rest rhs =>
+    wrote
     let (R, e1) ← expr env rhs
     let mut env := e1
     for t in targets do
@@ -720,6 +752,9 @@ partial def expr (env : Env) (e : Expr) : W (Option (Ty Tree) × Env) := do
         if !A.isEmpty && A.all (shapeOf G · == some .isBigint) then prim .bigint else prim .num
     return (r, e1)
   | .update _ op target rhs _ =>
+    match target with
+    | .var _ n => assigns n
+    | _ => wrote
     let (L, e1) ← expr env target
     let (R, e2) ← match rhs with
       | some r => do let (R, e2) ← expr e1 r; pure (R, e2)
@@ -735,6 +770,9 @@ partial def expr (env : Env) (e : Expr) : W (Option (Ty Tree) × Env) := do
       | _, _ => pure e2
     return (r, e3)
   | .logicalAssign _ op target rhs =>
+    match target with
+    | .var _ n => assigns n
+    | _ => wrote
     let (L, e1) ← expr env target
     let (R, e2) ← expr e1 rhs
     let r ← attempt e do
@@ -750,6 +788,7 @@ partial def expr (env : Env) (e : Expr) : W (Option (Ty Tree) × Env) := do
       | _, _ => pure e2
     return (r, e3)
   | .nullishAssign _ n namePos rhs =>
+    assigns n
     recordAt namePos "identifier" (match env.vars.lookup n with
       | some A => .ok A
       | none => .error s!"'{n}' is bound outside what the walk sees")
@@ -768,6 +807,7 @@ partial def expr (env : Env) (e : Expr) : W (Option (Ty Tree) × Env) := do
       | none => e1
     return (r, e2)
   | .assign _ n _ rhs =>
+    assigns n
     if let some D := env.decl.lookup n then modify fun w => { w with hints := (rhs.span, D) :: w.hints }
     let (R, e1) ← expr env rhs
     let R ← match env.decl.lookup n with
@@ -787,6 +827,7 @@ partial def expr (env : Env) (e : Expr) : W (Option (Ty Tree) × Env) := do
     let (_, e2) ← expr e1 initial
     return (← record e (.error "a function's value bag"), e2)
   | .objectAssign _ target sources =>
+    wrote
     let (A, e1) ← expr env target
     let (_, e2) ← exprs e1 sources
     return (← record e (match A with | some A => .ok A | none => .error "the target undetermined"), e2)
@@ -999,6 +1040,8 @@ partial def applyCall (env : Env) (c : Callee) (args : List Expr) (As : List (Op
     let _ := b
     return .error "a type argument is not an actual's type"
   let inst := a.map sub
+  -- A call changing the heap, by its instance's footprint.
+  if inst.effect.footprint != ⟨.keep, .keep⟩ then wrote
   let own ← StateT.lift (match c.own, rest with
     | some F, _ => pure F
     | none, some r => do return [← lower (SourceTypes.use (.arrs [] [r.map sub]))]
@@ -1042,6 +1085,10 @@ partial def walkLambda (env : Env) (e : Expr) (sig : Option (CallEffects.Arrow (
   let inner : Env := { vars, decl := vars, paths := [] }
   for (_, d) in defaults do let _ ← expr inner d
   let saved ← get
+  let declared := params.map (·.1) ++ (match body with
+    | .block _ ss => declaredIn ss
+    | _ => [])
+  modify fun w => { w with writes := false, locals := declared }
   modify fun w => { w with returns := [], expected := written <|> (if async then none else expectedResult) }
   -- An expression body's entry is its prologue's, at the body's start.
   modify fun w => { w with entries := w.entries.insert body.span.1 inner.vars }
@@ -1056,15 +1103,20 @@ partial def walkLambda (env : Env) (e : Expr) (sig : Option (CallEffects.Arrow (
       match (← get).expected, A with
       | some P, some A => fit P x A
       | _, _ => pure A
+  -- A body that changes nothing keeps both values and stores: the
+  -- footprint its calls are checked at (the producer's inferred effect).
+  let pure_ := !(← get).writes
   modify fun w => { w with breaks := saved.breaks, returns := saved.returns, expected := saved.expected }
+  modify fun w => { w with writes := saved.writes, locals := saved.locals }
   let R := if written.isSome then written else if async then none else R
   match ps.mapM id, R with
   | some qs, some R =>
     -- A callback is checked at the signature it is passed at, its result its
     -- body's; any other literal at its own parameters.
     let a : CallEffects.Arrow (Ty Tree) ← match sig with
-      | some a => pure { a with result := R }
-      | none => do pure ⟨← StateT.lift (prim .top), qs, R, .ordinary⟩
+      | some a => pure { a with result := R, effect := if pure_ then .ofFootprint ⟨.keep, .keep⟩ else a.effect }
+      | none => do pure ⟨← StateT.lift (prim .top), qs, R,
+          if pure_ then .ofFootprint ⟨.keep, .keep⟩ else .ordinary⟩
     record e (.ok [← StateT.lift (lower (SourceTypes.use (.arrs [a] [])))])
   | _, _ => record e (.error "a function value: a parameter or its result undetermined")
 
@@ -1413,7 +1465,7 @@ def walkUnit (T : EquationStore.State) (f : Fragment.Fn)
       | none => pure ()
     let env : Env := { vars, decl := vars }
     let expected ← tryCatch (some <$> lower (Fragment.translate f.ret)) fun _ => pure none
-    let (_, w) ← (stmts (some env) f.body).run { generics, expected, entries := ({} : Std.HashMap Nat _).insert 0 vars }
+    let (_, w) ← (stmts (some env) f.body).run { generics, expected, entries := (({} : Std.HashMap Nat _).insert 0 vars).insert f.namePos.1 vars }
     return (w, ← table)
   let ((w, T'), _) ← runCompiler T [] action
   return (w, T')
