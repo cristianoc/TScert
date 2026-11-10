@@ -369,7 +369,7 @@ export type Proposed = { claims: string } | { refusal: string };
 /** One unit's search: the unit's index and names, its evidence lines at the
  * document's positions, whether they are a reused result, and its search's
  * attempt (none where the search ended at a limit). */
-type SearchedUnit = { index: number; names: string[]; lines: string[]; reused: boolean; record: AttemptRecord | null };
+type SearchedUnit = { index: number; names: string[]; ids: string[]; lines: string[]; reused: boolean; record: AttemptRecord | null };
 /** The searches of a document's units: each unit's, each refused unit's
  * refusal, and each search that ended at a limit, by its members' names. */
 type Searched = { units: SearchedUnit[]; refused: Map<string, string>; failed: Map<string, string> };
@@ -541,6 +541,11 @@ export class UnitProposal {
       const unit = this.units[i];
       if (!unit) throw Error(`tool failure: no unit ${i}`);
       const names = [...unit.members, ...(unit.init ? [initOmission] : [])];
+      const ids = list(this.document.functions).flatMap((f) => {
+        const name = field(f, "name"), pos = spanOf(field(f, "namePos"));
+        return typeof name === "string" && unit.members.includes(name) && pos ? [`${name}@${pos[0]}`] : [];
+      });
+      if (unit.init) ids.push("init");
       if (select !== null && !names.some((n) => select.includes(n))) continue;
       // A refusal's spans, at the document's positions: `[a,b)` in its
       // text, and its diagnostics' positions, spans and obligation ids.
@@ -587,22 +592,22 @@ export class UnitProposal {
         } catch {
           lines = null;
         }
-        if (lines !== null) {
-          units.push({ index: i, names, lines, reused: true, record: produced.record });
+        if (lines !== null && lines.length === 1) {
+          units.push({ index: i, names, ids, lines, reused: true, record: produced.record });
           continue;
         }
         produced = searchedWith(false);
       }
       if ("limit" in produced) {
         for (const n of names) failed.set(n, produced.limit);
-        units.push({ index: i, names, lines: [], reused: false, record: null });
+        units.push({ index: i, names, ids, lines: [], reused: false, record: null });
         continue;
       }
       const refusal = verifierRefusal(produced, "--produce-unit");
       const out = produced.out.split("\n");
       if (refusal !== null && !out.some((l) => l.startsWith("checked source evidence written: "))) {
         for (const n of names) refused.set(n, at(refusal));
-        units.push({ index: i, names, lines: [], reused: false, record: produced.record });
+        units.push({ index: i, names, ids, lines: [], reused: false, record: produced.record });
         continue;
       }
       for (const l of out.filter((l) => l.startsWith("refused: "))) {
@@ -612,7 +617,7 @@ export class UnitProposal {
           throw Error("tool failure: verifier --produce-unit printed a malformed refusal");
         refused.set(memberName(named(id)), at(detail));
       }
-      units.push({ index: i, names, lines: written(), reused: false, record: produced.record });
+      units.push({ index: i, names, ids, lines: written(), reused: false, record: produced.record });
     }
     return { units, refused, failed };
   }
@@ -887,9 +892,19 @@ function unitRound(recorder: Recorder, artifacts: string, ast: string, claims: s
     }
     return keys.size ? { withdraw: [...keys] } : null;
   };
-  // The searched units a verdict names.
-  const verdictOf = (u: SearchedUnit, results: readonly UnitResult[]): UnitResult | undefined =>
-    results.find((r) => u.names.includes(memberName(r.unit)));
+  // One verdict per searched group, naming exactly its members. Coverage
+  // includes searched units as well as reused ones.
+  const verdictsOf = (u: SearchedUnit, results: readonly UnitResult[]): UnitResult[] =>
+    results.filter((r) => u.names.includes(memberName(r.unit)));
+  const completeVerdict = (u: SearchedUnit, results: readonly UnitResult[]): boolean => {
+    const matches = verdictsOf(u, results);
+    const r = matches[0];
+    return matches.length === 1 && r !== undefined && u.ids.includes(r.unit) &&
+      r.members.length === u.ids.length && new Set(r.members).size === u.ids.length &&
+      u.ids.every((id) => r.members.includes(id));
+  };
+  const accepted = (u: SearchedUnit, results: readonly UnitResult[]): boolean =>
+    completeVerdict(u, results) && verdictsOf(u, results).every((r) => r.status === "verified");
   let reused = 0;
   // The module runs, each keyed on its restricted document: an importer's
   // edit that keeps a closure replays its search and check.
@@ -912,10 +927,14 @@ function unitRound(recorder: Recorder, artifacts: string, ast: string, claims: s
     const checkModule = (lines: readonly string[]): unknown => {
       writeFileSync(own, `[${lines.join(",")}]`);
       const checked = runStep(verifierCall(verifier, [...budget, "--check-module", run, own]), recorder);
-      const verdict = checked.out.split("\n").find((l) => l.startsWith("{"));
+      const verdicts = checked.out.split("\n").filter((l) => l.startsWith("{"));
+      const verdict = verdicts[0];
       const refusal = verifierRefusal(checked, "--check-module");
       if (verdict === undefined) throw Error(`tool failure: verifier --check-module printed no verdict: ${refusal ?? ""}`);
-      return JSON.parse(verdict);
+      const value: unknown = JSON.parse(verdict);
+      if (verdicts.length !== 1 || field(value, "unit") !== `module:${location}`)
+        throw Error("tool failure: verifier --check-module printed unexpected verdicts");
+      return value;
     };
     let searched = modules.search(location, [...names, initOmission], budget, reuse);
     let value: unknown = null;
@@ -972,9 +991,10 @@ function unitRound(recorder: Recorder, artifacts: string, ast: string, claims: s
     } catch {
       outcome = null;
     }
-    const results = outcome;
+    const results = outcome !== null && searched.units.every((u) => completeVerdict(u, outcome)) &&
+      outcome.length === searched.units.length ? outcome : null;
     const refusedReused = results === null ? reusedUnits
-      : reusedUnits.filter((u) => verdictOf(u, results)?.status !== "verified");
+      : reusedUnits.filter((u) => !accepted(u, results));
     if (results !== null && refusedReused.length === 0) {
       checked = results;
       break;
@@ -985,7 +1005,7 @@ function unitRound(recorder: Recorder, artifacts: string, ast: string, claims: s
   if (typeof checked === "string") return withdrawal([checked]) ?? { front: checked };
   let results = checked;
   for (const u of searched.units) {
-    if (verdictOf(u, results)?.status !== "verified") continue;
+    if (!accepted(u, results)) continue;
     if (u.reused) reused++;
     else if (u.record !== null) referenceProposal(u.record);
   }
