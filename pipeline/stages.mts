@@ -143,18 +143,18 @@ export function retryingTimeouts(): boolean {
 // ---------------------------------------------------------------------------
 // Evidence proposals (STAGE-STORE.md, "Evidence proposals")
 
-/** The variable that turns evidence reuse on; outside every key. */
+/** The variable that turns evidence reuse off; outside every key. */
 export const evidenceReuseVariable = "TSCERT_EVIDENCE_REUSE";
 /** Whether a search may reuse the evidence another implementation found for
- * its inputs: `TSCERT_EVIDENCE_REUSE=1`. Off, nothing is read from or
- * written to the proposed index. */
+ * its inputs: unless `TSCERT_EVIDENCE_REUSE=0`. Off, nothing is read from
+ * or written to the proposed index. */
 export function reusingEvidence(): boolean {
-  return process.env[evidenceReuseVariable] === "1";
+  return process.env[evidenceReuseVariable] !== "0";
 }
 /** Turn evidence reuse off for this process and the processes it starts:
  * the suites and the census, whose subject includes the search. */
 export function withoutEvidenceReuse(): void {
-  delete process.env[evidenceReuseVariable];
+  process.env[evidenceReuseVariable] = "0";
 }
 /** The stages whose results are proposals to a later check. */
 const proposalStages: ReadonlySet<StageName> = new Set<StageName>(["search", "module-search"]);

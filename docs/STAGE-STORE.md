@@ -868,7 +868,7 @@ observations rather than deterministic judgments.
 ## Evidence proposals
 
 A search's key binds the verifier's executable, so after any change of the
-verifier every search misses. Under `TSCERT_EVIDENCE_REUSE=1`, a search
+verifier every search misses. Unless `TSCERT_EVIDENCE_REUSE=0`, a search
 whose key misses may reuse the evidence another build of the verifier found
 for the same inputs, and the current build's check decides it. Search is
 replaceable and untrusted ([search](DESIGN.md#search)); the check is not
@@ -926,14 +926,16 @@ replaced.
   of a check under the mode states `reused`: how many of its units were
   accepted over reused evidence, a module run counting as one unit.
   `dev/check-functions.mts` prints `reused <n> of <m> units`.
-- *The mode.* `TSCERT_EVIDENCE_REUSE=1` turns it on; it is off otherwise,
-  and off nothing is read from or written to the `proposed` index. The
-  variable is outside every key. `test-all.sh` (and so `make test-checks`),
-  `pipeline/test.mts`, `pipeline/run-cases.mts` and `dev/census.mts` remove
-  it from their environment, so their checks search; the controls of reuse
-  set it on the runs they start, each over a store of its own. A
-  comparison across a verifier change decides acceptance with the mode off;
-  a run with it on, over a store an earlier build seeded, measures latency.
+- *The mode.* Reuse is on; `TSCERT_EVIDENCE_REUSE=0` turns it off, and off
+  nothing is read from or written to the `proposed` index. The variable is
+  outside every key. `test-all.sh` (and so `make test-checks`),
+  `pipeline/test.mts` and `pipeline/run-cases.mts` set it to `0` in their
+  environment, so their checks search: they are where a search that no
+  longer finds its evidence shows. The census runs with reuse on: its
+  counts are of what the current check accepts. The controls of reuse
+  set it to `1` on the runs they start, each over a store of its own. A
+  check of one source or of a pretext file (`verify-source.mts`,
+  `dev/check-functions.mts`) runs with reuse on and states `reused`.
 
 *The guarantee.* An accepted verdict is the current checker's on the
 current claims and source: a unit is verified only from an accepting
