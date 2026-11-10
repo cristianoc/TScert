@@ -1966,8 +1966,8 @@ which guard paths read a tag's value, or from an atom its body follows from
 def indicesCheckWith (tags : Nat → List String → GuardTag → Bool) (M : Nat → List Nat) (ls : HeapLinks.Links)
     (a b : List IndexAtom) (m : PointClaims.Mapping) : Bool :=
   let B := bridgeOf ls a b
-  let K := knownOf a
-  b.all fun t => a.any (fun s => indexFollows M m s t) || linearFollowsIn K M m a B t || guardFollows M m ls tags a t ||
+  let K := Thunk.mk fun _ => knownOf a
+  b.all fun t => a.any (fun s => indexFollows M m s t) || linearFollowsIn K.get M m a B t || guardFollows M m ls tags a t ||
     storeFollows M m ls a t || guardBodyFollows M m a t
 
 /-- Whether a value set holds the value a guard's tag names alone. -/
@@ -2207,6 +2207,11 @@ those with each condition's atoms, the derived facts naming none of them,
 each of whose terms an atom states defined, appended under the condition
 they were derived under. -/
 def eliminateLinear (drop : List Nat) (as : List IndexAtom) : List IndexAtom :=
+  -- No linear or length atom names a slot of `drop`: no term of `linearTerms` does.
+  if !as.any (fun a => match a.fact with
+    | .linear F => F.vars.any fun t => drop.contains t.slot
+    | .length x n => drop.contains x || drop.contains n
+    | _ => false) then as else
   let used := (linearTerms as).filter fun t => drop.contains t.slot
   if used.isEmpty then as else
   let keep := fun (known : List (Linear.Fact Term)) (F : Linear.Fact Term) =>
@@ -2223,6 +2228,8 @@ def eliminateLinear (drop : List Nat) (as : List IndexAtom) : List IndexAtom :=
 theorem eliminateLinear_holds {drop : List Nat} {as : List IndexAtom} {ρ h} (he : IndexHolds as ρ h) :
     IndexHolds (eliminateLinear drop as) ρ h := by
   simp only [eliminateLinear]
+  split
+  · exact he
   split
   · exact he
   · intro a ha hc
