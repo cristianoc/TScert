@@ -1521,7 +1521,10 @@ location holds its value in every heap a normal return reaches):
 
 **Consuming it.** A call of a frame with store regions keeps the store of
 a slot a separation places outside every region, and with it the facts
-reading the slot's length (`region-call-keep`,
+reading the slot's length, where its closed bound keeps stores
+(`region-call-keep`); where it grows stores, the slot's store is no
+shorter after the call, and the facts reading the slot's length at a
+coefficient at most $`0`$ survive (`region-call-grow`,
 [store regions](SOURCE-ELABORATION.md#stated-effects)).
 
 **Implementation.** The front end elaborates `P !== Q`
@@ -1532,10 +1535,11 @@ those of a precondition, of a declaration of an object literal whose field
 holds an empty array literal, and keeps them as Lean does
 (`Linear_facts.sstatement`). Proved: `storeFollows_sound`,
 `restateStores_holds`, `stableFirst_frame`, `regionFirst_kept`,
-`effectKept_holds`.
+`regionGrown_grows`, `effectKept_holds`.
 
-**Cases.** Positive: `stated-argument-path` (`measure` and its caller) and
-`stated-local-runs` (the array allocated in the looping function). Negative,
+**Cases.** Positive: `stated-argument-path` (`measure` and its caller),
+`stated-local-runs` (the array allocated in the looping function) and
+`stated-region-grow-keeps-lengths` (a frame growing stores). Negative,
 run under Node: `invalid-stated-alias` (one array as both sides, `NaN`).
 Gap: `stated-distinct-view-refused`. Controls in `pipeline/test.mts`: a
 separation forged at a caller's entry, and a fact forged across a frame that

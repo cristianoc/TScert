@@ -4194,8 +4194,26 @@ the slot's length, so its store location holds an array store (`storeHeld`)
      {\Sigma\vdash f(\vec a)\dashv\Sigma',\ F(|y|)}\ \textsf{region-call-keep}
 ```
 
-with $`R_i = k_i.p_i[*]`$ the frame's regions. The producer proposes the
-facts and bounds it keeps (`Linear_facts.region_separated`), reading the
+with $`R_i = k_i.p_i[*]`$ the frame's regions. Where the closed bound grows
+stores, each store outside the regions is no shorter after the call, and at
+most $`2^{32}-1`$ long where it was, so a slot $`y`$ separated from each
+region as above keeps the lower bounds of its length: a linear fact each of
+whose terms is kept, or is $`|y|`$ of such a slot at a coefficient at most
+$`0`$, and an index bound below $`|y|`$ (`PromiseCalls.regionGrown`, the
+stores `keptIndicesGrown` grows; proved: `regionGrown_grows`,
+`IndexFact.holdsAt_grownWith`, `effectKept_holds`):
+
+```math
+\frac{\epsilon.\mathsf{stores}=\mathsf{grow}\qquad \forall y\in Y.\ \forall i.\ \Sigma\vdash\mathrm{apart}(\mathrm{sel}(R_i),y)\ \text{or}\ \Sigma\vdash a_{k_i}.p_i\mathrel{\#}y\qquad \Sigma\vdash \textstyle\sum_t c_t\,t\le d\qquad \forall t.\ (t=|y|\land y\in Y\land c_t\le 0)\lor t\ \text{kept}}
+     {\Sigma\vdash f(\vec a)\dashv\Sigma',\ \textstyle\sum_t c_t\,t\le d}\ \textsf{region-call-grow}
+```
+
+An upper bound of such a length, and every fact about a store a region may
+select, is dropped (`stated-region-grow-keeps-lengths`;
+`invalid-stated-region-grow-region` and
+`invalid-stated-region-grow-upper-bound`, run under Node). The producer
+proposes the facts and bounds it keeps (`Linear_facts.region_separated`),
+reading the
 frame from the callee's type (`Semantic.call_effect.regions`, the claims'
 `CallEffect.regions`); a call's coarse bound for every other purpose is
 `top` (`Semantic.coarse_footprint`, `Effect.footprint`).

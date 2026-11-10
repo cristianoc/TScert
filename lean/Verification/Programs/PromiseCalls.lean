@@ -2086,12 +2086,40 @@ theorem regionFirst_kept {k : HeapKnowledge.Knowledge} {eff : Effect} {t : Tm} {
   · rw [← hc.init_store]; exact hv'
   · rw [← hc.scalar_store]; exact hv'
 
+/-- The slots whose store a frame with store regions grows: each slot every
+region is separated from, where the closed bound grows stores
+(`regionGrown_grows`). -/
+def regionGrown (k : HeapKnowledge.Knowledge) (eff : Effect) (t : Tm) : Nat → Bool :=
+  fun s => eff.closed.store.onStore == .grow && eff.regions.all (regionSep k t s)
+
+theorem regionGrown_grows {k : HeapKnowledge.Knowledge} {eff : Effect} {t : Tm} {ρ : Env} {h h' : Heap}
+    (hk : HeapKnowledge.Holds k ρ h) (hs : eff.receiverStore = false) (ho : eff.receiverOwn = false)
+    (hw : eff.within (ExpressionEffects.receiverOf (instantiate 0 ρ t)) (ExpressionEffects.actualsOf (instantiate 0 ρ t)) h h') :
+    HeapKnowledge.StoresGrown (regionGrown k eff t) ρ h h' := by
+  intro s l ls hg hl hls
+  simp only [regionGrown, Bool.and_eq_true, beq_iff_eq, List.all_eq_true] at hg
+  obtain ⟨hgrow, hall⟩ := hg
+  have hw' := (CallEffects.Effect.within_iff_regions hs ho _ _ h h').mp hw
+  have hout : ∀ r ∈ eff.regions, r.resolve (CallEffects.callEnv (ExpressionEffects.receiverOf (instantiate 0 ρ t))
+      (ExpressionEffects.actualsOf (instantiate 0 ρ t))) h ≠ some l :=
+    fun r hr => regionSep_out hk (hall r hr) hl
+  obtain ⟨v', hv', hc⟩ := hw'.2 l _ hout hls
+  have hst : eff.closed.store = .grow := by
+    revert hgrow; cases eff.closed.store <;> simp [Footprints.Change.onStore]
+  simp only [Footprints.Closed.at, Footprints.isArr, if_true, hst] at hc
+  rcases hc with rfl | ⟨ls₁, ls', h₁, rfl, -, -, hlen⟩ | hsc
+  · exact ⟨ls, hv', Footprints.LengthGrows.refl ls⟩
+  · cases h₁; exact ⟨ls', hv', hlen⟩
+  · exact absurd hsc.2.1 (by simp [Footprints.isArr])
+
 /-- The heap-reading atoms of a call's entry its footprint keeps, renamed past
 the result (`Changes.ofClosed`, ARITHMETIC.md, "Linear facts"): with
 `receiverGrows`, those `growChanges` keeps, a field apart from the receiver's
-own locations kept besides (`growFirst`); none where its signature keeps the
-heap, whose output keeps every atom (`call-keep`), or excepts its receiver's
-store or own locations. -/
+own locations kept besides (`growFirst`); with store regions, those reading
+the stores of slots apart from every region, kept where the closed bound keeps
+stores (`regionFirst`) and grown where it grows them (`regionGrown`); none
+where its signature keeps the heap, whose output keeps every atom
+(`call-keep`), or excepts its receiver's store or own locations. -/
 def effectKept (views stable : Nat → String → Bool) (eff : Effect) (t : Tm) (k : HeapKnowledge.Knowledge) : List HeapKnowledge.IndexAtom :=
   if eff.receiverGrows then
     HeapKnowledge.shiftIndices (HeapKnowledge.keptIndices growChanges (fun s g => growFirst k t s g || stable s g)
@@ -2099,8 +2127,9 @@ def effectKept (views stable : Nat → String → Bool) (eff : Effect) (t : Tm) 
   else if keepsHeap eff || eff.receiverStore || eff.receiverOwn then [] else
   if !eff.regions.isEmpty then
     if eff.elementWrite.isSome then [] else
-    HeapKnowledge.shiftIndices (HeapKnowledge.keptIndicesWith HeapKnowledge.Changes.top
-      (fun s g => regionFirst k eff t s g || stable s g) views (k.indices.filter fun a => !a.fact.envOnly))
+    HeapKnowledge.shiftIndices (HeapKnowledge.keptIndicesGrown HeapKnowledge.Changes.top
+      (fun s g => regionFirst k eff t s g || stable s g) views (regionGrown k eff t)
+      (k.indices.filter fun a => !a.fact.envOnly))
   else
   match eff.elementWrite with
   | some w => HeapKnowledge.shiftIndices (HeapKnowledge.keptIndicesWith w.changes stable views
@@ -2140,9 +2169,10 @@ theorem effectKept_holds {views stable : Nat → String → Bool} {eff : Effect}
       split
       · split
         · exact HeapKnowledge.indexHolds_nil _ _
-        · exact HeapKnowledge.shiftIndices_holds (HeapKnowledge.keptIndicesWith_holds
+        · exact HeapKnowledge.shiftIndices_holds (HeapKnowledge.keptIndicesGrown_holds
             (fun a ha hcd => hk.2.2.2.2.2 a (List.mem_filter.mp ha).1 hcd)
-            (HeapKnowledge.Changes.top_holds h h') (firstKept_or (regionFirst_kept hk hs ho hw) hst) hv)
+            (HeapKnowledge.Changes.top_holds h h') (firstKept_or (regionFirst_kept hk hs ho hw) hst) hv
+            (regionGrown_grows hk hs ho hw))
       split
       · rename_i w hwr
         exact HeapKnowledge.shiftIndices_holds (HeapKnowledge.keptIndicesWith_holds

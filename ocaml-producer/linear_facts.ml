@@ -1275,22 +1275,23 @@ let call_regions : ((string * Environment.binding) list -> string -> ((int * str
   ref (fun _ _ -> None)
 
 (* Where a statement is a call of a function stating store regions whose
-   closed bound keeps every store, the arrays whose store the call keeps
-   (Lean's `regionFirst`): a value binding separated from the store each
-   region selects at the call, by a region fact with the actual of a
-   region's own store, or by a store separation with the region's path at
-   the actual. *)
-let region_separated ?(regions=[]) ?(stores=[]) env (s : stmt) : (string -> bool) option =
+   closed bound keeps or grows every store, the arrays whose store the call
+   keeps (Lean's `regionFirst`), or grows where the bound grows stores
+   (`regionGrown`, the second component): a value binding separated from the
+   store each region selects at the call, by a region fact with the actual
+   of a region's own store, or by a store separation with the region's path
+   at the actual. *)
+let region_separated ?(regions=[]) ?(stores=[]) env (s : stmt) : ((string -> bool) * bool) option =
   match s.statement with
   | Effect {node=Call ({node=Id f;_},None,args,[],_);_} when List.for_all (heap_free env) args ->
     (match !call_regions env f with
      | Some (rs,closed) when rs <> [] &&
-         (match closed.Semantic.on_store with Semantic.Keep | Semantic.Init | Semantic.Scalar -> true | _ -> false) ->
+         (match closed.Semantic.on_store with Semantic.Keep | Semantic.Init | Semantic.Scalar | Semantic.Grow -> true | _ -> false) ->
        let stores = List.map sfact_norm stores in
-       Some (fun y -> slot_binding env y && List.for_all (fun (p,q) -> p >= 1 &&
+       Some ((fun y -> slot_binding env y && List.for_all (fun (p,q) -> p >= 1 &&
          match List.nth_opt args (p - 1) with
          | Some {node=Id a;_} -> (q = [] && rapart regions a y) || List.mem (sfact_norm ((a,q),(y,[]))) stores
-         | _ -> false) rs)
+         | _ -> false) rs), closed.Semantic.on_store = Semantic.Grow)
      | _ -> None)
   | _ -> None
 
@@ -1350,10 +1351,12 @@ and statement_slots ~(array : string -> string list -> bool) ?(bounds=[]) ?(regi
         else None) (fs @ term_ranges fs)
     | _ -> [] in
   (* Across a call of a function stating store regions, each fact whose
-     lengths are of arrays the call keeps (`region-call-keep`). *)
+     lengths are of arrays the call keeps (`region-call-keep`), or, where
+     it grows them, of such arrays at a coefficient at most 0
+     (`region-call-grow`). *)
   let separated = match region_separated ~regions ~stores env s with
-    | Some sep -> List.filter (fun ((t,_) : fact) -> List.for_all (fun (n,_) -> stable_term env n ||
-        (let b,path,kind = term_parts n in kind = Length_term && path = [] && sep b)) t) fs
+    | Some (sep,grows) -> List.filter (fun ((t,_) : fact) -> List.for_all (fun (n,c) -> stable_term env n ||
+        (let b,path,kind = term_parts n in kind = Length_term && path = [] && sep b && (not grows || c <= 0))) t) fs
     | None -> [] in
   let fs = if statement_heap_free env s then fs else
     let changes = statement_changes ~facts:fs ~bounds env s in
@@ -1464,9 +1467,9 @@ let statement_bounds ?(facts=[]) ?(regions=[]) ?(stores=[]) env (bs : bound list
   let unassigned (a,i,_) = not (List.mem a assigned) && not (List.mem i assigned) in
   if kept then List.filter unassigned bs else
   (* Across a call of a function stating store regions, the bounds of the
-     arrays it keeps (`region-call-keep`). *)
+     arrays it keeps or grows (`region-call-keep`, `region-call-grow`). *)
   match region_separated ~regions ~stores env s with
-  | Some sep -> List.filter (fun ((a,_,_) as b) -> unassigned b && sep a) bs
+  | Some (sep,_) -> List.filter (fun ((a,_,_) as b) -> unassigned b && sep a) bs
   | None -> []
 
 (* What each answer of a comparison of an index with an array's length states:
