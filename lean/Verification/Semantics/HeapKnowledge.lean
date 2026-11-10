@@ -2587,8 +2587,11 @@ def project (k : Knowledge) (m : PointClaims.Mapping) (count : Nat) : Knowledge 
     -- Each slot an index atom names, its condition's included, restated at the
     -- first target slot holding its value.
     -- A slot no target slot holds is first eliminated from the linear facts.
-    let target := fun s => (List.range count).find? fun j =>
-      (HeapLinks.aliases k.links (PointClaims.slot m j)).contains s
+    -- By source slot, the first target slot whose source's aliases hold it.
+    let first : Std.HashMap Nat Nat := (List.range count).foldl (fun acc j =>
+      (HeapLinks.aliases k.links (PointClaims.slot m j)).foldl (fun acc a =>
+        if acc.contains a then acc else acc.insert a j) acc) ∅
+    let target := fun s => first.get? s
     let dropped := (linearTerms k.indices).map Term.slot |>.eraseDups.filter fun s => (target s).isNone
     -- A term rooted at a dropped slot is first restated through a read from a
     -- kept slot, where a read link gives one (`restateReads`).
