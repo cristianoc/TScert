@@ -247,6 +247,8 @@ never an acceptance. Not handled: a qualified body with code requests.
 `verifier --verify-units 3 <fragment> <claims> <file-key> <depth> <name>`
 runs the pass; `TSCERT_COMPARE=1` checks, at every node, that the state
 entails the knowledge the existing search's certificate holds there.
+`verifier --verify-units 8 <fragment> <file-key> <depth> <name>` runs it
+over the fragment alone (section 9).
 
 ### Observing
 
@@ -278,7 +280,8 @@ process the bytes of the files read (`counts-read:`).
 
 `node dev/perf-gate.mts <pretext checkout at ba09794f>` runs the pass over a
 fixed set of units: pretext's `measureAnalysis`, `prepareRichInline` and
-`buildEngineProfile`, and ten pipeline case units of different shapes. Each
+`buildEngineProfile`, also from the fragment alone (section 9), and ten
+pipeline case units of different shapes. Each
 unit's fragment and claims are captured through the pipeline, its given facts
 written by `--verify-units 6`, and the pass run three times. Each unit is
 compared with `dev/perf-baseline.json`:
@@ -346,3 +349,61 @@ claims facts and 27 written ones at 6 heads, of 6091 entries' facts).
 Withheld, measureAnalysis and prepareRichInline are refused at a call's
 precondition, buildEngineProfile is accepted, and 10 of 43 accepted units
 of loop-heavy cases are refused; none of 162 sampled units changes.
+
+## 9. The claims-free front
+
+`verifier --verify-units 8` reads the fragment and the given file, and no
+claims document (`SourceClaimJson.fragmentPlans`, `Claims/FragmentFront.lean`).
+
+- **Store and signatures.** The store is the fragment's declarations and
+  annotations, lowered with a type table of the primitives alone
+  (`fragmentClaims`). Each function's parameters and result are its
+  annotations' types; its footprint is the one its declaration writes
+  (`Modifies<…>`, with its `@requires` and `@ensures`), else the ordinary
+  effect. Another function, and an import, is read at that signature; an
+  import at its declared type. A function literal whose body the walk sees
+  change nothing states the footprint keeping values and stores.
+- **Types.** Every expression's and statement entry's type and every
+  `let`'s storage contract is the walk's (`Synthesis.retypeUnit`), at each
+  execution point of the unit's flow graphs (`SourceFlow.pointId`), each
+  point holding its node's sites' expressions and its statement's bindings.
+  A module constant is read at its initializer's type in the
+  initialization's walk with its annotation, a module cell at that walk's
+  storage contract (`Front.withInitTypes`). A call of a generic module value
+  is instantiated at the binders' types the walk gives it
+  (`instancesFromWalk`); a binder a resolution qualifies is not handled.
+- **Loop heads.** A loop head's facts beyond its written assertion are the
+  given file's `headFacts` (and `headFactsOfCodes` for each code request),
+  each at the statement entries that start where the given one does; mode 6
+  writes them with `TSCERT_GIVEN_FACTS=1`, for the experiment from the
+  claims' facts at the loop heads and the start (`SinglePass.loopHeads`).
+- **Written-footprint stand-ins.** For a measurement, `TSCERT_STANDINS`
+  names a file of footprints the file's functions and imports would write
+  (`{"functions": […], "imports": […]}`, each a name, footprint, on-throw
+  flag and result footprint), read apart from the source; the bytes read
+  count it. `dev/single-pass-standins.mts` writes one from a claims
+  document, the producer's proposals standing in for the annotations.
+
+Measured 2026-11-10 at the commit adding this section (perf gate, CPU of
+the verifier process, best of 3; read+lower and pass from `TSCERT_PROFILE`
+stamps):
+
+| Unit | Mode 3: bytes, CPU | Mode 8: bytes, CPU | Mode 8: read+lower (walk), pass |
+| --- | --- | --- | --- |
+| measureAnalysis | 5.88 MB, 1044 ms | 2.13 MB, 822 ms | 272 ms (42), 517 ms |
+| prepareRichInline | 16.1 MB, 2284 ms | 4.30 MB, 1991 ms | 601 ms (87), 1306 ms |
+| buildEngineProfile | 3.12 MB, 252 ms | 1.32 MB, 127 ms | 84 ms (7), 34 ms |
+
+The stand-ins each unit needs, each a function its unit calls whose
+footprint the unit's verdict reads (removing any one refuses the unit):
+`measureAnalysis` 9 of its file's functions (`countRenderedSpacingGraphemes`,
+`addInternalLetterSpacing`, `needsComplexTextPath`, `isSpaceKind`,
+`mayHoldCursive`, `getFollowingSpaceTail`, `getTailKerning`,
+`getJoinedNarrowing`, `getTextSegmentWidth`) and 16 imports
+(`getHanKerningTrims`, `textMayHanKern`, `lazyRegExp`, `getEmojiCorrection`,
+`getExtraSpacings`, `getFollowingSpaceMetrics`, `getFontMeasurement`,
+`getFontSpaceKerning`, `getHyphenText`, `getSegmentFit`, `getSegmentMetrics`,
+`getSpaceKerning`, `getSpaceWidth`, `getTextWidth`, `textMayContainEmoji`,
+`zeros`); `prepareRichInline` 4 functions (`getHyphenRooms`,
+`setEmptyObjectFacts`, `zeroList`, `getOpeningFit`) and 2 imports
+(`isCollapsibleSpaceCode`, `readLetterSpacing`); `buildEngineProfile` none.

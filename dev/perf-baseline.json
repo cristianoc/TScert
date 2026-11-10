@@ -288,60 +288,60 @@
         "bytesRead": 159454
       }
     },
-    "pretext measureAnalysis, computed types": {
+    "pretext measureAnalysis, from the fragment": {
       "verdict": "verified",
-      "cpuMs": 1104,
+      "cpuMs": 822,
       "counters": {
         "nodes": 1430,
         "edges": 1561,
         "reached": 1430,
         "visited": 1430,
-        "rules": 1319,
-        "wholeStoreRules": 54,
+        "rules": 1330,
+        "wholeStoreRules": 65,
         "queries": 10,
         "queryFacts": 517,
         "merges": 71,
-        "mergeDiffs": 1100,
-        "stateFactsSum": 72648,
+        "mergeDiffs": 1116,
+        "stateFactsSum": 72377,
         "stateFactsMax": 106,
         "headsWritten": 27,
         "headsFromClaims": 132,
         "headsSupplied": 0,
-        "bytesRead": 5876473
+        "bytesRead": 2131069
       }
     },
-    "pretext prepareRichInline, computed types": {
+    "pretext prepareRichInline, from the fragment": {
       "verdict": "verified",
-      "cpuMs": 2598,
+      "cpuMs": 1991,
       "counters": {
         "nodes": 3056,
         "edges": 3299,
         "reached": 3056,
         "visited": 3056,
-        "rules": 2764,
-        "wholeStoreRules": 103,
+        "rules": 2821,
+        "wholeStoreRules": 160,
         "queries": 625,
-        "queryFacts": 13909,
+        "queryFacts": 13484,
         "merges": 130,
         "mergeDiffs": 1823,
-        "stateFactsSum": 133639,
-        "stateFactsMax": 117,
+        "stateFactsSum": 132132,
+        "stateFactsMax": 113,
         "headsWritten": 166,
         "headsFromClaims": 371,
         "headsSupplied": 0,
-        "bytesRead": 16131334
+        "bytesRead": 4299180
       }
     },
-    "pretext buildEngineProfile, computed types": {
+    "pretext buildEngineProfile, from the fragment": {
       "verdict": "verified",
-      "cpuMs": 261,
+      "cpuMs": 127,
       "counters": {
         "nodes": 265,
         "edges": 280,
         "reached": 265,
         "visited": 265,
-        "rules": 247,
-        "wholeStoreRules": 0,
+        "rules": 248,
+        "wholeStoreRules": 1,
         "queries": 0,
         "queryFacts": 0,
         "merges": 11,
@@ -351,7 +351,7 @@
         "headsWritten": 0,
         "headsFromClaims": 0,
         "headsSupplied": 0,
-        "bytesRead": 3117222
+        "bytesRead": 1322703
       }
     }
   }

@@ -5,8 +5,11 @@
 // them with its counts (`TSCERT_COUNTS`), compared with dev/perf-baseline.json.
 //   node dev/perf-gate.mts <pretext checkout at ba09794f> [--update | --add]
 // The pretext units are also gated in mode 8 (`--verify-units 8`, the pass
-// over the types the verifier computes). `--add` writes the baseline of the
-// units it lacks, keeping the others'.
+// over the fragment alone, its types computed by the verifier): its given
+// file also states the loop heads' facts (`TSCERT_GIVEN_FACTS`), and the
+// footprints its unit's callees would write, stand-ins named per unit, are
+// read from the captured claims (dev/single-pass-standins.mts). `--add`
+// writes the baseline of the units it lacks, keeping the others'.
 // A regression is a verdict other than the baseline's, a counter above its
 // baseline, a unit whose visited nodes differ from its reached nodes, or the
 // pass's CPU time (user and system of the verifier process, best of 3) above
@@ -21,6 +24,7 @@ import { join, resolve } from "node:path";
 import { cases } from "../pipeline/cases.mts";
 import { checkApart } from "../pipeline/verify-source.mts";
 import { withoutEvidenceReuse } from "../pipeline/stages.mts";
+import { standIns } from "./single-pass-standins.mts";
 
 const root = resolve(import.meta.dirname, "..");
 const verifier = join(root, "lean/.lake/build/bin/verifier");
@@ -28,7 +32,7 @@ const baselinePath = join(root, "dev/perf-baseline.json");
 withoutEvidenceReuse();
 
 /** A unit of the gate: a function of a pretext file or of a pipeline case. */
-type GateUnit = { name: string; unit: string; mode?: string } & ({ pretext: string } | { case: string });
+type GateUnit = { name: string; unit: string; mode?: string; standIns?: string[] } & ({ pretext: string } | { case: string });
 const units: GateUnit[] = [
   { name: "pretext measureAnalysis", pretext: "prepare.ts", unit: "measureAnalysis" },
   { name: "pretext prepareRichInline", pretext: "rich-inline.ts", unit: "prepareRichInline" },
@@ -43,9 +47,17 @@ const units: GateUnit[] = [
   { name: "async", case: "async-await", unit: "chained" },
   { name: "handler", case: "try-catch", unit: "handled" },
   { name: "exceptional footprint", case: "exceptional-footprint-handler", unit: "largest" },
-  { name: "pretext measureAnalysis, computed types", pretext: "prepare.ts", unit: "measureAnalysis", mode: "8" },
-  { name: "pretext prepareRichInline, computed types", pretext: "rich-inline.ts", unit: "prepareRichInline", mode: "8" },
-  { name: "pretext buildEngineProfile, computed types", pretext: "measurement.ts", unit: "buildEngineProfile", mode: "8" },
+  { name: "pretext measureAnalysis, from the fragment", pretext: "prepare.ts", unit: "measureAnalysis", mode: "8",
+    standIns: ["countRenderedSpacingGraphemes", "addInternalLetterSpacing", "needsComplexTextPath", "isSpaceKind",
+      "mayHoldCursive", "getFollowingSpaceTail", "getTailKerning", "getJoinedNarrowing", "getTextSegmentWidth",
+      "getHanKerningTrims", "textMayHanKern", "lazyRegExp", "getEmojiCorrection", "getExtraSpacings",
+      "getFollowingSpaceMetrics", "getFontMeasurement", "getFontSpaceKerning", "getHyphenText", "getSegmentFit",
+      "getSegmentMetrics", "getSpaceKerning", "getSpaceWidth", "getTextWidth", "textMayContainEmoji", "zeros"] },
+  { name: "pretext prepareRichInline, from the fragment", pretext: "rich-inline.ts", unit: "prepareRichInline", mode: "8",
+    standIns: ["getHyphenRooms", "setEmptyObjectFacts", "zeroList", "getOpeningFit", "isCollapsibleSpaceCode",
+      "readLetterSpacing"] },
+  { name: "pretext buildEngineProfile, from the fragment", pretext: "measurement.ts", unit: "buildEngineProfile", mode: "8",
+    standIns: [] },
 ];
 
 /** The counters the gate compares, by the name the pass prints them. */
@@ -118,8 +130,10 @@ async function capture(u: GateUnit, pretextRoot: string, work: string): Promise<
 function verify(mode: string, dir: string, key: string, unit: string, env: NodeJS.ProcessEnv):
     { stdout: string; stderr: string; cpuMs: number; wallMs: number } {
   const started = performance.now();
+  // Mode 8 reads the fragment alone.
+  const documents = mode === "8" ? [join(dir, "fragment.json")] : [join(dir, "fragment.json"), join(dir, "claims.json")];
   const run = spawnSync("/bin/sh", ["-c", '"$@"; status=$?; times >&2; exit $status', "sh", verifier, "--verify-units", mode,
-    join(dir, "fragment.json"), join(dir, "claims.json"), key, "12", unit], { encoding: "utf8", maxBuffer: 1 << 28, env });
+    ...documents, key, "12", unit], { encoding: "utf8", maxBuffer: 1 << 28, env });
   const wallMs = performance.now() - started;
   const last = run.stderr.trimEnd().split("\n").at(-1) ?? "";
   const seconds = [...last.matchAll(/(\d+)m([\d.]+)s/g)].map((m) => Number(m[1]) * 60 + Number(m[2]));
@@ -129,10 +143,14 @@ function verify(mode: string, dir: string, key: string, unit: string, env: NodeJ
 
 /** The pass over a captured unit, three times: its verdict, counters and best CPU time. */
 function measure(u: GateUnit, dir: string, key: string): Measured {
-  const given = join(dir, "given.jsonl");
-  const lines = verify("6", dir, key, u.unit, process.env).stdout.split("\n").filter((l) => l.startsWith("{\"codes\""));
+  const given = join(dir, `given-${u.mode ?? "3"}.jsonl`);
+  const facts = u.mode === "8" ? { TSCERT_GIVEN_FACTS: "1" } : {};
+  const lines = verify("6", dir, key, u.unit, { ...process.env, ...facts }).stdout.split("\n").filter((l) => l.startsWith("{\"codes\""));
   writeFileSync(given, lines.join("\n") + "\n");
-  const env = { ...process.env, TSCERT_GIVEN: given, TSCERT_COUNTS: "1" };
+  const standInsPath = join(dir, "standins.json");
+  if (u.standIns !== undefined) writeFileSync(standInsPath, standIns(join(dir, "claims.json"), u.standIns) + "\n");
+  const env = { ...process.env, TSCERT_GIVEN: given, TSCERT_COUNTS: "1",
+    ...(u.standIns === undefined ? {} : { TSCERT_STANDINS: standInsPath }) };
   const runs = [0, 1, 2].map(() => verify(u.mode ?? "3", dir, key, u.unit, env));
   const first = runs[0];
   let verdict = "missing", refusal = "";
@@ -155,7 +173,8 @@ function measure(u: GateUnit, dir: string, key: string): Measured {
     const read = /^counts-read: (\{.*\})$/.exec(line);
     if (read) {
       const v: unknown = JSON.parse(read[1]);
-      counters.bytesRead = numberField(v, "fragmentBytes") + numberField(v, "claimsBytes") + numberField(v, "givenBytes");
+      counters.bytesRead = numberField(v, "fragmentBytes") + numberField(v, "claimsBytes") + numberField(v, "givenBytes") +
+        numberField(v, "standInBytes");
     }
   }
   const best = runs.reduce((a, b) => (b.cpuMs < a.cpuMs ? b : a));

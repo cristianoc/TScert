@@ -805,6 +805,34 @@ def RegionState.meet : List RegionState → RegionState
       r.cells.filter fun x => rs.all (·.cells.contains x),
       r.fields.filter fun x => rs.all (·.fields.contains x)⟩
 
+/-- The loop heads of a graph: each target of a retreating edge of a
+depth-first walk from the start (handlers' edges included); and the nodes
+the walk reaches. -/
+def loopHeads (nodes : Array ControlFlow.Node) (start : Nat) : Array Bool × Array Bool := Id.run do
+  let n := nodes.size
+  let mut heads : Array Bool := Array.replicate n false
+  let mut state : Array Nat := Array.replicate n 0   -- 0 new, 1 on the stack, 2 done
+  let mut stack : List (Nat × List Nat) := []
+  if start < n then
+    state := state.set! start 1
+    stack := [(start, (successors nodes[start]!.continuation ++ nodes[start]!.handler.toList).map (·.label))]
+  while true do
+    match stack with
+    | [] => break
+    | (v, []) :: rest =>
+      state := state.set! v 2
+      stack := rest
+    | (v, w :: ws) :: rest =>
+      stack := (v, ws) :: rest
+      if w < n then
+        match state[w]! with
+        | 0 =>
+          state := state.set! w 1
+          stack := (w, (successors nodes[w]!.continuation ++ nodes[w]!.handler.toList).map (·.label)) :: stack
+        | 1 => heads := heads.set! w true
+        | _ => pure ()
+  return (heads, state.map (· != 0))
+
 /-- A list of `n` labels' tables, empty but at the given labels. -/
 def sparse {α : Type} (n : Nat) (empty : α) (at_ : List (Nat × α)) : List α :=
   at_.foldl (fun acc (l, x) => acc.set l x) (List.replicate n empty)
@@ -837,32 +865,9 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
   let undefTy := pool.find? fun B => match PositiveRules.expand G B with
     | [PositiveNormalization.Clause.undef] => true
     | _ => false
-  -- The loop heads: each target of a retreating edge of a depth-first walk
-  -- from the start (handlers' edges included), and the start. A statement
-  -- entry that is no loop head is an ordinary node.
-  let (loopHeads, reached) : Array Bool × Array Bool := Id.run do
-    let mut heads : Array Bool := Array.replicate n false
-    let mut state : Array Nat := Array.replicate n 0   -- 0 new, 1 on the stack, 2 done
-    let mut stack : List (Nat × List Nat) := []
-    if start < n then
-      state := state.set! start 1
-      stack := [(start, (successors nodes[start]!.continuation ++ nodes[start]!.handler.toList).map (·.label))]
-    while true do
-      match stack with
-      | [] => break
-      | (v, []) :: rest =>
-        state := state.set! v 2
-        stack := rest
-      | (v, w :: ws) :: rest =>
-        stack := (v, ws) :: rest
-        if w < n then
-          match state[w]! with
-          | 0 =>
-            state := state.set! w 1
-            stack := (w, (successors nodes[w]!.continuation ++ nodes[w]!.handler.toList).map (·.label)) :: stack
-          | 1 => heads := heads.set! w true
-          | _ => pure ()
-    return (heads, state.map (· != 0))
+  -- The loop heads (`loopHeads`). A statement entry that is no loop head is
+  -- an ordinary node.
+  let (loopHeads, reached) := SinglePass.loopHeads nodes start
   let _ := cuts
   let isHead : Array Bool := if start < n then loopHeads.set! start true else loopHeads
   let stated := byLabel n assertions

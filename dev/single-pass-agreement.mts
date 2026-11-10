@@ -6,20 +6,24 @@
 //   node dev/single-pass-agreement.mts [pattern…]
 // With TSCERT_GIVEN_DIR set, each case's given statement-entry facts are read
 // from <dir>/<case file>.jsonl (written by dev/single-pass-given.mts).
-// With TSCERT_PASS_MODE=8, the pass runs over the types the verifier
-// computes (`--verify-units 8`) instead of the claimed ones.
+// With TSCERT_PASS_MODE=8, the pass runs over the fragment alone
+// (`--verify-units 8`), its types computed by the verifier; with
+// TSCERT_STANDINS_ALL set too, every function's and qualified import's
+// footprint the case's claims state is supplied as a written-footprint
+// stand-in (dev/single-pass-standins.mts).
 // Prints the disagreements, then the counts: units agreeing, disagreeing,
 // those the pass does not handle by construct, and those whose pipeline
 // check did not finish (a stage's timeout), which decide nothing. Exits 0
 // exactly when no unit disagrees, none is not handled and every case ran;
 // a unit whose pipeline check did not finish is counted apart.
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { cases, type Case } from "../pipeline/cases.mts";
 import { pooled } from "../pipeline/run-cases.mts";
 import { checkApart } from "../pipeline/verify-source.mts";
 import { withoutEvidenceReuse } from "../pipeline/stages.mts";
+import { standIns } from "./single-pass-standins.mts";
 
 const root = resolve(import.meta.dirname, "..");
 const verifier = join(root, "lean/.lake/build/bin/verifier");
@@ -37,9 +41,18 @@ function fileKey(artifacts: string): string | null {
 
 /** The pass's verdict on each unit of a run's file. */
 function passVerdicts(artifacts: string, key: string, given: string | null): Map<string, Verdict> {
-  const env = given === null ? process.env : { ...process.env, TSCERT_GIVEN: given };
-  const run = spawnSync(verifier, ["--verify-units", process.env.TSCERT_PASS_MODE ?? "3", join(artifacts, "fragment.json"),
-    join(artifacts, "claims.json"), key, "12"], { encoding: "utf8", maxBuffer: 1 << 28, env });
+  const mode = process.env.TSCERT_PASS_MODE ?? "3";
+  let env: NodeJS.ProcessEnv = given === null ? process.env : { ...process.env, TSCERT_GIVEN: given };
+  if (mode === "8" && process.env.TSCERT_STANDINS_ALL !== undefined) {
+    const path = join(artifacts, "standins.json");
+    writeFileSync(path, standIns(join(artifacts, "claims.json")) + "\n");
+    env = { ...env, TSCERT_STANDINS: path };
+  }
+  // Mode 8 reads the fragment alone.
+  const documents = mode === "8" ? [join(artifacts, "fragment.json")]
+    : [join(artifacts, "fragment.json"), join(artifacts, "claims.json")];
+  const run = spawnSync(verifier, ["--verify-units", mode, ...documents, key, "12"],
+    { encoding: "utf8", maxBuffer: 1 << 28, env });
   const verdicts = new Map<string, Verdict>();
   for (const line of run.stdout.split("\n").filter((l) => l.startsWith("{"))) {
     const value: unknown = JSON.parse(line);

@@ -466,11 +466,12 @@ def Front.extractAll (fr : Front) :
 
 /-- `extractAll` over the units `wanted` names, by index, only: another
 unit's plan is a refusal no check of the wanted units reads. -/
-def Front.extractSome (fr : Front) (wanted : Std.HashSet Nat) (retype : Option Retype := none) :
+def Front.extractSome (fr : Front) (wanted : Std.HashSet Nat) (retype : Option Retype := none)
+    (instances : Option Instances := none) :
     EquationStore.State × List (Except String (FunctionPlan EquationStore.State Tree)) :=
   (fr.units.zipIdx.foldl (init := (fr.d.types, #[])) fun (T, plans) (u, i) =>
     if !wanted.contains i then (T, plans.push (.error "not extracted")) else
-    match extractMember fr T u retype with
+    match extractMember fr T u retype instances with
     | .ok (next, plan) => (next, plans.push (.ok plan))
     | .error reason => (T, plans.push (.error reason))).map id (·.toList)
 
@@ -830,10 +831,33 @@ def regionalFromJson (n : Nat) (j : Json) : Except String (List String × Array 
     if l < n then heads := heads.set! l (some st)
   return (names, heads)
 
+/-- A graph's loop-head facts the claims state (its candidates at its loop
+heads, `SinglePass.loopHeads`, and its start), each at its label with its
+statement's start: a given file's `headFacts`. -/
+def headFacts (P : ControlFlow.Program) (start : Nat) (sourceMap : SourceMap)
+    (candidates : List (Nat × List HeapKnowledge.IndexAtom)) : Json :=
+  let heads := (SinglePass.loopHeads P.toArray start).1
+  Json.arr ((candidates.filter fun (l, _) => l == start || heads.getD l false).map fun (l, atoms) => Json.mkObj [("label", Lean.toJson l),
+    ("start", Lean.toJson (((sourceMap[l]?).bind id).map (·.pos.1))), ("atoms", Lean.toJson atoms)]).toArray
+
+/-- A given file's loop-head facts read back (`headFacts`), each at the
+statement entries of `cuts` that start where the given one does: a graph
+lowered over other types numbers its nodes otherwise. -/
+def headFactsFromJson (sourceMap : SourceMap) (cuts : List Nat) (j : Json) : List (Nat × List HeapKnowledge.IndexAtom) :=
+  let startOf := fun (l : Nat) => ((sourceMap[l]?).bind id).map (·.pos.1)
+  ((j.getArr?).toOption.getD #[]).toList.flatMap fun e => match do
+      let start ← (e.getObjValAs? (Option Nat) "start").toOption
+      let atoms ← (e.getObjValAs? (List HeapKnowledge.IndexAtom) "atoms").toOption
+      pure (start, atoms) with
+    | some (start, atoms) => (cuts.filter fun l => startOf l == start).map (·, atoms)
+    | none => []
+
 /-- Each selected unit's given statement-entry facts, read from the existing
 search's certificate (`GivenHeads.ofCertificate`), its own and each code
-request's, as a line (`dev/single-pass-given.mts` writes the file). -/
-def FilePlans.givenLines (f : FilePlans) (fuel : Nat) (group : List Nat) : List Json :=
+request's, as a line (`dev/single-pass-given.mts` writes the file). With
+`facts`, also the loop-head facts the claims state (`headFacts`), its own and
+each code request's: the claims-free pass's given invariants. -/
+def FilePlans.givenLines (f : FilePlans) (fuel : Nat) (group : List Nat) (facts : Bool := false) : List Json :=
   group.filterMap fun i => do
     let .ok (.graph name _ r) := (f.plans[i]?).getD (.error "") | none
     let .ok b := f.searchGroup fuel [i] true | none
@@ -850,8 +874,13 @@ def FilePlans.givenLines (f : FilePlans) (fuel : Nat) (group : List Nat) : List 
       | some (Φ, regions) => [("regional", regionalGiven r resp Φ regions)]
       | none => []
     let fallback := if !r.fresh && r.footprint != .top then [("footprintRegional", regionalGiven r resp r.footprint [])] else []
+    let heads := if !facts then [] else
+      [("headFacts", headFacts r.program r.start r.sourceMap r.candidates),
+       ("headFactsOfCodes", Json.arr ((r.codes.zip r.codeHints).map fun (q, h) =>
+        let rq := q.asRequest r.toRequest
+        headFacts rq.program rq.start h.sourceMap h.candidates).toArray)]
     pure (Json.mkObj ([("unit", Lean.toJson (f.fr.unitId i)), ("name", Lean.toJson name),
-      ("graph", main.toJson), ("codes", Json.arr codes)] ++ regional ++ fallback))
+      ("graph", main.toJson), ("codes", Json.arr codes)] ++ regional ++ fallback ++ heads))
 
 /-- A member's counts, and where asked (`counting`) also as a JSON line. -/
 def countsLine (counting : Bool) (name : String) (c : SinglePass.Counts) : String :=
@@ -861,7 +890,7 @@ def countsLine (counting : Bool) (name : String) (c : SinglePass.Counts) : Strin
 no certificate built: per member its outcome and counts; the group's
 verdict, the first member's refusal or construct not handled. -/
 def FilePlans.passGroup (f : FilePlans) (fuel : Nat) (group : List Nat) (compare : Bool := false) (debugNode : Nat := 1000000000) (repeats : Nat := 1) (given : Option (Std.HashMap String Json) := none)
-    (observe : Option String := none) (counting : Bool := false) :
+    (observe : Option String := none) (counting : Bool := false) (givenFacts : Bool := false) :
     List String × Except String (List String) := Id.run do
   let G : NormalGraph (EquationStore.CheckedLabel f.F.equations f.F.primitive) := StoreView.graph f.F.store
   let I : PositiveCertificates.InstanceImageCheck G := StoreView.images f.F.store
@@ -910,6 +939,11 @@ def FilePlans.passGroup (f : FilePlans) (fuel : Nat) (group : List Nat) (compare
           | Except.ok g => g
           | Except.error _ => {}
         | none => {}
+      -- The claims-free pass (`givenFacts`): the loop heads' facts the given
+      -- line states (`headFacts`), in place of the claims'.
+      let heads := (line.bind fun l => (l.getObjVal? "headFacts").toOption).getD (Json.arr #[])
+      let headCandidates := headFactsFromJson r.sourceMap (r.start :: r.cuts) heads
+      let r := if givenFacts then { r with candidates := headCandidates } else r
       let givenImplies := main.implies
       let givenArgs := main.args
       let givenInputs := main.inputs
@@ -952,6 +986,11 @@ def FilePlans.passGroup (f : FilePlans) (fuel : Nat) (group : List Nat) (compare
       let mut sumsAnswers := next
       for (q, ci) in r.codes.zipIdx do
         let hints := (r.codeHints[ci]?).getD {}
+        let hints := if !givenFacts then hints else
+          let given := ((line.bind fun l => (l.getObjVal? "headFactsOfCodes").toOption).bind fun cs =>
+            (cs.getArr?).toOption.bind (·[ci]?)).getD (Json.arr #[])
+          let codeStart := (q.asRequest r.toRequest).start
+          { hints with candidates := headFactsFromJson hints.sourceMap (codeStart :: hints.cuts) given }
         let rq := q.asRequest r.toRequest
         let eff := q.entry.row.effect
         let conditions := decide (q.entry.arity ≤ q.entry.row.arguments.length) && eff.below q.entry.arity &&

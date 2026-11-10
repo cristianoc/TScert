@@ -5,6 +5,8 @@ import Verification.Source.Claims.Json
 import Verification.Source.Claims.Translate
 -- Claims/TypeComparison.lean compares computed types with the claims (mode 7, a measurement).
 import Verification.Source.Claims.TypeComparison
+-- Claims/FragmentFront.lean lowers a file's units from its fragment alone (mode 8).
+import Verification.Source.Claims.FragmentFront
 
 /-! File interface to the source adapter. Source parsing remains external;
 checking reconstructs each unit's request from the fragment and its claims. -/
@@ -367,22 +369,33 @@ def checkUnitsFile (astPath claimsPath fileKey evidencePath : String) (names : O
 over the file's own store (`FilePlans.produceGroup`) and checked there
 (`SourceClaimJson.unitVerdict`), no evidence written. Each unit's verdict on
 a line, as `--check-units` prints it. -/
-def verifyUnitsFile (astPath claimsPath fileKey : String) (fuel : Nat) (names : Option String) (mode : Nat)
+def verifyUnitsFile (astPath : String) (claimsPath : Option String) (fileKey : String) (fuel : Nat)
+    (names : Option String) (mode : Nat)
     (budget : PositiveCertificates.SearchBudget := {}) : IO UInt32 := do
   -- Per-kind timings only where asked (`TSCERT_PROFILE`).
   SinglePass.profiling.set (← IO.getEnv "TSCERT_PROFILE").isSome
   let t0 ← IO.monoNanosNow
   let ast ← readJson astPath
-  let claims ← readJson claimsPath
+  -- Mode 8 reads no claims document.
+  let claims ← match claimsPath with
+    | some p => readJson p
+    | none => pure (.error "no claims document")
+  -- Mode 8's written-footprint stand-ins (`TSCERT_STANDINS`), a measurement aid.
+  let standInsPath := (← IO.getEnv "TSCERT_STANDINS").filter (!·.isEmpty)
+  let standIns : Except String SourceClaimJson.StandIns ← match standInsPath with
+    | some p => do pure ((← readJson p) >>= fromJson?)
+    | none => pure (.ok {})
   let tj ← IO.monoNanosNow
   -- The single pass (mode 3) reads what the selected units' groups read.
-  -- Mode 8's replaced parts, a debugging aid (`TSCERT_RETYPE`).
+  -- Mode 9's replaced parts, a debugging aid (`TSCERT_RETYPE`).
   let parts := (← IO.getEnv "TSCERT_RETYPE").getD "xec"
   let planned ← IO.lazyPure fun _ => do
     if mode == 3 || mode == 7 then SourceClaimJson.unitPlans (← ast) (← claims) fileKey budget (selection names)
-    -- Mode 8: the single pass over the selected units' types computed by
-    -- the walk in place of their claims (`SourceClaimJson.retypeByWalk`).
-    else if mode == 8 || mode == 9 then
+    -- Mode 8: the single pass over the fragment alone, each unit's types
+    -- computed by the walk (`SourceClaimJson.fragmentPlans`).
+    else if mode == 8 then SourceClaimJson.fragmentPlans (← ast) fileKey budget (selection names) (← standIns)
+    -- Mode 9: the search and check over the claims retyped by the walk.
+    else if mode == 9 then
       SourceClaimJson.unitPlans (← ast) (← claims) fileKey budget (selection names)
         (some (SourceClaimJson.retypeByWalk parts))
     else SourceClaimJson.filePlans (← ast) (← claims) fileKey budget
@@ -436,8 +449,15 @@ def verifyUnitsFile (astPath claimsPath fileKey : String) (fuel : Nat) (names : 
             let given ← match ← IO.getEnv "TSCERT_GIVEN" with
               | some p => size p
               | none => pure 0
-            IO.eprintln s!"counts-read: \{\"fragmentBytes\":{← size astPath},\"claimsBytes\":{← size claimsPath},\"givenBytes\":{given}}"
-          let (lines, v) ← IO.lazyPure fun _ => f.passGroup fuel (f.fr.group i) compare debugNode repeats given observe counting
+            let claimsBytes ← match claimsPath with
+              | some p => size p
+              | none => pure 0
+            let standInBytes ← match standInsPath with
+              | some p => size p
+              | none => pure 0
+            IO.eprintln s!"counts-read: \{\"fragmentBytes\":{← size astPath},\"claimsBytes\":{claimsBytes},\"givenBytes\":{given},\"standInBytes\":{standInBytes}}"
+          let (lines, v) ← IO.lazyPure fun _ =>
+            f.passGroup fuel (f.fr.group i) compare debugNode repeats given observe counting (givenFacts := mode == 8)
           let p1 ← SinglePass.passNanos.get
           let s1 ← IO.monoNanosNow
           for line in lines do IO.eprintln line
@@ -459,7 +479,8 @@ def verifyUnitsFile (astPath claimsPath fileKey : String) (fuel : Nat) (names : 
         | 6 => do
           -- The given statement-entry facts of the selected units, read from
           -- the existing search's certificate: one line per unit.
-          for line in f.givenLines fuel (f.fr.group i) do IO.println line.compress
+          let facts := (← IO.getEnv "TSCERT_GIVEN_FACTS").isSome
+          for line in f.givenLines fuel (f.fr.group i) facts do IO.println line.compress
           pure (.error "given facts written")
         | 7 => do
           -- The computed types against the claims, a line per unit

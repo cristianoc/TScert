@@ -58,6 +58,11 @@ structure Walk where
   writes : Bool := false
   locals : List String := []
   exprs : Std.HashMap Span (String × Except String (Ty Tree)) := {}
+  /-- Each call of a generic module function, by its span: the type each
+  binder takes at it, by the binder's name; and the last call's, until its
+  call records it. -/
+  instances : List (Span × List (String × Ty Tree)) := []
+  lastInstance : Option (List (String × Ty Tree)) := none
   entries : Std.HashMap Nat (List (String × Ty Tree)) := {}
   breaks : List (Option String × Env) := []
 
@@ -395,6 +400,10 @@ structure Callee where
   own : Option (Ty Tree) := none
   /-- A class's construct signatures: its instance is a constructor's. -/
   construct : Bool := false
+  /-- A generic module function's binders' names, each of `binders`; or
+  its explicit type arguments, by its binders' names. -/
+  names : List String := []
+  explicit : List (String × Ty Tree) := []
 
 /-- The callee a value of type `F` is, called with receiver `O`: a scheme
 by its binders and signatures, at `typeArgs` where they are written; any
@@ -416,12 +425,15 @@ def genericCallee (g : Generic) (typeArgs : List Json) : Compiler Callee := do
   if !typeArgs.isEmpty then
     if typeArgs.length != g.binders.length then throw "explicit type arguments of another count than the binders"
     let inst ← lower (do Fragment.translate (← g.instantiate (g.binders.zip typeArgs)))
+    let θ ← typeArgs.mapM fun t => lower (Fragment.translate t)
     let G ← graphNow
-    return { fixed := ProgramTyping.callSigs G inst, rests := ProgramTyping.restSigs G inst }
+    return { fixed := ProgramTyping.callSigs G inst, rests := ProgramTyping.restSigs G inst,
+             explicit := g.binders.zip θ }
   let ps ← lower (modifyGet fun T => let (T, ps) := EquationStore.binders T g.binders; (ps, T))
   let fresh ← lower (do Fragment.translate (← g.instantiate (g.binders.zip (ps.map fun p => graphJson [p]))))
   let G ← graphNow
-  return { binders := ps, fixed := ProgramTyping.callSigs G fresh, rests := ProgramTyping.restSigs G fresh }
+  return { binders := ps, fixed := ProgramTyping.callSigs G fresh, rests := ProgramTyping.restSigs G fresh,
+           names := g.binders }
 
 /-- The member `o.k` names, `o` of type `O`: its own (a host-relative
 member), else its prototype's. -/
@@ -872,9 +884,14 @@ partial def expr (env : Env) (e : Expr) : W (Option (Ty Tree) × Env) := do
         | some g => return Except.ok (← genericCallee g typeArgs)
         | none => return Except.ok (← calleeOf (← need F "the callee") [Labels.undef] typeArgs))
       fun m => pure (.error m))
+    modify fun w => { w with lastInstance := none }
     let r ← called e2 c args As e.span
-    -- A generic module function's occurrence is read at its instance.
-    if generic.isSome then if let .ok (inst, _) := r then let _ ← record callee (.ok inst)
+    -- A generic module function's occurrence is read at its instance, and
+    -- the call's type arguments recorded.
+    if generic.isSome then
+      if let .ok (inst, _) := r then let _ ← record callee (.ok inst)
+      if let some θ := (← get).lastInstance then
+        modify fun w => { w with instances := (e.span, θ) :: w.instances, lastInstance := none }
     return (← record e ((·.2) <$> r), e2)
   | .callWithReceiver _ callee recv args =>
     let (F, e1) ← expr env callee
@@ -1040,6 +1057,10 @@ partial def applyCall (env : Env) (c : Callee) (args : List Expr) (As : List (Op
     let _ := b
     return .error "a type argument is not an actual's type"
   let inst := a.map sub
+  -- A generic module function's instance: each binder's type, by name.
+  if !c.names.isEmpty || !c.explicit.isEmpty then
+    modify fun w => { w with lastInstance := some (c.explicit ++
+      c.names.zip (c.binders.map fun b => (σ.lookup b).getD [])) }
   -- A call changing the heap, by its instance's footprint.
   if inst.effect.footprint != ⟨.keep, .keep⟩ then wrote
   let own ← StateT.lift (match c.own, rest with
