@@ -615,6 +615,65 @@ def FilePlans.produceGroup (f : FilePlans) (fuel : Nat) (group : List Nat) :
     if !checked.accepted then throw (requestsRefusal certified b checked)
   return (evidence, match refusal with | .ok () => none | .error reason => some reason, account)
 
+/-- `produceGroup` and the check of its bundle, nothing encoded (`unchecked`: the
+search leaves the graph's check to that check). Search evidence for one group: each member's request searched in turn,
+the search's memo kept within the group only; the group's evidence, and its
+refusal: the first member's search refused, or the checker's refusal of
+what the searches left unchecked; and the account of the candidate
+search over the members searched to the end (`CertificateProducer.Answered`):
+its passes, the most over one graph, and the candidates it left out. -/
+def FilePlans.verifyGroup (f : FilePlans) (fuel : Nat) (group : List Nat) (unchecked : Bool) :
+    Except String (List String) := Id.run do
+  let G : NormalGraph (EquationStore.CheckedLabel f.F.equations f.F.primitive) := StoreView.graph f.F.store
+  let I : PositiveCertificates.InstanceImageCheck G := StoreView.images f.F.store
+  let mut answers : CertificateProducer.Answered G := {}
+  let mut cs := #[]
+  let mut es := #[]
+  let mut failed : Option String := none
+  for i in group do
+    let searched : Except String (Response _ × List (ProgramCertificates.Evidence _) × CertificateProducer.Answered G) :=
+      do
+      let .graph name namePos r ← (f.plans[i]?).getD (.error s!"no unit {i}")
+      let labels := r.searchLabels
+      let (e, next) ← ExpressionClaims.produceUsing G I labels (StoreView.valid r.types)
+        (StoreView.projection r.types) fuel r.obligations { answers with summaries := #[], summaryAnswers := {} }
+      let (rendered, next) := ExpressionClaims.renderKnownUsing G I labels (StoreView.valid r.types)
+        r.nodePlans next
+      let known := e ++ rendered
+      -- A qualified body's checker is stated over the request's own image
+      -- check: its search keeps that check, and the request's summaries.
+      let (c, kept) ← if r.qualification.isNone then
+          RequestJson.produceResponseUsing G I (HeapExpressionRules.Checker.ordinary G I) r.toRequest
+            fuel [] known r.sourceMap (some labels) r.assertions r.cuts r.candidates r.codeHints r.checker r.aliases next
+            (searched := true) (recheck := some (HeapExpressionRules.Checker.ordinary G)) (unchecked := unchecked)
+        else do
+          let (c, own) ← RequestJson.produceResponseUsing (RequestJson.graph r.toRequest) (StoreView.images r.types)
+            r.checker r.toRequest fuel [] known r.sourceMap (some labels) r.assertions r.cuts r.candidates
+            r.codeHints r.checker r.aliases { summaries := next.summaries, summaryAnswers := next.summaryAnswers }
+            (searched := true) (unchecked := unchecked)
+          pure (c, { next with
+            candidatePasses := next.candidatePasses + own.candidatePasses
+            candidatePassesMax := max next.candidatePassesMax own.candidatePassesMax
+            candidatesLeftOut := next.candidatesLeftOut + own.candidatesLeftOut })
+      if let some refusal := footprintRefusal name namePos r c then throw refusal
+      return (c, e, kept)
+    match searched with
+    | .ok (c, e, next) =>
+      answers := next
+      cs := cs.push c
+      es := es.push e
+    | .error reason =>
+      if failed.isNone then failed := some reason
+      cs := cs.push { certificate := [] }
+      es := es.push []
+  let b := Bundle.mk cs.toList es.toList
+  if let some reason := failed then return .error reason
+  return do
+    let certified ← f.certified group
+    let checked := checkRequestsResult (CertifiedPlan.requests certified) b
+    if checked.accepted then return f.dependencies group
+    throw (requestsRefusal certified b checked)
+
 /-- A module run on the wire: its location, its restricted document and
 claims, and its own qualified reads with their footprints and on-throw
 flags. -/

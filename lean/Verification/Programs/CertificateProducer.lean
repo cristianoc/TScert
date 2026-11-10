@@ -2412,7 +2412,7 @@ heap entailment; it is not limited to ordinary subtype proof construction. -/
     (aliases : List (ι × ι) := []) (answers : Answered G := {})
     (recheck : Option ((i : InstanceImageCheck G) → HeapExpressionRules.Checker G i) := none)
     (entrySeparation : HeapSeparation.Separation := {}) (entryIndices : List HeapKnowledge.IndexAtom := [])
-    (candidates : List (Nat × List HeapKnowledge.IndexAtom) := []) :
+    (candidates : List (Nat × List HeapKnowledge.IndexAtom) := []) (unchecked : Bool := false) :
     Except (Failure ι) (ControlFlow.Certificate ι) × Answered G × List LeftOut :=
   let promised := match R with
     | .guards T _ | .asserts T _ => [T]
@@ -2422,6 +2422,8 @@ heap entailment; it is not limited to ordinary subtype proof construction. -/
   | .error e answers => (.error e, answers, [])
   | .ok (.error e, leftOut) answers => (.error e, answers, leftOut)
   | .ok (.ok C, leftOut) answers => (fun r a => (r, a, leftOut)) (
+    -- `unchecked`: the caller checks the certificate itself.
+    if unchecked then .ok C else
     -- Where `recheck` builds the search's checker at any image check, the
     -- certificate is checked with the inclusions search established
     -- answered from their proofs (`Answered.images`).
