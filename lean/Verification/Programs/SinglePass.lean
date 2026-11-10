@@ -167,9 +167,10 @@ structure Counts where
   givenClaims : Nat := 0
   storeMax : Nat := 0
   directCalls : Nat := 0
+  givenImplies : Nat := 0
 
 instance : ToString Counts where
-  toString c := s!"visited {c.visited}, rule applications {c.rules} (whole store {c.fullRules}), copies {c.copies}, entailment queries {c.queries} (mean atoms {c.queryAtoms / max c.queries 1}), edge searches {c.edgeSearches}, head facts written {c.givenWritten} + from claims {c.givenClaims}, largest store {c.storeMax}, calls read off their signature {c.directCalls}"
+  toString c := s!"visited {c.visited}, rule applications {c.rules} (whole store {c.fullRules}), copies {c.copies}, entailment queries {c.queries} (mean atoms {c.queryAtoms / max c.queries 1}), edge searches {c.edgeSearches}, head facts written {c.givenWritten} + from claims {c.givenClaims}, largest store {c.storeMax}, calls read off their signature {c.directCalls}, head implications supplied {c.givenImplies}"
 
 /-- The verdict: refused at a located obligation, or a construct the pass
 does not handle. -/
@@ -607,7 +608,8 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
     (suggestions : List (Sequent ι)) (known : List (ProgramCertificates.Evidence ι)) (codes : CodeEntry ι → Bool)
     (aliases : List (ι × ι)) (checker : HeapExpressionRules.Checker G images)
     (answers : Answered G) (reference : Array Knowledge := #[]) (debugNode : Nat := 1000000000)
-    (bound : Option (Footprints.Closed × Bool × Bool) := none) : Outcome × Counts × Answered G := Id.run do
+    (bound : Option (Footprints.Closed × Bool × Bool) := none)
+    (givenImplies : Array (List (PromiseCalls.Implication ι)) := #[]) : Outcome × Counts × Answered G := Id.run do
   let nodes := P.toArray
   let claimed := claims.toArray
   let n := nodes.size
@@ -685,6 +687,10 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
       let f := fun (i : Nat) => if i < width then some (i + fresh - width) else none
       entry := { names, store := timedKind "head state" fun _ => (atomsOf g).foldl (fun s a => match a.rename f with
         | some b => s.add b | none => s) {} }
+      -- The implications its given invariant states, over its names.
+      implies := ((givenImplies[l]?).getD []).filterMap fun x => do
+        pure ⟨← f x.test, ← f x.target, x.type⟩
+      counts := { counts with givenImplies := counts.givenImplies + implies.length }
     | none => match incoming[l]! with
       | [s] =>
         entry := s
@@ -821,6 +827,18 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
               | none => false
             if !same then return (.refused s!"direct call output differs at node {l}", counts, answers)
       let some (deriv, effect, out) := r.value | return (.refused s!"expression at node {l}: {(reprStr node.expression).take 300} with {(atomsOf k).length} facts {(reprStr k).take 1500}", counts, answers)
+      -- The step's derivation checked as the checker's `run` checks it
+      -- (`checkStepResult`'s tree check): the search's `select` takes it as
+      -- given.
+      let tree := match effect with
+        | .slicedRead _ _ _ e _ => some e
+        | _ => effect.proof?
+      if let some p := tree then
+        -- A call at a precondition the step's facts establish is checked as
+        -- `requiringCalls` checks it (`PromiseCalls.requiresTree`).
+        if !(timedKind "tree check" fun _ => ProgramCertificates.checkTreeUsing G images p codes sums ||
+            PromiseCalls.requiresTree G images kE codes sums p) then
+          return (.refused s!"expression at node {l}: its derivation", counts, answers)
       -- A call keeping the heap (`PromiseCalls.keepsCall`), where no layer
       -- before it in `Checker.ordinary` decides the step, keeps every fact
       -- it does not name: its output over the facts it names is its delta.
@@ -1032,7 +1050,27 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
                 | none => []) answers
             answers := a
             if r.value.isNone then return (.refused s!"edge from node {l} to node {t.label}{if l == debugNode then s!" fields {reprStr (readFields ko 0)} links {reprStr ko.links} diff {reprStr diff} implies {reprStr (implies.map fun x => (x.test, x.target))} names {reprStr (entry.names.take 6)} yields {reprStr ((yields.getD []).map fun y => (y.target, y.conditional))}" else ""}", counts, answers)
+      -- The edge's implications: the entry's, and on a pushed edge those the
+      -- result's conditional yields state of it.
+      let freshImpl : List (PromiseCalls.Implication ι) := if !pushed then [] else
+        ((yields.getD []).filterMap fun y => if y.conditional && !y.onFalse then
+          (entry.names[y.target]?).map fun tgt => ⟨result, tgt, y.type⟩ else none)
       if isHead[t.label]! then
+        -- The head's given implications hold on every edge into it.
+        if !vacuous then
+          for x in (givenImplies[t.label]?).getD [] do
+            let nt := names[PointClaims.slot t.mapping x.test]?
+            let na := names[PointClaims.slot t.mapping x.target]?
+            let held := (implies ++ freshImpl).filter fun y => some y.test == nt && some y.target == na
+            let mut ok := false
+            for y in held do
+              if !ok then
+                if same y.type x.type then ok := true
+                else
+                  let (res, a') := subtypeUsing G images y.type x.type answers
+                  answers := a'
+                  if res.value.isSome then ok := true
+            if !ok then return (.refused s!"edge from node {l} into statement entry {t.label}: an implication", counts, answers)
         -- The head's given state is entailed on every edge into it.
         let some req := given[t.label]! | return (.refused s!"head {t.label}", counts, answers)
         let slots := (atomsOf req).flatMap Atom.names
@@ -1054,10 +1092,7 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
         -- The edge's implications: the entry's, and on a pushed edge those
         -- the result's conditional yields state of it; none naming a name
         -- the edge drops.
-        let fresh' : List (PromiseCalls.Implication ι) := if !pushed then [] else
-          ((yields.getD []).filterMap fun y => if y.conditional && !y.onFalse then
-            (entry.names[y.target]?).map fun tgt => ⟨result, tgt, y.type⟩ else none)
-        let carried := (keepFirst {} ((implies ++ fresh').filter fun x =>
+        let carried := (keepFirst {} ((implies ++ freshImpl).filter fun x =>
           !gone.contains x.test && !gone.contains x.target)).2.toList
         incomingImpl := incomingImpl.modify t.label (carried :: ·)
         indeg := indeg.modify t.label (· - 1)
