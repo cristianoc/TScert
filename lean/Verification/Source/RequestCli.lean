@@ -405,7 +405,8 @@ def verifyUnitsFile (astPath claimsPath fileKey : String) (fuel : Nat) (names : 
           let given ← match ← IO.getEnv "TSCERT_GIVEN" with
             | none => pure none
             | some path => do
-              let text ← IO.FS.readFile path
+              -- No file is no given fact.
+              let text ← try IO.FS.readFile path catch _ => pure ""
               let lines := text.splitOn "\n" |>.filter (!·.isEmpty)
               pure (some (lines.foldl (fun (m : Std.HashMap String Json) l => match Json.parse l with
                 | .ok j => match j.getObjValAs? String "unit", j.getObjVal? "graph" with
