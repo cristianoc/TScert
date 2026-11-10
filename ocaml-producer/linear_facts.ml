@@ -819,13 +819,13 @@ let strictly_bounded ~facts ~bounds xs k =
   (let fs = facts @ term_ranges facts in
    entails fs ([k,-1],0) && entails fs (norm [k,1; length_term xs,-1],-1))
 
-(* The footprint of an expression whose heap writes are calls each keeping
-   every location holding a store, within `{value: any, store: keep}`, its
+(* The footprint of an expression whose heap writes are calls each leaving
+   every store no shorter, within `{value: any, store: grow}`, its
    other parts writing none: the join of the calls'
    footprints, which the facts a call at it keeps bound (Lean's
    `Changes.ofClosed`); none for any other expression. *)
 let rec object_calls env (e : expr) : Semantic.footprint option =
-  let within fp = if Semantic.footprint_le fp {Semantic.on_value=Semantic.Any;on_store=Semantic.Keep} then Some fp else None in
+  let within fp = if Semantic.footprint_le fp {Semantic.on_value=Semantic.Any;on_store=Semantic.Grow} then Some fp else None in
   let join a b = match a,b with
     | Some a,Some b -> Some {Semantic.on_value=Semantic.join_change a.Semantic.on_value b.Semantic.on_value;
         on_store=Semantic.join_change a.Semantic.on_store b.Semantic.on_store}
@@ -843,6 +843,17 @@ let rec object_calls env (e : expr) : Semantic.footprint option =
   | Alloc fields -> all (List.map snd fields)
   | Assign (x,_,rhs) when slot_binding env x -> object_calls env rhs
   | Update (_,{node=Id x;_},Some rhs,_) when slot_binding env x -> object_calls env rhs
+  (* `x ??= v`, `x ||= v` and `x &&= v` of a slot: the right side's calls. *)
+  | NullishAssign (x,_,rhs) | LogicalAssign (_,{node=Id x;_},rhs) when slot_binding env x -> object_calls env rhs
+  (* A field write, and `x.f ??= v`, `||=`, `&&=`: its operands' calls, then
+     a change of the classes the field's type admits (`field_classes`), each
+     a step of its own for Lean. *)
+  | Write (recv,key,rhs) | LogicalAssign (_,{node=Read (recv,key);_},rhs) ->
+    (match !field_classes env recv key with
+     | Some (o,n,a) -> join (all [recv;rhs])
+         (Some {Semantic.on_value=(if o then Semantic.Any else if n then Semantic.Scalar else Semantic.Keep);
+           on_store=(if a then Semantic.Any else Semantic.Keep)})
+     | None -> None)
   | _ -> None
 let object_changes env e = Option.map (of_footprint env) (object_calls env e)
 
