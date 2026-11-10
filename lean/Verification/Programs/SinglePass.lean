@@ -836,6 +836,8 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
       if let some p := tree then
         -- A call at a precondition the step's facts establish is checked as
         -- `requiringCalls` checks it (`PromiseCalls.requiresTree`).
+        -- The read summaries the step's search added included.
+        let sums := answers.summaries.toList
         if !(timedKind "tree check" fun _ => ProgramCertificates.checkTreeUsing G images p codes sums ||
             PromiseCalls.requiresTree G images kE codes sums p) then
           return (.refused s!"expression at node {l}: its derivation", counts, answers)
@@ -861,8 +863,6 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
       | _, _ =>
         result := fresh
         fresh := fresh + 1
-      if l == debugNode then
-        return (.refused s!"debug {l}: effect preserving {preserving}, in {reprStr k}\nout {reprStr out}", counts, answers)
       stepK := kE
       stepOut := out
       stepDeriv := deriv
@@ -946,27 +946,46 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
       let (ys, a) := timedKind "yields" fun _ => (nodeYields G images pool c.context slotImpl e stepOut stepK) answers
       answers := a
       yields := some ys
-    if node.handler.isSome then return (.notHandled s!"handler at node {l}", counts, answers)
+    -- A handler receives the thrown value in a fresh name, at a type
+    -- admitting every value its target states for the slot it lands in, or
+    -- the pool's (`produceNodeAt`), under the facts a throw keeps
+    -- (`ControlFlow.handlerFacts`: no heap fact).
+    let thrownTy : Option (Ty ι) := node.handler.bind fun t => do
+      let tc ← claimed[t.label]?
+      let landing := (List.range tc.context.length).filterMap fun i =>
+        if PointClaims.slot t.mapping i == 0 then tc.context[i]? else none
+      (landing ++ pool).find? (ControlFlow.admitsAll G)
+    if node.handler.isSome && thrownTy.isNone then return (.refused s!"handler of node {l}", counts, answers)
+    let thrown := fresh
+    if node.handler.isSome then fresh := fresh + 1
     if let .ret := node.continuation then
       match goal with
       | .plain R => if !(c.type == R || c.type.isEmpty) then return (.refused s!"return at node {l}", counts, answers)
       | _ => return (.notHandled "promise goal", counts, answers)
     -- The edges: target, whether the result is pushed, an observation of
     -- it, and a branch's answer.
-    let edges : List (Target × Bool × Option BranchRefinement.Observation × Option Bool) :=
-      match node.continuation with
+    let edges : List (Target × Bool × Option BranchRefinement.Observation × Option Bool × Bool) :=
+      (match node.continuation with
       | .ret => []
-      | .bind t => [(t, true, none, none)]
-      | .effect t => [(t, false, none, none)]
-      | .branch y m => [(y, false, none, some true), (m, false, none, some false)]
-      | .branchBind y m => [(y, true, some (.boolean true), none), (m, true, some (.boolean false), none)]
-      | .tagBind tg y m => [(y, true, some (.tag tg true), none), (m, true, some (.tag tg false), none)]
-    for (t, pushed, observed, promote) in edges do
+      | .bind t => [(t, true, none, none, false)]
+      | .effect t => [(t, false, none, none, false)]
+      | .branch y m => [(y, false, none, some true, false), (m, false, none, some false, false)]
+      | .branchBind y m => [(y, true, some (.boolean true), none, false), (m, true, some (.boolean false), none, false)]
+      | .tagBind tg y m => [(y, true, some (.tag tg true), none, false), (m, true, some (.tag tg false), none, false)]) ++
+      node.handler.toList.map fun t => (t, true, none, none, true)
+    for (t, pushed, observed, promote, isHandler) in edges do
       let some tc := claimed[t.label]? | return (.refused s!"edge from {l}", counts, answers)
-      let Γ := if pushed then c.type :: c.context else c.context
-      let names := if pushed then pushedNames else entry.names
-      -- The edge's own facts: an observation of the result.
-      let mut edgeStore := store
+      let Γ := if isHandler then thrownTy.getD [] :: c.context else if pushed then c.type :: c.context else c.context
+      let names := if isHandler then thrown :: entry.names else if pushed then pushedNames else entry.names
+      -- The edge's own facts: an observation of the result; a throw's, the
+      -- entry's facts no heap change affects.
+      let mut edgeStore := if isHandler then
+          entry.store.toList.foldl (fun (acc : Store) a => match a with
+            | .cell _ | .elem _ => acc.remove a
+            | .link g => if g.alias then acc else acc.remove a
+            | .index x => if x.fact.envOnly then acc else acc.remove a
+            | _ => acc) entry.store
+        else store
       match observed, promote with
       | some o, _ =>
         let (k, pairs, table) := materialize { names, store } (if pushed then width + 1 else width) [0] false
@@ -982,7 +1001,8 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
       -- The slots' types: each the target's, or below it.
       -- Whether no environment meets the edge's context: the node's own
       -- context's answer, and the pushed result's type.
-      let unsatΓ := here || (pushed && ControlFlow.unsatisfiable G [c.type])
+      let unsatΓ := here || (if isHandler then ControlFlow.unsatisfiable G [thrownTy.getD []]
+        else pushed && ControlFlow.unsatisfiable G [c.type])
       let vacuous := match observed with
         | some o => unsatΓ || (Γ[0]?).any (BranchRefinement.impossible G · o)
         | none => unsatΓ
@@ -1017,6 +1037,8 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
               | some o => HeapKnowledge.aliasCells (HeapKnowledge.observeTyped G Γ ko 0 o)
               | none => []) answers
           answers := a
+          if r.value.isNone && isHandler then
+            return (.refused s!"handler edge from node {l} to node {t.label}", counts, answers)
           if r.value.isNone then
             -- The edge's context as the step's yields refine it
             -- (`produceNodeAt`): what a test or a promise establishes.
@@ -1028,6 +1050,11 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
                 answers := a
                 pure ys
             yields := some ys
+            -- Each yield restated at every slot holding its target's name, as
+            -- the alias links of a positional state relate them.
+            let ys := ys.flatMap fun y => match entry.names[y.target]? with
+              | some nm => (entry.names.zipIdx.filter (·.1 == nm)).map fun (_, j) => { y with target := j }
+              | none => [y]
             let outL := KnowledgeExpand.expandLinks (HeapKnowledge.setsCtx (HeapKnowledge.typeSets G c.context) 1) stepOut
             let pushedRefine := fun facts => PromiseCalls.refineBy G (c.type :: c.context)
               (PromiseCalls.aliasFacts outL.links facts 1) 0
@@ -1052,7 +1079,7 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
             if r.value.isNone then return (.refused s!"edge from node {l} to node {t.label}{if l == debugNode then s!" fields {reprStr (readFields ko 0)} links {reprStr ko.links} diff {reprStr diff} implies {reprStr (implies.map fun x => (x.test, x.target))} names {reprStr (entry.names.take 6)} yields {reprStr ((yields.getD []).map fun y => (y.target, y.conditional))}" else ""}", counts, answers)
       -- The edge's implications: the entry's, and on a pushed edge those the
       -- result's conditional yields state of it.
-      let freshImpl : List (PromiseCalls.Implication ι) := if !pushed then [] else
+      let freshImpl : List (PromiseCalls.Implication ι) := if !pushed || isHandler then [] else
         ((yields.getD []).filterMap fun y => if y.conditional && !y.onFalse then
           (entry.names[y.target]?).map fun tgt => ⟨result, tgt, y.type⟩ else none)
       if isHead[t.label]! then
@@ -1086,7 +1113,7 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
         let gone := droppedBy names t.mapping targetNames ++
           (if !pushed && !entry.names.contains result then [result] else [])
         let gone := if pushed || t.mapping.isSome then gone else gone
-        let freshOut := (if pushed && outFresh && !entry.fresh.contains result then result :: entry.fresh else entry.fresh).filter
+        let freshOut := (if pushed && !isHandler && outFresh && !entry.fresh.contains result then result :: entry.fresh else entry.fresh).filter
           (!gone.contains ·)
         incoming := incoming.modify t.label ({ names := targetNames, store := edgeStore.drop gone, fresh := freshOut } :: ·)
         -- The edge's implications: the entry's, and on a pushed edge those
