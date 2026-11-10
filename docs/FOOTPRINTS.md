@@ -503,11 +503,22 @@ callee stating a region on that field changes no store of its entry heap
 through the call (`stated-fresh-field`, `stated-fresh-field-local`,
 `stated-fresh-field-nullable`, where the slot is the record or `null`;
 `stated-fresh-field-escape`, `stated-fresh-field-alias`,
-`stated-fresh-field-throw`). A fresh record holding the caller's array, a
-join with such a record, and a field that is not `@stable` reassigned the
-caller's array give no fact (`invalid-stated-fresh-old-array`,
-`invalid-stated-fresh-join`, `invalid-stated-fresh-reassigned`, each run
-under Node).
+`stated-fresh-field-throw`). A fresh record holding the caller's array and a
+join with such a record give no fact (`invalid-stated-fresh-old-array`,
+`invalid-stated-fresh-join`, each run under Node). A region through a field
+that is not `@stable` is refused at the callee's entry
+(`invalid-stated-fresh-reassigned`, `invalid-stated-fresh-reassigned-throw`;
+Node prints `NaN` for `console.log(total([1, 2, 3]))` in each).
+
+The forged-table controls in `pipeline/test.mts` select those cases' caller
+`drain` alone, whose call uses the callee's declared region. They retain
+freshness across replacement of the mutable field by the parameter's array,
+also through a throwing call inside `try` and the subsequent `catch`.
+The transport check (`fieldsKept` in `checkNode`) refuses the retained fact
+in search and in evidence checking. With that check bypassed and the forged
+table retained, the same evidence is accepted; bypassing transport alone
+supplies no fresh-field fact. These mutations affect only the separate
+control executable (`pipeline/evidence-mutations.mts`).
 
 `pop`, `shift`, `reverse` and `splice` change only their receiver's store and element
 contents, and `filter`, `map`, `flatMap`, `flat`, `slice`, `splice` and `split` allocate their

@@ -36,6 +36,7 @@ function inject(source: string, symbol: string, body: (args: string[]) => string
 }
 
 const header = `
+extern intptr_t write(int, const void *, size_t);
 extern char *getenv(const char *);
 extern char *strstr(const char *, const char *);
 extern void abort(void);
@@ -67,7 +68,7 @@ export function mutationVerifier(): string {
   let response = readFileSync(join(lean, ".lake/build/bin/verifier.rsp"), "utf8");
   const modules = ["Programs/PointClaims", "Programs/BranchRefinement", "Semantics/HeapLinks", "Semantics/HeapSeparation",
     "Semantics/HeapKnowledge", "Semantics/KnowledgeExpand", "Programs/HeapExpressionRules", "Programs/ControlFlow", "Programs/CertificateProducer",
-    "Programs/ExpressionEffects", "Source/RequestJson", "Source/Lowering/ClosureSetup"];
+    "Programs/ExpressionEffects", "Source/RequestJson", "Source/Lowering/ClosureSetup", "Source/SourceRequests", "Programs/ArgumentRegionCertificates"];
   for (const module of modules) {
     const original = join(lean, ".lake/build/ir/Verification", `${module}.c`);
     let text = readFileSync(original, "utf8");
@@ -143,6 +144,26 @@ export function mutationVerifier(): string {
       text = inject(text, "RequestJson_statedWithin", () => 'if (mutation("stated")) return 1;');
     if (module === "Source/Lowering/ClosureSetup")
       text = inject(text, "SourceExtraction_statedObligation", () => 'if (mutation("stated")) return lean_box(0);');
+    if (module === "Source/SourceRequests") {
+      // Forge only the inference filter: mutable fields retain candidate
+      // freshness. Allocation, copies, joins and handlers still compute
+      // their ordinary tables; certification still checks those tables.
+      const pattern = /(v_\w+) = (lp_verification_Verification_HeapExpressionRules_stableFirst___redArg\([^;\n]+\));/g;
+      assert.equal([...text.matchAll(pattern)].length, 1, "the freshFieldsPass stability filter");
+      text = text.replace(pattern, '$1 = $2; if (mutation("fresh-fields-table")) $1 = 1;');
+    }
+    if (module === "Programs/ArgumentRegionCertificates") {
+      // Isolate the first conjunct of checkNode. Evaluate the actual
+      // transport check even under the bypass, and report its rejection
+      // so a control cannot pass because an unrelated obligation fails.
+      const pattern = /(v_\w+) = (lp_verification_List_all___at___00Verification_GraphCode_ArgumentRegionFresh_fieldsKept_spec__0___redArg\([^;\n]+\));/g;
+      assert.equal([...text.matchAll(pattern)].length, 1, "checkNode's fieldsKept conjunct");
+      text = text.replace(pattern, `$1 = $2;
+        if (mutation("fresh-fields-table") && !$1)
+          (void)write(2, "fresh-field transport refuses retained mutable field\\n",
+            sizeof("fresh-field transport refuses retained mutable field\\n") - 1);
+        if (mutation("fresh-fields-transport")) $1 = 1;`);
+    }
     const c = join(dir, module.replaceAll("/", "-") + ".c");
     const o = c + ".o";
     writeFileSync(c, text.replace("#include <lean/lean.h>", "#include <lean/lean.h>\n" + header));
