@@ -138,5 +138,8 @@ for (const u of units) {
 for (const n of selected) if (!seen.has(n)) { ok = false; console.log(`missing\t${n}\tno unit with this member`); }
 if (result.units === null || result.units === undefined)
   console.log(`file-refused\t${result.status} ${result.phase ?? ""}\t${("detail" in result ? result.detail : "").split("\n")[0]?.slice(0, 400)}`);
+// Under TSCERT_EVIDENCE_REUSE=1, how many units were checked over evidence
+// an earlier verifier found (docs/STAGE-STORE.md, "Evidence proposals").
+if (result.reused !== undefined) console.log(`reused\t${result.reused} of ${(result.units ?? []).length} units`);
 console.log(`seconds\t${((performance.now() - started) / 1000).toFixed(1)}`);
 process.exit(ok ? 0 : 1);

@@ -7,6 +7,9 @@
 set -uo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# The checks test the search: no stage reuses another verifier's evidence
+# (docs/STAGE-STORE.md, "Evidence proposals").
+unset TSCERT_EVIDENCE_REUSE
 cd "$REPO" || exit 1
 
 if [ $# -gt 0 ]; then

@@ -22,7 +22,7 @@ import { join, resolve } from "node:path";
 import { readMeasurement, Store, type Cpu, type Measurement, type StoredResult } from "./stage-store.mts";
 import { inputRead, isOperation, observationsHold, type Observation } from "../tools/files.mts";
 import { liveCompilers, observeCompilers, type LiveCompiler } from "../tools/compiler-processes.mts";
-import { bindProcess, codeFailure, deliver, executeProcess, executionDirectory, processCode, isStageName, readOrAbsent, resourcePolicy, runnerBuild, sha256, stageNames, text,
+import { bindProcess, canonical, codeFailure, deliver, executeProcess, executionDirectory, processCode, isStageName, readOrAbsent, resourcePolicy, runnerBuild, sha256, stageNames, text,
   type Canonical, type ProcessCall, type StageName } from "./stage-execution.mts";
 import { bindInProcess, observedInput, runInProcess, type InProcessCall } from "./in-process-execution.mts";
 
@@ -38,11 +38,13 @@ export type { Cpu, Measurement } from "./stage-store.mts";
 const replayedStages: ReadonlySet<StageName> = new Set<StageName>(stageNames);
 
 /** How an attempt ended: a finished result it computed (`executed`), one it
- * replayed, a timeout observation it reused, its own limit expiring, an
- * operational failure (a signal, an exit outside the stage's protocol, a
- * spawn failure) or an interruption of its run. */
-export type Execution = "executed" | "replayed" | "timeout-replayed" | "timed-out" | "failed" | "interrupted";
-const executions: readonly Execution[] = ["executed", "replayed", "timeout-replayed", "timed-out", "failed",
+ * replayed, a search's result another implementation computed for the same
+ * inputs (`reused`, STAGE-STORE.md, "Evidence proposals"), a timeout
+ * observation it reused, its own limit expiring, an operational failure (a
+ * signal, an exit outside the stage's protocol, a spawn failure) or an
+ * interruption of its run. */
+export type Execution = "executed" | "replayed" | "reused" | "timeout-replayed" | "timed-out" | "failed" | "interrupted";
+const executions: readonly Execution[] = ["executed", "replayed", "reused", "timeout-replayed", "timed-out", "failed",
   "interrupted"];
 
 /** What a replay measured, beside the stored attempt's own measurement. */
@@ -73,6 +75,9 @@ export type AttemptRecord = {
   elapsedMs: number;
   cpu: Cpu;
   replay: Replay | null;
+  /** For a reused search, the entry it reused: its key and the identity of
+   * the implementation that computed it. */
+  reusedFrom: { key: string; implementation: Canonical } | null;
 };
 
 /** The invocation records of one run, in the order the invocations started,
@@ -136,6 +141,81 @@ export function retryingTimeouts(): boolean {
 }
 
 // ---------------------------------------------------------------------------
+// Evidence proposals (STAGE-STORE.md, "Evidence proposals")
+
+/** The variable that turns evidence reuse on; outside every key. */
+export const evidenceReuseVariable = "TSCERT_EVIDENCE_REUSE";
+/** Whether a search may reuse the evidence another implementation found for
+ * its inputs: `TSCERT_EVIDENCE_REUSE=1`. Off, nothing is read from or
+ * written to the proposed index. */
+export function reusingEvidence(): boolean {
+  return process.env[evidenceReuseVariable] === "1";
+}
+/** Turn evidence reuse off for this process and the processes it starts:
+ * the suites and the census, whose subject includes the search. */
+export function withoutEvidenceReuse(): void {
+  delete process.env[evidenceReuseVariable];
+}
+/** The stages whose results are proposals to a later check. */
+const proposalStages: ReadonlySet<StageName> = new Set<StageName>(["search", "module-search"]);
+/** The manifest fields that identify the program that computed a result,
+ * which a proposal key leaves out. */
+const producerFields: readonly string[] = ["implementation", "code", "runtime", "runner"];
+/** A manifest's fields, or null where it is no object. */
+function manifestFields(manifest: Canonical): { readonly [key: string]: Canonical } | null {
+  if (typeof manifest !== "object" || manifest === null || isCanonicalList(manifest)) return null;
+  return manifest;
+}
+const isCanonicalList = (value: Canonical): value is readonly Canonical[] => Array.isArray(value);
+/** A manifest without the fields that identify its producer, canonical, or
+ * null where it is no object. */
+function proposalManifest(manifest: Canonical): string | null {
+  const fields = manifestFields(manifest);
+  return fields === null ? null
+    : canonical(Object.fromEntries(Object.entries(fields).filter(([name]) => !producerFields.includes(name))));
+}
+/** The proposal key of a search's manifest: the digest of its manifest
+ * without the fields that identify its producer; null for another stage. */
+export function proposalKey(stage: StageName, manifest: Canonical): string | null {
+  const kept = proposalStages.has(stage) ? proposalManifest(manifest) : null;
+  return kept === null ? null : sha256(kept);
+}
+/** Under evidence reuse, reference the entry a search's attempt executed or
+ * replayed in the proposed index, under its proposal key: the caller's
+ * check accepted the units it searched. A reused attempt references
+ * nothing: its entry is referenced already. */
+export function referenceProposal(record: AttemptRecord): void {
+  const store = currentStore();
+  const proposal = proposalKey(record.stage, record.manifest);
+  if (!reusingEvidence() || store === null || proposal === null || record.key === null ||
+      (record.execution !== "executed" && record.execution !== "replayed"))
+    return;
+  store.reference("proposed", record.stage, proposal, record.key);
+}
+/** The newest entry referenced under the proposal key of `manifest` that is
+ * valid and whose stored manifest is `manifest` but for the fields that
+ * identify its producer; null where there is none. */
+function proposed(store: Store, stage: StageName, manifest: Canonical):
+    { key: string; implementation: Canonical; found: NonNullable<ReturnType<Store["finished"]>> } | null {
+  const wanted = proposalManifest(manifest);
+  const proposal = proposalKey(stage, manifest);
+  if (wanted === null || proposal === null) return null;
+  for (const candidate of store.candidates("proposed", stage, proposal)) {
+    const found = store.finished(stage, candidate, null);
+    if (!found) continue;
+    let stored: Canonical;
+    try {
+      stored = readCanonical(JSON.parse(found.result.input));
+    } catch {
+      continue;
+    }
+    if (proposalManifest(stored) !== wanted) continue;
+    return { key: candidate, implementation: manifestFields(stored)?.["implementation"] ?? null, found };
+  }
+  return null;
+}
+
+// ---------------------------------------------------------------------------
 // Process stages
 
 /** A process stage's result, its output bytes and their text, and its
@@ -156,6 +236,9 @@ export type InvokeOptions = {
   /** Execute without consulting stored results or timeout observations. */
   force: boolean;
   recorder: Recorder | null;
+  /** Under evidence reuse, whether a search whose key misses may reuse an
+   * entry of its proposal key (`proposed`). */
+  reuse?: boolean;
 };
 
 /** How often a process waiting for another's execution of a key looks
@@ -187,10 +270,11 @@ export function invokeProcess(call: ProcessCall, options: InvokeOptions): Invoke
     const { input } = bound;
     let ineligible = bound.ineligible;
     let key = ineligible === null ? sha256(input) : null;
-    const record = (execution: Execution, exitStatus: number | null, replay: Replay | null, cpu: Cpu): AttemptRecord => ({
+    const record = (execution: Execution, exitStatus: number | null, replay: Replay | null, cpu: Cpu,
+        reusedFrom: AttemptRecord["reusedFrom"] = null): AttemptRecord => ({
       attempt, stage: call.stage, key, ineligible, manifest: bound.manifest, context: directory === null ? null : { program: bound.program, directory },
       forced, limitMs: options.limitMs, execution, exitStatus, elapsedMs: performance.now() - started,
-      cpu: replay ? replay.stored.cpu : cpu, replay,
+      cpu: replay ? replay.stored.cpu : cpu, replay, reusedFrom,
     });
     options.recorder?.start(record("interrupted", null, null, { unavailable: "the attempt was interrupted" }), startedAt);
     const replaying = key !== null && store !== null && replayedStages.has(call.stage) ? { key, store } : null;
@@ -232,6 +316,24 @@ export function invokeProcess(call: ProcessCall, options: InvokeOptions): Invoke
         options.recorder?.finish(done);
         return { status: null, signal: null, error: undefined, stdoutBytes: Buffer.alloc(0), stderrBytes: Buffer.alloc(0),
           stdout: "", stderr: "", record: done };
+      }
+      // Under evidence reuse, a search whose key holds nothing takes the
+      // result another implementation computed for its inputs, delivered as
+      // a replay's and published under no key of its own.
+      const reusable = waited === 0 && options.reuse === true && reusingEvidence()
+        ? proposed(replaying.store, call.stage, bound.manifest) : null;
+      if (reusable) {
+        const { found } = reusable;
+        const materializing = performance.now();
+        deliver(bound, found.result.outputs);
+        const done = record("reused", found.result.exitStatus, { lookupMs: found.lookupMs,
+          validationMs: found.validationMs, materializationMs: performance.now() - materializing,
+          stored: found.result.measurement }, found.result.measurement.cpu,
+        { key: reusable.key, implementation: reusable.implementation });
+        options.recorder?.finish(done);
+        return { status: found.result.exitStatus, signal: null, error: undefined, stdoutBytes: found.result.stdout,
+          stderrBytes: found.result.stderr, stdout: text(found.result.stdout), stderr: text(found.result.stderr),
+          record: done };
       }
       if (release !== null) break;
       const claimed = replaying.store.claim(call.stage, replaying.key);
@@ -485,6 +587,7 @@ function attemptInProcess<T>(call: InProcessCall<T>, options: { force: boolean; 
     return {
       attempt, stage: call.stage, key, ineligible, manifest: recorded, context: null, forced, limitMs: null, execution,
       exitStatus: null, elapsedMs: performance.now() - started, cpu: replay ? replay.stored.cpu : measured, replay,
+      reusedFrom: null,
     };
   };
   options.recorder?.start(record("interrupted", null), startedAt);
@@ -575,7 +678,7 @@ export function readAttemptRecord(value: unknown): AttemptRecord {
   if (typeof value !== "object" || value === null) return fail();
   const v: { [key: string]: unknown } = { ...value };
   const fields = ["attempt", "stage", "key", "ineligible", "manifest", "context", "forced", "limitMs", "execution",
-    "exitStatus", "elapsedMs", "cpu", "replay"];
+    "exitStatus", "elapsedMs", "cpu", "replay", "reusedFrom"];
   if (Object.keys(v).sort().join() !== [...fields].sort().join()) return fail();
   const nullableString = (x: unknown): x is string | null => x === null || typeof x === "string";
   const nullableNumber = (x: unknown): x is number | null => x === null || typeof x === "number";
@@ -609,8 +712,16 @@ export function readAttemptRecord(value: unknown): AttemptRecord {
       return fail();
     replay = { lookupMs, validationMs, materializationMs, stored };
   }
+  const u = v["reusedFrom"];
+  let reusedFrom: AttemptRecord["reusedFrom"] = null;
+  if (u !== null) {
+    const f: { [key: string]: unknown } = typeof u === "object" && u !== null ? { ...u } : fail();
+    const reusedKey = f["key"];
+    if (Object.keys(f).sort().join() !== "implementation,key" || typeof reusedKey !== "string") return fail();
+    reusedFrom = { key: reusedKey, implementation: readCanonical(f["implementation"]) };
+  }
   return { attempt, stage, key, ineligible, manifest, context, forced, limitMs, execution: found, exitStatus, elapsedMs,
-    cpu: measured.cpu, replay };
+    cpu: measured.cpu, replay, reusedFrom };
 }
 
 /** The attempts of a run's invocation log (`Recorder`), in order; an attempt
