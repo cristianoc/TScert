@@ -1,4 +1,5 @@
 import Verification.Programs.CertificateProducer
+import Verification.Programs.GraphCode
 import Lean.Data.PersistentHashMap
 import Verification.Programs.SinglePassStats
 
@@ -102,6 +103,9 @@ def Store.toList (s : Store) : List Atom := s.live.foldl (fun acc a _ => a :: ac
 structure State where
   names : List Nat
   store : Store := {}
+  /-- The names holding a store this run allocated (`GraphCode.inferFresh`'s
+  facts, over names). -/
+  fresh : List Nat := []
 
 mutual
 /-- The slots a term reads, below its binders; none for a term whose reads
@@ -602,7 +606,8 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
     (candidates : List (Nat × List IndexAtom)) (entryIndices : List IndexAtom)
     (suggestions : List (Sequent ι)) (known : List (ProgramCertificates.Evidence ι)) (codes : CodeEntry ι → Bool)
     (aliases : List (ι × ι)) (checker : HeapExpressionRules.Checker G images)
-    (answers : Answered G) (reference : Array Knowledge := #[]) (debugNode : Nat := 1000000000) : Outcome × Counts × Answered G := Id.run do
+    (answers : Answered G) (reference : Array Knowledge := #[]) (debugNode : Nat := 1000000000)
+    (bound : Option (Footprints.Closed × Bool × Bool) := none) : Outcome × Counts × Answered G := Id.run do
   let nodes := P.toArray
   let claimed := claims.toArray
   let n := nodes.size
@@ -625,6 +630,13 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
     for t in successors node.continuation ++ node.handler.toList do
       if t.label < n && !isHead[t.label]! then indeg := indeg.modify t.label (· + 1)
   let mut fresh := 0
+  -- Under a footprint bound, the region from which no normal return is
+  -- possible (`GraphCode.inferDead`), refined from every node.
+  let deadArr : Array Bool := match bound with
+    | some (_, _, false) =>
+      let flags := (nodes.zip claimed).map fun (node, c) => (node, ExpressionEffects.emptyType G c.type)
+      GraphCode.deadIterate flags (n + 1) (Array.replicate n true)
+    | _ => #[]
   -- The states entering each node, one per predecessor.
   let mut incoming : Array (List State) := Array.replicate n []
   -- Beside each entering state, the implications its edge carries, over
@@ -700,7 +712,13 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
         let first := stores.headD {}
         let met := timedKind "meet" fun _ => first.fold (fun (acc : Store) a =>
           if stores.tail.all (·.contains a) then acc.add a else acc) {}
-        entry := { names := names.toList, store := met }
+        -- A name holds a fresh store where every predecessor's does.
+        let freshLists := (preds.zip renames).map fun ((st : State), (m : Std.HashMap Nat Nat)) =>
+          st.fresh.map fun x => m.getD x x
+        let met' := match freshLists with
+          | f0 :: fs => f0.filter fun x => fs.all (·.contains x)
+          | [] => []
+        entry := { names := names.toList, store := met, fresh := met' }
         -- The implications every predecessor carries, renamed, at the
         -- union of their types.
         let renamedImpl : List (List (PromiseCalls.Implication ι)) :=
@@ -858,6 +876,38 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
         let inverse : Std.HashMap Nat Nat := table.fold (fun acc nm s => acc.insert s nm) {}
         store := applyDelta store pairs out true fun i => if i == 0 then some result else (inverse.get? (i - 1)).orElse fun _ => entry.names[i - 1]?
     let pushedNames := result :: entry.names
+    -- Whether the result holds a fresh store: a copy of a fresh slot, or a
+    -- call at a selected signature stating a fresh result (`GraphCode.varFresh`,
+    -- `callFresh`).
+    let deriv := stepDeriv.getD (.node ⟨c.context, node.expression, c.type⟩ .var [])
+    let outFresh := (match node.expression with
+      | .var i => (entry.names[i]?).any entry.fresh.contains
+      | _ => false) ||
+      ((match ExpressionEffects.selectedEffect deriv with | some eff => eff.fresh | none => false) &&
+        ExpressionEffects.selectedOperands deriv && (ProgramCertificates.claim deriv).term == node.expression)
+    -- The footprint bound at this node (`GraphCode.nodeChecked`).
+    if let some (Φ, ret, exc) := bound then
+      if deadArr.getD l false then
+        if !(GraphCode.deadNode G deadArr.toList node ⟨none, some ⟨c.context, node.expression, c.type⟩, [], {}, none, {}, none, [], [], [], none⟩ && !exc) then
+          return (.refused s!"footprint at node {l}", counts, answers)
+      else
+        let F := match PromiseCalls.receiverSlot node.expression with
+          | some i => if (entry.names[i]?).any entry.fresh.contains then [i] else []
+          | none => []
+        let writes := ExpressionEffects.writeWithin G c.context Φ node.expression ||
+          ExpressionEffects.initWriteWithin G c.context stepK Φ node.expression
+        let within := ExpressionEffects.check G c.context node.expression || writes ||
+          GraphCode.selectedWithinAt Φ F deriv || ExpressionEffects.emptyType G c.type ||
+          c.context.any (ExpressionEffects.emptyType G ·)
+        let throws := !exc || ExpressionEffects.check G c.context node.expression || writes ||
+          (GraphCode.selectedWithinAt Φ F deriv && ExpressionEffects.selectedThrows deriv &&
+            (match ExpressionEffects.selectedEffect deriv with | some eff => eff.onThrow | none => false)) ||
+          c.context.any (ExpressionEffects.emptyType G ·)
+        let returns := match node.continuation with
+          | .ret => !ret || outFresh
+          | _ => true
+        if !(within && throws && returns && ProgramCertificates.checkScope width node.expression) then
+          return (.refused s!"footprint at node {l}", counts, answers)
     -- The step's yields, computed where an edge's types need them. A read
     -- of a slot yields what the implications testing it state.
     let mut yields : Option (List (PromiseCalls.Yield ι)) := none
@@ -998,7 +1048,9 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
         let gone := droppedBy names t.mapping targetNames ++
           (if !pushed && !entry.names.contains result then [result] else [])
         let gone := if pushed || t.mapping.isSome then gone else gone
-        incoming := incoming.modify t.label ({ names := targetNames, store := edgeStore.drop gone } :: ·)
+        let freshOut := (if pushed && outFresh && !entry.fresh.contains result then result :: entry.fresh else entry.fresh).filter
+          (!gone.contains ·)
+        incoming := incoming.modify t.label ({ names := targetNames, store := edgeStore.drop gone, fresh := freshOut } :: ·)
         -- The edge's implications: the entry's, and on a pushed edge those
         -- the result's conditional yields state of it; none naming a name
         -- the edge drops.

@@ -109,6 +109,23 @@ fresh, keeps), every fact the call does not name stays where it is, and
 the output over the named facts is the step's delta. `ownOutput` and
 `ordinaryOutput` decide per fact over the whole store.
 
+### A footprint
+
+A unit stating a footprint is bounded node by node in the walk, as
+`GraphCode.compositionalChecked` checks it: a state also carries the names
+holding a store the run allocated (`inferFresh`'s facts, over names: a copy
+of such a name, or a call at a signature stating a fresh result; a merge
+keeps the names every predecessor holds; a cut holds none, its given
+invariant stating none); the region from which no normal return is possible
+is `GraphCode.deadIterate` over the claims' result types, computed once; at
+each node outside it, the node's step is within the bound
+(`ExpressionEffects.check`, `writeWithin`, `initWriteWithin`,
+`selectedWithinAt` with the receiver's freshness, an empty type), its throw
+too where the unit states the bound on a throw, and a return under a fresh
+result returns a fresh name; inside it, `deadNode`. A graph the bound
+refuses may still be within it by its store regions (`regionalChecked`),
+which the pass does not decide: that unit is not handled.
+
 ## 6. Where the rules read more than a step's names
 
 - A step that may write (a call's `ordinary` step, `written`, `boundedWrite`)
