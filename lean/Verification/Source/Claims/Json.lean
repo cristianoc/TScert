@@ -721,10 +721,18 @@ def FilePlans.passGroup (f : FilePlans) (fuel : Nat) (group : List Nat) (compare
       if r.promise.isSome then return (name, "", .notHandled "promise goal")
       -- The request's own checks over its whole certificate the pass does
       -- not make: the graph is passed, and its verdict is not handled.
+      -- A footprint (`effectResult`): its request-level conditions here, its
+      -- graph's bound at each node in the pass (`GraphCode.compositionalChecked`),
+      -- a pure program's shortcut first.
+      let bounded := !(r.footprint == .top && !r.onThrow && !r.fresh) &&
+        !(!r.fresh && r.program.all fun n => Purity.pureTerm n.expression)
+      if !(RequestJson.asyncEffects r.async r.footprint && (!r.async || !r.fresh) &&
+          RequestJson.statedWithin r.async r.footprint r.onThrow r.fresh r.stated) then
+        return (name, "", .refused "the declared effect")
+      if bounded && !(r.footprint != .top || r.fresh) then return (name, "", .refused "the declared effect")
+      let bound := if bounded then some (r.footprint, r.fresh, r.onThrow) else none
       let unchecked := (if r.ensures.isEmpty then [] else ["ensures"]) ++
-        (if r.regional.isSome then ["store regions"] else []) ++
-        (if !(r.footprint == .top && !r.onThrow && !r.fresh) &&
-          !(!r.fresh && r.program.all fun n => Purity.pureTerm n.expression) then ["footprint"] else [])
+        (if r.regional.isSome then ["store regions"] else [])
       let labels := r.searchLabels
       let (e, next) ← ExpressionClaims.produceUsing G I labels (StoreView.valid r.types)
         (StoreView.projection r.types) fuel r.obligations { answers with summaries := #[], summaryAnswers := {} }
@@ -744,10 +752,16 @@ def FilePlans.passGroup (f : FilePlans) (fuel : Nat) (group : List Nat) (compare
         if let .notHandled w := o then throw w
       let (o, counts, _) := CertificateProducer.timed SinglePass.passNanos fun _ =>
         SinglePass.run G I pool fuel r.program r.claims r.start r.goal r.assertions r.cuts r.candidates
-          r.entryIndices [] (e ++ rendered) (fun _ => false) r.aliases (HeapExpressionRules.Checker.ordinary G I) next reference debugNode
+          r.entryIndices [] (e ++ rendered) (fun _ => false) r.aliases (HeapExpressionRules.Checker.ordinary G I) next reference debugNode bound
       -- The unit's own expression claims, as the check reads them.
       let obligations := ExpressionClaims.checkAllResult (RequestJson.graph r.toRequest) (StoreView.images r.types)
         (StoreView.valid r.types) r.obligations e (fun _ => false) []
+      -- A graph the bound refuses may still be within it by its store
+      -- regions (`regionalChecked`), which the pass does not decide.
+      let o : SinglePass.Outcome := match o with
+        | .refused w => if w.startsWith "footprint at node" && !r.fresh then
+            .notHandled s!"footprint by store regions ({w})" else .refused w
+        | o => o
       let o := match o with
         | .accepted => if !obligations.accepted then .refused "an expression claim"
           else match unchecked with
