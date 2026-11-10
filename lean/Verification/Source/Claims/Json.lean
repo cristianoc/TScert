@@ -691,7 +691,7 @@ def FilePlans.passStats (f : FilePlans) (group : List Nat) (node : Nat) : List S
 /-- The single forward pass over each member of a group (`SinglePass.run`),
 no certificate built: per member its outcome and counts; the group's
 verdict, the first member's refusal or construct not handled. -/
-def FilePlans.passGroup (f : FilePlans) (fuel : Nat) (group : List Nat) (compare : Bool := false) (debugNode : Nat := 1000000000) :
+def FilePlans.passGroup (f : FilePlans) (fuel : Nat) (group : List Nat) (compare : Bool := false) (debugNode : Nat := 1000000000) (repeats : Nat := 1) :
     List String × Except String (List String) := Id.run do
   let G : NormalGraph (EquationStore.CheckedLabel f.F.equations f.F.primitive) := StoreView.graph f.F.store
   let I : PositiveCertificates.InstanceImageCheck G := StoreView.images f.F.store
@@ -703,12 +703,13 @@ def FilePlans.passGroup (f : FilePlans) (fuel : Nat) (group : List Nat) (compare
       let .graph name _ r ← (f.plans[i]?).getD (.error s!"no unit {i}")
       if r.qualification.isSome then return (name, "", .notHandled "qualified body")
       if !r.codes.isEmpty then return (name, "", .notHandled "graph code")
-      if !r.ensures.isEmpty then return (name, "", .notHandled "ensures")
-      if r.regional.isSome then return (name, "", .notHandled "store regions")
       if r.promise.isSome then return (name, "", .notHandled "promise goal")
-      if !(r.footprint == .top && !r.onThrow && !r.fresh) &&
-          !(!r.fresh && r.program.all fun n => Purity.pureTerm n.expression) then
-        return (name, "", .notHandled "footprint")
+      -- The request's own checks over its whole certificate the pass does
+      -- not make: the graph is passed, and its verdict is not handled.
+      let unchecked := (if r.ensures.isEmpty then [] else ["ensures"]) ++
+        (if r.regional.isSome then ["store regions"] else []) ++
+        (if !(r.footprint == .top && !r.onThrow && !r.fresh) &&
+          !(!r.fresh && r.program.all fun n => Purity.pureTerm n.expression) then ["footprint"] else [])
       let labels := r.searchLabels
       let (e, next) ← ExpressionClaims.produceUsing G I labels (StoreView.valid r.types)
         (StoreView.projection r.types) fuel r.obligations { answers with summaries := #[], summaryAnswers := {} }
@@ -721,6 +722,11 @@ def FilePlans.passGroup (f : FilePlans) (fuel : Nat) (group : List Nat) (compare
           | some resp => (resp.certificate.map (·.knowledge)).toArray
           | none => #[]
         | .error _ => #[]
+      -- Profiling: the pass run `repeats` times, the last run's result kept.
+      for k in List.range (repeats - 1) do
+        let (o, _, _) := SinglePass.run G I pool fuel r.program r.claims r.start r.goal r.assertions r.cuts r.candidates
+          r.entryIndices [] (e ++ rendered) (fun _ => false) r.aliases (HeapExpressionRules.Checker.ordinary G I) next #[] (debugNode + k)
+        if let .notHandled w := o then throw w
       let (o, counts, _) := CertificateProducer.timed SinglePass.passNanos fun _ =>
         SinglePass.run G I pool fuel r.program r.claims r.start r.goal r.assertions r.cuts r.candidates
           r.entryIndices [] (e ++ rendered) (fun _ => false) r.aliases (HeapExpressionRules.Checker.ordinary G I) next reference debugNode
@@ -728,7 +734,10 @@ def FilePlans.passGroup (f : FilePlans) (fuel : Nat) (group : List Nat) (compare
       let obligations := ExpressionClaims.checkAllResult (RequestJson.graph r.toRequest) (StoreView.images r.types)
         (StoreView.valid r.types) r.obligations e (fun _ => false) []
       let o := match o with
-        | .accepted => if obligations.accepted then .accepted else .refused "an expression claim"
+        | .accepted => if !obligations.accepted then .refused "an expression claim"
+          else match unchecked with
+            | [] => .accepted
+            | w :: _ => .notHandled s!"{w} (the graph passed)"
         | o => o
       return (name, toString counts, o)
     match outcome with
