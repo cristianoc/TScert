@@ -10,6 +10,9 @@
 // line of the refusal, its source places as `line:column` with the text
 // there, the obligation's summary in source names (`diagnostic-view.mts`),
 // and the facts the obligation's point requires, over its bindings' names.
+// Then, where the unit's proposal drops facts: each statement or expression
+// past which the producer proposes fewer facts, what dropped them (the change
+// it was given, or the form the fact analysis gives none), and the facts.
 // A unit's check emits one refusal: the evidence search of a graph stops at
 // the first round's failure, and within a round the nodes reached only
 // through a failed node are not produced, so an obligation after the first
@@ -21,7 +24,8 @@ import { checkApart, memberName } from "../pipeline/verify-source.mts";
 import { readDiagnostic, type HeapKnowledge, type SourceMapEntry } from "../tools/diagnostic.mts";
 import { presentObligation } from "../tools/diagnostic-view.mts";
 
-const [checkout, file, names] = process.argv.slice(2);
+const [checkout, file, names, option] = process.argv.slice(2);
+const explainAll = option === "--explain";
 if (checkout === undefined || file === undefined || names === undefined) {
   process.stderr.write("usage: node dev/check-functions.mts <pretext checkout> <file under src/> <fn1,fn2,…|*>\n");
   process.exit(2);
@@ -39,7 +43,7 @@ const selected = all ? [] : names.split(",").filter((n) => n !== "");
 const started = performance.now();
 const sourcePath = join(root, "src", file);
 const result = await checkApart(sourcePath, project, false, undefined, false,
-  { omitted: [], select: all ? null : selected });
+  { omitted: [], select: all ? null : selected, losses: true });
 const source = readFileSync(sourcePath, "utf8");
 
 /** A source offset as `line:column`, both from 1. */
@@ -110,6 +114,14 @@ for (const u of units) {
   const first = u.detail.split("\n").find((l) => l !== "" && !l.startsWith("obligation-diagnostic: ")) ?? "";
   console.log(`${u.status}\t${u.members.map(memberName).join(",")}\t${first.slice(0, 400)}`);
   if (u.status !== "verified") for (const line of refusal(u.detail)) console.log(`\t${line}`);
+  if (u.status !== "verified" || explainAll) for (const loss of [...(u.losses ?? [])].sort((a, b) => a.pos[0] - b.pos[0])) {
+    if (loss.kind === "footprint") {
+      console.log(`\tfootprint at ${located(loss.pos[0], loss.pos[1])}: ${loss.reason}`);
+      continue;
+    }
+    console.log(`\tfacts dropped at ${located(loss.pos[0], loss.pos[1])}: ${loss.reason}`);
+    for (const f of loss.facts) console.log(`\t  ${f}`);
+  }
 }
 for (const n of selected) if (!seen.has(n)) { ok = false; console.log(`missing\t${n}\tno unit with this member`); }
 if (result.units === null || result.units === undefined)
