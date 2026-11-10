@@ -1794,11 +1794,11 @@ theorem boundedWrite_sound [DecidableEq ι] {G : NormalGraph ι} {images : Insta
   · cases htypes
 
 /-- The knowledge after a write below its store's length: what the ordinary
-output keeps, and every atom reading stores' lengths alone
-(`ExpressionEffects.elem_var_write_length`). -/
-def lengthOutput (k : Knowledge) : Knowledge :=
+output keeps, and every atom reading stores' lengths alone or locations
+`stable` keeps (`ExpressionEffects.elem_var_write_length`, `stable-first`). -/
+def lengthOutput (stable : Nat → String → Bool) (k : Knowledge) : Knowledge :=
   { HeapExpressionRules.ordinaryOutput k with
-    indices := shiftIndices (keptIndices ⟨true, true, .length⟩ (fun _ _ => false) k.indices) }
+    indices := shiftIndices (keptIndices ⟨true, true, .length⟩ stable k.indices) }
 
 /-- Whether a checked write keeps every store's length: its index below the
 store's length, at a store type every position of which holds source
@@ -1813,7 +1813,8 @@ theorem boundedLength_sound [DecidableEq ι] {G : NormalGraph ι} {images : Inst
     (hc : boundedWriteCheck G images j k a i v sub = true) (hkeep : keepsLengths G j k a i = true) {ρ n W h}
     (he : EnvOk G j.context ρ n W) (hk : Holds k ρ h) (hw : WorldAdm W) (hh : HeapOk n W h) :
     SafePost (excOf G) (meaning G j.type)
-      (fun h' u => Holds (lengthOutput k) (push u ρ) h') n W h (instantiate 0 ρ j.term) := by
+      (fun h' u => Holds (lengthOutput (HeapExpressionRules.stableFirst G j.context) k) (push u ρ) h') n W h
+        (instantiate 0 ρ j.term) := by
   have hs := boundedWrite_sound hc he hk hw hh
   simp only [boundedWriteCheck, Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq] at hc
   obtain ⟨⟨⟨⟨hslots, hil⟩, htypes⟩, -⟩, -⟩ := hc
@@ -1837,12 +1838,13 @@ theorem boundedLength_sound [DecidableEq ι] {G : NormalGraph ι} {images : Inst
   have hsafe : Safe (excOf G) (meaning G j.type) n W h
       (instantiate 0 ρ (.writeAt arrayStoreKey (.var a) (.setElem (.readAt arrayStoreKey (.var a)) (.var i) (.var v)))) :=
     HeapObservations.erase hs
-  have hp := (ExpressionEffects.elem_var_write_length hvl hil hR hst hoi hfl hl hb hidx (by simp at hle; omega)
-    he hh hsafe).post
+  have hp := HeapExpressionRules.stableFirst_frame he hh
+    (ExpressionEffects.elem_var_write_length hvl hil hR hst hoi hfl hl hb hidx (by simp at hle; omega)
+      he hh hsafe).post
   refine weaken (fun h' u hq => ?_) hp
   exact ⟨HeapFacts.holds_nil _ _, (shift_holds (v := u) hk).2.1,
     HeapLinks.stable_holds (shift_holds (v := u) hk).2.2.1, (shift_holds (v := u) hk).2.2.2.1,
-    elemsHolds_nil _ _, shiftIndices_holds (keptIndices_holds hk.2.2.2.2.2 hq firstKept_none)⟩
+    elemsHolds_nil _ _, shiftIndices_holds (keptIndices_holds hk.2.2.2.2.2 hq.1 hq.2)⟩
 
 /-! ## Element regions (FOOTPRINTS.md, "Element regions")
 
@@ -2450,24 +2452,27 @@ theorem withWritten_sound {Ξ T : Fam} {out : Knowledge} {kept : List IndexAtom}
 /-- The knowledge after a step that is an element write at any index: `out`,
 and every atom the change `{value: any, store: grow}` keeps, a linear fact
 whose length terms have non-positive coefficients and whose other terms read
-no location holding an object or a number
-(`ExpressionEffects.writeStep_grow`). -/
+no location holding an object or a number, or locations a stable field holds
+(`ExpressionEffects.writeStep_grow`, `stable-first`). -/
 def growOutput [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι) (k out : Knowledge) : Knowledge :=
   if (ExpressionEffects.writeStep G j.context j.term).isSome then
-    withWritten out (keptIndices (Changes.ofClosed ⟨.any, .grow⟩) (fun _ _ => false) k.indices)
+    withWritten out (keptIndices (Changes.ofClosed ⟨.any, .grow⟩) (HeapExpressionRules.stableFirst G j.context)
+      k.indices)
   else out
 
-theorem growOutput_sound [DecidableEq ι] {G : NormalGraph ι} {j : Sequent ι} {k out : Knowledge} {Ξ T : Fam}
+theorem growOutput_sound [DecidableEq ι] {G : NormalGraph ι} {j : Sequent ι} {k out : Knowledge} {T : Fam}
     {ρ n W h} (he : EnvOk G j.context ρ n W) (hk : Holds k ρ h) (hh : HeapOk n W h)
-    (hs : SafePost Ξ T (fun h' u => Holds out (push u ρ) h') n W h (instantiate 0 ρ j.term)) :
-    SafePost Ξ T (fun h' u => Holds (growOutput G j k out) (push u ρ) h') n W h (instantiate 0 ρ j.term) := by
+    (hs : SafePost (excOf G) T (fun h' u => Holds out (push u ρ) h') n W h (instantiate 0 ρ j.term)) :
+    SafePost (excOf G) T (fun h' u => Holds (growOutput G j k out) (push u ρ) h') n W h
+      (instantiate 0 ρ j.term) := by
   unfold growOutput
   split
   · rename_i hw
     obtain ⟨i, hi⟩ := Option.isSome_iff_exists.mp hw
     refine withWritten_sound ?_ hs
-    exact weaken (fun _ _ hq => keptIndices_holds hk.2.2.2.2.2 hq firstKept_none)
-      (ExpressionEffects.writeStep_grow hi he hh (HeapObservations.erase hs))
+    exact weaken (fun _ _ hq => keptIndices_holds hk.2.2.2.2.2 hq.1 hq.2)
+      (HeapExpressionRules.stableFirst_frame he hh
+        (ExpressionEffects.writeStep_grow hi he hh (HeapObservations.erase hs)))
   · exact hs
 
 theorem boundedRegions_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
@@ -2711,14 +2716,14 @@ every other step is `base`'s. -/
   run := fun j k e codes sums => match e with
     | .boundedWrite a i v p =>
       if IndexWrites.boundedWriteCheck G images j k a i v p then
-        pure (IndexWrites.withWritten (if IndexWrites.keepsLengths G j k a i then IndexWrites.lengthOutput k
+        pure (IndexWrites.withWritten (if IndexWrites.keepsLengths G j k a i then IndexWrites.lengthOutput (stableFirst G j.context) k
           else IndexWrites.growOutput G j k (ordinaryOutput k)) (IndexWrites.writeAtoms G j.context k a))
       else failure
     | _ => (base.run j k e codes sums).map (IndexWrites.growOutput G j k)
   select := fun j k e codes sums => match e with
     | .boundedWrite a i v p =>
       if IndexWrites.boundedWriteCheck G images j k a i v p then
-        pure (IndexWrites.withWritten (if IndexWrites.keepsLengths G j k a i then IndexWrites.lengthOutput k
+        pure (IndexWrites.withWritten (if IndexWrites.keepsLengths G j k a i then IndexWrites.lengthOutput (stableFirst G j.context) k
           else IndexWrites.growOutput G j k (ordinaryOutput k)) (IndexWrites.writeAtoms G j.context k a))
       else failure
     | _ => (base.select j k e codes sums).map (IndexWrites.growOutput G j k)

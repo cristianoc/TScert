@@ -1510,14 +1510,26 @@ facts' `restateReads`).
 **Keeping it.** A separation reads no heap where both paths are empty
 (`envOnly`). Otherwise it is kept across a step where each path is at most
 one field whose location the step keeps (`IndexFact.keptBy` with
-`guardKept`): across a call, a field every clause of its slot's type states
-`@stable` (`HeapExpressionRules.stableFirst`, `stableFirst_frame`: a stable
-location holds its value in every heap a normal return reaches):
+`guardKept`): across a call, an element write and a field write, a field
+every clause of its slot's type states `@stable`
+(`HeapExpressionRules.stableFirst`, `stableFirst_frame`: a stable location
+holds its value in every heap a normal return reaches; a write of a
+`@stable` field is refused):
 
 ```math
-\frac{\Sigma\vdash x.p\mathrel{\#}y.q\qquad |p|,|q|\le 1\qquad \Gamma\vdash p,q\ \text{stable fields}}
-     {\Sigma\vdash f(\vec a)\dashv\Sigma',\ x.p\mathrel{\#}y.q}\ \textsf{stable-first}
+\frac{\Sigma\vdash x.p\mathrel{\#}y.q\qquad |p|,|q|\le 1\qquad \Gamma\vdash p,q\ \text{stable fields}\qquad e\in\{f(\vec a),\ z[k]=v,\ z.g=v\}}
+     {\Sigma\vdash e\dashv\Sigma',\ x.p\mathrel{\#}y.q}\ \textsf{stable-first}
 ```
+
+The element write's outputs pass `stableFirst` to the atoms they keep
+(`IndexWrites.lengthOutput`, `growOutput`), the field write's to its kept
+atoms beside `writeKeeps` (`HeapExpressionRules.writeOutput`). The producer
+keeps such a separation across a statement, a test or an initializer whose
+every heap-writing step is a call of a function, an element write of a
+binding's array, a field write (`??=`, `||=` and `&&=` of a field among
+them) or a method call at a signature keeping the heap or stating a
+footprint and changing neither its receiver's store nor its own locations,
+each of operands writing no heap (`Linear_facts.skept`).
 
 **Consuming it.** A call of a frame with store regions keeps the store of
 a slot a separation places outside every region, and with it the facts
@@ -1538,9 +1550,13 @@ holds an empty array literal, and keeps them as Lean does
 `regionGrown_grows`, `effectKept_holds`.
 
 **Cases.** Positive: `stated-argument-path` (`measure` and its caller),
-`stated-local-runs` (the array allocated in the looping function) and
-`stated-region-grow-keeps-lengths` (a frame growing stores). Negative,
-run under Node: `invalid-stated-alias` (one array as both sides, `NaN`).
+`stated-local-runs` (the array allocated in the looping function),
+`stated-region-grow-keeps-lengths` (a frame growing stores) and
+`stated-region-stable-apart-writes` (a separation kept across an element
+write and a field write). Negative, run under Node: `invalid-stated-alias`
+(one array as both sides, `NaN`) and
+`invalid-stated-region-unstable-apart-write` (a field that is not `@stable`,
+written with the other array, `undefined`).
 Gap: `stated-distinct-view-refused`. Controls in `pipeline/test.mts`: a
 separation forged at a caller's entry, and a fact forged across a frame that
 may change its array's store, each refused.

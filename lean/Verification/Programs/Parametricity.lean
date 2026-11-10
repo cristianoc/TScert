@@ -635,7 +635,8 @@ theorem boundedWrites_value_reassign (j : Sequent ι) (k : HeapKnowledge.Knowled
         j k e codes sums).value := by
   simp only [Checker.boundedWrites]
   split
-  · rw [boundedWriteCheck_reassign, keepsLengths_reassign, writeAtoms_reassign, growOutput_reassign]
+  · rw [boundedWriteCheck_reassign, keepsLengths_reassign, writeAtoms_reassign, growOutput_reassign,
+      stableFirst_reassign]
   · simp only [CheckResult.map]
     rw [indexing_value_reassign, growOutput_reassign]
 
