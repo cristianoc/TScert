@@ -267,6 +267,46 @@ decides whether the result holds at every node and on every edge. -/
     let next := freshTablesPass G images sums Φ nodes tables
     if next = tables then some tables else freshTablesIterate G images sums Φ nodes fuel next
 
+/-- The field names the regions of a body's calls read through one field:
+the fields whose freshness its fresh-field facts range over. -/
+def regionNames (C : ControlFlow.Certificate ι) : List String :=
+  (C.flatMap fun c => match ExpressionEffects.selectedEffect c.expression with
+    | some eff => eff.regions.filterMap fun r => match r.path with
+      | [f] => some f
+      | _ => none
+    | none => []).eraseDups
+
+/-- One pass over candidate fresh fields, the fresh values fixed: at each
+node the pairs its slots' types do not keep stable are removed, and at each
+destination what its edge does not establish. -/
+@[nospecialize] def freshFieldsPass [DecidableEq ι] (G : PositiveGraphs.NormalGraph ι) (names : List String)
+    (values : Array (List Nat)) (nodes : List ((ControlFlow.Node × ControlFlow.NodeEvidence ι) × Nat))
+    (fields : Array (List (Nat × String))) : Array (List (Nat × String)) :=
+  nodes.foldr (fun ((node, c), l) fields =>
+    let F := values.getD l []
+    let Fs := (fields.getD l []).filter fun p =>
+      HeapExpressionRules.stableFirst G (ControlFlow.entry c) p.1 p.2 ||
+        GraphCode.ArgumentRegionFresh.nullishSlot G (ControlFlow.entry c) p.1
+    let fields := fields.set! l Fs
+    let out := GraphCode.ArgumentRegionGraph.fieldOut names F Fs node.expression
+    let fields := (CertificateProducer.successors node.continuation).foldl (fun fields t =>
+      fields.modify t.label fun D => D.filter fun p =>
+        GraphCode.ArgumentRegionGraph.fieldSlot Fs out (GraphCode.pushes node.continuation)
+          (PointClaims.slot t.mapping p.1) p.2) fields
+    match node.handler with
+    | some t => fields.modify t.label fun D => D.filter fun p => match PointClaims.slot t.mapping p.1 with
+      | 0 => false
+      | j + 1 => Fs.contains (j, p.2)
+    | none => fields) fields
+
+@[nospecialize] def freshFieldsIterate [DecidableEq ι] (G : PositiveGraphs.NormalGraph ι) (names : List String)
+    (values : Array (List Nat)) (nodes : List ((ControlFlow.Node × ControlFlow.NodeEvidence ι) × Nat)) :
+    Nat → Array (List (Nat × String)) → Option (Array (List (Nat × String)))
+  | 0, _ => none
+  | fuel + 1, fields =>
+    let next := freshFieldsPass G names values nodes fields
+    if next = fields then some fields else freshFieldsIterate G names values nodes fuel next
+
 @[nospecialize] def freshTables [DecidableEq ι] (G : PositiveGraphs.NormalGraph ι)
     (images : PositiveCertificates.InstanceImageCheck G) (sums : List (ProgramCertificates.ReadSummary ι))
     (Φ : Footprints.Closed) (P : ControlFlow.Program) (C : ControlFlow.Certificate ι) (start : Nat) :
@@ -275,8 +315,18 @@ decides whether the result holds at every node and on every edge. -/
   let init := (nodes.map fun ((_, c), l) =>
     if l = start then [] else List.range (ControlFlow.entry c).length).toArray
   match freshTablesIterate G images sums Φ nodes (2 * P.length + 2) (init, init) with
-  | some (values, cells) => ⟨values.toList, cells.toList⟩
-  | none => ⟨[], []⟩
+  | some (values, cells) =>
+    -- Fresh fields, inferred after the values and cells and apart from
+    -- them: without a fixed point, none.
+    let names := regionNames C
+    let fields := if names.isEmpty then [] else
+      let start' := (nodes.map fun ((_, c), l) => if l = start then [] else
+        (List.range (ControlFlow.entry c).length).flatMap fun j => names.map fun f => (j, f)).toArray
+      match freshFieldsIterate G names values nodes (2 * P.length + 2) start' with
+      | some fields => fields.toList
+      | none => []
+    ⟨values.toList, cells.toList, fields, names⟩
+  | none => ⟨[], [], [], []⟩
 
 /-- **The regional check** of a unit's graph, at a bound `Φ` and store
 regions, each an input slot and a path: its runs stay within `Φ` off the
@@ -292,6 +342,7 @@ regions it is a second certificate of a claimed footprint (`effectResult`). -/
     c.certificate r.start
   GraphCode.ArgumentPathTracking.checkEntry (GraphCode.ArgumentPathTracking.atLabel table r.start) &&
     ((GraphCode.factsAt ft.values r.start).isEmpty && (GraphCode.factsAt ft.cells r.start).isEmpty) &&
+    (GraphCode.ArgumentRegionGraph.fieldsAt ft.fields r.start).isEmpty &&
     GraphCode.ArgumentPathTracking.checkEntryFields (RequestJson.graph r.toRequest) r.inputs regions &&
     GraphCode.ArgumentRegionGraph.checkNodes (RequestJson.graph r.toRequest) (StoreView.images r.types)
       c.readSummaries Φ regions table ft exc P c.certificate
@@ -564,7 +615,7 @@ theorem regionalChecked_at {rs : List (SourceRequest σ ι)} {b : Bundle ι}
   obtain ⟨es, _, hunit⟩ := checkRequests_pair h hm
   obtain ⟨checked, -⟩ := (checkRequestResult_accepted_iff _ _ _).mp hunit
   simp only [regionalChecked, Bool.and_eq_true] at hreg
-  obtain ⟨⟨⟨hstart, hfresh⟩, hfields⟩, hnodes⟩ := hreg
+  obtain ⟨⟨⟨⟨hstart, hfresh⟩, hfieldStart⟩, hfields⟩, hnodes⟩ := hreg
   simp only [SourceRequest.checker, hq] at checked
   rw [verify_eq] at checked
   simp only [Bool.and_eq_true] at checked
@@ -591,7 +642,7 @@ theorem regionalChecked_at {rs : List (SourceRequest σ ι)} {b : Bundle ι}
     rw [← GraphCode.ArgumentRegionGraph.checkNodes_reassign G images c.readSummaries η] at hnodes
     exact GraphCode.ArgumentRegionGraph.goto_bounded hc hcodes hsums
       (GraphCode.ArgumentRegionGraph.checkNodes_sound hgraph hcodes hsums hnodes) hstart
-      (by simpa only [Bool.and_eq_true] using hfresh)
+      (by simpa only [Bool.and_eq_true] using hfresh) hfieldStart
       (by rw [GraphCode.ArgumentRegionGraph.checkEntryFields_reassign]; exact hfields)
       n W heap L d he hw hh hsep hidx
   · contradiction

@@ -4095,7 +4095,12 @@ domain:
 
 (`RequestJson.statedWithin`; proved: `SourceExtraction.effectResult_stated`,
 `SourceExtraction.checkRequests_stated_at`, from `checkRequests_footprint_at`
-by `Closed.Holds.mono`). A unit stating a fresh result is checked node by
+by `Closed.Holds.mono`). The premise $`\vdash P:\Gamma\to B\;!\;\Phi`$ is
+established by the node-by-node bound check or, where it refuses and no
+fresh result is promised, by the regional check with no regions, which
+rebases a callee's region on a store the body allocated to none
+([fresh array storage](FOOTPRINTS.md#fresh-array-storage)).
+A unit stating a fresh result is checked node by
 node with its returns fresh, whatever its footprint, the shortcuts of the
 top footprint and of a pure graph excluded (`effectResult`), and on normal
 return its value's store lies at or above the entry heap's length
