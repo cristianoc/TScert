@@ -48,7 +48,8 @@ verifier --lower-control-flow <ast.json>
   every input, a line per unit, `{"anchors","evidence","heads","unit"}`, `heads` the
   slice's store as `EquationStore.State` spells it, and `anchors` each
   type union of the unit's requests at its position, with labels
-  marked ([unit anchors](STAGE-STORE.md#units-of-a-check)). It prints each unit its
+  marked, but its point claims', which its evidence states as its nodes'
+  sequents ([unit anchors](STAGE-STORE.md#units-of-a-check)). It prints each unit its
   search refuses on a line `refused: {"refusal","unit"}`; with any, the
   first is the command's refusal, the document written still. Claims that
   are the producer's refusal, `{"refusal"}`, are its refusal. `<depth>`
@@ -843,7 +844,7 @@ name their entries by position
   "knowledge": [{"cells": [F, …], "values": [F, …], "links": [l, …], "depth": d, "separation": [s, …],
                   "elems": [E, …]}, …],
   "proofs": [{"claim": {"context": c, "term": m, "type": t}, "rule": r, "premises": [p, …]}, …],
-  "functions": [response, …], "obligations": [[p, …], …] }
+  "edges": [[choices, …], …], "functions": [response, …], "obligations": [[p, …], …] }
 ```
 
 `T` is a type (a list of labels), `M` a term, `link` a [heap link](#heap-facts), `fact`
@@ -851,15 +852,19 @@ a [separation fact](#heap-facts), `V` a value set (a fact's
 [contents](#heap-facts)) and `r` a [rule](#rules); a fact reference `F` is
 `{"slot": i, "contents": v, "field": f}`, the heap fact on slot `i` and field
 `f` whose contents are `valueSets[v]`; `E` is an
-[elements fact](#heap-facts), written in full; `t`, `c`, `m`, `l`, `s` and `p` are
-positions in `types`, `contexts`, `terms`, `links`, `separations` and `proofs`. A response is as in [evidence](#evidence),
+[elements fact](#heap-facts), written in full; an entry of `edges` is an
+edge's subtype-evidence list, one `choices` per destination slot; `t`, `c`,
+`m`, `l`, `s`, `p` and `e` are positions in `types`, `contexts`, `terms`,
+`links`, `separations`, `proofs` and `edges`. A response is as in [evidence](#evidence),
 its nodes written with references: `ordinary` is `{"proof": {"tree": p}}`,
 `"effect"` or `null`; `sequent` is `{"context": c, "term": m, "type": t}` or
 `null`; `knowledge` and `output` are positions in `knowledge`; a step's
 `proof` is a position in `proofs`, and the value set `contents` of an
 `observedRead`, a `knownValue` or a `written` step a position in
-`valueSets` (`null` for a `written` step's unknown value). Edges, handlers, promise facts and read
-summaries are written in full. An obligation list names its derivations in
+`valueSets` (`null` for a `written` step's unknown value); `edges` is a
+list of positions `e` in `edges`, and a handler `[T, e]`, its edge's
+evidence a position in `edges`. Promise facts and read summaries are
+written in full. An obligation list names its derivations in
 `proofs`.
 
 A document $`D`$ denotes the bundle its references unfold to, each
@@ -891,7 +896,7 @@ built and its terms, the derivations table satisfies the equation of $`\mathit{p
 above (`EvidenceWire.proofs_unfold`), which has one solution
 (`EvidenceWire.unfold_unique`); the other tables and the nodes are read by
 direct lookups, trusted code. Search writes each type, context, term, link,
-separation fact, value set, knowledge and derivation once (`EvidenceWire.encode`), an untrusted
+separation fact, value set, knowledge, derivation and edge's evidence once (`EvidenceWire.encode`), an untrusted
 choice.
 
 ## Proved boundary and validation

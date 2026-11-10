@@ -364,13 +364,11 @@ def moveWire [FromJson Moved] [ToJson Moved]
   let choice (j : Json) : Except String Json :=
     if j == toJson ({} : PositiveCertificates.SubtypeChoices Tree) then pure j
     else moveJson (α := PositiveCertificates.SubtypeChoices Moved) unions j
-  let edge := array choice
   let node (j : Json) : Except String Json := do
-    let j ← field "edges" (array edge) j
     let j ← field "handler" (fun v => if v == .null then pure v else do
       let xs ← v.getArr?
       if xs.size != 2 then throw "expected handler type and edge"
-      return .arr #[← moveJson (α := List Moved) unions xs[0]!, ← edge xs[1]!]) j
+      return .arr #[← moveJson (α := List Moved) unions xs[0]!, xs[1]!]) j
     let j ← field "implies" (moveJson (α := List (PromiseCalls.Implication Moved)) unions) j
     let j ← field "yields" (moveJson (α := List (PromiseCalls.Yield Moved)) unions) j
     let j ← field "effect" (moveJson (α := Option (EvidenceWire.StepRef Moved)) unions) j
@@ -386,14 +384,69 @@ def moveWire [FromJson Moved] [ToJson Moved]
     else pure j
   let j ← field "types" (moveJson (α := List (List Moved)) unions) j
   let j ← field "proofs" (array (field "rule" (moveJson (α := ProgramCertificates.Rule Moved) unions))) j
+  let j ← field "edges" (array (array choice)) j
   field "functions" (array response) j
 
+/-- The sequent a node of the evidence wire names, as its header reads it
+(`ControlFlow.NodeEvidence.header`): its ordinary derivation's, its stated
+one, or its step's proof's. -/
+def nodeSequent (proofs : Array Json) (n : Json) : Option Json :=
+  let claimOf (p : Json) : Option Json := do
+    let k ← p.getNat?.toOption
+    (← proofs[k]?).getObjVal? "claim" |>.toOption
+  match (n.getObjValD "ordinary").getObjVal? "proof" with
+  | .ok r => claimOf (r.getObjValD "tree")
+  | .error _ =>
+    match n.getObjValD "sequent" with
+    | .null => match n.getObjValD "effect" with
+      | .obj kvs => match kvs.toList with
+        | [(_, v)] => (v.getObjVal? "proof").toOption.bind claimOf
+        | _ => none
+      | _ => none
+    | j => some j
+
+/-- A slice line's anchors with its point claims' unions, each node's
+sequent as its evidence states it, at the positions `FilePlans.anchors`
+gives them: each non-empty union of the context at
+`claims/<node>/context/<slot>` and of the type at `claims/<node>/type`, a
+code's under `codes/<code>/`. -/
+def withClaimAnchors (anchors evidence : Json) : Json :=
+  let types := (evidence.getObjValAs? (Array Json) "types").toOption.getD #[]
+  let contexts := (evidence.getObjValAs? (Array Json) "contexts").toOption.getD #[]
+  let proofs := (evidence.getObjValAs? (Array Json) "proofs").toOption.getD #[]
+  let functions := (evidence.getObjValAs? (Array Json) "functions").toOption.getD #[]
+  let union (t : Json) : Option Json := do
+    let .arr xs ← types[← t.getNat?.toOption]? | none
+    if xs.isEmpty then none else some (Json.arr (xs.map fun x => Json.mkObj [("§label", x)]))
+  let points (key : String) (nodes : Array Json) : Array (String × Json) := Id.run do
+    let mut out := #[]
+    for h : l in [:nodes.size] do
+      let some q := nodeSequent proofs nodes[l] | continue
+      if let some (.arr ts) := (q.getObjVal? "context").toOption.bind (·.getNat?.toOption) |>.bind (contexts[·]?) then
+        for h : k in [:ts.size] do
+          if let some U := union ts[k] then out := out.push (s!"{key}/{l}/context/{k}", U)
+      if let some U := union (q.getObjValD "type") then out := out.push (s!"{key}/{l}/type", U)
+    return out
+  match anchors with
+  | .arr members => Json.arr <| members.mapIdx fun j m => match m with
+    | .obj _ =>
+      let f := functions[j]?.getD .null
+      let certificate := (f.getObjValAs? (Array Json) "certificate").toOption.getD #[]
+      let codes := (f.getObjValAs? (Array (Array Json)) "codes").toOption.getD #[]
+      let derived := points "claims" certificate ++
+        (codes.mapIdx fun q c => points s!"codes/{q}/claims" c).flatten
+      m.setObjVal! "unions" (derived.foldl (fun u (k, U) => u.setObjVal! k U) (m.getObjValD "unions"))
+    | other => other
+  | other => other
+
 /-- Evidence over a slice's store, its heads `slice` and its unit's anchors
-`anchors`, written over the document's store `target`, whose unit's anchors
+`anchors` with its point claims' (`withClaimAnchors`), written over the
+document's store `target`, whose unit's anchors
 are `documentAnchors`: each label renamed by the correspondence the anchors
 give. Missing images refuse. The target caches its refinement rounds. -/
 def translate (slice : Array Draft) (anchors : Json) (target : Target) (documentAnchors : Json)
     (evidence : Json) : Except String Json × Target := Id.run do
+  let anchors := withClaimAnchors anchors evidence
   -- A slice whose store is the document's, head for head and name for name,
   -- and whose anchors are the document's, is written over it already.
   let row (d : Draft) := toJson (d.name, d.kinds, d.binders.map (fun b => (b.name, b.kind)), d.body)
@@ -537,8 +590,10 @@ private def anchorUnion (key : Unit → String) (U : List Tree) : StateM AnchorS
   modify fun s => { fields := (key (), value) :: s.fields }
 
 /-- A group's anchors: each type union of its requests at its position, and
-its hints. -/
-def FilePlans.anchors (f : FilePlans) (group : List Nat) : Json :=
+its hints. A slice's line leaves out its point claims' unions (`claims`
+false), which its evidence states as its nodes' sequents
+(`Translate.withClaimAnchors`). -/
+def FilePlans.anchors (f : FilePlans) (group : List Nat) (claims : Bool := true) : Json :=
   let _ : ToJson (EquationStore.CheckedLabel f.F.equations f.F.primitive) :=
     ⟨fun l => Json.mkObj [("§label", l.tree.toJson)]⟩
   Json.arr (group.map fun i => match f.plans[i]? with
@@ -557,14 +612,14 @@ def FilePlans.anchors (f : FilePlans) (group : List Nat) : Json :=
         context "inputs" r.inputs
         note (fun _ => "result") r.result
         if let some (_, _, U) := r.promise then note (fun _ => "promise") U
-        points "claims" r.claims
+        if claims then points "claims" r.claims
         for (q, j) in r.codes.zipIdx do
           context s!"codes/{j}/captures" q.entry.captures
           note (fun _ => s!"codes/{j}/receiver") q.entry.row.receiver
           context s!"codes/{j}/arguments" q.entry.row.arguments
           note (fun _ => s!"codes/{j}/result") q.entry.row.result
           if let some U := q.entry.store then note (fun _ => s!"codes/{j}/store") U
-          points s!"codes/{j}/claims" q.claims
+          if claims then points s!"codes/{j}/claims" q.claims
         for (o, j) in r.obligations.zipIdx do
           context s!"obligations/{j}/context" o.sequent.context
           note (fun _ => s!"obligations/{j}/type") o.sequent.type

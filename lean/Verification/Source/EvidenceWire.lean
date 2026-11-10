@@ -3,9 +3,10 @@ import Verification.Source.SourceRequests
 /-! # The evidence document: tables with backward references
 
 An evidence bundle (`SourceExtraction.Bundle`) is written as one document of
-typed tables: the types, contexts, links, separation facts, heap knowledge
-and derivation nodes it states, each once, and the responses and obligations naming them by their
-positions (REQUEST-PROTOCOL.md, "Evidence document"). A reference names an
+typed tables: the types, contexts, links, separation facts, heap knowledge,
+derivation nodes and edges' evidence it states, each once, and the responses
+and obligations naming them by their positions (REQUEST-PROTOCOL.md,
+"Evidence document"). A reference names an
 entry of the table its position's kind gives; a derivation node names its
 premises among the derivation nodes before it, so a document has no cycle.
 
@@ -80,16 +81,16 @@ inductive StepRef (ι : Type) where
   | boundedWrite (receiver index value : Nat) (sub : PositiveCertificates.SubtypeChoices ι)
   deriving ToJson, FromJson
 
-/-- `NodeEvidence`, its sequent, derivations and knowledge named by
-reference. -/
+/-- `NodeEvidence`, its sequent, derivations, knowledge and edges' evidence
+named by reference. -/
 structure NodeRef (ι : Type) where
   ordinary : Option OrdinaryRef
   sequent : Option SequentRef
-  edges : List (EdgeEvidence ι)
+  edges : List Nat
   knowledge : Nat
   effect : Option (StepRef ι)
   output : Nat
-  handler : Option (Ty ι × EdgeEvidence ι)
+  handler : Option (Ty ι × Nat)
   implies : List (Implication ι)
   yields : List (Yield ι)
   arguments : List Nat
@@ -125,6 +126,7 @@ structure Document (ι : Type) where
   valueSets : List ValueSets.ValueSet
   knowledge : List KnowledgeEntry
   proofs : List (ProofEntry ι)
+  edges : List (EdgeEvidence ι)
   functions : List (ResponseRef ι)
   obligations : List (List Nat)
   deriving ToJson, FromJson
@@ -164,6 +166,7 @@ structure Tables (ι : Type) where
   valueSets : Array ValueSets.ValueSet
   knowledge : Array HeapKnowledge.Knowledge
   proofs : Array (Evidence ι)
+  edges : Array (EdgeEvidence ι)
 
 @[nospecialize] def sequent (types : Array (Ty ι)) (contexts : Array (List (Ty ι))) (terms : Array Tm)
     (s : SequentRef) : Except String (Sequent ι) :=
@@ -203,7 +206,7 @@ structure Tables (ι : Type) where
   let valueSets := d.valueSets.toArray
   let knowledge ← build (fun _ e => knowledge links separations valueSets e) d.knowledge #[]
   let proofs ← build (proof types contexts terms) d.proofs #[]
-  return ⟨types, contexts, terms, valueSets, knowledge, proofs⟩
+  return ⟨types, contexts, terms, valueSets, knowledge, proofs, d.edges.toArray⟩
 
 @[nospecialize] def step (t : Tables ι) : StepRef ι → Except String (HeapExpressionRules.StepEvidence ι)
   | .ordinary p => return .ordinary (← entry "proof" t.proofs p)
@@ -229,8 +232,10 @@ given positionally, so a field added to `NodeEvidence` is a field this
 reads. -/
 @[nospecialize] def node (t : Tables ι) (n : NodeRef ι) : Except String (NodeEvidence ι) := do
   let c : NodeEvidence ι := ⟨← n.ordinary.mapM (ordinary t), ← n.sequent.mapM (sequent t.types t.contexts t.terms),
-    n.edges, ← entry "knowledge" t.knowledge n.knowledge, ← n.effect.mapM (step t),
-    ← entry "knowledge" t.knowledge n.output, n.handler, n.implies, n.yields, n.arguments, n.promise⟩
+    ← entries "edge" t.edges n.edges, ← entry "knowledge" t.knowledge n.knowledge, ← n.effect.mapM (step t),
+    ← entry "knowledge" t.knowledge n.output,
+    ← n.handler.mapM (fun (T, e) => do return (T, ← entry "edge" t.edges e)), n.implies, n.yields, n.arguments,
+    n.promise⟩
   unless c.wellFormed do
     throw "a node states its sequent once, by its ordinary derivation, its step's proof or itself, and has an ordinary derivation without step evidence"
   return c
@@ -374,7 +379,7 @@ end
 /-! ### Interning: the producer's
 
 Search writes its bundle as a document: each type, context, link, separation
-fact, heap knowledge and derivation node once, by its value. A table maps an entry's
+fact, heap knowledge, derivation node and edge's evidence once, by its value. A table maps an entry's
 key to its position; keys equal under a hash are compared in full, so a
 collision never merges two entries. Untrusted: the decoder accepts any
 document whose references point back, however much it shares. -/
@@ -407,6 +412,8 @@ structure Interner (ι : Type) [BEq ι] [Hashable ι] where
     List HeapKnowledge.ElemAtom × List HeapKnowledge.IndexAtom) KnowledgeEntry := {}
   /-- Derivation nodes by their JSON text, whose premises are positions. -/
   proofs : Interned String (ProofEntry ι) := {}
+  /-- Edges' evidence by its JSON text. -/
+  edges : Interned String (EdgeEvidence ι) := {}
 
 abbrev InternM (ι : Type) [BEq ι] [Hashable ι] := StateM (Interner ι)
 
@@ -479,9 +486,14 @@ abbrev InternM (ι : Type) [BEq ι] [Hashable ι] := StateM (Interner ι)
   | .effect => return .effect
   | .proof p => return .proof (← internProof p)
 
+@[nospecialize] def internEdge (e : EdgeEvidence ι) : InternM ι Nat := modifyGet fun s =>
+  let (k, t) := s.edges.add (toJson e).compress e
+  (k, { s with edges := t })
+
 @[nospecialize] def internNode (n : NodeEvidence ι) : InternM ι (NodeRef ι) := do
-  return ⟨← n.ordinary.mapM internOrdinary, ← n.sequent.mapM internSequent, n.edges,
-    ← internKnowledge n.knowledge, ← n.effect.mapM internStep, ← internKnowledge n.output, n.handler,
+  return ⟨← n.ordinary.mapM internOrdinary, ← n.sequent.mapM internSequent, ← n.edges.mapM internEdge,
+    ← internKnowledge n.knowledge, ← n.effect.mapM internStep, ← internKnowledge n.output,
+    ← n.handler.mapM (fun (T, e) => do return (T, ← internEdge e)),
     n.implies, n.yields, n.arguments, n.promise⟩
 
 @[nospecialize] def internResponse (r : Response ι) : InternM ι (ResponseRef ι) := do
@@ -494,7 +506,8 @@ abbrev InternM (ι : Type) [BEq ι] [Hashable ι] := StateM (Interner ι)
   let ((functions, obligations), s) := run.run {}
   let d : Document ι := ⟨s.types.entries.toList, s.contexts.entries.toList, s.terms.entries.toList,
     s.links.entries.toList,
-    s.separations.entries.toList, s.valueSets.entries.toList, s.knowledge.entries.toList, s.proofs.entries.toList, functions, obligations⟩
+    s.separations.entries.toList, s.valueSets.entries.toList, s.knowledge.entries.toList, s.proofs.entries.toList,
+    s.edges.entries.toList, functions, obligations⟩
   toJson d
 
 end
