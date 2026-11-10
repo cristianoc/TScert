@@ -57,6 +57,9 @@ structure Walk where
   bindings it declares. -/
   writes : Bool := false
   locals : List String := []
+  /-- Whether the code being walked runs inside a `try` with a handler in
+  the function literal being walked: a throw there may be caught. -/
+  catching : Bool := false
   exprs : Std.HashMap Span (String × Except String (Ty Tree)) := {}
   /-- Each call of a generic module function, by its span: the type each
   binder takes at it, by the binder's name; and the last call's, until its
@@ -435,6 +438,13 @@ def genericCallee (g : Generic) (typeArgs : List Json) : Compiler Callee := do
   return { binders := ps, fixed := ProgramTyping.callSigs G fresh, rests := ProgramTyping.restSigs G fresh,
            names := g.binders }
 
+/-- Whether an actual is a callback: a function literal, typed by the
+parameter it is passed at where it writes no parameter's type, and stated
+at that parameter's signature (`walkLambda`). -/
+def callback : Expr → Bool
+  | .lambda .. => true
+  | _ => false
+
 /-- The member `o.k` names, `o` of type `O`: its own (a host-relative
 member), else its prototype's. -/
 def memberFor (vars : List (String × Ty Tree)) (O : Ty Tree) (fld : PropKey) :
@@ -450,11 +460,23 @@ def memberFor (vars : List (String × Ty Tree)) (O : Ty Tree) (fld : PropKey) :
 
 /-- The callee `o.k(…)` calls, `o` of type `O`: the object's member, its
 prototype's, or a field holding a callable. -/
-def methodCallee (vars : List (String × Ty Tree)) (O : Ty Tree) (fld : PropKey) : Compiler Callee := do
+def methodCallee (vars : List (String × Ty Tree)) (O : Ty Tree) (fld : PropKey) (callbacks : List Bool := []) :
+    Compiler Callee := do
   if let some m ← memberFor vars O fld then
     if m.calls.isEmpty && m.rests.isEmpty then
       let some S := m.schemes.head? | throw "a member of no signature"
-      return ← calleeOf S O
+      let first ← calleeOf S O
+      if !callbacks.any id then return first
+      -- A member with several schemes (one per receiver label) called with
+      -- callbacks: the scheme whose callback parameters take the most
+      -- parameters, at which a walked callback admits every scheme's call.
+      let G ← graphNow
+      let width (c : Callee) : Nat := match c.fixed.find? (callbacks.length ≤ ·.arguments.length) with
+        | some a => ((a.arguments.zip callbacks).filter (·.2)).foldl (fun (n : Nat) (P, _) =>
+            n + (((ProgramTyping.callSigs G P).head?.map (·.arguments.length)).getD 0)) 0
+        | none => 0
+      let others ← m.schemes.tail.mapM fun S => calleeOf S O
+      return others.foldl (fun (best c : Callee) => if Nat.blt (width best) (width c) then c else best) first
     let fixed := m.calls.map (·.withReceiver O)
     let rests := m.rests.map (·.withReceiver O)
     return { fixed, rests, receiver := O, own := some [← lower (SourceTypes.use (.arrs fixed rests))] }
@@ -470,11 +492,6 @@ def constructCallee (F : Ty Tree) (typeArgs : List Json) : Compiler Callee := do
     return { fixed := L.map (·.withReceiver [Labels.undef]), rests := S.map (·.withReceiver [Labels.undef]) }
   | _ => throw "a construction of a value of no construct signature"
 
-/-- Whether an actual is a callback: a function literal some parameter of
-which is not written, typed by the parameter it is passed at. -/
-def callback : Expr → Bool
-  | .lambda _ _ _ params .. => params.any (·.2 == Json.null)
-  | _ => false
 
 mutual
 /-- The bindings statements declare, nested ones included. -/
@@ -866,10 +883,22 @@ partial def expr (env : Env) (e : Expr) : W (Option (Ty Tree) × Env) := do
     let c ← StateT.lift (tryCatch (do
         if !spreads.isEmpty then throw "a construction with spreads"
         return Except.ok (← constructCallee (← need F "the class") typeArgs)) fun m => pure (.error m))
+    -- A generic module class's binders, by its scheme's order.
+    let gs := (← get).generics
+    let generic := match callee with
+      | .var _ n => gs.lookup n
+      | _ => none
+    let c := c.map fun c => match generic with
+      | some g => if g.binders.length == c.binders.length then { c with names := g.binders } else c
+      | none => c
+    modify fun w => { w with lastInstance := none }
     let r ← called e2 c args As e.span
-    -- A generic class's occurrence is read at its instance.
+    -- A generic class's occurrence is read at its instance, and the call's
+    -- type arguments recorded.
     if let (.ok c, .ok (inst, _)) := (c, r) then
       if !c.binders.isEmpty then let _ ← record callee (.ok inst)
+    if let some θ := (← get).lastInstance then
+      modify fun w => { w with instances := (e.span, θ) :: w.instances, lastInstance := none }
     return (← record e ((·.2) <$> r), e2)
   | .call _ callee args spreads typeArgs =>
     let gs := (← get).generics
@@ -949,7 +978,7 @@ partial def expr (env : Env) (e : Expr) : W (Option (Ty Tree) × Env) := do
     let c ← StateT.lift (tryCatch (do
         if !spreads.isEmpty then throw "a call with spreads"
         let some fld := fld | throw "a method of a computed key"
-        return Except.ok (← methodCallee e1.vars (← need O "the receiver") fld)) fun m => pure (.error m))
+        return Except.ok (← methodCallee e1.vars (← need O "the receiver") fld (args.map callback))) fun m => pure (.error m))
     let r ← called e2 c args As e.span
     let _ ← record callee ((·.1) <$> r)
     let r ← record e ((·.2) <$> r)
@@ -1046,7 +1075,12 @@ partial def applyCall (env : Env) (c : Callee) (args : List Expr) (As : List (Op
   for ((x, P), i) in (args.zip a.arguments).zipIdx do
     let sub (A : Ty Tree) : Ty Tree := substitute σ A
     if callback x then
-      let expect := (ProgramTyping.callSigs G (sub P)).head?
+      -- The callback's parameter's signature taking the most parameters:
+      -- the callback walked there is within each of them.
+      let expect := (ProgramTyping.callSigs G (sub P)).foldl (fun (best : Option (CallEffects.Arrow (Ty Tree))) a =>
+        match best with
+        | some b => if Nat.blt b.arguments.length a.arguments.length then some a else some b
+        | none => some a) none
       let L ← walkLambda env x expect
       As := As.set i L
       if let some L := L then σ ← bindFrom σ [(P, L)]
@@ -1061,8 +1095,9 @@ partial def applyCall (env : Env) (c : Callee) (args : List Expr) (As : List (Op
   if !c.names.isEmpty || !c.explicit.isEmpty then
     modify fun w => { w with lastInstance := some (c.explicit ++
       c.names.zip (c.binders.map fun b => (σ.lookup b).getD [])) }
-  -- A call changing the heap, by its instance's footprint.
-  if inst.effect.footprint != ⟨.keep, .keep⟩ then wrote
+  -- A call changing the heap, by its instance's footprint, or on a throw a
+  -- handler catches where its footprint does not bound its throws.
+  if inst.effect.footprint != ⟨.keep, .keep⟩ || ((← get).catching && !inst.effect.onThrow) then wrote
   let own ← StateT.lift (match c.own, rest with
     | some F, _ => pure F
     | none, some r => do return [← lower (SourceTypes.use (.arrs [] [r.map sub]))]
@@ -1109,7 +1144,7 @@ partial def walkLambda (env : Env) (e : Expr) (sig : Option (CallEffects.Arrow (
   let declared := params.map (·.1) ++ (match body with
     | .block _ ss => declaredIn ss
     | _ => [])
-  modify fun w => { w with writes := false, locals := declared }
+  modify fun w => { w with writes := false, locals := declared, catching := false }
   modify fun w => { w with returns := [], expected := written <|> (if async then none else expectedResult) }
   -- An expression body's entry is its prologue's, at the body's start.
   modify fun w => { w with entries := w.entries.insert body.span.1 inner.vars }
@@ -1128,14 +1163,17 @@ partial def walkLambda (env : Env) (e : Expr) (sig : Option (CallEffects.Arrow (
   -- footprint its calls are checked at (the producer's inferred effect).
   let pure_ := !(← get).writes
   modify fun w => { w with breaks := saved.breaks, returns := saved.returns, expected := saved.expected }
-  modify fun w => { w with writes := saved.writes, locals := saved.locals }
+  modify fun w => { w with writes := saved.writes, locals := saved.locals, catching := saved.catching }
   let R := if written.isSome then written else if async then none else R
   match ps.mapM id, R with
   | some qs, some R =>
     -- A callback is checked at the signature it is passed at, its result its
     -- body's; any other literal at its own parameters.
     let a : CallEffects.Arrow (Ty Tree) ← match sig with
-      | some a => pure { a with result := R, effect := if pure_ then .ofFootprint ⟨.keep, .keep⟩ else a.effect }
+      -- Its footprint the walk's: keeping both where it changes nothing,
+      -- else the ordinary effect (the parameter's own where that is it).
+      | some a => pure { a with result := R, effect := if pure_ then .ofFootprint ⟨.keep, .keep⟩
+          else if a.effect.footprint == .top then a.effect else .ordinary }
       | none => do pure ⟨← StateT.lift (prim .top), qs, R,
           if pure_ then .ofFootprint ⟨.keep, .keep⟩ else .ordinary⟩
     record e (.ok [← StateT.lift (lower (SourceTypes.use (.arrs [a] [])))])
@@ -1215,9 +1253,12 @@ partial def fit (P : Ty Tree) (x : Expr) (A : Option (Ty Tree)) : W (Option (Ty 
 partial def bindPattern (env : Env) (p : Pattern Expr) (A : Option (Ty Tree)) : W Env := do
   match p with
   | .name n namePos =>
-    recordAt namePos "identifier" (match A with
-      | some A => .ok A
-      | none => .error "the bound value undetermined")
+    -- A name at its value's own span (a defaulted parameter's binding)
+    -- keeps the value's record there.
+    if !(← get).exprs.contains namePos then
+      recordAt namePos "identifier" (match A with
+        | some A => .ok A
+        | none => .error "the bound value undetermined")
     match A with
     | some A => return { env with vars := upd env.vars n A, decl := upd env.decl n A }
     | none => return { env with vars := env.vars.filter (·.1 != n) }
@@ -1373,12 +1414,36 @@ partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
       -- Unlabeled breaks inside go to an enclosing loop.
       let out ← collectBreaks (some l) saved
       return join r out
-  | .forOf _ name _ _ iterable body =>
+  | .forOf p name namePos it iterable body =>
     let (I, e1) ← expr env iterable
-    let head := loopHead e1 body
-    let elem ← match I with
-      | some I => StateT.lift (tryCatch (some <$> elementAt I none (missing := false)) fun _ => pure none)
-      | none => pure none
+    -- A generic iteration intrinsic's instance: its call at the iterable,
+    -- the stepper it gives held at the loop's head (`%next@…%`) and its
+    -- one binder the element.
+    let mut stepper : Option (Ty Tree) := none
+    let mut bound : Option (Ty Tree) := none
+    if let some g := (← get).generics.lookup it then
+      let c? : Except String Callee ← StateT.lift (tryCatch (Except.ok <$> genericCallee g []) fun m => pure (Except.error m))
+      if let .ok c := c? then
+        modify fun w => { w with lastInstance := none }
+        let r ← applyCall e1 c [iterable] [I]
+        -- The call at the loop's span, its intrinsic read at the `for`
+        -- keyword (`Stmt.callees`).
+        recordAt (p.1, p.1 + "for".length) "identifier" ((·.1) <$> r)
+        recordAt p "call" ((·.2) <$> r)
+        stepper := ((·.2) <$> r).toOption
+        if let some θ := (← get).lastInstance then
+          if let [(_, A)] := θ then bound := some A
+          modify fun w => { w with instances := (p, θ) :: w.instances, lastInstance := none }
+    let exit := loopHead e1 body
+    let head := match stepper with
+      | some N => { exit with vars := upd exit.vars s!"%next@{p.1}%" N, decl := upd exit.decl s!"%next@{p.1}%" N }
+      | none => exit
+    modify fun w => { w with entries := w.entries.insert p.1 head.vars }
+    let elem ← match bound, I with
+      | some A, _ => pure (some A)
+      | none, some I => StateT.lift (tryCatch (some <$> elementAt I none (missing := false)) fun _ => pure none)
+      | none, none => pure none
+    recordAt namePos "identifier" (match elem with | some A => .ok A | none => .error "the element undetermined")
     let inner := match elem with
       | some A => { head with vars := upd head.vars name A, decl := upd head.decl name A }
       | none => { head with vars := head.vars.filter (·.1 != name) }
@@ -1386,9 +1451,12 @@ partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
     modify fun w => { w with breaks := [] }
     let _ ← stmts (some inner) body
     let out ← collectBreaks none saved
-    return join (some head) out
+    return join (some exit) (out.map fun o => { o with vars := o.vars.filter (·.1 != s!"%next@{p.1}%") })
   | .tryStmt _ body handler finalizer =>
+    let outer := (← get).catching
+    modify fun w => { w with catching := outer || handler.isSome }
     let b ← stmts (some env) body
+    modify fun w => { w with catching := outer }
     let reset := loopHead env body
     let h ← match handler with
       | some (param, hs) =>
