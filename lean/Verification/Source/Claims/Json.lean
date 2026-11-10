@@ -729,8 +729,9 @@ def FilePlans.passGroup (f : FilePlans) (fuel : Nat) (group : List Nat) (compare
         return (name, "", .refused "the declared effect")
       if bounded && !(r.footprint != .top || r.fresh) then return (name, "", .refused "the declared effect")
       let bound := if bounded then some (r.footprint, r.fresh, r.onThrow) else none
-      let unchecked := (if r.ensures.isEmpty then [] else ["ensures"]) ++
-        (if r.regional.isSome then ["store regions"] else [])
+      -- A postcondition (`ensuresResult`): checked at each return in the pass.
+      if !r.ensures.isEmpty && r.qualification.isSome then return (name, "", .refused "a postcondition")
+      let unchecked := (if r.regional.isSome then ["store regions"] else [])
       let labels := r.searchLabels
       let (e, next) ← ExpressionClaims.produceUsing G I labels (StoreView.valid r.types)
         (StoreView.projection r.types) fuel r.obligations { answers with summaries := #[], summaryAnswers := {} }
@@ -755,6 +756,13 @@ def FilePlans.passGroup (f : FilePlans) (fuel : Nat) (group : List Nat) (compare
         | some C => (C.zipIdx.map fun (c, l) => if r.cuts.contains l then c.implies else []).toArray
         | none => #[]
       -- The slots holding a promise goal's input at each statement entry.
+      -- The slots holding each input's entry value a postcondition names, at
+      -- each statement entry (`GraphCode.trackTable`).
+      let givenInputs : Array (List (Nat × Nat)) := match supplied with
+        | some C => if r.ensures.isEmpty then #[] else
+          ((GraphCode.trackTable r.program C r.start (GraphCode.namedInputs r.ensures)).zipIdx.map fun (t, l) =>
+            if r.cuts.contains l then t.getD [] else []).toArray
+        | none => #[]
       let givenArgs : Array (List Nat) := match supplied with
         | some C => (C.zipIdx.map fun (c, l) => if r.cuts.contains l then c.arguments else []).toArray
         | none => #[]
@@ -797,7 +805,7 @@ def FilePlans.passGroup (f : FilePlans) (fuel : Nat) (group : List Nat) (compare
       let (o, counts, _) := CertificateProducer.timed SinglePass.passNanos fun _ =>
         SinglePass.run G I pool fuel r.program r.claims r.start r.goal r.assertions r.cuts r.candidates
           r.entryIndices [] (e ++ rendered) codes r.aliases (HeapExpressionRules.Checker.ordinary G I) next reference debugNode bound
-          givenImplies givenArgs
+          givenImplies givenArgs r.ensures givenInputs
       -- The unit's own expression claims, as the check reads them.
       let obligations := ExpressionClaims.checkAllResult (RequestJson.graph r.toRequest) (StoreView.images r.types)
         (StoreView.valid r.types) r.obligations e codes []
