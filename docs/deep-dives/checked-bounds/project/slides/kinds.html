@@ -6,6 +6,6 @@
 <tr><td>Precondition</td><td><span style="color:#2f6b47">written</span> as <span style="color:#2c4f7c">@requires C</span>; checked at analyzed calls, assumed by the body</td></tr>
 <tr><td>Postcondition</td><td><span style="color:#2f6b47">written</span> as <span style="color:#2c4f7c">@ensures C</span>; checked at every normal return, held by the variable a call’s result is assigned to</td></tr>
 <tr><td>Type invariant</td><td><span style="color:#2f6b47">written</span> as <span style="color:#2c4f7c">@invariant C</span> on a type; obligations at function boundaries</td></tr>
-<tr><td>Loop invariant</td><td><span style="color:#2f6b47">written</span> as <span style="color:#2c4f7c">@invariant C</span> before a loop, or inferred; checked on every edge into the head</td></tr>
+<tr><td>Loop invariant</td><td><span style="color:#2f6b47">written</span> as <span style="color:#2c4f7c">@invariant C</span> before a loop, required on every edge into the head; or inferred, a candidate kept where every such edge establishes it</td></tr>
 </table><p style="font-size:26px;color:#0b1a2e;line-height:1.4">Clauses are linear relations over values, field paths and lengths, under null guards; quantified clauses <span style="color:#2c4f7c">forall i in xs: B</span> over an array’s elements; and <span style="color:#2c4f7c">a !== b</span> of two arrays (slide 10). A heap change preserves no quantified fact: a stated limit.</p>
 </section>
