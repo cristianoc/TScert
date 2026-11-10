@@ -170,6 +170,28 @@ private def claimRefusal {σ ι : Type} [Labels ι] [StoreView σ ι] (r : Sourc
     ((r.sourceMap[l]?).bind id).map fun m =>
       s!"source evidence refusal at [{m.pos.1},{m.pos.2}): the evidence does not establish this node's claim"
 
+/-- Whether the evidence's certificates line up with the unit's graph and its
+codes' graphs: one certificate per code, one node's evidence per node. -/
+private def certificatesAligned {σ ι : Type} [Labels ι] [StoreView σ ι] (r : SourceRequest σ ι) (c : Response ι) :
+    Bool :=
+  c.certificate.length == r.program.length && c.codes.length == r.toRequest.codes.length &&
+    (r.toRequest.codes.zip c.codes).all fun (q, C) => C.length == q.entry.exprs.length
+
+/-- Where evidence that does not line up with the graph fails: an expression
+obligation whose evidence the check refuses, else the first node of the
+unit's graph, else of a closure's code, whose evidence is for another claim,
+at its source position. Reported before the footprint check, which reads
+each node at its evidence. A diagnostic only. -/
+private def misalignedRefusal {σ ι : Type} [Labels ι] [StoreView σ ι] (r : SourceRequest σ ι) (c : Response ι)
+    (es : List (ProgramCertificates.Evidence ι)) : Option String :=
+  if certificatesAligned r c then none else
+  obligationRefusal r c es <|> claimRefusal r c <|>
+    (r.toRequest.codes.zip c.codes).zipIdx.findSome? fun ((q, C), i) =>
+      let sourceMap := ((r.codeSources[i]?).map (·.sourceMap)).getD []
+      ((C.zip q.claims).zipIdx.find? fun ((e, p), _) => !decide (CertificateProducer.signature e = p)).bind
+        fun (_, l) => ((sourceMap[l]?).bind id).map fun m =>
+          s!"source evidence refusal at [{m.pos.1},{m.pos.2}): the evidence does not establish this node's claim"
+
 /-- The destination of a failed incoming type or heap-knowledge obligation.
 Claim agreement is checked before this diagnostic is selected. -/
 @[nospecialize] private def edgeRefusal {σ ι : Type} [Labels ι] [StoreView σ ι]
@@ -224,13 +246,16 @@ Claim agreement is checked before this diagnostic is selected. -/
 def requestsRefusal {σ ι : Type} [Labels ι] [StoreView σ ι] (certified : List (CertifiedPlan σ ι)) (b : Bundle ι)
     (checked : ProgramCertificates.CheckResult ι Unit) : String :=
   let rs := CertifiedPlan.requests certified
-  -- An exhausted search is reported as such; a footprint the graph does not
-  -- establish is located, then a node or an obligation whose evidence the
-  -- check refuses; any other failure is the generic refusal.
+  -- An exhausted search is reported as such; evidence that does not line up
+  -- with the graph is located at the first node whose claim it does not
+  -- state; a footprint the graph does not establish is located, then a node
+  -- or an obligation whose evidence the check refuses; any other failure is
+  -- the generic refusal.
   let fallback := validationFailure rs checked "source evidence does not justify the extracted program and exact claims"
   if checked.exhaustion.isSome then fallback else
-    (((certified.zip b.functions).findSome? fun (plan, c) => match plan with
-      | .graph name namePos r => footprintRefusal name namePos r c <|> ensuresRefusal name namePos r c) <|>
+    ((((certified.zip b.functions).zip b.obligations).findSome? fun ((plan, c), es) => match plan with
+      | .graph name namePos r => misalignedRefusal r c es <|> footprintRefusal name namePos r c <|>
+          ensuresRefusal name namePos r c) <|>
      (((certified.zip b.functions).zip b.obligations).findSome? fun ((plan, c), es) => match plan with
       | .graph _ _ r => obligationRefusal r c es <|> claimRefusal r c <|> edgeRefusal r c <|> nodeRefusal r c <|>
           typingRefusal r c)).getD fallback
