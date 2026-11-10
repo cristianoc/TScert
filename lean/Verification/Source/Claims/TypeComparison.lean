@@ -16,6 +16,22 @@ def moduleValueType (value : ModuleValue Tree) : Compiler (Ty Tree) := do
   | .ok (.claimed A none) | .ok (.cell A) => SourceClaims.resolve (← table) A
   | .error reason => throw reason
 
+/-- The generic module functions a unit's walk instantiates at its calls,
+and the scheme a read of one as a value is (`Scheme.moduleScheme`). -/
+def Front.genericValues (fr : Front) :
+    List (String × Compiler (Ty Tree)) × List (String × Synthesis.Generic) :=
+  (fr.generics.map fun g => (g.name, (do
+    let (T, slot) ← Scheme.moduleScheme (← table) g
+    lower (do set T; Fragment.translate slot) : Compiler (Ty Tree))),
+   fr.generics.map fun g => (g.name,
+    ({ binders := g.binders, instantiate := fun θ => (·.1) <$> g.instantiate θ } : Synthesis.Generic)))
+
+/-- A unit's claims retyped by the walk (`Synthesis.retypeUnit`): the
+extraction of the single pass without a producer's types (mode 8). -/
+def retypeByWalk (parts : String := "xec") : Retype := fun fr T f fc module =>
+  let (schemes, generics) := fr.genericValues
+  Synthesis.retypeUnit T f fc (module.map (fun v => (v.1, moduleValueType v)) ++ schemes) generics parts
+
 /-- Unit `i`'s computed types against its claims. -/
 def Front.compareTypes (fr : Front) (i : Nat) : Except String Json := do
   let some (f, _, initClaims) := fr.units[i]? | throw s!"no unit {i}"
@@ -26,14 +42,7 @@ def Front.compareTypes (fr : Front) (i : Nat) : Except String Json := do
       | none => throw s!"missing claims for '{f.name}'"
   let module := if initClaims.isSome then fr.moduleFunctions ++ fr.classSelves
     else fr.moduleFunctions ++ fr.moduleConstants
-  -- A generic module function read as a value is its scheme
-  -- (`Scheme.moduleScheme`); called, it is instantiated at the call.
-  let schemes := fr.generics.map fun g => (g.name, (do
-    let (T, slot) ← Scheme.moduleScheme (← table) g
-    let _ := T
-    lower (do set T; Fragment.translate slot) : Compiler (Ty Tree)))
-  let generics := fr.generics.map fun g => (g.name,
-    ({ binders := g.binders, instantiate := fun θ => (·.1) <$> g.instantiate θ } : Synthesis.Generic))
+  let (schemes, generics) := fr.genericValues
   Synthesis.compareUnit fr.d.types f c.normalized (module.map (fun v => (v.1, moduleValueType v)) ++ schemes)
     generics
 

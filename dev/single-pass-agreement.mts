@@ -6,6 +6,8 @@
 //   node dev/single-pass-agreement.mts [pattern…]
 // With TSCERT_GIVEN_DIR set, each case's given statement-entry facts are read
 // from <dir>/<case file>.jsonl (written by dev/single-pass-given.mts).
+// With TSCERT_PASS_MODE=8, the pass runs over the types the verifier
+// computes (`--verify-units 8`) instead of the claimed ones.
 // Prints the disagreements, then the counts: units agreeing, disagreeing,
 // those the pass does not handle by construct, and those whose pipeline
 // check did not finish (a stage's timeout), which decide nothing. Exits 0
@@ -36,7 +38,7 @@ function fileKey(artifacts: string): string | null {
 /** The pass's verdict on each unit of a run's file. */
 function passVerdicts(artifacts: string, key: string, given: string | null): Map<string, Verdict> {
   const env = given === null ? process.env : { ...process.env, TSCERT_GIVEN: given };
-  const run = spawnSync(verifier, ["--verify-units", "3", join(artifacts, "fragment.json"),
+  const run = spawnSync(verifier, ["--verify-units", process.env.TSCERT_PASS_MODE ?? "3", join(artifacts, "fragment.json"),
     join(artifacts, "claims.json"), key, "12"], { encoding: "utf8", maxBuffer: 1 << 28, env });
   const verdicts = new Map<string, Verdict>();
   for (const line of run.stdout.split("\n").filter((l) => l.startsWith("{"))) {
