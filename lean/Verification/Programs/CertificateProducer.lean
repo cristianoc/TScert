@@ -972,13 +972,16 @@ came from a different context. No execution budget is inspected. -/
         -- at the term, as a construct signature's is: its postcondition is
         -- what the call can state there.
         let ordered := L.filter (·.effect.elements.isSome) ++ L.filter (·.effect.elements.isNone)
-        (ordered.filter (fun p => (p.effect.requires.isSome || !p.effect.pre.isEmpty) && admits p.effect t) ++
-          ordered).findSearch? fun p => do
+        let stating := fun (p : Arrow (Ty ι)) => p.effect.requires.isSome || !p.effect.pre.isEmpty
+        -- The signatures stating a precondition `admits` holds of, then
+        -- those stating none: a signature stating one `admits` refuses is
+        -- not usable, and one it admits was tried first. Each precondition
+        -- is decided once, where its signature is reached.
+        let attempt := fun (p : Arrow (Ty ι)) => do
           -- Require every operand before searching the premises. A signature
           -- with more positions than the call writes is usable when each
           -- remaining contract admits `undefined`, the value bound there.
-          if args.length > p.arguments.length ||
-              !(p.effect.requires.isNone && p.effect.pre.isEmpty || admits p.effect t) then none else do
+          if args.length > p.arguments.length then none else do
             let omitted := p.arguments.drop args.length
             let ef ← recur Γ f F
             let er ← recur Γ recv p.receiver
@@ -986,6 +989,8 @@ came from a different context. No execution budget is inspected. -/
             let eus ← omitted.mapM fun D => recur Γ .undef D
             let sub ← subtypeUsing G images p.result A
             pure (coerceBy sub (.node ⟨Γ,t,p.result⟩ (r p.effect) (ef :: er :: eas ++ eus)) A)
+        (ordered.findSearch? fun p => if stating p && admits p.effect t then attempt p else none) <|>
+          ordered.findSearch? fun p => if stating p then none else attempt p
       -- A callee or, for a method dispatched on its object, the receiver.
       return (direct own <|> variadic own <|> variadic pool <|> direct pool).firstOr
         (splitReceiver f <|> splitReceiver recv)

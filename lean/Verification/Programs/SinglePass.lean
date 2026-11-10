@@ -1,5 +1,6 @@
 import Verification.Programs.CertificateProducer
 import Lean.Data.PersistentHashMap
+import Verification.Programs.SinglePassStats
 
 /-! One forward pass over a graph cut at its statement entries
 (docs/drafts/single-pass.md): each node visited once, in a topological order
@@ -129,6 +130,22 @@ end
 /-- Nanoseconds this process spent in `run`: a measurement. -/
 initialize passNanos : IO.Ref Nat ← IO.mkRef 0
 
+/-- Nanoseconds and applications per term kind: a measurement. -/
+initialize kindNanos : IO.Ref (Std.HashMap String (Nat × Nat)) ← IO.mkRef {}
+
+private unsafe def timedKindImpl {α : Type} (kind : String) (f : Unit → α) : α :=
+  match unsafeIO (do
+      let t0 ← IO.monoNanosNow
+      let a ← IO.lazyPure f
+      let t1 ← IO.monoNanosNow
+      kindNanos.modify fun m => let (t, n) := m.getD kind (0, 0); m.insert kind (t + (t1 - t0), n + 1)
+      pure a) with
+  | .ok a => a
+  | .error _ => f ()
+
+/-- `f ()`, its time added to `kind`'s. -/
+@[implemented_by timedKindImpl] def timedKind {α : Type} (_kind : String) (f : Unit → α) : α := f ()
+
 /-- What the pass counts. -/
 structure Counts where
   visited : Nat := 0
@@ -248,15 +265,41 @@ def applyDelta (s : Store) (pairs : List (Atom × Atom)) (out : Knowledge) (shif
       if let some a := o.rename back then s := s.add a
   return s
 
+instance : Inhabited Node := ⟨⟨.nul, .ret, none⟩⟩
+
+private unsafe def sameImpl {α : Type} [BEq α] (a b : α) : Bool := ptrAddrUnsafe a == ptrAddrUnsafe b || a == b
+/-- `a == b`, answered at once where they are one object. -/
+@[implemented_by sameImpl] def same {α : Type} [BEq α] (a b : α) : Bool := a == b
+
+/-- A list read at indices that mostly increase: the suffix at `pos`. -/
+structure Cursor (α : Type) where
+  all : List α
+  rest : List α
+  pos : Nat
+
+def Cursor.of (l : List α) : Cursor α := ⟨l, l, 0⟩
+
+/-- The element at `i`, and the cursor moved there. -/
+def Cursor.get (c : Cursor α) (i : Nat) : Option α × Cursor α :=
+  if i ≥ c.pos then
+    let rest := c.rest.drop (i - c.pos)
+    (rest.head?, { c with rest, pos := i })
+  else
+    let rest := c.all.drop i
+    (rest.head?, { c with rest, pos := i })
+
 /-- The names of a target's slots: the mapping applied to the source's. -/
 def mapNames (names : List Nat) (m : PointClaims.Mapping) : List Nat :=
   match m with
   | none => names
-  | some slots =>
-    let arr := names.toArray
-    slots.map fun s => arr.getD s 0
-
-instance : Inhabited Node := ⟨⟨.nul, .ret, none⟩⟩
+  | some slots => Id.run do
+    let mut cur := Cursor.of names
+    let mut out : Array Nat := Array.mkEmpty slots.length
+    for s in slots do
+      let (x, c) := cur.get s
+      cur := c
+      out := out.push (x.getD 0)
+    return out.toList
 
 section
 variable {ι : Type} [DecidableEq ι] [Hashable ι] [Instantiates ι]
@@ -274,20 +317,22 @@ def differing (Γ Δ : List (Ty ι)) (m : PointClaims.Mapping) : List (Nat × Na
     for B in Δ do
       match as with
       | A :: rest =>
-        if A != B then out := (i, i) :: out
+        if !same A B then out := (i, i) :: out
         as := rest
       | [] => out := (i, i) :: out
       i := i + 1
     return out
   | some slots =>
-    let arr := Γ.toArray
+    let mut cur := Cursor.of Γ
     let mut out := []
     let mut i := 0
     let mut ss := slots
     for B in Δ do
       match ss with
       | s :: rest =>
-        if (arr[s]?).all (· != B) then out := (i, s) :: out
+        let (A, c) := cur.get s
+        cur := c
+        if A.all (!same · B) then out := (i, s) :: out
         ss := rest
       | [] => out := (i, 0) :: out
       i := i + 1
@@ -321,27 +366,24 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
   -- The states entering each node, one per predecessor.
   let mut incoming : Array (List State) := Array.replicate n []
   let mut queue : List Nat := []
-  -- The given state of each head: its written assertion and the claims'
-  -- facts there, over fresh names.
-  let mut given : Array (Option State) := Array.replicate n none
+  -- The given invariant of each head, at its slots: its written assertion
+  -- and the claims' facts there.
+  let mut given : Array (Option Knowledge) := Array.replicate n none
   for l in List.range n do
     if isHead[l]! then
-      let width := (claimed[l]!).context.length
-      let names := (List.range width).map (· + fresh)
-      fresh := fresh + width
       let written := (stated[l]!).getD {}
       let written := if l == start then { written with indices := written.indices ++ entryIndices } else written
       let claimsFacts := (supplied[l]!).getD []
-      let f := fun (i : Nat) => names[i]?
-      let atoms := atomsOf written ++ claimsFacts.map .index
       counts := { counts with
         givenWritten := counts.givenWritten + (atomsOf written).length
         givenClaims := counts.givenClaims + claimsFacts.length }
-      let store := atoms.foldl (fun s a => match a.rename f with | some b => s.add b | none => s) {}
-      given := given.set! l (some { names, store })
+      given := given.set! l (some { written with indices := written.indices ++ claimsFacts })
   for l in List.range n do
     if indeg[l]! == 0 && (isHead[l]! || l == start) then queue := queue ++ [l]
   let mut visitedAll := 0
+  -- Per node, whether no environment meets its context, known from its
+  -- first entering edge.
+  let mut unsat : Array (Option Bool) := Array.replicate n none
   while true do
     let some l := queue.head? | break
     queue := queue.tail
@@ -349,11 +391,21 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
     let node := nodes[l]!
     let c := claimed[l]!
     let width := c.context.length
+    -- Whether no environment meets the node's context.
+    let here ← match unsat[l]! with
+      | some u => pure u
+      | none => pure (ControlFlow.unsatisfiable G c.context)
     -- The node's entry state: given at a head, its one predecessor's, or
     -- the meet of its predecessors'.
     let mut entry : State := { names := [] }
     match given[l]! with
-    | some s => entry := s
+    | some g =>
+      -- A head's state is its given invariant, over fresh names.
+      let names := (List.range width).map (· + fresh)
+      fresh := fresh + width
+      let f := fun (i : Nat) => if i < width then some (i + fresh - width) else none
+      entry := { names, store := (atomsOf g).foldl (fun s a => match a.rename f with
+        | some b => s.add b | none => s) {} }
     | none => match incoming[l]! with
       | [s] => entry := s
       | [] => pure ()
@@ -419,7 +471,9 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
       let kE := KnowledgeExpand.expandLinks (KnowledgeExpand.ctxOf G c.context) k
       let own := (keepFirst {} (c.type :: ms.filterMap fun i => c.context[i]?)).2.toList
       let j : Sequent ι := ⟨c.context, node.expression, c.type⟩
-      let (r, a) := expressionEffectUsing G images pool fuel j kE suggestions index codes aliases checker (some own) answers
+      let kindKey := SinglePassStats.termKind node.expression
+      let (r, a) := timedKind (if kindKey == "invoke" then s!"invoke facts {(atomsOf k).length / 10 * 10}" else kindKey) fun _ =>
+        expressionEffectUsing G images pool fuel j kE suggestions index codes aliases checker (some own) answers
       answers := a
       counts := { counts with rules := counts.rules + 1 }
       let some (_, effect, out) := r.value | return (.refused s!"expression at node {l}: {(reprStr node.expression).take 300} with {(atomsOf k).length} facts {(reprStr k).take 1500}", counts, answers)
@@ -441,10 +495,12 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
         -- A step that may write: its rule reads every fact.
         let (k, pairs, table) := materialize entry width ms true
         let kE := KnowledgeExpand.expandLinks (KnowledgeExpand.ctxOf G c.context) k
-        let (r, a) := expressionEffectUsing G images pool fuel j kE suggestions index codes aliases checker (some own) answers
-        answers := a
+        -- The step the search selected over the facts the expression names,
+        -- its output over every fact.
+        let r := timedKind ("whole " ++ SinglePassStats.termKind node.expression) fun _ =>
+          checker.select j kE effect codes answers.summaries.toList
         counts := { counts with rules := counts.rules + 1, fullRules := counts.fullRules + 1 }
-        let some (_, _, out) := r.value | return (.refused s!"expression at node {l}", counts, answers)
+        let some out := r.value | return (.refused s!"expression at node {l} over every fact", counts, answers)
         let inverse : Std.HashMap Nat Nat := table.fold (fun acc nm s => acc.insert s nm) {}
         store := applyDelta store pairs out true fun i => if i == 0 then some result else (inverse.get? (i - 1)).orElse fun _ => entry.names[i - 1]?
     let pushedNames := result :: entry.names
@@ -482,11 +538,20 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
         edgeStore := applyDelta store pairs k' false fun i => (inverse.get? i).orElse fun _ => pushedNames[i]?
       | none, none => pure ()
       -- The slots' types: each the target's, or below it.
+      -- Whether no environment meets the edge's context: the node's own
+      -- context's answer, and the pushed result's type.
+      let unsatΓ := here || (pushed && ControlFlow.unsatisfiable G [c.type])
       let vacuous := match observed with
-        | some o => ControlFlow.branchUnreachable G Γ o
-        | none => ControlFlow.unsatisfiable G Γ
+        | some o => unsatΓ || (Γ[0]?).any (BranchRefinement.impossible G · o)
+        | none => unsatΓ
+      let diff := if vacuous then [] else differing Γ tc.context t.mapping
+      -- The target's own answer: a slot of the empty type is one the edge's
+      -- context gives (where it has none) or a slot whose type differs.
+      if (unsat[t.label]!).isNone then
+        let u := if unsatΓ then ControlFlow.unsatisfiable G tc.context
+          else diff.any fun (i, _) => (tc.context[i]?).any fun B => ControlFlow.unsatisfiable G [B]
+        unsat := unsat.set! t.label (some u)
       if !vacuous then
-        let diff := differing Γ tc.context t.mapping
         let mut ok := true
         for (i, s) in diff do
           match Γ[s]?, tc.context[i]? with
@@ -509,8 +574,7 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
           if r.value.isNone then return (.refused s!"edge from node {l} to node {t.label}", counts, answers)
       if isHead[t.label]! then
         -- The head's given state is entailed on every edge into it.
-        let some g := given[t.label]! | return (.refused s!"head {t.label}", counts, answers)
-        let req := ofAtoms (g.store.toList.filterMap fun a => a.rename fun x => g.names.idxOf? x) tc.context.length
+        let some req := given[t.label]! | return (.refused s!"head {t.label}", counts, answers)
         let slots := (atomsOf req).flatMap Atom.names
         let srcSlots := slots.map (PointClaims.slot t.mapping)
         let (k, _, _) := materialize { names, store := edgeStore } (if pushed then width + 1 else width) srcSlots false
