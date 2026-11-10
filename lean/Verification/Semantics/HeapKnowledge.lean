@@ -343,6 +343,8 @@ def factFollows (M : Nat → List Nat) (m : PointClaims.Mapping) : IndexFact →
   | .storeApart a p b q, .storeApart a' p' b' q' =>
     (M (PointClaims.slot m a')).contains a && p == p' && (M (PointClaims.slot m b')).contains b && q == q' ||
       (M (PointClaims.slot m a')).contains b && p' == q && (M (PointClaims.slot m b')).contains a && q' == p
+  | .guarded s p g B, .guarded s' p' g' B' =>
+    (M (PointClaims.slot m s')).contains s && p == p' && g == g' && factFollows M m B B'
   | _, _ => false
 
 /-- A quantified fact holds at an edge's target where the source's holds:
@@ -367,7 +369,16 @@ theorem every_follows {M : Nat → List Nat} {m : PointClaims.Mapping} {ρ : Env
 theorem factFollows_sound {M : Nat → List Nat} {m : PointClaims.Mapping} {s t : IndexFact} {ρ h}
     (hM : ∀ x, ∀ y ∈ M x, ρ y = ρ x) (hf : factFollows M m s t = true) (hs : s.HoldsAt ρ h) :
     t.HoldsAt (PointClaims.mapEnv m ρ) h := by
-  cases s <;> cases t <;> simp only [factFollows, Bool.and_eq_true, List.contains_iff_mem, reduceCtorEq] at hf
+  induction s generalizing t with
+  | guarded s0 p0 g0 B ih =>
+    cases t <;> simp only [factFollows, Bool.and_eq_true, List.contains_iff_mem, beq_iff_eq, reduceCtorEq] at hf
+    rename_i s1 p1 g1 B'
+    obtain ⟨⟨⟨hm, rfl⟩, rfl⟩, hB⟩ := hf
+    obtain ⟨v, hv, hor⟩ := hs
+    refine ⟨v, by simpa only [PointClaims.mapEnv, hM _ _ hm] using hv, ?_⟩
+    exact hor.imp id (ih hB)
+  | _ => ?_
+  all_goals cases t <;> simp only [factFollows, Bool.and_eq_true, List.contains_iff_mem, reduceCtorEq] at hf
   · rename_i k k'
     simpa only [IndexFact.HoldsAt, PointClaims.mapEnv, hM _ _ hf] using hs
   · rename_i x n x' n'
@@ -1856,15 +1867,39 @@ theorem storeFollows_sound {M : Nat → List Nat} {m : PointClaims.Mapping} {ls 
     exact reach u w hne hm
   · cases hm
 
+/-- A guarded target whose guard reads its slot's own value (path `[]`, a
+read that always gives the value) follows from an unconditional source atom
+its body follows from (`factFollows`). -/
+def guardBodyFollows (M : Nat → List Nat) (m : PointClaims.Mapping) (a : List IndexAtom) (t : IndexAtom) : Bool :=
+  t.cond.isNone && match t.fact with
+  | .guarded _ [] _ B => a.any fun s => s.cond.isNone && factFollows M m s.fact B
+  | _ => false
+
+theorem guardBodyFollows_sound {M : Nat → List Nat} {m : PointClaims.Mapping} {a : List IndexAtom}
+    {t : IndexAtom} {ρ h} (hM : ∀ x, ∀ y ∈ M x, ρ y = ρ x)
+    (hf : guardBodyFollows M m a t = true) (ha : IndexHolds a ρ h) :
+    t.fact.HoldsAt (PointClaims.mapEnv m ρ) h := by
+  simp only [guardBodyFollows, Bool.and_eq_true] at hf
+  obtain ⟨-, hf⟩ := hf
+  split at hf
+  · rename_i g tag B hfa
+    rw [hfa]
+    obtain ⟨s, hs, hm⟩ := List.any_eq_true.mp hf
+    simp only [Bool.and_eq_true, Option.isNone_iff_eq_none] at hm
+    obtain ⟨hn, hm⟩ := hm
+    exact ⟨_, rfl, Or.inr (factFollows_sound hM hm (ha s hs fun c hc => by rw [hn] at hc; cases hc))⟩
+  · cases hf
+
 /-- Whether each target atom follows from a source atom or from the source's
 linear facts, with the source's read links `ls` as the bridge (`bridgeOf`),
 or, guarded, from the source's guarded atoms (`guardFollows`), `tags` stating
-which guard paths read a tag's value. -/
+which guard paths read a tag's value, or from an atom its body follows from
+(`guardBodyFollows`). -/
 def indicesCheckWith (tags : Nat → List String → GuardTag → Bool) (M : Nat → List Nat) (ls : HeapLinks.Links)
     (a b : List IndexAtom) (m : PointClaims.Mapping) : Bool :=
   let B := bridgeOf ls a b
   b.all fun t => a.any (fun s => indexFollows M m s t) || linearFollows M m a B t || guardFollows M m ls tags a t ||
-    storeFollows M m ls a t
+    storeFollows M m ls a t || guardBodyFollows M m a t
 
 /-- Whether a value set holds the value a guard's tag names alone. -/
 def onlyTag (V : ValueSets.ValueSet) : GuardTag → Bool
@@ -1947,7 +1982,9 @@ theorem indicesCheckWith_sound {tags : Nat → List String → GuardTag → Bool
     (ha : IndexHolds a ρ h) :
     IndexHolds b (PointClaims.mapEnv m ρ) h := by
   intro t ht hcond
-  rcases Bool.or_eq_true_iff.mp (List.all_eq_true.mp hc t ht) with hc' | hst
+  rcases Bool.or_eq_true_iff.mp (List.all_eq_true.mp hc t ht) with hc' | hgb
+  case inr => exact guardBodyFollows_sound hM hgb ha
+  rcases Bool.or_eq_true_iff.mp hc' with hc' | hst
   case inr => exact storeFollows_sound hM hl hst ha
   rcases Bool.or_eq_true_iff.mp hc' with hc' | hg
   case inr => exact guardFollows_sound hM hl htags hg ha

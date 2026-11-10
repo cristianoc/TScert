@@ -1171,7 +1171,7 @@ control(async (): Promise<void> => {
   const claims = readClaims(artifacts);
   const aliased = must(claims.functions.find(f => f.name === "aliased"), "aliased's claims");
   must(aliased.entries.find(e => e.start === source.indexOf("return measure(xs")), "the call's entry").storesApart.push(
-    { name: "xs", path: [], other: "xs", otherPath: [] });
+    { guards: [], name: "xs", path: [], other: "xs", otherPath: [] });
   const separated = produceWith(artifacts, writeClaims(artifacts, "forged-store-separation", claims), "forged-store-separation");
   refusedLeavingOut(separated, source.indexOf("return measure(xs"), "store separation");
   const ast: Ast = readFragmentFile(join(artifacts, "fragment.json"));
@@ -1189,6 +1189,25 @@ control(async (): Promise<void> => {
   const unseparated = produceWith(artifacts, writeClaims(artifacts, "forged-kept-across-frame", kept), "forged-kept-across-frame", document);
   refusedLeavingOut(unseparated, read, "kept across a frame");
   process.stdout.write("forged store separations: a separation forged at the caller's entry, and a fact forged across a frame that may change its array's store, each left out, the obligation needing it refused\n");
+});
+
+control(async (): Promise<void> => {
+  // A guarded store separation whose guard reads another binding than the
+  // region position's (ARITHMETIC.md, "Store separation"): `kept === null ||
+  // xs !== kept.open` holds where `passed`, whose region `runs.open[*]` the
+  // call selects, holds `runs`, whose `open` is `xs`. `to <= xs.length`,
+  // forged past the producer into the entry after the call, is left out and
+  // the read refused where evidence is searched.
+  const artifacts = run("invalid-stated-region-nullable-other-guard");
+  const source = readFileSync(sourceKey(artifacts), "utf8");
+  const claims = readClaims(artifacts);
+  const f = must(claims.functions.find(g => g.name === "f"), "f's claims");
+  const read = source.indexOf("s += xs[i]!");
+  must(f.entries.find(e => e.start === read), "the read's entry").facts.push({ guards: [], terms: [
+    { name: "to", path: [], term: "value", coefficient: 1 }, { name: "xs", path: [], term: "length", coefficient: -1 }], bound: 0 });
+  const searched = produceWith(artifacts, writeClaims(artifacts, "forged-other-guard", claims), "forged-other-guard");
+  refusedLeavingOut(searched, read, "a guard on another binding");
+  process.stdout.write("forged guarded separation: a separation guarded by another binding than the region position's keeps no length across the call\n");
 });
 
 control(async (): Promise<void> => {

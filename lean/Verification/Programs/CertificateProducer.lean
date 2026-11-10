@@ -2015,7 +2015,7 @@ meets establishes every candidate. -/
   let m := target.mapping
   cs.filter fun t => !(a.indices.any (fun s => HeapKnowledge.indexFollows M m s t) ||
     HeapKnowledge.linearFollows M m a.indices B t || HeapKnowledge.guardFollows M m a.links tags a.indices t ||
-    HeapKnowledge.storeFollows M m a.links a.indices t)
+    HeapKnowledge.storeFollows M m a.links a.indices t || HeapKnowledge.guardBodyFollows M m a.indices t)
 
 /-- A table by label of the first entry `xs` gives each label below `n`, as
 `List.lookup` finds it. -/
@@ -2221,7 +2221,21 @@ independent consumer. The search's result, and the candidates it left out. -/
                 -- "Guarded clauses", the join): each one's guarded atoms, also
                 -- restated through its read links, kept where every edge's
                 -- knowledge entails it; each edge is checked again.
-                let candidates := (projections.flatMap fun p => HeapKnowledge.lowerGuards p.links p.indices).eraseDups
+                -- A store separation one predecessor states of an alias of a
+                -- slot another holds a tag's value in, restated of that slot
+                -- and guarded by its tag (`a === null || y !== a.q`).
+                let restated := projections.flatMap fun p => p.indices.flatMap fun a =>
+                  if a.cond.isSome then [] else match a.fact with
+                  | .storeApart x q y r =>
+                    let guardsOf := fun (w : Nat) (mk : Nat → HeapKnowledge.IndexFact) =>
+                      (HeapLinks.aliases p.links w).flatMap fun z =>
+                        ([HeapKnowledge.GuardTag.null, .undef].filter fun g =>
+                          projections.any fun o => HeapKnowledge.guardTags o z [] g).map fun g =>
+                            ({ fact := .guarded z [] g (mk z) } : HeapKnowledge.IndexAtom)
+                    guardsOf x (fun z => .storeApart z q y r) ++ guardsOf y (fun z => .storeApart x q z r)
+                  | _ => []
+                let candidates := (projections.flatMap fun p => HeapKnowledge.lowerGuards p.links p.indices).eraseDups ++
+                  restated.eraseDups
                 let guarded := candidates.filter fun a => !k.indices.contains a && projections.all fun p =>
                   HeapKnowledge.indicesCheckWith (HeapKnowledge.guardTags p) (HeapLinks.aliases p.links) p.links
                     p.indices [a] none

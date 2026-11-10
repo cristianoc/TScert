@@ -117,7 +117,9 @@ let create diagnostics flows offered declarations module_functions arities bound
     let env0 = if every = [] then env0 else Linear_facts.eadd env0 every in
     (* Its store separations (ARITHMETIC.md, "Store separation"), alike. *)
     let stores = List.filter_map (fun (fact : Semantic.index_fact) -> match fact with
-      | Store_apart (x,p,y,q) -> (match name x, name y with Some a, Some b -> Some ((a,p),(b,q)) | _ -> None)
+      | Store_apart (x,p,y,q) -> (match name x, name y with Some a, Some b -> Some (None,((a,p),(b,q))) | _ -> None)
+      | Guarded (z,[],tag,Store_apart (x,p,y,q)) -> (match name z, name x, name y with
+        | Some g, Some a, Some b -> Some (Some (g,tag),((a,p),(b,q))) | _ -> None)
       | _ -> None) f.requires in
     if stores = [] then env0 else Linear_facts.sadd env0 stores in
   (* A module function holds each module cell its body mentions. *)

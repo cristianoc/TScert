@@ -156,9 +156,11 @@ interface ApartClaim {
 }
 
 /** A store separation proposed at a statement entry (ARITHMETIC.md, "Store
- * separation"): the arrays the paths `path` and `otherPath` read from what
- * the value bindings `name` and `other` hold have different stores. */
+ * separation"): where none of its guards, in order, reads its tag's value
+ * ("Guarded clauses"), the arrays the paths `path` and `otherPath` read from
+ * what the value bindings `name` and `other` hold have different stores. */
 interface StoresApartClaim {
+  guards: GuardClaim[];
   name: string;
   path: string[];
   other: string;
@@ -381,6 +383,11 @@ function claimsDocument(v: JsonRead): SourceClaims {
     const r = record(x, "a named point", ["name", "type", "current"]);
     return { name: name(r.name, "a point's name"), type: claimType(r.type), current: current(r.current) };
   };
+  const guardClaim = (g: JsonRead): GuardClaim => {
+    const r = record(g, "a fact's guard", ["name", "path", "tag"]);
+    if (r.tag !== "null" && r.tag !== "undefined" && r.tag !== "true" && r.tag !== "false") fail("a guard's tag is a nullish or Boolean literal");
+    return { name: name(r.name, "a guard's name"), path: each(r.path, "a guard's path", (f) => name(f, "a path's field")), tag: r.tag };
+  };
   const linearClaim = (f: JsonRead): LinearClaim => {
     if (isJsonObject(f) && "either" in f) {
       const e = record(record(f, "a disjunction", ["either"]).either, "a disjunction's arms", ["left", "right"]);
@@ -392,13 +399,7 @@ function claimsDocument(v: JsonRead): SourceClaims {
           return v;
         };
         return {
-          guards: each(q.guards, "a fact's guards", (g) => {
-            const r = record(g, "a fact's guard", ["name", "path", "tag"]);
-            if (r.tag !== "null" && r.tag !== "undefined" && r.tag !== "true" && r.tag !== "false") fail("a guard's tag is a nullish or Boolean literal");
-            const guard: GuardClaim = { name: name(r.name, "a guard's name"),
-              path: each(r.path, "a guard's path", (f) => name(f, "a path's field")), tag: r.tag };
-            return guard;
-          }),
+          guards: each(q.guards, "a fact's guards", guardClaim),
           terms: each(q.terms, "a fact's terms", (t) => {
             const r = record(t, "a fact's term", ["name", "path", "term", "coefficient"]);
             const kind = r.term;
@@ -462,8 +463,9 @@ function claimsDocument(v: JsonRead): SourceClaims {
         return { name: name(q.name, "a region fact's binding"), other: name(q.other, "a region fact's other binding") };
       }),
       storesApart: each(r.storesApart, "an entry's store separations", (f) => {
-        const q = record(f, "a store separation", ["name", "path", "other", "otherPath"]);
-        return { name: name(q.name, "a store separation's binding"),
+        const q = record(f, "a store separation", ["guards", "name", "path", "other", "otherPath"]);
+        return { guards: each(q.guards, "a store separation's guards", guardClaim),
+          name: name(q.name, "a store separation's binding"),
           path: each(q.path, "a store separation's path", (g) => name(g, "a path's field")),
           other: name(q.other, "a store separation's other binding"),
           otherPath: each(q.otherPath, "a store separation's other path", (g) => name(g, "a path's field")) };

@@ -409,10 +409,18 @@ private def reachablePoints (graph : SourceFlow.Graph) (id : Nat) : List String 
     | _, none => do throw (locatedRefusal (← table) node.source .entryClaim
         s!"a region fact names '{other}', which is no value binding")
   -- The store separations the producer proposes (ARITHMETIC.md, "Store
-  -- separation"): both sides paths from value bindings.
-  let storesApart ← ((fc.entryStoresApart.lookup node.source.1).getD []).mapM fun ((name, p), (other, q)) =>
+  -- separation"): both sides paths from value bindings, each guarded by its
+  -- guards, the first outermost, each a value binding's path.
+  let storesApart ← ((fc.entryStoresApart.lookup node.source.1).getD []).mapM fun (guards, (name, p), (other, q)) =>
     match valueSlot scope name, valueSlot scope other with
-    | some x, some y => pure ({ fact := .storeApart x p y q } : HeapKnowledge.IndexAtom)
+    | some x, some y => do
+      let guards ← guards.mapM fun (g, path, tag) => match valueSlot scope g with
+        | some z => pure (z, path, tag)
+        | none => do throw (locatedRefusal (← table) node.source .entryClaim
+            s!"a store separation's guard names '{g}', which is no value binding")
+      let fact := guards.foldr (fun g B => HeapKnowledge.IndexFact.guarded g.1 g.2.1 g.2.2 B)
+        (HeapKnowledge.IndexFact.storeApart x p y q)
+      pure ({ fact } : HeapKnowledge.IndexAtom)
     | none, _ => do throw (locatedRefusal (← table) node.source .entryClaim
         s!"a store separation names '{name}', which is no value binding")
     | _, none => do throw (locatedRefusal (← table) node.source .entryClaim

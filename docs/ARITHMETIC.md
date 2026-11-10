@@ -1515,8 +1515,10 @@ facts' `restateReads`).
 (`envOnly`). Otherwise it is kept across a step where each path is at most
 one field whose location the step keeps (`IndexFact.keptBy` with
 `guardKept`): across a call, an element write and a field write, a field
-every clause of its slot's type states `@stable`
-(`HeapExpressionRules.stableFirst`, `stableFirst_frame`: a stable location
+some clause of its slot's type states `@stable` and every other clause
+states `@stable` or is `null` or `undefined`, which owns no field
+(`HeapExpressionRules.stableFirst`, `stableFieldPresent`,
+`stableFirst_frame`: a stable location
 holds its value in every heap a normal return reaches; a write of a
 `@stable` field is refused):
 
@@ -1535,21 +1537,46 @@ them) or a method call at a signature keeping the heap or stating a
 footprint and changing neither its receiver's store nor its own locations,
 each of operands writing no heap (`Linear_facts.skept`).
 
+**Guarded separations.** A separation guarded by a slot's own value,
+$`z = \overline g \lor P\mathrel{\#}Q`$ (a [guarded fact](#guarded-clauses)
+whose guard's path is empty), is the clause `z === null || P !== Q`. An
+edge establishes it by its guard's tag (`guard-tag`) or by its body
+(`guard-body`, `guardBodyFollows`), and from the same guarded separation
+(`guard-match`, `factFollows`); a step keeps it where it keeps the body,
+the guard reading a slot alone. At a merge the search proposes, of a
+separation one predecessor states of a slot $`x`$ aliasing $`z`$, the
+separation of $`z`$ guarded by the tag another predecessor holds in $`z`$;
+each edge is checked. So `const chosen = use ? runs : null` establishes
+`chosen === null || xs !== chosen.open` from `xs !== runs.open`:
+
+```math
+\frac{\Sigma\vdash z=\overline g}{\Sigma\vdash z=\overline g\lor P\mathrel{\#}Q}\ \textsf{guard-tag}
+\qquad
+\frac{\Sigma\vdash P\mathrel{\#}Q}{\Sigma\vdash z=\overline g\lor P\mathrel{\#}Q}\ \textsf{guard-body}
+```
+
 **Consuming it.** A call of a frame with store regions keeps the store of
 a slot a separation places outside every region, and with it the facts
 reading the slot's length, where its closed bound keeps stores
 (`region-call-keep`); where it grows stores, the slot's store is no
 shorter after the call, and the facts reading the slot's length at a
 coefficient at most $`0`$ survive (`region-call-grow`,
-[store regions](SOURCE-ELABORATION.md#stated-effects)).
+[store regions](SOURCE-ELABORATION.md#stated-effects)). A separation of a
+region's path at the actual's slot $`a`$ places the slot outside the region
+unguarded or guarded by $`a`$'s own value: where $`a`$ holds a tag's value,
+no object, the region selects no location (`regionSep`, `storeApartAt`;
+proved: `regionSep_out`).
 
 **Implementation.** The front end elaborates `P !== Q`
 (`elaborateRequires`, `tools/bound-annotations.mts`) to
-`{"storeApart": {slot, path, other, otherPath}}`; an entry claim's
-`storesApart` proposes one at a statement entry. The producer proposes
-those of a precondition, of a declaration of an object literal whose field
-holds an empty array literal, and keeps them as Lean does
-(`Linear_facts.sstatement`). Proved: `storeFollows_sound`,
+`{"storeApart": {slot, path, other, otherPath}}`, inside a guarded fact
+under guards; an entry claim's `storesApart` proposes one at a statement
+entry, with its `guards`. The producer proposes those of a precondition and
+of a loop invariant, of a declaration of an object literal whose field
+holds an empty array literal, and, guarded by the literal's tag, of a
+declaration `c ? b : null` (either way round, `undefined` alike) from `b`'s,
+and keeps them as Lean does (`Linear_facts.sstatement`). Proved:
+`storeFollows_sound`, `guardBodyFollows_sound`, `factFollows_sound`,
 `restateStores_holds`, `stableFirst_frame`, `regionFirst_kept`,
 `regionGrown_grows`, `effectKept_holds`.
 
@@ -1557,13 +1584,20 @@ holds an empty array literal, and keeps them as Lean does
 `stated-local-runs` (the array allocated in the looping function),
 `stated-region-grow-keeps-lengths` (a frame growing stores) and
 `stated-region-stable-apart-writes` (a separation kept across an element
-write and a field write). Negative, run under Node: `invalid-stated-alias`
-(one array as both sides, `NaN`) and
+write and a field write) and `stated-region-nullable-apart` (a guarded
+separation at a region position holding a record or `null`). Negative, run
+under Node: `invalid-stated-alias` (one array as both sides, `NaN`),
 `invalid-stated-region-unstable-apart-write` (a field that is not `@stable`,
-written with the other array, `undefined`).
+written with the other array, `undefined`),
+`invalid-stated-region-nullable-alias` (a nullable region position with no
+separation, `NaN`), `invalid-stated-region-nullable-wrong-guard` (a guarded
+separation the declaration establishes on its `null` arm alone, `NaN`) and
+`invalid-stated-region-nullable-other-guard` (a separation guarded by
+another binding than the region position's, `NaN`).
 Gap: `stated-distinct-view-refused`. Controls in `pipeline/test.mts`: a
-separation forged at a caller's entry, and a fact forged across a frame that
-may change its array's store, each refused.
+separation forged at a caller's entry, a fact forged across a frame that
+may change its array's store, and a fact forged across a call whose region
+position another binding's guarded separation names, each refused.
 
 ## Designs that extend this document
 

@@ -669,10 +669,22 @@ let statements (expr:Analysis_state.expression_infer) execute_bindings owner_spa
           not r.call_effect.receiver_grows) (s :: rest) ->
       Some (s.call_effect.regions, s.call_effect.footprint)
     | _ -> None);
+  (* Every object arm states the field `@stable`, and every other arm is
+     `null` or `undefined` (Lean's `stableFieldPresent`). *)
   Linear_facts.stable_field := (fun env b g ->
-    match Option.bind (receiver_type env {Source.node = Id b; pos = Json.Null}) (fun t -> field_of t (Name g)) with
-    | Some fg -> fg.stable && not fg.host
-    | None -> false);
+    match Option.map head (receiver_type env {Source.node = Id b; pos = Json.Null}) with
+    | Some (Atoms atoms) ->
+      let atoms = List.concat_map (fun (at : Semantic.atom) -> match at with
+        | Named _ -> (match head (Atoms [at]) with Atoms ats -> ats | _ -> [Top])
+        | at -> [at]) atoms in
+      List.exists (function Semantic.Shape _ -> true | _ -> false) atoms &&
+      List.for_all (fun (at : Semantic.atom) -> match at with
+        | Shape {fields;_} -> (match List.find_opt (fun (f:Semantic.field) -> f.name = Name g) fields with
+          | Some fg -> fg.stable && not fg.host
+          | None -> false)
+        | Nul | Undef -> true
+        | _ -> false) atoms
+    | _ -> false);
   Linear_facts.stable_view := (fun env b ->
     match Option.bind (receiver_type env {Source.node = Id b; pos = Json.Null}) (fun t -> field_of t (Name "[[viewLength]]")) with
     | Some g -> g.stable
