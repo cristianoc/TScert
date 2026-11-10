@@ -525,7 +525,7 @@ let statements callbacks flow_graph register_following owner_span env0 ss =
              let ty,gy = guarded true and tn,gn = guarded false in
              let es = if heap_free then every0 else [] in
              let rs = if heap_free then regions0 else [] in
-             let ss = List.filter (fun (((_,p),(_,q)) : Linear_facts.sfact) -> heap_free || (p = [] && q = [])) stores0 in
+             let ss = if heap_free then stores0 else List.filter (Linear_facts.skept env s) stores0 in
              let dropped = rewritten s in
              [with_facts ~dropped ~ds:(if heap_free then disjunctions0 else []) ~gs:gy ~es ~rs ~ss y (reading (facts0 @ t @ ty) @ Linear_facts.test_conditional_facts env c true) (kept @ bounds bt);
               with_facts ~dropped ~ds:(if heap_free then disjunctions0 else []) ~gs:gn ~es ~rs ~ss n (reading (facts0 @ f @ tn) @ Linear_facts.test_conditional_facts env c false) (kept @ bounds bf)]

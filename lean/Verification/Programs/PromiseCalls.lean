@@ -2138,15 +2138,6 @@ def effectKept (views stable : Nat → String → Bool) (eff : Effect) (t : Tm) 
     HeapKnowledge.shiftIndices (HeapKnowledge.keptIndicesWith (HeapKnowledge.Changes.ofClosed eff.footprint)
       stable views (k.indices.filter fun a => !a.fact.envOnly))
 
-/-- Two kept-location predicates keep their union. -/
-theorem firstKept_or {a b : Nat → String → Bool} {ρ : Env} {h h' : Heap}
-    (ha : HeapKnowledge.FirstKept a ρ h h') (hb : HeapKnowledge.FirstKept b ρ h h') :
-    HeapKnowledge.FirstKept (fun s g => a s g || b s g) ρ h h' := by
-  intro s g fs cd o l v hf
-  rcases Bool.or_eq_true_iff.mp hf with hf | hf
-  · exact ha s g fs cd o l v hf
-  · exact hb s g fs cd o l v hf
-
 theorem effectKept_holds {views stable : Nat → String → Bool} {eff : Effect} {t : Tm} {k : HeapKnowledge.Knowledge} {ρ : Env} {h h' : Heap} {v : Tm}
     (hk : HeapKnowledge.Holds k ρ h) (hw : eff.within (ExpressionEffects.receiverOf (instantiate 0 ρ t)) (ExpressionEffects.actualsOf (instantiate 0 ρ t)) h h')
     (hg : eff.receiverGrows = true →
@@ -2160,7 +2151,7 @@ theorem effectKept_holds {views stable : Nat → String → Bool} {eff : Effect}
     have hg := hg hgr
     exact HeapKnowledge.shiftIndices_holds (HeapKnowledge.keptIndices_holds
       (fun a ha hcd => hk.2.2.2.2.2 a (List.mem_filter.mp ha).1 hcd)
-      (receiverGrows_changes hg) (firstKept_or (growFirst_kept hk hg) hst))
+      (receiverGrows_changes hg) (HeapKnowledge.firstKept_or (growFirst_kept hk hg) hst))
   · split
     · exact HeapKnowledge.indexHolds_nil _ _
     · rename_i hc
@@ -2171,7 +2162,7 @@ theorem effectKept_holds {views stable : Nat → String → Bool} {eff : Effect}
         · exact HeapKnowledge.indexHolds_nil _ _
         · exact HeapKnowledge.shiftIndices_holds (HeapKnowledge.keptIndicesGrown_holds
             (fun a ha hcd => hk.2.2.2.2.2 a (List.mem_filter.mp ha).1 hcd)
-            (HeapKnowledge.Changes.top_holds h h') (firstKept_or (regionFirst_kept hk hs ho hw) hst) hv
+            (HeapKnowledge.Changes.top_holds h h') (HeapKnowledge.firstKept_or (regionFirst_kept hk hs ho hw) hst) hv
             (regionGrown_grows hk hs ho hw))
       split
       · rename_i w hwr

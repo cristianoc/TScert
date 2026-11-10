@@ -2178,15 +2178,60 @@ let of_every_fact (name : int -> string option) (fact : Semantic.index_fact) : e
    field's location. Set by the statement analysis, which reads the type. *)
 let stable_field : ((string * Environment.binding) list -> string -> string -> bool) ref = ref (fun _ _ _ -> false)
 
+(* Whether every step of an expression that writes the heap keeps the
+   locations `@stable` fields hold (Lean's `stableFirst` passed to the step's
+   kept atoms): a call of a function, an element write of a binding's array
+   (`IndexWrites.lengthOutput`, `growOutput`) and a field write
+   (`writeOutput`), each of operands writing no heap, and a method call
+   whose call output keeps them, inside operators,
+   assignments of bindings and conditionals. *)
+let rec stable_steps env (e : expr) = heap_free env e || match e.node with
+  | Call ({node=Id _;_},None,args,[],_) -> List.for_all (heap_free env) args
+  | IndexWrite ({node=Id xs;_},k,rhs) -> slot_binding env xs && heap_free env k && heap_free env rhs
+  | Write (recv,_,rhs) -> heap_free env recv && heap_free env rhs
+  (* A method call keeping the heap (`call-keep`) or at a signature stating
+     a footprint and changing neither its receiver's store nor its own
+     locations (`effectKept`'s footprint case), on a receiver whose own
+     steps keep stable fields' locations. *)
+  | Invoke ({node=Read (r,key);_},args,[],_) ->
+    stable_steps env r && List.for_all (heap_free env) args &&
+    (!method_keeps_heap env r key || !method_footprint env r key args <> None)
+  (* `r.f ??= v`, `||=`, `&&=`: a read, then on one path the field's write. *)
+  | LogicalAssign (_,{node=Read (r,_);_},rhs) -> heap_free env r && stable_steps env rhs
+  | Assign (x,_,rhs) | NullishAssign (x,_,rhs) | LogicalAssign (_,{node=Id x;_},rhs) ->
+    slot_binding env x && stable_steps env rhs
+  | Not a | Unary (_,a) | Cast (_,_,a) -> stable_steps env a
+  | Arith (_,a,b) | Equality (_,a,b) | Logical (_,a,b) | Coalesce (a,b) | Comma (a,b) ->
+    stable_steps env a && stable_steps env b
+  | Conditional (c,a,b) -> stable_steps env c && stable_steps env a && stable_steps env b
+  | _ -> false
+
+let statement_stable_steps env (s : stmt) = match s.statement with
+  | Effect e | Return e | If (e,_,_) | While (e,_,_) -> stable_steps env e
+  | Declare (_,bs) -> List.for_all (fun (_,_,e) -> stable_steps env e) bs
+  | _ -> false
+
+(* Whether a statement keeps a store separation naming no binding it
+   assigns: both stores a binding's own (`envOnly`), or each side's path at
+   most one `@stable` field and every heap-writing step of the statement one
+   keeping stable fields' locations. *)
+let skept env (s : stmt) : sfact -> bool =
+  let assigned = names_assigned s env in
+  let stable = lazy (statement_stable_steps env s) in
+  let side (x,p) = match p with
+    | [] -> true
+    | [f] -> slot_binding env x && !stable_field env x f
+    | _ -> false in
+  fun (((_,p),(_,q)) as f) -> not (List.exists (fun x -> List.mem x assigned) (sbindings f)) &&
+    ((p = [] && q = []) || (side (fst f) && side (snd f) && Lazy.force stable))
+
 (* The store separations a statement keeps (Lean's `IndexFact.keptBy`):
-   each across a statement writing no heap; one between two bindings' own
-   stores across any statement, which reads no heap (`envOnly`); one whose
-   paths are at most one `@stable` field across a call of a function, whose
-   step keeps every stable field's location (`stableFirst`); none naming a
-   binding the statement assigns. A declaration of an object literal whose
-   field holds an empty array literal states the field's array apart from
-   every older array binding `visible` names (`region-alloc`, read through
-   the literal's field link, `store-apart-links`). *)
+   each across a statement writing no heap; the others where `skept` keeps
+   them; none naming a binding the statement assigns. A declaration of an
+   object literal whose field holds an empty array literal states the
+   field's array apart from every older array binding `visible` names
+   (`region-alloc`, read through the literal's field link,
+   `store-apart-links`). *)
 let sstatement ?(array = fun _ _ -> false) ?(visible = fun _ -> true) env (ss : sfact list) (s : stmt) : sfact list =
   let assigned = names_assigned s env in
   let ss = List.filter (fun f -> not (List.exists (fun x -> List.mem x assigned) (sbindings f))) ss in
@@ -2199,15 +2244,7 @@ let sstatement ?(array = fun _ _ -> false) ?(visible = fun _ -> true) env (ss : 
             | _ -> []) fields
         | _ -> []) bindings
     | _ -> [] in
-  fresh @ if statement_heap_free env s then ss else
-  let call = match s.statement with
-    | Effect {node=Call ({node=Id _;_},None,args,[],_);_} -> List.for_all (heap_free env) args
-    | _ -> false in
-  let side (x,p) = match p with
-    | [] -> true
-    | [f] -> slot_binding env x && !stable_field env x f
-    | _ -> false in
-  List.filter (fun (((_,p),(_,q)) as f) -> (p = [] && q = []) || (call && side (fst f) && side (snd f))) ss
+  fresh @ if statement_heap_free env s then ss else List.filter (skept env s) ss
 
 let rstatement ?(array = fun _ _ -> false) ?(visible = fun _ -> true) env (rs : rfact list) (s : stmt) : rfact list =
   let rs = if statement_heap_free env s then rs else match s.statement with

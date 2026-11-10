@@ -2070,6 +2070,15 @@ theorem keptIndicesGrown_holds {c : Changes} {first views : Nat → String → B
 theorem firstKept_none {ρ : Env} {h h' : Heap} : FirstKept (fun _ _ => false) ρ h h' := by
   intro _ _ _ _ _ _ _ hf; cases hf
 
+/-- Two kept-location predicates keep their union. -/
+theorem firstKept_or {a b : Nat → String → Bool} {ρ : Env} {h h' : Heap}
+    (ha : FirstKept a ρ h h') (hb : FirstKept b ρ h h') :
+    FirstKept (fun s g => a s g || b s g) ρ h h' := by
+  intro s g fs cd o l v hf
+  rcases Bool.or_eq_true_iff.mp hf with hf | hf
+  · exact ha s g fs cd o l v hf
+  · exact hb s g fs cd o l v hf
+
 /-- The terms the linear facts of the atoms name, conditional ones included. -/
 def linearTerms (as : List IndexAtom) : List Term :=
   ((linearFacts as).flatMap (·.vars) ++ as.flatMap fun a => match a.fact with

@@ -1400,9 +1400,11 @@ theorem fieldEvery_holds {as : List IndexAtom} {chg : Changes} {first : Nat → 
 to be distinct from the written one, establishes its new contents where the
 written value is a known primitive (`R`), states that reading the field from
 the receiver gives the written slot's value (a read link, `write-link`), and
-retains immutable values already read into slots. -/
+retains immutable values already read into slots. An index atom is kept
+where `chg` keeps it, its first locations kept by separation or
+`write-sibling`, or stable (`stable`, `stable-first`). -/
 def writeOutput (k : Knowledge) (i v : Nat) (fld : PropKey) (R : Option ValueSets.ValueSet) (owned : Bool)
-    (chg : Changes) (views : Nat → String → Bool) : Knowledge :=
+    (chg : Changes) (views stable : Nat → String → Bool) : Knowledge :=
   HeapKnowledge.withReadAtoms ⟨(R.map fun R => (HeapLinks.aliases k.links i).map (fun j => (⟨j+1,R,fld⟩ : Fact))).getD [] ++
       (k.cells.filter fun f => writeKeeps k i fld owned f.slot f.field).map
         (fun f => {f with slot := f.slot + 1}),
@@ -1410,7 +1412,8 @@ def writeOutput (k : Knowledge) (i v : Nat) (fld : PropKey) (R : Option ValueSet
     ⟨i+1, v+1, false, fld, false⟩ :: HeapLinks.stable (HeapKnowledge.shift k).links,
     HeapSeparation.shift k.separation, [],
     HeapKnowledge.shiftIndices
-      (HeapKnowledge.keptIndicesWith chg (fun s g => writeKeeps k i fld owned s (.str g)) views k.indices ++
+      (HeapKnowledge.keptIndicesWith chg (fun s g => writeKeeps k i fld owned s (.str g) || stable s g) views
+          k.indices ++
         k.indices.filter (fieldEvery k.indices chg (fun s g => writeKeeps k i fld owned s (.str g))
           (pick (HeapLinks.aliases k.links) (intSlot k.indices) v)))⟩
 
@@ -1465,7 +1468,7 @@ theorem write_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImag
     (hw : WorldAdm W) (hh : HeapOk n W h) :
     SafePost (excOf G) (meaning G A)
       (fun h' v => HeapKnowledge.Holds (writeOutput k i j fld R (ownedField (expand G (Γ.getD i [])) fld)
-        (fieldChanges G (expand G (Γ.getD i [])) fld) (writeViews G Γ)) (push v ρ) h')
+        (fieldChanges G (expand G (Γ.getD i [])) fld) (writeViews G Γ) (stableFirst G Γ)) (push v ρ) h')
       n W h (.writeAt fld (ρ i) (ρ j)) := by
   have hvv : isVal (ρ j) = true :=
     (meaning_value (he.2 j Γ[j] (List.getElem?_eq_some_iff.mpr ⟨hj,rfl⟩))).1
@@ -1513,7 +1516,8 @@ theorem write_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImag
         · cases hvw
       have hindex : HeapKnowledge.IndexHolds (HeapKnowledge.shiftIndices (HeapKnowledge.keptIndicesWith
           (fieldChanges G (expand G (Γ.getD i [])) fld)
-          (fun s g => writeKeeps k i fld (ownedField (expand G (Γ.getD i [])) fld) s (.str g))
+          (fun s g => writeKeeps k i fld (ownedField (expand G (Γ.getD i [])) fld) s (.str g) ||
+            stableFirst G Γ s g)
           (writeViews G Γ) k.indices ++
           k.indices.filter (fieldEvery k.indices (fieldChanges G (expand G (Γ.getD i [])) fld)
             (fun s g => writeKeeps k i fld (ownedField (expand G (Γ.getD i [])) fld) s (.str g))
@@ -1530,7 +1534,21 @@ theorem write_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImag
           exact hv
         refine HeapKnowledge.shiftIndices_holds fun a ha hcond => ?_
         rcases List.mem_append.mp ha with ha | ha
-        · exact HeapKnowledge.keptIndicesWith_holds hk.2.2.2.2.2 hc hf hviews a ha hcond
+        · have hstable : FirstKept (stableFirst G Γ) ρ h (h.set l (ρ j)) := by
+            intro s g fs cd o l0 w hsf hs0 hl0 hw0
+            unfold stableFirst at hsf
+            split at hsf
+            · rename_i A hA
+              obtain ⟨flds0, oid0, hv0, hst⟩ := stableField_at hsf (he.2 s A hA)
+              rw [hs0] at hv0; cases hv0
+              obtain ⟨c0, u0, hlk, hcs⟩ := hst.present hl0
+              have h0 := hh.stable_value (Nat.zero_lt_succ (m + 1)) hlk hcs
+              rw [hw0] at h0; cases h0
+              exact hh'.stable_value (Nat.zero_lt_succ m)
+                (WExt_lookup hx (lookup_trunc (Nat.le_succ (m + 1)) W l0 c0 hlk)) (hcs.restrict (Nat.le_succ (m + 1)))
+            · cases hsf
+          exact HeapKnowledge.keptIndicesWith_holds hk.2.2.2.2.2 hc (HeapKnowledge.firstKept_or hf hstable) hviews
+            a ha hcond
         · obtain ⟨ha, hkeep⟩ := List.mem_filter.mp ha
           have hv := pick_eq (fun a b hab => HeapLinks.aliases_eq hk.2.2.1 hab) (p := intSlot k.indices) j
           have hout := fieldEvery_holds hk.2.2.2.2.2 (by simpa only [hv] using hc)
@@ -1948,7 +1966,7 @@ frame. Subtype comparisons retain unfinished work through the step validation. -
       checkedOutput G images e (decide (claim e = j ∧ i' = i ∧ v' = v ∧ i < j.context.length ∧
         v < j.context.length ∧ valuesAt G j.context k v = R))
         (writeOutput k i v fld R (ownedField (expand G (j.context.getD i [])) fld)
-          (fieldChanges G (expand G (j.context.getD i [])) fld) (writeViews G j.context)) codes sums tree
+          (fieldChanges G (expand G (j.context.getD i [])) fld) (writeViews G j.context) (stableFirst G j.context)) codes sums tree
     | none => failure
   | .boundedWrite .. => failure
 
@@ -2048,7 +2066,7 @@ theorem checkStepUsing_eq [DecidableEq ι] (G : NormalGraph ι) (images : Instan
           i < j.context.length ∧ v < j.context.length ∧
           valuesAt G j.context k v = R
       then some (writeOutput k i v fld R (ownedField (expand G (j.context.getD i [])) fld)
-          (fieldChanges G (expand G (j.context.getD i [])) fld) (writeViews G j.context)) else none
+          (fieldChanges G (expand G (j.context.getD i [])) fld) (writeViews G j.context) (stableFirst G j.context)) else none
     | none => none
   | .boundedWrite .. => none := by
   cases step <;> simp only [checkStepUsing, checkStepResult, checkedOutput_value,

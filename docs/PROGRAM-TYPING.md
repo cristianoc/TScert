@@ -1480,7 +1480,13 @@ number. A term is preserved by $`\chi`$ where none of them holds what
 $`\chi`$ may alter; the first location, field $`g`$ of the root's object,
 also where it is known to be none the step writes ($`\mathrm{first}(x,g)`$),
 and a store also where it is the root's own `[]` field and
-$`\mathrm{first}(x,[\,])`$ holds (proved):
+$`\mathrm{first}(x,[\,])`$ holds (proved). At a call, an element write and
+a field write, $`\mathrm{first}(x,g)`$ holds besides where every clause of
+$`\Gamma(x)`$ states $`g`$ `@stable`: the field's location holds the value
+its object literal put there in every heap a normal execution reaches
+(`stable-first`, proved: `HeapExpressionRules.stableFirst_frame` at a call
+and an element write, the step's world extension in `write_sound` at a field
+write):
 
 ```math
 \mathrm{kept}_\chi(x.g_1\ldots g_m) \iff
