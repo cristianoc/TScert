@@ -4,6 +4,8 @@
 // its run kept, then the pass run over the same fragment and claims; each
 // unit's two verdicts compared.
 //   node dev/single-pass-agreement.mts [pattern…]
+// With TSCERT_GIVEN_DIR set, each case's given statement-entry facts are read
+// from <dir>/<case file>.jsonl (written by dev/single-pass-given.mts).
 // Prints the disagreements, then the counts: units agreeing, disagreeing,
 // and those the pass does not handle by construct.
 import { spawnSync } from "node:child_process";
@@ -29,9 +31,10 @@ function fileKey(artifacts: string): string | null {
 }
 
 /** The pass's verdict on each unit of a run's file. */
-function passVerdicts(artifacts: string, key: string): Map<string, Verdict> {
+function passVerdicts(artifacts: string, key: string, given: string | null): Map<string, Verdict> {
+  const env = given === null ? process.env : { ...process.env, TSCERT_GIVEN: given };
   const run = spawnSync(verifier, ["--verify-units", "3", join(artifacts, "fragment.json"),
-    join(artifacts, "claims.json"), key, "12"], { encoding: "utf8", maxBuffer: 1 << 28 });
+    join(artifacts, "claims.json"), key, "12"], { encoding: "utf8", maxBuffer: 1 << 28, env });
   const verdicts = new Map<string, Verdict>();
   for (const line of run.stdout.split("\n").filter((l) => l.startsWith("{"))) {
     const value: unknown = JSON.parse(line);
@@ -59,7 +62,8 @@ async function compare(test: Case): Promise<Comparison[]> {
   if (units.length === 0) return [];
   const key = fileKey(outcome.artifacts);
   if (key === null) return [];
-  const pass = passVerdicts(outcome.artifacts, key);
+  const givenDir = process.env.TSCERT_GIVEN_DIR;
+  const pass = passVerdicts(outcome.artifacts, key, givenDir === undefined ? null : join(givenDir, `${test.file}.jsonl`));
   return units.map((u): Comparison => {
     const v = pass.get(u.unit);
     const notHandled = v ? construct(v.refusal) : null;

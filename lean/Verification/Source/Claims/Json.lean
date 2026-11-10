@@ -752,10 +752,77 @@ def FilePlans.passStats (f : FilePlans) (group : List Nat) (node : Nat) : List S
       return s!"{name}: {SinglePassStats.stats r.program r.claims r.cuts r.assertions}\n{SinglePassStats.trace r.program r.claims r.cuts node 40}"
     line.toOption
 
+/-- What a graph's statement entries are given beyond their written
+assertions and the claims' facts, by label: the implications they hold,
+the slots holding a promise goal's input, and the slots holding an input's
+entry value a postcondition names. An input of the single pass. -/
+structure GivenHeads (ι : Type) where
+  implies : Array (List (PromiseCalls.Implication ι)) := #[]
+  args : Array (List Nat) := #[]
+  inputs : Array (List (Nat × Nat)) := #[]
+
+section
+variable {ι : Type} [Labels ι]
+
+/-- The given facts a certificate holds at the statement entries `cuts`. -/
+def GivenHeads.ofCertificate (C : ControlFlow.Certificate ι) (cuts : List Nat) (P : ControlFlow.Program)
+    (start : Nat) (ensures : List HeapKnowledge.IndexFact) : GivenHeads ι :=
+  { implies := (C.zipIdx.map fun (c, l) => if cuts.contains l then c.implies else []).toArray
+    args := (C.zipIdx.map fun (c, l) => if cuts.contains l then c.arguments else []).toArray
+    inputs := if ensures.isEmpty then #[] else
+      ((GraphCode.trackTable P C start (GraphCode.namedInputs ensures)).zipIdx.map fun (t, l) =>
+        if cuts.contains l then t.getD [] else []).toArray }
+
+def GivenHeads.toJson (g : GivenHeads ι) : Json :=
+  Json.arr ((List.range (max g.implies.size (max g.args.size g.inputs.size))).filterMap fun l =>
+    let xs := (g.implies[l]?).getD []
+    let as := (g.args[l]?).getD []
+    let ins := (g.inputs[l]?).getD []
+    if xs.isEmpty && as.isEmpty && ins.isEmpty then none else
+    some (Json.mkObj [("label", Lean.toJson l),
+      ("implies", Json.arr (xs.map fun x => Json.mkObj [("test", Lean.toJson x.test),
+        ("target", Lean.toJson x.target), ("type", Lean.toJson x.type)]).toArray),
+      ("arguments", Lean.toJson as), ("inputs", Lean.toJson (ins.map fun (a, b) => [a, b]))])).toArray
+
+def GivenHeads.fromJson (n : Nat) (j : Json) : Except String (GivenHeads ι) := do
+  let entries ← j.getArr?
+  let mut g : GivenHeads ι := ⟨Array.replicate n [], Array.replicate n [], Array.replicate n []⟩
+  for e in entries do
+    let l ← e.getObjValAs? Nat "label"
+    let xs ← (← e.getObjVal? "implies").getArr?
+    let implies ← xs.toList.mapM fun x => do
+      pure (⟨← x.getObjValAs? Nat "test", ← x.getObjValAs? Nat "target", ← x.getObjValAs? (Ty ι) "type"⟩ :
+        PromiseCalls.Implication ι)
+    let args ← e.getObjValAs? (List Nat) "arguments"
+    let inputs ← e.getObjValAs? (List (List Nat)) "inputs"
+    if l < n then
+      g := ⟨g.implies.set! l implies, g.args.set! l args,
+        g.inputs.set! l (inputs.filterMap fun p => match p with | [a, b] => some (a, b) | _ => none)⟩
+  return g
+
+end
+
+/-- Each selected unit's given statement-entry facts, read from the existing
+search's certificate (`GivenHeads.ofCertificate`), its own and each code
+request's, as a line (`dev/single-pass-given.mts` writes the file). -/
+def FilePlans.givenLines (f : FilePlans) (fuel : Nat) (group : List Nat) : List Json :=
+  group.filterMap fun i => do
+    let .ok (.graph name _ r) := (f.plans[i]?).getD (.error "") | none
+    let .ok b := f.searchGroup fuel [i] true | none
+    let resp ← b.functions.head?
+    let main := GivenHeads.ofCertificate resp.certificate r.cuts r.program r.start r.ensures
+    let codes := (r.codes.zipIdx.map fun (q, ci) =>
+      let hints := (r.codeHints[ci]?).getD {}
+      let rq := q.asRequest r.toRequest
+      (GivenHeads.ofCertificate ((resp.codes[ci]?).getD []) hints.cuts rq.program rq.start [] :
+        GivenHeads _).toJson).toArray
+    pure (Json.mkObj [("unit", Lean.toJson (f.fr.unitId i)), ("name", Lean.toJson name),
+      ("graph", main.toJson), ("codes", Json.arr codes)])
+
 /-- The single forward pass over each member of a group (`SinglePass.run`),
 no certificate built: per member its outcome and counts; the group's
 verdict, the first member's refusal or construct not handled. -/
-def FilePlans.passGroup (f : FilePlans) (fuel : Nat) (group : List Nat) (compare : Bool := false) (debugNode : Nat := 1000000000) (repeats : Nat := 1) (supply : Bool := false) :
+def FilePlans.passGroup (f : FilePlans) (fuel : Nat) (group : List Nat) (compare : Bool := false) (debugNode : Nat := 1000000000) (repeats : Nat := 1) (given : Option (Std.HashMap String Json) := none) :
     List String × Except String (List String) := Id.run do
   let G : NormalGraph (EquationStore.CheckedLabel f.F.equations f.F.primitive) := StoreView.graph f.F.store
   let I : PositiveCertificates.InstanceImageCheck G := StoreView.images f.F.store
@@ -797,25 +864,17 @@ def FilePlans.passGroup (f : FilePlans) (fuel : Nat) (group : List Nat) (compare
       -- Supplied, where asked: the implications the existing search's
       -- certificate holds at the unit's statement entries, as their given
       -- invariants' (`supply`); the pass computes none.
-      let response := if !supply then none else
-        match f.searchGroup fuel [i] true with
-        | .ok b => b.functions.head?
-        | .error _ => none
-      let supplied := response.map (·.certificate)
-      let givenImplies : Array (List (PromiseCalls.Implication _)) := match supplied with
-        | some C => (C.zipIdx.map fun (c, l) => if r.cuts.contains l then c.implies else []).toArray
-        | none => #[]
-      -- The slots holding a promise goal's input at each statement entry.
-      -- The slots holding each input's entry value a postcondition names, at
-      -- each statement entry (`GraphCode.trackTable`).
-      let givenInputs : Array (List (Nat × Nat)) := match supplied with
-        | some C => if r.ensures.isEmpty then #[] else
-          ((GraphCode.trackTable r.program C r.start (GraphCode.namedInputs r.ensures)).zipIdx.map fun (t, l) =>
-            if r.cuts.contains l then t.getD [] else []).toArray
-        | none => #[]
-      let givenArgs : Array (List Nat) := match supplied with
-        | some C => (C.zipIdx.map fun (c, l) => if r.cuts.contains l then c.arguments else []).toArray
-        | none => #[]
+      -- The statement entries' given facts beyond the written ones and the
+      -- claims': read from the given file's line of this unit, where given.
+      let line := given.bind fun m => m.get? (f.fr.unitId i)
+      let main : GivenHeads _ := match line with
+        | some l => match (l.getObjVal? "graph").bind (GivenHeads.fromJson r.program.length) with
+          | Except.ok g => g
+          | Except.error _ => {}
+        | none => {}
+      let givenImplies := main.implies
+      let givenArgs := main.args
+      let givenInputs := main.inputs
       -- Each code request, in order, passed over its own graph with the codes
       -- admitted before it (`produceResponseUsing`'s loop, `codeCheckedResult`):
       -- its signature's conditions, its graph against its goal and frame, its
@@ -835,9 +894,15 @@ def FilePlans.passGroup (f : FilePlans) (fuel : Nat) (group : List Nat) (compare
           else if !eff.fresh && q.entry.exprs.all Purity.pureTerm then none
           else some (eff.footprint, eff.fresh, eff.onThrow)
         let codePool := CertificateProducer.vocabulary G labels rq.claims rq.inputs
-        let codeCert := (response.bind fun resp => resp.codes[ci]?).getD []
-        let codeImplies := (codeCert.zipIdx.map fun (c, l) => if hints.cuts.contains l then c.implies else []).toArray
-        let codeArgs := (codeCert.zipIdx.map fun (c, l) => if hints.cuts.contains l then c.arguments else []).toArray
+        let codeGiven : GivenHeads _ := match line with
+          | some l => match (l.getObjVal? "codes").bind fun cs => do
+              let arr ← cs.getArr?
+              GivenHeads.fromJson rq.program.length ((arr[ci]?).getD (Json.arr #[])) with
+            | Except.ok g => g
+            | Except.error _ => {}
+          | none => {}
+        let codeImplies := codeGiven.implies
+        let codeArgs := codeGiven.args
         let (o, _, _) := SinglePass.run G I codePool fuel rq.program rq.claims rq.start q.entry.goal hints.requirements
           hints.cuts hints.candidates rq.entryIndices [] (e ++ rendered) (GraphCode.admits table) r.aliases
           (HeapExpressionRules.Checker.ordinary G I) next #[] 1000000000 codeBound codeImplies codeArgs
