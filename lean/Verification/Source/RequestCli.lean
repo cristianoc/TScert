@@ -367,6 +367,8 @@ over the file's own store (`FilePlans.produceGroup`) and checked there
 a line, as `--check-units` prints it. -/
 def verifyUnitsFile (astPath claimsPath fileKey : String) (fuel : Nat) (names : Option String) (mode : Nat)
     (budget : PositiveCertificates.SearchBudget := {}) : IO UInt32 := do
+  -- Per-kind timings only where asked (`TSCERT_PROFILE`).
+  SinglePass.profiling.set (← IO.getEnv "TSCERT_PROFILE").isSome
   let t0 ← IO.monoNanosNow
   let ast ← readJson astPath
   let claims ← readJson claimsPath
