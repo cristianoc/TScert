@@ -530,8 +530,11 @@ def FilePlans.extractionRefusal (f : FilePlans) (names : Option (List String)) :
 /-- Search evidence for one group: each member's request searched in turn,
 the search's memo kept within the group only; the group's evidence, and its
 refusal: the first member's search refused, or the group's check of that
-evidence refused, as the checker checks it. -/
-def FilePlans.produceGroup (f : FilePlans) (fuel : Nat) (group : List Nat) : Json × Option String := Id.run do
+evidence refused, as the checker checks it; and the account of the candidate
+search over the members searched to the end (`CertificateProducer.Answered`):
+its passes, the most over one graph, and the candidates it left out. -/
+def FilePlans.produceGroup (f : FilePlans) (fuel : Nat) (group : List Nat) :
+    Json × Option String × Nat × Nat × Nat := Id.run do
   let G : NormalGraph (EquationStore.CheckedLabel f.F.equations f.F.primitive) := StoreView.graph f.F.store
   let I : PositiveCertificates.InstanceImageCheck G := StoreView.images f.F.store
   let mut answers : CertificateProducer.Answered G := {}
@@ -552,14 +555,17 @@ def FilePlans.produceGroup (f : FilePlans) (fuel : Nat) (group : List Nat) : Jso
       -- check: its search keeps that check, and the request's summaries.
       let (c, kept) ← if r.qualification.isNone then
           RequestJson.produceResponseUsing G I (HeapExpressionRules.Checker.ordinary G I) r.toRequest
-            fuel [] known r.sourceMap (some labels) r.assertions r.cuts r.codeHints r.checker r.aliases next
+            fuel [] known r.sourceMap (some labels) r.assertions r.cuts r.candidates r.codeHints r.checker r.aliases next
             (searched := true) (recheck := some (HeapExpressionRules.Checker.ordinary G))
         else do
-          let (c, _) ← RequestJson.produceResponseUsing (RequestJson.graph r.toRequest) (StoreView.images r.types)
-            r.checker r.toRequest fuel [] known r.sourceMap (some labels) r.assertions r.cuts
+          let (c, own) ← RequestJson.produceResponseUsing (RequestJson.graph r.toRequest) (StoreView.images r.types)
+            r.checker r.toRequest fuel [] known r.sourceMap (some labels) r.assertions r.cuts r.candidates
             r.codeHints r.checker r.aliases { summaries := next.summaries, summaryAnswers := next.summaryAnswers }
             (searched := true)
-          pure (c, next)
+          pure (c, { next with
+            candidatePasses := next.candidatePasses + own.candidatePasses
+            candidatePassesMax := max next.candidatePassesMax own.candidatePassesMax
+            candidatesLeftOut := next.candidatesLeftOut + own.candidatesLeftOut })
       if let some refusal := footprintRefusal name namePos r c then throw refusal
       return (c, e, kept)
     match searched with
@@ -572,7 +578,8 @@ def FilePlans.produceGroup (f : FilePlans) (fuel : Nat) (group : List Nat) : Jso
       cs := cs.push { certificate := [] }
       es := es.push []
   let evidence := EvidenceWire.encode (Bundle.mk cs.toList es.toList)
-  if failed.isSome then return (evidence, failed)
+  let account := (answers.candidatePasses, answers.candidatePassesMax, answers.candidatesLeftOut)
+  if failed.isSome then return (evidence, failed, account)
   -- Not refused by its search, the group is checked as the checker checks it,
   -- so a refusal is the search's.
   let refusal : Except String Unit := do
@@ -580,7 +587,7 @@ def FilePlans.produceGroup (f : FilePlans) (fuel : Nat) (group : List Nat) : Jso
     let b ← f.groupEvidence group evidence
     let checked := checkRequestsResult (CertifiedPlan.requests certified) b
     if !checked.accepted then throw (requestsRefusal certified b checked)
-  return (evidence, match refusal with | .ok () => none | .error reason => some reason)
+  return (evidence, match refusal with | .ok () => none | .error reason => some reason, account)
 
 /-- A module run on the wire: its location, its restricted document and
 claims, and its own qualified reads with their footprints and on-throw

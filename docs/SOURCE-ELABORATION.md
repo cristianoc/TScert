@@ -50,11 +50,14 @@ following, in one change:
 
 The producer selects checked effects and propagates their postconditions along
 single-predecessor administrative paths within a statement. A source entry is
-seeded with exactly its supplied knowledge, without waiting for its predecessors;
-every incoming edge must subsequently justify it. External entry starts empty.
-There is no iteration to infer a loop invariant. The independent source consumer
-enforces the reset, so supplying a graph-safe certificate with extra facts at a
-statement entry still fails source verification.
+seeded with its required knowledge and the facts the producer supplies there,
+without waiting for its predecessors; a supplied fact is a candidate, which
+leaves the entry where an incoming edge does not establish it, the search then
+run again ([source observation checkpoints](PROGRAM-TYPING.md#source-observation-checkpoints)).
+External entry starts at its precondition. No loop invariant is inferred:
+the candidates are the only facts an entry holds beyond what it requires. The
+independent source consumer checks that every incoming edge establishes the
+entry's knowledge and that this knowledge entails what the entry requires.
 
 [CertificateProducer.lean](../lean/Verification/Programs/CertificateProducer.lean) accepts an actual graph, its declared result type and
 start label, and one `PointClaim` per node. Each claim fixes both the entry

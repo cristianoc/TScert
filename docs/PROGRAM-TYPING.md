@@ -1416,11 +1416,13 @@ store field is, so the step carries no observation of the heap past it. Its
 frame condition is the footprint `{value: any, store: grow}`
 ([element writes](FOOTPRINTS.md#element-writes)).
 
-**Across the guard's statement.** A statement entry is an exact interface
+**Across the guard's statement.** A statement entry is an interface
 ([decisions](DESIGN.md#lasting-decisions)): the bound reaches the write's
 statement as a claim of its entry ([source claims](SOURCE-CLAIMS.md)), an
 array binding's name and an index binding's, which the lowering states as
-$`\mathrm{bound}(x,k)`$ of their slots and every edge into the entry checks.
+$`\mathrm{bound}(x,k)`$ of their slots, a candidate the entry keeps where
+every edge into it establishes it
+([source observation checkpoints](#source-observation-checkpoints)).
 The producer claims it at the statement following an `if (c) throw …` whose
 test's false branch states both facts of names `k` and `xs`: the false branch
 of `a || b` states what each operand's states; `(k & m) !== k`, with the
@@ -4803,8 +4805,9 @@ refused where evidence is produced and where it is checked (the forged field
 contents in `pipeline/test.mts`). A cover holding `defined` keeps every
 label, as an atom no primitive test answers does.
 The write rule takes no premise about the cell's old contents. These are operation rules within a
-local segment: at the next statement entry, only the supplied interface
-survives.
+local segment: at the next statement entry, only the entry's knowledge
+survives, its required interface and the candidates every edge into it
+establishes.
 
 The `allocated` and `typedRead` evidence constructors serve both plain and
 callable bags. `allocationSlots` selects a `make` whose initializers are
@@ -4904,30 +4907,61 @@ storage contract is insufficient.
 predicates. The OCaml producer supplies claims through this interface, keyed
 by execution point and, for expressions, source span
 ([claim identities](SOURCE-CLAIMS.md#execution-graph-supplied-to-the-producer)). **Every source statement entry
-is a full local interface**, including entries with no current predicates. The
-compiler reconstructs its ordinary context $`\Gamma_l`$ and knowledge
-$`K_l=(\Delta_l,\varnothing,\varnothing)`$, where $`\Delta_l`$ contains exactly the
-supplied current predicates. No immutable-value facts or alias/read links are
-implicitly carried across this boundary. Ordinary reference contracts remain in
-$`\Gamma_l`$; the calculus always assumes environment and heap well-formedness.
+is a local interface**, including entries with no current predicates. The
+compiler reconstructs its ordinary context $`\Gamma_l`$ and splits what the
+entry states by where it comes from:
 
-For certificate input $`K_c`$, source acceptance requires:
+- its **required** knowledge $`R_l`$: the supplied current predicates
+  $`\Delta_l`$ of its bindings' contents, its path witnesses' read links, its
+  private cells' [separation](#separation-facts) and a loop's written
+  [invariant](ARITHMETIC.md#loop-invariants);
+- its **candidates** $`C_l`$: the index facts the producer supplies at the
+  entry, its bounds, linear, guarded and quantified facts, element regions
+  and store separations.
+
+Ordinary reference contracts remain in $`\Gamma_l`$; the calculus always
+assumes environment and heap well-formedness.
+
+The entry's knowledge $`K_l`$ is a certificate's, accepted where it entails
+the required knowledge and every incoming edge establishes it (ordinary
+context coverage is checked alongside each edge):
 
 ```math
-K_c=K_l.
+\frac{\mathrm{checkKnowledge}(K_l,R_l,\mathrm{id})=\mathsf{true}\qquad
+      \forall (n\to l).\ \mathrm{checkKnowledge}(K_{\mathrm{out}(n)},K_l,m_{n\to l})=\mathsf{true}}
+     {(\Gamma_l,K_l)\ \text{at}\ l}\ \textsf{statement-entry}
 ```
 
-`SourceExtraction.checkGraphAssertions` checks this equality.
-Each incoming edge separately establishes the supplied heap interface (ordinary
-context coverage is checked alongside it):
+with each edge's premise sound by
 
 ```math
 \frac{\mathrm{checkKnowledge}(K_{\mathrm{out}},K_l,m)=\mathsf{true}
 \qquad K_{\mathrm{out}}(\rho,h)}{K_l(\mathrm{mapEnv}(m,\rho),h)}.
 ```
 
+`SourceExtraction.checkGraphAssertions` checks the first premise, and the
+graph's check checks each edge. The candidates are not assertions: acceptance states
+that every recorded assertion, the required knowledge, is entailed
+(`checkRequests_assertions_at`), and a fact the producer supplies at an entry
+is not among them. The search takes as the entry's knowledge its required
+knowledge and the candidates every incoming edge establishes:
+
+```math
+K_l = R_l \cup \{\, a\in C_l \mid \forall (n\to l).\ \mathrm{checkKnowledge}(K_{\mathrm{out}(n)},\{a\},m_{n\to l}) \,\}.
+```
+
+It starts each entry at $`R_l\cup C_l`$; once a pass over the graph has
+produced the entry's predecessors, each candidate some produced edge does not
+establish leaves the entry, a predecessor not produced establishing and
+refuting nothing, and the pass is run again, nodes whose knowledge is
+unchanged keeping their evidence. Candidates only leave, so a graph of
+$`M`$ candidates takes at most $`M+1`$ passes. At the graph's entry a
+candidate stays where the entry's assumed knowledge entails it; at a
+handler's entry, entered by throws, every candidate stays and the edges of
+the throws are checked against it.
+
 The next statement is checked from $`(\Gamma_l,K_l)`$, independently of any
-stronger facts proved by predecessors. Loop heads use the same interface on both
+stronger facts proved by predecessors. Loop heads use the same rule on both
 initial and back edges. Empty knowledge means forget all extra facts; an empty
 _content predicate_ remains an impossible observation, not an absent one.
 

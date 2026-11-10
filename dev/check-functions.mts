@@ -9,7 +9,9 @@
 // Under a refused unit's line follow every refusal its check emitted: each
 // line of the refusal, its source places as `line:column` with the text
 // there, the obligation's summary in source names (`diagnostic-view.mts`),
-// and the facts the obligation's point requires, over its bindings' names.
+// and the facts the obligation's point requires, over its bindings' names;
+// each fact the producer supplied at a statement entry that the search left
+// out, with the edge into the entry that does not establish it.
 // Then, where the unit's proposal drops facts: each statement or expression
 // past which the producer proposes fewer facts, what dropped them (the change
 // it was given, or the form the fact analysis gives none), and the facts.
@@ -95,6 +97,16 @@ function refusal(detail: string): string[] {
   if (record === undefined) return out;
   const summary = presentObligation(record, source).summary;
   if (summary) out.push(`  obligation: ${summary.length > 600 ? summary.slice(0, 600) + "…" : summary}`);
+  for (const d of record.candidatesLeftOut ?? []) {
+    const names = bindings(d.sourceMap);
+    const name = (slot: number): string => names[slot] || `slot ${slot}`;
+    const at = d.sourceMap === null ? `node ${d.label}` : located(...d.sourceMap.pos);
+    const from = d.edgeFrom === d.label ? "the entry's assumptions" :
+      d.edgeSourceMap === null ? `node ${d.edgeFrom}` : located(...d.edgeSourceMap.pos);
+    const { fact: f, cond, negated } = d.fact;
+    out.push(`  left out at ${at}: ${cond === undefined ? "" : `${negated ? "!" : ""}${name(cond)} → `}${fact(f, name)}`);
+    out.push(`    not established by the edge from ${from}`);
+  }
   const point = record.kind === "edge-coverage" ? record.destination : record.kind === "node-typing" ? record.source : null;
   if (point === null) return out;
   if (record.kind === "edge-coverage" && record.source.sourceMap !== null)

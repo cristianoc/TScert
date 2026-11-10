@@ -440,9 +440,9 @@ change applied, the new value stated the old one plus the step, the old one
 eliminated; a binding the expression updates twice, reads elsewhere, steps
 by a non-literal, or updates on only some of its paths is forgotten; a slot
 an expression assigns otherwise is forgotten with the bindings its statement
-assigns. An entry claim's facts lower to atoms each
-stated once: a cut's knowledge is its assertion exactly, and two claimed
-facts over a cell's value can lower to one atom.
+assigns. An entry claim's facts lower to candidate atoms
+each stated once, as two claimed facts over a cell's value can lower to one
+atom.
 
 **Implementation.** The cell's root is `Lowering.termRoot`, the read's
 restatement `readAtoms`; the producer's reading is
@@ -1428,11 +1428,14 @@ loop's entry and each back edge, establishes it, and the head's knowledge
 assumes it; the loop's exit, the false branch of its test, starts from it.
 
 ```math
-\frac{\Sigma_{\mathit{entry}}\vdash I\qquad \Sigma_{\mathit{back}}\vdash I}
-     {\Sigma_{\mathit{head}}=\Sigma_{\mathit{claimed}},\ I}\ \textsf{loop-invariant}
+\frac{\Sigma_{\mathit{entry}}\vdash I,C\qquad \Sigma_{\mathit{back}}\vdash I,C\qquad C\subseteq\Sigma_{\mathit{claimed}}}
+     {\Sigma_{\mathit{head}}=I,\ C}\ \textsf{loop-invariant}
 ```
 
-with $`I`$ the clause's facts rooted at the bindings it names: a value
+with $`\Sigma_{\mathit{claimed}}`$ the facts the producer supplies at the
+head, candidates of which the head keeps those $`C`$ every edge establishes
+([source observation checkpoints](PROGRAM-TYPING.md#source-observation-checkpoints)),
+and $`I`$ the clause's facts rooted at the bindings it names: a value
 binding's slot, or an initialized cell's `value` field
 ([cell terms](#terms-for-bindings-held-in-cells)), including quantified
 bounds and free body terms. A clause naming any other
@@ -1447,8 +1450,8 @@ two counters stepping by 2 and by 1.
 binding's declaration (a static type request), and elaborates the clause
 (`elaborateRequires`) to index facts at positions naming the bindings, the
 `while` node's `invariant` (`LoopInvariant`, `tools/fragment.mts`;
-`Fragment.Stmt.loop`). Lean asserts the facts at the head's cut, its
-bindings resolved to the head's value slots or cell paths (`Lowering.Flow.invariantFact`), so the check
+`Fragment.Stmt.loop`). Lean asserts the facts at the head's cut, required whatever the producer
+supplies, its bindings resolved to the head's value slots or cell paths (`Lowering.Flow.invariantFact`), so the check
 of each edge into the head (`checkAssertions`) decides it whatever the
 producer proposes. The producer adds them to the head's state
 (`Source.loop_invariants`, `Proposal_flow`), so the entries of the body claim
@@ -1460,7 +1463,8 @@ what follows from them.
 `invalid-loop-invariant-back-edge` (a back edge stepping `j` by 3) and
 `invalid-loop-invariant-entry` (an entry with `j = 2`). Control in
 `pipeline/test.mts`: the back-edge negative's read claimed at `number` with
-every fact the producer proposes removed, refused at the loop's head.
+every fact the producer proposes removed but the parameters', refused at the
+loop's head.
 
 ## Store separation
 

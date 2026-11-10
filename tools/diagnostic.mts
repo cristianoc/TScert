@@ -178,6 +178,18 @@ function diagnosticOutcome(value: Json | undefined): DiagnosticOutcome {
   }
 }
 
+/** A fact the producer supplied at a statement entry that the search left
+ * out: the entry, the node whose edge into it does not establish the fact
+ * (the entry itself at the graph's entry), and the fact over the entry's
+ * slots. */
+export interface LeftOutCandidate {
+  label: number;
+  sourceMap: SourceMapEntry | null;
+  edgeFrom: number;
+  edgeSourceMap: SourceMapEntry | null;
+  fact: HeapKnowledge["indices"][number];
+}
+
 /** What every record carries, whatever the failure was. */
 interface Common {
   phase: Phase;
@@ -200,6 +212,10 @@ interface Common {
    * omission to paper over.
    */
   requiredResult?: Labels;
+  /** The facts the producer supplied at statement entries that the evidence
+   * search of the refused graph left out. Absent from a record no graph
+   * search makes. */
+  candidatesLeftOut?: LeftOutCandidate[];
   /** Attached by the report writer, not by the verifier. */
   input?: {
     file: string;
@@ -404,13 +420,27 @@ function knowledge(v: Json | undefined): HeapKnowledge | null {
   }
   if (!Array.isArray(k.indices)) throw Error("invalid index facts");
   const indices: HeapKnowledge["indices"] = [];
-  for (const atom of k.indices) {
-    const a = record(atom,["fact","cond","negated"]);
-    if (typeof a.negated !== "boolean") throw Error("invalid index fact");
-    const fact = indexFact(a.fact);
-    indices.push({ fact, negated: a.negated, ...(a.cond === null ? {} : { cond: nat(a.cond) }) });
-  }
+  for (const atom of k.indices) indices.push(indexAtom(atom));
   return { cells, values, links, separation: { depth, facts }, elems, indices };
+}
+
+/** An index atom (`HeapKnowledge.IndexAtom`): its fact, and the guard it
+ * holds under where it has one. */
+function indexAtom(atom: Json | undefined): HeapKnowledge["indices"][number] {
+  const a = record(atom,["fact","cond","negated"]);
+  if (typeof a.negated !== "boolean") throw Error("invalid index fact");
+  const fact = indexFact(a.fact);
+  return { fact, negated: a.negated, ...(a.cond === null ? {} : { cond: nat(a.cond) }) };
+}
+
+/** The candidates the search left out (RequestJson.lean, `failureDiagnostic`). */
+function leftOut(v: Json | undefined): LeftOutCandidate[] {
+  if (!Array.isArray(v)) throw Error("invalid candidates left out");
+  return v.map((entry) => {
+    const d = record(entry,["label","sourceMap","edgeFrom","edgeSourceMap","fact"]);
+    return { label: nat(d.label), sourceMap: sourceMap(d.sourceMap), edgeFrom: nat(d.edgeFrom),
+      edgeSourceMap: sourceMap(d.edgeSourceMap), fact: indexAtom(d.fact) };
+  });
 }
 
 /** An index fact of a knowledge (`HeapKnowledge.IndexFact`), decoded field
@@ -558,7 +588,7 @@ export function readDiagnostic(
     // Looked up at the parsed kind in a Map, which holds no inherited member.
     const fields = new Map<string, readonly string[]>(KIND_FIELDS).get(kind);
     if (!fields) return undefined;
-    record(d,["phase","outcome","fuel","types","kind",...fields],["requiredResult","names"]);
+    record(d,["phase","outcome","fuel","types","kind",...fields],["requiredResult","names","candidatesLeftOut"]);
     const outcome = diagnosticOutcome(d.outcome);
     // The graph decides how many labels there are, so it is decoded first and
     // everything after counts against what it returned.
@@ -598,6 +628,7 @@ export function readDiagnostic(
     if (kind === "production-failure" && typeof d.failure !== "string") return undefined;
     const labels = (v: Json) => decodeLabels(v,types.length);
     const requiredResult = d.requiredResult === undefined ? undefined : labels(d.requiredResult);
+    const candidatesLeftOut = d.candidatesLeftOut === undefined ? undefined : leftOut(d.candidatesLeftOut);
     let sequent: Sequent | undefined;
     if (kind === "node-typing" || kind === "expression-claim") {
       const q = d.sequent;
@@ -667,7 +698,8 @@ export function readDiagnostic(
       d.phase === "certificate-check" ? "certificate-check" : "request-validation";
     const common: Common = { phase, outcome, fuel, types: wireTypes,
       ...(d.names === undefined ? {} : { names }),
-      ...(requiredResult === undefined ? {} : { requiredResult }) };
+      ...(requiredResult === undefined ? {} : { requiredResult }),
+      ...(candidatesLeftOut === undefined ? {} : { candidatesLeftOut }) };
     if (kind === "production-failure" && typeof d.failure === "string") {
       const result: ProductionFailure = { ...common, kind: "production-failure", failure: d.failure };
       return result;

@@ -679,8 +679,12 @@ One line each; the reason is the one the design keeps.
 - **A file is checked over one front; acceptance is per unit.** Each unit's
   verdict is its own, under the signatures of the module values it reads
   ([modules and code units](#modules-and-code-units)).
-- **Statement entries are exact interfaces**; no invariant is inferred and no
-  join computed by the checker.
+- **Statement entries are interfaces checked on every edge**: an entry's
+  knowledge entails what it requires (its bindings' types and contents, a
+  written invariant), and a fact the producer supplies there is a candidate,
+  kept where every edge establishes it; no invariant is inferred and no
+  join computed by the checker
+  ([source observation checkpoints](PROGRAM-TYPING.md#source-observation-checkpoints)).
 - **A call forgets heap facts but those through stable keys.** No
   reachability or capture analysis is
   justified by the model's open record types: a value of an open type may
