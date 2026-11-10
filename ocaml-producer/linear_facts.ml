@@ -786,7 +786,7 @@ let of_classes env (o,n,a) = { obj = o; num = n; store = (if a then `Any else `K
   framed = (fun b g -> slot_binding env b && !view_field env b g); apart = false; cell_write = false }
 let of_footprint env (fp : Semantic.footprint) =
   { obj = fp.Semantic.on_value = Semantic.Any; num = not (Semantic.change_le fp.Semantic.on_value Semantic.Init);
-    store = (match fp.Semantic.on_store with Semantic.Keep | Semantic.Init | Semantic.Scalar -> `Keep | _ -> `Any); framed = (fun b g -> slot_binding env b && !view_field env b g); apart = false; cell_write = false }
+    store = (match fp.Semantic.on_store with Semantic.Keep | Semantic.Init | Semantic.Scalar -> `Keep | Semantic.Grow -> `Grow | Semantic.Any -> `Any); framed = (fun b g -> slot_binding env b && !view_field env b g); apart = false; cell_write = false }
 
 let term_kept ch t =
   let b,path,kind = term_parts t in

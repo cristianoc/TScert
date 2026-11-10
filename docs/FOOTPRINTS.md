@@ -63,7 +63,8 @@ an object nor a store and $`v'`$ no store:
 \mathsf{keep}_b(v, v') &\iff v' = v\\
 \mathsf{init}_b(v, v') &\iff v' = v \lor \mathrm{init}(v, v')\\
 \mathsf{scalar}_b(v, v') &\iff v' = v \lor \mathrm{scalar}(v, v')\\
-\mathsf{grow}_b(v, v') &\iff v' = v \lor \bigl(v = \mathsf{arr}\,ls \land v' = \mathsf{arr}\,ls' \land (\forall n.\ D_n\,ls \to D_n\,ls') \land \forall l.\ \mathsf{some}\,l \in ls' \to \mathsf{some}\,l \in ls \lor b \le l\bigr) \lor \mathrm{scalar}(v, v')\\
+\mathsf{grow}_b(v, v') &\iff v' = v \lor \bigl(v = \mathsf{arr}\,ls \land v' = \mathsf{arr}\,ls' \land (\forall n.\ D_n\,ls \to D_n\,ls') \land (\forall l.\ \mathsf{some}\,l \in ls' \to \mathsf{some}\,l \in ls \lor b \le l)\\
+&\qquad \land |ls| \le |ls'| \land (|ls| \le 2^{32}-1 \to |ls'| \le 2^{32}-1)\bigr) \lor \mathrm{scalar}(v, v')\\
 \mathsf{any}_b(v, v') &\iff \top
 \end{aligned}
 ```
@@ -71,8 +72,9 @@ an object nor a store and $`v'`$ no store:
 `init` lets a location holding `null` or `undefined` take a value, the change
 of a lazy initialization `x ??= e`; `scalar` lets a location holding neither an
 object nor a store take a value, the change of a `Map`'s `set` to its `size`;
-`grow` keeps every dense prefix and lists no old element location the store
-did not list, or takes a scalar's step. The changes form the chain
+`grow` keeps every dense prefix, lists no old element location the store
+did not list, and leaves the store no shorter and at most $`2^{32}-1`$ long
+(`maxArrayLength`) where it was (`LengthGrows`), or takes a scalar's step. The changes form the chain
 $`\mathsf{keep} \sqsubseteq \mathsf{init} \sqsubseteq \mathsf{scalar} \sqsubseteq \mathsf{grow} \sqsubseteq \mathsf{any}`$
 (proved: `Change.Holds.refl`, `.mono`, `.trans`). A change other than `any`
 keeps an object, `keep` and `init` keep contents neither `null` nor
@@ -683,10 +685,13 @@ A third instance: footprints are how the frame conditions of index facts
 are stated and checked. An index fact (a length, a typed-array length, a
 field path's value) reads the locations its terms read, each holding an
 object, a store or a number. A closed footprint preserves the locations of
-the classes it keeps, `grow` on a value being `keep`
-(`HeapKnowledge.Changes.ofClosed`, proved: `ofClosed_holds`), so a call at a
-signature within `{value: any, store: keep}` preserves every length, and
-`grow` preserves the lower bounds of a length; a field write, an element
+the classes it keeps, and `grow` on a store leaves every length no smaller
+(`HeapKnowledge.Changes.ofClosed`, proved: `ofClosed_holds`). So a call at a
+signature within `{value: any, store: keep}` preserves every length, and a
+fact with a non-positive coefficient on each length it reads, its other
+terms kept, survives a call
+within `{value: any, store: grow}` (`Term.grownBy`, proved:
+`termValue_grown`); a field write, an element
 write below the length and a call changing only its receiver's own locations
 state their own change. The preservation rules and their proofs are
 [frame conditions](PROGRAM-TYPING.md#frame-conditions).

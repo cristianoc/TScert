@@ -3263,9 +3263,12 @@ What is proved and what is audited:
   acceptance theorem: a native signature's footprint enters acceptance as
   stated, and these lemmas are the argument for stating it
   ([native footprints from their steps](drafts/native-footprints-from-steps.md)
-  makes them part of acceptance): `push`, `unshift`, a
-  longer length and `sort` over the whole call change the store by `grow`
-  (`Arr.push_grow`, `Arr.unshift_grow`, `Arr.setLength_grow`, `sort_grow`);
+  makes them part of acceptance): `push` and `unshift` of a store shorter
+  than $`2^{32}-1`$ (at that length they throw a `RangeError`), a longer
+  length of at most $`2^{32}-1`$ and `sort` over the whole call, at a
+  comparator whose own store changes are within `grow`, change the store by
+  `grow` (`Arr.push_grow`, `Arr.unshift_grow`, `Arr.setLength_grow`,
+  `sort_grow`);
   `pop`, `shift`, `reverse` of a store with a hole and a shorter length do
   not (controls in `Tests/FootprintControls.lean`). `array_native_post`
   turns a store change by `grow`, with element contents the only other old

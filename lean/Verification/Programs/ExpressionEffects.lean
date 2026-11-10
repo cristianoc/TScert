@@ -1408,10 +1408,10 @@ theorem elem_present_holds {h : Heap} {l fl : Nat} {v u : Val} {ls : List (Optio
     · refine ⟨w, ?_, Footprints.Change.Holds.refl _ _ _⟩
       rw [List.getElem?_set_ne (Ne.symm hf), List.getElem?_set_ne (Ne.symm hll), hw]
 
-/-- The heap after a write taking a fresh location, the store recording it
-put back. -/
+/-- The heap after a write taking a fresh location at an array index, the
+store recording it put back. -/
 theorem elem_grow_holds {h : Heap} {fl k : Nat} {v : Val} {ls : List (Option Nat)}
-    (hfl : h[fl]? = some (.arr ls)) :
+    (hfl : h[fl]? = some (.arr ls)) (hk : k < maxArrayLength) :
     Footprints.Closed.Holds ⟨.any, .grow⟩ h ((h ++ [v]).set fl (.arr (placeAt ls k h.length))) := by
   rw [Footprints.Closed.holds_iff]
   have hflt := (List.getElem?_eq_some_iff.mp hfl).1
@@ -1424,7 +1424,8 @@ theorem elem_grow_holds {h : Heap} {fl k : Nat} {v : Val} {ls : List (Option Nat
     · rw [List.getElem?_set_self (by simp; omega)]
     · simp only [Footprints.Closed.at, Footprints.isArr, if_true]
       exact .inr (.inl ⟨ls, _, rfl, rfl, fun n hd => placeAt_dense hd,
-        fun x hx => (placeAt_mem hx).imp id (fun e => by omega)⟩)
+        fun x hx => (placeAt_mem hx).imp id (fun e => by omega),
+        ⟨by rw [placeAt_length]; omega, fun _ => by rw [placeAt_length]; omega⟩⟩)
   · refine ⟨w, ?_, Footprints.Change.Holds.refl _ _ _⟩
     rw [List.getElem?_set_ne (Ne.symm hf), List.getElem?_append_left hlt, hw]
 
@@ -1581,7 +1582,7 @@ theorem elem_write_core [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)
       simp [elemLoc, hidx, hl] at hn
     | false =>
       refine .inr ⟨U2, _, _, hx2, hu2, step2, hh2, write_back_post hfd ?_ hs2⟩
-      refine ⟨elem_grow_holds hfu, fun fl' hfl' => ?_⟩
+      refine ⟨elem_grow_holds hfu (indexOfBits_lt hk'), fun fl' hfl' => ?_⟩
       simp only [Footprints.fieldsOf, hfd, Option.some.injEq] at hfl'
       subst hfl'
       exact elem_grow_kept
@@ -1782,7 +1783,7 @@ theorem elem_var_write_core [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty
     exact ⟨Footprints.Closed.Holds.mono rfl (elem_present_holds hfu hw hnarr),
       fun fl' hfl' => (elem_present_holds hfu hw hnarr).on _⟩
   · refine .inr ⟨U2, _, _, hx2, hu2, step2, hh2, write_back_post hfd ?_ hs2⟩
-    refine ⟨elem_grow_holds hfu, fun fl' hfl' => ?_⟩
+    refine ⟨elem_grow_holds hfu (indexOfBits_lt hk'), fun fl' hfl' => ?_⟩
     simp only [Footprints.fieldsOf, hfd, Option.some.injEq] at hfl'
     subst hfl'
     exact elem_grow_kept

@@ -1256,10 +1256,15 @@ theorem top_holds (h h' : Heap) : top.Holds h h' :=
     fun hs => (by simp [top] at hs)⟩
 
 /-- The change a closed footprint allows: below `any` no location holding an
-object changes, at most `init` none holding a number, and `init` or `scalar`
-on a store is `keep`. -/
+object changes, at most `init` none holding a number, `init` or `scalar` on a
+store is `keep`, and `grow` on a store leaves each store no shorter and within
+`maxArrayLength` where it was. -/
 def ofClosed (Φ : Footprints.Closed) : Changes :=
-  ⟨Φ.value == .any, !(Φ.value.le .init), if Φ.store.onStore == .keep then .keep else .any⟩
+  ⟨Φ.value == .any, !(Φ.value.le .init),
+    match Φ.store.onStore with
+    | .keep => .keep
+    | .grow => .grow
+    | _ => .any⟩
 
 theorem ofClosed_holds {Φ : Footprints.Closed} {h h' : Heap} (hp : Φ.Holds h h') : (ofClosed Φ).Holds h h' := by
   rw [Footprints.Closed.holds_iff] at hp
@@ -1289,7 +1294,16 @@ theorem ofClosed_holds {Φ : Footprints.Closed} {h h' : Heap} (hp : Φ.Holds h h
       all_goals simp [alters] at ha
     exact hkeep ▸ hv'
   · revert hs; simp only [ofClosed]; split <;> simp
-  · revert hs; simp only [ofClosed]; split <;> simp
+  · intro l ls hl
+    have hg : Φ.store = .grow := by
+      revert hs; simp only [ofClosed]
+      cases hΦ : Φ.store <;> simp [Footprints.Change.onStore]
+    obtain ⟨v', hv', hc⟩ := hp.2 l _ hl
+    simp only [Footprints.Closed.at, Footprints.isArr, ite_true, hg] at hc
+    rcases hc with rfl | ⟨ls₁, ls', h₁, rfl, -, -, hlen⟩ | hsc
+    · exact ⟨ls, hv', Nat.le_refl _, id⟩
+    · cases h₁; exact ⟨ls', hv', hlen.1, hlen.2⟩
+    · exact absurd hsc.2.1 (by simp [Footprints.isArr])
 
 end Changes
 
@@ -1872,9 +1886,10 @@ theorem termValue_viewFramed {c : Changes} {first views : Nat → String → Boo
 namespace IndexFact
 
 /-- Whether a change preserves a fact, each of its terms kept by `Term.keptBy` or
-framed by `Term.viewFramed`. -/
+framed by `Term.viewFramed`, or the fact kept by `keptBy`. -/
 def keptWith (c : Changes) (first views : Nat → String → Bool) : IndexFact → Bool
-  | .linear F => F.vars.all fun t => t.keptBy c first || t.viewFramed c first views
+  | .linear F => (F.vars.all fun t => t.keptBy c first || t.viewFramed c first views) ||
+      (IndexFact.linear F).keptBy c first
   | F => F.keptBy c first
 
 theorem holdsAt_keptWith {c : Changes} {first views : Nat → String → Bool} {F : IndexFact} {ρ : Env} {h h' : Heap}
@@ -1882,7 +1897,11 @@ theorem holdsAt_keptWith {c : Changes} {first views : Nat → String → Bool} {
     (hk : F.keptWith c first views = true) (hF : F.HoldsAt ρ h) : F.HoldsAt ρ h' := by
   cases F with
   | linear G =>
-    simp only [keptWith, List.all_eq_true, Bool.or_eq_true] at hk
+    simp only [keptWith, Bool.or_eq_true] at hk
+    rcases hk with hk | hk
+    rotate_left
+    · exact holdsAt_kept hc hf hk hF
+    simp only [List.all_eq_true, Bool.or_eq_true] at hk
     refine holdsAt_linear_terms (fun t ht => ?_) hF
     obtain ⟨m, hm⟩ := Option.isSome_iff_exists.mp (hF.1 t ht)
     rw [hm]
