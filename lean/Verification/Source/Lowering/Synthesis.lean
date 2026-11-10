@@ -136,10 +136,11 @@ def slice (A : Ty Tree) (tag : Tag) (q : Bool) : Compiler (Ty Tree) := do
 def nonNullish (A : Ty Tree) : Compiler (Ty Tree) := slice A .isNullish false
 
 /-- The type a binding declared at `D` holds after an assignment of a value
-of type `A`: the members of `D` some member of `A` is within, `D` where none
-is (TypeScript's assignment narrowing of a declared union). -/
+of type `A`: `A` where it is within `D`; else the members of `D` some member
+of `A` is within, `D` where none is (an assignment's narrowing). -/
 def assigned (D A : Ty Tree) : Compiler (Ty Tree) := do
   let T ← table
+  if !A.isEmpty && within T A D then return A
   let kept := D.filter fun d => A.any fun a => within T [a] [d]
   return if kept.isEmpty then D else kept
 
@@ -758,6 +759,8 @@ partial def expr (env : Env) (e : Expr) : W (Option (Ty Tree) × Env) := do
     let inner : Env := { vars, decl := vars, paths := [] }
     for (_, d) in defaults do let _ ← expr inner d
     let saved := (← get).breaks
+    -- An expression body's entry is its prologue's, at the body's start.
+    modify fun w => { w with entries := w.entries.insert body.span.1 inner.vars }
     let _ ← expr inner body
     modify fun w => { w with breaks := saved }
     return (← record e (.error "a function value"), env)
