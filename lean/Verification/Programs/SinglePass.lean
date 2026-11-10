@@ -73,8 +73,8 @@ def ofAtoms (as : List Atom) (d : Nat) : Knowledge :=
   let seps := k.separation.facts.filter fun f => f.slot < d && f.partners.all (·.1 < d)
   { k with separation := HeapSeparation.norm d (seps.map (flip d)) }
 
-/-- The facts a state holds, over names, and by each name the facts that
-mention it (removed facts are filtered out where read). -/
+/-- The facts a state holds, over names, and by each name the live facts
+that mention it. -/
 structure Store where
   live : Lean.PersistentHashMap Atom Unit := {}
   byName : Lean.PersistentHashMap Nat (List Atom) := {}
@@ -86,9 +86,13 @@ def Store.add (s : Store) (a : Atom) : Store :=
     byName := a.names.foldl (fun m n => m.insert n (a :: m.findD n [])) s.byName }
 
 def Store.remove (s : Store) (a : Atom) : Store :=
-  if s.live.contains a then { s with live := s.live.erase a, count := s.count - 1 } else s
+  if s.live.contains a then
+    { live := s.live.erase a, count := s.count - 1,
+      -- Off each name's list: the index holds live facts only.
+      byName := a.names.foldl (fun m n => m.insert n ((m.findD n []).erase a)) s.byName }
+  else s
 
-def Store.about (s : Store) (n : Nat) : List Atom := (s.byName.findD n []).filter s.live.contains
+def Store.about (s : Store) (n : Nat) : List Atom := s.byName.findD n []
 
 def Store.size (s : Store) : Nat := s.count
 
@@ -158,9 +162,10 @@ structure Counts where
   givenWritten : Nat := 0
   givenClaims : Nat := 0
   storeMax : Nat := 0
+  directCalls : Nat := 0
 
 instance : ToString Counts where
-  toString c := s!"visited {c.visited}, rule applications {c.rules} (whole store {c.fullRules}), copies {c.copies}, entailment queries {c.queries} (mean atoms {c.queryAtoms / max c.queries 1}), edge searches {c.edgeSearches}, head facts written {c.givenWritten} + from claims {c.givenClaims}, largest store {c.storeMax}"
+  toString c := s!"visited {c.visited}, rule applications {c.rules} (whole store {c.fullRules}), copies {c.copies}, entailment queries {c.queries} (mean atoms {c.queryAtoms / max c.queries 1}), edge searches {c.edgeSearches}, head facts written {c.givenWritten} + from claims {c.givenClaims}, largest store {c.storeMax}, calls read off their signature {c.directCalls}"
 
 /-- The verdict: refused at a located obligation, or a construct the pass
 does not handle. -/
@@ -429,6 +434,167 @@ def differing (Γ Δ : List (Ty ι)) (m : PointClaims.Mapping) : List (Nat × Na
       i := i + 1
     return out
 
+/-- A call's derivation read off its callee's signatures (the direct form
+of `CertificateProducer.expressionWithUsing`'s `direct`): the callee a slot,
+its type's signatures in the same order (those promising elements first;
+those stating a precondition `admits` holds of, then those stating none),
+the first whose receiver, actuals and result the slots' types meet, each
+by identity or a subtype proof (`subtypeUsing`, answered once). Untrusted:
+none where the call is not of this form. -/
+def directCall (G : NormalGraph ι) (images : InstanceImageCheck G) (Γ : List (Ty ι)) (t : Tm) (A : Ty ι)
+    (admits : CallEffects.Effect → Tm → Bool) (undefTy : Option (Ty ι)) (answers : Answered G) :
+    Option (ProgramCertificates.Evidence ι × Bool) × Answered G := Id.run do
+  let .invoke (.var f) recv args := t | return timedKind "direct: callee" fun _ => (none, answers)
+  let some F := Γ[f]? | return (none, answers)
+  if Γ.any List.isEmpty then return timedKind "direct: empty" fun _ => (none, answers)
+  let (L, r) ← match PositiveRules.expand G F with
+    | [PositiveNormalization.Clause.arrs L _] => pure (L, ProgramCertificates.Rule.app)
+    | [PositiveNormalization.Clause.callable _ _ L _ _] => pure (L, ProgramCertificates.Rule.callCallable)
+    | cs => return timedKind s!"direct: clauses {cs.length}" fun _ => (none, answers)
+  let some argSlots := args.mapM (fun (a : Tm) => match a with | Tm.var i => some i | _ => none) | return timedKind "direct: args" fun _ => (none, answers)
+  let mut answers := answers
+  -- A slot read at `D`: its leaf, coerced where its type is not `D`.
+  let leaf := fun (i : Nat) (B : Ty ι) => ProgramCertificates.Evidence.node ⟨Γ, Tm.var i, B⟩ ProgramCertificates.Rule.var []
+  let L : List (CallEffects.Arrow (Ty ι)) := L
+  let ordered := L.filter (fun (p : CallEffects.Arrow (Ty ι)) => p.effect.elements.isSome) ++
+    L.filter (fun (p : CallEffects.Arrow (Ty ι)) => p.effect.elements.isNone)
+  let stating := fun (p : CallEffects.Arrow (Ty ι)) => p.effect.requires.isSome || !p.effect.pre.isEmpty
+  for phase in [true, false] do
+    for p in ordered do
+      if phase != stating p then continue
+      if phase && !admits p.effect t then continue
+      if args.length != p.arguments.length then
+        let _ := timedKind s!"direct: arity {args.length} vs {p.arguments.length}" fun _ => ()
+        continue
+      -- Each operand at its parameter.
+      let mut parts : Array (ProgramCertificates.Evidence ι) := #[]
+      let mut ok := true
+      let operands := (recv, p.receiver) :: (args.zip p.arguments)
+      for (a, D) in operands do
+        match a with
+        | .var i =>
+          let some B := Γ[i]? | ok := false; break
+          if same B D then parts := parts.push (leaf i B)
+          else
+            let (res, a') := subtypeUsing G images B D answers
+            answers := a'
+            match res.value with
+            | some pr => parts := parts.push (coerceBy pr (leaf i B) D)
+            | none =>
+              ok := timedKind s!"direct: operand subtype" fun _ => false
+              break
+        | .undef =>
+          -- `undefined` at its own type, coerced to `D`, as the search finds it.
+          let e := ProgramCertificates.Evidence.node ⟨Γ, Tm.undef, D⟩ ProgramCertificates.Rule.undef []
+          if (ProgramCertificates.checkTreeUsing G images e (fun _ => false) []) then parts := parts.push e
+          else
+            let U := undefTy.getD []
+            let (res, a') := subtypeUsing G images U D answers
+            answers := a'
+            match res.value with
+            | some pr => parts := parts.push (coerceBy pr (ProgramCertificates.Evidence.node ⟨Γ, Tm.undef, U⟩ ProgramCertificates.Rule.undef []) D)
+            | none =>
+              ok := timedKind s!"direct: undefined operand" fun _ => false
+              break
+        | _ =>
+          ok := timedKind s!"direct: operand term" fun _ => false
+          break
+      if !ok then continue
+      let _ := argSlots
+      let ef := leaf f F
+      let (res, a') := if same p.result A then (CheckResult.ofBool true |>.map fun _ => ({} : PositiveCertificates.SubtypeChoices ι), answers)
+        else subtypeUsing G images p.result A answers
+      answers := a'
+      let some sub := res.value | continue
+      return (some (coerceBy sub (.node ⟨Γ, t, p.result⟩ (r p.effect) (ef :: parts.toList)) A, phase), answers)
+  return timedKind s!"direct: no signature of {L.length}" fun _ => (none, answers)
+
+/-- How a call step's output treats the facts its expression does not
+name, as the layers of `HeapExpressionRules.Checker.ordinary` decide it for
+a derivation the pass built (`directCall`): kept in place (`elementsCall`,
+`requiresCall` at a heap-keeping effect, `freshCall`, `keepsCall`), or read
+whole (`ownCall`, which keeps the facts apart from the receiver's own
+locations; the base step's `ordinaryOutput`, which keeps no heap fact). -/
+inductive CallBase where
+  | elements (x : Nat) (R : CallEffects.ElemPred)
+  | promise
+  | fresh
+  | own (i : Nat)
+  | keeps
+  | ordinary
+  deriving BEq
+
+/-- Which layer of `Checker.ordinary` gives a call's base output, its
+predicates read without their tree check: the derivation is the pass's own,
+each premise built by a checked comparison. `requires` is the precondition
+the pass decided (`admitsNear`). -/
+def callBase (G : NormalGraph ι) (j : Sequent ι) (p : ProgramCertificates.Evidence ι) (requires : Bool) : CallBase :=
+  match ExpressionEffects.selectedEffect p with
+  | none => .ordinary
+  | some eff =>
+    let operands := ExpressionEffects.selectedOperands p
+    -- `elementsCall`
+    match (if operands && PromiseCalls.onlyBool G j.type && PromiseCalls.keepsHeap eff then
+        (PromiseCalls.receiverSlot j.term).bind fun x => eff.elements.map fun R => (x, R) else none) with
+    | some (x, R) => .elements x R
+    | none =>
+    -- `requiresCall`: a stated precondition that holds
+    if requires && (eff.requires.isSome || !eff.pre.isEmpty) then
+      (if PromiseCalls.keepsHeap eff then .promise else .ordinary)
+    -- `freshCall`
+    else if operands && PromiseCalls.keepsHeap eff && eff.freshObject then .fresh
+    -- `ownCall`
+    else match (if operands && eff.footprint.le .empty && eff.receiverOwn && !eff.receiverStore then
+        PromiseCalls.receiverSlot j.term else none) with
+    | some i => .own i
+    | none =>
+    -- `keepsCall`
+    if ExpressionEffects.selectedCallWithin .empty p &&
+        (match PromiseCalls.promiseOf G p with | some (effect, _, _) => PromiseCalls.keepsHeap effect | none => true)
+    then .keeps else .ordinary
+
+/-- A call step's output over `k` at the base `b`, then the outer layers of
+`Checker.ordinary` in their order: `ensuringCalls`, `negatingSlots`,
+`emptyArrays`, `indexing`, `boundedWrites`' growth, `keepingStable`. -/
+def callOutput (G : NormalGraph ι) (j : Sequent ι) (p : ProgramCertificates.Evidence ι) (b : CallBase)
+    (requires : Bool) (k : Knowledge) : Knowledge :=
+  let Γ := j.context
+  let t := j.term
+  let base : Knowledge := match b with
+    | .elements x R => PromiseCalls.elementsOutput k x R
+    | .promise | .keeps => HeapKnowledge.shift k
+    | .fresh => PromiseCalls.freshOutput G Γ k
+    | .own i => PromiseCalls.ownOutput k i
+    | .ordinary => HeapExpressionRules.ordinaryOutput k
+  -- `ensuringCalls`
+  let out := match ExpressionEffects.selectedEffect p with
+    | some eff =>
+      if (ExpressionEffects.selectedOperands p || requires) && !(eff.ensures.isEmpty &&
+          (PromiseCalls.effectKept (HeapExpressionRules.writeViews G Γ) (HeapExpressionRules.stableFirst G Γ) eff t k).isEmpty &&
+          (PromiseCalls.appendKept eff t k).isEmpty && (PromiseCalls.writeKept eff t k).isEmpty &&
+          (PromiseCalls.linearAppendKept Γ.length eff t k).isEmpty) then
+        PromiseCalls.withGrown eff (PromiseCalls.withEnsures (HeapExpressionRules.writeViews G Γ)
+          (HeapExpressionRules.stableFirst G Γ) Γ.length eff t k base) (IndexWrites.grownRegions G Γ k t)
+      else base
+    | none => base
+  -- `negatingSlots`
+  let out := match PromiseCalls.negationOf j with
+    | some x => { out with elems := out.elems ++ PromiseCalls.negatedAtoms k x
+                           indices := out.indices ++ PromiseCalls.negatedIndices k x }
+    | none => out
+  -- `emptyArrays`
+  let lit := IndexWrites.literalArrayAtoms Γ.length t
+  let out := { out with
+    indices := out.indices ++ lit ++ (if lit.isEmpty then [] else HeapKnowledge.shiftIndices k.indices) ++
+      IndexWrites.regionAtoms G Γ k t
+    separation := if lit.isEmpty then out.separation
+      else HeapSeparation.allocate k.separation Γ.length (HeapExpressionRules.contractFields G Γ) }
+  -- `indexing`
+  let out := { out with indices := out.indices ++ (IndexWrites.stepAtoms G Γ k t ++
+    IndexWrites.linearAtoms G Γ k t ++ IndexWrites.lengthAtoms k Γ t) }
+  -- `boundedWrites`, `keepingStable`
+  HeapExpressionRules.withStable G Γ k (IndexWrites.growOutput G j k out)
+
 /-- The pass over one graph. -/
 def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι)) (fuel : Nat)
     (P : Program) (claims : List (PointClaim ι)) (start : Nat) (goal : Goal ι)
@@ -444,6 +610,11 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
   let mut counts : Counts := {}
   if claimed.size != n then return (.notHandled "claim count", counts, answers)
   let index := KnownIndex.of known
+  -- The type of `undefined` alone, among the pool's: a call's omitted
+  -- receiver is read at it.
+  let undefTy := pool.find? fun B => match PositiveRules.expand G B with
+    | [PositiveNormalization.Clause.undef] => true
+    | _ => false
   let isHead : Array Bool := (cuts ++ [start]).foldl (fun a l => if l < n then a.set! l true else a)
     (Array.replicate n false)
   let stated := byLabel n assertions
@@ -604,13 +775,48 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
           | some (_, v) => v.get
           | none => admitsNear kE eff t
         else admitsNear kE eff t
-      let (r, a) := timedKind (if kindKey == "invoke" then s!"invoke facts {(atomsOf k).length / 10 * 10}" else kindKey) fun _ =>
-        expressionEffectUsing G images pool fuel j kE suggestions index codes aliases checker (some own)
-          (some admits) answers
+      -- A call of a slot: its derivation read off the callee's signatures
+      -- (`directCall`), its step `ordinary`; otherwise the search.
+      let (direct, a0) := match node.expression with
+        | .invoke .. => timedKind "direct call" fun _ => directCall G images c.context node.expression c.type admits undefTy answers
+        | _ => (none, answers)
+      answers := a0
+      let sums := answers.summaries.toList
+      let base := direct.map fun (e, req) => callBase G j e req
+      let (r, a) := match direct, base with
+        | some (e, req), some b =>
+          let step : HeapExpressionRules.StepEvidence ι := .ordinary e
+          (timedKind "direct call output" fun _ => CheckResult.ofBool true |>.map fun _ =>
+            (some e, step, callOutput G j e b req kE), answers)
+        | _, _ => timedKind (if kindKey == "invoke" then s!"invoke facts {(atomsOf k).length / 10 * 10}" else kindKey) fun _ =>
+          expressionEffectUsing G images pool fuel j kE suggestions index codes aliases checker (some own)
+            (some admits) answers
       answers := a
-      counts := { counts with rules := counts.rules + 1 }
+      counts := { counts with rules := counts.rules + 1, directCalls := counts.directCalls + (if direct.isSome then 1 else 0) }
+      -- Debugging: the direct output against `Checker.select`'s over the same facts.
+      if !reference.isEmpty then
+        if let some (e, _) := direct then
+          let expected := checker.select j kE (.ordinary e) codes sums
+          if let some (_, _, out) := r.value then
+            let same := match expected.value with
+              | some o => (atomsOf o).all (atomsOf out).contains && (atomsOf out).all (atomsOf o).contains
+              | none => false
+            if !same then return (.refused s!"direct call output differs at node {l}", counts, answers)
       let some (deriv, effect, out) := r.value | return (.refused s!"expression at node {l}: {(reprStr node.expression).take 300} with {(atomsOf k).length} facts {(reprStr k).take 1500}", counts, answers)
-      let preserving := match effect with
+      -- A call keeping the heap (`PromiseCalls.keepsCall`), where no layer
+      -- before it in `Checker.ordinary` decides the step, keeps every fact
+      -- it does not name: its output over the facts it names is its delta.
+      let keepsHeap := match base with
+        | some .ordinary | some (.own _) => false
+        | some _ => true
+        | none => match effect with
+        | .ordinary _ => PromiseCalls.keepsCall G images j effect codes sums &&
+            !PromiseCalls.freshCall G images j effect codes sums &&
+            (PromiseCalls.ownCall G images j effect codes sums).isNone &&
+            (PromiseCalls.elementsCall G images j effect codes sums).isNone &&
+            !PromiseCalls.requiresCall G images j kE effect codes sums
+        | _ => false
+      let preserving := keepsHeap || match effect with
         | .ordinary _ | .written .. | .boundedWrite .. => false
         | _ => true
       -- A slot's read is that slot's value: it keeps its name.
@@ -633,8 +839,18 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
         let kE := KnowledgeExpand.expandLinks (KnowledgeExpand.ctxOf G c.context) k
         -- The step the search selected over the facts the expression names,
         -- its output over every fact.
-        let r := timedKind ("whole " ++ SinglePassStats.termKind node.expression) fun _ =>
-          checker.select j kE effect codes answers.summaries.toList
+        let sums := answers.summaries.toList
+        let layer := if PromiseCalls.keepsCall G images j effect codes sums then "keeps"
+          else if PromiseCalls.freshCall G images j effect codes sums then "fresh"
+          else if (PromiseCalls.ownCall G images j effect codes sums).isSome then "own"
+          else if (PromiseCalls.elementsCall G images j effect codes sums).isSome then "elements"
+          else if PromiseCalls.requiresCall G images j kE effect codes sums then "requires"
+          else if (PromiseCalls.ensuresCall G images j kE effect codes sums).isSome then "ensures"
+          else match effect with | .ordinary _ => "ordinary" | .written .. => "written" | _ => "boundedWrite"
+        let r := timedKind ("whole " ++ SinglePassStats.termKind node.expression ++ " " ++ layer) fun _ =>
+          match direct, base with
+          | some (e, req), some b => CheckResult.ofBool true |>.map fun _ => callOutput G j e b req kE
+          | _, _ => checker.select j kE effect codes sums
         counts := { counts with rules := counts.rules + 1, fullRules := counts.fullRules + 1 }
         let some out := r.value | return (.refused s!"expression at node {l} over every fact", counts, answers)
         stepK := kE
@@ -659,7 +875,7 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
     if yields.isNone && !isRead && copied.isNone then
       let e := stepDeriv.getD (.node ⟨c.context, node.expression, c.type⟩ .var [])
       let slotImpl : List (PromiseCalls.Implication ι) := []
-      let (ys, a) := (nodeYields G images pool c.context slotImpl e stepOut stepK) answers
+      let (ys, a) := timedKind "yields" fun _ => (nodeYields G images pool c.context slotImpl e stepOut stepK) answers
       answers := a
       yields := some ys
     if node.handler.isSome then return (.notHandled s!"handler at node {l}", counts, answers)
@@ -702,7 +918,7 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
       let vacuous := match observed with
         | some o => unsatΓ || (Γ[0]?).any (BranchRefinement.impossible G · o)
         | none => unsatΓ
-      let diff := if vacuous then [] else differing Γ tc.context t.mapping
+      let diff := if vacuous then [] else timedKind "edge types" fun _ => differing Γ tc.context t.mapping
       -- The target's own answer: a slot of the empty type is one the edge's
       -- context gives (where it has none) or a slot whose type differs.
       if (unsat[t.label]!).isNone then
@@ -728,7 +944,7 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
           -- Its links restated on every slot of their classes, as an edge reads
           -- a node's output (`ControlFlow.outFacts`).
           let ko := KnowledgeExpand.expandLinks (KnowledgeExpand.ctxOf G Γ) ko
-          let (r, a) := edgeUsing G images claimed Γ t (observed.map (0, ·)) (readFields ko 0) (optionalFields ko 0)
+          let (r, a) := timedKind "edge search" fun _ => edgeUsing G images claimed Γ t (observed.map (0, ·)) (readFields ko 0) (optionalFields ko 0)
             (match observed with
               | some o => HeapKnowledge.aliasCells (HeapKnowledge.observeTyped G Γ ko 0 o)
               | none => []) answers
@@ -777,7 +993,7 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
             (HeapKnowledge.withTypedLinks G Γ (ControlFlow.withTypedCells G Γ req t.mapping k)) req t.mapping) then
           return (.refused s!"edge from node {l} into statement entry {t.label}", counts, answers)
       else
-        let targetNames := mapNames names t.mapping
+        let targetNames := timedKind "edge names" fun _ => mapNames names t.mapping
         -- The names the edge drops leave the store.
         let gone := droppedBy names t.mapping targetNames ++
           (if !pushed && !entry.names.contains result then [result] else [])

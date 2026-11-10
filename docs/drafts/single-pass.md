@@ -80,6 +80,35 @@ survive. Obligations (a required assertion, an edge into a cut) are
 entailment queries against the facts over the names they mention, closed
 the same way.
 
+### A call of a slot
+
+A call whose callee is a slot is read off the callee's signatures, in the
+order `CertificateProducer.expressionWithUsing` tries them (those promising
+elements first; those stating a precondition `admits` holds of, then those
+stating none): the first whose receiver, actuals and result the slots'
+types meet, each by identity or a subtype proof; `undefined` at its own
+type. Each stated precondition is decided once per call, over the index
+facts connected to the call's slots. The step is `ordinary` at that
+derivation. Its output is the one `HeapExpressionRules.Checker.ordinary`
+gives, its layers' predicates read without their tree check (the
+derivation's premises are the pass's checked comparisons), mirrored by
+`SinglePass.callBase` and `SinglePass.callOutput`:
+
+- the base: `PromiseCalls.elementsOutput` (`elementsCall`),
+  `promiseOutput` (`requiresCall`), `freshOutput` (`freshCall`),
+  `ownOutput` (`ownCall`), the entry shifted (`keepsCall`), else
+  `HeapExpressionRules.ordinaryOutput`;
+- then `ensuringCalls` (`withEnsures`, `withGrown`, whose kept facts are
+  `effectKept`, `appendKept`, `writeKept`, `linearAppendKept`),
+  `negatingSlots`, `emptyArrays`, `indexing` (`stepAtoms`, `linearAtoms`,
+  `lengthAtoms`), `boundedWrites`' `IndexWrites.growOutput`, and
+  `keepingStable`'s `withStable`.
+
+Where the base keeps the heap (elements, a heap-keeping precondition,
+fresh, keeps), every fact the call does not name stays where it is, and
+the output over the named facts is the step's delta. `ownOutput` and
+`ordinaryOutput` decide per fact over the whole store.
+
 ## 6. Where the rules read more than a step's names
 
 - A step that may write (a call's `ordinary` step, `written`, `boundedWrite`)
