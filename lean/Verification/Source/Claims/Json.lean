@@ -805,7 +805,7 @@ def FilePlans.passGroup (f : FilePlans) (fuel : Nat) (group : List Nat) (compare
       let (o, counts, _) := CertificateProducer.timed SinglePass.passNanos fun _ =>
         SinglePass.run G I pool fuel r.program r.claims r.start r.goal r.assertions r.cuts r.candidates
           r.entryIndices [] (e ++ rendered) codes r.aliases (HeapExpressionRules.Checker.ordinary G I) next reference debugNode bound
-          givenImplies givenArgs r.ensures givenInputs
+          givenImplies givenArgs r.ensures givenInputs r.entrySeparation
       -- The unit's own expression claims, as the check reads them.
       let obligations := ExpressionClaims.checkAllResult (RequestJson.graph r.toRequest) (StoreView.images r.types)
         (StoreView.valid r.types) r.obligations e codes []
