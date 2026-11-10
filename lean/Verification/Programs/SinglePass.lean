@@ -168,9 +168,11 @@ structure Counts where
   storeMax : Nat := 0
   directCalls : Nat := 0
   givenImplies : Nat := 0
+  heads : Nat := 0
+  stateSum : Nat := 0
 
 instance : ToString Counts where
-  toString c := s!"visited {c.visited}, rule applications {c.rules} (whole store {c.fullRules}), copies {c.copies}, entailment queries {c.queries} (mean atoms {c.queryAtoms / max c.queries 1}), edge searches {c.edgeSearches}, head facts written {c.givenWritten} + from claims {c.givenClaims}, largest store {c.storeMax}, calls read off their signature {c.directCalls}, head implications supplied {c.givenImplies}"
+  toString c := s!"visited {c.visited}, rule applications {c.rules} (whole store {c.fullRules}), copies {c.copies}, entailment queries {c.queries} (mean atoms {c.queryAtoms / max c.queries 1}), edge searches {c.edgeSearches}, head facts written {c.givenWritten} + from claims {c.givenClaims}, largest store {c.storeMax}, calls read off their signature {c.directCalls}, head implications supplied {c.givenImplies}, loop heads {c.heads}, mean facts per state {c.stateSum / max c.visited 1}"
 
 /-- The verdict: refused at a located obligation, or a construct the pass
 does not handle. -/
@@ -624,8 +626,34 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
   let undefTy := pool.find? fun B => match PositiveRules.expand G B with
     | [PositiveNormalization.Clause.undef] => true
     | _ => false
-  let isHead : Array Bool := (cuts ++ [start]).foldl (fun a l => if l < n then a.set! l true else a)
-    (Array.replicate n false)
+  -- The loop heads: each target of a retreating edge of a depth-first walk
+  -- from the start (handlers' edges included), and the start. A statement
+  -- entry that is no loop head is an ordinary node.
+  let loopHeads : Array Bool := Id.run do
+    let mut heads : Array Bool := Array.replicate n false
+    let mut state : Array Nat := Array.replicate n 0   -- 0 new, 1 on the stack, 2 done
+    let mut stack : List (Nat × List Nat) := []
+    if start < n then
+      state := state.set! start 1
+      stack := [(start, (successors nodes[start]!.continuation ++ nodes[start]!.handler.toList).map (·.label))]
+    while true do
+      match stack with
+      | [] => break
+      | (v, []) :: rest =>
+        state := state.set! v 2
+        stack := rest
+      | (v, w :: ws) :: rest =>
+        stack := (v, ws) :: rest
+        if w < n then
+          match state[w]! with
+          | 0 =>
+            state := state.set! w 1
+            stack := (w, (successors nodes[w]!.continuation ++ nodes[w]!.handler.toList).map (·.label)) :: stack
+          | 1 => heads := heads.set! w true
+          | _ => pure ()
+    return heads
+  let _ := cuts
+  let isHead : Array Bool := if start < n then loopHeads.set! start true else loopHeads
   let stated := byLabel n assertions
   let supplied := byLabel n candidates
   -- In-degrees without the edges into cuts.
@@ -738,6 +766,23 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
         let first := stores.headD {}
         let met := timedKind "meet" fun _ => first.fold (fun (acc : Store) a =>
           if stores.tail.all (·.contains a) then acc.add a else acc) {}
+        -- A linear bound every predecessor states of one form (under one
+        -- condition), at the weakest of their bounds, each its strongest.
+        let bounds : List (Std.HashMap (Linear.Form HeapKnowledge.Term × Option Nat × Bool) Int) := stores.map fun st =>
+          st.fold (fun acc a => match a with
+            | .index ⟨.linear (.le F d), c, neg⟩ =>
+              acc.insert (F, c, neg) (match acc.get? (F, c, neg) with | some d' => min d d' | none => d)
+            | _ => acc) {}
+        let met := match bounds with
+          | b0 :: bs => b0.fold (fun (acc : Store) key d => Id.run do
+              let mut weakest := d
+              for b in bs do
+                match b.get? key with
+                | some d' => weakest := max weakest d'
+                | none => return acc
+              let (F, c, neg) := key
+              return acc.add (.index ⟨.linear (.le F weakest), c, neg⟩)) met
+          | [] => met
         -- A name holds a fresh store where every predecessor's does.
         let freshLists := (preds.zip renames).map fun ((st : State), (m : Std.HashMap Nat Nat)) =>
           st.fresh.map fun x => m.getD x x
@@ -759,7 +804,9 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
             else none
           implies := (keepFirst {} implies).2.toList
         | [] => pure ()
-    counts := { counts with visited := counts.visited + 1, storeMax := max counts.storeMax entry.store.size }
+    counts := { counts with
+      visited := counts.visited + 1, storeMax := max counts.storeMax entry.store.size
+      stateSum := counts.stateSum + entry.store.size, heads := counts.heads + (if isHead[l]! then 1 else 0) }
     -- Debugging: the facts a reference certificate holds here that this
     -- state does not entail.
     if let some old := reference[l]? then
@@ -1177,7 +1224,11 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
         counts := { counts with queries := counts.queries + 1, queryAtoms := counts.queryAtoms + (atomsOf k).length }
         if !vacuous && !(timedKind "head query" fun _ => KnowledgeExpand.checkIn (KnowledgeExpand.ctxOf G tc.context)
             (HeapKnowledge.withTypedLinks G Γ (ControlFlow.withTypedCells G Γ req t.mapping k)) req t.mapping) then
-          return (.refused s!"edge from node {l} into statement entry {t.label}", counts, answers)
+          -- The given facts the edge does not establish, named.
+          let ctx := KnowledgeExpand.ctxOf G tc.context
+          let src := HeapKnowledge.withTypedLinks G Γ (ControlFlow.withTypedCells G Γ req t.mapping k)
+          let missing := (atomsOf req).filter fun a => !KnowledgeExpand.checkIn ctx src (ofAtoms [a] tc.context.length) t.mapping
+          return (.refused s!"edge from node {l} into statement entry {t.label}: lacks {(reprStr (missing.map fun a => match a with | .index x => reprStr x | .cell f => s!"cell {f.slot}" | .value f => s!"value {f.slot}" | .link g => s!"link {g.cell} {g.value}" | .elem e => s!"elems {e.slot}" | .sep f => s!"sep {f.slot}")).take 1500}", counts, answers)
       else
         let targetNames := timedKind "edge names" fun _ => mapNames names t.mapping
         -- The names the edge drops leave the store.

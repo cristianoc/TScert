@@ -58,9 +58,17 @@ in a topological order. A node with one predecessor takes that edge's state;
 a merge takes the facts every predecessor holds, a slot whose predecessors
 give it different names named afresh, each predecessor's facts renamed to it.
 
-## 4. Cuts
+## 4. Loop heads
 
-A cut's state is exactly its given invariant: its written assertion
+A loop head is the target of a retreating edge of a depth-first walk from
+the start, handlers' edges included. A statement entry that is no loop head
+is an ordinary node: its state is its predecessor's, or the meet of its
+predecessors' at a merge; a written assertion there is an obligation on
+that state. At a merge, a linear bound every predecessor states of one form
+under one condition is kept at the weakest of their bounds.
+
+
+A loop head's state is exactly its given invariant: its written assertion
 (`@invariant`, required assertions) and the facts the claims document
 records there. Every edge into a cut, a back edge included, carries the
 obligation that its state entails that invariant; the cut is visited once,
