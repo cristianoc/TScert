@@ -1098,8 +1098,13 @@ the one the graph checker computes for the dispatch. -/
         let types := base.set 0 T
         let bound : ScopeBinding Tree := { source := ⟨binding.name,some binding.source⟩, fixed := some T }
         let sc := bound :: scope'.tail
+        -- Each saved value's type at its name's slot (`resolve`): each
+        -- name's first slot, found in one pass.
+        let firstSlot : Std.HashMap String Nat :=
+          sc.zipIdx.foldl (init := {}) fun m (b,i) => m.insertIfNew b.source.name i
+        let slotTypes := types.toArray
         let savedTypes := previous.types.map fun (name,B) =>
-          (name, ((resolve sc name).bind fun (i,_) => types[i]?).getD B)
+          (name, ((firstSlot[name]?).bind fun i => slotTypes[i]?).getD B)
         -- A rebound truthiness is that Boolean, no longer the tested value.
         let bindingOrigin := if correlated && truthOnly then Fragment.Expr.lit binding.source (.vbool truth)
           else origin

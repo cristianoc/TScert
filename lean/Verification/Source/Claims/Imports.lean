@@ -197,11 +197,23 @@ private def keepFunctions (doc : Json) (keep : String → Span → Bool) : Excep
     | _, _ => false
   return doc.setObjVal! "functions" (Json.arr kept.toArray)
 
+/-- A module's code, decoded: its functions, then its top-level code. -/
+private def decodeCode (m : Fragment.ModuleAst) : Except String (List Fragment.Fn × List Fragment.Stmt) := do
+  let functions ← (← jArr m.document "functions").mapM fun f => do return (← Fragment.decodeFn f).1
+  return (functions, ← Fragment.decodeInit m.document)
+
+/-- Each module's code (`decodeCode`) by its location, the first module of
+that location's, decoded at most once, where a read first asks for it. -/
+private abbrev ModuleCode := Std.HashMap String (Thunk (Except String (List Fragment.Fn × List Fragment.Stmt)))
+
+private def ModuleCode.of (fragmentModules : List Fragment.ModuleAst) : ModuleCode :=
+  fragmentModules.foldl (init := {}) fun m mod => m.insertIfNew mod.location (Thunk.mk fun _ => decodeCode mod)
+
 /-- One qualified read: the importer's binding of it, and its unit's
 footprint and on-throw flag, where the read names an eligible unit of its
 origin whose two signature readings agree. -/
 private def qualifiedRead (importer : Reading) (values : List Json) (fragmentModules : List Fragment.ModuleAst)
-    (claimModules : List Json) (q : Json) (location name : String) (span : Span) :
+    (code : ModuleCode) (claimModules : List Json) (q : Json) (location name : String) (span : Span) :
     Except String (String × Footprints.Closed × Bool × Footprints.Closed) := do
   let some v := values.find? fun v => (v.getObjVal? "declaration").toOption == some q
     | throw s!"a qualified read names no imported value: {q.compress}"
@@ -223,8 +235,9 @@ private def qualifiedRead (importer : Reading) (values : List Json) (fragmentMod
     throw s!"a qualified read names a unit that is not eligible: {location}#{name}"
   -- Stable: no code of the module the document holds writes the binding;
   -- the parser refuses a module whose code it does not lower writes it.
-  let functions ← fs.mapM fun f => do return (← Fragment.decodeFn f).1
-  let init ← Fragment.decodeInit m.document
+  let (functions, init) ← match code[location]? with
+    | some decoded => decoded.get
+    | none => decodeCode m
   if (init ++ functions.flatMap (·.body)).any (SourceExtraction.assignsStmt name) then
     throw s!"a qualified read names a unit whose module writes its binding: {location}#{name}"
   let type ← jField v "type"
@@ -279,7 +292,7 @@ imported value of its declarations and an eligible unit whose two readings
 agree (`qualifiedRead`). Its importer's binding of each, with the unit's
 footprint and on-throw flag, and the units, by module and name. -/
 private def planReads (declarations claims : Json) (fragmentModules : List Fragment.ModuleAst)
-    (claimModules : List Json) :
+    (code : ModuleCode) (claimModules : List Json) :
     Except String (List (String × Footprints.Closed × Bool × Footprints.Closed) × List (String × String)) := do
   let reads ← jArr claims "qualified"
   if reads.eraseDups.length != reads.length then throw "a qualified read is listed twice"
@@ -292,7 +305,7 @@ private def planReads (declarations claims : Json) (fragmentModules : List Fragm
     let location ← jStr (← jField q "module")
     let name ← jStr (← jField q "name")
     let span : Span ← fromJson? (← jField q "span")
-    let read ← (qualifiedRead importer values fragmentModules claimModules q location name span).mapError
+    let read ← (qualifiedRead importer values fragmentModules code claimModules q location name span).mapError
       (s!"certified import {location}#{name}: " ++ ·)
     qualified := qualified ++ [read]
     units := units ++ [(location, name)]
@@ -339,7 +352,8 @@ def planImports (ast claims : Json) : Except String ImportPlan := do
     match claimModules.find? fun c => (c.getObjValAs? String "file").toOption == some location with
     | some c => pure c
     | none => throw s!"a module without claims: {location}"
-  let (qualified, importerUnits) ← planReads (← jField ast "declarations") claims fragmentModules claimModules
+  let code := ModuleCode.of fragmentModules
+  let (qualified, importerUnits) ← planReads (← jField ast "declarations") claims fragmentModules code claimModules
   -- The modules a planned read names, each planned once, its reads in turn.
   let mut units := importerUnits
   let mut planned : List (String × List (String × Footprints.Closed × Bool × Footprints.Closed)) := []
@@ -349,7 +363,7 @@ def planImports (ast claims : Json) : Except String ImportPlan := do
     let some m := fragmentModules.find? (·.location == location)
       | throw s!"a qualified read names a module the fragment does not list: {location}"
     let (reads, more) ← (planReads (← jField m.document "declarations") (← claimsOf location)
-      fragmentModules claimModules).mapError (s!"module {location}: " ++ ·)
+      fragmentModules code claimModules).mapError (s!"module {location}: " ++ ·)
     planned := planned ++ [(location, reads)]
     edges := edges ++ more.map fun (l, _) => (location, l)
     units := units ++ more
@@ -358,8 +372,9 @@ def planImports (ast claims : Json) : Except String ImportPlan := do
   let modules ← fragmentModules.filterMapM fun m => do
     let some (_, reads) := planned.find? (·.1 == m.location) | return none
     let start := (units.filter (·.1 == m.location)).map (·.2)
-    let decoded ← (← jArr m.document "functions").mapM fun f => do return (← Fragment.decodeFn f).1
-    let init ← Fragment.decodeInit m.document
+    let (decoded, init) ← match code[m.location]? with
+      | some decoded => decoded.get
+      | none => decodeCode m
     let keep := readClosure decoded init start
     let ast ← keepFunctions m.document fun n _ => keep.contains n
     let claims ← keepFunctions (← claimsOf m.location) fun n _ => keep.contains n
@@ -369,7 +384,7 @@ def planImports (ast claims : Json) : Except String ImportPlan := do
 /-- Each qualified read of one document `qualifiedRead` refuses, worded as
 `planReads` words it, and the units of the reads it admits. -/
 private def readRefusals (declarations claims : Json) (fragmentModules : List Fragment.ModuleAst)
-    (claimModules : List Json) : Except String (List String × List (String × String)) := do
+    (code : ModuleCode) (claimModules : List Json) : Except String (List String × List (String × String)) := do
   let values ← jArr declarations "values"
   let importer ← Reading.of declarations
   let mut refused : List String := []
@@ -378,7 +393,7 @@ private def readRefusals (declarations claims : Json) (fragmentModules : List Fr
     let location ← jStr (← jField q "module")
     let name ← jStr (← jField q "name")
     let span : Span ← fromJson? (← jField q "span")
-    match qualifiedRead importer values fragmentModules claimModules q location name span with
+    match qualifiedRead importer values fragmentModules code claimModules q location name span with
     | .ok _ => units := units ++ [(location, name)]
     | .error e => refused := refused ++ [s!"certified import {location}#{name}: {e}"]
   return (refused, units)
@@ -391,8 +406,9 @@ the check plans by `planImports`. -/
 def planRefusals (ast claims : Json) : Except String (List String) := do
   let fragmentModules ← (← jArr ast "modules").mapM Fragment.decodeModule
   let claimModules ← jArr claims "modules"
+  let code := ModuleCode.of fragmentModules
   let (importerRefused, importerUnits) ← readRefusals (← jField ast "declarations") claims fragmentModules
-    claimModules
+    code claimModules
   let mut refused := importerRefused
   let mut units := importerUnits
   let mut planned : List String := []
@@ -402,7 +418,7 @@ def planRefusals (ast claims : Json) : Except String (List String) := do
     let some m := fragmentModules.find? (·.location == location) | continue
     let some c := claimModules.find? fun c => (c.getObjValAs? String "file").toOption == some location
       | continue
-    match do readRefusals (← jField m.document "declarations") c fragmentModules claimModules with
+    match do readRefusals (← jField m.document "declarations") c fragmentModules code claimModules with
     | .ok (more, reached) =>
       refused := refused ++ more.map (s!"module {location}: " ++ ·)
       units := units ++ reached
