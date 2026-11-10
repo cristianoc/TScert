@@ -76,6 +76,14 @@ the cut (`TSCERT_SUPPLY_IMPLIES=1`), never computed by the pass. Every edge
 into the cut carries the obligation that its own implications state each
 of them, at a type within the given one.
 
+Likewise a cut's given invariant may state which of its slots hold the
+input a promise goal is about (the certificate's `arguments` at the cut):
+those slots keep the input's name, and every edge into the cut carries the
+obligation that its slots mapped there hold that name. A return under a
+promise goal is checked as `ControlFlow.checkReturnResult` checks it: the
+answer's type, and the argument, as the step's yields refine it, within the
+promise at a slot holding the input's name.
+
 ## 5. Steps and obligations
 
 A step's rule is applied to the facts over the names its expression reads,

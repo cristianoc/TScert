@@ -609,7 +609,8 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
     (aliases : List (ι × ι)) (checker : HeapExpressionRules.Checker G images)
     (answers : Answered G) (reference : Array Knowledge := #[]) (debugNode : Nat := 1000000000)
     (bound : Option (Footprints.Closed × Bool × Bool) := none)
-    (givenImplies : Array (List (PromiseCalls.Implication ι)) := #[]) : Outcome × Counts × Answered G := Id.run do
+    (givenImplies : Array (List (PromiseCalls.Implication ι)) := #[])
+    (givenArgs : Array (List Nat) := #[]) : Outcome × Counts × Answered G := Id.run do
   let nodes := P.toArray
   let claimed := claims.toArray
   let n := nodes.size
@@ -661,6 +662,12 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
   for l in List.range n do
     if indeg[l]! == 0 && (isHead[l]! || l == start) then queue := queue ++ [l]
   let mut visitedAll := 0
+  -- The start's names, fixed before any node is visited (a cut may be
+  -- visited before it), and the name of the input a promise goal is about.
+  let startWidth := ((claimed[start]?).map (·.context.length)).getD 0
+  let startNames := (List.range startWidth).map (· + fresh)
+  fresh := fresh + startWidth
+  let argName : Option Nat := goal.slot.bind fun sl => startNames[sl]?
   -- Per node, whether no environment meets its context, known from its
   -- first entering edge.
   let mut unsat : Array (Option Bool) := Array.replicate n none
@@ -682,9 +689,16 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
     match given[l]! with
     | some g =>
       -- A head's state is its given invariant, over fresh names.
-      let names := (List.range width).map (· + fresh)
-      fresh := fresh + width
-      let f := fun (i : Nat) => if i < width then some (i + fresh - width) else none
+      let base := if l == start then startNames.headD 0 else fresh
+      if l != start then fresh := fresh + width
+      -- The slots its given invariant states hold the promised input keep
+      -- the input's name.
+      let argSlots := (givenArgs[l]?).getD []
+      let names := (List.range width).map fun i =>
+        match argName with
+        | some a => if argSlots.contains i then a else i + base
+        | none => i + base
+      let f := fun (i : Nat) => names[i]?
       entry := { names, store := timedKind "head state" fun _ => (atomsOf g).foldl (fun s a => match a.rename f with
         | some b => s.add b | none => s) {} }
       -- The implications its given invariant states, over its names.
@@ -961,7 +975,31 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
     if let .ret := node.continuation then
       match goal with
       | .plain R => if !(c.type == R || c.type.isEmpty) then return (.refused s!"return at node {l}", counts, answers)
-      | _ => return (.notHandled "promise goal", counts, answers)
+      | .guards T _ | .asserts T _ =>
+        -- A promise about the input in the goal's slot (`checkReturnResult`):
+        -- the answer right, and the argument, as the yields leave it, within
+        -- the promise, at a slot holding the input's name.
+        let answered := match goal with | .guards .. => true | _ => false
+        let answerOk := if answered then BranchRefinement.onlyBoolean G c.type
+          else PromiseCalls.onlyUndef G c.type
+        let vacuous := if answered then BranchRefinement.impossible G c.type (.boolean true) else c.type.isEmpty
+        let ys := yields.getD []
+        let ys := ys.flatMap fun y => match entry.names[y.target]? with
+          | some nm => (entry.names.zipIdx.filter (·.1 == nm)).map fun (_, j) => { y with target := j }
+          | none => [y]
+        let refined := PromiseCalls.refineBy G c.context (PromiseCalls.yieldFacts ys answered) 0
+        let held := match argName with
+          | some a => (entry.names.zipIdx.filter fun (x : Nat × Nat) => x.1 == a).map fun (x : Nat × Nat) => x.2
+          | none => []
+        let mut within := false
+        for p in held do
+          if !within then
+            if let some B := refined[p]? then
+              let (res, a') := subtypeUsing G images B T answers
+              answers := a'
+              if res.value.isSome then within := true
+        if !(answerOk && (vacuous || within)) then
+          return (.refused s!"return at node {l}: the promise{if l == debugNode then s!" answer {answerOk} vacuous {vacuous} held {held} arg {argName} start {start} slot {goal.slot} names {entry.names} yields {ys.length}" else ""}", counts, answers)
     -- The edges: target, whether the result is pushed, an observation of
     -- it, and a branch's answer.
     let edges : List (Target × Bool × Option BranchRefinement.Observation × Option Bool × Bool) :=
@@ -1098,6 +1136,11 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
                   answers := a'
                   if res.value.isSome then ok := true
             if !ok then return (.refused s!"edge from node {l} into statement entry {t.label}: an implication", counts, answers)
+        -- The slots it states hold the promised input hold it on every edge.
+        if !vacuous then
+          for j in (givenArgs[t.label]?).getD [] do
+            if names[PointClaims.slot t.mapping j]? != argName then
+              return (.refused s!"edge from node {l} into statement entry {t.label}: the promised input", counts, answers)
         -- The head's given state is entailed on every edge into it.
         let some req := given[t.label]! | return (.refused s!"head {t.label}", counts, answers)
         let slots := (atomsOf req).flatMap Atom.names
