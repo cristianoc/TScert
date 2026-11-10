@@ -1,4 +1,5 @@
 import Verification.Source.Lowering.Callbacks
+import Verification.Source.Lowering.Compact
 import Verification.Source.Lowering.ClosureSetup
 import Verification.Source.SourceFacts
 import Verification.Source.FlowGraph
@@ -140,7 +141,8 @@ state resume afterwards. -/
       emitAt pos .nul (.effect first) frameInputs [Labels.nul] "closure-entry" (scope := frameScope)
     | _, none => pure first
   let graph ← graphResult
-  return (graph.program, entry.label, graph.claims, graph.source)
+  let (program, claims, source, start) := compactLowered graph.program graph.claims graph.source entry.label
+  return (program, start, claims, source)
 
 /-- **A lambda's graph code**, checked at each signature `lambdaSetup` finds:
 one code request per signature, the graph `closureCode` compiles from that
