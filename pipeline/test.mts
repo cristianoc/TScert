@@ -959,6 +959,50 @@ control(async (): Promise<void> => {
   process.stdout.write("forged fresh field: a unit whose region on a fresh field rebases to none, claimed to keep the store it grows, refused at its unit in search and in checking\n");
 });
 
+for (const file of ["invalid-stated-fresh-reassigned", "invalid-stated-fresh-reassigned-throw"]) mutationControl(async (): Promise<void> => {
+  // The whole source refuses step's mutable-field region at entry. Select
+  // drain alone, as other isolated unit controls do: step's declared frame
+  // is an input to this unit. Its body allocates box.open fresh, replaces
+  // it with its parameter's store, and calls step under a frame omitting
+  // that region. The second fixture carries the replacement through a
+  // throwing call and its catch before step.
+  assert.equal(runExample(file, "String(total([1, 2, 3]))"), "NaN");
+  const artifacts = run(file);
+  const claims = join(artifacts, "claims.json");
+  const evidence = join(artifacts, "forged-mutable-field-evidence.json");
+  const both = "fresh-fields-table,fresh-fields-transport";
+  const search = (mutations: string, output: string): Invoked => tested(verifierCall(mutationVerifier(),
+    ["--produce-unit", join(artifacts, "fragment.json"), claims,
+      join(artifacts, "search-qualified.json"), output, "12", "drain"],
+    { TSCERT_TEST_MUTATIONS: mutations }));
+  const check = (mutations: string): Invoked => tested(verifierCall(mutationVerifier(),
+    ["--check-units", join(artifacts, "fragment.json"), claims, sourceKey(artifacts), evidence, "drain"],
+    { TSCERT_TEST_MUTATIONS: mutations }));
+  const transport = /fresh-field transport refuses retained mutable field/;
+  const refusal = /source effect refusal at \[\d+,\d+\): the (?:footprint claimed|frame stated) for 'drain' is not established by its body/;
+  const forged = search(both, evidence);
+  assert.ifError(forged.error);
+  assert.equal(forged.status, 0, forged.stdout + forged.stderr);
+  assert.match(forged.stderr, transport, "the forged table actually reaches a failing transport check");
+  withoutHeads(evidence);
+  const accepted = check(both);
+  assert.ifError(accepted.error);
+  assert.equal(accepted.status, 0, accepted.stdout + accepted.stderr);
+  assert.match(accepted.stderr, transport);
+  // Keep the forged table fixed, restoring transport checking. Require its
+  // own rejection in both search and consumption of the exact evidence.
+  // Conversely, bypassing transport alone supplies no fresh-field fact.
+  for (const mutations of ["fresh-fields-table", "fresh-fields-transport", ""]) {
+    for (const result of [search(mutations, join(artifacts, `field-${mutations || "honest"}.json`)), check(mutations)]) {
+      assert.ifError(result.error);
+      assert.equal(result.status, 1, result.stdout + result.stderr);
+      assert.match(result.stdout + result.stderr, refusal);
+      if (mutations === "fresh-fields-table") assert.match(result.stderr, transport);
+    }
+  }
+  process.stdout.write(`${file}: drain's forged mutable-field freshness refused by transport in search and checking; the same evidence accepted only with table forgery and transport bypass\n`);
+});
+
 control(async (): Promise<void> => {
   // A store region rooted at another position, forged into the parser's
   // document (`"xs[*]": "any"`, `SourceRequest.regional`): `trim`'s region
