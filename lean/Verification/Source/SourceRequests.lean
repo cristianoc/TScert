@@ -906,6 +906,45 @@ refuses a label outside the frozen equations. -/
 private def relabel {α β : Type} [ToJson α] [FromJson β] [ToJson β] (a : α) : Except String β :=
   decodeStrict "request" (toJson a)
 
+/-- A type read as `F`'s, through `relabel`, each type's once. -/
+private abbrev Relabeled (F : Frozen) :=
+  StateT (Std.HashMap (Ty Tree) (Ty (CheckedLabel F.equations F.primitive))) (Except String)
+
+private def typeOver (F : Frozen) (A : Ty Tree) : Relabeled F (Ty (CheckedLabel F.equations F.primitive)) := do
+  if let some B := (← get).get? A then return B
+  let B ← relabel A
+  modify fun cache => cache.insert A B
+  return B
+
+/-- A sequent read as `F`'s: its context's and its type's labels through
+`typeOver`. -/
+private def sequentOver (F : Frozen) (j : ProgramCertificates.Sequent Tree) :
+    Relabeled F (ProgramCertificates.Sequent (CheckedLabel F.equations F.primitive)) := do
+  return ⟨← j.context.mapM (typeOver F), j.term, ← typeOver F j.type⟩
+
+/-- A plan read as `F`'s: each goal through `sequentOver`, each rule through
+`relabel`. -/
+private partial def planOver (F : Frozen) :
+    DirectProof.Plan Tree → Relabeled F (DirectProof.Plan (CheckedLabel F.equations F.primitive))
+  | .rule j r ps => do return .rule (← sequentOver F j) (← relabel r) (← ps.mapM (planOver F))
+  | .cast j p => do return .cast (← sequentOver F j) (← planOver F p)
+
+/-- The obligations, point claims and node plans of a request read as `F`'s,
+each type relabeled once: what `relabel` gives them where every label is
+`F`'s. -/
+private def partsOver (F : Frozen) (r : SourceRequest EquationStore.State Tree) :
+    Except String (List (ExpressionClaims.Required (CheckedLabel F.equations F.primitive)) ×
+      List (PointClaim (CheckedLabel F.equations F.primitive)) ×
+      List (DirectProof.Plan (CheckedLabel F.equations F.primitive))) :=
+  (do
+    let obligations ← r.obligations.mapM fun o => do
+      return ({ pos := o.pos, sequent := ← sequentOver F o.sequent, plan := ← o.plan.mapM (planOver F),
+                role := o.role, context := o.context } : ExpressionClaims.Required _)
+    let claims ← r.claims.mapM fun (c : PointClaim Tree) => do
+      return (⟨← c.context.mapM (typeOver F), ← typeOver F c.type⟩ : PointClaim _)
+    let nodePlans ← r.nodePlans.mapM (planOver F)
+    return (obligations, claims, nodePlans) : Relabeled F _).run' {}
+
 /-- An extracted unit's request over the frozen equations. The program is
 the extracted one; every label is read as `F`'s. -/
 def SourceRequest.over (F : Frozen) (r : SourceRequest EquationStore.State Tree) :
@@ -918,31 +957,35 @@ def SourceRequest.over (F : Frozen) (r : SourceRequest EquationStore.State Tree)
       bounds := ← relabel s.bounds
       variadic := ← relabel s.variadic
       resolution := s.resolution } : PositiveGraphs.SchemeRow (CheckedLabel F.equations F.primitive))
-  let obligations ← r.obligations.mapM fun o => do
-    return ({ pos := o.pos, sequent := ← relabel o.sequent, plan := ← relabel o.plan,
-              role := o.role, context := o.context } : ExpressionClaims.Required _)
+  -- The obligations, point claims and node plans, every type relabeled
+  -- once (`partsOver`); where that fails, each read in turn as below, so
+  -- the first part refused names the refusal.
+  let parts := partsOver F r
+  let obligations ← match parts with
+    | .ok (obligations, _, _) => pure obligations
+    | .error _ => r.obligations.mapM fun o => do
+      return ({ pos := o.pos, sequent := ← relabel o.sequent, plan := ← relabel o.plan,
+                role := o.role, context := o.context } : ExpressionClaims.Required _)
   -- One frozen request fixes label validity. Share each strictly decoded
   -- type across its occurrences in point contexts and results.
-  let claimType := fun (A : Ty Tree) =>
-    (do
-      if let some B := (← get).get? A then return B
-      let B ← relabel A
-      modify fun cache => cache.insert A B
-      return B : StateT (Std.HashMap (Ty Tree) (Ty (CheckedLabel F.equations F.primitive)))
-        (Except String) (Ty (CheckedLabel F.equations F.primitive)))
-  let claims ← (r.claims.mapM fun (c : PointClaim Tree) => match c with
-    | ⟨context, type⟩ => do
-      let context ← try context.mapM claimType catch e =>
-        throw s!"{``PointClaim}.context: {e}"
-      let type ← try claimType type catch e =>
-        throw s!"{``PointClaim}.type: {e}"
-      return (⟨context, type⟩ : PointClaim (CheckedLabel F.equations F.primitive))).run' {}
+  let claimType := typeOver F
+  let claims ← match parts with
+    | .ok (_, claims, _) => pure claims
+    | .error _ => (r.claims.mapM fun (c : PointClaim Tree) => match c with
+      | ⟨context, type⟩ => do
+        let context ← try context.mapM claimType catch e =>
+          throw s!"{``PointClaim}.context: {e}"
+        let type ← try claimType type catch e =>
+          throw s!"{``PointClaim}.type: {e}"
+        return (⟨context, type⟩ : PointClaim (CheckedLabel F.equations F.primitive))).run' {}
   let result ← relabel r.result
   let promise ← r.promise.mapM fun (asserts, slot, T) => do return (asserts, slot, ← relabel T)
   let inputs ← relabel r.inputs
   let codes ← relabel r.codes
   let hints ← relabel r.hints
-  let nodePlans ← r.nodePlans.mapM fun p => relabel p
+  let nodePlans ← match parts with
+    | .ok (_, _, nodePlans) => pure nodePlans
+    | .error _ => r.nodePlans.mapM fun p => relabel p
   let request : RequestJson.Request (Checked F.equations F.primitive) (CheckedLabel F.equations F.primitive) :=
     { types := F.store, program := r.program, claims := claims, result := result, start := r.start,
       inputs := inputs, codes := codes, promise := promise, entrySeparation := r.entrySeparation,
