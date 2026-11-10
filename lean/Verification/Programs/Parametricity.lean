@@ -624,6 +624,9 @@ omit [DecidableEq ι] in
 theorem writeAtoms_reassign (Γ : List (List ι)) (k : HeapKnowledge.Knowledge) (a : Nat) :
     IndexWrites.writeAtoms (reassign G η) Γ k a = IndexWrites.writeAtoms G Γ k a := rfl
 
+theorem growOutput_reassign (j : Sequent ι) (k : HeapKnowledge.Knowledge) :
+    IndexWrites.growOutput (reassign G η) j k = IndexWrites.growOutput G j k := rfl
+
 theorem boundedWrites_value_reassign (j : Sequent ι) (k : HeapKnowledge.Knowledge)
     (e : StepEvidence ι) (codes : CodeEntry ι → Bool) (sums : List (ReadSummary ι)) :
     ((Checker.steps (reassign G η) (images.reassign η)).keepingCalls.keepingOwnCalls.allocatingCalls.requiringCalls.elementCalls.ensuringCalls.negatingSlots.indexing.boundedWrites.run
@@ -632,8 +635,9 @@ theorem boundedWrites_value_reassign (j : Sequent ι) (k : HeapKnowledge.Knowled
         j k e codes sums).value := by
   simp only [Checker.boundedWrites]
   split
-  · rw [boundedWriteCheck_reassign, keepsLengths_reassign, writeAtoms_reassign]
-  · exact indexing_value_reassign G η images j k e codes sums
+  · rw [boundedWriteCheck_reassign, keepsLengths_reassign, writeAtoms_reassign, growOutput_reassign]
+  · simp only [CheckResult.map]
+    rw [indexing_value_reassign, growOutput_reassign]
 
 theorem checkNode_reassign (Rty : ControlFlow.Goal ι) (P : Program) (C : ControlFlow.Certificate ι) (node : Node)
     (c : NodeEvidence ι) (codes : CodeEntry ι → Bool := fun _ => false) (sums : List (ReadSummary ι) := []) :

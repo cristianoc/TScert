@@ -2048,6 +2048,48 @@ theorem writeStep_sound [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)
       · cases hc
     · cases hc
 
+/-- **An element write grows the stores** (ARITHMETIC.md, "Linear facts"):
+whatever its index, it is within `{value: any, store: grow}`, so it alters
+locations holding objects and numbers and leaves every store no shorter and
+within `maxArrayLength` where it was (`HeapKnowledge.Changes.ofClosed`). -/
+theorem writeStep_grow [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)} {t : Tm} {i : Nat}
+    {T : Fam} {ρ n W h} (hc : writeStep G Γ t = some i) (he : EnvOk G Γ ρ n W) (hh : HeapOk n W h)
+    (hs : Safe Ξ T n W h (instantiate 0 ρ t)) :
+    SafePost Ξ T (fun h' _ => (HeapKnowledge.Changes.ofClosed ⟨.any, .grow⟩).Holds h h') n W h
+      (instantiate 0 ρ t) := by
+  unfold writeStep at hc
+  split at hc
+  · rename_i f i' j k hw
+    split at hc
+    · rename_i hcond
+      simp only [varWriteOk, Bool.and_eq_true, decide_eq_true_eq] at hcond
+      obtain ⟨⟨⟨rfl, hk⟩, hj⟩, hsel⟩ := hcond
+      split at hsel
+      · rename_i Ref hi
+        rw [elemVarWriteSlots_eq hw] at hs ⊢
+        exact SafePostExc.post (SafePostExc.weaken (fun _ _ hq => HeapKnowledge.Changes.ofClosed_holds hq.1)
+          (fun _ hq => HeapKnowledge.Changes.ofClosed_holds hq.1) (elem_var_write_core hk hj hi hsel he hh hs))
+      · cases hsel
+    · cases hc
+  · split at hc
+    · rename_i f i' b k hw
+      split at hc
+      · rename_i hcond
+        simp only [litWriteOk, Bool.and_eq_true, decide_eq_true_eq] at hcond
+        obtain ⟨⟨rfl, hk⟩, hsel⟩ := hcond
+        split at hsel
+        · rename_i Ref idx hi hidx
+          rw [elemWriteSlots_eq hw] at hs ⊢
+          rcases Bool.or_eq_true_iff.mp hsel with hst | hst
+          all_goals
+            exact SafePostExc.post (SafePostExc.weaken
+              (fun _ _ hq => HeapKnowledge.Changes.ofClosed_holds (Footprints.Closed.Holds.mono (b := ⟨.any, .grow⟩) (by rfl) hq.1))
+              (fun _ hq => HeapKnowledge.Changes.ofClosed_holds (Footprints.Closed.Holds.mono (b := ⟨.any, .grow⟩) (by rfl) hq.1))
+              (elem_write_core hk hi hidx hst he hh hs))
+        · cases hsel
+      · cases hc
+    · cases hc
+
 
 /-- The selected forms a throw postcondition is concluded for: an invocation
 or a construction at a fixed signature, through subsumption. -/

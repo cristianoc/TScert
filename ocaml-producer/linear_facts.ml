@@ -878,6 +878,11 @@ let write_changes ~facts ~bounds env (e : expr) : changes option =
          entails fs (norm (scale (-1) t), c) && entails fs (norm ((length_term xs,-1) :: t), -1 - c)
        | None -> false) ->
     Some { obj = true; num = true; store = `Length; framed = no_frame; apart = false; cell_write = false }
+  (* `xs[k] = v` at any index: it may append or leave holes, within
+     `{value: any, store: grow}` (Lean's `IndexWrites.growOutput`). *)
+  | IndexWrite ({node=Id xs;_},k,rhs)
+    when heap_free env k && heap_free env rhs && slot_binding env xs && !source_elements env xs ->
+    Some { obj = true; num = true; store = `Grow; framed = no_frame; apart = false; cell_write = false }
   | Call ({node=Id f;_},None,args,[],_) when List.for_all (heap_free env) args ->
     if !call_element_write env f then Some { element_changes with framed = (fun b g -> slot_binding env b && !view_field env b g) }
     else Option.map (of_footprint env) (!call_footprint env f)

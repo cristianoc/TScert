@@ -505,6 +505,12 @@ gives that position's.
      {o[k] = v\ \text{within}\ \{\mathsf{value}{:}\,\mathsf{any},\ \mathsf{store}{:}\,\mathsf{grow}\}}\ \textsf{elem-write-slot}
 ```
 
+Each rule's footprint is also the node's frame condition for index facts: the
+node keeps every fact the change $`(\top,\top,\mathsf{grow})`$ keeps, the
+lower bounds of every length, the written array's included
+([index facts](#index-facts), `IndexWrites.growOutput`, proved:
+`ExpressionEffects.writeStep_grow`).
+
 The producer proposes `{value: any, store: grow}` for an element write at a
 literal index or at a computed key every claim types as a number
 (`element_key`), and for a compound or logical assignment
@@ -691,9 +697,10 @@ signature within `{value: any, store: keep}` preserves every length, and a
 fact with a non-positive coefficient on each length it reads, its other
 terms kept, survives a call
 within `{value: any, store: grow}` (`Term.grownBy`, proved:
-`termValue_grown`); a field write, an element
-write below the length and a call changing only its receiver's own locations
-state their own change. The preservation rules and their proofs are
+`termValue_grown`), and so does such a fact across an element write, within
+that footprint at any index ([element writes](#element-writes)); a field
+write, an element write below the length and a call changing only its
+receiver's own locations state their own change. The preservation rules and their proofs are
 [frame conditions](PROGRAM-TYPING.md#frame-conditions).
 
 ## The rule users see
