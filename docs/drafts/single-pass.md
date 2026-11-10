@@ -74,7 +74,14 @@ A loop head is the target of a retreating edge of a depth-first walk from
 the start, handlers' edges included. A statement entry that is no loop head
 is an ordinary node: its state is its predecessor's, or the meet of its
 predecessors' at a merge; a written assertion there is an obligation on
-that state. At a merge, a linear bound every predecessor states of one form
+that state. A merge works on what differs between its predecessors: the
+first's store less each fact another lacks, found where the stores'
+persistent maps are not one object (`Store.diff`), and each predecessor's
+own differences at the merge's names; the rules below that query a
+predecessor's facts run over those differences alone, and the implications
+join runs where an edge carries an implication or a slot an edge's type
+differs at is a test some edge answers `false`. A name a predecessor
+renames that no slot of the merge holds leaves the store there. At a merge, a linear bound every predecessor states of one form
 under one condition is kept at the weakest of their bounds; a name a slot
 keeps that another slot's fresh name renames in some predecessor is stated
 equal to it there; a linear bound over the merge's names one predecessor
@@ -202,8 +209,10 @@ reading no heap), from the node's entry state.
   the node's names.
 - A request's checks over its whole certificate (its footprint,
   `GraphCode.compositionalCheckedResult`; its postcondition, `ensuresResult`;
-  its store regions) read every node's evidence: the pass does not make
-  them, and a unit stating one is not handled.
+  its store regions) read every node's evidence. Store regions
+  (`regionalChecked`) and qualified bodies are to be checked in the walk,
+  node by node as the footprint is, not through a certificate rebuilt from
+  it; until then a unit stating one is not handled.
 
 ## 7. Output and scope
 
