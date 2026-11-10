@@ -703,7 +703,7 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
   -- The loop heads: each target of a retreating edge of a depth-first walk
   -- from the start (handlers' edges included), and the start. A statement
   -- entry that is no loop head is an ordinary node.
-  let loopHeads : Array Bool := Id.run do
+  let (loopHeads, reached) : Array Bool × Array Bool := Id.run do
     let mut heads : Array Bool := Array.replicate n false
     let mut state : Array Nat := Array.replicate n 0   -- 0 new, 1 on the stack, 2 done
     let mut stack : List (Nat × List Nat) := []
@@ -725,7 +725,7 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
             stack := (w, (successors nodes[w]!.continuation ++ nodes[w]!.handler.toList).map (·.label)) :: stack
           | 1 => heads := heads.set! w true
           | _ => pure ()
-    return heads
+    return (heads, state.map (· != 0))
   let _ := cuts
   let isHead : Array Bool := if start < n then loopHeads.set! start true else loopHeads
   let stated := byLabel n assertions
@@ -735,11 +735,13 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
     let sg : Array (Option Nat) := Array.replicate n none
     trace := Trace.mk e e ms sg isHead start 0 none [] [] []
   let supplied := byLabel n candidates
-  -- In-degrees without the edges into cuts.
+  -- In-degrees without the edges into cuts, of the edges from nodes the
+  -- start reaches: a node no path from the start reaches never runs.
   let mut indeg : Array Nat := Array.replicate n 0
-  for node in nodes do
-    for t in successors node.continuation ++ node.handler.toList do
-      if t.label < n && !isHead[t.label]! then indeg := indeg.modify t.label (· + 1)
+  for (node, l) in nodes.zipIdx do
+    if reached[l]! then
+      for t in successors node.continuation ++ node.handler.toList do
+        if t.label < n && !isHead[t.label]! then indeg := indeg.modify t.label (· + 1)
   let merging : Array Bool := indeg.map (· > 1)
   let mut fresh := 0
   -- Under a footprint bound, the region from which no normal return is
@@ -782,7 +784,7 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
         givenClaims := counts.givenClaims + claimsFacts.length }
       given := given.set! l (some { written with indices := written.indices ++ claimsFacts })
   for l in List.range n do
-    if indeg[l]! == 0 && (isHead[l]! || l == start) then queue := queue ++ [l]
+    if reached[l]! && indeg[l]! == 0 && (isHead[l]! || l == start) then queue := queue ++ [l]
   let mut visitedAll := 0
   -- The start's names, fixed before any node is visited (a cut may be
   -- visited before it), and the name of the input a promise goal is about.
@@ -905,8 +907,11 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
         -- store separation; kept where every edge's knowledge entails it.
         let tagged := timedKind "meet tagged" fun _ =>
           let tags : List HeapKnowledge.GuardTag := [.null, .undef]
-          let nullish := (List.range width).flatMap fun z => (tags.filter fun g =>
-            projections.any fun (o : Knowledge) => HeapKnowledge.guardTags o z [] g).map (z, ·)
+          -- The slots some predecessor states a value of in each tag: a value
+          -- fact's slot and its aliases (`guardTags`).
+          let nullish := ((projections.flatMap fun (o : Knowledge) => o.values.flatMap fun f =>
+            (tags.filter fun g => HeapKnowledge.guardTags o f.slot [] g).flatMap fun g =>
+              (HeapLinks.aliases o.links f.slot).map (·, g))).eraseDups
           if nullish.isEmpty then [] else
           let candidates := (projections.flatMap fun (p : Knowledge) => p.indices.flatMap fun a =>
             if a.cond.isSome then [] else match a.fact with
@@ -1514,7 +1519,8 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
           incomingEdges := incomingEdges.modify t.label ((Γe, atSlots, t.mapping) :: ·)
         indeg := indeg.modify t.label (· - 1)
         if indeg[t.label]! == 0 then queue := t.label :: queue
-  if visitedAll < n then return (.notHandled s!"{n - visitedAll} nodes not reached", counts, answers, trace)
+  let reachable := (reached.toList.filter id).length
+  if visitedAll < reachable then return (.notHandled s!"{reachable - visitedAll} nodes not reached", counts, answers, trace)
   return (.accepted, counts, answers, trace)
 
 
