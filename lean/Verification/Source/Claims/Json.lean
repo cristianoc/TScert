@@ -496,6 +496,51 @@ def filePlans (ast claims : Json) (fileKey : String) (budget : PositiveCertifica
   let plans := SinglePass.timedKind "lower: plans over the store" fun _ => plans.map fun e => e.bind (FunctionPlan.over F)
   return ⟨p, fr, F, plans⟩
 
+/-- A function's claims with only what another unit reads of them: its
+identity, signature, footprints and on-throw flag, its point claims and
+storage contracts left empty. -/
+def signatureClaims (f : Json) : Json :=
+  let f := (f.setObjVal! "entries" (Json.arr #[])).setObjVal! "expressions" (Json.arr #[])
+  let f := f.setObjVal! "contracts" (Json.arr #[])
+  if (f.getObjVal? "arrows").isOk then f.setObjVal! "arrows" (Json.arr #[]) else f
+
+/-- A claims document whose functions outside `keep` (by name and name
+position) hold their signature claims alone (`signatureClaims`). -/
+def keepClaims (claims : Json) (keep : String → Span → Bool) : Json :=
+  match claims.getObjVal? "functions" with
+  | .ok (.arr fs) => claims.setObjVal! "functions" (Json.arr (fs.map fun f =>
+      match (f.getObjValAs? String "name").toOption, (f.getObjValAs? Span "namePos").toOption with
+      | some n, some p => if keep n p then f else signatureClaims f
+      | _, _ => f))
+  | _ => claims
+
+/-- **A selected unit's plans**: `filePlans` over what the selected units'
+groups read. The groups are read off a front of the file whose functions'
+claims are their signatures alone; the import plan holds the qualified reads
+whose names the groups' code mentions (`planImports` with `uses`); the front
+holds the groups' functions' claims whole and every other function's
+signature claims. A refusal of a read or a claim no group reads is no
+refusal of the selected units. -/
+def unitPlans (ast claims : Json) (fileKey : String) (budget : PositiveCertificates.SearchBudget)
+    (names : Option (List String)) : Except String FilePlans := do
+  let bare := (claims.setObjVal! "modules" (Json.arr #[])).setObjVal! "functions"
+    (Json.arr ((claims.getObjValAs? (Array Json) "functions").toOption.getD #[] |>.map signatureClaims))
+  let outline ← SinglePass.timedKind "lower: groups" fun _ =>
+    fileFront (ast.setObjVal! "modules" (Json.arr #[])) bare fileKey budget
+  let wanted := (outline.selected names).flatMap outline.group
+  let mentioned : Std.HashSet String := (wanted.flatMap outline.mentions).foldl (·.insert ·) {}
+  let members : List (String × Span) := wanted.filterMap fun i => match outline.units[i]? with
+    | some (f, _, none) => some (f.name, f.namePos)
+    | _ => none
+  let p ← SinglePass.timedKind "lower: planImports" fun _ => planImports ast claims (some mentioned.contains)
+  let fr ← SinglePass.timedKind "lower: fileFront" fun _ =>
+    fileFront p.ast (keepClaims p.claims fun n pos => members.contains (n, pos)) fileKey budget p.qualified
+  let (T, plans) := SinglePass.timedKind "lower: extractAll" fun _ =>
+    fr.extractSome (wanted.foldl (·.insert ·) {})
+  let F ← SinglePass.timedKind "lower: freeze" fun _ => EquationStore.freeze T
+  let plans := SinglePass.timedKind "lower: plans over the store" fun _ => plans.map fun e => e.bind (FunctionPlan.over F)
+  return ⟨p, fr, F, plans⟩
+
 /-- The plans of a group, by its members' indices, crossing the exhaustive
 certification boundary. -/
 def FilePlans.certified (f : FilePlans) (group : List Nat) :

@@ -209,13 +209,22 @@ private abbrev ModuleCode := Std.HashMap String (Thunk (Except String (List Frag
 private def ModuleCode.of (fragmentModules : List Fragment.ModuleAst) : ModuleCode :=
   fragmentModules.foldl (init := {}) fun m mod => m.insertIfNew mod.location (Thunk.mk fun _ => decodeCode mod)
 
+/-- The imported value a qualified read names, among a document's `values`. -/
+private def importedValue (values : List Json) (q : Json) : Option Json :=
+  values.find? fun v => (v.getObjVal? "declaration").toOption == some q
+
+/-- The importer's local name of the value a qualified read names. -/
+private def readLocalName (values : List Json) (q : Json) : Option String := do
+  let v ← importedValue values q
+  (do (← v.getObjVal? "binding").getObjValAs? String "local").toOption
+
 /-- One qualified read: the importer's binding of it, and its unit's
 footprint and on-throw flag, where the read names an eligible unit of its
 origin whose two signature readings agree. -/
 private def qualifiedRead (importer : Reading) (values : List Json) (fragmentModules : List Fragment.ModuleAst)
     (code : ModuleCode) (claimModules : List Json) (q : Json) (location name : String) (span : Span) :
     Except String (String × Footprints.Closed × Bool × Footprints.Closed) := do
-  let some v := values.find? fun v => (v.getObjVal? "declaration").toOption == some q
+  let some v := importedValue values q
     | throw s!"a qualified read names no imported value: {q.compress}"
   let binding ← jField v "binding"
   let localName ← jStr (← jField binding "local")
@@ -334,8 +343,12 @@ The documents planned are the importer's and, recursively, each module's a
 planned read names; the qualified-dependency graph among the modules is
 acyclic. Each planned module runs restricted to the read closure of the
 units read qualified of it, its top-level code kept, at its own qualified
-reads. -/
-def planImports (ast claims : Json) : Except String ImportPlan := do
+reads.
+
+With `uses`, the plan of one unit's group: the importer's reads whose local
+name `uses` holds, and the modules they name, each restricted to the read
+closure of its units read, without its own reads planned. -/
+def planImports (ast claims : Json) (uses : Option (String → Bool) := none) : Except String ImportPlan := do
   let fragmentModules ← (← jArr ast "modules").mapM Fragment.decodeModule
   let locations := fragmentModules.map (·.location)
   if locations.eraseDups.length != locations.length then throw "a module is listed twice"
@@ -353,13 +366,23 @@ def planImports (ast claims : Json) : Except String ImportPlan := do
     | some c => pure c
     | none => throw s!"a module without claims: {location}"
   let code := ModuleCode.of fragmentModules
-  let (qualified, importerUnits) ← planReads (← jField ast "declarations") claims fragmentModules code claimModules
+  let declarations ← jField ast "declarations"
+  let readClaims ← match uses with
+    | none => pure claims
+    | some uses => do
+      let values ← jArr declarations "values"
+      let reads := (← jArr claims "qualified").filter fun q => (readLocalName values q).any uses
+      pure (claims.setObjVal! "qualified" (Json.arr reads.toArray))
+  let (qualified, importerUnits) ← planReads declarations readClaims fragmentModules code claimModules
   -- The modules a planned read names, each planned once, its reads in turn.
   let mut units := importerUnits
   let mut planned : List (String × List (String × Footprints.Closed × Bool × Footprints.Closed)) := []
   let mut edges : List (String × String) := []
   for _ in [0:fragmentModules.length + 1] do
     let some location := (units.map (·.1)).find? fun l => !(planned.map (·.1)).contains l | break
+    if uses.isSome then
+      planned := planned ++ [(location, [])]
+      continue
     let some m := fragmentModules.find? (·.location == location)
       | throw s!"a qualified read names a module the fragment does not list: {location}"
     let (reads, more) ← (planReads (← jField m.document "declarations") (← claimsOf location)
