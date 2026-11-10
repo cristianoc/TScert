@@ -60,7 +60,11 @@ async function compare(test: Case): Promise<Comparison[]> {
     test.typescriptErrors, undefined, true);
   // A certified import's module run is checked apart (`--check-module`).
   const units = (outcome.units ?? []).filter((u) => !u.unit.startsWith("module:"));
-  if (units.length === 0) return [];
+  // A file whose pipeline check did not finish (a stage's timeout) gives no
+  // units: counted as one unfinished entry rather than dropped.
+  if (units.length === 0) return outcome.status === "error"
+    ? [{ file: test.file, unit: "(file)", pipeline: "unfinished", pass: "missing", agree: false, notHandled: null, why: "" }]
+    : [];
   const key = fileKey(outcome.artifacts);
   if (key === null) return [];
   const givenDir = process.env.TSCERT_GIVEN_DIR;
