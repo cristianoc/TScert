@@ -80,18 +80,42 @@ def compactGraph (c : Compaction) (program : List Node) (claims : List (PointCla
   let C := claims.toArray
   let pinned : Std.HashSet Nat := ((entry :: cuts) ++ assertions.map (·.1) ++ candidates.map (·.1)).foldl
     (·.insert ·) {}
-  -- Each edge resolved past left-out nodes, at most as many as there are nodes.
-  let resolve := fun (t : Target) => Id.run do
-    let mut cur := t
-    for _ in [0:P.size] do
-      match passOn P C c pinned cur.label with
-      | some (next, compose) => cur := ⟨next.label, compose cur.mapping⟩
-      | none => break
-    return cur
-  let gone : Array Bool := (Array.range P.size).map fun l => (passOn P C c pinned l).isSome
-  -- A left-out node on a cycle of left-out nodes stays (every cycle passes a
-  -- statement entry, which stays): resolving it would not end.
-  let gone := (Array.range P.size).map fun l => gone[l]! && !gone.getD (resolve ⟨l, none⟩).label false
+  -- For each left-out node, where its edge ends past left-out nodes, and the
+  -- slot of the node's context each slot there reads: computed once each.
+  let mut final : Array (Option (Nat × Array Nat)) := Array.replicate P.size none
+  let mut gone : Array Bool := Array.replicate P.size false
+  for l0 in [0:P.size] do
+    if (passOn P C c pinned l0).isNone || (final[l0]!).isSome then continue
+    -- The chain of left-out nodes from `l0`, at most as many as there are nodes.
+    let mut chain : Array (Nat × Array Nat) := #[]
+    let mut cur := l0
+    let mut endsAt : Option (Nat × Array Nat) := none
+    for _ in [0:P.size + 1] do
+      match final[cur]! with
+      | some r => endsAt := some r; break
+      | none =>
+        match passOn P C c pinned cur with
+        | some (t, compose) =>
+          if chain.any (·.1 == cur) then break
+          chain := chain.push (cur, ((compose none).getD []).toArray)
+          cur := t.label
+        | none => endsAt := some (cur, #[]); break
+    match endsAt with
+    | none => pure ()  -- a cycle of left-out nodes: they stay
+    | some (f, M0) =>
+      -- `M0` is empty where the chain ends at a kept node: its slots read
+      -- the last left-out node's directly.
+      let mut acc : Option (Array Nat) := if M0.isEmpty && (final[cur]!).isNone then none else some M0
+      for (l, A) in chain.reverse do
+        let M := match acc with
+          | none => A
+          | some M => M.map fun j => A.getD j 0
+        final := final.set! l (some (f, M))
+        gone := gone.set! l true
+        acc := some M
+  let resolve := fun (t : Target) => match final[t.label]?.join with
+    | some (f, M) => let a1 := t.mapping.map List.toArray; (⟨f, some (M.toList.map fun j => through a1 j)⟩ : Target)
+    | none => t
   let mut newLabel : Array Nat := Array.mkEmpty P.size
   let mut count := 0
   for l in [0:P.size] do
