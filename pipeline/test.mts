@@ -10369,7 +10369,7 @@ function assertSliceSearches(records: readonly AttemptRecord[], artifacts: strin
  * stand-in script audited with the programs it runs (`script`). */
 type ReuseRun = { outcome: Outcome; records: AttemptRecord[] };
 function reuseRun(store: string, source: string, options: { reuse: boolean; project?: string;
-    program?: { path: string; script: readonly string[] | null } }): ReuseRun {
+    program?: { path: string; script: readonly string[] | null }; limit?: string; memory?: string }): ReuseRun {
   const root = runDirectory("tscert-reuse-root-");
   const module = (path: string): string => JSON.stringify(pathToFileURL(path).href);
   const program = options.program;
@@ -10385,7 +10385,9 @@ process.stdout.write(JSON.stringify(check(${JSON.stringify(source)}, project ===
   const driverPath = join(root, "driver.mts");
   writeFileSync(driverPath, driver);
   const ran = spawnSync(process.execPath, [driverPath], { encoding: "utf8", timeout: 240_000, env: { ...process.env,
-    TSCERT_STAGE_STORE: store, TSCERT_RUN_ROOT: root, ...(options.reuse ? { TSCERT_EVIDENCE_REUSE: "1" } : {}),
+    TSCERT_STAGE_STORE: store, TSCERT_RUN_ROOT: root,
+    ...(options.limit === undefined ? {} : { TSCERT_STEP_LIMIT: options.limit }),
+    ...(options.memory === undefined ? {} : { TSCERT_STAGE_MEMORY: options.memory }), ...(options.reuse ? { TSCERT_EVIDENCE_REUSE: "1" } : {}),
     ...(program === undefined ? {} : { VERIFIER: program.path }) } });
   assert.equal(ran.status, 0, ran.stderr);
   const outcome = readOutcome(JSON.parse(ran.stdout.slice(ran.stdout.indexOf("{"))));
@@ -10589,6 +10591,108 @@ if [ "$1" = "--check-units" ] && grep -q 'a marker of reused evidence' "$5"; the
     "every reused unit searched again");
   assert.equal(run.records.filter((a) => a.stage === "check").length, 2, "the failed check, then one with no reused evidence");
   process.stdout.write("evidence reuse after a whole-check failure: every reused unit searched again, then one check\n");
+});
+
+for (const failure of ["timeout", "memory"]) control(async (): Promise<void> => {
+  const store = runDirectory(`tscert-reuse-${failure}-`);
+  const source = join(here, "examples", "arrays.ts");
+  const cold = reuseRun(store, source, { reuse: true });
+  const searches = searchAttempts(cold);
+  const target = must(searches[0], "a search");
+  proposeAsAnother(store, target, eachLine((unit) => `{"stale":"reuse limit marker","unit":${unit}}`));
+  const script = join(runDirectory("tscert-reuse-limit-"), "verifier.sh");
+  const action = failure === "timeout" ? "exec /bin/sleep 20" :
+    `exec ${JSON.stringify(process.execPath)} -e 'const b = Buffer.alloc(1024 * 1024 * 1024, 1); setInterval(() => b[0], 1000)'`;
+  writeFileSync(script, `#!/bin/sh
+if [ "$1" = "--check-units" ] && /usr/bin/grep -q 'reuse limit marker' "$5"; then
+  ${action}
+fi
+exec ${JSON.stringify(verifier)} "$@"
+`);
+  chmodSync(script, 0o755);
+  const run = reuseRun(store, source, { reuse: true, limit: "5", memory: "0.5",
+    program: { path: script, script: [verifier, "/usr/bin/grep", failure === "timeout" ? "/bin/sleep" : process.execPath] } });
+  assert.deepEqual(outcomeShape(run.outcome), outcomeShape(cold.outcome), "the searched outcome");
+  assert.equal(run.outcome.reused, 0);
+  for (const r of searches) assert.deepEqual(searchAttempts(run).filter((a) =>
+    proposalKey(a.stage, a.manifest) === proposalKey(r.stage, r.manifest)).map((a) => a.execution),
+  ["reused", "executed"], "every reused unit searched again");
+  const checks = run.records.filter((a) => a.stage === "check");
+  assert.equal(checks.length, 2);
+  const limited = must(checks[0], "the limited check");
+  assert.equal(limited.execution, failure === "timeout" ? "timed-out" : "failed");
+  if (failure === "memory") assert.ok("peakBytes" in limited.cpu &&
+    limited.cpu.peakBytes !== null && limited.cpu.peakBytes > 0.5 * 2 ** 30, "the runner observes the memory limit");
+  process.stdout.write(`evidence reuse after ${failure}: every reused unit searched and checked again\n`);
+});
+
+control(async (): Promise<void> => {
+  const store = runDirectory("tscert-reuse-duplicate-line-");
+  const source = join(here, "examples", "arrays.ts");
+  const cold = reuseRun(store, source, { reuse: true });
+  const target = must(searchAttempts(cold)[0], "a search");
+  proposeAsAnother(store, target, (evidence) => {
+    const line = jsonObject(jsonValue(JSON.parse(evidence.trim())));
+    const bundle = jsonObject(line.evidence);
+    const proofs = jsonArray(bundle.proofs);
+    assert.ok(proofs.length > 0, "the duplicate carries claims to invalidate");
+    for (const proof of proofs) jsonObject(jsonObject(proof).claim).type = 0;
+    return evidence.trim() + "\n" + JSON.stringify(line) + "\n";
+  });
+  const run = reuseRun(store, source, { reuse: true });
+  assert.deepEqual(outcomeShape(run.outcome), outcomeShape(cold.outcome), "the searched verdict is reported");
+  assert.deepEqual(executionsOf(run, target.key), ["reused", "executed"]);
+  assert.equal(run.records.filter((r) => r.stage === "check").length, 1, "duplicate proposal is a miss before checking");
+  process.stdout.write("evidence reuse: duplicate evidence lines trigger search\n");
+});
+
+for (const mode of ["duplicate", "missing", "mixed", "third-check"]) control(async (): Promise<void> => {
+  const store = runDirectory(`tscert-reuse-verdict-${mode}-`);
+  const source = join(here, "examples", "arrays.ts");
+  const cold = reuseRun(store, source, { reuse: true });
+  const [target, ...rest] = searchAttempts(cold);
+  if (target === undefined || rest.length === 0) throw Error("control: expected several searches");
+  // Whitespace identifies reused evidence without changing what it means.
+  for (const r of rest) proposeAsAnother(store, r, (e) => e.replace('{"', '{  "'));
+  proposeAsAnother(store, target, mode === "third-check"
+    ? eachLine((unit) => `{"stale":"first refusal","unit":${unit}}`) : (e) => e.replace('{"', '{  "'));
+  const script = join(runDirectory("tscert-reuse-verdict-"), "verifier.mjs");
+  writeFileSync(script, `#!${process.execPath}
+import { spawnSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
+const args = process.argv.slice(2);
+const result = spawnSync(${JSON.stringify(verifier)}, args, { encoding: 'utf8' });
+let out = result.stdout;
+if (args[0] === '--check-units') {
+  const evidence = readFileSync(args[4], 'utf8');
+  if (evidence.includes('{  "') && !evidence.includes('first refusal')) {
+    const lines = out.split('\\n');
+    const reused = JSON.parse(evidence.split('\\n').find(l => l.includes('{  "'))).unit;
+    const at = lines.findIndex(l => l.startsWith('{') && JSON.parse(l).unit === reused);
+    const original = lines[at];
+    const verdict = JSON.parse(original);
+    const refused = JSON.stringify({ unit: verdict.unit, members: verdict.members, refusal: 'injected reused verdict refusal' });
+    if (${JSON.stringify(mode)} === 'missing') lines.splice(at, 1);
+    else if (${JSON.stringify(mode)} === 'duplicate') lines.splice(at, 0, original);
+    else if (${JSON.stringify(mode)} === 'mixed') lines.splice(at + 1, 0, refused);
+    else lines[at] = refused;
+    out = lines.join('\\n');
+  }
+}
+process.stdout.write(out);
+process.stderr.write(result.stderr);
+process.exit(result.status ?? 3);
+`);
+  chmodSync(script, 0o755);
+  const run = reuseRun(store, source, { reuse: true, program: { path: script, script: [verifier, process.execPath] } });
+  assert.deepEqual(outcomeShape(run.outcome), outcomeShape(cold.outcome), "the searched outcome");
+  assert.equal(run.outcome.reused, 0);
+  assert.equal(run.records.filter((r) => r.stage === "check").length, mode === "third-check" ? 3 : 2,
+    "the documented check bound");
+  for (const r of [target, ...rest]) assert.deepEqual(searchAttempts(run).filter((a) =>
+    proposalKey(a.stage, a.manifest) === proposalKey(r.stage, r.manifest)).map((a) => a.execution),
+  ["reused", "executed"], "every reused unit searched once");
+  process.stdout.write(`evidence reuse ${mode}: complete searched verdicts within the check bound\n`);
 });
 
 control(async (): Promise<void> => {

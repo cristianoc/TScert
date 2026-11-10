@@ -899,9 +899,15 @@ replaced.
   reuses.
 - *Fallback.* The pipeline uses a reused result only where it is a
   complete success: exit 0, no `refused:` line, and every evidence line
-  naming its unit and relocating to the document's symbols. Any other is a
+  naming its unit and relocating to the document's symbols, with exactly one
+  line per unit. Any other is a
   miss, and the unit is searched with reuse off; the candidate raises no
-  tool failure. Where the file's check refuses units whose evidence was
+  tool failure. A check has exactly one verdict for every requested unit,
+  naming exactly that unit's members; a reused unit counts as accepted only
+  when its complete verdict accepts. Missing, duplicated or unexpected
+  verdicts fail the check as a whole; mixed acceptance and refusal for a
+  unit therefore triggers fallback too. A module check has exactly one
+  verdict naming its requested module. Where the file's check refuses units whose evidence was
   reused, those units are searched with reuse off and the check runs
   again; a later refusal of a reused unit, or a check with a reused line
   that fails as a whole (a refusal with no verdicts, a timeout, a memory
