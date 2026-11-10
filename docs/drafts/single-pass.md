@@ -264,6 +264,42 @@ turn), or a loop head's given invariant. `dev/single-pass-state.mts` runs
 it over a kept pipeline run and prints these over source names, with the
 bindings' types.
 
+### Counts
+
+`TSCERT_COUNTS` prints, per member, the pass's counts as a JSON line
+(`counts: <name> {…}`): the graph's nodes and edges, the nodes reached and
+visited, rule applications and those reading the whole store, entailment
+queries and the facts they read, merges and the facts their predecessors
+state that the met store lacks, the facts per state (sum and largest), the
+facts given at loop heads (written, from the claims, supplied); and once per
+process the bytes of the files read (`counts-read:`).
+
+### The performance gate
+
+`node dev/perf-gate.mts <pretext checkout at ba09794f>` runs the pass over a
+fixed set of units: pretext's `measureAnalysis`, `prepareRichInline` and
+`buildEngineProfile`, and ten pipeline case units of different shapes. Each
+unit's fragment and claims are captured through the pipeline, its given facts
+written by `--verify-units 6`, and the pass run three times. Each unit is
+compared with `dev/perf-baseline.json`:
+
+- its verdict equals the baseline's;
+- each count is at most the baseline's, and the nodes visited equal the nodes
+  reached;
+- the CPU time of the verifier process (user and system, the best of three)
+  is at most the baseline's by the baseline's `tolerance` (a fraction, 0.3)
+  or its `slackMs` (20), whichever is larger. Wall time is printed, not
+  compared.
+
+The gate prints one table, each value beside its baseline, and exits 1
+naming each regression. The counts do not depend on the machine's load and
+are the gate's primary measure. The baseline changes only by
+`node dev/perf-gate.mts <checkout> --update`, which writes the measured
+values; a lower count or time is kept by that command, run on purpose. The
+correctness half is `dev/single-pass-agreement.mts`, which exits 0 exactly
+when no unit disagrees with the pipeline, none is not handled and every case
+ran; a unit whose pipeline check did not finish is counted apart.
+
 ## 8. What the pass reads from the claims document
 
 Measured 2026-11-10 on the lowered graphs with no-op nodes left out

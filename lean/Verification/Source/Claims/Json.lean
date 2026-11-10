@@ -853,11 +853,15 @@ def FilePlans.givenLines (f : FilePlans) (fuel : Nat) (group : List Nat) : List 
     pure (Json.mkObj ([("unit", Lean.toJson (f.fr.unitId i)), ("name", Lean.toJson name),
       ("graph", main.toJson), ("codes", Json.arr codes)] ++ regional ++ fallback))
 
+/-- A member's counts, and where asked (`counting`) also as a JSON line. -/
+def countsLine (counting : Bool) (name : String) (c : SinglePass.Counts) : String :=
+  if counting then s!"{c}\ncounts: {name} {c.json}" else toString c
+
 /-- The single forward pass over each member of a group (`SinglePass.run`),
 no certificate built: per member its outcome and counts; the group's
 verdict, the first member's refusal or construct not handled. -/
 def FilePlans.passGroup (f : FilePlans) (fuel : Nat) (group : List Nat) (compare : Bool := false) (debugNode : Nat := 1000000000) (repeats : Nat := 1) (given : Option (Std.HashMap String Json) := none)
-    (observe : Option String := none) :
+    (observe : Option String := none) (counting : Bool := false) :
     List String × Except String (List String) := Id.run do
   let G : NormalGraph (EquationStore.CheckedLabel f.F.equations f.F.primitive) := StoreView.graph f.F.store
   let I : PositiveCertificates.InstanceImageCheck G := StoreView.images f.F.store
@@ -936,7 +940,7 @@ def FilePlans.passGroup (f : FilePlans) (fuel : Nat) (group : List Nat) (compare
           | .refused w => .refused w
           | .notHandled w => .notHandled w
           | .observed _ => .notHandled "observing a qualified body"
-        return (name, toString counts, o)
+        return (name, countsLine counting name counts, o)
       -- Each code request, in order, passed over its own graph with the codes
       -- admitted before it (`produceResponseUsing`'s loop, `codeCheckedResult`):
       -- its signature's conditions, its graph against its goal and frame, its
@@ -1094,7 +1098,7 @@ def FilePlans.passGroup (f : FilePlans) (fuel : Nat) (group : List Nat) (compare
             ("target", toJson x.target), ("type", toJson (p.shown x.type))]).toArray),
           ("preds", Json.arr (ob.preds.map fun (pl, k) => Json.mkObj (place pl ++ [("knowledge", toJson k)])).toArray)] ++ p.fields)
         return (name, "observation: " ++ record.compress, .notHandled "observed")
-      return (name, toString counts, o)
+      return (name, countsLine counting name counts, o)
     match outcome with
     | .ok (name, counts, o) =>
       lines := lines ++ [s!"{name}: {o}; {counts}"]
