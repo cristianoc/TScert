@@ -376,8 +376,15 @@ def verifyUnitsFile (astPath claimsPath fileKey : String) (fuel : Nat) (names : 
   let claims ← readJson claimsPath
   let tj ← IO.monoNanosNow
   -- The single pass (mode 3) reads what the selected units' groups read.
+  -- Mode 8's replaced parts, a debugging aid (`TSCERT_RETYPE`).
+  let parts := (← IO.getEnv "TSCERT_RETYPE").getD "xec"
   let planned ← IO.lazyPure fun _ => do
     if mode == 3 || mode == 7 then SourceClaimJson.unitPlans (← ast) (← claims) fileKey budget (selection names)
+    -- Mode 8: the single pass over the selected units' types computed by
+    -- the walk in place of their claims (`SourceClaimJson.retypeByWalk`).
+    else if mode == 8 then
+      SourceClaimJson.unitPlans (← ast) (← claims) fileKey budget (selection names)
+        (some (SourceClaimJson.retypeByWalk parts))
     else SourceClaimJson.filePlans (← ast) (← claims) fileKey budget
   let t1 ← IO.monoNanosNow
   let ms := fun (a b : Nat) => s!"{(b - a) / 1000000}"
@@ -399,7 +406,7 @@ def verifyUnitsFile (astPath claimsPath fileKey : String) (fuel : Nat) (names : 
           | some reason => .error reason
           | none => SourceClaimJson.unitVerdict f budget unit evidence
         | 1 => IO.lazyPure fun _ => f.verifyGroup fuel (f.fr.group i) false
-        | 3 => do
+        | 3 | 8 => do
           let p0 ← SinglePass.passNanos.get
           let compare := (← IO.getEnv "TSCERT_COMPARE").isSome
           let debugNode := ((← IO.getEnv "TSCERT_NODE").bind String.toNat?).getD 1000000000

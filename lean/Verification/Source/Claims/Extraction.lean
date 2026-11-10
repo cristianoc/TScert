@@ -301,9 +301,15 @@ def fileFront (ast claims : Json) (fileKey : String)
     SourceExtraction.ownedModuleCells init (all.map (·.1.body)) (← Fragment.decodeOmittedMentions ast),
     #[], #[]⟩
 
+/-- What replaces a unit's claims before its extraction, where one does:
+its claims with the types a computation gives (`Synthesis.retypeUnit`), over
+a grown store. -/
+abbrev Retype := Front → EquationStore.State → Fragment.Fn → SourceClaims.Function Tree →
+  List (SourceExtraction.ModuleValue Tree) → Except String (EquationStore.State × SourceClaims.Function Tree)
+
 /-- One unit's plan, extracted from the front over the store `T`. -/
 def extractMember (fr : Front) (T : EquationStore.State)
-    (u : Fragment.Fn × List Fragment.TypeParam × Option (Function Tree)) :
+    (u : Fragment.Fn × List Fragment.TypeParam × Option (Function Tree)) (retype : Option Retype := none) :
     Except String (EquationStore.State × FunctionPlan EquationStore.State Tree) := do
   let ⟨ast, d, functionJsons, init, generics, unitBinders, initBinders, classNames, freshConstructors,
     moduleFunctions, moduleConstants, classSelves, _, _, initOrder, moduleOwned, _, _⟩ := fr
@@ -466,7 +472,10 @@ def extractMember (fr : Front) (T : EquationStore.State)
         module := bindings
         c := claims
       | .error reason => throw reason
-    let request ← extractNormalizedFn d.types f c.normalized module (SourceExtraction.sourceClasses init) freshConstructors
+    let (types, claims) ← match retype with
+      | some r => r fr d.types f c.normalized module
+      | none => pure (d.types, c.normalized)
+    let request ← extractNormalizedFn types f claims module (SourceExtraction.sourceClasses init) freshConstructors
       moduleOwned
     return .graph f.name f.namePos { request with sourceScheme }
   -- A generic unit's graph extraction reports where it stops as a

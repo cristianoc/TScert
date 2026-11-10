@@ -466,11 +466,11 @@ def Front.extractAll (fr : Front) :
 
 /-- `extractAll` over the units `wanted` names, by index, only: another
 unit's plan is a refusal no check of the wanted units reads. -/
-def Front.extractSome (fr : Front) (wanted : Std.HashSet Nat) :
+def Front.extractSome (fr : Front) (wanted : Std.HashSet Nat) (retype : Option Retype := none) :
     EquationStore.State × List (Except String (FunctionPlan EquationStore.State Tree)) :=
   (fr.units.zipIdx.foldl (init := (fr.d.types, #[])) fun (T, plans) (u, i) =>
     if !wanted.contains i then (T, plans.push (.error "not extracted")) else
-    match extractMember fr T u with
+    match extractMember fr T u retype with
     | .ok (next, plan) => (next, plans.push (.ok plan))
     | .error reason => (T, plans.push (.error reason))).map id (·.toList)
 
@@ -526,7 +526,7 @@ holds the groups' functions' claims whole and every other function's
 signature claims. A refusal of a read or a claim no group reads is no
 refusal of the selected units. -/
 def unitPlans (ast claims : Json) (fileKey : String) (budget : PositiveCertificates.SearchBudget)
-    (names : Option (List String)) : Except String FilePlans := do
+    (names : Option (List String)) (retype : Option Retype := none) : Except String FilePlans := do
   let bare := (claims.setObjVal! "modules" (Json.arr #[])).setObjVal! "functions"
     (Json.arr ((claims.getObjValAs? (Array Json) "functions").toOption.getD #[] |>.map signatureClaims))
   let outline ← SinglePass.timedKind "lower: groups" fun _ =>
@@ -540,7 +540,7 @@ def unitPlans (ast claims : Json) (fileKey : String) (budget : PositiveCertifica
   let fr ← SinglePass.timedKind "lower: fileFront" fun _ =>
     fileFront p.ast (keepClaims p.claims fun n pos => members.contains (n, pos)) fileKey budget p.qualified
   let (T, plans) := SinglePass.timedKind "lower: extractAll" fun _ =>
-    fr.extractSome (wanted.foldl (·.insert ·) {})
+    fr.extractSome (wanted.foldl (·.insert ·) {}) retype
   let F ← SinglePass.timedKind "lower: freeze" fun _ => EquationStore.freeze T
   let plans := SinglePass.timedKind "lower: plans over the store" fun _ => plans.map fun e => e.bind (FunctionPlan.over F)
   return ⟨p, fr, F, plans⟩
