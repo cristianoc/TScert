@@ -1426,14 +1426,15 @@ read/value rule may succeed when ordinary derivation search cannot. -/
     (suggestions : List (Sequent ι)) (known : KnownIndex ι)
     (codes : CodeEntry ι → Bool := fun _ => false) (aliases : List (ι × ι) := [])
     (checker : HeapExpressionRules.Checker G images := HeapExpressionRules.Checker.ordinary G images)
-    (own? : Option (List (Ty ι)) := none) :
+    (own? : Option (List (Ty ι)) := none)
+    (admits? : Option (CallEffects.Effect → Tm → Bool) := none) :
     SearchM G (Option (Evidence ι) × HeapExpressionRules.StepEvidence ι × HeapKnowledge.Knowledge) := do
   -- A node's derivation is first sought among its own types: its claim and
   -- its context's, which are its operands' claims (or the types `own?`
   -- gives). The pool is consulted only where those leave a choice open. A
   -- construct signature stating a precondition is admitted where the step's
   -- knowledge establishes it.
-  let admits := fun (eff : CallEffects.Effect) (t : Tm) => PromiseCalls.preconditionHolds k eff t
+  let admits := admits?.getD fun (eff : CallEffects.Effect) (t : Tm) => PromiseCalls.preconditionHolds k eff t
   let own := own?.getD (j.type :: j.context).eraseDups
   let ordinary ← (SearchM.orElse (SearchM.lift (CheckResult.fromOption (known.find? j))) fun _ =>
     (expressionWithUsing G images own suggestions aliases admits fuel j.context j.term j.type).orElse fun _ =>

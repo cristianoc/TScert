@@ -464,6 +464,16 @@ def Front.extractAll (fr : Front) :
     | .ok (next, plan) => (next, plans ++ [.ok plan])
     | .error reason => (T, plans ++ [.error reason])
 
+/-- `extractAll` over the units `wanted` names, by index, only: another
+unit's plan is a refusal no check of the wanted units reads. -/
+def Front.extractSome (fr : Front) (wanted : Std.HashSet Nat) :
+    EquationStore.State × List (Except String (FunctionPlan EquationStore.State Tree)) :=
+  (fr.units.zipIdx.foldl (init := (fr.d.types, #[])) fun (T, plans) (u, i) =>
+    if !wanted.contains i then (T, plans.push (.error "not extracted")) else
+    match extractMember fr T u with
+    | .ok (next, plan) => (next, plans.push (.ok plan))
+    | .error reason => (T, plans.push (.error reason))).map id (·.toList)
+
 /-- A file's plans over one frozen store: the import plan, the front, the
 frozen store, and each unit's plan or refusal, in the front's order. -/
 structure FilePlans where
@@ -473,13 +483,18 @@ structure FilePlans where
   plans : List (Except String (FunctionPlan (EquationStore.Checked F.equations F.primitive)
     (EquationStore.CheckedLabel F.equations F.primitive)))
 
-def filePlans (ast claims : Json) (fileKey : String) (budget : PositiveCertificates.SearchBudget) :
+def filePlans (ast claims : Json) (fileKey : String) (budget : PositiveCertificates.SearchBudget)
+    (only : Option (Option (List String)) := none) :
     Except String FilePlans := do
-  let p ← planImports ast claims
-  let fr ← fileFront p.ast p.claims fileKey budget p.qualified
-  let (T, plans) := fr.extractAll
-  let F ← EquationStore.freeze T
-  return ⟨p, fr, F, plans.map fun e => e.bind (FunctionPlan.over F)⟩
+  -- Each phase's time is measured (`SinglePass.timedKind`).
+  let p ← SinglePass.timedKind "lower: planImports" fun _ => planImports ast claims
+  let fr ← SinglePass.timedKind "lower: fileFront" fun _ => fileFront p.ast p.claims fileKey budget p.qualified
+  let (T, plans) := SinglePass.timedKind "lower: extractAll" fun _ => match only with
+    | none => fr.extractAll
+    | some names => fr.extractSome (((fr.selected names).flatMap fr.group).foldl (·.insert ·) {})
+  let F ← SinglePass.timedKind "lower: freeze" fun _ => EquationStore.freeze T
+  let plans := SinglePass.timedKind "lower: plans over the store" fun _ => plans.map fun e => e.bind (FunctionPlan.over F)
+  return ⟨p, fr, F, plans⟩
 
 /-- The plans of a group, by its members' indices, crossing the exhaustive
 certification boundary. -/

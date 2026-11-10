@@ -370,10 +370,14 @@ def verifyUnitsFile (astPath claimsPath fileKey : String) (fuel : Nat) (names : 
   let t0 ← IO.monoNanosNow
   let ast ← readJson astPath
   let claims ← readJson claimsPath
-  let planned ← IO.lazyPure fun _ => do SourceClaimJson.filePlans (← ast) (← claims) fileKey budget
+  let tj ← IO.monoNanosNow
+  -- The single pass (mode 3) lowers only the selected units' groups.
+  let only := if mode == 3 then some (selection names) else none
+  let planned ← IO.lazyPure fun _ => do SourceClaimJson.filePlans (← ast) (← claims) fileKey budget only
   let t1 ← IO.monoNanosNow
   let ms := fun (a b : Nat) => s!"{(b - a) / 1000000}"
-  IO.eprintln s!"stamp: read+lower {ms t0 t1} ms"
+  let phases := (← SinglePass.kindNanos.get).toList.filter (·.1.startsWith "lower: ")
+  IO.eprintln s!"stamp: read+lower {ms t0 t1} ms: read JSON {ms t0 tj} ms, {", ".intercalate (phases.map fun (k, t, _) => s!"{k.drop 7} {t / 1000000} ms")}"
   match planned with
   | .error e => refuse e
   | .ok f =>

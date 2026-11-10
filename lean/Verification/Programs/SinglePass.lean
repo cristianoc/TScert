@@ -354,6 +354,44 @@ def Store.drop (s : Store) (D : List Nat) : Store := timedKind "drop" fun _ => I
     if a.names.all (!dset.contains ·) then s := s.add a
   return s
 
+/-- The index facts of `k` connected to the slots `seeds` through shared
+slots (alias links included), transitively: a linear entailment over the
+seeds' terms reads only these. -/
+def component (k : Knowledge) (seeds : List Nat) : Knowledge := Id.run do
+  if k.indices.isEmpty then return k
+  let mut seen : Std.HashSet Nat := {}
+  let mut frontier := seeds
+  for x in seeds do seen := seen.insert x
+  let mut kept : Array Bool := Array.replicate k.indices.length false
+  let arr := k.indices.toArray
+  let slotsOf := arr.map fun a => a.fact.slots ++ a.cond.toList
+  while !frontier.isEmpty do
+    let mut next := []
+    for x in frontier do
+      for g in k.links do
+        if g.alias && (g.cell == x || g.value == x) then
+          for y in [g.cell, g.value] do
+            if !seen.contains y then
+              seen := seen.insert y
+              next := y :: next
+    for i in List.range arr.size do
+      if !kept[i]! && slotsOf[i]!.any seen.contains then
+        kept := kept.set! i true
+        for y in slotsOf[i]! do
+          if !seen.contains y then
+            seen := seen.insert y
+            next := y :: next
+    frontier := next
+  return { k with indices := (arr.toList.zip kept.toList).filterMap fun (a, b) => if b then some a else none }
+
+/-- `PromiseCalls.preconditionHolds` over the index facts connected to the
+call's slots. -/
+def admitsNear (k : Knowledge) (eff : CallEffects.Effect) (t : Tm) : Bool := timedKind s!"admits pre {eff.pre.length} req {eff.requires.isSome}" fun _ =>
+  if eff.pre.isEmpty then PromiseCalls.preconditionHolds k eff t else
+  match PromiseCalls.callSlots t with
+  | some (_, slots) => PromiseCalls.preconditionHolds (component k slots) eff t
+  | none => PromiseCalls.preconditionHolds k eff t
+
 section
 variable {ι : Type} [DecidableEq ι] [Hashable ι] [Instantiates ι]
 
@@ -551,8 +589,24 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
       let own := (keepFirst {} (c.type :: ms.filterMap fun i => c.context[i]?)).2.toList
       let j : Sequent ι := ⟨c.context, node.expression, c.type⟩
       let kindKey := SinglePassStats.termKind node.expression
+      -- Each precondition the call's signatures state, decided once, where the
+      -- search first asks it (`admitsNear`).
+      let stated : List ((Option CallEffects.ElemPred × List HeapKnowledge.IndexFact) × Thunk Bool) :=
+        own.foldl (fun acc F => match PositiveRules.expand G F with
+          | [PositiveNormalization.Clause.arrs L _] | [PositiveNormalization.Clause.callable _ _ L _ _] => L.foldl (fun acc p =>
+              let key := (p.effect.requires, p.effect.pre)
+              if acc.any (·.1 == key) then acc
+              else acc ++ [(key, Thunk.mk fun _ => admitsNear kE p.effect node.expression)]) acc
+          | _ => acc) []
+      let admits := fun (eff : CallEffects.Effect) (t : Tm) =>
+        if t == node.expression then
+          match stated.find? (·.1 == (eff.requires, eff.pre)) with
+          | some (_, v) => v.get
+          | none => admitsNear kE eff t
+        else admitsNear kE eff t
       let (r, a) := timedKind (if kindKey == "invoke" then s!"invoke facts {(atomsOf k).length / 10 * 10}" else kindKey) fun _ =>
-        expressionEffectUsing G images pool fuel j kE suggestions index codes aliases checker (some own) answers
+        expressionEffectUsing G images pool fuel j kE suggestions index codes aliases checker (some own)
+          (some admits) answers
       answers := a
       counts := { counts with rules := counts.rules + 1 }
       let some (deriv, effect, out) := r.value | return (.refused s!"expression at node {l}: {(reprStr node.expression).take 300} with {(atomsOf k).length} facts {(reprStr k).take 1500}", counts, answers)
