@@ -1647,7 +1647,8 @@ where
     match Γ[i]? with
     | some A =>
       let sliced := BranchRefinement.tagSlice G A tag q
-      let decided := (pool.filter fun B => !B.isEmpty && BranchRefinement.tagMember G B tag q).foldl
+      -- Read only where the test's slice is the slot's whole type.
+      let decided := fun (_ : Unit) => (pool.filter fun B => !B.isEmpty && BranchRefinement.tagMember G B tag q).foldl
         (fun best B => match best with
           | some b => if B.length < b.length then some B else best
           | none => some B) none
@@ -1660,16 +1661,16 @@ where
       else
       -- A tag set the test splits: a claimed type holding the elements it
       -- leaves.
-      let decided := decided <|> (pool.filter fun B => !B.isEmpty &&
+      let decided := fun (_ : Unit) => decided () <|> (pool.filter fun B => !B.isEmpty &&
         BranchRefinement.setSlice G A B tag q).foldl (fun best B => match best with
           | some b => if B.length < b.length then some B else best
           | none => some B) none
       -- `unknown`'s kinds the test leaves: a claimed type holding them.
-      let decided := decided <|> (pool.filter fun B => !B.isEmpty &&
+      let decided := fun (_ : Unit) => decided () <|> (pool.filter fun B => !B.isEmpty &&
         BranchRefinement.sourceSlice G A B tag q).foldl (fun best B => match best with
           | some b => if B.length < b.length then some B else best
           | none => some B) none
-      match (if sliced != A then none else decided) with
+      match (if sliced != A then none else decided ()) with
       | some B => pure [{ conditional := true, target := i, type := B, evidence := some {} }]
       | none => do
         let r ← (subtypeUsing G images sliced sliced).toState
