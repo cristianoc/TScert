@@ -154,7 +154,12 @@ if (process.argv[2] === "--store-op") {
   else if (op === "observed") {
     const preKey = sha256(`pre ${rest[0]}`);
     evictable(store, "parse", rest[0]);
-    store.reference("parse", preKey, sha256(rest[0]));
+    store.reference("observed", "parse", preKey, sha256(rest[0]));
+  } else if (op === "proposed") {
+    // A search's entry referenced under a proposal key, in the proposed
+    // index.
+    evictable(store, "search", rest[0]);
+    store.reference("proposed", "search", sha256(`proposal ${rest[0]}`), sha256(rest[0]));
   } else if (op === "timeouts") {
     const [input, ...attempts] = rest;
     for (const attempt of attempts)
@@ -988,6 +993,36 @@ if (process.argv[3] === "keyed") {
   assert.deepEqual([pass?.evicted.entries, pass?.evicted.references], [1, 1]);
   assert.deepEqual(readdirSync(references), [], "the reference and its pre-key directory go with the entry");
   assert.deepEqual(readdirSync(join(store.root, "entries", "parse")), []);
+}
+{
+  // The proposed index is the observed one's mechanism under another root:
+  // its references go with their entry, a reference to an absent entry is
+  // removed, a store without a pass summary has them listed, and cleaning
+  // removes the root.
+  const store = new Store(join(dir, "evict-proposed"));
+  storeOp(store, "proposed", "kept input");
+  storeOp(store, "proposed", "evicted input");
+  storeOp(store, "observed", "observed beside it");
+  const proposed = join(store.root, "proposed", "search");
+  const preKey = (input: string): string => sha256(`proposal ${input}`);
+  assert.deepEqual(store.candidates("proposed", "search", preKey("kept input")), [sha256("kept input")]);
+  assert.deepEqual(store.candidates("observed", "search", preKey("kept input")), [], "the indexes are apart");
+  // An entry's own removal leaves its reference dangling; a pass removes it.
+  rmSync(join(store.root, "entries", "search", sha256("evicted input")), { recursive: true });
+  rmSync(join(store.root, "uses"), { recursive: true });
+  const listed = store.evictionPass(10 ** 12);
+  assert.ok(listed);
+  assert.deepEqual(readdirSync(proposed).sort(), [preKey("kept input")], "a reference to no entry present is removed");
+  assert.equal(listed.items, 2, "references are no items of their own");
+  const pass = store.evictionPass(0);
+  assert.deepEqual([pass?.evicted.entries, pass?.evicted.references], [2, 2]);
+  assert.deepEqual(readdirSync(proposed), [], "a proposed reference goes with its entry");
+  storeOp(store, "proposed", "cleaned input");
+  store.clean();
+  assert.ok(!existsSync(join(store.root, "proposed")) && !existsSync(join(store.root, "observed")),
+    "cleaning removes both indexes");
+  process.stdout.write("proposed references: candidates of their own index, removed with their entry, a dangling one " +
+    "by a pass, both indexes by a clean\n");
 }
 {
   const store = new Store(join(dir, "evict-snapshots"));
