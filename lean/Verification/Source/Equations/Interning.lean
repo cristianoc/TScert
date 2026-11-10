@@ -149,9 +149,36 @@ def unionOfArms (site : String) (U : Union) (meets : Bool) : M Union := do
     modify fun s => { s with meetChecks := s.meetChecks ++ [(U, site)] }
   return U
 
+/-- An object clause whose methods are its only statement of their keys: a
+key one operand states as a method and another as a field, a view or an
+optional field is a method of the object, which may hold it on its
+prototype, as a class instance holds its methods. The fields at a method's
+key are left out, so no reader takes the key for an own property; a call of
+the key is checked at the method's signatures. -/
+def methodKeysOnly (c : Clause α) : Clause α :=
+  let fields (ms : List (MethodMembers.Sig α)) (fs : List (PropKey × α)) : List (PropKey × α) :=
+    fs.filter fun f => !ms.any (·.key == f.1)
+  let operands (ms : List (MethodMembers.Sig α)) (bs : List (List (PropKey × α))) :
+      List (List (PropKey × α)) :=
+    (bs.map (fields ms)).filter (!·.isEmpty)
+  let optional (ms : List (MethodMembers.Sig α)) (os : List (OptionalField α)) : List (OptionalField α) :=
+    os.filter fun o => !ms.any (·.key == o.key)
+  match c with
+  | .refs a bs vs os ms ks st => .refs (fields ms a) (operands ms bs) (fields ms vs) (optional ms os) ms ks st
+  | .dict a bs vs ix os ms ks cs st =>
+    .dict (fields ms a) (operands ms bs) (fields ms vs) ix (optional ms os) ms ks cs st
+  | .callable a bs L S ms => .callable (fields ms a) (operands ms bs) L S ms
+  | c => c
+
+/-- The refusal of an intersection mentioning a type parameter whose operands
+state one key as a method and as a field. -/
+def methodFieldMeet : String :=
+  "an intersection mentioning a type parameter whose operands state a key both as a method and as a field is outside the fragment: the key is a method of the meet, which may sit on the prototype, and the meet is read at each instance as the model's, which owns the field"
+
 /-- Two operands' clauses as TypeScript meets them: the model's meet, except
 that a record of invariant fields met with a function type is the function
-carrying those fields, a `callable`. -/
+carrying those fields, a `callable`, and that a key one operand states as a
+method is a method of the meet (`methodKeysOnly`). -/
 def sourceMeetLists [BEq α] (A B : List (Clause α)) : Except String (List (Clause α)) := do
   let plainRecord (c : Clause α) : Bool := match c with
     | .refs .. => !c.presentKeys.contains CallArguments.arrayStoreField
@@ -165,7 +192,7 @@ def sourceMeetLists [BEq α] (A B : List (Clause α)) : Except String (List (Cla
     | .refs f fs [] [] [] [], .arrs L S | .arrs L S, .refs f fs [] [] [] [] => [.callable f fs L S]
     | .refs f fs [] [] [] [], .callable c cs L S | .callable c cs L S, .refs f fs [] [] [] [] =>
       [.callable (f ++ c) (fs ++ cs) L S]
-    | a, b => (PositiveNormalization.meet a b).filter Clause.consistent
+    | a, b => ((PositiveNormalization.meet a b).map methodKeysOnly).filter Clause.consistent
   let pairs := A.flatMap fun a => B.map fun b => (a, b)
   let met := pairs.flatMap fun (a, b) => pair a b
   if met.isEmpty && pairs.any (fun (a, b) => (plainRecord a && calls b) || (calls a && plainRecord b)) then

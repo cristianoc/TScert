@@ -4018,6 +4018,8 @@ export const cases: Case[] = [
   negative("invalid-spread-intersection-empty-arm-result", "a discarded empty arm supplies no field to the surviving union arm (run under Node)", /source expression obligation/),
   negative("invalid-spread-intersection-method", "a key one operand states as a method and another as a data field may sit on the prototype, which a spread does not copy: the copy does not state it (run under Node: the copy's `next`, `undefined`)",
     /The available claim for \{ \.\.\.c \} is \{ count: number, tag: string \}\. This return requires \{ next: \(\) => number, tag: string \}/),
+  negative("invalid-spread-intersection-method-generic", "a key one operand of an intersection mentioning a type parameter states as a method and another as a field is refused at the annotation: each instance is read as the model's meet, which would own it (run under Node: the copy's `get`, `undefined`)",
+    /an intersection mentioning a type parameter whose operands state a key both as a method and as a field is outside the fragment/),
   { file: "invalid-spread-intersection-disjoint-literals", area: "a key two operands state at types neither within the other: the meet, here empty, is no one field's, refused at the spread operand",
     kind: "negative", status: "unsupported", phase: "proposal", diagnostic: /a spread of an intersection states the key k in several operands, and the proposal heuristic finds no field covering every constraint at the required presence[\s\S]* at \[\d+,\d+\)$/ },
   { file: "invalid-spread-intersection-optional-narrowing", area: "a key one operand requires and another narrows by an optional field: the meet is no one field's, refused at the spread operand",
