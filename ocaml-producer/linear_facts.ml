@@ -887,6 +887,71 @@ let statement_changes ~facts ~bounds env (s : stmt) = match s.statement with
   | Return e -> object_changes env e
   | _ -> None
 
+(* `producer --explain`: the facts a statement's transfer drops, at the
+   statement's span, with what dropped them: the change the statement was
+   given, or the innermost expression the analysis gives no change
+   (`object_calls`'s `None`), past which only stable facts are proposed. A
+   display of the proposal: Lean decides each proposed fact on its own. Such
+   a run carries the dropped facts on (`kept_or_all`), so each later
+   statement that drops them is recorded too. *)
+let record_losses = ref false
+let losses : (string, Json.t * string * fact list) Hashtbl.t = Hashtbl.create 16
+let fact_text ((t,d) : fact) =
+  let term (n,c) = (if c = 1 then "" else if c = -1 then "-" else string_of_int c ^ "*") ^ n in
+  (if t = [] then "0" else String.concat " + " (List.map term t)) ^ " <= " ^ string_of_int d
+let form_name (e : expr) = match e.node with
+  | Call ({node=Id f;_},_,_,_,_) -> "the call of `" ^ f ^ "`"
+  | Call _ -> "a call of a computed callee"
+  | Invoke ({node=Read (_,Semantic.Name m);_},_,_,_) -> "the method call `." ^ m ^ "(…)`"
+  | Invoke _ -> "a method call"
+  | New ({node=Id c;_},_,_,_) -> "`new " ^ c ^ "(…)`"
+  | New _ -> "a construction"
+  | Write _ -> "a field write inside an expression"
+  | IndexWrite _ -> "an element write the facts do not bound"
+  | Update _ -> "an update of a field or element"
+  | Assign (x,_,_) -> "the assignment of `" ^ x ^ "`, a binding held in a cell"
+  | NullishAssign (x,_,_) -> "the logical assignment of `" ^ x ^ "`"
+  | LogicalAssign _ -> "a logical assignment"
+  | ArrayLiteral _ -> "an array literal with a spread"
+  | Index _ -> "an element read"
+  | Optional _ | WithObject _ -> "an optional chain"
+  | Apply _ | Bind _ -> "an `apply` or `bind`"
+  | ObjectAssign _ -> "`Object.assign`"
+  | ArrayAssign _ -> "a destructuring assignment"
+  | Build _ -> "a template or object construction"
+  | _ -> "an expression of a form the fact analysis gives no change"
+let rec blame env (e : expr) : expr option =
+  if object_calls env e <> None then None else
+  match List.find_map (blame env) (Source.children e) with Some b -> Some b | None -> Some e
+let change_text ch =
+  "a change of " ^ String.concat ", " (List.filter_map Fun.id [
+    (if ch.obj then Some "objects" else None); (if ch.num then Some "numbers" else None);
+    (match ch.store with `Keep -> None | `Length -> Some "stores (lengths kept)" | `Grow -> Some "stores (grown)"
+      | `Any -> Some "stores")])
+let kept_or_all before kept = if !record_losses then before else kept
+let record_loss env (span : Json.t) (exprs : expr list) (changes : changes option) (before : fact list) (after : fact list) =
+  if !record_losses then begin
+    let dropped = List.filter (fun f -> not (List.mem f after)) before in
+    if dropped <> [] then begin
+      let pos,why = match changes with
+        | Some ch -> span, change_text ch
+        | None ->
+          (match List.find_map (blame env) exprs with
+           | Some ({node=Call ({node=Id f;_},None,_,_,_);_} as e) ->
+             let name = function Semantic.Keep -> "keep" | Semantic.Init -> "init" | Semantic.Scalar -> "scalar"
+               | Semantic.Grow -> "grow" | Semantic.Any -> "any" in
+             e.pos, form_name e ^ (match !call_footprint env f with
+               | Some fp -> ", whose footprint {value: " ^ name fp.Semantic.on_value ^ ", store: " ^ name fp.Semantic.on_store
+                 ^ "} may shorten stores"
+               | None -> ", whose signatures state no closed footprint (a region's or a receiver's exception, or none)")
+           | Some e -> e.pos, form_name e ^ " has no change the fact analysis computes"
+           | None -> span, "a statement of a form the fact analysis gives no change") in
+      let key = Json.encode pos ^ why in
+      let old = match Hashtbl.find_opt losses key with Some (_,_,fs) -> fs | None -> [] in
+      Hashtbl.replace losses key (pos,why,List.sort_uniq compare (dropped @ old))
+    end
+  end
+
 (* The facts restated where a binding is declared at a path's read
    (`const b = p.f`): each fact naming a term of a path extending it restated
    of the binding, the path's prefix replaced by the binding's name, as Lean's
@@ -1274,9 +1339,13 @@ and statement_slots ~(array : string -> string list -> bool) ?(bounds=[]) ?(regi
     | Some sep -> List.filter (fun ((t,_) : fact) -> List.for_all (fun (n,_) -> stable_term env n ||
         (let b,path,kind = term_parts n in kind = Length_term && path = [] && sep b)) t) fs
     | None -> [] in
-  let fs = if statement_heap_free env s then fs else match statement_changes ~facts:fs ~bounds env s with
-    | Some ch -> List.filter (fun f -> fact_kept ch f || stable_fact env f) fs
-    | None -> keep_stable env fs in
+  let fs = if statement_heap_free env s then fs else
+    let changes = statement_changes ~facts:fs ~bounds env s in
+    let kept = match changes with
+      | Some ch -> List.filter (fun f -> fact_kept ch f || stable_fact env f) fs
+      | None -> keep_stable env fs in
+    record_loss env s.span (Source.statement_children s) changes fs (kept @ separated);
+    kept_or_all fs kept in
   let fs = List.sort_uniq compare (fs @ separated) @ appended in
   let fs = match written with
     | Some (p,(t,c)) ->
@@ -1505,9 +1574,13 @@ let rec declaration ~(array : string -> string list -> bool) env fs name (init :
   with_cells (updated != fs) @@ fun () ->
   let fs = updated in
   let fs = if heap_free env init then fs
-    else match object_changes env init with
-      | Some ch -> List.filter (fun f -> fact_kept ch f || stable_fact env f) fs
-      | None -> keep_stable env fs in
+    else
+      let changes = object_changes env init in
+      let kept = match changes with
+        | Some ch -> List.filter (fun f -> fact_kept ch f || stable_fact env f) fs
+        | None -> keep_stable env fs in
+      record_loss env init.pos [init] changes fs kept;
+      kept_or_all fs kept in
   let fs = forget name fs in
   (* `const x = f(…)` of a function stating a postcondition: each of
      its facts, of `x`. *)

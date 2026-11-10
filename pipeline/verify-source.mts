@@ -98,7 +98,10 @@ export type Outcome =
  * signatures (`initOmission` for its initialization), and the units to
  * search and check, by a member's function name (`initOmission` for the
  * initialization), or all. */
-export type UnitSelection = { omitted: string[]; select: string[] | null };
+export type UnitSelection = { omitted: string[]; select: string[] | null;
+  /** Whether each refused unit's result lists the facts its proposal drops
+   * (`UnitResult.losses`): one more producer run per refused unit. */
+  losses?: boolean };
 /** A unit member's name as a selection names it. */
 export const memberName = (member: string): string => member === "init" ? initOmission : member.replace(/@\d+$/, "");
 /** A unit's own result in a check of each unit: its identity and members as
@@ -111,6 +114,9 @@ export type UnitResult = {
   phase: "search" | "check";
   detail: string;
   depends: string[];
+  /** Where the unit's proposal drops facts and why (`producer --explain`),
+   * where the check was asked for them (`UnitSelection.losses`). */
+  losses?: Explanation[];
 };
 /** The fuel proof search is given. */
 const searchDepth = 12;
@@ -195,11 +201,16 @@ function namingTheObligation(detail: string, source: string): string {
   const [first, ...rest] = detail.split("\n");
   return [first, `obligation: ${summary}`, ...rest].join("\n");
 }
-/** One known cause of failure the producer met (`producer --explain`): a
- * form at a source span, and why no derivation of it is found. */
-interface Explanation {
+/** One observation of the producer's (`producer --explain`) at a source
+ * span, by `kind`: `form`, a form and why no derivation of it is found;
+ * `facts`, a statement or expression past which the proposal states none
+ * of `facts`, and what dropped them; `footprint`, an expression that makes
+ * the function's inferred footprint `store: any`. */
+export interface Explanation {
+  kind: "form" | "facts" | "footprint";
   pos: [number, number];
   reason: string;
+  facts: string[];
 }
 /** What `JSON.parse` gives: null, a Boolean, a number, a string, a fresh
  * array or a fresh plain object of such values. */
@@ -213,7 +224,7 @@ function isJsonRecord(value: Json): value is JsonRecord {
 }
 /** The producer's explanations (`producer --explain`), read field by field:
  * a run that exits otherwise than 0, or prints anything but an array of
- * `{pos, reason}` records, is a tool failure, never "no explanation". */
+ * `{kind, pos, reason, facts}` records, is a tool failure, never "no explanation". */
 function readExplanations(ran: StepRun): Explanation[] {
   const malformed = (what: string): Error =>
     Error(`tool failure: the producer's --explain ${what}: ${ran.detail.split("\n")[0] || "no output"}`);
@@ -226,13 +237,17 @@ function readExplanations(ran: StepRun): Explanation[] {
   }
   if (!isJsonArray(parsed)) throw malformed("printed no array of explanations");
   return parsed.map((e: Json): Explanation => {
-    if (!isJsonRecord(e) || Object.keys(e).sort().join() !== "pos,reason") throw malformed("printed a malformed explanation");
+    if (!isJsonRecord(e) || Object.keys(e).sort().join() !== "facts,kind,pos,reason") throw malformed("printed a malformed explanation");
     const reason = e["reason"];
+    const facts = e["facts"], kind = e["kind"];
+    if (!isJsonArray(facts) || !facts.every((f): f is string => typeof f === "string") ||
+        (kind !== "form" && kind !== "facts" && kind !== "footprint"))
+      throw malformed("printed a malformed explanation");
     const pos = e["pos"];
     const [start, end] = isJsonArray(pos) && pos.length === 2 ? pos : [];
     if (typeof reason !== "string" || typeof start !== "number" || typeof end !== "number")
       throw malformed("printed a malformed explanation");
-    return { pos: [start, end], reason };
+    return { kind, pos: [start, end], reason, facts: [...facts] };
   });
 }
 /** A search that found no derivation, or a quantified call it could not show
@@ -252,7 +267,7 @@ function refusedByName(detail: string, explain: () => Explanation[],
   const at = /at \[(\d+),(\d+)\)/.exec(detail);
   if (at) {
     const [start, end] = [Number(at[1]), Number(at[2])];
-    const meets = explain().filter((e) => e.pos[0] < Math.max(end, start + 1) && start < e.pos[1])
+    const meets = explain().filter((e) => e.kind === "form" && e.pos[0] < Math.max(end, start + 1) && start < e.pos[1])
       .sort((a, b) => (a.pos[1] - a.pos[0]) - (b.pos[1] - b.pos[0]));
     if (meets.length) return `reject: ${meets[0].reason}\n${detail}`;
   }
@@ -356,6 +371,8 @@ export class UnitProposal {
   private readonly facts: UnitFacts;
   private readonly slices = new Map<number, { slice: string; flow: string; deletions: [number, number][]; symbols: number[] }>();
   private settled = new Map<string, Interface>();
+  /** The qualified reads of the last proposal. */
+  private proposedAt: QualifiedRead[] = [];
   /** Each proposed unit's slice and claims, what its search reads. */
   private searchable = new Map<number, { slice: string; claims: string; qualified: string; deletions: [number, number][]; symbols: number[] }>();
   private qualified = "";
@@ -460,6 +477,7 @@ export class UnitProposal {
       this.searchable.set(i, { slice: files.slice, claims, qualified: searchQualified, deletions: files.deletions, symbols: files.symbols });
     }
     this.settled = interfaces;
+    this.proposedAt = qualified;
     this.qualified = `${this.prefix}search-qualified.json`;
     writeFileSync(this.qualified, JSON.stringify(qualified.map(({ local, footprint, onThrow, resultFootprint }) =>
       ({ name: local, footprint, onThrow, resultFootprint }))));
@@ -549,8 +567,8 @@ export class UnitProposal {
     if (typeof files === "string") return [];
     const reads = `${this.prefix}unit-${i}.explain.json`;
     // An explanation reads its neighbours at their settled footprints and
-    // flags, and every import at its ordinary signature.
-    writeFileSync(reads, this.reads(unit, this.settled, []));
+    // flags, and its imports as the last proposal read them.
+    writeFileSync(reads, this.reads(unit, this.settled, this.proposedAt));
     return readExplanations(this.run(producerCall(producerExecutable, ["--explain", files.slice, files.flow, reads]))).map((e) => ({ ...e, pos: [toDocument(files.deletions, e.pos[0]), toDocument(files.deletions, e.pos[1])] }));
   }
 }
@@ -997,6 +1015,9 @@ function checkUnowned(artifacts: string, source: string, tsconfigPath?: string, 
       }
       if ("front" in round)
         return { status: refusalStatus(round.front), artifacts, phase, detail: round.front, units: null };
+      if (units.losses) for (const u of round.results)
+        if (u.members[0] !== undefined && (units.select === null || u.members.some((m) => units.select?.includes(memberName(m)))))
+          u.losses = fileProposal.explain(u.members[0]).filter((e) => e.kind !== "form");
       const first = round.results.find((u) => u.status !== "verified");
       if (first === undefined)
         return { status: "verified", artifacts, phase: "check", functions, initialization, units: round.results };
@@ -1053,7 +1074,18 @@ function readUnitResults(value: unknown): UnitResult[] {
     if (typeof unit !== "string" || !members || !status || (phase !== "search" && phase !== "check") ||
         typeof detail !== "string" || !depends)
       throw Error("not an outcome: a unit result is malformed");
-    return { unit, members, status, phase, detail, depends };
+    const given = field(u, "losses");
+    if (given === undefined) return { unit, members, status, phase, detail, depends };
+    if (!Array.isArray(given)) throw Error("not an outcome: a unit result is malformed");
+    const losses = given.map((e: unknown): Explanation => {
+      const pos = field(e, "pos"), reason = field(e, "reason"), facts = strings(field(e, "facts")), kind = field(e, "kind");
+      const [start, end] = Array.isArray(pos) && pos.length === 2 ? pos : [];
+      if (typeof start !== "number" || typeof end !== "number" || typeof reason !== "string" || !facts ||
+          (kind !== "facts" && kind !== "footprint"))
+        throw Error("not an outcome: a unit result is malformed");
+      return { kind, pos: [start, end], reason, facts };
+    });
+    return { unit, members, status, phase, detail, depends, losses };
   });
 }
 /** What one check is asked: the arguments of `check`, as they cross to a worker. */
@@ -1073,7 +1105,8 @@ function readRequest(value: unknown): Request {
     Array.isArray(x) && x.every((u): u is string => typeof u === "string") ? x : null;
   const omitted = strings(field(given, "omitted")), select = field(given, "select");
   if (!omitted || !(select === null || strings(select))) throw Error("not a request");
-  const units: UnitSelection = { omitted, select: select === null ? null : strings(select) };
+  const units: UnitSelection = { omitted, select: select === null ? null : strings(select),
+    losses: field(given, "losses") === true };
   return { artifacts: value.artifacts, source: value.source, project, typescriptErrors: value.typescriptErrors, subtypeRounds,
     retainArtifacts: value.retainArtifacts, units };
 }

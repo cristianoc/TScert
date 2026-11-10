@@ -268,11 +268,23 @@ let main () =
   | [_;"--explain";file;flow_file;reads_file] ->
     let spec,qualified = unit_reads reads_file in
     let state = Proposal_diagnostics.create ~explaining:true () in
+    Linear_facts.record_losses := true;
+    let footprints = Hashtbl.create 16 in
+    Source.footprint_unbounded := (fun pos ->
+      Hashtbl.replace footprints (Json.encode pos) (pos,"no footprint is inferred for this form, so the function's is {value: any, store: any}"));
+    Source.footprint_store_any := (fun pos ->
+      Hashtbl.replace footprints (Json.encode pos) (pos,"the callee's footprint has store: any, and so has the function's"));
     let program = {(file |> Json.read |> Source.decode) with Source.qualified} in
     let flows = List.map Flow.decode (Json.list (Json.read flow_file)) in
     (try ignore (Proposal.infer ~unit:spec ~state flows program) with Json.Error _ -> ());
     print_endline (Json.encode (Json.Array (List.rev_map (fun (pos,reason) ->
-      Json.Object ["pos",pos;"reason",Json.String reason]) !(state.Proposal_diagnostics.explanations))))
+      Json.Object ["kind",Json.String "form";"pos",pos;"reason",Json.String reason;"facts",Json.Array []]) !(state.Proposal_diagnostics.explanations)
+      @ List.sort compare (Hashtbl.fold (fun _ (pos,why,facts) acc ->
+        Json.Object ["kind",Json.String "facts";"pos",pos;"reason",Json.String why;
+          "facts",Json.Array (List.map (fun f -> Json.String (Linear_facts.fact_text f)) facts)] :: acc)
+        Linear_facts.losses [])
+      @ List.sort compare (Hashtbl.fold (fun _ (pos,why) acc ->
+        Json.Object ["kind",Json.String "footprint";"pos",pos;"reason",Json.String why;"facts",Json.Array []] :: acc) footprints []))))
   | _ -> Json.fail ("usage: producer --units fragment.json | --unit slice.json flow.json reads.json proposal.bin claims.json"
       ^ " | --assemble fragment.json qualified.json assembly.json proposal.bin... | --explain slice.json flow.json reads.json")
 

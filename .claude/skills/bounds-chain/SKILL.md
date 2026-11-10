@@ -72,6 +72,16 @@ neighbours at their declared signatures (`*` for every unit):
 TSCERT_STEP_LIMIT=300 node dev/check-functions.mts <pretext worktree> analysis.ts analyzeText,segmentAtLineBreaks
 ```
 
+Under a refused unit the check prints its refusal, located in the source,
+then every place where the unit's proposal drops facts, with the facts and
+what dropped them
+([where a proposal drops facts](../../../docs/OBLIGATION-DIAGNOSTICS.md#where-a-proposal-drops-facts)).
+Read that list before forming a hypothesis: a refused read or loop
+invariant needs a fact, and the list names each statement past which that
+fact is no longer proposed. `--explain` as a fourth argument prints the
+list for verified units too, with what makes a function's inferred
+footprint `store: any`.
+
 Count the rewrites left, out of 501:
 
 ```sh

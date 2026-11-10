@@ -90,6 +90,30 @@ IDs (`node:L`, `edge:L:I`, `expression:I`) are local to one function and
 attempt. A saved diagnostic is untrusted display data; it cannot establish
 verification status.
 
+### Where a proposal drops facts
+
+`producer --explain` also prints, for the unit it runs, each place where
+the proposal states fewer facts than before it, and each place that makes
+the unit's inferred footprint `store: any`. Every explanation has a `kind`:
+
+- `form`: a form whose failure has a stated reason, as above.
+- `facts`: a statement or expression past which the proposal states none
+  of the listed facts, and what dropped them: the change the statement was
+  given (which classes of locations it may alter, and whether stores are
+  kept, grown or changed), or the innermost expression for which the fact
+  analysis computes no change, a call with its callee's footprint. In this
+  run the dropped facts are carried on, so every later place that drops
+  them is listed too.
+- `footprint`: an expression for which no footprint is inferred, or a call
+  whose callee's footprint has `store: any`.
+
+A unit's check asked for them (`UnitSelection.losses`) attaches the `facts`
+and `footprint` explanations to the unit's result, and
+`dev/check-functions.mts` prints them under each refused unit, or under
+every selected unit with `--explain`. They describe the proposal: Lean
+decides each proposed fact, and a place listed here is where a fact a later
+obligation needs stops being proposed.
+
 ## Common fields
 
 | Field | Meaning |

@@ -1005,10 +1005,27 @@ let rec leaves_stmts ss = List.exists (fun s -> match s.statement with
   | Closing (c,b) -> leaves_stmts (b @ c)
   | Declare _ | Destructure _ | Effect _ | Throw _ -> false) ss
 
+(* `producer --explain`: where a body's footprint is not bounded, at the
+   innermost expression or statement the inference gives none
+   (`footprint_unbounded`), and each call whose callee's footprint may shorten
+   stores (`footprint_store_any`). A display of the inference: Lean decides
+   each claimed footprint. *)
+let footprint_unbounded : (Json.t -> unit) ref = ref (fun _ -> ())
+let footprint_store_any : (Json.t -> unit) ref = ref (fun _ -> ())
+let unbounded_count = ref 0
 let rec footprint_expr ?(fresh=[]) ?(dispatched=fun _ _ -> false) ?(field_write=fun _ _ -> false) ?(element_key=fun _ _ -> false) ?(dictionary_key=fun _ _ -> false) ?(dead_throw=false) ~callable ~no_return ~iteration ~readable (e:expr) : footprint option =
+  let seen = !unbounded_count in
+  let result = footprint_expr_at ~fresh ~dispatched ~field_write ~element_key ~dictionary_key ~dead_throw ~callable ~no_return ~iteration ~readable e in
+  (match result with
+   | None when !unbounded_count = seen -> incr unbounded_count; !footprint_unbounded e.pos
+   | _ -> ());
+  result
+and footprint_expr_at ?(fresh=[]) ?(dispatched=fun _ _ -> false) ?(field_write=fun _ _ -> false) ?(element_key=fun _ _ -> false) ?(dictionary_key=fun _ _ -> false) ?(dead_throw=false) ~callable ~no_return ~iteration ~readable (e:expr) : footprint option =
   let go = footprint_expr ~fresh ~dispatched ~field_write ~element_key ~dictionary_key ~dead_throw ~callable ~no_return ~iteration ~readable in
   let calls ?(receiver_fresh=false) callee =
-    Option.map (effects_footprint ~receiver_fresh) (callable callee) in
+    let fp = Option.map (effects_footprint ~receiver_fresh) (callable callee) in
+    (match fp with Some {on_store=Any;_} -> !footprint_store_any e.pos | _ -> ());
+    fp in
   let all es = List.fold_left (fun acc e -> join_bound acc (go e)) (Some empty_footprint) es in
   (* A call the producer's own typing types at `never`, at its instance,
      never returns normally: its normal footprint is empty (Lean's
@@ -1155,7 +1172,7 @@ and footprint_stmts ?(fresh=[]) ?(dispatched=fun _ _ -> false) ?(field_write=fun
     | Try (body,Some (binding,handler),None) when throws_stmts ~callable body ->
       let caught = match binding with Some (name,_) -> name :: readable | None -> readable in
       join_bound (block ~dead_throw:false readable body) (join_bound (block caught handler) (tail ()))
-    | Destructure _ | Try _ | Closing _ -> None
+    | Destructure _ | Try _ | Closing _ -> incr unbounded_count; !footprint_unbounded s.span; None
 (* Whether an expression's run bounds the heap it throws in as its normal
    return does: every call and construction at a signature stating its
    footprint on a throw (`onThrow`), every other node an inspection or a typed
