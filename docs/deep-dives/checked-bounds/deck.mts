@@ -99,11 +99,11 @@ const slides: Slide[] = [
           ["Back edge", "j + 1 ≤ xs.length; the increment is exact"],
         ], [40, 60]),
       bullets([
-        point("Candidates", "the producer proposes types, and at each statement entry candidate facts: bounds, linear facts and separations, a loop head’s invariant among them."),
-        point("Proof search", "untrusted search keeps at each entry the candidates every edge into it establishes: it drops each candidate an edge does not establish and searches again, at most once per candidate, and constructs certificates."),
+        point("Candidates", "the producer proposes types, and at each statement entry candidate facts: bounds, linear facts and facts that two arrays are distinct (slide 10), a loop head’s invariant among them."),
+        point("Proof search", "untrusted search keeps at each entry the candidates every edge into it establishes, an edge being one step of control flow that reaches the entry: it drops each candidate an edge does not establish and searches again, at most once per candidate, and constructs certificates."),
         point("Checking", t("the checker validates each entry’s facts on every incoming edge, and that they include the entry’s required facts: its bindings’ types and contents, and a written `@invariant`.")),
         point("Arithmetic", "certificates use nonnegative linear combinations, integer rounding and disequalities; search uses Fourier–Motzkin elimination."),
-        point("Diagnostics", "a refused unit lists where the producer’s proposal drops a fact and what dropped it (a statement’s change, a call’s frame, slide 8), and each candidate the search left out, with the edge that does not establish it."),
+        point("Diagnostics", "a refused function lists where the producer’s proposal drops a fact and what dropped it (a statement’s change, a call’s frame, slide 8), and each candidate the search left out, with the edge that does not establish it."),
       ], 24),
     ], [46, 54]),
   }),
@@ -202,7 +202,7 @@ const slides: Slide[] = [
         box(o + 464, 228, 188, 84, { stroke: K.neg, dash: true, r: 8 }) + ink(o + 464, 216, "spliced: shorter", { fill: K.neg, size: 24 }) +
         label(o + 32, 366, [["i < flags.length", K.ok], ["  kept", K.ok]]);
     })()]) +
-      para(t("The frame names the store `runs.openBrackets` holds at the call; `@stable` fixes which store that is. `flags !== runs.openBrackets` places `flags` outside the region, and the frame keeps every store outside it, so `i < flags.length` holds after the call."), 26),
+      para(t("A store is an array’s elements and length. The frame names the store `runs.openBrackets` holds at the call; `@stable` fixes which store that is. `flags !== runs.openBrackets` places `flags` outside the region, and the frame keeps every store outside it, so `i < flags.length` holds after the call."), 26),
   }),
   slide("growth", {
     label: "Growth", note: t("the cases `stated-grow-keeps-lengths`, `invalid-stated-grow-upper-bound` · the rules ") + proved + t(" · native contracts ") + trusted,
@@ -222,7 +222,7 @@ const slides: Slide[] = [
     label: "Growth · the heap", note: t("`add(xs)` of slide 12, stated `stores: \"grow\"` · the rules ") + proved,
     title: "A store that grows keeps lower bounds and loses upper ones", gap: 22,
     body: panels(440, ["Lower bound: kept", (() => {
-      const o = 0, mark = (y: number): string => `<line x1="${o + 222}" y1="${y}" x2="${o + 222}" y2="${y + 14}" stroke="${K.ink}" stroke-width="3"/>` + ink(o + 222, y + 40, "i", { anchor: "middle" });
+      const o = 0, mark = (y: number): string => `<rect x="${o + 92 + 2 * 52}" y="${y - 48}" width="52" height="44" fill="${K["principled-bg"]}" stroke="${K.neutral}" stroke-width="2"/>` + ink(o + 222, y + 30, "xs[i]", { anchor: "middle" });
       return ink(o + 32, 90, "before", { sans: true, fill: K.muted }) + ink(o + 32, 140, "xs") + cells(o + 92, 108, 4) + ink(o + 316, 140, "length 4", { fill: K.muted }) + mark(156) +
         ink(o + 32, 260, "after add(xs)", { sans: true, fill: K.muted }) + ink(o + 32, 310, "xs") + cells(o + 92, 278, 5, { added: 4 }) + ink(o + 368, 310, "length 5", { fill: K.muted }) + mark(326) +
         label(o + 32, 412, [["i < xs.length", K.ok], ["  holds before and after", K.ok]]);
@@ -234,7 +234,7 @@ const slides: Slide[] = [
         `<line x1="${end}" y1="270" x2="${end}" y2="384" stroke="${K.neg}" stroke-width="3" stroke-dasharray="8 5"/>` + ink(o + 420, 336, "5 <= 4 fails", { fill: K.neg }) +
         label(o + 32, 412, [["xs.length <= ys.length", K.neg], ["  lost", K.neg]]);
     })()]) +
-      para(t("A growing step keeps every cell and may add cells at the end: `i` stays below the length, and the length may pass any bound above it."), 26),
+      para(t("A growing step leaves the store no shorter: `i` stays below the length, and the length may pass any bound above it."), 26),
   }),
   slide("separation", {
     label: "Separation across calls", note: t("after the case `stated-region-nullable-apart` · the rules ") + proved + t(" · in pretext ") + observed,
@@ -274,7 +274,7 @@ const slides: Slide[] = [
     label: "Soundness and trust", note: t("a conditional safety theorem ") + proved + t(" · explicit assumptions ") + trusted,
     title: "What certificate acceptance guarantees", gap: 20,
     body: columns([
-      para("The Lean theorem connects acceptance to modeled safety for every function in the checked unit, assuming input types, preconditions, separation requirements and environment contracts. Normal returns satisfy the checked postconditions. Exceptions and divergence are permitted.", 26) +
+      para("The Lean theorem connects acceptance to modeled safety for every function the checker accepts, assuming input types, preconditions, separation requirements and environment contracts. Normal returns satisfy the checked postconditions. Exceptions and divergence are permitted.", 26) +
         bullets([
           point("Untrusted inference", "the producer proposes types, loop invariants and candidate facts."),
           point("Untrusted proof search", "search constructs certificates from the proposed claims; the checker validates them."),
@@ -290,11 +290,11 @@ const slides: Slide[] = [
     label: "pretext", note: t("measured at TScert `787770a1`, pretext `tscert-bounds` `ba09794f` · ") + measured,
     title: "Bound checks leave pretext one chain at a time", gap: 22,
     body: cards([
-      stat("268 / 268", "units of pretext’s twelve source files verify on the rewrite as it stands.", "ok"),
+      stat("12 / 12", t("source files outside `src/generated` have every function verified on the rewrite as it stands. The two generated data files do not: one is refused before proof search, one exceeds the time limit."), "ok"),
       stat("66 / 501", "bound rewrites restored to pretext’s own reads; 436 checks remain, one of them added.", "ok"),
       stat("12", t("reads of chain 1 in `measureAnalysis` restored; 4 stay checked (slide 18)."), "gap"),
     ], 3) +
-      para(t("A chain is a function that builds a structure and every function reading it. Its rewrites are restored together, each read replaced by an assertion and the contracts that prove it in bounds, and every pretext unit keeps verifying. In chain 1, `analyzeText` and `segmentAtLineBreaks` state that `texts`, `starts` and `flags` have one length; `measureAnalysis` requires `to` at most each of their lengths, lower bounds that growth keeps."), 25) +
+      para(t("A chain is a function that builds a structure and every function reading it. Its rewrites are restored together, each read replaced by an assertion and the contracts that prove it in bounds, and every function that verified keeps verifying. In chain 1, `analyzeText` and `segmentAtLineBreaks` state that `texts`, `starts` and `flags` have one length; `measureAnalysis` requires `to` at most each of their lengths, lower bounds that growth keeps."), 25) +
       para(t("One class stays checked (" + "observed" + " under Node): a line range kept from a longer text, materialized on a shorter one, reads past a segment’s graphemes; original pretext returns wrong text, or `NaN` offsets in rich inline text. No annotation makes it safe; the code needs an index check."), 25),
   }),
   slide("remains", {
@@ -310,7 +310,7 @@ const slides: Slide[] = [
     ], [58, 42], { compact: true }),
   }),
   slide("visitor", {
-    label: "Optional callbacks", note: t("three variants ") + observed + t(" at TScert `0a5e9cab`, 2026-11-10 · a frame that depends on the callback ") + open,
+    label: "Optional callbacks", note: t("three variants ") + observed + t(" at TScert `7b6e476a`, 2026-11-10 · a frame that depends on the callback ") + open,
     title: "A callback left out still costs the call its frame", gap: 22,
     body: columns([
       code(["type Visitor = (i: number) => void;", "", "function walk(n: number, onItem?: Visitor): number {", "  let s = 0;", "  for (let i = 0; i < n; i++) {", "    s += i;", "    onItem?.(i);", "  }", "  return s;", "}", "", "/** @requires safeInteger(i) && 0 <= i", " *    && i < xs.length */", "export function get(xs: number[], i: number): number {", "  const n = walk(3);      // no visitor passed", "  if (i >= xs.length)     // the runtime check", "    throw new RangeError(\"index\");", "  return xs[i]! + n;", "}"]),
