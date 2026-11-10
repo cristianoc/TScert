@@ -8,10 +8,10 @@
 <tr><td>Body entry</td><td>0 ≤ j < xs.length</td></tr>
 <tr><td>Back edge</td><td>j + 1 ≤ xs.length; the increment is exact</td></tr>
 </table></div><div style="display:flex;flex-direction:column;gap:14px"><ul style="font-size:24px;color:#0b1a2e;line-height:1.36">
-<li><b style="font-weight:600">Candidates:</b> the producer proposes types, and at each statement entry candidate facts: bounds, linear facts and separations, a loop head’s invariant among them.</li>
-<li><b style="font-weight:600">Proof search:</b> untrusted search keeps at each entry the candidates every edge into it establishes: it drops each candidate an edge does not establish and searches again, at most once per candidate, and constructs certificates.</li>
+<li><b style="font-weight:600">Candidates:</b> the producer proposes types, and at each statement entry candidate facts: bounds, linear facts and facts that two arrays are distinct (slide 10), a loop head’s invariant among them.</li>
+<li><b style="font-weight:600">Proof search:</b> untrusted search keeps at each entry the candidates every edge into it establishes, an edge being one step of control flow that reaches the entry: it drops each candidate an edge does not establish and searches again, at most once per candidate, and constructs certificates.</li>
 <li><b style="font-weight:600">Checking:</b> the checker validates each entry’s facts on every incoming edge, and that they include the entry’s required facts: its bindings’ types and contents, and a written <span style="color:#2c4f7c">@invariant</span>.</li>
 <li><b style="font-weight:600">Arithmetic:</b> certificates use nonnegative linear combinations, integer rounding and disequalities; search uses Fourier–Motzkin elimination.</li>
-<li><b style="font-weight:600">Diagnostics:</b> a refused unit lists where the producer’s proposal drops a fact and what dropped it (a statement’s change, a call’s frame, slide 8), and each candidate the search left out, with the edge that does not establish it.</li>
+<li><b style="font-weight:600">Diagnostics:</b> a refused function lists where the producer’s proposal drops a fact and what dropped it (a statement’s change, a call’s frame, slide 8), and each candidate the search left out, with the edge that does not establish it.</li>
 </ul></div></div>
 </section>
