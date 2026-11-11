@@ -149,6 +149,12 @@ structure Walk where
   /-- The constants in scope: a write of a key one's record may lack grows
   its type. -/
   consts : List String := []
+  /-- The constants in scope holding a condition's value, each with its
+  initializer (`implicationForm`), and the unit's parameters held in no cell:
+  where such a constant is `true`, what its condition narrows of those and
+  of the constants (`constantImplications`). -/
+  conditions : List (String × Expr) := []
+  values : List String := []
   /-- Each constant holding a function literal of no type parameters and no
   rest: its literal's span and own parameters' types (the producer's
   `named_closure`, closure_offers.ml:29). -/
@@ -358,6 +364,17 @@ def slice (A : Ty Tree) (tag : Tag) (q : Bool) (literalOperand : Bool := false) 
         if q then
           for k in kinds.filter (fun k => tagClause tag k == some true) do out := out ++ (← prim k)
         else out := out ++ [a]
+        continue
+    -- Any other test: a meet row narrowed to the meets of its parts with
+    -- each clause the test does not contradict, dropped where it
+    -- contradicts every one (the lowering's `observedSlice`,
+    -- Execution.lean:19-31; the producer's `narrow_rigid`,
+    -- semantic.ml:498-508): `T ⊓ (null | number)` is `T ⊓ number` where a
+    -- nullish test fails.
+    if let .meet p cs also := StoreView.row (← table) a then
+      let left := cs.filter fun c => tagClause tag c != some (!q)
+      if left.length != cs.length then
+        for c in left do out := out ++ [← lower (SourceTypes.bounded p [c] also)]
         continue
     if G.plain a && PositiveRules.expand G [a] == [.source] then
       let kept := kinds.filter fun k => tagClause tag k != some (!q)
@@ -1411,7 +1428,20 @@ partial def decidedTest (c : Expr) (q : Bool) : W Bool := do
 /-- The narrowing a condition answering `q` makes. -/
 partial def refine (env : Env) (c : Expr) (q : Bool) : W Env := do
   match c with
-  | .var .. | .read .. => StateT.lift (narrowTarget env c .truthy q)
+  | .var _ name =>
+    let e ← StateT.lift (narrowTarget env c .truthy q)
+    -- A constant holding a condition's value, `true`: each immutable binding
+    -- other than it at what the condition narrows where it holds (the
+    -- lowering's `constantImplications`, Control.lean:208-224).
+    let w ← get
+    -- (`TSCERT_FORCE=implications`: every constant's initializer, every
+    -- binding other than it)
+    let forced := w.force.contains "implications"
+    let some init := if q then w.conditions.lookup name else none | return e
+    let narrowed ← refine e init true
+    let immutable (n : String) := n != name && (forced || w.consts.contains n || w.values.contains n)
+    return { e with vars := e.vars.map fun (n, A) => if immutable n then (n, (narrowed.vars.lookup n).getD A) else (n, A) }
+  | .read .. => StateT.lift (narrowTarget env c .truthy q)
   | .not _ e => refine env e !q
   | .cast _ _ e => refine env e q
   -- `(a, b)` tested: `b`'s answer, after `a`'s effects.
@@ -1446,10 +1476,12 @@ partial def refine (env : Env) (c : Expr) (q : Bool) : W Env := do
     | _, _ =>
       -- Equal to an operand holding one of several singletons: each
       -- operand the union of its slices at each singleton the other may
-      -- hold (the lowering's split, one singleton at a time).
+      -- hold (the lowering's split, one singleton at a time, each member
+      -- of the operand's type, `equalitySplit`, Control.lean:315-340).
       if equal != q then return env
       let singletons (y : Expr) : Option (List Tag) :=
-        (typeOf y).bind fun B => if B.isEmpty then none else B.mapM fun b => singletonTag G [b]
+        (typeOf y).bind fun B => if B.isEmpty then none else
+          (ProgramTyping.members G B).mapM fun b => singletonTag G [b]
       let mut env := env
       for (x, y) in [(l, r), (r, l)] do
         if let some ts := singletons y then
@@ -1554,7 +1586,13 @@ partial def expr (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (Op
     let (L, e1) ← expr env l
     let (R, e2) ← expr e1 r exp
     -- `a ?? b`: `a` less null and undefined, or `b`.
-    let A ← attempt e do joinTy (← nonNullish (← need L "the left operand")) (← need R "the right operand")
+    -- (`TSCERT_FORCE=meets`: each type parameter's value dropped there)
+    let meets := (← get).force.contains "meets"
+    let A ← attempt e do
+      let P ← nonNullish (← need L "the left operand")
+      let T ← table
+      let P := if meets then P.filter fun a => !(StoreView.row T a matches .meet ..) else P
+      joinTy P (← need R "the right operand")
     return (A, (join (some e1) (some e2)).getD e2)
   | .optional _ _ recv body =>
     let (O, e1) ← expr env recv
@@ -3124,6 +3162,8 @@ partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
     let mut env := env
     modify fun w => { w with
       consts := bs.map (·.name) ++ w.consts
+      conditions := (bs.filter (fun b => implicationForm b.init || w.force.contains "implications")).map (fun b => (b.name, b.init)) ++
+        w.conditions.filter fun (n, _) => !bs.any (·.name == n)
       allocated := (bs.filter fun b => match b.init with | .alloc .. | .arrayLit .. => true | _ => false).map (·.name) ++ w.allocated }
     -- An early binding's declaration writes its cell (a declaration's
     -- footprint).
@@ -3175,7 +3215,9 @@ partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
     return some env
   | .mutables p bs =>
     let mut env := env
-    modify fun w => { w with consts := w.consts.filter fun n => !bs.any (·.name == n) }
+    modify fun w => { w with
+      consts := w.consts.filter (fun n => !bs.any (·.name == n))
+      conditions := w.conditions.filter fun (n, _) => !bs.any (·.name == n) }
     modify fun w => { w with freshConsts := w.freshConsts.filter fun n => !bs.any (·.name == n) }
     if (← get).strict && bs.any (·.early) then wrote .any .keep
     for b in bs do
@@ -3506,7 +3548,9 @@ def walkUnit (T : EquationStore.State) (f : Fragment.Fn)
     -- (computed where a read first narrows one)
     let slots := Thunk.mk fun _ => (f.params.map (·.name) ++ declaredIn f.body).filter fun n =>
       !(cellLocals (f.params.map (·.name)) f.body f.name.isEmpty).any (·.1 == n)
-    let start : Walk := { generics, expected, force, scope, locals, strict, slots, schemes, entries := (({} : Std.HashMap Nat _).insert 0 vars).insert f.namePos.1 vars }
+    let values := (f.params.map (·.name)).filter fun n =>
+      !(cellLocals (f.params.map (·.name)) f.body f.name.isEmpty).any (·.1 == n)
+    let start : Walk := { generics, expected, force, scope, locals, strict, slots, schemes, values, entries := (({} : Std.HashMap Nat _).insert 0 vars).insert f.namePos.1 vars }
     let (done, w) ← (stmts (some env) f.body).run start
     -- Where a use offers a constant's literal more rows, walked again with
     -- them (the producer's second round, proposal.ml:47-52), once.
