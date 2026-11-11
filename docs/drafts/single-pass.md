@@ -681,7 +681,8 @@ removal works through:
   where the walk sees no write, assignment or call changing the heap, else
   the closed footprint of the classes of contents its writes and calls
   change (an assignment of a binding it does not declare or a field write
-  the values; an element write the values and a store's growth; an array's
+  the values, `x ??= v` of such a binding whose `v` changes nothing its
+  initialization, `init`; an element write the values and a store's growth; an array's
   `length`, and a call changing a receiver's store or elements, both,
   but a call changing the store of a constant holding a store the run
   allocated (one initialized by a call whose instance states a fresh
@@ -804,14 +805,27 @@ removal works through:
   function literal's effect is found with, the producer's
   `footprint_stmts`): keep/keep where it changes nothing, and nothing where
   the join is the ordinary effect. It bounds its throws where nothing in it
-  leaves a throw unbounded. For this reading a write, an assignment of a
-  binding held in a cell or of one it does not declare, an early binding's
-  declaration, a call at its instance's footprint, a call of a local
-  binding at its declared type's effect, a call of an unknown callee (a
+  leaves a throw unbounded. For this reading the grades are the
+  producer's (`footprint_expr`, `footprint_stmts`, source.ml:1016-1170): an
+  assignment of a binding held in a cell or of one it does not declare, and
+  an early binding's declaration, change the values; `x ??= v` of such a
+  binding whose `v` changes nothing initializes it (`init`, the producer's
+  `NullishAssign`); a field write, update or logical assignment changes the
+  values, a `length`'s the stores too; an element write or update the values
+  and a store's growth; a call, at its instance and, for a call of a local
+  binding, at each signature of its declared type, changes its signature's
+  footprint, the values too where it changes its receiver's own locations,
+  and everything where it changes its receiver's store and the receiver is
+  no constant holding a store the run allocated (`effects_footprint`); a
+  typed array's element write (`elementWrite`) is within its footprint; a
+  `for...of` changes what its intrinsic's call states and, of each signature
+  of the stepper it gives, the values where the step changes its receiver's
+  own locations, the iterator, else the step's footprint
+  (`iteration_footprint`), everything where the walk determines no stepper;
+  a call of an unknown callee (a
   function's `toString` among them: its lowered call tests the receiver and
-  calls a value's own `toString` where it is no function), an
-  iteration, and a call without `onThrow` a handler catches each change the
-  heap; a call without `onThrow`, an iteration and a finalizer leave a throw
+  calls a value's own `toString` where it is no function) and a call without
+  `onThrow` a handler catches change everything; a call without `onThrow`, an iteration and a finalizer leave a throw
   unbounded. A function passed to a call changes what its own signatures'
   effects state; where the call's instance is a generic module function's,
   or the passed function has no known type,
@@ -819,7 +833,20 @@ removal works through:
   declaration creates, which this walk reads with no scheme. A
   self-recursive function is walked with itself at keep/keep bounding its
   throws, then at the join of that and what the walk found, until a walk
-  finds no more than it assumed, three walks at most. A guard or an
+  finds no more than it assumed, three walks at most. A function whose
+  result annotation can state a returned function's footprint
+  (`resultWithFootprint`: one function type of fixed signatures stating no
+  effect, throw bound or promise), and whose returns each hold a function
+  of fixed and variadic signatures, is proposed,
+  beside its footprint, the join of those signatures' footprints as the
+  footprint of the function it returns (the producer's `returned_footprint`,
+  proposal.ml:164-174); its callers read it, its returns establish it
+  (`resultWithFootprint`); `TSCERT_FORCE=results` proposes it keeping values
+  and stores, the adversarial proposal (the controls
+  `returned-closure-footprint` `countLetters`, accepted unforced, and
+  `invalid-returned-closure-footprint` `lastRead`). Where the initialization
+  calls a function so proposed, the walks run once more, the
+  initialization's walk typing the module values at the proposals. A guard or an
   assertion function is proposed like any other, its promise kept. An
   async, generic or rest function, or one with a written effect or a
   stand-in, keeps its footprint. Each proposal is a stand-in: its callers
@@ -873,7 +900,10 @@ removal works through:
   effect is at the ordinary effect, and its module is planned for it no
   further, nor are the modules only its code reads (first its own walk with
   every module value at that footprint, `Front.changesEverything`, then the
-  walks of what it reaches, `declarationWalks` with `least`). That its walk
+  walks of what it reaches, `declarationWalks` with `least`, each function
+  returned at the least footprint too); nothing is so decided in a module
+  whose initialization calls a function returning one, whose values hold
+  the returned functions at the ordinary effect there. That its walk
   at any established footprints proposes the ordinary effect too rests on
   the walk's grades being monotone in its callees' footprints, conjectured;
   where it fails, the read is at the ordinary effect, which needs no check.
@@ -1333,41 +1363,32 @@ stamps):
 The stand-ins each unit needs, each a function its unit calls whose
 footprint the unit's verdict reads, measured 2026-11-11 with the imports'
 footprints their modules establish (removing any one refuses the unit; the
-given file with the module units' lines): `measureAnalysis` 5 of its file's
-functions (`countRenderedSpacingGraphemes`, `mayHoldCursive`,
-`getTailKerning`, `getJoinedNarrowing`, `getTextSegmentWidth`) and 13
-imports: `lazyRegExp`, established keeping values and stores but with no
-result footprint (`declarationEffects` proposes none; its stand-in states
-`init`/`keep`); `getHanKerningTrims`, whose module unit the pass refuses (a
-closure's loop head lacks a fact of `widthTrims`); `getFontMeasurement`,
-resting on `createMeasureState`, which rests on `getFontKanaKerning`, refused;
-and `getEmojiCorrection`, `getExtraSpacings`, `getFollowingSpaceMetrics`,
-`getFontSpaceKerning`, `getHyphenText`, `getSegmentFit`, `getSegmentMetrics`,
-`getSpaceKerning`, `getSpaceWidth`, `getTextWidth`, each proposed the ordinary
-effect (the walk states a store change of `any` where the producer states
-`grow` or `keep`: of the 67 module functions `measureAnalysis`'s imports
-reach, 43 are proposed so where the producer's claims state less). `prepareRichInline` needs 2 of its file's functions
-(`setEmptyObjectFacts`, `zeroList`) and no import; `buildEngineProfile`
-none. With no stand-in, `measureAnalysis` and `prepareRichInline` are refused
-at a statement entry's linear fact.
+given file with the module units' lines): `measureAnalysis` 3 imports and
+none of its file's functions: `getHanKerningTrims`, whose module unit the
+pass refuses (a closure's loop head lacks a fact of `widthTrims`);
+`getSegmentFit`, resting on `getFontKanaKerning`, which the pass refuses;
+and `getFontMeasurement`, proposed the ordinary effect, through
+`getCanvasFont`, whose callback to a generic native method's instance the
+walk reads at the ordinary effect. `prepareRichInline` and
+`buildEngineProfile` need none and are verified with none. Of the 81
+functions the walk proposes for `measureAnalysis` (its file's and its
+imports' modules'), 79 are proposed the producer's claim (footprint,
+on-throw flag and returned footprint), 28 before the grades above; of
+`prepareRichInline`'s 169, 165 (75 before); `buildEngineProfile`'s 2 of 2.
 
 Imports' cost (perf gate, CPU of the verifier process, best of 3, measured
 2026-11-11 beside the verifier of f894d34a, which plans no module, in
-parentheses): with the gate's stand-ins, `measureAnalysis` 1024 ms (934),
-`prepareRichInline` 2913 ms (2188), `buildEngineProfile` 142 ms (143); with
-none, 1030 and 2270 ms, both refused (430 and 920), and 142 ms. For
-`prepareRichInline` with the stand-ins, five modules are resolved (their
-fronts 0.13 s; the least walks 0.39 s, 0.27 s of it finding that
-`stepPreparedLineGeometryFromStart` proposes the ordinary effect), three
-planned (`checked.ts`, `measurement.ts`, `line-break.ts`) and 8 groups
-checked (0.12 s), every invocation again; `normalizePreparedLineStart`,
-`getEngineProfile`, `zeros` and `missing` established keep more facts
-(`mergeDiffs` 1,826 for 1,823, `stateFactsSum` 132,919 for 132,540), and the
-three modules' given lines add 68,628 bytes read. For `measureAnalysis`, one
-module is planned (`checked.ts`, for `missing`) and one resolved, 274 bytes
-more read. A per-module interface, each module's established footprints
-stored by its fragment's content once and read by its importers, removes
-the repetition.
+parentheses): with the gate's stand-ins, `measureAnalysis` 1287 ms (934),
+`prepareRichInline` 7146 ms (2188), `buildEngineProfile` 142 ms (143); with
+none, 2900 ms, refused (430), and 7270 ms, verified (920, refused). For
+`prepareRichInline` with the stand-ins, the modules' least fronts take
+0.23 s, their least walks 0.77 s, their plans 1.73 s and the 115 module
+groups checked 2.24 s, every invocation again; the footprints established
+keep more facts (`mergeDiffs` 1,826 for 1,823, `stateFactsSum` 132,919 for
+132,540), and the given lines of the modules checked add 206,985 bytes read
+(`measureAnalysis` 49,549). A per-module interface, each module's
+established footprints stored by its fragment's content once and read by
+its importers, removes the repetition.
 
 Agreement with the pipeline over the 3,303 pipeline cases (mode 8 with the
 given files, `TSCERT_REFEREE`), measured 2026-11-11: 6,296 units, 4,974
