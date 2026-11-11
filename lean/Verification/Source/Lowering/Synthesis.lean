@@ -707,7 +707,20 @@ def memberFor (vars : List (String × Ty Tree)) (O : Ty Tree) (fld : PropKey) :
   if let some m := ProgramTyping.memberOf G O fld then return some m
   if let some P := protoOf G O then
     if let some m := ProgramTyping.memberOf G P fld then return some m
-  return none
+  -- A union of objects each stating the member at the same signatures,
+  -- read at their receivers (a host family's node kinds, each its own
+  -- receiver): the member with every clause's receivers and schemes.
+  match O.mapM (fun l => match ProgramTyping.objectClauses G [l] with
+      | [c] => ProgramTyping.clauseMember c fld
+      | _ => none) with
+  | some (m :: ms) =>
+    if ms.all fun m' => m'.calls == m.calls && m'.rests == m.rests &&
+        m'.schemes.isEmpty == m.schemes.isEmpty then
+      return some { m with
+        schemes := (m.schemes ++ ms.flatMap (·.schemes)).eraseDups
+        receivers := (m.receivers ++ ms.flatMap (·.receivers)).eraseDups }
+    return none
+  | _ => return none
 
 /-- Whether the binder `b` occurs in a label. -/
 partial def occurs (b : Tree) (t : Tree) : Bool :=
