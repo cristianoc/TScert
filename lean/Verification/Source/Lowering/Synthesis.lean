@@ -3706,9 +3706,16 @@ partial def fit (P : Ty Tree) (x : Expr) (A : Option (Ty Tree)) : W (Option (Ty 
     | some A', some B' => record x (← StateT.lift (tryCatch (.ok <$> joinTy A' B') fun m => pure (.error m)))
     | _, _ => return A
   | .arrayLit _ [] _ =>
-    let arrays := P.filter fun l => (storeOf G [l]).isSome
-    if arrays.isEmpty then return A
-    record x (.ok arrays)
+    -- A fresh empty array has its store and the standard prototype only.
+    -- An array-like host value may require additional fields (NodeArray's
+    -- `pos` and `end`), and a tuple may require occupied positions.
+    for l in arrayArms G P do
+      let some S := storeOf G [l] | continue
+      let [.list t []] := PositiveRules.expand G S | continue
+      if !t.required.isEmpty then continue
+      let O ← StateT.lift (arrayObject S)
+      if within (← StateT.lift table) O [l] then return ← record x (.ok [l])
+    return A
   | .alloc _ names es =>
     -- The literal's own record, each field at the expected record's field
     -- where the value, itself fitted there, is within it: the record the
