@@ -364,6 +364,18 @@ def checkUnitsFile (astPath claimsPath fileKey evidencePath : String) (names : O
         IO.println s!"accept: stateful source {fileKey}"
         return 0
 
+/-- The given lines of a module's units, by their identity in the module:
+each line of a unit `module:<location>#<unit>`. -/
+def forModule (location : String) (given : Std.HashMap String Json) : Std.HashMap String Json :=
+  let pre := s!"module:{location}#"
+  given.fold (init := {}) fun m k v => if k.startsWith pre then m.insert (k.drop pre.length).toString v else m
+
+/-- A module's given lines a pass reads (`FilePlans.passGroup`): those stating
+a graph, by the unit's identity in the module whose document is `ast`. -/
+def moduleGiven (ast : Json) (given : Std.HashMap String Json) : Std.HashMap String Json :=
+  let location := (ast.getObjValAs? String "file").toOption.getD ""
+  (forModule location given).fold (init := {}) fun m k v => if (v.getObjVal? "graph").isOk then m.insert k v else m
+
 /-- Search and check a file's selected units over its one front
 (`SourceClaimJson.filePlans`) in one process: each group's evidence searched
 over the file's own store (`FilePlans.produceGroup`) and checked there
@@ -402,25 +414,51 @@ def verifyUnitsFile (astPath : String) (claimsPath : Option String) (fileKey : S
   let tj ← IO.monoNanosNow
   -- The single pass (mode 3) reads what the selected units' groups read.
   let planned ← IO.lazyPure fun _ => do
-    if mode == 3 || mode == 7 then SourceClaimJson.unitPlans (← ast) (← claims) fileKey budget (selection names)
+    if mode == 3 || mode == 7 then
+      (·, ([] : List SourceClaimJson.ModuleVerdict), ([] : List String)) <$> SourceClaimJson.unitPlans (← ast) (← claims) fileKey budget (selection names)
     -- Mode 8: the single pass over the fragment alone, each unit's types
     -- computed by the walk (`SourceClaimJson.fragmentPlans`).
     -- Mode 9: the search and the proved check over the same plans, the
     -- referee of mode 8's verdicts. Both take the loop heads' facts from the
     -- given file.
     else if mode == 8 || mode == 9 then
-      (fun (f : SourceClaimJson.FilePlans) =>
-        let f := f.withHeadFacts givenLines (mode == 9)
-        if mode == 9 && !allCuts then f.headCuts else f) <$> SourceClaimJson.fragmentPlans (← ast) fileKey budget (selection names) (← standIns) force
-    else SourceClaimJson.filePlans (← ast) (← claims) fileKey budget
+      let prepare := fun (given : Std.HashMap String Json) (f : SourceClaimJson.FilePlans) =>
+        let f := f.withHeadFacts given (mode == 9)
+        if mode == 9 && !allCuts then f.headCuts else f
+      -- The module units an import's footprint rests on, checked here by the
+      -- same mode (`fragmentPlansWithModules`), each at the given lines of
+      -- its wire identity (`module:<location>#<unit>`).
+      let check := fun (f : SourceClaimJson.FilePlans) (group : List Nat) =>
+        if mode == 9 then (([] : List String), f.verifyGroup fuel group false)
+        else f.passGroup fuel group (given := some (moduleGiven f.fr.ast givenLines))
+      let (f, ms, notes) ← SourceClaimJson.fragmentPlansWithModules (← ast) fileKey budget (selection names) (← standIns) force
+        (fun location => prepare (forModule location givenLines)) check
+      pure (prepare givenLines f, ms, notes)
+    else (·, ([] : List SourceClaimJson.ModuleVerdict), ([] : List String)) <$> SourceClaimJson.filePlans (← ast) (← claims) fileKey budget
   let t1 ← IO.monoNanosNow
   let ms := fun (a b : Nat) => s!"{(b - a) / 1000000}"
   let phases := (← SinglePass.kindNanos.get).toList.filter (·.1.startsWith "lower: ")
   IO.eprintln s!"stamp: read+lower {ms t0 t1} ms: read JSON {ms t0 tj} ms, {", ".intercalate (phases.map fun (k, t, _) => s!"{k.drop 7} {t / 1000000} ms")}"
   match planned with
   | .error e => refuse e
-  | .ok f =>
+  | .ok (f, modules, notes) =>
     let mut refused : Option String := none
+    -- The module units checked for the imports' footprints, each on its
+    -- line; a refused one leaves its importers' reads at the ordinary effect.
+    if !modules.isEmpty then IO.eprintln s!"stamp: modules: {modules.length} groups checked"
+    -- Profiling: each import read at a footprint, and that footprint.
+    if (← SinglePass.profiling.get) then
+      for (n, Φ, ot, r) in f.p.qualified do
+        IO.eprintln s!"import: {n} {(toJson Φ).compress} onThrow {ot} result {(toJson r).compress}"
+      for n in notes do IO.eprintln s!"import read: {n}"
+    for m in modules do
+      for line in m.lines do
+        for l in line.splitOn "\n" do IO.eprintln s!"{m.unit}: {l}"
+      IO.println (match m.verdict with
+        | .ok deps => Json.mkObj [("unit", toJson m.unit), ("members", toJson m.members), ("accepted", toJson true),
+            ("depends", toJson deps)]
+        | .error reason => Json.mkObj [("unit", toJson m.unit), ("members", toJson m.members),
+            ("refusal", toJson reason)]).compress
     for i in f.fr.selected (selection names) do
       let unit := f.fr.unitId i
       let members := (f.fr.group i).map f.fr.unitId
@@ -525,6 +563,12 @@ def verifyUnitsFile (astPath : String) (claimsPath : Option String) (fileKey : S
         | .error reason => Json.mkObj [("unit", toJson unit), ("members", toJson members),
             ("refusal", toJson reason)]).compress
       if let .error reason := verdict then refused := refused.orElse fun _ => some reason
+    -- Mode 6: the given lines of the module runs' units too, each named by
+    -- its wire identity (`ModuleRun.givenLines`).
+    if mode == 6 then
+      let facts ← IO.getEnv "TSCERT_GIVEN_FACTS"
+      for m in f.p.modules do
+        for line in m.givenLines budget fuel facts.isSome (facts == some "all") do IO.println line.compress
     match f.extractionRefusal (selection names) with
     | some reason => refuse reason
     | none =>

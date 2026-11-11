@@ -576,7 +576,7 @@ def slicePlans (ast claims qualified : Json) (fileKey : String) (budget : Positi
   let fr ← fileFront ast claims fileKey budget qualified
   let (T, plans) := fr.extractAll
   let F ← EquationStore.freeze T
-  return ⟨⟨ast, claims, qualified, []⟩, fr, F, plans.map fun e => e.bind (FunctionPlan.over F)⟩
+  return ⟨⟨ast, claims, qualified, [], []⟩, fr, F, plans.map fun e => e.bind (FunctionPlan.over F)⟩
 
 /-- A union at its request position. Positions name graph nodes and slots,
 independently of head numbering, so the slice's and the document's anchors

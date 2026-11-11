@@ -157,6 +157,8 @@ function measure(u: GateUnit, dir: string, key: string): Measured {
   for (const line of first.stdout.split("\n").filter((l) => l.startsWith("{"))) {
     const v: unknown = JSON.parse(line);
     if (typeof v !== "object" || v === null) continue;
+    // The unit's own line, not a module unit's (`module:<location>#<unit>`).
+    if (!("unit" in v) || typeof v.unit !== "string" || !v.unit.startsWith(`${u.unit}@`)) continue;
     if ("accepted" in v && v.accepted === true) verdict = "verified";
     else if ("refusal" in v && typeof v.refusal === "string") {
       refusal = v.refusal.replace(/\s+/g, " ").slice(0, 160);

@@ -195,10 +195,11 @@ def ordinarySlots (d : Document EquationStore.State Tree) (ordinary : List Fragm
 
 /-- The front of a source's units. A qualified import, by its name, is read
 at its certified unit's footprint and on-throw flag (`importedArrow`); every
-other at its declared type. -/
+other at its declared type. With `lenient` (mode 8), a qualified import
+whose declared type `importedArrow` does not read is at its declared type. -/
 def fileFront (ast claims : Json) (fileKey : String)
     (budget : PositiveCertificates.SearchBudget := {})
-    (qualified : List (String × Footprints.Closed × Bool × Footprints.Closed) := []) :
+    (qualified : List (String × Footprints.Closed × Bool × Footprints.Closed) := []) (lenient : Bool := false) :
     Except String Front := do
   -- A source with arrays lists `ArrayProto`: its units see `Array.prototype`.
   let arrays := match (ast.getObjVal? "declarations").toOption.bind
@@ -236,7 +237,9 @@ def fileFront (ast claims : Json) (fileKey : String)
   let moduleFunctions : List (SourceExtraction.ModuleValue Tree) :=
     ordinarySlots d ordinary (ordinary.map (·.name)).eraseDups ++
     (imported.map fun (name, span, U) => (name, span, match qualified.lookup name with
-      | some (footprint, onThrow, result) => (importedArrow d.types U footprint onThrow result).map .written
+      | some (footprint, onThrow, result) => match importedArrow d.types U footprint onThrow result with
+        | .ok J => .ok (.written J)
+        | .error e => if lenient then .ok (.written (graphClaim U)) else .error e
       | none => .ok (.written (graphClaim U)))) ++
     (if arrays then [(SourceExtraction.arrayPrototypeName, (0, 0),
       Except.ok (.written (Json.mkObj [("top", toJson false), ("atoms", toJson [Json.mkObj
