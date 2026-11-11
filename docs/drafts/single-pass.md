@@ -784,6 +784,9 @@ removal works through:
   the producer's evolving bindings (statement_analysis.ml:222-240); the
   step's type is the protocol's bound `next` of the statement's other
   bindings, or of the next statement, walked ahead.
+  A `for...of`'s iteration intrinsic of no binders (a string's,
+  `%Iterate:string%`) is called at the iterable as a generic one is, its
+  stepper held at the loop's head and its `value` the element.
 - **Expected types.** A store's contract is fixed where the store is made;
   a read is a copy, an upcast of an immutable value, or an upcast of a store
   to a readonly view of it. An annotated declaration holds an object it is

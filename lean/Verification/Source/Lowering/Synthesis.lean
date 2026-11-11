@@ -4070,6 +4070,16 @@ partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
         if let some θ := (← get).lastInstance then
           if let [(_, A)] := θ then bound := some A
           modify fun w => { w with instances := (p, θ) :: w.instances, resolutions := (p, w.lastResolution) :: w.resolutions, lastInstance := none, lastResolution := [] }
+    -- An intrinsic of no binders (a string's, `%Iterate:string%`): its call
+    -- at the iterable likewise, the stepper it gives at the loop's head.
+    else if let some F := e1.vars.lookup it then
+      let c? : Except String Callee ← StateT.lift (tryCatch (Except.ok <$> calleeOf F [Labels.undef]) fun m => pure (Except.error m))
+      if let .ok c := c? then
+        if c.binders.isEmpty then
+          let r ← applyCall e1 c [iterable] [I]
+          recordAt (p.1, p.1 + "for".length) "identifier" (.ok F)
+          recordAt p "call" ((·.2) <$> r)
+          stepper := ((·.2) <$> r).toOption
     let exit := loopHead e1 body
     let head := match stepper with
       | some N => { exit with vars := upd exit.vars s!"%next@{p.1}%" N, decl := upd exit.decl s!"%next@{p.1}%" N }
