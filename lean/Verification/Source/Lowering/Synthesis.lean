@@ -2471,7 +2471,17 @@ partial def exprAt (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (
     let mut As : List (Option (Ty Tree)) := []
     for (y, i) in es.zipIdx do
       let D ← match exp with
-        | some P => if spreads.contains i then pure none else StateT.lift (positionExpected P i)
+        | some P => StateT.lift do
+          let D ← positionExpected P i
+          if !spreads.contains i then return D
+          -- A spread's operand is expected at the readonly array of the
+          -- destination's element (expression_objects.ml:276-278).
+          match D with
+          | none => return none
+          | some E => some <$> lower do
+            let store ← SourceTypes.use (.list ⟨[], [], some E, true, .readable⟩ [])
+            let T ← get
+            return [← SourceTypes.use (SourceTypes.arrayOf T store true)]
         | none => pure none
       let (A, e') ← expr e1 y D
       As := As ++ [A]
@@ -3915,6 +3925,42 @@ partial def fit (P : Ty Tree) (x : Expr) (A : Option (Ty Tree)) : W (Option (Ty 
           let T ← get
           return [← SourceTypes.use (SourceTypes.arrayOf T s true)])
         if within (← StateT.lift table) R P then return ← record x (.ok R)
+    return some A
+  | .arrayLit _ es spreads =>
+    -- An array literal containing spreads is a fresh store. At an array
+    -- contract with no fixed positions, each item or spread element must
+    -- fit its rest contract; existing operands retain their store types.
+    let some A := A | return none
+    -- `array-spreads` proposes the expected store even for incompatible items.
+    let forced := (← get).force.contains "array-spreads"
+    for l in arrayArms G P do
+      let some S := storeOf G [l] | continue
+      let [.list t []] := PositiveRules.expand G S | continue
+      if !t.required.isEmpty || !t.optional.isEmpty then continue
+      let some E := t.rest | continue
+      let O ← StateT.lift (arrayObject S)
+      if !within (← StateT.lift table) O [l] then continue
+      let w ← get
+      let mut ok := true
+      for (y, i) in es.zipIdx do
+        let some B := (w.exprs.get? y.span).bind (·.2.toOption) | ok := false; break
+        if spreads.contains i then
+          let held ← StateT.lift (tryCatch (do
+            let B ← boundOf B
+            let G ← graphNow
+            if !arraysOnly G B then return none
+            let H ← elementAt B none (missing := false)
+            let sparse := B.any fun l => (storeOf G [l]).any fun S =>
+              match PositiveRules.expand G S with
+              | [.list t []] => t.presence == .sparse
+              | _ => false
+            return some (norm (H ++ if sparse then [Labels.undef] else []))) fun _ => pure none)
+          let T ← StateT.lift table
+          if !forced && !held.any (fun H => within T H E) then ok := false; break
+        else
+          let some B ← fit E y (some B) | ok := false; break
+          if !forced && !within (← StateT.lift table) B E then ok := false; break
+      if ok then return ← record x (.ok [l])
     return some A
   | .build _ _ es =>
     let w ← get
