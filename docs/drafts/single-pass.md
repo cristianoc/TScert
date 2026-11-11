@@ -987,6 +987,10 @@ removal works through:
   instance where it binds every binder and admits the actuals. A call whose
   signature states a fresh result is made at the first expected array whose
   elements admit the result's.
+  A spread nested inside a fresh call actual receives the expected record
+  fields recursively; each spread operand that is a literal receives the
+  optional fields of that context, and each resulting copy is checked
+  within an expected arm (expression_objects.ml:135-218).
 - **Narrowing.** A tag test narrows a binding or path by the tag slice;
   `unknown` (a `source` label) becomes the kinds of value the test does not
   contradict where it contradicts some (`BranchRefinement.sourceSlice`); a
