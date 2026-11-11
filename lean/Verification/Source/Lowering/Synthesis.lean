@@ -25,6 +25,8 @@ namespace Verification.SourceExtraction.Synthesis
 open Lean ProgramTyping PositiveRules LabelStore Fragment
 open EquationGraphs (Tree)
 
+set_option maxHeartbeats 400000
+
 /-- What a binding holds at a point: its current type, its declared type, and
 the narrowed types of the member paths read from it. -/
 structure Env where
@@ -1486,11 +1488,9 @@ are exactly theirs. -/
 structure Copy where
   fields : List (PropKey × Bool × Ty Tree) := []
   exact : Bool := true
-  /-- The type of every own string key it does not name, of every own
-  symbol key, and of every canonical numeric key, where it states one. -/
+  numeric : Option (Ty Tree) := none
   index : Option (Ty Tree) := none
   symbols : Option (Ty Tree) := none
-  numeric : Option (Ty Tree) := none
 
 /-- The copies a value of type `A` gives as a spread's operand (or, `target`,
 as `Object.assign`'s target), one per label (`object_spread.ml`,
@@ -1502,9 +1502,15 @@ optional ones optional, its own keys exactly where it bounds them; a class
 value's static fields, with no bound. `force` (`TSCERT_FORCE=spreads`):
 every key the record states, present, and its own keys exactly. -/
 def copiesOf (A : Ty Tree) (force : Bool) (target : Bool := false) : Compiler (List Copy) := do
+  let A ← boundOf A
   let G ← graphNow
   let mut out : List Copy := []
   for l in A do
+    if let some S := storeOf G [l] then
+      if target then throw "a copy onto an array"
+      if let [.list t []] := PositiveRules.expand G S then
+        out := out ++ [{ exact := false, numeric := some (norm (t.required.flatten ++ t.optional.flatten ++ (t.rest.getD []))) }]
+        continue
     if l == Labels.nul || l == Labels.undef then
       out := out ++ [({} : Copy)]
       continue
@@ -1531,27 +1537,11 @@ def copiesOf (A : Ty Tree) (force : Bool) (target : Bool := false) : Compiler (L
       -- (an array's own keys are its elements' too, which no field states)
       let array := (fs ++ vs).any (·.1 == SourceTypes.storeField)
       out := out ++ [{ fields := named ++ opt, exact := force || (bs.any (·.among) && !array) }]
-    -- A dictionary: its named fields, its string index the type of every
-    -- other own string key, its symbol index every own symbol key's; a
-    -- number index states only the canonical numeric keys', so a key it
-    -- covers is left unstated (`object_spread.ml`, `Shape` with indexes).
     | [.dict fs [] vs ix os ms _ _ _] =>
-      if target then throw "a copy onto a dictionary"
-      -- (two index signatures of one key class: an intersection's, whose
-      -- meet the copy's index would be, outside the fragment,
-      -- `object_spread.ml`'s `meet_refused`)
-      if [IndexKeys.strings, .numeric, .symbols].any fun k => (ix.filter (·.1 == k)).length > 1 then
-        throw "a spread of an intersection of two operands with index signatures"
-      let named := ((fs ++ vs).filter fun (f, _) => f != SourceTypes.storeField &&
-          f != SourceTypes.protoField && !ms.any (·.key == f) && (match f with | .str _ => true | _ => false)).map
-        fun (f, B) => (f, false, B)
-      let opt := (os.filter fun o => !named.any (·.1 == o.key) && (match o.key with | .str _ => true | _ => false)).map
-        fun o => (o.key, !force, o.type)
-      let at_ (k : IndexKeys) : Option (Ty Tree) :=
-        match ix.filter (·.1 == k) with
-        | [] => none
-        | xs => some (norm (xs.flatMap (·.2)))
-      out := out ++ [{ fields := named ++ opt, exact := false, index := at_ .strings, symbols := at_ .symbols }]
+      let fields := ((fs ++ vs).filter fun (k, _) =>
+        (target || k != SourceTypes.protoField) && !ms.any (·.key == k)).map fun (k, A) => (k, false, A)
+      let opt := (os.filter fun o => !fields.any (·.1 == o.key)).map fun o => (o.key, true, o.type)
+      out := out ++ [{ fields := fields ++ opt, exact := false, index := ix.lookup .strings, symbols := ix.lookup .symbols }]
     | [.ctors _ _ statics] =>
       out := out ++ [{ fields := (statics.filter (·.1 != SourceTypes.protoField)).map fun (f, B) => (f, false, B), exact := false }]
     | [.arrs ..] => out := out ++ [{ exact := false }]
@@ -1591,7 +1581,7 @@ def mergeCopy (a b : Copy) : Compiler Copy := do
     match bf with
     | some (_, false, B) => out := out ++ [(k, false, B)]
     | _ =>
-      let bMaybe := bf.map (·.2.2)
+      let bMaybe := (bf.map (·.2.2)) <|> (match k with | .str _ => b.index | .sym _ => b.symbols)
       let bNever := bf.isNone && b.exact
       -- (a key the source may hold at its index)
       let indexAt (x : Copy) : Option (Ty Tree) := match k with
@@ -1603,35 +1593,23 @@ def mergeCopy (a b : Copy) : Compiler Copy := do
         if bNever then out := out ++ [(k, opt, A)]
         else if let some B := bMaybe then out := out ++ [(k, opt, ← joinTy A B)]
       | none =>
-        -- (a key the copy may hold at its index: a dictionary owns no
-        -- prototype, so the key is optional at either side's type)
-        match indexAt a with
-        | some A => if let some B := bMaybe then out := out ++ [(k, true, ← joinTy A B)]
-        | none =>
-          if a.exact then
-            if let some B := bMaybe then out := out ++ [(k, true, B)]
-  -- Where a side states an index and each says what it gives under every
-  -- key of its class, by an index or by its exact keys, the copy states
-  -- the index, at what either side and the fields of that class hold, and
-  -- so does every such field (`object_spread.ml`, `merge_alternative`).
-  let resolve (get : Copy → Option (Ty Tree)) (keyed : PropKey → Bool) : Compiler (Option (Ty Tree)) := do
-    if (get a).isNone && (get b).isNone then return none
-    if !((get a).isSome || a.exact) || !((get b).isSome || b.exact) then return none
-    let mut U : Ty Tree := []
-    for X in (get a).toList ++ (get b).toList ++ (out.filter (keyed ·.1)).map (·.2.2) do
-      U ← joinTy U X
-    return some U
-  let isStr : PropKey → Bool := fun | .str _ => true | _ => false
-  let index ← resolve (·.index) isStr
-  let symbols ← resolve (·.symbols) (!isStr ·)
-  let numeric ← if index.isSome then pure none else
-    resolve (·.numeric) fun | .str t => (t.toNat?.map (toString · == t)).getD false | _ => false
-  let fields := out.map fun (k, o, A) => match k, index, symbols with
-    | .str _, some V, _ => (k, o, V)
-    | .str _, none, _ => (k, o, A)
-    | _, _, some V => (k, o, V)
-    | _, _, none => (k, o, A)
-  return { fields, exact := a.exact && b.exact, index, symbols, numeric }
+        let indexed := match k with | .str _ => a.index | .sym _ => a.symbols
+        if let some A := indexed then
+          if let some B := bMaybe then out := out ++ [(k, true, ← joinTy A B)]
+        else if a.exact then
+          if let some B := bMaybe then out := out ++ [(k, true, B)]
+  let resolve (left right : Option (Ty Tree)) (keys : IndexKeys) :=
+    if (left.isSome || right.isSome) && (left.isSome || a.exact) && (right.isSome || b.exact) then
+      some (norm (left.getD [] ++ right.getD [] ++ out.flatMap fun (k, _, A) => if keys.surely k then A else []))
+    else none
+  let index := resolve a.index b.index .strings
+  let symbols := resolve a.symbols b.symbols .symbols
+  out := out.map fun (k, o, A) => (k, o, ((match k with | .str _ => index | .sym _ => symbols).getD A))
+  let numeric := if (a.numeric.isSome || b.numeric.isSome) &&
+      (a.numeric.isSome || a.exact) && (b.numeric.isSome || b.exact) then
+    some (norm (a.numeric.getD [] ++ b.numeric.getD [] ++ out.flatMap fun (k, _, A) =>
+      if IndexKeys.numeric.surely k then A else [])) else none
+  return { fields := out, exact := a.exact && b.exact, numeric := if index.isSome then none else numeric, index, symbols }
 
 /-- A copy's type: its required fields, its optional ones, its own keys
 exactly where its keys are exact and none is optional
@@ -1644,7 +1622,10 @@ def copyType (c : Copy) : Compiler (Ty Tree) := do
   -- (an index: a dictionary of writable indexes at those types)
   if !indexes.isEmpty then return ← prim (.dict req [] [] indexes opt [] [] indexes [])
   let bound : List KeyBound := if c.exact && opt.isEmpty then [⟨true, req.map (·.1)⟩] else []
-  prim (.refs req [] [] opt [] bound [])
+  let indexes := (c.index.map (IndexKeys.strings, ·)).toList ++
+    (c.numeric.map (IndexKeys.numeric, ·)).toList ++ (c.symbols.map (IndexKeys.symbols, ·)).toList
+  if indexes.isEmpty then prim (.refs req [] [] opt [] bound [])
+  else prim (.dict req [] [] indexes opt [] [] indexes [])
 
 /-- The copies after each part: a named field set in every copy, a spread
 merged into each copy once per copy its operand gives. -/
@@ -2021,6 +2002,7 @@ partial def exprAt (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (
   let forceElements := (← get).force.contains "elements"
   let forceSpreads := (← get).force.contains "spreads"
   let forceKeys := (← get).force.contains "keys"
+  let forceIndexes := (← get).force.contains "copy-indexes"
   match e with
   | .var _ n =>
     let r := match env.vars.lookup n with
@@ -2182,6 +2164,7 @@ partial def exprAt (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (
         | some k => parts := parts ++ [(some (.str k), ← widen A)]
         | none => parts := parts ++ [(none, A)]
       let alts ← copyParts [{}] parts forceSpreads
+      let alts := if forceIndexes then alts.map fun c => { c with numeric := c.numeric.map fun _ => [Labels.tru] } else alts
       return norm (← alts.mapM copyType).flatten
     -- Where a type is expected: each copy the parts give at the first
     -- member of it whose field at each named key the part is within, each
@@ -2620,6 +2603,7 @@ partial def exprAt (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (
     let r ← attempt e do
       let start ← copiesOf (← need A "the target") forceSpreads (target := true)
       let alts ← copyParts start (← Ss.mapM fun S => do return (none, ← need S "a source")) forceSpreads
+      let alts := if forceIndexes then alts.map fun c => { c with numeric := c.numeric.map fun _ => [Labels.tru] } else alts
       return norm (← alts.mapM copyType).flatten
     -- It writes the target's keys: every path ends.
     ends .all
@@ -3894,6 +3878,10 @@ partial def bindPattern (env : Env) (p : Pattern Expr) (A : Option (Ty Tree))
               let named := props.map fun (k, _, _) => PropKey.str k
               Except.ok <$> prim (.refs (fs.filter fun (k, _) => !named.contains k) [] [])
             | [.refs fs [] vs [] ms _ _] =>
+              if (fs ++ vs).any (·.1 == SourceTypes.storeField) then
+                let cs ← copiesOf A forced
+                let Rs ← cs.mapM copyType
+                return .ok (norm Rs.flatten)
               let named := props.map fun (k, _, _) => PropKey.str k
               let fields := (fs ++ vs).filter fun (f, _) => f != SourceTypes.protoField &&
                 f != SourceTypes.storeField && !ms.any (·.key == f) && !named.contains f
