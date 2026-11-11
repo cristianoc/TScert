@@ -5395,6 +5395,18 @@ partial def recursiveConstant (env : Env) (b : Fragment.Binding) (written : Bool
   let some S0 ← earlyContract b (if b.early then .ordinary else
       { CallEffects.Effect.ofFootprint ⟨.keep, .keep⟩ with onThrow := true })
     | expr env b.init
+  -- An annotation supplies the signature, not the self-effect seed:
+  -- statement_analysis.ml:294-317 seeds every non-early self at keep/keep.
+  let S0 ← if b.early || b.annot.isNone then pure S0 else StateT.lift do
+    let G ← graphNow
+    match PositiveRules.expand G S0 with
+    | [.arrs L S] =>
+      let seed (e : CallEffects.Effect) : CallEffects.Effect :=
+        { e with closed := ⟨.keep, .keep⟩, onThrow := true }
+      lower (do return [← SourceTypes.use (.arrs
+        (L.map fun a => { a with effect := seed a.effect })
+        (S.map fun a => { a with effect := seed a.effect }))])
+    | _ => pure S0
   -- Its self reads are uses of the constant as any other read is: each
   -- offers the literal a longer signature it is expected at
   -- (`offerUse`), and where the walk states offered rows at the literal,
@@ -5408,9 +5420,9 @@ partial def recursiveConstant (env : Env) (b : Fragment.Binding) (written : Bool
   let mut S := S0
   for _ in [0:4] do
     set w0
-    let (A, e1) ← expr { env with vars := upd env.vars b.name S, decl := upd env.decl b.name S } b.init
+    let (A, e1) ← expr { env with vars := upd env.vars b.name S, decl := upd env.decl b.name S } b.init (if b.annot.isSome then some S else none)
     let some L := A | return (A, e1)
-    if (written && !offered) || b.early || sameMeaning (← StateT.lift table) L S then return (A, e1)
+    if (written && b.annot.isNone && !offered) || b.early || sameMeaning (← StateT.lift table) L S then return (A, e1)
     S := L
   set w0
   return (← record b.init (.error "not handled: a recursive closure's effect undetermined"), env)
