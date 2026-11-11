@@ -551,8 +551,13 @@ position's with `undefined` otherwise (an index read past the end). -/
 def elementAt (A : Ty Tree) (index : Option Nat) (missing : Bool := true) : Compiler (Ty Tree) := do
   if A.isEmpty then throw "an element read of a value of no type"
   let G ← graphNow
+  let A ← (present G A).mapM fun l => boundOf [l]
+  let A := norm A.flatten
+  let G ← graphNow
   let mut out : Ty Tree := []
   for l in A do
+    -- An empty intersection arm has no element to contribute.
+    if G.plain l && (PositiveRules.expand G [l]).isEmpty then continue
     if shapeOf G l == some .isStr then
       out := out ++ (← prim .str) ++ (if missing then [Labels.undef] else [])
       continue
@@ -1580,25 +1585,11 @@ def copyParts (start : List Copy) (parts : List (Option PropKey × Ty Tree)) (fo
   return alts
 
 /-- The property names a key of type `K` may spell, where each of its
-labels is one: a string's, or a number's that is an array index (the
-property its `ToString` spells). -/
+labels is one: a string's, or the property a number's `ToString` spells
+(the lowering's `keySingletons`, including fractional numeric properties). -/
 def keyNames (K : Ty Tree) : Compiler (Option (List PropKey)) := do
   let G ← graphNow
-  if K.isEmpty then return none
-  let mut out : List PropKey := []
-  for l in K do
-    match PositiveRules.expand G [l] with
-    | [.strLit s] => out := out ++ [.str s]
-    | [.strIn ss] => out := out ++ ss.map .str
-    | [.numLit b] => match indexOfBits b with
-      | some n => out := out ++ [.str (toString n)]
-      | none => return none
-    | [.numIn bs] => for b in bs do
-        match indexOfBits b with
-        | some n => out := out ++ [.str (toString n)]
-        | none => return none
-    | _ => return none
-  return some out.eraseDups
+  return (keySingletons G K).map fun ks => ks.map (·.2)
 
 /-- `o[k]` of an `o` of type `O` at a key of type `K` (`type_queries.ml`,
 `index_type`): an array's or a string's element, and an object's field at
@@ -1610,6 +1601,9 @@ def keyedRead (vars : List (String × Ty Tree)) (O K : Ty Tree) (missing : Bool)
     Compiler (Ty Tree) := do
   let G ← graphNow
   if O.isEmpty then throw "an element read of a value of no type"
+  let O ← (present G O).mapM fun l => boundOf [l]
+  let O := norm O.flatten
+  let G ← graphNow
   let index ← keyIndex K
   let names ← keyNames K
   let mut out : Ty Tree := []
@@ -1619,6 +1613,15 @@ def keyedRead (vars : List (String × Ty Tree)) (O K : Ty Tree) (missing : Bool)
     | true, _, _ => out := out ++ (← elementAt [l] index missing)
     | false, some ks, [.refs ..] | false, some ks, [.dict ..] =>
       for k in (if firstOnly then ks.take 1 else ks) do out := out ++ (← readField vars [l] k)
+    | false, none, [.dict _ _ _ ix _ _ _ _ _] =>
+      let cls := if runtimeNumberKey G K then some IndexKeys.numeric
+        else if K.all (fun l => shapeOf G l == some .isStr) then some .strings
+        else if (PositiveRules.expand G K).all (fun c => match c with | .symbol | .symbolLit _ => true | _ => false) then some .symbols
+        else none
+      let some cls := cls | throw "a dictionary key of no one key class"
+      let some (_, B) := (PositiveNormalization.numericFirst ix).find? (fun (k, _) => cls.within k)
+        | throw (readRefusal "a dictionary with no index over the key's class")
+      out := out ++ B ++ (if missing then [Labels.undef] else [])
     | false, _, _ => out := out ++ (← elementAt [l] index missing)
   return norm out
 
