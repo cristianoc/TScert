@@ -69,6 +69,8 @@ const controls: { file: string; unit: string; force: string; positive?: boolean 
   { file: "invalid-object-spread-two-sources", unit: "count@156", force: "spreads" },
   { file: "invalid-keyed-read", unit: "pick@70", force: "keys" },
   { file: "invalid-declaration-pop-callback", unit: "dropped@359", force: "callees" },
+  { file: "certified-value-import", unit: "tallies@829", force: "imports", positive: true },
+  { file: "invalid-certified-write-value-import", unit: "zeros@319", force: "imports" },
   { file: "invalid-compiler-api-guard-loop-partial", unit: "names@203", force: "guards" },
   { file: "invalid-read-narrows-write", unit: "wrong@187", force: "reads" },
   { file: "invalid-read-narrows-closure", unit: "wrong@153", force: "reads" },
@@ -136,7 +138,10 @@ function passVerdicts(artifacts: string, key: string, given: string | null, mode
   for (let changed = true; changed; ) {
     changed = false;
     for (const [unit, v] of verdicts) {
-      if (v.closed === true && (dependencies.get(unit) ?? []).some((d) => verdicts.get(d)?.closed === false)) {
+      // A module unit it depends on (`module:<location>#<unit>`) counts only
+      // where its own line is printed.
+      if (v.closed === true && (dependencies.get(unit) ?? []).some((d) => verdicts.get(d)?.closed === false ||
+          (d.startsWith("module:") && !verdicts.has(d)))) {
         v.closed = false;
         changed = true;
       }
