@@ -29,6 +29,85 @@ structure StandIns where
   imports : List StandIn := []
   deriving FromJson, ToJson
 
+/-- The generic closures a source tree creates, as their trees, outer first. -/
+partial def genericLambdas : Json → List Json
+  | .arr xs => xs.toList.flatMap genericLambdas
+  | .obj kvs =>
+    let j := Json.obj kvs
+    let here := if (j.getObjValAs? String "k").toOption == some "lambda" &&
+        ((j.getObjVal? "typeParams").toOption.bind (·.getArr?.toOption)).any (!·.isEmpty) then [j] else []
+    here ++ kvs.toList.flatMap fun (_, v) => genericLambdas v
+  | _ => []
+
+/-- **A generic closure's scheme claim from its annotations** (mode 8): its
+binders its own, each bound its written one (an earlier binder by name); its
+receiver its written `this` (an arrow's, every value); its parameters and
+result as written, a defaulted parameter with `undefined`, an array rest its
+element (`ClosureSetup.lambdaSetup`'s own signature); its effect the one it
+writes, else, for an expression body that, with its defaults, calls nothing
+(`Synthesis.mayCall`),
+keeping values and stores and bounding its throws, else the ordinary effect;
+the walk checks its body's effect within it (`Synthesis.walkLambda`). The
+scheme row and the binders its body reads as rigid rows are then
+`Scheme.closureRows`'s, as for a producer's scheme claim
+(claims.ml:546-564). A closure that writes no result, a guard, an async
+closure, a resolution-qualified binder or a rest of no array is claimed at
+no scheme. -/
+def writtenSchemes (force : List String := []) : ClosureSchemes := fun T body => do
+  let action : Compiler (List (Expression Tree)) := do
+    let mut out : List (Expression Tree) := []
+    for j in genericLambdas body do
+      let .ok (.lambda pos receiver tps params defaults rest result guard stated async _ body) := Fragment.decodeExpr j
+        | continue
+      let some ret := result | continue
+      if guard.isSome || async || tps.any (·.resolution.isSome) then continue
+      let part (j : Json) : Compiler (Option (Ty Tree)) :=
+        tryCatch (some <$> lower (Fragment.callableType j)) fun _ => pure none
+      let names := tps.map (·.name)
+      let bs ← tps.mapM (fun p => do
+          match p.bound with
+          | none => pure (some none)
+          | some b => match ← part b with
+            | some [l] =>
+              match EquationStore.placeholderName (← table) l with
+              | some m => pure (if names.contains m then some (some (ClaimType.param m)) else some (some (.labels [l])))
+              | none => pure (some (some (.labels [l])))
+            | some B => pure (some (some (.labels B)))
+            | none => pure none)
+      let some bounds := bs.mapM id | continue
+      let fixed := if rest then params.dropLast else params
+      let qs ← fixed.zipIdx.mapM fun ((_, ty), i) => do
+        let A ← part ty
+        pure (A.map fun A => if defaults.any (·.1 == i) then Synthesis.norm (A ++ [LabelStore.Labels.undef]) else A)
+      let some ps := qs.mapM id | continue
+      let restEl ← match rest, params.getLast? with
+        | true, some (_, ty) => match Fragment.arrayElement ty (readonly := true) with
+          | some el => pure (some (← part el))
+          | none => pure (some none)
+        | _, _ => pure none
+      if restEl == some none then continue
+      let some R ← part ret | continue
+      let recv ← match receiver with
+        | some (annot, _) => part annot
+        | none => pure (some [← lower (SourceTypes.use .source)])
+      let some recv := recv | continue
+      -- (`TSCERT_FORCE=schemes`, and `literals`: keeping both, bounding its throws, the
+      -- adversarial proposal)
+      let effect := if force.contains "schemes" || force.contains "literals" then
+          { (CallEffects.Effect.ofFootprint ⟨.keep, .keep⟩) with onThrow := true } else
+        stated.getD (match body with
+        | .block .. => .ordinary
+        | x => if Synthesis.mayCall x || defaults.any (Synthesis.mayCall ·.2) then .ordinary
+          else { (CallEffects.Effect.ofFootprint ⟨.keep, .keep⟩) with onThrow := true })
+      let binders := (tps.zip bounds).map fun (p, b) =>
+        ({ name := p.name, bound := b, resolution := none } : ResolutionWire.Binder (ClaimType Tree))
+      let claim : ClaimType Tree :=
+        .scheme binders (.labels recv) (ps.map .labels) (restEl.join.map .labels) (.labels R) effect
+      out := out ++ [({ point := "", pos := pos, type := claim } : Expression Tree)]
+    return out
+  let ((es, T), _) ← runCompiler T [] (do return (← action, ← table))
+  return (T, es)
+
 /-- A type the front states by none of its own: the annotation's, which the
 claims-free retyping reads (`retypeFromFragment`). -/
 private def annotated (what : String) : Json :=
@@ -198,6 +277,9 @@ def instancesFromWalk (force : List String := []) : Instances := fun fr T f c mo
   let (schemes, generics) := fr.genericValues
   let (w, T) ← SinglePass.timedKind "lower: of extractAll, the walk" fun _ =>
     Synthesis.walkUnit T f (module.map (fun v => (v.1, moduleValueType v)) ++ schemes) generics force scope
+      (schemes := c.expressions.filterMap fun e => match e.type with
+        | .labels A => some (e.pos, A)
+        | _ => none)
   let expressions := w.instances.filterMap fun (pos, θ) => do
     let (_, _, name, _) ← calls.find? (·.1 == pos)
     let g ← used.find? (·.name == name)
@@ -339,6 +421,7 @@ def fragmentPlans (ast : Json) (fileKey : String) (budget : PositiveCertificates
   let wanted := (fr.selected names).flatMap fr.group
   let (T, plans) := SinglePass.timedKind "lower: extractAll" fun _ =>
     fr.extractSome (wanted.foldl (·.insert ·) {}) (some (retypeFromFragment force)) (some (instancesFromWalk force))
+      (some (writtenSchemes force))
   let F ← SinglePass.timedKind "lower: freeze" fun _ => EquationStore.freeze T
   let plans := SinglePass.timedKind "lower: plans over the store" fun _ => plans.map fun e => e.bind (FunctionPlan.over F)
   return ⟨⟨ast, claims, qualified, []⟩, fr, F, plans⟩
