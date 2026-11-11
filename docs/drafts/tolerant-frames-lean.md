@@ -206,6 +206,16 @@ stability is invariant (`stableAt_invariant`), so the witness of
 $`\mathrm{rigid}(\pi)`$ is a fact of the world. Freshness of a store against
 the entry mark reads no heap and is invariant (`fresh_invariant`).
 
+Rigidity on a domain, proved. $`\Phi`$ is rigid on $`D`$ at $`\rho`$ when its
+action is transitive from every state where $`D`$ holds (`RigidOn`); then
+$`D\wedge\Box_\Phi F\vdash\Box_\Phi\Box_\Phi F`$ (`box_idem_on`), and an invariant
+$`D`$ holds at every state an action reaches (`rigidOn_domain`), so
+idempotence iterates. A store region at a path,
+$`\{x.p.k:\delta\}`$, is rigid on the domain of the path's stability,
+$`\mathrm{StableAt}\ x\ p\ v`$, whatever $`\delta`$ (`path_rigid_on`): the region
+reads the same locations at every heap where the path reads $`v`$
+(`path_mem_eq`), and changes compose (`Change.Holds.trans`).
+
 ## Entering the modality
 
 The tolerant frame theorem, proved: a fact kind whose support the effect
@@ -223,7 +233,11 @@ y\le|x| \;\vdash\; \Box_G\,(y\le|x|)
 (`grow`, `dense`), for variables $`x`$, $`y`$ and a fixed prefix $`k`$. Density here is physical presence of the first $`k`$ store entries: it states neither that the listed cells are allocated nor anything of the elements' contents.
 Along a stable path $`p`$, $`y\le|x.p|\vdash\Box_G(y\le|x.p|)`$
 (`grow_path`): the note's (Rigid) with (Grow), the rigidity supplied by the
-world.
+world. $`y\le|x.p|`$ is the pass's linear index fact over the value of $`y`$
+and the length term at $`x`$'s path $`p`$ (proved: `pathLowerBound_iff`), so
+(Grow) at a rigid path holds of that fact (`grow_path_fact`). That
+`StableAt` follows from the pass's own path-preservation evidence is not
+connected.
 
 ## The facts a step is not handed
 

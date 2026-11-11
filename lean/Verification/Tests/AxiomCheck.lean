@@ -175,6 +175,12 @@ run_cmd do
   check ``Verification.TolerantFrames.adminClosed_bound
   check ``Verification.TolerantFrames.action_compose_at
   check ``Verification.TolerantFrames.rebaseOk_stable
+  check ``Verification.TolerantFrames.box_idem_on
+  check ``Verification.TolerantFrames.rigidOn_domain
+  check ``Verification.TolerantFrames.path_mem_eq
+  check ``Verification.TolerantFrames.path_rigid_on
+  check ``Verification.TolerantFrames.pathLowerBound_iff
+  check ``Verification.TolerantFrames.grow_path_fact
   let env ← getEnv
   let project (decl : Name) : Bool := match env.getModuleIdxFor? decl with
     | some i => (`Verification).isPrefixOf env.header.moduleNames[i.toNat]!

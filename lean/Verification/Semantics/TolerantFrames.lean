@@ -425,6 +425,61 @@ theorem stable_rigid {Φ : Footprint} {x : Nat} {p : List String} {v : Val} {ρ 
     {s : IndexedHeap} (hp : StableAt x p v ρ m s) : Box Φ (ReadsAs x p v) ρ m s :=
   fun _ ha => ha.1.readPath hp
 
+/-! ## Rigidity on a domain
+
+`box_idem` needs transitivity of the action from every state; a footprint
+whose region is read along a path composes only where the path resolves to
+the same value in both heaps. Rigidity on a domain asks transitivity from the
+domain's states, and the domain carries the evidence: a stable path, a fact
+of the world every admissible transition keeps. -/
+
+/-- `Φ`'s action is transitive from every state of `D`. -/
+def RigidOn (Φ : Footprint) (ρ : Env) (m : Nat) (D : Assertion) : Prop :=
+  ∀ s₁ s₂ s₃, D ρ m s₁ → Action Φ ρ s₁ s₂ → Action Φ ρ s₂ s₃ → Action Φ ρ s₁ s₃
+
+/-- (e) on a domain: idempotence from a state of the domain. -/
+theorem box_idem_on {Φ : Footprint} {F D : Assertion} {ρ : Env} {m : Nat} {s : IndexedHeap}
+    (hr : RigidOn Φ ρ m D) (hD : D ρ m s) (hb : Box Φ F ρ m s) : Box Φ (Box Φ F) ρ m s :=
+  fun s₁ ha₁ s₂ ha₂ => hb s₂ (hr s s₁ s₂ hD ha₁ ha₂)
+
+/-- A rigid domain that is invariant stays one along every action: the
+domain holds at every state an action reaches, so idempotence iterates. -/
+theorem rigidOn_domain {Φ : Footprint} {D : Assertion} {ρ : Env} {m : Nat} {s s' : IndexedHeap}
+    (hinv : Invariant D) (hD : D ρ m s) (ha : Action Φ ρ s s') : D ρ m s' :=
+  hinv ρ m s s' ha.1 hD
+
+/-- The region of the field `k` of the value the path `p` reads from `x` is
+the same at every heap where the path reads `v`. -/
+theorem path_mem_eq {ρ : Env} {x : Nat} {p : List String} {k : PropKey} {v : Val} {h h' : Heap} {l : Nat}
+    (hv : HeapKnowledge.readPath h (ρ x) p = some v) (hv' : HeapKnowledge.readPath h' (ρ x) p = some v) :
+    (Region.path x p k).mem ρ h l = (Region.path x p k).mem ρ h' l := by
+  simp only [Region.mem, hv, hv']
+
+/-- **A store region at a stable path is rigid on the domain of the path's
+stability**: `{x.p.k: δ}` composes from every state where the path from `x`
+is stable, whatever the change `δ`. -/
+theorem path_rigid_on (x : Nat) (p : List String) (k : PropKey) (δ : Change) (v : Val) (ρ : Env) (m : Nat) :
+    RigidOn [(.path x p k, δ)] ρ m (StableAt x p v) := by
+  intro s₁ s₂ s₃ hD ha₁ ha₂
+  have hv₁ := hD.read s₁.pos s₁.ok
+  have hv₂ := ha₁.1.readPath hD
+  refine ⟨ha₁.1.trans ha₂.1, Nat.le_trans ha₁.2.1 ha₂.2.1, fun l v₀ h₀ => ?_⟩
+  obtain ⟨v₁, h₁, a₁⟩ := ha₁.2.2 l v₀ h₀
+  obtain ⟨v₂, h₂, a₂⟩ := ha₂.2.2 l v₁ h₁
+  have hb : s₁.h.length ≤ s₂.h.length := ha₁.2.1
+  refine ⟨v₂, h₂, ?_⟩
+  have single : ∀ {e}, e ∈ [(Region.path x p k, δ)] → e = (Region.path x p k, δ) := fun he => by simpa using he
+  rcases a₁ with rfl | ⟨e₁, he₁, hm₁, hh₁⟩
+  · rcases a₂ with rfl | ⟨e₂, he₂, hm₂, hh₂⟩
+    · exact .inl rfl
+    · obtain rfl := single he₂
+      exact .inr ⟨_, List.mem_singleton_self _, (path_mem_eq hv₁ hv₂).trans hm₂, hh₂.lower hb⟩
+  · obtain rfl := single he₁
+    rcases a₂ with rfl | ⟨e₂, he₂, -, hh₂⟩
+    · exact .inr ⟨_, List.mem_singleton_self _, hm₁, hh₁⟩
+    · obtain rfl := single he₂
+      exact .inr ⟨_, List.mem_singleton_self _, hm₁, hh₁.trans hb hh₂⟩
+
 /-! ## Entering the modality -/
 
 /-- **The tolerant frame theorem as a modal law**: a fact whose support the
@@ -486,6 +541,40 @@ theorem grow_path {y x : Nat} {p : List String} {v : Val} {ρ : Env} {m : Nat} {
   obtain ⟨ls', hls', hlen, hmax⟩ := hc.2.2 rfl st ls hls
   exact ⟨v, a, ls'.length, ha.1.readPath hp, ha', HeapKnowledge.lengthOf_of_store hst hls' (hmax hm),
     by omega⟩
+
+open HeapKnowledge in
+/-- `y ≤ |x.p|` as the pass states it: a linear index fact over the value of
+slot `y` and the length term at `x`'s path `p`. -/
+def pathLowerBoundFact (y x : Nat) (p : List String) : IndexFact :=
+  .linear (.le [(.value y, 1), (⟨.length, x, p⟩, -1)] 0)
+
+/-- **`PathLowerBound` is the pass's path-term index fact.** -/
+theorem pathLowerBound_iff {y x : Nat} {p : List String} {ρ : Env} {m : Nat} {s : IndexedHeap} :
+    PathLowerBound y x p ρ m s ↔ (pathLowerBoundFact y x p).HoldsAt ρ s.h := by
+  have e1 : HeapKnowledge.termValue ρ s.h (.value y) = HeapKnowledge.intValue (ρ y) := rfl
+  have e2 : HeapKnowledge.termValue ρ s.h ⟨.length, x, p⟩ =
+      (HeapKnowledge.readPath s.h (ρ x) p).bind (HeapKnowledge.lengthOf s.h) := rfl
+  simp only [PathLowerBound, pathLowerBoundFact, HeapKnowledge.IndexFact.HoldsAt, Linear.Fact.vars,
+    Linear.Fact.Holds, Linear.Form.eval, List.map, List.mem_cons, List.not_mem_nil, or_false,
+    forall_eq_or_imp, forall_eq, HeapKnowledge.termValuation, e1, e2]
+  constructor
+  · rintro ⟨w, a, len, hw, ha, hl, hle⟩
+    rw [ha, hw]
+    simp only [Option.bind_some, hl, Option.isSome_some, Option.getD_some, true_and]
+    omega
+  · rintro ⟨⟨hy, hx⟩, hle⟩
+    obtain ⟨a, ha⟩ := Option.isSome_iff_exists.mp hy
+    obtain ⟨len, hl⟩ := Option.isSome_iff_exists.mp hx
+    obtain ⟨w, hw, hl'⟩ := Option.bind_eq_some_iff.mp hl
+    rw [ha, hl] at hle
+    simp only [Option.getD_some] at hle
+    exact ⟨w, a, len, hw, ha, hl', by omega⟩
+
+/-- (Grow) at a rigid path for the pass's path-term fact. -/
+theorem grow_path_fact {y x : Nat} {p : List String} {v : Val} {ρ : Env} {m : Nat} {s : IndexedHeap}
+    (hp : StableAt x p v ρ m s) (hb : (pathLowerBoundFact y x p).HoldsAt ρ s.h) :
+    Box growEffect.fp (fun ρ _ s => (pathLowerBoundFact y x p).HoldsAt ρ s.h) ρ m s :=
+  fun s' ha => pathLowerBound_iff.mp (grow_path hp (pathLowerBound_iff.mpr hb) s' ha)
 
 /-- `dense(x, k)`: the first `k` indices of `x`'s store are present. -/
 def DenseAt (x k : Nat) : Assertion := fun ρ _ s => Dense x k ρ s.h
