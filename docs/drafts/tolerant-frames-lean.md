@@ -184,7 +184,7 @@ y\le|x| \;\vdash\; \Box_G\,(y\le|x|)
 \mathrm{dense}(x,k) \;\vdash\; \Box_G\,\mathrm{dense}(x,k)
 ```
 
-(`grow`, `dense`), for variables $`x`$, $`y`$ and a fixed prefix $`k`$.
+(`grow`, `dense`), for variables $`x`$, $`y`$ and a fixed prefix $`k`$. Density here is physical presence of the first $`k`$ store entries: it states neither that the listed cells are allocated nor anything of the elements' contents.
 Along a stable path $`p`$, $`y\le|x.p|\vdash\Box_G(y\le|x.p|)`$
 (`grow_path`): the note's (Rigid) with (Grow), the rigidity supplied by the
 world.
