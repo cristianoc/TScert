@@ -90,7 +90,8 @@ structure Walk where
   object literal at its expected type, `spreads` every spread with every
   key its operand's type states, `guards` every guard's and family guard's
   true answer on its false edge too, `reads` a member read's receiver
-  without `null` and `undefined` at every later statement. -/
+  without `null` and `undefined` at every later statement, `paths` each
+  narrowed member path narrowed at every later statement. -/
   force : List String := []
   /-- Where the unit's body completes: its bindings there, or none where it
   never completes. -/
@@ -119,6 +120,9 @@ structure Walk where
   /-- The bindings a member read was made of, under `TSCERT_FORCE=reads`:
   held without `null` and `undefined` at every later statement. -/
   readForced : List String := []
+  /-- The member paths narrowed so far, under `TSCERT_FORCE=paths`: held
+  narrowed at every later statement. -/
+  pathsForced : List ((String × List PropKey) × Ty Tree) := []
   /-- Whether a function literal is being walked. -/
   inLiteral : Bool := false
   /-- Whether the walk reads its own record of changes as a declaration's
@@ -418,6 +422,22 @@ def memberSigs (m : MethodMembers.Sig (Ty Tree)) : Compiler (List Sig) := do
   return m.calls.map (fun a => ⟨a.arguments, false, a.result⟩) ++
     m.rests.map (fun a => ⟨a.arguments.1, true, a.result⟩)
 
+/-- A member path `root.path` narrowed by `k`: its narrowed type, else the
+type read along it, at `k`'s, where the path is a member of an object other
+than `length` (a primitive's member is no location). -/
+def narrowPath (env : Env) (root : String) (path : List PropKey) (k : Ty Tree → Compiler (Ty Tree)) :
+    Compiler Env := do
+  let some A := env.vars.lookup root | return env
+  let P ← match env.paths.lookup (root, path) with
+    | some P => pure (some P)
+    | none => tryCatch (some <$> path.foldlM (fun B f => readField env.vars B f) A) fun _ => pure none
+  let G ← graphNow
+  let receiver ← tryCatch (some <$> path.dropLast.foldlM (fun B f => readField env.vars B f) A) fun _ => pure none
+  let ofObject := path.getLast? != some lengthKey && receiver.any fun R => R.all fun l => (shapeOf G l).isNone
+  match P with
+  | some P => if ofObject then return { env with paths := upd env.paths (root, path) (← k P) } else return env
+  | none => return env
+
 /-- The narrowing a test of `tag` answering `q` makes of the binding or the
 member path `target` reads, and, for a test of a member `x.f`, of `x` itself:
 the members of `x`'s type whose `f` can answer so (a discriminant). -/
@@ -429,17 +449,19 @@ def narrowTarget (env : Env) (target : Expr) (tag : Tag) (q : Bool) (literalOper
     return { env with vars := upd env.vars root (← slice A tag q) }
   | some (root, path) =>
     let some A := env.vars.lookup root | return env
-    let mut env := env
-    -- The path's type: its narrowed one, or read along it.
-    let P ← match env.paths.lookup (root, path) with
-      | some P => pure (some P)
-      | none => tryCatch (some <$> path.foldlM (fun B f => readField env.vars B f) A) fun _ => pure none
-    -- A member of an object only (a primitive's member is no location).
-    let G ← graphNow
-    let receiver ← tryCatch (some <$> path.dropLast.foldlM (fun B f => readField env.vars B f) A) fun _ => pure none
-    let ofObject := path.getLast? != some lengthKey && receiver.any fun R => R.all fun l => (shapeOf G l).isNone
-    if let some P := P then
-      if ofObject then env := { env with paths := upd env.paths (root, path) (← slice P tag q) }
+    let mut env ← narrowPath env root path fun P => slice P tag q
+    -- A discriminant of a member path (`o.key.kind`): the path `o.key` to
+    -- its arms whose field can answer so, as the root below.
+    if let some f := path.getLast? then
+      if path.length > 1 then
+        env ← narrowPath env root path.dropLast fun P => do
+          let mut kept : Ty Tree := []
+          for l in P do
+            let keep ← tryCatch (do
+                let B ← readField env.vars [l] f
+                return !(← slice B tag q).isEmpty) fun _ => pure true
+            if keep then kept := kept ++ [l]
+          return kept
     if let [f] := path then
       let mut kept : Ty Tree := []
       for l in A do
@@ -463,6 +485,8 @@ def narrowTo (env : Env) (target : Expr) (R : Ty Tree) : Compiler Env := do
   | some (root, []) =>
     let some A := env.vars.lookup root | return env
     return { env with vars := upd env.vars root (at_ A) }
+  -- A guard's actual a member path (`isX(a.b)`): the path so narrowed.
+  | some (root, path) => narrowPath env root path fun A => pure (at_ A)
   | _ => return env
 
 /-- A write of key `k` at a value of type `R` on a constant of type `O` whose
@@ -966,28 +990,34 @@ partial def refine (env : Env) (c : Expr) (q : Bool) : W Env := do
     if !q && !(← get).force.contains "guards" then return env
     promised env callee args false
   | .tagMember _ _ none tags _ e =>
+    let sliced (A : Ty Tree) : Compiler (Ty Tree) := do
+      if q then do
+        let parts ← tags.mapM fun t => slice A t true
+        pure (norm parts.flatten)
+      else tags.foldlM (fun B t => slice B t false) A
     match memberPath e with
     | some (root, []) =>
       let some A := env.vars.lookup root | return env
-      let B ← if q then do
-          let parts ← tags.mapM fun t => StateT.lift (slice A t true)
-          pure (norm parts.flatten)
-        else tags.foldlM (fun B t => StateT.lift (slice B t false)) A
-      return { env with vars := upd env.vars root B }
+      return { env with vars := upd env.vars root (← StateT.lift (sliced A)) }
+    | some (root, path) => StateT.lift (narrowPath env root path sliced)
     | _ => return env
   -- A family guard testing its operand's field (`ts.isIdentifier(n)`, the
   -- `kind` field): the binding's arms whose field can answer so, `undefined`
   -- answering no `true` and, where it throws, no `false` either
   -- (`Control.conditionContext`'s `.tagMember`, `PromiseCalls.memberFieldSlice`).
   | .tagMember _ _ (some f) tags onUndefined e =>
+    let G ← StateT.lift graphNow
+    -- (`TSCERT_FORCE=guards`: the true answer's arms on both edges)
+    let q := q || (← get).force.contains "guards"
+    let sliced (A : Ty Tree) : Ty Tree :=
+      let A := if q || onUndefined == .throws then BranchRefinement.tagSlice G A .isUndef false else A
+      norm (PromiseCalls.memberFieldSlice G A f tags q [])
     match memberPath e with
     | some (root, []) =>
       let some A := env.vars.lookup root | return env
-      let G ← StateT.lift graphNow
-      -- (`TSCERT_FORCE=guards`: the true answer's arms on both edges)
-      let q := q || (← get).force.contains "guards"
-      let A := if q || onUndefined == .throws then BranchRefinement.tagSlice G A .isUndef false else A
-      return { env with vars := upd env.vars root (norm (PromiseCalls.memberFieldSlice G A f tags q [])) }
+      return { env with vars := upd env.vars root (sliced A) }
+    -- On a member path (`ts.isIdentifier(m.name)`): the path so narrowed.
+    | some (root, path) => StateT.lift (narrowPath env root path fun A => pure (sliced A))
     | _ => return env
   | _ => return env
 
@@ -1012,6 +1042,10 @@ partial def promised (env : Env) (callee : Expr) (args : List Expr) (asserts : B
       | none => true
     if !admits || args.length < p + 1 then continue
     let some x := args[p]? | continue
+    -- A member path read before a call that may change a value of the heap
+    -- may hold another value after it: no path is narrowed there.
+    if w.changedValues then
+      if let some (_, _ :: _) := memberPath x then return env
     return ← StateT.lift (narrowTo env x s.result)
   return env
 
@@ -1280,14 +1314,19 @@ partial def expr (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (Op
   | .arrayAssign _ targets rest rhs =>
     wrote
     let (R, e1) ← expr env rhs
-    let mut env := e1
+    let names := targets.filterMap (·.target.targetLocal) ++ (rest.bind fun r => r.2.2.target.targetLocal).toList
+    -- Each name the pattern assigns at its declared type, and no path
+    -- through it narrowed, from the first target's assignment on (a later
+    -- default may read an earlier target).
+    let reset (env : Env) : Env := { env with
+      vars := env.vars.map fun (n, A) => if names.contains n then (n, (env.decl.lookup n).getD A) else (n, A)
+      paths := env.paths.filter fun ((r, _), _) => !names.contains r }
+    let mut env := reset e1
     for t in targets do
       let (_, e') ← expr env t.target
       env := e'
       if let some d := t.default_ then env := (← expr env d).2
-    let names := targets.filterMap (·.target.targetLocal) ++ (rest.bind fun r => r.2.2.target.targetLocal).toList
-    env := { env with vars := env.vars.map fun (n, A) =>
-      if names.contains n then (n, (env.decl.lookup n).getD A) else (n, A) }
+    env := reset env
     return (← record e (match R with | some R => .ok R | none => .error "the value undetermined"), env)
   | .arith _ op l r =>
     let (L, e1) ← expr env l
@@ -2147,6 +2186,12 @@ partial def stmts (env : Option Env) (ss : List Stmt) : W (Option Env) := do
     let e ← if forced.isEmpty then pure e else do
       let G ← StateT.lift graphNow
       pure { e with vars := e.vars.map fun (n, A) => if forced.contains n then (n, present G A) else (n, A) }
+    -- (`TSCERT_FORCE=paths`: each path narrowed so far kept narrowed)
+    let w ← get
+    let e := if !w.force.contains "paths" then e else
+      { e with paths := e.paths ++ (w.pathsForced.filter fun (p, _) => (e.paths.lookup p).isNone) }
+    if w.force.contains "paths" then
+      modify fun w => { w with pathsForced := w.pathsForced ++ e.paths.filter fun (p, _) => (w.pathsForced.lookup p).isNone }
     -- A `for`'s loop, right after its declarations, has its head's entry at
     -- the `for`'s start, the declarations' position: there the bindings
     -- the loop's entry holds, then the declarations' entry's.
@@ -2172,6 +2217,9 @@ partial def stmts (env : Option Env) (ss : List Stmt) : W (Option Env) := do
     | .loop .. | .forOf .. => modify fun w => { w with currents := w.currents.erase at_ }
     | _ => if !e.paths.isEmpty then modify fun w => { w with currents := w.currents.insert s.pos.1 (currentOf e) }
     env ← stmt e s
+    if (← get).force.contains "paths" then
+      if let some e' := env then
+        modify fun w => { w with pathsForced := w.pathsForced ++ e'.paths.filter fun (p, _) => (w.pathsForced.lookup p).isNone }
     prev := some s
   return env
 
