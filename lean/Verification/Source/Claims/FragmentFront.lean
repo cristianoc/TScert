@@ -276,7 +276,14 @@ def retypeFromFragment (force : List String := []) : Retype := fun fr T f fc mod
   let points := (points.map (·.1)).eraseDups.filterMap fun id => (joined.get? id).map (id, ·)
   -- Its own footprint the one its callers read (`fragmentClaims`): written,
   -- a stand-in's or forced, which its own unit then establishes.
-  let fc := { fc with points }
+  -- A signature's interior replaces the claims at its body's execution
+  -- points, the same overlay consumed by ClosureSetup.lambdaSetup.
+  let arrowClaims := fc.arrowClaims.map fun (sp, rows) => (sp, rows.map fun row =>
+    { row with points := points.map fun (id, point) => (id, {
+        exprs := row.exprs.filter (fun (sp, _) => point.exprs.any (·.1 == sp))
+        envs := row.envs.filter (fun (p, _) => point.envs.any (·.1 == p))
+        entryCurrent := row.entryCurrent.filter (fun (p, _) => point.envs.any (·.1 == p)) }) })
+  let fc := { fc with points, arrowClaims }
   if init then return (T, fc)
   let action : Compiler ((List (String × SourceClaims.Candidate Tree) × SourceClaims.Candidate Tree) ×
       EquationStore.State) := do
