@@ -896,7 +896,9 @@ removal works through:
   each a member of an object other than `length`: a test of the path, a
   guard or a family guard whose actual it is (a guard's only where its call
   changes no value of the heap), and a discriminant test of a member of it
-  (`o.key.kind` narrows `o.key` to the arms whose `kind` can answer so). A
+  (`o.key.kind` narrows `o.key` to the arms whose `kind` can answer so),
+  where some read of the unit's walk reads the path, or a longer path of its
+  root, at its narrowed type. A
   path's narrowing ends at a write of its field, at an assignment of its
   root (a destructuring assignment's from its first target on), after a
   call whose instance may change a value of the heap (or whose callee is
