@@ -1933,6 +1933,31 @@ partial def exprAt (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (
     return (r, e1)
   | .read _ fld x =>
     let (O, e1) ← expr env x
+    -- A read off a generic module value's name (a generic class's static
+    -- field) reads the value at an instance, each binder at its bound,
+    -- recorded as a call's (the producer's, `Fragment.Expr.callees`); a
+    -- binder of a bound is not handled here.
+    let O ← match x with
+      | .var _ n => match (← get).generics.lookup n with
+        | some g =>
+          if !g.resolution.isEmpty then pure O else do
+          let r ← StateT.lift (tryCatch (do
+              let U ← lower (SourceTypes.use .source)
+              let θ0 := g.binders.map (·, graphJson [U])
+              let B0 ← lower (g.bounds θ0)
+              let θ := g.binders.map fun n => (n, ((B0.lookup n).join).getD (graphJson [U]))
+              -- (a bound reading another binder: not handled)
+              if (← lower (g.bounds θ)) != B0 then throw "a static read of a binder whose bound reads another"
+              let inst ← lower (do Fragment.translate (← g.instantiate θ))
+              let θt ← θ.mapM fun (n, j) => do return (n, ← lower (Fragment.translate j))
+              return Except.ok (inst, θt)) fun m => pure (.error m))
+          match r with
+          | .ok (inst, θ) =>
+            modify fun w => { w with instances := (e.span, θ) :: w.instances, resolutions := (e.span, []) :: w.resolutions }
+            record x (.ok inst)
+          | .error m => record x (.error m)
+        | none => pure O
+      | _ => pure O
     let narrowed := (memberPath e).bind fun p => e1.paths.lookup p
     let r ← attempt e do
       if let some P := narrowed then return P
