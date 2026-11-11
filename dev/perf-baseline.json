@@ -4,7 +4,7 @@
   "units": {
     "pretext measureAnalysis": {
       "verdict": "verified",
-      "cpuMs": 956,
+      "cpuMs": 987,
       "counters": {
         "nodes": 1473,
         "edges": 1604,
@@ -26,7 +26,7 @@
     },
     "pretext prepareRichInline": {
       "verdict": "verified",
-      "cpuMs": 2085,
+      "cpuMs": 2148,
       "counters": {
         "nodes": 3189,
         "edges": 3432,
@@ -48,7 +48,7 @@
     },
     "pretext buildEngineProfile": {
       "verdict": "verified",
-      "cpuMs": 233,
+      "cpuMs": 239,
       "counters": {
         "nodes": 279,
         "edges": 294,
@@ -70,7 +70,7 @@
     },
     "loop with bounds": {
       "verdict": "verified",
-      "cpuMs": 41,
+      "cpuMs": 42,
       "counters": {
         "nodes": 23,
         "edges": 23,
@@ -92,7 +92,7 @@
     },
     "loop over a parent chain": {
       "verdict": "verified",
-      "cpuMs": 147,
+      "cpuMs": 151,
       "counters": {
         "nodes": 26,
         "edges": 28,
@@ -136,7 +136,7 @@
     },
     "union narrowing": {
       "verdict": "verified",
-      "cpuMs": 33,
+      "cpuMs": 34,
       "counters": {
         "nodes": 16,
         "edges": 16,
@@ -158,7 +158,7 @@
     },
     "logical narrowing": {
       "verdict": "verified",
-      "cpuMs": 51,
+      "cpuMs": 52,
       "counters": {
         "nodes": 14,
         "edges": 13,
@@ -202,7 +202,7 @@
     },
     "promise": {
       "verdict": "verified",
-      "cpuMs": 45,
+      "cpuMs": 46,
       "counters": {
         "nodes": 6,
         "edges": 5,
@@ -290,7 +290,7 @@
     },
     "pretext measureAnalysis, from the fragment": {
       "verdict": "verified",
-      "cpuMs": 781,
+      "cpuMs": 825,
       "counters": {
         "nodes": 1430,
         "edges": 1561,
@@ -312,7 +312,7 @@
     },
     "pretext prepareRichInline, from the fragment": {
       "verdict": "verified",
-      "cpuMs": 1904,
+      "cpuMs": 1990,
       "counters": {
         "nodes": 3055,
         "edges": 3298,
@@ -334,14 +334,14 @@
     },
     "pretext buildEngineProfile, from the fragment": {
       "verdict": "verified",
-      "cpuMs": 122,
+      "cpuMs": 172,
       "counters": {
         "nodes": 265,
         "edges": 280,
         "reached": 265,
         "visited": 265,
-        "rules": 248,
-        "wholeStoreRules": 1,
+        "rules": 247,
+        "wholeStoreRules": 0,
         "queries": 0,
         "queryFacts": 0,
         "merges": 11,

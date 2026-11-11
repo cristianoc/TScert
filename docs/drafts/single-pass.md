@@ -386,7 +386,9 @@ The script's controls run with their forced proposal
 whatever the patterns, each expected refused by mode 8:
 `invalid-method-effect-stated-throw-caught` `wrong` and
 `invalid-node-assert-catch-continue` `rows`, under `literals`, and
-`invalid-cell-truthiness-narrowing` `kept`, under `stale`.
+`invalid-cell-truthiness-narrowing` `kept`, under `stale`, and
+`invalid-exceptional-handler-fact` `wrong`, under `throws` (every function
+at keep/keep bounding its throws).
 
 ## 9. The claims-free front
 
@@ -465,6 +467,22 @@ claims document (`SourceClaimJson.fragmentPlans`, `Claims/FragmentFront.lean`).
   throws, raised to the type the walk gives the literal until the two
   agree, at most four rounds (the producer's rounds over a recursive
   constant). Its own check decides it (section 5, "A footprint").
+- **Declarations.** Each function a wanted unit reaches, callees first,
+  is walked as its unit is, each callee read at the footprint found for it
+  (`declarationEffects`). A walk that changes nothing proposes keep/keep,
+  bounding its throws where nothing in it leaves a throw unbounded; for this
+  reading a write, an assignment of a binding held in a cell or of one it
+  does not declare, an early binding's declaration, a call whose instance
+  may change the heap, a call of a local binding at its declared type's
+  effect, a call passing a function, a call of an unknown callee, an
+  iteration, and a call without `onThrow` a handler catches each change the
+  heap; a call without `onThrow`, an iteration and a finalizer leave a throw
+  unbounded. A self-recursive function is walked with itself at keep/keep
+  bounding its throws, then without the bound where that walk leaves one.
+  An async, generic or rest function, or one with a written effect, promise
+  or stand-in, keeps its footprint. Each proposal is a stand-in: its callers
+  read it and its own unit establishes it; the claims and the front are
+  built again where any is found.
 - **Early bindings.** Each early binding of a statement list (the flow
   graph's `.early` node) is bound from the list's entry on at its written
   contract: its annotation, else its function literal's written receiver,
@@ -579,8 +597,8 @@ footprint the unit's verdict reads (removing any one refuses the unit):
 (`isCollapsibleSpaceCode`, `readLetterSpacing`); `buildEngineProfile` none.
 
 Agreement with the pipeline over the 3,303 pipeline cases (mode 8 with the
-given files, `TSCERT_REFEREE`), measured 2026-11-11: 6,296 units, 4,946
-agree, 611 disagree, 739 not handled. A file the pipeline refuses before any
+given files, `TSCERT_REFEREE`), measured 2026-11-11: 6,296 units, 4,974
+agree, 584 disagree, 738 not handled. A file the pipeline refuses before any
 unit's check is run from its fragment too: the unit holding the refusal's
 position is compared with the refusal (91 units), the others are undecided
 (85; the pass accepts 24, none the unit an unsafe program's refusal names).
