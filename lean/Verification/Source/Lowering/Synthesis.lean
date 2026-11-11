@@ -1727,6 +1727,15 @@ partial def expr (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (Op
   let before := (← get).pathEnds.length
   let r ← exprAt env e exp
   modify fun w => { w with endsIn := w.endsIn.insert e.span (w.pathEnds.length != before || (w.endsIn.get? e.span).getD false) }
+  -- An unreached expression whose type the walk does not determine (each
+  -- binding there at the empty type, a constructor's included): at the
+  -- empty type, as the producer's `unreachable` states its bindings; the
+  -- pass decides the node by its unsatisfiable context.
+  if env.ghost && r.1.isNone then
+    if let some (k, .error m) := (← get).exprs.get? e.span then
+      if !m.startsWith refusalMark then
+        modify fun w => { w with exprs := w.exprs.insert e.span (k, .ok []), exprsAt := w.exprsAt.insert (w.stmtAt, e.span) (.ok []) }
+        return (some [], r.2)
   return r
 
 /-- `expr` but the record of whether the walk ended a path. -/
