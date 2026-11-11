@@ -1997,13 +1997,19 @@ partial def exprAt (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (
     let some O := O | do
       let _ ← expr e1 body
       return (← record e (.error "the chain's receiver undetermined"), e1)
-    let inner := { e1 with vars := upd e1.vars chainName (← StateT.lift (nonNullish O)) }
-    let (B, e2) ← expr inner body
+    let present ← StateT.lift (nonNullish O)
+    let inner := { e1 with vars := upd e1.vars chainName present, ghost := e1.ghost || present.isEmpty }
+    let (B, e2) ← expr inner body exp
+    let B ← if (← get).force.contains "chains" && !present.isEmpty then record body (.ok [Labels.tru]) else pure B
     let A ← attempt e do
       let B ← need B "the chain's body"
       let nullish := !(← slice O .isNullish true).isEmpty
       return norm (B ++ (if nullish then [Labels.undef] else []))
-    return (A, { e2 with vars := e2.vars.filter (·.1 != chainName) })
+    let canSkip := !(← StateT.lift (slice O .isNullish true)).isEmpty
+    let after := if present.isEmpty then e1 else if canSkip then (join (some e1) (some e2)).getD e1 else e2
+    return (A, { after with vars := match e1.vars.lookup chainName with
+      | some C => upd after.vars chainName C
+      | none => after.vars.filter (·.1 != chainName) })
   | .withObject _ _ obj body =>
     let (O, e1) ← expr env obj
     let inner := match O with
@@ -2132,7 +2138,9 @@ partial def exprAt (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (
             let A ← need A "a part"
             match k with
             | some k =>
-              let some D ← fieldExpected [l] (.str k) | throw "no expected field"
+              let D ← match ← fieldExpected [l] (.str k) with
+                | some D => pure D
+                | none => widen A
               if A != D && !within T A D then throw "a part not within its expected field"
               parts := parts ++ [(some (.str k), D)]
             | none => parts := parts ++ [(none, A)]
@@ -2239,8 +2247,10 @@ partial def exprAt (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (
           let nullish (A : Ty Tree) := !(BranchRefinement.tagSlice G A .isNullish true).isEmpty
           -- (`unknown` excepted: its slice is no contract the write states)
           let open_ := F.any fun l => G.plain l && PositiveRules.expand G [l] == [.source]
-          if !R.isEmpty && !open_ && nullish F && !nullish R then
-            StateT.lift (narrowPath e2 root path fun _ => nonNullish F)
+          if !R.isEmpty && !open_ && nullish F then
+            StateT.lift (narrowPath e2 root path fun _ => do
+              let F ← if (w.force.contains "field-writes" || (BranchRefinement.tagSlice G R .isNul true).isEmpty) then slice F .isNul false else pure F
+              if (w.force.contains "field-writes" || (BranchRefinement.tagSlice G R .isUndef true).isEmpty) then slice F .isUndef false else pure F)
           else pure e2
         else pure e2
       | _, _, _ => pure e2
