@@ -1163,8 +1163,14 @@ removal works through:
   have no written bound, through equation lowering and preparation. Direct
   primitive candidates of those binders use inference.ml:608-630's widening
   before resolution and fresh allocation; explicit arguments and declared
-  bounds retain their constraints. An async block's result is the union of
-  its walked return calls, as for an expression body
+  bounds retain their constraints. A literal's contextual result guides
+  async return calls before allocation (expression_closures.ml:263-268).
+  A widened candidate's observation and resolution result are instantiated
+  by its resolution certificate before comparison with the expected result;
+  a failed resolution retains the original candidate. Thus the expected
+  resolution result bounds widening (inference.ml:220-229,248-250,620-628).
+  An async block's result is the union of its walked return calls, as for
+  an expression body
   (expression_closures.ml:263-291). The resolution instance and each code
   body's return are checked; no existing promise store changes contract.
 - **Implemented overload interiors.** A literal with no binders, rest or
