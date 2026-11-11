@@ -334,7 +334,7 @@
     },
     "pretext buildEngineProfile, from the fragment": {
       "verdict": "verified",
-      "cpuMs": 172,
+      "cpuMs": 134,
       "counters": {
         "nodes": 265,
         "edges": 280,

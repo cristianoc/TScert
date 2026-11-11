@@ -38,7 +38,7 @@ withoutEvidenceReuse();
 
 type Verdict = { accepted: boolean; refusal: string; closed?: boolean };
 type Comparison = { file: string; unit: string; pipeline: string; pass: string; agree: boolean; notHandled: string | null; why: string;
-  referee: string | null; control: boolean; closed: boolean };
+  referee: string | null; control: boolean; closed: boolean; passClosed: boolean };
 /** The controls: units whose program is unsafe (run under Node), with the
  * adversarial proposal that once made the pass accept them. */
 const controls: { file: string; unit: string; force: string }[] = [
@@ -46,6 +46,7 @@ const controls: { file: string; unit: string; force: string }[] = [
   { file: "invalid-node-assert-catch-continue", unit: "rows@339", force: "literals" },
   { file: "invalid-cell-truthiness-narrowing", unit: "kept@176", force: "stale" },
   { file: "invalid-exceptional-handler-fact", unit: "wrong@336", force: "throws" },
+  { file: "invalid-declaration-pop-callback", unit: "dropped@359", force: "callees" },
 ];
 
 /** The file key the pipeline's check of a run named: `--check-units`'s third argument. */
@@ -114,7 +115,7 @@ async function compare(test: Case): Promise<Comparison[]> {
   // A file whose pipeline check did not finish (a stage's timeout) gives no
   // units: counted as one unfinished entry rather than dropped.
   if (units.length === 0 && outcome.status === "error")
-    return [{ file: test.file, unit: "(file)", pipeline: "unfinished", pass: "missing", agree: false, notHandled: null, why: "", referee: null, control: false, closed: false }];
+    return [{ file: test.file, unit: "(file)", pipeline: "unfinished", pass: "missing", agree: false, notHandled: null, why: "", referee: null, control: false, closed: false, passClosed: false }];
   // A file the pipeline decides with no unit checked (its producer or its
   // claims refused) is run from its fragment all the same in mode 8: each
   // unit the pass gives is compared with the file's outcome.
@@ -189,7 +190,7 @@ async function compare(test: Case): Promise<Comparison[]> {
     const closed = v?.closed === true && (referee === null || r?.closed === true);
     return { file: test.file, unit: u.unit, pipeline: pipelineSays, pass: passSays,
       agree: passSays === pipelineSays, notHandled, why: v ? v.refusal.replace(/\s+/g, " ").slice(0, 160) : "",
-      referee: refereeSays, control: control?.unit === u.unit, closed };
+      referee: refereeSays, control: control?.unit === u.unit, closed, passClosed: v?.closed === true };
   });
 }
 
@@ -236,8 +237,9 @@ for (const c of bothAccept) process.stdout.write(`both accept, pipeline refuses:
 if (refereed.length > 0)
   process.stdout.write(`referee: ${holes.length} mode 8 accepts / mode 9 refuses, ` +
     `${refereeOnly.length} mode 9 accepts / mode 8 refuses\n`);
-// The controls: each refused by mode 8 under its forced proposal.
-const controlFailures = all.filter((c) => c.control && c.pass === "verified");
+// The controls: each refused by mode 8 under its forced proposal, a unit's
+// acceptance counting only with every unit it depends on accepted.
+const controlFailures = all.filter((c) => c.control && c.passClosed);
 for (const c of controlFailures) process.stdout.write(`control accepted: ${c.file} ${c.unit}\n`);
 // The correctness half of the performance gate: every unit whose pipeline
 // check finished agrees, none is not handled, and every case ran.

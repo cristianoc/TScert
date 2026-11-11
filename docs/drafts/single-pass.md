@@ -388,7 +388,11 @@ whatever the patterns, each expected refused by mode 8:
 `invalid-node-assert-catch-continue` `rows`, under `literals`, and
 `invalid-cell-truthiness-narrowing` `kept`, under `stale`, and
 `invalid-exceptional-handler-fact` `wrong`, under `throws` (every function
-at keep/keep bounding its throws).
+at keep/keep bounding its throws), and `invalid-declaration-pop-callback`
+`dropped`, under `callees`. A control's acceptance counts only with every
+unit it `depends` on accepted: a run with named units checks only those, a
+dependency's footprint among its proposals, so its reader follows
+`depends`.
 
 ## 9. The claims-free front
 
@@ -409,8 +413,9 @@ removal works through:
   wire format (each function's name, name position, parameters and result
   marked unavailable, its footprint, `onThrow` and result footprint; the
   primitives' type rows; empty entries and expressions) and `fileFront`
-  decodes it into the front, twice where `declarationEffects` finds a
-  footprint.
+  decodes it into the front once; the footprints `declarationEffects`
+  finds are then written into the front's claims and slots
+  (`Front.withStandIns`).
 - **The walk's types as claim rows.** `Synthesis.retypeUnitWith` and
   `retypeFromFragment` state the walk's types as a `SourceClaims.Function`:
   expressions, statement entries, storage contracts, entry contents
@@ -504,8 +509,8 @@ removal works through:
   bounding its throws, then without the bound where that walk leaves one.
   An async, generic or rest function, or one with a written effect, promise
   or stand-in, keeps its footprint. Each proposal is a stand-in: its callers
-  read it and its own unit establishes it; the claims and the front are
-  built again where any is found.
+  read it and its own unit establishes it; the front states it at the
+  function's claim and slot (`Front.withStandIns`).
 - **Early bindings.** Each early binding of a statement list (the flow
   graph's `.early` node) is bound from the list's entry on at its written
   contract: its annotation, else its function literal's written receiver,

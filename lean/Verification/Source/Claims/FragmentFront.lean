@@ -268,6 +268,26 @@ def declarationEffects (fr : Front) (wanted : List Nat) (standIns : StandIns) (f
     if let some ot := r then found := found ++ [(f.name, ot)]
   return found.map fun (n, ot) => { name := n, footprint := ⟨.keep, .keep⟩, onThrow := ot }
 
+/-- The front with the functions the stand-ins name at their footprints:
+their claims' and their slots', as `fragmentClaims` and `fileFront` state a
+stand-in's. -/
+def Front.withStandIns (fr : Front) (sis : List StandIn) : Front :=
+  let d := { fr.d with functions := fr.d.functions.map fun c => match sis.find? (·.name == c.name) with
+    | some s => { c with footprint := s.footprint, onThrow := s.onThrow, resultFootprint := s.resultFootprint }
+    | none => c }
+  let ordinary := fr.units.filterMap fun (f, tps, c) => if tps.isEmpty && c.isNone then some f else none
+  let slots := ordinarySlots d ordinary (sis.map (·.name))
+  { fr with d, moduleFunctions := fr.moduleFunctions.map fun v => ((slots.find? (·.1 == v.1)).getD v) }
+
+/-- The claims document with the functions the stand-ins name at their
+footprints, as `fragmentClaims` states a stand-in's. -/
+def withStandIns (claims : Json) (sis : List StandIn) : Json :=
+  claims.setObjVal! "functions" (Json.arr ((claims.getObjValAs? (Array Json) "functions").toOption.getD #[] |>.map fun j =>
+    match sis.find? (some ·.name == (j.getObjValAs? String "name").toOption) with
+    | some s => ((j.setObjVal! "footprint" (toJson s.footprint)).setObjVal! "onThrow" (toJson s.onThrow)).setObjVal!
+        "resultFootprint" (toJson s.resultFootprint)
+    | none => j))
+
 /-- **A selected unit's plans from the fragment alone** (mode 8): the front
 of `fragmentClaims`, no import planned, each import read at its declared
 type or at its stand-in's footprint, the module values typed by the
@@ -285,11 +305,7 @@ def fragmentPlans (ast : Json) (fileKey : String) (budget : PositiveCertificates
   let computed := if force.contains "callees" || force.contains "throws" then [] else
     SinglePass.timedKind "lower: declarations' footprints" fun _ =>
       declarationEffects (fr.withInitTypes force) ((fr.selected names).flatMap fr.group) standIns force
-  let (claims, fr) ← if computed.isEmpty then pure (claims, fr) else do
-    let standIns := { standIns with functions := standIns.functions ++ computed }
-    let claims ← fragmentClaims ast fileKey standIns force
-    let fr ← SinglePass.timedKind "lower: fileFront" fun _ => fileFront ast claims fileKey budget qualified
-    pure (claims, fr)
+  let (claims, fr) := if computed.isEmpty then (claims, fr) else (withStandIns claims computed, fr.withStandIns computed)
   let fr := SinglePass.timedKind "lower: initialization's walk" fun _ => fr.withInitTypes force
   let wanted := (fr.selected names).flatMap fr.group
   let (T, plans) := SinglePass.timedKind "lower: extractAll" fun _ =>
