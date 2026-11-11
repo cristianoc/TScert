@@ -47,6 +47,8 @@ type Comparison = { file: string; unit: string; pipeline: string; pass: string; 
 const controls: { file: string; unit: string; force: string; positive?: boolean }[] = [
   { file: "optional-call-loop-cell", unit: "collect@300", force: "chains", positive: true },
   { file: "typed-array-float64", unit: "getKerning@474", force: "field-writes", positive: true },
+  { file: "evolving-bindings", unit: "captured@736", force: "evolving", positive: true },
+  { file: "array-first-use", unit: "tuple@268", force: "first-use", positive: true },
   { file: "invalid-method-effect-stated-throw-caught", unit: "wrong@596", force: "literals" },
   { file: "invalid-node-assert-catch-continue", unit: "rows@339", force: "literals" },
   { file: "invalid-cell-truthiness-narrowing", unit: "kept@176", force: "stale" },
