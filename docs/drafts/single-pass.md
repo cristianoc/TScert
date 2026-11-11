@@ -552,14 +552,20 @@ removal works through:
   it, at each signature the expected callable states binding more
   parameters whose leading ones are within its own (variadic: at least as
   many), each at its own result and effect, as the producer's
-  `from_context` offers them; where the expected signature's leading
+  `from_context` offers them, each offered row at the offered signature's
+  result where the body's is within it (`{s with call_effect}`), a use's
+  offer at the literal's own leading parameters (`discarded_signature`);
+  where the expected signature's leading
   parameters differ from its own in representation (the producer then
   states its interior per row), at that signature alone. A constant holding
   a literal of no type parameters and no rest, unannotated or annotated at
   one signature, read where one fixed signature binding more parameters
   whose leading ones are within the literal's is expected (an argument, an
   annotated binding, a return), offers the literal that signature
-  (`closure_offer`); where a unit's walk finds such an offer, the unit is
+  (`closure_offer`). A module constant, unannotated, holding a literal of
+  no type parameters, rest, defaults or guard whose result is written, is
+  also at its signature extended by a rest of `unknown`, its code
+  discarding the further actuals, as a module function's slot is. Where a unit's walk finds such an offer, the unit is
   walked once more with each offered row stated at its literal, the walk's
   one retry, at most one walk beyond the first (the producer's second round).
   `TSCERT_FORCE=offers` offers every longer signature whatever its leading
