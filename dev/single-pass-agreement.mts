@@ -59,7 +59,8 @@ const controls: { file: string; unit: string; force: string; positive?: boolean 
   { file: "invalid-node-assert-catch-continue", unit: "rows@339", force: "literals" },
   { file: "invalid-cell-truthiness-narrowing", unit: "kept@176", force: "stale" },
   { file: "module-cache-keeps-lengths", unit: "count@478", force: "cells" },
-  { file: "module-cache-before-initialization", unit: "rhs@341", force: "cells", positive: true },
+  // (its early binding `cache` is also held at its written contract, `early-contracts`: forced with both)
+  { file: "module-cache-before-initialization", unit: "rhs@341", force: "cells,early-contracts", positive: true },
   { file: "fresh-separation", unit: "handlerCell@1404", force: "cells", positive: true },
   { file: "module-cells-written-in-turn", unit: "aside@399", force: "cells", positive: true },
   { file: "early-bindings", unit: "count@471", force: "early", positive: true },
