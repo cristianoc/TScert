@@ -304,7 +304,26 @@ with its annotation, a cell at its computed storage contract. -/
 def Front.withInitTypes (fr : Front) (force : List String := []) : Front := Id.run do
   let some (f, _, some c) := fr.units.find? (·.2.2.isSome) | return fr
   let module := fr.moduleFunctions ++ fr.classSelves
-  match retypeFromFragment force fr fr.d.types f c.normalized module none with
+  -- Its generic closures (a generic class's methods among them) claimed at
+  -- the schemes their annotations state, as scheme rows, before the walk
+  -- types the values holding them (`extractMember`'s order, the producer's
+  -- claims.ml:546-564).
+  let source := Json.mkObj [("body", (fr.ast.getObjVal? "init").toOption.getD (.arr #[]))]
+  let atSchemes : Except String (EquationStore.State × Fragment.Fn × Function Tree) := do
+    let closures := Scheme.genericClosures (source.getObjValD "body")
+    if closures.isEmpty then return (fr.d.types, f, c)
+    let (T, es) ← writtenSchemes force fr.d.types (source.getObjValD "body")
+    let c := { c with expressions := c.expressions ++ es.filter fun e => !c.expressions.any (·.pos == e.pos) }
+    let localCalls := (f.body.flatMap Fragment.Stmt.callees).filter fun call =>
+      !fr.generics.any (·.name == call.2.2.1)
+    let (T, c, scopes) ← Scheme.closureRows T [] closures localCalls c
+    let source := Scheme.annotationAtScopes T scopes [] source
+    let body ← Fragment.decodeInit (Json.mkObj [("init", source.getObjValD "body")])
+    return (T, { f with body }, c)
+  let (T0, f, c) := match atSchemes with
+    | .ok r => r
+    | .error _ => (fr.d.types, f, c)
+  match retypeFromFragment force fr T0 f c.normalized module none with
   | .error reason =>
     let failed := fun (v : ModuleValue Tree) => ((v.1, v.2.1, .error s!"not handled: the module initialization's walk: {reason}") : ModuleValue Tree)
     return { fr with moduleConstants := fr.moduleConstants.map failed }
