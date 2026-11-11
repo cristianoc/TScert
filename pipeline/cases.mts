@@ -1123,6 +1123,8 @@ export const cases: Case[] = [
     /a `let` whose contract admits `undefined` read where an object is required/),
   negative("invalid-closure-cell-capture-narrowed", "a closure made where a cell is narrowed runs after a call writing the cell: it reads the cell at its contract, which admits `null`, so the cast to `string` is not established (under Node `wrong()` returns `null`)",
     /The available claim for x is null \| string/),
+  negative("invalid-object-spread-width-replaced", "a spread after a named field replaces it: the spread object, held at `{ id: number }`, also holds `name: 1`, so the copy is not within `{ name: string }` (under Node `wrong()` returns `{ name: 1, id: 1 }`)",
+    /source expression obligation at \[462,485\): evidence search failed: no derivation of its return-contract claim/),
   positive("nullish-member-reads", "member reads, method calls, element reads and a compound element assignment of values whose type admits `null` or `undefined`: a nullish one throws a `TypeError` before the access, the others are read at their type; an element a length guards, a handler around one, RegExp `test` at `string | undefined`"),
   positive("read-narrows-receiver", "a completed member read narrows its receiver: past `d.kind` a constant or an owned local `d` read from an element holds an object, in the statements after it and as an actual, until the local is written"),
   negative("invalid-read-narrows-optional", "`d?.kind` reads no member of a nullish `d`: past it `d` may be `undefined`",

@@ -1862,8 +1862,17 @@ partial def exprAt (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (
     return (r, e1)
   | .build _ names es =>
     -- An object literal with spreads: each spread's record fields, then each
-    -- named field, a later key replacing an earlier one.
-    let (As, e1) ← exprs env es
+    -- named field, a later key replacing an earlier one; each named field
+    -- walked at the field the expected type states at its key.
+    let mut e1 := env
+    let mut As : List (Option (Ty Tree)) := []
+    for (k, y) in names.zip es do
+      let D ← match exp, k with
+        | some P, some k => StateT.lift (fieldExpected P (.str k))
+        | _, _ => pure none
+      let (A, e') ← expr e1 y D
+      As := As ++ [A]
+      e1 := e'
     -- Each copy the parts give, a named field at its value's widened type
     -- (`object_spread.ml`).
     let r ← attempt e do
@@ -1875,6 +1884,43 @@ partial def exprAt (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (
         | none => parts := parts ++ [(none, A)]
       let alts ← copyParts [{}] parts forceSpreads
       return norm (← alts.mapM copyType).flatten
+    -- Where a type is expected: each copy the parts give at the first
+    -- member of it whose field at each named key the part is within, each
+    -- such field at that member's (the producer's expected field,
+    -- expression_objects.ml:53-54), where the copy is within the member;
+    -- the copies so made where each one has such a member.
+    -- (`TSCERT_FORCE=objects`: the copy at the expected type itself, the
+    -- adversarial proposal)
+    let r ← match exp, r with
+      | some P, some R0 =>
+        if (← get).force.contains "objects" && !P.isEmpty then record e (.ok P) else
+        if R0.isEmpty then pure r else do
+        let copiesAt (l : Tree) : Compiler (Option (List (Ty Tree))) := tryCatch (do
+          let T ← table
+          let mut parts : List (Option PropKey × Ty Tree) := []
+          for (k, A) in names.zip As do
+            let A ← need A "a part"
+            match k with
+            | some k =>
+              let D ← readField [] [l] (.str k)
+              if A != D && !within T A D then throw "a part not within its expected field"
+              parts := parts ++ [(some (.str k), D)]
+            | none => parts := parts ++ [(none, A)]
+          let alts ← copyParts [{}] parts forceSpreads
+          return some (← alts.mapM copyType)) fun _ => pure none
+        let byArm ← StateT.lift (P.mapM fun l => do return (l, ← copiesAt l))
+        let n := (byArm.findSome? (·.2)).map (·.length)
+        let some n := n | pure r
+        let T ← StateT.lift table
+        let mut out : Ty Tree := []
+        let mut ok := true
+        for i in List.range n do
+          match byArm.findSome? fun (l, cs) => cs.bind fun cs =>
+              if cs.length == n then cs[i]?.bind fun C => if within T C [l] then some C else none else none with
+          | some C => out := out ++ C
+          | none => ok := false
+        if ok && n > 0 then record e (.ok (norm out)) else pure r
+      | _, _ => pure r
     return (r, e1)
   | .read _ fld x =>
     let (O, e1) ← expr env x
@@ -2029,13 +2075,20 @@ partial def exprAt (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (
     return (r, e1)
   | .arrayAssign _ targets rest rhs =>
     wrote
-    -- An array literal assigned to a pattern of as many names, none
-    -- defaulted, made at the tuple of the names' declared types (`[p, q] =
-    -- [q, p]`).
+    -- An array literal assigned to a pattern of as many names or members,
+    -- none defaulted, made at the tuple of their declared types (`[p, q] =
+    -- [q, p]`, `[o.f] = ["s"]`).
     let tuple ← match rhs, rest with
       | .arrayLit _ es [], none =>
-        let Ds := targets.filterMap fun t => if t.default_.isSome then none else
-          t.target.targetLocal.bind fun n => env.decl.lookup n
+        -- (a member target `o.f` at the field's type)
+        let Ds ← StateT.lift (targets.filterMapM fun t => do
+          if t.default_.isSome then return none
+          match t.target.targetLocal, t.target with
+          | some n, _ => return env.decl.lookup n
+          | none, .read _ f (.var _ o) =>
+            let some O := env.vars.lookup o | return none
+            tryCatch (some <$> readField env.vars O f) fun _ => pure none
+          | none, _ => return none)
         if Ds.length != targets.length || es.length != targets.length then pure none
         else StateT.lift (tryCatch (some <$> lower do
           let s ← SourceTypes.use (.list ⟨Ds, [], none, false, .dense⟩ [])
@@ -2159,7 +2212,15 @@ partial def exprAt (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (
     let e2 ← match R with
       | some A => do
         let D := (e1.decl.lookup n).getD A
-        pure { e1 with vars := upd e1.vars n (← StateT.lift (assigned D A)), paths := e1.paths.filter (·.1.1 != n) }
+        -- A slot assigned an object literal holds it at its contract's
+        -- members it is within (the producer's `slot_holds`,
+        -- type_queries.ml:1133-1140): a store's contract is fixed where it
+        -- is made, so the slot is never at the exact type of the store.
+        let w ← get
+        let fresh := match rhs with | .alloc .. | .build .. => true | _ => false
+        let slot := fresh && (w.slots.get.contains n || w.literalSlots.contains n)
+        let held ← StateT.lift (if slot then declaredAt D A else assigned D A)
+        pure { e1 with vars := upd e1.vars n held, paths := e1.paths.filter (·.1.1 != n) }
       | none => pure (match e1.decl.lookup n with
         | some D => { e1 with vars := upd e1.vars n D, paths := e1.paths.filter (·.1.1 != n) }
         | none => { e1 with vars := e1.vars.filter (·.1 != n) })

@@ -426,7 +426,8 @@ throws, its body's effect unchecked against that claim),
 `invalid-type-parameter-meet-narrowing` `present`, under `meets`, and
 `invalid-negated-disjunction-saved` `wrong`, under `implications`, and
 `invalid-closure-cell-capture-narrowed` `wrong`, under `captures` (every
-captured binding at its type where the literal is made). A control's
+captured binding at its type where the literal is made), and
+`invalid-object-spread-width-replaced` `wrong`, under `objects`. A control's
 acceptance counts only with every unit
 it `depends` on accepted: a run with named units checks only those, a
 dependency's footprint among its proposals, so its reader follows
@@ -699,7 +700,11 @@ removal works through:
   its own keys exactly, the link at its walked type and each other key at
   the expected record's field. A copy (`{ ...o }`) whose sources each state
   their own keys exactly, with no optional field, states its own keys
-  exactly. A copy (`{ ...o }`, `Object.assign`) is the union of the
+  exactly. Where a type is expected, each copy an object literal with spreads gives
+  is made at the first member of it whose field at each named key the part
+  is within, its named fields at that member's, where the copy is within
+  the member (`TSCERT_FORCE=objects` states the expected type itself).
+  A copy (`{ ...o }`, `Object.assign`) is the union of the
   copies its parts give: a named field set in each, a spread merged into
   each once per label of its operand (a record's fields but its prototype
   link and a key it also states as a method, a key two operands of an
@@ -754,7 +759,8 @@ removal works through:
   initialized with at the members of its declared type the object is
   within (a primitive, nullish or callable value as an assignment narrows
   it; an early binding at its written contract), never at the exact type of
-  the store it was made from. So a value is made at the type its position
+  the store it was made from; an object literal assigned to a binding a
+  slot holds likewise (the producer's `slot_holds`). So a value is made at the type its position
   expects: a return's, an annotated declaration's, an assignment's (also
   `??=`, `||=`, `&&=`), a field write's field, an element write's contents,
   a cast's target, a function literal's result; and from there a
@@ -853,8 +859,9 @@ removal works through:
   the path `o.f` holds the assignment's value, and after `o.f = v`, of an
   immutable binding's object every record arm of which states `f`, its
   contract less the nullish values `v` does not admit (the producer's
-  `written_field`); a handler states none. An array literal assigned to an array pattern of as many names, none
-  defaulted, is made at the tuple of their declared types. A path narrowed
+  `written_field`); a handler states none. An array literal assigned to an array pattern of as many names or
+  members (`[o.f] = …`, at the field's type), none defaulted, is made at
+  the tuple of their declared types. A path narrowed
   before a loop is stated at its head, at each statement entry of its body
   and past its exit where nothing in its test, body and update ends it (a
   write of a field the path reads, an assignment of its root, a call that

@@ -71,6 +71,7 @@ const controls: { file: string; unit: string; force: string }[] = [
   { file: "invalid-type-parameter-meet-narrowing", unit: "present@127", force: "meets" },
   { file: "invalid-negated-disjunction-saved", unit: "wrong@91", force: "implications" },
   { file: "invalid-closure-cell-capture-narrowed", unit: "wrong@181", force: "captures" },
+  { file: "invalid-object-spread-width-replaced", unit: "wrong@385", force: "objects" },
 ];
 
 /** The file key the pipeline's check of a run named: `--check-units`'s third argument. */
