@@ -481,6 +481,13 @@ claims document (`SourceClaimJson.fragmentPlans`, `Claims/FragmentFront.lean`).
   record is expected, it is that record's form with each field at the
   expected one, else at the value's own type, as written where that is
   within the expected record, else stating its own keys exactly.
+- **Narrowing.** A tag test narrows a binding or path by the tag slice;
+  `unknown` (a `source` label) becomes the kinds of value the test does not
+  contradict where it contradicts some (`BranchRefinement.sourceSlice`). A
+  call of a type guard, on its true arm, and a statement calling an
+  assertion function, after it, narrow the binding the promise names to
+  its members within the guarded type, else to that type. A destructuring
+  default is added where the part may be `undefined`.
 - **Loop heads.** A loop head's facts beyond its written assertion are the
   given file's `headFacts` (and `headFactsOfCodes` for each code request),
   each at the statement entries that start where the given one does and hold
@@ -520,17 +527,15 @@ footprint the unit's verdict reads (removing any one refuses the unit):
 (`isCollapsibleSpaceCode`, `readLetterSpacing`); `buildEngineProfile` none.
 
 Agreement with the pipeline over the 3,303 pipeline cases (mode 8 with the
-given files, `TSCERT_REFEREE`), measured 2026-11-11: 6,296 units, 4,682
-agree, 830 disagree, 784 not handled. A file the pipeline refuses before any
+given files, `TSCERT_REFEREE`), measured 2026-11-11: 6,296 units, 4,748
+agree, 799 disagree, 748 not handled, 1 whose pipeline check timed out. A file the pipeline refuses before any
 unit's check is run from its fragment too: the unit holding the refusal's
 position is compared with the refusal (91 units), the others are undecided
 (85; the pass accepts 24, none the unit an unsafe program's refusal names).
-Referee: 10 units mode 8 accepts and mode 9 refuses (all pipeline-verified),
-18 the other way: 9 at a node no path from the start reaches, which mode 8
-does not handle, and 9 refused (`blocker-import-meta`, `import-meta` ×2,
-`null-equality-slices`, `field-write-refinement`,
-`equality-several-singletons`, `type-parameter-typeof-family` ×2,
-`try-catch` `describe`). Both modes accept seven
+Referee: 7 units mode 8 accepts and mode 9 refuses (all pipeline-verified),
+13 the other way: 9 at a node no path from the start reaches, which mode 8
+does not handle, and 4 refused (`field-write-refinement`,
+`equality-several-singletons`, `type-parameter-typeof-family` ×2). Both modes accept seven
 units the pipeline refuses: `blocker-pretext-equality-conjunction` `runs@923`,
 a gap case (a safe program the pipeline does not verify), and six, each a
 valid instance the producer did not propose: `invalid-bounds-callback-footprint` `visit@88`,
