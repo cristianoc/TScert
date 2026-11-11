@@ -5026,11 +5026,10 @@ partial def walkLambda (env : Env) (e : Expr) (sig : Option (CallEffects.Arrow (
   modify fun w => { w with breaks := saved.breaks, returns := saved.returns, held := saved.held, expected := saved.expected, literalSlots := saved.literalSlots, heldCells := saved.heldCells, evolving := saved.evolving, holders := saved.holders }
   modify fun w => { w with writes := saved.writes, throwWrites := saved.throwWrites, locals := saved.locals, inLiteral := saved.inLiteral }
   modify fun w => { w with valueChange := saved.valueChange, storeChange := saved.storeChange, lastBody := R, asyncBody := saved.asyncBody }
-  -- (an async expression body's value is its `%AsyncReturn%` call's, the
-  -- promise it resolves; a block's completion resolves one the walk does
-  -- not state)
-  let R := if written.isSome then written
-    else if async then (match body with | .block .. => none | _ => R) else R
+  -- Async returns are already the fragment's resolution calls, including
+  -- returns in a block (expression_closures.ml:263-291). Their walked
+  -- result is a proposal checked at each body return.
+  let R := written <|> R
   let forced := (← get).force.contains "literals"
   -- A written effect (`Modifies<…>`) is the one it states.
   let kept := { stated.getD kept with pre := requires }

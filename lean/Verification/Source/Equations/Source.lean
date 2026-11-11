@@ -33,6 +33,8 @@ structure GenericValue where
   name : String
   pos : Nat × Nat
   binders : List String
+  /-- Source binders with no written bound, for inference proposals. -/
+  widenBinders : List String := []
   resolution : List ResolutionSlots
   type : Except String GenericType
   bounds : List (String × Option Union)
@@ -184,7 +186,9 @@ private def genericOf (name : String) (pos : Nat × Nat) (path : String) (node :
       return (n, some (← packBound ctx b))
     if b == .null then return (n, some [← ground "source" sourceValueClauses])
     return (n, some (← lowerType ctx b))
-  return { name, pos, binders, resolution := ResolutionWire.groups parameters, type := t, bounds, packed }
+  let widenBinders := tps.toList.filterMap fun p =>
+    if p.getObjValD "bound" == .null then (p.getObjValAs? String "name").toOption else none
+  return { name, pos, binders, widenBinders, resolution := ResolutionWire.groups parameters, type := t, bounds, packed }
 
 /-- Everything the source path lowers, in one run: the declarations, every
 annotation, the imported values, the generic units' binders, the producer's
