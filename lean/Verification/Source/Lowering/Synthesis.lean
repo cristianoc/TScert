@@ -108,6 +108,13 @@ structure Walk where
   closureAssigned : List String := []
   /-- Whether a function literal is being walked. -/
   inLiteral : Bool := false
+  /-- Whether the walk reads its own record of changes as a declaration's
+  footprint (`declarationEffects`): a call of an unknown callee, an
+  iteration and a finalizer then change anything or bound no throw, and an
+  assignment of a binding held in a cell changes the values. -/
+  strict : Bool := false
+  /-- Whether a handler catches what the statements being walked throw. -/
+  caught : Bool := false
   /-- The constants in scope: a write of a key one's record may lack grows
   its type. -/
   consts : List String := []
@@ -1420,6 +1427,15 @@ partial def expr (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (Op
       | .var _ n => gs.lookup n
       | _ => none
     let (F, e1) ← expr env callee
+    -- For a declaration's footprint, a call of a local binding is at its
+    -- declared type's effect.
+    if (← get).strict then
+      if let .var _ n := callee then
+        if let some D := env.decl.lookup n then
+          let G ← StateT.lift graphNow
+          for a in ProgramTyping.callSigs G D do
+            if a.effect.footprint != ⟨.keep, .keep⟩ then wrote .any .any
+            if !a.effect.onThrow then modify fun w => { w with throwWrites := true }
     let (As, e2) ← actuals e1 args
     let c ← StateT.lift (tryCatch (do
         if !spreads.isEmpty then throw "a call with spreads"
@@ -1450,6 +1466,9 @@ partial def expr (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (Op
     let e3 ← match list with
       | some l => do pure (← expr e2 l).2
       | none => pure e2
+    if (← get).strict then
+      wrote .any .any
+      modify fun w => { w with throwWrites := true }
     return (← record e (.error "a call through apply"), e3)
   | .bindWithReceiver _ callee recv args =>
     -- `o.m.bind(o)`: the method's signatures, its receiver the object
@@ -1483,6 +1502,9 @@ partial def expr (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (Op
     let some o := obj | do
       let (_, e1) ← expr env callee
       let (_, e2) ← exprs e1 args
+      if (← get).strict then
+        wrote .any .any
+        modify fun w => { w with throwWrites := true }
       return (← record e (.error "a method call of an unknown form"), e2)
     let (O, e1) ← expr env o
     let e1 ← match keyE with
@@ -1536,6 +1558,10 @@ partial def called (env : Env) (c : Except String Callee) (args : List Expr) (As
   | .ok c => applyCall env c args As (exp <|> (← get).hints.lookup at_)
   | .error m =>
     for x in args do if callback x then let _ ← walkLambda env x none
+    -- A call of an unknown callee may change anything, and its throw too.
+    if (← get).strict then
+      wrote .any .any
+      modify fun w => { w with throwWrites := true }
     return .error m
 
 /-- A call's instance, in a fixed order (TypeScript's contextual typing of
@@ -1687,6 +1713,10 @@ partial def applyCall (env : Env) (c : Callee) (args : List Expr) (As : List (Op
       c.names.zip (c.binders.map fun b => (σ.lookup b).getD [])), lastResolution := certificates }
   -- A call changing the heap, by its instance's footprint.
   if inst.effect.footprint != ⟨.keep, .keep⟩ then wrote inst.effect.footprint.value inst.effect.footprint.store
+  -- For a declaration's footprint, a call passing a function may run it.
+  if (← get).strict && (args.any callback || As.any fun A => A.any fun A => !(ProgramTyping.callSigs G A).isEmpty) then
+    wrote .any .any
+    modify fun w => { w with throwWrites := true }
   if inst.effect.footprint.value != .keep || inst.effect.receiverOwn || inst.effect.receiverStore ||
       inst.effect.elementWrite.isSome then
     modify fun w => { w with changedValues := true }
@@ -1697,6 +1727,9 @@ partial def applyCall (env : Env) (c : Callee) (args : List Expr) (As : List (Op
   if inst.effect.receiverOwn then wrote .any inst.effect.footprint.store
   if inst.effect.receiverStore || inst.effect.elementWrite.isSome then wrote .any .any
   if !inst.effect.onThrow then modify fun w => { w with throwWrites := true }
+  -- For a declaration's footprint, a throw no footprint bounds that a
+  -- handler catches leaves the bound.
+  if (← get).strict && (← get).caught && !inst.effect.onThrow then wrote .any .any
   -- A fresh result where a type is expected: made at the expected array.
   let mut result := inst.result
   if let some H := hint then
@@ -2123,6 +2156,9 @@ partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
   | .constants p bs =>
     let mut env := env
     modify fun w => { w with consts := bs.map (·.name) ++ w.consts }
+    -- An early binding's declaration writes its cell (a declaration's
+    -- footprint).
+    if (← get).strict && bs.any (·.early) then wrote .any .keep
     for b in bs do
       modify fun w => { w with declarations := w.declarations.insert (p.1, b.name) env.vars }
       let written ← match b.annot with
@@ -2146,6 +2182,7 @@ partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
   | .mutables p bs =>
     let mut env := env
     modify fun w => { w with consts := w.consts.filter fun n => !bs.any (·.name == n) }
+    if (← get).strict && bs.any (·.early) then wrote .any .keep
     for b in bs do
       modify fun w => { w with declarations := w.declarations.insert (p.1, b.name) env.vars }
       let written ← match b.annot with
@@ -2217,6 +2254,11 @@ partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
     -- one binder the element.
     let mut stepper : Option (Ty Tree) := none
     let mut bound : Option (Ty Tree) := none
+    -- An iteration's throw is bounded by no footprint here; an intrinsic of
+    -- no generic instance may change anything.
+    if (← get).strict then
+      modify fun w => { w with throwWrites := true }
+      wrote .any .any
     if let some g := (← get).generics.lookup it then
       let c? : Except String Callee ← StateT.lift (tryCatch (Except.ok <$> genericCallee g []) fun m => pure (Except.error m))
       if let .ok c := c? then
@@ -2249,7 +2291,11 @@ partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
     let out ← collectBreaks none saved
     return join (some exit) (out.map fun o => { o with vars := o.vars.filter (·.1 != s!"%next@{p.1}%") })
   | .tryStmt _ body handler finalizer =>
+    if finalizer.isSome && (← get).strict then modify fun w => { w with throwWrites := true }
+    let outer := (← get).caught
+    if handler.isSome then modify fun w => { w with caught := true }
     let b ← stmts (some env) body
+    modify fun w => { w with caught := outer }
     let reset := loopHead env body
     let h ← match handler with
       | some (param, hs) =>
@@ -2335,7 +2381,8 @@ and the module values `module` it reads: what it records, and the grown
 store. -/
 def walkUnit (T : EquationStore.State) (f : Fragment.Fn)
     (module : List (String × Compiler (Ty Tree))) (generics : List (String × Generic) := [])
-    (force : List String := []) (scope : Option (PositiveGraphs.SchemeRow Tree × List String) := none) :
+    (force : List String := []) (scope : Option (PositiveGraphs.SchemeRow Tree × List String) := none)
+    (strict : Bool := false) :
     Except String (Walk × EquationStore.State) := do
   let action : Compiler (Walk × EquationStore.State) := do
     let mut vars : List (String × Ty Tree) := []
@@ -2349,7 +2396,13 @@ def walkUnit (T : EquationStore.State) (f : Fragment.Fn)
       | none => pure ()
     let env : Env := { vars, decl := vars }
     let expected ← tryCatch (some <$> lower (Fragment.translate f.ret)) fun _ => pure none
-    let (done, w) ← (stmts (some env) f.body).run { generics, expected, force, scope, entries := (({} : Std.HashMap Nat _).insert 0 vars).insert f.namePos.1 vars }
+    -- Its own parameters and declarations are its locals: assigning one
+    -- changes no heap location.
+    -- (but one held in a cell, which a closure shares, for a declaration's
+    -- footprint)
+    let cells := if strict then (cellLocals (f.params.map (·.name)) f.body).map (·.1) else []
+    let locals := (f.params.map (·.name) ++ declaredIn f.body).filter (!cells.contains ·)
+    let (done, w) ← (stmts (some env) f.body).run { generics, expected, force, scope, locals, strict, entries := (({} : Std.HashMap Nat _).insert 0 vars).insert f.namePos.1 vars }
     let w := { w with completion := done.bind fun d => if d.ghost then none else some d.vars }
     return (w, ← table)
   let ((w, T'), _) ← runCompiler T [] action

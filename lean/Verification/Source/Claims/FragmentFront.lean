@@ -57,8 +57,11 @@ def fragmentClaims (ast : Json) (fileKey : String) (standIns : StandIns := {}) (
       -- of its own regions certifying the statement.
       | none, some s => if s.regions.isEmpty then (s.closed, s.onThrow, Footprints.Closed.top)
           else (.top, false, .top)
-      -- Forced (`callees`): a function without a written footprint at keep/keep.
-      | none, none => if force.contains "callees" then (⟨.keep, .keep⟩, false, .top) else (.top, false, .top)
+      -- Forced (`callees`): a function without a written footprint at
+      -- keep/keep; (`throws`) bounding its throws too.
+      | none, none =>
+        if force.contains "throws" then (⟨.keep, .keep⟩, true, .top)
+        else if force.contains "callees" then (⟨.keep, .keep⟩, false, .top) else (.top, false, .top)
     Json.mkObj [("name", toJson f.name), ("namePos", toJson f.namePos),
       ("params", Json.arr (f.params.map fun p => Json.mkObj [("name", toJson p.name),
         ("type", annotated "a parameter's type"), ("current", Json.null)]).toArray),
@@ -204,17 +207,89 @@ def Front.withInitTypes (fr : Front) (force : List String := []) : Front := Id.r
       | _ => []
     return { fr with d := { fr.d with types := T }, moduleConstants := typed }
 
+/-- A module function's type with each signature's footprint keep/keep,
+bounding its throws where `onThrow`. -/
+def keepingType (A : Ty Tree) (onThrow : Bool) : Compiler (Ty Tree) := do
+  match PositiveRules.expand (SourceTypes.graph (← table)) A with
+  | [.arrs L S] =>
+    let e (x : CallEffects.Effect) : CallEffects.Effect := { x with closed := ⟨.keep, .keep⟩, onThrow, regions := [] }
+    return [← lower (SourceTypes.use (.arrs (L.map fun a => { a with effect := e a.effect })
+      (S.map fun a => { a with effect := e a.effect })))]
+  | _ => throw "a module function of no one signature"
+
+/-- **Declarations' footprints** (section 9, "Declarations"): each function
+a wanted unit reaches, callees first, walked as its unit is, each callee
+read at the footprint found for it. A walk changing nothing (no write, no
+assignment of a binding it does not declare, no call whose instance may
+change the heap) proposes keep/keep, bounding its throws where none of its
+calls, iterations or finalizers leaves one unbounded. A self-recursive
+function is walked with itself at keep/keep bounding its throws, then, where
+that walk leaves a throw unbounded, without the bound. Any other function,
+an async one, a generic one, one with a rest, a written effect, a written
+promise or a stand-in keeps what `fragmentClaims` gives it. Each proposal is
+a stand-in: its callers read it and its own unit establishes it. -/
+def declarationEffects (fr : Front) (wanted : List Nat) (standIns : StandIns) (force : List String) :
+    List StandIn := Id.run do
+  -- Callees first: the wanted units' reach in post-order.
+  let mut order : List Nat := []
+  let mut seen : Std.HashSet Nat := {}
+  let mut stack : List (Nat × Bool) := wanted.reverse.map (·, false)
+  for _ in List.range (4 * fr.units.length * (fr.units.length + 1) + 4) do
+    match stack with
+    | [] => break
+    | (i, true) :: rest => stack := rest; order := order ++ [i]
+    | (i, false) :: rest =>
+      if seen.contains i then stack := rest
+      else
+        seen := seen.insert i
+        stack := (fr.edges i).filter (!seen.contains ·) |>.map (·, false) |>.append ((i, true) :: rest)
+  let (schemes, generics) := fr.genericValues
+  let mut found : List (String × Bool) := []
+  for i in order do
+    let some (f, tps, none) := fr.units[i]? | continue
+    if !tps.isEmpty || f.async || f.stated.isSome || f.guard.isSome || f.params.any (·.rest) ||
+        standIns.functions.any (·.name == f.name) then continue
+    let walkAt (own : Option Bool) : Option Bool :=
+      let at_ := match own with
+        | some ot => (f.name, ot) :: found
+        | none => found
+      let module := (fr.moduleFunctions ++ fr.moduleConstants).map fun v => (v.1, (match at_.lookup v.1 with
+        | some ot => do keepingType (← moduleValueType v) ot
+        | none => moduleValueType v : Compiler (Ty Tree)))
+      match Synthesis.walkUnit fr.d.types f (module ++ schemes) generics force none (strict := true) with
+      | .ok (w, _) => if w.writes then none else some (!w.throwWrites)
+      | .error _ => none
+    let r := if (fr.mentions i).contains f.name then
+        match walkAt (some true) with
+        | some true => some true
+        | some false => (walkAt (some false)).map fun _ => false
+        | none => none
+      else walkAt none
+    if let some ot := r then found := found ++ [(f.name, ot)]
+  return found.map fun (n, ot) => { name := n, footprint := ⟨.keep, .keep⟩, onThrow := ot }
+
 /-- **A selected unit's plans from the fragment alone** (mode 8): the front
 of `fragmentClaims`, no import planned, each import read at its declared
 type or at its stand-in's footprint, the module values typed by the
 initialization's walk, and each selected group's units extracted over their
-computed types (`retypeFromFragment`). -/
+computed types (`retypeFromFragment`), the functions' footprints their
+walks give (`declarationEffects`). -/
 def fragmentPlans (ast : Json) (fileKey : String) (budget : PositiveCertificates.SearchBudget)
     (names : Option (List String)) (standIns : StandIns := {}) (force : List String := []) : Except String FilePlans := do
   let ast := ast.setObjVal! "modules" (Json.arr #[])
   let claims ← fragmentClaims ast fileKey standIns force
   let qualified := standIns.imports.map fun s => (s.name, s.footprint, s.onThrow, s.resultFootprint)
   let fr ← SinglePass.timedKind "lower: fileFront" fun _ => fileFront ast claims fileKey budget qualified
+  -- The functions' footprints their walks give, as stand-ins; the claims
+  -- and the front again where any is found.
+  let computed := if force.contains "callees" || force.contains "throws" then [] else
+    SinglePass.timedKind "lower: declarations' footprints" fun _ =>
+      declarationEffects (fr.withInitTypes force) ((fr.selected names).flatMap fr.group) standIns force
+  let (claims, fr) ← if computed.isEmpty then pure (claims, fr) else do
+    let standIns := { standIns with functions := standIns.functions ++ computed }
+    let claims ← fragmentClaims ast fileKey standIns force
+    let fr ← SinglePass.timedKind "lower: fileFront" fun _ => fileFront ast claims fileKey budget qualified
+    pure (claims, fr)
   let fr := SinglePass.timedKind "lower: initialization's walk" fun _ => fr.withInitTypes force
   let wanted := (fr.selected names).flatMap fr.group
   let (T, plans) := SinglePass.timedKind "lower: extractAll" fun _ =>
