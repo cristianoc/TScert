@@ -260,6 +260,55 @@ which edges (`Store.drop` of `droppedBy`) and merges (`renamedAway`) maintain
 and nothing checks; `materialize`'s elimination of names out of scope
 presupposes such facts.
 
+## Allocated cells and separation
+
+Module `lean/Verification/Semantics/TolerantFramesCells.lean`. A root's
+allocated cells, $`\mathrm{cells}(x)`$ read at the heap, is
+`HeapKnowledge.ElementsBelow` of the store $`x`$'s store location holds:
+every listed cell below the heap's length (`RootCells`). It is not kept by
+admissibility: in a world whose locations admit every value, a transition may
+replace a store by one listing a cell past the heap (proved:
+`rootCells_not_invariant`). It follows from a fact of the world instead:
+$`x`$'s store location has a contract every store of which lists only cells of
+its world (`StoreCells`, `CellsCtr`). Proved:
+
+- every tuple contract lists cells of its world (`listT_cells`): a required,
+  optional or rest position each states a lookup of its cell; so a location
+  whose contract's stores meet a tuple contract establishes
+  $`\mathrm{StoreCells}`$ (`cellsCtr_of_listT`, `storeCells_of_listT`);
+- $`\mathrm{StoreCells}\ x`$ is invariant (`storeCells_invariant`: the
+  contract persists, restricted, along every admissible transition), and
+  gives $`\mathrm{cells}(x)`$ at the state, the heap meeting the contract one
+  level down (`rootCells_of_storeCells`), so
+  $`\mathrm{StoreCells}\ x\vdash\Box_\Phi\,\mathrm{cells}(x)`$ for every
+  $`\Phi`$ (`rootCells_box`). No step needs to preserve the cells: the world
+  fact covers every state reached.
+
+What is not connected: that a slot of an array type has a store location of
+such a contract (the `.list` clause's meaning). A root whose store location
+admits any value carries no allocated-cell fact, and a step writing a store
+that lists a cell past the heap there (a store value the program holds, not
+an allocation, which reserves fresh cells: `elemSlots_above`) breaks it.
+
+Separation, proved:
+
+- allocation: a store whose location and cells are at or past $`b`$ is apart
+  from a store whose location and cells are below $`b`$ (`alloc_apart`);
+  freshness against the entry mark (`FreshAt`) is the location half;
+
+The third atom, (Apart, one-sided), proved (`apart_grow_keep`), with
+$`\Phi_x=\{\mathsf{values}:\mathsf{any},\ x.\mathsf{store}:\mathsf{grow}\}`$
+(`growOne`) and $`y`$ an array object:
+
+```math
+\mathrm{apart}(x,y)\wedge\mathrm{cells}(y)\;\vdash\;\Box_{\Phi_x}\,\mathrm{apart}(x,y)
+```
+
+$`y`$'s store location is not $`x`$'s, so it is kept (`growOne_keeps_store`),
+and $`x`$'s store gains only cells at or past the heap's end, beyond $`y`$'s
+allocated cells and store location. Both stores growing is not covered: their
+new cells may coincide.
+
 ## What the model requires beyond the note
 
 - **Admissibility needs no frame assumption.** Reflexivity, transitivity,
@@ -284,7 +333,7 @@ presupposes such facts.
 - **Allocated cells are not a consequence of admissibility.** A store whose
   contract admits it may list a cell beyond the heap; the support of
   $`\mathrm{apart}(x,y)`$ needs every listed cell allocated, a well-formedness
-  condition the contracts or the steps must supply (not proved here).
+  condition a fact of the world supplies (`StoreCells`, above).
 - **An action from a run needs the effect judgment.** Safety alone gives an
   admissible endpoint; the footprint comes from a postcondition relative
   to the run's first heap, on each exit (`action_normal`, `action_throw`).
