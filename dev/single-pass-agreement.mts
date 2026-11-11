@@ -17,7 +17,7 @@
 // `hole:`; the other direction is counted. TSCERT_FORCE (passed through)
 // forces an adversarial proposal (`literals`, `callees`, `elements`,
 // `objects`, `spreads`, `stale`, `throws`, `guards`, `reads`, `paths`,
-// `offers`, `loops`, `decided`, `schemes`, `callbacks`, `fresh`, `defaults`, `finally`, `never`, `meets`, `implications`, `binds`, `arms`, `captures`); the controls below run with theirs forced whatever
+// `offers`, `loops`, `decided`, `schemes`, `callbacks`, `fresh`, `defaults`, `finally`, `never`, `meets`, `implications`, `binds`, `arms`, `captures`, `cells`); the controls below run with theirs forced whatever
 // the patterns, each expected refused by mode 8; the forced proposal decides
 // the control's unit and the units it depends on, the file's other units
 // compared unforced.
@@ -59,6 +59,7 @@ const controls: { file: string; unit: string; force: string; positive?: boolean 
   { file: "invalid-node-assert-catch-continue", unit: "rows@339", force: "literals" },
   { file: "invalid-cell-truthiness-narrowing", unit: "kept@176", force: "stale" },
   { file: "module-cache-keeps-lengths", unit: "count@478", force: "cells" },
+  { file: "module-cache-before-initialization", unit: "rhs@341", force: "cells", positive: true },
   { file: "invalid-exceptional-handler-fact", unit: "wrong@336", force: "throws" },
   { file: "invalid-object-spread-two-sources", unit: "count@156", force: "spreads" },
   { file: "invalid-keyed-read", unit: "pick@70", force: "keys" },
