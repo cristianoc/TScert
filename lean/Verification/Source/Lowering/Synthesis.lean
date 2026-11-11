@@ -2259,10 +2259,14 @@ def offerClass (n : String) (P : Ty Tree) : W Unit := do
     if widened || longer then
       offer (⟨(), if longer then s.arguments else params, s.result, s.effect⟩, none)
   for r in S do
-    let _ ← widen r.result
+    let widened ← widen r.result
     if (PositiveRules.restElem G r.arguments.2).isSome && r.arguments.1.length ≤ params.length &&
         (force || (r.arguments.1.zip params).all fun (D, Q) => within T D Q) then
       offer (⟨(), r.arguments.1, r.result, r.effect⟩, some r.arguments.2)
+    else if widened then
+      -- A non-variadic pack still offers its result when a method widened;
+      -- the constructor keeps its own parameters (closure_offers.ml:92-95).
+      offer (⟨(), params, r.result, r.effect⟩, none)
 
 /-- Record an expression's computed type or the reason it has none. -/
 partial def record (e : Expr) (r : Except String (Ty Tree)) : W (Option (Ty Tree)) := do

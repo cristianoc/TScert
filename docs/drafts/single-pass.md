@@ -1142,6 +1142,12 @@ removal works through:
   assignment of a binding aside) or each member of the path is stable.
   After such a call, each binding a function literal walked so far assigns
   (one it captures, held in a cell) is at its declared type again.
+- **Constructor result offers.** When an offered constructor's result
+  widens one of the class's method signatures, a fixed argument pack offers
+  that result at the constructor's own parameters
+  (closure_offers.ml:62-95). An element-rest offer keeps the existing
+  variadic rule. The constructor body and every method row establish the
+  proposed result; fixed storage contracts remain unchanged.
 - **Iterator bind control.** The program-defined iterable's sum accepts
   unforced in modes 8 and 9 and refuses the forced bind proposal. The
   agreement tool treats it as a positive control: unforced closed acceptance
