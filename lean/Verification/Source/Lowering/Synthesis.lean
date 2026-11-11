@@ -126,6 +126,10 @@ structure Walk where
   /-- Each statement entry's narrowed member paths, by root: what a test or
   a write found a field to hold (the entry's `current` contents). -/
   currents : Std.HashMap Nat (List (String × List (List PropKey × Ty Tree))) := {}
+  /-- The member paths the walk reads at their narrowed types (a `.read` of a
+  member path a test or a write narrowed there): an entry states a narrowed
+  path only where this holds it or a longer path of the same root. -/
+  readPaths : Std.HashSet (String × List PropKey) := {}
   breaks : List (Option String × Env) := []
   /-- The bindings a function literal walked so far assigns that it does not
   declare (captured ones, held in cells). -/
@@ -2131,6 +2135,7 @@ partial def exprAt (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (
         | none => pure O
       | _ => pure O
     let narrowed := (memberPath e).bind fun p => e1.paths.lookup p
+    if let (some p, some _) := (memberPath e, narrowed) then modify fun w => { w with readPaths := w.readPaths.insert p }
     let r ← attempt e do
       if let some P := narrowed then return P
       readField e1.vars (← need O "the receiver") fld
@@ -4497,14 +4502,21 @@ def retypeUnitWith (T : EquationStore.State) (f : Fragment.Fn) (fc : SourceClaim
   -- draft, section 8): the unit's own, kept per point.
   -- Debugging: `k` keeps the claims' asserted field contents (`current`).
   let keep := parts.contains 'k'
+  -- Each entry's narrowed paths that some read of the walk reads narrowed,
+  -- or of which it reads a longer path of the same root so.
+  let readPaths := w.readPaths.toList
+  let read (root : String) (p : List PropKey) : Bool :=
+    readPaths.any fun (r, q) => r == root && p.isPrefixOf q
+  let currents := w.currents.toList.map fun (at_, cs) =>
+    (at_, (cs.map fun (root, ps) => (root, ps.filter fun (p, _) => read root p)).filter (!·.2.isEmpty))
   return (T', ({ fc with
     exprs, envs, contracts
-    entryCurrent := if keep then fc.entryCurrent else w.currents.toList
+    entryCurrent := if keep then fc.entryCurrent else currents
     exprCurrent := if keep then fc.exprCurrent else []
     arrowClaims := []
     points := fc.points.map fun (id, row) =>
       (id, { row with exprs := exprs, envs := envs,
-                      entryCurrent := if keep then row.entryCurrent else w.currents.toList,
+                      entryCurrent := if keep then row.entryCurrent else currents,
                       exprCurrent := if keep then row.exprCurrent else [] }) } : SourceClaims.Function Tree), w.completion,
     w.declarations, w.spanEntries, w.exprsAt.fold (fun m k r => m.insert k (r.mapError undetermined)) {})
 
