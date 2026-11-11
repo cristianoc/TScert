@@ -4828,7 +4828,10 @@ partial def applyCall (env : Env) (c : Callee) (args : List Expr) (As : List (Op
     -- the expected type does not admit), the expected type's instance, where
     -- it binds every binder and admits the actuals (TypeScript's widening of
     -- an inferred literal at its context).
-    if c.binders.all (fun b => hidden.contains b || (σ.lookup b).isSome) &&
+    -- (`TSCERT_FORCE=instances` keeps the actuals' instance: its result is
+    -- then stated at a type that does not admit it.)
+    if !(← get).force.contains "instances" &&
+        c.binders.all (fun b => hidden.contains b || (σ.lookup b).isSome) &&
         !within T (substitute σ a.result) H then
       let σe ← bindFrom c.seed [(a.result, H')]
       if c.binders.all (fun b => hidden.contains b || (σe.lookup b).isSome) && admitsAt σe then σ := σe

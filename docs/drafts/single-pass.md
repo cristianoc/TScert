@@ -438,7 +438,11 @@ throws, its body's effect unchecked against that claim),
 `invalid-closure-cell-capture-narrowed` `wrong`, under `captures` (every
 captured binding at its type where the literal is made), and
 `invalid-object-spread-width-replaced` `wrong`, under `objects`, and
-`invalid-class-static-inherited-rest` `rest`, under `spreads`. A control's
+`invalid-class-static-inherited-rest` `rest`, under `spreads`, and
+`invalid-native-promise-invariant-result` `widen`, under `instances` (a
+call's instance kept at the one its actuals give where the type expected of
+its value does not admit that instance's result: `make<number>` returned at
+`Box<unknown>`, whose field is written at its contract). A control's
 acceptance counts only with every unit
 it `depends` on accepted: a run with named units checks only those, a
 dependency's footprint among its proposals, so its reader follows

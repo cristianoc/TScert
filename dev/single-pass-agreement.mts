@@ -17,7 +17,7 @@
 // `hole:`; the other direction is counted. TSCERT_FORCE (passed through)
 // forces an adversarial proposal (`literals`, `callees`, `elements`,
 // `objects`, `spreads`, `stale`, `throws`, `guards`, `reads`, `paths`,
-// `offers`, `loops`, `decided`, `schemes`, `callbacks`, `fresh`, `defaults`, `finally`, `never`, `meets`, `implications`, `binds`, `arms`, `captures`, `cells`, `early`); the controls below run with theirs forced whatever
+// `offers`, `loops`, `decided`, `schemes`, `callbacks`, `fresh`, `defaults`, `finally`, `never`, `meets`, `implications`, `binds`, `arms`, `captures`, `cells`, `early`, `instances`); the controls below run with theirs forced whatever
 // the patterns, each expected refused by mode 8; the forced proposal decides
 // the control's unit and the units it depends on, the file's other units
 // compared unforced.
@@ -58,6 +58,7 @@ const reviewed: { file: string; unit: string; why: string }[] = [
  * growth and copy cases are accepted unforced and refused at the false proposal. */
 const controls: { file: string; unit: string; force: string; positive?: boolean }[] = [
   { file: "stated-signatures-presence", unit: "signatures@605", force: "path-callees", positive: true },
+  { file: "invalid-native-promise-invariant-result", unit: "widen@89", force: "instances", positive: true },
   { file: "early-let-literal", unit: "families@954", force: "early-contracts", positive: true },
   { file: "blocker-spread-tuple-field", unit: "returned@867", force: "objects", positive: true },
   { file: "blocker-prep-assign-error-value", unit: "absent@86", force: "copy-exclusions", positive: true },
