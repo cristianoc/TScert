@@ -2527,7 +2527,14 @@ partial def fit (P : Ty Tree) (x : Expr) (A : Option (Ty Tree)) : W (Option (Ty 
       let mut ok := true
       for ((k, y), D) in (names.zip es).zip Ds do
         let some B ← fit D y ((w.exprs.get? y.span).bind (·.2.toOption)) | ok := false; break
-        fields := fields ++ [(k, if within (← StateT.lift table) B D then D else B)]
+        -- A generic function literal at a field the expected record states
+        -- a scheme: allocated at that scheme (the producer's field built at
+        -- its contract's type, expression_objects.ml:51-52), the
+        -- allocation's typing checking the literal's scheme within it.
+        let scheme := match y, D with
+          | .lambda _ _ (_ :: _) .., [d] => (G.schemes d).isSome
+          | _, _ => false
+        fields := fields ++ [(k, if scheme || within (← StateT.lift table) B D then D else B)]
         own := own ++ [(k, B)]
       if !ok then continue
       -- Each field at the expected one, else at the value's own type (a

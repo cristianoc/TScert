@@ -780,7 +780,11 @@ removal works through:
   record is, its signatures the method's (the producer's `f.read`,
   expression_objects.ml:25-36): a literal there is stated at each of them
   binding more parameters, an iterator's `next` at `(value) => …` beside
-  its own row.
+  its own row. A generic function literal at a key the expected record
+  states as a scheme is allocated at that scheme, the store's contract the
+  annotation's (the producer's field built at its contract's type,
+  expression_objects.ml:51-52); the allocation's typing checks the
+  literal's own scheme within it.
   A constant holding such a literal, read where one variadic signature of
   an element rest binding at least as many fixed parameters is expected,
   offers the literal that signature at its own leading parameters
