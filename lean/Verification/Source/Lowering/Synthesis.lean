@@ -1848,7 +1848,7 @@ def copiesOf (A : Ty Tree) (force : Bool) (target : Bool := false) : Compiler (L
           | .dict _ _ _ ix _ _ _ _ _ => !ix.isEmpty
           | _ => false
       if indexed.length > 1 && !(PositiveRules.expand G [l]).isEmpty then
-        throw "a spread of an intersection of two operands with index signatures is outside the fragment"
+        throw (refusalMark ++ "copy: a spread of an intersection of two operands with index signatures is outside the fragment")
     if let some S := storeOf G [l] then
       if target then throw "a copy onto an array"
       if let [.list t []] := PositiveRules.expand G S then
