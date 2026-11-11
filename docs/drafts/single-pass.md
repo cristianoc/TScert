@@ -1142,6 +1142,14 @@ removal works through:
   assignment of a binding aside) or each member of the path is stable.
   After such a call, each binding a function literal walked so far assigns
   (one it captures, held in a cell) is at its declared type again.
+- **Implemented overload interiors.** A literal with no binders, rest or
+  defaults, expected at several fixed signatures of its own arity, proposes
+  that callable and walks its body once at each signature's parameters and
+  result (expression_closures.ml:455-473). Each row supplies its expression,
+  entry and local storage proposals through the existing closure overlay.
+  Captured cells keep their declared contracts. The front places each
+  overlay at the body's execution points; ClosureSetup.lean:322 checks its
+  row count, and Claims/Json.lean:993-1056 checks every code body.
 - **Annotated recursive constants.** A non-early constant’s annotation supplies
   its recursive signature; the self-effect starts at keep/keep with a bound
   on throws (statement_analysis.ml:294-317). The existing four-round
