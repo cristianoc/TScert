@@ -219,7 +219,9 @@ def retypeFromFragment (force : List String := []) : Retype := fun fr T f fc mod
       | none => (envMap.get? node.source.1).getD []
     -- A statement of a finalizer's copy on a return's route: its entry
     -- in that copy.
-    let route := (node.scope.find? (·.name.startsWith "%return@")).bind fun d =>
+    -- (a held return is `%return@p%`; a `for...of`'s `%return@p` is its
+    -- iterator's `return` method)
+    let route := (node.scope.find? fun d => d.name.startsWith "%return@" && d.name.endsWith "%").bind fun d =>
       declarations.get? (node.source.1, d.name)
     let bindings : List (String × SourceClaims.Candidate Tree) := if let some vs := route then
       vs.map fun (n, A) => (n, .ok A) else match node.action with
