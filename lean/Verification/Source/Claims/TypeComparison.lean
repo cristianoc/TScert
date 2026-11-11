@@ -24,7 +24,8 @@ def Front.genericValues (fr : Front) :
     let (T, slot) ← Scheme.moduleScheme (← table) g
     lower (do set T; Fragment.translate slot) : Compiler (Ty Tree))),
    fr.generics.map fun g => (g.name,
-    ({ binders := g.binders, instantiate := fun θ => (·.1) <$> g.instantiate θ, resolution := g.resolution } : Synthesis.Generic)))
+    ({ binders := g.binders, instantiate := (fun θ => (·.1) <$> g.instantiate θ),
+       resolution := g.resolution, bounds := (fun θ => Prod.snd <$> g.instantiate θ) } : Synthesis.Generic)))
 
 /-- A unit's claims retyped by the walk (`Synthesis.retypeUnit`): the
 extraction of the single pass without a producer's types (mode 8). -/

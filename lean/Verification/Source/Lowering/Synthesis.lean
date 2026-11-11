@@ -50,6 +50,8 @@ structure Generic where
   /-- Its binders a resolution qualifies, by position: each one's input,
   observation and result. -/
   resolution : List PositiveGraphs.ResolutionSlots := []
+  /-- Each binder's bound at given binder types, where it states one. -/
+  bounds : List (String × Json) → SourceTypes.Lowering (List (String × Option Json)) := fun _ => pure []
 
 /-- What the walk records: each expression occurrence's construct kind and
 computed type or reason, each statement entry's bindings, and the
@@ -545,15 +547,21 @@ structure Sig where
   rest : Bool
   result : Ty Tree
 
+/-- A position a call may omit: one whose contract admits `undefined`, also
+beside a binder (`T | undefined`, which no clause expansion opens). -/
+def omissible (G : PositiveGraphs.NormalGraph Tree) (A : Ty Tree) : Bool :=
+  A.contains Labels.undef || admitsUndefined G A
+
 /-- The signature a call's actuals select: the first whose parameter count
-admits them (omitted positions admitting `undefined`) and whose parameters
-each actual is within, else the first whose count admits them. -/
+admits them (omitted positions admitting `undefined`, also before a rest)
+and whose parameters each actual is within, else the first whose count
+admits them (the producer's `callable`, expression_calls.ml:757-761). -/
 def choose (sigs : List Sig) (args : List (Ty Tree)) : Compiler Sig := do
   let T ← table
   let G := SourceTypes.graph T
   let fits (s : Sig) : Bool :=
-    if s.rest then s.params.length ≤ args.length
-    else args.length ≤ s.params.length && (s.params.drop args.length).all (admitsUndefined G)
+    (s.rest && s.params.length ≤ args.length) ||
+      (args.length ≤ s.params.length && (s.params.drop args.length).all (omissible G))
   let candidates := sigs.filter fits
   let accepts (s : Sig) : Bool := (args.zip s.params).all fun (A, D) => within T A D
   match candidates.find? accepts <|> candidates.head? with
@@ -834,6 +842,8 @@ structure Callee where
   explicit : List (String × Ty Tree) := []
   /-- The binders a resolution qualifies, by position in `binders`. -/
   resolution : List PositiveGraphs.ResolutionSlots := []
+  /-- A generic module function's binders' bounds, where they state one. -/
+  bounds : List (Tree × Ty Tree) := []
 
 /-- The callee a value of type `F` is, called with receiver `O`: a scheme
 by its binders and signatures, at `typeArgs` where they are written; any
@@ -868,10 +878,61 @@ def genericCallee (g : Generic) (typeArgs : List Json) : Compiler Callee := do
     throw "explicit type arguments of another count than the binders"
   let θ ← typeArgs.mapM fun t => lower (Fragment.translate t)
   let ps ← lower (modifyGet fun T => let (T, ps) := EquationStore.binders T g.binders; (ps, T))
-  let fresh ← lower (do Fragment.translate (← g.instantiate (g.binders.zip (ps.map fun p => graphJson [p]))))
+  let θp := g.binders.zip (ps.map fun p => graphJson [p])
+  let fresh ← lower (do Fragment.translate (← g.instantiate θp))
+  let bounds ← tryCatch (do
+      let bs ← lower (g.bounds θp)
+      bs.filterMapM fun (n, j) => do
+        let some j := j | return none
+        let some p := (g.binders.zip ps).lookup n | return none
+        return some (p, ← lower (Fragment.translate j))) fun _ => pure []
   let G ← graphNow
   return { binders := ps, fixed := ProgramTyping.callSigs G fresh, rests := ProgramTyping.restSigs G fresh,
-           names := g.binders, resolution := g.resolution, seed := (shown.filterMap (ps[·]?)).zip θ }
+           names := g.binders, resolution := g.resolution, seed := (shown.filterMap (ps[·]?)).zip θ, bounds }
+
+/-- The callee of a generic module function of one binder typing a value and
+a rest's argument lists, whose signature at a fresh binder has no argument
+lists (they are an array or tuple instance's): at the tuple of the actuals
+past its fixed parameters, widened, a spread of a tuple of required
+positions standing for them (the producer's pack rest, a binder typing a
+value too, expression_calls.ml:666-671); where its signature at that tuple
+states no rest, at the actual of the first parameter that is the binder
+itself. -/
+def packedCallee (g : Generic) (As : List (Option (Ty Tree))) (spreads : List Nat) :
+    Compiler (Option Callee) := do
+  if g.binders.length != 1 || !g.resolution.isEmpty then return none
+  let G ← graphNow
+  let some As := As.mapM id | return none
+  let mut Es : List (Ty Tree) := []
+  for (A, i) in As.zipIdx do
+    if spreads.contains i then
+      let [l] := A | return none
+      let some S := storeOf G [l] | return none
+      let [.list t []] := PositiveRules.expand G S | return none
+      if !t.optional.isEmpty || t.rest.isSome then return none
+      for E in t.required do Es := Es ++ [← widen E]
+    else Es := Es ++ [← widen A]
+  let tuple (Es : List (Ty Tree)) : Compiler (Ty Tree) := lower do
+    let s ← SourceTypes.use (.list ⟨Es, [], none, false, .dense⟩ [])
+    let T ← get
+    return [← SourceTypes.use (SourceTypes.arrayOf T s false)]
+  let at_ (X : Ty Tree) : Compiler Callee := genericCallee g [graphJson X]
+  let X ← tuple Es
+  let c ← at_ X
+  match c.rests with
+  | [r] => if r.arguments.1.isEmpty then return some c else
+      if spreads.any (· < r.arguments.1.length) then return none
+      return some (← at_ (← tuple (Es.drop r.arguments.1.length)))
+  | [] =>
+    let params := c.fixed.head?.map (·.arguments) |>.getD []
+    -- (the rest's argument lists a tuple's positions, read as fixed
+    -- parameters: the tuple of every actual)
+    if !params.contains X && params.length == Es.length then return some c
+    if !spreads.isEmpty then return none
+    let some (_, i) := params.zipIdx.find? (·.1 == X) | return none
+    let some A := As[i]? | return none
+    return some (← at_ A)
+  | _ => return none
 
 /-- Whether an actual is a callback: a function literal, typed by the
 parameter it is passed at where it writes no parameter's type, and stated
@@ -1213,8 +1274,11 @@ def spreadCall (args : List Expr) (As : List (Option (Ty Tree))) (spreads : List
       if variadicAt.isNone then variadicAt := some outArgs.length
       outArgs := outArgs ++ [placeholder]
       outAs := outAs ++ [some (← elementAt A none (missing := false))]
+  -- (a rest that is a binder's argument lists takes a tuple's positions
+  -- alone, the producer's pack rest)
   let c := match variadicAt with
-    | some k => { c with fixed := [], rests := c.rests.filter (·.arguments.1.length ≤ k) }
+    | some k => { c with fixed := [], rests := c.rests.filter fun r => r.arguments.1.length ≤ k &&
+        !(match r.arguments.2 with | [p] => c.binders.contains p | _ => false) }
     | none => c
   return (outArgs, outAs, c)
 
@@ -2180,7 +2244,10 @@ partial def expr (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (Op
     -- Spread actuals as the call reads them (`spreadCall`).
     let c ← StateT.lift (tryCatch (do
         let c ← match generic with
-          | some g => genericCallee g typeArgs
+          | some g => tryCatch (genericCallee g typeArgs) fun m => do
+              if !typeArgs.isEmpty then throw m
+              let some c ← packedCallee g As spreads | throw m
+              pure c
           | none => calleeOf (← need F "the callee") [Labels.undef] typeArgs
         return Except.ok (← spreadCall args As spreads c))
       fun m => pure (.error m))
@@ -2470,18 +2537,77 @@ partial def applyCall (env : Env) (c : Callee) (args : List Expr) (As : List (Op
   let G := SourceTypes.graph T
   let n := args.length
   let fits (a : CallEffects.Arrow (Ty Tree)) : Bool :=
-    n ≤ a.arguments.length && (a.arguments.drop n).all (admitsUndefined G)
+    n ≤ a.arguments.length && (a.arguments.drop n).all (omissible G)
   -- A variadic signature: its fixed parameters, then each further actual at
-  -- the element its rest's argument list states.
+  -- the element its rest's argument list states; a call omitting fixed
+  -- parameters that each admit `undefined` passes no rest (the producer's
+  -- `callable`, expression_calls.ml:757-761).
   let variadic := c.rests.filterMap fun r =>
     if r.arguments.1.length ≤ n then
       match PositiveRules.expand G r.arguments.2 with
-      | [.pack t []] => t.rest.map fun E =>
-        ((⟨r.receiver, r.arguments.1 ++ (List.replicate (n - r.arguments.1.length) E), r.result, r.effect⟩ :
-          CallEffects.Arrow (Ty Tree)), some r)
+      | [.pack t []] => match t.rest with
+        | some E => some ((⟨r.receiver, r.arguments.1 ++ (List.replicate (n - r.arguments.1.length) E),
+            r.result, r.effect⟩ : CallEffects.Arrow (Ty Tree)), some r)
+        -- (an argument pack of required positions, a tuple instance's
+        -- argument lists: exactly its positions)
+        | none => if t.optional.isEmpty && n == r.arguments.1.length + t.required.length then
+            some (⟨r.receiver, r.arguments.1 ++ t.required, r.result, r.effect⟩, some r) else none
       | _ => none
+    else if (r.arguments.1.drop n).all (omissible G) then
+      some (⟨r.receiver, r.arguments.1, r.result, r.effect⟩, some r)
     else none
+  -- A rest that is a binder's argument lists (`...args: T`): the actuals
+  -- past the fixed ones, widened, are its instance, an argument pack where
+  -- only the rest uses the binder, else the tuple of them; the other
+  -- binders are read off the fixed actuals (the producer's pack rest,
+  -- expression_calls.ml:638-689).
+  let mut packs : List (Tree × Ty Tree) := []
+  let mut packed : List (CallEffects.Arrow (Ty Tree) × Option (CallEffects.RestArrow (Ty Tree))) := []
+  for r in c.rests do
+    let [p] := r.arguments.2 | continue
+    if !c.binders.contains p || (c.seed.lookup p).isSome || n < r.arguments.1.length then continue
+    let some extras := (As.drop r.arguments.1.length).mapM id | continue
+    let Es ← extras.mapM fun A => StateT.lift (widen A)
+    let typesValue := (r.receiver :: r.result :: r.arguments.1).any (·.any (occurs p))
+    let P ← StateT.lift (lower (do
+      if !typesValue then
+        return [← SourceTypes.use (.pack ⟨Es, [], none, false, .dense⟩ [])]
+      let s ← SourceTypes.use (.list ⟨Es, [], none, false, .dense⟩ [])
+      let T ← get
+      return [← SourceTypes.use (SourceTypes.arrayOf T s false)]))
+    packs := packs ++ [(p, P)]
+    packed := packed ++ [(⟨r.receiver, r.arguments.1 ++ Es, r.result, r.effect⟩, some r)]
+  let c := { c with seed := c.seed ++ packs }
+  let variadic := if packed.isEmpty then variadic else packed
   let candidates := (c.fixed.filter fits).map (·, none) ++ variadic
+  -- Of one signature, a fresh literal at a parameter that is a bounded
+  -- binder is made at the bound where the bound names a dictionary (an
+  -- object literal) or a tuple (an array literal), as TypeScript types it
+  -- by the constraint (the producer's `dictionary_bound` and `tuple_bound`,
+  -- expression_calls.ml:806-822, 866-875, 900-916).
+  let mut As := As
+  if let ([(a, _)], false) := (candidates, c.binders.isEmpty) then
+    for ((x, P), i) in (args.zip a.arguments).zipIdx do
+      let some A := As[i]?.join | continue
+      if !c.binders.any (isBinder · P) then continue
+      let B ← match P with
+        | [b] => match c.bounds.lookup b with
+          | some B => pure B
+          | none => StateT.lift (boundOf P)
+        | _ => StateT.lift (boundOf P)
+      if B == P then continue
+      let arms := PositiveRules.expand G B
+      let guided := match x with
+        | .alloc .. => arms.any fun | .dict .. => true | _ => false
+        | .arrayLit _ _ [] => B.any fun l => match storeOf G [l] with
+          | some S => match PositiveRules.expand G S with
+            | [.list t []] => t.rest.isNone
+            | _ => false
+          | none => false
+        | _ => false
+      if !guided then continue
+      if let some A' ← fit B x (some A) then
+        if within (← StateT.lift table) A' B then As := As.set i (some A')
   -- A resolution's observation and result are the resolution's, never an
   -- actual's.
   let hidden := (c.resolution.flatMap (·.associated)).filterMap (c.binders[·]?)
@@ -2595,7 +2721,6 @@ partial def applyCall (env : Env) (c : Callee) (args : List Expr) (As : List (Op
         !within T (substitute σ a.result) H then
       let σe ← bindFrom c.seed [(a.result, H)]
       if c.binders.all (fun b => hidden.contains b || (σe.lookup b).isSome) && admitsAt σe then σ := σe
-  let mut As := As
   for ((x, P), i) in (args.zip a.arguments).zipIdx do
     let sub (A : Ty Tree) : Ty Tree := substitute σ A
     if callback x then
@@ -2715,6 +2840,16 @@ partial def walkLambda (env : Env) (e : Expr) (sig : Option (CallEffects.Arrow (
         let some el := Fragment.arrayElement ty (readonly := true) | throw "a rest of no array element"
         let E ← lower (Fragment.callableType el)
         pure (some [← lower (SourceTypes.use (.pack ⟨[], [], some E, false, .dense⟩ []))])) fun _ => pure none))
+      -- A rest of a tuple of required positions: one fixed parameter per
+      -- position (the lowering's tuple rest, the producer's source.ml:644-646).
+      if restPack == some none then
+        let G ← StateT.lift graphNow
+        if let some [l] := A then
+          if let some S := storeOf G [l] then
+            if let [.list t []] := PositiveRules.expand G S then
+              if t.optional.isEmpty && t.rest.isNone then
+                restPack := none
+                ps := ps ++ t.required.map some
     else
       -- A defaulted one is offered with `undefined`: a call may omit it.
       ps := ps ++ [if defaults.any (·.1 == i) then A.map (fun A => norm (A ++ [Labels.undef])) else A]
@@ -3151,7 +3286,17 @@ partial def withDefault (env : Env) (B : Option (Ty Tree)) (d : Option Expr) : W
     -- The default only where the part may be `undefined`.
     | some B, some D =>
       if (← StateT.lift (slice B .isUndef true)).isEmpty then return (some B, (join (some env) (some e1)).getD e1)
-      return (some (norm ((← StateT.lift (slice B .isUndef false)) ++ D)), (join (some env) (some e1)).getD e1)
+      let Bd ← StateT.lift (slice B .isUndef false)
+      -- (a function the default makes within the part's type is held at
+      -- that type, an upcast of a function value, whichever value the part
+      -- took: a parameter's type is what the body reads, the default
+      -- replacing `undefined`, the producer's source.ml:643-646)
+      let T ← StateT.lift table
+      let G := SourceTypes.graph T
+      if !D.isEmpty && within T D Bd && D.all (fun l => !(ProgramTyping.callSigs G [l]).isEmpty) &&
+          Bd.all (fun l => !(ProgramTyping.callSigs G [l]).isEmpty) then
+        return (some Bd, (join (some env) (some e1)).getD e1)
+      return (some (norm (Bd ++ D)), (join (some env) (some e1)).getD e1)
     | _, _ => return (none, e1)
 
 /-- Walk statements from `env` (none: unreached), recording each statement
