@@ -3187,6 +3187,20 @@ def literalRows (span : Span) (a : CallEffects.Arrow (Ty Tree)) (qs : List (Ty T
     ([{ a with arguments := qs ++ a.arguments.drop qs.length }], []) else (rows, restOffers)
   return [← StateT.lift (lower (SourceTypes.use (.arrs rows restOffers)))]
 
+/-- Guard values prefer parameters stating their promise among otherwise
+matching overloads (expression_calls.ml:1032-1050). -/
+def promisesOfActuals (G : PositiveGraphs.NormalGraph Tree)
+    (As : List (Option (Ty Tree))) (a : CallEffects.Arrow (Ty Tree)) : Bool :=
+  (As.zip a.arguments).all fun (A, P) =>
+    let rows := A.toList.flatMap fun A =>
+      (ProgramTyping.callSigs G A).map (·.effect.promise) ++
+      (ProgramTyping.restSigs G A).map (·.effect.promise)
+    match rows.find? (·.isSome) with
+    | some own =>
+      let wanted := ProgramTyping.callSigs G P
+      !wanted.isEmpty && wanted.all (·.effect.promise == own)
+    | none => true
+
 /-- Direct primitive candidates follow inference.ml:608-630: widen an
 unbounded binder unless returned bare, within all actual and result bounds.
 Explicit seeds, dependent bounds and callback-only candidates stay fixed. -/
@@ -4581,6 +4595,11 @@ partial def applyCall (env : Env) (c : Callee) (args : List Expr) (As : List (Op
       let σr ← if c.binders.isEmpty then pure c.seed else bindFrom c.seed [(a.receiver, c.receiver)]
       if within (← StateT.lift table) c.receiver (substitute σr a.receiver) then mine := mine ++ [(a, r)]
     if !mine.isEmpty then candidates := mine
+  -- As for a written guard literal, a guard passed by name prefers the
+  -- signature whose callback states that promise. Each instance must still
+  -- pass the actuals check below.
+  let preferred := candidates.filter fun (a, _) => promisesOfActuals G As a
+  candidates := preferred ++ candidates.filter fun (a, _) => !promisesOfActuals G As a
   let mut walked : List (Nat × Ty Tree) := []
   if candidates.length > 1 then
     if let some (a0, _) := candidates.head? then
