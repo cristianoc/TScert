@@ -89,7 +89,8 @@ structure Walk where
   `elements` every element read without `undefined`, `objects` every
   object literal at its expected type, `spreads` every spread with every
   key its operand's type states, `guards` every guard's and family guard's
-  true answer on its false edge too. -/
+  true answer on its false edge too, `reads` a member read's receiver
+  without `null` and `undefined` at every later statement. -/
   force : List String := []
   /-- Where the unit's body completes: its bindings there, or none where it
   never completes. -/
@@ -112,6 +113,12 @@ structure Walk where
   /-- The bindings a function literal walked so far assigns that it does not
   declare (captured ones, held in cells). -/
   closureAssigned : List String := []
+  /-- The unit's bindings held in slots (its parameters and declarations
+  other than those held in cells): a completed member read narrows one. -/
+  slots : Thunk (List String) := Thunk.pure []
+  /-- The bindings a member read was made of, under `TSCERT_FORCE=reads`:
+  held without `null` and `undefined` at every later statement. -/
+  readForced : List String := []
   /-- Whether a function literal is being walked. -/
   inLiteral : Bool := false
   /-- Whether the walk reads its own record of changes as a declaration's
@@ -294,6 +301,13 @@ def protoFor (vars : List (String × Ty Tree)) (tag : Tag) : Compiler (Ty Tree) 
   let some P := vars.lookup name | throw s!"{name} is not in scope"
   return P
 
+/-- The labels a member read reads past its nullish guard: all but `null`
+and `undefined` where the type holds both kinds (`nullishSplit`). -/
+def present (G : PositiveGraphs.NormalGraph Tree) (A : Ty Tree) : Ty Tree :=
+  match nullishSplit G A with
+  | some (_, F) => F
+  | none => A
+
 /-- `o.f` of an `o` of type `A`: each primitive member by its prototype's
 field (a string's `length` a number), an array's `length` a number, and an
 object's field as the read rule reads it (`readCell`, `HeapExpressionRules`'
@@ -301,6 +315,9 @@ read, view, optional and prototype reads). -/
 def readField (vars : List (String × Ty Tree)) (A : Ty Tree) (fld : PropKey) : Compiler (Ty Tree) := do
   if A.isEmpty then throw "a read of a value of no type"
   let G ← graphNow
+  -- A nullish receiver throws before its member is read: the read is of the
+  -- others (`nullishSplit`, the lowering's read, Atoms.lean:599-618).
+  let A := present G A
   let (prims, objs) := A.partition fun l => (shapeOf G l).isSome
   let mut out : Ty Tree := []
   for l in prims do
@@ -1155,6 +1172,19 @@ partial def expr (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (Op
     let r ← attempt e do
       if let some P := narrowed then return P
       readField e1.vars (← need O "the receiver") fld
+    -- A completed read narrows its receiver held in a slot: past it, not
+    -- `null` or `undefined` (`readNarrowing`, Atoms.lean:93-104).
+    let e1 ← match x, O, r with
+      | .var _ n, some O, some _ => do
+        let G ← StateT.lift graphNow
+        if (← get).force.contains "reads" then
+          modify fun w => { w with readForced := n :: w.readForced }
+          pure { e1 with vars := upd e1.vars n (present G O) }
+        else if (nullishSplit G O).isSome && !(← get).inLiteral && (env.vars.lookup n).isSome &&
+            (← get).slots.get.contains n then
+          pure { e1 with vars := upd e1.vars n (present G O) }
+        else pure e1
+      | _, _, _ => pure e1
     return (r, e1)
   | .write _ fld recv rhs =>
     wrote .any (if fld == lengthKey then .any else .keep)
@@ -1538,7 +1568,9 @@ partial def expr (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (Op
     let c ← StateT.lift (tryCatch (do
         if !spreads.isEmpty then throw "a call with spreads"
         let some fld := fld | throw "a method of a computed key"
-        return Except.ok (← methodCallee e1.vars (← need O "the receiver") fld (args.map callback))) fun m => pure (.error m))
+        -- A nullish receiver throws before its method is read (the
+        -- lowering's saved receiver, Atoms.lean:1176-1184).
+        return Except.ok (← methodCallee e1.vars (present (← graphNow) (← need O "the receiver")) fld (args.map callback))) fun m => pure (.error m))
     let r ← called e2 c args As e.span exp
     let e2 ← afterCall e2 r
     let _ ← record callee ((·.1) <$> r)
@@ -2110,6 +2142,11 @@ partial def stmts (env : Option Env) (ss : List Stmt) : W (Option Env) := do
   let mut prev : Option Stmt := none
   for s in ss do
     let some e := env | return none
+    -- (`TSCERT_FORCE=reads`: a read's receiver kept present whatever ends it)
+    let forced := (← get).readForced
+    let e ← if forced.isEmpty then pure e else do
+      let G ← StateT.lift graphNow
+      pure { e with vars := e.vars.map fun (n, A) => if forced.contains n then (n, present G A) else (n, A) }
     -- A `for`'s loop, right after its declarations, has its head's entry at
     -- the `for`'s start, the declarations' position: there the bindings
     -- the loop's entry holds, then the declarations' entry's.
@@ -2434,7 +2471,10 @@ def walkUnit (T : EquationStore.State) (f : Fragment.Fn)
     -- footprint)
     let cells := if strict then (cellLocals (f.params.map (·.name)) f.body).map (·.1) else []
     let locals := (f.params.map (·.name) ++ declaredIn f.body).filter (!cells.contains ·)
-    let (done, w) ← (stmts (some env) f.body).run { generics, expected, force, scope, locals, strict, entries := (({} : Std.HashMap Nat _).insert 0 vars).insert f.namePos.1 vars }
+    -- (computed where a read first narrows one)
+    let slots := Thunk.mk fun _ => (f.params.map (·.name) ++ declaredIn f.body).filter fun n =>
+      !(cellLocals (f.params.map (·.name)) f.body f.name.isEmpty).any (·.1 == n)
+    let (done, w) ← (stmts (some env) f.body).run { generics, expected, force, scope, locals, strict, slots, entries := (({} : Std.HashMap Nat _).insert 0 vars).insert f.namePos.1 vars }
     let w := { w with completion := done.bind fun d => if d.ghost then none else some d.vars }
     return (w, ← table)
   let ((w, T'), _) ← runCompiler T [] action
