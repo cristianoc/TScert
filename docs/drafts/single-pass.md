@@ -855,7 +855,9 @@ removal works through:
   whose argument lists are the empty type admitting none) the unit's
   refusal at that call, and so is a call of a union of callables an arm of
   which does not admit the count, a call of a union an arm of which states
-  no call signature (the lowering's split names an arrow at every arm), and
+  no call signature (the lowering's split names an arrow at every arm), a
+  spread of an intersection of two operands with index signatures the
+  unit's refusal at that spread (the producer's `meet_records`), and
   an expression a part of which is; any other type the walk does not
   determine is a construct the pass does not handle.
   Each expression's type is read at its own statement's point,
