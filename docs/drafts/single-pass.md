@@ -1043,6 +1043,9 @@ removal works through:
   member of a binding can answer so leaves the binding no value; an arm a
   test leaves a binding or path no value is walked for its entries, and
   where it completes or returns is unreached.
+  A member read whose receiver supplies no cell contract is a located
+  refusal, as `Plans.readCell` (Plans.lean:518), including a binder meet
+  whose bound supplies no readable row.
 - **Field contents.** A statement entry states the member paths a test
   narrowed (its `current` contents, an execution point's `entryCurrent`),
   each a member of an object other than `length`: a test of the path, a
