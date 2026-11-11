@@ -75,6 +75,7 @@ structure Walk where
   evolvedWrites : List (Span × Ty Tree) := []
   evolvedUses : List (Span × Ty Tree) := []
   following : List Stmt := []
+  holders : List (String × String) := []
   /-- The type expected of a value, by the value's span: a declaration's,
   an assignment's or a return's. -/
   hints : List (Span × Ty Tree) := []
@@ -742,11 +743,26 @@ literal's keys, the write step's output). None where `O` is not records or
 states `k` of each. -/
 def growth (O : Ty Tree) (k : PropKey) (R : Ty Tree) (literal_ : Bool) : Compiler (Option (Ty Tree × Ty Tree)) := do
   let G ← graphNow
+  -- A dictionary retains its index contracts when a write establishes a
+  -- named key (type_queries.ml:525-564); no store is upcast.
+  if !O.isEmpty && O.all (fun l => match PositiveRules.expand G [l] with | [.dict _ [] ..] => true | _ => false) then
+    let rows := O.filterMap fun l => match PositiveRules.expand G [l] with
+      | [.dict fs [] vs ix os ms bs cells st] => some (fs, vs, ix, os, ms, bs, cells, st)
+      | _ => none
+    if !(rows.any fun (fs, vs, _, _, ms, _, _, _) => (fs.lookup k).isNone && (vs.lookup k).isNone && !ms.any (·.key == k)) then return none
+    if rows.any (fun (_, _, _, os, _, bs, _, _) =>
+        os.any (fun o => o.key == k && o.readonly) || bs.any (fun b => !b.among && b.keys.contains k)) then return none
+    let D := rows.findSome? fun (_, _, _, os, _, _, _, _) => (os.find? (·.key == k)).map (·.type)
+    let C ← match D with | some D => pure D | none => if literal_ then widen R else pure R
+    let grown ← rows.mapM fun (fs, vs, ix, os, ms, bs, cells, st) =>
+      prim (.dict (fs.filter (·.1 != k) ++ [(k, C)]) [] (vs.filter (·.1 != k)) ix (os.filter (·.key != k)) ms bs cells st)
+    return some (C, norm grown.flatten)
   let mut arms : List (List (PropKey × Ty Tree) × List (PropKey × Ty Tree) × List (OptionalField (Ty Tree)) ×
       List (MethodMembers.Sig (Ty Tree)) × List KeyBound × List PropKey) := []
   for l in O do
     let [.refs fs [] vs os ms bs st] := PositiveRules.expand G [l] | return none
     if fs.any (·.1 == SourceTypes.storeField) || fs.any (·.1 == SourceTypes.protoField) then return none
+    if os.any (fun o => o.key == k && o.readonly) || bs.any (fun b => !b.among && b.keys.contains k) then return none
     arms := arms ++ [(fs, vs, os, ms, bs, st)]
   if arms.isEmpty then return none
   let lacks := arms.any fun (fs, vs, _, ms, _, _) => (fs.lookup k).isNone && (vs.lookup k).isNone && !ms.any (·.key == k)
@@ -760,6 +776,16 @@ def growth (O : Ty Tree) (k : PropKey) (R : Ty Tree) (literal_ : Bool) : Compile
     let bs := bs.map fun b => if b.among && !b.keys.contains k then { b with keys := b.keys ++ [k] } else b
     grown := grown ++ (← prim (.refs (fs.filter (·.1 != k) ++ [(k, c)]) [] (vs.filter (·.1 != k)) (os.filter (·.key != k)) ms bs st))
   return some (c, norm grown)
+
+/-- Holders of a local's object, as analysis_state.ml's holders_of: aliases
+are followed transitively; a cell keeps its declared contract. -/
+def growHolders (env : Env) (w : Walk) (n : String) (A : Ty Tree) : Env := Id.run do
+  let mut names := [n]
+  for _ in w.holders do
+    for (a, b) in w.holders do
+      if names.contains a || names.contains b then names := (a :: b :: names).eraseDups
+  return { env with vars := env.vars.map fun (m, B) =>
+    (m, if names.contains m && (w.consts.contains m || w.slots.get.contains m || w.literalSlots.contains m) then A else B) }
 
 /-- Whether evaluating an expression may call: conservatively, any form
 other than a name, a literal, a read and the tests and operators over them. -/
@@ -1370,6 +1396,7 @@ def wrote (value store : Footprints.Change := .any) : W Unit := do
 /-- An assignment of `n`: a change of the heap where the function literal
 being walked does not declare `n`. -/
 def assigns (n : String) : W Unit := do
+  modify fun w => { w with holders := w.holders.filter (fun (a, b) => a != n && b != n) }
   ends (.root n)
   let w ← get
   if !w.locals.contains n then
@@ -2262,8 +2289,9 @@ partial def exprAt (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (
     if let (.var _ n, some O, some R) := (recv, O, R) then
       if (← get).consts.contains n then
         let literal_ := match rhs with | .var .. | .read .. => false | _ => true
-        if let some (c, grown) ← StateT.lift (tryCatch (growth O fld R literal_) fun _ => pure none) then
-          return (← record e (.ok c), { e2 with vars := upd e2.vars n grown })
+        let value := if (← get).force.contains "growth" then [Labels.tru] else exp.getD R
+        if let some (c, grown) ← StateT.lift (tryCatch (growth O fld value (literal_ && exp.isNone)) fun _ => pure none) then
+          return (← record e (.ok c), growHolders e2 (← get) n grown)
     -- A write of a field of an immutable binding's object that adds no key:
     -- the field then holds its contract less the nullish values the value
     -- written does not admit (the producer's `written_field`,
@@ -2341,6 +2369,20 @@ partial def exprAt (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (
         ends x
         pure { e3 with paths := surviving e3 [x] }
       | none => pure e3
+    if let (.var _ n, some O, some K, some R) := (recv, O, K, R) then
+      if (← get).consts.contains n then
+        let names ← StateT.lift (keyNames K)
+        if let some names := names then
+          let literal_ := match rhs with | .var .. | .read .. => false | _ => true
+          let mut grown : Ty Tree := []
+          let mut contract : Option (Ty Tree) := none
+          for k in names do
+            if let some (C, B) ← StateT.lift (tryCatch (growth O k R literal_) fun _ => pure none) then
+              contract := some C
+              grown := grown ++ B
+            else grown := grown ++ O
+          if let some C := contract then
+            return (← record e (.ok C), growHolders e3 (← get) n (norm grown))
     return (← record e (match R with | some R => .ok R | none => .error "the value undetermined"), e3)
   | .elemAt _ x key =>
     let (O, e1) ← expr env x
@@ -3535,7 +3577,7 @@ partial def walkLambda (env : Env) (e : Expr) (sig : Option (CallEffects.Arrow (
   let changed : CallEffects.Effect :=
     { CallEffects.Effect.ofFootprint ⟨(← get).valueChange, (← get).storeChange⟩ with
       onThrow := !(← get).throwWrites, fresh := freshResult }
-  modify fun w => { w with breaks := saved.breaks, returns := saved.returns, held := saved.held, expected := saved.expected, literalSlots := saved.literalSlots, evolving := saved.evolving }
+  modify fun w => { w with breaks := saved.breaks, returns := saved.returns, held := saved.held, expected := saved.expected, literalSlots := saved.literalSlots, evolving := saved.evolving, holders := saved.holders }
   modify fun w => { w with writes := saved.writes, throwWrites := saved.throwWrites, locals := saved.locals, inLiteral := saved.inLiteral }
   modify fun w => { w with valueChange := saved.valueChange, storeChange := saved.storeChange, lastBody := R }
   -- (an async expression body's value is its `%AsyncReturn%` call's, the
@@ -4282,7 +4324,23 @@ partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
     let _ ← expr env x
     return none
   | .effect _ x =>
-    let (A, e1) ← expr env x
+    let added := match x with
+      | .write _ k (.var _ n) _ => some (n, k)
+      | .indexWrite _ _ (.var _ n) (.lit _ (.vstr k)) _ => some (n, PropKey.str k)
+      | _ => none
+    let hint ← match added with
+      | some (n, k) => do
+        let uses ← useHints env n (← get).following false true
+        match uses.head? with
+        | some P => StateT.lift (fieldExpected P k)
+        | none => pure none
+      | none => pure none
+    let (A, e1) ← expr env x hint
+    let w ← get
+    let e1 := match x, A with
+      | .objectAssign _ (.var _ n) _, some A =>
+        if w.consts.contains n then { e1 with vars := upd e1.vars n A } else e1
+      | _, _ => e1
     -- A value of no type (a call of a function returning `never`): the
     -- statement does not complete; what follows is walked for its entries,
     -- unreached, each binding at the empty type (the producer's
@@ -4333,6 +4391,9 @@ partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
     -- footprint).
     if (← get).strict && bs.any (·.early) then wrote .any .keep
     for b in bs do
+      modify fun w => { w with holders := w.holders.filter (fun (a, c) => a != b.name && c != b.name) }
+      if let .var _ n := b.init then
+        modify fun w => { w with holders := (b.name, n) :: w.holders }
       modify fun w => { w with declarations := w.declarations.insert (p.1, b.name) env.vars }
       let written ← match b.annot with
         | some ty => StateT.lift (tryCatch (some <$> lower (Fragment.translate ty)) fun _ => pure none)
@@ -4404,6 +4465,7 @@ partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
     modify fun w => { w with freshConsts := w.freshConsts.filter fun n => !bs.any (·.name == n) }
     if (← get).strict && bs.any (·.early) then wrote .any .keep
     for b in bs do
+      modify fun w => { w with holders := w.holders.filter (fun (a, c) => a != b.name && c != b.name) }
       modify fun w => { w with declarations := w.declarations.insert (p.1, b.name) env.vars }
       let written ← match b.annot with
         | some ty => StateT.lift (tryCatch (some <$> lower (Fragment.translate ty)) fun _ => pure none)
