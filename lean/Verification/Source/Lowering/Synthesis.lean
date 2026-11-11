@@ -2165,10 +2165,24 @@ partial def walkLambda (env : Env) (e : Expr) (sig : Option (CallEffects.Arrow (
   let captured := env.vars.map fun (n, A) => (n, (env.decl.lookup n).getD A)
   let mut vars := captured
   let mut ps : List (Option (Ty Tree)) := []
+  -- Each parameter's type in the body, for its default's expected type.
+  let mut bound : List (Option (Ty Tree)) := []
+  -- A rest parameter, the last: in the body at its written array type, a
+  -- fresh argument pack with no holes; offered at the pack of its element
+  -- (`ClosureSetup`'s array rest). None where it has no array element.
+  let mut restPack : Option (Option (Ty Tree)) := none
   for ((n, ty), i) in params.zipIdx do
     let A ← if ty == Json.null then pure ((expected.bind (·[i]?)))
       else StateT.lift (tryCatch (some <$> lower (Fragment.translate ty)) fun _ => pure none)
-    ps := ps ++ [A]
+    bound := bound ++ [A]
+    if rest && i + 1 == params.length then
+      restPack := some (← StateT.lift (tryCatch (do
+        let some el := Fragment.arrayElement ty (readonly := true) | throw "a rest of no array element"
+        let E ← lower (Fragment.callableType el)
+        pure (some [← lower (SourceTypes.use (.pack ⟨[], [], some E, false, .dense⟩ []))])) fun _ => pure none))
+    else
+      -- A defaulted one is offered with `undefined`: a call may omit it.
+      ps := ps ++ [if defaults.any (·.1 == i) then A.map (fun A => norm (A ++ [Labels.undef])) else A]
     match A with
     | some A => vars := upd vars n A
     | none => vars := vars.filter (·.1 != n)
@@ -2181,7 +2195,6 @@ partial def walkLambda (env : Env) (e : Expr) (sig : Option (CallEffects.Arrow (
     | some ty => StateT.lift (tryCatch (some <$> lower (Fragment.translate ty)) fun _ => pure none)
     | none => pure none
   let inner : Env := { vars, decl := vars, paths := [] }
-  for (_, d) in defaults do let _ ← expr inner d
   let saved ← get
   let declared := params.map (·.1) ++ (match body with
     | .block _ ss => declaredIn ss
@@ -2190,6 +2203,9 @@ partial def walkLambda (env : Env) (e : Expr) (sig : Option (CallEffects.Arrow (
   modify fun w => { w with returns := [], expected := written <|> (if async then none else expectedResult) }
   -- An expression body's entry is its prologue's, at the body's start.
   modify fun w => { w with entries := w.entries.insert body.span.1 inner.vars }
+  -- Each default runs at a call omitting its argument, before the body: its
+  -- effect is the literal's, its value made at the parameter's type.
+  for (i, d) in defaults do let _ ← expr inner d (bound[i]?.join)
   let R ← match body with
     | .block _ ss => do
       let done ← stmts (some inner) ss
@@ -2220,8 +2236,18 @@ partial def walkLambda (env : Env) (e : Expr) (sig : Option (CallEffects.Arrow (
   -- A written effect (`Modifies<…>`) is the one it states.
   let kept := stated.getD kept
   let changed := stated.getD changed
-  match ps.mapM id, R with
-  | some qs, some R =>
+  match ps.mapM id, R, restPack with
+  | some _, some _, some none => record e (.error "a function value: a rest of no array element")
+  | some qs, some R, some (some pack) =>
+    -- A rest literal at its rest arrow, at its written effect else the
+    -- ordinary one (`ClosureSetup`'s own signature of an array rest).
+    let recv ← match thisTy, sig with
+      | some A, _ => pure A
+      | none, some a => pure a.receiver
+      | none, none => StateT.lift (prim .source)
+    let r : CallEffects.RestArrow (Ty Tree) := ⟨recv, (qs, pack), R, stated.getD .ordinary⟩
+    record e (.ok [← StateT.lift (lower (SourceTypes.use (.arrs [] [r])))])
+  | some qs, some R, none =>
     -- A callback is checked at the signature it is passed at, its result its
     -- body's; any other literal at its own parameters.
     let a : CallEffects.Arrow (Ty Tree) ← match sig with
@@ -2296,7 +2322,7 @@ partial def walkLambda (env : Env) (e : Expr) (sig : Option (CallEffects.Arrow (
     let same := a.arguments.take qs.length == qs
     let (rows, restOffers) := if sig.isSome && !same then ([a], []) else (rows, restOffers)
     record e (.ok [← StateT.lift (lower (SourceTypes.use (.arrs rows restOffers)))])
-  | _, _ => record e (.error "a function value: a parameter or its result undetermined")
+  | _, _, _ => record e (.error "a function value: a parameter or its result undetermined")
 
 /-- A literal where a type `P` is expected: `[]` at the arrays of `P`
 (whose own type would be an array of no element); an array or object
@@ -2452,22 +2478,49 @@ partial def bindPattern (env : Env) (p : Pattern Expr) (A : Option (Ty Tree)) : 
     match A with
     | some A => return { env with vars := upd env.vars n A, decl := upd env.decl n A }
     | none => return { env with vars := env.vars.filter (·.1 != n) }
-  | .object _ props rest =>
+  | .object pos props rest =>
+    -- A nested pattern's value at its span (a parameter's pattern's is its
+    -- parameter's read there).
+    if !(← get).exprs.contains pos then
+      recordAt pos "other" (match A with | some A => .ok A | none => .error "the bound value undetermined")
     let mut env := env
     for (key, q, d) in props do
       let B ← match A with
         | some A => StateT.lift (tryCatch (some <$> readField env.vars A (.str key)) fun _ => pure none)
         | none => pure none
+      -- A defaulted part's read, at the field's type where the part is a
+      -- name (its span the name's).
+      if let (some _, .name _ np, some B) := (d, q, B) then
+        if !(← get).exprs.contains np then recordAt np "identifier" (.ok B)
       let (B, e') ← withDefault env B d
       env ← bindPattern e' q B
-    if let some (_, q) := rest then env ← bindPattern env q none
+    if let some (rp, q) := rest then
+      -- The rest: a fresh object of the value's own fields but the named
+      -- keys, at their types (`Object.assign`'s copy of one record).
+      let R ← match A with
+        | some A => StateT.lift (tryCatch (do
+            let G ← graphNow
+            match PositiveRules.expand G A with
+            | [.refs fs [] vs [] ms _ _] =>
+              let named := props.map fun (k, _, _) => PropKey.str k
+              let fields := (fs ++ vs).filter fun (f, _) => f != SourceTypes.protoField &&
+                f != SourceTypes.storeField && !ms.any (·.key == f) && !named.contains f
+              Except.ok <$> prim (.refs fields [] [] [] [] [])
+            | _ => pure (Except.error "a rest of a value of no one record contract")) fun m => pure (.error m))
+        | none => pure (.error "the bound value undetermined")
+      recordAt rp "other" R
+      env ← bindPattern env q R.toOption
     return env
-  | .array _ elems rest =>
+  | .array pos elems rest =>
+    if !(← get).exprs.contains pos then
+      recordAt pos "other" (match A with | some A => .ok A | none => .error "the bound value undetermined")
     let mut env := env
     for (i, q, d) in elems do
       let B ← match A with
         | some A => StateT.lift (tryCatch (some <$> elementAt A (some i)) fun _ => pure none)
         | none => pure none
+      if let (some _, .name _ np, some B) := (d, q, B) then
+        if !(← get).exprs.contains np then recordAt np "identifier" (.ok B)
       let (B, e') ← withDefault env B d
       env ← bindPattern e' q B
     if let some (k, rp, slice, q) := rest then
@@ -2484,6 +2537,18 @@ partial def restOf (env : Env) (A : Option (Ty Tree)) (k : Nat) (rp : Span) (sli
   if slice then
     let some g := (← get).generics.lookup (restFromName k) | return none
     let .ok c ← StateT.lift (tryCatch (Except.ok <$> genericCallee g []) fun m => pure (Except.error m)) | return none
+    -- Its binder the union of the value's elements from position `k` on,
+    -- its rest's included (the producer's `slice_element`,
+    -- expression_values.ml:279-283).
+    let E ← StateT.lift (tryCatch (do
+        let G ← graphNow
+        let some S := storeOf G A | pure none
+        let [.list t []] := PositiveRules.expand G S | pure none
+        let Es := t.required.drop k ++ t.optional.drop (k - t.required.length) ++ t.rest.toList
+        pure (if Es.isEmpty then none else some (norm Es.flatten))) fun _ => pure none)
+    let c := match c.binders, E with
+      | [b], some E => { c with seed := c.seed ++ [(b, E)] }
+      | _, _ => c
     modify fun w => { w with lastInstance := none, lastResolution := [] }
     let r ← applyCall env c [.var rp "%rest%"] [some A]
     recordAt (rp.1, rp.1 + "...".length) "identifier" ((·.1) <$> r)

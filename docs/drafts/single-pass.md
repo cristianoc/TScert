@@ -480,8 +480,13 @@ removal works through:
   its elements, which only a variadic signature taking no more fixed
   parameters than the actuals before it admits; into a callee of no
   variadic signature, no actual after the first spread runs code. A slice rest of an array pattern is the call of its
-  `%RestFrom:k%` at the value, any other rest the tuple of the positions
-  after it. A declaration of a statement declaring several holds the
+  `%RestFrom:k%` at the value, its binder the union of the value's elements
+  from position `k` on (the producer's `slice_element`), any other rest the
+  tuple of the positions after it. An object pattern's rest is a fresh
+  object of the value's one record's fields but the named keys, at their
+  types. A nested pattern's value is stated at its span (a parameter's
+  pattern is a destructuring of the parameter), and a defaulted part that
+  is a name is read at the field's type at its span. A declaration of a statement declaring several holds the
   bindings before it.
 - **Function literals.** A body has no type; an expression body the parser
   writes as statements (a guard's Boolean return, `booleanReturn`) shares
@@ -503,7 +508,12 @@ removal works through:
   (`closure_offer`); where a unit's walk finds such an offer, the unit is
   walked once more with each offered row stated at its literal.
   `TSCERT_FORCE=offers` offers every longer signature whatever its leading
-  parameters, the adversarial proposal. Its effect is the one
+  parameters, the adversarial proposal. A defaulted parameter is offered
+  with `undefined`, bound in the body at its type, its default made at that
+  type at the literal's entry, before the body, its effect the literal's. A
+  literal with an array rest is stated at its rest arrow, the pack of the
+  rest's element, at its written effect else the ordinary one
+  (`ClosureSetup`'s own signature of an array rest). Its effect is the one
   it writes (`Modifies<…>`); else the footprint keeping values and stores
   where the walk sees no write, assignment or call changing the heap, else
   the closed footprint of the classes of contents its writes and calls
