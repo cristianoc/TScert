@@ -141,6 +141,10 @@ structure Walk where
   pathsForced : List ((String × List PropKey) × Ty Tree) := []
   /-- Whether a function literal is being walked. -/
   inLiteral : Bool := false
+  /-- The bindings of the function literals being walked held in slots (each
+  one's parameters and declarations no cell holds, `cellLocals`): a closure
+  they hold sees each at the value it held when the closure was made. -/
+  literalSlots : List String := []
   /-- Whether the walk reads its own record of changes as a declaration's
   footprint (`declarationEffects`): a call of an unknown callee, an
   iteration and a finalizer then change anything or bound no throw, and an
@@ -216,6 +220,10 @@ structure Walk where
   /-- The constants holding an allocation (an object or array literal): an
   iterator's step keeps no path of one (the producer's `allocated`). -/
   allocated : List String := []
+  /-- Each expression walked, by its span: whether its walk ended a
+  narrowed path (a call that may change a value of the heap, a write, an
+  assignment). -/
+  endsIn : Std.HashMap Span Bool := {}
 
 abbrev W := StateT Walk Compiler
 
@@ -489,6 +497,10 @@ def readField (vars : List (String × Ty Tree)) (A : Ty Tree) (fld : PropKey) : 
       | throw s!"{SourceTypes.functionPrototypeName} is not in scope"
     let some B := fieldRow G P fld | throw (readRefusal "Function.prototype names no field 'toString'")
     out := out ++ B
+  -- An array's `length` a number, each array arm of a union apart from the
+  -- others (the lowering's read of a union, each alternative as it reads).
+  let (arrs, objs) := if fld == lengthKey then objs.partition fun l => arraysOnly G [l] else ([], objs)
+  if !arrs.isEmpty then out := out ++ (← prim .num)
   if !objs.isEmpty then
     if fld == lengthKey && arraysOnly G objs then out := out ++ (← prim .num)
     else
@@ -596,11 +608,20 @@ than `length` (a primitive's member is no location). -/
 def narrowPath (env : Env) (root : String) (path : List PropKey) (k : Ty Tree → Compiler (Ty Tree)) :
     Compiler Env := do
   let some A := env.vars.lookup root | return env
-  let P ← match env.paths.lookup (root, path) with
-    | some P => pure (some P)
-    | none => tryCatch (some <$> path.foldlM (fun B f => readField env.vars B f) A) fun _ => pure none
+  -- Each prefix at its narrowed type where a test narrowed it, as the read
+  -- of the prefix reads it (`.read`).
+  let along (p : List PropKey) : Compiler (Option (Ty Tree)) := tryCatch (do
+      let mut B := A
+      let mut pre : List PropKey := []
+      for f in p do
+        pre := pre ++ [f]
+        B ← match env.paths.lookup (root, pre) with
+          | some P => pure P
+          | none => readField env.vars B f
+      return some B) fun _ => pure none
+  let P ← along path
   let G ← graphNow
-  let receiver ← tryCatch (some <$> path.dropLast.foldlM (fun B f => readField env.vars B f) A) fun _ => pure none
+  let receiver ← along path.dropLast
   let ofObject := path.getLast? != some lengthKey && receiver.any fun R => R.all fun l => (shapeOf G l).isNone
   match P with
   | some P => if ofObject then return { env with paths := upd env.paths (root, path) (← k P) } else return env
@@ -692,6 +713,23 @@ partial def mayCall : Expr → Bool
   | .equality _ _ l r | .singletonTest _ _ _ _ l r | .logical _ _ l r | .coalesce _ l r | .arith _ _ l r
   | .inKeys _ l r | .elemAt _ l r | .index _ _ l r => mayCall l || mayCall r
   | _ => true
+
+/-- Whether a statement may end a narrowed path of a binding it does not
+assign: conservatively, any form but those whose expressions call nothing,
+an increment or an assignment of a binding allowed (`mayCall`). -/
+partial def quietStmt : Stmt → Bool
+  | .ret _ e | .effect _ e | .throw _ e => quietExpr e
+  | .constants _ bs | .mutables _ bs => bs.all fun b => quietExpr b.init
+  | .ite _ c t e => quietExpr c && t.all quietStmt && (e.getD []).all quietStmt
+  | .loop _ c b u _ => quietExpr c && b.all quietStmt && u.all quietStmt
+  | .block _ _ b => b.all quietStmt
+  | .brk .. | .cont .. => true
+  | _ => false
+where
+  quietExpr : Expr → Bool
+    | .update _ _ (.var ..) rhs _ => (rhs.map quietExpr).getD true
+    | .assign _ _ _ rhs => quietExpr rhs
+    | e => !mayCall e
 
 /-- An environment's narrowed paths by root. -/
 def currentOf (env : Env) : List (String × List (List PropKey × Ty Tree)) :=
@@ -1562,13 +1600,19 @@ partial def refine (env : Env) (c : Expr) (q : Bool) : W Env := do
     if env.vars.any fun (n, _) => assignsStmt n (.effect c.span c) then return env
     refine env r q
   | .logical _ andOp l r =>
-    -- The right operand runs after the left's narrowing: a call in it ends
-    -- the narrowed paths.
-    let after (e : Env) : Env := if mayCall r then { e with paths := [] } else e
-    if andOp == q then refine (after (← refine env l q)) r q
+    -- The right operand runs after the left's narrowing: where its walk
+    -- ended a path (a call that may change a value of the heap, a write, an
+    -- assignment), or where it was not walked and may call, the narrowed
+    -- paths end but those through stable members, as after a call
+    -- (`afterCall`; the producer's step havocs only where it may write and
+    -- keeps `stable_path`, execution_analysis.ml:244-249).
+    let after (e : Env) : W Env := do
+      if !((← get).endsIn.get? r.span).getD (mayCall r) then return e
+      return { e with paths := ← StateT.lift (e.paths.filterM fun ((root, p), _) => stablePath e root p) }
+    if andOp == q then refine (← after (← refine env l q)) r q
     else
       let a ← refine env l q
-      let b ← refine (after (← refine env l !q)) r q
+      let b ← refine (← after (← refine env l !q)) r q
       return (join (some a) (some b)).getD a
   | .shapeTest _ tag equal e => StateT.lift (narrowTarget env e tag (equal == q))
   | .singletonTest _ tag equal testLeft l r =>
@@ -1606,7 +1650,7 @@ partial def refine (env : Env) (c : Expr) (q : Bool) : W Env := do
   -- type, as the lowering reads it (`Control.promiseNarrowing`'s `.invoke`).
   | .call _ callee args _ _ | .callWithReceiver _ callee _ args | .invoke _ callee args _ _ =>
     if !q && !(← get).force.contains "guards" then return env
-    promised env callee args false
+    promised env callee args false (some c.span)
   | .tagMember _ _ none tags _ e =>
     let sliced (A : Ty Tree) : Compiler (Ty Tree) := do
       if q then do
@@ -1643,8 +1687,15 @@ partial def refine (env : Env) (c : Expr) (q : Bool) : W Env := do
 function) of the callee's recorded type holds: the actual its promise names
 at the signature's guarded type, the first signature stating one whose
 parameters admit the actuals' recorded types. -/
-partial def promised (env : Env) (callee : Expr) (args : List Expr) (asserts : Bool) : W Env := do
+partial def promised (env : Env) (callee : Expr) (args : List Expr) (asserts : Bool)
+    (site : Option Span := none) : W Env := do
   let w ← get
+  -- Whether the call may have changed a value of the heap: the last call's
+  -- instance, else, for a call walked earlier (a test's, refined after its
+  -- condition is walked), whether its walk ended a path.
+  let changed := match site with
+    | some sp => (w.endsIn.get? sp).getD true
+    | none => w.changedValues
   let typeOf (x : Expr) : Option (Ty Tree) := (w.exprs.get? x.span).bind (·.2.toOption)
   let some F := typeOf callee | return env
   let T ← StateT.lift table
@@ -1662,7 +1713,7 @@ partial def promised (env : Env) (callee : Expr) (args : List Expr) (asserts : B
     let some x := args[p]? | continue
     -- A member path read before a call that may change a value of the heap
     -- may hold another value after it: no path is narrowed there.
-    if w.changedValues then
+    if changed then
       if let some (_, _ :: _) := memberPath x then return env
     return ← StateT.lift (narrowTo env x s.result)
   return env
@@ -1673,6 +1724,13 @@ annotated declaration's, an assignment's, a field's, a parameter's), a
 literal, a function literal or a fresh store made at it (`fit`), and each
 part of it walked at the part's expected type. -/
 partial def expr (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (Option (Ty Tree) × Env) := do
+  let before := (← get).pathEnds.length
+  let r ← exprAt env e exp
+  modify fun w => { w with endsIn := w.endsIn.insert e.span (w.pathEnds.length != before || (w.endsIn.get? e.span).getD false) }
+  return r
+
+/-- `expr` but the record of whether the walk ended a path. -/
+partial def exprAt (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (Option (Ty Tree) × Env) := do
   let forceElements := (← get).force.contains "elements"
   let forceSpreads := (← get).force.contains "spreads"
   let forceKeys := (← get).force.contains "keys"
@@ -1787,7 +1845,15 @@ partial def expr (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (Op
       As := As ++ [A]
       e1 := e'
     let r ← attempt e do
-      let fields ← (names.zip As).mapM fun (n, A) => do return (n, ← widen (← need A "a field"))
+      -- A literal's type widens in a mutable field, as TypeScript's fresh
+      -- literal types do; a name's or a read's type does not, nor a const
+      -- assertion's (the producer's `fresh`, expression_objects.ml:49-54).
+      let fresh (y : Expr) : Bool := match y with
+        | .var .. | .read .. | .cast _ none (.alloc ..) | .cast _ none (.arrayLit ..) => false
+        | _ => true
+      let fields ← (names.zip (As.zip es)).mapM fun (n, A, y) => do
+        let A ← need A "a field"
+        return (n, ← if fresh y then widen A else pure A)
       -- Its own keys exactly (`HasTyUsing.alloc`'s bound).
       prim (.refs fields [] [] [] [] [⟨true, names⟩] [])
     let r ← match exp with
@@ -2859,9 +2925,17 @@ partial def walkLambda (env : Env) (e : Expr) (sig : Option (CallEffects.Arrow (
   if !tps.isEmpty && (← get).strict then
     wrote .any .any
     modify fun w => { w with throwWrites := true }
-  let slots := (← get).slots.get
+  -- A captured binding held in a cell at its declared type (a cell holds
+  -- whatever its contract admits when the body runs); one held in a slot at
+  -- its type here: no write of it follows the closure's creation
+  -- (`cellLocals`; the producer's `forget`, environment.ml:138-142, keeps
+  -- every binding but a cell's).
+  -- (`TSCERT_FORCE=captures`: every captured binding at its type here, a
+  -- cell's included, the adversarial proposal)
+  let w0 ← get
   let captured := env.vars.map fun (n, A) =>
-    (n, if slots.contains n then A else (env.decl.lookup n).getD A)
+    if w0.force.contains "captures" || w0.slots.get.contains n || w0.literalSlots.contains n then (n, A)
+    else (n, (env.decl.lookup n).getD A)
   let mut vars := captured
   let mut ps : List (Option (Ty Tree)) := []
   -- Each parameter's type in the body, for its default's expected type.
@@ -2908,7 +2982,12 @@ partial def walkLambda (env : Env) (e : Expr) (sig : Option (CallEffects.Arrow (
   let declared := params.map (·.1) ++ (match body with
     | .block _ ss => declaredIn ss
     | _ => [])
-  modify fun w => { w with writes := false, throwWrites := false, valueChange := .keep, storeChange := .keep, locals := declared, inLiteral := true }
+  let bodyStmts := match body with
+    | .block _ ss => ss
+    | x => [.effect x.span x]
+  let cells := (cellLocals (params.map (·.1)) bodyStmts).map (·.1)
+  modify fun w => { w with writes := false, throwWrites := false, valueChange := .keep, storeChange := .keep, locals := declared, inLiteral := true,
+                           literalSlots := declared.filter (!cells.contains ·) ++ w.literalSlots }
   modify fun w => { w with returns := [], expected := written <|> (if async then none else expectedResult) }
   -- An expression body's entry is its prologue's, at the body's start.
   modify fun w => { w with entries := w.entries.insert body.span.1 inner.vars }
@@ -2955,7 +3034,7 @@ partial def walkLambda (env : Env) (e : Expr) (sig : Option (CallEffects.Arrow (
   let changed : CallEffects.Effect :=
     { CallEffects.Effect.ofFootprint ⟨(← get).valueChange, (← get).storeChange⟩ with
       onThrow := !(← get).throwWrites, fresh := freshResult }
-  modify fun w => { w with breaks := saved.breaks, returns := saved.returns, held := saved.held, expected := saved.expected }
+  modify fun w => { w with breaks := saved.breaks, returns := saved.returns, held := saved.held, expected := saved.expected, literalSlots := saved.literalSlots }
   modify fun w => { w with writes := saved.writes, throwWrites := saved.throwWrites, locals := saved.locals, inLiteral := saved.inLiteral }
   modify fun w => { w with valueChange := saved.valueChange, storeChange := saved.storeChange, lastBody := R }
   -- (an async expression body's value is its `%AsyncReturn%` call's, the
@@ -3621,7 +3700,20 @@ partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
     modify fun w => { w with continues := env :: w.continues }
     return none
   | .loop _ c body update _ =>
-    let head := loopHead env (.effect c.span c :: body ++ update)
+    -- The paths narrowed before the loop that nothing in it can end, held
+    -- from its head on: the root no binding the loop declares or assigns,
+    -- and either nothing in the loop calling or writing, or each member of
+    -- the path stable (`stablePath`), as after a call. The pass checks them
+    -- at the head's entry, from each edge into it.
+    let all := .effect c.span c :: body ++ update
+    let declared := declaredIn (body ++ update)
+    let quiet := all.all quietStmt
+    let early ← if (← get).force.contains "loops" then pure [] else
+      StateT.lift (env.paths.filterM fun ((r, p), _) => do
+        if declared.contains r || all.any (assignsStmt r) then return false
+        if quiet then return true
+        stablePath env r p)
+    let head := keepPaths early (loopHead env all)
     let savedEnds := (← get).pathEnds
     modify fun w => { w with pathEnds := [] }
     let (_, e1) ← expr head c
@@ -3640,10 +3732,9 @@ partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
     -- Past the loop, the paths narrowed before it that nothing in its test,
     -- body and update ends.
     let evs := (← get).pathEnds
-    let declared := declaredIn (body ++ update)
     -- (`TSCERT_FORCE=loops`: every path kept, whatever ends it)
     let evs := if (← get).force.contains "loops" then [] else evs
-    let kept := (surviving env evs).filter fun ((r, _), _) => !declared.contains r
+    let kept := early ++ ((surviving env evs).filter fun ((r, p), _) => !declared.contains r && (early.lookup (r, p)).isNone)
     modify fun w => { w with pathEnds := evs ++ savedEnds, loopKept := kept }
     let keep := keepPaths kept
     if noExit then return out.map keep
