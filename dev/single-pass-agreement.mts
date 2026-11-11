@@ -60,6 +60,8 @@ const controls: { file: string; unit: string; force: string; positive?: boolean 
   { file: "invalid-cell-truthiness-narrowing", unit: "kept@176", force: "stale" },
   { file: "module-cache-keeps-lengths", unit: "count@478", force: "cells" },
   { file: "module-cache-before-initialization", unit: "rhs@341", force: "cells", positive: true },
+  { file: "fresh-separation", unit: "handlerCell@1404", force: "cells", positive: true },
+  { file: "module-cells-written-in-turn", unit: "aside@399", force: "cells", positive: true },
   { file: "invalid-exceptional-handler-fact", unit: "wrong@336", force: "throws" },
   { file: "invalid-object-spread-two-sources", unit: "count@156", force: "spreads" },
   { file: "invalid-keyed-read", unit: "pick@70", force: "keys" },
