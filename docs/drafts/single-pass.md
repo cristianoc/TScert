@@ -531,7 +531,9 @@ removal works through:
   array's elements (a tuple's positions separately), a record's fields and
   methods' results, a constructor's first signature's result and parameters,
   a callable's result at the actual's, then its parameters
-  where the result supplies no candidate. A binder no actual gives is at what
+  where the result supplies no candidate, of a callable stating several
+  signatures (a guard's plain row beside its promise row) the first naming
+  the binder (a written guard's promised type, the producer's `promised`). A binder no actual gives is at what
   the type expected of the call's value gives it, whether or not that
   instance admits the actuals (the call's step decides), else at its bound
   read at the binders so far, else at `unknown` (the producer's upper
