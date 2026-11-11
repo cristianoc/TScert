@@ -468,7 +468,9 @@ removal works through:
   `%RestFrom:k%` at the value, any other rest the tuple of the positions
   after it. A declaration of a statement declaring several holds the
   bindings before it.
-- **Function literals.** A function literal passed as an actual is stated
+- **Function literals.** A body has no type; an expression body the parser
+  writes as statements (a guard's Boolean return, `booleanReturn`) shares
+  its expression's span, which keeps the expression's type. A function literal passed as an actual is stated
   at its parameter's signature taking the most parameters; any other at its
   written parameters and receiver (a method's `this`). Its effect is the one
   it writes (`Modifies<…>`); else the footprint keeping values and stores
