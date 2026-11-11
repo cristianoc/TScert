@@ -2907,7 +2907,6 @@ def armsCall (c : Callee) (callbacks : List Bool) (As : List (Option (Ty Tree)))
     modify fun w => { w with throwWrites := true }
   return armsCallee (SourceTypes.graph T) T c callbacks As (w.force.contains "arms")
 
-mutual
 /-- The narrowing a condition answering `q` makes. -/
 partial def refine (env : Env) (c : Expr) (q : Bool) : W Env := do
   match c with
@@ -3044,6 +3043,113 @@ partial def refine (env : Env) (c : Expr) (q : Bool) : W Env := do
     | _ => return env
   | _ => return env
 
+/-- The callee's type at a call: its own where it states one; a scheme's
+rest at the instance; a construct signature; else every signature of the
+scheme the actuals' count admits (`sigs`), at the binders `σ`. -/
+def calleeAtCall (c : Callee) (σ : List (Tree × Ty Tree)) (inst : CallEffects.Arrow (Ty Tree))
+    (rest : Option (CallEffects.RestArrow (Ty Tree))) (fitting : List (CallEffects.Arrow (Ty Tree))) :
+    Compiler (Ty Tree) := do
+  let sub (A : Ty Tree) : Ty Tree := substitute σ A
+  match c.own, rest with
+  | some F, _ => pure F
+  | none, some r => do
+    -- A scheme's rest at the instance: the argument pack of its positions
+    -- read at the binders, a binder's meet row at the binder's type itself
+    -- (the row the claims state, `Scheme.closureRows`' instances,
+    -- Schemes.lean:627-660): a spread's store spreads into the pack whose
+    -- element holds its positions' labels (`VariadicTyping.SpreadsInto`).
+    let r' := r.map sub
+    let G ← graphNow
+    let pack ← match c.binders.isEmpty, PositiveRules.expand G r.arguments.2 with
+      | false, [.pack t []] =>
+        lower (do return [← SourceTypes.use (.pack
+          { t with required := t.required.map sub, optional := t.optional.map sub, rest := t.rest.map sub } [])])
+      | _, _ => pure r'.arguments.2
+    return [← lower (SourceTypes.use (.arrs [] [{ r' with arguments := (r'.arguments.1, pack) }]))]
+  | none, none =>
+    if c.construct then do return [← lower (SourceTypes.use (.ctors [⟨(), inst.arguments, inst.result, inst.effect⟩]))]
+    -- Every signature of the scheme the actuals' count admits, at the
+    -- binders: the step chooses among them (`SinglePass.directCall`), a
+    -- precondition's where the facts establish it.
+    else do
+      -- A scheme-typed local's instance: a bounded binder's row is a meet
+      -- row, whose image is the one clause row holding the meet of its
+      -- binders' types' clauses with the row's own (`SchemeInstances.meetOk`;
+      -- `Scheme.closureRows`' instances, Schemes.lean:627-660, compute the
+      -- producer's so).
+      let sigs := fitting
+      let mut images : List (Tree × Ty Tree) := []
+      for l in (sigs.flatMap fun x => (x.receiver :: x.result :: x.arguments).flatten.flatMap meetsIn).eraseDups do
+        let .meet ps := l | continue
+        let found := ps.toList.filterMap (σ.lookup ·)
+        let own := ps.toList.filter fun p => (σ.lookup p).isNone
+        let G ← graphNow
+        if found.isEmpty || !found.all G.plainTy || !G.plainTy own then continue
+        let cs := PositiveRules.meetMany (found.map (PositiveRules.clausesOf G) ++
+          (if own.isEmpty then [] else [PositiveRules.clausesOf G own]))
+        if cs.isEmpty then continue
+        images := images ++ [(l, [← lower (modifyGet fun T => let (T, l) := EquationStore.intern T cs; (l, T))])]
+      let row (A : Ty Tree) : Ty Tree := norm (A.flatMap (EquationLowering.treeReplace fun u =>
+        match images.lookup u with
+        | some I => some I
+        | none => match u with
+          | .meet _ => some (sub [u])
+          | u => σ.lookup u))
+      let rows (x : CallEffects.Arrow (Ty Tree)) : CallEffects.Arrow (Ty Tree) :=
+        { x.map sub with receiver := row x.receiver, arguments := x.arguments.map row, result := row x.result }
+      if c.binders.isEmpty then return [← lower (SourceTypes.use (.arrs [inst] []))]
+      -- (of those, the ones whose receiver admits the callee's, where
+      -- some does: a member stating its signatures at several receivers, a
+      -- dense and a sparse array's, is read at the walked receiver's, as the
+      -- producer claims the member at the signature the call selects)
+      let all := sigs.map rows
+      let T ← table
+      let mine := all.filter fun a => within T c.receiver a.receiver
+      return [← lower (SourceTypes.use (.arrs (if mine.isEmpty then all else mine) []))]
+
+/-- The rows a function literal at `span` of no rest binder, guard or
+scheme is stated at: its own row `a` (at its own parameters `qs` where it
+was walked at a signature, `walkedAtSig`), the rows its expected callable
+`ctx` offers it (`contextRows`) and those the uses of the constant holding
+it offer (`offerUse`); `rest` where it has a tuple rest of fixed positions. -/
+def literalRows (span : Span) (a : CallEffects.Arrow (Ty Tree)) (qs : List (Ty Tree))
+    (ctx : Option (Ty Tree)) (walkedAtSig rest : Bool) : W (Ty Tree) := do
+  let ownRow := if walkedAtSig then { a with arguments := qs } else a
+  let T ← StateT.lift table
+  -- (`TSCERT_FORCE=offers`: whatever the leading ones, the adversarial
+  -- proposal)
+  let forceOffers := (← get).force.contains "offers"
+  let leads (Ds : List (Ty Tree)) : Bool := forceOffers || (Ds.zip qs).all fun (D, Q) => within T D Q
+  -- An offered row at the offered signature's result where the body's is
+  -- within it, else the body's (the producer's `{s with call_effect}` and
+  -- `discarded_signature`, expression_closures.ml:400-405, semantic.ml:358:
+  -- the offered result, the closure's own effect and leading parameters).
+  let atResult (R : Ty Tree) : Ty Tree := if within T ownRow.result R then R else ownRow.result
+  let (fixedOffers, restOffers) := if rest then ([], []) else contextRows T ctx ownRow qs forceOffers
+  -- and at each a use of the constant holding it offers (`offerUse`).
+  let useOffers := ((← get).offers.filter (·.1 == span)).filterMap fun (_, s) =>
+    if !rest && qs.length < s.arguments.length && leads (s.arguments.take qs.length) then
+      let a : CallEffects.Arrow (Ty Tree) := { s with arguments := qs ++ s.arguments.drop qs.length }
+      some { a with result := atResult s.result, effect := ownRow.effect }
+    else none
+  let useRests := ((← get).restOffers.filter (·.1 == span)).filterMap fun (_, r) =>
+    if !rest && qs.length ≤ r.arguments.1.length && leads (r.arguments.1.take qs.length) then
+      some ({ r with arguments := (qs ++ r.arguments.1.drop qs.length, r.arguments.2),
+                     result := atResult r.result, effect := ownRow.effect } : CallEffects.RestArrow (Ty Tree))
+    else none
+  let restOffers := restOffers ++ useRests.filter (!restOffers.contains ·)
+  let rows := ownRow :: ((fixedOffers ++ useOffers).foldl (fun acc s => if acc.contains s || s == ownRow then acc else acc ++ [s]) [])
+  -- A callback's leading parameters are the ones its body was walked
+  -- at, followed by the further parameters the context offers.
+  let same := a.arguments.take qs.length == qs
+  let (rows, restOffers) := if walkedAtSig && !same then
+    -- The body was walked at its own written leading parameters; the
+    -- further actuals are discarded (semantic.ml:358). This row keeps
+    -- that domain when a callback's result enlarges a binder's candidate.
+    ([{ a with arguments := qs ++ a.arguments.drop qs.length }], []) else (rows, restOffers)
+  return [← StateT.lift (lower (SourceTypes.use (.arrs rows restOffers)))]
+
+mutual
 /-- An expression's type, recorded at its occurrence, and the environment
 after it; where a type `exp` is expected of its value (a return's, an
 annotated declaration's, an assignment's, a field's, a parameter's), a
@@ -4622,62 +4728,7 @@ partial def applyCall (env : Env) (c : Callee) (args : List Expr) (As : List (Op
   if let some H := hint then
     if inst.effect.fresh then
       if let some R ← StateT.lift (tryCatch (freshAt H inst.result) fun _ => pure none) then result := R
-  let own ← StateT.lift (match c.own, rest with
-    | some F, _ => pure F
-    | none, some r => do
-      -- A scheme's rest at the instance: the argument pack of its positions
-      -- read at the binders, a binder's meet row at the binder's type itself
-      -- (the row the claims state, `Scheme.closureRows`' instances,
-      -- Schemes.lean:627-660): a spread's store spreads into the pack whose
-      -- element holds its positions' labels (`VariadicTyping.SpreadsInto`).
-      let r' := r.map sub
-      let G ← graphNow
-      let pack ← match c.binders.isEmpty, PositiveRules.expand G r.arguments.2 with
-        | false, [.pack t []] =>
-          lower (do return [← SourceTypes.use (.pack
-            { t with required := t.required.map sub, optional := t.optional.map sub, rest := t.rest.map sub } [])])
-        | _, _ => pure r'.arguments.2
-      return [← lower (SourceTypes.use (.arrs [] [{ r' with arguments := (r'.arguments.1, pack) }]))]
-    | none, none =>
-      if c.construct then do return [← lower (SourceTypes.use (.ctors [⟨(), inst.arguments, inst.result, inst.effect⟩]))]
-      -- Every signature of the scheme the actuals' count admits, at the
-      -- binders: the step chooses among them (`SinglePass.directCall`), a
-      -- precondition's where the facts establish it.
-      else do
-        -- A scheme-typed local's instance: a bounded binder's row is a meet
-        -- row, whose image is the one clause row holding the meet of its
-        -- binders' types' clauses with the row's own (`SchemeInstances.meetOk`;
-        -- `Scheme.closureRows`' instances, Schemes.lean:627-660, compute the
-        -- producer's so).
-        let sigs := c.fixed.filter fits
-        let mut images : List (Tree × Ty Tree) := []
-        for l in (sigs.flatMap fun x => (x.receiver :: x.result :: x.arguments).flatten.flatMap meetsIn).eraseDups do
-          let .meet ps := l | continue
-          let found := ps.toList.filterMap (σ.lookup ·)
-          let own := ps.toList.filter fun p => (σ.lookup p).isNone
-          let G ← graphNow
-          if found.isEmpty || !found.all G.plainTy || !G.plainTy own then continue
-          let cs := PositiveRules.meetMany (found.map (PositiveRules.clausesOf G) ++
-            (if own.isEmpty then [] else [PositiveRules.clausesOf G own]))
-          if cs.isEmpty then continue
-          images := images ++ [(l, [← lower (modifyGet fun T => let (T, l) := EquationStore.intern T cs; (l, T))])]
-        let row (A : Ty Tree) : Ty Tree := norm (A.flatMap (EquationLowering.treeReplace fun u =>
-          match images.lookup u with
-          | some I => some I
-          | none => match u with
-            | .meet _ => some (sub [u])
-            | u => σ.lookup u))
-        let rows (x : CallEffects.Arrow (Ty Tree)) : CallEffects.Arrow (Ty Tree) :=
-          { x.map sub with receiver := row x.receiver, arguments := x.arguments.map row, result := row x.result }
-        if c.binders.isEmpty then return [← lower (SourceTypes.use (.arrs [inst] []))]
-        -- (of those, the ones whose receiver admits the callee's, where
-        -- some does: a member stating its signatures at several receivers, a
-        -- dense and a sparse array's, is read at the walked receiver's, as the
-        -- producer claims the member at the signature the call selects)
-        let all := sigs.map rows
-        let T ← table
-        let mine := all.filter fun a => within T c.receiver a.receiver
-        return [← lower (SourceTypes.use (.arrs (if mine.isEmpty then all else mine) []))])
+  let own ← StateT.lift (calleeAtCall c σ inst rest (c.fixed.filter fits))
   return .ok (own, result)
 
 /-- A function literal's walk: its parameters at their written types, or
@@ -4898,40 +4949,7 @@ partial def walkLambda (env : Env) (e : Expr) (sig : Option (CallEffects.Arrow (
     -- result and effect: calls through it discard the actuals past its
     -- parameters, and its body is checked at each row (`ClosureSetup`;
     -- the producer's `from_context`, expression_closures.ml:372-386).
-    let ownRow := if sig.isSome then { a with arguments := qs } else a
-    let T ← StateT.lift table
-    -- (`TSCERT_FORCE=offers`: whatever the leading ones, the adversarial
-    -- proposal)
-    let forceOffers := (← get).force.contains "offers"
-    let leads (Ds : List (Ty Tree)) : Bool := forceOffers || (Ds.zip qs).all fun (D, Q) => within T D Q
-    -- An offered row at the offered signature's result where the body's is
-    -- within it, else the body's (the producer's `{s with call_effect}` and
-    -- `discarded_signature`, expression_closures.ml:400-405, semantic.ml:358:
-    -- the offered result, the closure's own effect and leading parameters).
-    let atResult (R : Ty Tree) : Ty Tree := if within T ownRow.result R then R else ownRow.result
-    let (fixedOffers, restOffers) := if rest then ([], []) else contextRows T ctx ownRow qs forceOffers
-    -- and at each a use of the constant holding it offers (`offerUse`).
-    let useOffers := ((← get).offers.filter (·.1 == e.span)).filterMap fun (_, s) =>
-      if !rest && qs.length < s.arguments.length && leads (s.arguments.take qs.length) then
-        let a : CallEffects.Arrow (Ty Tree) := { s with arguments := qs ++ s.arguments.drop qs.length }
-        some { a with result := atResult s.result, effect := ownRow.effect }
-      else none
-    let useRests := ((← get).restOffers.filter (·.1 == e.span)).filterMap fun (_, r) =>
-      if !rest && qs.length ≤ r.arguments.1.length && leads (r.arguments.1.take qs.length) then
-        some ({ r with arguments := (qs ++ r.arguments.1.drop qs.length, r.arguments.2),
-                       result := atResult r.result, effect := ownRow.effect } : CallEffects.RestArrow (Ty Tree))
-      else none
-    let restOffers := restOffers ++ useRests.filter (!restOffers.contains ·)
-    let rows := ownRow :: ((fixedOffers ++ useOffers).foldl (fun acc s => if acc.contains s || s == ownRow then acc else acc ++ [s]) [])
-    -- A callback's leading parameters are the ones its body was walked
-    -- at, followed by the further parameters the context offers.
-    let same := a.arguments.take qs.length == qs
-    let (rows, restOffers) := if sig.isSome && !same then
-      -- The body was walked at its own written leading parameters; the
-      -- further actuals are discarded (semantic.ml:358). This row keeps
-      -- that domain when a callback's result enlarges a binder's candidate.
-      ([{ a with arguments := qs ++ a.arguments.drop qs.length }], []) else (rows, restOffers)
-    record e (.ok [← StateT.lift (lower (SourceTypes.use (.arrs rows restOffers)))])
+    record e (.ok (← literalRows e.span a qs ctx sig.isSome rest))
   | _, _, _ => record e (.error "a function value: a parameter or its result undetermined")
 
 /-- Bind a pattern's names to the parts of a value of type `A` (none where
