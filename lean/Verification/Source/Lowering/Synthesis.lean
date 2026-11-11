@@ -654,7 +654,8 @@ def readField (vars : List (String × Ty Tree)) (A : Ty Tree) (fld : PropKey) : 
       let objs := norm (← objs.mapM fun l => boundOf [l]).flatten
       let G ← graphNow
       let plan ← tryCatch (readCell G [objs] fld (DirectProof.var [objs] 0 objs)) fun m =>
-        throw (if m.startsWith "read of a field" || m.startsWith "read of a key" then readRefusal m else m)
+        throw (if m.startsWith "read of a field" || m.startsWith "read of a key" ||
+          m == "read receiver must name a cell contract" then readRefusal m else m)
       out := out ++ plan.type
   return norm out
 
