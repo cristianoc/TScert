@@ -24,6 +24,8 @@ structure Instantiable where
   name : String
   pos : Span
   binders : List String
+  /-- Declared unbounded binders, retained for candidate widening proposals. -/
+  widenBinders : List String := []
   resolution : List ResolutionSlots := []
   instantiate : List (String × Json) → SourceTypes.Lowering (Json × List (String × Option Json))
 
