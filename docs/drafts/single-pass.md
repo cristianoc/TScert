@@ -358,9 +358,12 @@ of loop-heavy cases are refused; none of 162 sampled units changes.
 
 ### The referee
 
-A node no path from the start reaches is checked by the proved layer at its
-own context; the pass does not decide one whose context some environment
-meets (`not handled`). The walk states the bindings where the unit's body
+A node no path from the start reaches never runs: the pass follows every
+normal and exceptional edge from the start (`loopHeads`' `reached`), so the
+nodes it reaches include every node a run can be at, and it decides
+nothing of the others (a finalizer's copy for a throw no step raises, a
+handler no throw reaches). The proved layer checks such a node at its own
+context all the same, which the referee does. The walk states the bindings where the unit's body
 completes, each at the empty type where it never does, at the unit's
 completion node.
 
