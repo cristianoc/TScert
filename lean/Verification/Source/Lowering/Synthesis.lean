@@ -1178,7 +1178,10 @@ def genericCallee (g : Generic) (typeArgs : List Json) : Compiler Callee := do
         let some p := (g.binders.zip ps).lookup n | return none
         return some (p, ← lower (Fragment.translate j))) fun _ => pure []
   let G ← graphNow
-  return { binders := ps, fixed := ProgramTyping.callSigs G fresh, rests := ProgramTyping.restSigs G fresh,
+  let (fixed, rests, construct) := match PositiveRules.expand G fresh with
+    | [.ctors L R ..] => (L.map (·.withReceiver [Labels.undef]), R.map (·.withReceiver [Labels.undef]), true)
+    | _ => (ProgramTyping.callSigs G fresh, ProgramTyping.restSigs G fresh, false)
+  return { binders := ps, fixed, rests, construct,
            names := g.binders, resolution := g.resolution, seed := (shown.filterMap (ps[·]?)).zip θ, bounds }
 
 /-- The callee of a generic module function of one binder typing a value and
@@ -3939,10 +3942,13 @@ partial def exprCall (env : Env) (e : Expr) (exp : Option (Ty Tree)) : W (Option
     let c ← StateT.lift (tryCatch (do
         let c ← match F, generic with
           | none, some g =>
-            if !typeArgs.isEmpty then genericCallee g typeArgs else do
-              -- A packed class cannot be opened at a bare value binder:
-              -- its argument lists require the actual tuple's contract.
-              let some c ← packedCallee g actualTypes spreads | throw "a packed class needs a tuple actual"
+            -- Ordinary constructors expose their parameters at fresh
+            -- binders, as their call signatures do (expression_closures.ml:
+            -- 111-143; inference.ml:287-294). A packed constructor
+            -- requires the actual tuple before its signature can be read.
+            tryCatch (genericCallee g typeArgs) fun m => do
+              if !typeArgs.isEmpty then throw m
+              let some c ← packedCallee g actualTypes spreads | throw m
               pure c
           | _, _ => constructCallee (← need F "the class") typeArgs
         let (args', As', c) ← spreadCall args actualTypes spreads c
