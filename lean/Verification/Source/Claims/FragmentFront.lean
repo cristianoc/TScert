@@ -90,11 +90,11 @@ graphs, each point holding its node's sites' expressions and its statement
 entry's bindings, where `checkPointSites` places a producer's; its
 parameters' and result's types its annotations', each read where the
 extraction reads them. -/
-def retypeFromFragment (force : List String := []) : Retype := fun fr T f fc module => do
+def retypeFromFragment (force : List String := []) : Retype := fun fr T f fc module scope => do
   let init := f.name.isEmpty
   let (schemes, generics) := fr.genericValues
   let (T, fc, completion, declarations) ← SinglePass.timedKind "lower: of extractAll, the walk" fun _ =>
-    Synthesis.retypeUnitWith T f fc (module.map (fun v => (v.1, moduleValueType v)) ++ schemes) generics "xec" force
+    Synthesis.retypeUnitWith T f fc (module.map (fun v => (v.1, moduleValueType v)) ++ schemes) generics "xec" force scope
   let (graphs, prologues) ← fr.flowGraphs f init
   let owner := if init then (0, 0) else f.namePos
   let exprMap : Std.HashMap Span (SourceClaims.Candidate Tree) := fc.exprs.foldl (fun m (sp, c) => m.insert sp c) {}
@@ -145,22 +145,25 @@ def retypeFromFragment (force : List String := []) : Retype := fun fr T f fc mod
 
 /-- **A unit's calls' type arguments from its walk** (mode 8): each call of a
 generic module value at the type each binder takes there
-(`Synthesis.Walk.instances`). A value whose binders a resolution qualifies
-takes evidence the walk does not state: not handled. -/
-def instancesFromWalk (force : List String := []) : Instances := fun fr T f c module => do
+(`Synthesis.Walk.instances`), a binder a resolution qualifies with the
+certificate its type's form gives (`Synthesis.Walk.resolutions`). -/
+def instancesFromWalk (force : List String := []) : Instances := fun fr T f c module scope => do
   let calls := f.body.flatMap Fragment.Stmt.callees
   let used := fr.generics.filter fun g => calls.any (·.2.2.1 == g.name)
   if used.isEmpty then return (T, c)
-  if let some g := used.find? (!·.resolution.isEmpty) then
-    throw s!"not handled: a call of '{g.name}', whose binders a resolution qualifies"
   let (schemes, generics) := fr.genericValues
   let (w, T) ← SinglePass.timedKind "lower: of extractAll, the walk" fun _ =>
-    Synthesis.walkUnit T f (module.map (fun v => (v.1, moduleValueType v)) ++ schemes) generics force
+    Synthesis.walkUnit T f (module.map (fun v => (v.1, moduleValueType v)) ++ schemes) generics force scope
   let expressions := w.instances.filterMap fun (pos, θ) => do
     let (_, _, name, _) ← calls.find? (·.1 == pos)
     let g ← used.find? (·.name == name)
-    let inst ← g.binders.mapM fun n => do
-      return ({ name := n, type := .labels (← θ.lookup n), resolution := none } : Instantiation Tree)
+    -- Each binder but a resolution's observation and result, a qualified
+    -- one with the certificate the walk checked.
+    let hidden := g.resolution.flatMap (·.associated)
+    let certificates := ((w.resolutions.find? (·.1 == pos)).map (·.2)).getD []
+    let inst ← (g.binders.zipIdx.filter fun (_, i) => !hidden.contains i).mapM fun (n, _) => do
+      let resolution := (certificates.lookup n).map fun c => ({ certificate := c } : ResolutionWire.Instance)
+      return ({ name := n, type := .labels (← θ.lookup n), resolution } : Instantiation Tree)
     return ({ point := "", pos, type := .labels [], instantiate := some inst } : Expression Tree)
   return (T, { c with expressions := c.expressions ++ expressions })
 
@@ -170,7 +173,7 @@ with its annotation, a cell at its computed storage contract. -/
 def Front.withInitTypes (fr : Front) (force : List String := []) : Front := Id.run do
   let some (f, _, some c) := fr.units.find? (·.2.2.isSome) | return fr
   let module := fr.moduleFunctions ++ fr.classSelves
-  match retypeFromFragment force fr fr.d.types f c.normalized module with
+  match retypeFromFragment force fr fr.d.types f c.normalized module none with
   | .error reason =>
     let failed := fun (v : ModuleValue Tree) => ((v.1, v.2.1, .error s!"not handled: the module initialization's walk: {reason}") : ModuleValue Tree)
     return { fr with moduleConstants := fr.moduleConstants.map failed }

@@ -385,6 +385,13 @@ whatever the patterns, each expected refused by mode 8:
 
 ## 9. The claims-free front
 
+### End state
+
+The design's target: no OCaml producer; no claims document, hence no wire
+format for it, no decoder of it and no check of its field names across
+languages; one forward pass; given facts at loop heads only; every type
+computed by TScert in Lean.
+
 `verifier --verify-units 8` reads the fragment and the given file, and no
 claims document (`SourceClaimJson.fragmentPlans`, `Claims/FragmentFront.lean`).
 
@@ -405,7 +412,15 @@ claims document (`SourceClaimJson.fragmentPlans`, `Claims/FragmentFront.lean`).
   storage contract (`Front.withInitTypes`). A call of a generic module value,
   a generic class's construction and a `for...of`'s iteration intrinsic are
   instantiated at the binders' types the walk gives them
-  (`instancesFromWalk`); a binder a resolution qualifies is not handled. A
+  (`instancesFromWalk`). A binder a resolution qualifies (`%Await%`,
+  `%AsyncReturn%`, `%PromiseResolve%`, an `Awaited<T>`-resolved one) is
+  instantiated at its input's type with the certificate that type's form
+  gives (`Scheme.resolutionCertificate`: a binder of the unit's own scheme
+  or its observation that binder's, a native promise its payload's where
+  the binder is resolvable, else observed whatever its payload, a union each
+  label's, any other label stable), its observation and result the ones the
+  checked certificate establishes (`Scheme.resolutionInstance`); written
+  type arguments name its binders but the observations and results. A
   binder's type is read off an actual by matching its parameter's type one
   level at a time (`Synthesis.matchBinder`): the binder itself; in a union,
   the one member naming it at the actual less what the other members admit,
@@ -475,13 +490,24 @@ footprint the unit's verdict reads (removing any one refuses the unit):
 (`isCollapsibleSpaceCode`, `readLetterSpacing`); `buildEngineProfile` none.
 
 Agreement with the pipeline over the 3,303 pipeline cases (mode 8 with the
-given files, `TSCERT_REFEREE`), measured 2026-11-11: 6,205 units, 4,381
-agree, 977 disagree, 847 not handled. Referee: 10 units mode 8 accepts and
-mode 9 refuses (all pipeline-verified), 17 the other way. Both modes accept
-four units the pipeline refuses, each a valid instance the producer did not
+given files, `TSCERT_REFEREE`), measured 2026-11-11: 6,296 units, 4,513
+agree, 983 disagree, 800 not handled. A file the pipeline refuses before any
+unit's check is run from its fragment too: the unit holding the refusal's
+position is compared with the refusal (91 units), the others are undecided
+(85; the pass accepts 24, none the unit an unsafe program's refusal names).
+Referee: 10 units mode 8 accepts and mode 9 refuses (all pipeline-verified),
+17 the other way: 8 at a node no path from the start reaches, which mode 8
+does not handle, and 9 refused (`blocker-import-meta`, `import-meta` ×2,
+`null-equality-slices`, `field-write-refinement`,
+`equality-several-singletons`, `type-parameter-typeof-family` ×2,
+`try-catch` `describe`). Both modes accept six
+units the pipeline refuses, each a valid instance the producer did not
 propose: `invalid-bounds-callback-footprint` `visit@88`,
 `invalid-generic-literal-widening` `use@206`,
 `invalid-native-promise-invariant-result` `widen@89` (`make<unknown>` at
-the expected result `Box<unknown>`) and
-`blocker-gap-round-cache-answer-inferred` `real@605` (the callback's
-literals at the cache's record `{ answer: string | null }`).
+the expected result `Box<unknown>`), `blocker-gap-round-cache-answer-inferred`
+`real@605` (the callback's literals at the cache's record
+`{ answer: string | null }`), and `invalid-spread-intersection-disjoint-literals`
+and `invalid-spread-intersection-optional-narrowing` `copied` (each copy is
+within the written result; the producer refuses the file at its proposal
+heuristic).
