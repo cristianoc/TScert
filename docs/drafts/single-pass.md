@@ -1142,6 +1142,11 @@ removal works through:
   assignment of a binding aside) or each member of the path is stable.
   After such a call, each binding a function literal walked so far assigns
   (one it captures, held in a cell) is at its declared type again.
+- **Iterator bind control.** The program-defined iterable's sum accepts
+  unforced in modes 8 and 9 and refuses the forced bind proposal. The
+  agreement tool treats it as a positive control: unforced closed acceptance
+  is required, and forced refusal satisfies the control
+  (dev/single-pass-agreement.mts, the positive-control comparison).
 - **Async literal results.** A generic module value retains which binders
   have no written bound, through equation lowering and preparation. Direct
   primitive candidates of those binders use inference.ml:608-630's widening
