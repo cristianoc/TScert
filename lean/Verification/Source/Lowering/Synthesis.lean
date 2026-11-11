@@ -147,6 +147,10 @@ structure Walk where
   /-- The bindings the unit assigns that it holds in no slot: cells (a module
   binding, one a closure shares). -/
   cellAssigned : List String := []
+  /-- The bindings the unit and the function literals being walked hold in
+  cells (`cellLocals`: one a closure shares, every `let` of a module's
+  initialization), whether or not the walk has met their assignment. -/
+  heldCells : List String := []
   /-- The changes of a value location recorded so far, a cell's own
   assignment aside. -/
   valueWrites : Nat := 0
@@ -975,6 +979,17 @@ def loopHead (env : Env) (ss : List Stmt) : Env :=
     vars := env.vars.map fun (n, A) =>
       if changed.any (·.1 == n) then (n, (env.decl.lookup n).getD A) else (n, A)
     paths := [] }
+
+/-- Each binding held in a cell at its declared type: what a cell holds is a
+current-content fact, which no step keeps across a write without a
+separation and no throw keeps (the producer's `forget`, environment.ml:138,
+at a step that may write cells, execution_analysis.ml:243, and at a
+handler's edge, proposal_flow.ml:556).
+(`TSCERT_FORCE=cells` keeps them, the adversarial proposal) -/
+def cellsDeclared (w : Walk) (e : Env) : Env :=
+  if w.force.contains "cells" then e else
+  { e with vars := e.vars.map fun (n, A) =>
+      if w.cellAssigned.contains n || w.heldCells.contains n then (n, (e.decl.lookup n).getD A) else (n, A) }
 
 /-- Whether each member of the path `root.path` is a key every arm of its
 receiver states stable (the producer's `stable_path` through
@@ -4729,7 +4744,7 @@ partial def walkLambda (env : Env) (e : Expr) (sig : Option (CallEffects.Arrow (
     | x => [.effect x.span x]
   let cells := (cellLocals (params.map (·.1)) bodyStmts).map (·.1)
   modify fun w => { w with writes := false, throwWrites := false, valueChange := .keep, storeChange := .keep, locals := declared, inLiteral := true,
-                           literalSlots := declared.filter (!cells.contains ·) ++ w.literalSlots }
+                           literalSlots := declared.filter (!cells.contains ·) ++ w.literalSlots, heldCells := cells ++ w.heldCells }
   modify fun w => { w with returns := [], expected := written <|> (if async then none else expectedResult), asyncBody := async }
   -- An expression body's entry is its prologue's, at the body's start.
   modify fun w => { w with entries := w.entries.insert body.span.1 inner.vars }
@@ -4783,7 +4798,7 @@ partial def walkLambda (env : Env) (e : Expr) (sig : Option (CallEffects.Arrow (
   let changed : CallEffects.Effect :=
     { CallEffects.Effect.ofFootprint ⟨(← get).valueChange, (← get).storeChange⟩ with
       onThrow := !(← get).throwWrites, fresh := freshResult }
-  modify fun w => { w with breaks := saved.breaks, returns := saved.returns, held := saved.held, expected := saved.expected, literalSlots := saved.literalSlots, evolving := saved.evolving, holders := saved.holders }
+  modify fun w => { w with breaks := saved.breaks, returns := saved.returns, held := saved.held, expected := saved.expected, literalSlots := saved.literalSlots, heldCells := saved.heldCells, evolving := saved.evolving, holders := saved.holders }
   modify fun w => { w with writes := saved.writes, throwWrites := saved.throwWrites, locals := saved.locals, inLiteral := saved.inLiteral }
   modify fun w => { w with valueChange := saved.valueChange, storeChange := saved.storeChange, lastBody := R, asyncBody := saved.asyncBody }
   -- (an async expression body's value is its `%AsyncReturn%` call's, the
@@ -5154,10 +5169,8 @@ partial def stmts (env : Option Env) (ss : List Stmt) : W (Option Env) := do
     -- after a write; PROGRAM-TYPING, "No general frame rule").
     -- (`TSCERT_FORCE=cells` keeps them)
     let w ← get
-    if w.valueWrites != before && !w.force.contains "cells" then
-      let reset (e : Env) : Env :=
-        { e with vars := e.vars.map fun (n, A) => if w.cellAssigned.contains n then (n, (e.decl.lookup n).getD A) else (n, A) }
-      env := env.map reset
+    if w.valueWrites != before then
+      env := env.map (cellsDeclared w)
     -- A loop's kept paths, at its head's entry and its body's.
     if let some (body, update) := (match s with
         | .loop _ _ body update _ => some (body, update)
@@ -5744,7 +5757,8 @@ def walkUnit (T : EquationStore.State) (f : Fragment.Fn)
       !(cellLocals (f.params.map (·.name)) f.body f.name.isEmpty).any (·.1 == n)
     let values := (f.params.map (·.name)).filter fun n =>
       !(cellLocals (f.params.map (·.name)) f.body f.name.isEmpty).any (·.1 == n)
-    let start : Walk := { generics, expected, force, scope, locals, strict, slots, schemes, values, moduleInit := f.name.isEmpty, entries := (({} : Std.HashMap Nat _).insert 0 vars).insert f.namePos.1 vars }
+    let heldCells := (cellLocals (f.params.map (·.name)) f.body f.name.isEmpty).map (·.1)
+    let start : Walk := { generics, expected, force, scope, locals, strict, slots, schemes, values, heldCells, moduleInit := f.name.isEmpty, entries := (({} : Std.HashMap Nat _).insert 0 vars).insert f.namePos.1 vars }
     let settle (start : Walk) (initial : List (Span × Ty Tree)) :
         Compiler ((Option Env × Walk) × List (Span × Ty Tree)) := do
       let mut assumed := initial

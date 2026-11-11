@@ -780,16 +780,20 @@ removal works through:
   of the import does. An intrinsic (`%…%`) keeps its reviewed contract.
   Pretext's `x ?? missing()` is the case: with it the functions calling
   `missing` are proposed their own footprints.
-- **Cells.** A binding the unit assigns and holds in no slot (a module
-  binding, one a closure shares) is narrowed by its own assignment and by
-  tests, as a slot is, until a statement changes a value location other
-  than by assigning that binding: from the next statement on it is at its
-  declared type. What a cell currently holds is a current-content fact,
+- **Cells.** A binding held in a cell (a module binding the unit assigns,
+  one a closure shares, every `let` of a module's initialization) is
+  narrowed by its own assignment and by tests, as a slot is, until a
+  statement changes a value location other than by assigning that binding:
+  from the next statement on it is at its declared type, whether or not
+  the walk has met an assignment of it (the producer's `forget` at a step
+  that may write cells, execution_analysis.ml:243). What a cell currently holds is a current-content fact,
   which no step keeps across a write without a separation
   ([no general frame rule](../PROGRAM-TYPING.md#no-general-frame-rule));
   the producer's entries widen the binding there too.
-  `TSCERT_FORCE=cells` keeps the narrowing, the control
-  `module-cache-keeps-lengths` `count`.
+  `TSCERT_FORCE=cells` keeps the narrowing, the controls
+  `module-cache-keeps-lengths` `count` and
+  `module-cache-before-initialization` `rhs` (its initialization's `let`
+  across the call of a function that writes it).
 - **Early bindings.** Each early binding of a statement list (the flow
   graph's `.early` node) is bound from the list's entry on at its written
   contract: its annotation, else its function literal's written receiver,
