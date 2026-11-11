@@ -674,7 +674,11 @@ removal works through:
   a native regex's `[Symbol.replace]`, the producer's `from_actuals`); the
   binder is then read off the walked callback. The binders a
   callback's result would give are first read off the type expected of the
-  call's value, where that instance admits the actuals. A written type
+  call's value, where that instance admits the actuals. An empty array
+  literal in a callback's body is made at no expected array naming a binder
+  of the call that no actual has given a type yet: it keeps its own type,
+  an array of no element (the producer's `never[]`), and the binder is read
+  off the callback's other returns. A written type
   guard or assertion is stated with its promise, its result the guarded
   type, and also at its own parameters. A constant holding a function
   literal that reads it is walked with the constant at its written type,
