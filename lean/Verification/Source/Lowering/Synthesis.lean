@@ -938,6 +938,57 @@ def earlyContract (b : Fragment.Binding) (effect : CallEffects.Effect := .ordina
       return [← lower (SourceTypes.use (.arrs [⟨Rt, Ds, R, stated.getD effect⟩] []))]
     | _, _ => throw "no written contract") fun _ => pure none)
 
+/-- A call's actuals with its spreads read as the call reads them
+(`expression_calls.ml`): a spread of a tuple of required positions as those
+positions; a spread of any other array as one actual of its elements, which
+only a variadic signature taking no more fixed parameters than the actuals
+before the first such spread admits (its elements checked against the
+rest's), the callee's signatures narrowed to those. Into a callee of no
+variadic signature, no actual after the first spread runs code (the call
+reads the spreads' elements after every actual). -/
+def spreadCall (args : List Expr) (As : List (Option (Ty Tree))) (spreads : List Nat) (c : Callee) :
+    Compiler (List Expr × List (Option (Ty Tree)) × Callee) := do
+  if spreads.isEmpty then return (args, As, c)
+  let G ← graphNow
+  let first := spreads.foldl min args.length
+  if c.rests.isEmpty && spreads != [args.length - 1] then
+    for (x, i) in args.zipIdx do
+      if i > first then match x with
+        | .var .. | .lit .. => pure ()
+        | _ => throw "a spread into fixed parameters followed by an actual that runs code"
+  let mut outArgs : List Expr := []
+  let mut outAs : List (Option (Ty Tree)) := []
+  let mut variadicAt : Option Nat := none
+  for ((x, A), i) in (args.zip As).zipIdx do
+    if !spreads.contains i then
+      outArgs := outArgs ++ [x]
+      outAs := outAs ++ [A]
+      continue
+    let A ← need A "a spread's operand"
+    -- (each position read through the operand's span, which no rule of the
+    -- call writes)
+    let placeholder := Expr.var x.span "%spread%"
+    let tuple : Option (List (Ty Tree)) := match A with
+      | [l] => match storeOf G [l] with
+        | some S => match PositiveRules.expand G S with
+          | [.list t []] => if t.optional.isEmpty && t.rest.isNone then some t.required else none
+          | _ => none
+        | none => none
+      | _ => none
+    match tuple with
+    | some ps =>
+      outArgs := outArgs ++ ps.map fun _ => placeholder
+      outAs := outAs ++ ps.map some
+    | none =>
+      if !A.all fun l => (storeOf G [l]).isSome then throw "a spread of what is no array"
+      if variadicAt.isNone then variadicAt := some outArgs.length
+      outArgs := outArgs ++ [placeholder]
+      outAs := outAs ++ [some (← elementAt A none (missing := false))]
+  let c := match variadicAt with
+    | some k => { c with fixed := [], rests := c.rests.filter (·.arguments.1.length ≤ k) }
+    | none => c
+  return (outArgs, outAs, c)
+
 /-- The allocations a body returns last: its last statement's `return` of
 an object literal, or of each arm of its last `if`. -/
 partial def tailAllocs : Expr → List Span
@@ -1572,9 +1623,14 @@ partial def expr (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (Op
   | .construct _ callee args spreads typeArgs =>
     let (F, e1) ← expr env callee
     let (As, e2) ← actuals e1 args
+    -- Spread actuals as the construction reads them (`spreadCall`).
     let c ← StateT.lift (tryCatch (do
-        if !spreads.isEmpty then throw "a construction with spreads"
-        return Except.ok (← constructCallee (← need F "the class") typeArgs)) fun m => pure (.error m))
+        let (args', As', c) ← spreadCall args As spreads (← constructCallee (← need F "the class") typeArgs)
+        return Except.ok (args', As', c)) fun m => pure (.error m))
+    let (args, As) := match c with
+      | .ok (args', As', _) => (args', As')
+      | .error _ => (args, As)
+    let c := (·.2.2) <$> c
     -- A generic module class's binders, by its scheme's order.
     let gs := (← get).generics
     let generic := match callee with
@@ -1608,12 +1664,17 @@ partial def expr (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (Op
             if a.effect.footprint != ⟨.keep, .keep⟩ then wrote .any .any
             if !a.effect.onThrow then modify fun w => { w with throwWrites := true }
     let (As, e2) ← actuals e1 args
+    -- Spread actuals as the call reads them (`spreadCall`).
     let c ← StateT.lift (tryCatch (do
-        if !spreads.isEmpty then throw "a call with spreads"
-        match generic with
-        | some g => return Except.ok (← genericCallee g typeArgs)
-        | none => return Except.ok (← calleeOf (← need F "the callee") [Labels.undef] typeArgs))
+        let c ← match generic with
+          | some g => genericCallee g typeArgs
+          | none => calleeOf (← need F "the callee") [Labels.undef] typeArgs
+        return Except.ok (← spreadCall args As spreads c))
       fun m => pure (.error m))
+    let (args, As) := match c with
+      | .ok (args', As', _) => (args', As')
+      | .error _ => (args, As)
+    let c := (·.2.2) <$> c
     modify fun w => { w with lastInstance := none, lastResolution := [] }
     let r ← called e2 c args As e.span exp
     -- A generic module function's occurrence is read at its instance, and
@@ -1682,12 +1743,17 @@ partial def expr (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (Op
       | some k => do pure (← expr e1 k).2
       | none => pure e1
     let (As, e2) ← actuals e1 args
+    -- Spread actuals as the call reads them (`spreadCall`).
     let c ← StateT.lift (tryCatch (do
-        if !spreads.isEmpty then throw "a call with spreads"
         let some fld := fld | throw "a method of a computed key"
         -- A nullish receiver throws before its method is read (the
         -- lowering's saved receiver, Atoms.lean:1176-1184).
-        return Except.ok (← methodCallee e1.vars (present (← graphNow) (← need O "the receiver")) fld (args.map callback))) fun m => pure (.error m))
+        return Except.ok (← spreadCall args As spreads (← methodCallee e1.vars (present (← graphNow) (← need O "the receiver")) fld (args.map callback))))
+      fun m => pure (.error m))
+    let (args, As) := match c with
+      | .ok (args', As', _) => (args', As')
+      | .error _ => (args, As)
+    let c := (·.2.2) <$> c
     let r ← called e2 c args As e.span exp
     let e2 ← afterCall e2 r
     let _ ← record callee ((·.1) <$> r)
