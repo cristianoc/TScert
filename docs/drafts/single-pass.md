@@ -397,8 +397,9 @@ at keep/keep bounding its throws), `invalid-declaration-pop-callback`
 `names`, under `guards`, `invalid-read-narrows-write` and
 `invalid-read-narrows-closure` `wrong`, under `reads`, and
 `invalid-slot-path-call` `keyText` and `invalid-path-witness-alias`
-`wrong`, under `paths`, and `invalid-object-spread-two-sources` `count`,
-under `spreads`. A control's acceptance counts only with every unit
+`wrong`, under `paths`, `invalid-object-spread-two-sources` `count`, under
+`spreads`, and `invalid-keyed-read` `pick`, under `keys` (a keyed read of an
+object at the first name its key may spell alone). A control's acceptance counts only with every unit
 it `depends` on accepted: a run with named units checks only those, a
 dependency's footprint among its proposals, so its reader follows
 `depends`.
@@ -555,6 +556,10 @@ removal works through:
   static fields; nothing from a primitive; no stated key from a string or a
   function), a key the source surely has at its type, one it may have at
   the union of both, one either may hold at an unknown type dropped.
+  A keyed read `o[k]` is an array's or a string's element, an object's
+  field at each name the key may spell (its string literals, its numbers
+  that are array indices: an enum's reverse map, a record at a
+  literal-union key), else its index (a dictionary's, with `undefined`).
   Each expression's type is read at its own statement's point,
   where two statements' expressions share a span (a construction's parts).
 - **Expected types.** A store's contract is fixed where the store is made;
