@@ -405,7 +405,8 @@ object at the first name its key may spell alone),
 `invalid-closure-offer-narrower-mutation` `wrong`, under `offers`,
 `invalid-field-narrowing-for-of-callback` and `-closure` `count`, under
 `loops`, `invalid-unassigned-let` `readBeforeAssignment`, under
-`decided`, `invalid-map-fresh-alias` `drained`, under `callbacks`, and
+`decided`, `invalid-map-fresh-alias` `drained`, under `callbacks`,
+`invalid-map-fresh-reassigned` `drained`, under `fresh`, and
 `invalid-generic-closure-effect` `stale`, under `schemes`
 (every generic closure claimed keeping values and stores and bounding its
 throws, its body's effect unchecked against that claim). A control's
@@ -422,6 +423,16 @@ The design's target: no OCaml producer; no claims document, hence no wire
 format for it, no decoder of it and no check of its field names across
 languages; one forward pass; given facts at loop heads only; every type
 computed by TScert in Lean.
+
+The single pass carries its own Lean soundness theorem: a unit the pass
+accepts is safe. With that theorem the existing search and the proved
+checker are retired with their code, so the end state has one checker;
+this happens once the pass has no gap left against the pipeline over the
+cases. Until the theorem exists, the existing checker is the referee
+(mode 9). The proof's organising statements are the transfer of knowledge
+along each exit edge of a node (a fact is kept where the node's effect
+preserves it; new facts follow from the node's exact post) and the check of
+every edge against its target's knowledge, loop heads included.
 
 `verifier --verify-units 8` reads the fragment and the given file, and no
 claims document (`SourceClaimJson.fragmentPlans`, `Claims/FragmentFront.lean`).
@@ -529,10 +540,17 @@ removal works through:
   the closed footprint of the classes of contents its writes and calls
   change (an assignment of a binding it does not declare or a field write
   the values; an element write the values and a store's growth; an array's
-  `length`, and a call changing a receiver's store or elements, both; a
-  call changing its receiver's own locations the values and its store's
-  change; any other call its instance's footprint); and it bounds a throw
-  (`onThrow`) where none of its calls states a throw left unbounded. A
+  `length`, and a call changing a receiver's store or elements, both,
+  but a call changing the store of a constant holding a store the run
+  allocated (one initialized by a call whose instance states a fresh
+  result, or by such a constant), which is its instance's footprint (the
+  producer's `receiver_fresh`); a call changing its receiver's own
+  locations the values and its store's change; any other call its
+  instance's footprint); it bounds a throw (`onThrow`) where none of its
+  calls states a throw left unbounded; and an expression body that is a
+  call whose instance states a fresh result states one (the producer's
+  `fresh_result`). `TSCERT_FORCE=fresh` takes every named receiver as
+  such a constant, the adversarial proposal. A
   generic function literal (one writing type parameters, a class's generic
   method included) is claimed at the scheme its annotations state, before
   its unit's walk: its binders its own, each bound its written one; its
