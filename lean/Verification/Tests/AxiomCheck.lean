@@ -9,6 +9,7 @@ import Verification.Programs.ArgumentPathTracking
 import Verification.Programs.ArgumentRegionCertificates
 import Verification.Semantics.TolerantFrames
 import Verification.Programs.TolerantFramesRuns
+import Verification.Programs.TolerantFramesNamed
 
 /-!
 Acceptance rests on Lean's standard axioms alone. The build fails when any of
@@ -136,6 +137,20 @@ run_cmd do
   check ``Verification.TolerantFrames.grow_path
   check ``Verification.TolerantFrames.dense
   check ``Verification.TolerantFrames.field_write_keeps_bound
+  check ``Verification.TolerantFrames.atomHolds_extend
+  check ``Verification.TolerantFrames.atomHolds_heapFree
+  check ``Verification.TolerantFrames.atomHolds_congr
+  check ``Verification.TolerantFrames.named_set
+  check ``Verification.TolerantFrames.named_keep_box
+  check ``Verification.TolerantFrames.named_any_box
+  check ``Verification.TolerantFrames.named_le_box
+  check ``Verification.TolerantFrames.preserving_normal
+  check ``Verification.TolerantFrames.preserving_throw
+  check ``Verification.TolerantFrames.inspection_keeps
+  check ``Verification.TolerantFrames.keepsCall_keeps
+  check ``Verification.TolerantFrames.freshCall_keeps
+  check ``Verification.TolerantFrames.keepsCall_frame
+  check ``Verification.TolerantFrames.slotless_not_framed
   let env ← getEnv
   let project (decl : Name) : Bool := match env.getModuleIdxFor? decl with
     | some i => (`Verification).isPrefixOf env.header.moduleNames[i.toNat]!

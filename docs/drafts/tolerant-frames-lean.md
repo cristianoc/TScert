@@ -189,6 +189,77 @@ Along a stable path $`p`$, $`y\le|x.p|\vdash\Box_G(y\le|x.p|)`$
 (`grow_path`): the note's (Rigid) with (Grow), the rigidity supplied by the
 world.
 
+## The facts a step is not handed
+
+The pass stores facts over names and hands a step's rule the facts over the
+names its expression mentions (`SinglePass.materialize`); `applyDelta`
+removes a handed fact the rule's output lost and keeps every other stored
+fact. Module `lean/Verification/Programs/TolerantFramesNamed.lean`.
+
+A named fact $`a`$ is read at a name valuation $`\eta`$ (each name its value)
+and a heap, with each name for a slot (`AtomHolds`); a separation fact
+relates its subject's fields to its partners' at names. Its meaning needs no
+slot. $`\mathrm{Named}\ S\ \eta`$ holds at a state when every fact of $`S`$
+holds at $`\eta`$ and the state's heap. Proved:
+
+- every named fact survives an extension of the heap (`atomHolds_extend`), a
+  fact reading no heap holds in every heap (`atomHolds_heapFree`), where
+  $`a.\mathrm{heapFree}`$ is exactly the pass's handler filter: values, alias
+  links, separation, and index facts with $`\mathrm{envOnly}`$; a fact reads
+  only its names' values (`atomHolds_congr`), so naming a step's result $`r`$,
+  fresh for $`S`$, keeps $`S`$ (`named_set`);
+- (Keep) for $`c\le\{\mathsf{values}:\mathsf{keep},\ \mathsf{stores}:\mathsf{keep}\}`$,
+  $`\mathrm{Named}\ S\ \eta\vdash\Box_c\,\mathrm{Named}\ S\ \eta`$
+  (`named_keep_box`); for $`S`$ heap-free,
+  $`\mathrm{Named}\ S\ \eta\vdash\Box_\Phi\,\mathrm{Named}\ S\ \eta`$ for every
+  $`\Phi`$ (`named_any_box`); a footprint within such a $`c`$ by class evidence
+  $`cl`$ keeps $`S`$ from a state where $`\mathrm{ClassOk}\ cl`$ holds at the
+  action's source heap (`named_le_box`), the evidence of a density fact
+  holding at the heap the density holds at (`dense_class_at`);
+- the step, both exits: a judgment whose normal exit is within such a
+  $`c_n`$, run to a value with budget left, ends in an action of $`c_n`$ with
+  the residual budget, the value's type, the exact post and
+  $`\mathrm{Named}\ S\ \eta[r\mapsto v]`$ (`preserving_normal`); a throw ends in
+  an action of $`\top`$ with the raised value closed and of the exception
+  family and the heap-free part of $`S`$ (`preserving_throw`);
+- the preserving judgments: an inspection (`inspection_keeps`, from
+  `inspect_frame`), a call `keepsCall` accepts (`keepsCall_keeps`, from
+  `selectedCall_sound` at the empty footprint) and a call `freshCall` accepts
+  (`freshCall_keeps`, from `keepsHeap_prefix`) have their normal exit within
+  $`\{\mathsf{values}:\mathsf{keep},\ \mathsf{stores}:\mathsf{keep}\}`$. At a
+  node whose step `keepsCall` accepts, both exits together
+  (`keepsCall_frame`): the normal return exposes the rule's output
+  $`\mathrm{shift}\ k`$ for the handed facts $`k`$ and every fact of $`S`$,
+  handed or not, at $`\eta[r\mapsto v]`$; the throw exposes the heap-free
+  facts of $`S`$.
+
+A fact whose names hold no slot is kept under $`\eta`$, not at the positional
+environment: `Transported` states only facts over slots, so a slotless fact
+holds in the named invariant and enters no target assertion until a slot
+holds its names.
+
+Every `preserving` case of the pass has its normal exit within
+$`\{\mathsf{values}:\mathsf{keep},\ \mathsf{stores}:\mathsf{keep}\}`$: the four
+call layers through `keepsHeap` (proved for `keepsCall` and `freshCall`;
+`elementsCall` and `requiresCall` test the same `keepsHeap` of the selected
+effect), and the other step kinds through their terms (proved for
+inspections; the term shapes `created`, the reads and `knownValue` require are
+not connected here). The frame consumes no class evidence: `keepsHeap`
+compares closed footprints. Two conditions are outside it: the result's name
+is fresh for the store (a premise, `hr`), and the output the pass applies is
+the checked rule's (`Checker.select` agreeing with `run`).
+
+**Not justified: a slotless fact across a writing step.** A step that may
+write materializes every fact (`materialize … true`, `SinglePass.lean` lines
+1326–1336), but a fact naming a name no slot holds fails to rename, is not
+among `pairs`, and `applyDelta` (lines 373–381) keeps it. A writing step's
+effect does not tolerate it: a cell fact over a name fails after an action of
+$`\top`$ (proved: `slotless_not_framed`). The pass is sound here only under
+the store invariant that every name a stored fact mentions is held by a slot,
+which edges (`Store.drop` of `droppedBy`) and merges (`renamedAway`) maintain
+and nothing checks; `materialize`'s elimination of names out of scope
+presupposes such facts.
+
 ## What the model requires beyond the note
 
 - **Admissibility needs no frame assumption.** Reflexivity, transitivity,
