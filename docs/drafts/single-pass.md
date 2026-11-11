@@ -531,7 +531,11 @@ removal works through:
   array's elements (a tuple's positions separately), a record's fields and
   methods' results, a constructor's first signature's result and parameters,
   a callable's result at the actual's, then its parameters
-  where the result supplies no candidate. Fresh array literals at generic
+  where the result supplies no candidate. A binder no actual gives is at what
+  the type expected of the call's value gives it, whether or not that
+  instance admits the actuals (the call's step decides), else at its bound
+  read at the binders so far, else at `unknown` (the producer's upper
+  candidates and `top`, inference.ml:584-636). Fresh array literals at generic
   tuple positions keep those positions recursively, each value widened.
   An actual that is a call, at a parameter placing the call's unbounded
   binders at tuple positions (through at most four arrays; of a
