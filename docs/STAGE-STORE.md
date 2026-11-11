@@ -54,6 +54,9 @@ Excluded from every key (`unkeyed`), by role:
 
 - `pipeline/stages.mts`: the replay policy (forcing, finished and timeout
   lookup, retrying timeouts, publication calls) and the attempt records;
+- `pipeline/module-interfaces.mts`: dependency-first orchestration of the
+  canonical component checks and importer checks, passing complete requests
+  to process stages;
 - `pipeline/stage-store.mts`: the store's lookup, validation, publication and
   cleanup;
 - `pipeline/verify-source.mts`: the orchestration of one check, passing
@@ -322,6 +325,31 @@ inputs it changes. The check reads the whole document.
 The slices, the reads documents, the slice claims and the assembly's inputs
 are stage inputs, keyed by their content; `pipeline/unit-slices.mts`, which
 computes them, is outside every key.
+
+## Single-pass module interfaces
+
+The experimental claims-free pass uses `interface-plan`, `module-interface`
+and `pass` process stages (`verifierCall`). Discovery consumes the whole
+fragment and returns a dependency-ordered SCC DAG. The orchestrator resolves
+each outgoing dependency before invoking its parent's stage, and therefore
+before acquiring its execution claim. Each component request contains its
+complete module documents, normalized given lines, dependency result bytes
+and keys, mode, depth, forced proposals and `ALL_CUTS`; subtype rounds are
+an explicit argument. The standard process manifest binds the request file
+by content, alongside executable, libraries, runner, runtime and adapter.
+
+`module-interface` has a success-only exit protocol. Completed semantic
+refusals give ordinary entries; malformed requests, timeouts and operational
+failures give no interface. No interface stage reuses evidence. A caller
+consumes only the output returned by `invokeProcess`, which validates a
+replay's manifest and payload integrity. An interface file supplied outside
+that boundary is not an authenticated module check. The importer adapter
+binds its fragment, interfaces, given lines and measurement stand-ins as
+explicit input files; component requests contain no measurement stand-ins.
+The importer stage suppresses measurement output so repeated executions
+have the same payload; the direct measurement command retains that output.
+The canonical computation and its dependency closure are specified in
+[module interfaces](drafts/module-interfaces.md).
 
 ## Observed stages
 
