@@ -405,7 +405,8 @@ object at the first name its key may spell alone),
 `invalid-closure-offer-narrower-mutation` `wrong`, under `offers`,
 `invalid-field-narrowing-for-of-callback` and `-closure` `count`, under
 `loops`, `invalid-unassigned-let` `readBeforeAssignment`, under
-`decided`, and `invalid-generic-closure-effect` `stale`, under `schemes`
+`decided`, `invalid-map-fresh-alias` `drained`, under `callbacks`, and
+`invalid-generic-closure-effect` `stale`, under `schemes`
 (every generic closure claimed keeping values and stores and bounding its
 throws, its body's effect unchecked against that claim). A control's
 acceptance counts only with every unit
@@ -549,12 +550,22 @@ removal works through:
   any generic literal a walk meets before the scheme rows are made (a
   declaration's footprint, the initialization's walk), is walked at its own
   parameters as any other literal. A
-  callback is stated at that effect where its parameter's effect covers it
-  (`Effect.covers`; without `onThrow` where the parameter states none), else
-  at the parameter's. Of a call's several signatures, each callback is
-  walked first at the first one's parameter, and the signature chosen is
-  the first whose parameters admit the walked actuals and callbacks and
-  cover each callback's effect, with every binder bound; the binders a
+  callback is stated at that effect on every row it offers, never at its
+  parameter's (without `onThrow` where the parameter states none; the
+  producer's footprint at each row it claims). Of a call's several
+  signatures, each callback is walked first at the first one's parameter
+  under the binders its receiver and other actuals give, and the signature
+  chosen is the first whose parameters admit the walked actuals and whose
+  callback parameter each callback's type is within (the checker's
+  subtyping of arrows, which bounds the callback's effect by the
+  parameter's), in the store after those walks, with every binder it
+  mentions bound (the producer's `matches_actuals`); where none admits a
+  callback, the first stating each callback's promise, else the first
+  admitting the other actuals, the callback at its own effect, which the
+  pass then refuses. A binder the chosen signature does not mention is at
+  the empty type. `TSCERT_FORCE=callbacks` chooses the first signature and
+  states each callback at its parameter's effect, the adversarial
+  proposal. The binders a
   callback's result would give are first read off the type expected of the
   call's value, where that instance admits the actuals. A written type
   guard or assertion is stated with its promise, its result the guarded

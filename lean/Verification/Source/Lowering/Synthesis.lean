@@ -2337,40 +2337,57 @@ partial def applyCall (env : Env) (c : Callee) (args : List Expr) (As : List (Op
       match best with
       | some b => if Nat.blt b.arguments.length a.arguments.length then some a else some b
       | none => some a) none
+  -- The binders a signature mentions.
+  let mentioned (a : CallEffects.Arrow (Ty Tree)) (b : Tree) : Bool :=
+    (a.receiver :: a.result :: a.arguments).any (·.any (occurs b))
   -- Of several signatures, each callback walked first at the first one's
-  -- parameter, at its own effect: the signature chosen is one whose
-  -- parameter admits it (the producer's claim at the literal).
+  -- parameter, under the binders its receiver and other actuals give, at
+  -- its own effect: the signature chosen is the first whose parameter its
+  -- type is within (the checker's subtyping of arrows, its effect within
+  -- the parameter's), in the store after its walk (the producer's
+  -- `matches_actuals`, expression_calls.ml:980-1000).
   let mut walked : List (Nat × Ty Tree) := []
   if candidates.length > 1 then
     if let some (a0, _) := candidates.head? then
+      let σ0 ← if c.binders.isEmpty then pure c.seed else
+        bindFrom c.seed ((a0.receiver, c.receiver) :: (a0.arguments.zip As).filterMap fun (P, A) => A.map (P, ·))
       for ((x, P), i) in (args.zip a0.arguments).zipIdx do
         if callback x then
           let w0 ← get
-          let L ← walkLambda env x (widest (substitute c.seed P)) (own := true) (ctx := some (substitute c.seed P))
+          let L ← walkLambda env x (widest (substitute σ0 P)) (ctx := some (substitute σ0 P))
           set w0
           if let some L := L then walked := walked ++ [(i, L)]
+  let Tw ← StateT.lift table
   let mut chosen : Option (CallEffects.Arrow (Ty Tree) × Option (CallEffects.RestArrow (Ty Tree))) := none
   let mut fallback : Option (CallEffects.Arrow (Ty Tree) × Option (CallEffects.RestArrow (Ty Tree))) := none
+  let mut promised : Option (CallEffects.Arrow (Ty Tree) × Option (CallEffects.RestArrow (Ty Tree))) := none
+  -- (`TSCERT_FORCE=callbacks`: the first, whatever its parameter, the
+  -- adversarial proposal)
+  let forceCallbacks := (← get).force.contains "callbacks"
   for (a, r) in candidates do
-    if chosen.isSome then break
+    if chosen.isSome || forceCallbacks then break
     let σa ← if c.binders.isEmpty then pure c.seed else
       bindFrom c.seed ((a.receiver, c.receiver) :: (a.arguments.zip As).filterMap fun (P, A) => A.map (P, ·))
-    if (As.zip a.arguments).all fun (A, D) => A.all fun A => within T A (substitute σa D) then
+    if (As.zip a.arguments).all fun (A, D) => A.all fun A => within Tw A (substitute σa D) then
       if fallback.isNone then fallback := some (a, r)
+      -- (where none admits a callback, the first stating each callback's
+      -- promise: the rows stating a guard's written promise first, the
+      -- producer's `states_written`, expression_calls.ml:1032-1047)
+      if promised.isNone && walked.all (fun (i, L) => match a.arguments[i]? with
+          | some D =>
+            let Gw := SourceTypes.graph Tw
+            let ps (X : Ty Tree) := (ProgramTyping.callSigs Gw X).map (·.effect.promise)
+            (ps L).any (·.isSome) == (ps D).any (·.isSome) && (ps D).all ((ps L).contains ·)
+          | none => false) then promised := some (a, r)
       let σa ← if c.binders.isEmpty then pure σa else
         bindFrom σa (walked.filterMap fun (i, L) => (a.arguments[i]?).map (·, L))
-      -- With every binder the actuals and callbacks give bound.
-      let bound := walked.isEmpty || c.binders.all fun b => hidden.contains b || (σa.lookup b).isSome
-      -- (each of the parameter's signatures covering the callback's effect,
-      -- which subtyping of the arrows alone does not decide here).
-      let covers (L D : Ty Tree) : Bool :=
-        let mine := (ProgramTyping.callSigs G L).map (·.effect)
-        (ProgramTyping.callSigs G D).all fun (s : CallEffects.Arrow (Ty Tree)) =>
-          mine.all fun m => s.effect.covers m || s.effect.covers { m with onThrow := false }
+      -- With every binder it mentions the actuals and callbacks give bound.
+      let bound := walked.isEmpty || c.binders.all fun b =>
+        hidden.contains b || !mentioned a b || (σa.lookup b).isSome
       if bound && walked.all fun (i, L) => match a.arguments[i]? with
-          | some D => within T L (substitute σa D) && covers L (substitute σa D)
+          | some D => within Tw L (substitute σa D)
           | none => false then chosen := some (a, r)
-  chosen := chosen <|> fallback
+  chosen := chosen <|> promised <|> fallback
   let some (a, rest) := chosen <|> candidates.head?
     | do
       for x in args do if callback x then let _ ← walkLambda env x none
@@ -2431,6 +2448,8 @@ partial def applyCall (env : Env) (c : Callee) (args : List Expr) (As : List (Op
       σ := σ.filter (·.1 != o) ++ [(o, O.getD [])]
       if let (some slot, some R) := (group.result, R) then
         if let some rb := c.binders[slot]? then σ := σ.filter (·.1 != rb) ++ [(rb, R)]
+  -- A binder the signature does not mention, at the empty type.
+  σ := σ ++ (c.binders.filter fun b => !mentioned a b && (σ.lookup b).isNone).map (·, [])
   let sub (A : Ty Tree) : Ty Tree := substitute σ A
   if let some b := c.binders.find? (fun b => (σ.lookup b).isNone) then
     let _ := b
@@ -2482,7 +2501,7 @@ every binding it captures at its declared type; its result its written one,
 or else what its body gives (its returns' union, `undefined` where it
 completes). Recorded at the literal as a signature where every part is
 determined. -/
-partial def walkLambda (env : Env) (e : Expr) (sig : Option (CallEffects.Arrow (Ty Tree))) (own : Bool := false)
+partial def walkLambda (env : Env) (e : Expr) (sig : Option (CallEffects.Arrow (Ty Tree)))
     (ctx : Option (Ty Tree) := none) :
     W (Option (Ty Tree)) := do
   let expected := sig.map (·.arguments)
@@ -2592,17 +2611,17 @@ partial def walkLambda (env : Env) (e : Expr) (sig : Option (CallEffects.Arrow (
     -- body's; any other literal at its own parameters.
     let a : CallEffects.Arrow (Ty Tree) ← match sig with
       | some a =>
-        if pure_ then pure { a with result := R, effect := kept }
+        -- (`TSCERT_FORCE=callbacks`: at the parameter's effect, the
+        -- adversarial proposal)
+        if (← get).force.contains "callbacks" then pure { a with result := R }
+        else if pure_ then pure { a with result := R, effect := kept }
         else if forced then pure { a with result := R, effect := .ofFootprint ⟨.keep, .keep⟩ }
-        else
-          -- A callback that changes the heap at its own effect where the
-          -- parameter admits it (or `own`, for choosing the call's
-          -- signature), else at the parameter's.
-          -- (without its bound on a throw where the parameter states none)
-          let changed := if a.effect.covers changed then changed else { changed with onThrow := false }
-          let mine := { a with result := R, effect := changed }
-          let admitted := a.effect.covers changed
-          pure (if own || admitted then mine else { a with result := R })
+        -- A callback that changes the heap at its own effect, never the
+        -- parameter's: the call's signature is chosen by it (`applyCall`;
+        -- the producer's footprint at every row it claims,
+        -- expression_closures.ml:348-351, 400-406), without its bound on a
+        -- throw where the parameter states none.
+        else pure { a with result := R, effect := if a.effect.onThrow then changed else { changed with onThrow := false } }
       -- Any other literal at its own parameters and written receiver (a
       -- method's `this`), else a receiver admitting every value.
       | none => do pure ⟨← match thisTy with
