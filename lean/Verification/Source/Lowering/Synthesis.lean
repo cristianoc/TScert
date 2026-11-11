@@ -4708,6 +4708,22 @@ partial def applyCall (env : Env) (c : Callee) (args : List Expr) (As : List (Op
         offerUse n (sub P)
         offerClass n (sub P)
       As := As.set i (← fit (sub P) x A)
+  -- A finite record supplies no index candidate to a dictionary parameter
+  -- (inference.ml:301-308). With no other candidate or declared bound,
+  -- that binder defaults to unknown (inference.ml:631-632): its unnamed
+  -- own values are unconstrained, not the union of its named fields.
+  for b in c.binders do
+    if (σ.lookup b).isSome || (c.bounds.lookup b).isSome || hidden.contains b then continue
+    let G ← StateT.lift graphNow
+    let missingIndex := (a.arguments.zip As).any fun (P, A) =>
+      match PositiveRules.expand G P, A with
+      | [.dict [] [] [] ix [] [] _ _ _], some A =>
+        ix.any (fun (_, E) => isBinder b E) && !A.isEmpty && A.all fun l =>
+          (storeOf G [l]).isNone && match PositiveRules.expand G [l] with
+            | [.refs _ [] ..] => true
+            | _ => false
+      | _, _ => false
+    if missingIndex then σ := upd σ b (← StateT.lift (prim .source))
   -- A binder a resolution qualifies: its observation and result the
   -- resolution of its input's type by the certificate its form gives
   -- (`resolutionCertificate`), checked (`resolutionInstance`).
