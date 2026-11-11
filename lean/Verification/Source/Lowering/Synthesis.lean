@@ -2288,6 +2288,36 @@ partial def expr (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (Op
           | some M => return Except.ok M
           | none => throw "a bound generic method") fun m => pure (.error m))
       let _ ← record callee r
+      -- The bound member at any receiver, at the effect binding keeps: of
+      -- several signatures (`next(...[value]: [] | [TNext])`) its first of
+      -- no promise binding keeps (`Effect.keeps`), with each further one of
+      -- its parameters promising
+      -- (`expression_values.ml`, `Bind`), which the lowering selects among
+      -- the member's (`bindMember`); as the general form below.
+      -- `TSCERT_FORCE=binds` states it keeping values and stores, the
+      -- adversarial proposal.
+      let forced := (← get).force.contains "binds"
+      let r ← match r with
+        | .ok M => StateT.lift (do
+            let G ← graphNow
+            let top ← prim .top
+            let bound (e : CallEffects.Effect) : CallEffects.Effect :=
+              if forced then .ofFootprint ⟨.keep, .keep⟩ else e.drop 0
+            match PositiveRules.expand G M with
+            | [.arrs L R] =>
+              match L.find? (fun a => a.effect.promise.isNone && a.effect.keeps 0), R with
+              | some a, _ =>
+                let further := L.filterMap fun s =>
+                  if s.receiver == a.receiver && s.arguments == a.arguments && s.effect.promise.isSome &&
+                      s.effect.keeps 0 then
+                    some (⟨top, s.arguments, s.result, bound s.effect⟩ : CallEffects.Arrow (Ty Tree)) else none
+                return Except.ok [← lower (SourceTypes.use (.arrs
+                  (⟨top, a.arguments, a.result, bound a.effect⟩ :: further) []))]
+              | none, [a] => if !a.effect.keeps 0 then return r else return Except.ok [← lower (SourceTypes.use (.arrs []
+                  [⟨top, a.arguments, a.result, bound a.effect⟩]))]
+              | _, _ => return r
+            | _ => return r)
+        | .error _ => pure r
       return (← record e r, e3)
     | _ =>
       -- `f.bind(o, a…)` of any other target: the target, the receiver and

@@ -414,6 +414,8 @@ object at the first name its key may spell alone),
 `loops`, `invalid-unassigned-let` `readBeforeAssignment`, under
 `decided`, `invalid-map-fresh-alias` `drained`, under `callbacks`,
 `invalid-map-fresh-reassigned` `drained`, under `fresh`,
+`invalid-for-of-program-iterable-drain` `wrong`, under `binds` (each
+member bound by `o.m.bind(o)` keeping values and stores),
 `invalid-closure-default-effect` `stale`, under `defaults` (each
 function literal's defaults' changes left out of its effect),
 `invalid-generic-closure-effect` `stale`, under `schemes`
@@ -700,7 +702,14 @@ removal works through:
   taking the prefix within its first parameters: at any receiver, the
   parameters left, its result and its effect past the prefix
   (`Effect.drop`), with each further signature of the same parameters
-  promising about a parameter past the prefix. `f.apply(o, list)` and
+  promising about a parameter past the prefix. `o.m.bind(o)` (a
+  `for...of` over a program's iterable binds its iterator's `next` so) is
+  the member at any receiver at the effect binding keeps, of several
+  signatures its first of no promise binding keeps (`next(...[value]: [] |
+  [TNext])` at its zero-argument row) with each further one of its
+  parameters promising (the producer's `Bind`); `TSCERT_FORCE=binds`
+  states it keeping values and stores, the adversarial proposal.
+  `f.apply(o, list)` and
   `Reflect.apply(f, o, list)` are the target's one signature's result, the
   call at its effect, for a list that is null, undefined or a tuple of
   required positions, or, for a target taking only a rest, an array of any
