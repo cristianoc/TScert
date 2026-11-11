@@ -681,6 +681,14 @@ removal works through:
   stand-in, keeps its footprint. Each proposal is a stand-in: its callers
   read it and its own unit establishes it; the front states it at the
   function's claim and slot (`Front.withStandIns`).
+- **Imports that never return.** An import of one fixed signature whose
+  declared result is the empty type, stating no promise, is read at the
+  footprint keeping values and stores (`Front.withNeverImports`): it has no
+  normal return, so its normal return meets every footprint; its throws
+  stay unbounded. The reading rests on the declared result, as every read
+  of the import does. An intrinsic (`%…%`) keeps its reviewed contract.
+  Pretext's `x ?? missing()` is the case: with it the functions calling
+  `missing` are proposed their own footprints.
 - **Cells.** A binding the unit assigns and holds in no slot (a module
   binding, one a closure shares) is narrowed by its own assignment and by
   tests, as a slot is, until a statement changes a value location other
