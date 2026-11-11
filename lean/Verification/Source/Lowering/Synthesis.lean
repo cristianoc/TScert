@@ -1043,10 +1043,14 @@ structure Callee where
   resolution : List PositiveGraphs.ResolutionSlots := []
   /-- A generic module function's binders' bounds, where they state one. -/
   bounds : List (Tree × Ty Tree) := []
+  /-- A union of callables: each arm's one signature (`calleeOf`). -/
+  arms : List (CallEffects.Arrow (Ty Tree)) := []
 
 /-- The callee a value of type `F` is, called with receiver `O`: a scheme
-by its binders and signatures, at `typeArgs` where they are written; any
-other callable by its signatures. -/
+by its binders and signatures, at `typeArgs` where they are written; a
+union of callables, each arm of one fixed signature and no binders, by its
+arms (the producer's union of callables, expression_calls.ml:1105-1118);
+any other callable by its signatures. -/
 def calleeOf (F O : Ty Tree) (typeArgs : List Json := []) : Compiler Callee := do
   let G ← graphNow
   if let [l] := F then
@@ -1056,6 +1060,23 @@ def calleeOf (F O : Ty Tree) (typeArgs : List Json := []) : Compiler Callee := d
         throw "explicit type arguments of another count than the binders"
       return { binders := s.binders, fixed := s.signatures, rests := s.variadic, receiver := O,
                seed := s.binders.zip θ }
+  if F.length > 1 && typeArgs.isEmpty && (ProgramTyping.callSigs G F).isEmpty &&
+      (ProgramTyping.restSigs G F).isEmpty then
+    let arms := F.map fun l => (ProgramTyping.callSigs G [l], ProgramTyping.restSigs G [l], (G.schemes l).isSome)
+    if arms.all fun (L, S, s) => L.length == 1 && S.isEmpty && !s then
+      return { arms := arms.flatMap (·.1), receiver := O, own := some F }
+    -- An arm that is no callable (a value of no call signature, as `null`):
+    -- the lowering's split refuses the call (every alternative names an
+    -- arrow), and the producer's union of callables states none.
+    if arms.any fun (L, S, s) => L.isEmpty && S.isEmpty && !s then
+      throw (callRefusal "a call of a union an arm of which states no call signature")
+  -- A bounded binder's value is called at its bound (`Plans.boundOf`, the
+  -- lowering's `throughBound`).
+  if (ProgramTyping.callSigs G F).isEmpty && (ProgramTyping.restSigs G F).isEmpty then
+    let B ← boundOf F
+    if B != F then
+      let G ← graphNow
+      return { fixed := ProgramTyping.callSigs G B, rests := ProgramTyping.restSigs G B, receiver := O, own := some F }
   return { fixed := ProgramTyping.callSigs G F, rests := ProgramTyping.restSigs G F, receiver := O, own := some F }
 
 /-- A generic module function's callee: its signature at fresh binders, or
@@ -1144,6 +1165,40 @@ def callback : Expr → Bool
   | .lambda .. => true
   | _ => false
 
+/-- A call of a union of callables (`calleeOf`'s arms) with `callbacks`
+marking the actuals that are function literals and `As` the walked ones: the
+call is each arm's, so every arm's count admits the actuals, else the call is
+refused (the lowering splits the callee and selects each arm's signature,
+`selectSignature`); each actual is made at the parameter every arm states at
+its position, else at its own type (the producer's `shared_actuals`); the
+value is the union of the arms' results, and the effect the arms' one effect,
+else the ordinary effect bounding a throw where every arm does. Any other
+callee is itself. `first` (`TSCERT_FORCE=arms`) states the first arm's
+signature alone, the adversarial proposal. -/
+def armsCallee (G : PositiveGraphs.NormalGraph Tree) (T : EquationStore.State) (c : Callee)
+    (callbacks : List Bool) (As : List (Option (Ty Tree))) (first : Bool := false) : Except String Callee := do
+  let n := callbacks.length
+  let fits (a : CallEffects.Arrow (Ty Tree)) : Bool :=
+    n ≤ a.arguments.length && (a.arguments.drop n).all (fun D => omissible G D || within T [Labels.undef] D)
+  match c.arms with
+  | [] => return c
+  | a0 :: rest =>
+    if first then return { c with fixed := [a0], rests := [], arms := [] }
+    if !c.arms.all fits then
+      throw (callRefusal s!"no signature admits {n} actuals at every arm of a union of callables")
+    let params ← (callbacks.zipIdx).mapM fun (cb, i) => do
+      match c.arms.map (·.arguments[i]?) with
+      | some P :: Ps =>
+        if Ps.all (· == some P) then return P
+        match cb, As[i]?.join with
+        | false, some A => return A
+        | _, _ => throw "an actual where the arms of a union of callables state different parameters"
+      | _ => throw "an actual past a parameter"
+    let effect := if rest.all (·.effect == a0.effect) then a0.effect
+      else { CallEffects.Effect.ordinary with onThrow := c.arms.all (·.effect.onThrow) }
+    return { c with fixed := [⟨a0.receiver, params, norm (c.arms.flatMap (·.result)), effect⟩],
+                    rests := [], arms := [] }
+
 /-- The member `o.k` names, `o` of type `O`: its own (a host-relative
 member), else its prototype's. -/
 def memberFor (vars : List (String × Ty Tree)) (O : Ty Tree) (fld : PropKey) :
@@ -1167,7 +1222,23 @@ def memberFor (vars : List (String × Ty Tree)) (O : Ty Tree) (fld : PropKey) :
       return some { m with
         schemes := (m.schemes ++ ms.flatMap (·.schemes)).eraseDups
         receivers := (m.receivers ++ ms.flatMap (·.receivers)).eraseDups }
-    return none
+    -- Members of one signature each, of no promise, binders or rest, taking
+    -- the same parameters at the same effect: one signature returning the
+    -- union of their results (the producer's `bound_union`,
+    -- semantic.ml:431-446; the lowering splits the host's slot,
+    -- `unionVar`, and binds each host's member, `bindMember`).
+    let one (m' : MethodMembers.Sig (Ty Tree)) : Option (CallEffects.MethodArrow (Ty Tree)) :=
+      match m'.calls, m'.rests, m'.schemes with
+      | [a], [], [] => if a.effect.promise.isNone then some a else none
+      | _, _, _ => none
+    match one m, ms.mapM one with
+    | some a, some as =>
+      if as.all fun b => b.arguments == a.arguments && b.effect == a.effect then
+        return some { m with
+          calls := [{ a with result := norm (a.result ++ as.flatMap (·.result)) }]
+          receivers := (m.receivers ++ ms.flatMap (·.receivers)).eraseDups }
+      return none
+    | _, _ => return none
   | _ => return none
 
 /-- Whether the binder `b` occurs in a label. -/
@@ -1304,6 +1375,54 @@ partial def valueBinder (G : PositiveGraphs.NormalGraph Tree) (b : Tree) (A : Ty
     rests.any (fun a => (a.receiver :: a.result :: a.arguments.1).any (valueBinder G b · (fuel - 1)))
   | _ => A.any (occurs b)
 
+/-- The member `o.k` of a union `O` read arm by arm, as the read of a union
+reads each alternative (`Plans.readCell`): each label's member (its own or
+its prototype's, `memberFor`) at that label's receiver, else its field
+(`readField`). None for a value of one label, or where an arm's member is
+generic. -/
+def memberArms (vars : List (String × Ty Tree)) (O : Ty Tree) (fld : PropKey) :
+    Compiler (Option (Ty Tree)) := do
+  if O.length < 2 then return none
+  let mut out : Ty Tree := []
+  for l in O do
+    match ← memberFor vars [l] fld with
+    | some m =>
+      if !m.schemes.isEmpty || (m.calls.isEmpty && m.rests.isEmpty) then return none
+      out := out ++ [← lower (SourceTypes.use (.arrs (m.calls.map (·.withReceiver [l]))
+        (m.rests.map (·.withReceiver [l]))))]
+    | none => out := out ++ (← readField vars [l] fld)
+  return some (norm out)
+
+/-- The member `o.k` of a union of hosts whose members differ, as a bind
+reads it: each arm's (`memberArms`), where `memberFor` finds no one member;
+none where an arm's member cannot be read. -/
+def unionMember (vars : List (String × Ty Tree)) (O : Ty Tree) (fld : PropKey) : Compiler (Option (Ty Tree)) :=
+  tryCatch (do
+    let O := present (← graphNow) O
+    if (← memberFor vars O fld).isSome then return none
+    memberArms vars O fld) fun _ => pure none
+
+/-- `o.k.bind(o)` of a union of hosts whose members `M` (`memberArms`)
+differ: of each arm its first signature of no promise binding keeps
+(`Effect.keeps`); where all take the same parameters at the same effect, the
+bound function at any receiver taking them, at the effect binding keeps
+(`Effect.drop`), returning the union of their results (the producer's
+`Bind` of a union of hosts, `bound_union`, expression_values.ml:349-363;
+the lowering splits the host's slot, `unionVar`, and binds each arm's
+member, `bindMember`). `forced` states it keeping values and stores. -/
+def boundUnion (M : Ty Tree) (forced : Bool) : Compiler (Option (Ty Tree)) := do
+  let G ← graphNow
+  if M.length < 2 then return none
+  let some arms := M.mapM (fun l => (match PositiveRules.expand G [l] with
+      | [.arrs L []] => L.find? fun a => a.effect.promise.isNone && a.effect.keeps 0
+      | _ => none : Option (CallEffects.Arrow (Ty Tree)))) | return none
+  let a :: rest := arms | return none
+  if !rest.all (fun b => b.arguments == a.arguments && b.effect == a.effect) then return none
+  let top ← prim .top
+  let effect : CallEffects.Effect := if forced then .ofFootprint ⟨.keep, .keep⟩ else a.effect.drop 0
+  return some [← lower (SourceTypes.use (.arrs
+    [⟨top, a.arguments, norm (arms.flatMap (·.result)), effect⟩] []))]
+
 /-- The callee `o.k(…)` calls, `o` of type `O`: the object's member, its
 prototype's, or a field holding a callable. -/
 def methodCallee (vars : List (String × Ty Tree)) (O : Ty Tree) (fld : PropKey) (callbacks : List Bool := []) (typeArgs : List Json := []) :
@@ -1326,6 +1445,11 @@ def methodCallee (vars : List (String × Ty Tree)) (O : Ty Tree) (fld : PropKey)
     let fixed := m.calls.map (·.withReceiver O)
     let rests := m.rests.map (·.withReceiver O)
     return { fixed, rests, receiver := O, own := some [← lower (SourceTypes.use (.arrs fixed rests))] }
+  -- A union whose arms' members differ: each arm's member, a union of
+  -- callables (`calleeOf`).
+  if typeArgs.isEmpty then
+    if let some M ← tryCatch (memberArms vars O fld) (fun _ => pure none) then
+      return ← calleeOf M O
   calleeOf (← readField vars O fld) O typeArgs
 
 /-- The callee `new C(…)` calls: its construct signatures. -/
@@ -2361,6 +2485,20 @@ def offerToParameters (args : List Expr) (Ps : List (Ty Tree)) : W Unit := do
       let e := { r.effect with fresh := r.effect.fresh && s.effect.fresh, onThrow := r.effect.onThrow && s.effect.onThrow }
       e == s.effect || ({ e with closed := s.effect.closed } == s.effect && e.closed.le s.effect.closed)
     if supplies then recordAt x.span (kindOf x) (.ok P)
+
+/-- A call of a callee in the walk: a union of callables at one signature
+its arms meet (`armsCallee`; `TSCERT_FORCE=arms` at the first arm's). For a
+declaration's footprint, a call of a union is a call of no one instance: it
+may change anything, and its throw too (the producer's `callable`,
+proposal.ml:85-92, reads one callee's signatures). -/
+def armsCall (c : Callee) (callbacks : List Bool) (As : List (Option (Ty Tree))) : W (Except String Callee) := do
+  if c.arms.isEmpty then return .ok c
+  let T ← StateT.lift table
+  let w ← get
+  if w.strict then
+    wrote .any .any
+    modify fun w => { w with throwWrites := true }
+  return armsCallee (SourceTypes.graph T) T c callbacks As (w.force.contains "arms")
 
 mutual
 /-- The narrowing a condition answering `q` makes. -/
@@ -3420,7 +3558,10 @@ partial def exprCall (env : Env) (e : Expr) (exp : Option (Ty Tree)) : W (Option
       let (_, e3) ← exprs e2 args
       let r ← StateT.lift (tryCatch (do
           if !args.isEmpty then throw "a bound function with bound actuals"
-          let c ← methodCallee e1.vars (← need O "the receiver") fld
+          let O ← need O "the receiver"
+          -- (a union of hosts whose members differ: each arm's, `memberArms`)
+          if let some M ← unionMember e1.vars O fld then return Except.ok M
+          let c ← methodCallee e1.vars O fld
           match c.own with
           | some M => return Except.ok M
           | none => throw "a bound generic method") fun m => pure (.error m))
@@ -3436,6 +3577,7 @@ partial def exprCall (env : Env) (e : Expr) (exp : Option (Ty Tree)) : W (Option
       let forced := (← get).force.contains "binds"
       let r ← match r with
         | .ok M => StateT.lift (do
+            if let some B ← boundUnion M forced then return Except.ok B
             let G ← graphNow
             let top ← prim .top
             let bound (e : CallEffects.Effect) : CallEffects.Effect :=
@@ -3648,6 +3790,12 @@ partial def applyCall (env : Env) (c : Callee) (args : List Expr) (As : List (Op
   let n := args.length
   let fits (a : CallEffects.Arrow (Ty Tree)) : Bool :=
     n ≤ a.arguments.length && (a.arguments.drop n).all (fun D => omissible G D || within T [Labels.undef] D)
+  -- A union of callables (`armsCall`): one signature its arms meet.
+  let c ← match ← armsCall c (args.map callback) As with
+    | .ok c => pure c
+    | .error m => do
+      for x in args do if callback x then let _ ← walkLambda env x none
+      return .error m
   -- A variadic signature: its fixed parameters, then each further actual at
   -- the element its rest's argument list states; a call omitting fixed
   -- parameters that each admit `undefined` passes no rest (the producer's
@@ -3818,15 +3966,23 @@ partial def applyCall (env : Env) (c : Callee) (args : List Expr) (As : List (Op
       -- admits, omitted positions admitting `undefined`, a variadic one's
       -- fixed ones too: the lowering's selection refuses it too
       -- (`refusalMark`). (A binder's admission is its instance's.)
+      -- A class's construction of no binders likewise (a constructor none
+      -- of whose signatures takes the count, `new Error()` at a message).
       let one := match c.own with
         | some [_] => c.binders.isEmpty
-        | _ => false
+        | _ => c.construct && c.binders.isEmpty
       -- (`undefined` within an omitted position's type, `unknown` too.)
       let admits (D : Ty Tree) : Bool := admitsUndefined G D || within T [Labels.undef] D
       let short (ps : List (Ty Tree)) : Bool := n ≤ ps.length && (ps.drop n).all admits
+      -- (a rest whose argument lists are the empty type admits no list,
+      -- an empty one included: `(...args: never) => R`)
+      let none_ (P : Ty Tree) : Bool := P.isEmpty
       let m := s!"no signature admits {n} actuals"
-      return .error (if one && !(c.fixed.isEmpty && c.rests.isEmpty) && c.fixed.all (!short ·.arguments) &&
-        c.rests.all (fun r => n < r.arguments.1.length && !short r.arguments.1) then callRefusal m else m)
+      -- (a value of no call signature, `Function` or `(...args: never) =>
+      -- R`, is none: the producer states no call of it)
+      return .error (if one && c.fixed.all (!short ·.arguments) &&
+        c.rests.all (fun r => none_ r.arguments.2 || (n < r.arguments.1.length && !short r.arguments.1))
+        then callRefusal m else m)
   let mut σ : List (Tree × Ty Tree) := c.seed
   -- Each binder from the receiver and the walked actuals first; then those
   -- still unbound from the type expected of the call's value, where the
