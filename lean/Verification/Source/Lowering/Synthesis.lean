@@ -393,6 +393,13 @@ def slice (A : Ty Tree) (tag : Tag) (q : Bool) (literalOperand : Bool := false) 
     -- semantic.ml:498-508): `T ⊓ (null | number)` is `T ⊓ number` where a
     -- nullish test fails.
     if let .meet p cs also := StoreView.row (← table) a then
+      -- A rigid value tested as a function keeps its parameter and meets
+      -- the function kinds (refinement.ml:58, `T & Function`).
+      if tag == .isFun && q then
+        let functions := kinds.filter fun c => tagClause tag c == some true
+        for c in PositiveNormalization.meetLists cs functions do
+          out := out ++ [← lower (SourceTypes.bounded p [c] also)]
+        continue
       let left := cs.filter fun c => tagClause tag c != some (!q)
       if left.length != cs.length then
         for c in left do out := out ++ [← lower (SourceTypes.bounded p [c] also)]
@@ -480,11 +487,13 @@ number, and an object's field as the read rule reads it (`readCell`,
 the read rule finds no contract stating is the unit's refusal there
 (`refusalMark`). -/
 def readField (vars : List (String × Ty Tree)) (A : Ty Tree) (fld : PropKey) : Compiler (Ty Tree) := do
-  if A.isEmpty then throw "a read of a value of no type"
+  if A.isEmpty then return []
   let G ← graphNow
   -- A nullish receiver throws before its member is read: the read is of the
   -- others (`nullishSplit`, the lowering's read, Atoms.lean:599-618).
-  let A := present G A
+  -- Union elimination drops contradictory duplicate discriminants
+  -- (`labelMembers`/`conflicting`; type_queries.ml:407-423).
+  let A := ProgramTyping.members G (present G A)
   let (prims, objs) := A.partition fun l => (shapeOf G l).isSome
   -- A function's `toString`: no function owns one, so its lookup reaches
   -- `Function.prototype`'s (`Plans.primitiveArms`, Plans.lean:631-643).
@@ -657,15 +666,21 @@ def narrowTarget (env : Env) (target : Expr) (tag : Tag) (q : Bool) (literalOper
           for l in P do
             let keep ← tryCatch (do
                 let B ← readField env.vars [l] f
-                return !(← slice B tag q).isEmpty) fun _ => pure true
+                let B ← slice B tag q
+                let G ← graphNow
+                return !B.isEmpty && !(env.paths.lookup (root, path)).any (BranchRefinement.typesDisjoint G B)) fun _ => pure true
             if keep then kept := kept ++ [l]
           return kept
+    -- Successive tests share the path's accumulated contents: an arm
+    -- disjoint from them is impossible (`contents_meet`, refinement.ml:276).
     if let [f] := path then
       let mut kept : Ty Tree := []
       for l in A do
         let keep ← tryCatch (do
             let B ← readField env.vars [l] f
-            return !(← slice B tag q).isEmpty) fun _ => pure true
+            let B ← slice B tag q
+            let G ← graphNow
+            return !B.isEmpty && !(env.paths.lookup (root, path)).any (BranchRefinement.typesDisjoint G B)) fun _ => pure true
         if keep then kept := kept ++ [l]
       -- (none of them: the binding holds no value there)
       env := { env with vars := upd env.vars root kept }
@@ -1713,13 +1728,27 @@ partial def refine (env : Env) (c : Expr) (q : Bool) : W Env := do
     let after (e : Env) : W Env := do
       if !((← get).endsIn.get? r.span).getD (mayCall r) then return e
       return { e with paths := ← StateT.lift (e.paths.filterM fun ((root, p), _) => stablePath e root p) }
-    if andOp == q then refine (← after (← refine env l q)) r q
+    -- The left test describes the value before the right operand runs.
+    -- A binding the right assigns keeps its post-evaluation type here
+    -- (execution_analysis.ml:274: separate states for a condition's exits).
+    let left (answer : Bool) : W Env := do
+      let e ← refine env l answer
+      let written (n : String) := assignsStmt n (.effect r.span r)
+      return { e with
+        vars := e.vars.map fun (n, A) => (n, if written n then (env.vars.lookup n).getD A else A)
+        paths := e.paths.filter fun ((n, _), _) => !written n }
+    if andOp == q then refine (← after (← left q)) r q
     else
-      let a ← refine env l q
-      let b ← refine (← after (← refine env l !q)) r q
+      let a ← left q
+      let b ← refine (← after (← left !q)) r q
       return (join (some a) (some b)).getD a
   | .shapeTest _ tag equal e => StateT.lift (narrowTarget env e tag (equal == q))
   | .singletonTest _ tag equal testLeft l r =>
+    -- A comparison of a saved field cannot refine its current contents
+    -- after the other operand may write it.
+    if testLeft && ((← get).endsIn.get? r.span).getD (mayCall r) then
+      if let some (root, path@(_ :: _)) := memberPath l then
+        if !(← StateT.lift (stablePath env root path)) then return env
     let other := if testLeft then r else l
     StateT.lift (narrowTarget env (if testLeft then l else r) tag (equal == q) (match other with | .lit .. => true | _ => false))
   -- Strict equality with an operand of one value: the test of that value on
@@ -1730,7 +1759,11 @@ partial def refine (env : Env) (c : Expr) (q : Bool) : W Env := do
     let G ← StateT.lift graphNow
     let isLit (x : Expr) : Bool := match x with | .lit .. => true | _ => false
     match (typeOf r).bind (singletonTag G), (typeOf l).bind (singletonTag G) with
-    | some tag, _ => StateT.lift (narrowTarget env l tag (equal == q) (isLit r))
+    | some tag, _ => do
+      if (w.endsIn.get? r.span).getD (mayCall r) then
+        if let some (root, path@(_ :: _)) := memberPath l then
+          if !(← StateT.lift (stablePath env root path)) then return env
+      StateT.lift (narrowTarget env l tag (equal == q) (isLit r))
     | _, some tag => StateT.lift (narrowTarget env r tag (equal == q) (isLit l))
     | _, _ =>
       -- Equal to an operand holding one of several singletons: each
@@ -1778,6 +1811,9 @@ partial def refine (env : Env) (c : Expr) (q : Bool) : W Env := do
     let sliced (A : Ty Tree) : Ty Tree :=
       let A := if q || onUndefined == .throws then BranchRefinement.tagSlice G A .isUndef false else A
       norm (PromiseCalls.memberFieldSlice G A f tags q [])
+    -- Keep the excluded field values for subsequent discriminant tests.
+    let env ← if q then pure env else tags.foldlM (fun env t =>
+      StateT.lift (narrowTarget env (.read c.span f e) t false)) env
     match memberPath e with
     | some (root, []) =>
       let some A := env.vars.lookup root | return env
