@@ -376,9 +376,11 @@ def moduleGiven (ast : Json) (given : Std.HashMap String Json) : Std.HashMap Str
   let location := (ast.getObjValAs? String "file").toOption.getD ""
   (forModule location given).fold (init := {}) fun m k v => if (v.getObjVal? "graph").isOk then m.insert k v else m
 
-/-- Discovery is a process stage with the fragment as its complete input. -/
-def interfacePlanFile (path : String) : IO UInt32 := do
-  match (← readJson path) >>= SourceClaimJson.interfacePlan with
+/-- Discovery binds both the fragment and its requested roots. -/
+def interfacePlanFile (path selection : String) : IO UInt32 := do
+  let ast ← readJson path
+  let selected ← readJson selection
+  match (do SourceClaimJson.interfacePlan (← ast) (← selected)) with
   | .error e => refuse e
   | .ok j => IO.println j.compress; return 0
 
@@ -510,8 +512,11 @@ def verifyUnitsFile (astPath : String) (claimsPath : Option String) (fileKey : S
         else f.passGroup fuel group (given := some (moduleGiven f.fr.ast
           (moduleLines ((f.fr.ast.getObjValAs? String "file").toOption.getD ""))))
       if let some cached := interfaces then
-        let sc ← SourceClaimJson.ImportScope.of (← ast)
-        let est ← SourceClaimJson.decodeInterfaces sc (← cached)
+        let cached ← cached
+        let sc ← if (← jArr cached "modules").isEmpty then
+            pure (⟨[], {}⟩ : SourceClaimJson.ImportScope)
+          else SourceClaimJson.ImportScope.of (← ast)
+        let est ← SourceClaimJson.decodeInterfaces sc cached
         let f ← SourceClaimJson.fragmentPlansFromInterfaces (← ast) fileKey budget (selection names) (← standIns) force est
         let ms : List SourceClaimJson.ModuleVerdict := (est.map (·.2.2)).eraseDups.map fun u =>
           ⟨u, [u], [], .ok []⟩

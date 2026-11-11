@@ -38,7 +38,10 @@ of its functions is requested.
 
 The graph has a node for each implementation module in the fragment and
 an edge for each resolved implementation import. Declaration-only imports
-keep their existing contracts. Strongly connected components form a DAG.
+keep their existing contracts. Discovery starts at the selected importer's
+resolved reads and closes over every candidate of each reached module.
+Selection and measurement stand-ins choose the requested components; each
+requested component retains its complete canonical inputs and checks. Strongly connected components form a DAG.
 A component's members are ordered by module location; ready components are
 ordered by their first location. These orders depend on the module graph,
 independently of the requesting importer or selected function.
@@ -91,13 +94,21 @@ version tag.
 
 ## Entry points
 
-`--module-interface-plan <fragment>` discovers the canonical component DAG.
+`--module-interface-plan <fragment> <selection>` discovers the requested
+canonical component DAG. The selection supplies function names, stand-in
+names, and explicit own-module roots. Both input files bind the stage key.
 `--module-interface <request>` prints one component's closed interfaces.
 Both commands are process stages through `verifierCall` and `invokeProcess`.
 `prepareInterfaces` resolves them dependency first. Its `ownModule` input
 is the parser's canonical module document for an own-file publication.
 
-`verifyWithInterfaces` runs the importer with the resulting projections.
+`verifyWithInterfaces` first checks the importer at ordinary import contracts.
+A successful check needs no stronger module facts and returns that check's
+verdicts, with their dependencies. It publishes no module interface. A semantic
+refusal requests the reachable components and checks the importer with their
+projections. Operational failures propagate. Explicit own-module publication
+and forced-proposal controls run the complete requested component checks.
+An empty established set requires no module resolution in importer planning.
 Its `--verify-interface-stage` command suppresses measurements for stable
 stage payloads; `--verify-interfaces` runs the identical check with the
 measurement output available. The direct `--verify-units 8|9` command uses

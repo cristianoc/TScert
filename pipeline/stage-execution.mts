@@ -654,8 +654,8 @@ export function verifierCall(program: string, args: readonly string[],
   const [mode, ...rest] = args.slice(budget.length);
   const call = (stage: StageName, list: Argument[]): ProcessCall =>
     ({ stage, program, arguments: [...budget, { text: mode }, ...list], environment, protocol: verifierProtocol });
-  if (mode === "--module-interface-plan" && rest.length === 1)
-    return call("interface-plan", [{ input: "fragment.json", path: rest[0] }]);
+  if (mode === "--module-interface-plan" && rest.length === 2)
+    return call("interface-plan", [{ input: "fragment.json", path: rest[0] }, { input: "selection.json", path: rest[1] }]);
   if (mode === "--module-interface" && rest.length === 1)
     return { ...call("module-interface", [{ input: "request.json", path: rest[0] }]), protocol: { refusal: null } };
   if (mode === "--verify-interface-stage" && rest.length === 8)

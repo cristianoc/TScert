@@ -60,9 +60,15 @@ def decodeInterfaces (sc : ImportScope) (j : Json) : Except String Established :
   return out
 
 /-- Dependency discovery and canonical SCC order, shared with direct use. -/
-def interfacePlan (ast : Json) : Except String Json := do
+def interfacePlan (ast selection : Json) : Except String Json := do
   let sc ← ImportScope.of ast
-  let needs ← interfaceNeeds sc
+  fieldsExactly selection ["names", "imports", "functions", "own"]
+  let names : Option (List String) ← fromJson? (← jField selection "names")
+  let given : List String ← fromJson? (← jField selection "imports")
+  let fixed : List String ← fromJson? (← jField selection "functions")
+  let own : List String ← fromJson? (← jField selection "own")
+  if own.any (fun l => !sc.modules.any (·.location == l)) then throw "unknown own module"
+  let needs ← requestedInterfaceNeeds sc ast names given fixed own
   let components := (interfaceComponents needs).map fun c =>
     let dependencies := ((c.flatMap fun n => n.reads.map (·.location)).eraseDups.filter
       fun l => !c.any (·.module.location == l)).mergeSort (· ≤ ·)
