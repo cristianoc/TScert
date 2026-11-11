@@ -523,10 +523,15 @@ removal works through:
   them (a union iteration's parts, each kind's binders apart), else each
   label of the actual at the first member it matches; one type
   constructor's arguments at the actual's of the same constructor; an
-  array's elements, a record's fields and methods' results, a callable's
-  result at the actual's. Of a call's signatures the first each walked
-  actual is within at the binders so read is selected, else the first the
-  actuals' count admits; a call may omit each trailing parameter whose
+  array's elements (a tuple's positions separately), a record's fields and
+  methods' results, a callable's result at the actual's, then its parameters
+  where the result supplies no candidate. Fresh array literals at generic
+  tuple positions keep those positions recursively, each value widened.
+  Explicit method type arguments seed the instance. An expected union's
+  unique application of the result's declaration supplies its contextual
+  type arguments. Of a call's signatures the first each walked actual is
+  within at the binders so read, satisfying their bounds, is selected, else
+  the first the actuals' count admits; a call may omit each trailing parameter whose
   contract admits `undefined` (`T | undefined` included), a variadic
   signature's fixed ones too, passing no rest (the producer's `callable`).
   Of one signature, a fresh literal at a parameter that is a bounded binder
