@@ -1740,10 +1740,28 @@ partial def expr (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (Op
         | some D => { e1 with vars := upd e1.vars n D, paths := e1.paths.filter (·.1.1 != n) }
         | none => { e1 with vars := e1.vars.filter (·.1 != n) })
     return (r, e2)
-  | .withValue _ fn initial _ _ =>
-    let (_, e1) ← expr env fn
-    let (_, e2) ← expr e1 initial
-    return (← record e (.error "a function's value bag"), e2)
+  | .withValue _ fn initial functionType bagType =>
+    -- `Object.assign(fn, { … })` at its two annotations (the lowering's
+    -- `withValue`, Expression.lean:797-843): the function walked at the
+    -- function annotation, the literal at the record's, the value the
+    -- callable object of the record's fields at the annotation's signatures
+    -- (its variadic ones for a function with a rest parameter).
+    let F ← StateT.lift (tryCatch (some <$> lower (Fragment.translate functionType)) fun _ => pure none)
+    let P ← StateT.lift (tryCatch (some <$> lower (Fragment.translate bagType)) fun _ => pure none)
+    let (_, e1) ← expr env fn F
+    let (_, e2) ← expr e1 initial P
+    let r ← attempt e do
+      let F ← need F "the function annotation"
+      let P ← need P "the record annotation"
+      let G ← graphNow
+      let [.arrs L S] := PositiveRules.expand G F | throw "initializer requires a free function annotation"
+      let [.refs fs [] []] := PositiveRules.expand G P | throw "initializer requires an invariant record annotation"
+      let rest := match fn with
+        | .lambda _ _ _ _ _ rest .. => rest
+        | _ => false
+      if rest && !L.isEmpty then throw "initializer requires a variadic signature"
+      return [← lower (SourceTypes.use (if rest then .callable fs [] [] S else .callable fs [] L []))]
+    return (r, e2)
   | .objectAssign _ target sources =>
     wrote .any .keep
     let (A, e1) ← expr env target
@@ -1898,15 +1916,67 @@ partial def expr (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (Op
     let r ← called e3 c args As e.span exp
     return (← record e ((·.2) <$> r), ← afterCall e3 r)
   | .applyWithReceiver _ callee recv list _ =>
-    let (_, e1) ← expr env callee
+    -- `f.apply(o, list)`, `Reflect.apply(f, o, list)`: the target, the
+    -- receiver and the list in order, then the target called with the list's
+    -- positions (the lowering's, Atoms.lean:832-918): a tuple of required
+    -- positions, else, for a target of one variadic signature taking only a
+    -- rest, its store's positions (holes read as `undefined`); a null or
+    -- undefined list gives none. The value is the target's one signature's
+    -- result (`expression_values.ml`, `Apply`), the call at its effect.
+    let (F, e1) ← expr env callee
     let (_, e2) ← expr e1 recv
-    let e3 ← match list with
-      | some l => do pure (← expr e2 l).2
-      | none => pure e2
-    if (← get).strict then
-      wrote .any .any
-      modify fun w => { w with throwWrites := true }
-    return (← record e (.error "a call through apply"), e3)
+    let (Lt, e3) ← match list with
+      | some l => do let (A, e) ← expr e2 l; pure (A.map some, e)
+      | none => pure (some none, e2)
+    let r ← StateT.lift (tryCatch (do
+        let B ← need F "the target"
+        let some Lt := Lt | throw "the list undetermined"
+        let G ← graphNow
+        let listed := match Lt with
+          | none => some false
+          | some T => if nullishList G T then some false else
+            match storeOf G T with
+            | some S => match PositiveRules.expand G S with
+              | [.list t []] =>
+                if t.optional.isEmpty && t.rest.isNone then some false
+                else if t.required.isEmpty && t.optional.isEmpty then some true else none
+              | _ => none
+            | none => none
+        let some dynamic := listed | throw ".apply needs an array list of required positions, or a null or undefined one"
+        match PositiveRules.expand G B, dynamic with
+        | [.arrs [a] []], false | [.callable _ _ [a] [] _], false => return Except.ok (a.effect, a.result)
+        | [.arrs [] [a]], true | [.callable _ _ [] [a] _], true =>
+          if !a.arguments.1.isEmpty then throw ".apply with a list of unknown length needs a target taking only a rest parameter"
+          return Except.ok (a.effect, a.result)
+        | _, _ => throw ".apply requires a single arrow") fun m => pure (.error m))
+    modify fun w => { w with changedValues := false }
+    let r ← match r with
+      | .ok (eff, R) => do
+        -- The call changes the heap by its signature's footprint, as a call's
+        -- instance does (`applyCall`).
+        if eff.footprint != ⟨.keep, .keep⟩ then wrote eff.footprint.value eff.footprint.store
+        if eff.footprint.value != .keep || eff.receiverOwn || eff.receiverStore || eff.elementWrite.isSome then
+          modify fun w => { w with changedValues := true }
+        if eff.receiverOwn then wrote .any eff.footprint.store
+        if eff.receiverStore || eff.elementWrite.isSome then wrote .any .any
+        if !eff.onThrow then modify fun w => { w with throwWrites := true }
+        if (← get).strict && (← get).caught && !eff.onThrow then wrote .any .any
+        -- For a declaration's footprint, a list holding a function may pass it.
+        if (← get).strict then
+          if let some (some T) := Lt then
+            let G ← StateT.lift graphNow
+            let E ← StateT.lift (tryCatch (elementAt T none (missing := false)) fun _ => pure [])
+            if E.any fun l => !(ProgramTyping.callSigs G [l]).isEmpty then
+              wrote .any .any
+              modify fun w => { w with throwWrites := true }
+        pure (Except.ok R)
+      | .error m => do
+        if (← get).strict then
+          wrote .any .any
+          modify fun w => { w with throwWrites := true }
+        pure (Except.error m)
+    let v ← record e r
+    return (v, ← afterCall e3 ((fun R => (R, R)) <$> r))
   | .bindWithReceiver _ callee recv args =>
     -- `o.m.bind(o)`: the method's signatures, its receiver the object
     -- (`bindMember`); with no further actual bound.
@@ -1924,10 +1994,49 @@ partial def expr (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (Op
       let _ ← record callee r
       return (← record e r, e3)
     | _ =>
-      let (_, e1) ← expr env callee
-      let (_, e2) ← expr e1 recv
-      let (_, e3) ← exprs e2 args
-      return (← record e (.error "a bound function of a computed member"), e3)
+      -- `f.bind(o, a…)` of any other target: the target, the receiver and
+      -- the prefix in order; the target's first signature of no promise
+      -- taking the prefix (`expression_values.ml`, `Bind`), the prefix at
+      -- its first positions; the bound function at any receiver takes the
+      -- positions left, at the effect binding keeps (`Effect.drop`), with
+      -- each further signature of the same parameters promising about a
+      -- position past the prefix (`Effect.keeps`), as the lowering builds
+      -- it (Expression.lean:518-573); a variadic one keeps its rest.
+      let (F, e1) ← expr env callee
+      let (R, e2) ← expr e1 recv
+      let (Ps, e3) ← exprs e2 args
+      let n := args.length
+      let r ← StateT.lift (tryCatch (do
+          let B ← need F "the target"
+          let _ ← need R "the receiver"
+          let Ps ← Ps.mapM (need · "a bound actual")
+          let T ← table
+          let G := SourceTypes.graph T
+          let top ← prim .top
+          match PositiveRules.expand G B with
+          | [.arrs L@(_ :: _) _] | [.callable _ _ L@(_ :: _) _ _] =>
+            let some a := L.find? fun a => a.effect.promise.isNone && a.effect.keeps n && n ≤ a.arguments.length
+              | throw "bind requires a signature taking the prefix"
+            if !(Ps.zip a.arguments).all (fun (P, D) => within T P D) then
+              throw "a bound actual outside its parameter"
+            let further := L.filterMap fun s =>
+              if s.receiver == a.receiver && s.arguments == a.arguments && s.effect.promise.isSome &&
+                  s.effect.keeps n then
+                some (⟨top, s.arguments.drop n, s.result, s.effect.drop n⟩ : CallEffects.Arrow (Ty Tree))
+              else none
+            return Except.ok [← lower (SourceTypes.use (.arrs
+              (⟨top, a.arguments.drop n, a.result, a.effect.drop n⟩ :: further) []))]
+          | [.arrs [] [a]] | [.callable _ _ [] [a] _] =>
+            if a.effect.promise.isSome || !a.effect.keeps n then throw "bind requires a signature of no promise"
+            let some El := PositiveRules.restElem G a.arguments.2
+              | throw "a variadic bound function needs an element rest"
+            let Ds := a.arguments.1 ++ List.replicate (n - a.arguments.1.length) El
+            if !(Ps.zip Ds).all (fun (P, D) => within T P D) then
+              throw "a bound actual outside its parameter"
+            return Except.ok [← lower (SourceTypes.use (.arrs []
+              [⟨top, (a.arguments.1.drop n, a.arguments.2), a.result, a.effect.drop n⟩]))]
+          | _ => throw "bind requires a single callable contract") fun m => pure (.error m))
+      return (← record e r, e3)
   | .invoke _ callee args spreads _ =>
     -- The method's object, then its read (the member, recorded apart), then
     -- the actuals.
@@ -1944,12 +2053,18 @@ partial def expr (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (Op
         modify fun w => { w with throwWrites := true }
       return (← record e (.error "a method call of an unknown form"), e2)
     let (O, e1) ← expr env o
-    let e1 ← match keyE with
-      | some k => do pure (← expr e1 k).2
-      | none => pure e1
+    let (K, e1) ← match keyE with
+      | some k => expr e1 k
+      | none => pure (none, e1)
     let (As, e2) ← actuals e1 args
     -- Spread actuals as the call reads them (`spreadCall`).
     let c ← StateT.lift (tryCatch (do
+        -- A computed key of one string literal names its member, as a
+        -- literal key does (the lowering's `keySingletons`, Atoms.lean:1079).
+        let fld ← match fld, K with
+          | some f, _ => pure (some f)
+          | none, some K => pure ((← keyString K).map PropKey.str)
+          | none, none => pure none
         let some fld := fld | throw "a method of a computed key"
         -- A nullish receiver throws before its method is read (the
         -- lowering's saved receiver, Atoms.lean:1176-1184).

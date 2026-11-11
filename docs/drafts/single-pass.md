@@ -598,6 +598,21 @@ removal works through:
   determine is a construct the pass does not handle.
   Each expression's type is read at its own statement's point,
   where two statements' expressions share a span (a construction's parts).
+- **Function forms.** `Object.assign(f, { … })` at its two annotations is
+  the callable object of the record annotation's fields at the function
+  annotation's signatures (its variadic ones where `f` has a rest
+  parameter), `f` walked at the function annotation and the literal at the
+  record's. `f.bind(o, a…)` of a target other than a member of `o` is, of
+  the target's fixed signatures (else its one variadic one), the first
+  stating no promise, keeping what binding keeps (`Effect.keeps`) and
+  taking the prefix within its first parameters: at any receiver, the
+  parameters left, its result and its effect past the prefix
+  (`Effect.drop`), with each further signature of the same parameters
+  promising about a parameter past the prefix. `f.apply(o, list)` and
+  `Reflect.apply(f, o, list)` are the target's one signature's result, the
+  call at its effect, for a list that is null, undefined or a tuple of
+  required positions, or, for a target taking only a rest, an array of any
+  length. A method at a computed key of one string literal is that member.
 - **Expected types.** A store's contract is fixed where the store is made;
   a read is a copy, an upcast of an immutable value, or an upcast of a store
   to a readonly view of it. So a value is made at the type its position
