@@ -1131,6 +1131,19 @@ partial def matchBinder (b : Tree) (P A : Ty Tree) (fuel : Nat := 6) (vars : Lis
         if let some B ← first [(E, elementAt A none (missing := false))] then return some B
     return ← perLabel A
   let r ← match PositiveRules.expand G [l] with
+  | [.ctors fixed rests ..] =>
+    -- The class's own constructor is first; its result and parameters
+    -- constrain the target constructor (inference.ml:287-294).
+    let target := (fixed.head?.map fun a => (a.arguments, a.result)) <|>
+      (rests.head?.map fun a => (a.arguments.1, a.result))
+    let actual := match PositiveRules.expand G A with
+      | [.ctors fixed rests ..] => (fixed.head?.map fun a => (a.arguments, a.result)) <|>
+          (rests.head?.map fun a => (a.arguments.1, a.result))
+      | _ => none
+    match target, actual with
+    | some (ps, R), some (qs, S) =>
+      first ((R, pure S) :: (ps.zip qs).map fun (P, A) => (P, pure A))
+    | _, _ => pure none
   | [.dict _ _ _ ix _ _ _ _ _] => first [(norm (ix.flatMap (·.2)), elementAt A none (missing := false))]
   | [.refs fs [] vs os ms _ _] =>
     first (((fs ++ vs).filter (fun (k, _) => k != SourceTypes.protoField)).map (fun (k, F) => (F, readField vars A k)) ++
@@ -1158,6 +1171,22 @@ partial def matchBinder (b : Tree) (P A : Ty Tree) (fuel : Nat := 6) (vars : Lis
       | none => pure none
   if r.isSome then return r
   perLabel A
+
+/-- Whether a binder supplies values in a signature. A constructor or
+callback's argument pack alone does not make it a value binder
+(expression_calls.ml:661-671). -/
+partial def valueBinder (G : PositiveGraphs.NormalGraph Tree) (b : Tree) (A : Ty Tree)
+    (fuel : Nat := 6) : Bool :=
+  if fuel == 0 then A.any (occurs b) else
+  match PositiveRules.expand G A with
+  | [.ctors fixed rests fs more vs] =>
+    (fs ++ more.flatten ++ vs).any (fun (_, A) => A.any (occurs b)) ||
+    fixed.any (fun a => (a.result :: a.arguments).any (valueBinder G b · (fuel - 1))) ||
+    rests.any (fun a => (a.result :: a.arguments.1).any (valueBinder G b · (fuel - 1)))
+  | [.arrs fixed rests] =>
+    fixed.any (fun a => (a.receiver :: a.result :: a.arguments).any (valueBinder G b · (fuel - 1))) ||
+    rests.any (fun a => (a.receiver :: a.result :: a.arguments.1).any (valueBinder G b · (fuel - 1)))
+  | _ => A.any (occurs b)
 
 /-- The callee `o.k(…)` calls, `o` of type `O`: the object's member, its
 prototype's, or a field holding a callable. -/
@@ -2974,7 +3003,7 @@ partial def applyCall (env : Env) (c : Callee) (args : List Expr) (As : List (Op
     if !c.binders.contains p || (c.seed.lookup p).isSome || n < r.arguments.1.length then continue
     let some extras := (As.drop r.arguments.1.length).mapM id | continue
     let Es ← extras.mapM fun A => StateT.lift (widen A)
-    let typesValue := (r.receiver :: r.result :: r.arguments.1).any (·.any (occurs p))
+    let typesValue := (r.receiver :: r.result :: r.arguments.1).any (valueBinder G p)
     let P ← StateT.lift (lower (do
       if !typesValue then
         return [← SourceTypes.use (.pack ⟨Es, [], none, false, .dense⟩ [])]
