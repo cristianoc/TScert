@@ -1224,6 +1224,16 @@ removal works through:
   row. Regenerating the available `use` and `distinct` certificates gives
   the same empty code rows. Supplying those facts requires a pass input and
   edge check as well as an exporter; a tooling-only change cannot do it.
+  The proposed field is freshSlots on each exact code-indexed, labeled
+  head row, with indices into that head's context. The entry list is empty.
+  Every live incoming edge, including back and handler edges, must map
+  each requested slot to an outgoing fresh name; only a normal pushed
+  result certified fresh can add one. Missing indices and malformed head
+  identities refuse. A forced captured-store fact must fail on the initial
+  edge, and a fact lost in the loop must fail on its back edge.
+  Mode 6 may export GraphCode.inferFresh's proposals at those heads;
+  mode 8 checks them without freshness inference. This is a proposed pass
+  extension, with no implementation in this round.
 - **Written-footprint stand-ins.** For a measurement, `TSCERT_STANDINS`
   names a file of footprints the file's functions and imports would write
   (`{"functions": […], "imports": […]}`, each a name, footprint, on-throw
