@@ -73,6 +73,9 @@ structure Walk where
   storeChange : Footprints.Change := .keep
   locals : List String := []
   exprs : Std.HashMap Span (String × Except String (Ty Tree)) := {}
+  /-- The expressions whose computed type the read rule refuses
+  (`refusalMark`), by span, as last recorded. -/
+  refusals : Std.HashMap Span String := {}
   /-- Each call of a generic module function, by its span: the type each
   binder takes at it, by the binder's name; and the last call's, until its
   call records it. -/
@@ -346,10 +349,22 @@ def present (G : PositiveGraphs.NormalGraph Tree) (A : Ty Tree) : Ty Tree :=
   | some (_, F) => F
   | none => A
 
+/-- The mark of a walk failure that is the unit's refusal: a read the read
+rule the lowering shares refuses at the type the walk states (`readCell`, a
+member the contract does not state; a primitive's prototype stating none),
+which the lowering's own read of that type refuses too. -/
+def refusalMark : String := "refused at a read: "
+
+def readRefusal (m : String) : String :=
+  if m.startsWith refusalMark then m else refusalMark ++ m
+
 /-- `o.f` of an `o` of type `A`: each primitive member by its prototype's
-field (a string's `length` a number), an array's `length` a number, and an
-object's field as the read rule reads it (`readCell`, `HeapExpressionRules`'
-read, view, optional and prototype reads). -/
+field (a string's `length` a number), a function's `toString` by
+`Function.prototype`'s (`Plans.primitiveArms`), an array's `length` a
+number, and an object's field as the read rule reads it (`readCell`,
+`HeapExpressionRules`' read, view, optional and prototype reads). A member
+the read rule finds no contract stating is the unit's refusal there
+(`refusalMark`). -/
 def readField (vars : List (String × Ty Tree)) (A : Ty Tree) (fld : PropKey) : Compiler (Ty Tree) := do
   if A.isEmpty then throw "a read of a value of no type"
   let G ← graphNow
@@ -357,6 +372,12 @@ def readField (vars : List (String × Ty Tree)) (A : Ty Tree) (fld : PropKey) : 
   -- others (`nullishSplit`, the lowering's read, Atoms.lean:599-618).
   let A := present G A
   let (prims, objs) := A.partition fun l => (shapeOf G l).isSome
+  -- A function's `toString`: no function owns one, so its lookup reaches
+  -- `Function.prototype`'s (`Plans.primitiveArms`, Plans.lean:631-643).
+  let isFunction (l : Tree) : Bool := match PositiveRules.expand G [l] with
+    | [.arrs ..] | [.callable ..] | [.ctors ..] => true
+    | _ => false
+  let (funs, objs) := if fld == "toString" then objs.partition isFunction else ([], objs)
   let mut out : Ty Tree := []
   for l in prims do
     let some tag := shapeOf G l | continue
@@ -364,12 +385,18 @@ def readField (vars : List (String × Ty Tree)) (A : Ty Tree) (fld : PropKey) : 
       out := out ++ (← prim .num)
     else
       let P ← protoFor vars tag
-      let some B := fieldRow G P fld | throw s!"a primitive's prototype names no field '{reprStr fld}'"
+      let some B := fieldRow G P fld | throw (readRefusal s!"a primitive's prototype names no field '{reprStr fld}'")
       out := out ++ B
+  if !funs.isEmpty then
+    let some P := vars.lookup SourceTypes.functionPrototypeName
+      | throw s!"{SourceTypes.functionPrototypeName} is not in scope"
+    let some B := fieldRow G P fld | throw (readRefusal "Function.prototype names no field 'toString'")
+    out := out ++ B
   if !objs.isEmpty then
     if fld == lengthKey && arraysOnly G objs then out := out ++ (← prim .num)
     else
-      let plan ← readCell G [objs] fld (DirectProof.var [objs] 0 objs)
+      let plan ← tryCatch (readCell G [objs] fld (DirectProof.var [objs] 0 objs)) fun m =>
+        throw (if m.startsWith "read of a field" || m.startsWith "read of a key" then readRefusal m else m)
       out := out ++ plan.type
   return norm out
 
@@ -1199,11 +1226,27 @@ def offerUse (n : String) (P : Ty Tree) : W Unit := do
 mutual
 /-- Record an expression's computed type or the reason it has none. -/
 partial def record (e : Expr) (r : Except String (Ty Tree)) : W (Option (Ty Tree)) := do
-  modify fun w => { w with exprs := w.exprs.insert e.span (kindOf e, r), exprsAt := w.exprsAt.insert (w.stmtAt, e.span) r }
+  -- An expression a part of which the read rule refuses (`refusalMark`) is
+  -- refused with that part: the lowering reads the part with it.
+  let r ← match r with
+    | .error m =>
+      if m.startsWith refusalMark then pure r else do
+        let w ← get
+        pure (match w.refusals.toList.find? fun (sp, _) => e.span.1 ≤ sp.1 && sp.2 ≤ e.span.2 with
+          | some (_, m') => .error m'
+          | none => r)
+    | .ok _ => pure r
+  modify fun w => { w with exprs := w.exprs.insert e.span (kindOf e, r), exprsAt := w.exprsAt.insert (w.stmtAt, e.span) r,
+                           refusals := match r with
+                             | .error m => if m.startsWith refusalMark then w.refusals.insert e.span m else w.refusals
+                             | .ok _ => w.refusals.erase e.span }
   return r.toOption
 
 partial def recordAt (span : Span) (kind : String) (r : Except String (Ty Tree)) : W Unit :=
-  modify fun w => { w with exprs := w.exprs.insert span (kind, r), exprsAt := w.exprsAt.insert (w.stmtAt, span) r }
+  modify fun w => { w with exprs := w.exprs.insert span (kind, r), exprsAt := w.exprsAt.insert (w.stmtAt, span) r,
+                           refusals := match r with
+                             | .error m => if m.startsWith refusalMark then w.refusals.insert span m else w.refusals
+                             | .ok _ => w.refusals.erase span }
 
 partial def attempt (e : Expr) (x : Compiler (Ty Tree)) : W (Option (Ty Tree)) := do
   let r ← StateT.lift (tryCatch (Except.ok <$> x) fun msg => pure (.error msg))
@@ -2988,6 +3031,12 @@ def compareUnit (T : EquationStore.State) (f : Fragment.Fn) (fc : SourceClaims.F
       Json.mkObj [("kind", toJson k), ("class", toJson c), ("n", toJson n)])),
     ("samples", Json.arr samples)]
 
+/-- The lowering's reading of an expression the walk gives no type: the
+unit's refusal where the read rule refuses it (`refusalMark`), else a type
+the pass does not handle. -/
+def undetermined (m : String) : String :=
+  if m.startsWith refusalMark then m else s!"not handled: {m} (type undetermined)"
+
 /-- A unit's claims with what the walk computes in place of what a producer
 infers: every expression's type, every statement entry's bindings and every
 `let`'s storage contract, at each execution point alike; no asserted field
@@ -3005,7 +3054,7 @@ def retypeUnitWith (T : EquationStore.State) (f : Fragment.Fn) (fc : SourceClaim
       Std.HashMap (Span × Span) (SourceClaims.Candidate Tree)) := do
   let (w, T') ← walkUnit T f module generics force scope
   let exprs : List (Span × SourceClaims.Candidate Tree) := w.exprs.toList.map fun (span, (_, r)) =>
-    (span, r.mapError fun m => s!"not handled: {m} (type undetermined)")
+    (span, r.mapError undetermined)
   let envs : List (Nat × List (String × SourceClaims.Candidate Tree)) :=
     w.entries.toList.map fun (pos, vars) => (pos, vars.map fun (n, A) => (n, .ok A))
   let contracts : SourceClaims.Contracts Tree := w.contracts.map fun (k, D) => (k, .ok D)
@@ -3034,7 +3083,7 @@ def retypeUnitWith (T : EquationStore.State) (f : Fragment.Fn) (fc : SourceClaim
       (id, { row with exprs := exprs, envs := envs,
                       entryCurrent := if keep then row.entryCurrent else w.currents.toList,
                       exprCurrent := if keep then row.exprCurrent else [] }) } : SourceClaims.Function Tree), w.completion,
-    w.declarations, w.spanEntries, w.exprsAt.fold (fun m k r => m.insert k (r.mapError fun m => s!"not handled: {m} (type undetermined)")) {})
+    w.declarations, w.spanEntries, w.exprsAt.fold (fun m k r => m.insert k (r.mapError undetermined)) {})
 
 /-- `retypeUnitWith`'s grown store and claims. -/
 def retypeUnit (T : EquationStore.State) (f : Fragment.Fn) (fc : SourceClaims.Function Tree)
