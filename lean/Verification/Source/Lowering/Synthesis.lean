@@ -219,6 +219,9 @@ structure Walk where
   /-- Each generic closure's scheme, by its span: the claim its annotations
   state (`writtenSchemes`), its row `Scheme.closureRows`'s. -/
   schemes : List (Span × Ty Tree) := []
+  /-- The binders of the call a callback is being walked for that no actual
+  has given a type yet. -/
+  pending : List Tree := []
   /-- The constants holding a store the run allocated: each initialized by
   a call whose instance states a fresh result, or by such a constant (the
   producer's `fresh_expr`, source.ml:957-966); and whether the last call's
@@ -2286,6 +2289,11 @@ partial def fit (P : Ty Tree) (x : Expr) (A : Option (Ty Tree)) : W (Option (Ty 
     -- An array-like host value may require additional fields (NodeArray's
     -- `pos` and `end`), and a tuple may require occupied positions.
     for l in arrayArms G P do
+      -- (an arm still naming a binder of the call a callback is walked for,
+      -- its result read before the binder is read off it, is no type to
+      -- make the array at: the literal keeps its own, the producer's
+      -- `never[]`)
+      if (← get).pending.any (occurs · l) then continue
       let some S := storeOf G [l] | continue
       let [.list t []] := PositiveRules.expand G S | continue
       if !t.required.isEmpty then continue
@@ -4282,6 +4290,7 @@ partial def applyCall (env : Env) (c : Callee) (args : List Expr) (As : List (Op
       for ((x, P), i) in (args.zip a0.arguments).zipIdx do
         if callback x then
           let w0 ← get
+          modify fun w => { w with pending := c.binders.filter fun b => (σ0.lookup b).isNone }
           let L ← walkLambda env x (widest (substitute σ0 P)) (ctx := some (substitute σ0 P))
           set w0
           if let some L := L then walked := walked ++ [(i, L)]
@@ -4329,6 +4338,7 @@ partial def applyCall (env : Env) (c : Callee) (args : List Expr) (As : List (Op
           | none => false) then promised := some (a, r)
       let σa ← if c.binders.isEmpty then pure σa else
         bindFrom σa (walked.filterMap fun (i, L) => (a.arguments[i]?).map (·, L)) (receiverFirst := false)
+          (uppers := uppersOf a)
       -- With every binder it mentions the actuals and callbacks give bound.
       let bound := walked.isEmpty || c.binders.all fun b =>
         hidden.contains b || !mentioned a b || (σa.lookup b).isSome
@@ -4338,7 +4348,6 @@ partial def applyCall (env : Env) (c : Callee) (args : List Expr) (As : List (Op
   chosen := chosen <|> promised <|> fallback
   let some (a, rest) := chosen <|> candidates.head?
     | do
-          (uppers := uppersOf a)
       for x in args do if callback x then let _ ← walkLambda env x none
       -- One callable of no binders none of whose signatures the count
       -- admits, omitted positions admitting `undefined`, a variadic one's
@@ -4405,7 +4414,10 @@ partial def applyCall (env : Env) (c : Callee) (args : List Expr) (As : List (Op
       let Pc := match P with
         | [r] => if (σ.lookup r).isNone then ((fromActuals.lookup r).getD (sub P)) else sub P
         | _ => sub P
+      let before := (← get).pending
+      modify fun w => { w with pending := c.binders.filter fun b => (σ.lookup b).isNone }
       let L ← walkLambda env x (widest Pc) (ctx := some Pc)
+      modify fun w => { w with pending := before }
       As := As.set i L
       if let some L := L then σ ← bindFrom σ [(P, L)] (receiverFirst := false) (uppers := uppersOf a)
     else if let some A := As[i]? then
