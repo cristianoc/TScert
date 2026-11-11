@@ -2625,13 +2625,22 @@ partial def applyCall (env : Env) (c : Callee) (args : List Expr) (As : List (Op
     -- it (the producer's join of its lower bounds, inference.ml:557-569),
     -- a primitive's members read off its prototype.
     for b in c.binders do
-      if (σ.lookup b).isSome || hidden.contains b then continue
+      if hidden.contains b || (c.seed.lookup b).isSome ||
+          ((σ.lookup b).isSome && (receiverFirst || c.fixed.any (fun a => a.receiver.any (occurs b)))) then continue
       let mut got : Option (Ty Tree) := none
       for ((P, A), i) in pairs.zipIdx do
         if let some B ← StateT.lift (tryCatch (matchBinder b P A (vars := env.vars) (siblings := c.binders)) fun _ => pure none) then
           got := some (norm (got.getD [] ++ B))
         if i == 0 && got.isSome && receiverFirst then break
-      if let some B := got then σ := σ ++ [(b, B)]
+      if let some B := got then
+        -- Callback results join the actuals' lower bounds (inference.ml:
+        -- 327-329, 557-569); a primitive absorbs its literal candidate.
+        let B ← match σ.lookup b with
+          | none => pure B
+          | some A => StateT.lift (do
+            let T ← table
+            if within T A B then pure B else if within T B A then pure A else joinTy A B)
+        σ := upd σ b B
     return σ
   -- The first signature, in order, each walked actual is within (a
   -- scheme's at the binders its walked actuals give); else the first the
@@ -2734,7 +2743,7 @@ partial def applyCall (env : Env) (c : Callee) (args : List Expr) (As : List (Op
       -- the callback walked there is within each of them.
       let L ← walkLambda env x (widest (sub P)) (ctx := some (sub P))
       As := As.set i L
-      if let some L := L then σ ← bindFrom σ [(P, L)]
+      if let some L := L then σ ← bindFrom σ [(P, L)] (receiverFirst := false)
     else if let some A := As[i]? then
       if let .var _ n := x then offerUse n (sub P)
       As := As.set i (← fit (sub P) x A)
@@ -3041,11 +3050,14 @@ partial def walkLambda (env : Env) (e : Expr) (sig : Option (CallEffects.Arrow (
         some { a with result := atResult s.result, effect := ownRow.effect }
       else none
     let rows := ownRow :: ((fixedOffers ++ useOffers).foldl (fun acc s => if acc.contains s || s == ownRow then acc else acc ++ [s]) [])
-    -- A callback whose parameters' expected leading ones differ from its own
-    -- in representation (the producer then states its interior per row,
-    -- which these claims do not): at the expected signature alone.
+    -- A callback's leading parameters are the ones its body was walked
+    -- at, followed by the further parameters the context offers.
     let same := a.arguments.take qs.length == qs
-    let (rows, restOffers) := if sig.isSome && !same then ([a], []) else (rows, restOffers)
+    let (rows, restOffers) := if sig.isSome && !same then
+      -- The body was walked at its own written leading parameters; the
+      -- further actuals are discarded (semantic.ml:358). This row keeps
+      -- that domain when a callback's result enlarges a binder's candidate.
+      ([{ a with arguments := qs ++ a.arguments.drop qs.length }], []) else (rows, restOffers)
     record e (.ok [← StateT.lift (lower (SourceTypes.use (.arrs rows restOffers)))])
   | _, _, _ => record e (.error "a function value: a parameter or its result undetermined")
 
