@@ -1613,9 +1613,11 @@ def copiesOf (A : Ty Tree) (force : Bool) (target : Bool := false) : Compiler (L
     | [.callable fs rest _ _ ms] =>
       -- A callable object's fields are copied just as the producer's
       -- callable Shape (object_spread.ml:156-160); every intersection
-      -- operand constrains a repeated key (field_meet, lines 56-70).
+      -- operand constrains a repeated key (field_meet, lines 56-70). A
+      -- copy onto a callable is not handled.
+      if target then throw "a spread of a value of no record contract"
       let all := (fs ++ rest.flatten).filter fun (k, _) =>
-        (target || k != SourceTypes.protoField) && !ms.any (·.key == k) &&
+        k != SourceTypes.protoField && !ms.any (·.key == k) &&
           (match k with | .str _ => true | _ => false)
       let T ← table
       let mut fields := []
@@ -1632,19 +1634,6 @@ def copiesOf (A : Ty Tree) (force : Bool) (target : Bool := false) : Compiler (L
     | [.arrs ..] => out := out ++ [{ exact := false }]
     -- (a label of no value: no copy)
     | [] => pure ()
-    -- A function with fields: its type states its fields, and no other
-    -- key (`object_spread.ml`, `Shape` with calls); a key two operands of
-    -- an intersection state at the field within the other's.
-    | [.callable fs rest _ _ ms] =>
-      if target then throw "a spread of a value of no record contract"
-      let named := ((fs ++ rest.flatten).filter fun (f, _) => f != SourceTypes.protoField &&
-          !ms.any (·.key == f) && (match f with | .str _ => true | _ => false)).map fun (f, B) => (f, false, B)
-      let T ← table
-      let named := named.foldl (fun (acc : List (PropKey × Bool × Ty Tree)) (f, o, B) =>
-        match acc.find? (·.1 == f) with
-        | some (_, _, A) => if within T B A then acc.map fun g => if g.1 == f then (f, o, B) else g else acc
-        | none => acc ++ [(f, o, B)]) []
-      out := out ++ [{ fields := named, exact := false }]
     | _ => throw "a spread of a value of no record contract"
   return out
 
