@@ -7,6 +7,7 @@ import Verification.Semantics.ArgumentStoreRegions
 import Verification.Semantics.FootprintNatives
 import Verification.Programs.ArgumentPathTracking
 import Verification.Programs.ArgumentRegionCertificates
+import Verification.Semantics.TolerantFrames
 
 /-!
 Acceptance rests on Lean's standard axioms alone. The build fails when any of
@@ -17,6 +18,8 @@ the following depends on an axiom other than `propext`, `Classical.choice` and `
   accepted function's and module run's safety is a consequence;
 - the regional footprint's transport and composition, cell provenance, and the
   argument-store region composition, framing and stable separation theorems;
+- the tolerant-frame development's admissibility, adequacy, modal-law and
+  atom theorems (`Verification.TolerantFrames`);
 - each `@[csimp]` lemma of the project's modules the verifier imports
   (`Verification.Source.RequestCli`, what `Main` imports): the compiled
   verifier runs a lemma's right-hand side in place of the definition the
@@ -95,6 +98,10 @@ run_cmd do
   check ``Verification.GraphCode.ArgumentRegionGraph.checkFresh_sound
   check ``Verification.GraphCode.edgesFresh_holds
   check ``Verification.GraphCode.handlerFresh_holds
+  check ``Verification.TolerantFrames.Admissible.trans
+  check ``Verification.TolerantFrames.Admissible.length_le
+  check ``Verification.TolerantFrames.Admissible.stable_value
+  check ``Verification.TolerantFrames.Admissible.readPath
   let env ← getEnv
   let project (decl : Name) : Bool := match env.getModuleIdxFor? decl with
     | some i => (`Verification).isPrefixOf env.header.moduleNames[i.toNat]!
