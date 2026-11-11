@@ -128,7 +128,7 @@ function passVerdicts(artifacts: string, key: string, given: string | null, mode
     writeFileSync(emptyStandins, '{"functions":[],"imports":[]}');
     run = verifyWithInterfaces(documents[0], key, "", env.TSCERT_STANDINS ?? emptyStandins, {
       mode: mode === "8" ? 8 : 9, fuel: 12, rounds: 4096, force: force?.split(",") ?? [], allCuts,
-      given: given ?? emptyGiven, work: join(artifacts, "interfaces"),
+      given: given !== null && existsSync(given) ? given : emptyGiven, work: join(artifacts, "interfaces"),
       invocation: { limitMs: 60_000, force: false, recorder: null },
     }).run;
   } else run = spawnSync(verifier, ["--verify-units", mode, ...documents, key, "12"],
