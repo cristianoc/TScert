@@ -1693,6 +1693,25 @@ structure Copy where
   index : Option (Ty Tree) := none
   symbols : Option (Ty Tree) := none
 
+/-- Each required copy field must have a required source field within every
+constraint on that key (object_spread.ml:56-70, field_meet). Optional
+constraints do not supply required presence. -/
+def checkCopyFields (cs : List (PositiveNormalization.Clause (Ty Tree))) : Compiler Unit := do
+  let fields := cs.flatMap fun c => match c with
+    | .refs fs [] vs _ ms _ _ | .dict fs [] vs _ _ ms _ _ _ =>
+      (fs ++ vs).filter fun (k, _) => !ms.any (·.key == k)
+    | .callable fs rest _ _ ms => (fs ++ rest.flatten).filter fun (k, _) => !ms.any (·.key == k)
+    | _ => []
+  let optional := cs.flatMap fun c => match c with
+    | .refs _ [] _ os _ _ _ | .dict _ [] _ _ os _ _ _ _ => os.map fun o => (o.key, o.type)
+    | _ => []
+  let T ← table
+  for k in (fields.map (·.1)).eraseDups do
+    let candidates := (fields.filter (·.1 == k)).map (·.2)
+    let constraints := candidates ++ (optional.filter (·.1 == k)).map (·.2)
+    if constraints.length > 1 && !candidates.any (fun A => constraints.all (within T A)) then
+      throw (refusalMark ++ s!"copy: no required field '{k}' covers every intersection constraint")
+
 /-- The copies a value of type `A` gives as a spread's operand (or, `target`,
 as `Object.assign`'s target), one per label (`object_spread.ml`,
 `alternatives_of`): nothing from a primitive other than a string, its own
@@ -1710,6 +1729,12 @@ def copiesOf (A : Ty Tree) (force : Bool) (target : Bool := false) : Compiler (L
     -- `object_spread.ml:meet_records` excludes an intersection with two
     -- indexed operands. Inspect its parts before their indexes merge.
     if let .meet ps := l then
+      -- Check each product before its fields are normalized together, as
+      -- arm_products/meet_product do (object_spread.ml:93-122).
+      let mut products : List (List (PositiveNormalization.Clause (Ty Tree))) := [[]]
+      for p in ps.toList do
+        products := products.flatMap fun row => (PositiveRules.expand G [p]).map fun c => row ++ [c]
+      for row in products do checkCopyFields row
       let indexed := ps.toList.filter fun p =>
         (PositiveRules.expand G [p]).any fun c => match c with
           | .dict _ _ _ ix _ _ _ _ _ => !ix.isEmpty
@@ -1732,7 +1757,9 @@ def copiesOf (A : Ty Tree) (force : Bool) (target : Bool := false) : Compiler (L
       out := out ++ [({} : Copy)]
       continue
     | none => pure ()
-    match PositiveRules.expand G [l] with
+    let clauses := PositiveRules.expand G [l]
+    for c in clauses do checkCopyFields [c]
+    match clauses with
     | [.refs fs [] vs os ms bs _] =>
       let named := ((fs ++ vs).filter fun (f, _) => f != SourceTypes.storeField &&
           (target || f != SourceTypes.protoField) && (force || !ms.any (·.key == f))).map fun (f, B) => (f, false, B)
