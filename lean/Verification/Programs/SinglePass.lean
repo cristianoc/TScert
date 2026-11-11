@@ -1779,12 +1779,11 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
   let reachable := (reached.toList.filter id).length
   counts := { counts with reached := reachable }
   if visitedAll < reachable then return (.notHandled s!"{reachable - visitedAll} nodes not reached", counts, answers, trace)
-  -- A node no path from the start reaches is still checked by the proved
-  -- layer, at its own context: one whose context some environment meets
-  -- (no slot of the empty type, `GraphCode.unreachableEntry`) the pass does
-  -- not decide.
-  if let some l := (List.range n).find? fun l => !reached[l]! && !ControlFlow.unsatisfiable G claimed[l]!.context then
-    return (.notHandled s!"a node no path from the start reaches (node {l})", counts, answers, trace)
+  -- A node no path from the start reaches never runs (`reached` follows
+  -- every normal and exceptional edge, so it holds every node a run can
+  -- be at): the pass decides nothing of it. The proved layer checks such a
+  -- node at its own context all the same (`GraphCode.unreachableEntry`),
+  -- which the referee still does.
   return (.accepted, counts, answers, trace)
 
 
