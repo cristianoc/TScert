@@ -1115,6 +1115,12 @@ removal works through:
   assignment of a binding aside) or each member of the path is stable.
   After such a call, each binding a function literal walked so far assigns
   (one it captures, held in a cell) is at its declared type again.
+- **Annotated recursive constants.** A non-early constant’s annotation supplies
+  its recursive signature; the self-effect starts at keep/keep with a bound
+  on throws (statement_analysis.ml:294-317). The existing four-round
+  self proposal checks agreement with the walked body (proposal.ml:224-240);
+  the annotation supplies contextual parameter types. Each code body must
+  establish its proposed signature and footprint.
 - **Write footprints.** A compound write at a numeric literal index proposes
   value `any`, store `grow` (source.ml:1086-1087). A logical
   write to a required writable field of source values proposes value `any`,
