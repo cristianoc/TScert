@@ -1362,7 +1362,14 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
         let within := ExpressionEffects.check G c.context node.expression || writes ||
           GraphCode.selectedWithinAt Φ F deriv || ExpressionEffects.emptyType G c.type ||
           c.context.any (ExpressionEffects.emptyType G ·)
-        let throws := !exc || ExpressionEffects.check G c.context node.expression || writes ||
+        -- The throw within the bound where a handler outside the region with
+        -- no normal return catches it or the bound covers throws
+        -- (`GraphCode.nodeChecked`'s `deadHandler`): an effect without
+        -- `onThrow` bounds no throw a live handler catches.
+        let liveHandler := match node.handler with
+          | some t => !deadArr.getD t.label false
+          | none => false
+        let throws := !(liveHandler || exc) || ExpressionEffects.check G c.context node.expression || writes ||
           (GraphCode.selectedWithinAt Φ F deriv && ExpressionEffects.selectedThrows deriv &&
             (match ExpressionEffects.selectedEffect deriv with | some eff => eff.onThrow | none => false)) ||
           c.context.any (ExpressionEffects.emptyType G ·)
@@ -1772,6 +1779,12 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
   let reachable := (reached.toList.filter id).length
   counts := { counts with reached := reachable }
   if visitedAll < reachable then return (.notHandled s!"{reachable - visitedAll} nodes not reached", counts, answers, trace)
+  -- A node no path from the start reaches is still checked by the proved
+  -- layer, at its own context: one whose context some environment meets
+  -- (no slot of the empty type, `GraphCode.unreachableEntry`) the pass does
+  -- not decide.
+  if let some l := (List.range n).find? fun l => !reached[l]! && !ControlFlow.unsatisfiable G claimed[l]!.context then
+    return (.notHandled s!"a node no path from the start reaches (node {l})", counts, answers, trace)
   return (.accepted, counts, answers, trace)
 
 

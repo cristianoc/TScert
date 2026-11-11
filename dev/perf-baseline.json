@@ -307,7 +307,7 @@
         "headsWritten": 27,
         "headsFromClaims": 132,
         "headsSupplied": 0,
-        "bytesRead": 2131069
+        "bytesRead": 2131129
       }
     },
     "pretext prepareRichInline, from the fragment": {
@@ -329,7 +329,7 @@
         "headsWritten": 166,
         "headsFromClaims": 371,
         "headsSupplied": 0,
-        "bytesRead": 4299180
+        "bytesRead": 4299444
       }
     },
     "pretext buildEngineProfile, from the fragment": {

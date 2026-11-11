@@ -161,7 +161,10 @@ otherwise the layers read every fact.
 ### A footprint
 
 A unit stating a footprint is bounded node by node in the walk, as
-`GraphCode.compositionalChecked` checks it: a state also carries the names
+`GraphCode.compositionalChecked` checks it (`nodeChecked`): a node's throw
+is within the bound where the unit states the bound on a throw or a handler
+outside the region with no normal return catches it (`deadHandler`), so an
+effect without `onThrow` admits no such handler; a state also carries the names
 holding a store the run allocated (`inferFresh`'s facts, over names: a copy
 of such a name, or a call at a signature stating a fresh result; a merge
 keeps the names every predecessor holds; a cut holds none, its given
@@ -350,6 +353,36 @@ Withheld, measureAnalysis and prepareRichInline are refused at a call's
 precondition, buildEngineProfile is accepted, and 10 of 43 accepted units
 of loop-heavy cases are refused; none of 162 sampled units changes.
 
+### The referee
+
+A node no path from the start reaches is checked by the proved layer at its
+own context; the pass does not decide one whose context some environment
+meets (`not handled`). The walk states the bindings where the unit's body
+completes, each at the empty type where it never does, at the unit's
+completion node.
+
+`verifier --verify-units 9 <fragment> <file-key> <depth> <name>` runs the
+search and the proved check (`FilePlans.verifyGroup`) over mode 8's plans:
+the same computed types, stand-ins and given facts, every statement entry's
+facts the given file states as candidates (`entryFacts`, written by mode 6
+with `TSCERT_GIVEN_FACTS=all`), and the search's cuts the loop heads and the
+start (`FilePlans.headCuts`), so that it carries facts through every other
+statement entry as the pass does. A unit mode 8 accepts and mode 9 refuses
+is a hole in the pass until shown otherwise; `dev/single-pass-agreement.mts`
+with `TSCERT_REFEREE` prints each as `hole:`. `TSCERT_FORCE` forces
+adversarial proposals into the walk, comma-separated: `literals` (every
+function literal at keep/keep), `callees` (every function of the file without
+a written footprint at keep/keep), `elements` (every element read without
+`undefined`), `objects` (every object literal at its expected type),
+`spreads` (every spread with every key its operand's type states, optional
+ones as present). Under a forced proposal, a forced footprint is one the
+function's own unit establishes, and a unit whose dependency of the file is
+refused counts as refused where both modes are compared with the pipeline.
+The script's controls run with their forced proposal
+whatever the patterns, each expected refused by mode 8:
+`invalid-method-effect-stated-throw-caught` `wrong` and
+`invalid-node-assert-catch-continue` `rows`, under `literals`.
+
 ## 9. The claims-free front
 
 `verifier --verify-units 8` reads the fragment and the given file, and no
@@ -375,20 +408,21 @@ claims document (`SourceClaimJson.fragmentPlans`, `Claims/FragmentFront.lean`).
   (`instancesFromWalk`); a binder a resolution qualifies is not handled. A
   function literal passed as an actual is stated at its parameter's
   signature taking the most parameters, at the footprint keeping values and
-  stores where the walk sees it change nothing (a call's throw a handler in
-  it catches counted where the call's footprint does not bound its throws),
-  else at the ordinary effect.
+  stores where the walk sees no write, assignment or call changing the heap
+  on its normal return, else at that signature's effect; its own check
+  decides its throws (section 5, "A footprint").
 - **Loop heads.** A loop head's facts beyond its written assertion are the
   given file's `headFacts` (and `headFactsOfCodes` for each code request),
-  each at the statement entries that start where the given one does; mode 6
+  each at the statement entries that start where the given one does and hold
+  as many slots (a `for`'s head and its declarations' entry share a start); mode 6
   writes them with `TSCERT_GIVEN_FACTS=1`, for the experiment from the
   claims' facts at the loop heads and the start (`SinglePass.loopHeads`).
 - **Written-footprint stand-ins.** For a measurement, `TSCERT_STANDINS`
   names a file of footprints the file's functions and imports would write
   (`{"functions": […], "imports": […]}`, each a name, footprint, on-throw
   flag and result footprint), read apart from the source; the bytes read
-  count it. A stand-in states what callers read of the function; its own
-  unit is checked at the footprint its declaration writes. `dev/single-pass-standins.mts` writes one from a claims
+  count it. A stand-in, as a written footprint, is what the function's
+  callers read and what its own unit establishes. `dev/single-pass-standins.mts` writes one from a claims
   document, the producer's proposals standing in for the annotations.
 
 Measured 2026-11-10 at the commit adding this section (perf gate, CPU of

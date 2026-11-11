@@ -28,9 +28,9 @@ def Front.genericValues (fr : Front) :
 
 /-- A unit's claims retyped by the walk (`Synthesis.retypeUnit`): the
 extraction of the single pass without a producer's types (mode 8). -/
-def retypeByWalk (parts : String := "xec") : Retype := fun fr T f fc module =>
+def retypeByWalk (parts : String := "xec") (force : List String := []) : Retype := fun fr T f fc module =>
   let (schemes, generics) := fr.genericValues
-  Synthesis.retypeUnit T f fc (module.map (fun v => (v.1, moduleValueType v)) ++ schemes) generics parts
+  Synthesis.retypeUnit T f fc (module.map (fun v => (v.1, moduleValueType v)) ++ schemes) generics parts force
 
 /-- Unit `i`'s computed types against its claims. -/
 def Front.compareTypes (fr : Front) (i : Nat) : Except String Json := do

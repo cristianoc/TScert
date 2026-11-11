@@ -385,19 +385,33 @@ def verifyUnitsFile (astPath : String) (claimsPath : Option String) (fileKey : S
   let standIns : Except String SourceClaimJson.StandIns ← match standInsPath with
     | some p => do pure ((← readJson p) >>= fromJson?)
     | none => pure (.ok {})
+  -- The given file's lines, by unit (`TSCERT_GIVEN`), for modes 8 and 9's plans.
+  let givenLines : Std.HashMap String Json ← match ← IO.getEnv "TSCERT_GIVEN" with
+    | none => pure {}
+    | some path => do
+      let text ← try IO.FS.readFile path catch _ => pure ""
+      pure ((text.splitOn "\n").foldl (fun (m : Std.HashMap String Json) l => match Json.parse l with
+        | .ok j => match j.getObjValAs? String "unit" with
+          | .ok u => m.insert u j
+          | .error _ => m
+        | .error _ => m) {})
+  -- Adversarial proposals forced, for the referee (`TSCERT_FORCE`, comma-separated).
+  let force := ((← IO.getEnv "TSCERT_FORCE").getD "").splitOn "," |>.filter (!·.isEmpty)
+  -- The referee's statement entries all the search's cuts (`TSCERT_ALL_CUTS`).
+  let allCuts := (← IO.getEnv "TSCERT_ALL_CUTS").isSome
   let tj ← IO.monoNanosNow
   -- The single pass (mode 3) reads what the selected units' groups read.
-  -- Mode 9's replaced parts, a debugging aid (`TSCERT_RETYPE`).
-  let parts := (← IO.getEnv "TSCERT_RETYPE").getD "xec"
   let planned ← IO.lazyPure fun _ => do
     if mode == 3 || mode == 7 then SourceClaimJson.unitPlans (← ast) (← claims) fileKey budget (selection names)
     -- Mode 8: the single pass over the fragment alone, each unit's types
     -- computed by the walk (`SourceClaimJson.fragmentPlans`).
-    else if mode == 8 then SourceClaimJson.fragmentPlans (← ast) fileKey budget (selection names) (← standIns)
-    -- Mode 9: the search and check over the claims retyped by the walk.
-    else if mode == 9 then
-      SourceClaimJson.unitPlans (← ast) (← claims) fileKey budget (selection names)
-        (some (SourceClaimJson.retypeByWalk parts))
+    -- Mode 9: the search and the proved check over the same plans, the
+    -- referee of mode 8's verdicts. Both take the loop heads' facts from the
+    -- given file.
+    else if mode == 8 || mode == 9 then
+      (fun (f : SourceClaimJson.FilePlans) =>
+        let f := f.withHeadFacts givenLines (mode == 9)
+        if mode == 9 && !allCuts then f.headCuts else f) <$> SourceClaimJson.fragmentPlans (← ast) fileKey budget (selection names) (← standIns) force
     else SourceClaimJson.filePlans (← ast) (← claims) fileKey budget
   let t1 ← IO.monoNanosNow
   let ms := fun (a b : Nat) => s!"{(b - a) / 1000000}"
@@ -418,7 +432,7 @@ def verifyUnitsFile (astPath : String) (claimsPath : Option String) (fileKey : S
           match refusal with
           | some reason => .error reason
           | none => SourceClaimJson.unitVerdict f budget unit evidence
-        -- Mode 9: the search and the proved check over the retyped claims.
+        -- Mode 9: the search and the proved check over mode 8's plans.
         | 1 | 9 => IO.lazyPure fun _ => f.verifyGroup fuel (f.fr.group i) false
         | 3 | 8 => do
           let p0 ← SinglePass.passNanos.get
@@ -457,7 +471,7 @@ def verifyUnitsFile (astPath : String) (claimsPath : Option String) (fileKey : S
               | none => pure 0
             IO.eprintln s!"counts-read: \{\"fragmentBytes\":{← size astPath},\"claimsBytes\":{claimsBytes},\"givenBytes\":{given},\"standInBytes\":{standInBytes}}"
           let (lines, v) ← IO.lazyPure fun _ =>
-            f.passGroup fuel (f.fr.group i) compare debugNode repeats given observe counting (givenFacts := mode == 8)
+            f.passGroup fuel (f.fr.group i) compare debugNode repeats given observe counting
           let p1 ← SinglePass.passNanos.get
           let s1 ← IO.monoNanosNow
           for line in lines do IO.eprintln line
@@ -479,8 +493,9 @@ def verifyUnitsFile (astPath : String) (claimsPath : Option String) (fileKey : S
         | 6 => do
           -- The given statement-entry facts of the selected units, read from
           -- the existing search's certificate: one line per unit.
-          let facts := (← IO.getEnv "TSCERT_GIVEN_FACTS").isSome
-          for line in f.givenLines fuel (f.fr.group i) facts do IO.println line.compress
+          -- `TSCERT_GIVEN_FACTS=all`: the other statement entries' facts too.
+          let facts ← IO.getEnv "TSCERT_GIVEN_FACTS"
+          for line in f.givenLines fuel (f.fr.group i) facts.isSome (facts == some "all") do IO.println line.compress
           pure (.error "given facts written")
         | 7 => do
           -- The computed types against the claims, a line per unit

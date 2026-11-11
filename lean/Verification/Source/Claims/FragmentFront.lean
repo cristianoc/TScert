@@ -39,7 +39,8 @@ parameters' names, and the footprint its declaration writes (`Modifies<…>`)
 or a stand-in names, else the ordinary effect; its types left to its
 annotations, its points to the walk. The type table holds the primitives
 alone. -/
-def fragmentClaims (ast : Json) (fileKey : String) (standIns : StandIns := {}) : Except String Json := do
+def fragmentClaims (ast : Json) (fileKey : String) (standIns : StandIns := {}) (force : List String := []) :
+    Except String Json := do
   -- The functions' identities and written effects, their annotations as
   -- the source spells them.
   let bare := ast.setObjVal! "declarations" (Json.mkObj [("roots", Json.arr #[]),
@@ -53,7 +54,8 @@ def fragmentClaims (ast : Json) (fileKey : String) (standIns : StandIns := {}) :
     let (footprint, onThrow, resultFootprint) := match standIns.functions.find? (·.name == f.name), f.stated with
       | some s, _ => (s.footprint, s.onThrow, s.resultFootprint)
       | none, some s => (s.closed, s.onThrow, Footprints.Closed.top)
-      | none, none => (.top, false, .top)
+      -- Forced (`callees`): a function without a written footprint at keep/keep.
+      | none, none => if force.contains "callees" then (⟨.keep, .keep⟩, false, .top) else (.top, false, .top)
     Json.mkObj [("name", toJson f.name), ("namePos", toJson f.namePos),
       ("params", Json.arr (f.params.map fun p => Json.mkObj [("name", toJson p.name),
         ("type", annotated "a parameter's type"), ("current", Json.null)]).toArray),
@@ -88,18 +90,29 @@ graphs, each point holding its node's sites' expressions and its statement
 entry's bindings, where `checkPointSites` places a producer's; its
 parameters' and result's types its annotations', each read where the
 extraction reads them. -/
-def retypeFromFragment : Retype := fun fr T f fc module => do
+def retypeFromFragment (force : List String := []) : Retype := fun fr T f fc module => do
   let init := f.name.isEmpty
-  let (T, fc) ← SinglePass.timedKind "lower: of extractAll, the walk" fun _ => retypeByWalk "xec" fr T f fc module
+  let (schemes, generics) := fr.genericValues
+  let (T, fc, completion) ← SinglePass.timedKind "lower: of extractAll, the walk" fun _ =>
+    Synthesis.retypeUnitWith T f fc (module.map (fun v => (v.1, moduleValueType v)) ++ schemes) generics "xec" force
   let (graphs, prologues) ← fr.flowGraphs f init
+  let owner := if init then (0, 0) else f.namePos
   let exprMap : Std.HashMap Span (SourceClaims.Candidate Tree) := fc.exprs.foldl (fun m (sp, c) => m.insert sp c) {}
   let envMap : Std.HashMap Nat (List (String × SourceClaims.Candidate Tree)) :=
     fc.envs.foldl (fun m (pos, bs) => m.insert pos bs) {}
-  let points := graphs.flatMap fun g => g.nodes.toList.zipIdx.map fun (node, id) =>
+  let points : List (String × SourceClaims.PointData Tree) := graphs.flatMap fun g => g.nodes.toList.zipIdx.map fun (node, id) =>
     let sites := (actionSites node.action ++ (if id == g.entry then (prologues.lookup g.owner).getD [] else [])).eraseDups
+    -- The unit's completion holds the bindings where its body completes,
+    -- each at the empty type where it never does.
+    let atEntry := (envMap.get? node.source.1).getD []
+    let bindings : List (String × SourceClaims.Candidate Tree) := match node.action with
+      | .finish => if g.owner != owner then atEntry else match completion with
+        | some vs => vs.map fun (n, A) => (n, .ok A)
+        | none => atEntry.map fun (n, _) => (n, .ok [])
+      | _ => atEntry
     let row : SourceClaims.PointData Tree := {
       exprs := sites.filterMap fun sp => (exprMap.get? sp).map (sp, ·)
-      envs := ((envMap.get? node.source.1).map fun bs => [(node.source.1, bs)]).getD [] }
+      envs := if bindings.isEmpty && (envMap.get? node.source.1).isNone then [] else [(node.source.1, bindings)] }
     (SourceFlow.pointId g.owner id, row)
   -- Two graphs of one owner name a point once: its rows joined.
   let joined : Std.HashMap String (SourceClaims.PointData Tree) := points.foldl (fun m (id, row) =>
@@ -107,11 +120,9 @@ def retypeFromFragment : Retype := fun fr T f fc module => do
     | some r => m.insert id { r with exprs := r.exprs ++ row.exprs.filter (fun (sp, _) => !r.exprs.any (·.1 == sp)), envs := r.envs ++ row.envs.filter fun (pos, _) => !r.envs.any (·.1 == pos) }
     | none => m.insert id row) {}
   let points := (points.map (·.1)).eraseDups.filterMap fun id => (joined.get? id).map (id, ·)
-  -- Its own footprint the one its declaration writes: a stand-in states
-  -- what its callers read of it.
-  let footprint := (f.stated.map (·.closed)).getD .top
-  let onThrow := f.stated.any (·.onThrow)
-  let fc := { fc with points, footprint, onThrow, resultFootprint := .top }
+  -- Its own footprint the one its callers read (`fragmentClaims`): written,
+  -- a stand-in's or forced, which its own unit then establishes.
+  let fc := { fc with points }
   if init then return (T, fc)
   let action : Compiler ((List (String × SourceClaims.Candidate Tree) × SourceClaims.Candidate Tree) ×
       EquationStore.State) := do
@@ -132,7 +143,7 @@ def retypeFromFragment : Retype := fun fr T f fc module => do
 generic module value at the type each binder takes there
 (`Synthesis.Walk.instances`). A value whose binders a resolution qualifies
 takes evidence the walk does not state: not handled. -/
-def instancesFromWalk : Instances := fun fr T f c module => do
+def instancesFromWalk (force : List String := []) : Instances := fun fr T f c module => do
   let calls := f.body.flatMap Fragment.Stmt.callees
   let used := fr.generics.filter fun g => calls.any (·.2.2.1 == g.name)
   if used.isEmpty then return (T, c)
@@ -140,7 +151,7 @@ def instancesFromWalk : Instances := fun fr T f c module => do
     throw s!"not handled: a call of '{g.name}', whose binders a resolution qualifies"
   let (schemes, generics) := fr.genericValues
   let (w, T) ← SinglePass.timedKind "lower: of extractAll, the walk" fun _ =>
-    Synthesis.walkUnit T f (module.map (fun v => (v.1, moduleValueType v)) ++ schemes) generics
+    Synthesis.walkUnit T f (module.map (fun v => (v.1, moduleValueType v)) ++ schemes) generics force
   let expressions := w.instances.filterMap fun (pos, θ) => do
     let (_, _, name, _) ← calls.find? (·.1 == pos)
     let g ← used.find? (·.name == name)
@@ -152,10 +163,10 @@ def instancesFromWalk : Instances := fun fr T f c module => do
 /-- The front with its module constants and cells typed by the
 initialization unit's walk: a constant at its initializer's computed type
 with its annotation, a cell at its computed storage contract. -/
-def Front.withInitTypes (fr : Front) : Front := Id.run do
+def Front.withInitTypes (fr : Front) (force : List String := []) : Front := Id.run do
   let some (f, _, some c) := fr.units.find? (·.2.2.isSome) | return fr
   let module := fr.moduleFunctions ++ fr.classSelves
-  match retypeFromFragment fr fr.d.types f c.normalized module with
+  match retypeFromFragment force fr fr.d.types f c.normalized module with
   | .error reason =>
     let failed := fun (v : ModuleValue Tree) => ((v.1, v.2.1, .error s!"not handled: the module initialization's walk: {reason}") : ModuleValue Tree)
     return { fr with moduleConstants := fr.moduleConstants.map failed }
@@ -180,17 +191,58 @@ type or at its stand-in's footprint, the module values typed by the
 initialization's walk, and each selected group's units extracted over their
 computed types (`retypeFromFragment`). -/
 def fragmentPlans (ast : Json) (fileKey : String) (budget : PositiveCertificates.SearchBudget)
-    (names : Option (List String)) (standIns : StandIns := {}) : Except String FilePlans := do
+    (names : Option (List String)) (standIns : StandIns := {}) (force : List String := []) : Except String FilePlans := do
   let ast := ast.setObjVal! "modules" (Json.arr #[])
-  let claims ← fragmentClaims ast fileKey standIns
+  let claims ← fragmentClaims ast fileKey standIns force
   let qualified := standIns.imports.map fun s => (s.name, s.footprint, s.onThrow, s.resultFootprint)
   let fr ← SinglePass.timedKind "lower: fileFront" fun _ => fileFront ast claims fileKey budget qualified
-  let fr := SinglePass.timedKind "lower: initialization's walk" fun _ => fr.withInitTypes
+  let fr := SinglePass.timedKind "lower: initialization's walk" fun _ => fr.withInitTypes force
   let wanted := (fr.selected names).flatMap fr.group
   let (T, plans) := SinglePass.timedKind "lower: extractAll" fun _ =>
-    fr.extractSome (wanted.foldl (·.insert ·) {}) (some retypeFromFragment) (some instancesFromWalk)
+    fr.extractSome (wanted.foldl (·.insert ·) {}) (some (retypeFromFragment force)) (some (instancesFromWalk force))
   let F ← SinglePass.timedKind "lower: freeze" fun _ => EquationStore.freeze T
   let plans := SinglePass.timedKind "lower: plans over the store" fun _ => plans.map fun e => e.bind (FunctionPlan.over F)
   return ⟨⟨ast, claims, qualified, []⟩, fr, F, plans⟩
+
+/-- The plans with each unit's loop-head facts the given file states
+(`headFacts`, `headFactsOfCodes`) as its statement entries' candidates, its
+own graph's and each code request's: the search's and the single pass's
+given invariants, in place of the claims'. With `entries` (the referee,
+mode 9), the other statement entries' facts too (`entryFacts`): the search
+holds at each statement entry only what its candidates there give. -/
+def FilePlans.withHeadFacts (f : FilePlans) (given : Std.HashMap String Json) (entries : Bool := false) : FilePlans :=
+  { f with plans := f.plans.zipIdx.map fun (p, i) => p.map fun
+    | .graph name pos r =>
+      let line := given.get? (f.fr.unitId i)
+      let field := fun (k : String) => (line.bind fun l => (l.getObjVal? k).toOption)
+      let facts := fun (k : String) (sm : RequestJson.SourceMap) (cuts : List Nat) =>
+        headFactsFromJson sm cuts ((field k).getD (Json.arr #[]))
+      let ofCodes := fun (k : String) (ci : Nat) =>
+        (((field k).bind fun cs => (cs.getArr?).toOption).bind (·[ci]?)).getD (Json.arr #[])
+      .graph name pos { r with
+        candidates := facts "headFacts" r.sourceMap (r.start :: r.cuts) ++
+          (if entries then facts "entryFacts" r.sourceMap (r.start :: r.cuts) else [])
+        codeSources := r.codeSources.zipIdx.map fun (c, ci) =>
+          let start := ((r.codes[ci]?).map fun q => (q.asRequest r.toRequest).start).getD 0
+          { c with candidates := headFactsFromJson c.sourceMap (start :: c.cuts) (ofCodes "headFactsOfCodes" ci) ++
+            (if entries then headFactsFromJson c.sourceMap (start :: c.cuts) (ofCodes "entryFactsOfCodes" ci) else []) } } }
+
+/-- The plans with each graph's statement entries reduced to its loop heads
+(`SinglePass.loopHeads`) and its start, its own and each code request's: the
+search then carries facts through every other statement entry as the single
+pass does, the referee (mode 9) deciding mode 8's proposals over the same
+state model. The statement entries are the search's alone: the proved check
+reads none. -/
+def FilePlans.headCuts (f : FilePlans) : FilePlans :=
+  { f with plans := f.plans.map fun p => p.map fun
+    | .graph name pos r =>
+      let heads (P : ControlFlow.Program) (start : Nat) (cuts : List Nat) : List Nat :=
+        let hs := (SinglePass.loopHeads P.toArray start).1
+        cuts.filter fun l => l == start || hs.getD l false
+      .graph name pos { r with
+        cuts := heads r.program r.start r.cuts
+        codeSources := r.codeSources.zipIdx.map fun (c, ci) => match r.codes[ci]? with
+          | some q => let rq := q.asRequest r.toRequest; { c with cuts := heads rq.program rq.start c.cuts }
+          | none => c } }
 
 end Verification.SourceClaimJson

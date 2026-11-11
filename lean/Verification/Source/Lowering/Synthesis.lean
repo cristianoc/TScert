@@ -57,14 +57,20 @@ structure Walk where
   bindings it declares. -/
   writes : Bool := false
   locals : List String := []
-  /-- Whether the code being walked runs inside a `try` with a handler in
-  the function literal being walked: a throw there may be caught. -/
-  catching : Bool := false
   exprs : Std.HashMap Span (String × Except String (Ty Tree)) := {}
   /-- Each call of a generic module function, by its span: the type each
   binder takes at it, by the binder's name; and the last call's, until its
   call records it. -/
   instances : List (Span × List (String × Ty Tree)) := []
+  /-- Adversarial proposals forced, for the referee's measurement
+  (`TSCERT_FORCE`): `literals` states every function literal at keep/keep,
+  `elements` every element read without `undefined`, `objects` every
+  object literal at its expected type, `spreads` every spread with every
+  key its operand's type states. -/
+  force : List String := []
+  /-- Where the unit's body completes: its bindings there, or none where it
+  never completes. -/
+  completion : Option (List (String × Ty Tree)) := none
   lastInstance : Option (List (String × Ty Tree)) := none
   entries : Std.HashMap Nat (List (String × Ty Tree)) := {}
   breaks : List (Option String × Env) := []
@@ -569,6 +575,8 @@ partial def refine (env : Env) (c : Expr) (q : Bool) : W Env := do
 /-- An expression's type, recorded at its occurrence, and the environment
 after it. -/
 partial def expr (env : Env) (e : Expr) : W (Option (Ty Tree) × Env) := do
+  let forceElements := (← get).force.contains "elements"
+  let forceSpreads := (← get).force.contains "spreads"
   match e with
   | .var _ n =>
     let r := match env.vars.lookup n with
@@ -670,12 +678,15 @@ partial def expr (env : Env) (e : Expr) : W (Option (Ty Tree) × Env) := do
             -- A key the type also states as a method may sit on the
             -- prototype, which a spread does not copy: no field of the copy.
             for (f, B) in fs ++ vs do
-              if f != SourceTypes.protoField && f != SourceTypes.storeField && !ms.any (·.key == f) then
+              if f != SourceTypes.protoField && f != SourceTypes.storeField && (forceSpreads || !ms.any (·.key == f)) then
                 fields := upd fields f B
                 optional := optional.filter (·.key != f)
             -- An optional field the spread may lack keeps an earlier value.
             for o in os do
-              if (fields.lookup o.key).isNone then optional := o :: optional.filter (·.key != o.key)
+              if forceSpreads then
+                fields := upd fields o.key o.type
+                optional := optional.filter (·.key != o.key)
+              else if (fields.lookup o.key).isNone then optional := o :: optional.filter (·.key != o.key)
           | _ => throw "a spread of a value of no one record contract"
       prim (.refs fields.reverse [] [] optional.reverse [] [])
     return (r, e1)
@@ -708,7 +719,7 @@ partial def expr (env : Env) (e : Expr) : W (Option (Ty Tree) × Env) := do
       | some f => readField e2.vars O (.str f)
       | none => match ← keyString K with
         | some s => readField e2.vars O (.str s)
-        | none => elementAt O (← keyIndex K)
+        | none => elementAt O (← keyIndex K) (missing := !forceElements)
     return (r, e2)
   | .elemWrite p recv key rhs => expr env (.indexWrite p none recv key rhs)
   | .indexWrite _ field recv key rhs =>
@@ -732,7 +743,7 @@ partial def expr (env : Env) (e : Expr) : W (Option (Ty Tree) × Env) := do
   | .elemAt _ x key =>
     let (O, e1) ← expr env x
     let (K, e2) ← expr e1 key
-    let r ← attempt e do elementAt (← need O "the receiver") (← keyIndex (← need K "the key"))
+    let r ← attempt e do elementAt (← need O "the receiver") (← keyIndex (← need K "the key")) (missing := !forceElements)
     return (r, e2)
   | .arrayLit _ es spreads =>
     let (As, e1) ← exprs env es
@@ -1095,9 +1106,8 @@ partial def applyCall (env : Env) (c : Callee) (args : List Expr) (As : List (Op
   if !c.names.isEmpty || !c.explicit.isEmpty then
     modify fun w => { w with lastInstance := some (c.explicit ++
       c.names.zip (c.binders.map fun b => (σ.lookup b).getD [])) }
-  -- A call changing the heap, by its instance's footprint, or on a throw a
-  -- handler catches where its footprint does not bound its throws.
-  if inst.effect.footprint != ⟨.keep, .keep⟩ || ((← get).catching && !inst.effect.onThrow) then wrote
+  -- A call changing the heap, by its instance's footprint.
+  if inst.effect.footprint != ⟨.keep, .keep⟩ then wrote
   let own ← StateT.lift (match c.own, rest with
     | some F, _ => pure F
     | none, some r => do return [← lower (SourceTypes.use (.arrs [] [r.map sub]))]
@@ -1144,7 +1154,7 @@ partial def walkLambda (env : Env) (e : Expr) (sig : Option (CallEffects.Arrow (
   let declared := params.map (·.1) ++ (match body with
     | .block _ ss => declaredIn ss
     | _ => [])
-  modify fun w => { w with writes := false, locals := declared, catching := false }
+  modify fun w => { w with writes := false, locals := declared }
   modify fun w => { w with returns := [], expected := written <|> (if async then none else expectedResult) }
   -- An expression body's entry is its prologue's, at the body's start.
   modify fun w => { w with entries := w.entries.insert body.span.1 inner.vars }
@@ -1163,19 +1173,16 @@ partial def walkLambda (env : Env) (e : Expr) (sig : Option (CallEffects.Arrow (
   -- footprint its calls are checked at (the producer's inferred effect).
   let pure_ := !(← get).writes
   modify fun w => { w with breaks := saved.breaks, returns := saved.returns, expected := saved.expected }
-  modify fun w => { w with writes := saved.writes, locals := saved.locals, catching := saved.catching }
+  modify fun w => { w with writes := saved.writes, locals := saved.locals }
   let R := if written.isSome then written else if async then none else R
   match ps.mapM id, R with
   | some qs, some R =>
     -- A callback is checked at the signature it is passed at, its result its
     -- body's; any other literal at its own parameters.
     let a : CallEffects.Arrow (Ty Tree) ← match sig with
-      -- Its footprint the walk's: keeping both where it changes nothing,
-      -- else the ordinary effect (the parameter's own where that is it).
-      | some a => pure { a with result := R, effect := if pure_ then .ofFootprint ⟨.keep, .keep⟩
-          else if a.effect.footprint == .top then a.effect else .ordinary }
+      | some a => pure { a with result := R, effect := if pure_ || (← get).force.contains "literals" then .ofFootprint ⟨.keep, .keep⟩ else a.effect }
       | none => do pure ⟨← StateT.lift (prim .top), qs, R,
-          if pure_ then .ofFootprint ⟨.keep, .keep⟩ else .ordinary⟩
+          if pure_ || (← get).force.contains "literals" then .ofFootprint ⟨.keep, .keep⟩ else .ordinary⟩
     record e (.ok [← StateT.lift (lower (SourceTypes.use (.arrs [a] [])))])
   | _, _ => record e (.error "a function value: a parameter or its result undetermined")
 
@@ -1206,6 +1213,7 @@ partial def fit (P : Ty Tree) (x : Expr) (A : Option (Ty Tree)) : W (Option (Ty 
     -- where the value, itself fitted there, is within it: the record the
     -- allocation makes, which the expected type then admits.
     let some A := A | return none
+    if (← get).force.contains "objects" && !P.isEmpty then return ← record x (.ok P)
     for l in P do
       let w ← get
       let Ds ← StateT.lift (tryCatch (some <$> names.mapM fun k => readField [] [l] k) fun _ => pure none)
@@ -1453,10 +1461,7 @@ partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
     let out ← collectBreaks none saved
     return join (some exit) (out.map fun o => { o with vars := o.vars.filter (·.1 != s!"%next@{p.1}%") })
   | .tryStmt _ body handler finalizer =>
-    let outer := (← get).catching
-    modify fun w => { w with catching := outer || handler.isSome }
     let b ← stmts (some env) body
-    modify fun w => { w with catching := outer }
     let reset := loopHead env body
     let h ← match handler with
       | some (param, hs) =>
@@ -1540,7 +1545,8 @@ def compareWalk (T : EquationStore.State) (fc : SourceClaims.Function Tree) (w :
 and the module values `module` it reads: what it records, and the grown
 store. -/
 def walkUnit (T : EquationStore.State) (f : Fragment.Fn)
-    (module : List (String × Compiler (Ty Tree))) (generics : List (String × Generic) := []) :
+    (module : List (String × Compiler (Ty Tree))) (generics : List (String × Generic) := [])
+    (force : List String := []) :
     Except String (Walk × EquationStore.State) := do
   let action : Compiler (Walk × EquationStore.State) := do
     let mut vars : List (String × Ty Tree) := []
@@ -1554,7 +1560,8 @@ def walkUnit (T : EquationStore.State) (f : Fragment.Fn)
       | none => pure ()
     let env : Env := { vars, decl := vars }
     let expected ← tryCatch (some <$> lower (Fragment.translate f.ret)) fun _ => pure none
-    let (_, w) ← (stmts (some env) f.body).run { generics, expected, entries := (({} : Std.HashMap Nat _).insert 0 vars).insert f.namePos.1 vars }
+    let (done, w) ← (stmts (some env) f.body).run { generics, expected, force, entries := (({} : Std.HashMap Nat _).insert 0 vars).insert f.namePos.1 vars }
+    let w := { w with completion := done.map (·.vars) }
     return (w, ← table)
   let ((w, T'), _) ← runCompiler T [] action
   return (w, T')
@@ -1575,12 +1582,13 @@ infers: every expression's type, every statement entry's bindings and every
 `let`'s storage contract, at each execution point alike; no asserted field
 contents, entry facts or per-closure overlays. The signature, footprints and
 the execution points' names are the unit's own (`fc`). The first undetermined
-type the lowering would read is the unit's refusal there. -/
-def retypeUnit (T : EquationStore.State) (f : Fragment.Fn) (fc : SourceClaims.Function Tree)
+type the lowering would read is the unit's refusal there. Beside them, where
+the unit's body completes (`Walk.completion`). -/
+def retypeUnitWith (T : EquationStore.State) (f : Fragment.Fn) (fc : SourceClaims.Function Tree)
     (module : List (String × Compiler (Ty Tree))) (generics : List (String × Generic) := [])
-    (parts : String := "xec") :
-    Except String (EquationStore.State × SourceClaims.Function Tree) := do
-  let (w, T') ← walkUnit T f module generics
+    (parts : String := "xec") (force : List String := []) :
+    Except String (EquationStore.State × SourceClaims.Function Tree × Option (List (String × Ty Tree))) := do
+  let (w, T') ← walkUnit T f module generics force
   let exprs : List (Span × SourceClaims.Candidate Tree) := w.exprs.toList.map fun (span, (_, r)) =>
     (span, r.mapError fun m => s!"not handled: {m} (type undetermined)")
   let envs : List (Nat × List (String × SourceClaims.Candidate Tree)) :=
@@ -1602,7 +1610,7 @@ def retypeUnit (T : EquationStore.State) (f : Fragment.Fn) (fc : SourceClaims.Fu
   -- draft, section 8): the unit's own, kept per point.
   -- Debugging: `k` keeps the claims' asserted field contents (`current`).
   let keep := parts.contains 'k'
-  return (T', { fc with
+  return (T', ({ fc with
     exprs, envs, contracts
     entryCurrent := if keep then fc.entryCurrent else []
     exprCurrent := if keep then fc.exprCurrent else []
@@ -1610,6 +1618,14 @@ def retypeUnit (T : EquationStore.State) (f : Fragment.Fn) (fc : SourceClaims.Fu
     points := fc.points.map fun (id, row) =>
       (id, { row with exprs := exprs, envs := envs,
                       entryCurrent := if keep then row.entryCurrent else [],
-                      exprCurrent := if keep then row.exprCurrent else [] }) })
+                      exprCurrent := if keep then row.exprCurrent else [] }) } : SourceClaims.Function Tree), w.completion)
+
+/-- `retypeUnitWith`'s grown store and claims. -/
+def retypeUnit (T : EquationStore.State) (f : Fragment.Fn) (fc : SourceClaims.Function Tree)
+    (module : List (String × Compiler (Ty Tree))) (generics : List (String × Generic) := [])
+    (parts : String := "xec") (force : List String := []) :
+    Except String (EquationStore.State × SourceClaims.Function Tree) := do
+  let (T, fc, _) ← retypeUnitWith T f fc module generics parts force
+  return (T, fc)
 
 end Verification.SourceExtraction.Synthesis
