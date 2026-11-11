@@ -718,8 +718,15 @@ removal works through:
   link and a key it also states as a method, a key two operands of an
   intersection state at the field within the other's; a class value's
   static fields; nothing from a primitive; no stated key from a string or a
-  function), a key the source surely has at its type, one it may have at
-  the union of both, one either may hold at an unknown type dropped.
+  function of no fields; a function's fields, open; a dictionary's string
+  fields, its string index the type of every other own string key and its
+  symbol index every symbol key's, two indexes of one key class, an
+  intersection's, not handled), a key the source surely has at its type,
+  one it may have at the union of both, or at a side's index, one either
+  may hold at an unknown type dropped; where a side states an index and
+  each says what it gives under every key of its class, the copy states
+  the index at the union of both sides' and that class's fields', and
+  each such field at it (`object_spread.ml`, `merge_alternative`).
   The initialization's generic closures, a generic class's methods among
   them (each quantifying the class's binders, `C."m"#classI`), are claimed
   at the schemes their annotations state, as scheme rows, before its walk
