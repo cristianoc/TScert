@@ -265,7 +265,10 @@ the names it mentions and those connected, each fact it lacks, and each
 fact over those names an earlier state held that its state lacks; for each,
 going back from the refusal, where it was last present and what removed
 it: a step, an edge, a merge (with the predecessors lacking it, followed in
-turn), or a loop head's given invariant. `dev/single-pass-state.mts` runs
+turn), or a loop head's given invariant. A refusal in a code request (a
+closure's, a constructor's or a method's own graph) gives its obligation,
+the facts over its names and each fact it lacks, at the code's nodes.
+`dev/single-pass-state.mts` runs
 it over a kept pipeline run and prints these over source names, with the
 bindings' types.
 
@@ -439,14 +442,41 @@ claims document (`SourceClaimJson.fragmentPlans`, `Claims/FragmentFront.lean`).
   it writes (`Modifies<…>`); else the footprint keeping values and stores
   where the walk sees no write, assignment or call changing the heap, else
   the closed footprint of the classes of contents its writes and calls
-  change (a field write or an assignment the values, an element write, an
-  array's `length` and a call changing a receiver's store both), at a callback
-  that changes the heap the parameter's effect; and it bounds a throw
-  (`onThrow`) where none of its calls states a throw left unbounded. Its own
-  check decides it (section 5, "A footprint").
+  change (an assignment of a binding it does not declare or a field write
+  the values; an element write the values and a store's growth; an array's
+  `length`, and a call changing a receiver's store or elements, both; a
+  call changing its receiver's own locations the values and its store's
+  change; any other call its instance's footprint); and it bounds a throw
+  (`onThrow`) where none of its calls states a throw left unbounded. A
+  callback is stated at that effect where its parameter's effect covers it
+  (`Effect.covers`; without `onThrow` where the parameter states none), else
+  at the parameter's. Of a call's several signatures, each callback is
+  walked first at the first one's parameter, and the signature chosen is
+  the first whose parameters admit the walked actuals and callbacks and
+  cover each callback's effect, with every binder bound; the binders a
+  callback's result would give are first read off the type expected of the
+  call's value, where that instance admits the actuals. A written type
+  guard or assertion is stated with its promise, its result the guarded
+  type, and also at its own parameters. A constant holding a function
+  literal that reads it is walked with the constant at its written type,
+  else at its written signature keeping values and stores and bounding its
+  throws, raised to the type the walk gives the literal until the two
+  agree, at most four rounds (the producer's rounds over a recursive
+  constant). Its own check decides it (section 5, "A footprint").
+- **Early bindings.** Each early binding of a statement list (the flow
+  graph's `.early` node) is bound from the list's entry on at its written
+  contract: its annotation, else its function literal's written receiver,
+  parameters (a defaulted one admitting `undefined`) and result at its
+  written effect, else the ordinary one; that is its storage contract. A
+  `return`'s value holds the statement's bindings at its own position,
+  where a finalizer holds the return.
+- **Regions.** A function whose statement states store regions is
+  proposed at `top`; the regional check of its own regions certifies the
+  statement.
 - **Classes and literals.** A class value is the construct signature of its
   constructor's written parameters and instance (its written result), or
-  of the fresh constructor it is bound to, with its static fields. An object
+  of the fresh constructor it is bound to, with its static fields, each at
+  the class binding's annotation's type where it states one. An object
   literal states its own keys exactly (`HasTyUsing.alloc`'s bound); where a
   record is expected, it is that record's form with each field at the
   expected one, else at the value's own type, as written where that is
@@ -490,19 +520,20 @@ footprint the unit's verdict reads (removing any one refuses the unit):
 (`isCollapsibleSpaceCode`, `readLetterSpacing`); `buildEngineProfile` none.
 
 Agreement with the pipeline over the 3,303 pipeline cases (mode 8 with the
-given files, `TSCERT_REFEREE`), measured 2026-11-11: 6,296 units, 4,513
-agree, 983 disagree, 800 not handled. A file the pipeline refuses before any
+given files, `TSCERT_REFEREE`), measured 2026-11-11: 6,296 units, 4,682
+agree, 830 disagree, 784 not handled. A file the pipeline refuses before any
 unit's check is run from its fragment too: the unit holding the refusal's
 position is compared with the refusal (91 units), the others are undecided
 (85; the pass accepts 24, none the unit an unsafe program's refusal names).
 Referee: 10 units mode 8 accepts and mode 9 refuses (all pipeline-verified),
-17 the other way: 8 at a node no path from the start reaches, which mode 8
+18 the other way: 9 at a node no path from the start reaches, which mode 8
 does not handle, and 9 refused (`blocker-import-meta`, `import-meta` ×2,
 `null-equality-slices`, `field-write-refinement`,
 `equality-several-singletons`, `type-parameter-typeof-family` ×2,
-`try-catch` `describe`). Both modes accept six
-units the pipeline refuses, each a valid instance the producer did not
-propose: `invalid-bounds-callback-footprint` `visit@88`,
+`try-catch` `describe`). Both modes accept seven
+units the pipeline refuses: `blocker-pretext-equality-conjunction` `runs@923`,
+a gap case (a safe program the pipeline does not verify), and six, each a
+valid instance the producer did not propose: `invalid-bounds-callback-footprint` `visit@88`,
 `invalid-generic-literal-widening` `use@206`,
 `invalid-native-promise-invariant-result` `widen@89` (`make<unknown>` at
 the expected result `Box<unknown>`), `blocker-gap-round-cache-answer-inferred`

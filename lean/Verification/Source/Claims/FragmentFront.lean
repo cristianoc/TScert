@@ -53,7 +53,10 @@ def fragmentClaims (ast : Json) (fileKey : String) (standIns : StandIns := {}) (
   let functions := all.map fun (f, _) =>
     let (footprint, onThrow, resultFootprint) := match standIns.functions.find? (·.name == f.name), f.stated with
       | some s, _ => (s.footprint, s.onThrow, s.resultFootprint)
-      | none, some s => (s.closed, s.onThrow, Footprints.Closed.top)
+      -- A statement with store regions proposes `top`, the regional check
+      -- of its own regions certifying the statement.
+      | none, some s => if s.regions.isEmpty then (s.closed, s.onThrow, Footprints.Closed.top)
+          else (.top, false, .top)
       -- Forced (`callees`): a function without a written footprint at keep/keep.
       | none, none => if force.contains "callees" then (⟨.keep, .keep⟩, false, .top) else (.top, false, .top)
     Json.mkObj [("name", toJson f.name), ("namePos", toJson f.namePos),
