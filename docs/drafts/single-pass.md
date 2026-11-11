@@ -1071,7 +1071,9 @@ removal works through:
   where it completes or returns is unreached.
   A member read whose receiver supplies no cell contract is a located
   refusal, as `Plans.readCell` (Plans.lean:518), including a binder meet
-  whose bound supplies no readable row.
+  whose bound supplies no readable row. A primitive member whose prototype
+  is absent from the unit is likewise a located read refusal
+  (`Plans.primitiveArms`, Plans.lean:646-648).
 - **Field contents.** A statement entry states the member paths a test
   narrowed (its `current` contents, an execution point's `entryCurrent`),
   each a member of an object other than `length`: a test of the path, a

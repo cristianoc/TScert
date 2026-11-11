@@ -624,7 +624,9 @@ def readField (vars : List (String × Ty Tree)) (A : Ty Tree) (fld : PropKey) : 
     if tag == .isStr && fld == lengthKey then
       out := out ++ (← prim .num)
     else
-      let P ← protoFor vars tag
+      -- Plans.primitiveArms (Plans.lean:646-648) refuses the same missing
+      -- prototype; it is a located read refusal, not an unknown construct.
+      let P ← tryCatch (protoFor vars tag) fun m => throw (readRefusal m)
       let some B := fieldRow G P fld | throw (readRefusal s!"a primitive's prototype names no field '{reprStr fld}'")
       out := out ++ B
   if !funs.isEmpty then
