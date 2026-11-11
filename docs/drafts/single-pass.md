@@ -677,7 +677,9 @@ removal works through:
   leaves a throw unbounded. For this reading a write, an assignment of a
   binding held in a cell or of one it does not declare, an early binding's
   declaration, a call at its instance's footprint, a call of a local
-  binding at its declared type's effect, a call of an unknown callee, an
+  binding at its declared type's effect, a call of an unknown callee (a
+  function's `toString` among them: its lowered call tests the receiver and
+  calls a value's own `toString` where it is no function), an
   iteration, and a call without `onThrow` a handler catches each change the
   heap; a call without `onThrow`, an iteration and a finalizer leave a throw
   unbounded. A function passed to a call changes what its own signatures'

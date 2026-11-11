@@ -2898,6 +2898,20 @@ partial def exprAt (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (
       | .var _ n => anyFresh || fcs.contains n
       | _ => false
     let r ← called e2 c args As e.span exp receiverFresh
+    -- A function's `toString` call is lowered as a test of its receiver: a
+    -- function calls `Function.prototype`'s, any other value its own
+    -- (`Plans.primitiveArms`' `.isFun` arm, Plans.lean:631-643), a callee
+    -- the walk does not know; a declaration's footprint reads that call as a
+    -- call of an unknown callee.
+    if (← get).strict && fld == some (PropKey.str "toString") then
+      if let some O := O then
+        let G ← StateT.lift graphNow
+        let isFunction (l : Tree) : Bool := match PositiveRules.expand G [l] with
+          | [.arrs ..] | [.callable ..] | [.ctors ..] => true
+          | _ => false
+        if O.any isFunction then
+          wrote .any .any
+          modify fun w => { w with throwWrites := true }
     let e2 ← afterCall e2 r
     let _ ← record callee ((·.1) <$> r)
     let r ← record e ((·.2) <$> r)
