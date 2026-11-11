@@ -4463,6 +4463,7 @@ partial def applyCall (env : Env) (c : Callee) (args : List Expr) (As : List (Op
   let admitsAt (σ : List (Tree × Ty Tree)) : Bool :=
     (As.zip a.arguments).all (fun (A, P) => A.all fun A => within T A (substitute σ P))
   σ ← bindFrom σ ((a.receiver, c.receiver) :: (a.arguments.zip As).filterMap fun (P, A) => A.map (P, ·))
+  let mut hinted : List (Tree × Ty Tree) := []
   if let some H := hint then
     let H' := match a.result with
       | [.app h _] =>
@@ -4470,6 +4471,7 @@ partial def applyCall (env : Env) (c : Callee) (args : List Expr) (As : List (Op
         if same.length == 1 then same else H
       | _ => H
     let σh ← bindFrom σ [(a.result, H')]
+    hinted := σh
     if admitsAt σh then σ := σh
     -- Where the two conflict (the instance the actuals give has a result
     -- the expected type does not admit), the expected type's instance, where
@@ -4550,6 +4552,22 @@ partial def applyCall (env : Env) (c : Callee) (args : List Expr) (As : List (Op
         if let some rb := c.binders[slot]? then σ := σ.filter (·.1 != rb) ++ [(rb, R)]
   -- A binder the signature does not mention, at the empty type.
   σ := σ ++ (c.binders.filter fun b => !mentioned a b && (σ.lookup b).isNone).map (·, [])
+  -- A binder no actual gives: at what the type expected of the call's value
+  -- gives it, whether or not that instance admits the actuals (the call's
+  -- step decides); else at its bound, read at the binders so far; else at
+  -- `unknown` (the producer's candidates, inference.ml:584-636: the lower
+  -- bounds' join, else the upper bounds', the expected result among them,
+  -- else `top`).
+  for b in c.binders do
+    if (σ.lookup b).isSome then continue
+    let B ← match hinted.lookup b, c.bounds.lookup b with
+      | some B, _ => pure B
+      | none, some B =>
+        let B := substitute σ B
+        if c.binders.any (fun b' => B.any (occurs b')) then continue
+        pure B
+      | none, none => StateT.lift (prim .source)
+    σ := σ ++ [(b, B)]
   let sub (A : Ty Tree) : Ty Tree := substitute σ A
   if let some b := c.binders.find? (fun b => (σ.lookup b).isNone) then
     let _ := b
