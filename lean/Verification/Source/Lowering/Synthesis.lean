@@ -10,8 +10,10 @@ declarations, signatures of the module values it reads) and the language's
 typing of each construct. What it computes is a proposal: the proved rules
 check every type the lowering states, so nothing here adds trust.
 
-The walk has no search, fixed point or retry. A construct whose type the
-direct rule does not determine is recorded as undetermined, with the reason.
+Evolving declarations use the producer's four bounded contract-growth
+rounds and its unique-use fallback (proposal.ml:19-47). Each resulting
+contract is a proposal checked from the declaration onwards. A construct
+whose type the direct rule does not determine is recorded as undetermined.
 A loop body is walked once, from the loop head, where each binding the loop
 assigns holds its declared type (its annotation, or its initializer's type
 widened as a `let` widens it); at a merge a binding holds the union of what
@@ -66,6 +68,13 @@ structure Walk where
   /-- Each `let`'s storage contract, by its initializer's span and name:
   its declared type. -/
   contracts : List ((Span × String) × Ty Tree) := []
+  /-- Evolving initializer contracts, proposed by at most four growth rounds
+  (producer proposal.ml:19-47); each write is checked by the pass. -/
+  assumed : List (Span × Ty Tree) := []
+  evolving : List (String × (Span × Bool)) := []
+  evolvedWrites : List (Span × Ty Tree) := []
+  evolvedUses : List (Span × Ty Tree) := []
+  following : List Stmt := []
   /-- The type expected of a value, by the value's span: a declaration's,
   an assignment's or a return's. -/
   hints : List (Span × Ty Tree) := []
@@ -1941,6 +1950,33 @@ part of it walked at the part's expected type. -/
 partial def expr (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (Option (Ty Tree) × Env) := do
   let before := (← get).pathEnds.length
   let r ← exprAt env e exp
+  let w ← get
+  let written := match e with
+    | .assign _ n _ rhs | .nullishAssign _ n _ rhs => [(n, false, rhs)]
+    | .indexWrite _ _ (.var _ n) _ rhs | .elemWrite _ (.var _ n) _ rhs => [(n, true, rhs)]
+    | .invoke _ (.read _ (.str method) (.var _ n)) args [] _ =>
+      if method == "push" || method == "unshift" then args.map (n, true, ·) else []
+    | _ => []
+  for (n, element, rhs) in written do
+    if let some (key, isArray) := w.evolving.lookup n then
+      if !element || isArray then
+        let mut A := (w.exprs.get? rhs.span).bind (·.2.toOption)
+        -- A self-reading assignment is measured for every value its cell
+        -- can hold (expression_properties.ml:156-164); speculation publishes
+        -- no expression or flow claim.
+        if !element && rhs.freeNames.contains n then
+          let saved ← get
+          let reset := { env with vars := env.vars.map fun (m, B) =>
+            (m, if m == n || !(w.slots.get.contains m || w.literalSlots.contains m) then (env.decl.lookup m).getD B else B), paths := [] }
+          let (B, _) ← expr reset rhs
+          set saved
+          A := B <|> A
+        if let some B := A then
+          let B ← if isArray && !element then
+              StateT.lift (tryCatch (elementAt B none (missing := false)) fun _ => pure [])
+            else pure B
+          let B ← StateT.lift (widen B)
+          modify fun w => { w with evolvedWrites := upd w.evolvedWrites key (norm ((w.evolvedWrites.lookup key).getD [] ++ B)) }
   modify fun w => { w with endsIn := w.endsIn.insert e.span (w.pathEnds.length != before || (w.endsIn.get? e.span).getD false) }
   -- An unreached expression whose type the walk does not determine (each
   -- binding there at the empty type, a constructor's included): at the
@@ -3499,7 +3535,7 @@ partial def walkLambda (env : Env) (e : Expr) (sig : Option (CallEffects.Arrow (
   let changed : CallEffects.Effect :=
     { CallEffects.Effect.ofFootprint ⟨(← get).valueChange, (← get).storeChange⟩ with
       onThrow := !(← get).throwWrites, fresh := freshResult }
-  modify fun w => { w with breaks := saved.breaks, returns := saved.returns, held := saved.held, expected := saved.expected, literalSlots := saved.literalSlots }
+  modify fun w => { w with breaks := saved.breaks, returns := saved.returns, held := saved.held, expected := saved.expected, literalSlots := saved.literalSlots, evolving := saved.evolving }
   modify fun w => { w with writes := saved.writes, throwWrites := saved.throwWrites, locals := saved.locals, inLiteral := saved.inLiteral }
   modify fun w => { w with valueChange := saved.valueChange, storeChange := saved.storeChange, lastBody := R }
   -- (an async expression body's value is its `%AsyncReturn%` call's, the
@@ -3948,7 +3984,7 @@ partial def stmts (env : Option Env) (ss : List Stmt) : W (Option Env) := do
           e := { e with vars := upd e.vars b.name D, decl := upd e.decl b.name D }
     env := some e
   let mut prev : Option Stmt := none
-  for s in ss do
+  for (s, i) in ss.zipIdx do
     let some e := env | return none
     -- (`TSCERT_FORCE=reads`: a read's receiver kept present whatever ends it)
     let forced := (← get).readForced
@@ -4007,7 +4043,10 @@ partial def stmts (env : Option Env) (ss : List Stmt) : W (Option Env) := do
     let outer := (← get).stmtAt
     modify fun w => { w with stmtAt := s.pos }
     let before := (← get).valueWrites
+    let following := (← get).following
+    modify fun w => { w with following := ss.drop (i + 1) }
     env ← stmt e s
+    modify fun w => { w with following }
     -- A cell's narrowed contents end at a change of a value location: a
     -- current-content fact no separation keeps (the producer's entries
     -- after a write; PROGRAM-TYPING, "No general frame rule").
@@ -4076,6 +4115,158 @@ partial def collectBreaks (label : Option String) (saved : List (Option String �
   let (mine, others) := w.breaks.partition (·.1 == label)
   set { w with breaks := others ++ saved }
   return mine.foldl (fun acc (_, b) => join acc (some b)) none
+
+/-- Whole-value uses in the following statements of this block, as
+statement_analysis.ml:89-165. Nested control statements supply no hint. -/
+partial def useHints (env : Env) (n : String) (ss : List Stmt) (typed : Bool := true) (first : Bool := false) : W (List (Ty Tree)) := do
+  let mut out := []
+  for s in ss do
+    let uses ← match s with
+      | .constants _ bs | .mutables _ bs => do
+        let mut uses := []
+        for b in bs do
+          let P ← match b.annot with
+            | some t => StateT.lift (tryCatch (some <$> lower (Fragment.translate t)) fun _ => pure none)
+            | none => pure none
+          uses := uses ++ (← useIn env n b.init P)
+        pure uses
+      | .ret _ e => useIn env n e (← get).expected
+      | .effect _ e => useIn env n e none
+      | _ => pure (if first && s.freeNames.contains n then [none] else [])
+    let found := if typed then (uses.filterMap id).take 1 else (uses.take 1).filterMap id
+    if first && !uses.isEmpty then return found
+    out := out ++ found
+  return out
+
+partial def useIn (env : Env) (n : String) (e : Expr) (P : Option (Ty Tree)) : W (List (Option (Ty Tree))) := do
+  let fieldHint (P : Option (Ty Tree)) (k : PropKey) : W (Option (Ty Tree)) := do
+    let G ← StateT.lift graphNow
+    let ds := (P.getD []).filterMap fun l => match PositiveRules.expand G [l] with
+      | [.refs fs [] vs os ..] | [.dict fs [] vs _ os ..] =>
+        fs.lookup k <|> vs.lookup k <|> ((os.find? (·.key == k)).map (·.type))
+      | _ => none
+    return match ds.eraseDups with | [D] => some D | _ => none
+  match e with
+  | .var _ m => return if n == m then [P] else []
+  | .call _ (.var _ g) args [] [] =>
+    if g == n then return []
+    let gs := (← get).generics
+    let params ← StateT.lift (tryCatch (do
+      let c ← match gs.lookup g with
+        | some generic => genericCallee generic []
+        | none => do
+          let some F := env.vars.lookup g | return []
+          calleeOf F [Labels.undef] []
+      let [a] := c.fixed | return []
+      if !c.rests.isEmpty then return []
+      if c.binders.isEmpty then return a.arguments
+      let some P := P | return []
+      if a.arguments.length != args.length then return []
+      let mut solution := c.seed
+      for binder in c.binders do
+        let some A ← matchBinder binder a.result P (vars := env.vars) (siblings := c.binders) | return []
+        if A.isEmpty then return []
+        solution := upd solution binder A
+      return a.arguments.map (substitute solution)) fun _ => pure [])
+    let mut uses := []
+    for (a, i) in args.zipIdx do uses := uses ++ (← useIn env n a params[i]?)
+    return uses
+  | .alloc _ ks es =>
+    let mut uses := []
+    for (k, e) in ks.zip es do
+      let D ← fieldHint P k
+      uses := uses ++ (← useIn env n e D)
+    return uses
+  | .build _ ks es =>
+    let mut uses := []
+    for (k, e) in ks.zip es do
+      let D ← match k with | some k => fieldHint P (.str k) | none => pure none
+      uses := uses ++ (← useIn env n e D)
+    return uses
+  | .ifBody _ c t f => return (← useIn env n c none) ++ (← useIn env n t P) ++ (← useIn env n f P)
+  | .arrayLit _ es spreads =>
+    let mut uses := []
+    for (e, i) in es.zipIdx do
+      let D ← if spreads.contains i then StateT.lift (tryCatch (do
+          let some P := P | return none
+          let E ← elementAt P none (missing := false)
+          let store ← lower (SourceTypes.use (.list ⟨[], [], some E, false, .readable⟩ []))
+          some <$> lower (do return [← SourceTypes.use (SourceTypes.arrayOf (← get) store false)])) fun _ => pure none)
+        else pure none
+      uses := uses ++ (← useIn env n e D)
+    return uses
+  | .block _ ss => useNested env n ss
+  | _ =>
+    let children : List Expr := match e with
+      | .lit .. | .var .. => []
+      | .shapeTest _ _ _ e | .tagMember _ _ _ _ _ e | .not _ e | .unary _ _ e | .cast _ _ e | .read _ _ e
+      | .assign _ _ _ e | .nullishAssign _ _ _ e => [e]
+      | .ctor _ e fs => e :: fs.map (·.2)
+      | .lambda _ _ _ _ ds _ _ _ _ _ _ body => ds.map (·.2) ++ [body]
+      | .construct _ f args _ _ | .call _ f args _ _ | .invoke _ f args _ _ => f :: args
+      | .logical _ _ a b | .coalesce _ a b | .equality _ _ a b | .singletonTest _ _ _ _ a b
+      | .write _ _ a b | .index _ _ a b | .elemAt _ a b | .arith _ _ a b | .logicalAssign _ _ a b
+      | .comma _ a b | .inKeys _ a b | .withValue _ a b _ _ | .optional _ _ a b | .withObject _ _ a b => [a, b]
+      | .indexWrite _ _ a b c | .elemWrite _ a b c => [a, b, c]
+      | .update _ _ a b _ => a :: b.toList
+      | .arrayAssign _ targets rest rhs => rhs :: targets.flatMap (fun q => q.target :: q.default_.toList) ++ (rest.map (·.2.2.target)).toList
+      | .bindWithReceiver _ f r args | .callWithReceiver _ f r args => f :: r :: args
+      | .applyWithReceiver _ f r list _ => f :: r :: list.toList
+      | .objectAssign _ t sources => t :: sources
+      | .alloc .. | .build .. | .arrayLit .. | .ifBody .. | .block .. => []
+    let mut uses := []
+    for child in children do uses := uses ++ (← useIn env n child none)
+    return uses
+
+/-- Source.children of a block body, with no contextual type inherited. -/
+partial def useNested (env : Env) (n : String) (ss : List Stmt) : W (List (Option (Ty Tree))) := do
+  let mut uses := []
+  for s in ss do
+    let (es, nested) : List Expr × List Stmt := match s with
+      | .constants _ bs | .mutables _ bs => (bs.map (·.init), [])
+      | .ret _ e | .effect _ e | .throw _ e => ([e], [])
+      | .destructure _ p d e => (e :: d.toList ++ p.defaults, [])
+      | .ite _ c a b => ([c], a ++ b.getD [])
+      | .loop _ c b u _ => ([c], b ++ u)
+      | .block _ _ b => ([], b)
+      | .forOf _ _ _ _ e b => ([e], b)
+      | .tryStmt _ b h f => ([], b ++ (h.map (·.2)).getD [] ++ f.getD [])
+      | .closing _ c b => ([], b ++ c)
+      | .brk .. | .cont .. => ([], [])
+    for e in es do uses := uses ++ (← useIn env n e none)
+    uses := uses ++ (← useNested env n nested)
+  return uses
+
+/-- A declaration's construction hint and evolving contract registration. -/
+partial def declarationHint (env : Env) (b : Binding) (mutable_ : Bool)
+    (written : Option (Ty Tree)) : W (Option (Ty Tree)) := do
+  modify fun w => { w with evolving := w.evolving.filter (·.1 != b.name) }
+  if b.annot.isSome then return written
+  let kind := match b.init with
+    | .arrayLit _ [] _ => some true
+    | .lit _ .vnull | .lit _ .vundef => if mutable_ then some false else none
+    | _ => none
+  if let some array := kind then
+    modify fun w => { w with evolving := (b.name, (b.init.span, array)) :: w.evolving }
+    let w ← get
+    let A := if w.force.contains "evolving" then [] else (w.assumed.lookup b.init.span).getD []
+    if array then
+      return some (← StateT.lift (lower do
+        let store ← SourceTypes.use (.list ⟨[], [], some A, false, .readable⟩ [])
+        return [← SourceTypes.use (SourceTypes.arrayOf (← get) store false)]))
+    let uses := (← useHints env b.name (← get).following false).eraseDups
+    if let [U] := uses then modify fun w => { w with evolvedUses := upd w.evolvedUses b.init.span U }
+    return written
+  if !mutable_ && !(← get).force.contains "first-use" then
+    let fresh := match b.init with
+      | .arrayLit _ (_ :: _) _ => true
+      | .invoke _ (.read _ (.str m) _) [_] [] [] => m == "map" || m == "flatMap"
+      | _ => false
+    if fresh then
+      if let some H := (← useHints env b.name (← get).following).head? then
+        let G ← StateT.lift graphNow
+        if !H.isEmpty && H.all (fun l => (storeOf G [l]).isSome) then return some H
+  return written
 
 partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
   match s with
@@ -4146,6 +4337,7 @@ partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
       let written ← match b.annot with
         | some ty => StateT.lift (tryCatch (some <$> lower (Fragment.translate ty)) fun _ => pure none)
         | none => pure (if b.name.startsWith "%items@" || b.name.startsWith "%rest@" then collected else none)
+      let written ← declarationHint env b false written
       if let some D := written then modify fun w => { w with hints := (b.init.span, D) :: w.hints }
       if b.name.endsWith ".[[class]]" then modify fun w => { w with freshClass := true }
       -- The initializer made at the annotation's type.
@@ -4218,13 +4410,20 @@ partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
         | none => pure none
       -- (a pattern's collected binding at the contract its steps give it)
       let written := written <|> (← get).collected.lookup b.name
+      let written ← declarationHint env b true written
       if let some D := written then modify fun w => { w with hints := (b.init.span, D) :: w.hints }
       -- The initializer made at the annotation's type.
       let (A, e1) ← expr env b.init written
       env := e1
       let D ← match written, A with
         | some _, _ => pure written
-        | none, some A => some <$> StateT.lift (widen A)
+        | none, some A => do
+          let A ← StateT.lift (widen A)
+          let w ← get
+          let evolved := match w.evolving.lookup b.name with
+            | some (key, false) => if w.force.contains "evolving" then [] else (w.assumed.lookup key).getD []
+            | _ => []
+          pure (some (norm (A ++ evolved)))
         | none, none => pure none
       if let some D := D then
         modify fun w => { w with contracts := ((b.init.span, b.name), D) :: w.contracts }
@@ -4570,11 +4769,32 @@ def walkUnit (T : EquationStore.State) (f : Fragment.Fn)
     let values := (f.params.map (·.name)).filter fun n =>
       !(cellLocals (f.params.map (·.name)) f.body f.name.isEmpty).any (·.1 == n)
     let start : Walk := { generics, expected, force, scope, locals, strict, slots, schemes, values, moduleInit := f.name.isEmpty, entries := (({} : Std.HashMap Nat _).insert 0 vars).insert f.namePos.1 vars }
-    let (done, w) ← (stmts (some env) f.body).run start
+    let settle (start : Walk) (initial : List (Span × Ty Tree)) :
+        Compiler ((Option Env × Walk) × List (Span × Ty Tree)) := do
+      let mut assumed := initial
+      let mut result ← (stmts (some env) f.body).run { start with assumed }
+      -- Four growth rounds and one unique-use fallback, exactly the bound of
+      -- proposal.ml:23-47. The final pass checks all writes at these contracts.
+      for round in List.range 5 do
+        let w := result.2
+        let grown := w.evolvedWrites.filter fun (key, A) => norm ((assumed.lookup key).getD [] ++ A) != (assumed.lookup key).getD []
+        if grown.isEmpty then break
+        if round == 4 then
+          if !grown.all (fun (key, _) => (w.evolvedUses.lookup key).isSome) then
+            throw "not handled: an evolving binding's contract does not settle"
+          for (key, _) in grown do assumed := upd assumed key ((w.evolvedUses.lookup key).getD [])
+        else
+          for (key, A) in grown do assumed := upd assumed key (norm ((assumed.lookup key).getD [] ++ A))
+        result ← (stmts (some env) f.body).run { start with assumed }
+      return (result, assumed)
+    let (result, assumed) ← settle start []
+    let (done, w) := result
     -- Where a use offers a constant's literal more rows, walked again with
     -- them (the producer's second round, proposal.ml:47-52), once.
     let (done, w) ← if w.offered.isEmpty then pure (done, w)
-      else (stmts (some env) f.body).run { start with offers := w.offered }
+      else do
+        let (result, _) ← settle { start with offers := w.offered } assumed
+        pure result
     let w := { w with completion := done.bind fun d => if d.ghost then none else some d.vars }
     return (w, ← table)
   let ((w, T'), _) ← runCompiler T [] action
