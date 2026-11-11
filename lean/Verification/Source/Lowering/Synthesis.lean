@@ -4591,7 +4591,20 @@ partial def applyCall (env : Env) (c : Callee) (args : List Expr) (As : List (Op
       if let some R ← StateT.lift (tryCatch (freshAt H inst.result) fun _ => pure none) then result := R
   let own ← StateT.lift (match c.own, rest with
     | some F, _ => pure F
-    | none, some r => do return [← lower (SourceTypes.use (.arrs [] [r.map sub]))]
+    | none, some r => do
+      -- A scheme's rest at the instance: the argument pack of its positions
+      -- read at the binders, a binder's meet row at the binder's type itself
+      -- (the row the claims state, `Scheme.closureRows`' instances,
+      -- Schemes.lean:627-660): a spread's store spreads into the pack whose
+      -- element holds its positions' labels (`VariadicTyping.SpreadsInto`).
+      let r' := r.map sub
+      let G ← graphNow
+      let pack ← match c.binders.isEmpty, PositiveRules.expand G r.arguments.2 with
+        | false, [.pack t []] =>
+          lower (do return [← SourceTypes.use (.pack
+            { t with required := t.required.map sub, optional := t.optional.map sub, rest := t.rest.map sub } [])])
+        | _, _ => pure r'.arguments.2
+      return [← lower (SourceTypes.use (.arrs [] [{ r' with arguments := (r'.arguments.1, pack) }]))]
     | none, none =>
       if c.construct then do return [← lower (SourceTypes.use (.ctors [⟨(), inst.arguments, inst.result, inst.effect⟩]))]
       -- Every signature of the scheme the actuals' count admits, at the
