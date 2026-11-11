@@ -544,7 +544,13 @@ removal works through:
   Of one signature, a fresh literal at a parameter that is a bounded binder
   is made at the bound where the bound names a dictionary (an object
   literal) or a tuple (an array literal), and the binder read off it (the
-  producer's `dictionary_bound` and `tuple_bound`). A rest that is a binder's
+  producer's `dictionary_bound` and `tuple_bound`); a fresh array literal at
+  a parameter whose binders are bounded by literal types is made at the
+  parameter read at those bounds, where that leaves it no binder (the
+  producer's `literal_bounds`: `pick<K extends 0 | 1>(e: Array<[K,
+  number]>)` at `[[0, 1]]`). Of several signatures, an object or array
+  literal at a parameter they state differently is made at the first one's
+  parameter it fits (the producer's `shared_actuals`). A rest that is a binder's
   argument lists (`...args: T`) binds it at the actuals past the fixed ones,
   widened: an argument pack where only the rest uses the binder, else the
   tuple of them, whose argument lists the rest's are; an occurrence solely

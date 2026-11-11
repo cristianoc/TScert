@@ -4152,13 +4152,31 @@ partial def applyCall (env : Env) (c : Callee) (args : List Expr) (As : List (Op
   let mut As := As
   if let ([(a, _)], false) := (candidates, c.binders.isEmpty) then
     for ((x, P), i) in (args.zip a.arguments).zipIdx do
-      if c.binders.any (fun b => P.any (occurs b)) then
+      if c.binders.any (fun b => P.any (occurs b)) && !atBounds.contains i then
         As := As.set i (← tupleActual P x (As[i]?.join))
   if let ([(a, _)], false) := (candidates, c.binders.isEmpty) then
     for ((x, P), i) in (args.zip a.arguments).zipIdx do
       let some A := As[i]?.join | continue
       if !c.binders.any (isBinder · P) then continue
       let B ← match P with
+  -- A fresh array literal at a parameter whose binders are bounded by
+  -- literal types is made at the parameter read at those bounds, where
+  -- that leaves it no binder (the producer's `literal_bounds`,
+  -- expression_calls.ml:827-844, 900-902).
+  let literalLabel (l : Tree) : Bool := l == Labels.nul || l == Labels.undef ||
+    match PositiveRules.expand G [l] with
+    | [.numLit _] | [.numIn _] | [.strLit _] | [.strIn _] | [.boolLit _] | [.bigintLit _] => true
+    | _ => false
+  let literalBounds := c.bounds.filter fun (_, B) => !B.isEmpty && B.all literalLabel
+  let mut atBounds : List Nat := []
+  if let ([(a, _)], false) := (candidates, literalBounds.isEmpty) then
+    for ((x, P), i) in (args.zip a.arguments).zipIdx do
+      let .arrayLit .. := x | continue
+      let P' := substitute literalBounds P
+      if P' == P || c.binders.any (fun b => P'.any (occurs b)) then continue
+      if let some A' ← fit P' x (As[i]?.join) then
+        As := As.set i (some A')
+        atBounds := i :: atBounds
         | [b] => match c.bounds.lookup b with
           | some B => pure B
           | none => StateT.lift (boundOf P)
@@ -4253,6 +4271,25 @@ partial def applyCall (env : Env) (c : Callee) (args : List Expr) (As : List (Op
   let forceCallbacks := (← get).force.contains "callbacks"
   for (a, r) in candidates do
     if chosen.isSome || forceCallbacks then break
+  -- An object or array literal at a parameter the candidates state
+  -- differently is made at the first candidate's parameter it fits, as
+  -- TypeScript reads a literal against each overload in turn (the
+  -- producer's `shared_actuals`, expression_calls.ml:353-380).
+  if candidates.length > 1 && c.binders.isEmpty then
+    for (x, i) in args.zipIdx do
+      let literal := match x with
+        | .alloc .. | .arrayLit _ _ [] => true
+        | _ => false
+      let Ds := (candidates.filterMap fun (a, _) => a.arguments[i]?).eraseDups
+      let some A := As[i]?.join | continue
+      if !literal || Ds.length < 2 then continue
+      for D in Ds do
+        let w0 ← get
+        if let some A' ← fit D x (some A) then
+          if A' != A && within (← StateT.lift table) A' D then
+            As := As.set i (some A')
+            break
+        modify fun w => { w with exprs := w0.exprs }
     let σa ← if c.binders.isEmpty then pure c.seed else
       bindFrom c.seed ((a.receiver, c.receiver) :: (a.arguments.zip As).filterMap fun (P, A) => A.map (P, ·))
     if c.bounds.all (fun (b, B) => (σa.lookup b).all fun A => within Tw A (substitute σa B)) &&
@@ -5471,6 +5508,7 @@ def compareWalk (T : EquationStore.State) (fc : SourceClaims.Function Tree) (w :
       | .ok A => classify T A C
       | .error _ => "undetermined"
     counts := bump counts (kind, cls)
+  let raw (A : Ty Tree) : String := reprStr (A.map fun l => (l, PositiveRules.expand (SourceTypes.graph T) [l]))
     -- Same meaning under other labels: what a syntactic reading of the type
     -- (a clause's form) may still tell apart.
     let other := match r with
@@ -5510,7 +5548,6 @@ def compareWalk (T : EquationStore.State) (fc : SourceClaims.Function Tree) (w :
 and the module values `module` it reads: what it records, and the grown
 store. -/
 def walkUnit (T : EquationStore.State) (f : Fragment.Fn)
-  let raw (A : Ty Tree) : String := reprStr (A.map fun l => (l, PositiveRules.expand (SourceTypes.graph T) [l]))
     (module : List (String × Compiler (Ty Tree))) (generics : List (String × Generic) := [])
     (force : List String := []) (scope : Option (PositiveGraphs.SchemeRow Tree × List String) := none)
     (strict : Bool := false) (schemes : List (Span × Ty Tree) := []) :
