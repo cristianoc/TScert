@@ -386,7 +386,10 @@ held without `null` and `undefined` at every later statement), `paths`
 (each path narrowed before a loop kept at its head, its body and its exit,
 whatever ends it), `decided` (every test's `false` answer unreached),
 `finally` (a finalizer's shared entry its statement's normal completion
-alone), `never` (every call's statement completing at no value). Under
+alone), `never` (every call's statement completing at no value), `meets`
+(a type parameter's value dropped from `a ?? b`'s left operand),
+`implications` (every constant's initializer narrowing every other
+binding where the constant is tested `true`). Under
 a forced proposal, a forced footprint is one the
 function's own unit establishes, and a unit whose dependency of the file is
 refused counts as refused where both modes are compared with the pipeline.
@@ -415,7 +418,9 @@ function literal's defaults' changes left out of its effect),
 (every generic closure claimed keeping values and stores and bounding its
 throws, its body's effect unchecked against that claim),
 `invalid-compiler-api-guard-loop-finally` `names`, under `finally`, and
-`invalid-closure-graph-captured-cell` `counter`, under `never`. A control's
+`invalid-closure-graph-captured-cell` `counter`, under `never`,
+`invalid-type-parameter-meet-narrowing` `present`, under `meets`, and
+`invalid-negated-disjunction-saved` `wrong`, under `implications`. A control's
 acceptance counts only with every unit
 it `depends` on accepted: a run with named units checks only those, a
 dependency's footprint among its proposals, so its reader follows
@@ -726,7 +731,14 @@ removal works through:
   contradict where it contradicts some (`BranchRefinement.sourceSlice`); a
   type parameter's value (its meet with its bound), where a test naming one
   primitive family holds, becomes that family, as `unknown` does, and stays
-  where it fails. A test that cannot give an answer (its value's slice for
+  where it fails; under any other test, a meet row becomes the meets of its
+  parts with each clause of it the test does not contradict, none where it
+  contradicts every one (`T ⊓ (number | null)` less `null` and `undefined`
+  is `T ⊓ number`, the lowering's `observedSlice`). Where a constant holding
+  a condition's value (a guard's call, a test, a conjunction of them,
+  `implicationForm`) is tested `true`, each constant and each parameter no
+  cell holds is at what the condition narrows where it holds
+  (`constantImplications`). A test that cannot give an answer (its value's slice for
   it is empty, `!e` where `e` cannot give the other, `a || b` not `false`
   where either operand is never falsy, not `true` where neither is ever
   truthy, `a && b` dually) leaves the arm of that answer unreached, walked
@@ -752,7 +764,8 @@ removal works through:
   (`unknown` included), to the literal (but `0`, which `-0` equals too);
   a comma expression tested is its last operand's test, where the test
   assigns no binding; equality with an operand holding one of
-  several singletons narrows each operand to the union of its slices at the
+  several singletons (each member of its type one, `equalitySplit`)
+  narrows each operand to the union of its slices at the
   singletons the other may hold. `k in x` holding states a record's optional
   `k` present (a field where the record states one, else a view) and a
   dictionary not naming `k` with `k` a view of its index. `Array.isArray`
