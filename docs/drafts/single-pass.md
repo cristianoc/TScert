@@ -427,7 +427,8 @@ throws, its body's effect unchecked against that claim),
 `invalid-negated-disjunction-saved` `wrong`, under `implications`, and
 `invalid-closure-cell-capture-narrowed` `wrong`, under `captures` (every
 captured binding at its type where the literal is made), and
-`invalid-object-spread-width-replaced` `wrong`, under `objects`. A control's
+`invalid-object-spread-width-replaced` `wrong`, under `objects`, and
+`invalid-class-static-inherited-rest` `rest`, under `spreads`. A control's
 acceptance counts only with every unit
 it `depends` on accepted: a run with named units checks only those, a
 dependency's footprint among its proposals, so its reader follows
@@ -541,7 +542,8 @@ removal works through:
   `slice_element`), any other rest the
   tuple of the positions after it. An object pattern's rest is a fresh
   object of the value's one record's fields but the named keys, at their
-  types. A nested pattern's value is stated at its span (a parameter's
+  types; of any other value, the copies it gives as a spread's operand but
+  the named keys. An assignment pattern's rest is a pattern's. A nested pattern's value is stated at its span (a parameter's
   pattern is a destructuring of the parameter), and a defaulted part that
   is a name is read at the field's type at its span. A declaration of a statement declaring several holds the
   bindings before it.
@@ -825,7 +827,8 @@ removal works through:
   default is added where the part may be `undefined`, made at the part's
   type less `undefined` (a parameter's default at its annotation's); a
   function the default makes within a callable part's type is held at that
-  type (a parameter's type is what the body reads). Strict equality with
+  type (a parameter's type is what the body reads), an object literal
+  default at that type's members it is within. Strict equality with
   a literal holding narrows the operand, where it may hold the literal
   (`unknown` included), to the literal (but `0`, which `-0` equals too);
   a comma expression tested is its last operand's test, where the test

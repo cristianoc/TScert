@@ -2096,6 +2096,9 @@ partial def exprAt (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (
           return [← SourceTypes.use (SourceTypes.arrayOf T s false)]) fun _ => pure none)
       | _, _ => pure none
     let (R, e1) ← expr env rhs tuple
+    -- The rest after the targets: as a pattern's (`restOf`), its slice's
+    -- call instantiated at the value.
+    if let some (rp, slice, _) := rest then let _ ← restOf e1 R targets.length rp slice
     let names := targets.filterMap (·.target.targetLocal) ++ (rest.bind fun r => r.2.2.target.targetLocal).toList
     -- Each name the pattern assigns at its declared type, and no path
     -- through it narrowed, from the first target's assignment on (a later
@@ -3394,6 +3397,8 @@ partial def bindPattern (env : Env) (p : Pattern Expr) (A : Option (Ty Tree)) : 
     if let some (rp, q) := rest then
       -- The rest: a fresh object of the value's own fields but the named
       -- keys, at their types (`Object.assign`'s copy of one record).
+      -- (`TSCERT_FORCE=spreads`: the copies with every key stated)
+      let forced := (← get).force.contains "spreads"
       let R ← match A with
         | some A => StateT.lift (tryCatch (do
             let G ← graphNow
@@ -3403,7 +3408,15 @@ partial def bindPattern (env : Env) (p : Pattern Expr) (A : Option (Ty Tree)) : 
               let fields := (fs ++ vs).filter fun (f, _) => f != SourceTypes.protoField &&
                 f != SourceTypes.storeField && !ms.any (·.key == f) && !named.contains f
               Except.ok <$> prim (.refs fields [] [] [] [] [])
-            | _ => pure (Except.error "a rest of a value of no one record contract")) fun m => pure (.error m))
+            | _ =>
+              -- Any other value: the copies it gives as a spread's operand
+              -- (`copiesOf`: each record arm's, a class value's static
+              -- fields, a function's none), but the named keys.
+              let named := props.map fun (k, _, _) => PropKey.str k
+              let cs ← copiesOf A forced
+              if cs.isEmpty then return .error "a rest of a value of no record contract"
+              let Rs ← cs.mapM fun c => copyType { c with fields := c.fields.filter fun (k, _, _) => !named.contains k }
+              return .ok (norm Rs.flatten)) fun m => pure (.error m))
         | none => pure (.error "the bound value undetermined")
       recordAt rp "other" R
       env ← bindPattern env q R.toOption
@@ -3493,6 +3506,12 @@ partial def withDefault (env : Env) (B : Option (Ty Tree)) (d : Option Expr) : W
       if !D.isEmpty && within T D Bd && D.all (fun l => !(ProgramTyping.callSigs G [l]).isEmpty) &&
           Bd.all (fun l => !(ProgramTyping.callSigs G [l]).isEmpty) then
         return (some Bd, (join (some env) (some e1)).getD e1)
+      -- An object literal default at the part's members it is within: a
+      -- store's contract is fixed where it is made (`declaredAt`; the
+      -- producer binds a defaulted parameter at its annotation).
+      let D ← match d with
+        | .alloc .. | .build .. => if Bd.isEmpty then pure D else StateT.lift (declaredAt Bd D)
+        | _ => pure D
       return (some (norm (Bd ++ D)), (join (some env) (some e1)).getD e1)
     | _, _ => return (none, e1)
 
