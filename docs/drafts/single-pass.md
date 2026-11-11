@@ -519,7 +519,9 @@ removal works through:
   binder's type is read off an actual by matching its parameter's type one
   level at a time (`Synthesis.matchBinder`), at what the receiver gives
   it, else at the join of what the actuals give it (the producer's join of
-  lower bounds),
+  lower bounds), a binder the signature reads only at its callbacks'
+  parameters at the candidate within every other (the producer's meet of
+  an upper-only binder's candidates, inference.ml:557-569),
   a primitive's members read off its prototype: the binder itself; in a
   union, the one member naming it at the actual less what the other members
   admit and less the labels another binder of the call reads off one of
