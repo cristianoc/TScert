@@ -673,6 +673,12 @@ removal works through:
   of a constant holding a literal does (`closure_offer`); where the walk
   states offered rows at the literal, the constant is read at the type the
   walk gives the literal, those rows included, written or not. Its own check decides it (section 5, "A footprint").
+  A field of an object literal at a key the expected record states as a
+  method is walked at the callable a read of that method bound to the
+  record is, its signatures the method's (the producer's `f.read`,
+  expression_objects.ml:25-36): a literal there is stated at each of them
+  binding more parameters, an iterator's `next` at `(value) => …` beside
+  its own row.
 - **Declarations.** Each function a wanted unit reaches, callees first,
   is walked as its unit is, each callee read at the footprint found for it
   (`declarationEffects`). A walk proposes the join, by class of location,
