@@ -2278,30 +2278,44 @@ partial def exprAt (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (
     return (r, e1)
   | .arrayAssign _ targets rest rhs =>
     wrote
-    -- An array literal assigned to a pattern of as many names or members,
-    -- none defaulted, made at the tuple of their declared types (`[p, q] =
-    -- [q, p]`, `[o.f] = ["s"]`).
-    let tuple ← match rhs, rest with
-      | .arrayLit _ es [], none =>
-        -- (a member target `o.f` at the field's type)
-        let Ds ← StateT.lift (targets.filterMapM fun t => do
-          if t.default_.isSome then return none
-          match t.target.targetLocal, t.target with
-          | some n, _ => return env.decl.lookup n
-          | none, .read _ f (.var _ o) =>
-            let some O := env.vars.lookup o | return none
-            tryCatch (some <$> readField env.vars O f) fun _ => pure none
-          | none, _ => return none)
-        if Ds.length != targets.length || es.length != targets.length then pure none
-        else StateT.lift (tryCatch (some <$> lower do
-          let s ← SourceTypes.use (.list ⟨Ds, [], none, false, .dense⟩ [])
-          let T ← get
-          return [← SourceTypes.use (SourceTypes.arrayOf T s false)]) fun _ => pure none)
-      | _, _ => pure none
+    -- A literal assigned to a pattern is made at its targets' contracts,
+    -- defaults admitting undefined and the rest supplying the remaining
+    -- positions (expression_values.ml:250-269).
+    let targetType (target : Expr) : Compiler (Option (Ty Tree)) := do
+      match target.targetLocal, target with
+      | some n, _ => return env.decl.lookup n
+      | none, .read _ f (.var _ o) =>
+        let some O := env.vars.lookup o | return none
+        tryCatch (some <$> readField env.vars O f) fun _ => pure none
+      | none, _ => return none
+    let restType ← match rest with
+      | some (_, _, t) => StateT.lift (targetType t.target)
+      | none => pure none
+    let tuple ← match rhs with
+      | .arrayLit _ es [] => StateT.lift (tryCatch (do
+          let mut Ds : List (Ty Tree) := []
+          for t in targets do
+            let some D ← targetType t.target | return none
+            Ds := Ds ++ [if t.default_.isSome then norm (D ++ [Labels.undef]) else D]
+          if targets.length > es.length then return none
+          if rest.isNone && targets.length != es.length then return none
+          for i in List.range (es.length - targets.length) do
+            let some D := restType | return none
+            Ds := Ds ++ [← elementAt D (some i) (missing := false)]
+          some <$> lower do
+            let s ← SourceTypes.use (.list ⟨Ds, [], none, false, .dense⟩ [])
+            let T ← get
+            return [← SourceTypes.use (SourceTypes.arrayOf T s false)]) fun _ => pure none)
+      | _ => pure none
     let (R, e1) ← expr env rhs tuple
     -- The rest after the targets: as a pattern's (`restOf`), its slice's
     -- call instantiated at the value.
-    if let some (rp, slice, _) := rest then let _ ← restOf e1 R targets.length rp slice
+    if let some (rp, slice, _) := rest then
+      let A ← restOf e1 R targets.length rp slice
+      if !slice && A.isSome then
+        if let some D := restType then
+          let G ← StateT.lift graphNow
+          if (storeOf G D).isSome then recordAt rp "other" (.ok D)
     let names := targets.filterMap (·.target.targetLocal) ++ (rest.bind fun r => r.2.2.target.targetLocal).toList
     -- Each name the pattern assigns at its declared type, and no path
     -- through it narrowed, from the first target's assignment on (a later
@@ -2315,6 +2329,8 @@ partial def exprAt (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (
       let (_, e') ← expr env t.target
       env := e'
       if let some d := t.default_ then env := (← expr env d).2
+    if let some (_, _, t) := rest then
+      env := (← expr env t.target).2
     env := reset env
     return (← record e (match R with | some R => .ok R | none => .error "the value undetermined"), env)
   | .arith _ op l r =>
@@ -3620,7 +3636,8 @@ partial def fit (P : Ty Tree) (x : Expr) (A : Option (Ty Tree)) : W (Option (Ty 
 
 /-- Bind a pattern's names to the parts of a value of type `A` (none where
 `A` is undetermined). -/
-partial def bindPattern (env : Env) (p : Pattern Expr) (A : Option (Ty Tree)) : W Env := do
+partial def bindPattern (env : Env) (p : Pattern Expr) (A : Option (Ty Tree))
+    (origin : Option (String × List PropKey) := none) : W Env := do
   match p with
   | .name n namePos =>
     -- A name at its value's own span (a defaulted parameter's binding)
@@ -3639,15 +3656,19 @@ partial def bindPattern (env : Env) (p : Pattern Expr) (A : Option (Ty Tree)) : 
       recordAt pos "other" (match A with | some A => .ok A | none => .error "the bound value undetermined")
     let mut env := env
     for (key, q, d) in props do
-      let B ← match A with
-        | some A => StateT.lift (tryCatch (some <$> readField env.vars A (.str key)) fun _ => pure none)
-        | none => pure none
-      -- A defaulted part's read, at the field's type where the part is a
-      -- name (its span the name's).
-      if let (some _, .name _ np, some B) := (d, q, B) then
-        if !(← get).exprs.contains np then recordAt np "identifier" (.ok B)
+      let path := origin.map fun (root, pre) => (root, pre ++ [.str key])
+      let B ← match path.bind (env.paths.lookup ·), A with
+        | some B, _ => pure (some B)
+        | none, A => match A with
+          | some A => StateT.lift (tryCatch (some <$> readField env.vars A (.str key)) fun _ => pure none)
+          | none => pure none
+      -- A defaulted part's read keeps the original field type at its span;
+      -- its binding receives the value after the default (binding_analysis.ml:61).
+      if let (some _, some B) := (d, B) then
+        let sp := match q with | .name _ sp | .object sp .. | .array sp .. => sp
+        if !(← get).exprs.contains sp then recordAt sp "other" (.ok B)
       let (B, e') ← withDefault env B d
-      env ← bindPattern e' q B
+      env ← bindPattern e' q B (if d.isNone then path else none)
     if let some (rp, q) := rest then
       -- The rest: a fresh object of the value's own fields but the named
       -- keys, at their types (`Object.assign`'s copy of one record).
@@ -3655,8 +3676,12 @@ partial def bindPattern (env : Env) (p : Pattern Expr) (A : Option (Ty Tree)) : 
       let forced := (← get).force.contains "spreads"
       let R ← match A with
         | some A => StateT.lift (tryCatch (do
+            let A ← boundOf A
             let G ← graphNow
             match PositiveRules.expand G A with
+            | [.callable fs _ _ _ _] =>
+              let named := props.map fun (k, _, _) => PropKey.str k
+              Except.ok <$> prim (.refs (fs.filter fun (k, _) => !named.contains k) [] [])
             | [.refs fs [] vs [] ms _ _] =>
               let named := props.map fun (k, _, _) => PropKey.str k
               let fields := (fs ++ vs).filter fun (f, _) => f != SourceTypes.protoField &&
@@ -3706,10 +3731,12 @@ partial def restOf (env : Env) (A : Option (Ty Tree)) (k : Nat) (rp : Span) (sli
     -- producer's `slice_element`, type_queries.ml:626-638).
     let E ← StateT.lift (tryCatch (do
         let G ← graphNow
-        let some S := storeOf G A | pure none
-        let [.list t []] := PositiveRules.expand G S | pure none
-        let Es := t.required.drop k ++ (t.optional.drop (k - t.required.length)).map (· ++ [Labels.undef]) ++ t.rest.toList
-        pure (if Es.isEmpty then none else some (norm Es.flatten))) fun _ => pure none)
+        let mut Es : List (Ty Tree) := []
+        for l in A do
+          let some S := storeOf G [l] | return none
+          let [.list t []] := PositiveRules.expand G S | return none
+          Es := Es ++ t.required.drop k ++ (t.optional.drop (k - t.required.length)).map (· ++ [Labels.undef]) ++ t.rest.toList
+        pure (some (norm Es.flatten))) fun _ => pure none)
     let c := match c.binders, E with
       | [b], some E => { c with seed := c.seed ++ [(b, E)] }
       | _, _ => c
@@ -4069,7 +4096,7 @@ partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
   | .destructure _ target d init =>
     let (A, e1) ← expr env init
     let (A, e2) ← withDefault e1 A d
-    return some (← bindPattern e2 target A)
+    return some (← bindPattern e2 target A (if d.isNone then memberPath init else none))
   | .ite _ c thn els =>
     let (_, e1) ← expr env c
     let arm (q : Bool) (ss : List Stmt) : W (Option Env) := do
