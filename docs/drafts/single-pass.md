@@ -473,14 +473,40 @@ claims document (`SourceClaimJson.fragmentPlans`, `Claims/FragmentFront.lean`).
 - **Regions.** A function whose statement states store regions is
   proposed at `top`; the regional check of its own regions certifies the
   statement.
-- **Classes and literals.** A class value is the construct signature of its
+- **Classes.** A class value is the construct signature of its
   constructor's written parameters and instance (its written result), or
   of the fresh constructor it is bound to, with its static fields, each at
-  the class binding's annotation's type where it states one. An object
-  literal states its own keys exactly (`HasTyUsing.alloc`'s bound); where a
-  record is expected, it is that record's form with each field at the
-  expected one, else at the value's own type, as written where that is
-  within the expected record, else stating its own keys exactly.
+  the class binding's annotation's type where it states one.
+- **Expected types.** A store's contract is fixed where the store is made;
+  a read is a copy, an upcast of an immutable value, or an upcast of a store
+  to a readonly view of it. So a value is made at the type its position
+  expects: a return's, an annotated declaration's, an assignment's (also
+  `??=`, `||=`, `&&=`), a field write's field, an element write's contents,
+  a cast's target, a function literal's result; and from there a
+  conditional's arms, the right operand of `&&`, `||`, `??` and `,`, an
+  object literal's fields (the union of the fields the expected members
+  state at the key) and an array literal's positions. By form: an object
+  literal states its own keys exactly (`HasTyUsing.alloc`'s bound); at a
+  dictionary with a writable index it is allocated at that dictionary with
+  each of its keys a field (at the dictionary's named field, else its
+  index), the optional fields it leaves out absent; at a record, it is that
+  record's form with each key a field the allocation writes (a stable key
+  the record states as a view stays a view), at the expected field, else at
+  the value's own type, as written where that is within the expected
+  record, else stating its own keys exactly. An array literal is made at the
+  one array member whose positions admit its elements, each element made at
+  its position; at an iterable other than an array, at the readonly array
+  of what it yields (its `[Symbol.iterator]`'s `next` results' `value`),
+  presence `readable`; where nothing is expected, at an array of its
+  elements' widened union, presence `readable`. `[…] as const` and `{…} as
+  const` make the operand at the const type. A function literal writing no
+  parameter's type is walked at the expected signature taking the most
+  parameters. A call's binders are read off the receiver and the actuals
+  first, those still unbound off the expected type; where the instance so
+  read has a result the expected type does not admit, the expected type's
+  instance where it binds every binder and admits the actuals. A call whose
+  signature states a fresh result is made at the first expected array whose
+  elements admit the result's.
 - **Narrowing.** A tag test narrows a binding or path by the tag slice;
   `unknown` (a `source` label) becomes the kinds of value the test does not
   contradict where it contradicts some (`BranchRefinement.sourceSlice`). A
@@ -527,8 +553,8 @@ footprint the unit's verdict reads (removing any one refuses the unit):
 (`isCollapsibleSpaceCode`, `readLetterSpacing`); `buildEngineProfile` none.
 
 Agreement with the pipeline over the 3,303 pipeline cases (mode 8 with the
-given files, `TSCERT_REFEREE`), measured 2026-11-11: 6,296 units, 4,748
-agree, 799 disagree, 748 not handled, 1 whose pipeline check timed out. A file the pipeline refuses before any
+given files, `TSCERT_REFEREE`), measured 2026-11-11: 6,296 units, 4,888
+agree, 661 disagree, 747 not handled. A file the pipeline refuses before any
 unit's check is run from its fragment too: the unit holding the refusal's
 position is compared with the refusal (91 units), the others are undecided
 (85; the pass accepts 24, none the unit an unsafe program's refusal names).
