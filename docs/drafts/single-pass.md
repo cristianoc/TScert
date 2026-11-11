@@ -679,6 +679,26 @@ removal works through:
   expression_objects.ml:25-36): a literal there is stated at each of them
   binding more parameters, an iterator's `next` at `(value) => …` beside
   its own row.
+  A constant holding such a literal, read where one variadic signature of
+  an element rest binding at least as many fixed parameters is expected,
+  offers the literal that signature at its own leading parameters
+  (`closure_offer`, closure_offers.ml:54-56). A literal walked with no
+  expected type (a field of an argument's object literal) is stated,
+  beside its own row, at the rows the parameter's callable offers it once
+  the call's instance is chosen (`fit`, `contextRows`).
+  A constant holding a class value whose constructor's body returns an
+  allocation last, read where a constructor type is expected (a
+  dictionary's field at its index's value, less the `undefined` of an
+  absent read), is offered: each method of its
+  prototype chain a constant of a literal holds, the signature the
+  expected instance's member states binding more parameters, at the
+  class's instance as receiver; and the class value, the construct
+  signature giving that instance, at that signature's parameters where it
+  binds more than the constructor, else at the constructor's; a variadic
+  construct signature of an element rest as it is (the producer's
+  `offer_class`, closure_offers.ml:62-95). A class value is held at its
+  own construct signatures, the offered ones among them, as a callable is;
+  the constructor's code is checked at each (ClosureSetup.lean:211-224).
 - **Declarations.** Each function a wanted unit reaches, callees first,
   is walked as its unit is, each callee read at the footprint found for it
   (`declarationEffects`). A walk proposes the join, by class of location,
