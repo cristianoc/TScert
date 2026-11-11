@@ -1776,7 +1776,8 @@ def copiesOf (A : Ty Tree) (force : Bool) (target : Bool := false) : Compiler (L
     | [.arrs ..] => out := out ++ [{ exact := false }]
     -- (a label of no value: no copy)
     | [] => pure ()
-    | _ => throw "a spread of a value of no record contract"
+    -- The producer rejects these operand contracts (object_spread.ml:176).
+    | _ => throw (refusalMark ++ "copy: a spread of a value of no record contract")
   return out
 
 /-- A source's copy defined over a copy's (`object_spread.ml`,
