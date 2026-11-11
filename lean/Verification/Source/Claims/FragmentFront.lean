@@ -99,7 +99,7 @@ extraction reads them. -/
 def retypeFromFragment (force : List String := []) : Retype := fun fr T f fc module scope => do
   let init := f.name.isEmpty
   let (schemes, generics) := fr.genericValues
-  let (T, fc, completion, declarations, spanEntries) ← SinglePass.timedKind "lower: of extractAll, the walk" fun _ =>
+  let (T, fc, completion, declarations, spanEntries, exprsAt) ← SinglePass.timedKind "lower: of extractAll, the walk" fun _ =>
     Synthesis.retypeUnitWith T f fc (module.map (fun v => (v.1, moduleValueType v)) ++ schemes) generics "xec" force scope
   let (graphs, prologues) ← fr.flowGraphs f init
   let owner := if init then (0, 0) else f.namePos
@@ -116,8 +116,22 @@ def retypeFromFragment (force : List String := []) : Retype := fun fr T f fc mod
     return twice
   let currentMap : Std.HashMap Nat (List (String × List (List PropKey × Ty Tree))) :=
     fc.entryCurrent.foldl (fun m (pos, cs) => m.insert pos cs) {}
+  let sitesOf (g : SourceFlow.Graph) (node : SourceFlow.Node) (id : Nat) : List Span :=
+    (actionSites node.action ++ (if id == g.entry then (prologues.lookup g.owner).getD [] else [])).eraseDups
+  -- The spans that are sites of more than one statement (the parts a class's
+  -- construction is lowered to share spans).
+  let sharedSites : Std.HashSet Span := Id.run do
+    let mut first : Std.HashMap Span Span := {}
+    let mut out : Std.HashSet Span := {}
+    for g in graphs do
+      for (node, id) in g.nodes.toList.zipIdx do
+        for sp in sitesOf g node id do
+          match first.get? sp with
+          | some src => if src != node.source then out := out.insert sp
+          | none => first := first.insert sp node.source
+    return out
   let points : List (String × SourceClaims.PointData Tree) := graphs.flatMap fun g => g.nodes.toList.zipIdx.map fun (node, id) =>
-    let sites := (actionSites node.action ++ (if id == g.entry then (prologues.lookup g.owner).getD [] else [])).eraseDups
+    let sites := sitesOf g node id
     -- The unit's completion holds the bindings where its body completes,
     -- each at the empty type where it never does.
     let own := if shared.contains node.source.1 then spanEntries.get? node.source else none
@@ -134,7 +148,10 @@ def retypeFromFragment (force : List String := []) : Retype := fun fr T f fc mod
         | none => atEntry
       | _ => atEntry
     let row : SourceClaims.PointData Tree := {
-      exprs := sites.filterMap fun sp => (exprMap.get? sp).map (sp, ·)
+      -- Each site's type as the walk records it; at a span sites of several
+      -- statements share, as its own statement's walk records it.
+      exprs := sites.filterMap fun sp =>
+        ((if sharedSites.contains sp then exprsAt.get? (node.source, sp) else none) <|> exprMap.get? sp).map (sp, ·)
       envs := if bindings.isEmpty && (envMap.get? node.source.1).isNone then [] else [(node.source.1, bindings)]
       -- The member paths the walk narrowed there (their `current` contents).
       entryCurrent := match own, currentMap.get? node.source.1 with

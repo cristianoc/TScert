@@ -378,7 +378,7 @@ function literal at keep/keep), `callees` (every function of the file without
 a written footprint at keep/keep), `elements` (every element read without
 `undefined`), `objects` (every object literal at its expected type),
 `spreads` (every spread with every key its operand's type states, optional
-ones as present), `stale` (a binding a function literal assigns kept
+ones as present, the copy at its own keys exactly), `stale` (a binding a function literal assigns kept
 narrowed across a call), `guards` (each guard's and family guard's true
 answer stated on its false edge too), `reads` (a member read's receiver
 held without `null` and `undefined` at every later statement), `paths`
@@ -532,9 +532,18 @@ removal works through:
   proposed at `top`; the regional check of its own regions certifies the
   statement.
 - **Classes.** A class value is the construct signature of its
-  constructor's written parameters and instance (its written result), or
-  of the fresh constructor it is bound to, with its static fields, each at
-  the class binding's annotation's type where it states one.
+  constructor's written parameters and instance (its written result), with
+  its static fields, each at the class binding's annotation's type where it
+  states one. A fresh constructor (a class binding `C.[[class]]`) has first
+  the signature giving the instance its body allocates, its tail
+  allocations stating their own keys exactly; a class value whose code is
+  a constructor an earlier class value of its declaration was walked at
+  has that one's signatures. An allocation holding a prototype link states
+  its own keys exactly, the link at its walked type and each other key at
+  the expected record's field. A copy (`{ ...o }`) whose sources each state
+  their own keys exactly, with no optional field, states its own keys
+  exactly. Each expression's type is read at its own statement's point,
+  where two statements' expressions share a span (a construction's parts).
 - **Expected types.** A store's contract is fixed where the store is made;
   a read is a copy, an upcast of an immutable value, or an upcast of a store
   to a readonly view of it. So a value is made at the type its position
