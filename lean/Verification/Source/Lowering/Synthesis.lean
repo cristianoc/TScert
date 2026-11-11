@@ -96,6 +96,11 @@ structure Walk where
   completion : Option (List (String × Ty Tree)) := none
   lastInstance : Option (List (String × Ty Tree)) := none
   entries : Std.HashMap Nat (List (String × Ty Tree)) := {}
+  /-- Each statement entry's bindings and narrowed member paths by the
+  statement's whole span: where statements of one start nest (a guard's
+  `return c` read as `if (c) return true; else return false;`, each part at
+  the start of `c`), each one's own. -/
+  spanEntries : Std.HashMap Span (List (String × Ty Tree) × List (String × List (List PropKey × Ty Tree))) := {}
   /-- The bindings before each declaration of a statement declaring several,
   by the statement's start and the declared name: the entry of that
   declaration's own node. -/
@@ -2119,7 +2124,11 @@ partial def stmts (env : Option Env) (ss : List Stmt) : W (Option Env) := do
     modify fun w =>
       let earlier := if at_ == s.pos.1 then [] else
         ((w.entries.get? at_).getD []).filter fun (n, _) => (vars.lookup n).isNone
-      { w with entries := (w.entries.insert s.pos.1 vars).insert at_ (vars ++ earlier) }
+      let current := match s with
+        | .loop .. | .forOf .. => []
+        | _ => currentOf e
+      { w with entries := (w.entries.insert s.pos.1 vars).insert at_ (vars ++ earlier),
+               spanEntries := w.spanEntries.insert s.pos (vars, current) }
     -- The narrowed paths of an entry no loop's head is (a `for`'s head
     -- shares its declarations' entry).
     match s with
@@ -2454,7 +2463,8 @@ def retypeUnitWith (T : EquationStore.State) (f : Fragment.Fn) (fc : SourceClaim
     (parts : String := "xec") (force : List String := [])
     (scope : Option (PositiveGraphs.SchemeRow Tree × List String) := none) :
     Except String (EquationStore.State × SourceClaims.Function Tree × Option (List (String × Ty Tree)) ×
-      Std.HashMap (Nat × String) (List (String × Ty Tree))) := do
+      Std.HashMap (Nat × String) (List (String × Ty Tree)) ×
+      Std.HashMap Span (List (String × Ty Tree) × List (String × List (List PropKey × Ty Tree)))) := do
   let (w, T') ← walkUnit T f module generics force scope
   let exprs : List (Span × SourceClaims.Candidate Tree) := w.exprs.toList.map fun (span, (_, r)) =>
     (span, r.mapError fun m => s!"not handled: {m} (type undetermined)")
@@ -2486,7 +2496,7 @@ def retypeUnitWith (T : EquationStore.State) (f : Fragment.Fn) (fc : SourceClaim
       (id, { row with exprs := exprs, envs := envs,
                       entryCurrent := if keep then row.entryCurrent else w.currents.toList,
                       exprCurrent := if keep then row.exprCurrent else [] }) } : SourceClaims.Function Tree), w.completion,
-    w.declarations)
+    w.declarations, w.spanEntries)
 
 /-- `retypeUnitWith`'s grown store and claims. -/
 def retypeUnit (T : EquationStore.State) (f : Fragment.Fn) (fc : SourceClaims.Function Tree)
@@ -2494,7 +2504,7 @@ def retypeUnit (T : EquationStore.State) (f : Fragment.Fn) (fc : SourceClaims.Fu
     (parts : String := "xec") (force : List String := [])
     (scope : Option (PositiveGraphs.SchemeRow Tree × List String) := none) :
     Except String (EquationStore.State × SourceClaims.Function Tree) := do
-  let (T, fc, _, _) ← retypeUnitWith T f fc module generics parts force scope
+  let (T, fc, _, _, _) ← retypeUnitWith T f fc module generics parts force scope
   return (T, fc)
 
 end Verification.SourceExtraction.Synthesis

@@ -99,20 +99,31 @@ extraction reads them. -/
 def retypeFromFragment (force : List String := []) : Retype := fun fr T f fc module scope => do
   let init := f.name.isEmpty
   let (schemes, generics) := fr.genericValues
-  let (T, fc, completion, declarations) ← SinglePass.timedKind "lower: of extractAll, the walk" fun _ =>
+  let (T, fc, completion, declarations, spanEntries) ← SinglePass.timedKind "lower: of extractAll, the walk" fun _ =>
     Synthesis.retypeUnitWith T f fc (module.map (fun v => (v.1, moduleValueType v)) ++ schemes) generics "xec" force scope
   let (graphs, prologues) ← fr.flowGraphs f init
   let owner := if init then (0, 0) else f.namePos
   let exprMap : Std.HashMap Span (SourceClaims.Candidate Tree) := fc.exprs.foldl (fun m (sp, c) => m.insert sp c) {}
   let envMap : Std.HashMap Nat (List (String × SourceClaims.Candidate Tree)) :=
     fc.envs.foldl (fun m (pos, bs) => m.insert pos bs) {}
+  -- A start several statements share (nested at one position): each node
+  -- at its own statement's entry.
+  let shared : Std.HashSet Nat := Id.run do
+    let mut seen : Std.HashSet Nat := {}
+    let mut twice : Std.HashSet Nat := {}
+    for (sp, _) in spanEntries.toList do
+      if seen.contains sp.1 then twice := twice.insert sp.1 else seen := seen.insert sp.1
+    return twice
   let currentMap : Std.HashMap Nat (List (String × List (List PropKey × Ty Tree))) :=
     fc.entryCurrent.foldl (fun m (pos, cs) => m.insert pos cs) {}
   let points : List (String × SourceClaims.PointData Tree) := graphs.flatMap fun g => g.nodes.toList.zipIdx.map fun (node, id) =>
     let sites := (actionSites node.action ++ (if id == g.entry then (prologues.lookup g.owner).getD [] else [])).eraseDups
     -- The unit's completion holds the bindings where its body completes,
     -- each at the empty type where it never does.
-    let atEntry := (envMap.get? node.source.1).getD []
+    let own := if shared.contains node.source.1 then spanEntries.get? node.source else none
+    let atEntry := match own with
+      | some (vs, _) => vs.map fun (n, A) => (n, .ok A)
+      | none => (envMap.get? node.source.1).getD []
     let bindings : List (String × SourceClaims.Candidate Tree) := match node.action with
       | .finish => if g.owner != owner then atEntry else match completion with
         | some vs => vs.map fun (n, A) => (n, .ok A)
@@ -126,9 +137,10 @@ def retypeFromFragment (force : List String := []) : Retype := fun fr T f fc mod
       exprs := sites.filterMap fun sp => (exprMap.get? sp).map (sp, ·)
       envs := if bindings.isEmpty && (envMap.get? node.source.1).isNone then [] else [(node.source.1, bindings)]
       -- The member paths the walk narrowed there (their `current` contents).
-      entryCurrent := match currentMap.get? node.source.1 with
-        | some cs => [(node.source.1, cs)]
-        | none => [] }
+      entryCurrent := match own, currentMap.get? node.source.1 with
+        | some (_, []), _ => []
+        | some (_, cs), _ | none, some cs => [(node.source.1, cs)]
+        | none, none => [] }
     (SourceFlow.pointId g.owner id, row)
   -- Two graphs of one owner name a point once: its rows joined.
   let joined : Std.HashMap String (SourceClaims.PointData Tree) := points.foldl (fun m (id, row) =>
