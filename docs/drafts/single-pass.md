@@ -489,7 +489,10 @@ removal works through:
   storage contract (`Front.withInitTypes`). A call of a generic module value,
   a generic class's construction and a `for...of`'s iteration intrinsic are
   instantiated at the binders' types the walk gives them
-  (`instancesFromWalk`). A binder a resolution qualifies (`%Await%`,
+  (`instancesFromWalk`); a loop's element is its intrinsic's one binder,
+  else (a union's iteration) the `value` its stepper yields. An async
+  literal with an expression body is at the promise its `%AsyncReturn%`
+  call gives. A binder a resolution qualifies (`%Await%`,
   `%AsyncReturn%`, `%PromiseResolve%`, an `Awaited<T>`-resolved one) is
   instantiated at its input's type with the certificate that type's form
   gives (`Scheme.resolutionCertificate`: a binder of the unit's own scheme
@@ -499,9 +502,14 @@ removal works through:
   checked certificate establishes (`Scheme.resolutionInstance`); written
   type arguments name its binders but the observations and results. A
   binder's type is read off an actual by matching its parameter's type one
-  level at a time (`Synthesis.matchBinder`): the binder itself; in a union,
-  the one member naming it at the actual less what the other members admit,
-  else each label of the actual at the first member it matches; one type
+  level at a time (`Synthesis.matchBinder`), at what the receiver gives
+  it, else at the join of what the actuals give it (the producer's join of
+  lower bounds),
+  a primitive's members read off its prototype: the binder itself; in a
+  union, the one member naming it at the actual less what the other members
+  admit and less the labels another binder of the call reads off one of
+  them (a union iteration's parts, each kind's binders apart), else each
+  label of the actual at the first member it matches; one type
   constructor's arguments at the actual's of the same constructor; an
   array's elements, a record's fields and methods' results, a callable's
   result at the actual's. Of a call's signatures the first each walked

@@ -914,7 +914,8 @@ member mentioning `b` at `A` less what the others admit; in an application
 of one head, its arguments at `A`'s of that head; in an array, its elements
 at `A`'s; in a record, each field at `A`'s; in a callable, its result at
 `A`'s. -/
-partial def matchBinder (b : Tree) (P A : Ty Tree) (fuel : Nat := 6) : Compiler (Option (Ty Tree)) := do
+partial def matchBinder (b : Tree) (P A : Ty Tree) (fuel : Nat := 6) (vars : List (String × Ty Tree) := [])
+    (siblings : List Tree := []) : Compiler (Option (Ty Tree)) := do
   if isBinder b P then return some A
   if fuel == 0 || A.isEmpty then return none
   let T ← table
@@ -928,16 +929,26 @@ partial def matchBinder (b : Tree) (P A : Ty Tree) (fuel : Nat := 6) : Compiler 
     for a in A do
       let mut got : Option (Ty Tree) := none
       for m in withB do
-        if got.isNone then got ← matchBinder b [m] [a] (fuel - 1)
+        if got.isNone then got ← matchBinder b [m] [a] (fuel - 1) vars
       let some B := got | return none
       out := out ++ B
     return some (norm out)
+  -- (a label another binder of the call reads off a member not mentioning
+  -- `b` is that member's: a union iteration's parts, each kind's binders
+  -- apart, as the producer's instance reads them)
+  let mut A' : Ty Tree := []
+  for a in A do
+    let mut theirs := within T [a] others
+    for m in others do
+      for b' in siblings do
+        if !theirs && b' != b && occurs b' m then
+          if (← matchBinder b' [m] [a] (fuel - 1) vars).isSome then theirs := true
+    if !theirs then A' := A' ++ [a]
   let [l] := withB | do
     if withB.isEmpty then return none
-    perLabel (A.filter fun a => !within T [a] others)
+    perLabel A'
   if !others.isEmpty then
-    let A' := A.filter fun a => !within T [a] others
-    if let some B ← matchBinder b [l] A' (fuel - 1) then return some B
+    if let some B ← matchBinder b [l] A' (fuel - 1) vars then return some B
     return ← perLabel A'
   -- One head applied: its arguments, each at `A`'s of the same head.
   if let .app h ps := l then
@@ -948,12 +959,12 @@ partial def matchBinder (b : Tree) (P A : Ty Tree) (fuel : Nat := 6) : Compiler 
       for (Pi, i) in ps.toList.zipIdx do
         if Pi.toList.any (occurs b) then
           let Ai := norm (same.flatMap fun as => ((as.toList[i]?).map (·.toList)).getD [])
-          if let some B ← matchBinder b Pi.toList Ai (fuel - 1) then return some B
+          if let some B ← matchBinder b Pi.toList Ai (fuel - 1) vars then return some B
   let first (xs : List (Ty Tree × Compiler (Ty Tree))) : Compiler (Option (Ty Tree)) := do
     for (Q, read) in xs do
       if Q.any (occurs b) then
         if let some B ← tryCatch (some <$> read) (fun _ => pure none) then
-          if let some C ← matchBinder b Q B (fuel - 1) then return some C
+          if let some C ← matchBinder b Q B (fuel - 1) vars then return some C
     return none
   if let some S := storeOf G [l] then
     if let [.list t []] := PositiveRules.expand G S then
@@ -963,11 +974,11 @@ partial def matchBinder (b : Tree) (P A : Ty Tree) (fuel : Nat := 6) : Compiler 
   let r ← match PositiveRules.expand G [l] with
   | [.dict _ _ _ ix _ _ _ _ _] => first [(norm (ix.flatMap (·.2)), elementAt A none (missing := false))]
   | [.refs fs [] vs os ms _ _] =>
-    first (((fs ++ vs).filter (fun (k, _) => k != SourceTypes.protoField)).map (fun (k, F) => (F, readField [] A k)) ++
-      os.map (fun o => (o.type, do slice (← readField [] A o.key) .isUndef false)) ++
+    first (((fs ++ vs).filter (fun (k, _) => k != SourceTypes.protoField)).map (fun (k, F) => (F, readField vars A k)) ++
+      os.map (fun o => (o.type, do slice (← readField vars A o.key) .isUndef false)) ++
       -- A method: its result at `A`'s member's.
       ms.map fun m => (norm (m.calls.flatMap (·.result)), do
-        let some m' ← memberFor [] A m.key | throw "no member"
+        let some m' ← memberFor vars A m.key | throw "no member"
         let some a := m'.calls.head? | throw "no signature"
         pure a.result))
   | _ =>
@@ -2438,13 +2449,21 @@ partial def applyCall (env : Env) (c : Callee) (args : List Expr) (As : List (Op
   -- A resolution's observation and result are the resolution's, never an
   -- actual's.
   let hidden := (c.resolution.flatMap (·.associated)).filterMap (c.binders[·]?)
-  let bindFrom (σ : List (Tree × Ty Tree)) (pairs : List (Ty Tree × Ty Tree)) : W (List (Tree × Ty Tree)) := do
+  let bindFrom (σ : List (Tree × Ty Tree)) (pairs : List (Ty Tree × Ty Tree)) (receiverFirst : Bool := true) :
+      W (List (Tree × Ty Tree)) := do
     let mut σ := σ
+    -- Each binder at what the first pair (the receiver, where the caller
+    -- passes it first) gives it, else at the join of what the others give
+    -- it (the producer's join of its lower bounds, inference.ml:557-569),
+    -- a primitive's members read off its prototype.
     for b in c.binders do
       if (σ.lookup b).isSome || hidden.contains b then continue
-      for (P, A) in pairs do
-        if (σ.lookup b).isNone then
-          if let some B ← StateT.lift (tryCatch (matchBinder b P A) fun _ => pure none) then σ := σ ++ [(b, B)]
+      let mut got : Option (Ty Tree) := none
+      for ((P, A), i) in pairs.zipIdx do
+        if let some B ← StateT.lift (tryCatch (matchBinder b P A (vars := env.vars) (siblings := c.binders)) fun _ => pure none) then
+          got := some (norm (got.getD [] ++ B))
+        if i == 0 && got.isSome && receiverFirst then break
+      if let some B := got then σ := σ ++ [(b, B)]
     return σ
   -- The first signature, in order, each walked actual is within (a
   -- scheme's at the binders its walked actuals give); else the first the
@@ -2498,7 +2517,7 @@ partial def applyCall (env : Env) (c : Callee) (args : List Expr) (As : List (Op
             (ps L).any (·.isSome) == (ps D).any (·.isSome) && (ps D).all ((ps L).contains ·)
           | none => false) then promised := some (a, r)
       let σa ← if c.binders.isEmpty then pure σa else
-        bindFrom σa (walked.filterMap fun (i, L) => (a.arguments[i]?).map (·, L))
+        bindFrom σa (walked.filterMap fun (i, L) => (a.arguments[i]?).map (·, L)) (receiverFirst := false)
       -- With every binder it mentions the actuals and callbacks give bound.
       let bound := walked.isEmpty || c.binders.all fun b =>
         hidden.contains b || !mentioned a b || (σa.lookup b).isSome
@@ -2712,7 +2731,11 @@ partial def walkLambda (env : Env) (e : Expr) (sig : Option (CallEffects.Arrow (
   modify fun w => { w with breaks := saved.breaks, returns := saved.returns, held := saved.held, expected := saved.expected }
   modify fun w => { w with writes := saved.writes, throwWrites := saved.throwWrites, locals := saved.locals, inLiteral := saved.inLiteral }
   modify fun w => { w with valueChange := saved.valueChange, storeChange := saved.storeChange, lastBody := R }
-  let R := if written.isSome then written else if async then none else R
+  -- (an async expression body's value is its `%AsyncReturn%` call's, the
+  -- promise it resolves; a block's completion resolves one the walk does
+  -- not state)
+  let R := if written.isSome then written
+    else if async then (match body with | .block .. => none | _ => R) else R
   let forced := (← get).force.contains "literals"
   -- A written effect (`Modifies<…>`) is the one it states.
   let kept := stated.getD kept
@@ -3394,10 +3417,14 @@ partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
       | some N => { exit with vars := upd exit.vars s!"%next@{p.1}%" N, decl := upd exit.decl s!"%next@{p.1}%" N }
       | none => exit
     modify fun w => { w with entries := w.entries.insert p.1 head.vars }
-    let elem ← match bound, I with
-      | some A, _ => pure (some A)
-      | none, some I => StateT.lift (tryCatch (some <$> elementAt I none (missing := false)) fun _ => pure none)
-      | none, none => pure none
+    let elem ← match bound, stepper, I with
+      | some A, _, _ => pure (some A)
+      -- (a union's iteration, binders apart: the `value` its stepper yields)
+      | none, some N, _ => StateT.lift (tryCatch (do
+          let some s := (← callSigsOf N).head? | throw "no step"
+          some <$> readField [] (← nonNullish s.result) (PropKey.str "value")) fun _ => pure none)
+      | none, none, some I => StateT.lift (tryCatch (some <$> elementAt I none (missing := false)) fun _ => pure none)
+      | none, none, none => pure none
     recordAt namePos "identifier" (match elem with | some A => .ok A | none => .error "the element undetermined")
     let inner := match elem with
       | some A => { head with vars := upd head.vars name A, decl := upd head.decl name A }
