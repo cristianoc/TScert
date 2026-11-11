@@ -81,6 +81,8 @@ structure Walk where
   /-- The type expected of a value, by the value's span: a declaration's,
   an assignment's or a return's. -/
   hints : List (Span × Ty Tree) := []
+  /-- Fresh call results whose later uses require the general array contract. -/
+  generalCalls : List Span := []
   /-- Whether the function literal being walked may change the heap: a write,
   an assignment of a binding it does not declare, or a call whose instance
   states another footprint than keeping both values and stores; and the
@@ -3187,6 +3189,41 @@ def literalRows (span : Span) (a : CallEffects.Arrow (Ty Tree)) (qs : List (Ty T
     ([{ a with arguments := qs ++ a.arguments.drop qs.length }], []) else (rows, restOffers)
   return [← StateT.lift (lower (SourceTypes.use (.arrs rows restOffers)))]
 
+/-- Definite non-reading uses from Source.reads_only (source.ml:1453-1482):
+an alias or a mutating member prevents a required-position result contract.
+Other uses leave the existing proposal unchanged. -/
+partial def generalArrayUse (name : String) : Stmt → Bool
+  | .constants _ bs | .mutables _ bs => bs.any fun b => match b.init with
+    | .var _ n => n == name
+    | _ => false
+  | .effect _ (.invoke _ (.read _ (.str m) (.var _ n)) _ _ _) =>
+    n == name && !["map", "filter", "every", "some", "forEach", "join", "slice", "at", "indexOf",
+      "lastIndexOf", "includes", "find", "findIndex", "flatMap", "reduce", "reduceRight", "entries", "keys", "values"].contains m
+  | .effect _ (.write _ _ (.var _ n) _) | .effect _ (.indexWrite _ _ (.var _ n) _ _) => n == name
+  | .ite _ _ a b => (a ++ b.getD []).any (generalArrayUse name)
+  | .loop _ _ b u _ => (b ++ u).any (generalArrayUse name)
+  | .block _ _ b | .forOf _ _ _ _ _ b => b.any (generalArrayUse name)
+  | .tryStmt _ b h f => (b ++ (h.map (·.2)).getD [] ++ f.getD []).any (generalArrayUse name)
+  | .closing _ c b => (c ++ b).any (generalArrayUse name)
+  | _ => false
+
+/-- The producer's matching overloads without required result positions,
+where one exists (expression_calls.ml:1079-1087), before the fresh call. -/
+def generalArrayCallee (c : Callee) (As : List (Option (Ty Tree))) : Compiler Callee := do
+  if !c.binders.isEmpty then return c
+  let T ← table
+  let G := SourceTypes.graph T
+  let required (a : CallEffects.Arrow (Ty Tree)) : Bool :=
+    match (storeOf G a.result).map (PositiveRules.expand G) with
+    | some [.list t []] => !t.required.isEmpty
+    | _ => false
+  let matching := c.fixed.filter fun a =>
+    As.length ≤ a.arguments.length &&
+    (a.arguments.drop As.length).all (fun D => within T [Labels.undef] D) &&
+    (As.zip a.arguments).all (fun (A, P) => A.any fun A => within T A P)
+  let general := matching.filter (!required ·)
+  return if general.isEmpty then c else { c with fixed := general }
+
 /-- Guard values prefer parameters stating their promise among otherwise
 matching overloads (expression_calls.ml:1032-1050). -/
 def promisesOfActuals (G : PositiveGraphs.NormalGraph Tree)
@@ -4353,7 +4390,9 @@ partial def called (env : Env) (c : Except String Callee) (args : List Expr) (As
     W (Except String (Ty Tree × Ty Tree)) := do
   modify fun w => { w with changedValues := false }
   match c with
-  | .ok c => applyCall env c args As (exp <|> (← get).hints.lookup at_) receiverFresh
+  | .ok c =>
+    let c ← if (← get).generalCalls.contains at_ then StateT.lift (generalArrayCallee c As) else pure c
+    applyCall env c args As (exp <|> (← get).hints.lookup at_) receiverFresh
   | .error m =>
     for x in args do if callback x then let _ ← walkLambda env x none
     -- A call of an unknown callee may change anything, and its throw too.
@@ -5466,6 +5505,8 @@ partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
       let written ← match b.annot with
         | some ty => StateT.lift (tryCatch (some <$> lower (Fragment.translate ty)) fun _ => pure none)
         | none => pure (if b.name.startsWith "%items@" || b.name.startsWith "%rest@" then collected else none)
+      if b.annot.isNone && (← get).following.any (generalArrayUse b.name) then
+        modify fun w => { w with generalCalls := b.init.span :: w.generalCalls }
       let written ← declarationHint env b false written
       if let some D := written then modify fun w => { w with hints := (b.init.span, D) :: w.hints }
       if b.name.endsWith ".[[class]]" then modify fun w => { w with freshClass := true }
