@@ -45,6 +45,7 @@ type Comparison = { file: string; unit: string; pipeline: string; pass: string; 
 /** Forced proposals: unsafe programs remain refused; the positive declaration,
  * growth and copy cases are accepted unforced and refused at the false proposal. */
 const controls: { file: string; unit: string; force: string; positive?: boolean }[] = [
+  { file: "stated-signatures-presence", unit: "signatures@605", force: "path-callees", positive: true },
   { file: "early-let-literal", unit: "families@954", force: "early-contracts", positive: true },
   { file: "blocker-spread-tuple-field", unit: "returned@867", force: "objects", positive: true },
   { file: "blocker-prep-assign-error-value", unit: "absent@86", force: "copy-exclusions", positive: true },

@@ -1054,7 +1054,9 @@ removal works through:
   receiver states stable (the producer's `stable_path`), and, but such
   stable paths, after the left operand of `&&` or `||` whose right operand's
   walk ends a path; a guard's call narrows its actual's path only where its
-  own call ends none. A path's prefix is read at its narrowed type; a
+  own call ends none. A method call reads its member path at its narrowed type before walking
+  its actuals, as any other read (expression_properties.ml:32-35); the
+  receiver remains the object holding the member. A path's prefix is read at its narrowed type; a
   write of an element at a key naming no one field or number, and
   `Object.assign`, end every path; after `o.f ??= v` (and `||=`, `&&=`)
   the path `o.f` holds the assignment's value, and after `o.f = v`, of an
