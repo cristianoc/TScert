@@ -566,7 +566,10 @@ removal works through:
   union, the one member naming it at the actual less what the other members
   admit and less the labels another binder of the call reads off one of
   them (a union iteration's parts, each kind's binders apart), else each
-  label of the actual at the first member it matches; one type
+  label of the actual, a single one included, at the first member it
+  matches, the bare binder last (`TResult1 | PromiseLike<TResult1>` at
+  `string` is `string`: the producer's arm of a part's own kind, else the
+  bare binder, inference.ml:425-503); one type
   constructor's arguments at the actual's of the same constructor; an
   array's elements (a tuple's positions separately), a record's fields and
   methods' results, a constructor's first signature's result and parameters,
@@ -575,7 +578,10 @@ removal works through:
   signatures (a guard's plain row beside its promise row) the first naming
   the binder (a written guard's promised type, the producer's `promised`). A binder no actual gives is at what
   the type expected of the call's value gives it, whether or not that
-  instance admits the actuals (the call's step decides), else at its bound
+  instance admits the actuals (the call's step decides), else at a
+  scheme's declared default read at the binders so far (`then`'s `TResult2
+  = never`; the producer's `default`, inference.ml:637-647), a proposal the
+  call's instance check decides, else at its bound
   read at the binders so far, else at `unknown` (the producer's upper
   candidates and `top`, inference.ml:584-636). Fresh array literals at generic
   tuple positions keep those positions recursively, each value widened.

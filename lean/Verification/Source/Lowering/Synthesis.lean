@@ -1121,6 +1121,21 @@ structure Callee where
   widenBinders : List Tree := []
   /-- A union of callables: each arm's one signature (`calleeOf`). -/
   arms : List (CallEffects.Arrow (Ty Tree)) := []
+  /-- A scheme's binders' declared defaults (`Draft.defaults`), each read at
+  the scheme's application: proposals for binders nothing else gives. -/
+  defaults : List (Tree × Ty Tree) := []
+
+/-- The declared binder defaults of the scheme a label applies, at its
+arguments, each binder its application's (`instantiateRow`'s reading). -/
+def schemeDefaults (T : EquationStore.State) (l : Tree) : List (Tree × Ty Tree) :=
+  match l with
+  | .app h args => match T.heads[h]? with
+    | some d =>
+      let argF (i : Nat) : List Tree := ((args.toList[i]?).map EquationGraphs.Types.toList).getD []
+      let locF (j : Nat) : List Tree := [.bound h args j]
+      d.defaults.map fun (j, U) => (Tree.bound h args j, U.flatMap (EquationLowering.treeSubst argF locF))
+    | none => []
+  | _ => []
 
 /-- The callee a value of type `F` is, called with receiver `O`: a scheme
 by its binders and signatures, at `typeArgs` where they are written; a
@@ -1135,7 +1150,7 @@ def calleeOf (F O : Ty Tree) (typeArgs : List Json := []) : Compiler Callee := d
       if θ.length > s.binders.length then
         throw "explicit type arguments of another count than the binders"
       return { binders := s.binders, fixed := s.signatures, rests := s.variadic, receiver := O,
-               seed := s.binders.zip θ }
+               seed := s.binders.zip θ, defaults := schemeDefaults (← table) l }
   if F.length > 1 && typeArgs.isEmpty && (ProgramTyping.callSigs G F).isEmpty &&
       (ProgramTyping.restSigs G F).isEmpty then
     let arms := F.map fun l => (ProgramTyping.callSigs G [l], ProgramTyping.restSigs G [l], (G.schemes l).isSome)
@@ -1371,13 +1386,17 @@ partial def matchBinder (b : Tree) (P A : Ty Tree) (fuel : Nat := 6) (vars : Lis
   let G := SourceTypes.graph T
   let (withB, others) := P.partition (occurs b)
   -- A union: the actual less what the members not mentioning `b` admit;
-  -- each of its labels at the first member mentioning `b` it matches.
-  let perLabel (A : Ty Tree) : Compiler (Option (Ty Tree)) := do
-    if A.length < 2 then return none
+  -- each of its labels at the first member mentioning `b` it matches, the
+  -- bare binder last (the producer's arm of a part's own kind, else the
+  -- bare binder, inference.ml:425-503): a single label too, where several
+  -- members mention `b` (`TResult1 | PromiseLike<TResult1>` at `string`).
+  let ordered := withB.filter (!isBinder b [·]) ++ withB.filter (isBinder b [·])
+  let perLabel (A : Ty Tree) (single : Bool := false) : Compiler (Option (Ty Tree)) := do
+    if A.length < 2 && !single then return none
     let mut out : Ty Tree := []
     for a in A do
       let mut got : Option (Ty Tree) := none
-      for m in withB do
+      for m in ordered do
         if got.isNone then got ← matchBinder b [m] [a] (fuel - 1) vars
       let some B := got | return none
       out := out ++ B
@@ -1395,7 +1414,7 @@ partial def matchBinder (b : Tree) (P A : Ty Tree) (fuel : Nat := 6) (vars : Lis
     if !theirs then A' := A' ++ [a]
   let [l] := withB | do
     if withB.isEmpty then return none
-    perLabel A'
+    perLabel A' (single := true)
   if !others.isEmpty then
     if let some B ← matchBinder b [l] A' (fuel - 1) vars then return some B
     return ← perLabel A'
@@ -4928,16 +4947,23 @@ partial def applyCall (env : Env) (c : Callee) (args : List Expr) (As : List (Op
   -- step decides); else at its bound, read at the binders so far; else at
   -- `unknown` (the producer's candidates, inference.ml:584-636: the lower
   -- bounds' join, else the upper bounds', the expected result among them,
-  -- else `top`).
+  -- else `top`). A binder the expected type does not give either takes its
+  -- declared default, read at the binders so far, before its bound (the
+  -- producer's `default`, inference.ml:637-647): a proposal, the instance
+  -- checked against the scheme at the call.
   for b in c.binders do
     if (σ.lookup b).isSome then continue
-    let B ← match hinted.lookup b, c.bounds.lookup b with
-      | some B, _ => pure B
-      | none, some B =>
+    let B ← match hinted.lookup b, c.defaults.lookup b, c.bounds.lookup b with
+      | some B, _, _ => pure B
+      | none, some D, _ =>
+        let D := substitute σ D
+        if c.binders.any (fun b' => D.any (occurs b')) then continue
+        pure D
+      | none, none, some B =>
         let B := substitute σ B
         if c.binders.any (fun b' => B.any (occurs b')) then continue
         pure B
-      | none, none => StateT.lift (prim .source)
+      | none, none, none => StateT.lift (prim .source)
     σ := σ ++ [(b, B)]
   let sub (A : Ty Tree) : Ty Tree := substitute σ A
   if let some b := c.binders.find? (fun b => (σ.lookup b).isNone) then
