@@ -4197,6 +4197,17 @@ partial def applyCall (env : Env) (c : Callee) (args : List Expr) (As : List (Op
   -- type is within (the checker's subtyping of arrows, its effect within
   -- the parameter's), in the store after its walk (the producer's
   -- `matches_actuals`, expression_calls.ml:980-1000).
+  -- A member stating its signatures at several receivers (a dense and a
+  -- sparse array's): those whose receiver, at the binders it gives, admits
+  -- the callee's, where some does (the producer reads the member at the
+  -- walked receiver).
+  let mut candidates := candidates
+  if ((candidates.map (·.1.receiver)).eraseDups).length > 1 then
+    let mut mine := []
+    for (a, r) in candidates do
+      let σr ← if c.binders.isEmpty then pure c.seed else bindFrom c.seed [(a.receiver, c.receiver)]
+      if within (← StateT.lift table) c.receiver (substitute σr a.receiver) then mine := mine ++ [(a, r)]
+    if !mine.isEmpty then candidates := mine
   let mut walked : List (Nat × Ty Tree) := []
   if candidates.length > 1 then
     if let some (a0, _) := candidates.head? then
@@ -4368,8 +4379,15 @@ partial def applyCall (env : Env) (c : Callee) (args : List Expr) (As : List (Op
       -- Every signature of the scheme the actuals' count admits, at the
       -- binders: the step chooses among them (`SinglePass.directCall`), a
       -- precondition's where the facts establish it.
-      else do return [← lower (SourceTypes.use (.arrs (if c.binders.isEmpty then [inst]
-        else (c.fixed.filter fits).map (·.map sub)) []))])
+      -- (of those, the ones whose receiver admits the callee's, where
+      -- some does: a member stating its signatures at several receivers, a
+      -- dense and a sparse array's, is read at the walked receiver's, as the
+      -- producer claims the member at the signature the call selects)
+      else do
+        let rows := if c.binders.isEmpty then [inst] else (c.fixed.filter fits).map (·.map sub)
+        let T ← table
+        let mine := rows.filter fun a => within T c.receiver a.receiver
+        return [← lower (SourceTypes.use (.arrs (if mine.isEmpty then rows else mine) []))])
   return .ok (own, result)
 
 /-- A function literal's walk: its parameters at their written types, or
