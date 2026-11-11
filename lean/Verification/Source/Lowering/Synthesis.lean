@@ -940,7 +940,7 @@ def calleeOf (F O : Ty Tree) (typeArgs : List Json := []) : Compiler Callee := d
   if let [l] := F then
     if let some s := G.schemes l then
       let θ ← typeArgs.mapM fun t => lower (Fragment.translate t)
-      if !θ.isEmpty && θ.length != s.binders.length then
+      if θ.length > s.binders.length then
         throw "explicit type arguments of another count than the binders"
       return { binders := s.binders, fixed := s.signatures, rests := s.variadic, receiver := O,
                seed := s.binders.zip θ }
@@ -1122,8 +1122,13 @@ partial def matchBinder (b : Tree) (P A : Ty Tree) (fuel : Nat := 6) (vars : Lis
     return none
   if let some S := storeOf G [l] then
     if let [.list t []] := PositiveRules.expand G S then
-      let E := norm (t.required.flatten ++ t.optional.flatten ++ t.rest.getD [])
-      if let some B ← first [(E, elementAt A none (missing := false))] then return some B
+      if !t.required.isEmpty || !t.optional.isEmpty then
+        let positions := (t.required ++ t.optional).zipIdx
+        if let some B ← first (positions.map fun (P, i) =>
+            (P, elementAt A (some i) (missing := false))) then return some B
+      else
+        let E := norm (t.rest.getD [])
+        if let some B ← first [(E, elementAt A none (missing := false))] then return some B
     return ← perLabel A
   let r ← match PositiveRules.expand G [l] with
   | [.dict _ _ _ ix _ _ _ _ _] => first [(norm (ix.flatMap (·.2)), elementAt A none (missing := false))]
@@ -1137,24 +1142,31 @@ partial def matchBinder (b : Tree) (P A : Ty Tree) (fuel : Nat := 6) (vars : Lis
         pure a.result))
   | _ =>
     let some s := (ProgramTyping.callSigs G [l]).head? | return none
-    first [(s.result, do
-      -- A promise row matches a promise row; its result is the promised
-      -- type (inference.ml:311-329), while a plain row returns its value.
+    -- A callback's result supplies the lower candidate first; only a
+    -- binder absent there is read off its parameters (inference.ml:311-329).
+    let rows := ProgramTyping.callSigs G A
+    let row := rows.find? fun a => a.effect.promise == s.effect.promise &&
+      a.arguments.length ≤ s.arguments.length
+    let result ← first [(s.result, do
       let rows := (ProgramTyping.callSigs G A).map (fun a => (a.effect.promise, a.result)) ++
         (ProgramTyping.restSigs G A).map (fun a => (a.effect.promise, a.result))
       let some (_, R) := rows.find? (·.1 == s.effect.promise) | throw "no signature"
       pure R)]
+    if result.isSome then pure result else
+      match row with
+      | some a => first ((s.arguments.zip a.arguments).map fun (P, A) => (P, pure A))
+      | none => pure none
   if r.isSome then return r
   perLabel A
 
 /-- The callee `o.k(…)` calls, `o` of type `O`: the object's member, its
 prototype's, or a field holding a callable. -/
-def methodCallee (vars : List (String × Ty Tree)) (O : Ty Tree) (fld : PropKey) (callbacks : List Bool := []) :
+def methodCallee (vars : List (String × Ty Tree)) (O : Ty Tree) (fld : PropKey) (callbacks : List Bool := []) (typeArgs : List Json := []) :
     Compiler Callee := do
   if let some m ← memberFor vars O fld then
     if m.calls.isEmpty && m.rests.isEmpty then
       let some S := m.schemes.head? | throw "a member of no signature"
-      let first ← calleeOf S O
+      let first ← calleeOf S O typeArgs
       if !callbacks.any id then return first
       -- A member with several schemes (one per receiver label) called with
       -- callbacks: the scheme whose callback parameters take the most
@@ -1164,12 +1176,12 @@ def methodCallee (vars : List (String × Ty Tree)) (O : Ty Tree) (fld : PropKey)
         | some a => ((a.arguments.zip callbacks).filter (·.2)).foldl (fun (n : Nat) (P, _) =>
             n + (((ProgramTyping.callSigs G P).head?.map (·.arguments.length)).getD 0)) 0
         | none => 0
-      let others ← m.schemes.tail.mapM fun S => calleeOf S O
+      let others ← m.schemes.tail.mapM fun S => calleeOf S O typeArgs
       return others.foldl (fun (best c : Callee) => if Nat.blt (width best) (width c) then c else best) first
     let fixed := m.calls.map (·.withReceiver O)
     let rests := m.rests.map (·.withReceiver O)
     return { fixed, rests, receiver := O, own := some [← lower (SourceTypes.use (.arrs fixed rests))] }
-  calleeOf (← readField vars O fld) O
+  calleeOf (← readField vars O fld) O typeArgs
 
 /-- The callee `new C(…)` calls: its construct signatures. -/
 def constructCallee (F : Ty Tree) (typeArgs : List Json) : Compiler Callee := do
@@ -2793,7 +2805,7 @@ partial def exprAt (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (
               [⟨top, (a.arguments.1.drop n, a.arguments.2), a.result, a.effect.drop n⟩]))]
           | _ => throw "bind requires a single callable contract") fun m => pure (.error m))
       return (← record e r, e3)
-  | .invoke _ callee args spreads _ =>
+  | .invoke _ callee args spreads typeArgs =>
     -- The method's object, then its read (the member, recorded apart), then
     -- the actuals.
     let (obj, fld, keyE) := match callee with
@@ -2824,7 +2836,7 @@ partial def exprAt (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (
         let some fld := fld | throw "a method of a computed key"
         -- A nullish receiver throws before its method is read (the
         -- lowering's saved receiver, Atoms.lean:1176-1184).
-        return Except.ok (← spreadCall args As spreads (← methodCallee e1.vars (present (← graphNow) (← need O "the receiver")) fld (args.map callback))))
+        return Except.ok (← spreadCall args As spreads (← methodCallee e1.vars (present (← graphNow) (← need O "the receiver")) fld (args.map callback) typeArgs)))
       fun m => pure (.error m))
     let (args, As) := match c with
       | .ok (args', As', _) => (args', As')
@@ -2886,6 +2898,37 @@ partial def called (env : Env) (c : Except String Callee) (args : List Expr) (As
       wrote .any .any
       modify fun w => { w with throwWrites := true }
     return .error m
+
+/-- Fresh array literals at generic tuple positions retain those positions,
+with each value widened, recursively through an array of tuples
+(expression_support.ml:124-139). Existing stores keep their contracts. -/
+partial def tupleActual (P : Ty Tree) (x : Expr) (A : Option (Ty Tree)) : W (Option (Ty Tree)) := do
+  let .arrayLit _ es [] := x | return A
+  let G ← StateT.lift graphNow
+  let target ← match arrayArms G P with
+    | [l] => pure ((storeOf G [l]).bind fun S => match PositiveRules.expand G S with
+        | [.list t []] => some t
+        | _ => none)
+    | _ => do
+      let E ← StateT.lift (tryCatch (iteratedElement P) fun _ => pure none)
+      pure (E.map fun E => ⟨[], [], some E, true, .readable⟩)
+  let some t := target | return A
+  if es.length < t.required.length ||
+      (t.rest.isNone && es.length > t.required.length + t.optional.length) then return A
+  let mut Es : List (Ty Tree) := []
+  for (e, i) in es.zipIdx do
+    let some D := t.position i | return A
+    let B := ((← get).exprs.get? e.span).bind (·.2.toOption)
+    let some B ← tupleActual D e B | return A
+    Es := Es ++ [← StateT.lift (widen B)]
+  let R ← StateT.lift (lower do
+    let tuple := if t.required.isEmpty && t.optional.isEmpty then
+      ⟨[], [], some (norm Es.flatten), false, .readable⟩
+      else ⟨Es, [], none, false, .dense⟩
+    let s ← SourceTypes.use (.list tuple [])
+    let T ← get
+    return [← SourceTypes.use (SourceTypes.arrayOf T s false)])
+  record x (.ok R)
 
 /-- A call's instance, in a fixed order (TypeScript's contextual typing of
 arguments, one pass): the signature the actuals' count and the walked
@@ -2949,6 +2992,10 @@ partial def applyCall (env : Env) (c : Callee) (args : List Expr) (As : List (Op
   -- by the constraint (the producer's `dictionary_bound` and `tuple_bound`,
   -- expression_calls.ml:806-822, 866-875, 900-916).
   let mut As := As
+  if let ([(a, _)], false) := (candidates, c.binders.isEmpty) then
+    for ((x, P), i) in (args.zip a.arguments).zipIdx do
+      if c.binders.any (fun b => P.any (occurs b)) then
+        As := As.set i (← tupleActual P x (As[i]?.join))
   if let ([(a, _)], false) := (candidates, c.binders.isEmpty) then
     for ((x, P), i) in (args.zip a.arguments).zipIdx do
       let some A := As[i]?.join | continue
@@ -3039,7 +3086,8 @@ partial def applyCall (env : Env) (c : Callee) (args : List Expr) (As : List (Op
     if chosen.isSome || forceCallbacks then break
     let σa ← if c.binders.isEmpty then pure c.seed else
       bindFrom c.seed ((a.receiver, c.receiver) :: (a.arguments.zip As).filterMap fun (P, A) => A.map (P, ·))
-    if (As.zip a.arguments).all fun (A, D) => A.all fun A => within Tw A (substitute σa D) then
+    if c.bounds.all (fun (b, B) => (σa.lookup b).all fun A => within Tw A (substitute σa B)) &&
+        (As.zip a.arguments).all (fun (A, D) => A.all fun A => within Tw A (substitute σa D)) then
       if fallback.isNone then fallback := some (a, r)
       -- (where none admits a callback, the first stating each callback's
       -- promise: the rows stating a guard's written promise first, the
@@ -3083,7 +3131,12 @@ partial def applyCall (env : Env) (c : Callee) (args : List Expr) (As : List (Op
     (As.zip a.arguments).all (fun (A, P) => A.all fun A => within T A (substitute σ P))
   σ ← bindFrom σ ((a.receiver, c.receiver) :: (a.arguments.zip As).filterMap fun (P, A) => A.map (P, ·))
   if let some H := hint then
-    let σh ← bindFrom σ [(a.result, H)]
+    let H' := match a.result with
+      | [.app h _] =>
+        let same := H.filter fun | .app h' _ => h' == h | _ => false
+        if same.length == 1 then same else H
+      | _ => H
+    let σh ← bindFrom σ [(a.result, H')]
     if admitsAt σh then σ := σh
     -- Where the two conflict (the instance the actuals give has a result
     -- the expected type does not admit), the expected type's instance, where
@@ -3091,7 +3144,7 @@ partial def applyCall (env : Env) (c : Callee) (args : List Expr) (As : List (Op
     -- an inferred literal at its context).
     if c.binders.all (fun b => hidden.contains b || (σ.lookup b).isSome) &&
         !within T (substitute σ a.result) H then
-      let σe ← bindFrom c.seed [(a.result, H)]
+      let σe ← bindFrom c.seed [(a.result, H')]
       if c.binders.all (fun b => hidden.contains b || (σe.lookup b).isSome) && admitsAt σe then σ := σe
   -- A binder that is a callback literal's parameter, which an earlier
   -- actual's parameter takes at a position of one of its methods: the
