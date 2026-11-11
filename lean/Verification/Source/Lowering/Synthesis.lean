@@ -324,8 +324,26 @@ partial def shown (T : EquationStore.State) (A : Ty Tree) (depth : Nat := 2) : S
           s!"{match k with | .str n => n | _ => "#"}: {shown T B (depth - 1)}"
         let opt := os.map fun o => s!"{match o.key with | .str n => n | _ => "#"}?: {shown T o.type (depth - 1)}"
         "{" ++ ", ".intercalate (named ++ opt) ++ "}"
-    | [.arrs L _] => " & ".intercalate (L.map fun a =>
-        s!"({", ".intercalate (a.arguments.map (shown T · (depth - 1)))}) => {shown T a.result (depth - 1)}")
+    | [.arrs L S] =>
+      -- Each row with its effect, where it is not the ordinary one: its
+      -- footprint by class, `T` a bounded throw, `F` a fresh result, `P` a
+      -- promise, `R` a receiver's store or own locations, `+` anything else.
+      let ch (c : Footprints.Change) : String := match c with
+        | .keep => "keep" | .init => "init" | .scalar => "scalar" | .grow => "grow" | .any => "any"
+      let eff (e : CallEffects.Effect) : String :=
+        if e == CallEffects.Effect.ordinary then "" else
+        let rest := { e with closed := .top, onThrow := false, fresh := false, promise := none,
+                             receiverStore := false, receiverOwn := false }
+        s!" !{ch e.closed.value}/{ch e.closed.store}{if e.onThrow then "T" else ""}{if e.fresh then "F" else ""}{if e.promise.isSome then "P" else ""}{if e.receiverStore || e.receiverOwn then "R" else ""}{if rest == CallEffects.Effect.ordinary then "" else "+"}"
+      " & ".intercalate ((L.map fun a =>
+        s!"({", ".intercalate (a.arguments.map (shown T · (depth - 1)))}) => {shown T a.result (depth - 1)}{eff a.effect}") ++
+        S.map fun a =>
+        s!"({", ".intercalate (a.arguments.1.map (shown T · (depth - 1)) ++ [s!"...{shown T a.arguments.2 (depth - 1)}"])}) => {shown T a.result (depth - 1)}{eff a.effect}")
+    | [.ctors L S _] =>
+      " & ".intercalate ((L.map fun a =>
+        s!"new ({", ".intercalate (a.arguments.map (shown T · (depth - 1)))}) => {shown T a.result (depth - 1)}") ++
+        S.map fun a =>
+        s!"new ({", ".intercalate (a.arguments.1.map (shown T · (depth - 1)) ++ ["..."])}) => {shown T a.result (depth - 1)}")
     | _ => SourceTypes.render T [l]
   if A.isEmpty then "never" else " | ".intercalate (A.map one).eraseDups
 
@@ -1484,7 +1502,18 @@ def fieldExpected (P : Ty Tree) (k : PropKey) : Compiler (Option (Ty Tree)) := d
       | _ => none
     let D ← match named with
       | some D => pure (some D)
-      | none => tryCatch (some <$> readField [] [l] k) (fun _ => pure none)
+      | none =>
+        -- A key the member states as a method: the callable a read of it
+        -- bound to that member is (the producer's `f.read` of a method
+        -- field, expression_objects.ml:25-36).
+        match (match ProgramTyping.objectClauses G [l] with
+            | [c] => ProgramTyping.clauseMember c k
+            | _ => none) with
+        | some m =>
+          if m.schemes.isEmpty && !(m.calls.isEmpty && m.rests.isEmpty) then
+            pure (some [← lower (SourceTypes.use (.arrs (m.calls.map (CallEffects.Contract.withReceiver [l])) (m.rests.map (CallEffects.Contract.withReceiver [l]))))])
+          else pure none
+        | none => tryCatch (some <$> readField [] [l] k) (fun _ => pure none)
     if let some D := D then out := out ++ D
   return if out.isEmpty then none else some (norm out)
 
