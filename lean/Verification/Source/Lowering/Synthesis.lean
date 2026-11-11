@@ -4206,8 +4206,17 @@ partial def applyCall (env : Env) (c : Callee) (args : List Expr) (As : List (Op
   -- A resolution's observation and result are the resolution's, never an
   -- actual's.
   let hidden := (c.resolution.flatMap (·.associated)).filterMap (c.binders[·]?)
-  let bindFrom (σ : List (Tree × Ty Tree)) (pairs : List (Ty Tree × Ty Tree)) (receiverFirst : Bool := true) :
-      W (List (Tree × Ty Tree)) := do
+  -- A binder the signature reads only at its callbacks' parameters (each
+  -- parameter mentioning it a callable whose results do not): its
+  -- candidates are upper bounds, of which the one within every other is
+  -- taken (the producer's upper-only candidates' meet, inference.ml:557-569).
+  let uppersOf (a : CallEffects.Arrow (Ty Tree)) : List Tree := c.binders.filter fun b =>
+    (a.receiver :: a.arguments).any (·.any (occurs b)) &&
+    (a.receiver :: a.arguments).all fun P => !P.any (occurs b) ||
+      (let sigs := ProgramTyping.callSigs G P
+       !sigs.isEmpty && sigs.all fun s => !s.result.any (occurs b))
+  let bindFrom (σ : List (Tree × Ty Tree)) (pairs : List (Ty Tree × Ty Tree)) (receiverFirst : Bool := true)
+      (uppers : List Tree := []) : W (List (Tree × Ty Tree)) := do
     let mut σ := σ
     -- Each binder at what the first pair (the receiver, where the caller
     -- passes it first) gives it, else at the join of what the others give
@@ -4219,7 +4228,11 @@ partial def applyCall (env : Env) (c : Callee) (args : List Expr) (As : List (Op
       let mut got : Option (Ty Tree) := none
       for ((P, A), i) in pairs.zipIdx do
         if let some B ← StateT.lift (tryCatch (matchBinder b P A (vars := env.vars) (siblings := c.binders)) fun _ => pure none) then
-          got := some (norm (got.getD [] ++ B))
+          let T ← StateT.lift table
+          got := match got with
+            | some A => if !uppers.contains b then some (norm (A ++ B))
+              else if within T B A then some B else some A
+            | none => some (norm B)
         if i == 0 && got.isSome && receiverFirst then break
       if let some B := got then
         -- Callback results join the actuals' lower bounds (inference.ml:
@@ -4228,7 +4241,8 @@ partial def applyCall (env : Env) (c : Callee) (args : List Expr) (As : List (Op
           | none => pure B
           | some A => StateT.lift (do
             let T ← table
-            if within T A B then pure B else if within T B A then pure A else joinTy A B)
+            if uppers.contains b then pure (if within T B A then B else A)
+            else if within T A B then pure B else if within T B A then pure A else joinTy A B)
         σ := upd σ b B
     return σ
   -- The first signature, in order, each walked actual is within (a
@@ -4324,6 +4338,7 @@ partial def applyCall (env : Env) (c : Callee) (args : List Expr) (As : List (Op
   chosen := chosen <|> promised <|> fallback
   let some (a, rest) := chosen <|> candidates.head?
     | do
+          (uppers := uppersOf a)
       for x in args do if callback x then let _ ← walkLambda env x none
       -- One callable of no binders none of whose signatures the count
       -- admits, omitted positions admitting `undefined`, a variadic one's
@@ -4392,7 +4407,7 @@ partial def applyCall (env : Env) (c : Callee) (args : List Expr) (As : List (Op
         | _ => sub P
       let L ← walkLambda env x (widest Pc) (ctx := some Pc)
       As := As.set i L
-      if let some L := L then σ ← bindFrom σ [(P, L)] (receiverFirst := false)
+      if let some L := L then σ ← bindFrom σ [(P, L)] (receiverFirst := false) (uppers := uppersOf a)
     else if let some A := As[i]? then
       if let .var _ n := x then
         offerUse n (sub P)
