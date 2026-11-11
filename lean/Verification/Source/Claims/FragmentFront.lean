@@ -435,6 +435,39 @@ def withStandIns (claims : Json) (sis : List StandIn) : Json :=
         "resultFootprint" (toJson s.resultFootprint)
     | none => j))
 
+/-- The front with each import that never returns read at the footprint
+keeping values and stores: an import of one fixed signature whose declared
+result is the empty type and that states no promise; an intrinsic is no
+import. Its normal return
+meets every footprint, having none; its throws stay unbounded. The reading
+rests on the declared result alone, as every read of the import does. -/
+def Front.withNeverImports (fr : Front) : Front := Id.run do
+  let own := fr.units.map (·.1.name)
+  let mut T := fr.d.types
+  let mut out : List (ModuleValue Tree) := []
+  for v in fr.moduleFunctions do
+    let kept := out ++ [v]
+    -- (an intrinsic, named `%…%`, keeps its reviewed contract)
+    if own.contains v.1 || fr.qualifiedNames.contains v.1 || v.1.startsWith "%" ||
+        v.1 == SourceExtraction.arrayPrototypeName then
+      out := kept
+      continue
+    match runCompiler T [] (moduleValueType v) with
+    | .ok (A, r) =>
+      let T' := r.types
+      match PositiveRules.expand (SourceTypes.graph T') A with
+      | [.arrs [a] []] =>
+        if a.effect.promise.isNone && (PositiveRules.expand (SourceTypes.graph T') a.result).isEmpty then
+          match importedArrow T' A ⟨.keep, .keep⟩ false .top with
+          | .ok J =>
+            T := T'
+            out := out ++ [(v.1, v.2.1, .ok (.written J))]
+          | .error _ => out := kept
+        else out := kept
+      | _ => out := kept
+    | .error _ => out := kept
+  return { fr with d := { fr.d with types := T }, moduleFunctions := out }
+
 /-- **A selected unit's plans from the fragment alone** (mode 8): the front
 of `fragmentClaims`, no import planned, each import read at its declared
 type or at its stand-in's footprint, the module values typed by the
@@ -447,6 +480,7 @@ def fragmentPlans (ast : Json) (fileKey : String) (budget : PositiveCertificates
   let claims ← fragmentClaims ast fileKey standIns force
   let qualified := standIns.imports.map fun s => (s.name, s.footprint, s.onThrow, s.resultFootprint)
   let fr ← SinglePass.timedKind "lower: fileFront" fun _ => fileFront ast claims fileKey budget qualified
+  let fr := fr.withNeverImports
   -- The functions' footprints their walks give, as stand-ins; the claims
   -- and the front again where any is found.
   let computed := if force.contains "callees" || force.contains "throws" then [] else
