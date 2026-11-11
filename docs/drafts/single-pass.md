@@ -518,7 +518,17 @@ removal works through:
   array's elements, a record's fields and methods' results, a callable's
   result at the actual's. Of a call's signatures the first each walked
   actual is within at the binders so read is selected, else the first the
-  actuals' count admits. A spread actual of a tuple of required positions
+  actuals' count admits; a call may omit each trailing parameter whose
+  contract admits `undefined` (`T | undefined` included), a variadic
+  signature's fixed ones too, passing no rest (the producer's `callable`).
+  Of one signature, a fresh literal at a parameter that is a bounded binder
+  is made at the bound where the bound names a dictionary (an object
+  literal) or a tuple (an array literal), and the binder read off it (the
+  producer's `dictionary_bound` and `tuple_bound`). A rest that is a binder's
+  argument lists (`...args: T`) binds it at the actuals past the fixed ones,
+  widened: an argument pack where only the rest uses the binder, else the
+  tuple of them, whose argument lists the rest's are (the producer's pack
+  rest). A spread actual of a tuple of required positions
   stands for those positions; a spread of any other array for one actual of
   its elements, which only a variadic signature taking no more fixed
   parameters than the actuals before it admits; into a callee of no
@@ -559,7 +569,8 @@ removal works through:
   (`TSCERT_FORCE=defaults` leaves it out, the adversarial proposal). A
   literal with an array rest is stated at its rest arrow, the pack of the
   rest's element, at its written effect else the ordinary one
-  (`ClosureSetup`'s own signature of an array rest). Its effect is the one
+  (`ClosureSetup`'s own signature of an array rest); a rest of a tuple of
+  required positions is one fixed parameter per position. Its effect is the one
   it writes (`Modifies<…>`); else the footprint keeping values and stores
   where the walk sees no write, assignment or call changing the heap, else
   the closed footprint of the classes of contents its writes and calls
@@ -781,7 +792,9 @@ removal works through:
   where a slot of the unit holds it, is without them (`readNarrowing`);
   an assignment, a join and a loop head end that as any narrowing. A destructuring
   default is added where the part may be `undefined`, made at the part's
-  type less `undefined` (a parameter's default at its annotation's). Strict equality with
+  type less `undefined` (a parameter's default at its annotation's); a
+  function the default makes within a callable part's type is held at that
+  type (a parameter's type is what the body reads). Strict equality with
   a literal holding narrows the operand, where it may hold the literal
   (`unknown` included), to the literal (but `0`, which `-0` equals too);
   a comma expression tested is its last operand's test, where the test
