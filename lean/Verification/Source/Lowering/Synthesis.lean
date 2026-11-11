@@ -616,7 +616,7 @@ def choose (sigs : List Sig) (args : List (Ty Tree)) : Compiler Sig := do
   let G := SourceTypes.graph T
   let fits (s : Sig) : Bool :=
     (s.rest && s.params.length ≤ args.length) ||
-      (args.length ≤ s.params.length && (s.params.drop args.length).all (omissible G))
+      (args.length ≤ s.params.length && (s.params.drop args.length).all (fun D => omissible G D || within T [Labels.undef] D))
   let candidates := sigs.filter fits
   let accepts (s : Sig) : Bool := (args.zip s.params).all fun (A, D) => within T A D
   match candidates.find? accepts <|> candidates.head? with
@@ -1219,7 +1219,7 @@ def constructCallee (F : Ty Tree) (typeArgs : List Json) : Compiler Callee := do
     if (G.schemes l).isSome then return { ← calleeOf F [Labels.undef] typeArgs with construct := true }
   match PositiveRules.expand G F with
   | [.ctors L S ..] =>
-    return { fixed := L.map (·.withReceiver [Labels.undef]), rests := S.map (·.withReceiver [Labels.undef]) }
+    return { fixed := L.map (·.withReceiver [Labels.undef]), rests := S.map (·.withReceiver [Labels.undef]), construct := true }
   | _ => throw "a construction of a value of no construct signature"
 
 /-- The signature of a callable type taking the most parameters. -/
@@ -1399,7 +1399,7 @@ def spreadCall (args : List Expr) (As : List (Option (Ty Tree))) (spreads : List
   if spreads.isEmpty then return (args, As, c)
   let G ← graphNow
   let first := spreads.foldl min args.length
-  if c.rests.isEmpty && spreads != [args.length - 1] then
+  if !c.construct && c.rests.isEmpty && spreads != [args.length - 1] then
     for (x, i) in args.zipIdx do
       if i > first then match x with
         | .var .. | .lit .. => pure ()
@@ -2972,7 +2972,7 @@ partial def applyCall (env : Env) (c : Callee) (args : List Expr) (As : List (Op
   let G := SourceTypes.graph T
   let n := args.length
   let fits (a : CallEffects.Arrow (Ty Tree)) : Bool :=
-    n ≤ a.arguments.length && (a.arguments.drop n).all (omissible G)
+    n ≤ a.arguments.length && (a.arguments.drop n).all (fun D => omissible G D || within T [Labels.undef] D)
   -- A variadic signature: its fixed parameters, then each further actual at
   -- the element its rest's argument list states; a call omitting fixed
   -- parameters that each admit `undefined` passes no rest (the producer's
@@ -2988,7 +2988,7 @@ partial def applyCall (env : Env) (c : Callee) (args : List Expr) (As : List (Op
         | none => if t.optional.isEmpty && n == r.arguments.1.length + t.required.length then
             some (⟨r.receiver, r.arguments.1 ++ t.required, r.result, r.effect⟩, some r) else none
       | _ => none
-    else if (r.arguments.1.drop n).all (omissible G) then
+    else if (r.arguments.1.drop n).all (fun D => omissible G D || within T [Labels.undef] D) then
       some (⟨r.receiver, r.arguments.1, r.result, r.effect⟩, some r)
     else none
   -- A rest that is a binder's argument lists (`...args: T`): the actuals
