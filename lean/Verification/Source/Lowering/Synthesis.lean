@@ -1687,6 +1687,8 @@ are exactly theirs. -/
 structure Copy where
   fields : List (PropKey × Bool × Ty Tree) := []
   exact : Bool := true
+  /-- Target keys excluded by its contract, retained through exact sources. -/
+  excluded : List PropKey := []
   numeric : Option (Ty Tree) := none
   index : Option (Ty Tree) := none
   symbols : Option (Ty Tree) := none
@@ -1744,7 +1746,7 @@ def copiesOf (A : Ty Tree) (force : Bool) (target : Bool := false) : Compiler (L
       let opt := (os.filter fun o => !named.any (·.1 == o.key)).map fun o => (o.key, !force, o.type)
       -- (an array's own keys are its elements' too, which no field states)
       let array := (fs ++ vs).any (·.1 == SourceTypes.storeField)
-      out := out ++ [{ fields := named ++ opt, exact := force || (bs.any (·.among) && !array) }]
+      out := out ++ [{ fields := named ++ opt, exact := force || (bs.any (·.among) && !array), excluded := if target then (bs.filter (!·.among)).flatMap (·.keys) else [] }]
     | [.dict fs [] vs ix os ms _ _ _] =>
       let fields := ((fs ++ vs).filter fun (k, _) =>
         (target || k != SourceTypes.protoField) && !ms.any (·.key == k)).map fun (k, A) => (k, false, A)
@@ -1823,7 +1825,7 @@ def mergeCopy (a b : Copy) : Compiler Copy := do
       (a.numeric.isSome || a.exact) && (b.numeric.isSome || b.exact) then
     some (norm (a.numeric.getD [] ++ b.numeric.getD [] ++ out.flatMap fun (k, _, A) =>
       if IndexKeys.numeric.surely k then A else [])) else none
-  return { fields := out, exact := a.exact && b.exact, numeric := if index.isSome then none else numeric, index, symbols }
+  return { fields := out, exact := a.exact && b.exact, excluded := a.excluded.filter (fun k => b.exact && !b.fields.any (·.1 == k)), numeric := if index.isSome then none else numeric, index, symbols }
 
 /-- A copy's type: its required fields, its optional ones, its own keys
 exactly where its keys are exact and none is optional
@@ -1831,11 +1833,8 @@ exactly where its keys are exact and none is optional
 def copyType (c : Copy) : Compiler (Ty Tree) := do
   let req := (c.fields.filter fun (_, o, _) => !o).map fun (k, _, A) => (k, A)
   let opt := (c.fields.filter fun (_, o, _) => o).map fun (k, _, A) => (⟨k, false, A⟩ : OptionalField (Ty Tree))
-  let indexes := (c.index.toList.map (IndexKeys.strings, ·)) ++ (c.numeric.toList.map (IndexKeys.numeric, ·)) ++
-    (c.symbols.toList.map (IndexKeys.symbols, ·))
-  -- (an index: a dictionary of writable indexes at those types)
-  if !indexes.isEmpty then return ← prim (.dict req [] [] indexes opt [] [] indexes [])
-  let bound : List KeyBound := if c.exact && opt.isEmpty then [⟨true, req.map (·.1)⟩] else []
+  let bound : List KeyBound := (if c.exact && opt.isEmpty then [⟨true, req.map (·.1)⟩] else []) ++
+    (if c.excluded.isEmpty then [] else [⟨false, c.excluded⟩])
   let indexes := (c.index.map (IndexKeys.strings, ·)).toList ++
     (c.numeric.map (IndexKeys.numeric, ·)).toList ++ (c.symbols.map (IndexKeys.symbols, ·)).toList
   if indexes.isEmpty then prim (.refs req [] [] opt [] bound [])
@@ -3294,6 +3293,7 @@ partial def exprAt (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (
     wrote .any .keep
     let (A, e1) ← expr env target
     let (Ss, e2) ← exprs e1 sources
+    let forceCopyBounds := (← get).force.contains "copy-exclusions"
     -- Each source copied over what the target and the sources before it
     -- give, as a spread is (`expression_objects.ml`, `ObjectAssign`): the
     -- object the call returns, the target grown.
@@ -3301,6 +3301,9 @@ partial def exprAt (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (
       let start ← copiesOf (← need A "the target") forceSpreads (target := true)
       let alts ← copyParts start (← Ss.mapM fun S => do return (none, ← need S "a source")) forceSpreads
       let alts := if forceIndexes then alts.map fun c => { c with numeric := c.numeric.map fun _ => [Labels.tru] } else alts
+      -- Force absence of written own keys; the copy rule must refuse it.
+      let alts := if forceCopyBounds then alts.map fun c =>
+        { c with excluded := c.excluded ++ c.fields.map (·.1) } else alts
       return norm (← alts.mapM copyType).flatten
     -- It writes the target's keys: every path ends.
     ends .all
