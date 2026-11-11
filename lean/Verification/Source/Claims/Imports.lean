@@ -208,9 +208,9 @@ private def decodeCode (m : Fragment.ModuleAst) : Except String (List Fragment.F
 
 /-- Each module's code (`decodeCode`) by its location, the first module of
 that location's, decoded at most once, where a read first asks for it. -/
-private abbrev ModuleCode := Std.HashMap String (Thunk (Except String (List Fragment.Fn × List Fragment.Stmt)))
+abbrev ModuleCode := Std.HashMap String (Thunk (Except String (List Fragment.Fn × List Fragment.Stmt)))
 
-private def ModuleCode.of (fragmentModules : List Fragment.ModuleAst) : ModuleCode :=
+def ModuleCode.of (fragmentModules : List Fragment.ModuleAst) : ModuleCode :=
   fragmentModules.foldl (init := {}) fun m mod => m.insertIfNew mod.location (Thunk.mk fun _ => decodeCode mod)
 
 /-- The imported value a qualified read names, among a document's `values`. -/
@@ -511,9 +511,11 @@ private def documentReads (fragmentModules : List Fragment.ModuleAst) (code : Mo
 those functions', the functions they mention, transitively, and the
 top-level code's where any of them mentions a name it binds (the
 initialization unit, which the front's edges reach the same way,
-`Front.edgesOf`), or where `init` is among the names. -/
-private def reachMentions (functions : List Fragment.Fn) (init : List Fragment.Stmt) (start : List String) :
-    List String := Id.run do
+`Front.edgesOf`), or where `init` is among the names. With `walked`, a
+function reached but not among `start` adds its body's names only where
+`walked` holds of it. -/
+private def reachMentions (functions : List Fragment.Fn) (init : List Fragment.Stmt) (start : List String)
+    (walked : Fragment.Fn → Bool := fun _ => true) : List String := Id.run do
   let names := functions.map (·.name)
   let owned := init.flatMap Fragment.Stmt.bound
   let initNames := Fragment.stmtsFreeNames init
@@ -521,7 +523,8 @@ private def reachMentions (functions : List Fragment.Fn) (init : List Fragment.S
   let mut withInit := start.contains "init"
   let mut out : List String := if withInit then initNames else []
   for _ in [0:functions.length + 2] do
-    let bodies := (functions.filter (set.contains ·.name)).flatMap fun f => Fragment.stmtsFreeNames f.body
+    let bodies := (functions.filter fun f => set.contains f.name && (start.contains f.name || walked f)).flatMap
+      fun f => Fragment.stmtsFreeNames f.body
     let seen := (out ++ bodies).eraseDups
     let reachesInit := withInit || seen.any owned.contains
     let seen := if reachesInit then (seen ++ initNames).eraseDups else seen
@@ -532,63 +535,54 @@ private def reachMentions (functions : List Fragment.Fn) (init : List Fragment.S
     out := seen
   return out
 
-/-- A module whose units an importer reads (`importNeeds`): the module, the
-names of its functions read, and its own reads its read closure mentions. -/
+/-- The modules a fragment lists, and their code decoded where first asked
+(`ModuleCode`): what an importer's reads resolve against (`importerReads`,
+`moduleReads`). -/
+structure ImportScope where
+  modules : List Fragment.ModuleAst
+  code : ModuleCode
+
+def ImportScope.of (ast : Json) : Except String ImportScope := do
+  let modules ← (← jArr ast "modules").mapM Fragment.decodeModule
+  return ⟨modules, ModuleCode.of modules⟩
+
+/-- **What the importer's units read of the modules** (mode 8): the reads of
+the importer's document the code `start` names reaches mentions (every
+function's where none is given, `reachMentions`). The importer's reads of
+the names `given` are left out (a stand-in states them). Of the importer's
+functions reached, only those whose footprint the walk proposes
+(`declarationEffects`) add the names their bodies mention: a function the
+stand-ins name (`fixed`), or one keeping its footprint (async, generic, of a
+rest or of a written effect), is read at that footprint, its body neither
+walked nor checked for the selected units. -/
+def importerReads (sc : ImportScope) (ast : Json) (start : Option (List String)) (given : List String := [])
+    (fixed : List String := []) : Except String (List FragmentRead) := do
+  if sc.modules.isEmpty then return []
+  let decoded ← (← jArr ast "functions").mapM Fragment.decodeFn
+  let functions := decoded.map (·.1)
+  let kept := (decoded.filter fun (f, tps) => !tps.isEmpty || f.async || f.stated.isSome ||
+    f.params.any (·.rest) || fixed.contains f.name).map (·.1.name)
+  let init ← Fragment.decodeInit ast
+  let own := reachMentions functions init (start.getD (functions.map (·.name))) (!kept.contains ·.name)
+  return documentReads sc.modules sc.code (← jField ast "declarations") fun n => own.contains n && !given.contains n
+
+/-- **A module's own reads** for the functions `names` of it an importer
+reads: its imports the code those functions reach mentions, its top-level
+code's where they read a name it binds (`reachMentions`), each resolved as
+the importer's are (`documentReads`). -/
+def moduleReads (sc : ImportScope) (m : Fragment.ModuleAst) (names : List String) : Except String (List FragmentRead) := do
+  let (fs, mi) ← match sc.code[m.location]? with
+    | some decoded => decoded.get
+    | none => throw s!"a module the fragment does not list: {m.location}"
+  let more := reachMentions fs mi names
+  return documentReads sc.modules sc.code (← jField m.document "declarations") more.contains
+
+/-- A module whose units an importer reads (`fragmentPlansWithModules`): the
+module, the names of its functions read, and its own reads its read closure
+mentions. -/
 structure ModuleNeed where
   module : Fragment.ModuleAst
   names : List String
   reads : List FragmentRead
-
-/-- **What the importer's units read of the modules** (mode 8): the reads of
-the importer's document the code `start` names reaches mentions (every
-function's where none is given, `reachMentions`), and each module a read
-names, its functions read and, recursively, its own reads the code those
-functions reach mentions, every module once. The importer's reads
-of the names `given` are left out (a stand-in states them). -/
-def importNeeds (ast : Json) (start : Option (List String)) (given : List String := []) :
-    Except String (List FragmentRead × List ModuleNeed) := do
-  let fragmentModules ← (← jArr ast "modules").mapM Fragment.decodeModule
-  if fragmentModules.isEmpty then return ([], [])
-  let code := ModuleCode.of fragmentModules
-  let functions ← (← jArr ast "functions").mapM fun f => do return (← Fragment.decodeFn f).1
-  let init ← Fragment.decodeInit ast
-  let mentioned (fs : List Fragment.Fn) (init : List Fragment.Stmt) (names : List String) : List String :=
-    reachMentions fs init names
-  let own := mentioned functions init ((start.getD (functions.map (·.name))))
-  let importerReads := documentReads fragmentModules code (← jField ast "declarations")
-    fun n => own.contains n && !given.contains n
-  let mut needs : List (String × List String) := []
-  let mut work := importerReads
-  let mut reads : List (String × List FragmentRead) := []
-  for _ in [0:4 * (fragmentModules.length + 1) * (fragmentModules.length + 1)] do
-    let r :: rest := work | break
-    work := rest
-    let before := (needs.lookup r.location).getD []
-    if before.contains r.name then continue
-    let names := before ++ [r.name]
-    needs := (needs.filter (·.1 != r.location)) ++ [(r.location, names)]
-    let some m := fragmentModules.find? (·.location == r.location) | continue
-    let (fs, mi) ← match code[m.location]? with
-      | some decoded => decoded.get
-      | none => decodeCode m
-    let more := mentioned fs mi names
-    let known := (reads.lookup m.location).getD []
-    let fresh := documentReads fragmentModules code (← jField m.document "declarations")
-      fun n => more.contains n && !known.any (·.localName == n)
-    let theirs := known ++ fresh
-    reads := (reads.filter (·.1 != m.location)) ++ [(m.location, theirs)]
-    work := work ++ theirs.filter fun t => more.contains t.localName
-  let out := needs.filterMap fun (location, names) => do
-    let m ← fragmentModules.find? (·.location == location)
-    let theirs := (reads.lookup location).getD []
-    let fs := match code[location]? with
-      | some decoded => (decoded.get.toOption.map (·.1)).getD []
-      | none => []
-    let mi := match code[location]? with
-      | some decoded => (decoded.get.toOption.map (·.2)).getD []
-      | none => []
-    let more := mentioned fs mi names
-    return ({ module := m, names, reads := theirs.filter (more.contains ·.localName) } : ModuleNeed)
-  return (importerReads, out)
 
 end Verification.SourceClaimJson
