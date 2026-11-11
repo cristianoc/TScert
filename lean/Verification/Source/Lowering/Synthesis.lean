@@ -989,6 +989,117 @@ def spreadCall (args : List Expr) (As : List (Option (Ty Tree))) (spreads : List
     | none => c
   return (outArgs, outAs, c)
 
+/-- An object literal's copy as a merge reads it (`object_spread.ml`,
+`alternative`): its fields, each optional or not, and whether its own keys
+are exactly theirs. -/
+structure Copy where
+  fields : List (PropKey × Bool × Ty Tree) := []
+  exact : Bool := true
+
+/-- The copies a value of type `A` gives as a spread's operand (or, `target`,
+as `Object.assign`'s target), one per label (`object_spread.ml`,
+`alternatives_of`): nothing from a primitive other than a string, its own
+keys exactly; no stated key from a string or a function, and no bound; a
+record's fields, but its store, its prototype link (a target's kept) and a
+key it also states as a method, which may sit on the prototype, its
+optional ones optional, its own keys exactly where it bounds them; a class
+value's static fields, with no bound. `force` (`TSCERT_FORCE=spreads`):
+every key the record states, present, and its own keys exactly. -/
+def copiesOf (A : Ty Tree) (force : Bool) (target : Bool := false) : Compiler (List Copy) := do
+  let G ← graphNow
+  let mut out : List Copy := []
+  for l in A do
+    if l == Labels.nul || l == Labels.undef then
+      out := out ++ [({} : Copy)]
+      continue
+    match shapeOf G l with
+    | some .isStr =>
+      out := out ++ [{ exact := false }]
+      continue
+    | some _ =>
+      out := out ++ [({} : Copy)]
+      continue
+    | none => pure ()
+    match PositiveRules.expand G [l] with
+    | [.refs fs [] vs os ms bs _] =>
+      let named := ((fs ++ vs).filter fun (f, _) => f != SourceTypes.storeField &&
+          (target || f != SourceTypes.protoField) && (force || !ms.any (·.key == f))).map fun (f, B) => (f, false, B)
+      -- A key an intersection's operands state twice: at the field within
+      -- the others (`object_spread.ml`, `field_meet`), else the first.
+      let T ← table
+      let named := named.foldl (fun (acc : List (PropKey × Bool × Ty Tree)) (f, o, B) =>
+        match acc.find? (·.1 == f) with
+        | some (_, _, A) => if within T B A then acc.map fun g => if g.1 == f then (f, o, B) else g else acc
+        | none => acc ++ [(f, o, B)]) []
+      let opt := (os.filter fun o => !named.any (·.1 == o.key)).map fun o => (o.key, !force, o.type)
+      -- (an array's own keys are its elements' too, which no field states)
+      let array := (fs ++ vs).any (·.1 == SourceTypes.storeField)
+      out := out ++ [{ fields := named ++ opt, exact := force || (bs.any (·.among) && !array) }]
+    | [.ctors _ _ statics] =>
+      out := out ++ [{ fields := (statics.filter (·.1 != SourceTypes.protoField)).map fun (f, B) => (f, false, B), exact := false }]
+    | [.arrs ..] => out := out ++ [{ exact := false }]
+    -- (a label of no value: no copy)
+    | [] => pure ()
+    | _ => throw "a spread of a value of no record contract"
+  return out
+
+/-- A source's copy defined over a copy's (`object_spread.ml`,
+`merge_alternative`): a key the source surely has takes its type; one the
+copy has keeps its own where the source never has it, or with the source's
+where it may; a key only the source may have is optional where the copy's
+keys are exact. A key either may hold at an unknown type is not stated. The
+copy's prototype link is kept. -/
+def mergeCopy (a b : Copy) : Compiler Copy := do
+  let names := (a.fields.map (·.1) ++ b.fields.map (·.1)).eraseDups
+  let mut out : List (PropKey × Bool × Ty Tree) := []
+  for k in names do
+    let af := a.fields.find? (·.1 == k)
+    let bf := b.fields.find? (·.1 == k)
+    if k == SourceTypes.protoField then
+      if let some f := af then out := out ++ [f]
+      continue
+    match bf with
+    | some (_, false, B) => out := out ++ [(k, false, B)]
+    | _ =>
+      let bMaybe := bf.map (·.2.2)
+      let bNever := bf.isNone && b.exact
+      match af with
+      | some (_, opt, A) =>
+        if bNever then out := out ++ [(k, opt, A)]
+        else if let some B := bMaybe then out := out ++ [(k, opt, ← joinTy A B)]
+      | none =>
+        if a.exact then
+          if let some B := bMaybe then out := out ++ [(k, true, B)]
+  return { fields := out, exact := a.exact && b.exact }
+
+/-- A copy's type: its required fields, its optional ones, its own keys
+exactly where its keys are exact and none is optional
+(`object_spread.ml`, `alternative_type`). -/
+def copyType (c : Copy) : Compiler (Ty Tree) := do
+  let req := (c.fields.filter fun (_, o, _) => !o).map fun (k, _, A) => (k, A)
+  let opt := (c.fields.filter fun (_, o, _) => o).map fun (k, _, A) => (⟨k, false, A⟩ : OptionalField (Ty Tree))
+  let bound : List KeyBound := if c.exact && opt.isEmpty then [⟨true, req.map (·.1)⟩] else []
+  prim (.refs req [] [] opt [] bound [])
+
+/-- The copies after each part: a named field set in every copy, a spread
+merged into each copy once per copy its operand gives. -/
+def copyParts (start : List Copy) (parts : List (Option PropKey × Ty Tree)) (force : Bool) : Compiler (List Copy) := do
+  let mut alts := start
+  for (k, A) in parts do
+    match k with
+    | some k =>
+      alts := alts.map fun a =>
+        if a.fields.any (·.1 == k) then { a with fields := a.fields.map fun f => if f.1 == k then (k, false, A) else f }
+        else { a with fields := a.fields ++ [(k, false, A)] }
+    | none =>
+      let srcs ← copiesOf A force
+      let mut next : List Copy := []
+      for a in alts do
+        for b in srcs do next := next ++ [← mergeCopy a b]
+      if next.length > 64 then throw "a copy of more than 64 alternatives"
+      alts := next
+  return alts
+
 /-- The allocations a body returns last: its last statement's `return` of
 an object literal, or of each arm of its last `if`. -/
 partial def tailAllocs : Expr → List Span
@@ -1270,41 +1381,17 @@ partial def expr (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (Op
     -- An object literal with spreads: each spread's record fields, then each
     -- named field, a later key replacing an earlier one.
     let (As, e1) ← exprs env es
+    -- Each copy the parts give, a named field at its value's widened type
+    -- (`object_spread.ml`).
     let r ← attempt e do
-      let G ← graphNow
-      let mut fields : List (PropKey × Ty Tree) := []
-      let mut optional : List (OptionalField (Ty Tree)) := []
-      -- Whether every source states its own keys exactly (an own-key bound):
-      -- the copy's own keys are then exactly its fields
-      -- (`object_spread.ml`, `merge_alternative`'s `exact`).
-      let mut exact := true
+      let mut parts : List (Option PropKey × Ty Tree) := []
       for (k, A) in names.zip As do
         let A ← need A "a part"
         match k with
-        | some k =>
-          fields := upd fields (.str k) (← widen A)
-          optional := optional.filter (·.key != PropKey.str k)
-        | none =>
-          match PositiveRules.expand G A with
-          | [.refs fs [] vs os ms bs _] =>
-            exact := exact && bs.any (·.among)
-            -- A key the type also states as a method may sit on the
-            -- prototype, which a spread does not copy: no field of the copy.
-            for (f, B) in fs ++ vs do
-              if f != SourceTypes.protoField && f != SourceTypes.storeField && (forceSpreads || !ms.any (·.key == f)) then
-                fields := upd fields f B
-                optional := optional.filter (·.key != f)
-            -- An optional field the spread may lack keeps an earlier value.
-            for o in os do
-              if forceSpreads then
-                fields := upd fields o.key o.type
-                optional := optional.filter (·.key != o.key)
-              else if (fields.lookup o.key).isNone then optional := o :: optional.filter (·.key != o.key)
-          | _ => throw "a spread of a value of no one record contract"
-      -- (`TSCERT_FORCE=spreads`: the copy at its own keys exactly whatever
-      -- its sources)
-      let bound : List KeyBound := if (exact || forceSpreads) && optional.isEmpty then [⟨true, fields.reverse.map (·.1)⟩] else []
-      prim (.refs fields.reverse [] [] optional.reverse [] bound [])
+        | some k => parts := parts ++ [(some (.str k), ← widen A)]
+        | none => parts := parts ++ [(none, A)]
+      let alts ← copyParts [{}] parts forceSpreads
+      return norm (← alts.mapM copyType).flatten
     return (r, e1)
   | .read _ fld x =>
     let (O, e1) ← expr env x
@@ -1536,20 +1623,13 @@ partial def expr (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (Op
     wrote .any .keep
     let (A, e1) ← expr env target
     let (Ss, e2) ← exprs e1 sources
-    -- The target's fields, then each source's, a later key replacing an
-    -- earlier one: the object the call returns, the target grown.
+    -- Each source copied over what the target and the sources before it
+    -- give, as a spread is (`expression_objects.ml`, `ObjectAssign`): the
+    -- object the call returns, the target grown.
     let r ← attempt e do
-      let G ← graphNow
-      let mut fields : List (PropKey × Ty Tree) := []
-      for P in (A :: Ss) do
-        let P ← need P "a part"
-        match PositiveRules.expand G P with
-        | [.refs fs [] vs [] ms _ _] =>
-          for (f, B) in fs ++ vs do
-            if f != SourceTypes.protoField && f != SourceTypes.storeField && !ms.any (·.key == f) then
-              fields := upd fields f B
-        | _ => throw "an assignment of a value of no one record contract"
-      prim (.refs fields.reverse [] [] [] [] [])
+      let start ← copiesOf (← need A "the target") forceSpreads (target := true)
+      let alts ← copyParts start (← Ss.mapM fun S => do return (none, ← need S "a source")) forceSpreads
+      return norm (← alts.mapM copyType).flatten
     return (r, e2)
   -- A function literal where a callable is expected, writing no parameter's
   -- type: at the expected signature taking the most parameters.
