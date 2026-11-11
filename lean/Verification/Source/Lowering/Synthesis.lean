@@ -2569,7 +2569,13 @@ partial def walkLambda (env : Env) (e : Expr) (sig : Option (CallEffects.Arrow (
   modify fun w => { w with entries := w.entries.insert body.span.1 inner.vars }
   -- Each default runs at a call omitting its argument, before the body: its
   -- effect is the literal's, its value made at the parameter's type.
+  -- (`TSCERT_FORCE=defaults`: their changes left out of the literal's
+  -- effect, the adversarial proposal)
+  let beforeDefaults ← get
   for (i, d) in defaults do let _ ← expr inner d (bound[i]?.join)
+  if (← get).force.contains "defaults" then
+    modify fun w => { w with writes := beforeDefaults.writes, throwWrites := beforeDefaults.throwWrites }
+    modify fun w => { w with valueChange := beforeDefaults.valueChange, storeChange := beforeDefaults.storeChange }
   let R ← match body with
     | .block _ ss => do
       let done ← stmts (some inner) ss

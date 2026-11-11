@@ -406,7 +406,9 @@ object at the first name its key may spell alone),
 `invalid-field-narrowing-for-of-callback` and `-closure` `count`, under
 `loops`, `invalid-unassigned-let` `readBeforeAssignment`, under
 `decided`, `invalid-map-fresh-alias` `drained`, under `callbacks`,
-`invalid-map-fresh-reassigned` `drained`, under `fresh`, and
+`invalid-map-fresh-reassigned` `drained`, under `fresh`,
+`invalid-closure-default-effect` `stale`, under `defaults` (each
+function literal's defaults' changes left out of its effect), and
 `invalid-generic-closure-effect` `stale`, under `schemes`
 (every generic closure claimed keeping values and stores and bounding its
 throws, its body's effect unchecked against that claim). A control's
@@ -531,7 +533,8 @@ removal works through:
   `TSCERT_FORCE=offers` offers every longer signature whatever its leading
   parameters, the adversarial proposal. A defaulted parameter is offered
   with `undefined`, bound in the body at its type, its default made at that
-  type at the literal's entry, before the body, its effect the literal's. A
+  type at the literal's entry, before the body, its effect the literal's
+  (`TSCERT_FORCE=defaults` leaves it out, the adversarial proposal). A
   literal with an array rest is stated at its rest arrow, the pack of the
   rest's element, at its written effect else the ordinary one
   (`ClosureSetup`'s own signature of an array rest). Its effect is the one
