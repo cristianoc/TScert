@@ -33,6 +33,7 @@ import { cases, type Case } from "../pipeline/cases.mts";
 import { pooled } from "../pipeline/run-cases.mts";
 import { checkApart } from "../pipeline/verify-source.mts";
 import { withoutEvidenceReuse } from "../pipeline/stages.mts";
+import { verifyWithInterfaces } from "../pipeline/module-interfaces.mts";
 import { standIns } from "./single-pass-standins.mts";
 
 const root = resolve(import.meta.dirname, "..");
@@ -119,7 +120,18 @@ function passVerdicts(artifacts: string, key: string, given: string | null, mode
   // Modes 8 and 9 read the fragment alone.
   const documents = mode === "8" || mode === "9" ? [join(artifacts, "fragment.json")]
     : [join(artifacts, "fragment.json"), join(artifacts, "claims.json")];
-  const run = spawnSync(verifier, ["--verify-units", mode, ...documents, key, "12"],
+  let run: { stdout: string; stderr: string };
+  if (mode === "8" || mode === "9") {
+    const emptyGiven = join(artifacts, "empty-given.jsonl");
+    const emptyStandins = join(artifacts, "empty-standins.json");
+    writeFileSync(emptyGiven, "");
+    writeFileSync(emptyStandins, '{"functions":[],"imports":[]}');
+    run = verifyWithInterfaces(documents[0], key, "", env.TSCERT_STANDINS ?? emptyStandins, {
+      mode: mode === "8" ? 8 : 9, fuel: 12, rounds: 4096, force: force?.split(",") ?? [], allCuts,
+      given: given ?? emptyGiven, work: join(artifacts, "interfaces"),
+      invocation: { limitMs: 60_000, force: false, recorder: null },
+    }).run;
+  } else run = spawnSync(verifier, ["--verify-units", mode, ...documents, key, "12"],
     { encoding: "utf8", maxBuffer: 1 << 28, env });
   const verdicts = new Map<string, Verdict>();
   const dependencies = new Map<string, string[]>();
