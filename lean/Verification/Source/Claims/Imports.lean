@@ -25,6 +25,10 @@ structure ImportPlan where
   claims : Json
   qualified : List (String × Footprints.Closed × Bool × Footprints.Closed)
   modules : List ModuleRun
+  /-- The module units each qualified read's footprint rests on, by the
+  read's local name: the units mode 8 checks in the same invocation
+  (`fragmentPlansWithModules`). -/
+  depends : List (String × List String)
 
 section correspondence
 
@@ -218,20 +222,25 @@ private def readLocalName (values : List Json) (q : Json) : Option String := do
   let v ← importedValue values q
   (do (← v.getObjVal? "binding").getObjValAs? String "local").toOption
 
-/-- One qualified read: the importer's binding of it, and its unit's
-footprint and on-throw flag, where the read names an eligible unit of its
-origin whose two signature readings agree. -/
-private def qualifiedRead (importer : Reading) (values : List Json) (fragmentModules : List Fragment.ModuleAst)
-    (code : ModuleCode) (claimModules : List Json) (q : Json) (location name : String) (span : Span) :
-    Except String (String × Footprints.Closed × Bool × Footprints.Closed) := do
+/-- A read of an import that names an eligible unit of its origin whose
+two signature readings agree: the importer's binding of it and the unit's
+fragment. The import `q`, a declaration identity, is an imported value of
+the importer's declarations; its module is one the fragment lists; the unit
+is a function of that module, its name the declaration's, its name within
+the declaration's span; it has no binders, no rest, no receiver, no guard;
+no code of its module writes its binding; the import is a function of one
+fixed call signature of no rest, receiver, binders or promise; the import's
+signature and the unit state the same precondition and postcondition; and
+the two readings of its signature agree (`sameReading`). -/
+private def eligibleRead (importer : Reading) (values : List Json) (fragmentModules : List Fragment.ModuleAst)
+    (code : ModuleCode) (q : Json) (location name : String) (span : Span) :
+    Except String (String × Json) := do
   let some v := importedValue values q
     | throw s!"a qualified read names no imported value: {q.compress}"
   let binding ← jField v "binding"
   let localName ← jStr (← jField binding "local")
   let some m := fragmentModules.find? (·.location == location)
     | throw s!"a qualified read names a module the fragment does not list: {location}"
-  let some c := claimModules.find? fun c => (c.getObjValAs? String "file").toOption == some location
-    | throw s!"a qualified read names a module without claims: {location}"
   let fs ← jArr m.document "functions"
   let some unit := fs.find? fun f => (f.getObjValAs? String "name").toOption == some name &&
       ((f.getObjValAs? Span "namePos").toOption.map (within · span)).getD false
@@ -274,6 +283,17 @@ private def qualifiedRead (importer : Reading) (values : List Json) (fragmentMod
   let module ← Reading.of (← jField m.document "declarations")
   sameReading importer module [s!"{location}#{name}"] (((← jField type "result"), (← jField unit "retType")) ::
     (← (ps.zip params).mapM fun (a, p) => do return (a, ← jField p "type")))
+  return (localName, unit)
+
+/-- One qualified read: the importer's binding of it, and its unit's
+footprint and on-throw flag, where the read names an eligible unit of its
+origin whose two signature readings agree (`eligibleRead`). -/
+private def qualifiedRead (importer : Reading) (values : List Json) (fragmentModules : List Fragment.ModuleAst)
+    (code : ModuleCode) (claimModules : List Json) (q : Json) (location name : String) (span : Span) :
+    Except String (String × Footprints.Closed × Bool × Footprints.Closed) := do
+  let (localName, unit) ← eligibleRead importer values fragmentModules code q location name span
+  let some c := claimModules.find? fun c => (c.getObjValAs? String "file").toOption == some location
+    | throw s!"a qualified read names a module without claims: {location}"
   let namePos ← jField unit "namePos"
   let some uc := (← jArr c "functions").find? fun f =>
       (f.getObjValAs? String "name").toOption == some name && (f.getObjValD "namePos") == namePos
@@ -402,7 +422,7 @@ def planImports (ast claims : Json) (uses : Option (String → Bool) := none) : 
     let ast ← keepFunctions m.document fun n _ => keep.contains n
     let claims ← keepFunctions (← claimsOf m.location) fun n _ => keep.contains n
     return some ⟨m.location, ast, claims, reads⟩
-  return ⟨ast.setObjVal! "modules" (Json.arr #[]), claims.setObjVal! "modules" (Json.arr #[]), qualified, modules⟩
+  return ⟨ast.setObjVal! "modules" (Json.arr #[]), claims.setObjVal! "modules" (Json.arr #[]), qualified, modules, []⟩
 
 /-- Each qualified read of one document `qualifiedRead` refuses, worded as
 `planReads` words it, and the units of the reads it admits. -/
@@ -447,5 +467,128 @@ def planRefusals (ast claims : Json) : Except String (List String) := do
       units := units ++ reached
     | .error e => refused := refused ++ [s!"module {location}: {e}"]
   return refused
+
+/-- An import the fragment alone resolves to a unit of a module it lists
+(`eligibleRead`): the importer's local name, the module's location, and the
+unit's name and name position. -/
+structure FragmentRead where
+  localName : String
+  location : String
+  name : String
+  namePos : Span
+  deriving Repr, BEq
+
+/-- **The fragment's reads of one document** (mode 8): each imported value
+of its declarations whose declaration identity names a module the fragment
+lists, resolved by that identity alone as a qualified read naming it is
+(`eligibleRead`): a function of that module, its name the declaration's,
+its name within the declaration's span, eligible, its two signature
+readings agreeing, of the local names `wanted` holds. An import refused
+there, and a local name two imports bind, resolve to no unit. -/
+private def documentReads (fragmentModules : List Fragment.ModuleAst) (code : ModuleCode) (declarations : Json)
+    (wanted : String → Bool := fun _ => true) : List FragmentRead := Id.run do
+  let locations := fragmentModules.map (·.location)
+  let some values := (jArr declarations "values").toOption | return []
+  let some importer := (Reading.of declarations).toOption | return []
+  let mut out : List FragmentRead := []
+  for v in values do
+    let some localName := (do (← v.getObjVal? "binding").getObjValAs? String "local").toOption | continue
+    if !wanted localName then continue
+    let some q := (v.getObjVal? "declaration").toOption | continue
+    let some location := (q.getObjValAs? String "module").toOption | continue
+    if !locations.contains location then continue
+    let some name := (q.getObjValAs? String "name").toOption | continue
+    let some span := (fromJson? (q.getObjValD "span") : Except String Span).toOption | continue
+    match eligibleRead importer values fragmentModules code q location name span with
+    | .ok (localName, unit) =>
+      let some namePos := (fromJson? (unit.getObjValD "namePos") : Except String Span).toOption | continue
+      out := out ++ [⟨localName, location, name, namePos⟩]
+    | .error _ => continue
+  let names := out.map (·.localName)
+  return out.filter fun r => names.count r.localName == 1
+
+/-- The names the code a set of a document's functions reaches mentions:
+those functions', the functions they mention, transitively, and the
+top-level code's where any of them mentions a name it binds (the
+initialization unit, which the front's edges reach the same way,
+`Front.edgesOf`), or where `init` is among the names. -/
+private def reachMentions (functions : List Fragment.Fn) (init : List Fragment.Stmt) (start : List String) :
+    List String := Id.run do
+  let names := functions.map (·.name)
+  let owned := init.flatMap Fragment.Stmt.bound
+  let initNames := Fragment.stmtsFreeNames init
+  let mut set := start.eraseDups
+  let mut withInit := start.contains "init"
+  let mut out : List String := if withInit then initNames else []
+  for _ in [0:functions.length + 2] do
+    let bodies := (functions.filter (set.contains ·.name)).flatMap fun f => Fragment.stmtsFreeNames f.body
+    let seen := (out ++ bodies).eraseDups
+    let reachesInit := withInit || seen.any owned.contains
+    let seen := if reachesInit then (seen ++ initNames).eraseDups else seen
+    let next := (set ++ seen.filter names.contains).eraseDups
+    if next.length == set.length && reachesInit == withInit then return seen
+    set := next
+    withInit := reachesInit
+    out := seen
+  return out
+
+/-- A module whose units an importer reads (`importNeeds`): the module, the
+names of its functions read, and its own reads its read closure mentions. -/
+structure ModuleNeed where
+  module : Fragment.ModuleAst
+  names : List String
+  reads : List FragmentRead
+
+/-- **What the importer's units read of the modules** (mode 8): the reads of
+the importer's document the code `start` names reaches mentions (every
+function's where none is given, `reachMentions`), and each module a read
+names, its functions read and, recursively, its own reads the code those
+functions reach mentions, every module once. The importer's reads
+of the names `given` are left out (a stand-in states them). -/
+def importNeeds (ast : Json) (start : Option (List String)) (given : List String := []) :
+    Except String (List FragmentRead × List ModuleNeed) := do
+  let fragmentModules ← (← jArr ast "modules").mapM Fragment.decodeModule
+  if fragmentModules.isEmpty then return ([], [])
+  let code := ModuleCode.of fragmentModules
+  let functions ← (← jArr ast "functions").mapM fun f => do return (← Fragment.decodeFn f).1
+  let init ← Fragment.decodeInit ast
+  let mentioned (fs : List Fragment.Fn) (init : List Fragment.Stmt) (names : List String) : List String :=
+    reachMentions fs init names
+  let own := mentioned functions init ((start.getD (functions.map (·.name))))
+  let importerReads := documentReads fragmentModules code (← jField ast "declarations")
+    fun n => own.contains n && !given.contains n
+  let mut needs : List (String × List String) := []
+  let mut work := importerReads
+  let mut reads : List (String × List FragmentRead) := []
+  for _ in [0:4 * (fragmentModules.length + 1) * (fragmentModules.length + 1)] do
+    let r :: rest := work | break
+    work := rest
+    let before := (needs.lookup r.location).getD []
+    if before.contains r.name then continue
+    let names := before ++ [r.name]
+    needs := (needs.filter (·.1 != r.location)) ++ [(r.location, names)]
+    let some m := fragmentModules.find? (·.location == r.location) | continue
+    let (fs, mi) ← match code[m.location]? with
+      | some decoded => decoded.get
+      | none => decodeCode m
+    let more := mentioned fs mi names
+    let known := (reads.lookup m.location).getD []
+    let fresh := documentReads fragmentModules code (← jField m.document "declarations")
+      fun n => more.contains n && !known.any (·.localName == n)
+    let theirs := known ++ fresh
+    reads := (reads.filter (·.1 != m.location)) ++ [(m.location, theirs)]
+    work := work ++ theirs.filter fun t => more.contains t.localName
+  let out := needs.filterMap fun (location, names) => do
+    let m ← fragmentModules.find? (·.location == location)
+    let theirs := (reads.lookup location).getD []
+    let fs := match code[location]? with
+      | some decoded => (decoded.get.toOption.map (·.1)).getD []
+      | none => []
+    let mi := match code[location]? with
+      | some decoded => (decoded.get.toOption.map (·.2)).getD []
+      | none => []
+    let more := mentioned fs mi names
+    return ({ module := m, names, reads := theirs.filter (more.contains ·.localName) } : ModuleNeed)
+  return (importerReads, out)
 
 end Verification.SourceClaimJson

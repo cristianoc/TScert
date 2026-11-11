@@ -554,11 +554,14 @@ def FilePlans.certified (f : FilePlans) (group : List Nat) :
   let plans ← group.mapM fun i => (f.plans[i]?).getD (.error s!"no unit {i}")
   certifyPlans plans
 
-/-- A group's dependencies on the wire: the groups its members reach and, where
-its code names a qualified read, the module runs. -/
+/-- A group's dependencies on the wire: the groups its members reach, where
+its code names a qualified read, the module runs, and the module units the
+reads it mentions rest on (`ImportPlan.depends`). -/
 def FilePlans.dependencies (f : FilePlans) (group : List Nat) : List String :=
   (f.fr.dependencies group).map f.fr.unitId ++
-    (if f.fr.readsQualified group then f.p.modules.map ("module:" ++ ·.location) else [])
+    (if f.fr.readsQualified group then f.p.modules.map ("module:" ++ ·.location) else []) ++
+    -- The module units a read of an import the group's code mentions rests on.
+    ((f.p.depends.filter fun (n, _) => group.any fun i => (f.fr.mentions i).contains n).flatMap (·.2)).eraseDups
 
 /-- A group's evidence, decoded: one response and one obligation list per
 member, in the group's order. -/
@@ -1210,6 +1213,26 @@ checked at its claims and qualified reads (`checkDocument`). -/
 def moduleVerdict (m : ModuleRun) (budget : PositiveCertificates.SearchBudget) (evidence : Json) :
     Except String Unit :=
   (checkDocument m.ast m.claims m.location evidence budget m.qualified).mapError (s!"module {m.location}: " ++ ·)
+
+/-- A module run's plans: its restricted document's front at its claims and
+qualified reads, every unit extracted, as `filePlans` plans a file. -/
+def ModuleRun.plans (m : ModuleRun) (budget : PositiveCertificates.SearchBudget) : Except String FilePlans := do
+  let fr ← fileFront m.ast m.claims m.location budget m.qualified
+  let (T, plans) := fr.extractAll
+  let F ← EquationStore.freeze T
+  return ⟨⟨m.ast, m.claims, m.qualified, [], []⟩, fr, F, plans.map fun e => e.bind (FunctionPlan.over F)⟩
+
+/-- Each unit's given lines of a module run (`givenLines`), the unit named by
+its wire identity among the importer's (`module:<location>#<unit>`), which
+mode 8 reads for the module units it checks (`fragmentPlansWithModules`). -/
+def ModuleRun.givenLines (m : ModuleRun) (budget : PositiveCertificates.SearchBudget) (fuel : Nat)
+    (facts entries : Bool) : List Json :=
+  match m.plans budget with
+  | .error _ => []
+  | .ok f => f.fr.leaders.flatMap fun l => (f.givenLines fuel (f.fr.group l) facts entries).map fun j =>
+      match j.getObjValAs? String "unit" with
+      | .ok u => j.setObjVal! "unit" (toJson s!"module:{m.location}#{u}")
+      | .error _ => j
 
 /-- A unit's line of an evidence document: the unit, and its evidence. -/
 def unitLine (unit : String) (evidence : Json) : Json :=

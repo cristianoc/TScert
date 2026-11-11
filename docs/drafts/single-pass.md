@@ -406,7 +406,10 @@ expected refused by mode 8:
 `invalid-cell-truthiness-narrowing` `kept`, under `stale`, and
 `invalid-exceptional-handler-fact` `wrong`, under `throws` (every function
 at keep/keep bounding its throws), `invalid-declaration-pop-callback`
-`dropped`, under `callees`, `invalid-compiler-api-guard-loop-partial`
+`dropped`, under `callees`, `invalid-certified-write-value-import` `zeros`
+and the positive `certified-value-import` `tallies`, under `imports` (every
+imported function a module establishes keeping values and stores and
+bounding its throws), `invalid-compiler-api-guard-loop-partial`
 `names`, under `guards`, `invalid-read-narrows-write` and
 `invalid-read-narrows-closure` `wrong`, under `reads`, and
 `invalid-slot-path-call` `keyText` and `invalid-path-witness-alias`
@@ -512,7 +515,11 @@ removal works through:
 - **Stand-ins.** `TSCERT_STANDINS`, written by
   `dev/single-pass-standins.mts` from a claims document: the footprints the
   file's functions and imports would write (`qualified` carries the
-  imports').
+  imports'), each taking the place of the walk's proposal or of the
+  module's established footprint.
+- **Module units' loop-head facts.** The given file's lines of the module
+  units checked for imports (`module:<location>#<unit>`), which mode 6
+  writes from the module runs the claims plan.
 
 - **Store and signatures.** The store is the fragment's declarations and
   annotations, lowered with a type table of the primitives alone
@@ -520,7 +527,8 @@ removal works through:
   annotations' types; its footprint is the one its declaration writes
   (`Modifies<…>`, with its `@requires` and `@ensures`), else the ordinary
   effect. Another function, and an import, is read at that signature; an
-  import at its declared type. A function literal whose body the walk sees
+  import at its declared type, at the footprint its module establishes
+  where one does ("Imports" below). A function literal whose body the walk sees
   change nothing states the footprint keeping values and stores.
 - **Types.** Every expression's and statement entry's type and every
   `let`'s storage contract is the walk's (`Synthesis.retypeUnit`), at each
@@ -832,6 +840,53 @@ removal works through:
   from the next statement on it is at its declared type, whether or not
   the walk has met an assignment of it (the producer's `forget` at a step
   that may write cells, execution_analysis.ml:243). What a cell currently holds is a current-content fact,
+- **Imports.** An import is read at the footprint its module establishes
+  where the fragment alone resolves it to a unit of a module the fragment
+  lists (`importNeeds`, `Claims/Imports.lean`), by the checks a qualified
+  read of the claims passes ([certified imports](../SOURCE-CONTRACTS.md#certified-imports),
+  `eligibleRead`): its declaration identity names that module, and the unit
+  is the module's function of the declaration's name whose name lies within
+  the declaration's span (a default import's declaration names the
+  function, a re-export's the module declaring it; a function the parser
+  leaves out, `absent`, is no unit); the unit has no binders, rest,
+  receiver or guard, and no code of its module writes its binding; the
+  import is one fixed call signature of no rest, receiver, binders or
+  promise, stating the unit's precondition and postcondition; the two
+  readings of the signature agree (`sameReading`); and no other import binds
+  its local name. Only the reads the code the selected units reach mentions
+  are resolved, a module's top-level code counted where its functions read a
+  name it binds (`reachMentions`); a module's own imports are resolved the
+  same way, recursively. The modules are planned callees first, each from
+  its own fragment (`fragmentPlansWithModules`): its imports at what the
+  modules planned before establish, a module on a cycle with its reads of
+  the modules not yet planned at the ordinary effect; each function read
+  proposed its walk's footprint (`declarationEffects`) or the one it writes.
+  The groups of the functions proposed more than the ordinary effect, and
+  every group they reach, are checked in the same invocation by the same
+  mode (mode 8's pass, mode 9's search and check), each verdict on its own
+  line as the unit `module:<location>#<unit>`, its loop heads' facts the
+  given file's lines of that name, which mode 6 writes from the module runs
+  the claims plan (`ModuleRun.givenLines`). A read is at its proposal where
+  the function's group and every group it depends on, of its module and of
+  the modules it reads, was accepted there; the importer's units that
+  mention the read list that group in `depends`. Every other import, one
+  of no module fragment (a declaration file, a package), one the fragment
+  does not resolve, one of a module whose plans fail, and one whose
+  proposal is the ordinary effect or is not established, is at its declared
+  type with the ordinary effect (but the reading of an import that never
+  returns). The declared type is what the importer reads in every case;
+  only the effect rests on the module's check. A stand-in names an import's
+  footprint in place of its module's. `TSCERT_FORCE=imports` proposes
+  every function read keeping values and stores and bounding its throws,
+  the adversarial proposal: the controls `certified-value-import`
+  `tallies` (accepted unforced) and `invalid-certified-write-value-import`
+  `zeros` are refused under it, each at its module's refusal of `tally`
+  and `drop`, which change the heap.
+- **Cells.** A binding the unit assigns and holds in no slot (a module
+  binding, one a closure shares) is narrowed by its own assignment and by
+  tests, as a slot is, until a statement changes a value location other
+  than by assigning that binding: from the next statement on it is at its
+  declared type. What a cell currently holds is a current-content fact,
   which no step keeps across a write without a separation
   ([no general frame rule](../PROGRAM-TYPING.md#no-general-frame-rule));
   the producer's entries widen the binding there too. A handler's entry
@@ -1259,18 +1314,36 @@ stamps):
 | buildEngineProfile | 3.12 MB, 252 ms | 1.32 MB, 127 ms | 84 ms (7), 34 ms |
 
 The stand-ins each unit needs, each a function its unit calls whose
-footprint the unit's verdict reads (removing any one refuses the unit):
-`measureAnalysis` 9 of its file's functions (`countRenderedSpacingGraphemes`,
-`addInternalLetterSpacing`, `needsComplexTextPath`, `isSpaceKind`,
-`mayHoldCursive`, `getFollowingSpaceTail`, `getTailKerning`,
-`getJoinedNarrowing`, `getTextSegmentWidth`) and 16 imports
-(`getHanKerningTrims`, `textMayHanKern`, `lazyRegExp`, `getEmojiCorrection`,
-`getExtraSpacings`, `getFollowingSpaceMetrics`, `getFontMeasurement`,
+footprint the unit's verdict reads, measured 2026-11-11 with the imports'
+footprints their modules establish (removing any one refuses the unit; the
+given file with the module units' lines): `measureAnalysis` 5 of its file's
+functions (`countRenderedSpacingGraphemes`, `mayHoldCursive`,
+`getTailKerning`, `getJoinedNarrowing`, `getTextSegmentWidth`) and 13
+imports: `lazyRegExp`, established keeping values and stores but with no
+result footprint (`declarationEffects` proposes none; its stand-in states
+`init`/`keep`); `getHanKerningTrims`, whose module unit the pass refuses (a
+closure's loop head lacks a fact of `widthTrims`); `getFontMeasurement`,
+resting on `createMeasureState`, which rests on `getFontKanaKerning`, refused;
+and `getEmojiCorrection`, `getExtraSpacings`, `getFollowingSpaceMetrics`,
 `getFontSpaceKerning`, `getHyphenText`, `getSegmentFit`, `getSegmentMetrics`,
-`getSpaceKerning`, `getSpaceWidth`, `getTextWidth`, `textMayContainEmoji`,
-`zeros`); `prepareRichInline` 4 functions (`getHyphenRooms`,
-`setEmptyObjectFacts`, `zeroList`, `getOpeningFit`) and 2 imports
-(`isCollapsibleSpaceCode`, `readLetterSpacing`); `buildEngineProfile` none.
+`getSpaceKerning`, `getSpaceWidth`, `getTextWidth`, each proposed the ordinary
+effect (the walk states a store change of `any` where the producer states
+`grow` or `keep`: of the 67 module functions `measureAnalysis`'s imports
+reach, 43 are proposed so where the producer's claims state less). `prepareRichInline` needs 2 of its file's functions
+(`setEmptyObjectFacts`, `zeroList`) and no import; `buildEngineProfile`
+none. With no stand-in, `measureAnalysis` and `prepareRichInline` are refused
+at a statement entry's linear fact.
+
+Imports' cost (perf gate, CPU of the verifier process, best of 3, measured
+2026-11-11): with the gate's stand-ins, `measureAnalysis` 1129 ms (825
+before), `prepareRichInline` 4108 ms (1990), `buildEngineProfile` 138 ms
+(134); with none, 1040 and 3418 ms, both refused, and 140 ms. The time is the
+modules': for `prepareRichInline`, 9 modules planned (their fronts,
+initialization walks and declarations' walks, 1.1 s), 22 module groups
+checked (0.6 s) and the reads resolved (0.24 s), every invocation again; most
+of the functions walked are proposed the ordinary effect. A per-module
+interface, each module's established footprints stored by its fragment's
+content once and read by its importers, removes the repetition.
 
 Agreement with the pipeline over the 3,303 pipeline cases (mode 8 with the
 given files, `TSCERT_REFEREE`), measured 2026-11-11: 6,296 units, 4,974
