@@ -82,7 +82,7 @@ const controls: { file: string; unit: string; force: string; positive?: boolean 
   { file: "invalid-map-fresh-alias", unit: "drained@188", force: "callbacks" },
   { file: "invalid-map-fresh-reassigned", unit: "drained@156", force: "fresh" },
   { file: "invalid-closure-default-effect", unit: "stale@264", force: "defaults" },
-  { file: "for-of-program-iterable", unit: "sum@2547", force: "binds" },
+  { file: "for-of-program-iterable", unit: "sum@2547", force: "binds", positive: true },
   { file: "bind-union-host", unit: "total@1704", force: "binds", positive: true },
   { file: "union-callee", unit: "renderEither@283", force: "arms", positive: true },
   { file: "invalid-compiler-api-guard-loop-finally", unit: "names@210", force: "finally" },
