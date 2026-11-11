@@ -18,7 +18,9 @@
 // forces an adversarial proposal (`literals`, `callees`, `elements`,
 // `objects`, `spreads`, `stale`, `throws`, `guards`, `reads`, `paths`,
 // `offers`, `loops`, `decided`, `schemes`, `callbacks`, `fresh`, `defaults`, `finally`, `never`, `meets`, `implications`); the controls below run with theirs forced whatever
-// the patterns, each expected refused by mode 8.
+// the patterns, each expected refused by mode 8; the forced proposal decides
+// the control's unit and the units it depends on, the file's other units
+// compared unforced.
 // Prints the disagreements, then the counts: units agreeing, disagreeing,
 // those the pass does not handle by construct, and those whose pipeline
 // check did not finish (a stage's timeout), which decide nothing. Exits 0
@@ -179,14 +181,26 @@ async function compare(test: Case): Promise<Comparison[]> {
   const givenDir = process.env.TSCERT_GIVEN_DIR;
   const given = givenDir === undefined ? null : join(givenDir, `${test.file}.jsonl`);
   const control = controls.find((c) => c.file === test.file);
-  const force = control?.force ?? process.env.TSCERT_FORCE;
-  const pass = passVerdicts(outcome.artifacts, key, given, undefined, force);
+  const force = process.env.TSCERT_FORCE;
+  // A control's forced proposal decides the control's unit, with the units
+  // it depends on forced too; the file's other units are compared unforced.
+  const decide = (mode: string | undefined, forced: string | undefined, allCuts = false): Map<string, Verdict> => {
+    const verdicts = passVerdicts(outcome.artifacts, key, given, mode, forced, allCuts);
+    if (control === undefined) return verdicts;
+    // Accepted only with every unit it depends on accepted under the force.
+    const own = passVerdicts(outcome.artifacts, key, given, mode, control.force, allCuts).get(control.unit);
+    if (own === undefined) verdicts.delete(control.unit);
+    else verdicts.set(control.unit, own.closed === true ? own
+      : { ...own, accepted: false, refusal: own.refusal === "" ? "a unit it depends on refused" : own.refusal });
+    return verdicts;
+  };
+  const pass = decide(undefined, force);
   // The referee accepts a unit where the search finds evidence the proved
   // check accepts with the search's cuts at the loop heads, or else at every
   // statement entry: either is a certificate of the same proposals.
-  let referee = process.env.TSCERT_REFEREE === undefined ? null : passVerdicts(outcome.artifacts, key, given, "9", force);
+  let referee = process.env.TSCERT_REFEREE === undefined ? null : decide("9", force);
   if (referee !== null && [...pass].some(([u, v]) => v.accepted && referee?.get(u)?.accepted !== true)) {
-    const again = passVerdicts(outcome.artifacts, key, given, "9", force, true);
+    const again = decide("9", force, true);
     for (const [u, v] of again) if (v.accepted) referee.set(u, v);
   }
   // Of a file the pipeline refuses whole, the unit its refusal is located

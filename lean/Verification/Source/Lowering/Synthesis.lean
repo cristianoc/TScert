@@ -81,7 +81,7 @@ structure Walk where
   storeChange : Footprints.Change := .keep
   locals : List String := []
   exprs : Std.HashMap Span (String × Except String (Ty Tree)) := {}
-  /-- The expressions whose computed type the read rule refuses
+  /-- The expressions whose computed type a rule the lowering shares refuses
   (`refusalMark`), by span, as last recorded. -/
   refusals : Std.HashMap Span String := {}
   /-- Each call of a generic module function, by its span: the type each
@@ -436,14 +436,20 @@ def present (G : PositiveGraphs.NormalGraph Tree) (A : Ty Tree) : Ty Tree :=
   | some (_, F) => F
   | none => A
 
-/-- The mark of a walk failure that is the unit's refusal: a read the read
-rule the lowering shares refuses at the type the walk states (`readCell`, a
-member the contract does not state; a primitive's prototype stating none),
-which the lowering's own read of that type refuses too. -/
-def refusalMark : String := "refused at a read: "
+/-- The mark of a walk failure that is the unit's refusal: a rule the
+lowering shares refusing at the types the walk states, which the lowering's
+own rule refuses at those types too: a read the read rule refuses
+(`readCell`, a member the contract does not state; a primitive's prototype
+stating none), and a call of one callable none of whose signatures admits
+the actuals' count (`Plans.selectSignature`, a variadic one taking more
+fixed parameters than the actuals). -/
+def refusalMark : String := "refused at a "
 
 def readRefusal (m : String) : String :=
-  if m.startsWith refusalMark then m else refusalMark ++ m
+  if m.startsWith refusalMark then m else refusalMark ++ "read: " ++ m
+
+def callRefusal (m : String) : String :=
+  if m.startsWith refusalMark then m else refusalMark ++ "call: " ++ m
 
 /-- `o.f` of an `o` of type `A`: each primitive member by its prototype's
 field (a string's `length` a number), a function's `toString` by
@@ -1400,7 +1406,7 @@ def offerUse (n : String) (P : Ty Tree) : W Unit := do
 mutual
 /-- Record an expression's computed type or the reason it has none. -/
 partial def record (e : Expr) (r : Except String (Ty Tree)) : W (Option (Ty Tree)) := do
-  -- An expression a part of which the read rule refuses (`refusalMark`) is
+  -- An expression a part of which a shared rule refuses (`refusalMark`) is
   -- refused with that part: the lowering reads the part with it.
   let r ← match r with
     | .error m =>
@@ -2528,7 +2534,19 @@ partial def applyCall (env : Env) (c : Callee) (args : List Expr) (As : List (Op
   let some (a, rest) := chosen <|> candidates.head?
     | do
       for x in args do if callback x then let _ ← walkLambda env x none
-      return .error s!"no signature admits {n} actuals"
+      -- One callable of no binders none of whose signatures the count
+      -- admits, omitted positions admitting `undefined`, a variadic one's
+      -- fixed ones too: the lowering's selection refuses it too
+      -- (`refusalMark`). (A binder's admission is its instance's.)
+      let one := match c.own with
+        | some [_] => c.binders.isEmpty
+        | _ => false
+      -- (`undefined` within an omitted position's type, `unknown` too.)
+      let admits (D : Ty Tree) : Bool := admitsUndefined G D || within T [Labels.undef] D
+      let short (ps : List (Ty Tree)) : Bool := n ≤ ps.length && (ps.drop n).all admits
+      let m := s!"no signature admits {n} actuals"
+      return .error (if one && !(c.fixed.isEmpty && c.rests.isEmpty) && c.fixed.all (!short ·.arguments) &&
+        c.rests.all (fun r => n < r.arguments.1.length && !short r.arguments.1) then callRefusal m else m)
   let mut σ : List (Tree × Ty Tree) := c.seed
   -- Each binder from the receiver and the walked actuals first; then those
   -- still unbound from the type expected of the call's value, where the
@@ -3661,7 +3679,7 @@ def compareUnit (T : EquationStore.State) (f : Fragment.Fn) (fc : SourceClaims.F
     ("samples", Json.arr samples)]
 
 /-- The lowering's reading of an expression the walk gives no type: the
-unit's refusal where the read rule refuses it (`refusalMark`), else a type
+unit's refusal where a rule the lowering shares refuses it (`refusalMark`), else a type
 the pass does not handle. -/
 def undetermined (m : String) : String :=
   if m.startsWith refusalMark then m else s!"not handled: {m} (type undetermined)"
