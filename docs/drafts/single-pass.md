@@ -699,6 +699,10 @@ removal works through:
   `offer_class`, closure_offers.ml:62-95). A class value is held at its
   own construct signatures, the offered ones among them, as a callable is;
   the constructor's code is checked at each (ClosureSetup.lean:211-224).
+  A member stating its signatures at several receivers (an array's methods
+  at a dense and at a sparse array) is called at those whose receiver
+  admits the walked receiver, each callback walked first at the first of
+  them, and its type at the call states those rows.
 - **Declarations.** Each function a wanted unit reaches, callees first,
   is walked as its unit is, each callee read at the footprint found for it
   (`declarationEffects`). A walk proposes the join, by class of location,
