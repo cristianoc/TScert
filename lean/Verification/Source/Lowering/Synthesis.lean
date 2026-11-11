@@ -140,6 +140,27 @@ structure Walk where
   changedValues : Bool := false
   /-- The environments a `continue` of the innermost loop leaves with. -/
   continues : List Env := []
+  /-- The type the body of the last function literal walked returns (the
+  union of its `return`s' values), where every one is determined. -/
+  lastBody : Option (Ty Tree) := none
+  /-- Whether the class value being walked is a fresh constructor (a class
+  binding `C.[[class]]`): its first construct signature gives the instance
+  its body allocates. -/
+  freshClass : Bool := false
+  /-- The allocations a fresh constructor's body returns last (its tails):
+  made with their own keys exactly (`closure_offers.ml`, `tails`;
+  `prepare_constructor`). -/
+  exactAt : List Span := []
+  /-- Each class value walked, by its constructor's span: a later class value
+  whose code is that constructor (`Fragment.decodeBindings`) takes its
+  construct signatures. -/
+  classes : List (Span × Ty Tree) := []
+  /-- The statement being walked, by its span; and each expression's
+  computed type by that statement and its span: an expression of another
+  statement may share a span (the parts a class's construction is lowered
+  to), each point reading its own statement's. -/
+  stmtAt : Span := (0, 0)
+  exprsAt : Std.HashMap (Span × Span) (Except String (Ty Tree)) := {}
 
 abbrev W := StateT Walk Compiler
 
@@ -917,14 +938,30 @@ def earlyContract (b : Fragment.Binding) (effect : CallEffects.Effect := .ordina
       return [← lower (SourceTypes.use (.arrs [⟨Rt, Ds, R, stated.getD effect⟩] []))]
     | _, _ => throw "no written contract") fun _ => pure none)
 
+/-- The allocations a body returns last: its last statement's `return` of
+an object literal, or of each arm of its last `if`. -/
+partial def tailAllocs : Expr → List Span
+  | .block _ ss =>
+    let rec last : List Stmt → List Span
+      | [] => []
+      | ss => match ss.getLast? with
+        | some (.ret _ e) => match e with
+          | .alloc .. | .build .. => [e.span]
+          | _ => []
+        | some (.ite _ _ a b) => last a ++ last (b.getD [])
+        | _ => []
+    last ss
+  | e@(.alloc ..) | e@(.build ..) => [e.span]
+  | _ => []
+
 mutual
 /-- Record an expression's computed type or the reason it has none. -/
 partial def record (e : Expr) (r : Except String (Ty Tree)) : W (Option (Ty Tree)) := do
-  modify fun w => { w with exprs := w.exprs.insert e.span (kindOf e, r) }
+  modify fun w => { w with exprs := w.exprs.insert e.span (kindOf e, r), exprsAt := w.exprsAt.insert (w.stmtAt, e.span) r }
   return r.toOption
 
 partial def recordAt (span : Span) (kind : String) (r : Except String (Ty Tree)) : W Unit :=
-  modify fun w => { w with exprs := w.exprs.insert span (kind, r) }
+  modify fun w => { w with exprs := w.exprs.insert span (kind, r), exprsAt := w.exprsAt.insert (w.stmtAt, span) r }
 
 partial def attempt (e : Expr) (x : Compiler (Ty Tree)) : W (Option (Ty Tree)) := do
   let r ← StateT.lift (tryCatch (Except.ok <$> x) fun msg => pure (.error msg))
@@ -1186,6 +1223,10 @@ partial def expr (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (Op
       let G ← graphNow
       let mut fields : List (PropKey × Ty Tree) := []
       let mut optional : List (OptionalField (Ty Tree)) := []
+      -- Whether every source states its own keys exactly (an own-key bound):
+      -- the copy's own keys are then exactly its fields
+      -- (`object_spread.ml`, `merge_alternative`'s `exact`).
+      let mut exact := true
       for (k, A) in names.zip As do
         let A ← need A "a part"
         match k with
@@ -1194,7 +1235,8 @@ partial def expr (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (Op
           optional := optional.filter (·.key != PropKey.str k)
         | none =>
           match PositiveRules.expand G A with
-          | [.refs fs [] vs os ms _ _] =>
+          | [.refs fs [] vs os ms bs _] =>
+            exact := exact && bs.any (·.among)
             -- A key the type also states as a method may sit on the
             -- prototype, which a spread does not copy: no field of the copy.
             for (f, B) in fs ++ vs do
@@ -1208,7 +1250,10 @@ partial def expr (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (Op
                 optional := optional.filter (·.key != o.key)
               else if (fields.lookup o.key).isNone then optional := o :: optional.filter (·.key != o.key)
           | _ => throw "a spread of a value of no one record contract"
-      prim (.refs fields.reverse [] [] optional.reverse [] [])
+      -- (`TSCERT_FORCE=spreads`: the copy at its own keys exactly whatever
+      -- its sources)
+      let bound : List KeyBound := if (exact || forceSpreads) && optional.isEmpty then [⟨true, fields.reverse.map (·.1)⟩] else []
+      prim (.refs fields.reverse [] [] optional.reverse [] bound [])
     return (r, e1)
   | .read _ fld x =>
     let (O, e1) ← expr env x
@@ -1467,9 +1512,24 @@ partial def expr (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (Op
     -- types (the construct rule's `ctors` clause). A class whose code is
     -- its fresh constructor bound earlier (`.var`) takes that one's
     -- signatures.
-    match lam with
-    | .lambda .. => let _ ← walkLambda env lam none
-    | _ => let _ ← expr env lam
+    -- A fresh constructor (a class binding `C.[[class]]`) gives, first, the
+    -- instance its body allocates (`expression_closures.ml`, `fresh_sig`).
+    let fresh := (← get).freshClass
+    modify fun w => { w with freshClass := false }
+    -- A class value whose code is a constructor an earlier class value of
+    -- its declaration was walked at: that one's construct signatures, with
+    -- the class's static fields (`expression_closures.ml`, `Ctor (Id h)`).
+    let earlier := (← get).classes.lookup lam.span
+    let allocated ← match lam, earlier with
+      | .lambda _ _ _ _ _ _ _ _ _ _ _ body, none => do
+        let saved := (← get).exactAt
+        if fresh then modify fun w => { w with exactAt := tailAllocs body ++ w.exactAt }
+        let _ ← walkLambda env lam none
+        modify fun w => { w with exactAt := saved }
+        let body := (← get).lastBody
+        pure (if fresh then body else none)
+      | .lambda .., some _ => pure none
+      | _, _ => do let _ ← expr env lam; pure none
     let (Ss, e1) ← exprs env (statics.map (·.2))
     -- A static the class binding's annotation states is at its type there
     -- (a data property agrees both ways), any other at its initializer's.
@@ -1484,17 +1544,25 @@ partial def expr (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (Op
         match written.lookup k with
         | some D => return (k, D)
         | none => return (k, ← widen (← need S "a static field"))
-      match lam with
-      | .lambda _ _ _ params _ _ (some inst) _ _ _ _ _ =>
-        let I ← lower (Fragment.translate inst)
-        let ps ← params.mapM fun (_, ty) => lower (Fragment.translate ty)
-        prim (.ctors [⟨(), ps, I, .ordinary⟩] [] fields)
-      | .var _ n =>
-        let some F := env.vars.lookup n | throw s!"'{n}' is bound outside what the walk sees"
+      let ofClass (F : Ty Tree) : Compiler (Ty Tree) := do
         match PositiveRules.expand (← graphNow) F with
         | [.ctors L S ..] => prim (.ctors L S fields)
         | _ => throw "a class whose constructor is no class value"
-      | _ => throw "a class of no written instance"
+      match lam, earlier with
+      | _, some F => ofClass F
+      | .lambda _ _ _ params _ _ (some inst) _ _ _ _ _, none =>
+        let I ← lower (Fragment.translate inst)
+        let ps ← params.mapM fun (_, ty) => lower (Fragment.translate ty)
+        let allocates := match allocated with
+          | some A => if A == I then [] else [A]
+          | none => []
+        prim (.ctors ((allocates ++ [I]).map fun R => ⟨(), ps, R, .ordinary⟩) [] fields)
+      | .var _ n, none =>
+        let some F := env.vars.lookup n | throw s!"'{n}' is bound outside what the walk sees"
+        ofClass F
+      | _, _ => throw "a class of no written instance"
+    if let (.lambda .., none, some C) := (lam, earlier, r) then
+      modify fun w => { w with classes := (lam.span, C) :: w.classes }
     return (r, e1)
   | .block _ ss =>
     let _ ← stmts (some env) ss
@@ -1916,7 +1984,7 @@ partial def walkLambda (env : Env) (e : Expr) (sig : Option (CallEffects.Arrow (
     { CallEffects.Effect.ofFootprint ⟨(← get).valueChange, (← get).storeChange⟩ with onThrow := !(← get).throwWrites }
   modify fun w => { w with breaks := saved.breaks, returns := saved.returns, expected := saved.expected }
   modify fun w => { w with writes := saved.writes, throwWrites := saved.throwWrites, locals := saved.locals, inLiteral := saved.inLiteral }
-  modify fun w => { w with valueChange := saved.valueChange, storeChange := saved.storeChange }
+  modify fun w => { w with valueChange := saved.valueChange, storeChange := saved.storeChange, lastBody := R }
   let R := if written.isSome then written else if async then none else R
   let forced := (← get).force.contains "literals"
   -- A written effect (`Modifies<…>`) is the one it states.
@@ -1988,6 +2056,10 @@ partial def fit (P : Ty Tree) (x : Expr) (A : Option (Ty Tree)) : W (Option (Ty 
     -- allocation makes, which the expected type then admits.
     let some A := A | return none
     if (← get).force.contains "objects" && !P.isEmpty then return ← record x (.ok P)
+    -- A class instance, which holds its prototype, states its own keys
+    -- exactly: the bound says a method is not its own
+    -- (`expression_objects.ml`, `Alloc`).
+    let exact := (← get).exactAt.contains x.span || names.contains SourceTypes.protoField
     for l in P do
       let w ← get
       -- A dictionary with a writable index: the literal allocated at the
@@ -2010,8 +2082,13 @@ partial def fit (P : Ty Tree) (x : Expr) (A : Option (Ty Tree)) : W (Option (Ty 
           continue
       -- An instance's prototype key (`[[proto]]`), which the declared
       -- instance type does not name, at its walked type.
-      let Ds ← StateT.lift (tryCatch (some <$> (names.zip es).mapM fun (k, _) =>
-          readField [] [l] k) fun _ => pure none)
+      -- (`expression_objects.ml`: a prototype link is built at what it holds)
+      let Ds ← StateT.lift (tryCatch (some <$> (names.zip es).mapM fun (k, y) =>
+          if k == SourceTypes.protoField then
+            match (w.exprs.get? y.span).bind (·.2.toOption) with
+            | some B => pure B
+            | none => throw "the prototype undetermined"
+          else readField [] [l] k) fun _ => pure none)
       let some Ds := Ds | continue
       let mut fields : List (PropKey × Ty Tree) := []
       let mut own : List (PropKey × Ty Tree) := []
@@ -2038,7 +2115,7 @@ partial def fit (P : Ty Tree) (x : Expr) (A : Option (Ty Tree)) : W (Option (Ty 
                   est.filter names.contains)
               | _ => (byField, [], [])
             let R ← prim (.refs fs [] vs [] [] [] st)
-            if within (← table) R [l] then return some (R, false)
+            if !exact && within (← table) R [l] then return some (R, false)
             let R ← prim (.refs fs [] vs [] [] [⟨true, names⟩] st)
             return if within (← table) R [l] then some (R, true) else none) fun _ => pure none)
         if let some (R, _) := R? then return ← record x (.ok R)
@@ -2226,10 +2303,13 @@ partial def stmts (env : Option Env) (ss : List Stmt) : W (Option Env) := do
     match s with
     | .loop .. | .forOf .. => modify fun w => { w with currents := w.currents.erase at_ }
     | _ => if !e.paths.isEmpty then modify fun w => { w with currents := w.currents.insert s.pos.1 (currentOf e) }
+    let outer := (← get).stmtAt
+    modify fun w => { w with stmtAt := s.pos }
     env ← stmt e s
     if (← get).force.contains "paths" then
       if let some e' := env then
         modify fun w => { w with pathsForced := w.pathsForced ++ e'.paths.filter fun (p, _) => (w.pathsForced.lookup p).isNone }
+    modify fun w => { w with stmtAt := outer }
     prev := some s
   return env
 
@@ -2292,12 +2372,14 @@ partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
         | some ty => StateT.lift (tryCatch (some <$> lower (Fragment.translate ty)) fun _ => pure none)
         | none => pure none
       if let some D := written then modify fun w => { w with hints := (b.init.span, D) :: w.hints }
+      if b.name.endsWith ".[[class]]" then modify fun w => { w with freshClass := true }
       -- The initializer made at the annotation's type.
       let (A, e1) ← match b.init with
         | .lambda _ _ _ _ _ _ _ _ stated _ _ _ =>
           if b.init.freeNames.contains b.name then recursiveConstant env b (b.annot.isSome || stated.isSome)
           else expr env b.init written
         | _ => expr env b.init written
+      modify fun w => { w with freshClass := false }
       env := e1
       let D := if b.annot.isSome then written else A
       match D, A with
@@ -2562,7 +2644,8 @@ def retypeUnitWith (T : EquationStore.State) (f : Fragment.Fn) (fc : SourceClaim
     (scope : Option (PositiveGraphs.SchemeRow Tree × List String) := none) :
     Except String (EquationStore.State × SourceClaims.Function Tree × Option (List (String × Ty Tree)) ×
       Std.HashMap (Nat × String) (List (String × Ty Tree)) ×
-      Std.HashMap Span (List (String × Ty Tree) × List (String × List (List PropKey × Ty Tree)))) := do
+      Std.HashMap Span (List (String × Ty Tree) × List (String × List (List PropKey × Ty Tree))) ×
+      Std.HashMap (Span × Span) (SourceClaims.Candidate Tree)) := do
   let (w, T') ← walkUnit T f module generics force scope
   let exprs : List (Span × SourceClaims.Candidate Tree) := w.exprs.toList.map fun (span, (_, r)) =>
     (span, r.mapError fun m => s!"not handled: {m} (type undetermined)")
@@ -2594,7 +2677,7 @@ def retypeUnitWith (T : EquationStore.State) (f : Fragment.Fn) (fc : SourceClaim
       (id, { row with exprs := exprs, envs := envs,
                       entryCurrent := if keep then row.entryCurrent else w.currents.toList,
                       exprCurrent := if keep then row.exprCurrent else [] }) } : SourceClaims.Function Tree), w.completion,
-    w.declarations, w.spanEntries)
+    w.declarations, w.spanEntries, w.exprsAt.fold (fun m k r => m.insert k (r.mapError fun m => s!"not handled: {m} (type undetermined)")) {})
 
 /-- `retypeUnitWith`'s grown store and claims. -/
 def retypeUnit (T : EquationStore.State) (f : Fragment.Fn) (fc : SourceClaims.Function Tree)
@@ -2602,7 +2685,7 @@ def retypeUnit (T : EquationStore.State) (f : Fragment.Fn) (fc : SourceClaims.Fu
     (parts : String := "xec") (force : List String := [])
     (scope : Option (PositiveGraphs.SchemeRow Tree × List String) := none) :
     Except String (EquationStore.State × SourceClaims.Function Tree) := do
-  let (T, fc, _, _, _) ← retypeUnitWith T f fc module generics parts force scope
+  let (T, fc, _, _, _, _) ← retypeUnitWith T f fc module generics parts force scope
   return (T, fc)
 
 end Verification.SourceExtraction.Synthesis
