@@ -4925,7 +4925,7 @@ partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
     let (I, e1) ← expr env iterable
     -- A generic iteration intrinsic's instance: its call at the iterable,
     -- the stepper it gives held at the loop's head (`%next@…%`) and its
-    -- one binder the element.
+    -- one binder kept as a fallback where no stepper is available.
     let mut stepper : Option (Ty Tree) := none
     let mut bound : Option (Ty Tree) := none
     -- An iteration's throw is bounded by no footprint here; an intrinsic of
@@ -4961,14 +4961,19 @@ partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
       | some N => { exit with vars := upd exit.vars s!"%next@{p.1}%" N, decl := upd exit.decl s!"%next@{p.1}%" N }
       | none => exit
     modify fun w => { w with entries := w.entries.insert p.1 head.vars }
-    let elem ← match bound, stepper, I with
-      | some A, _, _ => pure (some A)
-      -- (a union's iteration, binders apart: the `value` its stepper yields)
-      | none, some N, _ => StateT.lift (tryCatch (do
+    -- The yielded value is the step result's field, not necessarily the
+    -- intrinsic's binder: ForIn yields a key/value pair
+    -- (statement_analysis.ml:765-779).
+    let elem ← match stepper, bound, I with
+      | some N, _, _ => StateT.lift (tryCatch (do
           let some s := (← callSigsOf N).head? | throw "no step"
           some <$> readField [] (← nonNullish s.result) (PropKey.str "value")) fun _ => pure none)
+      | none, some A, _ => pure (some A)
       | none, none, some I => StateT.lift (tryCatch (some <$> elementAt I none (missing := false)) fun _ => pure none)
       | none, none, none => pure none
+    -- An adversarial yield narrower than the iterator's value contract.
+    let elem ← if (← get).force.contains "iteration-values" then
+        pure (some (← StateT.lift (prim (.numLit 0)))) else pure elem
     recordAt namePos "identifier" (match elem with | some A => .ok A | none => .error "the element undetermined")
     let inner := match elem with
       | some A => { head with vars := upd head.vars name A, decl := upd head.decl name A }
