@@ -1053,8 +1053,12 @@ partial def matchBinder (b : Tree) (P A : Ty Tree) (fuel : Nat := 6) (vars : Lis
   | _ =>
     let some s := (ProgramTyping.callSigs G [l]).head? | return none
     first [(s.result, do
-      let some r := (← callSigsOf A).head? | throw "no signature"
-      pure r.result)]
+      -- A promise row matches a promise row; its result is the promised
+      -- type (inference.ml:311-329), while a plain row returns its value.
+      let rows := (ProgramTyping.callSigs G A).map (fun a => (a.effect.promise, a.result)) ++
+        (ProgramTyping.restSigs G A).map (fun a => (a.effect.promise, a.result))
+      let some (_, R) := rows.find? (·.1 == s.effect.promise) | throw "no signature"
+      pure R)]
   if r.isSome then return r
   perLabel A
 
@@ -2991,8 +2995,12 @@ partial def walkLambda (env : Env) (e : Expr) (sig : Option (CallEffects.Arrow (
     -- A guard is also offered at its own parameters, where its promise is
     -- checked (`ClosureSetup`'s written promise).
     if guard.isSome then
+      -- The promise is beside the plain row, whose result is the body's
+      -- Boolean (or assertion's undefined), not the promised type
+      -- (expression_closures.ml:433-450; Types.lean:820-843).
+      let plain := { a with arguments := qs, result := R, effect := { a.effect with promise := none } }
       let offered := if a.arguments.length != qs.length then
-        [a, { a with arguments := a.arguments.take qs.length }] else [a]
+        [plain, a, { a with arguments := a.arguments.take qs.length }] else [plain, a]
       return ← record e (.ok [← StateT.lift (lower (SourceTypes.use (.arrs offered [])))])
     -- Any other at its own parameters' row and, beside it, at each signature
     -- the expected callable `ctx` states taking more parameters whose leading
