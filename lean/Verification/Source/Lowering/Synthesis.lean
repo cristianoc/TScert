@@ -1420,7 +1420,12 @@ partial def matchBinder (b : Tree) (P A : Ty Tree) (fuel : Nat := 6) (vars : Lis
         let some a := m'.calls.head? | throw "no signature"
         pure a.result))
   | _ =>
-    let some s := (ProgramTyping.callSigs G [l]).head? | return none
+    -- (of a parameter stating a guard's plain row beside its promise row,
+    -- the first signature mentioning `b`: a written guard's promised type
+    -- is the binder's, the producer's `promised`, expression_calls.ml:438-445)
+    let sigs := ProgramTyping.callSigs G [l]
+    let some s := (sigs.find? fun s => (s.result :: s.arguments).any (·.any (occurs b))) <|> sigs.head?
+      | return none
     -- A callback's result supplies the lower candidate first; only a
     -- binder absent there is read off its parameters (inference.ml:311-329).
     let rows := ProgramTyping.callSigs G A
