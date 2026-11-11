@@ -135,6 +135,15 @@ structure Walk where
   /-- The constants in scope: a write of a key one's record may lack grows
   its type. -/
   consts : List String := []
+  /-- Each constant holding a function literal of no type parameters and no
+  rest: its literal's span and own parameters' types (the producer's
+  `named_closure`, closure_offers.ml:29). -/
+  closureConsts : List (String × Span × List (Ty Tree)) := []
+  /-- The signatures a use offers such a literal (`closure_offer`,
+  closure_offers.ml:51), by the literal's span: found by a walk, read by the
+  next (`walkUnit`). -/
+  offered : List (Span × CallEffects.Arrow (Ty Tree)) := []
+  offers : List (Span × CallEffects.Arrow (Ty Tree)) := []
   /-- Whether the last call may have changed a value of the heap (its
   instance's footprint): the narrowed paths end there. -/
   changedValues : Bool := false
@@ -1172,6 +1181,21 @@ partial def tailAllocs : Expr → List Span
   | e@(.alloc ..) | e@(.build ..) => [e.span]
   | _ => []
 
+/-- A constant `n` holding a function literal, read where a callable `P` of
+one fixed signature binding more parameters than the literal is expected,
+whose leading parameters are within the literal's own: that signature
+offered to the literal (the producer's `closure_offer`,
+closure_offers.ml:51-59, from expression_values.ml:58-62 and
+expression_calls.ml:309-313). -/
+def offerUse (n : String) (P : Ty Tree) : W Unit := do
+  let some (_, sp, own) := (← get).closureConsts.find? (·.1 == n) | return
+  let T ← StateT.lift table
+  let G := SourceTypes.graph T
+  let [s] := ProgramTyping.callSigs G P | return
+  if !(ProgramTyping.restSigs G P).isEmpty || s.arguments.length ≤ own.length then return
+  if !(← get).force.contains "offers" && !((s.arguments.take own.length).zip own).all fun (D, Q) => within T D Q then return
+  modify fun w => { w with offered := if w.offered.contains (sp, s) then w.offered else w.offered ++ [(sp, s)] }
+
 mutual
 /-- Record an expression's computed type or the reason it has none. -/
 partial def record (e : Expr) (r : Except String (Ty Tree)) : W (Option (Ty Tree)) := do
@@ -1328,6 +1352,7 @@ partial def expr (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (Op
     let r := match env.vars.lookup n with
       | some A => .ok A
       | none => .error s!"'{n}' is bound outside what the walk sees"
+    if let some P := exp then offerUse n P
     return (← record e r, env)
   | .lit _ v => return (← attempt e (literal v), env)
   | .logical _ andOp l r =>
@@ -1693,7 +1718,7 @@ partial def expr (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (Op
   | .lambda _ _ _ params .. =>
     let G ← StateT.lift graphNow
     let sig := if params.all (·.2 == Json.null) then exp.bind (widestOf G) else none
-    return (← walkLambda env e sig, env)
+    return (← walkLambda env e sig (ctx := exp), env)
   | .ctor _ lam statics =>
     -- A class value: its constructor's written parameters, its instance its
     -- written result, its static fields at their initializers' widened
@@ -1994,7 +2019,7 @@ partial def applyCall (env : Env) (c : Callee) (args : List Expr) (As : List (Op
       for ((x, P), i) in (args.zip a0.arguments).zipIdx do
         if callback x then
           let w0 ← get
-          let L ← walkLambda env x (widest (substitute c.seed P)) (own := true)
+          let L ← walkLambda env x (widest (substitute c.seed P)) (own := true) (ctx := some (substitute c.seed P))
           set w0
           if let some L := L then walked := walked ++ [(i, L)]
   let mut chosen : Option (CallEffects.Arrow (Ty Tree) × Option (CallEffects.RestArrow (Ty Tree))) := none
@@ -2047,10 +2072,11 @@ partial def applyCall (env : Env) (c : Callee) (args : List Expr) (As : List (Op
     if callback x then
       -- The callback's parameter's signature taking the most parameters:
       -- the callback walked there is within each of them.
-      let L ← walkLambda env x (widest (sub P))
+      let L ← walkLambda env x (widest (sub P)) (ctx := some (sub P))
       As := As.set i L
       if let some L := L then σ ← bindFrom σ [(P, L)]
     else if let some A := As[i]? then
+      if let .var _ n := x then offerUse n (sub P)
       As := As.set i (← fit (sub P) x A)
   -- A binder a resolution qualifies: its observation and result the
   -- resolution of its input's type by the certificate its form gives
@@ -2129,11 +2155,12 @@ every binding it captures at its declared type; its result its written one,
 or else what its body gives (its returns' union, `undefined` where it
 completes). Recorded at the literal as a signature where every part is
 determined. -/
-partial def walkLambda (env : Env) (e : Expr) (sig : Option (CallEffects.Arrow (Ty Tree))) (own : Bool := false) :
+partial def walkLambda (env : Env) (e : Expr) (sig : Option (CallEffects.Arrow (Ty Tree))) (own : Bool := false)
+    (ctx : Option (Ty Tree) := none) :
     W (Option (Ty Tree)) := do
   let expected := sig.map (·.arguments)
   let expectedResult := sig.map (·.result)
-  let .lambda _ receiver _ params defaults _ result guard stated async _ body := e
+  let .lambda _ receiver _ params defaults rest result guard stated async _ body := e
     | return none
   let captured := env.vars.map fun (n, A) => (n, (env.decl.lookup n).getD A)
   let mut vars := captured
@@ -2226,9 +2253,49 @@ partial def walkLambda (env : Env) (e : Expr) (sig : Option (CallEffects.Arrow (
       | none => pure a
     -- A guard is also offered at its own parameters, where its promise is
     -- checked (`ClosureSetup`'s written promise).
-    let offered := if guard.isSome && a.arguments.length != qs.length then
-      [a, { a with arguments := a.arguments.take qs.length }] else [a]
-    record e (.ok [← StateT.lift (lower (SourceTypes.use (.arrs offered [])))])
+    if guard.isSome then
+      let offered := if a.arguments.length != qs.length then
+        [a, { a with arguments := a.arguments.take qs.length }] else [a]
+      return ← record e (.ok [← StateT.lift (lower (SourceTypes.use (.arrs offered [])))])
+    -- Any other at its own parameters' row and, beside it, at each signature
+    -- the expected callable `ctx` states taking more parameters whose leading
+    -- ones are within its own (or, variadic, at least as many), at its own
+    -- result and effect: calls through it discard the actuals past its
+    -- parameters, and its body is checked at each row (`ClosureSetup`;
+    -- the producer's `from_context`, expression_closures.ml:372-386).
+    let ownRow := if sig.isSome then { a with arguments := qs } else a
+    let T ← StateT.lift table
+    let G := SourceTypes.graph T
+    let ctxTy := (ctx.map fun P => P.filter fun l =>
+      !(ProgramTyping.callSigs G [l]).isEmpty || !(ProgramTyping.restSigs G [l]).isEmpty).getD []
+    -- (`TSCERT_FORCE=offers`: whatever the leading ones, the adversarial
+    -- proposal)
+    let forceOffers := (← get).force.contains "offers"
+    let leads (Ds : List (Ty Tree)) : Bool := forceOffers || (Ds.zip qs).all fun (D, Q) => within T D Q
+    -- (an expected signature's leading parameters its own, as written: the
+    -- body lowers alike under each row)
+    let ownLeads (Ds : List (Ty Tree)) : Bool := forceOffers || Ds.take qs.length == qs
+    let fixedOffers := if rest then [] else
+      ((ProgramTyping.callSigs G ctxTy).filter fun s =>
+        qs.length < s.arguments.length && ownLeads (s.arguments.take qs.length)).map fun s =>
+          ({ s with result := ownRow.result, effect := ownRow.effect } : CallEffects.Arrow (Ty Tree))
+    let restOffers := if rest then [] else
+      ((ProgramTyping.restSigs G ctxTy).filter fun r =>
+        qs.length ≤ r.arguments.1.length && ownLeads (r.arguments.1.take qs.length) &&
+          (PositiveRules.restElem G r.arguments.2).isSome).map fun r =>
+          ({ r with result := ownRow.result, effect := ownRow.effect } : CallEffects.RestArrow (Ty Tree))
+    -- and at each a use of the constant holding it offers (`offerUse`).
+    let useOffers := ((← get).offers.filter (·.1 == e.span)).filterMap fun (_, s) =>
+      if !rest && qs.length < s.arguments.length && leads (s.arguments.take qs.length) then
+        some ({ s with result := ownRow.result, effect := ownRow.effect } : CallEffects.Arrow (Ty Tree))
+      else none
+    let rows := ownRow :: ((fixedOffers ++ useOffers).foldl (fun acc s => if acc.contains s || s == ownRow then acc else acc ++ [s]) [])
+    -- A callback whose parameters' expected leading ones differ from its own
+    -- in representation (the producer then states its interior per row,
+    -- which these claims do not): at the expected signature alone.
+    let same := a.arguments.take qs.length == qs
+    let (rows, restOffers) := if sig.isSome && !same then ([a], []) else (rows, restOffers)
+    record e (.ok [← StateT.lift (lower (SourceTypes.use (.arrs rows restOffers)))])
   | _, _ => record e (.error "a function value: a parameter or its result undetermined")
 
 /-- A literal where a type `P` is expected: `[]` at the arrays of `P`
@@ -2584,6 +2651,16 @@ partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
         | _ => expr env b.init written
       modify fun w => { w with freshClass := false }
       env := e1
+      -- A literal of no type parameters and no rest, unannotated or
+      -- annotated at one signature, whose uses may offer it more rows.
+      if let (.lambda _ _ [] _ _ false _ _ _ _ _ _, some L) := (b.init, A) then
+        let G := SourceTypes.graph (← StateT.lift table)
+        let single := match written with
+          | some D => (ProgramTyping.callSigs G D).length == 1 && (ProgramTyping.restSigs G D).isEmpty
+          | none => true
+        if single then
+          if let some own := (ProgramTyping.callSigs G L).head? then
+            modify fun w => { w with closureConsts := (b.name, b.init.span, own.arguments) :: w.closureConsts }
       let D := if b.annot.isSome then written else A
       match D, A with
       | some D, some A =>
@@ -2817,7 +2894,12 @@ def walkUnit (T : EquationStore.State) (f : Fragment.Fn)
     -- (computed where a read first narrows one)
     let slots := Thunk.mk fun _ => (f.params.map (·.name) ++ declaredIn f.body).filter fun n =>
       !(cellLocals (f.params.map (·.name)) f.body f.name.isEmpty).any (·.1 == n)
-    let (done, w) ← (stmts (some env) f.body).run { generics, expected, force, scope, locals, strict, slots, entries := (({} : Std.HashMap Nat _).insert 0 vars).insert f.namePos.1 vars }
+    let start : Walk := { generics, expected, force, scope, locals, strict, slots, entries := (({} : Std.HashMap Nat _).insert 0 vars).insert f.namePos.1 vars }
+    let (done, w) ← (stmts (some env) f.body).run start
+    -- Where a use offers a constant's literal more rows, walked again with
+    -- them (the producer's second round, proposal.ml:47-52), once.
+    let (done, w) ← if w.offered.isEmpty then pure (done, w)
+      else (stmts (some env) f.body).run { start with offers := w.offered }
     let w := { w with completion := done.bind fun d => if d.ghost then none else some d.vars }
     return (w, ← table)
   let ((w, T'), _) ← runCompiler T [] action

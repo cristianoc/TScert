@@ -398,8 +398,9 @@ at keep/keep bounding its throws), `invalid-declaration-pop-callback`
 `invalid-read-narrows-closure` `wrong`, under `reads`, and
 `invalid-slot-path-call` `keyText` and `invalid-path-witness-alias`
 `wrong`, under `paths`, `invalid-object-spread-two-sources` `count`, under
-`spreads`, and `invalid-keyed-read` `pick`, under `keys` (a keyed read of an
-object at the first name its key may spell alone). A control's acceptance counts only with every unit
+`spreads`, `invalid-keyed-read` `pick`, under `keys` (a keyed read of an
+object at the first name its key may spell alone), and
+`invalid-closure-offer-narrower-mutation` `wrong`, under `offers`. A control's acceptance counts only with every unit
 it `depends` on accepted: a run with named units checks only those, a
 dependency's footprint among its proposals, so its reader follows
 `depends`.
@@ -484,9 +485,25 @@ removal works through:
   bindings before it.
 - **Function literals.** A body has no type; an expression body the parser
   writes as statements (a guard's Boolean return, `booleanReturn`) shares
-  its expression's span, which keeps the expression's type. A function literal passed as an actual is stated
-  at its parameter's signature taking the most parameters; any other at its
-  written parameters and receiver (a method's `this`). Its effect is the one
+  its expression's span, which keeps the expression's type. A function literal
+  passed as an actual takes its unwritten parameters' types from its
+  parameter's signature taking the most parameters; any other literal is at
+  its written parameters and receiver (a method's `this`). A literal of no
+  rest that is not a guard is stated at its own parameters' row and, beside
+  it, at each signature the expected callable states binding more
+  parameters whose leading ones are within its own (variadic: at least as
+  many), each at its own result and effect, as the producer's
+  `from_context` offers them; where the expected signature's leading
+  parameters differ from its own in representation (the producer then
+  states its interior per row), at that signature alone. A constant holding
+  a literal of no type parameters and no rest, unannotated or annotated at
+  one signature, read where one fixed signature binding more parameters
+  whose leading ones are within the literal's is expected (an argument, an
+  annotated binding, a return), offers the literal that signature
+  (`closure_offer`); where a unit's walk finds such an offer, the unit is
+  walked once more with each offered row stated at its literal.
+  `TSCERT_FORCE=offers` offers every longer signature whatever its leading
+  parameters, the adversarial proposal. Its effect is the one
   it writes (`Modifies<…>`); else the footprint keeping values and stores
   where the walk sees no write, assignment or call changing the heap, else
   the closed footprint of the classes of contents its writes and calls
