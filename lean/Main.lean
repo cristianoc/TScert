@@ -32,8 +32,8 @@ def command (args : List String) : IO UInt32 := do
       | none => IO.eprintln "usage: subtype rounds must be a natural number"; return 2
     | _ => pure ({}, args)
   match args with
-  | ["--module-interface-plan", astPath] =>
-      Verification.RequestCli.interfacePlanFile astPath
+  | ["--module-interface-plan", astPath, selection] =>
+      Verification.RequestCli.interfacePlanFile astPath selection
   | ["--module-interface", request] =>
       Verification.RequestCli.interfaceFile request budget
   | ["--verify-interfaces", mode, ast, interfaces, given, stand, key, depth, names]

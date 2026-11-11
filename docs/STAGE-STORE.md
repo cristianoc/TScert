@@ -330,7 +330,8 @@ computes them, is outside every key.
 
 The experimental claims-free pass uses `interface-plan`, `module-interface`
 and `pass` process stages (`verifierCall`). Discovery consumes the whole
-fragment and returns a dependency-ordered SCC DAG. The orchestrator resolves
+fragment and a selection document and returns a dependency-ordered SCC DAG
+for the requested roots and their complete module dependencies. The orchestrator resolves
 each outgoing dependency before invoking its parent's stage, and therefore
 before acquiring its execution claim. Each component request contains its
 complete module documents, normalized given lines, dependency result bytes

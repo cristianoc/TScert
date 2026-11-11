@@ -636,6 +636,26 @@ def interfaceNeeds (sc : ImportScope) : Except String (List ModuleNeed) := do
     let names ← (← jArr m.document "functions").mapM fun f => f.getObjValAs? String "name"
     return { module := m, names, reads := (moduleReads sc m ("init" :: names)).toOption.getD [] }
 
+/-- Discover only modules reached by the importer, then close over each
+complete module's reads. Selection changes the requested components, never
+the candidates or inputs of a component check. -/
+def requestedInterfaceNeeds (sc : ImportScope) (ast : Json) (names : Option (List String))
+    (given fixed own : List String := []) : Except String (List ModuleNeed) := do
+  let roots ← importerReads sc ast names given fixed
+  let mut pending := (own ++ roots.map (·.location)).eraseDups
+  let mut needs : List ModuleNeed := []
+  for _ in sc.modules do
+    if pending.isEmpty then break
+    let batch := sc.modules.filter fun m => pending.contains m.location &&
+      !needs.any (·.module.location == m.location)
+    pending := []
+    for m in batch do
+      let ns ← (← jArr m.document "functions").mapM fun f => f.getObjValAs? String "name"
+      let reads := (moduleReads sc m ("init" :: ns)).toOption.getD []
+      needs := needs ++ [{ module := m, names := ns, reads }]
+      pending := (pending ++ reads.map (·.location)).eraseDups
+  return needs
+
 /-- The SCC DAG in dependency order; lexicographic module identities break
 all ties, including member order within a component. -/
 def interfaceComponents (needs : List ModuleNeed) : List (List ModuleNeed) := Id.run do
@@ -740,6 +760,8 @@ def establishModules (needs : List ModuleNeed) (budget : PositiveCertificates.Se
 def fragmentPlansFromInterfaces (ast : Json) (fileKey : String) (budget : PositiveCertificates.SearchBudget)
     (names : Option (List String)) (standIns : StandIns) (force : List String) (established : Established) :
     Except String FilePlans := do
+  if established.isEmpty then
+    return ← fragmentPlansCore ast fileKey budget names standIns force
   let sc ← ImportScope.of ast
   let reads ← importerReads sc ast names (standIns.imports.map StandIn.name) (standIns.functions.map StandIn.name)
   let rs := readsOf reads established
@@ -752,7 +774,8 @@ def fragmentPlansWithModules (ast : Json) (fileKey : String) (budget : PositiveC
     (prepare : String → FilePlans → FilePlans := fun _ f => f)
     (check : FilePlans → List Nat → List String × Except String (List String) := fun _ _ => ([], .error "not checked")) :
     Except String (FilePlans × List ModuleVerdict × List String) := do
-  let needs ← interfaceNeeds (← ImportScope.of ast)
+  let needs ← requestedInterfaceNeeds (← ImportScope.of ast) ast names
+    (standIns.imports.map StandIn.name) (standIns.functions.map StandIn.name)
   let mut established : Established := []
   let mut verdicts := []
   let mut notes := []

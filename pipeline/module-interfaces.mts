@@ -53,6 +53,9 @@ export type InterfaceOptions = {
    * than the own-file snapshot's file key. Supplying it runs its complete
    * component check even when the importer itself selects one function. */
   ownModule?: string;
+  /** Importer roots and measurement inputs affect discovery only. */
+  names?: string;
+  standins?: string;
 };
 export type PreparedInterfaces = { path: string; records: Invoked[] };
 
@@ -90,7 +93,16 @@ export function prepareInterfaces(fragmentPath: string, options: InterfaceOption
     if (run.status !== 0) throw Error(`interface stage ${run.record.execution}: ${run.stderr}`);
     return run;
   };
-  const plan = exact(json(invoke(["--module-interface-plan", source]).stdout), ["components"]);
+  const standins = options.standins === undefined ? { functions: [], imports: [] } :
+    exact(json(readFileSync(options.standins, "utf8")), ["functions", "imports"]);
+  const selection = join(options.work, "selection.json");
+  writeFileSync(selection, canonical({
+    names: options.names ? options.names.split(",").filter(Boolean) : null,
+    imports: array(standins.imports).map((s) => string(object(s).name)),
+    functions: array(standins.functions).map((s) => string(object(s).name)),
+    own: options.ownModule === undefined ? [] : [string(object(json(readFileSync(options.ownModule, "utf8"))).location)],
+  }));
+  const plan = exact(json(invoke(["--module-interface-plan", source, selection]).stdout), ["components"]);
   const byModule = new Map<string, { key: string; interface: Canonical }>();
   const projections: Canonical[] = [];
   for (const [index, raw] of array(plan.components).entries()) {
@@ -125,7 +137,29 @@ export function prepareInterfaces(fragmentPath: string, options: InterfaceOption
  * input role. Stand-ins are importer-only measurement inputs. */
 export function verifyWithInterfaces(fragment: string, key: string, names: string, standins: string,
     options: InterfaceOptions): { run: Invoked; interfaces: PreparedInterfaces } {
-  const interfaces = prepareInterfaces(fragment, options);
+  mkdirSync(options.work, { recursive: true });
+  const environment: Record<string, string> = {};
+  if (options.force.length > 0) environment.TSCERT_FORCE = options.force.join(",");
+  if (options.allCuts) environment.TSCERT_ALL_CUTS = "1";
+  const check = (path: string): Invoked => invokeProcess(verifierCall(verifierBuild,
+    ["--subtype-rounds", String(options.rounds), "--verify-interface-stage", String(options.mode),
+      fragment, path, options.given, standins, key, String(options.fuel), names], environment),
+    { ...options.invocation, reuse: false });
+  // A completed importer check at ordinary contracts needs no stronger
+  // module facts. This publishes only that check, never a module interface.
+  // Explicit own-module publication always runs the canonical computation.
+  const ordinary = join(options.work, "ordinary-interfaces.json");
+  writeFileSync(ordinary, canonical({ modules: [] }));
+  const attempt = options.ownModule === undefined && options.force.length === 0 ? check(ordinary) : undefined;
+  if (attempt?.status === 0)
+    return { run: attempt, interfaces: { path: ordinary, records: [] } };
+  if (attempt !== undefined && attempt.status !== 1)
+    throw Error(`importer stage ${attempt.record.execution}: ${attempt.stderr}`);
+  if (attempt !== undefined && array(object(json(readFileSync(fragment, "utf8"))).modules).length === 0)
+    return { run: attempt, interfaces: { path: ordinary, records: [] } };
+  const interfaces = prepareInterfaces(fragment, { ...options, names, standins });
+  if (attempt !== undefined && array(object(json(readFileSync(interfaces.path, "utf8"))).modules).length === 0)
+    return { run: attempt, interfaces };
   let importerInterfaces = interfaces.path;
   if (options.ownModule !== undefined) {
     const locations = array(object(json(readFileSync(fragment, "utf8"))).modules).map((m) => string(object(m).location));
@@ -134,11 +168,6 @@ export function verifyWithInterfaces(fragment: string, key: string, names: strin
     importerInterfaces = join(options.work, "importer-interfaces.json");
     writeFileSync(importerInterfaces, canonical({ modules }));
   }
-  const environment: Record<string, string> = {};
-  if (options.force.length > 0) environment.TSCERT_FORCE = options.force.join(",");
-  if (options.allCuts) environment.TSCERT_ALL_CUTS = "1";
-  const run = invokeProcess(verifierCall(verifierBuild, ["--subtype-rounds", String(options.rounds),
-    "--verify-interface-stage", String(options.mode), fragment, importerInterfaces, options.given, standins,
-    key, String(options.fuel), names], environment), { ...options.invocation, reuse: false });
+  const run = check(importerInterfaces);
   return { run, interfaces };
 }
