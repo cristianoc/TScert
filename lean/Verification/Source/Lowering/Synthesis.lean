@@ -1609,7 +1609,7 @@ def copiesOf (A : Ty Tree) (force : Bool) (target : Bool := false) : Compiler (L
       let fields := ((fs ++ vs).filter fun (k, _) =>
         (target || k != SourceTypes.protoField) && !ms.any (·.key == k)).map fun (k, A) => (k, false, A)
       let opt := (os.filter fun o => !fields.any (·.1 == o.key)).map fun o => (o.key, true, o.type)
-      out := out ++ [{ fields := fields ++ opt, exact := false, index := ix.lookup .strings, symbols := ix.lookup .symbols }]
+      out := out ++ [{ fields := fields ++ opt, exact := false, index := if force && (ix.lookup .strings).isSome then some [Labels.tru] else ix.lookup .strings, symbols := ix.lookup .symbols }]
     | [.callable fs rest _ _ ms] =>
       -- A callable object's fields are copied just as the producer's
       -- callable Shape (object_spread.ml:156-160); every intersection
@@ -1719,12 +1719,14 @@ def copyParts (start : List Copy) (parts : List (Option PropKey × Ty Tree)) (fo
   for (k, A) in parts do
     match k with
     | some k =>
-      -- (a copy stating an index: the field merged in, as an exact
-      -- alternative of its own, the index then holding it too,
-      -- `object_spread.ml`'s `merge_alternative`)
+      -- A written field also contributes to each applicable index of the
+      -- fresh copy (object_spread.ml:merge_alternative). Every named cell
+      -- covered by that writable index is allocated at its combined type.
       alts ← alts.mapM fun a =>
-        if a.index.isSome || a.symbols.isSome then mergeCopy a { fields := [(k, false, A)] }
-        else pure (if a.fields.any (·.1 == k) then { a with fields := a.fields.map fun f => if f.1 == k then (k, false, A) else f }
+        if a.index.isSome || a.symbols.isSome || a.numeric.isSome then
+          mergeCopy a { fields := [(k, false, A)] }
+        else pure (if a.fields.any (·.1 == k) then
+          { a with fields := a.fields.map fun f => if f.1 == k then (k, false, A) else f }
           else { a with fields := a.fields ++ [(k, false, A)] })
     | none =>
       let srcs ← copiesOf A force
