@@ -663,7 +663,9 @@ removal works through:
   where either operand is never falsy, not `true` where neither is ever
   truthy, `a && b` dually) leaves the arm of that answer unreached, walked
   for its entries; a loop whose test cannot answer `false` is left by its
-  breaks alone. `typeof x` is a `string`. A
+  breaks alone; a statement whose value has no type (a call of a function
+  returning `never`) does not complete, what follows it walked for its
+  entries, unreached. `typeof x` is a `string`. A
   call of a type guard, on its true arm, and a statement calling an
   assertion function, after it, narrow the binding the promise names to
   its members within the guarded type, else to that type; a method's
@@ -701,7 +703,8 @@ removal works through:
   call whose instance may change a value of the heap (or whose callee is
   unknown), and after the left operand of `&&` or `||` where the right may
   call; a write of an element at a key naming no one field or number, and
-  `Object.assign`, end every path; a handler states none. A path narrowed
+  `Object.assign`, end every path; after `o.f ??= v` (and `||=`, `&&=`)
+  the path `o.f` holds the assignment's value; a handler states none. A path narrowed
   before a loop is stated at its head, at each statement entry of its body
   and past its exit where nothing in its test, body and update ends it (a
   write of a field the path reads, an assignment of its root, a call that
