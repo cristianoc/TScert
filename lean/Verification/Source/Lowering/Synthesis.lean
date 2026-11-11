@@ -5919,6 +5919,17 @@ partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
           if eff.receiverOwn then wrote .any eff.footprint.store
           else if eff.footprint != ⟨.keep, .keep⟩ then wrote eff.footprint.value eff.footprint.store
       | none => wrote .any .any
+    -- For a function literal's effect, each step a call of the stepper,
+    -- changing what its signature's footprint states and, where it changes
+    -- its receiver's own locations (a native iterator's position), the
+    -- values and its store's change (`callChanges`).
+    -- (`TSCERT_FORCE=steps` leaves them out, the adversarial proposal)
+    else if !(← get).force.contains "steps" then
+      if let some N := stepper then
+        let G ← StateT.lift graphNow
+        if let some eff := ((ProgramTyping.callSigs G N).map (·.effect)).head? then
+          if eff.receiverOwn then wrote .any eff.footprint.store
+          else if eff.footprint != ⟨.keep, .keep⟩ then wrote eff.footprint.value eff.footprint.store
     let exit := loopHead e1 body
     let head := match stepper with
       | some N => { exit with vars := upd exit.vars s!"%next@{p.1}%" N, decl := upd exit.decl s!"%next@{p.1}%" N }
