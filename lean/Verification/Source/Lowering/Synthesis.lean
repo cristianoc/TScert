@@ -62,6 +62,8 @@ computed type or reason, each statement entry's bindings, and the
 environments a `break` leaves with, by label; and the generic module
 functions it reads. -/
 structure Walk where
+  /-- Interiors under each advertised signature (expression_closures.ml:455-473). -/
+  arrowClaims : List (Span × List (SourceClaims.Overlay Tree)) := []
   generics : List (String × Generic) := []
   /-- The types the `return`s of the body being walked give, and the result
   its signature expects. -/
@@ -4893,7 +4895,7 @@ or else what its body gives (its returns' union, `undefined` where it
 completes). Recorded at the literal as a signature where every part is
 determined. -/
 partial def walkLambda (env : Env) (e : Expr) (sig : Option (CallEffects.Arrow (Ty Tree)))
-    (ctx : Option (Ty Tree) := none) :
+    (ctx : Option (Ty Tree) := none) (rowInterior : Bool := false) :
     W (Option (Ty Tree)) := do
   let G ← StateT.lift graphNow
   let expected := (sig <|> ctx.bind (widestOf G)).map (·.arguments)
@@ -4925,7 +4927,7 @@ partial def walkLambda (env : Env) (e : Expr) (sig : Option (CallEffects.Arrow (
   -- (`ClosureSetup`'s array rest). None where it has no array element.
   let mut restPack : Option (Option (Ty Tree)) := none
   for ((n, ty), i) in params.zipIdx do
-    let A ← if ty == Json.null then pure ((expected.bind (·[i]?)))
+    let A ← if rowInterior || ty == Json.null then pure ((expected.bind (·[i]?)))
       else StateT.lift (tryCatch (some <$> lower (Fragment.translate ty)) fun _ => pure none)
     bound := bound ++ [A]
     if rest && i + 1 == params.length then
@@ -4968,7 +4970,7 @@ partial def walkLambda (env : Env) (e : Expr) (sig : Option (CallEffects.Arrow (
   let cells := (cellLocals (params.map (·.1)) bodyStmts).map (·.1)
   modify fun w => { w with writes := false, throwWrites := false, valueChange := .keep, storeChange := .keep, locals := declared, inLiteral := true,
                            literalSlots := declared.filter (!cells.contains ·) ++ w.literalSlots, heldCells := cells ++ w.heldCells }
-  modify fun w => { w with returns := [], expected := written <|> (if async then none else expectedResult), asyncBody := async }
+  modify fun w => { w with returns := [], expected := (if rowInterior then expectedResult else written <|> (if async then none else expectedResult)), asyncBody := async }
   -- An expression body's entry is its prologue's, at the body's start.
   modify fun w => { w with entries := w.entries.insert body.span.1 inner.vars }
   -- Each default runs at a call omitting its argument, before the body: its
@@ -5103,6 +5105,26 @@ partial def walkLambda (env : Env) (e : Expr) (sig : Option (CallEffects.Arrow (
     -- result and effect: calls through it discard the actuals past its
     -- parameters, and its body is checked at each row (`ClosureSetup`;
     -- the producer's `from_context`, expression_closures.ml:372-386).
+    -- One body obligation for each implemented signature, at that row's
+    -- parameters; captured cells retain the contracts above. The producer
+    -- states these interiors in expression_closures.ml:455-473.
+    let rows := ctx.toList.flatMap (ProgramTyping.callSigs G)
+    if !rowInterior && tps.isEmpty && !rest && defaults.isEmpty && rows.length > 1 &&
+        rows.all (fun r => r.arguments.length == params.length) then
+      let outside ← get
+      let mut interiors : List (SourceClaims.Overlay Tree) := []
+      for r in rows do
+        set { outside with exprs := {}, entries := {}, currents := {}, contracts := [],
+                           spanEntries := {}, declarations := {}, exprsAt := {} }
+        let _ ← walkLambda env e (some r) none true
+        let inside ← get
+        interiors := interiors ++ [{
+          exprs := inside.exprs.toList.map (fun (sp, _, A) => (sp, A))
+          envs := inside.entries.toList.map (fun (p, vs) => (p, vs.map fun (n, A) => (n, .ok A)))
+          entryCurrent := inside.currents.toList
+          contracts := inside.contracts.map (fun (key, A) => (key, .ok A)) }]
+      set { outside with arrowClaims := upd outside.arrowClaims e.span interiors }
+      return ← record e (.ok (ctx.getD []))
     record e (.ok (← literalRows e.span a qs ctx sig.isSome rest))
   | _, _, _ => record e (.error "a function value: a parameter or its result undetermined")
 
@@ -6096,7 +6118,7 @@ def retypeUnitWith (T : EquationStore.State) (f : Fragment.Fn) (fc : SourceClaim
     exprs, envs, contracts
     entryCurrent := if keep then fc.entryCurrent else currents
     exprCurrent := if keep then fc.exprCurrent else []
-    arrowClaims := []
+    arrowClaims := w.arrowClaims
     points := fc.points.map fun (id, row) =>
       (id, { row with exprs := exprs, envs := envs,
                       entryCurrent := if keep then row.entryCurrent else currents,
