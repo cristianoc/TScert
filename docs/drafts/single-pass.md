@@ -402,6 +402,29 @@ computed by TScert in Lean.
 `verifier --verify-units 8` reads the fragment and the given file, and no
 claims document (`SourceClaimJson.fragmentPlans`, `Claims/FragmentFront.lean`).
 
+What mode 8 still takes in the claims wire format, the list the format's
+removal works through:
+
+- **An internal carrier.** `fragmentClaims` builds a document in the claims
+  wire format (each function's name, name position, parameters and result
+  marked unavailable, its footprint, `onThrow` and result footprint; the
+  primitives' type rows; empty entries and expressions) and `fileFront`
+  decodes it into the front, twice where `declarationEffects` finds a
+  footprint.
+- **The walk's types as claim rows.** `Synthesis.retypeUnitWith` and
+  `retypeFromFragment` state the walk's types as a `SourceClaims.Function`:
+  expressions, statement entries, storage contracts, entry contents
+  (`entryCurrent`) and the execution points' rows; `instancesFromWalk`
+  states each generic call's instance and resolution certificates there.
+- **Given loop-head facts.** The given file mode 6 writes from the existing
+  search's certificate over the producer's claims: each unit's `headFacts`
+  and `headFactsOfCodes`, each cut's `graph` row (`arguments`, `implies`,
+  `inputs`) and the regional tables' heads (`footprintRegional`).
+- **Stand-ins.** `TSCERT_STANDINS`, written by
+  `dev/single-pass-standins.mts` from a claims document: the footprints the
+  file's functions and imports would write (`qualified` carries the
+  imports').
+
 - **Store and signatures.** The store is the fragment's declarations and
   annotations, lowered with a type table of the primitives alone
   (`fragmentClaims`). Each function's parameters and result are its
