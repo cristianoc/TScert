@@ -1145,6 +1145,25 @@ removal works through:
   as many slots (a `for`'s head and its declarations' entry share a start); mode 6
   writes them with `TSCERT_GIVEN_FACTS=1`, for the experiment from the
   claims' facts at the loop heads and the start (`SinglePass.loopHeads`).
+  A callback's code request uses its own indexed `codes` row (implications,
+  promise arguments and input identities) and `headFactsOfCodes` row
+  (source start, context width and index atoms). Neither row represents
+  fresh-store slots. At a loop head `SinglePass.run` constructs a state
+  with empty freshness (SinglePass.lean:965-984); a callback has no regional
+  fallback (Claims/Json.lean:993-1030). The proved code check obtains fresh
+  slots from `GraphCode.inferFresh` (GraphCode.lean:1276-1283, 1342-1351).
+  Measured 2026-11-11: `for-of-allocated-constant-field-guard` `captured`,
+  `blocker-nullable-field-argument` `use` and `map-stable-set` `distinct`
+  refuse code 0's iterator call at nodes 10, 20 and 11. Each needs its
+  loop-head slot holding `%next` marked fresh in this callback invocation.
+  A given input for this purpose must identify the code request, loop head
+  and fresh slots; the pass must check that freshness on every incoming
+  edge and assume none at the callback entry. The present reader accepts
+  no such input. `dev/single-pass-given.mts:35-42` copies mode 6's rows;
+  `GivenHeads` and `givenLines` (Claims/Json.lean:760-895) emit no freshness
+  row. Regenerating the available `use` and `distinct` certificates gives
+  the same empty code rows. Supplying those facts requires a pass input and
+  edge check as well as an exporter; a tooling-only change cannot do it.
 - **Written-footprint stand-ins.** For a measurement, `TSCERT_STANDINS`
   names a file of footprints the file's functions and imports would write
   (`{"functions": […], "imports": […]}`, each a name, footprint, on-throw
