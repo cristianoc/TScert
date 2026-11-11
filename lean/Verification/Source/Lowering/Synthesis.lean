@@ -3822,6 +3822,11 @@ partial def exprAt (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (
   | .logicalAssign _ op target rhs =>
     match target with
     | .var _ n => assigns n
+    | .read _ fld recv =>
+      let O := (memberPath recv).bind fun (n, path) =>
+        if path.isEmpty then env.vars.lookup n else env.paths.lookup (n, path)
+      let G ← StateT.lift graphNow
+      wrote .any (if O.any (fun O => ExpressionEffects.sourceField G (PositiveRules.expand G O) fld) then .keep else .any)
     | _ => wrote
     let (L, e1) ← expr env target
     let D := match target with
