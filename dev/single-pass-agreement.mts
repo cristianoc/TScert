@@ -71,6 +71,8 @@ const controls: { file: string; unit: string; force: string; positive?: boolean 
   { file: "invalid-declaration-pop-callback", unit: "dropped@359", force: "callees" },
   { file: "certified-value-import", unit: "tallies@829", force: "imports", positive: true },
   { file: "invalid-certified-write-value-import", unit: "zeros@319", force: "imports" },
+  { file: "returned-closure-footprint", unit: "countLetters@972", force: "results", positive: true },
+  { file: "invalid-returned-closure-footprint", unit: "lastRead@421", force: "results" },
   { file: "invalid-compiler-api-guard-loop-partial", unit: "names@203", force: "guards" },
   { file: "invalid-read-narrows-write", unit: "wrong@187", force: "reads" },
   { file: "invalid-read-narrows-closure", unit: "wrong@153", force: "reads" },

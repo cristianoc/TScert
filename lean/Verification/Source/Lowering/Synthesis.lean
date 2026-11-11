@@ -1765,14 +1765,40 @@ def wrote (value store : Footprints.Change := .any) : W Unit := do
   modify fun w => { w with writes := true, valueChange := w.valueChange.max value, storeChange := w.storeChange.max store }
   if value != .keep then modify fun w => { w with valueWrites := w.valueWrites + 1 }
 
+/-- For a declaration's footprint, a call's change of the heap at one of its
+callee's signatures, graded as the producer's `effects_footprint`
+(source.ml:953-956) grades it: the signature's footprint; with the values
+where it changes its receiver's own locations; everything where it changes
+its receiver's store and the receiver's store is not one the run allocated
+(`receiverFresh`). A typed array's element write (`elementWrite`) is a
+change within the footprint (`Effect.Holds`). -/
+def callChange (eff : CallEffects.Effect) (receiverFresh : Bool := false) : W Unit := do
+  if eff.footprint != ⟨.keep, .keep⟩ then wrote eff.footprint.value eff.footprint.store
+  if eff.receiverOwn then wrote .any eff.footprint.store
+  if eff.receiverStore && !receiverFresh then wrote .any .any
+
+/-- The change of an update (`x.f += v`, `x[k]++`) or a logical assignment
+(`x.f ??= v`) of a target other than a binding: for a declaration's
+footprint, a field's as a field write grades it (the values; a `length`'s
+the stores too) and an element's as an element write does (the values and
+a store's growth), the producer's `cell_write` and `element_write`
+(source.ml:924-935, 1082-1107); else everything. -/
+def targetWrite (t : Expr) : W Unit := do
+  if !(← get).strict then wrote else
+  match t with
+  | .read _ fld _ => wrote .any (if fld == lengthKey then .any else .keep)
+  | .index .. => wrote .any .grow
+  | _ => wrote
+
 /-- An assignment of `n`: a change of the heap where the function literal
-being walked does not declare `n`. -/
-def assigns (n : String) : W Unit := do
+being walked does not declare `n`, of its values (`value`: an initializing
+write's `init`). -/
+def assigns (n : String) (value : Footprints.Change := .any) : W Unit := do
   modify fun w => { w with holders := w.holders.filter (fun (a, b) => a != n && b != n) }
   ends (.root n)
   let w ← get
   if !w.locals.contains n then
-    wrote .any .keep
+    wrote value .keep
     -- (the cell's own assignment: what it then holds is the value assigned)
     modify fun w => { w with valueWrites := w.valueWrites - 1 }
     if !w.cellAssigned.contains n then modify fun w => { w with cellAssigned := n :: w.cellAssigned }
@@ -2892,8 +2918,7 @@ def callChanges (c : Callee) (inst : CallEffects.Arrow (Ty Tree)) (As : List (Op
       match (if unread then none else A) with
       | some A =>
         for p in ProgramTyping.callSigs Gn A do
-          if p.effect.footprint != ⟨.keep, .keep⟩ then wrote p.effect.footprint.value p.effect.footprint.store
-          if p.effect.receiverOwn || p.effect.receiverStore || p.effect.elementWrite.isSome then wrote .any .any
+          callChange p.effect
           if !p.effect.onThrow then modify fun w => { w with throwWrites := true }
       | none =>
         if callback x || (A.any fun A => !(ProgramTyping.callSigs Gn A).isEmpty) then
@@ -2910,7 +2935,8 @@ def callChanges (c : Callee) (inst : CallEffects.Arrow (Ty Tree)) (As : List (Op
   -- (but a change of a receiver's store the run allocated, a constant
   -- holding one, which its frame bounds: the producer's `receiver_fresh`,
   -- source.ml:953-956, the checker's `Effect.within_below`)
-  if (inst.effect.receiverStore && !receiverFresh) || inst.effect.elementWrite.isSome then wrote .any .any
+  if (inst.effect.receiverStore && !receiverFresh) || (inst.effect.elementWrite.isSome && !(← get).strict) then
+    wrote .any .any
   modify fun w => { w with lastFresh := inst.effect.fresh }
   if !inst.effect.onThrow then modify fun w => { w with throwWrites := true }
   -- For a declaration's footprint, a throw no footprint bounds that a
@@ -3824,10 +3850,14 @@ partial def exprAt (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (
   | .update _ op target rhs _ =>
     match target with
     | .var _ n => assigns n
-    -- source.ml:1086-1087: only a numeric literal index has the
+    -- For a declaration's footprint, the target's grade (`targetWrite`);
+    -- else source.ml:1086-1087: only a numeric literal index has the
     -- producer's compound element-write footprint.
-    | .index _ _ _ (.lit _ (.vnum _)) => wrote .any .grow
-    | _ => wrote
+    | t =>
+      if (← get).strict then targetWrite t else
+      match t with
+      | .index _ _ _ (.lit _ (.vnum _)) => wrote .any .grow
+      | _ => wrote
     let (L, e1) ← expr env target
     let (R, e2) ← match rhs with
       | some r => do let (R, e2) ← expr e1 r; pure (R, e2)
@@ -3849,12 +3879,15 @@ partial def exprAt (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (
   | .logicalAssign _ op target rhs =>
     match target with
     | .var _ n => assigns n
-    | .read _ fld recv =>
-      let O := (memberPath recv).bind fun (n, path) =>
-        if path.isEmpty then env.vars.lookup n else env.paths.lookup (n, path)
-      let G ← StateT.lift graphNow
-      wrote .any (if O.any (fun O => ExpressionEffects.sourceField G (PositiveRules.expand G O) fld) then .keep else .any)
-    | _ => wrote
+    | t =>
+      if (← get).strict then targetWrite t else
+      match t with
+      | .read _ fld recv =>
+        let O := (memberPath recv).bind fun (n, path) =>
+          if path.isEmpty then env.vars.lookup n else env.paths.lookup (n, path)
+        let G ← StateT.lift graphNow
+        wrote .any (if O.any (fun O => ExpressionEffects.sourceField G (PositiveRules.expand G O) fld) then .keep else .any)
+      | _ => wrote
     let (L, e1) ← expr env target
     let D := match target with
       | .var _ n => env.decl.lookup n
@@ -3884,7 +3917,14 @@ partial def exprAt (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (
       | _, _ => pure e2
     return (r, e3)
   | .nullishAssign _ n namePos rhs =>
-    assigns n
+    -- `x ??= v` of a binding held in a cell whose `v` changes nothing
+    -- initializes the cell: it writes it only where it holds `null` or
+    -- `undefined` (the producer's `NullishAssign`, source.ml:1076-1083,
+    -- Lean's initializing write); else it changes the values.
+    let initializing := !(← get).locals.contains n
+    assigns n (if initializing then .init else .any)
+    let before := (← get).writes
+    if initializing then modify fun w => { w with writes := false }
     recordAt namePos "identifier" (match env.vars.lookup n with
       | some A => .ok A
       | none => .error s!"'{n}' is bound outside what the walk sees")
@@ -3893,6 +3933,10 @@ partial def exprAt (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (
       | none => pure none
     if let some D := D then modify fun w => { w with hints := (rhs.span, D) :: w.hints }
     let (R, e1) ← expr env rhs D
+    if initializing then
+      let changed := (← get).writes
+      modify fun w => { w with writes := before || changed }
+      if changed then modify fun w => { w with valueChange := w.valueChange.max .any }
     let r ← attempt e do
       let some L := env.vars.lookup n | throw s!"'{n}' is bound outside what the walk sees"
       joinTy (← nonNullish L) (← need R "the right operand")
@@ -4112,11 +4156,10 @@ partial def exprCall (env : Env) (e : Expr) (exp : Option (Ty Tree)) : W (Option
       if let .var _ n := callee then
         if let some D := env.decl.lookup n then
           let G ← StateT.lift graphNow
+          -- (graded as the producer grades a call at its callee's
+          -- signatures, `callChange`)
           for a in ProgramTyping.callSigs G D do
-            -- (at the grades its declared signature states; a change of
-            -- its receiver beside the footprint is one of everything)
-            if a.effect.footprint != ⟨.keep, .keep⟩ then wrote a.effect.footprint.value a.effect.footprint.store
-            if a.effect.receiverOwn || a.effect.receiverStore || a.effect.elementWrite.isSome then wrote .any .any
+            callChange a.effect
             if !a.effect.onThrow then modify fun w => { w with throwWrites := true }
     let (As, e2) ← actuals e1 args
     -- Spread actuals as the call reads them (`spreadCall`).
@@ -4199,7 +4242,7 @@ partial def exprCall (env : Env) (e : Expr) (exp : Option (Ty Tree)) : W (Option
         if eff.footprint.value != .keep || eff.receiverOwn || eff.receiverStore || eff.elementWrite.isSome then
           modify fun w => { w with changedValues := true }
         if eff.receiverOwn then wrote .any eff.footprint.store
-        if eff.receiverStore || eff.elementWrite.isSome then wrote .any .any
+        if eff.receiverStore || (eff.elementWrite.isSome && !(← get).strict) then wrote .any .any
         if !eff.onThrow then modify fun w => { w with throwWrites := true }
         if (← get).strict && (← get).caught && !eff.onThrow then wrote .any .any
         -- For a declaration's footprint, a list holding a function may pass it.
@@ -5787,11 +5830,9 @@ partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
     -- one binder kept as a fallback where no stepper is available.
     let mut stepper : Option (Ty Tree) := none
     let mut bound : Option (Ty Tree) := none
-    -- An iteration's throw is bounded by no footprint here; an intrinsic of
-    -- no generic instance may change anything.
+    -- An iteration's throw is bounded by no footprint here.
     if (← get).strict then
       modify fun w => { w with throwWrites := true }
-      wrote .any .any
     if let some g := (← get).generics.lookup it then
       let c? : Except String Callee ← StateT.lift (tryCatch (Except.ok <$> genericCallee g []) fun m => pure (Except.error m))
       if let .ok c := c? then
@@ -5815,6 +5856,22 @@ partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
           recordAt (p.1, p.1 + "for".length) "identifier" (.ok F)
           recordAt p "call" ((·.2) <$> r)
           stepper := ((·.2) <$> r).toOption
+    -- For a declaration's footprint, the iteration changes what its
+    -- intrinsic's call states (`applyCall`) and what each step of the
+    -- stepper it gives does: the values where a step changes its receiver's
+    -- own locations, the iterator the call made, else its footprint (the
+    -- producer's `iteration_footprint`, source.ml:939-950); an iteration
+    -- whose stepper the walk does not determine may change anything.
+    if (← get).strict then
+      match stepper with
+      | some N =>
+        let G ← StateT.lift graphNow
+        let steps := (ProgramTyping.callSigs G N).map (·.effect) ++ (ProgramTyping.restSigs G N).map (·.effect)
+        if steps.isEmpty then wrote .any .any
+        for eff in steps do
+          if eff.receiverOwn then wrote .any eff.footprint.store
+          else if eff.footprint != ⟨.keep, .keep⟩ then wrote eff.footprint.value eff.footprint.store
+      | none => wrote .any .any
     let exit := loopHead e1 body
     let head := match stepper with
       | some N => { exit with vars := upd exit.vars s!"%next@{p.1}%" N, decl := upd exit.decl s!"%next@{p.1}%" N }

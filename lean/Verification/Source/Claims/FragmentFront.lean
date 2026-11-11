@@ -374,14 +374,45 @@ def Front.withInitTypes (fr : Front) (force : List String := []) : Front := Id.r
     return { fr with d := { fr.d with types := T }, moduleConstants := typed }
 
 /-- A module function's type with each signature's footprint `Φ`, bounding
-its throws where `onThrow`. -/
-def keepingType (A : Ty Tree) (onThrow : Bool) (Φ : Footprints.Closed := ⟨.keep, .keep⟩) : Compiler (Ty Tree) := do
-  match PositiveRules.expand (SourceTypes.graph (← table)) A with
+its throws where `onThrow`, and the function each returns at the footprint
+`R` where `R` is not `top` (`resultWithFootprint`'s reading: a result of one
+function type of fixed signatures, else left as it is). -/
+def keepingType (A : Ty Tree) (onThrow : Bool) (Φ : Footprints.Closed := ⟨.keep, .keep⟩)
+    (R : Footprints.Closed := .top) : Compiler (Ty Tree) := do
+  let G := SourceTypes.graph (← table)
+  let returning (B : Ty Tree) : Compiler (Ty Tree) := do
+    if R == .top then return B
+    match PositiveRules.expand G B with
+    | [.arrs L []] =>
+      if L.isEmpty || L.any (fun a => a.effect.footprint != .top || a.effect.onThrow || a.effect.promise.isSome) then
+        return B
+      return [← lower (SourceTypes.use (.arrs (L.map fun a => { a with effect := { a.effect with closed := R } }) []))]
+    | _ => return B
+  match PositiveRules.expand G A with
   | [.arrs L S] =>
     let e (x : CallEffects.Effect) : CallEffects.Effect := { x with closed := Φ, onThrow, regions := [] }
-    return [← lower (SourceTypes.use (.arrs (L.map fun a => { a with effect := e a.effect })
-      (S.map fun a => { a with effect := e a.effect })))]
+    let L ← L.mapM fun a => do return { a with effect := e a.effect, result := ← returning a.result }
+    let S ← S.mapM fun a => do return { a with effect := e a.effect, result := ← returning a.result }
+    return [← lower (SourceTypes.use (.arrs L S))]
   | _ => throw "a module function of no one signature"
+
+/-- **A returned function's footprint** (section 9, "Declarations"): the
+join of the footprints of every signature of each function the walk's
+returns hold, where each return holds one of fixed and variadic signatures;
+else `top` (the producer's `returned_footprint`, proposal.ml:164-174).
+With `least` (`TSCERT_FORCE=results`, the adversarial proposal), each such
+signature's footprint is taken as keeping values and stores. -/
+def returnedFootprint (T : EquationStore.State) (returns : List (Option (Ty Tree))) (least : Bool := false) :
+    Footprints.Closed :=
+  if returns.isEmpty then .top else
+  let G := SourceTypes.graph T
+  returns.foldl (init := ⟨.keep, .keep⟩) fun acc r => match r with
+    | some A => match PositiveRules.expand G A with
+      | [.arrs L S] => if L.isEmpty && S.isEmpty then .top else
+        ((L.map (·.effect)) ++ S.map (·.effect)).foldl (init := acc) fun acc e =>
+          if least then acc else ⟨acc.value.max e.footprint.value, acc.store.max e.footprint.store⟩
+      | _ => .top
+    | none => .top
 
 /-- **Declarations' footprints** (section 9, "Declarations"): each function
 a wanted unit reaches, callees first, walked as its unit is, each callee
@@ -426,40 +457,45 @@ def declarationWalks (fr : Front) (wanted : List Nat) (standIns : StandIns) (for
   let own := fr.units.map (·.1.name)
   let imported (n : String) : Bool := least && !own.contains n && !n.startsWith "%" &&
     n != SourceExtraction.arrayPrototypeName
-  let mut found : List (String × Footprints.Closed × Bool) := []
+  let mut found : List (String × (Footprints.Closed × Bool) × Footprints.Closed) := []
   let mut tops : List String := []
   for i in order do
     let some (f, tps, none) := fr.units[i]? | continue
     if !tps.isEmpty || f.async || f.stated.isSome || f.params.any (·.rest) ||
         standIns.functions.any (·.name == f.name) then continue
-    let walkAt (own : Option (Footprints.Closed × Bool)) : Option (Footprints.Closed × Bool) :=
+    let walkAt (own : Option (Footprints.Closed × Bool)) : Option ((Footprints.Closed × Bool) × Footprints.Closed) :=
       let at_ := match own with
-        | some o => (f.name, o) :: found
+        | some o => (f.name, o, Footprints.Closed.top) :: found
         | none => found
       let module := (fr.moduleFunctions ++ fr.moduleConstants).map fun v => (v.1, (match at_.lookup v.1 with
-        | some (Φ, ot) => do keepingType (← moduleValueType v) ot Φ
+        | some ((Φ, ot), R) => do keepingType (← moduleValueType v) ot Φ R
         | none => if imported v.1 then do
             let A ← moduleValueType v
-            tryCatch (keepingType A true) fun _ => pure A
+            tryCatch (keepingType A true ⟨.keep, .keep⟩ ⟨.keep, .keep⟩) fun _ => pure A
           else moduleValueType v : Compiler (Ty Tree)))
       match Synthesis.walkUnit fr.d.types f (module ++ schemes) generics force none (strict := true) with
-      | .ok (w, _) => some (if w.writes then ⟨w.valueChange, w.storeChange⟩ else ⟨.keep, .keep⟩, !w.throwWrites)
+      | .ok (w, T) =>
+        some ((if w.writes then ⟨w.valueChange, w.storeChange⟩ else ⟨.keep, .keep⟩, !w.throwWrites),
+          -- (where the result annotation can state it, `resultWithFootprint`)
+          let R := returnedFootprint T w.returns (force.contains "results")
+          if (resultWithFootprint fr.d.types f.ret R).isOk then R else .top)
       | .error _ => none
     let within (a b : Footprints.Closed × Bool) : Bool := a.1.le b.1 && (a.2 || !b.2)
-    let r : Option (Footprints.Closed × Bool) :=
+    -- (a self-recursive function's own reads of its result at `top`)
+    let r : Option ((Footprints.Closed × Bool) × Footprints.Closed) :=
       if (fr.mentions i).contains f.name then Id.run do
         let mut assumed : Footprints.Closed × Bool := (⟨.keep, .keep⟩, true)
         for _ in List.range 3 do
           match walkAt (some assumed) with
           | none => return none
-          | some got =>
-            if within got assumed then return some assumed
+          | some (got, R) =>
+            if within got assumed then return some (assumed, R)
             assumed := (⟨assumed.1.value.max got.1.value, assumed.1.store.max got.1.store⟩, assumed.2 && got.2)
         return none
       else walkAt none
-    if let some (Φ, ot) := r then
-      if Φ != top then found := found ++ [(f.name, Φ, ot)] else tops := tops ++ [f.name]
-  return (found.map fun (n, Φ, ot) => { name := n, footprint := Φ, onThrow := ot }, tops)
+    if let some ((Φ, ot), R) := r then
+      if Φ != top || R != top then found := found ++ [(f.name, (Φ, ot && Φ != top), R)] else tops := tops ++ [f.name]
+  return (found.map fun (n, (Φ, ot), R) => { name := n, footprint := Φ, onThrow := ot, resultFootprint := R }, tops)
 
 /-- **A function whose own code changes everything** (`fragmentPlansWithModules`):
 whether the walk of the function `name` proposes the ordinary effect with
@@ -480,10 +516,26 @@ def Front.changesEverything (fr : Front) (name : String) (force : List String) :
         !fr.moduleFunctions.any (·.1 == v.1) then moduleValueType v
     else do
       let A ← moduleValueType v
-      tryCatch (keepingType A true) fun _ => pure A : Compiler (Ty Tree)))
+      tryCatch (keepingType A true ⟨.keep, .keep⟩ ⟨.keep, .keep⟩) fun _ => pure A : Compiler (Ty Tree)))
   match Synthesis.walkUnit fr.d.types f (module ++ schemes) generics force none (strict := true) with
   | .ok (w, _) => return w.writes && (⟨w.valueChange, w.storeChange⟩ : Footprints.Closed) == .top
   | .error _ => return false
+
+/-- Whether a module's initialization mentions a function, its own or an
+import, whose declared result is a function. -/
+def initCallsReturning (doc : Json) : Bool := Id.run do
+  let some init := (Fragment.decodeInit doc).toOption | return true
+  let named := Fragment.stmtsFreeNames init
+  let returnsFunction (t : Json) : Bool := (t.getObjValD "k") == .str "function"
+  let own := ((doc.getObjValAs? (Array Json) "functions").toOption.getD #[]).toList.filterMap fun f =>
+    if returnsFunction (f.getObjValD "retType") then (f.getObjValAs? String "name").toOption else none
+  let imported := (((doc.getObjValD "declarations").getObjValAs? (Array Json) "values").toOption.getD #[]).toList.filterMap
+    fun v => do
+      let t := v.getObjValD "type"
+      if returnsFunction t && returnsFunction (t.getObjValD "result") then
+        (do (← v.getObjVal? "binding").getObjValAs? String "local").toOption
+      else none
+  return named.any fun n => own.contains n || imported.contains n
 
 /-- The proposals of `declarationWalks`. -/
 def declarationEffects (fr : Front) (wanted : List Nat) (standIns : StandIns) (force : List String) :
@@ -591,6 +643,13 @@ def fragmentPlansCore (ast : Json) (fileKey : String) (budget : PositiveCertific
   let computed := if force.contains "callees" || force.contains "throws" then [] else
     SinglePass.timedKind "lower: declarations' footprints" fun _ =>
       declarationEffects (fr.withInitTypes force) (wantedOf fr names) standIns force
+  -- Where the initialization calls a function proposed a returned
+  -- function's footprint, the module values it types hold such functions:
+  -- the walks once more, the initialization's walk reading the proposals.
+  let returning := (computed.filter (·.resultFootprint != .top)).map (·.name)
+  let computed := if returning.isEmpty || !(fr.init.flatMap stmtNames).any returning.contains then computed else
+    SinglePass.timedKind "lower: declarations' footprints" fun _ =>
+      declarationEffects ((fr.withStandIns computed).withInitTypes force) (wantedOf fr names) standIns force
   let (claims, fr) := if computed.isEmpty then (claims, fr) else (withStandIns claims computed, fr.withStandIns computed)
   let fr := SinglePass.timedKind "lower: initialization's walk" fun _ => fr.withInitTypes force
   -- With `proposed`, the selected functions whose footprint is more than
@@ -680,7 +739,10 @@ def fragmentPlansWithModules (ast : Json) (fileKey : String) (budget : PositiveC
           fronts := fronts.insert location fr
           pure fr
       let front := raw.map fun (_, fr) => fr.withNeverImports.withInitTypes force
-      let tops : List String := if force.contains "imports" then [] else match front with
+      -- (none where the initialization calls a function returning one: the
+      -- values it types hold the returned functions at the ordinary effect
+      -- there, which is no least footprint)
+      let tops : List String := if force.contains "imports" || initCallsReturning m.document then [] else match front with
         | some fr => SinglePass.timedKind "lower: modules' least walks" fun _ =>
           -- (one walk each first, then the walks of what the others reach)
           let alone := fresh.filter (fr.changesEverything · force)
