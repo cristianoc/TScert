@@ -820,7 +820,11 @@ removal works through:
   throw of its body or handler leaves (each binding they assign at its
   declared type) and each such jump's. A return's copy is walked from the
   return's bindings, its statements' entries read by that copy's points
-  (a point whose scope holds `%return@p%`). After the finalizer, its
+  (a point whose scope holds `%return@p%`). A loop's close (the
+  iterator's `return` that a `for...of` over a program's iterable calls
+  when a `return` leaves it) is such a finalizer: each return's copy is
+  walked from the return's bindings, and the return's held value holds that
+  copy's completion. After the finalizer, its
   bindings hold at the statement's start (the rethrow), at each return's
   held value (that return's copy's), and for each jump; where a copy never
   completes, these are at the empty type.

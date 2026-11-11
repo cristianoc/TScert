@@ -2598,6 +2598,23 @@ partial def promised (env : Env) (callee : Expr) (args : List Expr) (asserts : B
     return ← StateT.lift (narrowTo env x s.result)
   return env
 
+/-- A return's copy of a finalizer (or of a loop's close) walked to the
+entries `walked`: its statements' entries at `positions`, read by that
+copy's points (their scope holds `key`, `%return@p%`). -/
+def recordCopy (positions : List Nat) (key : String) (walked : Std.HashMap Nat (List (String × Ty Tree))) : W Unit :=
+  modify fun w => { w with declarations := positions.foldl (fun m k =>
+    ((walked.get? k).map (m.insert (k, key) ·)).getD m) w.declarations }
+
+/-- After a loop's close, each of the `nr` latest returns held at its
+copy's completion: its held value's entry, and the return held only where
+the copy completes. -/
+def closeCopies (nr : Nat) (copies : List (Span × Span × Option Env)) : W Unit :=
+  modify fun w =>
+    let entries := copies.foldl (fun m (q, xs, g) => match g with
+      | some ge => if xs.1 != q.1 then m.insert xs.1 ge.vars else m
+      | none => m) w.entries
+    { w with entries, held := copies.filterMap (fun (q, xs, g) => g.map (q, xs, ·)) ++ w.held.drop nr }
+
 partial def collectBreaks (label : Option String) (saved : List (Option String × Env)) : W (Option Env) := do
   let w ← get
   let (mine, others) := w.breaks.partition (·.1 == label)
@@ -5631,9 +5648,7 @@ partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
         let fq ← stmts (some e) fs
         let walked := (← get).entries
         set saved
-        let key := s!"%return@{q.1}%"
-        modify fun w => { w with declarations := positions.foldl (fun m k =>
-          ((walked.get? k).map (m.insert (k, key) ·)).getD m) w.declarations }
+        recordCopy positions s!"%return@{q.1}%" walked
         copies := copies ++ [(q, xs, fq.map fun fe => { fe with ghost := fe.ghost || e.ghost })]
       -- After the finalizer: at the statement's start (its rethrow, and the
       -- dead end of a body that never completes, `SourceFlow.sequence`), at
@@ -5675,8 +5690,24 @@ partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
       return if joined.isNone then none else f
     | none => return joined
   | .closing _ close body =>
+    let w0 ← get
     let b ← stmts (some env) body
+    let nr := (← get).held.length - w0.held.length
     let _ ← stmts (some (b.getD env)) close
+    -- Each return's own copy of the close (a finalizer of the loop, its
+    -- scope holding the return, `%return@p%`), walked from the return's
+    -- bindings: its statements' entries, read by that copy's points, and
+    -- the bindings at the return's held value where it completes.
+    let positions := ((ownStmts close).map (·.1)).eraseDups
+    let mut copies : List (Span × Span × Option Env) := []
+    for (q, xs, e) in (← get).held.take nr do
+      let saved ← get
+      let fq ← stmts (some e) close
+      let walked := (← get).entries
+      set saved
+      recordCopy positions s!"%return@{q.1}%" walked
+      copies := copies ++ [(q, xs, fq.map fun fe => { fe with ghost := fe.ghost || e.ghost })]
+    closeCopies nr copies
     return b
 end
 
