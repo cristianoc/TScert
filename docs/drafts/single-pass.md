@@ -758,6 +758,10 @@ removal works through:
   source.ml:1031-1035); its throw is its signature's. Under a handler or
   in an async body its throw is caught and the heap it leaves is a normal
   return's: the call changes what its instance's footprint states.
+  A synchronous throw operand outside a handler or finalizer contributes
+  only its exceptional effect, since it has no normal exit
+  (source.ml:1140-1144). A finalizer’s body and handler retain those effects:
+  the finalizer may replace a throw with a normal return.
 - **Declarations.** Each function a wanted unit reaches, callees first,
   is walked as its unit is, each callee read at the footprint found for it
   (`declarationEffects`). A walk proposes the join, by class of location,
