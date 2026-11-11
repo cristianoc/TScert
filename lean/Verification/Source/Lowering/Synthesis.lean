@@ -279,6 +279,10 @@ def slice (A : Ty Tree) (tag : Tag) (q : Bool) (literalOperand : Bool := false) 
         for k in kept do out := out ++ (← prim k)
         continue
     out := out ++ [a]
+  -- A passed equality with a literal leaves the operand that value alone,
+  -- where it may hold it (`Control.conditionContext`'s `single`).
+  if let some S := one then
+    if !out.isEmpty then return ← S
   return norm out
 
 /-- The union of two types, a member of `B` within `A` already stated by
@@ -945,6 +949,12 @@ partial def refine (env : Env) (c : Expr) (q : Bool) : W Env := do
   | .var .. | .read .. => StateT.lift (narrowTarget env c .truthy q)
   | .not _ e => refine env e !q
   | .cast _ _ e => refine env e q
+  -- `(a, b)` tested: `b`'s answer, after `a`'s effects.
+  -- (none where the test assigns a binding: the narrowing would be of the
+  -- binding's value before the assignment)
+  | .comma _ _ r =>
+    if env.vars.any fun (n, _) => assignsStmt n (.effect c.span c) then return env
+    refine env r q
   | .logical _ andOp l r =>
     -- The right operand runs after the left's narrowing: a call in it ends
     -- the narrowed paths.
