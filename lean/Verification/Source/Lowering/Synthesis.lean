@@ -3242,9 +3242,16 @@ partial def walkLambda (env : Env) (e : Expr) (sig : Option (CallEffects.Arrow (
   let beforeDefaults ← get
   -- The body binds a defaulted parameter after replacing `undefined`
   -- (expression_closures.ml:187-201).
+  -- A parameter of `unknown` is bound at `unknown`, which holds the default's
+  -- value too: its parts other than `undefined` are no type the prologue's
+  -- join states (the producer states `(value: unknown = seed)` at
+  -- `boolean | unknown` in the body, default-parameters.ts).
+  let G0 ← StateT.lift graphNow
   for (i, d) in defaults do
-    let (D, _) ← withDefault inner (bound[i]?.join) (some d)
-    if let (some (n, _), some D) := (params[i]?, D) then
+    let B := bound[i]?.join
+    let (D, _) ← withDefault inner B (some d)
+    let open_ := B.any fun B => B.any fun l => G0.plain l && PositiveRules.expand G0 [l] == [.source]
+    if let (some (n, _), some D) := (params[i]?, if open_ then B else D) then
       inner := { inner with vars := upd inner.vars n D, decl := upd inner.decl n D }
   if (← get).force.contains "defaults" then
     modify fun w => { w with writes := beforeDefaults.writes, throwWrites := beforeDefaults.throwWrites }

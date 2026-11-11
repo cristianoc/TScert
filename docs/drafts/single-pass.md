@@ -580,8 +580,9 @@ removal works through:
   one retry, at most one walk beyond the first (the producer's second round).
   `TSCERT_FORCE=offers` offers every longer signature whatever its leading
   parameters, the adversarial proposal. A defaulted parameter is offered
-  with `undefined`, bound in the body at its type, its default made at that
-  type at the literal's entry, before the body, its effect the literal's
+  with `undefined`, bound in the body at its type less `undefined` joined
+  with its default's (a parameter of `unknown` at `unknown`), its default
+  made at that type at the literal's entry, before the body, its effect the literal's
   (`TSCERT_FORCE=defaults` leaves it out, the adversarial proposal). A
   literal with an array rest is stated at its rest arrow, the pack of the
   rest's element, at its written effect else the ordinary one
