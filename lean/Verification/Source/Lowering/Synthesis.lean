@@ -1509,6 +1509,15 @@ def copiesOf (A : Ty Tree) (force : Bool) (target : Bool := false) : Compiler (L
   let G ← graphNow
   let mut out : List Copy := []
   for l in A do
+    -- `object_spread.ml:meet_records` excludes an intersection with two
+    -- indexed operands. Inspect its parts before their indexes merge.
+    if let .meet ps := l then
+      let indexed := ps.toList.filter fun p =>
+        (PositiveRules.expand G [p]).any fun c => match c with
+          | .dict _ _ _ ix _ _ _ _ _ => !ix.isEmpty
+          | _ => false
+      if indexed.length > 1 && !(PositiveRules.expand G [l]).isEmpty then
+        throw "a spread of an intersection of two operands with index signatures is outside the fragment"
     if let some S := storeOf G [l] then
       if target then throw "a copy onto an array"
       if let [.list t []] := PositiveRules.expand G S then
