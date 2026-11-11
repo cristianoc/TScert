@@ -1142,6 +1142,12 @@ removal works through:
   assignment of a binding aside) or each member of the path is stable.
   After such a call, each binding a function literal walked so far assigns
   (one it captures, held in a cell) is at its declared type again.
+- **Named guard offers.** A longer signature collected for a named guard
+  retains the guard's written promise and proposed body effect when the
+  requested promise matches (expression_closures.ml:396-399,433-450).
+  Its leading parameters supply that row's interior; the body's result
+  remains Boolean. The code check establishes the promise separately at
+  every advertised row, including the original signature.
 - **Constructor result offers.** When an offered constructor's result
   widens one of the class's method signatures, a fixed argument pack offers
   that result at the constructor's own parameters

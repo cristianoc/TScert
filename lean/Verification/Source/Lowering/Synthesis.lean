@@ -5101,6 +5101,28 @@ partial def walkLambda (env : Env) (e : Expr) (sig : Option (CallEffects.Arrow (
       let plain := { a with arguments := qs, result := R, effect := { a.effect with promise := none } }
       let offered := if a.arguments.length != qs.length then
         [plain, a, { a with arguments := a.arguments.take qs.length }] else [plain, a]
+      -- A named guard offers its written promise at the requested longer
+      -- row (expression_closures.ml:396-399,433-450). Each interior is
+      -- walked under that row's leading parameters, with a Boolean body.
+      let extra := ((← get).offers.filter (·.1 == e.span)).filterMap fun (_, r) =>
+        if r.effect.promise == a.effect.promise then
+          some { r with result := a.result, effect := a.effect }
+        else none
+      let offered := offered ++ extra.filter (!offered.contains ·)
+      if !rowInterior && !extra.isEmpty && !rest && defaults.isEmpty then
+        let outside ← get
+        let mut interiors : List (SourceClaims.Overlay Tree) := []
+        for r in offered do
+          set { outside with exprs := {}, entries := {}, currents := {}, contracts := [],
+                             spanEntries := {}, declarations := {}, exprsAt := {} }
+          let _ ← walkLambda env e (some { r with result := R }) none true
+          let inside ← get
+          interiors := interiors ++ [{
+            exprs := inside.exprs.toList.map (fun (sp, _, A) => (sp, A))
+            envs := inside.entries.toList.map (fun (p, vs) => (p, vs.map fun (n, A) => (n, .ok A)))
+            entryCurrent := inside.currents.toList
+            contracts := inside.contracts.map (fun (key, A) => (key, .ok A)) }]
+        set { outside with arrowClaims := upd outside.arrowClaims e.span interiors }
       return ← record e (.ok [← StateT.lift (lower (SourceTypes.use (.arrs offered [])))])
     -- Any other at its own parameters' row and, beside it, at each signature
     -- the expected callable `ctx` states taking more parameters whose leading
