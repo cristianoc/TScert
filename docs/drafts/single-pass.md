@@ -394,7 +394,9 @@ a forced proposal, a forced footprint is one the
 function's own unit establishes, and a unit whose dependency of the file is
 refused counts as refused where both modes are compared with the pipeline.
 The script's controls run with their forced proposal
-whatever the patterns, each expected refused by mode 8:
+whatever the patterns, the proposal deciding the control's unit and the
+units it depends on (the file's other units compared unforced), each
+expected refused by mode 8:
 `invalid-method-effect-stated-throw-caught` `wrong` and
 `invalid-node-assert-catch-continue` `rows`, under `literals`, and
 `invalid-cell-truthiness-narrowing` `kept`, under `stale`, and
@@ -681,8 +683,10 @@ removal works through:
   bound (`Plans.boundOf`). A function's `toString` is `Function.prototype`'s. A member read the
   read rule refuses at the walked receiver's type (a member no contract of
   it states, a key no index constrains, a primitive's prototype stating
-  none: `readCell`) is the unit's refusal at that read, and so is an
-  expression a part of which is; any other type the walk does not
+  none: `readCell`) is the unit's refusal at that read, a call of one
+  callable none of whose signatures admits the actuals' count (the
+  lowering's `selectSignature`) the unit's refusal at that call, and so is
+  an expression a part of which is; any other type the walk does not
   determine is a construct the pass does not handle.
   Each expression's type is read at its own statement's point,
   where two statements' expressions share a span (a construction's parts).
