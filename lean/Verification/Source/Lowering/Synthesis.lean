@@ -432,6 +432,28 @@ def slice (A : Ty Tree) (tag : Tag) (q : Bool) (literalOperand : Bool := false) 
     if !out.isEmpty then return ← S
   return norm out
 
+/-- Numeric singleton exclusions, as successive false `slice`s. The common
+case of a union of numeric singleton rows needs one row lookup per label
+and one membership test; other rows use the general slicing rule. -/
+def excludeNumbers (tags : List Tag) (A : Ty Tree) : Compiler (Ty Tree) := do
+  let first :: tags := tags | return A
+  -- The first slice splits a numeric set row into its interned singleton
+  -- labels, with the same fallback where the graph lacks an element label.
+  let A ← slice A first false
+  let G ← graphNow
+  let key (b : UInt64) := if numberEqual b (0 : Float).toBits then (0 : Float).toBits else b
+  let excluded : Std.HashSet UInt64 := tags.foldl (fun acc t => match t with
+    | .numEq b => if numberEqual b b then acc.insert (key b) else acc
+    | _ => acc) {}
+  let numbers := A.mapM fun l =>
+    if G.plain l then match PositiveRules.expand G [l] with
+      | [.numLit b] => some (l, b)
+      | _ => none
+    else none
+  if let some numbers := numbers then
+    return norm (numbers.filterMap fun (l, b) => if excluded.contains (key b) then none else some l)
+  tags.foldlM (fun B t => slice B t false) A
+
 /-- The union of two types, a member of `B` within `A` already stated by
 `A`: one label for one meaning where the two state it twice. -/
 def joinTy (A B : Ty Tree) : Compiler (Ty Tree) := do
@@ -495,6 +517,20 @@ def readRefusal (m : String) : String :=
 def callRefusal (m : String) : String :=
   if m.startsWith refusalMark then m else refusalMark ++ "call: " ++ m
 
+/-- Union members for a read, as `ProgramTyping.members`. A record with
+no repeated invariant key has no pair for `litClash` to exclude; checking
+its keys first avoids expanding a large tag set merely to compare it with
+itself. Other labels use `labelMembers` unchanged. -/
+def readMembers (G : PositiveGraphs.NormalGraph Tree) (A : Ty Tree) : Ty Tree :=
+  A.flatMap fun l =>
+    match G l with
+    | [c] => match ProgramTyping.recordFields c with
+      | some fs =>
+        let keys := fs.map (·.1)
+        if keys.eraseDups.length == keys.length then [l] else ProgramTyping.labelMembers G l
+      | none => ProgramTyping.labelMembers G l
+    | _ => ProgramTyping.labelMembers G l
+
 /-- `o.f` of an `o` of type `A`: each primitive member by its prototype's
 field (a string's `length` a number), a function's `toString` by
 `Function.prototype`'s (`Plans.primitiveArms`), an array's `length` a
@@ -509,7 +545,7 @@ def readField (vars : List (String × Ty Tree)) (A : Ty Tree) (fld : PropKey) : 
   -- others (`nullishSplit`, the lowering's read, Atoms.lean:599-618).
   -- Union elimination drops contradictory duplicate discriminants
   -- (`labelMembers`/`conflicting`; type_queries.ml:407-423).
-  let A := (ProgramTyping.members G (present G A)).filter fun l =>
+  let A := (readMembers G (present G A)).filter fun l =>
     -- An empty intersection contributes no receiver. Drop it before
     -- partitioning dictionaries from the other object contracts.
     !(G.plain l && (PositiveRules.expand G [l]).isEmpty)
@@ -683,18 +719,37 @@ def narrowPath (env : Env) (root : String) (path : List PropKey) (k : Ty Tree �
   | some P => if ofObject then return { env with paths := upd env.paths (root, path) (← k P) } else return env
   | none => return env
 
+/-- Disjointness against one path's contents. Clause rows and their plainness
+are read once for the path. A common label with a consistent self-meet
+settles overlap before the pairwise clause test; the remaining test is
+`typesDisjoint`, flattened by `BranchRefinement.meetsNone_labels`. -/
+def pathDisjoint (G : PositiveGraphs.NormalGraph Tree) (P : Option (Ty Tree)) :
+    Ty Tree → Compiler Bool :=
+  match P with
+  | none => fun _ => pure false
+  | some P =>
+    if !G.plainTy P then fun _ => pure false else
+    let rows := P.map fun l => (l, clausesOf G [l])
+    let shared : Std.HashSet Tree := rows.foldl (fun acc (l, cs) =>
+      if BranchRefinement.meetsNone cs cs then acc else acc.insert l) {}
+    let clauses := rows.flatMap (·.2)
+    fun B => do
+      if B.any shared.contains then return false
+      let G ← graphNow
+      return G.plainTy B && BranchRefinement.meetsNone (clausesOf G B) clauses
+
 /-- The narrowing a test of `tag` answering `q` makes of the binding or the
 member path `target` reads, and, for a test of a member `x.f`, of `x` itself:
 the members of `x`'s type whose `f` can answer so (a discriminant). -/
-def narrowTarget (env : Env) (target : Expr) (tag : Tag) (q : Bool) (literalOperand : Bool := false) : Compiler Env := do
-  let slice (A : Ty Tree) (tag : Tag) (q : Bool) := slice A tag q literalOperand
+def narrowTargetWith (env : Env) (target : Expr) (slice : Ty Tree → Compiler (Ty Tree)) : Compiler Env := do
   match memberPath target with
   | some (root, []) =>
     let some A := env.vars.lookup root | return env
-    return { env with vars := upd env.vars root (← slice A tag q) }
+    return { env with vars := upd env.vars root (← slice A) }
   | some (root, path) =>
     let some A := env.vars.lookup root | return env
-    let mut env ← narrowPath env root path fun P => slice P tag q
+    let mut env ← narrowPath env root path fun P => slice P
+    let disjoint := pathDisjoint (← graphNow) (env.paths.lookup (root, path))
     -- A discriminant of a member path (`o.key.kind`): the path `o.key` to
     -- its arms whose field can answer so, as the root below.
     if let some f := path.getLast? then
@@ -704,9 +759,8 @@ def narrowTarget (env : Env) (target : Expr) (tag : Tag) (q : Bool) (literalOper
           for l in P do
             let keep ← tryCatch (do
                 let B ← readField env.vars [l] f
-                let B ← slice B tag q
-                let G ← graphNow
-                return !B.isEmpty && !(env.paths.lookup (root, path)).any (BranchRefinement.typesDisjoint G B)) fun _ => pure true
+                let B ← slice B
+                return !B.isEmpty && !(← disjoint B)) fun _ => pure true
             if keep then kept := kept ++ [l]
           return kept
     -- Successive tests share the path's accumulated contents: an arm
@@ -716,14 +770,16 @@ def narrowTarget (env : Env) (target : Expr) (tag : Tag) (q : Bool) (literalOper
       for l in A do
         let keep ← tryCatch (do
             let B ← readField env.vars [l] f
-            let B ← slice B tag q
-            let G ← graphNow
-            return !B.isEmpty && !(env.paths.lookup (root, path)).any (BranchRefinement.typesDisjoint G B)) fun _ => pure true
+            let B ← slice B
+            return !B.isEmpty && !(← disjoint B)) fun _ => pure true
         if keep then kept := kept ++ [l]
       -- (none of them: the binding holds no value there)
       env := { env with vars := upd env.vars root kept }
     return env
   | none => return env
+
+def narrowTarget (env : Env) (target : Expr) (tag : Tag) (q : Bool) (literalOperand : Bool := false) : Compiler Env :=
+  narrowTargetWith env target fun A => slice A tag q literalOperand
 
 /-- A binding narrowed to a promised type `R`: its members within
 `R`, else `R` (a type guard's true arm, an assertion's normal return). -/
@@ -1916,8 +1972,14 @@ partial def refine (env : Env) (c : Expr) (q : Bool) : W Env := do
       let A := if q || onUndefined == .throws then BranchRefinement.tagSlice G A .isUndef false else A
       norm (PromiseCalls.memberFieldSlice G A f tags q [])
     -- Keep the excluded field values for subsequent discriminant tests.
-    let env ← if q then pure env else tags.foldlM (fun env t =>
-      StateT.lift (narrowTarget env (.read c.span f e) t false)) env
+    let env ← if q || tags.isEmpty then pure env else
+      if tags.all (fun t => match t with | .numEq _ => true | _ => false) then
+        -- Numeric family exclusions commute: slice each field once through
+        -- the set, then filter its receiver against the accumulated contents.
+        StateT.lift (narrowTargetWith env (.read c.span f e) fun A =>
+          excludeNumbers tags A)
+      else tags.foldlM (fun env t =>
+        StateT.lift (narrowTarget env (.read c.span f e) t false)) env
     match memberPath e with
     | some (root, []) =>
       let some A := env.vars.lookup root | return env
