@@ -56,6 +56,13 @@ structure Walk where
   states another footprint than keeping both values and stores; and the
   bindings it declares. -/
   writes : Bool := false
+  /-- Whether a call in it may leave a changed heap on its throw: one whose
+  instance states no bound on a throw (`onThrow`). -/
+  throwWrites : Bool := false
+  /-- The changes it may make, by class of contents: to the old locations
+  holding a value, and to those holding an array store. -/
+  valueChange : Footprints.Change := .keep
+  storeChange : Footprints.Change := .keep
   locals : List String := []
   exprs : Std.HashMap Span (String × Except String (Ty Tree)) := {}
   /-- Each call of a generic module function, by its span: the type each
@@ -73,6 +80,10 @@ structure Walk where
   completion : Option (List (String × Ty Tree)) := none
   lastInstance : Option (List (String × Ty Tree)) := none
   entries : Std.HashMap Nat (List (String × Ty Tree)) := {}
+  /-- The bindings before each declaration of a statement declaring several,
+  by the statement's start and the declared name: the entry of that
+  declaration's own node. -/
+  declarations : Std.HashMap (Nat × String) (List (String × Ty Tree)) := {}
   breaks : List (Option String × Env) := []
 
 abbrev W := StateT Walk Compiler
@@ -376,19 +387,6 @@ def isBinder (b : Tree) (P : Ty Tree) : Bool :=
     | [.meet ps] => ps.toList.contains b
     | _ => false
 
-def matchBinder (b : Tree) (P A : Ty Tree) : Compiler (Option (Ty Tree)) := do
-  if isBinder b P then return some A
-  let G ← graphNow
-  let [l] := P | return none
-  if let some S := storeOf G [l] then
-    if let [.list t []] := PositiveRules.expand G S then
-      if (t.rest.map (isBinder b)).getD false || (!t.required.isEmpty && t.required.all (isBinder b)) then
-        return some (← elementAt A none (missing := false))
-    return none
-  let some s := (ProgramTyping.callSigs G [l]).head? | return none
-  if !isBinder b s.result then return none
-  return (← callSigsOf A).head?.map (·.result)
-
 /-- `A` with each binder `σ` names read as its type; a binder's meet with
 its bound read as the type too, which an instance within the bound is. -/
 def substitute (σ : List (Tree × Ty Tree)) (A : Ty Tree) : Ty Tree :=
@@ -464,6 +462,84 @@ def memberFor (vars : List (String × Ty Tree)) (O : Ty Tree) (fld : PropKey) :
     if let some m := ProgramTyping.memberOf G P fld then return some m
   return none
 
+/-- Whether the binder `b` occurs in a label. -/
+partial def occurs (b : Tree) (t : Tree) : Bool :=
+  t == b || match t with
+    | .app _ args | .bound _ args _ => args.toList.any fun ts => ts.toList.any (occurs b)
+    | .meet ps => ps.toList.any (occurs b)
+    | _ => false
+
+/-- What a parameter of type `P` says the binder `b` is, given an actual of
+type `A`, matched structurally one level at a time (no search; the first
+part mentioning `b` decides): `A` where `P` is `b`; in a union, the one
+member mentioning `b` at `A` less what the others admit; in an application
+of one head, its arguments at `A`'s of that head; in an array, its elements
+at `A`'s; in a record, each field at `A`'s; in a callable, its result at
+`A`'s. -/
+partial def matchBinder (b : Tree) (P A : Ty Tree) (fuel : Nat := 6) : Compiler (Option (Ty Tree)) := do
+  if isBinder b P then return some A
+  if fuel == 0 || A.isEmpty then return none
+  let T ← table
+  let G := SourceTypes.graph T
+  let (withB, others) := P.partition (occurs b)
+  -- A union: the actual less what the members not mentioning `b` admit;
+  -- each of its labels at the first member mentioning `b` it matches.
+  let perLabel (A : Ty Tree) : Compiler (Option (Ty Tree)) := do
+    if A.length < 2 then return none
+    let mut out : Ty Tree := []
+    for a in A do
+      let mut got : Option (Ty Tree) := none
+      for m in withB do
+        if got.isNone then got ← matchBinder b [m] [a] (fuel - 1)
+      let some B := got | return none
+      out := out ++ B
+    return some (norm out)
+  let [l] := withB | do
+    if withB.isEmpty then return none
+    perLabel (A.filter fun a => !within T [a] others)
+  if !others.isEmpty then
+    let A' := A.filter fun a => !within T [a] others
+    if let some B ← matchBinder b [l] A' (fuel - 1) then return some B
+    return ← perLabel A'
+  -- One head applied: its arguments, each at `A`'s of the same head.
+  if let .app h ps := l then
+    let same := A.filterMap fun a => match a with
+      | .app h' as => if h' == h then some as else none
+      | _ => none
+    if same.length == A.length then
+      for (Pi, i) in ps.toList.zipIdx do
+        if Pi.toList.any (occurs b) then
+          let Ai := norm (same.flatMap fun as => ((as.toList[i]?).map (·.toList)).getD [])
+          if let some B ← matchBinder b Pi.toList Ai (fuel - 1) then return some B
+  let first (xs : List (Ty Tree × Compiler (Ty Tree))) : Compiler (Option (Ty Tree)) := do
+    for (Q, read) in xs do
+      if Q.any (occurs b) then
+        if let some B ← tryCatch (some <$> read) (fun _ => pure none) then
+          if let some C ← matchBinder b Q B (fuel - 1) then return some C
+    return none
+  if let some S := storeOf G [l] then
+    if let [.list t []] := PositiveRules.expand G S then
+      let E := norm (t.required.flatten ++ t.optional.flatten ++ t.rest.getD [])
+      if let some B ← first [(E, elementAt A none (missing := false))] then return some B
+    return ← perLabel A
+  let r ← match PositiveRules.expand G [l] with
+  | [.dict _ _ _ ix _ _ _ _ _] => first [(norm (ix.flatMap (·.2)), elementAt A none (missing := false))]
+  | [.refs fs [] vs os ms _ _] =>
+    first (((fs ++ vs).filter (fun (k, _) => k != SourceTypes.protoField)).map (fun (k, F) => (F, readField [] A k)) ++
+      os.map (fun o => (o.type, do slice (← readField [] A o.key) .isUndef false)) ++
+      -- A method: its result at `A`'s member's.
+      ms.map fun m => (norm (m.calls.flatMap (·.result)), do
+        let some m' ← memberFor [] A m.key | throw "no member"
+        let some a := m'.calls.head? | throw "no signature"
+        pure a.result))
+  | _ =>
+    let some s := (ProgramTyping.callSigs G [l]).head? | return none
+    first [(s.result, do
+      let some r := (← callSigsOf A).head? | throw "no signature"
+      pure r.result)]
+  if r.isSome then return r
+  perLabel A
+
 /-- The callee `o.k(…)` calls, `o` of type `O`: the object's member, its
 prototype's, or a field holding a callable. -/
 def methodCallee (vars : List (String × Ty Tree)) (O : Ty Tree) (fld : PropKey) (callbacks : List Bool := []) :
@@ -515,12 +591,13 @@ partial def declaredIn (ss : List Stmt) : List String :=
 end
 
 /-- The walk records a change of the heap. -/
-def wrote : W Unit := modify fun w => { w with writes := true }
+def wrote (value store : Footprints.Change := .any) : W Unit :=
+  modify fun w => { w with writes := true, valueChange := w.valueChange.max value, storeChange := w.storeChange.max store }
 
 /-- An assignment of `n`: a change of the heap where the function literal
 being walked does not declare `n`. -/
 def assigns (n : String) : W Unit := do
-  if !(← get).locals.contains n then wrote
+  if !(← get).locals.contains n then wrote .any .keep
 
 mutual
 /-- Record an expression's computed type or the reason it has none. -/
@@ -656,7 +733,8 @@ partial def expr (env : Env) (e : Expr) : W (Option (Ty Tree) × Env) := do
     let (As, e1) ← exprs env es
     let r ← attempt e do
       let fields ← (names.zip As).mapM fun (n, A) => do return (n, ← widen (← need A "a field"))
-      prim (.refs fields [] [] [] [] [])
+      -- Its own keys exactly (`HasTyUsing.alloc`'s bound).
+      prim (.refs fields [] [] [] [] [⟨true, names⟩] [])
     return (r, e1)
   | .build _ names es =>
     -- An object literal with spreads: each spread's record fields, then each
@@ -698,7 +776,7 @@ partial def expr (env : Env) (e : Expr) : W (Option (Ty Tree) × Env) := do
       readField e1.vars (← need O "the receiver") fld
     return (r, e1)
   | .write _ fld recv rhs =>
-    wrote
+    wrote .any (if fld == lengthKey then .any else .keep)
     let (O, e1) ← expr env recv
     -- The reference `recv.fld`, as the read gives it.
     if let .str f := fld then
@@ -867,23 +945,34 @@ partial def expr (env : Env) (e : Expr) : W (Option (Ty Tree) × Env) := do
     let (_, e2) ← expr e1 initial
     return (← record e (.error "a function's value bag"), e2)
   | .objectAssign _ target sources =>
-    wrote
+    wrote .any .keep
     let (A, e1) ← expr env target
     let (_, e2) ← exprs e1 sources
     return (← record e (match A with | some A => .ok A | none => .error "the target undetermined"), e2)
   | .lambda .. => return (← walkLambda env e none, env)
   | .ctor _ lam statics =>
     -- A class value: its constructor's written parameters, its instance its
-    -- receiver's annotation, its static fields at their initializers'
-    -- widened types (the construct rule's `ctors` clause).
-    let _ ← walkLambda env lam none
+    -- written result, its static fields at their initializers' widened
+    -- types (the construct rule's `ctors` clause). A class whose code is
+    -- its fresh constructor bound earlier (`.var`) takes that one's
+    -- signatures.
+    match lam with
+    | .lambda .. => let _ ← walkLambda env lam none
+    | _ => let _ ← expr env lam
     let (Ss, e1) ← exprs env (statics.map (·.2))
     let r ← attempt e do
-      let .lambda _ (some (inst, _)) _ params _ _ _ _ _ _ _ _ := lam | throw "a class of no instance annotation"
-      let I ← lower (Fragment.translate inst)
-      let ps ← params.mapM fun (_, ty) => lower (Fragment.translate ty)
       let fields ← (statics.zip Ss).mapM fun ((k, _), S) => do return (k, ← widen (← need S "a static field"))
-      prim (.ctors [⟨(), ps, I, .ordinary⟩] [] fields)
+      match lam with
+      | .lambda _ _ _ params _ _ (some inst) _ _ _ _ _ =>
+        let I ← lower (Fragment.translate inst)
+        let ps ← params.mapM fun (_, ty) => lower (Fragment.translate ty)
+        prim (.ctors [⟨(), ps, I, .ordinary⟩] [] fields)
+      | .var _ n =>
+        let some F := env.vars.lookup n | throw s!"'{n}' is bound outside what the walk sees"
+        match PositiveRules.expand (← graphNow) F with
+        | [.ctors L S ..] => prim (.ctors L S fields)
+        | _ => throw "a class whose constructor is no class value"
+      | _ => throw "a class of no written instance"
     return (r, e1)
   | .block _ ss =>
     let _ ← stmts (some env) ss
@@ -1058,13 +1147,6 @@ partial def applyCall (env : Env) (c : Callee) (args : List Expr) (As : List (Op
       | _ => none
     else none
   let candidates := (c.fixed.filter fits).map (·, none) ++ variadic
-  let accepts (a : CallEffects.Arrow (Ty Tree)) : Bool :=
-    !c.binders.isEmpty || (As.zip a.arguments).all fun (A, D) => A.all fun A => within T A D
-  let some (a, rest) := candidates.find? (accepts ·.1) <|> candidates.head?
-    | do
-      for x in args do if callback x then let _ ← walkLambda env x none
-      return .error s!"no signature admits {n} actuals"
-  let mut σ : List (Tree × Ty Tree) := c.seed
   let bindFrom (σ : List (Tree × Ty Tree)) (pairs : List (Ty Tree × Ty Tree)) : W (List (Tree × Ty Tree)) := do
     let mut σ := σ
     for b in c.binders do
@@ -1073,6 +1155,20 @@ partial def applyCall (env : Env) (c : Callee) (args : List Expr) (As : List (Op
         if (σ.lookup b).isNone then
           if let some B ← StateT.lift (tryCatch (matchBinder b P A) fun _ => pure none) then σ := σ ++ [(b, B)]
     return σ
+  -- The first signature, in order, each walked actual is within (a
+  -- scheme's at the binders its walked actuals give); else the first the
+  -- count admits.
+  let mut chosen : Option (CallEffects.Arrow (Ty Tree) × Option (CallEffects.RestArrow (Ty Tree))) := none
+  for (a, r) in candidates do
+    if chosen.isSome then break
+    let σa ← if c.binders.isEmpty then pure c.seed else
+      bindFrom c.seed ((a.receiver, c.receiver) :: (a.arguments.zip As).filterMap fun (P, A) => A.map (P, ·))
+    if (As.zip a.arguments).all fun (A, D) => A.all fun A => within T A (substitute σa D) then chosen := some (a, r)
+  let some (a, rest) := chosen <|> candidates.head?
+    | do
+      for x in args do if callback x then let _ ← walkLambda env x none
+      return .error s!"no signature admits {n} actuals"
+  let mut σ : List (Tree × Ty Tree) := c.seed
   -- The type expected of the call's value first, where the instance it
   -- gives admits every walked actual (the inference from the result's
   -- context); else from the receiver and the actuals.
@@ -1107,7 +1203,11 @@ partial def applyCall (env : Env) (c : Callee) (args : List Expr) (As : List (Op
     modify fun w => { w with lastInstance := some (c.explicit ++
       c.names.zip (c.binders.map fun b => (σ.lookup b).getD [])) }
   -- A call changing the heap, by its instance's footprint.
-  if inst.effect.footprint != ⟨.keep, .keep⟩ then wrote
+  if inst.effect.footprint != ⟨.keep, .keep⟩ then wrote inst.effect.footprint.value inst.effect.footprint.store
+  -- A change its receiver's store or elements state beside the footprint.
+  if inst.effect.receiverGrows || inst.effect.receiverStore || inst.effect.receiverOwn || inst.effect.elementWrite.isSome then
+    wrote .any .any
+  if !inst.effect.onThrow then modify fun w => { w with throwWrites := true }
   let own ← StateT.lift (match c.own, rest with
     | some F, _ => pure F
     | none, some r => do return [← lower (SourceTypes.use (.arrs [] [r.map sub]))]
@@ -1129,7 +1229,7 @@ determined. -/
 partial def walkLambda (env : Env) (e : Expr) (sig : Option (CallEffects.Arrow (Ty Tree))) : W (Option (Ty Tree)) := do
   let expected := sig.map (·.arguments)
   let expectedResult := sig.map (·.result)
-  let .lambda _ receiver _ params defaults _ result _ _ async _ body := e
+  let .lambda _ receiver _ params defaults _ result _ stated async _ body := e
     | return none
   let captured := env.vars.map fun (n, A) => (n, (env.decl.lookup n).getD A)
   let mut vars := captured
@@ -1141,9 +1241,10 @@ partial def walkLambda (env : Env) (e : Expr) (sig : Option (CallEffects.Arrow (
     match A with
     | some A => vars := upd vars n A
     | none => vars := vars.filter (·.1 != n)
+  let mut thisTy : Option (Ty Tree) := none
   if let some (ty, _) := receiver then
     match ← StateT.lift (tryCatch (some <$> lower (Fragment.translate ty)) fun _ => pure none) with
-    | some A => vars := upd vars "this" A
+    | some A => vars := upd vars "this" A; thisTy := some A
     | none => pure ()
   let written ← match result with
     | some ty => StateT.lift (tryCatch (some <$> lower (Fragment.translate ty)) fun _ => pure none)
@@ -1154,7 +1255,7 @@ partial def walkLambda (env : Env) (e : Expr) (sig : Option (CallEffects.Arrow (
   let declared := params.map (·.1) ++ (match body with
     | .block _ ss => declaredIn ss
     | _ => [])
-  modify fun w => { w with writes := false, locals := declared }
+  modify fun w => { w with writes := false, throwWrites := false, valueChange := .keep, storeChange := .keep, locals := declared }
   modify fun w => { w with returns := [], expected := written <|> (if async then none else expectedResult) }
   -- An expression body's entry is its prologue's, at the body's start.
   modify fun w => { w with entries := w.entries.insert body.span.1 inner.vars }
@@ -1172,17 +1273,33 @@ partial def walkLambda (env : Env) (e : Expr) (sig : Option (CallEffects.Arrow (
   -- A body that changes nothing keeps both values and stores: the
   -- footprint its calls are checked at (the producer's inferred effect).
   let pure_ := !(← get).writes
+  -- One that also calls nothing leaving a changed heap on its throw keeps
+  -- them on a throw too (`onThrow`).
+  let kept : CallEffects.Effect := { CallEffects.Effect.ofFootprint ⟨.keep, .keep⟩ with onThrow := !(← get).throwWrites }
+  -- One that changes the heap at the classes of contents its writes and
+  -- calls change.
+  let changed : CallEffects.Effect :=
+    { CallEffects.Effect.ofFootprint ⟨(← get).valueChange, (← get).storeChange⟩ with onThrow := !(← get).throwWrites }
   modify fun w => { w with breaks := saved.breaks, returns := saved.returns, expected := saved.expected }
-  modify fun w => { w with writes := saved.writes, locals := saved.locals }
+  modify fun w => { w with writes := saved.writes, throwWrites := saved.throwWrites, locals := saved.locals }
+  modify fun w => { w with valueChange := saved.valueChange, storeChange := saved.storeChange }
   let R := if written.isSome then written else if async then none else R
+  let forced := (← get).force.contains "literals"
+  -- A written effect (`Modifies<…>`) is the one it states.
+  let kept := stated.getD kept
+  let changed := stated.getD changed
   match ps.mapM id, R with
   | some qs, some R =>
     -- A callback is checked at the signature it is passed at, its result its
     -- body's; any other literal at its own parameters.
     let a : CallEffects.Arrow (Ty Tree) ← match sig with
-      | some a => pure { a with result := R, effect := if pure_ || (← get).force.contains "literals" then .ofFootprint ⟨.keep, .keep⟩ else a.effect }
-      | none => do pure ⟨← StateT.lift (prim .top), qs, R,
-          if pure_ || (← get).force.contains "literals" then .ofFootprint ⟨.keep, .keep⟩ else .ordinary⟩
+      | some a => pure { a with result := R, effect := if pure_ then kept else if forced then .ofFootprint ⟨.keep, .keep⟩ else a.effect }
+      -- Any other literal at its own parameters and written receiver (a
+      -- method's `this`), else a receiver admitting every value.
+      | none => do pure ⟨← match thisTy with
+            | some A => pure A
+            | none => StateT.lift (prim .top), qs, R,
+          if pure_ then kept else if forced then .ofFootprint ⟨.keep, .keep⟩ else changed⟩
     record e (.ok [← StateT.lift (lower (SourceTypes.use (.arrs [a] [])))])
   | _, _ => record e (.error "a function value: a parameter or its result undetermined")
 
@@ -1219,26 +1336,32 @@ partial def fit (P : Ty Tree) (x : Expr) (A : Option (Ty Tree)) : W (Option (Ty 
       let Ds ← StateT.lift (tryCatch (some <$> names.mapM fun k => readField [] [l] k) fun _ => pure none)
       let some Ds := Ds | continue
       let mut fields : List (PropKey × Ty Tree) := []
+      let mut own : List (PropKey × Ty Tree) := []
       let mut ok := true
       for ((k, y), D) in (names.zip es).zip Ds do
         let some B ← fit D y ((w.exprs.get? y.span).bind (·.2.toOption)) | ok := false; break
         fields := fields ++ [(k, if within T B D then D else B)]
+        own := own ++ [(k, B)]
       if !ok then continue
-      let R? ← StateT.lift (tryCatch (do
-          -- The literal's record as written, else stating its own keys
-          -- exactly (`HasTyUsing.alloc`'s bound), which meets optional fields.
-          -- Each key in the expected record's form: a field where it states
-          -- one, a view where it states one, its stable keys kept.
-          let (fs, vs, st) := match PositiveRules.expand G [l] with
-            | [.refs _ [] evs _ _ _ est] =>
-              (fields.filter (fun (k, _) => (evs.lookup k).isNone), fields.filter (fun (k, _) => (evs.lookup k).isSome),
-                est.filter names.contains)
-            | _ => (fields, [], [])
-          let R ← prim (.refs fs [] vs [] [] [] st)
-          if within (← table) R [l] then return some (R, false)
-          let R ← prim (.refs fs [] vs [] [] [⟨true, names⟩] st)
-          return if within (← table) R [l] then some (R, true) else none) fun _ => pure none)
-      if let some (R, _) := R? then return ← record x (.ok R)
+      -- Each field at the expected one, else at the value's own type (a
+      -- literal kept where the expected member states it).
+      for byField in [fields, own] do
+        let R? ← StateT.lift (tryCatch (do
+            -- The literal's record as written, else stating its own keys
+            -- exactly (`HasTyUsing.alloc`'s bound), which meets optional
+            -- fields.
+            -- Each key in the expected record's form: a field where it states
+            -- one, a view where it states one, its stable keys kept.
+            let (fs, vs, st) := match PositiveRules.expand G [l] with
+              | [.refs _ [] evs _ _ _ est] =>
+                (byField.filter (fun (k, _) => (evs.lookup k).isNone), byField.filter (fun (k, _) => (evs.lookup k).isSome),
+                  est.filter names.contains)
+              | _ => (byField, [], [])
+            let R ← prim (.refs fs [] vs [] [] [] st)
+            if within (← table) R [l] then return some (R, false)
+            let R ← prim (.refs fs [] vs [] [] [⟨true, names⟩] st)
+            return if within (← table) R [l] then some (R, true) else none) fun _ => pure none)
+        if let some (R, _) := R? then return ← record x (.ok R)
     return some A
   | .arrayLit _ es [] | .build _ _ es =>
     let w ← get
@@ -1288,8 +1411,39 @@ partial def bindPattern (env : Env) (p : Pattern Expr) (A : Option (Ty Tree)) : 
         | none => pure none
       let (B, e') ← withDefault env B d
       env ← bindPattern e' q B
-    if let some (_, _, _, q) := rest then env ← bindPattern env q none
+    if let some (k, rp, slice, q) := rest then
+      let R ← restOf env A k rp slice
+      env ← bindPattern env q R
     return env
+
+/-- An array pattern's rest after `k` positions of a value of type `A`,
+recorded at its span `rp`: a slice rest the call of `%RestFrom:k%` at `A`
+(its intrinsic read at the `...`); any other the fresh array of the
+positions of `A`'s tuple from `k` on. -/
+partial def restOf (env : Env) (A : Option (Ty Tree)) (k : Nat) (rp : Span) (slice : Bool) : W (Option (Ty Tree)) := do
+  let some A := A | return none
+  if slice then
+    let some g := (← get).generics.lookup (restFromName k) | return none
+    let .ok c ← StateT.lift (tryCatch (Except.ok <$> genericCallee g []) fun m => pure (Except.error m)) | return none
+    modify fun w => { w with lastInstance := none }
+    let r ← applyCall env c [.var rp "%rest%"] [some A]
+    recordAt (rp.1, rp.1 + "...".length) "identifier" ((·.1) <$> r)
+    recordAt rp "call" ((·.2) <$> r)
+    if let some θ := (← get).lastInstance then
+      modify fun w => { w with instances := (rp, θ) :: w.instances, lastInstance := none }
+    return ((·.2) <$> r).toOption
+  let r ← StateT.lift (tryCatch (do
+      let G ← graphNow
+      let some S := storeOf G A | throw "a rest of a value that is no array"
+      let [.list t []] := PositiveRules.expand G S | throw "an array of more than one tuple contract"
+      let Es := t.required.drop k
+      let Os := t.optional.drop (k - t.required.length)
+      Except.ok <$> lower do
+        let s ← SourceTypes.use (.list ⟨Es, Os, t.rest, false, .dense⟩ [])
+        let T ← get
+        return [← SourceTypes.use (SourceTypes.arrayOf T s false)]) fun m => pure (.error m))
+  recordAt rp "other" r
+  return r.toOption
 
 /-- A part with a default: the part less `undefined`, or the default's. -/
 partial def withDefault (env : Env) (B : Option (Ty Tree)) (d : Option Expr) : W (Option (Ty Tree) × Env) := do
@@ -1347,9 +1501,10 @@ partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
     let _ ← expr env x
     return none
   | .effect _ x => return some (← expr env x).2
-  | .constants _ bs =>
+  | .constants p bs =>
     let mut env := env
     for b in bs do
+      modify fun w => { w with declarations := w.declarations.insert (p.1, b.name) env.vars }
       if let some ty := b.annot then
         if let some D ← StateT.lift (tryCatch (some <$> lower (Fragment.translate ty)) fun _ => pure none) then
           modify fun w => { w with hints := (b.init.span, D) :: w.hints }
@@ -1367,9 +1522,10 @@ partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
       | some D, none => env := { env with vars := upd env.vars b.name D, decl := upd env.decl b.name D }
       | none, _ => env := { env with vars := env.vars.filter (·.1 != b.name) }
     return some env
-  | .mutables _ bs =>
+  | .mutables p bs =>
     let mut env := env
     for b in bs do
+      modify fun w => { w with declarations := w.declarations.insert (p.1, b.name) env.vars }
       if let some ty := b.annot then
         if let some D ← StateT.lift (tryCatch (some <$> lower (Fragment.translate ty)) fun _ => pure none) then
           modify fun w => { w with hints := (b.init.span, D) :: w.hints }
@@ -1587,7 +1743,8 @@ the unit's body completes (`Walk.completion`). -/
 def retypeUnitWith (T : EquationStore.State) (f : Fragment.Fn) (fc : SourceClaims.Function Tree)
     (module : List (String × Compiler (Ty Tree))) (generics : List (String × Generic) := [])
     (parts : String := "xec") (force : List String := []) :
-    Except String (EquationStore.State × SourceClaims.Function Tree × Option (List (String × Ty Tree))) := do
+    Except String (EquationStore.State × SourceClaims.Function Tree × Option (List (String × Ty Tree)) ×
+      Std.HashMap (Nat × String) (List (String × Ty Tree))) := do
   let (w, T') ← walkUnit T f module generics force
   let exprs : List (Span × SourceClaims.Candidate Tree) := w.exprs.toList.map fun (span, (_, r)) =>
     (span, r.mapError fun m => s!"not handled: {m} (type undetermined)")
@@ -1618,14 +1775,15 @@ def retypeUnitWith (T : EquationStore.State) (f : Fragment.Fn) (fc : SourceClaim
     points := fc.points.map fun (id, row) =>
       (id, { row with exprs := exprs, envs := envs,
                       entryCurrent := if keep then row.entryCurrent else [],
-                      exprCurrent := if keep then row.exprCurrent else [] }) } : SourceClaims.Function Tree), w.completion)
+                      exprCurrent := if keep then row.exprCurrent else [] }) } : SourceClaims.Function Tree), w.completion,
+    w.declarations)
 
 /-- `retypeUnitWith`'s grown store and claims. -/
 def retypeUnit (T : EquationStore.State) (f : Fragment.Fn) (fc : SourceClaims.Function Tree)
     (module : List (String × Compiler (Ty Tree))) (generics : List (String × Generic) := [])
     (parts : String := "xec") (force : List String := []) :
     Except String (EquationStore.State × SourceClaims.Function Tree) := do
-  let (T, fc, _) ← retypeUnitWith T f fc module generics parts force
+  let (T, fc, _, _) ← retypeUnitWith T f fc module generics parts force
   return (T, fc)
 
 end Verification.SourceExtraction.Synthesis

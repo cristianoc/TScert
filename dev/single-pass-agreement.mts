@@ -24,7 +24,7 @@
 // exactly when no unit disagrees, none is not handled and every case ran;
 // a unit whose pipeline check did not finish is counted apart.
 import { spawnSync } from "node:child_process";
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { cases, type Case } from "../pipeline/cases.mts";
 import { pooled } from "../pipeline/run-cases.mts";
@@ -111,10 +111,20 @@ async function compare(test: Case): Promise<Comparison[]> {
   const units = (outcome.units ?? []).filter((u) => !u.unit.startsWith("module:"));
   // A file whose pipeline check did not finish (a stage's timeout) gives no
   // units: counted as one unfinished entry rather than dropped.
-  if (units.length === 0) return outcome.status === "error"
-    ? [{ file: test.file, unit: "(file)", pipeline: "unfinished", pass: "missing", agree: false, notHandled: null, why: "", referee: null, control: false, closed: false }]
-    : [];
-  const key = fileKey(outcome.artifacts);
+  if (units.length === 0 && outcome.status === "error")
+    return [{ file: test.file, unit: "(file)", pipeline: "unfinished", pass: "missing", agree: false, notHandled: null, why: "", referee: null, control: false, closed: false }];
+  // A file the pipeline decides with no unit checked (its producer or its
+  // claims refused) is run from its fragment all the same in mode 8: each
+  // unit the pass gives is compared with the file's outcome.
+  const fragment = join(outcome.artifacts, "fragment.json");
+  const fragmentFile = (): string | null => {
+    if (!existsSync(fragment)) return null;
+    const value: unknown = JSON.parse(readFileSync(fragment, "utf8"));
+    return typeof value === "object" && value !== null && "file" in value && typeof value.file === "string" ? value.file : null;
+  };
+  const whole = units.length === 0;
+  if (whole && process.env.TSCERT_PASS_MODE !== "8") return [];
+  const key = whole ? fragmentFile() : fileKey(outcome.artifacts);
   if (key === null) return [];
   const givenDir = process.env.TSCERT_GIVEN_DIR;
   const given = givenDir === undefined ? null : join(givenDir, `${test.file}.jsonl`);
@@ -129,7 +139,10 @@ async function compare(test: Case): Promise<Comparison[]> {
     const again = passVerdicts(outcome.artifacts, key, given, "9", force, true);
     for (const [u, v] of again) if (v.accepted) referee.set(u, v);
   }
-  return units.map((u): Comparison => {
+  const compared: { unit: string; status: string }[] = whole
+    ? [...pass.keys()].filter((u) => !u.startsWith("module:")).map((unit) => ({ unit, status: outcome.status === "verified" ? "verified" : "refused" }))
+    : units;
+  return compared.map((u): Comparison => {
     const v = pass.get(u.unit);
     const notHandled = v ? construct(v.refusal) : null;
     const passSays = v === undefined ? "missing" : v.accepted ? "verified" : notHandled ? "not handled" : "refused";
@@ -172,11 +185,13 @@ for (const [what, n] of [...constructs].sort((a, b) => b[1] - a[1])) process.std
 const refereed = all.filter((c) => c.referee !== null);
 const holes = refereed.filter((c) => c.pass === "verified" && c.referee !== "verified");
 for (const c of holes) process.stdout.write(`hole: ${c.file} ${c.unit}: mode 8 accepts, mode 9 ${c.referee}, pipeline ${c.pipeline}\n`);
+const refereeOnly = refereed.filter((c) => c.pass !== "verified" && c.referee === "verified");
+for (const c of refereeOnly) process.stdout.write(`referee only: ${c.file} ${c.unit}: mode 9 accepts, mode 8 ${c.pass}, pipeline ${c.pipeline}\n`);
 const bothAccept = refereed.filter((c) => c.closed && c.pipeline === "refused");
 for (const c of bothAccept) process.stdout.write(`both accept, pipeline refuses: ${c.file} ${c.unit}\n`);
 if (refereed.length > 0)
   process.stdout.write(`referee: ${holes.length} mode 8 accepts / mode 9 refuses, ` +
-    `${refereed.filter((c) => c.pass !== "verified" && c.referee === "verified").length} mode 9 accepts / mode 8 refuses\n`);
+    `${refereeOnly.length} mode 9 accepts / mode 8 refuses\n`);
 // The controls: each refused by mode 8 under its forced proposal.
 const controlFailures = all.filter((c) => c.control && c.pass === "verified");
 for (const c of controlFailures) process.stdout.write(`control accepted: ${c.file} ${c.unit}\n`);
