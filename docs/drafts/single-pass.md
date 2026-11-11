@@ -382,7 +382,9 @@ ones as present, the copy at its own keys exactly), `stale` (a binding a functio
 narrowed across a call), `guards` (each guard's and family guard's true
 answer stated on its false edge too), `reads` (a member read's receiver
 held without `null` and `undefined` at every later statement), `paths`
-(each narrowed member path kept narrowed at every later statement). Under
+(each narrowed member path kept narrowed at every later statement), `loops`
+(each path narrowed before a loop kept at its head, its body and its exit,
+whatever ends it). Under
 a forced proposal, a forced footprint is one the
 function's own unit establishes, and a unit whose dependency of the file is
 refused counts as refused where both modes are compared with the pipeline.
@@ -400,7 +402,9 @@ at keep/keep bounding its throws), `invalid-declaration-pop-callback`
 `wrong`, under `paths`, `invalid-object-spread-two-sources` `count`, under
 `spreads`, `invalid-keyed-read` `pick`, under `keys` (a keyed read of an
 object at the first name its key may spell alone), and
-`invalid-closure-offer-narrower-mutation` `wrong`, under `offers`. A control's acceptance counts only with every unit
+`invalid-closure-offer-narrower-mutation` `wrong`, under `offers`, and
+`invalid-field-narrowing-for-of-callback` and `-closure` `count`, under
+`loops`. A control's acceptance counts only with every unit
 it `depends` on accepted: a run with named units checks only those, a
 dependency's footprint among its proposals, so its reader follows
 `depends`.
@@ -683,7 +687,17 @@ removal works through:
   root (a destructuring assignment's from its first target on), after a
   call whose instance may change a value of the heap (or whose callee is
   unknown), and after the left operand of `&&` or `||` where the right may
-  call; a loop head and a handler state none.
+  call; a write of an element at a key naming no one field or number, and
+  `Object.assign`, end every path; a handler states none. A path narrowed
+  before a loop is stated at its head, at each statement entry of its body
+  and past its exit where nothing in its test, body and update ends it (a
+  write of a field the path reads, an assignment of its root, a call that
+  may change a value of the heap) and its root is no binding the loop
+  declares; over a `for...of`, also only where the iterable is an array,
+  the root holds no allocation (an object or array literal) and each member
+  of the path is a required field every record arm of its receiver states,
+  none a `length` (the producer's `separated_path`: the locations an
+  iterator's step keeps).
   After such a call, each binding a function literal walked so far assigns
   (one it captures, held in a cell) is at its declared type again.
 - **Growth and assignment.** A write of a key a constant's records may lack

@@ -34,6 +34,14 @@ structure Env where
   it completes or returns unreached. -/
   ghost : Bool := false
 
+/-- What ends a narrowed member path: anything (a call that may change a
+value of the heap, a write of an unknown key), a write of a field the path
+reads, an assignment of its root. -/
+inductive PathEnd where
+  | all
+  | field (k : PropKey)
+  | root (n : String)
+
 /-- A generic module function: its binders' names and its signature at
 given binder types, in claim form (`Instantiable.instantiate`). -/
 structure Generic where
@@ -94,7 +102,8 @@ structure Walk where
   key its operand's type states, `guards` every guard's and family guard's
   true answer on its false edge too, `reads` a member read's receiver
   without `null` and `undefined` at every later statement, `paths` each
-  narrowed member path narrowed at every later statement. -/
+  narrowed member path narrowed at every later statement, `loops` each
+  path narrowed before a loop kept at its head, its body and its exit. -/
   force : List String := []
   /-- Where the unit's body completes: its bindings there, or none where it
   never completes. -/
@@ -173,8 +182,27 @@ structure Walk where
   to), each point reading its own statement's. -/
   stmtAt : Span := (0, 0)
   exprsAt : Std.HashMap (Span × Span) (Except String (Ty Tree)) := {}
+  /-- What the statements walked so far may end a narrowed path by: the
+  loop being walked keeps across its exit the paths none of them ends. -/
+  pathEnds : List PathEnd := []
+  /-- The paths the loop just walked keeps: stated at its head and at each
+  statement entry of its body, whose edges carry them. -/
+  loopKept : List ((String × List PropKey) × Ty Tree) := []
+  /-- The constants holding an allocation (an object or array literal): an
+  iterator's step keeps no path of one (the producer's `allocated`). -/
+  allocated : List String := []
 
 abbrev W := StateT Walk Compiler
+
+/-- The walk records what ends narrowed paths. -/
+def ends (x : PathEnd) : W Unit := modify fun w => { w with pathEnds := x :: w.pathEnds }
+
+/-- The paths of `env` none of `xs` ends. -/
+def surviving (env : Env) (xs : List PathEnd) : List ((String × List PropKey) × Ty Tree) :=
+  env.paths.filter fun ((root, path), _) => xs.all fun
+    | .all => false
+    | .field k => !path.contains k
+    | .root n => n != root
 
 def norm (A : Ty Tree) : Ty Tree := (A.mergeSort Labels.le).eraseDups
 
@@ -629,6 +657,27 @@ def loopHead (env : Env) (ss : List Stmt) : Env :=
       if changed.any (·.1 == n) then (n, (env.decl.lookup n).getD A) else (n, A)
     paths := [] }
 
+/-- Whether an iterator's step keeps the path `root.path`: each member a
+required field every record arm of its receiver states, none a `length`
+(the producer's `separated_path`, statement_analysis.ml:785-793, the
+locations the iterator is apart from). -/
+def separatedPath (env : Env) (root : String) (path : List PropKey) : Compiler Bool := do
+  let some A := env.vars.lookup root | return false
+  let G ← graphNow
+  let mut R := A
+  for f in path do
+    if f == lengthKey || R.isEmpty then return false
+    for l in R do
+      let [.refs fs _ vs _ _ _ _] := PositiveRules.expand G [l] | return false
+      if (fs.lookup f).isNone && (vs.lookup f).isNone then return false
+    let some B ← tryCatch (some <$> readField env.vars R f) fun _ => pure none | return false
+    R := B
+  return true
+
+/-- An environment with the paths `kept` beside its own. -/
+def keepPaths (kept : List ((String × List PropKey) × Ty Tree)) (env : Env) : Env :=
+  { env with paths := env.paths ++ kept.filter fun (p, _) => (env.paths.lookup p).isNone }
+
 def typeofNames : List String := ["bigint", "boolean", "function", "number", "object", "string", "symbol", "undefined"]
 
 def need (o : Option (Ty Tree)) (what : String) : Compiler (Ty Tree) :=
@@ -943,6 +992,26 @@ def freshAt (H R : Ty Tree) : Compiler (Option (Ty Tree)) := do
     if within T E D then return some [l]
   return none
 
+/-- The statements of `ss` at their function's own level, nested statement
+lists included but a handler's and a finalizer's (each entered as a head
+is) and none of a function literal. -/
+partial def ownStmts (ss : List Stmt) : List Span :=
+  ss.flatMap fun s => s.pos :: match s with
+    | .ite _ _ t e => ownStmts t ++ ownStmts (e.getD [])
+    | .loop _ _ b u _ => ownStmts b ++ ownStmts u
+    | .block _ _ b => ownStmts b
+    | .forOf _ _ _ _ _ b => ownStmts b
+    | .tryStmt _ b _ _ => ownStmts b
+    | .closing _ _ b => ownStmts b
+    | _ => []
+
+/-- An entry's narrowed paths with `kept` beside them. -/
+def withPaths (kept : List ((String × List PropKey) × Ty Tree)) (cs : List (String × List (List PropKey × Ty Tree))) :
+    List (String × List (List PropKey × Ty Tree)) :=
+  kept.foldl (fun cs ((r, p), A) =>
+    if A.isEmpty then cs else match cs.lookup r with
+    | some ps => if (ps.lookup p).isSome then cs else upd cs r (ps ++ [(p, A)])
+    | none => cs ++ [(r, [(p, A)])]) cs
 
 mutual
 /-- The bindings statements declare, nested ones included. -/
@@ -966,6 +1035,7 @@ def wrote (value store : Footprints.Change := .any) : W Unit :=
 /-- An assignment of `n`: a change of the heap where the function literal
 being walked does not declare `n`. -/
 def assigns (n : String) : W Unit := do
+  ends (.root n)
   let w ← get
   if !w.locals.contains n then
     wrote .any .keep
@@ -1264,6 +1334,7 @@ partial def afterCall (env : Env) (r : Except String (Ty Tree × Ty Tree)) : W E
     -- A binding a function literal assigns is held in a cell the call may
     -- change: at its declared type again (`TSCERT_FORCE=stale` keeps it).
     let reset := if w.force.contains "stale" then [] else w.closureAssigned
+    ends .all
     return { env with
       paths := []
       vars := env.vars.map fun (n, A) => if reset.contains n then (n, (env.decl.lookup n).getD A) else (n, A) }
@@ -1555,6 +1626,7 @@ partial def expr (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (Op
     -- The value made at the field's type.
     let (R, e2) ← expr e1 rhs D
     -- A write ends the narrowing of every path through the field.
+    ends (.field fld)
     let e2 := { e2 with paths := e2.paths.filter fun ((_, p), _) => !p.contains fld }
     -- A key a constant's records may lack: the write at the contract it adds
     -- the key at, and the constant's records owning it after.
@@ -1599,6 +1671,21 @@ partial def expr (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (Op
       | .ok B => some <$> StateT.lift (slice B .isUndef false)
       | .error _ => pure none
     let (R, e3) ← expr e2 rhs D
+    -- The write ends the paths through its key: a named one's, a number's
+    -- none (an element, no path's field), any other every path.
+    let ended ← StateT.lift (tryCatch (do
+        match field with
+        | some f => return some (PathEnd.field (.str f))
+        | none =>
+          let K ← need K "the key"
+          match ← keyString K with
+          | some s => return some (.field (.str s))
+          | none => return if (← slice K .isNum false).isEmpty then none else some .all) fun _ => pure (some .all))
+    let e3 ← match ended with
+      | some x => do
+        ends x
+        pure { e3 with paths := surviving e3 [x] }
+      | none => pure e3
     return (← record e (match R with | some R => .ok R | none => .error "the value undetermined"), e3)
   | .elemAt _ x key =>
     let (O, e1) ← expr env x
@@ -1643,6 +1730,7 @@ partial def expr (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (Op
     let reset (env : Env) : Env := { env with
       vars := env.vars.map fun (n, A) => if names.contains n then (n, (env.decl.lookup n).getD A) else (n, A)
       paths := env.paths.filter fun ((r, _), _) => !names.contains r }
+    for n in names do ends (.root n)
     let mut env := reset e1
     for t in targets do
       let (_, e') ← expr env t.target
@@ -1686,6 +1774,10 @@ partial def expr (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (Op
       | .var _ n, some A => do
         let D := (e2.decl.lookup n).getD A
         pure { e2 with vars := upd e2.vars n (← StateT.lift (assigned D A)), paths := e2.paths.filter (·.1.1 != n) }
+      -- A field's update ends the paths through the field.
+      | .read _ fld _, _ => do
+        ends (.field fld)
+        pure { e2 with paths := surviving e2 [.field fld] }
       | _, _ => pure e2
     return (r, e3)
   | .logicalAssign _ op target rhs =>
@@ -1710,6 +1802,9 @@ partial def expr (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (Op
     let e2 := (join (some e1) (some e2)).getD e2
     let e3 ← match target, r with
       | .var _ n, some A => pure { e2 with vars := upd e2.vars n A, paths := e2.paths.filter (·.1.1 != n) }
+      | .read _ fld _, _ => do
+        ends (.field fld)
+        pure { e2 with paths := surviving e2 [.field fld] }
       | _, _ => pure e2
     return (r, e3)
   | .nullishAssign _ n namePos rhs =>
@@ -1777,7 +1872,9 @@ partial def expr (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (Op
       let start ← copiesOf (← need A "the target") forceSpreads (target := true)
       let alts ← copyParts start (← Ss.mapM fun S => do return (none, ← need S "a source")) forceSpreads
       return norm (← alts.mapM copyType).flatten
-    return (r, e2)
+    -- It writes the target's keys: every path ends.
+    ends .all
+    return (r, { e2 with paths := [] })
   -- A function literal where a callable is expected, writing no parameter's
   -- type: at the expected signature taking the most parameters.
   | .lambda _ _ _ params .. =>
@@ -2810,6 +2907,20 @@ partial def stmts (env : Option Env) (ss : List Stmt) : W (Option Env) := do
     let outer := (← get).stmtAt
     modify fun w => { w with stmtAt := s.pos }
     env ← stmt e s
+    -- A loop's kept paths, at its head's entry and its body's.
+    if let some (body, update) := (match s with
+        | .loop _ _ body update _ => some (body, update)
+        | .forOf _ _ _ _ _ body => some (body, [])
+        | _ => none) then
+      let kept := (← get).loopKept
+      if !kept.isEmpty then
+        let ps := s.pos :: ownStmts (body ++ update)
+        modify fun w => { w with
+          loopKept := []
+          currents := (at_ :: ps.map (·.1)).eraseDups.foldl (fun m k => m.insert k (withPaths kept ((m.get? k).getD []))) w.currents
+          spanEntries := ps.foldl (fun m sp => match m.get? sp with
+            | some (vs, cs) => m.insert sp (vs, withPaths kept cs)
+            | none => m) w.spanEntries }
     if (← get).force.contains "paths" then
       if let some e' := env then
         modify fun w => { w with pathsForced := w.pathsForced ++ e'.paths.filter fun (p, _) => (w.pathsForced.lookup p).isNone }
@@ -2866,7 +2977,9 @@ partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
     | _ => return some e1
   | .constants p bs =>
     let mut env := env
-    modify fun w => { w with consts := bs.map (·.name) ++ w.consts }
+    modify fun w => { w with
+      consts := bs.map (·.name) ++ w.consts
+      allocated := (bs.filter fun b => match b.init with | .alloc .. | .arrayLit .. => true | _ => false).map (·.name) ++ w.allocated }
     -- An early binding's declaration writes its cell (a declaration's
     -- footprint).
     if (← get).strict && bs.any (·.early) then wrote .any .keep
@@ -2949,6 +3062,8 @@ partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
     return none
   | .loop _ c body update _ =>
     let head := loopHead env (.effect c.span c :: body ++ update)
+    let savedEnds := (← get).pathEnds
+    modify fun w => { w with pathEnds := [] }
     let (_, e1) ← expr head c
     let saved := (← get).breaks
     let savedContinues := (← get).continues
@@ -2959,7 +3074,16 @@ partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
     modify fun w => { w with continues := savedContinues }
     let _ ← stmts (some (continued.getD head)) update
     let out ← collectBreaks none saved
-    return join (some (← refine e1 c false)) out
+    -- Past the loop, the paths narrowed before it that nothing in its test,
+    -- body and update ends.
+    let evs := (← get).pathEnds
+    let declared := declaredIn (body ++ update)
+    -- (`TSCERT_FORCE=loops`: every path kept, whatever ends it)
+    let evs := if (← get).force.contains "loops" then [] else evs
+    let kept := (surviving env evs).filter fun ((r, _), _) => !declared.contains r
+    modify fun w => { w with pathEnds := evs ++ savedEnds, loopKept := kept }
+    let keep := keepPaths kept
+    return join (some (keep (← refine e1 c false))) (out.map keep)
   | .block _ label body =>
     match label with
     | none => stmts (some env) body
@@ -3010,9 +3134,31 @@ partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
       | none => { head with vars := head.vars.filter (·.1 != name) }
     let saved := (← get).breaks
     modify fun w => { w with breaks := [] }
+    let savedEnds := (← get).pathEnds
+    modify fun w => { w with pathEnds := [] }
     let _ ← stmts (some inner) body
     let out ← collectBreaks none saved
-    return join (some exit) (out.map fun o => { o with vars := o.vars.filter (·.1 != s!"%next@{p.1}%") })
+    -- Past the loop, over an array (whose native iterator's steps change
+    -- only the iterator), the paths narrowed before it that nothing in its
+    -- body, nor the element's assignment, ends.
+    let evs := (← get).pathEnds
+    modify fun w => { w with pathEnds := evs ++ savedEnds }
+    let G ← StateT.lift graphNow
+    let overArray := match I with
+      | some I => !I.isEmpty && (arrayArms G I).length == I.length
+      | none => false
+    let declared := declaredIn body
+    let forced := (← get).force.contains "loops"
+    let allocated := (← get).allocated
+    let kept ← if overArray || forced then
+        (surviving e1 (if forced then [] else .root name :: evs)).filterM fun ((r, p), _) => do
+          if declared.contains r then return false
+          if forced then return true
+          return !allocated.contains r && (← StateT.lift (separatedPath e1 r p))
+      else pure []
+    modify fun w => { w with loopKept := kept }
+    let keep := keepPaths kept
+    return join (some (keep exit)) (out.map fun o => keep { o with vars := o.vars.filter (·.1 != s!"%next@{p.1}%") })
   | .tryStmt _ body handler finalizer =>
     if finalizer.isSome && (← get).strict then modify fun w => { w with throwWrites := true }
     let outer := (← get).caught
