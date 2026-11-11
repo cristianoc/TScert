@@ -4041,13 +4041,22 @@ partial def recursiveConstant (env : Env) (b : Fragment.Binding) (written : Bool
   let some S0 ← earlyContract b (if b.early then .ordinary else
       { CallEffects.Effect.ofFootprint ⟨.keep, .keep⟩ with onThrow := true })
     | expr env b.init
+  -- Its self reads are uses of the constant as any other read is: each
+  -- offers the literal a longer signature it is expected at
+  -- (`offerUse`), and where the walk states offered rows at the literal,
+  -- the self entry holds the literal's whole type, those rows included.
+  if let .lambda _ _ [] _ _ false _ _ _ _ _ _ := b.init then
+    let G := SourceTypes.graph (← StateT.lift table)
+    if let ([own], []) := (ProgramTyping.callSigs G S0, ProgramTyping.restSigs G S0) then
+      modify fun w => { w with closureConsts := (b.name, b.init.span, own.arguments) :: w.closureConsts }
+  let offered := (← get).offers.any (·.1 == b.init.span)
   let w0 ← get
   let mut S := S0
   for _ in [0:4] do
     set w0
     let (A, e1) ← expr { env with vars := upd env.vars b.name S, decl := upd env.decl b.name S } b.init
     let some L := A | return (A, e1)
-    if written || b.early || sameMeaning (← StateT.lift table) L S then return (A, e1)
+    if (written && !offered) || b.early || sameMeaning (← StateT.lift table) L S then return (A, e1)
     S := L
   set w0
   return (← record b.init (.error "not handled: a recursive closure's effect undetermined"), env)
