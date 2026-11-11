@@ -460,6 +460,33 @@ along each exit edge of a node (a fact is kept where the node's effect
 preserves it; new facts follow from the node's exact post) and the check of
 every edge against its target's knowledge, loop heads included.
 
+### Order of work
+
+The work has two sides. The trusted side is the pass
+(`Programs/SinglePass.lean`): its verdict is what the theorem is about. The
+untrusted side is the type computation (the walk and the front), the
+module interfaces and the tooling that writes given facts: each of its
+results is a proposal the pass checks.
+
+1. The pass is frozen once it reads the given facts its remaining units
+   need (a fresh slot and a binding's type at a loop head, each an
+   obligation on every edge into the head) and bounds a never-returning
+   call's footprint where its throw is caught. A later change of the pass
+   states its reason against the proof.
+2. The proof's model side depends on no code of the pass and proceeds
+   beside every other item: admissible transitions over the step-indexed
+   model, the modality indexed by an effect, its laws, the atom axioms.
+3. The pass's theorem is proved against the frozen pass, the referee
+   deciding soundness until it holds.
+4. Work on the untrusted side proceeds beside the proof: the remaining
+   rules of the walk, the module interfaces, the units' costs. Its measure
+   is agreement with the pipeline over the cases, unit by unit, by a
+   complete run before each integration.
+5. The existing search and proved checker, the producer and the claims
+   wire format are deleted when the theorem holds and no unit disagrees
+   with the pipeline, a unit both the pass and the referee accept beyond
+   the pipeline counting as reviewed, not as a disagreement.
+
 `verifier --verify-units 8` reads the fragment and the given file, and no
 claims document (`SourceClaimJson.fragmentPlans`, `Claims/FragmentFront.lean`).
 
