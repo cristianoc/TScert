@@ -1610,6 +1610,23 @@ def copiesOf (A : Ty Tree) (force : Bool) (target : Bool := false) : Compiler (L
         (target || k != SourceTypes.protoField) && !ms.any (·.key == k)).map fun (k, A) => (k, false, A)
       let opt := (os.filter fun o => !fields.any (·.1 == o.key)).map fun o => (o.key, true, o.type)
       out := out ++ [{ fields := fields ++ opt, exact := false, index := ix.lookup .strings, symbols := ix.lookup .symbols }]
+    | [.callable fs rest _ _ ms] =>
+      -- A callable object's fields are copied just as the producer's
+      -- callable Shape (object_spread.ml:156-160); every intersection
+      -- operand constrains a repeated key (field_meet, lines 56-70).
+      let all := (fs ++ rest.flatten).filter fun (k, _) =>
+        (target || k != SourceTypes.protoField) && !ms.any (·.key == k) &&
+          (match k with | .str _ => true | _ => false)
+      let T ← table
+      let mut fields := []
+      for k in (all.map (·.1)).eraseDups do
+        let types := (all.filter (·.1 == k)).map (·.2)
+        let some B := types.find? fun B => types.all (within T B)
+          | throw "a callable copy's repeated field has no contract within every operand"
+        fields := fields ++ [(k, false, B)]
+      -- A callable can own additional keys. `spreads` forces an exact
+      -- bound, whose proof the pass must refuse.
+      out := out ++ [{ fields, exact := force }]
     | [.ctors _ _ statics] =>
       out := out ++ [{ fields := (statics.filter (·.1 != SourceTypes.protoField)).map fun (f, B) => (f, false, B), exact := false }]
     | [.arrs ..] => out := out ++ [{ exact := false }]
