@@ -88,7 +88,8 @@ structure Walk where
   (`TSCERT_FORCE`): `literals` states every function literal at keep/keep,
   `elements` every element read without `undefined`, `objects` every
   object literal at its expected type, `spreads` every spread with every
-  key its operand's type states. -/
+  key its operand's type states, `guards` every guard's and family guard's
+  true answer on its false edge too. -/
   force : List String := []
   /-- Where the unit's body completes: its bindings there, or none where it
   never completes. -/
@@ -936,9 +937,11 @@ partial def refine (env : Env) (c : Expr) (q : Bool) : W Env := do
           env := out.getD env
       return env
   -- A call of a type guard (`promise := guards p`): on its true arm its
-  -- actual `p` at the guarded type (`PromiseCalls`' implication).
-  | .call _ callee args _ _ | .callWithReceiver _ callee _ args =>
-    if !q then return env
+  -- actual `p` at the guarded type (`PromiseCalls`' implication); a method
+  -- guard (`c.isWord(v)`, `ts.isIdentifier(n)`) at its member's recorded
+  -- type, as the lowering reads it (`Control.promiseNarrowing`'s `.invoke`).
+  | .call _ callee args _ _ | .callWithReceiver _ callee _ args | .invoke _ callee args _ _ =>
+    if !q && !(← get).force.contains "guards" then return env
     promised env callee args false
   | .tagMember _ _ none tags _ e =>
     match memberPath e with
@@ -949,6 +952,20 @@ partial def refine (env : Env) (c : Expr) (q : Bool) : W Env := do
           pure (norm parts.flatten)
         else tags.foldlM (fun B t => StateT.lift (slice B t false)) A
       return { env with vars := upd env.vars root B }
+    | _ => return env
+  -- A family guard testing its operand's field (`ts.isIdentifier(n)`, the
+  -- `kind` field): the binding's arms whose field can answer so, `undefined`
+  -- answering no `true` and, where it throws, no `false` either
+  -- (`Control.conditionContext`'s `.tagMember`, `PromiseCalls.memberFieldSlice`).
+  | .tagMember _ _ (some f) tags onUndefined e =>
+    match memberPath e with
+    | some (root, []) =>
+      let some A := env.vars.lookup root | return env
+      let G ← StateT.lift graphNow
+      -- (`TSCERT_FORCE=guards`: the true answer's arms on both edges)
+      let q := q || (← get).force.contains "guards"
+      let A := if q || onUndefined == .throws then BranchRefinement.tagSlice G A .isUndef false else A
+      return { env with vars := upd env.vars root (norm (PromiseCalls.memberFieldSlice G A f tags q [])) }
     | _ => return env
   | _ => return env
 
@@ -2156,7 +2173,8 @@ partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
     let e1 := (← expr env x).2
     -- An assertion function's normal return: its promise holds.
     match x with
-    | .call _ callee args _ _ | .callWithReceiver _ callee _ args => return some (← promised e1 callee args true)
+    | .call _ callee args _ _ | .callWithReceiver _ callee _ args | .invoke _ callee args _ _ =>
+      return some (← promised e1 callee args true)
     | _ => return some e1
   | .constants p bs =>
     let mut env := env
