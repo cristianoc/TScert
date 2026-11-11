@@ -1100,6 +1100,49 @@ def copyParts (start : List Copy) (parts : List (Option PropKey × Ty Tree)) (fo
       alts := next
   return alts
 
+/-- The property names a key of type `K` may spell, where each of its
+labels is one: a string's, or a number's that is an array index (the
+property its `ToString` spells). -/
+def keyNames (K : Ty Tree) : Compiler (Option (List PropKey)) := do
+  let G ← graphNow
+  if K.isEmpty then return none
+  let mut out : List PropKey := []
+  for l in K do
+    match PositiveRules.expand G [l] with
+    | [.strLit s] => out := out ++ [.str s]
+    | [.strIn ss] => out := out ++ ss.map .str
+    | [.numLit b] => match indexOfBits b with
+      | some n => out := out ++ [.str (toString n)]
+      | none => return none
+    | [.numIn bs] => for b in bs do
+        match indexOfBits b with
+        | some n => out := out ++ [.str (toString n)]
+        | none => return none
+    | _ => return none
+  return some out.eraseDups
+
+/-- `o[k]` of an `o` of type `O` at a key of type `K` (`type_queries.ml`,
+`index_type`): an array's or a string's element, and an object's field at
+each name the key may spell (an enum's reverse map, a record at a
+literal-union key), else its index at a dynamic key (a dictionary's, with
+`undefined`). `firstOnly` (`TSCERT_FORCE=keys`): an object's field at the
+first name alone. -/
+def keyedRead (vars : List (String × Ty Tree)) (O K : Ty Tree) (missing : Bool) (firstOnly : Bool := false) :
+    Compiler (Ty Tree) := do
+  let G ← graphNow
+  if O.isEmpty then throw "an element read of a value of no type"
+  let index ← keyIndex K
+  let names ← keyNames K
+  let mut out : Ty Tree := []
+  for l in O do
+    let elementLike := shapeOf G l == some .isStr || (storeOf G [l]).isSome
+    match elementLike, names, PositiveRules.expand G [l] with
+    | true, _, _ => out := out ++ (← elementAt [l] index missing)
+    | false, some ks, [.refs ..] | false, some ks, [.dict ..] =>
+      for k in (if firstOnly then ks.take 1 else ks) do out := out ++ (← readField vars [l] k)
+    | false, _, _ => out := out ++ (← elementAt [l] index missing)
+  return norm out
+
 /-- The allocations a body returns last: its last statement's `return` of
 an object literal, or of each arm of its last `if`. -/
 partial def tailAllocs : Expr → List Span
@@ -1266,6 +1309,7 @@ part of it walked at the part's expected type. -/
 partial def expr (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (Option (Ty Tree) × Env) := do
   let forceElements := (← get).force.contains "elements"
   let forceSpreads := (← get).force.contains "spreads"
+  let forceKeys := (← get).force.contains "keys"
   match e with
   | .var _ n =>
     let r := match env.vars.lookup n with
@@ -1445,7 +1489,7 @@ partial def expr (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (Op
       | some f => readField e2.vars O (.str f)
       | none => match ← keyString K with
         | some s => readField e2.vars O (.str s)
-        | none => elementAt O (← keyIndex K) (missing := !forceElements)
+        | none => keyedRead e2.vars O K (missing := !forceElements) (firstOnly := forceKeys)
     return (r, e2)
   | .elemWrite p recv key rhs => expr env (.indexWrite p none recv key rhs)
   | .indexWrite _ field recv key rhs =>
@@ -1474,7 +1518,7 @@ partial def expr (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (Op
   | .elemAt _ x key =>
     let (O, e1) ← expr env x
     let (K, e2) ← expr e1 key
-    let r ← attempt e do elementAt (← need O "the receiver") (← keyIndex (← need K "the key")) (missing := !forceElements)
+    let r ← attempt e do keyedRead e2.vars (← need O "the receiver") (← need K "the key") (missing := !forceElements) (firstOnly := forceKeys)
     return (r, e2)
   | .arrayLit _ es spreads =>
     -- Each element walked at the position the expected type states.
