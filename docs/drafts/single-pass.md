@@ -886,6 +886,11 @@ removal works through:
   static field) reads the class at an instance, each binder at its bound
   (`unknown` where it states none), recorded as the read's type arguments;
   a bound reading another binder is not handled there.
+  A fresh call bound to an unannotated constant and followed by an alias
+  or a mutating member use selects a matching overload whose result has no
+  required array positions, where one exists (source.ml:1453-1482,
+  expression_calls.ml:1079-1087). The call creates that store contract;
+  later uses retain it. Other uses retain their existing result proposal.
   A member `o.m` of a union of objects each stating it at the same signatures
   (a host family's node kinds, each its own receiver) is that member with
   every member's receivers and schemes; each stating it at one signature of
