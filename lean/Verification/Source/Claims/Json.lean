@@ -1017,6 +1017,32 @@ def FilePlans.passGroup (f : FilePlans) (fuel : Nat) (group : List Nat) (compare
           hints.cuts hints.candidates rq.entryIndices [] (e ++ rendered) (GraphCode.admits table) r.aliases
           (HeapExpressionRules.Checker.ordinary G I) sumsAnswers #[] 1000000000 codeBound codeImplies codeArgs
         sumsAnswers := a
+        -- A refusal observed in a code request: its obligation, the facts
+        -- over its names and those it lacks, as for the unit's own graph.
+        if let .refused w := o then
+          if observe == some "refusal" then
+            let (_, _, _, trace) := SinglePass.run G I codePool fuel rq.program rq.claims rq.start q.entry.goal hints.requirements
+              hints.cuts hints.candidates rq.entryIndices [] (e ++ rendered) (GraphCode.admits table) r.aliases
+              (HeapExpressionRules.Checker.ordinary G I) sumsAnswers #[] 1000000000 codeBound codeImplies codeArgs [] #[] {}
+              (some 1000000000) true
+            let l := trace.node
+            let mentioned := ((rq.claims[l]?).map RequestJson.PointClaim.mentions).getD []
+            let p := StoreView.projection r.types mentioned.eraseDups
+            let width := trace.names.length
+            let slotOf := fun (x : Nat) => trace.names.idxOf? x
+            let shown := fun (as : List SinglePass.Atom) =>
+              toJson (SinglePass.ofAtoms (as.filterMap fun a => a.rename slotOf) width)
+            let here := (trace.afters[l]?).join.orElse fun _ => (trace.entries[l]?).join
+            let focus := (here.map fun st => st.store.connected trace.focus).getD []
+            let facts := (here.map fun st => st.store.toList.filter fun a => a.names.any focus.contains).getD []
+            let place := fun l => [("label", toJson l), ("sourceMap", toJson ((hints.sourceMap[l]?).bind id))]
+            let missingJson := trace.missing.map fun a => Json.mkObj [("fact", shown [a]),
+              ("where", Json.arr ((trace.locate l a 3 false).map fun (q, why) => Json.mkObj (place q ++ [("why", toJson why)])).toArray)]
+            let record := Json.mkObj ([("refusal", toJson s!"code {ci}: {w}"), ("observed", Json.mkObj (place l)),
+              ("node", toJson rq.program[l]?),
+              ("claim", toJson ((rq.claims[l]?).map (RequestJson.PointClaim.shown p))),
+              ("facts", shown facts), ("missing", Json.arr missingJson.toArray)] ++ p.fields)
+            return (name, "refusal-observation: " ++ record.compress, .refused s!"code {ci}: {w}")
         match o with
         | .accepted => table := table ++ [q.entry]
         | .refused w => codeOutcome := codeOutcome.orElse fun _ => some (.refused s!"code {ci}: {w}"); break
