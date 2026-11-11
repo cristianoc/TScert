@@ -17,7 +17,7 @@
 // `hole:`; the other direction is counted. TSCERT_FORCE (passed through)
 // forces an adversarial proposal (`literals`, `callees`, `elements`,
 // `objects`, `spreads`, `stale`, `throws`, `guards`, `reads`, `paths`,
-// `offers`, `loops`, `decided`, `schemes`, `callbacks`, `fresh`, `defaults`, `finally`, `never`, `meets`, `implications`, `binds`, `captures`); the controls below run with theirs forced whatever
+// `offers`, `loops`, `decided`, `schemes`, `callbacks`, `fresh`, `defaults`, `finally`, `never`, `meets`, `implications`, `binds`, `arms`, `captures`); the controls below run with theirs forced whatever
 // the patterns, each expected refused by mode 8; the forced proposal decides
 // the control's unit and the units it depends on, the file's other units
 // compared unforced.
@@ -73,6 +73,8 @@ const controls: { file: string; unit: string; force: string; positive?: boolean 
   { file: "invalid-map-fresh-reassigned", unit: "drained@156", force: "fresh" },
   { file: "invalid-closure-default-effect", unit: "stale@264", force: "defaults" },
   { file: "for-of-program-iterable", unit: "sum@2547", force: "binds" },
+  { file: "bind-union-host", unit: "total@1704", force: "binds", positive: true },
+  { file: "union-callee", unit: "renderEither@283", force: "arms", positive: true },
   { file: "invalid-compiler-api-guard-loop-finally", unit: "names@210", force: "finally" },
   { file: "invalid-closure-graph-captured-cell", unit: "counter@170", force: "never" },
   { file: "invalid-type-parameter-meet-narrowing", unit: "present@127", force: "meets" },

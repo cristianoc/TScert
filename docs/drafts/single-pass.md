@@ -392,7 +392,8 @@ whatever ends it), `decided` (every test's `false` answer unreached),
 alone), `never` (every call's statement completing at no value), `meets`
 (a type parameter's value dropped from `a ?? b`'s left operand),
 `implications` (every constant's initializer narrowing every other
-binding where the constant is tested `true`). Under
+binding where the constant is tested `true`), `arms` (a call of a union of
+callables at its first arm's signature). Under
 a forced proposal, a forced footprint is one the
 function's own unit establishes, and a unit whose dependency of the file is
 refused counts as refused where both modes are compared with the pipeline.
@@ -417,9 +418,11 @@ object at the first name its key may spell alone),
 `loops`, `invalid-unassigned-let` `readBeforeAssignment`, under
 `decided`, `invalid-map-fresh-alias` `drained`, under `callbacks`,
 `invalid-map-fresh-reassigned` `drained`, under `fresh`,
-`for-of-program-iterable` `sum`, under `binds` (each
-member bound by `o.m.bind(o)` keeping values and stores; accepted
-unforced, refused at the bind, its member's effect changing the heap),
+`for-of-program-iterable` `sum` and `bind-union-host` `total`, under
+`binds` (each member bound by `o.m.bind(o)` keeping values and stores;
+accepted unforced, refused at the bind, its member's effect changing the
+heap), `union-callee` `renderEither`, under `arms` (accepted unforced,
+refused at the call, the second arm's result outside the first's),
 `invalid-closure-default-effect` `stale`, under `defaults` (each
 function literal's defaults' changes left out of its effect),
 `invalid-generic-closure-effect` `stale`, under `schemes`
@@ -774,9 +777,22 @@ removal works through:
   static field) reads the class at an instance, each binder at its bound
   (`unknown` where it states none), recorded as the read's type arguments;
   a bound reading another binder is not handled there.
-  A member `o.m` of a union of objects each stating it at the same
-  signatures (a host family's node kinds, each its own receiver) is that
-  member with every member's receivers and schemes.
+  A member `o.m` of a union of objects each stating it at the same signatures
+  (a host family's node kinds, each its own receiver) is that member with
+  every member's receivers and schemes; each stating it at one signature of
+  no promise, binders or rest, all taking the same parameters at the same
+  effect, it is that signature returning the union of their results (the
+  producer's `bound_union`). Any other member of a union is read arm by arm,
+  each arm's member at that arm's receiver (its own or its prototype's) or
+  its field, the union of them: a union of callables.
+  A call of a union of callables, each arm of one fixed signature and no
+  binders, is each arm's call: every arm's count admits the actuals, each
+  actual is made at the parameter every arm states at its position, else at
+  its own type (the producer's `shared_actuals`), and the value is the union
+  of the arms' results; for a declaration's footprint it is a call of no one
+  instance, changing anything and leaving a throw unbounded (the producer's
+  `callable`). `TSCERT_FORCE=arms` states the first arm's signature alone,
+  the adversarial proposal. A bounded binder's value is called at its bound.
   An array arm's `length` is a number beside the other arms' reads.
   A keyed read `o[k]` is an array's or a string's element, an object's
   field at each name the key may spell (its string literals, its numbers
@@ -788,7 +804,12 @@ removal works through:
   it states, a key no index constrains, a primitive's prototype stating
   none: `readCell`) is the unit's refusal at that read, a call of one
   callable none of whose signatures admits the actuals' count (the
-  lowering's `selectSignature`) the unit's refusal at that call, and so is
+  lowering's `selectSignature`; a construction of a class of no binders, a
+  value of no call signature such as `Function`, and a variadic signature
+  whose argument lists are the empty type admitting none) the unit's
+  refusal at that call, and so is a call of a union of callables an arm of
+  which does not admit the count, a call of a union an arm of which states
+  no call signature (the lowering's split names an arrow at every arm), and
   an expression a part of which is; any other type the walk does not
   determine is a construct the pass does not handle.
   Each expression's type is read at its own statement's point,
@@ -808,7 +829,14 @@ removal works through:
   the member at any receiver at the effect binding keeps, of several
   signatures its first of no promise binding keeps (`next(...[value]: [] |
   [TNext])` at its zero-argument row) with each further one of its
-  parameters promising (the producer's `Bind`); `TSCERT_FORCE=binds`
+  parameters promising (the producer's `Bind`); of a union of hosts whose
+  members differ (`%iterator.next.bind(%iterator)` over a union of
+  iterables), the member read arm by arm, and bound, of each arm's member
+  its first signature of no promise binding keeps, where all take the same
+  parameters at the same effect, at any receiver taking them at the effect
+  binding keeps, returning the union of their results (the producer's
+  `bound_union`; the lowering splits the host's slot, `unionVar`, and binds
+  each arm's member, `bindMember`); `TSCERT_FORCE=binds`
   states it keeping values and stores, the adversarial proposal.
   `f.apply(o, list)` and
   `Reflect.apply(f, o, list)` are the target's one signature's result, the
