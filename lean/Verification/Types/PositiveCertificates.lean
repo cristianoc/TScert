@@ -59,9 +59,9 @@ changes only that domain; combining results states and checks both effects. -/
     (L : Ops ι) (S : List (RestArrow (List ι))) (q : Arrow (List ι)) : ArrowCert ι → Bool
   | .empty => decide ([] ∈ q.arguments)
   | .emptyRecv => decide (q.receiver = [])
-  | .source p => decide (p ∈ L ∧ R q.receiver p.receiver ∧
+  | .source p => p.effect.covers q.effect && decide (p ∈ L ∧ R q.receiver p.receiver ∧
       (p.result = [] ∨ R p.result q.result)) &&
-      checkDomainsWith R q.arguments p.arguments && p.effect.covers q.effect
+      checkDomainsWith R q.arguments p.arguments
   | .rest s => decide (s ∈ S) && checkRestFixedWith G R s q
   | .union pre a b suffix left right => decide (q.arguments = pre ++ (a ++ b) :: suffix) &&
       checkArrowWith G R L S { q with arguments := pre ++ a :: suffix } left &&
@@ -70,10 +70,10 @@ changes only that domain; combining results states and checks both effects. -/
       checkArrowWith G R L S { q with receiver := a } left &&
       checkArrowWith G R L S { q with receiver := b } right
   | .combine b b' effect other left right =>
+      effect.sameResult other && (effect.meet other).covers q.effect &&
       checkArrowWith G R L S { q with result := b, effect := effect } left &&
       checkArrowWith G R L S { q with result := b', effect := other } right &&
-      decide (∀ i ∈ b, ∀ k ∈ b', compatible G i k = true → R [i] q.result) &&
-      effect.sameResult other && (effect.meet other).covers q.effect
+      decide (∀ i ∈ b, ∀ k ∈ b', compatible G i k = true → R [i] q.result)
 
 theorem checkArrowWith_sound [DecidableEq ι] {G : NormalGraph ι} {R : List ι → List ι → Prop} [DecidableRel R] {L S q cert}
     (h : checkArrowWith G R L S q cert = true) :
@@ -83,7 +83,7 @@ theorem checkArrowWith_sound [DecidableEq ι] {G : NormalGraph ι} {R : List ι 
   | emptyRecv => exact .emptyRecv (of_decide_eq_true h)
   | source p =>
     simp only [checkArrowWith, Bool.and_eq_true, decide_eq_true_eq, checkDomainsWith_iff] at h
-    exact .source h.1.1.1 h.1.1.2.1 h.1.2 h.1.1.2.2 h.2
+    exact .source h.1.2.1 h.1.2.2.1 h.2 h.1.2.2.2 h.1.1
   | rest s =>
     simp only [checkArrowWith, Bool.and_eq_true, decide_eq_true_eq, checkRestFixedWith_iff] at h
     exact .rest h.1 h.2
@@ -95,7 +95,7 @@ theorem checkArrowWith_sound [DecidableEq ι] {G : NormalGraph ι} {R : List ι 
     exact .recvUnion h.1.1 (ih h.1.2) (ih' h.2)
   | combine b b' effect other left right ih ih' =>
     simp only [checkArrowWith, Bool.and_eq_true, decide_eq_true_eq] at h
-    exact .combine (ih h.1.1.1.1) (ih' h.1.1.1.2) h.1.1.2 h.1.2 h.2
+    exact .combine (ih h.1.1.2) (ih' h.1.2) h.2 h.1.1.1.1 h.1.1.1.2
 
 abbrev Evidence (ι : Type) := List (Ops ι × ((Arrow (List ι)) × ArrowCert ι))
 
