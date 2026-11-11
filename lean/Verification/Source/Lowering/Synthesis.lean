@@ -3251,7 +3251,8 @@ unbounded binder unless returned bare, within all actual and result bounds.
 Explicit seeds, dependent bounds and callback-only candidates stay fixed. -/
 def widenActualBinders (c : Callee) (a : CallEffects.Arrow (Ty Tree))
     (As : List (Option (Ty Tree))) (hidden : List Tree) (hint : Option (Ty Tree))
-    (initial : List (Tree × Ty Tree)) : Compiler (List (Tree × Ty Tree)) := do
+    (initial : List (Tree × Ty Tree))
+    (scope : Option (PositiveGraphs.SchemeRow Tree × List String)) : Compiler (List (Tree × Ty Tree)) := do
   let mut σ := initial
   let G ← graphNow
   for b in c.binders do
@@ -3265,7 +3266,27 @@ def widenActualBinders (c : Callee) (a : CallEffects.Arrow (Ty Tree))
     if B' == B then continue
     let proposed := upd σ b B'
     let T ← table
-    if (As.zip a.arguments).all (fun (A, P) => A.all fun A => within T A (substitute proposed P)) && hint.all (fun H => within T (substitute proposed a.result) H) then
+    -- A stable input's observation and resolution result constrain its
+    -- widening too (inference.ml:220-229,248-250,620-628). Compare the
+    -- candidate's resolved result to the context before fresh allocation.
+    let mut resolved := proposed
+    let mut resolvedOk := true
+    if hint.isSome then
+      for group in c.resolution do
+        if c.binders[group.input]? != some b then continue
+        let trial : Except String (Option (Ty Tree) × Option (Ty Tree)) := do
+          let cert ← SourceClaimJson.Scheme.resolutionCertificate T (scope.map (·.1))
+            ((scope.map (·.2)).getD []) B' group.result.isSome
+          SourceClaimJson.Scheme.resolutionInstance T (scope.map (·.1))
+            ((scope.map (·.2)).getD []) B' cert
+        match trial with
+        | .error _ => resolvedOk := false
+        | .ok (O, R) =>
+          if let some o := c.binders[group.observation]? then
+            resolved := upd resolved o (O.getD [])
+          if let (some slot, some R) := (group.result, R) then
+            if let some r := c.binders[slot]? then resolved := upd resolved r R
+    if resolvedOk && (As.zip a.arguments).all (fun (A, P) => A.all fun A => within T A (substitute proposed P)) && hint.all (fun H => within T (substitute resolved a.result) H) then
       σ := proposed
   return σ
 
@@ -4827,7 +4848,7 @@ partial def applyCall (env : Env) (c : Callee) (args : List Expr) (As : List (Op
             | _ => false
       | _, _ => false
     if missingIndex then σ := upd σ b (← StateT.lift (prim .source))
-  σ ← StateT.lift (widenActualBinders c a As hidden hint σ)
+  σ ← StateT.lift (widenActualBinders c a As hidden hint σ (← get).scope)
   -- A binder a resolution qualifies: its observation and result the
   -- resolution of its input's type by the certificate its form gives
   -- (`resolutionCertificate`), checked (`resolutionInstance`).
@@ -4974,7 +4995,9 @@ partial def walkLambda (env : Env) (e : Expr) (sig : Option (CallEffects.Arrow (
   let cells := (cellLocals (params.map (·.1)) bodyStmts).map (·.1)
   modify fun w => { w with writes := false, throwWrites := false, valueChange := .keep, storeChange := .keep, locals := declared, inLiteral := true,
                            literalSlots := declared.filter (!cells.contains ·) ++ w.literalSlots, heldCells := cells ++ w.heldCells }
-  modify fun w => { w with returns := [], expected := (if rowInterior then expectedResult else written <|> (if async then none else expectedResult)), asyncBody := async }
+  -- The contextual result guides async resolution calls as well as ordinary
+  -- returns (expression_closures.ml:263-268), before their stores are made.
+  modify fun w => { w with returns := [], expected := (if rowInterior then expectedResult else written <|> expectedResult), asyncBody := async }
   -- An expression body's entry is its prologue's, at the body's start.
   modify fun w => { w with entries := w.entries.insert body.span.1 inner.vars }
   -- Each default runs at a call omitting its argument, before the body: its
