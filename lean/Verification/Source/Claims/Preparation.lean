@@ -283,7 +283,9 @@ def equationFront (ast claims : Json) (fileKey : String)
       (n, B.map fun B => graphClaim (normUnion (B.flatMap (rebind T θ))))
     return ((genericClaim T θ t, bounds), T)
   let generics := L.generics.map fun g =>
-    ({ name := g.name, pos := g.pos, binders := g.binders, resolution := g.resolution, instantiate := instantiate g } :
+    ({ name := g.name, pos := g.pos, binders := g.binders,
+       widenBinders := g.widenBinders,
+       resolution := g.resolution, instantiate := instantiate g } :
       Instantiable)
   let units := L.units.filterMap fun (path, bs) => do
     let i ← (path.dropPrefix? "/functions/").bind (·.toString.toNat?)

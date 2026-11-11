@@ -1142,6 +1142,14 @@ removal works through:
   assignment of a binding aside) or each member of the path is stable.
   After such a call, each binding a function literal walked so far assigns
   (one it captures, held in a cell) is at its declared type again.
+- **Async literal results.** A generic module value retains which binders
+  have no written bound, through equation lowering and preparation. Direct
+  primitive candidates of those binders use inference.ml:608-630's widening
+  before resolution and fresh allocation; explicit arguments and declared
+  bounds retain their constraints. An async block's result is the union of
+  its walked return calls, as for an expression body
+  (expression_closures.ml:263-291). The resolution instance and each code
+  body's return are checked; no existing promise store changes contract.
 - **Implemented overload interiors.** A literal with no binders, rest or
   defaults, expected at several fixed signatures of its own arity, proposes
   that callable and walks its body once at each signature's parameters and
