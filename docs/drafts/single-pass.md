@@ -381,8 +381,9 @@ a written footprint at keep/keep), `elements` (every element read without
 ones as present), `stale` (a binding a function literal assigns kept
 narrowed across a call), `guards` (each guard's and family guard's true
 answer stated on its false edge too), `reads` (a member read's receiver
-held without `null` and `undefined` at every later statement). Under a
-forced proposal, a forced footprint is one the
+held without `null` and `undefined` at every later statement), `paths`
+(each narrowed member path kept narrowed at every later statement). Under
+a forced proposal, a forced footprint is one the
 function's own unit establishes, and a unit whose dependency of the file is
 refused counts as refused where both modes are compared with the pipeline.
 The script's controls run with their forced proposal
@@ -393,11 +394,13 @@ whatever the patterns, each expected refused by mode 8:
 `invalid-exceptional-handler-fact` `wrong`, under `throws` (every function
 at keep/keep bounding its throws), `invalid-declaration-pop-callback`
 `dropped`, under `callees`, `invalid-compiler-api-guard-loop-partial`
-`names`, under `guards`, and `invalid-read-narrows-write` and
-`invalid-read-narrows-closure` `wrong`, under `reads`. A control's
-acceptance counts only with every unit it `depends` on accepted: a run
-with named units checks only those, a dependency's footprint among its
-proposals, so its reader follows `depends`.
+`names`, under `guards`, `invalid-read-narrows-write` and
+`invalid-read-narrows-closure` `wrong`, under `reads`, and
+`invalid-slot-path-call` `keyText` and `invalid-path-witness-alias`
+`wrong`, under `paths`. A control's acceptance counts only with every unit
+it `depends` on accepted: a run with named units checks only those, a
+dependency's footprint among its proposals, so its reader follows
+`depends`.
 
 ## 9. The claims-free front
 
@@ -590,10 +593,15 @@ removal works through:
   where it completes or returns is unreached.
 - **Field contents.** A statement entry states the member paths a test
   narrowed (its `current` contents, an execution point's `entryCurrent`),
-  each a member of an object other than `length`. A path's narrowing ends at
-  a write of its field, after a call whose instance may change a value of
-  the heap (or whose callee is unknown), and after the left operand of `&&`
-  or `||` where the right may call; a loop head and a handler state none.
+  each a member of an object other than `length`: a test of the path, a
+  guard or a family guard whose actual it is (a guard's only where its call
+  changes no value of the heap), and a discriminant test of a member of it
+  (`o.key.kind` narrows `o.key` to the arms whose `kind` can answer so). A
+  path's narrowing ends at a write of its field, at an assignment of its
+  root (a destructuring assignment's from its first target on), after a
+  call whose instance may change a value of the heap (or whose callee is
+  unknown), and after the left operand of `&&` or `||` where the right may
+  call; a loop head and a handler state none.
   After such a call, each binding a function literal walked so far assigns
   (one it captures, held in a cell) is at its declared type again.
 - **Growth and assignment.** A write of a key a constant's records may lack
