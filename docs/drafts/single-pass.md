@@ -472,7 +472,11 @@ removal works through:
   array's elements, a record's fields and methods' results, a callable's
   result at the actual's. Of a call's signatures the first each walked
   actual is within at the binders so read is selected, else the first the
-  actuals' count admits. A slice rest of an array pattern is the call of its
+  actuals' count admits. A spread actual of a tuple of required positions
+  stands for those positions; a spread of any other array for one actual of
+  its elements, which only a variadic signature taking no more fixed
+  parameters than the actuals before it admits; into a callee of no
+  variadic signature, no actual after the first spread runs code. A slice rest of an array pattern is the call of its
   `%RestFrom:k%` at the value, any other rest the tuple of the positions
   after it. A declaration of a statement declaring several holds the
   bindings before it.
