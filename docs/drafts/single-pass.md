@@ -888,7 +888,8 @@ removal works through:
   `Reflect.apply(f, o, list)` are the target's one signature's result, the
   call at its effect, for a list that is null, undefined or a tuple of
   required positions, or, for a target taking only a rest, an array of any
-  length. A method at a computed key of one string literal is that member.
+  length. A method at a computed key of one string literal is that member; at an
+  index key of an array, the array's element there, called at the array.
 - **Collected values.** A spread of a program's iterable and an array
   pattern over one collect the values its protocol's steps yield
   (`collect`, `protocolPattern`, tools/fragment-statements.mts): the
