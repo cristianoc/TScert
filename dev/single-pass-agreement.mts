@@ -50,6 +50,7 @@ const controls: { file: string; unit: string; force: string; positive?: boolean 
   { file: "evolving-bindings", unit: "captured@736", force: "evolving", positive: true },
   { file: "array-first-use", unit: "tuple@268", force: "first-use", positive: true },
   { file: "object-growth", unit: "grow@191", force: "growth", positive: true },
+  { file: "array-spread", unit: "spreadTuple@500", force: "copy-indexes", positive: true },
   { file: "invalid-method-effect-stated-throw-caught", unit: "wrong@596", force: "literals" },
   { file: "invalid-node-assert-catch-continue", unit: "rows@339", force: "literals" },
   { file: "invalid-cell-truthiness-narrowing", unit: "kept@176", force: "stale" },
