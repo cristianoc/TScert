@@ -4,7 +4,7 @@
   "units": {
     "pretext measureAnalysis": {
       "verdict": "verified",
-      "cpuMs": 1038,
+      "cpuMs": 956,
       "counters": {
         "nodes": 1473,
         "edges": 1604,
@@ -26,7 +26,7 @@
     },
     "pretext prepareRichInline": {
       "verdict": "verified",
-      "cpuMs": 2277,
+      "cpuMs": 2085,
       "counters": {
         "nodes": 3189,
         "edges": 3432,
@@ -48,7 +48,7 @@
     },
     "pretext buildEngineProfile": {
       "verdict": "verified",
-      "cpuMs": 254,
+      "cpuMs": 233,
       "counters": {
         "nodes": 279,
         "edges": 294,
@@ -70,7 +70,7 @@
     },
     "loop with bounds": {
       "verdict": "verified",
-      "cpuMs": 45,
+      "cpuMs": 41,
       "counters": {
         "nodes": 23,
         "edges": 23,
@@ -92,7 +92,7 @@
     },
     "loop over a parent chain": {
       "verdict": "verified",
-      "cpuMs": 160,
+      "cpuMs": 147,
       "counters": {
         "nodes": 26,
         "edges": 28,
@@ -114,7 +114,7 @@
     },
     "call in a loop": {
       "verdict": "verified",
-      "cpuMs": 65,
+      "cpuMs": 61,
       "counters": {
         "nodes": 35,
         "edges": 36,
@@ -136,7 +136,7 @@
     },
     "union narrowing": {
       "verdict": "verified",
-      "cpuMs": 34,
+      "cpuMs": 33,
       "counters": {
         "nodes": 16,
         "edges": 16,
@@ -158,7 +158,7 @@
     },
     "logical narrowing": {
       "verdict": "verified",
-      "cpuMs": 55,
+      "cpuMs": 51,
       "counters": {
         "nodes": 14,
         "edges": 13,
@@ -202,7 +202,7 @@
     },
     "promise": {
       "verdict": "verified",
-      "cpuMs": 50,
+      "cpuMs": 45,
       "counters": {
         "nodes": 6,
         "edges": 5,
@@ -224,7 +224,7 @@
     },
     "async": {
       "verdict": "verified",
-      "cpuMs": 62,
+      "cpuMs": 57,
       "counters": {
         "nodes": 10,
         "edges": 9,
@@ -246,7 +246,7 @@
     },
     "handler": {
       "verdict": "verified",
-      "cpuMs": 51,
+      "cpuMs": 47,
       "counters": {
         "nodes": 13,
         "edges": 14,
@@ -290,7 +290,7 @@
     },
     "pretext measureAnalysis, from the fragment": {
       "verdict": "verified",
-      "cpuMs": 822,
+      "cpuMs": 781,
       "counters": {
         "nodes": 1430,
         "edges": 1561,
@@ -298,8 +298,8 @@
         "visited": 1430,
         "rules": 1330,
         "wholeStoreRules": 65,
-        "queries": 10,
-        "queryFacts": 517,
+        "queries": 12,
+        "queryFacts": 547,
         "merges": 71,
         "mergeDiffs": 1116,
         "stateFactsSum": 72377,
@@ -312,19 +312,19 @@
     },
     "pretext prepareRichInline, from the fragment": {
       "verdict": "verified",
-      "cpuMs": 1991,
+      "cpuMs": 1904,
       "counters": {
-        "nodes": 3056,
-        "edges": 3299,
-        "reached": 3056,
-        "visited": 3056,
-        "rules": 2821,
+        "nodes": 3055,
+        "edges": 3298,
+        "reached": 3055,
+        "visited": 3055,
+        "rules": 2820,
         "wholeStoreRules": 160,
-        "queries": 625,
-        "queryFacts": 13484,
+        "queries": 627,
+        "queryFacts": 13635,
         "merges": 130,
         "mergeDiffs": 1823,
-        "stateFactsSum": 132132,
+        "stateFactsSum": 132109,
         "stateFactsMax": 113,
         "headsWritten": 166,
         "headsFromClaims": 371,
@@ -334,7 +334,7 @@
     },
     "pretext buildEngineProfile, from the fragment": {
       "verdict": "verified",
-      "cpuMs": 127,
+      "cpuMs": 122,
       "counters": {
         "nodes": 265,
         "edges": 280,

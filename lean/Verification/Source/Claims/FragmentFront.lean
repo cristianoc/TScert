@@ -103,6 +103,8 @@ def retypeFromFragment (force : List String := []) : Retype := fun fr T f fc mod
   let exprMap : Std.HashMap Span (SourceClaims.Candidate Tree) := fc.exprs.foldl (fun m (sp, c) => m.insert sp c) {}
   let envMap : Std.HashMap Nat (List (String × SourceClaims.Candidate Tree)) :=
     fc.envs.foldl (fun m (pos, bs) => m.insert pos bs) {}
+  let currentMap : Std.HashMap Nat (List (String × List (List PropKey × Ty Tree))) :=
+    fc.entryCurrent.foldl (fun m (pos, cs) => m.insert pos cs) {}
   let points : List (String × SourceClaims.PointData Tree) := graphs.flatMap fun g => g.nodes.toList.zipIdx.map fun (node, id) =>
     let sites := (actionSites node.action ++ (if id == g.entry then (prologues.lookup g.owner).getD [] else [])).eraseDups
     -- The unit's completion holds the bindings where its body completes,
@@ -119,12 +121,19 @@ def retypeFromFragment (force : List String := []) : Retype := fun fr T f fc mod
       | _ => atEntry
     let row : SourceClaims.PointData Tree := {
       exprs := sites.filterMap fun sp => (exprMap.get? sp).map (sp, ·)
-      envs := if bindings.isEmpty && (envMap.get? node.source.1).isNone then [] else [(node.source.1, bindings)] }
+      envs := if bindings.isEmpty && (envMap.get? node.source.1).isNone then [] else [(node.source.1, bindings)]
+      -- The member paths the walk narrowed there (their `current` contents).
+      entryCurrent := match currentMap.get? node.source.1 with
+        | some cs => [(node.source.1, cs)]
+        | none => [] }
     (SourceFlow.pointId g.owner id, row)
   -- Two graphs of one owner name a point once: its rows joined.
   let joined : Std.HashMap String (SourceClaims.PointData Tree) := points.foldl (fun m (id, row) =>
     match m.get? id with
-    | some r => m.insert id { r with exprs := r.exprs ++ row.exprs.filter (fun (sp, _) => !r.exprs.any (·.1 == sp)), envs := r.envs ++ row.envs.filter fun (pos, _) => !r.envs.any (·.1 == pos) }
+    | some r => m.insert id { r with
+        exprs := r.exprs ++ row.exprs.filter (fun (sp, _) => !r.exprs.any (·.1 == sp))
+        envs := r.envs ++ row.envs.filter (fun (pos, _) => !r.envs.any (·.1 == pos))
+        entryCurrent := r.entryCurrent ++ row.entryCurrent.filter (fun (pos, _) => !r.entryCurrent.any (·.1 == pos)) }
     | none => m.insert id row) {}
   let points := (points.map (·.1)).eraseDups.filterMap fun id => (joined.get? id).map (id, ·)
   -- Its own footprint the one its callers read (`fragmentClaims`): written,

@@ -513,7 +513,29 @@ claims document (`SourceClaimJson.fragmentPlans`, `Claims/FragmentFront.lean`).
   call of a type guard, on its true arm, and a statement calling an
   assertion function, after it, narrow the binding the promise names to
   its members within the guarded type, else to that type. A destructuring
-  default is added where the part may be `undefined`.
+  default is added where the part may be `undefined`. Strict equality with
+  a literal holding narrows a label of the literal's family to the literal
+  (but `0`, which `-0` equals too); equality with an operand holding one of
+  several singletons narrows each operand to the union of its slices at the
+  singletons the other may hold. `k in x` holding states a record's optional
+  `k` present (a field where the record states one, else a view) and a
+  dictionary not naming `k` with `k` a view of its index. `Array.isArray`
+  holding keeps the labels the edge's observation keeps
+  (`arrayRefine`, `BranchRefinement.arraySlice`). A discriminant test no
+  member of a binding can answer so leaves the binding no value; an arm a
+  test leaves a binding or path no value is walked for its entries, and
+  where it completes or returns is unreached.
+- **Field contents.** A statement entry states the member paths a test
+  narrowed (its `current` contents, an execution point's `entryCurrent`),
+  each a member of an object other than `length`. A path's narrowing ends at
+  a write of its field, after a call whose instance may change a value of
+  the heap (or whose callee is unknown), and after the left operand of `&&`
+  or `||` where the right may call; a loop head and a handler state none.
+- **Growth and assignment.** A write of a key a constant's records may lack
+  is at the contract it adds the key at (the optional field's, else the
+  value's type, a literal's widened), the constant's records owning it
+  after. `Object.assign`'s value is the target's fields and then each
+  source's, a later key replacing an earlier one.
 - **Loop heads.** A loop head's facts beyond its written assertion are the
   given file's `headFacts` (and `headFactsOfCodes` for each code request),
   each at the statement entries that start where the given one does and hold
@@ -553,17 +575,18 @@ footprint the unit's verdict reads (removing any one refuses the unit):
 (`isCollapsibleSpaceCode`, `readLetterSpacing`); `buildEngineProfile` none.
 
 Agreement with the pipeline over the 3,303 pipeline cases (mode 8 with the
-given files, `TSCERT_REFEREE`), measured 2026-11-11: 6,296 units, 4,888
-agree, 661 disagree, 747 not handled. A file the pipeline refuses before any
+given files, `TSCERT_REFEREE`), measured 2026-11-11: 6,296 units, 4,941
+agree, 616 disagree, 739 not handled. A file the pipeline refuses before any
 unit's check is run from its fragment too: the unit holding the refusal's
 position is compared with the refusal (91 units), the others are undecided
 (85; the pass accepts 24, none the unit an unsafe program's refusal names).
-Referee: 7 units mode 8 accepts and mode 9 refuses (all pipeline-verified),
-13 the other way: 9 at a node no path from the start reaches, which mode 8
-does not handle, and 4 refused (`field-write-refinement`,
-`equality-several-singletons`, `type-parameter-typeof-family` ×2). Both modes accept seven
-units the pipeline refuses: `blocker-pretext-equality-conjunction` `runs@923`,
-a gap case (a safe program the pipeline does not verify), and six, each a
+Referee: 6 units mode 8 accepts and mode 9 refuses (all pipeline-verified),
+12 the other way. Both modes accept eight
+units the pipeline refuses: `blocker-pretext-equality-conjunction` `runs@923`
+and `growth-optional-accumulator-refused` `optionalAnnotated@290`, gap
+cases (safe programs the pipeline does not verify; the second's object is
+the fresh literal, allocated at its own exact keys, which no host object
+is, so the key-adding write is a write of a plain object), and six, each a
 valid instance the producer did not propose: `invalid-bounds-callback-footprint` `visit@88`,
 `invalid-generic-literal-widening` `use@206`,
 `invalid-native-promise-invariant-result` `widen@89` (`make<unknown>` at
