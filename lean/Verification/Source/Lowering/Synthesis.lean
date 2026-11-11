@@ -2745,7 +2745,10 @@ partial def exprAt (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (
         if let some D := env.decl.lookup n then
           let G ← StateT.lift graphNow
           for a in ProgramTyping.callSigs G D do
-            if a.effect.footprint != ⟨.keep, .keep⟩ then wrote .any .any
+            -- (at the grades its declared signature states; a change of
+            -- its receiver beside the footprint is one of everything)
+            if a.effect.footprint != ⟨.keep, .keep⟩ then wrote a.effect.footprint.value a.effect.footprint.store
+            if a.effect.receiverOwn || a.effect.receiverStore || a.effect.elementWrite.isSome then wrote .any .any
             if !a.effect.onThrow then modify fun w => { w with throwWrites := true }
     let (As, e2) ← actuals e1 args
     -- Spread actuals as the call reads them (`spreadCall`).
