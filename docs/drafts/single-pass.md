@@ -703,6 +703,12 @@ removal works through:
   at a dense and at a sparse array) is called at those whose receiver
   admits the walked receiver, each callback walked first at the first of
   them, and its type at the call states those rows.
+  A call whose instance's result is the empty type, under no handler and
+  in no async body, changes nothing on a normal return, for a literal's
+  effect and for a declaration's footprint (the producer's `no_return`,
+  source.ml:1031-1035); its throw is its signature's. Under a handler or
+  in an async body its throw is caught and the heap it leaves is a normal
+  return's: the call changes what its instance's footprint states.
 - **Declarations.** Each function a wanted unit reaches, callees first,
   is walked as its unit is, each callee read at the footprint found for it
   (`declarationEffects`). A walk proposes the join, by class of location,

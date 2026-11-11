@@ -175,6 +175,9 @@ structure Walk where
   strict : Bool := false
   /-- Whether a handler catches what the statements being walked throw. -/
   caught : Bool := false
+  /-- Whether the body being walked is an async literal's: a throw in it
+  rejects the promise its call returns normally. -/
+  asyncBody : Bool := false
   /-- The constants in scope: a write of a key one's record may lack grows
   its type. -/
   consts : List String := []
@@ -2684,6 +2687,18 @@ of its receiver's store or elements, its fresh result and its throws
 (`applyCall`'s effects, read after the actuals are walked). -/
 def callChanges (c : Callee) (inst : CallEffects.Arrow (Ty Tree)) (As : List (Option (Ty Tree)))
     (args : List Expr) (receiverFresh : Bool) : W Unit := do
+  -- A call whose instance's result is the empty type never returns
+  -- normally: on a normal return it changes nothing; its throw is its
+  -- signature's (the producer's `no_return`, source.ml:1031-1035,
+  -- expression_closures.ml:320, proposal.ml:96; the pass's footprint of a
+  -- call decides the result's emptiness itself).
+  -- (but under a handler or in an async body, where its throw is caught and
+  -- the heap it leaves is a normal return's: source.ml:1166-1175,
+  -- expression_closures.ml:344)
+  if inst.result.isEmpty && !(← get).caught && !(← get).asyncBody then
+    modify fun w => { w with lastFresh := false }
+    if !inst.effect.onThrow then modify fun w => { w with throwWrites := true }
+    return
   -- A call changing the heap, by its instance's footprint.
   if inst.effect.footprint != ⟨.keep, .keep⟩ then wrote inst.effect.footprint.value inst.effect.footprint.store
   -- For a declaration's footprint, a call passing a function may run it:
@@ -4473,7 +4488,7 @@ partial def walkLambda (env : Env) (e : Expr) (sig : Option (CallEffects.Arrow (
   let cells := (cellLocals (params.map (·.1)) bodyStmts).map (·.1)
   modify fun w => { w with writes := false, throwWrites := false, valueChange := .keep, storeChange := .keep, locals := declared, inLiteral := true,
                            literalSlots := declared.filter (!cells.contains ·) ++ w.literalSlots }
-  modify fun w => { w with returns := [], expected := written <|> (if async then none else expectedResult) }
+  modify fun w => { w with returns := [], expected := written <|> (if async then none else expectedResult), asyncBody := async }
   -- An expression body's entry is its prologue's, at the body's start.
   modify fun w => { w with entries := w.entries.insert body.span.1 inner.vars }
   -- Each default runs at a call omitting its argument, before the body: its
@@ -4528,7 +4543,7 @@ partial def walkLambda (env : Env) (e : Expr) (sig : Option (CallEffects.Arrow (
       onThrow := !(← get).throwWrites, fresh := freshResult }
   modify fun w => { w with breaks := saved.breaks, returns := saved.returns, held := saved.held, expected := saved.expected, literalSlots := saved.literalSlots, evolving := saved.evolving, holders := saved.holders }
   modify fun w => { w with writes := saved.writes, throwWrites := saved.throwWrites, locals := saved.locals, inLiteral := saved.inLiteral }
-  modify fun w => { w with valueChange := saved.valueChange, storeChange := saved.storeChange, lastBody := R }
+  modify fun w => { w with valueChange := saved.valueChange, storeChange := saved.storeChange, lastBody := R, asyncBody := saved.asyncBody }
   -- (an async expression body's value is its `%AsyncReturn%` call's, the
   -- promise it resolves; a block's completion resolves one the walk does
   -- not state)
