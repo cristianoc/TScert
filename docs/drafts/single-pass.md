@@ -533,6 +533,16 @@ removal works through:
   a callable's result at the actual's, then its parameters
   where the result supplies no candidate. Fresh array literals at generic
   tuple positions keep those positions recursively, each value widened.
+  An actual that is a call, at a parameter placing the call's unbounded
+  binders at tuple positions (through at most four arrays; of a
+  construction's signatures, the first placing them so), is walked at that
+  parameter with those binders as holes: a type naming a hole guides an
+  array literal (a tuple of the positions it states, a position holding a
+  hole at its element's own type) and a call, whose instance is read off its
+  actuals and whose callback is walked at its parameter read at the binders
+  the call's result gives there, where that names holes in its result alone
+  (the producer's `contextual_actual` and `result_bound`: `new
+  Map(xs.map((x) => [x.k, x]))` is a `Map` of the pairs' types).
   A packed generic class's construction reads written callback parameters
   before choosing its tuple instance; the tuple parameter's actual supplies
   that instance, whose argument lists the existing lowering derives.
