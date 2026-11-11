@@ -4928,7 +4928,10 @@ partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
         modify fun w => { w with contracts := ((b.init.span, b.name), D) :: w.contracts }
       match D, A with
       | some D, some A =>
-        let held ← StateT.lift (if b.annot.isSome then declaredAt D A else assigned D A)
+        -- Initializing an early cell keeps its entry contract; later reads
+        -- run through that cell (proposal_flow.ml:317-327).
+        let held ← if b.early && !(← get).force.contains "early-contracts" then pure D
+          else StateT.lift (if b.annot.isSome then declaredAt D A else assigned D A)
         env := { env with vars := upd env.vars b.name held, decl := upd env.decl b.name D }
       | some D, none => env := { env with vars := upd env.vars b.name D, decl := upd env.decl b.name D }
       | none, _ => env := { env with vars := env.vars.filter (·.1 != b.name) }
