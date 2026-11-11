@@ -109,6 +109,20 @@ run_cmd do
   check ``Verification.TolerantFrames.safe_run
   check ``Verification.TolerantFrames.transition_det
   check ``Verification.TolerantFrames.graph_run
+  check ``Verification.TolerantFrames.box_elim
+  check ``Verification.TolerantFrames.box_and
+  check ``Verification.TolerantFrames.box_mono
+  check ``Verification.TolerantFrames.box_anti
+  check ``Verification.TolerantFrames.action_le
+  check ``Verification.TolerantFrames.action_le_closed
+  check ``Verification.TolerantFrames.box_or
+  check ``Verification.TolerantFrames.box_idem
+  check ``Verification.TolerantFrames.invariant_iff_top
+  check ``Verification.TolerantFrames.closed_rigid
+  check ``Verification.TolerantFrames.elems_not_rigid
+  check ``Verification.TolerantFrames.action_normal
+  check ``Verification.TolerantFrames.action_throw
+  check ``Verification.TolerantFrames.stable_rigid
   let env ← getEnv
   let project (decl : Name) : Bool := match env.getModuleIdxFor? decl with
     | some i => (`Verification).isPrefixOf env.header.moduleNames[i.toNat]!

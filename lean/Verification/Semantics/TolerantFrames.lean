@@ -10,7 +10,12 @@ budget positive: the safety predicates state nothing at budget zero
 heap growth and the contents of every location whose contract admits one value
 follow from it. A **safe run** of a term from a state, to a point with budget
 left, ends in a state an admissible transition reaches, its intermediate
-worlds the ones the safety derivation supplies (`run`). -/
+worlds the ones the safety derivation supplies (`run`). An **action** of a
+footprint `Φ` at a name valuation `ρ` is an admissible transition whose heaps
+meet `Post Φ ρ`, and `Box Φ F` holds where `F` holds after every action of
+`Φ`: the weakest liberal precondition of one arbitrary such action. The name
+valuation and the entry mark are parameters of every assertion and stay fixed
+across the modality. -/
 namespace Verification.TolerantFrames
 open Verification Footprints HeapObservations
 
@@ -176,5 +181,228 @@ theorem safe_run {Ξ T : Fam} {s : IndexedHeap} {t t' : Tm} {h' : Heap} {k : Nat
     SafePostExc.of_post (fun _ => trivial) (of_value_property (fun _ _ _ _ _ => trivial) hsafe)
   obtain ⟨s', ha, he, hn, hs'⟩ := run hst s rfl hk hp
   exact ⟨s', ha, he, hn, erase hs'.post⟩
+
+/-! ## Actions and the modality -/
+
+/-- An action of the footprint `Φ` at the name valuation `ρ`: an admissible
+transition whose heaps meet `Φ`'s postcondition, its regions read at the
+heap it starts from. -/
+def Action (Φ : Footprint) (ρ : Env) (s s' : IndexedHeap) : Prop :=
+  Admissible s s' ∧ Post Φ ρ s.h s'.h
+
+theorem Action.refl (Φ : Footprint) (ρ : Env) (s : IndexedHeap) : Action Φ ρ s s :=
+  ⟨Admissible.refl s, Post.refl Φ ρ s.h⟩
+
+/-- `Box Φ F`: `F` holds after every action of `Φ`, at the same name
+valuation and entry mark. -/
+def Box (Φ : Footprint) (F : Assertion) : Assertion :=
+  fun ρ m s => ∀ s', Action Φ ρ s s' → F ρ m s'
+
+def Entails (F G : Assertion) : Prop := ∀ ρ m s, F ρ m s → G ρ m s
+
+/-- An assertion is invariant when every admissible transition keeps it. -/
+def Invariant (g : Assertion) : Prop := ∀ ρ m s s', Admissible s s' → g ρ m s → g ρ m s'
+
+/-- An effect is rigid at `ρ` when its action is transitive. -/
+def Rigid (Φ : Footprint) (ρ : Env) : Prop :=
+  ∀ s₁ s₂ s₃, Action Φ ρ s₁ s₂ → Action Φ ρ s₂ s₃ → Action Φ ρ s₁ s₃
+
+/-! ## The laws -/
+
+section Laws
+variable {Φ Ψ : Footprint} {F G g : Assertion} {ρ : Env} {m : Nat} {s : IndexedHeap}
+
+/-- (a) Reflexive elimination. -/
+theorem box_elim (hb : Box Φ F ρ m s) : F ρ m s := hb s (Action.refl Φ ρ s)
+
+/-- (b) Conjunction. -/
+theorem box_and : Box Φ (fun ρ m s => F ρ m s ∧ G ρ m s) ρ m s ↔ Box Φ F ρ m s ∧ Box Φ G ρ m s :=
+  ⟨fun hb => ⟨fun s' ha => (hb s' ha).1, fun s' ha => (hb s' ha).2⟩,
+    fun ⟨hf, hg⟩ s' ha => ⟨hf s' ha, hg s' ha⟩⟩
+
+/-- (b) Monotonicity. -/
+theorem box_mono (hfg : Entails F G) (hb : Box Φ F ρ m s) : Box Φ G ρ m s :=
+  fun s' ha => hfg ρ m s' (hb s' ha)
+
+/-- (c) Antitonicity in the effect, for inclusion of actions from `s`. -/
+theorem box_anti (hle : ∀ s', Action Φ ρ s s' → Action Ψ ρ s s') (hb : Box Ψ F ρ m s) :
+    Box Φ F ρ m s :=
+  fun s' ha => hb s' (hle s' ha)
+
+/-- Footprint inclusion gives inclusion of actions from a state where its
+class evidence holds. -/
+theorem action_le {cl : ClassEvidence} (hle : Footprint.le cl Φ Ψ = true) (hc : ClassOk cl ρ s.h)
+    {s' : IndexedHeap} (ha : Action Φ ρ s s') : Action Ψ ρ s s' :=
+  ⟨ha.1, Post.mono hle hc ha.2⟩
+
+/-- Closed footprints are included as their entries are, from every state. -/
+theorem action_le_closed {a b : Footprints.Closed} (hle : a.le b = true) {s' : IndexedHeap}
+    (ha : Action a.fp ρ s s') : Action b.fp ρ s s' :=
+  ⟨ha.1, Footprints.Closed.post_mono hle ha.2⟩
+
+/-- (d) Disjunction with an invariant guard. -/
+theorem box_or (hg : Invariant g) (h : g ρ m s ∨ Box Φ F ρ m s) :
+    Box Φ (fun ρ m s => g ρ m s ∨ F ρ m s) ρ m s := by
+  intro s' ha
+  rcases h with hg' | hb
+  · exact .inl (hg ρ m s s' ha.1 hg')
+  · exact .inr (hb s' ha)
+
+/-- (e) Idempotence for a rigid effect. -/
+theorem box_idem (hr : Rigid Φ ρ) (hb : Box Φ F ρ m s) : Box Φ (Box Φ F) ρ m s :=
+  fun s₁ ha₁ s₂ ha₂ => hb s₂ (hr s s₁ s₂ ha₁ ha₂)
+
+end Laws
+
+/-- Every admissible transition is an action of the closed footprint letting
+everything change. -/
+theorem action_top {ρ : Env} {s s' : IndexedHeap} (ha : Admissible s s') : Action Footprints.Closed.top.fp ρ s s' :=
+  ⟨ha, Footprints.Closed.post_iff.mpr (Footprints.Closed.holds_iff.mp (Footprints.Closed.holds_top.mpr ha.length_le))⟩
+
+/-- **Invariance is the note's `F ⊢ □_⊤ F`.** -/
+theorem invariant_iff_top {g : Assertion} : Invariant g ↔ Entails g (Box Footprints.Closed.top.fp g) :=
+  ⟨fun hg ρ m s hs s' ha => hg ρ m s s' ha.1 hs,
+    fun hb ρ m s s' ha hs => hb ρ m s hs s' (action_top ha)⟩
+
+/-- **Closed footprints are rigid**: a run within one followed by another is
+within it (`Closed.Holds.trans_on`). -/
+theorem closed_rigid (c : Footprints.Closed) (ρ : Env) : Rigid c.fp ρ := by
+  intro s₁ s₂ s₃ ha₁ ha₂
+  refine ⟨ha₁.1.trans ha₂.1, ?_⟩
+  have h₁ : c.Holds s₁.h s₂.h := Footprints.Closed.holds_iff.mpr (Footprints.Closed.post_iff.mp ha₁.2)
+  have h₂ : c.Holds s₂.h s₃.h := Footprints.Closed.holds_iff.mpr (Footprints.Closed.post_iff.mp ha₂.2)
+  exact Footprints.Closed.post_iff.mpr (Footprints.Closed.holds_iff.mp (h₁.trans_on (h₂.on _)))
+
+/-! ## An effect that is not rigid
+
+`x[∗]`, the store of `x` with the cells it lists, both at `any`: a first
+action may make the store list an old cell, and a second may then change that
+cell, which the first heap's region does not cover. -/
+
+/-- A contract admitting every value. -/
+def anyCtr : Ctr 1 := fun _ _ _ v => isVal v = true
+
+/-- A world of three locations admitting every value. -/
+def anyWorld : WorldT 1 := ofList [anyCtr, anyCtr, anyCtr]
+
+theorem anyWorld_lookup {l : Nat} {c : Ctr 1} (hl : lookup anyWorld l = some c) : l < 3 ∧ c = anyCtr := by
+  simp only [lookup, anyWorld, toList_ofList] at hl
+  rcases l with _ | _ | _ | l <;> simp at hl
+  all_goals exact ⟨by omega, hl.symm⟩
+
+theorem anyWorld_adm : WorldAdm anyWorld := by
+  intro l c hl
+  obtain ⟨-, rfl⟩ := anyWorld_lookup hl
+  exact ⟨fun _ _ _ _ _ _ hv => hv, fun _ _ _ _ hv => hv⟩
+
+theorem anyWorld_ok {h : Heap} (hl : h.length = 3) (hv : ∀ v ∈ h, isVal v = true) :
+    HeapOk 1 anyWorld h := by
+  refine ⟨by simp [anyWorld, hl], fun l c hc => ?_⟩
+  obtain ⟨hlt, rfl⟩ := anyWorld_lookup hc
+  have hlh : l < h.length := by omega
+  exact ⟨h[l], List.getElem?_eq_getElem hlh, fun _ _ => hv _ (List.getElem_mem hlh)⟩
+
+/-- A state of `anyWorld` at budget 1. -/
+def anyState (h : Heap) (hl : h.length = 3) (hv : ∀ v ∈ h, isVal v = true) : IndexedHeap :=
+  ⟨1, anyWorld, h, Nat.one_pos, anyWorld_adm, anyWorld_ok hl hv⟩
+
+theorem anyState_admissible {h h' : Heap} {hl hv hl' hv'} :
+    Admissible (anyState h hl hv) (anyState h' hl' hv') :=
+  ⟨Nat.le_refl 1, by show WExt (trunc 1 (Nat.le_refl 1) anyWorld) anyWorld; rw [trunc_id]; exact WExt_refl _⟩
+
+theorem vals3 {a b c : Val} (ha : isVal a = true) (hb : isVal b = true) (hc : isVal c = true) :
+    ∀ v ∈ [a, b, c], isVal v = true := by
+  intro v hm
+  simp only [List.mem_cons, List.not_mem_nil, or_false] at hm
+  rcases hm with rfl | rfl | rfl <;> assumption
+
+/-- **`x[∗] : any` is not rigid.** -/
+theorem elems_not_rigid :
+    ¬ Rigid [(.field 0 arrayStoreKey, .any), (.elems 0, .any)]
+      (fun _ => .objAt [(arrayStoreKey, 0)] .absent 0) := by
+  intro hr
+  let s₁ := anyState [.arr [some 1], .nul, .nul] rfl (vals3 rfl rfl rfl)
+  let s₂ := anyState [.arr [some 2], .nul, .nul] rfl (vals3 rfl rfl rfl)
+  let s₃ := anyState [.arr [some 2], .nul, .tru] rfl (vals3 rfl rfl rfl)
+  have a₁ : Action [(.field 0 arrayStoreKey, .any), (.elems 0, .any)]
+      (fun _ => .objAt [(arrayStoreKey, 0)] .absent 0) s₁ s₂ := by
+    refine ⟨anyState_admissible, by simp [s₁, s₂, anyState], fun l v hl => ?_⟩
+    rcases l with _ | _ | _ | l <;> simp [s₁, s₂, anyState] at hl ⊢
+    · exact .inr ⟨_, List.mem_cons_self .., by decide, trivial⟩
+    · exact .inl hl
+    · exact .inl hl
+  have a₂ : Action [(.field 0 arrayStoreKey, .any), (.elems 0, .any)]
+      (fun _ => .objAt [(arrayStoreKey, 0)] .absent 0) s₂ s₃ := by
+    refine ⟨anyState_admissible, by simp [s₂, s₃, anyState], fun l v hl => ?_⟩
+    rcases l with _ | _ | _ | l <;> simp [s₂, s₃, anyState] at hl ⊢
+    · exact .inl hl
+    · exact .inl hl
+    · exact .inr ⟨_, List.mem_cons_of_mem _ (List.mem_cons_self ..), by decide, trivial⟩
+  obtain ⟨-, -, hp⟩ := hr s₁ s₂ s₃ a₁ a₂
+  obtain ⟨v', hv', ha⟩ := hp 2 .nul (by simp [s₁, anyState])
+  simp [s₃, anyState] at hv'
+  subst hv'
+  rcases ha with he | ⟨e, he, hm, -⟩
+  · cases he
+  · simp only [List.mem_cons, List.not_mem_nil, or_false] at he
+    rcases he with rfl | rfl <;> simp [s₁, anyState, Region.mem, storeElems, fieldsOf] at hm
+
+/-! ## Adequacy: effect judgments give actions -/
+
+/-- **The normal exit of a run within a closed footprint is an action of it**:
+a closed footprint's judgment (`SafePostExc` with `c.Holds` from the entry heap
+on both exits, as the expression effect rules state it), a run to a value with
+budget left, and the action is produced, its endpoint where the value meets
+its type. -/
+theorem action_normal {Ξ T : Fam} {c : Footprints.Closed} {ρ : Env} {s : IndexedHeap} {t v : Tm}
+    {h' : Heap} {k : Nat}
+    (hsafe : SafePostExc Ξ T (fun h' _ => c.Holds s.h h') (fun h' => c.Holds s.h h') s.n s.W s.h t)
+    (hst : Steps k s.h t h' v) (hv : isVal v = true) (hk : k < s.n) :
+    ∃ s' : IndexedHeap, Action c.fp ρ s s' ∧ s'.h = h' ∧ T s'.n s'.W v := by
+  obtain ⟨s', ha, he, -, hT, hc⟩ := run_normal hsafe hst hv hk
+  subst he
+  exact ⟨s', ⟨ha, Footprints.Closed.post_iff.mpr (Footprints.Closed.holds_iff.mp hc)⟩, rfl, hT⟩
+
+/-- **The exceptional exit of a run within a closed footprint is an action of
+it**, its endpoint where the thrown value is of the exception family. -/
+theorem action_throw {Ξ T : Fam} {c : Footprints.Closed} {ρ : Env} {s : IndexedHeap} {t t' e : Tm}
+    {h' : Heap} {k : Nat}
+    (hsafe : SafePostExc Ξ T (fun h' _ => c.Holds s.h h') (fun h' => c.Holds s.h h') s.n s.W s.h t)
+    (hst : Steps k s.h t h' t') (hr : Raises t' e) (hk : k < s.n) :
+    ∃ s' : IndexedHeap, Action c.fp ρ s s' ∧ s'.h = h' ∧ Thrown Ξ s'.n s'.W t' := by
+  obtain ⟨s', ha, he, -, hth, hc⟩ := run_throw hsafe hst hr hk
+  subst he
+  exact ⟨s', ⟨ha, Footprints.Closed.post_iff.mpr (Footprints.Closed.holds_iff.mp hc)⟩, rfl, hth⟩
+
+/-! ## Invariant and rigid assertions -/
+
+/-- An assertion reading no state is invariant: a fact about the name
+valuation and the entry mark alone. -/
+theorem invariant_const (P : Env → Nat → Prop) : Invariant (fun ρ m _ => P ρ m) :=
+  fun _ _ _ _ _ hp => hp
+
+/-- The store of `x` was allocated at or after the entry mark: `fresh(x)`. It
+reads no heap. -/
+def Fresh (x : Nat) : Assertion := fun ρ m _ => FreshAt m (ρ x)
+
+theorem fresh_invariant (x : Nat) : Invariant (Fresh x) := invariant_const _
+
+/-- The path `p` from `x` passes only locations whose contracts admit one
+value, reading `v`: a fact of the world. -/
+def StableAt (x : Nat) (p : List String) (v : Val) : Assertion :=
+  fun ρ _ s => StablePath s.W (ρ x) p v
+
+theorem stableAt_invariant (x : Nat) (p : List String) (v : Val) : Invariant (StableAt x p v) :=
+  fun _ _ _ _ ha hp => ha.stablePath hp
+
+/-- The path `p` from `x` reads `v`: `π ≐ v`. -/
+def ReadsAs (x : Nat) (p : List String) (v : Val) : Assertion :=
+  fun ρ _ s => HeapKnowledge.readPath s.h (ρ x) p = some v
+
+/-- **A stable path is rigid**: `rigid(π)` with its witness the path's
+value, under every effect. -/
+theorem stable_rigid {Φ : Footprint} {x : Nat} {p : List String} {v : Val} {ρ : Env} {m : Nat}
+    {s : IndexedHeap} (hp : StableAt x p v ρ m s) : Box Φ (ReadsAs x p v) ρ m s :=
+  fun _ ha => ha.1.readPath hp
 
 end Verification.TolerantFrames
