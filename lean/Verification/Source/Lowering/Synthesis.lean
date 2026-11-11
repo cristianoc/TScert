@@ -955,6 +955,10 @@ def genericCallee (g : Generic) (typeArgs : List Json) : Compiler Callee := do
     let inst ← lower (do Fragment.translate (← g.instantiate (g.binders.zip typeArgs)))
     let θ ← typeArgs.mapM fun t => lower (Fragment.translate t)
     let G ← graphNow
+    if let [.ctors fixed rests ..] := PositiveRules.expand G inst then
+      return { fixed := fixed.map (·.withReceiver [Labels.undef]),
+               rests := rests.map (·.withReceiver [Labels.undef]),
+               explicit := g.binders.zip θ, construct := true }
     return { fixed := ProgramTyping.callSigs G inst, rests := ProgramTyping.restSigs G inst,
              explicit := g.binders.zip θ }
   -- Written type arguments of a scheme a resolution qualifies are its
@@ -2605,18 +2609,33 @@ partial def exprAt (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (
     let (F, e1) ← expr env callee
     let (As, e2) ← actuals e1 args
     -- Spread actuals as the construction reads them (`spreadCall`).
+    let gs := (← get).generics
+    let generic := match callee with
+      | .var _ n => gs.lookup n
+      | _ => none
+    let mut actualTypes := As
+    if F.isNone && generic.isSome then
+      -- A packed construction's arguments are typed before its instance;
+      -- written callback parameters supply their own types here
+      -- (expression_closures.ml:128-134).
+      for (x, i) in args.zipIdx do
+        if callback x then actualTypes := actualTypes.set i (← walkLambda e2 x none)
     let c ← StateT.lift (tryCatch (do
-        let (args', As', c) ← spreadCall args As spreads (← constructCallee (← need F "the class") typeArgs)
+        let c ← match F, generic with
+          | none, some g =>
+            if !typeArgs.isEmpty then genericCallee g typeArgs else do
+              -- A packed class cannot be opened at a bare value binder:
+              -- its argument lists require the actual tuple's contract.
+              let some c ← packedCallee g actualTypes spreads | throw "a packed class needs a tuple actual"
+              pure c
+          | _, _ => constructCallee (← need F "the class") typeArgs
+        let (args', As', c) ← spreadCall args actualTypes spreads c
         return Except.ok (args', As', c)) fun m => pure (.error m))
     let (args, As) := match c with
       | .ok (args', As', _) => (args', As')
       | .error _ => (args, As)
     let c := (·.2.2) <$> c
     -- A generic module class's binders, by its scheme's order.
-    let gs := (← get).generics
-    let generic := match callee with
-      | .var _ n => gs.lookup n
-      | _ => none
     let c := c.map fun c => match generic with
       | some g => if g.binders.length == c.binders.length then { c with names := g.binders } else c
       | none => c
@@ -2625,7 +2644,7 @@ partial def exprAt (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (
     -- A generic class's occurrence is read at its instance, and the call's
     -- type arguments recorded.
     if let (.ok c, .ok (inst, _)) := (c, r) then
-      if !c.binders.isEmpty then let _ ← record callee (.ok inst)
+      if !c.binders.isEmpty || !c.explicit.isEmpty then let _ ← record callee (.ok inst)
     if let some θ := (← get).lastInstance then
       modify fun w => { w with instances := (e.span, θ) :: w.instances, resolutions := (e.span, w.lastResolution) :: w.resolutions, lastInstance := none, lastResolution := [] }
     return (← record e ((·.2) <$> r), ← afterCall e2 r)

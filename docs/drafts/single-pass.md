@@ -528,6 +528,9 @@ removal works through:
   a callable's result at the actual's, then its parameters
   where the result supplies no candidate. Fresh array literals at generic
   tuple positions keep those positions recursively, each value widened.
+  A packed generic class's construction reads written callback parameters
+  before choosing its tuple instance; the tuple parameter's actual supplies
+  that instance, whose argument lists the existing lowering derives.
   Explicit method type arguments seed the instance. An expected union's
   unique application of the result's declaration supplies its contextual
   type arguments. Of a call's signatures the first each walked actual is
