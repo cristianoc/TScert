@@ -48,6 +48,13 @@ def setBody (h : Nat) (row : GraphRow Tree (List Tree)) : M Unit :=
     { s with heads, nullary := s.nullary.set! h (Thunk.mk fun _ => nullaryRow heads h)
              nullary_eq := by rw [s.nullary_eq, nullaryOf_modify] }
 
+/-- A scheme head's declared binder defaults (`Draft.defaults`). -/
+def setDefaults (h : Nat) (defaults : List (Nat × List Tree)) : M Unit :=
+  modify fun s =>
+    let heads := s.heads.modify h fun d => { d with defaults }
+    { s with heads, nullary := s.nullary.set! h (Thunk.mk fun _ => nullaryRow heads h)
+             nullary_eq := by rw [s.nullary_eq, nullaryOf_modify] }
+
 def draft (h : Nat) : M Draft := do
   match (← get).heads[h]? with
   | some d => return d
