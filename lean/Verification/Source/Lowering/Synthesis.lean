@@ -185,7 +185,19 @@ def shapeOf (G : PositiveGraphs.NormalGraph Tree) (l : Tree) : Option Tag :=
   | _ => none
 
 def slice (A : Ty Tree) (tag : Tag) (q : Bool) : Compiler (Ty Tree) := do
-  return norm (BranchRefinement.tagSlice (← graphNow) A tag q)
+  let G ← graphNow
+  -- `unknown` (a `source` label) as the kinds of value the test does not
+  -- contradict, where it contradicts some (`BranchRefinement.sourceSlice`).
+  let kinds : List (PositiveNormalization.Clause (Ty Tree)) := BranchRefinement.sourceKinds
+  let mut out : Ty Tree := []
+  for a in BranchRefinement.tagSlice G A tag q do
+    if G.plain a && PositiveRules.expand G [a] == [.source] then
+      let kept := kinds.filter fun k => tagClause tag k != some (!q)
+      if kept.length < kinds.length then
+        for k in kept do out := out ++ (← prim k)
+        continue
+    out := out ++ [a]
+  return norm out
 
 /-- The union of two types, a member of `B` within `A` already stated by
 `A`: one label for one meaning where the two state it twice. -/
@@ -345,6 +357,19 @@ def narrowTarget (env : Env) (target : Expr) (tag : Tag) (q : Bool) : Compiler E
       if !kept.isEmpty then env := { env with vars := upd env.vars root kept }
     return env
   | none => return env
+
+/-- A binding narrowed to a promised type `R`: its members within
+`R`, else `R` (a type guard's true arm, an assertion's normal return). -/
+def narrowTo (env : Env) (target : Expr) (R : Ty Tree) : Compiler Env := do
+  let T ← table
+  let at_ (A : Ty Tree) : Ty Tree :=
+    let kept := A.filter fun a => within T [a] R
+    if kept.isEmpty then R else kept
+  match memberPath target with
+  | some (root, []) =>
+    let some A := env.vars.lookup root | return env
+    return { env with vars := upd env.vars root (at_ A) }
+  | _ => return env
 
 /-- The union of two environments where both are reached: each binding both
 hold, at the union of its two types; each path both narrow, likewise. -/
@@ -678,6 +703,11 @@ partial def refine (env : Env) (c : Expr) (q : Bool) : W Env := do
     | some tag, _ => StateT.lift (narrowTarget env l tag (equal == q))
     | _, some tag => StateT.lift (narrowTarget env r tag (equal == q))
     | _, _ => return env
+  -- A call of a type guard (`promise := guards p`): on its true arm its
+  -- actual `p` at the guarded type (`PromiseCalls`' implication).
+  | .call _ callee args _ _ | .callWithReceiver _ callee _ args =>
+    if !q then return env
+    promised env callee args false
   | .tagMember _ _ none tags _ e =>
     match memberPath e with
     | some (root, []) =>
@@ -689,6 +719,30 @@ partial def refine (env : Env) (c : Expr) (q : Bool) : W Env := do
       return { env with vars := upd env.vars root B }
     | _ => return env
   | _ => return env
+
+/-- The environment where a call of a guard (or, `asserts`, an assertion
+function) of the callee's recorded type holds: the actual its promise names
+at the signature's guarded type, the first signature stating one whose
+parameters admit the actuals' recorded types. -/
+partial def promised (env : Env) (callee : Expr) (args : List Expr) (asserts : Bool) : W Env := do
+  let w ← get
+  let typeOf (x : Expr) : Option (Ty Tree) := (w.exprs.get? x.span).bind (·.2.toOption)
+  let some F := typeOf callee | return env
+  let T ← StateT.lift table
+  let G := SourceTypes.graph T
+  for s in ProgramTyping.callSigs G F do
+    let p? := match s.effect.promise with
+      | some (.guards p) => if asserts then none else some p
+      | some (.asserts p) => if asserts then some p else none
+      | none => none
+    let some p := p? | continue
+    let admits := (args.zip s.arguments).all fun (x, D) => match typeOf x with
+      | some A => within T A D
+      | none => true
+    if !admits || args.length < p + 1 then continue
+    let some x := args[p]? | continue
+    return ← StateT.lift (narrowTo env x s.result)
+  return env
 
 /-- An expression's type, recorded at its occurrence, and the environment
 after it. -/
@@ -1607,7 +1661,10 @@ partial def withDefault (env : Env) (B : Option (Ty Tree)) (d : Option Expr) : W
   | some d =>
     let (D, e1) ← expr env d
     match B, D with
-    | some B, some D => return (some (norm ((← StateT.lift (slice B .isUndef false)) ++ D)), e1)
+    -- The default only where the part may be `undefined`.
+    | some B, some D =>
+      if (← StateT.lift (slice B .isUndef true)).isEmpty then return (some B, (join (some env) (some e1)).getD e1)
+      return (some (norm ((← StateT.lift (slice B .isUndef false)) ++ D)), (join (some env) (some e1)).getD e1)
     | _, _ => return (none, e1)
 
 /-- Walk statements from `env` (none: unreached), recording each statement
@@ -1693,7 +1750,12 @@ partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
   | .throw _ x =>
     let _ ← expr env x
     return none
-  | .effect _ x => return some (← expr env x).2
+  | .effect _ x =>
+    let e1 := (← expr env x).2
+    -- An assertion function's normal return: its promise holds.
+    match x with
+    | .call _ callee args _ _ | .callWithReceiver _ callee _ args => return some (← promised e1 callee args true)
+    | _ => return some e1
   | .constants p bs =>
     let mut env := env
     for b in bs do
