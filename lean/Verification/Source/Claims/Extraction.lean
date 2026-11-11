@@ -305,13 +305,15 @@ def fileFront (ast claims : Json) (fileKey : String)
 its claims with the types a computation gives (`Synthesis.retypeUnit`), over
 a grown store. -/
 abbrev Retype := Front → EquationStore.State → Fragment.Fn → SourceClaims.Function Tree →
-  List (SourceExtraction.ModuleValue Tree) → Except String (EquationStore.State × SourceClaims.Function Tree)
+  List (SourceExtraction.ModuleValue Tree) → Option (SchemeRow Tree × List String) →
+  Except String (EquationStore.State × SourceClaims.Function Tree)
 
 /-- What states a unit's calls' type arguments before its generic module
 values are instantiated, where a computation gives them: its claims with
 each such call's, over a grown store. -/
 abbrev Instances := Front → EquationStore.State → Fragment.Fn → Function Tree →
-  List (SourceExtraction.ModuleValue Tree) → Except String (EquationStore.State × Function Tree)
+  List (SourceExtraction.ModuleValue Tree) → Option (SchemeRow Tree × List String) →
+  Except String (EquationStore.State × Function Tree)
 
 /-- One unit's plan, extracted from the front over the store `T`. -/
 def extractMember (fr : Front) (T : EquationStore.State)
@@ -434,7 +436,8 @@ def extractMember (fr : Front) (T : EquationStore.State)
       f := (← Fragment.decodeFn source).1
   -- The calls' type arguments, where computed (`instances`).
   if let some h := instances then
-    let (T, c') ← h fr d.types f c module
+    let (T, c') ← h fr d.types f c module (sourceScheme.map fun row =>
+      (row, tps.flatMap fun p => ResolutionWire.ownedNames p.name p.resolution))
     d := { d with types := T }
     c := c'
   let finish (d : Document EquationStore.State Tree) (module : List (SourceExtraction.ModuleValue Tree)) (c : Function Tree)
@@ -485,7 +488,8 @@ def extractMember (fr : Front) (T : EquationStore.State)
         c := claims
       | .error reason => throw reason
     let (types, claims) ← match retype with
-      | some r => r fr d.types f c.normalized module
+      | some r => r fr d.types f c.normalized module (sourceScheme.map fun row =>
+          (row, tps.flatMap fun p => ResolutionWire.ownedNames p.name p.resolution))
       | none => pure (d.types, c.normalized)
     let request ← extractNormalizedFn types f claims module (SourceExtraction.sourceClasses init) freshConstructors
       moduleOwned

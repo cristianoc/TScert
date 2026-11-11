@@ -1,4 +1,5 @@
 import Verification.Source.SourceExtraction
+import Verification.Source.Claims.Schemes
 
 /-! # The types of a function's declarations and expressions, computed
 
@@ -34,6 +35,9 @@ given binder types, in claim form (`Instantiable.instantiate`). -/
 structure Generic where
   binders : List String
   instantiate : List (String × Json) → SourceTypes.Lowering Json
+  /-- Its binders a resolution qualifies, by position: each one's input,
+  observation and result. -/
+  resolution : List PositiveGraphs.ResolutionSlots := []
 
 /-- What the walk records: each expression occurrence's construct kind and
 computed type or reason, each statement entry's bindings, and the
@@ -69,6 +73,13 @@ structure Walk where
   binder takes at it, by the binder's name; and the last call's, until its
   call records it. -/
   instances : List (Span × List (String × Ty Tree)) := []
+  /-- Each such call's certificate for each binder a resolution qualifies,
+  by its span; and the last call's. -/
+  resolutions : List (Span × List (String × ResolutionWire.Certificate)) := []
+  lastResolution : List (String × ResolutionWire.Certificate) := []
+  /-- The unit's own scheme row where a resolution qualifies its binders,
+  with their names: what a certificate's binder names. -/
+  scope : Option (PositiveGraphs.SchemeRow Tree × List String) := none
   /-- Adversarial proposals forced, for the referee's measurement
   (`TSCERT_FORCE`): `literals` states every function literal at keep/keep,
   `elements` every element read without `undefined`, `objects` every
@@ -411,6 +422,8 @@ structure Callee where
   its explicit type arguments, by its binders' names. -/
   names : List String := []
   explicit : List (String × Ty Tree) := []
+  /-- The binders a resolution qualifies, by position in `binders`. -/
+  resolution : List PositiveGraphs.ResolutionSlots := []
 
 /-- The callee a value of type `F` is, called with receiver `O`: a scheme
 by its binders and signatures, at `typeArgs` where they are written; any
@@ -429,18 +442,26 @@ def calleeOf (F O : Ty Tree) (typeArgs : List Json := []) : Compiler Callee := d
 /-- A generic module function's callee: its signature at fresh binders, or
 at its explicit type arguments. -/
 def genericCallee (g : Generic) (typeArgs : List Json) : Compiler Callee := do
-  if !typeArgs.isEmpty then
+  let hidden := g.resolution.flatMap (·.associated)
+  if !typeArgs.isEmpty && hidden.isEmpty then
     if typeArgs.length != g.binders.length then throw "explicit type arguments of another count than the binders"
     let inst ← lower (do Fragment.translate (← g.instantiate (g.binders.zip typeArgs)))
     let θ ← typeArgs.mapM fun t => lower (Fragment.translate t)
     let G ← graphNow
     return { fixed := ProgramTyping.callSigs G inst, rests := ProgramTyping.restSigs G inst,
              explicit := g.binders.zip θ }
+  -- Written type arguments of a scheme a resolution qualifies are its
+  -- binders' but the resolutions' observations and results, which the
+  -- call's resolution gives.
+  let shown := (List.range g.binders.length).filter (!hidden.contains ·)
+  if !typeArgs.isEmpty && typeArgs.length != shown.length then
+    throw "explicit type arguments of another count than the binders"
+  let θ ← typeArgs.mapM fun t => lower (Fragment.translate t)
   let ps ← lower (modifyGet fun T => let (T, ps) := EquationStore.binders T g.binders; (ps, T))
   let fresh ← lower (do Fragment.translate (← g.instantiate (g.binders.zip (ps.map fun p => graphJson [p]))))
   let G ← graphNow
   return { binders := ps, fixed := ProgramTyping.callSigs G fresh, rests := ProgramTyping.restSigs G fresh,
-           names := g.binders }
+           names := g.binders, resolution := g.resolution, seed := (shown.filterMap (ps[·]?)).zip θ }
 
 /-- Whether an actual is a callback: a function literal, typed by the
 parameter it is passed at where it writes no parameter's type, and stated
@@ -991,14 +1012,14 @@ partial def expr (env : Env) (e : Expr) : W (Option (Ty Tree) × Env) := do
     let c := c.map fun c => match generic with
       | some g => if g.binders.length == c.binders.length then { c with names := g.binders } else c
       | none => c
-    modify fun w => { w with lastInstance := none }
+    modify fun w => { w with lastInstance := none, lastResolution := [] }
     let r ← called e2 c args As e.span
     -- A generic class's occurrence is read at its instance, and the call's
     -- type arguments recorded.
     if let (.ok c, .ok (inst, _)) := (c, r) then
       if !c.binders.isEmpty then let _ ← record callee (.ok inst)
     if let some θ := (← get).lastInstance then
-      modify fun w => { w with instances := (e.span, θ) :: w.instances, lastInstance := none }
+      modify fun w => { w with instances := (e.span, θ) :: w.instances, resolutions := (e.span, w.lastResolution) :: w.resolutions, lastInstance := none, lastResolution := [] }
     return (← record e ((·.2) <$> r), e2)
   | .call _ callee args spreads typeArgs =>
     let gs := (← get).generics
@@ -1013,14 +1034,14 @@ partial def expr (env : Env) (e : Expr) : W (Option (Ty Tree) × Env) := do
         | some g => return Except.ok (← genericCallee g typeArgs)
         | none => return Except.ok (← calleeOf (← need F "the callee") [Labels.undef] typeArgs))
       fun m => pure (.error m))
-    modify fun w => { w with lastInstance := none }
+    modify fun w => { w with lastInstance := none, lastResolution := [] }
     let r ← called e2 c args As e.span
     -- A generic module function's occurrence is read at its instance, and
     -- the call's type arguments recorded.
     if generic.isSome then
       if let .ok (inst, _) := r then let _ ← record callee (.ok inst)
       if let some θ := (← get).lastInstance then
-        modify fun w => { w with instances := (e.span, θ) :: w.instances, lastInstance := none }
+        modify fun w => { w with instances := (e.span, θ) :: w.instances, resolutions := (e.span, w.lastResolution) :: w.resolutions, lastInstance := none, lastResolution := [] }
     return (← record e ((·.2) <$> r), e2)
   | .callWithReceiver _ callee recv args =>
     let (F, e1) ← expr env callee
@@ -1147,10 +1168,13 @@ partial def applyCall (env : Env) (c : Callee) (args : List Expr) (As : List (Op
       | _ => none
     else none
   let candidates := (c.fixed.filter fits).map (·, none) ++ variadic
+  -- A resolution's observation and result are the resolution's, never an
+  -- actual's.
+  let hidden := (c.resolution.flatMap (·.associated)).filterMap (c.binders[·]?)
   let bindFrom (σ : List (Tree × Ty Tree)) (pairs : List (Ty Tree × Ty Tree)) : W (List (Tree × Ty Tree)) := do
     let mut σ := σ
     for b in c.binders do
-      if (σ.lookup b).isSome then continue
+      if (σ.lookup b).isSome || hidden.contains b then continue
       for (P, A) in pairs do
         if (σ.lookup b).isNone then
           if let some B ← StateT.lift (tryCatch (matchBinder b P A) fun _ => pure none) then σ := σ ++ [(b, B)]
@@ -1193,6 +1217,32 @@ partial def applyCall (env : Env) (c : Callee) (args : List Expr) (As : List (Op
       if let some L := L then σ ← bindFrom σ [(P, L)]
     else if let some A := As[i]? then
       As := As.set i (← fit (sub P) x A)
+  -- A binder a resolution qualifies: its observation and result the
+  -- resolution of its input's type by the certificate its form gives
+  -- (`resolutionCertificate`), checked (`resolutionInstance`).
+  let mut certificates : List (String × ResolutionWire.Certificate) := []
+  for group in c.resolution do
+    let (some b, some o) := (c.binders[group.input]?, c.binders[group.observation]?) | continue
+    let some A := σ.lookup b | continue
+    let T ← StateT.lift table
+    let scope := (← get).scope
+    let r : Except String (ResolutionWire.Certificate × Option (Ty Tree) × Option (Ty Tree)) := do
+      let row := scope.map (·.1)
+      let names := (scope.map (·.2)).getD []
+      let cert ← SourceClaimJson.Scheme.resolutionCertificate T row names A group.result.isSome
+      let (O, R) ← SourceClaimJson.Scheme.resolutionInstance T row names A cert
+      return (cert, O, R)
+    match r with
+    | .error m =>
+      return .error s!"the resolution of a binder's type: {m}"
+    | .ok (cert, O, R) =>
+      if let some n := c.names[group.input]? then certificates := certificates ++ [(n, cert)]
+      -- An observation no source type names is placed at the empty type:
+      -- the instance's check admits it only where the signature does not
+      -- read it (`moduleInstances`).
+      σ := σ.filter (·.1 != o) ++ [(o, O.getD [])]
+      if let (some slot, some R) := (group.result, R) then
+        if let some rb := c.binders[slot]? then σ := σ.filter (·.1 != rb) ++ [(rb, R)]
   let sub (A : Ty Tree) : Ty Tree := substitute σ A
   if let some b := c.binders.find? (fun b => (σ.lookup b).isNone) then
     let _ := b
@@ -1201,7 +1251,7 @@ partial def applyCall (env : Env) (c : Callee) (args : List Expr) (As : List (Op
   -- A generic module function's instance: each binder's type, by name.
   if !c.names.isEmpty || !c.explicit.isEmpty then
     modify fun w => { w with lastInstance := some (c.explicit ++
-      c.names.zip (c.binders.map fun b => (σ.lookup b).getD [])) }
+      c.names.zip (c.binders.map fun b => (σ.lookup b).getD [])), lastResolution := certificates }
   -- A call changing the heap, by its instance's footprint.
   if inst.effect.footprint != ⟨.keep, .keep⟩ then wrote inst.effect.footprint.value inst.effect.footprint.store
   -- A change its receiver's store or elements state beside the footprint.
@@ -1425,12 +1475,12 @@ partial def restOf (env : Env) (A : Option (Ty Tree)) (k : Nat) (rp : Span) (sli
   if slice then
     let some g := (← get).generics.lookup (restFromName k) | return none
     let .ok c ← StateT.lift (tryCatch (Except.ok <$> genericCallee g []) fun m => pure (Except.error m)) | return none
-    modify fun w => { w with lastInstance := none }
+    modify fun w => { w with lastInstance := none, lastResolution := [] }
     let r ← applyCall env c [.var rp "%rest%"] [some A]
     recordAt (rp.1, rp.1 + "...".length) "identifier" ((·.1) <$> r)
     recordAt rp "call" ((·.2) <$> r)
     if let some θ := (← get).lastInstance then
-      modify fun w => { w with instances := (rp, θ) :: w.instances, lastInstance := none }
+      modify fun w => { w with instances := (rp, θ) :: w.instances, resolutions := (rp, w.lastResolution) :: w.resolutions, lastInstance := none, lastResolution := [] }
     return ((·.2) <$> r).toOption
   let r ← StateT.lift (tryCatch (do
       let G ← graphNow
@@ -1588,7 +1638,7 @@ partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
     if let some g := (← get).generics.lookup it then
       let c? : Except String Callee ← StateT.lift (tryCatch (Except.ok <$> genericCallee g []) fun m => pure (Except.error m))
       if let .ok c := c? then
-        modify fun w => { w with lastInstance := none }
+        modify fun w => { w with lastInstance := none, lastResolution := [] }
         let r ← applyCall e1 c [iterable] [I]
         -- The call at the loop's span, its intrinsic read at the `for`
         -- keyword (`Stmt.callees`).
@@ -1597,7 +1647,7 @@ partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
         stepper := ((·.2) <$> r).toOption
         if let some θ := (← get).lastInstance then
           if let [(_, A)] := θ then bound := some A
-          modify fun w => { w with instances := (p, θ) :: w.instances, lastInstance := none }
+          modify fun w => { w with instances := (p, θ) :: w.instances, resolutions := (p, w.lastResolution) :: w.resolutions, lastInstance := none, lastResolution := [] }
     let exit := loopHead e1 body
     let head := match stepper with
       | some N => { exit with vars := upd exit.vars s!"%next@{p.1}%" N, decl := upd exit.decl s!"%next@{p.1}%" N }
@@ -1702,7 +1752,7 @@ and the module values `module` it reads: what it records, and the grown
 store. -/
 def walkUnit (T : EquationStore.State) (f : Fragment.Fn)
     (module : List (String × Compiler (Ty Tree))) (generics : List (String × Generic) := [])
-    (force : List String := []) :
+    (force : List String := []) (scope : Option (PositiveGraphs.SchemeRow Tree × List String) := none) :
     Except String (Walk × EquationStore.State) := do
   let action : Compiler (Walk × EquationStore.State) := do
     let mut vars : List (String × Ty Tree) := []
@@ -1716,7 +1766,7 @@ def walkUnit (T : EquationStore.State) (f : Fragment.Fn)
       | none => pure ()
     let env : Env := { vars, decl := vars }
     let expected ← tryCatch (some <$> lower (Fragment.translate f.ret)) fun _ => pure none
-    let (done, w) ← (stmts (some env) f.body).run { generics, expected, force, entries := (({} : Std.HashMap Nat _).insert 0 vars).insert f.namePos.1 vars }
+    let (done, w) ← (stmts (some env) f.body).run { generics, expected, force, scope, entries := (({} : Std.HashMap Nat _).insert 0 vars).insert f.namePos.1 vars }
     let w := { w with completion := done.map (·.vars) }
     return (w, ← table)
   let ((w, T'), _) ← runCompiler T [] action
@@ -1742,10 +1792,11 @@ type the lowering would read is the unit's refusal there. Beside them, where
 the unit's body completes (`Walk.completion`). -/
 def retypeUnitWith (T : EquationStore.State) (f : Fragment.Fn) (fc : SourceClaims.Function Tree)
     (module : List (String × Compiler (Ty Tree))) (generics : List (String × Generic) := [])
-    (parts : String := "xec") (force : List String := []) :
+    (parts : String := "xec") (force : List String := [])
+    (scope : Option (PositiveGraphs.SchemeRow Tree × List String) := none) :
     Except String (EquationStore.State × SourceClaims.Function Tree × Option (List (String × Ty Tree)) ×
       Std.HashMap (Nat × String) (List (String × Ty Tree))) := do
-  let (w, T') ← walkUnit T f module generics force
+  let (w, T') ← walkUnit T f module generics force scope
   let exprs : List (Span × SourceClaims.Candidate Tree) := w.exprs.toList.map fun (span, (_, r)) =>
     (span, r.mapError fun m => s!"not handled: {m} (type undetermined)")
   let envs : List (Nat × List (String × SourceClaims.Candidate Tree)) :=
@@ -1781,9 +1832,10 @@ def retypeUnitWith (T : EquationStore.State) (f : Fragment.Fn) (fc : SourceClaim
 /-- `retypeUnitWith`'s grown store and claims. -/
 def retypeUnit (T : EquationStore.State) (f : Fragment.Fn) (fc : SourceClaims.Function Tree)
     (module : List (String × Compiler (Ty Tree))) (generics : List (String × Generic) := [])
-    (parts : String := "xec") (force : List String := []) :
+    (parts : String := "xec") (force : List String := [])
+    (scope : Option (PositiveGraphs.SchemeRow Tree × List String) := none) :
     Except String (EquationStore.State × SourceClaims.Function Tree) := do
-  let (T, fc, _, _) ← retypeUnitWith T f fc module generics parts force
+  let (T, fc, _, _) ← retypeUnitWith T f fc module generics parts force scope
   return (T, fc)
 
 end Verification.SourceExtraction.Synthesis

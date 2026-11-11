@@ -117,10 +117,37 @@ async function compare(test: Case): Promise<Comparison[]> {
   // claims refused) is run from its fragment all the same in mode 8: each
   // unit the pass gives is compared with the file's outcome.
   const fragment = join(outcome.artifacts, "fragment.json");
+  const fragmentValue = (): unknown => existsSync(fragment) ? JSON.parse(readFileSync(fragment, "utf8")) : null;
   const fragmentFile = (): string | null => {
-    if (!existsSync(fragment)) return null;
-    const value: unknown = JSON.parse(readFileSync(fragment, "utf8"));
+    const value = fragmentValue();
     return typeof value === "object" && value !== null && "file" in value && typeof value.file === "string" ? value.file : null;
+  };
+  // The unit a whole-file refusal is located in: the function whose extent
+  // (its name to the last span its body names) holds the refusal's first
+  // position, else the initialization.
+  const locatedUnit = (): string | null => {
+    const detail = outcome.status === "verified" ? "" : outcome.detail;
+    const at = /\[(\d+),\d+\)/.exec(detail);
+    if (at === null) return null;
+    const p = Number(at[1]);
+    const value = fragmentValue();
+    const functions = typeof value === "object" && value !== null && "functions" in value && Array.isArray(value.functions) ? value.functions : [];
+    const ends = (v: unknown): number => {
+      if (Array.isArray(v)) return Math.max(0, ...v.map(ends));
+      if (typeof v !== "object" || v === null) return 0;
+      let m = 0;
+      for (const [k, x] of Object.entries(v)) {
+        if ((k === "pos" || k === "span") && Array.isArray(x) && typeof x[1] === "number") m = Math.max(m, x[1]);
+        m = Math.max(m, ends(x));
+      }
+      return m;
+    };
+    for (const f of functions) {
+      if (typeof f !== "object" || f === null || !("namePos" in f) || !Array.isArray(f.namePos) || !("name" in f)) continue;
+      const start = f.namePos[0];
+      if (typeof start === "number" && start <= p && p < ends("body" in f ? f.body : null)) return `${String(f.name)}@${start}`;
+    }
+    return "init";
   };
   const whole = units.length === 0;
   if (whole && process.env.TSCERT_PASS_MODE !== "8") return [];
@@ -139,15 +166,21 @@ async function compare(test: Case): Promise<Comparison[]> {
     const again = passVerdicts(outcome.artifacts, key, given, "9", force, true);
     for (const [u, v] of again) if (v.accepted) referee.set(u, v);
   }
+  // Of a file the pipeline refuses whole, the unit its refusal is located
+  // in is refused; the others, and every unit where the refusal names no
+  // position, are undecided.
+  const located = whole && outcome.status !== "verified" ? locatedUnit() : null;
   const compared: { unit: string; status: string }[] = whole
-    ? [...pass.keys()].filter((u) => !u.startsWith("module:")).map((unit) => ({ unit, status: outcome.status === "verified" ? "verified" : "refused" }))
+    ? [...pass.keys()].filter((u) => !u.startsWith("module:")).map((unit) => ({ unit,
+        status: outcome.status === "verified" ? "verified" : located === unit ? "refused" : "undecided" }))
     : units;
   return compared.map((u): Comparison => {
     const v = pass.get(u.unit);
     const notHandled = v ? construct(v.refusal) : null;
     const passSays = v === undefined ? "missing" : v.accepted ? "verified" : notHandled ? "not handled" : "refused";
     // A pipeline run that did not finish (a stage's timeout) decides nothing.
-    const pipelineSays = u.status === "verified" ? "verified" : u.status === "error" ? "unfinished" : "refused";
+    const pipelineSays = u.status === "verified" ? "verified" : u.status === "error" ? "unfinished"
+      : u.status === "undecided" ? "undecided" : "refused";
     const r = referee?.get(u.unit);
     const refereeSays = referee === null ? null : r === undefined ? "missing" : r.accepted ? "verified" : "refused";
     // Both accept with their dependencies accepted.
@@ -162,11 +195,20 @@ const patterns = process.argv.slice(2);
 const chosen = cases.filter((c) => patterns.length === 0 || patterns.some((p) => c.file.includes(p)) ||
   (process.env.TSCERT_PASS_MODE === "8" && controls.some((k) => k.file === c.file)));
 const results = await pooled(chosen, compare);
-const all: Comparison[] = [];
+const compared: Comparison[] = [];
 for (const [i, r] of results.entries()) {
-  if (r.status === "fulfilled") all.push(...r.value);
+  if (r.status === "fulfilled") compared.push(...r.value);
   else process.stdout.write(`${chosen[i].file}: ${String(r.reason).slice(0, 200)}\n`);
 }
+// The units of a file the pipeline refuses whole, but the one its refusal
+// is located in, are undecided: counted apart.
+const all = compared.filter((c) => c.pipeline !== "undecided");
+const undecided = compared.filter((c) => c.pipeline === "undecided");
+if (undecided.length > 0)
+  process.stdout.write(`${undecided.length} units of files the pipeline refuses before any unit's check, ` +
+    `outside the refusal's unit: the pass accepts ${undecided.filter((c) => c.pass === "verified").length}\n`);
+for (const c of undecided.filter((c) => c.pass === "verified"))
+  process.stdout.write(`undecided, the pass accepts: ${c.file} ${c.unit}\n`);
 const constructs = new Map<string, number>();
 for (const c of all) {
   const what = c.notHandled?.replace(/ at node \d+$/, "") ?? null;

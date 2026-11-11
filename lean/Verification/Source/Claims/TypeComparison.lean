@@ -24,13 +24,13 @@ def Front.genericValues (fr : Front) :
     let (T, slot) ← Scheme.moduleScheme (← table) g
     lower (do set T; Fragment.translate slot) : Compiler (Ty Tree))),
    fr.generics.map fun g => (g.name,
-    ({ binders := g.binders, instantiate := fun θ => (·.1) <$> g.instantiate θ } : Synthesis.Generic)))
+    ({ binders := g.binders, instantiate := fun θ => (·.1) <$> g.instantiate θ, resolution := g.resolution } : Synthesis.Generic)))
 
 /-- A unit's claims retyped by the walk (`Synthesis.retypeUnit`): the
 extraction of the single pass without a producer's types (mode 8). -/
-def retypeByWalk (parts : String := "xec") (force : List String := []) : Retype := fun fr T f fc module =>
+def retypeByWalk (parts : String := "xec") (force : List String := []) : Retype := fun fr T f fc module scope =>
   let (schemes, generics) := fr.genericValues
-  Synthesis.retypeUnit T f fc (module.map (fun v => (v.1, moduleValueType v)) ++ schemes) generics parts force
+  Synthesis.retypeUnit T f fc (module.map (fun v => (v.1, moduleValueType v)) ++ schemes) generics parts force scope
 
 /-- Unit `i`'s computed types against its claims. -/
 def Front.compareTypes (fr : Front) (i : Nat) : Except String Json := do

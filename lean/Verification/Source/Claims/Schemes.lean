@@ -160,6 +160,36 @@ def resolutionInstance (T : EquationStore.State) (source : Option (SchemeRow Tre
     | throw "resolution certificate does not establish its input, observation and stable result"
   return (checked.observation.map (·.map (·.val)), checked.result.map (·.map (·.val)))
 
+/-- The certificate classifying an input of type `A` by its form, as the
+producer proposes it (`Inference.resolution_instance`): a native promise
+its payload's (`native`) where the binder is resolvable, else observed at
+its payload whatever it is (`promise`); a union each label's; any other
+label stable. A proposal only: `resolutionInstance` checks it. -/
+def resolutionCertificate (T : EquationStore.State) (source : Option (SchemeRow Tree))
+    (sourceNames : List String) (A : List Tree) (resolvable : Bool) :
+    Except String ResolutionWire.Certificate := do
+  let F ← EquationStore.freeze T
+  let some context := F.store.resolution
+    | throw "resolution instance requires the native descriptor domain"
+  let input ← EquationLowering.closedUnion F.equations "resolution instance" A
+  -- A binder of the enclosing scheme a resolution qualifies, or its
+  -- observation, read alone or as its meet with its bound: that binder's.
+  let own (t : Tree) : Option String := source.bind fun row => row.resolution.findSome? fun g =>
+    if row.binders[g.input]? == some t || row.binders[g.observation]? == some t then sourceNames[g.input]? else none
+  let owner (t : Tree) : Option String := match t with
+    | .meet ps => ps.toList.findSome? own
+    | t => own t
+  let rec go : Nat → List (EquationGraphs.Label F.equations.signature) → ResolutionWire.Certificate
+    | 0, _ => .stable
+    | _ + 1, [] => .stable
+    | n + 1, [l] => match owner l.val with
+      | some b => .binder b
+      | none => match context.1.promise.payload l with
+        | some p => if resolvable then .native (go n p.1) else .promise
+        | none => .stable
+    | n + 1, ls => .union (ls.map fun l => go n [l])
+  return go 8 input
+
 /-- A generic module value reached from a unit (a generic module function,
 or a generic imported one): the unit's calls name its instances. Each call's
 type arguments must be ground and name exactly its binders, and every bound,
