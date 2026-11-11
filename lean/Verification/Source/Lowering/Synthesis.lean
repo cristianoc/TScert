@@ -1056,10 +1056,14 @@ def isBinder (b : Tree) (P : Ty Tree) : Bool :=
     | _ => false
 
 /-- `A` with each binder `σ` names read as its type; a binder's meet with
-its bound read as the type too, which an instance within the bound is. -/
+its bound read as the type too, which an instance within the bound is: of
+a meet naming several binders (a binder bounded by another, `T extends U`,
+is `T ⊓ U`), the type every other's labels include, else the first's. -/
 def substitute (σ : List (Tree × Ty Tree)) (A : Ty Tree) : Ty Tree :=
   norm (A.flatMap (EquationLowering.treeReplace fun u => match u with
-    | .meet ps => ps.toList.findSome? (σ.lookup ·)
+    | .meet ps =>
+      let found := ps.toList.filterMap (σ.lookup ·)
+      (found.find? fun A => found.all fun B => A.all (B.contains ·)) <|> found.head?
     | u => σ.lookup u))
 
 /-- What a call selects its signature from: a callee's binders (none for a
@@ -1287,6 +1291,12 @@ partial def occurs (b : Tree) (t : Tree) : Bool :=
     | .app _ args | .bound _ args _ => args.toList.any fun ts => ts.toList.any (occurs b)
     | .meet ps => ps.toList.any (occurs b)
     | _ => false
+
+/-- The meets a tree holds, at any depth of its arguments. -/
+partial def meetsIn : Tree → List Tree
+  | .app _ args | .bound _ args _ => args.toList.flatMap fun ts => ts.toList.flatMap meetsIn
+  | t@(.meet _) => [t]
+  | _ => []
 
 /-- What a parameter of type `P` says the binder `b` is, given an actual of
 type `A`, matched structurally one level at a time (no search; the first
@@ -4394,15 +4404,41 @@ partial def applyCall (env : Env) (c : Callee) (args : List Expr) (As : List (Op
       -- Every signature of the scheme the actuals' count admits, at the
       -- binders: the step chooses among them (`SinglePass.directCall`), a
       -- precondition's where the facts establish it.
-      -- (of those, the ones whose receiver admits the callee's, where
-      -- some does: a member stating its signatures at several receivers, a
-      -- dense and a sparse array's, is read at the walked receiver's, as the
-      -- producer claims the member at the signature the call selects)
       else do
-        let rows := if c.binders.isEmpty then [inst] else (c.fixed.filter fits).map (·.map sub)
+        -- A scheme-typed local's instance: a bounded binder's row is a meet
+        -- row, whose image is the one clause row holding the meet of its
+        -- binders' types' clauses with the row's own (`SchemeInstances.meetOk`;
+        -- `Scheme.closureRows`' instances, Schemes.lean:627-660, compute the
+        -- producer's so).
+        let sigs := c.fixed.filter fits
+        let mut images : List (Tree × Ty Tree) := []
+        for l in (sigs.flatMap fun x => (x.receiver :: x.result :: x.arguments).flatten.flatMap meetsIn).eraseDups do
+          let .meet ps := l | continue
+          let found := ps.toList.filterMap (σ.lookup ·)
+          let own := ps.toList.filter fun p => (σ.lookup p).isNone
+          let G ← graphNow
+          if found.isEmpty || !found.all G.plainTy || !G.plainTy own then continue
+          let cs := PositiveRules.meetMany (found.map (PositiveRules.clausesOf G) ++
+            (if own.isEmpty then [] else [PositiveRules.clausesOf G own]))
+          if cs.isEmpty then continue
+          images := images ++ [(l, [← lower (modifyGet fun T => let (T, l) := EquationStore.intern T cs; (l, T))])]
+        let row (A : Ty Tree) : Ty Tree := norm (A.flatMap (EquationLowering.treeReplace fun u =>
+          match images.lookup u with
+          | some I => some I
+          | none => match u with
+            | .meet _ => some (sub [u])
+            | u => σ.lookup u))
+        let rows (x : CallEffects.Arrow (Ty Tree)) : CallEffects.Arrow (Ty Tree) :=
+          { x.map sub with receiver := row x.receiver, arguments := x.arguments.map row, result := row x.result }
+        if c.binders.isEmpty then return [← lower (SourceTypes.use (.arrs [inst] []))]
+        -- (of those, the ones whose receiver admits the callee's, where
+        -- some does: a member stating its signatures at several receivers, a
+        -- dense and a sparse array's, is read at the walked receiver's, as the
+        -- producer claims the member at the signature the call selects)
+        let all := sigs.map rows
         let T ← table
-        let mine := rows.filter fun a => within T c.receiver a.receiver
-        return [← lower (SourceTypes.use (.arrs (if mine.isEmpty then rows else mine) []))])
+        let mine := all.filter fun a => within T c.receiver a.receiver
+        return [← lower (SourceTypes.use (.arrs (if mine.isEmpty then all else mine) []))])
   return .ok (own, result)
 
 /-- A function literal's walk: its parameters at their written types, or
@@ -5474,6 +5510,7 @@ def compareWalk (T : EquationStore.State) (fc : SourceClaims.Function Tree) (w :
 and the module values `module` it reads: what it records, and the grown
 store. -/
 def walkUnit (T : EquationStore.State) (f : Fragment.Fn)
+  let raw (A : Ty Tree) : String := reprStr (A.map fun l => (l, PositiveRules.expand (SourceTypes.graph T) [l]))
     (module : List (String × Compiler (Ty Tree))) (generics : List (String × Generic) := [])
     (force : List String := []) (scope : Option (PositiveGraphs.SchemeRow Tree × List String) := none)
     (strict : Bool := false) (schemes : List (Span × Ty Tree) := []) :
@@ -5510,7 +5547,6 @@ def walkUnit (T : EquationStore.State) (f : Fragment.Fn)
       -- proposal.ml:23-47. The final pass checks all writes at these contracts.
       for round in List.range 5 do
         let w := result.2
-  let raw (A : Ty Tree) : String := reprStr (A.map fun l => (l, PositiveRules.expand (SourceTypes.graph T) [l]))
         let grown := w.evolvedWrites.filter fun (key, A) => norm ((assumed.lookup key).getD [] ++ A) != (assumed.lookup key).getD []
         if grown.isEmpty then break
         if round == 4 then
