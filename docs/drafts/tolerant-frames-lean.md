@@ -111,6 +111,27 @@ $`F.\mathrm{mapM}\ g = F'`$ and $`\rho'(g\,i)=\rho\,i`$ on $`F`$'s slots
 without the exit's value bound. The continuations `branchBind` and `tagBind`
 are outside this statement (`ShapeOk` is false there).
 
+The note's loop `for (j = from; j < to; j++) out[j] = xs[j]`, head facts
+$`0\le j`$ and $`\mathit{to}\le|\mathit{xs}|`$, `out` possibly `xs`, proved at
+two edges:
+
+- the aliasing element write: its local judgment within
+  $`G=\{\mathsf{values}:\mathsf{any},\ \mathsf{stores}:\mathsf{grow}\}`$
+  (`grow_write_judgment`, from `ExpressionEffects.write_within_exc`, which
+  covers an element write at a run-time index whatever array it writes), and
+  its obligations toward the increment, $`\mathit{to}\le|\mathit{xs}|`$ by
+  (Grow) and $`0\le j`$ reading no heap (`loop_write_obligations`);
+- the back edge with a changed head valuation: after $`j'=j+1`$, the
+  head's slot 0 holds $`j'`$, $`\mathit{to}\le|\mathit{xs}|`$ is retained under
+  the increment's empty effect and renamed from slots 2, 3 to 1, 2, and
+  $`0\le j'`$ follows from $`0\le j`$ and the increment's post
+  (`loop_back_edge`).
+
+The initialisation, the guard and the read edges are not proved here; the
+increment's local judgment (its empty effect and its post) is a premise.
+Both edges take the escaping throw's obligation from the node's exception
+family one level up (`hΞ`).
+
 ## The modality
 
 ```math

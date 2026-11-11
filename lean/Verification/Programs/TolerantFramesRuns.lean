@@ -341,4 +341,85 @@ theorem field_write_keeps_bound {ι : Type} [DecidableEq ι] {G : PositiveGraphs
   · obtain ⟨s', ha, he', hn, hsc, hΞ, -⟩ := action_throw (ρ := ρ) hp hst hr hk
     exact ⟨s', ha, he', hn, hsc, hΞ, hgrow s' ha⟩
 
+/-! ## The loop of `out[j] = xs[j]`: the aliasing write and the back edge
+
+The note's loop `for (j = from; j < to; j++) out[j] = xs[j]`, its head
+holding `0 ≤ j` and `to ≤ |xs|`. The write node's environment is
+`v, j, to, xs, out` (slots 0 to 4); the increment binds `j' = j + 1` and the
+back edge maps `j', to, xs, out` (slots 0, 3, 4, 5 after the push) to the
+head's `j, to, xs, out`. `out` may be `xs`. -/
+
+/-- Slot `j` holds a non-negative integer. It reads no heap. -/
+def NonNeg (j : Nat) : Assertion := fun ρ _ _ => ∃ a, HeapKnowledge.intValue (ρ j) = some a ∧ 0 ≤ a
+
+/-- **The aliasing element write keeps the head's facts** for the increment:
+an element write at a run-time index, checked within
+`{values: any, stores: grow}` whichever array it writes, and `to ≤ |xs|`
+retained under that effect; `0 ≤ j` reads no heap. The escaping throw meets
+the graph's exception family where the node's family does one level up. -/
+theorem loop_write_obligations {pre : Nat → Assertion} {Ξres Tres Ξ T : Fam} {ρ : Env} {m : Nat}
+    {s₀ : IndexedHeap} {l : Nat}
+    (hinc : ∀ s, NonNeg 1 ρ m s → LowerBound 2 3 ρ m s → pre l ρ m s)
+    (hΞ : ∀ s e, Above Ξ s e → Ξres s.n s.W e)
+    (hj : NonNeg 1 ρ m s₀) (hb : LowerBound 2 3 ρ m s₀) :
+    NodeObligations pre Ξres Tres Ξ T growEffect growEffect (fun _ _ => True) (fun _ => True) ρ m s₀
+      (.effect ⟨l, none⟩) none :=
+  transfer (Kn := [lowerBoundFact 2 3]) (Ke := [])
+    (fun _ _ _ _ _ _ _ _ => trivial)
+    (fun F hF => by simp only [List.mem_singleton] at hF; subst hF; exact grow hb)
+    (fun F hF => by simp at hF)
+    (fun s _ _ _ _ _ htr => by
+      have hb' : LowerBound 2 3 ρ m s :=
+        htr ρ _ (List.mem_singleton_self _) some _ rfl (fun _ _ _ hg => by cases hg; rfl)
+      exact hinc s hj hb')
+    (fun s e _ _ hab _ _ => hΞ s e hab)
+
+/-- The write node's local judgment: a typed write checked within
+`{values: any, stores: grow}` (`ExpressionEffects.write_within_exc`), in the
+form `NodesChecked` takes, with both posts `True`. -/
+theorem grow_write_judgment {ι : Type} [DecidableEq ι] {G : PositiveGraphs.NormalGraph ι} {Γ} {t : Tm}
+    {Ξ T : Fam} {ρ : Env} {s : IndexedHeap}
+    (hc : ExpressionEffects.writeWithin G Γ growEffect t = true) (he : ProgramTyping.EnvOk G Γ ρ s.n s.W)
+    (hs : Safe Ξ T s.n s.W s.h (instantiate 0 ρ t)) :
+    SafePostExc Ξ T (fun h' _ => growEffect.Holds s.h h' ∧ True) (fun h' => growEffect.Holds s.h h' ∧ True)
+      s.n s.W s.h (instantiate 0 ρ t) :=
+  HeapObservations.SafePostExc.weaken (fun _ _ h => ⟨h, trivial⟩) (fun _ h => ⟨h, trivial⟩)
+    (ExpressionEffects.write_within_exc hc he s.ok hs)
+
+/-- **The back edge with a changed head valuation**: after `j' = j + 1`, the
+head holds `0 ≤ j` and `to ≤ |xs|` at its new environment, the head's slot 0
+now `j'`. The bound is retained under the increment's empty effect and
+renamed (`to, xs` from slots 2, 3 to 1, 2); `0 ≤ j'` follows from `0 ≤ j` and
+the increment's post. -/
+theorem loop_back_edge {pre : Nat → Assertion} {Ξres Tres Ξ T : Fam} {ce : Footprints.Closed} {Qe : Heap → Prop}
+    {ρ : Env} {m : Nat} {s₀ : IndexedHeap} {hd : Nat}
+    (hhead : ∀ ρ' s, NonNeg 0 ρ' m s → LowerBound 1 2 ρ' m s → pre hd ρ' m s)
+    (hΞ : ∀ s e, Above Ξ s e → Ξres s.n s.W e)
+    (hj : NonNeg 1 ρ m s₀) (hb : LowerBound 2 3 ρ m s₀) :
+    NodeObligations pre Ξres Tres Ξ T Footprints.Closed.empty ce
+      (fun _ v => ∃ a, HeapKnowledge.intValue (ρ 1) = some a ∧ HeapKnowledge.intValue v = some (a + 1)) Qe
+      ρ m s₀ (.bind ⟨hd, some [0, 3, 4, 5]⟩) none :=
+  transfer (Kn := [lowerBoundFact 2 3]) (Ke := [])
+    (fun _ _ _ _ _ _ _ _ => trivial)
+    (fun F hF s ha => by
+      simp only [List.mem_singleton] at hF; subst hF
+      exact grow hb s (action_le_closed (by decide) ha))
+    (fun F hF => by simp at hF)
+    (fun s v _ _ _ hq htr => by
+      obtain ⟨a, ha, hv⟩ := hq
+      obtain ⟨a', ha', hle⟩ := hj
+      rw [ha] at ha'; cases ha'
+      refine hhead _ s ⟨a + 1, ?_, by omega⟩ ?_
+      · simpa [mapEnv, slot, push] using hv
+      · refine htr _ _ (List.mem_singleton_self _)
+          (fun i => if i = 2 then some 1 else if i = 3 then some 2 else none) (lowerBoundFact 1 2) rfl ?_
+        intro i hi j hg
+        simp only [lowerBoundFact, HeapKnowledge.IndexFact.slots] at hi
+        by_cases h2 : i = 2
+        · subst h2; simp at hg; subst hg; simp [mapEnv, slot, push]
+        · by_cases h3 : i = 3
+          · subst h3; simp at hg; subst hg; simp [mapEnv, slot, push]
+          · simp [h2, h3] at hg)
+    (fun s e _ _ hab _ _ => hΞ s e hab)
+
 end Verification.TolerantFrames

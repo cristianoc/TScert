@@ -127,6 +127,9 @@ run_cmd do
   check ``Verification.TolerantFrames.graph_safe
   check ``Verification.TolerantFrames.graph_safe_at
   check ``Verification.TolerantFrames.transfer
+  check ``Verification.TolerantFrames.grow_write_judgment
+  check ``Verification.TolerantFrames.loop_write_obligations
+  check ``Verification.TolerantFrames.loop_back_edge
   check ``Verification.TolerantFrames.tolerant_frame
   check ``Verification.TolerantFrames.kept_box
   check ``Verification.TolerantFrames.grow
