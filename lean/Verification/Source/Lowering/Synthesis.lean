@@ -103,6 +103,11 @@ structure Walk where
   a write found a field to hold (the entry's `current` contents). -/
   currents : Std.HashMap Nat (List (String × List (List PropKey × Ty Tree))) := {}
   breaks : List (Option String × Env) := []
+  /-- The bindings a function literal walked so far assigns that it does not
+  declare (captured ones, held in cells). -/
+  closureAssigned : List String := []
+  /-- Whether a function literal is being walked. -/
+  inLiteral : Bool := false
   /-- The constants in scope: a write of a key one's record may lack grows
   its type. -/
   consts : List String := []
@@ -829,7 +834,12 @@ def wrote (value store : Footprints.Change := .any) : W Unit :=
 /-- An assignment of `n`: a change of the heap where the function literal
 being walked does not declare `n`. -/
 def assigns (n : String) : W Unit := do
-  if !(← get).locals.contains n then wrote .any .keep
+  let w ← get
+  if !w.locals.contains n then
+    wrote .any .keep
+    -- Inside a function literal, a captured binding.
+    if w.inLiteral && !w.closureAssigned.contains n then
+      modify fun w => { w with closureAssigned := n :: w.closureAssigned }
 
 /-- An early binding's written contract (the flow graph's `.early` rule):
 its annotation, else a function literal's written receiver, parameters (a
@@ -866,7 +876,13 @@ partial def attempt (e : Expr) (x : Compiler (Ty Tree)) : W (Option (Ty Tree)) :
 change a value of the heap, or where its callee is unknown. -/
 partial def afterCall (env : Env) (r : Except String (Ty Tree × Ty Tree)) : W Env := do
   let w ← get
-  if w.changedValues || r.toOption.isNone then return { env with paths := [] }
+  if w.changedValues || r.toOption.isNone then
+    -- A binding a function literal assigns is held in a cell the call may
+    -- change: at its declared type again (`TSCERT_FORCE=stale` keeps it).
+    let reset := if w.force.contains "stale" then [] else w.closureAssigned
+    return { env with
+      paths := []
+      vars := env.vars.map fun (n, A) => if reset.contains n then (n, (env.decl.lookup n).getD A) else (n, A) }
   return env
 
 /-- The narrowing a condition answering `q` makes. -/
@@ -1734,7 +1750,7 @@ partial def walkLambda (env : Env) (e : Expr) (sig : Option (CallEffects.Arrow (
   let declared := params.map (·.1) ++ (match body with
     | .block _ ss => declaredIn ss
     | _ => [])
-  modify fun w => { w with writes := false, throwWrites := false, valueChange := .keep, storeChange := .keep, locals := declared }
+  modify fun w => { w with writes := false, throwWrites := false, valueChange := .keep, storeChange := .keep, locals := declared, inLiteral := true }
   modify fun w => { w with returns := [], expected := written <|> (if async then none else expectedResult) }
   -- An expression body's entry is its prologue's, at the body's start.
   modify fun w => { w with entries := w.entries.insert body.span.1 inner.vars }
@@ -1758,7 +1774,7 @@ partial def walkLambda (env : Env) (e : Expr) (sig : Option (CallEffects.Arrow (
   let changed : CallEffects.Effect :=
     { CallEffects.Effect.ofFootprint ⟨(← get).valueChange, (← get).storeChange⟩ with onThrow := !(← get).throwWrites }
   modify fun w => { w with breaks := saved.breaks, returns := saved.returns, expected := saved.expected }
-  modify fun w => { w with writes := saved.writes, throwWrites := saved.throwWrites, locals := saved.locals }
+  modify fun w => { w with writes := saved.writes, throwWrites := saved.throwWrites, locals := saved.locals, inLiteral := saved.inLiteral }
   modify fun w => { w with valueChange := saved.valueChange, storeChange := saved.storeChange }
   let R := if written.isSome then written else if async then none else R
   let forced := (← get).force.contains "literals"

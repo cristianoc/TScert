@@ -378,13 +378,15 @@ function literal at keep/keep), `callees` (every function of the file without
 a written footprint at keep/keep), `elements` (every element read without
 `undefined`), `objects` (every object literal at its expected type),
 `spreads` (every spread with every key its operand's type states, optional
-ones as present). Under a forced proposal, a forced footprint is one the
+ones as present), `stale` (a binding a function literal assigns kept
+narrowed across a call). Under a forced proposal, a forced footprint is one the
 function's own unit establishes, and a unit whose dependency of the file is
 refused counts as refused where both modes are compared with the pipeline.
 The script's controls run with their forced proposal
 whatever the patterns, each expected refused by mode 8:
 `invalid-method-effect-stated-throw-caught` `wrong` and
-`invalid-node-assert-catch-continue` `rows`, under `literals`.
+`invalid-node-assert-catch-continue` `rows`, under `literals`, and
+`invalid-cell-truthiness-narrowing` `kept`, under `stale`.
 
 ## 9. The claims-free front
 
@@ -531,6 +533,8 @@ claims document (`SourceClaimJson.fragmentPlans`, `Claims/FragmentFront.lean`).
   a write of its field, after a call whose instance may change a value of
   the heap (or whose callee is unknown), and after the left operand of `&&`
   or `||` where the right may call; a loop head and a handler state none.
+  After such a call, each binding a function literal walked so far assigns
+  (one it captures, held in a cell) is at its declared type again.
 - **Growth and assignment.** A write of a key a constant's records may lack
   is at the contract it adds the key at (the optional field's, else the
   value's type, a literal's widened), the constant's records owning it
@@ -575,8 +579,8 @@ footprint the unit's verdict reads (removing any one refuses the unit):
 (`isCollapsibleSpaceCode`, `readLetterSpacing`); `buildEngineProfile` none.
 
 Agreement with the pipeline over the 3,303 pipeline cases (mode 8 with the
-given files, `TSCERT_REFEREE`), measured 2026-11-11: 6,296 units, 4,941
-agree, 616 disagree, 739 not handled. A file the pipeline refuses before any
+given files, `TSCERT_REFEREE`), measured 2026-11-11: 6,296 units, 4,946
+agree, 611 disagree, 739 not handled. A file the pipeline refuses before any
 unit's check is run from its fragment too: the unit holding the refusal's
 position is compared with the refusal (91 units), the others are undecided
 (85; the pass accepts 24, none the unit an unsafe program's refusal names).
