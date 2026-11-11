@@ -861,12 +861,29 @@ removal works through:
   modules planned before establish, a module on a cycle with its reads of
   the modules not yet planned at the ordinary effect; each function read
   proposed its walk's footprint (`declarationEffects`) or the one it writes.
+  Of the importer's functions reached, one read at a footprint the walk does
+  not propose (a stand-in's, or the one an async, generic, rest or
+  written-effect function keeps) adds no names: its body is neither walked
+  nor checked for the selected units. A stand-in for an import takes its
+  place: its module is not planned for it. Before the modules are planned,
+  the reads are resolved from the importer down, a round at a time, each
+  module's front built once and kept for its plans (`Front.withQualified`):
+  a function read whose walk with every import at the least footprint
+  (keeping values and stores, bounding its throws) proposes the ordinary
+  effect is at the ordinary effect, and its module is planned for it no
+  further, nor are the modules only its code reads (first its own walk with
+  every module value at that footprint, `Front.changesEverything`, then the
+  walks of what it reaches, `declarationWalks` with `least`). That its walk
+  at any established footprints proposes the ordinary effect too rests on
+  the walk's grades being monotone in its callees' footprints, conjectured;
+  where it fails, the read is at the ordinary effect, which needs no check.
   The groups of the functions proposed more than the ordinary effect, and
   every group they reach, are checked in the same invocation by the same
   mode (mode 8's pass, mode 9's search and check), each verdict on its own
   line as the unit `module:<location>#<unit>`, its loop heads' facts the
   given file's lines of that name, which mode 6 writes from the module runs
-  the claims plan (`ModuleRun.givenLines`). A read is at its proposal where
+  the claims plan (`ModuleRun.givenLines`) and mode 8 reads only for a module
+  whose groups it checks. A read is at its proposal where
   the function's group and every group it depends on, of its module and of
   the modules it reads, was accepted there; the importer's units that
   mention the read list that group in `depends`. Every other import, one
@@ -1335,15 +1352,22 @@ none. With no stand-in, `measureAnalysis` and `prepareRichInline` are refused
 at a statement entry's linear fact.
 
 Imports' cost (perf gate, CPU of the verifier process, best of 3, measured
-2026-11-11): with the gate's stand-ins, `measureAnalysis` 1129 ms (825
-before), `prepareRichInline` 4108 ms (1990), `buildEngineProfile` 138 ms
-(134); with none, 1040 and 3418 ms, both refused, and 140 ms. The time is the
-modules': for `prepareRichInline`, 9 modules planned (their fronts,
-initialization walks and declarations' walks, 1.1 s), 22 module groups
-checked (0.6 s) and the reads resolved (0.24 s), every invocation again; most
-of the functions walked are proposed the ordinary effect. A per-module
-interface, each module's established footprints stored by its fragment's
-content once and read by its importers, removes the repetition.
+2026-11-11 beside the verifier of f894d34a, which plans no module, in
+parentheses): with the gate's stand-ins, `measureAnalysis` 1024 ms (934),
+`prepareRichInline` 2913 ms (2188), `buildEngineProfile` 142 ms (143); with
+none, 1030 and 2270 ms, both refused (430 and 920), and 142 ms. For
+`prepareRichInline` with the stand-ins, five modules are resolved (their
+fronts 0.13 s; the least walks 0.39 s, 0.27 s of it finding that
+`stepPreparedLineGeometryFromStart` proposes the ordinary effect), three
+planned (`checked.ts`, `measurement.ts`, `line-break.ts`) and 8 groups
+checked (0.12 s), every invocation again; `normalizePreparedLineStart`,
+`getEngineProfile`, `zeros` and `missing` established keep more facts
+(`mergeDiffs` 1,826 for 1,823, `stateFactsSum` 132,919 for 132,540), and the
+three modules' given lines add 68,628 bytes read. For `measureAnalysis`, one
+module is planned (`checked.ts`, for `missing`) and one resolved, 274 bytes
+more read. A per-module interface, each module's established footprints
+stored by its fragment's content once and read by its importers, removes
+the repetition.
 
 Agreement with the pipeline over the 3,303 pipeline cases (mode 8 with the
 given files, `TSCERT_REFEREE`), measured 2026-11-11: 6,296 units, 4,974

@@ -397,16 +397,31 @@ def verifyUnitsFile (astPath : String) (claimsPath : Option String) (fileKey : S
   let standIns : Except String SourceClaimJson.StandIns ← match standInsPath with
     | some p => do pure ((← readJson p) >>= fromJson?)
     | none => pure (.ok {})
-  -- The given file's lines, by unit (`TSCERT_GIVEN`), for modes 8 and 9's plans.
-  let givenLines : Std.HashMap String Json ← match ← IO.getEnv "TSCERT_GIVEN" with
-    | none => pure {}
+  -- The given file's lines (`TSCERT_GIVEN`), for modes 8 and 9's plans: the
+  -- selected file's units' by unit, and a module unit's (`module:…`) kept
+  -- as text, read where its module's groups are checked (`moduleLines`).
+  let givenText : List String ← match ← IO.getEnv "TSCERT_GIVEN" with
+    | none => pure []
     | some path => do
       let text ← try IO.FS.readFile path catch _ => pure ""
-      pure ((text.splitOn "\n").foldl (fun (m : Std.HashMap String Json) l => match Json.parse l with
-        | .ok j => match j.getObjValAs? String "unit" with
-          | .ok u => m.insert u j
-          | .error _ => m
-        | .error _ => m) {})
+      pure ((text.splitOn "\n").filter (!·.isEmpty))
+  let moduleLine := fun (l : String) => (l.splitOn "\"unit\":\"module:").length > 1
+  let givenLines : Std.HashMap String Json := (givenText.filter (!moduleLine ·)).foldl
+    (fun (m : Std.HashMap String Json) l => match Json.parse l with
+      | .ok j => match j.getObjValAs? String "unit" with
+        | .ok u => m.insert u j
+        | .error _ => m
+      | .error _ => m) {}
+  let moduleText := givenText.filter moduleLine
+  -- A module's given lines, by unit: those naming it, parsed.
+  let moduleLines := fun (location : String) =>
+    let pre := s!"\"unit\":\"module:{location}#"
+    (moduleText.filter fun l => (l.splitOn pre).length > 1).foldl (fun (m : Std.HashMap String Json) l =>
+      match Json.parse l with
+      | .ok j => match j.getObjValAs? String "unit" with
+        | .ok u => m.insert u j
+        | .error _ => m
+      | .error _ => m) {}
   -- Adversarial proposals forced, for the referee (`TSCERT_FORCE`, comma-separated).
   let force := ((← IO.getEnv "TSCERT_FORCE").getD "").splitOn "," |>.filter (!·.isEmpty)
   -- The referee's statement entries all the search's cuts (`TSCERT_ALL_CUTS`).
@@ -430,9 +445,10 @@ def verifyUnitsFile (astPath : String) (claimsPath : Option String) (fileKey : S
       -- its wire identity (`module:<location>#<unit>`).
       let check := fun (f : SourceClaimJson.FilePlans) (group : List Nat) =>
         if mode == 9 then (([] : List String), f.verifyGroup fuel group false)
-        else f.passGroup fuel group (given := some (moduleGiven f.fr.ast givenLines))
+        else f.passGroup fuel group (given := some (moduleGiven f.fr.ast
+          (moduleLines ((f.fr.ast.getObjValAs? String "file").toOption.getD ""))))
       let (f, ms, notes) ← SourceClaimJson.fragmentPlansWithModules (← ast) fileKey budget (selection names) (← standIns) force
-        (fun location => prepare (forModule location givenLines)) check
+        (fun location => prepare (forModule location (moduleLines location))) check
       pure (prepare givenLines f, ms, notes)
     else (·, ([] : List SourceClaimJson.ModuleVerdict), ([] : List String)) <$> SourceClaimJson.filePlans (← ast) (← claims) fileKey budget
   let t1 ← IO.monoNanosNow
@@ -445,7 +461,9 @@ def verifyUnitsFile (astPath : String) (claimsPath : Option String) (fileKey : S
     let mut refused : Option String := none
     -- The module units checked for the imports' footprints, each on its
     -- line; a refused one leaves its importers' reads at the ordinary effect.
-    if !modules.isEmpty then IO.eprintln s!"stamp: modules: {modules.length} groups checked"
+    if !modules.isEmpty then
+      let passNs := ((← SinglePass.kindNanos.get).toList.filter (·.1 == "modules: pass")).foldl (· + ·.2.1) 0
+      IO.eprintln s!"stamp: modules: {modules.length} groups checked, {passNs / 1000000} ms"
     -- Profiling: each import read at a footprint, and that footprint.
     if (← SinglePass.profiling.get) then
       for (n, Φ, ot, r) in f.p.qualified do
@@ -479,17 +497,11 @@ def verifyUnitsFile (astPath : String) (claimsPath : Option String) (fileKey : S
           let repeats := ((← IO.getEnv "TSCERT_REPEAT").bind String.toNat?).getD 1
           -- The given statement-entry facts, a file of lines by unit
           -- (`TSCERT_GIVEN`, written by `dev/single-pass-given.mts`).
+          -- (no file is no given fact; a module unit's line is its module's)
           let given ← match ← IO.getEnv "TSCERT_GIVEN" with
             | none => pure none
-            | some path => do
-              -- No file is no given fact.
-              let text ← try IO.FS.readFile path catch _ => pure ""
-              let lines := text.splitOn "\n" |>.filter (!·.isEmpty)
-              pure (some (lines.foldl (fun (m : Std.HashMap String Json) l => match Json.parse l with
-                | .ok j => match j.getObjValAs? String "unit", j.getObjVal? "graph" with
-                  | .ok u, .ok _ => m.insert u j
-                  | _, _ => m
-                | .error _ => m) {}))
+            | some _ => pure (some (givenLines.fold (init := {}) fun (m : Std.HashMap String Json) u j =>
+                if (j.getObjVal? "graph").isOk then m.insert u j else m))
           -- Observing: the state at `TSCERT_OBSERVE` (`node:L` or `offset:K`).
           let observe ← IO.getEnv "TSCERT_OBSERVE"
           -- The pass's counts as JSON lines (`TSCERT_COUNTS`, `dev/perf-gate.mts`),
@@ -498,9 +510,12 @@ def verifyUnitsFile (astPath : String) (claimsPath : Option String) (fileKey : S
           if counting then
             let size := fun (p : String) => do
               try pure (← System.FilePath.metadata p).byteSize.toNat catch _ => pure 0
-            let given ← match ← IO.getEnv "TSCERT_GIVEN" with
-              | some p => size p
-              | none => pure 0
+            -- The given file's lines read: the file's units', and a module
+            -- unit's where its module's groups were checked.
+            let checked := modules.map fun m => ((m.unit.drop "module:".length).toString.splitOn "#").head!
+            let given := (givenText.filter fun l => !moduleLine l ||
+              checked.any fun c => (l.splitOn s!"\"unit\":\"module:{c}#").length > 1).foldl
+              (fun n l => n + l.utf8ByteSize + 1) 0
             let claimsBytes ← match claimsPath with
               | some p => size p
               | none => pure 0
