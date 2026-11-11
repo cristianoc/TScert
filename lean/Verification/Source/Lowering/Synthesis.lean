@@ -161,6 +161,8 @@ structure Walk where
   rest: its literal's span and own parameters' types (the producer's
   `named_closure`, closure_offers.ml:29). -/
   closureConsts : List (String × Span × List (Ty Tree)) := []
+  /-- Whether the walk is the module's initialization's. -/
+  moduleInit : Bool := false
   /-- The signatures a use offers such a literal (`closure_offer`,
   closure_offers.ml:51), by the literal's span: found by a walk, read by the
   next (`walkUnit`). -/
@@ -2998,13 +3000,18 @@ partial def walkLambda (env : Env) (e : Expr) (sig : Option (CallEffects.Arrow (
     -- proposal)
     let forceOffers := (← get).force.contains "offers"
     let leads (Ds : List (Ty Tree)) : Bool := forceOffers || (Ds.zip qs).all fun (D, Q) => within T D Q
+    -- An offered row at the offered signature's result where the body's is
+    -- within it, else the body's (the producer's `{s with call_effect}` and
+    -- `discarded_signature`, expression_closures.ml:400-405, semantic.ml:358:
+    -- the offered result, the closure's own effect and leading parameters).
+    let atResult (R : Ty Tree) : Ty Tree := if within T ownRow.result R then R else ownRow.result
     -- (an expected signature's leading parameters its own, as written: the
     -- body lowers alike under each row)
     let ownLeads (Ds : List (Ty Tree)) : Bool := forceOffers || Ds.take qs.length == qs
     let fixedOffers := if rest then [] else
       ((ProgramTyping.callSigs G ctxTy).filter fun s =>
         qs.length < s.arguments.length && ownLeads (s.arguments.take qs.length)).map fun s =>
-          ({ s with result := ownRow.result, effect := ownRow.effect } : CallEffects.Arrow (Ty Tree))
+          ({ s with result := atResult s.result, effect := ownRow.effect } : CallEffects.Arrow (Ty Tree))
     let restOffers := if rest then [] else
       ((ProgramTyping.restSigs G ctxTy).filter fun r =>
         qs.length ≤ r.arguments.1.length && ownLeads (r.arguments.1.take qs.length) &&
@@ -3013,7 +3020,8 @@ partial def walkLambda (env : Env) (e : Expr) (sig : Option (CallEffects.Arrow (
     -- and at each a use of the constant holding it offers (`offerUse`).
     let useOffers := ((← get).offers.filter (·.1 == e.span)).filterMap fun (_, s) =>
       if !rest && qs.length < s.arguments.length && leads (s.arguments.take qs.length) then
-        some ({ s with result := ownRow.result, effect := ownRow.effect } : CallEffects.Arrow (Ty Tree))
+        let a : CallEffects.Arrow (Ty Tree) := { s with arguments := qs ++ s.arguments.drop qs.length }
+        some { a with result := atResult s.result, effect := ownRow.effect }
       else none
     let rows := ownRow :: ((fixedOffers ++ useOffers).foldl (fun acc s => if acc.contains s || s == ownRow then acc else acc ++ [s]) [])
     -- A callback whose parameters' expected leading ones differ from its own
@@ -3459,6 +3467,24 @@ partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
           if b.init.freeNames.contains b.name then recursiveConstant env b (b.annot.isSome || stated.isSome)
           else expr env b.init written
         | _ => expr env b.init written
+      -- A module constant, unannotated, holding a literal of no type
+      -- parameters, rest, defaults or guard whose result is written: also
+      -- at its signature extended by a rest of `unknown`, its code
+      -- discarding the further actuals, as a module function's slot is (the
+      -- producer's, proposal.ml:320-327, module_contract.ml:34-38).
+      let mut A₀ := A
+      if let (.lambda _ _ [] _ [] false (some _) none _ _ _ _, some L, none, true, false) :=
+          (b.init, A, b.annot, (← get).moduleInit, (← get).inLiteral) then
+        let G := SourceTypes.graph (← StateT.lift table)
+        if let ([own], []) := (ProgramTyping.callSigs G L, ProgramTyping.restSigs G L) then
+          let U ← StateT.lift (prim .source)
+          let L' ← StateT.lift (lower do
+            let pack ← SourceTypes.use (.pack ⟨[], [], some U, false, .dense⟩ [])
+            let r : CallEffects.RestArrow (Ty Tree) := ⟨own.receiver, (own.arguments, [pack]), own.result, own.effect⟩
+            return [← SourceTypes.use (.arrs [own] [r])])
+          let _ ← record b.init (.ok L')
+          A₀ := some L'
+      let A := A₀
       modify fun w => { w with freshClass := false }
       -- A constant holding a store the run allocated.
       let w ← get
@@ -3831,7 +3857,7 @@ def walkUnit (T : EquationStore.State) (f : Fragment.Fn)
       !(cellLocals (f.params.map (·.name)) f.body f.name.isEmpty).any (·.1 == n)
     let values := (f.params.map (·.name)).filter fun n =>
       !(cellLocals (f.params.map (·.name)) f.body f.name.isEmpty).any (·.1 == n)
-    let start : Walk := { generics, expected, force, scope, locals, strict, slots, schemes, values, entries := (({} : Std.HashMap Nat _).insert 0 vars).insert f.namePos.1 vars }
+    let start : Walk := { generics, expected, force, scope, locals, strict, slots, schemes, values, moduleInit := f.name.isEmpty, entries := (({} : Std.HashMap Nat _).insert 0 vars).insert f.namePos.1 vars }
     let (done, w) ← (stmts (some env) f.body).run start
     -- Where a use offers a constant's literal more rows, walked again with
     -- them (the producer's second round, proposal.ml:47-52), once.
