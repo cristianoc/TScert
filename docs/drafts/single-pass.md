@@ -990,6 +990,9 @@ removal works through:
   instance where it binds every binder and admits the actuals. A call whose
   signature states a fresh result is made at the first expected array whose
   elements admit the result's.
+  An uncontextualized object literal nested directly in a fresh field is
+  made at its own open record, unless its own keys are required exact or
+  it carries a prototype (expression_objects.ml:46-54, 83-97).
   A spread nested inside a fresh call actual receives the expected record
   fields recursively; each spread operand that is a literal receives the
   optional fields of that context, and each resulting copy is checked
