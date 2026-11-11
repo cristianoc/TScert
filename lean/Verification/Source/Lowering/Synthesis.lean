@@ -48,6 +48,8 @@ inductive PathEnd where
 given binder types, in claim form (`Instantiable.instantiate`). -/
 structure Generic where
   binders : List String
+  /-- Source binders with no declared bound, for primitive candidate widening. -/
+  widenBinders : List String := []
   instantiate : List (String × Json) → SourceTypes.Lowering Json
   /-- Its binders a resolution qualifies, by position: each one's input,
   observation and result. -/
@@ -1110,6 +1112,7 @@ structure Callee where
   resolution : List PositiveGraphs.ResolutionSlots := []
   /-- A generic module function's binders' bounds, where they state one. -/
   bounds : List (Tree × Ty Tree) := []
+  widenBinders : List Tree := []
   /-- A union of callables: each arm's one signature (`calleeOf`). -/
   arms : List (CallEffects.Arrow (Ty Tree)) := []
 
@@ -1182,7 +1185,8 @@ def genericCallee (g : Generic) (typeArgs : List Json) : Compiler Callee := do
     | [.ctors L R ..] => (L.map (·.withReceiver [Labels.undef]), R.map (·.withReceiver [Labels.undef]), true)
     | _ => (ProgramTyping.callSigs G fresh, ProgramTyping.restSigs G fresh, false)
   return { binders := ps, fixed, rests, construct,
-           names := g.binders, resolution := g.resolution, seed := (shown.filterMap (ps[·]?)).zip θ, bounds }
+           names := g.binders, resolution := g.resolution, seed := (shown.filterMap (ps[·]?)).zip θ, bounds,
+           widenBinders := (g.binders.zip ps).filterMap fun (n, p) => if g.widenBinders.contains n then some p else none }
 
 /-- The callee of a generic module function of one binder typing a value and
 a rest's argument lists, whose signature at a fresh binder has no argument
@@ -3183,6 +3187,31 @@ def literalRows (span : Span) (a : CallEffects.Arrow (Ty Tree)) (qs : List (Ty T
     ([{ a with arguments := qs ++ a.arguments.drop qs.length }], []) else (rows, restOffers)
   return [← StateT.lift (lower (SourceTypes.use (.arrs rows restOffers)))]
 
+/-- Direct primitive candidates follow inference.ml:608-630: widen an
+unbounded binder unless returned bare, within all actual and result bounds.
+Explicit seeds, dependent bounds and callback-only candidates stay fixed. -/
+def widenActualBinders (c : Callee) (a : CallEffects.Arrow (Ty Tree))
+    (As : List (Option (Ty Tree))) (hidden : List Tree) (hint : Option (Ty Tree))
+    (initial : List (Tree × Ty Tree)) : Compiler (List (Tree × Ty Tree)) := do
+  let mut σ := initial
+  let G ← graphNow
+  for b in c.binders do
+    if !c.widenBinders.contains b || (c.seed.lookup b).isSome || (c.bounds.lookup b).any (fun B => PositiveRules.expand G B != [.source]) || hidden.contains b ||
+        c.bounds.any (fun (_, B) => B.any (occurs b)) || a.result.contains b then continue
+    let some B := σ.lookup b | continue
+    let direct := (a.arguments.zip As).filterMap fun (P, A) =>
+      if isBinder b P then A else none
+    if direct.isEmpty || norm direct.flatten != norm B then continue
+    let B' ← widen B
+    if B' == B then continue
+    let proposed := upd σ b B'
+    let T ← table
+    if (As.zip a.arguments).all (fun (A, P) => A.all fun A => within T A (substitute proposed P)) && hint.all (fun H => within T (substitute proposed a.result) H) then
+      σ := proposed
+  return σ
+
+
+set_option maxHeartbeats 250000 in
 mutual
 /-- An expression's type, recorded at its occurrence, and the environment
 after it; where a type `exp` is expected of its value (a return's, an
@@ -4724,6 +4753,7 @@ partial def applyCall (env : Env) (c : Callee) (args : List Expr) (As : List (Op
             | _ => false
       | _, _ => false
     if missingIndex then σ := upd σ b (← StateT.lift (prim .source))
+  σ ← StateT.lift (widenActualBinders c a As hidden hint σ)
   -- A binder a resolution qualifies: its observation and result the
   -- resolution of its input's type by the certificate its form gives
   -- (`resolutionCertificate`), checked (`resolutionInstance`).
