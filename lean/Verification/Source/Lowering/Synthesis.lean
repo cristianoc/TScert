@@ -1488,6 +1488,53 @@ def fieldExpected (P : Ty Tree) (k : PropKey) : Compiler (Option (Ty Tree)) := d
     if let some D := D then out := out ++ D
   return if out.isEmpty then none else some (norm out)
 
+/-- A fresh object's contextual contract: the one record arm, or the one
+arm its keys and literal members select (type_queries.ml:769-789,
+820-830). Several compatible arms supply no allocation contract. -/
+def recordContext (P : Ty Tree) (names : List PropKey) (es : List Expr) : Compiler (Option (Ty Tree)) := do
+  let G ← graphNow
+  let arms := P.filter fun l => (storeOf G [l]).isNone && match PositiveRules.expand G [l] with
+    | [.refs _ [] ..] | [.dict _ [] ..] => true
+    | _ => false
+  if let [l] := arms then return some [l]
+  let mut selected := []
+  for l in arms do
+    let required : List PropKey := match PositiveRules.expand G [l] with
+      | [.refs fs [] vs _ _ _ _] | [.dict fs [] vs _ _ _ _ _ _] => (fs ++ vs).map (fun (p : PropKey × Ty Tree) => p.1)
+      | _ => []
+    if !required.all names.contains then continue
+    let mut ok := true
+    for (k, e) in names.zip es do
+      let some D ← fieldExpected [l] k | ok := false; break
+      if let .lit _ v := e then
+        let A ← literal v
+        if !within (← table) A D then ok := false; break
+    if ok then selected := selected ++ [l]
+  return match selected with | [l] => some [l] | _ => none
+
+/-- Literal spread operands receive optional fields whose contextual
+contracts agree across the arms that state them (expression_objects.ml:
+154-181). The operand need not supply the enclosing copy's required keys. -/
+def spreadContext (P : Ty Tree) : Compiler (Option (Ty Tree)) := do
+  let G ← graphNow
+  let fields := P.flatMap fun l => match PositiveRules.expand G [l] with
+    | [.refs fs [] vs os ms _ _] | [.dict fs [] vs _ os ms _ _ _] =>
+      ((fs ++ vs) ++ os.map (fun o => (o.key, o.type))).filter fun (k, _) => !ms.any (·.key == k)
+    | _ => []
+  let mut optional : List (OptionalField (Ty Tree)) := []
+  for k in (fields.map (·.1)).eraseDups do
+    if k == SourceTypes.protoField then continue
+    match ((fields.filter (·.1 == k)).map (·.2)).eraseDups with
+    | [A] => optional := optional ++ [⟨k, false, A⟩]
+    | _ => pure ()
+  if optional.isEmpty then return none
+  return some (← prim (.refs [] [] [] optional [] [] []))
+
+partial def copyLiteral : Expr → Bool
+  | .alloc .. => true
+  | .ifBody _ _ a b => copyLiteral a && copyLiteral b
+  | _ => false
+
 /-- The array members of an expected type. -/
 def arrayArms (G : PositiveGraphs.NormalGraph Tree) (P : Ty Tree) : List Tree :=
   P.filter fun l => (storeOf G [l]).isSome
@@ -2062,6 +2109,7 @@ partial def fit (P : Ty Tree) (x : Expr) (A : Option (Ty Tree)) : W (Option (Ty 
     -- allocation makes, which the expected type then admits.
     let some A := A | return none
     if (← get).force.contains "objects" && !P.isEmpty then return ← record x (.ok P)
+    let some P ← StateT.lift (recordContext P names es) | return some A
     -- A class instance, which holds its prototype, states its own keys
     -- exactly: the bound says a method is not its own
     -- (`expression_objects.ml`, `Alloc`).
@@ -2828,7 +2876,10 @@ partial def exprAt (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (
       | _, _ => pure r
     return (r, e1)
   | .alloc _ names es =>
-    -- Each field walked at the field the expected type states at its key.
+    -- Only a uniquely selected record gives its fields' context.
+    let exp ← match exp with
+      | some P => StateT.lift (recordContext P names es)
+      | none => pure none
     let mut e1 := env
     let mut As : List (Option (Ty Tree)) := []
     for (k, y) in names.zip es do
@@ -2855,6 +2906,9 @@ partial def exprAt (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (
       | none => pure r
     return (r, e1)
   | .build _ names es =>
+    let spreadExp ← match exp with
+      | some P => StateT.lift (spreadContext P)
+      | none => pure none
     -- An object literal with spreads: each spread's record fields, then each
     -- named field, a later key replacing an earlier one; each named field
     -- walked at the field the expected type states at its key.
@@ -2863,7 +2917,7 @@ partial def exprAt (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (
     for (k, y) in names.zip es do
       let D ← match exp, k with
         | some P, some k => StateT.lift (fieldExpected P (.str k))
-        | some P, none => pure (some P)
+        | some P, none => pure (if copyLiteral y then spreadExp else some P)
         | _, _ => pure none
       let (A, e') ← expr e1 y D
       As := As ++ [A]
