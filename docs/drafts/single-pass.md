@@ -406,11 +406,36 @@ claims document (`SourceClaimJson.fragmentPlans`, `Claims/FragmentFront.lean`).
   a generic class's construction and a `for...of`'s iteration intrinsic are
   instantiated at the binders' types the walk gives them
   (`instancesFromWalk`); a binder a resolution qualifies is not handled. A
-  function literal passed as an actual is stated at its parameter's
-  signature taking the most parameters, at the footprint keeping values and
-  stores where the walk sees no write, assignment or call changing the heap
-  on its normal return, else at that signature's effect; its own check
-  decides its throws (section 5, "A footprint").
+  binder's type is read off an actual by matching its parameter's type one
+  level at a time (`Synthesis.matchBinder`): the binder itself; in a union,
+  the one member naming it at the actual less what the other members admit,
+  else each label of the actual at the first member it matches; one type
+  constructor's arguments at the actual's of the same constructor; an
+  array's elements, a record's fields and methods' results, a callable's
+  result at the actual's. Of a call's signatures the first each walked
+  actual is within at the binders so read is selected, else the first the
+  actuals' count admits. A slice rest of an array pattern is the call of its
+  `%RestFrom:k%` at the value, any other rest the tuple of the positions
+  after it. A declaration of a statement declaring several holds the
+  bindings before it.
+- **Function literals.** A function literal passed as an actual is stated
+  at its parameter's signature taking the most parameters; any other at its
+  written parameters and receiver (a method's `this`). Its effect is the one
+  it writes (`Modifies<…>`); else the footprint keeping values and stores
+  where the walk sees no write, assignment or call changing the heap, else
+  the closed footprint of the classes of contents its writes and calls
+  change (a field write or an assignment the values, an element write, an
+  array's `length` and a call changing a receiver's store both), at a callback
+  that changes the heap the parameter's effect; and it bounds a throw
+  (`onThrow`) where none of its calls states a throw left unbounded. Its own
+  check decides it (section 5, "A footprint").
+- **Classes and literals.** A class value is the construct signature of its
+  constructor's written parameters and instance (its written result), or
+  of the fresh constructor it is bound to, with its static fields. An object
+  literal states its own keys exactly (`HasTyUsing.alloc`'s bound); where a
+  record is expected, it is that record's form with each field at the
+  expected one, else at the value's own type, as written where that is
+  within the expected record, else stating its own keys exactly.
 - **Loop heads.** A loop head's facts beyond its written assertion are the
   given file's `headFacts` (and `headFactsOfCodes` for each code request),
   each at the statement entries that start where the given one does and hold
@@ -448,3 +473,15 @@ footprint the unit's verdict reads (removing any one refuses the unit):
 `zeros`); `prepareRichInline` 4 functions (`getHyphenRooms`,
 `setEmptyObjectFacts`, `zeroList`, `getOpeningFit`) and 2 imports
 (`isCollapsibleSpaceCode`, `readLetterSpacing`); `buildEngineProfile` none.
+
+Agreement with the pipeline over the 3,303 pipeline cases (mode 8 with the
+given files, `TSCERT_REFEREE`), measured 2026-11-11: 6,205 units, 4,381
+agree, 977 disagree, 847 not handled. Referee: 10 units mode 8 accepts and
+mode 9 refuses (all pipeline-verified), 17 the other way. Both modes accept
+four units the pipeline refuses, each a valid instance the producer did not
+propose: `invalid-bounds-callback-footprint` `visit@88`,
+`invalid-generic-literal-widening` `use@206`,
+`invalid-native-promise-invariant-result` `widen@89` (`make<unknown>` at
+the expected result `Box<unknown>`) and
+`blocker-gap-round-cache-answer-inferred` `real@605` (the callback's
+literals at the cache's record `{ answer: string | null }`).

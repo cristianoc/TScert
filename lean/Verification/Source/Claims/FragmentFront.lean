@@ -93,7 +93,7 @@ extraction reads them. -/
 def retypeFromFragment (force : List String := []) : Retype := fun fr T f fc module => do
   let init := f.name.isEmpty
   let (schemes, generics) := fr.genericValues
-  let (T, fc, completion) ← SinglePass.timedKind "lower: of extractAll, the walk" fun _ =>
+  let (T, fc, completion, declarations) ← SinglePass.timedKind "lower: of extractAll, the walk" fun _ =>
     Synthesis.retypeUnitWith T f fc (module.map (fun v => (v.1, moduleValueType v)) ++ schemes) generics "xec" force
   let (graphs, prologues) ← fr.flowGraphs f init
   let owner := if init then (0, 0) else f.namePos
@@ -109,6 +109,10 @@ def retypeFromFragment (force : List String := []) : Retype := fun fr T f fc mod
       | .finish => if g.owner != owner then atEntry else match completion with
         | some vs => vs.map fun (n, A) => (n, .ok A)
         | none => atEntry.map fun (n, _) => (n, .ok [])
+      -- A declaration of a statement declaring several: the bindings before it.
+      | .declaration _ _ b _ => match declarations.get? (node.source.1, b.name) with
+        | some vs => vs.map fun (n, A) => (n, .ok A)
+        | none => atEntry
       | _ => atEntry
     let row : SourceClaims.PointData Tree := {
       exprs := sites.filterMap fun sp => (exprMap.get? sp).map (sp, ·)
