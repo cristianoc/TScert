@@ -3214,9 +3214,10 @@ partial def exprAt (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (
     let r ← attempt e do
       -- A literal's type widens in a mutable field, as TypeScript's fresh
       -- literal types do; a name's or a read's type does not, nor a const
-      -- assertion's (the producer's `fresh`, expression_objects.ml:49-54).
+      -- assertion's (the producer's `fresh`, expression_objects.ml:49-54;
+      -- a literal's cast of no annotation is its `as const`).
       let fresh (y : Expr) : Bool := match y with
-        | .var .. | .read .. | .cast _ none (.alloc ..) | .cast _ none (.arrayLit ..) => false
+        | .var .. | .read .. | .cast _ none (.alloc ..) | .cast _ none (.arrayLit ..) | .cast _ none (.lit ..) => false
         | _ => true
       let fields ← (names.zip (As.zip es)).mapM fun (n, A, y) => do
         let A ← need A "a field"

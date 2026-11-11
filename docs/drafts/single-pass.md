@@ -960,8 +960,9 @@ removal works through:
   object literal's fields (the union of the fields the expected members
   state at the key) and an array literal's positions. By form: an object
   literal states its own keys exactly (`HasTyUsing.alloc`'s bound), where
-  nothing is expected each field a literal's widened type, a name's or a
-  read's as it is (the producer's `fresh`); at a
+  nothing is expected each field a literal's widened type, a name's, a
+  read's or a const assertion's (`true as const`) as it is (the producer's
+  `fresh`); at a
   dictionary with a writable index it is allocated at that dictionary with
   each of its keys a field (at the dictionary's named field, else its
   index), the optional fields it leaves out absent; at a record, it is that
