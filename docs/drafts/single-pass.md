@@ -453,7 +453,8 @@ its value does not admit that instance's result: `make<number>` returned at
 `wrong` (refused at the async code's footprint) and
 `invalid-method-effect-throw-caught` `wrong` (refused at the caught call's
 throw), under `no-return` (a never-returning call changing nothing under a
-handler and in an async body too). A control's
+handler and in an async body too), and `map-stable-set` `distinct`, under
+`steps` (accepted unforced, refused at its callback's iterator step). A control's
 acceptance counts only with every unit
 it `depends` on accepted: a run with named units checks only those, a
 dependency's footprint among its proposals, so its reader follows
@@ -710,7 +711,11 @@ removal works through:
   the closed footprint of the classes of contents its writes and calls
   change (an assignment of a binding it does not declare or a field write
   the values, `x ??= v` of such a binding whose `v` changes nothing its
-  initialization, `init`; an element write the values and a store's growth; an array's
+  initialization, `init`; an element write the values and a store's growth;
+  a `for...of` what each step of its stepper's first signature does, the
+  values and its store's change where the step changes its receiver's own
+  locations (a native iterator's position), else the step's footprint
+  (`TSCERT_FORCE=steps` leaves the steps out, the adversarial proposal); an array's
   `length`, and a call changing a receiver's store or elements, both,
   but a call changing the store of a constant holding a store the run
   allocated (one initialized by a call whose instance states a fresh
@@ -1349,33 +1354,7 @@ removal works through:
   claims' facts at the loop heads and the start (`SinglePass.loopHeads`).
   A callback's code request uses its own indexed `codes` row (implications,
   promise arguments and input identities) and `headFactsOfCodes` row
-  (source start, context width and index atoms). Neither row represents
-  fresh-store slots. At a loop head `SinglePass.run` constructs a state
-  with empty freshness (SinglePass.lean:965-984); a callback has no regional
-  fallback (Claims/Json.lean:993-1030). The proved code check obtains fresh
-  slots from `GraphCode.inferFresh` (GraphCode.lean:1276-1283, 1342-1351).
-  Measured 2026-11-11: `for-of-allocated-constant-field-guard` `captured`,
-  `blocker-nullable-field-argument` `use` and `map-stable-set` `distinct`
-  refuse code 0's iterator call at nodes 10, 20 and 11. Each needs its
-  loop-head slot holding `%next` marked fresh in this callback invocation.
-  A given input for this purpose must identify the code request, loop head
-  and fresh slots; the pass must check that freshness on every incoming
-  edge and assume none at the callback entry. The present reader accepts
-  no such input. `dev/single-pass-given.mts:35-42` copies mode 6's rows;
-  `GivenHeads` and `givenLines` (Claims/Json.lean:760-895) emit no freshness
-  row. Regenerating the available `use` and `distinct` certificates gives
-  the same empty code rows. Supplying those facts requires a pass input and
-  edge check as well as an exporter; a tooling-only change cannot do it.
-  The proposed field is freshSlots on each exact code-indexed, labeled
-  head row, with indices into that head's context. The entry list is empty.
-  Every live incoming edge, including back and handler edges, must map
-  each requested slot to an outgoing fresh name; only a normal pushed
-  result certified fresh can add one. Missing indices and malformed head
-  identities refuse. A forced captured-store fact must fail on the initial
-  edge, and a fact lost in the loop must fail on its back edge.
-  Mode 6 may export GraphCode.inferFresh's proposals at those heads;
-  mode 8 checks them without freshness inference. This is a proposed pass
-  extension, with no implementation in this round.
+  (source start, context width and index atoms).
 - **Written-footprint stand-ins.** For a measurement, `TSCERT_STANDINS`
   names a file of footprints the file's functions and imports would write
   (`{"functions": […], "imports": […]}`, each a name, footprint, on-throw
