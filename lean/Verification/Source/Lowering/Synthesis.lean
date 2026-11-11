@@ -509,7 +509,10 @@ def readField (vars : List (String × Ty Tree)) (A : Ty Tree) (fld : PropKey) : 
   -- others (`nullishSplit`, the lowering's read, Atoms.lean:599-618).
   -- Union elimination drops contradictory duplicate discriminants
   -- (`labelMembers`/`conflicting`; type_queries.ml:407-423).
-  let A := ProgramTyping.members G (present G A)
+  let A := (ProgramTyping.members G (present G A)).filter fun l =>
+    -- An empty intersection contributes no receiver. Drop it before
+    -- partitioning dictionaries from the other object contracts.
+    !(G.plain l && (PositiveRules.expand G [l]).isEmpty)
   let (prims, objs) := A.partition fun l => (shapeOf G l).isSome
   -- A function's `toString`: no function owns one, so its lookup reaches
   -- `Function.prototype`'s (`Plans.primitiveArms`, Plans.lean:631-643).
