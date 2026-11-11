@@ -4489,6 +4489,20 @@ partial def applyCall (env : Env) (c : Callee) (args : List Expr) (As : List (Op
             if uppers.contains b then pure (if within T B A then B else A)
             else if within T A B then pure B else if within T B A then pure A else joinTy A B)
         σ := upd σ b B
+    -- A lower candidate for U also constrains T where U extends T.
+    -- These edges copy finite candidate sets; at most one pass per binder
+    -- propagates every path (inference.ml:540-556, saturation of bounds).
+    for _ in List.range c.binders.length do
+      let before := σ
+      for (u, bound) in c.bounds do
+        let [t] := bound | continue
+        if !c.binders.contains t || (c.seed.lookup t).isSome then continue
+        let some U := σ.lookup u | continue
+        let B ← match σ.lookup t with
+          | none => pure U
+          | some B => StateT.lift (joinTy B U)
+        σ := upd σ t B
+      if σ == before then break
     return σ
   -- The first signature, in order, each walked actual is within (a
   -- scheme's at the binders its walked actuals give); else the first the
