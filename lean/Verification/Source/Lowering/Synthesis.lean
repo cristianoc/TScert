@@ -5230,9 +5230,15 @@ partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
   | .ret p x =>
     -- The value's entry, where a finalizer holds the return (the flow
     -- graph's `.returnHeld`): the statement's bindings.
-    modify fun w => { w with entries := w.entries.insert x.span.1 env.vars, held := (p, x.span, env) :: w.held }
+    modify fun w => { w with entries := w.entries.insert x.span.1 env.vars }
     if let some P := (← get).expected then modify fun w => { w with hints := (x.span, P) :: w.hints }
+    let before := (← get).valueWrites
     let (A, _) ← expr env x (← get).expected
+    -- The finalizers it passes run after its value: each cell at its
+    -- declared type where evaluating the value changes a value location.
+    let w ← get
+    let held := if w.valueWrites != before then cellsDeclared w env else env
+    modify fun w => { w with held := (p, x.span, held) :: w.held }
     if !env.ghost then modify fun w => { w with returns := w.returns ++ [A] }
     return none
   | .throw _ x =>
@@ -5581,7 +5587,9 @@ partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
     let w0 ← get
     let b ← stmts (some env) body
     modify fun w => { w with caught := outer }
-    let reset := loopHead env body
+    -- A handler's entry: each binding the body assigns at its declared
+    -- type, and each cell (a throw keeps no current-content fact).
+    let reset := cellsDeclared (← get) (loopHead env body)
     let h ← match handler with
       | some (param, hs) =>
         let unknown ← StateT.lift (prim .source)
@@ -5600,7 +5608,7 @@ partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
       -- The finalizer's entry, which every copy but a return's shares: the
       -- statement's normal completion, a throw of its body or handler (each
       -- binding they assign at its declared type), and each jump passing it.
-      let thrown := loopHead env (body ++ (handler.map (·.2)).getD [])
+      let thrown := cellsDeclared (← get) (loopHead env (body ++ (handler.map (·.2)).getD []))
       let routes := (w1.breaks.take nb).map (·.2) ++ w1.continues.take nc
       -- (`TSCERT_FORCE=finally`: the statement's normal completion alone)
       let entry := if (← get).force.contains "finally" then some (joined.getD thrown) else

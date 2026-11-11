@@ -789,11 +789,19 @@ removal works through:
   that may write cells, execution_analysis.ml:243). What a cell currently holds is a current-content fact,
   which no step keeps across a write without a separation
   ([no general frame rule](../PROGRAM-TYPING.md#no-general-frame-rule));
-  the producer's entries widen the binding there too.
-  `TSCERT_FORCE=cells` keeps the narrowing, the controls
+  the producer's entries widen the binding there too. A handler's entry
+  and a finalizer's entry on a throw's route state each cell at its
+  declared type, and so does a return's route through a finalizer where
+  evaluating the returned value changes a value location: a throw keeps no
+  current-content fact (`ControlFlow.handlerFacts`; the producer's handler
+  edge, proposal_flow.ml:556). `TSCERT_FORCE=cells` keeps the narrowing,
+  the controls
   `module-cache-keeps-lengths` `count` and
   `module-cache-before-initialization` `rhs` (its initialization's `let`
-  across the call of a function that writes it).
+  across the call of a function that writes it), `fresh-separation`
+  `handlerCell` (a shared `let` at a handler's entry) and
+  `module-cells-written-in-turn` `aside` (two module cells at a finalizer's
+  entry, on the throw's route and the return's).
 - **Early bindings.** Each early binding of a statement list (the flow
   graph's `.early` node) is bound from the list's entry on at its written
   contract: its annotation, else its function literal's written receiver,
