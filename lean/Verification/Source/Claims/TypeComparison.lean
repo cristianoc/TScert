@@ -24,7 +24,13 @@ def Front.genericValues (fr : Front) :
     let (T, slot) ← Scheme.moduleScheme (← table) g
     lower (do set T; Fragment.translate slot) : Compiler (Ty Tree))),
    fr.generics.map fun g => (g.name,
-    ({ binders := g.binders, instantiate := (fun θ => (·.1) <$> g.instantiate θ),
+    ({ binders := g.binders,
+       widenBinders := (((fr.ast.getObjValAs? (Array Json) "functions").toOption.getD #[]).toList.find? fun j =>
+         (j.getObjValAs? String "name").toOption == some g.name &&
+         (j.getObjValAs? Span "namePos").toOption == some g.pos).toList.flatMap fun j =>
+           ((j.getObjValAs? (Array Json) "typeParams").toOption.getD #[]).toList.filterMap fun p =>
+             if p.getObjValD "bound" == Json.null then (p.getObjValAs? String "name").toOption else none,
+       instantiate := (fun θ => (·.1) <$> g.instantiate θ),
        resolution := g.resolution, bounds := (fun θ => Prod.snd <$> g.instantiate θ) } : Synthesis.Generic)))
 
 /-- A unit's claims retyped by the walk (`Synthesis.retypeUnit`): the

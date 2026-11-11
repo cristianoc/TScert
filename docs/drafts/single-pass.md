@@ -550,6 +550,12 @@ removal works through:
   the call's result gives there, where that names holes in its result alone
   (the producer's `contextual_actual` and `result_bound`: `new
   Map(xs.map((x) => [x.k, x]))` is a `Map` of the pairs' types).
+  A source function's unbounded binder inferred directly from its actuals
+  widens primitive literal candidates when its result does not return that
+  binder bare, within the other actuals' and expected result's constraints
+  (inference.ml:608-630). Written bounds, explicit seeds and callback-only
+  candidates retain their types. The instance precedes result allocation;
+  each existing argument keeps its store contract.
   An ordinary generic constructor supplies its construct signatures at fresh
   binders; its actuals supply their instance as for a function call.
   A packed generic class's construction reads written callback parameters
