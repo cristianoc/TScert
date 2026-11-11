@@ -414,8 +414,9 @@ object at the first name its key may spell alone),
 `loops`, `invalid-unassigned-let` `readBeforeAssignment`, under
 `decided`, `invalid-map-fresh-alias` `drained`, under `callbacks`,
 `invalid-map-fresh-reassigned` `drained`, under `fresh`,
-`invalid-for-of-program-iterable-drain` `wrong`, under `binds` (each
-member bound by `o.m.bind(o)` keeping values and stores),
+`for-of-program-iterable` `sum`, under `binds` (each
+member bound by `o.m.bind(o)` keeping values and stores; accepted
+unforced, refused at the bind, its member's effect changing the heap),
 `invalid-closure-default-effect` `stale`, under `defaults` (each
 function literal's defaults' changes left out of its effect),
 `invalid-generic-closure-effect` `stale`, under `schemes`
