@@ -4200,9 +4200,21 @@ partial def exprCall (env : Env) (e : Expr) (exp : Option (Ty Tree)) : W (Option
     let (K, e1) ← match keyE with
       | some k => expr e1 k
       | none => pure (none, e1)
+    -- The method is read before its actuals. A path's current contents
+    -- supply that read as for any other member read (expression_calls.ml:85,
+    -- expression_properties.ml:32-35). The existing path invalidation in
+    -- `expr`/`afterCall` decides which contents reach this point.
+    let narrowed := (memberPath callee).bind fun p => e1.paths.lookup p
+    -- The adversarial proposal changes the saved member's callable row.
+    let narrowed := if (← get).force.contains "path-callees" then narrowed.map fun _ => [Labels.tru] else narrowed
+    if let (some p, some _) := (memberPath callee, narrowed) then
+      modify fun w => { w with readPaths := w.readPaths.insert p }
     let (As, e2) ← actuals e1 args
     -- Spread actuals as the call reads them (`spreadCall`).
     let c ← StateT.lift (tryCatch (do
+        if let some F := narrowed then
+          let R := present (← graphNow) (← need O "the receiver")
+          return Except.ok (← spreadCall args As spreads (← calleeOf F R typeArgs))
         -- A computed key of one string literal names its member, as a
         -- literal key does (the lowering's `keySingletons`, Atoms.lean:1079).
         let fld ← match fld, K with
