@@ -519,6 +519,20 @@ def readField (vars : List (String × Ty Tree)) (A : Ty Tree) (fld : PropKey) : 
   -- others (the lowering's read of a union, each alternative as it reads).
   let (arrs, objs) := if fld == lengthKey then objs.partition fun l => arraysOnly G [l] else ([], objs)
   if !arrs.isEmpty then out := out ++ (← prim .num)
+  let (dicts, objs) := objs.partition fun l => match PositiveRules.expand G [l] with
+    | [.dict _ [] ..] => true
+    | _ => false
+  for l in dicts do
+    if let [.dict fs [] vs ix os _ _ _ _] := PositiveRules.expand G [l] then
+      match fs.lookup fld <|> vs.lookup fld with
+      | some B => out := out ++ B
+      | none =>
+        match os.find? (·.key == fld) with
+        | some o => out := out ++ o.type ++ [Labels.undef]
+        | none =>
+          let some (_, B) := (PositiveNormalization.numericFirst ix).find? (fun (K, _) => K.surely fld)
+            | throw (readRefusal s!"read of a key '{fld}' no index of the object constrains")
+          out := out ++ B ++ [Labels.undef]
   if !objs.isEmpty then
     if fld == lengthKey && arraysOnly G objs then out := out ++ (← prim .num)
     else
@@ -1169,10 +1183,19 @@ def widestOf (G : PositiveGraphs.NormalGraph Tree) (P : Ty Tree) : Option (CallE
 union of the field each member of `P` states at `k`, a dictionary's index
 included; none where no member states one. -/
 def fieldExpected (P : Ty Tree) (k : PropKey) : Compiler (Option (Ty Tree)) := do
+  let G ← graphNow
   let mut out : Ty Tree := []
   for l in P do
-    if let some D ← tryCatch (some <$> readField [] [l] k) (fun _ => pure none) then
-      out := out ++ D
+    -- Construction at an optional field uses its value contract, without
+    -- the undefined contributed by an absent read (expression_objects.ml:34).
+    let named := match PositiveRules.expand G [l] with
+      | [.refs fs [] vs os _ _ _] | [.dict fs [] vs _ os _ _ _ _] =>
+        fs.lookup k <|> vs.lookup k <|> (os.find? (·.key == k)).map (·.type)
+      | _ => none
+    let D ← match named with
+      | some D => pure (some D)
+      | none => tryCatch (some <$> readField [] [l] k) (fun _ => pure none)
+    if let some D := D then out := out ++ D
   return if out.isEmpty then none else some (norm out)
 
 /-- The array members of an expected type. -/
@@ -1902,12 +1925,17 @@ partial def exprAt (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (
     return (A, (join (some (← refine e1 l !andOp)) (some e2)).getD e2)
   | .coalesce _ l r =>
     let (L, e1) ← expr env l
-    let (R, e2) ← expr e1 r exp
+    let expected ← match exp, L with
+      | none, some L => StateT.lift (tryCatch (some <$> nonNullish L) fun _ => pure none)
+      | _, _ => pure exp
+    let (R, e2) ← expr e1 r expected
     -- `a ?? b`: `a` less null and undefined, or `b`.
     -- (`TSCERT_FORCE=meets`: each type parameter's value dropped there)
     let meets := (← get).force.contains "meets"
     let A ← attempt e do
-      let P ← nonNullish (← need L "the left operand")
+      let L ← need L "the left operand"
+      let G ← graphNow
+      let P ← if L.any (fun l => PositiveRules.expand G [l] == [.source]) then pure L else nonNullish L
       let T ← table
       let P := if meets then P.filter fun a => !(StoreView.row T a matches .meet ..) else P
       joinTy P (← need R "the right operand")
@@ -2018,6 +2046,7 @@ partial def exprAt (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (
     for (k, y) in names.zip es do
       let D ← match exp, k with
         | some P, some k => StateT.lift (fieldExpected P (.str k))
+        | some P, none => pure (some P)
         | _, _ => pure none
       let (A, e') ← expr e1 y D
       As := As ++ [A]
@@ -2051,7 +2080,7 @@ partial def exprAt (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (
             let A ← need A "a part"
             match k with
             | some k =>
-              let D ← readField [] [l] (.str k)
+              let some D ← fieldExpected [l] (.str k) | throw "no expected field"
               if A != D && !within T A D then throw "a part not within its expected field"
               parts := parts ++ [(some (.str k), D)]
             | none => parts := parts ++ [(none, A)]
@@ -3493,7 +3522,7 @@ partial def fit (P : Ty Tree) (x : Expr) (A : Option (Ty Tree)) : W (Option (Ty 
           for (k, y) in names.zip es do
             let D := (first.lookup k).getD index
             let some B ← fit D y ((w.exprs.get? y.span).bind (·.2.toOption)) | ok := false; break
-            if !within T B D then ok := false; break
+            if !within (← StateT.lift table) B D then ok := false; break
             fields := fields ++ [(k, D)]
           if ok then
             let R ← StateT.lift (prim (.dict fields [] vs ix (os.filter fun o => !names.contains o.key) [] bs cells st))
@@ -3507,14 +3536,16 @@ partial def fit (P : Ty Tree) (x : Expr) (A : Option (Ty Tree)) : W (Option (Ty 
             match (w.exprs.get? y.span).bind (·.2.toOption) with
             | some B => pure B
             | none => throw "the prototype undetermined"
-          else readField [] [l] k) fun _ => pure none)
+          else do
+            let some D ← fieldExpected [l] k | throw "no expected field"
+            pure D) fun _ => pure none)
       let some Ds := Ds | continue
       let mut fields : List (PropKey × Ty Tree) := []
       let mut own : List (PropKey × Ty Tree) := []
       let mut ok := true
       for ((k, y), D) in (names.zip es).zip Ds do
         let some B ← fit D y ((w.exprs.get? y.span).bind (·.2.toOption)) | ok := false; break
-        fields := fields ++ [(k, if within T B D then D else B)]
+        fields := fields ++ [(k, if within (← StateT.lift table) B D then D else B)]
         own := own ++ [(k, B)]
       if !ok then continue
       -- Each field at the expected one, else at the value's own type (a
@@ -3554,7 +3585,7 @@ partial def fit (P : Ty Tree) (x : Expr) (A : Option (Ty Tree)) : W (Option (Ty 
       for (y, i) in es.zipIdx do
         let some D := t.position i | ok := false; break
         let some B ← fit D y ((w.exprs.get? y.span).bind (·.2.toOption)) | ok := false; break
-        if !within T B D then ok := false; break
+        if !within (← StateT.lift table) B D then ok := false; break
       if ok then return ← record x (.ok [l])
     -- At an iterable other than an array: the readonly array of what it
     -- yields, holes read as `undefined` where that admits it.
@@ -3563,7 +3594,7 @@ partial def fit (P : Ty Tree) (x : Expr) (A : Option (Ty Tree)) : W (Option (Ty 
       let mut ok := true
       for y in es do
         let some B ← fit E y ((w.exprs.get? y.span).bind (·.2.toOption)) | ok := false; break
-        if !within T B E then ok := false; break
+        if !within (← StateT.lift table) B E then ok := false; break
       if ok then
         let R ← StateT.lift (lower do
           let s ← SourceTypes.use (.list ⟨[], [], some E, true, .readable⟩ [])
