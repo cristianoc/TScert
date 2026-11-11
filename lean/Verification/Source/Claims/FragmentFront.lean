@@ -39,10 +39,19 @@ partial def genericLambdas : Json → List Json
     here ++ kvs.toList.flatMap fun (_, v) => genericLambdas v
   | _ => []
 
+/-- Whether an annotation contains a quantified callable. Inferred scheme
+results leave nested scheme comparison to its existing source-signature
+obligation (ClosureSetup.lean:258). -/
+partial def nestedSchemeAnnotation : Json → Bool
+  | .arr xs => xs.any nestedSchemeAnnotation
+  | .obj kvs => (Json.obj kvs).getObjValD "k" == toJson "scheme" ||
+      kvs.toList.any (fun (_, v) => nestedSchemeAnnotation v)
+  | _ => false
+
 /-- **A generic closure's scheme claim from its annotations** (mode 8): its
 binders its own, each bound its written one (an earlier binder by name); its
 receiver its written `this` (an arrow's, every value); its parameters and
-result as written, a defaulted parameter with `undefined`, an array rest its
+result as written or proposed by the body walk, a defaulted parameter with `undefined`, an array rest its
 element (`ClosureSetup.lambdaSetup`'s own signature); its effect the one it
 writes, else, for an expression body that, with its defaults, calls nothing
 (`Synthesis.mayCall`),
@@ -50,17 +59,16 @@ keeping values and stores and bounding its throws, else the ordinary effect;
 the walk checks its body's effect within it (`Synthesis.walkLambda`). The
 scheme row and the binders its body reads as rigid rows are then
 `Scheme.closureRows`'s, as for a producer's scheme claim
-(claims.ml:546-564). A closure that writes no result, a guard, an async
-closure, a resolution-qualified binder or a rest of no array is claimed at
+(claims.ml:546-564). A guard, an async closure, a resolution-qualified binder or a rest of no array is claimed at
 no scheme. -/
 def writtenSchemes (force : List String := []) : ClosureSchemes := fun T body => do
   let action : Compiler (List (Expression Tree)) := do
     let mut out : List (Expression Tree) := []
     for j in genericLambdas body do
-      let .ok (.lambda pos receiver tps params defaults rest result guard stated async _ body) := Fragment.decodeExpr j
+      let .ok (e@(.lambda pos receiver tps params defaults rest result guard stated async _ body)) := Fragment.decodeExpr j
         | continue
-      let some ret := result | continue
       if guard.isSome || async || tps.any (·.resolution.isSome) then continue
+      if result.isNone && params.any (fun (_, ty) => nestedSchemeAnnotation ty) then continue
       let part (j : Json) : Compiler (Option (Ty Tree)) :=
         tryCatch (some <$> lower (Fragment.callableType j)) fun _ => pure none
       let names := tps.map (·.name)
@@ -80,13 +88,25 @@ def writtenSchemes (force : List String := []) : ClosureSchemes := fun T body =>
         let A ← part ty
         pure (A.map fun A => if defaults.any (·.1 == i) then Synthesis.norm (A ++ [LabelStore.Labels.undef]) else A)
       let some ps := qs.mapM id | continue
+      let G := SourceTypes.graph (← table)
+      if result.isNone && ps.any (fun A => A.any (fun l => (G.schemes l).isSome)) then continue
       let restEl ← match rest, params.getLast? with
         | true, some (_, ty) => match Fragment.arrayElement ty (readonly := true) with
           | some el => pure (some (← part el))
           | none => pure (some none)
         | _, _ => pure none
       if restEl == some none then continue
-      let some R ← part ret | continue
+      -- An unwritten result is the body's, as in expression_closures.ml:
+      -- 266-272. This preliminary walk supplies only a proposal; the
+      -- scheme introduction checks the body again at its rigid rows.
+      let R ← match result with
+        | some ret => part ret
+        | none => tryCatch (do
+          let (A, _) ← (Synthesis.walkLambda {} e none).run {}
+          let some A := A | pure none
+          let G := SourceTypes.graph (← table)
+          pure ((ProgramTyping.callSigs G A).head?.map (·.result))) fun _ => pure none
+      let some R := R | continue
       let recv ← match receiver with
         | some (annot, _) => part annot
         | none => pure (some [← lower (SourceTypes.use .source)])
