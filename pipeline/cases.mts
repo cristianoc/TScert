@@ -3465,6 +3465,9 @@ export const cases: Case[] = [
     "captured cell written at the binder's type",
     /source expression obligation at \[128,143\): evidence search failed: no derivation of its storage-contract claim/,
   ),
+  positive("generic-closure-effect", "a generic closure writing a field its caller narrowed: the caller tests the field again after the call"),
+  negative("invalid-generic-closure-effect", "a generic closure writing a field its caller narrowed, the caller returning the field after the call as narrowed (run under Node: `null` where a number is promised)",
+    /source expression obligation at \[372,381\): evidence search failed: no derivation of its return-contract claim/),
   positive(
     "callback-literal-context",
     "a callback's object literal built at the arm of the expected element type it fits: `map`'s binder and a generic function's fixed by the expected result, a field's, the enclosing function's",

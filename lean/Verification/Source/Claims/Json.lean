@@ -467,11 +467,11 @@ def Front.extractAll (fr : Front) :
 /-- `extractAll` over the units `wanted` names, by index, only: another
 unit's plan is a refusal no check of the wanted units reads. -/
 def Front.extractSome (fr : Front) (wanted : Std.HashSet Nat) (retype : Option Retype := none)
-    (instances : Option Instances := none) :
+    (instances : Option Instances := none) (closureSchemes : Option ClosureSchemes := none) :
     EquationStore.State × List (Except String (FunctionPlan EquationStore.State Tree)) :=
   (fr.units.zipIdx.foldl (init := (fr.d.types, #[])) fun (T, plans) (u, i) =>
     if !wanted.contains i then (T, plans.push (.error "not extracted")) else
-    match extractMember fr T u retype instances with
+    match extractMember fr T u retype instances closureSchemes with
     | .ok (next, plan) => (next, plans.push (.ok plan))
     | .error reason => (T, plans.push (.error reason))).map id (·.toList)
 

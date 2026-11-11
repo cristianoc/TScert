@@ -404,8 +404,11 @@ at keep/keep bounding its throws), `invalid-declaration-pop-callback`
 object at the first name its key may spell alone),
 `invalid-closure-offer-narrower-mutation` `wrong`, under `offers`,
 `invalid-field-narrowing-for-of-callback` and `-closure` `count`, under
-`loops`, and `invalid-unassigned-let` `readBeforeAssignment`, under
-`decided`. A control's acceptance counts only with every unit
+`loops`, `invalid-unassigned-let` `readBeforeAssignment`, under
+`decided`, and `invalid-generic-closure-effect` `stale`, under `schemes`
+(every generic closure claimed keeping values and stores and bounding its
+throws, its body's effect unchecked against that claim). A control's
+acceptance counts only with every unit
 it `depends` on accepted: a run with named units checks only those, a
 dependency's footprint among its proposals, so its reader follows
 `depends`.
@@ -511,7 +514,8 @@ removal works through:
   whose leading ones are within the literal's is expected (an argument, an
   annotated binding, a return), offers the literal that signature
   (`closure_offer`); where a unit's walk finds such an offer, the unit is
-  walked once more with each offered row stated at its literal.
+  walked once more with each offered row stated at its literal, the walk's
+  one retry, at most one walk beyond the first (the producer's second round).
   `TSCERT_FORCE=offers` offers every longer signature whatever its leading
   parameters, the adversarial proposal. A defaulted parameter is offered
   with `undefined`, bound in the body at its type, its default made at that
@@ -528,6 +532,23 @@ removal works through:
   call changing its receiver's own locations the values and its store's
   change; any other call its instance's footprint); and it bounds a throw
   (`onThrow`) where none of its calls states a throw left unbounded. A
+  generic function literal (one writing type parameters, a class's generic
+  method included) is claimed at the scheme its annotations state, before
+  its unit's walk: its binders its own, each bound its written one; its
+  receiver its written `this`, an arrow's every value; its parameters and
+  result as written, a defaulted parameter with `undefined`, an array rest
+  its element; its effect its written one, else, for an expression body
+  that with its defaults calls nothing (`Synthesis.mayCall`), keeping values
+  and stores and bounding its throws, else the ordinary effect (the
+  producer's scheme claim, claims.ml:546-564). Its scheme row and binder
+  rows are `Scheme.closureRows`', so its annotations, and its body's walk,
+  read each binder as a rigid row; the walk states it at that scheme where
+  its body's effect is within the scheme's, and states a call of a local
+  holding a scheme with its callee at the call's instance (`closureRows`'
+  instances). One that writes no result is claimed at no scheme; it, and
+  any generic literal a walk meets before the scheme rows are made (a
+  declaration's footprint, the initialization's walk), is walked at its own
+  parameters as any other literal. A
   callback is stated at that effect where its parameter's effect covers it
   (`Effect.covers`; without `onThrow` where the parameter states none), else
   at the parameter's. Of a call's several signatures, each callback is

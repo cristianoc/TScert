@@ -320,10 +320,16 @@ abbrev Instances := Front → EquationStore.State → Fragment.Fn → Function T
   List (SourceExtraction.ModuleValue Tree) → Option (SchemeRow Tree × List String) →
   Except String (EquationStore.State × Function Tree)
 
+/-- What claims a unit's generic closures at their schemes where no claim
+names them, before their scheme rows are made (`Scheme.closureRows`): from
+the unit's source tree, over a grown store. -/
+abbrev ClosureSchemes := EquationStore.State → Json →
+  Except String (EquationStore.State × List (Expression Tree))
+
 /-- One unit's plan, extracted from the front over the store `T`. -/
 def extractMember (fr : Front) (T : EquationStore.State)
     (u : Fragment.Fn × List Fragment.TypeParam × Option (Function Tree)) (retype : Option Retype := none)
-    (instances : Option Instances := none) :
+    (instances : Option Instances := none) (closureSchemes : Option ClosureSchemes := none) :
     Except String (EquationStore.State × FunctionPlan EquationStore.State Tree) := do
   let ⟨ast, d, functionJsons, init, generics, unitBinders, initBinders, classNames, freshConstructors,
     moduleFunctions, moduleConstants, classSelves, _, _, initOrder, moduleOwned, _, _⟩ := fr
@@ -376,6 +382,13 @@ def extractMember (fr : Front) (T : EquationStore.State)
   if (c.arrows.getD []).any fun a => closures.any (·.span == a.pos) then
     throw "per-arrow source claims are for ground closures, not quantified schemes"
   let graphClosures := !closures.isEmpty
+  -- A generic closure no claim names, claimed at its scheme where a hook
+  -- states one (the claims-free front's, from its annotations).
+  if let (some h, some j) := (closureSchemes, unitSource) then
+    if closures.any fun gc => !c.expressions.any (·.pos == gc.span) then
+      let (T, es) ← h d.types ((j.getObjVal? "body").toOption.getD .null)
+      d := { d with types := T }
+      c := { c with expressions := c.expressions ++ es.filter fun e => !c.expressions.any (·.pos == e.pos) }
   -- The calls a scheme-typed local makes: a generic module value's calls
   -- name instances its slot holds (`Scheme.moduleInstances`) instead.
   let localCalls := (f.body.flatMap Fragment.Stmt.callees).filter fun call =>

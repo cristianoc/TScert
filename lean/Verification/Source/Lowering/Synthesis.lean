@@ -157,6 +157,9 @@ structure Walk where
   next (`walkUnit`). -/
   offered : List (Span × CallEffects.Arrow (Ty Tree)) := []
   offers : List (Span × CallEffects.Arrow (Ty Tree)) := []
+  /-- Each generic closure's scheme, by its span: the claim its annotations
+  state (`writtenSchemes`), its row `Scheme.closureRows`'s. -/
+  schemes : List (Span × Ty Tree) := []
   /-- Whether the last call may have changed a value of the heap (its
   instance's footprint): the narrowed paths end there. -/
   changedValues : Bool := false
@@ -2060,8 +2063,14 @@ partial def expr (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (Op
     let c := (·.2.2) <$> c
     modify fun w => { w with lastInstance := none, lastResolution := [] }
     let r ← called e2 c args As e.span exp
-    -- A generic module function's occurrence is read at its instance, and
-    -- the call's type arguments recorded.
+    -- A generic module function's occurrence, and a scheme-typed local's,
+    -- is read at its instance (`Scheme.closureRows`' instances), and a
+    -- generic module function's type arguments recorded.
+    let schemeLocal ← match callee, F with
+      | .var .., some [l] => do pure ((← StateT.lift graphNow).schemes l).isSome
+      | _, _ => pure false
+    if schemeLocal && generic.isNone then
+      if let .ok (inst, _) := r then let _ ← record callee (.ok inst)
     if generic.isSome then
       if let .ok (inst, _) := r then let _ ← record callee (.ok inst)
       if let some θ := (← get).lastInstance then
@@ -2478,7 +2487,7 @@ partial def walkLambda (env : Env) (e : Expr) (sig : Option (CallEffects.Arrow (
     W (Option (Ty Tree)) := do
   let expected := sig.map (·.arguments)
   let expectedResult := sig.map (·.result)
-  let .lambda _ receiver _ params defaults rest result guard stated async _ body := e
+  let .lambda _ receiver tps params defaults rest result guard stated async _ body := e
     | return none
   let captured := env.vars.map fun (n, A) => (n, (env.decl.lookup n).getD A)
   let mut vars := captured
@@ -2554,6 +2563,19 @@ partial def walkLambda (env : Env) (e : Expr) (sig : Option (CallEffects.Arrow (
   -- A written effect (`Modifies<…>`) is the one it states.
   let kept := stated.getD kept
   let changed := stated.getD changed
+  -- A generic closure: at the scheme its annotations state, its body walked
+  -- with each binder a rigid row (`Scheme.closureRows`), where that scheme's
+  -- effect covers its body's.
+  -- (Where no scheme names it, a walk before the scheme rows are made: at
+  -- its own parameters, as any other literal.)
+  if let (false, some S) := (tps.isEmpty, (← get).schemes.lookup e.span) then
+    let G ← StateT.lift graphNow
+    let some s := (match S with | [l] => G.schemes l | _ => none)
+      | return ← record e (.error "a generic closure's claim is no scheme")
+    let mine := if pure_ then kept else changed
+    if !forced && !(← get).force.contains "schemes" && !(s.signatures.all (mine.covers ·.effect) && s.variadic.all (mine.covers ·.effect)) then
+      return ← record e (.error "a generic closure whose body changes the heap beyond its scheme's effect")
+    return ← record e (.ok S)
   match ps.mapM id, R, restPack with
   | some _, some _, some none => record e (.error "a function value: a rest of no array element")
   | some qs, some R, some (some pack) =>
@@ -3326,7 +3348,7 @@ store. -/
 def walkUnit (T : EquationStore.State) (f : Fragment.Fn)
     (module : List (String × Compiler (Ty Tree))) (generics : List (String × Generic) := [])
     (force : List String := []) (scope : Option (PositiveGraphs.SchemeRow Tree × List String) := none)
-    (strict : Bool := false) :
+    (strict : Bool := false) (schemes : List (Span × Ty Tree) := []) :
     Except String (Walk × EquationStore.State) := do
   let action : Compiler (Walk × EquationStore.State) := do
     let mut vars : List (String × Ty Tree) := []
@@ -3349,7 +3371,7 @@ def walkUnit (T : EquationStore.State) (f : Fragment.Fn)
     -- (computed where a read first narrows one)
     let slots := Thunk.mk fun _ => (f.params.map (·.name) ++ declaredIn f.body).filter fun n =>
       !(cellLocals (f.params.map (·.name)) f.body f.name.isEmpty).any (·.1 == n)
-    let start : Walk := { generics, expected, force, scope, locals, strict, slots, entries := (({} : Std.HashMap Nat _).insert 0 vars).insert f.namePos.1 vars }
+    let start : Walk := { generics, expected, force, scope, locals, strict, slots, schemes, entries := (({} : Std.HashMap Nat _).insert 0 vars).insert f.namePos.1 vars }
     let (done, w) ← (stmts (some env) f.body).run start
     -- Where a use offers a constant's literal more rows, walked again with
     -- them (the producer's second round, proposal.ml:47-52), once.
@@ -3392,7 +3414,9 @@ def retypeUnitWith (T : EquationStore.State) (f : Fragment.Fn) (fc : SourceClaim
       Std.HashMap (Nat × String) (List (String × Ty Tree)) ×
       Std.HashMap Span (List (String × Ty Tree) × List (String × List (List PropKey × Ty Tree))) ×
       Std.HashMap (Span × Span) (SourceClaims.Candidate Tree)) := do
-  let (w, T') ← walkUnit T f module generics force scope
+  -- A generic closure at the scheme its claim names.
+  let schemes := fc.exprs.filterMap fun (sp, c) => c.toOption.map (sp, ·)
+  let (w, T') ← walkUnit T f module generics force scope (schemes := schemes)
   let exprs : List (Span × SourceClaims.Candidate Tree) := w.exprs.toList.map fun (span, (_, r)) =>
     (span, r.mapError undetermined)
   let envs : List (Nat × List (String × SourceClaims.Candidate Tree)) :=
