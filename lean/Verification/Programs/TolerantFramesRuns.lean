@@ -111,10 +111,10 @@ def ShapeOk (v : Tm) : Continuation → Prop
 
 /-- The obligation a normal exit with value `v` meets at the state `s` its
 continuation's transition reaches: the target's assertion at its environment,
-or the result type. -/
-def NormalTarget (pre : Nat → Assertion) (Tres : Fam) (ρ : Env) (m : Nat) (s : IndexedHeap) (v : Tm) :
-    Continuation → Prop
-  | .ret => Tres s.n s.W v
+or the result type and the graph's normal exit post `Qres`. -/
+def NormalTarget (pre : Nat → Assertion) (Tres : Fam) (Qres : Heap → Prop) (ρ : Env) (m : Nat) (s : IndexedHeap)
+    (v : Tm) : Continuation → Prop
+  | .ret => Tres s.n s.W v ∧ Qres s.h
   | .bind l => pre l.label (mapEnv l.mapping (push v ρ)) m s
   | .effect l => pre l.label (mapEnv l.mapping ρ) m s
   | .branch y n => (v = .tru ∧ pre y.label (mapEnv y.mapping ρ) m s) ∨
@@ -123,52 +123,56 @@ def NormalTarget (pre : Nat → Assertion) (Tres : Fam) (ρ : Env) (m : Nat) (s 
 
 /-- The obligation a throw of `e` meets at the state the handler's transition
 reaches: the handler's assertion with `e` bound, or, escaping, the graph's
-exception family. -/
-def RaiseTarget (pre : Nat → Assertion) (Ξres : Fam) (ρ : Env) (m : Nat) (s : IndexedHeap) (e : Tm) :
-    Option Target → Prop
+exception family and its exceptional exit post `Rres`. -/
+def RaiseTarget (pre : Nat → Assertion) (Ξres : Fam) (Rres : Heap → Prop) (ρ : Env) (m : Nat) (s : IndexedHeap)
+    (e : Tm) : Option Target → Prop
   | some l => pre l.label (mapEnv l.mapping (push e ρ)) m s
-  | none => Ξres s.n s.W e
+  | none => Ξres s.n s.W e ∧ Rres s.h
 
 /-- A node's exit obligations from its entry state `s₀`, exit by exit: the
 normal exit within `cn` with post `Qn`, the exceptional one within `ce` with
 post `Qe`. The shape is required at every budget, the targets at positive
 states only. -/
-structure NodeObligations (pre : Nat → Assertion) (Ξres Tres Ξ T : Fam) (cn ce : Footprints.Closed)
+structure NodeObligations (pre : Nat → Assertion) (Ξres Tres : Fam) (Qres Rres : Heap → Prop) (Ξ T : Fam)
+    (cn ce : Footprints.Closed)
     (Qn : Post) (Qe : Heap → Prop) (ρ : Env) (m : Nat) (s₀ : IndexedHeap) (k : Continuation)
     (x : Option Target) : Prop where
   shape : ∀ (j : Nat) (U : WorldT (j + 1)) (h : Heap) (v : Tm), isVal v = true → T (j + 1) U v →
     cn.Holds s₀.h h → Qn h v → ShapeOk v k
   normal : ∀ (s : IndexedHeap) (v : Tm), Action cn.fp ρ s₀ s → isVal v = true → Above T s v → Qn s.h v →
-    NormalTarget pre Tres ρ m s v k
+    NormalTarget pre Tres Qres ρ m s v k
   raise : ∀ (s : IndexedHeap) (e : Tm), Action ce.fp ρ s₀ s → Scoped 0 e → Above Ξ s e → Qe s.h →
-    RaiseTarget pre Ξres ρ m s e x
+    RaiseTarget pre Ξres Rres ρ m s e x
 
 /-- A partially evaluated node: its local safety from its entry state `s₀`,
 the current world reached from `s₀`, and its exit obligations. -/
-def EvalOk (pre : Nat → Assertion) (Ξres Tres : Fam) (m n : Nat) (W : WorldT n) (h : Heap) (t : Tm)
+def EvalOk (pre : Nat → Assertion) (Ξres Tres : Fam) (Qres Rres : Heap → Prop) (m n : Nat) (W : WorldT n) (h : Heap) (t : Tm)
     (ρ : Env) (k : Continuation) (x : Option Target) : Prop :=
   ∃ (s₀ : IndexedHeap) (Ξ T : Fam) (cn ce : Footprints.Closed) (Qn : Post) (Qe : Heap → Prop),
     Reach s₀ n W ∧
     SafePostExc Ξ T (fun h' v => cn.Holds s₀.h h' ∧ Qn h' v) (fun h' => ce.Holds s₀.h h' ∧ Qe h') n W h t ∧
-    NodeObligations pre Ξres Tres Ξ T cn ce Qn Qe ρ m s₀ k x
+    NodeObligations pre Ξres Tres Qres Rres Ξ T cn ce Qn Qe ρ m s₀ k x
 
 /-- The graph invariant: a node's assertion at `.at`, a partially evaluated
 node at `.eval`, the result type at `.done`, the exception family at
-`.raised`; each only at positive budget. -/
-def GraphInv (pre : Nat → Assertion) (Ξres Tres : Fam) (m n : Nat) (W : WorldT n) (h : Heap) : State → Prop
+`.raised`, with the exits' posts `Qres` and `Rres` of the heap; each only at
+positive budget. -/
+def GraphInv (pre : Nat → Assertion) (Ξres Tres : Fam) (Qres Rres : Heap → Prop) (m n : Nat) (W : WorldT n)
+    (h : Heap) : State → Prop
   | .at l ρ => ∀ (hp : 0 < n) (ha : WorldAdm W) (ho : HeapOk n W h), pre l ρ m ⟨n, W, h, hp, ha, ho⟩
-  | .eval t ρ k x => 0 < n → EvalOk pre Ξres Tres m n W h t ρ k x
-  | .done v => 0 < n → isVal v = true ∧ Tres n W v
-  | .raised v => 0 < n → Scoped 0 v ∧ Ξres n W v
+  | .eval t ρ k x => 0 < n → EvalOk pre Ξres Tres Qres Rres m n W h t ρ k x
+  | .done v => 0 < n → isVal v = true ∧ Tres n W v ∧ Qres h
+  | .raised v => 0 < n → Scoped 0 v ∧ Ξres n W v ∧ Rres h
 
 /-- Every node a label's assertion reaches exists and meets its local safety
 and exit obligations from every state where the assertion holds. -/
-def NodesChecked (P : Program) (pre : Nat → Assertion) (Ξres Tres : Fam) (m : Nat) : Prop :=
+def NodesChecked (P : Program) (pre : Nat → Assertion) (Ξres Tres : Fam) (Qres Rres : Heap → Prop) (m : Nat) :
+    Prop :=
   ∀ l ρ (s : IndexedHeap), pre l ρ m s → ∃ node, P[l]? = some node ∧
     ∃ (Ξ T : Fam) (cn ce : Footprints.Closed) (Qn : Post) (Qe : Heap → Prop),
       SafePostExc Ξ T (fun h' v => cn.Holds s.h h' ∧ Qn h' v) (fun h' => ce.Holds s.h h' ∧ Qe h')
         s.n s.W s.h (instantiate 0 ρ node.expression) ∧
-      NodeObligations pre Ξres Tres Ξ T cn ce Qn Qe ρ m s node.continuation node.handler
+      NodeObligations pre Ξres Tres Qres Rres Ξ T cn ce Qn Qe ρ m s node.continuation node.handler
 
 /-- The node assertions survive the administrative steps: a truncation of
 the world with the heap unchanged. -/
@@ -191,75 +195,94 @@ theorem below_action {s₀ : IndexedHeap} {c : Footprints.Closed} {ρ : Env} {j 
     Action c.fp ρ s₀ (below j U h hp ha ho) :=
   ⟨hr.step (WExt_refl _), Footprints.Closed.post_iff.mpr (Footprints.Closed.holds_iff.mp hc)⟩
 
+/-- **One transition from the graph invariant.** At a positive budget a state
+the invariant describes is terminal, with its result, or takes a transition to
+a state the invariant describes one level down, its world extending the
+truncated one. -/
+theorem graph_step {P : Program} {pre : Nat → Assertion} {Ξres Tres : Fam} {Qres Rres : Heap → Prop} {m : Nat}
+    (hnodes : NodesChecked P pre Ξres Tres Qres Rres m) (hdown : AdminClosed pre m) {n : Nat}
+    {W : WorldT (n + 1)} {h : Heap} {st : State} (ha : WorldAdm W) (ho : HeapOk (n + 1) W h)
+    (hinv : GraphInv pre Ξres Tres Qres Rres m (n + 1) W h st) :
+    ((∃ v, st = .done v ∧ isVal v = true ∧ Tres (n + 1) W v) ∨
+      (∃ v, st = .raised v ∧ Scoped 0 v ∧ Ξres (n + 1) W v)) ∨
+    ∃ (U : WorldT n) (h' : Heap) (st' : State), WExt (trunc n (Nat.le_succ n) W) U ∧ WorldAdm U ∧
+      Transition P h st h' st' ∧ HeapOk n U h' ∧ GraphInv pre Ξres Tres Qres Rres m n U h' st' := by
+  have ha' := WorldAdm_trunc (Nat.le_succ n) ha
+  have ho' := HeapOk_trunc n W h ho
+  have next : ∀ {h' st'} (U : WorldT n), WExt (trunc n (Nat.le_succ n) W) U → WorldAdm U →
+      Transition P h st h' st' → HeapOk n U h' → GraphInv pre Ξres Tres Qres Rres m n U h' st' →
+      ((∃ v, st = .done v ∧ isVal v = true ∧ Tres (n + 1) W v) ∨
+        (∃ v, st = .raised v ∧ Scoped 0 v ∧ Ξres (n + 1) W v)) ∨
+      ∃ (U : WorldT n) (h' : Heap) (st' : State), WExt (trunc n (Nat.le_succ n) W) U ∧ WorldAdm U ∧
+        Transition P h st h' st' ∧ HeapOk n U h' ∧ GraphInv pre Ξres Tres Qres Rres m n U h' st' :=
+    fun U hx hu tr hh hi => .inr ⟨U, _, _, hx, hu, tr, hh, hi⟩
+  cases st with
+  | «at» l ρ =>
+    have hpre := hinv (Nat.zero_lt_succ n) ha ho
+    obtain ⟨node, hP, -⟩ := hnodes l ρ _ hpre
+    refine next _ (WExt_refl _) ha' (.enter hP) ho' fun hp => ?_
+    let s₀ : IndexedHeap := ⟨n, trunc n (Nat.le_succ n) W, h, hp, ha', ho'⟩
+    have hpre₀ := hdown l ρ ⟨n + 1, W, h, Nat.zero_lt_succ n, ha, ho⟩ s₀ ⟨Nat.le_succ n, WExt_refl _⟩ rfl hpre
+    obtain ⟨node', hP', Ξ, T, cn, ce, Qn, Qe, hsafe, hobl⟩ := hnodes l ρ s₀ hpre₀
+    rw [hP] at hP'; cases hP'
+    exact ⟨s₀, Ξ, T, cn, ce, Qn, Qe, ⟨Nat.le_refl _, by rw [trunc_id]; exact WExt_refl _⟩, hsafe, hobl⟩
+  | eval t ρ k x =>
+    obtain ⟨s₀, Ξ, T, cn, ce, Qn, Qe, hr, hsafe, hobl⟩ := hinv (Nat.zero_lt_succ n)
+    rcases hsafe with (⟨hv, hT, hc, hq⟩ | ⟨⟨e, hre, hsc, hΞ⟩, hc, hq⟩) | ⟨U, h', t', hx, hu, st, hh, hs'⟩
+    · -- a value: the continuation's transition
+      have hshape := hobl.shape n W h t hv hT hc hq
+      have tgt : ∀ (hp : 0 < n), NormalTarget pre Tres Qres ρ m (below n W h hp ha ho) t k := fun hp =>
+        hobl.normal _ t (below_action hr hc) hv ⟨W, rfl, hT⟩ hq
+      cases k with
+      | ret => exact next _ (WExt_refl _) ha' (.ret hv) ho' fun hp => ⟨hv, tgt hp⟩
+      | bind l => exact next _ (WExt_refl _) ha' (.bind hv) ho' fun hp _ _ => tgt hp
+      | effect l => exact next _ (WExt_refl _) ha' (.effect hv) ho' fun hp _ _ => tgt hp
+      | branch y no =>
+        rcases hshape with rfl | rfl
+        · refine next _ (WExt_refl _) ha' .yes ho' fun hp _ _ => ?_
+          rcases tgt hp with ⟨-, hy⟩ | ⟨he, -⟩
+          · exact hy
+          · cases he
+        · refine next _ (WExt_refl _) ha' .no ho' fun hp _ _ => ?_
+          rcases tgt hp with ⟨he, -⟩ | ⟨-, hn⟩
+          · cases he
+          · exact hn
+      | branchBind _ _ => exact hshape.elim
+      | tagBind _ _ _ => exact hshape.elim
+    · -- a throw: the handler's transition, or the run ends raised
+      have tgt : ∀ (hp : 0 < n), RaiseTarget pre Ξres Rres ρ m (below n W h hp ha ho) e x := fun hp =>
+        hobl.raise _ e (below_action hr hc) hsc ⟨W, rfl, hΞ⟩ hq
+      cases x with
+      | some l => exact next _ (WExt_refl _) ha' (.handle hre) ho' fun hp _ _ => tgt hp
+      | none => exact next _ (WExt_refl _) ha' (.raise hre) ho' fun hp => ⟨hsc, tgt hp⟩
+    · -- an expression step
+      exact next U hx hu (.expr st) hh fun _ => ⟨s₀, Ξ, T, cn, ce, Qn, Qe, hr.step hx, hs', hobl⟩
+  | done v =>
+    obtain ⟨hv, hT, -⟩ := hinv (Nat.zero_lt_succ n)
+    exact .inl (.inl ⟨v, rfl, hv, hT⟩)
+  | raised v =>
+    obtain ⟨hsc, hΞ, -⟩ := hinv (Nat.zero_lt_succ n)
+    exact .inl (.inr ⟨v, rfl, hsc, hΞ⟩)
+
 /-- **Graph safety from node obligations.** Every state the invariant
 describes is safe for the graph machine, at every budget. -/
-theorem graph_safe {P : Program} {pre : Nat → Assertion} {Ξres Tres : Fam} {m : Nat}
-    (hnodes : NodesChecked P pre Ξres Tres m) (hdown : AdminClosed pre m) :
-    ∀ n (W : WorldT n) h st, WorldAdm W → HeapOk n W h → GraphInv pre Ξres Tres m n W h st →
+theorem graph_safe {P : Program} {pre : Nat → Assertion} {Ξres Tres : Fam} {Qres Rres : Heap → Prop} {m : Nat}
+    (hnodes : NodesChecked P pre Ξres Tres Qres Rres m) (hdown : AdminClosed pre m) :
+    ∀ n (W : WorldT n) h st, WorldAdm W → HeapOk n W h → GraphInv pre Ξres Tres Qres Rres m n W h st →
       SafeGraph Ξres P Tres n W h st := by
   intro n
   induction n with
   | zero => intros; trivial
   | succ n ih =>
     intro W h st ha ho hinv
-    have ha' := WorldAdm_trunc (Nat.le_succ n) ha
-    have ho' := HeapOk_trunc n W h ho
-    -- one administrative or expression transition, to the next state
-    have next : ∀ {h' st'} (U : WorldT n), WExt (trunc n (Nat.le_succ n) W) U → WorldAdm U →
-        Transition P h st h' st' → HeapOk n U h' → GraphInv pre Ξres Tres m n U h' st' →
-        SafeGraph Ξres P Tres (n + 1) W h st :=
-      fun U hx hu tr hh hi => .inr ⟨U, _, _, hx, hu, tr, hh, ih U _ _ hu hh hi⟩
-    cases st with
-    | «at» l ρ =>
-      have hpre := hinv (Nat.zero_lt_succ n) ha ho
-      obtain ⟨node, hP, -⟩ := hnodes l ρ _ hpre
-      refine next _ (WExt_refl _) ha' (.enter hP) ho' fun hp => ?_
-      let s₀ : IndexedHeap := ⟨n, trunc n (Nat.le_succ n) W, h, hp, ha', ho'⟩
-      have hpre₀ := hdown l ρ ⟨n + 1, W, h, Nat.zero_lt_succ n, ha, ho⟩ s₀ ⟨Nat.le_succ n, WExt_refl _⟩ rfl hpre
-      obtain ⟨node', hP', Ξ, T, cn, ce, Qn, Qe, hsafe, hobl⟩ := hnodes l ρ s₀ hpre₀
-      rw [hP] at hP'; cases hP'
-      exact ⟨s₀, Ξ, T, cn, ce, Qn, Qe, ⟨Nat.le_refl _, by rw [trunc_id]; exact WExt_refl _⟩, hsafe, hobl⟩
-    | eval t ρ k x =>
-      obtain ⟨s₀, Ξ, T, cn, ce, Qn, Qe, hr, hsafe, hobl⟩ := hinv (Nat.zero_lt_succ n)
-      rcases hsafe with (⟨hv, hT, hc, hq⟩ | ⟨⟨e, hre, hsc, hΞ⟩, hc, hq⟩) | ⟨U, h', t', hx, hu, st, hh, hs'⟩
-      · -- a value: the continuation's transition
-        have hshape := hobl.shape n W h t hv hT hc hq
-        have tgt : ∀ (hp : 0 < n), NormalTarget pre Tres ρ m (below n W h hp ha ho) t k := fun hp =>
-          hobl.normal _ t (below_action hr hc) hv ⟨W, rfl, hT⟩ hq
-        cases k with
-        | ret => exact next _ (WExt_refl _) ha' (.ret hv) ho' fun hp => ⟨hv, tgt hp⟩
-        | bind l => exact next _ (WExt_refl _) ha' (.bind hv) ho' fun hp _ _ => tgt hp
-        | effect l => exact next _ (WExt_refl _) ha' (.effect hv) ho' fun hp _ _ => tgt hp
-        | branch y no =>
-          rcases hshape with rfl | rfl
-          · refine next _ (WExt_refl _) ha' .yes ho' fun hp _ _ => ?_
-            rcases tgt hp with ⟨-, hy⟩ | ⟨he, -⟩
-            · exact hy
-            · cases he
-          · refine next _ (WExt_refl _) ha' .no ho' fun hp _ _ => ?_
-            rcases tgt hp with ⟨he, -⟩ | ⟨-, hn⟩
-            · cases he
-            · exact hn
-        | branchBind _ _ => exact hshape.elim
-        | tagBind _ _ _ => exact hshape.elim
-      · -- a throw: the handler's transition, or the run ends raised
-        have tgt : ∀ (hp : 0 < n), RaiseTarget pre Ξres ρ m (below n W h hp ha ho) e x := fun hp =>
-          hobl.raise _ e (below_action hr hc) hsc ⟨W, rfl, hΞ⟩ hq
-        cases x with
-        | some l => exact next _ (WExt_refl _) ha' (.handle hre) ho' fun hp _ _ => tgt hp
-        | none => exact next _ (WExt_refl _) ha' (.raise hre) ho' fun hp => ⟨hsc, tgt hp⟩
-      · -- an expression step
-        exact next U hx hu (.expr st) hh fun _ => ⟨s₀, Ξ, T, cn, ce, Qn, Qe, hr.step hx, hs', hobl⟩
-    | done v =>
-      obtain ⟨hv, hT⟩ := hinv (Nat.zero_lt_succ n)
-      exact .inl (.inl ⟨v, rfl, hv, hT⟩)
-    | raised v =>
-      obtain ⟨hsc, hΞ⟩ := hinv (Nat.zero_lt_succ n)
-      exact .inl (.inr ⟨v, rfl, hsc, hΞ⟩)
+    rcases graph_step hnodes hdown ha ho hinv with (h1 | h2) | ⟨U, h', st', hx, hu, tr, hh, hi⟩
+    · exact .inl (.inl h1)
+    · exact .inl (.inr h2)
+    · exact .inr ⟨U, h', st', hx, hu, tr, hh, ih U h' st' hu hh hi⟩
 
 /-- The graph is safe from every node entry whose assertion holds. -/
-theorem graph_safe_at {P : Program} {pre : Nat → Assertion} {Ξres Tres : Fam} {m : Nat}
-    (hnodes : NodesChecked P pre Ξres Tres m) (hdown : AdminClosed pre m) {l : Nat} {ρ : Env}
+theorem graph_safe_at {P : Program} {pre : Nat → Assertion} {Ξres Tres : Fam} {Qres Rres : Heap → Prop} {m : Nat}
+    (hnodes : NodesChecked P pre Ξres Tres Qres Rres m) (hdown : AdminClosed pre m) {l : Nat} {ρ : Env}
     {s : IndexedHeap} (hpre : pre l ρ m s) : SafeGraph Ξres P Tres s.n s.W s.h (.at l ρ) :=
   graph_safe hnodes hdown _ _ _ _ s.adm s.ok fun _ _ _ => hpre
 
@@ -295,7 +318,8 @@ modality of the exit's footprint; and, per exit, the target obligation from
 the exit's value, its type above, its post and the retained facts transported
 to every target environment: then the node meets its exit obligations, which
 `graph_safe` composes into `SafeGraph`. -/
-theorem transfer {pre : Nat → Assertion} {Ξres Tres Ξ T : Fam} {cn ce : Footprints.Closed} {Qn : Post}
+theorem transfer {pre : Nat → Assertion} {Ξres Tres Ξ T : Fam} {Qres Rres : Heap → Prop} {cn ce : Footprints.Closed}
+    {Qn : Post}
     {Qe : Heap → Prop} {ρ : Env} {m : Nat} {s₀ : IndexedHeap} {k : Continuation} {x : Option Target}
     {Kn Ke : List IndexFact}
     (hshape : ∀ (j : Nat) (U : WorldT (j + 1)) (h : Heap) (v : Tm), isVal v = true → T (j + 1) U v →
@@ -303,10 +327,10 @@ theorem transfer {pre : Nat → Assertion} {Ξres Tres Ξ T : Fam} {cn ce : Foot
     (hkeepN : ∀ F ∈ Kn, Box cn.fp (fun ρ _ s => F.HoldsAt ρ s.h) ρ m s₀)
     (hkeepE : ∀ F ∈ Ke, Box ce.fp (fun ρ _ s => F.HoldsAt ρ s.h) ρ m s₀)
     (hentN : ∀ (s : IndexedHeap) (v : Tm), Action cn.fp ρ s₀ s → isVal v = true → Above T s v → Qn s.h v →
-      (∀ ρ', Transported Kn ρ ρ' s.h) → NormalTarget pre Tres ρ m s v k)
+      (∀ ρ', Transported Kn ρ ρ' s.h) → NormalTarget pre Tres Qres ρ m s v k)
     (hentE : ∀ (s : IndexedHeap) (e : Tm), Action ce.fp ρ s₀ s → Scoped 0 e → Above Ξ s e → Qe s.h →
-      (∀ ρ', Transported Ke ρ ρ' s.h) → RaiseTarget pre Ξres ρ m s e x) :
-    NodeObligations pre Ξres Tres Ξ T cn ce Qn Qe ρ m s₀ k x :=
+      (∀ ρ', Transported Ke ρ ρ' s.h) → RaiseTarget pre Ξres Rres ρ m s e x) :
+    NodeObligations pre Ξres Tres Qres Rres Ξ T cn ce Qn Qe ρ m s₀ k x :=
   ⟨hshape,
     fun s v ha hv hT hq => hentN s v ha hv hT hq (transported_of fun F hF => hkeepN F hF s ha),
     fun s e ha hsc hΞ hq => hentE s e ha hsc hΞ hq (transported_of fun F hF => hkeepE F hF s ha)⟩
@@ -357,12 +381,13 @@ an element write at a run-time index, checked within
 `{values: any, stores: grow}` whichever array it writes, and `to ≤ |xs|`
 retained under that effect; `0 ≤ j` reads no heap. The escaping throw meets
 the graph's exception family where the node's family does one level up. -/
-theorem loop_write_obligations {pre : Nat → Assertion} {Ξres Tres Ξ T : Fam} {ρ : Env} {m : Nat}
+theorem loop_write_obligations {pre : Nat → Assertion} {Ξres Tres Ξ T : Fam} {Qres Rres : Heap → Prop} {ρ : Env}
+    {m : Nat}
     {s₀ : IndexedHeap} {l : Nat}
     (hinc : ∀ s, NonNeg 1 ρ m s → LowerBound 2 3 ρ m s → pre l ρ m s)
-    (hΞ : ∀ s e, Above Ξ s e → Ξres s.n s.W e)
+    (hΞ : ∀ s e, Above Ξ s e → Ξres s.n s.W e ∧ Rres s.h)
     (hj : NonNeg 1 ρ m s₀) (hb : LowerBound 2 3 ρ m s₀) :
-    NodeObligations pre Ξres Tres Ξ T growEffect growEffect (fun _ _ => True) (fun _ => True) ρ m s₀
+    NodeObligations pre Ξres Tres Qres Rres Ξ T growEffect growEffect (fun _ _ => True) (fun _ => True) ρ m s₀
       (.effect ⟨l, none⟩) none :=
   transfer (Kn := [lowerBoundFact 2 3]) (Ke := [])
     (fun _ _ _ _ _ _ _ _ => trivial)
@@ -391,12 +416,13 @@ head holds `0 ≤ j` and `to ≤ |xs|` at its new environment, the head's slot 0
 now `j'`. The bound is retained under the increment's empty effect and
 renamed (`to, xs` from slots 2, 3 to 1, 2); `0 ≤ j'` follows from `0 ≤ j` and
 the increment's post. -/
-theorem loop_back_edge {pre : Nat → Assertion} {Ξres Tres Ξ T : Fam} {ce : Footprints.Closed} {Qe : Heap → Prop}
+theorem loop_back_edge {pre : Nat → Assertion} {Ξres Tres Ξ T : Fam} {Qres Rres : Heap → Prop} {ce : Footprints.Closed}
+    {Qe : Heap → Prop}
     {ρ : Env} {m : Nat} {s₀ : IndexedHeap} {hd : Nat}
     (hhead : ∀ ρ' s, NonNeg 0 ρ' m s → LowerBound 1 2 ρ' m s → pre hd ρ' m s)
-    (hΞ : ∀ s e, Above Ξ s e → Ξres s.n s.W e)
+    (hΞ : ∀ s e, Above Ξ s e → Ξres s.n s.W e ∧ Rres s.h)
     (hj : NonNeg 1 ρ m s₀) (hb : LowerBound 2 3 ρ m s₀) :
-    NodeObligations pre Ξres Tres Ξ T Footprints.Closed.empty ce
+    NodeObligations pre Ξres Tres Qres Rres Ξ T Footprints.Closed.empty ce
       (fun _ v => ∃ a, HeapKnowledge.intValue (ρ 1) = some a ∧ HeapKnowledge.intValue v = some (a + 1)) Qe
       ρ m s₀ (.bind ⟨hd, some [0, 3, 4, 5]⟩) none :=
   transfer (Kn := [lowerBoundFact 2 3]) (Ke := [])

@@ -80,8 +80,10 @@ the raised value's family, and every bound $`y\le|x|`$ that held at $`s`$
 `.at l ρ` the node assertion $`\mathrm{pre}_l`$; at a partially evaluated
 `.eval` its node's local safety `SafePostExc` from the node's entry state
 $`s_0`$, the current world reached from $`s_0`$ (`Reach`) and the node's
-exit obligations; at `.done` the result type; at `.raised` a closed value of
-the exception family. Its premises are
+exit obligations; at `.done` the result type and the normal exit post
+$`Q_{\mathrm{res}}`$ of the heap; at `.raised` a closed value of the exception
+family and the exceptional exit post $`R_{\mathrm{res}}`$. One transition from
+the invariant is `graph_step`; `graph_safe` iterates it. Its premises are
 
 - `NodesChecked`: from every state where $`\mathrm{pre}_l\ \rho`$ holds, node
   $`l`$ exists, is locally safe with exit footprints $`c_n, c_e`$ and posts
@@ -93,10 +95,10 @@ the exception family. Its premises are
 transition (a Boolean at a branch), required at every budget so that a
 successor exists at budget one; the normal target (`NormalTarget`: the
 target's assertion at `mapEnv θ (push v ρ)` or `mapEnv θ ρ`, the branch's by
-the observed Boolean, the result type at `ret`), from an action of $`c_n`$,
+the observed Boolean, the result type and $`Q_{\mathrm{res}}`$ at `ret`), from an action of $`c_n`$,
 the value, its type one level above (`Above`) and $`Q_n`$; and the raise
 target (`RaiseTarget`: the handler's assertion with $`e`$ bound, or the
-exception family when it escapes), from an action of $`c_e`$, $`e`$ closed,
+exception family and $`R_{\mathrm{res}}`$ when it escapes), from an action of $`c_e`$, $`e`$ closed,
 its family above, and $`Q_e`$. Entering a node and each continuation or
 handler transition spend one level; no obligation is read at budget zero.
 
@@ -131,6 +133,40 @@ The initialisation, the guard and the read edges are not proved here; the
 increment's local judgment (its empty effect and its post) is a premise.
 Both edges take the escaping throw's obligation from the node's exception
 family one level up (`hΞ`).
+
+## One action per invocation
+
+Module `lean/Verification/Programs/TolerantFramesInvocation.lean`. A graph
+run from a state `GraphInv` describes, with budget left, ends in a state it
+describes, reached by an admissible transition (proved: `graph_inv_run`, each
+transition the one `graph_step` supplies, by `transition_det`). So a run of
+an invocation from a node entry whose assertion holds ends, at `.done v`, with
+$`v`$ of the result type and $`Q_{\mathrm{res}}`$ of the heap
+(`invocation_done`), and at `.raised e` with $`e`$ closed, of the exception
+family, and $`R_{\mathrm{res}}`$ (`invocation_raised`). Where
+$`Q_{\mathrm{res}}`$ bounds the heap by $`c_n`$ from the entry heap, the run is
+one action of $`c_n`$ from the entry state, at every name valuation
+(`invocation_action`; `invocation_throw_action` for $`c_e`$ and
+$`R_{\mathrm{res}}`$), and a fact under $`\Box_{c_n}`$ at the entry holds at the
+exit (`invocation_box`): a callee's invocation is the action a caller's
+`transfer` consumes. Effects are required at the exits only.
+
+The node assertions carry the bound so far from the fixed invocation entry
+heap $`h_0`$, and each exit composes the node's effect onto it, proved:
+
+- a closed node effect $`c_n\le c`$ (`bound_step`, from
+  `Closed.Holds.trans_on`), the handler's exceptional effect alike;
+- the fresh-store exemption: a node effect within $`c`$ on the locations below
+  $`|h_0|`$ only (`bound_step_fresh`);
+- the administrative transitions keep the heap, so the bound conjoined to the
+  node assertions keeps `AdminClosed` (`adminClosed_bound`);
+- a regional node effect $`\Psi`$ at the node's positions, rebased to the
+  entry values: an action of $`\Phi_q`$ from the invocation's entry where
+  $`\Phi_p\mathbin{+\!\!+}\mathrm{rebase}(\Psi)\le_{cl}\Phi_q`$ with
+  $`\mathrm{ClassOk}\ cl`$ at the invocation's entry heap (`action_compose_at`,
+  the lift of `Post.compose_at`); the rebasing evidence holds wherever each
+  position's value is read from an entry position along a stable path of the
+  entry world (`rebaseOk_stable`).
 
 ## The modality
 
@@ -337,5 +373,5 @@ new cells may coincide.
 - **An action from a run needs the effect judgment.** Safety alone gives an
   admissible endpoint; the footprint comes from a postcondition relative
   to the run's first heap, on each exit (`action_normal`, `action_throw`).
-  A graph run's footprint is the graph code's node judgments composed
-  (`Post.compose_at`; not connected to `graph_run` here).
+  A graph run's footprint is the node judgments composed from the
+  invocation entry and stated as the graph's exit posts (`invocation_action`).
