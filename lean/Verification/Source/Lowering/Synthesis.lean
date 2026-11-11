@@ -2813,18 +2813,22 @@ partial def applyCall (env : Env) (c : Callee) (args : List Expr) (As : List (Op
 
 /-- A function literal's walk: its parameters at their written types, or
 else at `expected` (a callback's, from the parameter it is passed at),
-every binding it captures at its declared type; its result its written one,
+each captured cell at its contract and each captured slot at its current
+type (environment.ml:138-142); its result its written one,
 or else what its body gives (its returns' union, `undefined` where it
 completes). Recorded at the literal as a signature where every part is
 determined. -/
 partial def walkLambda (env : Env) (e : Expr) (sig : Option (CallEffects.Arrow (Ty Tree)))
     (ctx : Option (Ty Tree) := none) :
     W (Option (Ty Tree)) := do
-  let expected := sig.map (·.arguments)
+  let G ← StateT.lift graphNow
+  let expected := (sig <|> ctx.bind (widestOf G)).map (·.arguments)
   let expectedResult := sig.map (·.result)
-  let .lambda _ receiver tps params defaults rest result guard stated async _ body := e
+  let .lambda _ receiver tps params defaults rest result guard stated async requires body := e
     | return none
-  let captured := env.vars.map fun (n, A) => (n, (env.decl.lookup n).getD A)
+  let slots := (← get).slots.get
+  let captured := env.vars.map fun (n, A) =>
+    (n, if slots.contains n then A else (env.decl.lookup n).getD A)
   let mut vars := captured
   let mut ps : List (Option (Ty Tree)) := []
   -- Each parameter's type in the body, for its default's expected type.
@@ -2866,7 +2870,7 @@ partial def walkLambda (env : Env) (e : Expr) (sig : Option (CallEffects.Arrow (
   let written ← match result with
     | some ty => StateT.lift (tryCatch (some <$> lower (Fragment.translate ty)) fun _ => pure none)
     | none => pure none
-  let inner : Env := { vars, decl := vars, paths := [] }
+  let mut inner : Env := { vars, decl := vars, paths := [] }
   let saved ← get
   let declared := params.map (·.1) ++ (match body with
     | .block _ ss => declaredIn ss
@@ -2880,7 +2884,12 @@ partial def walkLambda (env : Env) (e : Expr) (sig : Option (CallEffects.Arrow (
   -- (`TSCERT_FORCE=defaults`: their changes left out of the literal's
   -- effect, the adversarial proposal)
   let beforeDefaults ← get
-  for (i, d) in defaults do let _ ← expr inner d (bound[i]?.join)
+  -- The body binds a defaulted parameter after replacing `undefined`
+  -- (expression_closures.ml:187-201).
+  for (i, d) in defaults do
+    let (D, _) ← withDefault inner (bound[i]?.join) (some d)
+    if let (some (n, _), some D) := (params[i]?, D) then
+      inner := { inner with vars := upd inner.vars n D, decl := upd inner.decl n D }
   if (← get).force.contains "defaults" then
     modify fun w => { w with writes := beforeDefaults.writes, throwWrites := beforeDefaults.throwWrites }
     modify fun w => { w with valueChange := beforeDefaults.valueChange, storeChange := beforeDefaults.storeChange }
@@ -2923,8 +2932,8 @@ partial def walkLambda (env : Env) (e : Expr) (sig : Option (CallEffects.Arrow (
     else if async then (match body with | .block .. => none | _ => R) else R
   let forced := (← get).force.contains "literals"
   -- A written effect (`Modifies<…>`) is the one it states.
-  let kept := stated.getD kept
-  let changed := stated.getD changed
+  let kept := { stated.getD kept with pre := requires }
+  let changed := { stated.getD changed with pre := requires }
   -- A generic closure: at the scheme its annotations state, its body walked
   -- with each binder a rigid row (`Scheme.closureRows`), where that scheme's
   -- effect covers its body's.
@@ -3395,7 +3404,10 @@ the two agree (the producer's `raise_selves`), at most four rounds: the
 footprint of each class of contents only rises and `onThrow` only falls. -/
 partial def recursiveConstant (env : Env) (b : Fragment.Binding) (written : Bool) :
     W (Option (Ty Tree) × Env) := do
-  let some S0 ← earlyContract b { CallEffects.Effect.ofFootprint ⟨.keep, .keep⟩ with onThrow := true }
+  -- An early self is read through its cell at the early contract
+  -- (statement_analysis.ml:289-293), rather than a self-entry proposal.
+  let some S0 ← earlyContract b (if b.early then .ordinary else
+      { CallEffects.Effect.ofFootprint ⟨.keep, .keep⟩ with onThrow := true })
     | expr env b.init
   let w0 ← get
   let mut S := S0
@@ -3403,7 +3415,7 @@ partial def recursiveConstant (env : Env) (b : Fragment.Binding) (written : Bool
     set w0
     let (A, e1) ← expr { env with vars := upd env.vars b.name S, decl := upd env.decl b.name S } b.init
     let some L := A | return (A, e1)
-    if written || sameMeaning (← StateT.lift table) L S then return (A, e1)
+    if written || b.early || sameMeaning (← StateT.lift table) L S then return (A, e1)
     S := L
   set w0
   return (← record b.init (.error "not handled: a recursive closure's effect undetermined"), env)
