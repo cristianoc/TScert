@@ -546,8 +546,10 @@ removal works through:
   rest). A spread actual of a tuple of required positions
   stands for those positions; a spread of any other array for one actual of
   its elements, which only a variadic signature taking no more fixed
-  parameters than the actuals before it admits; into a callee of no
-  variadic signature, no actual after the first spread runs code. A slice rest of an array pattern is the call of its
+  parameters than the actuals before it admits; into an ordinary call of no
+  variadic signature, no actual after the first spread runs code. Constructors
+  admit later actuals that run code, with tuple spreads saved by their
+  execution plan. A slice rest of an array pattern is the call of its
   `%RestFrom:k%` at the value, its binder the union of the value's elements
   from position `k` on, an optional one's with `undefined` (the producer's
   `slice_element`), any other rest the
