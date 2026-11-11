@@ -1386,9 +1386,9 @@ none, 2900 ms, refused (430), and 7270 ms, verified (920, refused). For
 groups checked 2.24 s, every invocation again; the footprints established
 keep more facts (`mergeDiffs` 1,826 for 1,823, `stateFactsSum` 132,919 for
 132,540), and the given lines of the modules checked add 206,985 bytes read
-(`measureAnalysis` 49,549). A per-module interface, each module's
-established footprints stored by its fragment's content once and read by
-its importers, removes the repetition.
+(`measureAnalysis` 49,549). [Module interfaces](module-interfaces.md)
+designs the store of each module's established footprints that removes
+the repetition.
 
 Agreement with the pipeline over the 3,303 pipeline cases (mode 8 with the
 given files, `TSCERT_REFEREE`), measured 2026-11-11: 6,296 units, 4,974
