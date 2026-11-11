@@ -43,6 +43,17 @@ withoutEvidenceReuse();
 type Verdict = { accepted: boolean; refusal: string; closed?: boolean };
 type Comparison = { file: string; unit: string; pipeline: string; pass: string; agree: boolean; notHandled: string | null; why: string;
   referee: string | null; control: boolean; closed: boolean; passClosed: boolean };
+/** Units the pass and the referee both accept, with every unit they depend
+ * on, where the pipeline refuses: each reviewed as a safe function the
+ * producer's proposal lost. They count as agreeing while both accept and the
+ * pipeline refuses; any other such unit is a disagreement. */
+const reviewed: { file: string; unit: string; why: string }[] = [
+  { file: "blocker-pretext-equality-conjunction", unit: "runs@923", why: "the producer loses an equality's narrowing on the right operand of `&&`" },
+  { file: "blocker-last-guard-param-inferred", unit: "fields@712", why: "the producer selects the plain `filter` row at an inferred union parameter" },
+  { file: "blocker-gap-round-cache-answer-inferred", unit: "real@605", why: "the producer builds the callback's records at separate invariant fields" },
+  { file: "invalid-bounds-callback-footprint", unit: "visit@88", why: "the callback keeps every store, so the read stays in bounds; the unit `broken` stays refused" },
+  { file: "invalid-native-promise-invariant-result", unit: "widen@89", why: "the call is made at `make<unknown>`, whose result is the stated one; the producer chose `make<number>`" },
+];
 /** Forced proposals: unsafe programs remain refused; the positive declaration,
  * growth and copy cases are accepted unforced and refused at the false proposal. */
 const controls: { file: string; unit: string; force: string; positive?: boolean }[] = [
@@ -267,7 +278,9 @@ async function compare(test: Case): Promise<Comparison[]> {
     // Both accept with their dependencies accepted.
     const closed = v?.closed === true && (referee === null || r?.closed === true);
     return { file: test.file, unit: u.unit, pipeline: pipelineSays, pass: passSays,
-      agree: control?.positive && control.unit === u.unit ? passSays === "refused" : passSays === pipelineSays, notHandled, why: v ? v.refusal.replace(/\s+/g, " ").slice(0, 160) : "",
+      agree: control?.positive && control.unit === u.unit ? passSays === "refused" : passSays === pipelineSays ||
+        (pipelineSays === "refused" && passSays === "verified" && refereeSays === "verified" && closed &&
+          reviewed.some((k) => k.file === test.file && k.unit === u.unit)), notHandled, why: v ? v.refusal.replace(/\s+/g, " ").slice(0, 160) : "",
       referee: refereeSays, control: control?.unit === u.unit, closed, passClosed: v?.closed === true };
   });
 }
@@ -311,7 +324,8 @@ for (const c of holes) process.stdout.write(`hole: ${c.file} ${c.unit}: mode 8 a
 const refereeOnly = refereed.filter((c) => c.pass !== "verified" && c.referee === "verified");
 for (const c of refereeOnly) process.stdout.write(`referee only: ${c.file} ${c.unit}: mode 9 accepts, mode 8 ${c.pass}, pipeline ${c.pipeline}\n`);
 const bothAccept = refereed.filter((c) => c.closed && c.pipeline === "refused");
-for (const c of bothAccept) process.stdout.write(`both accept, pipeline refuses: ${c.file} ${c.unit}\n`);
+for (const c of bothAccept)
+  process.stdout.write(`both accept, pipeline refuses${c.agree ? " (reviewed)" : ""}: ${c.file} ${c.unit}\n`);
 if (refereed.length > 0)
   process.stdout.write(`referee: ${holes.length} mode 8 accepts / mode 9 refuses, ` +
     `${refereeOnly.length} mode 9 accepts / mode 8 refuses\n`);
