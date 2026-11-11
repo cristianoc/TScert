@@ -15,7 +15,9 @@ footprint `Φ` at a name valuation `ρ` is an admissible transition whose heaps
 meet `Post Φ ρ`, and `Box Φ F` holds where `F` holds after every action of
 `Φ`: the weakest liberal precondition of one arbitrary such action. The name
 valuation and the entry mark are parameters of every assertion and stay fixed
-across the modality. -/
+across the modality. A fact whose support an effect respects enters the
+modality (`tolerant_frame`), and two atoms, a length lower bound and density,
+enter that of `{values: any, stores: grow}`. -/
 namespace Verification.TolerantFrames
 open Verification Footprints HeapObservations
 
@@ -404,5 +406,75 @@ value, under every effect. -/
 theorem stable_rigid {Φ : Footprint} {x : Nat} {p : List String} {v : Val} {ρ : Env} {m : Nat}
     {s : IndexedHeap} (hp : StableAt x p v ρ m s) : Box Φ (ReadsAs x p v) ρ m s :=
   fun _ ha => ha.1.readPath hp
+
+/-! ## Entering the modality -/
+
+/-- **The tolerant frame theorem as a modal law**: a fact whose support the
+effect respects, under knowledge holding at the state, holds after every
+action of the effect (`stable_sound`, `FactKind.support_sound`). -/
+theorem tolerant_frame {K : SepKnowledge} {F : FactKind} {Φ : Footprint} {μ : Nat → Nat} {ρ : Env}
+    {m : Nat} {s : IndexedHeap} (hc : stable K F.support Φ = true) (hK : K.Holds μ ρ s.h)
+    (hF : F.Holds ρ s.h) : Box Φ (fun ρ _ s => F.Holds ρ s.h) ρ m s :=
+  fun _ ha => FactKind.support_sound hF (stable_sound hc hK ha.2)
+
+open HeapKnowledge in
+/-- **An index fact a closed footprint's change keeps holds after every
+action of the footprint** (`holdsAt_kept`, `Changes.ofClosed_holds`). -/
+theorem kept_box (c : Footprints.Closed) {F : IndexFact} {ρ : Env} {m : Nat} {s : IndexedHeap}
+    (hk : F.keptBy (Changes.ofClosed c) (fun _ _ => false) = true) (hF : F.HoldsAt ρ s.h) :
+    Box c.fp (fun ρ _ s => F.HoldsAt ρ s.h) ρ m s := by
+  intro s' ha
+  have hc : (Changes.ofClosed c).Holds s.h s'.h :=
+    Changes.ofClosed_holds (Footprints.Closed.holds_iff.mpr (Footprints.Closed.post_iff.mp ha.2))
+  exact IndexFact.holdsAt_kept hc (fun _ _ _ _ _ _ _ hf => by simp at hf) hk hF
+
+/-! ## Two atoms -/
+
+/-- `{values: any, stores: grow}`: the effect of an element write whose
+target is unknown. -/
+def growEffect : Footprints.Closed := ⟨.any, .grow⟩
+
+open HeapKnowledge in
+/-- `y ≤ |x|`: slot `y` holds an integer at most the length of `x`'s store. -/
+def lowerBoundFact (y x : Nat) : IndexFact := .linear (.le [(.value y, 1), (.length x, -1)] 0)
+
+/-- `y ≤ |x|` as an assertion. -/
+def LowerBound (y x : Nat) : Assertion := fun ρ _ s => (lowerBoundFact y x).HoldsAt ρ s.h
+
+/-- **(Grow)** `y ≤ |x| ⊢ □_{values: any, stores: grow} (y ≤ |x|)`. -/
+theorem grow {y x : Nat} {ρ : Env} {m : Nat} {s : IndexedHeap} (hb : LowerBound y x ρ m s) :
+    Box growEffect.fp (LowerBound y x) ρ m s :=
+  kept_box growEffect rfl hb
+
+/-- `y ≤ |x.p|`: the value the path `p` reads from `x` has a store at least as
+long as the integer slot `y` holds. -/
+def PathLowerBound (y x : Nat) (p : List String) : Assertion := fun ρ _ s =>
+  ∃ w a len, HeapKnowledge.readPath s.h (ρ x) p = some w ∧ HeapKnowledge.intValue (ρ y) = some a ∧
+    HeapKnowledge.lengthOf s.h w = some len ∧ a ≤ len
+
+/-- **(Grow) at a rigid path**: along a stable path, `y ≤ |x.p|` survives
+every action of `{values: any, stores: grow}`. The path's rigidity is a fact
+of the world, kept by every admissible transition. -/
+theorem grow_path {y x : Nat} {p : List String} {v : Val} {ρ : Env} {m : Nat} {s : IndexedHeap}
+    (hp : StableAt x p v ρ m s) (hb : PathLowerBound y x p ρ m s) :
+    Box growEffect.fp (PathLowerBound y x p) ρ m s := by
+  intro s' ha
+  obtain ⟨w, a, len, hw, ha', hl, hle⟩ := hb
+  have hv : HeapKnowledge.readPath s.h (ρ x) p = some v := hp.read s.pos s.ok
+  rw [hw] at hv; cases hv
+  obtain ⟨st, ls, hst, hls, rfl, hm⟩ := HeapKnowledge.lengthOf_store hl
+  have hc : (HeapKnowledge.Changes.ofClosed growEffect).Holds s.h s'.h :=
+    HeapKnowledge.Changes.ofClosed_holds (Footprints.Closed.holds_iff.mpr (Footprints.Closed.post_iff.mp ha.2))
+  obtain ⟨ls', hls', hlen, hmax⟩ := hc.2.2 rfl st ls hls
+  exact ⟨v, a, ls'.length, ha.1.readPath hp, ha', HeapKnowledge.lengthOf_of_store hst hls' (hmax hm),
+    by omega⟩
+
+/-- `dense(x, k)`: the first `k` indices of `x`'s store are present. -/
+def DenseAt (x k : Nat) : Assertion := fun ρ _ s => Dense x k ρ s.h
+
+/-- **(Dense)** `dense(x, k) ⊢ □_{values: any, stores: grow} dense(x, k)`. -/
+theorem dense {x k : Nat} {ρ : Env} {m : Nat} {s : IndexedHeap} (hd : DenseAt x k ρ m s) :
+    Box growEffect.fp (DenseAt x k) ρ m s :=
+  fun _ ha => stableDenseClosed_sound (by decide) hd ha.2
 
 end Verification.TolerantFrames

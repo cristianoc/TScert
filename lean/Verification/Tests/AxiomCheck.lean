@@ -123,6 +123,12 @@ run_cmd do
   check ``Verification.TolerantFrames.action_normal
   check ``Verification.TolerantFrames.action_throw
   check ``Verification.TolerantFrames.stable_rigid
+  check ``Verification.TolerantFrames.tolerant_frame
+  check ``Verification.TolerantFrames.kept_box
+  check ``Verification.TolerantFrames.grow
+  check ``Verification.TolerantFrames.grow_path
+  check ``Verification.TolerantFrames.dense
+  check ``Verification.TolerantFrames.field_write_keeps_bound
   let env ← getEnv
   let project (decl : Name) : Bool := match env.getModuleIdxFor? decl with
     | some i => (`Verification).isPrefixOf env.header.moduleNames[i.toNat]!

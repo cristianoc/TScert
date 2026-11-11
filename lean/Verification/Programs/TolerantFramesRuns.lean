@@ -1,11 +1,15 @@
 import Verification.Semantics.TolerantFrames
+import Verification.Programs.ExpressionEffects
 import Verification.Programs.ControlFlow
 
-/-! # Tolerant frames: graph runs
+/-! # Tolerant frames: graph runs and an expression's action
 
 A graph run that `SafeGraph` covers, with budget left, ends in a state an
 admissible transition reaches, by determinism of the graph machine's
-transitions. -/
+transitions. A typed field write's effect judgment
+(`ExpressionEffects.field_write_within_exc`) yields, on each exit of a run
+with budget left, an action of `{values: any, stores: keep}`, and every length
+lower bound survives it by antitonicity and (Grow). -/
 namespace Verification.TolerantFrames
 open Verification Footprints HeapObservations
 
@@ -75,5 +79,31 @@ theorem graph_run {Ξ T : Fam} {P : Program} :
         obtain ⟨s', ha, he, hn, hsafe'⟩ :=
           ih ⟨m, U, _, by omega, hu, hh⟩ rfl (by simp only; omega) hs'
         exact ⟨s', Admissible.trans ⟨Nat.le_succ m, hx⟩ ha, he, by simp only at hn; omega, hsafe'⟩
+
+/-! ## A typed field write -/
+
+/-- `{values: any, stores: keep}`: the effect of a typed field write. -/
+def fieldWriteEffect : Footprints.Closed := ⟨.any, .keep⟩
+
+/-- **A typed field write keeps every length lower bound, on both exits.** A
+run of the write to a value or to a raise, with budget left, ends in a state an
+action of `{values: any, stores: keep}` reaches; there `y ≤ |x|` holds where it
+held. -/
+theorem field_write_keeps_bound {ι : Type} [DecidableEq ι] {G : PositiveGraphs.NormalGraph ι}
+    {Γ} {t : Tm} {Ξ T : Fam} {ρ : Env} {s : IndexedHeap} {y x m k : Nat}
+    {h' : Heap} {t' : Tm}
+    (hc : ExpressionEffects.fieldWriteWithin G Γ fieldWriteEffect t = true)
+    (he : ProgramTyping.EnvOk G Γ ρ s.n s.W) (hs : Safe Ξ T s.n s.W s.h (instantiate 0 ρ t))
+    (hst : Steps k s.h (instantiate 0 ρ t) h' t') (hk : k < s.n)
+    (hexit : isVal t' = true ∨ ∃ e, Raises t' e) (hb : LowerBound y x ρ m s) :
+    ∃ s' : IndexedHeap, Action fieldWriteEffect.fp ρ s s' ∧ s'.h = h' ∧ LowerBound y x ρ m s' := by
+  have hp := ExpressionEffects.field_write_within_exc hc he s.ok hs
+  have hgrow : ∀ s', Action fieldWriteEffect.fp ρ s s' → LowerBound y x ρ m s' :=
+    fun s' ha => grow hb s' (action_le_closed (by decide) ha)
+  rcases hexit with hv | ⟨e, hr⟩
+  · obtain ⟨s', ha, he', -⟩ := action_normal (ρ := ρ) hp hst hv hk
+    exact ⟨s', ha, he', hgrow s' ha⟩
+  · obtain ⟨s', ha, he', -⟩ := action_throw (ρ := ρ) hp hst hr hk
+    exact ⟨s', ha, he', hgrow s' ha⟩
 
 end Verification.TolerantFrames
