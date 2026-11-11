@@ -663,7 +663,10 @@ removal works through:
   U` reading `T ⊓ U`) at the one clause row holding the meet of its
   binders' types' clauses with the row's own (`SchemeInstances.meetOk`), and
   elsewhere a meet naming several binders at the type every other's labels
-  include. One that writes no result is claimed at no scheme; it, and
+  include; a scheme's rest is stated at the argument pack of its positions
+  read at the binders, a binder's meet row there at the binder's type
+  itself, the labels a spread's store must hold (`SpreadsInto`). One that
+  writes no result is claimed at no scheme; it, and
   any generic literal a walk meets before the scheme rows are made (a
   declaration's footprint, the initialization's walk), is walked at its own
   parameters as any other literal. A
