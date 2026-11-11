@@ -671,9 +671,11 @@ removal works through:
   elsewhere a meet naming several binders at the type every other's labels
   include; a scheme's rest is stated at the argument pack of its positions
   read at the binders, a binder's meet row there at the binder's type
-  itself, the labels a spread's store must hold (`SpreadsInto`). One that
-  writes no result is claimed at no scheme; it, and
-  any generic literal a walk meets before the scheme rows are made (a
+  itself, the labels a spread's store must hold (`SpreadsInto`). An unwritten result whose parameters contain no nested scheme is
+  proposed by a preliminary body walk
+  (expression_closures.ml:266-272), then checked at the scheme’s rigid
+  rows with the body. A result that this walk cannot determine supplies no
+  scheme. Any generic literal a walk meets before the scheme rows are made (a
   declaration's footprint, the initialization's walk), is walked at its own
   parameters as any other literal. A
   callback is stated at that effect on every row it offers, never at its
