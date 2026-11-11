@@ -1397,6 +1397,8 @@ partial def expr (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (Op
     return (r, e1)
   | .block _ ss =>
     let _ ← stmts (some env) ss
+    -- (but where its span is its expression's, which keeps its own)
+    if (← get).exprs.contains e.span then return (none, env)
     return (← record e (.error "a function body"), env)
   | .construct _ callee args spreads typeArgs =>
     let (F, e1) ← expr env callee
@@ -1790,7 +1792,10 @@ partial def walkLambda (env : Env) (e : Expr) (sig : Option (CallEffects.Arrow (
   let R ← match body with
     | .block _ ss => do
       let done ← stmts (some inner) ss
-      let _ ← record body (.error "a function body")
+      -- A body has no type, but where its span is its expression's (an
+      -- expression body the parser writes as statements, `booleanReturn`),
+      -- which keeps its own.
+      if !(← get).exprs.contains body.span then let _ ← record body (.error "a function body")
       let rs := (← get).returns ++ (if done.any (!·.ghost) then [some [Labels.undef]] else [])
       pure (if rs.all (·.isSome) then some (norm (rs.filterMap id).flatten) else none)
     | x => do
