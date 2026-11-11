@@ -1856,9 +1856,14 @@ partial def expr (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (Op
     let e2 := (join (some e1) (some e2)).getD e2
     let e3 ← match target, r with
       | .var _ n, some A => pure { e2 with vars := upd e2.vars n A, paths := e2.paths.filter (·.1.1 != n) }
-      | .read _ fld _, _ => do
+      | .read _ fld _, r => do
         ends (.field fld)
-        pure { e2 with paths := surviving e2 [.field fld] }
+        let e3 := { e2 with paths := surviving e2 [.field fld] }
+        -- The field holds the assignment's value after it: its path so
+        -- narrowed.
+        match memberPath target, r with
+        | some (root, path), some A => StateT.lift (narrowPath e3 root path fun _ => pure A)
+        | _, _ => pure e3
       | _, _ => pure e2
     return (r, e3)
   | .nullishAssign _ n namePos rhs =>
@@ -3023,7 +3028,11 @@ partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
     let _ ← expr env x
     return none
   | .effect _ x =>
-    let e1 := (← expr env x).2
+    let (A, e1) ← expr env x
+    -- A value of no type (a call of a function returning `never`): the
+    -- statement does not complete; what follows is walked for its entries,
+    -- unreached.
+    if A == some [] then return some { e1 with ghost := true }
     -- An assertion function's normal return: its promise holds.
     match x with
     | .call _ callee args _ _ | .callWithReceiver _ callee _ args | .invoke _ callee args _ _ =>
