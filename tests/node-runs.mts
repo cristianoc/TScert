@@ -1458,6 +1458,11 @@ assert.equal(runExample("invalid-named-implicit-index", 'typeof asDictionary({ a
   // declaration creates; where it fails, a record with the class's members
   // is still returned, and a class binding its module writes tests another
   // class's prototype.
+  // An imported function popping the array `map` visits leaves holes in its
+  // result: the import's footprint lets the heap change, as its module's
+  // check establishes (the control under `TSCERT_FORCE=imports`).
+  assert.equal(runImporting("invalid-certified-write-value-import", "Object.keys(zeros([1, 2, 3])).length"), 2,
+    "invalid-certified-write-value-import: the result has three positions, two present");
   assert.equal(runImporting("instanceof-class-value-import",
     "[tests(), isFailure({ operation: \"x\" }), atStart, lineOf(new ParseFailure(2))].join()"),
     "true,false,true,2", "instanceof-class-value-import: the walk");
