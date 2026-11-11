@@ -164,6 +164,35 @@ it, each by its first member. -/
 def Front.dependencies (fr : Front) (group : List Nat) : List Nat :=
   ((group.flatMap fr.edges).filter (!group.contains ·) |>.map fun j => ((fr.group j).head?).getD j).eraseDups
 
+/-- The slots of the file's ordinary functions of the given names. A
+function's slot states the footprint its claim proposes, which its own unit
+certifies (`checkRequestResult`); its result states the footprint its claim
+proposes for the function it returns, which its unit's returns establish
+(`resultWithFootprint`). A declaration with overloads is one unit per
+overload, each its code at that overload's signature (SOURCE-ELABORATION.md,
+"Module functions"): the units of one name run one code, and its slot holds
+every overload. -/
+def ordinarySlots (d : Document EquationStore.State Tree) (ordinary : List Fragment.Fn) (names : List String) :
+    List (SourceExtraction.ModuleValue Tree) :=
+  let claimOf (g : Fragment.Fn) : Option (Function Tree) :=
+    d.functions.find? fun c => c.name == g.name && c.namePos == g.namePos
+  let returning (g : Fragment.Fn) : Except String Fragment.Fn := do
+    return { g with ret := ← resultWithFootprint d.types g.ret (((claimOf g).map (·.resultFootprint)).getD .top) }
+  -- A statement with store regions is certified by its unit's regional
+  -- check (`regionalResult`): the slot states it.
+  let slotOf (u : Fragment.Fn) : Except String Json := do
+    let r ← returning u
+    let c := claimOf u
+    match u.stated.bind fun (s : CallEffects.Effect) => if s.regions.isEmpty then none else some s with
+    | some s => moduleArrow r s.closed s.onThrow false s.regions
+    | none =>
+      let fresh := u.stated.any (·.fresh : CallEffects.Effect → Bool)
+      moduleArrow r ((c.map (·.footprint)).getD .top) ((c.map (·.onThrow)).getD false) fresh
+  names.filterMap fun name => do
+    let units := ordinary.filter (·.name == name)
+    let g ← units.head?
+    some (name, g.namePos, (do overloadSlot (← units.mapM slotOf)).map .written)
+
 /-- The front of a source's units. A qualified import, by its name, is read
 at its certified unit's footprint and on-throw flag (`importedArrow`); every
 other at its declared type. -/
@@ -202,34 +231,10 @@ def fileFront (ast claims : Json) (fileKey : String)
   -- signatures, and a function also reaches the module's constants at their
   -- annotations; each of those is established by its own unit.
   -- Imported values join them at the types their declarations state.
-  -- A function's slot states the footprint its claim proposes, which its own
-  -- unit certifies (`checkRequestResult`); an imported value states none.
-  let footprintOf (g : Fragment.Fn) : Footprints.Closed :=
-    ((d.functions.find? fun c => c.name == g.name && c.namePos == g.namePos).map (·.footprint)).getD .top
-  let onThrowOf (g : Fragment.Fn) : Bool :=
-    ((d.functions.find? fun c => c.name == g.name && c.namePos == g.namePos).map (·.onThrow)).getD false
-  -- Its result states the footprint its claim proposes for the function it
-  -- returns, which its unit's returns establish (`resultWithFootprint`).
-  let returning (g : Fragment.Fn) : Except String Fragment.Fn := do
-    let footprint := ((d.functions.find? fun c => c.name == g.name && c.namePos == g.namePos).map
-      (·.resultFootprint)).getD .top
-    return { g with ret := ← resultWithFootprint d.types g.ret footprint }
-  -- A declaration with overloads is one unit per overload, each its code at
-  -- that overload's signature (SOURCE-ELABORATION.md, "Module functions"):
-  -- the units of one name run one code, and its slot holds every overload.
   sameCodeOverloads functionJsons
   let ordinary := (all.filter (·.2.isEmpty)).map (·.1)
   let moduleFunctions : List (SourceExtraction.ModuleValue Tree) :=
-    ((ordinary.map (·.name)).eraseDups.filterMap fun name => do
-      let units := ordinary.filter (·.name == name)
-      let g ← units.head?
-      some (name, g.namePos, (do
-        overloadSlot (← units.mapM fun (u : Fragment.Fn) => do
-          -- A statement with store regions is certified by its unit's
-          -- regional check (`regionalResult`): the slot states it.
-          match u.stated.bind fun (s : CallEffects.Effect) => if s.regions.isEmpty then none else some s with
-          | some s => moduleArrow (← returning u) s.closed s.onThrow false s.regions
-          | none => moduleArrow (← returning u) (footprintOf u) (onThrowOf u) (u.stated.any (·.fresh : CallEffects.Effect → Bool)))).map .written)) ++
+    ordinarySlots d ordinary (ordinary.map (·.name)).eraseDups ++
     (imported.map fun (name, span, U) => (name, span, match qualified.lookup name with
       | some (footprint, onThrow, result) => (importedArrow d.types U footprint onThrow result).map .written
       | none => .ok (.written (graphClaim U)))) ++
