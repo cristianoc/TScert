@@ -3976,7 +3976,16 @@ partial def exprCall (env : Env) (e : Expr) (exp : Option (Ty Tree)) : W (Option
           | some f, _ => pure (some f)
           | none, some K => pure ((← keyString K).map PropKey.str)
           | none, none => pure none
-        let some fld := fld | throw "a method of a computed key"
+        let some fld := fld | do
+          -- An array's element at an index key, called at the array (the
+          -- lowering's `keySingletons` reads a numeric key as its property,
+          -- Atoms.lean:1079; the element read is `keyedRead`'s).
+          let some i ← (match K with | some K => keyIndex K | none => pure none)
+            | throw "a method of a computed key"
+          let R := present (← graphNow) (← need O "the receiver")
+          if (storeOf (← graphNow) R).isNone then throw "a method of a computed key"
+          let F ← elementAt R (some i)
+          return Except.ok (← spreadCall args As spreads (← calleeOf F R typeArgs))
         -- A nullish receiver throws before its method is read (the
         -- lowering's saved receiver, Atoms.lean:1176-1184).
         return Except.ok (← spreadCall args As spreads (← methodCallee e1.vars (present (← graphNow) (← need O "the receiver")) fld (args.map callback) typeArgs)))
@@ -4150,15 +4159,6 @@ partial def applyCall (env : Env) (c : Callee) (args : List Expr) (As : List (Op
   -- by the constraint (the producer's `dictionary_bound` and `tuple_bound`,
   -- expression_calls.ml:806-822, 866-875, 900-916).
   let mut As := As
-  if let ([(a, _)], false) := (candidates, c.binders.isEmpty) then
-    for ((x, P), i) in (args.zip a.arguments).zipIdx do
-      if c.binders.any (fun b => P.any (occurs b)) && !atBounds.contains i then
-        As := As.set i (← tupleActual P x (As[i]?.join))
-  if let ([(a, _)], false) := (candidates, c.binders.isEmpty) then
-    for ((x, P), i) in (args.zip a.arguments).zipIdx do
-      let some A := As[i]?.join | continue
-      if !c.binders.any (isBinder · P) then continue
-      let B ← match P with
   -- A fresh array literal at a parameter whose binders are bounded by
   -- literal types is made at the parameter read at those bounds, where
   -- that leaves it no binder (the producer's `literal_bounds`,
@@ -4177,6 +4177,15 @@ partial def applyCall (env : Env) (c : Callee) (args : List Expr) (As : List (Op
       if let some A' ← fit P' x (As[i]?.join) then
         As := As.set i (some A')
         atBounds := i :: atBounds
+  if let ([(a, _)], false) := (candidates, c.binders.isEmpty) then
+    for ((x, P), i) in (args.zip a.arguments).zipIdx do
+      if c.binders.any (fun b => P.any (occurs b)) && !atBounds.contains i then
+        As := As.set i (← tupleActual P x (As[i]?.join))
+  if let ([(a, _)], false) := (candidates, c.binders.isEmpty) then
+    for ((x, P), i) in (args.zip a.arguments).zipIdx do
+      let some A := As[i]?.join | continue
+      if !c.binders.any (isBinder · P) then continue
+      let B ← match P with
         | [b] => match c.bounds.lookup b with
           | some B => pure B
           | none => StateT.lift (boundOf P)
@@ -4262,15 +4271,6 @@ partial def applyCall (env : Env) (c : Callee) (args : List Expr) (As : List (Op
           let L ← walkLambda env x (widest (substitute σ0 P)) (ctx := some (substitute σ0 P))
           set w0
           if let some L := L then walked := walked ++ [(i, L)]
-  let Tw ← StateT.lift table
-  let mut chosen : Option (CallEffects.Arrow (Ty Tree) × Option (CallEffects.RestArrow (Ty Tree))) := none
-  let mut fallback : Option (CallEffects.Arrow (Ty Tree) × Option (CallEffects.RestArrow (Ty Tree))) := none
-  let mut promised : Option (CallEffects.Arrow (Ty Tree) × Option (CallEffects.RestArrow (Ty Tree))) := none
-  -- (`TSCERT_FORCE=callbacks`: the first, whatever its parameter, the
-  -- adversarial proposal)
-  let forceCallbacks := (← get).force.contains "callbacks"
-  for (a, r) in candidates do
-    if chosen.isSome || forceCallbacks then break
   -- An object or array literal at a parameter the candidates state
   -- differently is made at the first candidate's parameter it fits, as
   -- TypeScript reads a literal against each overload in turn (the
@@ -4290,6 +4290,15 @@ partial def applyCall (env : Env) (c : Callee) (args : List Expr) (As : List (Op
             As := As.set i (some A')
             break
         modify fun w => { w with exprs := w0.exprs }
+  let Tw ← StateT.lift table
+  let mut chosen : Option (CallEffects.Arrow (Ty Tree) × Option (CallEffects.RestArrow (Ty Tree))) := none
+  let mut fallback : Option (CallEffects.Arrow (Ty Tree) × Option (CallEffects.RestArrow (Ty Tree))) := none
+  let mut promised : Option (CallEffects.Arrow (Ty Tree) × Option (CallEffects.RestArrow (Ty Tree))) := none
+  -- (`TSCERT_FORCE=callbacks`: the first, whatever its parameter, the
+  -- adversarial proposal)
+  let forceCallbacks := (← get).force.contains "callbacks"
+  for (a, r) in candidates do
+    if chosen.isSome || forceCallbacks then break
     let σa ← if c.binders.isEmpty then pure c.seed else
       bindFrom c.seed ((a.receiver, c.receiver) :: (a.arguments.zip As).filterMap fun (P, A) => A.map (P, ·))
     if c.bounds.all (fun (b, B) => (σa.lookup b).all fun A => within Tw A (substitute σa B)) &&
@@ -5499,6 +5508,7 @@ def compareWalk (T : EquationStore.State) (fc : SourceClaims.Function Tree) (w :
   let mut samples : Array Json := #[]
   let mut seen : Std.HashSet Span := {}
   let bump (m : Std.HashMap (String × String) Nat) (k : String × String) := m.insert k ((m.getD k 0) + 1)
+  let raw (A : Ty Tree) : String := reprStr (A.map fun l => (l, PositiveRules.expand (SourceTypes.graph T) [l]))
   for (span, cand) in fc.exprs do
     if seen.contains span then continue
     seen := seen.insert span
@@ -5508,7 +5518,6 @@ def compareWalk (T : EquationStore.State) (fc : SourceClaims.Function Tree) (w :
       | .ok A => classify T A C
       | .error _ => "undetermined"
     counts := bump counts (kind, cls)
-  let raw (A : Ty Tree) : String := reprStr (A.map fun l => (l, PositiveRules.expand (SourceTypes.graph T) [l]))
     -- Same meaning under other labels: what a syntactic reading of the type
     -- (a clause's form) may still tell apart.
     let other := match r with
