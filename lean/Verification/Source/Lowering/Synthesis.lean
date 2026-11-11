@@ -3797,6 +3797,9 @@ partial def exprAt (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (
   | .update _ op target rhs _ =>
     match target with
     | .var _ n => assigns n
+    -- source.ml:1086-1087: only a numeric literal index has the
+    -- producer's compound element-write footprint.
+    | .index _ _ _ (.lit _ (.vnum _)) => wrote .any .grow
     | _ => wrote
     let (L, e1) ← expr env target
     let (R, e2) ← match rhs with

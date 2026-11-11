@@ -1115,6 +1115,9 @@ removal works through:
   assignment of a binding aside) or each member of the path is stable.
   After such a call, each binding a function literal walked so far assigns
   (one it captures, held in a cell) is at its declared type again.
+- **Write footprints.** A compound write at a numeric literal index proposes
+  value `any`, store `grow` (source.ml:1086-1087). Each proposal is checked
+  against the body at SinglePass.lean:1351-1380.
 - **Growth and assignment.** A write of a key a constant's records may lack
   is at the contract it adds the key at (the optional field's, else the
   value's type, a literal's widened), the constant's records owning it
