@@ -160,6 +160,12 @@ structure Walk where
   /-- Each generic closure's scheme, by its span: the claim its annotations
   state (`writtenSchemes`), its row `Scheme.closureRows`'s. -/
   schemes : List (Span × Ty Tree) := []
+  /-- The constants holding a store the run allocated: each initialized by
+  a call whose instance states a fresh result, or by such a constant (the
+  producer's `fresh_expr`, source.ml:957-966); and whether the last call's
+  instance states one. -/
+  freshConsts : List String := []
+  lastFresh : Bool := false
   /-- Whether the last call may have changed a value of the heap (its
   instance's footprint): the narrowed paths end there. -/
   changedValues : Bool := false
@@ -2243,7 +2249,14 @@ partial def expr (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (Op
       | .ok (args', As', _) => (args', As')
       | .error _ => (args, As)
     let c := (·.2.2) <$> c
-    let r ← called e2 c args As e.span exp
+    -- (`TSCERT_FORCE=fresh`: every named receiver, the adversarial
+    -- proposal)
+    let fcs := (← get).freshConsts
+    let anyFresh := (← get).force.contains "fresh"
+    let receiverFresh := match o with
+      | .var _ n => anyFresh || fcs.contains n
+      | _ => false
+    let r ← called e2 c args As e.span exp receiverFresh
     let e2 ← afterCall e2 r
     let _ ← record callee ((·.1) <$> r)
     let r ← record e ((·.2) <$> r)
@@ -2280,10 +2293,11 @@ partial def actuals (env : Env) (args : List Expr) : W (List (Option (Ty Tree)) 
 /-- `applyCall` where the callee is known; the callbacks walked unexpected
 where it is not. -/
 partial def called (env : Env) (c : Except String Callee) (args : List Expr) (As : List (Option (Ty Tree)))
-    (at_ : Span) (exp : Option (Ty Tree) := none) : W (Except String (Ty Tree × Ty Tree)) := do
+    (at_ : Span) (exp : Option (Ty Tree) := none) (receiverFresh : Bool := false) :
+    W (Except String (Ty Tree × Ty Tree)) := do
   modify fun w => { w with changedValues := false }
   match c with
-  | .ok c => applyCall env c args As (exp <|> (← get).hints.lookup at_)
+  | .ok c => applyCall env c args As (exp <|> (← get).hints.lookup at_) receiverFresh
   | .error m =>
     for x in args do if callback x then let _ ← walkLambda env x none
     -- A call of an unknown callee may change anything, and its throw too.
@@ -2300,7 +2314,7 @@ the selected signature's, under those binders, its result binding what
 remains; each literal actual at the parameter's shape (`fit`). The callee's
 type at the call and the call's result. -/
 partial def applyCall (env : Env) (c : Callee) (args : List Expr) (As : List (Option (Ty Tree)))
-    (hint : Option (Ty Tree) := none) : W (Except String (Ty Tree × Ty Tree)) := do
+    (hint : Option (Ty Tree) := none) (receiverFresh : Bool := false) : W (Except String (Ty Tree × Ty Tree)) := do
   let T ← StateT.lift table
   let G := SourceTypes.graph T
   let n := args.length
@@ -2473,7 +2487,11 @@ partial def applyCall (env : Env) (c : Callee) (args : List Expr) (As : List (Op
   -- locations at the values and its store's change; a receiver's store or
   -- elements both).
   if inst.effect.receiverOwn then wrote .any inst.effect.footprint.store
-  if inst.effect.receiverStore || inst.effect.elementWrite.isSome then wrote .any .any
+  -- (but a change of a receiver's store the run allocated, a constant
+  -- holding one, which its frame bounds: the producer's `receiver_fresh`,
+  -- source.ml:953-956, the checker's `Effect.within_below`)
+  if (inst.effect.receiverStore && !receiverFresh) || inst.effect.elementWrite.isSome then wrote .any .any
+  modify fun w => { w with lastFresh := inst.effect.fresh }
   if !inst.effect.onThrow then modify fun w => { w with throwWrites := true }
   -- For a declaration's footprint, a throw no footprint bounds that a
   -- handler catches leaves the bound.
@@ -2562,6 +2580,7 @@ partial def walkLambda (env : Env) (e : Expr) (sig : Option (CallEffects.Arrow (
       let rs := (← get).returns ++ (if done.any (!·.ghost) then [some [Labels.undef]] else [])
       pure (if rs.all (·.isSome) then some (norm (rs.filterMap id).flatten) else none)
     | x => do
+      modify fun w => { w with lastFresh := false }
       let (A, _) ← expr inner x (← get).expected
       pure A
   -- A body that changes nothing keeps both values and stores: the
@@ -2569,11 +2588,17 @@ partial def walkLambda (env : Env) (e : Expr) (sig : Option (CallEffects.Arrow (
   let pure_ := !(← get).writes
   -- One that also calls nothing leaving a changed heap on its throw keeps
   -- them on a throw too (`onThrow`).
-  let kept : CallEffects.Effect := { CallEffects.Effect.ofFootprint ⟨.keep, .keep⟩ with onThrow := !(← get).throwWrites }
+  -- An expression body calling a function whose instance states a fresh
+  -- result returns a fresh store (the producer's `fresh_result`,
+  -- source.ml:1230).
+  let freshResult := (match body with | .call .. | .invoke .. => true | _ => false) && (← get).lastFresh
+  let kept : CallEffects.Effect :=
+    { CallEffects.Effect.ofFootprint ⟨.keep, .keep⟩ with onThrow := !(← get).throwWrites, fresh := freshResult }
   -- One that changes the heap at the classes of contents its writes and
   -- calls change.
   let changed : CallEffects.Effect :=
-    { CallEffects.Effect.ofFootprint ⟨(← get).valueChange, (← get).storeChange⟩ with onThrow := !(← get).throwWrites }
+    { CallEffects.Effect.ofFootprint ⟨(← get).valueChange, (← get).storeChange⟩ with
+      onThrow := !(← get).throwWrites, fresh := freshResult }
   modify fun w => { w with breaks := saved.breaks, returns := saved.returns, expected := saved.expected }
   modify fun w => { w with writes := saved.writes, throwWrites := saved.throwWrites, locals := saved.locals, inLiteral := saved.inLiteral }
   modify fun w => { w with valueChange := saved.valueChange, storeChange := saved.storeChange, lastBody := R }
@@ -3095,12 +3120,21 @@ partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
       if let some D := written then modify fun w => { w with hints := (b.init.span, D) :: w.hints }
       if b.name.endsWith ".[[class]]" then modify fun w => { w with freshClass := true }
       -- The initializer made at the annotation's type.
+      modify fun w => { w with lastFresh := false }
       let (A, e1) ← match b.init with
         | .lambda _ _ _ _ _ _ _ _ stated _ _ _ =>
           if b.init.freeNames.contains b.name then recursiveConstant env b (b.annot.isSome || stated.isSome)
           else expr env b.init written
         | _ => expr env b.init written
       modify fun w => { w with freshClass := false }
+      -- A constant holding a store the run allocated.
+      let w ← get
+      let fresh := match b.init with
+        | .var _ m => w.freshConsts.contains m
+        | .call .. | .invoke .. => w.lastFresh
+        | _ => false
+      let fcs := if fresh then b.name :: w.freshConsts else w.freshConsts.filter (· != b.name)
+      modify fun w => { w with lastFresh := false, freshConsts := fcs }
       env := e1
       -- A literal of no type parameters and no rest, unannotated or
       -- annotated at one signature, whose uses may offer it more rows.
@@ -3126,6 +3160,7 @@ partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
   | .mutables p bs =>
     let mut env := env
     modify fun w => { w with consts := w.consts.filter fun n => !bs.any (·.name == n) }
+    modify fun w => { w with freshConsts := w.freshConsts.filter fun n => !bs.any (·.name == n) }
     if (← get).strict && bs.any (·.early) then wrote .any .keep
     for b in bs do
       modify fun w => { w with declarations := w.declarations.insert (p.1, b.name) env.vars }
