@@ -3366,6 +3366,19 @@ partial def exprAt (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (
         | some P => StateT.lift (fieldExpected P k)
         | none => pure none
       let (A, e') ← expr e1 y D
+      -- An ordinary nested allocation without a field context is made at
+      -- its own open record (expression_objects.ml:46-54, 83-97). Only the
+      -- fresh child is retyped: an existing value's store is unchanged.
+      let A ← match D, y, A with
+        | none, .alloc _ ks _, some A => do
+          if ks.contains SourceTypes.protoField || (← get).exactAt.contains y.span then pure (some A) else do
+          let G ← StateT.lift graphNow
+          match PositiveRules.expand G A with
+          | [.refs fs [] vs os ms _ st] =>
+            let B ← StateT.lift (prim (.refs fs [] vs os ms [] st))
+            record y (.ok B)
+          | _ => pure (some A)
+        | _, _, _ => pure A
       As := As ++ [A]
       e1 := e'
     let r ← attempt e do
