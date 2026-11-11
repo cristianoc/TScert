@@ -1116,8 +1116,12 @@ removal works through:
   After such a call, each binding a function literal walked so far assigns
   (one it captures, held in a cell) is at its declared type again.
 - **Write footprints.** A compound write at a numeric literal index proposes
-  value `any`, store `grow` (source.ml:1086-1087). Each proposal is checked
-  against the body at SinglePass.lean:1351-1380.
+  value `any`, store `grow` (source.ml:1086-1087). A logical
+  write to a required writable field of source values proposes value `any`,
+  store `keep` (source.ml:1111-1113; type_queries.ml:1009-1027); the receiver
+  is a binding or a path with known contents. `ExpressionEffects.sourceField`
+  checks the principal invariant operand. Each proposal is checked against
+  the body at SinglePass.lean:1351-1380.
 - **Growth and assignment.** A write of a key a constant's records may lack
   is at the contract it adds the key at (the optional field's, else the
   value's type, a literal's widened), the constant's records owning it
