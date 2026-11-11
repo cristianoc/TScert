@@ -48,6 +48,7 @@ const controls: { file: string; unit: string; force: string }[] = [
   { file: "invalid-method-effect-stated-throw-caught", unit: "wrong@596", force: "literals" },
   { file: "invalid-node-assert-catch-continue", unit: "rows@339", force: "literals" },
   { file: "invalid-cell-truthiness-narrowing", unit: "kept@176", force: "stale" },
+  { file: "module-cache-keeps-lengths", unit: "count@478", force: "cells" },
   { file: "invalid-exceptional-handler-fact", unit: "wrong@336", force: "throws" },
   { file: "invalid-object-spread-two-sources", unit: "count@156", force: "spreads" },
   { file: "invalid-keyed-read", unit: "pick@70", force: "keys" },
