@@ -2875,12 +2875,54 @@ partial def applyCall (env : Env) (c : Callee) (args : List Expr) (As : List (Op
         !within T (substitute σ a.result) H then
       let σe ← bindFrom c.seed [(a.result, H)]
       if c.binders.all (fun b => hidden.contains b || (σe.lookup b).isSome) && admitsAt σe then σ := σe
+  -- A binder that is a callback literal's parameter, which an earlier
+  -- actual's parameter takes at a position of one of its methods: the
+  -- literal is walked at the callable the actual's method of that key takes
+  -- there, of its signatures of that arity taking a callable the last whose
+  -- effect covers the parameter's method's, else the first (a string's
+  -- `replace` dispatching to a native regex's `[Symbol.replace]`, whose
+  -- replacer rows differ by the footprint they keep; the producer's
+  -- `from_actuals`, expression_calls.ml:446-485). The binder is then read
+  -- off the walked literal, as any callback's.
+  let lambdaBinders := (args.zip a.arguments).filterMap fun (x, P) => match x, P with
+    | .lambda .., [r] => if c.binders.contains r && (σ.lookup r).isNone then some r else none
+    | _, _ => none
+  let mut fromActuals : List (Tree × Ty Tree) := []
+  if !lambdaBinders.isEmpty then
+    let Ga := SourceTypes.graph (← StateT.lift table)
+    -- A type's methods by key, each its signatures' parameters and effects.
+    let methodsOf (X : Ty Tree) : List (PropKey × List (List (Ty Tree) × CallEffects.Effect)) :=
+      match ProgramTyping.objectClauses Ga X with
+      | [.refs fs _ vs _ ms _ _] =>
+        ((fs ++ vs).map fun (k, t) => (k, (ProgramTyping.callSigs Ga t).map fun s => (s.arguments, s.effect))) ++
+          ms.map fun m => (m.key, m.calls.map fun s => (s.arguments, s.effect))
+      | _ => []
+    for ((x, P), i) in (args.zip a.arguments).zipIdx do
+      if callback x then continue
+      let some A := As[i]?.join | continue
+      let actual := methodsOf A
+      for (k, ws) in methodsOf P do
+        let [(wps, we)] := ws | continue
+        let some ss := actual.lookup k | continue
+        for (p, j) in wps.zipIdx do
+          let [r] := p | continue
+          if !lambdaBinders.contains r || (fromActuals.lookup r).isSome then continue
+          let callables := ss.filterMap fun (ps, e) =>
+            if ps.length != wps.length then none else match ps[j]? with
+              | some t => if (ProgramTyping.callSigs Ga t).isEmpty then none else some (e, t)
+              | none => none
+          match (callables.filter fun (e, _) => e.covers we).reverse.head? <|> callables.head? with
+          | some (_, t) => fromActuals := fromActuals ++ [(r, t)]
+          | none => pure ()
   for ((x, P), i) in (args.zip a.arguments).zipIdx do
     let sub (A : Ty Tree) : Ty Tree := substitute σ A
     if callback x then
       -- The callback's parameter's signature taking the most parameters:
       -- the callback walked there is within each of them.
-      let L ← walkLambda env x (widest (sub P)) (ctx := some (sub P))
+      let Pc := match P with
+        | [r] => if (σ.lookup r).isNone then ((fromActuals.lookup r).getD (sub P)) else sub P
+        | _ => sub P
+      let L ← walkLambda env x (widest Pc) (ctx := some Pc)
       As := As.set i L
       if let some L := L then σ ← bindFrom σ [(P, L)] (receiverFirst := false)
     else if let some A := As[i]? then
