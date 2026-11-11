@@ -634,7 +634,13 @@ removal works through:
   pass then refuses. A binder the chosen signature does not mention is at
   the empty type. `TSCERT_FORCE=callbacks` chooses the first signature and
   states each callback at its parameter's effect, the adversarial
-  proposal. The binders a
+  proposal. A callback whose parameter is a binder another actual's
+  parameter takes at a position of one of its methods is walked at the
+  callable the actual's method of that key takes there: of its signatures
+  of that arity taking a callable there, the last whose effect covers the
+  parameter's method's, else the first (a string's `replace` dispatching to
+  a native regex's `[Symbol.replace]`, the producer's `from_actuals`); the
+  binder is then read off the walked callback. The binders a
   callback's result would give are first read off the type expected of the
   call's value, where that instance admits the actuals. A written type
   guard or assertion is stated with its promise, its result the guarded
