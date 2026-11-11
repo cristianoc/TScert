@@ -5447,7 +5447,8 @@ def compareWalk (T : EquationStore.State) (fc : SourceClaims.Function Tree) (w :
     if cls != "identical" then
       samples := samples.push (Json.mkObj [("span", toJson span), ("kind", toJson kind), ("class", toJson cls),
         ("computed", toJson (match r with | .ok A => shown T A | .error m => s!"({m})")),
-        ("claimed", toJson (shown T C))])
+        ("claimed", toJson (shown T C)), ("computedRaw", toJson (match r with | .ok A => raw A | .error _ => "")),
+        ("claimedRaw", toJson (raw C))])
   for (pos, vars) in fc.envs do
     let computed := w.entries.get? pos
     for (n, cand) in vars do
@@ -5465,7 +5466,8 @@ def compareWalk (T : EquationStore.State) (fc : SourceClaims.Function Tree) (w :
         samples := samples.push (Json.mkObj [("pos", toJson pos), ("name", toJson n), ("kind", toJson "entry"),
           ("class", toJson cls),
           ("computed", toJson (match r with | .ok A => shown T A | .error m => s!"({m})")),
-          ("claimed", toJson (shown T C))])
+          ("claimed", toJson (shown T C)), ("computedRaw", toJson (match r with | .ok A => raw A | .error _ => "")),
+          ("claimedRaw", toJson (raw C))])
   return (counts, samples)
 
 /-- A unit's walk over the store `T`, from its parameters' written types
@@ -5508,6 +5510,7 @@ def walkUnit (T : EquationStore.State) (f : Fragment.Fn)
       -- proposal.ml:23-47. The final pass checks all writes at these contracts.
       for round in List.range 5 do
         let w := result.2
+  let raw (A : Ty Tree) : String := reprStr (A.map fun l => (l, PositiveRules.expand (SourceTypes.graph T) [l]))
         let grown := w.evolvedWrites.filter fun (key, A) => norm ((assumed.lookup key).getD [] ++ A) != (assumed.lookup key).getD []
         if grown.isEmpty then break
         if round == 4 then
