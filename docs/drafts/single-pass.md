@@ -637,18 +637,28 @@ removal works through:
   constant). Its own check decides it (section 5, "A footprint").
 - **Declarations.** Each function a wanted unit reaches, callees first,
   is walked as its unit is, each callee read at the footprint found for it
-  (`declarationEffects`). A walk that changes nothing proposes keep/keep,
-  bounding its throws where nothing in it leaves a throw unbounded; for this
-  reading a write, an assignment of a binding held in a cell or of one it
-  does not declare, an early binding's declaration, a call whose instance
-  may change the heap, a call of a local binding at its declared type's
-  effect, a call passing a function, a call of an unknown callee, an
+  (`declarationEffects`). A walk proposes the join, by class of location,
+  of the changes its writes and its calls' instances make (the grades a
+  function literal's effect is found with, the producer's
+  `footprint_stmts`): keep/keep where it changes nothing, and nothing where
+  the join is the ordinary effect. It bounds its throws where nothing in it
+  leaves a throw unbounded. For this reading a write, an assignment of a
+  binding held in a cell or of one it does not declare, an early binding's
+  declaration, a call at its instance's footprint, a call of a local
+  binding at its declared type's effect, a call of an unknown callee, an
   iteration, and a call without `onThrow` a handler catches each change the
   heap; a call without `onThrow`, an iteration and a finalizer leave a throw
-  unbounded. A self-recursive function is walked with itself at keep/keep
-  bounding its throws, then without the bound where that walk leaves one.
-  An async, generic or rest function, or one with a written effect, promise
-  or stand-in, keeps its footprint. Each proposal is a stand-in: its callers
+  unbounded. A function passed to a call changes what its own signatures'
+  effects state; where the call's instance is a generic module function's
+  or a resolution-qualified one, or the passed function has no known type,
+  it changes everything, and so does a generic function literal the
+  declaration creates, which this walk reads with no scheme. A
+  self-recursive function is walked with itself at keep/keep bounding its
+  throws, then at the join of that and what the walk found, until a walk
+  finds no more than it assumed, three walks at most. A guard or an
+  assertion function is proposed like any other, its promise kept. An
+  async, generic or rest function, or one with a written effect or a
+  stand-in, keeps its footprint. Each proposal is a stand-in: its callers
   read it and its own unit establishes it; the front states it at the
   function's claim and slot (`Front.withStandIns`).
 - **Early bindings.** Each early binding of a statement list (the flow
