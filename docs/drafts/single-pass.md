@@ -524,7 +524,8 @@ removal works through:
   label of the actual at the first member it matches; one type
   constructor's arguments at the actual's of the same constructor; an
   array's elements (a tuple's positions separately), a record's fields and
-  methods' results, a callable's result at the actual's, then its parameters
+  methods' results, a constructor's first signature's result and parameters,
+  a callable's result at the actual's, then its parameters
   where the result supplies no candidate. Fresh array literals at generic
   tuple positions keep those positions recursively, each value widened.
   Explicit method type arguments seed the instance. An expected union's
@@ -540,7 +541,8 @@ removal works through:
   producer's `dictionary_bound` and `tuple_bound`). A rest that is a binder's
   argument lists (`...args: T`) binds it at the actuals past the fixed ones,
   widened: an argument pack where only the rest uses the binder, else the
-  tuple of them, whose argument lists the rest's are (the producer's pack
+  tuple of them, whose argument lists the rest's are; an occurrence solely
+  as a constructor or callback's argument pack supplies no value type (the producer's pack
   rest). A spread actual of a tuple of required positions
   stands for those positions; a spread of any other array for one actual of
   its elements, which only a variadic signature taking no more fixed
