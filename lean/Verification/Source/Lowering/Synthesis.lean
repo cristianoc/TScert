@@ -1855,6 +1855,16 @@ def spreadCall (args : List Expr) (As : List (Option (Ty Tree))) (spreads : List
     Compiler (List Expr × List (Option (Ty Tree)) × Callee) := do
   if spreads.isEmpty then return (args, As, c)
   let G ← graphNow
+  -- A callee of one signature whose rest is a packed binder's argument
+  -- lists, after the fixed actuals: one spread, the last actual, of a value
+  -- of that binder, at its own type (the producer's pack rest call,
+  -- expression_calls.ml:607-616; the lowering's `callPacked`,
+  -- Atoms.lean:220-224, checks the operand's store is one of its lists).
+  if c.binders.isEmpty && c.fixed.isEmpty && spreads == [args.length - 1] then
+    if let ([r], some (some A)) := (c.rests, As.getLast?) then
+      if r.arguments.1.length + 1 == args.length &&
+          r.arguments.2.any (fun t => G.parameterKinds t == some .packed) then
+        return (args, As, { c with fixed := [⟨r.receiver, r.arguments.1 ++ [A], r.result, r.effect⟩], rests := [] })
   let first := spreads.foldl min args.length
   if !c.construct && c.rests.isEmpty && spreads != [args.length - 1] then
     for (x, i) in args.zipIdx do

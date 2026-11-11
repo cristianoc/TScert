@@ -606,6 +606,13 @@ removal works through:
   A packed generic class's construction reads written callback parameters
   before choosing its tuple instance; the tuple parameter's actual supplies
   that instance, whose argument lists the existing lowering derives.
+  A generic method's binder its annotations read as packed (a class
+  binder at its declaration's packed parameter) is packed in the method's
+  scheme, its argument lists its own row (the producer's `T#pack`,
+  claims.ml:490-499). A callee of one signature whose rest is a packed
+  binder's argument lists takes one last spread of a value of that binder
+  at its own type (expression_calls.ml:607-616); the lowering's
+  `callPacked` checks the operand (Atoms.lean:220-224).
   A finite record gives a dictionary parameter no index candidate; an
   otherwise unconstrained, unbounded binder there defaults to `unknown`,
   as inference.ml:301-308, 631-632. Its named fields do not constrain other
