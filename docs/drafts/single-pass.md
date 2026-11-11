@@ -555,7 +555,10 @@ removal works through:
   A packed generic class's construction reads written callback parameters
   before choosing its tuple instance; the tuple parameter's actual supplies
   that instance, whose argument lists the existing lowering derives.
-  Explicit method type arguments seed the instance. An expected union's
+  A finite record gives a dictionary parameter no index candidate; an
+  otherwise unconstrained, unbounded binder there defaults to `unknown`,
+  as inference.ml:301-308, 631-632. Its named fields do not constrain other
+  own values. Explicit method type arguments seed the instance. An expected union's
   unique application of the result's declaration supplies its contextual
   type arguments. Of a call's signatures the first each walked actual is
   within at the binders so read, satisfying their bounds, is selected, else
