@@ -635,7 +635,11 @@ removal works through:
   read each binder as a rigid row; the walk states it at that scheme where
   its body's effect is within the scheme's, and states a call of a local
   holding a scheme with its callee at the call's instance (`closureRows`'
-  instances). One that writes no result is claimed at no scheme; it, and
+  instances): a binder's row that is a meet (a bounded binder, `T extends
+  U` reading `T ⊓ U`) at the one clause row holding the meet of its
+  binders' types' clauses with the row's own (`SchemeInstances.meetOk`), and
+  elsewhere a meet naming several binders at the type every other's labels
+  include. One that writes no result is claimed at no scheme; it, and
   any generic literal a walk meets before the scheme rows are made (a
   declaration's footprint, the initialization's walk), is walked at its own
   parameters as any other literal. A
