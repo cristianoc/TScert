@@ -380,7 +380,9 @@ a written footprint at keep/keep), `elements` (every element read without
 `spreads` (every spread with every key its operand's type states, optional
 ones as present), `stale` (a binding a function literal assigns kept
 narrowed across a call), `guards` (each guard's and family guard's true
-answer stated on its false edge too). Under a forced proposal, a forced footprint is one the
+answer stated on its false edge too), `reads` (a member read's receiver
+held without `null` and `undefined` at every later statement). Under a
+forced proposal, a forced footprint is one the
 function's own unit establishes, and a unit whose dependency of the file is
 refused counts as refused where both modes are compared with the pipeline.
 The script's controls run with their forced proposal
@@ -390,11 +392,12 @@ whatever the patterns, each expected refused by mode 8:
 `invalid-cell-truthiness-narrowing` `kept`, under `stale`, and
 `invalid-exceptional-handler-fact` `wrong`, under `throws` (every function
 at keep/keep bounding its throws), `invalid-declaration-pop-callback`
-`dropped`, under `callees`, and `invalid-compiler-api-guard-loop-partial`
-`names`, under `guards`. A control's acceptance counts only with every
-unit it `depends` on accepted: a run with named units checks only those, a
-dependency's footprint among its proposals, so its reader follows
-`depends`.
+`dropped`, under `callees`, `invalid-compiler-api-guard-loop-partial`
+`names`, under `guards`, and `invalid-read-narrows-write` and
+`invalid-read-narrows-closure` `wrong`, under `reads`. A control's
+acceptance counts only with every unit it `depends` on accepted: a run
+with named units checks only those, a dependency's footprint among its
+proposals, so its reader follows `depends`.
 
 ## 9. The claims-free front
 
@@ -568,7 +571,11 @@ removal works through:
   promise is read at the member's type. A family guard testing its
   operand's field (`ts.isIdentifier(n)`) narrows the binding to the arms
   whose field can answer so, `undefined` answering no `true` and, where
-  the guard throws on it, no `false` (`PromiseCalls.memberFieldSlice`). A destructuring
+  the guard throws on it, no `false` (`PromiseCalls.memberFieldSlice`). A
+  member read of a receiver that may be `null` or `undefined` reads the
+  others (it throws on those, `nullishSplit`), and past it the receiver,
+  where a slot of the unit holds it, is without them (`readNarrowing`);
+  an assignment, a join and a loop head end that as any narrowing. A destructuring
   default is added where the part may be `undefined`. Strict equality with
   a literal holding narrows a label of the literal's family to the literal
   (but `0`, which `-0` equals too); equality with an operand holding one of

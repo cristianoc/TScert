@@ -16,7 +16,7 @@
 // mode 9 refuses is a hole in the pass until shown otherwise, printed as
 // `hole:`; the other direction is counted. TSCERT_FORCE (passed through)
 // forces an adversarial proposal (`literals`, `callees`, `elements`,
-// `objects`, `spreads`, `stale`, `throws`, `guards`); the controls below run with theirs forced whatever
+// `objects`, `spreads`, `stale`, `throws`, `guards`, `reads`); the controls below run with theirs forced whatever
 // the patterns, each expected refused by mode 8.
 // Prints the disagreements, then the counts: units agreeing, disagreeing,
 // those the pass does not handle by construct, and those whose pipeline
@@ -48,6 +48,8 @@ const controls: { file: string; unit: string; force: string }[] = [
   { file: "invalid-exceptional-handler-fact", unit: "wrong@336", force: "throws" },
   { file: "invalid-declaration-pop-callback", unit: "dropped@359", force: "callees" },
   { file: "invalid-compiler-api-guard-loop-partial", unit: "names@203", force: "guards" },
+  { file: "invalid-read-narrows-write", unit: "wrong@187", force: "reads" },
+  { file: "invalid-read-narrows-closure", unit: "wrong@153", force: "reads" },
 ];
 
 /** The file key the pipeline's check of a run named: `--check-units`'s third argument. */
