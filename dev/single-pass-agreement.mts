@@ -72,6 +72,7 @@ const controls: { file: string; unit: string; force: string }[] = [
   { file: "invalid-negated-disjunction-saved", unit: "wrong@91", force: "implications" },
   { file: "invalid-closure-cell-capture-narrowed", unit: "wrong@181", force: "captures" },
   { file: "invalid-object-spread-width-replaced", unit: "wrong@385", force: "objects" },
+  { file: "invalid-class-static-inherited-rest", unit: "rest@276", force: "spreads" },
 ];
 
 /** The file key the pipeline's check of a run named: `--check-units`'s third argument. */
