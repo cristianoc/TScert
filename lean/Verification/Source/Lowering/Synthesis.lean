@@ -118,7 +118,8 @@ structure Walk where
   spanEntries : Std.HashMap Span (List (String × Ty Tree) × List (String × List (List PropKey × Ty Tree))) := {}
   /-- The bindings before each declaration of a statement declaring several,
   by the statement's start and the declared name: the entry of that
-  declaration's own node. -/
+  declaration's own node. By a statement's start and `%return@p%`, the
+  statement's entry in the copy of a finalizer the return at `p` passes. -/
   declarations : Std.HashMap (Nat × String) (List (String × Ty Tree)) := {}
   /-- Each statement entry's narrowed member paths, by root: what a test or
   a write found a field to hold (the entry's `current` contents). -/
@@ -171,6 +172,10 @@ structure Walk where
   changedValues : Bool := false
   /-- The environments a `continue` of the innermost loop leaves with. -/
   continues : List Env := []
+  /-- Each `return` walked so far, last first: its statement's span, its
+  value's (where a finalizer holds the return) and the environment it
+  leaves with. -/
+  held : List (Span × Span × Env) := []
   /-- The type the body of the last function literal walked returns (the
   union of its `return`s' values), where every one is determined. -/
   lastBody : Option (Ty Tree) := none
@@ -2605,7 +2610,7 @@ partial def walkLambda (env : Env) (e : Expr) (sig : Option (CallEffects.Arrow (
   let changed : CallEffects.Effect :=
     { CallEffects.Effect.ofFootprint ⟨(← get).valueChange, (← get).storeChange⟩ with
       onThrow := !(← get).throwWrites, fresh := freshResult }
-  modify fun w => { w with breaks := saved.breaks, returns := saved.returns, expected := saved.expected }
+  modify fun w => { w with breaks := saved.breaks, returns := saved.returns, held := saved.held, expected := saved.expected }
   modify fun w => { w with writes := saved.writes, throwWrites := saved.throwWrites, locals := saved.locals, inLiteral := saved.inLiteral }
   modify fun w => { w with valueChange := saved.valueChange, storeChange := saved.storeChange, lastBody := R }
   let R := if written.isSome then written else if async then none else R
@@ -3088,10 +3093,10 @@ partial def collectBreaks (label : Option String) (saved : List (Option String �
 
 partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
   match s with
-  | .ret _ x =>
+  | .ret p x =>
     -- The value's entry, where a finalizer holds the return (the flow
     -- graph's `.returnHeld`): the statement's bindings.
-    modify fun w => { w with entries := w.entries.insert x.span.1 env.vars }
+    modify fun w => { w with entries := w.entries.insert x.span.1 env.vars, held := (p, x.span, env) :: w.held }
     if let some P := (← get).expected then modify fun w => { w with hints := (x.span, P) :: w.hints }
     let (A, _) ← expr env x (← get).expected
     if !env.ghost then modify fun w => { w with returns := w.returns ++ [A] }
@@ -3103,8 +3108,13 @@ partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
     let (A, e1) ← expr env x
     -- A value of no type (a call of a function returning `never`): the
     -- statement does not complete; what follows is walked for its entries,
-    -- unreached.
-    if A == some [] then return some { e1 with ghost := true }
+    -- unreached, each binding at the empty type (the producer's
+    -- `unreachable`, environment.ml:91, proposal_flow.ml:347).
+    -- (`TSCERT_FORCE=never`: every call's statement so, whatever it returns)
+    let forced := (← get).force.contains "never" && match x with
+      | .call .. | .callWithReceiver .. | .invoke .. => true
+      | _ => false
+    if A == some [] || forced then return some { e1 with ghost := true, vars := e1.vars.map fun (n, _) => (n, []) }
     -- An assertion function's normal return: its promise holds.
     match x with
     | .call _ callee args _ _ | .callWithReceiver _ callee _ args | .invoke _ callee args _ _ =>
@@ -3316,10 +3326,13 @@ partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
     modify fun w => { w with loopKept := kept }
     let keep := keepPaths kept
     return join (some (keep exit)) (out.map fun o => keep { o with vars := o.vars.filter (·.1 != s!"%next@{p.1}%") })
-  | .tryStmt _ body handler finalizer =>
+  | .tryStmt p body handler finalizer =>
     if finalizer.isSome && (← get).strict then modify fun w => { w with throwWrites := true }
     let outer := (← get).caught
     if handler.isSome then modify fun w => { w with caught := true }
+    -- The jumps and returns the statement's body and handler leave by (each
+    -- through the finalizer: a copy of it per route, `SourceFlow.sequence`).
+    let w0 ← get
     let b ← stmts (some env) body
     modify fun w => { w with caught := outer }
     let reset := loopHead env body
@@ -3334,8 +3347,70 @@ partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
     let joined := if handler.isSome then join b h else b
     match finalizer with
     | some fs =>
-      -- After the finalizer, its bindings where the statement completes.
-      let f ← stmts (some (joined.getD reset)) fs
+      let w1 ← get
+      let nb := w1.breaks.length - w0.breaks.length
+      let nc := w1.continues.length - w0.continues.length
+      let nr := w1.held.length - w0.held.length
+      -- The finalizer's entry, which every copy but a return's shares: the
+      -- statement's normal completion, a throw of its body or handler (each
+      -- binding they assign at its declared type), and each jump passing it.
+      let thrown := loopHead env (body ++ (handler.map (·.2)).getD [])
+      let routes := (w1.breaks.take nb).map (·.2) ++ w1.continues.take nc
+      -- (`TSCERT_FORCE=finally`: the statement's normal completion alone)
+      let entry := if (← get).force.contains "finally" then some (joined.getD thrown) else
+        routes.foldl (fun acc e => join acc (some e)) (join joined (some thrown))
+      let f ← stmts entry fs
+      -- Each return's own copy (its scope holds the return, `%return@p%`),
+      -- walked from the return's bindings: its statements' entries, read
+      -- by that copy's points, and its bindings where it completes.
+      let positions := ((ownStmts fs).map (·.1)).eraseDups
+      let mut copies : List (Span × Span × Option Env) := []
+      for (q, xs, e) in w1.held.take nr do
+        let saved ← get
+        let fq ← stmts (some e) fs
+        let walked := (← get).entries
+        set saved
+        let key := s!"%return@{q.1}%"
+        modify fun w => { w with declarations := positions.foldl (fun m k =>
+          ((walked.get? k).map (m.insert (k, key) ·)).getD m) w.declarations }
+        copies := copies ++ [(q, xs, fq.map fun fe => { fe with ghost := fe.ghost || e.ghost })]
+      -- After the finalizer: at the statement's start (its rethrow, and the
+      -- dead end of a body that never completes, `SourceFlow.sequence`), at
+      -- each return's held value, and each jump leaving with it; where a
+      -- copy never completes, what follows it is not reached.
+      modify fun w =>
+        let atEnd := fun (e : Env) => match f with
+          | some fe => some { fe with ghost := fe.ghost || e.ghost }
+          | none => none
+        let after := fun (g : Option Env) (vs : List (String × Ty Tree)) => match g with
+          | some ge => ge.vars
+          | none => vs.map fun (n, _) => (n, [])
+        let cur := fun (g : Option Env) => match g with
+          | some ge => currentOf ge
+          | none => []
+        -- The jumps and returns the finalizer itself makes come first.
+        let kb := w.breaks.length - w1.breaks.length
+        let kc := w.continues.length - w1.continues.length
+        let kr := w.held.length - w1.held.length
+        let (ob, pb, rb) := (w.breaks.take kb, (w.breaks.drop kb).take nb, w.breaks.drop (kb + nb))
+        let (oc, pc, rc) := (w.continues.take kc, (w.continues.drop kc).take nc, w.continues.drop (kc + nc))
+        let (or_, rr) := (w.held.take kr, w.held.drop (kr + nr))
+        let entries := w.entries.insert p.1 (after f ((w.entries.get? p.1).getD []))
+        let currents := match cur f with
+          | [] => w.currents.erase p.1
+          | cs => w.currents.insert p.1 cs
+        -- A held value at its statement's start (a guard's Boolean return the
+        -- parser writes as statements) by its own span (`shared`).
+        let (entries, spanEntries, currents) := copies.foldl (fun (m, sm, cm) (q, xs, g) =>
+          let vs := after g ((m.get? xs.1).getD [])
+          if xs.1 != q.1 then
+            (m.insert xs.1 vs, sm, match cur g with | [] => cm.erase xs.1 | cs => cm.insert xs.1 cs)
+          else if xs != q then (m, sm.insert xs (vs, cur g), cm) else (m, sm, cm)) (entries, w.spanEntries, currents)
+        { w with
+          breaks := ob ++ pb.filterMap (fun (l, e) => (atEnd e).map (l, ·)) ++ rb
+          continues := oc ++ pc.filterMap atEnd ++ rc
+          held := or_ ++ copies.filterMap (fun (q, xs, g) => g.map (q, xs, ·)) ++ rr
+          entries, spanEntries, currents }
       return if joined.isNone then none else f
     | none => return joined
   | .closing _ close body =>
