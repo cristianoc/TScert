@@ -1121,6 +1121,12 @@ removal works through:
   self proposal checks agreement with the walked body (proposal.ml:224-240);
   the annotation supplies contextual parameter types. Each code body must
   establish its proposed signature and footprint.
+- **Annotated module callables.** An immutable annotated callable retains a
+  separately inferred keep/keep effect on the same receiver, parameters and
+  result, including its bound on throws (semantic.ml:231-241). The default
+  receiver admits source values; the literal’s internal `top` receiver
+  also admits them. The declaration keeps its signature and every other
+  component. The initialization’s code body and each use check this proposal.
 - **Write footprints.** A compound write at a numeric literal index proposes
   value `any`, store `grow` (source.ml:1086-1087). A logical
   write to a required writable field of source values proposes value `any`,
