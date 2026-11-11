@@ -260,7 +260,15 @@ def surviving (env : Env) (xs : List PathEnd) : List ((String × List PropKey) �
     | .field k => !path.contains k
     | .root n => n != root
 
-def norm (A : Ty Tree) : Ty Tree := (A.mergeSort Labels.le).eraseDups
+/-- Sorted labels, retaining each label once in the sorted traversal. -/
+def norm (A : Ty Tree) : Ty Tree := Id.run do
+  let mut seen : Std.HashSet Tree := {}
+  let mut out : Array Tree := #[]
+  for a in A.mergeSort Labels.le do
+    if !seen.contains a then
+      seen := seen.insert a
+      out := out.push a
+  return out.toList
 
 def graphNow : Compiler (PositiveGraphs.NormalGraph Tree) := return SourceTypes.graph (← table)
 
@@ -362,7 +370,7 @@ def slice (A : Ty Tree) (tag : Tag) (q : Bool) (literalOperand : Bool := false) 
   -- not (`arrayRefine`, `BranchRefinement.arraySlice`).
   if tag == .isArray && q && G.builtins.isSome then
     return norm (arrayRefine G A (← builtinArrayTy))
-  let mut out : Ty Tree := []
+  let mut out : Array Tree := #[]
   for a in BranchRefinement.tagSlice G A tag q do
     -- `k in x` holding: a record's optional `k` present (a field where the
     -- record states one, else a view); a dictionary not naming `k` states
@@ -375,19 +383,19 @@ def slice (A : Ty Tree) (tag : Tag) (q : Bool) (literalOperand : Bool := false) 
           let c : PositiveNormalization.Clause (Ty Tree) :=
             if fs.isEmpty then .refs fs [] (vs ++ [(k, o.type)]) os ms bs st
             else .refs (fs ++ [(k, o.type)]) [] vs os ms bs st
-          out := out ++ (← prim c)
+          out := out ++ (← prim c).toArray
           continue
       | [.dict fs [] vs ix os ms bs cells st] =>
         if (fs.lookup k).isNone && (vs.lookup k).isNone && !os.any (·.key == k) then
           if let .str _ := k then
             if !ix.isEmpty then
-              out := out ++ (← prim (.dict fs [] (vs ++ [(k, norm (ix.flatMap (·.2)))]) ix os ms bs cells st))
+              out := out ++ (← prim (.dict fs [] (vs ++ [(k, norm (ix.flatMap (·.2)))]) ix os ms bs cells st)).toArray
               continue
       | _ => pure ()
     if let some S := one then
       match PositiveRules.expand G [a], tag with
       | [.num], .numEq _ | [.str], .strEq _ | [.bool], .boolEq _ | [.bigint], .bigintEq _ =>
-        out := out ++ (← S)
+        out := out ++ (← S).toArray
         continue
       | _, _ => pure ()
     -- A type parameter's value (its meet with its bound) where a test naming
@@ -397,8 +405,8 @@ def slice (A : Ty Tree) (tag : Tag) (q : Bool) (literalOperand : Bool := false) 
     if let .meet _ := a then
       if [Tag.isNum, .isStr, .isBool, .isBigint, .isSymbol].contains tag then
         if q then
-          for k in kinds.filter (fun k => tagClause tag k == some true) do out := out ++ (← prim k)
-        else out := out ++ [a]
+          for k in kinds.filter (fun k => tagClause tag k == some true) do out := out ++ (← prim k).toArray
+        else out := out.push a
         continue
     -- Any other test: a meet row narrowed to the meets of its parts with
     -- each clause the test does not contradict, dropped where it
@@ -412,23 +420,23 @@ def slice (A : Ty Tree) (tag : Tag) (q : Bool) (literalOperand : Bool := false) 
       if tag == .isFun && q then
         let functions := kinds.filter fun c => tagClause tag c == some true
         for c in PositiveNormalization.meetLists cs functions do
-          out := out ++ [← lower (SourceTypes.bounded p [c] also)]
+          out := out.push (← lower (SourceTypes.bounded p [c] also))
         continue
       let left := cs.filter fun c => tagClause tag c != some (!q)
       if left.length != cs.length then
-        for c in left do out := out ++ [← lower (SourceTypes.bounded p [c] also)]
+        for c in left do out := out.push (← lower (SourceTypes.bounded p [c] also))
         continue
     if G.plain a && PositiveRules.expand G [a] == [.source] then
       let kept := kinds.filter fun k => tagClause tag k != some (!q)
       if kept.length < kinds.length then
-        for k in kept do out := out ++ (← prim k)
+        for k in kept do out := out ++ (← prim k).toArray
         continue
-    out := out ++ [a]
+    out := out.push a
   -- A passed equality with a literal leaves the operand that value alone,
   -- where it may hold it (`Control.conditionContext`'s `single`).
   if let some S := one then
     if !out.isEmpty then return ← S
-  return norm out
+  return norm out.toList
 
 /-- Numeric singleton exclusions, as successive false `slice`s. The common
 case of a union of numeric singleton rows needs one row lookup per label
@@ -438,6 +446,7 @@ def excludeNumbers (tags : List Tag) (A : Ty Tree) : Compiler (Ty Tree) := do
   -- The first slice splits a numeric set row into its interned singleton
   -- labels, with the same fallback where the graph lacks an element label.
   let A ← slice A first false
+  if tags.isEmpty then return A
   let G ← graphNow
   let key (b : UInt64) := if numberEqual b (0 : Float).toBits then (0 : Float).toBits else b
   let excluded : Std.HashSet UInt64 := tags.foldl (fun acc t => match t with
@@ -721,20 +730,26 @@ def narrowPath (env : Env) (root : String) (path : List PropKey) (k : Ty Tree �
 are read once for the path. A common label with a consistent self-meet
 settles overlap before the pairwise clause test; the remaining test is
 `typesDisjoint`, flattened by `BranchRefinement.meetsNone_labels`. -/
-def pathDisjoint (G : PositiveGraphs.NormalGraph Tree) (P : Option (Ty Tree)) :
-    Ty Tree → Compiler Bool :=
-  match P with
-  | none => fun _ => pure false
-  | some P =>
-    if !G.plainTy P then fun _ => pure false else
+structure PathDisjoint where
+  clauses : List (PositiveNormalization.Clause (Ty Tree))
+  shared : Std.HashSet Tree
+
+/-- Materialize a path's clause rows before testing its receiver arms. -/
+def preparePathDisjoint (G : PositiveGraphs.NormalGraph Tree) (P : Option (Ty Tree)) :
+    Option PathDisjoint := do
+  let P ← P
+  if !G.plainTy P then none else
     let rows := P.map fun l => (l, clausesOf G [l])
     let shared : Std.HashSet Tree := rows.foldl (fun acc (l, cs) =>
       if BranchRefinement.meetsNone cs cs then acc else acc.insert l) {}
-    let clauses := rows.flatMap (·.2)
-    fun B => do
-      if B.any shared.contains then return false
-      let G ← graphNow
-      return G.plainTy B && BranchRefinement.meetsNone (clausesOf G B) clauses
+    some ⟨rows.flatMap (·.2), shared⟩
+
+/-- Test against materialized path clauses at the current graph. -/
+def pathDisjoint (P : Option PathDisjoint) (B : Ty Tree) : Compiler Bool := do
+  let some P := P | return false
+  if B.any P.shared.contains then return false
+  let G ← graphNow
+  return G.plainTy B && BranchRefinement.meetsNone (clausesOf G B) P.clauses
 
 /-- The narrowing a test of `tag` answering `q` makes of the binding or the
 member path `target` reads, and, for a test of a member `x.f`, of `x` itself:
@@ -747,7 +762,10 @@ def narrowTargetWith (env : Env) (target : Expr) (slice : Ty Tree → Compiler (
   | some (root, path) =>
     let some A := env.vars.lookup root | return env
     let mut env ← narrowPath env root path fun P => slice P
-    let disjoint := pathDisjoint (← graphNow) (env.paths.lookup (root, path))
+    -- Bind the materialized rows here: a partially applied function would
+    -- rebuild them when each receiver arm runs its Compiler action.
+    let prepared ← pure (preparePathDisjoint (← graphNow) (env.paths.lookup (root, path)))
+    let disjoint := pathDisjoint prepared
     -- A discriminant of a member path (`o.key.kind`): the path `o.key` to
     -- its arms whose field can answer so, as the root below.
     if let some f := path.getLast? then
