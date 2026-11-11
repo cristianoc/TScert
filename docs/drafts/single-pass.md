@@ -397,7 +397,8 @@ at keep/keep bounding its throws), `invalid-declaration-pop-callback`
 `names`, under `guards`, `invalid-read-narrows-write` and
 `invalid-read-narrows-closure` `wrong`, under `reads`, and
 `invalid-slot-path-call` `keyText` and `invalid-path-witness-alias`
-`wrong`, under `paths`. A control's acceptance counts only with every unit
+`wrong`, under `paths`, and `invalid-object-spread-two-sources` `count`,
+under `spreads`. A control's acceptance counts only with every unit
 it `depends` on accepted: a run with named units checks only those, a
 dependency's footprint among its proposals, so its reader follows
 `depends`.
@@ -546,7 +547,15 @@ removal works through:
   its own keys exactly, the link at its walked type and each other key at
   the expected record's field. A copy (`{ ...o }`) whose sources each state
   their own keys exactly, with no optional field, states its own keys
-  exactly. Each expression's type is read at its own statement's point,
+  exactly. A copy (`{ ...o }`, `Object.assign`) is the union of the
+  copies its parts give: a named field set in each, a spread merged into
+  each once per label of its operand (a record's fields but its prototype
+  link and a key it also states as a method, a key two operands of an
+  intersection state at the field within the other's; a class value's
+  static fields; nothing from a primitive; no stated key from a string or a
+  function), a key the source surely has at its type, one it may have at
+  the union of both, one either may hold at an unknown type dropped.
+  Each expression's type is read at its own statement's point,
   where two statements' expressions share a span (a construction's parts).
 - **Expected types.** A store's contract is fixed where the store is made;
   a read is a copy, an upcast of an immutable value, or an upcast of a store
