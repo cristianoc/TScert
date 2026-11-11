@@ -665,8 +665,8 @@ removal works through:
   iteration, and a call without `onThrow` a handler catches each change the
   heap; a call without `onThrow`, an iteration and a finalizer leave a throw
   unbounded. A function passed to a call changes what its own signatures'
-  effects state; where the call's instance is a generic module function's
-  or a resolution-qualified one, or the passed function has no known type,
+  effects state; where the call's instance is a generic module function's,
+  or the passed function has no known type,
   it changes everything, and so does a generic function literal the
   declaration creates, which this walk reads with no scheme. A
   self-recursive function is walked with itself at keep/keep bounding its

@@ -3091,9 +3091,9 @@ partial def applyCall (env : Env) (c : Callee) (args : List Expr) (As : List (Op
   -- actuals are walked; one of no known type is the ordinary effect's.
   if (← get).strict then
     let Gn := SourceTypes.graph (← StateT.lift table)
-    -- (a generic module function's instance and a resolution-qualified one
-    -- are not yet read off the function passed: the ordinary effect)
-    let unread := !c.names.isEmpty || !c.explicit.isEmpty || !certificates.isEmpty
+    -- (a generic module function's instance is not yet read off the
+    -- function passed: the ordinary effect)
+    let unread := !c.names.isEmpty || !c.explicit.isEmpty
     for (A, x) in As.zip args do
       match (if unread then none else A) with
       | some A =>
