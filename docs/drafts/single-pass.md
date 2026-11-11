@@ -812,7 +812,8 @@ removal works through:
   breaks alone; a statement whose value has no type (a call of a function
   returning `never`) does not complete, what follows it walked for its
   entries, unreached, each binding at the empty type (the producer's
-  `unreachable`). `typeof x` is a `string`. A
+  `unreachable`); an unreached expression whose type the walk does not determine is at
+  the empty type. `typeof x` is a `string`. A
   call of a type guard, on its true arm, and a statement calling an
   assertion function, after it, narrow the binding the promise names to
   its members within the guarded type, else to that type; a method's
