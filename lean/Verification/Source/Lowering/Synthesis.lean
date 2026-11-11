@@ -5383,7 +5383,13 @@ partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
     if !env.ghost then modify fun w => { w with returns := w.returns ++ [A] }
     return none
   | .throw _ x =>
+    let before ← get
     let _ ← expr env x
+    -- With no enclosing handler and outside async completion, neither
+    -- the throw nor its operand has a normal exit (source.ml:1140-1144).
+    -- Keep its throw effect, and every expression claim, for the checker.
+    if !before.caught && !before.asyncBody then
+      modify fun w => { w with writes := before.writes, valueChange := before.valueChange, storeChange := before.storeChange }
     return none
   | .effect _ x =>
     let added := match x with
@@ -5728,12 +5734,12 @@ partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
   | .tryStmt p body handler finalizer =>
     if finalizer.isSome && (← get).strict then modify fun w => { w with throwWrites := true }
     let outer := (← get).caught
-    if handler.isSome then modify fun w => { w with caught := true }
+    if handler.isSome || finalizer.isSome then modify fun w => { w with caught := true }
     -- The jumps and returns the statement's body and handler leave by (each
     -- through the finalizer: a copy of it per route, `SourceFlow.sequence`).
     let w0 ← get
     let b ← stmts (some env) body
-    modify fun w => { w with caught := outer }
+    modify fun w => { w with caught := outer || finalizer.isSome }
     -- A handler's entry: each binding the body assigns at its declared
     -- type, and each cell (a throw keeps no current-content fact).
     let reset := cellsDeclared (← get) (loopHead env body)
@@ -5745,6 +5751,7 @@ partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
           | none => reset
         stmts (some hEnv) hs
       | none => pure none
+    modify fun w => { w with caught := outer }
     let joined := if handler.isSome then join b h else b
     match finalizer with
     | some fs =>
