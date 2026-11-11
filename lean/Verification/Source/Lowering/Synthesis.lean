@@ -2547,20 +2547,50 @@ partial def fit (P : Ty Tree) (x : Expr) (A : Option (Ty Tree)) : W (Option (Ty 
           if !forced && !within (← StateT.lift table) B E then ok := false; break
       if ok then return ← record x (.ok [l])
     return some A
-  | .build _ _ es =>
-    let w ← get
-    let tuple ← match x, es.mapM (fun y => (w.exprs.get? y.span).bind (·.2.toOption)) with
-      | .arrayLit .., some Es => StateT.lift (tryCatch (do
-          let t ← lower do
-            let s ← SourceTypes.use (.list ⟨Es, [], none, false, .dense⟩ [])
-            let T ← get
-            return [← SourceTypes.use (SourceTypes.arrayOf T s false)]
-          pure (some t)) fun _ => pure none)
-      | _, _ => pure none
+  | .build _ names es =>
+    -- Context reaches every fresh part of a copy, including a copy nested
+    -- in a call's object literal (expression_objects.ml:135-218).
     let some A := A | return none
-    let kept := P.filter fun l => within T A [l] || (tuple.any fun t => within T t [l])
-    if kept.isEmpty then return some A
-    record x (.ok kept)
+    if (← get).force.contains "objects" && !P.isEmpty then return ← record x (.ok P)
+    let spreadExp ← StateT.lift (spreadContext P)
+    let mut As : List (Ty Tree) := []
+    for (k, y) in names.zip es do
+      let w ← get
+      let B := (w.exprs.get? y.span).bind (·.2.toOption)
+      let D ← match k with
+        | some k => StateT.lift (fieldExpected P (.str k))
+        | none => pure (if copyLiteral y then spreadExp else none)
+      let B ← match D with
+        | some D => fit D y B
+        | none => pure B
+      let some B := B | return some A
+      As := As ++ [B]
+    let forced := (← get).force.contains "spreads"
+    let byArm ← StateT.lift (P.mapM fun l => do
+      let copies ← tryCatch (do
+        let mut parts : List (Option PropKey × Ty Tree) := []
+        for (k, B) in names.zip As do
+          match k with
+          | some k =>
+            let D ← match ← fieldExpected [l] (.str k) with
+              | some D => pure D
+              | none => widen B
+            if !within (← table) B D then throw "a part not within its expected field"
+            parts := parts ++ [(some (.str k), D)]
+          | none => parts := parts ++ [(none, B)]
+        let alts ← copyParts [{}] parts forced
+        return some (← alts.mapM copyType)) fun _ => pure none
+      return (l, copies))
+    let some n := (byArm.findSome? (·.2)).map (·.length) | return some A
+    let T ← StateT.lift table
+    let mut out : Ty Tree := []
+    for i in List.range n do
+      let some C := byArm.findSome? fun (l, cs) => cs.bind fun cs =>
+          if cs.length == n then cs[i]?.bind fun C => if within T C [l] then some C else none else none
+        | return some A
+      out := out ++ C
+    if n == 0 then return some A
+    record x (.ok (norm out))
   | _ => return A
 
 /-- The environment where a call of a guard (or, `asserts`, an assertion
@@ -3380,45 +3410,9 @@ partial def exprAt (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (
       let alts ← copyParts [{}] parts forceSpreads
       let alts := if forceIndexes then alts.map fun c => { c with numeric := c.numeric.map fun _ => [Labels.tru] } else alts
       return norm (← alts.mapM copyType).flatten
-    -- Where a type is expected: each copy the parts give at the first
-    -- member of it whose field at each named key the part is within, each
-    -- such field at that member's (the producer's expected field,
-    -- expression_objects.ml:53-54), where the copy is within the member;
-    -- the copies so made where each one has such a member.
-    -- (`TSCERT_FORCE=objects`: the copy at the expected type itself, the
-    -- adversarial proposal)
-    let r ← match exp, r with
-      | some P, some R0 =>
-        if (← get).force.contains "objects" && !P.isEmpty then record e (.ok P) else
-        if R0.isEmpty then pure r else do
-        let copiesAt (l : Tree) : Compiler (Option (List (Ty Tree))) := tryCatch (do
-          let T ← table
-          let mut parts : List (Option PropKey × Ty Tree) := []
-          for (k, A) in names.zip As do
-            let A ← need A "a part"
-            match k with
-            | some k =>
-              let D ← match ← fieldExpected [l] (.str k) with
-                | some D => pure D
-                | none => widen A
-              if A != D && !within T A D then throw "a part not within its expected field"
-              parts := parts ++ [(some (.str k), D)]
-            | none => parts := parts ++ [(none, A)]
-          let alts ← copyParts [{}] parts forceSpreads
-          return some (← alts.mapM copyType)) fun _ => pure none
-        let byArm ← StateT.lift (P.mapM fun l => do return (l, ← copiesAt l))
-        let n := (byArm.findSome? (·.2)).map (·.length)
-        let some n := n | pure r
-        let T ← StateT.lift table
-        let mut out : Ty Tree := []
-        let mut ok := true
-        for i in List.range n do
-          match byArm.findSome? fun (l, cs) => cs.bind fun cs =>
-              if cs.length == n then cs[i]?.bind fun C => if within T C [l] then some C else none else none with
-          | some C => out := out ++ C
-          | none => ok := false
-        if ok && n > 0 then record e (.ok (norm out)) else pure r
-      | _, _ => pure r
+    let r ← match exp with
+      | some P => fit P e r
+      | none => pure r
     return (r, e1)
   | .read _ fld x =>
     let (O, e1) ← expr env x
