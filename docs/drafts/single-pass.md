@@ -720,6 +720,13 @@ removal works through:
   static fields; nothing from a primitive; no stated key from a string or a
   function), a key the source surely has at its type, one it may have at
   the union of both, one either may hold at an unknown type dropped.
+  The initialization's generic closures, a generic class's methods among
+  them (each quantifying the class's binders, `C."m"#classI`), are claimed
+  at the schemes their annotations state, as scheme rows, before its walk
+  types the values holding them. A read off a generic class's name (a
+  static field) reads the class at an instance, each binder at its bound
+  (`unknown` where it states none), recorded as the read's type arguments;
+  a bound reading another binder is not handled there.
   A member `o.m` of a union of objects each stating it at the same
   signatures (a host family's node kinds, each its own receiver) is that
   member with every member's receivers and schemes.
@@ -761,6 +768,15 @@ removal works through:
   call at its effect, for a list that is null, undefined or a tuple of
   required positions, or, for a target taking only a rest, an array of any
   length. A method at a computed key of one string literal is that member.
+- **Collected values.** A spread of a program's iterable and an array
+  pattern over one collect the values its protocol's steps yield
+  (`collect`, `protocolPattern`, tools/fragment-statements.mts): the
+  collected array (`%items`, `%rest`, an unannotated `[]` the steps push
+  onto) is made at the array of the values a step not done yields, an
+  element binding (`let %vI = undefined`) at `undefined` or those values,
+  the producer's evolving bindings (statement_analysis.ml:222-240); the
+  step's type is the protocol's bound `next` of the statement's other
+  bindings, or of the next statement, walked ahead.
 - **Expected types.** A store's contract is fixed where the store is made;
   a read is a copy, an upcast of an immutable value, or an upcast of a store
   to a readonly view of it. An annotated declaration holds an object it is

@@ -136,6 +136,9 @@ structure Walk where
   /-- The bindings a member read was made of, under `TSCERT_FORCE=reads`:
   held without `null` and `undefined` at every later statement. -/
   readForced : List String := []
+  /-- A destructuring's collected bindings (`%v…`, `%rest`, `%items`) at
+  the contracts the protocol's steps give them, by name. -/
+  collected : List (String × Ty Tree) := []
   /-- The member paths narrowed so far, under `TSCERT_FORCE=paths`: held
   narrowed at every later statement. -/
   pathsForced : List ((String × List PropKey) × Ty Tree) := []
@@ -1174,6 +1177,19 @@ def iteratedElement (P : Ty Tree) : Compiler (Option (Ty Tree)) := do
       if done == some [Labels.tru] then continue
       if let some V ← tryCatch (some <$> readField [] [u] (.str "value")) (fun _ => pure none) then
         out := out ++ V
+  return if out.isEmpty then none else some (norm out)
+
+/-- The values a protocol step `N` (a bound `next`) yields not done: its
+first signature's result's arms whose `done` may be other than `true`, their
+`value`s (`iteratedElement`'s). -/
+def stepValue (N : Ty Tree) : Compiler (Option (Ty Tree)) := do
+  let G ← graphNow
+  let some r := (ProgramTyping.callSigs G N).head? | return none
+  let mut out : Ty Tree := []
+  for u in r.result do
+    let done ← tryCatch (some <$> readField [] [u] (.str "done")) (fun _ => pure none)
+    if done == some [Labels.tru] then continue
+    out := out ++ (← readField [] [u] (.str "value"))
   return if out.isEmpty then none else some (norm out)
 
 /-- The type expected of position `i` of an array literal where `P` is
@@ -3647,6 +3663,25 @@ partial def stmts (env : Option Env) (ss : List Stmt) : W (Option Env) := do
     match s with
     | .loop .. | .forOf .. => modify fun w => { w with currents := w.currents.erase at_ }
     | _ => if !e.paths.isEmpty then modify fun w => { w with currents := w.currents.insert s.pos.1 (currentOf e) }
+    -- An array pattern's element bindings (`let %v0 = undefined, …`,
+    -- `protocolPattern`, tools/fragment-statements.mts) before the
+    -- protocol's `%next`: each an evolving `let` holding what a step not done
+    -- yields (statement_analysis.ml:222-240), at `undefined` or that, the
+    -- step's type read off the next statement, walked ahead.
+    if let .mutables _ bs := s then
+      if !bs.isEmpty && bs.all (fun b => b.name.startsWith "%v" && b.annot.isNone &&
+          (match b.init with | .lit _ .vundef => true | _ => false)) then
+        let tag := (((bs.head?.map (·.name)).getD "").splitOn "@").getLast!
+        let rest := ss.dropWhile (·.pos != s.pos)
+        if let some next@(Stmt.constants _ _) := rest[1]? then
+          let saved ← get
+          let ahead ← match ← stmt e s with
+            | some e' => stmt e' next
+            | none => pure none
+          set saved
+          if let some N := ahead.bind (·.vars.lookup s!"%next@{tag}") then
+            if let some E ← StateT.lift (tryCatch (stepValue N) fun _ => pure none) then
+              modify fun w => { w with collected := bs.map (·.name, norm (E ++ [Labels.undef])) ++ w.collected }
     let outer := (← get).stmtAt
     modify fun w => { w with stmtAt := s.pos }
     env ← stmt e s
@@ -3731,6 +3766,31 @@ partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
       return some (← promised e1 callee args true)
     | _ => return some e1
   | .constants p bs =>
+    -- A spread's or an array pattern's collected array (`collect`,
+    -- `protocolPattern`, tools/fragment-statements.mts: `const %items = [],
+    -- %iterator = …, %next = …`, the values pushed onto it): an unannotated
+    -- `[]` whose elements the protocol's steps write, made at the array of
+    -- the values a step not done yields, the evolving array's type
+    -- (statement_analysis.ml:222-230), the step's type read off the
+    -- statement's other bindings, walked ahead.
+    let collected ← match bs with
+      | b0 :: rest@(_ :: _) =>
+        match b0.init with
+        | .arrayLit _ [] [] =>
+          if b0.annot.isSome || !(b0.name.startsWith "%items@" || b0.name.startsWith "%rest@") then pure none else do
+          let saved ← get
+          let ahead ← stmt env (.constants p rest)
+          set saved
+          let tag := (b0.name.splitOn "@").getLast!
+          let some N := ahead.bind (·.vars.lookup s!"%next@{tag}") | pure none
+          StateT.lift (tryCatch (do
+            let some E ← stepValue N | return none
+            return some (← lower do
+              let s ← SourceTypes.use (.list ⟨[], [], some E, false, .readable⟩ [])
+              let T ← get
+              return [← SourceTypes.use (SourceTypes.arrayOf T s false)])) fun _ => pure none)
+        | _ => pure none
+      | _ => pure none
     let mut env := env
     modify fun w => { w with
       consts := bs.map (·.name) ++ w.consts
@@ -3744,7 +3804,7 @@ partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
       modify fun w => { w with declarations := w.declarations.insert (p.1, b.name) env.vars }
       let written ← match b.annot with
         | some ty => StateT.lift (tryCatch (some <$> lower (Fragment.translate ty)) fun _ => pure none)
-        | none => pure none
+        | none => pure (if b.name.startsWith "%items@" || b.name.startsWith "%rest@" then collected else none)
       if let some D := written then modify fun w => { w with hints := (b.init.span, D) :: w.hints }
       if b.name.endsWith ".[[class]]" then modify fun w => { w with freshClass := true }
       -- The initializer made at the annotation's type.
@@ -3792,7 +3852,7 @@ partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
         if single then
           if let some own := (ProgramTyping.callSigs G L).head? then
             modify fun w => { w with closureConsts := (b.name, b.init.span, own.arguments) :: w.closureConsts }
-      let D := if b.annot.isSome then written else A
+      let D := if b.annot.isSome || written.isSome then written else A
       match D, A with
       | some D, some A =>
         -- (an early binding, read through its cell from the list's entry
@@ -3815,11 +3875,13 @@ partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
       let written ← match b.annot with
         | some ty => StateT.lift (tryCatch (some <$> lower (Fragment.translate ty)) fun _ => pure none)
         | none => pure none
+      -- (a pattern's collected binding at the contract its steps give it)
+      let written := written <|> (← get).collected.lookup b.name
       if let some D := written then modify fun w => { w with hints := (b.init.span, D) :: w.hints }
       -- The initializer made at the annotation's type.
       let (A, e1) ← expr env b.init written
       env := e1
-      let D ← match b.annot, A with
+      let D ← match written, A with
         | some _, _ => pure written
         | none, some A => some <$> StateT.lift (widen A)
         | none, none => pure none
