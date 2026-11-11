@@ -590,6 +590,12 @@ removal works through:
   field at each name the key may spell (its string literals, its numbers
   that are array indices: an enum's reverse map, a record at a
   literal-union key), else its index (a dictionary's, with `undefined`).
+  A function's `toString` is `Function.prototype`'s. A member read the
+  read rule refuses at the walked receiver's type (a member no contract of
+  it states, a key no index constrains, a primitive's prototype stating
+  none: `readCell`) is the unit's refusal at that read, and so is an
+  expression a part of which is; any other type the walk does not
+  determine is a construct the pass does not handle.
   Each expression's type is read at its own statement's point,
   where two statements' expressions share a span (a construction's parts).
 - **Expected types.** A store's contract is fixed where the store is made;
