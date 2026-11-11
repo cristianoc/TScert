@@ -24,6 +24,7 @@ import { join, resolve } from "node:path";
 import { cases } from "../pipeline/cases.mts";
 import { checkApart } from "../pipeline/verify-source.mts";
 import { withoutEvidenceReuse } from "../pipeline/stages.mts";
+import { prepareInterfaces } from "../pipeline/module-interfaces.mts";
 import { standIns } from "./single-pass-standins.mts";
 
 const root = resolve(import.meta.dirname, "..");
@@ -129,11 +130,21 @@ async function capture(u: GateUnit, pretextRoot: string, work: string): Promise<
  * (`times`: the children's user and system time, its last line). */
 function verify(mode: string, dir: string, key: string, unit: string, env: NodeJS.ProcessEnv):
     { stdout: string; stderr: string; cpuMs: number; wallMs: number } {
+  // Warm importer measurements exclude component preparation; the stage
+  // records retain cold component CPU and wall time separately.
+  const interfaces = mode === "8" ? prepareInterfaces(join(dir, "fragment.json"), {
+    mode: 8, fuel: 12, rounds: 4096, force: (env.TSCERT_FORCE ?? "").split(",").filter(Boolean),
+    allCuts: env.TSCERT_ALL_CUTS !== undefined, given: env.TSCERT_GIVEN ?? "", work: join(dir, "interfaces"),
+    invocation: { limitMs: 60_000, force: false, recorder: null },
+  }) : null;
   const started = performance.now();
   // Mode 8 reads the fragment alone.
   const documents = mode === "8" ? [join(dir, "fragment.json")] : [join(dir, "fragment.json"), join(dir, "claims.json")];
-  const run = spawnSync("/bin/sh", ["-c", '"$@"; status=$?; times >&2; exit $status', "sh", verifier, "--verify-units", mode,
-    ...documents, key, "12", unit], { encoding: "utf8", maxBuffer: 1 << 28, env });
+  const args = interfaces === null ? ["--verify-units", mode, ...documents, key, "12", unit]
+    : ["--verify-interfaces", mode, ...documents, interfaces.path, env.TSCERT_GIVEN ?? "",
+      env.TSCERT_STANDINS ?? "", key, "12", unit];
+  const run = spawnSync("/bin/sh", ["-c", '"$@"; status=$?; times >&2; exit $status', "sh", verifier, ...args],
+    { encoding: "utf8", maxBuffer: 1 << 28, env });
   const wallMs = performance.now() - started;
   const last = run.stderr.trimEnd().split("\n").at(-1) ?? "";
   const seconds = [...last.matchAll(/(\d+)m([\d.]+)s/g)].map((m) => Number(m[1]) * 60 + Number(m[2]));
@@ -176,7 +187,7 @@ function measure(u: GateUnit, dir: string, key: string): Measured {
     if (read) {
       const v: unknown = JSON.parse(read[1]);
       counters.bytesRead = numberField(v, "fragmentBytes") + numberField(v, "claimsBytes") + numberField(v, "givenBytes") +
-        numberField(v, "standInBytes");
+        numberField(v, "standInBytes") + numberField(v, "interfaceBytes");
     }
   }
   const best = runs.reduce((a, b) => (b.cpuMs < a.cpuMs ? b : a));
