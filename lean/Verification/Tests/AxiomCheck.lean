@@ -123,6 +123,10 @@ run_cmd do
   check ``Verification.TolerantFrames.action_normal
   check ``Verification.TolerantFrames.action_throw
   check ``Verification.TolerantFrames.stable_rigid
+  check ``Verification.TolerantFrames.action_throw_top
+  check ``Verification.TolerantFrames.graph_safe
+  check ``Verification.TolerantFrames.graph_safe_at
+  check ``Verification.TolerantFrames.transfer
   check ``Verification.TolerantFrames.tolerant_frame
   check ``Verification.TolerantFrames.kept_box
   check ``Verification.TolerantFrames.grow

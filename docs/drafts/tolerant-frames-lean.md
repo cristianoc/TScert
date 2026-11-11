@@ -55,18 +55,61 @@ continuing there; its intermediate worlds are the derivation's, matched to
 the run by determinism of the step relation (proved: `run` for
 `SafePostExc`, `safe_run` for `Safe`). On each exit the endpoint carries the
 exit's postcondition: a value meets its type and $`Q`$ (`run_normal`), a
-raise is a throw of the exception family and meets $`R`$ (`run_throw`). For
-a closed footprint $`c`$ stated on both exits, as the expression effect rules
-state it, each exit is an action of $`c`$ (`action_normal`,
-`action_throw`). The graph machine is deterministic (`transition_det`), and
-a graph run that `SafeGraph` covers with budget left ends in an admissible
-state, `SafeGraph` continuing there (`graph_run`).
+raise is a throw of the exception family and meets $`R`$ (`run_throw`). Each exit has its own footprint and post: a judgment whose normal exit meets
+$`c_n`$ and $`Q_n`$ from the run's first heap, and whose exceptional exit
+meets $`c_e`$ and $`Q_e`$, gives on the normal exit an action of $`c_n`$ with
+the residual budget $`n'+k=n`$, the value's type and $`Q_n`$
+(`action_normal`), and on the exceptional exit an action of $`c_e`$ with the
+raised value $`e`$ closed, of the exception family, and $`Q_e`$
+(`action_throw`). A normal-only judgment leaves the exceptional exit at
+$`\top`$ (`action_throw_top`). The graph machine is deterministic
+(`transition_det`); a graph run that `SafeGraph` covers with budget left ends
+in an admissible state (`graph_run`).
 
 One expression end to end, proved: a typed field write
 (`ExpressionEffects.fieldWriteWithin` with $`\{\mathsf{values}:\mathsf{any},\ \mathsf{stores}:\mathsf{keep}\}`$),
-safe at $`s`$, run to a value or a raise with budget left, ends in a state
-an action of that effect reaches, where every bound $`y\le|x|`$ that held at
-$`s`$ holds (`field_write_keeps_bound`).
+safe at $`s`$, run with budget left to a value or a raise, ends in a state an
+action of that effect reaches, with the residual budget, the result's type or
+the raised value's family, and every bound $`y\le|x|`$ that held at $`s`$
+(`field_write_keeps_bound`).
+
+## Graph safety and transfer
+
+`SafeGraph` is established from node obligations (proved: `graph_safe`,
+`graph_safe_at`). The invariant `GraphInv` states, at positive budget only: at
+`.at l ρ` the node assertion $`\mathrm{pre}_l`$; at a partially evaluated
+`.eval` its node's local safety `SafePostExc` from the node's entry state
+$`s_0`$, the current world reached from $`s_0`$ (`Reach`) and the node's
+exit obligations; at `.done` the result type; at `.raised` a closed value of
+the exception family. Its premises are
+
+- `NodesChecked`: from every state where $`\mathrm{pre}_l\ \rho`$ holds, node
+  $`l`$ exists, is locally safe with exit footprints $`c_n, c_e`$ and posts
+  $`Q_n, Q_e`$, and meets its `NodeObligations`;
+- `AdminClosed`: each $`\mathrm{pre}_l`$ survives an admissible transition
+  that keeps the heap (the world truncated by entering a node).
+
+`NodeObligations` are, per exit: the shape a continuation needs to take a
+transition (a Boolean at a branch), required at every budget so that a
+successor exists at budget one; the normal target (`NormalTarget`: the
+target's assertion at `mapEnv θ (push v ρ)` or `mapEnv θ ρ`, the branch's by
+the observed Boolean, the result type at `ret`), from an action of $`c_n`$,
+the value, its type one level above (`Above`) and $`Q_n`$; and the raise
+target (`RaiseTarget`: the handler's assertion with $`e`$ bound, or the
+exception family when it escapes), from an action of $`c_e`$, $`e`$ closed,
+its family above, and $`Q_e`$. Entering a node and each continuation or
+handler transition spend one level; no obligation is read at budget zero.
+
+TRANSFER (proved: `transfer`) builds `NodeObligations` from the shape, the
+retained index facts $`K_n`$, $`K_e`$ under $`\Box_{c_n}`$, $`\Box_{c_e}`$ at
+$`s_0`$, and the per-exit target entailment, which receives the retained
+facts transported (`Transported`): each $`F\in K`$ holds as $`F'`$ at every
+target environment $`\rho'`$ under every renaming $`g`$ with
+$`F.\mathrm{mapM}\ g = F'`$ and $`\rho'(g\,i)=\rho\,i`$ on $`F`$'s slots
+(`transported_of`, from `holdsAt_mapM`); `mapEnv_slot` and
+`mapEnv_push_slot` give the slot condition for an edge mapping with and
+without the exit's value bound. The continuations `branchBind` and `tagBind`
+are outside this statement (`ShapeOk` is false there).
 
 ## The modality
 

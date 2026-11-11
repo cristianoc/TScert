@@ -351,30 +351,48 @@ theorem elems_not_rigid :
 
 /-! ## Adequacy: effect judgments give actions -/
 
-/-- **The normal exit of a run within a closed footprint is an action of it**:
-a closed footprint's judgment (`SafePostExc` with `c.Holds` from the entry heap
-on both exits, as the expression effect rules state it), a run to a value with
-budget left, and the action is produced, its endpoint where the value meets
-its type. -/
-theorem action_normal {Ξ T : Fam} {c : Footprints.Closed} {ρ : Env} {s : IndexedHeap} {t v : Tm}
-    {h' : Heap} {k : Nat}
-    (hsafe : SafePostExc Ξ T (fun h' _ => c.Holds s.h h') (fun h' => c.Holds s.h h') s.n s.W s.h t)
+/-- **The normal exit of a run is an action of the normal footprint**: a
+judgment whose normal exit meets `cn` and `Qn` from the run's first heap, and
+whose exceptional exit meets `ce` and `Qe`, and a run to a value with budget
+left. The endpoint exposes the action, the residual budget, the value's type
+and the exact post. -/
+theorem action_normal {Ξ T : Fam} {cn ce : Footprints.Closed} {Qn : Post} {Qe : Heap → Prop} {ρ : Env}
+    {s : IndexedHeap} {t v : Tm} {h' : Heap} {k : Nat}
+    (hsafe : SafePostExc Ξ T (fun h' v => cn.Holds s.h h' ∧ Qn h' v) (fun h' => ce.Holds s.h h' ∧ Qe h')
+      s.n s.W s.h t)
     (hst : Steps k s.h t h' v) (hv : isVal v = true) (hk : k < s.n) :
-    ∃ s' : IndexedHeap, Action c.fp ρ s s' ∧ s'.h = h' ∧ T s'.n s'.W v := by
-  obtain ⟨s', ha, he, -, hT, hc⟩ := run_normal hsafe hst hv hk
+    ∃ s' : IndexedHeap, Action cn.fp ρ s s' ∧ s'.h = h' ∧ s'.n + k = s.n ∧ T s'.n s'.W v ∧ Qn h' v := by
+  obtain ⟨s', ha, he, hn, hT, hc, hq⟩ := run_normal hsafe hst hv hk
   subst he
-  exact ⟨s', ⟨ha, Footprints.Closed.post_iff.mpr (Footprints.Closed.holds_iff.mp hc)⟩, rfl, hT⟩
+  exact ⟨s', ⟨ha, Footprints.Closed.post_iff.mpr (Footprints.Closed.holds_iff.mp hc)⟩, rfl, hn, hT, hq⟩
 
-/-- **The exceptional exit of a run within a closed footprint is an action of
-it**, its endpoint where the thrown value is of the exception family. -/
-theorem action_throw {Ξ T : Fam} {c : Footprints.Closed} {ρ : Env} {s : IndexedHeap} {t t' e : Tm}
-    {h' : Heap} {k : Nat}
-    (hsafe : SafePostExc Ξ T (fun h' _ => c.Holds s.h h') (fun h' => c.Holds s.h h') s.n s.W s.h t)
+/-- **The exceptional exit of a run is an action of the exceptional
+footprint**, the raised value exposed: it is closed and of the exception
+family at the endpoint, and the exact exceptional post holds. -/
+theorem action_throw {Ξ T : Fam} {cn ce : Footprints.Closed} {Qn : Post} {Qe : Heap → Prop} {ρ : Env}
+    {s : IndexedHeap} {t t' e : Tm} {h' : Heap} {k : Nat}
+    (hsafe : SafePostExc Ξ T (fun h' v => cn.Holds s.h h' ∧ Qn h' v) (fun h' => ce.Holds s.h h' ∧ Qe h')
+      s.n s.W s.h t)
     (hst : Steps k s.h t h' t') (hr : Raises t' e) (hk : k < s.n) :
-    ∃ s' : IndexedHeap, Action c.fp ρ s s' ∧ s'.h = h' ∧ Thrown Ξ s'.n s'.W t' := by
-  obtain ⟨s', ha, he, -, hth, hc⟩ := run_throw hsafe hst hr hk
+    ∃ s' : IndexedHeap, Action ce.fp ρ s s' ∧ s'.h = h' ∧ s'.n + k = s.n ∧
+      Scoped 0 e ∧ Ξ s'.n s'.W e ∧ Qe h' := by
+  obtain ⟨s', ha, he, hn, ⟨e', hr', hsc, hΞ⟩, hc, hq⟩ := run_throw hsafe hst hr hk
+  cases Raises_det hr hr'
   subst he
-  exact ⟨s', ⟨ha, Footprints.Closed.post_iff.mpr (Footprints.Closed.holds_iff.mp hc)⟩, rfl, hth⟩
+  exact ⟨s', ⟨ha, Footprints.Closed.post_iff.mpr (Footprints.Closed.holds_iff.mp hc)⟩, rfl, hn, hsc, hΞ, hq⟩
+
+/-- A normal-only judgment (`SafePost`) leaves the exceptional exit at
+`{values: any, stores: any}`: its throw is an action of `Closed.top`, the
+raised value exposed. -/
+theorem action_throw_top {Ξ T : Fam} {Q : Post} {ρ : Env} {s : IndexedHeap} {t t' e : Tm} {h' : Heap}
+    {k : Nat} (hsafe : SafePost Ξ T Q s.n s.W s.h t) (hst : Steps k s.h t h' t') (hr : Raises t' e)
+    (hk : k < s.n) :
+    ∃ s' : IndexedHeap, Action Footprints.Closed.top.fp ρ s s' ∧ s'.h = h' ∧ s'.n + k = s.n ∧
+      Scoped 0 e ∧ Ξ s'.n s'.W e := by
+  obtain ⟨s', ha, he, hn, ⟨e', hr', hsc, hΞ⟩, -⟩ :=
+    run_throw (SafePostExc.of_post (R := fun _ => True) (fun _ => trivial) hsafe) hst hr hk
+  cases Raises_det hr hr'
+  exact ⟨s', action_top ha, he, hn, hsc, hΞ⟩
 
 /-! ## Invariant and rigid assertions -/
 
