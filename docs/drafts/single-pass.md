@@ -677,6 +677,16 @@ removal works through:
   stand-in, keeps its footprint. Each proposal is a stand-in: its callers
   read it and its own unit establishes it; the front states it at the
   function's claim and slot (`Front.withStandIns`).
+- **Cells.** A binding the unit assigns and holds in no slot (a module
+  binding, one a closure shares) is narrowed by its own assignment and by
+  tests, as a slot is, until a statement changes a value location other
+  than by assigning that binding: from the next statement on it is at its
+  declared type. What a cell currently holds is a current-content fact,
+  which no step keeps across a write without a separation
+  ([no general frame rule](../PROGRAM-TYPING.md#no-general-frame-rule));
+  the producer's entries widen the binding there too.
+  `TSCERT_FORCE=cells` keeps the narrowing, the control
+  `module-cache-keeps-lengths` `count`.
 - **Early bindings.** Each early binding of a statement list (the flow
   graph's `.early` node) is bound from the list's entry on at its written
   contract: its annotation, else its function literal's written receiver,

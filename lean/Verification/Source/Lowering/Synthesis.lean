@@ -130,6 +130,12 @@ structure Walk where
   /-- The bindings a function literal walked so far assigns that it does not
   declare (captured ones, held in cells). -/
   closureAssigned : List String := []
+  /-- The bindings the unit assigns that it holds in no slot: cells (a module
+  binding, one a closure shares). -/
+  cellAssigned : List String := []
+  /-- The changes of a value location recorded so far, a cell's own
+  assignment aside. -/
+  valueWrites : Nat := 0
   /-- The unit's bindings held in slots (its parameters and declarations
   other than those held in cells): a completed member read narrows one. -/
   slots : Thunk (List String) := Thunk.pure []
@@ -1256,8 +1262,9 @@ partial def declaredIn (ss : List Stmt) : List String :=
 end
 
 /-- The walk records a change of the heap. -/
-def wrote (value store : Footprints.Change := .any) : W Unit :=
+def wrote (value store : Footprints.Change := .any) : W Unit := do
   modify fun w => { w with writes := true, valueChange := w.valueChange.max value, storeChange := w.storeChange.max store }
+  if value != .keep then modify fun w => { w with valueWrites := w.valueWrites + 1 }
 
 /-- An assignment of `n`: a change of the heap where the function literal
 being walked does not declare `n`. -/
@@ -1266,6 +1273,9 @@ def assigns (n : String) : W Unit := do
   let w ← get
   if !w.locals.contains n then
     wrote .any .keep
+    -- (the cell's own assignment: what it then holds is the value assigned)
+    modify fun w => { w with valueWrites := w.valueWrites - 1 }
+    if !w.cellAssigned.contains n then modify fun w => { w with cellAssigned := n :: w.cellAssigned }
     -- Inside a function literal, a captured binding.
     if w.inLiteral && !w.closureAssigned.contains n then
       modify fun w => { w with closureAssigned := n :: w.closureAssigned }
@@ -3762,7 +3772,17 @@ partial def stmts (env : Option Env) (ss : List Stmt) : W (Option Env) := do
               modify fun w => { w with collected := bs.map (·.name, norm (E ++ [Labels.undef])) ++ w.collected }
     let outer := (← get).stmtAt
     modify fun w => { w with stmtAt := s.pos }
+    let before := (← get).valueWrites
     env ← stmt e s
+    -- A cell's narrowed contents end at a change of a value location: a
+    -- current-content fact no separation keeps (the producer's entries
+    -- after a write; PROGRAM-TYPING, "No general frame rule").
+    -- (`TSCERT_FORCE=cells` keeps them)
+    let w ← get
+    if w.valueWrites != before && !w.force.contains "cells" then
+      let reset (e : Env) : Env :=
+        { e with vars := e.vars.map fun (n, A) => if w.cellAssigned.contains n then (n, (e.decl.lookup n).getD A) else (n, A) }
+      env := env.map reset
     -- A loop's kept paths, at its head's entry and its body's.
     if let some (body, update) := (match s with
         | .loop _ _ body update _ => some (body, update)
