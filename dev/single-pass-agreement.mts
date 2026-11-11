@@ -42,9 +42,11 @@ withoutEvidenceReuse();
 type Verdict = { accepted: boolean; refusal: string; closed?: boolean };
 type Comparison = { file: string; unit: string; pipeline: string; pass: string; agree: boolean; notHandled: string | null; why: string;
   referee: string | null; control: boolean; closed: boolean; passClosed: boolean };
-/** The controls: units whose program is unsafe (run under Node), with the
- * adversarial proposal that once made the pass accept them. */
-const controls: { file: string; unit: string; force: string }[] = [
+/** Forced proposals: unsafe programs remain refused; the positive declaration,
+ * growth and copy cases are accepted unforced and refused at the false proposal. */
+const controls: { file: string; unit: string; force: string; positive?: boolean }[] = [
+  { file: "optional-call-loop-cell", unit: "collect@300", force: "chains", positive: true },
+  { file: "typed-array-float64", unit: "getKerning@474", force: "field-writes", positive: true },
   { file: "invalid-method-effect-stated-throw-caught", unit: "wrong@596", force: "literals" },
   { file: "invalid-node-assert-catch-continue", unit: "rows@339", force: "literals" },
   { file: "invalid-cell-truthiness-narrowing", unit: "kept@176", force: "stale" },
@@ -192,6 +194,8 @@ async function compare(test: Case): Promise<Comparison[]> {
   const decide = (mode: string | undefined, forced: string | undefined, allCuts = false): Map<string, Verdict> => {
     const verdicts = passVerdicts(outcome.artifacts, key, given, mode, forced, allCuts);
     if (control === undefined) return verdicts;
+    if (control.positive && forced === undefined && verdicts.get(control.unit)?.closed !== true)
+      throw new Error(`positive control refused unforced: ${test.file} ${control.unit}`);
     // Accepted only with every unit it depends on accepted under the force.
     const own = passVerdicts(outcome.artifacts, key, given, mode, control.force, allCuts).get(control.unit);
     if (own === undefined) verdicts.delete(control.unit);
@@ -228,7 +232,7 @@ async function compare(test: Case): Promise<Comparison[]> {
     // Both accept with their dependencies accepted.
     const closed = v?.closed === true && (referee === null || r?.closed === true);
     return { file: test.file, unit: u.unit, pipeline: pipelineSays, pass: passSays,
-      agree: passSays === pipelineSays, notHandled, why: v ? v.refusal.replace(/\s+/g, " ").slice(0, 160) : "",
+      agree: control?.positive && control.unit === u.unit ? passSays === "refused" : passSays === pipelineSays, notHandled, why: v ? v.refusal.replace(/\s+/g, " ").slice(0, 160) : "",
       referee: refereeSays, control: control?.unit === u.unit, closed, passClosed: v?.closed === true };
   });
 }
