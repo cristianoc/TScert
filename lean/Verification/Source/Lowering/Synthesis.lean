@@ -2786,10 +2786,25 @@ partial def applyCall (env : Env) (c : Callee) (args : List Expr) (As : List (Op
       c.names.zip (c.binders.map fun b => (σ.lookup b).getD [])), lastResolution := certificates }
   -- A call changing the heap, by its instance's footprint.
   if inst.effect.footprint != ⟨.keep, .keep⟩ then wrote inst.effect.footprint.value inst.effect.footprint.store
-  -- For a declaration's footprint, a call passing a function may run it.
-  if (← get).strict && (args.any callback || As.any fun A => A.any fun A => !(ProgramTyping.callSigs G A).isEmpty) then
-    wrote .any .any
-    modify fun w => { w with throwWrites := true }
+  -- For a declaration's footprint, a call passing a function may run it:
+  -- the function's own effect at each of its signatures, read after the
+  -- actuals are walked; one of no known type is the ordinary effect's.
+  if (← get).strict then
+    let Gn := SourceTypes.graph (← StateT.lift table)
+    -- (a generic module function's instance and a resolution-qualified one
+    -- are not yet read off the function passed: the ordinary effect)
+    let unread := !c.names.isEmpty || !c.explicit.isEmpty || !certificates.isEmpty
+    for (A, x) in As.zip args do
+      match (if unread then none else A) with
+      | some A =>
+        for p in ProgramTyping.callSigs Gn A do
+          if p.effect.footprint != ⟨.keep, .keep⟩ then wrote p.effect.footprint.value p.effect.footprint.store
+          if p.effect.receiverOwn || p.effect.receiverStore || p.effect.elementWrite.isSome then wrote .any .any
+          if !p.effect.onThrow then modify fun w => { w with throwWrites := true }
+      | none =>
+        if callback x || (A.any fun A => !(ProgramTyping.callSigs Gn A).isEmpty) then
+          wrote .any .any
+          modify fun w => { w with throwWrites := true }
   if inst.effect.footprint.value != .keep || inst.effect.receiverOwn || inst.effect.receiverStore ||
       inst.effect.elementWrite.isSome then
     modify fun w => { w with changedValues := true }
@@ -2839,6 +2854,11 @@ partial def walkLambda (env : Env) (e : Expr) (sig : Option (CallEffects.Arrow (
   let expectedResult := sig.map (·.result)
   let .lambda _ receiver tps params defaults rest result guard stated async requires body := e
     | return none
+  -- For a declaration's footprint, a generic function literal is walked
+  -- with no scheme of its own: the declaration is at the ordinary effect.
+  if !tps.isEmpty && (← get).strict then
+    wrote .any .any
+    modify fun w => { w with throwWrites := true }
   let slots := (← get).slots.get
   let captured := env.vars.map fun (n, A) =>
     (n, if slots.contains n then A else (env.decl.lookup n).getD A)

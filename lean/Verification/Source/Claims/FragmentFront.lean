@@ -323,27 +323,31 @@ def Front.withInitTypes (fr : Front) (force : List String := []) : Front := Id.r
       | _ => []
     return { fr with d := { fr.d with types := T }, moduleConstants := typed }
 
-/-- A module function's type with each signature's footprint keep/keep,
-bounding its throws where `onThrow`. -/
-def keepingType (A : Ty Tree) (onThrow : Bool) : Compiler (Ty Tree) := do
+/-- A module function's type with each signature's footprint `Φ`, bounding
+its throws where `onThrow`. -/
+def keepingType (A : Ty Tree) (onThrow : Bool) (Φ : Footprints.Closed := ⟨.keep, .keep⟩) : Compiler (Ty Tree) := do
   match PositiveRules.expand (SourceTypes.graph (← table)) A with
   | [.arrs L S] =>
-    let e (x : CallEffects.Effect) : CallEffects.Effect := { x with closed := ⟨.keep, .keep⟩, onThrow, regions := [] }
+    let e (x : CallEffects.Effect) : CallEffects.Effect := { x with closed := Φ, onThrow, regions := [] }
     return [← lower (SourceTypes.use (.arrs (L.map fun a => { a with effect := e a.effect })
       (S.map fun a => { a with effect := e a.effect })))]
   | _ => throw "a module function of no one signature"
 
 /-- **Declarations' footprints** (section 9, "Declarations"): each function
 a wanted unit reaches, callees first, walked as its unit is, each callee
-read at the footprint found for it. A walk changing nothing (no write, no
-assignment of a binding it does not declare, no call whose instance may
-change the heap) proposes keep/keep, bounding its throws where none of its
-calls, iterations or finalizers leaves one unbounded. A self-recursive
-function is walked with itself at keep/keep bounding its throws, then, where
-that walk leaves a throw unbounded, without the bound. Any other function,
-an async one, a generic one, one with a rest, a written effect, a written
-promise or a stand-in keeps what `fragmentClaims` gives it. Each proposal is
-a stand-in: its callers read it and its own unit establishes it. -/
+read at the footprint found for it. A walk proposes the join of the changes
+its writes and its calls' instances make, by class of location
+(`Walk.valueChange`, `Walk.storeChange`, as a function literal's effect is
+found, the producer's `footprint_stmts`, source.ml:1016-1122): keep/keep
+where it changes nothing, and no proposal where the join is the ordinary
+effect. It bounds the throws where none of its calls, iterations or
+finalizers leaves one unbounded. A self-recursive function is walked with
+itself at keep/keep, then at what that walk found, until a walk finds no
+more than it assumed, three walks at most (the least fixed point over a
+lattice of twelve footprints). Any other function, an async one, a generic
+one, one with a rest, a written effect, a written promise or a stand-in
+keeps what `fragmentClaims` gives it. Each proposal is a stand-in: its
+callers read it and its own unit establishes it. -/
 def declarationEffects (fr : Front) (wanted : List Nat) (standIns : StandIns) (force : List String) :
     List StandIn := Id.run do
   -- Callees first: the wanted units' reach in post-order.
@@ -360,29 +364,37 @@ def declarationEffects (fr : Front) (wanted : List Nat) (standIns : StandIns) (f
         seen := seen.insert i
         stack := (fr.edges i).filter (!seen.contains ·) |>.map (·, false) |>.append ((i, true) :: rest)
   let (schemes, generics) := fr.genericValues
-  let mut found : List (String × Bool) := []
+  let top : Footprints.Closed := ⟨.any, .any⟩
+  let mut found : List (String × Footprints.Closed × Bool) := []
   for i in order do
     let some (f, tps, none) := fr.units[i]? | continue
-    if !tps.isEmpty || f.async || f.stated.isSome || f.guard.isSome || f.params.any (·.rest) ||
+    if !tps.isEmpty || f.async || f.stated.isSome || f.params.any (·.rest) ||
         standIns.functions.any (·.name == f.name) then continue
-    let walkAt (own : Option Bool) : Option Bool :=
+    let walkAt (own : Option (Footprints.Closed × Bool)) : Option (Footprints.Closed × Bool) :=
       let at_ := match own with
-        | some ot => (f.name, ot) :: found
+        | some o => (f.name, o) :: found
         | none => found
       let module := (fr.moduleFunctions ++ fr.moduleConstants).map fun v => (v.1, (match at_.lookup v.1 with
-        | some ot => do keepingType (← moduleValueType v) ot
+        | some (Φ, ot) => do keepingType (← moduleValueType v) ot Φ
         | none => moduleValueType v : Compiler (Ty Tree)))
       match Synthesis.walkUnit fr.d.types f (module ++ schemes) generics force none (strict := true) with
-      | .ok (w, _) => if w.writes then none else some (!w.throwWrites)
+      | .ok (w, _) => some (if w.writes then ⟨w.valueChange, w.storeChange⟩ else ⟨.keep, .keep⟩, !w.throwWrites)
       | .error _ => none
-    let r := if (fr.mentions i).contains f.name then
-        match walkAt (some true) with
-        | some true => some true
-        | some false => (walkAt (some false)).map fun _ => false
-        | none => none
+    let within (a b : Footprints.Closed × Bool) : Bool := a.1.le b.1 && (a.2 || !b.2)
+    let r : Option (Footprints.Closed × Bool) :=
+      if (fr.mentions i).contains f.name then Id.run do
+        let mut assumed : Footprints.Closed × Bool := (⟨.keep, .keep⟩, true)
+        for _ in List.range 3 do
+          match walkAt (some assumed) with
+          | none => return none
+          | some got =>
+            if within got assumed then return some assumed
+            assumed := (⟨assumed.1.value.max got.1.value, assumed.1.store.max got.1.store⟩, assumed.2 && got.2)
+        return none
       else walkAt none
-    if let some ot := r then found := found ++ [(f.name, ot)]
-  return found.map fun (n, ot) => { name := n, footprint := ⟨.keep, .keep⟩, onThrow := ot }
+    if let some (Φ, ot) := r then
+      if Φ != top then found := found ++ [(f.name, Φ, ot)]
+  return found.map fun (n, Φ, ot) => { name := n, footprint := Φ, onThrow := ot }
 
 /-- The front with the functions the stand-ins name at their footprints:
 their claims' and their slots', as `fragmentClaims` and `fileFront` state a
