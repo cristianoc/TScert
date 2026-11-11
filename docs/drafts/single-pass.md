@@ -666,7 +666,10 @@ removal works through:
   else at its written signature keeping values and stores and bounding its
   throws, raised to the type the walk gives the literal until the two
   agree, at most four rounds (the producer's rounds over a recursive
-  constant). Its own check decides it (section 5, "A footprint").
+  constant). Its self reads offer the literal longer signatures as any read
+  of a constant holding a literal does (`closure_offer`); where the walk
+  states offered rows at the literal, the constant is read at the type the
+  walk gives the literal, those rows included, written or not. Its own check decides it (section 5, "A footprint").
 - **Declarations.** Each function a wanted unit reaches, callees first,
   is walked as its unit is, each callee read at the footprint found for it
   (`declarationEffects`). A walk proposes the join, by class of location,
