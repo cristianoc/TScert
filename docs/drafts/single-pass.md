@@ -580,8 +580,10 @@ removal works through:
   where a slot of the unit holds it, is without them (`readNarrowing`);
   an assignment, a join and a loop head end that as any narrowing. A destructuring
   default is added where the part may be `undefined`. Strict equality with
-  a literal holding narrows a label of the literal's family to the literal
-  (but `0`, which `-0` equals too); equality with an operand holding one of
+  a literal holding narrows the operand, where it may hold the literal
+  (`unknown` included), to the literal (but `0`, which `-0` equals too);
+  a comma expression tested is its last operand's test, where the test
+  assigns no binding; equality with an operand holding one of
   several singletons narrows each operand to the union of its slices at the
   singletons the other may hold. `k in x` holding states a record's optional
   `k` present (a field where the record states one, else a view) and a
