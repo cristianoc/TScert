@@ -24,7 +24,7 @@ import { join, resolve } from "node:path";
 import { cases } from "../pipeline/cases.mts";
 import { checkApart } from "../pipeline/verify-source.mts";
 import { withoutEvidenceReuse } from "../pipeline/stages.mts";
-import { prepareInterfaces } from "../pipeline/module-interfaces.mts";
+import { verifyWithInterfaces } from "../pipeline/module-interfaces.mts";
 import { standIns } from "./single-pass-standins.mts";
 
 const root = resolve(import.meta.dirname, "..");
@@ -132,11 +132,12 @@ function verify(mode: string, dir: string, key: string, unit: string, env: NodeJ
     { stdout: string; stderr: string; cpuMs: number; wallMs: number } {
   // Warm importer measurements exclude component preparation; the stage
   // records retain cold component CPU and wall time separately.
-  const interfaces = mode === "8" ? prepareInterfaces(join(dir, "fragment.json"), {
+  writeFileSync(join(dir, "empty-standins.json"), '{"functions":[],"imports":[]}');
+  const interfaces = mode === "8" ? verifyWithInterfaces(join(dir, "fragment.json"), key, unit, env.TSCERT_STANDINS ?? join(dir, "empty-standins.json"), {
     mode: 8, fuel: 12, rounds: 4096, force: (env.TSCERT_FORCE ?? "").split(",").filter(Boolean),
     allCuts: env.TSCERT_ALL_CUTS !== undefined, given: env.TSCERT_GIVEN ?? "", work: join(dir, "interfaces"),
     invocation: { limitMs: 60_000, force: false, recorder: null },
-  }) : null;
+  }).interfaces : null;
   const started = performance.now();
   // Mode 8 reads the fragment alone.
   const documents = mode === "8" ? [join(dir, "fragment.json")] : [join(dir, "fragment.json"), join(dir, "claims.json")];
