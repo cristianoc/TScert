@@ -3,6 +3,24 @@ import Verification.Source.RequestCli
 
 open Verification Lean
 
+/-- `--verify-units`: modes 8 and 9 read the fragment alone
+(`<ast> <file-key> <depth> [<names>]`); every other mode reads the claims
+(`<ast> <claims> <file-key> <depth> [<names>]`). -/
+def verifyUnits (budget : Verification.PositiveCertificates.SearchBudget)
+    (mode astPath second third : String) (rest : List String) : IO UInt32 :=
+  let usage : IO UInt32 := do IO.eprintln "usage: verifier --verify-units <mode> <ast.json> [<source-claims.json>] <file-key> <depth> [<names>]"; return 2
+  match (mode == "8" || mode == "9"), third.toNat?, rest with
+  | true, some fuel, names =>
+    if names.length > 1 then usage
+    else Verification.RequestCli.verifyUnitsFile astPath none second fuel names.head? (mode.toNat?.getD 8) budget
+  | _, _, depth :: names =>
+    match depth.toNat? with
+    | some fuel =>
+      if names.length > 1 then usage
+      else Verification.RequestCli.verifyUnitsFile astPath (some second) third fuel names.head? (mode.toNat?.getD 0) budget
+    | none => usage
+  | _, _, [] => usage
+
 /-- The command: a refusal exits 1 with its record (`RequestCli.refuse`), a
 usage error 2, and an operational failure (a file it cannot read or write,
 any exception) 3, with a first line `error: `. -/
@@ -29,17 +47,10 @@ def command (args : List String) : IO UInt32 := do
   | "--check-units" :: astPath :: claimsPath :: fileKey :: evidencePath :: names =>
       if names.length > 1 then usage
       else Verification.RequestCli.checkUnitsFile astPath claimsPath fileKey evidencePath names.head? budget
-  -- Mode 8 reads the fragment alone.
-  | "--verify-units" :: "8" :: astPath :: fileKey :: depth :: names =>
-      if names.length > 1 then usage
-      else match depth.toNat? with
-        | some fuel => Verification.RequestCli.verifyUnitsFile astPath none fileKey fuel names.head? 8 budget
-        | none => do IO.eprintln "usage: search depth must be a natural number"; return 2
-  | "--verify-units" :: mode :: astPath :: claimsPath :: fileKey :: depth :: names =>
-      if names.length > 1 then usage
-      else match depth.toNat? with
-        | some fuel => Verification.RequestCli.verifyUnitsFile astPath (some claimsPath) fileKey fuel names.head? (mode.toNat?.getD 0) budget
-        | none => do IO.eprintln "usage: search depth must be a natural number"; return 2
+  -- Modes 8 and 9 read the fragment alone: `<ast> <file-key> <depth>`;
+  -- every other mode `<ast> <claims> <file-key> <depth>`.
+  | "--verify-units" :: mode :: astPath :: second :: third :: rest =>
+      verifyUnits budget mode astPath second third rest
   | ["--module-runs", astPath, claimsPath] =>
       Verification.RequestCli.moduleRunsFile astPath claimsPath
   | ["--check-module", runPath, evidencePath] =>
@@ -53,7 +64,7 @@ where
     IO.eprintln "       verifier --produce-unit <slice.json> <slice-claims.json> <qualified.json> <evidence.json> <depth> [<names>]"
     IO.eprintln "       verifier --check-units <ast.json> <source-claims.json> <file-key> <evidence.json> [<names>]"
     IO.eprintln "       verifier --verify-units <mode> <ast.json> <source-claims.json> <file-key> <depth> [<names>]"
-    IO.eprintln "       verifier --verify-units 8 <ast.json> <file-key> <depth> [<names>]"
+    IO.eprintln "       verifier --verify-units 8|9 <ast.json> <file-key> <depth> [<names>]"
     IO.eprintln "       verifier --module-runs <ast.json> <source-claims.json>"
     IO.eprintln "       verifier --check-module <module-run.json> <evidence.json>"
     IO.eprintln "       (any mode may be preceded by --subtype-rounds <rounds>; <names> selects units by a member's name, comma-separated)"

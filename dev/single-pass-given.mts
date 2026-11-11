@@ -34,7 +34,7 @@ async function write(dir: string, test: Case): Promise<number> {
   // The loop heads' facts too, the claims-free pass's (`TSCERT_GIVEN_FACTS`).
   const run = spawnSync(verifier, ["--verify-units", "6", join(outcome.artifacts, "fragment.json"),
     join(outcome.artifacts, "claims.json"), key, "12"], { encoding: "utf8", maxBuffer: 1 << 28,
-    env: { ...process.env, TSCERT_GIVEN_FACTS: "1" } });
+    env: { ...process.env, TSCERT_GIVEN_FACTS: "all" } });
   const lines = run.stdout.split("\n").filter((l) => l.startsWith("{\"codes\""));
   const path = join(dir, `${test.file}.jsonl`);
   mkdirSync(dirname(path), { recursive: true });

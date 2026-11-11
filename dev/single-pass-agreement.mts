@@ -11,6 +11,13 @@
 // TSCERT_STANDINS_ALL set too, every function's and qualified import's
 // footprint the case's claims state is supplied as a written-footprint
 // stand-in (dev/single-pass-standins.mts).
+// With TSCERT_REFEREE set (mode 8), each file is also run in mode 9, the
+// search and the proved check over the same plans: a unit mode 8 accepts and
+// mode 9 refuses is a hole in the pass until shown otherwise, printed as
+// `hole:`; the other direction is counted. TSCERT_FORCE (passed through)
+// forces an adversarial proposal (`literals`, `callees`, `elements`,
+// `objects`, `spreads`); the controls below run with theirs forced whatever
+// the patterns, each expected refused by mode 8.
 // Prints the disagreements, then the counts: units agreeing, disagreeing,
 // those the pass does not handle by construct, and those whose pipeline
 // check did not finish (a stage's timeout), which decide nothing. Exits 0
@@ -29,8 +36,15 @@ const root = resolve(import.meta.dirname, "..");
 const verifier = join(root, "lean/.lake/build/bin/verifier");
 withoutEvidenceReuse();
 
-type Verdict = { accepted: boolean; refusal: string };
-type Comparison = { file: string; unit: string; pipeline: string; pass: string; agree: boolean; notHandled: string | null; why: string };
+type Verdict = { accepted: boolean; refusal: string; closed?: boolean };
+type Comparison = { file: string; unit: string; pipeline: string; pass: string; agree: boolean; notHandled: string | null; why: string;
+  referee: string | null; control: boolean; closed: boolean };
+/** The controls: units whose program is unsafe (run under Node), with the
+ * adversarial proposal that once made the pass accept them. */
+const controls: { file: string; unit: string; force: string }[] = [
+  { file: "invalid-method-effect-stated-throw-caught", unit: "wrong@596", force: "literals" },
+  { file: "invalid-node-assert-catch-continue", unit: "rows@339", force: "literals" },
+];
 
 /** The file key the pipeline's check of a run named: `--check-units`'s third argument. */
 function fileKey(artifacts: string): string | null {
@@ -40,20 +54,23 @@ function fileKey(artifacts: string): string | null {
 }
 
 /** The pass's verdict on each unit of a run's file. */
-function passVerdicts(artifacts: string, key: string, given: string | null): Map<string, Verdict> {
-  const mode = process.env.TSCERT_PASS_MODE ?? "3";
+function passVerdicts(artifacts: string, key: string, given: string | null, mode = process.env.TSCERT_PASS_MODE ?? "3",
+    force?: string, allCuts = false): Map<string, Verdict> {
   let env: NodeJS.ProcessEnv = given === null ? process.env : { ...process.env, TSCERT_GIVEN: given };
-  if (mode === "8" && process.env.TSCERT_STANDINS_ALL !== undefined) {
+  if (force !== undefined) env = { ...env, TSCERT_FORCE: force };
+  if (allCuts) env = { ...env, TSCERT_ALL_CUTS: "1" };
+  if ((mode === "8" || mode === "9") && process.env.TSCERT_STANDINS_ALL !== undefined) {
     const path = join(artifacts, "standins.json");
     writeFileSync(path, standIns(join(artifacts, "claims.json")) + "\n");
     env = { ...env, TSCERT_STANDINS: path };
   }
-  // Mode 8 reads the fragment alone.
-  const documents = mode === "8" ? [join(artifacts, "fragment.json")]
+  // Modes 8 and 9 read the fragment alone.
+  const documents = mode === "8" || mode === "9" ? [join(artifacts, "fragment.json")]
     : [join(artifacts, "fragment.json"), join(artifacts, "claims.json")];
   const run = spawnSync(verifier, ["--verify-units", mode, ...documents, key, "12"],
     { encoding: "utf8", maxBuffer: 1 << 28, env });
   const verdicts = new Map<string, Verdict>();
+  const dependencies = new Map<string, string[]>();
   for (const line of run.stdout.split("\n").filter((l) => l.startsWith("{"))) {
     const value: unknown = JSON.parse(line);
     if (typeof value !== "object" || value === null) continue;
@@ -61,6 +78,21 @@ function passVerdicts(artifacts: string, key: string, given: string | null): Map
     if (typeof unit !== "string") continue;
     const refusal = "refusal" in value && typeof value.refusal === "string" ? value.refusal : "";
     verdicts.set(unit, { accepted: "accepted" in value && value.accepted === true, refusal });
+    const depends = "depends" in value && Array.isArray(value.depends) ? value.depends.filter((d) => typeof d === "string") : [];
+    dependencies.set(unit, depends);
+  }
+  // `closed`: the unit's acceptance with every unit of the file it depends
+  // on accepted; a refused dependency refuses it. The per-unit verdict stays
+  // what the pipeline's is compared with.
+  for (const v of verdicts.values()) v.closed = v.accepted;
+  for (let changed = true; changed; ) {
+    changed = false;
+    for (const [unit, v] of verdicts) {
+      if (v.closed === true && (dependencies.get(unit) ?? []).some((d) => verdicts.get(d)?.closed === false)) {
+        v.closed = false;
+        changed = true;
+      }
+    }
   }
   return verdicts;
 }
@@ -80,25 +112,42 @@ async function compare(test: Case): Promise<Comparison[]> {
   // A file whose pipeline check did not finish (a stage's timeout) gives no
   // units: counted as one unfinished entry rather than dropped.
   if (units.length === 0) return outcome.status === "error"
-    ? [{ file: test.file, unit: "(file)", pipeline: "unfinished", pass: "missing", agree: false, notHandled: null, why: "" }]
+    ? [{ file: test.file, unit: "(file)", pipeline: "unfinished", pass: "missing", agree: false, notHandled: null, why: "", referee: null, control: false, closed: false }]
     : [];
   const key = fileKey(outcome.artifacts);
   if (key === null) return [];
   const givenDir = process.env.TSCERT_GIVEN_DIR;
-  const pass = passVerdicts(outcome.artifacts, key, givenDir === undefined ? null : join(givenDir, `${test.file}.jsonl`));
+  const given = givenDir === undefined ? null : join(givenDir, `${test.file}.jsonl`);
+  const control = controls.find((c) => c.file === test.file);
+  const force = control?.force ?? process.env.TSCERT_FORCE;
+  const pass = passVerdicts(outcome.artifacts, key, given, undefined, force);
+  // The referee accepts a unit where the search finds evidence the proved
+  // check accepts with the search's cuts at the loop heads, or else at every
+  // statement entry: either is a certificate of the same proposals.
+  let referee = process.env.TSCERT_REFEREE === undefined ? null : passVerdicts(outcome.artifacts, key, given, "9", force);
+  if (referee !== null && [...pass].some(([u, v]) => v.accepted && referee?.get(u)?.accepted !== true)) {
+    const again = passVerdicts(outcome.artifacts, key, given, "9", force, true);
+    for (const [u, v] of again) if (v.accepted) referee.set(u, v);
+  }
   return units.map((u): Comparison => {
     const v = pass.get(u.unit);
     const notHandled = v ? construct(v.refusal) : null;
     const passSays = v === undefined ? "missing" : v.accepted ? "verified" : notHandled ? "not handled" : "refused";
     // A pipeline run that did not finish (a stage's timeout) decides nothing.
     const pipelineSays = u.status === "verified" ? "verified" : u.status === "error" ? "unfinished" : "refused";
+    const r = referee?.get(u.unit);
+    const refereeSays = referee === null ? null : r === undefined ? "missing" : r.accepted ? "verified" : "refused";
+    // Both accept with their dependencies accepted.
+    const closed = v?.closed === true && (referee === null || r?.closed === true);
     return { file: test.file, unit: u.unit, pipeline: pipelineSays, pass: passSays,
-      agree: passSays === pipelineSays, notHandled, why: v ? v.refusal.replace(/\s+/g, " ").slice(0, 160) : "" };
+      agree: passSays === pipelineSays, notHandled, why: v ? v.refusal.replace(/\s+/g, " ").slice(0, 160) : "",
+      referee: refereeSays, control: control?.unit === u.unit, closed };
   });
 }
 
 const patterns = process.argv.slice(2);
-const chosen = cases.filter((c) => patterns.length === 0 || patterns.some((p) => c.file.includes(p)));
+const chosen = cases.filter((c) => patterns.length === 0 || patterns.some((p) => c.file.includes(p)) ||
+  (process.env.TSCERT_PASS_MODE === "8" && controls.some((k) => k.file === c.file)));
 const results = await pooled(chosen, compare);
 const all: Comparison[] = [];
 for (const [i, r] of results.entries()) {
@@ -118,9 +167,23 @@ process.stdout.write(`${all.length} units of ${chosen.length} cases: ${agree} ag
   `${handled.length - handled.filter((c) => c.agree).length} disagree, ${all.filter((c) => c.notHandled !== null).length} not handled, ` +
   `${unfinished} the pipeline did not finish\n`);
 for (const [what, n] of [...constructs].sort((a, b) => b[1] - a[1])) process.stdout.write(`  not handled: ${what} ${n}\n`);
+// The referee: units mode 8 accepts and mode 9 refuses (holes), and the
+// other direction (the pass's incompleteness), counted.
+const refereed = all.filter((c) => c.referee !== null);
+const holes = refereed.filter((c) => c.pass === "verified" && c.referee !== "verified");
+for (const c of holes) process.stdout.write(`hole: ${c.file} ${c.unit}: mode 8 accepts, mode 9 ${c.referee}, pipeline ${c.pipeline}\n`);
+const bothAccept = refereed.filter((c) => c.closed && c.pipeline === "refused");
+for (const c of bothAccept) process.stdout.write(`both accept, pipeline refuses: ${c.file} ${c.unit}\n`);
+if (refereed.length > 0)
+  process.stdout.write(`referee: ${holes.length} mode 8 accepts / mode 9 refuses, ` +
+    `${refereed.filter((c) => c.pass !== "verified" && c.referee === "verified").length} mode 9 accepts / mode 8 refuses\n`);
+// The controls: each refused by mode 8 under its forced proposal.
+const controlFailures = all.filter((c) => c.control && c.pass === "verified");
+for (const c of controlFailures) process.stdout.write(`control accepted: ${c.file} ${c.unit}\n`);
 // The correctness half of the performance gate: every unit whose pipeline
 // check finished agrees, none is not handled, and every case ran.
 const failedCases = results.filter((r) => r.status === "rejected").length;
 const disagreeing = handled.length - handled.filter((c) => c.agree).length;
 const notHandled = all.filter((c) => c.notHandled !== null).length;
-process.exitCode = disagreeing === 0 && notHandled === 0 && failedCases === 0 ? 0 : 1;
+process.exitCode = disagreeing === 0 && notHandled === 0 && failedCases === 0 && holes.length === 0 &&
+  controlFailures.length === 0 ? 0 : 1;
