@@ -424,7 +424,9 @@ throws, its body's effect unchecked against that claim),
 `invalid-compiler-api-guard-loop-finally` `names`, under `finally`, and
 `invalid-closure-graph-captured-cell` `counter`, under `never`,
 `invalid-type-parameter-meet-narrowing` `present`, under `meets`, and
-`invalid-negated-disjunction-saved` `wrong`, under `implications`. A control's
+`invalid-negated-disjunction-saved` `wrong`, under `implications`, and
+`invalid-closure-cell-capture-narrowed` `wrong`, under `captures` (every
+captured binding at its type where the literal is made). A control's
 acceptance counts only with every unit
 it `depends` on accepted: a run with named units checks only those, a
 dependency's footprint among its proposals, so its reader follows
@@ -547,7 +549,11 @@ removal works through:
   its expression's span, which keeps the expression's type. A function literal
   passed as an actual takes its unwritten parameters' types from its
   parameter's signature taking the most parameters; any other literal is at
-  its written parameters and receiver (a method's `this`). A literal of no
+  its written parameters and receiver (a method's `this`). Its body reads each binding
+  it captures that a slot holds (`cellLocals`: the unit's or an enclosing
+  literal's) at its type where the literal is made, one a cell holds at its
+  declared type (the producer's `forget`); `TSCERT_FORCE=captures` reads a
+  cell's at its type there too, the adversarial proposal. A literal of no
   rest that is not a guard is stated at its own parameters' row and, beside
   it, at each signature the expected callable states binding more
   parameters whose leading ones are within its own (variadic: at least as
@@ -704,6 +710,7 @@ removal works through:
   A member `o.m` of a union of objects each stating it at the same
   signatures (a host family's node kinds, each its own receiver) is that
   member with every member's receivers and schemes.
+  An array arm's `length` is a number beside the other arms' reads.
   A keyed read `o[k]` is an array's or a string's element, an object's
   field at each name the key may spell (its string literals, its numbers
   that are array indices: an enum's reverse map, a record at a
@@ -754,7 +761,9 @@ removal works through:
   conditional's arms, the right operand of `&&`, `||`, `??` and `,`, an
   object literal's fields (the union of the fields the expected members
   state at the key) and an array literal's positions. By form: an object
-  literal states its own keys exactly (`HasTyUsing.alloc`'s bound); at a
+  literal states its own keys exactly (`HasTyUsing.alloc`'s bound), where
+  nothing is expected each field a literal's widened type, a name's or a
+  read's as it is (the producer's `fresh`); at a
   dictionary with a writable index it is allocated at that dictionary with
   each of its keys a field (at the dictionary's named field, else its
   index), the optional fields it leaves out absent; at a record, it is that
@@ -835,8 +844,11 @@ removal works through:
   root (a destructuring assignment's from its first target on), after a
   call whose instance may change a value of the heap (or whose callee is
   unknown) but where each member of the path is a key every arm of its
-  receiver states stable (the producer's `stable_path`), and after the left operand of `&&` or `||` where the right may
-  call; a write of an element at a key naming no one field or number, and
+  receiver states stable (the producer's `stable_path`), and, but such
+  stable paths, after the left operand of `&&` or `||` whose right operand's
+  walk ends a path; a guard's call narrows its actual's path only where its
+  own call ends none. A path's prefix is read at its narrowed type; a
+  write of an element at a key naming no one field or number, and
   `Object.assign`, end every path; after `o.f ??= v` (and `||=`, `&&=`)
   the path `o.f` holds the assignment's value, and after `o.f = v`, of an
   immutable binding's object every record arm of which states `f`, its
@@ -852,6 +864,10 @@ removal works through:
   of the path is a required field every record arm of its receiver states,
   none a `length` (the producer's `separated_path`: the locations an
   iterator's step keeps).
+  Over a `for` or `while` loop, a path whose root the loop neither
+  declares nor assigns is held from its head on, through the test and the
+  body, where nothing in the loop calls or writes (an increment or an
+  assignment of a binding aside) or each member of the path is stable.
   After such a call, each binding a function literal walked so far assigns
   (one it captures, held in a cell) is at its declared type again.
 - **Growth and assignment.** A write of a key a constant's records may lack

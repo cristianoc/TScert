@@ -1121,6 +1121,8 @@ export const cases: Case[] = [
   positive("cell-truthiness-narrowing", "a `let` holding an object or `undefined` in a cell, tested by truthiness alone, as `&&`'s left operand and through an optional chain: the truthy edge knows its contents neither null nor undefined, so its member is read at the object"),
   negative("invalid-cell-truthiness-narrowing", "a call between the test and the read may write the cell, which then holds its contract again",
     /a `let` whose contract admits `undefined` read where an object is required/),
+  negative("invalid-closure-cell-capture-narrowed", "a closure made where a cell is narrowed runs after a call writing the cell: it reads the cell at its contract, which admits `null`, so the cast to `string` is not established (under Node `wrong()` returns `null`)",
+    /The available claim for x is null \| string/),
   positive("nullish-member-reads", "member reads, method calls, element reads and a compound element assignment of values whose type admits `null` or `undefined`: a nullish one throws a `TypeError` before the access, the others are read at their type; an element a length guards, a handler around one, RegExp `test` at `string | undefined`"),
   positive("read-narrows-receiver", "a completed member read narrows its receiver: past `d.kind` a constant or an owned local `d` read from an element holds an object, in the statements after it and as an actual, until the local is written"),
   negative("invalid-read-narrows-optional", "`d?.kind` reads no member of a nullish `d`: past it `d` may be `undefined`",
