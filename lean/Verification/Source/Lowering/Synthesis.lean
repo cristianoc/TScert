@@ -2240,6 +2240,110 @@ partial def declarationHint (env : Env) (b : Binding) (mutable_ : Bool)
         if !H.isEmpty && H.all (fun l => (storeOf G [l]).isSome) then return some H
   return written
 
+/-- Each binder in `lambdaBinders` (a callback literal's parameter) that an
+earlier actual's parameter takes at a position of one of its methods, at the
+callable the actual's method of that key takes there (`applyCall`'s
+`from_actuals`). -/
+def methodBinders (args : List Expr) (Ps : List (Ty Tree)) (As : List (Option (Ty Tree)))
+    (lambdaBinders : List Tree) : Compiler (List (Tree × Ty Tree)) := do
+  let mut fromActuals : List (Tree × Ty Tree) := []
+  if lambdaBinders.isEmpty then return fromActuals
+  let Ga := SourceTypes.graph (← table)
+  -- A type's methods by key, each its signatures' parameters and effects.
+  let methodsOf (X : Ty Tree) : List (PropKey × List (List (Ty Tree) × CallEffects.Effect)) :=
+    match ProgramTyping.objectClauses Ga X with
+    | [.refs fs _ vs _ ms _ _] =>
+      ((fs ++ vs).map fun (k, t) => (k, (ProgramTyping.callSigs Ga t).map fun s => (s.arguments, s.effect))) ++
+        ms.map fun m => (m.key, m.calls.map fun s => (s.arguments, s.effect))
+    | _ => []
+  for ((x, P), i) in (args.zip Ps).zipIdx do
+    if callback x then continue
+    let some A := As[i]?.join | continue
+    let actual := methodsOf A
+    for (k, ws) in methodsOf P do
+      let [(wps, we)] := ws | continue
+      let some ss := actual.lookup k | continue
+      for (p, j) in wps.zipIdx do
+        let [r] := p | continue
+        if !lambdaBinders.contains r || (fromActuals.lookup r).isSome then continue
+        let callables := ss.filterMap fun (ps, e) =>
+          if ps.length != wps.length then none else match ps[j]? with
+            | some t => if (ProgramTyping.callSigs Ga t).isEmpty then none else some (e, t)
+            | none => none
+        match (callables.filter fun (e, _) => e.covers we).reverse.head? <|> callables.head? with
+        | some (_, t) => fromActuals := fromActuals ++ [(r, t)]
+        | none => pure ()
+  return fromActuals
+
+/-- What a call at instance `inst` changes, recorded for the walk's footprints:
+its instance's footprint, a declaration's passed functions' effects, a change
+of its receiver's store or elements, its fresh result and its throws
+(`applyCall`'s effects, read after the actuals are walked). -/
+def callChanges (c : Callee) (inst : CallEffects.Arrow (Ty Tree)) (As : List (Option (Ty Tree)))
+    (args : List Expr) (receiverFresh : Bool) : W Unit := do
+  -- A call changing the heap, by its instance's footprint.
+  if inst.effect.footprint != ⟨.keep, .keep⟩ then wrote inst.effect.footprint.value inst.effect.footprint.store
+  -- For a declaration's footprint, a call passing a function may run it:
+  -- the function's own effect at each of its signatures, read after the
+  -- actuals are walked; one of no known type is the ordinary effect's.
+  if (← get).strict then
+    let Gn := SourceTypes.graph (← StateT.lift table)
+    -- (a generic module function's instance is not yet read off the
+    -- function passed: the ordinary effect)
+    let unread := !c.names.isEmpty || !c.explicit.isEmpty
+    for (A, x) in As.zip args do
+      match (if unread then none else A) with
+      | some A =>
+        for p in ProgramTyping.callSigs Gn A do
+          if p.effect.footprint != ⟨.keep, .keep⟩ then wrote p.effect.footprint.value p.effect.footprint.store
+          if p.effect.receiverOwn || p.effect.receiverStore || p.effect.elementWrite.isSome then wrote .any .any
+          if !p.effect.onThrow then modify fun w => { w with throwWrites := true }
+      | none =>
+        if callback x || (A.any fun A => !(ProgramTyping.callSigs Gn A).isEmpty) then
+          wrote .any .any
+          modify fun w => { w with throwWrites := true }
+  if inst.effect.footprint.value != .keep || inst.effect.receiverOwn || inst.effect.receiverStore ||
+      inst.effect.elementWrite.isSome then
+    modify fun w => { w with changedValues := true }
+  -- A change its receiver's store or elements state beside the footprint.
+  -- (a growing receiver within its footprint; one changing its own
+  -- locations at the values and its store's change; a receiver's store or
+  -- elements both).
+  if inst.effect.receiverOwn then wrote .any inst.effect.footprint.store
+  -- (but a change of a receiver's store the run allocated, a constant
+  -- holding one, which its frame bounds: the producer's `receiver_fresh`,
+  -- source.ml:953-956, the checker's `Effect.within_below`)
+  if (inst.effect.receiverStore && !receiverFresh) || inst.effect.elementWrite.isSome then wrote .any .any
+  modify fun w => { w with lastFresh := inst.effect.fresh }
+  if !inst.effect.onThrow then modify fun w => { w with throwWrites := true }
+  -- For a declaration's footprint, a throw no footprint bounds that a
+  -- handler catches leaves the bound.
+  if (← get).strict && (← get).caught && !inst.effect.onThrow then wrote .any .any
+
+/-- A literal of no binders, rest or guard passed where the instance's
+parameter is one fixed signature binding more parameters than it, of
+the ordinary effect or one a row of the literal's covers, is stated at
+that parameter, where every row of the literal leads with its own
+parameters: calls through it discard the further actuals, and its
+body is checked at the parameter's row (the producer's `offer_to`,
+expression_calls.ml:264-307, applied by `offer` at the selected
+signature). -/
+def offerToParameters (args : List Expr) (Ps : List (Ty Tree)) : W Unit := do
+  let Go := SourceTypes.graph (← StateT.lift table)
+  for (x, P) in args.zip Ps do
+    let .lambda _ _ tps params _ false _ none .. := x | continue
+    if !tps.isEmpty then continue
+    let some (_, .ok L) := (← get).exprs.get? x.span | continue
+    let rows := ProgramTyping.callSigs Go L
+    let some own := rows.find? (·.arguments.length == params.length) | continue
+    if !(rows.all fun r => r.arguments.take params.length == own.arguments) then continue
+    let [s] := ProgramTyping.callSigs Go P | continue
+    if P.length != 1 || !(ProgramTyping.restSigs Go P).isEmpty || s.arguments.length ≤ params.length then continue
+    let supplies := s.effect == CallEffects.Effect.ordinary || rows.any fun r =>
+      let e := { r.effect with fresh := r.effect.fresh && s.effect.fresh, onThrow := r.effect.onThrow && s.effect.onThrow }
+      e == s.effect || ({ e with closed := s.effect.closed } == s.effect && e.closed.le s.effect.closed)
+    if supplies then recordAt x.span (kindOf x) (.ok P)
+
 mutual
 /-- The narrowing a condition answering `q` makes. -/
 partial def refine (env : Env) (c : Expr) (q : Bool) : W Env := do
@@ -3740,33 +3844,7 @@ partial def applyCall (env : Env) (c : Callee) (args : List Expr) (As : List (Op
   let lambdaBinders := (args.zip a.arguments).filterMap fun (x, P) => match x, P with
     | .lambda .., [r] => if c.binders.contains r && (σ.lookup r).isNone then some r else none
     | _, _ => none
-  let mut fromActuals : List (Tree × Ty Tree) := []
-  if !lambdaBinders.isEmpty then
-    let Ga := SourceTypes.graph (← StateT.lift table)
-    -- A type's methods by key, each its signatures' parameters and effects.
-    let methodsOf (X : Ty Tree) : List (PropKey × List (List (Ty Tree) × CallEffects.Effect)) :=
-      match ProgramTyping.objectClauses Ga X with
-      | [.refs fs _ vs _ ms _ _] =>
-        ((fs ++ vs).map fun (k, t) => (k, (ProgramTyping.callSigs Ga t).map fun s => (s.arguments, s.effect))) ++
-          ms.map fun m => (m.key, m.calls.map fun s => (s.arguments, s.effect))
-      | _ => []
-    for ((x, P), i) in (args.zip a.arguments).zipIdx do
-      if callback x then continue
-      let some A := As[i]?.join | continue
-      let actual := methodsOf A
-      for (k, ws) in methodsOf P do
-        let [(wps, we)] := ws | continue
-        let some ss := actual.lookup k | continue
-        for (p, j) in wps.zipIdx do
-          let [r] := p | continue
-          if !lambdaBinders.contains r || (fromActuals.lookup r).isSome then continue
-          let callables := ss.filterMap fun (ps, e) =>
-            if ps.length != wps.length then none else match ps[j]? with
-              | some t => if (ProgramTyping.callSigs Ga t).isEmpty then none else some (e, t)
-              | none => none
-          match (callables.filter fun (e, _) => e.covers we).reverse.head? <|> callables.head? with
-          | some (_, t) => fromActuals := fromActuals ++ [(r, t)]
-          | none => pure ()
+  let fromActuals ← StateT.lift (methodBinders args a.arguments As lambdaBinders)
   for ((x, P), i) in (args.zip a.arguments).zipIdx do
     let sub (A : Ty Tree) : Ty Tree := substitute σ A
     if callback x then
@@ -3814,48 +3892,12 @@ partial def applyCall (env : Env) (c : Callee) (args : List Expr) (As : List (Op
     let _ := b
     return .error "a type argument is not an actual's type"
   let inst := a.map sub
+  offerToParameters args inst.arguments
   -- A generic module function's instance: each binder's type, by name.
   if !c.names.isEmpty || !c.explicit.isEmpty then
     modify fun w => { w with lastInstance := some (c.explicit ++
       c.names.zip (c.binders.map fun b => (σ.lookup b).getD [])), lastResolution := certificates }
-  -- A call changing the heap, by its instance's footprint.
-  if inst.effect.footprint != ⟨.keep, .keep⟩ then wrote inst.effect.footprint.value inst.effect.footprint.store
-  -- For a declaration's footprint, a call passing a function may run it:
-  -- the function's own effect at each of its signatures, read after the
-  -- actuals are walked; one of no known type is the ordinary effect's.
-  if (← get).strict then
-    let Gn := SourceTypes.graph (← StateT.lift table)
-    -- (a generic module function's instance is not yet read off the
-    -- function passed: the ordinary effect)
-    let unread := !c.names.isEmpty || !c.explicit.isEmpty
-    for (A, x) in As.zip args do
-      match (if unread then none else A) with
-      | some A =>
-        for p in ProgramTyping.callSigs Gn A do
-          if p.effect.footprint != ⟨.keep, .keep⟩ then wrote p.effect.footprint.value p.effect.footprint.store
-          if p.effect.receiverOwn || p.effect.receiverStore || p.effect.elementWrite.isSome then wrote .any .any
-          if !p.effect.onThrow then modify fun w => { w with throwWrites := true }
-      | none =>
-        if callback x || (A.any fun A => !(ProgramTyping.callSigs Gn A).isEmpty) then
-          wrote .any .any
-          modify fun w => { w with throwWrites := true }
-  if inst.effect.footprint.value != .keep || inst.effect.receiverOwn || inst.effect.receiverStore ||
-      inst.effect.elementWrite.isSome then
-    modify fun w => { w with changedValues := true }
-  -- A change its receiver's store or elements state beside the footprint.
-  -- (a growing receiver within its footprint; one changing its own
-  -- locations at the values and its store's change; a receiver's store or
-  -- elements both).
-  if inst.effect.receiverOwn then wrote .any inst.effect.footprint.store
-  -- (but a change of a receiver's store the run allocated, a constant
-  -- holding one, which its frame bounds: the producer's `receiver_fresh`,
-  -- source.ml:953-956, the checker's `Effect.within_below`)
-  if (inst.effect.receiverStore && !receiverFresh) || inst.effect.elementWrite.isSome then wrote .any .any
-  modify fun w => { w with lastFresh := inst.effect.fresh }
-  if !inst.effect.onThrow then modify fun w => { w with throwWrites := true }
-  -- For a declaration's footprint, a throw no footprint bounds that a
-  -- handler catches leaves the bound.
-  if (← get).strict && (← get).caught && !inst.effect.onThrow then wrote .any .any
+  callChanges c inst As args receiverFresh
   -- A fresh result where a type is expected: made at the expected array.
   let mut result := inst.result
   if let some H := hint then
