@@ -374,6 +374,23 @@ def assigned (D A : Ty Tree) : Compiler (Ty Tree) := do
   let kept := D.filter fun d => A.any fun a => within T [a] [d]
   return if kept.isEmpty then D else kept
 
+/-- The type an annotated declaration at `D` holds from an initializer of
+type `A`: a primitive, nullish or callable member of `A` as `assigned`
+gives it, any other object at the members of `D` it is within (a store's contract is fixed
+where it is made: it is never held at the exact type of the store it was
+initialized from, which another alias may grow or write). -/
+def declaredAt (D A : Ty Tree) : Compiler (Ty Tree) := do
+  let G ← graphNow
+  let T ← table
+  let (prims, objs) := A.partition fun a =>
+    (shapeOf G a).isSome || !(BranchRefinement.tagSlice G [a] .isNullish true).isEmpty ||
+      !(ProgramTyping.callSigs G [a]).isEmpty
+  if objs.isEmpty then return ← assigned D A
+  let kept := D.filter fun d => objs.any fun a => within T [a] [d]
+  if kept.isEmpty then return ← assigned D A
+  let ps ← if prims.isEmpty then pure [] else assigned D prims
+  return norm (ps ++ kept)
+
 /-- The prototype a primitive's member is read from, by its shape. -/
 def protoFor (vars : List (String × Ty Tree)) (tag : Tag) : Compiler (Ty Tree) := do
   let some (_, name) := SourceTypes.primitivePrototypes.find? (·.1 == tag)
@@ -3048,7 +3065,11 @@ partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
       let D := if b.annot.isSome then written else A
       match D, A with
       | some D, some A =>
-        env := { env with vars := upd env.vars b.name (← StateT.lift (assigned D A)), decl := upd env.decl b.name D }
+        -- (an early binding, read through its cell from the list's entry
+        -- on, at its written contract)
+        let held ← if b.early && b.annot.isSome then pure D
+          else StateT.lift (if b.annot.isSome then declaredAt D A else assigned D A)
+        env := { env with vars := upd env.vars b.name held, decl := upd env.decl b.name D }
       | some D, none => env := { env with vars := upd env.vars b.name D, decl := upd env.decl b.name D }
       | none, _ => env := { env with vars := env.vars.filter (·.1 != b.name) }
     return some env
@@ -3073,7 +3094,8 @@ partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
         modify fun w => { w with contracts := ((b.init.span, b.name), D) :: w.contracts }
       match D, A with
       | some D, some A =>
-        env := { env with vars := upd env.vars b.name (← StateT.lift (assigned D A)), decl := upd env.decl b.name D }
+        let held ← StateT.lift (if b.annot.isSome then declaredAt D A else assigned D A)
+        env := { env with vars := upd env.vars b.name held, decl := upd env.decl b.name D }
       | some D, none => env := { env with vars := upd env.vars b.name D, decl := upd env.decl b.name D }
       | none, _ => env := { env with vars := env.vars.filter (·.1 != b.name) }
     return some env

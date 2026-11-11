@@ -621,7 +621,11 @@ removal works through:
   length. A method at a computed key of one string literal is that member.
 - **Expected types.** A store's contract is fixed where the store is made;
   a read is a copy, an upcast of an immutable value, or an upcast of a store
-  to a readonly view of it. So a value is made at the type its position
+  to a readonly view of it. An annotated declaration holds an object it is
+  initialized with at the members of its declared type the object is
+  within (a primitive, nullish or callable value as an assignment narrows
+  it; an early binding at its written contract), never at the exact type of
+  the store it was made from. So a value is made at the type its position
   expects: a return's, an annotated declaration's, an assignment's (also
   `??=`, `||=`, `&&=`), a field write's field, an element write's contents,
   a cast's target, a function literal's result; and from there a
