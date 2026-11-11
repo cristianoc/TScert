@@ -1003,6 +1003,12 @@ def FilePlans.passGroup (f : FilePlans) (fuel : Nat) (group : List Nat) (compare
         if !conditions then
           codeOutcome := codeOutcome.orElse fun _ => some (.refused s!"code {ci}: its signature")
           break
+        -- An async code's footprint is `top` (`RequestJson.asyncEffects`, as
+        -- `codeTableResult` requires of every code): its call returns
+        -- normally where its body throws.
+        if !RequestJson.asyncEffects q.async eff.footprint then
+          codeOutcome := codeOutcome.orElse fun _ => some (.refused s!"code {ci}: an async definition's footprint")
+          break
         let codeBound := if eff.footprint == .top && !eff.fresh && !eff.onThrow then none
           else if !eff.fresh && q.entry.exprs.all Purity.pureTerm then none
           else some (eff.footprint, eff.fresh, eff.onThrow)

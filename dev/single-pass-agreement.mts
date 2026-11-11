@@ -109,6 +109,10 @@ const controls: { file: string; unit: string; force: string; positive?: boolean 
   { file: "invalid-closure-cell-capture-narrowed", unit: "wrong@181", force: "captures" },
   { file: "invalid-object-spread-width-replaced", unit: "wrong@385", force: "objects" },
   { file: "invalid-class-static-inherited-rest", unit: "rest@276", force: "spreads" },
+  { file: "invalid-async-throw-only-arrow", unit: "wrong@347", force: "no-return" },
+  { file: "invalid-async-throw-only-expression", unit: "wrong@361", force: "no-return" },
+  { file: "invalid-async-throw-only-object-method", unit: "wrong@369", force: "no-return" },
+  { file: "invalid-method-effect-throw-caught", unit: "wrong@487", force: "no-return" },
 ];
 
 /** The file key the pipeline's check of a run named: `--check-units`'s third argument. */

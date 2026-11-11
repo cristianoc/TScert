@@ -2936,7 +2936,8 @@ def callChanges (c : Callee) (inst : CallEffects.Arrow (Ty Tree)) (As : List (Op
   -- (but under a handler or in an async body, where its throw is caught and
   -- the heap it leaves is a normal return's: source.ml:1166-1175,
   -- expression_closures.ml:344)
-  if inst.result.isEmpty && !(← get).caught && !(← get).asyncBody then
+  -- (`TSCERT_FORCE=no-return`: also there, the adversarial proposal)
+  if inst.result.isEmpty && ((← get).force.contains "no-return" || (!(← get).caught && !(← get).asyncBody)) then
     modify fun w => { w with lastFresh := false }
     if !inst.effect.onThrow then modify fun w => { w with throwWrites := true }
     return

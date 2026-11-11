@@ -174,7 +174,13 @@ each node outside it, the node's step is within the bound
 (`ExpressionEffects.check`, `writeWithin`, `initWriteWithin`,
 `selectedWithinAt` with the receiver's freshness, an empty type), its throw
 too where the unit states the bound on a throw, and a return under a fresh
-result returns a fresh name; inside it, `deadNode`. A graph the bound
+result returns a fresh name; inside it, `deadNode`. A code request of an
+async definition has the footprint `top` (`RequestJson.asyncEffects`, as
+`RequestJson.codeTableResult` requires of every code): its call returns
+normally where its body throws, so no bound its body meets is the call's.
+A call whose result is the empty type is within the bound on normal
+return; its throw, caught by a live handler, is within it only at a
+signature bounding its throws. A graph the bound
 refuses may still be within it by its store regions (`regionalChecked`),
 which the pass does not decide: that unit is not handled.
 
@@ -443,6 +449,11 @@ captured binding at its type where the literal is made), and
 call's instance kept at the one its actuals give where the type expected of
 its value does not admit that instance's result: `make<number>` returned at
 `Box<unknown>`, whose field is written at its contract). A control's
+`invalid-async-throw-only-arrow`, `-expression` and `-object-method`
+`wrong` (refused at the async code's footprint) and
+`invalid-method-effect-throw-caught` `wrong` (refused at the caught call's
+throw), under `no-return` (a never-returning call changing nothing under a
+handler and in an async body too). A control's
 acceptance counts only with every unit
 it `depends` on accepted: a run with named units checks only those, a
 dependency's footprint among its proposals, so its reader follows
@@ -815,6 +826,8 @@ removal works through:
   source.ml:1031-1035); its throw is its signature's. Under a handler or
   in an async body its throw is caught and the heap it leaves is a normal
   return's: the call changes what its instance's footprint states.
+  `TSCERT_FORCE=no-return` reads it as changing nothing there too, the
+  adversarial proposal.
   A synchronous throw operand outside a handler or finalizer contributes
   only its exceptional effect, since it has no normal exit
   (source.ml:1140-1144). A finalizer’s body and handler retain those effects:
