@@ -103,7 +103,8 @@ structure Walk where
   true answer on its false edge too, `reads` a member read's receiver
   without `null` and `undefined` at every later statement, `paths` each
   narrowed member path narrowed at every later statement, `loops` each
-  path narrowed before a loop kept at its head, its body and its exit. -/
+  path narrowed before a loop kept at its head, its body and its exit,
+  `decided` every test's `false` answer unreached. -/
   force : List String := []
   /-- Where the unit's body completes: its bindings there, or none where it
   never completes. -/
@@ -334,6 +335,16 @@ def slice (A : Ty Tree) (tag : Tag) (q : Bool) (literalOperand : Bool := false) 
         out := out ++ (← S)
         continue
       | _, _ => pure ()
+    -- A type parameter's value (its meet with its bound) where a test naming
+    -- one primitive family holds: that family, as for `unknown`; where it
+    -- fails, the value stays (the producer's `typeof_slice` of a `Rigid`,
+    -- refinement.ml:52-58).
+    if let .meet _ := a then
+      if [Tag.isNum, .isStr, .isBool, .isBigint, .isSymbol].contains tag then
+        if q then
+          for k in kinds.filter (fun k => tagClause tag k == some true) do out := out ++ (← prim k)
+        else out := out ++ [a]
+        continue
     if G.plain a && PositiveRules.expand G [a] == [.source] then
       let kept := kinds.filter fun k => tagClause tag k != some (!q)
       if kept.length < kinds.length then
@@ -673,6 +684,14 @@ def separatedPath (env : Env) (root : String) (path : List PropKey) : Compiler B
     let some B ← tryCatch (some <$> readField env.vars R f) fun _ => pure none | return false
     R := B
   return true
+
+/-- Whether a test of a value of type `C` cannot answer `q`: its truthy
+slice for `q` is empty (`BranchRefinement.tagSlice`, the edge's own
+refinement of the test's value). -/
+def decided (C : Option (Ty Tree)) (q : Bool) : Compiler Bool := do
+  let some C := C | return false
+  if C.isEmpty then return false
+  return (BranchRefinement.tagSlice (← graphNow) C .truthy q).isEmpty
 
 /-- An environment with the paths `kept` beside its own. -/
 def keepPaths (kept : List ((String × List PropKey) × Ty Tree)) (env : Env) : Env :=
@@ -1340,6 +1359,24 @@ partial def afterCall (env : Env) (r : Except String (Ty Tree × Ty Tree)) : W E
       vars := env.vars.map fun (n, A) => if reset.contains n then (n, (env.decl.lookup n).getD A) else (n, A) }
   return env
 
+/-- Whether a test cannot answer `q`: its value's type has no value of that
+answer (`decided`), `!e` where `e` cannot answer the other, `a || b` not
+`false` where either is never falsy and not `true` where neither is ever
+truthy, `a && b` dually (the edge's slice of each operand's value). -/
+partial def decidedTest (c : Expr) (q : Bool) : W Bool := do
+  -- (`TSCERT_FORCE=decided`: no test answers `false`)
+  if !q && (← get).force.contains "decided" then return true
+  match c with
+  | .not _ e => decidedTest e !q
+  | .logical _ andOp l r =>
+    -- `&&` cannot answer `true` where either cannot, `||` cannot answer
+    -- `false` where either cannot; the other answer needs both.
+    if andOp == q then return (← decidedTest l q) || (← decidedTest r q)
+    else return (← decidedTest l q) && (← decidedTest r q)
+  | _ =>
+    let C := ((← get).exprs.get? c.span).bind (·.2.toOption)
+    StateT.lift (decided C q)
+
 /-- The narrowing a condition answering `q` makes. -/
 partial def refine (env : Env) (c : Expr) (q : Bool) : W Env := do
   match c with
@@ -1751,7 +1788,7 @@ partial def expr (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (Op
     let (A, e1) ← expr env x
     let r ← attempt e do
       match op with
-      | .typeof => prim (.strIn typeofNames)
+      | .typeof => prim .str
       | .plus => prim .num
       | .neg | .bitNot =>
         let A ← need A "the operand"
@@ -3048,6 +3085,9 @@ partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
     let (_, e1) ← expr env c
     let arm (q : Bool) (ss : List Stmt) : W (Option Env) := do
       let r ← refine e1 c q
+      -- An answer the test's value cannot give (`if (true)`'s `false`): the
+      -- arm unreached, walked for its entries.
+      if ← decidedTest c q then return ← stmts (some { r with ghost := true }) ss
       match emptiedBy e1 r with
       | some walked => stmts (some walked) ss
       | none => stmts (some r) ss
@@ -3074,6 +3114,9 @@ partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
     modify fun w => { w with continues := savedContinues }
     let _ ← stmts (some (continued.getD head)) update
     let out ← collectBreaks none saved
+    -- A test that cannot answer `false` (`while (true)`): left by its breaks
+    -- alone.
+    let noExit ← decidedTest c false
     -- Past the loop, the paths narrowed before it that nothing in its test,
     -- body and update ends.
     let evs := (← get).pathEnds
@@ -3083,6 +3126,7 @@ partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
     let kept := (surviving env evs).filter fun ((r, _), _) => !declared.contains r
     modify fun w => { w with pathEnds := evs ++ savedEnds, loopKept := kept }
     let keep := keepPaths kept
+    if noExit then return out.map keep
     return join (some (keep (← refine e1 c false))) (out.map keep)
   | .block _ label body =>
     match label with

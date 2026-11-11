@@ -17,7 +17,7 @@
 // `hole:`; the other direction is counted. TSCERT_FORCE (passed through)
 // forces an adversarial proposal (`literals`, `callees`, `elements`,
 // `objects`, `spreads`, `stale`, `throws`, `guards`, `reads`, `paths`,
-// `offers`, `loops`); the controls below run with theirs forced whatever
+// `offers`, `loops`, `decided`); the controls below run with theirs forced whatever
 // the patterns, each expected refused by mode 8.
 // Prints the disagreements, then the counts: units agreeing, disagreeing,
 // those the pass does not handle by construct, and those whose pipeline
@@ -58,6 +58,7 @@ const controls: { file: string; unit: string; force: string }[] = [
   { file: "invalid-closure-offer-narrower-mutation", unit: "wrong@275", force: "offers" },
   { file: "invalid-field-narrowing-for-of-callback", unit: "count@323", force: "loops" },
   { file: "invalid-field-narrowing-for-of-closure", unit: "count@343", force: "loops" },
+  { file: "invalid-unassigned-let", unit: "readBeforeAssignment@113", force: "decided" },
 ];
 
 /** The file key the pipeline's check of a run named: `--check-units`'s third argument. */

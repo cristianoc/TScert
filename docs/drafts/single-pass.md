@@ -384,7 +384,7 @@ answer stated on its false edge too), `reads` (a member read's receiver
 held without `null` and `undefined` at every later statement), `paths`
 (each narrowed member path kept narrowed at every later statement), `loops`
 (each path narrowed before a loop kept at its head, its body and its exit,
-whatever ends it). Under
+whatever ends it), `decided` (every test's `false` answer unreached). Under
 a forced proposal, a forced footprint is one the
 function's own unit establishes, and a unit whose dependency of the file is
 refused counts as refused where both modes are compared with the pipeline.
@@ -401,10 +401,11 @@ at keep/keep bounding its throws), `invalid-declaration-pop-callback`
 `invalid-slot-path-call` `keyText` and `invalid-path-witness-alias`
 `wrong`, under `paths`, `invalid-object-spread-two-sources` `count`, under
 `spreads`, `invalid-keyed-read` `pick`, under `keys` (a keyed read of an
-object at the first name its key may spell alone), and
-`invalid-closure-offer-narrower-mutation` `wrong`, under `offers`, and
+object at the first name its key may spell alone),
+`invalid-closure-offer-narrower-mutation` `wrong`, under `offers`,
 `invalid-field-narrowing-for-of-callback` and `-closure` `count`, under
-`loops`. A control's acceptance counts only with every unit
+`loops`, and `invalid-unassigned-let` `readBeforeAssignment`, under
+`decided`. A control's acceptance counts only with every unit
 it `depends` on accepted: a run with named units checks only those, a
 dependency's footprint among its proposals, so its reader follows
 `depends`.
@@ -650,7 +651,15 @@ removal works through:
   elements admit the result's.
 - **Narrowing.** A tag test narrows a binding or path by the tag slice;
   `unknown` (a `source` label) becomes the kinds of value the test does not
-  contradict where it contradicts some (`BranchRefinement.sourceSlice`). A
+  contradict where it contradicts some (`BranchRefinement.sourceSlice`); a
+  type parameter's value (its meet with its bound), where a test naming one
+  primitive family holds, becomes that family, as `unknown` does, and stays
+  where it fails. A test that cannot give an answer (its value's slice for
+  it is empty, `!e` where `e` cannot give the other, `a || b` not `false`
+  where either operand is never falsy, not `true` where neither is ever
+  truthy, `a && b` dually) leaves the arm of that answer unreached, walked
+  for its entries; a loop whose test cannot answer `false` is left by its
+  breaks alone. `typeof x` is a `string`. A
   call of a type guard, on its true arm, and a statement calling an
   assertion function, after it, narrow the binding the promise names to
   its members within the guarded type, else to that type; a method's
