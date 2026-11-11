@@ -556,6 +556,9 @@ removal works through:
   static fields; nothing from a primitive; no stated key from a string or a
   function), a key the source surely has at its type, one it may have at
   the union of both, one either may hold at an unknown type dropped.
+  A member `o.m` of a union of objects each stating it at the same
+  signatures (a host family's node kinds, each its own receiver) is that
+  member with every member's receivers and schemes.
   A keyed read `o[k]` is an array's or a string's element, an object's
   field at each name the key may spell (its string literals, its numbers
   that are array indices: an enum's reverse map, a record at a
