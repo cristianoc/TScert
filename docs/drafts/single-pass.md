@@ -512,7 +512,8 @@ removal works through:
   parameters than the actuals before it admits; into a callee of no
   variadic signature, no actual after the first spread runs code. A slice rest of an array pattern is the call of its
   `%RestFrom:k%` at the value, its binder the union of the value's elements
-  from position `k` on (the producer's `slice_element`), any other rest the
+  from position `k` on, an optional one's with `undefined` (the producer's
+  `slice_element`), any other rest the
   tuple of the positions after it. An object pattern's rest is a fresh
   object of the value's one record's fields but the named keys, at their
   types. A nested pattern's value is stated at its span (a parameter's
@@ -783,10 +784,15 @@ removal works through:
   path's narrowing ends at a write of its field, at an assignment of its
   root (a destructuring assignment's from its first target on), after a
   call whose instance may change a value of the heap (or whose callee is
-  unknown), and after the left operand of `&&` or `||` where the right may
+  unknown) but where each member of the path is a key every arm of its
+  receiver states stable (the producer's `stable_path`), and after the left operand of `&&` or `||` where the right may
   call; a write of an element at a key naming no one field or number, and
   `Object.assign`, end every path; after `o.f ??= v` (and `||=`, `&&=`)
-  the path `o.f` holds the assignment's value; a handler states none. A path narrowed
+  the path `o.f` holds the assignment's value, and after `o.f = v`, of an
+  immutable binding's object every record arm of which states `f`, its
+  contract less the nullish values `v` does not admit (the producer's
+  `written_field`); a handler states none. An array literal assigned to an array pattern of as many names, none
+  defaulted, is made at the tuple of their declared types. A path narrowed
   before a loop is stated at its head, at each statement entry of its body
   and past its exit where nothing in its test, body and update ends it (a
   write of a field the path reads, an assignment of its root, a call that

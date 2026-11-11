@@ -716,6 +716,28 @@ def loopHead (env : Env) (ss : List Stmt) : Env :=
       if changed.any (·.1 == n) then (n, (env.decl.lookup n).getD A) else (n, A)
     paths := [] }
 
+/-- Whether each member of the path `root.path` is a key every arm of its
+receiver states stable (the producer's `stable_path` through
+`stable_member`, refinement.ml:195-251): no step writes it, so its
+narrowing survives a call that may change the heap. -/
+def stablePath (env : Env) (root : String) (path : List PropKey) : Compiler Bool := do
+  let some A := env.vars.lookup root | return false
+  if path.isEmpty then return false
+  let G ← graphNow
+  let mut R := A
+  let mut pre : List PropKey := []
+  for f in path do
+    if R.isEmpty then return false
+    for l in R do
+      match PositiveRules.expand G [l] with
+      | [.refs _ _ _ _ _ _ st] => if !st.contains f then return false
+      | _ => return false
+    pre := pre ++ [f]
+    R ← match env.paths.lookup (root, pre) with
+      | some B => pure B
+      | none => tryCatch (readField env.vars R f) fun _ => pure []
+  return true
+
 /-- Whether an iterator's step keeps the path `root.path`: each member a
 required field every record arm of its receiver states, none a `length`
 (the producer's `separated_path`, statement_analysis.ml:785-793, the
@@ -1394,7 +1416,8 @@ partial def attempt (e : Expr) (x : Compiler (Ty Tree)) : W (Option (Ty Tree)) :
   record e r
 
 /-- The environment after a call: its narrowed paths end where the call may
-change a value of the heap, or where its callee is unknown. -/
+change a value of the heap, or where its callee is unknown, but those
+through stable members (`stablePath`). -/
 partial def afterCall (env : Env) (r : Except String (Ty Tree × Ty Tree)) : W Env := do
   let w ← get
   if w.changedValues || r.toOption.isNone then
@@ -1402,8 +1425,9 @@ partial def afterCall (env : Env) (r : Except String (Ty Tree × Ty Tree)) : W E
     -- change: at its declared type again (`TSCERT_FORCE=stale` keeps it).
     let reset := if w.force.contains "stale" then [] else w.closureAssigned
     ends .all
+    let kept ← StateT.lift (env.paths.filterM fun ((r, p), _) => stablePath env r p)
     return { env with
-      paths := []
+      paths := kept
       vars := env.vars.map fun (n, A) => if reset.contains n then (n, (env.decl.lookup n).getD A) else (n, A) }
   return env
 
@@ -1741,6 +1765,30 @@ partial def expr (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (Op
         let literal_ := match rhs with | .var .. | .read .. => false | _ => true
         if let some (c, grown) ← StateT.lift (tryCatch (growth O fld R literal_) fun _ => pure none) then
           return (← record e (.ok c), { e2 with vars := upd e2.vars n grown })
+    -- A write of a field of an immutable binding's object that adds no key:
+    -- the field then holds its contract less the nullish values the value
+    -- written does not admit (the producer's `written_field`,
+    -- statement_analysis.ml:168-172, 419), its path so narrowed.
+    let w ← get
+    let e2 ← match memberPath (.read e.span fld recv), R, D with
+      | some (root, path), some R, some F =>
+        let G ← StateT.lift graphNow
+        -- (a field every record arm of the receiver states: a write of
+        -- any other key adds it, the producer's `adds`)
+        let stated := match O with
+          | some O => !O.isEmpty && O.all fun l => match PositiveRules.expand G [l] with
+            | [.refs fs _ _ _ _ _ _] => (fs.lookup fld).isSome
+            | _ => false
+          | none => false
+        if stated && (w.consts.contains root || w.values.contains root) then
+          let nullish (A : Ty Tree) := !(BranchRefinement.tagSlice G A .isNullish true).isEmpty
+          -- (`unknown` excepted: its slice is no contract the write states)
+          let open_ := F.any fun l => G.plain l && PositiveRules.expand G [l] == [.source]
+          if !R.isEmpty && !open_ && nullish F && !nullish R then
+            StateT.lift (narrowPath e2 root path fun _ => nonNullish F)
+          else pure e2
+        else pure e2
+      | _, _, _ => pure e2
     return (← record e (match R with | some R => .ok R | none => .error "the value undetermined"), e2)
   | .index _ field x key =>
     let (O, e1) ← expr env x
@@ -1828,7 +1876,20 @@ partial def expr (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (Op
     return (r, e1)
   | .arrayAssign _ targets rest rhs =>
     wrote
-    let (R, e1) ← expr env rhs
+    -- An array literal assigned to a pattern of as many names, none
+    -- defaulted, made at the tuple of the names' declared types (`[p, q] =
+    -- [q, p]`).
+    let tuple ← match rhs, rest with
+      | .arrayLit _ es [], none =>
+        let Ds := targets.filterMap fun t => if t.default_.isSome then none else
+          t.target.targetLocal.bind fun n => env.decl.lookup n
+        if Ds.length != targets.length || es.length != targets.length then pure none
+        else StateT.lift (tryCatch (some <$> lower do
+          let s ← SourceTypes.use (.list ⟨Ds, [], none, false, .dense⟩ [])
+          let T ← get
+          return [← SourceTypes.use (SourceTypes.arrayOf T s false)]) fun _ => pure none)
+      | _, _ => pure none
+    let (R, e1) ← expr env rhs tuple
     let names := targets.filterMap (·.target.targetLocal) ++ (rest.bind fun r => r.2.2.target.targetLocal).toList
     -- Each name the pattern assigns at its declared type, and no path
     -- through it narrowed, from the first target's assignment on (a later
@@ -2971,13 +3032,13 @@ partial def restOf (env : Env) (A : Option (Ty Tree)) (k : Nat) (rp : Span) (sli
     let some g := (← get).generics.lookup (restFromName k) | return none
     let .ok c ← StateT.lift (tryCatch (Except.ok <$> genericCallee g []) fun m => pure (Except.error m)) | return none
     -- Its binder the union of the value's elements from position `k` on,
-    -- its rest's included (the producer's `slice_element`,
-    -- expression_values.ml:279-283).
+    -- its rest's included, an optional one's with `undefined` (the
+    -- producer's `slice_element`, type_queries.ml:626-638).
     let E ← StateT.lift (tryCatch (do
         let G ← graphNow
         let some S := storeOf G A | pure none
         let [.list t []] := PositiveRules.expand G S | pure none
-        let Es := t.required.drop k ++ t.optional.drop (k - t.required.length) ++ t.rest.toList
+        let Es := t.required.drop k ++ (t.optional.drop (k - t.required.length)).map (· ++ [Labels.undef]) ++ t.rest.toList
         pure (if Es.isEmpty then none else some (norm Es.flatten))) fun _ => pure none)
     let c := match c.binders, E with
       | [b], some E => { c with seed := c.seed ++ [(b, E)] }
