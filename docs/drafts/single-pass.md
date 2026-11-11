@@ -384,7 +384,9 @@ answer stated on its false edge too), `reads` (a member read's receiver
 held without `null` and `undefined` at every later statement), `paths`
 (each narrowed member path kept narrowed at every later statement), `loops`
 (each path narrowed before a loop kept at its head, its body and its exit,
-whatever ends it), `decided` (every test's `false` answer unreached). Under
+whatever ends it), `decided` (every test's `false` answer unreached),
+`finally` (a finalizer's shared entry its statement's normal completion
+alone), `never` (every call's statement completing at no value). Under
 a forced proposal, a forced footprint is one the
 function's own unit establishes, and a unit whose dependency of the file is
 refused counts as refused where both modes are compared with the pipeline.
@@ -408,10 +410,12 @@ object at the first name its key may spell alone),
 `decided`, `invalid-map-fresh-alias` `drained`, under `callbacks`,
 `invalid-map-fresh-reassigned` `drained`, under `fresh`,
 `invalid-closure-default-effect` `stale`, under `defaults` (each
-function literal's defaults' changes left out of its effect), and
+function literal's defaults' changes left out of its effect),
 `invalid-generic-closure-effect` `stale`, under `schemes`
 (every generic closure claimed keeping values and stores and bounding its
-throws, its body's effect unchecked against that claim). A control's
+throws, its body's effect unchecked against that claim),
+`invalid-compiler-api-guard-loop-finally` `names`, under `finally`, and
+`invalid-closure-graph-captured-cell` `counter`, under `never`. A control's
 acceptance counts only with every unit
 it `depends` on accepted: a run with named units checks only those, a
 dependency's footprint among its proposals, so its reader follows
@@ -619,6 +623,17 @@ removal works through:
   written effect, else the ordinary one; that is its storage contract. A
   `return`'s value holds the statement's bindings at its own position,
   where a finalizer holds the return.
+- **Finalizers.** The flow graph copies a `finally` block per route that
+  leaves the `try` (`SourceFlow.sequence`). The copies of the normal
+  completion, the throw and each `break` or `continue` share one entry per
+  statement: the join of the statement's normal completion, the bindings a
+  throw of its body or handler leaves (each binding they assign at its
+  declared type) and each such jump's. A return's copy is walked from the
+  return's bindings, its statements' entries read by that copy's points
+  (a point whose scope holds `%return@p%`). After the finalizer, its
+  bindings hold at the statement's start (the rethrow), at each return's
+  held value (that return's copy's), and for each jump; where a copy never
+  completes, these are at the empty type.
 - **Regions.** A function whose statement states store regions is
   proposed at `top`; the regional check of its own regions certifies the
   statement.
@@ -718,7 +733,8 @@ removal works through:
   for its entries; a loop whose test cannot answer `false` is left by its
   breaks alone; a statement whose value has no type (a call of a function
   returning `never`) does not complete, what follows it walked for its
-  entries, unreached. `typeof x` is a `string`. A
+  entries, unreached, each binding at the empty type (the producer's
+  `unreachable`). `typeof x` is a `string`. A
   call of a type guard, on its true arm, and a statement calling an
   assertion function, after it, narrow the binding the promise names to
   its members within the guarded type, else to that type; a method's
