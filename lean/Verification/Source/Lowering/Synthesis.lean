@@ -2574,7 +2574,14 @@ partial def withDefault (env : Env) (B : Option (Ty Tree)) (d : Option Expr) : W
   match d with
   | none => return (B, env)
   | some d =>
-    let (D, e1) ← expr env d
+    -- The default made at the part's type less `undefined` (a parameter's
+    -- at its annotation's).
+    let X ← match B with
+      | some B => do
+        let X ← StateT.lift (slice B .isUndef false)
+        pure (if X.isEmpty then none else some X)
+      | none => pure none
+    let (D, e1) ← expr env d X
     match B, D with
     -- The default only where the part may be `undefined`.
     | some B, some D =>

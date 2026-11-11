@@ -636,7 +636,8 @@ removal works through:
   others (it throws on those, `nullishSplit`), and past it the receiver,
   where a slot of the unit holds it, is without them (`readNarrowing`);
   an assignment, a join and a loop head end that as any narrowing. A destructuring
-  default is added where the part may be `undefined`. Strict equality with
+  default is added where the part may be `undefined`, made at the part's
+  type less `undefined` (a parameter's default at its annotation's). Strict equality with
   a literal holding narrows the operand, where it may hold the literal
   (`unknown` included), to the literal (but `0`, which `-0` equals too);
   a comma expression tested is its last operand's test, where the test
