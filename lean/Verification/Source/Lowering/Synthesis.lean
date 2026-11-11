@@ -222,6 +222,10 @@ structure Walk where
   /-- The binders of the call a callback is being walked for that no actual
   has given a type yet. -/
   pending : List Tree := []
+  /-- The binders of a call whose actual is being walked at its parameter,
+  each standing for no type yet (the producer's `with_holes`,
+  expression_support.ml:124-139). -/
+  holes : List Tree := []
   /-- The constants holding a store the run allocated: each initialized by
   a call whose instance states a fresh result, or by such a constant (the
   producer's `fresh_expr`, source.ml:957-966); and whether the last call's
@@ -1205,6 +1209,16 @@ def packedCallee (g : Generic) (As : List (Option (Ty Tree))) (spreads : List Na
     return some (← at_ A)
   | _ => return none
 
+/-- The expressions an expected type naming a hole guides
+(expression_typing.ml:38-40). -/
+def holeGuided : Expr → Bool
+  | .arrayLit .. | .call .. | .invoke .. | .lambda .. => true
+  | _ => false
+
+def arrayLiteral : Expr → Bool
+  | .arrayLit .. => true
+  | _ => false
+
 /-- Whether an actual is a callback: a function literal, typed by the
 parameter it is passed at where it writes no parameter's type, and stated
 at that parameter's signature (`walkLambda`). -/
@@ -1294,6 +1308,18 @@ partial def occurs (b : Tree) (t : Tree) : Bool :=
     | .app _ args | .bound _ args _ => args.toList.any fun ts => ts.toList.any (occurs b)
     | .meet ps => ps.toList.any (occurs b)
     | _ => false
+
+/-- A callback's parameter `Ph`, read at the binders the type expected of
+its call's value gives, where it is one signature naming holes in its
+result alone and no binder of the call; else `Pc` (the producer's
+`result_bound`, expression_calls.ml:852-868). -/
+def holedCallback (G : PositiveGraphs.NormalGraph Tree) (holes binders : List Tree) (Ph Pc : Ty Tree) : Ty Tree :=
+  let holed (A : Ty Tree) : Bool := holes.any fun h => A.any (occurs h)
+  match Ph, ProgramTyping.callSigs G Ph with
+  | [_], [s] =>
+    if holed s.result && !(s.receiver :: s.arguments).any holed &&
+        !binders.any (fun b => Ph.any (occurs b)) then Ph else Pc
+  | _, _ => Pc
 
 /-- The meets a tree holds, at any depth of its arguments. -/
 partial def meetsIn : Tree → List Tree
@@ -2266,6 +2292,48 @@ partial def decidedTest (c : Expr) (q : Bool) : W Bool := do
     let C := ((← get).exprs.get? c.span).bind (·.2.toOption)
     StateT.lift (decided C q)
 
+/-- Whether a parameter's type places a binder of `free` at a tuple position,
+through at most `depth` arrays (the producer's `places`,
+expression_support.ml:128-135). -/
+partial def placesHoles (G : PositiveGraphs.NormalGraph Tree) (free : List Tree) (depth : Nat) (P : Ty Tree) : Bool :=
+  depth > 0 && (arrayArms G P).any fun l => match storeOf G [l] with
+    | some S => match PositiveRules.expand G S with
+      | [.list t []] => (t.required ++ t.optional).any (fun D => free.any fun b => D.any (occurs b)) ||
+          t.rest.any (placesHoles G free (depth - 1))
+      | _ => false
+    | none => false
+
+/-- Fresh array literals at generic tuple positions retain those positions,
+with each value widened, recursively through an array of tuples
+(expression_support.ml:124-139). Existing stores keep their contracts. -/
+partial def tupleActual (P : Ty Tree) (x : Expr) (A : Option (Ty Tree)) : W (Option (Ty Tree)) := do
+  let .arrayLit _ es [] := x | return A
+  let G ← StateT.lift graphNow
+  let target ← match arrayArms G P with
+    | [l] => pure ((storeOf G [l]).bind fun S => match PositiveRules.expand G S with
+        | [.list t []] => some t
+        | _ => none)
+    | _ => do
+      let E ← StateT.lift (tryCatch (iteratedElement P) fun _ => pure none)
+      pure (E.map fun E => ⟨[], [], some E, true, .readable⟩)
+  let some t := target | return A
+  if es.length < t.required.length ||
+      (t.rest.isNone && es.length > t.required.length + t.optional.length) then return A
+  let mut Es : List (Ty Tree) := []
+  for (e, i) in es.zipIdx do
+    let some D := t.position i | return A
+    let B := ((← get).exprs.get? e.span).bind (·.2.toOption)
+    let some B ← tupleActual D e B | return A
+    Es := Es ++ [← StateT.lift (widen B)]
+  let R ← StateT.lift (lower do
+    let tuple := if t.required.isEmpty && t.optional.isEmpty then
+      ⟨[], [], some (norm Es.flatten), false, .readable⟩
+      else ⟨Es, [], none, false, .dense⟩
+    let s ← SourceTypes.use (.list tuple [])
+    let T ← get
+    return [← SourceTypes.use (SourceTypes.arrayOf T s false)])
+  record x (.ok R)
+
 /-- A literal where a type `P` is expected: `[]` at the arrays of `P`
 (whose own type would be an array of no element); an array or object
 literal at the members of `P` its type, or its elements' tuple, is within
@@ -2274,6 +2342,14 @@ type `A`. -/
 partial def fit (P : Ty Tree) (x : Expr) (A : Option (Ty Tree)) : W (Option (Ty Tree)) := do
   let T ← StateT.lift table
   let G := SourceTypes.graph T
+  -- An expected type naming a hole (a binder of a call whose actual is
+  -- being walked at its parameter, `applyCall`): an array literal keeps the
+  -- tuple positions it states, a position holding a hole its element's own
+  -- type (expression_objects.ml:269-275); any other value its own type.
+  if (← get).holes.any (fun h => P.any (occurs h)) then
+    return ← match x with
+      | .arrayLit _ (_ :: _) [] => tupleActual P x A
+      | _ => pure A
   match x with
   | .ifBody _ _ t f =>
     -- Each arm where the conditional's value is expected.
@@ -2938,6 +3014,11 @@ literal, a function literal or a fresh store made at it (`fit`), and each
 part of it walked at the part's expected type. -/
 partial def expr (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (Option (Ty Tree) × Env) := do
   let before := (← get).pathEnds.length
+  -- An expected type naming a hole guides an array literal, a call's
+  -- callback and a function literal's result alone; any other expression
+  -- is at no expected type (expression_typing.ml:35-41).
+  let holes := (← get).holes
+  let exp := exp.filter fun P => holeGuided e || !holes.any fun h => P.any (occurs h)
   let r ← exprAt env e exp
   let w ← get
   let written := match e with
@@ -4068,36 +4149,34 @@ partial def called (env : Env) (c : Except String Callee) (args : List Expr) (As
       modify fun w => { w with throwWrites := true }
     return .error m
 
-/-- Fresh array literals at generic tuple positions retain those positions,
-with each value widened, recursively through an array of tuples
-(expression_support.ml:124-139). Existing stores keep their contracts. -/
-partial def tupleActual (P : Ty Tree) (x : Expr) (A : Option (Ty Tree)) : W (Option (Ty Tree)) := do
-  let .arrayLit _ es [] := x | return A
+/-- The actuals of a call with those at a parameter placing the call's
+unbounded binders at tuple positions made at the parameter with those
+binders as holes: an array literal a tuple there, and a call's callback's
+result (`new Map(xs.map((x) => [x.k, x]))`); of a construction's
+signatures, at the first placing them so (the producer's
+`contextual_actual`, expression_support.ml:105-137, expression_calls.ml:927,
+expression_closures.ml:121-133). `skip`: the positions made at their
+binders' bounds. -/
+partial def holedActuals (env : Env) (c : Callee) (candidates : List (List (Ty Tree))) (args : List Expr)
+    (As : List (Option (Ty Tree))) (skip : List Nat) : W (List (Option (Ty Tree))) := do
   let G ← StateT.lift graphNow
-  let target ← match arrayArms G P with
-    | [l] => pure ((storeOf G [l]).bind fun S => match PositiveRules.expand G S with
-        | [.list t []] => some t
-        | _ => none)
-    | _ => do
-      let E ← StateT.lift (tryCatch (iteratedElement P) fun _ => pure none)
-      pure (E.map fun E => ⟨[], [], some E, true, .readable⟩)
-  let some t := target | return A
-  if es.length < t.required.length ||
-      (t.rest.isNone && es.length > t.required.length + t.optional.length) then return A
-  let mut Es : List (Ty Tree) := []
-  for (e, i) in es.zipIdx do
-    let some D := t.position i | return A
-    let B := ((← get).exprs.get? e.span).bind (·.2.toOption)
-    let some B ← tupleActual D e B | return A
-    Es := Es ++ [← StateT.lift (widen B)]
-  let R ← StateT.lift (lower do
-    let tuple := if t.required.isEmpty && t.optional.isEmpty then
-      ⟨[], [], some (norm Es.flatten), false, .readable⟩
-      else ⟨Es, [], none, false, .dense⟩
-    let s ← SourceTypes.use (.list tuple [])
-    let T ← get
-    return [← SourceTypes.use (SourceTypes.arrayOf T s false)])
-  record x (.ok R)
+  -- (a bound of `unknown` constrains nothing)
+  let free := c.binders.filter fun b => (c.seed.lookup b).isNone &&
+    (c.bounds.lookup b).all fun B => PositiveRules.expand G B == [.source]
+  if free.isEmpty || !(candidates.length == 1 || c.construct) then return As
+  let mut As := As
+  for (x, i) in args.zipIdx do
+    if skip.contains i || callback x || !holeGuided x then continue
+    let some P := (candidates.filterMap (·[i]?)).find? (placesHoles G free 4) | continue
+    if arrayLiteral x then
+      if candidates.length != 1 then As := As.set i (← tupleActual P x (As[i]?.join))
+    else
+      let before := (← get).holes
+      modify fun w => { w with holes := free ++ before }
+      let (A, _) ← expr env x (some P)
+      modify fun w => { w with holes := before }
+      if A.isSome then As := As.set i A
+  return As
 
 /-- A call's instance, in a fixed order (TypeScript's contextual typing of
 arguments, one pass): the signature the actuals' count and the walked
@@ -4111,6 +4190,11 @@ partial def applyCall (env : Env) (c : Callee) (args : List Expr) (As : List (Op
   let T ← StateT.lift table
   let G := SourceTypes.graph T
   let n := args.length
+  -- An expected type naming a hole guides a callback's result alone; the
+  -- call's instance is read off its actuals (expression_calls.ml:42-46).
+  let outer := (← get).holes
+  let contextual := hint.filter fun H => outer.any fun h => H.any (occurs h)
+  let hint := if contextual.isSome then none else hint
   let fits (a : CallEffects.Arrow (Ty Tree)) : Bool :=
     n ≤ a.arguments.length && (a.arguments.drop n).all (fun D => omissible G D || within T [Labels.undef] D)
   -- A union of callables (`armsCall`): one signature its arms meet.
@@ -4189,6 +4273,8 @@ partial def applyCall (env : Env) (c : Callee) (args : List Expr) (As : List (Op
     for ((x, P), i) in (args.zip a.arguments).zipIdx do
       if c.binders.any (fun b => P.any (occurs b)) && !atBounds.contains i then
         As := As.set i (← tupleActual P x (As[i]?.join))
+  -- (`holedActuals`: the producer's `contextual_actual`)
+  As ← holedActuals env c (candidates.map (·.1.arguments)) args As atBounds
   if let ([(a, _)], false) := (candidates, c.binders.isEmpty) then
     for ((x, P), i) in (args.zip a.arguments).zipIdx do
       let some A := As[i]?.join | continue
@@ -4414,6 +4500,17 @@ partial def applyCall (env : Env) (c : Callee) (args : List Expr) (As : List (Op
       let Pc := match P with
         | [r] => if (σ.lookup r).isNone then ((fromActuals.lookup r).getD (sub P)) else sub P
         | _ => sub P
+      -- Where the type expected of the call's value names a hole, the
+      -- callback is walked at its parameter read at the binders the result
+      -- gives there, where that is one signature naming holes in its result
+      -- alone and no binder of this call (the producer's `result_bound`,
+      -- expression_calls.ml:852-868).
+      let Pc ← match contextual with
+        | none => pure Pc
+        | some H => do
+          let σh ← bindFrom σ [(a.result, H)]
+          let G ← StateT.lift graphNow
+          pure (holedCallback G outer c.binders (substitute σh P) Pc)
       let before := (← get).pending
       modify fun w => { w with pending := c.binders.filter fun b => (σ.lookup b).isNone }
       let L ← walkLambda env x (widest Pc) (ctx := some Pc)
