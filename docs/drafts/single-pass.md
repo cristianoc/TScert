@@ -550,6 +550,8 @@ removal works through:
   the call's result gives there, where that names holes in its result alone
   (the producer's `contextual_actual` and `result_bound`: `new
   Map(xs.map((x) => [x.k, x]))` is a `Map` of the pairs' types).
+  An ordinary generic constructor supplies its construct signatures at fresh
+  binders; its actuals supply their instance as for a function call.
   A packed generic class's construction reads written callback parameters
   before choosing its tuple instance; the tuple parameter's actual supplies
   that instance, whose argument lists the existing lowering derives.
