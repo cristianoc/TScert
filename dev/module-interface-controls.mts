@@ -110,6 +110,19 @@ assert.deepEqual(reordered.records.filter((r) => r.record.stage === "module-inte
 assert.equal(readFileSync(reordered.path, "utf8"), original);
 console.log("importer module ordering: identical canonical component requests and results");
 
+// Root selection cannot manufacture a partial canonical interface.
+const noRoots = prepareInterfaces(fragment, { ...options, names: "%absent-interface-control",
+  work: join(work, "no-roots") });
+assert.deepEqual(parsed(noRoots.path), { modules: [] });
+assert(noRoots.records.every((r) => r.record.stage === "interface-plan"));
+const selectedOwn = prepareInterfaces(ownPath, { ...options, names: "%absent-interface-control",
+  ownModule, given: ownGiven, work: join(work, "selected-own") });
+assert.equal(readFileSync(selectedOwn.path, "utf8"), readFileSync(ownResult.path, "utf8"));
+assert.deepEqual(selectedOwn.records.filter((r) => r.record.stage === "module-interface").map((r) => r.record.key),
+  ownResult.records.filter((r) => r.record.stage === "module-interface").map((r) => r.record.key));
+console.log("selected roots: no unrelated component; own publication retains complete canonical keys");
+
+
 // Forced executions also publish: timing text must not make one exact
 // importer request produce two different stored payloads.
 const importerSource = parsed(fragment);
