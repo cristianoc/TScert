@@ -806,7 +806,11 @@ removal works through:
   graph's `.early` node) is bound from the list's entry on at its written
   contract: its annotation, else its function literal's written receiver,
   parameters (a defaulted one admitting `undefined`) and result at its
-  written effect, else the ordinary one; that is its storage contract. A
+  written effect, else the ordinary one; that is its storage contract. It
+  stays at that contract after its declaration, which writes its cell, every
+  later read checking the cell's contents against it (the producer's early
+  declaration, proposal_flow.ml:317-327); `TSCERT_FORCE=early` holds it at
+  its initializer's type, the control `early-bindings` `count`. A
   `return`'s value holds the statement's bindings at its own position,
   where a finalizer holds the return.
 - **Finalizers.** The flow graph copies a `finally` block per route that

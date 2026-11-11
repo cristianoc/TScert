@@ -5372,10 +5372,16 @@ partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
       match D, A with
       | some D, some A =>
         -- (an early binding, read through its cell from the list's entry
-        -- on, at its written contract)
-        let held ← if b.early && b.annot.isSome then pure D
-          else StateT.lift (if b.annot.isSome then declaredAt D A else assigned D A)
-        env := { env with vars := upd env.vars b.name held, decl := upd env.decl b.name D }
+        -- on, stays at its written contract: its declaration writes the
+        -- cell, whose contents every later read checks against it, the
+        -- producer's early declaration, proposal_flow.ml:317-327)
+        -- (`TSCERT_FORCE=early`: at its initializer's type, the adversarial
+        -- proposal)
+        match (if b.early && !(← get).force.contains "early" then env.decl.lookup b.name else none) with
+        | some C => env := { env with vars := upd env.vars b.name C }
+        | none =>
+          let held ← StateT.lift (if b.annot.isSome then declaredAt D A else assigned D A)
+          env := { env with vars := upd env.vars b.name held, decl := upd env.decl b.name D }
       | some D, none => env := { env with vars := upd env.vars b.name D, decl := upd env.decl b.name D }
       | none, _ => env := { env with vars := env.vars.filter (·.1 != b.name) }
     return some env
