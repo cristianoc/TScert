@@ -36,6 +36,7 @@ import Verification.Programs.TolerantFramesGuarantee
 import Verification.Programs.TolerantFramesStoreOpsEdge
 import Verification.Programs.TolerantFramesNodeWalk
 import Verification.Programs.TolerantFramesStoreOpsBelowNames
+import Verification.Programs.TolerantFramesWalkReassign
 
 /-!
 Acceptance rests on Lean's standard axioms alone. The build fails when any of
@@ -574,6 +575,10 @@ run_cmd do
   check ``Verification.TolerantFrames.mapNames_mem
   check ``Verification.TolerantFrames.edgeTransfer_below
   check ``Verification.TolerantFrames.headEntry_below
+  check ``Verification.TolerantFrames.passBack_below
+  check ``Verification.TolerantFrames.start_passPreT
+  check ``Verification.TolerantFrames.run_guarantee
+  check ``Verification.TolerantFrames.codesSound_reassign
   let env ← getEnv
   let project (decl : Name) : Bool := match env.getModuleIdxFor? decl with
     | some i => (`Verification).isPrefixOf env.header.moduleNames[i.toNat]!

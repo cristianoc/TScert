@@ -337,6 +337,22 @@ theorem back_below {names : List Nat} {next : Nat} (hn : ∀ x ∈ names, x < ne
     rw [hi] at h
     exact hn _ (List.mem_of_getElem? h)
 
+/-- **A step's delta renames below the counter** (`passBack`): slot 0 to the
+result, every other slot to a key of the entry's table or an entry name. -/
+theorem passBack_below {names : List Nat} {next result : Nat} (hn : ∀ x ∈ names, x < next) (hr : result < next)
+    {table : Std.HashMap Nat Nat} (ht : KeysIn names table) : BackBelow (passBack table names result) next := by
+  intro i j h
+  unfold passBack at h
+  split at h
+  · cases h; exact hr
+  · cases hi : (table.fold (fun acc nm s => acc.insert s nm) (∅ : Std.HashMap Nat Nat)).get? (i - 1) with
+    | some nm =>
+      rw [hi] at h; cases h
+      exact hn _ (inverse_keys ht (i - 1) _ hi)
+    | none =>
+      rw [hi] at h
+      exact hn _ (List.mem_of_getElem? h)
+
 variable {ι : Type}
 
 /-- **An edge's store keeps the facts' names below the counter** where the

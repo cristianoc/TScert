@@ -1290,8 +1290,8 @@ $`X`$ hold, every run of its term meets its exit's obligation. Proved:
 **The guarantee.** `GraphGuarantee` is the unit lane's record field by field
 (its reachability `ReachesIn` read as `Transitions`, the same constructors).
 `WalkSound` bundles the safety proof's walk predicates (`Traversed`,
-`StepEdgesSound` with exit posts $`\top`$, `HeadsEntered`, `MergesSound`);
-`nodesChecked_of_walk` gives `NodesChecked` for `passPre` from them. Each
+`StepEdgesSoundT` with exit posts $`\top`$, `HeadsEntered`, `MergesSound`);
+`nodesChecked_of_walk` gives `NodesChecked` for `passPreT` (Leg 11) from them. Each
 field, proved from `WalkSound` and one per-node hypothesis, at the start
 entered at `envOf L d` with mark $`|h|`$:
 
@@ -1303,7 +1303,8 @@ entered at `envOf L d` with mark $`|h|`$:
 | `regionally` | `regionally_of_walk` | `RegionsKept` (its facts $`X`$ holding at the start) | $`X`$; `RegionQ`, `RegionR`: `ArgumentStoreRegionsWithin Φ regions ρ0 h0` |
 | `asserted` | `asserted_of_walk` | `AssertionsHeld` | — |
 
-The per-node hypotheses, exactly (`pre` = `passPre G w startNames ρ0`):
+The per-node hypotheses, exactly (`pre` = `passPreT G w startNames ρ0 ctx`, each
+hypothesis taking the contexts `ctx`):
 
 - `FootprintKept P G w startNames ρ0 Φ h₀ dead fresh onThrow` =
   `NodesKeep P pre (BoundX Φ h₀ dead) (BoundQ Φ h₀ fresh) (BoundR Φ h₀ onThrow) |h₀|`:
@@ -1330,8 +1331,8 @@ The per-node hypotheses, exactly (`pre` = `passPre G w startNames ρ0`):
 ⟹ `GraphGuarantee G admits P start goal inputs sep idx assertions bound ensures regional`.
 `PassWalkSound` holds `WalkSound` at every entry value $`\rho_0`$ and mark,
 the start entered at every entry meeting the inputs, the separation and the
-index facts (`entered`, which `start_passPre` gives from `entryRefusal`'s
-acceptance and the walk's start entry), and the four per-node hypotheses
+index facts (`entered`, which `start_passPreT` gives from `entryRefusal`'s
+acceptance, the walk's start entry and the start's context the inputs), and the four per-node hypotheses
 for the options the call states. The unit lane's `RunSound` is then
 `run_guarantee` composed with `run_traversed` (an accepted call yields a walk
 with `PassWalkSound` at every admitted assignment), which needs the driver on
@@ -1414,26 +1415,34 @@ retreating edge's target of a complete depth-first walk; `loopHeads` is a
 
 ## Open premises of the graph-level proof
 
-The current list, replacing leg 8's. `run_guarantee` proves the unit lane's
-`GraphGuarantee` from `PassWalkSound` at every admitted assignment; each
-premise below is a part of it or of `run_traversed`.
+The current list. `run_guarantee` proves the unit lane's `GraphGuarantee`
+from `PassWalkSound` at every admitted assignment (at the typed assertions,
+Leg 12); each premise below is a part of it or of `run_traversed`.
 
-| Premise | Statement | Owner and status |
+| Premise | Statement | Status |
 | --- | --- | --- |
-| `run_traversed` | an accepted `run` yields a walk, given, contexts, merge edges and counters with `Traversed` | needs the driver on fuel returning `Walk` (pass lane) |
-| `HeadsCutCycles` | every cycle of reached nodes contains a head | needs `loopHeads` on fuel |
-| `StepEdgesSound` | per node, from `passPre`, the local judgment and every exit a holding edge state into its target | step-and-edge lane: from `checkedStep_sound`, `edge_normal_sound`, `edge_handler_sound`, `freshImpl_ok`, under `DirectKeepsSummaries`, `SearchKeepsSummaries`, `NamesBelow`, the names no wider than the context, `MapNamesSound`, the result's freshness where `outFresh`, `YieldsOk`, the target's types through `subtypeUsing` |
-| `HeadsEntered` | a head's state holds where an edge state into it does | `headsEntered_of` from `HeadEstablishes`; its facts from `head_query_sound` (`headEstablishes_of_edge`); its implications, inputs and promised input from the edge check, not proved; the start: `StartNotReentered` (pass change) |
-| `MergesSound` | `LinearNearSound`, `EntailedDefined`, `GuardedHolds`, the edges' joined implications | `LinearNearSound` needs `linearNear` on fuel (pass lane); `EntailedDefined` needs the `termDefined` check (pass lane); `GuardedHolds` and the joined implications (`meetImplications` relied on unchecked) need the recheck (pass lane) |
-| `Traversed.width`, `.wf`, `.below` | the merge's incoming states have the context's width, well-formed stores and names below its counter | `.wf`: `edgeStoreOf_wf`, `edgeTransfer_wf` with `checkedStep`'s output store well-formed; `.width`: `edgeTransfer_width` under `MapNamesLength` and the edge's mapping of the target's width; `.below`: `edgeTransfer_below` over `edgeStoreOf_below` (Leg 12), given the step's output below the counter (`NamesBelow`) and a positive counter |
-| `entered` | the start's state holds at every entry meeting the inputs | `start_passPre`, given `entryRefusal`'s acceptance and the walk's start entry (`run_traversed`) |
-| `FootprintKept` | the footprint check keeps the bound at each node | step-and-edge lane: `pass_footprint_exits` outside the dead region (`DerivContext` now checked by the pass), the result's freshness where `outFresh`, `deadNode` inside it |
-| `ReturnsEnsured` | the return check establishes `ensures` | step-and-edge lane: `pass_return_ensures` with `checkedStep_sound`; the input tracking at the start needs `StartNotReentered` |
-| `RegionsKept` | the regional check keeps its facts | step-and-edge lane: `ArgumentRegionGraph.checkNode` over the tables `run` builds inline |
-| `AssertionsHeld` | each stated assertion holds where `passPre` at its label does | the written assertion's facts added to a non-head entry, the given facts at a head; needs the walk's entry recorded after that addition |
-| the reassignment | the walk's predicates at `reassign G η` for every admitted `η` | not addressed: the pass runs at `G` |
-| `RunKeepsSummaries` | the answers' summaries a call starts from are among those it leaves | needs the driver on fuel; per step, `DirectKeepsSummaries` and `SearchKeepsSummaries` |
-| unchecked searches | edge evidence, yields, merge implications, `outFresh`, the subtype cache, the summary table, `mapNames` (Leg 9's table) | named hypotheses until the pass lane's checks arrive |
+| `run_traversed` | an accepted `run` yields a walk, contexts, merge edges and counters with `Traversed`, `NodeAccepted` at every visited node, and each edge into a head recorded as the head's entry (`headsEntered_of_recorded`) | needs pass change: the driver on fuel returning `Walk` (not arrived) |
+| the reassignment | the walk's predicates at `reassign G η` for every admitted `η` | needs pass change: the driver on fuel, then `run_reassign` from per-function invariance lemmas (Leg 12: the reassignment link); qualified bodies also need the body's subtyping sound at each admitted `η` |
+| `HeadsCutCycles` | every cycle of reached nodes contains a head | needs pass change: `loopHeads` on fuel (not arrived) |
+| `StepEdgesSoundT` | per node, from `passPreT`, the local judgment and every exit a holding edge state into its target | step-and-edge lane: `stepEdgesSound_of` from `NodeAccepted`, `CodesSound`, `DirectKeepsSummaries`, `SearchKeepsSummaries` |
+| `HeadsEntered` | a head's state holds where an edge state into it does | step-and-edge lane: `headEstablishes_of_edge`, `headsEntered_of_recorded`; the start: `StartNotReentered`, needs pass change D8 (not arrived) |
+| `MergesSound`: `LinearNearSound` | every fact `linearNear` returns is stored | needs pass change: `linearNear` on fuel (not arrived) |
+| `MergesSound`: `EntailedDefined` | the terms of an entailed bound are defined on each path | needs pass change: the `termDefined` check at merges (not arrived) |
+| `MergesSound`: `GuardedHolds` | the guarded join's facts hold on each path | needs pass change: the recheck of guarded joins (not arrived) |
+| `MergesSound`: the joined implications | `ImpliesOk` of `meetImplications` at the merge's environment | needs pass change D3: on each incoming edge, each met implication established by `impliesCheck` from the implications the edge carries (`impliesCheck_sound`); this is the check's specification (not arrived) |
+| `Traversed.width` | the incoming states have the context's width | `edgeTransfer_width` under `MapNamesLength`; `MapNamesLength` needs pass change D7 (`mapNames` on fuel, not arrived) |
+| `Traversed.wf` | the incoming stores are well-formed | proved from the step's output store well-formed (`edgeStoreOf_wf`, `edgeTransfer_wf`) |
+| `Traversed.below` | the incoming states below the merge's counter | proved from the step's output below the counter and a positive counter (`edgeStoreOf_below`, `edgeTransfer_below`, Leg 12); the step's output facts: `applyDelta_below` with `passBack_below` |
+| a merge's facts below its counter | the met store's facts below the merge's next name | other: not proved (Leg 12's table) |
+| `entered` | the start's typed state holds at every entry meeting the inputs | `start_passPreT`, given `entryRefusal`'s acceptance, the walk's start entry and the start's context the inputs (`StartContext`) |
+| `FootprintKept` | the footprint check keeps the bound at each node | step-and-edge lane: `footprintCheck_sound`, `footprint_exits`; composition into `NodesKeep` not stated |
+| `ReturnsEnsured` | the return check establishes `ensures` | step-and-edge lane: `pass_return_ensures`; at the start, `StartNotReentered` |
+| `RegionsKept` | the regional check keeps its facts per node | step-and-edge lane: `ArgumentRegionGraph.checkNode`'s soundness from a node's own typing and the tables' agreement, not proved |
+| `AssertionsHeld` | each stated assertion holds where `passPreT` at its label does | other: the node assertion carries the walk's entry, to which the pass adds the written assertion's facts at a node other than a head; `run_traversed` records the entry after that addition, and at a head the written assertion is part of the given facts |
+| `ShapeOk` at a branch | the claim's type at a branch is Boolean | needs pass change: no check of the pass states it |
+| `RunKeepsSummaries` | the answers' summaries a call starts from are among those it leaves | needs pass change: the driver on fuel; per step `DirectKeepsSummaries`, `SearchKeepsSummaries`, which pass change D6 (a `summaries_sound` field) makes structural |
+| unchecked searches | edge evidence, yields, `outFresh`, the subtype cache | needs pass changes D1, D2, D4, D5 (not arrived) |
+
 ## Leg 11: one obligation per node
 
 Modules `lean/Verification/Programs/TolerantFramesNodeSound.lean`,
@@ -1640,4 +1649,88 @@ counter (`FactsBelow`); every cell proved, or stated with what it lacks.
 then `edgeTransfer_below` over `edgeStoreOf_below` at the source's step
 output, given the step's output below the counter (`NamesBelow` after the
 step) and a positive counter.
+
+## Leg 12: the guarantee at the typed assertions
+
+Module `lean/Verification/Programs/TolerantFramesGuarantee.lean`. The walk
+predicates of `run_guarantee` are the typed ones (Leg 11): `WalkSound.steps`
+is `StepEdgesSoundT`, `nodesChecked_of_walk` gives `NodesChecked` for
+`passPreT`, and the four per-node hypotheses (`FootprintKept`,
+`ReturnsEnsured`, `RegionsKept`, `AssertionsHeld`) are stated from `passPreT`
+at the contexts `ctx`. `run_guarantee`'s `safe` field is
+`run_sound_of_walk_typed`. `PassWalkSound.entered` gives `passPreT` at the
+start, which `start_passPreT` proves from `start_passPre` where the start's
+context is the inputs (the unit lane's `StartContext`).
+
+## Leg 12: the reassignment link
+
+Module `lean/Verification/Programs/TolerantFramesWalkReassign.lean`.
+
+**How the proved checker covers every assignment.** Its rules' soundness
+theorems are stated for every graph, at the graph's own assignment
+(`ControlFlow.accepted_inputs_safe` at any `G`); its acceptance at `G` is its
+acceptance at `reassign G η` (`Parametricity.accept_reassign`: each checker
+equal at the reassigned graph, by `rfl` where it unfolds and by a lemma for
+the recursive ones: `checkTree_reassign`, `checkStep_reassign`,
+`checkTarget_reassign`, `yieldFollows_reassign`, `checkReturn_reassign` and
+the rest of `Parametricity.lean`); so one check gives safety at every `η`
+(`Parametricity.accepted_at`). A qualified body is not covered that way: its
+subtyping (`BodySubtyping`) is sound at the graph's own assignment only, and
+`RequestJson.verify_qualified_safe_at` gives safety at an admitted instance
+`assign η source.binders As` from the lexical body check and the descriptor
+capabilities.
+
+**The same route for the pass.** The step-and-edge lane's theorems
+(`checkedStep_sound`, `stepEdgesSound_of`, `headEstablishes_of_edge`) and this
+lane's (`mergeState_holds`, the store operations) are stated for every graph.
+So the walk predicates at `reassign G η` follow from an accepted run at
+`reassign G η` with the reassigned arguments, and `run_guarantee`'s premise
+from the equation
+
+```math
+\mathrm{run}\ (\mathrm{reassign}\ G\ \eta)\ (I.\mathrm{reassign}\ \eta)\ \dots\ (a.\mathrm{reassign}\ \eta)\ =_{\mathrm{outcome}}\ \mathrm{run}\ G\ I\ \dots\ a
+```
+
+(`run_reassign`, not proved). Proved: the arguments at the reassigned graph
+exist and keep their soundness: `codesSound_reassign` (a code table sound at
+`G` is sound at every reassignment), `Answered.reassign` (the cached answers,
+their proved inclusions holding at every assignment),
+`Parametricity.summariesSound_reassign`. Observed: `mergeState`,
+`entryRefusal` and `edgeStoreOf` are equal at the reassigned graph by `rfl`;
+`footprintCheck` and `returnCheck` are not (they call the tree check, which
+`checkTree_reassign` covers by a lemma). What `run_reassign` needs:
+
+- the driver on fuel (a `while` loop is a `partial` definition: no equation
+  unfolds it);
+- an invariance lemma for each pass function that is not `rfl`:
+  `footprintCheck`, `returnCheck`, `checkedStep` and the searches it runs
+  (their results are data the run carries, so each search must return the
+  same at the reassigned graph), the edge checks, the head query;
+- for a qualified checker, `PassChecker.qualified`'s subtyping at
+  `reassign G η`: a `BodySubtyping (reassign G η)` exists only where the
+  body's check is sound at `η`, which the lexical body check gives at
+  `q.Admits η` (`verify_qualified_safe_at`'s route). This is the one rule
+  whose soundness is not uniform in `η`.
+
+Until then the link is `run_guarantee`'s premise as stated: `PassWalkSound` at
+`reassign G η` for every admitted `η`.
+
+## Leg 12: the loop heads and the order
+
+What `run_traversed` needs of the traversal, stated for the driver's
+`Walk`:
+
+- `HeadsCutCycles`: every cycle of reached nodes passes through a node
+  `isHead` marks. `loopHeads` marks every target of a retreating edge of the
+  depth-first walk it runs, and every cycle of a graph contains a retreating
+  edge of any complete depth-first walk (a standard fact of depth-first
+  search, not proved here); the theorem needs `loopHeads` as a
+  function a proof unfolds (on fuel) and its walk complete over the reached
+  nodes;
+- the in-degree order: a node other than a head is processed after every
+  edge into it from a reached node is processed. The driver must record,
+  per label, the list of incoming states in processing order and the
+  processed flag of each edge, so that `Traversed.merge` (the merge's list
+  complete) follows from the in-degree counter reaching zero, which counts
+  the edges into the node from reached nodes outside the edges into heads.
 
