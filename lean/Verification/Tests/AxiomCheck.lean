@@ -20,6 +20,7 @@ import Verification.Programs.TolerantFramesFootprint
 import Verification.Programs.TolerantFramesElems
 import Verification.Programs.TolerantFramesState
 import Verification.Programs.TolerantFramesDelta
+import Verification.Programs.TolerantFramesModelLoop
 
 /-!
 Acceptance rests on Lean's standard axioms alone. The build fails when any of
@@ -307,6 +308,29 @@ run_cmd do
   check ``Verification.TolerantFrames.atomHolds_rename_rev
   check ``Verification.TolerantFrames.rename_succ_total
   check ``Verification.TolerantFrames.applyDelta_writing
+  -- the model-side supports (TolerantFramesModel*)
+  check ``Verification.TolerantFrames.storeF_cell
+  check ``Verification.TolerantFrames.storeF_grow
+  check ``Verification.TolerantFrames.arrayF_at
+  check ``Verification.TolerantFrames.arrAt_invariant
+  check ``Verification.TolerantFrames.lowerBound_push
+  check ``Verification.TolerantFrames.arrayF_store
+  check ``Verification.TolerantFrames.cell_src
+  check ``Verification.TolerantFrames.write_safe
+  check ``Verification.TolerantFrames.lt_binop
+  check ``Verification.TolerantFrames.guard_safe
+  check ``Verification.TolerantFrames.read_safe
+  check ``Verification.TolerantFrames.lowerBound_iff
+  check ``Verification.TolerantFrames.headAt_action
+  check ``Verification.TolerantFrames.bodyAt_action
+  check ``Verification.TolerantFrames.loopPre_admin
+  check ``Verification.TolerantFrames.loop_checked
+  check ``Verification.TolerantFrames.loop_safe
+  check ``Verification.TolerantFrames.loop_done
+  check ``Verification.TolerantFrames.loop_no_raise
+  check ``Verification.TolerantFrames.aliasHeap_ok
+  check ``Verification.TolerantFrames.alias_entry
+  check ``Verification.TolerantFrames.alias_loop_safe
   let env ← getEnv
   let project (decl : Name) : Bool := match env.getModuleIdxFor? decl with
     | some i => (`Verification).isPrefixOf env.header.moduleNames[i.toNat]!
