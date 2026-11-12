@@ -881,6 +881,224 @@ by unfolding the `let`s); the merge theorem reads it there.
   A graph run's footprint is the node judgments composed from the
   invocation entry and stated as the graph's exit posts (`invocation_action`).
 
+## Leg 8: the merge
+
+Modules `lean/Verification/Programs/TolerantFramesMergeMirror.lean`,
+`TolerantFramesMergeNames.lean`, `TolerantFramesMergeMeet.lean`,
+`TolerantFramesMergeJoin.lean`, `TolerantFramesMergeHolds.lean` and
+`TolerantFramesStoreOpsDrop.lean`.
+
+**The merge in parts.** `SinglePass.mergeState` is the composition of its
+parts, by unfolding (proved: `mergeState_state`, `mergeState_implies`,
+`mergeState_fresh`): the names and renamings (`mergeSlots`), the
+restatements (`mergeVariants`), the common facts (`mergeCommon`), the
+restated facts every predecessor states (`mergeMeet`), the names renamed
+away forgotten (`mergeMet0`, `Store.drop`), the differences (`mergeDiffs`),
+the weakest bounds (`mergeBounds`), the entailed bounds (`mergeEntailed`),
+the guarded join (`mergeGuarded`, `mergeAddGuarded`), the fresh names
+(`mergeFresh`) and the implications (`mergeImplies`).
+
+**The path's valuation.** On the path through predecessor $`p`$, whose state
+holds at $`\eta`$ and slot environment $`\rho`$, the merge's valuation is
+
+```math
+\eta'(y) = \begin{cases} \eta(y) & y < \mathit{fresh} \\ \rho(i) & \text{for a slot } i \text{ the merge names } y \\ \eta(y) & \text{otherwise} \end{cases}
+```
+
+(`mergeVal`). Proved: the first loop's invariant (`mergeSlots_inv`: a slot
+keeps the predecessors' common name or takes the fresh name of their names'
+vector, distinct vectors distinct fresh names, each renaming sends a name to
+fresh names of slots where the predecessor holds it); two slots with one
+merged name hold one value (`slots_same`); each slot holds its merged name's
+value under $`\eta'`$ (`mergeVal_slots`); a fresh name $`\varphi`$ that $`p`$
+renames $`x`$ to has $`\eta'(\varphi)=\eta(x)`$ (`mergeVal_rename`), and a
+renamed name is below $`\mathit{fresh}`$ (`rename_key_below`).
+
+**Forgetting names**, proved: `Store.drop` keeps every fact holding
+(`drop_ok`: removed facts leave, a separation fact keeps its partners outside
+the dropped names, a fact restated through an alias link holds by the link,
+`keptAliasOf_eq`, the derived facts by `eliminateIndices_holds`,
+`restateReads_holds`, `restateStores_holds` over facts of the store,
+`dropDerived_holds`) and keeps the store well-formed (`drop_wf`).
+
+**The merged store**, proved on the path through $`p`$ at $`\eta'`$:
+
+- the common facts are live facts of every predecessor (`mergeCommon_live`);
+- $`p`$'s restatements hold (`OnPath.variants_ok`: `renameEach_holds`, and
+  `mergeEqual_holds`), so the met store holds (`OnPath.met0_ok`) and so does
+  each fact $`p`$ states beyond it (`OnPath.diffs_ok`);
+- a weakest bound: each predecessor's map holds a bound of the form that is
+  one of its facts (`boundsOf_get`), the bound added is at least each
+  (`weakestStep_cases`), and a weakened bound in normal form holds
+  (`linear_weaken`, `normalize_vars`): `OnPath.bounds_ok`;
+- an entailed bound: `Store.holds` is sound for an unconditional linear fact
+  whose terms are defined (`holds_sound`), and `entailsKnown_sound` over the
+  facts `linearNear` lists: `OnPath.entailed_ok`;
+- the guarded facts renamed by the merge's names: `OnPath.guarded_ok`;
+- each part as a property of stores closed under the facts it adds
+  (`mergeMeet_inv`, `mergeBounds_inv`, `mergeEntailed_inv`,
+  `mergeAddGuarded_inv`), instantiated at holding (`OnPath.store_ok`) and at
+  well-formedness.
+
+**(Merge)**, proved (`mergeState_holdsAt`, `mergeState_holds` its
+existential form): for predecessors `preds`, $`p`$ below their number, the
+merge's first fresh name $`\mathit{fresh}`$,
+
+```math
+\begin{aligned}
+&\forall q\in\mathit{preds}.\ |q.\mathit{names}| = |\mathit{context}| \wedge \mathrm{StoreWF}\ q.\mathit{store} \wedge \mathrm{StateBelow}\ q\ \mathit{fresh}
+\\ &\wedge\ \forall x\in\mathit{start}.\ x<\mathit{fresh}
+\ \wedge\ \mathrm{LinearNearSound} \wedge \mathrm{EntailedDefined}_\eta \wedge \mathrm{GuardedHolds}
+\\ &\wedge\ \mathrm{ImpliesOk}\ (\mathrm{meetImplications}\ \mathit{edgesIn})\ \rho
+\ \wedge\ \mathrm{StateHoldsAt}\ \mathit{preds}[p]\ \eta\ \rho
+\\ &\Rightarrow\ \mathrm{StateHoldsAt}\ (\mathrm{mergeState}\ \dots).\mathit{state}\ (\mathrm{mergeState}\ \dots).\mathit{implies}\ \eta'\ \rho
+\end{aligned}
+```
+
+where $`\mathrm{StateHoldsAt}`$ is $`\mathrm{StateHolds}`$ at a given
+valuation (`stateHolds_iff`) and $`\mathrm{StateBelow}`$ is the type of
+`StateWF.below`. The implications hold where the edges' joined implications
+hold at the slots (`mergeImplies_ok`); the fresh names hold fresh stores
+(`OnPath.fresh_ok`). The merged store is well-formed, the next fresh name is
+at least $`\mathit{fresh}`$, and the merged names and fresh names are below
+it (`mergeState_wf`, for a non-empty list of predecessors).
+
+**Named hypotheses of (Merge):**
+
+1. `LinearNearSound`: every fact `Store.linearNear` lists is an `index` fact
+   of its store. Its search is a `while` loop, which Lean does not unfold; a
+   fuel bound, as `selectFrom` has, makes it provable.
+2. `EntailedDefined`: an entailed bound's terms have integer values at
+   $`\eta'`$. `Linear.Known.entails` reads an undefined term as 0, and the
+   merge checks no definedness; a `termDefined` check per view, as
+   `IndexWrites`' rules make, discharges it.
+3. `GuardedHolds`: the guarded join's facts hold at $`\rho`$. Its tagged
+   candidates are checked against every view by `indicesCheckWith`; its
+   joined facts are `CertificateProducer.joinGuarded`'s, a search function
+   with no soundness theorem.
+4. `hI`: the edges' implications joined at the slots
+   (`CertificateProducer.meetImplications`) hold at $`\rho`$, an obligation on
+   the edges.
+
+Not proved: the merged facts' names below the next fresh name (the names of
+`eliminateIndices`' output); `StateWF.freshHeld` of the merged state, which
+does not hold in general: a predecessor's fresh name stays beside its fresh
+renames (`mergeFresh`) when no slot of the merge holds it.
+
+## Leg 8: the graph invariant
+
+Module `lean/Verification/Programs/TolerantFramesMergeGraph.lean`. A walk of
+the pass (`Walk`) records the labels it visits, each visited node's entry
+state and implications, and the states with implications that edges carry
+into each node. The pass's node assertion at label $`l`$ (`passPre`) is: $`l`$
+is visited and its entry state holds (`StateHolds`), the start names holding
+the invocation's entry values. Proved:
+
+- `passPre_adminClosed`: the node assertions survive the administrative
+  steps (`AdminClosed`): a state's meaning reads the heap, and the world only
+  through the implications' types, which admissibility keeps;
+- `nodeObligations_mono`: node obligations are monotone in the node
+  assertions;
+- (`run_sound_of_traversed`) `StepEdgesSound` ∧ `EntriesFromEdges` ⟹ for
+  every label $`l`$ and state where `passPre` holds, `SafeGraph` from
+  $`(l,\rho)`$, by `graph_safe_at`;
+- (`entries_of_traversed`) `Traversed` ∧ `HeadsEntered` ∧ `MergesSound` ⟹
+  `EntriesFromEdges`: a head by `HeadsEntered`, one incoming state as it is,
+  several by `mergeState_holds`;
+- `run_sound_of_walk`, the two composed; `start_passPre`: the start's
+  assertion holds at every entry meeting the inputs, the entry separation and
+  the entry index facts, where the walk enters the start with its head entry
+  and `entryRefusal` accepts (`entry_stateHolds`).
+
+The conclusion is the `safe` field of the unit lane's `GraphGuarantee` at the
+start (on branch `engine-proof-unit`, `PassUnit.lean`), for the main graph;
+its `bounded`, `ensured`, `regionally` and `asserted` fields are not
+addressed here.
+
+**`Traversed`** (the walk's construction, as `run`'s driver builds it): every
+node an edge state enters is visited; a node with no given facts and one
+incoming state enters with it and its implications; with several, with
+`mergeState` of them over its context, merge edges and fresh counter, each
+incoming state of the context's width, with a well-formed store and names
+below the counter, the start names below it.
+
+**The premises of `run_sound_of_walk`:**
+
+| Premise | Status |
+| --- | --- |
+| `Traversed` | needs a pass change: `run`'s driver is `while true`, which Lean does not unfold; a fuel-structured driver returning the walk, and a theorem that acceptance gives `Traversed` |
+| `StepEdgesSound` | named hypothesis: the per-node step theorems (proved for the step kinds above, from `checkedStep`'s conditions taken as hypotheses) and the edge theorems (`edgeStoreOf`, `edgeTransfer`, the edges' checks; the other lane), including the walk's order: an edge's state is among those its target entered with |
+| `HeadsEntered` | named hypothesis: the head entry from `EdgeEstablishes` |
+| `MergesSound` | named hypotheses `LinearNearSound`, `EntailedDefined`, `GuardedHolds`, the edges' joined implications (Leg 8: the merge) |
+| `Traversed.width`, `.wf`, `.below` at merges | not proved: the edge operations' maintenance of the target's width, `StoreWF` and `StateBelow` |
+
+## Leg 8: the head entry
+
+Module `lean/Verification/Programs/TolerantFramesMergeHead.lean`. A loop
+head other than the start enters with `SinglePass.headEntry g false`: slot
+$`i`$ named by the start name a given input `(i, q)` names, else by the
+promised input's start name where the slot is among the promised input's
+slots, else by the fresh name $`\mathit{fresh}+i`$; the store is the given
+facts $`g`$ renamed from slots to those names; the given implications
+renamed alike; the next fresh name $`\mathit{fresh}+\mathit{width}`$. Its
+valuation (`headVal`) gives a start name `startNames[q]` the entry value
+$`\rho_0(q)`$ and any other name $`\mathit{fresh}+i`$ the value of slot $`i`$.
+
+### Interface between the head entry and the edge check
+
+`EdgeEstablishes G g implies startNames argName argSlots inputSlots ρ0 ρ' s`,
+at the head's environment $`\rho'`$ (the edge's mapping applied to the
+source's slots, with the exit's value bound where the edge pushes it) and
+the state $`s`$ the edge reaches:
+
+1. `facts`: $`\rho', s.h \models g`$ (`HeapKnowledge.Holds`), the head's given
+   facts at its slots;
+2. `implies`: the head's given implications hold at $`\rho'`$
+   (`PromiseCalls.ImpliesOk`);
+3. `inputs`: for each given input $`(j,q)`$ with `startNames[q] = x`,
+   $`\rho'(j)=\rho_0(q)`$;
+4. `arg`: for each promised-input slot $`j`$, where `argName = a` and
+   `startNames[q] = a`, $`\rho'(j)=\rho_0(q)`$.
+
+These are what the edge into a head checks (`SinglePass.lean`, the edge loop
+of `run`: the given implications, the inputs' values, the promised input, and
+`KnowledgeExpand.checkIn` of the given facts over the edge's materialized
+store), stated at the target environment; the edge lane proves that the
+checks and the source's holding state give them.
+
+Proved:
+
+- (`headEntry_holds`) start names distinct and below $`\mathit{fresh}`$ ∧
+  the promised input a start name ∧ `EdgeEstablishes` at $`\rho'`$ ⟹ the
+  head's state with its implications holds at $`\rho'`$ (`StateHolds`, at
+  `headVal`) ∧ its store is well-formed; `headEntry_slots`: each slot holds
+  its name's value under `headVal`;
+- (`headsEntered_of`) a walk entering each head with its head entry, every
+  edge state into a head establishing it (`EdgeEstablishes`) ⟹
+  `HeadsEntered`.
+
+Not proved: the start as a loop head with edges into it
+(`headEntry … true`, its names the start names themselves).
+
+## Leg 8: the store operations and well-formedness
+
+Module `lean/Verification/Programs/TolerantFramesStoreOpsBelow.lean` and the
+modules above. The store operations the pass uses, by function of
+`SinglePass.lean`, and the well-formedness conjuncts of `StateWF`: `store`
+(`StoreWF`), the slot and fresh names below the counter (`below`, names), the
+facts' names below the counter (`below`, facts), `freshHeld`.
+
+| Operation | `StoreWF` | names, fresh below | facts below | `freshHeld` |
+| --- | --- | --- | --- | --- |
+| `Store.addRaw`, `remove`, `addBound`, `add` | proved (`addRaw_wf`, `remove_wf`, `addBound_wf`, `add_wf`) | no names change | proved for a fact below (`addRaw_below`, `remove_below`, `addBound_below`, `add_below`) | no names change |
+| `applyDelta` | removal loop proved (`deltaRemove_wf`); additions by `add_wf`; the loops as a whole not stated | slot 0 named by the result name | not proved: the names `back` gives | not stated |
+| `Store.dropHeap` | proved (`dropHeap_cover`) | no names change | removals only, not stated | no names change |
+| `Store.drop` | proved (`drop_wf`) | no names change | not proved: the names of `eliminateIndices`' output | no names change |
+| `edgeStoreOf` | handler: `dropHeap`; observed: `applyDelta`; as those | — | as those | — |
+| `edgeTransfer` | through `Store.drop` | not proved: `mapNames`' output | not proved | the fresh names filtered by the dropped names; not proved |
+| `mergeState` | proved (`mergeState_wf`) | proved (`mergeState_wf`) | not proved: through `Store.drop` | does not hold in general |
+| `headEntry` | proved (`headStore_ok`, `headEntry_holds`) | not stated | not proved: the renamed facts' names | no fresh names |
+
 ## Leg 9: the step theorem about `checkedStep`
 
 Modules `lean/Verification/Programs/TolerantFramesStepLink.lean` and
