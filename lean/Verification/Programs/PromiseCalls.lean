@@ -160,6 +160,18 @@ def impliesFollows (G : NormalGraph ι) (Γ : List (Ty ι)) (xs : List (Implicat
   (Γ[PointClaims.slot m x.target]?).any (fun A => within A x.type) ||
   (Γ[PointClaims.slot m x.test]?).any (fun A => impossible G A (.boolean true))
 
+/-- `impliesFollows` as the compiled verifier runs it (`impliesFollows_eq_fast`):
+the mapped test and target slots read once. -/
+def impliesFollowsFast (G : NormalGraph ι) (Γ : List (Ty ι)) (xs : List (Implication ι))
+    (m : PointClaims.Mapping) (x : Implication ι) : Bool :=
+  let test := PointClaims.slot m x.test
+  let target := PointClaims.slot m x.target
+  xs.any (fun y => y.test == test && y.target == target && within y.type x.type) ||
+  (Γ[target]?).any (fun A => within A x.type) ||
+  (Γ[test]?).any (fun A => impossible G A (.boolean true))
+
+@[csimp] theorem impliesFollows_eq_fast : @impliesFollows = @impliesFollowsFast := rfl
+
 def impliesCheck (G : NormalGraph ι) (Γ : List (Ty ι)) (xs : List (Implication ι))
     (m : PointClaims.Mapping) (targets : List (Implication ι)) : Bool :=
   targets.all (impliesFollows G Γ xs m)

@@ -1017,6 +1017,27 @@ theorem promote_sound {X : α → Fam} {P : α → ArgFam} {k : PropKey} {c : Cl
 /-- Whether every member of `xs` is one of `ys`. -/
 def within [DecidableEq β] (xs ys : List β) : Bool := xs.all fun x => decide (x ∈ ys)
 
+/-- `x ∈ ys`, each member answered at once where it is `x` itself
+(`withPtrEq`). -/
+def memFast [DecidableEq β] (x : β) (ys : List β) : Bool :=
+  ys.any fun y => withPtrEq x y (fun _ => decide (x = y)) (fun h => by subst h; simp)
+
+/-- `within` as the compiled verifier runs it (`within_eq_fast`): answered
+at once where the two lists are one object, each member by `memFast`. -/
+def withinFast [DecidableEq β] (xs ys : List β) : Bool :=
+  withPtrEq xs ys (fun _ => xs.all fun x => memFast x ys) (fun h => by
+    subst h
+    simp only [memFast, withPtrEq, List.all_eq_true, List.any_eq_true, decide_eq_true_eq]
+    exact fun x hx => ⟨x, hx, rfl⟩)
+
+@[csimp] theorem within_eq_fast : @within = @withinFast := by
+  funext β _ xs ys
+  simp only [within, withinFast, memFast, withPtrEq]
+  congr 1
+  funext x
+  apply Bool.eq_iff_iff.mpr
+  simp [List.any_eq_true]
+
 theorem within_mem [DecidableEq β] {xs ys : List β} (h : within xs ys = true) {x} (hx : x ∈ xs) :
     x ∈ ys := of_decide_eq_true (List.all_eq_true.mp h x hx)
 

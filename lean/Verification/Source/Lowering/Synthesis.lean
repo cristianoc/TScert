@@ -989,6 +989,88 @@ def join : Option Env → Option Env → Option Env
       decl := a.decl ++ b.decl.filter fun (n, _) => (a.decl.lookup n).isNone
       paths := a.paths.filterMap fun (p, A) => (b.paths.lookup p).map fun B => (p, norm (A ++ B)) }
 
+/-- An association list's first entry for each key, as a hash map
+(`lookupTable_get`). -/
+def lookupTable {α : Type} (l : List (String × α)) : Std.HashMap String α :=
+  l.foldl (fun m (n, A) => m.insertIfNew n A) {}
+
+theorem lookupTable_go {α : Type} (l : List (String × α)) (m : Std.HashMap String α) (n : String) :
+    (l.foldl (fun m (p : String × α) => m.insertIfNew p.1 p.2) m)[n]? = m[n]?.or (l.lookup n) := by
+  induction l generalizing m with
+  | nil => simp
+  | cons p rest ih =>
+    obtain ⟨k, v⟩ := p
+    simp only [List.foldl_cons, ih, Std.HashMap.getElem?_insertIfNew, List.lookup_cons]
+    by_cases hk : k = n
+    · subst hk
+      by_cases hm : k ∈ m
+      · obtain ⟨w, _⟩ := Option.isSome_iff_exists.mp (Std.HashMap.isSome_getElem?_iff_mem.mpr hm)
+        simp [hm]
+      · simp [hm]
+    · have h1 : (n == k) = false := beq_false_of_ne (Ne.symm hk)
+      have h2 : (k == n) = false := beq_false_of_ne hk
+      simp [h1, h2]
+
+theorem lookupTable_get {α : Type} (l : List (String × α)) (n : String) :
+    (lookupTable l)[n]? = l.lookup n := by
+  unfold lookupTable
+  rw [lookupTable_go]
+  simp
+
+theorem lookup_isSome_of_mem {α : Type} {l : List (String × α)} {n : String} {v : α} (h : (n, v) ∈ l) :
+    (l.lookup n).isSome := by
+  induction l with
+  | nil => cases h
+  | cons p rest ih =>
+    obtain ⟨k, w⟩ := p
+    rw [List.lookup_cons]
+    by_cases hk : n = k
+    · simp [hk]
+    · rw [beq_false_of_ne hk]
+      rcases List.mem_cons.mp h with e | h
+      · cases e; exact absurd rfl hk
+      · exact ih h
+
+/-- A declaration list joined with itself is itself. -/
+theorem decl_join_self {α : Type} (l : List (String × α)) :
+    l.filter (fun (p : String × α) => (l.lookup p.1).isNone) = [] := by
+  rw [List.filter_eq_nil_iff]
+  intro p hp
+  have hs := lookup_isSome_of_mem (n := p.1) (v := p.2) hp
+  cases hl : l.lookup p.1 with
+  | none => simp [hl] at hs
+  | some _ => simp
+
+/-- `join` as the compiled verifier runs it (`join_eq_fast`): each binding,
+path and declaration of one environment looked up in a hash map of the
+other's. -/
+def joinFast : Option Env → Option Env → Option Env
+  | none, b => b
+  | a, none => a
+  | some a, some b =>
+    if a.ghost && !b.ghost then some b else if b.ghost && !a.ghost then some a else
+    let bv := lookupTable b.vars
+    some {
+      ghost := a.ghost
+      cells := a.cells
+      vars := a.vars.filterMap fun (n, A) => bv[n]?.map fun B => (n, if A == B then A else norm (A ++ B))
+      decl := if withPtrEq a.decl b.decl (fun _ => decide (a.decl = b.decl)) (fun h => by simp [h]) then a.decl
+        else a.decl ++ b.decl.filter fun (n, _) => (a.decl.lookup n).isNone
+      paths := a.paths.filterMap fun (p, A) => (b.paths.lookup p).map fun B => (p, norm (A ++ B)) }
+
+@[csimp] theorem join_eq_fast : @join = @joinFast := by
+  funext a b
+  match a, b with
+  | none, _ => rfl
+  | some _, none => rfl
+  | some a, some b =>
+    simp only [join, joinFast, lookupTable_get, withPtrEq]
+    by_cases h : a.decl = b.decl
+    · have hd := decl_join_self a.decl
+      simp only [h, decide_true, if_true] at hd ⊢
+      rw [hd, List.append_nil]
+    · simp [h]
+
 /-- The environment at a loop head: every binding the loop assigns at its
 declared type, and no path narrowed (a loop head holds its given facts,
 which state no field's contents). -/
