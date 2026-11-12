@@ -659,6 +659,32 @@ def differing (Γ Δ : List (Ty ι)) (m : PointClaims.Mapping) : List (Nat × Na
       i := i + 1
     return out
 
+/-- **An edge's evidence checked** as the certificate checker checks a
+target's slots (`ControlFlow.checkTargetResult`, `checkBranchTargetResult`;
+`checkMapped_sound`, `checkObserved_sound`): from a context `Γ` no
+environment meets, or each target slot of `Δ` covered by the source slot the
+mapping reads, under the observation where the edge observes the result (at
+slot 0, with the read fields, optional fields and cells the search read). -/
+def edgeEvidenceChecked (G : NormalGraph ι) (images : InstanceImageCheck G) (Γ Δ : List (Ty ι)) (t : Target)
+    (observed : Option BranchRefinement.Observation) (fields optionals : List (Nat × PropKey))
+    (cells : HeapFacts.Facts) (p : PointClaims.EdgeEvidence ι) : Bool :=
+  ControlFlow.unsatisfiable G Γ || match observed with
+  | some o => BranchRefinement.checkObservedUsing G images Γ Δ 0 o t.mapping p fields optionals cells
+  | none => PointClaims.checkMappedUsing G images Γ Δ t.mapping p
+
+/-- The edge search (`edgeUsing`) from `Γ` over the facts `k`, its evidence
+kept only where `edgeEvidenceChecked` accepts it. -/
+def checkedEdge (G : NormalGraph ι) (images : InstanceImageCheck G) (claimed : Array (PointClaim ι))
+    (Δ Γ : List (Ty ι)) (t : Target) (observed : Option BranchRefinement.Observation) (k : Knowledge)
+    (answers : Answered G) : Bool × Answered G :=
+  let fields := readFields k 0
+  let optionals := optionalFields k 0
+  let cells := match observed with
+    | some o => HeapKnowledge.aliasCells (HeapKnowledge.observeTyped G Γ k 0 o)
+    | none => []
+  let (r, a) := edgeUsing G images claimed Γ t (observed.map (0, ·)) fields optionals cells answers
+  (r.value.any (edgeEvidenceChecked G images Γ Δ t observed fields optionals cells), a)
+
 /-- A call's derivation read off its callee's signatures (the direct form
 of `CertificateProducer.expressionWithUsing`'s `direct`): the callee a slot,
 its type's signatures in the same order (those promising elements first;
@@ -1890,14 +1916,11 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
           -- Its links restated on every slot of their classes, as an edge reads
           -- a node's output (`ControlFlow.outFacts`).
           let ko := KnowledgeExpand.expandLinks (KnowledgeExpand.ctxOf G Γ) ko
-          let (r, a) := timedKind "edge search" fun _ => edgeUsing G images claimed Γ t (observed.map (0, ·)) (readFields ko 0) (optionalFields ko 0)
-            (match observed with
-              | some o => HeapKnowledge.aliasCells (HeapKnowledge.observeTyped G Γ ko 0 o)
-              | none => []) answers
+          let (found, a) := timedKind "edge search" fun _ => checkedEdge G images claimed tc.context Γ t observed ko answers
           answers := a
-          if r.value.isNone && isHandler then
+          if !found && isHandler then
             return (.refused s!"handler edge from node {l} to node {t.label}", counts, answers, trace)
-          if r.value.isNone then
+          if !found then
             -- The edge's context as the step's yields refine it
             -- (`produceNodeAt`): what a test or a promise establishes.
             let ys ← match yields with
@@ -1929,16 +1952,13 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
               | .tagBind tg .. => pushedRefine (if first then PromiseCalls.yieldFacts ys (ControlFlow.truthyBoolean G tg c.type)
                   else unconditional)
               | .ret => Γ
-            let (r, a) := edgeUsing G images claimed Γ' t (observed.map (0, ·)) (readFields outL 0) (optionalFields outL 0)
-              (match observed with
-                | some o => HeapKnowledge.aliasCells (HeapKnowledge.observeTyped G Γ' outL 0 o)
-                | none => []) answers
+            let (found, a) := checkedEdge G images claimed tc.context Γ' t observed outL answers
             answers := a
             -- A slot whose refined type the target's does not admit read at
             -- its unrefined type: both are types of its value (an alias
             -- refined through an array's invariant element type).
-            let mut r := r
-            if r.value.isNone then
+            let mut found := found
+            if !found then
               let mut mixed : Array (Ty ι) := #[]
               for (A', s) in Γ'.zipIdx do
                 let A := (Γ[s]?).getD A'
@@ -1956,13 +1976,10 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
                 mixed := mixed.push (if fits then A' else A)
               let Γm := mixed.toList
               if Γm != Γ' then
-                let (r', a) := edgeUsing G images claimed Γm t (observed.map (0, ·)) (readFields outL 0) (optionalFields outL 0)
-                  (match observed with
-                    | some o => HeapKnowledge.aliasCells (HeapKnowledge.observeTyped G Γm outL 0 o)
-                    | none => []) answers
+                let (found', a) := checkedEdge G images claimed tc.context Γm t observed outL answers
                 answers := a
-                r := r'
-            if r.value.isNone then return (.refused s!"edge from node {l} to node {t.label}{if l == debugNode then s!" fields {reprStr (readFields ko 0)} links {reprStr ko.links} diff {reprStr diff} implies {reprStr (implies.map fun x => (x.test, x.target))} names {reprStr (entry.names.take 6)} yields {reprStr ((yields.getD []).map fun y => (y.target, y.conditional))}" else ""}", counts, answers, trace)
+                found := found'
+            if !found then return (.refused s!"edge from node {l} to node {t.label}{if l == debugNode then s!" fields {reprStr (readFields ko 0)} links {reprStr ko.links} diff {reprStr diff} implies {reprStr (implies.map fun x => (x.test, x.target))} names {reprStr (entry.names.take 6)} yields {reprStr ((yields.getD []).map fun y => (y.target, y.conditional))}" else ""}", counts, answers, trace)
       -- The edge's implications: the entry's, and on a pushed edge those the
       -- result's conditional yields state of it.
       let freshImpl : List (PromiseCalls.Implication ι) := if !pushed || isHandler then [] else

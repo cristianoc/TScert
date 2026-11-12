@@ -164,7 +164,10 @@ by an alias link. An edge observing a test releases the alternatives it
 contradicts (`HeapKnowledge.withElements`). An edge whose context, refined
 by the step's yields, its target does not admit is checked again with each
 slot the target does not admit at its refined type read at its unrefined
-type; both are types of its value.
+type; both are types of its value. The evidence an edge search returns is checked
+as the certificate checker checks a target's slots (`checkMappedUsing`, or
+under the edge's observation `checkObservedUsing`, `edgeEvidenceChecked`):
+an edge whose evidence the check refuses is not established by it.
 
 ### A call of a slot
 
