@@ -146,11 +146,13 @@ theorem exitStep_impBelow {env : SinglePass.WalkEnv ι G I} {l : Nat} {en : Sing
   split at h
   · cases h
   rename_i tc htc
+  split at h
+  · cases h
   extract_lets diff u acc2 typed at h
   generalize ht : typed = T at h
   split at h
   · cases h
-  rename_i acc1
+  rename_i acc1 et
   simp only [typed] at ht
   have hp : SameCore acc acc2 ∧ acc2.edges = acc.edges := by
     exact sameCore_unsat (sameCore_trace _ _ _) _ _
@@ -159,7 +161,7 @@ theorem exitStep_impBelow {env : SinglePass.WalkEnv ι G I} {l : Nat} {en : Sing
     · cases ht; exact hp
     · obtain ⟨h1, h2⟩ := exitTypes_core ht
       exact ⟨hp.1.trans h1, h2.trans hp.2⟩
-  extract_lets freshImpl at h
+  extract_lets freshImpl record at h
   have hf : ImpliesBelow freshImpl N := by
     unfold freshImpl
     split
@@ -170,9 +172,15 @@ theorem exitStep_impBelow {env : SinglePass.WalkEnv ι G I} {l : Nat} {en : Sing
     · exact hi y hy
     · exact hf y hy
   split at h
-  · obtain ⟨hc2, -⟩ := headExit_core h
-    rw [hc2.incomingImpl, hc1.1.incomingImpl]
-    exact ha
+  · simp only [Except.map] at h
+    split at h
+    · cases h
+    · rename_i a hh
+      cases h
+      obtain ⟨hc2, -⟩ := headExit_core hh
+      change ImplArrayBelow a.incomingImpl N
+      rw [hc2.incomingImpl, hc1.1.incomingImpl]
+      exact ha
   · split at h
     · cases h
     rename_i acc3 hA

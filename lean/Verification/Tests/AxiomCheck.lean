@@ -1,3 +1,4 @@
+import Verification.Programs.TolerantFramesExitRecords
 import Verification.Programs.TolerantFramesExitExecution
 import Verification.Programs.TolerantFramesExitTypeChecks
 import Verification.Programs.TolerantFramesExitVacuity
@@ -1050,3 +1051,15 @@ run_cmd do
   check ``Verification.TolerantFrames.visB_replicate
   check ``Verification.TolerantFrames.SetupOk.recInv
   check ``Verification.TolerantFrames.setupRecords_of
+  check ``Verification.TolerantFrames.subtypeAnswersSound
+  check ``Verification.TolerantFrames.subtypeAnswersAll
+  check ``Verification.TolerantFrames.exitStep_mappingWidth
+  check ``Verification.TolerantFrames.exitsFold_mappingWidth
+  check ``Verification.TolerantFrames.exitsWidth
+  check ``Verification.TolerantFrames.exitTypes_exits
+  check ``Verification.TolerantFrames.headExit_exits
+  check ``Verification.TolerantFrames.assertionExit_exits
+  check ``Verification.TolerantFrames.exitStep_record
+  check ``Verification.TolerantFrames.exitsFold_records_prefix
+  check ``Verification.TolerantFrames.exitsFold_records_checked
+  check ``Verification.TolerantFrames.visitExits_records

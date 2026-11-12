@@ -81,8 +81,8 @@ theorem exitTypes_unsat {env : WalkEnv ι G I} {l : Nat} {en : Entered ι} {sd :
     {outAll : Thunk HeapKnowledge.Knowledge} {t : Target} {tc : PointClaim ι} {Γ : List (Ty ι)}
     {names : List Nat} {edgeStore : Store} {pushed isHandler : Bool}
     {observed : Option BranchRefinement.Observation} {first : Bool} {diff : List (Nat × Nat)}
-    {acc acc' : ExitsDone ι G}
-    (h : exitTypes G I env l en sd outAll t tc Γ names edgeStore pushed isHandler observed first diff acc = .ok acc') :
+    {acc acc' : ExitsDone ι G} {et : SinglePass.ExitTyped ι}
+    (h : exitTypes G I env l en sd outAll t tc Γ names edgeStore pushed isHandler observed first diff acc = .ok (acc', et)) :
     acc'.unsat = acc.unsat := by
   unfold exitTypes at h
   repeat' (first | split at h | extract_lets at h)
@@ -116,15 +116,17 @@ theorem exitStep_cachedVacuity {env : WalkEnv ι G I} {l : Nat} {en : Entered ι
     (h : exitStep G I env l en sd ysAll outAll acc exi = .ok acc') :
     CachedVacuity G env.claimed acc'.unsat := by
   unfold exitStep at h
-  extract_lets ex first node c width entry st t pushed observed isHandler pushedNames tr acc0 Γ names store unsatΓ vacuous Γe at h
+  extract_lets ex first node c width entry st t pushed observed isHandler pushedNames tr acc0 Γ names store unsatΓ vacuous Γe read Γr at h
   split at h
   · cases h
   rename_i tc htc
+  split at h
+  · cases h
   extract_lets diff u acc2 typed at h
   generalize ht : typed = T at h
   split at h
   · cases h
-  rename_i acc1
+  rename_i acc1 et
   simp only [typed] at ht
   have hp : CachedVacuity G env.claimed acc2.unsat := by
     have h0 : CachedVacuity G env.claimed acc0.unsat := by
@@ -143,9 +145,15 @@ theorem exitStep_cachedVacuity {env : WalkEnv ι G I} {l : Nat} {en : Entered ι
     split at ht
     · cases ht; exact hp
     · rw [exitTypes_unsat ht]; exact hp
-  extract_lets freshImpl at h
+  extract_lets freshImpl record at h
   split at h
-  · rw [headExit_unsat h]; exact hc1
+  · simp only [Except.map] at h
+    split at h
+    · cases h
+    · rename_i a hh
+      cases h
+      change CachedVacuity G env.claimed a.unsat
+      rw [headExit_unsat hh]; exact hc1
   · split at h
     · cases h
     rename_i acc3 hA

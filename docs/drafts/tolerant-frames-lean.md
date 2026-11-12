@@ -1370,49 +1370,44 @@ of `TolerantFramesRunSound.lean`, quantified over every call the premises of
 
 ## Open premises
 
-The hypotheses of `run_sound_single_pass`
-(`TolerantFramesSinglePassSound.lean`: `run_sound_pass` with the walk
-side's `recordsSound_of` and `recordsChecked_of`, `VisitsRecord` from
-`visitsRecord_of` and `visitsRest_of`), each with what
-discharges it and the theorem that consumes it:
+The graph theorem `run_sound_single_pass`
+(`TolerantFramesSinglePassSound.lean`) has five hypotheses:
 
 ```math
-\mathrm{ExitsWidth} \wedge \mathrm{DirectKeepsSummaries} \wedge \mathrm{SearchKeepsSummaries} \wedge \mathrm{SubtypeAnswersAll} \wedge \mathrm{ExitsYield} \wedge \mathrm{RegionsRecorded} \wedge \mathrm{RegionsTyped} \Longrightarrow \mathrm{RunSound}
+\mathrm{DirectKeepsSummaries} \wedge \mathrm{SearchKeepsSummaries} \wedge \mathrm{ExitsYield} \wedge \mathrm{RegionsRecorded} \wedge \mathrm{RegionsTyped} \Longrightarrow \mathrm{RunSound}
 ```
 
-The pass keeps the read summaries it was given with no hypothesis
-(`runKeepsSummaries`, the unit level's `RunKeepsSummaries`), its
-`linearNear` is its search on fuel by definition (`linearNearFuelEq`),
-and each visited node's kept yields are judged and meet the return's goal
-at every admitted reassigned graph (`nodesYield_of`: the visit's yield
-checks, `NodeYieldChecks`, a field of `NodePassChecked`, hold there by
-`NodeYieldChecks.reassign`); the regional premise `RegionsHeld` follows
-from `RegionsRecorded` and `RegionsTyped` (`regionsHeld_of`).
- Pass changes are named by the pass lane's
-items in its queue; the pass lane (`engine-pass`) is at 3b2d6528, where D1
-to D4, D9 (`passShapeCheck'`), D10 (one written assertion per label), D11
-(the regional derivation check, the entry's fields under store regions),
-the driver on fuel (C9), the setup and visit as functions (`setup`,
-`visit`, `StopOutcome`), an exit's arm by its position (D13), the visit
-restoring its read-summary table (W2, `keepSummaries`) and the visit as
-its entry, step and exits with one record write (W3: `visitEntry`,
-`visitStep`, `visitExits`, `LabelWalk.ofVisit`; D15's `refinedContext`
-and `outAllOf`), the loop heads' walk on fuel (`loopHeadsWalk`,
-`loopHeadsRun`), the name mapping by structural recursion (D7, W7) and
-the visit's parts returning only what they compute (W6, R2's `boundOk`,
-W5's `exitStep`) have arrived. A stopped walk is never accepted by
-its type (`walkStopsRefuse`, from `StopOutcome.outcome_ne_accepted`).
-
-| Premise | Discharged by | Consumed by |
+| Premise | Obligation | Consumed by |
 | --- | --- | --- |
-| `SetupRecords` | proved (`setupRecords_of`, module `TolerantFramesDriverSetup.lean`): a returned setup gives the claims one per node, the entry accepted and the environment and state of `setupEnv` and `setupState` (`setup_ok`); the environment states the call (`SetupOk.envFacts`, by `envFacts_of_loopHeads` and the heads' given states, `setupGiven_get`) and the first state meets `RecInv` (`SetupOk.recInv`: nothing visited or come in, the queue `initialQueue`'s labels, each in-degree the count of the edges still to come, `inDegrees_get`); `run_sound_single_pass` applies it | `recordsSound_of` and `recordsChecked_of`, then `run_traversedC` |
-| `ExitsWidth` | pass change W9: each exit's mapping has its target's width (no mapping: as many source names as the target's context; a mapping: as many slots, each a source slot); with it every state an exit pushes meets `PushOk` (`exitsPushOk_of`) | `visitsRest_of` (through `ExitsPushOk`) |
-| `DirectKeepsSummaries`, `SearchKeepsSummaries` | the direct call and expression search preserve soundness of the read-summary table; their discharge awaits table-prefix preservation in pass change W8. These two premises imply `VisitsSettle` (`visitsSettle_of`): the recorded node has its checked step, footprint and return checks, and checked yields (`visitStep_node`); the start is entered (`visitStart_entered`); a non-head's entry is its single predecessor or recorded merge with the written assertion (`visitEntry_settled`). Setup equations belong to `EnvFacts`; `RecInv.impBelow` bounds incoming implications and is preserved by `visitsImplications`. | `visitsRest_of` through `visitsSettle_of` |
-| `SubtypeAnswersAll` | pass change D5: an answer `subtypeUsing` accepts from any answers is an inclusion of meanings, at every graph (the answers' `subtypes` cache carries no soundness, so this is not provable of the pass as it is; `proved_sound` is the form the change can give) | `nodesYield_of` (the return's goal, `goalHolds_of_returnY`) |
-| `ExitsYield` | each checked node's exits and handler deliver `NodeExitsY` at the recorded yields. Proved: `NodeExitsChecked.reassign` preserves the exit checks; `nodeExitsY_of_checks` interprets them at every reassigned graph using the existing normal, head and handler delivery lemmas. `NodeExitsY.exits` and `NodeYielded.exits` retain an initial state, its entry facts and mark bound, and an execution shorter than its budget (`safePostExc_trace_lt`); `passOutFreshChecked_fresh` supplies result freshness. `PassWalkSound.walk` uses `marked passPreA`, and `passPreU` includes the same heap bound; `nodeObligations_marked` preserves it along admissible transitions. `RecInv.vacuity` states `CachedVacuity`; `exitStep_cachedVacuity` and `visitExits_cachedVacuity` preserve it, and `NodeExitTrace` retains `en.here = true → HereEmpty`. Setup must identify its initial cache with the unfilled array (`cachedVacuity_empty`). `exitTypes_checked` exposes `ExitTyped` at the returned yield list with its `ExitYieldSource`; `assertionExit_checked` exposes the written-assertion check. `checkYsAt_judged` and `ExitYieldSource.judged` justify computed yields under soundness of the summary table they read. Open proof obligations: assemble `NodeExitsChecked` from `NodeExitTrace`, including head-entry records, handler bounds, incoming and merge membership, and W9's mapping widths; relate the independently computed exit yields to the node's semantic judgment. The existing `NodeExitsChecked.yieldsRead` and per-exit equality with the kept list require that relation; `ExitYieldSource` alone supplies checkedness, not those equalities. | `nodesYield_of`, then `stepEdgesSound_of_yields` |
-| `ExitsYield` | each checked node's exits and handler deliver `NodeExitsY` at the recorded yields. Proved, at the records: `RecordsChecked`, `WalkChecked` and `SettledCore.node` retain `NodeExitTrace` in the same existential as `NodePassChecked` (`visitsSettle_of`): a successful entry, step and exit computation at the original graph, every indexed `exitStep` exposed (`visitExits_checked`) and its arrays extending to the checked walk (`WalkExtends`, `visitExits_extends`). Proved, at the exits: `NodeExitsChecked` states what `exitStep` checks at a node's values in a form every reassigned graph keeps (`NonHeadExitChecked`, `HeadExitChecked`, `HandlerExitChecked`; the types by `ExitTyped`: the subtype answers, the edge search's evidence at the edge's, refined or mixed context, `ExitTyped.reassign`), and `nodeExitsYF_of_checks` gives, at every reassigned graph with the subtype answers sound there, every exit and the handler delivering `edgePreAJ` (`nonHeadExit_delivers`, `headExit_delivers`, `handlerExit_delivers`; mapped names by `mapNamesSound_some` under the width bounds, vacuous exits by `vacuous_false`). Its conclusion `NodeExitsYF` is `NodeExitsY` with the state after the step also stating the result's freshness where `outFresh` holds (`AfterStep`), which `normal_edge_delivers` needs; the step's judgment carries it (`stepFresh_judgment`, by `SafePostExc.and_steps` and `passOutFreshChecked_fresh`), so `NodeYielded` and `stepEdgesSound_of_yields` are to carry `NodeExitsYF`. Not proved: `NodeExitTrace ⟹ NodeExitsChecked` (reading each `exitStep` branch); two of its fields have no source yet: `HereEmpty` of the cached `en.here` (an invariant of `σ.unsat`, `visitEntry_here`), and the yields the exits read being the recorded ones or none (`NodeExitTrace` records `sd.yields`, while `exitsYields` and `exitTypes` compute yields where the step kept none) | `nodesYield_of`, then `stepEdgesSound_of_yields` |
-| `RegionsRecorded` | tables of the graph whose start entry holds each region's own position and no fresh value, cell or field, and at every visited node the visit's regional check (`checkNode` at `passRegionalEvidenceOf`) accepting over the node's own tables, which agree with the graph's (`TablesAgree`): the check read off the visit (queue entry W6), the graph's tables the region state each label's own check used, recorded per label (queue entry R4), each target's entry within its predecessors' by `meet_sub` and the in-degree order | `regionsHeld_of`, then `run_guarantee` (`regionally`) |
-| `RegionsTyped` | at every visited node, the regional evidence's entry the node's context and the evidence typed (`RegionalTyped`) at every admitted reassigned graph: proved where the step's derivation passes its tree check (`regionsTyped_of_tree`) and at a copy (`regionalTyped_copy`); the tree check's `requiresTree` disjunct and step evidence alone read the step's facts `stepK`, which the evidence's entry states once it holds `kHere` together with `stepK` (queue entry R3) | `regionsHeld_of` |
+| `DirectKeepsSummaries` | Every summary returned by `directCall` is sound when its input summaries are sound. `keepSummaries` preserves the input prefix; soundness also requires checking every appended summary. This preservation theorem is not proved. | `visitsSettle_of` |
+| `SearchKeepsSummaries` | Every summary returned by `expressionEffectUsing` is sound when its input summaries are sound. Preservation through the search's operations is not proved. | `visitsSettle_of` |
+| `ExitsYield` | Each checked node's normal exits and handler deliver `NodeExitsY` at every admitted reassigned graph. `nodeExitsY_of_checks` proves delivery from `NodeExitsChecked`, with freshness from the actual step execution. The assembly of `NodeExitsChecked` from the visit's records is not proved: it requires head-entry checks, handler bounds, incoming and merge membership, and semantic justification of the yields each exit reads. `NodeExitsChecked.yieldsRead` and its per-exit yield equality are stronger than `ExitYieldSource`, which states checkedness rather than equality with the node's kept yields. | `nodesYield_of`, then `stepEdgesSound_of_yields` |
+| `RegionsRecorded` | The graph's regional tables agree with the tables each visit checks, satisfy the initial regional facts, and admit each predecessor's established facts at its target. Each `RegionalDone` contains its tables and evidence; each label records its region state. The graph-wide agreement proof is not established. | `regionsHeld_of` |
+| `RegionsTyped` | Every visited node's regional evidence has its context and is typed at every admitted reassigned graph. `regionsTyped_of_tree` proves the tree-checked case, and `regionalTyped_copy` proves the copy case. The `requiresTree` case needs the evidence's `regionalFacts` to supply both the entry facts and `stepK`. | `regionsHeld_of` |
+
+Proved prerequisites:
+
+- `setupRecords_of` (`TolerantFramesDriverSetup.lean`) supplies `SetupRecords`.
+  `SetupOk.recInv` includes `RecInv.vacuity`, by `cachedVacuity_empty`;
+  `exitStep_cachedVacuity` and `visitExits_cachedVacuity` preserve it.
+- `exitsWidth` (`TolerantFramesExitWidths.lean`) supplies `ExitsWidth` from
+  `mappingWidthOk` at every successful indexed exit (`exitStep_mappingWidth`,
+  `exitsFold_mappingWidth`). It includes the target width and source-slot bounds.
+- `subtypeAnswersAll` supplies `SubtypeAnswersAll`, by `subtypeAnswersSound`
+  (`TolerantFramesNodeGoals.lean`): an accepted cache hit has `proved_sound`,
+  and an accepted search has `subtypeSearch_sound`.
+- `visitExits_records` (`TolerantFramesExitRecords.lean`) supplies
+  `ExitRecordsChecked`: each indexed exit has its own record in the final
+  `ExitsDone.exits` array and a successful `exitStep` that appends that record.
+  `exitStep_record` identifies its index, target, source names, head flag and
+  mapping check; `exitsFold_records_prefix` preserves earlier records.
+  `NodeExitTrace` carries this predicate alongside `ExitStepsChecked` and
+  the cached vacuity witness. `SettledCore.node`, `RecordsChecked` and
+  `WalkChecked` retain that trace at the same checked node (`visitsSettle_of`).
+- `exitTypes_checked` (`TolerantFramesExitTypeChecks.lean`) exposes semantic
+  `ExitTyped` checks from the pass's returned state and `SinglePass.ExitTyped`
+  tag. `ExitYieldSource.judged` justifies computed yields when their summary
+  table is sound; `assertionExit_checked` exposes the written assertion check.
 
 ## Leg 17a: the per-node hypotheses from the pass's checks
 

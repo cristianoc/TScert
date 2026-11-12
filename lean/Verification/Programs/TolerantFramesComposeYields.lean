@@ -196,10 +196,13 @@ def NodesYield : Prop :=
         (r.node l hl).entry (r.node l hl).st ys
 
 variable (ι) in
-/-- **(Named hypothesis, pass change D5) The answered subtype requests are
+/-- **The answered subtype requests are
 sound**: an answer `subtypeUsing` accepts, from any answers, is an
 inclusion of meanings, at every graph (the reassigned ones included). -/
 def SubtypeAnswersAll : Prop := ∀ (G : NormalGraph ι) (I : InstanceImageCheck G), SubtypeAnswersSound G I
+
+/-- Subtype acceptance is sound at every graph. -/
+theorem subtypeAnswersAll : SubtypeAnswersAll ι := subtypeAnswersSound
 
 variable (ι) in
 /-- **(Named hypothesis) Each checked node's exits and handler deliver

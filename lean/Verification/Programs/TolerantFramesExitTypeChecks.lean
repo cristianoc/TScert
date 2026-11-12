@@ -31,8 +31,9 @@ theorem exitTypes_checked {env : WalkEnv ι G I} {l : Nat} {en : Entered ι} {sd
     {outAll : Thunk HeapKnowledge.Knowledge} {t : Target} {tc : PointClaim ι}
     {Γ : List (Ty ι)} {names : List Nat} {edgeStore : Store} {pushed isHandler : Bool}
     {observed : Option BranchRefinement.Observation} {first : Bool} {acc acc' : ExitsDone ι G}
+    {et : SinglePass.ExitTyped ι}
     (h : exitTypes G I env l en sd outAll t tc Γ names edgeStore pushed isHandler observed first
-      (differing Γ tc.context t.mapping) acc = .ok acc') :
+      (differing Γ tc.context t.mapping) acc = .ok (acc', et)) :
     ∃ ys, ExitYieldSource env l en sd acc.yields ys ∧ ys = acc'.yields.getD [] ∧
       ExitTyped G I Γ tc.context t observed
         (KnowledgeExpand.expandLinks (KnowledgeExpand.ctxOf G Γ)
@@ -55,6 +56,7 @@ theorem exitTypes_checked {env : WalkEnv ι G I} {l : Nat} {en : Entered ι} {sd
     extract_lets ko at h
     split at h
     rename_i found a1 hf
+    extract_lets answers at h
     split at h
     · cases h
     · split at h
@@ -84,8 +86,9 @@ theorem exitTypes_checked {env : WalkEnv ι G I} {l : Nat} {en : Entered ι} {sd
         extract_lets Γr at h
         split at h
         rename_i foundR a3 hr
+        extract_lets answersR at h
         split at h
-        rename_i foundM a4 hmixed
+        rename_i foundM a4 typ hmixed
         split at h
         · cases h
         · rename_i hfinal
@@ -101,8 +104,11 @@ theorem exitTypes_checked {env : WalkEnv ι G I} {l : Nat} {en : Entered ι} {sd
             split at hmixed
             rename_i Γm am hmix
             split at hmixed
-            · refine .inr ⟨Γm, ?_, edgeFound_of_checked ((congrArg Prod.fst hmixed).trans htrue)⟩
-              have hh := mixedOf_mixedContext G I Γ Γr tc.context t.mapping a3
+            · split at hmixed
+              rename_i fm am2 hm
+              have hfm : fm = true := (congrArg Prod.fst hmixed).trans htrue
+              refine .inr ⟨Γm, ?_, edgeFound_of_checked ((congrArg Prod.fst hm).trans hfm)⟩
+              have hh := mixedOf_mixedContext G I Γ Γr tc.context t.mapping answersR
               rw [hmix] at hh
               exact hh
             · exact (hfr ((congrArg Prod.fst hmixed).trans htrue)).elim

@@ -27,7 +27,7 @@ count one more, the step's fresh counter and the read-summary table kept
 (`visit`). -/
 def visitResult (σ : SinglePass.WalkState ι G) (l : Nat) (en : SinglePass.Entered ι) (sd : SinglePass.StepDone ι G)
     (ex : SinglePass.ExitsDone ι G) : SinglePass.WalkState ι G :=
-  { walk := { labels := σ.walk.labels.set! l (SinglePass.LabelWalk.ofVisit σ.fresh en sd ex.region), incoming := ex.incoming,
+  { walk := { labels := σ.walk.labels.set! l (SinglePass.LabelWalk.ofVisit σ.fresh en sd (ex.regional.map (·.state))), incoming := ex.incoming,
               incomingImpl := ex.incomingImpl, incomingEdges := ex.incomingEdges, edges := ex.edges,
               visited := σ.walk.visited + 1 },
     answers := SinglePass.keepSummaries σ.answers ex.answers, counts := ex.counts, trace := ex.trace,

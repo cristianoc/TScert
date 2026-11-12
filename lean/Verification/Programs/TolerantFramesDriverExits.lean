@@ -35,9 +35,9 @@ theorem exitTypes_core {env : SinglePass.WalkEnv ι G I} {l : Nat} {en : SingleP
     {sd : SinglePass.StepDone ι G} {outAll : Thunk HeapKnowledge.Knowledge} {t : Target} {tc : PointClaim ι}
     {Γ : List (ProgramTyping.Ty ι)} {names : List Nat} {edgeStore : SinglePass.Store} {pushed isHandler : Bool}
     {observed : Option BranchRefinement.Observation} {first : Bool} {diff : List (Nat × Nat)}
-    {acc acc' : SinglePass.ExitsDone ι G}
+    {acc acc' : SinglePass.ExitsDone ι G} {et : SinglePass.ExitTyped ι}
     (h : SinglePass.exitTypes G I env l en sd outAll t tc Γ names edgeStore pushed isHandler observed first diff acc
-      = .ok acc') : SameCore acc acc' ∧ acc'.edges = acc.edges := by
+      = .ok (acc', et)) : SameCore acc acc' ∧ acc'.edges = acc.edges := by
   unfold SinglePass.exitTypes at h
   repeat' (first | split at h | extract_lets at h)
   all_goals first | (cases h; exact ⟨⟨rfl, rfl, rfl, rfl, rfl⟩, rfl⟩) | cases h
@@ -124,11 +124,13 @@ theorem exitStep_effect {env : SinglePass.WalkEnv ι G I} {l : Nat} {en : Single
   split at h
   · cases h
   rename_i tc htc
+  split at h
+  · cases h
   extract_lets diff u acc2 typed at h
   generalize ht : typed = T at h
   split at h
   · cases h
-  rename_i acc1
+  rename_i acc1 et
   simp only [typed] at ht
   have hp : SameCore acc acc2 ∧ acc2.edges = acc.edges := by
     exact sameCore_unsat (sameCore_trace _ _ _) _ _
@@ -137,14 +139,19 @@ theorem exitStep_effect {env : SinglePass.WalkEnv ι G I} {l : Nat} {en : Single
     · cases ht; exact hp
     · obtain ⟨h1, h2⟩ := exitTypes_core ht
       exact ⟨hp.1.trans h1, h2.trans hp.2⟩
-  extract_lets freshImpl at h
+  extract_lets freshImpl record at h
   have hcl : (exi.1.target.label) < env.claimed.size := by
     rcases (Array.getElem?_eq_some_iff.mp htc) with ⟨hlt, -⟩; exact hlt
   split at h
   · rename_i hhead
-    obtain ⟨hc2, he2⟩ := headExit_core h
-    exact { claimed := hcl, edges := ⟨_, by rw [he2, hc1.2], rfl⟩, head := fun _ => hc1.1.trans hc2,
-            push := fun hf => absurd (hhead.symm.trans hf) (by decide) }
+    simp only [Except.map] at h
+    split at h
+    · cases h
+    · rename_i a hheadExit
+      cases h
+      obtain ⟨hc2, he2⟩ := headExit_core hheadExit
+      exact { claimed := hcl, edges := ⟨_, by rw [he2, hc1.2], rfl⟩, head := fun _ => hc1.1.trans ⟨hc2.incoming, hc2.incomingImpl, hc2.incomingEdges, hc2.indeg, hc2.queue⟩,
+              push := fun hf => absurd (hhead.symm.trans hf) (by decide) }
   · rename_i hhead
     split at h
     · cases h

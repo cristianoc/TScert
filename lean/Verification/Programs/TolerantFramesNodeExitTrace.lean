@@ -36,6 +36,18 @@ persist in `raw`. The exit index fixes which branch receives refinement. -/
       (Thunk.mk fun _ => SinglePass.outAllOf G env.claimed[l]! sd.st.stepOut) a e = .ok b ∧
     WalkExtends (exitsWalk b) raw
 
+/-- Each indexed exit owns a record in the visit's final array, appended
+by that exit's successful computation. -/
+@[nospecialize] def ExitRecordsChecked {ι : Type} [Labels ι] (G : NormalGraph ι) (I : InstanceImageCheck G)
+    (env : SinglePass.WalkEnv ι G I) (l : Nat) (en : SinglePass.Entered ι) (sd : SinglePass.StepDone ι G)
+    (ex : SinglePass.ExitsDone ι G) : Prop :=
+  ∀ e ∈ (SinglePass.Exit.ofNode env.nodes[l]!).zipIdx, ∃ r ∈ ex.exits.toList,
+    r.index = e.2 ∧ r.target = e.1.target ∧ ∃ a b,
+    SinglePass.exitStep G I env l en sd
+      (SinglePass.yieldsAtSlots en.entry.names ((SinglePass.exitsYields G I env l en sd).1.getD []))
+      (Thunk.mk fun _ => SinglePass.outAllOf G env.claimed[l]! sd.st.stepOut) a e = .ok b ∧
+    b.exits = a.exits.push r
+
 /-- A successful entry, step, and exit visit at this very node's values.
 The exit arrays extend to the walk used by the node's check. This keeps the
 step and exit witnesses in the same existential when a checked node is chosen.
@@ -59,6 +71,7 @@ The equations are about execution at `G`, not execution at reassigned graphs. -/
     r.ans = sd.steppedAnswers ∧ r.ys = sd.yields.getD [] ∧ en.implies = w.implies l ∧
     σ.walk.incoming.size = σ.walk.incomingImpl.size ∧ WalkExtends (exitsWalk ex) raw ∧
     ExitStepsChecked G I env l en sd raw ∧
-    (en.here = true → HereEmpty G (env.claimed[l]!).context)
+    (en.here = true → HereEmpty G (env.claimed[l]!).context) ∧
+    ExitRecordsChecked G I env l en sd ex
 
 end Verification.TolerantFrames
