@@ -22,13 +22,9 @@ name (`passReturnYields`, `ysAll`), and refines an edge's context by them
 - `exitDeliversY_head`: `exitDelivers_head` with the yields read at the
   step's value from the state after the step;
 - `goalHolds_of_returnY`: a return's goal from the state after the step,
-  the claim's type and the yields `returnCheck` read at the value;
-- `passRefined_env`: the context as the yields refine it (`refinedΓ`,
-  restated as `passRefined`) types the edge's environment where the
-  yields hold of the value, the step's output holds, the exit observes its
-  arm and the arms are distinct (`ArmsDistinct`);
-- `refinedEdge_env`: the target's types from an edge `checkedEdge` accepts
-  at the refined context over the step's output. -/
+  the claim's type and the yields `returnCheck` read at the value.
+
+The context as the yields refine it is `TolerantFramesNodeRefined`'s. -/
 namespace Verification.TolerantFrames
 open Verification SinglePass Footprints HeapObservations
 open ProgramTyping ControlFlow CertificateProducer PositiveCertificates PositiveGraphs ProgramCertificates

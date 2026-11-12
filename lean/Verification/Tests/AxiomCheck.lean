@@ -65,6 +65,7 @@ import Verification.Programs.TolerantFramesComposeRunSound
 import Verification.Programs.TolerantFramesNodeJoined
 import Verification.Programs.TolerantFramesNodeYields
 import Verification.Programs.TolerantFramesNodeYielded
+import Verification.Programs.TolerantFramesNodeRefined
 import Verification.Programs.TolerantFramesMergeExits
 import Verification.Programs.TolerantFramesMergeNearRounds
 
@@ -761,6 +762,10 @@ run_cmd do
   check ``Verification.TolerantFrames.assertionsLabelled_of_checked
   check ``Verification.TolerantFrames.run_sound_18a
   check ``Verification.TolerantFrames.run_sound_pass
+  check ``Verification.TolerantFrames.truthy_arm
+  check ``Verification.TolerantFrames.passRefined_env
+  check ``Verification.TolerantFrames.checkedEdge_env_none
+  check ``Verification.TolerantFrames.refinedEdge_env
 
   -- Leg 17b: the walk side of the graph theorem (TolerantFramesMergeExits, TolerantFramesMergeNearRounds)
   check ``Verification.TolerantFrames.entry_of_edge
