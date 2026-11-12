@@ -1406,6 +1406,11 @@ removal works through:
   generic module function's call changes everything. The function's own unit
   checks the proposal; `TSCERT_FORCE=callbacks` still refuses
   `invalid-map-fresh-alias` `drained`.
+- **Casts through `unknown`.** `x as unknown` is at `x`'s type
+  (expression_values.ml:483-486), so the outer cast of `x as unknown as H`
+  is the obligation that `x` meets `H` (a sealed handle's representation and
+  invariant); the cast's own claim is checked against its annotation
+  (`Atoms.lean`'s `cast-annotation`).
 - **Loop heads.** A loop head's facts beyond its written assertion are the
   given file's `headFacts` (and `headFactsOfCodes` for each code request),
   each at the statement entries that start where the given one does and hold
