@@ -1938,6 +1938,17 @@ structure WalkEnv (ι : Type) [DecidableEq ι] [Hashable ι] (G : NormalGraph ι
   startNames : List Nat
   argName : Option Nat
 
+/-- Under a footprint bound stating no normal return, the region from which
+no normal return is possible (`GraphCode.inferDead`), refined from every
+node; empty otherwise. -/
+def deadRegion (G : NormalGraph ι) (nodes : Array Node) (claimed : Array (PointClaim ι))
+    (bound : Option (Footprints.Closed × Bool × Bool)) : Array Bool :=
+  match bound with
+  | some (_, _, false) =>
+    let flags := (nodes.zip claimed).map fun (node, c) => (node, ExpressionEffects.emptyType G c.type)
+    GraphCode.deadIterate flags (nodes.size + 1) (Array.replicate nodes.size true)
+  | _ => #[]
+
 /-- The walk's setup over one graph: what every visit reads (`WalkEnv`) and
 the state the first visit starts from, or where it stopped. -/
 def setup (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι)) (fuel : Nat)
@@ -2015,11 +2026,7 @@ def setup (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty 
   let mut fresh := 0
   -- Under a footprint bound, the region from which no normal return is
   -- possible (`GraphCode.inferDead`), refined from every node.
-  let deadArr : Array Bool := match bound with
-    | some (_, _, false) =>
-      let flags := (nodes.zip claimed).map fun (node, c) => (node, ExpressionEffects.emptyType G c.type)
-      GraphCode.deadIterate flags (n + 1) (Array.replicate n true)
-    | _ => #[]
+  let deadArr : Array Bool := deadRegion G nodes claimed bound
   -- The states entering each node, one per predecessor.
   let mut incoming : Array (List State) := Array.replicate n []
   -- Under a regional check, the regional facts each edge into a label
@@ -2106,13 +2113,128 @@ def refinedContext (G : NormalGraph ι) (c : PointClaim ι) (k : Continuation) (
       else unconditional)
   | .ret => c.context
 
-/-- What a node's entry gives its step and its exits: the walk's state
-after it (its counters, trace, fresh counter and timer), whether no
-environment meets the node's context, the entry state and implications, at
-a merge observed each predecessor's state and names, at a merge its context
-and the fresh counter it started from. -/
-structure Entered (ι : Type) [BEq ι] [Hashable ι] (G : NormalGraph ι) where
-  σ : WalkState ι G
+/-- A node's entry before a written assertion's facts join it: the state
+given at a head, its one predecessor's, or the meet of its predecessors'
+(`base`); its implications; the fresh counter after it; at a merge its
+context and the fresh counter it started from, and the merge's result. -/
+structure EntryStart (ι : Type) where
+  base : State
+  implies : List (PromiseCalls.Implication ι)
+  fresh : Nat
+  merge : Option (List (Ty ι) × Nat)
+  merged : Option (Merged ι)
+
+/-- **A node's entry** from the walk's state `σ`: at a head its given state
+(`headEntry`), else its one predecessor's state, or the meet of its
+predecessors' (`mergeState`). -/
+def entryStart (G : NormalGraph ι) {images : InstanceImageCheck G} (env : WalkEnv ι G images) (σ : WalkState ι G)
+    (l : Nat) : EntryStart ι :=
+  let c := env.claimed[l]!
+  let width := c.context.length
+  match env.given[l]! with
+  | some g =>
+    let (st, imp, fr) := headEntry g (l == env.start && !env.startEntered) width σ.fresh env.startNames env.argName
+      ((env.givenArgs[l]?).getD []) ((env.givenInputs[l]?).getD []) ((env.givenImplies[l]?).getD [])
+    { base := st, implies := imp, fresh := fr, merge := none, merged := none }
+  | none => match σ.walk.incoming[l]! with
+    | [s] => { base := s, implies := (σ.walk.incomingImpl[l]!).headD [], fresh := σ.fresh, merge := none, merged := none }
+    | [] => { base := { names := [] }, implies := [], fresh := σ.fresh, merge := none, merged := none }
+    | s :: rest =>
+      let mg := mergeState G c.context (s :: rest) σ.walk.incomingEdges[l]! σ.fresh
+      { base := mg.state, implies := mg.implies, fresh := mg.fresh, merge := some (c.context, σ.fresh), merged := some mg }
+
+/-- A written assertion, established on every edge into a node other than
+a head, holds there: its facts join the state `entry` at `l`. -/
+def withStated {G : NormalGraph ι} {images : InstanceImageCheck G} (env : WalkEnv ι G images) (l : Nat) (entry : State) : State :=
+  if !env.isHead[l]! then
+    match env.stated[l]! with
+    | some req =>
+      let f := fun (i : Nat) => entry.names[i]?
+      { entry with store := (atomsOf req).foldl (fun s a => match a.rename f with
+        | some b => s.add b | none => s) entry.store }
+    | none => entry
+  else entry
+
+/-- **A node's entry state**, its implications, the fresh counter after its
+entry and at a merge its context and the fresh counter the merge started
+from (`entryStart`, then a written assertion's facts at a node other than a
+head, `withStated`). -/
+def entryOf (G : NormalGraph ι) {images : InstanceImageCheck G} (env : WalkEnv ι G images) (σ : WalkState ι G)
+    (l : Nat) : State × List (PromiseCalls.Implication ι) × Nat × Option (List (Ty ι) × Nat) :=
+  let es := entryStart G env σ l
+  (withStated env l es.base, es.implies, es.fresh, es.merge)
+
+/-- The counters after a node's entry `es`. -/
+def entryCounts {G : NormalGraph ι} {images : InstanceImageCheck G} (env : WalkEnv ι G images) (counts : Counts) (l : Nat)
+    (es : EntryStart ι) : Counts :=
+  let counts := match env.given[l]! with
+    | some _ => { counts with givenImplies := counts.givenImplies + es.implies.length }
+    | none => match es.merged with
+      | some mg => { counts with merges := counts.merges + 1, mergeDiffs := counts.mergeDiffs + mg.diffCount }
+      | none => counts
+  { counts with
+    visited := counts.visited + 1, storeMax := max counts.storeMax es.base.store.size
+    stateSum := counts.stateSum + es.base.store.size, heads := counts.heads + (if env.isHead[l]! then 1 else 0) }
+
+/-- The trace after a node's entry `es`, where tracing. -/
+def entryTrace {G : NormalGraph ι} {images : InstanceImageCheck G} (env : WalkEnv ι G images) (σ : WalkState ι G) (l : Nat)
+    (es : EntryStart ι) : Trace :=
+  if env.tracing then
+    let trace := σ.trace
+    let trace := match env.given[l]! with
+      | some _ => trace
+      | none => match σ.walk.incoming[l]! with
+        | [_] => { trace with single := trace.single.set! l (σ.incomingFrom[l]!).head? }
+        | _ => match es.merged with
+          | some mg => { trace with merges := trace.merges.set! l ((σ.incomingFrom[l]!).zip (mg.views.zip mg.renames)) }
+          | none => trace
+    let node := env.nodes[l]!
+    let focus := ((mentioned 0 node.expression).getD []).filterMap (es.base.names[·]?)
+    { trace with entries := trace.entries.set! l (some es.base), node := l, edge := none, names := es.fresh :: es.base.names, focus }
+  else σ.trace
+
+/-- At a merge observed, each predecessor's state at the merge's slots and
+the names. -/
+def entryPreds {G : NormalGraph ι} {images : InstanceImageCheck G} (env : WalkEnv ι G images) (σ : WalkState ι G) (l : Nat)
+    (es : EntryStart ι) : List (Nat × Knowledge) × List (List Nat) :=
+  match es.merged with
+  | some mg =>
+    if env.observe == some l then
+      let width := (env.claimed[l]!).context.length
+      ((σ.incomingFrom[l]!).zip (mg.views.map fun ps => (materialize ps width (List.range width) true).1),
+        mg.state.names :: (σ.walk.incoming[l]!).map (·.names))
+    else ([], [])
+  | none => ([], [])
+
+/-- Debugging: the facts a reference certificate holds at `l` that the
+state `entry` does not entail. -/
+def referenceRefusal (G : NormalGraph ι) {images : InstanceImageCheck G} (env : WalkEnv ι G images) (l : Nat)
+    (entry : State) : Option String :=
+  match env.reference[l]? with
+  | some old =>
+    if !env.isHead[l]! then
+      let c := env.claimed[l]!
+      let width := c.context.length
+      let (k, _, _) := materialize entry width (List.range width) true
+      let ctx := KnowledgeExpand.ctxOf G c.context
+      let missingCells := old.cells.filter fun f => !KnowledgeExpand.checkIn ctx k { cells := [f] } none
+      if !missingCells.isEmpty then some s!"reference: node {l} lacks cells {reprStr missingCells}"
+      else
+        let missing := old.indices.filter fun a => !KnowledgeExpand.checkIn ctx k { indices := [a] } none
+        if !missing.isEmpty then some s!"reference: node {l} lacks {reprStr missing}" else none
+    else none
+  | none => none
+
+/-- What a node's entry gives its step and its exits: the walk's counters,
+trace, fresh counter and timer after it, whether no environment meets the
+node's context, the entry state and implications (`entryOf`), at a merge
+observed each predecessor's state and names, at a merge its context and the
+fresh counter it started from. -/
+structure Entered (ι : Type) where
+  counts : Counts
+  trace : Trace
+  fresh : Nat
+  lastStamp : Nat
   here : Bool
   entry : State
   implies : List (PromiseCalls.Implication ι)
@@ -2120,15 +2242,217 @@ structure Entered (ι : Type) [BEq ι] [Hashable ι] (G : NormalGraph ι) where
   predNames : List (List Nat)
   merge : Option (List (Ty ι) × Nat)
 
-/-- What a node's step gives its exits and its record: the walk's state
-after it, the fresh counter and the read-summary table's length it started
-from, its result, whether its result holds a fresh store, whether its
-footprint and return checks passed, its yields where computed, the
-handler's thrown value's type and name. -/
+/-- A node's entry (`visit`'s first part): `entryStart` and `withStated`;
+the stop where a reference certificate's facts are missing or an
+observation of its entry is asked. -/
+def visitEntry (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEnv ι G images) (σ : WalkState ι G)
+    (l : Nat) : Except (WalkStop ι G) (Entered ι) :=
+  -- Measuring: the previous node's time, with its edges, by its kind.
+  let lastStamp := clock σ.lastKind σ.lastStamp l
+  let c := env.claimed[l]!
+  let width := c.context.length
+  -- Whether no environment meets the node's context.
+  let here := match σ.unsat[l]! with
+    | some u => u
+    | none => ControlFlow.unsatisfiable G c.context
+  let es := entryStart G env σ l
+  let counts := entryCounts env σ.counts l es
+  let trace := entryTrace env σ l es
+  let (predViews, predNames) := entryPreds env σ l es
+  match referenceRefusal G env l es.base with
+  | some why => .error (WalkStop.mk (.refused why) counts σ.answers trace)
+  | none =>
+    let entry := withStated env l es.base
+    -- Observing a node whose step is refused: its state on entry alone.
+    if env.observeEntry && env.observe == some l then
+      let before := (materialize entry width (List.range width) true).1
+      let o : Observation ι := { label := l, before, after := before, preds := predViews, names := predNames, implies := slotImplOf entry.names es.implies }
+      .error (WalkStop.mk (.observed o) counts σ.answers trace)
+    else
+      .ok { counts, trace, fresh := es.fresh, lastStamp, here, entry, implies := es.implies, predViews, predNames,
+            merge := es.merge }
+
+/-- The counters with a step's statistics added. -/
+def addStats (counts : Counts) (stats : StepStats) : Counts :=
+  { counts with
+    rules := counts.rules + stats.rules, fullRules := counts.fullRules + stats.fullRules
+    directCalls := counts.directCalls + stats.directCalls, copies := counts.copies + stats.copies }
+
+/-- **A node's checked step** from its entry state `entry`, the fresh
+counter `fresh` and the answers `answers`: the node's shape
+(`passShapeCheck'`), the slots its expression reads, `checkedStep`; the
+slots, the step, its statistics and the answers after it, or where it
+stopped (at the counters `counts` and the trace `trace`). -/
+def stepRun (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEnv ι G images) (l : Nat)
+    (entry : State) (fresh : Nat) (answers : Answered G) (counts : Counts) (trace : Trace) :
+    Except (WalkStop ι G) (List Nat × Stepped ι × StepStats × Answered G) :=
+  let node := env.nodes[l]!
+  let c := env.claimed[l]!
+  if !passShapeCheck' G c.type node.continuation then
+    .error (WalkStop.mk (.refused s!"the shape of node {l}") counts answers trace)
+  else match timedKind "node mentioned" fun _ => mentioned 0 node.expression with
+  | none => .error (WalkStop.mk (.notHandled s!"term at node {l}: {(reprStr node.expression).take 200}") counts answers trace)
+  | some ms =>
+    let ms := (keepFirst {} ms).2.toList
+    let (stepped, stats, a) := checkedStep G images env.pool env.fuel env.suggestions env.index env.codes env.aliases
+      env.passChecker env.undefTy l node c entry ms fresh answers
+    match stepped with
+    | .ok st => .ok (ms, st, stats, a)
+    | .error why => .error (WalkStop.mk (.refused why) (addStats counts stats) a trace)
+
+/-- The step's derivation as the checks after it read it: the step's, else
+a variable read at the node's sequent. -/
+def derivOf (c : PointClaim ι) (node : Node) (st : Stepped ι) : ProgramCertificates.Evidence ι :=
+  st.stepDeriv.getD (.node ⟨c.context, node.expression, c.type⟩ .var [])
+
+/-- The fresh receiver slots of the step: the receiver's slot where it holds
+a fresh name. -/
+def recvFresh (node : Node) (entry : State) : List Nat :=
+  match PromiseCalls.receiverSlot node.expression with
+  | some i => if (entry.names[i]?).any entry.fresh.contains then [i] else []
+  | none => []
+
+/-- The evidence `GraphCode.deadNode` reads at a node of the no-return
+region. -/
+def deadEvidence (c : PointClaim ι) (node : Node) : NodeEvidence ι :=
+  ⟨none, some ⟨c.context, node.expression, c.type⟩, [], {}, none, {}, none, [], [], [], none⟩
+
+/-- Whether the step's result holds a fresh store: a copy of a fresh slot,
+or a call at a selected signature stating a fresh result
+(`GraphCode.varFresh`, `callFresh`) whose derivation `derivChecked`
+accepts at the step's facts `stepK`. -/
+def outFreshOf (G : NormalGraph ι) (images : InstanceImageCheck G) (codes : CodeEntry ι → Bool)
+    (sums : List (ReadSummary ι)) (c : PointClaim ι) (node : Node) (entry : State)
+    (stepK : Knowledge) (deriv : ProgramCertificates.Evidence ι) : Bool :=
+  (match node.expression with
+    | .var i => (entry.names[i]?).any entry.fresh.contains
+    | _ => false) ||
+    ((match ExpressionEffects.selectedEffect deriv with | some eff => eff.fresh | none => false) &&
+      ExpressionEffects.selectedOperands deriv &&
+      derivChecked G images codes sums c node stepK deriv)
+
+/-- **The footprint check at a node** (`GraphCode.nodeChecked`): under no
+bound, it passes; under the bound $`(\Phi, \mathit{ret}, \mathit{exc})`$, at a
+label of the no-return region `deadArr` it is `deadNode` with no throw
+bound, elsewhere `footprintCheck` at the fresh receiver slots, the live
+handler and the result's freshness (`outFreshOf`), over the read summaries
+`sums` after the step, its facts `stepK` and its derivation `deriv`. -/
+def boundOk (G : NormalGraph ι) (images : InstanceImageCheck G) (codes : CodeEntry ι → Bool)
+    (bound : Option (Footprints.Closed × Bool × Bool)) (deadArr : Array Bool) (l : Nat) (node : Node)
+    (c : PointClaim ι) (entry : State) (sums : List (ReadSummary ι)) (stepK : Knowledge)
+    (deriv : ProgramCertificates.Evidence ι) : Bool :=
+  match bound with
+  | none => true
+  | some (Φ, ret, exc) =>
+    if deadArr.getD l false then
+      GraphCode.deadNode G deadArr.toList node (deadEvidence c node) && !exc
+    else
+      footprintCheck G images codes sums Φ (recvFresh node entry) c node stepK deriv
+        (match node.handler with
+          | some t => !deadArr.getD t.label false
+          | none => false) exc ret
+        (outFreshOf G images codes sums c node entry stepK deriv)
+
+/-- A step's yields checked (`checkedYields`) at the node's claim, the
+step's facts and derivation, the promise branch's derivation checked over
+the read summaries of `answers`. -/
+def checkYsAt (G : NormalGraph ι) (images : InstanceImageCheck G) (codes : CodeEntry ι → Bool)
+    (answers : Answered G) (c : PointClaim ι) (node : Node) (st : Stepped ι)
+    (xs : List (PromiseCalls.Implication ι)) (ys : List (PromiseCalls.Yield ι)) : List (PromiseCalls.Yield ι) :=
+  let deriv := derivOf c node st
+  timedKind "yields checked" fun _ =>
+    checkedYields G images c.context c.type xs st.stepK st.stepOut deriv node.expression
+      (fun _ => promiseDerivChecked G images codes answers.summaries.toList c node st.stepK deriv) ys
+
+/-- A read of a slot yields what the implications testing its name state,
+at every slot holding a target's name, checked against the implications
+testing the slot's name; none where no implication tests it. -/
+def readYields (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEnv ι G images) (l : Nat)
+    (entry : State) (implies : List (PromiseCalls.Implication ι)) (st : Stepped ι) (answers : Answered G) :
+    Option (List (PromiseCalls.Yield ι)) :=
+  let node := env.nodes[l]!
+  let c := env.claimed[l]!
+  match node.expression with
+  | .var i => match entry.names[i]? with
+    | some x =>
+      let tested := implies.filter (·.test == x)
+      if tested.isEmpty then none
+      else
+        let held := (entry.names.zipIdx).filter fun (nm, _) => tested.any (·.target == nm)
+        some (checkYsAt G images env.codes answers c node st (slotImplOf entry.names tested)
+          (tested.flatMap fun y => (held.filter (·.1 == y.target)).map fun (_, t) =>
+            ({ conditional := true, target := t, type := y.type } : PromiseCalls.Yield ι)))
+    | none => none
+  | _ => none
+
+/-- **The step's yields**, where an edge's types need them: a read's
+(`readYields`), else another step's (a test's, a promise call's), computed
+for the implications its pushed result carries (`nodeYields`), checked
+(`checkYsAt` at the answers `answers`); and the answers after them. -/
+def stepYields (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEnv ι G images) (l : Nat)
+    (entry : State) (implies : List (PromiseCalls.Implication ι)) (st : Stepped ι) (answers : Answered G) :
+    Option (List (PromiseCalls.Yield ι)) × Answered G :=
+  match readYields G images env l entry implies st answers with
+  | some ys => (some ys, answers)
+  | none =>
+    let node := env.nodes[l]!
+    let c := env.claimed[l]!
+    let isRead := match node.expression with | .var _ => true | _ => false
+    if !isRead && !st.copied then
+      let slotImpl := slotImplOf entry.names implies
+      let (ys, a) := timedKind "yields" fun _ =>
+        (nodeYields G images env.pool c.context slotImpl (derivOf c node st) st.stepOut st.stepK) answers
+      (some (checkYsAt G images env.codes answers c node st slotImpl ys), a)
+    else (none, answers)
+
+/-- A handler receives the thrown value in a fresh name, at a type
+admitting every value its target states for the slot it lands in, or the
+pool's (`produceNodeAt`), under the facts a throw keeps
+(`ControlFlow.handlerFacts`: no heap fact). -/
+def thrownTyOf {G : NormalGraph ι} {images : InstanceImageCheck G} (env : WalkEnv ι G images) (node : Node) : Option (Ty ι) :=
+  node.handler.bind fun t => do
+    let tc ← env.claimed[t.label]?
+    let landing := (List.range tc.context.length).filterMap fun i =>
+      if PointClaims.slot t.mapping i == 0 then tc.context[i]? else none
+    (landing ++ env.pool).find? (ControlFlow.admitsAll G)
+
+/-- The return check at a return node (`returnCheck`, at the step's store
+and result and the yields `yields`, from the answers `answers`); none at
+another node. -/
+def returnRun (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEnv ι G images) (l : Nat)
+    (entry : State) (st : Stepped ι) (yields : List (PromiseCalls.Yield ι)) (answers : Answered G) :
+    Option (Option String × Answered G × Option Nat) :=
+  match (env.nodes[l]!).continuation with
+  | .ret => some (returnCheck G images env.goal env.ensures env.claimed[l]! l entry st.store st.result env.start
+      env.startNames env.argName yields env.debugNode answers)
+  | _ => none
+
+/-- **Whether the return check passes** at `l` (`returnRun`): its refusal
+none at a return, true at another node. -/
+def returnOk (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEnv ι G images) (l : Nat)
+    (entry : State) (st : Stepped ι) (yields : List (PromiseCalls.Yield ι)) (answers : Answered G) : Bool :=
+  match returnRun G images env l entry st yields answers with
+  | some (refusal, _, _) => refusal.isNone
+  | none => true
+
+/-- What a node's step gives its exits and its record: the answers it
+started from (`stepAnswers`), those after `checkedStep` (`steppedAnswers`,
+which the footprint check reads), those the return check started from
+(`yieldAnswers`) and those after the step (`answers`); the counters, trace,
+fresh counter and timer kind after it; the slots it read, its result,
+whether its result holds a fresh store, whether its footprint and return
+checks passed, its yields where computed, the handler's thrown value's type
+and name. -/
 structure StepDone (ι : Type) [BEq ι] [Hashable ι] (G : NormalGraph ι) where
-  σ : WalkState ι G
-  stepFresh : Nat
-  stepSummaries : Nat
+  stepAnswers : Answered G
+  steppedAnswers : Answered G
+  yieldAnswers : Answered G
+  answers : Answered G
+  counts : Counts
+  trace : Trace
+  fresh : Nat
+  lastKind : String
+  ms : List Nat
   st : Stepped ι
   outFresh : Bool
   bounded : Bool
@@ -2137,364 +2461,129 @@ structure StepDone (ι : Type) [BEq ι] [Hashable ι] (G : NormalGraph ι) where
   thrownTy : Option (Ty ι)
   thrown : Nat
 
-/-- A node's entry (`visit`'s first part): its entry state, given at a
-head, its one predecessor's, or the meet of its predecessors', a written
-assertion's facts joined at a node other than a head; the stop where an
-observation of its entry is asked. -/
-def visitEntry (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEnv ι G images) (σ : WalkState ι G)
-    (l : Nat) : Except (WalkStop ι G) (Entered ι G) := do
-  let nodes := env.nodes
-  let claimed := env.claimed
-  let start := env.start
-  let reference := env.reference
-  let givenImplies := env.givenImplies
-  let givenArgs := env.givenArgs
-  let givenInputs := env.givenInputs
-  let observe := env.observe
-  let tracing := env.tracing
-  let observeEntry := env.observeEntry
-  let isHead := env.isHead
-  let startEntered := env.startEntered
-  let stated := env.stated
-  let given := env.given
-  let startNames := env.startNames
-  let argName := env.argName
-  let answers := σ.answers
-  let mut counts := σ.counts
-  let mut trace := σ.trace
-  let mut fresh := σ.fresh
-  let mut lastStamp := σ.lastStamp
-  let lastKind := σ.lastKind
-  let unsat := σ.unsat
-  let incoming := σ.walk.incoming
-  let incomingImpl := σ.walk.incomingImpl
-  let incomingEdges := σ.walk.incomingEdges
-  let incomingFrom := σ.incomingFrom
-  let mut merge : Option (List (Ty ι) × Nat) := none
-  -- Measuring: the previous node's time, with its edges, by its kind.
-  lastStamp := clock lastKind lastStamp l
-  let node := nodes[l]!
-  let c := claimed[l]!
-  let width := c.context.length
-  -- Whether no environment meets the node's context.
-  let here ← match unsat[l]! with
-    | some u => pure u
-    | none => pure (ControlFlow.unsatisfiable G c.context)
-  -- The node's entry state: given at a head, its one predecessor's, or
-  -- the meet of its predecessors'.
-  let mut entry : State := { names := [] }
-  let mut implies : List (PromiseCalls.Implication ι) := []
-  -- At a merge observed, each predecessor's state at the merge's slots.
-  let mut predViews : List (Nat × Knowledge) := []
-  let mut predNames : List (List Nat) := []
-  match given[l]! with
-  | some g =>
-    let (st, imp, fr) := headEntry g (l == start && !startEntered) width fresh startNames argName ((givenArgs[l]?).getD [])
-      ((givenInputs[l]?).getD []) ((givenImplies[l]?).getD [])
-    entry := st
-    implies := imp
-    fresh := fr
-    counts := { counts with givenImplies := counts.givenImplies + implies.length }
-  | none => match incoming[l]! with
-    | [s] =>
-      entry := s
-      if tracing then trace := { trace with single := trace.single.set! l (incomingFrom[l]!).head? }
-      implies := (incomingImpl[l]!).headD []
-    | [] => pure ()
-    | s :: rest =>
-      merge := some (c.context, fresh)
-      let mg := mergeState G c.context (s :: rest) incomingEdges[l]! fresh
-      fresh := mg.fresh
-      counts := { counts with merges := counts.merges + 1, mergeDiffs := counts.mergeDiffs + mg.diffCount }
-      if observe == some l then
-        predViews := incomingFrom[l]!.zip (mg.views.map fun ps => (materialize ps width (List.range width) true).1)
-        predNames := mg.state.names :: (s :: rest).map (·.names)
-      if tracing then
-        trace := { trace with merges := trace.merges.set! l ((incomingFrom[l]!).zip (mg.views.zip mg.renames)) }
-      entry := mg.state
-      implies := mg.implies
-  if tracing then
-    let focus := ((mentioned 0 node.expression).getD []).filterMap (entry.names[·]?)
-    trace := { trace with entries := trace.entries.set! l (some entry), node := l, edge := none, names := fresh :: entry.names, focus }
-  counts := { counts with
-    visited := counts.visited + 1, storeMax := max counts.storeMax entry.store.size
-    stateSum := counts.stateSum + entry.store.size, heads := counts.heads + (if isHead[l]! then 1 else 0) }
-  -- Debugging: the facts a reference certificate holds here that this
-  -- state does not entail.
-  if let some old := reference[l]? then
-    if !isHead[l]! then
-      let (k, _, _) := materialize entry width (List.range width) true
-      let ctx := KnowledgeExpand.ctxOf G c.context
-      let missingCells := old.cells.filter fun f => !KnowledgeExpand.checkIn ctx k { cells := [f] } none
-      if !missingCells.isEmpty then
-        throw (WalkStop.mk (.refused s!"reference: node {l} lacks cells {reprStr missingCells}") counts answers trace)
-      let missing := old.indices.filter fun a => !KnowledgeExpand.checkIn ctx k { indices := [a] } none
-      if !missing.isEmpty then
-        throw (WalkStop.mk (.refused s!"reference: node {l} lacks {reprStr missing}") counts answers trace)
-  -- A written assertion, established on every edge into a node other than
-  -- a head, holds there: its facts join the state.
-  if !isHead[l]! then
-    if let some req := stated[l]! then
-      let f := fun (i : Nat) => entry.names[i]?
-      entry := { entry with store := (atomsOf req).foldl (fun s a => match a.rename f with
-        | some b => s.add b | none => s) entry.store }
-  -- Observing a node whose step is refused: its state on entry alone.
-  if observeEntry && observe == some l then
-    let before := (materialize entry width (List.range width) true).1
-    let o : Observation ι := { label := l, before, after := before, preds := predViews, names := predNames, implies := slotImplOf entry.names implies }
-    throw (WalkStop.mk (.observed o) counts answers trace)
-  pure { σ := { σ with counts, trace, fresh, lastStamp }, here, entry, implies, predViews, predNames, merge }
-
-/-- A node's step (`visit`'s second part), from its entry `en`: its shape,
-the checked step, an observation of it, its result's freshness, its
-footprint check, its yields, a handler's thrown value, its return check. -/
-def visitStep (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEnv ι G images) (l : Nat)
-    (en : Entered ι G) : Except (WalkStop ι G) (StepDone ι G) := do
-  let pool := env.pool
-  let fuel := env.fuel
-  let suggestions := env.suggestions
-  let index := env.index
-  let codes := env.codes
-  let aliases := env.aliases
-  let passChecker := env.passChecker
-  let undefTy := env.undefTy
-  let nodes := env.nodes
-  let claimed := env.claimed
-  let start := env.start
-  let goal := env.goal
-  let ensures := env.ensures
-  let debugNode := env.debugNode
-  let bound := env.bound
-  let observe := env.observe
-  let tracing := env.tracing
-  let given := env.given
-  let deadArr := env.deadArr
-  let startNames := env.startNames
-  let argName := env.argName
-  let σ := en.σ
-  let mut answers := σ.answers
-  let mut counts := σ.counts
-  let mut trace := σ.trace
-  let mut fresh := σ.fresh
-  let mut lastKind := σ.lastKind
-  let incoming := σ.walk.incoming
-  let node := nodes[l]!
-  let c := claimed[l]!
-  let width := c.context.length
-  let entry := en.entry
-  let implies := en.implies
-  let predViews := en.predViews
-  let predNames := en.predNames
-  -- The node's shape (`passShapeCheck'`).
-  if !passShapeCheck' G c.type node.continuation then
-    throw (WalkStop.mk (.refused s!"the shape of node {l}") counts answers trace)
-  -- The step.
-  let some ms := timedKind "node mentioned" fun _ => mentioned 0 node.expression | throw (WalkStop.mk (.notHandled s!"term at node {l}: {(reprStr node.expression).take 200}") counts answers trace)
-  let ms := (keepFirst {} ms).2.toList
-  -- The fresh counter and the answers the step starts from.
-  let stepFresh := fresh
-  let stepSummaries := answers.summaries.size
-  let (stepped, stats, a) := checkedStep G images pool fuel suggestions index codes aliases passChecker undefTy
-    l node c entry ms fresh answers
-  answers := a
-  counts := { counts with
-    rules := counts.rules + stats.rules, fullRules := counts.fullRules + stats.fullRules
-    directCalls := counts.directCalls + stats.directCalls, copies := counts.copies + stats.copies }
-  let st ← match stepped with
-    | .ok st => pure st
-    | .error why => throw (WalkStop.mk (.refused why) counts answers trace)
-  lastKind := if (given[l]!).isSome then "node: head" else if (incoming[l]!).length > 1 then "node: merge"
-    else if st.copied then "node: copy" else "node: step"
-  fresh := st.fresh
-  let store := st.store
-  let result := st.result
-  let stepK := st.stepK
-  let stepOut := st.stepOut
-  let stepDeriv := st.stepDeriv
-  let pushedNames := result :: entry.names
-  if tracing then
-    let st : State := { entry with names := pushedNames, store := store }
-    trace := { trace with afters := trace.afters.set! l (some st), names := pushedNames, focus := result :: trace.focus }
-  if observe == some l then
-    let before := (materialize entry width (List.range width) true).1
-    let after := (materialize { entry with names := pushedNames, store := store } (width + 1) (List.range (width + 1)) true).1
-    let o : Observation ι := { label := l, before, after, preds := predViews, names := predNames, implies := slotImplOf entry.names implies }
-    throw (WalkStop.mk (.observed o) counts answers trace)
-  -- Whether the result holds a fresh store: a copy of a fresh slot, or a
-  -- call at a selected signature stating a fresh result (`GraphCode.varFresh`,
-  -- `callFresh`).
-  let deriv := stepDeriv.getD (.node ⟨c.context, node.expression, c.type⟩ .var [])
-  let outFresh := (match node.expression with
-    | .var i => (entry.names[i]?).any entry.fresh.contains
-    | _ => false) ||
-    ((match ExpressionEffects.selectedEffect deriv with | some eff => eff.fresh | none => false) &&
-      ExpressionEffects.selectedOperands deriv &&
-      derivChecked G images codes answers.summaries.toList c node stepK deriv)
-  -- The footprint bound at this node (`GraphCode.nodeChecked`): whether it
-  -- passes, recorded.
-  let bounded : Bool := match bound with
-    | none => true
-    | some (Φ, ret, exc) =>
-      if deadArr.getD l false then
-        GraphCode.deadNode G deadArr.toList node ⟨none, some ⟨c.context, node.expression, c.type⟩, [], {}, none, {}, none, [], [], [], none⟩ && !exc
+/-- A node's step (`visit`'s second part), from the walk's state `σ` and the
+node's entry `en`: the checked step (`stepRun`), an observation of it, its
+result's freshness (`outFreshOf`), its footprint check (`boundOk`), its
+yields (`stepYields`), a handler's thrown value, its return check
+(`returnRun`). -/
+def visitStep (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEnv ι G images) (σ : WalkState ι G)
+    (l : Nat) (en : Entered ι) : Except (WalkStop ι G) (StepDone ι G) :=
+  match stepRun G images env l en.entry en.fresh σ.answers en.counts en.trace with
+  | .error stop => .error stop
+  | .ok (ms, st, stats, a) =>
+    let node := env.nodes[l]!
+    let c := env.claimed[l]!
+    let width := c.context.length
+    let entry := en.entry
+    let counts := addStats en.counts stats
+    let lastKind := if (env.given[l]!).isSome then "node: head" else if (σ.walk.incoming[l]!).length > 1 then "node: merge"
+      else if st.copied then "node: copy" else "node: step"
+    let pushedNames := st.result :: entry.names
+    let trace := if env.tracing then
+        let s : State := { entry with names := pushedNames, store := st.store }
+        { en.trace with afters := en.trace.afters.set! l (some s), names := pushedNames, focus := st.result :: en.trace.focus }
+      else en.trace
+    if env.observe == some l then
+      let before := (materialize entry width (List.range width) true).1
+      let after := (materialize { entry with names := pushedNames, store := st.store } (width + 1) (List.range (width + 1)) true).1
+      let o : Observation ι := { label := l, before, after, preds := en.predViews, names := en.predNames, implies := slotImplOf entry.names en.implies }
+      .error (WalkStop.mk (.observed o) counts a trace)
+    else
+      let deriv := derivOf c node st
+      let sums := a.summaries.toList
+      let outFresh := outFreshOf G images env.codes sums c node entry st.stepK deriv
+      let bounded := boundOk G images env.codes env.bound env.deadArr l node c entry sums st.stepK deriv
+      if !bounded then .error (WalkStop.mk (.outsideBound l) counts a trace)
       else
-        let F := match PromiseCalls.receiverSlot node.expression with
-          | some i => if (entry.names[i]?).any entry.fresh.contains then [i] else []
-          | none => []
-        let liveHandler := match node.handler with
-          | some t => !deadArr.getD t.label false
-          | none => false
-        footprintCheck G images codes answers.summaries.toList Φ F c node stepK deriv liveHandler exc ret outFresh
-  if !bounded then throw (WalkStop.mk (.outsideBound l) counts answers trace)
-  -- The node's implications at its slots, as the search's yields read
-  -- them (`produceNode`): a negation's or a copy's yields restate them.
-  let slotImpl : Thunk (List (PromiseCalls.Implication ι)) := Thunk.mk fun _ => slotImplOf entry.names implies
-  -- The yields kept: those the checker's yield check accepts (`checkedYields`).
-  let checkYs := fun (xs : List (PromiseCalls.Implication ι)) (ys : List (PromiseCalls.Yield ι)) => timedKind "yields checked" fun _ =>
-    checkedYields G images c.context c.type xs stepK stepOut deriv node.expression
-      (fun _ => promiseDerivChecked G images codes answers.summaries.toList c node stepK deriv) ys
-  -- The step's yields, computed where an edge's types need them. A read
-  -- of a slot yields what the implications testing it state.
-  let mut yields : Option (List (PromiseCalls.Yield ι)) := none
-  if let .var i := node.expression then
-    if let some x := entry.names[i]? then
-      let tested := implies.filter (·.test == x)
-      if !tested.isEmpty then
-        -- At every slot holding a target's name.
-        let held := (entry.names.zipIdx).filter fun (nm, _) => tested.any (·.target == nm)
-        -- Checked against the implications testing the slot's name.
-        yields := some (checkYs (slotImplOf entry.names tested) (tested.flatMap fun y => (held.filter (·.1 == y.target)).map fun (_, t) =>
-          ({ conditional := true, target := t, type := y.type } : PromiseCalls.Yield ι)))
-  -- Another step's yields (a test's, a promise call's): computed for the
-  -- implications its pushed result carries.
-  let isRead := match node.expression with | .var _ => true | _ => false
-  if yields.isNone && !isRead && !st.copied then
-    let e := stepDeriv.getD (.node ⟨c.context, node.expression, c.type⟩ .var [])
-    let (ys, a) := timedKind "yields" fun _ => (nodeYields G images pool c.context slotImpl.get e stepOut stepK) answers
-    answers := a
-    yields := some (checkYs slotImpl.get ys)
-  -- A handler receives the thrown value in a fresh name, at a type
-  -- admitting every value its target states for the slot it lands in, or
-  -- the pool's (`produceNodeAt`), under the facts a throw keeps
-  -- (`ControlFlow.handlerFacts`: no heap fact).
-  let thrownTy : Option (Ty ι) := node.handler.bind fun t => do
-    let tc ← claimed[t.label]?
-    let landing := (List.range tc.context.length).filterMap fun i =>
-      if PointClaims.slot t.mapping i == 0 then tc.context[i]? else none
-    (landing ++ pool).find? (ControlFlow.admitsAll G)
-  if node.handler.isSome && thrownTy.isNone then throw (WalkStop.mk (.refused s!"handler of node {l}") counts answers trace)
-  let thrown := fresh
-  if node.handler.isSome then fresh := fresh + 1
-  -- The return check at a return: whether it passes, recorded.
-  let mut returned := true
-  if let .ret := node.continuation then
-    let (refusal, a, queried) := returnCheck G images goal ensures c l entry store result start startNames argName
-      (yields.getD []) debugNode answers
-    answers := a
-    returned := refusal.isNone
-    if let some q := queried then
-      counts := { counts with queries := counts.queries + 1, queryAtoms := counts.queryAtoms + q }
-    if let some why := refusal then throw (WalkStop.mk (.refused why) counts answers trace)
+        let (yields, a1) := stepYields G images env l entry en.implies st a
+        let thrownTy := thrownTyOf env node
+        if node.handler.isSome && thrownTy.isNone then
+          .error (WalkStop.mk (.refused s!"handler of node {l}") counts a1 trace)
+        else
+          let thrown := st.fresh
+          let fresh := if node.handler.isSome then st.fresh + 1 else st.fresh
+          match returnRun G images env l entry st (yields.getD []) a1 with
+          | none =>
+            .ok { stepAnswers := σ.answers, steppedAnswers := a, yieldAnswers := a1, answers := a1, counts, trace,
+                  fresh, lastKind, ms, st, outFresh, bounded, returned := true, yields, thrownTy, thrown }
+          | some (refusal, a2, queried) =>
+            let counts := match queried with
+              | some q => { counts with queries := counts.queries + 1, queryAtoms := counts.queryAtoms + q }
+              | none => counts
+            match refusal with
+            | some why => .error (WalkStop.mk (.refused why) counts a2 trace)
+            | none =>
+              .ok { stepAnswers := σ.answers, steppedAnswers := a, yieldAnswers := a1, answers := a2, counts, trace,
+                    fresh, lastKind, ms, st, outFresh, bounded, returned := true, yields, thrownTy, thrown }
 
-  pure { σ := { σ with answers, counts, trace, fresh, lastKind }, stepFresh, stepSummaries, st, outFresh, bounded,
-         returned, yields, thrownTy, thrown }
+/-- The walk's arrays and threaded values a node's exits change: the states,
+implications and merge edges carried into each label, the processed edges,
+the answers, counters and trace, the in-degrees, the regional facts carried
+in, where each incoming state came from, the queue, each node's
+satisfiability, and the step's yields. -/
+structure ExitsDone (ι : Type) [BEq ι] [Hashable ι] (G : NormalGraph ι) where
+  incoming : Array (List State)
+  incomingImpl : Array (List (List (PromiseCalls.Implication ι)))
+  incomingEdges : Array (List (List (Ty ι) × List (PromiseCalls.Implication ι) × PointClaims.Mapping))
+  edges : Array (EdgeWalk ι)
+  answers : Answered G
+  counts : Counts
+  trace : Trace
+  indeg : Array Nat
+  regionIn : Array (List RegionState)
+  incomingFrom : Array (List Nat)
+  queue : List Nat
+  unsat : Array (Option Bool)
+  yields : Option (List (PromiseCalls.Yield ι))
 
-/-- A node's exits (`visit`'s third part), from its entry `en` and its step
-`sd`: a regional check, then each exit's edge checked, and its state and
-implications carried into its target, or checked against a head's given
-facts; the walk's state after them. -/
-def visitExits (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEnv ι G images) (l : Nat)
-    (en : Entered ι G) (sd : StepDone ι G) : Except (WalkStop ι G) (WalkState ι G) := do
-  let pool := env.pool
-  let codes := env.codes
-  let nodes := env.nodes
-  let claimed := env.claimed
-  let n := env.n
-  let start := env.start
-  let debugNode := env.debugNode
-  let givenImplies := env.givenImplies
-  let givenArgs := env.givenArgs
-  let givenInputs := env.givenInputs
-  let observe := env.observe
-  let tracing := env.tracing
-  let regional := env.regional
-  let isHead := env.isHead
-  let stated := env.stated
-  let given := env.given
-  let merging := env.merging
-  let startNames := env.startNames
-  let argName := env.argName
-  let σ := sd.σ
-  let mut answers := σ.answers
-  let mut counts := σ.counts
-  let mut trace := σ.trace
-  let mut indeg := σ.indeg
-  let mut regionIn := σ.regionIn
-  let mut incomingFrom := σ.incomingFrom
-  let mut queue := σ.queue
-  let mut unsat := σ.unsat
-  let mut incoming := σ.walk.incoming
-  let mut incomingImpl := σ.walk.incomingImpl
-  let mut incomingEdges := σ.walk.incomingEdges
-  let mut walkEdges := σ.walk.edges
-  let node := nodes[l]!
-  let c := claimed[l]!
-  let width := c.context.length
-  let here := en.here
-  let entry := en.entry
-  let implies := en.implies
-  let st := sd.st
-  let store := st.store
-  let result := st.result
-  let stepK := st.stepK
-  let stepOut := st.stepOut
-  let stepDeriv := st.stepDeriv
-  let stepEffect := st.stepEffect
-  let pushedNames := result :: entry.names
-  let outFresh := sd.outFresh
-  let thrownTy := sd.thrownTy
-  let thrown := sd.thrown
-  let mut yields := sd.yields
-  let deriv := stepDeriv.getD (.node ⟨c.context, node.expression, c.type⟩ .var [])
-  let slotImpl : Thunk (List (PromiseCalls.Implication ι)) := Thunk.mk fun _ => slotImplOf entry.names implies
-  let checkYs := fun (xs : List (PromiseCalls.Implication ι)) (ys : List (PromiseCalls.Yield ι)) => timedKind "yields checked" fun _ =>
-    checkedYields G images c.context c.type xs stepK stepOut deriv node.expression
-      (fun _ => promiseDerivChecked G images codes answers.summaries.toList c node stepK deriv) ys
-  -- The edges: target, whether the result is pushed, an observation of
-  -- it, and a branch's answer.
-  let edges := Exit.ofNode node
-  -- The edges' contexts as the step's yields refine them (`produceNodeAt`),
-  -- read where a target's assertion is checked on the edge.
-  if yields.isNone && edges.any (fun e => !isHead[e.target.label]! && (stated[e.target.label]!).isSome) then
-    let e := stepDeriv.getD (.node ⟨c.context, node.expression, c.type⟩ .var [])
-    let (ys, a) := (nodeYields G images pool c.context slotImpl.get e stepOut stepK) answers
-    answers := a
-    yields := some (checkYs slotImpl.get ys)
-  let ysAll := (yields.getD []).flatMap fun y => match entry.names[y.target]? with
-    | some nm => (entry.names.zipIdx.filter (·.1 == nm)).map fun (_, j) => { y with target := j }
+/-- The step's yields the exits read: the step's, else, where a target's
+assertion is checked on an edge, `nodeYields` checked (`checkYsAt` at the
+step's final answers); and the answers after them. -/
+def exitsYields (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEnv ι G images) (l : Nat)
+    (en : Entered ι) (sd : StepDone ι G) : Option (List (PromiseCalls.Yield ι)) × Answered G :=
+  let node := env.nodes[l]!
+  let c := env.claimed[l]!
+  if sd.yields.isNone && (Exit.ofNode node).any (fun e => !env.isHead[e.target.label]! && (env.stated[e.target.label]!).isSome) then
+    let slotImpl := slotImplOf en.entry.names en.implies
+    let (ys, a) := (nodeYields G images env.pool c.context slotImpl (derivOf c node sd.st) sd.st.stepOut sd.st.stepK) sd.answers
+    (some (checkYsAt G images env.codes sd.answers c node sd.st slotImpl ys), a)
+  else (sd.yields, sd.answers)
+
+/-- Each yield restated at every slot holding its target's name, as the
+alias links of a positional state relate them. -/
+def yieldsAtSlots (names : List Nat) (ys : List (PromiseCalls.Yield ι)) : List (PromiseCalls.Yield ι) :=
+  ys.flatMap fun y => match names[y.target]? with
+    | some nm => (names.zipIdx.filter (·.1 == nm)).map fun (_, j) => { y with target := j }
     | none => [y]
-  let outAll : Thunk Knowledge := Thunk.mk fun _ => outAllOf G c stepOut
-  let refinedΓ := fun (first : Bool) => refinedContext G c node.continuation ysAll outAll.get first
-  -- A regional check at this node, as `ArgumentRegionGraph.checkNode`
-  -- makes it: its regional facts on entry (the regions' input slots at the
-  -- start, a loop head's given ones, else what every edge into it
-  -- establishes), the cells and fields it keeps, and on each edge what
-  -- the node establishes at the target (a loop head's given facts there).
-  if let some rg := regional then
-    let here : RegionState := if l == start then
-        { facts := ((rg.regions.map fun (x : Footprints.ArgumentStoreRegion) =>
-            (⟨x.position, []⟩ : Footprints.ArgumentStoreRegion)).eraseDups).map fun x => ⟨x.position, x⟩ }
-      else if isHead[l]! then ((rg.heads[l]?).join).getD {}
-      else RegionState.meet (regionIn[l]!)
-    let sums := answers.summaries.toList
-    let ordinaryEv : Option (OrdinaryEvidence ι) := match stepDeriv, stepEffect with
-      | some d, _ => some (.proof d)
-      | none, some _ => some .effect
-      | none, none => none
-    let kHere := (materialize entry width (List.range width) true).1
-    if !regionalDerivChecked G images codes sums c node stepK stepDeriv then
-      throw (WalkStop.mk (.refused s!"store regions at node {l}: its derivation") counts answers trace)
-    let cEv : NodeEvidence ι := ⟨ordinaryEv, some ⟨c.context, node.expression, c.type⟩, [], kHere, stepEffect, {}, none, [], [], [], none⟩
+
+/-- **A regional check at a node**, as `ArgumentRegionGraph.checkNode` makes
+it: its regional facts on entry (the regions' input slots at the start, a
+loop head's given ones, else what every edge into it establishes), the
+cells and fields it keeps, and on each edge what the node establishes at the
+target (a loop head's given facts there); the regional facts carried into
+each label after it, or the refusal. -/
+def regionalAt (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEnv ι G images) (l : Nat)
+    (en : Entered ι) (sd : StepDone ι G) (rg : Regional) (answers : Answered G)
+    (regionIn : Array (List RegionState)) : Except String (Array (List RegionState)) :=
+  let node := env.nodes[l]!
+  let c := env.claimed[l]!
+  let width := c.context.length
+  let st := sd.st
+  let here : RegionState := if l == env.start then
+      { facts := ((rg.regions.map fun (x : Footprints.ArgumentStoreRegion) =>
+          (⟨x.position, []⟩ : Footprints.ArgumentStoreRegion)).eraseDups).map fun x => ⟨x.position, x⟩ }
+    else if env.isHead[l]! then ((rg.heads[l]?).join).getD {}
+    else RegionState.meet (regionIn[l]!)
+  let sums := answers.summaries.toList
+  let ordinaryEv : Option (OrdinaryEvidence ι) := match st.stepDeriv, st.stepEffect with
+    | some d, _ => some (.proof d)
+    | none, some _ => some .effect
+    | none, none => none
+  let kHere := (materialize en.entry width (List.range width) true).1
+  if !regionalDerivChecked G images env.codes sums c node st.stepK st.stepDeriv then
+    .error s!"store regions at node {l}: its derivation"
+  else
+    let cEv : NodeEvidence ι := ⟨ordinaryEv, some ⟨c.context, node.expression, c.type⟩, [], kHere, st.stepEffect, {}, none, [], [], [], none⟩
     let t0 := node.expression
     let F := here.values
     let C := if GraphCode.ArgumentRegionGraph.cellsKept G images sums rg.Φ F here.cells cEv t0 node.handler.isSome
@@ -2507,8 +2596,8 @@ def visitExits (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkE
     let outF := GraphCode.ArgumentRegionGraph.freshOut G images sums F C cEv t0
     let outC := GraphCode.ArgumentRegionGraph.cellOut F C t0
     let outFs := GraphCode.ArgumentRegionGraph.fieldOut rg.names F Fs t0
-    let established := fun (t : Target) (handler : Bool) => Id.run do
-      let w := ((claimed[t.label]?).map (·.context.length)).getD 0
+    let established := fun (t : Target) (handler : Bool) =>
+      let w := ((env.claimed[t.label]?).map (·.context.length)).getD 0
       let src := fun (j : Nat) => PointClaims.slot t.mapping j
       let rfacts := if handler then GraphCode.ArgumentPathTracking.shift here.facts else outR
       let facts := (List.range w).flatMap fun j => (rfacts.filter (·.slot == src j)).map fun f => ⟨j, f.region⟩
@@ -2519,40 +2608,264 @@ def visitExits (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkE
       let fields := (List.range w).flatMap fun j => (rg.names.filter fun f =>
         if handler then (match src j with | 0 => false | j' + 1 => Fs.contains (j', f))
         else GraphCode.ArgumentRegionGraph.fieldSlot Fs outFs pushes (src j) f).map (j, ·)
-      return ({ facts, values, cells, fields } : RegionState)
+      ({ facts, values, cells, fields } : RegionState)
     let targets := (successors node.continuation).map (·, false) ++ node.handler.toList.map (·, true)
-    let mut at_ : List (Nat × RegionState) := [(l, { here with cells := C, fields := Fs })]
-    for (t, h) in targets do
-      let e := established t h
-      if isHead[t.label]! then at_ := at_ ++ [(t.label, ((rg.heads[t.label]?).join).getD {})]
+    let (at_, regionIn) := targets.foldl (fun (acc : List (Nat × RegionState) × Array (List RegionState)) (t, h) =>
+      if env.isHead[t.label]! then (acc.1 ++ [(t.label, ((rg.heads[t.label]?).join).getD {})], acc.2)
       else
-        at_ := at_ ++ [(t.label, e)]
-        regionIn := regionIn.modify t.label (e :: ·)
+        let e := established t h
+        (acc.1 ++ [(t.label, e)], acc.2.modify t.label (e :: ·)))
+      ([(l, { here with cells := C, fields := Fs })], regionIn)
+    let n := env.n
     let table := sparse n [] (at_.map fun (x, r) => (x, r.facts))
     let ft : GraphCode.ArgumentRegionFresh.FreshTables := ⟨sparse n [] (at_.map fun (x, r) => (x, r.values)),
       sparse n [] (at_.map fun (x, r) => (x, r.cells)), sparse n [] (at_.map fun (x, r) => (x, r.fields)), rg.names⟩
     if !(timedKind "regional node" fun _ => GraphCode.ArgumentRegionGraph.checkNode G images sums rg.Φ rg.regions table ft rg.exc l node cEv) then
-      throw (WalkStop.mk (.refused s!"store regions at node {l}") counts answers trace)
-  for (ex, edgeIndex) in edges.zipIdx do
-    let t := ex.target
-    let pushed := ex.pushed
-    let observed := ex.observed
-    let promote := ex.promote
-    let isHandler := ex.isHandler
-    -- Whether the exit is its continuation's first (a two-way dispatch's
-    -- true arm), by its position among the exits.
-    let first := edgeIndex == 0
-    if tracing then trace := { trace with edge := some t.label }
-    let some tc := claimed[t.label]? | throw (WalkStop.mk (.refused s!"edge from {l}") counts answers trace)
-    let Γ := if isHandler then thrownTy.getD [] :: c.context else if pushed then c.type :: c.context else c.context
-    let names := if isHandler then thrown :: entry.names else if pushed then pushedNames else entry.names
+      .error s!"store regions at node {l}"
+    else .ok regionIn
+
+/-- Whether each slot `diff` names has, in the edge's context `Γ`, a type
+below the target's (`subtypeUsing`; the observed slot 0 never); and the
+answers after them. -/
+def diffSubtypes (G : NormalGraph ι) (images : InstanceImageCheck G) (Γ Δ : List (Ty ι)) (diff : List (Nat × Nat))
+    (observed : Option BranchRefinement.Observation) (answers : Answered G) : Bool × Answered G :=
+  diff.foldl (fun (acc : Bool × Answered G) (i, s) => match Γ[s]?, Δ[i]? with
+    | some A, some B =>
+      if observed.isNone || s != 0 then
+        let (r, a) := subtypeUsing G images A B acc.2
+        (acc.1 && r.value.isSome, a)
+      else (false, acc.2)
+    | _, _ => (false, acc.2)) (true, answers)
+
+/-- A refined context `Γ'` where a slot whose refined type the target's
+(`Δ`, through the mapping `m`) does not admit is read at its unrefined type
+in `Γ`: both are types of its value (an alias refined through an array's
+invariant element type); and the answers after it. -/
+def mixedContext (G : NormalGraph ι) (images : InstanceImageCheck G) (Γ Γ' Δ : List (Ty ι)) (m : PointClaims.Mapping)
+    (answers : Answered G) : List (Ty ι) × Answered G :=
+  let (mixed, answers) := Γ'.zipIdx.foldl (fun (acc : Array (Ty ι) × Answered G) (A', s) =>
+    let A := (Γ[s]?).getD A'
+    let reads := (List.range Δ.length).filter fun i => PointClaims.slot m i == s
+    let (fits, answers) := reads.foldl (fun (fa : Bool × Answered G) i =>
+      if fa.1 then
+        match Δ[i]? with
+        | some B =>
+          if !same A' B then
+            let (res, a') := subtypeUsing G images A' B fa.2
+            (res.value.isSome, a')
+          else fa
+        | none => fa
+      else fa) (true, acc.2)
+    (acc.1.push (if fits then A' else A), answers)) (#[], answers)
+  (mixed.toList, answers)
+
+/-- Whether a held implication `held` gives the given implication `x`: one
+of the same type, or of a type below it (`subtypeUsing`); and the answers
+after them. -/
+def impliesHeld (G : NormalGraph ι) (images : InstanceImageCheck G) (x : PromiseCalls.Implication ι)
+    (held : List (PromiseCalls.Implication ι)) (answers : Answered G) : Bool × Answered G :=
+  held.foldl (fun (acc : Bool × Answered G) y =>
+    if acc.1 then acc
+    else if same y.type x.type then (true, acc.2)
+    else
+      let (res, a') := subtypeUsing G images y.type x.type acc.2
+      (res.value.isSome, a')) (false, answers)
+
+/-- Whether a head's given implications (at `t`'s label) hold on an edge
+into it carrying `carried` over the names `names`, the first that does not
+stopping the check; and the answers after them. -/
+def headImplies (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEnv ι G images) (t : Target)
+    (names : List Nat) (carried : List (PromiseCalls.Implication ι)) (answers : Answered G) : Bool × Answered G :=
+  ((env.givenImplies[t.label]?).getD []).foldl (fun (acc : Bool × Answered G) x =>
+    if !acc.1 then acc
+    else
+      let nt := names[PointClaims.slot t.mapping x.test]?
+      let na := names[PointClaims.slot t.mapping x.target]?
+      let held := carried.filter fun y => some y.test == nt && some y.target == na
+      impliesHeld G images x held acc.2) (true, answers)
+
+/-- The edge's types (`visitExits`, where the edge's context is met): each
+slot's type below the target's (`diffSubtypes`), else the edge search
+(`checkedEdge`) over the edge's facts, else over the node's output facts at
+the context the step's yields refine (`refinedContext`), else at the mixed
+context (`mixedContext`); the refusal where none passes. -/
+def exitTypes (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEnv ι G images) (l : Nat)
+    (en : Entered ι) (sd : StepDone ι G) (outAll : Thunk Knowledge) (t : Target) (tc : PointClaim ι)
+    (Γ : List (Ty ι)) (names : List Nat) (edgeStore : Store) (pushed isHandler : Bool)
+    (observed : Option BranchRefinement.Observation) (first : Bool) (diff : List (Nat × Nat))
+    (acc : ExitsDone ι G) : Except (WalkStop ι G) (ExitsDone ι G) :=
+  let node := env.nodes[l]!
+  let c := env.claimed[l]!
+  let width := c.context.length
+  let entry := en.entry
+  let (ok, answers) := diffSubtypes G images Γ tc.context diff observed acc.answers
+  if ok then .ok { acc with answers }
+  else
+    -- The edge as the search reads it, its observation included.
+    let counts := { acc.counts with edgeSearches := acc.counts.edgeSearches + 1 }
+    let (ko, _, _) := materialize { names, store := edgeStore } (if pushed then width + 1 else width)
+      (0 :: diff.map (·.2)) false
+    -- Its links restated on every slot of their classes, as an edge reads
+    -- a node's output (`ControlFlow.outFacts`).
+    let ko := KnowledgeExpand.expandLinks (KnowledgeExpand.ctxOf G Γ) ko
+    let (found, answers) := timedKind "edge search" fun _ => checkedEdge G images env.claimed tc.context Γ t observed ko answers
+    if !found && isHandler then
+      .error (WalkStop.mk (.refused s!"handler edge from node {l} to node {t.label}") counts answers acc.trace)
+    else if found then .ok { acc with answers, counts }
+    else
+      -- The edge's context as the step's yields refine it
+      -- (`produceNodeAt`): what a test or a promise establishes.
+      let (ys, answers) := match acc.yields with
+        | some ys => (ys, answers)
+        | none =>
+          let slotImpl := slotImplOf entry.names en.implies
+          let (ys, a) := (nodeYields G images env.pool c.context slotImpl (derivOf c node sd.st) sd.st.stepOut sd.st.stepK) answers
+          (checkYsAt G images env.codes sd.answers c node sd.st slotImpl ys, a)
+      let outL := outAll.get
+      let Γ' := refinedContext G c node.continuation (yieldsAtSlots entry.names ys) outL first
+      let (found, answers) := checkedEdge G images env.claimed tc.context Γ' t observed outL answers
+      let (found, answers) := if found then (found, answers)
+        else
+          let (Γm, answers) := mixedContext G images Γ Γ' tc.context t.mapping answers
+          if Γm != Γ' then checkedEdge G images env.claimed tc.context Γm t observed outL answers
+          else (found, answers)
+      if !found then
+        .error (WalkStop.mk (.refused s!"edge from node {l} to node {t.label}{if l == env.debugNode then s!" fields {reprStr (readFields ko 0)} links {reprStr ko.links} diff {reprStr diff} implies {reprStr (en.implies.map fun x => (x.test, x.target))} names {reprStr (entry.names.take 6)} yields {reprStr (ys.map fun y => (y.target, y.conditional))}" else ""}") counts answers acc.trace)
+      else .ok { acc with answers, counts, yields := some ys }
+
+/-- An edge into a head (`exitStep`): recorded; where the edge's context is
+met, the head's given implications and the slots it states to hold an
+input's entry value or the promised input hold on it; the head's given state
+entailed on it. -/
+def headExit (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEnv ι G images) (l : Nat)
+    (t : Target) (tc : PointClaim ι) (Γ : List (Ty ι)) (names : List Nat) (edgeStore : Store) (pushed : Bool)
+    (vacuous : Bool) (carried : List (PromiseCalls.Implication ι)) (acc : ExitsDone ι G) :
+    Except (WalkStop ι G) (ExitsDone ι G) :=
+  let width := (env.claimed[l]!).context.length
+  let edges := acc.edges.push { source := l, target := t, pushed, carried, meets := !vacuous }
+  -- The head's given implications hold on every edge into it.
+  let (implOk, answers) := if vacuous then (true, acc.answers) else headImplies G images env t names carried acc.answers
+  if !implOk then
+    .error (WalkStop.mk (.refused s!"edge from node {l} into statement entry {t.label}: an implication") acc.counts answers acc.trace)
+  -- The slots it states hold the promised input, or an input's entry
+  -- value, hold it on every edge.
+  else if !vacuous && ((env.givenInputs[t.label]?).getD []).any (fun (j, q) => names[PointClaims.slot t.mapping j]? != env.startNames[q]?) then
+    .error (WalkStop.mk (.refused s!"edge from node {l} into statement entry {t.label}: an input's value") acc.counts answers acc.trace)
+  else if !vacuous && ((env.givenArgs[t.label]?).getD []).any (fun j => names[PointClaims.slot t.mapping j]? != env.argName) then
+    .error (WalkStop.mk (.refused s!"edge from node {l} into statement entry {t.label}: the promised input") acc.counts answers acc.trace)
+  else
+    -- The head's given state is entailed on every edge into it.
+    match env.given[t.label]! with
+    | none => .error (WalkStop.mk (.refused s!"head {t.label}") acc.counts answers acc.trace)
+    | some req =>
+      let slots := (atomsOf req).flatMap Atom.names
+      let srcSlots := slots.map (PointClaims.slot t.mapping)
+      let (k, _, _) := materialize { names, store := edgeStore } (if pushed then width + 1 else width) srcSlots true
+      let counts := { acc.counts with queries := acc.counts.queries + 1, queryAtoms := acc.counts.queryAtoms + (atomsOf k).length }
+      if !vacuous && !(timedKind "head query" fun _ => KnowledgeExpand.checkIn (KnowledgeExpand.ctxOf G tc.context)
+          (HeapKnowledge.withTypedLinks G Γ (ControlFlow.withTypedCells G Γ req t.mapping k)) req t.mapping) then
+        -- The given facts the edge does not establish, named.
+        let ctx := KnowledgeExpand.ctxOf G tc.context
+        let src := HeapKnowledge.withTypedLinks G Γ (ControlFlow.withTypedCells G Γ req t.mapping k)
+        let missing := (atomsOf req).filter fun a => !KnowledgeExpand.checkIn ctx src (ofAtoms [a] tc.context.length) t.mapping
+        let trace := if env.tracing then
+            { acc.trace with missing := missing.filterMap fun a => a.rename fun i => names[PointClaims.slot t.mapping i]? }
+          else acc.trace
+        .error (WalkStop.mk (.refused s!"edge from node {l} into statement entry {t.label}: lacks {(reprStr (missing.map fun a => match a with | .index x => reprStr x | .cell f => s!"cell {f.slot}" | .value f => s!"value {f.slot}" | .link g => s!"link {g.cell} {g.value}" | .elem e => s!"elems {e.slot}" | .sep f => s!"sep {f.slot}")).take 1500}") counts answers trace)
+      else .ok { acc with edges, answers, counts }
+
+/-- A target's assertion established on an edge into a node other than a
+head, as the edge test into a statement entry establishes it
+(`checkTargetResult`): over the edge's facts, its context `Γe` as the
+yields refine it, with the facts that context's types state of the cells
+and links it reads; the counters and trace after it, or the refusal. -/
+def assertionExit (G : NormalGraph ι) {images : InstanceImageCheck G} (env : WalkEnv ι G images) (l : Nat)
+    (t : Target) (tc : PointClaim ι) (Γe : Thunk (List (Ty ι))) (names : List Nat) (edgeStore : Store) (pushed : Bool)
+    (observed : Option BranchRefinement.Observation) (vacuous : Bool) (acc : ExitsDone ι G) :
+    Except (WalkStop ι G) (ExitsDone ι G) :=
+  let width := (env.claimed[l]!).context.length
+  match env.stated[t.label]! with
+  | none => .ok acc
+  | some req =>
+    if vacuous then .ok acc
+    else
+      let slots := (atomsOf req).flatMap Atom.names
+      let srcSlots := slots.map (PointClaims.slot t.mapping)
+      let (k, _, _) := materialize { names, store := edgeStore } (if pushed then width + 1 else width) srcSlots false
+      let Γe := Γe.get
+      let k := match observed with
+        | some o => HeapKnowledge.observeTyped G Γe (ControlFlow.withTypedCells G Γe req t.mapping k) 0 o
+        | none => HeapKnowledge.withTypedLinks G Γe (ControlFlow.withTypedCells G Γe req t.mapping k)
+      let counts := { acc.counts with queries := acc.counts.queries + 1, queryAtoms := acc.counts.queryAtoms + (atomsOf k).length }
+      if !KnowledgeExpand.checkIn (KnowledgeExpand.ctxOf G tc.context) k req t.mapping then
+        let missing := (atomsOf req).filter fun a =>
+          !KnowledgeExpand.checkIn (KnowledgeExpand.ctxOf G tc.context) k (ofAtoms [a] tc.context.length) t.mapping
+        let trace := if env.tracing then
+            { acc.trace with missing := missing.filterMap fun a => a.rename fun i => names[PointClaims.slot t.mapping i]? }
+          else acc.trace
+        .error (WalkStop.mk (.refused s!"edge from node {l} into node {t.label}: its assertion lacks {(missing.map fun a => match a with | .index x => (reprStr x.fact).take 80 | .cell f => s!"cell {f.slot}.{f.field}" | .value f => s!"value {f.slot}" | .link g => s!"link {g.cell}.{g.field}={g.value}" | .elem e => s!"elems {e.slot}" | .sep f => s!"sep {f.slot}").take 4}") counts acc.answers trace)
+      else .ok { acc with counts }
+
+/-- An edge into a node other than a head carried in (`exitStep`): the
+state and implications it carries (`edgeTransfer`) pushed at the target,
+where it came from (where observed or traced), the edge recorded, into a
+merge the edge as the merge reads it (its context `Γe`, its implications at
+the source's slots, its mapping); the target's in-degree one less, and the
+target queued where it reaches 0. -/
+def pushExit {G : NormalGraph ι} {images : InstanceImageCheck G} (env : WalkEnv ι G images) (l : Nat) (t : Target)
+    (target : State) (carried : List (PromiseCalls.Implication ι)) (Γe : Thunk (List (Ty ι))) (names : List Nat)
+    (pushed vacuous : Bool) (acc : ExitsDone ι G) : ExitsDone ι G :=
+  let incoming := acc.incoming.modify t.label (target :: ·)
+  let incomingFrom := if env.observe == some t.label || env.tracing then acc.incomingFrom.modify t.label (l :: ·)
+    else acc.incomingFrom
+  let incomingImpl := acc.incomingImpl.modify t.label (carried :: ·)
+  let edges := acc.edges.push { source := l, target := t, pushed, carried, meets := !vacuous }
+  let incomingEdges := if env.merging[t.label]! then
+      let slotsOf : Std.HashMap Nat (List Nat) := names.zipIdx.foldl (fun acc (x, i) =>
+        acc.insert x (i :: acc.getD x [])) {}
+      let atSlots := carried.flatMap fun (x : PromiseCalls.Implication ι) =>
+        (slotsOf.getD x.test []).flatMap fun i => (slotsOf.getD x.target []).map fun j =>
+          (⟨i, j, x.type⟩ : PromiseCalls.Implication ι)
+      acc.incomingEdges.modify t.label ((Γe.get, atSlots, t.mapping) :: ·)
+    else acc.incomingEdges
+  let indeg := acc.indeg.modify t.label (· - 1)
+  let queue := if indeg[t.label]! == 0 then t.label :: acc.queue else acc.queue
+  { acc with incoming, incomingFrom, incomingImpl, edges, incomingEdges, indeg, queue }
+
+/-- **One exit of node `l`** (`visitExits` folds it over the node's exits
+with their positions): the exit's context and names, its edge facts
+(`edgeStoreOf`), whether some environment meets it, the target's
+satisfiability; where it is met, its types (`exitTypes`); then into a head
+`headExit`, else the target's assertion (`assertionExit`) and the carried
+state (`pushExit`). Whether the exit is its continuation's first (a
+two-way dispatch's true arm) is its position. -/
+def exitStep (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEnv ι G images) (l : Nat)
+    (en : Entered ι) (sd : StepDone ι G) (ysAll : List (PromiseCalls.Yield ι)) (outAll : Thunk Knowledge)
+    (acc : ExitsDone ι G) (exi : Exit × Nat) : Except (WalkStop ι G) (ExitsDone ι G) :=
+  let ex := exi.1
+  let first := exi.2 == 0
+  let node := env.nodes[l]!
+  let c := env.claimed[l]!
+  let width := c.context.length
+  let entry := en.entry
+  let st := sd.st
+  let t := ex.target
+  let pushed := ex.pushed
+  let observed := ex.observed
+  let isHandler := ex.isHandler
+  let pushedNames := st.result :: entry.names
+  let acc := if env.tracing then { acc with trace := { acc.trace with edge := some t.label } } else acc
+  match env.claimed[t.label]? with
+  | none => .error (WalkStop.mk (.refused s!"edge from {l}") acc.counts acc.answers acc.trace)
+  | some tc =>
+    let Γ := if isHandler then sd.thrownTy.getD [] :: c.context else if pushed then c.type :: c.context else c.context
+    let names := if isHandler then sd.thrown :: entry.names else if pushed then pushedNames else entry.names
     -- The edge's own facts: an observation of the result; a throw's, the
     -- entry's facts no heap change affects.
-    let edgeStore := edgeStoreOf G Γ entry.store store names pushedNames width pushed isHandler observed promote
-    -- The slots' types: each the target's, or below it.
+    let edgeStore := edgeStoreOf G Γ entry.store st.store names pushedNames width pushed isHandler observed ex.promote
     -- Whether no environment meets the edge's context: the node's own
     -- context's answer, and the pushed result's type.
-    let unsatΓ := here || (if isHandler then ControlFlow.unsatisfiable G [thrownTy.getD []]
+    let unsatΓ := en.here || (if isHandler then ControlFlow.unsatisfiable G [sd.thrownTy.getD []]
       else pushed && ControlFlow.unsatisfiable G [c.type])
     let vacuous := match observed with
       | some o => unsatΓ || (Γ[0]?).any (BranchRefinement.impossible G · o)
@@ -2560,184 +2873,81 @@ def visitExits (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkE
     let diff := if vacuous then [] else timedKind "edge types" fun _ => differing Γ tc.context t.mapping
     -- The target's own answer: a slot of the empty type is one the edge's
     -- context gives (where it has none) or a slot whose type differs.
-    if (unsat[t.label]!).isNone then
-      let u := if unsatΓ then ControlFlow.unsatisfiable G tc.context
-        else diff.any fun (i, _) => (tc.context[i]?).any fun B => ControlFlow.unsatisfiable G [B]
-      unsat := unsat.set! t.label (some u)
-    if !vacuous then
-      let mut ok := true
-      for (i, s) in diff do
-        match Γ[s]?, tc.context[i]? with
-        | some A, some B =>
-          if observed.isNone || s != 0 then
-            let (r, a) := subtypeUsing G images A B answers
-            answers := a
-            if r.value.isNone then ok := false
-          else ok := false
-        | _, _ => ok := false
-      if !ok then
-        -- The edge as the search reads it, its observation included.
-        counts := { counts with edgeSearches := counts.edgeSearches + 1 }
-        let (ko, _, _) := materialize { names, store := edgeStore } (if pushed then width + 1 else width)
-          (0 :: diff.map (·.2)) false
-        -- Its links restated on every slot of their classes, as an edge reads
-        -- a node's output (`ControlFlow.outFacts`).
-        let ko := KnowledgeExpand.expandLinks (KnowledgeExpand.ctxOf G Γ) ko
-        let (found, a) := timedKind "edge search" fun _ => checkedEdge G images claimed tc.context Γ t observed ko answers
-        answers := a
-        if !found && isHandler then
-          throw (WalkStop.mk (.refused s!"handler edge from node {l} to node {t.label}") counts answers trace)
-        if !found then
-          -- The edge's context as the step's yields refine it
-          -- (`produceNodeAt`): what a test or a promise establishes.
-          let ys ← match yields with
-            | some ys => pure ys
-            | none =>
-              let e := stepDeriv.getD (.node ⟨c.context, node.expression, c.type⟩ .var [])
-              let (ys, a) := (nodeYields G images pool c.context slotImpl.get e stepOut stepK) answers
-              answers := a
-              pure (checkYs slotImpl.get ys)
-          yields := some ys
-          -- Each yield restated at every slot holding its target's name, as
-          -- the alias links of a positional state relate them.
-          let ys := ys.flatMap fun y => match entry.names[y.target]? with
-            | some nm => (entry.names.zipIdx.filter (·.1 == nm)).map fun (_, j) => { y with target := j }
-            | none => [y]
-          let outL := outAll.get
-          let Γ' := refinedContext G c node.continuation ys outL first
-          let (found, a) := checkedEdge G images claimed tc.context Γ' t observed outL answers
-          answers := a
-          -- A slot whose refined type the target's does not admit read at
-          -- its unrefined type: both are types of its value (an alias
-          -- refined through an array's invariant element type).
-          let mut found := found
-          if !found then
-            let mut mixed : Array (Ty ι) := #[]
-            for (A', s) in Γ'.zipIdx do
-              let A := (Γ[s]?).getD A'
-              let reads := (List.range tc.context.length).filter fun i => PointClaims.slot t.mapping i == s
-              let mut fits := true
-              for i in reads do
-                if fits then
-                  match tc.context[i]? with
-                  | some B =>
-                    if !same A' B then
-                      let (res, a') := subtypeUsing G images A' B answers
-                      answers := a'
-                      if res.value.isNone then fits := false
-                  | none => pure ()
-              mixed := mixed.push (if fits then A' else A)
-            let Γm := mixed.toList
-            if Γm != Γ' then
-              let (found', a) := checkedEdge G images claimed tc.context Γm t observed outL answers
-              answers := a
-              found := found'
-          if !found then throw (WalkStop.mk (.refused s!"edge from node {l} to node {t.label}{if l == debugNode then s!" fields {reprStr (readFields ko 0)} links {reprStr ko.links} diff {reprStr diff} implies {reprStr (implies.map fun x => (x.test, x.target))} names {reprStr (entry.names.take 6)} yields {reprStr ((yields.getD []).map fun y => (y.target, y.conditional))}" else ""}") counts answers trace)
-    -- The edge's implications: the entry's, and on a pushed edge those the
-    -- result's conditional yields state of it.
-    let freshImpl : List (PromiseCalls.Implication ι) := if !pushed || isHandler then [] else
-      ((yields.getD []).filterMap fun y => if y.conditional && !y.onFalse then
-        (entry.names[y.target]?).map fun tgt => ⟨result, tgt, y.type⟩ else none)
-    if isHead[t.label]! then
-      walkEdges := walkEdges.push { source := l, target := t, pushed, carried := implies ++ freshImpl, meets := !vacuous }
-      -- The head's given implications hold on every edge into it.
-      if !vacuous then
-        for x in (givenImplies[t.label]?).getD [] do
-          let nt := names[PointClaims.slot t.mapping x.test]?
-          let na := names[PointClaims.slot t.mapping x.target]?
-          let held := (implies ++ freshImpl).filter fun y => some y.test == nt && some y.target == na
-          let mut ok := false
-          for y in held do
-            if !ok then
-              if same y.type x.type then ok := true
-              else
-                let (res, a') := subtypeUsing G images y.type x.type answers
-                answers := a'
-                if res.value.isSome then ok := true
-          if !ok then throw (WalkStop.mk (.refused s!"edge from node {l} into statement entry {t.label}: an implication") counts answers trace)
-      -- The slots it states hold the promised input, or an input's entry
-      -- value, hold it on every edge.
-      if !vacuous then
-        for (j, q) in (givenInputs[t.label]?).getD [] do
-          if names[PointClaims.slot t.mapping j]? != startNames[q]? then
-            throw (WalkStop.mk (.refused s!"edge from node {l} into statement entry {t.label}: an input's value") counts answers trace)
-        for j in (givenArgs[t.label]?).getD [] do
-          if names[PointClaims.slot t.mapping j]? != argName then
-            throw (WalkStop.mk (.refused s!"edge from node {l} into statement entry {t.label}: the promised input") counts answers trace)
-      -- The head's given state is entailed on every edge into it.
-      let some req := given[t.label]! | throw (WalkStop.mk (.refused s!"head {t.label}") counts answers trace)
-      let slots := (atomsOf req).flatMap Atom.names
-      let srcSlots := slots.map (PointClaims.slot t.mapping)
-      let (k, _, _) := materialize { names, store := edgeStore } (if pushed then width + 1 else width) srcSlots true
-      counts := { counts with queries := counts.queries + 1, queryAtoms := counts.queryAtoms + (atomsOf k).length }
-      if !vacuous && !(timedKind "head query" fun _ => KnowledgeExpand.checkIn (KnowledgeExpand.ctxOf G tc.context)
-          (HeapKnowledge.withTypedLinks G Γ (ControlFlow.withTypedCells G Γ req t.mapping k)) req t.mapping) then
-        -- The given facts the edge does not establish, named.
-        let ctx := KnowledgeExpand.ctxOf G tc.context
-        let src := HeapKnowledge.withTypedLinks G Γ (ControlFlow.withTypedCells G Γ req t.mapping k)
-        let missing := (atomsOf req).filter fun a => !KnowledgeExpand.checkIn ctx src (ofAtoms [a] tc.context.length) t.mapping
-        if tracing then
-          trace := { trace with missing := missing.filterMap fun a => a.rename fun i => names[PointClaims.slot t.mapping i]? }
-        throw (WalkStop.mk (.refused s!"edge from node {l} into statement entry {t.label}: lacks {(reprStr (missing.map fun a => match a with | .index x => reprStr x | .cell f => s!"cell {f.slot}" | .value f => s!"value {f.slot}" | .link g => s!"link {g.cell} {g.value}" | .elem e => s!"elems {e.slot}" | .sep f => s!"sep {f.slot}")).take 1500}") counts answers trace)
-    else
-      -- A target's assertion established on the edge, as the edge test
-      -- into a statement entry establishes it (`checkTargetResult`): over the
-      -- edge's facts, its context as the yields refine it, with the facts
-      -- that context's types state of the cells and links it reads.
-      if let some req := stated[t.label]! then
-        if !vacuous then
-          let Γe := if isHandler then Γ else refinedΓ first
-          let slots := (atomsOf req).flatMap Atom.names
-          let srcSlots := slots.map (PointClaims.slot t.mapping)
-          let (k, _, _) := materialize { names, store := edgeStore } (if pushed then width + 1 else width) srcSlots false
-          let k := match observed with
-            | some o => HeapKnowledge.observeTyped G Γe (ControlFlow.withTypedCells G Γe req t.mapping k) 0 o
-            | none => HeapKnowledge.withTypedLinks G Γe (ControlFlow.withTypedCells G Γe req t.mapping k)
-          counts := { counts with queries := counts.queries + 1, queryAtoms := counts.queryAtoms + (atomsOf k).length }
-          if !KnowledgeExpand.checkIn (KnowledgeExpand.ctxOf G tc.context) k req t.mapping then
-            let missing := (atomsOf req).filter fun a =>
-              !KnowledgeExpand.checkIn (KnowledgeExpand.ctxOf G tc.context) k (ofAtoms [a] tc.context.length) t.mapping
-            if tracing then
-              trace := { trace with missing := missing.filterMap fun a => a.rename fun i => names[PointClaims.slot t.mapping i]? }
-            throw (WalkStop.mk (.refused s!"edge from node {l} into node {t.label}: its assertion lacks {(missing.map fun a => match a with | .index x => (reprStr x.fact).take 80 | .cell f => s!"cell {f.slot}.{f.field}" | .value f => s!"value {f.slot}" | .link g => s!"link {g.cell}.{g.field}={g.value}" | .elem e => s!"elems {e.slot}" | .sep f => s!"sep {f.slot}").take 4}") counts answers trace)
-      let (target, carried) := edgeTransfer names t.mapping pushed isHandler outFresh entry result edgeStore
-        (implies ++ freshImpl)
-      incoming := incoming.modify t.label (target :: ·)
-      if observe == some t.label || tracing then incomingFrom := incomingFrom.modify t.label (l :: ·)
-      incomingImpl := incomingImpl.modify t.label (carried :: ·)
-      walkEdges := walkEdges.push { source := l, target := t, pushed, carried, meets := !vacuous }
-      if merging[t.label]! then
-        let Γe := if isHandler then Γ else refinedΓ first
-        let slotsOf : Std.HashMap Nat (List Nat) := names.zipIdx.foldl (fun acc (x, i) =>
-          acc.insert x (i :: acc.getD x [])) {}
-        let atSlots := carried.flatMap fun (x : PromiseCalls.Implication ι) =>
-          (slotsOf.getD x.test []).flatMap fun i => (slotsOf.getD x.target []).map fun j =>
-            (⟨i, j, x.type⟩ : PromiseCalls.Implication ι)
-        incomingEdges := incomingEdges.modify t.label ((Γe, atSlots, t.mapping) :: ·)
-      indeg := indeg.modify t.label (· - 1)
-      if indeg[t.label]! == 0 then queue := t.label :: queue
-  let w : Walk ι := { σ.walk with incoming, incomingImpl, incomingEdges, edges := walkEdges }
-  pure { σ with walk := w, answers, counts, trace, indeg, regionIn, incomingFrom, queue, unsat }
+    let acc := if (acc.unsat[t.label]!).isNone then
+        let u := if unsatΓ then ControlFlow.unsatisfiable G tc.context
+          else diff.any fun (i, _) => (tc.context[i]?).any fun B => ControlFlow.unsatisfiable G [B]
+        { acc with unsat := acc.unsat.set! t.label (some u) }
+      else acc
+    let typed := if vacuous then .ok acc
+      else exitTypes G images env l en sd outAll t tc Γ names edgeStore pushed isHandler observed first diff acc
+    match typed with
+    | .error stop => .error stop
+    | .ok acc =>
+      -- The edge's implications: the entry's, and on a pushed edge those the
+      -- result's conditional yields state of it.
+      let freshImpl : List (PromiseCalls.Implication ι) := if !pushed || isHandler then [] else
+        ((acc.yields.getD []).filterMap fun y => if y.conditional && !y.onFalse then
+          (entry.names[y.target]?).map fun tgt => ⟨st.result, tgt, y.type⟩ else none)
+      if env.isHead[t.label]! then
+        headExit G images env l t tc Γ names edgeStore pushed vacuous (en.implies ++ freshImpl) acc
+      else
+        let Γe : Thunk (List (Ty ι)) := Thunk.mk fun _ => if isHandler then Γ else refinedContext G c node.continuation ysAll outAll.get first
+        match assertionExit G env l t tc Γe names edgeStore pushed observed vacuous acc with
+        | .error stop => .error stop
+        | .ok acc =>
+          let (target, carried) := edgeTransfer names t.mapping pushed isHandler sd.outFresh entry st.result edgeStore
+            (en.implies ++ freshImpl)
+          .ok (pushExit env l t target carried Γe names pushed vacuous acc)
+
+/-- A node's exits (`visit`'s third part), from the walk's state `σ`, its
+entry `en` and its step `sd`: the yields the exits read (`exitsYields`), a
+regional check (`regionalAt`), then `exitStep` folded over the exits with
+their positions; the walk's arrays and threaded values after them. -/
+def visitExits (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEnv ι G images) (σ : WalkState ι G)
+    (l : Nat) (en : Entered ι) (sd : StepDone ι G) : Except (WalkStop ι G) (ExitsDone ι G) :=
+  let node := env.nodes[l]!
+  let c := env.claimed[l]!
+  let (yields, answers) := exitsYields G images env l en sd
+  let ysAll := yieldsAtSlots en.entry.names (yields.getD [])
+  let outAll : Thunk Knowledge := Thunk.mk fun _ => outAllOf G c sd.st.stepOut
+  let regional : Except String (Array (List RegionState)) := match env.regional with
+    | none => .ok σ.regionIn
+    | some rg => regionalAt G images env l en sd rg answers σ.regionIn
+  match regional with
+  | .error why => .error (WalkStop.mk (.refused why) sd.counts answers sd.trace)
+  | .ok regionIn =>
+    let acc0 : ExitsDone ι G :=
+      { incoming := σ.walk.incoming, incomingImpl := σ.walk.incomingImpl, incomingEdges := σ.walk.incomingEdges,
+        edges := σ.walk.edges, answers, counts := sd.counts, trace := sd.trace, indeg := σ.indeg, regionIn,
+        incomingFrom := σ.incomingFrom, queue := σ.queue, unsat := σ.unsat, yields }
+    (Exit.ofNode node).zipIdx.foldlM (exitStep G images env l en sd ysAll outAll) acc0
 
 /-- What the walk records of a visited label, from its entry `en` and its
-step `sd` (`visit` writes it once). -/
-def LabelWalk.ofVisit {G : NormalGraph ι} (entryFresh : Nat) (en : Entered ι G) (sd : StepDone ι G) : LabelWalk ι :=
-  { visited := true, entryFresh, entry := some en.entry, implies := en.implies, stepFresh := sd.stepFresh,
-    stepSummaries := sd.stepSummaries, stepped := some sd.st,
+step `sd` (`visitBody` writes it once). -/
+def LabelWalk.ofVisit {G : NormalGraph ι} (entryFresh : Nat) (en : Entered ι) (sd : StepDone ι G) : LabelWalk ι :=
+  { visited := true, entryFresh, entry := some en.entry, implies := en.implies, stepFresh := en.fresh,
+    stepSummaries := sd.stepAnswers.summaries.size, stepped := some sd.st,
     after := some { en.entry with names := sd.st.result :: en.entry.names, store := sd.st.store },
     bounded := sd.bounded, returned := sd.returned, merge := en.merge }
 
 /-- One node's visit, its entry, its step and its exits, from the walk's
-state `σ`, the label's record written once (`visit` keeps its read-summary
-table). -/
+state `σ`: the state after it built here alone, the label's record written
+once (`visit` keeps its read-summary table). -/
 def visitBody (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEnv ι G images) (σ : WalkState ι G)
-    (l : Nat) : Except (WalkStop ι G) (WalkState ι G) := do
-  let en ← visitEntry G images env σ l
-  let sd ← visitStep G images env l en
-  let σ' ← visitExits G images env l en sd
-  let labels := σ'.walk.labels.set! l (LabelWalk.ofVisit σ.fresh en sd)
-  let w : Walk ι := { σ'.walk with labels, visited := σ.walk.visited + 1 }
-  pure { σ' with walk := w }
+    (l : Nat) : Except (WalkStop ι G) (WalkState ι G) :=
+  match visitEntry G images env σ l with
+  | .error stop => .error stop
+  | .ok en => match visitStep G images env σ l en with
+    | .error stop => .error stop
+    | .ok sd => match visitExits G images env σ l en sd with
+      | .error stop => .error stop
+      | .ok ex =>
+        .ok { walk := { labels := σ.walk.labels.set! l (LabelWalk.ofVisit σ.fresh en sd), incoming := ex.incoming,
+                        incomingImpl := ex.incomingImpl, incomingEdges := ex.incomingEdges, edges := ex.edges,
+                        visited := σ.walk.visited + 1 },
+              answers := ex.answers, counts := ex.counts, trace := ex.trace, indeg := ex.indeg, fresh := sd.fresh,
+              regionIn := ex.regionIn, incomingFrom := ex.incomingFrom, queue := ex.queue, unsat := ex.unsat,
+              lastStamp := en.lastStamp, lastKind := sd.lastKind }
 
 /-- `b`'s answers with `a`'s read-summary table as their table's prefix:
 `a`'s table, then `b`'s entries past `a`'s length (`b` itself where `a`'s
