@@ -2756,7 +2756,10 @@ partial def useIn (env : Env) (n : String) (e : Expr) (P : Option (Ty Tree)) : W
           let some F := env.vars.lookup g | return []
           calleeOf F [Labels.undef] []
       let [a] := c.fixed | return []
-      if !c.rests.isEmpty then return []
+      -- One plain signature, the producer's declared head (statement_analysis.ml:122-124):
+      -- a module function's slot also states it extended by a rest of
+      -- `unknown` (`moduleArrow`), which the declaration does not write.
+      if !c.rests.all (fun r => r.arguments.1 == a.arguments && r.result == a.result) then return []
       if c.binders.isEmpty then return a.arguments
       let some P := P | return []
       if a.arguments.length != args.length then return []

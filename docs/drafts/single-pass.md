@@ -1368,6 +1368,12 @@ removal works through:
   `TSCERT_FORCE=head-entry` states such a binding at its entry type,
   unwalked, the adversarial proposal: `loop-head-contents` `continued`,
   accepted unforced, is refused at an edge into its loop's head.
+- **First use through a module function.** A use of an unannotated
+  constant's fresh array as an actual of a module function reads the
+  function at its one written signature, its slot's extension by a rest of
+  `unknown` aside (statement_analysis.ml:122-124): `joined([...a, ...xs])`
+  of `joined(terms: Term[])` builds `xs = forms.map(…)` at `Term[]`. The
+  pass checks the allocation at that contract and every use against it.
 - **Loop heads.** A loop head's facts beyond its written assertion are the
   given file's `headFacts` (and `headFactsOfCodes` for each code request),
   each at the statement entries that start where the given one does and hold
