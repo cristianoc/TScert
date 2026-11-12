@@ -3,7 +3,7 @@ import Lean.Elab.Command
 import Lean.Compiler.CSimpAttr
 import Verification.Source.Claims.Json
 import Verification.Source.RequestCli
-import Verification.Source.Claims.PassUnitLink
+import Verification.Source.Claims.PassUnitFile
 import Verification.Semantics.ArgumentStoreRegions
 import Verification.Semantics.FootprintNatives
 import Verification.Programs.ArgumentPathTracking
@@ -30,7 +30,8 @@ the following depends on an axiom other than `propext`, `Classical.choice` and `
 - `SourceClaimJson.checkUnitJson_safe`, the acceptance theorem, of which every
   accepted function's and module run's safety is a consequence;
 - the single pass's unit theorem `SourceClaimJson.PassUnit.passUnit_safe` and
-  the wrapper, code-table, plan and linking theorems it rests on;
+  the wrapper, code-table, plan, linking and realization theorems it rests on,
+  and the file-level theorem `SourceClaimJson.PassUnit.passFile_safe`;
 - the regional footprint's transport and composition, cell provenance, and the
   argument-store region composition, framing and stable separation theorems;
 - the tolerant-frame development's admissibility, adequacy, modal-law and
@@ -69,6 +70,18 @@ run_cmd do
   check ``Verification.SourceClaimJson.PassUnit.closedUnits_linked
   check ``Verification.SourceClaimJson.PassUnit.closedUnits_safe
   check ``Verification.SourceClaimJson.PassUnit.envOk_of_linked
+  check ``Verification.SourceClaimJson.PassUnit.codeSpec_of_clauses
+  check ``Verification.SourceClaimJson.PassUnit.closure_meets_below
+  check ``Verification.SourceClaimJson.PassUnit.unitSpec_of_requestSafe
+  check ``Verification.SourceClaimJson.PassUnit.codeBound_some
+  check ``Verification.SourceClaimJson.PassUnit.captures_envOk
+  check ``Verification.SourceClaimJson.PassUnit.approx_meets
+  check ``Verification.SourceClaimJson.PassUnit.approx_captures_envOk
+  check ``Verification.SourceClaimJson.PassUnit.approx_link
+  check ``Verification.SourceClaimJson.PassUnit.approxEnv_value
+  check ``Verification.SourceClaimJson.PassUnit.requestSafe_of_member
+  check ``Verification.SourceClaimJson.PassUnit.closedUnits_selected_safe
+  check ``Verification.SourceClaimJson.PassUnit.passFile_safe
   check ``Verification.Footprints.transport_sound
   check ``Verification.Footprints.Sep.sound
   check ``Verification.Footprints.Post.mono

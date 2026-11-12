@@ -84,18 +84,25 @@ theorem code_goal (G : NormalGraph ι) (c : CodeEntry ι) (L : List Tm) :
       CallEffects.TypePromise.param]
     rfl
 
-/-- **A code whose run guarantees its graph meets its signature** (proved):
-a code meeting its conditions, whose graph is guaranteed at every assignment
-from its frame (`codeFrame`), at its goal and its bound (`codeBound`), is
-graph code at its signature at every assignment. The pass's counterpart of
-`GraphCode.codeChecked_sound`: its premises are the guarantee and the
-conditions, in place of the certificate check. -/
-theorem codeSpec_of_guarantee {G : NormalGraph ι} {c : CodeEntry ι}
-    {assertions : List (Nat × HeapKnowledge.Knowledge)}
+/-- **A code safe from its frame, within its bound, meets its signature**
+(proved): a code meeting its conditions, whose graph is safe at every
+assignment from its frame (`codeFrame`) at its goal, and within its bound
+(`codeBound`) where it has one, run as its node lists, is graph code at its
+signature at every assignment. The step shared by code requests
+(`codeSpec_of_guarantee`) and units (`unitSpec_of_requestSafe`). -/
+theorem codeSpec_of_clauses {G : NormalGraph ι} {c : CodeEntry ι}
     (hcond : codeConditions c = true)
-    (hg : GraphGuarantee G (fun _ => True) (GraphCode.program c.exprs c.conts) c.start c.goal
-      (codeFrame c.arity c.row c.captures c.store) {} (GraphCode.codeEntryIndices c) assertions
-      (codeBound c) [] none) :
+    (hsafeG : ∀ η n W h ρ, EntryHolds (reassign G η) (codeFrame c.arity c.row c.captures c.store) {}
+      (GraphCode.codeEntryIndices c) ρ n W h →
+      SafeGraph (excOf (reassign G η)) (GraphCode.program c.exprs c.conts)
+        (GoalHolds (reassign G η) c.goal (c.goal.argument ρ)) n W h (.at c.start ρ))
+    (hboundG : ∀ Φ fresh onThrow, codeBound c = some (Φ, fresh, onThrow) → ∀ η n W h L d,
+      EntryHolds (reassign G η) (codeFrame c.arity c.row c.captures c.store) {} (GraphCode.codeEntryIndices c)
+        (envOf L d) n W h → (∀ v ∈ L, isVal v = true) → isVal d = true →
+      HeapObservations.SafePostExc (excOf (reassign G η))
+        (GoalHolds (reassign G η) c.goal (c.goal.argument (envOf L d)))
+        (fun h' v => Φ.Holds h h' ∧ (fresh = true → Footprints.FreshAt h.length v))
+        (fun h' => onThrow = true → Φ.Holds h h') n W h (.goto c.exprs c.conts c.start L d)) :
     ∀ η, c.Spec (reassign G η) := by
   intro η
   simp only [codeConditions, Bool.and_eq_true, decide_eq_true_eq, Bool.not_eq_true',
@@ -106,7 +113,7 @@ theorem codeSpec_of_guarantee {G : NormalGraph ι} {c : CodeEntry ι}
   have hentry : EntryHolds (reassign G η) (codeFrame c.arity c.row c.captures c.store) {}
       (GraphCode.codeEntryIndices c) (envOf L .nul) n W heap :=
     ⟨he, HeapSeparation.empty_holds _, GraphCode.codeEntryIndices_holds hpre, hw, hh⟩
-  have hgraph := hg.safe η trivial n W heap (envOf L .nul) hentry
+  have hgraph := hsafeG η n W heap (envOf L .nul) hentry
   have hs : Safe (excOf (reassign G η)) (GoalHolds (reassign G η) c.goal (c.goal.argument (envOf L .nul)))
       n W heap (.goto c.exprs c.conts c.start L .nul) :=
     GraphCode.safe_of_sim n W heap .goto hgraph
@@ -148,7 +155,7 @@ theorem codeSpec_of_guarantee {G : NormalGraph ι} {c : CodeEntry ι}
           cases hfr : c.row.effect.fresh <;> cases hal : c.exprs.all Purity.pureTerm <;> simp_all
         simp only [codeBound, h1, h2]
         rfl
-      have hb := hg.bounded _ _ _ hbound c.exprs c.conts rfl η trivial n W heap L .nul hentry
+      have hb := hboundG _ _ _ hbound η n W heap L .nul hentry
         (fun v hv => hvalues v hv) rfl
       rw [code_goal] at hb
       exact HeapObservations.SafePostExc.weaken
@@ -156,6 +163,23 @@ theorem codeSpec_of_guarantee {G : NormalGraph ι} {c : CodeEntry ι}
           fun R hR => (hnel R hR).elim, fun F hF => (hnen F hF).elim,
           fun hg => (hngr hg).elim, fun w hw => (hnew w hw).elim⟩)
         (fun h' hq ho => CallEffects.Effect.within_of_footprint hnrg (hq ho)) hb
+
+
+/-- **A code whose run guarantees its graph meets its signature** (proved):
+a code meeting its conditions, whose graph is guaranteed at every assignment
+from its frame (`codeFrame`), at its goal and its bound (`codeBound`), is
+graph code at its signature at every assignment. The pass's counterpart of
+`GraphCode.codeChecked_sound`: its premises are the guarantee and the
+conditions, in place of the certificate check. -/
+theorem codeSpec_of_guarantee {G : NormalGraph ι} {c : CodeEntry ι}
+    {assertions : List (Nat × HeapKnowledge.Knowledge)}
+    (hcond : codeConditions c = true)
+    (hg : GraphGuarantee G (fun _ => True) (GraphCode.program c.exprs c.conts) c.start c.goal
+      (codeFrame c.arity c.row c.captures c.store) {} (GraphCode.codeEntryIndices c) assertions
+      (codeBound c) [] none) :
+    ∀ η, c.Spec (reassign G η) :=
+  codeSpec_of_clauses hcond (fun η => hg.safe η trivial)
+    (fun _ _ _ hb η => hg.bounded _ _ _ hb c.exprs c.conts rfl η trivial)
 
 end
 

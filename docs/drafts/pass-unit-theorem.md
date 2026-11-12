@@ -33,7 +33,10 @@ The Lean modules are
 [PassUnitPlans](../../lean/Verification/Source/Claims/PassUnitPlans.lean) (construction facts of the plans),
 [PassUnitMember](../../lean/Verification/Source/Claims/PassUnitMember.lean) (the wrapper's checks),
 [PassUnitSafe](../../lean/Verification/Source/Claims/PassUnitSafe.lean) and
-[PassUnitHeadline](../../lean/Verification/Source/Claims/PassUnitHeadline.lean) (the theorems).
+[PassUnitHeadline](../../lean/Verification/Source/Claims/PassUnitHeadline.lean) (the theorems),
+[PassUnitLink](../../lean/Verification/Source/Claims/PassUnitLink.lean) (the closure and the linking induction),
+[PassUnitRealize](../../lean/Verification/Source/Claims/PassUnitRealize.lean) (the module's environment) and
+[PassUnitFile](../../lean/Verification/Source/Claims/PassUnitFile.lean) (the file-level theorem).
 
 ## 1. The statement
 
@@ -292,32 +295,105 @@ the unit's own parameters once its callees are linked.
 
 ### H5: the realization
 
-The step premise of `link` at a closed unit is the realization hypothesis
-`hreal` of `closedUnits_linked`, not proved:
+The step premise of `link` at a closed unit is that the unit's value meets
+its interface one budget up. It is proved for the module's environment
+defined below, from the units' own `RequestSafe`, under two hypotheses
+about the file's layout and its outside slots (H5a, H5b).
+
+**The module's code.** A module function's code (`ModuleCode`) is graph
+code (arity $`a`$, node lists $`E, K`$, start $`\ell_0`$, kind) with, per
+capture $`k`$ in frame order after the receiver and the parameters, a type
+$`C_k`$ and a slot $`s_k`$: $`\mathrm{linked}(d)`$, the value of the file's
+function $`d`$, or $`\mathrm{outside}(v)`$, a value from outside the file's
+functions (an import, a host value, a module constant or cell).
+
+**The module's environment** (`approxEnv`, `approx`). The value of $`u`$
+unfolded $`n`$ times is its closure over its slots, each linked one
+holding its callee unfolded $`n - 1`$ times:
 
 ```math
-\mathrm{RequestSafe}(r_u) \wedge \forall m \le n.\; M(u, m) \wedge \forall d \in \mathrm{deps}(u).\; \forall m \le n.\; M(d, m)
- \;\Longrightarrow\; M(u, n + 1)
+\mathrm{env}_0(u) = \mathtt{null} \qquad
+\mathrm{env}_{n+1}(u) = \mathrm{closure}_u\big(s_1[\mathrm{env}_n], \ldots, s_m[\mathrm{env}_n]\big) \qquad
+\mathrm{approx}_n(u) = \mathrm{env}_{n+1}(u)
 ```
 
-It needs Lean code that does not exist:
+with $`\mathrm{linked}(d)[e] = e(d)`$ and $`\mathrm{outside}(v)[e] = v`$. A
+closure holds its captured values, so a cycle of functions has no finite
+closure; the depth-$`n`$ unfolding is the environment a run of at most
+$`n`$ steps sees, since each call spends a step.
 
-- the module's environment: a definition of the value each function and
-  module constant of a file holds when its initialization has run, as the
-  lowering places it in each caller's slots (the slot table of `Front`);
-- the slot agreement: the type every caller reads for $`u`$
-  (`moduleFunctions`, `withStandIns`) is the arrow $`u`$'s request
-  establishes, at the footprint and throw flag its unit claims;
-- the closure theorem: a function whose request is safe at budget $`n`$ is
-  graph code meeting its arrow (`TypingBasics.GraphCodeSpec`) at that budget,
-  and its closure meets the arrow at $`n + 1`$, as
-  `ProgramCertificates.funGraph_of_local` and `funGraphSelf_of_local` give
-  for code tables (cited: they are about closures a graph creates, and
-  transfer to module functions once the environment is defined as such
-  closures; not checked);
-- the initialization: the `:init` unit's acceptance establishes the module
-  constants' types the walk proposes (`withInitTypes`), a postcondition on
-  the module's cells its request does not state today.
+**Realized** (`Realizes`). A unit $`u`$ of a set $`S`$ is realized when its
+interface $`I_u`$ presents one clause of signatures $`L`$ and variadic
+signatures $`S_v`$ which its code offers at its captures' types
+(`CodeOffers`) with its kind (`KindOffers`); it has one slot per capture;
+each linked slot $`\mathrm{linked}(d)`$ has type $`I_d`$ with $`d \in S`$
+(the slot agreement); and each outside slot's value meets its type at every
+budget in every world.
+
+**Theorem** `closure_meets_below` (proved). Graph code of fixed arity
+offering the signatures of $`F`$, whose captured values meet their types at
+every budget $`j < n`$ in every world, meets $`F`$ at $`n`$ in every world:
+every call of a closure runs its code below the budget of the call. It is
+`offers_self`'s induction with the self entry replaced by captures given
+below the budget.
+
+**Theorem** `unitSpec_of_requestSafe` (proved). Where a unit request $`r`$
+is a code $`c`$'s (`UnitIsCode`: unqualified, inputs $`c`$'s frame, program
+$`c`$'s node lists, start and goal $`c`$'s, no entry separation, $`c`$'s
+precondition as entry facts, $`c`$'s footprint, fresh and throw flags) and
+$`c`$ meets the code conditions (`codeConditions`),
+
+```math
+\mathrm{RequestSafe}(r) \;\Longrightarrow\; \forall \eta.\; \mathrm{GraphCodeSpec}_{G\eta}(c)
+```
+
+It shares its argument with the code requests' `codeSpec_of_guarantee`
+through `codeSpec_of_clauses` (proved): safety from the frame and the bound,
+by the bound, the graph's purity or the top footprint.
+
+**Theorem** `approx_meets` (proved). If every unit of $`S`$ is realized
+against $`S`$ and every outside value is a closed value,
+
+```math
+\forall n.\; \forall u \in S.\; \forall m \le n.\; \forall W \in \mathrm{World}_m.\;
+  \mathrm{approx}_n(u) \in ⟦I_u⟧_{m,W}
+```
+
+by induction on $`n`$ with `closure_meets_below`; recursion and cycles of
+units go through because the captured values are one unfolding below.
+`approx_captures_envOk` (proved): the values the depth-$`n`$ environment
+captures for $`u \in S`$ meet $`u`$'s capture types at $`n`$, the module
+part of $`u`$'s entry premise. `approx_link` (proved) restates
+`approx_meets` as `link`'s interface.
+
+**H5a, the module's layout** (`ModuleLayout`, the extraction's frame
+layout). For each closed unit $`u`$: its code, interface and slots as
+above, its interface one clause, one slot per capture, the slot agreement,
+and each signature $`p`$ of its interface realized by a member $`j`$ of its
+group (`RowRealized`): $`j`$'s plan is a request that is the code of $`u`$
+at $`p`$ and meets the code conditions. It is a statement about the
+extraction (the slot table `ordinarySlots` builds, `withStandIns`,
+`withNeverImports`, the frame `extractMember` lays out), not proved: every
+function on that path is a `do` block over the front with no theorem about
+its frame, and part of it is decidable at the verdict (see 6.3).
+
+**H5b, the outside contracts** (`OutsideContracts`). Every value a closed
+unit's outside slot holds meets the slot's type at every budget. It is the
+trusted boundary of section 5, slot by slot: an import's declared contract
+or an import stand-in's footprint, a host value's contract, and a module
+constant's or cell's type, which the initialization's request would have to
+establish as a postcondition on the module's cells (`withInitTypes`
+proposes these types; the `:init` request states no such postcondition). A
+function stand-in fixes a linked slot's type, $`I_u`$, which $`u`$'s own
+unit establishes: it needs no hypothesis. With no import, no host value and
+no module constant, no slot is outside and H5b holds vacuously.
+
+**What H5a excludes.** A unit realized through `RowRealized` has fixed
+arity, no rest, an unqualified (non-generic) request, and signatures meeting
+the code conditions: no postcondition, stated region, precondition, element
+promise, fresh object, receiver growth or element write. A closed unit
+outside these has no layout and `passFile_safe` says nothing of its value;
+its members stay safe locally (`passUnit_safe`).
 
 ## 5. The boundaries that stay trusted
 
@@ -352,6 +428,4 @@ Each enters the headline at a named place:
   (`SinglePass.timedKind`, `clock`, `same`, `oneObject`, `Store.diff`), which
   no theorem relates to their definitions.
 
-The hypotheses H1–H5 are the open obligations; H3 and H4 are the two the
-wrapper and the extraction can discharge in Lean (section 3's repairs, a
-start-context check), H5 the one linking needs.
+The hypotheses are listed with their owners in section 6.
