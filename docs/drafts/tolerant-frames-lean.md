@@ -447,8 +447,14 @@ its world (`StoreCells`, `CellsCtr`). Proved:
   $`\Phi`$ (`rootCells_box`). No step needs to preserve the cells: the world
   fact covers every state reached.
 
-What is not connected: that a slot of an array type has a store location of
-such a contract (the `.list` clause's meaning). A root whose store location
+A built-in array's store location has such a contract, proved
+(`storeCells_of_arrayInvariant`, `TolerantFramesWrites.lean`): the array
+invariant (`PositiveGraphs.arrayInvariant`) gives the store field a location
+whose contract's stores are `builtinStoreT`, a tuple contract. What is not
+connected: that a slot whose type has the `.list` clause meets the array
+invariant (`builtinInvariant` applies it to records, dictionaries and
+`source` clauses where the graph states the built-ins), and that `StableAt`
+follows from the pass's path-preservation evidence. A root whose store location
 admits any value carries no allocated-cell fact, and a step writing a store
 that lists a cell past the heap there (a store value the program holds, not
 an allocation, which reserves fresh cells: `elemSlots_above`) breaks it.

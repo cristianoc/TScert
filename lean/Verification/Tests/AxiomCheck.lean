@@ -216,6 +216,7 @@ run_cmd do
   check ``Verification.TolerantFrames.element_write_judgment
   check ``Verification.TolerantFrames.preserving_judgment
   check ``Verification.TolerantFrames.writing_frame
+  check ``Verification.TolerantFrames.storeCells_of_arrayInvariant
   let env ← getEnv
   let project (decl : Name) : Bool := match env.getModuleIdxFor? decl with
     | some i => (`Verification).isPrefixOf env.header.moduleNames[i.toNat]!
