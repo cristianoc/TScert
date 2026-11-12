@@ -1603,3 +1603,20 @@ Premises this leg discharges / leaves:
   edge state alone.
 - `LinearNearFuelEq`, `RunKeepsSummaries`: left (`Store.linearNear` is a
   `while` loop; the answers are threaded by the visit).
+
+## Leg 19b: the walk's premises from the driver
+
+**The depth-first walk ends within its fuel.** Module
+`lean/Verification/Programs/TolerantFramesDriverHeadsFuel.lean`. The
+measure of a walk's state (`dfsMeasure`) counts, for each frame, one and
+one per successor it has left to examine, and for each node below $`n`$ in
+state 0, two and one per successor. Popping a frame takes one off,
+examining a successor one, pushing a new node two (its weight as a new
+node is its frame's weight and one more), so a round decreases the measure
+(proved: `dfsStep_measure`, from `zeroWeight_upd`: marking a node takes its
+weight off where it was new). From a state of measure at most $`k`$, $`k`$
+rounds empty the stack (`dfsLoop_ends`); the start's measure is at most
+$`2n + \sum_{w<n} |\mathit{succ}\ w|`$ (`dfsInit_measure`), so every fuel
+of at least that empties it (`dfsLoop_init_ends`). A `loopHeads` that runs
+the walk from the start on such a fuel meets `LoopHeadsFuelEq`, with that
+fuel as its witness.
