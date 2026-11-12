@@ -149,6 +149,12 @@ its written and supplied facts are entailed by the request's entry facts
 (its index facts and its inputs' separation, `ControlFlow.entryKnows`).
 `TSCERT_FORCE=start-facts` supplies a false fact at every start, the
 adversarial proposal the check refuses.
+Where an edge enters the start, the start is entered as any loop head: its
+slots outside the given inputs and the promised input take fresh names, and
+its given state is an obligation on every edge into it; such a unit under
+store regions is not handled. The lowering makes no edge into a unit's
+start: a function's entry is a node emitted after its body, a lambda's its
+block's `closure-entry` node or its expression's first node.
 
 ## 5. Steps and obligations
 

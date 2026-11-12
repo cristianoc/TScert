@@ -1538,6 +1538,15 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
   let (loopHeads, reached) := SinglePass.loopHeads nodes start
   let _ := cuts
   let isHead : Array Bool := if start < n then loopHeads.set! start true else loopHeads
+  -- Whether an edge enters the start: the start is then entered as any
+  -- head, over fresh names, its given state checked on every edge into it;
+  -- otherwise its names are the inputs' entry values (`headEntry`).
+  let startEntered := nodes.any fun node =>
+    (successors node.continuation ++ node.handler.toList).any (·.label == start)
+  -- A regional check assumes the regions' input facts at the start, which
+  -- no edge into it establishes.
+  if startEntered && regional.isSome then
+    return (.notHandled "store regions with an edge into the start", counts, answers, trace)
   let stated := byLabel n assertions
   if tracing then
     let e : Array (Option State) := Array.replicate n none
@@ -1634,7 +1643,7 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
     let mut predNames : List (List Nat) := []
     match given[l]! with
     | some g =>
-      let (st, imp, fr) := headEntry g (l == start) width fresh startNames argName ((givenArgs[l]?).getD [])
+      let (st, imp, fr) := headEntry g (l == start && !startEntered) width fresh startNames argName ((givenArgs[l]?).getD [])
         ((givenInputs[l]?).getD []) ((givenImplies[l]?).getD [])
       entry := st
       implies := imp
