@@ -203,7 +203,9 @@ Every step's derivation is checked as the checker's `run` checks it
 (`ProgramCertificates.checkTreeUsing`, or `PromiseCalls.requiresTree` for a
 call at a precondition the step's facts establish): the search's `select`
 takes a derivation as given, and a derivation it selects may be one the
-check refuses. The read summaries the derivations read are checked once
+check refuses. A step the search finds is applied at the output the
+checker's `select` gives for the evidence the search returns, computed by
+the pass over the step's facts and the read summaries after the search. The read summaries the derivations read are checked once
 for the unit, as a response's are (`validSummary`,
 `checkReadSummariesResult`), and the unit's expression claims are checked
 over them.
