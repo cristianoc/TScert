@@ -1380,6 +1380,14 @@ removal works through:
   the actuals are (inference.ml:518-529): `calls.map(name)` expected at
   `(string | undefined)[]` is the call at `U` of `string | undefined`. The
   instance must still admit every actual; the pass checks the call at it.
+- **Rethrowing handlers.** A `try` with no finalizer whose handler has no
+  normal exit (it completes only by a throw, the producer's
+  `throw_only_stmts`, source.ml:975-993) contributes its body's changes
+  alone to a normal return's footprint, the body's calls graded as outside
+  any handler; the handler's changes leave a throw unbounded where they
+  exceed the body's (source.ml:1168-1169). The function's own unit checks
+  the proposal (SinglePass.lean:1351-1380, a dead handler region bounding
+  throws alone).
 - **Loop heads.** A loop head's facts beyond its written assertion are the
   given file's `headFacts` (and `headFactsOfCodes` for each code request),
   each at the statement entries that start where the given one does and hold

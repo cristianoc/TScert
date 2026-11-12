@@ -2711,6 +2711,28 @@ partial def promised (env : Env) (callee : Expr) (args : List Expr) (asserts : B
     return ← StateT.lift (narrowTo env x s.result)
   return env
 
+/-- Statements that complete only by falling through or a throw (the
+producer's `falls_or_throws`, source.ml:978-985). -/
+partial def fallsOrThrows : List Stmt → Bool
+  | [] => true
+  | s :: rest => (match s with
+    | .constants .. | .mutables .. | .effect .. | .destructure .. | .throw .. => true
+    | .ite _ _ a b => fallsOrThrows a && fallsOrThrows (b.getD [])
+    | .block _ none body => fallsOrThrows body
+    | _ => false) && fallsOrThrows rest
+
+/-- A handler that has no normal exit: it completes only by a throw (the
+producer's `throw_only_stmts`, source.ml:975-993). -/
+partial def throwOnly : List Stmt → Bool
+  | [] => false
+  | s :: rest => match s with
+    | .throw .. => true
+    | .constants .. | .mutables .. | .effect .. | .destructure .. => throwOnly rest
+    | .ite _ _ a b => (throwOnly a && throwOnly (b.getD [])) ||
+        (fallsOrThrows a && fallsOrThrows (b.getD []) && throwOnly rest)
+    | .block _ none body => throwOnly body || (fallsOrThrows body && throwOnly rest)
+    | _ => false
+
 /-- A return's copy of a finalizer (or of a loop's close) walked to the
 entries `walked`: its statements' entries at `positions`, read by that
 copy's points (their scope holds `key`, `%return@p%`). -/
@@ -6054,7 +6076,13 @@ partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
   | .tryStmt p body handler finalizer =>
     if finalizer.isSome && (← get).strict then modify fun w => { w with throwWrites := true }
     let outer := (← get).caught
-    if handler.isSome || finalizer.isSome then modify fun w => { w with caught := true }
+    -- A handler with no normal exit, and no finalizer: what the body's
+    -- throws leave reaches no normal return, so the body is walked as
+    -- outside it, and the handler's changes are no part of the footprint of
+    -- a normal return; a throw it leaves may change what they change (the
+    -- producer's `Try` of a `throw_only_stmts` handler, source.ml:1168-1169).
+    let rethrows := finalizer.isNone && (handler.any fun (_, hs) => throwOnly hs)
+    if (handler.isSome || finalizer.isSome) && !rethrows then modify fun w => { w with caught := true }
     -- The jumps and returns the statement's body and handler leave by (each
     -- through the finalizer: a copy of it per route, `SourceFlow.sequence`).
     let w0 ← get
@@ -6069,7 +6097,15 @@ partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
         let hEnv := match param with
           | some (n, _) => { reset with vars := upd reset.vars n unknown, decl := upd reset.decl n unknown }
           | none => reset
-        stmts (some hEnv) hs
+        let before ← get
+        let r ← stmts (some hEnv) hs
+        if rethrows then
+          modify fun w =>
+            let grew := w.valueChange != before.valueChange || w.storeChange != before.storeChange ||
+              (w.writes && !before.writes)
+            { w with writes := before.writes, valueChange := before.valueChange,
+                     storeChange := before.storeChange, throwWrites := w.throwWrites || grew }
+        pure r
       | none => pure none
     modify fun w => { w with caught := outer }
     let joined := if handler.isSome then join b h else b
