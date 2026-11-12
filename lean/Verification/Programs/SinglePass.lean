@@ -913,6 +913,117 @@ def entryRefusal (G : NormalGraph ι) (inputs : List (Ty ι)) (claims : List (Po
         some "the entry: a given fact the entry facts do not entail"
       else none
 
+/-- The start's written facts as `run` assumes them at its given state: its
+written assertion with the request's entry index facts and the separation
+of its inputs (`Request.entryIndices`, `entrySeparation`). -/
+def startWritten (written : Option Knowledge) (entryIndices : List IndexAtom)
+    (entrySeparation : HeapSeparation.Separation) : Knowledge :=
+  let w := written.getD {}
+  { w with indices := w.indices ++ entryIndices, separation := HeapSeparation.union w.separation entrySeparation }
+
+/-- The start's given state as `run` builds it: `startWritten`, with the
+claims' facts there (`supplied`). -/
+def startGiven (written : Option Knowledge) (entryIndices : List IndexAtom)
+    (entrySeparation : HeapSeparation.Separation) (supplied : List IndexAtom) : Knowledge :=
+  let w := startWritten written entryIndices entrySeparation
+  { w with indices := w.indices ++ supplied }
+
+/-- **A node's step within a footprint bound** (`GraphCode.nodeChecked`),
+at a node outside the region from which no normal return is possible: the
+step within `Φ` (`ExpressionEffects.check`, `writeWithin`, `initWriteWithin`,
+the step's derivation `deriv` within it at the fresh receivers `F`
+(`selectedWithinAt`), claimed at the node's term and context and its tree
+accepted, an empty type); its throw within it where a live handler catches
+it or the bound covers throws (`exc`); a return under a fresh result
+(`ret`) returning a fresh value (`outFresh`); the term in scope. -/
+def footprintCheck (G : NormalGraph ι) (images : InstanceImageCheck G) (codes : CodeEntry ι → Bool)
+    (sums : List (ReadSummary ι)) (Φ : Footprints.Closed) (F : List Nat) (c : PointClaim ι) (node : Node)
+    (stepK : Knowledge) (deriv : ProgramCertificates.Evidence ι) (liveHandler exc ret outFresh : Bool) : Bool :=
+  -- The step's derivation, where its signature bounds the step: claimed
+  -- at the node's term and context, its tree accepted (`GraphCode.nodeChecked`'s
+  -- conjuncts beside `selectedWithinAt`).
+  let derivChecked : Thunk Bool := Thunk.mk fun _ =>
+    (ProgramCertificates.claim deriv).term == node.expression &&
+      (ProgramCertificates.claim deriv).context == c.context &&
+      (ProgramCertificates.checkTreeUsing G images deriv codes sums ||
+        PromiseCalls.requiresTree G images stepK codes sums deriv)
+  let writes := ExpressionEffects.writeWithin G c.context Φ node.expression ||
+    ExpressionEffects.initWriteWithin G c.context stepK Φ node.expression
+  let within := ExpressionEffects.check G c.context node.expression || writes ||
+    (GraphCode.selectedWithinAt Φ F deriv && derivChecked.get) || ExpressionEffects.emptyType G c.type ||
+    c.context.any (ExpressionEffects.emptyType G ·)
+  -- The throw within the bound where a handler outside the region with
+  -- no normal return catches it or the bound covers throws
+  -- (`GraphCode.nodeChecked`'s `deadHandler`): an effect without
+  -- `onThrow` bounds no throw a live handler catches.
+  let throws := !(liveHandler || exc) || ExpressionEffects.check G c.context node.expression || writes ||
+    (GraphCode.selectedWithinAt Φ F deriv && derivChecked.get && ExpressionEffects.selectedThrows deriv &&
+      (match ExpressionEffects.selectedEffect deriv with | some eff => eff.onThrow | none => false)) ||
+    c.context.any (ExpressionEffects.emptyType G ·)
+  let returns := match node.continuation with
+    | .ret => !ret || outFresh
+    | _ => true
+  within && throws && returns && ProgramCertificates.checkScope c.context.length node.expression
+
+/-- **A return's checks** (`GraphCode.returnOk`, `checkReturnResult`), at
+node `l` returning its result's name `result` from `entry` with the output
+store `store`: a postcondition (`ensures`) entailed by the output's facts
+over the result and the inputs' entry values (`startNames`); the goal: a
+plain result's type, or a promise about the input in the goal's slot (its
+name `argName`), the answer right and the argument, as the step's yields
+leave it, within the promise. The refusal where one fails, the answers
+after the subtyping searches, and the postcondition query's atom count
+where it is made. -/
+def returnCheck (G : NormalGraph ι) (images : InstanceImageCheck G) (goal : Goal ι)
+    (ensures : List HeapKnowledge.IndexFact) (c : PointClaim ι) (l : Nat) (entry : State) (store : Store)
+    (result start : Nat) (startNames : List Nat) (argName : Option Nat) (yields : List (PromiseCalls.Yield ι))
+    (debugNode : Nat) (answers : Answered G) : Option String × Answered G × Option Nat :=
+  let width := c.context.length
+  let pushedNames := result :: entry.names
+  -- A postcondition at a return (`GraphCode.returnOk`): the output's facts
+  -- over the result and the inputs' entry values entail it.
+  let post : Option (Option String × Nat) :=
+    if !ensures.isEmpty && !(ExpressionEffects.emptyType G c.type || c.context.any (ExpressionEffects.emptyType G ·)) then
+      let wanted := GraphCode.namedInputs ensures
+      let tracked : GraphCode.Tracked := wanted.filterMap fun (_, q) => do
+        let nm ← startNames[q]?
+        let j ← entry.names.idxOf? nm
+        pure (j, q)
+      let (k, _, _) := materialize { names := pushedNames, store } (width + 1) (0 :: tracked.map (·.1 + 1)) false
+      let kOut := KnowledgeExpand.expandLinks (HeapKnowledge.setsCtx (HeapKnowledge.typeSets G c.context) 1) k
+      some (if !GraphCode.returnEntails kOut tracked ensures then
+          some s!"return at node {l}: the postcondition{if l == debugNode then s!" tracked {tracked} k {reprStr kOut.indices}" else ""}"
+        else none, (atomsOf k).length)
+    else none
+  let queried := post.map (·.2)
+  match post with
+  | some (some why, _) => (some why, answers, queried)
+  | _ =>
+    match goal with
+    | .plain R => (if !(c.type == R || c.type.isEmpty) then some s!"return at node {l}" else none, answers, queried)
+    | .guards T _ | .asserts T _ =>
+      -- A promise about the input in the goal's slot (`checkReturnResult`):
+      -- the answer right, and the argument, as the yields leave it, within
+      -- the promise, at a slot holding the input's name.
+      let answered := match goal with | .guards .. => true | _ => false
+      let answerOk := if answered then BranchRefinement.onlyBoolean G c.type
+        else PromiseCalls.onlyUndef G c.type
+      let vacuous := if answered then BranchRefinement.impossible G c.type (.boolean true) else c.type.isEmpty
+      let ys := yields.flatMap fun y => match entry.names[y.target]? with
+        | some nm => (entry.names.zipIdx.filter (·.1 == nm)).map fun (_, j) => { y with target := j }
+        | none => [y]
+      let refined := PromiseCalls.refineBy G c.context (PromiseCalls.yieldFacts ys answered) 0
+      let held := match argName with
+        | some a => (entry.names.zipIdx.filter fun (x : Nat × Nat) => x.1 == a).map fun (x : Nat × Nat) => x.2
+        | none => []
+      let (within, answers) := held.foldl (fun (within, answers) p =>
+        if within then (within, answers) else match refined[p]? with
+          | some B => let (res, a') := subtypeUsing G images B T answers; (res.value.isSome, a')
+          | none => (false, answers)) (false, answers)
+      (if !(answerOk && (vacuous || within)) then
+        some s!"return at node {l}: the promise{if l == debugNode then s!" answer {answerOk} vacuous {vacuous} held {held} arg {argName} start {start} slot {goal.slot} names {entry.names} yields {ys.length}" else ""}"
+       else none, answers, queried)
+
 /-- The store without its facts reading the heap (a cell, an element, a
 read link, an index fact reading the heap) that `keep` does not hold: the
 facts a throw keeps (`ControlFlow.handlerFacts`), or a writing step's facts
@@ -1451,19 +1562,16 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
   let mut given : Array (Option Knowledge) := Array.replicate n none
   for l in List.range n do
     if isHead[l]! then
-      let written := (stated[l]!).getD {}
       -- The start assumes the request's entry facts: its index facts and
-      -- the separation of its inputs (`Request.entryIndices`, `entrySeparation`).
-      let written : Knowledge := if l == start then
-          { written with
-            indices := written.indices ++ entryIndices
-            separation := HeapSeparation.union written.separation entrySeparation }
-        else written
+      -- the separation of its inputs (`startWritten`, `startGiven`).
+      let written : Knowledge := if l == start then startWritten stated[l]! entryIndices entrySeparation
+        else (stated[l]!).getD {}
       let claimsFacts := (supplied[l]!).getD []
       counts := { counts with
         givenWritten := counts.givenWritten + (atomsOf written).length
         givenClaims := counts.givenClaims + claimsFacts.length }
-      given := given.set! l (some { written with indices := written.indices ++ claimsFacts })
+      given := given.set! l (some (if l == start then startGiven stated[l]! entryIndices entrySeparation claimsFacts
+        else { written with indices := written.indices ++ claimsFacts }))
   for l in List.range n do
     if reached[l]! && indeg[l]! == 0 && (isHead[l]! || l == start) then queue := queue ++ [l]
   let mut visitedAll := 0
@@ -1601,33 +1709,10 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
         let F := match PromiseCalls.receiverSlot node.expression with
           | some i => if (entry.names[i]?).any entry.fresh.contains then [i] else []
           | none => []
-        -- The step's derivation, where its signature bounds the step: claimed
-        -- at the node's term, its tree accepted (`GraphCode.nodeChecked`'s
-        -- conjuncts beside `selectedWithinAt`).
-        let derivChecked : Thunk Bool := Thunk.mk fun _ =>
-          (ProgramCertificates.claim deriv).term == node.expression &&
-            (ProgramCertificates.checkTreeUsing G images deriv codes answers.summaries.toList ||
-              PromiseCalls.requiresTree G images stepK codes answers.summaries.toList deriv)
-        let writes := ExpressionEffects.writeWithin G c.context Φ node.expression ||
-          ExpressionEffects.initWriteWithin G c.context stepK Φ node.expression
-        let within := ExpressionEffects.check G c.context node.expression || writes ||
-          (GraphCode.selectedWithinAt Φ F deriv && derivChecked.get) || ExpressionEffects.emptyType G c.type ||
-          c.context.any (ExpressionEffects.emptyType G ·)
-        -- The throw within the bound where a handler outside the region with
-        -- no normal return catches it or the bound covers throws
-        -- (`GraphCode.nodeChecked`'s `deadHandler`): an effect without
-        -- `onThrow` bounds no throw a live handler catches.
         let liveHandler := match node.handler with
           | some t => !deadArr.getD t.label false
           | none => false
-        let throws := !(liveHandler || exc) || ExpressionEffects.check G c.context node.expression || writes ||
-          (GraphCode.selectedWithinAt Φ F deriv && derivChecked.get && ExpressionEffects.selectedThrows deriv &&
-            (match ExpressionEffects.selectedEffect deriv with | some eff => eff.onThrow | none => false)) ||
-          c.context.any (ExpressionEffects.emptyType G ·)
-        let returns := match node.continuation with
-          | .ret => !ret || outFresh
-          | _ => true
-        if !(within && throws && returns && ProgramCertificates.checkScope width node.expression) then
+        if !footprintCheck G images codes answers.summaries.toList Φ F c node stepK deriv liveHandler exc ret outFresh then
           return (.outsideBound l, counts, answers, trace)
     -- The step's yields, computed where an edge's types need them. A read
     -- of a slot yields what the implications testing it state.
@@ -1663,47 +1748,13 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
     if node.handler.isSome && thrownTy.isNone then return (.refused s!"handler of node {l}", counts, answers, trace)
     let thrown := fresh
     if node.handler.isSome then fresh := fresh + 1
-    -- A postcondition at a return (`GraphCode.returnOk`): the output's facts
-    -- over the result and the inputs' entry values entail it.
     if let .ret := node.continuation then
-      if !ensures.isEmpty && !(ExpressionEffects.emptyType G c.type || c.context.any (ExpressionEffects.emptyType G ·)) then
-        let wanted := GraphCode.namedInputs ensures
-        let tracked : GraphCode.Tracked := wanted.filterMap fun (_, q) => do
-          let nm ← startNames[q]?
-          let j ← entry.names.idxOf? nm
-          pure (j, q)
-        let (k, _, _) := materialize { names := pushedNames, store } (width + 1) (0 :: tracked.map (·.1 + 1)) false
-        let kOut := KnowledgeExpand.expandLinks (HeapKnowledge.setsCtx (HeapKnowledge.typeSets G c.context) 1) k
-        counts := { counts with queries := counts.queries + 1, queryAtoms := counts.queryAtoms + (atomsOf k).length }
-        if !GraphCode.returnEntails kOut tracked ensures then
-          return (.refused s!"return at node {l}: the postcondition{if l == debugNode then s!" tracked {tracked} k {reprStr kOut.indices}" else ""}", counts, answers, trace)
-      match goal with
-      | .plain R => if !(c.type == R || c.type.isEmpty) then return (.refused s!"return at node {l}", counts, answers, trace)
-      | .guards T _ | .asserts T _ =>
-        -- A promise about the input in the goal's slot (`checkReturnResult`):
-        -- the answer right, and the argument, as the yields leave it, within
-        -- the promise, at a slot holding the input's name.
-        let answered := match goal with | .guards .. => true | _ => false
-        let answerOk := if answered then BranchRefinement.onlyBoolean G c.type
-          else PromiseCalls.onlyUndef G c.type
-        let vacuous := if answered then BranchRefinement.impossible G c.type (.boolean true) else c.type.isEmpty
-        let ys := yields.getD []
-        let ys := ys.flatMap fun y => match entry.names[y.target]? with
-          | some nm => (entry.names.zipIdx.filter (·.1 == nm)).map fun (_, j) => { y with target := j }
-          | none => [y]
-        let refined := PromiseCalls.refineBy G c.context (PromiseCalls.yieldFacts ys answered) 0
-        let held := match argName with
-          | some a => (entry.names.zipIdx.filter fun (x : Nat × Nat) => x.1 == a).map fun (x : Nat × Nat) => x.2
-          | none => []
-        let mut within := false
-        for p in held do
-          if !within then
-            if let some B := refined[p]? then
-              let (res, a') := subtypeUsing G images B T answers
-              answers := a'
-              if res.value.isSome then within := true
-        if !(answerOk && (vacuous || within)) then
-          return (.refused s!"return at node {l}: the promise{if l == debugNode then s!" answer {answerOk} vacuous {vacuous} held {held} arg {argName} start {start} slot {goal.slot} names {entry.names} yields {ys.length}" else ""}", counts, answers, trace)
+      let (refusal, a, queried) := returnCheck G images goal ensures c l entry store result start startNames argName
+        (yields.getD []) debugNode answers
+      answers := a
+      if let some q := queried then
+        counts := { counts with queries := counts.queries + 1, queryAtoms := counts.queryAtoms + q }
+      if let some why := refusal then return (.refused why, counts, answers, trace)
     -- The edges: target, whether the result is pushed, an observation of
     -- it, and a branch's answer.
     let edges := Exit.ofNode node
