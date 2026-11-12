@@ -2090,3 +2090,277 @@ Leaves, each a pass change with its specification stated here:
   (`Traversed.width`, under `MapNamesLength`), well-formedness and
   `StateBelow` (proved at the edges, Legs 10 and 12), the start names below
   the merge's counter.
+## Leg 14b: the footprint check kept along a run
+
+Module `lean/Verification/Programs/TolerantFramesNodeBound.lean`. Under
+`bound = some (Φ, ret, exc)` and the region `dead`, `run` checks at each
+node (`BoundChecked`): at a node of `dead`, `GraphCode.deadNode` with
+`exc = false`; outside it, `footprintCheck` at the step's values, which
+`passRecvFresh`, `passDerivOf`, `passLiveHandler` and `passOutFresh`
+restate from `run`'s bindings (`F`, `deriv`, `liveHandler`, `outFresh`);
+`run` reads the region as an array, `deadAt_toList` gives the list. Proved:
+
+- `freshOk_recv`: the receiver slots `passRecvFresh` lists hold stores
+  allocated at or past the mark (`GraphCode.FreshOk`), from the entry
+  state's fresh names: the `FreshOk` premise of `footprint_exits`;
+- `copyFresh`: a copy of a slot holding a fresh name returns a fresh store;
+- (`footprintKept_of`) `NodeAccepted` at mark $`|h_0|`$ ∧ `BoundChecked`
+  ∧ `CallFreshOk` at every visited node ∧ `CodesSound` ∧
+  `DirectKeepsSummaries` ∧ `SearchKeepsSummaries` ⟹ `FootprintKept`.
+  Outside `dead`, from $`\Phi`$ between $`h_0`$ and the entry heap,
+  `footprint_exits` gives $`\Phi`$ on each normal exit and on a throw where
+  the handler is live or the bound covers throws; a return where `ret`
+  is fresh by `passOutFresh` (`copyFresh`, or `CallFreshOk`). Inside
+  `dead`, an empty result type admits no normal exit (the value's type from
+  the step's exits), a continuation into `dead` reaches a node of `dead`,
+  and a throw reaches a handler of `dead` or escapes with no throw bound.
+
+Named hypothesis `CallFreshOk`: where `outFresh` reads a fresh result off
+the derivation's selected effect (`passCallFresh`), the returned value's
+store is allocated at or past the mark; the pass does not check that
+derivation's tree there (pass change D4).
+
+## Leg 14b: the return check kept along a run
+
+Module `lean/Verification/Programs/TolerantFramesNodeReturns.lean`.
+`ReturnChecked` is `returnCheck` refusing nothing at a node whose
+continuation is a return, at the step's output store and result. Proved:
+
+- `returnCheck_ensures`, by unfolding: where `returnCheck` refuses nothing,
+  `ensures` is empty, the claim's type or a context slot's is empty, or
+  `returnEntails` accepts the output's facts over the result and the
+  tracked inputs (`passTracked`, `returnCheck`'s `tracked`);
+- `passTracked_names`: each tracked slot holds the start name of the input
+  it tracks, the premise `htr` of `pass_return_ensures`;
+- (`returnsEnsured_of`) `NodeAccepted` ∧ `ReturnChecked` at every visited
+  node ∧ `CodesSound` ∧ `DirectKeepsSummaries` ∧ `SearchKeepsSummaries` ⟹
+  `ReturnsEnsured`: the state after the step at the pushed environment
+  (the step's normal exit) gives `ensures` by `pass_return_ensures`; an
+  empty result type admits no value, an empty context type no
+  environment.
+
+The guard and assertion goals are not composed here: `NodeAccepted.ret`
+states the goal of every value of the claim's type, while a guard's goal
+reads the promised argument (`GoalHolds (.guards T _) a`), which only the
+state after the step determines (the argument's slots, named by
+`argName`, refined by the step's yields). Their proof needs `ret` read at
+that state, as `ControlFlow.goal_return` reads `ReturnOk`, `YieldsOk` and
+`ArgumentsOk`, with the subtype answers' soundness (pass change D5) for
+`returnCheck`'s `subtypeUsing`.
+
+## Leg 14b: a written assertion on its edges and in the entry state
+
+Module `lean/Verification/Programs/TolerantFramesNodeAsserted.lean`.
+Proved (`assertion_query_sound`): the check `run` makes on every edge into
+a node other than a head that states an assertion `req` (`checkIn` of `req`
+over the edge's materialized facts with the typed cells and links of the
+edge's context $`\Gamma_e`$, under the edge's observation where it has one,
+`assertionSource`) gives `req` at the target's environment
+$`\mathrm{mapEnv}\ \theta\ \rho`$, where the edge's facts hold at
+$`\rho`$, $`\Gamma_e`$ types $`\rho`$ (on a refined edge context, the
+step's yields: `YieldsOk`), the observation holds of the result and the
+target's context types the mapped environment.
+
+`AssertionsHeld` reads the assertion from the node's entry state
+(`passPreT`), into which `run` adds each written fact renamed to the
+slots' names (`Store.add`). That state does not entail every written
+fact: a fact one of whose slots has no name is not added (its renaming is
+`none`); `Store.addBound` does not add a linear bound when the store has a
+bound of the same normal form at least as strong, though the normal form
+may drop a term (`x - x`) whose value the skipped fact requires defined;
+and a separation fact's atoms carry no level bound. Observed in the code;
+no source reaching these is demonstrated. So `AssertionsHeld` is a named
+hypothesis of this leg. The edge check above is the obligation that gives
+the assertion at every entry: a node assertion that states, beside
+`passPreT`, the stated assertions at the label, with every edge into the
+label establishing them (`assertion_query_sound` at a node other than a
+head, `head_query_sound` at a head, whose given facts include the written
+assertion), carries them to every reached entry as `reached_pre` carries
+`passPreT`.
+
+## Leg 14b: the edge evidence checked, and a start an edge enters
+
+Module `lean/Verification/Programs/TolerantFramesComposeEdges.lean`.
+
+**D1, the edge evidence.** Proved: (`edgeEvidenceChecked_env`) where
+`edgeEvidenceChecked` accepts the search's evidence at the edge's context
+$`\Gamma`$ and the target's $`\Delta`$, over the fields, optional fields
+and cells read off the edge's facts $`k`$, with $`k`$ holding at
+$`\rho`$, $`\Gamma`$ typing $`\rho`$ and the observation holding of slot
+0, $`\Delta`$ types $`\mathrm{mapEnv}\ \theta\ \rho`$: an unsatisfiable
+context meets no environment, `checkMapped_sound` gives `MappedCovers`
+and `checkObserved_sound` `ObservedCovers`, each read at the environment
+(`MappedCovers.env`, `ObservedCovers.env` with `readFields_holds`,
+`optionalFields_holds`, `aliasCells_holds`), as `ControlFlow.target_sound`
+and `branch_target_sound` read them for the checker; `checkedEdge_env` is
+the same for `checkedEdge`'s accepted result. This is the `htc` premise
+of `exitDelivers_of_edge` and `exitDelivers_head` on an edge `run` accepts
+by its search, at each context `run` searches from: the edge's own (its
+facts the materialized edge store, expanded, which `edgeStore_normal`
+gives), the yields' refinement and the mixed one (their typing at
+$`\rho`$ the step's yields, `YieldsOk`, pass change D2). An edge accepted
+by subtype answers alone reads the subtype cache (pass change D5).
+
+**D8, the start an edge enters.** `run` enters it with `headEntry g
+false`, as any head, and checks each edge into it as an edge into a head,
+so `exitDelivers_head` covers those edges with the start's given facts
+`startGiven …`. Proved (`start_entered_passPreT`): with that entry,
+`entryRefusal` accepting, the counter at or past the inputs' width and the
+entry meeting the inputs, the separation and the index facts, the start's
+typed assertion holds at the entry values (`headEntry_holds` from
+`HeadEstablishes` at the entry: the given facts by `startGiven_holds`, no
+given implication, each given input and the promised input at its own
+slot). `StartNotReentered` is then not a premise: `PassWalkSound.entered`
+is `start_passPreT` at a start no edge enters and `start_entered_passPreT`
+at one an edge enters, and `HeadsEntered` at the start is
+`headsEntered_of_recorded` as at any head.
+
+## Leg 14b: the shape of a branch's value
+
+Module `lean/Verification/Programs/TolerantFramesComposeShape.lean`.
+`NodeAccepted.shape` asks every value of the claim's type to have its
+continuation's shape (`ShapeOk`): a Boolean at a branch. Neither the
+graph's well-formedness nor the lowering gives it, since the claims are
+the producer's; the proved checker tests it of a branch's evidence
+(`ControlFlow.checkNodeResult` at `.branch`, `decide (expand G (result c)
+= [.bool])`), and `run` makes no such test. The check the pass needs is
+that test at a branch node (`passShapeCheck`). Proved: `branchShape_of`,
+the test gives `true` or `false` of every value (`represents_raw` at the
+Boolean clause); `nodeShape_of`, `passShapeCheck` gives `shape` at every
+continuation.
+
+`ShapeOk` and `NormalTarget` are `False` at `branchBind` and `tagBind`:
+the node obligations admit no node with those continuations, so a unit
+with one is outside `stepEdgesSound_of`. The checker covers them by
+`onlyBoolean` at `branchBind` and the tag's observation at `tagBind`
+(`ContinuationOk`, `BranchTargetOk`); `NodeObligations` would take the
+same.
+
+## Leg 14b: the regional check of one node
+
+Module `lean/Verification/Programs/TolerantFramesRegionalNode.lean`. Proved:
+
+- (`checkNode_sound`) `checkNode` accepting node $`l`$ at its evidence
+  $`c`$ ∧ `ExpressionOk G c node.expression` ∧ `SummariesSound` ⟹
+  `NodeWithinAt` (the node's conjunct of `NodesWithin`): the core of
+  `checkNodes_sound`, its typing premise the node's own instead of the
+  whole graph's acceptance (`graph_node`); `nodesWithin_of` assembles it;
+- (`checkNode_mono`) the check over the node's tables holds over the
+  graph's where they agree (`TablesAgree`): equal at the node, and at each
+  target of its continuation and handler the graph's entry within the
+  node's, in each of the four tables (every target check is an `all` over
+  the target's entry: `checkEdges_mono`, `checkHandler_mono`,
+  `edgesFresh_mono`, `handlerFresh_mono`, `edgesFields_mono`,
+  `handlerFields_mono`);
+- (`meet_sub`) the meet of the established entries is within each, the
+  agreement at a target other than a head, once the meet is over every
+  predecessor's entry (the in-degree order, `run_traversed`).
+
+The graph's tables are then, at each label, the entry `run` checks the node
+at (the regions' inputs at the start, a head's given facts, the meet of
+the entries the edges into it establish, with the kept cells and fields).
+What `RegionsKept` still needs, beyond `NodeWithinAt` at every visited
+node:
+
+1. `ExpressionOk G cEv node.expression` at the evidence `run` checks
+   (`⟨ordinaryEv, some ⟨c.context, node.expression, c.type⟩, [], kHere,
+   stepEffect, …⟩`): it quantifies over every environment meeting the
+   evidence's context and its facts `kHere` (materialized from the entry
+   state), while the step theorem gives the node's judgment from the entry
+   state holding; and the evidence's context is its derivation's claim,
+   which `run` does not compare with the node's at this check. A named
+   hypothesis (`RegionalTyped`), discharged by the derivation's tree check
+   at the node's context, as `footprintCheck`'s `derivChecked`;
+2. the composition along a run: `NodesKeep` with $`X`$ the graph's tables
+   holding (`LabelHolds`) and the regions within, as
+   `ArgumentRegionGraph.bounded_step` composes `NodesWithin` for the
+   checker from `StateOk`, here from `passPreT` and the step's judgment,
+   with `StableNow` at the entry world carried in $`X`$.
+   Not proved here.
+
+## Leg 14b: premises this leg discharges and leaves
+
+Discharges:
+
+- `FootprintKept`: `footprintKept_of`, from `NodeAccepted`, `BoundChecked`
+  and `CallFreshOk` at every visited node; its `FreshOk` of the receiver
+  slots from the entry state's fresh names (`freshOk_recv`);
+- `ReturnsEnsured`: `returnsEnsured_of`, from `NodeAccepted` and
+  `ReturnChecked` at every visited node;
+- the edge lemmas' target types (`htc`) on an edge accepted by the edge
+  search: `checkedEdge_env` (D1), given the edge's facts holding and its
+  context typing the source environment;
+- `StartNotReentered`: `start_entered_passPreT` at a start an edge enters
+  (D8), with `exitDelivers_head` and `headsEntered_of_recorded` at the start
+  as at any head;
+- `shape` at a branch: `nodeShape_of`, given the check `passShapeCheck`
+  (needs a pass change: the checker's Boolean test at a branch node).
+
+Leaves:
+
+- `CallFreshOk`: a call's fresh result read off the derivation's selected
+  effect (pass change D4);
+- `AssertionsHeld` from `passPreT`: the entry state does not entail every
+  written fact (Leg 14b: a written assertion on its edges and in the entry
+  state); the edge's check gives it (`assertion_query_sound`), carried by a
+  node assertion stating the assertions;
+- `RegionsKept`: `RegionalTyped` (the evidence's `ExpressionOk`), the
+  graph's tables' agreement with each node's through the in-degree order,
+  and the composition along a run;
+- the guard and assertion goals of `NodeAccepted.ret`: `ret` read at the
+  state after the step, `YieldsOk`, the subtype answers (D5);
+- `branchBind` and `tagBind` continuations: outside the node obligations;
+- `htc` on an edge accepted by subtype answers alone (D5), and at the
+  yields' refined and mixed contexts (`YieldsOk`, D2).
+
+## Leg 15b: node obligations at every continuation
+
+Modules `lean/Verification/Programs/TolerantFramesNodeBinds.lean` and
+`TolerantFramesNodeBindsExits.lean`.
+
+The lowering emits no `branch` continuation: every two-way dispatch of a
+source is a `branchBind` (a condition whose claim type is Boolean) or a
+`tagBind` (a condition by truthiness, a `typeof` or equality guard, `?.`
+and `??`, a default for `undefined`, a read before initialization, an
+`Array.isArray` test, a `__proto__` key), at 19 sites of
+`Source/Lowering` (`Control.lean`, `Atoms.lean`, `Execution.lean`,
+`Bindings.lean`, `Flow.lean`). `ShapeOk` and `NormalTarget` are `False` at
+both, so `NodeObligations` covers no unit with a condition.
+
+`ShapeOk'` and `NormalTarget'` extend them: at `branchBind y n` the value
+is `true` or `false` and the arm it selects holds at
+$`\mathrm{mapEnv}\ \theta\ (\mathrm{push}\ v\ \rho)`$; at `tagBind tg y n`
+any value, and the arm of `tagHoldsIn h tg v` in the heap of the state
+reached holds at the pushed environment, as `Transition.yesBind`, `noBind`
+and `tagBind` take them. `NodeObligations'`, `EvalOk'`, `GraphInv'` and
+`NodesChecked'` are the existing definitions over them. Proved:
+
+- `shapeOk'_eq`, `normalTarget'_eq`: on the other four continuations they
+  are `ShapeOk` and `NormalTarget`; `nodeObligations'_of`,
+  `nodesChecked'_of`: every `NodeObligations` is a `NodeObligations'`;
+- `graph_step'`, `graph_safe'`, `graph_safe_at'`, `graph_inv_run'`,
+  `reached_pre'`, `transfer'`: the graph theorems over `NodesChecked'`;
+- `nodeShape'_of`: the shape check `passShapeCheck'` (the proved
+  checker's `onlyBoolean` at a `branchBind`, nothing at a `tagBind`) gives
+  `ShapeOk'`;
+- `ofNode_flags`: an exit of `Exit.ofNode` observes only where it pushes
+  and promotes only where it does not, the premises `hpo` and `hpp` of
+  `exitDelivers_of_edge` and `exitDelivers_head`, which therefore deliver
+  the exits of both continuations as they stand (the observation's facts
+  by `edgeStore_observed`);
+- `normalTarget'_of_exits`: from every exit delivering, the normal target
+  at every continuation; a `branchBind`'s exits observe `.boolean`, a
+  `tagBind`'s observe `.tag tg q`, which `tagHolds_of_heap` gives from the
+  answer in the heap;
+- `nodeObligations'_of_parts`, `NodeAccepted'` (`NodeAccepted` with
+  `ShapeOk'`, `NodeAccepted.toPrime`), `stepEdgesSound'_of`,
+  `StepEdgesSoundT'`, `stepEdgesSoundT'_of`, `run_sound_of_walk_typed'`.
+
+The rest of the guarantee (`nodesChecked_of_walk`, `keeps_step`,
+`keeps_postExc`, `reached_pre` and the fields of `TolerantFramesGuarantee`)
+is generic in the node obligations: replacing `ShapeOk` and `NormalTarget`
+in `TolerantFramesRuns.lean` by `ShapeOk'` and `NormalTarget'` adds the two
+cases of `graph_step'` to `graph_step`, the two of `normalTarget'_of_exits`
+to `normalTarget_of_exits`, the two of `nodeObligations'_mono` to
+`nodeObligations_mono` and the `branchBind` case of `nodeShape'_of` to
+`nodeShape_of`; no other proof unfolds either definition.
