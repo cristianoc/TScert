@@ -1,3 +1,6 @@
+import Verification.Programs.TolerantFramesExitsYield
+import Verification.Programs.TolerantFramesExitYieldCache
+import Verification.Programs.TolerantFramesExitHeadChecks
 import Verification.Programs.TolerantFramesExitRecords
 import Verification.Programs.TolerantFramesExitExecution
 import Verification.Programs.TolerantFramesExitTypeChecks
@@ -1198,3 +1201,19 @@ run_cmd do
   check ``Verification.TolerantFrames.exitsFold_records_checked
   check ``Verification.TolerantFrames.visitExits_records
   check ``Verification.SourceClaimJson.PassUnit.passUnitVerdict_safe_run
+  check ``Verification.TolerantFrames.ExitYieldSource.trans
+  check ``Verification.TolerantFrames.exitTypes_yields_source
+  check ``Verification.TolerantFrames.headExit_yields
+  check ``Verification.TolerantFrames.assertionExit_yields
+  check ``Verification.TolerantFrames.exitStep_yields_source
+  check ``Verification.TolerantFrames.exitsFold_yields_source
+  check ``Verification.TolerantFrames.exitsFold_records_yields
+  check ``Verification.TolerantFrames.visitExits_records_yields
+  check ``Verification.TolerantFrames.exitTypes_refined_yields
+  check ``Verification.TolerantFrames.exitStep_refined_yields
+  check ``Verification.TolerantFrames.visitExits_refined_judged
+  check ``Verification.TolerantFrames.impliesHeld_checked
+  check ``Verification.TolerantFrames.headImplies_checked
+  check ``Verification.TolerantFrames.headExit_checked
+  check ``Verification.TolerantFrames.exitTypes_handler_checked
+  check ``Verification.TolerantFrames.exitsYield_of_checks

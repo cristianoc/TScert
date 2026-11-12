@@ -1,4 +1,5 @@
 import Verification.Programs.TolerantFramesExitWidths
+import Verification.Programs.TolerantFramesDriverExitTrace
 
 /-! # Exit records retain each successful indexed check -/
 namespace Verification.TolerantFrames
@@ -116,27 +117,34 @@ theorem exitsFold_records_checked {env : SinglePass.WalkEnv ι G I} {l : Nat} {e
     {sd : SinglePass.StepDone ι G} {ys : List (PromiseCalls.Yield ι)} {out : Thunk HeapKnowledge.Knowledge} :
     ∀ (es : List (SinglePass.Exit × Nat)) (a b : SinglePass.ExitsDone ι G),
       es.foldlM (SinglePass.exitStep G I env l en sd ys out) a = .ok b →
+      a.incoming.size = a.incomingImpl.size →
       ∀ e ∈ es, ∃ r ∈ b.exits.toList, r.index = e.2 ∧ r.target = e.1.target ∧ ∃ a' b',
-        SinglePass.exitStep G I env l en sd ys out a' e = .ok b' ∧ b'.exits = a'.exits.push r
-  | [], _, _, _, _, he => by cases he
-  | e :: es, a, b, h, e', he => by
+        SinglePass.exitStep G I env l en sd ys out a' e = .ok b' ∧ b'.exits = a'.exits.push r ∧
+          WalkExtends (exitsWalk b') (exitsWalk b)
+  | [], _, _, _, _, _, he => by cases he
+  | e :: es, a, b, h, hs, e', he => by
     rw [List.foldlM_cons] at h
     cases ha : SinglePass.exitStep G I env l en sd ys out a e with
     | error stop => rw [ha] at h; cases h
     | ok a' =>
       rw [ha] at h
+      have hf : ExitsFold env l en sd [e.1] a a' :=
+        exitsFold_of (ysAll := ys) (outAll := out) [e] a a'
+          (by simp only [List.foldlM_cons, List.foldlM_nil, ha]; rfl)
+      have hs' : a'.incoming.size = a'.incomingImpl.size := by rw [hf.sizes.1, hf.sizes.2, hs]
       rcases List.mem_cons.mp he with rfl | he
       · obtain ⟨r, hr, hi, ht, -⟩ := exitStep_record ha
         obtain ⟨rs, hrs⟩ := exitsFold_records_prefix es a' b h
-        refine ⟨r, ?_, hi, ht, a, a', ha, hr⟩
+        refine ⟨r, ?_, hi, ht, a, a', ha, hr, exitsFold_extends h hs'⟩
         rw [hrs, hr, Array.toList_push]
         simp
-      · exact exitsFold_records_checked es a' b h e' he
+      · exact exitsFold_records_checked es a' b h hs' e' he
 
 /-- A successful exit visit retains every indexed exit's own record. -/
 theorem visitExits_records {env : SinglePass.WalkEnv ι G I} {σ : SinglePass.WalkState ι G} {l : Nat}
     {en : SinglePass.Entered ι} {sd : SinglePass.StepDone ι G} {ex : SinglePass.ExitsDone ι G}
-    (h : SinglePass.visitExits G I env σ l en sd = .ok ex) : ExitRecordsChecked G I env l en sd ex := by
+    (h : SinglePass.visitExits G I env σ l en sd = .ok ex)
+    (hs : σ.walk.incoming.size = σ.walk.incomingImpl.size) : ExitRecordsChecked G I env l en sd ex := by
   unfold SinglePass.visitExits at h
   extract_lets node c at h
   split at h
@@ -146,8 +154,8 @@ theorem visitExits_records {env : SinglePass.WalkEnv ι G I} {σ : SinglePass.Wa
   split at h
   · cases h
   · intro e he
-    obtain ⟨r, hr, hi, ht, a, b, hb, hext⟩ := exitsFold_records_checked _ _ _ h e he
-    refine ⟨r, hr, hi, ht, a, b, ?_, hext⟩
+    obtain ⟨r, hr, hi, ht, a, b, hb, hext, hg⟩ := exitsFold_records_checked _ _ _ h hs e he
+    refine ⟨r, hr, hi, ht, a, b, ?_, hext, hg⟩
     rw [heq]
     exact hb
 

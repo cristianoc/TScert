@@ -181,7 +181,7 @@ theorem visitsSettle_of (hprefix : VisitStepPrefix ι) : VisitsSettle ι := by
     · exact ⟨hext.incoming, hext.incomingEdges, hext.edges⟩
     · exact visitExits_checked hP.exits hP.inv.inSizes ⟨hext.incoming, hext.incomingEdges, hext.edges⟩
     · exact visitEntry_hereEmpty hP.inv.vacuity hP.entry
-    · exact visitExits_records hP.exits
+    · exact visitExits_records hP.exits hP.inv.inSizes
   · intro hs w hw
     exact visitStart_entered hP hs (hw.trans hlabel)
 
