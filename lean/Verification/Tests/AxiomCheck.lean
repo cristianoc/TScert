@@ -42,6 +42,11 @@ import Verification.Programs.TolerantFramesWalkReassignCall
 import Verification.Programs.TolerantFramesWalkReassignSelect
 import Verification.Programs.TolerantFramesWalkReassignStep
 import Verification.Programs.TolerantFramesWalkReassignWalk
+import Verification.Programs.TolerantFramesMergeBelow
+import Verification.Programs.TolerantFramesMergeGuarded
+import Verification.Programs.TolerantFramesMergeEntailed
+import Verification.Programs.TolerantFramesMergeNear
+import Verification.Programs.TolerantFramesMergeChecked
 
 /-!
 Acceptance rests on Lean's standard axioms alone. The build fails when any of
@@ -629,6 +634,30 @@ run_cmd do
   check ``Verification.TolerantFrames.headQuery_reassign
   check ``Verification.TolerantFrames.assertionQuery_reassign
   check ``Verification.TolerantFrames.edgeEvidenceChecked_reassign
+  -- Leg 14c: the merge's remaining premises (TolerantFramesMergeBelow and the modules after it)
+  check ``Verification.TolerantFrames.renameEach_names
+  check ``Verification.TolerantFrames.mergeEqual_names
+  check ``Verification.TolerantFrames.PredsBelow.store
+  check ``Verification.TolerantFrames.mergeState_factsBelow
+  check ``Verification.TolerantFrames.mergeState_below
+  check ``Verification.TolerantFrames.guardReads_path
+  check ``Verification.TolerantFrames.lowerRead_holds
+  check ``Verification.TolerantFrames.lowerGuards_holds
+  check ``Verification.TolerantFrames.check_holds
+  check ``Verification.TolerantFrames.guardedHolds_of_path
+  check ``Verification.TolerantFrames.termValue_value_undef
+  check ``Verification.TolerantFrames.termValue_length_num
+  check ``Verification.TolerantFrames.checked_bound_holds
+  check ``Verification.TolerantFrames.OnPath.entailed_ok_checked
+  check ``Verification.TolerantFrames.entailedDefined_of_checked
+  check ``Verification.TolerantFrames.linearNearFuel_sound
+  check ``Verification.TolerantFrames.linearNearSound_of_eq
+  check ``Verification.TolerantFrames.slotsOfNames_get
+  check ``Verification.TolerantFrames.atSlots_ok
+  check ``Verification.TolerantFrames.meetImplications_ok_of_check
+  check ``Verification.TolerantFrames.mergeImplies_ok_of_check
+  check ``Verification.TolerantFrames.mergeState_holdsAt_checked
+  check ``Verification.TolerantFrames.mergeState_holds_checked
   let env ← getEnv
   let project (decl : Name) : Bool := match env.getModuleIdxFor? decl with
     | some i => (`Verification).isPrefixOf env.header.moduleNames[i.toNat]!

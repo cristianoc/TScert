@@ -1872,3 +1872,221 @@ Premises this leg discharges / leaves:
   `DirectKeepsSummaries` and `SearchKeepsSummaries` at `G`; for a qualified
   body, that the unit's admitted assignments are of the form
   `assign η source.binders As` with the scheme's conditions.
+## Leg 14c: a merge's facts below its counter
+
+Module `lean/Verification/Programs/TolerantFramesMergeBelow.lean`. Proved,
+for predecessors of the context's width with well-formed stores and every
+slot, fact and fresh name below the merge's first fresh name
+$`\mathit{fresh}`$ (`PredsBelow`), a non-empty list of them:
+
+- `renameEach_names`: a fact restated at fresh names names the original's
+  names and the names the renaming sends them to; `mergeEqual_names`: a
+  predecessor's equalities name a name its renaming renames and that
+  name's fresh names;
+- the fresh names a renaming sends a name to are slots' names of the merge,
+  so below the merge's next fresh name (`PredsBelow.renamed`, from the first
+  loop's invariant `mergeSlots_inv`); the renamed names are below
+  $`\mathit{fresh}`$ (`rename_key_below`);
+- the restatements (`PredsBelow.variants`), the met store
+  (`PredsBelow.met0`: the common facts are the first predecessor's live
+  facts, `mergeCommon_live`; `drop_below`), the differences
+  (`PredsBelow.diffs`), and the merged store (`PredsBelow.store`): a weakest
+  bound names the names of a predecessor's bound of its normal form
+  (`boundsOf_get`, `normalize_vars`), an entailed bound is a difference, a
+  guarded fact is renamed into the merge's names.
+
+**(Merge below)** (`mergeState_factsBelow`, `mergeState_below`):
+
+```math
+\mathit{preds}\neq[\,] \wedge \forall q\in\mathit{preds}.\ |q.\mathit{names}|=|\mathit{context}| \wedge \mathrm{StoreWF}\ q.\mathit{store} \wedge \mathrm{StateBelow}\ q\ \mathit{fresh}
+\ \Rightarrow\ \mathrm{StateBelow}\ m.\mathit{state}\ m.\mathit{fresh}
+```
+
+for $`m = \mathrm{mergeState}\ G\ \mathit{context}\ \mathit{preds}\ \mathit{edgesIn}\ \mathit{fresh}`$.
+With `mergeState_wf` this fills the merge's row of the store-operations
+table (Leg 12): `StoreWF`, names and fresh names below, facts below, all
+proved.
+
+## Leg 14c: the guarded join
+
+Module `lean/Verification/Programs/TolerantFramesMergeGuarded.lean`.
+`GuardedHolds` is a theorem (`guardedHolds_of_path`): on the path through
+any predecessor $`p`$ (`OnPath`), every fact `mergeGuarded` keeps holds at the
+slot environment. The join is sound as written: each fact it keeps passes
+`indicesCheckWith` against every predecessor's view materialized at the
+seed slots, among them $`p`$'s, which holds on the path. Proved:
+
+- `guardReads_path`: a read link from $`c`$ through field $`f`$ into $`v`$
+  that holds makes a path $`f :: q`$ read from $`c`$ read what $`q`$ reads
+  from $`v`$ (`readPath`; `guardReads_read` is its `readGuard` form);
+- `lowerRead_holds`: a fact lowered through such a link
+  (`IndexFact.lowerRead`) holds where the fact does: a term rooted at $`c`$
+  with path $`f :: q`$ denotes the term rooted at $`v`$ with path $`q`$, a
+  guard's path alike, the other facts unchanged; `lowerGuards_holds`:
+  the lowered guards hold where the atoms and links do;
+- `check_holds`: a fact `indicesCheckWith` accepts over a holding knowledge,
+  with that knowledge's guard tags and alias classes, holds
+  (`indicesCheckWith_sound`, `guardTags_sound`, `HeapLinks.aliases_eq`);
+- `OnPath.projection_holds`: $`p`$'s view, which holds at the merge's
+  valuation (`OnPath.view_ok`), materialized at any slots holds at the slots
+  (`materializeFrom_holds`, `selectedFromIndex`).
+
+The joined facts (`CertificateProducer.joinGuarded`) are checked against
+every lowered view, the tagged facts against every view; both checks are
+the ones the proof reads. The pass lane's queued item "recheck joined
+guarded facts with `indicesCheckWith`" adds no premise this proof uses: the
+check `joinGuarded` runs is that recheck.
+
+## Leg 14c: the entailed bounds' terms
+
+Module `lean/Verification/Programs/TolerantFramesMergeEntailed.lean`.
+
+**No term is defined at every valuation.** A term denotes what its kind
+reads of the value its path reads from its slot (`termValue`): a value term
+a safe integer, a length term an array's length, a view term a typed
+array's length, a string-length term a string's length, and none for a
+value of another kind (proved instances: `termValue_value_undef`, a value
+term at `undefined`; `termValue_length_num`, a length term at a number); a
+term with a path is undefined where a read along it finds no object or no
+field. So the class of bounds the merge keeps unconditionally is the class
+each view holds as a stored fact, whose holding states its terms defined.
+
+**The check** (`entailDefinedCheck`, at a view $`q`$, a bound $`a`$ of form
+$`F`$): $`q`$'s store holds $`a`$ as a live fact, or every term of $`F`$ is one
+`termDefined` accepts over the facts the entailment reads,
+`q.store.linearNear a.names`. `EntailedChecked`: every bound
+`mergeEntailed` adds passes the check at every view. Proved:
+
+- `checked_bound_holds`: `LinearNearSound` ∧ the view holds at $`\eta`$ ∧ the
+  view holds or entails the bound ∧ the check ⟹ the bound holds at $`\eta`$
+  (a live fact by the store; otherwise its terms defined by
+  `termDefined_sound` over the near facts, then `holds_sound` or
+  `entailsKnown_sound`);
+- `OnPath.entailed_ok_checked`: `LinearNearSound` ∧ `EntailedChecked` ⟹ the
+  entailed bounds hold on the path through any predecessor, which replaces
+  `EntailedDefined` in the merge theorem;
+- `entailedDefined_of_checked`: the check's `termDefined` disjunct at every
+  view ⟹ `EntailedDefined`.
+
+**The residue, the exact condition for the pass.** The check fails only for
+a bound kept at a view that does not store it, with a term that no
+unconditional fact the entailment reads names and that is neither a value
+slot stated `int` nor a length a `length` fact states. Two routes reach such
+a term (observed in the code, no source demonstrated): a view holding the
+bound through a stronger bound of the same normal form (`Store.holds`),
+where the term's coefficients cancel in `Linear.normalize`; and an
+entailment over the near facts, where the term's coefficient cancels in the
+derivation. Which terms can then be undefined on a path: a value term of a
+slot holding a non-integer there (a union-typed slot), a length, view or
+string-length term of a value of another kind, and any term read through a
+path whose object or field is absent on that path. The pass's merge tests
+`entailDefinedCheck` at each view before adding the bound; at a bound
+stored by the view, or over terms the near facts name, it passes with no
+extra work.
+
+## Leg 14c: the facts near a merge's names, on fuel
+
+Module `lean/Verification/Programs/TolerantFramesMergeNear.lean`.
+`linearNearFuel s names limit fuel` is `Store.linearNear`'s search by
+structural recursion on `fuel` (default `s.size + 1`): each round
+(`nearRound`) reads every frontier name's facts, keeps an unconditional index
+fact not kept yet while fewer than `limit` are listed (`nearStep`), and puts
+the unseen names of a kept linear fact on the next frontier; the rounds run
+while the frontier is non-empty and fewer than `limit` facts are listed
+(`nearLoop`). Proved: `linearNearFuel_sound`, every fact it lists is an
+unconditional `index` fact of the store (an `about` list's, so in
+`storeAll`), at any fuel.
+
+The single residue is the named hypothesis `LinearNearFuelEq`: the pass's
+`linearNear` (a `while` loop, which Lean does not unfold) returns what
+`linearNearFuel` returns at fuel `s.size + 1`. `linearNearSound_of_eq`:
+`LinearNearFuelEq` ⟹ `LinearNearSound`. A round that leaves the frontier
+non-empty listed a fact not listed before, and the listed facts are
+distinct live facts, so `s.size + 1` rounds reach the loop's end (read from
+the code, not proved). `engine-pass` at 0f8d18ce has `linearNear` as the
+`while` loop; once the pass's search is on that fuel, the equation is its
+definition.
+
+## Leg 14c: the joined implications
+
+Module `lean/Verification/Programs/TolerantFramesMergeChecked.lean`. The pass
+records each edge into a merge as $`(\Gamma_e, \mathit{atSlots}, m)`$
+(`SinglePass.run`, `incomingEdges`): the source's context as its yields
+refine it, the implications the edge carries restated at the source's slots
+(`atSlotsOf names carried`, the same expression, with `slotsOfNames`), the
+edge's mapping.
+
+**The check each incoming edge needs** (the pass lane's D3, its
+specification):
+
+```math
+\mathrm{impliesCheck}\ G\ \Gamma_e\ \mathit{atSlots}\ m\ (\mathrm{meetImplications}\ G\ \mathit{edgesIn}\ |\mathit{context}|\ \mathit{context}) = \mathit{true}
+```
+
+Proved:
+
+- `slotsOfNames_get`: a slot listed for a name holds that name;
+  `atSlots_ok`: the source's slots hold their names' values at $`\eta_s`$ ∧
+  the carried implications hold at $`\eta_s`$ ⟹ the implications at the
+  source's slots hold at the source environment $`\rho_s`$;
+- `meetImplications_ok_of_check`: the check ∧ $`\mathrm{EnvOk}\ G\ \Gamma_e\ \rho_s`$
+  ∧ the edge's implications hold at $`\rho_s`$ ⟹ the joined implications hold at
+  $`\mathrm{mapEnv}\ m\ \rho_s`$ (`impliesCheck_sound`);
+- `mergeImplies_ok_of_check`: with the merge's slots holding their names'
+  values at $`\mathrm{mapEnv}\ m\ \rho_s`$, the merge's implications
+  (`mergeImplies`) hold at the merge's valuation: the merge theorem's `hI`.
+
+The edge's obligations beside the check are the source's: its context met
+($`\mathrm{EnvOk}`$, the step's typing) and its carried implications holding
+(the edge's transfer keeps the source's).
+
+## Leg 14c: the merge theorem from its theorems
+
+Module `lean/Verification/Programs/TolerantFramesMergeChecked.lean`.
+**(Merge, checked)** (`mergeState_holdsAt_checked`, `mergeState_holds_checked`
+its existential form): for predecessors `preds`, $`p`$ below their number,
+the merge's first fresh name $`\mathit{fresh}`$,
+
+```math
+\begin{aligned}
+&\forall q\in\mathit{preds}.\ |q.\mathit{names}| = |\mathit{context}| \wedge \mathrm{StoreWF}\ q.\mathit{store} \wedge \mathrm{StateBelow}\ q\ \mathit{fresh}
+\ \wedge\ \forall x\in\mathit{start}.\ x<\mathit{fresh}
+\\ &\wedge\ \mathrm{LinearNearFuelEq} \wedge \mathrm{EntailedChecked}
+\ \wedge\ \mathrm{ImpliesOk}\ (\mathrm{meetImplications}\ \mathit{edgesIn})\ \rho
+\ \wedge\ \mathrm{StateHoldsAt}\ \mathit{preds}[p]\ \eta\ \rho
+\\ &\Rightarrow\ \mathrm{StateHoldsAt}\ (\mathrm{mergeState}\ \dots).\mathit{state}\ (\mathrm{mergeState}\ \dots).\mathit{implies}\ \eta'\ \rho
+\end{aligned}
+```
+
+with $`\eta'`$ the merge's valuation (`mVal`). `GuardedHolds` is gone
+(`guardedHolds_of_path`), `LinearNearSound` follows from its equation
+(`linearNearSound_of_eq`), `EntailedDefined` is replaced by the check
+(`OnPath.entailed_ok_checked`), and `ImpliesOk` of the joined implications
+follows from the edge check (`meetImplications_ok_of_check`). With
+`mergeState_wf` and `mergeState_below`, the merged state is well-formed and
+below its counter.
+
+**Premises this leg discharges / leaves.**
+
+Discharges:
+
+- the open-premises row "a merge's facts below its counter":
+  `mergeState_below` (the merge's row of the store-operations table is
+  complete);
+- `MergesSound`: `GuardedHolds`, a theorem with no pass change; the queued
+  recheck of joined guarded facts is the check `joinGuarded` already runs.
+
+Leaves, each a pass change with its specification stated here:
+
+- `LinearNearFuelEq`: `Store.linearNear` on fuel `s.size + 1`, as
+  `linearNearFuel` (replaces the row `MergesSound`: `LinearNearSound`);
+- `EntailedChecked`: the merge adds an entailed bound only where every view
+  passes `entailDefinedCheck` (replaces `EntailedDefined`);
+- D3, the joined implications: each incoming edge passes
+  `impliesCheck G Γe atSlots m (meetImplications …)`; the premise is then
+  `meetImplications_ok_of_check` from the edge's `EnvOk` and carried
+  implications, which `run_traversed` must record per edge;
+- the structural premises read from the walk: the incoming states' width
+  (`Traversed.width`, under `MapNamesLength`), well-formedness and
+  `StateBelow` (proved at the edges, Legs 10 and 12), the start names below
+  the merge's counter.
