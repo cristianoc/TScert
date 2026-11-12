@@ -909,298 +909,378 @@ def summariesChecked {σ ι : Type} [Labels ι] [StoreView σ ι] (r : SourceReq
   sums.all (RequestJson.validSummary (StoreView.valid r.types)) &&
     (ProgramCertificates.checkReadSummariesResult (RequestJson.graph r.toRequest) (StoreView.images r.types) sums).accepted
 
-/-- The single forward pass over each member of a group (`SinglePass.run`),
-no certificate built: per member its outcome and counts; the group's
-verdict, the first member's refusal or construct not handled. -/
-def FilePlans.passGroup (f : FilePlans) (fuel : Nat) (group : List Nat) (compare : Bool := false) (debugNode : Nat := 1000000000) (repeats : Nat := 1) (given : Option (Std.HashMap String Json) := none)
+/-- How the main graph's footprint is established (`effectResult`): by the
+walk at its bound and stated regions; or, the walk refusing the bound at a
+node for a result that is not fresh, by the footprint's regional fallback
+with no regions; or by that fallback followed by the stated regions' walk. -/
+inductive FootprintRoute where
+  | direct
+  | fallback
+  | fallbackThenRegions
+  deriving BEq, Repr
+
+/-- One code request's run, as `FilePlans.passMember` makes it: its position,
+its conclusion (accepted, or the located refusal), the answers its run
+leaves (the answers it was given where its signature's conditions refuse
+it), and the observation record of a refusal where asked. -/
+structure CodeRun (ι α : Type) where
+  index : Nat
+  outcome : SinglePass.Outcome ι
+  answers : α
+  line : String
+
+/-- The code requests in order, each passed by `step` against the entries of
+those accepted before it and the answers the previous run left: the runs
+made, up to and with the first not accepted; the entries of the accepted
+ones; the answers the last run left. -/
+def codesInOrder {κ ε ι α : Type} (entry : κ → ε) (step : List ε → α → κ → CodeRun ι α) :
+    List ε → α → List κ → List (CodeRun ι α) × List ε × α
+  | table, a, [] => ([], table, a)
+  | table, a, q :: rest =>
+    let c := step table a q
+    match c.outcome with
+    | .accepted =>
+      let (cs, t, a') := codesInOrder entry step (table ++ [entry q]) c.answers rest
+      (c :: cs, t, a')
+    | _ => ([c], table, c.answers)
+
+/-- The main graph's runs, as `FilePlans.passMember` makes them: the route
+its footprint took, the last run's outcome (`Outcome.asRefusal`), counts,
+answers and trace, and on `fallbackThenRegions` the fallback run's answers. -/
+structure MainRun (ι α : Type) where
+  route : FootprintRoute
+  outcome : SinglePass.Outcome ι
+  counts : SinglePass.Counts
+  after : α
+  trace : SinglePass.Trace
+  fallbackAfter : Option α
+
+/-- **What the wrapper checked and concluded of one member**
+(`FilePlans.passMember`): its name; the first of the request's own
+conditions refusing it before any run (`request`); qualified, its one run's
+outcome; unqualified, each code request's run in order (`codes`) and the
+main graph's (`main`); the read summaries' check of each final run
+(`summaries`: the main run's, and on `fallbackThenRegions` the fallback's;
+the qualified run's); the expression obligations' check (`obligations`);
+the member's conclusion (`outcome`) and its diagnostic line (`line`). A
+check not reached is `none`. -/
+structure MemberRun (ι α : Type) where
+  name : String
+  request : Option (SinglePass.Outcome ι) := none
+  qualified : Option (SinglePass.Outcome ι) := none
+  codes : List (CodeRun ι α) := []
+  main : Option (MainRun ι α) := none
+  summaries : Option Bool := none
+  obligations : Option Bool := none
+  outcome : SinglePass.Outcome ι
+  line : String := ""
+
+/-- The member accepted: its conclusion is acceptance. -/
+def MemberRun.accepted {ι α : Type} (m : MemberRun ι α) : Bool := m.outcome matches .accepted
+
+/-- The member's outcome where the request's own conditions refuse it before
+any run. -/
+def MemberRun.before {ι α : Type} (name : String) (o : SinglePass.Outcome ι) : MemberRun ι α :=
+  { name, request := some o, outcome := o }
+
+/-- **One member's single pass** (`SinglePass.run`), no certificate built:
+its plan through the exhaustive conversion (`FunctionPlan.certify`), the
+request's own conditions, each code request's run against the codes
+admitted before it, the main graph's runs and the read summaries' and
+expression obligations' checks; with the diagnostics asked for (`observe`,
+`counting`) as its line. -/
+def FilePlans.passMember (f : FilePlans) (fuel : Nat) (i : Nat) (compare : Bool := false)
+    (debugNode : Nat := 1000000000) (repeats : Nat := 1) (given : Option (Std.HashMap String Json) := none)
     (observe : Option String := none) (counting : Bool := false) :
-    List String × Except String (List String) := Id.run do
+    Except String (MemberRun (EquationStore.CheckedLabel f.F.equations f.F.primitive)
+      (CertificateProducer.Answered (StoreView.graph f.F.store))) := do
   let G : NormalGraph (EquationStore.CheckedLabel f.F.equations f.F.primitive) := StoreView.graph f.F.store
   let I : PositiveCertificates.InstanceImageCheck G := StoreView.images f.F.store
-  let mut answers : CertificateProducer.Answered G := {}
-  let mut lines : List String := []
-  let mut failed : Option String := none
-  for i in group do
-    let outcome : Except String (String × String × SinglePass.Outcome _) := do
-      let .graph name _ r ← (f.plans[i]?).getD (.error s!"no unit {i}")
-      -- The request's own checks over its whole certificate the pass does
-      -- not make: the graph is passed, and its verdict is not handled.
-      -- A footprint (`effectResult`): its request-level conditions here, its
-      -- graph's bound at each node in the pass (`GraphCode.compositionalChecked`),
-      -- a pure program's shortcut first.
-      let bounded := !(r.footprint == .top && !r.onThrow && !r.fresh) &&
-        !(!r.fresh && r.program.all fun n => Purity.pureTerm n.expression)
-      if !(RequestJson.asyncEffects r.async r.footprint && (!r.async || !r.fresh) &&
-          RequestJson.statedWithin r.async r.footprint r.onThrow r.fresh r.stated) then
-        return (name, "", .refused "the declared effect")
-      if bounded && !(r.footprint != .top || r.fresh) then return (name, "", .refused "the declared effect")
-      let bound := if bounded then some (r.footprint, r.fresh, r.onThrow) else none
-      -- A postcondition (`ensuresResult`): checked at each return in the pass.
-      if !r.ensures.isEmpty && r.qualification.isSome then return (name, "", .refused "a postcondition")
-      let unchecked : List String := []
-      let labels := SinglePass.timedKind "outside: search labels" fun _ => r.searchLabels
-      let (e, next) ← SinglePass.timedKind "outside: expression claims searched" fun _ =>
-        ExpressionClaims.produceUsing G I labels (StoreView.valid r.types)
-        (StoreView.projection r.types) fuel r.obligations { answers with summaries := #[], summaryAnswers := {} }
-      let (rendered, next) := SinglePass.timedKind "outside: node plans rendered" fun _ =>
-        ExpressionClaims.renderKnownUsing G I labels (StoreView.valid r.types) r.nodePlans next
-      let pool := SinglePass.timedKind "outside: vocabulary" fun _ => CertificateProducer.vocabulary G labels r.claims r.inputs
-      let reference : Array HeapKnowledge.Knowledge := if !compare then #[] else
-        match f.searchGroup fuel [i] true with
-        | .ok b => match b.functions.head? with
-          | some resp => (resp.certificate.map (·.knowledge)).toArray
-          | none => #[]
-        | .error _ => #[]
-      -- Supplied, where asked: the implications the existing search's
-      -- certificate holds at the unit's statement entries, as their given
-      -- invariants' (`supply`); the pass computes none.
-      -- The statement entries' given facts beyond the written ones and the
-      -- claims': read from the given file's line of this unit, where given.
-      let line := given.bind fun m => m.get? (f.fr.unitId i)
-      let main : GivenHeads _ := match line with
-        | some l => match (l.getObjVal? "graph").bind (GivenHeads.fromJson r.program.length) with
-          | Except.ok g => g
-          | Except.error _ => {}
-        | none => {}
-      let givenImplies := main.implies
-      let givenArgs := main.args
-      let givenInputs := main.inputs
-      -- A qualified body (`SourceRequest.checker`): the walk over the
-      -- request's own graph and image check, at its checker and aliases;
-      -- the request-level conditions a qualified body meets
-      -- (`effectResult`, `regionalResult`, `ensuresResult`).
-      if let some q := r.qualification then
-        if !(r.footprint == .top && !r.onThrow && !r.fresh) then return (name, "", .refused "the declared effect")
-        if r.regional.isSome then return (name, "", .refused "store regions of a qualified body")
-        if !r.codes.isEmpty then return (name, "", .notHandled "codes of a qualified body")
-        let G' := RequestJson.graph r.toRequest
-        let I' := StoreView.images r.types
-        let pool' := CertificateProducer.vocabulary G' labels r.claims r.inputs
-        let (o, counts, after, _) := CertificateProducer.timed SinglePass.passNanos fun _ =>
-          SinglePass.run G' I' pool' fuel r.program r.claims r.start r.inputs r.goal r.assertions r.cuts r.candidates
-            r.entryIndices [] (e ++ rendered) (GraphCode.admits []) r.aliases (.qualified q.body q.ordinary)
-            { summaries := next.summaries, summaryAnswers := next.summaryAnswers } #[] debugNode none
-            givenImplies givenArgs r.ensures givenInputs r.entrySeparation none false false
-        let sums := after.summaries.toList
-        let sumsOk := sums.all (RequestJson.validSummary (StoreView.valid r.types)) &&
-          (ProgramCertificates.checkReadSummariesResult G' I' sums).accepted
-        let obligations := ExpressionClaims.checkAllResult G' I' (StoreView.valid r.types) r.obligations e
-          (GraphCode.admits []) sums
-        let o : SinglePass.Outcome _ := match o with
-          | .accepted => if !sumsOk then .refused "a read summary"
-            else if !obligations.accepted then .refused "an expression claim" else .accepted
-          | .refused w => .refused w
-          | .outsideBound l => .refused s!"footprint at node {l}"
-          | .notHandled w => .notHandled w
-          | .observed _ => .notHandled "observing a qualified body"
-        return (name, countsLine counting name counts, o)
-      -- Each code request, in order, passed over its own graph with the codes
-      -- admitted before it (`produceResponseUsing`'s loop, `codeCheckedResult`):
-      -- its signature's conditions, its graph against its goal and frame, its
-      -- effect's bound; then the unit's graph over the admitted table.
-      let mut table : List (CodeEntry _) := []
-      let mut codeOutcome : Option (SinglePass.Outcome _) := none
-      -- The read summaries the searches add, kept from run to run: the
-      -- unit's are checked once (`checkReadSummariesResult`).
-      let mut sumsAnswers := next
-      for (q, ci) in r.codes.zipIdx do
-        let hints := (r.codeHints[ci]?).getD {}
-        let rq := q.asRequest r.toRequest
-        let eff := q.entry.row.effect
-        let conditions := decide (q.entry.arity ≤ q.entry.row.arguments.length) && eff.below q.entry.arity &&
-          !eff.freshObject && eff.requires.isNone && eff.elements.isNone && !eff.receiverGrows && eff.elementWrite.isNone
-        if !conditions then
-          codeOutcome := codeOutcome.orElse fun _ => some (.refused s!"code {ci}: its signature")
-          break
-        -- An async code's footprint is `top` (`RequestJson.asyncEffects`, as
-        -- `codeTableResult` requires of every code): its call returns
-        -- normally where its body throws.
-        if !RequestJson.asyncEffects q.async eff.footprint then
-          codeOutcome := codeOutcome.orElse fun _ => some (.refused s!"code {ci}: an async definition's footprint")
-          break
-        let codeBound := if eff.footprint == .top && !eff.fresh && !eff.onThrow then none
-          else if !eff.fresh && q.entry.exprs.all Purity.pureTerm then none
-          else some (eff.footprint, eff.fresh, eff.onThrow)
-        let codePool := CertificateProducer.vocabulary G labels rq.claims rq.inputs
-        let codeGiven : GivenHeads _ := match line with
-          | some l => match (l.getObjVal? "codes").bind fun cs => do
-              let arr ← cs.getArr?
-              GivenHeads.fromJson rq.program.length ((arr[ci]?).getD (Json.arr #[])) with
-            | Except.ok g => g
-            | Except.error _ => {}
-          | none => {}
-        let codeImplies := codeGiven.implies
-        let codeArgs := codeGiven.args
-        let (o, _, a, _) := SinglePass.run G I codePool fuel rq.program rq.claims rq.start rq.inputs q.entry.goal hints.requirements
+  let answers : CertificateProducer.Answered G := {}
+  let plan ← (f.plans[i]?).getD (.error s!"no unit {i}")
+  let .graph name _ r ← plan.certify
+  -- The request's own checks over its whole certificate the pass does
+  -- not make: the graph is passed, and its verdict is not handled.
+  -- A footprint (`effectResult`): its request-level conditions here, its
+  -- graph's bound at each node in the pass (`GraphCode.compositionalChecked`),
+  -- a pure program's shortcut first.
+  let bounded := !(r.footprint == .top && !r.onThrow && !r.fresh) &&
+    !(!r.fresh && r.program.all fun n => Purity.pureTerm n.expression)
+  if !(RequestJson.asyncEffects r.async r.footprint && (!r.async || !r.fresh) &&
+      RequestJson.statedWithin r.async r.footprint r.onThrow r.fresh r.stated) then
+    return .before name (.refused "the declared effect")
+  if bounded && !(r.footprint != .top || r.fresh) then return .before name (.refused "the declared effect")
+  let bound := if bounded then some (r.footprint, r.fresh, r.onThrow) else none
+  -- A postcondition (`ensuresResult`): checked at each return in the pass.
+  if !r.ensures.isEmpty && r.qualification.isSome then return .before name (.refused "a postcondition")
+  let labels := SinglePass.timedKind "outside: search labels" fun _ => r.searchLabels
+  let (e, next) ← SinglePass.timedKind "outside: expression claims searched" fun _ =>
+    ExpressionClaims.produceUsing G I labels (StoreView.valid r.types)
+    (StoreView.projection r.types) fuel r.obligations { answers with summaries := #[], summaryAnswers := {} }
+  let (rendered, next) := SinglePass.timedKind "outside: node plans rendered" fun _ =>
+    ExpressionClaims.renderKnownUsing G I labels (StoreView.valid r.types) r.nodePlans next
+  let pool := SinglePass.timedKind "outside: vocabulary" fun _ => CertificateProducer.vocabulary G labels r.claims r.inputs
+  let reference : Array HeapKnowledge.Knowledge := if !compare then #[] else
+    match f.searchGroup fuel [i] true with
+    | .ok b => match b.functions.head? with
+      | some resp => (resp.certificate.map (·.knowledge)).toArray
+      | none => #[]
+    | .error _ => #[]
+  -- The statement entries' given facts beyond the written ones and the
+  -- claims': read from the given file's line of this unit, where given.
+  let line := given.bind fun m => m.get? (f.fr.unitId i)
+  let main : GivenHeads _ := match line with
+    | some l => match (l.getObjVal? "graph").bind (GivenHeads.fromJson r.program.length) with
+      | Except.ok g => g
+      | Except.error _ => {}
+    | none => {}
+  let givenImplies := main.implies
+  let givenArgs := main.args
+  let givenInputs := main.inputs
+  -- A qualified body (`SourceRequest.checker`): the walk over the
+  -- request's own graph and image check, at its checker and aliases;
+  -- the request-level conditions a qualified body meets
+  -- (`effectResult`, `regionalResult`, `ensuresResult`).
+  if let some q := r.qualification then
+    if !(r.footprint == .top && !r.onThrow && !r.fresh) then return .before name (.refused "the declared effect")
+    if r.regional.isSome then return .before name (.refused "store regions of a qualified body")
+    if !r.codes.isEmpty then return .before name (.notHandled "codes of a qualified body")
+    let G' := RequestJson.graph r.toRequest
+    let I' := StoreView.images r.types
+    let pool' := CertificateProducer.vocabulary G' labels r.claims r.inputs
+    let (o, counts, after, _) := CertificateProducer.timed SinglePass.passNanos fun _ =>
+      SinglePass.run G' I' pool' fuel r.program r.claims r.start r.inputs r.goal r.assertions r.cuts r.candidates
+        r.entryIndices [] (e ++ rendered) (GraphCode.admits []) r.aliases (.qualified q.body q.ordinary)
+        { summaries := next.summaries, summaryAnswers := next.summaryAnswers } #[] debugNode none
+        givenImplies givenArgs r.ensures givenInputs r.entrySeparation none false false
+    let sums := after.summaries.toList
+    let sumsOk := summariesChecked r sums
+    let obligations := ExpressionClaims.checkAllResult G' I' (StoreView.valid r.types) r.obligations e
+      (GraphCode.admits []) sums
+    let outcome : SinglePass.Outcome _ := match o with
+      | .accepted => if !sumsOk then .refused "a read summary"
+        else if !obligations.accepted then .refused "an expression claim" else .accepted
+      | .refused w => .refused w
+      | .outsideBound l => .refused s!"footprint at node {l}"
+      | .notHandled w => .notHandled w
+      | .observed _ => .notHandled "observing a qualified body"
+    return { name, qualified := some o, summaries := some sumsOk, obligations := some obligations.accepted,
+             outcome, line := countsLine counting name counts }
+  -- Each code request, in order, passed over its own graph with the codes
+  -- admitted before it (`produceResponseUsing`'s loop, `codeCheckedResult`):
+  -- its signature's conditions, its graph against its goal and frame, its
+  -- effect's bound; then the unit's graph over the admitted table. The
+  -- read summaries the searches add are kept from run to run: the unit's
+  -- are checked once (`checkReadSummariesResult`).
+  let codeStep := fun (table : List (CodeEntry _)) (sumsAnswers : CertificateProducer.Answered G)
+      ((q, ci) : CodeRequest _ × Nat) =>
+    let refuse := fun (o : SinglePass.Outcome _) => ({ index := ci, outcome := o, answers := sumsAnswers, line := "" } : CodeRun _ _)
+    let hints := (r.codeHints[ci]?).getD {}
+    let rq := q.asRequest r.toRequest
+    let eff := q.entry.row.effect
+    let conditions := decide (q.entry.arity ≤ q.entry.row.arguments.length) && eff.below q.entry.arity &&
+      !eff.freshObject && eff.requires.isNone && eff.elements.isNone && !eff.receiverGrows && eff.elementWrite.isNone
+    if !conditions then refuse (.refused s!"code {ci}: its signature")
+    -- An async code's footprint is `top` (`RequestJson.asyncEffects`, as
+    -- `codeTableResult` requires of every code): its call returns
+    -- normally where its body throws.
+    else if !RequestJson.asyncEffects q.async eff.footprint then
+      refuse (.refused s!"code {ci}: an async definition's footprint")
+    else
+    let codeBound := if eff.footprint == .top && !eff.fresh && !eff.onThrow then none
+      else if !eff.fresh && q.entry.exprs.all Purity.pureTerm then none
+      else some (eff.footprint, eff.fresh, eff.onThrow)
+    let codePool := CertificateProducer.vocabulary G labels rq.claims rq.inputs
+    let codeGiven : GivenHeads _ := match line with
+      | some l => match (l.getObjVal? "codes").bind fun cs => do
+          let arr ← cs.getArr?
+          GivenHeads.fromJson rq.program.length ((arr[ci]?).getD (Json.arr #[])) with
+        | Except.ok g => g
+        | Except.error _ => {}
+      | none => {}
+    let codeImplies := codeGiven.implies
+    let codeArgs := codeGiven.args
+    let (o, _, a, _) := SinglePass.run G I codePool fuel rq.program rq.claims rq.start rq.inputs q.entry.goal hints.requirements
+      hints.cuts hints.candidates rq.entryIndices [] (e ++ rendered) (GraphCode.admits table) r.aliases
+      .ordinary sumsAnswers #[] 1000000000 codeBound codeImplies codeArgs
+    -- A code run makes no observation (it is given none): any outcome
+    -- but acceptance is the code's located refusal.
+    match o.asRefusal with
+    | .accepted => { index := ci, outcome := .accepted, answers := a, line := "" }
+    | .notHandled w => { index := ci, outcome := .notHandled s!"{w} (in code {ci})", answers := a, line := "" }
+    | .refused w =>
+      -- A refusal observed in a code request: its obligation, the facts
+      -- over its names and those it lacks, as for the unit's own graph.
+      let record := if observe != some "refusal" then "" else
+        let (_, _, _, trace) := SinglePass.run G I codePool fuel rq.program rq.claims rq.start rq.inputs q.entry.goal hints.requirements
           hints.cuts hints.candidates rq.entryIndices [] (e ++ rendered) (GraphCode.admits table) r.aliases
-          .ordinary sumsAnswers #[] 1000000000 codeBound codeImplies codeArgs
-        let o := o.asRefusal
-        sumsAnswers := a
-        -- A refusal observed in a code request: its obligation, the facts
-        -- over its names and those it lacks, as for the unit's own graph.
-        if let .refused w := o then
-          if observe == some "refusal" then
-            let (_, _, _, trace) := SinglePass.run G I codePool fuel rq.program rq.claims rq.start rq.inputs q.entry.goal hints.requirements
-              hints.cuts hints.candidates rq.entryIndices [] (e ++ rendered) (GraphCode.admits table) r.aliases
-              .ordinary sumsAnswers #[] 1000000000 codeBound codeImplies codeArgs [] #[] {}
-              (some 1000000000) true
-            let l := trace.node
-            let mentioned := ((rq.claims[l]?).map RequestJson.PointClaim.mentions).getD []
-            let p := StoreView.projection r.types mentioned.eraseDups
-            let width := trace.names.length
-            let slotOf := fun (x : Nat) => trace.names.idxOf? x
-            let shown := fun (as : List SinglePass.Atom) =>
-              toJson (SinglePass.ofAtoms (as.filterMap fun a => a.rename slotOf) width)
-            let here := (trace.afters[l]?).join.orElse fun _ => (trace.entries[l]?).join
-            let focus := (here.map fun st => st.store.connected trace.focus).getD []
-            let facts := (here.map fun st => st.store.toList.filter fun a => a.names.any focus.contains).getD []
-            let place := fun l => [("label", toJson l), ("sourceMap", toJson ((hints.sourceMap[l]?).bind id))]
-            let missingJson := trace.missing.map fun a => Json.mkObj [("fact", shown [a]),
-              ("where", Json.arr ((trace.locate l a 3 false).map fun (q, why) => Json.mkObj (place q ++ [("why", toJson why)])).toArray)]
-            let record := Json.mkObj ([("refusal", toJson s!"code {ci}: {w}"), ("observed", Json.mkObj (place l)),
-              ("node", toJson rq.program[l]?),
-              ("claim", toJson ((rq.claims[l]?).map (RequestJson.PointClaim.shown p))),
-              ("facts", shown facts), ("missing", Json.arr missingJson.toArray)] ++ p.fields)
-            return (name, "refusal-observation: " ++ record.compress, .refused s!"code {ci}: {w}")
-        match o with
-        | .accepted => table := table ++ [q.entry]
-        | .refused w => codeOutcome := codeOutcome.orElse fun _ => some (.refused s!"code {ci}: {w}"); break
-        | .notHandled w => codeOutcome := codeOutcome.orElse fun _ => some (.notHandled s!"{w} (in code {ci})"); break
-        -- A code run is given no node to observe: any other outcome is the
-        -- code's located refusal, never a table cut short.
-        | o => codeOutcome := codeOutcome.orElse fun _ => some (.refused s!"code {ci}: {o}"); break
-      if let some o := codeOutcome then return (name, "", o)
-      let codes := GraphCode.admits table
-      -- Observing (`observe`): the node of that label (`node:L`), or the
-      -- innermost node whose source span holds that offset (`offset:K`).
-      let observed : Option Nat := observe.bind fun w =>
-        if w == "refusal" then some 1000000000 else
-        if w.startsWith "node:" then (w.drop 5).toString.toNat? else
-        if w.startsWith "offset:" then (w.drop 7).toString.toNat?.bind fun k =>
-          let holding := r.sourceMap.zipIdx.filterMap fun (e, l) => e.bind fun e =>
-            if e.pos.1 ≤ k && k < e.pos.2 then some (e.pos.2 - e.pos.1, l) else none
-          (holding.foldl (fun (b : Option (Nat × Nat)) x => match b with
-            | some y => if x.1 < y.1 then some x else some y
-            | none => some x) none).map (·.2)
-        else none
-      if observe.isSome && observed.isNone then return (name, "", .notHandled "no node to observe")
-      -- Profiling: the pass run `repeats` times, the last run's result kept.
-      for k in List.range (repeats - 1) do
-        let (o, _, _, _) := SinglePass.run G I pool fuel r.program r.claims r.start r.inputs r.goal r.assertions r.cuts r.candidates
-          r.entryIndices [] (e ++ rendered) codes r.aliases .ordinary sumsAnswers #[] (debugNode + k)
-        if let .notHandled w := o then throw w
-      let tracing := observe == some "refusal"
-      -- The regional checks (`regionalChecked`), made in the walk: the
-      -- unit's store regions, and its footprint's regional fallback
-      -- (`effectResult`); each loop head's given regional facts read from
-      -- the given line. Their entry conditions (`checkEntryFields`, the
-      -- regions' own conditions) are checked here.
-      let regionalOf := fun (key : String) (Φ : Footprints.Closed) (regions : List Footprints.ArgumentStoreRegion) (exc : Bool) =>
-        let (names, heads) := match line.bind fun l => (l.getObjVal? key).toOption with
-          | some j => (regionalFromJson r.program.length j).toOption.getD ([], #[])
-          | none => ([], #[])
-        ({ Φ, regions, exc, names, heads } : SinglePass.Regional)
-      let regional := r.regional.map fun (Φ, regions) => regionalOf "regional" Φ regions (r.stated.any (·.onThrow))
-      if let some (_, regions) := r.regional then
-        if r.async || r.fresh || !GraphCode.ArgumentPathTracking.checkEntryFields (RequestJson.graph r.toRequest) r.inputs regions then
-          return (name, "", .refused "store regions")
-      let walk := fun (bound : Option (Footprints.Closed × Bool × Bool)) (regional : Option SinglePass.Regional) =>
-        SinglePass.run G I pool fuel r.program r.claims r.start r.inputs r.goal r.assertions r.cuts r.candidates
-          r.entryIndices [] (e ++ rendered) codes r.aliases .ordinary sumsAnswers reference debugNode bound
-          givenImplies givenArgs r.ensures givenInputs r.entrySeparation observed tracing false regional
-      let (o, counts, after, trace) := CertificateProducer.timed SinglePass.passNanos fun _ => walk bound regional
-      -- A footprint the walk refuses node by node, checked regionally with no
-      -- regions where the result is not fresh; then the unit's own regions,
-      -- the fallback's answers kept for their read summaries' check.
-      let (o, counts, after, trace, fallbackAfter) := match o with
-        | .outsideBound l => if !r.fresh then
-            let fallback := regionalOf "footprintRegional" r.footprint [] r.onThrow
-            match walk none (some fallback) with
-            | (.accepted, c, a, t) => match regional with
-              | some rg => let (o', c', a', t') := walk none (some rg); (o', c', a', t', some a)
-              | none => (.accepted, c, a, t, none)
-            | (.refused w', c, a, t) => (.refused s!"footprint by store regions: {w'} (after footprint at node {l})", c, a, t, none)
-            | (o', c, a, t) => (o', c, a, t, none)
-          else (o, counts, after, trace, none)
-        | _ => (o, counts, after, trace, none)
-      let o := o.asRefusal
-      -- The unit's own expression claims, as the check reads them.
-      let obligations := SinglePass.timedKind "outside: expression claims checked" fun _ => ExpressionClaims.checkAllResult (RequestJson.graph r.toRequest) (StoreView.images r.types)
-        (StoreView.valid r.types) r.obligations e codes after.summaries.toList
-      -- A graph the bound refuses may still be within it by its store
-      -- regions (`regionalChecked`), which the pass does not decide.
-      -- The read summaries every step's check read, checked as a
-      -- response's are (`validSummary`, `checkReadSummariesResult`).
-      -- After the regional fallback and the unit's regions, the fallback
-      -- run's too: its footprint rests on them.
-      let sumsOk := summariesChecked r after.summaries.toList &&
-        fallbackAfter.all fun a => summariesChecked r a.summaries.toList
-      let o : SinglePass.Outcome _ := match o with
-        | .accepted => if !sumsOk then .refused "a read summary" else if !obligations.accepted then .refused "an expression claim"
-          else match unchecked with
-            | [] => .accepted
-            | w :: _ => .notHandled s!"{w} (the graph passed)"
-        | o => o
-      -- A node observed whose step is refused, or that is not reached past
-      -- the refusal: the walk again, stopping on its entry.
-      let o : SinglePass.Outcome _ := match o, observed with
-        | .refused _, some _ => if tracing then o else
-          (SinglePass.run G I pool fuel r.program r.claims r.start r.inputs r.goal r.assertions r.cuts r.candidates
-            r.entryIndices [] (e ++ rendered) codes r.aliases .ordinary sumsAnswers #[] debugNode bound
-            givenImplies givenArgs r.ensures givenInputs r.entrySeparation observed false true).1.asRefusal
-        | o, _ => o
-      -- A refusal observed: its obligation's facts, the facts it lacks, and
-      -- each fact over its names an earlier state held, where last present
-      -- and what removed it (`Trace.locate`, `Trace.lost`).
-      if let .refused w := o then
-        if tracing then
-          let l := trace.node
-          let mentioned := ((r.claims[l]?).map RequestJson.PointClaim.mentions).getD []
-          let p := StoreView.projection r.types mentioned.eraseDups
-          let width := trace.names.length
-          let slotOf := fun (x : Nat) => trace.names.idxOf? x
-          let shown := fun (as : List SinglePass.Atom) =>
-            toJson (SinglePass.ofAtoms (as.filterMap fun a => a.rename slotOf) width)
-          let here := (trace.afters[l]?).join.orElse fun _ => (trace.entries[l]?).join
-          let focus := (here.map fun st => st.store.connected trace.focus).getD []
-          let facts := (here.map fun st => st.store.toList.filter fun a => a.names.any focus.contains).getD []
-          let place := fun l => [("label", toJson l), ("sourceMap", toJson ((r.sourceMap[l]?).bind id))]
-          let lostJson := (trace.lost.map fun (a, ws) => Json.mkObj [("fact", shown [a]),
-            ("where", Json.arr (ws.map fun (q, why) => Json.mkObj (place q ++ [("why", toJson why)])).toArray)])
-          let missingJson := trace.missing.map fun a => Json.mkObj [("fact", shown [a]),
-            ("where", Json.arr ((trace.locate l a 3 false).map fun (q, why) => Json.mkObj (place q ++ [("why", toJson why)])).toArray)]
-          let record := Json.mkObj ([("refusal", toJson w), ("observed", Json.mkObj (place l)),
-            ("edge", toJson (trace.edge.map fun t => Json.mkObj (place t))),
-            ("node", toJson r.program[l]?),
-            ("claim", toJson ((r.claims[l]?).map (RequestJson.PointClaim.shown p))),
-            ("facts", shown facts), ("missing", Json.arr missingJson.toArray), ("lost", Json.arr lostJson.toArray)] ++ p.fields)
-          return (name, "refusal-observation: " ++ record.compress, o)
-      if let .observed ob := o then
-        let claimAt := fun l => (r.claims[l]? : Option (CertificateProducer.PointClaim _))
-        let mentioned := ((claimAt ob.label).map RequestJson.PointClaim.mentions).getD [] ++
-          ob.implies.flatMap (·.type)
+          .ordinary a #[] 1000000000 codeBound codeImplies codeArgs [] #[] {}
+          (some 1000000000) true
+        let l := trace.node
+        let mentioned := ((rq.claims[l]?).map RequestJson.PointClaim.mentions).getD []
         let p := StoreView.projection r.types mentioned.eraseDups
-        let place := fun l => [("label", toJson l), ("sourceMap", toJson ((r.sourceMap[l]?).bind id))]
-        let record := Json.mkObj ([("observed", Json.mkObj (place ob.label)),
-          ("node", toJson r.program[ob.label]?),
-          ("claim", toJson ((claimAt ob.label).map (RequestJson.PointClaim.shown p))),
-          ("before", toJson ob.before), ("after", toJson ob.after), ("slotNames", toJson ob.names),
-          ("implies", Json.arr (ob.implies.map fun x => Json.mkObj [("test", toJson x.test),
-            ("target", toJson x.target), ("type", toJson (p.shown x.type))]).toArray),
-          ("preds", Json.arr (ob.preds.map fun (pl, k) => Json.mkObj (place pl ++ [("knowledge", toJson k)])).toArray)] ++ p.fields)
-        return (name, "observation: " ++ record.compress, .notHandled "observed")
-      return (name, countsLine counting name counts, o)
-    match outcome with
-    | .ok (name, counts, o) =>
-      lines := lines ++ [s!"{name}: {o}; {counts}"]
-      match o with
-      | .accepted => pure ()
-      | .observed _ | .outsideBound _ => pure ()
-      | .refused w | .notHandled w => if failed.isNone then failed := some s!"single pass: {o} ({w.length})"
-    | .error reason =>
-      lines := lines ++ [s!"refused before the pass: {reason.take 200}"]
-      if failed.isNone then failed := some reason
-  return (lines, match failed with
+        let width := trace.names.length
+        let slotOf := fun (x : Nat) => trace.names.idxOf? x
+        let shown := fun (as : List SinglePass.Atom) =>
+          toJson (SinglePass.ofAtoms (as.filterMap fun a => a.rename slotOf) width)
+        let here := (trace.afters[l]?).join.orElse fun _ => (trace.entries[l]?).join
+        let focus := (here.map fun st => st.store.connected trace.focus).getD []
+        let facts := (here.map fun st => st.store.toList.filter fun a => a.names.any focus.contains).getD []
+        let place := fun l => [("label", toJson l), ("sourceMap", toJson ((hints.sourceMap[l]?).bind id))]
+        let missingJson := trace.missing.map fun a => Json.mkObj [("fact", shown [a]),
+          ("where", Json.arr ((trace.locate l a 3 false).map fun (q, why) => Json.mkObj (place q ++ [("why", toJson why)])).toArray)]
+        let record := Json.mkObj ([("refusal", toJson s!"code {ci}: {w}"), ("observed", Json.mkObj (place l)),
+          ("node", toJson rq.program[l]?),
+          ("claim", toJson ((rq.claims[l]?).map (RequestJson.PointClaim.shown p))),
+          ("facts", shown facts), ("missing", Json.arr missingJson.toArray)] ++ p.fields)
+        "refusal-observation: " ++ record.compress
+      { index := ci, outcome := .refused s!"code {ci}: {w}", answers := a, line := record }
+    | o => { index := ci, outcome := .refused s!"code {ci}: {o}", answers := a, line := "" }
+  let (codeRuns, table, sumsAnswers) := codesInOrder (·.1.entry) codeStep [] next r.codes.zipIdx
+  if let some c := codeRuns.find? fun c => !(c.outcome matches .accepted) then
+    return { name, codes := codeRuns, outcome := c.outcome, line := c.line }
+  let codes := GraphCode.admits table
+  -- Observing (`observe`): the node of that label (`node:L`), or the
+  -- innermost node whose source span holds that offset (`offset:K`).
+  let observed : Option Nat := observe.bind fun w =>
+    if w == "refusal" then some 1000000000 else
+    if w.startsWith "node:" then (w.drop 5).toString.toNat? else
+    if w.startsWith "offset:" then (w.drop 7).toString.toNat?.bind fun k =>
+      let holding := r.sourceMap.zipIdx.filterMap fun (e, l) => e.bind fun e =>
+        if e.pos.1 ≤ k && k < e.pos.2 then some (e.pos.2 - e.pos.1, l) else none
+      (holding.foldl (fun (b : Option (Nat × Nat)) x => match b with
+        | some y => if x.1 < y.1 then some x else some y
+        | none => some x) none).map (·.2)
+    else none
+  if observe.isSome && observed.isNone then
+    return { name, codes := codeRuns, outcome := .notHandled "no node to observe" }
+  -- Profiling: the pass run `repeats` times, the last run's result kept.
+  for k in List.range (repeats - 1) do
+    let (o, _, _, _) := SinglePass.run G I pool fuel r.program r.claims r.start r.inputs r.goal r.assertions r.cuts r.candidates
+      r.entryIndices [] (e ++ rendered) codes r.aliases .ordinary sumsAnswers #[] (debugNode + k)
+    if let .notHandled w := o then throw w
+  let tracing := observe == some "refusal"
+  -- The regional checks (`regionalChecked`), made in the walk: the
+  -- unit's store regions, and its footprint's regional fallback
+  -- (`effectResult`); each loop head's given regional facts read from
+  -- the given line. Their entry conditions (`checkEntryFields`, the
+  -- regions' own conditions) are checked here.
+  let regionalOf := fun (key : String) (Φ : Footprints.Closed) (regions : List Footprints.ArgumentStoreRegion) (exc : Bool) =>
+    let (names, heads) := match line.bind fun l => (l.getObjVal? key).toOption with
+      | some j => (regionalFromJson r.program.length j).toOption.getD ([], #[])
+      | none => ([], #[])
+    ({ Φ, regions, exc, names, heads } : SinglePass.Regional)
+  let regional := r.regional.map fun (Φ, regions) => regionalOf "regional" Φ regions (r.stated.any (·.onThrow))
+  if let some (_, regions) := r.regional then
+    if r.async || r.fresh || !GraphCode.ArgumentPathTracking.checkEntryFields (RequestJson.graph r.toRequest) r.inputs regions then
+      return { name, codes := codeRuns, outcome := .refused "store regions" }
+  let walk := fun (bound : Option (Footprints.Closed × Bool × Bool)) (regional : Option SinglePass.Regional) =>
+    SinglePass.run G I pool fuel r.program r.claims r.start r.inputs r.goal r.assertions r.cuts r.candidates
+      r.entryIndices [] (e ++ rendered) codes r.aliases .ordinary sumsAnswers reference debugNode bound
+      givenImplies givenArgs r.ensures givenInputs r.entrySeparation observed tracing false regional
+  let (o, counts, after, trace) := CertificateProducer.timed SinglePass.passNanos fun _ => walk bound regional
+  -- A footprint the walk refuses node by node, checked regionally with no
+  -- regions where the result is not fresh; then the unit's own regions,
+  -- the fallback's answers kept for their read summaries' check.
+  let mainRun : MainRun _ _ := match o with
+    | .outsideBound l => if !r.fresh then
+        let fallback := regionalOf "footprintRegional" r.footprint [] r.onThrow
+        match walk none (some fallback) with
+        | (.accepted, c, a, t) => match regional with
+          | some rg => let (o', c', a', t') := walk none (some rg)
+            { route := .fallbackThenRegions, outcome := o'.asRefusal, counts := c', after := a', trace := t', fallbackAfter := some a }
+          | none => { route := .fallback, outcome := .accepted, counts := c, after := a, trace := t, fallbackAfter := none }
+        | (.refused w', c, a, t) =>
+          { route := .fallback, outcome := .refused s!"footprint by store regions: {w'} (after footprint at node {l})",
+            counts := c, after := a, trace := t, fallbackAfter := none }
+        | (o', c, a, t) => { route := .fallback, outcome := o'.asRefusal, counts := c, after := a, trace := t, fallbackAfter := none }
+      else { route := .direct, outcome := o.asRefusal, counts, after, trace, fallbackAfter := none }
+    | _ => { route := .direct, outcome := o.asRefusal, counts, after, trace, fallbackAfter := none }
+  let counts := mainRun.counts
+  let trace := mainRun.trace
+  -- The unit's own expression claims, as the check reads them.
+  let obligations := SinglePass.timedKind "outside: expression claims checked" fun _ => ExpressionClaims.checkAllResult (RequestJson.graph r.toRequest) (StoreView.images r.types)
+    (StoreView.valid r.types) r.obligations e codes mainRun.after.summaries.toList
+  -- The read summaries every step's check read, checked as a response's
+  -- are (`validSummary`, `checkReadSummariesResult`); after the regional
+  -- fallback and the unit's regions, the fallback run's too: its
+  -- footprint rests on them.
+  let sumsOk := summariesChecked r mainRun.after.summaries.toList &&
+    mainRun.fallbackAfter.all fun a => summariesChecked r a.summaries.toList
+  let o : SinglePass.Outcome _ := match mainRun.outcome with
+    | .accepted => if !sumsOk then .refused "a read summary" else if !obligations.accepted then .refused "an expression claim"
+      else .accepted
+    | o => o
+  -- A node observed whose step is refused, or that is not reached past
+  -- the refusal: the walk again, stopping on its entry.
+  let o : SinglePass.Outcome _ := match o, observed with
+    | .refused _, some _ => if tracing then o else
+      (SinglePass.run G I pool fuel r.program r.claims r.start r.inputs r.goal r.assertions r.cuts r.candidates
+        r.entryIndices [] (e ++ rendered) codes r.aliases .ordinary sumsAnswers #[] debugNode bound
+        givenImplies givenArgs r.ensures givenInputs r.entrySeparation observed false true).1.asRefusal
+    | o, _ => o
+  let checked := fun (outcome : SinglePass.Outcome _) (line : String) =>
+    ({ name, codes := codeRuns, main := some mainRun, summaries := some sumsOk,
+       obligations := some obligations.accepted, outcome, line } : MemberRun _ _)
+  -- A refusal observed: its obligation's facts, the facts it lacks, and
+  -- each fact over its names an earlier state held, where last present
+  -- and what removed it (`Trace.locate`, `Trace.lost`).
+  if let .refused w := o then
+    if tracing then
+      let l := trace.node
+      let mentioned := ((r.claims[l]?).map RequestJson.PointClaim.mentions).getD []
+      let p := StoreView.projection r.types mentioned.eraseDups
+      let width := trace.names.length
+      let slotOf := fun (x : Nat) => trace.names.idxOf? x
+      let shown := fun (as : List SinglePass.Atom) =>
+        toJson (SinglePass.ofAtoms (as.filterMap fun a => a.rename slotOf) width)
+      let here := (trace.afters[l]?).join.orElse fun _ => (trace.entries[l]?).join
+      let focus := (here.map fun st => st.store.connected trace.focus).getD []
+      let facts := (here.map fun st => st.store.toList.filter fun a => a.names.any focus.contains).getD []
+      let place := fun l => [("label", toJson l), ("sourceMap", toJson ((r.sourceMap[l]?).bind id))]
+      let lostJson := (trace.lost.map fun (a, ws) => Json.mkObj [("fact", shown [a]),
+        ("where", Json.arr (ws.map fun (q, why) => Json.mkObj (place q ++ [("why", toJson why)])).toArray)])
+      let missingJson := trace.missing.map fun a => Json.mkObj [("fact", shown [a]),
+        ("where", Json.arr ((trace.locate l a 3 false).map fun (q, why) => Json.mkObj (place q ++ [("why", toJson why)])).toArray)]
+      let record := Json.mkObj ([("refusal", toJson w), ("observed", Json.mkObj (place l)),
+        ("edge", toJson (trace.edge.map fun t => Json.mkObj (place t))),
+        ("node", toJson r.program[l]?),
+        ("claim", toJson ((r.claims[l]?).map (RequestJson.PointClaim.shown p))),
+        ("facts", shown facts), ("missing", Json.arr missingJson.toArray), ("lost", Json.arr lostJson.toArray)] ++ p.fields)
+      return checked o ("refusal-observation: " ++ record.compress)
+  if let .observed ob := o then
+    let claimAt := fun l => (r.claims[l]? : Option (CertificateProducer.PointClaim _))
+    let mentioned := ((claimAt ob.label).map RequestJson.PointClaim.mentions).getD [] ++
+      ob.implies.flatMap (·.type)
+    let p := StoreView.projection r.types mentioned.eraseDups
+    let place := fun l => [("label", toJson l), ("sourceMap", toJson ((r.sourceMap[l]?).bind id))]
+    let record := Json.mkObj ([("observed", Json.mkObj (place ob.label)),
+      ("node", toJson r.program[ob.label]?),
+      ("claim", toJson ((claimAt ob.label).map (RequestJson.PointClaim.shown p))),
+      ("before", toJson ob.before), ("after", toJson ob.after), ("slotNames", toJson ob.names),
+      ("implies", Json.arr (ob.implies.map fun x => Json.mkObj [("test", toJson x.test),
+        ("target", toJson x.target), ("type", toJson (p.shown x.type))]).toArray),
+      ("preds", Json.arr (ob.preds.map fun (pl, k) => Json.mkObj (place pl ++ [("knowledge", toJson k)])).toArray)] ++ p.fields)
+    return checked (.notHandled "observed") ("observation: " ++ record.compress)
+  return checked o (countsLine counting name counts)
+
+/-- The single forward pass over each member of a group
+(`FilePlans.passMember`), no certificate built: per member its line, its
+outcome and counts; the group's verdict, the first member's refusal or
+construct not handled, else the group's dependencies. -/
+def FilePlans.passGroup (f : FilePlans) (fuel : Nat) (group : List Nat) (compare : Bool := false) (debugNode : Nat := 1000000000) (repeats : Nat := 1) (given : Option (Std.HashMap String Json) := none)
+    (observe : Option String := none) (counting : Bool := false) :
+    List String × Except String (List String) :=
+  let (lines, failed) := group.foldl (init := (([] : List String), (none : Option String))) fun (lines, failed) i =>
+    match f.passMember fuel i compare debugNode repeats given observe counting with
+    | .ok m =>
+      let failure := match m.outcome with
+        | .accepted => none
+        | .refused w | .notHandled w => some s!"single pass: {m.outcome} ({w.length})"
+        | o => some s!"single pass: {o} ({(toString o).length})"
+      (lines ++ [s!"{m.name}: {m.outcome}; {m.line}"], failed.orElse fun _ => failure)
+    | .error reason => (lines ++ [s!"refused before the pass: {reason.take 200}"], failed.orElse fun _ => some reason)
+  (lines, match failed with
     | some reason => .error reason
     | none => .ok (f.dependencies group))
 
