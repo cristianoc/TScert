@@ -1397,6 +1397,37 @@ its derivation checked, its receiver a slot. -/
     else none
   | _ => none
 
+/-- `elementsCall` as the compiled verifier runs it (`elementsCall_eq_fast`):
+the atom it would add read first, the sequent, operands, result type and
+derivation checked only where there is one. -/
+def elementsCallFast (G : NormalGraph ι) (images : InstanceImageCheck G) (j : Sequent ι)
+    (e : HeapExpressionRules.StepEvidence ι) (codes : CodeEntry ι → Bool) (sums : List (ReadSummary ι)) :
+    Option (Nat × CallEffects.ElemPred) :=
+  match stepProof e with
+  | some p =>
+    match ExpressionEffects.selectedEffect p, receiverSlot j.term with
+    | some eff, some x =>
+      if keepsHeap eff then
+        match eff.elements with
+        | some R =>
+          if decide (claim p = j) && ExpressionEffects.selectedOperands p && onlyBool G j.type &&
+              checkTreeUsing G images p codes sums then some (x, R) else none
+        | none => none
+      else none
+    | _, _ => none
+  | _ => none
+
+@[csimp] theorem elementsCall_eq_fast : @elementsCall = @elementsCallFast := by
+  funext ι _ G images j e codes sums
+  unfold elementsCall elementsCallFast
+  split
+  · rename_i p _
+    cases ExpressionEffects.selectedEffect p <;> cases receiverSlot j.term <;>
+      cases decide (claim p = j) <;> cases ExpressionEffects.selectedOperands p <;>
+      cases onlyBool G j.type <;> cases checkTreeUsing G images p codes sums <;> simp
+    all_goals (split <;> (try cases ‹Effect›.elements) <;> simp)
+  · rfl
+
 /-- The knowledge after a call promising its receiver's elements: every fact
 of the entry, and the atom on the receiver's slot, conditional on the result. -/
 def elementsOutput (k : HeapKnowledge.Knowledge) (x : Nat) (R : CallEffects.ElemPred) : HeapKnowledge.Knowledge :=
@@ -1613,6 +1644,39 @@ theorem preconditionHolds_sound {k : HeapKnowledge.Knowledge} {eff : Effect} {t 
     ps.attach.all (fun p => checkTreeUsing G images p.val codes sums) &&
     preconditionHolds k eff j.term
   | _ => false
+
+/-- `requiresApp` as the compiled verifier runs it (`requiresApp_eq_fast`):
+whether the signature states a precondition read first. -/
+def requiresAppFast (G : NormalGraph ι) (images : InstanceImageCheck G)
+    (k : HeapKnowledge.Knowledge) (codes : CodeEntry ι → Bool) (sums : List (ReadSummary ι)) :
+    Evidence ι → Bool
+  | .node j (.app eff) ps =>
+    (eff.requires.isSome || !eff.pre.isEmpty) &&
+    (ps.all fun p => ExpressionEffects.valueTerm (claim p).term && checkScope (claim p).context.length (claim p).term) &&
+    decide (LocalUsing G images j (.app eff) (ps.map claim) codes (sums := sums) (allowRequires := true)) &&
+    ps.attach.all (fun p => checkTreeUsing G images p.val codes sums) &&
+    preconditionHolds k eff j.term
+  | .node j (.construct eff) ps =>
+    (eff.requires.isSome || !eff.pre.isEmpty) &&
+    (ps.all fun p => ExpressionEffects.valueTerm (claim p).term && checkScope (claim p).context.length (claim p).term) &&
+    decide (LocalUsing G images j (.construct eff) (ps.map claim) codes (sums := sums) (allowRequires := true)) &&
+    ps.attach.all (fun p => checkTreeUsing G images p.val codes sums) &&
+    preconditionHolds k eff j.term
+  | _ => false
+
+@[csimp] theorem requiresApp_eq_fast : @requiresApp = @requiresAppFast := by
+  funext ι _ G images k codes sums p
+  unfold requiresApp requiresAppFast
+  split
+  · rename_i eff _
+    unfold preconditionHolds
+    generalize (eff.requires.isSome || !eff.pre.isEmpty) = g
+    cases g <;> simp
+  · rename_i eff _
+    unfold preconditionHolds
+    generalize (eff.requires.isSome || !eff.pre.isEmpty) = g
+    cases g <;> simp
+  · rfl
 
 /-- Such a call, or its subsumption. -/
 @[nospecialize] def requiresTree (G : NormalGraph ι) (images : InstanceImageCheck G)
@@ -2976,6 +3040,32 @@ applies to: at the sequent `j`, a call checked as `selected_sound` or as
       | none => none
     else none
   | _ => none
+
+/-- `ensuresCall` as the compiled verifier runs it (`ensuresCall_eq_fast`):
+the signature's postcondition read first, the sequent and derivation checked
+only where it states one. -/
+def ensuresCallFast (G : NormalGraph ι) (images : InstanceImageCheck G) (j : Sequent ι)
+    (k : HeapKnowledge.Knowledge) (e : HeapExpressionRules.StepEvidence ι) (codes : CodeEntry ι → Bool)
+    (sums : List (ReadSummary ι)) : Option Effect :=
+  match e with
+  | .ordinary p =>
+    match ExpressionEffects.selectedEffect p with
+    | some eff => if eff.ensures.isEmpty && (effectKept (HeapExpressionRules.writeViews G j.context)
+          (HeapExpressionRules.stableFirst G j.context) eff j.term k).isEmpty && (appendKept eff j.term k).isEmpty &&
+          (writeKept eff j.term k).isEmpty &&
+          (linearAppendKept j.context.length eff j.term k).isEmpty then none
+      else if decide (claim p = j) && (ExpressionEffects.selectedOperands p && checkTreeUsing G images p codes sums ||
+          requiresTree G images k codes sums p) then some eff else none
+    | none => none
+  | _ => none
+
+@[csimp] theorem ensuresCall_eq_fast : @ensuresCall = @ensuresCallFast := by
+  funext ι _ G images j k e codes sums
+  unfold ensuresCall ensuresCallFast
+  split
+  · rename_i p
+    cases ExpressionEffects.selectedEffect p <;> split <;> split <;> simp_all
+  · rfl
 
 /-- **`call-ensures`**: such a call's normal return meets its selected
 signature's postcondition at its receiver and actuals, its `ensures` facts
