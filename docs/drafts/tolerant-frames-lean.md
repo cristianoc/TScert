@@ -1385,3 +1385,62 @@ derivation) and the entailed bounds' check have arrived.
 | `ReturnsKept` | `returnsEnsured_of`, over `NodeAccepted`, under `ReturnChecked`; a proof to write: the same over `NodeChecked` | `run_guarantee` (`ensured`) |
 | `RegionsHeld` | `regionsKept_of` from `RegionNodeOk` at every visited node (`RegionNodeOk.ofCheck`); left: `RegionalTyped` (`regionalTyped_of_tree` given `regionalDerivChecked` of the step's derivation at the regional check, a pass change D11, not arrived; a step with no derivation, a proof to write), `TablesAgree` at every visited node (the meet over every predecessor, from the in-degree order of `RunTraversed`) | `run_guarantee` (`regionally`) |
 | `AssertionsLabelled` | a pass change D10: `run` refuses a repeated assertion label or joins the assertions a label states (`byLabel` keeps the first; not arrived) | `run_guarantee` (`asserted`) |
+
+## Leg 17b: the walk side of the graph theorem
+
+Modules `lean/Verification/Programs/TolerantFramesMergeExits.lean` and
+`TolerantFramesMergeNearRounds.lean`.
+
+**A merge's joined implications come with the exit into it.** The pass
+records each edge into a merge as $`(\Gamma_e, \mathrm{atSlotsOf}\ \mathit{names}\ \mathit{carried}, m)`$
+beside the state `edgeTransfer` carries, whose implications are
+$`\mathit{carried}`$ and whose names are `mapNames names m`
+(`MergeEdgeRecorded`, what `RunWalk` records of it). A kept joined
+implication holds at the target environment $`\mathrm{mapEnv}\ m\ \rho_s`$
+of an exit whose source environment $`\rho_s`$ meets $`\Gamma_e`$ and whose
+carried implications hold at the source's valuation (proved:
+`joined_of_exit`, from `meetImplications_ok_of_check` and `atSlots_ok`).
+The edge state's meaning (`StateHolds`) reads names, facts and
+implications, not types, and the merge keeps an implication whose target
+slot's source type is within it (`impliesFollows`, its second disjunct)
+without the edge stating it. So `MergesImpliesHold`, the joined
+implications wherever an edge state into the merge holds (`edgePre`), is
+stronger than the pass establishes (observed from the definitions, no
+counterexample built): the joined implications are delivered by the exit.
+An exit into a merge delivers
+
+```math
+\mathrm{edgePreJ}\ t\ \rho\ m\ s \iff \mathrm{edgePre}\ t\ \rho\ m\ s \wedge (t \text{ a merge} \Rightarrow \mathrm{ImpliesOk}\ (\mathrm{joinedChecked}\ (\mathit{ctx}\ t)\ (\mathit{edgesIn}\ t))\ \rho)
+```
+
+and the entries follow from it. Proved: `entry_of_edge` (the entry state
+where an edge state holds with, at a merge, the joined implications; from
+`Traversed`, `HeadsEntered`, `LinearNearFuelEq`), `entries_of_traversed`
+by it, `entries_of_traversedJ` (`edgePreJ` ⟹ `passPre`).
+
+**The rounds of the search near a merge's names.** Over a store with
+`StoreWF` (each fact an `about` list holds is live), more fuel than
+$`|s| + 1`$ returns the same facts:
+
+```math
+\mathrm{StoreWF}\ s \Rightarrow \mathrm{linearNearFuel}\ s\ \mathit{names}\ \mathit{limit}\ (|s| + 1 + k) = \mathrm{linearNearFuel}\ s\ \mathit{names}\ \mathit{limit}
+```
+
+(proved: `linearNearFuel_rounds`). The search's invariant `NearInv` (each
+listed fact kept, listed facts distinct and live) bounds the listed facts
+by $`|s|`$ (`NearInv.out_le`); a round leaving a non-empty next frontier
+lists one more (`nearRound_progress`); so the loop has ended once its fuel
+exceeds the facts left unlisted (`nearLoop_stable`).
+
+Premises this leg discharges / leaves:
+
+- `MergesImpliesHold`: left, and replaced in the decomposition by what the
+  exits deliver: `NodeMeaning`'s exits and handler into a merge deliver
+  `edgePreJ` (per edge, `joined_of_exit` at the exit's source environment,
+  the per-node side), the walk records `MergeEdgeRecorded`; then
+  `entries_of_traversedJ` takes the place of `MergesSound`'s second
+  conjunct. `run_sound`'s statement is unchanged until the per-node side's
+  exits deliver `edgePreJ`.
+- `LinearNearFuelEq`: the rounds bound discharged (`linearNearFuel_rounds`);
+  left: the equation of the pass's `while` loop with `linearNearFuel`, and
+  the terms an entailment reads named by the facts it reads.
