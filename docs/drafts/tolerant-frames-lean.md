@@ -1264,3 +1264,85 @@ validates it before the pass relies on it (`SinglePass.lean` lines at 16720b68).
 | `meetImplications` (1154) | a merge's implications (1525) | relied on unchecked; change: check each on every incoming edge (`PromiseCalls.impliesCheck_sound`, `PromiseCalls.lean` 167) |
 | `summaryUsing`, through the search (the table at 1251, 1285, 1335) | the read summaries every tree check reads | each summary checked before it is appended (`CertificateProducer.lean` 642); the table's soundness is not stated of `Answered` (`DirectKeepsSummaries`, `SearchKeepsSummaries`); change: a `summaries_sound` field of `Answered`, as `proved_sound` |
 | `mapNames` (958) | the target's names on every edge | relied on unproved: `orderedSuffix` is a `while` loop (`MapNamesSound`); change: structural recursion, as `selectFrom` |
+
+## Leg 10: the guarantee's fields from the walk
+
+Modules `lean/Verification/Programs/TolerantFramesGuaranteeRuns.lean` and
+`lean/Verification/Programs/TolerantFramesGuarantee.lean`.
+
+**Run properties beside the graph invariant.** A property of the graph
+machine's states (`StateKeeps X Q R`) is, at a node entry $`(l,\rho)`$ in heap
+$`h`$, a property $`X\ l\ \rho\ h`$; inside a node, that every run of its term
+with budget left meets the obligation of the exit it reaches (`EvalKeeps`:
+$`X`$ at the target's environment, `ContKeeps` and `HandlerKeeps`); at the
+ends, $`Q\ h\ v`$ at `.done v` and $`R\ h`$ at `.raised`. A node keeps it
+(`NodesKeep P pre X Q R`) when from every state where its assertion and
+$`X`$ hold, every run of its term meets its exit's obligation. Proved:
+
+- `keeps_step`: one transition from a state the graph invariant describes
+  keeps `StateKeeps`;
+- `keeps_postExc`: `NodesChecked` ∧ `AdminClosed` ∧ `NodesKeep` ⟹ the term
+  simulating (`GraphCode.Sim`) a state the invariant and the run property
+  describe satisfies $`\mathrm{SafePostExc}\ \Xi\ T\ Q\ R`$;
+- `reached_pre`: a graph run from a node entry whose assertion holds, with
+  budget left, to the entry of $`l'`$ ends where $`l'`$'s assertion holds.
+
+**The guarantee.** `GraphGuarantee` is the unit lane's record field by field
+(its reachability `ReachesIn` read as `Transitions`, the same constructors).
+`WalkSound` bundles the safety proof's walk predicates (`Traversed`,
+`StepEdgesSound` with exit posts $`\top`$, `HeadsEntered`, `MergesSound`);
+`nodesChecked_of_walk` gives `NodesChecked` for `passPre` from them. Each
+field, proved from `WalkSound` and one per-node hypothesis, at the start
+entered at `envOf L d` with mark $`|h|`$:
+
+| Field | Theorem | Per-node hypothesis | $`X`$, $`Q`$, $`R`$ |
+| --- | --- | --- | --- |
+| `safe` | `run_sound_of_walk` | none | — |
+| `bounded` | `bounded_of_walk` | `FootprintKept` | `BoundX`: the label in the region `dead` or $`\Phi.\mathrm{Holds}\ h_0\ h`$; `BoundQ`: $`\Phi`$ from $`h_0`$, the value fresh at $`\lvert h_0\rvert`$ where `fresh`; `BoundR`: $`\Phi`$ where `onThrow` |
+| `ensured` | `ensured_of_walk` | `ReturnsEnsured` | $`\top`$; `EnsuresQ`: `EnsuresAt ensures h (push v ρ0)`; $`\top`$ |
+| `regionally` | `regionally_of_walk` | `RegionsKept` (its facts $`X`$ holding at the start) | $`X`$; `RegionQ`, `RegionR`: `ArgumentStoreRegionsWithin Φ regions ρ0 h0` |
+| `asserted` | `asserted_of_walk` | `AssertionsHeld` | — |
+
+The per-node hypotheses, exactly (`pre` = `passPre G w startNames ρ0`):
+
+- `FootprintKept P G w startNames ρ0 Φ h₀ dead fresh onThrow` =
+  `NodesKeep P pre (BoundX Φ h₀ dead) (BoundQ Φ h₀ fresh) (BoundR Φ h₀ onThrow) |h₀|`:
+  outside the region `dead`, `pass_footprint_exits` gives $`\Phi`$ from
+  $`h_0`$ on each exit of a run (its premises `FreshOk` from the state's
+  fresh names at mark $`\lvert h_0\rvert`$, `DerivContext`); at a return
+  where `fresh`, the result's freshness (`returns`, `outFresh`); inside
+  `dead`, `deadNode`'s no-return and exit closure, as `GraphCode.bounded_step`
+  proves them for the checker;
+- `ReturnsEnsured P G w startNames ρ0 ens m` =
+  `NodesKeep P pre ⊤ (EnsuresQ ens ρ0) ⊤ m`: at a `ret` node,
+  `pass_return_ensures` from the state `checkedStep_sound` gives after the
+  step; at every other continuation the obligation is $`\top`$;
+- `RegionsKept P G w startNames ρ0 X Φ regions h₀ exc` =
+  `NodesKeep P pre X (RegionQ …) (RegionR …) |h₀|`, $`X`$ the regional facts
+  the pass's tables (`regionIn`, `ArgumentRegionGraph.checkNode`) state, and
+  $`X`$ at the start from `checkEntryFields`;
+- `AssertionsHeld G w startNames ρ0 assertions m`: each stated
+  $`(l,K)`$ holds at $`\rho, s.h`$ wherever `passPre l ρ m s` holds: at a node
+  other than a head the pass adds $`K`$'s facts to the entry state after the
+  edges check it, at a head $`K`$ is part of the given facts.
+
+**`run_guarantee`**, proved: $`\forall\eta.\ \mathrm{admits}\ \eta\Rightarrow\exists\ w\ \mathit{given}\ \mathit{ctx}\ \mathit{edgesIn}\ \mathit{fresh}.\ \mathrm{PassWalkSound}\ (\mathrm{reassign}\ G\ \eta)\ \dots`$
+⟹ `GraphGuarantee G admits P start goal inputs sep idx assertions bound ensures regional`.
+`PassWalkSound` holds `WalkSound` at every entry value $`\rho_0`$ and mark,
+the start entered at every entry meeting the inputs, the separation and the
+index facts (`entered`, which `start_passPre` gives from `entryRefusal`'s
+acceptance and the walk's start entry), and the four per-node hypotheses
+for the options the call states. The unit lane's `RunSound` is then
+`run_guarantee` composed with `run_traversed` (an accepted call yields a walk
+with `PassWalkSound` at every admitted assignment), which needs the driver on
+fuel.
+
+**The head's interface, joined.** The edge lane's `EdgeEstablishes` (the
+given facts and the head's types at $`\mathrm{mapEnv}\ \theta\ \rho`$,
+`head_query_sound`) and the merge line's (renamed `HeadEstablishes`: facts,
+given implications, given inputs, promised input) are joined by
+`headEstablishes_of_edge`: `EdgeEstablishes` supplies the facts; the
+implications, the inputs and the promised input are the edge check's other
+conjuncts, not proved. The merge line's `drop_ok` and `keepFirst_mem` are
+named `drop_holds` and `keepFirst_sub`, the edge lane keeping its copies
+under the original names.

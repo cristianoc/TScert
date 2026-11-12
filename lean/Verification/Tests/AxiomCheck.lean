@@ -32,6 +32,7 @@ import Verification.Programs.TolerantFramesStoreOpsBelow
 import Verification.Programs.TolerantFramesStepLinkSound
 import Verification.Programs.TolerantFramesEdge
 import Verification.Programs.TolerantFramesStepLinkReturns
+import Verification.Programs.TolerantFramesGuarantee
 
 /-!
 Acceptance rests on Lean's standard axioms alone. The build fails when any of
@@ -509,6 +510,17 @@ run_cmd do
   check ``Verification.TolerantFrames.plain_return
   check ``Verification.TolerantFrames.pass_return_ensures
   check ``Verification.TolerantFrames.pass_footprint_exits
+  -- Leg 10, the walk and the guarantee: the run properties beside the graph invariant and each field
+  check ``Verification.TolerantFrames.keeps_step
+  check ``Verification.TolerantFrames.keeps_postExc
+  check ``Verification.TolerantFrames.reached_pre
+  check ``Verification.TolerantFrames.nodesChecked_of_walk
+  check ``Verification.TolerantFrames.bounded_of_walk
+  check ``Verification.TolerantFrames.ensured_of_walk
+  check ``Verification.TolerantFrames.regionally_of_walk
+  check ``Verification.TolerantFrames.asserted_of_walk
+  check ``Verification.TolerantFrames.run_guarantee
+  check ``Verification.TolerantFrames.headEstablishes_of_edge
   let env ← getEnv
   let project (decl : Name) : Bool := match env.getModuleIdxFor? decl with
     | some i => (`Verification).isPrefixOf env.header.moduleNames[i.toNat]!
