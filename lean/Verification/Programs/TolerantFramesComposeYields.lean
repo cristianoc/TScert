@@ -93,8 +93,8 @@ theorem exitJoinedY {G : NormalGraph ι} {w : Walk ι} {given : Nat → Bool} {c
     {c : PointClaim ι} {node : Node} {ysAll : List (PromiseCalls.Yield ι)} {stepOut : HeapKnowledge.Knowledge}
     {t : Target} {pushed : Bool} {observed : Option BranchRefinement.Observation} {promote : Option Bool}
     {names : List Nat} {carried : List (PromiseCalls.Implication ι)} {k : Nat}
-    (hm : Exit.normal t pushed observed promote ∈ Exit.ofNode node) (harms : ArmsDistinct node.continuation)
-    (hin : (passRefined G c node.continuation ysAll (passOutAll G c stepOut) (passFirst node.continuation t),
+    {i : Nat} (hm : (Exit.ofNode node)[i]? = some (Exit.normal t pushed observed promote))
+    (hin : (passRefined G c node.continuation ysAll (passOutAll G c stepOut) (i == 0),
       atSlotsOf names carried, t.mapping) ∈ edgesIn t.label)
     {ρ η : Env} {s : IndexedHeap} {v : Tm}
     (he : EnvOk G (c.type :: c.context) (push v ρ) s.n s.W) (hshape : ShapeOk v node.continuation)
@@ -102,7 +102,7 @@ theorem exitJoinedY {G : NormalGraph ι} {w : Walk ι} {given : Nat → Bool} {c
     (hout : HeapKnowledge.Holds stepOut (push v ρ) s.h)
     (hss : SlotsNamed names (if pushed then push v ρ else ρ) η) (hcar : PromiseCalls.ImpliesOk G carried η s.n s.W) :
     joinedAt G w given ctx edgesIn t.label (PointClaims.mapEnv t.mapping (if pushed then push v ρ else ρ)) k s :=
-  joinedAt_of_exit hin (passRefined_env hm harms he hshape ho hy hout) hss hcar
+  joinedAt_of_exit hin (passRefined_env hm he hshape ho hy hout) hss hcar
 
 omit [DecidableEq ι] in
 /-- **A normal exit delivers `edgePreAJ`**: `ExitDelivers` at `edgePreA`

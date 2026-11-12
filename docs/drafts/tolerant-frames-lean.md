@@ -1375,17 +1375,18 @@ of `TolerantFramesRunSound.lean`, quantified over every call the premises of
 
 The hypotheses of `run_sound_pass` (Leg 18a), each with what discharges it
 and the theorem that consumes it. Pass changes are named by the pass lane's
-items in its queue; the pass lane (`engine-pass`) is at dc8f2a8a, where D1
+items in its queue; the pass lane (`engine-pass`) is at d50dd0ed, where D1
 to D4, D9 (`passShapeCheck'`), D10 (one written assertion per label), D11
 (the regional derivation check, the entry's fields under store regions),
-the driver on fuel (C9) and the setup and visit as functions (`setup`,
-`visit`, `StopOutcome`) have arrived. A stopped walk is never accepted by
+the driver on fuel (C9), the setup and visit as functions (`setup`,
+`visit`, `StopOutcome`) and an exit's arm by its position (D13) have
+arrived. A stopped walk is never accepted by
 its type (`walkStopsRefuse`, from `StopOutcome.outcome_ne_accepted`).
 
 | Premise | Discharged by | Consumed by |
 | --- | --- | --- |
 | `RecordsSound` | read off the visit once it is a top-level function (being lifted on the pass lane): each visited label `NodeChecked` (its step, its entry the recorded one, its shape check), `TraversedA` (the in-degree order, `HeadsCutCycles` under `LoopHeadsFuelEq`), `StartEntered`; the record's fields Leg 18b lists | `run_traversedA` |
-| `NodesYield` | per node, `nodeYielded_of_checks`: the judgment and the return's goal from `NodeYieldChecks` (the visit's kept yields, `PromiseDerivChecked` (D12), the return check); each exit by `exitDeliversAJ_of` from `exitDeliversY_of_edge` or `exitDeliversY_head` (the edge's checks, the target's types by `refinedEdge_env`), `assertsAt_of_edge` (the assertion check at the refined context) and `exitJoinedY` (the merge's recorded edge at `passRefined`, under `ArmsDistinct`, D13); the handler by `handlerDelivers_of_edge` and `joinedAt_of_exit` at the node's context; all read off the visit | `stepEdgesSound_of_yields` |
+| `NodesYield` | per node, `nodeYielded_of_checks`: the judgment and the return's goal from `NodeYieldChecks` (the visit's kept yields, `PromiseDerivChecked` (D12), the return check); each exit by `exitDeliversAJ_of` from `exitDeliversY_of_edge` or `exitDeliversY_head` (the edge's checks, the target's types by `refinedEdge_env`), `assertsAt_of_edge` (the assertion check at the refined context) and `exitJoinedY` (the merge's recorded edge at `passRefined`); the handler by `handlerDelivers_of_edge` and `joinedAt_of_exit` at the node's context; all read off the visit | `stepEdgesSound_of_yields` |
 | `LinearNearFuelEq` | a pass change: `Store.linearNear` as `linearNearFuel` (with `linearNearFuel_rounds`) | `entry_of_edgeA`, through `nodesChecked_of_walkJ` |
 | `BoundsChecked` | read off the visit (the footprint check at each visited node) | `footprintsKept_of_bounds` |
 | `ReturnsChecked` | read off the visit (the return check at each visited return) | `returnsKept_of_returns` |
@@ -1756,11 +1757,12 @@ accepted by `checkTreeUsing`, the check's first disjunct (D14).
 **The context the yields refine.** `run` refines a normal edge's context
 by the kept yields restated at every slot holding their targets' names,
 through the links of the step's output (`refinedΓ`, restated as
-`passRefined` over `passOutAll`), at the exit's arm (`passFirst`: whether
-its target is the continuation's first successor). This context is the one
-a merge records for the edge and the one an edge into a stated node is
-checked at. Proved: (`passRefined_env`) a normal exit of the node, the
-arms distinct (`ArmsDistinct`, D13), the claim's type and context typing
+`passRefined` over `passOutAll`), at the exit's arm (whether the exit is
+the first of the node's exits, `Exit.ofNode`, by position). This context
+is the one a merge records for the edge and the one an edge into a stated
+node is checked at. Proved: (`passRefined_env`) the normal exit at
+position $`i`$ of the node's exits at the arm $`i = 0`$, the claim's type
+and context typing
 $`\mathrm{push}\ v\ \rho`$, $`v`$ of the continuation's shape, the exit's
 observation, the yields and the step's output holding ⟹ `passRefined` types
 the edge's environment; (`refinedEdge_env`) `checkedEdge` accepting the
@@ -1797,8 +1799,8 @@ Premises this leg discharges / leaves:
 
 - `NodesMean`, `MergeExitsJoined`: replaced by `NodesYield`; its judgment
   and return discharged into `NodeYieldChecks` (the visit's checks); left:
-  each exit and the handler from the visit's edge checks, with D13
-  (`ArmsDistinct`) and D12 (`PromiseDerivChecked`).
+  each exit and the handler from the visit's edge checks, with D12
+  (`PromiseDerivChecked`).
 - `AssertionsLabelled`: discharged (`labelsChecked`, the setup's check).
 - `FootprintsKept`, `ReturnsKept`: into `BoundsChecked`, `ReturnsChecked`.
 - `RegionsHeld`: the regional derivation's typing over the pass's check

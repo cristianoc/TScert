@@ -2179,15 +2179,15 @@ def visit (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEnv ι
       sparse n [] (at_.map fun (x, r) => (x, r.cells)), sparse n [] (at_.map fun (x, r) => (x, r.fields)), rg.names⟩
     if !(timedKind "regional node" fun _ => GraphCode.ArgumentRegionGraph.checkNode G images sums rg.Φ rg.regions table ft rg.exc l node cEv) then
       throw (WalkStop.mk (.refused s!"store regions at node {l}") counts answers trace)
-  let mut edgeIndex := 0
-  for ex in edges do
+  for (ex, edgeIndex) in edges.zipIdx do
     let t := ex.target
     let pushed := ex.pushed
     let observed := ex.observed
     let promote := ex.promote
     let isHandler := ex.isHandler
+    -- Whether the exit is its continuation's first (a two-way dispatch's
+    -- true arm), by its position among the exits.
     let first := edgeIndex == 0
-    edgeIndex := edgeIndex + 1
     if tracing then trace := { trace with edge := some t.label }
     let some tc := claimed[t.label]? | throw (WalkStop.mk (.refused s!"edge from {l}") counts answers trace)
     let Γ := if isHandler then thrownTy.getD [] :: c.context else if pushed then c.type :: c.context else c.context
@@ -2256,7 +2256,6 @@ def visit (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEnv ι
             (PromiseCalls.aliasFacts (HeapKnowledge.dropResult outL).links facts 0) 0
           let unconditional := PromiseCalls.yieldFacts ys false
           let conditional := PromiseCalls.yieldFacts ys true
-          let first := t == (successors node.continuation).headD t
           let Γ' := match node.continuation with
             | .bind _ => pushedRefine unconditional
             | .effect _ => keptRefine unconditional

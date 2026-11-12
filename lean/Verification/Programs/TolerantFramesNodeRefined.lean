@@ -10,12 +10,12 @@ context at a merge (`incomingEdges`) and the one an edge into a stated node
 is checked at. `passRefined` is `refinedΓ`, `passOutAll` is `outAll`.
 Proved:
 
-- `passRefined_env`: at a normal exit of the node, the arm `first` the exit's
-  position among the successors gives (`passFirst`), the arms distinct
-  (`ArmsDistinct`), the pushed environment typed by the claim's type and
-  context, the value of the continuation's shape, the exit's observation
-  holding of it, the yields holding of it and the step's output holding at
-  the pushed environment ⟹ `passRefined` types the edge's environment. -/
+- `passRefined_env`: at the normal exit at position `i` of the node's
+  exits (`Exit.ofNode`), the arm `i = 0` (the continuation's first), the
+  pushed environment typed by the claim's type and context, the value of
+  the continuation's shape, the exit's observation holding of it, the
+  yields holding of it and the step's output holding at the pushed
+  environment ⟹ `passRefined` types the edge's environment. -/
 namespace Verification.TolerantFrames
 open Verification SinglePass Footprints HeapObservations
 open ProgramTyping ControlFlow CertificateProducer PositiveCertificates PositiveGraphs ProgramCertificates
@@ -49,14 +49,6 @@ def passRefined (G : NormalGraph ι) (c : PointClaim ι) (k : Continuation) (ysA
       else unconditional)
   | .ret => c.context
 
-/-- `run`'s arm of an exit into `t`: whether `t` is the continuation's first
-successor. -/
-def passFirst (k : Continuation) (t : Target) : Bool := t == (successors k).headD t
-
-/-- **(Pass premise, D13) The two arms of a test enter distinct targets**:
-where they do not, `passFirst` reads both exits as the first arm. -/
-def ArmsDistinct (k : Continuation) : Prop := ∀ y n, successors k = [y, n] → y ≠ n
-
 omit [DecidableEq ι] in
 /-- A value of a test's shape whose truthiness is the arm's answer is that
 arm's Boolean. -/
@@ -64,20 +56,20 @@ theorem truthy_arm {v : Tm} (hv : v = .tru ∨ v = .fls) {q : Bool} (ht : tagHol
     v = if q then .tru else .fls := by
   rcases hv with rfl | rfl <;> cases q <;> simp_all [tagHolds]
 
-/-- **The refined context types the edge's environment**: at a normal exit
-of the node, its arm by position, the arms distinct, where the pushed
+/-- **The refined context types the edge's environment**: at the normal
+exit at position `i` of the node's exits, its arm `i = 0`, where the pushed
 environment meets the claim's type and context, the value has the
 continuation's shape, the exit's observation holds of it, the yields `ysAll`
 hold of it and the step's output holds at the pushed environment. -/
 theorem passRefined_env {G : NormalGraph ι} {c : PointClaim ι} {node : Node} {ysAll : List (PromiseCalls.Yield ι)}
     {stepOut : HeapKnowledge.Knowledge} {t : Target} {pushed : Bool}
     {observed : Option BranchRefinement.Observation} {promote : Option Bool}
-    (hm : Exit.normal t pushed observed promote ∈ Exit.ofNode node) (harms : ArmsDistinct node.continuation)
+    {i : Nat} (hm : (Exit.ofNode node)[i]? = some (Exit.normal t pushed observed promote))
     {ρ : Env} {s : IndexedHeap} {v : Tm}
     (he : EnvOk G (c.type :: c.context) (push v ρ) s.n s.W) (hshape : ShapeOk v node.continuation)
     (ho : ObservedOk observed promote v) (hy : PromiseCalls.YieldsOk G ysAll ρ s.n s.W v)
     (hout : HeapKnowledge.Holds stepOut (push v ρ) s.h) :
-    EnvOk G (passRefined G c node.continuation ysAll (passOutAll G c stepOut) (passFirst node.continuation t))
+    EnvOk G (passRefined G c node.continuation ysAll (passOutAll G c stepOut) (i == 0))
       (if pushed then push v ρ else ρ) s.n s.W := by
   cases s with
   | mk n W h pos adm hh =>
@@ -91,57 +83,53 @@ theorem passRefined_env {G : NormalGraph ι} {c : PointClaim ι} {node : Node} {
     have hld := (HeapKnowledge.dropResult_holds
       (KnowledgeExpand.expandLinks_holds (setsCtx_push_ok heΓ v) hout)).2.2.1
     unfold Exit.ofNode at hm
-    replace hm := (List.mem_append.mp hm).resolve_right (by simp)
-    unfold passRefined passFirst
+    unfold passRefined
     split at hm
     · simp at hm
     · rename_i t0 hk
-      simp only [List.mem_singleton, Exit.normal.injEq] at hm
+      rcases i with _ | i <;> simp at hm
       obtain ⟨rfl, rfl, rfl, rfl⟩ := hm
       rw [hk]
       exact refined_push_aliased hh heΓ hv hy (fun h => by cases h) (fun h => by cases h) hl
     · rename_i t0 hk
-      simp only [List.mem_singleton, Exit.normal.injEq] at hm
+      rcases i with _ | i <;> simp at hm
       obtain ⟨rfl, rfl, rfl, rfl⟩ := hm
       rw [hk]
       exact refined_env_aliased hh heΓ hy (fun h => by cases h) (fun h => by cases h) hld
     · rename_i y0 n0 hk
-      rw [hk] at hshape harms ⊢
-      have hd := harms y0 n0 rfl
-      simp only [List.mem_cons, Exit.normal.injEq, List.not_mem_nil, or_false] at hm
-      rcases hm with ⟨rfl, rfl, rfl, rfl⟩ | ⟨rfl, rfl, rfl, rfl⟩
-      · have hv1 : v = .tru := by simpa using truthy_arm hshape ho
-        simp only [successors, List.headD_cons, beq_self_eq_true, ↓reduceIte]
+      rw [hk] at hshape ⊢
+      rcases i with _ | _ | i <;> simp at hm
+      · obtain ⟨rfl, rfl, rfl, rfl⟩ := hm
+        have hv1 : v = .tru := by simpa using truthy_arm hshape ho
+        simp only [beq_self_eq_true, ↓reduceIte]
         exact refined_env_aliased hh heΓ hy (fun _ => hv1) (fun h => by cases h) hld
-      · have hne : (t == y0) = false := by simpa using fun h => hd h.symm
-        simp only [successors, List.headD_cons, hne, Bool.false_eq_true, ↓reduceIte]
+      · obtain ⟨rfl, rfl, rfl, rfl⟩ := hm
+        simp only [Nat.add_one_ne_zero, beq_iff_eq, ↓reduceIte]
         exact refined_env_aliased hh heΓ hy (fun h => by cases h) (fun h => by cases h) hld
     · rename_i y0 n0 hk
-      rw [hk] at harms ⊢
-      have hd := harms y0 n0 rfl
-      simp only [List.mem_cons, Exit.normal.injEq, List.not_mem_nil, or_false] at hm
-      rcases hm with ⟨rfl, rfl, rfl, rfl⟩ | ⟨rfl, rfl, rfl, rfl⟩
-      · have hv1 : v = .tru := by simpa [ObservedOk, BranchRefinement.Observation.holds] using ho
-        simp only [successors, List.headD_cons, beq_self_eq_true, ↓reduceIte]
+      rw [hk]
+      rcases i with _ | _ | i <;> simp at hm
+      · obtain ⟨rfl, rfl, rfl, rfl⟩ := hm
+        have hv1 : v = .tru := by simpa [ObservedOk, BranchRefinement.Observation.holds] using ho
+        simp only [beq_self_eq_true, ↓reduceIte]
         exact refined_push_aliased hh heΓ hv hy (fun _ => hv1) (fun h => by cases h) hl
-      · have hv0 : v = .fls := by simpa [ObservedOk, BranchRefinement.Observation.holds] using ho
-        have hne : (t == y0) = false := by simpa using fun h => hd h.symm
-        simp only [successors, List.headD_cons, hne, Bool.false_eq_true, ↓reduceIte]
+      · obtain ⟨rfl, rfl, rfl, rfl⟩ := hm
+        have hv0 : v = .fls := by simpa [ObservedOk, BranchRefinement.Observation.holds] using ho
+        simp only [Nat.add_one_ne_zero, beq_iff_eq, ↓reduceIte]
         exact refined_push_aliased hh heΓ hv hy (fun h => by cases h) (fun _ => hv0) hl
     · rename_i tg y0 n0 hk
-      rw [hk] at harms ⊢
-      have hd := harms y0 n0 rfl
-      simp only [List.mem_cons, Exit.normal.injEq, List.not_mem_nil, or_false] at hm
-      rcases hm with ⟨rfl, rfl, rfl, rfl⟩ | ⟨rfl, rfl, rfl, rfl⟩
-      · simp only [successors, List.headD_cons, beq_self_eq_true, ↓reduceIte]
+      rw [hk]
+      rcases i with _ | _ | i <;> simp at hm
+      · obtain ⟨rfl, rfl, rfl, rfl⟩ := hm
+        simp only [beq_self_eq_true, ↓reduceIte]
         refine refined_push_aliased hh heΓ hv hy (fun hb => ?_) (fun h => by cases h) hl
         simp only [ControlFlow.truthyBoolean, Bool.and_eq_true, beq_iff_eq] at hb
         obtain ⟨rfl, hb⟩ := hb
         have ht : tagHolds .truthy v = true := by
           simpa [ObservedOk, BranchRefinement.Observation.holds, protoFree] using ho
         simpa using truthy_arm (BranchRefinement.onlyBoolean_sound hb hv) ht
-      · have hne : (t == y0) = false := by simpa using fun h => hd h.symm
-        simp only [successors, List.headD_cons, hne, Bool.false_eq_true, ↓reduceIte]
+      · obtain ⟨rfl, rfl, rfl, rfl⟩ := hm
+        simp only [Nat.add_one_ne_zero, beq_iff_eq, ↓reduceIte]
         exact refined_push_aliased hh heΓ hv hy (fun h => by cases h) (fun h => by cases h) hl
 
 omit [DecidableEq ι] in
@@ -168,17 +156,17 @@ theorem refinedEdge_env [Hashable ι] [Instantiates ι] {G : NormalGraph ι} {im
     {claimed : Array (PointClaim ι)} {c : PointClaim ι} {node : Node} {ysAll : List (PromiseCalls.Yield ι)}
     {stepOut : HeapKnowledge.Knowledge} {Δ : List (Ty ι)} {t : Target} {pushed : Bool}
     {observed : Option BranchRefinement.Observation} {promote : Option Bool} {answers : Answered G}
-    (hm : Exit.normal t pushed observed promote ∈ Exit.ofNode node) (harms : ArmsDistinct node.continuation)
+    {i : Nat} (hm : (Exit.ofNode node)[i]? = some (Exit.normal t pushed observed promote))
     (hce : (checkedEdge G images claimed Δ
-      (passRefined G c node.continuation ysAll (passOutAll G c stepOut) (passFirst node.continuation t)) t observed
+      (passRefined G c node.continuation ysAll (passOutAll G c stepOut) (i == 0)) t observed
       (passOutAll G c stepOut) answers).1 = true)
     {ρ : Env} {s : IndexedHeap} {v : Tm}
     (he : EnvOk G (c.type :: c.context) (push v ρ) s.n s.W) (hshape : ShapeOk v node.continuation)
     (ho : ObservedOk observed promote v) (hy : PromiseCalls.YieldsOk G ysAll ρ s.n s.W v)
     (hout : HeapKnowledge.Holds stepOut (push v ρ) s.h) :
     EnvOk G Δ (PointClaims.mapEnv t.mapping (if pushed then push v ρ else ρ)) s.n s.W := by
-  have hr := passRefined_env hm harms he hshape ho hy hout
-  have hpo := (ofNode_flags hm).1
+  have hr := passRefined_env hm he hshape ho hy hout
+  have hpo := (ofNode_flags (List.mem_of_getElem? hm)).1
   cases s with
   | mk n W h pos adm hh =>
   cases n with
