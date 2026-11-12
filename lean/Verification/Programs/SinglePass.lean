@@ -1734,7 +1734,6 @@ def setup (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty 
   let nodes := P.toArray
   let claimed := claims.toArray
   let n := nodes.size
-  let mut answers := answers
   let edgeCount := nodes.foldl (fun acc node => acc + (successors node.continuation).length + node.handler.toList.length) 0
   let mut counts : Counts := { nodes := n, edges := edgeCount }
   let mut trace : Trace := {}
@@ -1852,9 +1851,9 @@ def setup (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty 
       given := given, merging := merging, deadArr := deadArr, startNames := startNames, argName := argName }
   return .ok (env, σ0)
 
-/-- One node's visit (`drive` visits each once): its entry, its step, its
-exits, from the walk's state `σ`. -/
-def visit (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEnv ι G images) (σ : WalkState ι G)
+/-- One node's visit, its entry, its step and its exits, from the walk's
+state `σ` (`visit` keeps its read-summary table). -/
+def visitBody (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEnv ι G images) (σ : WalkState ι G)
     (l : Nat) : Except (WalkStop ι G) (WalkState ι G) := do
   let pool := env.pool
   let fuel := env.fuel
@@ -2378,6 +2377,21 @@ def visit (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEnv ι
   let w : Walk ι := { labels := labels, incoming := incoming, incomingImpl := incomingImpl, incomingEdges := incomingEdges, edges := walkEdges, visited := visitedBefore + 1 }
   let σ' : WalkState ι G := { walk := w, answers := answers, counts := counts, trace := trace, indeg := indeg, fresh := fresh, regionIn := regionIn, incomingFrom := incomingFrom, queue := queue, unsat := unsat, lastStamp := lastStamp, lastKind := lastKind }
   pure σ'
+
+/-- `b`'s answers with `a`'s read-summary table as their table's prefix:
+`a`'s table, then `b`'s entries past `a`'s length (`b` itself where `a`'s
+table is a prefix of `b`'s). -/
+def keepSummaries {G : NormalGraph ι} (a b : Answered G) : Answered G :=
+  { b with summaries := a.summaries ++ b.summaries.extract a.summaries.size b.summaries.size }
+
+/-- One node's visit (`drive` visits each once): `visitBody`, the answers it
+leaves or stops with holding the table it started from as a prefix, so the
+read-summary table only grows along the walk. -/
+def visit (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEnv ι G images) (σ : WalkState ι G)
+    (l : Nat) : Except (WalkStop ι G) (WalkState ι G) :=
+  match visitBody G images env σ l with
+  | .ok σ' => .ok { σ' with answers := keepSummaries σ.answers σ'.answers }
+  | .error stop => .error { stop with answers := keepSummaries σ.answers stop.answers }
 
 /-- The walk over one graph: the setup, then `drive` over the visits; the
 walk's state and the nodes the start reaches, or where it stopped. -/
