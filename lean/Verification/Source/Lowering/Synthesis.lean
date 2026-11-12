@@ -153,6 +153,9 @@ structure Walk where
   /-- The bindings the unit assigns that it holds in no slot: cells (a module
   binding, one a closure shares). -/
   cellAssigned : List String := []
+  /-- Each loop's head bindings narrower than declared, by the loop's
+  start (`loopOverrides`). -/
+  loopNarrowed : Std.HashMap Nat (List (String × Ty Tree)) := {}
   /-- The bindings the unit and the function literals being walked hold in
   cells (`cellLocals`: one a closure shares, every `let` of a module's
   initialization), whether or not the walk has met their assignment. -/
@@ -5432,6 +5435,62 @@ partial def withDefault (env : Env) (B : Option (Ty Tree)) (d : Option Expr) : W
       return (some (norm (Bd ++ D)), (join (some env) (some e1)).getD e1)
     | _, _ => return (none, e1)
 
+/-- The bindings a loop's head holds narrower than declared: a source
+binding (no `%` name the lowering makes) a slot holds that the loop assigns, entering narrower than its declared type,
+is at the join of its types on the edges into the head, from its entry type,
+the loop walked again until its edges add nothing, at most three walks, the
+walk's state restored after each; kept where that join is strictly within
+the declared type and settles (the producer's fixpoint, flow.ml:104-139).
+The pass checks each edge's types against the head's.
+(`TSCERT_FORCE=head-entry`: at its entry type, unwalked, the adversarial
+proposal) -/
+partial def loopOverrides (env : Env) (c : Expr) (body update : List Stmt) : W (List (String × Ty Tree)) := do
+  let head := loopHead env (.effect c.span c :: body ++ update)
+  let w0 ← get
+  let narrow := head.vars.filterMap fun (n, D) => match env.vars.lookup n with
+    | some A => if A != D && !n.startsWith "%" && w0.locals.contains n && !w0.heldCells.contains n && !w0.cellAssigned.contains n &&
+        !w0.closureAssigned.contains n then some (n, A) else none
+    | none => none
+  -- (but one whose entry type has literals that widen within its declared
+  -- type: they widen at the head, as TypeScript widens a mutable binding's)
+  let narrow ← narrow.filterM fun (n, A) => do
+    let W ← StateT.lift (widen A)
+    let tbl ← StateT.lift table
+    return W == A || !(head.vars.lookup n).any (within tbl W ·)
+  if narrow.isEmpty then return []
+  if w0.force.contains "head-entry" then return narrow
+  let at_ := fun (ts : List (String × Ty Tree)) =>
+    { head with vars := head.vars.map fun (n, D) => (n, (ts.lookup n).getD D) }
+  -- (a binding whose join reaches its declared type is at it: dropped;
+  -- the table read after each walk, which may add labels)
+  let below := fun (tbl : EquationStore.State) (n : String) (T : Ty Tree) => match head.vars.lookup n with
+    | some D => within tbl T D && !within tbl D T
+    | none => false
+  let mut ts := narrow
+  let mut settled := false
+  for _ in [0:3] do
+    if !settled then
+      let h := at_ ts
+      -- One walk of the test, the body and the update from the head: the
+      -- bindings on the edge back to it.
+      let (_, e1) ← expr h c
+      modify fun w => { w with breaks := [], continues := [] }
+      let b ← stmts (some (← refine e1 c true)) body
+      let continued := (← get).continues.foldl (fun acc c => join acc (some c)) b
+      let back ← stmts (some (continued.getD h)) update
+      set w0
+      let next := ts.map fun (n, T) => (n, match back.bind fun e => e.vars.lookup n with
+        | some B => norm (T ++ B)
+        | none => T)
+      if next == ts then settled := true
+      else
+        let tbl ← StateT.lift table
+        ts := next.filter fun (n, T) => below tbl n T
+        if ts.isEmpty then return []
+  if !settled then return []
+  let tbl ← StateT.lift table
+  return ts.filter fun (n, T) => below tbl n T
+
 /-- Walk statements from `env` (none: unreached), recording each statement
 entry; the environment where the list completes, none where it does not. -/
 partial def stmts (env : Option Env) (ss : List Stmt) : W (Option Env) := do
@@ -5472,9 +5531,12 @@ partial def stmts (env : Option Env) (ss : List Stmt) : W (Option Env) := do
       | _, _ => s.pos.1
     -- A loop's entry is its head's: each binding the loop assigns at its
     -- declared type (`loopHead`).
-    let vars := match s with
-      | .loop _ c body update _ => (loopHead e (.effect c.span c :: body ++ update)).vars
-      | _ => e.vars
+    let vars ← match s with
+      | .loop q c body update _ => do
+        let ts ← loopOverrides e c body update
+        if !ts.isEmpty then modify fun w => { w with loopNarrowed := w.loopNarrowed.insert q.1 ts }
+        pure ((loopHead e (.effect c.span c :: body ++ update)).vars.map fun (n, D) => (n, (ts.lookup n).getD D))
+      | _ => pure e.vars
     modify fun w =>
       let earlier := if at_ == s.pos.1 then [] else
         ((w.entries.get? at_).getD []).filter fun (n, _) => (vars.lookup n).isNone
@@ -5820,7 +5882,7 @@ partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
   | .cont _ =>
     modify fun w => { w with continues := env :: w.continues }
     return none
-  | .loop _ c body update _ =>
+  | .loop p c body update _ =>
     -- The paths narrowed before the loop that nothing in it can end, held
     -- from its head on: the root no binding the loop declares or assigns,
     -- and either nothing in the loop calling or writing, or each member of
@@ -5835,6 +5897,11 @@ partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
         if quiet then return true
         stablePath env r p)
     let head := keepPaths early (loopHead env all)
+    -- (the bindings the loop's head holds narrower than declared, found
+    -- where its entry was recorded: `loopNarrowed`)
+    let head := match (← get).loopNarrowed.get? p.1 with
+      | some ts => { head with vars := head.vars.map fun (n, D) => (n, (ts.lookup n).getD D) }
+      | none => head
     let savedEnds := (← get).pathEnds
     modify fun w => { w with pathEnds := [] }
     let (_, e1) ← expr head c
