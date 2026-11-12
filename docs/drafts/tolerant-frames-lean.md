@@ -1827,3 +1827,33 @@ for $`m = \mathrm{mergeState}\ G\ \mathit{context}\ \mathit{preds}\ \mathit{edge
 With `mergeState_wf` this fills the merge's row of the store-operations
 table (Leg 12): `StoreWF`, names and fresh names below, facts below, all
 proved.
+
+## Leg 14c: the guarded join
+
+Module `lean/Verification/Programs/TolerantFramesMergeGuarded.lean`.
+`GuardedHolds` is a theorem (`guardedHolds_of_path`): on the path through
+any predecessor $`p`$ (`OnPath`), every fact `mergeGuarded` keeps holds at the
+slot environment. The join is sound as written: each fact it keeps passes
+`indicesCheckWith` against every predecessor's view materialized at the
+seed slots, among them $`p`$'s, which holds on the path. Proved:
+
+- `guardReads_path`: a read link from $`c`$ through field $`f`$ into $`v`$
+  that holds makes a path $`f :: q`$ read from $`c`$ read what $`q`$ reads
+  from $`v`$ (`readPath`; `guardReads_read` is its `readGuard` form);
+- `lowerRead_holds`: a fact lowered through such a link
+  (`IndexFact.lowerRead`) holds where the fact does: a term rooted at $`c`$
+  with path $`f :: q`$ denotes the term rooted at $`v`$ with path $`q`$, a
+  guard's path alike, the other facts unchanged; `lowerGuards_holds`:
+  the lowered guards hold where the atoms and links do;
+- `check_holds`: a fact `indicesCheckWith` accepts over a holding knowledge,
+  with that knowledge's guard tags and alias classes, holds
+  (`indicesCheckWith_sound`, `guardTags_sound`, `HeapLinks.aliases_eq`);
+- `OnPath.projection_holds`: $`p`$'s view, which holds at the merge's
+  valuation (`OnPath.view_ok`), materialized at any slots holds at the slots
+  (`materializeFrom_holds`, `selectedFromIndex`).
+
+The joined facts (`CertificateProducer.joinGuarded`) are checked against
+every lowered view, the tagged facts against every view; both checks are
+the ones the proof reads. The pass lane's queued item "recheck joined
+guarded facts with `indicesCheckWith`" adds no premise this proof uses: the
+check `joinGuarded` runs is that recheck.
