@@ -70,7 +70,17 @@ names has its facts restated under each, and those fresh names are equal
 there. A fact is stored in one form: an unconditional fact reads no
 condition's polarity.
 
-`SinglePass.run` drives the walk over pure functions of a node's state:
+`SinglePass.runWalk` drives the walk by structural recursion on a fuel of
+the nodes and one (`drive`, one node per step from the queue, a fuel that
+runs out a refusal) and returns its record (`Walk`): per label whether it
+was visited, its entry state and implications (a written assertion's facts
+added), its state after its step and at a merge its context and the fresh
+counter the merge started from; the states and implications each edge
+carried into it and the edges into a merge as the merge reads them; per
+processed edge its source, target and mapping, whether it pushes, the
+implications it carries and whether some environment may meet its
+context. `SinglePass.run`'s verdict is a function of that record
+(`Walk.outcome`). Each node is visited over pure functions of its state:
 a loop head's entry (`headEntry`), a merge (`mergeState`), a node's step
 (`checkedStep`, its counts beside it as `StepStats`), an edge's store
 (`edgeStoreOf`) and what an edge into an ordinary node carries
