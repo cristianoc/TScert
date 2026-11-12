@@ -295,6 +295,16 @@ theorem StartBelow.mono {env : SinglePass.WalkEnv ι G I} {a b : Nat} (h : Start
 @[nospecialize] def IncomingBelow (w : SinglePass.Walk ι) (fresh : Nat) : Prop :=
   ∀ t xs, xs ∈ incI w t → ∀ y ∈ xs, y.test < fresh ∧ y.target < fresh
 
+/-- The successful visit whose result supplies this label's record, including
+its exits' complete optional regional result. -/
+@[nospecialize] def VisitOrigin (env : SinglePass.WalkEnv ι G I) (w : SinglePass.Walk ι) (l : Nat) : Prop :=
+  ∃ (σ : SinglePass.WalkState ι G) (en : SinglePass.Entered ι) (sd : SinglePass.StepDone ι G)
+    (ex : SinglePass.ExitsDone ι G),
+    SinglePass.visitEntry G I env σ l = .ok en ∧
+    SinglePass.visitStep G I env σ l en = .ok sd ∧
+    SinglePass.visitExits G I env σ l en sd = .ok ex ∧
+    w.labels[l]? = some (SinglePass.LabelWalk.ofVisit σ.fresh en sd (ex.regional.map (·.state)))
+
 /-- **The walk's invariant**: the queue's labels distinct, below the bound,
 reached, unvisited and, other than heads, with no exit left to come in; the
 visited labels reached, with no exit left to come in, their exits below the
@@ -328,6 +338,7 @@ structure RecInv (c : Target.RunCall G I) (env : SinglePass.WalkEnv ι G I) (σ 
   settled : ∀ t, visB σ.walk t = true → Settled c (envHead env) env.deadArr.toList σ t
   impBelow : IncomingBelow σ.walk σ.fresh
   vacuity : CachedVacuity G env.claimed σ.unsat
+  origins : ∀ l, visB σ.walk l = true → VisitOrigin env σ.walk l
 
 /-- **At the walk's end every reached label is visited**, where the record
 counts at least the reached labels (`filter_eq_of_le`). -/
@@ -480,6 +491,7 @@ structure VisitFacts (c : Target.RunCall G I) (env : SinglePass.WalkEnv ι G I) 
   impBelow : IncomingBelow σ.walk σ.fresh → IncomingBelow σ'.walk σ'.fresh
   extendsWalk : WalkExtends σ.walk σ'.walk
   vacuity : CachedVacuity G env.claimed σ.unsat → CachedVacuity G env.claimed σ'.unsat
+  origin : VisitOrigin env σ'.walk l
 
 omit [Labels ι] in
 theorem visB_frame {w w' : SinglePass.Walk ι} {t : Nat} (h : w'.labels[t]? = w.labels[t]?) : visB w' t = visB w t := by
@@ -532,7 +544,7 @@ theorem recInv_visit {c : Target.RunCall G I} {env : SinglePass.WalkEnv ι G I} 
     subst htl; exact hself (hnewQ t ht).2.1 (hnewQ t ht).1
   refine { nodup := ?_, queue := ?_, visR := ?_, visDeg := ?_, exits := ?_, count := ?_, size := ?_, degs := ?_,
            inLen := ?_, inSizes := hF.inSizes hI.inSizes, inVis := ?_, edgesVis := ?_, push := ?_, startFresh := ?_,
-           startBelow := hI.startBelow.mono hF.fresh, impBelow := hF.impBelow hI.impBelow, vacuity := hF.vacuity hI.vacuity, settled := ?_ }
+           startBelow := hI.startBelow.mono hF.fresh, impBelow := hF.impBelow hI.impBelow, vacuity := hF.vacuity hI.vacuity, settled := ?_, origins := ?_ }
   · rw [hQ]
     refine List.nodup_append.mpr ⟨hnodupNew, hrest.2, fun a ha b hb hab => ?_⟩
     subst hab
@@ -623,6 +635,13 @@ theorem recInv_visit {c : Target.RunCall G I} {env : SinglePass.WalkEnv ι G I} 
       exact ⟨fun e he => (hI.push t e.1 (List.of_mem_zip he).1).2.2, hI.startFresh⟩
     · rw [hvis t htl] at ht
       exact (hI.settled t ht).frame (hF.labels t htl) (fun hg => hF.frame t (hvisOld t ht hg)) hk hF.extendsWalk
+
+  · intro t ht
+    by_cases htl : t = l
+    · subst t; exact hF.origin
+    · rw [hvis t htl] at ht
+      obtain ⟨σ₀, en, sd, ex, he, hs, hx, hr⟩ := hI.origins t ht
+      exact ⟨σ₀, en, sd, ex, he, hs, hx, (hF.labels t htl).trans hr⟩
 
 /-- A call's setup (`SinglePass.setup` over its arguments). -/
 def RunCall.setup {G : NormalGraph ι} {I : InstanceImageCheck G} (c : Target.RunCall G I) :

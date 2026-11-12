@@ -1371,19 +1371,35 @@ of `TolerantFramesRunSound.lean`, quantified over every call the premises of
 ## Open premises
 
 The graph theorem `run_sound_single_pass`
-(`TolerantFramesSinglePassSound.lean`) has three hypotheses:
+(`TolerantFramesSinglePassSound.lean`) has four hypotheses:
 
 ```math
-\mathrm{ExitsYield} \wedge \mathrm{RegionalVisitTables} \wedge \mathrm{RegionalStepBridge} \Longrightarrow \mathrm{RunSound}
+\begin{aligned}
+&\mathrm{ExitsYield} \wedge \mathrm{RegionalWalkAlignment} \\
+&\quad \wedge \mathrm{RegionalDiscardedSeparation} \wedge \mathrm{RegionalStepHeader}
+\quad\Longrightarrow \mathrm{RunSound}
+\end{aligned}
 ```
 
 | Premise | Obligation | Consumed by |
 | --- | --- | --- |
 | `ExitsYield` | Each checked node's normal exits and handler deliver `NodeExitsY` at every admitted reassigned graph. `nodeExitsY_of_checks` proves delivery from `NodeExitsChecked`, with freshness from the actual step execution. Assembly from the visit's records requires head-entry checks, handler bounds, incoming and merge membership, and semantic justification of the yields each exit reads. | `nodesYield_of` |
-| `RegionalVisitTables` | A checked walk has graph tables whose start entries equal a successful start visit's recorded state. Every visited node has a successful step and regional check at its recorded inputs, sound summaries, and `TablesAgree` between its returned `RegionalDone.table` / `.ft` and the graph tables. The outstanding invariant relates these local witnesses across `drive`, including target containment through incoming meets. `ExitsDone.regional` contains the full regional result; `LabelWalk.region` contains its state. | `regionsRecorded_of_visitTables`, `regionsTyped_of_visitTables` |
-| `RegionalStepBridge` | For a successful `visitStep`, at every reassignment, the regional evidence's expanded entry knowledge entails `stepK`'s links and separation; when `stepDeriv = none`, its effective context and result equal the node's claim. `regionalStepFacts_of_relations` proves recovery of cells, values, elements and indices. Relational recovery includes alias expansion, separation normalization and the depth condition in `regionalFacts`. The header condition concerns `NodeEvidence.expression`: ordinary evidence `.effect` can expose `stepEffect.proof?`. `regionalDerivChecked` checks `stepDeriv`; the relation between that optional derivation and the effect's proof requires a reachable-visit invariant. | `regionalTyped_of_derivation`, `regionalTyped_of_step` |
+| `RegionalWalkAlignment` | Every abstract `RunWalkA` meeting `WalkChecked` aligns with a driver state satisfying `RecInv`: the start and visited labels occur there, its recorded visits have the same node, claim, entry and step, their regional summary tables are sound, and their checked tables satisfy `TablesAgree` against `recordedRegionFacts` / `recordedRegionFresh`. The exact quantifiers are in `TolerantFramesRegionalRecorded.lean`. `WalkChecked` states node checks and exit traces; it contains no driver-origin witness. | `regionalVisitTables` |
+| `RegionalDiscardedSeparation` | For a successful visit, let `a` be the whole entry materialization and `b = sd.st.stepK`. If `a.separation.depth ≠ b.separation.depth` and `b.separation.facts ≠ []`, then for every environment, `Holds a.separation` implies `Holds b.separation`. This is precisely the discarded branch of `SinglePass.regionalFacts` (lines 2635–2636). `regionalFacts_discard_counterexample` proves failure for arbitrary facts: `a = {}`, `b` has depth 1 and one fact separating slot 0 from its own field `x`, and slot 0 holds an object with `x` at location 0. Reachability of these inputs is not established. | `regionalStepBridge` |
+| `RegionalStepHeader` | At every successful `visitStep` with `sd.st.stepDeriv = none`, every `p` satisfying `sd.st.stepEffect.bind StepEvidence.proof? = some p` has `(claim p).context = env.claimed[l]!.context` and `(claim p).type = env.claimed[l]!.type`. `regionalAt` selects `.effect` at lines 2661–2664; its derivation check at line 2665 reads `stepDeriv`. | `regionalStepBridge` |
 
 Proved prerequisites:
+
+- `RecInv.origins` retains each visited label's complete successful visit;
+  `VisitFacts.origin`, `recInv_visit` and `SetupOk.recInv` establish its
+  preservation and initial case. `exitsFold_regional` preserves the complete
+  regional result; `RecInv.regionalWitness` recovers its check and stored state.
+  `recordedRegion_at` reads the four components from the recorded graph tables.
+- `expandedLinks_recover` and `regionalLinks_recover` recover the original
+  links from expansion. `visitStep_separation_partners` proves that step
+  separation facts have partners; `separation_union_right` recovers them
+  through normalization, and `regionalSeparation_recover` isolates the
+  discarded-depth branch.
 
 - `exitStepPrefix` (`TolerantFramesVisitSummaries.lean`) proves summary-prefix
   preservation through `exitTypes`, nested `mixedContext` folds, head checks,
@@ -1407,12 +1423,6 @@ Proved prerequisites:
 - `setupRecords_of`, `exitsWidth` and `subtypeAnswersAll` supply setup,
   mapping-width and subtype-answer soundness. `visitExits_records` retains
   each indexed exit's successful check in `NodeExitTrace`.
-
-The two regional premises are proof obligations about reachable visits.
-No necessary pass modification is established. The relevant code is
-`regionalFacts`' separation-depth branch, `regionalAt`'s `ordinaryEv` and
-`cEv` construction and its check of `st.stepDeriv`, and `visitBody`'s storage
-of `ex.regional.map (·.state)`.
 
 ## Leg 17a: the per-node hypotheses from the pass's checks
 

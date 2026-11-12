@@ -1098,3 +1098,24 @@ run_cmd do
   check ``Verification.TolerantFrames.regionsRecorded_of_visitTables
   check ``Verification.TolerantFrames.regionsTyped_of_visitTables
   check ``Verification.TolerantFrames.regionalStepFacts_of_relations
+
+  check ``Verification.TolerantFrames.expandedLinks_recover
+  check ``Verification.TolerantFrames.regionalJoin_right
+  check ``Verification.TolerantFrames.regionalLinks_recover
+  check ``Verification.TolerantFrames.separation_norm_recover
+  check ``Verification.TolerantFrames.separation_union_right
+  check ``Verification.TolerantFrames.regionalSeparation_recover
+  check ``Verification.TolerantFrames.regionalFacts_discard_counterexample
+  check ``Verification.TolerantFrames.separation_norm_partners
+  check ``Verification.TolerantFrames.materialize_separation_partners
+  check ``Verification.TolerantFrames.visitStep_separation_partners
+  check ``Verification.TolerantFrames.regionalStepBridge
+  check ``Verification.TolerantFrames.exitTypes_regional
+  check ``Verification.TolerantFrames.headExit_regional
+  check ``Verification.TolerantFrames.assertionExit_regional
+  check ``Verification.TolerantFrames.exitStep_regional
+  check ``Verification.TolerantFrames.exitsFold_regional
+  check ``Verification.TolerantFrames.visitExits_regionalCheck
+  check ``Verification.TolerantFrames.RecInv.regionalWitness
+  check ``Verification.TolerantFrames.recordedRegion_at
+  check ``Verification.TolerantFrames.regionalVisitTables

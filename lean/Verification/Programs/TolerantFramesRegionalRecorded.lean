@@ -60,6 +60,124 @@ theorem regionalAt_start {env : WalkEnv ι G I} {l : Nat} {en : Entered ι} {sd 
       rw [hh.2.2]
       rfl
 
+/-- Type checking leaves the regional result intact. -/
+theorem exitTypes_regional {env : SinglePass.WalkEnv ι G I} {l : Nat} {en : SinglePass.Entered ι}
+    {sd : SinglePass.StepDone ι G} {out : Thunk HeapKnowledge.Knowledge} {t : Target} {tc : PointClaim ι}
+    {Γ : List (ProgramTyping.Ty ι)} {names : List Nat} {store : SinglePass.Store} {pushed handler : Bool}
+    {observed : Option BranchRefinement.Observation} {first : Bool} {diff : List (Nat × Nat)}
+    {a b : SinglePass.ExitsDone ι G} {et : SinglePass.ExitTyped ι}
+    (h : SinglePass.exitTypes G I env l en sd out t tc Γ names store pushed handler observed first diff a = .ok (b, et)) :
+    b.regional = a.regional := by
+  unfold SinglePass.exitTypes at h
+  repeat' (first | split at h | extract_lets at h)
+  all_goals cases h <;> rfl
+
+/-- The head check leaves the regional result intact. -/
+theorem headExit_regional {env : SinglePass.WalkEnv ι G I} {l : Nat} {t : Target} {tc : PointClaim ι}
+    {Γ : List (ProgramTyping.Ty ι)} {names : List Nat} {store : SinglePass.Store} {pushed vacuous : Bool}
+    {carried : List (PromiseCalls.Implication ι)} {a b : SinglePass.ExitsDone ι G}
+    (h : SinglePass.headExit G I env l t tc Γ names store pushed vacuous carried a = .ok b) :
+    b.regional = a.regional := by
+  unfold SinglePass.headExit at h
+  repeat' (first | split at h | extract_lets at h)
+  all_goals cases h <;> rfl
+
+/-- The assertion check leaves the regional result intact. -/
+theorem assertionExit_regional {env : SinglePass.WalkEnv ι G I} {l : Nat} {t : Target} {tc : PointClaim ι}
+    {Γe : Thunk (List (ProgramTyping.Ty ι))} {names : List Nat} {store : SinglePass.Store} {pushed vacuous : Bool}
+    {observed : Option BranchRefinement.Observation} {a b : SinglePass.ExitsDone ι G}
+    (h : SinglePass.assertionExit G env l t tc Γe names store pushed observed vacuous a = .ok b) :
+    b.regional = a.regional := by
+  unfold SinglePass.assertionExit at h
+  repeat' (first | split at h | extract_lets at h)
+  all_goals cases h <;> rfl
+
+/-- A successful exit preserves the complete regional result. -/
+theorem exitStep_regional {env : WalkEnv ι G I} {l : Nat} {en : Entered ι}
+    {sd : StepDone ι G} {ys : List (PromiseCalls.Yield ι)} {out : Thunk HeapKnowledge.Knowledge}
+    {a b : ExitsDone ι G} {e : Exit × Nat}
+    (h : exitStep G I env l en sd ys out a e = .ok b) : b.regional = a.regional := by
+  unfold exitStep at h
+  extract_lets ex first node c width entry st t pushed observed handler pushedNames tr a0 Γ names store unsatΓ vacuous Γe read Γr at h
+  split at h
+  · cases h
+  split at h
+  · cases h
+  extract_lets diff u a2 typed at h
+  generalize ht : typed = T at h
+  split at h
+  · cases h
+  rename_i a1 et
+  simp only [typed] at ht
+  have hp : a2.regional = a.regional := by
+    dsimp only [a2, a0]
+    split <;> split <;> rfl
+  have hp1 : a1.regional = a.regional := by
+    split at ht
+    · cases ht; exact hp
+    · exact (exitTypes_regional ht).trans hp
+  extract_lets freshImpl record at h
+  split at h
+  · simp only [Except.map] at h
+    split at h
+    · cases h
+    · rename_i a3 hhead
+      cases h
+      exact (headExit_regional hhead).trans hp1
+  · split at h
+    · cases h
+    rename_i a3 ha
+    split at h
+    cases h
+    exact (assertionExit_regional ha).trans hp1
+
+/-- Every exit in the fold preserves the regional check's result. -/
+theorem exitsFold_regional {env : WalkEnv ι G I} {l : Nat} {en : Entered ι}
+    {sd : StepDone ι G} {ys : List (PromiseCalls.Yield ι)} {out : Thunk HeapKnowledge.Knowledge}
+    (es : List (Exit × Nat)) (a b : ExitsDone ι G)
+    (h : es.foldlM (exitStep G I env l en sd ys out) a = .ok b) : b.regional = a.regional := by
+  induction es generalizing a with
+  | nil => cases h; rfl
+  | cons e es ih =>
+    rw [List.foldlM_cons] at h
+    cases he : exitStep G I env l en sd ys out a e with
+    | error stop => rw [he] at h; cases h
+    | ok a' =>
+      rw [he] at h
+      exact (ih a' h).trans (exitStep_regional he)
+
+/-- A successful exits visit has performed its regional check. -/
+theorem visitExits_regionalCheck {env : WalkEnv ι G I} {σ : WalkState ι G} {l : Nat}
+    {en : Entered ι} {sd : StepDone ι G} {ex : ExitsDone ι G} {rg : Regional}
+    (hreg : env.regional = some rg) (h : visitExits G I env σ l en sd = .ok ex) :
+    ∃ done, regionalAt G I env l en sd rg (exitsYields G I env l en sd).2 σ.regionIn = .ok done ∧
+      ex.regional = some done := by
+  unfold visitExits at h
+  rw [hreg] at h
+  cases hr : regionalAt G I env l en sd rg (exitsYields G I env l en sd).2 σ.regionIn with
+  | error why =>
+    simp only [hr, Except.map] at h
+    cases h
+  | ok done =>
+    refine ⟨done, rfl, ?_⟩
+    simp only [hr, Except.map] at h
+    exact exitsFold_regional _ _ _ h
+
+/-- The driver invariant supplies every visited label's successful step
+and regional check, together with its retained complete exit result. -/
+theorem RecInv.regionalWitness {c : Target.RunCall G I} {env : WalkEnv ι G I} {σ : WalkState ι G}
+    (hi : RecInv c env σ) {l : Nat} (hl : visB σ.walk l = true) {rg : Regional}
+    (hreg : env.regional = some rg) :
+    ∃ (before : WalkState ι G) (en : Entered ι) (sd : StepDone ι G) (ex : ExitsDone ι G)
+      (done : RegionalDone ι),
+      visitEntry G I env before l = .ok en ∧ visitStep G I env before l en = .ok sd ∧
+      visitExits G I env before l en sd = .ok ex ∧
+      regionalAt G I env l en sd rg (exitsYields G I env l en sd).2 before.regionIn = .ok done ∧
+      σ.walk.labels[l]? = some (LabelWalk.ofVisit before.fresh en sd (some done.state)) := by
+  obtain ⟨before, en, sd, ex, he, hs, hx, hr⟩ := hi.origins l hl
+  obtain ⟨done, hd, hdone⟩ := visitExits_regionalCheck hreg hx
+  exact ⟨before, en, sd, ex, done, he, hs, hx, hd, by simpa [hdone] using hr⟩
+
 /-- The graph's regional facts, from each label's own recorded check. -/
 def recordedRegionFacts (w : SinglePass.Walk ι) : List (List ArgumentPathTracking.Fact) :=
   w.labels.toList.map fun r => (r.region.getD {}).facts
@@ -69,6 +187,17 @@ def recordedRegionFresh (w : SinglePass.Walk ι) (names : List String) : Argumen
   ⟨w.labels.toList.map (fun r => (r.region.getD {}).values),
     w.labels.toList.map (fun r => (r.region.getD {}).cells),
     w.labels.toList.map (fun r => (r.region.getD {}).fields), names⟩
+
+omit [Labels ι] in
+/-- Reading a recorded label reads its four regional components. -/
+theorem recordedRegion_at {w : SinglePass.Walk ι} {l : Nat} {r : LabelWalk ι} {state : RegionState}
+    (hr : w.labels[l]? = some r) (hs : r.region = some state) (names : List String) :
+    ArgumentPathTracking.atLabel (recordedRegionFacts w) l = state.facts ∧
+    factsAt (recordedRegionFresh w names).values l = state.values ∧
+    factsAt (recordedRegionFresh w names).cells l = state.cells ∧
+    fieldsAt (recordedRegionFresh w names).fields l = state.fields := by
+  simp [recordedRegionFacts, recordedRegionFresh, ArgumentPathTracking.atLabel, factsAt, fieldsAt,
+    List.getD_eq_getElem?_getD, List.getElem?_map, hr, hs]
 
 /-- A successful visit's record carries precisely the regional state returned by its exits. -/
 theorem visitResult_region (σ : WalkState ι G) (l : Nat) (en : Entered ι) (sd : StepDone ι G)
@@ -98,6 +227,46 @@ and agreement at the node and all its targets. -/
             en.entry = (r.node l hl).entry ∧ sd.st = (r.node l hl).st ∧
             rg.Φ = Φ ∧ rg.regions = regions ∧ rg.exc = exc ∧
             SummariesSound G I a.summaries.toList ∧ TablesAgree done.table table done.ft ft l (r.node l hl).node
+
+/-- Alignment of a checked abstract walk with a driver state and its
+recorded regional checks. The driver invariant supplies the visit witnesses;
+this premise supplies their node alignment, summary soundness and table agreement. -/
+@[nospecialize] def RegionalWalkAlignment (ι : Type) [Labels ι] : Prop :=
+  ∀ (G : NormalGraph ι) (I : InstanceImageCheck G) (c : Target.RunCall G I) after admits,
+    RunPremises G I c after admits → ∀ r : RunWalkA G I c, WalkChecked c r →
+      ∀ Φ regions exc, Target.regionOf c.regional = some (Φ, regions, exc) →
+        ∃ (env : WalkEnv ι G I) (σ : WalkState ι G) (rg : Regional),
+          RecInv c env σ ∧ env.regional = some rg ∧ c.start = env.start ∧
+          visB σ.walk c.start = true ∧ rg.Φ = Φ ∧ rg.regions = regions ∧ rg.exc = exc ∧
+          (∀ l, r.w.visited l → visB σ.walk l = true) ∧
+          ∀ l (hl : r.w.visited l) (before : WalkState ι G) (en : Entered ι) (sd : StepDone ι G)
+            (ex : ExitsDone ι G) (done : RegionalDone ι),
+            visitEntry G I env before l = .ok en → visitStep G I env before l en = .ok sd →
+            visitExits G I env before l en sd = .ok ex →
+            regionalAt G I env l en sd rg (exitsYields G I env l en sd).2 before.regionIn = .ok done →
+            σ.walk.labels[l]? = some (LabelWalk.ofVisit before.fresh en sd (some done.state)) →
+            env.codes = c.codes ∧ env.claimed[l]! = (r.node l hl).c ∧ env.nodes[l]! = (r.node l hl).node ∧
+            en.entry = (r.node l hl).entry ∧ sd.st = (r.node l hl).st ∧
+            SummariesSound G I (exitsYields G I env l en sd).2.summaries.toList ∧
+            TablesAgree done.table (recordedRegionFacts σ.walk) done.ft (recordedRegionFresh σ.walk rg.names)
+              l (r.node l hl).node
+
+/-- The graph tables from the driver's regional visit witnesses. -/
+theorem regionalVisitTables (alignment : RegionalWalkAlignment ι) : RegionalVisitTables ι := by
+  intro G I c after admits hp r hchk Φ regions exc hreg
+  obtain ⟨env, σ, rg, hi, hrg, hstart, hvis, hΦ, hregions, hexc, hvisited, halign⟩ :=
+    alignment G I c after admits hp r hchk Φ regions exc hreg
+  have startWitness := hi.regionalWitness hvis hrg
+  obtain ⟨before, en, sd, ex, done, _, _, _, hd, hr⟩ := startWitness
+  have startTables := recordedRegion_at hr (by rfl) rg.names
+  refine ⟨recordedRegionFacts σ.walk, recordedRegionFresh σ.walk rg.names,
+    ⟨env, en, sd, rg, _, before.regionIn, done, hstart, hd, startTables⟩, ?_⟩
+  intro l hl
+  have visitWitness := hi.regionalWitness (hvisited l hl) hrg
+  obtain ⟨before, en, sd, ex, done, he, hs, hx, hd, hr⟩ := visitWitness
+  obtain ⟨hc, hclaim, hnode, hentry, hst, hsum, ht⟩ := halign l hl before en sd ex done he hs hx hd hr
+  exact ⟨env, before, en, sd, rg, _, before.regionIn, done, hs, hd,
+    hc, hclaim, hnode, hentry, hst, hΦ, hregions, hexc, hsum, ht⟩
 
 /-- Successful regional visits supply the recorded checks once their tables
 satisfy the graph invariant. -/

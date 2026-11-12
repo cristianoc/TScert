@@ -1,4 +1,5 @@
 import Verification.Programs.TolerantFramesRegionalHeld
+import Verification.Programs.TolerantFramesDriverVisitRest
 
 /-! # Regional typing from the derivation's checked requirements -/
 namespace Verification.TolerantFrames
@@ -140,5 +141,91 @@ the regional evidence reads the node's claimed context and result type. -/
       HeapLinks.Holds sd.st.stepK.links ρ h ∧ HeapSeparation.Holds sd.st.stepK.separation ρ) ∧
       (sd.st.stepDeriv = none → ControlFlow.entry ev = (env.claimed[l]!).context ∧
         result ev = (env.claimed[l]!).type)
+
+/-- Every retained normalized separation fact has partners. -/
+theorem separation_norm_partners (d : Nat) (fs : List HeapSeparation.Fact) :
+    ∀ f ∈ (HeapSeparation.norm d fs).facts, f.partners ≠ [] := by
+  unfold HeapSeparation.norm
+  dsimp only
+  split
+  · simp
+  · intro f hf
+    simpa using (List.mem_filter.mp hf).2
+
+/-- The separation facts constructed by materialization have partners. -/
+theorem materialize_separation_partners (st : SinglePass.State) (d : Nat) (slots : List Nat) (whole : Bool) :
+    ∀ f ∈ (materialize st d slots whole).1.separation.facts, f.partners ≠ [] :=
+  separation_norm_partners d _
+
+/-- Every successful step's separation facts have partners. -/
+theorem visitStep_separation_partners {G : NormalGraph ι} {I : InstanceImageCheck G}
+    {env : WalkEnv ι G I} {σ : WalkState ι G} {l : Nat} {en : Entered ι} {sd : StepDone ι G}
+    (h : visitStep G I env σ l en = .ok sd) :
+    ∀ f ∈ sd.st.stepK.separation.facts, f.partners ≠ [] := by
+  obtain ⟨⟨ms, stats, hr⟩, -, -⟩ := visitStep_ok h
+  rcases checkedStep_ok (stepRun_ok hr) with ⟨_, _, _, _, _, _, hk, _⟩ |
+    ⟨_, effect, a0, a1, _, _, ha, _⟩
+  · rw [hk]; simp
+  · obtain ⟨out, pre, _, _, _, _, _, _, hp, hn⟩ := ha
+    by_cases hpres : passPreserving G I (jOf env.claimed[l]! env.nodes[l]!)
+        (kOf G env.claimed[l]! en.entry ms (wholeOf (env.nodes[l]!).expression)) effect env.codes
+        a0.summaries.toList = true
+    · rw [(hp hpres).2.1]
+      exact materialize_separation_partners _ _ _ _
+    · obtain ⟨out', _, _, _, hk, _⟩ := hn (Bool.eq_false_iff.mpr hpres)
+      rw [hk]
+      exact materialize_separation_partners _ _ _ _
+
+/-- The separation obligation only at the branch discarding step facts. -/
+@[nospecialize] def RegionalDiscardedSeparation (ι : Type) [Labels ι] : Prop :=
+  ∀ (G : NormalGraph ι) (I : InstanceImageCheck G) (env : WalkEnv ι G I) (σ : WalkState ι G)
+    (l : Nat) (en : Entered ι) (sd : StepDone ι G),
+    visitStep G I env σ l en = .ok sd →
+    let a := (materialize en.entry (env.claimed[l]!).context.length
+      (List.range (env.claimed[l]!).context.length) true).1
+    a.separation.depth ≠ sd.st.stepK.separation.depth → sd.st.stepK.separation.facts ≠ [] →
+    ∀ ρ, HeapSeparation.Holds a.separation ρ → HeapSeparation.Holds sd.st.stepK.separation ρ
+
+/-- The selected effect's proof has the claimed header when no ordinary
+step derivation is present. -/
+@[nospecialize] def RegionalStepHeader (ι : Type) [Labels ι] : Prop :=
+  ∀ (G : NormalGraph ι) (I : InstanceImageCheck G) (env : WalkEnv ι G I) (σ : WalkState ι G)
+    (l : Nat) (en : Entered ι) (sd : StepDone ι G),
+    visitStep G I env σ l en = .ok sd → sd.st.stepDeriv = none →
+    ∀ p, sd.st.stepEffect.bind HeapExpressionRules.StepEvidence.proof? = some p →
+      (claim p).context = (env.claimed[l]!).context ∧ (claim p).type = (env.claimed[l]!).type
+
+/-- Composition of the visit's relational and header obligations. -/
+theorem regionalStepBridge (hdiscard : RegionalDiscardedSeparation ι)
+    (hheader : RegionalStepHeader ι) : RegionalStepBridge ι := by
+  intro G I env σ l en sd hv η
+  have partners := visitStep_separation_partners hv
+  have relations : ∀ ρ h, HeapKnowledge.Holds (entryFacts (reassign G η)
+      (passRegionalEvidence env.claimed[l]! env.nodes[l]! sd.st.stepDeriv sd.st.stepEffect
+        (regionalFacts (materialize en.entry (env.claimed[l]!).context.length
+          (List.range (env.claimed[l]!).context.length) true).1 sd.st.stepK))) ρ h →
+      HeapLinks.Holds sd.st.stepK.links ρ h ∧ HeapSeparation.Holds sd.st.stepK.separation ρ := by
+    intro ρ h hh
+    exact ⟨regionalLinks_recover hh, regionalSeparation_recover partners
+      (fun hd hn => hdiscard G I env σ l en sd hv hd hn ρ) hh.2.2.2.1⟩
+  have header : sd.st.stepDeriv = none →
+      ControlFlow.entry (passRegionalEvidence env.claimed[l]! env.nodes[l]! sd.st.stepDeriv sd.st.stepEffect
+        (regionalFacts (materialize en.entry (env.claimed[l]!).context.length
+          (List.range (env.claimed[l]!).context.length) true).1 sd.st.stepK)) = (env.claimed[l]!).context ∧
+      result (passRegionalEvidence env.claimed[l]! env.nodes[l]! sd.st.stepDeriv sd.st.stepEffect
+        (regionalFacts (materialize en.entry (env.claimed[l]!).context.length
+          (List.range (env.claimed[l]!).context.length) true).1 sd.st.stepK)) = (env.claimed[l]!).type := by
+    intro hd
+    have hp := hheader G I env σ l en sd hv hd
+    simp only [passRegionalEvidence, hd, ControlFlow.entry, result, NodeEvidence.expression, NodeEvidence.header]
+    cases he : sd.st.stepEffect with
+    | none => exact ⟨rfl, rfl⟩
+    | some e =>
+      cases hep : e.proof? with
+      | none => simp only [Option.bind_some, hep]; exact ⟨rfl, rfl⟩
+      | some p =>
+        have hh := hp p (by simp [he, hep])
+        simpa [hep] using hh
+  exact ⟨relations, header⟩
 
 end Verification.TolerantFrames

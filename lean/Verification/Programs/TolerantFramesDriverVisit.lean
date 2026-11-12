@@ -111,7 +111,7 @@ record's size by the invariant (`visit_ok`, `visitResult_labels`,
 theorem visitsRecord_of (hr : VisitsRest ι) : VisitsRecord ι := by
   intro G I c env σ0 σ σ'' l rest hs hE hI hq hv
   have hR := hr G I c env σ0 σ σ'' l rest hs hE hI hq hv
-  obtain ⟨en, sd, ex, -, -, -, rfl⟩ := visit_ok hv
+  obtain ⟨en, sd, ex, he, hs, hx, rfl⟩ := visit_ok hv
   have hln : l < env.n := (hI.queue l (by rw [hq]; exact List.mem_cons_self ..)).1
   exact { exits := hR.exits,
           labels := fun t ht => visitResult_labels _ _ _ _ _ ht,
@@ -120,7 +120,10 @@ theorem visitsRecord_of (hr : VisitsRest ι) : VisitsRecord ι := by
           size := visitResult_size _ _ _ _ _,
           frame := hR.frame, pushes := hR.pushes, edges := hR.edges, fresh := hR.fresh, degs := hR.degs,
           queue := hR.queue, settles := hR.settles, mergeFresh := hR.mergeFresh,
-          inSizes := hR.inSizes, impBelow := hR.impBelow, extendsWalk := hR.extendsWalk, vacuity := hR.vacuity }
+          inSizes := hR.inSizes, impBelow := hR.impBelow, extendsWalk := hR.extendsWalk, vacuity := hR.vacuity,
+          origin := ⟨_, en, sd, ex, he, hs, hx, by
+            simp only [visitResult, Array.set!_eq_setIfInBounds,
+              Array.getElem?_setIfInBounds_self_of_lt (hI.size ▸ hln)]⟩ }
 
 /-- **A state an exit carries in meets `PushOk`** (`edgeTransfer_width`,
 `edgeTransfer_wf`, `edgeStoreOf_wf`, `edgeTransfer_below`,
