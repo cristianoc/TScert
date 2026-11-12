@@ -156,5 +156,45 @@ theorem assertionExit_checked {env : WalkEnv ι G I} {l : Nat} {t : Target} {tc 
   all_goals first | cases h | skip
   all_goals simp_all (config := { zetaDelta := true }) [assertionSource]
 
+/-- A handler type check uses only subtyping or the edge context's facts.
+Its successful check supplies exactly the alternatives of
+`HandlerExitChecked.typed`. -/
+theorem exitTypes_handler_checked {env : WalkEnv ι G I} {l : Nat} {en : Entered ι} {sd : StepDone ι G}
+    {outAll : Thunk HeapKnowledge.Knowledge} {t : Target} {tc : PointClaim ι}
+    {Γ : List (Ty ι)} {names : List Nat} {edgeStore : Store} {pushed first : Bool}
+    {observed : Option BranchRefinement.Observation} {acc acc' : ExitsDone ι G}
+    {et : SinglePass.ExitTyped ι}
+    (h : exitTypes G I env l en sd outAll t tc Γ names edgeStore pushed true observed first
+      (differing Γ tc.context t.mapping) acc = .ok (acc', et)) :
+    SubtypesPass G I Γ tc.context (differing Γ tc.context t.mapping) ∨
+      EdgeFound G I tc.context Γ t observed
+        (KnowledgeExpand.expandLinks (KnowledgeExpand.ctxOf G Γ)
+          (materialize { names, store := edgeStore }
+            (if pushed then (env.claimed[l]!).context.length + 1 else (env.claimed[l]!).context.length)
+            (0 :: (differing Γ tc.context t.mapping).map (·.2)) false).1) := by
+  unfold exitTypes at h
+  extract_lets node c width entry at h
+  split at h
+  rename_i ok a hd
+  split at h
+  · rename_i hok
+    exact .inl (subtypesPass_of ((congrArg Prod.fst hd).trans hok))
+  · split at h
+    rename_i k pairs lookup hk
+    extract_lets ko at h
+    split at h
+    rename_i found a1 hf
+    extract_lets answers at h
+    split at h
+    · cases h
+    · rename_i hfound
+      have htrue : found = true := by simpa using hfound
+      have hh := edgeFound_of_checked ((congrArg Prod.fst hf).trans htrue)
+      dsimp only [ko] at hh
+      have hko := congrArg (KnowledgeExpand.expandLinks (KnowledgeExpand.ctxOf G Γ)) (congrArg Prod.fst hk)
+      apply Or.inr
+      rw [hko]
+      exact hh
+
 end Checks
 end Verification.TolerantFrames
