@@ -40,7 +40,8 @@ The Lean modules are
 [PassUnitModules](../../lean/Verification/Source/Claims/PassUnitModules.lean) (linking modules) and
 [PassUnitObligations](../../lean/Verification/Source/Claims/PassUnitObligations.lean) (expression obligations, async members) and
 [PassUnitInterfaces](../../lean/Verification/Source/Claims/PassUnitInterfaces.lean) (outside slots by kind, module interfaces, the command line's condition) and
-[PassUnitSignatures](../../lean/Verification/Source/Claims/PassUnitSignatures.lean) (signature agreement from a store map), over
+[PassUnitSignatures](../../lean/Verification/Source/Claims/PassUnitSignatures.lean) (signature agreement from a store map) and
+[PassUnitCross](../../lean/Verification/Source/Claims/PassUnitCross.lean) (the cross-module theorem), over
 [StoreMaps](../../lean/Verification/Types/StoreMaps.lean) (one type's meaning in two stores).
 
 ## 1. The statement
@@ -154,7 +155,9 @@ $`i`$'s line `"accepted": true` in mode 8, with an interface file
 conclusion is `checkUnitJson_safe`'s for a file's unit: every member's plan
 crosses the exhaustive certification and its request is safe
 (`RequestSafe`). With the file-level part (`passFile_safe_kinds`) every
-closed unit's value meets its interface.
+closed unit's value meets its interface, and with `crossModule_safe` an
+importer's units meet theirs, their imports discharged by their modules'
+checks (section 7).
 
 | Hypothesis | Statement | Discharged by |
 | --- | --- | --- |
@@ -162,8 +165,11 @@ closed unit's value meets its interface.
 | H2 `RunKeepsSummaries` | a run keeps the summaries it starts from | the graph lane |
 | H3 `PassGroupChecks` | an accepted group's members are `MemberAccepted` | the wrapper lane (`passGroup_members`, `passMember_sound`) |
 | H5a `ModuleLayout` | each closed unit's code, interface and slots | the extraction; decidable at the verdict (wrapper lane) |
-| `EstablishedSlots` | an import slot holds its module's function, read at an agreeing type | H5a's import part and `SignatureAgrees`, proved from a store map (`signatureAgrees_of_storeMap`, section 7) |
-| `EstablishProvenance` | `establishModules` publishes only `EstablishedStep` entries | the wrapper lane |
+| `EstablishedSlots` | an import slot holds its module's function, read at an agreeing type | proved from `ChosenSlots` and `entries_realized` (`crossModule_safe`) |
+| `EstablishProvenance` | `establishModules` publishes only `EstablishedStep` entries | the wrapper lane; with `InterfaceProvenance` it gives `established_of_provenance` |
+| publication order | each module reads only entries published before it (`ReadsEarlier`) | the wrapper lane, from `establishModules`' fold over the components (`published_holds`' form) |
+| `StepLayouts` | H5a at each module: a layout at its accepted units, with outside contracts once its reads are realized | the extraction, as H5a |
+| `ChosenSlots` | an importer's import slot holds its module's function in the chosen realization | H5a's import part; `SignatureAgrees` from `StoreMapAgrees` (section 7) |
 | `InterfaceProvenance` | the interface file read is `interfaceFile`'s output | trusted: the stage store's replay, the forged-interface control |
 | declared imports, host values | their declared and host contracts | trusted, as for the proved checker |
 | stand-ins | the written footprint | vacuous with no `TSCERT_STANDINS` (`standIns_vacuous`) |
@@ -668,18 +674,51 @@ $`\forall i.\; \forall j \le i.\; \forall W.\; v_i \in ⟦A⟧_{j,W}`$.
 `established_met` (proved) lifts it to every slot of kind `established`
 (`EstablishedSlots`).
 
-**The cross-module theorem** (under `InterfaceProvenance`,
-`EstablishProvenance`, H5a of each module and of the importer, and
-`SignatureAgrees` per read). Every closed unit of an importer is safe and
-meets its interface: `passFile_safe_kinds` with `established_met`, each
-entry's `EntryRealized` built from its step by `step_units_safe` and the
-module's layout; the module's own established slots read entries of
-earlier components, so `linkModules` (proved, by strong induction on the
-component order, `ReadsEarlier`) carries the argument along the order.
-Proved: each link. Not proved: the assembly of a module's `EntryRealized`
-from `EstablishedStep`, which needs the module's layout (H5a at the module's
-`ok`) and the importer's slot facts (`HoldsModuleValue`, part of H5a: the
-extraction's slot for an import holds that module's function).
+**Theorem** `entryRealized_of_step` (proved under H1–H3). A step of mode
+8's interface computation (`fragmentPlansCore` over the module's document,
+mode 8's prepare `mode8Prepare` and check `mode8Check`, its accepted set
+$`\mathit{ok}`$) and a layout of the module at units of $`\mathit{ok}`$
+(`StepLayout`: a set $`S_m`$ of units whose wire identities are in
+$`\mathit{ok}`$, holding the entry's unit, a `ModuleLayout` of $`S_m`$ and
+its `OutsideContracts`) give `EntryRealized`$`(e)`$: the safety of $`S_m`$
+is `step_units_safe`, the wire identity being injective
+(`moduleUnitId_inj`). `realized_of_established` (proved) gives a
+realization of every entry `EstablishedStep` states, under `StepLayouts`
+(H5a at the module, for every step publishing $`e`$, a layout whose
+realization satisfies a predicate $`\mathit{Chosen}`$, the realization the
+importers' slots read).
+
+**Theorem** `established_of_provenance` (proved under
+`InterfaceProvenance` and `EstablishProvenance`). Every entry of the
+interface file an importer reads is published by a step of mode 8's
+interface computation: `establishModules` returned it and it was not among
+the incoming entries.
+
+**Theorem** `entries_realized` (proved under H1–H3). Over an order of
+modules in which each reads only entries published before it
+(`ReadsEarlier`), where each module's entries are published by steps of
+mode 8's interface computation and laid out (`StepLayouts`) once the
+entries it reads are realized, every published entry has a realization
+$`\mathit{Chosen}`$ names. By `linkModules`, `Holds`$`(e)`$ being
+$`\exists\, \mathit{src}.\; \mathit{Chosen}(e, \mathit{src})`$.
+
+**Theorem** `crossModule_safe` (proved under H1–H3, the importer's layout,
+the modules' `StepLayouts`, the publication order, and the per-kind
+contracts of the other outside slots). For plans over their store and a set
+$`S`$ of units each a selected unit whose group is safe, whose established
+slots read entries published along the order and hold, at each depth, the
+value of every chosen realization at a type the stores agree on
+(`ChosenSlots`), every $`u \in S`$ meets its interface:
+
+```math
+\forall n.\; \forall m \le n.\; \forall W.\; \mathrm{approx}_n(u) \in ⟦I_u⟧_{m,W}
+\qquad\text{and}\qquad
+\forall n\, W.\; \text{the values } \mathrm{env} \text{ captures for } u \models_{n,W} C_u
+```
+
+`passUnitCli_safe` gives each importer unit's safety from its verdict line;
+`crossModule_safe` adds its value's interface, the imports discharged
+through their modules' own checks.
 
 ### Signature agreement across two stores
 

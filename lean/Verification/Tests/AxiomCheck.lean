@@ -6,6 +6,7 @@ import Verification.Source.RequestCli
 import Verification.Source.Claims.PassUnitObligations
 import Verification.Source.Claims.PassUnitInterfaces
 import Verification.Source.Claims.PassUnitSignatures
+import Verification.Source.Claims.PassUnitCross
 import Verification.Semantics.ArgumentStoreRegions
 import Verification.Semantics.FootprintNatives
 import Verification.Programs.ArgumentPathTracking
@@ -120,6 +121,13 @@ run_cmd do
   check ``Verification.StoreMaps.ordinary_allowed
   check ``Verification.SourceClaimJson.PassUnit.signatureAgrees_of_storeMap
   check ``Verification.SourceClaimJson.PassUnit.signatureAgrees_of_maps
+  check ``Verification.SourceClaimJson.PassUnit.moduleUnitId_inj
+  check ``Verification.SourceClaimJson.PassUnit.entryRealized_of_step
+  check ``Verification.SourceClaimJson.PassUnit.realized_of_established
+  check ``Verification.SourceClaimJson.PassUnit.entries_realized
+  check ``Verification.SourceClaimJson.PassUnit.established_of_provenance
+  check ``Verification.SourceClaimJson.PassUnit.establishedSlots_of_chosen
+  check ``Verification.SourceClaimJson.PassUnit.crossModule_safe
   check ``Verification.Footprints.transport_sound
   check ``Verification.Footprints.Sep.sound
   check ``Verification.Footprints.Post.mono
