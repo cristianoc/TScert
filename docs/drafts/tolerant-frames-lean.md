@@ -1927,3 +1927,36 @@ distinct live facts, so `s.size + 1` rounds reach the loop's end (read from
 the code, not proved). `engine-pass` at 0f8d18ce has `linearNear` as the
 `while` loop; once the pass's search is on that fuel, the equation is its
 definition.
+
+## Leg 14c: the joined implications
+
+Module `lean/Verification/Programs/TolerantFramesMergeChecked.lean`. The pass
+records each edge into a merge as $`(\Gamma_e, \mathit{atSlots}, m)`$
+(`SinglePass.run`, `incomingEdges`): the source's context as its yields
+refine it, the implications the edge carries restated at the source's slots
+(`atSlotsOf names carried`, the same expression, with `slotsOfNames`), the
+edge's mapping.
+
+**The check each incoming edge needs** (the pass lane's D3, its
+specification):
+
+```math
+\mathrm{impliesCheck}\ G\ \Gamma_e\ \mathit{atSlots}\ m\ (\mathrm{meetImplications}\ G\ \mathit{edgesIn}\ |\mathit{context}|\ \mathit{context}) = \mathit{true}
+```
+
+Proved:
+
+- `slotsOfNames_get`: a slot listed for a name holds that name;
+  `atSlots_ok`: the source's slots hold their names' values at $`\eta_s`$ ∧
+  the carried implications hold at $`\eta_s`$ ⟹ the implications at the
+  source's slots hold at the source environment $`\rho_s`$;
+- `meetImplications_ok_of_check`: the check ∧ $`\mathrm{EnvOk}\ G\ \Gamma_e\ \rho_s`$
+  ∧ the edge's implications hold at $`\rho_s`$ ⟹ the joined implications hold at
+  $`\mathrm{mapEnv}\ m\ \rho_s`$ (`impliesCheck_sound`);
+- `mergeImplies_ok_of_check`: with the merge's slots holding their names'
+  values at $`\mathrm{mapEnv}\ m\ \rho_s`$, the merge's implications
+  (`mergeImplies`) hold at the merge's valuation: the merge theorem's `hI`.
+
+The edge's obligations beside the check are the source's: its context met
+($`\mathrm{EnvOk}`$, the step's typing) and its carried implications holding
+(the edge's transfer keeps the source's).
