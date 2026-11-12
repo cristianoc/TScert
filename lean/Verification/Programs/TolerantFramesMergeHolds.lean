@@ -210,7 +210,7 @@ theorem mergeImplies_ok {G : NormalGraph ι} {context : List (Ty ι)}
   unfold mergeImplies
   intro x hx
   replace hx := key _ _ _ hx
-  · obtain ⟨y, hy, hyx⟩ := List.mem_filterMap.mp (keepFirst_mem hx)
+  · obtain ⟨y, hy, hyx⟩ := List.mem_filterMap.mp (keepFirst_sub hx)
     simp only [Option.bind_eq_bind, Option.bind_eq_some_iff, Option.pure_def, Option.some.injEq] at hyx
     obtain ⟨a, ha, b, hb, rfl⟩ := hyx
     intro htest

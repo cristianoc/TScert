@@ -316,11 +316,11 @@ theorem OnPath.variants_len (P : OnPath preds width fresh0 p ρ η h) :
 /-- **The met store holds** on the path through `p` at the merge's
 valuation: the common facts are `p`'s, the restated facts every predecessor
 states are `p`'s restatements, and forgetting names keeps facts holding
-(`drop_ok`). -/
+(`drop_holds`). -/
 theorem OnPath.met0_ok (P : OnPath preds width fresh0 p ρ η h) :
     StoreOk (mergeMet0 preds (mNames preds width fresh0) (mRen preds width fresh0)) (mVal preds width fresh0 ρ η) h := by
   unfold mergeMet0
-  refine drop_ok (mergeMeet_inv (fun s => StoreOk s (mVal preds width fresh0 ρ η) h)
+  refine drop_holds (mergeMeet_inv (fun s => StoreOk s (mVal preds width fresh0 ρ η) h)
     (fun a => AtomHolds a (mVal preds width fresh0 ρ η) h) (fun _ _ hs ha => add_ok hs ha) P.variants_len
     (P.variants_ok (List.getElem?_eq_getElem P.variants_len)) ?_)
   obtain ⟨w, hsub⟩ := mergeCommon_live P.wf

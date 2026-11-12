@@ -1098,3 +1098,169 @@ facts' names below the counter (`below`, facts), `freshHeld`.
 | `edgeTransfer` | through `Store.drop` | not proved: `mapNames`' output | not proved | the fresh names filtered by the dropped names; not proved |
 | `mergeState` | proved (`mergeState_wf`) | proved (`mergeState_wf`) | not proved: through `Store.drop` | does not hold in general |
 | `headEntry` | proved (`headStore_ok`, `headEntry_holds`) | not stated | not proved: the renamed facts' names | no fresh names |
+
+## Leg 9: the step theorem about `checkedStep`
+
+Modules `lean/Verification/Programs/TolerantFramesStepLink.lean` and
+`lean/Verification/Programs/TolerantFramesStepLinkSound.lean`.
+
+**`checkedStep` read as its conditions** (proved: `checkedStep_ok`, by
+unfolding the pass's own function). An accepted step of node $`l`$ from the
+entry state $`\mathit{st}_0`$ with result $`r`$ is
+
+- a copy (`copiedOf`): the term is a slot $`i`$ whose context type is the
+  claim's, $`r=\mathit{st}_0.\mathrm{names}[i]`$, the store unchanged, the
+  answers unchanged; or
+- a step (`StepAccepted`) at evidence $`e`$, with $`\mathit{sums}_0`$ the read
+  summaries after the direct call (if any) and $`\mathit{sums}`$ those after
+  the search (if any), the final answers: the output
+  $`\mathit{out}=\mathrm{select}\ j\ k_E\ e\ \mathit{sums}`$ at the step's
+  facts $`k_E`$ (`kOf`); the tree check
+  $`\mathrm{passTreeCheck}\ k_E\ \mathit{sums}\ e=\mathrm{some}\ \mathit{pre}`$;
+  the result $`(r,\mathit{fresh}')=\mathrm{resultOf}`$ (a slot's read keeps
+  its name, else the fresh name); where
+  $`\mathrm{passPreserving}\ j\ k_E\ e\ \mathit{sums}_0`$, the store
+  $`\mathrm{applyDelta}\ \mathit{st}_0.\mathrm{store}\ \mathit{pairs}\ \mathit{out}`$
+  with `passBack`; otherwise `passWholeCheck` at every fact $`k_W`$, the output
+  $`\mathit{out}'=\mathrm{select}\ j\ k_W\ e\ \mathit{sums}`$ and the store
+  $`\mathrm{applyDelta}\ (\mathit{st}_0.\mathrm{store}.\mathrm{dropHeap}\ (\mathrm{handedSet}\ \mathit{pairs}_W))\ \mathit{pairs}_W\ \mathit{out}'`$.
+
+The call layers' test reads $`\mathit{sums}_0`$ and the selection
+$`\mathit{sums}`$ (`SinglePass.lean` 1251, 1285): the preserving judgment is
+stated at both (`passPreserving_keeps_two`, `preserving_judgment_two`).
+
+**The step theorem** (proved: `checkedStep_sound`). Premises:
+`checkedStep … = (ok st, _, ans)`;
+$`\mathrm{StateHolds}\ \mathit{st}_0\ I\ \mathit{start}\ E`$ at $`\rho,m,s`$;
+`StoreWF` of the entry's store; every name of the entry state, its start names
+and its implications below the fresh counter (`NamesBelow`); the entry's names
+no wider than the context; `EnvOk` of the context at $`\rho`$; `CodesSound`;
+the incoming summaries checked. Conclusion: the outgoing summaries are checked;
+`st.stepK` holds at $`\rho`$; $`r`$ is an entry name with the counter kept, or
+the counter with the counter advanced; and for closed effects $`c_n,c_e`$
+(`StepExits`):
+
+- the local judgment of the node's term with normal post
+  $`c_n\wedge\mathit{st}.\mathrm{stepOut}`$ at $`\mathrm{push}\ v\ \rho`$ and
+  exceptional post $`c_e`$;
+- a run with budget left to a value $`v`$: an action of $`c_n`$, $`n'+k=n`$,
+  $`v`$ of the claim's type, `st.stepOut` at $`\mathrm{push}\ v\ \rho`$, and
+  $`\mathrm{StateHolds}\ \langle r::\mathit{st}_0.\mathrm{names},\ \mathit{st}.\mathrm{store},\ \mathit{st}_0.\mathrm{fresh}\rangle`$
+  at $`\mathrm{push}\ v\ \rho`$ (`stateHolds_pushed`, `preserving_store`,
+  `writing_store`);
+- a raise of $`x`$: an action of $`c_e`$, $`x`$ closed and of the exception
+  family, and $`\mathrm{StateHolds}\ \langle\mathit{st}_0.\mathrm{names},\ \mathit{st}_0.\mathrm{store}.\mathrm{dropHeap}\ \bot,\ \mathit{st}_0.\mathrm{fresh}\rangle`$
+  at $`\rho`$ (`stateHolds_throw`), the store a handler edge starts from.
+
+The effects are $`c_n=\{\mathsf{values}:\mathsf{keep},\ \mathsf{stores}:\mathsf{keep}\}`$,
+$`c_e=\top`$ at a preserving step, $`c_n=c_e=\top`$ at a writing step, and
+$`c_n=c_e=\{\mathsf{values}:\mathsf{keep},\ \mathsf{stores}:\mathsf{keep}\}`$
+at a copy.
+
+Named hypotheses of the step theorem:
+
+- `DirectKeepsSummaries`, `SearchKeepsSummaries`: `directCall` and
+  `expressionEffectUsing` keep every summary of the answers' table checked
+  (`checkReadSummary`). `summaryUsing` checks a summary before appending it
+  (`CertificateProducer.lean` 625–651); no theorem states it of the search.
+- `NamesBelow` and the width of the entry's names: invariants of the pass's
+  states (`StateWF.below` with the start names and implications), not proved
+  maintained.
+
+The theorem gives no effect tighter than $`\top`$ at a writing step; the
+footprint check gives the bound's.
+
+## Leg 9: an edge's store and transfer
+
+Module `lean/Verification/Programs/TolerantFramesEdge.lean`. The state's
+meaning is existential in the name valuation $`\eta`$; an edge renames
+slots, never names, so every operation of an edge keeps the facts holding at
+the exit's $`\eta`$. Proved:
+
+- `drop_ok`: `Store.drop` of any names keeps every fact holding at
+  $`\eta`$ (the removed facts leave; a separation with fewer partners, a fact
+  restated through an alias link, a derived linear fact each hold);
+- `edgeStore_observed`, `edgeStore_promote`: the observation's facts at slot 0
+  (`observeTyped` under the edge's context, `withElements`) and a branch's
+  promoted truthiness (`promoteTruthy`) added by the delta keep the state
+  holding, the delta's renaming reading back each slot's name
+  (`edgeBack_ok`);
+- `edgeTransfer_ok`: where each target slot is named by the name of the
+  source slot the mapping reads (`MapNamesSound`) and a fresh result holds a
+  store at or past the mark, the target's state (mapped names, dropped store,
+  kept fresh names, implications naming no dropped name) holds at
+  $`\mathrm{mapEnv}\ \theta\ \rho_x`$;
+- `edge_normal_sound`: from the step's normal exit
+  (`checkedStep_sound`) and the observation of its value (`ObservedOk`: a
+  branch-binding's observation holds of $`v`$, a branch's answer is $`v`$'s
+  truthiness), the state `edgeTransfer` builds from `edgeStoreOf` holds at
+  $`\mathrm{mapEnv}\ \theta\ (\mathrm{push}\ v\ \rho)`$ on a pushed edge and at
+  $`\mathrm{mapEnv}\ \theta\ \rho`$ on an unpushed one;
+- `edge_handler_sound`: from the step's throw state, the thrown value at a
+  name above every name, the handler's state at
+  $`\mathrm{mapEnv}\ \theta\ (\mathrm{push}\ e\ \rho)`$;
+- `freshImpl_ok`: where the step's yields hold of its value
+  (`PromiseCalls.YieldsOk`), the implications a pushed edge states of its
+  result hold (`stateHolds_addImplies` adds them).
+
+**Interface between the head entry and the edge check.** An edge into a loop
+head with given invariant $`\mathit{req}`$ over context $`\Delta`$
+establishes (`EdgeEstablishes`) $`\mathit{req}`$ at
+$`\mathrm{mapEnv}\ \theta\ \rho_x`$ and $`\Delta`$'s types there. Proved
+(`head_query_sound`): the head query `checkIn` accepting, with the edge's
+facts holding at $`\rho_x`$ and typed by the edge's context, gives the first
+conjunct from the second.
+
+Named hypotheses: `MapNamesSound` (`mapNames` reads the mapping's ordered
+suffix by `orderedSuffix`, a `while` loop, which no proof unfolds; the
+identity mapping is proved, `mapNamesSound_none`); the result's freshness
+where `outFresh`; the step's yields (`YieldsOk`, which `yieldFollows_sound`
+gives where `yieldFollows` accepts them; the pass does not evaluate
+`yieldFollows`); the target's types at the mapped environment (the edge's type
+check through `subtypeUsing`).
+
+## Leg 9: returns and footprints at a step
+
+Module `lean/Verification/Programs/TolerantFramesStepLinkReturns.lean`.
+Proved:
+
+- `plain_return`: the plain goal's check (`c.type == R || c.type.isEmpty`)
+  gives a returned value of the claim's type the goal's type;
+- `pass_return_ensures`: where `returnEntails` accepts the output's facts over
+  the result and the tracked slots, each tracked slot holding the name of the
+  start's input it tracks, the state after the step (`checkedStep_sound`) gives
+  `ensures` at the result and the invocation's entry values
+  (`GraphCode.returnEntails_sound`, the context at the pushed slots
+  `setsCtx_push_ok`);
+- `pass_footprint_exits`: where `within` and `throws` hold at the node, a
+  bound $`\Phi`$ from the invocation's entry $`h_0`$ to the node's entry heap
+  and the node's local safety give $`\Phi`$ from $`h_0`$ to the heap of each
+  exit, normal and exceptional (`pass_within_normal`, `pass_within_throw`,
+  `pass_within_entry`).
+
+Named hypotheses: `FreshOk F |h_0| ρ` for the receiver slots the pass records
+fresh, and `DerivContext` (the context conjunct of `derivChecked`); a
+closed return's result freshness (`returns`, line 1628: `outFresh`, read off
+the step's derivation's selected effect, whose tree `outFresh` does not
+check); the guard and assertion goals (`ControlFlow.goal_return` needs the
+step's yields, which the pass takes from `nodeYields` unchecked). The
+regional checks (`ArgumentRegionGraph.checkNode` over the tables `run`
+builds inline, lines 1741–1791) are not connected.
+
+## Leg 9: the searches the pass relies on
+
+Each producer the pass runs, where its result is used, and the check that
+validates it before the pass relies on it (`SinglePass.lean` lines at 16720b68).
+
+| Producer | Result used at | Validated by |
+| --- | --- | --- |
+| `expressionEffectUsing` (1259) | the step's evidence `effect` (1268, 1341) | `select` with the tree check (`pass_select_sound`, `checkedStep_sound`) |
+| `expressionEffectUsing` (1259) | the derivation `deriv` (1318): `outFresh` (1590–1594) | relied on unchecked: the claim's term compared, the tree not; change: `outFresh` behind `derivChecked` |
+| `expressionEffectUsing` (1259) | `deriv` at the footprint (1607–1614) | `derivChecked` (`pass_within_normal`) with `DerivContext` |
+| `directCall` (1248) | the step's evidence `.ordinary e` (1256–1258) | `select` with the tree check (`checkedStep_ok`) |
+| `nodeYields` (1651, 1714, 1856) | the promise return (1690–1705), the edges' refined contexts (1873–1881, 1967, 1987), the result's implications (1917–1919) | relied on unchecked; change: keep the yields `PromiseCalls.yieldFollows` accepts (`yieldFollows_sound`, `PromiseCalls.lean` 728) |
+| `edgeUsing` (1842, 1881, 1908) | an edge's types accepted where its value is some (1847, 1914) | relied on unchecked: the edge evidence is not checked; change: check it with the certificate checker's target check (`ControlFlow.target_sound`, `ControlFlow.lean` 892) |
+| `subtypeUsing`, cached (1702, 1829, 1901, 1932) | a slot's type, a promise, an implication accepted where its value is some | `subtypeSearch_sound` (`CertificateProducer.lean` 441) where the cache holds only `subtypeSearch`'s answers (its one writer, 607); the cache's content is not stated of `Answered`; change: test `answers.proved.contains (A, B)` (`Answered.proved_sound`) |
+| `meetImplications` (1154) | a merge's implications (1525) | relied on unchecked; change: check each on every incoming edge (`PromiseCalls.impliesCheck_sound`, `PromiseCalls.lean` 167) |
+| `summaryUsing`, through the search (the table at 1251, 1285, 1335) | the read summaries every tree check reads | each summary checked before it is appended (`CertificateProducer.lean` 642); the table's soundness is not stated of `Answered` (`DirectKeepsSummaries`, `SearchKeepsSummaries`); change: a `summaries_sound` field of `Answered`, as `proved_sound` |
+| `mapNames` (958) | the target's names on every edge | relied on unproved: `orderedSuffix` is a `while` loop (`MapNamesSound`); change: structural recursion, as `selectFrom` |

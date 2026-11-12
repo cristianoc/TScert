@@ -8,7 +8,7 @@ it removes the facts naming them, keeps a separation fact's partners outside
 at that name, and adds the linear facts the elimination of `D` derives from
 the facts over `D` and their neighbours, restated through read links. This
 module proves that every fact of the result holds wherever every fact of `s`
-holds (`drop_ok`): each added fact is derived from facts of `s`. -/
+holds (`drop_holds`): each added fact is derived from facts of `s`. -/
 namespace Verification.TolerantFrames
 open Verification Footprints HeapObservations
 open Verification.SinglePass (Atom Store State)
@@ -33,7 +33,7 @@ theorem keepFirst_foldl_mem {α : Type} [BEq α] [Hashable α] :
     · exact .inr (List.mem_cons_of_mem _ hx)
 
 /-- **`keepFirst` keeps only elements of its list.** -/
-theorem keepFirst_mem {α : Type} [BEq α] [Hashable α] {seen : Std.HashSet α} {l : List α} {x : α}
+theorem keepFirst_sub {α : Type} [BEq α] [Hashable α] {seen : Std.HashSet α} {l : List α} {x : α}
     (hx : x ∈ (CertificateProducer.keepFirst seen l).2.toList) : x ∈ l := by
   unfold CertificateProducer.keepFirst at hx
   rcases keepFirst_foldl_mem l (seen, #[]) x (by simpa using hx) with hx | hx
@@ -129,14 +129,14 @@ dropped name restated at the name an alias link relates it to holds by the
 link; the derived facts hold by `eliminateIndices_holds`, `restateReads_holds`
 and `restateStores_holds` over the facts naming `D` and their linear and link
 neighbours, all facts of `s`. -/
-theorem drop_ok {s : Store} {D : List Nat} {η : Env} {h : Heap} (hs : StoreOk s η h) :
+theorem drop_holds {s : Store} {D : List Nat} {η : Env} {h : Heap} (hs : StoreOk s η h) :
     StoreOk (s.drop D) η h := by
   unfold Store.drop SinglePass.timedKind
   simp only [Id.run]
   have habout : ∀ (L : List Nat), ∀ a ∈ (CertificateProducer.keepFirst ∅ (L.flatMap s.about)).2.toList,
       AtomHolds a η h := by
     intro L a ha
-    obtain ⟨n, -, ha⟩ := List.mem_flatMap.mp (keepFirst_mem ha)
+    obtain ⟨n, -, ha⟩ := List.mem_flatMap.mp (keepFirst_sub ha)
     exact hs a (about_storeAll ha)
   generalize (List.foldl (fun x1 x2 => x1.insert x2) (∅ : Std.HashSet Nat) D) = dset
   have hnear := habout

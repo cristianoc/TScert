@@ -7,7 +7,7 @@ with fresh names `fresh + i` at its slots, but where its given inputs or its
 promised input name a start name, and its store is its given facts renamed
 from slots to those names. Its given facts are an obligation on every edge
 into it: the edge establishes them at the head's environment
-(`EdgeEstablishes`, the interface with the edge check). This module proves
+(`HeadEstablishes`, the interface with the edge check). This module proves
 that where an edge establishes them, the head's state holds
 (`headEntry_holds`), at the valuation `headVal`: a start name its entry
 value, a fresh name the value of its slot. -/
@@ -23,7 +23,7 @@ environment `ρ'` and the state `s`, its entry values `ρ0`: the head's given
 facts `g` hold at its slots; its given implications hold; a slot `j` a given
 input `(j, q)` names holds the entry value of `q`; a slot the promised input
 names holds the entry value of the start name the promised input is. -/
-structure EdgeEstablishes (G : NormalGraph ι) (g : HeapKnowledge.Knowledge)
+structure HeadEstablishes (G : NormalGraph ι) (g : HeapKnowledge.Knowledge)
     (implies : List (PromiseCalls.Implication ι)) (startNames : List Nat) (argName : Option Nat)
     (argSlots : List Nat) (inputSlots : List (Nat × Nat)) (ρ0 ρ' : Env) (s : IndexedHeap) : Prop where
   facts : HeapKnowledge.Holds g ρ' s.h
@@ -60,7 +60,7 @@ theorem headEntry_slots {G : NormalGraph ι} {g : HeapKnowledge.Knowledge} {widt
     {implies : List (PromiseCalls.Implication ι)} {ρ0 ρ' : Env} {s : IndexedHeap}
     (hnd : startNames.Nodup) (hlt : ∀ x ∈ startNames, x < fresh)
     (harg : ∀ a, argName = some a → ∃ q : Nat, startNames[q]? = some a)
-    (he : EdgeEstablishes G g implies startNames argName argSlots inputSlots ρ0 ρ' s) :
+    (he : HeadEstablishes G g implies startNames argName argSlots inputSlots ρ0 ρ' s) :
     SlotsNamed (SinglePass.headEntry g false width fresh startNames argName argSlots inputSlots implies).1.names
       ρ' (headVal startNames ρ0 ρ' fresh) := by
   intro i x hx
@@ -97,7 +97,7 @@ theorem headEntry_holds {G : NormalGraph ι} {g : HeapKnowledge.Knowledge} {widt
     {implies : List (PromiseCalls.Implication ι)} {ρ0 ρ' : Env} {m : Nat} {s : IndexedHeap}
     (hnd : startNames.Nodup) (hlt : ∀ x ∈ startNames, x < fresh)
     (harg : ∀ a, argName = some a → ∃ q : Nat, startNames[q]? = some a)
-    (he : EdgeEstablishes G g implies startNames argName argSlots inputSlots ρ0 ρ' s) :
+    (he : HeadEstablishes G g implies startNames argName argSlots inputSlots ρ0 ρ' s) :
     StateHolds G (SinglePass.headEntry g false width fresh startNames argName argSlots inputSlots implies).1
       (SinglePass.headEntry g false width fresh startNames argName argSlots inputSlots implies).2.1
       startNames ρ0 ρ' m s ∧
@@ -118,7 +118,7 @@ theorem headEntry_holds {G : NormalGraph ι} {g : HeapKnowledge.Knowledge} {widt
 
 /-- **The heads a walk enters with their head entries are entered**
 (`HeadsEntered`), where every edge state into a head holding establishes the
-head's given facts at the head's environment (`EdgeEstablishes`) and no head
+head's given facts at the head's environment (`HeadEstablishes`) and no head
 is the start. -/
 theorem headsEntered_of {G : NormalGraph ι} {w : Walk ι} {startNames : List Nat} {ρ0 : Env}
     {given : Nat → Bool} {m : Nat} (gk : Nat → HeapKnowledge.Knowledge) (width fresh : Nat → Nat)
@@ -131,7 +131,7 @@ theorem headsEntered_of {G : NormalGraph ι} {w : Walk ι} {startNames : List Na
       w.implies t =
       (SinglePass.headEntry (gk t) false (width t) (fresh t) startNames argName (argSlots t) (inputSlots t) (gimp t)).2.1)
     (hedges : ∀ t ρ (s : IndexedHeap), given t = true → edgePre G w startNames ρ0 t ρ m s →
-      EdgeEstablishes G (gk t) (gimp t) startNames argName (argSlots t) (inputSlots t) ρ0 ρ s) :
+      HeadEstablishes G (gk t) (gimp t) startNames argName (argSlots t) (inputSlots t) ρ0 ρ s) :
     HeadsEntered G w startNames ρ0 given m := by
   intro t ρ s hg he
   obtain ⟨h1, h2⟩ := hentry t hg

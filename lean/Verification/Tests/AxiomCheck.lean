@@ -29,6 +29,9 @@ import Verification.Programs.TolerantFramesModelTyped
 import Verification.Programs.TolerantFramesModelRules
 import Verification.Programs.TolerantFramesMergeHead
 import Verification.Programs.TolerantFramesStoreOpsBelow
+import Verification.Programs.TolerantFramesStepLinkSound
+import Verification.Programs.TolerantFramesEdge
+import Verification.Programs.TolerantFramesStepLinkReturns
 
 /-!
 Acceptance rests on Lean's standard axioms alone. The build fails when any of
@@ -432,10 +435,10 @@ run_cmd do
   check ``Verification.TolerantFrames.mergeState_state
   check ``Verification.TolerantFrames.mergeState_implies
   check ``Verification.TolerantFrames.mergeState_fresh
-  check ``Verification.TolerantFrames.keepFirst_mem
+  check ``Verification.TolerantFrames.keepFirst_sub
   check ``Verification.TolerantFrames.keptAliasOf_eq
   check ``Verification.TolerantFrames.dropDerived_holds
-  check ``Verification.TolerantFrames.drop_ok
+  check ``Verification.TolerantFrames.drop_holds
   check ``Verification.TolerantFrames.drop_wf
   check ``Verification.TolerantFrames.slotsInv_step
   check ``Verification.TolerantFrames.mergeSlots_inv
@@ -485,6 +488,27 @@ run_cmd do
   check ``Verification.TolerantFrames.remove_below
   check ``Verification.TolerantFrames.addBound_below
   check ``Verification.TolerantFrames.add_below
+  -- Leg 9, the step and the edge: `checkedStep` read as its conditions and its step theorem
+  check ``Verification.TolerantFrames.checkedStep_ok
+  check ``Verification.TolerantFrames.stateHolds_pushed
+  check ``Verification.TolerantFrames.stateHolds_throw
+  check ``Verification.TolerantFrames.preserving_store
+  check ``Verification.TolerantFrames.writing_store
+  check ``Verification.TolerantFrames.preserving_judgment_two
+  check ``Verification.TolerantFrames.stepExits_of
+  check ``Verification.TolerantFrames.checkedStep_sound
+  check ``Verification.TolerantFrames.drop_ok
+  check ``Verification.TolerantFrames.edgeStore_observed
+  check ``Verification.TolerantFrames.edgeStore_promote
+  check ``Verification.TolerantFrames.stateHolds_handler
+  check ``Verification.TolerantFrames.edgeTransfer_ok
+  check ``Verification.TolerantFrames.edge_normal_sound
+  check ``Verification.TolerantFrames.edge_handler_sound
+  check ``Verification.TolerantFrames.freshImpl_ok
+  check ``Verification.TolerantFrames.head_query_sound
+  check ``Verification.TolerantFrames.plain_return
+  check ``Verification.TolerantFrames.pass_return_ensures
+  check ``Verification.TolerantFrames.pass_footprint_exits
   let env ← getEnv
   let project (decl : Name) : Bool := match env.getModuleIdxFor? decl with
     | some i => (`Verification).isPrefixOf env.header.moduleNames[i.toNat]!

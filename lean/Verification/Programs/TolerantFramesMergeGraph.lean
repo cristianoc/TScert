@@ -137,7 +137,7 @@ structure Traversed (G : NormalGraph ι) (w : Walk ι) (startNames : List Nat) (
 
 /-- **(Named hypothesis) A head's given state holds where an edge state
 into it holds**: the head entry's theorem from the edge check
-(`EdgeEstablishes`, Leg 8's interface with the edge check). -/
+(`HeadEstablishes`, Leg 8's interface with the edge check). -/
 def HeadsEntered (G : NormalGraph ι) (w : Walk ι) (startNames : List Nat) (ρ0 : Env) (given : Nat → Bool)
     (m : Nat) : Prop :=
   ∀ t ρ (s : IndexedHeap), given t = true → edgePre G w startNames ρ0 t ρ m s →
