@@ -1,4 +1,5 @@
 import Verification.Programs.TolerantFramesRunSound
+import Verification.Programs.TolerantFramesDriverHeads
 
 /-! # Tolerant frames: the driver's record read as the walk
 
@@ -166,6 +167,26 @@ def passIsHead (P : ControlFlow.Program) (start : Nat) : Array Bool :=
 /-- A call's loop heads, by label. -/
 def passHeads {G : NormalGraph ι} {I : InstanceImageCheck G} (c : Target.RunCall G I) (t : Nat) : Bool :=
   (passIsHead c.P c.start)[t]?.getD false
+
+/-- **A call's loop heads cut every cycle of the nodes `loopHeads`
+reaches** (`loopHeads_cuts` under `LoopHeadsFuelEq`; the start marked
+besides, `HeadsCutCycles.mono`). -/
+theorem passHeads_cuts (heq : LoopHeadsFuelEq) {G : NormalGraph ι} {I : InstanceImageCheck G}
+    (c : Target.RunCall G I) :
+    HeadsCutCycles (nodeSucc c.P.toArray) c.P.toArray.size
+      (fun t => (SinglePass.loopHeads c.P.toArray c.start).2[t]?.getD false) (passHeads c) := by
+  refine HeadsCutCycles.mono (fun v hv => ?_) (loopHeads_cuts heq c.P.toArray c.start)
+  unfold passHeads passIsHead
+  split
+  · rw [Array.set!_eq_setIfInBounds, Array.getElem?_setIfInBounds]
+    split
+    · rename_i hs
+      subst hs
+      by_cases hlt : c.start < (SinglePass.loopHeads c.P.toArray c.start).1.size
+      · simp [hlt]
+      · simp [Array.getElem?_eq_none (Nat.le_of_not_lt hlt)] at hv
+    · exact hv
+  · exact hv
 
 /-- A call's label contexts: each label's claim's. -/
 def passCtx {G : NormalGraph ι} {I : InstanceImageCheck G} (c : Target.RunCall G I) (t : Nat) : List (Ty ι) :=

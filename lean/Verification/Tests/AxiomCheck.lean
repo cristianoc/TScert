@@ -742,6 +742,15 @@ run_cmd do
   check ``Verification.TolerantFrames.stepEdgesSound_of_checkedAt
   check ``Verification.TolerantFrames.NodeMeaning.withJoined
   check ``Verification.TolerantFrames.nodesChecked_of_walkJ
+  check ``Verification.TolerantFrames.FramesOk.mono
+  check ``Verification.TolerantFrames.dfsStep_inv
+  check ``Verification.TolerantFrames.dfsLoop_inv
+  check ``Verification.TolerantFrames.dfsInit_inv
+  check ``Verification.TolerantFrames.Path.rank_lt
+  check ``Verification.TolerantFrames.dfs_cuts
+  check ``Verification.TolerantFrames.loopHeads_cuts
+  check ``Verification.TolerantFrames.HeadsCutCycles.mono
+  check ``Verification.TolerantFrames.passHeads_cuts
   let env ← getEnv
   let project (decl : Name) : Bool := match env.getModuleIdxFor? decl with
     | some i => (`Verification).isPrefixOf env.header.moduleNames[i.toNat]!

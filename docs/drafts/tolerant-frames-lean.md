@@ -1537,3 +1537,27 @@ admitted reassigned graph, every visited node of the walk meets
 given the walk's `MergeEdgeRecorded` and the source environment meeting the
 edge's refined context). Every other premise is the one of the earlier
 statement, over `RunWalkA`.
+
+**The loop heads cut every cycle.** Module
+`lean/Verification/Programs/TolerantFramesDriverHeads.lean`.
+`SinglePass.loopHeads` is a `while` loop over the marks, the node states (0
+new, 1 on the stack, 2 done) and a stack of frames, each a node with its
+successors not yet examined. `dfsStep` is one round of it over functions in
+place of arrays, `dfsLoop` the rounds on fuel, `dfsInit` the start;
+`LoopHeadsFuelEq` (named hypothesis) is the equation of the pass's loop with
+them: it ends at a fuel where the mirror's stack is empty, with the
+mirror's marks and states. `HeadsCutCycles succ n reached heads`: no path of
+edges from a reached node to a successor below $`n`$ that is no head
+(`NonHeadEdge`) returns to its node. With ghost finishing times $`f`$ below
+a counter, the rounds keep `DfsInv`: the done nodes are those with a time;
+each done node's successors below $`n`$ are heads or done at an earlier
+time; each frame's examined successors are heads, done, or nodes of frames
+above it (`FramesOk`); a node in state 1 is a frame's node and every
+frame's node is in state 1, the frames' nodes distinct. Proved:
+`dfsStep_inv`, `dfsLoop_inv`, `dfsInit_inv`; (`dfs_cuts`) on an empty
+stack every reached node is done, so each non-head edge between reached
+nodes goes to an earlier time ($`f(b) < f(a)`$, `Path.rank_lt`) and no such
+path is a cycle; `loopHeads_cuts` (under `LoopHeadsFuelEq`, the marks
+`loopHeads` returns cut every cycle of the nodes it reaches);
+`HeadsCutCycles.mono`; `passHeads_cuts` (the call's heads, the start
+marked besides). No depth-first path theorem is used.
