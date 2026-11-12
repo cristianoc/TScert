@@ -1371,12 +1371,12 @@ of `TolerantFramesRunSound.lean`, quantified over every call the premises of
 ## Open premises
 
 The graph theorem `run_sound_single_pass`
-(`TolerantFramesSinglePassSound.lean`) has three hypotheses:
+(`TolerantFramesSinglePassSound.lean`) has two hypotheses:
 
 ```math
 \begin{aligned}
 &\mathrm{ExitsYield} \\
-&\quad \wedge \mathrm{RegionalDiscardedSeparation} \wedge \mathrm{RegionalStepHeader}
+&\quad \wedge \mathrm{RegionalStepHeader}
 \quad\Longrightarrow \mathrm{RunSound}
 \end{aligned}
 ```
@@ -1384,8 +1384,27 @@ The graph theorem `run_sound_single_pass`
 | Premise | Obligation | Consumed by |
 | --- | --- | --- |
 | `ExitsYield` | Each checked node's normal exits and handler deliver `NodeExitsY` at every admitted reassigned graph. `nodeExitsY_of_checks` proves delivery from `NodeExitsChecked`, with freshness from the actual step execution. Assembly from the visit's records requires head-entry checks, handler bounds, incoming and merge membership, and semantic justification of the yields each exit reads. | `nodesYield_of` |
-| `RegionalDiscardedSeparation` | For a successful visit, let `a` be the whole entry materialization and `b = sd.st.stepK`. If `a.separation.depth ≠ b.separation.depth` and `b.separation.facts ≠ []`, then for every environment, `Holds a.separation` implies `Holds b.separation`. This is precisely the discarded branch of `SinglePass.regionalFacts` (lines 2635–2636). `regionalFacts_discard_counterexample` proves failure for arbitrary facts: `a = {}`, `b` has depth 1 and one fact separating slot 0 from its own field `x`, and slot 0 holds an object with `x` at location 0. Reachability of these inputs is not established. | `regionalStepBridge` |
-| `RegionalStepHeader` | At every successful `visitStep` with `sd.st.stepDeriv = none`, every `p` satisfying `sd.st.stepEffect.bind StepEvidence.proof? = some p` has `(claim p).context = env.claimed[l]!.context` and `(claim p).type = env.claimed[l]!.type`. `regionalAt` selects `.effect` at lines 2661–2664; its derivation check at line 2665 reads `stepDeriv`. | `regionalStepBridge`, `regionalAt_entry_header` |
+| `RegionalStepHeader` | At every successful `visitStep` with `sd.st.stepDeriv = none`, every `p` satisfying `sd.st.stepEffect.bind StepEvidence.proof? = some p` has `(claim p).context = env.claimed[l]!.context` and `(claim p).type = env.claimed[l]!.type`. `regionalAt` selects `.effect`; `regionalDerivChecked` reads `stepDeriv`. | `regionalStepBridge`, `regionalAt_entry_header` |
+
+`regionalFacts_holds` proves that the union holds when both sources hold.
+`regionalSeparation_recover` recovers the step separation from that union
+for facts with partners. `visitStep_separation_partners` establishes this
+condition, and `visitStep_regional_relations` supplies the relational part
+of `regionalStepBridge` from successful `visitStep`.
+
+The proposed effect-header refusal in `regionalAt` supplies the following
+readback shape, with `c = env.claimed[l]!`:
+
+```lean
+regionalAt G I env l en sd rg answers regionIn = .ok done →
+  sd.st.stepDeriv = none →
+  sd.st.stepEffect.bind HeapExpressionRules.StepEvidence.proof? = some p →
+  (claim p).context = c.context ∧ (claim p).type = c.type
+```
+
+This shape requires successful regional checking. `RegionalStepHeader`
+quantifies over successful `visitStep` alone; using the proposed check
+requires carrying regional success to the bridge's header obligation.
 
 `RegionalRecordedReadback` and `RegionalRecordedTableAgreement` supply
 one retained visit per visited label, together with its record, summary prefix

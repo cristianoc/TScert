@@ -35,10 +35,7 @@ theorem regionalFacts_holds {a b : Knowledge} {ρ : Env} {h : Heap}
     · exact hy x (List.mem_filter.mp hx').1
   refine ⟨join ha.1 hb.1, join ha.2.1 hb.2.1, join ha.2.2.1 hb.2.2.1, ?_,
     join ha.2.2.2.2.1 hb.2.2.2.2.1, join ha.2.2.2.2.2 hb.2.2.2.2.2⟩
-  dsimp only [regionalFacts]
-  split
-  · exact separation_union_holds ha.2.2.2.1 hb.2.2.2.1
-  · exact ha.2.2.2.1
+  exact separation_union_holds ha.2.2.2.1 hb.2.2.2.1
 
 /-- Expansion retains the meaning of every original link. -/
 theorem expandedLinks_recover {k : Knowledge} {ρ : Env} {h : Heap}
@@ -133,38 +130,11 @@ theorem separation_union_right {S T : HeapSeparation.Separation} {ρ : Env}
           exact hh f hm'
       · exact hh
 
-/-- Only the unequal-depth branch needs a separation recovery hypothesis. -/
+/-- Regional knowledge supplies the step separation when its facts have partners. -/
 theorem regionalSeparation_recover {a b : Knowledge} {ρ : Env}
     (hn : ∀ f ∈ b.separation.facts, f.partners ≠ [])
-    (hdiscard : a.separation.depth ≠ b.separation.depth → b.separation.facts ≠ [] →
-      HeapSeparation.Holds a.separation ρ → HeapSeparation.Holds b.separation ρ)
     (hh : HeapSeparation.Holds (regionalFacts a b).separation ρ) :
-    HeapSeparation.Holds b.separation ρ := by
-  dsimp only [regionalFacts] at hh
-  split at hh
-  · exact separation_union_right hn hh
-  · rename_i hb
-    simp only [Bool.or_eq_true, beq_iff_eq, List.isEmpty_iff, not_or] at hb
-    exact hdiscard hb.1 hb.2 hh
-
-/-- One nonempty step separation is lost when the entry separation is
-empty at depth zero. This is a counterexample for arbitrary facts; it does
-not assert that a successful visit constructs these inputs. -/
-theorem regionalFacts_discard_counterexample :
-    let a : Knowledge := {}
-    let b : Knowledge := { separation := ⟨1, [⟨0, none, [(0, [.str "x"]) ]⟩]⟩ }
-    let ρ : Env := fun _ => .objAt [(.str "x", 0)] .absent 0
-    HeapSeparation.Holds (regionalFacts a b).separation ρ ∧
-      ¬ HeapSeparation.Holds b.separation ρ := by
-  dsimp only
-  constructor
-  · exact HeapSeparation.empty_holds _
-  · intro hh
-    have ha := (hh _ (List.mem_singleton_self _)).2 _ (List.mem_singleton_self _)
-    have hn := ha.2 _ (List.mem_singleton_self _) 0 0
-    apply hn
-    · simp [HeapSeparation.At]
-    · exact ⟨.str "x", List.mem_singleton_self _, by simp⟩
-    · rfl
+    HeapSeparation.Holds b.separation ρ :=
+  separation_union_right hn hh
 
 end Verification.TolerantFrames

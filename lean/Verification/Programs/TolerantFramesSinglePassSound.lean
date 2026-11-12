@@ -16,14 +16,13 @@ open Verification PositiveGraphs PositiveCertificates LabelStore
 section Run
 variable {ι : Type} [Labels ι]
 
-/-- The graph theorem under exit delivery, discarded
-separation recovery and selected-proof header alignment. -/
+/-- The graph theorem under exit delivery and selected-proof header alignment. -/
 theorem run_sound_single_pass
     (hex : ExitsYield ι)
-    (hdiscard : RegionalDiscardedSeparation ι) (hheader : RegionalStepHeader ι) : Target.RunSound ι :=
+    (hheader : RegionalStepHeader ι) : Target.RunSound ι :=
   have htables := regionalVisitTables_of_recordedAgreement
     (regionalRecordedTableAgreement (regionalRecordedReadback hheader))
-  have hstep := regionalStepBridge hdiscard hheader
+  have hstep := regionalStepBridge hheader
   have hv := visitsRecord_of (visitsRest_of (exitsPushOk_of exitsWidth) (visitsSettle_of (visitStepPrefix_of_exitStep exitStepPrefix)) visitsImplications) visitExits_answers_prefix
   run_sound_pass (recordsSound_of setupRecords_of hv) (recordsChecked_of setupRecords_of hv) (nodesYield_of subtypeAnswersAll hex) linearNearFuelEq
     (regionsHeld_of (regionsRecorded_of_visitTables htables) (regionsTyped_of_visitTables htables hstep))

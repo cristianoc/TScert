@@ -176,16 +176,6 @@ theorem visitStep_separation_partners {G : NormalGraph ι} {I : InstanceImageChe
       rw [hk]
       exact materialize_separation_partners _ _ _ _
 
-/-- The separation obligation only at the branch discarding step facts. -/
-@[nospecialize] def RegionalDiscardedSeparation (ι : Type) [Labels ι] : Prop :=
-  ∀ (G : NormalGraph ι) (I : InstanceImageCheck G) (env : WalkEnv ι G I) (σ : WalkState ι G)
-    (l : Nat) (en : Entered ι) (sd : StepDone ι G),
-    visitStep G I env σ l en = .ok sd →
-    let a := (materialize en.entry (env.claimed[l]!).context.length
-      (List.range (env.claimed[l]!).context.length) true).1
-    a.separation.depth ≠ sd.st.stepK.separation.depth → sd.st.stepK.separation.facts ≠ [] →
-    ∀ ρ, HeapSeparation.Holds a.separation ρ → HeapSeparation.Holds sd.st.stepK.separation ρ
-
 /-- The selected effect's proof has the claimed header when no ordinary
 step derivation is present. -/
 @[nospecialize] def RegionalStepHeader (ι : Type) [Labels ι] : Prop :=
@@ -195,19 +185,23 @@ step derivation is present. -/
     ∀ p, sd.st.stepEffect.bind HeapExpressionRules.StepEvidence.proof? = some p →
       (claim p).context = (env.claimed[l]!).context ∧ (claim p).type = (env.claimed[l]!).type
 
-/-- Composition of the visit's relational and header obligations. -/
-theorem regionalStepBridge (hdiscard : RegionalDiscardedSeparation ι)
-    (hheader : RegionalStepHeader ι) : RegionalStepBridge ι := by
-  intro G I env σ l en sd hv η
-  have partners := visitStep_separation_partners hv
-  have relations : ∀ ρ h, HeapKnowledge.Holds (entryFacts (reassign G η)
+/-- Regional entry facts supply the successful step's links and separation. -/
+theorem visitStep_regional_relations {G : NormalGraph ι} {I : InstanceImageCheck G}
+    {env : WalkEnv ι G I} {σ : WalkState ι G} {l : Nat} {en : Entered ι} {sd : StepDone ι G}
+    (hv : visitStep G I env σ l en = .ok sd) (η : MixedAssignment ι) :
+    ∀ ρ h, HeapKnowledge.Holds (entryFacts (reassign G η)
       (passRegionalEvidence env.claimed[l]! env.nodes[l]! sd.st.stepDeriv sd.st.stepEffect
         (regionalFacts (materialize en.entry (env.claimed[l]!).context.length
           (List.range (env.claimed[l]!).context.length) true).1 sd.st.stepK))) ρ h →
       HeapLinks.Holds sd.st.stepK.links ρ h ∧ HeapSeparation.Holds sd.st.stepK.separation ρ := by
-    intro ρ h hh
-    exact ⟨regionalLinks_recover hh, regionalSeparation_recover partners
-      (fun hd hn => hdiscard G I env σ l en sd hv hd hn ρ) hh.2.2.2.1⟩
+  intro ρ h hh
+  exact ⟨regionalLinks_recover hh,
+    regionalSeparation_recover (visitStep_separation_partners hv) hh.2.2.2.1⟩
+
+/-- Composition of the visit's relational and header obligations. -/
+theorem regionalStepBridge (hheader : RegionalStepHeader ι) : RegionalStepBridge ι := by
+  intro G I env σ l en sd hv η
+  have relations := visitStep_regional_relations hv η
   have header : sd.st.stepDeriv = none →
       ControlFlow.entry (passRegionalEvidence env.claimed[l]! env.nodes[l]! sd.st.stepDeriv sd.st.stepEffect
         (regionalFacts (materialize en.entry (env.claimed[l]!).context.length

@@ -787,7 +787,6 @@ run_cmd do
   check ``Verification.TolerantFrames.returnsEnsured_of_walk
   check ``Verification.TolerantFrames.run_sound_checked
   check ``Verification.TolerantFrames.run_traversedC
-  check ``Verification.TolerantFrames.run_sound_single_pass
   check ``Verification.TolerantFrames.run_sound_pass
 
   -- Leg 17b: the walk side of the graph theorem (TolerantFramesMergeExits, TolerantFramesMergeNearRounds)
@@ -1090,7 +1089,6 @@ run_cmd do
   check ``Verification.TolerantFrames.assertionExit_answers
   check ``Verification.TolerantFrames.exitStepPrefix
   check ``Verification.TolerantFrames.separation_union_holds
-  check ``Verification.TolerantFrames.regionalFacts_holds
   check ``Verification.TolerantFrames.regionNodeEntry_checked
   check ``Verification.TolerantFrames.stepChecked_safe
   check ``Verification.TolerantFrames.regionalTyped_of_step
@@ -1104,12 +1102,9 @@ run_cmd do
   check ``Verification.TolerantFrames.regionalLinks_recover
   check ``Verification.TolerantFrames.separation_norm_recover
   check ``Verification.TolerantFrames.separation_union_right
-  check ``Verification.TolerantFrames.regionalSeparation_recover
-  check ``Verification.TolerantFrames.regionalFacts_discard_counterexample
   check ``Verification.TolerantFrames.separation_norm_partners
   check ``Verification.TolerantFrames.materialize_separation_partners
   check ``Verification.TolerantFrames.visitStep_separation_partners
-  check ``Verification.TolerantFrames.regionalStepBridge
   check ``Verification.TolerantFrames.exitTypes_regional
   check ``Verification.TolerantFrames.headExit_regional
   check ``Verification.TolerantFrames.assertionExit_regional
@@ -1185,3 +1180,8 @@ run_cmd do
   check ``Verification.TolerantFrames.regionalFold_size
   check ``Verification.TolerantFrames.regionalAt_size
   check ``Verification.TolerantFrames.visitExits_regionSize
+  check ``Verification.TolerantFrames.visitStep_regional_relations
+  check ``Verification.TolerantFrames.regionalFacts_holds
+  check ``Verification.TolerantFrames.regionalSeparation_recover
+  check ``Verification.TolerantFrames.regionalStepBridge
+  check ``Verification.TolerantFrames.run_sound_single_pass
