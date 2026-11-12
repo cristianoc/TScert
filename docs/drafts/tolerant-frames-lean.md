@@ -129,7 +129,15 @@ two edges:
   $`0\le j'`$ follows from $`0\le j`$ and the increment's post
   (`loop_back_edge`).
 
-The initialisation, the guard and the read edges are not proved here; the
+Two graphs with an actual throw instantiate `graph_safe`
+(`lean/Verification/Programs/TolerantFramesExamples.lean`, proved): in
+`handledGraph` node 0 throws `null` to a handler node returning the value it
+receives, the raise target the handler's assertion with the thrown value
+bound (`handled_safe`); in `escapingGraph` the throw escapes, the raise target
+the graph's exception family (`escaping_safe`), and a run to the raised state
+raises `null` (`escaping_raised`, from `invocation_raised`).
+
+The loop's initialisation, guard and read edges are not proved here; the
 increment's local judgment (its empty effect and its post) is a premise.
 Both edges take the escaping throw's obligation from the node's exception
 family one level up (`hΞ`).
