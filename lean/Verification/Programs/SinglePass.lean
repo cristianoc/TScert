@@ -314,6 +314,37 @@ def slotTable (names : List Nat) (want : Std.HashSet Nat) (whole : Bool) : Std.H
     i := i + 1
   return t
 
+/-- The names a selected fact chains through: an alias or read link's, and
+with `chain` a linear fact's (the facts an entailment over the given names
+may chain through). -/
+def Atom.through (chain : Bool) (a : Atom) : List Nat := match a with
+  | .link g => [g.cell, g.value]
+  | .index x => match x.fact with
+    | .linear _ => if chain then a.names else []
+    | _ => []
+  | _ => []
+
+/-- One round of the selective worklist: each fact over a frontier name
+not yet kept, kept in order; each name it chains through not yet seen,
+seen and on the next frontier. -/
+def selectRound (s : Store) (chain : Bool) (frontier : List Nat) (seen : Std.HashSet Nat)
+    (kept : Std.HashSet Atom) (out : Array Atom) : List Nat × Std.HashSet Nat × Std.HashSet Atom × Array Atom :=
+  frontier.foldl (fun acc x => (s.about x).foldl (fun (next, seen, kept, out) a =>
+    if kept.contains a then (next, seen, kept, out) else
+    (a.through chain).foldl (fun (next, seen, kept, out) y =>
+      if seen.contains y then (next, seen, kept, out) else (y :: next, seen.insert y, kept, out))
+      (next, seen, kept.insert a, out.push a)) acc) ([], seen, kept, out)
+
+/-- The selective worklist (`selectRound`) from `frontier` until a round
+finds no new name: each round with a next frontier keeps a new fact, so a
+fuel of the store's size and two never runs out. -/
+def selectFrom (s : Store) (chain : Bool) : Nat → List Nat → Std.HashSet Nat → Std.HashSet Atom → Array Atom → Array Atom
+  | 0, _, _, _, out => out
+  | fuel + 1, frontier, seen, kept, out =>
+    if frontier.isEmpty then out else
+    let (next, seen, kept, out) := selectRound s chain frontier seen kept out
+    selectFrom s chain fuel next seen kept out
+
 /-- The knowledge a step reads, at slots: the facts over the names of
 `slots` and over the names those facts mention, a name out of scope
 eliminated from the linear facts. With `whole`, every fact. The store's
@@ -321,34 +352,8 @@ facts with their images, for the step's delta, and the table of slots. -/
 def materialize (st : State) (d : Nat) (slots : List Nat) (whole : Bool) (chain : Bool := true) :
     Knowledge × List (Atom × Atom) × Std.HashMap Nat Nat := timedKind (if whole then "materialize whole" else "materialize") fun _ =>
   let given := slots.filterMap fun s => st.names[s]?
-  let atoms : List Atom := if whole then st.store.toList else Id.run do
-    -- The facts over the given names and over every name an alias link
-    -- relates to one of them.
-    let mut seen : Std.HashSet Nat := given.foldl (·.insert ·) {}
-    let mut frontier := given
-    let mut kept : Std.HashSet Atom := {}
-    let mut out : Array Atom := #[]
-    while !frontier.isEmpty do
-      let mut next := []
-      for x in frontier do
-        for a in st.store.about x do
-          if !kept.contains a then
-            kept := kept.insert a
-            out := out.push a
-            -- Through an alias link, and through a linear fact: the facts
-            -- an entailment over the given names may chain through.
-            let through := match a with
-              | .link g => [g.cell, g.value]
-              | .index x => match x.fact with
-                | .linear _ => if chain then a.names else []
-                | _ => []
-              | _ => []
-            for y in through do
-              if !seen.contains y then
-                seen := seen.insert y
-                next := y :: next
-      frontier := next
-    return out.toList
+  let atoms : List Atom := if whole then st.store.toList else
+    (selectFrom st.store chain (st.store.size + 2) given (given.foldl (·.insert ·) {}) {} #[]).toList
   let want : Std.HashSet Nat := atoms.foldl (fun acc a => a.names.foldl (·.insert ·) acc)
     (given.foldl (·.insert ·) {})
   let table := slotTable st.names want whole
