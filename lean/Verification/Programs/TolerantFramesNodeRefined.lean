@@ -7,7 +7,7 @@ slot holding their targets' names (`ysAll`, `passReturnYields`), through the
 alias links of the step's output over the node's context (`outAll`), per
 continuation and arm (`refinedΓ`): this context is the edge's recorded
 context at a merge (`incomingEdges`) and the one an edge into a stated node
-is checked at. `passRefined` is `refinedΓ`, `passOutAll` is `outAll`.
+is checked at (`SinglePass.refinedContext` over `SinglePass.outAllOf`).
 Proved:
 
 - `passRefined_env`: at the normal exit at position `i` of the node's
@@ -15,7 +15,7 @@ Proved:
   pushed environment typed by the claim's type and context, the value of
   the continuation's shape, the exit's observation holding of it, the
   yields holding of it and the step's output holding at the pushed
-  environment ⟹ `passRefined` types the edge's environment. -/
+  environment ⟹ `SinglePass.refinedContext` types the edge's environment. -/
 namespace Verification.TolerantFrames
 open Verification SinglePass Footprints HeapObservations
 open ProgramTyping ControlFlow CertificateProducer PositiveCertificates PositiveGraphs ProgramCertificates
@@ -23,31 +23,6 @@ open PositiveRules HeapExpressionRules
 
 section Refined
 variable {ι : Type} [DecidableEq ι]
-
-/-- `run`'s `outAll`: the step's output with its links restated on every
-slot of their classes over the pushed context. -/
-def passOutAll (G : NormalGraph ι) (c : PointClaim ι) (stepOut : HeapKnowledge.Knowledge) :
-    HeapKnowledge.Knowledge :=
-  KnowledgeExpand.expandLinks (HeapKnowledge.setsCtx (HeapKnowledge.typeSets G c.context) 1) stepOut
-
-/-- `run`'s `refinedΓ`: the edge's context as the yields `ysAll` refine it,
-through the links of `out`, at the arm `first`. -/
-def passRefined (G : NormalGraph ι) (c : PointClaim ι) (k : Continuation) (ysAll : List (PromiseCalls.Yield ι))
-    (out : HeapKnowledge.Knowledge) (first : Bool) : List (Ty ι) :=
-  let pushedRefine := fun facts => PromiseCalls.refineBy G (c.type :: c.context)
-    (PromiseCalls.aliasFacts out.links facts 1) 0
-  let keptRefine := fun facts => PromiseCalls.refineBy G c.context
-    (PromiseCalls.aliasFacts (HeapKnowledge.dropResult out).links facts 0) 0
-  let unconditional := PromiseCalls.yieldFacts ysAll false
-  let conditional := PromiseCalls.yieldFacts ysAll true
-  match k with
-  | .bind _ => pushedRefine unconditional
-  | .effect _ => keptRefine unconditional
-  | .branch .. => keptRefine (if first then conditional else unconditional)
-  | .branchBind .. => pushedRefine (if first then conditional else PromiseCalls.yieldFacts ysAll false true)
-  | .tagBind tg .. => pushedRefine (if first then PromiseCalls.yieldFacts ysAll (ControlFlow.truthyBoolean G tg c.type)
-      else unconditional)
-  | .ret => c.context
 
 omit [DecidableEq ι] in
 /-- A value of a test's shape whose truthiness is the arm's answer is that
@@ -69,7 +44,7 @@ theorem passRefined_env {G : NormalGraph ι} {c : PointClaim ι} {node : Node} {
     (he : EnvOk G (c.type :: c.context) (push v ρ) s.n s.W) (hshape : ShapeOk v node.continuation)
     (ho : ObservedOk observed promote v) (hy : PromiseCalls.YieldsOk G ysAll ρ s.n s.W v)
     (hout : HeapKnowledge.Holds stepOut (push v ρ) s.h) :
-    EnvOk G (passRefined G c node.continuation ysAll (passOutAll G c stepOut) (i == 0))
+    EnvOk G (SinglePass.refinedContext G c node.continuation ysAll (SinglePass.outAllOf G c stepOut) (i == 0))
       (if pushed then push v ρ else ρ) s.n s.W := by
   cases s with
   | mk n W h pos adm hh =>
@@ -83,7 +58,7 @@ theorem passRefined_env {G : NormalGraph ι} {c : PointClaim ι} {node : Node} {
     have hld := (HeapKnowledge.dropResult_holds
       (KnowledgeExpand.expandLinks_holds (setsCtx_push_ok heΓ v) hout)).2.2.1
     unfold Exit.ofNode at hm
-    unfold passRefined
+    unfold SinglePass.refinedContext
     split at hm
     · simp at hm
     · rename_i t0 hk
@@ -149,8 +124,8 @@ theorem checkedEdge_env_none [Hashable ι] [DecidableEq ι] [Instantiates ι] {G
   · exact (PointClaims.checkMapped_sound hc).env he
 
 /-- **The target's types from an edge checked at the refined context**
-(`refinedEdge_env`): where `checkedEdge` accepts the edge at `passRefined`
-over the step's output (`passOutAll`), under `passRefined_env`'s premises,
+(`refinedEdge_env`): where `checkedEdge` accepts the edge at `SinglePass.refinedContext`
+over the step's output (`SinglePass.outAllOf`), under `passRefined_env`'s premises,
 the target's context types the mapped environment. -/
 theorem refinedEdge_env [Hashable ι] [Instantiates ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
     {claimed : Array (PointClaim ι)} {c : PointClaim ι} {node : Node} {ysAll : List (PromiseCalls.Yield ι)}
@@ -158,8 +133,8 @@ theorem refinedEdge_env [Hashable ι] [Instantiates ι] {G : NormalGraph ι} {im
     {observed : Option BranchRefinement.Observation} {promote : Option Bool} {answers : Answered G}
     {i : Nat} (hm : (Exit.ofNode node)[i]? = some (Exit.normal t pushed observed promote))
     (hce : (checkedEdge G images claimed Δ
-      (passRefined G c node.continuation ysAll (passOutAll G c stepOut) (i == 0)) t observed
-      (passOutAll G c stepOut) answers).1 = true)
+      (SinglePass.refinedContext G c node.continuation ysAll (SinglePass.outAllOf G c stepOut) (i == 0)) t observed
+      (SinglePass.outAllOf G c stepOut) answers).1 = true)
     {ρ : Env} {s : IndexedHeap} {v : Tm}
     (he : EnvOk G (c.type :: c.context) (push v ρ) s.n s.W) (hshape : ShapeOk v node.continuation)
     (ho : ObservedOk observed promote v) (hy : PromiseCalls.YieldsOk G ysAll ρ s.n s.W v)

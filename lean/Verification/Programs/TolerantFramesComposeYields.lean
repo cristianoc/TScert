@@ -86,7 +86,7 @@ variable {ι : Type} [DecidableEq ι]
 
 /-- **An exit's joined implications from the edge's record at the refined
 context** (`joinedAt_of_exit` with `passRefined_env`): an edge recorded
-into `t` as `(passRefined …, atSlotsOf names carried, m)`, under
+into `t` as `(SinglePass.refinedContext …, atSlotsOf names carried, m)`, under
 `passRefined_env`'s premises at the step's value, the edge's slots naming
 `names`' values at `η` and the carried implications holding at `η`. -/
 theorem exitJoinedY {G : NormalGraph ι} {w : Walk ι} {given : Nat → Bool} {ctx : Nat → List (Ty ι)}
@@ -95,7 +95,7 @@ theorem exitJoinedY {G : NormalGraph ι} {w : Walk ι} {given : Nat → Bool} {c
     {t : Target} {pushed : Bool} {observed : Option BranchRefinement.Observation} {promote : Option Bool}
     {names : List Nat} {carried : List (PromiseCalls.Implication ι)} {k : Nat}
     {i : Nat} (hm : (Exit.ofNode node)[i]? = some (Exit.normal t pushed observed promote))
-    (hin : (passRefined G c node.continuation ysAll (passOutAll G c stepOut) (i == 0),
+    (hin : (SinglePass.refinedContext G c node.continuation ysAll (SinglePass.outAllOf G c stepOut) (i == 0),
       atSlotsOf names carried, t.mapping) ∈ edgesIn t.label)
     {ρ η : Env} {s : IndexedHeap} {v : Tm}
     (he : EnvOk G (c.type :: c.context) (push v ρ) s.n s.W) (hshape : ShapeOk v node.continuation)
