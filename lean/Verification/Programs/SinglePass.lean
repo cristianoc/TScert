@@ -1427,10 +1427,17 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
         let F := match PromiseCalls.receiverSlot node.expression with
           | some i => if (entry.names[i]?).any entry.fresh.contains then [i] else []
           | none => []
+        -- The step's derivation, where its signature bounds the step: claimed
+        -- at the node's term, its tree accepted (`GraphCode.nodeChecked`'s
+        -- conjuncts beside `selectedWithinAt`).
+        let derivChecked : Thunk Bool := Thunk.mk fun _ =>
+          (ProgramCertificates.claim deriv).term == node.expression &&
+            (ProgramCertificates.checkTreeUsing G images deriv codes answers.summaries.toList ||
+              PromiseCalls.requiresTree G images stepK codes answers.summaries.toList deriv)
         let writes := ExpressionEffects.writeWithin G c.context Φ node.expression ||
           ExpressionEffects.initWriteWithin G c.context stepK Φ node.expression
         let within := ExpressionEffects.check G c.context node.expression || writes ||
-          GraphCode.selectedWithinAt Φ F deriv || ExpressionEffects.emptyType G c.type ||
+          (GraphCode.selectedWithinAt Φ F deriv && derivChecked.get) || ExpressionEffects.emptyType G c.type ||
           c.context.any (ExpressionEffects.emptyType G ·)
         -- The throw within the bound where a handler outside the region with
         -- no normal return catches it or the bound covers throws
@@ -1440,7 +1447,7 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
           | some t => !deadArr.getD t.label false
           | none => false
         let throws := !(liveHandler || exc) || ExpressionEffects.check G c.context node.expression || writes ||
-          (GraphCode.selectedWithinAt Φ F deriv && ExpressionEffects.selectedThrows deriv &&
+          (GraphCode.selectedWithinAt Φ F deriv && derivChecked.get && ExpressionEffects.selectedThrows deriv &&
             (match ExpressionEffects.selectedEffect deriv with | some eff => eff.onThrow | none => false)) ||
           c.context.any (ExpressionEffects.emptyType G ·)
         let returns := match node.continuation with
