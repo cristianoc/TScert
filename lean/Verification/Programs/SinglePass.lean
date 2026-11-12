@@ -1312,7 +1312,12 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
             (some admits) answers
       answers := a
       counts := { counts with rules := counts.rules + 1, directCalls := counts.directCalls + (if direct.isSome then 1 else 0) }
-      let some (deriv, effect, out) := r.value | return (.refused s!"expression at node {l}: {(reprStr node.expression).take 300} with {(atomsOf k).length} facts {(reprStr k).take 1500}", counts, answers, trace)
+      let some (deriv, effect, searched) := r.value | return (.refused s!"expression at node {l}: {(reprStr node.expression).take 300} with {(atomsOf k).length} facts {(reprStr k).take 1500}", counts, answers, trace)
+      -- The output the checker selects for the step the search returned,
+      -- computed here: the search's own output is not applied.
+      let out? : Option Knowledge := if direct.isSome then some searched
+        else (checker.select j kE effect codes answers.summaries.toList).value
+      let some out := out? | return (.refused s!"expression at node {l}: the selected step", counts, answers, trace)
       -- The step's derivation checked as the checker's `run` checks it
       -- (`checkStepResult`'s tree check): the search's `select` takes it as
       -- given.
