@@ -1889,6 +1889,26 @@ reached labels closed under exits below $`n`$, the start reached) and
 `VisitsRecord` (every visit that returns gives `VisitFacts`) named
 hypotheses over the setup and the visit.
 
+**A visit's record from its parts.** Module
+`lean/Verification/Programs/TolerantFramesDriverVisit.lean`. A visit that
+returns ran `visitEntry`, `visitStep` and `visitExits` and returns the
+exits' state with the label's record written once
+(`LabelWalk.ofVisit`), the visited count one more and the read-summary
+table restored (proved: `visit_ok`, the state `visitResult`). The record
+has a record per label below the bound (`RecInv.size`), so where the parts
+leave the records as they were (`PartsKeepLabels`, named hypothesis), the
+visit changes the record at its label only, marks it visited, counts it
+once and keeps the record's size (`visitResult_labels`,
+`visitResult_visits`, `visitResult_size`):
+
+```math
+\mathrm{PartsKeepLabels} \wedge \mathrm{VisitsRest} \Longrightarrow \mathrm{VisitsRecord}
+```
+
+(`visitsRecord_of`), `VisitsRest` stating the rest of `VisitFacts`
+(`VisitRest`: the exits, what came in, the in-degrees, the queue, the
+settled record, the merge's counter) of every visit.
+
 **The visit's footprint check as `BoundChecked`.** Module
 `lean/Verification/Programs/TolerantFramesDriverChecks.lean`.
 `passBounded` is the visit's footprint check (`visitStep`'s `bounded`)
@@ -1922,8 +1942,9 @@ Premises this leg discharges / leaves:
   order is part of the invariant (`RecInv`), proved along the walk. Left:
   `SetupRecords` (over the setup's environment and first state, queue
   entry W4, with `dfsLoop_init_closed` for the reached labels) and
-  `VisitsRecord` (over the visit's entry, step and exits: queue entries R2,
-  W5 and W6; its settled record's node needs the per-node side's
+  `VisitsRecord`, reduced to `PartsKeepLabels` and `VisitsRest`
+  (`visitsRecord_of`; over the visit's entry, step and exits: queue
+  entries R2, W5, W6 and W7; its settled record's node needs the per-node side's
   `DirectKeepsSummaries` and `SearchKeepsSummaries` for
   `stepChecked_of_step`, and each state an exit pushes its target's width,
   a well-formed store and below the fresh counter, `PushOk`).

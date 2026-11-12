@@ -1,5 +1,5 @@
 import Verification.Programs.TolerantFramesComposeYields
-import Verification.Programs.TolerantFramesDriverRecords
+import Verification.Programs.TolerantFramesDriverVisit
 
 /-! # Tolerant frames: the single pass's graph theorem
 

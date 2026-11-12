@@ -209,7 +209,8 @@ structure EnvFacts (c : Target.RunCall G I) (env : SinglePass.WalkEnv ι G I) : 
 /-- **The walk's invariant**: the queue's labels distinct, below the bound,
 reached, unvisited and, other than heads, with no exit left to come in; the
 visited labels reached, with no exit left to come in, their exits below the
-bound, counted by the record; a node other than a head's in-degree the
+bound, counted by the record, which has a record per label below the
+bound; a node other than a head's in-degree the
 exits still to come into it (`pend`); the states and implications that came
 in paired, each from an exit of a visited label, with its target's width, a
 well-formed store and below the fresh counter, the edges into heads from
@@ -224,6 +225,7 @@ structure RecInv (c : Target.RunCall G I) (env : SinglePass.WalkEnv ι G I) (σ 
   visDeg : ∀ t, visB σ.walk t = true → envHead env t = false → deg σ t = 0
   exits : ∀ s, visB σ.walk s = true → ∀ t ∈ exitsOf env s, t < env.n
   count : σ.walk.visited = ((List.range env.n).filter (visB σ.walk)).length
+  size : σ.walk.labels.size = env.n
   degs : ∀ t < env.n, envHead env t = false → deg σ t = pend env σ t
   inLen : ∀ t, (incS σ.walk t).length = (incI σ.walk t).length
   inVis : ∀ t, incS σ.walk t ≠ [] → ∃ s, visB σ.walk s = true ∧ t ∈ exitsOf env s
@@ -350,7 +352,8 @@ theorem Settled.frame {c : Target.RunCall G I} {heads : Nat → Bool} {dead : Li
 
 /-- **What a visit gives**, from the state `σ` it starts from (the queue's
 first label `l` taken off) to the state `σ'` it returns: `l`'s exits below
-the bound; the record changed at `l` only, `l` visited, counted once;
+the bound; the record changed at `l` only, `l` visited, counted once, as
+many records as before;
 states, implications and merge edges coming in at `l`'s exits only, paired,
 each with its target's width, a well-formed store and below the fresh
 counter after the visit; the edges into heads at `l`'s exits; the fresh
@@ -366,6 +369,7 @@ structure VisitFacts (c : Target.RunCall G I) (env : SinglePass.WalkEnv ι G I) 
   labels : ∀ t, t ≠ l → σ'.walk.labels[t]? = σ.walk.labels[t]?
   visits : visB σ'.walk l = true
   count : σ'.walk.visited = σ.walk.visited + 1
+  size : σ'.walk.labels.size = σ.walk.labels.size
   frame : ∀ t, t ∉ exitsOf env l → σ'.walk.incoming[t]? = σ.walk.incoming[t]? ∧
     σ'.walk.incomingImpl[t]? = σ.walk.incomingImpl[t]? ∧ σ'.walk.incomingEdges[t]? = σ.walk.incomingEdges[t]?
   pushes : ∀ t, ∃ ns nis, incS σ'.walk t = ns ++ incS σ.walk t ∧ incI σ'.walk t = nis ++ incI σ.walk t ∧
@@ -427,7 +431,7 @@ theorem recInv_visit {c : Target.RunCall G I} {env : SinglePass.WalkEnv ι G I} 
     hnotexit t (hF.exits t (hnewQ t ht).1) (hnewQ t ht).2.1 h0 (hnewQ t ht).1
   have hnew_ne : ∀ t ∈ newQ, t ≠ l := fun t ht htl => by
     subst htl; exact hself (hnewQ t ht).2.1 (hnewQ t ht).1
-  refine { nodup := ?_, queue := ?_, visR := ?_, visDeg := ?_, exits := ?_, count := ?_, degs := ?_,
+  refine { nodup := ?_, queue := ?_, visR := ?_, visDeg := ?_, exits := ?_, count := ?_, size := ?_, degs := ?_,
            inLen := ?_, inVis := ?_, edgesVis := ?_, push := ?_, startFresh := ?_, settled := ?_ }
   · rw [hQ]
     refine List.nodup_append.mpr ⟨hnodupNew, hrest.2, fun a ha b hb hab => ?_⟩
@@ -467,6 +471,7 @@ theorem recInv_visit {c : Target.RunCall G I} {env : SinglePass.WalkEnv ι G I} 
     simp only
     rw [hI.count]
     exact (filter_flip (visB σ.walk) (visB σ'.walk) l hlv hF.visits hvis (List.range env.n) List.nodup_range hlmem).symm
+  · rw [hF.size]; exact hI.size
   · intro t ht hg
     rw [hF.degs t ht hg, show deg { σ with queue := rest } t = deg σ t from rfl, hI.degs t ht hg]
     unfold pend
