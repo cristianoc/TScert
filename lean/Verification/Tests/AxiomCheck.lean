@@ -531,6 +531,9 @@ run_cmd do
   check ``Verification.TolerantFrames.footprintCheck_sound
   check ``Verification.TolerantFrames.footprint_exits
   check ``Verification.TolerantFrames.returnCheck_plain
+  check ``Verification.TolerantFrames.typedRead_optional_sound
+  check ``Verification.TolerantFrames.namesBelow_step
+  check ``Verification.TolerantFrames.width_step
   let env ← getEnv
   let project (decl : Name) : Bool := match env.getModuleIdxFor? decl with
     | some i => (`Verification).isPrefixOf env.header.moduleNames[i.toNat]!

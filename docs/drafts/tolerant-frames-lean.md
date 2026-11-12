@@ -1391,3 +1391,41 @@ by its step, and its tables per node (`sparse` over the node and its
 targets), so the per-node regional statement needs `checkNode`'s soundness
 from the node's own typing and the agreement of each node's tables with its
 targets' (`regionIn`'s meet).
+
+## Leg 11: the names after a step, and the hypotheses of pure functions
+
+Module `lean/Verification/Programs/TolerantFramesNodeWalk.lean`. Proved:
+
+- `namesBelow_step`: where the entry's names, start names and implications
+  are below the counter and the result is an entry name with the counter
+  kept or the counter with the counter advanced (`checkedStep_parts`), the
+  state after the step is below the next counter, given its store's facts
+  are;
+- `width_step`: the pushed names no wider than the pushed context.
+
+Not proved, with the function each needs:
+
+- the store's facts after a step below the next counter: the names
+  `applyDelta` reads back (`passBack`), and after an edge, the names of
+  `Store.drop`'s derived facts (`HeapKnowledge.eliminateIndices`' output);
+- `MapNamesSound` for a mapping other than the identity: `mapNames` reads the
+  ordered suffix by `orderedSuffix`, a `while` loop;
+- `DirectKeepsSummaries`, `SearchKeepsSummaries`: the table's one writer is
+  `summaryUsing` (`CertificateProducer.lean` 646), which appends a summary
+  `checkReadSummaryResult` accepts; a proof through `directCall` and
+  `expressionEffectUsing` is an invariant of every `SearchM` function they
+  run, which a `summaries_sound` field of `Answered` (as `proved_sound`)
+  makes structural;
+- the result's freshness where `outFresh`: read off the step's derivation's
+  selected effect, whose tree `outFresh` does not check (`run`, the
+  definition of `outFresh`).
+
+## Leg 11: `typedRead`'s optional-field branch
+
+Module `lean/Verification/Programs/TolerantFramesSelect.lean`. Proved
+(`typedRead_optional_sound`): where the pass's tree check accepts the read's
+derivation with the codes, at a read of a field the slot's type states
+optional, the output `readFrame k i fld true` holds after the read. The
+checker's `run` checks this tree with no codes; the pass's selection reaches
+the branch by `passSteps_value`'s third case, and `passSteps_sound` consumes
+it through `typedRead_optional_sound` alone.
