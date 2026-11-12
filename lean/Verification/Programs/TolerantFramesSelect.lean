@@ -152,12 +152,12 @@ theorem select_value_eq {G : NormalGraph ι} {images : InstanceImageCheck G} {j 
     rcases readSlot j.term with _ | ⟨f, i'⟩ <;> simp only [CheckResult.value_bind_const, treeChecked_accepted h]
   | _ => rfl
 
-/-- The tree the pass checks is claimed at the step's term. -/
+/-- The tree the pass checks is claimed at the step's context and term. -/
 theorem select_claim_term {G : NormalGraph ι} {images : InstanceImageCheck G} {j : Sequent ι}
     {k out : HeapKnowledge.Knowledge} {e : StepEvidence ι} {codes : CodeEntry ι → Bool} {sums : List (ReadSummary ι)}
     {p : ProgramCertificates.Evidence ι}
     (hc : (checkStepResult G images j k e codes sums (tree := false)).value = some out)
-    (hp : passTree e = some p) : (claim p).term = j.term := by
+    (hp : passTree e = some p) : (claim p).context = j.context ∧ (claim p).term = j.term := by
   cases e <;> simp only [passTree, StepEvidence.proof?, Option.some.injEq, reduceCtorEq] at hp <;> subst hp <;>
     simp only [checkStepResult, checkedOutput_value_tree, CheckResult.value_bind_const, treeChecked_false,
       Bool.and_true, CheckResult.accepted_ofBool] at hc
@@ -239,7 +239,7 @@ theorem passSteps_value {G : NormalGraph ι} {images : InstanceImageCheck G} {j 
         exact hc
     · have hreq : PromiseCalls.requiresTree G images k codes sums p = true := by simpa [ht] using hok'
       have hcall := requiresTree_term hreq
-      rw [select_claim_term hc hpt] at hcall
+      rw [(select_claim_term hc hpt).2] at hcall
       by_cases hord : ∃ q, e = .ordinary q
       · obtain ⟨q, rfl⟩ := hord
         simp only [passTree, StepEvidence.proof?, Option.some.injEq] at hpt

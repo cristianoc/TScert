@@ -16,6 +16,7 @@ import Verification.Programs.TolerantFramesExamples
 import Verification.Programs.TolerantFramesSteps
 import Verification.Programs.TolerantFramesWrites
 import Verification.Programs.TolerantFramesSelect
+import Verification.Programs.TolerantFramesFootprint
 
 /-!
 Acceptance rests on Lean's standard axioms alone. The build fails when any of
@@ -237,6 +238,13 @@ run_cmd do
   check ``Verification.TolerantFrames.passPreserving_keeps_select
   check ``Verification.TolerantFrames.pass_preserving_frame_select
   check ``Verification.TolerantFrames.preserving_judgment_select
+  check ``Verification.TolerantFrames.derivChecked_of_select
+  check ``Verification.TolerantFrames.passWrites_sound
+  check ``Verification.TolerantFrames.selected_within_on
+  check ``Verification.TolerantFrames.pass_within_normal
+  check ``Verification.TolerantFrames.pass_within_throw
+  check ``Verification.TolerantFrames.pass_within_entry
+  check ``Verification.TolerantFrames.pass_write_judgment
   let env ← getEnv
   let project (decl : Name) : Bool := match env.getModuleIdxFor? decl with
     | some i => (`Verification).isPrefixOf env.header.moduleNames[i.toNat]!

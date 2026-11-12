@@ -473,14 +473,68 @@ no heap or is an index fact $`c`$'s change keeps (`Atom.keptBy`). Proved:
   $`c_n`$ keeps at $`\eta[r\mapsto v]`$; a throw an action of $`c_e`$ with the
   raised value closed and of the family and the named facts $`c_e`$ keeps.
 
-What the rules do not give: `written` and `boundedWrite` acceptance does not
-imply `writeWithin` or `fieldWriteWithin`; the effect comes from the pass's
-footprint check against the invocation's bound (line 1360), whose bound is the
-invocation's, so a per-step effect tighter than the bound (needed to keep a
-fact the bound does not tolerate) is not established for a writing step. The
-facts a writing step keeps are exactly its rule's output over every fact plus
-the facts its effect keeps by atom; density (`.elem` atoms) is not among the
-atoms `keptBy` decides.
+`written` and `boundedWrite` acceptance does not imply `writeWithin` or
+`fieldWriteWithin`; the effect a writing step has is what the pass's footprint
+check gives ([the footprint check](#the-footprint-check-at-a-node)). Density
+(`.elem` atoms) is not among the atoms `keptBy` decides.
+
+### The footprint check at a node
+
+Module `lean/Verification/Programs/TolerantFramesFootprint.lean`. Where the
+invocation states a bound $`\Phi`$ (`SinglePass.lean` 1342–1380), the pass
+evaluates at a node with sequent $`j`$, step knowledge $`k_S`$ (`stepK`), step
+derivation $`d`$ (`stepDeriv`) and fresh receiver slots $`F`$:
+`passWrites` (`writes`, 1356–1357: `writeWithin` or `initWriteWithin` at
+$`\Phi`$), `passWithin` (`within`, 1358–1360: an inspection, `passWrites`,
+`selectedWithinAt Φ F d`, or a type no value has) and `passThrows` (`throws`,
+1367–1371, its first disjunct, which bounds no throw, left out).
+`DerivChecked … k j d` states $`d`$ claimed at $`j`$'s context and term with its
+tree accepted by `checkTreeUsing` or by `requiresTree` at $`k`$. Proved, for
+$`\mathrm{FreshOk}\ F\ b\ \rho`$:
+
+- `pass_within_normal`: `passWithin` and (`selectedWithinAt` ⟹ `DerivChecked`)
+  ⟹ the normal exit is within $`\Phi`$ on the locations below $`b`$ from the
+  node's entry heap: $`\Phi.\mathrm{HoldsOn}\ (\cdot < b)\ h\ h'`$;
+  `pass_within_throw`: `passThrows` and the same premise ⟹ the throw is too;
+- relative to the invocation's entry $`h_0`$ with $`b=|h_0|`$:
+  $`\Phi.\mathrm{Holds}\ h_0\ h \wedge \Phi.\mathrm{HoldsOn}\ (\cdot<|h_0|)\ h\ h'
+  \Rightarrow \Phi.\mathrm{Holds}\ h_0\ h'`$ (`pass_within_entry`, from
+  `Closed.Holds.trans_on`), the composition `bound_step` and
+  `action_compose_at` carry along the invocation;
+- `pass_write_judgment`: `passWrites` ⟹ the step's judgment within $`\Phi`$ on
+  the whole heap, both exits, with its rule's output: `write_judgment`'s
+  `writeWithin` premise discharged at $`c=\Phi`$, the initialisation write
+  included;
+- `derivChecked_of_select`: where $`d`$ is the tree the pass checks
+  ($`\mathrm{passTree}\ e = d`$), `DerivChecked` holds at the step's knowledge.
+
+What the check does not give:
+
+1. **The step's derivation is unchecked where it is not the checked tree.**
+   `stepDeriv` is the search's ordinary derivation (`ordinary.value`), and the
+   step's evidence the first of its choices `select` accepts. For a
+   `knownValue`, `observedRead`, `linkedRead`, `slicedRead` or `boundedWrite`
+   step, `passTree e` is not $`d`$ (none, or the sliced read's location
+   derivation), and nothing checks $`d`$'s claim or tree; `selectedWithinAt Φ F d`
+   then reads an unchecked signature. The read kinds pass `within` as
+   inspections, so a `boundedWrite` outside `writes` is the step whose bound
+   rests on it. `GraphCode.nodeChecked` requires
+   `claim d`'s term to be the node's and its tree accepted beside
+   `selectedWithinAt`; the pass would close it with the same conjuncts.
+2. **The effect is the invocation's bound, not the step's.** The check
+   establishes $`\Phi`$ (below $`b`$), so the per-step effect a writing step's
+   judgment has is $`\Phi`$; a fact $`\Phi`$ does not tolerate is kept across
+   a writing step only through the rule's output over every fact. A per-step
+   effect tighter than the bound (a field write's
+   $`\{\mathsf{values}:\mathsf{any},\ \mathsf{stores}:\mathsf{keep}\}`$, an
+   element write's $`\{\mathsf{values}:\mathsf{any},\ \mathsf{stores}:\mathsf{grow}\}`$)
+   would need the pass to evaluate `fieldWriteWithin` or `writeWithin` at that
+   effect for the step, beside the bound check.
+3. Where no bound is stated (`bound = none`) the pass checks no footprint; a
+   writing step's judgment is then `top_judgment`'s.
+4. `FreshOk F b ρ`, the receiver slots the pass records fresh (`entry.fresh`)
+   holding stores allocated at or after the invocation's entry, is a premise:
+   the pass's freshness tracking is not connected.
 
 **Not justified: a slotless fact across a writing step.** A step that may
 write materializes every fact (`materialize … true`, `SinglePass.lean` lines
