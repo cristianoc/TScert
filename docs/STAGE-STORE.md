@@ -1030,6 +1030,15 @@ the operation's result, executed or replayed.
 - *Limit.* A control's operation is killed after 30 s unless the control
   states another limit (`tested`, `pipeline/stages.mts`).
 
+The single pass's controls (`tests/single-pass-controls.mts`) run the same
+way on the single-pass route: a control checks its case through the parse
+and the pass (`TSCERT_ROUTE=single-pass`), then runs the pass's importer and
+interface stages over its fragment under a forced proposal or over a forged
+fragment, each stage replayed where the store holds a finished result and
+counted as the controls of `pipeline/test.mts` count theirs. Its
+store-boundary controls of the [module-interface
+stages](#single-pass-module-interfaces) name a fresh store.
+
 The controls of the store itself (`tests/stage-store.mts`, the observed
 stages' replay controls, the cold and warm comparison of `pipeline/test.mts`)
 name fresh stores of their own and execute every time: their subject is the

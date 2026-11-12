@@ -17,7 +17,8 @@
 // `hole:`; the other direction is counted. TSCERT_FORCE (passed through)
 // forces an adversarial proposal (`literals`, `callees`, `elements`,
 // `objects`, `spreads`, `stale`, `throws`, `guards`, `reads`, `paths`,
-// `offers`, `loops`, `decided`, `schemes`, `callbacks`, `fresh`, `defaults`, `finally`, `never`, `meets`, `implications`, `binds`, `arms`, `captures`, `cells`, `early`, `no-return`, `steps`, `head-entry`, `start-facts`); the controls below run with theirs forced whatever
+// `offers`, `loops`, `decided`, `schemes`, `callbacks`, `fresh`, `defaults`, `finally`, `never`, `meets`, `implications`, `binds`, `arms`, `captures`, `cells`, `early`, `no-return`, `steps`, `head-entry`, `start-facts`); the controls
+// (tests/single-pass-control-inputs.mts, the suite of the single pass's controls' list) run with theirs forced whatever
 // the patterns, each expected refused by mode 8; the forced proposal decides
 // the control's unit and the units it depends on, the file's other units
 // compared unforced.
@@ -35,6 +36,7 @@ import { checkApart } from "../pipeline/verify-source.mts";
 import { withoutEvidenceReuse } from "../pipeline/stages.mts";
 import { verifyWithInterfaces } from "../pipeline/module-interfaces.mts";
 import { standIns } from "./single-pass-standins.mts";
+import { forcedProposals, type ForcedProposal } from "../tests/single-pass-control-inputs.mts";
 
 const root = resolve(import.meta.dirname, "..");
 const verifier = join(root, "lean/.lake/build/bin/verifier");
@@ -54,69 +56,8 @@ const reviewed: { file: string; unit: string; why: string }[] = [
   { file: "invalid-bounds-callback-footprint", unit: "visit@88", why: "the callback keeps every store, so the read stays in bounds; the unit `broken` stays refused" },
   { file: "invalid-native-promise-invariant-result", unit: "widen@89", why: "the call is made at `make<unknown>`, whose result is the stated one; the producer chose `make<number>`" },
 ];
-/** Forced proposals: unsafe programs remain refused; the positive declaration,
- * growth and copy cases are accepted unforced and refused at the false proposal. */
-const controls: { file: string; unit: string; force: string; positive?: boolean }[] = [
-  { file: "stated-signatures-presence", unit: "signatures@605", force: "path-callees", positive: true },
-  { file: "invalid-native-promise-invariant-result", unit: "widen@89", force: "instances", positive: true },
-  { file: "early-let-literal", unit: "families@954", force: "early-contracts", positive: true },
-  { file: "blocker-spread-tuple-field", unit: "returned@867", force: "objects", positive: true },
-  { file: "blocker-prep-assign-error-value", unit: "absent@86", force: "copy-exclusions", positive: true },
-  { file: "for-of-host-iterables", unit: "sum@631", force: "iteration-values", positive: true },
-  { file: "optional-call-loop-cell", unit: "collect@300", force: "chains", positive: true },
-  { file: "typed-array-float64", unit: "getKerning@474", force: "field-writes", positive: true },
-  { file: "evolving-bindings", unit: "captured@736", force: "evolving", positive: true },
-  { file: "array-first-use", unit: "tuple@268", force: "first-use", positive: true },
-  { file: "object-growth", unit: "grow@191", force: "growth", positive: true },
-  { file: "array-spread", unit: "spreadTuple@500", force: "copy-indexes", positive: true },
-  { file: "invalid-method-effect-stated-throw-caught", unit: "wrong@596", force: "literals" },
-  { file: "invalid-node-assert-catch-continue", unit: "rows@339", force: "literals" },
-  { file: "invalid-cell-truthiness-narrowing", unit: "kept@176", force: "stale" },
-  { file: "module-cache-keeps-lengths", unit: "count@478", force: "cells", positive: true },
-  // (its early binding `cache` is also held at its written contract, `early-contracts`: forced with both)
-  { file: "module-cache-before-initialization", unit: "rhs@341", force: "cells,early-contracts", positive: true },
-  { file: "fresh-separation", unit: "handlerCell@1404", force: "cells", positive: true },
-  { file: "module-cells-written-in-turn", unit: "aside@399", force: "cells", positive: true },
-  { file: "early-bindings", unit: "count@471", force: "early", positive: true },
-  { file: "invalid-exceptional-handler-fact", unit: "wrong@336", force: "throws" },
-  { file: "invalid-object-spread-two-sources", unit: "count@156", force: "spreads" },
-  { file: "invalid-keyed-read", unit: "pick@70", force: "keys" },
-  { file: "invalid-declaration-pop-callback", unit: "dropped@359", force: "callees" },
-  { file: "certified-value-import", unit: "tallies@829", force: "imports", positive: true },
-  { file: "invalid-certified-write-value-import", unit: "zeros@319", force: "imports" },
-  { file: "returned-closure-footprint", unit: "countLetters@972", force: "results", positive: true },
-  { file: "invalid-returned-closure-footprint", unit: "lastRead@421", force: "results" },
-  { file: "invalid-compiler-api-guard-loop-partial", unit: "names@203", force: "guards" },
-  { file: "invalid-read-narrows-write", unit: "wrong@187", force: "reads" },
-  { file: "invalid-read-narrows-closure", unit: "wrong@153", force: "reads" },
-  { file: "invalid-slot-path-call", unit: "keyText@477", force: "paths" },
-  { file: "invalid-path-witness-alias", unit: "wrong@82", force: "paths" },
-  { file: "invalid-closure-offer-narrower-mutation", unit: "wrong@275", force: "offers" },
-  { file: "invalid-field-narrowing-for-of-callback", unit: "count@323", force: "loops" },
-  { file: "invalid-field-narrowing-for-of-closure", unit: "count@343", force: "loops" },
-  { file: "invalid-unassigned-let", unit: "readBeforeAssignment@113", force: "decided" },
-  { file: "invalid-generic-closure-effect", unit: "stale@197", force: "schemes" },
-  { file: "invalid-map-fresh-alias", unit: "drained@188", force: "callbacks" },
-  { file: "invalid-map-fresh-reassigned", unit: "drained@156", force: "fresh" },
-  { file: "invalid-closure-default-effect", unit: "stale@264", force: "defaults" },
-  { file: "for-of-program-iterable", unit: "sum@2547", force: "binds", positive: true },
-  { file: "bind-union-host", unit: "total@1704", force: "binds", positive: true },
-  { file: "union-callee", unit: "renderEither@283", force: "arms", positive: true },
-  { file: "invalid-compiler-api-guard-loop-finally", unit: "names@210", force: "finally" },
-  { file: "invalid-closure-graph-captured-cell", unit: "counter@170", force: "never" },
-  { file: "invalid-type-parameter-meet-narrowing", unit: "present@127", force: "meets" },
-  { file: "invalid-negated-disjunction-saved", unit: "wrong@91", force: "implications" },
-  { file: "invalid-closure-cell-capture-narrowed", unit: "wrong@181", force: "captures" },
-  { file: "invalid-object-spread-width-replaced", unit: "wrong@385", force: "objects" },
-  { file: "invalid-class-static-inherited-rest", unit: "rest@276", force: "spreads" },
-  { file: "invalid-async-throw-only-arrow", unit: "wrong@347", force: "no-return" },
-  { file: "invalid-async-throw-only-expression", unit: "wrong@361", force: "no-return" },
-  { file: "invalid-async-throw-only-object-method", unit: "wrong@369", force: "no-return" },
-  { file: "invalid-method-effect-throw-caught", unit: "wrong@487", force: "no-return" },
-  { file: "map-stable-set", unit: "distinct@238", force: "steps", positive: true },
-  { file: "loop-head-contents", unit: "continued@413", force: "head-entry", positive: true },
-  { file: "returntype-guard", unit: "isName@125", force: "start-facts", positive: true },
-];
+/** Forced proposals, the suite of the single pass's controls' list. */
+const controls: readonly ForcedProposal[] = forcedProposals;
 
 /** The file key the pipeline's check of a run named: `--check-units`'s third argument. */
 function fileKey(artifacts: string): string | null {
