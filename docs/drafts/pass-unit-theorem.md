@@ -355,7 +355,10 @@ call starts from is among those it leaves. The wrapper checks only the last
 run's summaries; the code runs before it rely on theirs.
 
 **H3 `PassGroupChecks`** (wrapper, section 3). `passGroup` accepting a group
-makes every member `MemberAccepted`. A statement about the actual function.
+makes every member `MemberAccepted`. A statement about the actual function,
+proved at `observe = none` (`passGroupChecks_unobserved passMember_sound`);
+for every `observe` it needs the wrapper to keep a refusal where the
+observation rerun accepts.
 
 The wrapper gives each run the inputs the theorem's entry premise names:
 the request's inputs for its own graph (`MainCall`), each code request's
