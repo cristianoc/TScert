@@ -1605,6 +1605,12 @@ structure Stepped (ι : Type) where
   stepDeriv : Option (ProgramCertificates.Evidence ι) := none
   stepEffect : Option (HeapExpressionRules.StepEvidence ι) := none
 
+/-- `b`'s answers with `a`'s read-summary table as their table's prefix:
+`a`'s table, then `b`'s entries past `a`'s length (`b` itself where `a`'s
+table is a prefix of `b`'s). -/
+def keepSummaries {G : NormalGraph ι} (a b : Answered G) : Answered G :=
+  { b with summaries := a.summaries ++ b.summaries.extract a.summaries.size b.summaries.size }
+
 /-- The step of node `l` (its claim `c`, the slots `ms` its expression
 reads) from the state `entry`: a copy of a slot at the claim's type, a call
 read off its callee's signatures (`directCall`), else the search's evidence;
@@ -1674,7 +1680,7 @@ def checkedStep (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : Lis
     let (direct, a0) := match node.expression with
       | .invoke .. => timedKind "direct call" fun _ => directCall G images c.context node.expression c.type admits undefTy answers
       | _ => (none, answers)
-    answers := a0
+    answers := keepSummaries answers a0
     let sums := answers.summaries.toList
     let (r, a) := match direct with
       | some (e, _) =>
@@ -1686,7 +1692,7 @@ def checkedStep (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : Lis
       | none => timedKind (if kindKey == "invoke" then s!"invoke facts {(atomsOf k).length / 10 * 10}" else kindKey) fun _ =>
         expressionEffectUsing G images pool fuel j kE suggestions index codes aliases checker (some own)
           (some admits) answers
-    answers := a
+    answers := keepSummaries answers a
     stats := { stats with rules := stats.rules + 1, directCalls := stats.directCalls + (if direct.isSome then 1 else 0) }
     let some (deriv, effect, searched) := r.value | return (.error s!"expression at node {l}: {(reprStr node.expression).take 300} with {(atomsOf k).length} facts {(reprStr k).take 1500}", stats, answers)
     -- The output the checker selects for the step the search returned,
@@ -2417,7 +2423,7 @@ def stepYields (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkE
       let slotImpl := slotImplOf entry.names implies
       let (ys, a) := timedKind "yields" fun _ =>
         (nodeYields G images env.pool c.context slotImpl (derivOf c node st) st.stepOut st.stepK) answers
-      (some (checkYsAt G images env.codes answers c node st slotImpl ys), a)
+      (some (checkYsAt G images env.codes answers c node st slotImpl ys), keepSummaries answers a)
     else (none, answers)
 
 /-- A handler receives the thrown value in a fresh name, at a type
@@ -2438,8 +2444,10 @@ def returnRun (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEn
     (entry : State) (st : Stepped ι) (yields : List (PromiseCalls.Yield ι)) (answers : Answered G) :
     Option (Option String × Answered G × Option Nat) :=
   match (env.nodes[l]!).continuation with
-  | .ret => some (returnCheck G images env.goal env.ensures env.claimed[l]! l entry st.store st.result env.start
-      env.startNames env.argName yields env.debugNode answers)
+  | .ret =>
+    let (refusal, a, queried) := returnCheck G images env.goal env.ensures env.claimed[l]! l entry st.store st.result
+      env.start env.startNames env.argName yields env.debugNode answers
+    some (refusal, keepSummaries answers a, queried)
   | _ => none
 
 /-- **Whether the return check passes** at `l` (`returnRun`): its refusal
@@ -2561,7 +2569,7 @@ def exitsYields (G : NormalGraph ι) (images : InstanceImageCheck G) (env : Walk
   if sd.yields.isNone && (Exit.ofNode node).any (fun e => !env.isHead[e.target.label]! && (env.stated[e.target.label]!).isSome) then
     let slotImpl := slotImplOf en.entry.names en.implies
     let (ys, a) := (nodeYields G images env.pool c.context slotImpl (derivOf c node sd.st) sd.st.stepOut sd.st.stepK) sd.answers
-    (some (checkYsAt G images env.codes sd.answers c node sd.st slotImpl ys), a)
+    (some (checkYsAt G images env.codes sd.answers c node sd.st slotImpl ys), keepSummaries sd.answers a)
   else (sd.yields, sd.answers)
 
 /-- Each yield restated at every slot holding its target's name, as the
@@ -2648,7 +2656,7 @@ def diffSubtypes (G : NormalGraph ι) (images : InstanceImageCheck G) (Γ Δ : L
     | some A, some B =>
       if observed.isNone || s != 0 then
         let (r, a) := subtypeUsing G images A B acc.2
-        (acc.1 && r.value.isSome, a)
+        (acc.1 && r.value.isSome, keepSummaries acc.2 a)
       else (false, acc.2)
     | _, _ => (false, acc.2)) (true, answers)
 
@@ -2667,7 +2675,7 @@ def mixedContext (G : NormalGraph ι) (images : InstanceImageCheck G) (Γ Γ' Δ
         | some B =>
           if !same A' B then
             let (res, a') := subtypeUsing G images A' B fa.2
-            (res.value.isSome, a')
+            (res.value.isSome, keepSummaries fa.2 a')
           else fa
         | none => fa
       else fa) (true, acc.2)
@@ -2684,7 +2692,7 @@ def impliesHeld (G : NormalGraph ι) (images : InstanceImageCheck G) (x : Promis
     else if same y.type x.type then (true, acc.2)
     else
       let (res, a') := subtypeUsing G images y.type x.type acc.2
-      (res.value.isSome, a')) (false, answers)
+      (res.value.isSome, keepSummaries acc.2 a')) (false, answers)
 
 /-- Whether a head's given implications (at `t`'s label) hold on an edge
 into it carrying `carried` over the names `names`, the first that does not
@@ -2723,7 +2731,8 @@ def exitTypes (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEn
     -- Its links restated on every slot of their classes, as an edge reads
     -- a node's output (`ControlFlow.outFacts`).
     let ko := KnowledgeExpand.expandLinks (KnowledgeExpand.ctxOf G Γ) ko
-    let (found, answers) := timedKind "edge search" fun _ => checkedEdge G images env.claimed tc.context Γ t observed ko answers
+    let (found, a) := timedKind "edge search" fun _ => checkedEdge G images env.claimed tc.context Γ t observed ko answers
+    let answers := keepSummaries answers a
     if !found && isHandler then
       .error (WalkStop.mk (.refused s!"handler edge from node {l} to node {t.label}") counts answers acc.trace)
     else if found then .ok { acc with answers, counts }
@@ -2735,14 +2744,17 @@ def exitTypes (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEn
         | none =>
           let slotImpl := slotImplOf entry.names en.implies
           let (ys, a) := (nodeYields G images env.pool c.context slotImpl (derivOf c node sd.st) sd.st.stepOut sd.st.stepK) answers
-          (checkYsAt G images env.codes sd.answers c node sd.st slotImpl ys, a)
+          (checkYsAt G images env.codes sd.answers c node sd.st slotImpl ys, keepSummaries answers a)
       let outL := outAll.get
       let Γ' := refinedContext G c node.continuation (yieldsAtSlots entry.names ys) outL first
-      let (found, answers) := checkedEdge G images env.claimed tc.context Γ' t observed outL answers
+      let (found, a) := checkedEdge G images env.claimed tc.context Γ' t observed outL answers
+      let answers := keepSummaries answers a
       let (found, answers) := if found then (found, answers)
         else
           let (Γm, answers) := mixedContext G images Γ Γ' tc.context t.mapping answers
-          if Γm != Γ' then checkedEdge G images env.claimed tc.context Γm t observed outL answers
+          if Γm != Γ' then
+            let (found, a) := checkedEdge G images env.claimed tc.context Γm t observed outL answers
+            (found, keepSummaries answers a)
           else (found, answers)
       if !found then
         .error (WalkStop.mk (.refused s!"edge from node {l} to node {t.label}{if l == env.debugNode then s!" fields {reprStr (readFields ko 0)} links {reprStr ko.links} diff {reprStr diff} implies {reprStr (en.implies.map fun x => (x.test, x.target))} names {reprStr (entry.names.take 6)} yields {reprStr (ys.map fun y => (y.target, y.conditional))}" else ""}") counts answers acc.trace)
@@ -2963,12 +2975,6 @@ def visitBody (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEn
               answers := ex.answers, counts := ex.counts, trace := ex.trace, indeg := ex.indeg, fresh := sd.fresh,
               regionIn := ex.regionIn, incomingFrom := ex.incomingFrom, queue := ex.queue, unsat := ex.unsat,
               lastStamp := en.lastStamp, lastKind := sd.lastKind }
-
-/-- `b`'s answers with `a`'s read-summary table as their table's prefix:
-`a`'s table, then `b`'s entries past `a`'s length (`b` itself where `a`'s
-table is a prefix of `b`'s). -/
-def keepSummaries {G : NormalGraph ι} (a b : Answered G) : Answered G :=
-  { b with summaries := a.summaries ++ b.summaries.extract a.summaries.size b.summaries.size }
 
 /-- One node's visit (`drive` visits each once): `visitBody`, the answers it
 leaves or stops with holding the table it started from as a prefix, so the
