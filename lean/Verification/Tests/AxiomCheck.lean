@@ -757,6 +757,9 @@ run_cmd do
   check ``Verification.TolerantFrames.byLabel_cons
   check ``Verification.TolerantFrames.byLabel_of_nodup
   check ``Verification.TolerantFrames.assertionsLabelled_of_checked
+  check ``Verification.TolerantFrames.setup_labels
+  check ``Verification.TolerantFrames.setup_of_walk
+  check ``Verification.TolerantFrames.labelsChecked
   check ``Verification.TolerantFrames.truthy_arm
   check ``Verification.TolerantFrames.passRefined_env
   check ``Verification.TolerantFrames.checkedEdge_env_none

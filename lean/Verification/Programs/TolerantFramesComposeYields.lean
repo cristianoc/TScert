@@ -251,9 +251,9 @@ theorem run_sound_yields (hrun : RunTraversedA ι) (hyield : NodesYield ι) (hne
 (`run_sound_yields` with the driver's walk from its record,
 `run_traversedA`). -/
 theorem run_sound_pass (hrec : RecordsSound ι) (hyield : NodesYield ι)
-    (hnear : LinearNearFuelEq) (hb : BoundsChecked ι) (hrc : ReturnsChecked ι) (hreg : RegionsHeld ι)
-    (hlab : LabelsChecked ι) : Target.RunSound ι :=
-  run_sound_yields (run_traversedA (walkStopsRefuse (ι := ι)) hrec) hyield hnear hb hrc hreg hlab
+    (hnear : LinearNearFuelEq) (hb : BoundsChecked ι) (hrc : ReturnsChecked ι) (hreg : RegionsHeld ι) :
+    Target.RunSound ι :=
+  run_sound_yields (run_traversedA (walkStopsRefuse (ι := ι)) hrec) hyield hnear hb hrc hreg labelsChecked
 
 end Run
 

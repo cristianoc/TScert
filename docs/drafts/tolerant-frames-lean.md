@@ -1390,7 +1390,6 @@ its type (`walkStopsRefuse`, from `StopOutcome.outcome_ne_accepted`).
 | `BoundsChecked` | read off the visit (the footprint check at each visited node) | `footprintsKept_of_bounds` |
 | `ReturnsChecked` | read off the visit (the return check at each visited return) | `returnsKept_of_returns` |
 | `RegionsHeld` | `regionsKept_of` from `RegionNodeOk` at every visited node (`RegionNodeOk.ofCheck`); `RegionalTyped` by `regionalTyped_of_tree` from `SinglePass.regionalDerivChecked` and the tree disjunct (D14, queued: the check's `requiresTree` disjunct reads the step's facts, which the regional evidence's entry does not state), by `regionalTyped_copy` at a copy; left: a step with step evidence alone (its rule's judgment holds where the step's facts do, which the regional evidence's entry, the entry's whole materialization, does not state), and `TablesAgree` at every visited node (the in-degree order) | `run_guarantee` (`regionally`) |
-| `LabelsChecked` | read off `runWalk`'s setup once it is a function: the setup refuses repeated assertion labels (D10, arrived) | `assertionsLabelled_of_checked` |
 
 ## Leg 17a: the per-node hypotheses from the pass's checks
 
@@ -1744,8 +1743,10 @@ with two written assertions at one label and reads them by label
 guarantee reads an assertion at a visited label (`PassWalkSound.labelled`).
 Proved: `nodup_of_eraseDups`, `byLabel_of_nodup` (distinct labels, an
 assertion at a label below the program's size is the one `byLabel` gives
-there), and (`assertionsLabelled_of_checked`) `LabelsChecked` ⟹
-`AssertionsLabelled`.
+there), (`assertionsLabelled_of_checked`) `LabelsChecked` ⟹
+`AssertionsLabelled`, and (`labelsChecked`) `LabelsChecked`: an accepted
+call's walk returned, so its setup did (`setup_of_walk`), and the setup
+returns only where the assertions' labels are distinct (`setup_labels`).
 
 **The regional derivation.** `regionalTyped_of_tree` is stated over the
 pass's `SinglePass.regionalDerivChecked` with the derivation's tree
@@ -1786,7 +1787,7 @@ written assertion and a merge's joined implications). `NodesYield` is
 **(`run_sound_pass`)**, proved (`run_sound_yields` with `run_traversedA`):
 
 ```math
-\mathrm{RecordsSound} \wedge \mathrm{NodesYield} \wedge \mathrm{LinearNearFuelEq} \wedge \mathrm{BoundsChecked} \wedge \mathrm{ReturnsChecked} \wedge \mathrm{RegionsHeld} \wedge \mathrm{LabelsChecked} \Longrightarrow \mathrm{RunSound}
+\mathrm{RecordsSound} \wedge \mathrm{NodesYield} \wedge \mathrm{LinearNearFuelEq} \wedge \mathrm{BoundsChecked} \wedge \mathrm{ReturnsChecked} \wedge \mathrm{RegionsHeld} \Longrightarrow \mathrm{RunSound}
 ```
 
 `run_sound_yields` is the same with `RunTraversedA` for `RecordsSound`. Its premises are those of "Open premises".
@@ -1797,7 +1798,7 @@ Premises this leg discharges / leaves:
   and return discharged into `NodeYieldChecks` (the visit's checks); left:
   each exit and the handler from the visit's edge checks, with D13
   (`ArmsDistinct`) and D12 (`PromiseDerivChecked`).
-- `AssertionsLabelled`: discharged into `LabelsChecked`, the setup's check.
+- `AssertionsLabelled`: discharged (`labelsChecked`, the setup's check).
 - `FootprintsKept`, `ReturnsKept`: into `BoundsChecked`, `ReturnsChecked`.
 - `RegionsHeld`: the regional derivation's typing over the pass's check
   under D14; the rest left.

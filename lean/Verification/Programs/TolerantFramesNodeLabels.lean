@@ -10,7 +10,8 @@ element) and `byLabel_of_nodup` (with distinct labels, every assertion at a
 label below the program's size is the one `byLabel` gives there), and
 (`assertionsLabelled_of_checked`) `LabelsChecked` (every accepted call's
 written assertions at distinct labels, the check `runWalk`'s setup makes)
-⟹ `AssertionsLabelled`. -/
+⟹ `AssertionsLabelled`, and `labelsChecked` (the setup's check:
+`setup_labels`, `setup_of_walk`). -/
 namespace Verification.TolerantFrames
 open Verification Footprints HeapObservations
 open ProgramTyping ControlFlow CertificateProducer PositiveCertificates PositiveGraphs ProgramCertificates
@@ -89,10 +90,9 @@ section Called
 variable {ι : Type} [Labels ι]
 
 variable (ι) in
-/-- **(Named hypothesis) An accepted call's written assertions are at
-distinct labels**: the check `runWalk`'s setup makes before the walk (`a
-label with two written assertions`), read off the setup once it is a
-function of its own. -/
+/-- **An accepted call's written assertions are at distinct labels**: the
+check `runWalk`'s setup makes before the walk (`a label with two written
+assertions`); proved (`labelsChecked`). -/
 def LabelsChecked : Prop :=
   ∀ (G : NormalGraph ι) (I : InstanceImageCheck G) (c : Target.RunCall G I) (after : Answered G),
     c.Accepts after → (c.assertions.map (·.1)).eraseDups.length = c.assertions.length
@@ -111,6 +111,49 @@ theorem assertionsLabelled_of_checked (h : LabelsChecked ι) : AssertionsLabelle
     exact (List.getElem?_eq_some_iff.mp this).1
   rw [r.stated_eq l, byLabel_of_nodup hnd hm hlt]
   rfl
+
+/-- **The setup returns only where the written assertions are at distinct
+labels** (its check "a label with two written assertions"). -/
+theorem setup_labels {G : NormalGraph ι} {I : InstanceImageCheck G} {c : Target.RunCall G I} {p}
+    (h : SinglePass.setup G I c.pool c.fuel c.P c.claims c.start c.inputs c.goal c.assertions c.cuts c.candidates
+    c.entryIndices c.suggestions c.known c.codes c.aliases c.passChecker c.answers c.reference c.debugNode
+    c.bound c.givenImplies c.givenArgs c.ensures c.givenInputs c.entrySeparation c.observe c.tracing
+    c.observeEntry c.regional = .ok p) :
+    (c.assertions.map (·.1)).eraseDups.length = c.assertions.length := by
+  refine Classical.byContradiction fun hne => ?_
+  have hb : ((c.assertions.map (·.1)).eraseDups.length != c.assertions.length) = true := by simp [hne]
+  unfold SinglePass.setup at h
+  by_cases hcl : (c.claims.toArray.size != c.P.toArray.size) = true
+  · rw [if_pos hcl] at h
+    cases h
+  · rw [if_neg hcl] at h
+    simp only [hb, if_true] at h
+    repeat' split at h
+    all_goals cases h
+
+/-- **A walk that returned was set up.** -/
+theorem setup_of_walk {G : NormalGraph ι} {I : InstanceImageCheck G} {c : Target.RunCall G I} {q}
+    (h : RunCall.walk c = .ok q) :
+    ∃ p, SinglePass.setup G I c.pool c.fuel c.P c.claims c.start c.inputs c.goal c.assertions c.cuts c.candidates
+      c.entryIndices c.suggestions c.known c.codes c.aliases c.passChecker c.answers c.reference c.debugNode
+      c.bound c.givenImplies c.givenArgs c.ensures c.givenInputs c.entrySeparation c.observe c.tracing
+      c.observeEntry c.regional = .ok p := by
+  unfold RunCall.walk SinglePass.runWalk at h
+  cases hs : SinglePass.setup G I c.pool c.fuel c.P c.claims c.start c.inputs c.goal c.assertions c.cuts c.candidates
+      c.entryIndices c.suggestions c.known c.codes c.aliases c.passChecker c.answers c.reference c.debugNode
+      c.bound c.givenImplies c.givenArgs c.ensures c.givenInputs c.entrySeparation c.observe c.tracing
+      c.observeEntry c.regional with
+  | error e => rw [hs] at h; cases h
+  | ok p => exact ⟨p, rfl⟩
+
+/-- **(`labelsChecked`) An accepted call's written assertions are at
+distinct labels** (`LabelsChecked`): its walk returned
+(`walk_of_accepts`), so its setup did (`setup_of_walk`), which refuses a
+repeated label (`setup_labels`). -/
+theorem labelsChecked : LabelsChecked ι := fun _ _ _ _ hacc =>
+  have ⟨_, _, hw, _⟩ := walk_of_accepts walkStopsRefuse hacc
+  have ⟨_, hs⟩ := setup_of_walk hw
+  setup_labels hs
 
 end Called
 
