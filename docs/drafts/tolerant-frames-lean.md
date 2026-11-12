@@ -880,3 +880,74 @@ by unfolding the `let`s); the merge theorem reads it there.
   to the run's first heap, on each exit (`action_normal`, `action_throw`).
   A graph run's footprint is the node judgments composed from the
   invocation entry and stated as the graph's exit posts (`invocation_action`).
+
+## Leg 9: the step theorem about `checkedStep`
+
+Modules `lean/Verification/Programs/TolerantFramesStepLink.lean` and
+`lean/Verification/Programs/TolerantFramesStepLinkSound.lean`.
+
+**`checkedStep` read as its conditions** (proved: `checkedStep_ok`, by
+unfolding the pass's own function). An accepted step of node $`l`$ from the
+entry state $`\mathit{st}_0`$ with result $`r`$ is
+
+- a copy (`copiedOf`): the term is a slot $`i`$ whose context type is the
+  claim's, $`r=\mathit{st}_0.\mathrm{names}[i]`$, the store unchanged, the
+  answers unchanged; or
+- a step (`StepAccepted`) at evidence $`e`$, with $`\mathit{sums}_0`$ the read
+  summaries after the direct call (if any) and $`\mathit{sums}`$ those after
+  the search (if any), the final answers: the output
+  $`\mathit{out}=\mathrm{select}\ j\ k_E\ e\ \mathit{sums}`$ at the step's
+  facts $`k_E`$ (`kOf`); the tree check
+  $`\mathrm{passTreeCheck}\ k_E\ \mathit{sums}\ e=\mathrm{some}\ \mathit{pre}`$;
+  the result $`(r,\mathit{fresh}')=\mathrm{resultOf}`$ (a slot's read keeps
+  its name, else the fresh name); where
+  $`\mathrm{passPreserving}\ j\ k_E\ e\ \mathit{sums}_0`$, the store
+  $`\mathrm{applyDelta}\ \mathit{st}_0.\mathrm{store}\ \mathit{pairs}\ \mathit{out}`$
+  with `passBack`; otherwise `passWholeCheck` at every fact $`k_W`$, the output
+  $`\mathit{out}'=\mathrm{select}\ j\ k_W\ e\ \mathit{sums}`$ and the store
+  $`\mathrm{applyDelta}\ (\mathit{st}_0.\mathrm{store}.\mathrm{dropHeap}\ (\mathrm{handedSet}\ \mathit{pairs}_W))\ \mathit{pairs}_W\ \mathit{out}'`$.
+
+The call layers' test reads $`\mathit{sums}_0`$ and the selection
+$`\mathit{sums}`$ (`SinglePass.lean` 1251, 1285): the preserving judgment is
+stated at both (`passPreserving_keeps_two`, `preserving_judgment_two`).
+
+**The step theorem** (proved: `checkedStep_sound`). Premises:
+`checkedStep … = (ok st, _, ans)`;
+$`\mathrm{StateHolds}\ \mathit{st}_0\ I\ \mathit{start}\ E`$ at $`\rho,m,s`$;
+`StoreWF` of the entry's store; every name of the entry state, its start names
+and its implications below the fresh counter (`NamesBelow`); the entry's names
+no wider than the context; `EnvOk` of the context at $`\rho`$; `CodesSound`;
+the incoming summaries checked. Conclusion: the outgoing summaries are checked;
+`st.stepK` holds at $`\rho`$; $`r`$ is an entry name with the counter kept, or
+the counter with the counter advanced; and for closed effects $`c_n,c_e`$
+(`StepExits`):
+
+- the local judgment of the node's term with normal post
+  $`c_n\wedge\mathit{st}.\mathrm{stepOut}`$ at $`\mathrm{push}\ v\ \rho`$ and
+  exceptional post $`c_e`$;
+- a run with budget left to a value $`v`$: an action of $`c_n`$, $`n'+k=n`$,
+  $`v`$ of the claim's type, `st.stepOut` at $`\mathrm{push}\ v\ \rho`$, and
+  $`\mathrm{StateHolds}\ \langle r::\mathit{st}_0.\mathrm{names},\ \mathit{st}.\mathrm{store},\ \mathit{st}_0.\mathrm{fresh}\rangle`$
+  at $`\mathrm{push}\ v\ \rho`$ (`stateHolds_pushed`, `preserving_store`,
+  `writing_store`);
+- a raise of $`x`$: an action of $`c_e`$, $`x`$ closed and of the exception
+  family, and $`\mathrm{StateHolds}\ \langle\mathit{st}_0.\mathrm{names},\ \mathit{st}_0.\mathrm{store}.\mathrm{dropHeap}\ \bot,\ \mathit{st}_0.\mathrm{fresh}\rangle`$
+  at $`\rho`$ (`stateHolds_throw`), the store a handler edge starts from.
+
+The effects are $`c_n=\{\mathsf{values}:\mathsf{keep},\ \mathsf{stores}:\mathsf{keep}\}`$,
+$`c_e=\top`$ at a preserving step, $`c_n=c_e=\top`$ at a writing step, and
+$`c_n=c_e=\{\mathsf{values}:\mathsf{keep},\ \mathsf{stores}:\mathsf{keep}\}`$
+at a copy.
+
+Named hypotheses of the step theorem:
+
+- `DirectKeepsSummaries`, `SearchKeepsSummaries`: `directCall` and
+  `expressionEffectUsing` keep every summary of the answers' table checked
+  (`checkReadSummary`). `summaryUsing` checks a summary before appending it
+  (`CertificateProducer.lean` 625–651); no theorem states it of the search.
+- `NamesBelow` and the width of the entry's names: invariants of the pass's
+  states (`StateWF.below` with the start names and implications), not proved
+  maintained.
+
+The theorem gives no effect tighter than $`\top`$ at a writing step; the
+footprint check gives the bound's.

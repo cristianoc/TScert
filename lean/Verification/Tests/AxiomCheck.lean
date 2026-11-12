@@ -27,6 +27,7 @@ import Verification.Programs.TolerantFramesMerge
 import Verification.Programs.TolerantFramesModelLoop
 import Verification.Programs.TolerantFramesModelTyped
 import Verification.Programs.TolerantFramesModelRules
+import Verification.Programs.TolerantFramesStepLinkSound
 
 /-!
 Acceptance rests on Lean's standard axioms alone. The build fails when any of
@@ -426,6 +427,15 @@ run_cmd do
   check ``Verification.TolerantFrames.fresh_eff
   check ``Verification.TolerantFrames.fresh_eff_bound
   check ``Verification.TolerantFrames.fresh_cells_not_erased
+  -- Leg 9, the step and the edge: `checkedStep` read as its conditions and its step theorem
+  check ``Verification.TolerantFrames.checkedStep_ok
+  check ``Verification.TolerantFrames.stateHolds_pushed
+  check ``Verification.TolerantFrames.stateHolds_throw
+  check ``Verification.TolerantFrames.preserving_store
+  check ``Verification.TolerantFrames.writing_store
+  check ``Verification.TolerantFrames.preserving_judgment_two
+  check ``Verification.TolerantFrames.stepExits_of
+  check ``Verification.TolerantFrames.checkedStep_sound
   let env ← getEnv
   let project (decl : Name) : Bool := match env.getModuleIdxFor? decl with
     | some i => (`Verification).isPrefixOf env.header.moduleNames[i.toNat]!
