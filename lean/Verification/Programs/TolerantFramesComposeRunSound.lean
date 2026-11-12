@@ -1,3 +1,4 @@
+import Verification.Programs.TolerantFramesNodeExitTrace
 import Verification.Programs.TolerantFramesRunSound
 import Verification.Programs.TolerantFramesNodeCallFresh
 import Verification.Programs.TolerantFramesNodeReturns
@@ -37,11 +38,11 @@ structure NodePassChecked {G : NormalGraph ι} {I : InstanceImageCheck G} (c : T
   yields : ∃ sums : List (ReadSummary ι), SummariesSound G I sums ∧
     NodeYieldChecks G I c.codes sums w (List.range c.inputs.length) c.goal c.ensures l r.node r.c r.entry r.st r.ys
 
-/-- **A checked walk**: every visited node's step `NodePassChecked`, in one
-no-return region. -/
+/-- **A checked walk**: every visited node has `NodePassChecked`, in one
+no-return region, and `NodeExitTrace` at the same chosen node. -/
 def WalkChecked {G : NormalGraph ι} {I : InstanceImageCheck G} (c : Target.RunCall G I) (r : RunWalkA G I c) :
     Prop :=
-  ∃ dead, ∀ l (hl : r.w.visited l), NodePassChecked c dead (r.node l hl)
+  ∃ dead, ∀ l (hl : r.w.visited l), NodePassChecked c dead (r.node l hl) ∧ NodeExitTrace c r.edgesIn (r.node l hl)
 
 variable (ι) in
 /-- **(Named hypothesis) An accepted call records a checked walk**: an

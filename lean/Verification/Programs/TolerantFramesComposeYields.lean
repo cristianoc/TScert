@@ -218,7 +218,7 @@ by `ExitsYield`. -/
 theorem nodesYield_of (hsub : SubtypeAnswersAll ι) (hex : ExitsYield ι) : NodesYield ι := by
   intro G I c after admits hp r hchk η hη ρ0 m l hl
   obtain ⟨dead, hd⟩ := hchk
-  obtain ⟨sums, hsums, hys⟩ := (hd l hl).yields
+  obtain ⟨sums, hsums, hys⟩ := (hd l hl).1.yields
   exact ⟨(r.node l hl).ys, nodeYielded_of_checks (hys.reassign η) (codesSound_reassign hp.2.2.1 η)
     (Parametricity.summariesSound_reassign G η I hsums) (hsub _ _)
     (hex G I c after admits hp r ⟨dead, hd⟩ η hη ρ0 m l hl)⟩
@@ -274,8 +274,8 @@ theorem run_sound_checked (hrun : RunTraversedC ι) (hyield : NodesYield ι) (hn
       stable := fun Φ regions exc hr ρ s he =>
         GraphCode.ArgumentPathTracking.checkEntryFields_sound
           ((checkEntryFields_reassign G η c.inputs regions).trans (hfields Φ regions exc hr)) he s.pos s.ok
-      footprint := fun Φ fr ex hbd => ⟨dead, footprintKept_of_walk hp hd hη hbd⟩
-      returns := fun hne => returnsEnsured_of_walk hp hd hη hne
+      footprint := fun Φ fr ex hbd => ⟨dead, footprintKept_of_walk hp (fun l hl => (hd l hl).1) hη hbd⟩
+      returns := fun hne => returnsEnsured_of_walk hp (fun l hl => (hd l hl).1) hη hne
       regions := hreg G I c after admits hp r ⟨dead, hd⟩ η hη
       labelled := assertionsLabelled_of_checked labelsChecked G I c after admits hp r }⟩
   exact nodesChecked_of_walkJ (r.traversed.reassign η)
@@ -290,14 +290,14 @@ variable (ι) in
 for a walk that returned, visiting at least the nodes the start reaches,
 whose final summaries are sound, one no-return region `dead` and at every
 label the record visits a checked step (`NodeChecked`, its entry the
-recorded one) that `NodePassChecked` holds of: the visit's footprint and
-return checks at the step's values. -/
+recorded one) with `NodePassChecked` and `NodeExitTrace`: the footprint,
+return and exit computations at the same step's values. -/
 def RecordsChecked : Prop :=
   ∀ (G : NormalGraph ι) (I : InstanceImageCheck G) (c : Target.RunCall G I) (σ : SinglePass.WalkState ι G) reach,
     RunCall.walk c = .ok (σ, reach) → reach ≤ σ.walk.visited →
     SummariesSound G I σ.answers.summaries.toList → ∃ dead, ∀ l, (ofPass σ.walk (passHeads c)).visited l →
       ∃ r : NodeChecked G I c.codes c.passChecker c.P (ofPass σ.walk (passHeads c)) (List.range c.inputs.length)
-        (passCtx c) l, NodePassChecked c dead r
+        (passCtx c) l, NodePassChecked c dead r ∧ NodeExitTrace c (passEdgesIn σ.walk) r
 
 /-- **(`run_traversedC`) The driver's checked walk from its record**: the
 walk `run_traversedA` builds, its nodes the checked steps `RecordsChecked`

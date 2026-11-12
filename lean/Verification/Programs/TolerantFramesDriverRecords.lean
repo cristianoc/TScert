@@ -168,17 +168,19 @@ theorem PushOk.mono {c : Target.RunCall G I} {t : Nat} {s : SinglePass.State} {a
   ⟨h.1, h.2.1, h.2.2.mono hab⟩
 
 /-- **A visited label's record as the visit leaves it**: its node checked
-at every record agreeing with it at the label and every summary table its
-answers are a prefix of, with the visit's checks at it in the no-return
-region `dead` (`NodePassChecked`); at the start, the start entered; at a node other
+at every record agreeing with it at the label and extending its incoming
+arrays (`WalkExtends`), and every summary table its answers are a prefix of,
+with the visit's checks in the no-return region `dead` (`NodePassChecked`)
+and its exit computation (`NodeExitTrace`) at the same node; at the start, the start entered; at a node other
 than a head, its entry the written facts added to its one incoming state or
 to the merge of those that came in (or to some state where none did). -/
 structure SettledCore (c : Target.RunCall G I) (heads : Nat → Bool) (dead : List Bool) (σ : SinglePass.WalkState ι G)
     (l : Nat) : Prop where
-  node : ∀ (w : SinglePass.Walk ι) (a : Answered G), w.labels[l]? = σ.walk.labels[l]? → SumsPrefix σ.answers a →
+  node : ∀ (w : SinglePass.Walk ι) (a : Answered G), w.labels[l]? = σ.walk.labels[l]? →
+    WalkExtends σ.walk w → SumsPrefix σ.answers a →
     ProgramCertificates.SummariesSound G I a.summaries.toList →
     ∃ r : NodeChecked G I c.codes c.passChecker c.P (ofPass w heads) (List.range c.inputs.length) (passCtx c) l,
-      NodePassChecked c dead r
+      NodePassChecked c dead r ∧ NodeExitTrace c (passEdgesIn w) r
   start : l = c.start → ∀ w : SinglePass.Walk ι, w.labels[l]? = σ.walk.labels[l]? →
     StartEntered c (ofPass w heads) (passCtx c) (passStated c)
   entry : heads l = false → ∃ b, (ofPass σ.walk heads).entry l = withWritten (passStated c l) b ∧
@@ -384,7 +386,7 @@ theorem recordSound_of_inv {c : Target.RunCall G I} {env : SinglePass.WalkEnv ι
   have hbase : ∀ t (h : visB σ.walk t = true) (hg : passHeads c t = false),
       base t = Classical.choose ((hset t h).entry hg) := fun t h hg => by
     simp only [base, dif_pos (And.intro h hg)]
-  refine ⟨fun l hl => ((hset l ((ofPass_visited _ _ _).mp hl)).node σ.walk σ.answers rfl (SumsPrefix.refl _)
+  refine ⟨fun l hl => ((hset l ((ofPass_visited _ _ _).mp hl)).node σ.walk σ.answers rfl (WalkExtends.refl _) (SumsPrefix.refl _)
     hsums).elim fun r _ => ⟨r⟩,
     ⟨base, ?_, fun t hv => ?_⟩, ?_⟩
   · refine { visited := fun t hne => (ofPass_visited σ.walk (passHeads c) t).mpr (hvi t hne),
@@ -423,7 +425,7 @@ theorem Settled.frame {c : Target.RunCall G I} {heads : Nat → Bool} {dead : Li
     {σ σ' : SinglePass.WalkState ι G} {t : Nat} (h : Settled c heads dead σ t) (hl : σ'.walk.labels[t]? = σ.walk.labels[t]?)
     (hin : heads t = false → σ'.walk.incoming[t]? = σ.walk.incoming[t]? ∧
       σ'.walk.incomingImpl[t]? = σ.walk.incomingImpl[t]? ∧ σ'.walk.incomingEdges[t]? = σ.walk.incomingEdges[t]?)
-    (hk : SumsPrefix σ.answers σ'.answers) : Settled c heads dead σ' t := by
+    (hk : SumsPrefix σ.answers σ'.answers) (hext : WalkExtends σ.walk σ'.walk) : Settled c heads dead σ' t := by
   have he : (ofPass σ'.walk heads).entry t = (ofPass σ.walk heads).entry t := by simp only [ofPass, hl]
   have hi : (ofPass σ'.walk heads).implies t = (ofPass σ.walk heads).implies t := by simp only [ofPass, hl]
   have hf : passFresh σ'.walk t = passFresh σ.walk t := by simp only [passFresh, hl]
@@ -431,7 +433,7 @@ theorem Settled.frame {c : Target.RunCall G I} {heads : Nat → Bool} {dead : Li
       passEdgesIn σ'.walk t = passEdgesIn σ.walk t := fun hg => by
     obtain ⟨h1, h2, h3⟩ := hin hg
     exact ⟨by simp [ofPass, hg, h1, h2], by simp only [passEdgesIn, h3]⟩
-  refine { node := fun w a hw hka hs => h.node w a (hw.trans hl) (SumsPrefix.trans hk hka) hs,
+  refine { node := fun w a hw hwa hka hs => h.node w a (hw.trans hl) (hext.trans hwa) (SumsPrefix.trans hk hka) hs,
            start := fun hs w hw => h.start hs w (hw.trans hl),
            entry := fun hg => ?_, below := fun hg h2 => ?_ }
   · obtain ⟨hI, hE⟩ := hinc hg
@@ -475,6 +477,7 @@ structure VisitFacts (c : Target.RunCall G I) (env : SinglePass.WalkEnv ι G I) 
   mergeFresh : envHead env l = false → 2 ≤ (incS σ.walk l).length → passFresh σ'.walk l = σ.fresh
   inSizes : σ.walk.incoming.size = σ.walk.incomingImpl.size → σ'.walk.incoming.size = σ'.walk.incomingImpl.size
   impBelow : IncomingBelow σ.walk σ.fresh → IncomingBelow σ'.walk σ'.fresh
+  extendsWalk : WalkExtends σ.walk σ'.walk
 
 omit [Labels ι] in
 theorem visB_frame {w w' : SinglePass.Walk ι} {t : Nat} (h : w'.labels[t]? = w.labels[t]?) : visB w' t = visB w t := by
@@ -617,7 +620,7 @@ theorem recInv_visit {c : Target.RunCall G I} {env : SinglePass.WalkEnv ι G I} 
       rw [hF.mergeFresh hg h2']
       exact ⟨fun e he => (hI.push t e.1 (List.of_mem_zip he).1).2.2, hI.startFresh⟩
     · rw [hvis t htl] at ht
-      exact (hI.settled t ht).frame (hF.labels t htl) (fun hg => hF.frame t (hvisOld t ht hg)) hk
+      exact (hI.settled t ht).frame (hF.labels t htl) (fun hg => hF.frame t (hvisOld t ht hg)) hk hF.extendsWalk
 
 /-- A call's setup (`SinglePass.setup` over its arguments). -/
 def RunCall.setup {G : NormalGraph ι} {I : InstanceImageCheck G} (c : Target.RunCall G I) :
@@ -698,7 +701,7 @@ theorem recordsChecked_of (hs : SetupRecords ι) (hv : VisitsRecord ι) : Record
   have hl' := (ofPass_visited _ _ _).mp hl
   have hset := hinv.settled l hl'
   rw [hE.heads] at hset
-  exact hset.node σ.walk σ.answers rfl (SumsPrefix.refl _) hsums
+  exact hset.node σ.walk σ.answers rfl (WalkExtends.refl _) (SumsPrefix.refl _) hsums
 
 end Records
 
