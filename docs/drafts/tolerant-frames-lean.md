@@ -1561,3 +1561,45 @@ path is a cycle; `loopHeads_cuts` (under `LoopHeadsFuelEq`, the marks
 `loopHeads` returns cut every cycle of the nodes it reaches);
 `HeadsCutCycles.mono`; `passHeads_cuts` (the call's heads, the start
 marked besides). No depth-first path theorem is used.
+
+**(`run_sound_18b`)**, proved (`run_sound` with `run_traversedA`):
+
+```math
+\mathrm{WalkStopsRefuse} \wedge \mathrm{RecordsSound} \wedge \mathrm{NodesMean} \wedge \mathrm{LinearNearFuelEq} \wedge \mathrm{MergeExitsJoined} \wedge \mathrm{FootprintsKept} \wedge \mathrm{ReturnsKept} \wedge \mathrm{RegionsHeld} \wedge \mathrm{AssertionsLabelled} \Longrightarrow \mathrm{RunSound}
+```
+
+**What the record lacks for `RecordsSound`** (pass changes, each a field
+or a definition the proof reads):
+
+- `runWalk`'s visit and setup as top-level functions (the visit is a local
+  `fun` of `runWalk`, which no statement can name), so that each visit's
+  effect on the record is a theorem over the visit and `Drives.inv` carries
+  it to the walk's end;
+- per label, the fresh counter the step starts from, the answers it starts
+  from and its `Stepped` result (`NodeChecked`'s `fresh`, `answers`, `st`),
+  and the counter on entry (the start's `StartEntered` counter);
+- the loop heads (`isHead`) in the record, or exposed by the setup
+  (`passHeads` restates them);
+- a stop type without acceptance (`WalkStopsRefuse` by its type);
+- `loopHeads` on fuel as `dfsLoop` (`LoopHeadsFuelEq` by construction);
+- `Store.linearNear` on fuel as `linearNearFuel` (`LinearNearFuelEq`).
+
+Premises this leg discharges / leaves:
+
+- `RunTraversed`: restated as `RunTraversedA` (the record's entries hold
+  the written facts, which `Traversed` did not state) and reduced by
+  `run_traversedA` to `WalkStopsRefuse` and `RecordsSound`; the heads'
+  records discharged by the reading (`ofPass_heads`). Left: `RecordsSound`
+  (each visited node `NodeChecked`, `TraversedA`, `StartEntered`, read off
+  the visit once it is a function), `WalkStopsRefuse`.
+- `HeadsCutCycles`: discharged under `LoopHeadsFuelEq` (`passHeads_cuts`),
+  for the proof of `TraversedA`'s merges; left: the in-degree order (a
+  node other than a head visited after every edge into it from a reached
+  node) and `TablesAgree` from it, both over the visit.
+- `MergesImpliesHold`: replaced by `MergeExitsJoined`, the exits into a
+  merge delivering its joined implications (`ExitsJoined`, the per-node
+  side's, by `joined_of_exit` at the source environment meeting the edge's
+  refined context); the pass's per-edge check does not give them at an
+  edge state alone.
+- `LinearNearFuelEq`, `RunKeepsSummaries`: left (`Store.linearNear` is a
+  `while` loop; the answers are threaded by the visit).

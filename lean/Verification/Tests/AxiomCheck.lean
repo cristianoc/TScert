@@ -751,6 +751,7 @@ run_cmd do
   check ``Verification.TolerantFrames.loopHeads_cuts
   check ``Verification.TolerantFrames.HeadsCutCycles.mono
   check ``Verification.TolerantFrames.passHeads_cuts
+  check ``Verification.TolerantFrames.run_sound_18b
   let env ← getEnv
   let project (decl : Name) : Bool := match env.getModuleIdxFor? decl with
     | some i => (`Verification).isPrefixOf env.header.moduleNames[i.toNat]!
