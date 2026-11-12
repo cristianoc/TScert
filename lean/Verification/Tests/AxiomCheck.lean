@@ -59,6 +59,7 @@ import Verification.Programs.TolerantFramesRegionalRuns
 import Verification.Programs.TolerantFramesNodeAsserts
 import Verification.Programs.TolerantFramesNodeGoals
 import Verification.Programs.TolerantFramesNodeCallFresh
+import Verification.Programs.TolerantFramesMergeExits
 
 /-!
 Acceptance rests on Lean's standard axioms alone. The build fails when any of
@@ -715,6 +716,10 @@ run_cmd do
   check ``Verification.TolerantFrames.goalHolds_of_return
   check ``Verification.TolerantFrames.passOutFresh_of_checked
   check ``Verification.TolerantFrames.callFresh_of_checked
+  -- Leg 17b: the walk side of the graph theorem (TolerantFramesMergeExits)
+  check ``Verification.TolerantFrames.entry_of_edge
+  check ``Verification.TolerantFrames.joined_of_exit
+  check ``Verification.TolerantFrames.entries_of_traversedJ
   let env ← getEnv
   let project (decl : Name) : Bool := match env.getModuleIdxFor? decl with
     | some i => (`Verification).isPrefixOf env.header.moduleNames[i.toNat]!
