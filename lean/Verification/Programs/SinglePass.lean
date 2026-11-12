@@ -1851,59 +1851,100 @@ def setup (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty 
       given := given, merging := merging, deadArr := deadArr, startNames := startNames, argName := argName }
   return .ok (env, σ0)
 
-/-- One node's visit, its entry, its step and its exits, from the walk's
-state `σ` (`visit` keeps its read-summary table). -/
-def visitBody (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEnv ι G images) (σ : WalkState ι G)
-    (l : Nat) : Except (WalkStop ι G) (WalkState ι G) := do
-  let pool := env.pool
-  let fuel := env.fuel
-  let suggestions := env.suggestions
-  let index := env.index
-  let codes := env.codes
-  let aliases := env.aliases
-  let passChecker := env.passChecker
-  let undefTy := env.undefTy
+/-- A node's output facts as an edge reads them: the step's output `out`
+with its links restated on every slot of their classes at the node's
+context with its result. -/
+def outAllOf (G : NormalGraph ι) (c : PointClaim ι) (out : Knowledge) : Knowledge :=
+  KnowledgeExpand.expandLinks (HeapKnowledge.setsCtx (HeapKnowledge.typeSets G c.context) 1) out
+
+/-- **An exit's context as the step's yields refine it** (`produceNodeAt`),
+at the node's claim `c` and continuation `k`, the yields `ysAll` (each at
+every slot holding its target's name), the output facts `out`
+(`outAllOf`) and whether the exit is the continuation's first (`first`, a
+two-way dispatch's true arm): a pushed result's context refined by the
+unconditional yields, a branch's arm by its arm's. -/
+def refinedContext (G : NormalGraph ι) (c : PointClaim ι) (k : Continuation) (ysAll : List (PromiseCalls.Yield ι))
+    (out : Knowledge) (first : Bool) : List (Ty ι) :=
+  let pushedRefine := fun facts => PromiseCalls.refineBy G (c.type :: c.context)
+    (PromiseCalls.aliasFacts out.links facts 1) 0
+  let keptRefine := fun facts => PromiseCalls.refineBy G c.context
+    (PromiseCalls.aliasFacts (HeapKnowledge.dropResult out).links facts 0) 0
+  let unconditional := PromiseCalls.yieldFacts ysAll false
+  let conditional := PromiseCalls.yieldFacts ysAll true
+  match k with
+  | .bind _ => pushedRefine unconditional
+  | .effect _ => keptRefine unconditional
+  | .branch .. => keptRefine (if first then conditional else unconditional)
+  | .branchBind .. => pushedRefine (if first then conditional else PromiseCalls.yieldFacts ysAll false true)
+  | .tagBind tg .. => pushedRefine (if first then PromiseCalls.yieldFacts ysAll (ControlFlow.truthyBoolean G tg c.type)
+      else unconditional)
+  | .ret => c.context
+
+/-- What a node's entry gives its step and its exits: the walk's state
+after it (its counters, trace, fresh counter and timer), whether no
+environment meets the node's context, the entry state and implications, at
+a merge observed each predecessor's state and names, at a merge its context
+and the fresh counter it started from. -/
+structure Entered (ι : Type) [BEq ι] [Hashable ι] (G : NormalGraph ι) where
+  σ : WalkState ι G
+  here : Bool
+  entry : State
+  implies : List (PromiseCalls.Implication ι)
+  predViews : List (Nat × Knowledge)
+  predNames : List (List Nat)
+  merge : Option (List (Ty ι) × Nat)
+
+/-- What a node's step gives its exits and its record: the walk's state
+after it, the fresh counter and the read-summary table's length it started
+from, its result, whether its result holds a fresh store, whether its
+footprint and return checks passed, its yields where computed, the
+handler's thrown value's type and name. -/
+structure StepDone (ι : Type) [BEq ι] [Hashable ι] (G : NormalGraph ι) where
+  σ : WalkState ι G
+  stepFresh : Nat
+  stepSummaries : Nat
+  st : Stepped ι
+  outFresh : Bool
+  bounded : Bool
+  returned : Bool
+  yields : Option (List (PromiseCalls.Yield ι))
+  thrownTy : Option (Ty ι)
+  thrown : Nat
+
+/-- A node's entry (`visit`'s first part): its entry state, given at a
+head, its one predecessor's, or the meet of its predecessors', a written
+assertion's facts joined at a node other than a head; the stop where an
+observation of its entry is asked. -/
+def visitEntry (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEnv ι G images) (σ : WalkState ι G)
+    (l : Nat) : Except (WalkStop ι G) (Entered ι G) := do
   let nodes := env.nodes
   let claimed := env.claimed
-  let n := env.n
   let start := env.start
-  let goal := env.goal
-  let ensures := env.ensures
   let reference := env.reference
-  let debugNode := env.debugNode
-  let bound := env.bound
   let givenImplies := env.givenImplies
   let givenArgs := env.givenArgs
   let givenInputs := env.givenInputs
   let observe := env.observe
   let tracing := env.tracing
   let observeEntry := env.observeEntry
-  let regional := env.regional
   let isHead := env.isHead
   let startEntered := env.startEntered
   let stated := env.stated
   let given := env.given
-  let merging := env.merging
-  let deadArr := env.deadArr
   let startNames := env.startNames
   let argName := env.argName
-  let mut answers := σ.answers
+  let answers := σ.answers
   let mut counts := σ.counts
   let mut trace := σ.trace
-  let mut indeg := σ.indeg
   let mut fresh := σ.fresh
-  let mut regionIn := σ.regionIn
-  let mut incomingFrom := σ.incomingFrom
-  let mut queue := σ.queue
-  let mut unsat := σ.unsat
   let mut lastStamp := σ.lastStamp
-  let mut lastKind := σ.lastKind
-  let mut labels := σ.walk.labels
-  let mut incoming := σ.walk.incoming
-  let mut incomingImpl := σ.walk.incomingImpl
-  let mut incomingEdges := σ.walk.incomingEdges
-  let mut walkEdges := σ.walk.edges
-  let visitedBefore := σ.walk.visited
+  let lastKind := σ.lastKind
+  let unsat := σ.unsat
+  let incoming := σ.walk.incoming
+  let incomingImpl := σ.walk.incomingImpl
+  let incomingEdges := σ.walk.incomingEdges
+  let incomingFrom := σ.incomingFrom
+  let mut merge : Option (List (Ty ι) × Nat) := none
   -- Measuring: the previous node's time, with its edges, by its kind.
   lastStamp := clock lastKind lastStamp l
   let node := nodes[l]!
@@ -1935,7 +1976,7 @@ def visitBody (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEn
       implies := (incomingImpl[l]!).headD []
     | [] => pure ()
     | s :: rest =>
-      labels := labels.modify l fun r => { r with merge := some (c.context, fresh) }
+      merge := some (c.context, fresh)
       let mg := mergeState G c.context (s :: rest) incomingEdges[l]! fresh
       fresh := mg.fresh
       counts := { counts with merges := counts.merges + 1, mergeDiffs := counts.mergeDiffs + mg.diffCount }
@@ -1971,12 +2012,53 @@ def visitBody (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEn
       let f := fun (i : Nat) => entry.names[i]?
       entry := { entry with store := (atomsOf req).foldl (fun s a => match a.rename f with
         | some b => s.add b | none => s) entry.store }
-  labels := labels.modify l fun r => { r with visited := true, entryFresh := σ.fresh, entry := some entry, implies }
   -- Observing a node whose step is refused: its state on entry alone.
   if observeEntry && observe == some l then
     let before := (materialize entry width (List.range width) true).1
     let o : Observation ι := { label := l, before, after := before, preds := predViews, names := predNames, implies := slotImplOf entry.names implies }
     throw (WalkStop.mk (.observed o) counts answers trace)
+  pure { σ := { σ with counts, trace, fresh, lastStamp }, here, entry, implies, predViews, predNames, merge }
+
+/-- A node's step (`visit`'s second part), from its entry `en`: its shape,
+the checked step, an observation of it, its result's freshness, its
+footprint check, its yields, a handler's thrown value, its return check. -/
+def visitStep (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEnv ι G images) (l : Nat)
+    (en : Entered ι G) : Except (WalkStop ι G) (StepDone ι G) := do
+  let pool := env.pool
+  let fuel := env.fuel
+  let suggestions := env.suggestions
+  let index := env.index
+  let codes := env.codes
+  let aliases := env.aliases
+  let passChecker := env.passChecker
+  let undefTy := env.undefTy
+  let nodes := env.nodes
+  let claimed := env.claimed
+  let start := env.start
+  let goal := env.goal
+  let ensures := env.ensures
+  let debugNode := env.debugNode
+  let bound := env.bound
+  let observe := env.observe
+  let tracing := env.tracing
+  let given := env.given
+  let deadArr := env.deadArr
+  let startNames := env.startNames
+  let argName := env.argName
+  let σ := en.σ
+  let mut answers := σ.answers
+  let mut counts := σ.counts
+  let mut trace := σ.trace
+  let mut fresh := σ.fresh
+  let mut lastKind := σ.lastKind
+  let incoming := σ.walk.incoming
+  let node := nodes[l]!
+  let c := claimed[l]!
+  let width := c.context.length
+  let entry := en.entry
+  let implies := en.implies
+  let predViews := en.predViews
+  let predNames := en.predNames
   -- The node's shape (`passShapeCheck'`).
   if !passShapeCheck' G c.type node.continuation then
     throw (WalkStop.mk (.refused s!"the shape of node {l}") counts answers trace)
@@ -2003,11 +2085,7 @@ def visitBody (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEn
   let stepK := st.stepK
   let stepOut := st.stepOut
   let stepDeriv := st.stepDeriv
-  let stepEffect := st.stepEffect
   let pushedNames := result :: entry.names
-  labels := labels.modify l fun r =>
-    { r with stepFresh := stepFresh, stepSummaries := stepSummaries, stepped := some st,
-             after := some { entry with names := pushedNames, store } }
   if tracing then
     let st : State := { entry with names := pushedNames, store := store }
     trace := { trace with afters := trace.afters.set! l (some st), names := pushedNames, focus := result :: trace.focus }
@@ -2041,7 +2119,6 @@ def visitBody (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEn
           | some t => !deadArr.getD t.label false
           | none => false
         footprintCheck G images codes answers.summaries.toList Φ F c node stepK deriv liveHandler exc ret outFresh
-  labels := labels.modify l fun r => { r with bounded := bounded }
   if !bounded then throw (WalkStop.mk (.outsideBound l) counts answers trace)
   -- The node's implications at its slots, as the search's yields read
   -- them (`produceNode`): a negation's or a copy's yields restate them.
@@ -2082,15 +2159,79 @@ def visitBody (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEn
   let thrown := fresh
   if node.handler.isSome then fresh := fresh + 1
   -- The return check at a return: whether it passes, recorded.
+  let mut returned := true
   if let .ret := node.continuation then
     let (refusal, a, queried) := returnCheck G images goal ensures c l entry store result start startNames argName
       (yields.getD []) debugNode answers
     answers := a
+    returned := refusal.isNone
     if let some q := queried then
       counts := { counts with queries := counts.queries + 1, queryAtoms := counts.queryAtoms + q }
-    labels := labels.modify l fun r => { r with returned := refusal.isNone }
     if let some why := refusal then throw (WalkStop.mk (.refused why) counts answers trace)
-  else labels := labels.modify l fun r => { r with returned := true }
+
+  pure { σ := { σ with answers, counts, trace, fresh, lastKind }, stepFresh, stepSummaries, st, outFresh, bounded,
+         returned, yields, thrownTy, thrown }
+
+/-- A node's exits (`visit`'s third part), from its entry `en` and its step
+`sd`: a regional check, then each exit's edge checked, and its state and
+implications carried into its target, or checked against a head's given
+facts; the walk's state after them. -/
+def visitExits (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEnv ι G images) (l : Nat)
+    (en : Entered ι G) (sd : StepDone ι G) : Except (WalkStop ι G) (WalkState ι G) := do
+  let pool := env.pool
+  let codes := env.codes
+  let nodes := env.nodes
+  let claimed := env.claimed
+  let n := env.n
+  let start := env.start
+  let debugNode := env.debugNode
+  let givenImplies := env.givenImplies
+  let givenArgs := env.givenArgs
+  let givenInputs := env.givenInputs
+  let observe := env.observe
+  let tracing := env.tracing
+  let regional := env.regional
+  let isHead := env.isHead
+  let stated := env.stated
+  let given := env.given
+  let merging := env.merging
+  let startNames := env.startNames
+  let argName := env.argName
+  let σ := sd.σ
+  let mut answers := σ.answers
+  let mut counts := σ.counts
+  let mut trace := σ.trace
+  let mut indeg := σ.indeg
+  let mut regionIn := σ.regionIn
+  let mut incomingFrom := σ.incomingFrom
+  let mut queue := σ.queue
+  let mut unsat := σ.unsat
+  let mut incoming := σ.walk.incoming
+  let mut incomingImpl := σ.walk.incomingImpl
+  let mut incomingEdges := σ.walk.incomingEdges
+  let mut walkEdges := σ.walk.edges
+  let node := nodes[l]!
+  let c := claimed[l]!
+  let width := c.context.length
+  let here := en.here
+  let entry := en.entry
+  let implies := en.implies
+  let st := sd.st
+  let store := st.store
+  let result := st.result
+  let stepK := st.stepK
+  let stepOut := st.stepOut
+  let stepDeriv := st.stepDeriv
+  let stepEffect := st.stepEffect
+  let pushedNames := result :: entry.names
+  let outFresh := sd.outFresh
+  let thrownTy := sd.thrownTy
+  let thrown := sd.thrown
+  let mut yields := sd.yields
+  let deriv := stepDeriv.getD (.node ⟨c.context, node.expression, c.type⟩ .var [])
+  let slotImpl : Thunk (List (PromiseCalls.Implication ι)) := Thunk.mk fun _ => slotImplOf entry.names implies
+  let checkYs := fun (xs : List (PromiseCalls.Implication ι)) (ys : List (PromiseCalls.Yield ι)) => timedKind "yields checked" fun _ =>
+    checkedYields G images c.context c.type xs stepK stepOut deriv node.expression ys
   -- The edges: target, whether the result is pushed, an observation of
   -- it, and a branch's answer.
   let edges := Exit.ofNode node
@@ -2104,22 +2245,8 @@ def visitBody (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEn
   let ysAll := (yields.getD []).flatMap fun y => match entry.names[y.target]? with
     | some nm => (entry.names.zipIdx.filter (·.1 == nm)).map fun (_, j) => { y with target := j }
     | none => [y]
-  let outAll : Thunk Knowledge := Thunk.mk fun _ => KnowledgeExpand.expandLinks (HeapKnowledge.setsCtx (HeapKnowledge.typeSets G c.context) 1) stepOut
-  let refinedΓ := fun (first : Bool) =>
-    let pushedRefine := fun facts => PromiseCalls.refineBy G (c.type :: c.context)
-      (PromiseCalls.aliasFacts outAll.get.links facts 1) 0
-    let keptRefine := fun facts => PromiseCalls.refineBy G c.context
-      (PromiseCalls.aliasFacts (HeapKnowledge.dropResult outAll.get).links facts 0) 0
-    let unconditional := PromiseCalls.yieldFacts ysAll false
-    let conditional := PromiseCalls.yieldFacts ysAll true
-    match node.continuation with
-    | .bind _ => pushedRefine unconditional
-    | .effect _ => keptRefine unconditional
-    | .branch .. => keptRefine (if first then conditional else unconditional)
-    | .branchBind .. => pushedRefine (if first then conditional else PromiseCalls.yieldFacts ysAll false true)
-    | .tagBind tg .. => pushedRefine (if first then PromiseCalls.yieldFacts ysAll (ControlFlow.truthyBoolean G tg c.type)
-        else unconditional)
-    | .ret => c.context
+  let outAll : Thunk Knowledge := Thunk.mk fun _ => outAllOf G c stepOut
+  let refinedΓ := fun (first : Bool) => refinedContext G c node.continuation ysAll outAll.get first
   -- A regional check at this node, as `ArgumentRegionGraph.checkNode`
   -- makes it: its regional facts on entry (the regions' input slots at the
   -- start, a loop head's given ones, else what every edge into it
@@ -2249,20 +2376,7 @@ def visitBody (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEn
             | some nm => (entry.names.zipIdx.filter (·.1 == nm)).map fun (_, j) => { y with target := j }
             | none => [y]
           let outL := outAll.get
-          let pushedRefine := fun facts => PromiseCalls.refineBy G (c.type :: c.context)
-            (PromiseCalls.aliasFacts outL.links facts 1) 0
-          let keptRefine := fun facts => PromiseCalls.refineBy G c.context
-            (PromiseCalls.aliasFacts (HeapKnowledge.dropResult outL).links facts 0) 0
-          let unconditional := PromiseCalls.yieldFacts ys false
-          let conditional := PromiseCalls.yieldFacts ys true
-          let Γ' := match node.continuation with
-            | .bind _ => pushedRefine unconditional
-            | .effect _ => keptRefine unconditional
-            | .branch .. => keptRefine (if first then conditional else unconditional)
-            | .branchBind .. => pushedRefine (if first then conditional else PromiseCalls.yieldFacts ys false true)
-            | .tagBind tg .. => pushedRefine (if first then PromiseCalls.yieldFacts ys (ControlFlow.truthyBoolean G tg c.type)
-                else unconditional)
-            | .ret => Γ
+          let Γ' := refinedContext G c node.continuation ys outL first
           let (found, a) := checkedEdge G images claimed tc.context Γ' t observed outL answers
           answers := a
           -- A slot whose refined type the target's does not admit read at
@@ -2374,9 +2488,28 @@ def visitBody (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEn
         incomingEdges := incomingEdges.modify t.label ((Γe, atSlots, t.mapping) :: ·)
       indeg := indeg.modify t.label (· - 1)
       if indeg[t.label]! == 0 then queue := t.label :: queue
-  let w : Walk ι := { labels := labels, incoming := incoming, incomingImpl := incomingImpl, incomingEdges := incomingEdges, edges := walkEdges, visited := visitedBefore + 1 }
-  let σ' : WalkState ι G := { walk := w, answers := answers, counts := counts, trace := trace, indeg := indeg, fresh := fresh, regionIn := regionIn, incomingFrom := incomingFrom, queue := queue, unsat := unsat, lastStamp := lastStamp, lastKind := lastKind }
-  pure σ'
+  let w : Walk ι := { σ.walk with incoming, incomingImpl, incomingEdges, edges := walkEdges }
+  pure { σ with walk := w, answers, counts, trace, indeg, regionIn, incomingFrom, queue, unsat }
+
+/-- What the walk records of a visited label, from its entry `en` and its
+step `sd` (`visit` writes it once). -/
+def LabelWalk.ofVisit {G : NormalGraph ι} (entryFresh : Nat) (en : Entered ι G) (sd : StepDone ι G) : LabelWalk ι :=
+  { visited := true, entryFresh, entry := some en.entry, implies := en.implies, stepFresh := sd.stepFresh,
+    stepSummaries := sd.stepSummaries, stepped := some sd.st,
+    after := some { en.entry with names := sd.st.result :: en.entry.names, store := sd.st.store },
+    bounded := sd.bounded, returned := sd.returned, merge := en.merge }
+
+/-- One node's visit, its entry, its step and its exits, from the walk's
+state `σ`, the label's record written once (`visit` keeps its read-summary
+table). -/
+def visitBody (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEnv ι G images) (σ : WalkState ι G)
+    (l : Nat) : Except (WalkStop ι G) (WalkState ι G) := do
+  let en ← visitEntry G images env σ l
+  let sd ← visitStep G images env l en
+  let σ' ← visitExits G images env l en sd
+  let labels := σ'.walk.labels.set! l (LabelWalk.ofVisit σ.fresh en sd)
+  let w : Walk ι := { σ'.walk with labels, visited := σ.walk.visited + 1 }
+  pure { σ' with walk := w }
 
 /-- `b`'s answers with `a`'s read-summary table as their table's prefix:
 `a`'s table, then `b`'s entries past `a`'s length (`b` itself where `a`'s
