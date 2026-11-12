@@ -1850,3 +1850,33 @@ state after the step determines (the argument's slots, named by
 that state, as `ControlFlow.goal_return` reads `ReturnOk`, `YieldsOk` and
 `ArgumentsOk`, with the subtype answers' soundness (pass change D5) for
 `returnCheck`'s `subtypeUsing`.
+
+## Leg 14b: a written assertion on its edges and in the entry state
+
+Module `lean/Verification/Programs/TolerantFramesNodeAsserted.lean`.
+Proved (`assertion_query_sound`): the check `run` makes on every edge into
+a node other than a head that states an assertion `req` (`checkIn` of `req`
+over the edge's materialized facts with the typed cells and links of the
+edge's context $`\Gamma_e`$, under the edge's observation where it has one,
+`assertionSource`) gives `req` at the target's environment
+$`\mathrm{mapEnv}\ \theta\ \rho`$, where the edge's facts hold at
+$`\rho`$, $`\Gamma_e`$ types $`\rho`$ (on a refined edge context, the
+step's yields: `YieldsOk`), the observation holds of the result and the
+target's context types the mapped environment.
+
+`AssertionsHeld` reads the assertion from the node's entry state
+(`passPreT`), into which `run` adds each written fact renamed to the
+slots' names (`Store.add`). That state does not entail every written
+fact: a fact one of whose slots has no name is not added (its renaming is
+`none`); `Store.addBound` does not add a linear bound when the store has a
+bound of the same normal form at least as strong, though the normal form
+may drop a term (`x - x`) whose value the skipped fact requires defined;
+and a separation fact's atoms carry no level bound. Observed in the code;
+no source reaching these is demonstrated. So `AssertionsHeld` is a named
+hypothesis of this leg. The edge check above is the obligation that gives
+the assertion at every entry: a node assertion that states, beside
+`passPreT`, the stated assertions at the label, with every edge into the
+label establishing them (`assertion_query_sound` at a node other than a
+head, `head_query_sound` at a head, whose given facts include the written
+assertion), carries them to every reached entry as `reached_pre` carries
+`passPreT`.
