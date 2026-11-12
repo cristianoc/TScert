@@ -2625,15 +2625,15 @@ def yieldsAtSlots (names : List Nat) (ys : List (PromiseCalls.Yield ι)) : List 
 
 /-- **The regional evidence's entry facts**: the entry's whole
 materialization `kHere` together with the step's facts `stepK`, each list
-`kHere`'s then `stepK`'s others, the separations joined where both are at
-one depth or `stepK`'s is empty (`HeapSeparation.union`), `kHere`'s
-otherwise; every fact of `kHere` kept. -/
+`kHere`'s then `stepK`'s others; the separations joined
+(`HeapSeparation.union`): both where they are at one depth, the other where
+one is empty, `stepK`'s otherwise, so every separation fact of the step's
+derivation check is stated. -/
 def regionalFacts (kHere stepK : Knowledge) : Knowledge :=
   { cells := kHere.cells ++ stepK.cells.filter (!kHere.cells.contains ·)
     values := kHere.values ++ stepK.values.filter (!kHere.values.contains ·)
     links := kHere.links ++ stepK.links.filter (!kHere.links.contains ·)
-    separation := if kHere.separation.depth == stepK.separation.depth || stepK.separation.facts.isEmpty
-      then HeapSeparation.union kHere.separation stepK.separation else kHere.separation
+    separation := HeapSeparation.union kHere.separation stepK.separation
     elems := kHere.elems ++ stepK.elems.filter (!kHere.elems.contains ·)
     indices := kHere.indices ++ stepK.indices.filter (!kHere.indices.contains ·) }
 
