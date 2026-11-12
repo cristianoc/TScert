@@ -2222,3 +2222,63 @@ Named hypotheses: `SubtypeAnswersSound` (an accepted `subtypeUsing`
 answer, from any table, an inclusion of meanings: pass change D5);
 `YieldsOk` of the step's yields (pass change D2). The plain goal's premise
 is `NodeAccepted.ret` at a plain goal (`plain_return`).
+
+## Leg 15b: a call's fresh result behind its derivation's check
+
+Module `lean/Verification/Programs/TolerantFramesNodeCallFresh.lean`.
+`passOutFreshChecked` is `run`'s `outFresh` with its call disjunct
+(`passCallFresh`) behind `passDerivChecked`, the check pass change D4
+adds; `passOutFresh_of_checked` gives the existing `outFresh` from it.
+`CallFreshBelow` is `CallFreshOk` over the runs within the state's budget,
+the runs `footprintKept_of` reads (`EvalKeeps`). Proved:
+
+- (`callFresh_of_checked`) `passCallFresh` ∧ `passDerivChecked` at the
+  node's sequent ∧ `CodesSound` ∧ `SummariesSound` ∧ the mark at most the
+  heap's length ∧ the context typing the environment ∧ the step's
+  knowledge holding ⟹ every run of the node's term within the budget to a
+  value returns a store allocated at or past the mark: the selected
+  effect's `post` (`selected_sound`, or `requiresTree_sound`) states the
+  result fresh at the heap's length (`Effect.post`'s `fresh` conjunct),
+  `FreshAt.lower` at the mark.
+
+`CallFreshOk` quantifies over runs of every length, which the step's
+judgment at the state's budget does not bound; the fold restates it as
+`CallFreshBelow`, which `footprintKept_of`'s consumption (`hcf … k …`,
+`k` below the budget) already meets.
+
+## Leg 15b: premises this leg discharges and leaves
+
+Discharges:
+
+- the node obligations at `branchBind` and `tagBind`: `NodeObligations'`,
+  `graph_safe'`, `normalTarget'_of_exits`, `stepEdgesSound'_of`; the
+  edge lemmas cover both continuations as they stand (`ofNode_flags`);
+  the shape at a `branchBind` from `passShapeCheck'` (needs the pass's
+  `onlyBoolean` test there, beside Leg 14b's `branch` test);
+- `RegionsKept`: `regionsKept_of` and `regionally_of_walk_stable` at the
+  assertion fixing the traversed fields (`passPreS`), from `RegionNodeOk`
+  at every visited node (`RegionNodeOk.ofCheck`);
+- `AssertionsHeld`: by `passPreA`, every edge establishing the written
+  assertion (`assertsAt_of_edge`, `assertsAt_of_head`, `assertsAt_start`),
+  `asserted_of_walkA`;
+- the guard and assertion goals of `NodeAccepted.ret`:
+  `goalHolds_of_return`, under `SubtypeAnswersSound` (D5) and `YieldsOk`
+  (D2);
+- `CallFreshOk` within the budget: `callFresh_of_checked` under D4.
+
+Leaves:
+
+- the fold of `ShapeOk'`, `NormalTarget'` into `TolerantFramesRuns.lean`
+  (the two cases each of `graph_step`, `normalTarget_of_exits`,
+  `nodeObligations_mono`, `nodeShape_of`), of `passPreS` and `passPreA`
+  into `WalkSound`, `PassWalkSound` and `run_guarantee`, and of
+  `CallFreshBelow` into `footprintKept_of`;
+- pass changes: `onlyBoolean` at a `branchBind`; `checkEntryFields G
+  inputs regions` under a regional check (`StableNow` at the start);
+  `regionalDerivChecked` of the step's derivation at the regional check
+  (`RegionalTyped`); a repeated assertion label refused or joined
+  (`byLabel` checks the first); D2, D4, D5;
+- `RegionalTyped` at a node whose step has no derivation (a copy, step
+  evidence alone); `TablesAgree` at every visited node (the meet over
+  every predecessor, `run_traversed`'s order); the mark at most the
+  heap's length at a node entry (`callFresh_of_checked`'s `hm`).
