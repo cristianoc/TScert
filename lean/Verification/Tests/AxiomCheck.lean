@@ -62,6 +62,7 @@ import Verification.Programs.TolerantFramesNodeCallFresh
 import Verification.Programs.TolerantFramesComposeRunSound
 import Verification.Programs.TolerantFramesNodeJoined
 import Verification.Programs.TolerantFramesNodeYields
+import Verification.Programs.TolerantFramesNodeYielded
 
 /-!
 Acceptance rests on Lean's standard axioms alone. The build fails when any of
@@ -735,6 +736,19 @@ run_cmd do
   check ``Verification.TolerantFrames.nodeObligations_of_partsY
   check ``Verification.TolerantFrames.stepEdgesSoundJ_of_yields
   check ``Verification.TolerantFrames.regionalTyped_copy
+  -- Leg 18a: the per-node side (TolerantFramesNode*, TolerantFramesCompose*)
+  check ``Verification.TolerantFrames.yieldsJudged_of_follows
+  check ``Verification.PromiseCalls.promiseCall_yields_local
+  check ``Verification.PromiseCalls.promiseCall_yields_checked
+  check ``Verification.TolerantFrames.slotImplOf_mem
+  check ``Verification.TolerantFrames.slotImplOf_ok
+  check ``Verification.TolerantFrames.slotImplOf_entry
+  check ``Verification.TolerantFrames.yieldsOk_passReturnYields
+  check ``Verification.TolerantFrames.yieldsJudged_of_promise
+  check ``Verification.TolerantFrames.yieldsJudged_nil
+  check ``Verification.TolerantFrames.yieldsJudged_of_checked
+  check ``Verification.TolerantFrames.exitDeliversY_head
+  check ``Verification.TolerantFrames.goalHolds_of_returnY
   let env ← getEnv
   let project (decl : Name) : Bool := match env.getModuleIdxFor? decl with
     | some i => (`Verification).isPrefixOf env.header.moduleNames[i.toNat]!

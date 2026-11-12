@@ -164,23 +164,45 @@ theorem nodeObligations_of_partsY {G : NormalGraph ι} {A : Ty ι} {Γ : List (T
       rwa [hU] at this
     exact hraise s' e ha.1 (hx s' ha) (envOk_admissible ha.1 he) hsc hΞ'
 
-/-- **What a node's step means with its kept yields** `ys`, read at the
-implications `xs`: the yields accepted by `yieldFollows` of the node's
-term at the step's facts' links (`checkedYields_follows`), `xs` holding
-where the entry state does, a return's goal from the state after the step,
+/-- **A step's judgment carries its kept yields** `ys`: at every state
+where the entry state `entry` holds, the context types the environment and
+the step's facts `stepK` hold, the step's judgment at the claim's type `A`
+holds with each value also meeting `YieldsOk ys`. -/
+def YieldsJudged (G : NormalGraph ι) (A : Ty ι) (Γ : List (Ty ι)) (t : Tm) (entry : SinglePass.State)
+    (I : List (PromiseCalls.Implication ι)) (startNames : List Nat) (ρ0 : Env) (m : Nat)
+    (stepK : HeapKnowledge.Knowledge) (ys : List (PromiseCalls.Yield ι)) : Prop :=
+  ∀ ρ (s : IndexedHeap) (Q : Post) (R : Heap → Prop), StateHolds G entry I startNames ρ0 ρ m s →
+    EnvOk G Γ ρ s.n s.W → HeapKnowledge.Holds stepK ρ s.h →
+    SafePostExc (excOf G) (meaning G A) Q R s.n s.W s.h (instantiate 0 ρ t) →
+    SafePostExc (excOf G) (fun k U u => meaning G A k U u ∧ PromiseCalls.YieldsOk G ys ρ k U u) Q R
+      s.n s.W s.h (instantiate 0 ρ t)
+
+omit [Hashable ι] [Instantiates ι] in
+/-- **Yields `yieldFollows` accepts are judged** (`stepYields_judgment`):
+where every yield passes `yieldFollows` at the implications `xs` and the
+step's links, and `xs` holds wherever the entry state does. -/
+theorem yieldsJudged_of_follows {G : NormalGraph ι} {images : InstanceImageCheck G} {A : Ty ι}
+    {Γ : List (Ty ι)} {t : Tm} {entry : SinglePass.State} {I : List (PromiseCalls.Implication ι)}
+    {startNames : List Nat} {ρ0 : Env} {m : Nat} {stepK : HeapKnowledge.Knowledge}
+    {xs : List (PromiseCalls.Implication ι)} {ys : List (PromiseCalls.Yield ι)}
+    (hc : ys.all (PromiseCalls.yieldFollows G images Γ xs stepK.links t) = true)
+    (hx : ∀ ρ (s : IndexedHeap), StateHolds G entry I startNames ρ0 ρ m s → PromiseCalls.ImpliesOk G xs ρ s.n s.W) :
+    YieldsJudged G A Γ t entry I startNames ρ0 m stepK ys :=
+  fun ρ s _ _ hS he hk hj => stepYields_judgment hc he (hx ρ s hS) hk.2.2.1 hj
+
+/-- **What a node's step means with its kept yields** `ys`: the step's
+judgment carrying them (`YieldsJudged`), a return's goal from the state after the step,
 the claim's type and the yields (`ret`, the premises of
 `goalHolds_of_return`), each normal exit delivering from the state after the step
 and the yields at the pushed value (`exits`). `NodeMeaning`'s `ret` and
 `exits`, stated for every value of the claim's type, restated at the values
 the step returns. -/
-structure NodeYielded (G : NormalGraph ι) (images : InstanceImageCheck G) (w : Walk ι) (startNames : List Nat)
+structure NodeYielded (G : NormalGraph ι) (w : Walk ι) (startNames : List Nat)
     (ρ0 : Env) (ctx : Nat → List (Ty ι)) (stated : Nat → Option HeapKnowledge.Knowledge) (given : Nat → Bool)
     (edgesIn : Nat → List (List (Ty ι) × List (PromiseCalls.Implication ι) × PointClaims.Mapping))
     (Tres : Fam) (m : Nat) (l : Nat) (node : Node) (c : PointClaim ι) (entry : SinglePass.State) (st : Stepped ι)
-    (xs : List (PromiseCalls.Implication ι)) (ys : List (PromiseCalls.Yield ι)) : Prop where
-  follows : ys.all (PromiseCalls.yieldFollows G images c.context xs st.stepK.links node.expression) = true
-  implies : ∀ ρ (s : IndexedHeap), StateHolds G entry (w.implies l) startNames ρ0 ρ m s →
-    PromiseCalls.ImpliesOk G xs ρ s.n s.W
+    (ys : List (PromiseCalls.Yield ι)) : Prop where
+  judged : YieldsJudged G c.type c.context node.expression entry (w.implies l) startNames ρ0 m st.stepK ys
   ret : node.continuation = .ret → ∀ ρ (s' : IndexedHeap) v, isVal v = true →
     StateHolds G ⟨st.result :: entry.names, st.store, entry.fresh⟩ (w.implies l) startNames ρ0 (push v ρ) m s' →
     EnvOk G (c.type :: c.context) (push v ρ) s'.n s'.W → PromiseCalls.YieldsOk G ys ρ s'.n s'.W v →
@@ -203,17 +225,17 @@ theorem stepEdgesSoundJ_of_yields {G : NormalGraph ι} {images : InstanceImageCh
     {edgesIn : Nat → List (List (Ty ι) × List (PromiseCalls.Implication ι) × PointClaims.Mapping)}
     {Tres : Fam} {m : Nat}
     (hacc : ∀ l, w.visited l → ∃ r : NodeChecked G images codes pc P w startNames ctx l,
-      ∃ xs ys, NodeMeaning G w startNames ρ0 ctx stated Tres m l r.node r.c r.entry r.st ∧
+      ∃ ys, NodeMeaning G w startNames ρ0 ctx stated Tres m l r.node r.c r.entry r.st ∧
       NodeJoined G w startNames ρ0 ctx given edgesIn m l r.node r.c r.entry r.st ∧
-      NodeYielded G images w startNames ρ0 ctx stated given edgesIn Tres m l r.node r.c r.entry r.st xs ys)
+      NodeYielded G w startNames ρ0 ctx stated given edgesIn Tres m l r.node r.c r.entry r.st ys)
     (hcodes : CodesSound G codes) :
     StepEdgesSoundJ P G w startNames ρ0 ctx stated given edgesIn (excOf G) Tres (fun _ => True) (fun _ => True) m := by
   intro l ρ s hp
-  obtain ⟨na, xs, ys, hm, hJ, hY⟩ := hacc l hp.1.1
+  obtain ⟨na, ys, hm, hJ, hY⟩ := hacc l hp.1.1
   have hS := hm.entered ρ s hp
   have he : EnvOk G na.c.context ρ s.n s.W := na.hctx ▸ hp.2
   obtain ⟨-, hkS, -, cn, ce, hparts⟩ := stepChecked_parts na.hstep hS na.wf na.below na.width he hcodes na.sums
-  have hjY := stepYields_judgment hY.follows he (hY.implies ρ s hS) hkS.2.2.1 hparts.1
+  have hjY := hY.judged ρ s _ _ hS he hkS hparts.1
   obtain ⟨hj, ho⟩ := nodeObligations_of_partsY (pre := edgePreAJ G w startNames ρ0 ctx stated given edgesIn)
     (Ξres := excOf G) (Tres := Tres) (Qres := fun _ => True) (Rres := fun _ => True) (x := na.node.handler)
     hparts he hjY
