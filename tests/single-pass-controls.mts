@@ -206,6 +206,31 @@ control("module interfaces: the store boundary", async (): Promise<void> => {
   interfaceControls(fragmentOf(artifacts), given, join(artifacts, "interface-controls"), say, counted);
 });
 
+control("module interfaces: a module's store stating no built-ins", async (): Promise<void> => {
+  // A module document and its importer's each list `ArrayProto`, so both
+  // stores state the built-ins and the store map relates them. A module
+  // document with `ArrayProto` left out states none: no store map relates
+  // its interface rows to the importer's store, and the unit reading the
+  // import is refused at the read.
+  const artifacts = run("certified-mts-value-import");
+  accepted(pass(fragmentOf(artifacts)), "doubled@259", "the module's store stating the built-ins");
+  const ast: unknown = JSON.parse(readFileSync(fragmentOf(artifacts), "utf8"));
+  assert.ok(isObject(ast) && Array.isArray(ast.modules));
+  let dropped = 0;
+  const modules = ast.modules.map((m: unknown) => {
+    assert.ok(isObject(m) && isObject(m.declarations) && Array.isArray(m.declarations.definitions));
+    const definitions = m.declarations.definitions.filter((d: unknown) =>
+      !(isObject(d) && isObject(d.declaration) && d.declaration.module === "tscert/array-prototype"));
+    dropped += m.declarations.definitions.length - definitions.length;
+    return { ...m, declarations: { ...m.declarations, definitions } };
+  });
+  assert.equal(dropped, 1, "scaled.mts's document lists ArrayProto");
+  refused(pass(forged(artifacts, "forged-module-builtins", { ...ast, modules })), "doubled@259",
+    "the module's store stating no built-ins",
+    /source refusal at \[259,266\): signature rows differ: the import 'scaled', its module's interface rows refused by the store-map check/);
+  say("a module's store stating no built-ins: the importer's read of it refused at the read");
+});
+
 // ---------------------------------------------------------------------------
 // Forged fragments: the parser's document forged, refused by the pass. Each
 // is a control of pipeline/test.mts's whose forgery the old route searched

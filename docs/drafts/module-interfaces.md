@@ -79,12 +79,14 @@ table's accepts, and the importer reads an entry only where the check from
 the table's type to the type its own store reads the import at accepts,
 each image operand a canonical union of the importer's store. A refused
 read refuses each unit reading that import, at `signature rows differ`.
+A store map relates the two stores' built-ins only where both state them,
+so a module's document, and the document of a file importing one, list
+`ArrayProto` whatever their code writes, and a store whose document lists
+it states the built-ins (its arrays, their prototype and their `unknown`).
 The two accepted checks give the importer's slot type the meaning of the
 module's interface type (`signatureAgrees_of_checks`, proved on the
 unit-level proof's branch). The check is incomplete for unions with two
-members of one row shape, qualified schemes, and built-ins present in one
-graph only; an import of a module without arrays into a file with arrays is
-the last kind.
+members of one row shape and for qualified schemes.
 
 The importer resolves a read using the existing declaration-identity,
 eligibility and signature-agreement checks. It reads the matching module
