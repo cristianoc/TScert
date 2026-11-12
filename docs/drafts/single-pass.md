@@ -510,8 +510,10 @@ results is a proposal the pass checks.
 5. The pass runs with no given file. The facts the agreement run supplies
    at loop heads are written from the existing search over the producer's
    claims (`dev/single-pass-given.mts`, `verifier --verify-units 6`); with
-   none supplied, 6,184 of the 6,305 units agree (complete run,
-   2026-11-12). Each such fact is computed in Lean where the producer
+   none supplied, 6,184 of the 6,301 units the run compares agree (complete
+   run at 7fe0d80e, 2026-11-12; the four units of
+   `returned-closure-footprint` are not compared, its control unit being
+   refused without those facts). Each such fact is computed in Lean where the producer
    infers it, as a candidate the pass checks on every edge into its loop
    head, or is written as an `@invariant`; the tables the search's
    certificate supplies (entry values, store regions, implications) are
