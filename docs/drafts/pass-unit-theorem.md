@@ -44,6 +44,7 @@ The Lean modules are
 [PassUnitCross](../../lean/Verification/Source/Claims/PassUnitCross.lean) (the cross-module theorem) and
 [PassUnitWrapper](../../lean/Verification/Source/Claims/PassUnitWrapper.lean) (the wrapper's lemmas) and
 [PassUnitMemberRun](../../lean/Verification/Source/Claims/PassUnitMemberRun.lean) (what an accepted member run establishes) and
+[PassUnitVerdict](../../lean/Verification/Source/Claims/PassUnitVerdict.lean) (the headline at mode 8's verdict) and
 [PassUnitInit](../../lean/Verification/Source/Claims/PassUnitInit.lean) (the initialization's assertions), over
 [StoreMaps](../../lean/Verification/Types/StoreMaps.lean) (one type's meaning in two stores) and
 [StoreMapsCheck](../../lean/Verification/Types/StoreMapsCheck.lean) (the store-map check).
@@ -139,7 +140,8 @@ counting and given-file inputs range over all their values.
 
 ### The final statement
 
-**Theorem** `passUnitCli_safe` (proved under H1–H3). With
+**Theorem** `passUnitVerdict_safe` (proved under H1 and H2,
+[PassUnitVerdict](../../lean/Verification/Source/Claims/PassUnitVerdict.lean)). With
 $`f = \mathrm{preparedMode8}(\mathit{force}, \mathit{givenLines}, f_0)`$, the
 plans with the given head facts, and the false start fact where
 `TSCERT_FORCE` names `start-facts`:
@@ -148,14 +150,23 @@ plans with the given head facts, and the false start fact where
 \begin{aligned}
 &\big(\exists\, \mathit{est}.\; \mathrm{fragmentPlansFromInterfaces}(\mathit{ast}, \ldots, \mathit{est}) = \mathrm{ok}\ f_0
  \;\vee\; \exists\, \mathit{ms}\, \mathit{ns}.\; \mathrm{fragmentPlansWithModules}(\mathit{ast}, \ldots) = \mathrm{ok}\ (f_0, \mathit{ms}, \mathit{ns})\big) \\
-&\wedge\; (f.\mathrm{passGroup}(\mathit{fuel}, f.\mathrm{group}(i), \ldots)).2 = \mathrm{ok}\ \mathit{deps}
+&\wedge\; (f.\mathrm{passGroup}(\mathit{fuel}, f.\mathrm{group}(i), \ldots, \mathit{observe} = \mathrm{none}, \ldots)).2 = \mathrm{ok}\ \mathit{deps}
  \;\Longrightarrow\; \forall j \in f.\mathrm{group}(i).\; \mathrm{MemberSafe}(f, j)
 \end{aligned}
 ```
 
+`passUnitCli_safe` states the same for every value of $`\mathit{observe}`$,
+under H1–H3; H3 at $`\mathit{observe} = \mathrm{none}`$ is proved
+(`passGroupChecks_unobserved passMember_sound`, section 3), so
+`passUnitVerdict_safe` has H1 and H2 as its only hypotheses.
+
 The premise is the condition under which `verifyUnitsFile` prints unit
-$`i`$'s line `"accepted": true` in mode 8, with an interface file
-(`--verify-interface-stage`) or without; every other argument is free. Its
+$`i`$'s line `"accepted": true` in mode 8 with `TSCERT_OBSERVE` unset, with
+an interface file (`--verify-interface-stage`) or without; every other
+argument is free: the comparison, node, repetition, given lines and counting
+inputs, the modules' check and the interface file's entries. With
+`TSCERT_OBSERVE` set, the observation rerun's outcome replaces a refusal
+(section 3), and the verdict is outside the theorem. Its
 conclusion is `checkUnitJson_safe`'s for a file's unit: every member's plan
 crosses the exhaustive certification and its request is safe
 (`RequestSafe`). With the file-level part (`passFile_safe_kinds`) every
@@ -167,7 +178,8 @@ checks (section 7).
 
 Each level's theorem adds hypotheses to the one below it:
 
-- **Unit**, `passUnitCli_safe`: H1, H2, H3.
+- **Unit**, `passUnitVerdict_safe`: H1, H2 (`passUnitCli_safe`, for every
+  `observe`: H1, H2, H3).
 - **File**, `passFile_safe_kinds`: H1–H3, `ReceiverDropSound`, the layout (H5a `ModuleLayout`),
   the established slots (`EstablishedSlots`) and the four outside kinds met
   (`KindMet` for `declared`, `standIn`, `host`, `moduleCell`).

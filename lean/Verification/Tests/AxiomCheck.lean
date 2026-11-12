@@ -9,6 +9,7 @@ import Verification.Source.Claims.PassUnitSignatures
 import Verification.Source.Claims.PassUnitCross
 import Verification.Source.Claims.PassUnitWrapper
 import Verification.Source.Claims.PassUnitMemberRun
+import Verification.Source.Claims.PassUnitVerdict
 import Verification.Source.Claims.PassUnitInit
 import Verification.Semantics.ArgumentStoreRegions
 import Verification.Semantics.FootprintNatives
@@ -42,7 +43,8 @@ the following depends on an axiom other than `propext`, `Classical.choice` and `
 
 - `SourceClaimJson.checkUnitJson_safe`, the acceptance theorem, of which every
   accepted function's and module run's safety is a consequence;
-- the single pass's unit theorem `SourceClaimJson.PassUnit.passUnit_safe` and
+- the single pass's unit theorem at mode 8's verdict,
+  `SourceClaimJson.PassUnit.passUnitVerdict_safe`, `passUnit_safe` and
   the wrapper, code-table, plan, linking and realization theorems it rests on,
   the file-level theorem `SourceClaimJson.PassUnit.passFile_safe` and the
   modules' linking theorems;
@@ -64,6 +66,8 @@ run_cmd do
       unless standard.contains axiom_ do
         throwError "{decl} depends on the axiom {axiom_}"
   check ``Verification.SourceClaimJson.checkUnitJson_safe
+  check ``Verification.SourceClaimJson.PassUnit.passUnitVerdict_safe
+  check ``Verification.SourceClaimJson.PassUnit.passGroupOver_safe_unobserved
   check ``Verification.SourceClaimJson.PassUnit.passUnit_safe
   check ``Verification.SourceClaimJson.PassUnit.member_safe
   check ``Verification.SourceClaimJson.PassUnit.ordinary_requestSafe
