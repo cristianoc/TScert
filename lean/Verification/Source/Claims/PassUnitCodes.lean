@@ -240,7 +240,7 @@ theorem codesAccepted_sound {G : NormalGraph ι} {I : InstanceImageCheck G} {r :
       hrest⟩ := h
     have hsums : ProgramCertificates.SummariesSound G I a₁.summaries.toList :=
       summariesSound_sub (fun s hs => hsub s (codesAccepted_keeps hkeep hrest s hs)) hfinal
-    have hscope : CheckerScope G I c.passChecker (fun _ => True) := hchk ▸ CheckerScope.ordinary
+    have hscope : CheckerScope G I c.passChecker (fun _ => True) := hchk ▸ Verification.TolerantFrames.Target.CheckerScope.ordinary
     have hg := hrun G I c a₁ _ hacc hscope (hcodes ▸ ht) hsums
       (fun _ _ _ h => by rw [hreg] at h; cases h)
     rw [hP, hgoal, hst, hin, hsep, hidx, hbd, hens, hreg] at hg
@@ -267,7 +267,7 @@ theorem codesAccepted_guarantees {G : NormalGraph ι} {I : InstanceImageCheck G}
       hrest⟩ := h
     have hsums : ProgramCertificates.SummariesSound G I a₁.summaries.toList :=
       summariesSound_sub (fun s hs => hsub s (codesAccepted_keeps hkeep hrest s hs)) hfinal
-    have hscope : CheckerScope G I c.passChecker (fun _ => True) := hchk ▸ CheckerScope.ordinary
+    have hscope : CheckerScope G I c.passChecker (fun _ => True) := hchk ▸ Verification.TolerantFrames.Target.CheckerScope.ordinary
     have hg := hrun G I c a₁ _ hacc hscope (hcodes ▸ ht) hsums
       (fun _ _ _ h => by rw [hreg] at h; cases h)
     rw [hP, hgoal, hst, hin, hsep, hidx, hbd, hens, hreg, has] at hg

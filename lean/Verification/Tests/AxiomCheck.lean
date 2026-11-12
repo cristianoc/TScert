@@ -87,6 +87,7 @@ import Verification.Programs.TolerantFramesNodeYields
 import Verification.Programs.TolerantFramesNodeYielded
 import Verification.Programs.TolerantFramesNodeRefined
 import Verification.Programs.TolerantFramesComposeYields
+import Verification.Source.Claims.PassUnitRun
 import Verification.Programs.TolerantFramesSinglePassSound
 import Verification.Programs.TolerantFramesMergeExits
 import Verification.Programs.TolerantFramesMergeNearRounds
@@ -1176,3 +1177,4 @@ run_cmd do
   check ``Verification.TolerantFrames.exitsFold_records_prefix
   check ``Verification.TolerantFrames.exitsFold_records_checked
   check ``Verification.TolerantFrames.visitExits_records
+  check ``Verification.SourceClaimJson.PassUnit.passUnitVerdict_safe_run
