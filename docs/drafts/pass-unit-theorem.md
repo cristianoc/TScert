@@ -815,8 +815,17 @@ Each enters the headline at a named place:
   over; no proposal is trusted.
 - **Compiled replacements**: the proofs are about the logical definitions;
   the verifier runs the pass's `implemented_by` replacements
-  (`SinglePass.timedKind`, `clock`, `same`, `oneObject`, `Store.diff`), which
-  no theorem relates to their definitions.
+  (`SinglePass.timedKind`, `clock`, `same`, `oneObject`, `Store.diff`,
+  `CertificateProducer.timed`, `keepFirst`), which no theorem relates to
+  their definitions. A verdict flows through `timedKind`, `timed` (each
+  returns its function's result) and `keepFirst` (it passes over an element
+  that is one object with an element already met).
+- **Replayed module lines**: the accepted line of a module unit read from a
+  cached interface is the stage store's replay of the computation
+  `mode8Accepted_sound` covers. The store's key holds the verifier
+  executable, the module documents with their source hashes and the
+  dependency interfaces
+  ([what is within Lean and what is trusted](#what-is-within-lean-and-what-is-trusted)).
 
 The hypotheses are listed with their owners in section 1.
 
