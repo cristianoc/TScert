@@ -112,7 +112,7 @@ theorem passGroupOver_safe
 /-- **An entry realized by its module** (the module's side of an entry):
 the module's plans `fm` over their store, a set `Sm` of its units each a
 selected unit whose group is safe, a layout of `Sm` whose outside contracts
-hold, and the entry's unit `u` in `Sm`. `interface_entry_meets` gives the
+hold, and the entry's function `u` laid out. `interface_entry_meets` gives the
 function's value in its module's environment meeting its interface. -/
 structure EntryRealized (e : Entry) where
   fm : FilePlans
@@ -123,7 +123,7 @@ structure EntryRealized (e : Entry) where
   layout : ModuleLayout fm selection Sm
   hout : OutsideContracts layout
   unit : String
-  hunit : unit ∈ Sm
+  hunit : unit ∈ layout.D
 
 /-- **Signature agreement across two stores**: every value meeting the
 function's interface in its module's graph meets, at the same budget and
@@ -144,7 +144,7 @@ environment, unfolded `n` times, meets its interface at every budget up to
 theorem interface_entry_meets (hdrop : ReceiverDropSound) (src : EntryRealized e) :
     ∀ n, ∀ m ≤ n, ∀ W : WorldT m,
       meaning (graphOf src.fm) (src.layout.iface src.unit) m W (approx src.layout.code n src.unit) :=
-  (passPlans_safe hdrop src.hover src.hsafe src.layout src.hout).1 src.unit (src.layout.cover _ src.hunit)
+  (passPlans_safe hdrop src.hover src.hsafe src.layout src.hout).1 src.unit src.hunit
 
 /-- **An importer's slot read at an established entry is met** (proved):
 where the entry's module realizes it, the slot holds the module's function

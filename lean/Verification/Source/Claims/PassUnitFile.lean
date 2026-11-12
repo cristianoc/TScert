@@ -73,20 +73,20 @@ theorem rowRealized_spec (hdrop : ReceiverDropSound) {f : FilePlans} (hover : Ov
   exact he
 
 /-- **The module's layout** (H5a, the extraction's frame layout): the
-functions `D` laid out (each closed unit's members, a mutually recursive
-group's non-leaders included), the code of each by its identity and its
-interface, such that each unit of `S` is laid out and each function `x` of
-`D` has an interface presenting one clause of signatures its code's kind
+functions `D` laid out (any set of the file's functions, a mutually
+recursive group's non-leaders included), the code of each by its identity
+and its interface, such that each function `x` of `D` has an interface presenting one clause of signatures its code's kind
 offers, one slot per capture, each linked slot read at its callee's
 interface with its callee in `D`, and each signature realized by a member
-of the group of a closed unit (its own group, or another one for an
-overload's signature); the outside values are closed values. -/
+of the group of a unit of `S` (its own group, or another one for an
+overload's signature); the outside values are closed values. The file-level
+theorem's value claims are about `D`; a function outside `D` keeps its
+members' safety from the units' verdicts alone. -/
 structure ModuleLayout (f : FilePlans) (selection : Option (List String)) (S : List String) where
   D : List String
   code : String → ModuleCode (Lab f) String
   iface : String → Ty (Lab f)
   values : OutsideValues code
-  cover : ∀ u ∈ S, u ∈ D
   shape : ∀ x ∈ D, ∃ (L : List (CallEffects.Arrow (Ty (Lab f)))) (Sg : List (CallEffects.RestArrow (Ty (Lab f)))),
     Represents (graphOf f) (iface x) (.arrs L Sg) ∧ KindOffers (graphOf f) (code x).kind L Sg ∧
     (code x).captures.length = (code x).slots.length ∧

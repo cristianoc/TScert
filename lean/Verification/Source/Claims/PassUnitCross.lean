@@ -35,14 +35,14 @@ def mode8Check (fuel : Nat) (given : Std.HashMap String Json) :
 
 /-- **A module's layout at its established units** (H5a at the module): a
 set `Sm` of the module's units, each with its wire identity in the step's
-set `ok`, holding the unit of the entry `e`; a layout of `Sm` whose outside
+set `ok`; a layout realized by their groups, the function of the entry `e` laid out, whose outside
 contracts hold. -/
 structure StepLayout (fm : FilePlans) (location : String) (ok : List String) (e : Entry) where
   Sm : List String
   layout : ModuleLayout fm none Sm
   hout : OutsideContracts layout
   unit : String
-  hunit : unit ∈ Sm
+  hunit : unit ∈ layout.D
   hok : ∀ u ∈ Sm, moduleUnitId location u ∈ ok
   hentry : moduleUnitId location unit = e.2.2
 

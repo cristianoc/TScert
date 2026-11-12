@@ -288,6 +288,32 @@ structure UnitIsReceiverless (r : SourceRequest σ ι) (c : CodeEntry ι) : Prop
 
 end
 
+/-- The slot map from a frame with a receiver in front to the frame past
+it: slot `s + 1` to `s`, the receiver's slot to none. -/
+def pastReceiver (s : Nat) : Option Nat := if s = 0 then none else some (s - 1)
+
+/-- **Entry facts of a function declared without `this`** (proved): where
+each entry fact of the request is a fact of the code's precondition with
+each slot one less (`mapIndices pastReceiver`), the code's facts at every
+frame with a receiver in front imply the request's at the frame past it:
+`UnitIsReceiverless.indices`. -/
+theorem receiverless_indices {ι : Type} {c : CodeEntry ι} {facts : List HeapKnowledge.IndexAtom}
+    (hsub : ∀ a ∈ facts, a ∈ HeapKnowledge.mapIndices pastReceiver (GraphCode.codeEntryIndices c)) :
+    ∀ (L : List Tm) (recv : Tm) h,
+      HeapKnowledge.IndexHolds (GraphCode.codeEntryIndices c) (envOf (recv :: L) .nul) h →
+      HeapKnowledge.IndexHolds facts (envOf L .nul) h := by
+  intro L recv h he a ha
+  have hf : ∀ s t, pastReceiver s = some t → envOf L .nul t = envOf (recv :: L) .nul s := by
+    intro s t hs
+    unfold pastReceiver at hs
+    split at hs
+    · cases hs
+    · rename_i hne
+      cases hs
+      obtain ⟨k, rfl⟩ := Nat.exists_eq_succ_of_ne_zero hne
+      simp [envOf]
+  exact HeapKnowledge.mapIndices_holds hf he a (hsub a ha)
+
 /-- **The receiver's prologue keeps a safe request safe** (named hypothesis
 `ReceiverDropSound`, a lemma about the graph machine): where a request with
 no receiver slot is a code's behind the prologue (`UnitIsReceiverless`) and

@@ -148,6 +148,7 @@ run_cmd do
   check ``Verification.SourceClaimJson.PassUnit.crossModule_safe
   check ``Verification.SourceClaimJson.PassUnit.rowRealized_spec
   check ``Verification.SourceClaimJson.PassUnit.layout_realizes
+  check ``Verification.SourceClaimJson.PassUnit.receiverless_indices
   check ``Verification.SourceClaimJson.PassUnit.passGroup_members
   check ``Verification.SourceClaimJson.PassUnit.passGroupChecks_of_sound
   check ``Verification.SourceClaimJson.PassUnit.passGroupChecks

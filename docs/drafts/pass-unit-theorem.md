@@ -187,6 +187,29 @@ Each level's theorem adds hypotheses to the one below it:
   the other three outside kinds; with `established_of_provenance` the steps
   follow from `InterfaceProvenance` and `EstablishProvenance`.
 
+**Which front check each theorem needs.** The front's checks are named U1–U6
+as the front lane's work items name them:
+
+- *The pass is sound per unit* (`passUnitVerdict_safe`, every accepted
+  verdict line of mode 8): H1 and H2 only. It needs the observation guard
+  (U1, on the front line) and no other front check; U2–U6 are not among its
+  premises. Its entry premise assumes every slot's type, imports' and host
+  values' included.
+- *A laid-out function's value meets its interface* (`passFile_safe_kinds`):
+  adds `ReceiverDropSound`, the layout (U3: the check computing $`D`$), the
+  `:init` postcondition for module cells (U6), and the declared, stand-in
+  and host contracts (trusted boundaries).
+- *An importer's laid-out functions meet theirs, imports discharged by
+  their modules' checks* (`crossModule_safe`): adds each module step's
+  layout with its entries' functions in $`D`$ (U3 at the step), the row
+  checks (U4, on the front line: `signatureAgrees_of_rows` gives the
+  agreement from them), the step's provenance (U5: a lemma about
+  `establishFold`, not proved), the publication order (`ReadsEarlier`, not
+  proved), the slots holding the module's values (`HoldsModuleValue`, the
+  extraction) and the replay (`InterfaceProvenance`, trusted). The built-ins
+  in a module's store (U2) bear on coverage only: a store stating none makes
+  the importer's row check refuse.
+
 **(i) The graph lane** (about `SinglePass.run`, section 2):
 
 - **H1 `RunSound`**: for every call $`c`$ over $`G`$ and image check $`I`$,
@@ -494,7 +517,8 @@ the unit's own parameters once its callees are linked.
 The step premise of `link` at a closed unit is that the unit's value meets
 its interface one budget up. It is proved for the module's environment
 defined below, from the units' own `RequestSafe`, under two hypotheses
-about the file's layout and its outside slots (H5a, H5b).
+about the file's layout and its outside slots (H5a, H5b), for the functions
+the layout lays out.
 
 **The module's code.** A module function's code (`ModuleCode`) is graph
 code (arity $`a`$, node lists $`E, K`$, start $`\ell_0`$, kind) with, per
@@ -585,21 +609,24 @@ $`\mathit{recv} :: L`$ to the request's start at $`L`$, and every later
 transition is one of the request's program.
 
 **H5a, the module's layout** (`ModuleLayout`, the extraction's frame
-layout). A set $`D`$ of functions laid out, holding every closed unit and
-every member of its group (a mutually recursive group's non-leaders
-included), and for each $`x \in D`$: its code, interface and slots as above,
-its interface one clause, one slot per capture, each linked slot's callee
-in $`D`$ at its interface, and each signature $`p`$ of its interface
-realized (`RowRealized`) by a member $`j`$ of the group of some closed
-unit: $`j`$'s plan is a request that is a code $`e`$'s (`CodeOf`:
-`UnitIsCode` with $`e`$ the module code, or `UnitIsReceiverless` with
-$`\mathrm{dropReceiver}(e)`$ the module code) meeting the code conditions.
-The realizing member is any member of any closed group: a member of its own
-group, or, for an overload, of the group whose request is at that
-signature. Linking is per function within and across groups: the
-environment (`approxEnv`) is indexed by function, its captured values one
-unfolding below, so `approx_meets` covers every $`x \in D`$; the verdicts'
-closure (`closedUnits`) is per group. `layout_realizes` (proved under
+layout). A set $`D`$ of the file's functions laid out (any set, a mutually
+recursive group's non-leaders included), and for each $`x \in D`$: its
+code, interface and slots as above, its interface one clause, one slot per
+capture, each linked slot's callee in $`D`$ at its interface, and each
+signature $`p`$ of its interface realized (`RowRealized`) by a member $`j`$
+of the group of some unit of $`S`$: $`j`$'s plan is a request that is a code
+$`e`$'s (`CodeOf`: `UnitIsCode` with $`e`$ the module code, or
+`UnitIsReceiverless` with $`\mathrm{dropReceiver}(e)`$ the module code)
+meeting the code conditions. The realizing member is any member of any
+group of $`S`$: a member of its own group, or, for an overload, of the
+group whose request is at that signature. The file-level theorem's value
+claims are about $`D`$; the units of $`S`$ are safe from their verdicts
+whatever $`D`$ is, so a function outside $`D`$ loses the claim that its
+value meets its interface and keeps its members' safety. Linking is per
+function within and across groups: the environment (`approxEnv`) is
+indexed by function, its captured values one unfolding below, so
+`approx_meets` covers every $`x \in D`$; the verdicts' closure
+(`closedUnits`) is per group. `layout_realizes` (proved under
 `ReceiverDropSound`) gives every $`x \in D`$ realized from its members'
 safety (`rowRealized_spec`). H5a is a statement about the extraction (the
 slot table `ordinarySlots` builds, `withStandIns`, `withNeverImports`, the
@@ -607,19 +634,54 @@ frame `extractMember` lays out), not proved: every function on that path is
 a `do` block over the front with no theorem about its frame; part of it is
 decidable at the verdict (the layout check).
 
-**The layout check against real units** (measured by the front lane on
-206 units of the pipeline's cases, 2026-11-12, with the previous layout:
-one member per unit, rows realized by the unit's own group, a receiver
-slot required): 30 refused, every one a unit another unit of its file
-calls. Against the restated layout, argued from the refusal kinds (not
-rerun): 26 refused at "no receiver slot" are admitted under
-`ReceiverDropSound` where their entry facts are empty (the check's
-sufficient case of `UnitIsReceiverless.indices`); the mutually recursive
-unit (`even@210`, whose group's non-leader `odd@302` it captures) is
-admitted, `odd` laid out in $`D`$; an overload is admitted where each
-overload signature's row is realized by the member whose request is at it
-with the same node lists, decided per row; the 4 generic functions stay
-refused (type parameters, below).
+For a function declared without `this`, `UnitIsReceiverless.indices` asks
+the code's precondition at every frame with a receiver in front to imply
+the request's entry facts at the frame past it. `receiverless_indices`
+(proved) gives it where every entry fact of the request is a fact of the
+precondition with each slot one less, the receiver's facts dropped
+($`\mathrm{mapIndices}(\mathrm{pastReceiver}, \mathrm{codeEntryIndices}(e))`$).
+
+**The layout check** decides H5a's decidable part at the verdict and
+computes $`D`$; it refuses no unit. Per function $`x`$ of the closed units'
+groups:
+
+1. its interface (the one type its file's units capture it at, else its own
+   signature) expands to one clause $`\mathrm{arrs}(L, S_v)`$, offered by
+   its code's kind (`KindOffers`);
+2. its plan's captures are its slots, each linked slot $`k`$ at its callee's
+   interface;
+3. for each signature $`p \in \mathrm{offerRows}(L, S_v)`$, some member
+   $`j`$ of a closed group has a plan $`r`$ with $`\mathrm{UnitIsCode}(r, e)`$
+   or $`\mathrm{UnitIsReceiverless}(r, e)`$ for
+   $`e = \langle a, \mathit{exprs}, \mathit{conts}, \ell_0, C, p, \mathrm{none}\rangle`$
+   ($`x`$'s node lists, start and captures), the receiverless entry facts
+   by `receiverless_indices`, and $`\mathrm{codeConditions}(e)`$;
+
+and $`D`$ is the greatest set of such functions closed under linked
+callees (a function whose callee fails leaves $`D`$). `StepLayouts` asks
+each published entry's function in its module's $`D`$, so a module step
+publishes an entry only where its function is in $`D`$.
+
+**The layout check against real units** (measured by the front lane over
+the pipeline's cases, 2026-11-12, the check as a refusal: 286 of 6,303
+units), by class, against the restated layout:
+
+- *a function declared without `this` with entry facts* (61): covered where
+  its entry facts are the precondition's one slot down
+  (`receiverless_indices`);
+- *its inputs not the signature's frame* (18) and *its goal* (54): covered
+  where some member of a closed group realizes the row (an overload's row
+  by the member at it); a row no member's request equals stays outside
+  $`D`$; why the 54 goals differ is not established;
+- *a generic function* (75) and *a qualified request* (24): outside $`D`$:
+  the interface is a scheme, and `RequestSafe` holds at the body's admitted
+  instances only (type parameters, below);
+- *the code's conditions* (47): outside $`D`$: a postcondition, stated
+  regions, an element precondition, a fresh object, a growing receiver or
+  an element write (below).
+
+Every class keeps its units' safety: none of them is a premise of
+`passUnitVerdict_safe`.
 
 **H5b, the outside contracts** (`OutsideContracts`). Every value a closed
 unit's outside slot holds at depth $`i`$ meets the slot's type at every
@@ -682,8 +744,8 @@ these: `EstablishedSlots` and four `KindMet` premises.
 `RowRealized` has fixed arity, no rest, an unqualified request, and
 signatures meeting the code conditions (`codeConditions`) and the code
 specification's own condition `Effect.below` (inside `GraphCodeSpec`). A
-closed unit outside these stays safe locally (`passUnit_safe`);
-`passFile_safe` says nothing of its value. Each case against the actual
+function outside these is outside $`D`$: its units stay safe
+(`passUnit_safe`), and `passFile_safe` says nothing of its value. Each case against the actual
 definitions:
 
 - *a precondition on the call's values* (`@requires`, the effect's `pre`
@@ -769,16 +831,15 @@ and $`S = \mathrm{closedUnits}(V)`$. Then
 
 ```math
 \begin{aligned}
-&\mathrm{fragmentPlans}(\ldots) = \mathrm{ok}\ f \;\wedge\; \mathrm{ModuleLayout}(f', S) \;\wedge\; \mathrm{OutsideContracts}
- \;\Longrightarrow\; \forall u \in S. \\
-&\quad \exists i \in f.\mathrm{selected}.\; \mathrm{unitId}(i) = u \wedge \mathrm{PassUnitSafe}(f', i) \\
-&\quad \wedge\; \forall n.\; \forall m \le n.\; \forall W.\; \mathrm{approx}_n(u) \in ⟦I_u⟧_{m,W} \\
-&\quad \wedge\; \forall n.\; \forall W.\; \text{the values } \mathrm{env} \text{ captures for } u \models_{n,W} C_u
+&\mathrm{fragmentPlans}(\ldots) = \mathrm{ok}\ f \;\wedge\; \mathrm{ModuleLayout}(f', S) = (D, \ldots) \;\wedge\; \mathrm{OutsideContracts} \\
+&\Longrightarrow\; \big(\forall u \in S.\; \exists i \in f.\mathrm{selected}.\; \mathrm{unitId}(i) = u \wedge \mathrm{PassUnitSafe}(f', i)\big) \\
+&\quad \wedge\; \forall x \in D.\; \big(\forall n.\; \forall m \le n.\; \forall W.\; \mathrm{approx}_n(x) \in ⟦I_x⟧_{m,W}\big) \\
+&\quad \wedge\; \big(\forall n.\; \forall W.\; \text{the values } \mathrm{env} \text{ captures for } x \models_{n,W} C_x\big)
 \end{aligned}
 ```
 
 Every member of each closed unit's group is safe from every entry meeting
-its inputs; each closed function's value in the module's environment meets
+its inputs; each laid-out function's value in the module's environment meets
 the arrow its callers read, its effect included, at every budget; and its
 module slots are met by that environment. This statement, with
 `passUnit_safe` for a unit's line alone, takes the place of
