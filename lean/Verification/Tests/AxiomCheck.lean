@@ -121,6 +121,12 @@ run_cmd do
   check ``Verification.StoreMaps.ordinary_allowed
   check ``Verification.SourceClaimJson.PassUnit.signatureAgrees_of_storeMap
   check ``Verification.SourceClaimJson.PassUnit.signatureAgrees_of_maps
+  check ``Verification.StoreMaps.checkMap_sound
+  check ``Verification.StoreMaps.matchStores_sound
+  check ``Verification.StoreMaps.env_empty_agree
+  check ``Verification.SourceClaimJson.PassUnit.graphOf_env
+  check ``Verification.SourceClaimJson.PassUnit.storeMapAgrees_of_check
+  check ``Verification.SourceClaimJson.PassUnit.signatureAgrees_of_checks
   check ``Verification.SourceClaimJson.PassUnit.moduleUnitId_inj
   check ``Verification.SourceClaimJson.PassUnit.entryRealized_of_step
   check ``Verification.SourceClaimJson.PassUnit.realized_of_established

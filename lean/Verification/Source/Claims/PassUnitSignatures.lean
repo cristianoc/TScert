@@ -1,5 +1,6 @@
 import Verification.Source.Claims.PassUnitInterfaces
 import Verification.Types.StoreMaps
+import Verification.Types.StoreMapsCheck
 
 /-! # The single pass's unit theorem: signature agreement across two stores
 
@@ -43,5 +44,39 @@ theorem signatureAgrees_of_maps {e : Entry} {src : EntryRealized e} {ι : Type} 
     {A : List ι} (h : StoreMapAgrees src G A) : SignatureAgrees src G A :=
   let ⟨m, hD, hA⟩ := h
   signatureAgrees_of_storeMap src m hD hA
+
+/-- A frozen store's graph states no environment (proved). -/
+theorem graphOf_env (f : FilePlans) : (graphOf f).env = ParameterAssignment.empty .mixed := rfl
+
+/-- **Signature agreement from one check in one process** (proved): where
+the importer holds the module's plans (`fragmentPlansWithModules`) and the
+store-map check accepts the interface's labels against the slot's type,
+the rows agree on the signature. -/
+theorem storeMapAgrees_of_check {e : Entry} (src : EntryRealized e) {ι : Type} [Labels ι] [Inhabited ι]
+    {G : NormalGraph ι} (hG : G.env = ParameterAssignment.empty .mixed) {canon : List ι → List ι}
+    (hcanon : ∀ S x, x ∈ canon S ↔ x ∈ S) {fuel : Nat} {A : List ι} {mp}
+    (h : matchStores (graphOf src.fm) G canon fuel (src.layout.iface src.unit) A = some mp) :
+    StoreMapAgrees src G A :=
+  matchStores_sound hcanon (env_empty_agree (graphOf_env src.fm) hG) h
+
+/-- **Signature agreement through an interface's rows** (proved): the
+interface entry carries a graph `Gs` and a type `Is` of it (the module's
+rows reachable from the interface, as the wire's decoder reads them); the
+module's check accepts its interface against them and the importer's check
+accepts them against the slot's type. Then the stores agree on the
+signature: the meanings are equal along both maps. -/
+theorem signatureAgrees_of_checks {e : Entry} (src : EntryRealized e) {σ : Type} [DecidableEq σ]
+    [Hashable σ] [Inhabited σ] {Gs : NormalGraph σ} (hGs : Gs.env = ParameterAssignment.empty .mixed)
+    {Is : List σ} {ι : Type} [Labels ι] [Inhabited ι] {G : NormalGraph ι}
+    (hG : G.env = ParameterAssignment.empty .mixed)
+    {canon₁ : List σ → List σ} (hc₁ : ∀ S x, x ∈ canon₁ S ↔ x ∈ S)
+    {canon₂ : List ι → List ι} (hc₂ : ∀ S x, x ∈ canon₂ S ↔ x ∈ S) {fuel₁ fuel₂ : Nat} {A : List ι} {mp₁ mp₂}
+    (h₁ : matchStores (graphOf src.fm) Gs canon₁ fuel₁ (src.layout.iface src.unit) Is = some mp₁)
+    (h₂ : matchStores Gs G canon₂ fuel₂ Is A = some mp₂) : SignatureAgrees src G A := by
+  obtain ⟨m₁, hD₁, hI₁⟩ := matchStores_sound hc₁ (env_empty_agree (graphOf_env src.fm) hGs) h₁
+  obtain ⟨m₂, hD₂, hI₂⟩ := matchStores_sound hc₂ (env_empty_agree hGs hG) h₂
+  intro j V w hw
+  rw [m₂.meaning_eq_of_mem hD₂ hI₂, m₁.meaning_eq_of_mem hD₁ hI₁]
+  exact hw
 
 end Verification.SourceClaimJson.PassUnit
