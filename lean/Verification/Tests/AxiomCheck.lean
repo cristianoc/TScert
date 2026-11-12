@@ -3,6 +3,7 @@ import Lean.Elab.Command
 import Lean.Compiler.CSimpAttr
 import Verification.Source.Claims.Json
 import Verification.Source.RequestCli
+import Verification.Source.Claims.PassUnitHeadline
 import Verification.Semantics.ArgumentStoreRegions
 import Verification.Semantics.FootprintNatives
 import Verification.Programs.ArgumentPathTracking
@@ -28,6 +29,8 @@ the following depends on an axiom other than `propext`, `Classical.choice` and `
 
 - `SourceClaimJson.checkUnitJson_safe`, the acceptance theorem, of which every
   accepted function's and module run's safety is a consequence;
+- the single pass's unit theorem `SourceClaimJson.PassUnit.passUnit_safe` and
+  the wrapper, code-table and plan theorems it rests on;
 - the regional footprint's transport and composition, cell provenance, and the
   argument-store region composition, framing and stable separation theorems;
 - the tolerant-frame development's admissibility, adequacy, modal-law and
@@ -46,6 +49,21 @@ run_cmd do
       unless standard.contains axiom_ do
         throwError "{decl} depends on the axiom {axiom_}"
   check ``Verification.SourceClaimJson.checkUnitJson_safe
+  check ``Verification.SourceClaimJson.PassUnit.passUnit_safe
+  check ``Verification.SourceClaimJson.PassUnit.member_safe
+  check ``Verification.SourceClaimJson.PassUnit.ordinary_requestSafe
+  check ``Verification.SourceClaimJson.PassUnit.qualified_requestSafe
+  check ``Verification.SourceClaimJson.PassUnit.codesAccepted_sound
+  check ``Verification.SourceClaimJson.PassUnit.codesAccepted_guarantees
+  check ``Verification.SourceClaimJson.PassUnit.codeSpec_of_guarantee
+  check ``Verification.SourceClaimJson.PassUnit.footprint_of_bound
+  check ``Verification.SourceClaimJson.PassUnit.footprint_of_fallback
+  check ``Verification.SourceClaimJson.PassUnit.main_guarantee
+  check ``Verification.SourceClaimJson.PassUnit.summaries_of_checked
+  check ``Verification.SourceClaimJson.PassUnit.fragmentPlans_overStore
+  check ``Verification.SourceClaimJson.PassUnit.fragmentPlans_modules
+  check ``Verification.SourceClaimJson.PassUnit.withHeadFacts_overStore
+  check ``Verification.SourceClaimJson.PassUnit.withHeadFacts_startContexts
   check ``Verification.Footprints.transport_sound
   check ``Verification.Footprints.Sep.sound
   check ``Verification.Footprints.Post.mono

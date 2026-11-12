@@ -1,0 +1,107 @@
+import Verification.Source.Claims.PassUnitCodes
+
+/-! # The single pass's unit theorem: what mode 8's plans are built with
+
+Construction facts of `fragmentPlans` and `FilePlans.withHeadFacts` the
+unit theorem reads: every plan is over the file's frozen store
+(`fragmentPlans_overStore`), so the pass's graph and image check are each
+request's own; mode 8 plans no module run (`fragmentPlans_modules`), so a
+unit's dependencies name units of its file alone. -/
+
+namespace Verification.SourceClaimJson.PassUnit
+open Lean ProgramTyping RequestJson SourceExtraction ControlFlow PositiveGraphs PositiveRules LabelStore
+
+/-- A request over a file's frozen store. -/
+abbrev Req (f : FilePlans) : Type :=
+  SourceRequest (EquationStore.Checked f.F.equations f.F.primitive) (EquationStore.CheckedLabel f.F.equations f.F.primitive)
+
+/-- The plan of unit `i` of `f` is the graph request `r`. -/
+def PlanAt (f : FilePlans) (i : Nat) (name : String) (pos : Span) (r : Req f) : Prop :=
+  f.plans[i]? = some (Except.ok (FunctionPlan.graph name pos r))
+
+/-- Every plan of `f` is a request over `f`'s frozen store. -/
+def OverStore (f : FilePlans) : Prop :=
+  ∀ i name pos (r : Req f), PlanAt f i name pos r → r.types = f.F.store
+
+/-- A request over the frozen equations has their store. -/
+theorem over_types {F : EquationStore.Frozen} {r : SourceRequest EquationStore.State EquationGraphs.Tree} {r'}
+    (h : SourceRequest.over F r = .ok r') : r'.types = F.store := by
+  unfold SourceRequest.over at h
+  simp only [bind, Except.bind, pure, Except.pure] at h
+  repeat' split at h
+  all_goals first | (cases h; done) | (injection h with h; subst h; rfl)
+
+/-- A plan over the frozen equations has their store. -/
+theorem planOver_types {F : EquationStore.Frozen} {e : Except String (FunctionPlan EquationStore.State EquationGraphs.Tree)}
+    {name pos r} (h : e.bind (FunctionPlan.over F) = .ok (.graph name pos r)) : r.types = F.store := by
+  cases e with
+  | error _ => cases h
+  | ok p =>
+    cases p with
+    | graph n ps r₀ =>
+      simp only [Except.bind, FunctionPlan.over, bind, pure, Except.pure] at h
+      cases hr : SourceRequest.over F r₀ with
+      | error _ => rw [hr] at h; cases h
+      | ok r₁ =>
+        rw [hr] at h
+        injection h with h
+        cases h
+        exact over_types hr
+
+/-- **Mode 8's plans are over its frozen store** (proved). -/
+theorem fragmentPlans_overStore {ast : Json} {fileKey : String} {budget : PositiveCertificates.SearchBudget}
+    {names : Option (List String)} {standIns : StandIns} {force : List String} {f : FilePlans}
+    (h : fragmentPlans ast fileKey budget names standIns force = .ok f) : OverStore f := by
+  unfold fragmentPlans at h
+  simp only [bind, Except.bind, pure, Except.pure, SinglePass.timedKind] at h
+  repeat' split at h
+  all_goals first | (cases h; done) | skip
+  all_goals
+    injection h with h
+    subst h
+    intro i name pos r hi
+    simp only [PlanAt, List.getElem?_map, Option.map_eq_some_iff] at hi
+    obtain ⟨e, -, he⟩ := hi
+    exact planOver_types he
+
+/-- **Mode 8 plans no module run** (proved): its import plan's module runs
+are empty, so `FilePlans.dependencies` names the file's units alone. -/
+theorem fragmentPlans_modules {ast : Json} {fileKey : String} {budget : PositiveCertificates.SearchBudget}
+    {names : Option (List String)} {standIns : StandIns} {force : List String} {f : FilePlans}
+    (h : fragmentPlans ast fileKey budget names standIns force = .ok f) : f.p.modules = [] := by
+  unfold fragmentPlans at h
+  simp only [bind, Except.bind, pure, Except.pure, SinglePass.timedKind] at h
+  repeat' split at h
+  all_goals first | (cases h; done) | skip
+  all_goals
+    injection h with h
+    subst h
+    rfl
+
+/-- The plans with the given head facts are those plans, each request with
+other candidates and code sources and every other field kept. -/
+theorem withHeadFacts_plan {f : FilePlans} {given : Std.HashMap String Json} {entries : Bool} {i name pos}
+    {r : Req f} (h : PlanAt (f.withHeadFacts given entries) i name pos r) :
+    ∃ r₀ : Req f, PlanAt f i name pos r₀ ∧ ∃ cands cs, r = { r₀ with candidates := cands, codeSources := cs } := by
+  unfold PlanAt FilePlans.withHeadFacts at h
+  simp only [List.getElem?_map, List.getElem?_zipIdx, Option.map_eq_some_iff] at h
+  obtain ⟨⟨p, j⟩, hp, he⟩ := h
+  simp only [Prod.mk.injEq] at hp
+  obtain ⟨p', hp', rfl, rfl⟩ := hp
+  cases p' with
+  | error _ => cases he
+  | ok q =>
+    cases q with
+    | graph n ps r₀ =>
+      simp only [Except.map, Except.ok.injEq, FunctionPlan.graph.injEq] at he
+      obtain ⟨rfl, rfl, rfl⟩ := he
+      exact ⟨r₀, hp', _, _, rfl⟩
+
+/-- Head facts keep the store every plan is over (proved). -/
+theorem withHeadFacts_overStore {f : FilePlans} {given : Std.HashMap String Json} {entries : Bool}
+    (h : OverStore f) : OverStore (f.withHeadFacts given entries) := by
+  intro i name pos r hi
+  obtain ⟨r₀, h₀, _, _, rfl⟩ := withHeadFacts_plan hi
+  exact h i name pos r₀ h₀
+
+end Verification.SourceClaimJson.PassUnit
