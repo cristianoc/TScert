@@ -839,6 +839,9 @@ run_cmd do
   check ``Verification.TolerantFrames.walk_inv
   check ``Verification.TolerantFrames.recordsSound_of
   check ``Verification.TolerantFrames.recordsChecked_of
+  check ``Verification.TolerantFrames.passLiveHandler_toList
+  check ``Verification.TolerantFrames.boundChecked_of_bounded
+  check ``Verification.TolerantFrames.nodePassChecked_of
   check ``Verification.TolerantFrames.dfsStep_seen
   check ``Verification.TolerantFrames.dfsLoop_seen
   check ``Verification.TolerantFrames.dfs_closed

@@ -1,5 +1,6 @@
 import Verification.Programs.TolerantFramesDriverSummaries
 import Verification.Programs.TolerantFramesComposeYields
+import Verification.Programs.TolerantFramesDriverChecks
 
 /-! # Tolerant frames: the driver's record from its visits
 

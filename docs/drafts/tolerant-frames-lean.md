@@ -1889,6 +1889,17 @@ reached labels closed under exits below $`n`$, the start reached) and
 `VisitsRecord` (every visit that returns gives `VisitFacts`) named
 hypotheses over the setup and the visit.
 
+**The visit's footprint check as `BoundChecked`.** Module
+`lean/Verification/Programs/TolerantFramesDriverChecks.lean`.
+`passBounded` is the visit's footprint check (`visitStep`'s `bounded`)
+over its values: under no bound it passes; under the bound
+$`(\Phi, \mathit{ret}, \mathit{exc})`$, at a label of the no-return region
+`deadArr`, `deadNode` with no throw bound, elsewhere `footprintCheck` at the
+step's values. Proved: (`boundChecked_of_bounded`) where it passes at a
+checked node's own values, the node meets `BoundChecked` in the region
+`deadArr.toList`; with the return check, `NodePassChecked`
+(`nodePassChecked_of`), the check a settled record carries.
+
 **The labels the depth-first walk reaches.** Module
 `lean/Verification/Programs/TolerantFramesDriverReached.lean`. A node the
 walk has seen (state other than 0) stays seen, and every marked head is
