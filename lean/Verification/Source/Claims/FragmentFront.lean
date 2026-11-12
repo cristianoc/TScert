@@ -685,76 +685,116 @@ def interfaceComponents (needs : List ModuleNeed) : List (List ModuleNeed) := Id
     done := done ++ c.map (·.module.location)
   return out
 
+/-- The groups of a module's prepared plans its step checks: every group the
+selected functions whose claims propose more than the ordinary effect reach,
+by leader. -/
+def establishChecked (m : ModuleNeed) (fm : FilePlans) : List Nat :=
+  let wanted := fm.fr.selected (some (m.names.filter fm.fr.proposes))
+  let reach := (wanted ++ wanted.flatMap fm.fr.reach).eraseDups.filterMap fun j => (fm.fr.group j).head?
+  fm.fr.leaders.filter reach.contains
+
+/-- The units a step establishes: the least set holding each accepted unit
+(with its dependencies on the wire) whose every dependency is in it or among
+the units `earlier` established before, grown once per accepted unit. -/
+def establishedUnits (accepted : List (String × List String)) (earlier : List String) : List String :=
+  go (accepted.length + 1) []
+where
+  go : Nat → List String → List String
+    | 0, ok => ok
+    | n + 1, ok =>
+      let next := accepted.filter fun (u, deps) => !ok.contains u &&
+        deps.all fun d => ok.contains d || earlier.contains d
+      if next.isEmpty then ok else go n (ok ++ next.map (·.1))
+
+/-- A function's entry where its step publishes one: its unit's group a
+leader whose identity is in `ok`, at the footprint the module's claim of the
+function states, where that is more than the ordinary effect; else the note
+saying why it has none. -/
+def establishEntry (location : String) (fm : FilePlans) (ok : List String) (n : String) :
+    Except String ((String × String) × (Footprints.Closed × Bool × Footprints.Closed) × String) :=
+  match (List.range fm.fr.units.length).find? fun i => match fm.fr.units[i]? with
+      | some (f, _, none) => f.name == n
+      | _ => false with
+  | none => .error s!"{location}#{n}: no unit"
+  | some i => match (fm.fr.group i).head?, fm.fr.units[i]? with
+    | some l, some f => match fm.fr.d.functions.find? fun c => c.name == n && c.namePos == f.1.namePos with
+      | some c =>
+        let u := moduleUnitId location (fm.fr.unitId l)
+        let p := (c.footprint, c.onThrow, c.resultFootprint)
+        if p == (.top, false, .top) then .error s!"{location}#{n}: the ordinary effect"
+        else if !ok.contains u then
+          .error s!"{location}#{n}: proposed {(toJson p.1).compress} onThrow {p.2.1}, not established"
+        else .ok ((location, n), p, u)
+      | none => .error ""
+    | _, _ => .error ""
+
+/-- **One module's step of the interface computation**: the module planned
+over its document at its names, reading the entries `established` before it
+(`fragmentPlansCore`), prepared (`prepare`); each group its proposals reach
+checked (`check`); the entries it publishes (`establishEntry`) over the units
+it establishes (`establishedUnits`); its verdicts and notes. It reads
+`established` and nothing else of the steps before it. -/
+def establishStep (budget : PositiveCertificates.SearchBudget) (force : List String)
+    (prepare : String → FilePlans → FilePlans)
+    (check : FilePlans → List Nat → List String × Except String (List String))
+    (established : Established) (m : ModuleNeed) : Established × List ModuleVerdict × List String :=
+  let location := m.module.location
+  let rs := readsOf (m.reads.filter (·.location != location)) established
+  let forced : StandIns := if force.contains "imports" then
+      { functions := m.names.map fun n => { name := n, footprint := ⟨.keep, .keep⟩, onThrow := true } } else {}
+  let planned := SinglePass.timedKind "lower: modules' plans" fun _ =>
+    fragmentPlansCore m.module.document location budget (some m.names) forced force (rs.map (·.1)) (rs.map (·.2))
+      (closure := true) (proposed := true)
+  match planned with
+  | .error e => ([], [], [s!"{location}: its plans: {e.take 200}"])
+  | .ok fm =>
+    let fm := prepare location fm
+    let toCheck := establishChecked m fm
+    -- Each function checked, at the footprint its claim states.
+    let checkedNotes := (toCheck.flatMap fm.fr.group).filterMap fun j => match fm.fr.units[j]? with
+      | some (g, _, none) => (fm.fr.d.functions.find? fun c => c.name == g.name && c.namePos == g.namePos).map fun c =>
+        s!"{location}#{g.name}: checked at {(toJson c.footprint).compress} onThrow {c.onThrow}"
+      | _ => none
+    -- Each group the reads reach, checked; accepted with its dependencies,
+    -- each a group of the module or a module unit established before.
+    let wire := fun (d : String) => if d.startsWith "module:" then d else moduleUnitId location d
+    let verdicts := toCheck.map fun l =>
+      let group := fm.fr.group l
+      let (lines, v) := SinglePass.timedKind "modules: pass" fun _ => check fm group
+      (⟨moduleUnitId location (fm.fr.unitId l), group.map (fun j => moduleUnitId location (fm.fr.unitId j)),
+        lines, v.map (·.map wire)⟩ : ModuleVerdict)
+    let accepted := verdicts.filterMap fun mv => match mv.verdict with
+      | .ok deps => some (mv.unit, deps)
+      | .error _ => none
+    -- A group is established where it and, transitively, every group it
+    -- depends on was accepted.
+    let ok := establishedUnits accepted (established.map (·.2.2))
+    let entries := m.names.map (establishEntry location fm ok)
+    (entries.filterMap (·.toOption), verdicts, checkedNotes ++ entries.filterMap fun
+      | .error e => if e.isEmpty then none else some e
+      | .ok _ => none)
+
+/-- The steps over a component's modules in order, each reading the entries
+published before it: the fold `establishModules` makes. -/
+def establishFold (budget : PositiveCertificates.SearchBudget) (force : List String)
+    (prepare : String → FilePlans → FilePlans)
+    (check : FilePlans → List Nat → List String × Except String (List String)) :
+    List ModuleNeed → Established × List ModuleVerdict × List String → Established × List ModuleVerdict × List String
+  | [], acc => acc
+  | m :: ms, (est, vs, ns) =>
+    let (es, vs', ns') := establishStep budget force prepare check est m
+    establishFold budget force prepare check ms (est ++ es, vs ++ vs', ns ++ ns')
+
 /-- The canonical component computation. Every candidate's required groups
 are checked without measurement stand-ins. Incoming footprints are closed
-results of predecessor components. -/
+results of predecessor components. Each module is one step
+(`establishStep`) over the entries published before it (`establishFold`). -/
 def establishModules (needs : List ModuleNeed) (budget : PositiveCertificates.SearchBudget)
     (force : List String) (incoming : Established)
     (prepare : String → FilePlans → FilePlans)
     (check : FilePlans → List Nat → List String × Except String (List String)) :
-    Except String (Established × List ModuleVerdict × List String) := do
-  let mut notes : List String := []
-  let mut established := incoming
-  let mut verdicts : List ModuleVerdict := []
-  for m in needs do
-    let location := m.module.location
-    let rs := readsOf (m.reads.filter (·.location != location)) established
-    let forced : StandIns := if force.contains "imports" then
-        { functions := m.names.map fun n => { name := n, footprint := ⟨.keep, .keep⟩, onThrow := true } } else {}
-    let planned := SinglePass.timedKind "lower: modules' plans" fun _ =>
-      fragmentPlansCore m.module.document location budget (some m.names) forced force (rs.map (·.1)) (rs.map (·.2))
-        (closure := true) (proposed := true)
-    let fm ← match planned with
-      | .ok fm => pure fm
-      | .error e => do notes := notes ++ [s!"{location}: its plans: {e.take 200}"]; continue
-    let fm := prepare location fm
-    -- Each group the reads reach, checked; accepted with its dependencies,
-    -- each a group of the module or a module unit established before.
-    let wanted := (fm.fr.selected (some (m.names.filter fm.fr.proposes)))
-    let reach := (wanted ++ wanted.flatMap fm.fr.reach).eraseDups.filterMap fun j => (fm.fr.group j).head?
-    let toCheck := fm.fr.leaders.filter reach.contains
-    -- Each function checked, at the footprint its claim states.
-    notes := notes ++ (toCheck.flatMap fm.fr.group).filterMap fun j => match fm.fr.units[j]? with
-      | some (g, _, none) => (fm.fr.d.functions.find? fun c => c.name == g.name && c.namePos == g.namePos).map fun c =>
-        s!"{location}#{g.name}: checked at {(toJson c.footprint).compress} onThrow {c.onThrow}"
-      | _ => none
-    let mut accepted : List (String × List String) := []
-    for l in toCheck do
-      let group := fm.fr.group l
-      let (lines, v) := SinglePass.timedKind "modules: pass" fun _ => check fm group
-      let wire := fun (d : String) => if d.startsWith "module:" then d else moduleUnitId location d
-      let v := v.map (·.map wire)
-      let mv : ModuleVerdict := ⟨moduleUnitId location (fm.fr.unitId l),
-        group.map (fun j => moduleUnitId location (fm.fr.unitId j)), lines, v⟩
-      verdicts := verdicts ++ [mv]
-      if let .ok deps := v then accepted := accepted ++ [(moduleUnitId location (fm.fr.unitId l), deps)]
-    -- A group is established where it and, transitively, every group it
-    -- depends on was accepted.
-    let earlier := established.map (·.2.2)
-    let mut ok : List String := []
-    for _ in [0:accepted.length + 1] do
-      let next := accepted.filter fun (u, deps) => !ok.contains u &&
-        deps.all fun d => ok.contains d || earlier.contains d
-      if next.isEmpty then break
-      ok := ok ++ next.map (·.1)
-    for n in m.names do
-      let some i := (List.range fm.fr.units.length).find? fun i => match fm.fr.units[i]? with
-          | some (f, _, none) => f.name == n
-          | _ => false
-        | notes := notes ++ [s!"{location}#{n}: no unit"]; continue
-      let some l := (fm.fr.group i).head? | continue
-      let u := moduleUnitId location (fm.fr.unitId l)
-      let some f := fm.fr.units[i]? | continue
-      let some c := fm.fr.d.functions.find? fun c => c.name == n && c.namePos == f.1.namePos | continue
-      let p := (c.footprint, c.onThrow, c.resultFootprint)
-      if p == (.top, false, .top) then
-        notes := notes ++ [s!"{location}#{n}: the ordinary effect"]
-        continue
-      if !ok.contains u then
-        notes := notes ++ [s!"{location}#{n}: proposed {(toJson p.1).compress} onThrow {p.2.1}, not established"]
-        continue
-      established := established ++ [((location, n), p, u)]
-  return (established, verdicts, notes)
+    Except String (Established × List ModuleVerdict × List String) :=
+  .ok (establishFold budget force prepare check needs (incoming, [], []))
 
 /-- Importer planning from closed interfaces. No module is planned here. -/
 def fragmentPlansFromInterfaces (ast : Json) (fileKey : String) (budget : PositiveCertificates.SearchBudget)
@@ -776,14 +816,12 @@ def fragmentPlansWithModules (ast : Json) (fileKey : String) (budget : PositiveC
     Except String (FilePlans × List ModuleVerdict × List String) := do
   let needs ← requestedInterfaceNeeds (← ImportScope.of ast) ast names
     (standIns.imports.map StandIn.name) (standIns.functions.map StandIn.name)
-  let mut established : Established := []
-  let mut verdicts := []
-  let mut notes := []
-  for component in interfaceComponents needs do
-    let (es, vs, ns) ← establishModules component budget force established prepare check
-    established := es
-    verdicts := verdicts ++ vs
-    notes := notes ++ ns
+  -- The components in order, each established from the entries of those
+  -- before it.
+  let (established, verdicts, notes) := (interfaceComponents needs).foldl (init := (([] : Established),
+      ([] : List ModuleVerdict), ([] : List String))) fun (est, vs, ns) component =>
+    let (es, vs', ns') := establishFold budget force prepare check component (est, [], [])
+    (es, vs ++ vs', ns ++ ns')
   let f ← fragmentPlansFromInterfaces ast fileKey budget names standIns force established
   return (f, verdicts, notes)
 

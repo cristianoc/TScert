@@ -47,7 +47,9 @@ ordered by their first location. These orders depend on the module graph,
 independently of the requesting importer or selected function.
 
 A component receives its member documents and the completed interfaces of
-its outgoing dependencies. It checks members in canonical order. An import
+its outgoing dependencies. It checks members in canonical order, each
+member one step that reads only the entries published before it, the
+component's result the fold of those steps over its members. An import
 of a later member has the ordinary effect; an earlier member contributes
 only already established footprints. A group's successful check supplies
 its dependency list. A footprint becomes established only when the group
