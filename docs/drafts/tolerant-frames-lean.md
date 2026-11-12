@@ -307,6 +307,63 @@ compares closed footprints. Two conditions are outside it: the result's name
 is fresh for the store (a premise, `hr`), and the output the pass applies is
 the checked rule's (`Checker.select` agreeing with `run`).
 
+### The preserving steps through their checked rules
+
+Module `lean/Verification/Programs/TolerantFramesSteps.lean`. The pass frames
+a step (`applyDelta … true`) when it is preserving: a call its own predicates
+find keeping the heap (`callKeepsHeap`, `SinglePass.lean` lines 1289–1296), or
+a step of a kind other than `ordinary`, `written` and `boundedWrite`
+(`kindPreserving`, lines 1307–1309); `passPreserving` is their disjunction.
+$`\mathrm{KeepsPost}`$ is the normal exit within
+$`\{\mathsf{values}:\mathsf{keep},\ \mathsf{stores}:\mathsf{keep}\}`$. Proved:
+
+- the base rule (`checkStepUsing`) of each preserving kind fixes the term's
+  shape (`base_shape`): `pure` and `reading` an inspection by their checked
+  purity, the four reads `.readAt f (.var i)` with $`i`$ a slot holding a value
+  (for `linkedRead`, an object by the link fact), `knownValue` a slot,
+  `allocated` an allocation or merge of slots, `created` a graph closure's
+  creation, which allocates its two frames (`created_keeps`); so each keeps the
+  heap (`base_keeps`, with `pure_inspect`);
+- the calls: `elementsCall` and a `requiresCall` whose selected signature keeps
+  the heap (`elementsCall_keeps`, `requiresCall_keeps`, from `selected_sound`,
+  `requiresTree_sound` and `keepsHeap_prefix`), and with `freshCall_keeps`,
+  `keepsCall_keeps` every call the pass frames (`callKeepsHeap_keeps`);
+- the production checker accepts a preserving kind only where its base rule or
+  `elementsCall` does (`ordinary_run_base`: every other call layer reads an
+  `ordinary` step, the rest map the base's output), and a qualified body's
+  checker only where its base rule does (`withSubtyping_run_base`); so every
+  step the pass classifies preserving keeps the heap (`passPreserving_keeps`);
+- both exits (`preserving_step_frame` for any checker given $`\mathrm{KeepsPost}`$,
+  `pass_preserving_frame` at `Checker.ordinary`): from `run`'s output
+  $`\mathit{out}`$ over the handed facts, a normal return is an action of
+  $`\{\mathsf{values}:\mathsf{keep},\ \mathsf{stores}:\mathsf{keep}\}`$ with
+  $`n'+k=n`$, the result's type, $`\mathit{out}`$ at $`\mathrm{push}\ v\ \rho`$ and
+  $`\mathrm{Named}\ S\ \eta[r\mapsto v]`$; a throw is an action of $`\top`$ with
+  the raised value closed and of the exception family and the heap-free part
+  of $`S`$.
+
+`ownCall` and `ensuresCall` steps are not preserving: the first only
+excludes `keepsCall` (line 1296), the second is an `ordinary` step taking the
+writing path.
+
+**Where the pass's treatment is not implied by its checked rule.** The theorems
+above assume the output the pass applies is `run`'s (`hrun`). The pass takes it
+elsewhere:
+
+1. `SinglePass.lean` 1326 (every writing step) and 1260 (a direct call):
+   `Checker.select`, whose `Checker.steps` layer skips the derivation's tree
+   check (`tree := false`); the pass checks that tree once, at 1276–1282.
+   Agreement of `select` with `run` given that check is not proved.
+2. Lines 1276–1282 accept the tree by `checkTreeUsing … codes` or by
+   `PromiseCalls.requiresTree`. `run` checks `typedRead`'s optional-field
+   branch with no codes (`checkStepResult`, `fun _ => false`), and checks the
+   other kinds by `checkTreeUsing` alone: a tree accepted only by `requiresTree`,
+   or by codes in that branch, has no `run` acceptance behind it.
+3. Line 1263: the search (`expressionEffectUsing`) returns the output; nothing
+   rechecks it against `run` for a preserving step.
+4. Line 1276: with `selectChecks` (a qualified body) no tree check runs;
+   `Checker.withSubtyping`'s `select` is its `run`, so there it is implied.
+
 **Not justified: a slotless fact across a writing step.** A step that may
 write materializes every fact (`materialize … true`, `SinglePass.lean` lines
 1326–1336), but a fact naming a name no slot holds fails to rename, is not
