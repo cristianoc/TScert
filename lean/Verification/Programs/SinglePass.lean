@@ -1318,6 +1318,16 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
       else
         -- A step that may write: its rule reads every fact.
         let (k, pairs, table) := materialize entry width ms true
+        -- A heap fact over a name no slot holds is not among the facts the
+        -- rule reads, so its output does not say whether the step keeps it:
+        -- it is dropped (the handler's filter's heap facts); a heap-free
+        -- fact stays.
+        let renamed : Std.HashSet Atom := pairs.foldl (fun acc (a, _) => acc.insert a) {}
+        store := entry.store.toList.foldl (fun (acc : Store) a => if renamed.contains a then acc else match a with
+          | .cell _ | .elem _ => acc.remove a
+          | .link g => if g.alias then acc else acc.remove a
+          | .index x => if x.fact.envOnly then acc else acc.remove a
+          | _ => acc) store
         let kE := KnowledgeExpand.expandLinks (KnowledgeExpand.ctxOf G c.context) k
         -- The step the search selected over the facts the expression names,
         -- its output over every fact.

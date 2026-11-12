@@ -211,7 +211,11 @@ reading no heap), from the node's entry state.
 - A step that may write (a call's `ordinary` step, `written`, `boundedWrite`)
   states which heap facts survive it: its derivation is searched over the
   facts its expression names, and its output selected once over every fact
-  (`Checker.select`, HeapExpressionRules.lean `Checker` structure).
+  (`Checker.select`, HeapExpressionRules.lean `Checker` structure). A heap
+  fact over a name no slot holds is outside what the step reads, so the
+  step drops it (cells, elements, read links and index facts reading the
+  heap, as a handler's edge drops them); a heap-free fact stays. Measured
+  2026-11-12 over the pipeline cases: no step reached such a fact.
 - An allocation states its object apart from every object slot of the
   context (`HeapExpressionRules.allocLinked`, the separation at the output's
   depth): its output names slots no fact it read names, mapped back through
