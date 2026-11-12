@@ -1147,14 +1147,26 @@ theorem PassChecker.select_eq_run {G : NormalGraph ι} {images : InstanceImageCh
   | ordinary => cases h
   | qualified s o => rfl
 
+/-- **The start's written separation kept** in its given state
+(`startWritten`, `HeapSeparation.union`): each of its facts has a partner,
+and where it and the entry separation `entrySeparation` both state facts,
+they are at one depth. -/
+def startSeparationKept (written : Option Knowledge) (entrySeparation : HeapSeparation.Separation) : Bool :=
+  let ws := (written.getD {}).separation
+  ws.facts.all (!·.partners.isEmpty) &&
+    (ws.facts.isEmpty || entrySeparation.facts.isEmpty || ws.depth == entrySeparation.depth)
+
 /-- The unit's entry checked as `ControlFlow.checkEntryResult` checks a
 certificate's (no edge enters the start on the first invocation): the start's
 context is the request's inputs; the promised input's slot is one of them;
 the start's given state states no implication, names a slot after the
 promised input only at that input's own slot and after an input's entry value
-only at that input's slot; and its written and supplied facts are entailed
-by the request's entry facts (`ControlFlow.entryKnows`). The refusal where
-one fails. -/
+only at that input's slot; its written separation states each fact with a
+partner and, where it and the entry's separation both state facts, is at
+the entry separation's depth, so the start's given state
+(`startWritten`) keeps every fact of it; and its written and supplied facts
+are entailed by the request's entry facts (`ControlFlow.entryKnows`). The
+refusal where one fails. -/
 def entryRefusal (G : NormalGraph ι) (inputs : List (Ty ι)) (claims : List (PointClaim ι)) (start : Nat)
     (goal : Goal ι) (written : Option Knowledge) (supplied : List IndexAtom)
     (givenImplies : List (PromiseCalls.Implication ι)) (givenArgs : List Nat) (givenInputs : List (Nat × Nat))
@@ -1167,6 +1179,7 @@ def entryRefusal (G : NormalGraph ι) (inputs : List (Ty ι)) (claims : List (Po
     else if !givenImplies.isEmpty then some "the entry: a given implication"
     else if !givenArgs.all (some · == goal.slot) then some "the entry: a slot given the promised input"
     else if !givenInputs.all (fun (j, q) => j == q) then some "the entry: a slot given an input's value"
+    else if !startSeparationKept written entrySeparation then some "the entry: its written separation"
     else
       let k := written.getD {}
       let k := { k with indices := k.indices ++ supplied }
