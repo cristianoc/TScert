@@ -298,6 +298,18 @@ The output is the verdict, with the first refused obligation located; a
 construct the pass does not handle is an explicit `not handled` result,
 never an acceptance. Not handled: a qualified body with code requests.
 
+A unit's refusal line in modes 3 and 8 names the obligation at its source
+span, in the wording the search's refusal of the same obligation has: an
+expression or return (`source expression obligation at [a,b): evidence
+search failed: no derivation of its <role> claim`, or the promise's), a
+postcondition (`source ensures refusal at [a,b)`), an edge at its target
+(`source incoming edge obligation at [a,b)`), a footprint or stated frame
+(`source effect refusal at [a,b)`); the pass's own text follows on the next
+line. A refusal before the pass that names no place is named at its unit's
+declaration (`source refusal at [a,b)`). `TSCERT_PASS_REFUSALS=raw` prints
+the pass's own text alone. On the single-pass route, a unit refused for a
+dependency also prints the refusal that dependency rests on.
+
 `verifier --verify-units 3 <fragment> <claims> <file-key> <depth> <name>`
 runs the pass; `TSCERT_COMPARE=1` checks, at every node, that the state
 entails the knowledge the existing search's certificate holds there.

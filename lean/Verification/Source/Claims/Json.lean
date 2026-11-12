@@ -1268,22 +1268,86 @@ def FilePlans.passMember (f : FilePlans) (fuel : Nat) (i : Nat) (compare : Bool 
     return checked (.notHandled "observed") ("observation: " ++ record.compress)
   return checked o (countsLine counting name counts)
 
+/-- The node label a pass refusal's text names after `key` (`expression at
+node 8: …` names `8`). -/
+def refusalLabel (w key : String) : Option Nat :=
+  match w.splitOn key with
+  | _ :: rest :: _ => (rest.takeWhile Char.isDigit).toNat?
+  | _ => none
+
+/-- **A pass refusal, located** (the verdict's text): the obligation a
+refusal of the single pass names (`expression at node l`, `return at node
+l`, an edge into node `t`, `footprint at node l`, `store regions at node l`,
+in the unit's graph or, after `code i: `, in its code `i`'s) at the source
+span of its node, in the wording the search's refusal of the same
+obligation has (`produceGraphUsing`, `footprintRefusal`, `ensuresRefusal`);
+none where the refusal names no node with a source span. -/
+def FilePlans.locatedRefusal (f : FilePlans) (i : Nat) (w : String) : Option String := do
+  let .ok (.graph name _ r) := (f.plans[i]?).getD (.error "") | none
+  let (ci, w) : Option Nat × String := if w.startsWith "code " then
+      match (w.drop 5).toString.splitOn ": " with
+      | n :: rest => ((n.toNat?), ": ".intercalate rest)
+      | [] => (none, w)
+    else (none, w)
+  let sourceMap : SourceMap := match ci with
+    | some c => ((r.codeSources[c]?).map (·.sourceMap)).getD []
+    | none => r.sourceMap
+  let at_ := fun (l : Nat) => (sourceMap[l]?).bind id
+  let what := if ci.isSome then s!"a closure in '{name}'" else s!"'{name}'"
+  if w.startsWith "expression at node " then
+    let o ← at_ (← refusalLabel w "expression at node ")
+    return s!"source expression obligation at [{o.pos.1},{o.pos.2}): evidence search failed: no derivation of its {o.role} claim"
+  if w.startsWith "return at node " then
+    let o ← at_ (← refusalLabel w "return at node ")
+    if (w.splitOn ": the promise").length > 1 then
+      return s!"source expression obligation at [{o.pos.1},{o.pos.2}): evidence search failed: the promised argument is not within the promise at this return"
+    if (w.splitOn ": the postcondition").length > 1 then
+      return s!"source ensures refusal at [{o.pos.1},{o.pos.2}): a return of '{name}' does not establish the postcondition stated by its declaration"
+    return s!"source expression obligation at [{o.pos.1},{o.pos.2}): evidence search failed: no derivation of its {o.role} claim"
+  if w.startsWith "edge from node " || w.startsWith "handler edge from node " then
+    let l ← refusalLabel w "edge from node "
+    let t ← refusalLabel w " to node " <|> refusalLabel w " into statement entry " <|> refusalLabel w " into node "
+    let o ← at_ t
+    return s!"source incoming edge obligation at [{o.pos.1},{o.pos.2}): evidence search failed: the edge from node {l} does not establish the claims at this point"
+  if w.startsWith "footprint at node " || w.startsWith "footprint by store regions: " then
+    let l ← refusalLabel w "footprint at node "
+    let o := at_ l
+    let pos := (o.map (·.pos)).getD (f.fr.units[i]?.map (·.1.namePos) |>.getD (0, 0))
+    return s!"source effect refusal at [{pos.1},{pos.2}): the footprint claimed for {what} is not established by its body"
+  if w.startsWith "store regions at node " then
+    let o ← at_ (← refusalLabel w "store regions at node ")
+    return s!"source effect refusal at [{o.pos.1},{o.pos.2}): the frame stated for {what} is not established by its body: a step changes a location outside its store regions beyond the statement's bound"
+  none
+
 /-- The single forward pass over each member of a group
 (`FilePlans.passMember`), no certificate built: per member its line, its
 outcome and counts; the group's verdict, the first member's refusal or
 construct not handled, else the group's dependencies. -/
 def FilePlans.passGroup (f : FilePlans) (fuel : Nat) (group : List Nat) (compare : Bool := false) (debugNode : Nat := 1000000000) (repeats : Nat := 1) (given : Option (Std.HashMap String Json) := none)
-    (observe : Option String := none) (counting : Bool := false) :
+    (observe : Option String := none) (counting : Bool := false) (located : Bool := false) :
     List String × Except String (List String) :=
+  -- (`located`: a refusal's text the source obligation it names, the
+  -- pass's own text on the next line, `FilePlans.locatedRefusal`; a
+  -- refusal before the pass named at its unit where it names no place)
+  let place := fun (i : Nat) (w raw : String) =>
+    if !located then raw else match f.locatedRefusal i w with
+      | some l => s!"{l}\n{raw}"
+      | none => raw
   let (lines, failed) := group.foldl (init := (([] : List String), (none : Option String))) fun (lines, failed) i =>
     match f.passMember fuel i compare debugNode repeats given observe counting with
     | .ok m =>
       let failure := match m.outcome with
         | .accepted => none
-        | .refused w | .notHandled w => some s!"single pass: {m.outcome} ({w.length})"
+        | .refused w => some (place i w s!"single pass: {m.outcome} ({w.length})")
+        | .notHandled w => some s!"single pass: {m.outcome} ({w.length})"
         | o => some s!"single pass: {o} ({(toString o).length})"
       (lines ++ [s!"{m.name}: {m.outcome}; {m.line}"], failed.orElse fun _ => failure)
-    | .error reason => (lines ++ [s!"refused before the pass: {reason.take 200}"], failed.orElse fun _ => some reason)
+    | .error reason =>
+      let reason := if !located || (reason.splitOn " at [").length > 1 then reason else
+        match f.fr.units[i]? with
+        | some (fn, _, _) => s!"source refusal at [{fn.namePos.1},{fn.namePos.2}): {reason}"
+        | none => reason
+      (lines ++ [s!"refused before the pass: {reason.take 200}"], failed.orElse fun _ => some reason)
   (lines, match failed with
     | some reason => .error reason
     | none => .ok (f.dependencies group))

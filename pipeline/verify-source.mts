@@ -1282,7 +1282,24 @@ function singlePass(recorder: Recorder, artifacts: string, ast: string, fileKey:
     .sort((a, b) => place(a.unit) - place(b.unit)).map((v): UnitResult => {
       if (closed.get(v.unit) === true)
         return { unit: v.unit, members: v.members, status: "verified", phase: "check", detail: "", depends: v.depends };
-      const detail = v.accepted ? `reject: a unit it depends on is refused: ${openBy.get(v.unit) ?? ""}` : `reject: ${v.refusal}`;
+      // A unit open by a dependency: that dependency, then the refusal it
+      // rests on, followed through the dependencies open in turn.
+      const cause = (unit: string): string => {
+        const seen = new Set<string>();
+        let u: string | undefined = unit;
+        while (u !== undefined && !seen.has(u)) {
+          seen.add(u);
+          const d = byUnit.get(u);
+          if (d === undefined) return `${u}: no verdict`;
+          if (!d.accepted) return d.refusal;
+          u = openBy.get(u);
+        }
+        return "";
+      };
+      const open = openBy.get(v.unit) ?? "";
+      const reason = cause(open);
+      const detail = v.accepted ? `reject: a unit it depends on is refused: ${open}${reason === "" ? "" : `\n${reason}`}`
+        : `reject: ${v.refusal}`;
       return { unit: v.unit, members: v.members, status: refusalStatus(detail), phase: "search", detail, depends: [] };
     });
   const first = results.find((u) => u.status !== "verified");

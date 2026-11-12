@@ -484,6 +484,10 @@ def verifyUnitsFile (astPath : String) (claimsPath : Option String) (fileKey : S
         | .ok u => m.insert u j
         | .error _ => m
       | .error _ => m) {}
+  -- A pass refusal's text located at the source obligation it names
+  -- (`FilePlans.locatedRefusal`), unless `TSCERT_PASS_REFUSALS=raw`: the
+  -- pass's own text alone.
+  let located := (← IO.getEnv "TSCERT_PASS_REFUSALS") != some "raw"
   -- Adversarial proposals forced, for the referee (`TSCERT_FORCE`, comma-separated).
   let force := ((← IO.getEnv "TSCERT_FORCE").getD "").splitOn "," |>.filter (!·.isEmpty)
   -- The referee's statement entries all the search's cuts (`TSCERT_ALL_CUTS`).
@@ -512,7 +516,7 @@ def verifyUnitsFile (astPath : String) (claimsPath : Option String) (fileKey : S
       let check := fun (f : SourceClaimJson.FilePlans) (group : List Nat) =>
         if mode == 9 then (([] : List String), f.verifyGroup fuel group false)
         else f.passGroup fuel group (given := some (moduleGiven f.fr.ast
-          (moduleLines ((f.fr.ast.getObjValAs? String "file").toOption.getD ""))))
+          (moduleLines ((f.fr.ast.getObjValAs? String "file").toOption.getD "")))) (located := located)
       if let some cached := interfaces then
         let cached ← cached
         let sc ← if (← jArr cached "modules").isEmpty then
@@ -603,7 +607,7 @@ def verifyUnitsFile (astPath : String) (claimsPath : Option String) (fileKey : S
               | none => pure 0
             emit s!"counts-read: \{\"fragmentBytes\":{← size astPath},\"claimsBytes\":{claimsBytes},\"givenBytes\":{given},\"standInBytes\":{standInBytes},\"interfaceBytes\":{interfaceBytes}}"
           let (lines, v) ← IO.lazyPure fun _ =>
-            f.passGroup fuel (f.fr.group i) compare debugNode repeats given observe counting
+            f.passGroup fuel (f.fr.group i) compare debugNode repeats given observe counting located
           let p1 ← SinglePass.passNanos.get
           let s1 ← IO.monoNanosNow
           for line in lines do emit line
