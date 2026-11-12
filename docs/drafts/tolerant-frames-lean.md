@@ -360,17 +360,19 @@ own conditions discharge it ([the selected output](#the-selected-output-under-th
 ### The selected output under the pass's tree check
 
 Module `lean/Verification/Programs/TolerantFramesSelect.lean`. The pass takes a
-step's output from `Checker.select` (`SinglePass.lean` 1260 for a direct call,
-1335 over every fact for a writing step) or from the search (1263), and checks
-the step's derivation once (1271–1282, `selectChecks` false):
+step's output from `Checker.select` of the step's evidence (`SinglePass.lean`
+1302 for a direct call, 1313 for a searched step, 1390 over every fact for a
+writing step), and checks the step's derivation once (1318–1333) where its
+checker's `select` checks nothing:
 
 ```
 let tree := match effect with
   | .slicedRead _ _ _ e _ => some e
   | _ => effect.proof?
 if let some p := (if selectChecks then none else tree) then
-  if !(checkTreeUsing G images p codes sums ||
-      PromiseCalls.requiresTree G images kE codes sums p) then refuse
+  if !checkTreeUsing G images p codes sums then
+    if requiresTree G images kE codes sums p then preconditioned := some p
+    else refuse
 ```
 
 `passTree` is that `tree`, and `passTreeOk G images k codes sums e` that
@@ -411,36 +413,34 @@ $`b`$ (`Checker.ordinary = ordinaryOver (Checker.steps …)`, by definition);
 - a tree `checkTreeUsing` accepts passes the check at every knowledge
   (`passTreeOk_of_tree`).
 
-**Where the pass's conditions do not give the theorem's premise**, most
-important first:
+The pass's checker (`SinglePass.PassChecker`, `SinglePass.lean` 819–840) is
+`ordinary` (`Checker.ordinary`, whose `select` takes a derivation as given,
+the pass checking its tree) or `qualified` (`Checker.withSubtyping`, whose
+`select` is its `run`). The pass's tree check at the step's facts
+$`k_E`$ (lines 1325–1333) is `passTreeCheck`: refused, or accepted with the
+tree only `requiresTree` accepted (`preconditioned`); before a writing step's
+`select` over every fact $`k_E'`$ that tree is checked again at $`k_E'`$
+(lines 1386–1388, `passWholeCheck`). `passRunChecker` is `passOrdinary` for
+the ordinary checker and the qualified body's checker itself. Proved:
 
-1. Line 1263: the output is the search's. `expressionEffectUsing` returns
-   `checker.select j kE effect codes sums` of its last loop, with `sums` the
-   state's summaries, which that loop does not change; this property of the
-   monadic search is not proved. The pass would close it by computing
-   `checker.select j kE effect codes sums` from the returned evidence (the
-   search returning derivation and evidence only).
-2. Line 1335: the whole-facts `select` runs at the knowledge $`k_E'`$ of every
-   fact, the tree check at the narrower $`k_E`$ (1276). Where `checkTreeUsing`
-   accepted the tree the premise holds (`passTreeOk_of_tree`). A tree only
-   `requiresTree kE` accepts has no `passTreeOk kE'`: for $`e`$ `.ordinary p`
-   with $`\mathrm{claim}\ p=j`$, `checkTreeUsing p` false, `requiresTree kE p`
-   true and `requiresTree kE' p` false, and no other call layer deciding the
-   step (`elementsCall`, `freshCall`, `ownCall`, `keepsCall`), `run` at $`k_E'`$ rejects (its base checks the tree) and
-   `select` returns $`\mathrm{ordinaryOutput}\ k_E'`$ with the outer layers'
-   atoms. That output is sound when $`k_E'`$'s facts imply $`k_E`$'s and the
-   precondition read at $`k_E`$ holds (conjectured; the inclusion is a property
-   of `materialize`, not proved). The pass would close it by evaluating
-   `requiresTree` at $`k_E'`$ for that `select`.
-3. `typedRead`'s optional-field branch: `run` checks its tree with no codes
-   (`fun _ => false`), the pass with the codes, so `run` rejects a tree whose
-   check consults a code entry. The output is sound with the codes
-   (`passSteps_sound`); `run` and the pass differ, safety does not.
-4. `selectChecks` is a Boolean argument of the pass: no check ties it to a
-   checker whose `select` is its `run` (`withSubtyping_select` holds of the
-   qualified body's checker, and `Checker.ordinary`'s `select` skips the
-   tree). A `Checker` field stating `select = run`, or the pass deriving
-   `selectChecks` from the checker, would close it.
+- `passTreeCheck` accepting gives `passTreeOk` at $`k_E`$
+  (`passTreeCheck_ok`), and with `passWholeCheck` at $`k_E'`$
+  (`passWholeCheck_ok`), for the ordinary checker;
+- (`pass_select_run`) where the checker's `select` checks nothing,
+  `passTreeOk` at $`k`$, $`\mathrm{select}\ j\ k\ e=\mathit{out}\Rightarrow
+  \mathrm{passRunChecker.run}\ j\ k\ e=\mathit{out}`$; so the output the pass
+  applies over the step's facts (lines 1302 for a direct call, 1313 for a
+  searched step, both `select` of the step's evidence) is its checker's `run`
+  (`pass_select_narrow`), and the output over every fact (line 1390) too
+  (`pass_select_whole`); it is sound (`pass_select_sound`);
+- the preserving steps at either checker: `passPreserving_keeps_pass`,
+  `pass_preserving_frame_pass`, `preserving_judgment_pass`.
+
+**Where `run` and the pass differ**: `typedRead`'s optional-field branch.
+`run` checks its tree with no codes (`fun _ => false`), the pass with the
+codes, so `run` rejects a tree whose check consults a code entry. The output
+is sound with the codes (`passSteps_sound`); `run` and the pass differ,
+safety does not.
 
 ### The writing steps
 
@@ -511,21 +511,22 @@ field writes keep them through their rules' outputs (`IndexWrites.writeAtoms`,
 ### The footprint check at a node
 
 Module `lean/Verification/Programs/TolerantFramesFootprint.lean`. Where the
-invocation states a bound $`\Phi`$ (`SinglePass.lean` 1342–1380), the pass
+invocation states a bound $`\Phi`$ (`SinglePass.lean` 1416–1451), the pass
 evaluates at a node with sequent $`j`$, step knowledge $`k_S`$ (`stepK`), step
 derivation $`d`$ (`stepDeriv`) and fresh receiver slots $`F`$:
-`passWrites` (`writes`, 1356–1357: `writeWithin` or `initWriteWithin` at
-$`\Phi`$), `passWithin` (`within`, 1358–1360: an inspection, `passWrites`,
-`selectedWithinAt Φ F d`, or a type no value has) and `passThrows` (`throws`,
-1367–1371, its first disjunct, which bounds no throw, left out).
-`DerivChecked … k j d` states $`d`$ claimed at $`j`$'s context and term with its
-tree accepted by `checkTreeUsing` or by `requiresTree` at $`k`$. Proved, for
-$`\mathrm{FreshOk}\ F\ b\ \rho`$:
+`passWrites` (`writes`, 1431–1432: `writeWithin` or `initWriteWithin` at
+$`\Phi`$), `passDerivChecked` (`derivChecked`, 1427–1430: $`d`$ claimed at the
+node's term, its tree accepted by `checkTreeUsing` or by `requiresTree` at
+$`k_S`$), `passWithin` (`within`, 1433–1435: an inspection, `passWrites`,
+`selectedWithinAt Φ F d` with `passDerivChecked`, or a type no value has) and
+`passThrows` (`throws`, 1443–1446, its first disjunct, which bounds no
+throw, left out). Proved, for $`\mathrm{FreshOk}\ F\ b\ \rho`$ and
+`DerivContext` (below):
 
-- `pass_within_normal`: `passWithin` and (`selectedWithinAt` ⟹ `DerivChecked`)
-  ⟹ the normal exit is within $`\Phi`$ on the locations below $`b`$ from the
-  node's entry heap: $`\Phi.\mathrm{HoldsOn}\ (\cdot < b)\ h\ h'`$;
-  `pass_within_throw`: `passThrows` and the same premise ⟹ the throw is too;
+- `pass_within_normal`: `passWithin` ⟹ the normal exit is within $`\Phi`$ on
+  the locations below $`b`$ from the node's entry heap:
+  $`\Phi.\mathrm{HoldsOn}\ (\cdot < b)\ h\ h'`$; `pass_within_throw`:
+  `passThrows` ⟹ the throw is too;
 - relative to the invocation's entry $`h_0`$ with $`b=|h_0|`$:
   $`\Phi.\mathrm{Holds}\ h_0\ h \wedge \Phi.\mathrm{HoldsOn}\ (\cdot<|h_0|)\ h\ h'
   \Rightarrow \Phi.\mathrm{Holds}\ h_0\ h'`$ (`pass_within_entry`, from
@@ -534,24 +535,17 @@ $`\mathrm{FreshOk}\ F\ b\ \rho`$:
 - `pass_write_judgment`: `passWrites` ⟹ the step's judgment within $`\Phi`$ on
   the whole heap, both exits, with its rule's output: `write_judgment`'s
   `writeWithin` premise discharged at $`c=\Phi`$, the initialisation write
-  included;
-- `derivChecked_of_select`: where $`d`$ is the tree the pass checks
-  ($`\mathrm{passTree}\ e = d`$), `DerivChecked` holds at the step's knowledge.
+  included.
+
+**`DerivContext`** (a named hypothesis, where `selectedWithinAt` holds): the
+claim of $`d`$ is at the node's context. `passDerivChecked` compares the
+claim's term only (`SinglePass.lean` 1428); the selected signature's
+soundness (`selected_sound`, `requiresTree_sound`) is stated at the claim's
+context. A conjunct `(claim deriv).context == c.context` there discharges it.
 
 What the check does not give:
 
-1. **The step's derivation is unchecked where it is not the checked tree.**
-   `stepDeriv` is the search's ordinary derivation (`ordinary.value`), and the
-   step's evidence the first of its choices `select` accepts. For a
-   `knownValue`, `observedRead`, `linkedRead`, `slicedRead` or `boundedWrite`
-   step, `passTree e` is not $`d`$ (none, or the sliced read's location
-   derivation), and nothing checks $`d`$'s claim or tree; `selectedWithinAt Φ F d`
-   then reads an unchecked signature. The read kinds pass `within` as
-   inspections, so a `boundedWrite` outside `writes` is the step whose bound
-   rests on it. `GraphCode.nodeChecked` requires
-   `claim d`'s term to be the node's and its tree accepted beside
-   `selectedWithinAt`; the pass would close it with the same conjuncts.
-2. **The effect is the invocation's bound, not the step's.** The check
+1. **The effect is the invocation's bound, not the step's.** The check
    establishes $`\Phi`$ (below $`b`$), so the per-step effect a writing step's
    judgment has is $`\Phi`$; a fact $`\Phi`$ does not tolerate is kept across
    a writing step only through the rule's output over every fact. A per-step
@@ -560,22 +554,20 @@ What the check does not give:
    element write's $`\{\mathsf{values}:\mathsf{any},\ \mathsf{stores}:\mathsf{grow}\}`$)
    would need the pass to evaluate `fieldWriteWithin` or `writeWithin` at that
    effect for the step, beside the bound check.
-3. Where no bound is stated (`bound = none`) the pass checks no footprint; a
+2. Where no bound is stated (`bound = none`) the pass checks no footprint; a
    writing step's judgment is then `top_judgment`'s.
-4. `FreshOk F b ρ`, the receiver slots the pass records fresh (`entry.fresh`)
+3. `FreshOk F b ρ`, the receiver slots the pass records fresh (`entry.fresh`)
    holding stores allocated at or after the invocation's entry, is a premise:
    the pass's freshness tracking is not connected.
 
-**Not justified: a slotless fact across a writing step.** A step that may
-write materializes every fact (`materialize … true`, `SinglePass.lean` lines
-1326–1336), but a fact naming a name no slot holds fails to rename, is not
-among `pairs`, and `applyDelta` (lines 373–381) keeps it. A writing step's
-effect does not tolerate it: a cell fact over a name fails after an action of
-$`\top`$ (proved: `slotless_not_framed`). The pass is sound here only under
-the store invariant that every name a stored fact mentions is held by a slot,
-which edges (`Store.drop` of `droppedBy`) and merges (`renamedAway`) maintain
-and nothing checks; `materialize`'s elimination of names out of scope
-presupposes such facts.
+**The facts a writing step is not handed.** A step that may write
+materializes every fact (`materialize … true`, `SinglePass.lean` 1370), and a
+fact naming a name no slot holds fails to rename and is not among `pairs`.
+Before the step's delta the pass removes each such fact that reads the heap
+and keeps the heap-free ones (lines 1375–1380, the handler's filter): a
+writing step's effect does not tolerate a heap fact it is not handed (a cell
+fact over a name fails after an action of $`\top`$, proved:
+`slotless_not_framed`).
 
 ## Allocated cells and separation
 
@@ -635,8 +627,8 @@ new cells may coincide.
 ## The pass's named state
 
 Module `lean/Verification/Programs/TolerantFramesState.lean`. The pass's state
-at a point (`SinglePass.State`, `SinglePass.lean` lines 153–159) is its slots'
-names $`N`$, a store $`S`$ of facts over names (`Store`, lines 87–151) and the
+at a point (`SinglePass.State`, `SinglePass.lean` lines 165–170) is its slots'
+names $`N`$, a store $`S`$ of facts over names (`Store`, lines 88–162) and the
 names $`F`$ holding stores the invocation allocated; the walk keeps the
 implications $`I`$ over names beside it (lines 961, 1767). The store's facts
 are its live set's and those its index by name lists
@@ -673,18 +665,18 @@ fresh name), separate from the meaning:
 Soundness reads none of them but `below` (through `fresh_result`); `slotted`
 is what a writing step's frame needs ([the slotless finding](#the-footprint-check-at-a-node)).
 
-**The store's laws** (`StoreLaws`, a named hypothesis): an insertion into
-`Lean.PersistentHashMap` adds only its key (or list), an erasure adds
-nothing, a list found under a key is among the map's lists. The library
-states no lemma about `PersistentHashMap`; every theorem reading a store after
-a change assumes these four inclusions.
+**The store's laws**, proved from the lemmas of `Std.HashSet` and
+`Std.HashMap` (the store's live facts and its index by name, `SinglePass.lean`
+88–92): an insertion adds only its key or its list (`keys_insert`,
+`vals_insert`), an erasure adds nothing (`keys_erase`), a list found under a
+name is among the index's lists (`findD_vals`, `mem_valsOf`).
 
 Proved, per fact and per store operation:
 
 - `atomHolds_canon`: $`a.\mathrm{canon}`$ holds iff $`a`$ does;
   `atomHolds_rename`: a fact renamed by $`f`$ holds at $`\rho`$ where
   $`f\,x=i \Rightarrow \rho\,i=\eta\,x`$;
-- under `StoreLaws`, adding a holding fact and removing any fact keep every
+- adding a holding fact and removing any fact keep every
   fact of the store holding (`addRaw_ok`, `remove_ok`), a stronger bound
   replacing weaker ones (`addBound_ok`), a length fact added with the linear
   facts it means (`add_ok`, from `HeapKnowledge.atomLinear_holds`).
@@ -709,8 +701,8 @@ facts its worklist collects. Proved:
   is a selected fact and its image under the table (`materializeFrom_pairs`).
 
 From the state's meaning: the whole materialization holds
-(`stateHolds_materialize_whole`); the selective one holds under `StoreLaws`
-and `SelectedFromIndex` (`stateHolds_materialize`); and the step's knowledge
+(`stateHolds_materialize_whole`); the selective one holds under
+`SelectedFromIndex` (`stateHolds_materialize`); and the step's knowledge
 $`k_E`$ (line 1229) and $`k_E'`$ (line 1321), each `expandLinks` at the node's
 context, hold together where the environment meets that context
 (`stateHolds_stepKnowledge`). So a precondition `requiresTree` decides at
@@ -730,7 +722,7 @@ pushed slots the output lost, `deltaAdd` adds each output fact not among the
 images, renamed by `back`, and `deltaRestate` restates each added linear fact
 over a read's name over the read's path. The pass's `back` (lines 1316–1317,
 1331–1332) is `passBack`: slot 0 the result's name, a slot the table's
-inverse gives its name, else the slot's name. Proved, under `StoreLaws`:
+inverse gives its name, else the slot's name. Proved:
 
 - `deltaRemove_sub`: the removal loop keeps only facts the store held;
   `deltaAdd_ok`: the facts added hold where the output holds at the pushed

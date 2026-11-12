@@ -13,32 +13,60 @@ and the start's names hold the invocation's entry values. The valuation is
 existential per state: a loop head's names denote new values on each visit.
 
 The store's well-formedness, separate from its meaning, is `StateWF`; the
-laws of `Lean.PersistentHashMap` the store's operations need are a named
-hypothesis, `StoreLaws`: the library states none of them. -/
+laws of the store's maps its operations need follow from the lemmas of
+`Std.HashSet` and `Std.HashMap` (`keys_insert`, `keys_erase`, `vals_insert`,
+`findD_vals`). -/
 namespace Verification.TolerantFrames
 open Verification Footprints HeapObservations
 open Verification.SinglePass (Atom Store State)
 
 /-! ## The store's facts and the laws of its maps -/
 
-/-- The keys of the store's set of facts, as `Store.toList` lists them. -/
-def keysOf (m : Lean.PersistentHashMap Atom Unit) : List Atom := m.foldl (fun acc a _ => a :: acc) []
+/-- The store's live facts, as `Store.toList` lists them. -/
+def keysOf (m : Std.HashSet Atom) : List Atom := m.toList
 
 /-- The facts the store's index by name lists, over every name. -/
-def valsOf (m : Lean.PersistentHashMap Nat (List Atom)) : List Atom := m.foldl (fun acc _ l => l ++ acc) []
+def valsOf (m : Std.HashMap Nat (List Atom)) : List Atom := m.toList.flatMap (·.2)
 
-/-- **The laws of `Lean.PersistentHashMap` the store's operations need**, each
-an upper bound on what an operation's result holds: an insertion adds only
-its key (or its list), an erasure adds nothing, a list found under a name is
-among the index's lists. `Lean.PersistentHashMap` states no lemma; these are
-assumed here, a named hypothesis of every theorem that reads the store after
-a change. -/
-structure StoreLaws : Prop where
-  keys_insert : ∀ (m : Lean.PersistentHashMap Atom Unit) a x, x ∈ keysOf (m.insert a ()) → x = a ∨ x ∈ keysOf m
-  keys_erase : ∀ (m : Lean.PersistentHashMap Atom Unit) a x, x ∈ keysOf (m.erase a) → x ∈ keysOf m
-  vals_insert : ∀ (m : Lean.PersistentHashMap Nat (List Atom)) n l x,
-    x ∈ valsOf (m.insert n l) → x ∈ l ∨ x ∈ valsOf m
-  findD_vals : ∀ (m : Lean.PersistentHashMap Nat (List Atom)) n x, x ∈ m.findD n [] → x ∈ valsOf m
+theorem mem_keysOf {m : Std.HashSet Atom} {x : Atom} : x ∈ keysOf m ↔ x ∈ m := Std.HashSet.mem_toList
+
+/-- A fact the index lists is listed under some name. -/
+theorem mem_valsOf {m : Std.HashMap Nat (List Atom)} {x : Atom} : x ∈ valsOf m ↔ ∃ n, x ∈ m.getD n [] := by
+  simp only [valsOf, List.mem_flatMap]
+  constructor
+  · rintro ⟨⟨n, l⟩, hp, hx⟩
+    rw [Std.HashMap.mem_toList_iff_getElem?_eq_some] at hp
+    exact ⟨n, by rw [Std.HashMap.getD_eq_getD_getElem?, hp]; exact hx⟩
+  · rintro ⟨n, hx⟩
+    rw [Std.HashMap.getD_eq_getD_getElem?] at hx
+    cases h : m[n]? with
+    | none => rw [h] at hx; simp at hx
+    | some l => rw [h] at hx; exact ⟨(n, l), Std.HashMap.mem_toList_iff_getElem?_eq_some.mpr h, hx⟩
+
+/-! The store's laws: each an upper bound on what an operation's result
+holds, from `Std.HashSet`'s and `Std.HashMap`'s lemmas. -/
+
+theorem keys_insert (m : Std.HashSet Atom) (a x : Atom) (hx : x ∈ keysOf (m.insert a)) : x = a ∨ x ∈ keysOf m := by
+  rw [mem_keysOf, Std.HashSet.mem_insert] at hx
+  rw [mem_keysOf]
+  rcases hx with h | h
+  · exact .inl (beq_iff_eq.mp h).symm
+  · exact .inr h
+
+theorem keys_erase (m : Std.HashSet Atom) (a x : Atom) (hx : x ∈ keysOf (m.erase a)) : x ∈ keysOf m := by
+  rw [mem_keysOf, Std.HashSet.mem_erase] at hx
+  exact mem_keysOf.mpr hx.2
+
+theorem vals_insert (m : Std.HashMap Nat (List Atom)) (n : Nat) (l : List Atom) (x : Atom)
+    (hx : x ∈ valsOf (m.insert n l)) : x ∈ l ∨ x ∈ valsOf m := by
+  obtain ⟨k, hk⟩ := mem_valsOf.mp hx
+  rw [Std.HashMap.getD_insert] at hk
+  split at hk
+  · exact .inl hk
+  · exact .inr (mem_valsOf.mpr ⟨k, hk⟩)
+
+theorem findD_vals (m : Std.HashMap Nat (List Atom)) (n : Nat) (x : Atom) (hx : x ∈ m.getD n []) :
+    x ∈ valsOf m := mem_valsOf.mpr ⟨n, hx⟩
 
 /-- Every fact the store holds: its live facts and the facts its index by
 name lists. -/
@@ -46,8 +74,8 @@ def storeAll (s : Store) : List Atom := s.toList ++ valsOf s.byName
 
 theorem toList_eq (s : Store) : s.toList = keysOf s.live := rfl
 
-theorem about_storeAll (L : StoreLaws) {s : Store} {n : Nat} {a : Atom} (ha : a ∈ s.about n) : a ∈ storeAll s :=
-  List.mem_append_right _ (L.findD_vals _ _ _ ha)
+theorem about_storeAll {s : Store} {n : Nat} {a : Atom} (ha : a ∈ s.about n) : a ∈ storeAll s :=
+  List.mem_append_right _ (findD_vals _ _ _ ha)
 
 theorem toList_storeAll {s : Store} {a : Atom} (ha : a ∈ s.toList) : a ∈ storeAll s := List.mem_append_left _ ha
 
@@ -232,7 +260,7 @@ theorem atomHolds_rename {a b : Atom} {f : Nat → Option Nat} {η ρ : Env} {h 
 /-- The facts of a store hold at `η` and `h`. -/
 def StoreOk (s : Store) (η : Env) (h : Heap) : Prop := ∀ a ∈ storeAll s, AtomHolds a η h
 
-theorem vals_foldl {β : Type} (P : Atom → Prop) (g : Lean.PersistentHashMap Nat (List Atom) → β → Lean.PersistentHashMap Nat (List Atom))
+theorem vals_foldl {β : Type} (P : Atom → Prop) (g : Std.HashMap Nat (List Atom) → β → Std.HashMap Nat (List Atom))
     (hg : ∀ m n, (∀ y ∈ valsOf m, P y) → ∀ x ∈ valsOf (g m n), P x) :
     ∀ (l : List β) m, (∀ y ∈ valsOf m, P y) → ∀ x ∈ valsOf (l.foldl g m), P x
   | [], _, hm => hm
@@ -246,7 +274,7 @@ theorem storeOk_of {s' : Store} {η : Env} {h : Heap}
   · exact hv x hx
 
 /-- A fact added raw keeps the store's facts holding, where it holds. -/
-theorem addRaw_ok (L : StoreLaws) {s : Store} {a : Atom} {η : Env} {h : Heap} (hs : StoreOk s η h)
+theorem addRaw_ok {s : Store} {a : Atom} {η : Env} {h : Heap} (hs : StoreOk s η h)
     (ha : AtomHolds a η h) : StoreOk (s.addRaw a) η h := by
   have hc : AtomHolds a.canon η h := atomHolds_canon.mpr ha
   unfold Store.addRaw
@@ -255,36 +283,36 @@ theorem addRaw_ok (L : StoreLaws) {s : Store} {a : Atom} {η : Env} {h : Heap} (
   · exact hs
   · refine storeOk_of (fun x hx => ?_) (vals_foldl _ _ (fun m n hm x hx => ?_) _ _
       (fun y hy => hs y (List.mem_append_right _ hy)))
-    · rcases L.keys_insert _ _ _ hx with rfl | hx
+    · rcases keys_insert _ _ _ hx with rfl | hx
       · exact hc
       · exact hs x (List.mem_append_left _ hx)
-    · rcases L.vals_insert _ _ _ _ hx with hx | hx
+    · rcases vals_insert _ _ _ _ hx with hx | hx
       · rcases List.mem_cons.mp hx with rfl | hx
         · exact hc
-        · exact hm x (L.findD_vals _ _ _ hx)
+        · exact hm x (findD_vals _ _ _ hx)
       · exact hm x hx
 
 /-- A fact removed keeps the store's facts holding. -/
-theorem remove_ok (L : StoreLaws) {s : Store} {a : Atom} {η : Env} {h : Heap} (hs : StoreOk s η h) :
+theorem remove_ok {s : Store} {a : Atom} {η : Env} {h : Heap} (hs : StoreOk s η h) :
     StoreOk (s.remove a) η h := by
   unfold Store.remove
   dsimp only
   split
-  · refine storeOk_of (fun x hx => hs x (List.mem_append_left _ (L.keys_erase _ _ _ hx)))
+  · refine storeOk_of (fun x hx => hs x (List.mem_append_left _ (keys_erase _ _ _ hx)))
       (vals_foldl _ _ (fun m n hm x hx => ?_) _ _ (fun y hy => hs y (List.mem_append_right _ hy)))
-    rcases L.vals_insert _ _ _ _ hx with hx | hx
-    · exact hm x (L.findD_vals _ _ _ (List.mem_of_mem_erase hx))
+    rcases vals_insert _ _ _ _ hx with hx | hx
+    · exact hm x (findD_vals _ _ _ (List.mem_of_mem_erase hx))
     · exact hm x hx
   · exact hs
 
-theorem foldl_remove_ok (L : StoreLaws) {η : Env} {h : Heap} :
+theorem foldl_remove_ok {η : Env} {h : Heap} :
     ∀ (as : List Atom) (s : Store), StoreOk s η h → StoreOk (as.foldl Store.remove s) η h
   | [], _, hs => hs
-  | _ :: as, _, hs => foldl_remove_ok L as _ (remove_ok L hs)
+  | _ :: as, _, hs => foldl_remove_ok as _ (remove_ok hs)
 
 /-- **A bound added keeps the store's facts holding**, a stronger bound
 replacing weaker ones. -/
-theorem addBound_ok (L : StoreLaws) {s : Store} {a : Atom} {η : Env} {h : Heap} (hs : StoreOk s η h)
+theorem addBound_ok {s : Store} {a : Atom} {η : Env} {h : Heap} (hs : StoreOk s η h)
     (ha : AtomHolds a η h) : StoreOk (s.addBound a) η h := by
   have hc : AtomHolds a.canon η h := atomHolds_canon.mpr ha
   unfold Store.addBound
@@ -294,27 +322,27 @@ theorem addBound_ok (L : StoreLaws) {s : Store} {a : Atom} {η : Env} {h : Heap}
   · split
     · split
       · exact hs
-      · exact addRaw_ok L (foldl_remove_ok L _ _ hs) hc
-    · exact addRaw_ok L hs hc
+      · exact addRaw_ok (foldl_remove_ok _ _ hs) hc
+    · exact addRaw_ok hs hc
 
-theorem foldl_addBound_ok (L : StoreLaws) {η : Env} {h : Heap} {c : Option Nat} {neg : Bool} :
+theorem foldl_addBound_ok {η : Env} {h : Heap} {c : Option Nat} {neg : Bool} :
     ∀ (Fs : List (Linear.Fact HeapKnowledge.Term)) (s : Store), StoreOk s η h →
       (∀ F ∈ Fs, AtomHolds (.index ⟨.linear F, c, neg⟩) η h) →
       StoreOk (Fs.foldl (fun (s : Store) F => s.addBound (.index ⟨.linear F, c, neg⟩)) s) η h
   | [], _, hs, _ => hs
-  | F :: Fs, _, hs, hx => foldl_addBound_ok L Fs _ (addBound_ok L hs (hx F (List.mem_cons_self ..)))
+  | F :: Fs, _, hs, hx => foldl_addBound_ok Fs _ (addBound_ok hs (hx F (List.mem_cons_self ..)))
       fun G hG => hx G (List.mem_cons_of_mem _ hG)
 
 /-- **A fact added (`Store.add`) keeps the store's facts holding**: a length
 fact also as the linear facts it means (`HeapKnowledge.atomLinear_holds`). -/
-theorem add_ok (L : StoreLaws) {s : Store} {a : Atom} {η : Env} {h : Heap} (hs : StoreOk s η h)
+theorem add_ok {s : Store} {a : Atom} {η : Env} {h : Heap} (hs : StoreOk s η h)
     (ha : AtomHolds a η h) : StoreOk (s.add a) η h := by
   have hc : AtomHolds a.canon η h := atomHolds_canon.mpr ha
   unfold Store.add
   dsimp only
   split
   · exact hs
-  · refine addBound_ok L ?_ hc
+  · refine addBound_ok ?_ hc
     split
     · rename_i _ x n c neg heq
       have hx : ∀ F ∈ HeapKnowledge.atomLinear (.length x n), AtomHolds (.index ⟨.linear F, c, neg⟩) η h := by
@@ -322,7 +350,7 @@ theorem add_ok (L : StoreLaws) {s : Store} {a : Atom} {η : Env} {h : Heap} (hs 
         simp only [List.mem_singleton] at hy; subst hy
         rw [heq] at hc
         exact HeapKnowledge.atomLinear_holds (hc _ (List.mem_singleton_self _) hcond) F hF
-      exact foldl_addBound_ok L _ _ hs hx
+      exact foldl_addBound_ok _ _ hs hx
     · exact hs
 
 /-! ## Materialization -/
@@ -668,9 +696,9 @@ theorem stateHolds_materialize_whole {G : NormalGraph ι} {st : State} {implies 
 
 /-- **The selective materialization holds at the slots**, its facts drawn
 from the index by name (`SelectedFromIndex`, the obstacle of the `while`
-loop) and the store's laws assumed (`StoreLaws`). -/
+loop). -/
 theorem stateHolds_materialize {G : NormalGraph ι} {st : State} {implies : List (PromiseCalls.Implication ι)}
-    {start : List Nat} {entry ρ : Env} {m : Nat} {s : IndexedHeap} (L : StoreLaws)
+    {start : List Nat} {entry ρ : Env} {m : Nat} {s : IndexedHeap} 
     (hS : StateHolds G st implies start entry ρ m s) (d : Nat) (slots : List Nat) (chain : Bool)
     (hsel : SelectedFromIndex st slots chain) :
     HeapKnowledge.Holds (SinglePass.materialize st d slots false chain).1 ρ s.h := by
@@ -678,7 +706,7 @@ theorem stateHolds_materialize {G : NormalGraph ι} {st : State} {implies : List
   rw [materialize_eq]
   refine materializeFrom_holds hn fun a ha => ?_
   obtain ⟨n, hn⟩ := hsel a ha
-  exact hst a (about_storeAll L hn)
+  exact hst a (about_storeAll hn)
 
 /-- **The knowledge a step's rule reads holds** (`kE`, line 1229, and `kE'`,
 line 1321): `KnowledgeExpand.expandLinks` of either materialization at the
@@ -686,7 +714,7 @@ node's context, where the environment meets that context. Both hold at
 once; so a precondition decided at `kE` holds where the step reads `kE'`. -/
 theorem stateHolds_stepKnowledge {G : NormalGraph ι} {Γ : List (Ty ι)} {st : State}
     {implies : List (PromiseCalls.Implication ι)} {start : List Nat} {entry ρ : Env} {m : Nat} {s : IndexedHeap}
-    (L : StoreLaws) (hS : StateHolds G st implies start entry ρ m s) (he : EnvOk G Γ ρ s.n s.W)
+    (hS : StateHolds G st implies start entry ρ m s) (he : EnvOk G Γ ρ s.n s.W)
     (d : Nat) (ms : List Nat) (wholeStep : Bool) (hsel : wholeStep = false → SelectedFromIndex st ms true) :
     HeapKnowledge.Holds (KnowledgeExpand.expandLinks (KnowledgeExpand.ctxOf G Γ)
         (SinglePass.materialize st d ms wholeStep).1) ρ s.h ∧
@@ -697,7 +725,7 @@ theorem stateHolds_stepKnowledge {G : NormalGraph ι} {Γ : List (Ty ι)} {st : 
     KnowledgeExpand.expandLinks_holds hc (stateHolds_materialize_whole hS d ms true)⟩
   cases wholeStep with
   | true => exact stateHolds_materialize_whole hS d ms true
-  | false => exact stateHolds_materialize L hS d ms true (hsel rfl)
+  | false => exact stateHolds_materialize hS d ms true (hsel rfl)
 
 end Materialize
 

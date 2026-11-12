@@ -241,7 +241,15 @@ run_cmd do
   check ``Verification.TolerantFrames.passPreserving_keeps_select
   check ``Verification.TolerantFrames.pass_preserving_frame_select
   check ``Verification.TolerantFrames.preserving_judgment_select
-  check ``Verification.TolerantFrames.derivChecked_of_select
+  check ``Verification.TolerantFrames.passTreeCheck_ok
+  check ``Verification.TolerantFrames.passWholeCheck_ok
+  check ``Verification.TolerantFrames.pass_select_run
+  check ``Verification.TolerantFrames.pass_select_narrow
+  check ``Verification.TolerantFrames.pass_select_whole
+  check ``Verification.TolerantFrames.pass_select_sound
+  check ``Verification.TolerantFrames.passPreserving_keeps_pass
+  check ``Verification.TolerantFrames.pass_preserving_frame_pass
+  check ``Verification.TolerantFrames.preserving_judgment_pass
   check ``Verification.TolerantFrames.passWrites_sound
   check ``Verification.TolerantFrames.selected_within_on
   check ``Verification.TolerantFrames.pass_within_normal
@@ -260,6 +268,12 @@ run_cmd do
   check ``Verification.TolerantFrames.atomHolds_canon
   check ``Verification.TolerantFrames.atomHolds_rename
   check ``Verification.TolerantFrames.mapM_mem
+  check ``Verification.TolerantFrames.mem_keysOf
+  check ``Verification.TolerantFrames.mem_valsOf
+  check ``Verification.TolerantFrames.keys_insert
+  check ``Verification.TolerantFrames.keys_erase
+  check ``Verification.TolerantFrames.vals_insert
+  check ``Verification.TolerantFrames.findD_vals
   check ``Verification.TolerantFrames.toList_eq
   check ``Verification.TolerantFrames.about_storeAll
   check ``Verification.TolerantFrames.toList_storeAll
