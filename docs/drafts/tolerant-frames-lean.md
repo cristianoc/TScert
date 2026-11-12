@@ -1620,3 +1620,8 @@ $`2n + \sum_{w<n} |\mathit{succ}\ w|`$ (`dfsInit_measure`), so every fuel
 of at least that empties it (`dfsLoop_init_ends`). A `loopHeads` that runs
 the walk from the start on such a fuel meets `LoopHeadsFuelEq`, with that
 fuel as its witness.
+The walk touches no label at or past its bound: where every frame's node
+is below $`n`$ and, at or past $`n`$, no head is marked and every state is 0
+(`OutsideClear`), a round keeps both (proved: `dfsStep_clear`,
+`dfsLoop_clear`, `dfsInit_clear`), so marks and states read from arrays of
+$`n`$ labels agree with the walk's at every label.

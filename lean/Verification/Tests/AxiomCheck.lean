@@ -759,6 +759,9 @@ run_cmd do
   check ``Verification.TolerantFrames.dfsLoop_ends
   check ``Verification.TolerantFrames.dfsInit_measure
   check ``Verification.TolerantFrames.dfsLoop_init_ends
+  check ``Verification.TolerantFrames.dfsStep_clear
+  check ``Verification.TolerantFrames.dfsLoop_clear
+  check ``Verification.TolerantFrames.dfsInit_clear
   let env ← getEnv
   let project (decl : Name) : Bool := match env.getModuleIdxFor? decl with
     | some i => (`Verification).isPrefixOf env.header.moduleNames[i.toNat]!

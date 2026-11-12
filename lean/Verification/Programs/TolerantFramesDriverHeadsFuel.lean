@@ -171,6 +171,74 @@ theorem dfsLoop_init_ends (succ : Nat → List Nat) (n start k : Nat) (hk : 2 * 
     (dfsLoop succ n k (dfsInit succ n start)).stack = [] :=
   dfsLoop_ends succ n k _ (Nat.le_trans (dfsInit_measure succ n start) hk)
 
+/-- **The walk touches no label past its bound**: where every frame's node
+is below `n`, and past `n` no head is marked and every state is new, a
+round keeps both. -/
+def OutsideClear (n : Nat) (σ : Dfs) : Prop :=
+  (∀ f ∈ σ.stack, f.1 < n) ∧ ∀ t, n ≤ t → σ.heads t = false ∧ σ.state t = 0
+
+theorem dfsStep_clear {succ : Nat → List Nat} {n : Nat} {σ σ' : Dfs} (hc : OutsideClear n σ)
+    (h : dfsStep succ n σ = some σ') : OutsideClear n σ' := by
+  obtain ⟨heads, state, stack⟩ := σ
+  obtain ⟨hf, ho⟩ := hc
+  unfold dfsStep at h
+  simp only at h hf ho
+  match stack, h, hf with
+  | [], h, _ => cases h
+  | (v, []) :: rest, h, hf =>
+    simp only [Option.some.injEq] at h
+    subst h
+    have hv : v < n := hf _ (List.mem_cons_self ..)
+    refine ⟨fun f hm => hf f (List.mem_cons_of_mem _ hm), fun t ht => ?_⟩
+    dsimp only
+    rw [upd_ne _ (by omega)]
+    exact ho t ht
+  | (v, w :: ws) :: rest, h, hf =>
+    have hrest : ∀ f ∈ (v, ws) :: rest, f.1 < n := by
+      intro f hm
+      rcases List.mem_cons.mp hm with rfl | hm
+      · exact hf (v, w :: ws) (List.mem_cons_self ..)
+      · exact hf f (List.mem_cons_of_mem _ hm)
+    simp only at h
+    split at h
+    · rename_i hw
+      split at h
+      · simp only [Option.some.injEq] at h
+        subst h
+        refine ⟨fun f hm => ?_, fun t ht => ?_⟩
+        · rcases List.mem_cons.mp hm with rfl | hm
+          · exact hw
+          · exact hrest f hm
+        · dsimp only; rw [upd_ne _ (by omega)]; exact ho t ht
+      · split at h
+        · simp only [Option.some.injEq] at h
+          subst h
+          exact ⟨hrest, fun t ht => by dsimp only; rw [upd_ne _ (by omega)]; exact ho t ht⟩
+        · simp only [Option.some.injEq] at h
+          subst h
+          exact ⟨hrest, ho⟩
+    · simp only [Option.some.injEq] at h
+      subst h
+      exact ⟨hrest, ho⟩
+
+theorem dfsLoop_clear (succ : Nat → List Nat) (n : Nat) :
+    ∀ (k : Nat) (σ : Dfs), OutsideClear n σ → OutsideClear n (dfsLoop succ n k σ)
+  | 0, _, h => h
+  | k + 1, σ, h => by
+    simp only [dfsLoop]
+    cases hs : dfsStep succ n σ with
+    | none => exact h
+    | some σ' => exact dfsLoop_clear succ n k σ' (dfsStep_clear h hs)
+
+theorem dfsInit_clear (succ : Nat → List Nat) (n start : Nat) : OutsideClear n (dfsInit succ n start) := by
+  unfold dfsInit
+  split
+  · rename_i hs
+    refine ⟨fun f hm => by simp at hm; subst hm; exact hs, fun t ht => ⟨rfl, ?_⟩⟩
+    dsimp only
+    rw [upd_ne _ (show t ≠ start by omega)]
+  · exact ⟨fun f hm => by simp at hm, fun _ _ => ⟨rfl, rfl⟩⟩
+
 end DfsFuel
 
 end Verification.TolerantFrames
