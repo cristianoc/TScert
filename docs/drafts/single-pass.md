@@ -120,6 +120,9 @@ is kept per normalized form and condition, the strongest, and a length atom
 is also stated as the linear facts it means (`HeapKnowledge.atomLinear`).
 
 
+A unit states at most one written assertion per label; a request
+with two at one label is refused.
+
 A loop head's state is exactly its given invariant: its written assertion
 (`@invariant`, required assertions) and the facts the claims document
 records there. Every edge into a cut, a back edge included, carries the

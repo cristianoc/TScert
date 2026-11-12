@@ -1692,6 +1692,9 @@ def runWalk (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (T
   if let some rg := regional then
     if !GraphCode.ArgumentPathTracking.checkEntryFields G inputs rg.regions then
       return .error (.refused "store regions: the entry's fields", counts, answers, trace)
+  -- One written assertion per label (`byLabel` reads the first).
+  if (assertions.map (·.1)).eraseDups.length != assertions.length then
+    return .error (.refused "a label with two written assertions", counts, answers, trace)
   let stated := byLabel n assertions
   if tracing then
     let e : Array (Option State) := Array.replicate n none
