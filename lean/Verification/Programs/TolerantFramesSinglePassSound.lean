@@ -1,0 +1,29 @@
+import Verification.Programs.TolerantFramesComposeYields
+import Verification.Programs.TolerantFramesDriverRecords
+
+/-! # Tolerant frames: the single pass's graph theorem
+
+`run_sound_single_pass` composes the per-node side's graph theorem
+(`run_sound_pass`) with the walk side's record soundness
+(`recordsSound_of`): its premises are the hypotheses still open, each a
+statement about the pass's setup, one visit, or a loop the pass runs. -/
+namespace Verification.TolerantFrames
+open LabelStore
+
+section Run
+variable {ι : Type} [Labels ι]
+
+/-- **THE GRAPH THEOREM of the single pass, over its open premises**: what
+the setup records (`SetupRecords`), what each visit records
+(`VisitsRecord`) and keeps of the read summaries (`VisitsKeepSummaries`),
+the visit's checks at the nodes it visits (`RecordsChecked`), each checked
+node's kept yields (`NodesYield`), `LinearNearFuelEq` and the regional
+premise (`RegionsHeld`) ⟹ `RunSound`. -/
+theorem run_sound_single_pass (hs : SetupRecords ι) (hv : VisitsRecord ι) (hk : VisitsKeepSummaries ι)
+    (hchk : RecordsChecked ι) (hyield : NodesYield ι) (hnear : LinearNearFuelEq) (hreg : RegionsHeld ι) :
+    Target.RunSound ι :=
+  run_sound_pass (recordsSound_of hs hv hk) hchk hyield hnear hreg
+
+end Run
+
+end Verification.TolerantFrames

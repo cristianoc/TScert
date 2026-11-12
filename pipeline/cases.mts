@@ -1074,6 +1074,7 @@ export const cases: Case[] = [
   positive("map-stable-json-error", "`JSON.stringify` at a JSON value and `Error` at a string message within the empty footprint: callbacks calling them keep `map`'s result dense"),
   positive("typeof-named-union-open-arms", "a `typeof` test of a named union whose definition has a type-parameter or an intersection arm keeps those arms on the failed edge"),
   positive("typeof-named-union", "a `typeof` test of a value whose type names a union decides the arms of its definition, in a module constant's arrow"),
+  positive("saved-test-empty-arm", "a saved `typeof` test whose `if` has an empty arm, its two exits into one node: the return reads the parameter at its declared union (the source of the single pass's forged-document control of the exits' order)"),
   positive("logical-narrowing-past-reads", "the right operand of `&&` and `||` sees the left operand's `typeof` test on a parameter also past member reads, a method read and a regex literal before the parameter's read: a value binding's entry claim is its first read before a call, checked by the incoming edge"),
   positive("logical-truth-narrowing", "conditions of `&&` with a string left operand, in a statement and a conditional: the condition is read for its truthiness, so the right operand's test narrows the guarded branch; a computed read at a 14-key union is a chain of decided tests"),
   negative("invalid-logical-truth-or-narrowing", "`s || r !== \"a\"` holds where `s` is truthy whatever `r` is: the guarded branch may see `r` at `\"a\"`",

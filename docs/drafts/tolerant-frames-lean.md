@@ -1195,9 +1195,9 @@ the arm of the Boolean at the pushed environment, at `tagBind tg y n` the
 arm of `tagHoldsIn h tg v`, as `Transition.yesBind`, `noBind` and `tagBind`
 take them. `graph_step`, `normalTarget_of_exits` (each exit observing what
 its arm tests: `ofNode_flags`, `tagHolds_of_heap`), `nodeObligations_mono`
-and `nodeShape_of` (the shape check `passShapeCheck`: a Boolean type at a
-`branch`, `onlyBoolean` at a `branchBind`) are proved at every
-continuation.
+and `nodeShape_of` (`run`'s shape check `SinglePass.passShapeCheck'`: a
+Boolean type at a `branch`, `onlyBoolean` at a `branchBind`) are proved at
+every continuation.
 
 **What `Traversed` requires of the traversal**, stated for the driver's
 walk: every cycle of reached nodes passes through a node `isHead` marks
@@ -1339,7 +1339,7 @@ Modules `lean/Verification/Programs/TolerantFramesGuaranteeTarget.lean` (the
 unit lane's definitions, copied from `PassUnit.lean` at c99647d3 on
 `engine-proof-unit`) and `TolerantFramesRunSound.lean`.
 
-`RunWalk G I c`, what the driver records of an accepted call: a walk, the
+`RunWalk G I c` (`RunWalkA` with `TraversedA`, Leg 18b), what the driver records of an accepted call: a walk, the
 label contexts, each merge's edges and counter, the loop heads, the written
 assertions by label (`stated`); every visited node `NodeChecked` at `G`;
 `Traversed`; each edge state into a head the head's entry; `StartEntered`
@@ -1347,11 +1347,8 @@ assertions by label (`stated`); every visited node `NodeChecked` at `G`;
 entry `headEntry` over `startGiven` as the start or as any head, its
 context the inputs).
 
-**(`run_sound`)**, proved:
-
-```math
-\mathrm{RunTraversed} \wedge \mathrm{NodesMean} \wedge \mathrm{LinearNearFuelEq} \wedge \mathrm{MergesImpliesHold} \wedge \mathrm{FootprintsKept} \wedge \mathrm{ReturnsKept} \wedge \mathrm{RegionsHeld} \wedge \mathrm{AssertionsLabelled} \Longrightarrow \mathrm{RunSound}
-```
+The graph theorem is `run_sound_pass` (Leg 18a); its premises are those
+of "Open premises".
 
 `RunSound` is the unit lane's statement: for an accepted `RunCall`, under
 its `CheckerScope`, with `CodesSound` and `SummariesSound` of the summaries
@@ -1369,22 +1366,146 @@ of `TolerantFramesRunSound.lean`, quantified over every call the premises of
 
 ## Open premises
 
-The hypotheses of `run_sound`, each with what discharges it and the theorem
-that consumes it. Pass changes are named by the pass lane's items; the pass
-lane (`engine-pass`) is at 7fd1fedb, where D1 (the edge evidence), D2 (the
-yields), D3 (the joined implications), D4 (a fresh result off a checked
-derivation) and the entailed bounds' check have arrived.
+The hypotheses of `run_sound_single_pass`
+(`TolerantFramesSinglePassSound.lean`: `run_sound_pass` with the walk
+side's `recordsSound_of`), each with what discharges it and the theorem
+that consumes it:
+
+```math
+\mathrm{SetupRecords} \wedge \mathrm{VisitsRecord} \wedge \mathrm{VisitsKeepSummaries} \wedge \mathrm{RecordsChecked} \wedge \mathrm{NodesYield} \wedge \mathrm{LinearNearFuelEq} \wedge \mathrm{RegionsHeld} \Longrightarrow \mathrm{RunSound}
+```
+ Pass changes are named by the pass lane's
+items in its queue; the pass lane (`engine-pass`) is at d50dd0ed, where D1
+to D4, D9 (`passShapeCheck'`), D10 (one written assertion per label), D11
+(the regional derivation check, the entry's fields under store regions),
+the driver on fuel (C9), the setup and visit as functions (`setup`,
+`visit`, `StopOutcome`) and an exit's arm by its position (D13) have
+arrived. A stopped walk is never accepted by
+its type (`walkStopsRefuse`, from `StopOutcome.outcome_ne_accepted`).
 
 | Premise | Discharged by | Consumed by |
 | --- | --- | --- |
-| `RunTraversed` | a pass change: the driver on fuel returning a `Walk` (not arrived), then a proof `run_traversed` composing: `NodeRan.checked` at each visited node, under `DirectKeepsSummaries` and `SearchKeepsSummaries` (pass change D6, a `summaries_sound` field of `Answered`, not arrived) and the entry's summaries among the final ones (`RunKeepsSummaries`, the same driver); `NamesBelow` and the width at each entry (proofs to write along the walk from `namesBelow_step`, `edgeTransfer_below`, `mergeState_below`, `headEntry_below`); `Traversed`'s fields (the in-degree order and `HeadsCutCycles`: `loopHeads` on fuel, a pass change not arrived, and the depth-first fact, a proof to write; `width` under `MapNamesLength`, pass change D7, `mapNames` on fuel, not arrived; `wf`, `below` proved per edge); the heads' records, `stated` and `StartEntered`, read off the driver | `run_sound` (the walk, the checked nodes, `Traversed.reassign`, `headsEntered_of_recorded`, `StartEntered.entered`) |
-| `NodesMean` | per field: `entered`, the entry state where the node assertion holds, read off the driver; `shape`, `nodeShape_of` given `passShapeCheck` at the node (a pass change: the Boolean tests at a `branch` and at a `branchBind`, D9, not arrived); `ret`, `returnCheck_plain` at a plain goal, `goalHolds_of_return` at a guard or an assertion goal under `SubtypeAnswersSound` (D5, not arrived) and `YieldsOk` (from D2's `checkedYields` through `yieldFollows_sound`, a proof to write), a proof to write restating `ret` at the state after the step; `exits`, `exitDelivers_of_edge`, `exitDelivers_head` with `exitDeliversA_of`, `assertsAt_of_edge`, `assertsAt_of_head`, under `MapNamesSound` (D7, not arrived), `YieldsOk` (as above), the result's freshness (`callFresh_of_checked`, D4 arrived, a proof to write at the edge), the target's types (`checkedEdge_env`, D1 arrived; an edge accepted by subtype answers alone, D5) and a given implication's type (D5); `handler`, `handlerDelivers_of_edge` with the written assertion | `stepEdgesSound_of_checked` |
-| `LinearNearFuelEq` | a pass change: `Store.linearNear` on fuel `s.size + 1` as `linearNearFuel` (not arrived) | `mergeState_holdsAt_checked`, through `MergesSound` |
-| `MergesImpliesHold` | a proof to write: the walk records, for each state into a merge, its edge among `edgesIn` with the source's context typing the source environment and the carried implications holding there, then `meetImplications_ok_of_check` (the merge's per-edge check is the pass's, `joinedChecked`) | `entries_of_traversed`, through `MergesSound` |
-| `FootprintsKept` | `footprintKept_of`, over `NodeAccepted`, under `BoundChecked` and `CallFreshBelow`; proofs to write: `BoundChecked` over the pass's `outFresh` with the call disjunct behind `derivChecked` (D4, arrived; `passOutFreshChecked`), `CallFreshBelow` from `callFresh_of_checked` (the mark at most the heap's length at a node entry), and the theorem over `NodeChecked` at the reassigned graph (`stepChecked_parts` in place of `checkedStep_parts`) | `run_guarantee` (`bounded`) |
-| `ReturnsKept` | `returnsEnsured_of`, over `NodeAccepted`, under `ReturnChecked`; a proof to write: the same over `NodeChecked` | `run_guarantee` (`ensured`) |
-| `RegionsHeld` | `regionsKept_of` from `RegionNodeOk` at every visited node (`RegionNodeOk.ofCheck`); left: `RegionalTyped` (`regionalTyped_of_tree` given `regionalDerivChecked` of the step's derivation at the regional check, a pass change D11, not arrived; a step with no derivation, a proof to write), `TablesAgree` at every visited node (the meet over every predecessor, from the in-degree order of `RunTraversed`) | `run_guarantee` (`regionally`) |
-| `AssertionsLabelled` | a pass change D10: `run` refuses a repeated assertion label or joins the assertions a label states (`byLabel` keeps the first; not arrived) | `run_guarantee` (`asserted`) |
+| `SetupRecords`, `VisitsRecord`, `VisitsKeepSummaries` | the walk side (Leg 19b): what the setup gives (`EnvFacts`, `RecInv`), what each visit that returns gives (`VisitFacts`, after W3), the visit keeping the read-summary table's prefix (W2) | `recordsSound_of`, then `run_traversedC` |
+| `NodesYield` | over a checked walk (`WalkChecked`, whose `NodePassChecked` takes the visit's yield and edge checks as fields once they are read off the visit); per node, `nodeYielded_of_checks`: the judgment and the return's goal from `NodeYieldChecks` (the visit's kept yields, `PromiseDerivChecked` (D12), the return check); each exit by `exitDeliversAJ_of` from `exitDeliversY_of_edge` or `exitDeliversY_head` (the edge's checks, the target's types by `refinedEdge_env`), `assertsAt_of_edge` (the assertion check at the refined context) and `exitJoinedY` (the merge's recorded edge at `passRefined`); the handler by `handlerDelivers_of_edge` and `joinedAt_of_exit` at the node's context; all read off the visit | `stepEdgesSound_of_yields` |
+| `LinearNearFuelEq` | a pass change: `Store.linearNear` as `linearNearFuel` (with `linearNearFuel_rounds`) | `entry_of_edgeA`, through `nodesChecked_of_walkJ` |
+| `RecordsChecked` | read off the visit: at each label the record visits, a checked step (`NodeChecked`, the step the visit ran, at its values: entry, fresh counter, answers, `Stepped`) with `NodePassChecked` (the visit's footprint check in the setup's no-return region `deadArr`, and its return check); a per-visit lemma once the visit is factored (W3), carried along the walk by `Drives.inv` | `run_traversedC` |
+| `RegionsHeld` | over a checked walk (the regional check joins `NodePassChecked`); `regionsKept_of` from `RegionNodeOk` at every visited node (`RegionNodeOk.ofCheck`); `RegionalTyped` by `regionalTyped_of_tree` from `SinglePass.regionalDerivChecked` and the tree disjunct (D14, queued: the check's `requiresTree` disjunct reads the step's facts, which the regional evidence's entry does not state), by `regionalTyped_copy` at a copy; left: a step with step evidence alone (its rule's judgment holds where the step's facts do, which the regional evidence's entry, the entry's whole materialization, does not state), and `TablesAgree` at every visited node (the in-degree order) | `run_guarantee` (`regionally`) |
+
+## Leg 17a: the per-node hypotheses from the pass's checks
+
+Modules `lean/Verification/Programs/TolerantFramesNodeBound.lean` (the
+values `run` reads at the footprint check), `TolerantFramesNodeCallFresh.lean`,
+`TolerantFramesNodeReturns.lean` and `TolerantFramesComposeRunSound.lean`.
+
+**The footprint check at a checked node.** `BoundChecked r Φ dead ret exc`
+is `run`'s check at a node `r : NodeChecked` under the bound
+$`(\Phi, \mathit{ret}, \mathit{exc})`$: inside `dead`, `deadNode` and
+$`\mathit{exc}=\mathit{false}`$; outside it, `footprintCheck` at the step's
+values with `outFresh` as `run` computes it (`passOutFreshChecked`: a copy
+of a slot holding a fresh name, or a call stating a fresh result, its
+operands selected, whose derivation `derivChecked` accepts). Proved:
+
+- `passOutFreshChecked_cases`: the call disjunct gives `passCallFresh` and
+  `passDerivChecked` at the node's sequent, the premises of
+  `callFresh_of_checked`;
+- (`footprintKept_of`) every visited node checked, its entry state holding
+  where `passPreT` does at mark $`|h_0|`$, and `BoundChecked` ∧ `CodesSound`
+  ⟹ `FootprintKept`; outside `dead` the heap $`h`$ is within $`\Phi`$ from
+  $`h_0`$, so $`|h_0| \le |h|`$ (`Post`'s first conjunct), the mark
+  premise of `callFresh_of_checked`;
+- `BoundChecked.reassign`, `passOutFreshChecked_reassign`: the check at `G`
+  is the check at `reassign G η`.
+
+**The return check at a checked node.** `ReturnChecked r goal ensures`:
+at a return, `returnCheck` at the step's values refuses nothing. Proved:
+(`returnsEnsured_of`) every visited node checked, its entry state holding
+where `passPreT` does, and `ReturnChecked` ∧ `CodesSound` ⟹
+`ReturnsEnsured`; `ReturnChecked.reassign`.
+
+**The graph theorem from the checks.** `NodePassChecked c dead r`
+(module `TolerantFramesComposeRunSound.lean`) is what the driver checks at
+a node it visits, at the node's checked step `r`: under the call's bound,
+`BoundChecked` in the no-return region `dead`; where the call states
+`ensures`, `ReturnChecked`. A walk is checked (`WalkChecked`) where every
+visited node is, in one region. The checks hold of the record's steps, at
+the values the visit computed, and of no other walk the premises admit, so
+the per-node premises (`NodesYield`, `RegionsHeld`) are stated over a
+checked walk. Proved (module `TolerantFramesComposeYields.lean`):
+`footprintKept_of_walk` (a checked walk ⟹ `FootprintKept` at every
+admitted reassigned graph) and `returnsEnsured_of_walk` (⟹
+`ReturnsEnsured`), the entry states from the record's `hentry`.
+
+**The merges' joined implications at the exits** (module
+`TolerantFramesNodeJoined.lean`). The walk side's `joinedAt` and
+`ExitsJoined` (Leg 18b) state the obligation. Proved: (`joinedAt_of_exit`)
+an edge recorded into $`t`$ as
+$`(\Gamma_e, \mathrm{atSlotsOf}\ \mathit{names}\ \mathit{carried}, m)`$,
+its source environment $`\rho_s`$ typed by $`\Gamma_e`$, its slots holding
+$`\mathit{names}`$' values at $`\eta`$, the carried implications holding at
+$`\eta`$ ⟹ `joinedAt` at $`\mathrm{mapEnv}\ m\ \rho_s`$. `ExitsJoined` is
+discharged per exit by it, given the driver's record of the edge and
+$`\Gamma_e`$ typing the source environment: at a handler edge $`\Gamma_e`$
+is the node's context; at a normal edge it is the context as the step's
+yields refine it, typed where the kept yields hold of the step's value.
+
+**The kept yields at the values the step returns** (module
+`TolerantFramesNodeYields.lean`). `run` keeps a step's yields where
+`checkedYields` accepts them: outside a call at a promise signature, those
+`yieldFollows` accepts of the node's term. `NodeMeaning`'s `ret` and
+`exits` are stated for every value of the claim's type; a guard's goal and
+the implications a pushed edge states of its result hold only of the
+values the step returns, so `NodeYielded` restates them there, with the
+yields `ys` read at the implications `xs`. Proved:
+
+- `SafePostExc.conj_post`: a run safe with postconditions $`Q, R`$ and
+  safe with a value property $`T'`$ is safe with $`T'`$, $`Q`$ and $`R`$;
+- `checkedYields_follows`: outside a promise call, every kept yield passes
+  `yieldFollows`;
+- (`stepYields_judgment`) the yields passing `yieldFollows` ∧ the context
+  typing $`\rho`$ ∧ `ImpliesOk xs` ∧ the step's links holding ∧ the step's
+  judgment ⟹ the judgment with each value meeting the claim's type and
+  `YieldsOk ys` (`yieldFollows_sound`);
+- `nodeObligations_of_partsY`: a node's obligations from its step's parts
+  with the judgment's values meeting the yields, which each normal exit
+  receives at the state after the step (`stepEdgesSound_of_yields`, Leg
+  18a, composes it);
+- `exitDeliversY_of_edge`: `exitDelivers_of_edge` with the yields read at
+  the step's value and the target's types from the edge's check where they
+  hold, so an exit's `YieldsOk` premise and a refined context's typing come
+  from the state after the step.
+
+`NodeYielded.ret` is `goalHolds_of_return`'s premises with the yields at
+the value (its yields `passReturnYields entry ys`).
+
+**A copy's regional evidence** (module `TolerantFramesRegionalRuns.lean`).
+Proved: (`regionalTyped_copy`) a term that is a slot whose context type is
+the claim's, with no derivation and no step evidence, gives the regional
+evidence's context the node's and `RegionalTyped`: the term's value is the
+slot's, of the claim's type, with no yields and no output facts.
+
+Premises this leg discharges / leaves:
+
+- discharges the footprint and return fields of the guarantee (into
+  `NodePassChecked` at the record's steps) and `CallFreshBelow`;
+- leaves `RecordsChecked` to the visit.
+- leaves `ExitsJoined`
+  per exit to `joinedAt_of_exit` with the driver's record and the typing of
+  the refined context.
+- discharges the yields premise of the exits and the return (`YieldsOk`
+  at every value) into `NodeYielded`, whose `follows` field is
+  `checkedYields_follows` outside a promise call; leaves: a promise call's
+  kept yields (`checkedYields`' promise branch keeps them by
+  `promiseYields` and the output, where `promiseCall_sound` needs the
+  derivation's tree, which `run` checks of the step's evidence, not of
+  `stepDeriv`: a pass change), `xs` holding at the entry (`slotImplOf`
+  over the state's implications, a proof to write), the head edge's
+  version of `exitDeliversY_of_edge`, and the walk's predicates over
+  `StepEdgesSoundAt` at `edgePreAJ`.
+- discharges `RegionalTyped` at a copy (`regionalTyped_copy`, where the
+  copy's `stepDeriv` and `stepEffect` are none, which `StepChecked`'s copy
+  case does not yet state); leaves `RegionalTyped` at a step with step
+  evidence alone (the rule's judgment at every state where the evidence's
+  facts hold) and with a derivation (D11, `regionalTyped_of_tree`).
 
 ## Leg 17b: the walk side of the graph theorem
 
@@ -1439,8 +1560,7 @@ Premises this leg discharges / leaves:
   `edgePreJ` (per edge, `joined_of_exit` at the exit's source environment,
   the per-node side), the walk records `MergeEdgeRecorded`; then
   `entries_of_traversedJ` takes the place of `MergesSound`'s second
-  conjunct. `run_sound`'s statement is unchanged until the per-node side's
-  exits deliver `edgePreJ`.
+  conjunct.
 - `LinearNearFuelEq`: the rounds bound discharged (`linearNearFuel_rounds`);
   left: the equation of the pass's `while` loop with `linearNearFuel`, and
   the terms an entailment reads named by the facts it reads.
@@ -1480,8 +1600,8 @@ node over the rest of the queue, until the queue is empty (`Drives`,
 its result (`Drives.inv`); an accepted call either stopped with an accepted
 outcome or returned a record visiting at least the nodes the start
 reaches, its answers the call's (`walk_of_accepts'`, from `run` being the
-record's `Walk.outcome`); with `WalkStopsRefuse` (a stopped walk is never
-accepted), the latter (`walk_of_accepts`).
+record's `Walk.outcome`); a stopped walk is never accepted, by the stop's
+type (`walkStopsRefuse`), so the latter (`walk_of_accepts`).
 
 **The record as the proof's walk** (`ofPass`, with the loop heads
 `passHeads`, the start and `loopHeads`' targets as `runWalk` marks them): a
@@ -1527,19 +1647,6 @@ every visited node ∧ `CodesSound` ⟹ `StepEdgesSoundAt pre`),
 `PassWalkSound`'s walk field is `NodesChecked` at `passPreA` at every entry
 value and mark; `nodesChecked_of_walk` gives it at `passPreU`.
 
-**(`run_sound`, restated)**, proved:
-
-```math
-\mathrm{RunTraversedA} \wedge \mathrm{NodesMean} \wedge \mathrm{LinearNearFuelEq} \wedge \mathrm{MergeExitsJoined} \wedge \mathrm{FootprintsKept} \wedge \mathrm{ReturnsKept} \wedge \mathrm{RegionsHeld} \wedge \mathrm{AssertionsLabelled} \Longrightarrow \mathrm{RunSound}
-```
-
-`RunWalkA` is `RunWalk` with `TraversedA`; `MergeExitsJoined`: at every
-admitted reassigned graph, every visited node of the walk meets
-`ExitsJoined` (the per-node side's route: `joined_of_exit` at the exit,
-given the walk's `MergeEdgeRecorded` and the source environment meeting the
-edge's refined context). Every other premise is the one of the earlier
-statement, over `RunWalkA`.
-
 **The loop heads cut every cycle.** Module
 `lean/Verification/Programs/TolerantFramesDriverHeads.lean`.
 `SinglePass.loopHeads` is a `while` loop over the marks, the node states (0
@@ -1563,12 +1670,6 @@ path is a cycle; `loopHeads_cuts` (under `LoopHeadsFuelEq`, the marks
 `loopHeads` returns cut every cycle of the nodes it reaches);
 `HeadsCutCycles.mono`; `passHeads_cuts` (the call's heads, the start
 marked besides). No depth-first path theorem is used.
-
-**(`run_sound_18b`)**, proved (`run_sound` with `run_traversedA`):
-
-```math
-\mathrm{WalkStopsRefuse} \wedge \mathrm{RecordsSound} \wedge \mathrm{NodesMean} \wedge \mathrm{LinearNearFuelEq} \wedge \mathrm{MergeExitsJoined} \wedge \mathrm{FootprintsKept} \wedge \mathrm{ReturnsKept} \wedge \mathrm{RegionsHeld} \wedge \mathrm{AssertionsLabelled} \Longrightarrow \mathrm{RunSound}
-```
 
 **What the record lacks for `RecordsSound`** (pass changes, each a field
 or a definition the proof reads):
@@ -1606,6 +1707,90 @@ Premises this leg discharges / leaves:
   edge state alone.
 - `LinearNearFuelEq`, `RunKeepsSummaries`: left (`Store.linearNear` is a
   `while` loop; the answers are threaded by the visit).
+
+## Leg 18a: the per-node side of the graph theorem
+
+Modules `lean/Verification/Programs/TolerantFramesNodeLabels.lean`,
+`TolerantFramesComposeShape.lean`, `TolerantFramesRegionalRuns.lean`,
+`TolerantFramesNodeRefined.lean`, `TolerantFramesComposeRunSound.lean` and
+`TolerantFramesComposeYields.lean`.
+
+**The pass's checks at a node.** `NodeChecked`, what the record gives of a
+visited node, states that the step starts from the label's recorded entry
+(`hentry`) and that `run`'s shape check accepts the claim type
+(`hshape`, `SinglePass.passShapeCheck'`); `nodeChecked_reassign` carries
+both (`passShapeCheck'_reassign`).
+
+**The assertions at their labels.** `runWalk`'s setup refuses a request
+with two written assertions at one label and reads them by label
+(`byLabel`); the record's table is that one (`RunWalkA.stated_eq`), and the
+guarantee reads an assertion at a visited label (`PassWalkSound.labelled`).
+Proved: `nodup_of_eraseDups`, `byLabel_of_nodup` (distinct labels, an
+assertion at a label below the program's size is the one `byLabel` gives
+there), (`assertionsLabelled_of_checked`) `LabelsChecked` ⟹
+`AssertionsLabelled`, and (`labelsChecked`) `LabelsChecked`: an accepted
+call's walk returned, so its setup did (`setup_of_walk`), and the setup
+returns only where the assertions' labels are distinct (`setup_labels`).
+
+**The regional derivation.** `regionalTyped_of_tree` is stated over the
+pass's `SinglePass.regionalDerivChecked` with the derivation's tree
+accepted by `checkTreeUsing`, the check's first disjunct (D14).
+
+**The context the yields refine.** `run` refines a normal edge's context
+by the kept yields restated at every slot holding their targets' names,
+through the links of the step's output (`refinedΓ`, restated as
+`passRefined` over `passOutAll`), at the exit's arm (whether the exit is
+the first of the node's exits, `Exit.ofNode`, by position). This context
+is the one a merge records for the edge and the one an edge into a stated
+node is checked at. Proved: (`passRefined_env`) the normal exit at
+position $`i`$ of the node's exits at the arm $`i = 0`$, the claim's type
+and context typing
+$`\mathrm{push}\ v\ \rho`$, $`v`$ of the continuation's shape, the exit's
+observation, the yields and the step's output holding ⟹ `passRefined` types
+the edge's environment; (`refinedEdge_env`) `checkedEdge` accepting the
+edge at that context gives the target's types.
+
+**The nodes' kept yields.** `NodeYielded` states a node's step at the
+values it returns: its judgment with its kept yields `ys`, a return's goal
+from the state after the step and the yields, each normal exit from the
+state after the step, the yields at the value and the step's output, and
+the handler, each exit delivering `edgePreAJ` (the target's typed and
+written assertion and a merge's joined implications). `NodesYield` is
+`NodeYielded` for some `ys` at every visited node. Proved:
+
+- `stepEdgesSound_of_yields`: `NodeChecked` ∧ `NodeYielded` at every
+  visited label ∧ `CodesSound` ⟹ `StepEdgesSoundAt` at `edgePreAJ`;
+- `nodeYielded_of_checks`: `NodeYieldChecks` (the yields `checkedYields`
+  keeps at `slotImplOf` of the label's implications, `PromiseDerivChecked`,
+  at a return `returnCheck` refusing nothing) ∧ the exits and the handler
+  delivering `edgePreAJ` ⟹ `NodeYielded`;
+- `exitJoinedY`: an edge recorded into a merge at `passRefined` ∧
+  `passRefined_env`'s premises ∧ its slots naming the names' values ∧ the
+  carried implications ⟹ `joinedAt`; `exitDeliversAJ_of`: `edgePreA` and
+  `joinedAt` at an exit give `edgePreAJ`.
+
+**(`run_sound_pass`)**, proved (`run_sound_checked` with `run_traversedC`):
+
+```math
+\mathrm{RecordsSound} \wedge \mathrm{RecordsChecked} \wedge \mathrm{NodesYield} \wedge \mathrm{LinearNearFuelEq} \wedge \mathrm{RegionsHeld} \Longrightarrow \mathrm{RunSound}
+```
+
+`run_sound_checked` is the same with `RunTraversedC` (an accepted call
+records a checked walk) for `RecordsSound` and `RecordsChecked`;
+`run_traversedC` builds that walk as `run_traversedA` does, its nodes the
+checked steps `RecordsChecked` gives. Its premises are those of "Open
+premises".
+
+Premises this leg discharges / leaves:
+
+- `NodesMean`, `MergeExitsJoined`: replaced by `NodesYield`; its judgment
+  and return discharged into `NodeYieldChecks` (the visit's checks); left:
+  each exit and the handler from the visit's edge checks, with D12
+  (`PromiseDerivChecked`).
+- `AssertionsLabelled`: discharged (`labelsChecked`, the setup's check).
+- `FootprintsKept`, `ReturnsKept`: into `RecordsChecked` (`NodePassChecked`).
+- `RegionsHeld`: the regional derivation's typing over the pass's check
+  under D14; the rest left.
 
 ## Leg 19b: the walk's premises from the driver
 

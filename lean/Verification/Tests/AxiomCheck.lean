@@ -65,6 +65,13 @@ import Verification.Programs.TolerantFramesRegionalRuns
 import Verification.Programs.TolerantFramesNodeAsserts
 import Verification.Programs.TolerantFramesNodeGoals
 import Verification.Programs.TolerantFramesNodeCallFresh
+import Verification.Programs.TolerantFramesComposeRunSound
+import Verification.Programs.TolerantFramesNodeJoined
+import Verification.Programs.TolerantFramesNodeYields
+import Verification.Programs.TolerantFramesNodeYielded
+import Verification.Programs.TolerantFramesNodeRefined
+import Verification.Programs.TolerantFramesComposeYields
+import Verification.Programs.TolerantFramesSinglePassSound
 import Verification.Programs.TolerantFramesMergeExits
 import Verification.Programs.TolerantFramesMergeNearRounds
 
@@ -695,7 +702,6 @@ run_cmd do
   check ``Verification.TolerantFrames.nodesKeep_anti
   check ``Verification.TolerantFrames.PassWalkSound.start
   check ``Verification.TolerantFrames.checkEntryFields_reassign
-  check ``Verification.TolerantFrames.run_sound
   check ``Verification.TolerantFrames.contKeeps_regionX
   check ``Verification.TolerantFrames.regionsKept_of
   check ``Verification.TolerantFrames.regionalTyped_of_tree
@@ -721,8 +727,56 @@ run_cmd do
   check ``Verification.TolerantFrames.goalHolds_at
   check ``Verification.TolerantFrames.returnOk_of_check
   check ``Verification.TolerantFrames.goalHolds_of_return
-  check ``Verification.TolerantFrames.passOutFresh_of_checked
   check ``Verification.TolerantFrames.callFresh_of_checked
+  -- Leg 17a: the per-node hypotheses of run_sound from the pass's checks (TolerantFramesNode*, TolerantFramesCompose*)
+  check ``Verification.TolerantFrames.passOutFreshChecked_cases
+  check ``Verification.TolerantFrames.passOutFreshChecked_reassign
+  check ``Verification.TolerantFrames.BoundChecked.reassign
+  check ``Verification.TolerantFrames.ReturnChecked.reassign
+  check ``Verification.TolerantFrames.joinedAt_of_exit
+  check ``Verification.TolerantFrames.SafePostExc.conj_post
+  check ``Verification.TolerantFrames.checkedYields_follows
+  check ``Verification.TolerantFrames.stepYields_judgment
+  check ``Verification.TolerantFrames.exitDeliversY_of_edge
+  check ``Verification.TolerantFrames.nodeObligations_of_partsY
+  check ``Verification.TolerantFrames.stepEdgesSound_of_yields
+  check ``Verification.TolerantFrames.regionalTyped_copy
+  -- Leg 18a: the per-node side (TolerantFramesNode*, TolerantFramesCompose*)
+  check ``Verification.TolerantFrames.yieldsJudged_of_follows
+  check ``Verification.PromiseCalls.promiseCall_yields_local
+  check ``Verification.PromiseCalls.promiseCall_yields_checked
+  check ``Verification.TolerantFrames.slotImplOf_mem
+  check ``Verification.TolerantFrames.slotImplOf_ok
+  check ``Verification.TolerantFrames.slotImplOf_entry
+  check ``Verification.TolerantFrames.yieldsOk_passReturnYields
+  check ``Verification.TolerantFrames.yieldsJudged_of_promise
+  check ``Verification.TolerantFrames.yieldsJudged_nil
+  check ``Verification.TolerantFrames.yieldsJudged_of_checked
+  check ``Verification.TolerantFrames.exitDeliversY_head
+  check ``Verification.TolerantFrames.goalHolds_of_returnY
+  check ``Verification.TolerantFrames.passShapeCheck'_reassign
+  check ``Verification.TolerantFrames.nodup_of_eraseDups
+  check ``Verification.TolerantFrames.byLabel_size
+  check ``Verification.TolerantFrames.byLabel_cons
+  check ``Verification.TolerantFrames.byLabel_of_nodup
+  check ``Verification.TolerantFrames.assertionsLabelled_of_checked
+  check ``Verification.TolerantFrames.setup_labels
+  check ``Verification.TolerantFrames.setup_of_walk
+  check ``Verification.TolerantFrames.labelsChecked
+  check ``Verification.TolerantFrames.truthy_arm
+  check ``Verification.TolerantFrames.passRefined_env
+  check ``Verification.TolerantFrames.checkedEdge_env_none
+  check ``Verification.TolerantFrames.refinedEdge_env
+  check ``Verification.TolerantFrames.exitJoinedY
+  check ``Verification.TolerantFrames.exitDeliversAJ_of
+  check ``Verification.TolerantFrames.nodeYielded_of_checks
+  check ``Verification.TolerantFrames.footprintKept_of_walk
+  check ``Verification.TolerantFrames.returnsEnsured_of_walk
+  check ``Verification.TolerantFrames.run_sound_checked
+  check ``Verification.TolerantFrames.run_traversedC
+  check ``Verification.TolerantFrames.run_sound_single_pass
+  check ``Verification.TolerantFrames.run_sound_pass
+
   -- Leg 17b: the walk side of the graph theorem (TolerantFramesMergeExits, TolerantFramesMergeNearRounds)
   check ``Verification.TolerantFrames.entry_of_edge
   check ``Verification.TolerantFrames.joined_of_exit
@@ -755,7 +809,6 @@ run_cmd do
   check ``Verification.TolerantFrames.loopHeads_cuts
   check ``Verification.TolerantFrames.HeadsCutCycles.mono
   check ``Verification.TolerantFrames.passHeads_cuts
-  check ``Verification.TolerantFrames.run_sound_18b
   -- Leg 19b: the walk's premises from the driver (TolerantFramesDriverHeadsFuel)
   check ``Verification.TolerantFrames.zeroWeight_upd
   check ``Verification.TolerantFrames.dfsStep_measure

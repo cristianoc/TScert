@@ -115,13 +115,14 @@ theorem walk_of_accepts' {G : NormalGraph ι} {I : InstanceImageCheck G} {c : Ta
     · omega
 
 variable (ι) in
-/-- **A stopped walk is never accepted**: the verdict of every stop
-`runWalk` returns is a refusal, a gap or an observation. -/
+/-- **A stopped walk is never accepted**: every outcome `runWalk` stops
+with is a refusal, a gap or an observation (`WalkStopsRefuse`, by the stop's
+type: `walkStopsRefuse`). -/
 def WalkStopsRefuse : Prop :=
   ∀ (G : NormalGraph ι) (I : InstanceImageCheck G) (c : Target.RunCall G I) (stop : SinglePass.WalkStop ι G),
     RunCall.walk c = .error stop → stop.outcome.outcome ≠ .accepted
 
-/-- **(`walkStopsRefuse`) A stopped walk is never accepted**, by its type
+/-- **A stopped walk is never accepted, by its type**
 (`StopOutcome.outcome_ne_accepted`). -/
 theorem walkStopsRefuse : WalkStopsRefuse ι :=
   fun _ _ _ stop _ => stop.outcome.outcome_ne_accepted
@@ -244,19 +245,7 @@ theorem run_traversedA (hstop : WalkStopsRefuse ι) (hrec : RecordsSound ι) : R
   have hr := hrec G I c σ reach hw hle (ha ▸ hsums)
   exact ⟨⟨ofPass σ.walk (passHeads c), passHeads c, passCtx c, passEdgesIn σ.walk, passFresh σ.walk,
     passStated c, fun l hl => Classical.choice (hr.node l hl), hr.traversed, ofPass_heads σ.walk (passHeads c),
-    hr.start⟩⟩
-
-/-- **THE GRAPH THEOREM from the driver's record** (`run_sound` with
-`RunTraversedA` from `run_traversedA`): from a stopped walk never being
-accepted (`WalkStopsRefuse`), the record's soundness (`RecordsSound`), the
-nodes' meaning (`NodesMean`), the merges' premises (`LinearNearFuelEq`,
-`MergeExitsJoined`), the per-node hypotheses of the guarantee's other
-fields and the call's assertions at their labels, an accepted call of the
-pass guarantees `GraphGuarantee` of its options at its inputs. -/
-theorem run_sound_18b (hstop : WalkStopsRefuse ι) (hrec : RecordsSound ι) (hmean : NodesMean ι)
-    (hnear : LinearNearFuelEq) (hjoin : MergeExitsJoined ι) (hfoot : FootprintsKept ι) (hret : ReturnsKept ι)
-    (hreg : RegionsHeld ι) (hasr : AssertionsLabelled ι) : Target.RunSound ι :=
-  run_sound (run_traversedA hstop hrec) hmean hnear hjoin hfoot hret hreg hasr
+    hr.start, fun _ => rfl⟩⟩
 
 end Record
 
