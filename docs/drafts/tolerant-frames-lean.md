@@ -1031,3 +1031,70 @@ below the counter, the start names below it.
 | `HeadsEntered` | named hypothesis: the head entry from `EdgeEstablishes` |
 | `MergesSound` | named hypotheses `LinearNearSound`, `EntailedDefined`, `GuardedHolds`, the edges' joined implications (Leg 8: the merge) |
 | `Traversed.width`, `.wf`, `.below` at merges | not proved: the edge operations' maintenance of the target's width, `StoreWF` and `StateBelow` |
+
+## Leg 8: the head entry
+
+Module `lean/Verification/Programs/TolerantFramesMergeHead.lean`. A loop
+head other than the start enters with `SinglePass.headEntry g false`: slot
+$`i`$ named by the start name a given input `(i, q)` names, else by the
+promised input's start name where the slot is among the promised input's
+slots, else by the fresh name $`\mathit{fresh}+i`$; the store is the given
+facts $`g`$ renamed from slots to those names; the given implications
+renamed alike; the next fresh name $`\mathit{fresh}+\mathit{width}`$. Its
+valuation (`headVal`) gives a start name `startNames[q]` the entry value
+$`\rho_0(q)`$ and any other name $`\mathit{fresh}+i`$ the value of slot $`i`$.
+
+### Interface between the head entry and the edge check
+
+`EdgeEstablishes G g implies startNames argName argSlots inputSlots ρ0 ρ' s`,
+at the head's environment $`\rho'`$ (the edge's mapping applied to the
+source's slots, with the exit's value bound where the edge pushes it) and
+the state $`s`$ the edge reaches:
+
+1. `facts`: $`\rho', s.h \models g`$ (`HeapKnowledge.Holds`), the head's given
+   facts at its slots;
+2. `implies`: the head's given implications hold at $`\rho'`$
+   (`PromiseCalls.ImpliesOk`);
+3. `inputs`: for each given input $`(j,q)`$ with `startNames[q] = x`,
+   $`\rho'(j)=\rho_0(q)`$;
+4. `arg`: for each promised-input slot $`j`$, where `argName = a` and
+   `startNames[q] = a`, $`\rho'(j)=\rho_0(q)`$.
+
+These are what the edge into a head checks (`SinglePass.lean`, the edge loop
+of `run`: the given implications, the inputs' values, the promised input, and
+`KnowledgeExpand.checkIn` of the given facts over the edge's materialized
+store), stated at the target environment; the edge lane proves that the
+checks and the source's holding state give them.
+
+Proved:
+
+- (`headEntry_holds`) start names distinct and below $`\mathit{fresh}`$ ∧
+  the promised input a start name ∧ `EdgeEstablishes` at $`\rho'`$ ⟹ the
+  head's state with its implications holds at $`\rho'`$ (`StateHolds`, at
+  `headVal`) ∧ its store is well-formed; `headEntry_slots`: each slot holds
+  its name's value under `headVal`;
+- (`headsEntered_of`) a walk entering each head with its head entry, every
+  edge state into a head establishing it (`EdgeEstablishes`) ⟹
+  `HeadsEntered`.
+
+Not proved: the start as a loop head with edges into it
+(`headEntry … true`, its names the start names themselves).
+
+## Leg 8: the store operations and well-formedness
+
+Module `lean/Verification/Programs/TolerantFramesStoreOpsBelow.lean` and the
+modules above. The store operations the pass uses, by function of
+`SinglePass.lean`, and the well-formedness conjuncts of `StateWF`: `store`
+(`StoreWF`), the slot and fresh names below the counter (`below`, names), the
+facts' names below the counter (`below`, facts), `freshHeld`.
+
+| Operation | `StoreWF` | names, fresh below | facts below | `freshHeld` |
+| --- | --- | --- | --- | --- |
+| `Store.addRaw`, `remove`, `addBound`, `add` | proved (`addRaw_wf`, `remove_wf`, `addBound_wf`, `add_wf`) | no names change | proved for a fact below (`addRaw_below`, `remove_below`, `addBound_below`, `add_below`) | no names change |
+| `applyDelta` | removal loop proved (`deltaRemove_wf`); additions by `add_wf`; the loops as a whole not stated | slot 0 named by the result name | not proved: the names `back` gives | not stated |
+| `Store.dropHeap` | proved (`dropHeap_cover`) | no names change | removals only, not stated | no names change |
+| `Store.drop` | proved (`drop_wf`) | no names change | not proved: the names of `eliminateIndices`' output | no names change |
+| `edgeStoreOf` | handler: `dropHeap`; observed: `applyDelta`; as those | — | as those | — |
+| `edgeTransfer` | through `Store.drop` | not proved: `mapNames`' output | not proved | the fresh names filtered by the dropped names; not proved |
+| `mergeState` | proved (`mergeState_wf`) | proved (`mergeState_wf`) | not proved: through `Store.drop` | does not hold in general |
+| `headEntry` | proved (`headStore_ok`, `headEntry_holds`) | not stated | not proved: the renamed facts' names | no fresh names |

@@ -27,7 +27,8 @@ import Verification.Programs.TolerantFramesMerge
 import Verification.Programs.TolerantFramesModelLoop
 import Verification.Programs.TolerantFramesModelTyped
 import Verification.Programs.TolerantFramesModelRules
-import Verification.Programs.TolerantFramesMergeGraph
+import Verification.Programs.TolerantFramesMergeHead
+import Verification.Programs.TolerantFramesStoreOpsBelow
 
 /-!
 Acceptance rests on Lean's standard axioms alone. The build fails when any of
@@ -474,6 +475,16 @@ run_cmd do
   check ``Verification.TolerantFrames.entries_of_traversed
   check ``Verification.TolerantFrames.run_sound_of_walk
   check ``Verification.TolerantFrames.start_passPre
+  check ``Verification.TolerantFrames.headVal_start
+  check ``Verification.TolerantFrames.headVal_fresh
+  check ``Verification.TolerantFrames.headEntry_slots
+  check ``Verification.TolerantFrames.headEntry_holds
+  check ``Verification.TolerantFrames.headsEntered_of
+  check ``Verification.TolerantFrames.canon_names
+  check ``Verification.TolerantFrames.addRaw_below
+  check ``Verification.TolerantFrames.remove_below
+  check ``Verification.TolerantFrames.addBound_below
+  check ``Verification.TolerantFrames.add_below
   let env ← getEnv
   let project (decl : Name) : Bool := match env.getModuleIdxFor? decl with
     | some i => (`Verification).isPrefixOf env.header.moduleNames[i.toNat]!
