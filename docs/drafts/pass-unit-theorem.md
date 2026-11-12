@@ -477,26 +477,48 @@ these: `EstablishedSlots` and four `KindMet` premises.
 
 **What H5a excludes, and what each needs.** A unit realized through
 `RowRealized` has fixed arity, no rest, an unqualified request, and
-signatures meeting the code conditions. A closed unit outside these stays
-safe locally (`passUnit_safe`); `passFile_safe` says nothing of its value.
-None is lifted here. Each needs a clause of `UnitIsCode` and of
-`CodeEntry.Spec`, the code specification `closure_meets_below` consumes:
+signatures meeting the code conditions (`codeConditions`) and the code
+specification's own condition `Effect.below` (inside `GraphCodeSpec`). A
+closed unit outside these stays safe locally (`passUnit_safe`);
+`passFile_safe` says nothing of its value. Each case against the actual
+definitions:
 
-- *a postcondition* (`ensures`): `EnsuresClause` gives the returns' facts;
-  `codeSpec_of_clauses` must carry them into the spec's normal-return
-  post, and `KindOffers` must read the arrow's `ensures` as that post;
-- *stated regions*: `RegionalClause` gives the bound; the spec's frame
-  condition must be the regional one (`ArgumentStoreRegionsWithin`) in
-  place of the footprint;
-- *a precondition* (`requires`): `UnitIsCode` takes the code's precondition
-  as entry facts already; the spec must assume it at entry, and the
-  caller's call rule, which checks it at the call, establishes it there;
-- *a rest parameter*: `CodeOffers` over the variadic signatures
-  $`S_v`$, with the packed rest frame (`codeFrame` with the row's rest),
-  and `RowRealized` per variadic row;
+- *a precondition on the call's values* (`@requires`, the effect's `pre`
+  index facts): admitted. `codeConditions` does not exclude it,
+  `UnitIsCode.indices` takes it as the request's entry facts
+  (`codeEntryIndices`), `GraphCodeSpec` assumes it at entry (`PreAt`), and
+  `codeSpec_of_clauses` discharges the entry from it
+  (`codeEntryIndices_holds`); the caller's call rule establishes it at the
+  call. An element predicate on the receiver (`Effect.requires`, an
+  `ElemPred`) is excluded by `codeConditions`; lifting it needs an
+  `ElemsAt` premise in `GraphCodeSpec` (`TypingBasics`) and an entry fact
+  of the request stating it, neither of which exists.
+- *a postcondition* (`@ensures`): excluded by `Effect.below`
+  (`e.ensures.isEmpty`), which `GraphCodeSpec` requires of every
+  signature. `EnsuresClause` gives the returns' facts; lifting needs
+  `Effect.below` to admit `ensures` facts at slots up to the arity plus one
+  (`CallEffects`), the post of `GraphCodeSpec` to read them
+  (`Effect.post`, which `post_args` relates to the frame only for an empty
+  `ensures`), and `codeSpec_of_clauses` to carry `EnsuresClause` into that
+  post.
+- *stated regions*: excluded by `Effect.below` (`e.regions.isEmpty`).
+  `RegionalClause` gives the bound; lifting needs the specification's frame
+  condition to be the regional one (`ArgumentStoreRegionsWithin`) in place
+  of the footprint, in `GraphCodeSpec`.
+- *a rest parameter*: `RowRealized` fixes `e.store = none` and
+  `closure_meets_below` is stated for `CodeOffers … false L S []`, no
+  variadic signature realized. Lifting needs `CodeOffers` over the variadic
+  signatures $`S_v`$ with the packed rest frame (`codeFrame` with the row's
+  rest), `closure_meets_below` extended to them, and `RowRealized` per
+  variadic row.
 - *type parameters*: the interface is a scheme; `RequestSafe` holds at the
   admitted instances (`qualified_requestSafe`), and `approx_meets` must be
-  stated per instance $`\eta \in \mathrm{Adm}`$ against $`I_u\eta`$.
+  stated per instance $`\eta \in \mathrm{Adm}`$ against $`I_u\eta`$: a
+  scheme row's meaning (`schemeSemWithArgs`) asks the value to meet every
+  bounded instance at once, so the step needs the instances' safety for one
+  code, which `qualified_requestSafe` gives for the body's own admitted
+  instances; what is missing is the relation between the body's admitted
+  instances and the scheme's bounded, allowed substitutions.
 
 ## 5. The boundaries that stay trusted
 
