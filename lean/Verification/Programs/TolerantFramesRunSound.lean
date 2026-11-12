@@ -1,6 +1,7 @@
 import Verification.Programs.TolerantFramesGuaranteeTarget
 import Verification.Programs.TolerantFramesWalkReassignWalk
 import Verification.Programs.TolerantFramesComposeEdges
+import Verification.Programs.TolerantFramesGuaranteeWalk
 
 /-! # Tolerant frames: the graph theorem
 
@@ -15,20 +16,23 @@ graph-level proof, each a definition below:
   walk's construction (`Traversed`), each edge into a head recorded as the
   head's entry, and the start entered with its head entry;
 - `NodesMean`: each visited node's step means at every admitted reassigned
-  graph what it states (`NodeMeaning`: the stated assertion, the shapes, the
-  return type, the exits, the handler);
+  graph what it states (`NodeMeaning`: the entry state, the shapes, the
+  return type, the exits and the handler delivering the targets' typed and
+  written assertions);
 - `LinearNearFuelEq`, `MergesImpliesHold`: the merges' premises
   (`MergesSound`);
-- `FootprintsKept`, `ReturnsKept`, `RegionsHeld`, `AssertionsKept`: the
-  per-node hypotheses of the guarantee's other fields (`PassWalkSound`).
+- `FootprintsKept`, `ReturnsKept`, `RegionsHeld`: the per-node hypotheses
+  of the guarantee's bounded, ensured and regional fields;
+- `AssertionsLabelled`: every assertion of the call is the written
+  assertion at its label.
 
 The proof carries each checked node to every admitted assignment
 (`nodeChecked_reassign`, the checker there from `CheckerScope`:
 `passCheckerReassign_ordinary`, `passCheckerReassign_lexical`), gives the
 node obligations there (`stepEdgesSound_of_checked`), the heads entered
-(`headsEntered_of_recorded`), the start entered (`start_passPreT`,
-`start_entered_passPreT`), and assembles `GraphGuarantee`
-(`run_guarantee`), restated in the unit lane's record
+(`headsEntered_of_recorded`), the start entered (`StartEntered.entered`,
+the traversed fields fixed by the call's entry fields check), and assembles
+`GraphGuarantee` at one node assertion (`run_guarantee`), restated in the unit lane's record
 (`GraphGuarantee.toTarget`). -/
 namespace Verification.TolerantFrames
 open Verification Footprints HeapObservations
@@ -100,13 +104,15 @@ theorem scope_reassign {G : NormalGraph ι} {I : InstanceImageCheck G} {pc : Sin
       hlen hall hb
 
 /-- **The walk enters the start with its head entry**: the pass's entry
-check accepts; the start is visited; its entry is `headEntry` over the
-given invariant (`startGiven`), as the start (`isStart = true`) where no
-edge enters it and as any head where one does (`reentered`, the counter at
-or past the inputs' width); and its context is the inputs. -/
+check accepts, the start's written assertion `stated c.start`; the start is
+visited; its entry is `headEntry` over the given invariant (`startGiven`),
+as the start (`isStart = true`) where no edge enters it and as any head
+where one does (`reentered`, the counter at or past the inputs' width); and
+its context is the inputs. -/
 def StartEntered {G : NormalGraph ι} {I : InstanceImageCheck G} (c : Target.RunCall G I) (w : Walk ι)
-    (ctx : Nat → List (Ty ι)) : Prop :=
-  ∃ (written : Option HeapKnowledge.Knowledge) (supplied : List HeapKnowledge.IndexAtom)
+    (ctx : Nat → List (Ty ι)) (stated : Nat → Option HeapKnowledge.Knowledge) : Prop :=
+  let written := stated c.start
+  ∃ (supplied : List HeapKnowledge.IndexAtom)
     (givenImplies : List (PromiseCalls.Implication ι)) (givenArgs : List Nat) (givenInputs : List (Nat × Nat))
     (fresh : Nat) (reentered : Bool),
     SinglePass.entryRefusal G c.inputs c.claims c.start c.goal written supplied givenImplies givenArgs givenInputs
@@ -122,7 +128,8 @@ def StartEntered {G : NormalGraph ι} {I : InstanceImageCheck G} (c : Target.Run
 
 /-- **What the driver records of an accepted call** (`run_traversed`'s
 conclusion): the walk, the label contexts, each merge's edges and fresh
-counter, and each loop head (`given`); every visited node checked at `G`
+counter, each loop head (`given`) and the written assertions by label
+(`stated`, the table `run` reads); every visited node checked at `G`
 with its searches as oracles; the walk's construction; each edge state
 recorded into a head being the head's entry; the start entered. -/
 structure RunWalk (G : NormalGraph ι) (I : InstanceImageCheck G) (c : Target.RunCall G I) where
@@ -134,7 +141,8 @@ structure RunWalk (G : NormalGraph ι) (I : InstanceImageCheck G) (c : Target.Ru
   node : ∀ l, w.visited l → NodeChecked G I c.codes c.passChecker c.P w (List.range c.inputs.length) ctx l
   traversed : Traversed G w (List.range c.inputs.length) given ctx edgesIn fresh
   heads : ∀ t, given t = true → ∀ e ∈ w.incoming t, e = (w.entry t, w.implies t)
-  start : StartEntered c w ctx
+  stated : Nat → Option HeapKnowledge.Knowledge
+  start : StartEntered c w ctx stated
 
 /-- The premises `RunSound` gives a call. -/
 def RunPremises (G : NormalGraph ι) (I : InstanceImageCheck G) (c : Target.RunCall G I) (after : Answered G)
@@ -161,7 +169,7 @@ stated assertion, the shapes, the return type, the exits and the handler
 def NodesMean : Prop :=
   ∀ (G : NormalGraph ι) (I : InstanceImageCheck G) (c : Target.RunCall G I) after admits,
     RunPremises G I c after admits → ∀ r : RunWalk G I c, ∀ η, admits η → ∀ ρ0 m l (hl : r.w.visited l),
-      NodeMeaning (reassign G η) r.w (List.range c.inputs.length) ρ0 r.ctx
+      NodeMeaning (reassign G η) r.w (List.range c.inputs.length) ρ0 r.ctx r.stated
         (GoalHolds (reassign G η) c.goal (c.goal.argument ρ0)) m l (r.node l hl).node (r.node l hl).c
         (r.node l hl).entry (r.node l hl).st
 
@@ -195,63 +203,76 @@ def ReturnsKept : Prop :=
 
 variable (ι) in
 /-- **(Named hypothesis) The regional check keeps its facts** at every
-admitted reassigned graph (`RegionsKept`), its facts holding at the start. -/
+admitted reassigned graph, at the node assertion with the traversed fields
+fixed (`RegionsKeptS`), its facts holding at the start. -/
 def RegionsHeld : Prop :=
   ∀ (G : NormalGraph ι) (I : InstanceImageCheck G) (c : Target.RunCall G I) after admits,
     RunPremises G I c after admits → ∀ r : RunWalk G I c, ∀ η, admits η →
       ∀ Φ regions exc, Target.regionOf c.regional = some (Φ, regions, exc) →
         ∃ X : Env → Heap → Nat → Env → Heap → Prop, ∀ ρ0 h₀, X ρ0 h₀ c.start ρ0 h₀ ∧
-          RegionsKept c.P (reassign G η) r.w (List.range c.inputs.length) ρ0 r.ctx (X ρ0 h₀) Φ regions h₀ exc
+          RegionsKeptS c.P (reassign G η) r.w (List.range c.inputs.length) ρ0 r.ctx (X ρ0 h₀) Φ regions h₀ exc
 
 variable (ι) in
-/-- **(Named hypothesis) Each stated assertion holds** where the node
-assertion at its label does, at every admitted reassigned graph
-(`AssertionsHeld`). -/
-def AssertionsKept : Prop :=
+/-- **(Named hypothesis) Every assertion of the call is the written
+assertion at its label** (`stated`, the table `run` checks the edges
+against). -/
+def AssertionsLabelled : Prop :=
   ∀ (G : NormalGraph ι) (I : InstanceImageCheck G) (c : Target.RunCall G I) after admits,
-    RunPremises G I c after admits → ∀ r : RunWalk G I c, ∀ η, admits η →
-      ∀ ρ0 m, AssertionsHeld (reassign G η) r.w (List.range c.inputs.length) ρ0 r.ctx c.assertions m
+    RunPremises G I c after admits → ∀ r : RunWalk G I c, ∀ l k, (l, k) ∈ c.assertions → r.stated l = some k
 
-/-- **The start entered at a reassigned graph**: the start's typed assertion
-holds at every entry meeting the inputs, the separation and the index facts
-(`start_passPreT` where no edge enters the start, `start_entered_passPreT`
-where one does; the entry check is the same at `reassign G η`). -/
+/-- **The start entered at a reassigned graph**: the start's typed and
+written assertion holds at every entry meeting the inputs, the separation
+and the index facts (`start_passPreT` where no edge enters the start,
+`start_entered_passPreT` where one does, `assertsAt_start`; the entry check
+is the same at `reassign G η`). -/
 theorem StartEntered.entered {G : NormalGraph ι} {I : InstanceImageCheck G} {c : Target.RunCall G I} {w : Walk ι}
-    {ctx : Nat → List (Ty ι)} (h : StartEntered c w ctx) (η : MixedAssignment ι) :
+    {ctx : Nat → List (Ty ι)} {stated : Nat → Option HeapKnowledge.Knowledge} (h : StartEntered c w ctx stated)
+    (η : MixedAssignment ι) :
     ∀ ρ m (s : IndexedHeap), EnvOk (reassign G η) c.inputs ρ s.n s.W → HeapSeparation.Holds c.entrySeparation ρ →
       HeapKnowledge.IndexHolds c.entryIndices ρ s.h →
-      passPreT (reassign G η) w (List.range c.inputs.length) ρ ctx c.start ρ m s := by
-  obtain ⟨written, supplied, givenImplies, givenArgs, givenInputs, fresh, reentered, hacc, hv, hfr, hentry, himp,
+      passPreA (reassign G η) w (List.range c.inputs.length) ρ ctx stated c.start ρ m s := by
+  obtain ⟨supplied, givenImplies, givenArgs, givenInputs, fresh, reentered, hacc, hv, hfr, hentry, himp,
     hctx⟩ := h
-  have hacc' := (entryRefusal_reassign G η c.inputs c.claims c.start c.goal written supplied givenImplies givenArgs
-    givenInputs c.entryIndices c.entrySeparation).trans hacc
+  have hacc' := (entryRefusal_reassign G η c.inputs c.claims c.start c.goal (stated c.start) supplied givenImplies
+    givenArgs givenInputs c.entryIndices c.entrySeparation).trans hacc
   intro ρ m s he hs hi
+  refine ⟨?_, assertsAt_start hacc' he hs hi⟩
   cases reentered with
   | false => exact start_passPreT hacc' hv hentry himp hctx he hs hi
   | true => exact start_entered_passPreT hacc' hv (hfr rfl) hentry himp hctx he hs hi
 
+omit [Labels ι] in
+/-- The entry fields check at a reassigned graph. -/
+theorem checkEntryFields_reassign [DecidableEq ι] (G : NormalGraph ι) (η : MixedAssignment ι)
+    (inputs : List (Ty ι)) (regions : List Footprints.ArgumentStoreRegion) :
+    GraphCode.ArgumentPathTracking.checkEntryFields (reassign G η) inputs regions =
+      GraphCode.ArgumentPathTracking.checkEntryFields G inputs regions := rfl
+
 /-- **THE GRAPH THEOREM** (`RunSound`, the unit lane's statement): from the
 driver's walk (`RunTraversed`), the nodes' meaning at every admitted
 reassigned graph (`NodesMean`), the merges' premises (`LinearNearFuelEq`,
-`MergesImpliesHold`) and the per-node hypotheses
-of the guarantee's other fields (`FootprintsKept`, `ReturnsKept`,
-`RegionsHeld`, `AssertionsKept`), an accepted call of the pass guarantees
-`GraphGuarantee` of its options at its inputs. -/
+`MergesImpliesHold`), the per-node hypotheses of the guarantee's other
+fields (`FootprintsKept`, `ReturnsKept`, `RegionsHeld`) and the call's
+assertions at their labels (`AssertionsLabelled`), an accepted call of the
+pass guarantees `GraphGuarantee` of its options at its inputs. -/
 theorem run_sound (hrun : RunTraversed ι) (hmean : NodesMean ι) (hnear : LinearNearFuelEq)
     (himp : MergesImpliesHold ι) (hfoot : FootprintsKept ι) (hret : ReturnsKept ι)
-    (hreg : RegionsHeld ι) (hasr : AssertionsKept ι) : Target.RunSound ι := by
+    (hreg : RegionsHeld ι) (hasr : AssertionsLabelled ι) : Target.RunSound ι := by
   intro G I c after admits hacc hscope hcodes hsums hfields
   have hp : RunPremises G I c after admits := ⟨hacc, hscope, hcodes, hsums, hfields⟩
   obtain ⟨r⟩ := hrun G I c after hacc hsums
   refine GraphGuarantee.toTarget (run_guarantee fun η hη => ?_)
   obtain ⟨pc', hpc⟩ := scope_reassign hscope hη
-  refine ⟨r.w, r.given, r.ctx, r.edgesIn, r.fresh,
+  refine ⟨r.w, r.given, r.ctx, r.edgesIn, r.fresh, r.stated,
     { walk := fun ρ0 m => ?_
       entered := r.start.entered η
+      stable := fun Φ regions exc hr ρ s he =>
+        GraphCode.ArgumentPathTracking.checkEntryFields_sound
+          ((checkEntryFields_reassign G η c.inputs regions).trans (hfields Φ regions exc hr)) he s.pos s.ok
       footprint := hfoot G I c after admits hp r η hη
       returns := hret G I c after admits hp r η hη
       regions := hreg G I c after admits hp r η hη
-      asserted := hasr G I c after admits hp r η hη }⟩
+      labelled := hasr G I c after admits hp r }⟩
   exact
     { traversed := r.traversed.reassign η
       steps := stepEdgesSound_of_checked

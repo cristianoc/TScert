@@ -100,15 +100,16 @@ def BoundChecked {G : NormalGraph ι} {images : InstanceImageCheck G} {pool : Li
       na.st.stepK (passDerivOf na.c na.node na.st) (passLiveHandler dead na.node) exc ret
       (passOutFresh na.node na.entry (passDerivOf na.c na.node na.st)) = true)
 
-/-- **(Named hypothesis) A call's fresh result**: where `run`'s `outFresh`
-reads a fresh result off the step's derivation's selected effect
-(`passCallFresh`), every run of the node's term to a value returns a store
-allocated at or past the mark. The pass does not check the derivation's tree
-there (pass change D4: `outFresh` behind `derivChecked`). -/
-def CallFreshOk (G : NormalGraph ι) (w : Walk ι) (startNames : List Nat) (ρ0 : Env) (ctx : Nat → List (Ty ι))
-    (m l : Nat) (node : Node) (deriv : ProgramCertificates.Evidence ι) : Prop :=
+/-- **(Named hypothesis) A call's fresh result within the budget**: where
+`run`'s `outFresh` reads a fresh result off the step's derivation's selected
+effect (`passCallFresh`), from a state where the node assertion holds,
+every run of the node's term with fewer steps than the state's budget to a
+value returns a store allocated at or past the mark (`callFresh_of_checked`
+gives it from the derivation's check). -/
+def CallFreshBelow (G : NormalGraph ι) (w : Walk ι) (startNames : List Nat) (ρ0 : Env)
+    (ctx : Nat → List (Ty ι)) (m l : Nat) (node : Node) (deriv : ProgramCertificates.Evidence ι) : Prop :=
   passCallFresh node deriv = true → ∀ ρ (s : IndexedHeap), passPreT G w startNames ρ0 ctx l ρ m s →
-    ∀ k h' v, Steps k s.h (instantiate 0 ρ node.expression) h' v → isVal v = true → FreshAt m v
+    ∀ k h' v, k < s.n → Steps k s.h (instantiate 0 ρ node.expression) h' v → isVal v = true → FreshAt m v
 
 omit [DecidableEq ι] [Hashable ι] [Instantiates ι] in
 /-- **The fresh receiver slots hold fresh stores**: a slot `passRecvFresh`
@@ -181,12 +182,12 @@ theorem contKeeps_of {X : Nat → Env → Heap → Prop} {Q : Heap → Tm → Pr
 where the pass accepted every visited node (`NodeAccepted`, at the mark
 `|h₀|`), checked its bound there (`BoundChecked`, with `ret` the bound's
 fresh result and `exc` its throw bound) and a call's fresh result holds a
-fresh store (`CallFreshOk`), the codes are sound and the direct call and the
+fresh store (`CallFreshBelow`), the codes are sound and the direct call and the
 search keep the summary table checked, every node keeps `BoundX`: a run of a
 node outside `dead` from a heap within `Φ` stays within it on each exit
 (`footprint_exits`, its fresh receivers from the state, `freshOk_recv`), a
 return's value fresh where `ret` (`passOutFresh`: a copy of a fresh slot,
-`copyFresh`, or a fresh call, `CallFreshOk`); a run of a node of `dead`
+`copyFresh`, or a fresh call, `CallFreshBelow`); a run of a node of `dead`
 reaches a target of `dead` or no normal exit (`deadNode`: an empty result
 type, or a continuation into `dead`), and a throw a handler of `dead`, or
 escapes with no throw bound. -/
@@ -197,7 +198,7 @@ theorem footprintKept_of {G : NormalGraph ι} {images : InstanceImageCheck G} {p
     {Φ : Footprints.Closed} {h₀ : Heap} {dead : List Bool} {ret exc : Bool}
     (hacc : ∀ l, w.visited l → ∃ na : NodeAccepted G images pool fuel suggestions index codes aliases pc undefTy P w
       startNames ρ0 ctx Tres h₀.length l, BoundChecked na Φ dead ret exc ∧
-        CallFreshOk G w startNames ρ0 ctx h₀.length l na.node (passDerivOf na.c na.node na.st))
+        CallFreshBelow G w startNames ρ0 ctx h₀.length l na.node (passDerivOf na.c na.node na.st))
     (hcodes : CodesSound G codes) (hdir : DirectKeepsSummaries G images undefTy)
     (hsrch : SearchKeepsSummaries G images pool fuel suggestions index codes aliases pc.checker) :
     FootprintKept P G w startNames ρ0 ctx Φ h₀ dead ret exc := by
@@ -239,7 +240,7 @@ theorem footprintKept_of {G : NormalGraph ι} {images : InstanceImageCheck G} {p
       simp only [passOutFresh, Bool.or_eq_true] at hof
       rcases hof with hc | hc
       · exact copyFresh hS he na.width hc hst
-      · exact hcf hc ρ s hp k h' t' hst hv
+      · exact hcf hc ρ s hp k h' t' hk hst hv
     · cases hh : na.node.handler with
       | none =>
         intro hexc

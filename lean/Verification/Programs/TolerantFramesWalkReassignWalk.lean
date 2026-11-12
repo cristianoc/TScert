@@ -88,26 +88,27 @@ theorem passCheckerReassign_lexical {G : NormalGraph ι} {images : InstanceImage
     bodyCheck.symm ord⟩
 
 omit [Instantiates ι] in
-/-- **Every checked node of the pass delivers** (`StepEdgesSoundT`): where
+/-- **Every checked node of the pass delivers** (`StepEdgesSoundA`): where
 every visited node is checked with its searches as oracles (`NodeChecked`)
 and that node's step means at the graph what it states (`NodeMeaning`), the
 codes are sound, each visited node's step and exits meet the typed node
-obligations, with the exception family `excOf G`, the result type `Tres`
+obligations with the targets' written assertions, with the exception
+family `excOf G`, the result type `Tres`
 and no post on the heap at the graph's exits (`stepChecked_parts` in place
 of `checkedStep_parts` in `stepEdgesSound_of`). -/
 theorem stepEdgesSound_of_checked {G : NormalGraph ι} {images : InstanceImageCheck G} {codes : CodeEntry ι → Bool}
     {pc : PassChecker G images} {P : ControlFlow.Program} {w : Walk ι} {startNames : List Nat} {ρ0 : Env}
-    {ctx : Nat → List (Ty ι)} {Tres : Fam} {m : Nat}
+    {ctx : Nat → List (Ty ι)} {stated : Nat → Option HeapKnowledge.Knowledge} {Tres : Fam} {m : Nat}
     (hacc : ∀ l, w.visited l → ∃ r : NodeChecked G images codes pc P w startNames ctx l,
-      NodeMeaning G w startNames ρ0 ctx Tres m l r.node r.c r.entry r.st)
+      NodeMeaning G w startNames ρ0 ctx stated Tres m l r.node r.c r.entry r.st)
     (hcodes : CodesSound G codes) :
-    StepEdgesSoundT P G w startNames ρ0 ctx (excOf G) Tres (fun _ => True) (fun _ => True) m := by
+    StepEdgesSoundA P G w startNames ρ0 ctx stated (excOf G) Tres (fun _ => True) (fun _ => True) m := by
   intro l ρ s hp
   obtain ⟨na, hm⟩ := hacc l hp.1.1
-  have hS := hm.stated ρ s hp
+  have hS := hm.entered ρ s hp
   have he : EnvOk G na.c.context ρ s.n s.W := na.hctx ▸ hp.2
   obtain ⟨-, -, -, cn, ce, hparts⟩ := stepChecked_parts na.hstep hS na.wf na.below na.width he hcodes na.sums
-  obtain ⟨hj, ho⟩ := nodeObligations_of_parts (pre := edgePreT G w startNames ρ0 ctx) (Ξres := excOf G)
+  obtain ⟨hj, ho⟩ := nodeObligations_of_parts (pre := edgePreA G w startNames ρ0 ctx stated) (Ξres := excOf G)
     (Tres := Tres) (Qres := fun _ => True) (Rres := fun _ => True) (x := na.node.handler) hparts he
     (fun j U v hv => hm.shape (j + 1) U v hv)
     (fun s' v _ hv hF he' _ => normalTarget_of_exits (fun t p o q hmem => hm.exits t p o q hmem ρ) hm.ret

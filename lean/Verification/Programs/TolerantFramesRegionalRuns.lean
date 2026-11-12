@@ -287,32 +287,6 @@ theorem stableNow_admissible {regions : List ArgumentStoreRegion} {ρ0 : Env} {h
     ArgumentPathTracking.StableNow (ArgumentPathTracking.stableFields regions) ρ0 h₀ s'.W :=
   hs.transfer ha.1 ha.2
 
-/-- **`regionally` from the walk, at the assertion with the fields fixed**:
-`regionally_of_walk` with `RegionsKeptS`, the traversed fields fixed in the
-start's world (which `ArgumentPathTracking.checkEntryFields_sound` gives
-from the check `checkEntryFields G inputs regions`). -/
-theorem regionally_of_walk_stable {P : Program} {G : NormalGraph ι} {w : Walk ι} {startNames : List Nat}
-    {given : Nat → Bool} {ctx : Nat → List (Ty ι)}
-    {edgesIn : Nat → List (List (Ty ι) × List (PromiseCalls.Implication ι) × PointClaims.Mapping)}
-    {fresh : Nat → Nat} {Ξres Tres : Fam} {ρ0 : Env} [Hashable ι]
-    {E : List Tm} {K : List (Continuation × Option Target)}
-    (hP : GraphCode.program E K = P) {start : Nat} {L : List Tm} {d : Tm} {n : Nat} {W : WorldT n} {h : Heap}
-    {X : Nat → Env → Heap → Prop} {Φ : Footprints.Closed} {regions : List ArgumentStoreRegion}
-    {exc : Bool} (hw : WalkSound P G w startNames given ctx edgesIn fresh Ξres Tres ρ0 h.length)
-    (hkeep : RegionsKeptS P G w startNames ρ0 ctx X Φ regions h exc) (ha : WorldAdm W) (ho : HeapOk n W h)
-    (hpre : ∀ hp ha ho, passPreT G w startNames ρ0 ctx start (envOf L d) h.length ⟨n, W, h, hp, ha, ho⟩)
-    (hst : 0 < n → ArgumentPathTracking.StableNow (ArgumentPathTracking.stableFields regions) ρ0 h W)
-    (hX : X start (envOf L d) h) :
-    SafePostExc Ξres Tres (RegionQ Φ regions ρ0 h) (RegionR Φ regions ρ0 h exc) n W h (.goto E K start L d) := by
-  subst hP
-  have hS : ∀ s s' : IndexedHeap, Admissible s s' →
-      ArgumentPathTracking.StableNow (ArgumentPathTracking.stableFields regions) ρ0 h s.W →
-      ArgumentPathTracking.StableNow (ArgumentPathTracking.stableFields regions) ρ0 h s'.W :=
-    fun _ _ ha hs => stableNow_admissible ha hs
-  exact keeps_postExc (nodesChecked_stable hS (nodesChecked_of_walk hw))
-    (fun l ρ s s' ha he ⟨hp, hs⟩ => ⟨passPreT_adminClosed l ρ s s' ha he hp, hS s s' ha hs⟩) hkeep
-    (fun _ _ _ h => h) n W h _ _ .goto ha ho (fun hp ha' ho' => ⟨hpre hp ha' ho', hst hp⟩) hX
-
 end Regional
 
 end Verification.TolerantFrames

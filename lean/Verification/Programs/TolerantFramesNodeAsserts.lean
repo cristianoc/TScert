@@ -5,10 +5,10 @@ import Verification.Programs.TolerantFramesNodeEdges
 
 /-! # Tolerant frames: the written assertions in the node assertion
 
-`AssertionsHeld` reads each written assertion from the node's entry state
-(`passPreT`), which does not entail every written fact (Leg 14b: a written
-assertion on its edges and in the entry state). The node assertion here
-states the written assertion itself (`passPreA`: `passPreT` and
+The node's entry state (`passPreT`) does not entail every written fact: a
+fact with a slot no name holds is not added, `Store.addBound` skips a bound
+for one of the same normal form, a separation fact carries no level bound.
+The node assertion here states the written assertion itself (`passPreA`: `passPreT` and
 `AssertsAt`, over the table `run` reads, `stated`), and every edge into a
 label establishes it: on an edge into a node other than a loop head the
 edge's assertion check (`assertsAt_of_edge`, by `assertion_query_sound`),
@@ -89,7 +89,7 @@ theorem asserted_of_walkA {P : ControlFlow.Program} {G : NormalGraph ι} {w : Wa
 
 /-- **The stated table holds every assertion** where `run` reads the
 request's assertions by label (`byLabel`) and no label is stated twice:
-then `AssertsAt` at every label gives `AssertionsHeld`'s statement. -/
+then `AssertsAt` at every label gives every assertion of the request. -/
 theorem holds_of_assertsAt {assertions : List (Nat × HeapKnowledge.Knowledge)}
     {stated : Nat → Option HeapKnowledge.Knowledge} (hst : ∀ l k, (l, k) ∈ assertions → stated l = some k)
     {l : Nat} {k : HeapKnowledge.Knowledge} (hl : (l, k) ∈ assertions) {ρ : Env} {s : IndexedHeap}

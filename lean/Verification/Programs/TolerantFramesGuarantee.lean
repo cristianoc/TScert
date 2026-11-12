@@ -14,13 +14,10 @@ every state reached at its label. `GraphGuarantee` below is that record field
 by field, the reachability relation being `Transitions`, which has the same
 constructors as the unit lane's `ReachesIn`.
 
-Each field follows from the walk predicates of the safety proof
-(`WalkSound`: `Traversed`, `StepEdgesSoundT`, `HeadsEntered`, `MergesSound`)
-and one per-node hypothesis in the pass's terms, an instance of
-`NodesKeep`: the footprint check's (`FootprintKept`), the return check's
-(`ReturnsEnsured`), the regional check's (`RegionsKept`) and the stated
-assertions' (`AssertionsHeld`). `run_guarantee` assembles them:
-`PassWalkSound` at every admitted assignment ⟹ `GraphGuarantee`. -/
+The per-node hypotheses of its fields are instances of `NodesKeep` in the
+pass's terms: the footprint check's (`FootprintKept`), the return check's
+(`ReturnsEnsured`) and the regional check's (`RegionsKept`); `run_guarantee`
+(`TolerantFramesRunSound`) assembles the fields. -/
 namespace Verification.TolerantFrames
 open Verification Footprints HeapObservations ControlFlow PointClaims ProgramTyping PositiveGraphs PositiveRules
 
@@ -125,96 +122,6 @@ def RegionsKept (P : Program) (G : NormalGraph ι) (w : Walk ι) (startNames : L
     (h₀ : Heap) (exc : Bool) : Prop :=
   NodesKeep P (passPreT G w startNames ρ0 ctx) X (RegionQ Φ regions ρ0 h₀) (RegionR Φ regions ρ0 h₀ exc) h₀.length
 
-/-- **(Named hypothesis) Each stated assertion holds where the pass's
-assertion at its label does.** -/
-def AssertionsHeld (G : NormalGraph ι) (w : Walk ι) (startNames : List Nat) (ρ0 : Env)
-    (ctx : Nat → List (Ty ι)) (assertions : List (Nat × HeapKnowledge.Knowledge)) (m : Nat) : Prop :=
-  ∀ l k, (l, k) ∈ assertions → ∀ ρ (s : IndexedHeap), passPreT G w startNames ρ0 ctx l ρ m s →
-    HeapKnowledge.Holds k ρ s.h
-
-/-- **The walk predicates of the safety proof**, at entry values `ρ0` and
-mark `m`. -/
-structure WalkSound (P : Program) (G : NormalGraph ι) (w : Walk ι) (startNames : List Nat)
-    (given : Nat → Bool) (ctx : Nat → List (Ty ι))
-    (edgesIn : Nat → List (List (Ty ι) × List (PromiseCalls.Implication ι) × PointClaims.Mapping))
-    (fresh : Nat → Nat) (Ξres Tres : Fam) (ρ0 : Env) (m : Nat) : Prop where
-  traversed : Traversed G w startNames given ctx edgesIn fresh
-  steps : StepEdgesSoundT P G w startNames ρ0 ctx Ξres Tres (fun _ => True) (fun _ => True) m
-  heads : HeadsEntered G w startNames ρ0 given m
-  merges : MergesSound G w given ctx edgesIn
-
-/-! ## Each field from the walk -/
-
-section Fields
-variable {P : Program} {G : NormalGraph ι} {w : Walk ι} {startNames : List Nat} {given : Nat → Bool}
-  {ctx : Nat → List (Ty ι)}
-  {edgesIn : Nat → List (List (Ty ι) × List (PromiseCalls.Implication ι) × PointClaims.Mapping)}
-  {fresh : Nat → Nat} {Ξres Tres : Fam} {ρ0 : Env} {m : Nat}
-
-/-- **The walk checks every node**: the pass's assertions meet the graph's
-node obligations. -/
-theorem nodesChecked_of_walk (hw : WalkSound P G w startNames given ctx edgesIn fresh Ξres Tres ρ0 m) :
-    NodesChecked P (passPreT G w startNames ρ0 ctx) Ξres Tres (fun _ => True) (fun _ => True) m := by
-  intro l ρ s hp
-  obtain ⟨node, hn, Ξ, T, cn, ce, Qn, Qe, hsafe, ho⟩ := hw.steps l ρ s hp
-  exact ⟨node, hn, Ξ, T, cn, ce, Qn, Qe, hsafe,
-    nodeObligations_mono (fun t ρ s h => ⟨entries_of_traversed hw.traversed hw.heads hw.merges t ρ s h.1, h.2⟩) ho⟩
-
-/-- **`bounded` from the walk**: the term running the graph from the start
-at `envOf L d` is safe, its return within `Φ` from the entry heap `h` (its
-value fresh where `fr`), its escaping throw within `Φ` where `ex`. -/
-theorem bounded_of_walk {E : List Tm} {K : List (Continuation × Option Target)} (hP : GraphCode.program E K = P)
-    {start : Nat} {L : List Tm} {d : Tm} {n : Nat} {W : WorldT n} {h : Heap} {Φ : Footprints.Closed}
-    {dead : List Bool} {fr ex : Bool}
-    (hw : WalkSound P G w startNames given ctx edgesIn fresh Ξres Tres ρ0 h.length)
-    (hkeep : FootprintKept P G w startNames ρ0 ctx Φ h dead fr ex) (ha : WorldAdm W) (ho : HeapOk n W h)
-    (hpre : ∀ hp ha ho, passPreT G w startNames ρ0 ctx start (envOf L d) h.length ⟨n, W, h, hp, ha, ho⟩) :
-    SafePostExc Ξres Tres (BoundQ Φ h fr) (BoundR Φ h ex) n W h (.goto E K start L d) := by
-  subst hP
-  exact keeps_postExc (nodesChecked_of_walk hw) passPreT_adminClosed hkeep (fun _ _ _ h => h) n W h _ _ .goto
-    ha ho hpre (.inr (Footprints.Closed.Holds.refl Φ h))
-
-/-- **`ensured` from the walk**: the term running the graph from the start
-at `envOf L d` is safe and every return meets `ensures` at the value and
-the entry values. -/
-theorem ensured_of_walk {E : List Tm} {K : List (Continuation × Option Target)} (hP : GraphCode.program E K = P)
-    {start : Nat} {L : List Tm} {d : Tm} {n : Nat} {W : WorldT n} {h : Heap} {ens : List HeapKnowledge.IndexFact}
-    (hw : WalkSound P G w startNames given ctx edgesIn fresh Ξres Tres ρ0 m)
-    (hkeep : ReturnsEnsured P G w startNames ρ0 ctx ens m) (ha : WorldAdm W) (ho : HeapOk n W h)
-    (hpre : ∀ hp ha ho, passPreT G w startNames ρ0 ctx start (envOf L d) m ⟨n, W, h, hp, ha, ho⟩) :
-    SafePost Ξres Tres (EnsuresQ ens ρ0) n W h (.goto E K start L d) := by
-  subst hP
-  exact (keeps_postExc (nodesChecked_of_walk hw) passPreT_adminClosed hkeep (fun _ _ _ h => h) n W h _ _ .goto
-    ha ho hpre trivial).post
-
-/-- **`regionally` from the walk**: where the regional facts `X` hold at the
-start's entry, the term running the graph is safe and within the regional
-bound from the entry heap `h`, on a throw too where `exc`. -/
-theorem regionally_of_walk {E : List Tm} {K : List (Continuation × Option Target)}
-    (hP : GraphCode.program E K = P) {start : Nat} {L : List Tm} {d : Tm} {n : Nat} {W : WorldT n} {h : Heap}
-    {X : Nat → Env → Heap → Prop} {Φ : Footprints.Closed} {regions : List Footprints.ArgumentStoreRegion}
-    {exc : Bool} (hw : WalkSound P G w startNames given ctx edgesIn fresh Ξres Tres ρ0 h.length)
-    (hkeep : RegionsKept P G w startNames ρ0 ctx X Φ regions h exc) (ha : WorldAdm W) (ho : HeapOk n W h)
-    (hpre : ∀ hp ha ho, passPreT G w startNames ρ0 ctx start (envOf L d) h.length ⟨n, W, h, hp, ha, ho⟩)
-    (hX : X start (envOf L d) h) :
-    SafePostExc Ξres Tres (RegionQ Φ regions ρ0 h) (RegionR Φ regions ρ0 h exc) n W h (.goto E K start L d) := by
-  subst hP
-  exact keeps_postExc (nodesChecked_of_walk hw) passPreT_adminClosed hkeep (fun _ _ _ h => h) n W h _ _ .goto
-    ha ho hpre hX
-
-/-- **`asserted` from the walk**: a stated assertion holds at every node
-entry at its label a run from the start reaches with budget left. -/
-theorem asserted_of_walk {start : Nat} {ρ : Env} {s : IndexedHeap}
-    {assertions : List (Nat × HeapKnowledge.Knowledge)}
-    (hw : WalkSound P G w startNames given ctx edgesIn fresh Ξres Tres ρ0 m)
-    (hheld : AssertionsHeld G w startNames ρ0 ctx assertions m) (hpre : passPreT G w startNames ρ0 ctx start ρ m s)
-    {l : Nat} {k : HeapKnowledge.Knowledge} (hl : (l, k) ∈ assertions) {j : Nat} {h' : Heap} {ρ' : Env}
-    (hrun : Transitions P j s.h (.at start ρ) h' (.at l ρ')) (hj : j < s.n) : HeapKnowledge.Holds k ρ' h' := by
-  obtain ⟨s', he, hp'⟩ := reached_pre (nodesChecked_of_walk hw) passPreT_adminClosed hpre hrun hj
-  exact he ▸ hheld l k hl ρ' s' hp'
-
-end Fields
-
 omit [Hashable ι] in
 /-- **The start entered, typed**: `start_passPre` with the start's context
 the request's inputs, whose types the entry gives. -/
@@ -237,81 +144,6 @@ theorem start_passPreT {G : NormalGraph ι} {w : Walk ι} {inputs : List (Ty ι)
     (hs : HeapSeparation.Holds entrySeparation ρ) (hi : HeapKnowledge.IndexHolds entryIndices ρ s.h) :
     passPreT G w (List.range inputs.length) ρ ctx start ρ m s :=
   ⟨start_passPre hacc hv hentry himp he hs hi, hctx ▸ he⟩
-
-/-! ## The guarantee of an accepted run -/
-
-/-- **What the pass's walk at one assignment provides**: the walk
-predicates at every entry value and mark, the start entered at every entry
-meeting the request's inputs (`start_passPre`), and the per-node hypotheses
-of each stated option. -/
-structure PassWalkSound (G : NormalGraph ι) (P : Program) (start : Nat) (goal : Goal ι) (inputs : List (Ty ι))
-    (sep : HeapSeparation.Separation) (idx : List HeapKnowledge.IndexAtom)
-    (assertions : List (Nat × HeapKnowledge.Knowledge)) (bound : Option (Footprints.Closed × Bool × Bool))
-    (ensures : List HeapKnowledge.IndexFact)
-    (regional : Option (Footprints.Closed × List Footprints.ArgumentStoreRegion × Bool))
-    (w : Walk ι) (given : Nat → Bool) (ctx : Nat → List (Ty ι))
-    (edgesIn : Nat → List (List (Ty ι) × List (PromiseCalls.Implication ι) × PointClaims.Mapping))
-    (fresh : Nat → Nat) : Prop where
-  walk : ∀ ρ0 m, WalkSound P G w (List.range inputs.length) given ctx edgesIn fresh (excOf G)
-    (GoalHolds G goal (goal.argument ρ0)) ρ0 m
-  entered : ∀ ρ m (s : IndexedHeap), EnvOk G inputs ρ s.n s.W → HeapSeparation.Holds sep ρ →
-    HeapKnowledge.IndexHolds idx ρ s.h → passPreT G w (List.range inputs.length) ρ ctx start ρ m s
-  footprint : ∀ Φ fr ex, bound = some (Φ, fr, ex) → ∃ dead, ∀ ρ0 h₀,
-    FootprintKept P G w (List.range inputs.length) ρ0 ctx Φ h₀ dead fr ex
-  returns : ensures ≠ [] → ∀ ρ0 m, ReturnsEnsured P G w (List.range inputs.length) ρ0 ctx ensures m
-  regions : ∀ Φ regions exc, regional = some (Φ, regions, exc) →
-    ∃ X : Env → Heap → Nat → Env → Heap → Prop, ∀ ρ0 h₀, X ρ0 h₀ start ρ0 h₀ ∧
-      RegionsKept P G w (List.range inputs.length) ρ0 ctx (X ρ0 h₀) Φ regions h₀ exc
-  asserted : ∀ ρ0 m, AssertionsHeld G w (List.range inputs.length) ρ0 ctx assertions m
-
-/-- **An accepted run's guarantee from its walk**: where the pass's walk
-provides `PassWalkSound` at every admitted assignment, the run guarantees
-every field of `GraphGuarantee`. -/
-theorem run_guarantee {G : NormalGraph ι} {admits : MixedAssignment ι → Prop} {P : Program} {start : Nat}
-    {goal : Goal ι} {inputs : List (Ty ι)} {sep : HeapSeparation.Separation} {idx : List HeapKnowledge.IndexAtom}
-    {assertions : List (Nat × HeapKnowledge.Knowledge)} {bound : Option (Footprints.Closed × Bool × Bool)}
-    {ensures : List HeapKnowledge.IndexFact}
-    {regional : Option (Footprints.Closed × List Footprints.ArgumentStoreRegion × Bool)}
-    (hall : ∀ η, admits η → ∃ (w : Walk ι) (given : Nat → Bool) (ctx : Nat → List (Ty ι))
-      (edgesIn : Nat → List (List (Ty ι) × List (PromiseCalls.Implication ι) × PointClaims.Mapping))
-      (fresh : Nat → Nat),
-      PassWalkSound (reassign G η) P start goal inputs sep idx assertions bound ensures regional w given ctx
-        edgesIn fresh) :
-    GraphGuarantee G admits P start goal inputs sep idx assertions bound ensures regional where
-  safe η hη n W h ρ he := by
-    obtain ⟨w, given, ctx, edgesIn, fresh, hp⟩ := hall η hη
-    obtain ⟨hv, hs, hi, ha, ho⟩ := he
-    cases n with
-    | zero => trivial
-    | succ n =>
-      let s : IndexedHeap := ⟨n + 1, W, h, Nat.zero_lt_succ _, ha, ho⟩
-      have hw := hp.walk ρ 0
-      exact run_sound_of_walk_typed hw.traversed hw.steps hw.heads hw.merges (hp.entered ρ 0 s hv hs hi)
-  bounded Φ fr ex hb E K hP η hη n W h L d he _ _ := by
-    obtain ⟨w, given, ctx, edgesIn, fresh, hp⟩ := hall η hη
-    obtain ⟨hv, hs, hi, ha, ho⟩ := he
-    obtain ⟨dead, hkeep⟩ := hp.footprint Φ fr ex hb
-    exact bounded_of_walk hP (hp.walk (envOf L d) h.length) (hkeep (envOf L d) h) ha ho
-      fun hq ha' ho' => hp.entered (envOf L d) h.length ⟨n, W, h, hq, ha', ho'⟩ hv hs hi
-  ensured hne E K hP η hη n W h L d he := by
-    obtain ⟨w, given, ctx, edgesIn, fresh, hp⟩ := hall η hη
-    obtain ⟨hv, hs, hi, ha, ho⟩ := he
-    exact ensured_of_walk hP (hp.walk (envOf L d) 0) (hp.returns hne (envOf L d) 0) ha ho
-      fun hq ha' ho' => hp.entered (envOf L d) 0 ⟨n, W, h, hq, ha', ho'⟩ hv hs hi
-  regionally Φ regions exc hr E K hP η hη n W h L d he := by
-    obtain ⟨w, given, ctx, edgesIn, fresh, hp⟩ := hall η hη
-    obtain ⟨hv, hs, hi, ha, ho⟩ := he
-    obtain ⟨X, hX⟩ := hp.regions Φ regions exc hr
-    exact regionally_of_walk hP (hp.walk (envOf L d) h.length) (hX (envOf L d) h).2 ha ho
-      (fun hq ha' ho' => hp.entered (envOf L d) h.length ⟨n, W, h, hq, ha', ho'⟩ hv hs hi) (hX (envOf L d) h).1
-  asserted η hη n W h ρ he l k hl j h' ρ' hj hrun := by
-    obtain ⟨w, given, ctx, edgesIn, fresh, hp⟩ := hall η hη
-    obtain ⟨hv, hs, hi, ha, ho⟩ := he
-    cases n with
-    | zero => omega
-    | succ n =>
-      let s : IndexedHeap := ⟨n + 1, W, h, Nat.zero_lt_succ _, ha, ho⟩
-      exact asserted_of_walk (hp.walk ρ 0) (hp.asserted ρ 0) (hp.entered ρ 0 s hv hs hi) hl hrun hj
 
 end Guarantee
 

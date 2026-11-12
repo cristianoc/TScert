@@ -43,6 +43,7 @@ import Verification.Programs.TolerantFramesWalkReassignSelect
 import Verification.Programs.TolerantFramesWalkReassignStep
 import Verification.Programs.TolerantFramesWalkReassignWalk
 import Verification.Programs.TolerantFramesRunSound
+import Verification.Programs.TolerantFramesGuaranteeWalk
 import Verification.Programs.TolerantFramesMergeBelow
 import Verification.Programs.TolerantFramesMergeGuarded
 import Verification.Programs.TolerantFramesMergeEntailed
@@ -535,10 +536,6 @@ run_cmd do
   check ``Verification.TolerantFrames.keeps_postExc
   check ``Verification.TolerantFrames.reached_pre
   check ``Verification.TolerantFrames.nodesChecked_of_walk
-  check ``Verification.TolerantFrames.bounded_of_walk
-  check ``Verification.TolerantFrames.ensured_of_walk
-  check ``Verification.TolerantFrames.regionally_of_walk
-  check ``Verification.TolerantFrames.asserted_of_walk
   check ``Verification.TolerantFrames.run_guarantee
   check ``Verification.TolerantFrames.deltaAdd_wf
   check ``Verification.TolerantFrames.deltaRestate_wf
@@ -618,7 +615,6 @@ run_cmd do
   check ``Verification.TolerantFrames.returnCheck_reassign
   check ``Verification.TolerantFrames.edgeStoreOf_reassign
   check ``Verification.TolerantFrames.entryRefusal_reassign
-  check ``Verification.TolerantFrames.NodeAccepted.meaning
   -- Leg 14a: the step at a reassignment (TolerantFramesWalkReassignCall, TolerantFramesWalkReassignStep)
   check ``Verification.TolerantFrames.forIn_map_state
   check ``Verification.TolerantFrames.directCall_reassign
@@ -687,6 +683,10 @@ run_cmd do
   check ``Verification.TolerantFrames.Traversed.reassign
   check ``Verification.TolerantFrames.scope_reassign
   check ``Verification.TolerantFrames.StartEntered.entered
+  check ``Verification.TolerantFrames.passPreU_adminClosed
+  check ``Verification.TolerantFrames.nodesKeep_anti
+  check ``Verification.TolerantFrames.PassWalkSound.start
+  check ``Verification.TolerantFrames.checkEntryFields_reassign
   check ``Verification.TolerantFrames.run_sound
   check ``Verification.TolerantFrames.contKeeps_regionX
   check ``Verification.TolerantFrames.regionsKept_of
@@ -695,7 +695,6 @@ run_cmd do
   check ``Verification.TolerantFrames.regionX_start
   check ``Verification.TolerantFrames.nodesChecked_stable
   check ``Verification.TolerantFrames.stableNow_admissible
-  check ``Verification.TolerantFrames.regionally_of_walk_stable
   check ``Verification.TolerantFrames.passPreA_adminClosed
   check ``Verification.TolerantFrames.nodesChecked_of_walkA
   check ``Verification.TolerantFrames.asserted_of_walkA

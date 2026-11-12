@@ -5,9 +5,9 @@ import Verification.Programs.TolerantFramesNodeBound
 `run` reads a fresh result off the step's derivation (`outFresh`'s call
 disjunct, `passCallFresh`: the selected effect states a fresh result, its
 operands selected, claimed at the node's term) without checking that
-derivation's tree there; `CallFreshOk` (Leg 14b) is the named hypothesis
-standing for it. Pass change D4 puts that disjunct behind the derivation's
-check (`passDerivChecked`, as `footprintCheck`'s `derivChecked`):
+derivation's tree there, `CallFreshBelow` (`TolerantFramesNodeBound`)
+being the premise `footprintKept_of` reads. Pass change D4 puts that
+disjunct behind the derivation's check (`passDerivChecked`, as `footprintCheck`'s `derivChecked`):
 `passOutFreshChecked` mirrors it. `callFresh_of_checked` proves the
 checked disjunct gives every run of the node's term to a value within the
 state's budget a store allocated at or past the mark (`CallFreshBelow`),
@@ -41,15 +41,6 @@ theorem passOutFresh_of_checked {G : NormalGraph ι} {images : InstanceImageChec
   simp only [passOutFreshChecked, Bool.or_eq_true, Bool.and_eq_true] at h
   simp only [passOutFresh, Bool.or_eq_true]
   exact h.imp id (·.1)
-
-/-- **A call's fresh result within the budget**: from a state where the
-node assertion holds, every run of the node's term with fewer steps than
-the state's budget to a value returns a store allocated at or past the
-mark. -/
-def CallFreshBelow (G : NormalGraph ι) (w : Walk ι) (startNames : List Nat) (ρ0 : Env)
-    (ctx : Nat → List (Ty ι)) (m l : Nat) (node : Node) (deriv : ProgramCertificates.Evidence ι) : Prop :=
-  passCallFresh node deriv = true → ∀ ρ (s : IndexedHeap), passPreT G w startNames ρ0 ctx l ρ m s →
-    ∀ k h' v, k < s.n → Steps k s.h (instantiate 0 ρ node.expression) h' v → isVal v = true → FreshAt m v
 
 omit [Hashable ι] [Instantiates ι] in
 /-- **The checked call disjunct gives a fresh result** (what D4 makes
