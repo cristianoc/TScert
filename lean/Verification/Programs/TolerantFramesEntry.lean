@@ -32,6 +32,18 @@ def startGiven (written : Option HeapKnowledge.Knowledge) (entryIndices : List H
 
 /-! ## What an accepted entry check states -/
 
+/-- An accepted entry preserves the start's written separation. -/
+theorem entryRefusal_startKept {G : NormalGraph ι} {inputs : List (Ty ι)}
+    {claims : List (CertificateProducer.PointClaim ι)} {start : Nat}
+    {goal : ControlFlow.Goal ι} {written : Option HeapKnowledge.Knowledge} {supplied}
+    {givenImplies : List (PromiseCalls.Implication ι)} {givenArgs givenInputs entryIndices entrySeparation}
+    (h : SinglePass.entryRefusal G inputs claims start goal written supplied givenImplies givenArgs givenInputs
+      entryIndices entrySeparation = none) :
+    SinglePass.startSeparationKept written entrySeparation = true := by
+  unfold SinglePass.entryRefusal at h
+  repeat' (first | split at h | extract_lets at h)
+  all_goals simp_all
+
 /-- **An accepted entry check** gives the start's claim at the inputs, no
 given implication, the promised input's slot at each slot its given state
 names after it, each input's entry value at its own slot, and the entry
@@ -65,6 +77,8 @@ theorem entryRefusal_ok {G : NormalGraph ι} {inputs : List (Ty ι)} {claims : L
     split at h
     · cases h
     rename_i h5
+    split at h
+    · cases h
     dsimp only at h
     split at h
     · cases h

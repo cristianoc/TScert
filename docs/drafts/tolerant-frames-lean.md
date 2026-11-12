@@ -1370,18 +1370,15 @@ of `TolerantFramesRunSound.lean`, quantified over every call the premises of
 
 ## Open premises
 
-The graph theorem `run_sound_single_pass`
-(`TolerantFramesSinglePassSound.lean`) has one hypothesis, composed into
-`ExitsYield` by `exitsYield_of_kept`. It quantifies over `G`, `I`, a call
-`c`, `after`, `admits`, `RunPremises G I c after admits`, and a walk `r`
-with `WalkChecked c r`.
+The graph theorem `run_sound_single_pass : Target.RunSound ι`
+(`TolerantFramesSinglePassSound.lean`) has no hypothesis beyond its label
+type class. There are no open premises of this theorem.
 
-| Premise | Statement | Consumed by |
-| --- | --- | --- |
-| `startWrittenSound` | `ExitChecks.StartWrittenImpliesStated r`: for every environment and heap, holding `startWritten (r.stated c.start) c.entryIndices c.entrySeparation` implies holding `(r.stated c.start).getD {}`. | `headEntries_of_checked` |
-
-`run_sound_single_pass_of_exits` proves `ExitsYield → Target.RunSound`;
-setup, exit widths, subtype answers, summary prefixes, and regional recording
+`WalkChecked.startWrittenImpliesStated` supplies the start projection to
+`exitsYield_of_kept`: accepted setup supplies `SetupOk.startKept` and
+`EnvFacts.startKept`, and `startWrittenImpliesStated` projects the written
+assertion component by component using `union_keeps_left`.
+Setup, exit widths, subtype answers, summary prefixes, and regional recording
 and typing are supplied by the proofs listed below. The yield equalities and
 their final-state interpretation are proved in [Exit checks from the trace](#exit-checks-from-the-trace).
 
@@ -1551,17 +1548,12 @@ Proved prerequisites:
   connects these local results to visited nodes at admitted reassignments.
 
 
-The start-projection leaf is not established by the pass:
 `startWritten_projection_counterexample` in `TolerantFramesExitStart.lean`
-proves that an accepted `entryKnows` check and a holding `startWritten`
-contract can coexist with a false written assertion. Its separation has
-depth zero and one fact at slot zero with no partners; `union` normalizes
-away that fact and its slot-bound obligation. This counterexample concerns
-the projection, not `RunSound`: the caller's `EntryHolds` is impossible in
-this example. Setup refuses edges into the start only when `regional.isSome`;
-ordinary runs permit them (`SinglePass.setup`). Consequently,
-`exitsYield_of_kept` has the explicit `StartWrittenImpliesStated` leaf.
-
+states a boundary of projection for arbitrary proposals: a depth-zero fact
+at slot zero with no partners has a slot-bound obligation that normalization
+removes. The entry check `startSeparationKept` excludes this case. The checked
+projection is proved by `startWrittenImpliesStated`, as described in
+[Open premises](#open-premises).
 
 [`TolerantFramesExitHeadExtraction.lean`](../../lean/Verification/Programs/TolerantFramesExitHeadExtraction.lean)
 proves `exitChecks_head`, `exitChecks_handler_edges`, and
@@ -1584,13 +1576,13 @@ and `ctx_eq`, established at both walk constructors. `NodeExitTrace` and
 `Site.facts` retain setup provenance and the input-name bound at the visit's
 counter. `headEntryContract_nonstart` proves the final entry contract for a
 targeted head other than the start; `headEntries_of_checked` covers the start
-under the start-projection leaf above. The target's final visit follows from its recorded
+using the start projection proved above. The target's final visit follows from its recorded
 incoming edge and `TraversedA.visited`. Head extraction quantifies over exit
 targets: a head with no incoming edge has no incoming pair in `ofPass`.
 `exitStep_handler_arrays` and `Site.handler_record` identify the handler's
 transferred pair, merge record, indexed computation and final-walk extension.
 The handler's structural extraction is proved by `handlerRecords_of_checked`.
-The start-projection hypothesis is stated in "Open premises".
+The checked start projection is proved as stated in "Open premises".
 `ExitChecks.exitChecks_nonHead` in
 `TolerantFramesExitNonHeadExtraction.lean` proves `NonHead` from a checked
 walk and its execution site.
@@ -1703,7 +1695,8 @@ The local Props are `ExitChecks.Here`, `Widths`, `NonHead`, `Head`,
 `Handler`, and `Fresh`. `ExitChecks.assemble` combines these six Props
 into `ExitChecks.Extracted` at the same site and assignment.
 `exitsYield_of_kept` supplies `ExitChecks.Extraction` under the
-start-projection hypothesis and applies `exitsYield_of_checks`.
+start-projection hypothesis and applies `exitsYield_of_checks`;
+`WalkChecked.startWrittenImpliesStated` discharges that hypothesis.
 The field proofs and composition theorems are checked by `AxiomCheck`.
 
 ## Leg 17a: the per-node hypotheses from the pass's checks
