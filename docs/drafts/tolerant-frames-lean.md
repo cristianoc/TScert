@@ -1489,6 +1489,12 @@ yields `ys` read at the implications `xs`. Proved:
 `NodeYielded.ret` is `goalHolds_of_return`'s premises with the yields at
 the value (its yields `passReturnYields entry ys`).
 
+**A copy's regional evidence** (module `TolerantFramesRegionalRuns.lean`).
+Proved: (`regionalTyped_copy`) a term that is a slot whose context type is
+the claim's, with no derivation and no step evidence, gives the regional
+evidence's context the node's and `RegionalTyped`: the term's value is the
+slot's, of the claim's type, with no yields and no output facts.
+
 Premises this leg discharges / leaves:
 
 - discharges `FootprintsKept` (into `BoundsChecked`, a record of the
@@ -1511,3 +1517,8 @@ Premises this leg discharges / leaves:
   over the state's implications, a proof to write), the head edge's
   version of `exitDeliversY_of_edge`, and the walk's predicates over
   `StepEdgesSoundJ` (the walk side's `WalkSound`).
+- discharges `RegionalTyped` at a copy (`regionalTyped_copy`, where the
+  copy's `stepDeriv` and `stepEffect` are none, which `StepChecked`'s copy
+  case does not yet state); leaves `RegionalTyped` at a step with step
+  evidence alone (the rule's judgment at every state where the evidence's
+  facts hold) and with a derivation (D11, `regionalTyped_of_tree`).

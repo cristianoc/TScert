@@ -216,6 +216,29 @@ theorem regionalTyped_of_tree {G : NormalGraph ι} {images : InstanceImageCheck 
   exact of_value_property (fun _ _ _ v _ => outFacts_holds he (HeapKnowledge.empty _ _))
     hs'
 
+/-- **A copy's regional evidence is typed** (`RegionalTyped`), its step
+having no derivation and no step evidence (`stepDeriv`, `stepEffect` none): where the term is a slot `i` whose context type is the
+claim's (`copiedOf`), at every environment the context types the term's
+value is the slot's, of the claim's type, with no yields and no output
+facts. -/
+theorem regionalTyped_copy {G : NormalGraph ι} {c : PointClaim ι} {node : Node}
+    {kHere : HeapKnowledge.Knowledge} {i : Nat} (hi : node.expression = .var i)
+    (hty : c.context[i]? = some c.type) :
+    ControlFlow.entry (passRegionalEvidence c node none none kHere) = c.context ∧
+      RegionalTyped G (passRegionalEvidence c node none none kHere) node := by
+  have hent : ControlFlow.entry (passRegionalEvidence c node none none kHere) = c.context := by
+    simp [ControlFlow.entry, passRegionalEvidence, NodeEvidence.expression, NodeEvidence.header, claim]
+  refine ⟨hent, ?_⟩
+  intro n W h ρ he _ _ _ _
+  rw [hent] at he
+  have hval : instantiate 0 ρ node.expression = ρ i := by rw [hi]; simp [instantiate]
+  rw [hval]
+  have hm := he.2 i c.type hty
+  exact HeapObservations.value (meaning_value hm).1
+    ⟨by simpa [result, passRegionalEvidence, NodeEvidence.expression, NodeEvidence.header, claim] using hm,
+      fun y hy => by simp [passRegionalEvidence] at hy⟩
+    (outFacts_holds (hent ▸ he) (HeapKnowledge.empty _ _))
+
 omit [DecidableEq ι] in
 /-- **The regional evidence's entry holds where the node assertion does**:
 its context the node's (`hent`, which `regionalTyped_of_tree` gives), no

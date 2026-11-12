@@ -734,6 +734,7 @@ run_cmd do
   check ``Verification.TolerantFrames.exitDeliversY_of_edge
   check ``Verification.TolerantFrames.nodeObligations_of_partsY
   check ``Verification.TolerantFrames.stepEdgesSoundJ_of_yields
+  check ``Verification.TolerantFrames.regionalTyped_copy
   let env ← getEnv
   let project (decl : Name) : Bool := match env.getModuleIdxFor? decl with
     | some i => (`Verification).isPrefixOf env.header.moduleNames[i.toNat]!
