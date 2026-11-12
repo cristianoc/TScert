@@ -688,17 +688,18 @@ def checkedEdge (G : NormalGraph ι) (images : InstanceImageCheck G) (claimed : 
 /-- **A step's yields checked** as the certificate checker checks a node's
 (`ControlFlow.checkYields`), at the node's context `Γ`, its claim's type
 `A`, its implications at slots `xs`, its step's input facts `k` and output
-`out` and its derivation `e`: of a call at a promise signature, the yields
+`out` and its derivation `e`: of a call at a promise signature whose
+derivation `promiseChecked` accepts (`promiseDerivChecked`), the yields
 where the promise states them (`PromiseCalls.promiseYields`) at an output
 the promise keeps; otherwise each yield `PromiseCalls.yieldFollows` accepts
 of the node's term `t`. -/
 def checkedYields (G : NormalGraph ι) (images : InstanceImageCheck G) (Γ : List (Ty ι)) (A : Ty ι)
     (xs : List (PromiseCalls.Implication ι)) (k out : Knowledge) (e : ProgramCertificates.Evidence ι) (t : Tm)
-    (ys : List (PromiseCalls.Yield ι)) : List (PromiseCalls.Yield ι) :=
+    (promiseChecked : Unit → Bool) (ys : List (PromiseCalls.Yield ι)) : List (PromiseCalls.Yield ι) :=
   if ys.isEmpty then [] else
   match PromiseCalls.promiseOf G e with
   | some (effect, a, T) =>
-    if PromiseCalls.promiseYields G A effect a T ys &&
+    if PromiseCalls.promiseYields G A effect a T ys && promiseChecked () &&
         [HeapExpressionRules.ordinaryOutput k, PromiseCalls.promiseOutput effect k].any fun o =>
           out == o || out == HeapExpressionRules.withStable G Γ k o then ys
     else []
@@ -985,6 +986,13 @@ def derivChecked (G : NormalGraph ι) (images : InstanceImageCheck G) (codes : C
     (ProgramCertificates.claim deriv).context == c.context &&
     (ProgramCertificates.checkTreeUsing G images deriv codes sums ||
       PromiseCalls.requiresTree G images stepK codes sums deriv)
+
+/-- **A promise call's derivation checked** where its yields are kept
+(`checkedYields`): `derivChecked`, and its claim's type the node's. -/
+def promiseDerivChecked (G : NormalGraph ι) (images : InstanceImageCheck G) (codes : CodeEntry ι → Bool)
+    (sums : List (ReadSummary ι)) (c : PointClaim ι) (node : Node) (stepK : Knowledge)
+    (deriv : ProgramCertificates.Evidence ι) : Bool :=
+  derivChecked G images codes sums c node stepK deriv && decide ((ProgramCertificates.claim deriv).type = c.type)
 
 /-- **A node's shape** as the certificate checker checks a `branch`: its
 claim type the Boolean (`expand G A = [.bool]`); a return, a bind or an
@@ -2125,7 +2133,8 @@ def visitStep (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEn
   let slotImpl : Thunk (List (PromiseCalls.Implication ι)) := Thunk.mk fun _ => slotImplOf entry.names implies
   -- The yields kept: those the checker's yield check accepts (`checkedYields`).
   let checkYs := fun (xs : List (PromiseCalls.Implication ι)) (ys : List (PromiseCalls.Yield ι)) => timedKind "yields checked" fun _ =>
-    checkedYields G images c.context c.type xs stepK stepOut deriv node.expression ys
+    checkedYields G images c.context c.type xs stepK stepOut deriv node.expression
+      (fun _ => promiseDerivChecked G images codes answers.summaries.toList c node stepK deriv) ys
   -- The step's yields, computed where an edge's types need them. A read
   -- of a slot yields what the implications testing it state.
   let mut yields : Option (List (PromiseCalls.Yield ι)) := none
@@ -2231,7 +2240,8 @@ def visitExits (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkE
   let deriv := stepDeriv.getD (.node ⟨c.context, node.expression, c.type⟩ .var [])
   let slotImpl : Thunk (List (PromiseCalls.Implication ι)) := Thunk.mk fun _ => slotImplOf entry.names implies
   let checkYs := fun (xs : List (PromiseCalls.Implication ι)) (ys : List (PromiseCalls.Yield ι)) => timedKind "yields checked" fun _ =>
-    checkedYields G images c.context c.type xs stepK stepOut deriv node.expression ys
+    checkedYields G images c.context c.type xs stepK stepOut deriv node.expression
+      (fun _ => promiseDerivChecked G images codes answers.summaries.toList c node stepK deriv) ys
   -- The edges: target, whether the result is pushed, an observation of
   -- it, and a branch's answer.
   let edges := Exit.ofNode node
