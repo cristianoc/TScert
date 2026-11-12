@@ -44,6 +44,7 @@ import Verification.Programs.TolerantFramesWalkReassignStep
 import Verification.Programs.TolerantFramesWalkReassignWalk
 import Verification.Programs.TolerantFramesRunSound
 import Verification.Programs.TolerantFramesDriverWalk
+import Verification.Programs.TolerantFramesDriverHeadsFuel
 import Verification.Programs.TolerantFramesWalkJoined
 import Verification.Programs.TolerantFramesGuaranteeWalk
 import Verification.Programs.TolerantFramesMergeBelow
@@ -806,6 +807,15 @@ run_cmd do
   check ``Verification.TolerantFrames.HeadsCutCycles.mono
   check ``Verification.TolerantFrames.passHeads_cuts
   check ``Verification.TolerantFrames.run_sound_18b
+  -- Leg 19b: the walk's premises from the driver (TolerantFramesDriverHeadsFuel)
+  check ``Verification.TolerantFrames.zeroWeight_upd
+  check ``Verification.TolerantFrames.dfsStep_measure
+  check ``Verification.TolerantFrames.dfsLoop_ends
+  check ``Verification.TolerantFrames.dfsInit_measure
+  check ``Verification.TolerantFrames.dfsLoop_init_ends
+  check ``Verification.TolerantFrames.dfsStep_clear
+  check ``Verification.TolerantFrames.dfsLoop_clear
+  check ``Verification.TolerantFrames.dfsInit_clear
   let env ← getEnv
   let project (decl : Name) : Bool := match env.getModuleIdxFor? decl with
     | some i => (`Verification).isPrefixOf env.header.moduleNames[i.toNat]!
