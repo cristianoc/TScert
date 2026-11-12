@@ -1,4 +1,5 @@
 import Verification.Programs.TolerantFramesDriverRecords
+import Verification.Programs.TolerantFramesStoreOpsEdge
 
 /-! # Tolerant frames: a visit's record from its parts
 
@@ -10,7 +11,12 @@ were (`PartsKeepLabels`), the record changes at the visited label only,
 counts it, keeps its size and, at a label below the size, marks it
 visited (`visitResult_labels`, `visitResult_visits`); so `VisitsRecord`
 reduces to `PartsKeepLabels` and the rest of `VisitFacts` (`VisitRest`,
-`VisitsRest`) (`visitsRecord_of`). -/
+`VisitsRest`) (`visitsRecord_of`). A state an exit carries into its
+target (`edgeTransfer` over `edgeStoreOf`) has the target's width, a
+well-formed store and is below the counter where the mapping reads the
+source's slots and gives the target's width, the stores are well-formed
+and below the counter, and so are the names (`pushOk_of_exit`, under
+`MapNamesLength`). -/
 
 namespace Verification.TolerantFrames
 open Verification ControlFlow CertificateProducer PositiveCertificates PositiveGraphs LabelStore
@@ -120,6 +126,30 @@ theorem visitsRecord_of (hk : PartsKeepLabels ι) (hr : VisitsRest ι) : VisitsR
           size := by rw [visitResult_size, hlab],
           frame := hR.frame, pushes := hR.pushes, edges := hR.edges, fresh := hR.fresh, degs := hR.degs,
           queue := hR.queue, settles := hR.settles, mergeFresh := hR.mergeFresh }
+
+/-- **A state an exit carries in meets `PushOk`** (`edgeTransfer_width`,
+`edgeTransfer_wf`, `edgeStoreOf_wf`, `edgeTransfer_below`,
+`edgeStoreOf_below`): the mapping giving the target's width over the
+source's names (`MapNamesLength`), the entry's and the step's stores
+well-formed and below a positive counter `next`, the source's names, the
+pushed names, the entry's fresh names and the result below it. -/
+theorem pushOk_of_exit (hlen : MapNamesLength) {c : Target.RunCall G I} {tl : Nat} {m : PointClaims.Mapping}
+    {names pushedNames : List Nat} {pushed isHandler outFresh : Bool} {entry : SinglePass.State}
+    {store : SinglePass.Store} {result width next : Nat} {Γ : List (ProgramTyping.Ty ι)}
+    {observed : Option BranchRefinement.Observation} {promote : Option Bool}
+    {implies : List (PromiseCalls.Implication ι)}
+    (hw : match m with
+      | none => names.length = (passCtx c tl).length
+      | some slots => slots.length = (passCtx c tl).length ∧ ∀ j ∈ slots, j < names.length)
+    (we : StoreWF entry.store) (ws : StoreWF store) (he : FactsBelow entry.store next) (hs : FactsBelow store next)
+    (hpos : 0 < next) (hn : ∀ x ∈ names, x < next) (hp : ∀ x ∈ pushedNames, x < next)
+    (hf : ∀ x ∈ entry.fresh, x < next) (hr : result < next) :
+    PushOk c tl (SinglePass.edgeTransfer names m pushed isHandler outFresh entry result
+      (SinglePass.edgeStoreOf G Γ entry.store store names pushedNames width pushed isHandler observed promote)
+      implies).1 next :=
+  ⟨edgeTransfer_width hlen implies hw,
+    edgeTransfer_wf (edgeStoreOf_wf we ws names pushedNames width pushed isHandler observed promote) implies,
+    edgeTransfer_below hpos hn (edgeStoreOf_below we he hs hn hp width pushed isHandler observed promote) hf hr⟩
 
 end Visit
 end Verification.TolerantFrames

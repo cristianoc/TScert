@@ -1907,7 +1907,13 @@ once and keeps the record's size (`visitResult_labels`,
 
 (`visitsRecord_of`), `VisitsRest` stating the rest of `VisitFacts`
 (`VisitRest`: the exits, what came in, the in-degrees, the queue, the
-settled record, the merge's counter) of every visit.
+settled record, the merge's counter) of every visit. A state an exit
+carries into its target (`edgeTransfer` over `edgeStoreOf`) meets
+`PushOk` where the mapping reads the source's slots and gives the
+target's width, the entry's and the step's stores are well-formed and
+below a positive counter, and so are the source's names, the pushed
+names, the entry's fresh names and the result (proved: `pushOk_of_exit`,
+under `MapNamesLength`, queue entry W7).
 
 **The visit's footprint check as `BoundChecked`.** Module
 `lean/Verification/Programs/TolerantFramesDriverChecks.lean`.
