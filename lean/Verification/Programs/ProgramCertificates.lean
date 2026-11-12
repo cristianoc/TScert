@@ -17,6 +17,27 @@ structure Sequent (ι : Type) where
   type : Ty ι
   deriving DecidableEq
 
+/-- `a = b` decided at once where `a` and `b` are one object (`withPtrEq`,
+justified by the equality's reflexivity), else by `decide`. -/
+@[inline] def decideSame {α : Type} [DecidableEq α] (a b : α) : Bool :=
+  withPtrEq a b (fun _ => decide (a = b)) (fun h => by subst h; simp)
+
+theorem decideSame_iff {α : Type} [DecidableEq α] (a b : α) : decideSame a b = true ↔ a = b := by
+  simp [decideSame, withPtrEq]
+
+/-- Sequent equality as the compiled verifier decides it
+(`instDecidableEqSequent_eq_fast`): field by field, each answered at once
+where the two fields are one object. -/
+def Sequent.decEqFast {ι : Type} [DecidableEq ι] : DecidableEq (Sequent ι) := fun a b =>
+  decidable_of_iff (decideSame a.context b.context && decideSame a.term b.term && decideSame a.type b.type) (by
+    obtain ⟨c, t, T⟩ := a
+    obtain ⟨c', t', T'⟩ := b
+    simp [decideSame_iff, and_assoc])
+
+@[csimp] theorem instDecidableEqSequent_eq_fast : @instDecidableEqSequent = @Sequent.decEqFast := by
+  funext ι _ a b
+  exact Subsingleton.elim _ _
+
 /-- Validation scopes enclosing an unfinished comparison, outermost first. -/
 inductive CheckFrame where
   | node (label : Nat)

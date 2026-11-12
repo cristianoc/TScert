@@ -28,6 +28,25 @@ inductive Atom where
   | sep (f : HeapSeparation.Fact)
   deriving DecidableEq, Hashable
 
+/-- Atom equality as the compiled verifier decides it
+(`instDecidableEqAtom_eq_fast`): by constructor, the fields answered at once
+where they are one object (`ProgramCertificates.decideSame`). -/
+def Atom.sameFast : Atom → Atom → Bool
+  | .cell f, .cell g | .value f, .value g => ProgramCertificates.decideSame f g
+  | .link f, .link g => ProgramCertificates.decideSame f g
+  | .elem f, .elem g => ProgramCertificates.decideSame f g
+  | .index f, .index g => ProgramCertificates.decideSame f g
+  | .sep f, .sep g => ProgramCertificates.decideSame f g
+  | _, _ => false
+
+def Atom.decEqFast : DecidableEq Atom := fun a b =>
+  decidable_of_iff (Atom.sameFast a b = true) (by
+    cases a <;> cases b <;> simp [Atom.sameFast, ProgramCertificates.decideSame_iff])
+
+@[csimp] theorem instDecidableEqAtom_eq_fast : @instDecidableEqAtom = @Atom.decEqFast := by
+  funext a b
+  exact Subsingleton.elim _ _
+
 def Atom.names : Atom → List Nat
   | .cell f | .value f => [f.slot]
   | .link g => [g.cell, g.value]
