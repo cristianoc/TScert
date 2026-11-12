@@ -9,20 +9,24 @@
 // the unit it names refused. The store-boundary controls of the interface
 // stages name a fresh store.
 import assert from "node:assert/strict";
-import { mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
 import { join, resolve } from "node:path";
 import { availableParallelism } from "node:os";
 import { fork } from "node:child_process";
 import { controlOperations, ran as ranStage, startEviction, type Invoked } from "../pipeline/stages.mts";
-import { check as checkSource, readFragmentFile, sourceKey } from "../pipeline/verify-source.mts";
+import { check as checkSource, readFragmentFile, sourceKey, type Outcome } from "../pipeline/verify-source.mts";
+import { stringFamily } from "../pipeline/string-family.mts";
+import type { FamilyDescription } from "../tools/host-families.mts";
+import { createHash } from "node:crypto";
 import { verifyWithInterfaces } from "../pipeline/module-interfaces.mts";
 import { runDirectory } from "../pipeline/run-directory.mts";
 import { tsconfigOf } from "../tools/declaration-graph.mts";
 import { processInconsistency, processRetirement } from "../tools/files.mts";
 import { linkFixtures } from "../pipeline/fixture-links.mts";
-import { hostEnums } from "../tools/compiler-api.mts";
+import { compilerApiFamily, hostEnums } from "../tools/compiler-api.mts";
+import { useFamiliesForTests } from "../tools/family-activation.mts";
 import { deferredIdentity } from "../tools/type-term.mts";
 import { cases } from "../pipeline/cases.mts";
 import type { Ast } from "../tools/fragment.mts";
@@ -911,6 +915,431 @@ control("stated import: the exporting module refused", async (): Promise<void> =
   assert.notEqual(drain.status, "verified");
   assert.match(drain.detail, /footprint/);
   say("stated import: the importer verified relative to the import assumption, the exporting module's drain refused at its footprint");
+});
+
+control("exhausted footprint check", async (): Promise<void> => {
+  // A check that runs out of subtype rounds is inconclusive, not a refusal.
+  using searched = checkSource(join(root, "pipeline/examples/declaration-preserving-callback.ts"), undefined, false, 1, true);
+  assert.equal(searched.status, "exhausted", JSON.stringify(searched).slice(0, 1500));
+  assert.match("detail" in searched ? searched.detail : "", /exhausted/);
+  assert.doesNotMatch("detail" in searched ? searched.detail : "", /source effect refusal/);
+  say(`exhausted footprint check: reported exhausted (${searched.status})`);
+});
+
+/** The unit of the function whose code holds the source offset `at`: the
+ * last function of the fragment whose name precedes it. */
+function unitHolding(ast: Ast, at: number): string {
+  const before = ast.functions.filter((f) => f.namePos[0] <= at).sort((a, b) => b.namePos[0] - a.namePos[0]);
+  const fn = must(before[0], `a function before ${at}`);
+  return `${fn.name}@${fn.namePos[0]}`;
+}
+
+control("forged fragment: a guard's promise removed", async (): Promise<void> => {
+  // A call narrows its argument by the promise the document states of its
+  // callee: with the promise removed from `isPresence`, its caller is refused.
+  const artifacts = run("type-guards");
+  const ast = fragmentAst(artifacts);
+  const isPresence = must(ast.functions.find((f) => f.name === "isPresence"), "isPresence");
+  assert.ok(isPresence.guard, "isPresence states a promise");
+  const caller = unitHolding(ast, readFileSync(sourceKey(artifacts), "utf8").indexOf("isPresence(v)"));
+  honest("type-guards", caller);
+  isPresence.guard = null;
+  refused(pass(forged(artifacts, "forged-unpromised-guard", ast)), caller, "unpromised");
+  say(`unpromised guard call: its caller ${caller} refused`);
+});
+
+control("forged fragment: a regex shape no declaration lists", async (): Promise<void> => {
+  const artifacts = run("regexp-structural");
+  const text = readFileSync(fragmentOf(artifacts), "utf8");
+  const call = /"callee":\{"k":"id","pos":\[\d+,\d+\],"name":"%RegExp:1%"\}/.exec(text)?.[0];
+  assert.ok(call, "a literal's call names its shape");
+  const path = join(artifacts, "forged-regexp-shape.json");
+  writeFileSync(path, text.replace(call, call.replace("%RegExp:1%", "%RegExp:111%")));
+  refusedFile(pass(path), "forged", /%RegExp:111%/);
+  say("forged regex shape: a literal naming a shape no declaration lists refused");
+});
+
+control("host reading on a stand-in host", async (): Promise<void> => {
+  // Reading rule 1 on a stand-in host package (`pipeline/host-fixture/`,
+  // whose `Node` reaches no node list), activated by the compiler API's
+  // description naming the stand-in's installation and digest: the shape
+  // omits the allocating `jsDoc`, so every form of its read is refused, and
+  // reads of other members verify. The stand-in declares no `tokenCache`, so
+  // the description omits `jsDoc` alone.
+  const project = tsconfigOf(join(root, "pipeline/host-fixture-project"));
+  const example = (file: string): string => join(root, "pipeline/examples", `${file}.ts`);
+  useFamiliesForTests([{ ...compilerApiFamily, installation: { from: "pipeline/host-fixture-project",
+    digest: "1f729218dade5923e3787adb29cda54fc8b923d88f0b35892b11fa70d5ec42fe" },
+    omitted: compilerApiFamily.omitted.filter(m => m.member === "jsDoc") }]);
+  const jsDocRead = /source expression obligation at \[\d+,\d+\): refused at a read: read of a field 'jsDoc' the contract does not name/;
+  try {
+    for (const [form, refusal] of [
+      // The route's refusal of the read, at its span; a template key and a
+      // binding are refused as forms the pass does not handle (undetermined
+      // types), the view at its node.
+      ["dot", jsDocRead], ["element", jsDocRead], ["paren-key", jsDocRead], ["const-key", jsDocRead],
+      ["template-key", /source expression obligation at \[\d+,\d+\): not handled: an element read of a value that is no array/],
+      ["binding", /source expression obligation at \[\d+,\d+\): not handled: the bound value undetermined/], ["optional", jsDocRead],
+      ["view", /expression at node \d+: Verification\.Tm\.var 0 /],
+    ] as const) {
+      using outcome = checkSource(example(`invalid-host-fixture-jsdoc-${form}`), project, false, undefined, true);
+      assert.notEqual(outcome.status, "verified", `invalid-host-fixture-jsdoc-${form}: refused`);
+      assert.ok("detail" in outcome && refusal.test(outcome.detail), `invalid-host-fixture-jsdoc-${form}: ${JSON.stringify(outcome)}`);
+    }
+    // Node lists: read as dense readonly arrays owning their stated members, each readonly.
+    using rows = checkSource(example("host-fixture-node-list"), project, false, undefined, true);
+    assert.equal(rows.status, "verified", JSON.stringify(rows));
+    using written = checkSource(example("invalid-host-fixture-node-list-write"), project, false, undefined, true);
+    assert.ok(written.status !== "verified" && "detail" in written && /transformFlags/.test(written.detail),
+      JSON.stringify(written));
+    // Branded strings (reading rule 5): read as strings, refused as a host
+    // parameter (L5).
+    using branded = checkSource(example("host-fixture-branded-read"), project, false, undefined, true);
+    assert.equal(branded.status, "verified", JSON.stringify(branded));
+    for (const [file, refusal] of [
+      ["invalid-host-fixture-branded-parameter", /branded string Path where the client would produce one/],
+      ["invalid-host-fixture-branded-callback-result", /branded string Path where the client would produce one/],
+      ["invalid-host-fixture-branded-held", /branded string Path where the client would produce one/],
+      ["invalid-host-fixture-branded-argument", /branded string Path where the client would produce one/],
+      ["invalid-host-fixture-branded-nested", /branded string Path where the client would produce one/],
+      ["invalid-host-fixture-branded-curried", /branded string Path where the client would produce one/],
+      ["invalid-host-fixture-branded-optional-parameter", /branded string Path where the client would produce one/],
+      ["invalid-host-fixture-branded-return", /the intersection is empty/],
+      ["invalid-host-fixture-branded-alias", /the intersection is empty/],
+    ] as const) {
+      using refused = checkSource(example(file), project, false, undefined, true);
+      assert.ok(refused.status !== "verified" && "detail" in refused && refusal.test(refused.detail),
+        `${file}: ${JSON.stringify(refused)}`);
+    }
+    for (const file of ["host-fixture-branded-callback", "host-fixture-branded-positions"]) {
+      using supplied = checkSource(example(file), project, false, undefined, true);
+      assert.equal(supplied.status, "verified", `${file}: ${JSON.stringify(supplied)}`);
+    }
+    // A member declared `any`: optional, of type `unknown` (reading rule 2).
+    using brand = checkSource(example("host-fixture-brand-optional"), project, false, undefined, true);
+    assert.equal(brand.status, "verified", JSON.stringify(brand));
+    using required = checkSource(example("invalid-host-fixture-brand-required"), project, false, undefined, true);
+    assert.ok(required.status === "unverified" && /expression at node \d+: Verification\.Tm\.invoke/.test(required.detail),
+      JSON.stringify(required));
+    using kept = checkSource(example("host-fixture-jsdoc-other-reads"), project, false, undefined, true);
+    assert.equal(kept.status, "verified", JSON.stringify(kept));
+    using lookalike = checkSource(example("host-fixture-lookalike"), project, false, undefined, true);
+    // Refused at the read of jsDoc (the old route refuses it in the producer, unsupported).
+    assert.ok(lookalike.status !== "verified" && "detail" in lookalike && jsDocRead.test(lookalike.detail), JSON.stringify(lookalike));
+  } finally {
+    useFamiliesForTests(null);
+  }
+  say("host reading on a stand-in host: every read of jsDoc refused; other reads verified; a node list read as a dense readonly array, a write to its member refused; a branded string read as a string where the host produces it, refused where the client would; a member declared any optional");
+});
+
+
+control("forged fragment: guard domains", async (): Promise<void> => {
+  // A family guard's call stated at a domain its argument is not within
+  // (`never`), with the entry's tags and with none, refused at the call; one
+  // stating no domain refused by the decoder.
+  const calls: [string, string][] = [
+    ["compiler-api-guard-false-branch", "ts.isIdentifier(node)"],
+    ["compiler-api-guard-values", "ts.isIdentifier(n)"],
+    ["compiler-api-guards", "isStringLiteral(node)"],
+  ];
+  for (const [file, text] of calls) {
+    const artifacts = run(file);
+    const start = readFileSync(sourceKey(artifacts), "utf8").indexOf(text);
+    const document: unknown = JSON.parse(readFileSync(fragmentOf(artifacts), "utf8"));
+    assert.ok(isObject(document));
+    const found: Record<string, unknown>[] = [];
+    visitAll(document, (v) => {
+      if (v.k === "tagMember" && Array.isArray(v.pos) && v.pos[0] === start) found.push(v);
+    });
+    const [call] = found;
+    assert.ok(call && found.length === 1 && Array.isArray(call.pos), `${file}: the guard's call ${text}`);
+    const caller = unitHolding(fragmentAst(artifacts), start);
+    honest(file, caller);
+    const { domain, tags } = call;
+    const forgedDocument = (name: string, replaced: unknown, replacedTags: unknown): Pass => {
+      call.domain = replaced;
+      call.tags = replacedTags;
+      const p = pass(forged(artifacts, `${name}.fragment`, document));
+      call.domain = domain;
+      call.tags = tags;
+      return p;
+    };
+    const never = { k: "atom", name: "never", span: call.pos };
+    for (const [variant, replacedTags] of [["entry", tags], ["empty", []]] as const)
+      refused(forgedDocument(`forged-guard-domain-${variant}`, never, replacedTags), caller, `${file}, ${variant} tags`);
+    refusedFile(forgedDocument("forged-guard-no-domain", null, tags), `${file}: no domain`, /a family guard's call states its guard's domain/);
+  }
+  say("forged guard domains: a domain the argument is not within, with the entry's tags and with none, in a condition, a callback's body and a negated condition, refused at the call's unit; a call without its domain by the decoder");
+});
+
+for (const copy of [false, true]) control(`nested installations: ${copy ? "a copy" : "a link"}`, async (): Promise<void> => {
+  const installation = resolve(root, "tools", "node_modules", "typescript");
+  const dir = runDirectory(`tscert-nested-${copy ? "copied" : "linked"}-`);
+  writeFileSync(join(dir, "tsconfig.json"), JSON.stringify({ compilerOptions: { strict: true, noEmit: true,
+    module: "preserve", moduleResolution: "bundler", target: "es2022", verbatimModuleSyntax: true, types: [],
+    paths: { "typescript/unstable/ast": [join(installation, "dist", "ast", "index.d.ts")] } }, include: ["*.ts"] }));
+  const source = join(dir, "name.ts");
+  writeFileSync(source, 'import * as ts from "typescript/unstable/ast";\n\n' +
+    "export function name(n: ts.Node): string {\n  return ts.isIdentifier(n) ? n.text : \"\";\n}\n");
+  mkdirSync(join(dir, "node_modules"));
+  const target = join(dir, "node_modules", "typescript");
+  if (copy) cpSync(installation, target, { recursive: true, dereference: true });
+  else symlinkSync(installation, target);
+  using outcome = checkSource(source, tsconfigOf(dir), false, undefined, true);
+  if (!copy) assert.equal(outcome.status, "verified", JSON.stringify(outcome));
+  else assert.ok(outcome.status !== "verified" && /missing field text|read of a field 'text' the contract does not name/.test(outcome.detail), JSON.stringify(outcome));
+  say(copy ? "nested installations: a copy of the audited package in the client's node_modules is no guard"
+    : "nested installations: the audited package linked narrows");
+});
+
+/** The pipeline directory, as pipeline/test.mts's controls name it. */
+const here = join(root, "pipeline");
+/** A source checked on the route, its artifacts retained. */
+function check(source: string, project?: string, typescriptErrors: boolean = false, subtypeRounds?: number): Outcome {
+  return checkSource(source, project, typescriptErrors, subtypeRounds, true);
+}
+
+control("declared-optional method on a stand-in family", async (): Promise<void> => {
+  // A method declared optional (HOST-FAMILIES.md, "The family contract"):
+  // on a stand-in host package whose family root declares `describe?()`
+  // beside `text()`, each shape names the shared definition of `text` as a
+  // base and states `describe` as its own optional member, and its call is
+  // refused at the call.
+  const project = tsconfigOf(join(here, "family-fixture-project"));
+  const example = (file: string): string => join(here, "examples", `${file}.ts`);
+  useFamiliesForTests([{ ...compilerApiFamily, installation: { from: "pipeline/family-fixture-project",
+    digest: "aaaa66cf18b7f7d980c0e7734ae6421159ac2eccbbaa8d28b76f03e4280701ff" },
+  table: [{ rule: "literal" }], corrections: [], omitted: [], footprints: [] }]);
+  try {
+    const kept = check(example("family-fixture-optional-method"), project);
+    assert.equal(kept.status, "verified", JSON.stringify(kept));
+    const first = must(must(readFragmentFile(join(kept.artifacts, "fragment.json")).declarations, "the declarations")
+      .definitions.find((d) => d.declaration.name === "First"), "First's reading");
+    assert.deepEqual(first.bases.map((b) => b.k === "reference" ? b.reference.name : b.k), ["Node.text"]);
+    assert.ok(first.expression?.k === "object" && first.expression.fields.some((f) => f.name === "describe" && f.optional),
+      "First states describe optional");
+    const file = example("invalid-family-fixture-optional-method");
+    const refused = check(file, project);
+    const at = readFileSync(file, "utf8").indexOf("n.describe");
+    assert.ok(refused.status !== "verified" && refused.detail.includes(`at [${at},`) /* the route refuses at a unit, the old route in the producer */, JSON.stringify(refused));
+  } finally {
+    useFamiliesForTests(null);
+  }
+  process.stdout.write("declared-optional method: each shape's own optional member, the required one shared, its call refused\n");
+});
+control("a string-tagged family", async (): Promise<void> => {
+  // A second family (HOST-FAMILIES.md, "Instances"): a stand-in package of
+  // string-tagged units, activated beside the compiler API's by a
+  // description of its own, which names the stand-in's package, its
+  // installation and its digest, its tag `type`, a string, and a guard table
+  // that activates over the stand-in's own modules. A guard of one tag and
+  // one through a helper of its tag narrow both edges, each call a
+  // membership test of the family's string constants; a guard whose answer
+  // depends on an option argument has no entry and narrows nothing.
+  const project = tsconfigOf(join(here, "string-family-fixture-project"));
+  const example = (file: string): string => join(here, "string-family-fixture-project", `${file}.ts`);
+  const strings: FamilyDescription = stringFamily;
+  // The stand-in's description beside the compiler API's: the active
+  // descriptions, the whole of what the run is given.
+  const activate = (description: FamilyDescription): void => useFamiliesForTests([compilerApiFamily, description]);
+  activate(strings);
+  try {
+    const kept = check(example("guards"), project);
+    assert.equal(kept.status, "verified", JSON.stringify(kept));
+    const tagSets: string[] = [];
+    const visit = (v: unknown): void => {
+      if (Array.isArray(v)) v.forEach(visit);
+      else if (typeof v === "object" && v !== null) {
+        if ("k" in v && v.k === "tagMember" && "tags" in v) tagSets.push(JSON.stringify(v.tags) ?? "");
+        Object.values(v).forEach(visit);
+      }
+    };
+    visit(JSON.parse(readFileSync(join(kept.artifacts, "fragment.json"), "utf8")));
+    assert.ok(tagSets.includes(JSON.stringify([{ a: "stringlit", v: "call" }, { a: "stringlit", v: "name" }]) ?? ""),
+      `isExpression's call tests the family's string constants: ${tagSets.join(" ")}`);
+    const file = example("invalid-loose");
+    const refused = check(file, project);
+    const at = readFileSync(file, "utf8").lastIndexOf("n.name");
+    // Refused at a span holding the read, reading `name` (the old route: at the read's own span, in the producer).
+    const spans = [...("detail" in refused ? refused.detail : "").matchAll(/at \[(\d+),(\d+)\)/g)].map((m) => [Number(m[1]), Number(m[2])]);
+    assert.ok(refused.status !== "verified" && spans.some(([a, b]) => a <= at && at < b) &&
+      /read of a field 'name'|missing field name/.test(refused.detail), JSON.stringify(refused));
+    // The tag enum read as a value, by the description alone: its members
+    // are the runtime object the activated entry point exports. Over a copy
+    // whose `kinds.js` gives `Literal` another value, its guard table
+    // activated over the copy's own digests, the same program is refused at
+    // the read, and under Node `literalTag` returns the runtime value, not
+    // its declared `"literal"`.
+    const kinds = check(example("kinds"), project);
+    assert.equal(kinds.status, "verified", JSON.stringify(kinds));
+    // The compiler API's named views apply to its installation alone: the
+    // stand-in's `Program` and `API`, of the views' names, are read by their
+    // own declarations.
+    const views = check(example("views"), project);
+    assert.equal(views.status, "verified", JSON.stringify(views));
+    {
+      const copy = runDirectory("tscert-tag-enum-");
+      const installed = join(copy, "node_modules", "string-family-fixture");
+      mkdirSync(join(copy, "node_modules"));
+      cpSync(join(here, "string-family-fixture"), installed, { recursive: true });
+      const runtime = readFileSync(join(installed, "kinds.js"), "utf8").replace('UnitType["Literal"] = "literal"', 'UnitType["Literal"] = "lit"');
+      assert.ok(runtime.includes('"lit"'), "the copy's runtime enum differs");
+      writeFileSync(join(installed, "kinds.js"), runtime);
+      cpSync(join(here, "string-family-fixture-project", "tsconfig.json"), join(copy, "tsconfig.json"));
+      cpSync(example("kinds"), join(copy, "kinds.ts"));
+      activate({ ...strings, installation: { ...strings.installation, from: copy },
+        guards: { ...strings.guards, closure: { ...strings.guards.closure, files: { ...strings.guards.closure.files,
+          "kinds.js": createHash("sha256").update(runtime).digest("hex") } } } });
+      const mismatched = check(join(copy, "kinds.ts"), tsconfigOf(copy));
+      assert.ok(mismatched.status === "unsupported" && /the host enum UnitType is not one .* nor a family's tag enum its runtime object matches/.test(mismatched.detail),
+        JSON.stringify(mismatched));
+      const ran = spawnSync(process.execPath, ["--input-type=module", "-e",
+        `import { literalTag } from ${JSON.stringify(pathToFileURL(join(copy, "kinds.ts")).href)};\nconsole.log(literalTag());\n`],
+        { encoding: "utf8", cwd: copy });
+      assert.equal(ran.stdout.trim(), "lit", `literalTag under Node: ${ran.stderr}`);
+      activate(strings);
+    }
+    {
+      // The tag enum's binding is the object activation checked, as Node
+      // resolves the client's import: a project whose `paths` point
+      // TypeScript at the stand-in's audited declarations while Node loads a
+      // copy whose `Literal` is "lit" is refused at the read; with Node
+      // loading the audited installation, the same program verifies.
+      const bindingRun = (name: string, target: string, change: ((dir: string) => void) | null): { outcome: Outcome; dir: string } => {
+        const dir = runDirectory(`tscert-tag-binding-${name}-`);
+        writeFileSync(join(dir, "tsconfig.json"), JSON.stringify({ compilerOptions: { strict: true, noEmit: true,
+          module: "preserve", moduleResolution: "bundler", target: "es2022", lib: ["es2022"], types: [],
+          paths: { "string-family-fixture/ast": [join(here, "string-family-fixture", "ast.d.ts")] } }, include: ["*.ts"] }));
+        mkdirSync(join(dir, "node_modules"));
+        const installed = join(dir, "node_modules", "string-family-fixture");
+        if (change) {
+          cpSync(target, installed, { recursive: true });
+          change(installed);
+        } else symlinkSync(target, installed);
+        cpSync(example("kinds"), join(dir, "kinds.ts"));
+        return { outcome: check(join(dir, "kinds.ts"), tsconfigOf(dir)), dir };
+      };
+      const audited = bindingRun("audited", join(here, "string-family-fixture"), null);
+      assert.equal(audited.outcome.status, "verified", JSON.stringify(audited.outcome));
+      const other = bindingRun("other", join(here, "string-family-fixture"), (installed) => {
+        const runtime = readFileSync(join(installed, "kinds.js"), "utf8").replace('UnitType["Literal"] = "literal"', 'UnitType["Literal"] = "lit"');
+        writeFileSync(join(installed, "kinds.js"), runtime);
+      });
+      assert.ok(other.outcome.status === "unsupported" && /the host enum UnitType is not one .* nor a family's tag enum its runtime object matches/.test(other.outcome.detail),
+        JSON.stringify(other.outcome));
+      const ran = spawnSync(process.execPath, ["--input-type=module", "-e",
+        `import { literalTag } from ${JSON.stringify(pathToFileURL(join(other.dir, "kinds.ts")).href)};\nconsole.log(literalTag());\n`],
+        { encoding: "utf8", cwd: other.dir });
+      assert.equal(ran.stdout.trim(), "lit", `literalTag under Node, its import bound to the copy: ${ran.stderr}`);
+    }
+    {
+      // Guard recognition stays within one family: a second family, a copy
+      // of the stand-in under another name and marker whose `UnitType.Name`
+      // is "nm", is active beside it, with guards and a domain of the same
+      // names. A project whose `paths` point TypeScript at the stand-in's
+      // declarations while Node binds `isName` to the copy's is no guard
+      // call, refused at the return of the `false` edge's tag; with Node binding the
+      // stand-in's, it verifies.
+      const source = 'import { isName, type Unit } from "string-family-fixture/ast";\n\n' +
+        'export function tagOf(n: Unit): "call" | "literal" | "" {\n  return isName(n) ? "" : n.type;\n}\n';
+      const project = (name: string): string => {
+        const dir = runDirectory(`tscert-guard-family-${name}-`);
+        writeFileSync(join(dir, "tsconfig.json"), JSON.stringify({ compilerOptions: { strict: true, noEmit: true,
+          module: "preserve", moduleResolution: "bundler", target: "es2022", lib: ["es2022"], types: [],
+          paths: { "string-family-fixture/ast": [join(here, "string-family-fixture", "ast.d.ts")] } }, include: ["*.ts"] }));
+        writeFileSync(join(dir, "tag-of.ts"), source);
+        mkdirSync(join(dir, "node_modules"));
+        return dir;
+      };
+      const same = project("same");
+      symlinkSync(join(here, "string-family-fixture"), join(same, "node_modules", "string-family-fixture"));
+      const crossed = project("crossed");
+      const copy = join(crossed, "node_modules", "string-family-fixture-b");
+      cpSync(join(here, "string-family-fixture"), copy, { recursive: true });
+      const manifest: unknown = JSON.parse(readFileSync(join(copy, "package.json"), "utf8"));
+      assert.ok(typeof manifest === "object" && manifest !== null);
+      writeFileSync(join(copy, "package.json"), JSON.stringify({ ...manifest, name: "string-family-fixture-b" }));
+      const kinds = readFileSync(join(copy, "kinds.js"), "utf8").replace('UnitType["Name"] = "name"', 'UnitType["Name"] = "nm"');
+      writeFileSync(join(copy, "kinds.js"), kinds);
+      symlinkSync(copy, join(crossed, "node_modules", "string-family-fixture"));
+      const second: FamilyDescription = { ...strings, package: { ...strings.package, name: "string-family-fixture-b" },
+        installation: { ...strings.installation, from: crossed }, marker: "StringFixtureB",
+        guards: { ...structuredClone(strings.guards), closure: { ...strings.guards.closure, files: { ...strings.guards.closure.files,
+          "kinds.js": createHash("sha256").update(kinds).digest("hex") } } } };
+      useFamiliesForTests([compilerApiFamily, strings, second]);
+      try {
+        const verified = check(join(same, "tag-of.ts"), tsconfigOf(same));
+        assert.equal(verified.status, "verified", JSON.stringify(verified));
+        const refused = check(join(crossed, "tag-of.ts"), tsconfigOf(crossed));
+        const returned = source.indexOf("isName(n) ?");
+        // Refused; the route names the node (`expression at node N`) where
+        // the old route names the return's span and the tag set it fails.
+        assert.ok(refused.status !== "verified" && "detail" in refused && (refused.detail.includes(`at [${returned},`) &&
+          refused.detail.includes('"" | "call" | "literal" | "name"') ||
+          /single pass: refused: expression at node \d+: Verification\.Tm\.var 0 /.test(refused.detail)), JSON.stringify(refused));
+      } finally {
+        activate(strings);
+      }
+      const ran = spawnSync(process.execPath, ["--input-type=module", "-e",
+        `import { tagOf } from ${JSON.stringify(pathToFileURL(join(crossed, "tag-of.ts")).href)};\nconsole.log(tagOf({ type: "name" }));\n`],
+        { encoding: "utf8", cwd: crossed });
+      assert.equal(ran.stdout.trim(), "name", `tagOf under Node, isName bound to the copy: ${ran.stderr}`);
+    }
+    // Activation fails closed: under a description whose digest differs from
+    // the stand-in's declarations, or whose installation Node does not find,
+    // the same program is refused; with no stand-in description its guards
+    // narrow nothing.
+    for (const [what, description, refusal] of [
+      ["another digest", { ...strings, installation: { ...strings.installation, digest: "0".repeat(64) } },
+        /is not the one the family StringFixture was reviewed against/],
+      ["an installation Node does not find", { ...strings, installation: { ...strings.installation, from: "pipeline/host-fixture-project" } },
+        /the family StringFixture's package string-family-fixture does not resolve from pipeline\/host-fixture-project/],
+    ] as const) {
+      activate(description);
+      const closed = check(example("guards"), project);
+      assert.ok(closed.status !== "verified" && "detail" in closed && refusal.test(closed.detail), `${what}: ${JSON.stringify(closed)}`);
+    }
+    useFamiliesForTests([compilerApiFamily]);
+    const inactive = check(example("guards"), project);
+    assert.ok(inactive.status !== "verified", `no stand-in description: ${JSON.stringify(inactive)}`);
+    activate(strings);
+    // Stable members through the same code (HOST-FAMILIES.md, "Stable
+    // keys"): every property member of the stand-in is stable, so a callee
+    // tested and read past a call is the tested value; the description
+    // excluding `Call.callee`, the one thing changed, refuses the read.
+    const stable = check(example("stable"), project);
+    assert.equal(stable.status, "verified", JSON.stringify(stable));
+    activate({ ...strings, stable: { excluded: [{ owner: "Call", member: "callee", text: "readonly callee: Unit;" }] } });
+    const excluded = check(example("stable"), project);
+    const read = readFileSync(example("stable"), "utf8").lastIndexOf("c.callee.name");
+    assert.ok(excluded.status !== "verified" && excluded.detail.includes(`at [${read},`), JSON.stringify(excluded));
+    // The tag's stability follows its declarations, a residual's too: with
+    // `Literal.type` excluded, the residual standing for `Literal` states no
+    // stable tag, while `Name`'s shape keeps its own.
+    activate({ ...strings, stable: { excluded: [{ owner: "Literal", member: "type", text: "readonly type: UnitType.Literal;" }] } });
+    const tagged = check(example("guards"), project);
+    assert.equal(tagged.status, "verified", JSON.stringify(tagged));
+    const shapes = must(readFragmentFile(join(tagged.artifacts, "fragment.json")).declarations, "the declarations").definitions
+      .flatMap(d => d.expression?.k === "object" && d.expression.host !== undefined ? [{ name: d.declaration.name, term: d.expression }] : []);
+    const residuals = shapes.filter(s => s.name.includes(" tags "));
+    assert.ok(residuals.length > 0, "a residual arm");
+    for (const r of residuals) assert.ok(!(r.term.stable ?? []).includes("type"), `${r.name}: no stable tag over an excluded one`);
+    const name = must(shapes.find(s => s.name === "Name"), "the Name shape");
+    assert.ok((name.term.stable ?? []).includes("type"), "Name's own tag stays stable");
+    // An omitted member (HOST-FAMILIES.md, "The family contract"): the
+    // description listing `Unit.notes`, the one thing changed, omits it from
+    // every shape, so its read is refused; without the entry it verifies.
+    activate(strings);
+    const plain = check(example("notes"), project);
+    assert.equal(plain.status, "verified", JSON.stringify(plain));
+    activate({ ...strings, omitted: [{ owner: "Unit", member: "notes", text: "readonly notes: readonly string[];", why: "allocates" }] });
+    const omitted = check(example("notes"), project);
+    const notesAt = readFileSync(example("notes"), "utf8").lastIndexOf("u.notes");
+    assert.ok(omitted.status !== "verified" && omitted.detail.includes(`at [${notesAt},`), JSON.stringify(omitted));
+  } finally {
+    useFamiliesForTests(null);
+  }
+  process.stdout.write("string-tagged family, activated by its description beside the compiler API's: its guards' calls are membership tests of string constants narrowing both edges, through a helper too; a guard outside the contract narrows nothing; its declarations of the compiler API's view names read as declared; its tag enum read as a value where its runtime object matches, refused over a copy whose runtime value differs and where Node binds the import to such a copy while TypeScript reads the audited declarations (Node returns it); a guard Node binds to another family's function, of the same name and domain, no guard (Node returns the excluded tag); a description of another digest or of an installation Node does not find refuses the run, and without the description nothing narrows; a stable member's test read past a call, refused where the description excludes the member; an excluded tag stable in no residual; an omitted member's read refused where the description lists it\n");
 });
 
 // ---------------------------------------------------------------------------
