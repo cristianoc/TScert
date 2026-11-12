@@ -177,8 +177,12 @@ def VisitsSettle : Prop :=
 
 /-- **(`visitsRest_of`) Every visit gives `VisitRest`** where the pushed
 states meet `PushOk` and the visited label is settled: the rest is the exits' fold (`visitExits_fold`) and the
-entry's merge (`visitEntry_merge`). -/
-theorem visitsRest_of (hp : ExitsPushOk ι) (hs : VisitsSettle ι) : VisitsRest ι := by
+entry's merge (`visitEntry_merge`), with the incoming implication bound
+provided by `hi` (`visitsImplications`). -/
+theorem visitsRest_of (hp : ExitsPushOk ι) (hs : VisitsSettle ι)
+    (hi : ∀ (G : NormalGraph ι) (I : InstanceImageCheck G) (c : Target.RunCall G I) env σ l rest en sd ex,
+      VisitParts c env σ l rest en sd ex →
+      IncomingBelow (visitResult { σ with queue := rest } l en sd ex).walk sd.fresh) : VisitsRest ι := by
   intro G I c env σ0 σ σ'' l rest hsetup hE hI hq hv
   obtain ⟨en, sd, ex, he, hst, hx, rfl⟩ := visit_ok hv
   have hP : VisitParts c env σ l rest en sd ex := ⟨⟨σ0, hsetup⟩, hE, hI, hq, he, hst, hx⟩
@@ -187,7 +191,8 @@ theorem visitsRest_of (hp : ExitsPushOk ι) (hs : VisitsSettle ι) : VisitsRest 
   have hexits : ∀ t ∈ exitsOf env l, t < env.n := fun t ht => hE.claimed ▸ hF.claimed t (hL ▸ ht)
   have hln : l < σ.walk.labels.size := hI.size ▸ (hI.queue l (by rw [hq]; exact List.mem_cons_self ..)).1
   refine { exits := hexits, frame := ?_, pushes := ?_, edges := ?_, fresh := show σ.fresh ≤ sd.fresh from stepFresh hP,
-           degs := ?_, queue := ?_, settles := hs G I c env σ l rest en sd ex hP, mergeFresh := ?_, inSizes := ?_ }
+           degs := ?_, queue := ?_, settles := hs G I c env σ l rest en sd ex hP, mergeFresh := ?_, inSizes := ?_,
+           impBelow := fun _ => hi G I c env σ l rest en sd ex hP }
   · intro t ht
     have := hF.frame t (hL ▸ ht)
     rw [a1, a2, a3] at this

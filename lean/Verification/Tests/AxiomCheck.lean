@@ -920,3 +920,34 @@ run_cmd do
   check ``Verification.TolerantFrames.regionalDerivChecked_reassign
   check ``Verification.TolerantFrames.regionsTyped_of_tree
   check ``Verification.TolerantFrames.regionsHeld_of
+  -- Successful visits settle their recorded node, start and entry.
+  check ``Verification.TolerantFrames.renamedImplication_names
+  check ``Verification.TolerantFrames.headEntry_impNames
+  check ``Verification.TolerantFrames.mergeState_impNames
+  check ``Verification.TolerantFrames.entryStart_impBelow
+  check ``Verification.TolerantFrames.visitEntry_names
+  check ``Verification.TolerantFrames.implArrayBelow_modify
+  check ``Verification.TolerantFrames.edgeTransfer_impBelow
+  check ``Verification.TolerantFrames.freshImpl_below
+  check ``Verification.TolerantFrames.exitStep_impBelow
+  check ``Verification.TolerantFrames.exitsFold_impBelow
+  check ``Verification.TolerantFrames.visitExits_impBelow
+  check ``Verification.TolerantFrames.EnvFacts.context
+  check ``Verification.TolerantFrames.VisitParts.entryNames
+  check ``Verification.TolerantFrames.visitsImplications
+  check ``Verification.TolerantFrames.visitResult_record
+  check ``Verification.TolerantFrames.ofPass_visitRecord
+  check ``Verification.TolerantFrames.visitStart_entered
+  check ``Verification.TolerantFrames.zip_map_fst_eq
+  check ``Verification.TolerantFrames.entryStart_incoming
+  check ``Verification.TolerantFrames.visitEntry_settled
+  check ``Verification.TolerantFrames.visitCheck_true
+  check ``Verification.TolerantFrames.stepRun_shape
+  check ``Verification.TolerantFrames.boundOk_eq
+  check ``Verification.TolerantFrames.visitStep_checks
+  check ``Verification.TolerantFrames.returnOk_check
+  check ``Verification.TolerantFrames.stepYields_kept
+  check ``Verification.TolerantFrames.visitStep_yields
+  check ``Verification.TolerantFrames.StepChecked.summaries
+  check ``Verification.TolerantFrames.visitStep_node
+  check ``Verification.TolerantFrames.visitsSettle_of

@@ -201,7 +201,8 @@ structure Settled (c : Target.RunCall G I) (heads : Nat → Bool) (dead : List B
 (`passHeads`); the labels it reaches closed under exits below the bound;
 the start reached; the count `runWalk` reads of the reached labels; a
 claim per label below the bound, the call's claims; a given state at
-heads only. -/
+heads only; the call's nodes, checker, bound, goal, postcondition and written
+assertions; the start's names, context and checked given entry. -/
 structure EnvFacts (c : Target.RunCall G I) (env : SinglePass.WalkEnv ι G I) : Prop where
   heads : envHead env = passHeads c
   closed : ∀ s t, envReached env s = true → t ∈ exitsOf env s → t < env.n → envReached env t = true
@@ -210,6 +211,24 @@ structure EnvFacts (c : Target.RunCall G I) (env : SinglePass.WalkEnv ι G I) : 
   claimed : env.claimed.size = env.n
   claims : env.claimed = c.claims.toArray
   given : ∀ t : Nat, env.isHead[t]! = false → env.given[t]! = none
+  nodes : env.nodes = c.P.toArray
+  nodeCount : env.n = c.P.length
+  codes : env.codes = c.codes
+  checker : env.passChecker = c.passChecker
+  bound : env.bound = c.bound
+  goal : env.goal = c.goal
+  ensures : env.ensures = c.ensures
+  startNames : env.startNames = List.range c.inputs.length
+  argName : env.argName = c.goal.slot.bind ((List.range c.inputs.length)[·]?)
+  stated : ∀ l, env.stated[l]! = passStated c l
+  startLabel : env.start = c.start
+  startHead : env.isHead[c.start]! = true
+  startContext : passCtx c c.start = c.inputs
+  startGiven : ∃ supplied,
+    SinglePass.entryRefusal G c.inputs c.claims c.start c.goal (passStated c c.start) supplied
+      ((env.givenImplies[c.start]?).getD []) ((env.givenArgs[c.start]?).getD [])
+      ((env.givenInputs[c.start]?).getD []) c.entryIndices c.entrySeparation = none ∧
+    env.given[c.start]! = some (startGiven (passStated c c.start) c.entryIndices c.entrySeparation supplied)
 
 omit [Labels ι] in
 /-- A list's true entries, counted by position. -/
@@ -224,15 +243,29 @@ theorem filter_id_length (l : List Bool) :
 /-- **The setup's loop facts from `loopHeads`**: where the setup's nodes are
 the call's, its reached flags `loopHeads`' and its heads the call's, with
 the start below the bound, a claim per label and a given state at heads
-only, `env` states the call (`loopHeads_closed`, `loopHeads_reached_size`).
+only, and the call configuration and checked start entry, `env` states
+the call (`loopHeads_closed`, `loopHeads_reached_size`).
 The equations are read off `setup` (W4). -/
 theorem envFacts_of_loopHeads {c : Target.RunCall G I} {env : SinglePass.WalkEnv ι G I}
     (hnodes : env.nodes = c.P.toArray) (hn : env.n = c.P.toArray.size)
     (hreached : env.reached = (SinglePass.loopHeads c.P.toArray c.start).2) (hheads : envHead env = passHeads c)
     (hstart : c.start < env.n) (hclaimed : env.claimed.size = env.n) (hclaims : env.claimed = c.claims.toArray)
-    (hgiven : ∀ t : Nat, env.isHead[t]! = false → env.given[t]! = none) : EnvFacts c env := by
+    (hgiven : ∀ t : Nat, env.isHead[t]! = false → env.given[t]! = none)
+    (hcodes : env.codes = c.codes) (hchecker : env.passChecker = c.passChecker)
+    (hbound : env.bound = c.bound) (hgoal : env.goal = c.goal) (hensures : env.ensures = c.ensures)
+    (hnames : env.startNames = List.range c.inputs.length)
+    (harg : env.argName = c.goal.slot.bind ((List.range c.inputs.length)[·]?))
+    (hstated : ∀ l, env.stated[l]! = passStated c l) (hstartLabel : env.start = c.start)
+    (hstartHead : env.isHead[c.start]! = true) (hstartCtx : passCtx c c.start = c.inputs)
+    (hstartGiven : ∃ supplied,
+      SinglePass.entryRefusal G c.inputs c.claims c.start c.goal (passStated c c.start) supplied
+        ((env.givenImplies[c.start]?).getD []) ((env.givenArgs[c.start]?).getD [])
+        ((env.givenInputs[c.start]?).getD []) c.entryIndices c.entrySeparation = none ∧
+      env.given[c.start]! = some (startGiven (passStated c c.start) c.entryIndices c.entrySeparation supplied)) :
+    EnvFacts c env := by
   have hc := loopHeads_closed c.P.toArray c.start
-  refine ⟨hheads, fun s t hs ht htn => ?_, ⟨hstart, ?_⟩, ?_, hclaimed, hclaims, hgiven⟩
+  refine ⟨hheads, fun s t hs ht htn => ?_, ⟨hstart, ?_⟩, ?_, hclaimed, hclaims, hgiven, hnodes,
+    by simpa using hn, hcodes, hchecker, hbound, hgoal, hensures, hnames, harg, hstated, hstartLabel, hstartHead, hstartCtx, hstartGiven⟩
   · unfold envReached exitsOf at *
     rw [hreached] at hs ⊢
     rw [hnodes] at ht
@@ -256,6 +289,10 @@ theorem StartBelow.mono {env : SinglePass.WalkEnv ι G I} {a b : Nat} (h : Start
   ⟨fun x hx => Nat.lt_of_lt_of_le (h.1 x hx) hab, fun x hx => Nat.lt_of_lt_of_le (h.2.1 x hx) hab,
     fun i hi => Nat.lt_of_lt_of_le (h.2.2 i hi) hab⟩
 
+/-- Every implication carried into a label names values below the counter. -/
+@[nospecialize] def IncomingBelow (w : SinglePass.Walk ι) (fresh : Nat) : Prop :=
+  ∀ t xs, xs ∈ incI w t → ∀ y ∈ xs, y.test < fresh ∧ y.target < fresh
+
 /-- **The walk's invariant**: the queue's labels distinct, below the bound,
 reached, unvisited and, other than heads, with no exit left to come in; the
 visited labels reached, with no exit left to come in, their exits below the
@@ -267,7 +304,7 @@ well-formed store and below the fresh counter, the edges into heads from
 visited labels' exits; the start names below the counter; every visited
 label settled, its checks in the setup's no-return region `deadArr`; the
 setup's start names and promised input's name below the counter
-(`StartBelow`). -/
+(`StartBelow`); incoming implications below the counter (`IncomingBelow`). -/
 structure RecInv (c : Target.RunCall G I) (env : SinglePass.WalkEnv ι G I) (σ : SinglePass.WalkState ι G) :
     Prop where
   nodup : σ.queue.Nodup
@@ -287,6 +324,7 @@ structure RecInv (c : Target.RunCall G I) (env : SinglePass.WalkEnv ι G I) (σ 
   startFresh : ∀ x ∈ List.range c.inputs.length, x < σ.fresh
   startBelow : StartBelow env σ.fresh
   settled : ∀ t, visB σ.walk t = true → Settled c (envHead env) env.deadArr.toList σ t
+  impBelow : IncomingBelow σ.walk σ.fresh
 
 /-- **At the walk's end every reached label is visited**, where the record
 counts at least the reached labels (`filter_eq_of_le`). -/
@@ -436,6 +474,7 @@ structure VisitFacts (c : Target.RunCall G I) (env : SinglePass.WalkEnv ι G I) 
   settles : (envHead env l = false → l ∉ exitsOf env l) → SettledCore c (envHead env) env.deadArr.toList σ' l
   mergeFresh : envHead env l = false → 2 ≤ (incS σ.walk l).length → passFresh σ'.walk l = σ.fresh
   inSizes : σ.walk.incoming.size = σ.walk.incomingImpl.size → σ'.walk.incoming.size = σ'.walk.incomingImpl.size
+  impBelow : IncomingBelow σ.walk σ.fresh → IncomingBelow σ'.walk σ'.fresh
 
 omit [Labels ι] in
 theorem visB_frame {w w' : SinglePass.Walk ι} {t : Nat} (h : w'.labels[t]? = w.labels[t]?) : visB w' t = visB w t := by
@@ -488,7 +527,7 @@ theorem recInv_visit {c : Target.RunCall G I} {env : SinglePass.WalkEnv ι G I} 
     subst htl; exact hself (hnewQ t ht).2.1 (hnewQ t ht).1
   refine { nodup := ?_, queue := ?_, visR := ?_, visDeg := ?_, exits := ?_, count := ?_, size := ?_, degs := ?_,
            inLen := ?_, inSizes := hF.inSizes hI.inSizes, inVis := ?_, edgesVis := ?_, push := ?_, startFresh := ?_,
-           startBelow := hI.startBelow.mono hF.fresh, settled := ?_ }
+           startBelow := hI.startBelow.mono hF.fresh, impBelow := hF.impBelow hI.impBelow, settled := ?_ }
   · rw [hQ]
     refine List.nodup_append.mpr ⟨hnodupNew, hrest.2, fun a ha b hb hab => ?_⟩
     subst hab
