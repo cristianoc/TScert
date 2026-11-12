@@ -1880,3 +1880,40 @@ label establishing them (`assertion_query_sound` at a node other than a
 head, `head_query_sound` at a head, whose given facts include the written
 assertion), carries them to every reached entry as `reached_pre` carries
 `passPreT`.
+
+## Leg 14b: the edge evidence checked, and a start an edge enters
+
+Module `lean/Verification/Programs/TolerantFramesComposeEdges.lean`.
+
+**D1, the edge evidence.** Proved: (`edgeEvidenceChecked_env`) where
+`edgeEvidenceChecked` accepts the search's evidence at the edge's context
+$`\Gamma`$ and the target's $`\Delta`$, over the fields, optional fields
+and cells read off the edge's facts $`k`$, with $`k`$ holding at
+$`\rho`$, $`\Gamma`$ typing $`\rho`$ and the observation holding of slot
+0, $`\Delta`$ types $`\mathrm{mapEnv}\ \theta\ \rho`$: an unsatisfiable
+context meets no environment, `checkMapped_sound` gives `MappedCovers`
+and `checkObserved_sound` `ObservedCovers`, each read at the environment
+(`MappedCovers.env`, `ObservedCovers.env` with `readFields_holds`,
+`optionalFields_holds`, `aliasCells_holds`), as `ControlFlow.target_sound`
+and `branch_target_sound` read them for the checker; `checkedEdge_env` is
+the same for `checkedEdge`'s accepted result. This is the `htc` premise
+of `exitDelivers_of_edge` and `exitDelivers_head` on an edge `run` accepts
+by its search, at each context `run` searches from: the edge's own (its
+facts the materialized edge store, expanded, which `edgeStore_normal`
+gives), the yields' refinement and the mixed one (their typing at
+$`\rho`$ the step's yields, `YieldsOk`, pass change D2). An edge accepted
+by subtype answers alone reads the subtype cache (pass change D5).
+
+**D8, the start an edge enters.** `run` enters it with `headEntry g
+false`, as any head, and checks each edge into it as an edge into a head,
+so `exitDelivers_head` covers those edges with the start's given facts
+`startGiven …`. Proved (`start_entered_passPreT`): with that entry,
+`entryRefusal` accepting, the counter at or past the inputs' width and the
+entry meeting the inputs, the separation and the index facts, the start's
+typed assertion holds at the entry values (`headEntry_holds` from
+`HeadEstablishes` at the entry: the given facts by `startGiven_holds`, no
+given implication, each given input and the promised input at its own
+slot). `StartNotReentered` is then not a premise: `PassWalkSound.entered`
+is `start_passPreT` at a start no edge enters and `start_entered_passPreT`
+at one an edge enters, and `HeadsEntered` at the start is
+`headsEntered_of_recorded` as at any head.
