@@ -18,9 +18,8 @@ needs it (`throws`). This module states what that check gives:
   `write_judgment` states for `writeWithin`.
 
 The call case reads the step's derivation `d`, which the pass checks beside
-`selectedWithinAt` (`passDerivChecked`: claimed at the node's term, its tree
-accepted); that its claim is at the node's context is a premise
-(`DerivContext`): the pass does not check it. -/
+`selectedWithinAt` (`passDerivChecked`: claimed at the node's term and
+context, its tree accepted). -/
 namespace Verification.TolerantFrames
 open Verification Footprints HeapObservations
 
@@ -37,13 +36,13 @@ def passWrites (G : NormalGraph ι) (Γ : List (Ty ι)) (kS : HeapKnowledge.Know
   ExpressionEffects.writeWithin G Γ Φ t || ExpressionEffects.initWriteWithin G Γ kS Φ t
 
 /-- The pass's check of the step's derivation `d` where its signature bounds
-the step (`derivChecked`, `SinglePass.lean` 1427–1430): claimed at the node's
-term, its tree accepted with the codes or by `requiresTree` at the step's
+the step (`derivChecked` in `SinglePass.footprintCheck`): claimed at the
+node's term and context, its tree accepted with the codes or by `requiresTree` at the step's
 knowledge `kS`. -/
 def passDerivChecked (G : NormalGraph ι) (images : InstanceImageCheck G) (codes : CodeEntry ι → Bool)
     (sums : List (ReadSummary ι)) (kS : HeapKnowledge.Knowledge) (j : Sequent ι)
     (d : ProgramCertificates.Evidence ι) : Bool :=
-  (claim d).term == j.term &&
+  (claim d).term == j.term && (claim d).context == j.context &&
     (checkTreeUsing G images d codes sums || PromiseCalls.requiresTree G images kS codes sums d)
 
 /-- The pass's `within` (`SinglePass.lean` 1433–1435) at the node's sequent
@@ -67,12 +66,6 @@ def passThrows (G : NormalGraph ι) (images : InstanceImageCheck G) (codes : Cod
       ExpressionEffects.selectedThrows d &&
       (match ExpressionEffects.selectedEffect d with | some eff => eff.onThrow | none => false)) ||
     j.context.any (ExpressionEffects.emptyType G ·)
-
-/-- **(Hypothesis) The step's derivation is claimed at the node's context.**
-`passDerivChecked` compares the claim's term only; the selected signature's
-soundness is stated at the claim's context. -/
-def DerivContext (j : Sequent ι) (d : ProgramCertificates.Evidence ι) : Prop :=
-  (claim d).context = j.context
 
 /-! ## What the check gives -/
 
@@ -115,7 +108,6 @@ theorem pass_within_normal {G : NormalGraph ι} {images : InstanceImageCheck G} 
     {sums : List (ReadSummary ι)} {j : Sequent ι} {kS : HeapKnowledge.Knowledge} {Φ : Footprints.Closed}
     {F : List Nat} {d : ProgramCertificates.Evidence ι}
     (hwi : passWithin G images codes sums j kS Φ F d = true)
-    (hctx : GraphCode.selectedWithinAt Φ F d = true → DerivContext j d)
     (hscope : checkScope j.context.length j.term = true)
     (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums)
     {ρ : Env} {n : Nat} {W : WorldT n} {h : Heap} {b : Nat} (hF : GraphCode.FreshOk F b ρ)
@@ -130,9 +122,8 @@ theorem pass_within_normal {G : NormalGraph ι} {images : InstanceImageCheck G} 
   · exact weaken (fun _ _ hq => hq.on _) (SafePostExc.post (passWrites_sound hwrite he hh hkS hsafe))
   · simp only [Bool.and_eq_true] at hcall
     obtain ⟨hcall, hdc⟩ := hcall
-    have hctx := hctx hcall
     simp only [passDerivChecked, Bool.and_eq_true, beq_iff_eq] at hdc
-    obtain ⟨hterm, htree⟩ := hdc
+    obtain ⟨⟨hterm, hctx⟩, htree⟩ := hdc
     have hsel := hcall
     simp only [GraphCode.selectedWithinAt, Bool.and_eq_true] at hsel
     obtain ⟨hops, hsel⟩ := hsel
@@ -166,7 +157,6 @@ theorem pass_within_throw {G : NormalGraph ι} {images : InstanceImageCheck G} {
     {sums : List (ReadSummary ι)} {j : Sequent ι} {kS : HeapKnowledge.Knowledge} {Φ : Footprints.Closed}
     {F : List Nat} {d : ProgramCertificates.Evidence ι}
     (hth : passThrows G images codes sums j kS Φ F d = true)
-    (hctx : GraphCode.selectedWithinAt Φ F d = true → DerivContext j d)
     (hscope : checkScope j.context.length j.term = true)
     (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums)
     {ρ : Env} {n : Nat} {W : WorldT n} {h : Heap} {b : Nat} (hF : GraphCode.FreshOk F b ρ)
@@ -183,9 +173,8 @@ theorem pass_within_throw {G : NormalGraph ι} {images : InstanceImageCheck G} {
   · exact SafePostExc.weaken (fun _ _ _ => trivial) (fun _ hq => hq.on _) (passWrites_sound hwrite he hh hkS hsafe)
   · simp only [Bool.and_eq_true] at hcall
     obtain ⟨⟨⟨hsw, hdc⟩, hthr⟩, hon⟩ := hcall
-    have hctx := hctx hsw
     simp only [passDerivChecked, Bool.and_eq_true, beq_iff_eq] at hdc
-    obtain ⟨hterm, htree⟩ := hdc
+    obtain ⟨⟨hterm, hctx⟩, htree⟩ := hdc
     have hsel := hsw
     simp only [GraphCode.selectedWithinAt, Bool.and_eq_true] at hsel
     obtain ⟨hops, hsel⟩ := hsel

@@ -528,6 +528,9 @@ run_cmd do
   check ``Verification.TolerantFrames.exitDelivers_head
   check ``Verification.TolerantFrames.handlerDelivers_of_edge
   check ``Verification.TolerantFrames.stepEdgesSound_of
+  check ``Verification.TolerantFrames.footprintCheck_sound
+  check ``Verification.TolerantFrames.footprint_exits
+  check ``Verification.TolerantFrames.returnCheck_plain
   let env ← getEnv
   let project (decl : Name) : Bool := match env.getModuleIdxFor? decl with
     | some i => (`Verification).isPrefixOf env.header.moduleNames[i.toNat]!

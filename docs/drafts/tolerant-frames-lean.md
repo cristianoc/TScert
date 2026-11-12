@@ -1355,3 +1355,39 @@ Named hypotheses and what discharges them:
 | the result's freshness (`hfo`) | `outFresh` behind `derivChecked` (queued) |
 | the target's types (`htc`), a given implication's type within (`himp`) | edge evidence checked; the subtype cache's soundness (queued) |
 | the walk's records (`hrec`, `hrecHead`, `hentry`) | the driver returning a `Walk` (queued) |
+
+## Leg 11: the footprint and return checks at a node
+
+Module `lean/Verification/Programs/TolerantFramesStepLinkReturns.lean`, over
+the pass's functions `SinglePass.footprintCheck` and `SinglePass.returnCheck`.
+Proved:
+
+- `footprintCheck_sound`, by unfolding: at the node's sequent, `within`
+  (`passWithin`), `throws` (`passThrows`) where a live handler catches the
+  throw or the bound covers throws, a return's freshness where the bound
+  requires a fresh result, and the term's scope. The derivation check
+  (`passDerivChecked`) states the claim at the node's term and context, as
+  `footprintCheck`'s `derivChecked` does;
+- `footprint_exits`: where `footprintCheck` accepts the node, the fresh
+  receiver slots hold stores allocated at or past the invocation's entry
+  $`h_0`$ (`FreshOk`), and the node's local safety and $`\Phi`$ from $`h_0`$ to
+  its entry heap hold, each run with budget left keeps $`\Phi`$ from $`h_0`$ to
+  the heap of its normal exit, and of its throw where a live handler catches
+  it or the bound covers throws: the per-node form the `bounded` field
+  composes along a run;
+- `returnCheck_plain`: where `returnCheck` refuses nothing at a plain goal,
+  a returned value of the claim's type is of the goal's (`GoalHolds`), which
+  is `NodeAccepted.ret` at a plain goal.
+
+Named hypotheses: `FreshOk` of the receiver slots the pass records fresh;
+the guard and assertion goals of `returnCheck` (the yields' soundness,
+`YieldsOk`, and the subtype cache's).
+
+The regional check (`ArgumentRegionGraph.checkNode` over the tables `run`
+builds per node) has a soundness theorem only for a whole certified graph
+(`ArgumentRegionGraph.checkNodes_sound`, whose premise is the certificate
+checker's acceptance, `checkGraphUsing`); the pass supplies a node's typing
+by its step, and its tables per node (`sparse` over the node and its
+targets), so the per-node regional statement needs `checkNode`'s soundness
+from the node's own typing and the agreement of each node's tables with its
+targets' (`regionIn`'s meet).
