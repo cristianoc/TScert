@@ -3,7 +3,7 @@ import Lean.Elab.Command
 import Lean.Compiler.CSimpAttr
 import Verification.Source.Claims.Json
 import Verification.Source.RequestCli
-import Verification.Source.Claims.PassUnitFile
+import Verification.Source.Claims.PassUnitModules
 import Verification.Semantics.ArgumentStoreRegions
 import Verification.Semantics.FootprintNatives
 import Verification.Programs.ArgumentPathTracking
@@ -31,7 +31,8 @@ the following depends on an axiom other than `propext`, `Classical.choice` and `
   accepted function's and module run's safety is a consequence;
 - the single pass's unit theorem `SourceClaimJson.PassUnit.passUnit_safe` and
   the wrapper, code-table, plan, linking and realization theorems it rests on,
-  and the file-level theorem `SourceClaimJson.PassUnit.passFile_safe`;
+  the file-level theorem `SourceClaimJson.PassUnit.passFile_safe` and the
+  modules' linking theorems;
 - the regional footprint's transport and composition, cell provenance, and the
   argument-store region composition, framing and stable separation theorems;
 - the tolerant-frame development's admissibility, adequacy, modal-law and
@@ -82,6 +83,8 @@ run_cmd do
   check ``Verification.SourceClaimJson.PassUnit.requestSafe_of_member
   check ``Verification.SourceClaimJson.PassUnit.closedUnits_selected_safe
   check ``Verification.SourceClaimJson.PassUnit.passFile_safe
+  check ``Verification.SourceClaimJson.PassUnit.linkModules
+  check ``Verification.SourceClaimJson.PassUnit.published_holds
   check ``Verification.Footprints.transport_sound
   check ``Verification.Footprints.Sep.sound
   check ``Verification.Footprints.Post.mono

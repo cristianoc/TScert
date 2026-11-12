@@ -20,12 +20,13 @@ open Lean ProgramTyping RequestJson SourceExtraction ControlFlow PositiveGraphs 
 /-! ## The module's environment -/
 
 /-- What a module slot of a unit's frame holds: the value of a module
-function of the file (a unit, linked), or a value from outside the file's
+function of the file (a unit, linked), or values from outside the file's
 functions (an import, a host value, a module constant or cell the
-initialization binds). -/
+initialization binds), one per depth of unfolding: an import's value is its
+own module's environment at that depth. -/
 inductive Slot (U : Type) where
   | linked (u : U)
-  | outside (v : Tm)
+  | outside (v : Nat → Tm)
 
 /-- **A module function's code**: its graph code (arity, node lists, start,
 kind), the object it is (fields and identity), and per capture, in frame
@@ -41,50 +42,51 @@ structure ModuleCode (ι U : Type) where
   captures : List (Ty ι)
   slots : List (Slot U)
 
-/-- What a slot holds, with each linked function's value given by `f`. -/
-def Slot.valueWith {U : Type} (f : U → Tm) : Slot U → Tm
+/-- What a slot holds at depth `i`, with each linked function's value given
+by `f`. -/
+def Slot.valueAt {U : Type} (f : U → Tm) (i : Nat) : Slot U → Tm
   | .linked u => f u
-  | .outside v => v
+  | .outside v => v i
 
 /-- The closure of a module function's code over the captured values `vs`. -/
 def ModuleCode.closure {ι U : Type} (c : ModuleCode ι U) (vs : List Tm) : Tm :=
   .objAt c.fields (.graph c.arity c.exprs c.conts c.start vs c.kind false) c.oid
 
-/-- The captured values of a function's closure at depth `n + 1`, its linked
-functions given by `f` (the depth-`n` environment). -/
-def ModuleCode.captured {ι U : Type} (c : ModuleCode ι U) (f : U → Tm) : List Tm :=
-  c.slots.map (Slot.valueWith f)
+/-- The captured values of a function's closure at depth `i + 1`, its linked
+functions given by `f` (the depth-`i` environment). -/
+def ModuleCode.captured {ι U : Type} (c : ModuleCode ι U) (f : U → Tm) (i : Nat) : List Tm :=
+  c.slots.map (Slot.valueAt f i)
 
 /-- **The module's environment, unfolded `n` times**: each function's
 closure, whose linked captures hold the other functions' closures unfolded
-once less, and whose outside captures hold their values; at depth `0` the
+once less, and whose outside captures hold their values at that depth; at depth `0` the
 linked captures hold `null`. A run of at most `n` steps calls through at most
 `n` closures, so the depth-`n` environment is the one a budget-`n` run sees. -/
 def approxEnv {ι U : Type} (code : U → ModuleCode ι U) : Nat → U → Tm
   | 0 => fun _ => .nul
-  | n + 1 => fun u => (code u).closure ((code u).captured (approxEnv code n))
+  | n + 1 => fun u => (code u).closure ((code u).captured (approxEnv code n) n)
 
 /-- The value of each module function at depth `n`: its closure over the
 environment one depth below. -/
 def approx {ι U : Type} (code : U → ModuleCode ι U) (n : Nat) (u : U) : Tm :=
   approxEnv code (n + 1) u
 
-/-- Every outside value is a closed value. -/
+/-- Every outside value is a closed value, at every depth. -/
 def OutsideValues {ι U : Type} (code : U → ModuleCode ι U) : Prop :=
-  ∀ u v, Slot.outside v ∈ (code u).slots → isVal v = true ∧ Scoped 0 v
+  ∀ u v, Slot.outside v ∈ (code u).slots → ∀ i, isVal (v i) = true ∧ Scoped 0 (v i)
 
 theorem closure_scoped {ι U : Type} (c : ModuleCode ι U) {vs : List Tm} (h : ∀ v ∈ vs, Scoped 0 v) :
     Scoped 0 (c.closure vs) := by
   simpa [ModuleCode.closure, Scoped] using h
 
 theorem captured_values {ι U : Type} {code : U → ModuleCode ι U} (ho : OutsideValues code) {f : U → Tm}
-    (hf : ∀ d, isVal (f d) = true ∧ Scoped 0 (f d)) (u : U) :
-    ∀ v ∈ (code u).captured f, isVal v = true ∧ Scoped 0 v := by
+    (hf : ∀ d, isVal (f d) = true ∧ Scoped 0 (f d)) (u : U) (i : Nat) :
+    ∀ v ∈ (code u).captured f i, isVal v = true ∧ Scoped 0 v := by
   intro v hv
   obtain ⟨s, hs, rfl⟩ := List.mem_map.mp hv
   cases s with
   | linked d => exact hf d
-  | outside v => exact ho u v hs
+  | outside v => exact ho u v hs i
 
 theorem approxEnv_value {ι U : Type} {code : U → ModuleCode ι U} (ho : OutsideValues code) :
     ∀ n u, isVal (approxEnv code n u) = true ∧ Scoped 0 (approxEnv code n u) := by
@@ -93,10 +95,10 @@ theorem approxEnv_value {ι U : Type} {code : U → ModuleCode ι U} (ho : Outsi
   | zero => intro u; exact ⟨rfl, by simp [approxEnv, Scoped]⟩
   | succ n ih =>
     intro u
-    exact ⟨rfl, closure_scoped _ fun v hv => (captured_values ho ih u v hv).2⟩
+    exact ⟨rfl, closure_scoped _ fun v hv => (captured_values ho ih u n v hv).2⟩
 
-theorem captured_get {ι U : Type} {c : ModuleCode ι U} {f : U → Tm} {k : Nat} {s : Slot U}
-    (hs : c.slots[k]? = some s) : (c.captured f)[k]? = some (s.valueWith f) := by
+theorem captured_get {ι U : Type} {c : ModuleCode ι U} {f : U → Tm} {i k : Nat} {s : Slot U}
+    (hs : c.slots[k]? = some s) : (c.captured f i)[k]? = some (s.valueAt f i) := by
   simp only [ModuleCode.captured, List.getElem?_map, hs, Option.map_some]
 
 section
@@ -238,7 +240,8 @@ variable {ι U : Type}
 which its code offers, kind included (`CodeOffers`, `KindOffers`); each of its
 captures is a slot; each linked capture is read at its callee's interface
 and its callee is in the set (`S`): the slot agreement; and each outside
-capture's value meets its type at every budget in every world: the
+capture's value at each depth meets its type at every budget up to that
+depth in every world: the
 contract of the import, host value, stand-in or module value it holds. -/
 def Realizes (G : NormalGraph ι) (code : U → ModuleCode ι U) (iface : U → Ty ι) (S : U → Prop) (u : U) :
     Prop :=
@@ -248,17 +251,17 @@ def Realizes (G : NormalGraph ι) (code : U → ModuleCode ι U) (iface : U → 
     (code u).captures.length = (code u).slots.length ∧
     (∀ (k : Nat) d, (code u).slots[k]? = some (Slot.linked d) → (code u).captures[k]? = some (iface d) ∧ S d) ∧
     (∀ (k : Nat) v A, (code u).slots[k]? = some (Slot.outside v) → (code u).captures[k]? = some A →
-      ∀ j (V : WorldT j), meaning G A j V v)
+      ∀ i, ∀ j ≤ i, ∀ V : WorldT j, meaning G A j V (v i))
 
 /-- The captures of a realized unit meet their types at `j`, where every
 linked function's value, given by `f`, meets its interface there. -/
 theorem captures_envOk {G : NormalGraph ι} {code : U → ModuleCode ι U} {iface : U → Ty ι} {S : U → Prop}
     {u : U} (hr : Realizes G code iface S u) (ho : OutsideValues code) {f : U → Tm}
-    (hf : ∀ d, isVal (f d) = true ∧ Scoped 0 (f d)) {j : Nat} {V : WorldT j}
+    (hf : ∀ d, isVal (f d) = true ∧ Scoped 0 (f d)) {i j : Nat} (hji : j ≤ i) {V : WorldT j}
     (hm : ∀ d, S d → meaning G (iface d) j V (f d)) :
-    EnvOk G (code u).captures (envOf ((code u).captured f) .nul) j V := by
+    EnvOk G (code u).captures (envOf ((code u).captured f i) .nul) j V := by
   obtain ⟨L, Sg, -, -, -, hlen, hagree, hout⟩ := hr
-  apply EnvOk.envOf_nul (fun v hv => (captured_values ho hf u v hv).2)
+  apply EnvOk.envOf_nul (fun v hv => (captured_values ho hf u i v hv).2)
     (by simp [ModuleCode.captured, hlen])
   intro k A hA v hv
   have hk : k < (code u).slots.length := by
@@ -275,7 +278,7 @@ theorem captures_envOk {G : NormalGraph ι} {code : U → ModuleCode ι U} {ifac
     exact hm d hd
   | outside w =>
     rw [hsk] at hs
-    exact hout k w A hs hA j V
+    exact hout k w A hs hA i j hji V
 
 /-- **The module's environment meets every closed unit's interface**
 (proved): over a set `S` of units each realized against `S`, the value of
@@ -294,16 +297,16 @@ theorem approx_meets {G : NormalGraph ι} {code : U → ModuleCode ι U} {iface 
     have hm0 : m = 0 := Nat.le_zero.mp hm
     subst hm0
     exact closure_meets_below (code u).fields hrep hk hoff (by simp [ModuleCode.captured, hlen])
-      (fun v hv => (captured_values ho (approxEnv_value ho 0) u v hv).2)
-      (fun v hv => (captured_values ho (approxEnv_value ho 0) u v hv).1)
+      (fun v hv => (captured_values ho (approxEnv_value ho 0) u 0 v hv).2)
+      (fun v hv => (captured_values ho (approxEnv_value ho 0) u 0 v hv).1)
       (fun j hj => absurd hj (Nat.not_lt_zero j)) W
   | succ n ih =>
     intro u hu m hm W
     obtain ⟨L, Sg, hrep, hk, hoff, hlen, -, -⟩ := hreal u hu
     exact closure_meets_below (code u).fields hrep hk hoff (by simp [ModuleCode.captured, hlen])
-      (fun v hv => (captured_values ho (approxEnv_value ho (n + 1)) u v hv).2)
-      (fun v hv => (captured_values ho (approxEnv_value ho (n + 1)) u v hv).1)
-      (fun j hj V => captures_envOk (hreal u hu) ho (approxEnv_value ho (n + 1))
+      (fun v hv => (captured_values ho (approxEnv_value ho (n + 1)) u (n + 1) v hv).2)
+      (fun v hv => (captured_values ho (approxEnv_value ho (n + 1)) u (n + 1) v hv).1)
+      (fun j hj V => captures_envOk (hreal u hu) ho (approxEnv_value ho (n + 1)) (by omega)
         (fun d hd => ih d hd j (by omega) V)) W
 
 /-- **Each closed unit's captures are met by the module's environment**
@@ -315,8 +318,8 @@ a caller's input slots). -/
 theorem approx_captures_envOk {G : NormalGraph ι} {code : U → ModuleCode ι U} {iface : U → Ty ι}
     {S : U → Prop} (hreal : ∀ u, S u → Realizes G code iface S u) (ho : OutsideValues code)
     (n : Nat) {u : U} (hu : S u) (W : WorldT n) :
-    EnvOk G (code u).captures (envOf ((code u).captured (approx code n)) .nul) n W :=
-  captures_envOk (hreal u hu) ho (fun d => approxEnv_value ho (n + 1) d)
+    EnvOk G (code u).captures (envOf ((code u).captured (approx code n) n) .nul) n W :=
+  captures_envOk (hreal u hu) ho (fun d => approxEnv_value ho (n + 1) d) (Nat.le_refl n)
     (fun d hd => approx_meets hreal ho n d hd n (Nat.le_refl n) W)
 
 /-- **The interfaces as `link` states them** (proved): the realization

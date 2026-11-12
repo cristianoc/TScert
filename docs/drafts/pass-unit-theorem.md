@@ -36,7 +36,8 @@ The Lean modules are
 [PassUnitHeadline](../../lean/Verification/Source/Claims/PassUnitHeadline.lean) (the theorems),
 [PassUnitLink](../../lean/Verification/Source/Claims/PassUnitLink.lean) (the closure and the linking induction),
 [PassUnitRealize](../../lean/Verification/Source/Claims/PassUnitRealize.lean) (the module's environment) and
-[PassUnitFile](../../lean/Verification/Source/Claims/PassUnitFile.lean) (the file-level theorem).
+[PassUnitFile](../../lean/Verification/Source/Claims/PassUnitFile.lean) (the file-level theorem) and
+[PassUnitModules](../../lean/Verification/Source/Claims/PassUnitModules.lean) (linking modules).
 
 ## 1. The statement
 
@@ -317,7 +318,9 @@ holding its callee unfolded $`n - 1`$ times:
 \mathrm{approx}_n(u) = \mathrm{env}_{n+1}(u)
 ```
 
-with $`\mathrm{linked}(d)[e] = e(d)`$ and $`\mathrm{outside}(v)[e] = v`$. A
+with $`\mathrm{linked}(d)[e] = e(d)`$ and $`\mathrm{outside}(v)[e] = v_n`$:
+an outside slot holds one value per depth, an import's being its own
+module's environment at that depth. A
 closure holds its captured values, so a cycle of functions has no finite
 closure; the depth-$`n`$ unfolding is the environment a run of at most
 $`n`$ steps sees, since each call spends a step.
@@ -327,8 +330,8 @@ interface $`I_u`$ presents one clause of signatures $`L`$ and variadic
 signatures $`S_v`$ which its code offers at its captures' types
 (`CodeOffers`) with its kind (`KindOffers`); it has one slot per capture;
 each linked slot $`\mathrm{linked}(d)`$ has type $`I_d`$ with $`d \in S`$
-(the slot agreement); and each outside slot's value meets its type at every
-budget in every world.
+(the slot agreement); and each outside slot's value at depth $`i`$ meets
+its type at every budget $`j \le i`$ in every world.
 
 **Theorem** `closure_meets_below` (proved). Graph code of fixed arity
 offering the signatures of $`F`$, whose captured values meet their types at
@@ -378,7 +381,8 @@ function on that path is a `do` block over the front with no theorem about
 its frame, and part of it is decidable at the verdict (see 6.3).
 
 **H5b, the outside contracts** (`OutsideContracts`). Every value a closed
-unit's outside slot holds meets the slot's type at every budget. It is the
+unit's outside slot holds at depth $`i`$ meets the slot's type at every
+budget $`j \le i`$. It is the
 trusted boundary of section 5, slot by slot: an import's declared contract
 or an import stand-in's footprint, a host value's contract, and a module
 constant's or cell's type, which the initialization's request would have to
@@ -429,3 +433,176 @@ Each enters the headline at a named place:
   no theorem relates to their definitions.
 
 The hypotheses are listed with their owners in section 6.
+
+## 6. The file-level theorem
+
+### The statement
+
+**Theorem** `passFile_safe` (proved under H1–H4, H5a, H5b). Let
+$`f' = f.\mathrm{withHeadFacts}(\mathit{givenLines}, \mathrm{false})`$,
+$`V = \mathrm{fileVerdicts}(f, \ldots)`$ the verdicts mode 8's loop prints
+and $`S = \mathrm{closedUnits}(V)`$. Then
+
+```math
+\begin{aligned}
+&\mathrm{fragmentPlans}(\ldots) = \mathrm{ok}\ f \;\wedge\; \mathrm{ModuleLayout}(f', S) \;\wedge\; \mathrm{OutsideContracts}
+ \;\Longrightarrow\; \forall u \in S. \\
+&\quad \exists i \in f.\mathrm{selected}.\; \mathrm{unitId}(i) = u \wedge \mathrm{PassUnitSafe}(f', i) \\
+&\quad \wedge\; \forall n.\; \forall m \le n.\; \forall W.\; \mathrm{approx}_n(u) \in ⟦I_u⟧_{m,W} \\
+&\quad \wedge\; \forall n.\; \forall W.\; \text{the values } \mathrm{env} \text{ captures for } u \models_{n,W} C_u
+\end{aligned}
+```
+
+Every member of each closed unit's group is safe from every entry meeting
+its inputs; each closed function's value in the module's environment meets
+the arrow its callers read, its effect included, at every budget; and its
+module slots are met by that environment. This statement, with
+`passUnit_safe` for a unit's line alone, takes the place of
+`checkUnitJson_safe` for mode 8.
+
+### The hypotheses and who discharges them
+
+- **H1 `RunSound`, H2 `RunKeepsSummaries`**: the graph lane, about
+  `SinglePass.run` (section 2).
+- **H3 `PassGroupChecks`**: the wrapper lane, by the lemma below.
+- **H4 `FragmentStartContexts`**: the wrapper lane, by a start-context check
+  in `passMember` (below), which makes it a clause of `MemberAccepted`; H4
+  then leaves the headline.
+- **H5a `ModuleLayout`**: the extraction, about the frame `extractMember`
+  lays out and the slot table (`ordinarySlots`, `withStandIns`,
+  `withNeverImports`). Its slot agreement and frame layout are decidable from
+  the plans: a check at the verdict, building each closed unit's
+  `ModuleCode` from its plan and comparing slot types, would make H5a a
+  theorem about that check.
+- **H5b `OutsideContracts`**: trusted boundaries, slot by slot (section 5);
+  the module-constant slots are the initialization's obligation, an
+  implementation import's are discharged by section 7.
+- **Trusted, outside any hypothesis**: parser fidelity, annotation
+  interpretation, source-to-graph lowering (that the graph's run is the
+  source function's, and that a budget-$`n`$ run of the source sees the
+  depth-$`n`$ environment), sparse handler placement, compiled
+  replacements (section 5).
+
+### The lemma the wrapper lane provides
+
+With `passMember f fuel compare debugNode repeats given observe counting j`
+the pure function a member's checks become, and `.accepted` its verdict:
+
+```math
+\begin{aligned}
+&\texttt{passGroup\_members}:\; (f.\mathrm{passGroup}(\mathit{fuel}, g, \ldots)).2 = \mathrm{ok}\ d
+  \;\Longrightarrow\; \forall j \in g.\; (f.\mathrm{passMember}(\mathit{fuel}, \ldots, j)).\mathrm{accepted} \\
+&\texttt{passMember\_sound}:\; (f.\mathrm{passMember}(\mathit{fuel}, \ldots, j)).\mathrm{accepted}
+  \;\Longrightarrow\; \mathrm{MemberAccepted}(f, j) \wedge \mathrm{StartContexts}_j(f)
+\end{aligned}
+```
+
+for every value of every argument. `MemberAccepted` is the inductive of
+section 3 as written in `PassUnitMember`, its clauses the exact calls:
+`PlanAt`, `declaredEffect`, the region entry conditions, `CodesAccepted`
+(each code run accepted, R3: a run returning an observation refuses) and
+`MainAccepted` (R2: in the fallback, the fallback run's own summaries
+checked, which `MainAccepted.fallback` requires), or the qualified case.
+$`\mathrm{StartContexts}_j`$ is `StartContexts` at member $`j`$: its start
+claim states its inputs and each code request's its frame.
+
+### The old headline and the new one
+
+`checkUnitJson_safe` concludes, for a file's unit, `UnitSafe` (its
+certified requests' `RequestsSafe`) and, for a module run, `DocumentSafe`
+of its restricted document. Clause by clause:
+
+- *checker acceptance* (`checkRequests rs b = true`): the old conclusion
+  states the certificate's acceptance; the new one has no certificate and no
+  such clause.
+- *safety, footprint and fresh result, postcondition, regions*: the same
+  four statements, from the same entry (`EntryHolds`), at the same admitted
+  assignments.
+- *assertions*: the old states them entailed by the certificate
+  (`RequestAssertionsEntailed`); the new states each stated assertion of the
+  graph and of each code request true at every state reached within the
+  budget, which is about the program alone.
+- *module values*: the old states safety under $`\rho \models \Gamma`$,
+  every module slot included, and nothing discharges it; the new one
+  discharges each closed unit's linked slots in the module's environment
+  and states each closed function's value meets its interface.
+- *imported modules*: the old module case checks each certified import's
+  restricted document; mode 8 plans no module run, and an import's slot is
+  an outside contract (H5b) until section 7's interface theorem applies.
+- *which units*: the old covers each accepted line; the new one's local part
+  covers each accepted line (`passUnit_safe`), its linking part the closed
+  units with a layout (H5a's exclusions, section 4).
+- *async*: neither states the property `checkRequests_async` gives.
+
+## 7. Module interfaces
+
+### The existing mechanism
+
+On the integration branch (`engine-types`), a module's interface is the
+result of the canonical component computation, `establishModules`, over the
+modules' components (`interfaceComponents`: the strongly connected
+components of the import graph in dependency order, members by location).
+Each module is planned with the entries established before it as its
+imports' footprints, its reached groups checked by the pass, and a
+function's entry $`((\ell, n), (\Phi, t, \Phi_r), u)`$ added where its
+group $`u`$ is in the fixpoint `ok`: accepted with every dependency in `ok`
+or established before. An importer reads an entry at its declared type with
+that footprint (`importedArrow`), after the existing declaration-identity
+and signature-agreement checks.
+
+### The statement
+
+Let $`\mathrm{Holds}(e)`$, for an entry $`e`$ of module $`\ell`$'s function
+$`n`$, state that every slot of an importer reading $`e`$ is met at every
+depth by $`n`$'s value in $`\ell`$'s environment:
+
+```math
+\mathrm{Holds}(e) \iff \forall \text{importer slot } (A, v) \text{ reading } e.\;
+  \forall i.\; \forall j \le i.\; \forall W.\; v_i \in ⟦A⟧_{j,W}
+```
+
+**Theorem** `published_holds` (proved). For a step adding entries to those
+it is given, as `establishModules`' loop appends each module's entries to
+`established`:
+
+```math
+\frac{\forall \mathit{acc}\; m.\; (\forall e \in \mathit{acc}.\; \mathrm{Holds}(e)) \Rightarrow
+  \forall e \in \mathrm{step}(\mathit{acc}, m).\; \mathrm{Holds}(e)}
+ {\forall \mathit{ms}.\; \forall e \in \mathrm{published}(\mathrm{step}, \mathit{ms}, []).\; \mathrm{Holds}(e)}
+```
+
+**Theorem** `linkModules` (proved). The same over an explicit order in which
+each module reads only entries of modules strictly before it
+(`ReadsEarlier`), by strong induction on the position. The component order
+makes the import graph's order well founded: a cycle of imports lies inside
+one component, whose members read a later member at its declared contract
+(an outside contract) and an earlier one at its established entry only.
+
+**Interface soundness** (the step premise, conjectured, to be proved on the
+joined branches). For one module $`\ell`$ processed by `establishModules`
+with entries $`\mathit{acc}`$ that hold, every entry it adds holds. The
+proof plan:
+
+1. *Closure.* An added entry's group $`u`$ is in `ok`, and `ok` is closed:
+   each member accepted with its dependencies in `ok` or in $`\mathit{acc}`$
+   (the counterpart of `closedUnits_closed`, about `ok`'s loop).
+2. *The module's file theorem.* `passFile_safe` for $`\ell`$'s plans
+   (`fragmentPlansCore` with `prepare`), its outside slots for $`\ell`$'s
+   implementation imports discharged by $`\mathrm{Holds}`$ of
+   $`\mathit{acc}`$ (the incoming entries), every other outside slot H5b;
+   dependencies on earlier modules count as closed because their entries
+   hold.
+3. *The entry is the interface.* The footprint published is the unit's own
+   claim's, $`(c.\mathrm{footprint}, c.\mathrm{onThrow}, c.\mathrm{resultFootprint})`$,
+   the one its slot $`I_n`$ states (`ordinarySlots`).
+4. *Signature agreement.* $`⟦I_n⟧`$ in $`\ell`$'s graph is within
+   $`⟦\mathrm{importedArrow}(U, \Phi, t, \Phi_r)⟧`$ in the importer's, $`U`$
+   the importer's declaration of $`n`$: a semantic statement across two
+   stores, which the declaration-identity and correspondence checks
+   (`canonical`) are to establish; no theorem relates two stores' meanings
+   today, so it stays a named hypothesis.
+5. *Replay.* An entry read from the stage store is the result of that
+   computation: the replay trust boundary, not a theorem.
+
+With these, `published_holds` gives every established entry, and the
+importer's file theorem holds with its implementation imports discharged.

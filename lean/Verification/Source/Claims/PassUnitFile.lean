@@ -63,7 +63,8 @@ structure ModuleLayout (f : FilePlans) (selection : Option (List String)) (S : L
 
 /-- **The outside contracts** (H5b, the trusted boundary of the module's
 slots): every value a closed unit's slot holds from outside the file's
-functions meets the slot's type at every budget in every world. Such a slot
+functions, at each depth, meets the slot's type at every budget up to that
+depth in every world. Such a slot
 holds an import (its declaration's contract, or an import stand-in's
 footprint), a host value (its host contract), or a module constant or cell
 (the initialization's postcondition, `:init`). With no import, no host
@@ -71,7 +72,7 @@ value and no module constant, no slot is outside and this holds vacuously. -/
 def OutsideContracts {f : FilePlans} {selection : Option (List String)} {S : List String}
     (m : ModuleLayout f selection S) : Prop :=
   ∀ u ∈ S, ∀ (k : Nat) v A, (m.code u).slots[k]? = some (Slot.outside v) → (m.code u).captures[k]? = some A →
-    ∀ j (V : WorldT j), meaning (graphOf f) A j V v
+    ∀ i, ∀ j ≤ i, ∀ V : WorldT j, meaning (graphOf f) A j V (v i)
 
 /-- Every closed unit of mode 8's verdicts is a selected unit whose group
 `passGroup` accepts (proved, under H1–H4, as `closedUnits_safe`), selection
@@ -129,7 +130,7 @@ theorem passFile_safe
     (∀ u ∈ S, ∀ n, ∀ m ≤ n, ∀ W : WorldT m,
       meaning (graphOf (f.withHeadFacts givenLines false)) (layout.iface u) m W (approx layout.code n u)) ∧
     (∀ u ∈ S, ∀ n (W : WorldT n), EnvOk (graphOf (f.withHeadFacts givenLines false)) (layout.code u).captures
-      (envOf ((layout.code u).captured (approx layout.code n)) .nul) n W) := by
+      (envOf ((layout.code u).captured (approx layout.code n) n) .nul) n W) := by
   intro S
   have hsafe := fun u (hu : u ∈ S) =>
     closedUnits_selected_safe hrun hkeep hgroup hstarts hplans hu
@@ -139,7 +140,7 @@ theorem passFile_safe
     intro u hu
     obtain ⟨L, Sg, hrep, hk, hlen, hagree, hrows⟩ := layout.shape u hu
     obtain ⟨i, hi, hid, hunit⟩ := hsafe u hu
-    refine ⟨L, Sg, hrep, hk, ?_, hlen, hagree, fun k v A hs hA j V => hout u hu k v A hs hA j V⟩
+    refine ⟨L, Sg, hrep, hk, ?_, hlen, hagree, fun k v A hs hA i j hj V => hout u hu k v A hs hA i j hj V⟩
     intro p hp
     obtain ⟨j, hj, name, pos, r, e, hplan, hcode, hcond, ha, hex, hco, hst, hca, hsto, hrow⟩ :=
       hrows i hi hid p hp
