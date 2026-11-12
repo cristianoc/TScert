@@ -982,6 +982,7 @@ def FilePlans.passGroup (f : FilePlans) (fuel : Nat) (group : List Nat) (compare
           | .accepted => if !sumsOk then .refused "a read summary"
             else if !obligations.accepted then .refused "an expression claim" else .accepted
           | .refused w => .refused w
+          | .outsideBound l => .refused s!"footprint at node {l}"
           | .notHandled w => .notHandled w
           | .observed _ => .notHandled "observing a qualified body"
         return (name, countsLine counting name counts, o)
@@ -1025,6 +1026,7 @@ def FilePlans.passGroup (f : FilePlans) (fuel : Nat) (group : List Nat) (compare
         let (o, _, a, _) := SinglePass.run G I codePool fuel rq.program rq.claims rq.start rq.inputs q.entry.goal hints.requirements
           hints.cuts hints.candidates rq.entryIndices [] (e ++ rendered) (GraphCode.admits table) r.aliases
           .ordinary sumsAnswers #[] 1000000000 codeBound codeImplies codeArgs
+        let o := o.asRefusal
         sumsAnswers := a
         -- A refusal observed in a code request: its obligation, the facts
         -- over its names and those it lacks, as for the unit's own graph.
@@ -1056,7 +1058,7 @@ def FilePlans.passGroup (f : FilePlans) (fuel : Nat) (group : List Nat) (compare
         | .accepted => table := table ++ [q.entry]
         | .refused w => codeOutcome := codeOutcome.orElse fun _ => some (.refused s!"code {ci}: {w}"); break
         | .notHandled w => codeOutcome := codeOutcome.orElse fun _ => some (.notHandled s!"{w} (in code {ci})"); break
-        | .observed _ => break
+        | .observed _ | .outsideBound _ => break
       if let some o := codeOutcome then return (name, "", o)
       let codes := GraphCode.admits table
       -- Observing (`observe`): the node of that label (`node:L`), or the
@@ -1100,16 +1102,17 @@ def FilePlans.passGroup (f : FilePlans) (fuel : Nat) (group : List Nat) (compare
       -- A footprint the walk refuses node by node, checked regionally with no
       -- regions where the result is not fresh; then the unit's own regions.
       let (o, counts, after, trace) := match o with
-        | .refused w => if w.startsWith "footprint at node" && !r.fresh then
+        | .outsideBound l => if !r.fresh then
             let fallback := regionalOf "footprintRegional" r.footprint [] r.onThrow
             match walk none (some fallback) with
             | (.accepted, c, a, t) => match regional with
               | some rg => walk none (some rg)
               | none => (.accepted, c, a, t)
-            | (.refused w', c, a, t) => (.refused s!"footprint by store regions: {w'} (after {w})", c, a, t)
+            | (.refused w', c, a, t) => (.refused s!"footprint by store regions: {w'} (after footprint at node {l})", c, a, t)
             | x => x
           else (o, counts, after, trace)
         | _ => (o, counts, after, trace)
+      let o := o.asRefusal
       -- The unit's own expression claims, as the check reads them.
       let obligations := SinglePass.timedKind "outside: expression claims checked" fun _ => ExpressionClaims.checkAllResult (RequestJson.graph r.toRequest) (StoreView.images r.types)
         (StoreView.valid r.types) r.obligations e codes after.summaries.toList
@@ -1132,7 +1135,7 @@ def FilePlans.passGroup (f : FilePlans) (fuel : Nat) (group : List Nat) (compare
         | .refused _, some _ => if tracing then o else
           (SinglePass.run G I pool fuel r.program r.claims r.start r.inputs r.goal r.assertions r.cuts r.candidates
             r.entryIndices [] (e ++ rendered) codes r.aliases .ordinary sumsAnswers #[] debugNode bound
-            givenImplies givenArgs r.ensures givenInputs r.entrySeparation observed false true).1
+            givenImplies givenArgs r.ensures givenInputs r.entrySeparation observed false true).1.asRefusal
         | o, _ => o
       -- A refusal observed: its obligation's facts, the facts it lacks, and
       -- each fact over its names an earlier state held, where last present
@@ -1180,7 +1183,7 @@ def FilePlans.passGroup (f : FilePlans) (fuel : Nat) (group : List Nat) (compare
       lines := lines ++ [s!"{name}: {o}; {counts}"]
       match o with
       | .accepted => pure ()
-      | .observed _ => pure ()
+      | .observed _ | .outsideBound _ => pure ()
       | .refused w | .notHandled w => if failed.isNone then failed := some s!"single pass: {o} ({w.length})"
     | .error reason =>
       lines := lines ++ [s!"refused before the pass: {reason.take 200}"]

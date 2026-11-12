@@ -290,6 +290,9 @@ does not handle, or the state observed at a chosen node. -/
 inductive Outcome (ι : Type) where
   | accepted
   | refused (why : String)
+  /-- Refused at node `l`'s footprint check (`GraphCode.nodeChecked`): the
+  one refusal a regional check may still answer. -/
+  | outsideBound (l : Nat)
   | notHandled (what : String)
   | observed (o : Observation ι)
 
@@ -297,8 +300,52 @@ instance : ToString (Outcome ι) where
   toString
     | .accepted => "accepted"
     | .refused w => s!"refused: {w}"
+    | .outsideBound l => s!"refused: footprint at node {l}"
     | .notHandled w => s!"not handled: {w}"
     | .observed o => s!"observed node {o.label}"
+
+/-- A refusal at a footprint stated as its text. -/
+def Outcome.asRefusal : Outcome ι → Outcome ι
+  | .outsideBound l => .refused s!"footprint at node {l}"
+  | o => o
+
+/-- A node's exit: an edge of its continuation, with whether it pushes the
+result, the observation of the result it makes (a `branchBind` or
+`tagBind` arm) and the answer a `branch` arm promotes; or its handler's
+edge, which pushes the thrown value. -/
+inductive Exit where
+  | normal (target : Target) (pushed : Bool) (observed : Option BranchRefinement.Observation) (promote : Option Bool)
+  | handler (target : Target)
+
+def Exit.target : Exit → Target
+  | .normal t .. | .handler t => t
+
+def Exit.pushed : Exit → Bool
+  | .normal _ p .. => p
+  | .handler _ => true
+
+def Exit.observed : Exit → Option BranchRefinement.Observation
+  | .normal _ _ o _ => o
+  | .handler _ => none
+
+def Exit.promote : Exit → Option Bool
+  | .normal _ _ _ q => q
+  | .handler _ => none
+
+def Exit.isHandler : Exit → Bool
+  | .normal .. => false
+  | .handler _ => true
+
+/-- A node's exits: its continuation's edges in order, then its handler's. -/
+def Exit.ofNode (node : Node) : List Exit :=
+  (match node.continuation with
+  | .ret => []
+  | .bind t => [.normal t true none none]
+  | .effect t => [.normal t false none none]
+  | .branch y m => [.normal y false none (some true), .normal m false none (some false)]
+  | .branchBind y m => [.normal y true (some (.boolean true)) none, .normal m true (some (.boolean false)) none]
+  | .tagBind tg y m => [.normal y true (some (.tag tg true)) none, .normal m true (some (.tag tg false)) none]) ++
+  node.handler.toList.map .handler
 
 /-- The first slot holding each name of `want` (every name, `whole`). -/
 def slotTable (names : List Nat) (want : Std.HashSet Nat) (whole : Bool) : Std.HashMap Nat Nat := Id.run do
@@ -1549,7 +1596,7 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
     if let some (Φ, ret, exc) := bound then
       if deadArr.getD l false then
         if !(GraphCode.deadNode G deadArr.toList node ⟨none, some ⟨c.context, node.expression, c.type⟩, [], {}, none, {}, none, [], [], [], none⟩ && !exc) then
-          return (.refused s!"footprint at node {l}", counts, answers, trace)
+          return (.outsideBound l, counts, answers, trace)
       else
         let F := match PromiseCalls.receiverSlot node.expression with
           | some i => if (entry.names[i]?).any entry.fresh.contains then [i] else []
@@ -1581,7 +1628,7 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
           | .ret => !ret || outFresh
           | _ => true
         if !(within && throws && returns && ProgramCertificates.checkScope width node.expression) then
-          return (.refused s!"footprint at node {l}", counts, answers, trace)
+          return (.outsideBound l, counts, answers, trace)
     -- The step's yields, computed where an edge's types need them. A read
     -- of a slot yields what the implications testing it state.
     let mut yields : Option (List (PromiseCalls.Yield ι)) := none
@@ -1659,18 +1706,10 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
           return (.refused s!"return at node {l}: the promise{if l == debugNode then s!" answer {answerOk} vacuous {vacuous} held {held} arg {argName} start {start} slot {goal.slot} names {entry.names} yields {ys.length}" else ""}", counts, answers, trace)
     -- The edges: target, whether the result is pushed, an observation of
     -- it, and a branch's answer.
-    let edges : List (Target × Bool × Option BranchRefinement.Observation × Option Bool × Bool) :=
-      (match node.continuation with
-      | .ret => []
-      | .bind t => [(t, true, none, none, false)]
-      | .effect t => [(t, false, none, none, false)]
-      | .branch y m => [(y, false, none, some true, false), (m, false, none, some false, false)]
-      | .branchBind y m => [(y, true, some (.boolean true), none, false), (m, true, some (.boolean false), none, false)]
-      | .tagBind tg y m => [(y, true, some (.tag tg true), none, false), (m, true, some (.tag tg false), none, false)]) ++
-      node.handler.toList.map fun t => (t, true, none, none, true)
+    let edges := Exit.ofNode node
     -- The edges' contexts as the step's yields refine them (`produceNodeAt`),
     -- read where a target's assertion is checked on the edge.
-    if yields.isNone && edges.any (fun (t, _) => !isHead[t.label]! && (stated[t.label]!).isSome) then
+    if yields.isNone && edges.any (fun e => !isHead[e.target.label]! && (stated[e.target.label]!).isSome) then
       let e := stepDeriv.getD (.node ⟨c.context, node.expression, c.type⟩ .var [])
       let (ys, a) := (nodeYields G images pool c.context slotImpl.get e stepOut stepK) answers
       answers := a
@@ -1751,7 +1790,12 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
       if !(timedKind "regional node" fun _ => GraphCode.ArgumentRegionGraph.checkNode G images sums rg.Φ rg.regions table ft rg.exc l node cEv) then
         return (.refused s!"store regions at node {l}", counts, answers, trace)
     let mut edgeIndex := 0
-    for (t, pushed, observed, promote, isHandler) in edges do
+    for ex in edges do
+      let t := ex.target
+      let pushed := ex.pushed
+      let observed := ex.observed
+      let promote := ex.promote
+      let isHandler := ex.isHandler
       let first := edgeIndex == 0
       edgeIndex := edgeIndex + 1
       if tracing then trace := { trace with edge := some t.label }
