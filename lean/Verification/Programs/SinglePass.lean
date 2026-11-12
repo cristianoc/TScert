@@ -1234,6 +1234,15 @@ def regionalDerivChecked (G : NormalGraph ι) (images : InstanceImageCheck G) (c
   | some d => derivChecked G images codes sums c node stepK d
   | none => true
 
+/-- **The step evidence's header** where the regional evidence is typed by
+the step's proof (no derivation, a proof `p` in the step evidence): `p`'s
+claim at the node's context and type. -/
+def regionalHeaderChecked (c : PointClaim ι) (deriv : Option (ProgramCertificates.Evidence ι))
+    (effect : Option (HeapExpressionRules.StepEvidence ι)) : Bool :=
+  match deriv, effect.bind HeapExpressionRules.StepEvidence.proof? with
+  | none, some p => decide ((ProgramCertificates.claim p).context = c.context ∧ (ProgramCertificates.claim p).type = c.type)
+  | _, _ => true
+
 /-- **A node's step within a footprint bound** (`GraphCode.nodeChecked`),
 at a node outside the region from which no normal return is possible: the
 step within `Φ` (`ExpressionEffects.check`, `writeWithin`, `initWriteWithin`,
@@ -2664,6 +2673,8 @@ def regionalAt (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkE
   let kHere := (materialize en.entry width (List.range width) true).1
   if !regionalDerivChecked G images env.codes sums c node st.stepK st.stepDeriv then
     .error s!"store regions at node {l}: its derivation"
+  else if !regionalHeaderChecked c st.stepDeriv st.stepEffect then
+    .error s!"store regions at node {l}: its step evidence"
   else
     let cEv : NodeEvidence ι := ⟨ordinaryEv, some ⟨c.context, node.expression, c.type⟩, [], regionalFacts kHere st.stepK, st.stepEffect, {}, none, [], [], [], none⟩
     let t0 := node.expression
