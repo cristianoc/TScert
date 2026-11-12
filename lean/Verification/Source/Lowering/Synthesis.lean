@@ -3547,9 +3547,16 @@ partial def exprAt (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (
       | some ty => StateT.lift (tryCatch (some <$> lower (Fragment.translate ty)) fun _ => pure none)
       | none => pure none
     let (A, e1) ← expr env x target
+    -- `x as unknown` is `x`'s value at `x`'s type, which meets `unknown`: an
+    -- outer cast (`x as unknown as H`) is then the obligation that `x`
+    -- meets its target (expression_values.ml:483-486).
+    let G0 ← StateT.lift graphNow
+    let toUnknown : Bool := match target with
+      | some [l] => G0.plain l && PositiveRules.expand G0 [l] == [.source]
+      | _ => false
     let r ← attempt e do
       match annot with
-      | some ty => lower (Fragment.translate ty)
+      | some ty => if toUnknown then need A "the operand" else lower (Fragment.translate ty)
       -- `e!` (or `as const`): the operand less null and undefined.
       | none => nonNullish (← need A "the operand")
     -- `f(…)!` and `xs[i]!`: the call or the read proposed at the operand
