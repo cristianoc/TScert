@@ -53,4 +53,85 @@ theorem passUnitVerdict_sound
     PassUnitSafe (preparedMode8 force givenLines f₀) i :=
   passUnitVerdict_safe_run (fun _ _ => Verification.TolerantFrames.run_sound_single_pass) hplanned haccepted
 
+/-- The plans checked at a fresh module's print site in `establishStep`.
+The supplied lines are `moduleLines location` in `verifyUnitsFile`. -/
+def preparedModuleMode8 (force : List String) (lines : Std.HashMap String Json)
+    (location : String) (f₀ : FilePlans) (reads : List FragmentRead)
+    (incoming : Established) (tables : List (String × RowTable)) : FilePlans :=
+  stepPlans (fun location f => preparedMode8 force (RequestCli.forModule location lines) f)
+    location f₀ reads incoming tables
+
+/-- A fresh module's accepted group is safe. The premises are its core
+planning result and the successful pass result printed by `establishStep`;
+wire-prefixing the dependency identities preserves this success. -/
+theorem freshModuleVerdict_sound
+    {m : ModuleNeed} {budget : PositiveCertificates.SearchBudget} {force : List String}
+    {forced : StandIns} {imported : List (String × Footprints.Closed × Bool × Footprints.Closed)}
+    {depends : List (String × List String)} {f₀ : FilePlans}
+    {moduleLines : String → Std.HashMap String Json} {reads : List FragmentRead}
+    {incoming : Established} {tables : List (String × RowTable)}
+    {i fuel : Nat} {located : Bool} {deps : List String}
+    (hplanned : fragmentPlansCore m.module.document m.module.location budget (some m.names)
+      forced force imported depends true true none true = .ok f₀)
+    (haccepted : (let f := preparedModuleMode8 force (moduleLines m.module.location) m.module.location f₀ reads incoming tables
+      (f.passGroup fuel (f.fr.group i)
+        (given := some (RequestCli.moduleGiven f.fr.ast
+          (moduleLines ((f.fr.ast.getObjValAs? String "file").toOption.getD "")))) (located := located)).2) = .ok deps) :
+    PassUnitSafe (preparedModuleMode8 force (moduleLines m.module.location) m.module.location f₀ reads incoming tables) i := by
+  have h₀ := fragmentPlansCore_overStore hplanned
+  have hp : OverStore (preparedMode8 force (RequestCli.forModule m.module.location (moduleLines m.module.location)) f₀) := by
+    unfold preparedMode8
+    split
+    · exact withFalseStartFact_overStore (withHeadFacts_overStore h₀)
+    · exact withHeadFacts_overStore h₀
+  exact passGroupOver_safe (fun _ _ => Verification.TolerantFrames.run_sound_single_pass)
+    (fun _ _ => Verification.TolerantFrames.runKeepsSummaries) (stepPlans_overStore hp) haccepted
+
+/-- Acceptance at either mode 8 print site for a group checked in this
+process, indexed by its prepared plans and leader. The main-file branch
+uses either planning route; the fresh-module branch uses the core planner,
+module preparation and row refusal. Cached module projections have no
+constructor. Planning inputs are universally quantified, as in
+`passUnitVerdict_sound`. -/
+inductive Mode8Accepted : FilePlans → Nat → Prop where
+  | main
+    {ast : Json} {fileKey : String} {budget : PositiveCertificates.SearchBudget}
+    {selection : Option (List String)} {standIns : StandIns} {force : List String} {f₀ : FilePlans}
+    {prepare : String → FilePlans → FilePlans}
+    {check : FilePlans → List Nat → List String × Except String (List String)}
+    {givenLines : Std.HashMap String Json} {i fuel : Nat} {compare : Bool} {debugNode repeats : Nat}
+    {given : Option (Std.HashMap String Json)} {observe : Option String} {counting located : Bool}
+    {deps : List String}
+    (hplanned : (∃ est tables, fragmentPlansFromInterfaces ast fileKey budget selection standIns force est tables =
+        .ok f₀) ∨
+      (∃ ms notes, fragmentPlansWithModules ast fileKey budget selection standIns force prepare check =
+        .ok (f₀, ms, notes)))
+    (hselected : i ∈ (preparedMode8 force givenLines f₀).fr.selected selection)
+    (haccepted : ((preparedMode8 force givenLines f₀).passGroup fuel ((preparedMode8 force givenLines f₀).fr.group i)
+      compare debugNode repeats given observe counting located).2 = .ok deps) :
+    Mode8Accepted (preparedMode8 force givenLines f₀) i
+  | freshModule
+    {m : ModuleNeed} {budget : PositiveCertificates.SearchBudget} {force : List String}
+    {forced : StandIns} {imported : List (String × Footprints.Closed × Bool × Footprints.Closed)}
+    {depends : List (String × List String)} {f₀ : FilePlans}
+    {moduleLines : String → Std.HashMap String Json} {reads : List FragmentRead}
+    {incoming : Established} {tables : List (String × RowTable)}
+    {i fuel : Nat} {located : Bool} {deps : List String}
+    (hplanned : fragmentPlansCore m.module.document m.module.location budget (some m.names)
+      forced force imported depends true true none true = .ok f₀)
+    (hselected : i ∈ establishChecked m
+      (preparedModuleMode8 force (moduleLines m.module.location) m.module.location f₀ reads incoming tables))
+    (haccepted : (let f := preparedModuleMode8 force (moduleLines m.module.location) m.module.location f₀ reads incoming tables
+      (f.passGroup fuel (f.fr.group i)
+        (given := some (RequestCli.moduleGiven f.fr.ast
+          (moduleLines ((f.fr.ast.getObjValAs? String "file").toOption.getD "")))) (located := located)).2) = .ok deps) :
+    Mode8Accepted (preparedModuleMode8 force (moduleLines m.module.location) m.module.location f₀ reads incoming tables) i
+
+/-- Every member of a group accepted at a mode 8 in-process check is safe. -/
+theorem mode8Accepted_sound {f : FilePlans} {i : Nat}
+    (h : Mode8Accepted f i) : PassUnitSafe f i := by
+  cases h with
+  | main hplanned _ haccepted => exact passUnitVerdict_sound hplanned haccepted
+  | freshModule hplanned _ haccepted => exact freshModuleVerdict_sound hplanned haccepted
+
 end Verification.SourceClaimJson.PassUnit

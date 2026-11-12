@@ -1213,6 +1213,8 @@ run_cmd do
   check ``Verification.TolerantFrames.visitExits_records
   check ``Verification.SourceClaimJson.PassUnit.passUnitVerdict_safe_run
   check ``Verification.SourceClaimJson.PassUnit.passUnitVerdict_sound
+  check ``Verification.SourceClaimJson.PassUnit.freshModuleVerdict_sound
+  check ``Verification.SourceClaimJson.PassUnit.mode8Accepted_sound
 
 open Lean Elab Command in
 run_cmd do
