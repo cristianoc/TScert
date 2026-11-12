@@ -1371,20 +1371,15 @@ of `TolerantFramesRunSound.lean`, quantified over every call the premises of
 ## Open premises
 
 The graph theorem `run_sound_single_pass`
-(`TolerantFramesSinglePassSound.lean`) has two hypotheses:
+(`TolerantFramesSinglePassSound.lean`) has one hypothesis:
 
 ```math
-\begin{aligned}
-&\mathrm{ExitsYield} \\
-&\quad \wedge \mathrm{RegionalStepHeader}
-\quad\Longrightarrow \mathrm{RunSound}
-\end{aligned}
+\mathrm{ExitsYield} \Longrightarrow \mathrm{RunSound}
 ```
 
 | Premise | Obligation | Consumed by |
 | --- | --- | --- |
 | `ExitsYield` | Each checked node's normal exits and handler deliver `NodeExitsY` at every admitted reassigned graph. `nodeExitsY_of_checks` proves delivery from `NodeExitsChecked`, with freshness from the actual step execution. Assembly from the visit's records requires head-entry checks, handler bounds, incoming and merge membership, and semantic justification of the yields each exit reads. | `nodesYield_of` |
-| `RegionalStepHeader` | At every successful `visitStep` with `sd.st.stepDeriv = none`, every `p` satisfying `sd.st.stepEffect.bind StepEvidence.proof? = some p` has `(claim p).context = env.claimed[l]!.context` and `(claim p).type = env.claimed[l]!.type`. `regionalAt` selects `.effect`; `regionalDerivChecked` reads `stepDeriv`. | `regionalStepBridge`, `regionalAt_entry_header` |
 
 `regionalFacts_holds` proves that the union holds when both sources hold.
 `regionalSeparation_recover` recovers the step separation from that union
@@ -1392,8 +1387,8 @@ for facts with partners. `visitStep_separation_partners` establishes this
 condition, and `visitStep_regional_relations` supplies the relational part
 of `regionalStepBridge` from successful `visitStep`.
 
-The proposed effect-header refusal in `regionalAt` supplies the following
-readback shape, with `c = env.claimed[l]!`:
+`regionalAt_header` proves the following readback shape from the
+`regionalHeaderChecked` check in `regionalAt`, with `c = env.claimed[l]!`:
 
 ```lean
 regionalAt G I env l en sd rg answers regionIn = .ok done →
@@ -1402,9 +1397,9 @@ regionalAt G I env l en sd rg answers regionIn = .ok done →
   (claim p).context = c.context ∧ (claim p).type = c.type
 ```
 
-This shape requires successful regional checking. `RegionalStepHeader`
-quantifies over successful `visitStep` alone; using the proposed check
-requires carrying regional success to the bridge's header obligation.
+The `RegionalStepBridge` premise includes the successful regional check.
+`RecInv.regionalWitness` supplies that equation; the visit tables carry it
+to `regionsTyped_of_visitTables`, which applies `regionalStepBridge`.
 
 `RegionalRecordedReadback` and `RegionalRecordedTableAgreement` supply
 one retained visit per visited label, together with its record, summary prefix
@@ -1412,7 +1407,7 @@ and table facts. `RegionalVisitEvidence` and `RegionalWalkAlignment` use the
 same existential shape. `regionalVisitTables_of_recordedAgreement` applies
 `checkedWalk_nodeAlignment` to that witness's record; `RegionalVisitTables`
 and `regionsRecorded_of_visitTables` consume the resulting existential check.
-`regionalRecordedReadback` proves readback under `RegionalStepHeader`.
+`regionalRecordedReadback` proves readback from the retained regional check.
 `regionalRecordedTableAgreement` composes it with the head and non-head bounds
 on recorded states. `RegionBelow` means containment in each of the provenance,
 value, cell and field lists.
@@ -1426,8 +1421,7 @@ state. `regionalAt_own_head` uses the successful `checkNode`'s `cellsKept`
 and `fieldsKept` checks to prove that the cell and field filters preserve
 that state. The field check reads the selected proof's context;
 `regionalAt_entry_header` identifies it with the source claim's context
-under `RegionalStepHeader`. Thus this equality uses the existing header
-premise as well as the successful check.
+using `regionalAt_header` and the successful derivation check.
 
 `returnedWalk_regional_no_start` proves start-target exclusion from setup.
 `SinglePass.setup` rejects every continuation or handler edge into the start

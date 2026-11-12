@@ -133,7 +133,9 @@ the regional evidence reads the node's claimed context and result type. -/
 @[nospecialize] def RegionalStepBridge (ι : Type) [Labels ι] : Prop :=
   ∀ (G : NormalGraph ι) (I : InstanceImageCheck G) (env : WalkEnv ι G I) (σ : WalkState ι G)
     (l : Nat) (en : Entered ι) (sd : StepDone ι G),
-    visitStep G I env σ l en = .ok sd → ∀ η,
+    visitStep G I env σ l en = .ok sd →
+    ∀ (rg : Regional) (a : Answered G) (incoming : Array (List RegionState)) (done : RegionalDone ι),
+    regionalAt G I env l en sd rg a incoming = .ok done → ∀ η,
     let ev := passRegionalEvidence env.claimed[l]! env.nodes[l]! sd.st.stepDeriv sd.st.stepEffect
       (regionalFacts (materialize en.entry (env.claimed[l]!).context.length
         (List.range (env.claimed[l]!).context.length) true).1 sd.st.stepK)
@@ -176,14 +178,23 @@ theorem visitStep_separation_partners {G : NormalGraph ι} {I : InstanceImageChe
       rw [hk]
       exact materialize_separation_partners _ _ _ _
 
-/-- The selected effect's proof has the claimed header when no ordinary
-step derivation is present. -/
-@[nospecialize] def RegionalStepHeader (ι : Type) [Labels ι] : Prop :=
-  ∀ (G : NormalGraph ι) (I : InstanceImageCheck G) (env : WalkEnv ι G I) (σ : WalkState ι G)
-    (l : Nat) (en : Entered ι) (sd : StepDone ι G),
-    visitStep G I env σ l en = .ok sd → sd.st.stepDeriv = none →
-    ∀ p, sd.st.stepEffect.bind HeapExpressionRules.StepEvidence.proof? = some p →
-      (claim p).context = (env.claimed[l]!).context ∧ (claim p).type = (env.claimed[l]!).type
+/-- A successful regional check aligns the selected effect proof's header
+with the source claim when no ordinary derivation is present. -/
+theorem regionalAt_header {G : NormalGraph ι} {I : InstanceImageCheck G}
+    {env : WalkEnv ι G I} {l : Nat} {en : Entered ι} {sd : StepDone ι G}
+    {rg : Regional} {a : Answered G} {incoming : Array (List RegionState)} {done : RegionalDone ι}
+    (h : regionalAt G I env l en sd rg a incoming = .ok done)
+    (hd : sd.st.stepDeriv = none) {p : ProgramCertificates.Evidence ι}
+    (hp : sd.st.stepEffect.bind HeapExpressionRules.StepEvidence.proof? = some p) :
+    (claim p).context = (env.claimed[l]!).context ∧ (claim p).type = (env.claimed[l]!).type := by
+  unfold regionalAt at h
+  extract_lets node c width st here sums ordinaryEv kHere at h
+  split at h
+  · cases h
+  · split at h
+    · cases h
+    · rename_i hh
+      simpa [regionalHeaderChecked, st, c, hd, hp] using hh
 
 /-- Regional entry facts supply the successful step's links and separation. -/
 theorem visitStep_regional_relations {G : NormalGraph ι} {I : InstanceImageCheck G}
@@ -199,8 +210,8 @@ theorem visitStep_regional_relations {G : NormalGraph ι} {I : InstanceImageChec
     regionalSeparation_recover (visitStep_separation_partners hv) hh.2.2.2.1⟩
 
 /-- Composition of the visit's relational and header obligations. -/
-theorem regionalStepBridge (hheader : RegionalStepHeader ι) : RegionalStepBridge ι := by
-  intro G I env σ l en sd hv η
+theorem regionalStepBridge : RegionalStepBridge ι := by
+  intro G I env σ l en sd hv rg a incoming done hr η
   have relations := visitStep_regional_relations hv η
   have header : sd.st.stepDeriv = none →
       ControlFlow.entry (passRegionalEvidence env.claimed[l]! env.nodes[l]! sd.st.stepDeriv sd.st.stepEffect
@@ -210,7 +221,7 @@ theorem regionalStepBridge (hheader : RegionalStepHeader ι) : RegionalStepBridg
         (regionalFacts (materialize en.entry (env.claimed[l]!).context.length
           (List.range (env.claimed[l]!).context.length) true).1 sd.st.stepK)) = (env.claimed[l]!).type := by
     intro hd
-    have hp := hheader G I env σ l en sd hv hd
+    have hp := fun p => regionalAt_header hr hd (p := p)
     simp only [passRegionalEvidence, hd, ControlFlow.entry, result, NodeEvidence.expression, NodeEvidence.header]
     cases he : sd.st.stepEffect with
     | none => exact ⟨rfl, rfl⟩

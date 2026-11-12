@@ -1185,3 +1185,4 @@ run_cmd do
   check ``Verification.TolerantFrames.regionalSeparation_recover
   check ``Verification.TolerantFrames.regionalStepBridge
   check ``Verification.TolerantFrames.run_sound_single_pass
+  check ``Verification.TolerantFrames.regionalAt_header

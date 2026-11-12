@@ -157,10 +157,9 @@ theorem regionalAt_head_target {env : WalkEnv ι G I} {l t : Nat} {en : Entered 
     exact he
 
 /-- The selected regional proof has the source claim's context. -/
-theorem regionalAt_entry_header (hheader : RegionalStepHeader ι)
-    {env : WalkEnv ι G I} {before : WalkState ι G} {l : Nat} {en : Entered ι} {sd : StepDone ι G}
+theorem regionalAt_entry_header
+    {env : WalkEnv ι G I} {l : Nat} {en : Entered ι} {sd : StepDone ι G}
     {rg : Regional} {a : Answered G} {incoming : Array (List RegionState)} {done : RegionalDone ι}
-    (hs : visitStep G I env before l en = .ok sd)
     (hd : regionalAt G I env l en sd rg a incoming = .ok done) :
     entry done.cEv = (env.claimed[l]!).context := by
   obtain ⟨hc, hev, _⟩ := regionalAt_checks hd
@@ -171,7 +170,7 @@ theorem regionalAt_entry_header (hheader : RegionalStepHeader ι)
     simp only [regionalDerivChecked, derivChecked, Bool.and_eq_true, beq_iff_eq] at hc
     simpa [entry, passRegionalEvidence, NodeEvidence.expression] using hc.1.2
   | none =>
-    have hp := hheader G I env before l en sd hs hderiv
+    have hp := fun p => regionalAt_header hd hderiv (p := p)
     simp only [passRegionalEvidence, entry, NodeEvidence.expression, NodeEvidence.header]
     cases he : sd.st.stepEffect with
     | none => rfl
@@ -343,8 +342,7 @@ theorem regionalRecorded_nonhead_of_inputs {c : Target.RunCall G I} {env : WalkE
     (returnedWalk_regional_no_start hw hE hi hreg hl t ht) hh he
 
 /-- Readback separates the own entry, start exclusion and target entries. -/
-theorem regionalRecordedReadback
-    (hheader : RegionalStepHeader ι) :
+theorem regionalRecordedReadback :
     RegionalRecordedReadback ι := by
   intro G I c env σ reach rg hw hle hE hi hreg _ l hl
   obtain ⟨before, en, sd, ex, done, he, hs, hx, hd, hr, hp, targets⟩ := hi.regionalInputReadback hl hreg
@@ -352,7 +350,7 @@ theorem regionalRecordedReadback
   have own : regionalTableState done l = done.state := by
     by_cases hloop : l ∈ nodeSucc env.nodes l
     · exact regionalAt_own_head hd (hi.visR l hl).1 hloop (returnedWalk_self_head hw hE hl hloop)
-        (returnedWalk_regional_no_start hw hE hi hreg hl l hloop) (regionalAt_entry_header hheader hs hd)
+        (returnedWalk_regional_no_start hw hE hi hreg hl l hloop) (regionalAt_entry_header hd)
     · exact regionalAt_own_no_self hd (hi.visR l hl).1 hloop
   have noStart : ∀ t ∈ nodeSucc env.nodes l, t ≠ env.start :=
     returnedWalk_regional_no_start hw hE hi hreg hl

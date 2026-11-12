@@ -435,7 +435,7 @@ theorem regionsTyped_of_visitTables (hv : RegionalVisitTables ι) (hb : Regional
   have hshape : ControlFlow.entry (passRegionalEvidenceOf (r.node l hl)) = (r.node l hl).c.context := by
     cases hd' : (r.node l hl).st.stepDeriv with
     | none =>
-      have hh := (hb G I env σ l en sd hstep G.env).2
+      have hh := (hb G I env σ l en sd hstep rg a incoming done hr G.env).2
       rw [hclaim, hnode, hentry, hst] at hh
       exact (hh hd').1
     | some d =>
@@ -446,7 +446,7 @@ theorem regionsTyped_of_visitTables (hv : RegionalVisitTables ι) (hb : Regional
   intro η hη
   obtain ⟨pc', hpc'⟩ := scope_reassign hp.2.1 hη
   let rn := nodeChecked_reassign hpc' (r.node l hl)
-  have hb' := hb G I env σ l en sd hstep η
+  have hb' := hb G I env σ l en sd hstep rg a incoming done hr η
   dsimp only at hb'
   rw [hclaim, hnode, hentry, hst] at hb'
   exact (localTyped rn
