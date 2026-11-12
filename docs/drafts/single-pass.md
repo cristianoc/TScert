@@ -185,7 +185,9 @@ invariant stating none); the region from which no normal return is possible
 is `GraphCode.deadIterate` over the claims' result types, computed once; at
 each node outside it, the node's step is within the bound
 (`ExpressionEffects.check`, `writeWithin`, `initWriteWithin`,
-`selectedWithinAt` with the receiver's freshness, an empty type), its throw
+`selectedWithinAt` with the receiver's freshness, the step's derivation
+claimed at the node's term and its tree accepted, as `nodeChecked` requires
+beside it; an empty type), its throw
 too where the unit states the bound on a throw, and a return under a fresh
 result returns a fresh name; inside it, `deadNode`. A code request of an
 async definition has the footprint `top` (`RequestJson.asyncEffects`, as
