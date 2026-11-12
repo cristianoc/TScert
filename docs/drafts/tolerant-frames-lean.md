@@ -783,6 +783,37 @@ not in the resulting store. It needs exact erasure laws of
 `Lean.PersistentHashMap`, index lists without duplicates (`List.erase`
 removes one copy) and each listed fact under its own names only.
 
+### What the named state's proofs cannot reach as written
+
+Not proved: a merge (`SinglePass.lean` lines 995–1167), a head's entry
+(965–988), an edge's store (1559–1578, 1753–1767). Each is code inside
+`run`'s `while` loop over mutable arrays, no function a theorem can name;
+the merge's names, variants, met store, weakest bounds, entailed and guarded
+facts, fresh intersection and implications are local `let`s. Proofs need
+these operations as pure functions of their inputs:
+
+1. `materialize`'s selective worklist (313–340): a `while` loop, opaque
+   (`SelectedFromIndex`); a structural recursion on a fuel bound, or a fold
+   over rounds, makes it provable.
+2. `Store` over `Lean.PersistentHashMap` (87–151): no lemma (`StoreLaws`,
+   `RemovedLeave`); `Std.HashMap`, whose lemma library states insertion and
+   erasure exactly, makes both theorems.
+3. The merge (995–1167) as `mergeState : List State → … → State × List Implication`,
+   with the fresh-name counter an argument and result; then each
+   predecessor's valuation extends to the φ names by its own names.
+4. The head entry (965–988) and the edge's store (1559–1578, 1753–1767) as
+   functions of the node's state, its edge and the counter.
+5. `Store.drop` (482–523) is a function; its soundness is the
+   materialization's elimination (`derivedOf_holds`) plus the alias
+   restatement, not proved here.
+
+**Not justified: a merge's equalities of numbers.** `eqAtoms` (lines
+1022–1024) states, for a name a slot keeps and a fresh name renaming it,
+both the alias link and two linear facts $`\varphi-x\le 0`$, $`x-\varphi\le 0`$
+over their values. A linear fact holds only where every term denotes an
+integer (`IndexFact.HoldsAt.linear`); for names holding objects or strings
+the two facts do not hold at any valuation, while the alias link does.
+
 ## What the model requires beyond the note
 
 - **Admissibility needs no frame assumption.** Reflexivity, transitivity,
