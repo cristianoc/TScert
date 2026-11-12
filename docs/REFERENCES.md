@@ -730,6 +730,94 @@ preservation pattern each entry's change (`init`, `scalar`, `grow`) below
 changes.
 **Discussed in** [stated effects](drafts/stated-effects.md#2-the-written-form).
 
+### Kassios 2006
+
+Ioannis T. Kassios. *Dynamic frames: support for framing, dependencies and
+sharing without restrictions.* FM 2006, LNCS 4085, pp. 268–283, Springer,
+2006. [doi:10.1007/11813040_19](https://doi.org/10.1007/11813040_19).
+
+**Used for** a frame as a set of locations denoted by an expression read in
+the pre-state, and the obligation that such an expression be framed itself;
+the paper's theory has frames as first-class specification variables, which
+TScert's regions are not.
+**Discussed in** [tolerant frames](drafts/tolerant-frames.md#32-regions-actions-supports).
+
+### Banerjee, Naumann and Rosenberg 2013
+
+Anindya Banerjee, David A. Naumann and Stan Rosenberg. *Local reasoning for
+global invariants, part I: region logic.* Journal of the ACM 60(3):18, 2013.
+[doi:10.1145/2485982](https://doi.org/10.1145/2485982).
+
+**Used for** the frame rule whose side condition separates a command's
+write effect from a formula's read effect; the paper's logic is for
+first-order object-based programs and has no tolerated interference.
+**Discussed in** [tolerant frames](drafts/tolerant-frames.md#33-the-tolerant-frame-theorem).
+
+### Jones 1983
+
+Cliff B. Jones. *Tentative steps toward a development method for
+interfering programs.* ACM Transactions on Programming Languages and
+Systems 5(4):596–619, 1983.
+[doi:10.1145/69575.69577](https://doi.org/10.1145/69575.69577).
+
+**Used for** rely and guarantee conditions as relations over two states,
+and an assertion's stability under a rely; the paper's subject is
+concurrent interference, and TScert uses the stability check alone.
+**Discussed in** [tolerant frames](drafts/tolerant-frames.md#33-the-tolerant-frame-theorem).
+
+### Ahmed, Dreyer and Rossberg 2009
+
+Amal Ahmed, Derek Dreyer and Andreas Rossberg. *State-dependent
+representation independence.* POPL 2009, pp. 340–353.
+[doi:10.1145/1480881.1480925](https://doi.org/10.1145/1480881.1480925).
+
+**Context** for a location's state evolving within a possible world; the
+paper's worlds serve relational reasoning about abstract types.
+**Cited in** [tolerant frames](drafts/tolerant-frames.md#8-which-separation-logic-and-how-much).
+
+### Dreyer, Neis and Birkedal 2010
+
+Derek Dreyer, Georg Neis and Lars Birkedal. *The impact of higher-order
+state and control effects on local relational reasoning.* ICFP 2010,
+pp. 143–156.
+[doi:10.1145/1863543.1863566](https://doi.org/10.1145/1863543.1863566).
+
+**Context** for worlds as state-transition systems, a location's protocol
+as a preorder of states; the paper's results are relational.
+**Cited in** [tolerant frames](drafts/tolerant-frames.md#8-which-separation-logic-and-how-much).
+
+### Calcagno, O'Hearn and Yang 2007
+
+Cristiano Calcagno, Peter W. O'Hearn and Hongseok Yang. *Local action and
+abstract separation logic.* LICS 2007, IEEE Computer Society.
+[doi:10.1109/LICS.2007.30](https://doi.org/10.1109/LICS.2007.30).
+
+**Context** for the frame property as a property of actions over a
+separation algebra; whether TScert's supports form such an algebra is open.
+**Cited in** [tolerant frames](drafts/tolerant-frames.md#8-which-separation-logic-and-how-much).
+
+### Dinsdale-Young et al. 2013
+
+Thomas Dinsdale-Young, Lars Birkedal, Philippa Gardner, Matthew Parkinson
+and Hongseok Yang. *Views: compositional reasoning for concurrent
+programs.* POPL 2013, pp. 287–300.
+[doi:10.1145/2429069.2429104](https://doi.org/10.1145/2429069.2429104).
+
+**Context**, with Calcagno, O'Hearn and Yang 2007, for a general framework
+a frame-based logic may be an instance of.
+**Cited in** [tolerant frames](drafts/tolerant-frames.md#8-which-separation-logic-and-how-much).
+
+### Birkedal, Torp-Smith and Yang 2005
+
+Lars Birkedal, Noah Torp-Smith and Hongseok Yang. *Semantics of
+separation-logic typing and higher-order frame rules.* LICS 2005,
+pp. 260–269.
+[doi:10.1109/LICS.2005.47](https://doi.org/10.1109/LICS.2005.47).
+
+**Context** for frame rules at higher-order procedures, the general
+problem behind a footprint that depends on a callback's.
+**Cited in** [tolerant frames](drafts/tolerant-frames.md#10-limits).
+
 ## Compilation
 
 ### Aho, Lam, Sethi and Ullman 2006
