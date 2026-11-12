@@ -77,6 +77,8 @@ The equations are about execution at `G`, not execution at reassigned graphs. -/
     env.startNames = List.range c.inputs.length ∧
     env.argName = c.goal.slot.bind ((List.range c.inputs.length)[·]?) ∧
     (∃ σ0, RunCall.setup c = .ok (env, σ0)) ∧
-    (∀ x ∈ env.startNames, x < σ.fresh)
+    (∀ x ∈ env.startNames, x < σ.fresh) ∧
+    ctx = passCtx c ∧
+    σ.walk.incoming.size = env.claimed.size ∧ σ.walk.incomingEdges.size = env.claimed.size ∧ env.merging = passMerging c
 
 end Verification.TolerantFrames

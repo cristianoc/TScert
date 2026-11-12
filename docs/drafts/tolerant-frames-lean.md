@@ -1381,9 +1381,25 @@ The graph theorem `run_sound_single_pass`
 | --- | --- | --- |
 | `DirectKeepsSummaries` | Every summary returned by `directCall` is sound when its input summaries are sound. `keepSummaries` preserves the input prefix; soundness also requires checking every appended summary. This preservation theorem is not proved. | `visitsSettle_of` |
 | `SearchKeepsSummaries` | Every summary returned by `expressionEffectUsing` is sound when its input summaries are sound. Preservation through the search's operations is not proved. | `visitsSettle_of` |
-| `ExitsYield` | Each checked node's normal exits and handler deliver `NodeExitsY` at every admitted reassigned graph. `exitsYield_of_checks` takes the exact named premise `ExitChecks.Extraction`. Its field groups, execution witnesses, and separate final-world realization hypothesis are specified in [Exit checks from the trace](#exit-checks-from-the-trace). `exitChecks_fresh` and `exitChecks_widths` prove freshness and both mapping bounds. `exitChecks_here` leaves the initial yield judgment; `exitChecks_handler` leaves handler edge checks, with `exitChecks_thrownBelow` proving the name bound. Extraction retains those two premises, `Head`, `NonHead`, and `Realization`. | `nodesYield_of`, then `stepEdgesSound_of_yields` |
+| `ExitsYield` | Each checked node's normal exits and handler deliver `NodeExitsY` at every admitted reassigned graph. `exitsYield_of_yields` in `TolerantFramesExitStructural.lean` composes the structural checks under the yield judgments, final-world realization and start-separation premise stated below. | `nodesYield_of`, then `stepEdgesSound_of_yields` |
 | `RegionsRecorded` | The graph's regional tables agree with the tables each visit checks, satisfy the initial regional facts, and admit each predecessor's established facts at its target. Each `RegionalDone` contains its tables and evidence; each label records its region state. The graph-wide agreement proof is not established. | `regionsHeld_of` |
 | `RegionsTyped` | Every visited node's regional evidence has its context and is typed at every admitted reassigned graph. `regionsTyped_of_tree` proves the tree-checked case, and `regionalTyped_copy` proves the copy case. The `requiresTree` case needs the evidence's `regionalFacts` to supply both the entry facts and `stepK`. | `regionsHeld_of` |
+
+The proved `exitsYield_of_yields` uses `yieldSourcesJudged` for every
+`ExitYieldSource s.env l s.en s.sd s.sd.yields ys` (the same premise supplies
+`exitCachesJudged`), `initialYieldsJudged` for `s.ysA`, and
+`ExitChecks.Realization s η`, all at each admitted reassigned graph.
+It also requires `ExitChecks.StartSeparation r`:
+`HeapSeparation.union ((r.stated c.start).getD {}).separation c.entrySeparation =
+((r.stated c.start).getD {}).separation`.
+Setup reads `stated := byLabel n assertions` (`SinglePass.lean:2079`);
+`startWritten` adds entry separation to the given contract (line 1183),
+and `withStated` leaves head entries unchanged (line 2171).
+These definitions do not supply the required equality.
+`handlerRecords_of_checked` proves handler storage and merge recording
+from the allocated arrays and indexed execution; `HandlerExitChecked.merged`
+records the implications returned by `edgeTransfer`, whose semantic
+validity is proved in `handlerExit_delivers`.
 
 Proved prerequisites:
 
@@ -1420,9 +1436,8 @@ proves `exitChecks_head`, `exitChecks_handler_edges`, and
 (constructed-entry membership, written-contract coherence, and setup-name
 bounds). Normal exits also require `yieldSourcesJudged`; handlers require
 `HandlerRecords`, the final incoming and merge-record memberships. The merge
-membership requests source implications at slots; `pushExit` records the
-filtered implications returned by `edgeTransfer`. Their correspondence is an
-explicit obligation. `NodeExitTrace` and `ExitChecks.Site.facts` carry the
+membership uses the filtered implications returned by `edgeTransfer`,
+recorded by `pushExit` and justified by `handlerExit_delivers`. `NodeExitTrace` and `ExitChecks.Site.facts` carry the
 setup's `startNames` and `argName` equations, supplied by `EnvFacts` in
 `visitsSettle_of`. The successful step proves exception-type admission
 (`visitStep_handler_admits`); the successful exits prove the type, implication,
@@ -1440,14 +1455,27 @@ incoming edge and `TraversedA.visited`. Head extraction quantifies over exit
 targets: a head with no incoming edge has no incoming pair in `ofPass`.
 `exitStep_handler_arrays` and `Site.handler_record` identify the handler's
 transferred pair, merge record, indexed computation and final-walk extension.
-`handlerRecords_of_storage` requires the exact predicates `HandlerStorage`
-(array bounds and the merge flag) and `HandlerImplications` (equality of the
-transferred and original implications at source slots). `StartSeparation`
-requires the written start separation to absorb `c.entrySeparation` under
-`HeapSeparation.union`: `startGiven` includes this separation, whereas the
-head interface permits only added index facts. These three predicates are
-unproved leaves of the structural extraction wrappers; `yieldSourcesJudged`
-remains a separate hypothesis.
+The handler's structural extraction is proved by `handlerRecords_of_checked`.
+The remaining hypotheses are stated with `exitsYield_of_yields` above.
+`ExitChecks.exitChecks_nonHead` in
+`TolerantFramesExitNonHeadExtraction.lean` proves `NonHead` from a checked
+walk and the named premise `exitCachesJudged`: every `ExitYieldSource` from
+the step's kept cache has `ExitYieldsJudged` at the reassigned graph.
+`exitStep_nonHead_checked` extracts the type and assertion checks and both
+insertions; `visitExits_indexed_arrays` retains each indexed computation's
+allocation, extension and yield-cache source. `NonHeadExitChecked.merged`
+uses the implications returned by `edgeTransfer`. Filtering and deduplication
+preserve membership in the input list, which supplies the implication
+judgments used by `nonHeadExit_delivers`.
+
+The structural prerequisites are proved by `run_traversedC`,
+`SetupOk.recInv`, `recInv_visit`, `recordSound_of_inv`, and
+`visitsSettle_of`. `WalkChecked` carries head-table agreement and the
+non-head merge flag. `RecInv.allocation` fixes the incoming-state and merge
+array sizes; `RecInv.incomingBudget` bounds incoming states plus remaining
+in-degree by the setup's in-degree. `ExitsFold.incomingGrowth` bounds each
+visit's additions by its exit multiplicities. `NodeExitTrace` retains the
+allocation and `EnvFacts.merging` equation at the chosen node.
 
 ## Exit checks from the trace
 

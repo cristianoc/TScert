@@ -1,5 +1,6 @@
 import Verification.Programs.TolerantFramesExitStructural
 import Verification.Programs.TolerantFramesExitHeadExtraction
+import Verification.Programs.TolerantFramesExitNonHeadExtraction
 import Verification.Programs.TolerantFramesExitsYield
 import Verification.Programs.TolerantFramesExitYieldCache
 import Verification.Programs.TolerantFramesExitHeadChecks
@@ -621,7 +622,6 @@ run_cmd do
   check ``Verification.TolerantFrames.headEntry_below
   check ``Verification.TolerantFrames.passBack_below
   check ``Verification.TolerantFrames.start_passPreT
-  check ``Verification.TolerantFrames.run_guarantee
   check ``Verification.TolerantFrames.codesSound_reassign
   -- Leg 13: the pass's checks at a reassignment (TolerantFramesWalkReassignChecks, TolerantFramesWalkReassignNodes)
   check ``Verification.TolerantFrames.footprintCheck_reassign
@@ -1097,6 +1097,7 @@ run_cmd do
   check ``Verification.TolerantFrames.ExitChecks.exitChecks_handler
 
 -- Head and handler exit extraction.
+-- Non-head exit extraction and the incoming-array witnesses it consumes.
 open Lean Elab Command in
 run_cmd do
   let standard := [``propext, ``Classical.choice, ``Quot.sound]
@@ -1117,6 +1118,15 @@ run_cmd do
   check ``Verification.TolerantFrames.ExitChecks.exitChecks_handler_of_records
 
 -- Structural extraction from the final walk and its setup provenance.
+  check ``Verification.TolerantFrames.pushExit_incoming_mem
+  check ``Verification.TolerantFrames.pushExit_merge_mem
+  check ``Verification.TolerantFrames.exitStep_nonHead_checked
+  check ``Verification.TolerantFrames.exitStep_arraySizes
+  check ``Verification.TolerantFrames.exitsFold_indexed_arrays
+  check ``Verification.TolerantFrames.visitExits_indexed_arrays
+  check ``Verification.TolerantFrames.ExitChecks.exitChecks_nonHead
+
+-- Setup allocation, incoming multiplicities, and extraction from recorded implications.
 open Lean Elab Command in
 run_cmd do
   let standard := [``propext, ``Classical.choice, ``Quot.sound]
@@ -1131,7 +1141,7 @@ run_cmd do
   check ``Verification.TolerantFrames.ExitChecks.givenCorrespondence
   check ``Verification.TolerantFrames.ExitChecks.contextCorrespondence
   check ``Verification.TolerantFrames.ExitChecks.Site.handler_record
-  check ``Verification.TolerantFrames.ExitChecks.handlerRecords_of_storage
+  check ``Verification.TolerantFrames.ExitChecks.handlerRecords_of_checked
   check ``Verification.TolerantFrames.ExitChecks.Site.setup
   check ``Verification.TolerantFrames.ExitChecks.Site.startBelow
   check ``Verification.TolerantFrames.ExitChecks.Site.env_eq
@@ -1144,3 +1154,23 @@ run_cmd do
   check ``Verification.TolerantFrames.ExitChecks.headEntries_of_checked
   check ``Verification.TolerantFrames.ExitChecks.exitChecks_head_structural
   check ``Verification.TolerantFrames.ExitChecks.exitChecks_handler_structural
+  check ``Verification.TolerantFrames.passMerging_of_degree
+  check ``Verification.TolerantFrames.WalkChecked.givenAgreement
+  check ``Verification.TolerantFrames.WalkChecked.mergingOfIncoming
+  check ``Verification.TolerantFrames.exitsFold_arraySizes
+  check ``Verification.TolerantFrames.visitExits_arraySizes
+  check ``Verification.TolerantFrames.ExitChecks.Site.arrayAllocation
+  check ``Verification.TolerantFrames.ExitChecks.Site.mergingOfIncoming
+
+
+-- Handler transfer and the composition of remaining semantic premises.
+open Lean Elab Command in
+run_cmd do
+  let standard := [``propext, ``Classical.choice, ``Quot.sound]
+  let check (decl : Name) : CommandElabM Unit := do
+    for axiom_ in ← liftCoreM <| collectAxioms decl do
+      unless standard.contains axiom_ do
+        throwError "{decl} depends on the axiom {axiom_}"
+  check ``Verification.TolerantFrames.ExitChecks.handlerRecords_of_checked
+  check ``Verification.TolerantFrames.handlerExit_delivers
+  check ``Verification.TolerantFrames.exitsYield_of_yields

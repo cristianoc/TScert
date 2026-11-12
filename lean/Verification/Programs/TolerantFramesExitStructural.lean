@@ -1,4 +1,5 @@
 import Verification.Programs.TolerantFramesExitHeadExtraction
+import Verification.Programs.TolerantFramesExitNonHeadExtraction
 import Verification.Programs.TolerantFramesDriverEntry
 import Verification.Programs.TolerantFramesDriverSetup
 
@@ -113,52 +114,44 @@ theorem Site.handler_record (s : Site c r l hl) {t : Target}
     hrecords (.handler t, i) (List.mem_zipIdx_iff_getElem?.mpr hi)
   exact ⟨i, record, hr, hidx, htarget, a, b, hb, hpush, hg.trans hext⟩
 
-/-- Bounds for the arrays modified by a handler, and the setup's merge flag. -/
-@[nospecialize] def HandlerStorage (s : Site c r l hl) (t : Target) : Prop :=
-  ∀ i a b, exitStep G I s.env l s.en s.sd (yieldsAtSlots s.en.entry.names s.ysA)
-    (Thunk.mk fun _ => outAllOf G s.env.claimed[l]! s.sd.st.stepOut) a (.handler t, i) = .ok b →
-    t.label < a.incoming.size ∧ t.label < a.incomingImpl.size ∧
-    (2 ≤ (r.w.incoming t.label).length → s.env.merging[t.label]! = true ∧ t.label < a.incomingEdges.size)
-
-/-- The semantic handler interface asks for the source implications;
-execution records the implications retained by transfer. -/
-@[nospecialize] def HandlerImplications (s : Site c r l hl) (t : Target) : Prop :=
-  atSlotsOf (s.sd.thrown :: s.en.entry.names)
-    (edgeTransfer (s.sd.thrown :: s.en.entry.names) t.mapping true true s.sd.outFresh s.en.entry s.sd.st.result
-      (handlerStore G s.env.claimed[l]! (s.sd.thrownTy.getD []) s.en.entry s.sd.st s.sd.thrown) s.en.implies).2 =
-  atSlotsOf (s.sd.thrown :: s.en.entry.names) s.en.implies
-
-/-- The handler's incoming pair and merge record persist to the final walk.
-Storage bounds and the source/transfer implication equality are explicit leaves. -/
-theorem handlerRecords_of_storage (s : Site c r l hl) {t : Target}
-    (ht : (r.node l hl).node.handler = some t)
-    (storage : HandlerStorage s t) (implications : HandlerImplications s t) : HandlerRecords s t := by
-  obtain ⟨i, record, _, _, _, a, b, hb, _, hext⟩ := s.handler_record ht
-  obtain ⟨hw, hedge, _, _, _, _, _, _, _, _, _, _, hc, he, hs, _, _, hi, _⟩ := s.facts
+/-- A handler's transferred pair and implications persist in the final walk. -/
+theorem handlerRecords_of_checked (s : Site c r l hl) (checked : WalkChecked c r) {t : Target}
+    (ht : (r.node l hl).node.handler = some t) : HandlerRecords s t := by
+  obtain ⟨hw, hedge, _, _, _, _, _, _, _, _, hex, hn, hc, he, hs, _, _, hi,
+    hsizes, hext, _⟩ := s.facts
+  have member : Exit.handler t ∈ Exit.ofNode s.env.nodes[l]! := by
+    rw [hn] at ht
+    simp only [Exit.ofNode, ht, Option.toList_some, List.map_cons, List.map_nil,
+      List.mem_append, List.mem_singleton]
+    exact .inr trivial
+  obtain ⟨i, hidx⟩ := List.mem_iff_getElem?.mp member
+  obtain ⟨a, b, hb, hx, hb1, hb2, hb3, _⟩ :=
+    visitExits_indexed_arrays hex hsizes (.handler t, i) (List.mem_zipIdx_iff_getElem?.mpr hidx)
+  have growth := exitStep_arraySizes hb
+  have targetBound : t.label < s.env.claimed.size := (exitStep_effect hb).claimed
+  have b1 : t.label < a.incoming.size := by
+    rw [← growth.1, hb1, s.arrayAllocation.1]; exact targetBound
+  have b2 : t.label < a.incomingImpl.size := by
+    rw [← growth.2.1, hb2, ← hsizes, s.arrayAllocation.1]; exact targetBound
+  have b3 : t.label < a.incomingEdges.size := by
+    rw [← growth.2.2, hb3, s.arrayAllocation.2]; exact targetBound
   have flag : s.env.isHead[t.label]! = r.given t.label := by rw [s.headFlag, r.given_eq]
-  have bounds := storage i a b hb
-  let pair := edgeTransfer (s.sd.thrown :: s.en.entry.names) t.mapping true true s.sd.outFresh s.en.entry s.sd.st.result
-    (handlerStore G s.env.claimed[l]! (s.sd.thrownTy.getD []) s.en.entry s.sd.st s.sd.thrown) s.en.implies
   change (_ → IncomingRecorded _ _ _) ∧ (_ → _ → MergeRecorded _ _ _)
   constructor
-  · intro hn
-    obtain ⟨h1, h2, _⟩ := exitStep_handler_arrays hb (flag.trans hn)
-    refine ⟨exitsWalk b, s.raw, passHeads c, hw, r.given_eq ▸ hn, hext, ?_⟩
+  · intro hg
+    obtain ⟨h1, h2, _⟩ := exitStep_handler_arrays hb (flag.trans hg)
+    refine ⟨exitsWalk b, s.raw, passHeads c, hw, r.given_eq ▸ hg, hx.trans hext, ?_⟩
     change _ ∈ ((b.incoming[t.label]?).getD []).zip ((b.incomingImpl[t.label]?).getD [])
     rw [hc, he, hs, ← hi, h1, h2]
-    simp [bounds.1, bounds.2.1, Array.getElem_modify_self]
-  · intro hn hm
-    obtain ⟨_, _, h3⟩ := exitStep_handler_arrays hb (flag.trans hn)
-    obtain ⟨hmerge, hbound⟩ := bounds.2.2 hm
-    refine ⟨exitsWalk b, s.raw, hedge, hext, ?_⟩
+    simp [b1, b2, Array.getElem_modify_self]
+  · intro hg hm
+    obtain ⟨_, _, h3⟩ := exitStep_handler_arrays hb (flag.trans hg)
+    refine ⟨exitsWalk b, s.raw, hedge, hx.trans hext, ?_⟩
     change _ ∈ (b.incomingEdges[t.label]?).getD []
-    rw [h3, hmerge, if_pos rfl]
-    rw [hc, he, ← hi]
-    have hip : atSlotsOf (s.sd.thrown :: s.en.entry.names) pair.2 =
-        atSlotsOf (s.sd.thrown :: s.en.entry.names) s.en.implies := implications
-    simp only [Array.getElem?_modify, ↓reduceIte, Array.getElem?_eq_getElem hbound,
+    rw [h3, s.mergingOfIncoming checked t.label hg hm, if_pos rfl, hc, he, hs, ← hi]
+    simp only [Array.getElem?_modify, ↓reduceIte, Array.getElem?_eq_getElem b3,
       Option.map_some, Option.getD_some]
-    exact List.mem_cons.mpr (.inl (by rw [hip]))
+    exact List.mem_cons_self
 
 /-- Every site retains the setup which produced its environment. -/
 theorem Site.setup (s : Site c r l hl) : ∃ σ0, RunCall.setup c = .ok (s.env, σ0) := by
@@ -167,7 +160,7 @@ theorem Site.setup (s : Site c r l hl) : ∃ σ0, RunCall.setup c = .ok (s.env, 
 
 /-- Every site's input names precede its entry counter. -/
 theorem Site.startBelow (s : Site c r l hl) : ∀ x ∈ s.env.startNames, x < s.σ.fresh := by
-  obtain ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hb⟩ := s.facts
+  obtain ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hb, _⟩ := s.facts
   exact hb
 
 /-- Setup is deterministic, so sites at different visited labels share an environment. -/
@@ -245,7 +238,7 @@ theorem headEntryContract_of_checked (s : Site c r l hl) (checked : WalkChecked 
   have hne : r.w.incoming e.target.label ≠ [] := List.ne_nil_of_mem hin
   obtain ⟨base, traversed, _⟩ := r.traversed
   have visited : r.w.visited e.target.label := traversed.visited _ hne
-  obtain ⟨dead, hnodes⟩ := checked
+  obtain ⟨dead, hnodes, _⟩ := checked
   obtain ⟨q⟩ := site_of_trace (hnodes e.target.label visited).2
   have henv := s.env_eq q
   obtain ⟨_, _, _, _, _, _, _, _, hentry, _, _, _, _, he, _, _, _, hi, _, _, _, _, _, hnames, _⟩ := q.facts
@@ -318,14 +311,46 @@ theorem exitChecks_head_structural (s : Site c r l hl) (checked : WalkChecked c 
         (r.node l hl).node (r.node l hl).c (r.node l hl).entry (r.node l hl).st ys) : Head s η :=
   exitChecks_head s η (headEntries_of_checked s checked startSeparation) yieldSourcesJudged
 
-/-- Handler extraction under the three structural leaves. -/
+/-- Handler extraction under the start-separation premise. -/
 theorem exitChecks_handler_structural (s : Site c r l hl) (checked : WalkChecked c r) (η : MixedAssignment ι)
-    (startSeparation : StartSeparation r)
-    (storage : ∀ t, (r.node l hl).node.handler = some t → HandlerStorage s t)
-    (implications : ∀ t, (r.node l hl).node.handler = some t → HandlerImplications s t) : Handler s η :=
+    (startSeparation : StartSeparation r) : Handler s η :=
   exitChecks_handler_of_records s η (headEntries_of_checked s checked startSeparation)
-    (fun t ht => handlerRecords_of_storage s ht (storage t ht) (implications t ht))
+    (fun _ ht => handlerRecords_of_checked s checked ht)
 
 end ExitChecks
+/-- Checked exit execution delivers under yield judgments and final-world realization.
+The start's written separation must absorb the entry separation. -/
+theorem exitsYield_of_yields
+    (startSeparation : ∀ (G : NormalGraph ι) (I : InstanceImageCheck G) (c : Target.RunCall G I)
+      after admits, RunPremises G I c after admits → ∀ r : RunWalkA G I c,
+        WalkChecked c r → ExitChecks.StartSeparation r)
+    (yieldSourcesJudged : ∀ (G : NormalGraph ι) (I : InstanceImageCheck G) (c : Target.RunCall G I)
+      after admits, RunPremises G I c after admits → ∀ r : RunWalkA G I c,
+        WalkChecked c r → ∀ η, admits η → ∀ l (hl : r.w.visited l) (s : ExitChecks.Site c r l hl),
+        ∀ ys, ExitYieldSource s.env l s.en s.sd s.sd.yields ys →
+          ExitYieldsJudged (reassign G η) r.w (List.range c.inputs.length) l
+            (r.node l hl).node (r.node l hl).c (r.node l hl).entry (r.node l hl).st ys)
+    (initialYieldsJudged : ∀ (G : NormalGraph ι) (I : InstanceImageCheck G) (c : Target.RunCall G I)
+      after admits, RunPremises G I c after admits → ∀ r : RunWalkA G I c,
+        WalkChecked c r → ∀ η, admits η → ∀ l (hl : r.w.visited l) (s : ExitChecks.Site c r l hl),
+          ExitYieldsJudged (reassign G η) r.w (List.range c.inputs.length) l
+            (r.node l hl).node (r.node l hl).c (r.node l hl).entry (r.node l hl).st s.ysA)
+    (realization : ∀ (G : NormalGraph ι) (I : InstanceImageCheck G) (c : Target.RunCall G I)
+      after admits, RunPremises G I c after admits → ∀ r : RunWalkA G I c,
+        WalkChecked c r → ∀ η, admits η → ∀ l (hl : r.w.visited l) (s : ExitChecks.Site c r l hl),
+          ExitChecks.Realization s η) : ExitsYield ι := by
+  apply exitsYield_of_checks
+  intro G I c after admits hp r checked η ha l hl s
+  have sep := startSeparation G I c after admits hp r checked
+  have sources := yieldSourcesJudged G I c after admits hp r checked η ha l hl s
+  exact ExitChecks.assemble s η
+    (ExitChecks.exitChecks_here s η (initialYieldsJudged G I c after admits hp r checked η ha l hl s))
+    (ExitChecks.exitChecks_widths s η)
+    (ExitChecks.exitChecks_nonHead s η checked sources)
+    (ExitChecks.exitChecks_head_structural s checked η sep sources)
+    (ExitChecks.exitChecks_handler_structural s checked η sep)
+    (ExitChecks.exitChecks_fresh s)
+    (realization G I c after admits hp r checked η ha l hl s)
+
 end Structural
 end Verification.TolerantFrames

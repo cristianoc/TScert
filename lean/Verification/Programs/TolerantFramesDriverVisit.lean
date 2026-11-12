@@ -94,6 +94,9 @@ structure VisitRest (c : Target.RunCall G I) (env : SinglePass.WalkEnv ι G I) (
   impBelow : IncomingBelow σ.walk σ.fresh → IncomingBelow σ'.walk σ'.fresh
   extendsWalk : WalkExtends σ.walk σ'.walk
   vacuity : CachedVacuity G env.claimed σ.unsat → CachedVacuity G env.claimed σ'.unsat
+  allocation : σ'.walk.incoming.size = σ.walk.incoming.size ∧
+    σ'.walk.incomingEdges.size = σ.walk.incomingEdges.size
+  incomingGrowth : ∀ t, (incS σ'.walk t).length ≤ (incS σ.walk t).length + (exitsOf env l).count t
 
 variable (ι) in
 /-- **(Named hypothesis) Every visit gives `VisitRest`**, under
@@ -120,7 +123,7 @@ theorem visitsRecord_of (hr : VisitsRest ι) : VisitsRecord ι := by
           size := visitResult_size _ _ _ _ _,
           frame := hR.frame, pushes := hR.pushes, edges := hR.edges, fresh := hR.fresh, degs := hR.degs,
           queue := hR.queue, settles := hR.settles, mergeFresh := hR.mergeFresh,
-          inSizes := hR.inSizes, impBelow := hR.impBelow, extendsWalk := hR.extendsWalk, vacuity := hR.vacuity }
+          inSizes := hR.inSizes, impBelow := hR.impBelow, extendsWalk := hR.extendsWalk, vacuity := hR.vacuity, allocation := hR.allocation, incomingGrowth := hR.incomingGrowth }
 
 /-- **A state an exit carries in meets `PushOk`** (`edgeTransfer_width`,
 `edgeTransfer_wf`, `edgeStoreOf_wf`, `edgeTransfer_below`,

@@ -119,7 +119,10 @@ structure NonHeadExitChecked (G : NormalGraph ι) (images : InstanceImageCheck G
   merged : 2 ≤ (w.incoming t.label).length →
     MergeRecorded edgesIn t.label (SinglePass.refinedContext G c node.continuation (yieldsAtSlots entry.names ysA) (SinglePass.outAllOf G c st.stepOut)
         (i == 0),
-      atSlotsOf (normalNames entry st pushed) (w.implies l ++ freshImplOf pushed false ysE entry.names st.result),
+      atSlotsOf (normalNames entry st pushed)
+        (edgeTransfer (normalNames entry st pushed) t.mapping pushed false outFresh entry st.result
+          (exitStore G c entry st pushed observed promote)
+          (w.implies l ++ freshImplOf pushed false ysE entry.names st.result)).2,
       t.mapping)
 
 /-- **The checks at a reassigned graph**: the same checks there
@@ -251,7 +254,8 @@ theorem nonHeadExit_delivers {G : NormalGraph ι} {images : InstanceImageCheck G
     | true => simpa using hn'
     | false => simpa using slotsNamed_tail hn'
   exact ⟨⟨hT, hAs⟩, fun hg hlen =>
-    joinedAt_of_exit (given := given) (k := m) (hc.merged hlen).mem hrA hss hI' hg hlen⟩
+    joinedAt_of_exit (given := given) (k := m) (hc.merged hlen).mem hrA hss
+      (fun y hy => hI' y (List.mem_filter.mp (keepFirst_mem hy)).1) hg hlen⟩
 
 /-- **What `exitStep` checks on the normal exit at position `i` into a
 loop head** (`headExit`), the head's given facts `req` (its written
@@ -457,7 +461,9 @@ structure HandlerExitChecked (G : NormalGraph ι) (images : InstanceImageCheck G
   pushedIn : given t.label = false → IncomingRecorded w t.label (edgeTransfer (x :: entry.names) t.mapping true true outFresh entry st.result
     (handlerStore G c TT entry st x) (w.implies l))
   merged : given t.label = false → 2 ≤ (w.incoming t.label).length →
-    MergeRecorded edgesIn t.label (handlerCtx c TT, atSlotsOf (x :: entry.names) (w.implies l), t.mapping)
+    MergeRecorded edgesIn t.label (handlerCtx c TT, atSlotsOf (x :: entry.names)
+      (edgeTransfer (x :: entry.names) t.mapping true true outFresh entry st.result
+        (handlerStore G c TT entry st x) (w.implies l)).2, t.mapping)
   head : given t.label = true → ∃ (req written : HeapKnowledge.Knowledge) (cf : List HeapKnowledge.IndexAtom)
     (gimp : List (PromiseCalls.Implication ι)) (argName : Option Nat) (argSlots : List Nat)
     (inputSlots : List (Nat × Nat)) (hwidth hfresh : Nat),
@@ -543,7 +549,8 @@ theorem handlerExit_delivers {G : NormalGraph ι} {images : InstanceImageCheck G
         (stateHolds_materialize (stateHolds_edge hSe) _ _ true) heh hh (fun o ho => by cases ho) htc
     obtain ⟨η', hn', -, hI', -⟩ := hSh
     exact ⟨⟨hT, hAs⟩, fun hg' hlen =>
-      joinedAt_of_exit (given := given) (k := m) (hc.merged hg hlen).mem heh hn' hI' hg' hlen⟩
+      joinedAt_of_exit (given := given) (k := m) (hc.merged hg hlen).mem heh hn'
+        (fun y hy => hI' y (List.mem_filter.mp (keepFirst_mem hy)).1) hg' hlen⟩
   | true =>
     obtain ⟨req, written, cf, gimp, argName, argSlots, inputSlots, hwidth, hfresh, himp, hin, harg, hq, hent,
       hwr, hlt, hargs⟩ := hc.head hg

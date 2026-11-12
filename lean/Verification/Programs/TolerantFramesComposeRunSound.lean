@@ -42,7 +42,20 @@ structure NodePassChecked {G : NormalGraph ι} {I : InstanceImageCheck G} (c : T
 no-return region, and `NodeExitTrace` at the same chosen node. -/
 def WalkChecked {G : NormalGraph ι} {I : InstanceImageCheck G} (c : Target.RunCall G I) (r : RunWalkA G I c) :
     Prop :=
-  ∃ dead, ∀ l (hl : r.w.visited l), NodePassChecked c dead (r.node l hl) ∧ NodeExitTrace c r.edgesIn (r.node l hl)
+  ∃ dead, (∀ l (hl : r.w.visited l), NodePassChecked c dead (r.node l hl) ∧ NodeExitTrace c r.edgesIn (r.node l hl)) ∧
+    r.given = passHeads c ∧
+    ∀ t, r.given t = false → 2 ≤ (r.w.incoming t).length → (passMerging c)[t]! = true
+
+/-- A checked walk uses the setup's head table. -/
+theorem WalkChecked.givenAgreement {G : NormalGraph ι} {I : InstanceImageCheck G}
+    {c : Target.RunCall G I} {r : RunWalkA G I c} (h : WalkChecked c r) : r.given = passHeads c :=
+  h.choose_spec.2.1
+
+/-- Two incoming states at a non-head require the setup's merge flag. -/
+theorem WalkChecked.mergingOfIncoming {G : NormalGraph ι} {I : InstanceImageCheck G}
+    {c : Target.RunCall G I} {r : RunWalkA G I c} (h : WalkChecked c r) :
+    ∀ t, r.given t = false → 2 ≤ (r.w.incoming t).length → (passMerging c)[t]! = true :=
+  h.choose_spec.2.2
 
 variable (ι) in
 /-- **(Named hypothesis) An accepted call records a checked walk**: an

@@ -288,8 +288,7 @@ theorem exitChecks_head (s : Site c r l hl) (η : MixedAssignment ι)
     (s.env.givenImplies[t.label]?).getD [], s.env.argName, (s.env.givenArgs[t.label]?).getD [],
     (s.env.givenInputs[t.label]?).getD [], width, fresh, checked.reassign η, below, argumentInput⟩
 
-/-- Handler records at the final walk. The merge record states the
-source implications required by the semantic interface. -/
+/-- Handler records at the final walk, with the implications retained by transfer. -/
 @[nospecialize] def HandlerRecords (s : Site c r l hl) (t : Target) : Prop :=
   let n := r.node l hl
   (r.given t.label = false → IncomingRecorded r.w t.label
@@ -297,7 +296,9 @@ source implications required by the semantic interface. -/
       (handlerStore G n.c (s.sd.thrownTy.getD []) n.entry n.st s.sd.thrown) (r.w.implies l))) ∧
   (r.given t.label = false → 2 ≤ (r.w.incoming t.label).length →
     MergeRecorded r.edgesIn t.label (handlerCtx n.c (s.sd.thrownTy.getD []),
-      atSlotsOf (s.sd.thrown :: n.entry.names) (r.w.implies l), t.mapping))
+      atSlotsOf (s.sd.thrown :: n.entry.names)
+        (edgeTransfer (s.sd.thrown :: n.entry.names) t.mapping true true s.sd.outFresh n.entry n.st.result
+          (handlerStore G n.c (s.sd.thrownTy.getD []) n.entry n.st s.sd.thrown) (r.w.implies l)).2, t.mapping))
 
 /-- Handler edge checks from the trace, under the structural head-entry
 and incoming-record leaves. Type admission, type checks, head queries,
