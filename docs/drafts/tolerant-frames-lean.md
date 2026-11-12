@@ -1432,6 +1432,33 @@ it visits. Proved: `footprintsKept_of_checked` (`NodesMean` ∧
 (`run_sound_17a`). `BoundChecked` over `NodeAccepted`, the mirror
 `passOutFresh` and `CallFreshBelow` are replaced by these.
 
+**The merges' joined implications at the exits** (module
+`TolerantFramesNodeJoined.lean`). A joined implication a merge keeps
+(`joinedChecked`) is justified by the source environment's types, which an
+edge state's meaning does not read, so the exit into the merge delivers it.
+`JoinedAt t ρ s`: where `t` is a merge, its kept implications hold at
+$`\rho`$. Proved:
+
+- (`joinedAt_of_exit`) an edge recorded into $`t`$ as
+  $`(\Gamma_e, \mathrm{atSlotsOf}\ \mathit{names}\ \mathit{carried}, m)`$,
+  its source environment $`\rho_s`$ typed by $`\Gamma_e`$, its slots holding
+  $`\mathit{names}`$' values at $`\eta`$, the carried implications holding
+  at $`\eta`$ ⟹ `JoinedAt` at $`\mathrm{mapEnv}\ m\ \rho_s`$;
+- (`stepEdgesSoundJ_of_checked`) `NodeChecked` with its `NodeMeaning` and
+  `NodeJoined` (each normal exit's and the handler's `JoinedAt` at the
+  target's environment) at every visited label ∧ `CodesSound` ⟹
+  `StepEdgesSoundJ` (`StepEdgesSoundA` with each target's `edgePreA` and
+  `JoinedAt`, `edgePreAJ`); `StepEdgesSoundJ.toA` forgets `JoinedAt`.
+
+`edgePreAJ` is `edgePreA` with the conjunct of the walk side's `edgePreJ`,
+so `entries_of_traversedJ` reads it; with it `MergesImpliesHold` leaves the
+graph theorem once the walk's predicates take `StepEdgesSoundJ`.
+`NodeJoined` is discharged per exit by `joinedAt_of_exit`, given the
+driver's record of the edge (`MergeEdgeRecorded`) and $`\Gamma_e`$ typing the
+source environment: at a handler edge $`\Gamma_e`$ is the node's context; at
+a normal edge it is the context as the step's yields refine it, typed where
+the kept yields hold of the step's value.
+
 Premises this leg discharges / leaves:
 
 - discharges `FootprintsKept` (into `BoundsChecked`, a record of the
@@ -1440,3 +1467,7 @@ Premises this leg discharges / leaves:
   driver's walk);
 - leaves `BoundsChecked` and `ReturnsChecked` to the driver on fuel
   (`RunTraversed`'s walk records them).
+- states the exits' obligation into a merge (`NodeJoined`,
+  `StepEdgesSoundJ`) that replaces `MergesImpliesHold`; leaves `NodeJoined`
+  per exit to `joinedAt_of_exit` with the driver's record and the typing of
+  the refined context.
