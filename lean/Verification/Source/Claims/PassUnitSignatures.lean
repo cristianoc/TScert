@@ -1,6 +1,8 @@
 import Verification.Source.Claims.PassUnitInterfaces
 import Verification.Types.StoreMaps
 import Verification.Types.StoreMapsCheck
+import Verification.Types.StoreMapsBuiltins
+import Verification.Source.Claims.InterfaceRows
 
 /-! # The single pass's unit theorem: signature agreement across two stores
 
@@ -78,5 +80,39 @@ theorem signatureAgrees_of_checks {e : Entry} (src : EntryRealized e) {σ : Type
   intro j V w hw
   rw [m₂.meaning_eq_of_mem hD₂ hI₂, m₁.meaning_eq_of_mem hD₁ hI₁]
   exact hw
+
+/-- **Signature agreement from the front's two row checks** (proved): the
+module published the entry where the store-map check relates its interface
+type to the table's (`moduleRowsAgree`), and the importer reads it where
+the check relates the table's type to its slot's type `A`
+(`importerRowsAgree`). Then the stores agree on the signature; and where the
+module's store states the built-ins, so do the table and the importer's
+store, with the same keys and the same exception family. -/
+theorem signatureAgrees_of_rows {e : Entry} (src : EntryRealized e) (t : RowTable) (name : String)
+    {f : FilePlans} {A : List (Lab f)}
+    (hm : moduleRowsAgree src.fm.F.store t name (src.layout.iface src.unit) = true)
+    (hi : importerRowsAgree f.F.store t name A = true) :
+    SignatureAgrees src (graphOf f) A ∧
+      ∀ r, (graphOf src.fm).builtins = some r → ∃ r', (graphOf f).builtins = some r' ∧ r'.keys = r.keys ∧
+        PositiveRules.excOf (graphOf f) = PositiveRules.excOf (graphOf src.fm) := by
+  letI : Inhabited (Lab f) := ⟨Labels.nul⟩
+  unfold moduleRowsAgree at hm
+  unfold importerRowsAgree at hi
+  cases hl : t.interfaces.lookup name with
+  | none => rw [hl] at hm; cases hm
+  | some Is =>
+    rw [hl] at hm hi
+    obtain ⟨mp₁, h₁⟩ := Option.isSome_iff_exists.mp hm
+    obtain ⟨mp₂, h₂⟩ := Option.isSome_iff_exists.mp hi
+    have hc₁ : ∀ (S : List Nat) x, x ∈ id S ↔ x ∈ S := fun _ _ => Iff.rfl
+    have hc₂ : ∀ (S : List (Lab f)) x, x ∈ (S.mergeSort Labels.le).eraseDups ↔ x ∈ S := by
+      intro S x; simp only [List.mem_eraseDups, List.mem_mergeSort]
+    refine ⟨signatureAgrees_of_checks src rfl (graphOf_env f) hc₁ hc₂ h₁ h₂, ?_⟩
+    intro r hr
+    obtain ⟨_, r₁, -, -, hb₁, hk₁, -, -, -, -, he₁⟩ :=
+      StoreMaps.matchStores_sound_builtins hc₁ (env_empty_agree (graphOf_env src.fm) rfl) hr h₁
+    obtain ⟨_, r₂, -, -, hb₂, hk₂, -, -, -, -, he₂⟩ :=
+      StoreMaps.matchStores_sound_builtins hc₂ (env_empty_agree rfl (graphOf_env f)) hb₁ h₂
+    exact ⟨r₂, hb₂, hk₂.trans hk₁, he₂.trans he₁⟩
 
 end Verification.SourceClaimJson.PassUnit

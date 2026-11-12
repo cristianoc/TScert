@@ -1102,6 +1102,22 @@ against the same exception family; then `matchStores_sound_builtins`
 applies with the check unchanged. A module with no arrays throws no array,
 so its checks hold at the stronger family (not measured).
 
+The front's two checks are the store-map checks of section 7's request:
+the module publishes an entry where `moduleRowsAgree` relates its interface
+type to the table's, and the importer reads it where `importerRowsAgree`
+relates the table's type to its slot's type $`A`$.
+`signatureAgrees_of_rows` (proved) is the cross-module theorem's agreement
+from those two checks, and, through `matchStores_sound_builtins` twice,
+where the module's store states built-ins $`r`$ the importer's states
+built-ins with $`r`$'s keys and the same exception family. The front
+states the built-ins in a module's store by its document
+(`builtinsAt` in the parser, `ArrayProto` listed; `lowerSource` then sets
+the store's arrays); that the frozen store then has
+$`\mathrm{builtins} = \mathrm{some}\ r`$ is not proved, and soundness does
+not need it: `signatureAgrees_of_rows` holds whatever the two stores state,
+and a module's store stating none makes the importer's check refuse
+(`matchStores_none_of_builtins`), a loss of coverage only.
+
 **A module's own reads.** `crossModule_safe` needs each module's own
 established slots met (`StepLayouts`' outside contracts hold of the
 module's layout, its established kind among them), so a module's reads of

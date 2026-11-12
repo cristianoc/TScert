@@ -138,6 +138,7 @@ run_cmd do
   check ``Verification.SourceClaimJson.PassUnit.graphOf_env
   check ``Verification.SourceClaimJson.PassUnit.storeMapAgrees_of_check
   check ``Verification.SourceClaimJson.PassUnit.signatureAgrees_of_checks
+  check ``Verification.SourceClaimJson.PassUnit.signatureAgrees_of_rows
   check ``Verification.SourceClaimJson.PassUnit.moduleUnitId_inj
   check ``Verification.SourceClaimJson.PassUnit.entryRealized_of_step
   check ``Verification.SourceClaimJson.PassUnit.realized_of_established
