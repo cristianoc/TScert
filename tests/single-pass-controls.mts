@@ -855,16 +855,26 @@ control("forged declarations: a generic member's result", async (): Promise<void
   say("forged declarations: a generic member's result narrowed in the class's declaration, refused at the construct code");
 });
 
-stop("forged declarations: another import closure", async (): Promise<void> => {
-  // The fragment's own code over another file's declarations: other types.
-  // The old route refuses the claims, which name declarations by position;
-  // the route accepts every unit (values' `identity` reads no declaration).
+control("forged declarations: another import closure", async (): Promise<void> => {
+  // A fragment's code over another file's declarations. The code names each
+  // declaration it reads by its identity (module, name, span): a reference
+  // whose identity the other closure has no definition of refuses the unit
+  // reading it at the annotation; a unit reading no declaration (values'
+  // `identity`) is checked as before, its verdict independent of them.
+  const reading = run("collections-json-uninherited-key");
+  const fragment: unknown = JSON.parse(readFileSync(fragmentOf(reading), "utf8"));
+  const other: unknown = JSON.parse(readFileSync(fragmentOf(run("values")), "utf8"));
+  assert.ok(isObject(fragment) && isObject(other) && "declarations" in other);
+  const swapped = pass(forged(reading, "forged-import", { ...fragment, declarations: other.declarations }));
+  for (const unit of ["nest@197", "lookup@262"])
+    refused(swapped, unit, "a unit reading a declaration over another closure",
+      /source refusal at \[\d+,\d+\): the declarations required by this unit cannot be interpreted: reference has no declaration equation/);
   const good = run("values");
-  const fragment: unknown = JSON.parse(readFileSync(fragmentOf(good), "utf8"));
-  const json: unknown = JSON.parse(readFileSync(fragmentOf(run("collections-json-uninherited-key")), "utf8"));
-  assert.ok(isObject(fragment) && isObject(json) && "declarations" in json);
-  refusedFile(pass(forged(good, "forged-import", { ...fragment, declarations: json.declarations })), "forged import closure");
-  say("forged import closure: refused");
+  const own: unknown = JSON.parse(readFileSync(fragmentOf(good), "utf8"));
+  assert.ok(isObject(own) && isObject(fragment) && "declarations" in fragment);
+  const kept = pass(forged(good, "forged-import", { ...own, declarations: fragment.declarations }));
+  accepted(kept, "identity@9", "a unit reading no declaration");
+  say("forged import closure: a unit reading a declaration the other closure has no definition of refused at its annotation; one reading none checked as before");
 });
 
 control("forged declarations: unequal bound member effects", async (): Promise<void> => {

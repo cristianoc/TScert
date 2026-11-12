@@ -44,7 +44,7 @@ Measured: `node tests/single-pass-controls.mts`, engine-controls at
 | --- | --- | --- |
 | The parser's fragment: its shape | Malformed bodies, graph labels, claim-shaped annotations, unexamined fields at the root and on nodes, overload units at another function's code, unbound names, deferred mapped types, a regex shape no declaration lists, a family guard's call without its domain: each refused by the fragment's decoder or the front, by the old control's refusal text. | An assignment to an unbound name is refused with no span. |
 | The parser's fragment: its contracts (`requires`, `ensures`, loop invariants, statements, store regions) | False postconditions (3), a removed quantified precondition, a false loop-cell invariant, a closure's removed precondition, fresh results, moved, rebased and path regions, an old array at a slot's join, a generic closure's statement, a method's dropped statement: each refused at its unit. | Five of these units are refused unforced on the route (`lostBaselines`): their forged refusal shows nothing until a loop-head fact is supplied. |
-| The parser's fragment: its declarations | The Promise tag (renamed, dropped, on another prototype, a base or a callable one, PromiseLike in `then`, an allocation keyed by it, the native contract without it), a generic member's result, a union host's member effects, an array's `toJSON`, stable keys and stable links, written applications' arguments, scopes and references, binder roles, an unguarded alias, guard domains, a guard's promise: each refused. | Stop: another file's declarations under `values`' code are accepted (`identity` reads none); the old route refused the claims, which name declarations by position. Conjectured obsolete: the route reads no claim. |
+| The parser's fragment: its declarations | The Promise tag (renamed, dropped, on another prototype, a base or a callable one, PromiseLike in `then`, an allocation keyed by it, the native contract without it), a generic member's result, a union host's member effects, an array's `toJSON`, stable keys and stable links, written applications' arguments, scopes and references, binder roles, an unguarded alias, guard domains, a guard's promise: each refused. | none: the old route's form of this boundary is obsolete (below, "Declarations by identity"); its form on the route has its control ("forged declarations: another import closure"). |
 | The parser's fragment: reserved names | Each write form renamed to `stack` refused at the write's span; a member renamed `stack` accepted, the reservation the parser's alone. | none |
 | The type computation's proposals | 62 forced proposals over the forces of the Lean front (`TSCERT_FORCE`), each a positive unit accepted unforced and refused forced, or a negative one refused both ways; `elements` on native-length-literal `order@440`; `array-spreads` on two negatives (no positive unit exists: the force skips a check compatible operands pass); `objects` on blocker-census-options-default `config@148`. | An optional field's read proposed without `undefined` has no force (below, `optional-reads`). |
 | Loop-head facts | `head-entry` (loop-head-contents `continued@413`); the given facts are an input the pass checks on every edge into the head. | The route reads no given facts: 78 cases need one (the predecessor's case run). |
@@ -53,6 +53,31 @@ Measured: `node tests/single-pass-controls.mts`, engine-controls at
 | Module interfaces and the stage store | A module's document leaving out a function an import reaches (the imported function, or one its code calls): each unit reading the import refused at its read, `unbound name <name> in <module>, read through the import '<local>'`, on the interface path and the one-process path; a forged interface row refused by the store-map check; a forged stored interface recomputed; an interface stale for an edited module refused; forced and selected requests keyed apart; own-file and reordered requests reach the same keys; an importer's forced execution prints one payload; a timed-out or failed component unpublished; cold and warm runs agree, the interface stages replay warm, an importer's edit executes its stages and replays the module's interface, to a cold run's outcome. | Injected tool failures of the route's stages need the route to run the verifier `VERIFIER` names (`pipeline/module-interfaces.mts` calls `verifierBuild`). |
 | Native and host contracts | Every negative case `tests/node-runs.mts` runs under Node (365, its Node half there) refused on the route, but one reviewed acceptance (invalid-native-promise-invariant-result); the stand-in host's reading rules, a declared-optional method, the string-tagged family, the compiler enums through an audited and a mismatched installation, nested installations. | The route refuses a unit where the old producer refused the file (status `unverified` for `unsupported`); `exhausted` at a written obligation is reported `unsupported` (`pipeline/verify-source.mts`, `singlePass`). |
 | The lowering | The malformed bodies above; the front's refusal of a form it does not handle is a refusal (two `jsDoc` forms). | 996 refusals of the cases name a node and a Lean term, no span (`expression at node N`); a ported control matches the node where the old one matched a span (four controls). |
+
+## Declarations by identity
+
+The old route's control of another import closure (`values`' code over
+`collections-json-uninherited-key`'s declarations) refused the claims,
+which name declarations by their position in the document. The route reads
+no claims: the code names each declaration it reads by its identity (its
+module, name and span, the `target` of a reference), and the front reads
+the definition of that identity. So a tampered declaration list changes
+what the route accepts for a unit only through the identities the unit
+reads:
+
+- An identity the document has no definition of: the unit is refused at
+  its annotation (`the declarations required by this unit cannot be
+  interpreted: reference has no declaration equation`), the control's
+  first half. A unit reading no declaration (`identity`) has a verdict
+  independent of the list, the control's second half.
+- A position: the route reads none.
+- A definition's content under its own identity: the document is the front's
+  statement of what TypeScript resolved, and it carries no hash (CLAUDE.md,
+  "Wire formats"); neither route can check content against anything but
+  the code that reads it. Content the code contradicts is refused by the
+  controls of the declarations above (a generic member's result, member
+  effects, the Promise tag); content no code contradicts is the trusted
+  front's, a review obligation on both routes.
 
 ## The old route's controls with no counterpart
 
