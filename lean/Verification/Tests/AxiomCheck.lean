@@ -77,6 +77,7 @@ import Verification.Programs.TolerantFramesMergeNearRounds
 import Verification.Programs.TolerantFramesExitTypes
 import Verification.Programs.TolerantFramesMapNames
 import Verification.Programs.TolerantFramesExitTyped
+import Verification.Programs.TolerantFramesExitChecks
 
 /-!
 Acceptance rests on Lean's standard axioms alone. The build fails when any of
@@ -978,3 +979,14 @@ run_cmd do
   check ``Verification.TolerantFrames.HereEmpty.reassign
   check ``Verification.TolerantFrames.hereEmpty_false
   check ``Verification.TolerantFrames.vacuous_false
+  check ``Verification.TolerantFrames.yieldsOk_of_or
+  check ``Verification.TolerantFrames.slotsNamed_tail
+  check ``Verification.TolerantFrames.NonHeadExitChecked.reassign
+  check ``Verification.TolerantFrames.nonHeadExit_delivers
+  check ``Verification.TolerantFrames.HeadExitChecked.reassign
+  check ``Verification.TolerantFrames.headExit_delivers
+  check ``Verification.TolerantFrames.SubtypesPass.reassign
+  check ``Verification.TolerantFrames.EdgeFound.reassign
+  check ``Verification.TolerantFrames.HandlerExitChecked.reassign
+  check ``Verification.TolerantFrames.handlerExit_delivers
+  check ``Verification.TolerantFrames.nodeExitsYF_of_checks
