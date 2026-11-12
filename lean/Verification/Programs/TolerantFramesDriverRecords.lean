@@ -1,4 +1,5 @@
 import Verification.Programs.TolerantFramesDriverSummaries
+import Verification.Programs.TolerantFramesComposeYields
 
 /-! # Tolerant frames: the driver's record from its visits
 
@@ -167,14 +168,16 @@ theorem PushOk.mono {c : Target.RunCall G I} {t : Nat} {s : SinglePass.State} {a
 
 /-- **A visited label's record as the visit leaves it**: its node checked
 at every record agreeing with it at the label and every summary table its
-answers are a prefix of; at the start, the start entered; at a node other
+answers are a prefix of, with the visit's checks at it in the no-return
+region `dead` (`NodePassChecked`); at the start, the start entered; at a node other
 than a head, its entry the written facts added to its one incoming state or
 to the merge of those that came in (or to some state where none did). -/
-structure SettledCore (c : Target.RunCall G I) (heads : Nat → Bool) (σ : SinglePass.WalkState ι G) (l : Nat) :
-    Prop where
+structure SettledCore (c : Target.RunCall G I) (heads : Nat → Bool) (dead : List Bool) (σ : SinglePass.WalkState ι G)
+    (l : Nat) : Prop where
   node : ∀ (w : SinglePass.Walk ι) (a : Answered G), w.labels[l]? = σ.walk.labels[l]? → SumsPrefix σ.answers a →
     ProgramCertificates.SummariesSound G I a.summaries.toList →
-    Nonempty (NodeChecked G I c.codes c.passChecker c.P (ofPass w heads) (List.range c.inputs.length) (passCtx c) l)
+    ∃ r : NodeChecked G I c.codes c.passChecker c.P (ofPass w heads) (List.range c.inputs.length) (passCtx c) l,
+      NodePassChecked c dead r
   start : l = c.start → ∀ w : SinglePass.Walk ι, w.labels[l]? = σ.walk.labels[l]? →
     StartEntered c (ofPass w heads) (passCtx c) (passStated c)
   entry : heads l = false → ∃ b, (ofPass σ.walk heads).entry l = withWritten (passStated c l) b ∧
@@ -187,8 +190,8 @@ structure SettledCore (c : Target.RunCall G I) (heads : Nat → Bool) (σ : Sing
 
 /-- **A visited label's record settled**: `SettledCore`, and at a merge the
 states that came in and the start names below the merge's counter. -/
-structure Settled (c : Target.RunCall G I) (heads : Nat → Bool) (σ : SinglePass.WalkState ι G) (l : Nat) : Prop
-    extends SettledCore c heads σ l where
+structure Settled (c : Target.RunCall G I) (heads : Nat → Bool) (dead : List Bool) (σ : SinglePass.WalkState ι G)
+    (l : Nat) : Prop extends SettledCore c heads dead σ l where
   below : heads l = false → 2 ≤ ((ofPass σ.walk heads).incoming l).length →
     (∀ e ∈ (ofPass σ.walk heads).incoming l, StateBelow e.1 (passFresh σ.walk l)) ∧
     ∀ x ∈ List.range c.inputs.length, x < passFresh σ.walk l
@@ -210,7 +213,7 @@ exits still to come into it (`pend`); the states and implications that came
 in paired, each from an exit of a visited label, with its target's width, a
 well-formed store and below the fresh counter, the edges into heads from
 visited labels' exits; the start names below the counter; every visited
-label settled. -/
+label settled, its checks in the setup's no-return region `deadArr`. -/
 structure RecInv (c : Target.RunCall G I) (env : SinglePass.WalkEnv ι G I) (σ : SinglePass.WalkState ι G) :
     Prop where
   nodup : σ.queue.Nodup
@@ -226,7 +229,7 @@ structure RecInv (c : Target.RunCall G I) (env : SinglePass.WalkEnv ι G I) (σ 
   edgesVis : ∀ e ∈ σ.walk.edges.toList, ∃ s, visB σ.walk s = true ∧ e.target.label ∈ exitsOf env s
   push : ∀ t, ∀ s ∈ incS σ.walk t, PushOk c t s σ.fresh
   startFresh : ∀ x ∈ List.range c.inputs.length, x < σ.fresh
-  settled : ∀ t, visB σ.walk t = true → Settled c (envHead env) σ t
+  settled : ∀ t, visB σ.walk t = true → Settled c (envHead env) env.deadArr.toList σ t
 
 /-- **At the walk's end every reached label is visited**, where the record
 counts at least the reached labels (`filter_eq_of_le`). -/
@@ -277,7 +280,8 @@ theorem recordSound_of_inv {c : Target.RunCall G I} {env : SinglePass.WalkEnv ι
   have hheads := hE.heads
   have hvi := hI.visited_of_incoming hE hle
   rw [hheads] at hvi
-  have hset : ∀ t, visB σ.walk t = true → Settled c (passHeads c) σ t := fun t ht => hheads ▸ hI.settled t ht
+  have hset : ∀ t, visB σ.walk t = true → Settled c (passHeads c) env.deadArr.toList σ t :=
+    fun t ht => hheads ▸ hI.settled t ht
   classical
   let base : Nat → SinglePass.State := fun t =>
     if h : visB σ.walk t = true ∧ passHeads c t = false then Classical.choose ((hset t h.1).entry h.2)
@@ -285,7 +289,8 @@ theorem recordSound_of_inv {c : Target.RunCall G I} {env : SinglePass.WalkEnv ι
   have hbase : ∀ t (h : visB σ.walk t = true) (hg : passHeads c t = false),
       base t = Classical.choose ((hset t h).entry hg) := fun t h hg => by
     simp only [base, dif_pos (And.intro h hg)]
-  refine ⟨fun l hl => (hset l ((ofPass_visited _ _ _).mp hl)).node σ.walk σ.answers rfl (SumsPrefix.refl _) hsums,
+  refine ⟨fun l hl => ((hset l ((ofPass_visited _ _ _).mp hl)).node σ.walk σ.answers rfl (SumsPrefix.refl _)
+    hsums).elim fun r _ => ⟨r⟩,
     ⟨base, ?_, fun t hv => ?_⟩, ?_⟩
   · refine { visited := fun t hne => (ofPass_visited σ.walk (passHeads c) t).mpr (hvi t hne),
              single := fun t e hg hin => ?_, merge := fun t hg h2 => ?_, width := fun t hg h2 e he => ?_,
@@ -319,11 +324,11 @@ theorem recordSound_of_inv {c : Target.RunCall G I} {env : SinglePass.WalkEnv ι
 /-- **A settled record stays settled** where the label's record, the
 states, implications and merge edges that came into it (at a node other
 than a head) are unchanged and the answers grow by a prefix. -/
-theorem Settled.frame {c : Target.RunCall G I} {heads : Nat → Bool} {σ σ' : SinglePass.WalkState ι G} {t : Nat}
-    (h : Settled c heads σ t) (hl : σ'.walk.labels[t]? = σ.walk.labels[t]?)
+theorem Settled.frame {c : Target.RunCall G I} {heads : Nat → Bool} {dead : List Bool}
+    {σ σ' : SinglePass.WalkState ι G} {t : Nat} (h : Settled c heads dead σ t) (hl : σ'.walk.labels[t]? = σ.walk.labels[t]?)
     (hin : heads t = false → σ'.walk.incoming[t]? = σ.walk.incoming[t]? ∧
       σ'.walk.incomingImpl[t]? = σ.walk.incomingImpl[t]? ∧ σ'.walk.incomingEdges[t]? = σ.walk.incomingEdges[t]?)
-    (hk : SumsPrefix σ.answers σ'.answers) : Settled c heads σ' t := by
+    (hk : SumsPrefix σ.answers σ'.answers) : Settled c heads dead σ' t := by
   have he : (ofPass σ'.walk heads).entry t = (ofPass σ.walk heads).entry t := by simp only [ofPass, hl]
   have hi : (ofPass σ'.walk heads).implies t = (ofPass σ.walk heads).implies t := by simp only [ofPass, hl]
   have hf : passFresh σ'.walk t = passFresh σ.walk t := by simp only [passFresh, hl]
@@ -369,7 +374,7 @@ structure VisitFacts (c : Target.RunCall G I) (env : SinglePass.WalkEnv ι G I) 
   degs : ∀ t < env.n, envHead env t = false → deg σ' t = deg σ t - (exitsOf env l).count t
   queue : ∃ new, σ'.queue = new ++ σ.queue ∧ (∀ t ∈ new, t ∈ exitsOf env l ∧ envHead env t = false ∧ deg σ' t = 0) ∧
     ((∀ t < env.n, envHead env t = false → (exitsOf env l).count t ≤ deg σ t) → new.Nodup)
-  settles : (envHead env l = false → l ∉ exitsOf env l) → SettledCore c (envHead env) σ' l
+  settles : (envHead env l = false → l ∉ exitsOf env l) → SettledCore c (envHead env) env.deadArr.toList σ' l
   mergeFresh : envHead env l = false → 2 ≤ (incS σ.walk l).length → passFresh σ'.walk l = σ.fresh
 
 omit [Labels ι] in
@@ -539,14 +544,13 @@ def VisitsRecord : Prop :=
     σ.queue = l :: rest → SinglePass.visit G I env { σ with queue := rest } l = .ok σ' →
     VisitFacts c env { σ with queue := rest } l σ'
 
-/-- **(`recordsSound_of`) The driver's record of every returned walk is
-sound** (`RecordsSound`), where the setup starts the invariant, every visit
-gives `VisitFacts` and keeps the read summaries (`visitsKeepSummaries`):
-the invariant holds at the walk's end (`Drives.inv`, `recInv_visit`), and
-`recordSound_of_inv` reads the record from it. -/
-theorem recordsSound_of (hs : SetupRecords ι) (hv : VisitsRecord ι) :
-    RecordsSound ι := by
-  intro G I c σ reach hw hle hsums
+/-- **The walk's invariant at its end**: where the setup starts it and every
+visit gives `VisitFacts`, the state a call's returned walk ends in meets
+`RecInv` under the setup's `env`, which states the call (`Drives.inv`,
+`recInv_visit`, `visitsKeepSummaries`). -/
+theorem walk_inv (hs : SetupRecords ι) (hv : VisitsRecord ι) {G : NormalGraph ι} {I : InstanceImageCheck G}
+    {c : Target.RunCall G I} {σ : SinglePass.WalkState ι G} {reach : Nat} (hw : RunCall.walk c = .ok (σ, reach)) :
+    ∃ env, EnvFacts c env ∧ RecInv c env σ ∧ reach = (env.reached.toList.filter id).length := by
   unfold RunCall.walk SinglePass.runWalk at hw
   cases hr : RunCall.setup c with
   | error stop =>
@@ -569,7 +573,31 @@ theorem recordsSound_of (hs : SetupRecords ι) (hv : VisitsRecord ι) :
       have hinv := Drives.inv (RecInv c env)
         (fun σ σ₁ l rest hq hI hvis => recInv_visit hE hI hq (hv G I c env σ0 σ σ₁ l rest hr hE hI hq hvis)
           ((visitsKeepSummaries ι G I env).1 { σ with queue := rest } l σ₁ hvis)) hdr hI0
-      exact recordSound_of_inv hE hinv hle hsums
+      exact ⟨env, hE, hinv, rfl⟩
+
+/-- **(`recordsSound_of`) The driver's record of every returned walk is
+sound** (`RecordsSound`), where the setup starts the invariant and every
+visit gives `VisitFacts`: the invariant holds at the walk's end
+(`walk_inv`), and `recordSound_of_inv` reads the record from it. -/
+theorem recordsSound_of (hs : SetupRecords ι) (hv : VisitsRecord ι) :
+    RecordsSound ι := by
+  intro G I c σ reach hw hle hsums
+  obtain ⟨env, hE, hinv, rfl⟩ := walk_inv hs hv hw
+  exact recordSound_of_inv hE hinv hle hsums
+
+/-- **(`recordsChecked_of`) The driver checked every node its record
+visits** (`RecordsChecked`), where the setup starts the invariant and
+every visit gives `VisitFacts`: at the walk's end every visited label is
+settled (`walk_inv`), its node checked with `NodePassChecked` in the
+setup's no-return region `deadArr`, at the record and the final answers. -/
+theorem recordsChecked_of (hs : SetupRecords ι) (hv : VisitsRecord ι) : RecordsChecked ι := by
+  intro G I c σ reach hw _ hsums
+  obtain ⟨env, hE, hinv, -⟩ := walk_inv hs hv hw
+  refine ⟨env.deadArr.toList, fun l hl => ?_⟩
+  have hl' := (ofPass_visited _ _ _).mp hl
+  have hset := hinv.settled l hl'
+  rw [hE.heads] at hset
+  exact hset.node σ.walk σ.answers rfl (SumsPrefix.refl _) hsums
 
 end Records
 

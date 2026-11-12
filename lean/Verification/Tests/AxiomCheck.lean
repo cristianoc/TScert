@@ -834,7 +834,9 @@ run_cmd do
   check ``Verification.TolerantFrames.recordSound_of_inv
   check ``Verification.TolerantFrames.Settled.frame
   check ``Verification.TolerantFrames.recInv_visit
+  check ``Verification.TolerantFrames.walk_inv
   check ``Verification.TolerantFrames.recordsSound_of
+  check ``Verification.TolerantFrames.recordsChecked_of
   check ``Verification.TolerantFrames.dfsStep_seen
   check ``Verification.TolerantFrames.dfsLoop_seen
   check ``Verification.TolerantFrames.dfs_closed
