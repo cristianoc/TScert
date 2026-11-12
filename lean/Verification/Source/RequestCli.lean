@@ -405,8 +405,9 @@ def interfaceFile (path : String) (budget : PositiveCertificates.SearchBudget) :
           throw "component dependency overlaps"
         imported := imported ++ [m]
     let sc : SourceClaimJson.ImportScope := ⟨modules ++ imported, SourceClaimJson.ModuleCode.of (modules ++ imported)⟩
-    let incoming ← ds.flatMapM fun (d : Json) => do
-      return (← SourceClaimJson.decodeInterfaces sc (d.getObjValD "interface")).1
+    let decoded ← ds.mapM fun (d : Json) => SourceClaimJson.decodeInterfaces sc (d.getObjValD "interface")
+    let incoming := decoded.flatMap (·.1)
+    let incomingTables := decoded.flatMap (·.2)
     let needs ← SourceClaimJson.interfaceNeeds sc
     let own := needs.filter fun (n : SourceClaimJson.ModuleNeed) => modules.any (·.location == n.module.location)
     let mut given : Std.HashMap String Json := {}
@@ -427,7 +428,7 @@ def interfaceFile (path : String) (budget : PositiveCertificates.SearchBudget) :
       if mode == 9 then (([] : List String), f.verifyGroup fuel group false)
       else f.passGroup fuel group (given := some (moduleGiven f.fr.ast given))
     let (est, _, _, tables) ← SourceClaimJson.establishModules
-      (own.mergeSort (fun a b => a.module.location ≤ b.module.location)) budget force incoming prepare check
+      (own.mergeSort (fun a b => a.module.location ≤ b.module.location)) budget force incoming prepare check incomingTables
     SourceClaimJson.encodeInterfaces modules est tables
   match parsed with
   | .error e => refuse e
