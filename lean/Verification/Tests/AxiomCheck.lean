@@ -81,6 +81,7 @@ import Verification.Programs.TolerantFramesExitTypes
 import Verification.Programs.TolerantFramesMapNames
 import Verification.Programs.TolerantFramesExitTyped
 import Verification.Programs.TolerantFramesExitChecks
+import Verification.Programs.TolerantFramesExitFresh
 
 /-!
 Acceptance rests on Lean's standard axioms alone. The build fails when any of
@@ -1012,3 +1013,5 @@ run_cmd do
   check ``Verification.TolerantFrames.HandlerExitChecked.reassign
   check ``Verification.TolerantFrames.handlerExit_delivers
   check ``Verification.TolerantFrames.nodeExitsYF_of_checks
+  check ``Verification.TolerantFrames.SafePostExc.and_steps
+  check ``Verification.TolerantFrames.stepFresh_judgment
