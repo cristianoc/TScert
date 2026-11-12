@@ -41,6 +41,7 @@ import Verification.Programs.TolerantFramesWalkReassignNodes
 import Verification.Programs.TolerantFramesMergeBelow
 import Verification.Programs.TolerantFramesMergeGuarded
 import Verification.Programs.TolerantFramesMergeEntailed
+import Verification.Programs.TolerantFramesMergeNear
 
 /-!
 Acceptance rests on Lean's standard axioms alone. The build fails when any of
@@ -625,6 +626,8 @@ run_cmd do
   check ``Verification.TolerantFrames.checked_bound_holds
   check ``Verification.TolerantFrames.OnPath.entailed_ok_checked
   check ``Verification.TolerantFrames.entailedDefined_of_checked
+  check ``Verification.TolerantFrames.linearNearFuel_sound
+  check ``Verification.TolerantFrames.linearNearSound_of_eq
   let env ← getEnv
   let project (decl : Name) : Bool := match env.getModuleIdxFor? decl with
     | some i => (`Verification).isPrefixOf env.header.moduleNames[i.toNat]!

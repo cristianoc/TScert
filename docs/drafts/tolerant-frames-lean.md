@@ -1904,3 +1904,26 @@ path whose object or field is absent on that path. The pass's merge tests
 `entailDefinedCheck` at each view before adding the bound; at a bound
 stored by the view, or over terms the near facts name, it passes with no
 extra work.
+
+## Leg 14c: the facts near a merge's names, on fuel
+
+Module `lean/Verification/Programs/TolerantFramesMergeNear.lean`.
+`linearNearFuel s names limit fuel` is `Store.linearNear`'s search by
+structural recursion on `fuel` (default `s.size + 1`): each round
+(`nearRound`) reads every frontier name's facts, keeps an unconditional index
+fact not kept yet while fewer than `limit` are listed (`nearStep`), and puts
+the unseen names of a kept linear fact on the next frontier; the rounds run
+while the frontier is non-empty and fewer than `limit` facts are listed
+(`nearLoop`). Proved: `linearNearFuel_sound`, every fact it lists is an
+unconditional `index` fact of the store (an `about` list's, so in
+`storeAll`), at any fuel.
+
+The single residue is the named hypothesis `LinearNearFuelEq`: the pass's
+`linearNear` (a `while` loop, which Lean does not unfold) returns what
+`linearNearFuel` returns at fuel `s.size + 1`. `linearNearSound_of_eq`:
+`LinearNearFuelEq` ⟹ `LinearNearSound`. A round that leaves the frontier
+non-empty listed a fact not listed before, and the listed facts are
+distinct live facts, so `s.size + 1` rounds reach the loop's end (read from
+the code, not proved). `engine-pass` at 0f8d18ce has `linearNear` as the
+`while` loop; once the pass's search is on that fuel, the equation is its
+definition.
