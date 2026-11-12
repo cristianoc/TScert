@@ -35,6 +35,11 @@ structure Env where
   held (an exhaustive test's remaining arm): walked for its entries, where
   it completes or returns unreached. -/
   ghost : Bool := false
+  /-- The bindings held in cells (`cellLocals`; a function literal's
+  captured ones no slot holds): no member path of one is narrowed, as the
+  producer states a field's contents of an immutable binding's object alone
+  (`refine_field`'s `Value` root, refinement.ml:312-314). -/
+  cells : List String := []
 
 /-- What ends a narrowed member path: anything (a call that may change a
 value of the heap, a write of an unknown key), a write of a field the path
@@ -770,6 +775,7 @@ than `length` (a primitive's member is no location). -/
 def narrowPath (env : Env) (root : String) (path : List PropKey) (k : Ty Tree → Compiler (Ty Tree)) :
     Compiler Env := do
   let some A := env.vars.lookup root | return env
+  if env.cells.contains root then return env
   -- Each prefix at its narrowed type where a test narrowed it, as the read
   -- of the prefix reads it (`.read`).
   let along (p : List PropKey) : Compiler (Option (Ty Tree)) := tryCatch (do
@@ -978,6 +984,7 @@ def join : Option Env → Option Env → Option Env
   | some a, some b =>
     if a.ghost && !b.ghost then some b else if b.ghost && !a.ghost then some a else some {
       ghost := a.ghost
+      cells := a.cells
       vars := a.vars.filterMap fun (n, A) => (b.vars.lookup n).map fun B => (n, if A == B then A else norm (A ++ B))
       decl := a.decl ++ b.decl.filter fun (n, _) => (a.decl.lookup n).isNone
       paths := a.paths.filterMap fun (p, A) => (b.paths.lookup p).map fun B => (p, norm (A ++ B)) }
@@ -1002,6 +1009,20 @@ def cellsDeclared (w : Walk) (e : Env) : Env :=
   if w.force.contains "cells" then e else
   { e with vars := e.vars.map fun (n, A) =>
       if w.cellAssigned.contains n || w.heldCells.contains n then (n, (e.decl.lookup n).getD A) else (n, A) }
+
+/-- Each binding held in a cell whose contract names a type parameter (a
+binder's row, `T` or a bounded `T ⊓ B`) at its contract: a test states no
+contents of it, as the producer's `observed_contents` keeps the contract of
+a cell where the test's slice is no union of atoms (environment.ml:73-83). -/
+def cellsAtRigid (w : Walk) (e : Env) : Env :=
+  if w.force.contains "cells" then e else
+  let rigid (A : Ty Tree) : Bool := A.any fun | .bound .. | .meet .. => true | _ => false
+  { e with vars := e.vars.map fun (n, A) =>
+      if w.cellAssigned.contains n || w.heldCells.contains n then
+        match e.decl.lookup n with
+        | some D => if rigid D then (n, D) else (n, A)
+        | none => (n, A)
+      else (n, A) }
 
 /-- Whether each member of the path `root.path` is a key every arm of its
 receiver states stable (the producer's `stable_path` through
@@ -1321,9 +1342,11 @@ def memberFor (vars : List (String × Ty Tree)) (O : Ty Tree) (fld : PropKey) :
   -- A union of objects each stating the member at the same signatures,
   -- read at their receivers (a host family's node kinds, each its own
   -- receiver): the member with every clause's receivers and schemes.
-  match O.mapM (fun l => match ProgramTyping.objectClauses G [l] with
-      | [c] => ProgramTyping.clauseMember c fld
-      | _ => none) with
+  -- (a bounded binder's meet row, each of its clauses: its values the
+  -- bound's, the member its bound states, the lowering's `throughBound`)
+  match (O.mapM (fun l => match ProgramTyping.objectClauses G [l] with
+      | [] => none
+      | cs => cs.mapM (ProgramTyping.clauseMember · fld))).map List.flatten with
   | some (m :: ms) =>
     if ms.all fun m' => m'.calls == m.calls && m'.rests == m.rests &&
         m'.schemes.isEmpty == m.schemes.isEmpty then
@@ -5104,7 +5127,7 @@ partial def walkLambda (env : Env) (e : Expr) (sig : Option (CallEffects.Arrow (
   let written ← match result with
     | some ty => StateT.lift (tryCatch (some <$> lower (Fragment.translate ty)) fun _ => pure none)
     | none => pure none
-  let mut inner : Env := { vars, decl := vars, paths := [] }
+  let mut inner : Env := { vars, decl := vars, paths := [], cells := env.cells ++ w0.heldCells }
   let saved ← get
   let declared := params.map (·.1) ++ (match body with
     | .block _ ss => declaredIn ss
@@ -5113,6 +5136,7 @@ partial def walkLambda (env : Env) (e : Expr) (sig : Option (CallEffects.Arrow (
     | .block _ ss => ss
     | x => [.effect x.span x]
   let cells := (cellLocals (params.map (·.1)) bodyStmts).map (·.1)
+  inner := { inner with cells := inner.cells ++ cells }
   modify fun w => { w with writes := false, throwWrites := false, valueChange := .keep, storeChange := .keep, locals := declared, inLiteral := true,
                            literalSlots := declared.filter (!cells.contains ·) ++ w.literalSlots, heldCells := cells ++ w.heldCells }
   -- The contextual result guides async resolution calls as well as ordinary
@@ -5891,9 +5915,17 @@ partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
     let (A, e2) ← withDefault e1 A d
     return some (← bindPattern e2 target A (if d.isNone then memberPath init else none))
   | .ite _ c thn els =>
+    let before := (← get).valueWrites
     let (_, e1) ← expr env c
+    -- A test that changes a value location (a call) ends a cell's narrowed
+    -- contents in both arms, at the step, not the statement's end (the
+    -- producer's `forget` at a step that may write cells,
+    -- execution_analysis.ml:243-246).
+    let changed := (← get).valueWrites != before
     let arm (q : Bool) (ss : List Stmt) : W (Option Env) := do
       let r ← refine e1 c q
+      let w ← get
+      let r := cellsAtRigid w (if changed then cellsDeclared w r else r)
       -- An answer the test's value cannot give (`if (true)`'s `false`): the
       -- arm unreached, walked for its entries.
       if ← decidedTest c q then return ← stmts (some { r with ghost := true }) ss
@@ -6276,7 +6308,8 @@ def walkUnit (T : EquationStore.State) (f : Fragment.Fn)
       match ← tryCatch (some <$> lower (Fragment.translate p.ty)) fun _ => pure none with
       | some A => vars := upd vars p.name A
       | none => pure ()
-    let env : Env := { vars, decl := vars }
+    let unitCells := (cellLocals (f.params.map (·.name)) f.body f.name.isEmpty).map (·.1)
+    let env : Env := { vars := vars, decl := vars, cells := unitCells }
     let expected ← tryCatch (some <$> lower (Fragment.translate f.ret)) fun _ => pure none
     -- Its own parameters and declarations are its locals: assigning one
     -- changes no heap location.

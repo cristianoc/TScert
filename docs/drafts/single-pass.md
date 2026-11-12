@@ -1388,6 +1388,16 @@ removal works through:
   exceed the body's (source.ml:1168-1169). The function's own unit checks
   the proposal (SinglePass.lean:1351-1380, a dead handler region bounding
   throws alone).
+- **Captured cells' contents.** No member path whose root a cell holds (a
+  `let` a closure shares, a captured binding of a function literal) is
+  narrowed: the producer states a field's contents of an immutable binding's
+  object alone (refinement.ml:312-314). A test that changes a value location
+  ends a cell's narrowed contents in both its arms, at the step
+  (execution_analysis.ml:243-246); and a cell whose contract names a type
+  parameter keeps its contract under a test, as `observed_contents` keeps a
+  contract that is no union of atoms (environment.ml:73-83). A member of a
+  union of objects is read at every object clause of each arm, a bounded
+  binder's meet row at its bound's clauses (`Synthesis.memberFor`).
 - **Loop heads.** A loop head's facts beyond its written assertion are the
   given file's `headFacts` (and `headFactsOfCodes` for each code request),
   each at the statement entries that start where the given one does and hold
