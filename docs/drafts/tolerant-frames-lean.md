@@ -1960,3 +1960,54 @@ Proved:
 The edge's obligations beside the check are the source's: its context met
 ($`\mathrm{EnvOk}`$, the step's typing) and its carried implications holding
 (the edge's transfer keeps the source's).
+
+## Leg 14c: the merge theorem from its theorems
+
+Module `lean/Verification/Programs/TolerantFramesMergeChecked.lean`.
+**(Merge, checked)** (`mergeState_holdsAt_checked`, `mergeState_holds_checked`
+its existential form): for predecessors `preds`, $`p`$ below their number,
+the merge's first fresh name $`\mathit{fresh}`$,
+
+```math
+\begin{aligned}
+&\forall q\in\mathit{preds}.\ |q.\mathit{names}| = |\mathit{context}| \wedge \mathrm{StoreWF}\ q.\mathit{store} \wedge \mathrm{StateBelow}\ q\ \mathit{fresh}
+\ \wedge\ \forall x\in\mathit{start}.\ x<\mathit{fresh}
+\\ &\wedge\ \mathrm{LinearNearFuelEq} \wedge \mathrm{EntailedChecked}
+\ \wedge\ \mathrm{ImpliesOk}\ (\mathrm{meetImplications}\ \mathit{edgesIn})\ \rho
+\ \wedge\ \mathrm{StateHoldsAt}\ \mathit{preds}[p]\ \eta\ \rho
+\\ &\Rightarrow\ \mathrm{StateHoldsAt}\ (\mathrm{mergeState}\ \dots).\mathit{state}\ (\mathrm{mergeState}\ \dots).\mathit{implies}\ \eta'\ \rho
+\end{aligned}
+```
+
+with $`\eta'`$ the merge's valuation (`mVal`). `GuardedHolds` is gone
+(`guardedHolds_of_path`), `LinearNearSound` follows from its equation
+(`linearNearSound_of_eq`), `EntailedDefined` is replaced by the check
+(`OnPath.entailed_ok_checked`), and `ImpliesOk` of the joined implications
+follows from the edge check (`meetImplications_ok_of_check`). With
+`mergeState_wf` and `mergeState_below`, the merged state is well-formed and
+below its counter.
+
+**Premises this leg discharges / leaves.**
+
+Discharges:
+
+- the open-premises row "a merge's facts below its counter":
+  `mergeState_below` (the merge's row of the store-operations table is
+  complete);
+- `MergesSound`: `GuardedHolds`, a theorem with no pass change; the queued
+  recheck of joined guarded facts is the check `joinGuarded` already runs.
+
+Leaves, each a pass change with its specification stated here:
+
+- `LinearNearFuelEq`: `Store.linearNear` on fuel `s.size + 1`, as
+  `linearNearFuel` (replaces the row `MergesSound`: `LinearNearSound`);
+- `EntailedChecked`: the merge adds an entailed bound only where every view
+  passes `entailDefinedCheck` (replaces `EntailedDefined`);
+- D3, the joined implications: each incoming edge passes
+  `impliesCheck G Γe atSlots m (meetImplications …)`; the premise is then
+  `meetImplications_ok_of_check` from the edge's `EnvOk` and carried
+  implications, which `run_traversed` must record per edge;
+- the structural premises read from the walk: the incoming states' width
+  (`Traversed.width`, under `MapNamesLength`), well-formedness and
+  `StateBelow` (proved at the edges, Legs 10 and 12), the start names below
+  the merge's counter.

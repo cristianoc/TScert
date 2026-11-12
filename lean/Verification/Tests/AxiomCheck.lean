@@ -633,6 +633,8 @@ run_cmd do
   check ``Verification.TolerantFrames.atSlots_ok
   check ``Verification.TolerantFrames.meetImplications_ok_of_check
   check ``Verification.TolerantFrames.mergeImplies_ok_of_check
+  check ``Verification.TolerantFrames.mergeState_holdsAt_checked
+  check ``Verification.TolerantFrames.mergeState_holds_checked
   let env ← getEnv
   let project (decl : Name) : Bool := match env.getModuleIdxFor? decl with
     | some i => (`Verification).isPrefixOf env.header.moduleNames[i.toNat]!

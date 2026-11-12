@@ -1,6 +1,6 @@
 import Verification.Programs.TolerantFramesMergeNear
 
-/-! # Tolerant frames: the merge's implications from the edges' check
+/-! # Tolerant frames: the merge's implications from the edges' check, and the merge theorem
 
 **The joined implications.** The pass records each edge into a merge as
 `(Γe, atSlots, m)`: the source's context, the implications the edge carries
@@ -9,7 +9,13 @@ each incoming edge needs (the pass lane's D3) is
 `PromiseCalls.impliesCheck G Γe atSlots m (meetImplications G edgesIn width context)`:
 with it, the merge's joined implications hold at the merge's slot
 environment, the edge's mapping applied to the source's (`meetImplications_ok_of_check`),
-so the merge's implications hold (`mergeImplies_ok_of_check`). -/
+so the merge's implications hold (`mergeImplies_ok_of_check`).
+
+**The merge theorem** (`mergeState_holdsAt_checked`) with every premise that
+is a theorem removed: `GuardedHolds` (`guardedHolds_of_path`),
+`LinearNearSound` from the equation `LinearNearFuelEq`, `EntailedDefined`
+replaced by the pass's check `EntailedChecked`, the joined implications from
+the edge check. -/
 namespace Verification.TolerantFrames
 open Verification Footprints HeapObservations
 open Verification.SinglePass (Atom Store State)
@@ -97,5 +103,59 @@ theorem mergeImplies_ok_of_check {G : NormalGraph ι} {context : List (Ty ι)}
   mergeImplies_ok hs (meetImplications_ok_of_check hc he (atSlots_ok hss hcar))
 
 end Implies
+
+section Merge
+variable {ι : Type} [DecidableEq ι] [Hashable ι]
+
+/-- **(Merge) The merged state holds on the path through a predecessor**,
+from its theorems: where predecessor `p`'s state holds at `η`, every
+predecessor has the merge's width, a well-formed store and names below the
+merge's first fresh name `fresh`, the start names are below it, the pass's
+`linearNear` is its search on fuel (`LinearNearFuelEq`), every entailed bound
+passes the check at every view (`EntailedChecked`) and the edges' joined
+implications hold at the slot environment `hI`, the merged state with the
+merge's implications holds at the merge's valuation `mVal`. -/
+theorem mergeState_holdsAt_checked {G : NormalGraph ι} {context : List (Ty ι)} {preds : List State}
+    {edgesIn : List (List (Ty ι) × List (PromiseCalls.Implication ι) × PointClaims.Mapping)} {fresh : Nat}
+    {start : List Nat} {entry : Env} {implies : List (PromiseCalls.Implication ι)} {p : Nat} {η ρ : Env}
+    {mark : Nat} {s : IndexedHeap} (hp : p < preds.length)
+    (hlen : ∀ q ∈ preds, q.names.length = context.length) (hwf : ∀ q ∈ preds, StoreWF q.store)
+    (hbel : ∀ q ∈ preds, StateBelow q fresh) (hstart : ∀ x ∈ start, x < fresh) (hnear : LinearNearFuelEq)
+    (hchk : EntailedChecked preds context.length fresh)
+    (hI : PromiseCalls.ImpliesOk G (CertificateProducer.meetImplications G edgesIn context.length context) ρ s.n s.W)
+    (hS : StateHoldsAt G preds[p] implies start entry η ρ mark s) :
+    StateHoldsAt G (SinglePass.mergeState G context preds edgesIn fresh).state
+      (SinglePass.mergeState G context preds edgesIn fresh).implies start entry
+      (mVal preds context.length fresh ρ η) ρ mark s := by
+  obtain ⟨hslots, hstore, -, hfresh, hst⟩ := hS
+  have P : OnPath preds context.length fresh p ρ η s.h :=
+    { hp, len := hlen, bel := fun q hq => (hbel q hq).1, facts := fun q hq => (hbel q hq).2.1, wf := hwf,
+      slots := hslots, store := hstore }
+  have hn := linearNearSound_of_eq hnear
+  rw [mergeState_state, mergeState_implies]
+  refine ⟨P.slotsNamed, ?_, mergeImplies_ok P.slotsNamed hI,
+    P.fresh_ok (hbel _ (List.getElem_mem hp)).2.2 hfresh, fun q x hq => ?_⟩
+  · exact P.guarded_ok (guardedHolds_of_path P) (P.entailed_ok_checked hn hchk (P.bounds_ok P.met0_ok))
+  rw [show mVal preds context.length fresh ρ η x = η x from mergeVal_below (hstart x (List.mem_of_getElem? hq))]
+  exact hst q x hq
+
+/-- **(Merge) The merged state holds** (`StateHolds`) where predecessor `p`'s
+does, from its theorems and the premises `LinearNearFuelEq`,
+`EntailedChecked` and the joined implications. -/
+theorem mergeState_holds_checked {G : NormalGraph ι} {context : List (Ty ι)} {preds : List State}
+    {edgesIn : List (List (Ty ι) × List (PromiseCalls.Implication ι) × PointClaims.Mapping)} {fresh : Nat}
+    {start : List Nat} {entry : Env} {implies : List (PromiseCalls.Implication ι)} {p : Nat} {ρ : Env}
+    {mark : Nat} {s : IndexedHeap} (hp : p < preds.length)
+    (hlen : ∀ q ∈ preds, q.names.length = context.length) (hwf : ∀ q ∈ preds, StoreWF q.store)
+    (hbel : ∀ q ∈ preds, StateBelow q fresh) (hstart : ∀ x ∈ start, x < fresh) (hnear : LinearNearFuelEq)
+    (hchk : EntailedChecked preds context.length fresh)
+    (hI : PromiseCalls.ImpliesOk G (CertificateProducer.meetImplications G edgesIn context.length context) ρ s.n s.W)
+    (hS : StateHolds G preds[p] implies start entry ρ mark s) :
+    StateHolds G (SinglePass.mergeState G context preds edgesIn fresh).state
+      (SinglePass.mergeState G context preds edgesIn fresh).implies start entry ρ mark s := by
+  obtain ⟨η, hη⟩ := hS
+  exact ⟨_, mergeState_holdsAt_checked hp hlen hwf hbel hstart hnear hchk hI hη⟩
+
+end Merge
 
 end Verification.TolerantFrames
