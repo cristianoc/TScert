@@ -973,6 +973,19 @@ def startGiven (written : Option Knowledge) (entryIndices : List IndexAtom)
   let w := startWritten written entryIndices entrySeparation
   { w with indices := w.indices ++ supplied }
 
+/-- **A step's derivation checked** where a footprint or a fresh result
+reads it (`GraphCode.nodeChecked`'s conjuncts beside `selectedWithinAt`):
+claimed at the node's term and context, its tree accepted
+(`ProgramCertificates.checkTreeUsing`, or `PromiseCalls.requiresTree` at the
+step's facts `stepK`). -/
+def derivChecked (G : NormalGraph ι) (images : InstanceImageCheck G) (codes : CodeEntry ι → Bool)
+    (sums : List (ReadSummary ι)) (c : PointClaim ι) (node : Node) (stepK : Knowledge)
+    (deriv : ProgramCertificates.Evidence ι) : Bool :=
+  (ProgramCertificates.claim deriv).term == node.expression &&
+    (ProgramCertificates.claim deriv).context == c.context &&
+    (ProgramCertificates.checkTreeUsing G images deriv codes sums ||
+      PromiseCalls.requiresTree G images stepK codes sums deriv)
+
 /-- **A node's step within a footprint bound** (`GraphCode.nodeChecked`),
 at a node outside the region from which no normal return is possible: the
 step within `Φ` (`ExpressionEffects.check`, `writeWithin`, `initWriteWithin`,
@@ -987,11 +1000,7 @@ def footprintCheck (G : NormalGraph ι) (images : InstanceImageCheck G) (codes :
   -- The step's derivation, where its signature bounds the step: claimed
   -- at the node's term and context, its tree accepted (`GraphCode.nodeChecked`'s
   -- conjuncts beside `selectedWithinAt`).
-  let derivChecked : Thunk Bool := Thunk.mk fun _ =>
-    (ProgramCertificates.claim deriv).term == node.expression &&
-      (ProgramCertificates.claim deriv).context == c.context &&
-      (ProgramCertificates.checkTreeUsing G images deriv codes sums ||
-        PromiseCalls.requiresTree G images stepK codes sums deriv)
+  let derivChecked : Thunk Bool := Thunk.mk fun _ => SinglePass.derivChecked G images codes sums c node stepK deriv
   let writes := ExpressionEffects.writeWithin G c.context Φ node.expression ||
     ExpressionEffects.initWriteWithin G c.context stepK Φ node.expression
   let within := ExpressionEffects.check G c.context node.expression || writes ||
@@ -1757,7 +1766,8 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
       | .var i => (entry.names[i]?).any entry.fresh.contains
       | _ => false) ||
       ((match ExpressionEffects.selectedEffect deriv with | some eff => eff.fresh | none => false) &&
-        ExpressionEffects.selectedOperands deriv && (ProgramCertificates.claim deriv).term == node.expression)
+        ExpressionEffects.selectedOperands deriv &&
+        derivChecked G images codes answers.summaries.toList c node stepK deriv)
     -- The footprint bound at this node (`GraphCode.nodeChecked`).
     if let some (Φ, ret, exc) := bound then
       if deadArr.getD l false then

@@ -202,7 +202,8 @@ is within the bound where the unit states the bound on a throw or a handler
 outside the region with no normal return catches it (`deadHandler`), so an
 effect without `onThrow` admits no such handler; a state also carries the names
 holding a store the run allocated (`inferFresh`'s facts, over names: a copy
-of such a name, or a call at a signature stating a fresh result; a merge
+of such a name, or a call at a signature stating a fresh result whose
+derivation `derivChecked` accepts; a merge
 keeps the names every predecessor holds; a cut holds none, its given
 invariant stating none); the region from which no normal return is possible
 is `GraphCode.deadIterate` over the claims' result types, computed once; at
