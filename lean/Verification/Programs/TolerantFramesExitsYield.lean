@@ -37,7 +37,9 @@ structure Site {G : NormalGraph ι} {I : InstanceImageCheck G} (c : Target.RunCa
     (en.here = true → HereEmpty G (env.claimed[l]!).context) ∧
     ExitRecordsChecked G I env l en sd ex ∧
     env.startNames = List.range c.inputs.length ∧
-    env.argName = c.goal.slot.bind ((List.range c.inputs.length)[·]?)
+    env.argName = c.goal.slot.bind ((List.range c.inputs.length)[·]?) ∧
+    (∃ σ0, RunCall.setup c = .ok (env, σ0)) ∧
+    (∀ x ∈ env.startNames, x < σ.fresh)
 
 /-- A trace supplies a common site, without extracting any exit checks. -/
 theorem site_of_trace {G : NormalGraph ι} {I : InstanceImageCheck G} {c : Target.RunCall G I}

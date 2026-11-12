@@ -1428,6 +1428,27 @@ setup's `startNames` and `argName` equations, supplied by `EnvFacts` in
 (`visitStep_handler_admits`); the successful exits prove the type, implication,
 input, argument, heap-query, and handler assertion checks.
 
+
+[`TolerantFramesExitStructural.lean`](../../lean/Verification/Programs/TolerantFramesExitStructural.lean)
+proves `givenCorrespondence` and `contextCorrespondence` from `RunWalkA.given_eq`
+and `ctx_eq`, established at both walk constructors. `NodeExitTrace` and
+`Site.facts` retain setup provenance and the input-name bound at the visit's
+counter. `headEntryContract_nonstart` proves the final entry contract for a
+targeted head other than the start; `headEntries_of_checked` covers the start
+under `StartSeparation`. The target's final visit follows from its recorded
+incoming edge and `TraversedA.visited`. Head extraction quantifies over exit
+targets: a head with no incoming edge has no incoming pair in `ofPass`.
+`exitStep_handler_arrays` and `Site.handler_record` identify the handler's
+transferred pair, merge record, indexed computation and final-walk extension.
+`handlerRecords_of_storage` requires the exact predicates `HandlerStorage`
+(array bounds and the merge flag) and `HandlerImplications` (equality of the
+transferred and original implications at source slots). `StartSeparation`
+requires the written start separation to absorb `c.entrySeparation` under
+`HeapSeparation.union`: `startGiven` includes this separation, whereas the
+head interface permits only added index facts. These three predicates are
+unproved leaves of the structural extraction wrappers; `yieldSourcesJudged`
+remains a separate hypothesis.
+
 ## Exit checks from the trace
 
 `ExitChecks.Site` in

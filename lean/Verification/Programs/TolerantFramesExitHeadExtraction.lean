@@ -244,7 +244,7 @@ theorem Site.targetContext (s : Site c r l hl) {t : Nat} {tc : PointClaim ι}
 /-- The setup's promised argument is one of its input names. -/
 theorem Site.argumentInput (s : Site c r l hl) :
     ∀ a, s.env.argName = some a → ∃ q : Nat, (List.range c.inputs.length)[q]? = some a := by
-  obtain ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, ha⟩ := s.facts
+  obtain ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, ha, _⟩ := s.facts
   intro a he
   rw [ha] at he
   cases hslot : c.goal.slot with
@@ -254,24 +254,22 @@ theorem Site.argumentInput (s : Site c r l hl) :
 /-- Normal head extraction. The structural entry and judged yield sources
 are explicit leaves; every edge check comes from the successful visit. -/
 theorem exitChecks_head (s : Site c r l hl) (η : MixedAssignment ι)
-    (givenCorrespondence : r.given = passHeads c)
-    (contextCorrespondence : r.ctx = passCtx c)
-    (headEntries : ∀ t, r.given t = true → ∀ req, s.env.given[t]! = some req → HeadEntryContract s t req)
+    (headEntries : ∀ t, (∃ e ∈ Exit.ofNode (r.node l hl).node, e.target.label = t) → r.given t = true → ∀ req, s.env.given[t]! = some req → HeadEntryContract s t req)
     (yieldSourcesJudged : ∀ ys, ExitYieldSource s.env l s.en s.sd s.sd.yields ys →
       ExitYieldsJudged (reassign G η) r.w (List.range c.inputs.length) l
         (r.node l hl).node (r.node l hl).c (r.node l hl).entry (r.node l hl).st ys) : Head s η := by
   obtain ⟨_, _, _, _, _, _, _, _, _, _, hv, hn, hc, he, hs, _, _, hi, _, _, _, _, _, hnames, _⟩ := s.facts
   intro i t pushed observed promote hm hg
   have headFlag : s.env.isHead[t.label]! = true := by
-    rw [s.headFlag, ← givenCorrespondence]; exact hg
+    rw [s.headFlag, ← r.given_eq]; exact hg
   have member : (Exit.normal t pushed observed promote, i) ∈ (Exit.ofNode s.env.nodes[l]!).zipIdx := by
     apply List.mem_zipIdx_iff_getElem?.mpr
     simpa only [hn] using hm
   obtain ⟨record, _, _, _, a, b, hb, _, _, hy⟩ := visitExits_records_yields hv _ member
   obtain ⟨tc, req, htc, typed, checks⟩ := exitStep_head_checks hb headFlag
   have targetContext : tc.context = r.ctx t.label := by
-    rw [contextCorrespondence]; exact s.targetContext htc
-  have constructedHead : HeadEntryContract s t.label req := headEntries _ hg _ checks.given
+    rw [r.ctx_eq]; exact s.targetContext htc
+  have constructedHead : HeadEntryContract s t.label req := headEntries _ ⟨.normal t pushed observed promote, List.mem_of_getElem? hm, rfl⟩ hg _ checks.given
   obtain ⟨written, cf, width, fresh, entered, coherent, below⟩ := constructedHead
   have argumentInput : ∀ a, s.env.argName = some a → ∃ q : Nat, (List.range c.inputs.length)[q]? = some a :=
     s.argumentInput
@@ -305,9 +303,7 @@ source implications required by the semantic interface. -/
 and incoming-record leaves. Type admission, type checks, head queries,
 and written assertions are extracted from execution. -/
 theorem exitChecks_handler_edges (s : Site c r l hl) (η : MixedAssignment ι)
-    (givenCorrespondence : r.given = passHeads c)
-    (contextCorrespondence : r.ctx = passCtx c)
-    (headEntries : ∀ t, r.given t = true → ∀ req, s.env.given[t]! = some req → HeadEntryContract s t req)
+    (headEntries : ∀ t, (∃ e ∈ Exit.ofNode (r.node l hl).node, e.target.label = t) → r.given t = true → ∀ req, s.env.given[t]! = some req → HeadEntryContract s t req)
     (handlerRecords : ∀ t, (r.node l hl).node.handler = some t → HandlerRecords s t) :
     ∀ t, (r.node l hl).node.handler = some t →
       HandlerExitChecked (reassign G η) (I.reassign η) r.w (List.range c.inputs.length)
@@ -324,9 +320,9 @@ theorem exitChecks_handler_edges (s : Site c r l hl) (η : MixedAssignment ι)
   obtain ⟨a, b, hb, _⟩ := hsteps (.handler t, i) (List.mem_zipIdx_iff_getElem?.mpr hm)
   obtain ⟨tc, htc, typed, head, asserted⟩ := exitStep_handler_checks hb
   have targetContext : tc.context = r.ctx t.label := by
-    rw [contextCorrespondence]; exact s.targetContext htc
+    rw [r.ctx_eq]; exact s.targetContext htc
   have headFlag : s.env.isHead[t.label]! = r.given t.label := by
-    rw [s.headFlag, givenCorrespondence]
+    rw [s.headFlag, r.given_eq]
   have writtenContext : s.env.stated[t.label]! = r.stated t.label := by
     rw [hstated, r.stated_eq]; rfl
   have admits : ControlFlow.admitsAll G (s.sd.thrownTy.getD []) = true :=
@@ -339,7 +335,10 @@ theorem exitChecks_handler_edges (s : Site c r l hl) (η : MixedAssignment ι)
     · simpa only [hc, he, hs, ← targetContext, headFlag, writtenContext] using asserted
     · intro hg
       obtain ⟨req, checks⟩ := head (headFlag.trans hg)
-      obtain ⟨written, cf, width, fresh, entered, coherent, below⟩ := headEntries _ hg _ checks.given
+      obtain ⟨written, cf, width, fresh, entered, coherent, below⟩ := headEntries _ ⟨.handler t, by
+        simp only [Exit.ofNode, ht, Option.toList_some, List.map_cons, List.map_nil,
+          List.mem_append, List.mem_singleton]
+        exact .inr trivial, rfl⟩ hg _ checks.given
       refine ⟨req, written, cf, (s.env.givenImplies[t.label]?).getD [], s.env.argName,
         (s.env.givenArgs[t.label]?).getD [], (s.env.givenInputs[t.label]?).getD [], width, fresh,
         ?_, ?_, ?_, ?_, entered, coherent, below, s.argumentInput⟩
@@ -352,11 +351,9 @@ theorem exitChecks_handler_edges (s : Site c r l hl) (η : MixedAssignment ι)
 /-- The extracted handler checks and the step's fresh-name bound give
 all of the handler field group. -/
 theorem exitChecks_handler_of_records (s : Site c r l hl) (η : MixedAssignment ι)
-    (givenCorrespondence : r.given = passHeads c)
-    (contextCorrespondence : r.ctx = passCtx c)
-    (headEntries : ∀ t, r.given t = true → ∀ req, s.env.given[t]! = some req → HeadEntryContract s t req)
+    (headEntries : ∀ t, (∃ e ∈ Exit.ofNode (r.node l hl).node, e.target.label = t) → r.given t = true → ∀ req, s.env.given[t]! = some req → HeadEntryContract s t req)
     (handlerRecords : ∀ t, (r.node l hl).node.handler = some t → HandlerRecords s t) : Handler s η :=
-  exitChecks_handler s η (exitChecks_handler_edges s η givenCorrespondence contextCorrespondence headEntries handlerRecords)
+  exitChecks_handler s η (exitChecks_handler_edges s η headEntries handlerRecords)
 
 end ExitChecks
 

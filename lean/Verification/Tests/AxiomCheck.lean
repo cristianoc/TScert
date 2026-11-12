@@ -1,3 +1,4 @@
+import Verification.Programs.TolerantFramesExitStructural
 import Verification.Programs.TolerantFramesExitHeadExtraction
 import Verification.Programs.TolerantFramesExitsYield
 import Verification.Programs.TolerantFramesExitYieldCache
@@ -1114,3 +1115,32 @@ run_cmd do
   check ``Verification.TolerantFrames.ExitChecks.exitChecks_head
   check ``Verification.TolerantFrames.ExitChecks.exitChecks_handler_edges
   check ``Verification.TolerantFrames.ExitChecks.exitChecks_handler_of_records
+
+-- Structural extraction from the final walk and its setup provenance.
+open Lean Elab Command in
+run_cmd do
+  let standard := [``propext, ``Classical.choice, ``Quot.sound]
+  let check (decl : Name) : CommandElabM Unit := do
+    for axiom_ in ← liftCoreM <| collectAxioms decl do
+      unless standard.contains axiom_ do
+        throwError "{decl} depends on the axiom {axiom_}"
+  check ``Verification.TolerantFrames.exitStep_handler_arrays
+  check ``Verification.TolerantFrames.visitEntry_head_pair
+  check ``Verification.TolerantFrames.setup_startEntered
+  check ``Verification.TolerantFrames.exit_target_labels
+  check ``Verification.TolerantFrames.ExitChecks.givenCorrespondence
+  check ``Verification.TolerantFrames.ExitChecks.contextCorrespondence
+  check ``Verification.TolerantFrames.ExitChecks.Site.handler_record
+  check ``Verification.TolerantFrames.ExitChecks.handlerRecords_of_storage
+  check ``Verification.TolerantFrames.ExitChecks.Site.setup
+  check ``Verification.TolerantFrames.ExitChecks.Site.startBelow
+  check ``Verification.TolerantFrames.ExitChecks.Site.env_eq
+  check ``Verification.TolerantFrames.ExitChecks.Site.head_written
+  check ``Verification.TolerantFrames.ExitChecks.Site.head_incoming
+  check ``Verification.TolerantFrames.ExitChecks.Site.exit_noninitial
+  check ``Verification.TolerantFrames.ExitChecks.headEntryContract_of_checked
+  check ``Verification.TolerantFrames.ExitChecks.headEntryContract_nonstart
+  check ``Verification.TolerantFrames.ExitChecks.Site.head_written_of_startSeparation
+  check ``Verification.TolerantFrames.ExitChecks.headEntries_of_checked
+  check ``Verification.TolerantFrames.ExitChecks.exitChecks_head_structural
+  check ``Verification.TolerantFrames.ExitChecks.exitChecks_handler_structural

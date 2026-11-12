@@ -624,14 +624,6 @@ theorem recInv_visit {c : Target.RunCall G I} {env : SinglePass.WalkEnv ι G I} 
     · rw [hvis t htl] at ht
       exact (hI.settled t ht).frame (hF.labels t htl) (fun hg => hF.frame t (hvisOld t ht hg)) hk hF.extendsWalk
 
-/-- A call's setup (`SinglePass.setup` over its arguments). -/
-def RunCall.setup {G : NormalGraph ι} {I : InstanceImageCheck G} (c : Target.RunCall G I) :
-    Except (SinglePass.WalkStop ι G) (SinglePass.WalkEnv ι G I × SinglePass.WalkState ι G) :=
-  SinglePass.setup G I c.pool c.fuel c.P c.claims c.start c.inputs c.goal c.assertions c.cuts c.candidates
-    c.entryIndices c.suggestions c.known c.codes c.aliases c.passChecker c.answers c.reference c.debugNode
-    c.bound c.givenImplies c.givenArgs c.ensures c.givenInputs c.entrySeparation c.observe c.tracing
-    c.observeEntry c.regional
-
 variable (ι) in
 /-- **(Named hypothesis) The setup starts the walk's invariant**: where a
 call's setup returns, its `env` states the call (`EnvFacts`) and the state

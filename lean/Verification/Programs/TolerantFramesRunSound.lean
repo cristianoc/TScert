@@ -88,6 +88,20 @@ def StartEntered {G : NormalGraph ι} {I : InstanceImageCheck G} (c : Target.Run
       (c.goal.slot.bind ((List.range c.inputs.length)[·]?)) givenArgs givenInputs givenImplies).2.1 ∧
     ctx c.start = c.inputs
 
+/-- The loop heads `runWalk` marks: `loopHeads`' targets of retreating
+edges, and the start. -/
+def passIsHead (P : ControlFlow.Program) (start : Nat) : Array Bool :=
+  if start < P.toArray.size then (SinglePass.loopHeads P.toArray start).1.set! start true
+  else (SinglePass.loopHeads P.toArray start).1
+
+/-- A call's loop heads, by label. -/
+def passHeads {G : NormalGraph ι} {I : InstanceImageCheck G} (c : Target.RunCall G I) (t : Nat) : Bool :=
+  (passIsHead c.P c.start)[t]?.getD false
+
+/-- A call's label contexts: each label's claim's. -/
+def passCtx {G : NormalGraph ι} {I : InstanceImageCheck G} (c : Target.RunCall G I) (t : Nat) : List (Ty ι) :=
+  ((c.claims[t]?).map (·.context)).getD []
+
 /-- **What the driver records of an accepted call** (`run_traversedA`'s
 conclusion): the walk, the loop heads (`given`), the label contexts, each
 merge's edges and fresh counter, the written assertions by label (`stated`,
@@ -108,6 +122,10 @@ structure RunWalkA (G : NormalGraph ι) (I : InstanceImageCheck G) (c : Target.R
   start : StartEntered c w ctx stated
   /-- The written assertions by label are the table `runWalk` reads. -/
   stated_eq : ∀ t, stated t = (CertificateProducer.byLabel c.P.toArray.size c.assertions)[t]?.getD none
+  /-- The head flags read by the pass. -/
+  given_eq : given = passHeads c
+  /-- The contexts read by the pass. -/
+  ctx_eq : ctx = passCtx c
 
 /-- The premises `RunSound` gives a call. -/
 def RunPremises (G : NormalGraph ι) (I : InstanceImageCheck G) (c : Target.RunCall G I) (after : Answered G)

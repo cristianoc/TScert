@@ -75,6 +75,8 @@ The equations are about execution at `G`, not execution at reassigned graphs. -/
     (en.here = true → HereEmpty G (env.claimed[l]!).context) ∧
     ExitRecordsChecked G I env l en sd ex ∧
     env.startNames = List.range c.inputs.length ∧
-    env.argName = c.goal.slot.bind ((List.range c.inputs.length)[·]?)
+    env.argName = c.goal.slot.bind ((List.range c.inputs.length)[·]?) ∧
+    (∃ σ0, RunCall.setup c = .ok (env, σ0)) ∧
+    (∀ x ∈ env.startNames, x < σ.fresh)
 
 end Verification.TolerantFrames

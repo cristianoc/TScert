@@ -316,7 +316,7 @@ theorem run_traversedC (hrec : RecordsSound ι) (hchk : RecordsChecked ι) : Run
   obtain ⟨dead, hn⟩ := hchk G I c σ reach hw hle (ha ▸ hsums)
   exact ⟨⟨ofPass σ.walk (passHeads c), passHeads c, passCtx c, passEdgesIn σ.walk, passFresh σ.walk,
     passStated c, fun l hl => Classical.choose (hn l hl), hr.traversed, ofPass_heads σ.walk (passHeads c),
-    hr.start, fun _ => rfl⟩, dead, fun l hl => Classical.choose_spec (hn l hl)⟩
+    hr.start, (fun _ => rfl), rfl, rfl⟩, dead, fun l hl => Classical.choose_spec (hn l hl)⟩
 
 /-- **THE GRAPH THEOREM of the single pass** (`run_sound_checked` with the
 driver's checked walk from its record, `run_traversedC`). -/
