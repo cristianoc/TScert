@@ -152,3 +152,29 @@ assert.equal(failed.record.execution, "failed");
 assert(failed.record.key);
 assert(!existsSync(join(process.env.TSCERT_STAGE_STORE, "entries", "module-interface", failed.record.key)));
 console.log("timeout and malformed request: no finished interface published");
+
+// A forged row: an entry whose interface type names another row of its
+// module's table is not read; the importer's store-map check refuses the
+// units reading it.
+const published = parsed(first.path);
+let forgedCount = 0;
+for (const m of list(published.modules).map(record)) {
+  if (m.rows === null) continue;
+  const types = list(record(m.rows).types);
+  for (const e of list(m.entries).map(record)) {
+    if (e.established === null) continue;
+    const established = record(e.established);
+    const root = list(established.interface).map(Number);
+    const other = types.findIndex((row, i) => !root.includes(i) && JSON.stringify(row) !== JSON.stringify(types[root[0]]));
+    assert(other >= 0);
+    established.interface = [other];
+    forgedCount++;
+  }
+}
+assert(forgedCount > 0, "a module with established entries");
+const forgedRows = join(work, "forged-rows.json");
+writeFileSync(forgedRows, JSON.stringify(published));
+const rowsRun = invokeProcess(verifierCall(verifierBuild, ["--verify-interface-stage", "8", fragment, forgedRows,
+  given, empty, String(ast.file), "12", ""]), options.invocation);
+assert(rowsRun.stdout.includes("signature rows differ"), rowsRun.stdout + rowsRun.stderr);
+console.log("forged interface rows: the importer's store-map check refuses the units reading them");

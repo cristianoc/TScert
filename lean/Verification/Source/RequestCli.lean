@@ -405,7 +405,8 @@ def interfaceFile (path : String) (budget : PositiveCertificates.SearchBudget) :
           throw "component dependency overlaps"
         imported := imported ++ [m]
     let sc : SourceClaimJson.ImportScope := ⟨modules ++ imported, SourceClaimJson.ModuleCode.of (modules ++ imported)⟩
-    let incoming ← ds.flatMapM fun (d : Json) => SourceClaimJson.decodeInterfaces sc (d.getObjValD "interface")
+    let incoming ← ds.flatMapM fun (d : Json) => do
+      return (← SourceClaimJson.decodeInterfaces sc (d.getObjValD "interface")).1
     let needs ← SourceClaimJson.interfaceNeeds sc
     let own := needs.filter fun (n : SourceClaimJson.ModuleNeed) => modules.any (·.location == n.module.location)
     let mut given : Std.HashMap String Json := {}
@@ -425,9 +426,9 @@ def interfaceFile (path : String) (budget : PositiveCertificates.SearchBudget) :
     let check := fun (f : SourceClaimJson.FilePlans) group =>
       if mode == 9 then (([] : List String), f.verifyGroup fuel group false)
       else f.passGroup fuel group (given := some (moduleGiven f.fr.ast given))
-    let (est, _, _) ← SourceClaimJson.establishModules
+    let (est, _, _, tables) ← SourceClaimJson.establishModules
       (own.mergeSort (fun a b => a.module.location ≤ b.module.location)) budget force incoming prepare check
-    SourceClaimJson.encodeInterfaces modules est
+    SourceClaimJson.encodeInterfaces modules est tables
   match parsed with
   | .error e => refuse e
   | .ok j => IO.println j.compress; return 0
@@ -517,8 +518,8 @@ def verifyUnitsFile (astPath : String) (claimsPath : Option String) (fileKey : S
         let sc ← if (← jArr cached "modules").isEmpty then
             pure (⟨[], {}⟩ : SourceClaimJson.ImportScope)
           else SourceClaimJson.ImportScope.of (← ast)
-        let est ← SourceClaimJson.decodeInterfaces sc cached
-        let f ← SourceClaimJson.fragmentPlansFromInterfaces (← ast) fileKey budget (selection names) (← standIns) force est
+        let (est, tables) ← SourceClaimJson.decodeInterfaces sc cached
+        let f ← SourceClaimJson.fragmentPlansFromInterfaces (← ast) fileKey budget (selection names) (← standIns) force est tables
         let ms : List SourceClaimJson.ModuleVerdict := (est.map (·.2.2)).eraseDups.map fun u =>
           ⟨u, [u], [], .ok []⟩
         return (prepare givenLines f, ms, [])

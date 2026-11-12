@@ -1,5 +1,6 @@
 import Verification.Source.Claims.Json
 import Verification.Source.Claims.TypeComparison
+import Verification.Source.Claims.InterfaceRows
 
 /-! The claims-free front of the single pass (mode 8): a file's units
 lowered from its fragment alone. The store holds the fragment's declarations
@@ -561,7 +562,7 @@ def fragmentPlansCore (ast : Json) (fileKey : String) (budget : PositiveCertific
     (names : Option (List String)) (standIns : StandIns := {}) (force : List String := [])
     (imported : List (String × Footprints.Closed × Bool × Footprints.Closed) := [])
     (depends : List (String × List String) := []) (closure : Bool := false) (proposed : Bool := false)
-    (front : Option (Json × Front) := none) :
+    (front : Option (Json × Front) := none) (interfaceSlots : Bool := false) :
     Except String FilePlans := do
   let ast := ast.setObjVal! "modules" (Json.arr #[])
   -- A stand-in's footprint first; then the footprint the module's units
@@ -606,9 +607,20 @@ def fragmentPlansCore (ast : Json) (fileKey : String) (budget : PositiveCertific
   let (T, plans) := SinglePass.timedKind "lower: extractAll" fun _ =>
     fr.extractSome (wanted.foldl (·.insert ·) {}) (some (retypeFromFragment force)) (some (instancesFromWalk force))
       (some (writtenSchemes force))
+  -- With `interfaceSlots`, each ordinary function's type as its callers
+  -- read it, lowered into the store: the module's interface types.
+  let own := (fr.units.filterMap fun (g, tps, c) => if tps.isEmpty && c.isNone then some g.name else none).eraseDups
+  let (T, slotTypes) := if !interfaceSlots then (T, []) else
+    fr.moduleFunctions.foldl (init := (T, ([] : List (String × Ty Tree)))) fun (T, acc) v =>
+      if !own.contains v.1 then (T, acc) else
+      match runCompiler T [] (moduleValueType v) with
+      | .ok (A, r) => (r.types, acc ++ [(v.1, A)])
+      | .error _ => (T, acc)
   let F ← SinglePass.timedKind "lower: freeze" fun _ => EquationStore.freeze T
   let plans := SinglePass.timedKind "lower: plans over the store" fun _ => plans.map fun e => e.bind (FunctionPlan.over F)
-  return ⟨⟨ast, claims, qualified, [], depends⟩, fr, F, plans⟩
+  let slots := slotTypes.filterMap fun (n, A) =>
+    ((fromJson? (toJson A) : Except String (Ty (EquationStore.CheckedLabel F.equations F.primitive))).toOption).map (n, ·)
+  return ⟨⟨ast, claims, qualified, [], depends⟩, fr, F, plans, slots⟩
 
 /-- A module unit's identity on the wire: `module:<location>#<unit>`. -/
 def moduleUnitId (location unit : String) : String := s!"module:{location}#{unit}"
@@ -737,16 +749,17 @@ it establishes (`establishedUnits`); its verdicts and notes. It reads
 def establishStep (budget : PositiveCertificates.SearchBudget) (force : List String)
     (prepare : String → FilePlans → FilePlans)
     (check : FilePlans → List Nat → List String × Except String (List String))
-    (established : Established) (m : ModuleNeed) : Established × List ModuleVerdict × List String :=
+    (established : Established) (m : ModuleNeed) :
+    Established × List ModuleVerdict × List String × List (String × RowTable) :=
   let location := m.module.location
   let rs := readsOf (m.reads.filter (·.location != location)) established
   let forced : StandIns := if force.contains "imports" then
       { functions := m.names.map fun n => { name := n, footprint := ⟨.keep, .keep⟩, onThrow := true } } else {}
   let planned := SinglePass.timedKind "lower: modules' plans" fun _ =>
     fragmentPlansCore m.module.document location budget (some m.names) forced force (rs.map (·.1)) (rs.map (·.2))
-      (closure := true) (proposed := true)
+      (closure := true) (proposed := true) (interfaceSlots := true)
   match planned with
-  | .error e => ([], [], [s!"{location}: its plans: {e.take 200}"])
+  | .error e => ([], [], [s!"{location}: its plans: {e.take 200}"], [])
   | .ok fm =>
     let fm := prepare location fm
     let toCheck := establishChecked m fm
@@ -770,20 +783,35 @@ def establishStep (budget : PositiveCertificates.SearchBudget) (force : List Str
     -- depends on was accepted.
     let ok := establishedUnits accepted (established.map (·.2.2))
     let entries := m.names.map (establishEntry location fm ok)
-    (entries.filterMap (·.toOption), verdicts, checkedNotes ++ entries.filterMap fun
+    -- Each entry's interface type in the module's store, its rows a table
+    -- of their own (`encodeRowTable`), decoded; an entry published where
+    -- the store-map check relates the two (`moduleRowsAgree`).
+    let candidates := entries.filterMap (·.toOption)
+    let ifaces := candidates.filterMap fun e => (fm.slots.lookup e.1.2).map (e.1.2, ·)
+    let table := let (rows, ifs) := encodeRowTable fm.F.store ifaces; decodeRowTable rows ifs
+    let checked := candidates.map fun e => match fm.slots.lookup e.1.2, table with
+      | some I, .ok t => if moduleRowsAgree fm.F.store t e.1.2 I then Except.ok e
+        else .error s!"{location}#{e.1.2}: its interface rows refused by the store-map check"
+      | none, _ => .error s!"{location}#{e.1.2}: no interface type"
+      | _, .error w => .error s!"{location}#{e.1.2}: its interface rows: {w}"
+    let published := checked.filterMap (·.toOption)
+    (published, verdicts, checkedNotes ++ (entries ++ checked).filterMap (fun
       | .error e => if e.isEmpty then none else some e
-      | .ok _ => none)
+      | .ok _ => none), match table with
+      | .ok t => if published.isEmpty then [] else [(location, t)]
+      | .error _ => [])
 
 /-- The steps over a component's modules in order, each reading the entries
 published before it: the fold `establishModules` makes. -/
 def establishFold (budget : PositiveCertificates.SearchBudget) (force : List String)
     (prepare : String → FilePlans → FilePlans)
     (check : FilePlans → List Nat → List String × Except String (List String)) :
-    List ModuleNeed → Established × List ModuleVerdict × List String → Established × List ModuleVerdict × List String
+    List ModuleNeed → Established × List ModuleVerdict × List String × List (String × RowTable) →
+      Established × List ModuleVerdict × List String × List (String × RowTable)
   | [], acc => acc
-  | m :: ms, (est, vs, ns) =>
-    let (es, vs', ns') := establishStep budget force prepare check est m
-    establishFold budget force prepare check ms (est ++ es, vs ++ vs', ns ++ ns')
+  | m :: ms, (est, vs, ns, ts) =>
+    let (es, vs', ns', ts') := establishStep budget force prepare check est m
+    establishFold budget force prepare check ms (est ++ es, vs ++ vs', ns ++ ns', ts ++ ts')
 
 /-- The canonical component computation. Every candidate's required groups
 are checked without measurement stand-ins. Incoming footprints are closed
@@ -793,19 +821,40 @@ def establishModules (needs : List ModuleNeed) (budget : PositiveCertificates.Se
     (force : List String) (incoming : Established)
     (prepare : String → FilePlans → FilePlans)
     (check : FilePlans → List Nat → List String × Except String (List String)) :
-    Except String (Established × List ModuleVerdict × List String) :=
-  .ok (establishFold budget force prepare check needs (incoming, [], []))
+    Except String (Established × List ModuleVerdict × List String × List (String × RowTable)) :=
+  .ok (establishFold budget force prepare check needs (incoming, [], [], []))
 
 /-- Importer planning from closed interfaces. No module is planned here. -/
 def fragmentPlansFromInterfaces (ast : Json) (fileKey : String) (budget : PositiveCertificates.SearchBudget)
-    (names : Option (List String)) (standIns : StandIns) (force : List String) (established : Established) :
+    (names : Option (List String)) (standIns : StandIns) (force : List String) (established : Established)
+    (tables : List (String × RowTable) := []) :
     Except String FilePlans := do
   if established.isEmpty then
     return ← fragmentPlansCore ast fileKey budget names standIns force
   let sc ← ImportScope.of ast
   let reads ← importerReads sc ast names (standIns.imports.map StandIn.name) (standIns.functions.map StandIn.name)
   let rs := readsOf reads established
-  fragmentPlansCore ast fileKey budget names standIns force (rs.map (·.1)) (rs.map (·.2))
+  let f ← fragmentPlansCore ast fileKey budget names standIns force (rs.map (·.1)) (rs.map (·.2))
+  -- Each unit's capture of an import read at an entry: the store-map check
+  -- from the entry's rows to the type the unit reads it at
+  -- (`importerRowsAgree`); a refused one refuses the unit.
+  -- (an import read at its entry: its slot the entry's reading,
+  -- `importedArrow`; one read otherwise, a never-returning import at its
+  -- declared type, is read at its declaration's contract)
+  let atEntry := reads.filter fun r => match established.lookup (r.location, r.name),
+      f.fr.imported.find? (·.1 == r.localName), f.fr.moduleFunctions.find? (·.1 == r.localName) with
+    | some ((fp, ot, ret), _), some (_, _, U), some (_, _, .ok (.written J)) =>
+      match importedArrow f.fr.d.types U fp ot ret with
+      | .ok J' => J' == J
+      | .error _ => false
+    | _, _, _ => false
+  return { f with plans := f.plans.zipIdx.map fun (p, j) => p.bind fun plan =>
+    match (f.captures j).find? fun (n, A) => atEntry.any fun r => r.localName == n &&
+        !(match tables.lookup r.location with
+          | some t => importerRowsAgree f.F.store t r.name A
+          | none => false) with
+    | some (n, _) => .error s!"signature rows differ: the import '{n}', its module's interface rows refused by the store-map check"
+    | none => .ok plan }
 
 /-- Direct invocation uses the same canonical component computation as
 stored interfaces. Its result is local to this invocation. -/
@@ -818,11 +867,11 @@ def fragmentPlansWithModules (ast : Json) (fileKey : String) (budget : PositiveC
     (standIns.imports.map StandIn.name) (standIns.functions.map StandIn.name)
   -- The components in order, each established from the entries of those
   -- before it.
-  let (established, verdicts, notes) := (interfaceComponents needs).foldl (init := (([] : Established),
-      ([] : List ModuleVerdict), ([] : List String))) fun (est, vs, ns) component =>
-    let (es, vs', ns') := establishFold budget force prepare check component (est, [], [])
-    (es, vs ++ vs', ns ++ ns')
-  let f ← fragmentPlansFromInterfaces ast fileKey budget names standIns force established
+  let (established, verdicts, notes, tables) := (interfaceComponents needs).foldl (init := (([] : Established),
+      ([] : List ModuleVerdict), ([] : List String), ([] : List (String × RowTable)))) fun (est, vs, ns, ts) component =>
+    let (es, vs', ns', ts') := establishFold budget force prepare check component (est, [], [], [])
+    (es, vs ++ vs', ns ++ ns', ts ++ ts')
+  let f ← fragmentPlansFromInterfaces ast fileKey budget names standIns force established tables
   return (f, verdicts, notes)
 
 /-- `fragmentPlansWithModules`' importer plans, its module units unchecked:

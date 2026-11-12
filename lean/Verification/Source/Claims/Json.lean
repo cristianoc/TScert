@@ -483,6 +483,10 @@ structure FilePlans where
   F : EquationStore.Frozen
   plans : List (Except String (FunctionPlan (EquationStore.Checked F.equations F.primitive)
     (EquationStore.CheckedLabel F.equations F.primitive)))
+  /-- The types of the file's functions as their callers read them, in the
+  store, where the planning lowered them (`fragmentPlansCore`'s
+  `interfaceSlots`): a module's interface types. -/
+  slots : List (String × Ty (EquationStore.CheckedLabel F.equations F.primitive)) := []
 
 def filePlans (ast claims : Json) (fileKey : String) (budget : PositiveCertificates.SearchBudget)
     (only : Option (Option (List String)) := none) :
@@ -495,7 +499,7 @@ def filePlans (ast claims : Json) (fileKey : String) (budget : PositiveCertifica
     | some names => fr.extractSome (((fr.selected names).flatMap fr.group).foldl (·.insert ·) {})
   let F ← SinglePass.timedKind "lower: freeze" fun _ => EquationStore.freeze T
   let plans := SinglePass.timedKind "lower: plans over the store" fun _ => plans.map fun e => e.bind (FunctionPlan.over F)
-  return ⟨p, fr, F, plans⟩
+  return ⟨p, fr, F, plans, []⟩
 
 /-- A function's claims with only what another unit reads of them: its
 identity, signature, footprints and on-throw flag, its point claims and
@@ -544,7 +548,7 @@ def unitPlans (ast claims : Json) (fileKey : String) (budget : PositiveCertifica
     fr.extractSome (wanted.foldl (·.insert ·) {}) retype
   let F ← SinglePass.timedKind "lower: freeze" fun _ => EquationStore.freeze T
   let plans := SinglePass.timedKind "lower: plans over the store" fun _ => plans.map fun e => e.bind (FunctionPlan.over F)
-  return ⟨p, fr, F, plans⟩
+  return ⟨p, fr, F, plans, []⟩
 
 /-- The plans of a group, by its members' indices, crossing the exhaustive
 certification boundary. -/
@@ -1321,7 +1325,7 @@ def ModuleRun.plans (m : ModuleRun) (budget : PositiveCertificates.SearchBudget)
   let fr ← fileFront m.ast m.claims m.location budget m.qualified
   let (T, plans) := fr.extractAll
   let F ← EquationStore.freeze T
-  return ⟨⟨m.ast, m.claims, m.qualified, [], []⟩, fr, F, plans.map fun e => e.bind (FunctionPlan.over F)⟩
+  return ⟨⟨m.ast, m.claims, m.qualified, [], []⟩, fr, F, plans.map (fun e => e.bind (FunctionPlan.over F)), []⟩
 
 /-- Each unit's given lines of a module run (`givenLines`), the unit named by
 its wire identity among the importer's (`module:<location>#<unit>`), which

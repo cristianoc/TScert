@@ -66,6 +66,26 @@ on-throw flag, returned footprint and defining group whose successful check
 and dependency closure establish them, whatever proposed them, including a
 written effect. `ordinary` means no stronger footprint is established.
 
+A module with an established entry also carries its interface rows
+(`rows`): the rows of its own store on the region its functions' interface
+types reach (what each row reads, its meet's parts, its scheme's binders,
+and the built-ins' types), numbered from `0`, with the built-ins
+(`types`, `builtins`). Each established entry states its interface type as
+positions in that table (`interface`): the type its function's callers
+read it at in its module's store, lowered there at planning. The module
+publishes an entry only where the store-map check
+(`StoreMaps.matchStores`) from its store's interface type to the decoded
+table's accepts, and the importer reads an entry only where the check from
+the table's type to the type its own store reads the import at accepts,
+each image operand a canonical union of the importer's store. A refused
+read refuses each unit reading that import, at `signature rows differ`.
+The two accepted checks give the importer's slot type the meaning of the
+module's interface type (`signatureAgrees_of_checks`, proved on the
+unit-level proof's branch). The check is incomplete for unions with two
+members of one row shape, qualified schemes, and built-ins present in one
+graph only; an import of a module without arrays into a file with arrays is
+the last kind.
+
 The importer resolves a read using the existing declaration-identity,
 eligibility and signature-agreement checks. It reads the matching module
 projection only at the same document. The node adapter obtains projections
