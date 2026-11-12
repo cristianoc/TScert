@@ -1525,6 +1525,80 @@ Named hypotheses and what discharges them:
 | the target's types (`htc`), a given implication's type within (`himp`) | edge evidence checked; the subtype cache's soundness (queued) |
 | the walk's records (`hrec`, `hrecHead`, `hentry`) | the driver returning a `Walk` (queued) |
 
+## Leg 11: the footprint and return checks at a node
+
+Module `lean/Verification/Programs/TolerantFramesStepLinkReturns.lean`, over
+the pass's functions `SinglePass.footprintCheck` and `SinglePass.returnCheck`.
+Proved:
+
+- `footprintCheck_sound`, by unfolding: at the node's sequent, `within`
+  (`passWithin`), `throws` (`passThrows`) where a live handler catches the
+  throw or the bound covers throws, a return's freshness where the bound
+  requires a fresh result, and the term's scope. The derivation check
+  (`passDerivChecked`) states the claim at the node's term and context, as
+  `footprintCheck`'s `derivChecked` does;
+- `footprint_exits`: where `footprintCheck` accepts the node, the fresh
+  receiver slots hold stores allocated at or past the invocation's entry
+  $`h_0`$ (`FreshOk`), and the node's local safety and $`\Phi`$ from $`h_0`$ to
+  its entry heap hold, each run with budget left keeps $`\Phi`$ from $`h_0`$ to
+  the heap of its normal exit, and of its throw where a live handler catches
+  it or the bound covers throws: the per-node form the `bounded` field
+  composes along a run;
+- `returnCheck_plain`: where `returnCheck` refuses nothing at a plain goal,
+  a returned value of the claim's type is of the goal's (`GoalHolds`), which
+  is `NodeAccepted.ret` at a plain goal.
+
+Named hypotheses: `FreshOk` of the receiver slots the pass records fresh;
+the guard and assertion goals of `returnCheck` (the yields' soundness,
+`YieldsOk`, and the subtype cache's).
+
+The regional check (`ArgumentRegionGraph.checkNode` over the tables `run`
+builds per node) has a soundness theorem only for a whole certified graph
+(`ArgumentRegionGraph.checkNodes_sound`, whose premise is the certificate
+checker's acceptance, `checkGraphUsing`); the pass supplies a node's typing
+by its step, and its tables per node (`sparse` over the node and its
+targets), so the per-node regional statement needs `checkNode`'s soundness
+from the node's own typing and the agreement of each node's tables with its
+targets' (`regionIn`'s meet).
+
+## Leg 11: the names after a step, and the hypotheses of pure functions
+
+Module `lean/Verification/Programs/TolerantFramesNodeWalk.lean`. Proved:
+
+- `namesBelow_step`: where the entry's names, start names and implications
+  are below the counter and the result is an entry name with the counter
+  kept or the counter with the counter advanced (`checkedStep_parts`), the
+  state after the step is below the next counter, given its store's facts
+  are;
+- `width_step`: the pushed names no wider than the pushed context.
+
+Not proved, with the function each needs:
+
+- the store's facts after a step below the next counter: the names
+  `applyDelta` reads back (`passBack`), and after an edge, the names of
+  `Store.drop`'s derived facts (`HeapKnowledge.eliminateIndices`' output);
+- `MapNamesSound` for a mapping other than the identity: `mapNames` reads the
+  ordered suffix by `orderedSuffix`, a `while` loop;
+- `DirectKeepsSummaries`, `SearchKeepsSummaries`: the table's one writer is
+  `summaryUsing` (`CertificateProducer.lean` 646), which appends a summary
+  `checkReadSummaryResult` accepts; a proof through `directCall` and
+  `expressionEffectUsing` is an invariant of every `SearchM` function they
+  run, which a `summaries_sound` field of `Answered` (as `proved_sound`)
+  makes structural;
+- the result's freshness where `outFresh`: read off the step's derivation's
+  selected effect, whose tree `outFresh` does not check (`run`, the
+  definition of `outFresh`).
+
+## Leg 11: `typedRead`'s optional-field branch
+
+Module `lean/Verification/Programs/TolerantFramesSelect.lean`. Proved
+(`typedRead_optional_sound`): where the pass's tree check accepts the read's
+derivation with the codes, at a read of a field the slot's type states
+optional, the output `readFrame k i fld true` holds after the read. The
+checker's `run` checks this tree with no codes; the pass's selection reaches
+the branch by `passSteps_value`'s third case, and `passSteps_sound` consumes
+it through `typedRead_optional_sound` alone.
+
 ## Leg 12: the facts' names below the counter
 
 Modules `lean/Verification/Programs/TolerantFramesStoreOpsNames.lean` (the

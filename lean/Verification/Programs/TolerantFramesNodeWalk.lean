@@ -220,4 +220,36 @@ theorem stepEdgesSound_of {G : NormalGraph ι} {images : InstanceImageCheck G} {
 
 end Nodes
 
+/-! ## The names after a step -/
+
+section Below
+variable {ι : Type}
+
+/-- **The step keeps the names below the counter**: where the entry's names,
+start names and implications are below the counter `fresh` and the result
+is an entry name with the counter kept or the counter with the counter
+advanced (`checkedStep_parts`), the state after the step is below the next
+counter, given its store's facts are (`hstore`, the delta's names). -/
+theorem namesBelow_step {entry : SinglePass.State} {store : Store} {I : List (PromiseCalls.Implication ι)}
+    {start : List Nat} {fresh result next : Nat} (hnb : NamesBelow entry I start fresh)
+    (hres : (result ∈ entry.names ∧ next = fresh) ∨ (result = fresh ∧ next = fresh + 1))
+    (hstore : ∀ a ∈ storeAll store, ∀ x ∈ a.names, x < next) :
+    NamesBelow ⟨result :: entry.names, store, entry.fresh⟩ I start next := by
+  have hle : fresh ≤ next := by rcases hres with ⟨-, rfl⟩ | ⟨-, rfl⟩ <;> omega
+  obtain ⟨h1, -, h3, h4, h5⟩ := namesBelow_mono hle hnb
+  refine ⟨fun x hx => ?_, hstore, h3, h4, h5⟩
+  rcases List.mem_cons.mp hx with rfl | hx
+  · rcases hres with ⟨hm, -⟩ | ⟨rfl, rfl⟩
+    · exact h1 _ hm
+    · omega
+  · exact h1 x hx
+
+/-- **The step keeps the names no wider than the context**: the pushed
+names at the pushed context. -/
+theorem width_step {names : List Nat} {result : Nat} {A : Ty ι} {Γ : List (Ty ι)}
+    (h : names.length ≤ Γ.length) : (result :: names).length ≤ (A :: Γ).length := by
+  simp only [List.length_cons]; omega
+
+end Below
+
 end Verification.TolerantFrames

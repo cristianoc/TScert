@@ -548,6 +548,12 @@ run_cmd do
   check ``Verification.TolerantFrames.exitDelivers_head
   check ``Verification.TolerantFrames.handlerDelivers_of_edge
   check ``Verification.TolerantFrames.stepEdgesSound_of
+  check ``Verification.TolerantFrames.footprintCheck_sound
+  check ``Verification.TolerantFrames.footprint_exits
+  check ``Verification.TolerantFrames.returnCheck_plain
+  check ``Verification.TolerantFrames.typedRead_optional_sound
+  check ``Verification.TolerantFrames.namesBelow_step
+  check ``Verification.TolerantFrames.width_step
   -- Leg 12: the facts' names below the counter (TolerantFramesStoreOps*), the merge, the reassignment
   check ``Verification.TolerantFrames.atom_rename_names
   check ``Verification.TolerantFrames.termDefined_named

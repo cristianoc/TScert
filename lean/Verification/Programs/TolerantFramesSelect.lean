@@ -24,8 +24,10 @@ step's knowledge (`passTreeOk`). This module states what that pair gives:
   `pass_preserving_frame_select`); `withSubtyping`'s `select` is its `run`
   (`withSubtyping_select`).
 
-Where `run` itself rejects what the pass accepts: `typedRead`'s optional-field
-branch checks its tree with no codes (`optional_run_rejects`). -/
+`typedRead`'s optional-field branch: the checker's `run` checks its tree with
+no codes, the pass with codes; its output is sound with the codes
+(`typedRead_optional_sound`), and no theorem here depends on `run` accepting
+it. -/
 namespace Verification.TolerantFrames
 open Verification Footprints HeapObservations
 open Verification.SinglePass (Atom)
@@ -255,6 +257,27 @@ theorem passSteps_value {G : NormalGraph ι} {images : InstanceImageCheck G} {j 
       · rw [select_call_none hcall (fun q h => hord ⟨q, h⟩)] at hc
         cases hc
 
+/-- **`typedRead`'s optional-field branch is sound with the codes**: where
+the pass's tree check accepts the read's derivation with the codes
+(`checkTreeUsing … codes`) at the read `fld` of slot `i` of a type with that
+field optional, the output `readFrame k i fld true` holds after the read.
+This is the branch the checker's `run` checks with no codes; the pass's
+selection reaches it by `passSteps_value`'s third case alone. -/
+theorem typedRead_optional_sound {G : NormalGraph ι} {images : InstanceImageCheck G} {j : Sequent ι}
+    {k : HeapKnowledge.Knowledge} {codes : CodeEntry ι → Bool} {sums : List (ReadSummary ι)} {i : Nat}
+    {p : ProgramCertificates.Evidence ι} {fld : PropKey} {Ref : Ty ι}
+    (hj : claim p = j) (ht : j.term = .readAt fld (.var i)) (hi : j.context[i]? = some Ref)
+    (hopt : optionalOperand (expand G Ref) fld = true) (htree : checkTreeUsing G images p codes sums = true)
+    (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums)
+    {ρ : Env} {n : Nat} {W : WorldT n} {h : Heap}
+    (he : EnvOk G j.context ρ n W) (hk : HeapKnowledge.Holds k ρ h) (hw : WorldAdm W) (hh : HeapOk n W h) :
+    SafePost (excOf G) (meaning G j.type) (fun h' v => HeapKnowledge.Holds (readFrame k i fld true) (push v ρ) h') n W h
+      (instantiate 0 ρ j.term) := by
+  have typed := checkTreeUsing_sound p htree hcodes hsums
+  rw [hj, ht] at typed
+  rw [ht]
+  simpa [instantiate] using optionalRead_sound typed hi hopt he hk hw hh
+
 /-- **The base's selected output under the pass's tree check is sound**: the
 consequence `Checker.sound` states for `run`. -/
 theorem passSteps_sound {G : NormalGraph ι} {images : InstanceImageCheck G} {j : Sequent ι}
@@ -276,10 +299,7 @@ theorem passSteps_sound {G : NormalGraph ι} {images : InstanceImageCheck G} {j 
       HeapLinks.stable_holds (HeapKnowledge.shift_holds (v := v) hk).2.2.1,
       (HeapKnowledge.shift_holds (v := v) hk).2.2.2.1, HeapKnowledge.elemsHolds_nil _ _,
       HeapKnowledge.envIndices_holds (HeapKnowledge.shift_holds (v := v) hk).2.2.2.2.2 _⟩
-  · have typed := checkTreeUsing_sound p htree hcodes hsums
-    rw [hj, ht] at typed
-    rw [ht]
-    simpa [instantiate] using optionalRead_sound typed hi hopt he hk hw hh
+  · exact typedRead_optional_sound hj ht hi hopt htree hcodes hsums he hk hw hh
 
 /-! ## The checker the pass's selection runs -/
 

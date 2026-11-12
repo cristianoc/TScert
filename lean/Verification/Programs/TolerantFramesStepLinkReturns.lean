@@ -73,7 +73,7 @@ theorem pass_return_ensures {G : NormalGraph ι} {Γ : List (Ty ι)} {entry : Si
 /-- **The footprint check composes the invocation's bound** (lines
 1596–1631): where the pass's `within` and `throws` hold at the node (with the
 fresh receiver slots `F` holding stores allocated at or past the invocation's
-entry `h₀`, and the selected signature's claim at the node's context), the
+entry `h₀`), the
 node's local safety and a bound `Φ` from `h₀` to the node's entry heap give,
 on each exit of a run with budget left, `Φ` from `h₀` to the exit's heap. -/
 theorem pass_footprint_exits [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G} {codes : CodeEntry ι → Bool}
@@ -81,7 +81,6 @@ theorem pass_footprint_exits [DecidableEq ι] {G : NormalGraph ι} {images : Ins
     {F : List Nat} {d : ProgramCertificates.Evidence ι}
     (hwi : passWithin G images codes sums j kS Φ F d = true)
     (hth : passThrows G images codes sums j kS Φ F d = true)
-    (hctx : GraphCode.selectedWithinAt Φ F d = true → DerivContext j d)
     (hscope : checkScope j.context.length j.term = true)
     (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums)
     {ρ : Env} {s : IndexedHeap} {h₀ : Heap} (hF : GraphCode.FreshOk F h₀.length ρ)
@@ -91,12 +90,87 @@ theorem pass_footprint_exits [DecidableEq ι] {G : NormalGraph ι} {images : Ins
     (hst : Steps k s.h (instantiate 0 ρ j.term) h' t') (hk : k < s.n) :
     (isVal t' = true → Φ.Holds h₀ h') ∧ (∀ x, Raises t' x → Φ.Holds h₀ h') := by
   refine ⟨fun hv => ?_, fun x hx => ?_⟩
-  · have hn := pass_within_normal hwi hctx hscope hcodes hsums hF he hkS s.adm s.ok hsafe
+  · have hn := pass_within_normal hwi hscope hcodes hsums hF he hkS s.adm s.ok hsafe
     obtain ⟨s', -, hh, -, -, hq⟩ := run_normal (SafePostExc.of_post (R := fun _ => True) (fun _ => trivial) hn) hst hv hk
     exact pass_within_entry h₁ (hh ▸ hq)
-  · have ht := pass_within_throw hth hctx hscope hcodes hsums hF he hkS s.adm s.ok hsafe
+  · have ht := pass_within_throw hth hscope hcodes hsums hF he hkS s.adm s.ok hsafe
     obtain ⟨s', -, hh, -, -, hq⟩ := run_throw ht hst hx hk
     exact pass_within_entry h₁ (hh ▸ hq)
+
+/-- **The pass's footprint check read as its conditions** (`SinglePass.footprintCheck`,
+by unfolding): at the node's sequent `j`, `within`, `throws` where a live
+handler catches the throw or the bound covers throws, a return's freshness
+where the bound requires it, and the term's scope. -/
+theorem footprintCheck_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
+    {codes : CodeEntry ι → Bool} {sums : List (ReadSummary ι)} {Φ : Footprints.Closed} {F : List Nat}
+    {c : PointClaim ι} {node : Node} {kS : HeapKnowledge.Knowledge} {d : ProgramCertificates.Evidence ι}
+    {liveHandler exc ret outFresh : Bool}
+    (h : footprintCheck G images codes sums Φ F c node kS d liveHandler exc ret outFresh = true) :
+    passWithin G images codes sums ⟨c.context, node.expression, c.type⟩ kS Φ F d = true ∧
+    ((liveHandler || exc) = true → passThrows G images codes sums ⟨c.context, node.expression, c.type⟩ kS Φ F d = true) ∧
+    (node.continuation = .ret → ret = true → outFresh = true) ∧
+    checkScope c.context.length node.expression = true := by
+  have tg : ∀ f : Unit → Bool, (Thunk.mk f).get = f () := fun _ => rfl
+  simp only [footprintCheck, tg, Bool.and_eq_true] at h
+  obtain ⟨⟨⟨hw, ht⟩, hr⟩, hs⟩ := h
+  refine ⟨?_, fun hl => ?_, fun hk hret => ?_, hs⟩
+  · simpa [passWithin, passWrites, passDerivChecked, Bool.or_assoc, Bool.and_assoc] using hw
+  · rw [hl] at ht
+    simp only [passThrows, passWrites, passDerivChecked]
+    cases hse : ExpressionEffects.selectedEffect d <;> simp only [hse] at ht ⊢ <;>
+      simpa [Bool.or_assoc, Bool.and_assoc] using ht
+  · rw [hk] at hr; simpa [hret] using hr
+
+/-- **The footprint check composes the invocation's bound**, from the pass's
+function: where `footprintCheck` accepts the node, the fresh receiver slots
+`F` hold stores allocated at or past the invocation's entry `h₀`, and the
+node's local safety and a bound `Φ` from `h₀` to its entry heap hold, each
+run with budget left keeps `Φ` from `h₀` to the heap of its normal exit, and of
+its throw where a live handler catches it or the bound covers throws. -/
+theorem footprint_exits [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
+    {codes : CodeEntry ι → Bool} {sums : List (ReadSummary ι)} {Φ : Footprints.Closed} {F : List Nat}
+    {c : PointClaim ι} {node : Node} {kS : HeapKnowledge.Knowledge} {d : ProgramCertificates.Evidence ι}
+    {liveHandler exc ret outFresh : Bool}
+    (hfc : footprintCheck G images codes sums Φ F c node kS d liveHandler exc ret outFresh = true)
+    (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums)
+    {ρ : Env} {s : IndexedHeap} {h₀ : Heap} (hF : GraphCode.FreshOk F h₀.length ρ)
+    (he : EnvOk G c.context ρ s.n s.W) (hkS : HeapKnowledge.Holds kS ρ s.h)
+    (hsafe : Safe (excOf G) (meaning G c.type) s.n s.W s.h (instantiate 0 ρ node.expression))
+    (h₁ : Φ.Holds h₀ s.h) {k : Nat} {h' : Heap} {t' : Tm}
+    (hst : Steps k s.h (instantiate 0 ρ node.expression) h' t') (hk : k < s.n) :
+    (isVal t' = true → Φ.Holds h₀ h') ∧ ((liveHandler || exc) = true → ∀ x, Raises t' x → Φ.Holds h₀ h') := by
+  obtain ⟨hwi, hth, -, hscope⟩ := footprintCheck_sound hfc
+  refine ⟨fun hv => ?_, fun hl x hx => ?_⟩
+  · have hn := pass_within_normal (j := ⟨c.context, node.expression, c.type⟩) hwi hscope hcodes hsums hF he hkS
+      s.adm s.ok hsafe
+    obtain ⟨s', -, hh, -, -, hq⟩ := run_normal (SafePostExc.of_post (R := fun _ => True) (fun _ => trivial) hn) hst hv hk
+    exact pass_within_entry h₁ (hh ▸ hq)
+  · have ht := pass_within_throw (j := ⟨c.context, node.expression, c.type⟩) (hth hl) hscope hcodes hsums hF he hkS
+      s.adm s.ok hsafe
+    obtain ⟨s', -, hh, -, -, hq⟩ := run_throw ht hst hx hk
+    exact pass_within_entry h₁ (hh ▸ hq)
+
+/-- **A plain return's check** (`SinglePass.returnCheck`, by unfolding): where
+it refuses nothing, the claim's type is the goal's or empty, so a returned
+value of the claim's type is of the goal's (`plain_return`). -/
+theorem returnCheck_plain [DecidableEq ι] [Hashable ι] [Instantiates ι] {G : NormalGraph ι} {images : InstanceImageCheck G} {R : Ty ι}
+    {a : Tm} {ensures : List HeapKnowledge.IndexFact} {c : PointClaim ι} {l : Nat} {entry : SinglePass.State}
+    {store : Store} {result start : Nat} {startNames : List Nat} {argName : Option Nat}
+    {yields : List (PromiseCalls.Yield ι)} {debugNode : Nat} {answers : Answered G}
+    (h : (returnCheck G images (.plain R) ensures c l entry store result start startNames argName yields debugNode
+      answers).1 = none) {n : Nat} {W : WorldT n} {v : Tm} (hv : meaning G c.type n W v) :
+    GoalHolds G (.plain R) a n W v := by
+  refine plain_return ?_ hv
+  unfold returnCheck at h
+  dsimp only at h
+  generalize (@ite (Option (Option String × Nat))
+    ((!ensures.isEmpty && !(ExpressionEffects.emptyType G c.type || c.context.any (ExpressionEffects.emptyType G ·))) = true)
+    _ _ none) = post at h
+  simp only [Bool.or_eq_true, beq_iff_eq, List.isEmpty_iff]
+  by_cases hc : c.type = R
+  · exact .inl hc
+  · right
+    rcases post with _ | ⟨_ | why, _⟩ <;> simp_all
 
 end Returns
 
