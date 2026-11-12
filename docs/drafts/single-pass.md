@@ -507,10 +507,23 @@ results is a proposal the pass checks.
    rules of the walk, the module interfaces, the units' costs. Its measure
    is agreement with the pipeline over the cases, unit by unit, by a
    complete run before each integration.
-5. The existing search and proved checker, the producer and the claims
-   wire format are deleted when the theorem holds and no unit disagrees
-   with the pipeline, a unit both the pass and the referee accept beyond
-   the pipeline counting as reviewed, not as a disagreement.
+5. The pass runs with no given file. The facts the agreement run supplies
+   at loop heads are written from the existing search over the producer's
+   claims (`dev/single-pass-given.mts`, `verifier --verify-units 6`); with
+   none supplied, 6,184 of the 6,305 units agree (complete run,
+   2026-11-12). Each such fact is computed in Lean where the producer
+   infers it, as a candidate the pass checks on every edge into its loop
+   head, or is written as an `@invariant`; the tables the search's
+   certificate supplies (entry values, store regions, implications) are
+   computed by the pass.
+6. The pipeline runs the pass as its check: its refusals are located in the
+   source, the cases state their diagnostics for it, and each boundary a
+   control of the existing pipeline guards has a control on it.
+7. The existing search and proved checker, the producer and the claims
+   wire format are deleted when the theorem holds, items 5 and 6 are done
+   and no unit disagrees with the pipeline, a unit both the pass and the
+   referee accept beyond the pipeline counting as reviewed, not as a
+   disagreement.
 
 `verifier --verify-units 8` reads the fragment and the given file, and no
 claims document (`SourceClaimJson.fragmentPlans`, `Claims/FragmentFront.lean`).
