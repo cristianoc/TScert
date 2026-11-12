@@ -1602,10 +1602,11 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
           | some i => if (entry.names[i]?).any entry.fresh.contains then [i] else []
           | none => []
         -- The step's derivation, where its signature bounds the step: claimed
-        -- at the node's term, its tree accepted (`GraphCode.nodeChecked`'s
+        -- at the node's term and context, its tree accepted (`GraphCode.nodeChecked`'s
         -- conjuncts beside `selectedWithinAt`).
         let derivChecked : Thunk Bool := Thunk.mk fun _ =>
           (ProgramCertificates.claim deriv).term == node.expression &&
+            (ProgramCertificates.claim deriv).context == c.context &&
             (ProgramCertificates.checkTreeUsing G images deriv codes answers.summaries.toList ||
               PromiseCalls.requiresTree G images stepK codes answers.summaries.toList deriv)
         let writes := ExpressionEffects.writeWithin G c.context Φ node.expression ||
