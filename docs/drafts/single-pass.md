@@ -173,7 +173,11 @@ slot the target does not admit at its refined type read at its unrefined
 type; both are types of its value. The evidence an edge search returns is checked
 as the certificate checker checks a target's slots (`checkMappedUsing`, or
 under the edge's observation `checkObservedUsing`, `edgeEvidenceChecked`):
-an edge whose evidence the check refuses is not established by it.
+an edge whose evidence the check refuses is not established by it. A step's yields are kept where the certificate checker's yield check
+accepts them (`checkedYields`, as `ControlFlow.checkYields`): a promise
+call's where `promiseYields` states them at an output the promise keeps,
+any other's each where `yieldFollows` accepts it; a slot read's yields are
+checked against the implications testing the slot's name.
 
 ### A call of a slot
 
