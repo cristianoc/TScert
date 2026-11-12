@@ -986,6 +986,31 @@ def derivChecked (G : NormalGraph ι) (images : InstanceImageCheck G) (codes : C
     (ProgramCertificates.checkTreeUsing G images deriv codes sums ||
       PromiseCalls.requiresTree G images stepK codes sums deriv)
 
+/-- **A node's shape** as the certificate checker checks a `branch`: its
+claim type the Boolean (`expand G A = [.bool]`); a return, a bind or an
+effect any. -/
+def passShapeCheck (G : NormalGraph ι) (A : Ty ι) : Continuation → Bool
+  | .branch _ _ => decide (PositiveRules.expand G A = [.bool])
+  | .ret | .bind _ | .effect _ => true
+  | _ => false
+
+/-- **A node's shape at every continuation**: `passShapeCheck`, and at a
+`branchBind` the checker's test (`ControlFlow.checkNodeResult`,
+`BranchRefinement.onlyBoolean`); a `tagBind` needs none. -/
+def passShapeCheck' (G : NormalGraph ι) (A : Ty ι) : Continuation → Bool
+  | .branchBind _ _ => BranchRefinement.onlyBoolean G A
+  | .tagBind _ _ _ => true
+  | k => passShapeCheck G A k
+
+/-- **The derivation a regional check reads** checked as `footprintCheck`
+checks it (`derivChecked`), where the step has one. -/
+def regionalDerivChecked (G : NormalGraph ι) (images : InstanceImageCheck G) (codes : CodeEntry ι → Bool)
+    (sums : List (ReadSummary ι)) (c : PointClaim ι) (node : Node) (stepK : Knowledge)
+    (deriv : Option (ProgramCertificates.Evidence ι)) : Bool :=
+  match deriv with
+  | some d => derivChecked G images codes sums c node stepK d
+  | none => true
+
 /-- **A node's step within a footprint bound** (`GraphCode.nodeChecked`),
 at a node outside the region from which no normal return is possible: the
 step within `Φ` (`ExpressionEffects.check`, `writeWithin`, `initWriteWithin`,
@@ -1662,6 +1687,14 @@ def runWalk (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (T
   -- no edge into it establishes.
   if startEntered && regional.isSome then
     return .error (.notHandled "store regions with an edge into the start", counts, answers, trace)
+  -- Under store regions, the entry's fields the regions read
+  -- (`ArgumentPathTracking.checkEntryFields`, as `goto_bounded` checks them).
+  if let some rg := regional then
+    if !GraphCode.ArgumentPathTracking.checkEntryFields G inputs rg.regions then
+      return .error (.refused "store regions: the entry's fields", counts, answers, trace)
+  -- One written assertion per label (`byLabel` reads the first).
+  if (assertions.map (·.1)).eraseDups.length != assertions.length then
+    return .error (.refused "a label with two written assertions", counts, answers, trace)
   let stated := byLabel n assertions
   if tracing then
     let e : Array (Option State) := Array.replicate n none
@@ -1827,6 +1860,9 @@ def runWalk (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (T
       let before := (materialize entry width (List.range width) true).1
       let o : Observation ι := { label := l, before, after := before, preds := predViews, names := predNames, implies := slotImplOf entry.names implies }
       throw (.observed o, counts, answers, trace)
+    -- The node's shape (`passShapeCheck'`).
+    if !passShapeCheck' G c.type node.continuation then
+      throw (.refused s!"the shape of node {l}", counts, answers, trace)
     -- The step.
     let some ms := timedKind "node mentioned" fun _ => mentioned 0 node.expression | throw (.notHandled s!"term at node {l}: {(reprStr node.expression).take 200}", counts, answers, trace)
     let ms := (keepFirst {} ms).2.toList
@@ -1973,6 +2009,8 @@ def runWalk (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (T
         | none, some _ => some .effect
         | none, none => none
       let kHere := (materialize entry width (List.range width) true).1
+      if !regionalDerivChecked G images codes sums c node stepK stepDeriv then
+        throw (.refused s!"store regions at node {l}: its derivation", counts, answers, trace)
       let cEv : NodeEvidence ι := ⟨ordinaryEv, some ⟨c.context, node.expression, c.type⟩, [], kHere, stepEffect, {}, none, [], [], [], none⟩
       let t0 := node.expression
       let F := here.values
