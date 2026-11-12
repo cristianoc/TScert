@@ -37,7 +37,8 @@ The Lean modules are
 [PassUnitLink](../../lean/Verification/Source/Claims/PassUnitLink.lean) (the closure and the linking induction),
 [PassUnitRealize](../../lean/Verification/Source/Claims/PassUnitRealize.lean) (the module's environment) and
 [PassUnitFile](../../lean/Verification/Source/Claims/PassUnitFile.lean) (the file-level theorem) and
-[PassUnitModules](../../lean/Verification/Source/Claims/PassUnitModules.lean) (linking modules).
+[PassUnitModules](../../lean/Verification/Source/Claims/PassUnitModules.lean) (linking modules) and
+[PassUnitObligations](../../lean/Verification/Source/Claims/PassUnitObligations.lean) (expression obligations, async members).
 
 ## 1. The statement
 
@@ -210,10 +211,8 @@ What each establishes, all proved:
   `checkRequests_safe_at`;
 - a member: `member_safe`; the unit: `passUnit_safe`.
 
-Two checks establish nothing `RequestSafe` states. The expression
-obligations (`ExpressionClaims.checkAllResult`) compare claims and have no
-soundness theorem in either headline. The declared effect's conditions give
-the async property `checkRequests_async` states, outside `RequestsSafe`.
+Two checks establish nothing `RequestSafe` states: the expression
+obligations and the declared effect's async condition (section 8).
 
 ### H3 and the repairs it needs
 
@@ -606,3 +605,50 @@ proof plan:
 
 With these, `published_holds` gives every established entry, and the
 importer's file theorem holds with its implementation imports discharged.
+
+## 8. Expression obligations and async members
+
+### Expression obligations
+
+A member's expression claims are sequents $`\Gamma \vdash t : A`$ at source
+positions (`ExpressionClaims.Required`), the types claimed for the unit's
+expressions; `passGroup` checks them against evidence, the member's code
+table and the read summaries its last run left (`checkAllResult`).
+
+**Theorem** `obligations_sound` (proved). Where the check accepts, the table
+is sound and the summaries are sound, every obligation holds semantically:
+
+```math
+\forall (\Gamma \vdash t : A) \in \mathit{rs}.\; \forall n\, W\, h\, \rho.\;
+  \rho \models_{n,W} \Gamma \wedge \mathrm{WorldAdm}(W) \wedge \mathrm{HeapOk}_n(W, h)
+  \;\Longrightarrow\; \mathrm{Safe}_{n,W}(A;\, h,\, t\rho)
+```
+
+by `checkTreeUsing_sound` and the typing's soundness. A member's table is
+sound by `codesAccepted_sound` and its last run's summaries by
+`summaries_of_checked`; the remaining step is a clause of `MemberAccepted`
+recording the obligations' check, which `passMember_sound` is to give. The
+old headline states no such clause: its `RequestsSafe` has no conjunct for
+obligations. The theorem says what a claimed expression type means for the
+term the obligation states; that the term is the source expression at that
+position is the lowering's boundary.
+
+### Async members
+
+**Theorem** `member_async` (proved). An async member `passGroup` accepts
+claims the footprint letting every location change:
+$`\mathrm{MemberAccepted}(f, j) \wedge r.\mathrm{async} \Rightarrow r.\mathrm{footprint} = \top`$,
+from the declared effect's condition. It is the member half of
+`checkRequests_async`, which the old checker states outside `RequestsSafe`.
+
+`checkRequests_async` also states it of each code request
+($`q.\mathrm{async} \Rightarrow q.\mathrm{footprint} = \top`$, from the code
+table's check). `passGroup` checks the member's async condition and not its
+code requests' (observed in `Json.lean`: the code conditions name no async
+flag). The repair is the code requests' condition in `passMember`, and
+`passMember_sound` then gives both halves.
+
+The async property stays outside `RequestSafe`: it constrains how a claim is
+read against the source (an async body runs after its call returns its
+promise), which is the lowering's boundary, not a property of the graph's
+runs. Both headlines state it as a separate consequence.

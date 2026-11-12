@@ -3,7 +3,7 @@ import Lean.Elab.Command
 import Lean.Compiler.CSimpAttr
 import Verification.Source.Claims.Json
 import Verification.Source.RequestCli
-import Verification.Source.Claims.PassUnitModules
+import Verification.Source.Claims.PassUnitObligations
 import Verification.Semantics.ArgumentStoreRegions
 import Verification.Semantics.FootprintNatives
 import Verification.Programs.ArgumentPathTracking
@@ -85,6 +85,8 @@ run_cmd do
   check ``Verification.SourceClaimJson.PassUnit.passFile_safe
   check ``Verification.SourceClaimJson.PassUnit.linkModules
   check ``Verification.SourceClaimJson.PassUnit.published_holds
+  check ``Verification.SourceClaimJson.PassUnit.obligations_sound
+  check ``Verification.SourceClaimJson.PassUnit.member_async
   check ``Verification.Footprints.transport_sound
   check ``Verification.Footprints.Sep.sound
   check ``Verification.Footprints.Post.mono
