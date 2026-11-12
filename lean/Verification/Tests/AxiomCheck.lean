@@ -5,6 +5,7 @@ import Verification.Source.Claims.Json
 import Verification.Source.RequestCli
 import Verification.Source.Claims.PassUnitObligations
 import Verification.Source.Claims.PassUnitInterfaces
+import Verification.Source.Claims.PassUnitSignatures
 import Verification.Semantics.ArgumentStoreRegions
 import Verification.Semantics.FootprintNatives
 import Verification.Programs.ArgumentPathTracking
@@ -111,6 +112,13 @@ run_cmd do
   check ``Verification.SourceClaimJson.PassUnit.fragmentPlansWithModules_overStore
   check ``Verification.SourceClaimJson.PassUnit.withFalseStartFact_overStore
   check ``Verification.SourceClaimJson.PassUnit.passUnitCli_safe
+  check ``Verification.StoreMaps.StoreMap.meaning_eq
+  check ``Verification.StoreMaps.StoreMap.meaning_eq_of_mem
+  check ``Verification.StoreMaps.StoreMap.denote_eq
+  check ``Verification.StoreMaps.StoreMap.normalDenote_eq
+  check ``Verification.StoreMaps.StoreMap.related_assign
+  check ``Verification.StoreMaps.ordinary_allowed
+  check ``Verification.SourceClaimJson.PassUnit.signatureAgrees_of_storeMap
   check ``Verification.Footprints.transport_sound
   check ``Verification.Footprints.Sep.sound
   check ``Verification.Footprints.Post.mono

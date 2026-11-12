@@ -39,7 +39,9 @@ The Lean modules are
 [PassUnitFile](../../lean/Verification/Source/Claims/PassUnitFile.lean) (the file-level theorem) and
 [PassUnitModules](../../lean/Verification/Source/Claims/PassUnitModules.lean) (linking modules) and
 [PassUnitObligations](../../lean/Verification/Source/Claims/PassUnitObligations.lean) (expression obligations, async members) and
-[PassUnitInterfaces](../../lean/Verification/Source/Claims/PassUnitInterfaces.lean) (outside slots by kind, module interfaces, the command line's condition).
+[PassUnitInterfaces](../../lean/Verification/Source/Claims/PassUnitInterfaces.lean) (outside slots by kind, module interfaces, the command line's condition) and
+[PassUnitSignatures](../../lean/Verification/Source/Claims/PassUnitSignatures.lean) (signature agreement from a store map), over
+[StoreMaps](../../lean/Verification/Types/StoreMaps.lean) (one type's meaning in two stores).
 
 ## 1. The statement
 
@@ -160,7 +162,7 @@ closed unit's value meets its interface.
 | H2 `RunKeepsSummaries` | a run keeps the summaries it starts from | the graph lane |
 | H3 `PassGroupChecks` | an accepted group's members are `MemberAccepted` | the wrapper lane (`passGroup_members`, `passMember_sound`) |
 | H5a `ModuleLayout` | each closed unit's code, interface and slots | the extraction; decidable at the verdict (wrapper lane) |
-| `EstablishedSlots` | an import slot holds its module's function, read at an agreeing type | H5a's import part and `SignatureAgrees` (section 7) |
+| `EstablishedSlots` | an import slot holds its module's function, read at an agreeing type | H5a's import part and `SignatureAgrees`, proved from a store map (`signatureAgrees_of_storeMap`, section 7) |
 | `EstablishProvenance` | `establishModules` publishes only `EstablishedStep` entries | the wrapper lane |
 | `InterfaceProvenance` | the interface file read is `interfaceFile`'s output | trusted: the stage store's replay, the forged-interface control |
 | declared imports, host values | their declared and host contracts | trusted, as for the proved checker |
@@ -681,24 +683,91 @@ extraction's slot for an import holds that module's function).
 
 ### Signature agreement across two stores
 
-`SignatureAgrees` relates two frozen equation stores: the module's and the
-importer's. No theorem relates two stores' meanings. The store theorems
-(`Checked.graph_eq`, `Checked.images_eq`) are about one store's equations;
-freezing validates one state's heads. What is missing, in order:
+`SignatureAgrees` relates two frozen equation stores, the module's and the
+importer's, each with its own labels (`Lab f`, trees over its own head
+numbering). Their meanings are related by a store map.
 
-1. a label map $`\varphi`$ from the module's labels reachable from $`I_u`$ to
-   the importer's, with $`\mathrm{row}_{G}(\varphi\,l) = \varphi(\mathrm{row}_{G_m}(l))`$
-   and the same builtins, prototype and descriptor domain on its image;
-2. invariance of meaning under such a map:
-   $`⟦A⟧^{G_m}_{j,W} = ⟦\varphi A⟧^{G}_{j,W}`$, by induction on $`j`$ and
-   the row's structure;
-3. that both fronts lower the declaration of $`n`$ to rows related by
-   $`\varphi`$ (`importedArrow` over the importer's declaration $`U`$
-   against the slot $`I_n`$ the module's `ordinarySlots` builds): the
+**Store map** (`StoreMaps.StoreMap`). A label map $`\varphi : \iota \to \kappa`$
+from graph $`G`$ to graph $`H`$ and a region $`D`$ of $`G`$'s labels, with
+$`\varphi`$ injective on $`D`$, $`D`$ closed under what each of its rows reads
+(`PositiveRules.reads`), its meet parts, its schemes' binders and bound
+binders, and holding the built-ins' types, such that for every $`l \in D`$:
+
+- $`H.\mathrm{kind}(\varphi\,l) = G.\mathrm{kind}(l)`$ (parameter kinds, so
+  value, pack and packed binders);
+- the clauses are related both ways (`RowsRel`): each clause $`c`$ of $`l`$
+  has a clause $`c'`$ of $`\varphi\,l`$, and each $`c'`$ a $`c`$, with
+  $`c' = c.\mathrm{map}\,\sigma`$ for an operand map $`\sigma`$ such that
+  $`\sigma S`$ and $`\varphi S`$ have the same members for each operand $`S`$
+  of $`c`$ and for $`[]`$ (`ClauseRel`, `Equiv`): the same constructor, the
+  same keys, literals, flags and effects, every operand a union of the same
+  labels renamed, in any order;
+- a scheme $`s`$ of $`l`$ is $`\varphi\,l`$'s with binders renamed by
+  $`\varphi`$ and every operand (signatures, bounds' types, variadic
+  signatures) by such a $`\sigma`$, qualification and construct flag kept
+  (`mapSchemeWith`); no scheme maps to no scheme;
+- a meet $`(p, cs)`$ of $`l`$ is $`(\varphi\,p, cs')`$ with $`cs`$ and $`cs'`$
+  related, and the further meet parameters are the renamed ones, as sets;
+- the built-ins are related (same keys, prototype and `unknown` types of the
+  renamed labels); the domain admits the image scheme's substitutions as the
+  scheme's (`ordinary_allowed`: two ordinary domains do); the image's
+  assignment gives $`\varphi\,l`$ the family $`G`$'s gives $`l`$.
+
+**Theorem** `StoreMap.meaning_eq` (proved). For every type $`A`$ of labels
+of $`D`$, at every budget $`n`$ and world $`W`$,
+
+```math
+⟦A.\mathrm{map}\,\varphi⟧^{H}_{n,W} = ⟦A⟧^{G}_{n,W}
+```
+
+and `meaning_eq_of_mem`: the same for any union with the members of
+$`A.\mathrm{map}\,\varphi`$. Both directions hold. The proof is by induction
+on the approximation index of the guarded fixed point over pairs of
+assignments related by $`\varphi`$ (`Related`:
+$`\theta(\varphi\,p) = \eta(p)`$ on $`D`$), each step reading related rows
+(`layer_eq`); a scheme's reassignment keeps the pair related
+(`related_assign`, from injectivity). The constructors covered are every
+clause constructor (`Clause.map` is the whole syntax), parameter rows of
+every kind, schemes with bounds, variadic signatures, qualification and
+construct signatures, meets, argument packs, and the built-ins' array
+invariant and exception family. Arrows keep their effect under
+`Contract.map`, so footprints, throw footprints, fresh results,
+preconditions and postconditions are carried as they are: the map relates
+types, and an arrow's effect is part of its clause.
+
+**Theorem** `signatureAgrees_of_storeMap` (proved). A store map from the
+entry's module graph to the importer's graph whose region holds the
+interface $`I_u`$, and a slot type with the members of $`\varphi(I_u)`$,
+give `SignatureAgrees`.
+
+### The lowering side
+
+The importer reads an entry through `importedArrow`: it expands its own
+declaration type $`U`$ of the name, takes its one arrow, spells each
+parameter and the result as claims (`graphClaim`) with the entry's footprint
+and throw flag, and lowers that arrow into its own store (`moduleArrow`).
+The module's interface $`I_u`$ is `moduleArrow` over its own units'
+signatures (`ordinarySlots`). So the two sides run the same lowering
+(`moduleArrow`) on claims, each in its own store. What is missing, as exact
+lemmas:
+
+1. **Round trip within one store**: lowering `graphClaim A` into the store
+   that holds $`A`$ gives a type of the same meaning as $`A`$ (an
+   encoder/decoder lemma of `graphClaim` and the claim lowering).
+2. **Interning up to renaming**: lowering the same claim document in two
+   states gives labels related by a head renaming $`\pi`$ (each head's
+   header and body the other's, renamed), and such a head renaming gives a
+   `StoreMap` on the labels reachable from the result (rows by `rowFrom`
+   commuting with renaming; unions compared as sets, which `ClauseRel`
+   allows, since renaming changes the canonical order).
+3. **The same claims**: the importer's spelling of $`U`$'s arrow and the
+   module's own units' signatures are the same claims, and the module's
+   footprint is the entry's (`EstablishedStep` states the second); the
    declaration-identity check compares the declarations' text, a lowering
-   theorem would make it the rows' relation.
+   theorem would make it the claims' equality.
 
-Until then `SignatureAgrees` is a named hypothesis per read.
+Until then the per-read hypothesis is `SignatureAgrees`, or the syntactic
+`StoreMapAgrees` (a store map exists) from which it is proved.
 
 ## 8. Expression obligations and async members
 
