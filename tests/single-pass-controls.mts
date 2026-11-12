@@ -16,7 +16,7 @@ import { join, resolve } from "node:path";
 import { availableParallelism } from "node:os";
 import { fork, spawn } from "node:child_process";
 import { controlOperations, invokeProcess, ran as ranStage, readInvocationLog, startEviction, type Invoked } from "../pipeline/stages.mts";
-import { verifierCall } from "../pipeline/stage-execution.mts";
+import { verifierBuild, verifierCall, verifierProtocol } from "../pipeline/stage-execution.mts";
 import { usePassMutationVerifier } from "./single-pass-mutations.mts";
 import { check as checkSource, invocationLog, readFragmentFile, sourceKey, type Outcome } from "../pipeline/verify-source.mts";
 import { stringFamily } from "../pipeline/string-family.mts";
@@ -543,17 +543,37 @@ control("forged fragment: overload units at another function's code", async (): 
   say("overload units forged at another function's code: refused");
 });
 
-stop("forged fragment: a module function reading a function its document leaves out", async (): Promise<void> => {
-  // The old route's producer refuses the module run (`unsupported: unbound
-  // name describe at …`); the route accepts every unit: the importer's
-  // check at the module's ordinary contracts reads no module body.
+control("forged fragment: a module's document leaving out a function an import reaches", async (): Promise<void> => {
+  // The module document is the front's: a source cannot leave a function
+  // out of it. An import whose module's document binds no name a read of it
+  // reaches refuses each unit reading the import, on the interface path
+  // (`--verify-interface-stage`) and the one-process path (`--verify-units`):
+  // a function the import's code calls (`describe`, which `label` reads),
+  // and the imported function itself (`label`).
   const certified = run("certified-value-import");
-  const ast = fragmentAst(certified);
-  const module = must(ast.modules.find((m) => m.location.endsWith("certified.ts")), "certified.ts's module");
-  assert.ok(module.functions.some((f) => f.name === "describe"), "`label` reads `describe`");
-  module.functions = module.functions.filter((f) => f.name !== "describe");
-  refusedFile(pass(forged(certified, "forged-absent-callee", ast)), "absent callee", /describe/);
-  say("a module function reading a function its document leaves out: refused");
+  const direct = (path: string): Pass => {
+    const ast: unknown = JSON.parse(readFileSync(path, "utf8"));
+    assert.ok(isObject(ast) && typeof ast.file === "string");
+    // (the importer's one process: the module units checked in it, as the
+    // pass stage's interfaces are, `fragmentPlansWithModules`)
+    return passOf(counted(invokeProcess({ stage: "pass", program: verifierBuild, arguments: [{ text: "--subtype-rounds" },
+      { text: "4096" }, { text: "--verify-units" }, { text: "8" }, { input: "fragment.json", path }, { text: ast.file },
+      { text: "12" }], environment: {}, protocol: verifierProtocol }, { limitMs: 60_000, force: false, recorder: null })));
+  };
+  for (const name of ["describe", "label"]) {
+    const ast = fragmentAst(certified);
+    const module = must(ast.modules.find((m) => m.location.endsWith("certified.ts")), "certified.ts's module");
+    assert.ok(module.functions.some((f) => f.name === name), `certified.ts's ${name}`);
+    module.functions = module.functions.filter((f) => f.name !== name);
+    const path = forged(certified, `forged-absent-${name}`, ast);
+    const at = new RegExp(`source refusal at \\[\\d+,\\d+\\): unbound name ${name} in \\./certified\\.ts, read through the import 'label'`);
+    for (const [p, route] of [[pass(path), "interface"], [direct(path), "one-process"]] as const) {
+      refused(p, "labels@744", `${name} absent, ${route} path`, at);
+      for (const unit of ["doubled@658", "tallies@829", "values@937", "innerValues@1032"])
+        accepted(p, unit, `${name} absent, ${route} path, a unit not reading label`);
+    }
+  }
+  say("a module's document leaving out a function an import reaches (the imported one, or one it calls): the units reading the import refused at the read, on both paths");
 });
 
 control("forged fragment: unbound names", async (): Promise<void> => {

@@ -702,7 +702,7 @@ checked: the store-map check from the entry's rows to the type the unit
 reads it at (`importerRowsAgree`); a refused one refuses the unit. (An
 import read at its entry: its slot the entry's reading, `importedArrow`; one
 read otherwise, a never-returning import at its declared type, is read at
-its declaration's contract.) The importer's reads (`fragmentPlansFromInterfaces`)
+its declaration's contract.) The importer's reads (`fragmentPlansOfInterfaces`)
 and a module's own reads of the entries published before it
 (`establishStep`) alike. -/
 def FilePlans.refuseRows (f : FilePlans) (reads : List FragmentRead) (established : Established)
@@ -855,11 +855,102 @@ def establishModules (needs : List ModuleNeed) (budget : PositiveCertificates.Se
     Except String (Established × List ModuleVerdict × List String × List (String × RowTable)) :=
   .ok (establishFold budget force prepare check incomingTables needs (incoming, [], [], []))
 
+/-- A document's values by their local names, each with the module and name
+of its declaration: its imports and the globals it reads. -/
+def documentValues (document : Json) : List (String × String × String) :=
+  ((jArr (document.getObjValD "declarations") "values").toOption.getD []).filterMap fun v => (do
+    let local_ ← (← v.getObjVal? "binding").getObjValAs? String "local"
+    let q ← v.getObjVal? "declaration"
+    return (local_, ← q.getObjValAs? String "module", ← q.getObjValAs? String "name")).toOption
+
+/-- **The names a module's document leaves unbound for a read of one of its
+names**: where the document binds `name` nowhere (no function, no function
+it could not lower, no name its top-level code binds), that name; else each
+name the code the read reaches mentions (`name`'s functions, the functions
+they mention, transitively, and the top-level code where one of them reads
+a name it binds) that the document binds nowhere, its values included (its
+imports and the globals it reads), each with the module it is read in. A
+value the document imports from another module of the fragment is followed
+there the same way. A module the fragment does not list (a declaration
+alone) binds every name it declares. -/
+def unboundReads (sc : ImportScope) (location name : String) : List (String × String) := Id.run do
+  let mut pending : List (String × String) := [(location, name)]
+  let mut seen : List (String × String) := []
+  let mut out : List (String × String) := []
+  for _ in [0:sc.modules.length * 64 + 1] do
+    let some (l, n) := pending.head? | break
+    pending := pending.drop 1
+    if seen.contains (l, n) then continue
+    seen := seen ++ [(l, n)]
+    let some m := sc.modules.find? (·.location == l) | continue
+    let some decoded := sc.code[l]? | continue
+    let .ok (fs, init) := decoded.get | continue
+    let values := documentValues m.document
+    let owned := init.flatMap Fragment.Stmt.bound
+    let own := fs.map (·.name) ++ m.absent.map (·.1) ++ owned
+    if !own.contains n then
+      out := out ++ [(l, n)]
+      continue
+    -- The code the read reaches: functions by name, the top-level code
+    -- where a name it binds is reached.
+    let intrinsic := fun (x : String) => x.startsWith "%" || x.startsWith "?" || x == "this"
+    let mut set := [n]
+    let mut withInit := owned.contains n
+    let mut mentions : List String := []
+    for _ in [0:fs.length + 2] do
+      -- (a name the body declares at its top level binds the whole body,
+      -- a closure reading it before its declaration included)
+      let bodies := (fs.filter fun f => set.contains f.name).flatMap fun f =>
+        (Fragment.stmtsFreeNames f.body).filter fun x =>
+          !(f.params.map (·.name)).contains x && !(f.body.flatMap Fragment.Stmt.bound).contains x
+      let found := ((if withInit then Fragment.stmtsFreeNames init else []) ++ bodies).eraseDups.filter
+        (!intrinsic ·)
+      let reachesInit := withInit || found.any owned.contains
+      let next := (set ++ found.filter (fs.map (·.name)).contains).eraseDups
+      let done := next.length == set.length && reachesInit == withInit
+      set := next
+      withInit := reachesInit
+      mentions := found
+      if done then break
+    for x in mentions do
+      if own.contains x then continue
+      match values.find? (·.1 == x) with
+      | some (_, l', n') => pending := pending ++ [(l', n')]
+      | none => out := out ++ [(l, x)]
+  return out.eraseDups
+
+/-- Each import of the importer whose declaration names a module of the
+fragment, by its local name, with the names that module's document leaves
+unbound for it (`unboundReads`), where there are any. -/
+def unboundImports (sc : ImportScope) (ast : Json) : List (String × List (String × String)) :=
+  if sc.modules.isEmpty then [] else
+  (documentValues ast).filterMap fun (local_, l, n) =>
+    if !sc.modules.any (·.location == l) then none else
+    match unboundReads sc l n with
+    | [] => none
+    | us => some (local_, us)
+
+/-- The plans with each unit that reads an import of `unbound` refused, at
+the first call of it in the unit's code, else at the unit: `unbound name
+<name> in <module>, read through the import '<local>'`. -/
+def FilePlans.refuseUnbound (f : FilePlans) (unbound : List (String × List (String × String))) : FilePlans :=
+  if unbound.isEmpty then f else
+  { f with plans := f.plans.zipIdx.map fun (p, j) =>
+    match (f.fr.captureNames j).findSome? fun n => (unbound.lookup n).map (n, ·) with
+    | none => p
+    | some (n, us) =>
+      let (l, x) := us.head?.getD ("", n)
+      let reason := s!"unbound name {x} in {l}, read through the import '{n}'"
+      let at_ := (f.fr.units[j]?).bind fun (fn, _, _) =>
+        ((Fragment.stmtsCallees fn.body).find? (·.2.2.1 == n)).map (·.2.1)
+      .error (match at_ with
+        | some (a, b) => s!"source refusal at [{a},{b}): {reason}"
+        | none => reason) }
+
 /-- Importer planning from closed interfaces. No module is planned here. -/
-def fragmentPlansFromInterfaces (ast : Json) (fileKey : String) (budget : PositiveCertificates.SearchBudget)
+def fragmentPlansOfInterfaces (ast : Json) (fileKey : String) (budget : PositiveCertificates.SearchBudget)
     (names : Option (List String)) (standIns : StandIns) (force : List String) (established : Established)
-    (tables : List (String × RowTable) := []) :
-    Except String FilePlans := do
+    (tables : List (String × RowTable)) : Except String FilePlans := do
   if established.isEmpty then
     return ← fragmentPlansCore ast fileKey budget names standIns force
   let sc ← ImportScope.of ast
@@ -867,6 +958,18 @@ def fragmentPlansFromInterfaces (ast : Json) (fileKey : String) (budget : Positi
   let rs := readsOf reads established
   let f ← fragmentPlansCore ast fileKey budget names standIns force (rs.map (·.1)) (rs.map (·.2))
   return f.refuseRows reads established tables
+
+/-- Importer planning from closed interfaces (`fragmentPlansOfInterfaces`),
+each unit reading an import whose module's document leaves a name its read
+reaches unbound refused (`unboundImports`): the fragment's module documents
+are the interfaces' (`decodeInterfaces` refuses another), so a module's
+missing function is told from an entry not established on both paths. -/
+def fragmentPlansFromInterfaces (ast : Json) (fileKey : String) (budget : PositiveCertificates.SearchBudget)
+    (names : Option (List String)) (standIns : StandIns) (force : List String) (established : Established)
+    (tables : List (String × RowTable) := []) :
+    Except String FilePlans := do
+  let unbound := unboundImports (← ImportScope.of ast) ast
+  return (← fragmentPlansOfInterfaces ast fileKey budget names standIns force established tables).refuseUnbound unbound
 
 /-- Direct invocation uses the same canonical component computation as
 stored interfaces. Its result is local to this invocation. -/
