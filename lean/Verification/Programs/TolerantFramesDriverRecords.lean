@@ -200,13 +200,15 @@ structure Settled (c : Target.RunCall G I) (heads : Nat → Bool) (dead : List B
 /-- **What the setup's `env` states of the call**: its heads the call's
 (`passHeads`); the labels it reaches closed under exits below the bound;
 the start reached; the count `runWalk` reads of the reached labels; a
-claim per label below the bound; a given state at heads only. -/
+claim per label below the bound, the call's claims; a given state at
+heads only. -/
 structure EnvFacts (c : Target.RunCall G I) (env : SinglePass.WalkEnv ι G I) : Prop where
   heads : envHead env = passHeads c
   closed : ∀ s t, envReached env s = true → t ∈ exitsOf env s → t < env.n → envReached env t = true
   start : c.start < env.n ∧ envReached env c.start = true
   reachable : (env.reached.toList.filter id).length = ((List.range env.n).filter (envReached env)).length
   claimed : env.claimed.size = env.n
+  claims : env.claimed = c.claims.toArray
   given : ∀ t : Nat, env.isHead[t]! = false → env.given[t]! = none
 
 omit [Labels ι] in
@@ -227,10 +229,10 @@ The equations are read off `setup` (W4). -/
 theorem envFacts_of_loopHeads {c : Target.RunCall G I} {env : SinglePass.WalkEnv ι G I}
     (hnodes : env.nodes = c.P.toArray) (hn : env.n = c.P.toArray.size)
     (hreached : env.reached = (SinglePass.loopHeads c.P.toArray c.start).2) (hheads : envHead env = passHeads c)
-    (hstart : c.start < env.n) (hclaimed : env.claimed.size = env.n)
+    (hstart : c.start < env.n) (hclaimed : env.claimed.size = env.n) (hclaims : env.claimed = c.claims.toArray)
     (hgiven : ∀ t : Nat, env.isHead[t]! = false → env.given[t]! = none) : EnvFacts c env := by
   have hc := loopHeads_closed c.P.toArray c.start
-  refine ⟨hheads, fun s t hs ht htn => ?_, ⟨hstart, ?_⟩, ?_, hclaimed, hgiven⟩
+  refine ⟨hheads, fun s t hs ht htn => ?_, ⟨hstart, ?_⟩, ?_, hclaimed, hclaims, hgiven⟩
   · unfold envReached exitsOf at *
     rw [hreached] at hs ⊢
     rw [hnodes] at ht

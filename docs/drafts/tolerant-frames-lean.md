@@ -1377,7 +1377,7 @@ side's `recordsSound_of` and `recordsChecked_of`, `VisitsRecord` from
 discharges it and the theorem that consumes it:
 
 ```math
-\mathrm{SetupRecords} \wedge \mathrm{ExitsPushOk} \wedge \mathrm{StepFresh} \wedge \mathrm{VisitsSettle} \wedge \mathrm{SubtypeAnswersAll} \wedge \mathrm{ExitsYield} \wedge \mathrm{RegionsRecorded} \wedge \mathrm{RegionsTyped} \Longrightarrow \mathrm{RunSound}
+\mathrm{SetupRecords} \wedge \mathrm{ExitsPushOk} \wedge \mathrm{VisitsSettle} \wedge \mathrm{SubtypeAnswersAll} \wedge \mathrm{ExitsYield} \wedge \mathrm{RegionsRecorded} \wedge \mathrm{RegionsTyped} \Longrightarrow \mathrm{RunSound}
 ```
 
 The pass keeps the read summaries it was given with no hypothesis
@@ -1405,9 +1405,8 @@ its type (`walkStopsRefuse`, from `StopOutcome.outcome_ne_accepted`).
 
 | Premise | Discharged by | Consumed by |
 | --- | --- | --- |
-| `SetupRecords` | the walk side (Leg 19b): what the setup gives (`EnvFacts`, `RecInv`, queue entry W4; `EnvFacts` from four equations of the setup, the start below the node count, a claim per label and a given state at heads only, `envFacts_of_loopHeads`, queue entry L2) | `recordsSound_of` and `recordsChecked_of`, then `run_traversedC` |
+| `SetupRecords` | the walk side (Leg 19b): what the setup gives (`EnvFacts`, `RecInv`, queue entry W4; `EnvFacts` from four equations of the setup, the start below the node count, a claim per label, the call's claims and a given state at heads only, `envFacts_of_loopHeads`, queue entry L2) | `recordsSound_of` and `recordsChecked_of`, then `run_traversedC` |
 | `ExitsPushOk` | each state an exit pushes (`exitPushed`) meets `PushOk` at its target and the step's fresh counter: `pushOk_of_exit` from the mapping's width and the entry's and step's stores well-formed and below the counter | `visitsRest_of` |
-| `StepFresh` | the step's fresh counter (`StepDone.fresh`) not below the visit's: the entry's (`headEntry`, `mergeState`) and `checkedStep`'s counters only grow | `visitsRest_of` |
 | `VisitsSettle` | the visited label's record settled (`SettledCore`): its checked step with `NodePassChecked` in the setup's `deadArr` (the footprint and return checks, `boundOk` and `returnOk`, and the kept yields' checks `NodeYieldChecks` over a sound summary table, `DirectKeepsSummaries` and `SearchKeepsSummaries` until W8), the start entered, the entry from `entryStart` and `withStated` | `visitsRest_of` |
 | `SubtypeAnswersAll` | pass change D5: an answer `subtypeUsing` accepts from any answers is an inclusion of meanings, at every graph (the answers' `subtypes` cache carries no soundness, so this is not provable of the pass as it is; `proved_sound` is the form the change can give) | `nodesYield_of` (the return's goal, `goalHolds_of_returnY`) |
 | `ExitsYield` | over a checked walk, at the yields the visit kept (`NodeChecked.ys`), `NodeExitsY`: each exit by `exitDeliversAJ_of` from `exitDeliversY_of_edge` or `exitDeliversY_head` (the edge's checks, the target's types by `refinedEdge_env`), `assertsAt_of_edge` (the assertion check at the refined context) and `exitJoinedY` (the merge's recorded edge at `SinglePass.refinedContext`); the handler by `handlerDelivers_of_edge` and `joinedAt_of_exit` at the node's context; the edge checks to be read off the visit (queue entries W6, W5, R1) and carried to every reassigned graph (`edgeEvidenceChecked_reassign`, `headQuery_reassign`, `assertionQuery_reassign`) | `nodesYield_of`, then `stepEdgesSound_of_yields` |
@@ -1936,15 +1935,18 @@ the states and implications that came in grow by equally many pushed
 ones; the edges grow by edges to targets; a node other than a head's
 in-degree goes down by its count among the targets; the labels queued are
 targets at in-degree 0, distinct where no in-degree is below its count.
-The targets are the node's successors (`exitLabels_ofNode`), and a
-returned entry's merge is `entryStart`'s (`visitEntry_merge`), so
+The targets are the node's successors (`exitLabels_ofNode`), a returned
+entry's merge is `entryStart`'s (`visitEntry_merge`), and the step's fresh
+counter is not below the visit's (proved: `stepFresh`, from
+`entryStart_fresh` over the states that came in, `checkedStep_fresh`,
+`stepRun_ok`, `visitStep_ok`), so
 
 ```math
-\mathrm{ExitsPushOk} \wedge \mathrm{StepFresh} \wedge \mathrm{VisitsSettle} \Longrightarrow \mathrm{VisitsRest}
+\mathrm{ExitsPushOk} \wedge \mathrm{VisitsSettle} \Longrightarrow \mathrm{VisitsRest}
 ```
 
-(`visitsRest_of`, under the setup's `EnvFacts` and the invariant's equal
-incoming sizes, `RecInv.inSizes`). A state an exit
+(`visitsRest_of`, under the setup's `EnvFacts`, which states the call's
+claims, and the invariant's equal incoming sizes, `RecInv.inSizes`). A state an exit
 carries into its target (`edgeTransfer` over `edgeStoreOf`) meets
 `PushOk` where the mapping reads the source's slots and gives the
 target's width, the entry's and the step's stores are well-formed and
@@ -2040,8 +2042,8 @@ Premises this leg discharges / leaves:
   `SetupRecords` (over the setup's environment and first state, queue
   entry W4, with `dfsLoop_init_closed` for the reached labels) and
   `VisitsRecord`, reduced to `VisitsRest` (`visitsRecord_of`) and that
-  to `ExitsPushOk`, `StepFresh` and `VisitsSettle` (`visitsRest_of`, the
-  exits' fold `ExitsFold`); the settled record's node reads the step's
+  to `ExitsPushOk` and `VisitsSettle` (`visitsRest_of`, the exits' fold
+  `ExitsFold`, `stepFresh`); the settled record's node reads the step's
   read-summary tables sound, from `DirectKeepsSummaries` and
   `SearchKeepsSummaries` (`stepChecked_of_step`) or from the final table's
   soundness where each table the visit reads is a prefix of the next

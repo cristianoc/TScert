@@ -8,8 +8,8 @@ that came in, the edges, the in-degrees, the queue and the arrays' sizes
 of `VisitRest`, where every exit's target has a claim (`EnvFacts.claimed`)
 and the pushed states meet `PushOk` (`ExitsPushOk`); the entry gives the
 merge's counter where a node other than a head has no given state
-(`EnvFacts.given`, `visitEntry_merge`). With the step's fresh counter not
-below the visit's (`StepFresh`) and the visited label settled
+(`EnvFacts.given`, `visitEntry_merge`); the step's fresh counter is not
+below the visit's (`stepFresh`). With the visited label settled
 (`VisitsSettle`), every visit gives `VisitRest` (`visitsRest_of`). -/
 
 namespace Verification.TolerantFrames
@@ -42,6 +42,81 @@ theorem visitEntry_merge {env : SinglePass.WalkEnv ι G I} {σ : SinglePass.Walk
   repeat' (first | split at h | extract_lets at h)
   all_goals first | (cases h; exact ⟨rfl, rfl, rfl, rfl⟩) | cases h
 
+/-- **A node's checked step that returns** (`stepRun`): `checkedStep`
+accepted at the node's claim from the entry state, the fresh counter and
+the answers given. -/
+theorem stepRun_ok {env : SinglePass.WalkEnv ι G I} {l : Nat} {entry : SinglePass.State} {fresh : Nat}
+    {answers : Answered G} {counts : SinglePass.Counts} {trace : SinglePass.Trace} {ms : List Nat}
+    {st : SinglePass.Stepped ι} {stats : SinglePass.StepStats} {a : Answered G}
+    (h : SinglePass.stepRun G I env l entry fresh answers counts trace = .ok (ms, st, stats, a)) :
+    SinglePass.checkedStep G I env.pool env.fuel env.suggestions env.index env.codes env.aliases env.passChecker
+      env.undefTy l env.nodes[l]! env.claimed[l]! entry ms fresh answers = (.ok st, stats, a) := by
+  unfold SinglePass.stepRun at h
+  extract_lets node c at h
+  split at h
+  · cases h
+  split at h
+  · cases h
+  extract_lets at h
+  split at h
+  rename_i stepped stats' a' heq
+  split at h
+  · simp only [Except.ok.injEq, Prod.mk.injEq] at h
+    obtain ⟨hms, rfl, rfl, rfl⟩ := h
+    subst hms
+    exact heq
+  · cases h
+
+/-- **A node's step that returns** (`visitStep`): its checked step
+(`stepRun`) from the entry's state and counter and the visit's answers,
+the step's answers those it started from, its fresh counter the step's,
+one more at a node with a handler. -/
+theorem visitStep_ok {env : SinglePass.WalkEnv ι G I} {σ : SinglePass.WalkState ι G} {l : Nat}
+    {en : SinglePass.Entered ι} {sd : SinglePass.StepDone ι G} (h : SinglePass.visitStep G I env σ l en = .ok sd) :
+    (∃ ms stats, SinglePass.stepRun G I env l en.entry en.fresh σ.answers en.counts en.trace =
+        .ok (ms, sd.st, stats, sd.steppedAnswers)) ∧
+      sd.stepAnswers = σ.answers ∧
+      sd.fresh = (if (env.nodes[l]!).handler.isSome then sd.st.fresh + 1 else sd.st.fresh) := by
+  unfold SinglePass.visitStep at h
+  split at h
+  · cases h
+  rename_i ms st stats a hrun
+  repeat' (first | split at h | extract_lets at h)
+  all_goals first | (cases h; exact ⟨⟨ms, stats, hrun⟩, rfl, rfl⟩) | cases h
+
+/-- **A checked step's fresh counter is not below the one it started
+from** (`checkedStep_ok`, `resultOf_cases`). -/
+theorem checkedStep_fresh {pool fuel suggestions index codes aliases pc undefTy l} {node : Node} {c : PointClaim ι}
+    {entry : SinglePass.State} {ms : List Nat} {fresh : Nat} {answers : Answered G} {st : SinglePass.Stepped ι}
+    {stats : SinglePass.StepStats} {ans : Answered G}
+    (h : SinglePass.checkedStep G I pool fuel suggestions index codes aliases pc undefTy l node c entry ms fresh
+      answers = (.ok st, stats, ans)) : fresh ≤ st.fresh := by
+  rcases checkedStep_ok h with ⟨_, -, -, -, hfr, -⟩ | ⟨-, _, _, _, -, -, ⟨_, _, -, -, -, hfresh, -⟩, -⟩
+  · omega
+  · rw [hfresh]
+    rcases resultOf_cases node.expression entry.names fresh with ⟨_, -, -, hf⟩ | ⟨-, hf⟩ <;> omega
+
+/-- **A node's entry's fresh counter is not below the walk's**: a head's
+given state takes fresh names past it, a merge's counter grows where the
+states that came in have the node's width, well-formed stores and are
+below the walk's counter (`mergeState_wf`). -/
+theorem entryStart_fresh {env : SinglePass.WalkEnv ι G I} {σ : SinglePass.WalkState ι G} {l : Nat}
+    (hpreds : ∀ q ∈ σ.walk.incoming[l]!, q.names.length = (env.claimed[l]!).context.length ∧ StoreWF q.store ∧
+      StateBelow q σ.fresh) :
+    σ.fresh ≤ (SinglePass.entryStart G env σ l).fresh := by
+  unfold SinglePass.entryStart
+  generalize σ.walk.incoming[l]! = inc at hpreds ⊢
+  split
+  · dsimp only
+    unfold SinglePass.headEntry
+    dsimp only
+    split <;> omega
+  · split
+    · exact Nat.le_refl _
+    · exact Nat.le_refl _
+    · exact (mergeState_wf (G := G) (edgesIn := σ.walk.incomingEdges[l]!) (List.cons_ne_nil _ _) (fun q hq => (hpreds q hq).1) (fun q hq => (hpreds q hq).2.1)
+        (fun q hq => (hpreds q hq).2.2)).2.1
+
 /-- **A visit's parts that returned**: the call's setup, the invariant at
 the state the visit starts from (its queue `l :: rest`), the entry, the
 step and the exits. -/
@@ -65,12 +140,32 @@ def ExitsPushOk : Prop :=
     VisitParts c env σ l rest en sd ex → ∀ e ∈ SinglePass.Exit.ofNode env.nodes[l]!, ∀ imp,
       PushOk c e.target.label (exitPushed env l en sd e imp) sd.fresh
 
-variable (ι) in
-/-- **(Named hypothesis) The step's fresh counter is not below the
-visit's.** -/
-def StepFresh : Prop :=
-  ∀ (G : NormalGraph ι) (I : InstanceImageCheck G) (c : Target.RunCall G I) env σ l rest en sd ex,
-    VisitParts c env σ l rest en sd ex → σ.fresh ≤ sd.fresh
+/-- **(`stepFresh`) The step's fresh counter is not below the visit's**:
+the entry's is not (`entryStart_fresh`, the states that came in meeting
+`PushOk` by the invariant), the checked step's is not below the entry's
+(`checkedStep_fresh`), and a handler takes one more. -/
+theorem stepFresh {c : Target.RunCall G I} {env : SinglePass.WalkEnv ι G I} {σ : SinglePass.WalkState ι G}
+    {l : Nat} {rest : List Nat} {en : SinglePass.Entered ι} {sd : SinglePass.StepDone ι G}
+    {ex : SinglePass.ExitsDone ι G} (hP : VisitParts c env σ l rest en sd ex) : σ.fresh ≤ sd.fresh := by
+  obtain ⟨-, hen, -, -⟩ := visitEntry_merge hP.entry
+  obtain ⟨⟨ms, stats, hrun⟩, -, hsf⟩ := visitStep_ok hP.step
+  have hck := checkedStep_fresh (stepRun_ok hrun)
+  have hln : l < env.n := (hP.inv.queue l (by rw [hP.queue]; exact List.mem_cons_self ..)).1
+  have hctx : (env.claimed[l]!).context = passCtx c l := by
+    unfold passCtx
+    rw [hP.facts.claims, Array.getElem!_eq_getD, Array.getD_eq_getD_getElem?]
+    have hl : l < c.claims.toArray.size := by rw [← hP.facts.claims, hP.facts.claimed]; exact hln
+    rw [Array.getElem?_eq_getElem hl, List.getElem?_eq_getElem (by simpa using hl)]
+    simp
+  have hes := entryStart_fresh (env := env) (σ := { σ with queue := rest }) (l := l) fun q hq => by
+    have hp := hP.inv.push l q (by
+      unfold incS
+      rw [Array.getElem!_eq_getD, Array.getD_eq_getD_getElem?] at hq
+      exact hq)
+    exact ⟨hctx ▸ hp.1, hp.2.1, hp.2.2⟩
+  have : σ.fresh ≤ en.fresh := hen ▸ hes
+  rw [hsf]
+  split <;> omega
 
 variable (ι) in
 /-- **(Named hypothesis) The visited label is settled** in the state the
@@ -81,10 +176,9 @@ def VisitsSettle : Prop :=
       SettledCore c (envHead env) env.deadArr.toList (visitResult { σ with queue := rest } l en sd ex) l
 
 /-- **(`visitsRest_of`) Every visit gives `VisitRest`** where the pushed
-states meet `PushOk`, the step's counter does not go down and the visited
-label is settled: the rest is the exits' fold (`visitExits_fold`) and the
+states meet `PushOk` and the visited label is settled: the rest is the exits' fold (`visitExits_fold`) and the
 entry's merge (`visitEntry_merge`). -/
-theorem visitsRest_of (hp : ExitsPushOk ι) (hf : StepFresh ι) (hs : VisitsSettle ι) : VisitsRest ι := by
+theorem visitsRest_of (hp : ExitsPushOk ι) (hs : VisitsSettle ι) : VisitsRest ι := by
   intro G I c env σ0 σ σ'' l rest hsetup hE hI hq hv
   obtain ⟨en, sd, ex, he, hst, hx, rfl⟩ := visit_ok hv
   have hP : VisitParts c env σ l rest en sd ex := ⟨⟨σ0, hsetup⟩, hE, hI, hq, he, hst, hx⟩
@@ -92,7 +186,7 @@ theorem visitsRest_of (hp : ExitsPushOk ι) (hf : StepFresh ι) (hs : VisitsSett
   have hL : (SinglePass.Exit.ofNode env.nodes[l]!).map (·.target.label) = exitsOf env l := exitLabels_ofNode _ _
   have hexits : ∀ t ∈ exitsOf env l, t < env.n := fun t ht => hE.claimed ▸ hF.claimed t (hL ▸ ht)
   have hln : l < σ.walk.labels.size := hI.size ▸ (hI.queue l (by rw [hq]; exact List.mem_cons_self ..)).1
-  refine { exits := hexits, frame := ?_, pushes := ?_, edges := ?_, fresh := hf G I c env σ l rest en sd ex hP,
+  refine { exits := hexits, frame := ?_, pushes := ?_, edges := ?_, fresh := show σ.fresh ≤ sd.fresh from stepFresh hP,
            degs := ?_, queue := ?_, settles := hs G I c env σ l rest en sd ex hP, mergeFresh := ?_, inSizes := ?_ }
   · intro t ht
     have := hF.frame t (hL ▸ ht)

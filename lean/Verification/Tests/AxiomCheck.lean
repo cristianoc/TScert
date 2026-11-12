@@ -876,6 +876,11 @@ run_cmd do
   check ``Verification.TolerantFrames.exitLabels_ofNode
   check ``Verification.TolerantFrames.visitEntry_merge
   check ``Verification.TolerantFrames.visitsRest_of
+  check ``Verification.TolerantFrames.stepRun_ok
+  check ``Verification.TolerantFrames.visitStep_ok
+  check ``Verification.TolerantFrames.checkedStep_fresh
+  check ``Verification.TolerantFrames.entryStart_fresh
+  check ``Verification.TolerantFrames.stepFresh
   check ``Verification.TolerantFrames.pushOk_of_exit
   check ``Verification.TolerantFrames.dfsStep_seen
   check ``Verification.TolerantFrames.dfsLoop_seen
