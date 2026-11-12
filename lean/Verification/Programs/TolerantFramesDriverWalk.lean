@@ -247,18 +247,6 @@ theorem run_traversedA (hstop : WalkStopsRefuse ι) (hrec : RecordsSound ι) : R
     passStated c, fun l hl => Classical.choice (hr.node l hl), hr.traversed, ofPass_heads σ.walk (passHeads c),
     hr.start, fun _ => rfl⟩⟩
 
-/-- **THE GRAPH THEOREM from the driver's record** (`run_sound` with
-`RunTraversedA` from `run_traversedA`): from a stopped walk never being
-accepted (`WalkStopsRefuse`), the record's soundness (`RecordsSound`), the
-nodes' meaning (`NodesMean`), the merges' premises (`LinearNearFuelEq`,
-`MergeExitsJoined`), the per-node hypotheses of the guarantee's other
-fields and the call's assertions at their labels, an accepted call of the
-pass guarantees `GraphGuarantee` of its options at its inputs. -/
-theorem run_sound_18b (hstop : WalkStopsRefuse ι) (hrec : RecordsSound ι) (hmean : NodesMean ι)
-    (hnear : LinearNearFuelEq) (hjoin : MergeExitsJoined ι) (hfoot : FootprintsKept ι) (hret : ReturnsKept ι)
-    (hreg : RegionsHeld ι) (hasr : AssertionsLabelled ι) : Target.RunSound ι :=
-  run_sound (run_traversedA hstop hrec) hmean hnear hjoin hfoot hret hreg hasr
-
 end Record
 
 end Verification.TolerantFrames

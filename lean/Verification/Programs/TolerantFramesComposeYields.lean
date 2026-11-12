@@ -14,9 +14,9 @@ the joined implications included. Proved:
 - `stepEdgesSound_of_yields`: every visited node checked (`NodeChecked`:
   its entry the recorded one, its shape check) with `NodeYielded` ∧
   `CodesSound` ⟹ `StepEdgesSoundAt` at `edgePreAJ`;
-- `footprintsKept_of_bounds`, `returnsKept_of_returns`: `BoundsChecked` ⟹
-  `FootprintsKept`, `ReturnsChecked` ⟹ `ReturnsKept`, the entry states from
-  `NodeChecked.hentry`;
+- `footprintKept_of_walk`, `returnsEnsured_of_walk`: a checked walk
+  (`WalkChecked`) keeps the bound and establishes `ensures` at every
+  admitted reassigned graph, the entry states from `NodeChecked.hentry`;
 - `exitJoinedY`: an exit's joined implications at a merge from the edge's
   record at the refined context (`joinedAt_of_exit`, `passRefined_env`);
   `exitDeliversAJ_of`: an exit delivering `edgePreA` and those joined
@@ -25,9 +25,10 @@ the joined implications included. Proved:
   return (`NodeYieldChecks`) gives `NodeYielded`'s judgment and return
   (`yieldsJudged_of_checked`, `goalHolds_of_returnY`), its exits and
   handler given;
-- (`run_sound_yields`) `RunTraversedA` ∧ `NodesYield` ∧ `LinearNearFuelEq`
-  ∧ `BoundsChecked` ∧ `ReturnsChecked` ∧ `RegionsHeld` ∧ `LabelsChecked` ⟹
-  `RunSound`; `run_sound_pass` is it with `run_traversedA`. -/
+- (`run_sound_checked`) `RunTraversedC` ∧ `NodesYield` ∧ `LinearNearFuelEq`
+  ∧ `RegionsHeld` ⟹ `RunSound`; (`run_traversedC`) `RecordsSound` ∧
+  `RecordsChecked` ⟹ `RunTraversedC`; `run_sound_pass` is their
+  composition. -/
 namespace Verification.TolerantFrames
 open Verification SinglePass Footprints HeapObservations
 open ProgramTyping ControlFlow CertificateProducer PositiveCertificates PositiveGraphs ProgramCertificates
@@ -186,49 +187,61 @@ variable {ι : Type} [Labels ι]
 
 variable (ι) in
 /-- **(Named hypothesis) Each checked node delivers with its kept yields**
-at every admitted reassigned graph: some yields `ys` with `NodeYielded`
-(the judgment carrying them, the return's goal, each exit and the handler
-delivering `edgePreAJ`, the merges' joined implications included). -/
+at every admitted reassigned graph, over a checked walk: some yields `ys`
+with `NodeYielded` (the judgment carrying them, the return's goal, each exit
+and the handler delivering `edgePreAJ`, the merges' joined implications
+included). -/
 def NodesYield : Prop :=
   ∀ (G : NormalGraph ι) (I : InstanceImageCheck G) (c : Target.RunCall G I) after admits,
-    RunPremises G I c after admits → ∀ r : RunWalkA G I c, ∀ η, admits η → ∀ ρ0 m l (hl : r.w.visited l),
+    RunPremises G I c after admits → ∀ r : RunWalkA G I c, WalkChecked c r → ∀ η, admits η →
+      ∀ ρ0 m l (hl : r.w.visited l),
       ∃ ys, NodeYielded (reassign G η) r.w (List.range c.inputs.length) ρ0 r.ctx r.stated r.given r.edgesIn
         (GoalHolds (reassign G η) c.goal (c.goal.argument ρ0)) m l (r.node l hl).node (r.node l hl).c
         (r.node l hl).entry (r.node l hl).st ys
 
-/-- **The footprint check keeps the bound** (`FootprintsKept`) from
-`BoundsChecked`, the entry states from the recorded entries. -/
-theorem footprintsKept_of_bounds (hb : BoundsChecked ι) : FootprintsKept ι := by
-  intro G I c after admits hp r η hη Φ fr ex hbd
-  obtain ⟨dead, hd⟩ := hb G I c after admits hp r Φ fr ex hbd
+/-- **The footprint check keeps the bound at a checked walk**
+(`FootprintKept` at every admitted reassigned graph), the entry states from
+the recorded entries. -/
+theorem footprintKept_of_walk {G : NormalGraph ι} {I : InstanceImageCheck G} {c : Target.RunCall G I}
+    {after : Answered G} {admits : MixedAssignment ι → Prop} (hp : RunPremises G I c after admits)
+    {r : RunWalkA G I c} {dead : List Bool} (hd : ∀ l (hl : r.w.visited l), NodePassChecked c dead (r.node l hl))
+    {η : MixedAssignment ι} (hη : admits η) {Φ : Footprints.Closed} {fr ex : Bool}
+    (hbd : c.bound = some (Φ, fr, ex)) (ρ0 : Env) (h₀ : Heap) :
+    FootprintKept c.P (reassign G η) r.w (List.range c.inputs.length) ρ0 r.ctx Φ h₀ dead fr ex := by
   obtain ⟨pc', hpc⟩ := scope_reassign hp.2.1 hη
-  exact ⟨dead, fun ρ0 h₀ => footprintKept_of
+  exact footprintKept_of
     (fun l hl => ⟨nodeChecked_reassign hpc (r.node l hl),
-      fun _ _ hq => (nodeChecked_reassign hpc (r.node l hl)).hentry ▸ hq.1.2, (hd l hl).reassign hpc⟩)
-    (codesSound_reassign hp.2.2.1 η)⟩
+      fun _ _ hq => (nodeChecked_reassign hpc (r.node l hl)).hentry ▸ hq.1.2,
+      ((hd l hl).bound Φ fr ex hbd).reassign hpc⟩)
+    (codesSound_reassign hp.2.2.1 η)
 
-/-- **The return check establishes `ensures`** (`ReturnsKept`) from
-`ReturnsChecked`, the entry states from the recorded entries. -/
-theorem returnsKept_of_returns (hrc : ReturnsChecked ι) : ReturnsKept ι := by
-  intro G I c after admits hp r η hη hne ρ0 m
+/-- **The return check establishes `ensures` at a checked walk**
+(`ReturnsEnsured` at every admitted reassigned graph), the entry states
+from the recorded entries. -/
+theorem returnsEnsured_of_walk {G : NormalGraph ι} {I : InstanceImageCheck G} {c : Target.RunCall G I}
+    {after : Answered G} {admits : MixedAssignment ι → Prop} (hp : RunPremises G I c after admits)
+    {r : RunWalkA G I c} {dead : List Bool} (hd : ∀ l (hl : r.w.visited l), NodePassChecked c dead (r.node l hl))
+    {η : MixedAssignment ι} (hη : admits η) (hne : c.ensures ≠ []) (ρ0 : Env) (m : Nat) :
+    ReturnsEnsured c.P (reassign G η) r.w (List.range c.inputs.length) ρ0 r.ctx c.ensures m := by
   obtain ⟨pc', hpc⟩ := scope_reassign hp.2.1 hη
   exact returnsEnsured_of
     (fun l hl => ⟨nodeChecked_reassign hpc (r.node l hl),
       fun _ _ hq => (nodeChecked_reassign hpc (r.node l hl)).hentry ▸ hq.1.2,
-      (hrc G I c after admits hp r hne l hl).reassign hpc⟩)
+      ((hd l hl).ret hne).reassign hpc⟩)
     (codesSound_reassign hp.2.2.1 η)
 
-/-- **THE GRAPH THEOREM over the nodes' kept yields** (`RunSound`): from
-the driver's walk (`RunTraversedA`), each node's kept yields (`NodesYield`),
-`LinearNearFuelEq`, the driver's footprint and return checks
-(`BoundsChecked`, `ReturnsChecked`), the regional premise (`RegionsHeld`)
-and the setup's label check (`LabelsChecked`). -/
-theorem run_sound_yields (hrun : RunTraversedA ι) (hyield : NodesYield ι) (hnear : LinearNearFuelEq)
-    (hb : BoundsChecked ι) (hrc : ReturnsChecked ι) (hreg : RegionsHeld ι) (hlab : LabelsChecked ι) :
-    Target.RunSound ι := by
+/-- **THE GRAPH THEOREM over a checked walk** (`RunSound`): from the
+driver's checked walk (`RunTraversedC`), each node's kept yields
+(`NodesYield`), `LinearNearFuelEq` and the regional premise
+(`RegionsHeld`); the footprint and return fields from the walk's checks
+(`footprintKept_of_walk`, `returnsEnsured_of_walk`), the assertions at
+their labels from the setup's check (`labelsChecked`). -/
+theorem run_sound_checked (hrun : RunTraversedC ι) (hyield : NodesYield ι) (hnear : LinearNearFuelEq)
+    (hreg : RegionsHeld ι) : Target.RunSound ι := by
   intro G I c after admits hacc hscope hcodes hsums hfields
   have hp : RunPremises G I c after admits := ⟨hacc, hscope, hcodes, hsums, hfields⟩
-  obtain ⟨r⟩ := hrun G I c after hacc hsums
+  obtain ⟨r, hchk⟩ := hrun G I c after hacc hsums
+  obtain ⟨dead, hd⟩ := hchk
   refine GraphGuarantee.toTarget (run_guarantee fun η hη => ?_)
   obtain ⟨pc', hpc⟩ := scope_reassign hscope hη
   refine ⟨r.w, r.given, r.ctx, r.edgesIn, r.fresh, r.stated,
@@ -237,23 +250,48 @@ theorem run_sound_yields (hrun : RunTraversedA ι) (hyield : NodesYield ι) (hne
       stable := fun Φ regions exc hr ρ s he =>
         GraphCode.ArgumentPathTracking.checkEntryFields_sound
           ((checkEntryFields_reassign G η c.inputs regions).trans (hfields Φ regions exc hr)) he s.pos s.ok
-      footprint := footprintsKept_of_bounds hb G I c after admits hp r η hη
-      returns := returnsKept_of_returns hrc G I c after admits hp r η hη
-      regions := hreg G I c after admits hp r η hη
-      labelled := assertionsLabelled_of_checked hlab G I c after admits hp r }⟩
+      footprint := fun Φ fr ex hbd => ⟨dead, footprintKept_of_walk hp hd hη hbd⟩
+      returns := fun hne => returnsEnsured_of_walk hp hd hη hne
+      regions := hreg G I c after admits hp r ⟨dead, hd⟩ η hη
+      labelled := assertionsLabelled_of_checked labelsChecked G I c after admits hp r }⟩
   exact nodesChecked_of_walkJ (r.traversed.reassign η)
     (stepEdgesSound_of_yields
-      (fun l hl => ⟨nodeChecked_reassign hpc (r.node l hl), hyield G I c after admits hp r η hη ρ0 m l hl⟩)
+      (fun l hl => ⟨nodeChecked_reassign hpc (r.node l hl),
+        hyield G I c after admits hp r ⟨dead, hd⟩ η hη ρ0 m l hl⟩)
       (codesSound_reassign hcodes η))
     (headsEntered_of_recorded r.heads) hnear
 
-/-- **THE GRAPH THEOREM of the single pass over the nodes' kept yields**
-(`run_sound_yields` with the driver's walk from its record,
-`run_traversedA`). -/
-theorem run_sound_pass (hrec : RecordsSound ι) (hyield : NodesYield ι)
-    (hnear : LinearNearFuelEq) (hb : BoundsChecked ι) (hrc : ReturnsChecked ι) (hreg : RegionsHeld ι) :
-    Target.RunSound ι :=
-  run_sound_yields (run_traversedA (walkStopsRefuse (ι := ι)) hrec) hyield hnear hb hrc hreg labelsChecked
+variable (ι) in
+/-- **(Named hypothesis) The driver checked every node its record visits**:
+for a walk that returned, visiting at least the nodes the start reaches,
+whose final summaries are sound, one no-return region `dead` and at every
+label the record visits a checked step (`NodeChecked`, its entry the
+recorded one) that `NodePassChecked` holds of: the visit's footprint and
+return checks at the step's values. -/
+def RecordsChecked : Prop :=
+  ∀ (G : NormalGraph ι) (I : InstanceImageCheck G) (c : Target.RunCall G I) (σ : SinglePass.WalkState ι G) reach,
+    RunCall.walk c = .ok (σ, reach) → reach ≤ σ.walk.visited →
+    SummariesSound G I σ.answers.summaries.toList → ∃ dead, ∀ l, (ofPass σ.walk (passHeads c)).visited l →
+      ∃ r : NodeChecked G I c.codes c.passChecker c.P (ofPass σ.walk (passHeads c)) (List.range c.inputs.length)
+        (passCtx c) l, NodePassChecked c dead r
+
+/-- **(`run_traversedC`) The driver's checked walk from its record**: the
+walk `run_traversedA` builds, its nodes the checked steps `RecordsChecked`
+gives. -/
+theorem run_traversedC (hrec : RecordsSound ι) (hchk : RecordsChecked ι) : RunTraversedC ι := by
+  intro G I c after hacc hsums
+  obtain ⟨σ, reach, hw, hle, ha⟩ := walk_of_accepts walkStopsRefuse hacc
+  have hr := hrec G I c σ reach hw hle (ha ▸ hsums)
+  obtain ⟨dead, hn⟩ := hchk G I c σ reach hw hle (ha ▸ hsums)
+  exact ⟨⟨ofPass σ.walk (passHeads c), passHeads c, passCtx c, passEdgesIn σ.walk, passFresh σ.walk,
+    passStated c, fun l hl => Classical.choose (hn l hl), hr.traversed, ofPass_heads σ.walk (passHeads c),
+    hr.start, fun _ => rfl⟩, dead, fun l hl => Classical.choose_spec (hn l hl)⟩
+
+/-- **THE GRAPH THEOREM of the single pass** (`run_sound_checked` with the
+driver's checked walk from its record, `run_traversedC`). -/
+theorem run_sound_pass (hrec : RecordsSound ι) (hchk : RecordsChecked ι) (hyield : NodesYield ι)
+    (hnear : LinearNearFuelEq) (hreg : RegionsHeld ι) : Target.RunSound ι :=
+  run_sound_checked (run_traversedC hrec hchk) hyield hnear hreg
 
 end Run
 

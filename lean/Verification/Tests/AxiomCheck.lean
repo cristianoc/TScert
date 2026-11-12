@@ -699,7 +699,6 @@ run_cmd do
   check ``Verification.TolerantFrames.nodesKeep_anti
   check ``Verification.TolerantFrames.PassWalkSound.start
   check ``Verification.TolerantFrames.checkEntryFields_reassign
-  check ``Verification.TolerantFrames.run_sound
   check ``Verification.TolerantFrames.contKeeps_regionX
   check ``Verification.TolerantFrames.regionsKept_of
   check ``Verification.TolerantFrames.regionalTyped_of_tree
@@ -765,12 +764,13 @@ run_cmd do
   check ``Verification.TolerantFrames.passRefined_env
   check ``Verification.TolerantFrames.checkedEdge_env_none
   check ``Verification.TolerantFrames.refinedEdge_env
-  check ``Verification.TolerantFrames.footprintsKept_of_bounds
-  check ``Verification.TolerantFrames.returnsKept_of_returns
   check ``Verification.TolerantFrames.exitJoinedY
   check ``Verification.TolerantFrames.exitDeliversAJ_of
   check ``Verification.TolerantFrames.nodeYielded_of_checks
-  check ``Verification.TolerantFrames.run_sound_yields
+  check ``Verification.TolerantFrames.footprintKept_of_walk
+  check ``Verification.TolerantFrames.returnsEnsured_of_walk
+  check ``Verification.TolerantFrames.run_sound_checked
+  check ``Verification.TolerantFrames.run_traversedC
   check ``Verification.TolerantFrames.run_sound_pass
 
   -- Leg 17b: the walk side of the graph theorem (TolerantFramesMergeExits, TolerantFramesMergeNearRounds)
@@ -805,7 +805,6 @@ run_cmd do
   check ``Verification.TolerantFrames.loopHeads_cuts
   check ``Verification.TolerantFrames.HeadsCutCycles.mono
   check ``Verification.TolerantFrames.passHeads_cuts
-  check ``Verification.TolerantFrames.run_sound_18b
   -- Leg 19b: the walk's premises from the driver (TolerantFramesDriverHeadsFuel)
   check ``Verification.TolerantFrames.zeroWeight_upd
   check ``Verification.TolerantFrames.dfsStep_measure
