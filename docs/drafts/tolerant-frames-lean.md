@@ -2186,3 +2186,39 @@ such a request states an assertion no check established (observed in the
 code; no request with a repeated label is demonstrated). Needs pass change:
 `run` refuses a repeated label, or joins the assertions a label states;
 `holds_of_assertsAt`'s premise then holds.
+
+## Leg 15b: a guard's and an assertion's goal at a return
+
+Module `lean/Verification/Programs/TolerantFramesNodeGoals.lean`.
+`NodeAccepted.ret` gives the goal from the value alone; a type guard's
+goal (`x is T`) and an assertion function's (`asserts x is T`) read the
+promised argument $`a`$, the entry value of the goal's slot. Its
+state-dependent form, at the state after the step $`s'`$ and the pushed
+environment $`\mathrm{push}\ v\ \rho`$, is the conclusion of
+`goalHolds_of_return`: `GoalHolds G goal a` of $`v`$ at $`s'`$.
+
+`returnCheck` checks the promise as the certificate checker's
+`checkReturnResult` does: `returnGuard_of_check` and
+`returnAssert_of_check` read its code (the answer's type Boolean, or
+`undefined`; the answer `true` impossible, or the type empty; or a slot of
+`passHeld`, the entry's slots holding `argName`, whose type refined by the
+yields at the entry's slots, `passReturnYields`, a subtype answer places
+within the promise, `returnWithin`, `returnWithin_sound`). Proved:
+
+- (`returnOk_of_check`) `returnCheck` accepting ∧ `SubtypeAnswersSound`
+  ⟹ `ControlFlow.ReturnOk G goal c.context c.type (passReturnYields …)
+  (passHeld …)`, or the goal is plain;
+- (`passHeld_argument`) the entry state holding ∧ `argName` the start name
+  of the goal's slot ⟹ every slot of `passHeld` reads the promised
+  argument (`ArgumentsOk`; `slot_start`);
+- `goalHolds_at`: `ControlFlow.goal_return` at the state's own level;
+- (`goalHolds_of_return`) `returnCheck` accepting ∧ `SubtypeAnswersSound`
+  ∧ `argName = goal.slot.bind (startNames[·]?)` ∧ the state after the step
+  holding at $`\mathrm{push}\ v\ \rho`$ ∧ the pushed context typing it ∧
+  `YieldsOk` of `passReturnYields` at $`\rho`$ and $`v`$ ∧ a plain goal's
+  result type containing the claim's ⟹ `GoalHolds G goal a v` at $`s'`$.
+
+Named hypotheses: `SubtypeAnswersSound` (an accepted `subtypeUsing`
+answer, from any table, an inclusion of meanings: pass change D5);
+`YieldsOk` of the step's yields (pass change D2). The plain goal's premise
+is `NodeAccepted.ret` at a plain goal (`plain_return`).

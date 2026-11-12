@@ -47,6 +47,7 @@ import Verification.Programs.TolerantFramesRegionalNode
 import Verification.Programs.TolerantFramesNodeBindsExits
 import Verification.Programs.TolerantFramesRegionalRuns
 import Verification.Programs.TolerantFramesNodeAsserts
+import Verification.Programs.TolerantFramesNodeGoals
 
 /-!
 Acceptance rests on Lean's standard axioms alone. The build fails when any of
@@ -668,6 +669,14 @@ run_cmd do
   check ``Verification.TolerantFrames.assertsAt_start
   check ``Verification.TolerantFrames.exitDeliversA_of
   check ``Verification.TolerantFrames.edgeFacts_holds
+  check ``Verification.TolerantFrames.returnWithin_sound
+  check ``Verification.TolerantFrames.returnGuard_of_check
+  check ``Verification.TolerantFrames.returnAssert_of_check
+  check ``Verification.TolerantFrames.slot_start
+  check ``Verification.TolerantFrames.passHeld_argument
+  check ``Verification.TolerantFrames.goalHolds_at
+  check ``Verification.TolerantFrames.returnOk_of_check
+  check ``Verification.TolerantFrames.goalHolds_of_return
   let env ← getEnv
   let project (decl : Name) : Bool := match env.getModuleIdxFor? decl with
     | some i => (`Verification).isPrefixOf env.header.moduleNames[i.toNat]!
